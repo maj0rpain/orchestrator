@@ -81,10 +81,12 @@ case "$1" in
       exit 1
     fi
     echo "Logged in to github.com" ;;
-  repo) echo "${GH_STUB_REPO-acme/widgets main}" ;;
+  repo) printf '%s\n' ${GH_STUB_REPO-acme/widgets main} ;;
   label)
+    if [ "${GH_STUB_MODE:-ok}" = labelfail ]; then exit 1; fi
     if [ "${GH_STUB_MODE:-ok}" != nolabels ]; then
-      printf '%s\n' ${GH_STUB_LABELS-needs-triage ready-for-agent}
+      printf '%s\n' "${GH_STUB_LABELS-needs-triage
+ready-for-agent}"
     fi ;;
   pr) echo "${GH_STUB_PR_STATE:-OPEN}" ;;
 esac
@@ -301,10 +303,32 @@ healthy_repo
 out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when a documented label is missing from the repo" "$st" 1
 assert_contains "names the missing label with its backticks stripped" "$out" "ready-for-agent"
-assert_contains "gives the command that creates it" "$out" "gh label create ready-for-agent"
+assert_contains "gives the command that creates it" "$out" 'gh label create "ready-for-agent"'
+assert_contains "indents the remedy under its FAIL by six spaces" \
+  "$out" "$(printf '\n      gh label create')"
+assert_eq "strips the backticks the doc writes labels in" \
+  "$(printf '%s\n' "$out" | grep -c '`')" "0"
 assert_contains "counts one FAIL and no warns" \
   "$(printf '%s\n' "$out" | tail -1)" "0 warn, 1 FAIL"
 
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning |' \
+        '| -------------------------- | -------------------- | ------- |' \
+        '| `needs-triage`             | `needs triage`       | Look    |' >docs/agents/triage-labels.md
+out="$(GH_STUB_LABELS='needs triage' "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a label with a space in it is one label, not two" "$st" 0
+out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"
+assert_contains "quotes a multi-word label in the remedy" "$out" 'gh label create "needs triage"'
+
+# GitHub answered the auth probe and then would not answer this one: an absent
+# answer, not a "no", so it warns.
+healthy_repo
+out="$(GH_STUB_MODE=labelfail "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "an unlistable label set does not block the flow" "$st" 0
+assert_contains "says the labels could not be listed" "$out" "could not be listed"
+
+healthy_repo
 out="$(GH_STUB_MODE=offline "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "does not fail merely because GitHub is unreachable" "$st" 0
 assert_contains "collapses the checks that needed GitHub into one line" \
@@ -369,7 +393,7 @@ healthy_repo
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "separates groups with a blank line and a bare header" \
   "$out" "$(printf '\n\nauth & remotes\n')"
-assert_contains "a fully healthy repo reports nothing at all" \
+assert_contains "a fully healthy repo reports no warns and no FAILs" \
   "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
 
 # --- doctor --flow ----------------------------------------------------------
@@ -444,7 +468,14 @@ out="$(GH_STUB_MODE=offline "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an unreachable GitHub does not fail the flow scope" "$st" 0
 assert_contains "skips the PR check with its cause" "$out" "skipped: GitHub is not reachable"
 
+# --flow never runs the tools group, so if it skipped every check it has and
+# still exited 0, /orchestrator:next would advance a flow nothing had checked.
 out="$(PATH="$(path_without_jq)" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "--flow without jq fails rather than reporting a clean bill" "$st" 1
+assert_contains "names jq as the reason it cannot answer" "$out" "jq not found"
+
+out="$(PATH="$(path_without_jq)" "$ORCH" doctor 2>&1)"; st=$?
+assert_status "bare doctor without jq fails on the tools check" "$st" 1
 assert_contains "collapses every flow check into one line when jq is gone" \
   "$out" "flow checks skipped: jq is not installed"
 

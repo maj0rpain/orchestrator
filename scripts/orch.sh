@@ -110,12 +110,20 @@ h_plugin() { d_head "plugin environment"; }
 h_repo()   { d_head "repo config"; }
 h_flow()   { d_head "flow state"; }
 
-# Space-separated in, comma-separated out: a list reads better in a sentence.
+# Lists inside doctor are newline-separated, never space-separated: a triage
+# label may legally contain a space, and splitting one on whitespace is how a
+# diagnostic ends up telling you to create a label called "needs".
+d_append() {
+  if [ -n "$1" ]; then printf '%s\n%s' "$1" "$2"; else printf '%s' "$2"; fi
+}
+
+# Newline-separated in, comma-separated out: a list reads better in a sentence.
 d_join() {
   local out="" x
-  for x in $1; do
+  while IFS= read -r x; do
+    if [ -z "$x" ]; then continue; fi
     if [ -n "$out" ]; then out="$out, $x"; else out="$x"; fi
-  done
+  done <<<"$1"
   printf '%s\n' "$out"
 }
 
@@ -124,12 +132,21 @@ d_join() {
 # naming the cause - N warns, or worse N invented FAILs, would bury the one real
 # problem underneath them.
 D_GH=""            # "ok", or the reason GitHub could not be asked
-D_REPO=""          # "<owner/name> <default branch>" as GitHub reports them
+D_REPO_NAME=""     # owner/name, as GitHub resolves it
+D_REPO_BRANCH=""   # the default branch, as GitHub reports it
 D_MP=""            # the mattpocock-skills plugin root, or empty
 D_JQ=""            # "ok", or empty when jq is missing
 D_GH_SKIPPED=0
 D_MP_SKIPPED=0
 D_JQ_SKIPPED=0
+
+# A check that needed an answer GitHub could not give counts itself as skipped
+# and says nothing of its own, so the group collapses to one line.
+d_gh_gate() {
+  if [ "$D_GH" = ok ]; then return 0; fi
+  D_GH_SKIPPED=$((D_GH_SKIPPED + 1))
+  return 1
+}
 
 d_skip_line() {
   local n="$1" noun="$2" cause="$3" word="checks"
@@ -166,8 +183,11 @@ d_probe() {
     esac
   fi
   if [ "$D_GH" = ok ] && [ "$scope" != flow ]; then
-    D_REPO="$(gh repo view --json nameWithOwner,defaultBranchRef \
-      --jq '.nameWithOwner + " " + (.defaultBranchRef.name // "")' 2>/dev/null)" || D_REPO=""
+    local view
+    view="$(gh repo view --json nameWithOwner,defaultBranchRef \
+      --jq '.nameWithOwner, (.defaultBranchRef.name // "")' 2>/dev/null)" || view=""
+    D_REPO_NAME="$(printf '%s\n' "$view" | sed -n 1p)"
+    D_REPO_BRANCH="$(printf '%s\n' "$view" | sed -n 2p)"
   fi
 }
 
@@ -224,8 +244,8 @@ check_gh_auth() {
 }
 
 check_gh_repo() {
-  if [ "$D_GH" != ok ]; then D_GH_SKIPPED=$((D_GH_SKIPPED + 1)); return 0; fi
-  if [ -n "$D_REPO" ]; then d_ok "repo: ${D_REPO%% *}"; return 0; fi
+  d_gh_gate || return 0
+  if [ -n "$D_REPO_NAME" ]; then d_ok "repo: $D_REPO_NAME"; return 0; fi
   d_fail "gh cannot resolve this repo - origin may point somewhere you cannot see."
   d_remedy "git remote set-url origin https://github.com/<owner>/<repo>.git"
 }
@@ -234,10 +254,11 @@ check_gh_repo() {
 # back to a local pointer and then to the literal "main", and a feature branch
 # forked from the wrong place looks fine until review.
 check_default_branch() {
-  if [ "$D_GH" != ok ]; then D_GH_SKIPPED=$((D_GH_SKIPPED + 1)); return 0; fi
-  local b=""
-  case "$D_REPO" in *" "*) b="${D_REPO#* }" ;; esac
-  if [ -n "$b" ]; then d_ok "default branch: $b (from GitHub)"; return 0; fi
+  d_gh_gate || return 0
+  # Silent when the repo itself did not resolve: check_gh_repo has already said
+  # so, and a second line derived from the first buries it.
+  [ -n "$D_REPO_NAME" ] || return 0
+  if [ -n "$D_REPO_BRANCH" ]; then d_ok "default branch: $D_REPO_BRANCH (from GitHub)"; return 0; fi
   d_warn "default branch not resolved from GitHub - falling back to $(default_branch)."
   d_remedy "git remote set-head origin --auto"
 }
@@ -265,7 +286,7 @@ check_skills() {
     for p in "$D_MP/skills"/*/"$name"/SKILL.md; do
       if [ -f "$p" ]; then found=1; break; fi
     done
-    if [ -z "$found" ]; then missing="$missing $name"; fi
+    if [ -z "$found" ]; then missing="$(d_append "$missing" "$name")"; fi
   done
   if [ -z "$missing" ]; then d_ok "every skill the flow reads resolves"; return 0; fi
   d_fail "mattpocock skills missing: $(d_join "$missing")"
@@ -320,22 +341,27 @@ check_labels_doc() {
 # `gh issue create`, so a label the repo does not have kills the phase after the
 # whole to-spec exchange has already been spent.
 check_labels_exist() {
-  if [ "$D_GH" != ok ]; then D_GH_SKIPPED=$((D_GH_SKIPPED + 1)); return 0; fi
+  d_gh_gate || return 0
   local want have missing="" l
   want="$(triage_labels)" || want=""
   # Nothing to compare against, and check_labels_doc has already said so. One
   # problem earns one FAIL, never a second derived from the first.
   [ -n "$want" ] || return 0
   if ! have="$(gh label list --limit 200 --json name --jq '.[].name' 2>/dev/null)"; then
+    # One check, one cause, one warn: GitHub answered the auth probe and then
+    # would not answer this, which is an absent answer rather than a "no".
     d_warn "the repo's labels could not be listed."
     return 0
   fi
-  for l in $want; do
-    if ! printf '%s\n' "$have" | grep -qxF "$l"; then missing="$missing $l"; fi
-  done
+  while IFS= read -r l; do
+    if [ -z "$l" ]; then continue; fi
+    if ! printf '%s\n' "$have" | grep -qxF "$l"; then missing="$(d_append "$missing" "$l")"; fi
+  done <<<"$want"
   if [ -z "$missing" ]; then d_ok "every documented triage label exists on the repo"; return 0; fi
   d_fail "triage labels missing from the repo: $(d_join "$missing")"
-  for l in $missing; do d_remedy "gh label create $l"; done
+  # Quoted, because a label that needs quoting is exactly the one you would
+  # paste wrong.
+  while IFS= read -r l; do d_remedy "gh label create \"$l\""; done <<<"$missing"
 }
 
 check_git_exclude() {
@@ -419,7 +445,7 @@ check_flow_pr() {
   local pr pr_state
   pr="$(jq -r '.pr // ""' "$STATE")"
   if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
-  if [ "$D_GH" != ok ]; then D_GH_SKIPPED=$((D_GH_SKIPPED + 1)); return 0; fi
+  d_gh_gate || return 0
   pr_state="$(gh pr view "$pr" --json state --jq .state 2>/dev/null)" || pr_state=""
   case "$pr_state" in
     OPEN)   d_ok "PR #$pr open" ;;
@@ -450,9 +476,9 @@ check_flow_handoffs() {
       d_remedy "/orchestrator:redo"
       continue
     fi
-    problems="$(handoff_problems "$path")" || true
+    problems="$(handoff_report "$path" | grep -v '^ok ' || true)"
     if [ -z "$problems" ]; then d_ok "handoff $f complete"; continue; fi
-    while IFS= read -r line; do d_fail "handoff $f: $line"; done <<<"$problems"
+    while IFS= read -r line; do d_fail "handoff $f: ${line#FAIL }"; done <<<"$problems"
     d_remedy "/orchestrator:redo"
   done
 }
@@ -464,8 +490,8 @@ h_flow check_state_phase check_flow_branch check_flow_upstream check_flow_pr che
 d_run() {
   local entry
   for entry in $1; do
-    # `|| true` on purpose: a check that blows up must cost its own line, not
-    # the rest of the report.
+    # `|| true` on purpose: a check that blows up must not take the rest of the
+    # report with it. doctor is what you run when things are already wrong.
     "$entry" || true
   done
 }
@@ -487,11 +513,17 @@ cmd_doctor() {
     # Bare doctor did not ask, so it states the absence and carries on: an empty
     # answer must never be mistaken for a healthy one.
     if [ "$scope" = flow ]; then require_state; fi
-    if [ -f "$STATE" ]; then
-      d_run "$FLOW_CHECKS"
-    else
+    if [ ! -f "$STATE" ]; then
       h_flow
       d_ok "no active flow"
+    elif [ "$scope" = flow ] && [ "$D_JQ" != ok ]; then
+      # --flow never runs the tools group, so nothing else here would report the
+      # jq that every check below needs. Skipping all five and still exiting 0
+      # is the one answer a diagnostic must never give - and /orchestrator:next
+      # gates on exactly that exit code.
+      d_run "h_flow check_jq"
+    else
+      d_run "$FLOW_CHECKS"
     fi
   fi
 
@@ -570,18 +602,21 @@ section_body() {
   awk -v h="$2" '$0 == h { inside = 1; next } /^## / { inside = 0 } inside { print }' "$1"
 }
 
-# The single statement of what a valid handoff is. doctor's flow-state check
-# reads the same answer rather than writing a second one that can drift.
-handoff_problems() {
+# The single statement of what a valid handoff is: one line per required
+# section, each `ok <heading>` or `FAIL <problem>`. doctor's flow-state check
+# reads the same answer rather than writing a second one that can drift from it.
+handoff_report() {
   local file="$1" base heading failed=0
   base="$(basename "$file")"
   while IFS= read -r heading; do
     if ! grep -qxF "$heading" "$file"; then
-      printf 'missing section: %s\n' "$heading"
+      printf 'FAIL missing section: %s\n' "$heading"
       failed=1
     elif [ -z "$(section_body "$file" "$heading" | tr -d '[:space:]')" ]; then
-      printf 'empty section: %s\n' "$heading"
+      printf 'FAIL empty section: %s\n' "$heading"
       failed=1
+    else
+      printf 'ok %s\n' "$heading"
     fi
   done < <(handoff_required "$base")
   return "$failed"
@@ -597,15 +632,16 @@ cmd_handoff() {
       ;;
     validate)
       [ $# -eq 1 ] || die "usage: orch.sh handoff validate <file>"
-      local file="$1" problems line
+      local file="$1" report line failed=0
       [ -f "$file" ] || die "handoff not found: $file"
-      problems="$(handoff_problems "$file")" || true
-      if [ -z "$problems" ]; then
-        note "ok    $(basename "$file"): every required section is present"
-        return 0
-      fi
-      while IFS= read -r line; do note "FAIL  $line"; done <<<"$problems"
-      return 1
+      report="$(handoff_report "$file")" || failed=1
+      while IFS= read -r line; do
+        case "$line" in
+          "ok "*)   note "ok    ${line#ok }" ;;
+          "FAIL "*) note "FAIL  ${line#FAIL }" ;;
+        esac
+      done <<<"$report"
+      return "$failed"
       ;;
     *) die "unknown handoff op: ${op:-<none>} (want path|validate)" ;;
   esac
