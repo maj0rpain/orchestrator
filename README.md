@@ -17,9 +17,18 @@ reviews it. This plugin owns the state, the handoffs, the branch, and the PR.
 ## Install
 
 ```
-/plugin marketplace add maj0rpain/orchestrator
+/plugin marketplace add https://github.com/maj0rpain/orchestrator.git
 /plugin install orchestrator@orchestrator
 ```
+
+The repo doubles as its own single-plugin marketplace, so there is no separate
+marketplace repo. Installs at user scope, so it is available in every project on
+that machine.
+
+**Use the full HTTPS URL, not the `owner/repo` shorthand.** While this repo is
+private, the shorthand resolves over SSH and fails without a key on the machine;
+the HTTPS URL uses your existing git credential helper (`gh auth setup-git`).
+If the repo is ever made public, the shorthand works and this caveat goes away.
 
 Requires the `mattpocock-skills` plugin, plus `gh`, `jq`, and `git`. Run
 `/mattpocock-skills:setup-matt-pocock-skills` once per repo first - the spec phase
@@ -103,10 +112,16 @@ default branch, and validating handoffs all have one right answer, so they live 
 ## Develop
 
 ```
-claude --plugin-dir /path/to/orchestrator
+claude --plugin-dir /path/to/orchestrator     # load the working tree directly
 claude plugin validate .
 scripts/test/orch_test.sh && scripts/test/hooks_test.sh
 ```
+
+`--plugin-dir` is the development loop: it loads the working tree, so edits take
+effect on the next session with no push. The installed copy is a clone of the
+default branch pinned to `version` in `plugin.json`, so changes reach it only
+after a push plus `/plugin marketplace update orchestrator`. Bump `version` when
+publishing a change worth pulling.
 
 ## Status
 
