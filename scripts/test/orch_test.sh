@@ -376,6 +376,26 @@ assert_contains "skips the per-skill check rather than deriving a second FAIL" \
 # demanding that the repo create labels named after the Meaning text. Parsing to
 # nothing is the honest answer; inventing one is the worst thing a diagnostic
 # can do.
+# The width belongs to one table, and a doc may hold more than one. A second,
+# narrower table's *header* row arrives a line before the separator that would
+# correct the width, so without a reset at the end of the block that heading
+# gets read out as a label and demanded of the repo.
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+        '' '## Glossary' '' \
+        '| Term | Definition |' \
+        '| ---- | ---------- |' \
+        '| flow | a run       |' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "reads only the labels table, not every table in the doc" \
+  "$out" "1 triage labels"
+assert_eq "does not read a heading out of a second, narrower table" \
+  "$(printf '%s\n' "$out" | grep -c 'Definition')" "0"
+assert_status "and does not demand the repo create it" "$st" 0
+
 # The width comes from the separator row, because only there is an empty last
 # field unambiguous. On a data row it is equally an empty last *cell*, and a row
 # that drops its trailing pipe *and* leaves Meaning blank looks exactly like a

@@ -196,8 +196,8 @@ d_probe() {
   local scope="$1" view
   if command -v jq >/dev/null 2>&1; then D_JQ=ok; fi
   # A state file that does not parse invalidates every flow check at once.
-  # Settled here so that check_state_phase reports it once and the four checks
-  # that would each have run jq at the same broken file stay silent.
+  # Settled here so that d_run_flow can report it once, ahead of the list, and
+  # the checks that would each have run jq at the same broken file never run.
   if [ "$scope" != env ] && [ "$D_JQ" = ok ] && [ -f "$STATE" ] \
      && jq -e . "$STATE" >/dev/null 2>&1; then
     D_STATE=ok
@@ -342,6 +342,11 @@ check_tracker_doc() {
 triage_labels() {
   [ -f "$ROOT/$LABELS_DOC" ] || return 0
   awk -F'|' '
+    # A table ends where the pipes stop. Without this, cols still holds the
+    # previous table width when the next table begins - a header row arrives a
+    # line before the separator that would correct it - so a narrower second
+    # table anywhere in the doc leaks its heading out as a label name.
+    !/^[[:space:]]*\|/ { cols = 0 }
     /^[[:space:]]*\|/ {
       s = $3
       gsub(/`/, "", s)
@@ -541,8 +546,14 @@ check_state_phase check_flow_branch check_flow_upstream check_flow_pr check_flow
 # How many checks a registry stands for, so a skip line can say so without
 # anyone keeping the number in their head. Headers are not checks.
 d_count() {
-  local n=0 e
-  set -f; set -- $1; set +f
+  local n=0 e glob
+  # Restored rather than simply switched on: d_count is called from inside
+  # d_run_flow, and turning globbing back on inside a caller's set -f window is
+  # the silent check-dropping that window exists to prevent.
+  case "$-" in *f*) glob=off ;; *) glob=on ;; esac
+  set -f
+  set -- $1
+  if [ "$glob" = on ]; then set +f; fi
   for e in ${@+"$@"}; do
     case "$e" in h_*) ;; *) n=$((n + 1)) ;; esac
   done
@@ -578,10 +589,13 @@ d_run() {
   # unset, and an empty list is how a registry that lost its last entry would
   # arrive here - as an unbound-variable abort rather than an empty report.
   for entry in ${@+"$@"}; do
-    # A check that blows up must not take the rest of the report with it -
-    # doctor is what you run when things are already wrong - but it must not
-    # leave the report silently either. Without this the check aborts, prints
-    # nothing, and the summary counts it as neither ok nor FAIL.
+    # Catches a check that returns non-zero, and nothing else: being the left
+    # operand of || suppresses errexit for the whole body, so a check that hits
+    # a failing command does not abort here - it carries on with whatever state
+    # that left behind. Every check is written to return 0, which is why this
+    # arm stays quiet in practice; keeping errexit live while still collecting
+    # a status needs the check launched as a background job and waited on, and
+    # that waits for the review group in #2 to give it something to protect.
     "$entry" || d_warn "$entry could not run."
   done
 }
