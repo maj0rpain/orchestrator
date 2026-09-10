@@ -916,6 +916,27 @@ assert_status "doctor does not strand it either" "$st" 0
 assert_eq "and asks it for no handoff a later loop would have written" \
   "$(printf '%s\n' "$out" | grep -c '04-review.md')" "0"
 
+# The remaining three `review` commands on the same legacy state. `loop-next` is
+# the one that reads the missing counter and writes it back; ci and ready need a
+# PR, which a flow this old still records the same way.
+"$ORCH" state set pr 3 >/dev/null
+out="$(ORCH_CI_GRACE=0.2 ORCH_CI_INTERVAL=0.05 GH_STUB_CHECKS=green \
+  "$ORCH" review ci 2>&1)"; st=$?
+assert_status "review ci reads its PR from a state with no loop key" "$st" 0
+assert_eq "and classifies it" "$(printf '%s\n' "$out" | sed -n 1p)" "green"
+
+complete_review_handoff "$("$ORCH" handoff path review-next)"
+assert_eq "review loop-next counts on from the loop it inferred" \
+  "$("$ORCH" review loop-next)" "2"
+assert_contains "so the next loop's records land under it" \
+  "$("$ORCH" review path 1)" "/review/loop-02/"
+assert_contains "and it now reads the handoff that loop wrote" \
+  "$("$ORCH" handoff path review)" "04-review.md"
+
+assert_eq "review ready marks the PR and finishes the flow" \
+  "$("$ORCH" review ready)" "3"
+assert_eq "recording done as it goes" "$("$ORCH" state get phase)" "done"
+
 # --- init seeds the review loop ---------------------------------------------
 echo
 echo "init seeds the review loop"

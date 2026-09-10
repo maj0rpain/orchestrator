@@ -106,10 +106,11 @@ defect.
 
 ## CI
 
-Waited on **once per loop**, after blocking and major are clear, or at the
-five-iteration stop - someone taking over a failed loop needs the whole picture,
-not a blank. Not once per iteration: that would block a single session for most
-of an hour, and the fix commits are pushed as they land anyway.
+Waited on **once per loop**, in exactly one of two places: **Closing the loop**
+step 2, once the nit fixes are pushed, or a **Bounded stop**, where someone
+taking the loop over needs the whole picture rather than a blank. Never inside
+an iteration: that would block a single session for most of an hour, and the fix
+commits are pushed as they land anyway.
 
 `"$ORCH" review ci` polls the PR's checks and prints one of four words, exiting
 non-zero on the last two:
@@ -157,9 +158,17 @@ Then, in this order:
    `review ready` over an uncommitted working tree marks a PR ready on a change
    that is not in it, and a PR comment citing commit SHAs nobody wrote cites
    nothing. Nothing chosen, or everything handed off: no commit.
+
+   A verification failure here is blocking, and a nit fix is what broke it.
+   Revert that fix rather than iterating on it: the loop is otherwise clean, and
+   no nit is worth either a broken change or a **Bounded stop**. Record it as
+   reverted and say so in the PR comment.
 2. Wait on CI: `"$ORCH" review ci`. This is the once-per-loop wait the **CI**
    section describes, and it comes last so the answer covers the fixes as well
-   as the change. `failing` or `unreachable` here is a **Bounded stop**.
+   as the change. Append the answer to the last iteration's record
+   (`"$ORCH" review path`): every other record carries what CI said, and a loop
+   that ends well is the one whose record should not be the blank.
+   `failing` or `unreachable` here is a **Bounded stop**.
 3. Go to the terminal state that leaves.
 
 ## Terminal states
@@ -170,10 +179,13 @@ ready and records the flow `done` as one operation.
 
 **Handoff** - a clean loop whose chosen work needs a loop of its own. Post the PR
 comment. Call the Skill tool with `orchestrator:handoff` to write the file at
-`"$ORCH" handoff path review-next`, validate it with `"$ORCH" handoff validate`,
-run `"$ORCH" review loop-next`, then print the boundary - a **loop** boundary,
-not the phase one `flow` prints, because `phase` stays `review` and the phase is
-precisely what has not completed:
+`"$ORCH" handoff path review-next`, validate it with
+`"$ORCH" handoff validate "$("$ORCH" handoff path review-next)"` - not with
+`handoff path review`, which until `loop-next` runs still names the file this
+loop *read* - then run `"$ORCH" review loop-next` and print the boundary. It is
+a **loop** boundary, not the phase one `flow` prints, because `phase` stays
+`review` and the phase is precisely what has not completed. `<n>` is the loop
+that just finished, which is one less than the number `loop-next` printed:
 
 ```
 Loop <n> complete. Handoff written to <path>.
@@ -193,14 +205,14 @@ bound at all: `failing` with the flake rerun spent or the failure not looking
 flaky, or `unreachable`. The rerun is offered once per flow, at the **CI**
 section's `failing` bullet; a stop reached past it is not a second offer.
 
-Wait on CI here if the bound ended the loop before it was asked (`"$ORCH" review
-ci`) and
-record the answer whatever it is: someone taking over a stopped loop needs the
-whole picture, not a blank. Then post the PR comment, record the stop reason and
-the surviving findings, and stop. **Leave `phase` at `review` and the PR in
-draft**: `done` means "this succeeded", never "this stopped". Skip the nit
-question entirely - nobody wants to be asked about taste while the change is
-still broken.
+Wait on CI here if the bound ended the loop before it was asked
+(`"$ORCH" review ci`), and record the answer whatever it is: someone taking
+over a stopped loop needs the whole picture, not a blank. Then post the PR
+comment, record the stop reason and the surviving findings, and stop. **Leave
+`phase` at `review` and the PR in draft**: `done` means "this succeeded", never
+"this stopped". Skip the nit question entirely - nobody wants to be asked about
+taste while the change is still broken. Reached from **Closing the loop** step
+2 it has already been asked, and nothing re-opens it.
 
 ## The PR comment
 

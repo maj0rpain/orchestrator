@@ -664,7 +664,7 @@ cmd_init() {
     die "a flow is already active (slug: $(jq -r .slug "$STATE"), phase: $(jq -r .phase "$STATE")).
      One flow at a time - finish it, or run /orchestrator:abort."
   fi
-  mkdir -p "$HANDOFF_DIR" "$ORCH/review/loop-01"
+  mkdir -p "$HANDOFF_DIR" "$(loop_dir 1)"
   exclude_orch_dir
   # The flake rerun is seeded here rather than at the review phase because the
   # budget belongs to the flow: one per flow, spent or not, so that an allowance
@@ -880,6 +880,9 @@ cmd_review() {
       local n dir
       n="${1:-$(jq -r '.iteration // 0' "$STATE")}"
       case "$n" in ''|*[!0-9]*) die "not an iteration number: $n" ;; esac
+      # Base 10 explicitly: printf reads a zero-padded argument as octal, and
+      # `08` is not a number in base 8.
+      n=$((10#$n))
       dir="$(loop_dir "$(current_loop)")"
       mkdir -p "$dir"
       printf '%s/iteration-%02d.md\n' "$dir" "$n"
