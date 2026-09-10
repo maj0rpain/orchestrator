@@ -150,6 +150,18 @@ Classify each chosen nit, state the classification, and let the user overrule it
 The test is "would this change need reviewing?". If **any** chosen item needs a
 loop, the whole set hands off rather than being fixed here.
 
+Then, in this order:
+
+1. Fix the chosen **in place** items, run the verification command, and commit
+   and push them the way an iteration would - one commit, same subject style.
+   `review ready` over an uncommitted working tree marks a PR ready on a change
+   that is not in it, and a PR comment citing commit SHAs nobody wrote cites
+   nothing. Nothing chosen, or everything handed off: no commit.
+2. Wait on CI: `"$ORCH" review ci`. This is the once-per-loop wait the **CI**
+   section describes, and it comes last so the answer covers the fixes as well
+   as the change. `failing` or `unreachable` here is a **Bounded stop**.
+3. Go to the terminal state that leaves.
+
 ## Terminal states
 
 **Success** - nothing chosen, or everything chosen was fixed in place and
@@ -159,18 +171,30 @@ ready and records the flow `done` as one operation.
 **Handoff** - a clean loop whose chosen work needs a loop of its own. Post the PR
 comment. Call the Skill tool with `orchestrator:handoff` to write the file at
 `"$ORCH" handoff path review-next`, validate it with `"$ORCH" handoff validate`,
-run `"$ORCH" review loop-next`, and print the boundary. `phase` stays `review`,
-so `/clear` then `/orchestrator:next` lands in the next loop.
+run `"$ORCH" review loop-next`, then print the boundary - a **loop** boundary,
+not the phase one `flow` prints, because `phase` stays `review` and the phase is
+precisely what has not completed:
 
-**Bounded stop** - the bound reached with the change unconfirmed, CI failing, or
-CI unreachable. The bound is reached two ways, and the recorded reason says
-which: blocking or major still open after five iterations, or an iteration that
-fixed something and had no sixth iteration left to review the fixes. The second
-is not a failure of the change, but it is not a success either - nothing has
-reviewed what iteration five wrote, and marking a PR ready over that claims a
-verification that never happened.
+```
+Loop <n> complete. Handoff written to <path>.
 
-Wait on CI here if it has not been asked yet this loop (`"$ORCH" review ci`) and
+  Next: /clear, then /orchestrator:next
+```
+
+`/clear` then `/orchestrator:next` lands in the next loop.
+
+**Bounded stop** - three ways in, and the recorded reason says which. Two are
+the bound: blocking or major still open after five iterations, or an iteration
+that fixed something and had no sixth iteration left to review the fixes. The
+second is not a failure of the change, but it is not a success either - nothing
+has reviewed what iteration five wrote, and marking a PR ready over that claims
+a verification that never happened. The third is CI, which does not involve the
+bound at all: `failing` with the flake rerun spent or the failure not looking
+flaky, or `unreachable`. The rerun is offered once per flow, at the **CI**
+section's `failing` bullet; a stop reached past it is not a second offer.
+
+Wait on CI here if the bound ended the loop before it was asked (`"$ORCH" review
+ci`) and
 record the answer whatever it is: someone taking over a stopped loop needs the
 whole picture, not a blank. Then post the PR comment, record the stop reason and
 the surviving findings, and stop. **Leave `phase` at `review` and the PR in

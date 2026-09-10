@@ -49,8 +49,8 @@ which the review phase assigns — the reviewer itself reports findings unranked
 Which of three roles a finding plays in whether the flow can finish:
 
 - **Blocking** — the change is wrong: incorrect behaviour, a spec requirement
-  missing or misimplemented, a security problem, a broken or missing test. The
-  flow cannot finish while one is open.
+  missing or misimplemented, a security problem, a broken or missing test, or a
+  failing verification command. The flow cannot finish while one is open.
 - **Major** — the change works but carries real cost: a documented standard
   breached, a smell with teeth, behaviour nobody asked for. Fixed, but does not
   by itself keep the flow from finishing.
