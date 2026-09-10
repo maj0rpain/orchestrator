@@ -6,8 +6,8 @@ Run both, and report their output:
 
 ```
 ${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status
-${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh state validate
+${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh doctor --flow
 ```
 
 Read-only. Do not start, advance, or repair a flow from this command - if
-`state validate` reports a problem, say what it found and stop.
+`doctor` reports a problem, say what it found and stop.

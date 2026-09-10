@@ -33,7 +33,7 @@ If the repo is ever made public, the shorthand works and this caveat goes away.
 Requires the `mattpocock-skills` plugin, plus `gh`, `jq`, and `git`. Run
 `/mattpocock-skills:setup-matt-pocock-skills` once per repo first - the spec phase
 reads `docs/agents/issue-tracker.md` and fails without it. `/orchestrator:start`
-checks all of this up front.
+checks all of this up front, and `/orchestrator:doctor` reports it at any time.
 
 ## The flow
 
@@ -63,7 +63,8 @@ running the flow never dirties a repo's working tree.
 | --- | --- |
 | `/orchestrator:start [slug]` | Start a flow from an approved plan. Runs in the planning session. |
 | `/orchestrator:next` | Run the next phase. Run it in a fresh session. |
-| `/orchestrator:status` | Phase, issue, branch, PR, and a state validation. |
+| `/orchestrator:status` | Phase, issue, branch, PR, and the flow's health. |
+| `/orchestrator:doctor` | Diagnose the machine, the repo, and the active flow. |
 | `/orchestrator:redo` | Step back one phase and re-run it. |
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
 
@@ -96,7 +97,7 @@ legitimately write them mid-planning.
 ## Layout
 
 ```
-commands/         start, next, status, redo, abort
+commands/         start, next, status, doctor, redo, abort
 skills/flow/      the state machine (judgment)
 skills/handoff/   handoff templates, model-invocable unlike the upstream one
 scripts/orch.sh   every deterministic operation (mechanism)
@@ -126,12 +127,14 @@ publishing a change worth pulling.
 ## Status
 
 Walking skeleton. The plan, spec, and implement phases run; **the review phase is
-not built yet** and says so rather than improvising.
+not built yet** and says so rather than improvising. `/orchestrator:doctor`
+covers the machine, the repo, and the active flow.
 
 Still to come: `orchestrator:review-spec` (fidelity, testability, consistency,
 implementability), and the review loop - `code-review` per iteration, a
 blocking/major/nit rubric, one fix commit per iteration, required CI green with a
 single flake rerun, and a hard stop at 5 iterations or two with no net progress.
+`doctor` grows a review group alongside it.
 
 ## License
 

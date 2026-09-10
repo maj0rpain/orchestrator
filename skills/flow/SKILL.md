@@ -48,14 +48,15 @@ which holds the only copy of the plan.
    the user their plan.
 4. `"$ORCH" handoff validate "$("$ORCH" handoff path spec)"`. Fix and re-validate
    until it passes.
-5. `"$ORCH" precheck`. On failure, report it and stop; the plan is already safe
-   on disk.
+5. `"$ORCH" doctor --env`. Report its output; stop only on a non-zero exit. A
+   `warn` is an observation the user should see, not a reason to cost them a
+   restart - the plan is already safe on disk either way.
 6. Print the boundary (see below).
 
 ## /orchestrator:next
 
-1. `"$ORCH" state validate`. On failure, report and stop - offer `/orchestrator:abort`
-   or a concrete repair. Do not proceed on stale state.
+1. `"$ORCH" doctor --flow`. On a non-zero exit, report and stop - offer
+   `/orchestrator:abort` or a concrete repair. Do not proceed on stale state.
 2. `"$ORCH" state get phase`, then run that phase below.
 
 ### Phase: spec
