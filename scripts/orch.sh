@@ -448,23 +448,14 @@ h_repo   check_tracker_doc check_labels_doc check_labels_exist check_git_exclude
 
 # flow state -----------------------------------------------------------------
 
-# Every flow check reads state.json, so a missing jq invalidates all of them at
-# once. Gate them as a group rather than letting five checks each guess.
-d_flow_gate() { d_gate "$D_JQ" D_JQ_SKIPPED; }
-
-# A state file that does not parse is one problem, not five: the checks below
-# read the same file, so they stay silent rather than each printing an `ok` they
-# derived from an empty jq read - the way check_default_branch stays silent when
-# the repo itself did not resolve.
-d_state_gate() { [ "$D_STATE" = ok ]; }
+# Every check below reads state.json through jq, so a missing jq and a file that
+# will not parse each settle all of them at once. Both are decided in d_run_flow,
+# before any of them runs, rather than in a preamble each check has to remember:
+# a check that forgot would run jq at a broken file and report a confident wrong
+# ok, and the review group deferred to #2 is meant to be an append to the list.
+# Reaching a check at all is now the proof that its preconditions held.
 
 check_state_phase() {
-  d_flow_gate || return 0
-  if [ "$D_STATE" != ok ]; then
-    d_fail "$ORCH_DIR_NAME/state.json is not valid JSON."
-    d_remedy "/orchestrator:abort"
-    return 0
-  fi
   local phase
   phase="$(jq -r '.phase // ""' "$STATE")"
   case " $PHASES " in
@@ -475,8 +466,6 @@ check_state_phase() {
 }
 
 check_flow_branch() {
-  d_flow_gate || return 0
-  d_state_gate || return 0
   local branch
   branch="$(jq -r '.branch // ""' "$STATE")"
   if [ -z "$branch" ]; then d_ok "branch: not created yet"; return 0; fi
@@ -489,8 +478,6 @@ check_flow_branch() {
 # is correct, and a warning about correct state is how people learn to skim past
 # the word.
 check_flow_upstream() {
-  d_flow_gate || return 0
-  d_state_gate || return 0
   local phase branch
   phase="$(jq -r '.phase // ""' "$STATE")"
   case "$phase" in implement|review|done) ;; *) return 0 ;; esac
@@ -507,8 +494,6 @@ check_flow_upstream() {
 }
 
 check_flow_pr() {
-  d_flow_gate || return 0
-  d_state_gate || return 0
   local pr pr_state
   pr="$(jq -r '.pr // ""' "$STATE")"
   if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
@@ -527,8 +512,6 @@ check_flow_pr() {
 # Which handoffs are due is mechanical - phase names what runs *next*, so every
 # earlier phase has already written one.
 check_flow_handoffs() {
-  d_flow_gate || return 0
-  d_state_gate || return 0
   local phase files f path problems line
   phase="$(jq -r '.phase // ""' "$STATE")"
   case "$phase" in
@@ -552,8 +535,36 @@ check_flow_handoffs() {
 }
 
 FLOW_CHECKS="
-h_flow check_state_phase check_flow_branch check_flow_upstream check_flow_pr check_flow_handoffs
+check_state_phase check_flow_branch check_flow_upstream check_flow_pr check_flow_handoffs
 "
+
+# How many checks a registry stands for, so a skip line can say so without
+# anyone keeping the number in their head. Headers are not checks.
+d_count() {
+  local n=0 e
+  set -f; set -- $1; set +f
+  for e in ${@+"$@"}; do
+    case "$e" in h_*) ;; *) n=$((n + 1)) ;; esac
+  done
+  printf '%s\n' "$n"
+}
+
+# The gate the flow checks used to carry one at a time, hoisted to the list.
+d_run_flow() {
+  h_flow
+  if [ "$D_JQ" != ok ]; then
+    D_JQ_SKIPPED=$((D_JQ_SKIPPED + $(d_count "$FLOW_CHECKS")))
+    return 0
+  fi
+  # One problem earns one FAIL. Everything below reads this file, so there is
+  # nothing left to say about it and nothing that could be said honestly.
+  if [ "$D_STATE" != ok ]; then
+    d_fail "$ORCH_DIR_NAME/state.json is not valid JSON."
+    d_remedy "/orchestrator:abort"
+    return 0
+  fi
+  d_run "$FLOW_CHECKS"
+}
 
 d_run() {
   local entry
@@ -602,7 +613,7 @@ cmd_doctor() {
       # gates on exactly that exit code.
       d_run "h_flow check_jq"
     else
-      d_run "$FLOW_CHECKS"
+      d_run_flow
     fi
   fi
 

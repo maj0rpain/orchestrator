@@ -575,8 +575,11 @@ assert_contains "names jq as the reason it cannot answer" "$out" "jq not found"
 
 out="$(PATH="$(path_without_jq)" "$ORCH" doctor 2>&1)"; st=$?
 assert_status "bare doctor without jq fails on the tools check" "$st" 1
+# The count comes from the registry, so a check appended to it is covered by the
+# gate without anyone remembering to add a preamble - and this number moving is
+# how you find out that happened.
 assert_contains "collapses every flow check into one line when jq is gone" \
-  "$out" "flow checks skipped: jq is not installed"
+  "$out" "5 flow checks skipped: jq is not installed"
 
 echo
 echo "$PASS passed, $FAIL failed"
