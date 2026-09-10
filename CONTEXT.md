@@ -53,7 +53,8 @@ Which of three roles a finding plays in whether the flow can finish:
 - **Major** — the change works but carries real cost: a documented standard
   breached, a smell with teeth, behaviour nobody asked for. Fixed, but does not
   by itself keep the flow from finishing.
-- **Nit** — taste and judgement calls. Recorded, never fixed, never blocking.
+- **Nit** — taste and judgement calls. Recorded and never blocking, and never
+  fixed inside the loop.
 
 ## Review record
 

@@ -20,6 +20,9 @@ may drive a whole loop - see
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
+If `CLAUDE_PLUGIN_ROOT` is unset, it is `scripts/orch.sh` two directories above
+this file.
+
 ## Before the first iteration
 
 1. Read the handoff: `"$ORCH" handoff path review`. On loop 1 that is
@@ -29,7 +32,9 @@ ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 2. Take four facts from it, and take them from nowhere else: the **PR**, the
    **spec issue**, the **base SHA**, and the **verification command**.
 3. Read `01-plan.md`'s **Rejected alternatives** and `03-implement.md`'s
-   **Deviations**. Both are authority over the findings you are about to get.
+   **Deviations**. Both sit in the directory the handoff you just read came from
+   (`dirname "$("$ORCH" handoff path review)"`), and both are authority over the
+   findings you are about to get.
 
 ## The iteration
 

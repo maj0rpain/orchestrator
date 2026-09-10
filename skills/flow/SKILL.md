@@ -87,13 +87,15 @@ which holds the only copy of the plan.
    deviations, write "None", never leave it blank. Its **Verification** section is
    the command the review loop runs every iteration: record how you just ran the
    tests, because review takes it from here rather than guessing from the repo.
+   Then validate it: `"$ORCH" handoff validate "$("$ORCH" handoff path review)"`.
 6. `"$ORCH" state set phase review`, then print the boundary.
 
 ### Phase: review
 
-Call the Skill tool with `orchestrator:review` and follow it. It owns the loop;
-this file owns phase dispatch, and has nothing to add to a review beyond getting
-you there.
+1. `"$ORCH" doctor --flow`.
+2. Call the Skill tool with `orchestrator:review` and follow it. It owns the
+   loop; this file owns phase dispatch, and has nothing to add to a review
+   beyond getting you there.
 
 A flow may pass through this phase more than once: a loop that hands off to a
 fresh loop leaves `phase` at `review`, so `/orchestrator:next` lands here again
