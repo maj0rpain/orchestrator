@@ -803,15 +803,26 @@ loop_dir() { printf '%s/review/loop-%02d\n' "$ORCH" "$1"; }
 
 # Float comparison and addition, in awk, because the timings are overridable and
 # the tests turn them down to fractions of a second; bash arithmetic is integer
-# only and would read a grace of 0.3 as 0.
-f_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
-f_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
+# only and would read a grace of 0.3 as 0. A fractional `sleep` is a GNU/BSD
+# extension rather than POSIX, which is a line this file can hold because the
+# fractions only ever come from a test - the shipped defaults are whole seconds.
+float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
+float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
 
 # The larger of the wall clock and the time this loop has spent asleep. The wall
 # clock alone is whole seconds, which a sub-second override never reaches; the
 # sleep total alone ignores however long each `gh` call took, which would stretch
 # a 15-minute cap well past 15 minutes on a slow connection.
 ci_elapsed() { awk -v w="$(( $(date +%s) - $1 ))" -v s="$2" 'BEGIN { print (w > s) ? w : s }'; }
+
+# One turn of the poll loop: wait, then advance both clocks. It assigns to the
+# caller's `slept` and `elapsed`, which bash scopes dynamically - threading two
+# counters back out through a subshell's stdout would cost more than it explains.
+ci_tick() {
+  sleep "$ORCH_CI_INTERVAL"
+  slept="$(float_add "$slept" "$ORCH_CI_INTERVAL")"
+  elapsed="$(ci_elapsed "$started" "$slept")"
+}
 
 # One look at the PR's checks, classified. Prints the classification on the first
 # line and any detail on the lines after it, indented like doctor's remedies.
@@ -866,7 +877,8 @@ cmd_review() {
     path)
       require_state
       [ $# -le 1 ] || die "usage: orch.sh review path [iteration]"
-      local n="${1:-$(jq -r '.iteration // 0' "$STATE")}" dir
+      local n dir
+      n="${1:-$(jq -r '.iteration // 0' "$STATE")}"
       case "$n" in ''|*[!0-9]*) die "not an iteration number: $n" ;; esac
       dir="$(loop_dir "$(current_loop)")"
       mkdir -p "$dir"
@@ -903,46 +915,49 @@ cmd_review() {
       ;;
     ci)
       require_state
-      local pr started slept=0 elapsed=0 res head
+      local pr started slept=0 elapsed=0 res verdict
       pr="$(jq -r '.pr // ""' "$STATE")"
       [ -n "$pr" ] || die "no PR recorded in state - the implement phase opens it"
       started="$(date +%s)"
       while :; do
-        # Branch protection's required checks where it names any, every check on
-        # the commit where it does not - which is what "no required checks" from
-        # the filtered probe means, rather than a repo with no CI.
+        # Branch protection's required checks decide it wherever it names any.
+        # When nothing required has reported, gh's message cannot tell "this repo
+        # requires nothing" from "what it requires has not registered yet" - so
+        # the grace is spent waiting on the required set, and only once it runs
+        # out does the net widen to every check on the commit. Widening sooner is
+        # how an unrelated green check gets mistaken for a required one that
+        # never arrived, and the PR marked ready over it.
         res="$(ci_probe "$pr" required)"
-        if [ "$(printf '%s\n' "$res" | sed -n 1p)" = none ]; then res="$(ci_probe "$pr" all)"; fi
-        head="$(printf '%s\n' "$res" | sed -n 1p)"
-        case "$head" in
+        verdict="$(printf '%s\n' "$res" | sed -n 1p)"
+        if [ "$verdict" = none ]; then
+          if float_lt "$elapsed" "$ORCH_CI_GRACE"; then ci_tick; continue; fi
+          res="$(ci_probe "$pr" all)"
+          verdict="$(printf '%s\n' "$res" | sed -n 1p)"
+        fi
+        case "$verdict" in
           green)       printf '%s\n' "$res"; return 0 ;;
           # Reported, not fixed: which failure is worth a flake rerun is a
           # judgement, and the budget for it belongs to the flow.
           failing)     printf '%s\n' "$res"; return 1 ;;
           unreachable) printf '%s\n' "$res"; return 1 ;;
-          none)
-            # Zero checks straight after a push is ambiguous between a repo with
-            # no CI and CI that has not registered yet. Only the grace tells them
-            # apart, and without it the loop races a CI-having repo and wins.
-            if f_lt "$elapsed" "$ORCH_CI_GRACE"; then
-              sleep "$ORCH_CI_INTERVAL"
-              slept="$(f_add "$slept" "$ORCH_CI_INTERVAL")"
-              elapsed="$(ci_elapsed "$started" "$slept")"
-              continue
-            fi
-            printf '%s\n' "$res"; return 0 ;;
+          # Only reachable with the grace already spent: nothing required
+          # reported, and then nothing at all reported either.
+          none)        printf '%s\n' "$res"; return 0 ;;
           pending)
-            if f_lt "$elapsed" "$ORCH_CI_TIMEOUT"; then
-              sleep "$ORCH_CI_INTERVAL"
-              slept="$(f_add "$slept" "$ORCH_CI_INTERVAL")"
-              elapsed="$(ci_elapsed "$started" "$slept")"
-              continue
-            fi
+            if float_lt "$elapsed" "$ORCH_CI_TIMEOUT"; then ci_tick; continue; fi
             # Still pending at the cap is an answer we do not have, not a green
             # one. The loop stops rather than marking a PR ready over something
             # nothing ever verified.
             note unreachable
             note "      checks were still pending after ${ORCH_CI_TIMEOUT}s"
+            return 1 ;;
+          # Unreachable while ci_probe prints one of the five words above, and
+          # the arm that keeps it that way: an unrecognised answer with no arm
+          # would fall through to the next pass with nothing to wait on, and
+          # spin this loop silently on the one command built to be bounded.
+          *)
+            note unreachable
+            note "      unrecognised answer from gh pr checks: $verdict"
             return 1 ;;
         esac
       done
@@ -1048,7 +1063,8 @@ orch.sh - deterministic operations for the orchestrator flow
   branch-create               create orch/<issue>-<slug> off the default branch
   pr-open <title> <body-file> push and open a draft PR
   review begin                claim the next iteration, refusing past 5
-  review path [n]             record path under the current loop's directory
+  review path [n]             record path under the current loop's directory,
+                              creating that directory if it is not there yet
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
   review ready                mark the draft PR ready and set the phase to done

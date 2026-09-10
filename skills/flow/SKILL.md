@@ -116,8 +116,6 @@ Say nothing after it. Do not start the next phase, and do not offer to.
 
 `state.phase` names the phase that runs **next**, so re-running the phase that
 just finished means stepping back one first. Order: `spec -> implement -> review -> done`.
-What `redo` should do to a flow already part-way through a review loop is not
-settled yet (issue #6); say so rather than inventing an answer.
 
 1. Work out which phase actually produced the bad output, and say which one you
    are about to re-run.

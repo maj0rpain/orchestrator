@@ -86,12 +86,12 @@ complete_review_handoff() {
 # is how a test asserts that a scope made no network call at all.
 #
 # `pr checks` answers separately, because the CI classifier is the one caller
-# that has to see the answer *change* between calls: GH_STUB_CHECKS is a
-# `|`-separated script of answers (green, failing, pending, none, boom) consumed
-# one per call with the last repeating, counted in the file GH_STUB_CHECKS_N
-# names. GH_STUB_REQUIRED answers the `--required` probe alone and does not
-# advance that script - branch protection either names required checks or it
-# does not, and it does not change its mind mid-loop.
+# that has to see the answer *change* between calls. GH_STUB_CHECKS and
+# GH_STUB_REQUIRED are each a `|`-separated script of answers (green, failing,
+# pending, none, boom), consumed one per call with the last repeating and counted
+# in the file GH_STUB_CHECKS_N / GH_STUB_REQUIRED_N names. They advance
+# independently, because the classifier asks the two probes different questions:
+# what branch protection requires, and what ran on the commit.
 stub_gh() {
   local d
   d="$(mktemp -d)"
@@ -123,16 +123,16 @@ ready-for-agent}"
         req=0
         for a in "$@"; do if [ "$a" = --required ]; then req=1; fi; done
         if [ "$req" = 1 ]; then
-          answer="${GH_STUB_REQUIRED:-none}"
+          script="${GH_STUB_REQUIRED:-none}"; counter="${GH_STUB_REQUIRED_N:-}"
         else
-          i=1
-          if [ -n "${GH_STUB_CHECKS_N:-}" ]; then
-            i=$(( $(cat "$GH_STUB_CHECKS_N" 2>/dev/null || echo 0) + 1 ))
-            printf '%s\n' "$i" >"$GH_STUB_CHECKS_N"
-          fi
-          answer="$(printf '%s' "${GH_STUB_CHECKS:-green}" \
-            | awk -F'|' -v i="$i" '{ print (i <= NF) ? $i : $NF }')"
+          script="${GH_STUB_CHECKS:-green}"; counter="${GH_STUB_CHECKS_N:-}"
         fi
+        i=1
+        if [ -n "$counter" ]; then
+          i=$(( $(cat "$counter" 2>/dev/null || echo 0) + 1 ))
+          printf '%s\n' "$i" >"$counter"
+        fi
+        answer="$(printf '%s' "$script" | awk -F'|' -v i="$i" '{ print (i <= NF) ? $i : $NF }')"
         case "$answer" in
           green)   echo '[{"bucket":"pass","name":"build","state":"SUCCESS"}]' ;;
           failing) echo '[{"bucket":"fail","name":"build","state":"FAILURE"},{"bucket":"pass","name":"lint","state":"SUCCESS"}]' ;;
@@ -200,8 +200,6 @@ path_without_jq() {
   done
   printf '%s\n' "$d"
 }
-
-S_KEEP="$(mktemp)"
 
 echo "orch.sh tests"
 
@@ -718,6 +716,12 @@ out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "an implement handoff with no verification command is incomplete" "$st" 1
 assert_contains "names the section review would have read" "$out" "Verification"
 
+writeln '## PR' '#3' '' '## Spec issue' '#1' '' '## Base SHA' 'abc1234' '' \
+        '## Deviations' 'None.' '' '## Verification' '   ' >"$h3"
+out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
+assert_status "a bare Verification heading is no better than none" "$st" 1
+assert_contains "reported as empty, not missing" "$out" "empty section"
+
 complete_implement_handoff "$h3"
 out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "passes once the command is recorded" "$st" 0
@@ -774,11 +778,12 @@ assert_status "a second loop with every handoff in place is healthy" "$st" 0
 assert_contains "counts the outgoing review handoff among them" \
   "$out" "handoff 04-review.md complete"
 
-mv .orchestrator/handoff/04-review.md "$S_KEEP"
+stashed="$(mktemp)"
+mv .orchestrator/handoff/04-review.md "$stashed"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the loop that re-entered has no handoff to read" "$st" 1
 assert_contains "names the handoff it cannot find" "$out" "04-review.md is missing"
-mv "$S_KEEP" .orchestrator/handoff/04-review.md
+mv "$stashed" .orchestrator/handoff/04-review.md
 
 "$ORCH" state set loop 1
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -824,13 +829,19 @@ assert_status "a repo with no checks at all is not thereby failing" "$st" 0
 assert_eq "classified as none" "$(printf '%s\n' "$out" | sed -n 1p)" "none"
 
 # The grace period is the whole reason `none` is not concluded on the first
-# answer: this is the CI-having repo that would otherwise be called CI-less.
-# The grace is set well clear of a whole-second wall-clock tick, so what the test
-# proves is the second answer winning rather than how fast the first one came.
-ckn="$(mktemp)"; : >"$ckn"
-out="$(ORCH_CI_GRACE=5 GH_STUB_CHECKS_N="$ckn" GH_STUB_CHECKS='none|green' \
-  "$ORCH" review ci 2>&1)"; st=$?
-assert_eq "checks that have not registered yet are not checks that do not exist" \
+# answer: this is the CI-having repo that would otherwise be called CI-less. It
+# is spent on the *required* probe, because gh reports "no required checks"
+# whether the repo requires nothing or requires something that has not landed
+# yet. Widening to every check on the commit before the grace is out is how an
+# unrelated green check gets mistaken for a required one that never arrived - so
+# the unfiltered answer here is `failing`, and a green result proves it was never
+# consulted. The grace is set well clear of a whole-second wall-clock tick, so
+# what the test proves is the second answer winning rather than how fast the
+# first one came.
+reqn="$(mktemp)"; : >"$reqn"
+out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
+  GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
+assert_eq "a required check that has not registered yet is waited for" \
   "$(printf '%s\n' "$out" | sed -n 1p)" "green"
 assert_status "and the loop finishes on the answer it waited for" "$st" 0
 
@@ -839,6 +850,14 @@ assert_status "and the loop finishes on the answer it waited for" "$st" 0
 out="$(GH_STUB_REQUIRED=green GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
 assert_status "required checks decide it where branch protection names them" "$st" 0
 assert_eq "so the unfiltered answer is never asked for" \
+  "$(printf '%s\n' "$out" | sed -n 1p)" "green"
+
+# ...and where it names none, the answer is every check on the commit, but only
+# once the grace has run out.
+out="$(ORCH_CI_GRACE=0.2 GH_STUB_REQUIRED=none GH_STUB_CHECKS=green \
+  "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a repo that requires nothing falls back to every check" "$st" 0
+assert_eq "reading the commit's own checks for its answer" \
   "$(printf '%s\n' "$out" | sed -n 1p)" "green"
 
 out="$(GH_STUB_CHECKS=boom "$ORCH" review ci 2>&1)"; st=$?

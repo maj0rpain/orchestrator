@@ -139,24 +139,30 @@ loop, the whole set hands off rather than being fixed here.
 ## Terminal states
 
 **Success** - nothing chosen, or everything chosen was fixed in place and
-verified. Comment on the PR, then `"$ORCH" review ready`, which marks the PR
+verified. Post the PR comment, then `"$ORCH" review ready`, which marks the PR
 ready and records the flow `done` as one operation.
 
-**Handoff** - a clean loop whose chosen work needs a loop of its own. Comment on
-the PR. Call the Skill tool with `orchestrator:handoff` to write the file at
+**Handoff** - a clean loop whose chosen work needs a loop of its own. Post the PR
+comment. Call the Skill tool with `orchestrator:handoff` to write the file at
 `"$ORCH" handoff path review-next`, validate it with `"$ORCH" handoff validate`,
 run `"$ORCH" review loop-next`, and print the boundary. `phase` stays `review`,
 so `/clear` then `/orchestrator:next` lands in the next loop.
 
 **Bounded stop** - five iterations with blocking or major still open, CI failing,
-or CI unreachable. Comment on the PR, record the stop reason and the surviving
+or CI unreachable. Post the PR comment, record the stop reason and the surviving
 findings, and stop. **Leave `phase` at `review` and the PR in draft**: `done`
 means "this succeeded", never "this stopped". Skip the nit question entirely -
 nobody wants to be asked about taste while the change is still broken.
 
 ## The PR comment
 
-One comment at **every** loop termination, success and stop alike.
+One comment at **every** loop termination, success and stop alike, posted before
+the terminal action:
+
+```
+gh pr comment <pr> --body-file <file>
+```
+
 `.orchestrator/` is git-excluded and eventually archived, so the PR is the only
 durable surface another human ever sees; a single comment at the very end would
 compress a three-loop flow and lose the trail.
