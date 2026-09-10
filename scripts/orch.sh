@@ -44,6 +44,12 @@ require_state() {
 
 # Prints the flow's PR number, or dies. Every review command that reaches GitHub
 # needs it and none of them can do anything useful without it.
+#
+# Call it as a bare assignment on its own line - `local pr` then `pr="$(require_pr)"`.
+# The `die` runs inside the caller's command substitution and so exits only the
+# subshell; what actually stops the command is `set -e` on the failed assignment.
+# Fold it into `local pr="$(require_pr)"` or an `if`, and `set -e` no longer
+# applies: the caller carries on with an empty PR number.
 require_pr() {
   local pr
   pr="$(jq -r '.pr // ""' "$STATE")"
@@ -543,12 +549,16 @@ check_flow_handoffs() {
   case "$phase" in
     spec)        files="01-plan.md" ;;
     implement)   files="01-plan.md 02-spec.md" ;;
-    review|done) files="01-plan.md 02-spec.md 03-implement.md" ;;
+    review|done)
+      files="01-plan.md 02-spec.md 03-implement.md"
+      # A second review loop was entered from the handoff the first one wrote,
+      # so from there on 04 is due like every other handoff a completed phase
+      # leaves. The loop number outlives the phase, so this belongs to the
+      # review arm rather than to every phase that carries a loop.
+      if [ "$(current_loop)" -gt 1 ]; then files="$files 04-review.md"; fi
+      ;;
     *) return 0 ;;
   esac
-  # A second review loop was entered from the handoff the first one wrote, so
-  # from there on 04 is due like every other handoff a completed phase leaves.
-  if [ "$(current_loop)" -gt 1 ]; then files="$files 04-review.md"; fi
   for f in $files; do
     path="$HANDOFF_DIR/$f"
     if [ ! -f "$path" ]; then
@@ -785,7 +795,13 @@ cmd_handoff() {
   case "$op" in
     path)
       [ $# -eq 1 ] || die "usage: orch.sh handoff path <phase>"
-      printf '%s/%s\n' "$HANDOFF_DIR" "$(handoff_file_for "$1" "$(current_loop)")"
+      # Assign first, print second. `handoff_file_for` dies on a phase it does
+      # not know, and inside the printf's own substitution that kills the
+      # subshell and leaves printf to succeed - so the caller gets the bare
+      # handoff directory and a zero exit, which is worse than no answer.
+      local file
+      file="$(handoff_file_for "$1" "$(current_loop)")"
+      printf '%s/%s\n' "$HANDOFF_DIR" "$file"
       ;;
     validate)
       [ $# -eq 1 ] || die "usage: orch.sh handoff validate <file>"
@@ -818,6 +834,19 @@ loop_dir() { printf '%s/review/loop-%02d\n' "$ORCH" "$1"; }
 # only and would read a grace of 0.3 as 0. A fractional `sleep` is a GNU/BSD
 # extension rather than POSIX, which is a line this file can hold because the
 # fractions only ever come from a test - the shipped defaults are whole seconds.
+# awk compares a number against a non-numeric string as strings, which makes
+# every `float_lt` true and the poll loop below endless. The knobs are read once,
+# here, so a mistyped one is refused before anything sleeps on it.
+require_ci_knobs() {
+  local k v
+  for k in ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL; do
+    eval "v=\$$k"
+    case "$v" in
+      ''|*[!0-9.]*|*.*.*|.) die "$k is not a number: $v" ;;
+    esac
+  done
+}
+
 float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
 float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
 
@@ -930,6 +959,7 @@ cmd_review() {
     ci)
       require_state
       local pr started slept=0 elapsed=0 res verdict
+      require_ci_knobs
       pr="$(require_pr)"
       started="$(date +%s)"
       while :; do

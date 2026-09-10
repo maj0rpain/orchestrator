@@ -253,6 +253,14 @@ assert_contains "spec phase reads the plan handoff"      "$("$ORCH" handoff path
 assert_contains "implement phase reads the spec handoff" "$("$ORCH" handoff path implement)" "02-spec.md"
 assert_contains "review phase reads the implement handoff" "$("$ORCH" handoff path review)"  "03-implement.md"
 
+# The review skill consumes this inside command substitutions - `handoff validate
+# "$(... handoff path review-next)"` and `dirname "$(... handoff path review)"` -
+# so a phase it cannot resolve has to stop the caller rather than hand it the
+# bare handoff directory with a zero status.
+out="$("$ORCH" handoff path bogus 2>/dev/null)"; st=$?
+assert_status "an unknown phase is an error, not a directory" "$st" 1
+assert_eq "and prints no path for a caller to use" "$out" ""
+
 # --- handoff validate -------------------------------------------------------
 echo
 echo "handoff validate"
@@ -803,6 +811,16 @@ mv "$stashed" .orchestrator/handoff/04-review.md
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_eq "the first loop is not asked for a handoff no loop has written yet" \
   "$(printf '%s\n' "$out" | grep -c '04-review.md')" "0"
+
+# The loop number outlives the review phase, so a flow stepped back to an
+# earlier phase still carries it. 04 is a handoff the review phase writes, and
+# no earlier phase is late for it.
+"$ORCH" state set loop 2
+"$ORCH" state set phase implement
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_eq "an earlier phase is not asked for the review phase's handoff" \
+  "$(printf '%s\n' "$out" | grep -c '04-review.md')" "0"
+"$ORCH" state set phase review
 "$ORCH" state set loop 2
 
 # --- review ready -----------------------------------------------------------
@@ -900,6 +918,15 @@ out="$(ORCH_CI_TIMEOUT=0.2 GH_STUB_CHECKS=pending0 "$ORCH" review ci 2>&1)"; st=
 assert_status "a pending bucket is a wait even when gh exits 0" "$st" 1
 assert_first_line "classified from the bucket rather than the exit status" "$out" "unreachable"
 assert_contains "and says the same thing the exit-8 path says" "$out" "still pending"
+
+# The clocks are compared with awk, which compares a number against a
+# non-numeric string as strings - so a mistyped knob makes every comparison
+# true, and the one command written to be bounded polls GitHub until something
+# else kills it. The leash is what makes this assertable: without the fix the
+# command never returns on its own.
+out="$(ORCH_CI_GRACE=oops timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a grace that is not a number stops the command, not the clock" "$st" 1
+assert_contains "naming the knob it could not read" "$out" "ORCH_CI_GRACE"
 
 "$ORCH" state set pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
