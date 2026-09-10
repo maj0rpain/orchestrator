@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "orchestrator",
+  "description": "Marketplace hosting the orchestrator plugin.",
+  "owner": {
+    "name": "maj0rpain",
+    "url": "https://github.com/maj0rpain"
+  },
+  "plugins": [
+    {
+      "name": "orchestrator",
+      "description": "TODO: one-line description of what the orchestrator plugin does.",
+      "source": "./"
+    }
+  ]
+}

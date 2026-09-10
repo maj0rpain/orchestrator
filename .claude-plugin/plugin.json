@@ -1,0 +1,15 @@
+{
+  "name": "orchestrator",
+  "version": "0.1.0",
+  "description": "TODO: one-line description of what the orchestrator plugin does.",
+  "author": {
+    "name": "maj0rpain",
+    "url": "https://github.com/maj0rpain"
+  },
+  "homepage": "https://github.com/maj0rpain/orchestrator",
+  "repository": "https://github.com/maj0rpain/orchestrator",
+  "license": "MIT",
+  "keywords": [
+    "orchestration"
+  ]
+}
