@@ -119,14 +119,26 @@ non-zero on the last two:
 - **none** - the repo has no checks. Carry on: requiring CI in a repo that has
   none would make this plugin unusable in its own repo.
 - **failing** - a required check failed, and the detail lines name which. If it
-  looks flaky rather than caused by the change, the flow has **one** flake rerun:
-  `"$ORCH" state get flake_rerun_used` reads `true` once it is spent and empty
-  while it is not. Spend it with `gh run rerun --failed`, record
-  `"$ORCH" state set flake_rerun_used true`, and ask `review ci` again. A second
-  failure is a **Bounded stop**. That second ask starts the fifteen-minute wait
-  over rather than inheriting what is left of the first, because a rerun
-  restarts the checks - so this one path, once per flow, can wait longer than
-  the cap.
+  looks flaky rather than caused by the change, the flow has **one** flake
+  rerun: `"$ORCH" state get flake_rerun_used` reads `true` once it is spent and
+  empty while it is not. Spend it on the run behind the failing check -
+  `gh run rerun` needs that run's id, and with none it opens a prompt a session
+  driving `gh` from non-interactive bash cannot answer:
+
+  ```
+  link="$(gh pr checks <pr> --json bucket,link \
+    -q 'first(.[] | select(.bucket == "fail" or .bucket == "cancel") | .link)')"
+  run="${link##*/runs/}"          # .../actions/runs/N/job/M -> N/job/M
+  gh run rerun "${run%%/*}" --failed
+  ```
+
+  It reruns GitHub Actions and nothing else, so a failing check that is not an
+  Actions run has no rerun to spend and is a **Bounded stop** on the spot. Then
+  record `"$ORCH" state set flake_rerun_used true` and ask `review ci` again. A
+  second failure is a **Bounded stop**. That second ask restarts the
+  fifteen-minute wait rather than inheriting what is left of the first, because
+  a rerun restarts the checks - so this one path, once per flow, can wait longer
+  than the cap.
 - **unreachable** - GitHub would not answer, or the checks were still pending at
   the cap. A **Bounded stop**: marking a PR ready over a result nothing ever
   produced claims a verification that never happened.

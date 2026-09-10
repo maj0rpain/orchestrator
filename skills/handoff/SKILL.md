@@ -107,8 +107,12 @@ Written only when a clean loop's chosen work needs a loop of its own. Its path i
 the loop that wrote it and rolls the counter.
 
 The first four sections are one-liners carried forward from `03` rather than
-referenced: making a fresh session read two handoffs to assemble four facts is a
-false economy.
+referenced. Not to save the reader a file - the review loop opens `03` anyway,
+for its **Deviations** - but so that the four facts a loop runs on have exactly
+one authority. The review skill takes them from the handoff "and from nowhere
+else", and a fact with two homes is a fact that can disagree with itself. Carry
+them verbatim: a base SHA that drifts from `03`'s silently changes what every
+iteration diffs against, and nothing checks it.
 
 ```markdown
 # Handoff: <slug>, loop <n>

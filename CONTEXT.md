@@ -46,14 +46,14 @@ which the review phase assigns — the reviewer itself reports findings unranked
 
 ## Severity
 
-Which of three roles a finding plays in whether the flow can finish:
+Which of three roles a finding plays in whether a review loop can finish:
 
 - **Blocking** — the change is wrong: incorrect behaviour, a spec requirement
   missing or misimplemented, a security problem, a broken or missing test, or a
-  failing verification command. The flow cannot finish while one is open.
+  failing verification command. The loop cannot finish while one is open.
 - **Major** — the change works but carries real cost: a documented standard
   breached, a smell with teeth, scope nobody asked for. Fixed, but does not by
-  itself keep the flow from finishing.
+  itself keep the loop from finishing.
 - **Nit** — taste and judgement calls. Recorded and never blocking, and never
   fixed inside an iteration. A loop that ends clean asks which ones to fix
   before it marks the PR ready.
