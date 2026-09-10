@@ -343,26 +343,31 @@ triage_labels() {
   [ -f "$ROOT/$LABELS_DOC" ] || return 0
   awk -F'|' '
     /^[[:space:]]*\|/ {
-      # The doc is a three-column table and the label lives in the middle one.
-      # Count the columns rather than the pipe fields: the leading pipe always
-      # yields an empty field before it, and a trailing pipe another after -
-      # but markdown lets a row omit the outer pipes, so the field count alone
-      # says nothing about the width. In a narrower table $3 is whichever
-      # column happens to sit last, and its Meaning text gets read out as a
-      # label name and demanded of the repo. A diagnostic may fail to parse a
-      # doc; it may not invent an answer from one.
-      last = $NF
-      sub(/^[[:space:]]+/, "", last)
-      sub(/[[:space:]]+$/, "", last)
-      width = NF - 1
-      if (last == "") width--
-      if (width < 3) next
       s = $3
       gsub(/`/, "", s)
       sub(/^[[:space:]]+/, "", s)
       sub(/[[:space:]]+$/, "", s)
-      if (s ~ /^:?-+:?$/) { seen_separator = 1; next }
-      if (!seen_separator || s == "") next
+      # The separator row settles the width for the whole table, and only it
+      # can. Every separator cell holds a dash run, so an empty field at the
+      # end of that row is unambiguously the one a trailing pipe leaves behind
+      # - whereas on a data row an empty last field is equally well an empty
+      # last cell, and guessing there costs a real label. Markdown lets a row
+      # drop its trailing pipe; the leading one the match already requires.
+      if (s ~ /^:?-+:?$/) {
+        last = $NF
+        sub(/^[[:space:]]+/, "", last)
+        sub(/[[:space:]]+$/, "", last)
+        cols = NF - 1
+        if (last == "") cols--
+        next
+      }
+      # cols stays 0 until the separator row, which drops the header with it.
+      # Under three columns this is a table of some other shape, where $3 is
+      # whichever column happens to sit last and its Meaning text would be read
+      # out as a label name and demanded of the repo. A diagnostic may fail to
+      # parse a doc; it may not invent an answer from one.
+      if (cols < 3) next
+      if (s == "") next
       print s
     }' "$ROOT/$LABELS_DOC"
 }
@@ -407,7 +412,7 @@ check_labels_exist() {
   # someone to stop reading the word.
   n="$(printf '%s\n' "$have" | grep -c .)" || n=0
   if [ "$n" -ge "$LABEL_LIMIT" ]; then
-    d_warn "the repo has more than $LABEL_LIMIT labels - cannot tell whether $(d_join "$missing") exist."
+    d_warn "the repo has more than $LABEL_LIMIT labels - cannot confirm: $(d_join "$missing")"
     return 0
   fi
   d_fail "triage labels missing from the repo: $(d_join "$missing")"
@@ -418,9 +423,11 @@ check_labels_exist() {
 
 check_git_exclude() {
   local ex
-  # Not guarded: the script already died at load time if this were not a git
-  # repo, so a check for one could only ever report a world that cannot exist.
-  # Should it fail anyway, d_run reports the check as one that could not run.
+  # Unguarded, and unreachable: the script died at load time if this were not a
+  # git repo, so a check for one could only ever report a world that cannot
+  # exist. Not covered by d_run's abort warn either - a check runs as the left
+  # operand of ||, which disables errexit for its whole body, so a failure here
+  # would carry on with a wrong path rather than stop.
   ex="$(git rev-parse --git-dir)/info/exclude"
   if grep -qxF "$ORCH_DIR_NAME/" "$ex" 2>/dev/null; then
     d_ok "$ORCH_DIR_NAME/ is git-excluded"
