@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "orchestrator",
-      "description": "TODO: one-line description of what the orchestrator plugin does.",
+      "description": "Sequences planning, spec writing, implementation, and review into four handoff-connected phases, each running with fresh context.",
       "source": "./"
     }
   ]

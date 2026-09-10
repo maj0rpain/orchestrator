@@ -1,7 +1,18 @@
 # orchestrator
 
-A Claude Code plugin. **This is a blank shell** — the directory layout and
-manifests are in place, but there are no commands, agents, skills, or hooks yet.
+A Claude Code plugin that separates **planning**, **spec writing**,
+**implementation**, and **review** into four phases, each running in a fresh
+session, connected by handoff files.
+
+The problem it solves: one long session that plans, specs, builds, and reviews
+carries every earlier phase's context into the next. The reviewer already
+believes the implementer's reasoning. Splitting the phases and passing only a
+written handoff between them means each phase judges the work, not the story
+behind it.
+
+It conducts [`mattpocock-skills`](https://github.com/mattpocock/skills) rather
+than replacing it: `to-spec` writes the spec, `implement` builds it, `code-review`
+reviews it. This plugin owns the state, the handoffs, the branch, and the PR.
 
 ## Install
 
@@ -10,102 +21,103 @@ manifests are in place, but there are no commands, agents, skills, or hooks yet.
 /plugin install orchestrator@orchestrator
 ```
 
-The repo doubles as its own single-plugin marketplace, so no separate
-marketplace repo is needed.
+Requires the `mattpocock-skills` plugin, plus `gh`, `jq`, and `git`. Run
+`/mattpocock-skills:setup-matt-pocock-skills` once per repo first - the spec phase
+reads `docs/agents/issue-tracker.md` and fails without it. `/orchestrator:start`
+checks all of this up front.
 
-For local development, point Claude Code at the working tree instead:
+## The flow
 
 ```
-claude --plugin-dir /home/patlinux/Git/orchestrator
+  planning session          you approve the plan
+  (grill-me / wayfinder  ->  /orchestrator:start  ->  01-plan.md
+   / improve-codebase-…)                               |
+                                                       | /clear
+  spec session         to-spec publishes the issue  <--+
+                       spec review                  ->  02-spec.md
+                                                       |
+                                                       | /clear
+  implement session    branch orch/<issue>-<slug>   <--+
+                       implement, push, draft PR    ->  03-implement.md
+                                                       |
+                                                       | /clear
+  review session       code-review + CI loop        <--+
+                       until clean, then mark ready
 ```
+
+Handoffs live in `.orchestrator/handoff/`, ignored via `.git/info/exclude` so
+running the flow never dirties a repo's working tree.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `/orchestrator:start [slug]` | Start a flow from an approved plan. Runs in the planning session. |
+| `/orchestrator:next` | Run the next phase. Run it in a fresh session. |
+| `/orchestrator:status` | Phase, issue, branch, PR, and a state validation. |
+| `/orchestrator:redo` | Step back one phase and re-run it. |
+| `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
+
+## Why separate sessions
+
+`handoff`, `implement`, `to-spec`, `wayfinder`, and `improve-codebase-architecture`
+are all marked `disable-model-invocation: true` upstream, so the Skill tool cannot
+invoke them. The flow works around this by reading their `SKILL.md` files directly
+and following them, which is what the Skill tool would have injected anyway.
+
+That makes invocability a solved problem, **but the separate sessions remain the
+point**: fresh context per phase, and room for the human-in-the-loop exchanges
+that `to-spec` (test seams) and the spec review depend on. If those upstream flags
+ever change, the architecture does not need to.
+
+## Activation
+
+A `PostToolUse` hook on `Skill(grilling)` catches all three planning entry points
+- `grill-me`, `wayfinder`, and `improve-codebase-architecture` all route through
+it. It fires once per session, stays quiet when a flow is already running, warns
+early if the repo is unconfigured, and tells the model to close with
+`Plan approved?` rather than offering to implement.
+
+A `PreToolUse` hook on `Edit`/`Write` enforces that: during a planning session
+with no flow started, source edits are denied. Planning artifacts stay writable -
+`CONTEXT.md`, `CONTEXT-MAP.md`, `docs/adr/`, `docs/agents/`, `.scratch/`,
+`.orchestrator/` - because `improve-codebase-architecture` and `domain-modeling`
+legitimately write them mid-planning.
 
 ## Layout
 
 ```
-.claude-plugin/
-  plugin.json       # plugin manifest (required)
-  marketplace.json  # lets this repo be added as a marketplace
-commands/           # slash commands: one .md file per command
-agents/             # subagents: one .md file per agent
-skills/             # skills: one directory per skill, each with SKILL.md
-hooks/hooks.json    # hook configuration
-scripts/            # helper scripts invoked by commands/hooks
-.mcp.json           # MCP servers bundled with the plugin
+commands/         start, next, status, redo, abort
+skills/flow/      the state machine (judgment)
+skills/handoff/   handoff templates, model-invocable unlike the upstream one
+scripts/orch.sh   every deterministic operation (mechanism)
+scripts/hook-*.sh the two hooks
+scripts/test/     shell tests
+hooks/hooks.json  hook wiring
 ```
 
-Only `.claude-plugin/plugin.json` is required. Empty directories are kept with
-`.gitkeep` files and can be deleted if unused.
+Prose for judgment, bash for facts. Reading state, naming branches, resolving the
+default branch, and validating handoffs all have one right answer, so they live in
+`orch.sh` where they cannot drift between sessions.
 
-## Authoring reference
-
-### Commands — `commands/<name>.md`
-
-Becomes `/<name>` (or `/orchestrator:<name>` when names collide).
-
-```markdown
----
-description: One line shown in the slash-command list.
-argument-hint: [target]
-allowed-tools: Bash(git status:*), Read
----
-
-Instructions for Claude. `$ARGUMENTS` interpolates what the user typed;
-`$1`, `$2` interpolate positional args.
-```
-
-Subdirectories namespace commands: `commands/db/migrate.md` → `/db:migrate`.
-
-### Agents — `agents/<name>.md`
-
-```markdown
----
-name: reviewer
-description: When this agent should be invoked. Written for the calling model.
-tools: Read, Grep, Glob
-model: sonnet
----
-
-The agent's system prompt.
-```
-
-### Skills — `skills/<name>/SKILL.md`
-
-```markdown
----
-name: my-skill
-description: What it does and when to use it, including trigger phrases.
----
-
-Skill instructions. Supporting files live alongside SKILL.md and are
-referenced by relative path.
-```
-
-### Hooks — `hooks/hooks.json`
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/check.sh" }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Use `${CLAUDE_PLUGIN_ROOT}` for any path inside the plugin — it resolves to the
-plugin's install directory, which is not the user's working directory.
-
-## Validate
+## Develop
 
 ```
+claude --plugin-dir /path/to/orchestrator
 claude plugin validate .
+scripts/test/orch_test.sh && scripts/test/hooks_test.sh
 ```
+
+## Status
+
+Walking skeleton. The plan, spec, and implement phases run; **the review phase is
+not built yet** and says so rather than improvising.
+
+Still to come: `orchestrator:review-spec` (fidelity, testability, consistency,
+implementability), and the review loop - `code-review` per iteration, a
+blocking/major/nit rubric, one fix commit per iteration, required CI green with a
+single flake rerun, and a hard stop at 5 iterations or two with no net progress.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
