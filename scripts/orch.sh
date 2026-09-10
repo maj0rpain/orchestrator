@@ -42,10 +42,16 @@ find_mattpocock() {
   printf '%s\n' "${hits[@]}" | sort -V | tail -1 | sed 's|/skills/engineering/implement/SKILL.md$||'
 }
 
+# Ask GitHub first. refs/remotes/origin/HEAD is a *local cached pointer* frozen at
+# clone time - in a clone taken while a feature branch was checked out it names
+# that branch, which would silently base every feature branch off the wrong place.
+# It is a fallback for repos gh cannot answer for, not the primary source.
 default_branch() {
   local b
-  b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')" || true
-  [ -n "$b" ] || b="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)" || true
+  b="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)" || true
+  if [ -z "$b" ]; then
+    b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')" || true
+  fi
   [ -n "$b" ] || b="main"
   printf '%s\n' "$b"
 }
@@ -326,6 +332,7 @@ orch.sh - deterministic operations for the orchestrator flow
 
   precheck                    verify tracker config, mattpocock-skills, gh, jq
   mp-skill [name]             path to a mattpocock SKILL.md (or the plugin root)
+  default-branch              resolve the base branch feature branches fork from
   init <slug>                 start a flow (refuses if one is active)
   state get [key]             print state.json, or one key
   state set <key> <value>     update one key
@@ -345,6 +352,7 @@ main() {
   case "$cmd" in
     precheck)      cmd_precheck "$@" ;;
     mp-skill)      cmd_mp_skill "$@" ;;
+    default-branch) default_branch ;;
     init)          cmd_init "$@" ;;
     state)         cmd_state "$@" ;;
     handoff)       cmd_handoff "$@" ;;
