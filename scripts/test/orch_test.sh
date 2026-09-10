@@ -2,9 +2,11 @@
 #
 # Tests for scripts/orch.sh.
 #
-# orch.sh is where silent wrongness hides: `state validate` returning success on
-# a deleted branch, or a handoff passing with an empty required section, are
-# bugs you would experience as generic confusion three phases later. Each runs
+# orch.sh is where silent wrongness hides: `doctor` returning success on a
+# deleted branch, a missing triage label, or a handoff with an empty required
+# section, are bugs you would experience as generic confusion three phases
+# later - or, worse, as a phase that dies once the session that could have
+# fixed it has been cleared. Each runs
 # against a throwaway git repo in $TMPDIR - nothing here touches a real flow.
 
 ORCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/orch.sh"
@@ -48,6 +50,107 @@ complete_plan_handoff() {
           '## Open assumptions' 'Assumes W.' >"$1"
 }
 
+complete_spec_handoff() {
+  writeln '## Spec issue' '#1.' '' \
+          '## Seams' 'The CLI.' '' \
+          '## Spec review changelog' 'Not reviewed.' >"$1"
+}
+
+# --- doctor harness ---------------------------------------------------------
+
+# A fake `gh` on PATH. doctor's severity rules turn on the difference between
+# "GitHub said no" and "GitHub could not tell us", and that difference cannot be
+# arranged against a real gh. GH_STUB_MODE picks which answer comes back:
+#   ok        authenticated, repo resolves, every documented label exists
+#   noauth    `gh auth status` fails the way an unauthenticated gh does
+#   offline   every call fails with a connection error
+#   nolabels  authenticated, but the repo carries none of the documented labels
+# GH_STUB_LOG, when set, names a file the stub appends each subcommand to, which
+# is how a test asserts that a scope made no network call at all.
+stub_gh() {
+  local d
+  d="$(mktemp -d)"
+  cat >"$d/gh" <<'GH'
+#!/usr/bin/env bash
+if [ -n "${GH_STUB_LOG:-}" ]; then printf '%s\n' "$1" >>"$GH_STUB_LOG"; fi
+if [ "${GH_STUB_MODE:-ok}" = offline ]; then
+  echo "dial tcp: lookup api.github.com: no such host" >&2
+  exit 1
+fi
+case "$1" in
+  auth)
+    if [ "${GH_STUB_MODE:-ok}" = noauth ]; then
+      echo "You are not logged into any GitHub hosts." >&2
+      exit 1
+    fi
+    echo "Logged in to github.com" ;;
+  repo) printf '%s\n' ${GH_STUB_REPO-acme/widgets main} ;;
+  label)
+    if [ "${GH_STUB_MODE:-ok}" = labelfail ]; then exit 1; fi
+    if [ "${GH_STUB_MODE:-ok}" != nolabels ]; then
+      printf '%s\n' "${GH_STUB_LABELS-needs-triage
+ready-for-agent}"
+    fi ;;
+  pr) echo "${GH_STUB_PR_STATE:-OPEN}" ;;
+esac
+GH
+  chmod +x "$d/gh"
+  PATH="$d:$PATH"
+}
+
+# A fake mattpocock-skills install under a throwaway HOME holding exactly the
+# skills named. The *partial* install is the regression doctor exists to catch,
+# and it is unreachable through the extremes: with only all-present and
+# all-absent, the per-skill check is exercised by whatever happens to be
+# installed on the machine running the tests, which is to say not at all.
+stub_mattpocock() {
+  local home base s
+  home="$(mktemp -d)"
+  base="$home/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/engineering"
+  for s in "$@"; do
+    mkdir -p "$base/$s"
+    echo "# $s" >"$base/$s/SKILL.md"
+  done
+  printf '%s\n' "$home"
+}
+
+# The documented triage-label table, in the shape the setup skill writes it:
+# a header row, a separator row, and backticked labels in the second column.
+labels_doc() {
+  writeln '# Triage Labels' '' \
+          '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+          '| -------------------------- | -------------------- | ----------- |' \
+          '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+          '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' \
+          '' 'Edit the right-hand column to match whatever vocabulary you use.' >"$1"
+}
+
+# A repo where every --env check passes, so a test can break exactly one thing
+# and attribute the result to it.
+healthy_repo() {
+  new_repo >/dev/null
+  git remote add origin https://github.com/acme/widgets.git
+  labels_doc docs/agents/triage-labels.md
+  printf '%s\n' ".orchestrator/" >>.git/info/exclude
+  stub_gh
+  export CLAUDE_PLUGIN_ROOT="$PWD"
+  HOME="$(stub_mattpocock to-spec implement code-review handoff)"
+  export HOME
+  unset GH_STUB_MODE
+}
+
+# A PATH with everything orch.sh reaches for except jq. Reporting "jq is
+# missing" is the one thing doctor has to do without jq, so the only honest way
+# to test it is to actually take jq away.
+path_without_jq() {
+  local d t p
+  d="$(mktemp -d)"
+  for t in env bash git gh awk sed grep tr cat sort tail head date mktemp mv rm mkdir chmod basename dirname printf; do
+    if p="$(command -v "$t" 2>/dev/null)"; then ln -sf "$p" "$d/$t"; fi
+  done
+  printf '%s\n' "$d"
+}
+
 echo "orch.sh tests"
 
 # --- init -------------------------------------------------------------------
@@ -78,20 +181,6 @@ assert_eq "stores issue as JSON number, not string" \
   "$("$ORCH" state get | jq -r '.issue | type')" "number"
 "$ORCH" state set issue null
 assert_eq "accepts an explicit null" "$("$ORCH" state get | jq -r '.issue | type')" "null"
-
-# --- state validate ---------------------------------------------------------
-echo
-echo "state validate"
-out="$("$ORCH" state validate 2>&1)"; st=$?
-assert_status "fails when the recorded branch does not exist" "$st" 1
-assert_contains "names the missing branch" "$out" "orch/1-x"
-git checkout -q -b orch/1-x
-out="$("$ORCH" state validate 2>&1)"; st=$?
-assert_status "passes once the branch exists" "$st" 0
-"$ORCH" state set phase nonsense
-out="$("$ORCH" state validate 2>&1)"; st=$?
-assert_status "rejects an unknown phase" "$st" 1
-"$ORCH" state set phase spec
 
 # --- handoff path -----------------------------------------------------------
 echo
@@ -183,19 +272,357 @@ else
   echo "  skip (mattpocock-skills not installed)"
 fi
 
-# --- precheck ---------------------------------------------------------------
+# --- doctor -----------------------------------------------------------------
+# The two commands doctor replaces both returned success on the failures that
+# actually end flows, so what these assert is the *severity* of each condition,
+# not just that it got a mention.
 echo
-echo "precheck"
-rm -f docs/agents/issue-tracker.md
-out="$("$ORCH" precheck 2>&1)"; st=$?
-assert_status "fails without a configured issue tracker" "$st" 1
-assert_contains "points at the setup skill" "$out" "setup-matt-pocock-skills"
+echo "doctor"
+healthy_repo
 
-# A non-matching plugin glob must report cleanly, not abort under set -e.
-echo "# tracker" >docs/agents/issue-tracker.md
-out="$(HOME=/nonexistent "$ORCH" precheck 2>&1)"; st=$?
+out="$("$ORCH" doctor --nonsense 2>&1)"; st=$?
+assert_status "rejects an unknown flag" "$st" 1
+assert_contains "names the flag it rejected" "$out" "--nonsense"
+
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "passes a healthy repo" "$st" 0
+assert_contains "keeps the ok-line format of the commands it replaces" "$out" "ok    git present"
+assert_contains "opens with a bare group header" "$out" "tools"
+assert_contains "summarises severities on the last line" \
+  "$(printf '%s\n' "$out" | tail -1)" "0 FAIL"
+
+# jq gone is the awkward case: every other part of orch.sh needs it, so the one
+# message the user needs most is the one that cannot be printed the usual way.
+out="$(PATH="$(path_without_jq)" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails when jq is missing" "$st" 1
+assert_contains "names jq rather than dying mid-report" "$out" "jq"
+assert_contains "still reaches the summary line without jq" "$out" " FAIL"
+
+# Severity is the behaviour under test, not the wording: "GitHub said no" must
+# FAIL and "GitHub could not tell us" must only warn. Written backwards, doctor
+# either blocks every flow run away from a good network or waves through the two
+# failures it exists to catch, and both look plausible in a passing test suite.
+healthy_repo
+out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails when a documented label is missing from the repo" "$st" 1
+assert_contains "names the missing label with its backticks stripped" "$out" "ready-for-agent"
+assert_contains "gives the command that creates it" "$out" 'gh label create "ready-for-agent"'
+assert_contains "indents the remedy under its FAIL by six spaces" \
+  "$out" "$(printf '\n      gh label create')"
+assert_eq "strips the backticks the doc writes labels in" \
+  "$(printf '%s\n' "$out" | grep -c '`')" "0"
+assert_contains "counts one FAIL and no warns" \
+  "$(printf '%s\n' "$out" | tail -1)" "0 warn, 1 FAIL"
+
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning |' \
+        '| -------------------------- | -------------------- | ------- |' \
+        '| `needs-triage`             | `needs triage`       | Look    |' >docs/agents/triage-labels.md
+out="$(GH_STUB_LABELS='needs triage' "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a label with a space in it is one label, not two" "$st" 0
+out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"
+assert_contains "quotes a multi-word label in the remedy" "$out" 'gh label create "needs triage"'
+
+# GitHub answered the auth probe and then would not answer this one: an absent
+# answer, not a "no", so it warns.
+healthy_repo
+out="$(GH_STUB_MODE=labelfail "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "an unlistable label set does not block the flow" "$st" 0
+assert_contains "says the labels could not be listed" "$out" "could not be listed"
+
+healthy_repo
+out="$(GH_STUB_MODE=offline "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "does not fail merely because GitHub is unreachable" "$st" 0
+assert_contains "collapses the checks that needed GitHub into one line" \
+  "$out" "checks skipped: GitHub is not reachable"
+assert_eq "emits one skip line, not one per skipped check" \
+  "$(printf '%s\n' "$out" | grep -c 'skipped:')" "1"
+# The skip lines are a group like any other, so they carry a header and a blank
+# line rather than trailing loose off the end of the last one.
+assert_contains "puts the skipped group under a bare header" \
+  "$out" "$(printf '\n\nskipped\nwarn  ')"
+
+out="$(GH_STUB_MODE=noauth "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails when gh is not authenticated" "$st" 1
+assert_contains "gives the login command" "$out" "gh auth login"
+assert_contains "skips the checks that depended on the answer" "$out" "skipped: not authenticated"
+
+out="$(GH_STUB_REPO='acme/widgets ' "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "an unresolved default branch does not block the flow" "$st" 0
+assert_contains "warns that the default branch came from a fallback" "$out" "default branch"
+
+# A partial install is the regression this feature exists to catch: find_mattpocock
+# probes one skill file, so it passes, and the spec phase then dies with the
+# context that could have fixed it already cleared.
+healthy_repo
+HOME="$(stub_mattpocock implement code-review)"; export HOME
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails on a partial mattpocock-skills install" "$st" 1
+assert_contains "names one missing skill" "$out" "to-spec"
+assert_contains "names the other missing skill" "$out" "handoff"
+assert_eq "says nothing about the skills that are present" \
+  "$(printf '%s\n' "$out" | grep -c 'code-review')" "0"
+
+out="$(HOME=/nonexistent "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails cleanly when mattpocock-skills is absent" "$st" 1
 assert_contains "gives the install command" "$out" "/plugin install mattpocock-skills"
+assert_contains "skips the per-skill check rather than deriving a second FAIL" \
+  "$out" "1 skill check skipped"
+
+# Labels are parsed from the doc rather than hardcoded, so the parser is what
+# decides whether doctor is right in a repo that customised its vocabulary.
+# A narrower table would hand $3 whatever column sits last, so doctor would go
+# demanding that the repo create labels named after the Meaning text. Parsing to
+# nothing is the honest answer; inventing one is the worst thing a diagnostic
+# can do.
+# The width belongs to one table, and a doc may hold more than one. A second,
+# narrower table's *header* row arrives a line before the separator that would
+# correct the width, so without a reset at the end of the block that heading
+# gets read out as a label and demanded of the repo.
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+        '' '## Glossary' '' \
+        '| Term | Definition |' \
+        '| ---- | ---------- |' \
+        '| flow | a run       |' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "reads only the labels table, not every table in the doc" \
+  "$out" "1 triage labels"
+assert_eq "does not read a heading out of a second, narrower table" \
+  "$(printf '%s\n' "$out" | grep -c 'Definition')" "0"
+assert_status "and does not demand the repo create it" "$st" 0
+
+# The width comes from the separator row, because only there is an empty last
+# field unambiguous. On a data row it is equally an empty last *cell*, and a row
+# that drops its trailing pipe *and* leaves Meaning blank looks exactly like a
+# two-column row - so reading the width off that row costs a real label.
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning' \
+        '| -------------------------- | -------------------- | -------' \
+        '| `needs-triage`             | `needs-triage`       |' \
+        '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "an empty last cell does not cost the row its label" "$st" 0
+assert_contains "reads both labels, not just the one with a Meaning" "$out" "2 triage labels"
+
+# Markdown lets a row drop its trailing pipe, and the width is read off the
+# separator row precisely so that such a doc still parses.
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning' \
+        '| -------------------------- | -------------------- | -------' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it' \
+        '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a table without its trailing pipes still parses" "$st" 0
+assert_contains "reads both labels out of it" "$out" "2 triage labels"
+
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label          | Meaning     |' \
+        '| -------------- | ----------- |' \
+        '| `needs-triage` | Evaluate it |' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails on a table that is not the documented shape" "$st" 1
+assert_eq "does not read a label out of some other column" \
+  "$(printf '%s\n' "$out" | grep -c 'Evaluate it')" "0"
+assert_contains "points at the setup skill instead" "$out" "setup-matt-pocock-skills"
+
+# The width rule now hinges entirely on recognising the separator row, and these
+# are the two ways that recognition goes wrong: a separator dressed with
+# alignment colons, and a doc that never has one.
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| :------------------------- | :------------------: | ----------: |' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+        '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "an alignment-colon separator is still a separator" "$st" 0
+assert_contains "reads the labels under it" "$out" "2 triage labels"
+
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it |' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a table with no separator row parses to nothing" "$st" 1
+assert_eq "reads no label out of a table it never confirmed the width of" \
+  "$(printf '%s\n' "$out" | grep -c 'needs-triage')" "0"
+assert_contains "points at the setup skill" "$out" "setup-matt-pocock-skills"
+
+healthy_repo
+writeln '# Triage Labels' '' 'This repo does not use a table.' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails when the labels doc parses to no labels" "$st" 1
+assert_contains "points at the setup skill" "$out" "setup-matt-pocock-skills"
+
+healthy_repo
+rm docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails when the labels doc is absent entirely" "$st" 1
+assert_contains "says the doc is missing rather than that it lists nothing" \
+  "$out" "triage-labels.md is missing"
+
+# A label list long enough to fill the page is a list that may be cut off, so
+# naming labels as missing from it would be a FAIL derived from not knowing.
+healthy_repo
+out="$(GH_STUB_LABELS="$(seq 1 1000)" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a label list that filled the page does not FAIL" "$st" 0
+assert_contains "names the labels it cannot vouch for" "$out" "cannot confirm:"
+assert_contains "names them individually" "$out" "needs-triage, ready-for-agent"
+
+# ...but a page that filled up and still held every documented label answered
+# the question. The caveat qualifies a negative; there is no negative here.
+healthy_repo
+out="$(GH_STUB_LABELS="$(printf '%s\n' needs-triage ready-for-agent; seq 1 1000)" \
+  "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a full page that held every label is still a pass" "$st" 0
+assert_contains "does not hedge an answer it actually has" \
+  "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
+
+healthy_repo
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "counts only the documented labels, not the header row" \
+  "$out" "2 triage labels"
+
+healthy_repo
+: >.git/info/exclude
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a missing git exclude line warns without blocking" "$st" 0
+assert_contains "counts one warn and no FAILs" \
+  "$(printf '%s\n' "$out" | tail -1)" "1 warn, 0 FAIL"
+assert_contains "gives a command that adds the exclude line" "$out" "info/exclude"
+
+healthy_repo
+out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "running orch.sh by hand is not a broken install" "$st" 0
+assert_contains "warns about the unset plugin root" "$out" "CLAUDE_PLUGIN_ROOT"
+
+healthy_repo
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "separates groups with a blank line and a bare header" \
+  "$out" "$(printf '\n\nauth & remotes\n')"
+assert_contains "a fully healthy repo reports no warns and no FAILs" \
+  "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
+# Asserted against the lines actually printed rather than a literal, so adding a
+# check to the registry cannot quietly make the count wrong.
+assert_eq "the summary's ok count matches the ok lines it printed" \
+  "$(printf '%s\n' "$out" | tail -1 | sed 's/ ok,.*//')" \
+  "$(printf '%s\n' "$out" | grep -c '^ok    ')"
+
+# --- doctor --flow ----------------------------------------------------------
+# An empty answer must never read as a healthy one: --flow is asked explicitly
+# about a flow, so no flow is a failure there and a plain statement everywhere
+# else.
+healthy_repo
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "--flow refuses to answer when there is no flow" "$st" 1
+assert_contains "says why it cannot answer" "$out" "no active flow"
+
+out="$("$ORCH" doctor 2>&1)"; st=$?
+assert_status "bare doctor is safe to run with no flow" "$st" 0
+assert_contains "states there is no flow instead of failing" "$out" "ok    no active flow"
+assert_contains "bare doctor covers the environment too" "$out" "tools"
+
+"$ORCH" init flowtest >/dev/null
+complete_plan_handoff "$("$ORCH" handoff path spec)"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a fresh flow is healthy" "$st" 0
+assert_contains "reports the phase" "$out" "phase: spec"
+assert_eq "--flow leaves the environment alone" \
+  "$(printf '%s\n' "$out" | grep -c '^tools$')" "0"
+assert_eq "stays quiet about an upstream before the implement phase" \
+  "$(printf '%s\n' "$out" | grep -c 'upstream')" "0"
+
+# /orchestrator:next and /orchestrator:status both run this scope every time, and
+# a flow with no PR recorded has nothing to ask GitHub about.
+ghlog="$(mktemp)"
+GH_STUB_LOG="$ghlog" "$ORCH" doctor --flow >/dev/null 2>&1
+assert_eq "a flow with no PR asks GitHub nothing" "$(grep -c . "$ghlog")" "0"
+
+# One unparseable file is one problem. Four checks each reading it again would
+# print jq's parse error mid-report and then four ok lines that are not true.
+statebak="$(mktemp)"
+cp .orchestrator/state.json "$statebak"
+printf '%s' '{not json' >.orchestrator/state.json
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "fails when state.json does not parse" "$st" 1
+assert_contains "names the file that will not parse" "$out" "not valid JSON"
+assert_eq "reports it once rather than once per check" \
+  "$(printf '%s\n' "$out" | grep -c '^FAIL')" "1"
+assert_eq "claims nothing it could not read" \
+  "$(printf '%s\n' "$out" | grep -c '^ok    ')" "0"
+assert_eq "does not leak jq's parse error into the report" \
+  "$(printf '%s\n' "$out" | grep -c 'parse error')" "0"
+cp "$statebak" .orchestrator/state.json
+
+"$ORCH" state set phase nonsense
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "rejects an unknown phase" "$st" 1
+assert_contains "names the phase it does not know" "$out" "nonsense"
+"$ORCH" state set phase spec
+
+"$ORCH" state set branch orch/9-gone
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "fails when the recorded branch is gone" "$st" 1
+assert_contains "names the missing branch" "$out" "orch/9-gone"
+
+git checkout -q -b orch/9-gone
+"$ORCH" state set phase implement
+complete_spec_handoff "$("$ORCH" handoff path implement)"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "an unpushed branch warns rather than blocking the implement phase" "$st" 0
+assert_contains "gives the command that pushes it" "$out" "git push -u origin orch/9-gone"
+
+# branch-create forks off origin/<default>, so an unpushed branch already has an
+# upstream - just not its own. Accepting any upstream would call a branch nobody
+# else can see pushed.
+git update-ref refs/remotes/origin/main HEAD
+git branch -q --set-upstream-to=origin/main orch/9-gone
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_contains "an upstream pointing at the base branch is still unpushed" \
+  "$out" "not on origin yet"
+
+# A handoff with a bare required heading is the failure the next phase would
+# experience as running blind, so it has to surface as a FAIL here.
+writeln '## Spec issue' '#1' '' '## Seams' '' '## Spec review changelog' 'None.' \
+  >"$("$ORCH" handoff path implement)"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "fails when a completed phase's handoff has an empty section" "$st" 1
+assert_contains "names the handoff" "$out" "02-spec.md"
+assert_contains "reports it as empty, not missing" "$out" "empty section"
+complete_spec_handoff "$("$ORCH" handoff path implement)"
+
+"$ORCH" state set pr 7
+out="$(GH_STUB_PR_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "fails when the recorded PR has been closed" "$st" 1
+assert_contains "names the closed PR" "$out" "#7"
+out="$(GH_STUB_PR_STATE=MERGED "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a merged PR is not a failure" "$st" 0
+
+out="$(GH_STUB_MODE=offline "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "an unreachable GitHub does not fail the flow scope" "$st" 0
+assert_contains "skips the PR check with its cause" "$out" "skipped: GitHub is not reachable"
+
+# --flow never runs the tools group, so if it skipped every check it has and
+# still exited 0, /orchestrator:next would advance a flow nothing had checked.
+out="$(PATH="$(path_without_jq)" "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "--flow without jq fails rather than reporting a clean bill" "$st" 1
+assert_contains "names jq as the reason it cannot answer" "$out" "jq not found"
+
+out="$(PATH="$(path_without_jq)" "$ORCH" doctor 2>&1)"; st=$?
+assert_status "bare doctor without jq fails on the tools check" "$st" 1
+# The count comes from the registry, so a check appended to it is covered by the
+# gate without anyone remembering to add a preamble - and this number moving is
+# how you find out that happened.
+assert_contains "collapses every flow check into one line when jq is gone" \
+  "$out" "5 flow checks skipped: jq is not installed"
 
 echo
 echo "$PASS passed, $FAIL failed"

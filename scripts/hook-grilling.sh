@@ -32,6 +32,10 @@ root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 if [ -f "$root/.orchestrator/state.json" ]; then exit 0; fi
 
 warning=""
+# Open-coded rather than `orch.sh doctor --env`: this hook is PostToolUse on
+# every planning session, so it has to be instant and offline, and doctor costs
+# several gh calls and a few seconds. One early warning about the precondition
+# that wastes an hour of planning is the whole job here.
 if [ ! -f "$root/docs/agents/issue-tracker.md" ]; then
   warning="
 PRECONDITION NOT MET: this repo has no docs/agents/issue-tracker.md, so the spec
