@@ -376,6 +376,18 @@ assert_contains "skips the per-skill check rather than deriving a second FAIL" \
 # demanding that the repo create labels named after the Meaning text. Parsing to
 # nothing is the honest answer; inventing one is the worst thing a diagnostic
 # can do.
+# Markdown lets a row drop its outer pipes, and the width guard counts columns
+# rather than pipe fields precisely so that such a doc still parses.
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning' \
+        '| -------------------------- | -------------------- | -------' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it' \
+        '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a table without its trailing pipes still parses" "$st" 0
+assert_contains "reads both labels out of it" "$out" "2 triage labels"
+
 healthy_repo
 writeln '# Triage Labels' '' \
         '| Label          | Meaning     |' \
@@ -405,7 +417,17 @@ assert_contains "says the doc is missing rather than that it lists nothing" \
 healthy_repo
 out="$(GH_STUB_LABELS="$(seq 1 1000)" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a label list that filled the page does not FAIL" "$st" 0
-assert_contains "says it cannot tell which labels are missing" "$out" "cannot tell which are missing"
+assert_contains "names the labels it cannot vouch for" "$out" "cannot tell whether"
+assert_contains "names them individually" "$out" "needs-triage, ready-for-agent"
+
+# ...but a page that filled up and still held every documented label answered
+# the question. The caveat qualifies a negative; there is no negative here.
+healthy_repo
+out="$(GH_STUB_LABELS="$(printf '%s\n' needs-triage ready-for-agent; seq 1 1000)" \
+  "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a full page that held every label is still a pass" "$st" 0
+assert_contains "does not hedge an answer it actually has" \
+  "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
 
 healthy_repo
 out="$("$ORCH" doctor --env 2>&1)"

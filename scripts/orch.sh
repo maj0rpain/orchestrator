@@ -344,12 +344,19 @@ triage_labels() {
   awk -F'|' '
     /^[[:space:]]*\|/ {
       # The doc is a three-column table and the label lives in the middle one.
-      # Splitting on the pipes yields an empty field either side, so a row of
-      # the documented width has five. Anything narrower is a table of some
-      # other shape, where $3 would be whatever column happens to sit last -
-      # Meaning strings, read out as label names, demanded of the repo. A
-      # diagnostic may fail to parse; it may not invent an answer.
-      if (NF < 5) next
+      # Count the columns rather than the pipe fields: the leading pipe always
+      # yields an empty field before it, and a trailing pipe another after -
+      # but markdown lets a row omit the outer pipes, so the field count alone
+      # says nothing about the width. In a narrower table $3 is whichever
+      # column happens to sit last, and its Meaning text gets read out as a
+      # label name and demanded of the repo. A diagnostic may fail to parse a
+      # doc; it may not invent an answer from one.
+      last = $NF
+      sub(/^[[:space:]]+/, "", last)
+      sub(/[[:space:]]+$/, "", last)
+      width = NF - 1
+      if (last == "") width--
+      if (width < 3) next
       s = $3
       gsub(/`/, "", s)
       sub(/^[[:space:]]+/, "", s)
@@ -389,19 +396,20 @@ check_labels_exist() {
     d_warn "the repo's labels could not be listed."
     return 0
   fi
-  # A list that filled the page is a list that may be cut off, and a label named
-  # as missing because it fell past the boundary is exactly the FAIL that
-  # teaches someone to stop reading the word.
-  n="$(printf '%s\n' "$have" | grep -c .)" || n=0
-  if [ "$n" -ge "$LABEL_LIMIT" ]; then
-    d_warn "the repo has more than $LABEL_LIMIT labels - cannot tell which are missing."
-    return 0
-  fi
   while IFS= read -r l; do
     if [ -z "$l" ]; then continue; fi
     if ! printf '%s\n' "$have" | grep -qxF "$l"; then missing="$(d_append "$missing" "$l")"; fi
   done <<<"$want"
   if [ -z "$missing" ]; then d_ok "every documented triage label exists on the repo"; return 0; fi
+  # Found every one of them is a definitive answer whatever the page held, so
+  # the cut-off caveat only ever qualifies a *negative*: a label named as
+  # missing because it fell past the boundary is exactly the FAIL that teaches
+  # someone to stop reading the word.
+  n="$(printf '%s\n' "$have" | grep -c .)" || n=0
+  if [ "$n" -ge "$LABEL_LIMIT" ]; then
+    d_warn "the repo has more than $LABEL_LIMIT labels - cannot tell whether $(d_join "$missing") exist."
+    return 0
+  fi
   d_fail "triage labels missing from the repo: $(d_join "$missing")"
   # Quoted, because a label that needs quoting is exactly the one you would
   # paste wrong.
@@ -409,12 +417,11 @@ check_labels_exist() {
 }
 
 check_git_exclude() {
-  local gd ex
-  if ! gd="$(git rev-parse --git-dir 2>/dev/null)"; then
-    d_warn "the git directory could not be resolved - cannot tell whether $ORCH_DIR_NAME/ is excluded."
-    return 0
-  fi
-  ex="$gd/info/exclude"
+  local ex
+  # Not guarded: the script already died at load time if this were not a git
+  # repo, so a check for one could only ever report a world that cannot exist.
+  # Should it fail anyway, d_run reports the check as one that could not run.
+  ex="$(git rev-parse --git-dir)/info/exclude"
   if grep -qxF "$ORCH_DIR_NAME/" "$ex" 2>/dev/null; then
     d_ok "$ORCH_DIR_NAME/ is git-excluded"
     return 0
