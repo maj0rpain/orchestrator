@@ -27,8 +27,8 @@ options, deviations.
 
 ## Review loop
 
-One bounded sequence of iterations, ending either when nothing blocking or major
-is left or when it exhausts its bound. A flow may run more than one: a loop that
+One bounded sequence of iterations, ending either when an iteration's review
+comes back with nothing blocking or major to fix, or when it exhausts its bound. A flow may run more than one: a loop that
 finishes can hand off to a fresh loop, which starts with a new session and its
 own bound. Only a human decides that a further loop happens.
 

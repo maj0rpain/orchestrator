@@ -59,8 +59,12 @@ this file.
 8. Write the record to `"$ORCH" review path`: every finding with its axis and
    severity on one line, what was fixed, what was deferred and why, the fix
    commit SHA, and what CI said if it was asked.
-9. Nothing blocking or major left open? Go to **Closing the loop**. Otherwise
-   iterate.
+9. Did this iteration fix anything? Then iterate. The fixes are a new diff and
+   nothing has reviewed them, which is the whole reason the bound exists. The
+   loop closes on an **iteration whose review came back with nothing blocking or
+   major to fix** - the iteration that therefore fixed nothing and made no
+   commit. "I just fixed everything the last review found" is not that test: it
+   is true at the end of every iteration that fixed anything.
 
 ## Severity
 
