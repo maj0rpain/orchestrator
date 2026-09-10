@@ -433,6 +433,29 @@ assert_eq "does not read a label out of some other column" \
   "$(printf '%s\n' "$out" | grep -c 'Evaluate it')" "0"
 assert_contains "points at the setup skill instead" "$out" "setup-matt-pocock-skills"
 
+# The width rule now hinges entirely on recognising the separator row, and these
+# are the two ways that recognition goes wrong: a separator dressed with
+# alignment colons, and a doc that never has one.
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| :------------------------- | :------------------: | ----------: |' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+        '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "an alignment-colon separator is still a separator" "$st" 0
+assert_contains "reads the labels under it" "$out" "2 triage labels"
+
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it |' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a table with no separator row parses to nothing" "$st" 1
+assert_eq "reads no label out of a table it never confirmed the width of" \
+  "$(printf '%s\n' "$out" | grep -c 'needs-triage')" "0"
+assert_contains "points at the setup skill" "$out" "setup-matt-pocock-skills"
+
 healthy_repo
 writeln '# Triage Labels' '' 'This repo does not use a table.' >docs/agents/triage-labels.md
 out="$("$ORCH" doctor --env 2>&1)"; st=$?

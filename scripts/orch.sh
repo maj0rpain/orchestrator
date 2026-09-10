@@ -540,55 +540,59 @@ check_flow_handoffs() {
 }
 
 FLOW_CHECKS="
-check_state_phase check_flow_branch check_flow_upstream check_flow_pr check_flow_handoffs
+h_flow check_state_phase check_flow_branch check_flow_upstream check_flow_pr check_flow_handoffs
 "
 
-# How many checks a registry stands for, so a skip line can say so without
-# anyone keeping the number in their head. Headers are not checks.
-d_count() {
-  local n=0 e glob
-  # Restored rather than simply switched on: d_count is called from inside
-  # d_run_flow, and turning globbing back on inside a caller's set -f window is
-  # the silent check-dropping that window exists to prevent.
+# A registry's entries, one per line. Splitting a whitespace-separated list is
+# where a stray glob character would silently drop a check, so globbing goes off
+# across the split and is *restored* rather than switched on - a caller may have
+# its own set -f window, and handing globbing back inside one is the very thing
+# the window exists to prevent. bash cannot return an argument list from a
+# function, so the entries come back newline-separated and callers read them;
+# that also keeps this dance in one place rather than at every call site.
+d_entries() {
+  local glob
   case "$-" in *f*) glob=off ;; *) glob=on ;; esac
   set -f
   set -- $1
   if [ "$glob" = on ]; then set +f; fi
-  for e in ${@+"$@"}; do
-    case "$e" in h_*) ;; *) n=$((n + 1)) ;; esac
-  done
+  if [ $# -gt 0 ]; then printf '%s\n' "$@"; fi
+}
+
+# How many checks a registry stands for, so a skip line can say so without
+# anyone keeping the number in their head. Headers are not checks.
+d_count() {
+  local n=0 e
+  while IFS= read -r e; do
+    case "$e" in ""|h_*) ;; *) n=$((n + 1)) ;; esac
+  done <<<"$(d_entries "$1")"
   printf '%s\n' "$n"
 }
 
 # The gate the flow checks used to carry one at a time, hoisted to the list.
 d_run_flow() {
+  if [ "$D_JQ" = ok ] && [ "$D_STATE" = ok ]; then
+    d_run "$FLOW_CHECKS"
+    return 0
+  fi
+  # Neither path below reaches a check, so neither gets the header out of the
+  # registry the way the dispatch above does - and a skip line or a FAIL still
+  # belongs under "flow state" like everything else.
   h_flow
   if [ "$D_JQ" != ok ]; then
     D_JQ_SKIPPED=$((D_JQ_SKIPPED + $(d_count "$FLOW_CHECKS")))
     return 0
   fi
-  # One problem earns one FAIL. Everything below reads this file, so there is
-  # nothing left to say about it and nothing that could be said honestly.
-  if [ "$D_STATE" != ok ]; then
-    d_fail "$ORCH_DIR_NAME/state.json is not valid JSON."
-    d_remedy "/orchestrator:abort"
-    return 0
-  fi
-  d_run "$FLOW_CHECKS"
+  # One problem earns one FAIL. Every check reads this file, so there is nothing
+  # left to say about it and nothing that could be said honestly.
+  d_fail "$ORCH_DIR_NAME/state.json is not valid JSON."
+  d_remedy "/orchestrator:abort"
 }
 
 d_run() {
   local entry
-  # Globbing off across the split only - the checks themselves glob, so it goes
-  # straight back on. A list entry that matched a file would drop a check
-  # silently, which is the failure doctor exists to prevent.
-  set -f
-  set -- $1
-  set +f
-  # ${@+...}, not a bare "$@": bash 3.2 counts zero positional parameters as
-  # unset, and an empty list is how a registry that lost its last entry would
-  # arrive here - as an unbound-variable abort rather than an empty report.
-  for entry in ${@+"$@"}; do
+  while IFS= read -r entry; do
+    if [ -z "$entry" ]; then continue; fi
     # Catches a check that returns non-zero, and nothing else: being the left
     # operand of || suppresses errexit for the whole body, so a check that hits
     # a failing command does not abort here - it carries on with whatever state
@@ -597,7 +601,7 @@ d_run() {
     # a status needs the check launched as a background job and waited on, and
     # that waits for the review group in #2 to give it something to protect.
     "$entry" || d_warn "$entry could not run."
-  done
+  done <<<"$(d_entries "$1")"
 }
 
 cmd_doctor() {
