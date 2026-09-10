@@ -25,6 +25,11 @@ assert_contains() {
 assert_status() {
   if [ "$2" -eq "$3" ]; then ok "$1"; else bad "$1" "expected exit $3, got $2"; fi
 }
+# The CI classifier's verdict is its first line and the detail lines below it are
+# not the assertion, so most of these read one line out of a captured $out.
+assert_first_line() {
+  assert_eq "$1" "$(printf '%s\n' "$2" | sed -n 1p)" "$3"
+}
 
 # A fresh repo with the tracker precondition satisfied, cwd inside it.
 new_repo() {
@@ -138,6 +143,10 @@ ready-for-agent}"
           failing) echo '[{"bucket":"fail","name":"build","state":"FAILURE"},{"bucket":"pass","name":"lint","state":"SUCCESS"}]' ;;
           cancel)  echo '[{"bucket":"cancel","name":"build","state":"CANCELLED"}]' ;;
           pending) echo '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]'; exit 8 ;;
+          # gh documents exit 8 for pending checks, but with --json it answers 0
+          # and reports the state in the bucket instead. Both reach the same
+          # verdict, and only this arm exercises the one real gh takes.
+          pending0) echo '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]' ;;
           none)    echo "no checks reported on the 'topic' branch" >&2; exit 1 ;;
           boom)    echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
           # Without this arm a typo in GH_STUB_CHECKS prints nothing and exits 0,
@@ -819,11 +828,11 @@ echo "review ci"
 export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
 out="$(GH_STUB_CHECKS=green "$ORCH" review ci 2>&1)"; st=$?
 assert_status "green checks let the loop finish" "$st" 0
-assert_eq "and say so in one word" "$(printf '%s\n' "$out" | sed -n 1p)" "green"
+assert_first_line "and say so in one word" "$out" "green"
 
 out="$(GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
 assert_status "a failing check stops the loop" "$st" 1
-assert_eq "classified as failing" "$(printf '%s\n' "$out" | sed -n 1p)" "failing"
+assert_first_line "classified as failing" "$out" "failing"
 assert_contains "names the check that failed" "$out" "build"
 assert_eq "and not the ones that passed" "$(printf '%s\n' "$out" | grep -c 'lint')" "0"
 
@@ -832,14 +841,14 @@ assert_eq "and not the ones that passed" "$(printf '%s\n' "$out" | grep -c 'lint
 # right remedy for a check that was killed rather than one that judged the change.
 out="$(GH_STUB_CHECKS=cancel "$ORCH" review ci 2>&1)"; st=$?
 assert_status "a cancelled check stops the loop too" "$st" 1
-assert_eq "classified as failing rather than waited on" "$(printf '%s\n' "$out" | sed -n 1p)" "failing"
+assert_first_line "classified as failing rather than waited on" "$out" "failing"
 assert_contains "naming the check that was cancelled" "$out" "build"
 
 # Requiring CI in a repo that has none would make the plugin unusable in its own
 # repo, which has none.
 out="$(GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
 assert_status "a repo with no checks at all is not thereby failing" "$st" 0
-assert_eq "classified as none" "$(printf '%s\n' "$out" | sed -n 1p)" "none"
+assert_first_line "classified as none" "$out" "none"
 
 # The grace period is the whole reason `none` is not concluded on the first
 # answer: this is the CI-having repo that would otherwise be called CI-less. It
@@ -854,28 +863,25 @@ assert_eq "classified as none" "$(printf '%s\n' "$out" | sed -n 1p)" "none"
 reqn="$(mktemp)"; : >"$reqn"
 out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
   GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
-assert_eq "a required check that has not registered yet is waited for" \
-  "$(printf '%s\n' "$out" | sed -n 1p)" "green"
+assert_first_line "a required check that has not registered yet is waited for" "$out" "green"
 assert_status "and the loop finishes on the answer it waited for" "$st" 0
 
 # Where branch protection names required checks, those are the checks that
 # matter - and a failure outside them is not the flow's business.
 out="$(GH_STUB_REQUIRED=green GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
 assert_status "required checks decide it where branch protection names them" "$st" 0
-assert_eq "so the unfiltered answer is never asked for" \
-  "$(printf '%s\n' "$out" | sed -n 1p)" "green"
+assert_first_line "so the unfiltered answer is never asked for" "$out" "green"
 
 # ...and where it names none, the answer is every check on the commit, but only
 # once the grace has run out.
 out="$(ORCH_CI_GRACE=0.2 GH_STUB_REQUIRED=none GH_STUB_CHECKS=green \
   "$ORCH" review ci 2>&1)"; st=$?
 assert_status "a repo that requires nothing falls back to every check" "$st" 0
-assert_eq "reading the commit's own checks for its answer" \
-  "$(printf '%s\n' "$out" | sed -n 1p)" "green"
+assert_first_line "reading the commit's own checks for its answer" "$out" "green"
 
 out="$(GH_STUB_CHECKS=boom "$ORCH" review ci 2>&1)"; st=$?
 assert_status "an API that will not answer stops the loop" "$st" 1
-assert_eq "classified as unreachable" "$(printf '%s\n' "$out" | sed -n 1p)" "unreachable"
+assert_first_line "classified as unreachable" "$out" "unreachable"
 assert_contains "carrying the reason it could not be asked" "$out" "dial tcp"
 
 # doctor's "an unreachable API is a warn" rule was written for a read-only
@@ -883,12 +889,25 @@ assert_contains "carrying the reason it could not be asked" "$out" "dial tcp"
 # cannot be treated as a green one.
 out="$(ORCH_CI_TIMEOUT=0.2 GH_STUB_CHECKS=pending "$ORCH" review ci 2>&1)"; st=$?
 assert_status "checks still pending at the cap stop the loop" "$st" 1
-assert_eq "rather than being read as green" "$(printf '%s\n' "$out" | sed -n 1p)" "unreachable"
+assert_first_line "rather than being read as green" "$out" "unreachable"
 assert_contains "and it says the wait ran out" "$out" "still pending"
+
+# The same wait, reached the way real gh reports it. `gh pr checks --json` exits
+# 0 whatever the buckets hold, so the exit-8 arm above is the path the stub
+# takes and this is the path the live command takes - and until both are
+# asserted, the classifier's bucket-reading half ships unexercised.
+out="$(ORCH_CI_TIMEOUT=0.2 GH_STUB_CHECKS=pending0 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a pending bucket is a wait even when gh exits 0" "$st" 1
+assert_first_line "classified from the bucket rather than the exit status" "$out" "unreachable"
+assert_contains "and says the same thing the exit-8 path says" "$out" "still pending"
 
 "$ORCH" state set pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 1
+# require_pr dies inside a command substitution, so what stops the command is
+# `set -e` on the assignment rather than the exit itself. Asserting the message
+# is what would catch the guard degrading into an empty PR number.
+assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
 unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 
 # --- a flow from before the review loop shipped -----------------------------
@@ -923,7 +942,7 @@ assert_eq "and asks it for no handoff a later loop would have written" \
 out="$(ORCH_CI_GRACE=0.2 ORCH_CI_INTERVAL=0.05 GH_STUB_CHECKS=green \
   "$ORCH" review ci 2>&1)"; st=$?
 assert_status "review ci reads its PR from a state with no loop key" "$st" 0
-assert_eq "and classifies it" "$(printf '%s\n' "$out" | sed -n 1p)" "green"
+assert_first_line "and classifies it" "$out" "green"
 
 complete_review_handoff "$("$ORCH" handoff path review-next)"
 assert_eq "review loop-next counts on from the loop it inferred" \

@@ -28,6 +28,9 @@ ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
 note() { printf '%s\n' "$*"; }
 now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
+# Several answers here are one line of prose followed by detail lines, and it is
+# always the first line that carries the verdict.
+first_line() { printf '%s\n' "$1" | sed -n 1p; }
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"
 readonly ROOT
@@ -37,6 +40,15 @@ readonly HANDOFF_DIR="$ORCH/handoff"
 
 require_state() {
   [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run /orchestrator:start first."
+}
+
+# Prints the flow's PR number, or dies. Every review command that reaches GitHub
+# needs it and none of them can do anything useful without it.
+require_pr() {
+  local pr
+  pr="$(jq -r '.pr // ""' "$STATE")"
+  [ -n "$pr" ] || die "no PR recorded in state - the implement phase opens it"
+  printf '%s\n' "$pr"
 }
 
 # --- environment ------------------------------------------------------------
@@ -220,7 +232,7 @@ d_probe() {
   if [ "$D_GH" = ok ]; then
     view="$(gh repo view --json nameWithOwner,defaultBranchRef \
       --jq '.nameWithOwner, (.defaultBranchRef.name // "")' 2>/dev/null)" || view=""
-    D_REPO_NAME="$(printf '%s\n' "$view" | sed -n 1p)"
+    D_REPO_NAME="$(first_line "$view")"
     D_REPO_BRANCH="$(printf '%s\n' "$view" | sed -n 2p)"
   fi
 }
@@ -844,7 +856,7 @@ ci_probe() {
     *)
       case "$out" in
         *"no checks reported"*|*"no required checks"*) note none; return 0 ;;
-        *) note unreachable; note "      $(printf '%s' "$out" | sed -n 1p)"; return 0 ;;
+        *) note unreachable; note "      $(first_line "$out")"; return 0 ;;
       esac ;;
   esac
   buckets="$(printf '%s' "$out" | jq -r '.[].bucket' 2>/dev/null)" || buckets=""
@@ -906,8 +918,7 @@ cmd_review() {
     ready)
       require_state
       local pr
-      pr="$(jq -r '.pr // ""' "$STATE")"
-      [ -n "$pr" ] || die "no PR recorded in state - the implement phase opens it"
+      pr="$(require_pr)"
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.
@@ -919,8 +930,7 @@ cmd_review() {
     ci)
       require_state
       local pr started slept=0 elapsed=0 res verdict
-      pr="$(jq -r '.pr // ""' "$STATE")"
-      [ -n "$pr" ] || die "no PR recorded in state - the implement phase opens it"
+      pr="$(require_pr)"
       started="$(date +%s)"
       while :; do
         # Branch protection's required checks decide it wherever it names any.
@@ -931,11 +941,11 @@ cmd_review() {
         # how an unrelated green check gets mistaken for a required one that
         # never arrived, and the PR marked ready over it.
         res="$(ci_probe "$pr" required)"
-        verdict="$(printf '%s\n' "$res" | sed -n 1p)"
+        verdict="$(first_line "$res")"
         if [ "$verdict" = none ]; then
           if float_lt "$elapsed" "$ORCH_CI_GRACE"; then ci_tick; continue; fi
           res="$(ci_probe "$pr" all)"
-          verdict="$(printf '%s\n' "$res" | sed -n 1p)"
+          verdict="$(first_line "$res")"
         fi
         case "$verdict" in
           green)       printf '%s\n' "$res"; return 0 ;;

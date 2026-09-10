@@ -13,7 +13,9 @@ flow at a time per checkout.
 
 One of the four stages a flow passes through: **plan**, **spec**, **implement**,
 **review**. Each phase runs in its own session with no memory of the previous
-one.
+one - with one deliberate exception: a review loop drives all of its iterations
+from a single session (ADR-0001), so inside the review phase the unit of fresh
+context is the loop, not the iteration.
 
 Note the tense: the recorded phase names the stage that runs **next**, not the
 one that just finished.
@@ -42,26 +44,28 @@ loop is bounded to five.
 ## Finding
 
 One problem a review reports about the change. A finding carries a **severity**,
-which the review phase assigns — the reviewer itself reports findings unranked.
+which the review phase assigns - the reviewer itself reports findings unranked.
 
 ## Severity
 
 Which of three roles a finding plays in whether a review loop can finish:
 
-- **Blocking** — the change is wrong: incorrect behaviour, a spec requirement
+- **Blocking** - the change is wrong: incorrect behaviour, a spec requirement
   missing or misimplemented, a security problem, a broken or missing test, or a
   failing verification command. The loop cannot finish while one is open.
-- **Major** — the change works but carries real cost: a documented standard
-  breached, a smell with teeth, scope nobody asked for. Fixed, but does not by
-  itself keep the loop from finishing.
-- **Nit** — taste and judgement calls. Recorded and never blocking, and never
+- **Major** - the change works but carries real cost: a documented standard
+  breached, a smell with teeth, scope nobody asked for. Fixed like a blocking
+  finding, and a loop cannot finish on an iteration that found one; what
+  separates the two is that the change is not wrong, not that a loop may close
+  over it.
+- **Nit** - taste and judgement calls. Recorded and never blocking, and never
   fixed inside an iteration. A loop that ends clean asks which ones to fix
   before it marks the PR ready.
 
 ## Review record
 
 The written account of one iteration: what was found, at what severity, what was
-done about it, and what CI said. A record is a record — it is read by humans
+done about it, and what CI said. A record is a record - it is read by humans
 after the fact, not by the loop to decide anything.
 
 ## Flake rerun

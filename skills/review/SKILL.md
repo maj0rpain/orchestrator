@@ -30,7 +30,10 @@ this file.
    loop wrote, and its **Already settled** section is binding - everything named
    there was decided by a human and is neither re-reported nor re-asked.
 2. Take four facts from it, and take them from nowhere else: the **PR**, the
-   **spec issue**, the **base SHA**, and the **verification command**.
+   **spec issue**, the **base SHA**, and the **verification command**. State
+   holds the PR and the base SHA as well, and holds the same values; reading all
+   four from the handoff is what stops a later loop assembling its facts half
+   from a file the previous loop wrote and half from somewhere it did not.
 3. Read `01-plan.md`'s **Rejected alternatives** and `03-implement.md`'s
    **Deviations**. Both sit in the directory the handoff you just read came from
    (`dirname "$("$ORCH" handoff path review)"`), and both are authority over the
@@ -76,8 +79,9 @@ across them. The ranking is yours:
   security problem, a broken or missing test, or a failing verification command.
   The loop cannot finish while one is open.
 - **major** - it works, but carries real cost: a documented standard breached, a
-  smell with teeth, scope nobody asked for. Fixed by the loop; does not on its
-  own hold the loop open.
+  smell with teeth, scope nobody asked for. Fixed by the loop, and a loop cannot
+  close on an iteration that found one; what separates it from blocking is that
+  the change is not wrong, not that the loop may close over it.
 - **nit** - taste and judgement. Recorded, deduplicated across iterations, and
   **never fixed inside an iteration**. Fixing one there manufactures a fresh
   diff for the next iteration to find, which is exactly the non-convergence the
