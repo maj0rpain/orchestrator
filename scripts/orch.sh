@@ -144,14 +144,18 @@ D_GH_SKIPPED=0
 D_MP_SKIPPED=0
 D_JQ_SKIPPED=0
 
-# A check that needed an answer GitHub could not give counts itself as skipped
-# and says nothing of its own, so the group collapses to one line.
-d_gh_gate() {
-  d_probe_gh
-  if [ "$D_GH" = ok ]; then return 0; fi
-  D_GH_SKIPPED=$((D_GH_SKIPPED + 1))
+# A check that needed an answer it could not get counts itself as skipped and
+# says nothing of its own, so the group collapses to one line. $1 is the gate's
+# answer - "ok" opens it - and $2 names the counter the shut gate collects into.
+# Indirect assignment rather than a nameref: bash 3.2 has none, and the bash
+# check below promises this file still runs there.
+d_gate() {
+  if [ "$1" = ok ]; then return 0; fi
+  printf -v "$2" '%d' "$(( ${!2} + 1 ))"
   return 1
 }
+
+d_gh_gate() { d_probe_gh; d_gate "$D_GH" D_GH_SKIPPED; }
 
 d_skip_line() {
   local n="$1" noun="$2" cause="$3" word="checks"
@@ -260,7 +264,7 @@ check_gh_auth() {
     "not authenticated")
       d_fail "gh is not authenticated."
       d_remedy "gh auth login" ;;
-    *) D_GH_SKIPPED=$((D_GH_SKIPPED + 1)) ;;
+    *) d_gate "$D_GH" D_GH_SKIPPED || true ;;
   esac
 }
 
@@ -300,7 +304,7 @@ check_mattpocock() {
 MP_SKILLS="to-spec implement code-review handoff"
 
 check_skills() {
-  if [ -z "$D_MP" ]; then D_MP_SKIPPED=$((D_MP_SKIPPED + 1)); return 0; fi
+  d_gate "${D_MP:+ok}" D_MP_SKIPPED || return 0
   local name p missing="" found
   for name in $MP_SKILLS; do
     found=""
@@ -339,7 +343,13 @@ triage_labels() {
   [ -f "$ROOT/$LABELS_DOC" ] || return 0
   awk -F'|' '
     /^[[:space:]]*\|/ {
-      if (NF < 3) next
+      # The doc is a three-column table and the label lives in the middle one.
+      # Splitting on the pipes yields an empty field either side, so a row of
+      # the documented width has five. Anything narrower is a table of some
+      # other shape, where $3 would be whatever column happens to sit last -
+      # Meaning strings, read out as label names, demanded of the repo. A
+      # diagnostic may fail to parse; it may not invent an answer.
+      if (NF < 5) next
       s = $3
       gsub(/`/, "", s)
       sub(/^[[:space:]]+/, "", s)
@@ -426,11 +436,7 @@ h_repo   check_tracker_doc check_labels_doc check_labels_exist check_git_exclude
 
 # Every flow check reads state.json, so a missing jq invalidates all of them at
 # once. Gate them as a group rather than letting five checks each guess.
-d_flow_gate() {
-  if [ "$D_JQ" = ok ]; then return 0; fi
-  D_JQ_SKIPPED=$((D_JQ_SKIPPED + 1))
-  return 1
-}
+d_flow_gate() { d_gate "$D_JQ" D_JQ_SKIPPED; }
 
 # A state file that does not parse is one problem, not five: the checks below
 # read the same file, so they stay silent rather than each printing an `ok` they

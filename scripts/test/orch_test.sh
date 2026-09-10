@@ -372,6 +372,21 @@ assert_contains "skips the per-skill check rather than deriving a second FAIL" \
 
 # Labels are parsed from the doc rather than hardcoded, so the parser is what
 # decides whether doctor is right in a repo that customised its vocabulary.
+# A narrower table would hand $3 whatever column sits last, so doctor would go
+# demanding that the repo create labels named after the Meaning text. Parsing to
+# nothing is the honest answer; inventing one is the worst thing a diagnostic
+# can do.
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label          | Meaning     |' \
+        '| -------------- | ----------- |' \
+        '| `needs-triage` | Evaluate it |' >docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails on a table that is not the documented shape" "$st" 1
+assert_eq "does not read a label out of some other column" \
+  "$(printf '%s\n' "$out" | grep -c 'Evaluate it')" "0"
+assert_contains "points at the setup skill instead" "$out" "setup-matt-pocock-skills"
+
 healthy_repo
 writeln '# Triage Labels' '' 'This repo does not use a table.' >docs/agents/triage-labels.md
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
