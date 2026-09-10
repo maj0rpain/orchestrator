@@ -141,6 +141,33 @@ assert_contains "status reports no active flow afterwards" "$out" "No active flo
 out="$("$ORCH" init second 2>&1)"; st=$?
 assert_status "a new flow can start after archiving" "$st" 0
 
+# --- default-branch ---------------------------------------------------------
+# The base every feature branch forks from. Getting this wrong is silent: work
+# lands on top of the wrong branch and nothing complains until review.
+echo
+echo "default-branch"
+new_repo >/dev/null
+STUB="$(mktemp -d)"
+cat >"$STUB/gh" <<'GH'
+#!/usr/bin/env bash
+[ "${GH_STUB_FAIL:-0}" = "1" ] && exit 1
+echo "trunk"
+GH
+chmod +x "$STUB/gh"
+
+# origin/HEAD is a local pointer frozen at clone time; GitHub's answer must win.
+git remote add origin https://example.invalid/x/y.git
+git checkout -q -b some-feature
+git update-ref refs/remotes/origin/some-feature HEAD
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/some-feature
+assert_eq "prefers GitHub's answer over a stale origin/HEAD" \
+  "$(PATH="$STUB:$PATH" "$ORCH" default-branch)" "trunk"
+assert_eq "falls back to origin/HEAD when gh cannot answer" \
+  "$(PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" default-branch)" "some-feature"
+git symbolic-ref -d refs/remotes/origin/HEAD
+assert_eq "falls back to main when nothing else answers" \
+  "$(PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" default-branch)" "main"
+
 # --- mp-skill ---------------------------------------------------------------
 # Resolved by glob at runtime, never by pinned version: the version in the cache
 # path changes underneath us.
