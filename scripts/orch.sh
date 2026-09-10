@@ -14,6 +14,7 @@ set -euo pipefail
 readonly ORCH_DIR_NAME=".orchestrator"
 readonly PHASES="spec implement review done"
 readonly LABELS_DOC="docs/agents/triage-labels.md"
+readonly LABEL_LIMIT=1000
 
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
 note() { printf '%s\n' "$*"; }
@@ -33,14 +34,16 @@ require_state() {
 
 # Locate the newest installed mattpocock-skills plugin. Resolved by glob at
 # runtime and never pinned: the version in the cache path changes under us.
+# No array: bash 3.2 cannot tell an empty array from an unset one, so
+# ${#hits[@]} on a machine with no plugin installed aborts the subshell under
+# `set -u` - on the one code path doctor exists to report.
 find_mattpocock() {
-  local p
-  local -a hits=()
+  local p hits=""
   for p in "$HOME"/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/implement/SKILL.md; do
-    if [ -f "$p" ]; then hits+=("$p"); fi
+    if [ -f "$p" ]; then hits="$hits$p"$'\n'; fi
   done
-  [ ${#hits[@]} -gt 0 ] || return 1
-  printf '%s\n' "${hits[@]}" | sort -V | tail -1 | sed 's|/skills/engineering/implement/SKILL.md$||'
+  [ -n "$hits" ] || return 1
+  printf '%s' "$hits" | sort -V | tail -1 | sed 's|/skills/engineering/implement/SKILL.md$||'
 }
 
 # Ask GitHub first. refs/remotes/origin/HEAD is a *local cached pointer* frozen at
@@ -136,6 +139,7 @@ D_REPO_NAME=""     # owner/name, as GitHub resolves it
 D_REPO_BRANCH=""   # the default branch, as GitHub reports it
 D_MP=""            # the mattpocock-skills plugin root, or empty
 D_JQ=""            # "ok", or empty when jq is missing
+D_STATE=""         # "ok" when state.json parses, or empty
 D_GH_SKIPPED=0
 D_MP_SKIPPED=0
 D_JQ_SKIPPED=0
@@ -143,6 +147,7 @@ D_JQ_SKIPPED=0
 # A check that needed an answer GitHub could not give counts itself as skipped
 # and says nothing of its own, so the group collapses to one line.
 d_gh_gate() {
+  d_probe_gh
   if [ "$D_GH" = ok ]; then return 0; fi
   D_GH_SKIPPED=$((D_GH_SKIPPED + 1))
   return 1
@@ -158,20 +163,19 @@ d_skip_line() {
 
 d_skip_report() {
   if [ $((D_GH_SKIPPED + D_MP_SKIPPED + D_JQ_SKIPPED)) -eq 0 ]; then return 0; fi
-  note ""
+  d_head "skipped"
   d_skip_line "$D_GH_SKIPPED" "GitHub" "$D_GH"
   d_skip_line "$D_MP_SKIPPED" "skill"  "mattpocock-skills is not installed"
   d_skip_line "$D_JQ_SKIPPED" "flow"   "jq is not installed"
 }
 
-# Ask GitHub once, up front: `gh auth status` doubles as the reachability probe
-# and one repo view answers two checks. Telling "not authenticated" from "could
-# not connect" is the whole basis of the severity rule, and the only signal gh
-# offers for it is the text of the failure.
-d_probe() {
-  local scope="$1" out
-  if command -v jq >/dev/null 2>&1; then D_JQ=ok; fi
-  D_MP="$(find_mattpocock)" || D_MP=""
+# Ask GitHub at most once, and only when something actually needs it: `gh auth
+# status` doubles as the reachability probe. Telling "not authenticated" from
+# "could not connect" is the whole basis of the severity rule, and the only
+# signal gh offers for it is the text of the failure.
+d_probe_gh() {
+  local out
+  if [ -n "$D_GH" ]; then return 0; fi
   if ! command -v gh >/dev/null 2>&1; then D_GH="gh is not installed"; return 0; fi
   if out="$(gh auth status 2>&1)"; then
     D_GH=ok
@@ -182,8 +186,25 @@ d_probe() {
       *) D_GH="not authenticated" ;;
     esac
   fi
-  if [ "$D_GH" = ok ] && [ "$scope" != flow ]; then
-    local view
+}
+
+d_probe() {
+  local scope="$1" view
+  if command -v jq >/dev/null 2>&1; then D_JQ=ok; fi
+  # A state file that does not parse invalidates every flow check at once.
+  # Settled here so that check_state_phase reports it once and the four checks
+  # that would each have run jq at the same broken file stay silent.
+  if [ "$scope" != env ] && [ "$D_JQ" = ok ] && [ -f "$STATE" ] \
+     && jq -e . "$STATE" >/dev/null 2>&1; then
+    D_STATE=ok
+  fi
+  # The flow scope runs on every /orchestrator:next and every status, and a flow
+  # with no PR recorded has nothing to ask GitHub. It reaches gh through
+  # d_gh_gate instead, which probes on first use, so that run costs no round trip.
+  if [ "$scope" = flow ]; then return 0; fi
+  D_MP="$(find_mattpocock)" || D_MP=""
+  d_probe_gh
+  if [ "$D_GH" = ok ]; then
     view="$(gh repo view --json nameWithOwner,defaultBranchRef \
       --jq '.nameWithOwner, (.defaultBranchRef.name // "")' 2>/dev/null)" || view=""
     D_REPO_NAME="$(printf '%s\n' "$view" | sed -n 1p)"
@@ -214,7 +235,7 @@ check_jq() {
 }
 
 # A warn, not a FAIL: macOS still ships 3.2 as /bin/bash, and the flow works
-# there. The empty-array expansion in find_mattpocock is the known 3.2 landmine.
+# there - find_mattpocock avoids arrays precisely so that it keeps doing so.
 check_bash() {
   if [ "${BASH_VERSINFO[0]:-0}" -ge 4 ]; then d_ok "bash ${BASH_VERSION%%(*}"; return 0; fi
   d_warn "bash ${BASH_VERSION%%(*} - orch.sh is written for 4.0 and up."
@@ -331,6 +352,11 @@ triage_labels() {
 
 check_labels_doc() {
   local n
+  if [ ! -f "$ROOT/$LABELS_DOC" ]; then
+    d_fail "$LABELS_DOC is missing - the spec phase labels its issue from it."
+    d_remedy "/mattpocock-skills:setup-matt-pocock-skills"
+    return 0
+  fi
   n="$(triage_labels | grep -c .)" || n=0
   if [ "$n" -gt 0 ]; then d_ok "$n triage labels documented in $LABELS_DOC"; return 0; fi
   d_fail "$LABELS_DOC lists no triage labels - the spec phase labels its issue from it."
@@ -342,15 +368,23 @@ check_labels_doc() {
 # whole to-spec exchange has already been spent.
 check_labels_exist() {
   d_gh_gate || return 0
-  local want have missing="" l
+  local want have missing="" l n
   want="$(triage_labels)" || want=""
   # Nothing to compare against, and check_labels_doc has already said so. One
   # problem earns one FAIL, never a second derived from the first.
   [ -n "$want" ] || return 0
-  if ! have="$(gh label list --limit 200 --json name --jq '.[].name' 2>/dev/null)"; then
+  if ! have="$(gh label list --limit "$LABEL_LIMIT" --json name --jq '.[].name' 2>/dev/null)"; then
     # One check, one cause, one warn: GitHub answered the auth probe and then
     # would not answer this, which is an absent answer rather than a "no".
     d_warn "the repo's labels could not be listed."
+    return 0
+  fi
+  # A list that filled the page is a list that may be cut off, and a label named
+  # as missing because it fell past the boundary is exactly the FAIL that
+  # teaches someone to stop reading the word.
+  n="$(printf '%s\n' "$have" | grep -c .)" || n=0
+  if [ "$n" -ge "$LABEL_LIMIT" ]; then
+    d_warn "the repo has more than $LABEL_LIMIT labels - cannot tell which are missing."
     return 0
   fi
   while IFS= read -r l; do
@@ -365,8 +399,12 @@ check_labels_exist() {
 }
 
 check_git_exclude() {
-  local ex
-  ex="$(git rev-parse --git-dir)/info/exclude"
+  local gd ex
+  if ! gd="$(git rev-parse --git-dir 2>/dev/null)"; then
+    d_warn "the git directory could not be resolved - cannot tell whether $ORCH_DIR_NAME/ is excluded."
+    return 0
+  fi
+  ex="$gd/info/exclude"
   if grep -qxF "$ORCH_DIR_NAME/" "$ex" 2>/dev/null; then
     d_ok "$ORCH_DIR_NAME/ is git-excluded"
     return 0
@@ -394,9 +432,15 @@ d_flow_gate() {
   return 1
 }
 
+# A state file that does not parse is one problem, not five: the checks below
+# read the same file, so they stay silent rather than each printing an `ok` they
+# derived from an empty jq read - the way check_default_branch stays silent when
+# the repo itself did not resolve.
+d_state_gate() { [ "$D_STATE" = ok ]; }
+
 check_state_phase() {
   d_flow_gate || return 0
-  if ! jq -e . "$STATE" >/dev/null 2>&1; then
+  if [ "$D_STATE" != ok ]; then
     d_fail "$ORCH_DIR_NAME/state.json is not valid JSON."
     d_remedy "/orchestrator:abort"
     return 0
@@ -412,6 +456,7 @@ check_state_phase() {
 
 check_flow_branch() {
   d_flow_gate || return 0
+  d_state_gate || return 0
   local branch
   branch="$(jq -r '.branch // ""' "$STATE")"
   if [ -z "$branch" ]; then d_ok "branch: not created yet"; return 0; fi
@@ -425,6 +470,7 @@ check_flow_branch() {
 # the word.
 check_flow_upstream() {
   d_flow_gate || return 0
+  d_state_gate || return 0
   local phase branch
   phase="$(jq -r '.phase // ""' "$STATE")"
   case "$phase" in implement|review|done) ;; *) return 0 ;; esac
@@ -442,6 +488,7 @@ check_flow_upstream() {
 
 check_flow_pr() {
   d_flow_gate || return 0
+  d_state_gate || return 0
   local pr pr_state
   pr="$(jq -r '.pr // ""' "$STATE")"
   if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
@@ -461,6 +508,7 @@ check_flow_pr() {
 # earlier phase has already written one.
 check_flow_handoffs() {
   d_flow_gate || return 0
+  d_state_gate || return 0
   local phase files f path problems line
   phase="$(jq -r '.phase // ""' "$STATE")"
   case "$phase" in
@@ -489,10 +537,18 @@ h_flow check_state_phase check_flow_branch check_flow_upstream check_flow_pr che
 
 d_run() {
   local entry
-  for entry in $1; do
-    # `|| true` on purpose: a check that blows up must not take the rest of the
-    # report with it. doctor is what you run when things are already wrong.
-    "$entry" || true
+  # Globbing off across the split only - the checks themselves glob, so it goes
+  # straight back on. A list entry that matched a file would drop a check
+  # silently, which is the failure doctor exists to prevent.
+  set -f
+  set -- $1
+  set +f
+  for entry in "$@"; do
+    # A check that blows up must not take the rest of the report with it -
+    # doctor is what you run when things are already wrong - but it must not
+    # leave the report silently either. Without this the check aborts, prints
+    # nothing, and the summary counts it as neither ok nor FAIL.
+    "$entry" || d_warn "$entry could not run."
   done
 }
 

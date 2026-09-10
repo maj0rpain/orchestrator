@@ -65,11 +65,14 @@ complete_spec_handoff() {
 #   noauth    `gh auth status` fails the way an unauthenticated gh does
 #   offline   every call fails with a connection error
 #   nolabels  authenticated, but the repo carries none of the documented labels
+# GH_STUB_LOG, when set, names a file the stub appends each subcommand to, which
+# is how a test asserts that a scope made no network call at all.
 stub_gh() {
   local d
   d="$(mktemp -d)"
   cat >"$d/gh" <<'GH'
 #!/usr/bin/env bash
+if [ -n "${GH_STUB_LOG:-}" ]; then printf '%s\n' "$1" >>"$GH_STUB_LOG"; fi
 if [ "${GH_STUB_MODE:-ok}" = offline ]; then
   echo "dial tcp: lookup api.github.com: no such host" >&2
   exit 1
@@ -335,6 +338,10 @@ assert_contains "collapses the checks that needed GitHub into one line" \
   "$out" "checks skipped: GitHub is not reachable"
 assert_eq "emits one skip line, not one per skipped check" \
   "$(printf '%s\n' "$out" | grep -c 'skipped:')" "1"
+# The skip lines are a group like any other, so they carry a header and a blank
+# line rather than trailing loose off the end of the last one.
+assert_contains "puts the skipped group under a bare header" \
+  "$out" "$(printf '\n\nskipped\nwarn  ')"
 
 out="$(GH_STUB_MODE=noauth "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when gh is not authenticated" "$st" 1
@@ -372,6 +379,20 @@ assert_status "fails when the labels doc parses to no labels" "$st" 1
 assert_contains "points at the setup skill" "$out" "setup-matt-pocock-skills"
 
 healthy_repo
+rm docs/agents/triage-labels.md
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails when the labels doc is absent entirely" "$st" 1
+assert_contains "says the doc is missing rather than that it lists nothing" \
+  "$out" "triage-labels.md is missing"
+
+# A label list long enough to fill the page is a list that may be cut off, so
+# naming labels as missing from it would be a FAIL derived from not knowing.
+healthy_repo
+out="$(GH_STUB_LABELS="$(seq 1 1000)" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a label list that filled the page does not FAIL" "$st" 0
+assert_contains "says it cannot tell which labels are missing" "$out" "cannot tell which are missing"
+
+healthy_repo
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "counts only the documented labels, not the header row" \
   "$out" "2 triage labels"
@@ -395,6 +416,11 @@ assert_contains "separates groups with a blank line and a bare header" \
   "$out" "$(printf '\n\nauth & remotes\n')"
 assert_contains "a fully healthy repo reports no warns and no FAILs" \
   "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
+# Asserted against the lines actually printed rather than a literal, so adding a
+# check to the registry cannot quietly make the count wrong.
+assert_eq "the summary's ok count matches the ok lines it printed" \
+  "$(printf '%s\n' "$out" | tail -1 | sed 's/ ok,.*//')" \
+  "$(printf '%s\n' "$out" | grep -c '^ok    ')"
 
 # --- doctor --flow ----------------------------------------------------------
 # An empty answer must never read as a healthy one: --flow is asked explicitly
@@ -419,6 +445,27 @@ assert_eq "--flow leaves the environment alone" \
   "$(printf '%s\n' "$out" | grep -c '^tools$')" "0"
 assert_eq "stays quiet about an upstream before the implement phase" \
   "$(printf '%s\n' "$out" | grep -c 'upstream')" "0"
+
+# /orchestrator:next and /orchestrator:status both run this scope every time, and
+# a flow with no PR recorded has nothing to ask GitHub about.
+ghlog="$(mktemp)"
+GH_STUB_LOG="$ghlog" "$ORCH" doctor --flow >/dev/null 2>&1
+assert_eq "a flow with no PR asks GitHub nothing" "$(grep -c . "$ghlog")" "0"
+
+# One unparseable file is one problem. Four checks each reading it again would
+# print jq's parse error mid-report and then four ok lines that are not true.
+cp .orchestrator/state.json "$ghlog.bak"
+printf '%s' '{not json' >.orchestrator/state.json
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "fails when state.json does not parse" "$st" 1
+assert_contains "names the file that will not parse" "$out" "not valid JSON"
+assert_eq "reports it once rather than once per check" \
+  "$(printf '%s\n' "$out" | grep -c '^FAIL')" "1"
+assert_eq "claims nothing it could not read" \
+  "$(printf '%s\n' "$out" | grep -c '^ok    ')" "0"
+assert_eq "does not leak jq's parse error into the report" \
+  "$(printf '%s\n' "$out" | grep -c 'parse error')" "0"
+cp "$ghlog.bak" .orchestrator/state.json
 
 "$ORCH" state set phase nonsense
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
