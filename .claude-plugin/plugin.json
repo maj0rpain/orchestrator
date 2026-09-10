@@ -1,7 +1,7 @@
 {
   "name": "orchestrator",
   "version": "0.1.0",
-  "description": "TODO: one-line description of what the orchestrator plugin does.",
+  "description": "Sequences planning, spec writing, implementation, and review into four handoff-connected phases, each running with fresh context.",
   "author": {
     "name": "maj0rpain",
     "url": "https://github.com/maj0rpain"
@@ -10,6 +10,10 @@
   "repository": "https://github.com/maj0rpain/orchestrator",
   "license": "MIT",
   "keywords": [
-    "orchestration"
+    "orchestration",
+    "workflow",
+    "handoff",
+    "spec",
+    "code-review"
   ]
 }
