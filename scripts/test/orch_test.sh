@@ -491,7 +491,8 @@ assert_eq "a flow with no PR asks GitHub nothing" "$(grep -c . "$ghlog")" "0"
 
 # One unparseable file is one problem. Four checks each reading it again would
 # print jq's parse error mid-report and then four ok lines that are not true.
-cp .orchestrator/state.json "$ghlog.bak"
+statebak="$(mktemp)"
+cp .orchestrator/state.json "$statebak"
 printf '%s' '{not json' >.orchestrator/state.json
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when state.json does not parse" "$st" 1
@@ -502,7 +503,7 @@ assert_eq "claims nothing it could not read" \
   "$(printf '%s\n' "$out" | grep -c '^ok    ')" "0"
 assert_eq "does not leak jq's parse error into the report" \
   "$(printf '%s\n' "$out" | grep -c 'parse error')" "0"
-cp "$ghlog.bak" .orchestrator/state.json
+cp "$statebak" .orchestrator/state.json
 
 "$ORCH" state set phase nonsense
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?

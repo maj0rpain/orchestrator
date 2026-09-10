@@ -556,7 +556,10 @@ d_run() {
   set -f
   set -- $1
   set +f
-  for entry in "$@"; do
+  # ${@+...}, not a bare "$@": bash 3.2 counts zero positional parameters as
+  # unset, and an empty list is how a registry that lost its last entry would
+  # arrive here - as an unbound-variable abort rather than an empty report.
+  for entry in ${@+"$@"}; do
     # A check that blows up must not take the rest of the report with it -
     # doctor is what you run when things are already wrong - but it must not
     # leave the report silently either. Without this the check aborts, prints
