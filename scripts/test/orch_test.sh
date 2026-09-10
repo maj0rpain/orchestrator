@@ -136,10 +136,14 @@ ready-for-agent}"
         case "$answer" in
           green)   echo '[{"bucket":"pass","name":"build","state":"SUCCESS"}]' ;;
           failing) echo '[{"bucket":"fail","name":"build","state":"FAILURE"},{"bucket":"pass","name":"lint","state":"SUCCESS"}]' ;;
-          cancelled) echo '[{"bucket":"cancel","name":"build","state":"CANCELLED"}]' ;;
+          cancel)  echo '[{"bucket":"cancel","name":"build","state":"CANCELLED"}]' ;;
           pending) echo '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]'; exit 8 ;;
           none)    echo "no checks reported on the 'topic' branch" >&2; exit 1 ;;
           boom)    echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
+          # Without this arm a typo in GH_STUB_CHECKS prints nothing and exits 0,
+          # which ci_probe reads as a repo with no checks - a test that passes
+          # while asserting nothing.
+          *)       echo "gh stub: no script named '$answer'" >&2; exit 99 ;;
         esac ;;
       *) echo "${GH_STUB_PR_STATE:-OPEN}" ;;
     esac ;;
@@ -826,7 +830,7 @@ assert_eq "and not the ones that passed" "$(printf '%s\n' "$out" | grep -c 'lint
 # A cancelled run is not a run that passed, and it is never going to report. It
 # classifies as failing, which is also the arm that offers the flake rerun - the
 # right remedy for a check that was killed rather than one that judged the change.
-out="$(GH_STUB_CHECKS=cancelled "$ORCH" review ci 2>&1)"; st=$?
+out="$(GH_STUB_CHECKS=cancel "$ORCH" review ci 2>&1)"; st=$?
 assert_status "a cancelled check stops the loop too" "$st" 1
 assert_eq "classified as failing rather than waited on" "$(printf '%s\n' "$out" | sed -n 1p)" "failing"
 assert_contains "naming the check that was cancelled" "$out" "build"

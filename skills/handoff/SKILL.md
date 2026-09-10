@@ -66,7 +66,7 @@ until review.>
 <the test seams agreed with the user, and why these and not lower ones>
 
 ## Spec review changelog
-<what the spec review changed, or "Not reviewed - review phase not built yet">
+<what the spec review changed, or "Not reviewed - spec review not built yet">
 
 ## Suggested skills
 <usually tdd, plus whatever the seams imply>

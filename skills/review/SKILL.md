@@ -47,8 +47,9 @@ this file.
    cannot answer that from a diff containing one fix.
 3. Triage every finding: apply the two demotions first, then the rubric.
 4. Fix everything blocking and everything major, writing the fixes yourself. A
-   **blocking finding about behaviour** goes through the `tdd` skill, so the fix
-   arrives with a failing test that proves the problem was real.
+   **blocking finding about behaviour** goes through the `mattpocock-skills:tdd`
+   skill, so the fix arrives with a failing test that proves the problem was
+   real.
 5. Run the verification command. A failure is a blocking finding, and the
    iteration does not end clean.
 6. Commit once, subject in this repo's plain imperative style (`Replace precheck
@@ -78,9 +79,10 @@ across them. The ranking is yours:
   smell with teeth, scope nobody asked for. Fixed by the loop; does not on its
   own hold the loop open.
 - **nit** - taste and judgement. Recorded, deduplicated across iterations, and
-  **left alone until the loop is otherwise clean**. Fixing nits inside the loop
-  manufactures a fresh diff for the next iteration to find, which is exactly the
-  non-convergence the bound exists to catch.
+  **never fixed inside an iteration**. Fixing one there manufactures a fresh
+  diff for the next iteration to find, which is exactly the non-convergence the
+  bound exists to catch. The single exception is **Closing the loop**, which
+  asks which nits to fix once no iteration will follow.
 
 ## Authority: what the loop refuses to act on
 
@@ -120,7 +122,10 @@ non-zero on the last two:
   `"$ORCH" state get flake_rerun_used` reads `true` once it is spent and empty
   while it is not. Spend it with `gh run rerun --failed`, record
   `"$ORCH" state set flake_rerun_used true`, and ask `review ci` again. A second
-  failure is a **Bounded stop**.
+  failure is a **Bounded stop**. That second ask starts the fifteen-minute wait
+  over rather than inheriting what is left of the first, because a rerun
+  restarts the checks - so this one path, once per flow, can wait longer than
+  the cap.
 - **unreachable** - GitHub would not answer, or the checks were still pending at
   the cap. A **Bounded stop**: marking a PR ready over a result nothing ever
   produced claims a verification that never happened.
@@ -157,11 +162,21 @@ comment. Call the Skill tool with `orchestrator:handoff` to write the file at
 run `"$ORCH" review loop-next`, and print the boundary. `phase` stays `review`,
 so `/clear` then `/orchestrator:next` lands in the next loop.
 
-**Bounded stop** - five iterations with blocking or major still open, CI failing,
-or CI unreachable. Post the PR comment, record the stop reason and the surviving
-findings, and stop. **Leave `phase` at `review` and the PR in draft**: `done`
-means "this succeeded", never "this stopped". Skip the nit question entirely -
-nobody wants to be asked about taste while the change is still broken.
+**Bounded stop** - the bound reached with the change unconfirmed, CI failing, or
+CI unreachable. The bound is reached two ways, and the recorded reason says
+which: blocking or major still open after five iterations, or an iteration that
+fixed something and had no sixth iteration left to review the fixes. The second
+is not a failure of the change, but it is not a success either - nothing has
+reviewed what iteration five wrote, and marking a PR ready over that claims a
+verification that never happened.
+
+Wait on CI here if it has not been asked yet this loop (`"$ORCH" review ci`) and
+record the answer whatever it is: someone taking over a stopped loop needs the
+whole picture, not a blank. Then post the PR comment, record the stop reason and
+the surviving findings, and stop. **Leave `phase` at `review` and the PR in
+draft**: `done` means "this succeeded", never "this stopped". Skip the nit
+question entirely - nobody wants to be asked about taste while the change is
+still broken.
 
 ## The PR comment
 

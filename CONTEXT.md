@@ -28,9 +28,10 @@ options, deviations.
 ## Review loop
 
 One bounded sequence of iterations, ending either when an iteration's review
-comes back with nothing blocking or major to fix, or when it exhausts its bound. A flow may run more than one: a loop that
-finishes can hand off to a fresh loop, which starts with a new session and its
-own bound. Only a human decides that a further loop happens.
+comes back with nothing blocking or major to fix, or when it exhausts its bound.
+A flow may run more than one: a loop that finishes can hand off to a fresh loop,
+which starts with a new session and its own bound. Only a human decides that a
+further loop happens.
 
 ## Iteration
 
@@ -54,7 +55,8 @@ Which of three roles a finding plays in whether the flow can finish:
   breached, a smell with teeth, behaviour nobody asked for. Fixed, but does not
   by itself keep the flow from finishing.
 - **Nit** — taste and judgement calls. Recorded and never blocking, and never
-  fixed inside the loop.
+  fixed inside an iteration. A loop that ends clean asks which ones to fix
+  before it marks the PR ready.
 
 ## Review record
 
