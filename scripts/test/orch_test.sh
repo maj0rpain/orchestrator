@@ -147,6 +147,9 @@ ready-for-agent}"
           # and reports the state in the bucket instead. Both reach the same
           # verdict, and only this arm exercises the one real gh takes.
           pending0) echo '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]' ;;
+          # Exit 0 with something that is not JSON. jq fails, and the answer
+          # must not be read as the empty array that means "no checks".
+          garbage) echo 'not json at all' ;;
           none)    echo "no checks reported on the 'topic' branch" >&2; exit 1 ;;
           boom)    echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
           # Without this arm a typo in GH_STUB_CHECKS prints nothing and exits 0,
@@ -934,6 +937,13 @@ assert_contains "naming the knob it could not read" "$out" "ORCH_CI_GRACE"
 out="$(ORCH_CI_INTERVAL=0 timeout 5 "$ORCH" review ci 2>&1)"; st=$?
 assert_status "an interval of zero is refused rather than busy-polled" "$st" 1
 assert_contains "saying the interval has to be above zero" "$out" "greater than zero"
+
+# The one direction this classifier must never fail in: an answer nobody could
+# read is not an answer that there is nothing to read.
+out="$(GH_STUB_CHECKS=garbage "$ORCH" review ci 2>&1)"; st=$?
+assert_status "output jq cannot parse stops the loop" "$st" 1
+assert_first_line "rather than passing as a repo with no checks" "$out" "unreachable"
+assert_contains "saying what it could not read" "$out" "could not read"
 
 "$ORCH" state set pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?

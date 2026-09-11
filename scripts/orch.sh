@@ -902,9 +902,15 @@ ci_probe() {
         *) note unreachable; note "      $(first_line "$out")"; return 0 ;;
       esac ;;
   esac
-  buckets="$(printf '%s' "$out" | jq -r '.[].bucket' 2>/dev/null)" || buckets=""
-  # An empty array is a repo with no checks, reached by the gh versions that
-  # answer that question with success rather than with an error.
+  # jq's failure and jq's empty answer both arrive as an empty string, and they
+  # mean opposite things: an empty array is a repo with no checks, which passes,
+  # while output jq cannot read is an answer nobody has, which must not. Kept
+  # apart here, because conflating them marks a PR ready over unread checks.
+  if ! buckets="$(printf '%s' "$out" | jq -r '.[].bucket' 2>/dev/null)"; then
+    note unreachable
+    note "      gh pr checks answered with something jq could not read"
+    return 0
+  fi
   if [ -z "$buckets" ]; then note none; return 0; fi
   failed="$(printf '%s' "$out" | jq -r '.[] | select(.bucket == "fail" or .bucket == "cancel") | .name' 2>/dev/null)" || failed=""
   if [ -n "$failed" ]; then

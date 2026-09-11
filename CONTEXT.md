@@ -70,25 +70,22 @@ after the fact, not by the loop to decide anything.
 
 ## Terminal state
 
-One of the three places a review loop can end: the PR marked ready, a handoff to
-a fresh loop, or a bounded stop. A loop reaches exactly one of them, and each
-leaves the same trail behind - a record, and one comment on the PR.
+One of the three ways a review loop can end: the PR marked ready, a handoff to a
+fresh loop, or a bounded stop.
 
 ## Bounded stop
 
-The terminal state of a loop that ended without the change being ready: blocking
-or major findings still open at the bound, fixes the bound left nothing to
-review them, or a CI answer that could not be called green. It leaves the phase
-at **review** and the PR in draft, because a flow is only `done` when it
-succeeded.
+The terminal state of a loop that ended without the change being ready - because
+findings are still open, because nothing reviewed what the loop last wrote, or
+because CI could not be called green. A stop is not a failed change and not a
+successful one.
 
 ## In place / needs a loop
 
-How a nit chosen at a clean loop's close is classified. **In place** is
-localized, changes no behaviour, and is covered by the tests that already exist,
-so the loop fixes it before marking the PR ready. **Needs a loop** changes
-behaviour, adds a seam, or touches several modules, so the whole chosen set
-hands off instead. The test is whether the change would itself need reviewing.
+The two kinds of nit fix, told apart by whether the change would itself need
+reviewing. **In place** is localized, changes no behaviour, and is covered by
+existing tests. **Needs a loop** changes behaviour, adds a seam, or touches
+several modules.
 
 ## Flake rerun
 

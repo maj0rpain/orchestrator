@@ -34,11 +34,6 @@ this file.
    holds the PR and the base SHA as well, and holds the same values; reading all
    four from the handoff is what stops a later loop assembling its facts half
    from a file the previous loop wrote and half from somewhere it did not.
-   Check the one that matters: `"$ORCH" state get base_sha` must equal the base
-   SHA you just read. A handoff is written by hand, and a base SHA that drifted
-   from the one `branch-create` recorded silently changes what every iteration
-   of every loop diffs against. If they disagree, stop and say so - do not pick
-   one.
 3. Read `01-plan.md`'s **Rejected alternatives** and `03-implement.md`'s
    **Deviations**. Both sit in the directory the handoff you just read came from
    (`dirname "$("$ORCH" handoff path review)"`), and both are authority over the
