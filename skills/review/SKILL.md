@@ -224,7 +224,9 @@ section's `failing` bullet; a stop reached past it is not a second offer.
 Wait on CI here if the bound ended the loop before it was asked
 (`"$ORCH" review ci`), and record the answer whatever it is: someone taking
 over a stopped loop needs the whole picture, not a blank. Then post the PR
-comment, record the stop reason and the surviving findings, and stop. **Leave
+comment, record the stop reason and the surviving findings in the last
+iteration's record - `"$ORCH" review path` still names it, because `review
+begin`'s refusal does not spend the iteration it refused - and stop. **Leave
 `phase` at `review` and the PR in draft**: `done` means "this succeeded", never
 "this stopped". Skip the nit question entirely - nobody wants to be asked about
 taste while the change is still broken. Reached from **Closing the loop** step

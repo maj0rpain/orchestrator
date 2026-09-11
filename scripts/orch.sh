@@ -834,9 +834,15 @@ loop_dir() { printf '%s/review/loop-%02d\n' "$ORCH" "$1"; }
 # only and would read a grace of 0.3 as 0. A fractional `sleep` is a GNU/BSD
 # extension rather than POSIX, which is a line this file can hold because the
 # fractions only ever come from a test - the shipped defaults are whole seconds.
+float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
+float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
+
 # awk compares a number against a non-numeric string as strings, which makes
-# every `float_lt` true and the poll loop below endless. The knobs are read once,
-# here, so a mistyped one is refused before anything sleeps on it.
+# every `float_lt` above true and the poll loop endless. A zero interval is the
+# same hazard by a different route: `sleep 0` returns at once and never advances
+# the clock the loop sleeps on, leaving it to poll a rate-limited API as fast as
+# GitHub will answer. The three knobs are read once, here, before anything
+# sleeps on one of them.
 require_ci_knobs() {
   local k v
   for k in ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL; do
@@ -845,10 +851,12 @@ require_ci_knobs() {
       ''|*[!0-9.]*|*.*.*|.) die "$k is not a number: $v" ;;
     esac
   done
+  # Every character is a zero or the point, so the value is zero however it was
+  # written - and a glob cannot say that without also matching 0.05.
+  case "${ORCH_CI_INTERVAL//[0.]/}" in
+    '') die "ORCH_CI_INTERVAL must be greater than zero: $ORCH_CI_INTERVAL" ;;
+  esac
 }
-
-float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
-float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
 
 # The larger of the wall clock and the time this loop has spent asleep. The wall
 # clock alone is whole seconds, which a sub-second override never reaches; the

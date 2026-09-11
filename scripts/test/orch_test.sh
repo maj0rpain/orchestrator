@@ -928,6 +928,13 @@ out="$(ORCH_CI_GRACE=oops timeout 5 "$ORCH" review ci 2>&1)"; st=$?
 assert_status "a grace that is not a number stops the command, not the clock" "$st" 1
 assert_contains "naming the knob it could not read" "$out" "ORCH_CI_GRACE"
 
+# A zero interval passes for a number and still defeats the bound: `sleep 0`
+# returns at once and never advances the clock, so the loop polls as fast as
+# GitHub answers for the whole timeout.
+out="$(ORCH_CI_INTERVAL=0 timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "an interval of zero is refused rather than busy-polled" "$st" 1
+assert_contains "saying the interval has to be above zero" "$out" "greater than zero"
+
 "$ORCH" state set pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 1
