@@ -135,7 +135,8 @@ the human chooses at the start (five by default), `code-review` from the base
 SHA every one of them, a blocking/major/nit rubric applied on top of it, and
 only blocking findings fixed - one fix commit per iteration that fixed anything.
 The loop runs its whole budget; when it ends, every major and nit becomes a
-GitHub issue labelled `review:major` or `review:nit` plus `needs-triage`, with
+GitHub issue labelled `review:major` or `review:nit` plus the repo's
+`needs-triage`, with
 the reviewer's finding and the loop's reasoning in the body. CI is waited on
 once per loop with a single flake rerun per flow. It ends by marking the draft
 PR ready, or by stopping with the reason recorded - and comments on the PR

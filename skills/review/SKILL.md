@@ -203,8 +203,9 @@ carrying an issue number from a previous loop. File each of the rest:
 "$ORCH" review file <major|nit> "<title>" --body-file <file>
 ```
 
-It creates the `review:<severity>` and `needs-triage` labels if the repo lacks
-them, opens the issue with both, and prints the number. The title is the
+It creates the `review:<severity>` label if the repo lacks it, resolves the
+repo's own name for `needs-triage` from `docs/agents/triage-labels.md`, opens
+the issue with both, and prints the number. The title is the
 finding's one-line claim with no prefix - the severity lives in the label.
 Nothing calls `gh issue create` or `gh label create` directly.
 

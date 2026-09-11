@@ -99,7 +99,7 @@ not be called green. A stop is not a failed change and not a successful one.
 ## Flake rerun
 
 The one permitted re-run of a failing CI check on the theory that it failed for
-reasons unrelated to the change. The budget belongs to the flow, not to the
+reasons unrelated to the change. The allowance belongs to the flow, not to the
 iteration: one per flow, spent or not.
 
 ## Required check

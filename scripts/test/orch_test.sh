@@ -840,8 +840,10 @@ assert_status "files a major" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "17"
 assert_contains "creates the severity label" "$(cat "$filed")" "label create review:major"
 assert_contains "and the triage label" "$(cat "$filed")" "label create needs-triage"
-assert_contains "creating rather than failing where they exist already" \
+assert_contains "creating ours over one that exists already" \
   "$(cat "$filed")" "label create review:major --force"
+assert_eq "and leaving the repo's own triage label as the repo has it" \
+  "$(grep -c 'label create needs-triage --force' "$filed")" "0"
 assert_contains "passes the title through unprefixed" \
   "$(cat "$filed")" "title=Comment drifted from the code"
 assert_contains "labels the issue with the severity" "$(cat "$filed")" "label=review:major"
@@ -875,11 +877,27 @@ out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_EXIT=1 \
   "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_eq "with no number printed for a record to cite" \
-  "$(printf '%s\n' "$out" | grep -cx '[0-9]*')" "0"
+  "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
 out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
   "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the label fails it too" "$st" 1
+
+# The triage label is the repo's vocabulary, read from the doc the spec phase
+# labels from: a repo that renamed it must not get a second label the name
+# this plugin happens to know.
+: >"$filed"
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `triage me`          | Evaluate it |' \
+        '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
+assert_status "files under a renamed triage label" "$st" 0
+assert_contains "creating the repo's name for it" "$(cat "$filed")" "label create triage me"
+assert_contains "and applying it" "$(cat "$filed")" "label=triage me"
+assert_eq "rather than the canonical one" "$(grep -c 'needs-triage' "$filed")" "0"
+labels_doc docs/agents/triage-labels.md
 
 # --- doctor at the review phase ---------------------------------------------
 # Three handoffs are due from review onwards, and only three: a flow started
@@ -898,8 +916,9 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a stray loop key from an older flow still passes" "$st" 0
 assert_eq "and earns no mention of a handoff no loop writes any more" \
   "$(printf '%s\n' "$out" | grep -c '04-review.md')" "0"
-assert_eq "nor any mention of the key itself" \
-  "$(printf '%s\n' "$out" | grep -c 'loop')" "0"
+assert_eq "nor a line reporting the key" \
+  "$(printf '%s\n' "$out" | grep -c 'loop: 2')" "0"
+assert_eq "and the key is left as it was" "$("$ORCH" state get loop)" "2"
 
 # --- review ready -----------------------------------------------------------
 # Marking the PR ready and recording the flow as done are one operation, because

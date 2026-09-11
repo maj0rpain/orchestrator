@@ -405,6 +405,24 @@ triage_labels() {
     }' "$ROOT/$LABELS_DOC"
 }
 
+# The local name for one of the five triage roles - the right-hand column of
+# the row whose left-hand column names it. A repo that customised its
+# vocabulary customised this, and filing under the canonical name there would
+# create a second label the repo's triage never reads. The role name itself is
+# the answer where the doc is missing or does not list it.
+triage_label_for() {
+  local role="$1" name=""
+  if [ -f "$ROOT/$LABELS_DOC" ]; then
+    name="$(awk -F'|' -v role="$role" '
+      /^[[:space:]]*\|/ {
+        l = $2; gsub(/`/, "", l); sub(/^[[:space:]]+/, "", l); sub(/[[:space:]]+$/, "", l)
+        r = $3; gsub(/`/, "", r); sub(/^[[:space:]]+/, "", r); sub(/[[:space:]]+$/, "", r)
+        if (l == role && r != "") { print r; exit }
+      }' "$ROOT/$LABELS_DOC")"
+  fi
+  printf '%s\n' "${name:-$role}"
+}
+
 check_labels_doc() {
   local n
   if [ ! -f "$ROOT/$LABELS_DOC" ]; then
@@ -720,9 +738,8 @@ cmd_state() {
 
 # --- handoffs ---------------------------------------------------------------
 
-# Which handoff a phase reads. Mechanical, and one input only: every review
-# loop, however many the flow has run, reads the implement handoff. The four
-# facts a loop runs on then have exactly one authority.
+# Every review loop, however many the flow has run, reads the implement
+# handoff, so the four facts a loop runs on have exactly one authority.
 handoff_file_for() {
   case "$1" in
     spec)      printf '01-plan.md\n' ;;
@@ -819,14 +836,22 @@ review_budget() {
   printf '%s\n' "$b"
 }
 
-# The labels a filed finding carries: its severity, so triage can filter on it,
-# and needs-triage, so it enters the normal queue. Created with --force each
-# time, which on the current gh updates a label that exists rather than failing
-# on it - so filing works on a repo that has never seen these and on one that
-# has, with no listing step in between.
-label_ensure() {
-  gh label create "$1" --force --color "$2" --description "$3" >/dev/null 2>&1 \
+# The severity label a filed finding carries, so triage can filter on it. It is
+# this plugin's own, so --force is safe: on the current gh that updates a label
+# that exists rather than failing on it, and filing works on a repo that has
+# never seen the label and on one that has, with no listing step in between.
+severity_label_ensure() {
+  gh label create "$1" --force --color "$2" --description "$3" >/dev/null \
     || die "gh could not create label $1"
+}
+
+# The triage label is the repo's, not ours: created only where it is missing,
+# and never rewritten, because a maintainer's colour and description on it are
+# theirs to keep. A create that fails because the label exists is the common
+# case and is ignored; one that fails for any other reason surfaces two lines
+# later, when `gh issue create` cannot apply the label.
+triage_label_ensure() {
+  gh label create "$1" --color e4e669 --description "Not yet triaged" >/dev/null 2>&1 || true
 }
 
 # Float comparison and addition, in awk, because the timings are overridable and
@@ -954,7 +979,7 @@ cmd_review() {
       require_state
       [ $# -eq 4 ] && [ "$3" = --body-file ] \
         || die "usage: orch.sh review file <major|nit> <title> --body-file <file>"
-      local severity="$1" title="$2" body="$4" colour url
+      local severity="$1" title="$2" body="$4" colour triage url
       case "$severity" in
         major) colour=d93f0b ;;
         nit)   colour=c5def5 ;;
@@ -962,12 +987,13 @@ cmd_review() {
       esac
       [ -n "$title" ] || die "the title is empty"
       [ -f "$body" ] || die "body file not found: $body"
-      label_ensure "review:$severity" "$colour" "Review finding filed at $severity severity"
-      label_ensure needs-triage e4e669 "Not yet triaged"
+      severity_label_ensure "review:$severity" "$colour" "Review finding filed at $severity severity"
+      triage="$(triage_label_for needs-triage)"
+      triage_label_ensure "$triage"
       # The title carries no severity prefix: the label holds it, where triage
       # can change it, and the title reads as an issue.
       url="$(gh issue create --title "$title" --body-file "$body" \
-        --label "review:$severity" --label needs-triage)" \
+        --label "review:$severity" --label "$triage")" \
         || die "gh could not create the issue"
       # Prints the number alone: the record cites a number, and the caller
       # would otherwise be parsing a URL out of prose every time.
@@ -1138,8 +1164,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               creating the directory if it is not there yet
   review file <major|nit> <title> --body-file <file>
                               file a finding as a GitHub issue labelled
-                              review:<severity> and needs-triage, creating the
-                              labels if missing; prints the issue number
+                              review:<severity> and the repo's needs-triage,
+                              creating the labels if missing; prints the number
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
   review ready                mark the draft PR ready and set the phase to done
