@@ -876,10 +876,16 @@ ci_tick() {
 # One look at the PR's checks, classified. Prints the classification on the first
 # line and any detail on the lines after it, indented like doctor's remedies.
 #
-# gh's own signals carry most of this: exit 8 is documented as "checks pending",
-# and a repo with no checks at all is an error whose *text* is the only thing
-# separating it from an API that would not answer. Getting that distinction
-# backwards is what would make the loop declare a CI-having repo CI-less.
+# The buckets carry this, not the exit status. `gh pr checks` documents exit 8
+# for pending checks, but it returns through its JSON exporter before it reaches
+# the code that sets 8 or 1 - so with `--json`, which is the only way this
+# function asks, gh exits 0 whatever the checks are doing. The `8)` arm below is
+# kept against a gh that stops doing that, and is not the path taken.
+#
+# What the exit status does still carry is the difference between a repo with no
+# checks at all and an API that would not answer, and only the error *text*
+# separates those two. Getting that distinction backwards is what would make the
+# loop declare a CI-having repo CI-less.
 ci_probe() {
   local pr="$1" scope="$2" out st=0 buckets failed name
   if [ "$scope" = required ]; then

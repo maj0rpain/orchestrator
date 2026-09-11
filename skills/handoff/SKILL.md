@@ -112,7 +112,9 @@ for its **Deviations** - but so that the four facts a loop runs on have exactly
 one authority. The review skill takes them from the handoff "and from nowhere
 else", and a fact with two homes is a fact that can disagree with itself. Carry
 them verbatim: a base SHA that drifts from `03`'s silently changes what every
-iteration diffs against, and nothing checks it.
+iteration diffs against. The review loop checks that one against
+`state get base_sha` before it starts, so a drifted SHA stops a loop rather than
+quietly moving its fixed point - the other three are still yours to get right.
 
 ```markdown
 # Handoff: <slug>, loop <n>
