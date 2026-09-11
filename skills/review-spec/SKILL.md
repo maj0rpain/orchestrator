@@ -118,7 +118,9 @@ and wait. Asked once; a long spec is one longer question, not twenty prompts.
 
 1. Apply the accepted edits to `<dir>/spec.md`, then
    `"$ORCH" spec update <dir>/spec.md`. The body is rewritten in place; the
-   implement phase reads one body and reconciles nothing.
+   implement phase reads one body and reconciles nothing. Apply none: skip
+   this step - an update that writes the body it just read is a no-op edit on
+   the issue's history, and the comment in step 2 still records the decision.
 2. Write the changelog - see below - to `<dir>/changelog.md` under a
    `## Spec review` heading and `"$ORCH" spec comment <dir>/changelog.md`. The
    comment is history, visible on the issue; the body is the truth.

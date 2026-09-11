@@ -1066,16 +1066,6 @@ cmd_review() {
 
 # --- spec -------------------------------------------------------------------
 
-# Prints the spec issue number, or dies. Same discipline as require_pr: call it
-# as a bare assignment on its own line, so `set -e` stops the command when the
-# subshell dies.
-require_issue() {
-  local issue
-  issue="$(jq -r '.issue // ""' "$STATE")"
-  [ -n "$issue" ] || die "no issue recorded in state - the spec phase must publish one first"
-  printf '%s\n' "$issue"
-}
-
 # The spec review's one hand on GitHub. The body is the truth the implement
 # phase reads, so the three ways it is read and written go through here, where
 # they are tested, rather than through a `gh issue edit` in skill prose.
@@ -1085,7 +1075,8 @@ cmd_spec() {
   require_state
   [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment> <file>"
   local file="$1" issue
-  issue="$(require_issue)"
+  issue="$(jq -r '.issue // ""' "$STATE")"
+  [ -n "$issue" ] || die "no issue recorded in state - the spec phase must publish one first"
   case "$op" in
     fetch)
       # Written beside the target and moved into place only once gh has
@@ -1100,17 +1091,14 @@ cmd_spec() {
       fi
       mv "$tmp" "$file"
       ;;
-    update)
+    update|comment)
       [ -f "$file" ] || die "body file not found: $file"
+      local verb=edit did="replace the body of"
+      if [ "$op" = comment ]; then verb=comment; did="comment on"; fi
       # --body-file, never --body: a spec carries tables, fences, and `#nn`
       # references, and a heredoc through a shell is where those get mangled.
-      gh issue edit "$issue" --body-file "$file" >/dev/null \
-        || die "gh could not replace the body of issue #$issue"
-      ;;
-    comment)
-      [ -f "$file" ] || die "comment file not found: $file"
-      gh issue comment "$issue" --body-file "$file" >/dev/null \
-        || die "gh could not comment on issue #$issue"
+      gh issue "$verb" "$issue" --body-file "$file" >/dev/null \
+        || die "gh could not $did issue #$issue"
       ;;
     *) die "unknown spec op: ${op:-<none>} (want fetch|update|comment)" ;;
   esac
@@ -1122,7 +1110,8 @@ cmd_branch_create() {
   require_state
   local slug issue base name
   slug="$(jq -r .slug "$STATE")"
-  issue="$(require_issue)"
+  issue="$(jq -r '.issue // ""' "$STATE")"
+  [ -n "$issue" ] || die "no issue recorded in state - the spec phase must publish one first"
   name="orch/${issue}-${slug}"
   if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
   base="$(default_branch)"

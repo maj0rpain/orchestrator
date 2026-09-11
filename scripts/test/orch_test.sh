@@ -104,6 +104,19 @@ stub_gh() {
   cat >"$d/gh" <<'GH'
 #!/usr/bin/env bash
 if [ -n "${GH_STUB_LOG:-}" ]; then printf '%s\n' "$1" >>"$GH_STUB_LOG"; fi
+# Records the flags of an issue write to GH_STUB_FILED, the body file's
+# contents inlined, so a test asserts what reached gh rather than the exit.
+record_flags() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --title)     printf 'title=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
+      --label)     printf 'label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
+      --body-file) { printf 'body:\n'; cat "$2"; } >>"$GH_STUB_FILED"; shift ;;
+      *)           printf 'flag=%s\n' "$1" >>"$GH_STUB_FILED" ;;
+    esac
+    shift
+  done
+}
 if [ "${GH_STUB_MODE:-ok}" = offline ]; then
   echo "dial tcp: lookup api.github.com: no such host" >&2
   exit 1
@@ -140,13 +153,7 @@ ready-for-agent}"
         if [ -n "${GH_STUB_FILED:-}" ]; then
           printf 'issue %s %s\n' "$op" "$1" >>"$GH_STUB_FILED"
           shift
-          while [ $# -gt 0 ]; do
-            case "$1" in
-              --body-file) { printf 'body:\n'; cat "$2"; } >>"$GH_STUB_FILED"; shift ;;
-              *) printf 'flag=%s\n' "$1" >>"$GH_STUB_FILED" ;;
-            esac
-            shift
-          done
+          record_flags "$@"
         fi
         if [ "$op" = edit ]; then st="${GH_STUB_EDIT_EXIT:-0}"; else st="${GH_STUB_COMMENT_EXIT:-0}"; fi
         [ "$st" = 0 ] || echo "gh stub: issue $op refused" >&2
@@ -155,16 +162,7 @@ ready-for-agent}"
       *) echo "gh stub: unscripted issue op '$2'" >&2; exit 99 ;;
     esac
     shift 2
-    if [ -n "${GH_STUB_FILED:-}" ]; then
-      while [ $# -gt 0 ]; do
-        case "$1" in
-          --title)     printf 'title=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-          --label)     printf 'label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-          --body-file) { printf 'body:\n'; cat "$2"; } >>"$GH_STUB_FILED"; shift ;;
-        esac
-        shift
-      done
-    fi
+    if [ -n "${GH_STUB_FILED:-}" ]; then record_flags "$@"; fi
     [ "${GH_STUB_ISSUE_EXIT:-0}" = 0 ] || { echo "gh stub: issue create refused" >&2; exit "$GH_STUB_ISSUE_EXIT"; }
     echo "https://github.com/acme/widgets/issues/${GH_STUB_ISSUE_NUMBER:-42}" ;;
   pr)
@@ -970,6 +968,7 @@ assert_contains "and for its body alone" "$(cat "$filed")" "--json body"
 out="$("$ORCH" spec fetch .orchestrator/spec-review/spec.md 2>&1)"; st=$?
 assert_status "fetch creates the directory it is told to write into" "$st" 0
 assert_eq "and the body lands there" "$(cat .orchestrator/spec-review/spec.md)" "Body of the issue."
+rm -rf .orchestrator/spec-review
 
 rm -f "$spec_body"
 out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
@@ -1020,6 +1019,7 @@ assert_status "refuses an op it does not have" "$st" 1
 assert_contains "naming the three it does" "$out" "fetch|update|comment"
 out="$("$ORCH" spec fetch 2>&1)"; st=$?
 assert_status "and a call with no file" "$st" 1
+assert_contains "with the usage" "$out" "usage: orch.sh spec"
 assert_contains "help documents the spec verb" "$("$ORCH" help)" "spec fetch"
 "$ORCH" state set issue null
 
