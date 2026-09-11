@@ -1064,6 +1064,46 @@ cmd_review() {
   esac
 }
 
+# --- spec -------------------------------------------------------------------
+
+# The spec review's one hand on GitHub. The body is the truth the implement
+# phase reads, so the three ways it is read and written go through here, where
+# they are tested, rather than through a `gh issue edit` in skill prose.
+cmd_spec() {
+  local op="${1:-}"
+  shift || true
+  require_state
+  [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment> <file>"
+  local file="$1" issue
+  issue="$(jq -r '.issue // ""' "$STATE")"
+  [ -n "$issue" ] || die "no issue recorded in state - the spec phase must publish one first"
+  case "$op" in
+    fetch)
+      # Written beside the target and moved into place only once gh has
+      # answered: a failed fetch that left a partial file behind is a body a
+      # lens would read as the spec.
+      local tmp
+      mkdir -p "$(dirname "$file")"
+      tmp="$(mktemp "$file.XXXXXX")"
+      if ! gh issue view "$issue" --json body --jq .body >"$tmp"; then
+        rm -f "$tmp"
+        die "gh could not read the body of issue #$issue"
+      fi
+      mv "$tmp" "$file"
+      ;;
+    update|comment)
+      [ -f "$file" ] || die "body file not found: $file"
+      local verb=edit did="replace the body of"
+      if [ "$op" = comment ]; then verb=comment; did="comment on"; fi
+      # --body-file, never --body: a spec carries tables, fences, and `#nn`
+      # references, and a heredoc through a shell is where those get mangled.
+      gh issue "$verb" "$issue" --body-file "$file" >/dev/null \
+        || die "gh could not $did issue #$issue"
+      ;;
+    *) die "unknown spec op: ${op:-<none>} (want fetch|update|comment)" ;;
+  esac
+}
+
 # --- git / github -----------------------------------------------------------
 
 cmd_branch_create() {
@@ -1169,6 +1209,9 @@ orch.sh - deterministic operations for the orchestrator flow
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
   review ready                mark the draft PR ready and set the phase to done
+  spec fetch <file>           write the spec issue's body to <file>
+  spec update <file>          replace the spec issue's body with <file>
+  spec comment <file>         post <file> as a comment on the spec issue
   status                      human-readable summary
   archive                     move the live flow into .orchestrator/archive/
 USAGE
@@ -1187,6 +1230,7 @@ main() {
     branch-create) cmd_branch_create "$@" ;;
     pr-open)       cmd_pr_open "$@" ;;
     review)        cmd_review "$@" ;;
+    spec)          cmd_spec "$@" ;;
     status)        cmd_status "$@" ;;
     archive)       cmd_archive "$@" ;;
     help|-h|--help) cmd_help ;;

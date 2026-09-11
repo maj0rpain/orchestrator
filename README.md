@@ -100,14 +100,15 @@ legitimately write them mid-planning.
 ## Layout
 
 ```
-commands/         start, next, status, doctor, redo, abort
-skills/flow/      the state machine (judgment)
-skills/review/    the review loop: rubric, authority rules, terminal states
-skills/handoff/   handoff templates, model-invocable unlike the upstream one
-scripts/orch.sh   every deterministic operation (mechanism)
-scripts/hook-*.sh the two hooks
-scripts/test/     shell tests
-hooks/hooks.json  hook wiring
+commands/           start, next, status, doctor, redo, abort
+skills/flow/        the state machine (judgment)
+skills/review-spec/ the spec review: four lenses, one batch question
+skills/review/      the review loop: rubric, authority rules, terminal states
+skills/handoff/     handoff templates, model-invocable unlike the upstream one
+scripts/orch.sh     every deterministic operation (mechanism)
+scripts/hook-*.sh   the two hooks
+scripts/test/       shell tests
+hooks/hooks.json    hook wiring
 ```
 
 Prose for judgment, bash for facts. Reading state, naming branches, resolving the
@@ -130,8 +131,15 @@ publishing a change worth pulling.
 
 ## Status
 
-All four phases run. The review phase is a bounded loop: a budget of iterations
-the human chooses at the start (five by default), `code-review` from the base
+All four phases run. The spec phase reviews the spec it just published through
+four independent lenses - Fidelity to the plan, Consistency with itself and
+the glossary, Testability at the agreed seams, Implementability from the spec
+alone - and puts every finding to the human as one batch of proposed edits;
+the edits they accept rewrite the issue body, and the disposition is recorded
+on the issue and in the handoff.
+
+The review phase is a bounded loop: a budget of iterations the human chooses
+at the start (five by default), `code-review` from the base
 SHA every one of them, a blocking/major/nit rubric applied on top of it, and
 only blocking findings fixed - one fix commit per iteration that fixed anything.
 The loop runs its whole budget; when it ends, every major and nit becomes a
@@ -144,8 +152,7 @@ either way. After a bounded stop, a human may run the phase again as a fresh
 loop with its own budget. `/orchestrator:doctor` covers the machine, the repo,
 and the active flow.
 
-Still to come: `orchestrator:review-spec` (fidelity, testability, consistency,
-implementability), and a review check group in `doctor`.
+Still to come: a review check group in `doctor`.
 
 ## License
 
