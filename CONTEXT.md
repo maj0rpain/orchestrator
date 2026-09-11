@@ -15,7 +15,8 @@ One of the four stages a flow passes through: **plan**, **spec**, **implement**,
 **review**. Each phase runs in its own session with no memory of the previous
 one - with one deliberate exception: a review loop drives all of its iterations
 from a single session (ADR-0001), so inside the review phase the unit of fresh
-context is the loop, not the iteration.
+context is the loop, not the iteration. The spec review is a step of the spec
+phase, not a phase of its own.
 
 Note the tense: the recorded phase names the stage that runs **next**, not the
 one that just finished.
@@ -53,10 +54,46 @@ budget allows.
 An iteration whose review found nothing blocking, so it fixed nothing and
 committed nothing. A loop can finish only on a clean final iteration.
 
+## Spec review
+
+One look at a published spec, taken once in the spec phase after the spec is
+published and before its handoff is written. Four lenses read the spec
+independently; every finding they report is put to a human with a proposed
+edit, and only the edits the human accepts change the spec. A spec review
+runs once - it is not a loop and has no budget.
+
+## Lens
+
+One of the four angles a spec review takes, each answering one question of the
+spec and nothing else:
+
+- **Fidelity** - does the spec say what the plan decided? Read against the
+  plan's decisions, rejected alternatives, and constraints.
+- **Consistency** - does the spec agree with itself, with the glossary, and
+  with the recorded decisions?
+- **Testability** - can every story and decision be proven at the agreed
+  seams?
+- **Implementability** - could a fresh session build it from the spec alone,
+  and does the codebase allow what it asks?
+
+Findings stay with the lens that reported them and are never ranked across
+lenses.
+
+## Seam
+
+The public boundary a test observes behaviour at. Seams are agreed with a human
+in the spec phase, recorded in the spec and its handoff, and that agreement is
+the only one: the implement phase tests at the seams it is given and does not
+re-ask. A seam the code turns out not to allow is a deviation, recorded like
+any other.
+
 ## Finding
 
-One problem a review reports about the change. A finding carries a **severity**,
-which the review phase assigns - the reviewer itself reports findings unranked.
+One problem a review reports - about the change, from the review phase, or
+about the spec, from a spec review. Only a finding about the change carries a
+**severity**, which the review phase assigns; the reviewer itself reports
+findings unranked. A finding about the spec carries no severity: a human
+accepts or declines the edit it proposes, and it is never filed.
 
 ## Severity
 
