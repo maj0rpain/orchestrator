@@ -84,15 +84,22 @@ which holds the only copy of the plan.
    ready is the review loop's success condition.
 5. Call `orchestrator:handoff` for `03-implement.md`. Its **Deviations** section
    is what lets review tell an agreed change from scope creep - if there were no
-   deviations, write "None", never leave it blank.
+   deviations, write "None", never leave it blank. Its **Verification** section is
+   the command the review loop runs every iteration: record how you just ran the
+   tests, because review takes it from here rather than guessing from the repo.
+   Then validate it: `"$ORCH" handoff validate "$("$ORCH" handoff path review)"`.
 6. `"$ORCH" state set phase review`, then print the boundary.
 
 ### Phase: review
 
-**Not built yet.** Report the PR URL and the state file, and tell the user the
-review loop is still to come. Do not improvise one: an unbounded review loop
-without the iteration records, severity rubric, and CI policy is the piece most
-likely to burn a session in circles.
+1. `"$ORCH" doctor --flow`.
+2. Call the Skill tool with `orchestrator:review` and follow it. It owns the
+   loop; this file owns phase dispatch, and has nothing to add to a review
+   beyond getting you there.
+
+A flow may pass through this phase more than once: a loop that hands off to a
+fresh loop leaves `phase` at `review`, so `/orchestrator:next` lands here again
+and the review skill reads the handoff the previous loop wrote.
 
 ## Printing the boundary
 
@@ -139,8 +146,6 @@ just finished means stepping back one first. Order: `spec -> implement -> review
 
 ## Not yet built
 
-The skeleton stops at the review phase. Still to come: the `orchestrator:review-spec`
-reviewer (fidelity, testability, consistency, implementability), and the review
-loop (`code-review` per iteration, blocking/major/nit rubric, one fix commit per
-iteration, required CI green with one flake rerun, hard stop at 5 iterations or
-two with no net progress).
+Still to come: the `orchestrator:review-spec` reviewer (fidelity, testability,
+consistency, implementability), which is why the spec phase asks the user to
+review by hand.

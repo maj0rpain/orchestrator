@@ -25,6 +25,11 @@ assert_contains() {
 assert_status() {
   if [ "$2" -eq "$3" ]; then ok "$1"; else bad "$1" "expected exit $3, got $2"; fi
 }
+# The CI classifier's verdict is its first line and the detail lines below it are
+# not the assertion, so most of these read one line out of a captured $out.
+assert_first_line() {
+  assert_eq "$1" "$(printf '%s\n' "$2" | sed -n 1p)" "$3"
+}
 
 # A fresh repo with the tracker precondition satisfied, cwd inside it.
 new_repo() {
@@ -56,6 +61,23 @@ complete_spec_handoff() {
           '## Spec review changelog' 'Not reviewed.' >"$1"
 }
 
+complete_implement_handoff() {
+  writeln '## PR' '#3.' '' \
+          '## Spec issue' '#1.' '' \
+          '## Base SHA' 'abc1234.' '' \
+          '## Deviations' 'None.' '' \
+          '## Verification' 'scripts/test/orch_test.sh' >"$1"
+}
+
+complete_review_handoff() {
+  writeln '## PR' '#3.' '' \
+          '## Spec issue' '#1.' '' \
+          '## Base SHA' 'abc1234.' '' \
+          '## Verification' 'scripts/test/orch_test.sh' '' \
+          '## Chosen work' 'Split the CI classifier out.' '' \
+          '## Already settled' 'Declined the naming nit.' >"$1"
+}
+
 # --- doctor harness ---------------------------------------------------------
 
 # A fake `gh` on PATH. doctor's severity rules turn on the difference between
@@ -67,6 +89,14 @@ complete_spec_handoff() {
 #   nolabels  authenticated, but the repo carries none of the documented labels
 # GH_STUB_LOG, when set, names a file the stub appends each subcommand to, which
 # is how a test asserts that a scope made no network call at all.
+#
+# `pr checks` answers separately, because the CI classifier is the one caller
+# that has to see the answer *change* between calls. GH_STUB_CHECKS and
+# GH_STUB_REQUIRED are each a `|`-separated script of answers (green, failing,
+# pending, none, boom), consumed one per call with the last repeating and counted
+# in the file GH_STUB_CHECKS_N / GH_STUB_REQUIRED_N names. They advance
+# independently, because the classifier asks the two probes different questions:
+# what branch protection requires, and what ran on the commit.
 stub_gh() {
   local d
   d="$(mktemp -d)"
@@ -91,7 +121,44 @@ case "$1" in
       printf '%s\n' "${GH_STUB_LABELS-needs-triage
 ready-for-agent}"
     fi ;;
-  pr) echo "${GH_STUB_PR_STATE:-OPEN}" ;;
+  pr)
+    case "$2" in
+      ready) exit "${GH_STUB_READY_EXIT:-0}" ;;
+      checks)
+        req=0
+        for a in "$@"; do if [ "$a" = --required ]; then req=1; fi; done
+        if [ "$req" = 1 ]; then
+          script="${GH_STUB_REQUIRED:-none}"; counter="${GH_STUB_REQUIRED_N:-}"
+        else
+          script="${GH_STUB_CHECKS:-green}"; counter="${GH_STUB_CHECKS_N:-}"
+        fi
+        i=1
+        if [ -n "$counter" ]; then
+          i=$(( $(cat "$counter" 2>/dev/null || echo 0) + 1 ))
+          printf '%s\n' "$i" >"$counter"
+        fi
+        answer="$(printf '%s' "$script" | awk -F'|' -v i="$i" '{ print (i <= NF) ? $i : $NF }')"
+        case "$answer" in
+          green)   echo '[{"bucket":"pass","name":"build","state":"SUCCESS"}]' ;;
+          failing) echo '[{"bucket":"fail","name":"build","state":"FAILURE"},{"bucket":"pass","name":"lint","state":"SUCCESS"}]' ;;
+          cancel)  echo '[{"bucket":"cancel","name":"build","state":"CANCELLED"}]' ;;
+          pending) echo '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]'; exit 8 ;;
+          # gh documents exit 8 for pending checks, but with --json it answers 0
+          # and reports the state in the bucket instead. Both reach the same
+          # verdict, and only this arm exercises the one real gh takes.
+          pending0) echo '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]' ;;
+          # Exit 0 with something that is not JSON. jq fails, and the answer
+          # must not be read as the empty array that means "no checks".
+          garbage) echo 'not json at all' ;;
+          none)    echo "no checks reported on the 'topic' branch" >&2; exit 1 ;;
+          boom)    echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
+          # Without this arm a typo in GH_STUB_CHECKS prints nothing and exits 0,
+          # which ci_probe reads as a repo with no checks - a test that passes
+          # while asserting nothing.
+          *)       echo "gh stub: no script named '$answer'" >&2; exit 99 ;;
+        esac ;;
+      *) echo "${GH_STUB_PR_STATE:-OPEN}" ;;
+    esac ;;
 esac
 GH
   chmod +x "$d/gh"
@@ -188,6 +255,14 @@ echo "handoff path"
 assert_contains "spec phase reads the plan handoff"      "$("$ORCH" handoff path spec)"      "01-plan.md"
 assert_contains "implement phase reads the spec handoff" "$("$ORCH" handoff path implement)" "02-spec.md"
 assert_contains "review phase reads the implement handoff" "$("$ORCH" handoff path review)"  "03-implement.md"
+
+# The review skill consumes this inside command substitutions - `handoff validate
+# "$(... handoff path review-next)"` and `dirname "$(... handoff path review)"` -
+# so a phase it cannot resolve has to stop the caller rather than hand it the
+# bare handoff directory with a zero status.
+out="$("$ORCH" handoff path bogus 2>/dev/null)"; st=$?
+assert_status "an unknown phase is an error, not a directory" "$st" 1
+assert_eq "and prints no path for a caller to use" "$out" ""
 
 # --- handoff validate -------------------------------------------------------
 echo
@@ -623,6 +698,331 @@ assert_status "bare doctor without jq fails on the tools check" "$st" 1
 # how you find out that happened.
 assert_contains "collapses every flow check into one line when jq is gone" \
   "$out" "5 flow checks skipped: jq is not installed"
+
+# --- review begin -----------------------------------------------------------
+# The bound lives in bash precisely so a long session cannot re-remember five as
+# six, so what matters here is the refusal, not the counting.
+echo
+echo "review begin"
+healthy_repo
+"$ORCH" init reviewtest >/dev/null
+assert_eq "the first iteration is 1" "$("$ORCH" review begin)" "1"
+assert_eq "records the iteration in state" "$("$ORCH" state get iteration)" "1"
+for i in 2 3 4 5; do
+  assert_eq "iteration $i is claimed in order" "$("$ORCH" review begin)" "$i"
+done
+out="$("$ORCH" review begin 2>&1)"; st=$?
+assert_status "refuses a sixth iteration" "$st" 1
+assert_contains "says the bound is what stopped it" "$out" "5 iterations"
+assert_eq "and does not spend the refused iteration" "$("$ORCH" state get iteration)" "5"
+
+# --- review path ------------------------------------------------------------
+# Per-loop directories are what stop loop 2's iteration 1 overwriting loop 1's.
+echo
+echo "review path"
+assert_contains "files the record under the current loop" \
+  "$("$ORCH" review path)" "/review/loop-01/iteration-05.md"
+assert_contains "zero-pads an explicit iteration" \
+  "$("$ORCH" review path 2)" "/review/loop-01/iteration-02.md"
+assert_eq "creates the directory it names" \
+  "$([ -d .orchestrator/review/loop-01 ] && echo present || echo gone)" "present"
+out="$("$ORCH" review path nope 2>&1)"; st=$?
+assert_status "rejects an iteration that is not a number" "$st" 1
+
+# --- handoff verification ---------------------------------------------------
+# The review loop runs the command the implement phase recorded rather than
+# sniffing the repo for one, so a handoff without it sends review in blind.
+echo
+echo "handoff verification"
+h3="$("$ORCH" handoff path review)"
+writeln '## PR' '#3' '' '## Spec issue' '#1' '' '## Base SHA' 'abc1234' '' \
+        '## Deviations' 'None.' >"$h3"
+out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
+assert_status "an implement handoff with no verification command is incomplete" "$st" 1
+assert_contains "names the section review would have read" "$out" "Verification"
+
+writeln '## PR' '#3' '' '## Spec issue' '#1' '' '## Base SHA' 'abc1234' '' \
+        '## Deviations' 'None.' '' '## Verification' '   ' >"$h3"
+out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
+assert_status "a bare Verification heading is no better than none" "$st" 1
+assert_contains "reported as empty, not missing" "$out" "empty section"
+
+complete_implement_handoff "$h3"
+out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
+assert_status "passes once the command is recorded" "$st" 0
+
+# --- handoff path across loops ----------------------------------------------
+# Loop 2 is entered from the handoff loop 1 wrote, not from the implement
+# phase's - which is the whole difference between re-entering a loop and
+# restarting the phase.
+echo
+echo "handoff path across loops"
+assert_contains "review reads the implement handoff on the first loop" \
+  "$("$ORCH" handoff path review)" "03-implement.md"
+"$ORCH" state set loop 2
+assert_contains "and the outgoing review handoff on a later one" \
+  "$("$ORCH" handoff path review)" "04-review.md"
+assert_contains "the earlier phases are unaffected by the loop number" \
+  "$("$ORCH" handoff path implement)" "02-spec.md"
+"$ORCH" state set loop 1
+
+# --- review loop-next -------------------------------------------------------
+# The loop boundary is a real context boundary: the outgoing handoff is filed
+# under the loop that wrote it, and the counter that bounds iterations resets.
+echo
+echo "review loop-next"
+"$ORCH" state set phase review
+out="$("$ORCH" review loop-next 2>&1)"; st=$?
+assert_status "refuses to roll a loop that wrote no handoff" "$st" 1
+assert_contains "names the handoff it is missing" "$out" "04-review.md"
+
+complete_review_handoff "$("$ORCH" handoff path review-next)"
+"$ORCH" review loop-next >/dev/null
+assert_eq "the flow moves on to the next loop" "$("$ORCH" state get loop)" "2"
+assert_eq "the iteration count resets with it" "$("$ORCH" state get iteration)" "0"
+assert_eq "files the outgoing handoff under the loop that wrote it" \
+  "$([ -f .orchestrator/review/loop-01/04-review.md ] && echo present || echo gone)" "present"
+assert_eq "leaves it in place for the next loop to read" \
+  "$([ -f .orchestrator/handoff/04-review.md ] && echo present || echo gone)" "present"
+assert_eq "opens a directory for the loop that follows" \
+  "$([ -d .orchestrator/review/loop-02 ] && echo present || echo gone)" "present"
+assert_eq "the phase stays at review so re-entry lands correctly" \
+  "$("$ORCH" state get phase)" "review"
+assert_contains "records now land under the new loop" \
+  "$("$ORCH" review path 1)" "/review/loop-02/iteration-01.md"
+
+# --- doctor across loops ----------------------------------------------------
+# Which handoffs are due stays mechanical, and on a second loop 04 is one of
+# them: it is the only thing carrying forward what the first loop settled.
+echo
+echo "doctor across loops"
+complete_plan_handoff "$("$ORCH" handoff path spec)"
+complete_spec_handoff "$("$ORCH" handoff path implement)"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a second loop with every handoff in place is healthy" "$st" 0
+assert_contains "counts the outgoing review handoff among them" \
+  "$out" "handoff 04-review.md complete"
+
+stashed="$(mktemp)"
+mv .orchestrator/handoff/04-review.md "$stashed"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "fails when the loop that re-entered has no handoff to read" "$st" 1
+assert_contains "names the handoff it cannot find" "$out" "04-review.md is missing"
+mv "$stashed" .orchestrator/handoff/04-review.md
+
+"$ORCH" state set loop 1
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_eq "the first loop is not asked for a handoff no loop has written yet" \
+  "$(printf '%s\n' "$out" | grep -c '04-review.md')" "0"
+
+# The loop number outlives the review phase, so a flow stepped back to an
+# earlier phase still carries it. 04 is a handoff the review phase writes, and
+# no earlier phase is late for it.
+"$ORCH" state set loop 2
+"$ORCH" state set phase implement
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_eq "an earlier phase is not asked for the review phase's handoff" \
+  "$(printf '%s\n' "$out" | grep -c '04-review.md')" "0"
+"$ORCH" state set phase review
+"$ORCH" state set loop 2
+
+# --- review ready -----------------------------------------------------------
+# Marking the PR ready and recording the flow as done are one operation, because
+# either half alone is a lie: a `done` flow over a draft PR, or a PR promoted out
+# of draft by a flow that still thinks it is reviewing.
+echo
+echo "review ready"
+"$ORCH" state set pr 7
+out="$(GH_STUB_READY_EXIT=1 "$ORCH" review ready 2>&1)"; st=$?
+assert_status "fails when GitHub will not mark the PR ready" "$st" 1
+assert_eq "and leaves the phase where it was rather than half-finishing" \
+  "$("$ORCH" state get phase)" "review"
+"$ORCH" review ready >/dev/null
+assert_eq "records the flow as done once the PR is ready" "$("$ORCH" state get phase)" "done"
+"$ORCH" state set phase review
+
+# --- review ci --------------------------------------------------------------
+# The classification is what decides whether a PR may be marked ready, so each
+# of the four answers is asserted for its exit status as well as its word.
+echo
+echo "review ci"
+export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
+out="$(GH_STUB_CHECKS=green "$ORCH" review ci 2>&1)"; st=$?
+assert_status "green checks let the loop finish" "$st" 0
+assert_first_line "and say so in one word" "$out" "green"
+
+out="$(GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a failing check stops the loop" "$st" 1
+assert_first_line "classified as failing" "$out" "failing"
+assert_contains "names the check that failed" "$out" "build"
+assert_eq "and not the ones that passed" "$(printf '%s\n' "$out" | grep -c 'lint')" "0"
+
+# A cancelled run is not a run that passed, and it is never going to report. It
+# classifies as failing, which is also the arm that offers the flake rerun - the
+# right remedy for a check that was killed rather than one that judged the change.
+out="$(GH_STUB_CHECKS=cancel "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a cancelled check stops the loop too" "$st" 1
+assert_first_line "classified as failing rather than waited on" "$out" "failing"
+assert_contains "naming the check that was cancelled" "$out" "build"
+
+# Requiring CI in a repo that has none would make the plugin unusable in its own
+# repo, which has none.
+out="$(GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a repo with no checks at all is not thereby failing" "$st" 0
+assert_first_line "classified as none" "$out" "none"
+
+# The grace period is the whole reason `none` is not concluded on the first
+# answer: this is the CI-having repo that would otherwise be called CI-less. It
+# is spent on the *required* probe, because gh reports "no required checks"
+# whether the repo requires nothing or requires something that has not landed
+# yet. Widening to every check on the commit before the grace is out is how an
+# unrelated green check gets mistaken for a required one that never arrived - so
+# the unfiltered answer here is `failing`, and a green result proves it was never
+# consulted. The grace is set well clear of a whole-second wall-clock tick, so
+# what the test proves is the second answer winning rather than how fast the
+# first one came.
+reqn="$(mktemp)"; : >"$reqn"
+out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
+  GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "a required check that has not registered yet is waited for" "$out" "green"
+assert_status "and the loop finishes on the answer it waited for" "$st" 0
+
+# Where branch protection names required checks, those are the checks that
+# matter - and a failure outside them is not the flow's business.
+out="$(GH_STUB_REQUIRED=green GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
+assert_status "required checks decide it where branch protection names them" "$st" 0
+assert_first_line "so the unfiltered answer is never asked for" "$out" "green"
+
+# ...and where it names none, the answer is every check on the commit, but only
+# once the grace has run out.
+out="$(ORCH_CI_GRACE=0.2 GH_STUB_REQUIRED=none GH_STUB_CHECKS=green \
+  "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a repo that requires nothing falls back to every check" "$st" 0
+assert_first_line "reading the commit's own checks for its answer" "$out" "green"
+
+out="$(GH_STUB_CHECKS=boom "$ORCH" review ci 2>&1)"; st=$?
+assert_status "an API that will not answer stops the loop" "$st" 1
+assert_first_line "classified as unreachable" "$out" "unreachable"
+assert_contains "carrying the reason it could not be asked" "$out" "dial tcp"
+
+# doctor's "an unreachable API is a warn" rule was written for a read-only
+# diagnostic. Here the outcome is an action, so an answer that never arrived
+# cannot be treated as a green one.
+out="$(ORCH_CI_TIMEOUT=0.2 GH_STUB_CHECKS=pending "$ORCH" review ci 2>&1)"; st=$?
+assert_status "checks still pending at the cap stop the loop" "$st" 1
+assert_first_line "rather than being read as green" "$out" "unreachable"
+assert_contains "and it says the wait ran out" "$out" "still pending"
+
+# The same wait, reached the way real gh reports it. `gh pr checks --json` exits
+# 0 whatever the buckets hold, so the exit-8 arm above is the path the stub
+# takes and this is the path the live command takes - and until both are
+# asserted, the classifier's bucket-reading half ships unexercised.
+out="$(ORCH_CI_TIMEOUT=0.2 GH_STUB_CHECKS=pending0 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a pending bucket is a wait even when gh exits 0" "$st" 1
+assert_first_line "classified from the bucket rather than the exit status" "$out" "unreachable"
+assert_contains "and says the same thing the exit-8 path says" "$out" "still pending"
+
+# The clocks are compared with awk, which compares a number against a
+# non-numeric string as strings - so a mistyped knob makes every comparison
+# true, and the one command written to be bounded polls GitHub until something
+# else kills it. The leash is what makes this assertable: without the fix the
+# command never returns on its own.
+out="$(ORCH_CI_GRACE=oops timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a grace that is not a number stops the command, not the clock" "$st" 1
+assert_contains "naming the knob it could not read" "$out" "ORCH_CI_GRACE"
+
+# A zero interval passes for a number and still defeats the bound: `sleep 0`
+# returns at once and never advances the clock, so the loop polls as fast as
+# GitHub answers for the whole timeout.
+out="$(ORCH_CI_INTERVAL=0 timeout 5 "$ORCH" review ci 2>&1)"; st=$?
+assert_status "an interval of zero is refused rather than busy-polled" "$st" 1
+assert_contains "saying the interval has to be above zero" "$out" "greater than zero"
+
+# The one direction this classifier must never fail in: an answer nobody could
+# read is not an answer that there is nothing to read.
+out="$(GH_STUB_CHECKS=garbage "$ORCH" review ci 2>&1)"; st=$?
+assert_status "output jq cannot parse stops the loop" "$st" 1
+assert_first_line "rather than passing as a repo with no checks" "$out" "unreachable"
+assert_contains "saying what it could not read" "$out" "could not read"
+
+"$ORCH" state set pr null
+out="$("$ORCH" review ci 2>&1)"; st=$?
+assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 1
+# require_pr dies inside a command substitution, so what stops the command is
+# `set -e` on the assignment rather than the exit itself. Asserting the message
+# is what would catch the guard degrading into an empty PR number.
+assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
+unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
+
+# --- a flow from before the review loop shipped -----------------------------
+# An in-flight flow has no `loop` key, because nothing had written one. Failing
+# on its absence would strand exactly the flows this change was meant to finish.
+echo
+echo "a flow started before the review loop shipped"
+healthy_repo
+"$ORCH" init legacy >/dev/null
+legacy="$(mktemp)"
+jq 'del(.loop, .flake_rerun_used)' .orchestrator/state.json >"$legacy"
+mv "$legacy" .orchestrator/state.json
+assert_eq "the state it left behind names no loop" "$("$ORCH" state get loop)" ""
+assert_eq "review begin still claims an iteration" "$("$ORCH" review begin)" "1"
+assert_contains "records land under the first loop" "$("$ORCH" review path)" "/review/loop-01/"
+assert_contains "and review reads the implement handoff as it always did" \
+  "$("$ORCH" handoff path review)" "03-implement.md"
+
+"$ORCH" state set phase review
+complete_plan_handoff "$("$ORCH" handoff path spec)"
+complete_spec_handoff "$("$ORCH" handoff path implement)"
+complete_implement_handoff "$("$ORCH" handoff path review)"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor does not strand it either" "$st" 0
+assert_eq "and asks it for no handoff a later loop would have written" \
+  "$(printf '%s\n' "$out" | grep -c '04-review.md')" "0"
+
+# The remaining three `review` commands on the same legacy state. `loop-next` is
+# the one that reads the missing counter and writes it back; ci and ready need a
+# PR, which a flow this old still records the same way.
+"$ORCH" state set pr 3 >/dev/null
+out="$(ORCH_CI_GRACE=0.2 ORCH_CI_INTERVAL=0.05 GH_STUB_CHECKS=green \
+  "$ORCH" review ci 2>&1)"; st=$?
+assert_status "review ci reads its PR from a state with no loop key" "$st" 0
+assert_first_line "and classifies it" "$out" "green"
+
+complete_review_handoff "$("$ORCH" handoff path review-next)"
+assert_eq "review loop-next counts on from the loop it inferred" \
+  "$("$ORCH" review loop-next)" "2"
+assert_contains "so the next loop's records land under it" \
+  "$("$ORCH" review path 1)" "/review/loop-02/"
+assert_contains "and it now reads the handoff that loop wrote" \
+  "$("$ORCH" handoff path review)" "04-review.md"
+
+assert_eq "review ready marks the PR and finishes the flow" \
+  "$("$ORCH" review ready)" "3"
+assert_eq "recording done as it goes" "$("$ORCH" state get phase)" "done"
+
+# --- init seeds the review loop ---------------------------------------------
+echo
+echo "init seeds the review loop"
+healthy_repo
+"$ORCH" init seeded >/dev/null
+assert_eq "a flow starts on its first loop" "$("$ORCH" state get loop)" "1"
+assert_eq "with somewhere to file that loop's records" \
+  "$([ -d .orchestrator/review/loop-01 ] && echo present || echo gone)" "present"
+# The budget belongs to the flow, so it is seeded once here and never refilled.
+# `state get` reads a JSON false back as empty, which is the shape the review
+# skill tests against - spent is "true", and anything else is unspent.
+assert_eq "and one flake rerun unspent" \
+  "$("$ORCH" state get | jq -r '.flake_rerun_used')" "false"
+assert_eq "which reads as unspent through state get" \
+  "$("$ORCH" state get flake_rerun_used)" ""
+"$ORCH" state set flake_rerun_used true
+assert_eq "and as spent once it has been" \
+  "$("$ORCH" state get flake_rerun_used)" "true"
+
+assert_contains "status names the loop as well as the iteration" \
+  "$("$ORCH" status)" "loop 1, iteration 0"
+assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin"
+assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 
 echo
 echo "$PASS passed, $FAIL failed"

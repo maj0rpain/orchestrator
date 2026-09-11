@@ -66,7 +66,7 @@ until review.>
 <the test seams agreed with the user, and why these and not lower ones>
 
 ## Spec review changelog
-<what the spec review changed, or "Not reviewed - review phase not built yet">
+<what the spec review changed, or "Not reviewed - spec review not built yet">
 
 ## Suggested skills
 <usually tdd, plus whatever the seams imply>
@@ -90,7 +90,51 @@ until review.>
 <where the implementation knowingly departed from the spec, and why. "None" if
 it did not. This is how review tells an agreed change from scope creep.>
 
+## Verification
+<the exact command that proves the change works, as you just ran it. The review
+loop runs this every iteration and treats a failure as blocking. You have the
+tests fresh; review would be guessing.>
+
 ## Already found and fixed
 <what implement's own closing code-review caught, so review iteration 1 does not
 re-report it>
+```
+
+### `04-review.md` (review loop -> the next review loop)
+
+Written only when a clean loop's chosen work needs a loop of its own. Its path is
+`"$ORCH" handoff path review-next`; `"$ORCH" review loop-next` files a copy under
+the loop that wrote it and rolls the counter.
+
+The first four sections are one-liners carried forward from `03` rather than
+referenced. Not to save the reader a file - the review loop opens `03` anyway,
+for its **Deviations** - but so that the four facts a loop runs on have exactly
+one authority. The review skill takes them from the handoff "and from nowhere
+else", and a fact with two homes is a fact that can disagree with itself. Carry
+them verbatim: a base SHA that drifts from `03`'s silently changes what every
+iteration diffs against, and nothing checks it.
+
+```markdown
+# Handoff: <slug>, loop <n>
+
+## PR
+<URL and number. Still draft.>
+
+## Spec issue
+<URL and number>
+
+## Base SHA
+<the same fixed point every loop reviews from>
+
+## Verification
+<the command, carried forward unchanged>
+
+## Chosen work
+<the nits the user chose, each with why it needs a loop rather than an in-place
+fix>
+
+## Already settled
+<declined nits, covered deviations, and rejected-alternative proposals. This is
+04's equivalent of 01's Rejected alternatives: without it loop 2 re-reports
+everything loop 1 let go and asks the user the same questions again.>
 ```

@@ -50,8 +50,11 @@ checks all of this up front, and `/orchestrator:doctor` reports it at any time.
                        implement, push, draft PR    ->  03-implement.md
                                                        |
                                                        | /clear
-  review session       code-review + CI loop        <--+
-                       until clean, then mark ready
+  review session       bounded review loop          <--+
+                       triage, fix, verify, CI      ->  ready, or 04-review.md
+                                                       |
+                                                       | /clear (another loop)
+                                                       +--> review session
 ```
 
 Handoffs live in `.orchestrator/handoff/`, ignored via `.git/info/exclude` so
@@ -99,6 +102,7 @@ legitimately write them mid-planning.
 ```
 commands/         start, next, status, doctor, redo, abort
 skills/flow/      the state machine (judgment)
+skills/review/    the review loop: rubric, authority rules, terminal states
 skills/handoff/   handoff templates, model-invocable unlike the upstream one
 scripts/orch.sh   every deterministic operation (mechanism)
 scripts/hook-*.sh the two hooks
@@ -126,15 +130,16 @@ publishing a change worth pulling.
 
 ## Status
 
-Walking skeleton. The plan, spec, and implement phases run; **the review phase is
-not built yet** and says so rather than improvising. `/orchestrator:doctor`
-covers the machine, the repo, and the active flow.
+All four phases run. The review phase is a bounded loop: `code-review` from the
+base SHA every iteration, a blocking/major/nit rubric applied on top of it, one
+fix commit per iteration, CI waited on once per loop with a single flake rerun
+per flow, and a hard stop at five iterations. It ends by marking the draft PR
+ready, or by handing off to a fresh loop, or by stopping with the reason
+recorded - and comments on the PR either way. `/orchestrator:doctor` covers the
+machine, the repo, and the active flow.
 
 Still to come: `orchestrator:review-spec` (fidelity, testability, consistency,
-implementability), and the review loop - `code-review` per iteration, a
-blocking/major/nit rubric, one fix commit per iteration, required CI green with a
-single flake rerun, and a hard stop at 5 iterations or two with no net progress.
-`doctor` grows a review group alongside it.
+implementability), and a review check group in `doctor`.
 
 ## License
 

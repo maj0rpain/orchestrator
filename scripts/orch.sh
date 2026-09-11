@@ -16,9 +16,21 @@ readonly PHASES="spec implement review done"
 readonly LABELS_DOC="docs/agents/triage-labels.md"
 readonly LABEL_LIMIT=1000
 
+# How long `review ci` waits, and how often it looks. Overridable through the
+# environment rather than through positional arguments: the 60-second grace is
+# what stops a repo whose checks have not registered yet being declared CI-less,
+# and a test that could not turn it down would take a minute to prove it works.
+# The environment keeps those knobs out of the documented command surface.
+ORCH_CI_GRACE="${ORCH_CI_GRACE:-60}"
+ORCH_CI_TIMEOUT="${ORCH_CI_TIMEOUT:-900}"
+ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
+
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
 note() { printf '%s\n' "$*"; }
 now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
+# Several answers here are one line of prose followed by detail lines, and it is
+# always the first line that carries the verdict.
+first_line() { printf '%s\n' "$1" | sed -n 1p; }
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"
 readonly ROOT
@@ -28,6 +40,21 @@ readonly HANDOFF_DIR="$ORCH/handoff"
 
 require_state() {
   [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run /orchestrator:start first."
+}
+
+# Prints the flow's PR number, or dies. Every review command that reaches GitHub
+# needs it and none of them can do anything useful without it.
+#
+# Call it as a bare assignment on its own line - `local pr` then `pr="$(require_pr)"`.
+# The `die` runs inside the caller's command substitution and so exits only the
+# subshell; what actually stops the command is `set -e` on the failed assignment.
+# Fold it into `local pr="$(require_pr)"` or an `if`, and `set -e` no longer
+# applies: the caller carries on with an empty PR number.
+require_pr() {
+  local pr
+  pr="$(jq -r '.pr // ""' "$STATE")"
+  [ -n "$pr" ] || die "no PR recorded in state - the implement phase opens it"
+  printf '%s\n' "$pr"
 }
 
 # --- environment ------------------------------------------------------------
@@ -211,7 +238,7 @@ d_probe() {
   if [ "$D_GH" = ok ]; then
     view="$(gh repo view --json nameWithOwner,defaultBranchRef \
       --jq '.nameWithOwner, (.defaultBranchRef.name // "")' 2>/dev/null)" || view=""
-    D_REPO_NAME="$(printf '%s\n' "$view" | sed -n 1p)"
+    D_REPO_NAME="$(first_line "$view")"
     D_REPO_BRANCH="$(printf '%s\n' "$view" | sed -n 2p)"
   fi
 }
@@ -522,7 +549,14 @@ check_flow_handoffs() {
   case "$phase" in
     spec)        files="01-plan.md" ;;
     implement)   files="01-plan.md 02-spec.md" ;;
-    review|done) files="01-plan.md 02-spec.md 03-implement.md" ;;
+    review|done)
+      files="01-plan.md 02-spec.md 03-implement.md"
+      # A second review loop was entered from the handoff the first one wrote,
+      # so from there on 04 is due like every other handoff a completed phase
+      # leaves. The loop number outlives the phase, so this belongs to the
+      # review arm rather than to every phase that carries a loop.
+      if [ "$(current_loop)" -gt 1 ]; then files="$files 04-review.md"; fi
+      ;;
     *) return 0 ;;
   esac
   for f in $files; do
@@ -652,11 +686,15 @@ cmd_init() {
     die "a flow is already active (slug: $(jq -r .slug "$STATE"), phase: $(jq -r .phase "$STATE")).
      One flow at a time - finish it, or run /orchestrator:abort."
   fi
-  mkdir -p "$HANDOFF_DIR" "$ORCH/review"
+  mkdir -p "$HANDOFF_DIR" "$(loop_dir 1)"
   exclude_orch_dir
+  # The flake rerun is seeded here rather than at the review phase because the
+  # budget belongs to the flow: one per flow, spent or not, so that an allowance
+  # that refilled each iteration could not become an infinite retry loop.
   jq -n --arg slug "$slug" --arg now "$(now)" '{
     slug: $slug, phase: "spec", issue: null, branch: null,
-    pr: null, base_sha: null, iteration: 0, created: $now, updated: $now
+    pr: null, base_sha: null, loop: 1, iteration: 0,
+    flake_rerun_used: false, created: $now, updated: $now
   }' >"$STATE"
   note "$slug"
 }
@@ -684,14 +722,34 @@ cmd_state() {
   esac
 }
 
+# Which loop the flow is on. A flow created before the review loop shipped has no
+# `loop` key at all, and every review command treats that as loop 1 rather than
+# failing - stranding an in-flight flow on a key it could not have written would
+# be a worse answer than the only one that could ever be right.
+current_loop() {
+  local l=""
+  if [ -f "$STATE" ]; then l="$(jq -r '.loop // ""' "$STATE" 2>/dev/null)" || l=""; fi
+  case "$l" in ''|*[!0-9]*) l=1 ;; esac
+  printf '%s\n' "$l"
+}
+
 # --- handoffs ---------------------------------------------------------------
 
+# Which handoff a phase reads. Still mechanical, but the mechanism gained a
+# second input: the review phase is re-entered once per loop, and every loop
+# after the first is entered from the 04-review.md the previous one wrote.
 handoff_file_for() {
-  case "$1" in
+  local phase="$1" loop="${2:-1}"
+  case "$phase" in
     spec)      printf '01-plan.md\n' ;;
     implement) printf '02-spec.md\n' ;;
-    review)    printf '03-implement.md\n' ;;
-    *) die "no handoff defined for phase: $1" ;;
+    review)
+      if [ "$loop" -gt 1 ]; then printf '04-review.md\n'; else printf '03-implement.md\n'; fi ;;
+    # Not a phase but a reader all the same: the loop that follows the one now
+    # finishing. A loop writes its handoff before the counter that would name the
+    # file has moved, so asking for it by phase alone cannot answer.
+    review-next) printf '04-review.md\n' ;;
+    *) die "no handoff defined for phase: $phase" ;;
   esac
 }
 
@@ -701,7 +759,8 @@ handoff_required() {
   case "$1" in
     01-plan.md)      printf '%s\n' '## Decisions' '## Rejected alternatives' '## Constraints' '## Open assumptions' ;;
     02-spec.md)      printf '%s\n' '## Spec issue' '## Seams' '## Spec review changelog' ;;
-    03-implement.md) printf '%s\n' '## PR' '## Spec issue' '## Base SHA' '## Deviations' ;;
+    03-implement.md) printf '%s\n' '## PR' '## Spec issue' '## Base SHA' '## Deviations' '## Verification' ;;
+    04-review.md)    printf '%s\n' '## PR' '## Spec issue' '## Base SHA' '## Verification' '## Chosen work' '## Already settled' ;;
     *) die "unknown handoff file: $1" ;;
   esac
 }
@@ -736,7 +795,13 @@ cmd_handoff() {
   case "$op" in
     path)
       [ $# -eq 1 ] || die "usage: orch.sh handoff path <phase>"
-      printf '%s/%s\n' "$HANDOFF_DIR" "$(handoff_file_for "$1")"
+      # Assign first, print second. `handoff_file_for` dies on a phase it does
+      # not know, and inside the printf's own substitution that kills the
+      # subshell and leaves printf to succeed - so the caller gets the bare
+      # handoff directory and a zero exit, which is worse than no answer.
+      local file
+      file="$(handoff_file_for "$1" "$(current_loop)")"
+      printf '%s/%s\n' "$HANDOFF_DIR" "$file"
       ;;
     validate)
       [ $# -eq 1 ] || die "usage: orch.sh handoff validate <file>"
@@ -752,6 +817,215 @@ cmd_handoff() {
       return "$failed"
       ;;
     *) die "unknown handoff op: ${op:-<none>} (want path|validate)" ;;
+  esac
+}
+
+# --- review -----------------------------------------------------------------
+
+# The bound belongs here rather than in the skill's prose: a session that has
+# spent four iterations arguing with itself is exactly the one that would
+# re-remember five as six.
+readonly ITERATION_BOUND=5
+
+loop_dir() { printf '%s/review/loop-%02d\n' "$ORCH" "$1"; }
+
+# Float comparison and addition, in awk, because the timings are overridable and
+# the tests turn them down to fractions of a second; bash arithmetic is integer
+# only and would read a grace of 0.3 as 0. A fractional `sleep` is a GNU/BSD
+# extension rather than POSIX, which is a line this file can hold because the
+# fractions only ever come from a test - the shipped defaults are whole seconds.
+float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
+float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
+
+# awk compares a number against a non-numeric string as strings, which makes
+# every `float_lt` above true and the poll loop endless. A zero interval is the
+# same hazard by a different route: `sleep 0` returns at once and never advances
+# the clock the loop sleeps on, leaving it to poll a rate-limited API as fast as
+# GitHub will answer. The three knobs are read once, here, before anything
+# sleeps on one of them.
+require_ci_knobs() {
+  local k v
+  for k in ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL; do
+    eval "v=\$$k"
+    case "$v" in
+      ''|*[!0-9.]*|*.*.*|.) die "$k is not a number: $v" ;;
+    esac
+  done
+  # Every character is a zero or the point, so the value is zero however it was
+  # written - and a glob cannot say that without also matching 0.05.
+  case "${ORCH_CI_INTERVAL//[0.]/}" in
+    '') die "ORCH_CI_INTERVAL must be greater than zero: $ORCH_CI_INTERVAL" ;;
+  esac
+}
+
+# The larger of the wall clock and the time this loop has spent asleep. The wall
+# clock alone is whole seconds, which a sub-second override never reaches; the
+# sleep total alone ignores however long each `gh` call took, which would stretch
+# a 15-minute cap well past 15 minutes on a slow connection.
+ci_elapsed() { awk -v w="$(( $(date +%s) - $1 ))" -v s="$2" 'BEGIN { print (w > s) ? w : s }'; }
+
+# One turn of the poll loop: wait, then advance both clocks. It assigns to the
+# caller's `slept` and `elapsed`, which bash scopes dynamically - threading two
+# counters back out through a subshell's stdout would cost more than it explains.
+ci_tick() {
+  sleep "$ORCH_CI_INTERVAL"
+  slept="$(float_add "$slept" "$ORCH_CI_INTERVAL")"
+  elapsed="$(ci_elapsed "$started" "$slept")"
+}
+
+# One look at the PR's checks, classified. Prints the classification on the first
+# line and any detail on the lines after it, indented like doctor's remedies.
+#
+# The buckets carry this, not the exit status. `gh pr checks` documents exit 8
+# for pending checks, but it returns through its JSON exporter before it reaches
+# the code that sets 8 or 1 - so with `--json`, which is the only way this
+# function asks, gh exits 0 whatever the checks are doing. The `8)` arm below is
+# kept against a gh that stops doing that, and is not the path taken.
+#
+# What the exit status does still carry is the difference between a repo with no
+# checks at all and an API that would not answer, and only the error *text*
+# separates those two. Getting that distinction backwards is what would make the
+# loop declare a CI-having repo CI-less.
+ci_probe() {
+  local pr="$1" scope="$2" out st=0 buckets failed name
+  if [ "$scope" = required ]; then
+    out="$(gh pr checks "$pr" --required --json bucket,name,state 2>&1)" || st=$?
+  else
+    out="$(gh pr checks "$pr" --json bucket,name,state 2>&1)" || st=$?
+  fi
+  case "$st" in
+    0) ;;
+    8) note pending; return 0 ;;
+    *)
+      case "$out" in
+        *"no checks reported"*|*"no required checks"*) note none; return 0 ;;
+        *) note unreachable; note "      $(first_line "$out")"; return 0 ;;
+      esac ;;
+  esac
+  # jq's failure and jq's empty answer both arrive as an empty string, and they
+  # mean opposite things: an empty array is a repo with no checks, which passes,
+  # while output jq cannot read is an answer nobody has, which must not. Kept
+  # apart here, because conflating them marks a PR ready over unread checks.
+  if ! buckets="$(printf '%s' "$out" | jq -r '.[].bucket' 2>/dev/null)"; then
+    note unreachable
+    note "      gh pr checks answered with something jq could not read"
+    return 0
+  fi
+  if [ -z "$buckets" ]; then note none; return 0; fi
+  failed="$(printf '%s' "$out" | jq -r '.[] | select(.bucket == "fail" or .bucket == "cancel") | .name' 2>/dev/null)" || failed=""
+  if [ -n "$failed" ]; then
+    note failing
+    while IFS= read -r name; do [ -z "$name" ] || note "      $name"; done <<<"$failed"
+    return 0
+  fi
+  if printf '%s\n' "$buckets" | grep -qx pending; then note pending; return 0; fi
+  note green
+}
+
+cmd_review() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    begin)
+      require_state
+      local n
+      n=$(( $(jq -r '.iteration // 0' "$STATE") + 1 ))
+      [ "$n" -le "$ITERATION_BOUND" ] || \
+        die "loop $(current_loop) has run its $ITERATION_BOUND iterations - stop the loop and report, do not start another"
+      cmd_state set iteration "$n"
+      note "$n"
+      ;;
+    path)
+      require_state
+      [ $# -le 1 ] || die "usage: orch.sh review path [iteration]"
+      local n dir
+      n="${1:-$(jq -r '.iteration // 0' "$STATE")}"
+      case "$n" in ''|*[!0-9]*) die "not an iteration number: $n" ;; esac
+      # Base 10 explicitly: printf reads a zero-padded argument as octal, and
+      # `08` is not a number in base 8.
+      n=$((10#$n))
+      dir="$(loop_dir "$(current_loop)")"
+      mkdir -p "$dir"
+      printf '%s/iteration-%02d.md\n' "$dir" "$n"
+      ;;
+    loop-next)
+      require_state
+      local n loop out from
+      loop="$(current_loop)"
+      from="$HANDOFF_DIR/$(handoff_file_for review-next)"
+      [ -f "$from" ] || die "no $(basename "$from") to hand on - a loop hands off through it, so write it first"
+      out="$(loop_dir "$loop")"
+      mkdir -p "$out"
+      # Copied, not moved: the loop that is starting reads the same file.
+      cp "$from" "$out/"
+      n=$((loop + 1))
+      cmd_state set loop "$n"
+      cmd_state set iteration 0
+      mkdir -p "$(loop_dir "$n")"
+      note "$n"
+      ;;
+    ready)
+      require_state
+      local pr
+      pr="$(require_pr)"
+      # GitHub first, state second. Recording `done` over a PR still sitting in
+      # draft would claim a success nobody can see, and the flow would have no
+      # phase left to retry it from.
+      gh pr ready "$pr" >/dev/null 2>&1 \
+        || die "gh could not mark PR #$pr ready - the flow stays in review"
+      cmd_state set phase done
+      note "$pr"
+      ;;
+    ci)
+      require_state
+      local pr started slept=0 elapsed=0 res verdict
+      require_ci_knobs
+      pr="$(require_pr)"
+      started="$(date +%s)"
+      while :; do
+        # Branch protection's required checks decide it wherever it names any.
+        # When nothing required has reported, gh's message cannot tell "this repo
+        # requires nothing" from "what it requires has not registered yet" - so
+        # the grace is spent waiting on the required set, and only once it runs
+        # out does the net widen to every check on the commit. Widening sooner is
+        # how an unrelated green check gets mistaken for a required one that
+        # never arrived, and the PR marked ready over it.
+        res="$(ci_probe "$pr" required)"
+        verdict="$(first_line "$res")"
+        if [ "$verdict" = none ]; then
+          if float_lt "$elapsed" "$ORCH_CI_GRACE"; then ci_tick; continue; fi
+          res="$(ci_probe "$pr" all)"
+          verdict="$(first_line "$res")"
+        fi
+        case "$verdict" in
+          green)       printf '%s\n' "$res"; return 0 ;;
+          # Reported, not fixed: which failure is worth a flake rerun is a
+          # judgement, and the budget for it belongs to the flow.
+          failing)     printf '%s\n' "$res"; return 1 ;;
+          unreachable) printf '%s\n' "$res"; return 1 ;;
+          # Only reachable with the grace already spent: nothing required
+          # reported, and then nothing at all reported either.
+          none)        printf '%s\n' "$res"; return 0 ;;
+          pending)
+            if float_lt "$elapsed" "$ORCH_CI_TIMEOUT"; then ci_tick; continue; fi
+            # Still pending at the cap is an answer we do not have, not a green
+            # one. The loop stops rather than marking a PR ready over something
+            # nothing ever verified.
+            note unreachable
+            note "      checks were still pending after ${ORCH_CI_TIMEOUT}s"
+            return 1 ;;
+          # Unreachable while ci_probe prints one of the five words above, and
+          # the arm that keeps it that way: an unrecognised answer with no arm
+          # would fall through to the next pass with nothing to wait on, and
+          # spin this loop silently on the one command built to be bounded.
+          *)
+            note unreachable
+            note "      unrecognised answer from gh pr checks: $verdict"
+            return 1 ;;
+        esac
+      done
+      ;;
+    *) die "unknown review op: ${op:-<none>} (want begin|path|ci|ready|loop-next)" ;;
   esac
 }
 
@@ -806,7 +1080,9 @@ cmd_status() {
   note "issue:     $issue"
   note "branch:    $branch"
   note "PR:        $pr"
-  note "review:    iteration $iteration"
+  # The loop number, not just the iteration: once a flow can hold more than one
+  # loop, "iteration 3" does not say which three.
+  note "review:    loop $(current_loop), iteration $iteration"
   note ""
   note "handoffs:"
   local f
@@ -844,9 +1120,18 @@ orch.sh - deterministic operations for the orchestrator flow
   state get [key]             print state.json, or one key
   state set <key> <value>     update one key
   handoff path <phase>        print the handoff path for a phase
+                              (phase, or `review-next` for the handoff a
+                               finishing review loop writes)
   handoff validate <file>     check required sections exist and are non-empty
   branch-create               create orch/<issue>-<slug> off the default branch
   pr-open <title> <body-file> push and open a draft PR
+  review begin                claim the next iteration, refusing past 5
+  review path [n]             record path under the current loop's directory,
+                              creating that directory if it is not there yet
+  review ci                   classify the PR's checks: green, failing, none, or
+                              unreachable; exits non-zero on the last two
+  review ready                mark the draft PR ready and set the phase to done
+  review loop-next            file the outgoing handoff and start the next loop
   status                      human-readable summary
   archive                     move the live flow into .orchestrator/archive/
 USAGE
@@ -864,6 +1149,7 @@ main() {
     handoff)       cmd_handoff "$@" ;;
     branch-create) cmd_branch_create "$@" ;;
     pr-open)       cmd_pr_open "$@" ;;
+    review)        cmd_review "$@" ;;
     status)        cmd_status "$@" ;;
     archive)       cmd_archive "$@" ;;
     help|-h|--help) cmd_help ;;
