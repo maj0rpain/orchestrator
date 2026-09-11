@@ -97,9 +97,11 @@ which holds the only copy of the plan.
    loop; this file owns phase dispatch, and has nothing to add to a review
    beyond getting you there.
 
-A flow may pass through this phase more than once: a loop that hands off to a
-fresh loop leaves `phase` at `review`, so `/orchestrator:next` lands here again
-and the review skill reads the handoff the previous loop wrote.
+A flow may pass through this phase more than once. A loop that ends in a
+bounded stop leaves `phase` at `review`, and a human who wants more looks runs
+`/orchestrator:next` again: that is a fresh loop with its own budget, continuing
+the flow's iteration numbering, and it reads `03-implement.md` like the first
+one did.
 
 ## Printing the boundary
 

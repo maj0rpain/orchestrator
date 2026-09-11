@@ -51,9 +51,9 @@ checks all of this up front, and `/orchestrator:doctor` reports it at any time.
                                                        |
                                                        | /clear
   review session       bounded review loop          <--+
-                       triage, fix, verify, CI      ->  ready, or 04-review.md
+                       triage, fix, verify, CI      ->  ready, or a bounded stop
                                                        |
-                                                       | /clear (another loop)
+                                                       | /clear (after a bounded stop)
                                                        +--> review session
 ```
 
@@ -130,13 +130,18 @@ publishing a change worth pulling.
 
 ## Status
 
-All four phases run. The review phase is a bounded loop: `code-review` from the
-base SHA every iteration, a blocking/major/nit rubric applied on top of it, one
-fix commit per iteration, CI waited on once per loop with a single flake rerun
-per flow, and a hard stop at five iterations. It ends by marking the draft PR
-ready, or by handing off to a fresh loop, or by stopping with the reason
-recorded - and comments on the PR either way. `/orchestrator:doctor` covers the
-machine, the repo, and the active flow.
+All four phases run. The review phase is a bounded loop: a budget of iterations
+the human chooses at the start (five by default), `code-review` from the base
+SHA every one of them, a blocking/major/nit rubric applied on top of it, and
+only blocking findings fixed - one fix commit per iteration that fixed anything.
+The loop runs its whole budget; when it ends, every major and nit becomes a
+GitHub issue labelled `review:major` or `review:nit` plus `needs-triage`, with
+the reviewer's finding and the loop's reasoning in the body. CI is waited on
+once per loop with a single flake rerun per flow. It ends by marking the draft
+PR ready, or by stopping with the reason recorded - and comments on the PR
+either way. After a bounded stop, a human may run the phase again as a fresh
+loop with its own budget. `/orchestrator:doctor` covers the machine, the repo,
+and the active flow.
 
 Still to come: `orchestrator:review-spec` (fidelity, testability, consistency,
 implementability), and a review check group in `doctor`.
