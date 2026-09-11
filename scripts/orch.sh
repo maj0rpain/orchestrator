@@ -37,6 +37,7 @@ readonly ROOT
 readonly ORCH="$ROOT/$ORCH_DIR_NAME"
 readonly STATE="$ORCH/state.json"
 readonly HANDOFF_DIR="$ORCH/handoff"
+readonly REVIEW_DIR="$ORCH/review"
 
 require_state() {
   [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run /orchestrator:start first."
@@ -549,14 +550,7 @@ check_flow_handoffs() {
   case "$phase" in
     spec)        files="01-plan.md" ;;
     implement)   files="01-plan.md 02-spec.md" ;;
-    review|done)
-      files="01-plan.md 02-spec.md 03-implement.md"
-      # A second review loop was entered from the handoff the first one wrote,
-      # so from there on 04 is due like every other handoff a completed phase
-      # leaves. The loop number outlives the phase, so this belongs to the
-      # review arm rather than to every phase that carries a loop.
-      if [ "$(current_loop)" -gt 1 ]; then files="$files 04-review.md"; fi
-      ;;
+    review|done) files="01-plan.md 02-spec.md 03-implement.md" ;;
     *) return 0 ;;
   esac
   for f in $files; do
@@ -686,14 +680,16 @@ cmd_init() {
     die "a flow is already active (slug: $(jq -r .slug "$STATE"), phase: $(jq -r .phase "$STATE")).
      One flow at a time - finish it, or run /orchestrator:abort."
   fi
-  mkdir -p "$HANDOFF_DIR" "$(loop_dir 1)"
+  mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"
   exclude_orch_dir
-  # The flake rerun is seeded here rather than at the review phase because the
-  # budget belongs to the flow: one per flow, spent or not, so that an allowance
-  # that refilled each iteration could not become an infinite retry loop.
+  # The budget is null until the review loop asks a human for one, and `review
+  # begin` reads null as the default. The flake rerun is seeded here rather than
+  # at the review phase because its allowance belongs to the flow: one per flow,
+  # spent or not, so that one refilled each iteration could not become an
+  # infinite retry loop.
   jq -n --arg slug "$slug" --arg now "$(now)" '{
     slug: $slug, phase: "spec", issue: null, branch: null,
-    pr: null, base_sha: null, loop: 1, iteration: 0,
+    pr: null, base_sha: null, budget: null, iteration: 0,
     flake_rerun_used: false, created: $now, updated: $now
   }' >"$STATE"
   note "$slug"
@@ -722,34 +718,17 @@ cmd_state() {
   esac
 }
 
-# Which loop the flow is on. A flow created before the review loop shipped has no
-# `loop` key at all, and every review command treats that as loop 1 rather than
-# failing - stranding an in-flight flow on a key it could not have written would
-# be a worse answer than the only one that could ever be right.
-current_loop() {
-  local l=""
-  if [ -f "$STATE" ]; then l="$(jq -r '.loop // ""' "$STATE" 2>/dev/null)" || l=""; fi
-  case "$l" in ''|*[!0-9]*) l=1 ;; esac
-  printf '%s\n' "$l"
-}
-
 # --- handoffs ---------------------------------------------------------------
 
-# Which handoff a phase reads. Still mechanical, but the mechanism gained a
-# second input: the review phase is re-entered once per loop, and every loop
-# after the first is entered from the 04-review.md the previous one wrote.
+# Which handoff a phase reads. Mechanical, and one input only: every review
+# loop, however many the flow has run, reads the implement handoff. The four
+# facts a loop runs on then have exactly one authority.
 handoff_file_for() {
-  local phase="$1" loop="${2:-1}"
-  case "$phase" in
+  case "$1" in
     spec)      printf '01-plan.md\n' ;;
     implement) printf '02-spec.md\n' ;;
-    review)
-      if [ "$loop" -gt 1 ]; then printf '04-review.md\n'; else printf '03-implement.md\n'; fi ;;
-    # Not a phase but a reader all the same: the loop that follows the one now
-    # finishing. A loop writes its handoff before the counter that would name the
-    # file has moved, so asking for it by phase alone cannot answer.
-    review-next) printf '04-review.md\n' ;;
-    *) die "no handoff defined for phase: $phase" ;;
+    review)    printf '03-implement.md\n' ;;
+    *) die "no handoff defined for phase: $1" ;;
   esac
 }
 
@@ -760,7 +739,6 @@ handoff_required() {
     01-plan.md)      printf '%s\n' '## Decisions' '## Rejected alternatives' '## Constraints' '## Open assumptions' ;;
     02-spec.md)      printf '%s\n' '## Spec issue' '## Seams' '## Spec review changelog' ;;
     03-implement.md) printf '%s\n' '## PR' '## Spec issue' '## Base SHA' '## Deviations' '## Verification' ;;
-    04-review.md)    printf '%s\n' '## PR' '## Spec issue' '## Base SHA' '## Verification' '## Chosen work' '## Already settled' ;;
     *) die "unknown handoff file: $1" ;;
   esac
 }
@@ -773,8 +751,13 @@ section_body() {
 # section, each `ok <heading>` or `FAIL <problem>`. doctor's flow-state check
 # reads the same answer rather than writing a second one that can drift from it.
 handoff_report() {
-  local file="$1" base heading failed=0
+  local file="$1" base heading required failed=0
   base="$(basename "$file")"
+  # Resolved up front, and the failure caught by hand: read straight out of a
+  # process substitution, a name this file does not know would die in a subshell
+  # nobody checks, the loop would read nothing, and a file with no required
+  # sections at all would validate clean.
+  required="$(handoff_required "$base")" || return 1
   while IFS= read -r heading; do
     if ! grep -qxF "$heading" "$file"; then
       printf 'FAIL missing section: %s\n' "$heading"
@@ -785,7 +768,7 @@ handoff_report() {
     else
       printf 'ok %s\n' "$heading"
     fi
-  done < <(handoff_required "$base")
+  done <<<"$required"
   return "$failed"
 }
 
@@ -800,7 +783,7 @@ cmd_handoff() {
       # subshell and leaves printf to succeed - so the caller gets the bare
       # handoff directory and a zero exit, which is worse than no answer.
       local file
-      file="$(handoff_file_for "$1" "$(current_loop)")"
+      file="$(handoff_file_for "$1")"
       printf '%s/%s\n' "$HANDOFF_DIR" "$file"
       ;;
     validate)
@@ -824,10 +807,27 @@ cmd_handoff() {
 
 # The bound belongs here rather than in the skill's prose: a session that has
 # spent four iterations arguing with itself is exactly the one that would
-# re-remember five as six.
-readonly ITERATION_BOUND=5
+# re-remember five as six. The number itself is the human's, read from state;
+# this is only what it reads as when nobody has set one - a flow started before
+# the key existed, or a value nothing can count.
+readonly DEFAULT_BUDGET=5
 
-loop_dir() { printf '%s/review/loop-%02d\n' "$ORCH" "$1"; }
+review_budget() {
+  local b
+  b="$(jq -r '.budget // ""' "$STATE")"
+  case "$b" in ''|*[!0-9]*) b="$DEFAULT_BUDGET" ;; esac
+  printf '%s\n' "$b"
+}
+
+# The labels a filed finding carries: its severity, so triage can filter on it,
+# and needs-triage, so it enters the normal queue. Created with --force each
+# time, which on the current gh updates a label that exists rather than failing
+# on it - so filing works on a repo that has never seen these and on one that
+# has, with no listing step in between.
+label_ensure() {
+  gh label create "$1" --force --color "$2" --description "$3" >/dev/null 2>&1 \
+    || die "gh could not create label $1"
+}
 
 # Float comparison and addition, in awk, because the timings are overridable and
 # the tests turn them down to fractions of a second; bash arithmetic is integer
@@ -928,41 +928,50 @@ cmd_review() {
   case "$op" in
     begin)
       require_state
-      local n
+      local n budget
       n=$(( $(jq -r '.iteration // 0' "$STATE") + 1 ))
-      [ "$n" -le "$ITERATION_BOUND" ] || \
-        die "loop $(current_loop) has run its $ITERATION_BOUND iterations - stop the loop and report, do not start another"
+      budget="$(review_budget)"
+      [ "$n" -le "$budget" ] || \
+        die "budget of $budget iterations spent - stop the loop and report, do not start another"
       cmd_state set iteration "$n"
       note "$n"
       ;;
     path)
       require_state
       [ $# -le 1 ] || die "usage: orch.sh review path [iteration]"
-      local n dir
+      local n
       n="${1:-$(jq -r '.iteration // 0' "$STATE")}"
       case "$n" in ''|*[!0-9]*) die "not an iteration number: $n" ;; esac
       # Base 10 explicitly: printf reads a zero-padded argument as octal, and
       # `08` is not a number in base 8.
       n=$((10#$n))
-      dir="$(loop_dir "$(current_loop)")"
-      mkdir -p "$dir"
-      printf '%s/iteration-%02d.md\n' "$dir" "$n"
+      # Flat, and numbered on across every loop the flow runs: one flow, one
+      # trail, and nothing is ever moved aside for a loop that comes later.
+      mkdir -p "$REVIEW_DIR"
+      printf '%s/iteration-%02d.md\n' "$REVIEW_DIR" "$n"
       ;;
-    loop-next)
+    file)
       require_state
-      local n loop out from
-      loop="$(current_loop)"
-      from="$HANDOFF_DIR/$(handoff_file_for review-next)"
-      [ -f "$from" ] || die "no $(basename "$from") to hand on - a loop hands off through it, so write it first"
-      out="$(loop_dir "$loop")"
-      mkdir -p "$out"
-      # Copied, not moved: the loop that is starting reads the same file.
-      cp "$from" "$out/"
-      n=$((loop + 1))
-      cmd_state set loop "$n"
-      cmd_state set iteration 0
-      mkdir -p "$(loop_dir "$n")"
-      note "$n"
+      [ $# -eq 4 ] && [ "$3" = --body-file ] \
+        || die "usage: orch.sh review file <major|nit> <title> --body-file <file>"
+      local severity="$1" title="$2" body="$4" colour url
+      case "$severity" in
+        major) colour=d93f0b ;;
+        nit)   colour=c5def5 ;;
+        *) die "not a severity that gets filed: $severity (want major or nit - the loop fixes blocking)" ;;
+      esac
+      [ -n "$title" ] || die "the title is empty"
+      [ -f "$body" ] || die "body file not found: $body"
+      label_ensure "review:$severity" "$colour" "Review finding filed at $severity severity"
+      label_ensure needs-triage e4e669 "Not yet triaged"
+      # The title carries no severity prefix: the label holds it, where triage
+      # can change it, and the title reads as an issue.
+      url="$(gh issue create --title "$title" --body-file "$body" \
+        --label "review:$severity" --label needs-triage)" \
+        || die "gh could not create the issue"
+      # Prints the number alone: the record cites a number, and the caller
+      # would otherwise be parsing a URL out of prose every time.
+      note "${url##*/}"
       ;;
     ready)
       require_state
@@ -1025,7 +1034,7 @@ cmd_review() {
         esac
       done
       ;;
-    *) die "unknown review op: ${op:-<none>} (want begin|path|ci|ready|loop-next)" ;;
+    *) die "unknown review op: ${op:-<none>} (want begin|path|file|ci|ready)" ;;
   esac
 }
 
@@ -1074,15 +1083,15 @@ cmd_status() {
   local slug phase issue branch pr iteration
   slug="$(jq -r .slug "$STATE")";       phase="$(jq -r .phase "$STATE")"
   issue="$(jq -r '.issue // "-"' "$STATE")";  branch="$(jq -r '.branch // "-"' "$STATE")"
-  pr="$(jq -r '.pr // "-"' "$STATE")";  iteration="$(jq -r .iteration "$STATE")"
+  pr="$(jq -r '.pr // "-"' "$STATE")";  iteration="$(jq -r '.iteration // 0' "$STATE")"
   note "flow:      $slug"
   note "phase:     $phase"
   note "issue:     $issue"
   note "branch:    $branch"
   note "PR:        $pr"
-  # The loop number, not just the iteration: once a flow can hold more than one
-  # loop, "iteration 3" does not say which three.
-  note "review:    loop $(current_loop), iteration $iteration"
+  # Against the budget, not alone: "iteration 3" does not say how far along
+  # the loop is, and the budget is the one number a human chose.
+  note "review:    iteration $iteration of $(review_budget)"
   note ""
   note "handoffs:"
   local f
@@ -1120,18 +1129,20 @@ orch.sh - deterministic operations for the orchestrator flow
   state get [key]             print state.json, or one key
   state set <key> <value>     update one key
   handoff path <phase>        print the handoff path for a phase
-                              (phase, or `review-next` for the handoff a
-                               finishing review loop writes)
   handoff validate <file>     check required sections exist and are non-empty
   branch-create               create orch/<issue>-<slug> off the default branch
   pr-open <title> <body-file> push and open a draft PR
-  review begin                claim the next iteration, refusing past 5
-  review path [n]             record path under the current loop's directory,
-                              creating that directory if it is not there yet
+  review begin                claim the next iteration, refusing once the
+                              flow's budget is spent (5 when none is set)
+  review path [n]             record path, .orchestrator/review/iteration-NN.md,
+                              creating the directory if it is not there yet
+  review file <major|nit> <title> --body-file <file>
+                              file a finding as a GitHub issue labelled
+                              review:<severity> and needs-triage, creating the
+                              labels if missing; prints the issue number
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
   review ready                mark the draft PR ready and set the phase to done
-  review loop-next            file the outgoing handoff and start the next loop
   status                      human-readable summary
   archive                     move the live flow into .orchestrator/archive/
 USAGE
