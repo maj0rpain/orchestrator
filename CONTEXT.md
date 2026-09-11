@@ -29,17 +29,29 @@ options, deviations.
 
 ## Review loop
 
-One bounded sequence of iterations, ending either when an iteration's review
-comes back with nothing blocking or major to fix, or when it exhausts its bound.
-A flow may run more than one: a loop that finishes can hand off to a fresh loop,
-which starts with a new session and its own bound. Only a human decides that a
-further loop happens.
+One run of the review phase in one session: a budget of iterations, every one a
+fresh review of the whole change from the base SHA, ending in a terminal state.
+A flow runs a loop each time it enters the review phase; a flow's loops share
+one iteration numbering, and only a human decides that a further loop happens.
+
+## Budget
+
+The number of iterations a review loop runs, chosen by a human when the loop
+starts - five unless they say otherwise. A loop runs its whole budget: finding
+nothing does not end it early, because every iteration is an independent look
+at the same change, and the value of the loop is in the number of looks.
 
 ## Iteration
 
-One pass within a review loop: review the change, triage what came back, fix,
-verify. Iterations are numbered from 1; a loop that has run none sits at 0. A
-loop is bounded to five.
+One pass within a review loop: review the change, triage what came back, fix
+what is blocking, verify. Iterations are numbered from 1 and run on across a
+flow's loops; a flow that has run none sits at 0. A loop runs as many as its
+budget allows.
+
+## Clean iteration
+
+An iteration whose review found nothing blocking, so it fixed nothing and
+committed nothing. A loop can finish only on a clean final iteration.
 
 ## Finding
 
@@ -48,44 +60,41 @@ which the review phase assigns - the reviewer itself reports findings unranked.
 
 ## Severity
 
-Which of three roles a finding plays in whether a review loop can finish:
+Which of three roles a finding plays. Only one of them is loop behaviour; the
+other two are triage priorities on filed findings:
 
 - **Blocking** - the change is wrong: incorrect behaviour, a spec requirement
   missing or misimplemented, a security problem, a broken or missing test, or a
-  failing verification command. The loop cannot finish while one is open.
+  failing verification command. The only severity the loop fixes.
 - **Major** - the change works but carries real cost: a documented standard
-  breached, a smell with teeth, scope nobody asked for. Fixed like a blocking
-  finding, and a loop cannot finish on an iteration that found one; what
-  separates the two is that the change is not wrong, not that a loop may close
-  over it.
-- **Nit** - taste and judgement calls. Recorded and never blocking, and never
-  fixed inside an iteration. A loop that ends clean asks which ones to fix
-  before it marks the PR ready.
+  breached, a smell with teeth, scope nobody asked for. Filed, never fixed by
+  the loop.
+- **Nit** - taste and judgement calls. Filed, never fixed by the loop.
+
+## Filed finding
+
+A major or nit turned into an issue when a loop terminates, carrying the
+reviewer's finding and the loop's reasoning about it, deduplicated across
+iterations and across a flow's loops. A filed finding enters triage against the
+whole codebase rather than against one diff. Findings the loop demoted on a
+human's earlier decision are reported, never filed.
 
 ## Review record
 
 The written account of one iteration: what was found, at what severity, what was
-done about it, and what CI said. A record is a record - it is read by humans
-after the fact, not by the loop to decide anything.
+done about it, which issues were filed, and what CI said. A record is a record -
+it is read by humans after the fact, not by the loop to decide anything.
 
 ## Terminal state
 
-One of the three ways a review loop can end: the PR marked ready, a handoff to a
-fresh loop, or a bounded stop.
+One of the two ways a review loop can end: the PR marked ready, or a bounded
+stop.
 
 ## Bounded stop
 
 The terminal state of a loop that ended without the change being ready - because
-findings are still open, because nothing reviewed what the loop last wrote, or
-because CI could not be called green. A stop is not a failed change and not a
-successful one.
-
-## In place / needs a loop
-
-The two kinds of nit fix, told apart by whether the change would itself need
-reviewing. **In place** is localized, changes no behaviour, and is covered by
-existing tests. **Needs a loop** changes behaviour, adds a seam, or touches
-several modules.
+its final iteration fixed something nothing has reviewed, or because CI could
+not be called green. A stop is not a failed change and not a successful one.
 
 ## Flake rerun
 

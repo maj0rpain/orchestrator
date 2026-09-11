@@ -24,6 +24,7 @@ iteration and to the end of the loop (see the review skill): with a wait inside
 each iteration, a single session could spend most of an hour blocked.
 
 Fresh context does return at the loop boundary rather than the iteration
-boundary: a loop that hands off to another loop writes `04-review.md` and stops,
-and the next loop starts in a new session. The unit of context isolation is the
-loop, not the iteration.
+boundary: a flow that re-enters the review phase after a bounded stop starts a
+fresh loop in a new session, which reads the implement handoff and the earlier
+iteration records rather than anything the previous loop's session held (see
+ADR-0003). The unit of context isolation is the loop, not the iteration.
