@@ -58,6 +58,16 @@ require_pr() {
   printf '%s\n' "$pr"
 }
 
+# Prints the flow's spec issue number, or dies. branch-create, pr-open, and
+# every spec op need it before touching GitHub. Same calling convention as
+# require_pr - assign it bare on its own line so `set -e` catches the die.
+require_issue() {
+  local issue
+  issue="$(jq -r '.issue // ""' "$STATE")"
+  [ -n "$issue" ] || die "no issue recorded in state - the spec phase must publish one first"
+  printf '%s\n' "$issue"
+}
+
 # --- environment ------------------------------------------------------------
 
 # Locate the newest installed mattpocock-skills plugin. Resolved by glob at
@@ -1075,8 +1085,7 @@ cmd_spec() {
   require_state
   [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment> <file>"
   local file="$1" issue
-  issue="$(jq -r '.issue // ""' "$STATE")"
-  [ -n "$issue" ] || die "no issue recorded in state - the spec phase must publish one first"
+  issue="$(require_issue)"
   case "$op" in
     fetch)
       # Written beside the target and moved into place only once gh has
@@ -1110,8 +1119,7 @@ cmd_branch_create() {
   require_state
   local slug issue base name
   slug="$(jq -r .slug "$STATE")"
-  issue="$(jq -r '.issue // ""' "$STATE")"
-  [ -n "$issue" ] || die "no issue recorded in state - the spec phase must publish one first"
+  issue="$(require_issue)"
   name="orch/${issue}-${slug}"
   if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
   base="$(default_branch)"
@@ -1125,15 +1133,25 @@ cmd_branch_create() {
 cmd_pr_open() {
   require_state
   [ $# -eq 2 ] || die "usage: orch.sh pr-open <title> <body-file>"
-  local title="$1" body_file="$2" branch pr
+  local title="$1" body_file="$2" issue branch pr tmp
   [ -f "$body_file" ] || die "body file not found: $body_file"
+  issue="$(require_issue)"
   branch="$(jq -r '.branch // ""' "$STATE")"
   [ -n "$branch" ] || die "no branch recorded in state"
   git push -q -u origin "$branch"
+  # GitHub only links a PR as a closer on an exact close(s|d)/fix(es|ed)/
+  # resolve(s|d) keyword, so pr-open writes it rather than leaving the verb to
+  # whichever agent wrote the body.
+  tmp="$(mktemp)"
+  { printf 'Closes #%s\n\n' "$issue"; cat "$body_file"; } >"$tmp"
   # Draft is the honest signal: the review loop has not run yet, so marking it
   # ready is the loop's success condition rather than a comment nobody reads.
-  gh pr create --draft --base "$(default_branch)" --head "$branch" \
-    --title "$title" --body-file "$body_file" >/dev/null
+  if ! gh pr create --draft --base "$(default_branch)" --head "$branch" \
+      --title "$title" --body-file "$tmp" >/dev/null; then
+    rm -f "$tmp"
+    die "gh could not open the PR"
+  fi
+  rm -f "$tmp"
   pr="$(gh pr view "$branch" --json number --jq .number)"
   cmd_state set pr "$pr"
   note "$pr"

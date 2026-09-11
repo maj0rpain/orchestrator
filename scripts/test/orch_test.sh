@@ -98,6 +98,13 @@ complete_implement_handoff() {
 # the issue. `view` answers GH_STUB_BODY verbatim; `edit` and `comment` record
 # the number, flags, and body file contents they were handed to GH_STUB_FILED.
 # Each fails on demand: GH_STUB_VIEW_EXIT, GH_STUB_EDIT_EXIT, GH_STUB_COMMENT_EXIT.
+#
+# `pr create` and `pr view` are pr-open's boundary. `create` records its flags
+# and body-file contents to GH_STUB_FILED like `issue create`, answering with a
+# fake PR URL numbered GH_STUB_PR_NUMBER, or failing when GH_STUB_PR_CREATE_EXIT
+# says so. `view` answers GH_STUB_PR_NUMBER when asked `--json number` - the
+# call pr-open makes to learn the PR it just opened - and falls back to the
+# existing `--json state` behaviour (GH_STUB_PR_STATE) for every other query.
 stub_gh() {
   local d
   d="$(mktemp -d)"
@@ -201,6 +208,17 @@ ready-for-agent}"
           # while asserting nothing.
           *)       echo "gh stub: no script named '$answer'" >&2; exit 99 ;;
         esac ;;
+      create)
+        shift 2
+        if [ -n "${GH_STUB_FILED:-}" ]; then printf 'pr create\n' >>"$GH_STUB_FILED"; record_flags "$@"; fi
+        [ "${GH_STUB_PR_CREATE_EXIT:-0}" = 0 ] || { echo "gh stub: pr create refused" >&2; exit "$GH_STUB_PR_CREATE_EXIT"; }
+        echo "https://github.com/acme/widgets/pull/${GH_STUB_PR_NUMBER:-99}" ;;
+      view)
+        shift 2
+        for a in "$@"; do
+          if [ "$a" = number ]; then echo "${GH_STUB_PR_NUMBER:-99}"; exit 0; fi
+        done
+        echo "${GH_STUB_PR_STATE:-OPEN}" ;;
       *) echo "${GH_STUB_PR_STATE:-OPEN}" ;;
     esac ;;
 esac
@@ -741,6 +759,45 @@ assert_status "bare doctor without jq fails on the tools check" "$st" 1
 # how you find out that happened.
 assert_contains "collapses every flow check into one line when jq is gone" \
   "$out" "5 flow checks skipped: jq is not installed"
+
+# --- pr-open -----------------------------------------------------------------
+# PR #15 merged without closing #14 because the agent's body opened with a verb
+# GitHub does not read as a closer. pr-open owns the keyword instead, so no
+# agent-chosen wording can leave a spec issue open again.
+echo
+echo "pr-open"
+healthy_repo
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote set-url origin "$bare"
+git push -q origin HEAD:refs/heads/main
+"$ORCH" init propen >/dev/null
+git checkout -q -b orch/16-propen
+"$ORCH" state set branch orch/16-propen
+body="$(mktemp)"
+writeln 'Implements the thing.' '' 'Some detail.' >"$body"
+
+out="$("$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
+assert_status "refuses when state has no issue" "$st" 1
+assert_contains "with the guard branch-create uses" "$out" \
+  "no issue recorded in state - the spec phase must publish one first"
+
+"$ORCH" state set issue 16
+filed="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_REPO=main GH_STUB_PR_NUMBER=23 \
+  "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
+assert_status "opens the PR" "$st" 0
+assert_eq "prints the PR number gh answered" "$out" "23"
+assert_eq "and records it in state" "$("$ORCH" state get pr)" "23"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_first_line "the recorded body opens with the closing keyword" \
+  "$body_recorded" "Closes #16"
+assert_contains "and keeps the agent's original body intact after a blank line" \
+  "$body_recorded" "Some detail."
+
+out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
+assert_status "a gh that will not open the PR fails it" "$st" 1
+assert_contains "with a clear reason" "$out" "gh could not open the PR"
 
 # --- review begin -----------------------------------------------------------
 # The bound lives in bash precisely so a long session cannot re-remember five as
