@@ -69,15 +69,6 @@ complete_implement_handoff() {
           '## Verification' 'scripts/test/orch_test.sh' >"$1"
 }
 
-complete_review_handoff() {
-  writeln '## PR' '#3.' '' \
-          '## Spec issue' '#1.' '' \
-          '## Base SHA' 'abc1234.' '' \
-          '## Verification' 'scripts/test/orch_test.sh' '' \
-          '## Chosen work' 'Split the CI classifier out.' '' \
-          '## Already settled' 'Declined the naming nit.' >"$1"
-}
-
 # --- doctor harness ---------------------------------------------------------
 
 # A fake `gh` on PATH. doctor's severity rules turn on the difference between
@@ -97,6 +88,11 @@ complete_review_handoff() {
 # in the file GH_STUB_CHECKS_N / GH_STUB_REQUIRED_N names. They advance
 # independently, because the classifier asks the two probes different questions:
 # what branch protection requires, and what ran on the commit.
+#
+# `label create` and `issue create` are the filing boundary. GH_STUB_FILED names
+# a file the stub appends what it was asked for to - label names and flags, the
+# issue's title, labels, and body - and `issue create` answers with a fake issue
+# URL numbered GH_STUB_ISSUE_NUMBER, or fails when GH_STUB_ISSUE_EXIT says so.
 stub_gh() {
   local d
   d="$(mktemp -d)"
@@ -117,10 +113,30 @@ case "$1" in
   repo) printf '%s\n' ${GH_STUB_REPO-acme/widgets main} ;;
   label)
     if [ "${GH_STUB_MODE:-ok}" = labelfail ]; then exit 1; fi
+    if [ "$2" = create ]; then
+      shift 2
+      if [ -n "${GH_STUB_FILED:-}" ]; then printf 'label create %s\n' "$*" >>"$GH_STUB_FILED"; fi
+      exit 0
+    fi
     if [ "${GH_STUB_MODE:-ok}" != nolabels ]; then
       printf '%s\n' "${GH_STUB_LABELS-needs-triage
 ready-for-agent}"
     fi ;;
+  issue)
+    [ "$2" = create ] || { echo "gh stub: unscripted issue op '$2'" >&2; exit 99; }
+    shift 2
+    if [ -n "${GH_STUB_FILED:-}" ]; then
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --title)     printf 'title=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
+          --label)     printf 'label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
+          --body-file) { printf 'body:\n'; cat "$2"; } >>"$GH_STUB_FILED"; shift ;;
+        esac
+        shift
+      done
+    fi
+    [ "${GH_STUB_ISSUE_EXIT:-0}" = 0 ] || { echo "gh stub: issue create refused" >&2; exit "$GH_STUB_ISSUE_EXIT"; }
+    echo "https://github.com/acme/widgets/issues/${GH_STUB_ISSUE_NUMBER:-42}" ;;
   pr)
     case "$2" in
       ready) exit "${GH_STUB_READY_EXIT:-0}" ;;
@@ -256,10 +272,9 @@ assert_contains "spec phase reads the plan handoff"      "$("$ORCH" handoff path
 assert_contains "implement phase reads the spec handoff" "$("$ORCH" handoff path implement)" "02-spec.md"
 assert_contains "review phase reads the implement handoff" "$("$ORCH" handoff path review)"  "03-implement.md"
 
-# The review skill consumes this inside command substitutions - `handoff validate
-# "$(... handoff path review-next)"` and `dirname "$(... handoff path review)"` -
-# so a phase it cannot resolve has to stop the caller rather than hand it the
-# bare handoff directory with a zero status.
+# The review skill consumes this inside command substitutions - `dirname "$(...
+# handoff path review)"` - so a phase it cannot resolve has to stop the caller
+# rather than hand it the bare handoff directory with a zero status.
 out="$("$ORCH" handoff path bogus 2>/dev/null)"; st=$?
 assert_status "an unknown phase is an error, not a directory" "$st" 1
 assert_eq "and prints no path for a caller to use" "$out" ""
@@ -701,7 +716,8 @@ assert_contains "collapses every flow check into one line when jq is gone" \
 
 # --- review begin -----------------------------------------------------------
 # The bound lives in bash precisely so a long session cannot re-remember five as
-# six, so what matters here is the refusal, not the counting.
+# six, so what matters here is the refusal, not the counting. The budget is the
+# human's number, read from state; a flow that never wrote one runs the default.
 echo
 echo "review begin"
 healthy_repo
@@ -712,20 +728,50 @@ for i in 2 3 4 5; do
   assert_eq "iteration $i is claimed in order" "$("$ORCH" review begin)" "$i"
 done
 out="$("$ORCH" review begin 2>&1)"; st=$?
-assert_status "refuses a sixth iteration" "$st" 1
-assert_contains "says the bound is what stopped it" "$out" "5 iterations"
+assert_status "refuses a sixth iteration on the default budget" "$st" 1
+assert_contains "names the budget that stopped it" "$out" "budget of 5 iterations"
 assert_eq "and does not spend the refused iteration" "$("$ORCH" state get iteration)" "5"
 
+"$ORCH" state set iteration 0
+"$ORCH" state set budget 2
+assert_eq "a budget of 2 admits the first iteration" "$("$ORCH" review begin)" "1"
+assert_eq "and the second" "$("$ORCH" review begin)" "2"
+out="$("$ORCH" review begin 2>&1)"; st=$?
+assert_status "and refuses the third" "$st" 1
+assert_contains "naming the budget it honoured" "$out" "budget of 2 iterations"
+
+"$ORCH" state set iteration 0
+"$ORCH" state set budget 8
+for i in 1 2 3 4 5 6 7 8; do "$ORCH" review begin >/dev/null; done
+assert_eq "a budget of 8 runs past the old bound of five" "$("$ORCH" state get iteration)" "8"
+out="$("$ORCH" review begin 2>&1)"; st=$?
+assert_status "and stops at eight" "$st" 1
+
+# A budget nothing can read is the default, not a refusal: the only flows that
+# carry one are the ones started before it existed.
+"$ORCH" state set iteration 4
+"$ORCH" state set budget null
+assert_eq "a null budget reads as five" "$("$ORCH" review begin)" "5"
+out="$("$ORCH" review begin 2>&1)"; st=$?
+assert_status "and refuses the sixth" "$st" 1
+"$ORCH" state set iteration 4
+"$ORCH" state set budget lots
+assert_eq "a budget that is not a number reads as five" "$("$ORCH" review begin)" "5"
+out="$("$ORCH" review begin 2>&1)"; st=$?
+assert_status "and refuses the sixth too" "$st" 1
+"$ORCH" state set budget null
+
 # --- review path ------------------------------------------------------------
-# Per-loop directories are what stop loop 2's iteration 1 overwriting loop 1's.
+# One flow, one trail: the records sit flat under review/, numbered on across
+# every loop the flow runs, so nothing is ever moved aside.
 echo
 echo "review path"
-assert_contains "files the record under the current loop" \
-  "$("$ORCH" review path)" "/review/loop-01/iteration-05.md"
+assert_contains "files the record flat under review/" \
+  "$("$ORCH" review path)" "/review/iteration-05.md"
 assert_contains "zero-pads an explicit iteration" \
-  "$("$ORCH" review path 2)" "/review/loop-01/iteration-02.md"
+  "$("$ORCH" review path 2)" "/review/iteration-02.md"
 assert_eq "creates the directory it names" \
-  "$([ -d .orchestrator/review/loop-01 ] && echo present || echo gone)" "present"
+  "$([ -d .orchestrator/review ] && echo present || echo gone)" "present"
 out="$("$ORCH" review path nope 2>&1)"; st=$?
 assert_status "rejects an iteration that is not a number" "$st" 1
 
@@ -751,80 +797,139 @@ complete_implement_handoff "$h3"
 out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "passes once the command is recorded" "$st" 0
 
-# --- handoff path across loops ----------------------------------------------
-# Loop 2 is entered from the handoff loop 1 wrote, not from the implement
-# phase's - which is the whole difference between re-entering a loop and
-# restarting the phase.
+# --- the multi-loop machinery is gone ---------------------------------------
+# Every loop reads the implement handoff, whatever the flow has been through.
+# The old entry points are removed rather than deprecated, so each one has to
+# fail loudly: a session that found a path back into them would be driving a
+# loop nothing else understands.
 echo
-echo "handoff path across loops"
-assert_contains "review reads the implement handoff on the first loop" \
-  "$("$ORCH" handoff path review)" "03-implement.md"
-"$ORCH" state set loop 2
-assert_contains "and the outgoing review handoff on a later one" \
-  "$("$ORCH" handoff path review)" "04-review.md"
-assert_contains "the earlier phases are unaffected by the loop number" \
-  "$("$ORCH" handoff path implement)" "02-spec.md"
-"$ORCH" state set loop 1
-
-# --- review loop-next -------------------------------------------------------
-# The loop boundary is a real context boundary: the outgoing handoff is filed
-# under the loop that wrote it, and the counter that bounds iterations resets.
-echo
-echo "review loop-next"
+echo "the multi-loop machinery is gone"
 "$ORCH" state set phase review
+"$ORCH" state set iteration 7
+assert_contains "review reads the implement handoff however far in the flow is" \
+  "$("$ORCH" handoff path review)" "03-implement.md"
+"$ORCH" state set iteration 5
+
+out="$("$ORCH" handoff path review-next 2>&1)"; st=$?
+assert_status "there is no handoff for a next loop to read" "$st" 1
+assert_eq "and no path printed for a caller to use" \
+  "$(printf '%s\n' "$out" | grep -c '/handoff/')" "0"
+
+writeln '## PR' '#3' >.orchestrator/handoff/04-review.md
+out="$("$ORCH" handoff validate .orchestrator/handoff/04-review.md 2>&1)"; st=$?
+assert_status "a review handoff is not a handoff validate knows" "$st" 1
+assert_contains "and it says so rather than passing it empty" "$out" "unknown handoff file"
+rm .orchestrator/handoff/04-review.md
+
 out="$("$ORCH" review loop-next 2>&1)"; st=$?
-assert_status "refuses to roll a loop that wrote no handoff" "$st" 1
-assert_contains "names the handoff it is missing" "$out" "04-review.md"
+assert_status "review loop-next is an unknown op" "$st" 1
+assert_contains "listed alongside the ops that exist" "$out" "unknown review op"
 
-complete_review_handoff "$("$ORCH" handoff path review-next)"
-"$ORCH" review loop-next >/dev/null
-assert_eq "the flow moves on to the next loop" "$("$ORCH" state get loop)" "2"
-assert_eq "the iteration count resets with it" "$("$ORCH" state get iteration)" "0"
-assert_eq "files the outgoing handoff under the loop that wrote it" \
-  "$([ -f .orchestrator/review/loop-01/04-review.md ] && echo present || echo gone)" "present"
-assert_eq "leaves it in place for the next loop to read" \
-  "$([ -f .orchestrator/handoff/04-review.md ] && echo present || echo gone)" "present"
-assert_eq "opens a directory for the loop that follows" \
-  "$([ -d .orchestrator/review/loop-02 ] && echo present || echo gone)" "present"
-assert_eq "the phase stays at review so re-entry lands correctly" \
-  "$("$ORCH" state get phase)" "review"
-assert_contains "records now land under the new loop" \
-  "$("$ORCH" review path 1)" "/review/loop-02/iteration-01.md"
-
-# --- doctor across loops ----------------------------------------------------
-# Which handoffs are due stays mechanical, and on a second loop 04 is one of
-# them: it is the only thing carrying forward what the first loop settled.
+# --- review file ------------------------------------------------------------
+# Filing is mechanism: which labels, what title, which body, and the number
+# printed back. The stub records what reached gh, which is the assertion - a
+# finding filed with no severity label is a finding triage never finds.
 echo
-echo "doctor across loops"
+echo "review file"
+filed="$(mktemp)"
+body="$(mktemp)"
+writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
+out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=17 \
+  "$ORCH" review file major "Comment drifted from the code" --body-file "$body" 2>&1)"; st=$?
+assert_status "files a major" "$st" 0
+assert_eq "printing the issue number and nothing else" "$out" "17"
+assert_contains "creates the severity label" "$(cat "$filed")" "label create review:major"
+assert_contains "and the triage label" "$(cat "$filed")" "label create needs-triage"
+assert_contains "creating ours over one that exists already" \
+  "$(cat "$filed")" "label create review:major --force"
+assert_eq "and leaving the repo's own triage label as the repo has it" \
+  "$(grep -c 'label create needs-triage --force' "$filed")" "0"
+assert_contains "passes the title through unprefixed" \
+  "$(cat "$filed")" "title=Comment drifted from the code"
+assert_contains "labels the issue with the severity" "$(cat "$filed")" "label=review:major"
+assert_contains "and with needs-triage" "$(cat "$filed")" "label=needs-triage"
+assert_contains "and sends the body file's contents" "$(cat "$filed")" "The reviewer said this."
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
+assert_status "files a nit" "$st" 0
+assert_contains "under the nit label" "$(cat "$filed")" "label=review:nit"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file blocking "Wrong" --body-file "$body" 2>&1)"; st=$?
+assert_status "refuses a blocking severity - the loop fixes those" "$st" 1
+assert_contains "naming what it accepts" "$out" "major"
+assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "" --body-file "$body" 2>&1)"; st=$?
+assert_status "refuses an empty title" "$st" 1
+assert_eq "before anything reaches gh" "$(grep -c . "$filed")" "0"
+
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" --body-file /nonexistent/body.md 2>&1)"; st=$?
+assert_status "refuses a body file that does not exist" "$st" 1
+assert_contains "naming the file" "$out" "/nonexistent/body.md"
+assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
+
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" "$body" 2>&1)"; st=$?
+assert_status "insists on --body-file rather than guessing a positional" "$st" 1
+
+out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_EXIT=1 \
+  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+assert_status "a gh that will not create the issue fails the command" "$st" 1
+assert_eq "with no number printed for a record to cite" \
+  "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
+
+out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
+  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+assert_status "a gh that will not create the label fails it too" "$st" 1
+
+# The triage label is the repo's vocabulary, read from the doc the spec phase
+# labels from: a repo that renamed it must not get a second label the name
+# this plugin happens to know.
+: >"$filed"
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `triage me`          | Evaluate it |' \
+        '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
+assert_status "files under a renamed triage label" "$st" 0
+assert_contains "creating the repo's name for it" "$(cat "$filed")" "label create triage me"
+assert_contains "and applying it" "$(cat "$filed")" "label=triage me"
+assert_eq "rather than the canonical one" "$(grep -c 'needs-triage' "$filed")" "0"
+labels_doc docs/agents/triage-labels.md
+
+# --- doctor at the review phase ---------------------------------------------
+# Three handoffs are due from review onwards, and only three: a flow started
+# under the old loop machinery carries a `loop` key doctor neither reports nor
+# touches, and is asked for no handoff a loop would have written.
+echo
+echo "doctor at the review phase"
 complete_plan_handoff "$("$ORCH" handoff path spec)"
 complete_spec_handoff "$("$ORCH" handoff path implement)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
-assert_status "a second loop with every handoff in place is healthy" "$st" 0
-assert_contains "counts the outgoing review handoff among them" \
-  "$out" "handoff 04-review.md complete"
+assert_status "a review-phase flow with its three handoffs is healthy" "$st" 0
+assert_contains "counts the implement handoff among them" "$out" "handoff 03-implement.md complete"
 
-stashed="$(mktemp)"
-mv .orchestrator/handoff/04-review.md "$stashed"
-out="$("$ORCH" doctor --flow 2>&1)"; st=$?
-assert_status "fails when the loop that re-entered has no handoff to read" "$st" 1
-assert_contains "names the handoff it cannot find" "$out" "04-review.md is missing"
-mv "$stashed" .orchestrator/handoff/04-review.md
-
-"$ORCH" state set loop 1
-out="$("$ORCH" doctor --flow 2>&1)"; st=$?
-assert_eq "the first loop is not asked for a handoff no loop has written yet" \
-  "$(printf '%s\n' "$out" | grep -c '04-review.md')" "0"
-
-# The loop number outlives the review phase, so a flow stepped back to an
-# earlier phase still carries it. 04 is a handoff the review phase writes, and
-# no earlier phase is late for it.
 "$ORCH" state set loop 2
-"$ORCH" state set phase implement
-out="$("$ORCH" doctor --flow 2>&1)"
-assert_eq "an earlier phase is not asked for the review phase's handoff" \
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a stray loop key from an older flow still passes" "$st" 0
+assert_eq "and earns no mention of a handoff no loop writes any more" \
   "$(printf '%s\n' "$out" | grep -c '04-review.md')" "0"
-"$ORCH" state set phase review
-"$ORCH" state set loop 2
+assert_eq "nor a line reporting the key" \
+  "$(printf '%s\n' "$out" | grep -c 'loop: 2')" "0"
+assert_eq "and the key is left as it was" "$("$ORCH" state get loop)" "2"
+
+# The per-loop record directories an older flow left behind are the other
+# artefact story 37 names: ignored, not moved, and never a reason to fail.
+mkdir -p .orchestrator/review/loop-01
+: > .orchestrator/review/loop-01/iteration-01.md
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a stray review/loop-NN/ directory from an older flow still passes" "$st" 0
+assert_eq "and earns no line of its own" \
+  "$(printf '%s\n' "$out" | grep -c 'loop-01')" "0"
+assert_eq "and is left where it was" \
+  "$([ -f .orchestrator/review/loop-01/iteration-01.md ] && echo present || echo gone)" "present"
 
 # --- review ready -----------------------------------------------------------
 # Marking the PR ready and recording the flow as done are one operation, because
@@ -954,21 +1059,26 @@ assert_status "refuses to classify checks on a PR that does not exist yet" "$st"
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
 unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 
-# --- a flow from before the review loop shipped -----------------------------
-# An in-flight flow has no `loop` key, because nothing had written one. Failing
-# on its absence would strand exactly the flows this change was meant to finish.
+# --- a flow from before the budget shipped ----------------------------------
+# An in-flight flow carries whatever state the version that started it wrote:
+# no `budget`, no `loop`, no `flake_rerun_used`. Failing on any absence would
+# strand exactly the flows this change was meant to finish.
 echo
-echo "a flow started before the review loop shipped"
+echo "a flow started before the budget shipped"
 healthy_repo
 "$ORCH" init legacy >/dev/null
 legacy="$(mktemp)"
-jq 'del(.loop, .flake_rerun_used)' .orchestrator/state.json >"$legacy"
+jq 'del(.budget, .loop, .flake_rerun_used)' .orchestrator/state.json >"$legacy"
 mv "$legacy" .orchestrator/state.json
-assert_eq "the state it left behind names no loop" "$("$ORCH" state get loop)" ""
+assert_eq "the state it left behind names no budget" "$("$ORCH" state get budget)" ""
 assert_eq "review begin still claims an iteration" "$("$ORCH" review begin)" "1"
-assert_contains "records land under the first loop" "$("$ORCH" review path)" "/review/loop-01/"
+assert_contains "records land flat under review/" "$("$ORCH" review path)" "/review/iteration-01.md"
 assert_contains "and review reads the implement handoff as it always did" \
   "$("$ORCH" handoff path review)" "03-implement.md"
+for i in 2 3 4 5; do "$ORCH" review begin >/dev/null; done
+out="$("$ORCH" review begin 2>&1)"; st=$?
+assert_status "and it runs the default budget" "$st" 1
+assert_contains "of five" "$out" "budget of 5 iterations"
 
 "$ORCH" state set phase review
 complete_plan_handoff "$("$ORCH" handoff path spec)"
@@ -976,26 +1086,14 @@ complete_spec_handoff "$("$ORCH" handoff path implement)"
 complete_implement_handoff "$("$ORCH" handoff path review)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor does not strand it either" "$st" 0
-assert_eq "and asks it for no handoff a later loop would have written" \
-  "$(printf '%s\n' "$out" | grep -c '04-review.md')" "0"
+assert_contains "status reads its budget as the default" "$("$ORCH" status)" "iteration 5 of 5"
 
-# The remaining three `review` commands on the same legacy state. `loop-next` is
-# the one that reads the missing counter and writes it back; ci and ready need a
-# PR, which a flow this old still records the same way.
+# ci and ready need a PR, which a flow this old still records the same way.
 "$ORCH" state set pr 3 >/dev/null
 out="$(ORCH_CI_GRACE=0.2 ORCH_CI_INTERVAL=0.05 GH_STUB_CHECKS=green \
   "$ORCH" review ci 2>&1)"; st=$?
-assert_status "review ci reads its PR from a state with no loop key" "$st" 0
+assert_status "review ci reads its PR from a state with no budget key" "$st" 0
 assert_first_line "and classifies it" "$out" "green"
-
-complete_review_handoff "$("$ORCH" handoff path review-next)"
-assert_eq "review loop-next counts on from the loop it inferred" \
-  "$("$ORCH" review loop-next)" "2"
-assert_contains "so the next loop's records land under it" \
-  "$("$ORCH" review path 1)" "/review/loop-02/"
-assert_contains "and it now reads the handoff that loop wrote" \
-  "$("$ORCH" handoff path review)" "04-review.md"
-
 assert_eq "review ready marks the PR and finishes the flow" \
   "$("$ORCH" review ready)" "3"
 assert_eq "recording done as it goes" "$("$ORCH" state get phase)" "done"
@@ -1005,12 +1103,16 @@ echo
 echo "init seeds the review loop"
 healthy_repo
 "$ORCH" init seeded >/dev/null
-assert_eq "a flow starts on its first loop" "$("$ORCH" state get loop)" "1"
-assert_eq "with somewhere to file that loop's records" \
-  "$([ -d .orchestrator/review/loop-01 ] && echo present || echo gone)" "present"
-# The budget belongs to the flow, so it is seeded once here and never refilled.
-# `state get` reads a JSON false back as empty, which is the shape the review
-# skill tests against - spent is "true", and anything else is unspent.
+assert_eq "a flow starts with no loop counter" \
+  "$("$ORCH" state get | jq -r 'has("loop")')" "false"
+assert_eq "and no budget until a human names one" "$("$ORCH" state get budget)" ""
+assert_eq "with somewhere to file its records" \
+  "$([ -d .orchestrator/review ] && echo present || echo gone)" "present"
+assert_eq "and no per-loop directory under it" \
+  "$([ -e .orchestrator/review/loop-01 ] && echo present || echo gone)" "gone"
+# The flake rerun belongs to the flow, so it is seeded once here and never
+# refilled. `state get` reads a JSON false back as empty, which is the shape the
+# review skill tests against - spent is "true", and anything else is unspent.
 assert_eq "and one flake rerun unspent" \
   "$("$ORCH" state get | jq -r '.flake_rerun_used')" "false"
 assert_eq "which reads as unspent through state get" \
@@ -1019,10 +1121,16 @@ assert_eq "which reads as unspent through state get" \
 assert_eq "and as spent once it has been" \
   "$("$ORCH" state get flake_rerun_used)" "true"
 
-assert_contains "status names the loop as well as the iteration" \
-  "$("$ORCH" status)" "loop 1, iteration 0"
+assert_contains "status names the iteration against the default budget" \
+  "$("$ORCH" status)" "iteration 0 of 5"
+"$ORCH" state set budget 3
+"$ORCH" state set iteration 2
+assert_contains "and against the budget once one is set" \
+  "$("$ORCH" status)" "iteration 2 of 3"
 assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin"
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
+assert_contains "and filing" "$("$ORCH" help)" "review file"
+assert_eq "and no longer the loop machinery" "$("$ORCH" help | grep -c 'loop-next')" "0"
 
 echo
 echo "$PASS passed, $FAIL failed"
