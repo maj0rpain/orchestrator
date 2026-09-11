@@ -920,6 +920,17 @@ assert_eq "nor a line reporting the key" \
   "$(printf '%s\n' "$out" | grep -c 'loop: 2')" "0"
 assert_eq "and the key is left as it was" "$("$ORCH" state get loop)" "2"
 
+# The per-loop record directories an older flow left behind are the other
+# artefact story 37 names: ignored, not moved, and never a reason to fail.
+mkdir -p .orchestrator/review/loop-01
+: > .orchestrator/review/loop-01/iteration-01.md
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a stray review/loop-NN/ directory from an older flow still passes" "$st" 0
+assert_eq "and earns no line of its own" \
+  "$(printf '%s\n' "$out" | grep -c 'loop-01')" "0"
+assert_eq "and is left where it was" \
+  "$([ -f .orchestrator/review/loop-01/iteration-01.md ] && echo present || echo gone)" "present"
+
 # --- review ready -----------------------------------------------------------
 # Marking the PR ready and recording the flow as done are one operation, because
 # either half alone is a lie: a `done` flow over a draft PR, or a PR promoted out
