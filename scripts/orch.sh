@@ -1082,8 +1082,8 @@ require_issue() {
 cmd_spec() {
   local op="${1:-}"
   shift || true
-  [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment> <file>"
   require_state
+  [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment> <file>"
   local file="$1" issue
   issue="$(require_issue)"
   case "$op" in
@@ -1092,6 +1092,7 @@ cmd_spec() {
       # answered: a failed fetch that left a partial file behind is a body a
       # lens would read as the spec.
       local tmp
+      mkdir -p "$(dirname "$file")"
       tmp="$(mktemp "$file.XXXXXX")"
       if ! gh issue view "$issue" --json body --jq .body >"$tmp"; then
         rm -f "$tmp"
@@ -1121,8 +1122,7 @@ cmd_branch_create() {
   require_state
   local slug issue base name
   slug="$(jq -r .slug "$STATE")"
-  issue="$(jq -r '.issue // ""' "$STATE")"
-  [ -n "$issue" ] || die "no issue recorded in state - the spec phase must publish one first"
+  issue="$(require_issue)"
   name="orch/${issue}-${slug}"
   if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
   base="$(default_branch)"

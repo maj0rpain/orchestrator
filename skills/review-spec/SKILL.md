@@ -27,10 +27,10 @@ this file.
 ## Inputs
 
 1. Fetch the body: `"$ORCH" spec fetch <dir>/spec.md`, with `<dir>` a fresh
-   directory under `.orchestrator/`. It reads the issue number from state. A
-   failure stops the phase: state stays where it is, say what blocked, offer
-   `/orchestrator:abort`. A review with no body to review is never claimed as
-   done.
+   directory under `.orchestrator/` - `spec fetch` creates it. It reads the
+   issue number from state. A failure stops the phase: state stays where it
+   is, say what blocked, offer `/orchestrator:abort`. A review with no body to
+   review is never claimed as done.
 2. Resolve the other files the lenses read, and record the paths:
    - the plan handoff: `"$ORCH" handoff path spec` (always `01-plan.md`);
    - the glossary and decisions: `CONTEXT.md` and `docs/adr/` at the repo
@@ -58,8 +58,8 @@ row names, the brief below, and the reporting rules:
 | Implementability | spec body, repo root |
 
 **Fidelity brief.** "The plan handoff records what a human decided; the spec
-is what got written. Report: (a) every decision, constraint, or open assumption
-in the plan that the spec dropped or altered; (b) anything the plan's
+is what got written. Report: (a) every decision or constraint in the plan
+that the spec dropped or altered; (b) anything the plan's
 **Rejected alternatives** ruled out that the spec re-proposes, by whatever
 route it got there - label each of these `contradicts the plan`."
 

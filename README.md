@@ -133,7 +133,7 @@ publishing a change worth pulling.
 
 All four phases run. The spec phase reviews the spec it just published through
 four independent lenses - Fidelity to the plan, Consistency with itself and
-the glossary, Testability at the agreed seams, Implementability from the issue
+the glossary, Testability at the agreed seams, Implementability from the spec
 alone - and puts every finding to the human as one batch of proposed edits;
 the edits they accept rewrite the issue body, and the disposition is recorded
 on the issue and in the handoff.

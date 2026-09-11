@@ -148,8 +148,9 @@ ready-for-agent}"
             shift
           done
         fi
-        if [ "$op" = edit ]; then exit "${GH_STUB_EDIT_EXIT:-0}"; fi
-        exit "${GH_STUB_COMMENT_EXIT:-0}" ;;
+        if [ "$op" = edit ]; then st="${GH_STUB_EDIT_EXIT:-0}"; else st="${GH_STUB_COMMENT_EXIT:-0}"; fi
+        [ "$st" = 0 ] || echo "gh stub: issue $op refused" >&2
+        exit "$st" ;;
       create) ;;
       *) echo "gh stub: unscripted issue op '$2'" >&2; exit 99 ;;
     esac
@@ -964,6 +965,12 @@ assert_eq "exactly as gh answered it - table, fence, and #nn survive" \
 assert_contains "asking gh for the issue state records" "$(cat "$filed")" "issue view 14"
 assert_contains "and for its body alone" "$(cat "$filed")" "--json body"
 
+# The skill fetches into a fresh directory under .orchestrator/, so the first
+# fetch of a review is the one that has to create it.
+out="$("$ORCH" spec fetch .orchestrator/spec-review/spec.md 2>&1)"; st=$?
+assert_status "fetch creates the directory it is told to write into" "$st" 0
+assert_eq "and the body lands there" "$(cat .orchestrator/spec-review/spec.md)" "Body of the issue."
+
 rm -f "$spec_body"
 out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
 assert_status "a gh that will not answer fails the fetch" "$st" 1
@@ -987,7 +994,8 @@ assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 
 out="$(GH_STUB_EDIT_EXIT=1 "$ORCH" spec update "$tricky" 2>&1)"; st=$?
 assert_status "a gh that will not edit fails the update" "$st" 1
-assert_contains "with the reason" "$out" "issue #14"
+assert_contains "with gh's reason" "$out" "issue edit refused"
+assert_contains "and the issue it was for" "$out" "issue #14"
 
 : >"$filed"
 out="$(GH_STUB_FILED="$filed" "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
@@ -1004,7 +1012,8 @@ assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 
 out="$(GH_STUB_COMMENT_EXIT=1 "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
 assert_status "a gh that will not comment fails it" "$st" 1
-assert_contains "with the reason" "$out" "issue #14"
+assert_contains "with gh's reason" "$out" "issue comment refused"
+assert_contains "and the issue it was for" "$out" "issue #14"
 
 out="$("$ORCH" spec publish "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
