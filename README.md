@@ -10,14 +10,16 @@ believes the implementer's reasoning. Splitting the phases and passing only a
 written handoff between them means each phase judges the work, not the story
 behind it.
 
-It conducts [`mattpocock-skills`](https://github.com/mattpocock/skills) rather
-than replacing it: `to-spec` writes the spec, `implement` builds it, `code-review`
-reviews it. This plugin owns the state, the handoffs, the branch, and the PR.
+[`mattpocock-skills`](https://github.com/mattpocock/skills) is a separate plugin
+of skills for planning, spec-writing, implementing, and reviewing code. This
+plugin conducts it rather than replacing it: `to-spec` writes the spec,
+`implement` builds it, `code-review` reviews it. This plugin owns the state,
+the handoffs, the branch, and the PR.
 
 ## Install
 
 ```
-/plugin marketplace add https://github.com/maj0rpain/orchestrator.git
+/plugin marketplace add maj0rpain/orchestrator
 /plugin install orchestrator@orchestrator
 ```
 
@@ -25,15 +27,10 @@ The repo doubles as its own single-plugin marketplace, so there is no separate
 marketplace repo. Installs at user scope, so it is available in every project on
 that machine.
 
-**Use the full HTTPS URL, not the `owner/repo` shorthand.** While this repo is
-private, the shorthand resolves over SSH and fails without a key on the machine;
-the HTTPS URL uses your existing git credential helper (`gh auth setup-git`).
-If the repo is ever made public, the shorthand works and this caveat goes away.
-
 Requires the `mattpocock-skills` plugin, plus `gh`, `jq`, and `git`. Run
-`/mattpocock-skills:setup-matt-pocock-skills` once per repo first - the spec phase
-reads `docs/agents/issue-tracker.md` and fails without it. `/orchestrator:start`
-checks all of this up front, and `/orchestrator:doctor` reports it at any time.
+`/mattpocock-skills:setup-matt-pocock-skills` once per repo first - it writes
+`docs/agents/issue-tracker.md`, which `/orchestrator:start` checks for before
+starting a flow. `/orchestrator:doctor` reports all of this at any time.
 
 ## The flow
 
@@ -129,6 +126,9 @@ default branch pinned to `version` in `plugin.json`, so changes reach it only
 after a push plus `/plugin marketplace update orchestrator`. Bump `version` when
 publishing a change worth pulling.
 
+Found a bug or want to propose a change? Open a GitHub issue on this repo -
+label it `needs-triage` if it isn't already.
+
 ## Status
 
 All four phases run. The spec phase reviews the spec it just published through
@@ -139,18 +139,19 @@ the edits they accept rewrite the issue body, and the disposition is recorded
 on the issue and in the handoff.
 
 The review phase is a bounded loop: a budget of iterations the human chooses
-at the start (five by default), `code-review` from the base
-SHA every one of them, a blocking/major/nit rubric applied on top of it, and
-only blocking findings fixed - one fix commit per iteration that fixed anything.
-The loop runs its whole budget; when it ends, every major and nit becomes a
-GitHub issue labelled `review:major` or `review:nit` plus the repo's
-`needs-triage`, with
-the reviewer's finding and the loop's reasoning in the body. CI is waited on
-once per loop with a single flake rerun per flow. It ends by marking the draft
-PR ready, or by stopping with the reason recorded - and comments on the PR
-either way. After a bounded stop, a human may run the phase again as a fresh
-loop with its own budget. `/orchestrator:doctor` covers the machine, the repo,
-and the active flow.
+at the start (five by default), `code-review` from the base SHA every one of
+them, a blocking/major/nit rubric applied on top of it, and only blocking
+findings fixed - one fix commit per iteration that fixed anything. The loop
+runs its whole budget; when it ends, every major and nit becomes a GitHub
+issue labelled `review:major` or `review:nit` (a severity the loop assigned)
+plus the repo's `needs-triage` (a label meaning a human hasn't looked at it
+yet), with the reviewer's finding and the loop's reasoning in the body. CI is
+waited on once per loop with a single flake rerun per flow. It ends one of two
+ways: by marking the draft PR ready, or by a **bounded stop** - the loop
+giving up before the PR is ready and recording why, rather than looping
+forever - and it comments on the PR either way. After a bounded stop, a human
+may run the phase again as a fresh loop with its own budget.
+`/orchestrator:doctor` covers the machine, the repo, and the active flow.
 
 Still to come: a review check group in `doctor`.
 
