@@ -80,7 +80,8 @@ that found nothing, "not run - <reason>" for one that failed>
 # Handoff: <slug>
 
 ## PR
-<URL and number. Draft.>
+<URL and number. Draft. `pr-open` writes the `Closes #<issue>` line itself -
+the body file passed to it should not add a closing keyword of its own.>
 
 ## Spec issue
 <URL and number - the Spec review axis diffs against it>

@@ -89,7 +89,9 @@ which holds the only copy of the plan.
    pipeline, with full context and before anything is pushed. Capture what it
    found and fixed.
 4. `"$ORCH" pr-open "<title>" <body-file>`. The PR opens as a draft; marking it
-   ready is the review loop's success condition.
+   ready is the review loop's success condition. `pr-open` itself writes the
+   `Closes #<issue>` line ahead of the body - do not add a closing keyword of
+   your own to the body file.
 5. Call `orchestrator:handoff` for `03-implement.md`. Its **Deviations** section
    is what lets review tell an agreed change from scope creep - if there were no
    deviations, write "None", never leave it blank. Its **Verification** section is
