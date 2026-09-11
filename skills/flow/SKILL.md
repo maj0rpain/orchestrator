@@ -66,9 +66,13 @@ which holds the only copy of the plan.
 2. Read and follow `"$ORCH" mp-skill to-spec`. It will check test seams with the
    user - that exchange is the point, so do not skip it.
 3. Record the published issue: `"$ORCH" state set issue <number>`.
-4. **Spec review is not built yet** (see Not yet built). Say so, and let the user
-   decide whether to review the spec by hand before continuing.
-5. Call `orchestrator:handoff` for `02-spec.md`, validate it, then
+4. Call the Skill tool with `orchestrator:review-spec` and follow it. It owns
+   the review - four lenses, one batch question, the body rewritten with what
+   the human accepts - and returns the changelog. This step is part of the
+   phase, not an option in it: no spec reaches the implement phase unreviewed,
+   and the human's control is at the batch, where they may decline every edit.
+5. Call `orchestrator:handoff` for `02-spec.md`, with the changelog the review
+   returned as its **Spec review changelog**; validate it, then
    `"$ORCH" state set phase implement`.
 6. Print the boundary.
 
@@ -77,9 +81,13 @@ which holds the only copy of the plan.
 1. Read `"$ORCH" handoff path implement` and fetch the spec issue it names.
 2. `"$ORCH" branch-create` - creates `orch/<issue>-<slug>` off the default branch
    and records the base SHA the review will diff against.
-3. Read and follow `"$ORCH" mp-skill implement`. Keep its closing `code-review`
-   step: it is the cheapest review in the pipeline, with full context and before
-   anything is pushed. Capture what it found and fixed.
+3. Read and follow `"$ORCH" mp-skill implement`. `02-spec.md`'s **Seams**
+   section *is* the confirmation `tdd` asks for: read it, state the seams in
+   one line, and test at them. Ask about seams only when the code makes an
+   agreed one impossible, and record that as a deviation in `03-implement.md`.
+   Keep the closing `code-review` step: it is the cheapest review in the
+   pipeline, with full context and before anything is pushed. Capture what it
+   found and fixed.
 4. `"$ORCH" pr-open "<title>" <body-file>`. The PR opens as a draft; marking it
    ready is the review loop's success condition.
 5. Call `orchestrator:handoff` for `03-implement.md`. Its **Deviations** section
@@ -145,9 +153,3 @@ just finished means stepping back one first. Order: `spec -> implement -> review
 - **Never edit `.orchestrator/state.json` by hand.** Use `"$ORCH" state set`.
 - If a phase cannot finish, leave the state where it is, say what blocked it, and
   offer `/orchestrator:abort` (which archives rather than deletes).
-
-## Not yet built
-
-Still to come: the `orchestrator:review-spec` reviewer (fidelity, testability,
-consistency, implementability), which is why the spec phase asks the user to
-review by hand.

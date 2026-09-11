@@ -66,7 +66,9 @@ until review.>
 <the test seams agreed with the user, and why these and not lower ones>
 
 ## Spec review changelog
-<what the spec review changed, or "Not reviewed - spec review not built yet">
+<the list orchestrator:review-spec returned, per lens: applied edits one line
+each, declined findings verbatim with the human's reason, "None" for a lens
+that found nothing, "not run - <reason>" for one that failed>
 
 ## Suggested skills
 <usually tdd, plus whatever the seams imply>
