@@ -87,7 +87,7 @@ the body file passed to it should not add a closing keyword of its own.>
 <URL and number - the Spec review axis diffs against it>
 
 ## Base SHA
-<from state.json; the fixed point code-review diffs from>
+<from state.json; the fixed point mattpocock-skills:code-review diffs from>
 
 ## Deviations
 <where the implementation knowingly departed from the spec, and why. "None" if
@@ -99,6 +99,6 @@ loop runs this every iteration and treats a failure as blocking. You have the
 tests fresh; review would be guessing.>
 
 ## Already found and fixed
-<what implement's own closing code-review caught, so review iteration 1 does not
-re-report it>
+<what implement's own closing mattpocock-skills:code-review caught, so review
+iteration 1 does not re-report it>
 ```

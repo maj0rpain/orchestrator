@@ -32,8 +32,11 @@ Their `SKILL.md` files are plain markdown. Resolve one with
 is exactly what the Skill tool would have injected. Never tell the user to type
 the slash command themselves, and never claim to have invoked a skill you read.
 
-`code-review`, `tdd`, `research`, and `domain-modeling` have no such flag; call
-those through the Skill tool normally.
+`mattpocock-skills:code-review`, `tdd`, `research`, and `domain-modeling` have
+no such flag; call those through the Skill tool normally. Always spell the
+code review skill with its `mattpocock-skills:` scope - the bare name is
+ambiguous with another `code-review` skill that may be installed alongside
+this plugin.
 
 ## Starting a flow
 
@@ -85,9 +88,9 @@ which holds the only copy of the plan.
    section *is* the confirmation `tdd` asks for: read it, state the seams in
    one line, and test at them. Ask about seams only when the code makes an
    agreed one impossible, and record that as a deviation in `03-implement.md`.
-   Keep the closing `code-review` step: it is the cheapest review in the
-   pipeline, with full context and before anything is pushed. Capture what it
-   found and fixed.
+   Keep the closing `mattpocock-skills:code-review` step: it is the cheapest
+   review in the pipeline, with full context and before anything is pushed.
+   Capture what it found and fixed.
 4. `"$ORCH" pr-open "<title>" <body-file>`. The PR opens as a draft; marking it
    ready is the review loop's success condition. `pr-open` itself writes the
    `Closes #<issue>` line ahead of the body - do not add a closing keyword of
