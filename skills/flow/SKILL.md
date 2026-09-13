@@ -44,7 +44,8 @@ Reached when a planning session's plan is approved. Runs in the planning session
 which holds the only copy of the plan.
 
 1. Pick a slug from the plan's subject, kebab-case. If the user passed one as an
-   argument, use theirs. Confirm it in one line.
+   argument (after pulling out any `--issue N`, per `commands/start.md`), use
+   theirs. Confirm it in one line.
 2. `"$ORCH" init <slug>`, or `"$ORCH" init <slug> --issue N` when the user (or
    `/orchestrator:start`'s own `--issue N`) named an already-open,
    already-triaged issue to adopt as the flow's spec instead of publishing a

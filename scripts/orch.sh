@@ -445,7 +445,8 @@ validate_adopted_issue() {
   state="$(gh issue view "$issue" --json state --jq .state 2>/dev/null)" \
     || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
   [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
-  labels="$(gh issue view "$issue" --json labels --jq '.labels[].name' 2>/dev/null)" || labels=""
+  labels="$(gh issue view "$issue" --json labels --jq '.labels[].name' 2>/dev/null)" \
+    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
   printf '%s\n' "$labels" | grep -qxF "$label" \
     || die "issue #$issue is missing the '$label' triage label - adoption requires it."
 }
@@ -735,16 +736,17 @@ cmd_doctor() {
 # --- state ------------------------------------------------------------------
 
 cmd_init() {
+  local usage="usage: orch.sh init <slug> [--issue N]"
   local slug="${1:-}" issue=""
-  [ -n "$slug" ] || die "usage: orch.sh init <slug> [--issue N]"
+  [ -n "$slug" ] || die "$usage"
   shift || true
   while [ $# -gt 0 ]; do
     case "$1" in
       --issue)
         issue="${2:-}"
-        [ -n "$issue" ] || die "usage: orch.sh init <slug> [--issue N]"
+        [ -n "$issue" ] || die "$usage"
         shift 2 ;;
-      *) die "usage: orch.sh init <slug> [--issue N]" ;;
+      *) die "$usage" ;;
     esac
   done
   slug="$(printf '%s' "$slug" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"

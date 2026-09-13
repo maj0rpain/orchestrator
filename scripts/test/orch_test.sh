@@ -802,6 +802,13 @@ assert_status "fails when the issue cannot be read from GitHub" "$st" 1
 assert_contains "names the unreadable issue" "$out" "issue #11 could not be read from GitHub"
 assert_contains "gives the command that re-checks it" "$out" "gh issue view 11"
 
+# The ready-for-agent label is a one-time gate at adoption, not an ongoing flow
+# invariant (docs/adr/0005) - a maintainer's later triage housekeeping must not
+# stop a flow already running against the issue.
+out="$(GH_STUB_ISSUE_LABELS=needs-triage "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "an issue whose label was removed after adoption is still healthy" "$st" 0
+assert_contains "still reports it open" "$out" "issue #11 open"
+
 "$ORCH" state set pr 7
 out="$(GH_STUB_PR_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the recorded PR has been closed" "$st" 1
