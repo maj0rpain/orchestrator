@@ -18,3 +18,10 @@ See `docs/agents/triage-labels.md`.
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root.
 See `docs/agents/domain.md`.
+
+## Versioning
+
+Every PR that merges to `main` must bump `version` in `.claude-plugin/plugin.json`.
+Use semver judgment: patch for fixes/docs, minor for new features, major for
+breaking changes. A PR with no user-visible or behavioral change (pure CI/repo
+hygiene) is the only exception.
