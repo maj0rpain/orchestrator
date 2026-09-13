@@ -99,6 +99,12 @@ complete_implement_handoff() {
 # the number, flags, and body file contents they were handed to GH_STUB_FILED.
 # Each fails on demand: GH_STUB_VIEW_EXIT, GH_STUB_EDIT_EXIT, GH_STUB_COMMENT_EXIT.
 #
+# `view` also answers `--json state` and `--json labels` independently of the
+# body - mirroring the GH_STUB_PR_NUMBER/GH_STUB_PR_STATE split on `pr view`:
+# GH_STUB_ISSUE_STATE (default OPEN) and GH_STUB_ISSUE_LABELS (default
+# ready-for-agent, one label per line) - so `init --issue` and
+# `check_flow_issue` can be tested without disturbing GH_STUB_BODY.
+#
 # `pr create` and `pr view` are pr-open's boundary. `create` records its flags
 # and body-file contents to GH_STUB_FILED like `issue create`, answering with a
 # fake PR URL numbered GH_STUB_PR_NUMBER, or failing when GH_STUB_PR_CREATE_EXIT
@@ -153,6 +159,12 @@ ready-for-agent}"
         shift 2
         if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue view %s\n' "$*" >>"$GH_STUB_FILED"; fi
         [ "${GH_STUB_VIEW_EXIT:-0}" = 0 ] || { echo "gh stub: issue view refused" >&2; exit "$GH_STUB_VIEW_EXIT"; }
+        for a in "$@"; do
+          case "$a" in
+            state)  printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}"; exit 0 ;;
+            labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; exit 0 ;;
+          esac
+        done
         printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"
         exit 0 ;;
       edit|comment)
@@ -407,6 +419,50 @@ if "$ORCH" mp-skill >/dev/null 2>&1; then
 else
   echo "  skip (mattpocock-skills not installed)"
 fi
+
+# --- init --issue -------------------------------------------------------
+# Adoption is validated once, immediately, before state.json is written - a bad
+# issue number must cost nothing, the same promise branch-create and pr-open
+# already make about their own preconditions.
+echo
+echo "init --issue"
+healthy_repo
+out="$("$ORCH" init adopted --issue 42)"
+assert_eq "adopts an open, labelled issue" "$out" "adopted"
+assert_eq "issue is recorded as a number" "$("$ORCH" state get | jq -r '.issue | type')" "number"
+assert_eq "issue value matches the adopted number" "$("$ORCH" state get issue)" "42"
+
+healthy_repo
+out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" init nope --issue 99 2>&1)"; st=$?
+assert_status "refuses to adopt an issue gh cannot read" "$st" 1
+assert_contains "names the issue number" "$out" "99"
+assert_eq "no flow is left active after a failed adoption" \
+  "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+
+healthy_repo
+out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" init nope --issue 7 2>&1)"; st=$?
+assert_status "refuses to adopt a closed issue" "$st" 1
+assert_contains "says the issue is not open" "$out" "not open"
+
+healthy_repo
+out="$(GH_STUB_ISSUE_LABELS=needs-triage "$ORCH" init nope --issue 7 2>&1)"; st=$?
+assert_status "refuses to adopt an issue missing the triage label" "$st" 1
+assert_contains "names the missing label" "$out" "ready-for-agent"
+
+healthy_repo
+out="$("$ORCH" init nope --issue 2>&1)"; st=$?
+assert_status "requires a value after --issue" "$st" 1
+
+healthy_repo
+out="$("$ORCH" init nope --issue https://github.com/acme/widgets/issues/42 2>&1)"; st=$?
+assert_status "refuses a non-numeric --issue value" "$st" 1
+assert_contains "says --issue wants a plain number" "$out" "--issue"
+assert_eq "no flow is left active after a malformed --issue" \
+  "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+
+healthy_repo
+out="$("$ORCH" init 2>&1)"; st=$?
+assert_status "adoption does not change that a slug is still required" "$st" 1
 
 # --- doctor -----------------------------------------------------------------
 # The two commands doctor replaces both returned success on the failures that
@@ -735,6 +791,31 @@ assert_contains "names the handoff" "$out" "02-spec.md"
 assert_contains "reports it as empty, not missing" "$out" "empty section"
 complete_spec_handoff "$("$ORCH" handoff path implement)"
 
+# check_flow_issue runs unconditionally on state.issue, whichever path put it
+# there - adopted at init or published by to-spec - and mirrors check_flow_pr's
+# open/closed/unreadable shape.
+"$ORCH" state set issue 11
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "an open issue is healthy" "$st" 0
+assert_contains "reports the open issue" "$out" "issue #11 open"
+
+out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "fails when the recorded issue has been closed" "$st" 1
+assert_contains "names the closed issue" "$out" "issue #11 is closed"
+assert_contains "gives the command that reopens it" "$out" "gh issue reopen 11"
+
+out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "fails when the issue cannot be read from GitHub" "$st" 1
+assert_contains "names the unreadable issue" "$out" "issue #11 could not be read from GitHub"
+assert_contains "gives the command that re-checks it" "$out" "gh issue view 11"
+
+# The ready-for-agent label is a one-time gate at adoption, not an ongoing flow
+# invariant (docs/adr/0005) - a maintainer's later triage housekeeping must not
+# stop a flow already running against the issue.
+out="$(GH_STUB_ISSUE_LABELS=needs-triage "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "an issue whose label was removed after adoption is still healthy" "$st" 0
+assert_contains "still reports it open" "$out" "issue #11 open"
+
 "$ORCH" state set pr 7
 out="$(GH_STUB_PR_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the recorded PR has been closed" "$st" 1
@@ -758,7 +839,7 @@ assert_status "bare doctor without jq fails on the tools check" "$st" 1
 # gate without anyone remembering to add a preamble - and this number moving is
 # how you find out that happened.
 assert_contains "collapses every flow check into one line when jq is gone" \
-  "$out" "5 flow checks skipped: jq is not installed"
+  "$out" "6 flow checks skipped: jq is not installed"
 
 # --- pr-open -----------------------------------------------------------------
 # PR #15 merged without closing #14 because the agent's body opened with a verb

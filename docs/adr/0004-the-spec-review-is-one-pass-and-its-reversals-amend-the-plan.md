@@ -1,7 +1,8 @@
 # The spec review is one pass, and its reversals amend the plan handoff
 
-A spec review runs once, in the spec phase, after `to-spec` has published the
-issue and before `02-spec.md` is written. Four lenses read the issue as fresh
+A spec review runs once, in the spec phase, after the issue exists - published
+by `to-spec` or already adopted at init - and before `02-spec.md` is written.
+Four lenses read the issue as fresh
 sub-agents and report findings; every finding reaches the human as a proposed
 edit in one batch; the edits the human accepts rewrite the issue body. There
 is no budget, no second pass, and no severity: findings stay with the lens

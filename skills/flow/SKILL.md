@@ -44,8 +44,13 @@ Reached when a planning session's plan is approved. Runs in the planning session
 which holds the only copy of the plan.
 
 1. Pick a slug from the plan's subject, kebab-case. If the user passed one as an
-   argument, use theirs. Confirm it in one line.
-2. `"$ORCH" init <slug>`.
+   argument (after pulling out any `--issue N`, per `commands/start.md`), use
+   theirs. Confirm it in one line.
+2. `"$ORCH" init <slug>`, or `"$ORCH" init <slug> --issue N` when the user (or
+   `/orchestrator:start`'s own `--issue N`) named an already-open,
+   already-triaged issue to adopt as the flow's spec instead of publishing a
+   new one. `init` validates adoption immediately and dies if it cannot -
+   report the failure and stop rather than continuing without an issue.
 3. Call the Skill tool with `orchestrator:handoff` to write `01-plan.md`. **Do
    this before anything that can fail** - a failed precondition must never cost
    the user their plan.
@@ -64,6 +69,11 @@ which holds the only copy of the plan.
 
 ### Phase: spec
 
+0. Check `"$ORCH" state get issue`. Non-empty means the flow adopted an issue
+   at init - skip straight to step 4 below; steps 1-3 do not run, because the
+   issue already exists and is already recorded. Empty means no `--issue` was
+   given - run the phase from step 1, exactly as it does for every flow that
+   has no adopted issue.
 1. Read `"$ORCH" handoff path spec`. The **Rejected alternatives** section is
    load-bearing: do not re-propose anything it rules out.
 2. Read and follow `"$ORCH" mp-skill to-spec`. It will check test seams with the

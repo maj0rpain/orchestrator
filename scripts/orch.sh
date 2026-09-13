@@ -433,6 +433,24 @@ triage_label_for() {
   printf '%s\n' "${name:-$role}"
 }
 
+# `init --issue N`'s one-time gate: the issue must exist, be open, and carry
+# this repo's local name for the ready-for-agent role - resolved through
+# triage_label_for, never the literal string, so a repo that renamed its
+# labels still gets a correct check. Checked once, here, and never again: a
+# maintainer's later triage housekeeping must not stop a flow already running
+# against the issue (docs/adr/0005).
+validate_adopted_issue() {
+  local issue="$1" label state labels
+  label="$(triage_label_for ready-for-agent)"
+  state="$(gh issue view "$issue" --json state --jq .state 2>/dev/null)" \
+    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
+  [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
+  labels="$(gh issue view "$issue" --json labels --jq '.labels[].name' 2>/dev/null)" \
+    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
+  printf '%s\n' "$labels" | grep -qxF "$label" \
+    || die "issue #$issue is missing the '$label' triage label - adoption requires it."
+}
+
 check_labels_doc() {
   local n
   if [ ! -f "$ROOT/$LABELS_DOC" ]; then
@@ -554,6 +572,24 @@ check_flow_upstream() {
   d_remedy "git push -u origin $branch"
 }
 
+# Unconditional on how the issue arrived - adopted at init or published by
+# to-spec, state.json carries no field distinguishing the two, and none is
+# needed here: both are just "the flow's spec issue" once a flow is running
+# against one. The ready-for-agent label is deliberately not re-checked; it is
+# a one-time gate at adoption, not an ongoing flow invariant (docs/adr/0005).
+check_flow_issue() {
+  local issue issue_state
+  issue="$(jq -r '.issue // ""' "$STATE")"
+  if [ -z "$issue" ]; then d_ok "issue: not published yet"; return 0; fi
+  d_gh_gate || return 0
+  issue_state="$(gh issue view "$issue" --json state --jq .state 2>/dev/null)" || issue_state=""
+  case "$issue_state" in
+    OPEN)   d_ok "issue #$issue open" ;;
+    CLOSED) d_fail "issue #$issue is closed."; d_remedy "gh issue reopen $issue" ;;
+    *)      d_fail "issue #$issue could not be read from GitHub."; d_remedy "gh issue view $issue" ;;
+  esac
+}
+
 check_flow_pr() {
   local pr pr_state
   pr="$(jq -r '.pr // ""' "$STATE")"
@@ -596,7 +632,7 @@ check_flow_handoffs() {
 }
 
 FLOW_CHECKS="
-h_flow check_state_phase check_flow_branch check_flow_upstream check_flow_pr check_flow_handoffs
+h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream check_flow_pr check_flow_handoffs
 "
 
 # A registry's entries, one per line. Splitting a whitespace-separated list is
@@ -700,24 +736,44 @@ cmd_doctor() {
 # --- state ------------------------------------------------------------------
 
 cmd_init() {
-  local slug="${1:-}"
-  [ -n "$slug" ] || die "usage: orch.sh init <slug>"
+  local usage="usage: orch.sh init <slug> [--issue N]"
+  local slug="${1:-}" issue=""
+  [ -n "$slug" ] || die "$usage"
+  shift || true
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --issue)
+        issue="${2:-}"
+        [ -n "$issue" ] || die "$usage"
+        case "$issue" in
+          ''|*[!0-9]*) die "--issue wants a plain issue number, got: $issue" ;;
+        esac
+        shift 2 ;;
+      *) die "$usage" ;;
+    esac
+  done
   slug="$(printf '%s' "$slug" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
   [ -n "$slug" ] || die "slug is empty after normalisation"
   if [ -f "$STATE" ]; then
     die "a flow is already active (slug: $(jq -r .slug "$STATE"), phase: $(jq -r .phase "$STATE")).
      One flow at a time - finish it, or run /orchestrator:abort."
   fi
+  # Adoption is validated before anything is written, mirroring how
+  # branch-create and pr-open die on their own preconditions rather than
+  # letting a whole phase run against an issue that cannot back it.
+  [ -z "$issue" ] || validate_adopted_issue "$issue"
   mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"
   exclude_orch_dir
   # The budget is null until the review loop asks a human for one, and `review
   # begin` reads null as the default. The flake rerun is seeded here rather than
   # at the review phase because its allowance belongs to the flow: one per flow,
   # spent or not, so that one refilled each iteration could not become an
-  # infinite retry loop.
-  jq -n --arg slug "$slug" --arg now "$(now)" '{
-    slug: $slug, phase: "spec", issue: null, branch: null,
-    pr: null, base_sha: null, budget: null, iteration: 0,
+  # infinite retry loop. issue is seeded from --issue when given; state.json
+  # carries no field for whether it was adopted or published - nothing
+  # downstream reads that distinction.
+  jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" '{
+    slug: $slug, phase: "spec", issue: (if $issue == "" then null else ($issue | tonumber) end),
+    branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
     flake_rerun_used: false, created: $now, updated: $now
   }' >"$STATE"
   note "$slug"
@@ -1209,7 +1265,9 @@ orch.sh - deterministic operations for the orchestrator flow
   doctor [--env|--flow]       diagnose the machine, the repo, and the active flow
   mp-skill [name]             path to a mattpocock SKILL.md (or the plugin root)
   default-branch              resolve the base branch feature branches fork from
-  init <slug>                 start a flow (refuses if one is active)
+  init <slug> [--issue N]     start a flow (refuses if one is active); --issue
+                              adopts an already-open, ready-for-agent issue N
+                              as the flow's spec instead of leaving it unset
   state get [key]             print state.json, or one key
   state set <key> <value>     update one key
   handoff path <phase>        print the handoff path for a phase
