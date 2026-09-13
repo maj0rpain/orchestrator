@@ -54,13 +54,22 @@ budget allows.
 An iteration whose review found nothing blocking, so it fixed nothing and
 committed nothing. A loop can finish only on a clean final iteration.
 
+## Adopted issue
+
+An issue given to a flow at init, instead of one `to-spec` publishes during
+the spec phase. Checked once, at init, for existing, open, and carrying the
+`ready-for-agent` triage label; the spec phase then skips `to-spec` entirely
+and runs the spec review straight against it.
+_Avoid_: existing issue, pre-existing issue, given issue.
+
 ## Spec review
 
-One look at a published spec, taken once in the spec phase after the spec is
-published and before its handoff is written. Four lenses read the spec
-independently; every finding they report is put to a human with a proposed
-edit, and only the edits the human accepts change the spec. A spec review
-runs once - it is not a loop and has no budget.
+One look at a spec, taken once in the spec phase after the issue exists -
+published by `to-spec` or already adopted at init - and before its handoff is
+written. Four lenses read the spec independently; every finding they report
+is put to a human with a proposed edit, and only the edits the human accepts
+change the spec. A spec review runs once - it is not a loop and has no
+budget.
 
 ## Lens
 

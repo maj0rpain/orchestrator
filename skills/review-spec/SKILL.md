@@ -1,12 +1,13 @@
 ---
 name: review-spec
-description: Review a just-published spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orchestrator:flow's spec phase, after to-spec has published the issue and before 02-spec.md is written.
+description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orchestrator:flow's spec phase, after the issue exists - published by to-spec or already adopted at init - and before 02-spec.md is written.
 ---
 
 # Orchestrator spec review
 
-One look at the published spec, taken once, after `to-spec` has published the
-issue and before the handoff is written. Four **lenses** read the issue
+One look at the spec, taken once, after the issue exists - published by
+`to-spec` or already adopted at init - and before the handoff is written. Four
+**lenses** read the issue
 independently, as parallel sub-agents that see only files. Every **finding**
 they report reaches the human as a proposed edit in one batch; only the edits
 the human accepts change the issue. The issue body stays the single truth the
