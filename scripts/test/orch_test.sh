@@ -454,6 +454,13 @@ out="$("$ORCH" init nope --issue 2>&1)"; st=$?
 assert_status "requires a value after --issue" "$st" 1
 
 healthy_repo
+out="$("$ORCH" init nope --issue https://github.com/acme/widgets/issues/42 2>&1)"; st=$?
+assert_status "refuses a non-numeric --issue value" "$st" 1
+assert_contains "says --issue wants a plain number" "$out" "--issue"
+assert_eq "no flow is left active after a malformed --issue" \
+  "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+
+healthy_repo
 out="$("$ORCH" init 2>&1)"; st=$?
 assert_status "adoption does not change that a slug is still required" "$st" 1
 

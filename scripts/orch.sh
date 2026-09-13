@@ -745,6 +745,9 @@ cmd_init() {
       --issue)
         issue="${2:-}"
         [ -n "$issue" ] || die "$usage"
+        case "$issue" in
+          ''|*[!0-9]*) die "--issue wants a plain issue number, got: $issue" ;;
+        esac
         shift 2 ;;
       *) die "$usage" ;;
     esac
