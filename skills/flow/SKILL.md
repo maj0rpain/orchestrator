@@ -142,14 +142,42 @@ Say nothing after it. Do not start the next phase, and do not offer to.
 ## Redo
 
 `state.phase` names the phase that runs **next**, so re-running the phase that
-just finished means stepping back one first. Order: `spec -> implement -> review -> done`.
+just finished means stepping back one first. Only two directions are
+supported - `review -> implement` and `implement -> spec` - each a mechanical
+transition driven by `orch.sh`, not a per-artifact interview. Redo targeting
+`phase: done` remains unsupported, exactly as today - it is not discussed by
+the originating issue and is not expanded here.
 
-1. Work out which phase actually produced the bad output, and say which one you
-   are about to re-run.
-2. List what that run created and still exists - a spec issue, a branch, a draft
-   PR - and ask the user what to do with each. Never close or delete on your own.
-3. `"$ORCH" state set phase <the earlier phase>`, then run it as under
-   `/orchestrator:next`.
+**From `review`**: `"$ORCH" redo review`. It refuses unless the review loop
+has reached a **terminal state** - the PR marked ready, or a bounded stop -
+detected from the `## Terminal state` heading the review skill's Termination
+step writes into the final iteration's record. On a refusal, report the
+message and stop rather than doing anything destructive:
+
+- No loop has run yet: offer `/orchestrator:next` to start one.
+- Still short of its budget: offer `/orchestrator:next` instead - that is what
+  resumes a loop still mid-flight, and redo is for after a loop ends.
+- The last iteration has no recorded terminal state: the session looks
+  interrupted, not stopped - offer `/orchestrator:next` to resume it.
+
+Once confirmed terminal, it runs without asking anything further - retiring
+and closing are not destructive: the old branch is renamed aside
+(`orch/<issue>-<slug>-redo-N`, never force-pushed over), the old draft PR is
+closed with a comment pointing at the redo, the old loop's
+`.orchestrator/review/iteration-NN.md` records move into `pre-redo-N/`,
+`state.branch`/`state.pr`/`state.base_sha` are cleared, `state.iteration`
+resets to 0, `state.redo_count` increments, `flake_rerun_used` is left
+untouched (`docs/adr/0007-redo-resets-the-review-loops-iteration-and-budget.md`),
+and `state.phase` becomes `implement`.
+
+**From `implement`**: ask the human once whether to keep the existing spec
+issue and re-review it as-is (default), or publish a fresh one. Then call
+`"$ORCH" redo spec` or `"$ORCH" redo spec --new-issue` accordingly. The
+default path only changes `state.phase` to `spec` - the existing "adopted
+issue" path through the spec phase's step 0 does the rest. `--new-issue`
+additionally closes the old issue first (never deletes it) with a comment
+explaining why, and clears `state.issue`, so `to-spec` runs again from
+scratch.
 
 ## Abort
 

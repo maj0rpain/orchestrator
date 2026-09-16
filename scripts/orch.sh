@@ -180,7 +180,7 @@ cmd_init() {
   jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" '{
     slug: $slug, phase: "spec", issue: (if $issue == "" then null else ($issue | tonumber) end),
     branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
-    flake_rerun_used: false, created: $now, updated: $now
+    flake_rerun_used: false, redo_count: 0, created: $now, updated: $now
   }' >"$STATE"
   note "$slug"
 }
@@ -426,6 +426,39 @@ ci_probe() {
   note green
 }
 
+# Classifies the review loop's last iteration against its budget - the one
+# answer `review terminal` and doctor's `check_flow_review_terminal` both read,
+# rather than each re-deriving which iteration counts as done. Checked with
+# the same section_body/required-heading pattern handoff_report already uses,
+# not a second implementation of it. Prints the classification word on the
+# first line, and for `stop`, the recorded reason on the lines after it.
+# Exit status is 0 for ready/stop, non-zero for none/pending/interrupted - a
+# single boolean a caller can act on without re-deriving which words count as
+# terminal.
+review_terminal_state() {
+  require_state
+  local i b path first rest
+  i="$(jq -r '.iteration // 0' "$STATE")"
+  b="$(review_budget)"
+  if [ "$i" -eq 0 ]; then note none; return 1; fi
+  if [ "$i" -lt "$b" ]; then note pending; return 1; fi
+  path="$(cmd_review path "$i")"
+  if [ ! -f "$path" ] || [ -z "$(section_body "$path" '## Terminal state' | tr -d '[:space:]')" ]; then
+    note interrupted
+    return 1
+  fi
+  first="$(section_body "$path" '## Terminal state' | sed -n '1p')"
+  rest="$(section_body "$path" '## Terminal state' | tail -n +2)"
+  case "$first" in
+    ready) note ready; return 0 ;;
+    stop)
+      note stop
+      [ -z "$rest" ] || printf '%s\n' "$rest"
+      return 0 ;;
+    *) note interrupted; return 1 ;;
+  esac
+}
+
 cmd_review() {
   local op="${1:-}"
   shift || true
@@ -539,7 +572,27 @@ cmd_review() {
         esac
       done
       ;;
-    *) die "unknown review op: ${op:-<none>} (want begin|path|file|ci|ready)" ;;
+    terminal)
+      require_state
+      [ $# -eq 0 ] || die "usage: orch.sh review terminal"
+      review_terminal_state
+      ;;
+    retire)
+      require_state
+      [ $# -eq 1 ] || die "usage: orch.sh review retire <n>"
+      local n="$1" dest f
+      case "$n" in ''|*[!0-9]*) die "not a redo number: $n" ;; esac
+      dest="$REVIEW_DIR/pre-redo-$n"
+      [ ! -e "$dest" ] || die "$dest already exists - redo_count should only increase"
+      mkdir -p "$REVIEW_DIR"
+      for f in "$REVIEW_DIR"/iteration-*.md; do
+        [ -e "$f" ] || continue
+        mkdir -p "$dest"
+        mv "$f" "$dest/"
+      done
+      note "$dest"
+      ;;
+    *) die "unknown review op: ${op:-<none>} (want begin|path|file|ci|ready|terminal|retire)" ;;
   esac
 }
 
@@ -618,6 +671,34 @@ cmd_branch_off() {
   note "$1"
 }
 
+cmd_branch() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    retire)
+      [ $# -eq 2 ] || die "usage: orch.sh branch retire <old> <new>"
+      local old="$1" new="$2" upstream=""
+      git rev-parse --verify --quiet "$old" >/dev/null 2>&1 \
+        || die "branch $old does not exist"
+      git rev-parse --verify --quiet "$new" >/dev/null 2>&1 \
+        && die "branch $new already exists"
+      upstream="$(git rev-parse --abbrev-ref --verify --quiet "$old@{upstream}" 2>/dev/null)" || upstream=""
+      git branch -m "$old" "$new"
+      # A leftover remote ref under the un-suffixed name is exactly what the
+      # next implement attempt's branch-create/pr-open will reuse, and their
+      # plain push is not a force-push - so the old ref's delete is not
+      # optional, and both failures die rather than leaving origin out of
+      # sync with what this rename just did locally.
+      if [ -n "$upstream" ]; then
+        git push -q -u origin "$new" || die "could not push $new to origin"
+        git push -q origin --delete "$old" || die "could not delete origin/$old"
+      fi
+      note "$new"
+      ;;
+    *) die "unknown branch op: ${op:-<none>} (want retire)" ;;
+  esac
+}
+
 # The publishing boundary a quick implementation calls instead of hardcoding
 # `gh issue create` in skill prose - the same reason `review file` owns its
 # own `gh issue create` rather than leaving it to whichever skill files a
@@ -688,6 +769,94 @@ cmd_pr_publish() {
   note "$pr"
 }
 
+# --- redo ---------------------------------------------------------------
+
+# The full `review -> implement` transition: retire the old branch and PR,
+# move the old loop's records aside, and reset the state a fresh implement
+# attempt needs - never mid-budget, and never over a loop nobody has confirmed
+# actually ended. `flake_rerun_used` is deliberately untouched throughout, per
+# docs/adr/0007: it is a per-flow allowance, not a per-loop one.
+cmd_redo_review() {
+  [ $# -eq 0 ] || die "usage: orch.sh redo review"
+  require_state
+  local phase i b word detail slug issue branch pr new_n new_branch msg
+  phase="$(jq -r '.phase // ""' "$STATE")"
+  [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
+  i="$(jq -r '.iteration // 0' "$STATE")"
+  b="$(review_budget)"
+  local state; state="$(review_terminal_state)" || true
+  word="$(first_line "$state")"
+  detail="$(printf '%s\n' "$state" | tail -n +2)"
+  case "$word" in
+    none)
+      die "no review loop has run yet - nothing to redo back from; run /orchestrator:next to start one." ;;
+    pending)
+      die "the review loop hasn't reached its budget yet (iteration $i of budget $b) - that's what /orchestrator:next is for; redo is for after a loop ends." ;;
+    interrupted)
+      die "the review loop's last iteration ($i) has no recorded terminal state - the session looks interrupted, not stopped. Resume it with /orchestrator:next; redo only runs once a loop actually ends." ;;
+    ready|stop) ;;
+    *) die "review_terminal_state answered something redo does not know: $word" ;;
+  esac
+
+  slug="$(jq -r .slug "$STATE")"
+  issue="$(require_issue)"
+  branch="$(jq -r '.branch // ""' "$STATE")"
+  [ -n "$branch" ] || die "no branch recorded in state"
+  pr="$(require_pr)"
+  new_n=$(( $(jq -r '.redo_count // 0' "$STATE") + 1 ))
+  new_branch="orch/${issue}-${slug}-redo-${new_n}"
+
+  cmd_branch retire "$branch" "$new_branch" >/dev/null
+
+  msg="$(printf 'This PR was closed by /orchestrator:redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr-open again.\n' "$new_branch")"
+  gh pr close "$pr" --comment "$msg" >/dev/null || die "gh could not close PR #$pr"
+
+  cmd_review retire "$new_n" >/dev/null
+
+  cmd_state set branch null
+  cmd_state set pr null
+  cmd_state set base_sha null
+  cmd_state set redo_count "$new_n"
+  cmd_state set iteration 0
+  cmd_state set phase implement
+  note "$new_n"
+}
+
+# The full `implement -> spec` transition. Defaults to keeping the existing
+# spec issue and re-reviewing it as-is - the same path an adopted issue
+# already takes through the spec phase's step 0. Only `--new-issue` closes the
+# old one and clears state.issue, so to-spec runs again from scratch.
+cmd_redo_spec() {
+  require_state
+  local phase new_issue=0
+  phase="$(jq -r '.phase // ""' "$STATE")"
+  [ "$phase" = implement ] || die "flow is not at the implement phase - nothing to redo back from"
+  case "${1:-}" in
+    "") ;;
+    --new-issue) new_issue=1; shift ;;
+    *) die "usage: orch.sh redo spec [--new-issue]" ;;
+  esac
+  [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
+  if [ "$new_issue" -eq 1 ]; then
+    local issue msg
+    issue="$(require_issue)"
+    msg="$(printf 'This issue was closed by /orchestrator:redo because the spec itself needed to change.\n\nA fresh issue will follow from to-spec in this same flow.\n')"
+    gh issue close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
+    cmd_state set issue null
+  fi
+  cmd_state set phase spec
+}
+
+cmd_redo() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    review) cmd_redo_review "$@" ;;
+    spec)   cmd_redo_spec "$@" ;;
+    *) die "unknown redo op: ${op:-<none>} (want review|spec)" ;;
+  esac
+}
+
 # --- lifecycle --------------------------------------------------------------
 
 cmd_status() {
@@ -695,10 +864,11 @@ cmd_status() {
     note "No active flow. Run /orchestrator:start from an approved plan."
     return 0
   fi
-  local slug phase issue branch pr iteration
+  local slug phase issue branch pr iteration redo_count
   slug="$(jq -r .slug "$STATE")";       phase="$(jq -r .phase "$STATE")"
   issue="$(jq -r '.issue // "-"' "$STATE")";  branch="$(jq -r '.branch // "-"' "$STATE")"
   pr="$(jq -r '.pr // "-"' "$STATE")";  iteration="$(jq -r '.iteration // 0' "$STATE")"
+  redo_count="$(jq -r '.redo_count // 0' "$STATE")"
   note "flow:      $slug"
   note "phase:     $phase"
   note "issue:     $issue"
@@ -707,6 +877,10 @@ cmd_status() {
   # Against the budget, not alone: "iteration 3" does not say how far along
   # the loop is, and the budget is the one number a human chose.
   note "review:    iteration $iteration of $(review_budget)"
+  # Unconditional, like every other line here: a flow that has never been
+  # redone still has an answer - 0 - rather than a line that only appears once
+  # something has happened.
+  note "redo:      $redo_count"
   note ""
   note "handoffs:"
   local f
@@ -754,6 +928,9 @@ orch.sh - deterministic operations for the orchestrator flow
   branch-off <name>            create and check out <name> off the default
                                branch, recording no state - for a quick
                                implementation, which keeps none
+  branch retire <old> <new>   rename <old> aside to <new>, republishing it on
+                              origin and deleting the old remote ref, without
+                              force-pushing over anything
   issue-publish <title> <body-file>
                               create a GitHub issue, recording no state;
                               prints the number - for a quick implementation
@@ -775,9 +952,19 @@ orch.sh - deterministic operations for the orchestrator flow
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
   review ready                mark the draft PR ready and set the phase to done
+  review terminal             classify the last iteration: none, pending,
+                              interrupted, ready, or stop; exits non-zero on
+                              the first three
+  review retire <n>           move every iteration-*.md into pre-redo-<n>/
   spec fetch <file>           write the spec issue's body to <file>
   spec update <file>          replace the spec issue's body with <file>
   spec comment <file>         post <file> as a comment on the spec issue
+  redo review                 retire the branch and PR, reset the loop, and
+                              step the flow back to implement - refuses unless
+                              the review loop has reached a terminal state
+  redo spec [--new-issue]     step the flow back to spec, keeping the existing
+                              issue by default; --new-issue closes it and
+                              clears state.issue so to-spec starts fresh
   status                      human-readable summary
   archive                     move the live flow into .orchestrator/archive/
 USAGE
@@ -796,11 +983,13 @@ main() {
     handoff)       cmd_handoff "$@" ;;
     branch-create) cmd_branch_create "$@" ;;
     branch-off)    cmd_branch_off "$@" ;;
+    branch)        cmd_branch "$@" ;;
     issue-publish) cmd_issue_publish "$@" ;;
     pr-open)       cmd_pr_open "$@" ;;
     pr-publish)    cmd_pr_publish "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
+    redo)          cmd_redo "$@" ;;
     status)        cmd_status "$@" ;;
     archive)       cmd_archive "$@" ;;
     help|-h|--help) cmd_help ;;
