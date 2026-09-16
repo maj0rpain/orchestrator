@@ -7,7 +7,17 @@ implementation details, no spec, no decisions. Decisions live in `docs/adr/`.
 
 One run of the pipeline, from an approved plan to a pull request. A flow is
 identified by its slug and holds exactly one issue, one branch, and one PR. One
-flow at a time per checkout.
+flow at a time per checkout. Its alternative, for changes that don't need the
+pipeline, is a quick implementation.
+
+## Quick implementation
+
+The other route from an approved plan to a pull request, alongside a flow.
+Chosen once, by a human, at the close of a grilling session - never assumed by
+the model. Skips the plan/spec/implement/review pipeline entirely: no phases,
+no handoff, no `.orchestrator/state.json`. Still produces its own branch and
+PR, and is still held to this project's standards for how a change gets made -
+test-driven, reviewed, then opened as a PR.
 
 ## Phase
 

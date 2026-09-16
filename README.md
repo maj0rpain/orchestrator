@@ -35,10 +35,15 @@ starting a flow. `/orchestrator:doctor` reports all of this at any time.
 ## The flow
 
 ```
-  planning session          you approve the plan
-  (grill-me / wayfinder  ->  /orchestrator:start  ->  01-plan.md
+  planning session          shared understanding reached
+  (grill-me / wayfinder  ->  AskUserQuestion: flow, or quick?
    / improve-codebase-…)                               |
-                                                       | /clear
+                                        +----------------+----------------+
+                                        |                                 |
+                              /orchestrator:start                orchestrator:quick-implement
+                              ->  01-plan.md                     issue, branch quick/<issue>-<slug>,
+                                        |                          tdd, single-pass code-review,
+                                       | /clear                              PR
   spec session         to-spec publishes the issue  <--+
                        spec review                  ->  02-spec.md
                                                        |
@@ -53,6 +58,12 @@ starting a flow. `/orchestrator:doctor` reports all of this at any time.
                                                        | /clear (after a bounded stop)
                                                        +--> review session
 ```
+
+For work that does not need the pipeline, a human can pick a quick
+implementation instead of starting a flow - see CONTEXT.md's **Quick
+implementation** entry. It skips all four phases: no handoff, no
+`.orchestrator/state.json`, just a linked issue, `tdd`, a single-pass
+`code-review`, and a PR.
 
 Handoffs live in `.orchestrator/handoff/`, ignored via `.git/info/exclude` so
 running the flow never dirties a repo's working tree.
@@ -85,28 +96,35 @@ ever change, the architecture does not need to.
 A `PostToolUse` hook on `Skill(grilling)` catches all three planning entry points
 - `grill-me`, `wayfinder`, and `improve-codebase-architecture` all route through
 it. It fires once per session, stays quiet when a flow is already running, warns
-early if the repo is unconfigured, and tells the model to close with
-`Plan approved?` rather than offering to implement.
+early if the repo is unconfigured, and tells the model that once a shared
+understanding is reached, the next step is a human's call, not the model's:
+call `AskUserQuestion` with exactly two options, start the flow
+(`orchestrator:flow`) or a quick implementation (`orchestrator:quick-implement`),
+and do whichever the human picks.
 
 A `PreToolUse` hook on `Edit`/`Write` enforces that: during a planning session
 with no flow started, source edits are denied. Planning artifacts stay writable -
 `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/adr/`, `docs/agents/`, `.scratch/`,
 `.orchestrator/` - because `improve-codebase-architecture` and `domain-modeling`
-legitimately write them mid-planning.
+legitimately write them mid-planning. A third `PostToolUse` hook on the same
+`Skill` matcher lifts the guard for a quick implementation: it deletes the
+session's marker file when `orchestrator:quick-implement` fires, without
+`hook-guard.sh` itself changing.
 
 ## Layout
 
 ```
-commands/           start, next, status, doctor, redo, abort
-skills/flow/        the state machine (judgment)
-skills/review-spec/ the spec review: four lenses, one batch question
-skills/review/      the review loop: rubric, authority rules, terminal states
-skills/handoff/     handoff templates, model-invocable unlike the upstream one
-scripts/orch.sh     every deterministic operation (mechanism)
-scripts/doctor.sh   diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
-scripts/hook-*.sh   the two hooks
-scripts/test/       shell tests
-hooks/hooks.json    hook wiring
+commands/                start, next, status, doctor, redo, abort
+skills/flow/              the state machine (judgment)
+skills/review-spec/       the spec review: four lenses, one batch question
+skills/review/            the review loop: rubric, authority rules, terminal states
+skills/handoff/           handoff templates, model-invocable unlike the upstream one
+skills/quick-implement/   the other route: issue, tdd, single-pass review, PR - no flow
+scripts/orch.sh           every deterministic operation (mechanism)
+scripts/doctor.sh         diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
+scripts/hook-*.sh         the three hooks
+scripts/test/             shell tests
+hooks/hooks.json          hook wiring
 ```
 
 Prose for judgment, bash for facts. Reading state, naming branches, resolving the

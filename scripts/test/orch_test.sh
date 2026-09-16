@@ -405,6 +405,31 @@ git symbolic-ref -d refs/remotes/origin/HEAD
 assert_eq "falls back to main when nothing else answers" \
   "$(PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" default-branch)" "main"
 
+# --- branch-off --------------------------------------------------------------
+# A quick implementation keeps no state, so this is the primitive it shares
+# with a flow's own branch-create: same fetch/checkout-fallback idiom, naming
+# and recording left entirely to the caller.
+echo
+echo "branch-off"
+new_repo >/dev/null
+# default-branch resolves through git symbolic-ref as a fallback, which this
+# repo has none of yet - give it one rather than letting the answer depend on
+# this machine's git init.defaultBranch.
+git remote add origin https://example.invalid/x/y.git
+git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
+git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$(git branch --show-current)"
+out="$("$ORCH" branch-off "quick/9-widgets")"
+assert_eq "prints the branch it made" "$out" "quick/9-widgets"
+assert_eq "checks it out" "$(git branch --show-current)" "quick/9-widgets"
+assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+
+out="$("$ORCH" branch-off "quick/9-widgets" 2>&1)"; st=$?
+assert_status "refuses a name that already exists" "$st" 1
+assert_contains "names the branch" "$out" "quick/9-widgets already exists"
+
+out="$("$ORCH" branch-off 2>&1)"; st=$?
+assert_status "refuses with no name" "$st" 1
+
 # --- mp-skill ---------------------------------------------------------------
 # Resolved by glob at runtime, never by pinned version: the version in the cache
 # path changes underneath us.
