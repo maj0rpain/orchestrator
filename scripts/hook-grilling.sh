@@ -51,13 +51,19 @@ While this planning session is running:
 
 - Do NOT offer to implement, and do NOT write or edit code. Planning artifacts
   (CONTEXT.md, docs/adr/, docs/agents/, .scratch/) are fine; source files are not.
-- When you reach a shared understanding, close with exactly this line:
+- When you reach a shared understanding, do not close with a scripted line and
+  do not decide the next step yourself. Call the AskUserQuestion tool with
+  exactly two options:
 
-      Plan approved? I'll write the handoff and start the flow.
+      1. Start the orchestrator flow - the full plan -> spec -> implement ->
+         review pipeline, with its own handoff and review loop.
+      2. Quick implementation - skip the pipeline and implement this directly.
 
-- On approval, call the Skill tool with \"orchestrator:flow\" yourself. Do not ask
-  the user to type a command - orchestrator skills are model-invocable, unlike
-  the mattpocock ones.
+- On \"Start the orchestrator flow\", call the Skill tool with
+  \"orchestrator:flow\" yourself. On \"Quick implementation\", call the Skill
+  tool with \"orchestrator:quick-implement\" yourself. Do not ask the user to
+  type a command - orchestrator skills are model-invocable, unlike the
+  mattpocock ones.
 
 Under /mattpocock-skills:wayfinder, \"approved\" means the whole map is done, not
 that one ticket resolved. Do not start the flow after a single ticket.${warning}"

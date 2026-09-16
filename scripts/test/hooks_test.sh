@@ -10,6 +10,7 @@
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GRILL="$DIR/hook-grilling.sh"
 GUARD="$DIR/hook-guard.sh"
+QUICK="$DIR/hook-quick-implement.sh"
 PASS=0
 FAIL=0
 
@@ -41,8 +42,11 @@ echo "grilling hook"
 
 out="$(skill_event "mattpocock-skills:grilling" s1 | "$GRILL")"
 assert_contains "fires on Skill(grilling)" "$out" "additionalContext"
-assert_contains "reframes the closing line" "$out" "Plan approved?"
+assert_contains "replaces the scripted closing line with a structured choice" "$out" "AskUserQuestion"
+assert_contains "offers starting the flow as an option" "$out" "Start the orchestrator flow"
+assert_contains "offers quick implementation as an option" "$out" "Quick implementation"
 assert_contains "tells the model to invoke the flow skill itself" "$out" "orchestrator:flow"
+assert_contains "tells the model to invoke the quick-implement skill itself" "$out" "orchestrator:quick-implement"
 assert_contains "forbids offering to implement" "$out" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat" "$out" "whole map is done"
 assert_eq "emits valid JSON" "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "PostToolUse"
@@ -91,6 +95,29 @@ echo '{"slug":"x","phase":"implement"}' >"$REPO/.orchestrator/state.json"
 assert_empty "stops guarding once a flow is running" \
   "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
 rm -rf "$REPO/.orchestrator"
+
+echo
+echo "hook-quick-implement"
+
+: >"$TMPDIR/orchestrator-grilling-s1"
+out="$(skill_event "orchestrator:quick-implement" s1 | "$QUICK")"
+assert_empty "prints nothing" "$out"
+if [ -e "$TMPDIR/orchestrator-grilling-s1" ]; then
+  bad "deletes the session's marker" "marker still present"
+else
+  ok "deletes the session's marker"
+fi
+
+: >"$TMPDIR/orchestrator-grilling-s2"
+skill_event "mattpocock-skills:tdd" s2 | "$QUICK" >/dev/null
+if [ -e "$TMPDIR/orchestrator-grilling-s2" ]; then
+  ok "leaves another skill's marker alone"
+else
+  bad "leaves another skill's marker alone" "marker was deleted"
+fi
+
+skill_event "orchestrator:quick-implement" s3 | "$QUICK" >/dev/null
+ok "does not fail when no marker exists for the session"
 
 echo
 echo "$PASS passed, $FAIL failed"

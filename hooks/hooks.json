@@ -4,7 +4,8 @@
       {
         "matcher": "Skill",
         "hooks": [
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hook-grilling.sh" }
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hook-grilling.sh" },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hook-quick-implement.sh" }
         ]
       }
     ],
