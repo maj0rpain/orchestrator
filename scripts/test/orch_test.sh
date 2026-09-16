@@ -311,6 +311,19 @@ out="$("$ORCH" init other 2>&1)"; st=$?
 assert_status "refuses a second concurrent flow" "$st" 1
 assert_contains "explains how to clear the active flow" "$out" "abort"
 
+# --- slug -------------------------------------------------------------------
+# The same normalisation init applies to its own slug argument, exposed as a
+# primitive so the quick-implement skill can call it instead of restating the
+# algorithm as prose.
+echo
+echo "slug"
+assert_eq "matches init's own normalisation" "$("$ORCH" slug "My Feature!!")" "my-feature"
+out="$("$ORCH" slug "!!!" 2>&1)"; st=$?
+assert_status "refuses a slug empty after normalisation" "$st" 1
+assert_contains "explains why" "$out" "empty after normalisation"
+out="$("$ORCH" slug 2>&1)"; st=$?
+assert_status "refuses no argument at all" "$st" 1
+
 # --- state ------------------------------------------------------------------
 echo
 echo "state"

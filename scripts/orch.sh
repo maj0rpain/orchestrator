@@ -32,6 +32,19 @@ now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # always the first line that carries the verdict.
 first_line() { printf '%s\n' "$1" | sed -n 1p; }
 
+# The one normalisation a slug gets: lowercase, non-alphanumeric runs collapsed
+# to a single hyphen, trimmed, dying if nothing survives. `init` and `cmd_slug`
+# both call this rather than each carrying their own copy of the sed expression
+# and the empty-result check - and a caller outside this file (the
+# quick-implement skill) reaches it through `orch.sh slug` instead of
+# re-deriving the algorithm as prose.
+normalize_slug() {
+  local slug
+  slug="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+  [ -n "$slug" ] || die "slug is empty after normalisation"
+  printf '%s\n' "$slug"
+}
+
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"
 readonly ROOT
 readonly ORCH="$ROOT/$ORCH_DIR_NAME"
@@ -146,8 +159,7 @@ cmd_init() {
       *) die "$usage" ;;
     esac
   done
-  slug="$(printf '%s' "$slug" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
-  [ -n "$slug" ] || die "slug is empty after normalisation"
+  slug="$(normalize_slug "$slug")"
   if [ -f "$STATE" ]; then
     die "a flow is already active (slug: $(jq -r .slug "$STATE"), phase: $(jq -r .phase "$STATE")).
      One flow at a time - finish it, or run /orchestrator:abort."
@@ -170,6 +182,13 @@ cmd_init() {
     branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
     flake_rerun_used: false, created: $now, updated: $now
   }' >"$STATE"
+  note "$slug"
+}
+
+cmd_slug() {
+  local raw="${1:-}" slug
+  [ -n "$raw" ] || die "usage: orch.sh slug <text>"
+  slug="$(normalize_slug "$raw")"
   note "$slug"
 }
 
@@ -681,6 +700,9 @@ orch.sh - deterministic operations for the orchestrator flow
   init <slug> [--issue N]     start a flow (refuses if one is active); --issue
                               adopts an already-open, ready-for-agent issue N
                               as the flow's spec instead of leaving it unset
+  slug <text>                 normalise text to the kebab-case slug init would
+                              store - lowercase, non-alphanumeric runs collapsed
+                              to a hyphen, trimmed
   state get [key]             print state.json, or one key
   state set <key> <value>     update one key
   handoff path <phase>        print the handoff path for a phase
@@ -717,6 +739,7 @@ main() {
     mp-skill)      cmd_mp_skill "$@" ;;
     default-branch) default_branch ;;
     init)          cmd_init "$@" ;;
+    slug)          cmd_slug "$@" ;;
     state)         cmd_state "$@" ;;
     handoff)       cmd_handoff "$@" ;;
     branch-create) cmd_branch_create "$@" ;;
