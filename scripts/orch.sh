@@ -779,14 +779,13 @@ cmd_pr_publish() {
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
-  local phase i b word detail slug issue branch pr new_n new_branch msg
+  local phase i b word slug issue branch pr new_n new_branch msg
   phase="$(jq -r '.phase // ""' "$STATE")"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
   i="$(jq -r '.iteration // 0' "$STATE")"
   b="$(review_budget)"
   local state; state="$(review_terminal_state)" || true
   word="$(first_line "$state")"
-  detail="$(printf '%s\n' "$state" | tail -n +2)"
   case "$word" in
     none)
       die "no review loop has run yet - nothing to redo back from; run /orchestrator:next to start one." ;;
