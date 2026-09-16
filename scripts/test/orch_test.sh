@@ -443,6 +443,39 @@ assert_contains "names the branch" "$out" "quick/9-widgets already exists"
 out="$("$ORCH" branch-off 2>&1)"; st=$?
 assert_status "refuses with no name" "$st" 1
 
+# --- issue-publish ------------------------------------------------------------
+# The publishing boundary a quick implementation calls instead of hardcoding
+# `gh issue create` in skill prose - stateless like branch-off, since a quick
+# implementation has no flow to record into.
+echo
+echo "issue-publish"
+healthy_repo
+filed="$(mktemp)"
+body="$(mktemp)"
+writeln 'The shared understanding, written up.' >"$body"
+out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=7 \
+  "$ORCH" issue-publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "publishes" "$st" 0
+assert_eq "printing the issue number and nothing else" "$out" "7"
+assert_contains "passes the title through" "$(cat "$filed")" "title=Widgets need a handle"
+assert_contains "and sends the body file's contents" "$(cat "$filed")" "The shared understanding, written up."
+assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+
+out="$("$ORCH" issue-publish "" "$body" 2>&1)"; st=$?
+assert_status "refuses an empty title" "$st" 1
+
+out="$("$ORCH" issue-publish "Title" /nonexistent/body.md 2>&1)"; st=$?
+assert_status "refuses a body file that does not exist" "$st" 1
+assert_contains "naming the file" "$out" "/nonexistent/body.md"
+
+out="$("$ORCH" issue-publish "Title" 2>&1)"; st=$?
+assert_status "refuses with no body file" "$st" 1
+
+out="$(GH_STUB_ISSUE_EXIT=1 "$ORCH" issue-publish "Title" "$body" 2>&1)"; st=$?
+assert_status "a gh that will not create the issue fails the command" "$st" 1
+assert_eq "with no number printed for a record to cite" \
+  "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
+
 # --- mp-skill ---------------------------------------------------------------
 # Resolved by glob at runtime, never by pinned version: the version in the cache
 # path changes underneath us.
@@ -1430,6 +1463,7 @@ assert_contains "and against the budget once one is set" \
 assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin"
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 assert_contains "and filing" "$("$ORCH" help)" "review file"
+assert_contains "help documents issue-publish" "$("$ORCH" help)" "issue-publish"
 assert_eq "and no longer the loop machinery" "$("$ORCH" help | grep -c 'loop-next')" "0"
 
 echo

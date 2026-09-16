@@ -618,6 +618,21 @@ cmd_branch_off() {
   note "$1"
 }
 
+# The publishing boundary a quick implementation calls instead of hardcoding
+# `gh issue create` in skill prose - the same reason `review file` owns its
+# own `gh issue create` rather than leaving it to whichever skill files a
+# finding. Stateless like branch-off: the caller has no flow to record into,
+# so the title and body are its own and nothing here remembers them.
+cmd_issue_publish() {
+  [ $# -eq 2 ] || die "usage: orch.sh issue-publish <title> <body-file>"
+  local title="$1" body_file="$2" url
+  [ -n "$title" ] || die "the title is empty"
+  [ -f "$body_file" ] || die "body file not found: $body_file"
+  url="$(gh issue create --title "$title" --body-file "$body_file")" \
+    || die "gh could not create the issue"
+  note "${url##*/}"
+}
+
 cmd_pr_open() {
   require_state
   [ $# -eq 2 ] || die "usage: orch.sh pr-open <title> <body-file>"
@@ -711,6 +726,10 @@ orch.sh - deterministic operations for the orchestrator flow
   branch-off <name>            create and check out <name> off the default
                                branch, recording no state - for a quick
                                implementation, which keeps none
+  issue-publish <title> <body-file>
+                              create a GitHub issue, recording no state;
+                              prints the number - for a quick implementation
+                              that needs one
   pr-open <title> <body-file> push and open a draft PR
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
@@ -744,6 +763,7 @@ main() {
     handoff)       cmd_handoff "$@" ;;
     branch-create) cmd_branch_create "$@" ;;
     branch-off)    cmd_branch_off "$@" ;;
+    issue-publish) cmd_issue_publish "$@" ;;
     pr-open)       cmd_pr_open "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
