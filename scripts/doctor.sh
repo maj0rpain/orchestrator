@@ -1,0 +1,617 @@
+# doctor.sh - diagnostics for the orchestrator plugin, sourced by orch.sh.
+#
+# One diagnostic replacing the two health checks that came before it. Scopes
+# are named for the content they cover, never for the caller that asks -
+# `--env` and `--flow`, not `--preflight` and `--status` - so a check's home
+# does not move when a caller changes.
+#
+# Every check reports through the reporter trio and always returns 0: the
+# exit status comes from the FAIL counter alone. doctor is the thing you run
+# when the world is already broken, so no single check may abort the report.
+#
+# Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
+# now, first_line, default_branch, require_state, find_mattpocock,
+# ORCH_DIR_NAME, PHASES, LABELS_DOC, LABEL_LIMIT, HANDOFF_DIR) is defined.
+# cmd_doctor is then dispatched from main() exactly like any other command.
+
+D_OK=0
+D_WARN=0
+D_FAIL=0
+D_GROUPS=0
+
+d_head() { if [ "$D_GROUPS" -gt 0 ]; then note ""; fi; D_GROUPS=$((D_GROUPS + 1)); note "$1"; }
+d_ok()   { note "ok    $1"; D_OK=$((D_OK + 1)); }
+d_warn() { note "warn  $1"; D_WARN=$((D_WARN + 1)); }
+d_fail() { note "FAIL  $1"; D_FAIL=$((D_FAIL + 1)); }
+
+# Remedies are commands, verbatim, never prose: a fix you have to translate out
+# of a sentence before you can run it is a fix you postpone.
+d_remedy() { local l; for l in "$@"; do note "      $l"; done; }
+
+h_tools()  { d_head "tools"; }
+h_auth()   { d_head "auth & remotes"; }
+h_plugin() { d_head "plugin environment"; }
+h_repo()   { d_head "repo config"; }
+h_flow()   { d_head "flow state"; }
+
+# Lists inside doctor are newline-separated, never space-separated: a triage
+# label may legally contain a space, and splitting one on whitespace is how a
+# diagnostic ends up telling you to create a label called "needs".
+d_append() {
+  if [ -n "$1" ]; then printf '%s\n%s' "$1" "$2"; else printf '%s' "$2"; fi
+}
+
+# Newline-separated in, comma-separated out: a list reads better in a sentence.
+d_join() {
+  local out="" x
+  while IFS= read -r x; do
+    if [ -z "$x" ]; then continue; fi
+    if [ -n "$out" ]; then out="$out, $x"; else out="$x"; fi
+  done <<<"$1"
+  printf '%s\n' "$out"
+}
+
+# Gates. A check whose answer is unavailable reports *skip* rather than a FAIL it
+# derived from not knowing, and the skipped group collapses into a single warn
+# naming the cause - N warns, or worse N invented FAILs, would bury the one real
+# problem underneath them.
+D_GH=""            # "ok", or the reason GitHub could not be asked
+D_REPO_NAME=""     # owner/name, as GitHub resolves it
+D_REPO_BRANCH=""   # the default branch, as GitHub reports it
+D_MP=""            # the mattpocock-skills plugin root, or empty
+D_JQ=""            # "ok", or empty when jq is missing
+D_STATE=""         # "ok" when state.json parses, or empty
+D_GH_SKIPPED=0
+D_MP_SKIPPED=0
+D_JQ_SKIPPED=0
+
+# A check that needed an answer it could not get counts itself as skipped and
+# says nothing of its own, so the group collapses to one line. $1 is the gate's
+# answer - "ok" opens it - and $2 names the counter the shut gate collects into.
+# Indirect assignment rather than a nameref: bash 3.2 has none, and the bash
+# check below promises this file still runs there.
+d_gate() {
+  if [ "$1" = ok ]; then return 0; fi
+  printf -v "$2" '%d' "$(( ${!2} + 1 ))"
+  return 1
+}
+
+d_gh_gate() { d_probe_gh; d_gate "$D_GH" D_GH_SKIPPED; }
+
+d_skip_line() {
+  local n="$1" noun="$2" cause="$3" word="checks"
+  if [ "$n" -eq 0 ]; then return 0; fi
+  if [ "$n" -eq 1 ]; then word="check"; fi
+  # No remedy: reconnecting to a network is not a command.
+  d_warn "$n $noun $word skipped: $cause"
+}
+
+d_skip_report() {
+  if [ $((D_GH_SKIPPED + D_MP_SKIPPED + D_JQ_SKIPPED)) -eq 0 ]; then return 0; fi
+  d_head "skipped"
+  d_skip_line "$D_GH_SKIPPED" "GitHub" "$D_GH"
+  d_skip_line "$D_MP_SKIPPED" "skill"  "mattpocock-skills is not installed"
+  d_skip_line "$D_JQ_SKIPPED" "flow"   "jq is not installed"
+}
+
+# Ask GitHub at most once, and only when something actually needs it: `gh auth
+# status` doubles as the reachability probe. Telling "not authenticated" from
+# "could not connect" is the whole basis of the severity rule, and the only
+# signal gh offers for it is the text of the failure.
+d_probe_gh() {
+  local out
+  if [ -n "$D_GH" ]; then return 0; fi
+  if ! command -v gh >/dev/null 2>&1; then D_GH="gh is not installed"; return 0; fi
+  if out="$(gh auth status 2>&1)"; then
+    D_GH=ok
+  else
+    case "$out" in
+      *"dial tcp"*|*"lookup "*|*"connection refused"*|*"network is unreachable"*|*imeout*)
+        D_GH="GitHub is not reachable" ;;
+      *) D_GH="not authenticated" ;;
+    esac
+  fi
+}
+
+d_probe() {
+  local scope="$1" view
+  if command -v jq >/dev/null 2>&1; then D_JQ=ok; fi
+  # A state file that does not parse invalidates every flow check at once.
+  # Settled here so that d_run_flow can report it once, ahead of the list, and
+  # the checks that would each have run jq at the same broken file never run.
+  if [ "$scope" != env ] && [ "$D_JQ" = ok ] && [ -f "$STATE" ] \
+     && jq -e . "$STATE" >/dev/null 2>&1; then
+    D_STATE=ok
+  fi
+  # The flow scope runs on every /orchestrator:next and every status, and a flow
+  # with no PR recorded has nothing to ask GitHub. It reaches gh through
+  # d_gh_gate instead, which probes on first use, so that run costs no round trip.
+  if [ "$scope" = flow ]; then return 0; fi
+  D_MP="$(find_mattpocock)" || D_MP=""
+  d_probe_gh
+  if [ "$D_GH" = ok ]; then
+    view="$(gh repo view --json nameWithOwner,defaultBranchRef \
+      --jq '.nameWithOwner, (.defaultBranchRef.name // "")' 2>/dev/null)" || view=""
+    D_REPO_NAME="$(first_line "$view")"
+    D_REPO_BRANCH="$(printf '%s\n' "$view" | sed -n 2p)"
+  fi
+}
+
+# tools ----------------------------------------------------------------------
+
+check_git() {
+  if command -v git >/dev/null 2>&1; then d_ok "git present"; return 0; fi
+  d_fail "git not found."
+  d_remedy "brew install git    # or your platform's package manager"
+}
+
+check_gh() {
+  if command -v gh >/dev/null 2>&1; then d_ok "gh present"; return 0; fi
+  d_fail "gh not found - the spec phase publishes the issue and the PR through it."
+  d_remedy "brew install gh    # or your platform's package manager"
+}
+
+# Every state operation in this file needs jq, which makes "jq is missing" the
+# one message that has to survive without it.
+check_jq() {
+  if [ "$D_JQ" = ok ]; then d_ok "jq present"; return 0; fi
+  d_fail "jq not found - orch.sh reads and writes state.json with it."
+  d_remedy "brew install jq    # or your platform's package manager"
+}
+
+# A warn, not a FAIL: macOS still ships 3.2 as /bin/bash, and the flow works
+# there - find_mattpocock avoids arrays precisely so that it keeps doing so.
+check_bash() {
+  if [ "${BASH_VERSINFO[0]:-0}" -ge 4 ]; then d_ok "bash ${BASH_VERSION%%(*}"; return 0; fi
+  d_warn "bash ${BASH_VERSION%%(*} - orch.sh is written for 4.0 and up."
+  d_remedy "brew install bash"
+}
+
+# auth & remotes -------------------------------------------------------------
+
+check_origin() {
+  local url
+  if url="$(git remote get-url origin 2>/dev/null)" && [ -n "$url" ]; then
+    d_ok "origin: $url"
+    return 0
+  fi
+  d_fail "no origin remote - the flow pushes the branch and opens the PR there."
+  d_remedy "git remote add origin https://github.com/<owner>/<repo>.git"
+}
+
+check_gh_auth() {
+  case "$D_GH" in
+    ok) d_ok "gh authenticated" ;;
+    "not authenticated")
+      d_fail "gh is not authenticated."
+      d_remedy "gh auth login" ;;
+    *) d_gate "$D_GH" D_GH_SKIPPED || true ;;
+  esac
+}
+
+check_gh_repo() {
+  d_gh_gate || return 0
+  if [ -n "$D_REPO_NAME" ]; then d_ok "repo: $D_REPO_NAME"; return 0; fi
+  d_fail "gh cannot resolve this repo - origin may point somewhere you cannot see."
+  d_remedy "git remote set-url origin https://github.com/<owner>/<repo>.git"
+}
+
+# Worth its own line because getting it wrong is silent: default_branch falls
+# back to a local pointer and then to the literal "main", and a feature branch
+# forked from the wrong place looks fine until review.
+check_default_branch() {
+  d_gh_gate || return 0
+  # Silent when the repo itself did not resolve: check_gh_repo has already said
+  # so, and a second line derived from the first buries it.
+  [ -n "$D_REPO_NAME" ] || return 0
+  if [ -n "$D_REPO_BRANCH" ]; then d_ok "default branch: $D_REPO_BRANCH (from GitHub)"; return 0; fi
+  d_warn "default branch not resolved from GitHub - falling back to $(default_branch)."
+  d_remedy "git remote set-head origin --auto"
+}
+
+# plugin environment ---------------------------------------------------------
+
+check_mattpocock() {
+  if [ -n "$D_MP" ]; then d_ok "mattpocock-skills: ${D_MP/#$HOME/\~}"; return 0; fi
+  d_fail "mattpocock-skills is not installed - the flow reads its skills directly."
+  d_remedy "/plugin marketplace add anthropics/claude-plugins" \
+           "/plugin install mattpocock-skills"
+}
+
+# The check that justifies the feature. find_mattpocock probes a single skill
+# file to decide the whole plugin is present, so a partial or restructured
+# install passes and the flow then dies at the phase that needed the missing
+# one - by which point the session that could have fixed it has been cleared.
+MP_SKILLS="to-spec implement code-review handoff"
+
+check_skills() {
+  d_gate "${D_MP:+ok}" D_MP_SKIPPED || return 0
+  local name p missing="" found
+  for name in $MP_SKILLS; do
+    found=""
+    for p in "$D_MP/skills"/*/"$name"/SKILL.md; do
+      if [ -f "$p" ]; then found=1; break; fi
+    done
+    if [ -z "$found" ]; then missing="$(d_append "$missing" "$name")"; fi
+  done
+  if [ -z "$missing" ]; then d_ok "every skill the flow reads resolves"; return 0; fi
+  d_fail "mattpocock skills missing: $(d_join "$missing")"
+  d_remedy "/plugin marketplace update claude-plugins" \
+           "/plugin install mattpocock-skills"
+}
+
+check_plugin_root() {
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then d_ok "CLAUDE_PLUGIN_ROOT set"; return 0; fi
+  # No remedy, because nothing is broken: unset just means orch.sh was run by
+  # hand rather than through one of the plugin's commands.
+  d_warn "CLAUDE_PLUGIN_ROOT is not set - expected outside a Claude session."
+}
+
+# repo config ----------------------------------------------------------------
+
+check_tracker_doc() {
+  if [ -f "$ROOT/docs/agents/issue-tracker.md" ]; then d_ok "issue tracker configured"; return 0; fi
+  d_fail "docs/agents/issue-tracker.md is missing - to-spec and code-review both read it."
+  d_remedy "/mattpocock-skills:setup-matt-pocock-skills"
+}
+
+# Parsed, never hardcoded. That file documents its right-hand column as editable,
+# so a hardcoded list of the five canonical names would make doctor confidently
+# wrong in exactly the repos that customised themselves - the worst thing a
+# diagnostic can be. The separator row is what ends the header: everything above
+# it is column titles, everything below it is data.
+triage_labels() {
+  [ -f "$ROOT/$LABELS_DOC" ] || return 0
+  awk -F'|' '
+    # A table ends where the pipes stop. Without this, cols still holds the
+    # previous table width when the next table begins - a header row arrives a
+    # line before the separator that would correct it - so a narrower second
+    # table anywhere in the doc leaks its heading out as a label name.
+    !/^[[:space:]]*\|/ { cols = 0 }
+    /^[[:space:]]*\|/ {
+      s = $3
+      gsub(/`/, "", s)
+      sub(/^[[:space:]]+/, "", s)
+      sub(/[[:space:]]+$/, "", s)
+      # The separator row settles the width for the whole table, and only it
+      # can. Every separator cell holds a dash run, so an empty field at the
+      # end of that row is unambiguously the one a trailing pipe leaves behind
+      # - whereas on a data row an empty last field is equally well an empty
+      # last cell, and guessing there costs a real label. Markdown lets a row
+      # drop its trailing pipe; the leading one the match already requires.
+      if (s ~ /^:?-+:?$/) {
+        last = $NF
+        sub(/^[[:space:]]+/, "", last)
+        sub(/[[:space:]]+$/, "", last)
+        cols = NF - 1
+        if (last == "") cols--
+        next
+      }
+      # cols stays 0 until the separator row, which drops the header with it.
+      # Under three columns this is a table of some other shape, where $3 is
+      # whichever column happens to sit last and its Meaning text would be read
+      # out as a label name and demanded of the repo. A diagnostic may fail to
+      # parse a doc; it may not invent an answer from one.
+      if (cols < 3) next
+      if (s == "") next
+      print s
+    }' "$ROOT/$LABELS_DOC"
+}
+
+# The local name for one of the five triage roles - the right-hand column of
+# the row whose left-hand column names it. A repo that customised its
+# vocabulary customised this, and filing under the canonical name there would
+# create a second label the repo's triage never reads. The role name itself is
+# the answer where the doc is missing or does not list it.
+triage_label_for() {
+  local role="$1" name=""
+  if [ -f "$ROOT/$LABELS_DOC" ]; then
+    name="$(awk -F'|' -v role="$role" '
+      /^[[:space:]]*\|/ {
+        l = $2; gsub(/`/, "", l); sub(/^[[:space:]]+/, "", l); sub(/[[:space:]]+$/, "", l)
+        r = $3; gsub(/`/, "", r); sub(/^[[:space:]]+/, "", r); sub(/[[:space:]]+$/, "", r)
+        if (l == role && r != "") { print r; exit }
+      }' "$ROOT/$LABELS_DOC")"
+  fi
+  printf '%s\n' "${name:-$role}"
+}
+
+# `init --issue N`'s one-time gate: the issue must exist, be open, and carry
+# this repo's local name for the ready-for-agent role - resolved through
+# triage_label_for, never the literal string, so a repo that renamed its
+# labels still gets a correct check. Checked once, here, and never again: a
+# maintainer's later triage housekeeping must not stop a flow already running
+# against the issue (docs/adr/0005).
+validate_adopted_issue() {
+  local issue="$1" label state labels
+  label="$(triage_label_for ready-for-agent)"
+  state="$(gh issue view "$issue" --json state --jq .state 2>/dev/null)" \
+    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
+  [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
+  labels="$(gh issue view "$issue" --json labels --jq '.labels[].name' 2>/dev/null)" \
+    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
+  printf '%s\n' "$labels" | grep -qxF "$label" \
+    || die "issue #$issue is missing the '$label' triage label - adoption requires it."
+}
+
+check_labels_doc() {
+  local n
+  if [ ! -f "$ROOT/$LABELS_DOC" ]; then
+    d_fail "$LABELS_DOC is missing - the spec phase labels its issue from it."
+    d_remedy "/mattpocock-skills:setup-matt-pocock-skills"
+    return 0
+  fi
+  n="$(triage_labels | grep -c .)" || n=0
+  if [ "$n" -gt 0 ]; then d_ok "$n triage labels documented in $LABELS_DOC"; return 0; fi
+  d_fail "$LABELS_DOC lists no triage labels - the spec phase labels its issue from it."
+  d_remedy "/mattpocock-skills:setup-matt-pocock-skills"
+}
+
+# The other check that justifies the feature: the spec phase applies a label at
+# `gh issue create`, so a label the repo does not have kills the phase after the
+# whole to-spec exchange has already been spent.
+check_labels_exist() {
+  d_gh_gate || return 0
+  local want have missing="" l n
+  want="$(triage_labels)" || want=""
+  # Nothing to compare against, and check_labels_doc has already said so. One
+  # problem earns one FAIL, never a second derived from the first.
+  [ -n "$want" ] || return 0
+  if ! have="$(gh label list --limit "$LABEL_LIMIT" --json name --jq '.[].name' 2>/dev/null)"; then
+    # One check, one cause, one warn: GitHub answered the auth probe and then
+    # would not answer this, which is an absent answer rather than a "no".
+    d_warn "the repo's labels could not be listed."
+    return 0
+  fi
+  while IFS= read -r l; do
+    if [ -z "$l" ]; then continue; fi
+    if ! printf '%s\n' "$have" | grep -qxF "$l"; then missing="$(d_append "$missing" "$l")"; fi
+  done <<<"$want"
+  if [ -z "$missing" ]; then d_ok "every documented triage label exists on the repo"; return 0; fi
+  # Found every one of them is a definitive answer whatever the page held, so
+  # the cut-off caveat only ever qualifies a *negative*: a label named as
+  # missing because it fell past the boundary is exactly the FAIL that teaches
+  # someone to stop reading the word.
+  n="$(printf '%s\n' "$have" | grep -c .)" || n=0
+  if [ "$n" -ge "$LABEL_LIMIT" ]; then
+    d_warn "the repo has more than $LABEL_LIMIT labels - cannot confirm: $(d_join "$missing")"
+    return 0
+  fi
+  d_fail "triage labels missing from the repo: $(d_join "$missing")"
+  # Quoted, because a label that needs quoting is exactly the one you would
+  # paste wrong.
+  while IFS= read -r l; do d_remedy "gh label create \"$l\""; done <<<"$missing"
+}
+
+check_git_exclude() {
+  local ex
+  # Unguarded, and unreachable: the script died at load time if this were not a
+  # git repo, so a check for one could only ever report a world that cannot
+  # exist. Not covered by d_run's abort warn either - a check runs as the left
+  # operand of ||, which disables errexit for its whole body, so a failure here
+  # would carry on with a wrong path rather than stop.
+  ex="$(git rev-parse --git-dir)/info/exclude"
+  if grep -qxF "$ORCH_DIR_NAME/" "$ex" 2>/dev/null; then
+    d_ok "$ORCH_DIR_NAME/ is git-excluded"
+    return 0
+  fi
+  # A warn, not a FAIL: init writes this line, so it only bites someone who
+  # arrived mid-flow in a repo that is not theirs.
+  d_warn "$ORCH_DIR_NAME/ is not git-excluded - flow state would show as untracked."
+  d_remedy "printf '%s\\n' '$ORCH_DIR_NAME/' >>\"\$(git rev-parse --git-dir)/info/exclude\""
+}
+
+ENV_CHECKS="
+h_tools  check_git check_gh check_jq check_bash
+h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
+h_plugin check_mattpocock check_skills check_plugin_root
+h_repo   check_tracker_doc check_labels_doc check_labels_exist check_git_exclude
+"
+
+# flow state -----------------------------------------------------------------
+
+# Every check below reads state.json through jq, so a missing jq and a file that
+# will not parse each settle all of them at once. Both are decided in d_run_flow,
+# before any of them runs, rather than in a preamble each check has to remember:
+# a check that forgot would run jq at a broken file and report a confident wrong
+# ok, and the review group deferred to #2 is meant to be an append to the list.
+# Reaching a check at all is now the proof that its preconditions held.
+
+check_state_phase() {
+  local phase
+  phase="$(jq -r '.phase // ""' "$STATE")"
+  case " $PHASES " in
+    *" $phase "*) d_ok "phase: $phase" ;;
+    *) d_fail "unknown phase: $phase (want one of: $PHASES)"
+       d_remedy "/orchestrator:abort" ;;
+  esac
+}
+
+check_flow_branch() {
+  local branch
+  branch="$(jq -r '.branch // ""' "$STATE")"
+  if [ -z "$branch" ]; then d_ok "branch: not created yet"; return 0; fi
+  if git rev-parse --verify --quiet "$branch" >/dev/null; then d_ok "branch: $branch"; return 0; fi
+  d_fail "branch $branch no longer exists - the flow has nothing left to build on."
+  d_remedy "/orchestrator:abort"
+}
+
+# Only from the phase that pushes onwards: before implement, not having pushed
+# is correct, and a warning about correct state is how people learn to skim past
+# the word.
+check_flow_upstream() {
+  local phase branch
+  phase="$(jq -r '.phase // ""' "$STATE")"
+  case "$phase" in implement|review|done) ;; *) return 0 ;; esac
+  branch="$(jq -r '.branch // ""' "$STATE")"
+  [ -n "$branch" ] || return 0
+  # origin/<branch> specifically, not just any upstream: branch-create forks off
+  # origin/<default>, which leaves that as the upstream until the first push. An
+  # ok there would report a branch nobody can see as pushed.
+  local upstream=""
+  upstream="$(git rev-parse --abbrev-ref --verify --quiet "$branch@{upstream}" 2>/dev/null)" || upstream=""
+  if [ "$upstream" = "origin/$branch" ]; then d_ok "upstream: $upstream"; return 0; fi
+  d_warn "branch $branch is not on origin yet."
+  d_remedy "git push -u origin $branch"
+}
+
+# Unconditional on how the issue arrived - adopted at init or published by
+# to-spec, state.json carries no field distinguishing the two, and none is
+# needed here: both are just "the flow's spec issue" once a flow is running
+# against one. The ready-for-agent label is deliberately not re-checked; it is
+# a one-time gate at adoption, not an ongoing flow invariant (docs/adr/0005).
+check_flow_issue() {
+  local issue issue_state
+  issue="$(jq -r '.issue // ""' "$STATE")"
+  if [ -z "$issue" ]; then d_ok "issue: not published yet"; return 0; fi
+  d_gh_gate || return 0
+  issue_state="$(gh issue view "$issue" --json state --jq .state 2>/dev/null)" || issue_state=""
+  case "$issue_state" in
+    OPEN)   d_ok "issue #$issue open" ;;
+    CLOSED) d_fail "issue #$issue is closed."; d_remedy "gh issue reopen $issue" ;;
+    *)      d_fail "issue #$issue could not be read from GitHub."; d_remedy "gh issue view $issue" ;;
+  esac
+}
+
+check_flow_pr() {
+  local pr pr_state
+  pr="$(jq -r '.pr // ""' "$STATE")"
+  if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
+  d_gh_gate || return 0
+  pr_state="$(gh pr view "$pr" --json state --jq .state 2>/dev/null)" || pr_state=""
+  case "$pr_state" in
+    OPEN)   d_ok "PR #$pr open" ;;
+    MERGED) d_ok "PR #$pr merged" ;;
+    CLOSED) d_fail "PR #$pr is closed."; d_remedy "gh pr reopen $pr" ;;
+    *)      d_fail "PR #$pr could not be read from GitHub."; d_remedy "gh pr view $pr" ;;
+  esac
+}
+
+# Pure reuse: what makes a handoff valid lives in handoff_required and
+# section_body, and a second statement of it here is how the two answers drift.
+# Which handoffs are due is mechanical - phase names what runs *next*, so every
+# earlier phase has already written one.
+check_flow_handoffs() {
+  local phase files f path problems line
+  phase="$(jq -r '.phase // ""' "$STATE")"
+  case "$phase" in
+    spec)        files="01-plan.md" ;;
+    implement)   files="01-plan.md 02-spec.md" ;;
+    review|done) files="01-plan.md 02-spec.md 03-implement.md" ;;
+    *) return 0 ;;
+  esac
+  for f in $files; do
+    path="$HANDOFF_DIR/$f"
+    if [ ! -f "$path" ]; then
+      d_fail "handoff $f is missing - the phase that writes it has already run."
+      d_remedy "/orchestrator:redo"
+      continue
+    fi
+    problems="$(handoff_report "$path" | grep -v '^ok ' || true)"
+    if [ -z "$problems" ]; then d_ok "handoff $f complete"; continue; fi
+    while IFS= read -r line; do d_fail "handoff $f: ${line#FAIL }"; done <<<"$problems"
+    d_remedy "/orchestrator:redo"
+  done
+}
+
+FLOW_CHECKS="
+h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream check_flow_pr check_flow_handoffs
+"
+
+# A registry's entries, one per line. Splitting a whitespace-separated list is
+# where a stray glob character would silently drop a check, so globbing goes off
+# across the split and is *restored* rather than switched on - a caller may have
+# its own set -f window, and handing globbing back inside one is the very thing
+# the window exists to prevent. bash cannot return an argument list from a
+# function, so the entries come back newline-separated and callers read them;
+# that also keeps this dance in one place rather than at every call site.
+d_entries() {
+  local glob
+  case "$-" in *f*) glob=off ;; *) glob=on ;; esac
+  set -f
+  set -- $1
+  if [ "$glob" = on ]; then set +f; fi
+  if [ $# -gt 0 ]; then printf '%s\n' "$@"; fi
+}
+
+# How many checks a registry stands for, so a skip line can say so without
+# anyone keeping the number in their head. Headers are not checks.
+d_count() {
+  local n=0 e
+  while IFS= read -r e; do
+    case "$e" in ""|h_*) ;; *) n=$((n + 1)) ;; esac
+  done <<<"$(d_entries "$1")"
+  printf '%s\n' "$n"
+}
+
+# The gate the flow checks used to carry one at a time, hoisted to the list.
+d_run_flow() {
+  if [ "$D_JQ" = ok ] && [ "$D_STATE" = ok ]; then
+    d_run "$FLOW_CHECKS"
+    return 0
+  fi
+  # Neither path below reaches a check, so neither gets the header out of the
+  # registry the way the dispatch above does - and a skip line or a FAIL still
+  # belongs under "flow state" like everything else.
+  h_flow
+  if [ "$D_JQ" != ok ]; then
+    D_JQ_SKIPPED=$((D_JQ_SKIPPED + $(d_count "$FLOW_CHECKS")))
+    return 0
+  fi
+  # One problem earns one FAIL. Every check reads this file, so there is nothing
+  # left to say about it and nothing that could be said honestly.
+  d_fail "$ORCH_DIR_NAME/state.json is not valid JSON."
+  d_remedy "/orchestrator:abort"
+}
+
+d_run() {
+  local entry
+  while IFS= read -r entry; do
+    if [ -z "$entry" ]; then continue; fi
+    # Catches a check that returns non-zero, and nothing else: being the left
+    # operand of || suppresses errexit for the whole body, so a check that hits
+    # a failing command does not abort here - it carries on with whatever state
+    # that left behind. Every check is written to return 0, which is why this
+    # arm stays quiet in practice; keeping errexit live while still collecting
+    # a status needs the check launched as a background job and waited on, and
+    # that waits for the review group in #2 to give it something to protect.
+    "$entry" || d_warn "$entry could not run."
+  done <<<"$(d_entries "$1")"
+}
+
+cmd_doctor() {
+  local scope=both
+  [ $# -le 1 ] || die "usage: orch.sh doctor [--env|--flow]"
+  case "${1:-}" in
+    "")     scope=both ;;
+    --env)  scope=env ;;
+    --flow) scope=flow ;;
+    *)      die "unknown doctor flag: $1 (want --env or --flow)" ;;
+  esac
+
+  d_probe "$scope"
+  if [ "$scope" != flow ]; then d_run "$ENV_CHECKS"; fi
+  if [ "$scope" != env ]; then
+    # --flow asks about a flow specifically, so having none is a failure there.
+    # Bare doctor did not ask, so it states the absence and carries on: an empty
+    # answer must never be mistaken for a healthy one.
+    if [ "$scope" = flow ]; then require_state; fi
+    if [ ! -f "$STATE" ]; then
+      h_flow
+      d_ok "no active flow"
+    elif [ "$scope" = flow ] && [ "$D_JQ" != ok ]; then
+      # --flow never runs the tools group, so nothing else here would report the
+      # jq that every check below needs. Skipping all five and still exiting 0
+      # is the one answer a diagnostic must never give - and /orchestrator:next
+      # gates on exactly that exit code.
+      d_run "h_flow check_jq"
+    else
+      d_run_flow
+    fi
+  fi
+
+  d_skip_report
+  note ""
+  note "$D_OK ok, $D_WARN warn, $D_FAIL FAIL"
+  [ "$D_FAIL" -eq 0 ] || return 1
+}
