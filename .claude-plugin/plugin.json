@@ -1,6 +1,6 @@
 {
   "name": "orchestrator",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Sequences planning, spec writing, implementation, and review into four handoff-connected phases, each running with fresh context.",
   "author": {
     "name": "maj0rpain",
