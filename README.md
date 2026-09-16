@@ -103,7 +103,7 @@ skills/review-spec/ the spec review: four lenses, one batch question
 skills/review/      the review loop: rubric, authority rules, terminal states
 skills/handoff/     handoff templates, model-invocable unlike the upstream one
 scripts/orch.sh     every deterministic operation (mechanism)
-scripts/doctor.sh   the doctor module, sourced by orch.sh
+scripts/doctor.sh   diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
 scripts/hook-*.sh   the two hooks
 scripts/test/       shell tests
 hooks/hooks.json    hook wiring

@@ -9,6 +9,12 @@
 # exit status comes from the FAIL counter alone. doctor is the thing you run
 # when the world is already broken, so no single check may abort the report.
 #
+# Also home to triage_labels/triage_label_for/validate_adopted_issue: reading
+# the triage-labels doc and validating an adopted issue is the same "parse
+# this repo's config and report what's wrong with it" shape as a check, and
+# init and review file are the two other places that shape is needed - so it
+# lives here rather than forking a second copy of the label-table parser.
+#
 # Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
 # now, first_line, default_branch, require_state, find_mattpocock,
 # ORCH_DIR_NAME, PHASES, LABELS_DOC, LABEL_LIMIT, HANDOFF_DIR) is defined.
