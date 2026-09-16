@@ -16,10 +16,10 @@ The value of the loop is the number of looks, not the re-review of fixes: the
 fail-open nobody read until the fifth look still gets its fifth look. See
 `docs/adr/0003-the-review-loop-fixes-blocking-only-and-files-the-rest.md`.
 
-The reviewing itself is done by `code-review`'s parallel sub-agents, spawned
-fresh every iteration and never shown your reasoning about the fixes you just
-wrote. That is where the independence comes from, and it is why one session may
-drive a whole loop - see
+The reviewing itself is done by `mattpocock-skills:code-review`'s parallel
+sub-agents, spawned fresh every iteration and never shown your reasoning about
+the fixes you just wrote. That is where the independence comes from, and it is
+why one session may drive a whole loop - see
 `docs/adr/0001-review-loop-runs-in-a-single-session.md`.
 
 ```
@@ -64,10 +64,12 @@ this file.
    **Termination**.
 2. Call the Skill tool with `mattpocock-skills:code-review`, giving it the
    **base SHA** as the fixed point and the **spec issue** as the spec source.
-   **Every iteration reviews from the base SHA**, never from the previous
-   iteration's HEAD: each is an independent look at the whole change, and the
-   Spec axis cannot answer "is the spec implemented" from a diff containing one
-   fix.
+   Always spell it with the `mattpocock-skills:` scope - the bare name is
+   ambiguous with another `code-review` skill that may be installed alongside
+   this plugin. **Every iteration reviews from the base SHA**, never from the
+   previous iteration's HEAD: each is an independent look at the whole change,
+   and the Spec axis cannot answer "is the spec implemented" from a diff
+   containing one fix.
 3. Triage every finding: apply the two demotions under **Authority** first,
    then the **Severity** rubric.
 4. Fix the blocking findings, and only those, writing the fixes yourself. A

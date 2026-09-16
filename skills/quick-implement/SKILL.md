@@ -56,6 +56,11 @@ single pass, never `orchestrator:review`'s multi-iteration loop. That loop's
 budget and filed-findings machinery is exactly what a quick implementation is
 choosing to skip. Fix what it finds before opening the PR.
 
+Always spell the code review skill with its `mattpocock-skills:` scope - the
+bare name is ambiguous with another `code-review` skill that may be installed
+alongside this plugin, which reviews the current diff for correctness and
+cleanup, not Standards + Spec fidelity to the issue that this step needs.
+
 ## 5. Open the PR
 
 Commit, then open the PR with `"$ORCH" pr-publish <issue> "<title>"
