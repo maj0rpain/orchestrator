@@ -35,11 +35,12 @@ Never proceed without one, and never decide silently whether to make one.
 
 ## 2. Branch
 
-`"$ORCH" branch-off "quick/<issue>-<slug>"`, with `<slug>` the same
-normalisation `orch.sh init` applies to a flow's slug: lowercase,
-non-alphanumeric runs collapsed to single hyphens, trimmed. `branch-off`
-forks it off the default branch the same way a flow's own `branch-create`
-does, but records no state - a quick implementation keeps none.
+Get the slug from `"$ORCH" slug "<short description>"` - the same
+normalisation `orch.sh init` applies to a flow's slug, exposed as a primitive
+rather than re-derived here - then `"$ORCH" branch-off "quick/<issue>-<slug>"`.
+`branch-off` forks it off the default branch the same way a flow's own
+`branch-create` does, but records no state - a quick implementation keeps
+none.
 
 ## 3. Implement
 
