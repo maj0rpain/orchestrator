@@ -951,6 +951,51 @@ out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "with a clear reason" "$out" "gh could not open the PR"
 
+# --- pr-publish --------------------------------------------------------------
+# The publishing boundary a quick implementation calls instead of hardcoding
+# `gh pr create` in skill prose - stateless like branch-off and issue-publish,
+# and not a draft like pr-open is, since a quick implementation's single-pass
+# review already ran before this is called.
+echo
+echo "pr-publish"
+new_repo >/dev/null
+git remote add origin https://github.com/acme/widgets.git
+stub_gh
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote set-url origin "$bare"
+git push -q origin HEAD:refs/heads/main
+git checkout -q -b quick/16-widgets
+body="$(mktemp)"
+writeln 'Implements the thing.' '' 'Some detail.' >"$body"
+
+filed="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_REPO=main GH_STUB_PR_NUMBER=23 \
+  "$ORCH" pr-publish 16 "Title" "$body" 2>&1)"; st=$?
+assert_status "opens the PR" "$st" 0
+assert_eq "prints the PR number gh answered" "$out" "23"
+assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_contains "opens against the default branch, not as a draft" "$(cat "$filed")" "flag=--base"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_first_line "the recorded body opens with the closing keyword" \
+  "$body_recorded" "Closes #16"
+assert_contains "and keeps the agent's original body intact after a blank line" \
+  "$body_recorded" "Some detail."
+assert_eq "pushes the current branch" \
+  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/quick/16-widgets >/dev/null && echo pushed || echo missing)" \
+  "pushed"
+
+out="$("$ORCH" pr-publish abc "Title" "$body" 2>&1)"; st=$?
+assert_status "refuses an issue that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$("$ORCH" pr-publish 16 "Title" /nonexistent/body.md 2>&1)"; st=$?
+assert_status "refuses a body file that does not exist" "$st" 1
+
+out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-publish 16 "Title" "$body" 2>&1)"; st=$?
+assert_status "a gh that will not open the PR fails it" "$st" 1
+assert_contains "with a clear reason" "$out" "gh could not open the PR"
+
 # --- review begin -----------------------------------------------------------
 # The bound lives in bash precisely so a long session cannot re-remember five as
 # six, so what matters here is the refusal, not the counting. The budget is the
@@ -1464,6 +1509,7 @@ assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 assert_contains "and filing" "$("$ORCH" help)" "review file"
 assert_contains "help documents issue-publish" "$("$ORCH" help)" "issue-publish"
+assert_contains "and pr-publish" "$("$ORCH" help)" "pr-publish"
 assert_eq "and no longer the loop machinery" "$("$ORCH" help | grep -c 'loop-next')" "0"
 
 echo

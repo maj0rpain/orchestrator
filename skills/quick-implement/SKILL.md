@@ -58,7 +58,9 @@ choosing to skip. Fix what it finds before opening the PR.
 
 ## 5. Open the PR
 
-Commit, push the branch, and open the PR with `gh pr create` against the
-default branch, with a `Closes #<issue>` line. Not a draft: the single-pass
-review in step 4 already happened, so there is no loop left to promote it -
-draft would leave it stuck with nothing watching it.
+Commit, then open the PR with `"$ORCH" pr-publish <issue> "<title>"
+<body-file>` - the same boundary `pr-open` draws for a flow, kept out of
+skill prose. It pushes the branch, closes `<issue>`, and opens the PR against
+the default branch, not as a draft: the single-pass review in step 4 already
+happened, so there is no loop left to promote it - draft would leave it stuck
+with nothing watching it.

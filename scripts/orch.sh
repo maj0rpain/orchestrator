@@ -633,30 +633,58 @@ cmd_issue_publish() {
   note "${url##*/}"
 }
 
-cmd_pr_open() {
-  require_state
-  [ $# -eq 2 ] || die "usage: orch.sh pr-open <title> <body-file>"
-  local title="$1" body_file="$2" issue branch pr tmp
-  [ -f "$body_file" ] || die "body file not found: $body_file"
-  issue="$(require_issue)"
-  branch="$(jq -r '.branch // ""' "$STATE")"
-  [ -n "$branch" ] || die "no branch recorded in state"
+# Pushing a branch and opening a PR against it has exactly one right answer -
+# push, then prefix the body with a Closes line so GitHub links the PR as a
+# closer (no agent-chosen wording can leave the issue open again), then create
+# the PR - so pr-open (a flow's own, draft, recorded into state) and pr-publish
+# (a quick implementation's, not a draft, recording nothing) share it rather
+# than each hand-rolling the push/Closes-line/gh-pr-create idiom.
+open_pr() {
+  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr draft_flag=""
   git push -q -u origin "$branch"
-  # GitHub only links a PR as a closer on an exact close(s|d)/fix(es|ed)/
-  # resolve(s|d) keyword, so pr-open writes it rather than leaving the verb to
-  # whichever agent wrote the body.
   tmp="$(mktemp)"
   { printf 'Closes #%s\n\n' "$issue"; cat "$body_file"; } >"$tmp"
-  # Draft is the honest signal: the review loop has not run yet, so marking it
-  # ready is the loop's success condition rather than a comment nobody reads.
-  if ! gh pr create --draft --base "$(default_branch)" --head "$branch" \
+  # Unquoted on purpose: this is either empty or the one literal flag below,
+  # never a value with spaces or glob characters to mis-split.
+  [ "$draft" = true ] && draft_flag="--draft"
+  if ! gh pr create $draft_flag --base "$base" --head "$branch" \
       --title "$title" --body-file "$tmp" >/dev/null; then
     rm -f "$tmp"
     die "gh could not open the PR"
   fi
   rm -f "$tmp"
   pr="$(gh pr view "$branch" --json number --jq .number)"
+  printf '%s\n' "$pr"
+}
+
+cmd_pr_open() {
+  require_state
+  [ $# -eq 2 ] || die "usage: orch.sh pr-open <title> <body-file>"
+  local title="$1" body_file="$2" issue branch pr
+  [ -f "$body_file" ] || die "body file not found: $body_file"
+  issue="$(require_issue)"
+  branch="$(jq -r '.branch // ""' "$STATE")"
+  [ -n "$branch" ] || die "no branch recorded in state"
+  # Draft is the honest signal: the review loop has not run yet, so marking it
+  # ready is the loop's success condition rather than a comment nobody reads.
+  pr="$(open_pr "$branch" "$(default_branch)" "$issue" "$title" "$body_file" true)"
   cmd_state set pr "$pr"
+  note "$pr"
+}
+
+# The PR-opening boundary a quick implementation calls instead of hardcoding
+# `gh pr create` in skill prose - the same reason `issue-publish` owns its own
+# `gh issue create` rather than leaving it to skill prose. Stateless like
+# branch-off and issue-publish: the caller has no flow to record into, and no
+# draft to promote later, since a quick implementation's single-pass review
+# already ran before this is called.
+cmd_pr_publish() {
+  [ $# -eq 3 ] || die "usage: orch.sh pr-publish <issue> <title> <body-file>"
+  local issue="$1" title="$2" body_file="$3" branch pr
+  [ -f "$body_file" ] || die "body file not found: $body_file"
+  case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
+  branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  pr="$(open_pr "$branch" "$(default_branch)" "$issue" "$title" "$body_file" false)"
   note "$pr"
 }
 
@@ -731,6 +759,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               prints the number - for a quick implementation
                               that needs one
   pr-open <title> <body-file> push and open a draft PR
+  pr-publish <issue> <title> <body-file>
+                              push the current branch and open a non-draft PR
+                              closing <issue>, recording no state; prints the
+                              PR number - for a quick implementation whose
+                              single-pass review already ran
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
@@ -765,6 +798,7 @@ main() {
     branch-off)    cmd_branch_off "$@" ;;
     issue-publish) cmd_issue_publish "$@" ;;
     pr-open)       cmd_pr_open "$@" ;;
+    pr-publish)    cmd_pr_publish "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
     status)        cmd_status "$@" ;;
