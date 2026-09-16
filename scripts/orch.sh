@@ -565,19 +565,38 @@ cmd_spec() {
 
 # --- git / github -----------------------------------------------------------
 
-cmd_branch_create() {
-  require_state
-  local slug issue base name
-  slug="$(jq -r .slug "$STATE")"
-  issue="$(require_issue)"
-  name="orch/${issue}-${slug}"
+# Forking a named branch off the default branch has exactly one right answer -
+# fetch it, then check it out, falling back to the local ref if origin was
+# unreachable - so both branch-create (a flow's own naming and state) and
+# branch-off (a quick implementation's, which keeps no state) share it rather
+# than each hand-rolling the fetch/checkout-fallback idiom.
+checkout_new_branch() {
+  local name="$1" base
   if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
   base="$(default_branch)"
   git fetch --quiet origin "$base" 2>/dev/null || true
   git checkout -q -b "$name" "origin/$base" 2>/dev/null || git checkout -q -b "$name" "$base"
+}
+
+cmd_branch_create() {
+  require_state
+  local slug issue name
+  slug="$(jq -r .slug "$STATE")"
+  issue="$(require_issue)"
+  name="orch/${issue}-${slug}"
+  checkout_new_branch "$name"
   cmd_state set branch "$name"
   cmd_state set base_sha "$(git rev-parse HEAD)"
   note "$name"
+}
+
+# A quick implementation keeps no state, so it has nothing to derive a name
+# from and nothing to record one in - the caller passes the full name and gets
+# a checked-out branch back, nothing else.
+cmd_branch_off() {
+  [ $# -eq 1 ] || die "usage: orch.sh branch-off <name>"
+  checkout_new_branch "$1"
+  note "$1"
 }
 
 cmd_pr_open() {
@@ -667,6 +686,9 @@ orch.sh - deterministic operations for the orchestrator flow
   handoff path <phase>        print the handoff path for a phase
   handoff validate <file>     check required sections exist and are non-empty
   branch-create               create orch/<issue>-<slug> off the default branch
+  branch-off <name>            create and check out <name> off the default
+                               branch, recording no state - for a quick
+                               implementation, which keeps none
   pr-open <title> <body-file> push and open a draft PR
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
@@ -698,6 +720,7 @@ main() {
     state)         cmd_state "$@" ;;
     handoff)       cmd_handoff "$@" ;;
     branch-create) cmd_branch_create "$@" ;;
+    branch-off)    cmd_branch_off "$@" ;;
     pr-open)       cmd_pr_open "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;

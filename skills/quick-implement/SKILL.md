@@ -35,15 +35,11 @@ Never proceed without one, and never decide silently whether to make one.
 
 ## 2. Branch
 
-Off the default branch, named `quick/<issue>-<slug>`, with `<slug>` the same
-normalisation `orch.sh init` applies to a flow's slug: lowercase, non-alphanumeric
-runs collapsed to single hyphens, trimmed.
-
-```
-base="$("$ORCH" default-branch)"
-git fetch --quiet origin "$base" || true
-git checkout -q -b "quick/<issue>-<slug>" "origin/$base" 2>/dev/null || git checkout -q -b "quick/<issue>-<slug>" "$base"
-```
+`"$ORCH" branch-off "quick/<issue>-<slug>"`, with `<slug>` the same
+normalisation `orch.sh init` applies to a flow's slug: lowercase,
+non-alphanumeric runs collapsed to single hyphens, trimmed. `branch-off`
+forks it off the default branch the same way a flow's own `branch-create`
+does, but records no state - a quick implementation keeps none.
 
 ## 3. Implement
 

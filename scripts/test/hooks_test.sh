@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
-# Tests for the two hook scripts.
+# Tests for the three hook scripts.
 #
 # The failure modes worth catching: the grilling hook firing on skills that
 # aren't planning, firing twice in one session, or staying silent when it should
-# speak; and the edit guard blocking the planning artifacts that
-# improve-codebase-architecture and domain-modeling legitimately write.
+# speak; the edit guard blocking the planning artifacts that
+# improve-codebase-architecture and domain-modeling legitimately write; and the
+# quick-implement hook touching a marker it should leave alone.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GRILL="$DIR/hook-grilling.sh"
@@ -18,6 +19,7 @@ ok()  { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
 bad() { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in: $2" ;; esac; }
+assert_not_contains() { case "$2" in *"$3"*) bad "$1" "found '$3' in: $2" ;; *) ok "$1" ;; esac; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
 
 REPO="$(mktemp -d)"
@@ -43,6 +45,7 @@ echo "grilling hook"
 out="$(skill_event "mattpocock-skills:grilling" s1 | "$GRILL")"
 assert_contains "fires on Skill(grilling)" "$out" "additionalContext"
 assert_contains "replaces the scripted closing line with a structured choice" "$out" "AskUserQuestion"
+assert_not_contains "drops the old scripted closing line" "$out" "Plan approved? I'll write the handoff and start the flow."
 assert_contains "offers starting the flow as an option" "$out" "Start the orchestrator flow"
 assert_contains "offers quick implementation as an option" "$out" "Quick implementation"
 assert_contains "tells the model to invoke the flow skill itself" "$out" "orchestrator:flow"
@@ -77,6 +80,8 @@ echo "edit guard"
 assert_empty "ignores sessions that were never planning" \
   "$(edit_event "$REPO/src/main.ts" never-planned | "$GUARD")"
 
+# Regression check for the quick-implement change: hook-guard.sh itself is
+# untouched by it, so it must still block on the marker exactly as before.
 : >"$TMPDIR/orchestrator-grilling-s1"
 out="$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
 assert_eq "denies a source edit during planning" \
