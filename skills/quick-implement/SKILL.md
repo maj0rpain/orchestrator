@@ -26,10 +26,11 @@ Never proceed without one, and never decide silently whether to make one.
 - A linked issue already exists (named earlier in this conversation, or on an
   already-checked-out branch): use it.
 - Otherwise, publish one now, per `docs/agents/issue-tracker.md`'s "publish to
-  the issue tracker" convention (`gh issue create`), from the shared
-  understanding just reached.
+  the issue tracker" convention, with `"$ORCH" issue-publish "<title>"
+  <body-file>` - the same boundary `review file` draws for a filed finding,
+  kept out of skill prose - from the shared understanding just reached.
 - If neither holds - no linked issue, and the tracker convention doc does not
-  exist or `gh issue create` fails - stop and say why. A quick implementation
+  exist or `issue-publish` fails - stop and say why. A quick implementation
   with no issue behind it is exactly the unaccountable path this skill exists
   to avoid.
 
