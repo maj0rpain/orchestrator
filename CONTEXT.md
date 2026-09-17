@@ -44,6 +44,22 @@ One run of the review phase in one session: a budget of iterations, every one a
 fresh review of the whole change from the base SHA, ending in a terminal state.
 A flow runs a loop each time it enters the review phase; a flow's loops share
 one iteration numbering, and only a human decides that a further loop happens.
+That further-loop decision is re-entry, not Redo: re-entry reviews the same
+accepted change for more looks, Redo disowns it.
+
+## Redo
+
+A deliberate step back to re-run a phase whose output was wrong - never the
+review loop's own re-entry, which reruns the *same* accepted change for more
+looks. `state.phase` names the phase that runs next, so redoing the phase that
+just finished means stepping back one first: `spec -> implement -> review ->
+done`, in reverse.
+
+Redoing back to `implement` is only available once the review loop has reached
+a terminal state, never mid-budget - re-entry already covers "give this change
+more looks," so Redo only has a distinct meaning once the loop is done deciding
+that on its own. Redoing back to `spec` re-reviews the flow's existing issue by
+default, rather than publishing a second one.
 
 ## Budget
 

@@ -180,18 +180,26 @@ terminal state follows, in this order:
 4. Decide the terminal state:
 
 **Ready** - the final iteration was clean, and CI said `green` or `none`.
-`"$ORCH" review ready` marks the PR ready and records the flow `done` as one
-operation. No question is asked first: a loop that ends well ends without
-parking on a prompt.
+Append `## Terminal state` to the final iteration's record, first line
+`ready`, before the terminal action itself. `"$ORCH" review ready` marks the
+PR ready and records the flow `done` as one operation. No question is asked
+first: a loop that ends well ends without parking on a prompt.
 
 **Bounded stop** - two ways in, and the recorded reason says which. The final
 iteration fixed something: nothing has reviewed what it wrote, and marking a PR
 ready over that claims a verification that never happened. Or CI: `failing`
 with the flake rerun spent or the failure not looking flaky, or `unreachable`.
-Record the reason in the final iteration's record and stop. **Leave `phase` at
-`review` and the PR in draft**: `done` means "this succeeded", never "this
-stopped". A human may re-enter the review phase from here; that is a fresh
-loop with its own budget, and **Before the first iteration** describes it.
+Append `## Terminal state` to the final iteration's record, first line `stop`,
+followed by the reason, before stopping. **Leave `phase` at `review` and the
+PR in draft**: `done` means "this succeeded", never "this stopped". A human
+may re-enter the review phase from here; that is a fresh loop with its own
+budget, and **Before the first iteration** describes it.
+
+`## Terminal state` is written exactly once, here, only once a terminal state
+has actually been decided - never guessed or backfilled. It is what
+`"$ORCH" redo review` and `doctor --flow` both read, through the same
+`review_terminal_state` classifier, to tell a loop that genuinely finished
+from one whose driving session simply died mid-budget.
 
 ## Filing
 
