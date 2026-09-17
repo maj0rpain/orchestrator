@@ -332,6 +332,20 @@ path_without_jq() {
   printf '%s\n' "$d"
 }
 
+# Marks $1 as pushed to origin without a real push - it only has to make
+# "$1@{upstream}" resolve, so that cmd_branch retire's own push/delete (the
+# real git I/O the redo review assertions actually check) has something to
+# run against. The genuine push/checkout cycle for a redo's
+# rename-and-republish is proven once by "redo review"'s first iteration
+# and, at the lower branch-retire level, by "branch retire"'s own
+# to-retire/to-retire-redo-1 assertions - later redo iterations only need the
+# upstream to look real, not a second full round trip to the same bare repo.
+stub_pushed_branch() {
+  local branch="$1"
+  git update-ref "refs/remotes/origin/$branch" "$(git rev-parse "$branch")"
+  git branch -q --set-upstream-to="origin/$branch" "$branch"
+}
+
 echo "orch.sh tests"
 
 # --- init -------------------------------------------------------------------
@@ -692,6 +706,13 @@ echo
 echo "doctor"
 healthy_repo
 
+# path_without_jq() builds its restricted PATH from whatever's really on PATH,
+# not from repo state, so the same one built here serves every no-jq
+# assertion below (in this section and in doctor --flow) instead of
+# symlinking the same ~20 tools afresh at each call site.
+nojq_path=""
+on_windows_bash || nojq_path="$(path_without_jq)"
+
 out="$("$ORCH" doctor --nonsense 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "names the flag it rejected" "$out" "--nonsense"
@@ -710,7 +731,7 @@ if on_windows_bash; then
   skip_no_jq "names jq rather than dying mid-report"
   skip_no_jq "still reaches the summary line without jq"
 else
-  out="$(PATH="$(path_without_jq)" "$ORCH" doctor --env 2>&1)"; st=$?
+  out="$(PATH="$nojq_path" "$ORCH" doctor --env 2>&1)"; st=$?
   assert_status "fails when jq is missing" "$st" 1
   assert_contains "names jq rather than dying mid-report" "$out" "jq"
   assert_contains "still reaches the summary line without jq" "$out" " FAIL"
@@ -720,7 +741,9 @@ fi
 # FAIL and "GitHub could not tell us" must only warn. Written backwards, doctor
 # either blocks every flow run away from a good network or waves through the two
 # failures it exists to catch, and both look plausible in a passing test suite.
-healthy_repo
+# No healthy_repo() here: nothing above this point wrote to the repo (doctor
+# itself never mutates, and the jq-missing checks only scoped PATH to a
+# subshell), so the fixture from the top of the section is still clean.
 out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when a documented label is missing from the repo" "$st" 1
 assert_contains "names the missing label with its backticks stripped" "$out" "ready-for-agent"
@@ -732,7 +755,8 @@ assert_eq "strips the backticks the doc writes labels in" \
 assert_contains "counts one FAIL and no warns" \
   "$(printf '%s\n' "$out" | tail -1)" "0 warn, 1 FAIL"
 
-healthy_repo
+# Still the fixture from the top of the section - nothing since has written
+# anything besides the labels doc this call is about to overwrite anyway.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning |' \
         '| -------------------------- | -------------------- | ------- |' \
@@ -749,7 +773,8 @@ out="$(GH_STUB_MODE=labelfail "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unlistable label set does not block the flow" "$st" 0
 assert_contains "says the labels could not be listed" "$out" "could not be listed"
 
-healthy_repo
+# The labelfail check above only scoped GH_STUB_MODE to its own command, so
+# the repo the healthy_repo() call before it built is still clean here.
 out="$(GH_STUB_MODE=offline "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "does not fail merely because GitHub is unreachable" "$st" 0
 assert_contains "collapses the checks that needed GitHub into one line" \
@@ -773,7 +798,9 @@ assert_contains "warns that the default branch came from a fallback" "$out" "def
 # A partial install is the regression this feature exists to catch: find_mattpocock
 # probes one skill file, so it passes, and the spec phase then dies with the
 # context that could have fixed it already cleared.
-healthy_repo
+# No healthy_repo() needed: the offline/noauth/default-branch checks above
+# only ever scoped GH_STUB_* to their own command, so the repo is still clean
+# going into this one - it's the HOME reassignment right below that dirties it.
 HOME="$(stub_mattpocock implement code-review)"; export HOME
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails on a partial mattpocock-skills install" "$st" 1
@@ -798,6 +825,10 @@ assert_contains "skips the per-skill check rather than deriving a second FAIL" \
 # narrower table's *header* row arrives a line before the separator that would
 # correct the width, so without a reset at the end of the block that heading
 # gets read out as a label and demanded of the repo.
+# This healthy_repo() does earn its keep: the partial-install check above left
+# HOME pointed at a mattpocock-skills stub missing two skills, and every
+# labels-doc variant below needs the full install so the only FAIL it can
+# produce is the one the table shape under test is supposed to cause.
 healthy_repo
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
@@ -818,7 +849,10 @@ assert_status "and does not demand the repo create it" "$st" 0
 # field unambiguous. On a data row it is equally an empty last *cell*, and a row
 # that drops its trailing pipe *and* leaves Meaning blank looks exactly like a
 # two-column row - so reading the width off that row costs a real label.
-healthy_repo
+# No healthy_repo() here or in the labels-doc variants below: each one only
+# ever dirtied the labels doc, and the writeln right after overwrites it
+# again before anything reads it, so re-running the whole fixture just to
+# replace one file it's about to replace anyway would be pure waste.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning' \
         '| -------------------------- | -------------------- | -------' \
@@ -830,7 +864,6 @@ assert_contains "reads both labels, not just the one with a Meaning" "$out" "2 t
 
 # Markdown lets a row drop its trailing pipe, and the width is read off the
 # separator row precisely so that such a doc still parses.
-healthy_repo
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning' \
         '| -------------------------- | -------------------- | -------' \
@@ -840,7 +873,6 @@ out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a table without its trailing pipes still parses" "$st" 0
 assert_contains "reads both labels out of it" "$out" "2 triage labels"
 
-healthy_repo
 writeln '# Triage Labels' '' \
         '| Label          | Meaning     |' \
         '| -------------- | ----------- |' \
@@ -854,7 +886,6 @@ assert_contains "points at the setup skill instead" "$out" "setup-matt-pocock-sk
 # The width rule now hinges entirely on recognising the separator row, and these
 # are the two ways that recognition goes wrong: a separator dressed with
 # alignment colons, and a doc that never has one.
-healthy_repo
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| :------------------------- | :------------------: | ----------: |' \
@@ -864,7 +895,6 @@ out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an alignment-colon separator is still a separator" "$st" 0
 assert_contains "reads the labels under it" "$out" "2 triage labels"
 
-healthy_repo
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| `needs-triage`             | `needs-triage`       | Evaluate it |' >docs/agents/triage-labels.md
@@ -874,13 +904,11 @@ assert_eq "reads no label out of a table it never confirmed the width of" \
   "$(printf '%s\n' "$out" | grep -c 'needs-triage')" "0"
 assert_contains "points at the setup skill" "$out" "setup-matt-pocock-skills"
 
-healthy_repo
 writeln '# Triage Labels' '' 'This repo does not use a table.' >docs/agents/triage-labels.md
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when the labels doc parses to no labels" "$st" 1
 assert_contains "points at the setup skill" "$out" "setup-matt-pocock-skills"
 
-healthy_repo
 rm docs/agents/triage-labels.md
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when the labels doc is absent entirely" "$st" 1
@@ -889,6 +917,9 @@ assert_contains "says the doc is missing rather than that it lists nothing" \
 
 # A label list long enough to fill the page is a list that may be cut off, so
 # naming labels as missing from it would be a FAIL derived from not knowing.
+# This healthy_repo() is load-bearing: the doc was just deleted above, and
+# every check from here through the exclude-line one below needs the default
+# labels doc back, with nothing else in between rewriting it.
 healthy_repo
 out="$(GH_STUB_LABELS="$(seq 1 1000)" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a label list that filled the page does not FAIL" "$st" 0
@@ -897,19 +928,22 @@ assert_contains "names them individually" "$out" "needs-triage, ready-for-agent"
 
 # ...but a page that filled up and still held every documented label answered
 # the question. The caveat qualifies a negative; there is no negative here.
-healthy_repo
+# GH_STUB_LABELS above was command-scoped, so the repo is still the one
+# healthy_repo() built two checks up.
 out="$(GH_STUB_LABELS="$(printf '%s\n' needs-triage ready-for-agent; seq 1 1000)" \
   "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a full page that held every label is still a pass" "$st" 0
 assert_contains "does not hedge an answer it actually has" \
   "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
 
-healthy_repo
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "counts only the documented labels, not the header row" \
   "$out" "2 triage labels"
 
-healthy_repo
+# Still the fixture healthy_repo() built for the label-list checks above -
+# nothing since has touched anything but $out - so truncating the exclude
+# file here is the only new mutation, and it's this test's own setup, not
+# leftover state to clean up first.
 : >.git/info/exclude
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a missing git exclude line warns without blocking" "$st" 0
@@ -917,12 +951,15 @@ assert_contains "counts one warn and no FAILs" \
   "$(printf '%s\n' "$out" | tail -1)" "1 warn, 0 FAIL"
 assert_contains "gives a command that adds the exclude line" "$out" "info/exclude"
 
+# The exclude line is still truncated from the check above, so this one does
+# need a real reset before layering CLAUDE_PLUGIN_ROOT's own warning on top.
 healthy_repo
 out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "running orch.sh by hand is not a broken install" "$st" 0
 assert_contains "warns about the unset plugin root" "$out" "CLAUDE_PLUGIN_ROOT"
 
-healthy_repo
+# env -u above was scoped to that one command too, so this is still the same
+# fully-healthy repo - exactly the state this last check needs to prove out.
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "separates groups with a blank line and a bare header" \
   "$out" "$(printf '\n\nauth & remotes\n')"
@@ -1059,7 +1096,7 @@ if on_windows_bash; then
   skip_no_jq "--flow without jq fails rather than reporting a clean bill"
   skip_no_jq "names jq as the reason it cannot answer"
 else
-  out="$(PATH="$(path_without_jq)" "$ORCH" doctor --flow 2>&1)"; st=$?
+  out="$(PATH="$nojq_path" "$ORCH" doctor --flow 2>&1)"; st=$?
   assert_status "--flow without jq fails rather than reporting a clean bill" "$st" 1
   assert_contains "names jq as the reason it cannot answer" "$out" "jq not found"
 fi
@@ -1068,7 +1105,7 @@ if on_windows_bash; then
   skip_no_jq "bare doctor without jq fails on the tools check"
   skip_no_jq "collapses every flow check into one line when jq is gone"
 else
-  out="$(PATH="$(path_without_jq)" "$ORCH" doctor 2>&1)"; st=$?
+  out="$(PATH="$nojq_path" "$ORCH" doctor 2>&1)"; st=$?
   assert_status "bare doctor without jq fails on the tools check" "$st" 1
   # The count comes from the registry, so a check appended to it is covered by the
   # gate without anyone remembering to add a preamble - and this number moving is
@@ -1897,9 +1934,8 @@ assert_eq "leaving the flat trail empty" \
 # A second redo in the same flow numbers on rather than overwriting the first.
 "$ORCH" state set phase review
 "$ORCH" state set issue 21
-git checkout -q orch/21-redotest-redo-1
-git checkout -q -b orch/21-redotest
-git push -q -u origin orch/21-redotest
+git checkout -q -b orch/21-redotest orch/21-redotest-redo-1
+stub_pushed_branch orch/21-redotest
 "$ORCH" state set branch orch/21-redotest
 "$ORCH" state set pr 31
 "$ORCH" state set iteration 5
@@ -1919,7 +1955,7 @@ assert_eq "moving the second loop's records into pre-redo-2" \
 "$ORCH" state set phase review
 "$ORCH" state set issue 21
 git checkout -q -b orch/21-redotest
-git push -q -u origin orch/21-redotest
+stub_pushed_branch orch/21-redotest
 "$ORCH" state set branch orch/21-redotest
 "$ORCH" state set pr 32
 "$ORCH" state set iteration 1
