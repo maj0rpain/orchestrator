@@ -1830,8 +1830,24 @@ assert_eq "without disturbing redo-1's records" \
 assert_eq "moving the second loop's records into pre-redo-2" \
   "$([ -f .orchestrator/review/pre-redo-2/iteration-05.md ] && echo yes || echo no)" "yes"
 
-out="$(GH_STUB_PR_CLOSE_EXIT=1 "$ORCH" redo review 2>&1)"; st=$?
+"$ORCH" state set phase review
+"$ORCH" state set issue 21
+git checkout -q -b orch/21-redotest
+git push -q -u origin orch/21-redotest
+"$ORCH" state set branch orch/21-redotest
+"$ORCH" state set pr 32
+"$ORCH" state set iteration 1
+"$ORCH" state set budget 1
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md
+out="$(GH_STUB_PR_CLOSE_EXIT=1 GH_STUB_PR_NUMBER=32 "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a gh that will not close the PR fails the redo" "$st" 1
+assert_contains "naming the reason" "$out" "gh could not close PR #32"
+assert_eq "leaving the phase where it was rather than half-finishing" \
+  "$("$ORCH" state get phase)" "review"
+assert_eq "still renames the branch aside since retire runs before the pr close" \
+  "$(git rev-parse --verify --quiet orch/21-redotest-redo-3 >/dev/null 2>&1 && echo present || echo gone)" "present"
+assert_eq "and never moves the loop's records since gh failed first" \
+  "$([ -f .orchestrator/review/iteration-01.md ] && echo yes || echo no)" "yes"
 
 # --- redo spec --------------------------------------------------------------
 echo
