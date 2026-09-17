@@ -493,6 +493,36 @@ check_flow_pr() {
   esac
 }
 
+# Proactive surface for the same classification `redo review` refuses on -
+# a human sees "this loop looks interrupted" before wondering why redo
+# won't run. Phase-gated like check_flow_upstream: outside review, there is
+# no loop to classify and nothing to say about one.
+check_flow_review_terminal() {
+  local phase i b state word detail
+  phase="$(jq -r '.phase // ""' "$STATE")"
+  [ "$phase" = review ] || return 0
+  i="$(jq -r '.iteration // 0' "$STATE")"
+  b="$(review_budget)"
+  state="$(review_terminal_state)" || true
+  word="$(first_line "$state")"
+  detail="$(printf '%s\n' "$state" | tail -n +2)"
+  case "$word" in
+    none)  d_ok "review loop: not started yet" ;;
+    ready) d_ok "review loop at a terminal state: ready" ;;
+    stop)  d_ok "review loop at a terminal state: stop ($(first_line "$detail"))" ;;
+    # Both warn rather than FAIL: /orchestrator:next resumes either one, and a
+    # FAIL here would block the one command that can move a mid-flight loop
+    # forward. The two read as distinct situations, not one "interrupted"
+    # message covering both: a loop still short of its budget is proceeding
+    # normally, where one whose last iteration recorded nothing looks like the
+    # session that was driving it simply died.
+    pending)
+      d_warn "review loop hasn't reached its budget yet (iteration $i of budget $b) - /orchestrator:next will resume it; /orchestrator:redo refuses until it reaches a terminal state." ;;
+    interrupted)
+      d_warn "review loop's last iteration ($i of budget $b) has no recorded terminal state - the session looks interrupted, not stopped. /orchestrator:next will resume it; /orchestrator:redo refuses until it reaches a terminal state." ;;
+  esac
+}
+
 # Pure reuse: what makes a handoff valid lives in handoff_required and
 # section_body, and a second statement of it here is how the two answers drift.
 # Which handoffs are due is mechanical - phase names what runs *next*, so every
@@ -521,7 +551,7 @@ check_flow_handoffs() {
 }
 
 FLOW_CHECKS="
-h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream check_flow_pr check_flow_handoffs
+h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream check_flow_pr check_flow_review_terminal check_flow_handoffs
 "
 
 # A registry's entries, one per line. Splitting a whitespace-separated list is

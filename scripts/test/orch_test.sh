@@ -111,6 +111,10 @@ complete_implement_handoff() {
 # says so. `view` answers GH_STUB_PR_NUMBER when asked `--json number` - the
 # call pr-open makes to learn the PR it just opened - and falls back to the
 # existing `--json state` behaviour (GH_STUB_PR_STATE) for every other query.
+#
+# `pr close` and `issue close` are redo's boundary. Both record the number and
+# `--comment` text to GH_STUB_FILED like every other write above, and fail on
+# demand: GH_STUB_PR_CLOSE_EXIT, GH_STUB_ISSUE_CLOSE_EXIT.
 stub_gh() {
   local d
   d="$(mktemp -d)"
@@ -125,6 +129,7 @@ record_flags() {
       --title)     printf 'title=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
       --label)     printf 'label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
       --body-file) { printf 'body:\n'; cat "$2"; } >>"$GH_STUB_FILED"; shift ;;
+      --comment)   { printf 'comment:\n%s\n' "$2"; } >>"$GH_STUB_FILED"; shift ;;
       *)           printf 'flag=%s\n' "$1" >>"$GH_STUB_FILED" ;;
     esac
     shift
@@ -177,6 +182,15 @@ ready-for-agent}"
         if [ "$op" = edit ]; then st="${GH_STUB_EDIT_EXIT:-0}"; else st="${GH_STUB_COMMENT_EXIT:-0}"; fi
         [ "$st" = 0 ] || echo "gh stub: issue $op refused" >&2
         exit "$st" ;;
+      close)
+        shift 2
+        if [ -n "${GH_STUB_FILED:-}" ]; then
+          printf 'issue close %s\n' "$1" >>"$GH_STUB_FILED"
+          shift
+          record_flags "$@"
+        fi
+        [ "${GH_STUB_ISSUE_CLOSE_EXIT:-0}" = 0 ] || { echo "gh stub: issue close refused" >&2; exit "$GH_STUB_ISSUE_CLOSE_EXIT"; }
+        exit 0 ;;
       create) ;;
       *) echo "gh stub: unscripted issue op '$2'" >&2; exit 99 ;;
     esac
@@ -187,6 +201,15 @@ ready-for-agent}"
   pr)
     case "$2" in
       ready) exit "${GH_STUB_READY_EXIT:-0}" ;;
+      close)
+        shift 2
+        if [ -n "${GH_STUB_FILED:-}" ]; then
+          printf 'pr close %s\n' "$1" >>"$GH_STUB_FILED"
+          shift
+          record_flags "$@"
+        fi
+        [ "${GH_STUB_PR_CLOSE_EXIT:-0}" = 0 ] || { echo "gh stub: pr close refused" >&2; exit "$GH_STUB_PR_CLOSE_EXIT"; }
+        exit 0 ;;
       checks)
         req=0
         for a in "$@"; do if [ "$a" = --required ]; then req=1; fi; done
@@ -442,6 +465,115 @@ assert_contains "names the branch" "$out" "quick/9-widgets already exists"
 
 out="$("$ORCH" branch-off 2>&1)"; st=$?
 assert_status "refuses with no name" "$st" 1
+
+# --- branch retire ------------------------------------------------------------
+# The rename-aside a redo uses instead of deleting or force-pushing over a
+# discarded attempt's commits. The push/delete-remote-ref assertions reuse the
+# bare-repo-as-origin fixture branch-create and pr-open already use.
+echo
+echo "branch retire"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main
+
+out="$("$ORCH" branch retire nosuchbranch new 2>&1)"; st=$?
+assert_status "refuses a branch that does not exist" "$st" 1
+assert_contains "naming it" "$out" "nosuchbranch does not exist"
+
+git branch old-attempt
+git branch taken
+out="$("$ORCH" branch retire old-attempt taken 2>&1)"; st=$?
+assert_status "refuses a destination name already in use" "$st" 1
+assert_contains "naming it" "$out" "taken already exists"
+git branch -d taken
+
+out="$("$ORCH" branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$?
+assert_status "renames a branch with no upstream" "$st" 0
+assert_eq "prints the new name" "$out" "old-attempt-redo-1"
+assert_eq "the old name is gone locally" \
+  "$(git rev-parse --verify --quiet old-attempt >/dev/null 2>&1 && echo present || echo gone)" "gone"
+assert_eq "the new name exists" \
+  "$(git rev-parse --verify --quiet old-attempt-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
+
+git checkout -q -b to-retire
+git push -q -u origin to-retire
+out="$("$ORCH" branch retire to-retire to-retire-redo-1 2>&1)"; st=$?
+assert_status "renames and republishes a branch with an upstream" "$st" 0
+assert_eq "prints the new name" "$out" "to-retire-redo-1"
+assert_eq "pushes the new name to origin" \
+  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/to-retire-redo-1 >/dev/null && echo present || echo gone)" "present"
+# Not optional: a leftover ref under the un-suffixed name is exactly what the
+# next implement attempt's branch-create/pr-open would collide with.
+assert_eq "and deletes the old remote ref" \
+  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/to-retire >/dev/null && echo present || echo gone)" "gone"
+
+# The fixture gap named in spec review: no test in the suite forces a real
+# `git push` to fail, since the gh-stub exit overrides only apply to gh.
+# Pointing origin at a path removed out from under it does.
+git checkout -q -b to-fail
+git push -q -u origin to-fail
+rm -rf "$bare"
+out="$("$ORCH" branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
+assert_status "dies when the push to origin fails" "$st" 1
+assert_contains "with a clear reason" "$out" "could not push"
+# The local rename happens before the push is even attempted - issue #63:
+# without a rollback, a push failure leaves `old` gone locally with nothing
+# a retry could find, even though nothing was ever published.
+assert_eq "rolls the local rename back so the old name still exists" \
+  "$(git rev-parse --verify --quiet to-fail >/dev/null 2>&1 && echo present || echo gone)" "present"
+assert_eq "and the new name is not left dangling in its place" \
+  "$(git rev-parse --verify --quiet to-fail-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "gone"
+
+# Retrying with the same old/new names must succeed once whatever blocked
+# the push clears - issue #63 acceptance criterion 1.
+bare2="$(mktemp -d)/origin.git"
+git init -q --bare "$bare2"
+git remote set-url origin "$bare2"
+out="$("$ORCH" branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
+assert_status "retrying the same rename succeeds once origin is reachable again" "$st" 0
+assert_eq "prints the new name" "$out" "to-fail-redo-1"
+assert_eq "renames locally" \
+  "$(git rev-parse --verify --quiet to-fail-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
+assert_eq "and publishes it" \
+  "$(git -C "$bare2" rev-parse --quiet --verify refs/heads/to-fail-redo-1 >/dev/null && echo present || echo gone)" "present"
+
+# Idempotent resume: a previous call whose local rename and remote push both
+# already succeeded, but whose remote delete of the old ref did not - the
+# "Key interfaces" note in issue #63, that retire must resume rather than
+# fail on "$old does not exist" when $old really is gone locally already.
+bare3="$(mktemp -d)/origin.git"
+git init -q --bare "$bare3"
+git remote set-url origin "$bare3"
+git checkout -q -b to-resume
+git push -q -u origin to-resume
+git branch -m to-resume to-resume-redo-1
+git push -q -u origin to-resume-redo-1
+# The old ref is deliberately left on origin, standing in for the failed
+# delete a real partial failure would leave behind.
+out="$("$ORCH" branch retire to-resume to-resume-redo-1 2>&1)"; st=$?
+assert_status "resumes rather than failing on the already-gone old name" "$st" 0
+assert_eq "prints the new name" "$out" "to-resume-redo-1"
+assert_eq "and finishes the delete the earlier attempt left undone" \
+  "$(git -C "$bare3" rev-parse --quiet --verify refs/heads/to-resume >/dev/null && echo present || echo gone)" "gone"
+
+# A genuine remote failure on that same delete step still has to die, not
+# get swallowed by the resume path's tolerance for an already-gone ref.
+bare4="$(mktemp -d)/origin.git"
+git init -q --bare "$bare4"
+git -C "$bare4" symbolic-ref HEAD refs/heads/to-protect
+git -C "$bare4" config receive.denyDeleteCurrentBranch refuse
+git remote set-url origin "$bare4"
+git checkout -q -b to-protect
+git push -q -u origin to-protect
+out="$("$ORCH" branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
+assert_status "dies when the old ref genuinely cannot be deleted" "$st" 1
+assert_contains "with a clear reason" "$out" "could not delete origin/to-protect"
+
+out="$("$ORCH" branch retire 2>&1)"; st=$?
+assert_status "refuses with the wrong number of arguments" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 
 # --- issue-publish ------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
@@ -910,7 +1042,7 @@ assert_status "bare doctor without jq fails on the tools check" "$st" 1
 # gate without anyone remembering to add a preamble - and this number moving is
 # how you find out that happened.
 assert_contains "collapses every flow check into one line when jq is gone" \
-  "$out" "6 flow checks skipped: jq is not installed"
+  "$out" "7 flow checks skipped: jq is not installed"
 
 # --- pr-open -----------------------------------------------------------------
 # PR #15 merged without closing #14 because the agent's body opened with a verb
@@ -1499,18 +1631,351 @@ assert_eq "which reads as unspent through state get" \
 assert_eq "and as spent once it has been" \
   "$("$ORCH" state get flake_rerun_used)" "true"
 
+# redo_count is what answers "how many times has this flow been redone" once
+# a redo has happened - iteration alone no longer can.
+assert_eq "a fresh flow has never been redone" "$("$ORCH" state get redo_count)" "0"
+assert_eq "recorded as a number, not a string" \
+  "$("$ORCH" state get | jq -r '.redo_count | type')" "number"
+
 assert_contains "status names the iteration against the default budget" \
   "$("$ORCH" status)" "iteration 0 of 5"
 "$ORCH" state set budget 3
 "$ORCH" state set iteration 2
 assert_contains "and against the budget once one is set" \
   "$("$ORCH" status)" "iteration 2 of 3"
+assert_contains "status shows how many times the flow has been redone" \
+  "$("$ORCH" status)" "redo:      0"
+"$ORCH" state set redo_count 2
+assert_contains "and updates once it has been" "$("$ORCH" status)" "redo:      2"
 assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin"
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 assert_contains "and filing" "$("$ORCH" help)" "review file"
+assert_contains "and the terminal-state classifier" "$("$ORCH" help)" "review terminal"
+assert_contains "and retiring a loop's records" "$("$ORCH" help)" "review retire"
 assert_contains "help documents issue-publish" "$("$ORCH" help)" "issue-publish"
 assert_contains "and pr-publish" "$("$ORCH" help)" "pr-publish"
+assert_contains "and retiring a branch" "$("$ORCH" help)" "branch retire"
+assert_contains "and redo review" "$("$ORCH" help)" "redo review"
+assert_contains "and redo spec" "$("$ORCH" help)" "redo spec"
 assert_eq "and no longer the loop machinery" "$("$ORCH" help | grep -c 'loop-next')" "0"
+
+# --- review terminal ----------------------------------------------------
+# The one classifier `review terminal` and doctor's check both read - none and
+# pending need no iteration file at all, interrupted/ready/stop all do.
+echo
+echo "review terminal"
+healthy_repo
+"$ORCH" init terminaltest >/dev/null
+
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "no loop yet is not terminal" "$st" 1
+assert_first_line "and classifies as none" "$out" "none"
+
+"$ORCH" state set iteration 3
+"$ORCH" state set budget 5
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "short of its budget is not terminal" "$st" 1
+assert_first_line "and classifies as pending" "$out" "pending"
+
+"$ORCH" state set iteration 5
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "at budget with no iteration record is not terminal" "$st" 1
+assert_first_line "classified as interrupted, not pending" "$out" "interrupted"
+
+mkdir -p .orchestrator/review
+: >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a record with no Terminal state heading is still interrupted" "$st" 1
+assert_first_line "not silently read as done" "$out" "interrupted"
+
+writeln '## Terminal state' '' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "an empty Terminal state section is interrupted too" "$st" 1
+assert_first_line "same as a missing one" "$out" "interrupted"
+
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a ready heading is terminal" "$st" 0
+assert_first_line "and classifies as ready" "$out" "ready"
+
+writeln '## Terminal state' 'stop' 'CI failed twice, flake rerun spent.' \
+  >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a stop heading is terminal too" "$st" 0
+assert_first_line "classified as stop" "$out" "stop"
+assert_contains "carrying the recorded reason on the lines after it" \
+  "$out" "CI failed twice, flake rerun spent."
+
+out="$("$ORCH" review terminal extra 2>&1)"; st=$?
+assert_status "takes no arguments" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh review terminal"
+
+# --- doctor: review terminal check --------------------------------------
+# check_flow_pr's open/closed/unreadable branching is the direct template:
+# ok/warn on the classification, and phase-gated silent outside review.
+echo
+echo "doctor: review terminal check"
+healthy_repo
+"$ORCH" init doctorterm >/dev/null
+complete_plan_handoff "$("$ORCH" handoff path spec)"
+complete_spec_handoff "$("$ORCH" handoff path implement)"
+"$ORCH" state set phase implement
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "implement phase still passes" "$st" 0
+assert_eq "and says nothing about a review loop" \
+  "$(printf '%s\n' "$out" | grep -c 'review loop')" "0"
+
+complete_implement_handoff "$("$ORCH" handoff path review)"
+"$ORCH" state set phase review
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "no loop yet is healthy" "$st" 0
+assert_contains "reports the loop has not started" "$out" "review loop: not started yet"
+
+"$ORCH" state set iteration 2
+"$ORCH" state set budget 5
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "short of budget warns, never fails" "$st" 0
+assert_contains "names the iteration and budget" "$out" "iteration 2 of budget 5"
+assert_contains "reads as pending, not interrupted" "$out" "hasn't reached its budget yet"
+assert_contains "points at next for resuming it" "$out" "/orchestrator:next will resume it"
+assert_contains "and says redo refuses until it is terminal" "$out" "/orchestrator:redo refuses"
+
+"$ORCH" state set iteration 5
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "at budget with no terminal record warns rather than fails" "$st" 0
+assert_contains "reads as interrupted, not pending" "$out" "looks interrupted, not stopped"
+
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a ready record is healthy" "$st" 0
+assert_contains "names it a terminal state" "$out" "review loop at a terminal state: ready"
+
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a stop record is healthy too" "$st" 0
+assert_contains "names the terminal state and its reason" \
+  "$out" "review loop at a terminal state: stop (CI failed twice.)"
+
+# --- review retire -------------------------------------------------------
+# The archive test's directory-move assertions are the direct template.
+echo
+echo "review retire"
+new_repo >/dev/null
+"$ORCH" init retiretest >/dev/null
+
+out="$("$ORCH" review retire 1)"
+assert_contains "a no-op with nothing to move still prints the destination" \
+  "$out" "/review/pre-redo-1"
+assert_eq "and creates no directory for it" \
+  "$([ -d .orchestrator/review/pre-redo-1 ] && echo present || echo gone)" "gone"
+
+mkdir -p .orchestrator/review
+: >.orchestrator/review/iteration-01.md
+: >.orchestrator/review/iteration-02.md
+out="$("$ORCH" review retire 1)"
+assert_contains "moves every iteration record into pre-redo-N" \
+  "$out" "/review/pre-redo-1"
+assert_eq "iteration-01 landed under it" \
+  "$([ -f .orchestrator/review/pre-redo-1/iteration-01.md ] && echo yes || echo no)" "yes"
+assert_eq "iteration-02 landed under it too" \
+  "$([ -f .orchestrator/review/pre-redo-1/iteration-02.md ] && echo yes || echo no)" "yes"
+assert_eq "and the flat trail is empty afterwards" \
+  "$([ -e .orchestrator/review/iteration-01.md ] && echo yes || echo no)" "no"
+
+: >.orchestrator/review/iteration-01.md
+out="$("$ORCH" review retire 1 2>&1)"; st=$?
+assert_status "dies rather than collide with an existing pre-redo-N" "$st" 1
+assert_contains "naming the directory" "$out" "pre-redo-1"
+
+out="$("$ORCH" review retire nope 2>&1)"; st=$?
+assert_status "refuses a non-numeric redo count" "$st" 1
+
+out="$("$ORCH" review retire 2>&1)"; st=$?
+assert_status "refuses with no argument" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh review retire"
+
+# --- redo review ----------------------------------------------------------
+# The full review -> implement transition: three distinct refusals below a
+# terminal state, and a full composition above it.
+echo
+echo "redo review"
+healthy_repo
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote set-url origin "$bare"
+git push -q origin HEAD:refs/heads/main
+"$ORCH" init redotest >/dev/null
+
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "refuses outside the review phase" "$st" 1
+assert_contains "naming the reason" "$out" "flow is not at the review phase"
+
+"$ORCH" state set phase review
+"$ORCH" state set issue 21
+git checkout -q -b orch/21-redotest
+git push -q -u origin orch/21-redotest
+"$ORCH" state set branch orch/21-redotest
+filed="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=30 "$ORCH" redo review 2>&1)"; st=$?
+assert_status "refuses with no loop run yet" "$st" 1
+assert_contains "distinct from the other two refusals" "$out" "no review loop has run yet"
+assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+
+"$ORCH" state set iteration 2
+"$ORCH" state set budget 5
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "refuses a loop still short of its budget" "$st" 1
+assert_contains "pointing at /orchestrator:next instead" "$out" "that's what /orchestrator:next is for"
+
+"$ORCH" state set iteration 5
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "refuses a budget-spent loop with no terminal record" "$st" 1
+assert_contains "reading as interrupted, distinct from pending" "$out" "looks interrupted, not stopped"
+
+"$ORCH" state set pr 30
+"$ORCH" state set base_sha deadbeefcafe
+"$ORCH" state set flake_rerun_used true
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" "$ORCH" redo review 2>&1)"; st=$?
+assert_status "a genuinely terminal loop redoes" "$st" 0
+assert_eq "prints the new redo count" "$out" "1"
+assert_eq "records it in state" "$("$ORCH" state get redo_count)" "1"
+assert_eq "resets the iteration for a fresh budget" "$("$ORCH" state get iteration)" "0"
+assert_eq "and clears branch, PR, and base SHA" \
+  "$("$ORCH" state get branch)$("$ORCH" state get pr)$("$ORCH" state get base_sha)" ""
+assert_eq "steps the flow back to implement" "$("$ORCH" state get phase)" "implement"
+assert_eq "leaves the one-per-flow flake rerun untouched" \
+  "$("$ORCH" state get flake_rerun_used)" "true"
+assert_eq "renames the old branch aside" \
+  "$(git rev-parse --verify --quiet orch/21-redotest-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
+assert_eq "and republishes it on origin" \
+  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/orch/21-redotest-redo-1 >/dev/null && echo present || echo gone)" "present"
+assert_contains "closes the old PR" "$(cat "$filed")" "pr close 30"
+assert_contains "with a comment naming the retired branch" \
+  "$(cat "$filed")" "orch/21-redotest-redo-1"
+assert_eq "moves the old loop's records aside" \
+  "$([ -f .orchestrator/review/pre-redo-1/iteration-05.md ] && echo yes || echo no)" "yes"
+assert_eq "leaving the flat trail empty" \
+  "$([ -e .orchestrator/review/iteration-05.md ] && echo yes || echo no)" "no"
+
+# A second redo in the same flow numbers on rather than overwriting the first.
+"$ORCH" state set phase review
+"$ORCH" state set issue 21
+git checkout -q orch/21-redotest-redo-1
+git checkout -q -b orch/21-redotest
+git push -q -u origin orch/21-redotest
+"$ORCH" state set branch orch/21-redotest
+"$ORCH" state set pr 31
+"$ORCH" state set iteration 5
+"$ORCH" state set budget 5
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
+out="$(GH_STUB_PR_NUMBER=31 "$ORCH" redo review 2>&1)"; st=$?
+assert_status "a second stopped loop redoes just as the first did" "$st" 0
+assert_eq "and numbers on rather than repeating redo-1" "$out" "2"
+assert_eq "naming the branch redo-2" \
+  "$(git rev-parse --verify --quiet orch/21-redotest-redo-2 >/dev/null 2>&1 && echo present || echo gone)" "present"
+assert_eq "without disturbing redo-1's records" \
+  "$([ -f .orchestrator/review/pre-redo-1/iteration-05.md ] && echo yes || echo no)" "yes"
+assert_eq "moving the second loop's records into pre-redo-2" \
+  "$([ -f .orchestrator/review/pre-redo-2/iteration-05.md ] && echo yes || echo no)" "yes"
+
+"$ORCH" state set phase review
+"$ORCH" state set issue 21
+git checkout -q -b orch/21-redotest
+git push -q -u origin orch/21-redotest
+"$ORCH" state set branch orch/21-redotest
+"$ORCH" state set pr 32
+"$ORCH" state set iteration 1
+"$ORCH" state set budget 1
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
+out="$(GH_STUB_PR_CLOSE_EXIT=1 GH_STUB_PR_NUMBER=32 "$ORCH" redo review 2>&1)"; st=$?
+assert_status "a gh that will not close the PR fails the redo" "$st" 1
+assert_contains "naming the reason" "$out" "gh could not close PR #32"
+assert_eq "leaving the phase where it was rather than half-finishing" \
+  "$("$ORCH" state get phase)" "review"
+assert_eq "still renames the branch aside since retire runs before the pr close" \
+  "$(git rev-parse --verify --quiet orch/21-redotest-redo-3 >/dev/null 2>&1 && echo present || echo gone)" "present"
+assert_eq "and never moves the loop's records since gh failed first" \
+  "$([ -f .orchestrator/review/iteration-01.md ] && echo yes || echo no)" "yes"
+# Issue #63: the rename above is real, so state.branch has to follow it
+# rather than keep naming a branch retire already renamed away - otherwise a
+# retried redo dies confusingly against a branch that no longer exists.
+assert_eq "updates state.branch to the branch retire actually produced" \
+  "$("$ORCH" state get branch)" "orch/21-redotest-redo-3"
+assert_eq "and records the bumped redo_count so a retry numbers on, not over" \
+  "$("$ORCH" state get redo_count)" "3"
+
+# A retry after that failure has to work from the state the failure left
+# behind, and must not retire the already-retired branch a second time -
+# issue #63 acceptance criterion 3: it should pick up from closing the PR.
+out="$(GH_STUB_PR_NUMBER=32 "$ORCH" redo review 2>&1)"; st=$?
+assert_status "retrying redo review after the gh failure now succeeds" "$st" 0
+assert_eq "reuses redo-3 rather than numbering on to redo-4" "$out" "3"
+assert_eq "does not retire the branch a second time" \
+  "$(git rev-parse --verify --quiet orch/21-redotest-redo-4 >/dev/null 2>&1 && echo present || echo gone)" "gone"
+assert_eq "leaves redo-3 as the actually-retired branch" \
+  "$(git rev-parse --verify --quiet orch/21-redotest-redo-3 >/dev/null 2>&1 && echo present || echo gone)" "present"
+assert_eq "and clears branch, PR, and base SHA on the now-successful redo" \
+  "$("$ORCH" state get branch)$("$ORCH" state get pr)$("$ORCH" state get base_sha)" ""
+
+# A loop that ended by marking the PR ready has already moved the flow to
+# phase done, in the same operation that decided "ready" - there is no real
+# window where redo could ever see phase: review with a ready terminal
+# record. Produced the way the system actually produces it (review ready
+# itself, not a hand-crafted state), redo rejects it exactly as it would any
+# other done flow, through the same phase gate, not a ready-specific branch.
+"$ORCH" state set phase review
+"$ORCH" state set pr 33
+"$ORCH" state set iteration 1
+"$ORCH" state set budget 1
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md
+"$ORCH" review ready >/dev/null
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "a loop that ended ready is out of scope for redo, same as any done flow" "$st" 1
+assert_contains "the same phase-gate refusal as any other done flow" "$out" "flow is not at the review phase"
+
+# --- redo spec --------------------------------------------------------------
+echo
+echo "redo spec"
+healthy_repo
+"$ORCH" init redospec >/dev/null
+
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "refuses outside the implement phase" "$st" 1
+assert_contains "naming the reason" "$out" "flow is not at the implement phase"
+
+"$ORCH" state set phase implement
+"$ORCH" state set issue 40
+filed="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" "$ORCH" redo spec 2>&1)"; st=$?
+assert_status "the default path steps back to spec" "$st" 0
+assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
+assert_eq "keeping the existing issue" "$("$ORCH" state get issue)" "40"
+assert_eq "and touching gh not at all" "$(grep -c . "$filed")" "0"
+
+"$ORCH" state set phase implement
+"$ORCH" state set issue 41
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+assert_status "--new-issue also steps back to spec" "$st" 0
+assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
+assert_eq "clearing the old issue" "$("$ORCH" state get issue)" ""
+assert_contains "closes the old issue" "$(cat "$filed")" "issue close 41"
+
+"$ORCH" state set phase implement
+"$ORCH" state set issue 42
+out="$(GH_STUB_ISSUE_CLOSE_EXIT=1 "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+assert_status "a gh that will not close the issue fails --new-issue" "$st" 1
+assert_eq "leaving the phase where it was rather than half-finishing" \
+  "$("$ORCH" state get phase)" "implement"
+
+out="$("$ORCH" redo spec --bogus 2>&1)"; st=$?
+assert_status "rejects an unknown flag" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh redo spec"
 
 echo
 echo "$PASS passed, $FAIL failed"
