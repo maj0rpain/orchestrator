@@ -677,21 +677,44 @@ cmd_branch() {
   case "$op" in
     retire)
       [ $# -eq 2 ] || die "usage: orch.sh branch retire <old> <new>"
-      local old="$1" new="$2" upstream=""
-      git rev-parse --verify --quiet "$old" >/dev/null 2>&1 \
-        || die "branch $old does not exist"
-      git rev-parse --verify --quiet "$new" >/dev/null 2>&1 \
-        && die "branch $new already exists"
-      upstream="$(git rev-parse --abbrev-ref --verify --quiet "$old@{upstream}" 2>/dev/null)" || upstream=""
-      git branch -m "$old" "$new"
+      local old="$1" new="$2" upstream="" old_ok=1 new_ok=1
+      git rev-parse --verify --quiet "$old" >/dev/null 2>&1 || old_ok=0
+      git rev-parse --verify --quiet "$new" >/dev/null 2>&1 || new_ok=0
+      if [ "$old_ok" = 1 ] && [ "$new_ok" = 1 ]; then
+        die "branch $new already exists"
+      elif [ "$old_ok" = 0 ] && [ "$new_ok" = 0 ]; then
+        die "branch $old does not exist"
+      elif [ "$old_ok" = 1 ]; then
+        upstream="$(git rev-parse --abbrev-ref --verify --quiet "$old@{upstream}" 2>/dev/null)" || upstream=""
+        git branch -m "$old" "$new"
+      else
+        # $old is already gone and $new already exists: a previous call's
+        # local rename succeeded and it died on the remote push or delete
+        # below - resume from there instead of failing on "$old does not
+        # exist", the unretryable state issue #63 named. Reaching this state
+        # is only possible by way of the upstream branch below, since a
+        # no-upstream retire has no later step left to die on - so the
+        # remote steps still needing doing is a safe assumption here.
+        upstream=origin
+      fi
       # A leftover remote ref under the un-suffixed name is exactly what the
       # next implement attempt's branch-create/pr-open will reuse, and their
       # plain push is not a force-push - so the old ref's delete is not
       # optional, and both failures die rather than leaving origin out of
       # sync with what this rename just did locally.
       if [ -n "$upstream" ]; then
-        git push -q -u origin "$new" || die "could not push $new to origin"
-        git push -q origin --delete "$old" || die "could not delete origin/$old"
+        # The rename above is local-only and free to undo - if the push
+        # never lands, undoing it is what keeps `$old` a real, retryable
+        # branch instead of a name a retry can no longer find.
+        git push -q -u origin "$new" \
+          || { git branch -m "$new" "$old"; die "could not push $new to origin"; }
+        if ! git push -q origin --delete "$old" 2>/dev/null; then
+          # Already gone - a previous call's delete already succeeded before
+          # something else failed - is not an error to retry into; only a
+          # ref that is still there and won't go is.
+          git ls-remote --exit-code origin "refs/heads/$old" >/dev/null 2>&1 \
+            && die "could not delete origin/$old"
+        fi
       fi
       note "$new"
       ;;
@@ -779,7 +802,7 @@ cmd_pr_publish() {
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
-  local phase i b word slug issue branch pr new_n new_branch msg
+  local phase i b word slug issue branch pr redo_count new_n new_branch msg
   phase="$(jq -r '.phase // ""' "$STATE")"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
   i="$(jq -r '.iteration // 0' "$STATE")"
@@ -802,10 +825,29 @@ cmd_redo_review() {
   branch="$(jq -r '.branch // ""' "$STATE")"
   [ -n "$branch" ] || die "no branch recorded in state"
   pr="$(require_pr)"
-  new_n=$(( $(jq -r '.redo_count // 0' "$STATE") + 1 ))
-  new_branch="orch/${issue}-${slug}-redo-${new_n}"
+  redo_count="$(jq -r '.redo_count // 0' "$STATE")"
 
-  cmd_branch retire "$branch" "$new_branch" >/dev/null
+  # A previous call at this same redo can have already retired the branch
+  # and recorded it here before dying on the PR close below - branch and
+  # redo_count are set together right after a real retire, so if the
+  # recorded branch already matches what this redo_count's retire would
+  # have produced, the retire already happened: resume at closing the PR
+  # instead of retiring an already-retired branch a second time, which
+  # issue #63 called out by name as not what a retry should do.
+  if [ "$redo_count" -gt 0 ] && [ "$branch" = "orch/${issue}-${slug}-redo-${redo_count}" ]; then
+    new_n="$redo_count"
+    new_branch="$branch"
+  else
+    new_n=$(( redo_count + 1 ))
+    new_branch="orch/${issue}-${slug}-redo-${new_n}"
+    cmd_branch retire "$branch" "$new_branch" >/dev/null
+    # Recorded immediately, before the gh call below that can still fail:
+    # the rename already happened for real, so state.branch has to track it
+    # now rather than keep naming a branch that no longer exists if pr
+    # close dies and a retry has to find the real current name.
+    cmd_state set branch "$new_branch"
+    cmd_state set redo_count "$new_n"
+  fi
 
   msg="$(printf 'This PR was closed by /orchestrator:redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr-open again.\n' "$new_branch")"
   gh pr close "$pr" --comment "$msg" >/dev/null || die "gh could not close PR #$pr"
@@ -815,7 +857,6 @@ cmd_redo_review() {
   cmd_state set branch null
   cmd_state set pr null
   cmd_state set base_sha null
-  cmd_state set redo_count "$new_n"
   cmd_state set iteration 0
   cmd_state set phase implement
   note "$new_n"

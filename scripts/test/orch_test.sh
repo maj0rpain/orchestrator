@@ -518,6 +518,58 @@ rm -rf "$bare"
 out="$("$ORCH" branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "dies when the push to origin fails" "$st" 1
 assert_contains "with a clear reason" "$out" "could not push"
+# The local rename happens before the push is even attempted - issue #63:
+# without a rollback, a push failure leaves `old` gone locally with nothing
+# a retry could find, even though nothing was ever published.
+assert_eq "rolls the local rename back so the old name still exists" \
+  "$(git rev-parse --verify --quiet to-fail >/dev/null 2>&1 && echo present || echo gone)" "present"
+assert_eq "and the new name is not left dangling in its place" \
+  "$(git rev-parse --verify --quiet to-fail-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "gone"
+
+# Retrying with the same old/new names must succeed once whatever blocked
+# the push clears - issue #63 acceptance criterion 1.
+bare2="$(mktemp -d)/origin.git"
+git init -q --bare "$bare2"
+git remote set-url origin "$bare2"
+out="$("$ORCH" branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
+assert_status "retrying the same rename succeeds once origin is reachable again" "$st" 0
+assert_eq "prints the new name" "$out" "to-fail-redo-1"
+assert_eq "renames locally" \
+  "$(git rev-parse --verify --quiet to-fail-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
+assert_eq "and publishes it" \
+  "$(git -C "$bare2" rev-parse --quiet --verify refs/heads/to-fail-redo-1 >/dev/null && echo present || echo gone)" "present"
+
+# Idempotent resume: a previous call whose local rename and remote push both
+# already succeeded, but whose remote delete of the old ref did not - the
+# "Key interfaces" note in issue #63, that retire must resume rather than
+# fail on "$old does not exist" when $old really is gone locally already.
+bare3="$(mktemp -d)/origin.git"
+git init -q --bare "$bare3"
+git remote set-url origin "$bare3"
+git checkout -q -b to-resume
+git push -q -u origin to-resume
+git branch -m to-resume to-resume-redo-1
+git push -q -u origin to-resume-redo-1
+# The old ref is deliberately left on origin, standing in for the failed
+# delete a real partial failure would leave behind.
+out="$("$ORCH" branch retire to-resume to-resume-redo-1 2>&1)"; st=$?
+assert_status "resumes rather than failing on the already-gone old name" "$st" 0
+assert_eq "prints the new name" "$out" "to-resume-redo-1"
+assert_eq "and finishes the delete the earlier attempt left undone" \
+  "$(git -C "$bare3" rev-parse --quiet --verify refs/heads/to-resume >/dev/null && echo present || echo gone)" "gone"
+
+# A genuine remote failure on that same delete step still has to die, not
+# get swallowed by the resume path's tolerance for an already-gone ref.
+bare4="$(mktemp -d)/origin.git"
+git init -q --bare "$bare4"
+git -C "$bare4" symbolic-ref HEAD refs/heads/to-protect
+git -C "$bare4" config receive.denyDeleteCurrentBranch refuse
+git remote set-url origin "$bare4"
+git checkout -q -b to-protect
+git push -q -u origin to-protect
+out="$("$ORCH" branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
+assert_status "dies when the old ref genuinely cannot be deleted" "$st" 1
+assert_contains "with a clear reason" "$out" "could not delete origin/to-protect"
 
 out="$("$ORCH" branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1
@@ -1849,6 +1901,26 @@ assert_eq "still renames the branch aside since retire runs before the pr close"
   "$(git rev-parse --verify --quiet orch/21-redotest-redo-3 >/dev/null 2>&1 && echo present || echo gone)" "present"
 assert_eq "and never moves the loop's records since gh failed first" \
   "$([ -f .orchestrator/review/iteration-01.md ] && echo yes || echo no)" "yes"
+# Issue #63: the rename above is real, so state.branch has to follow it
+# rather than keep naming a branch retire already renamed away - otherwise a
+# retried redo dies confusingly against a branch that no longer exists.
+assert_eq "updates state.branch to the branch retire actually produced" \
+  "$("$ORCH" state get branch)" "orch/21-redotest-redo-3"
+assert_eq "and records the bumped redo_count so a retry numbers on, not over" \
+  "$("$ORCH" state get redo_count)" "3"
+
+# A retry after that failure has to work from the state the failure left
+# behind, and must not retire the already-retired branch a second time -
+# issue #63 acceptance criterion 3: it should pick up from closing the PR.
+out="$(GH_STUB_PR_NUMBER=32 "$ORCH" redo review 2>&1)"; st=$?
+assert_status "retrying redo review after the gh failure now succeeds" "$st" 0
+assert_eq "reuses redo-3 rather than numbering on to redo-4" "$out" "3"
+assert_eq "does not retire the branch a second time" \
+  "$(git rev-parse --verify --quiet orch/21-redotest-redo-4 >/dev/null 2>&1 && echo present || echo gone)" "gone"
+assert_eq "leaves redo-3 as the actually-retired branch" \
+  "$(git rev-parse --verify --quiet orch/21-redotest-redo-3 >/dev/null 2>&1 && echo present || echo gone)" "present"
+assert_eq "and clears branch, PR, and base SHA on the now-successful redo" \
+  "$("$ORCH" state get branch)$("$ORCH" state get pr)$("$ORCH" state get base_sha)" ""
 
 # A loop that ended by marking the PR ready has already moved the flow to
 # phase done, in the same operation that decided "ready" - there is no real
