@@ -12,9 +12,18 @@
 ORCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/orch.sh"
 PASS=0
 FAIL=0
+SKIP=0
 
 ok()   { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
 bad()  { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
+skip() { printf '  skip %s\n     %s\n' "$1" "$2"; SKIP=$((SKIP + 1)); }
+
+# Git Bash / MSYS2 (and Cygwin) both set OSTYPE this way; used to skip fixtures
+# that are known not to work in that environment rather than report a false FAIL.
+on_windows_bash() {
+  case "$OSTYPE" in msys*|cygwin*) return 0 ;; *) return 1 ;; esac
+}
+skip_no_jq() { skip "$1" "path_without_jq doesn't work on Windows/Git Bash - see its definition"; }
 
 assert_eq() {
   if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi
@@ -306,6 +315,14 @@ healthy_repo() {
 # A PATH with everything orch.sh reaches for except jq. Reporting "jq is
 # missing" is the one thing doctor has to do without jq, so the only honest way
 # to test it is to actually take jq away.
+#
+# Known gap: this doesn't work on Windows/Git Bash (MSYS) or Cygwin. `printf`
+# has no external binary to `ln -sf` there (it's builtin-only), and MSYS's
+# path translation between the trimmed Unix-style PATH and the Windows-side
+# resolution needed to launch orch.sh breaks down under it - the invocation
+# exits 127 with empty output before orch.sh's own logic ever runs. Callers
+# guard with on_windows_bash and skip rather than report a false FAIL - see
+# issue #68.
 path_without_jq() {
   local d t p
   d="$(mktemp -d)"
@@ -688,10 +705,16 @@ assert_contains "summarises severities on the last line" \
 
 # jq gone is the awkward case: every other part of orch.sh needs it, so the one
 # message the user needs most is the one that cannot be printed the usual way.
-out="$(PATH="$(path_without_jq)" "$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "fails when jq is missing" "$st" 1
-assert_contains "names jq rather than dying mid-report" "$out" "jq"
-assert_contains "still reaches the summary line without jq" "$out" " FAIL"
+if on_windows_bash; then
+  skip_no_jq "fails when jq is missing"
+  skip_no_jq "names jq rather than dying mid-report"
+  skip_no_jq "still reaches the summary line without jq"
+else
+  out="$(PATH="$(path_without_jq)" "$ORCH" doctor --env 2>&1)"; st=$?
+  assert_status "fails when jq is missing" "$st" 1
+  assert_contains "names jq rather than dying mid-report" "$out" "jq"
+  assert_contains "still reaches the summary line without jq" "$out" " FAIL"
+fi
 
 # Severity is the behaviour under test, not the wording: "GitHub said no" must
 # FAIL and "GitHub could not tell us" must only warn. Written backwards, doctor
@@ -1032,17 +1055,27 @@ assert_contains "skips the PR check with its cause" "$out" "skipped: GitHub is n
 
 # --flow never runs the tools group, so if it skipped every check it has and
 # still exited 0, /orchestrator:next would advance a flow nothing had checked.
-out="$(PATH="$(path_without_jq)" "$ORCH" doctor --flow 2>&1)"; st=$?
-assert_status "--flow without jq fails rather than reporting a clean bill" "$st" 1
-assert_contains "names jq as the reason it cannot answer" "$out" "jq not found"
+if on_windows_bash; then
+  skip_no_jq "--flow without jq fails rather than reporting a clean bill"
+  skip_no_jq "names jq as the reason it cannot answer"
+else
+  out="$(PATH="$(path_without_jq)" "$ORCH" doctor --flow 2>&1)"; st=$?
+  assert_status "--flow without jq fails rather than reporting a clean bill" "$st" 1
+  assert_contains "names jq as the reason it cannot answer" "$out" "jq not found"
+fi
 
-out="$(PATH="$(path_without_jq)" "$ORCH" doctor 2>&1)"; st=$?
-assert_status "bare doctor without jq fails on the tools check" "$st" 1
-# The count comes from the registry, so a check appended to it is covered by the
-# gate without anyone remembering to add a preamble - and this number moving is
-# how you find out that happened.
-assert_contains "collapses every flow check into one line when jq is gone" \
-  "$out" "7 flow checks skipped: jq is not installed"
+if on_windows_bash; then
+  skip_no_jq "bare doctor without jq fails on the tools check"
+  skip_no_jq "collapses every flow check into one line when jq is gone"
+else
+  out="$(PATH="$(path_without_jq)" "$ORCH" doctor 2>&1)"; st=$?
+  assert_status "bare doctor without jq fails on the tools check" "$st" 1
+  # The count comes from the registry, so a check appended to it is covered by the
+  # gate without anyone remembering to add a preamble - and this number moving is
+  # how you find out that happened.
+  assert_contains "collapses every flow check into one line when jq is gone" \
+    "$out" "7 flow checks skipped: jq is not installed"
+fi
 
 # --- pr-open -----------------------------------------------------------------
 # PR #15 merged without closing #14 because the agent's body opened with a verb
@@ -1978,5 +2011,9 @@ assert_status "rejects an unknown flag" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh redo spec"
 
 echo
-echo "$PASS passed, $FAIL failed"
+if [ "$SKIP" -gt 0 ]; then
+  echo "$PASS passed, $FAIL failed, $SKIP skipped"
+else
+  echo "$PASS passed, $FAIL failed"
+fi
 [ "$FAIL" -eq 0 ]
