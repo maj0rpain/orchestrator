@@ -1782,6 +1782,7 @@ assert_status "refuses a budget-spent loop with no terminal record" "$st" 1
 assert_contains "reading as interrupted, distinct from pending" "$out" "looks interrupted, not stopped"
 
 "$ORCH" state set pr 30
+"$ORCH" state set base_sha deadbeefcafe
 "$ORCH" state set flake_rerun_used true
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
