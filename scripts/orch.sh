@@ -793,7 +793,7 @@ cmd_redo_review() {
       die "the review loop hasn't reached its budget yet (iteration $i of budget $b) - that's what /orchestrator:next is for; redo is for after a loop ends." ;;
     interrupted)
       die "the review loop's last iteration ($i) has no recorded terminal state - the session looks interrupted, not stopped. Resume it with /orchestrator:next; redo only runs once a loop actually ends." ;;
-    ready|stop) ;;
+    stop) ;;
     *) die "review_terminal_state answered something redo does not know: $word" ;;
   esac
 

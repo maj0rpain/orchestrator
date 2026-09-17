@@ -1820,9 +1820,9 @@ git push -q -u origin orch/21-redotest
 "$ORCH" state set iteration 5
 "$ORCH" state set budget 5
 mkdir -p .orchestrator/review
-writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05.md
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
 out="$(GH_STUB_PR_NUMBER=31 "$ORCH" redo review 2>&1)"; st=$?
-assert_status "a ready loop redoes just as a stopped one does" "$st" 0
+assert_status "a second stopped loop redoes just as the first did" "$st" 0
 assert_eq "and numbers on rather than repeating redo-1" "$out" "2"
 assert_eq "naming the branch redo-2" \
   "$(git rev-parse --verify --quiet orch/21-redotest-redo-2 >/dev/null 2>&1 && echo present || echo gone)" "present"
@@ -1839,7 +1839,7 @@ git push -q -u origin orch/21-redotest
 "$ORCH" state set pr 32
 "$ORCH" state set iteration 1
 "$ORCH" state set budget 1
-writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
 out="$(GH_STUB_PR_CLOSE_EXIT=1 GH_STUB_PR_NUMBER=32 "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a gh that will not close the PR fails the redo" "$st" 1
 assert_contains "naming the reason" "$out" "gh could not close PR #32"
@@ -1849,6 +1849,22 @@ assert_eq "still renames the branch aside since retire runs before the pr close"
   "$(git rev-parse --verify --quiet orch/21-redotest-redo-3 >/dev/null 2>&1 && echo present || echo gone)" "present"
 assert_eq "and never moves the loop's records since gh failed first" \
   "$([ -f .orchestrator/review/iteration-01.md ] && echo yes || echo no)" "yes"
+
+# A loop that ended by marking the PR ready has already moved the flow to
+# phase done, in the same operation that decided "ready" - there is no real
+# window where redo could ever see phase: review with a ready terminal
+# record. Produced the way the system actually produces it (review ready
+# itself, not a hand-crafted state), redo rejects it exactly as it would any
+# other done flow, through the same phase gate, not a ready-specific branch.
+"$ORCH" state set phase review
+"$ORCH" state set pr 33
+"$ORCH" state set iteration 1
+"$ORCH" state set budget 1
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md
+"$ORCH" review ready >/dev/null
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "a loop that ended ready is out of scope for redo, same as any done flow" "$st" 1
+assert_contains "the same phase-gate refusal as any other done flow" "$out" "flow is not at the review phase"
 
 # --- redo spec --------------------------------------------------------------
 echo

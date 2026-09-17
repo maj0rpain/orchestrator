@@ -149,10 +149,12 @@ transition driven by `orch.sh`, not a per-artifact interview. Redo targeting
 the originating issue and is not expanded here.
 
 **From `review`**: `"$ORCH" redo review`. It refuses unless the review loop
-has reached a **terminal state** - the PR marked ready, or a bounded stop -
-detected from the `## Terminal state` heading the review skill's Termination
-step writes into the final iteration's record. On a refusal, report the
-message and stop rather than doing anything destructive:
+has reached a **bounded stop**, detected from the `## Terminal state` heading
+the review skill's Termination step writes into the final iteration's
+record. A PR marked ready has already moved `state.phase` to `done` as part
+of that same termination - out of scope per above - so `stop` is the only
+terminal state redo actually acts on. On a refusal, report the message and
+stop rather than doing anything destructive:
 
 - No loop has run yet: offer `/orchestrator:next` to start one.
 - Still short of its budget: offer `/orchestrator:next` instead - that is what
