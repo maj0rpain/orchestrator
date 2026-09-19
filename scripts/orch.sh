@@ -331,7 +331,7 @@ review_budget() {
   printf '%s\n' "$b"
 }
 
-# --- gh adapter ---------------------------------------------------------------
+# --- gh adapter -------------------------------------------------------------
 #
 # The seam between this file's decision logic and the `gh` CLI. A caller like
 # severity_label_ensure below calls an adapter function, never `gh` itself, so
@@ -343,8 +343,9 @@ review_budget() {
 # cmd_review file, and cmd_redo_spec's issue close - later tickets move the
 # rest of this file's `gh` call sites the same way.
 #
-# ORCH_GH_ADAPTER, read the same way as the ORCH_CI_* knobs above, names a
-# file sourced immediately after the real adapter functions are defined:
+# ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as the ORCH_CI_*
+# ones above, but read differently: not a value substituted at load time, but
+# a file sourced immediately after the real adapter functions are defined:
 # anything it redefines overrides the corresponding real function for the
 # rest of the process, and anything it leaves alone keeps shelling out to the
 # real `gh` below. Unset - every normal run - nothing is sourced and behaviour
@@ -359,8 +360,8 @@ adapter_issue_view() {
   gh issue view "$@"
 }
 
-# cmd_spec calls one of these by name - "adapter_issue_$verb" - the same way
-# it already picks `edit` or `comment` as the literal `gh issue` subcommand.
+# cmd_spec's update/comment ops pick between these two, the same way it
+# already picks `edit` or `comment` as the literal `gh issue` subcommand.
 adapter_issue_edit() {
   gh issue edit "$@"
 }
@@ -722,12 +723,14 @@ cmd_spec() {
       ;;
     update|comment)
       [ -f "$file" ] || die "body file not found: $file"
-      local verb=edit did="replace the body of"
-      if [ "$op" = comment ]; then verb=comment; did="comment on"; fi
+      local did="replace the body of"
+      if [ "$op" = comment ]; then did="comment on"; fi
       # --body-file, never --body: a spec carries tables, fences, and `#nn`
       # references, and a heredoc through a shell is where those get mangled.
-      "adapter_issue_$verb" "$issue" --body-file "$file" >/dev/null \
-        || die "gh could not $did issue #$issue"
+      case "$op" in
+        update)  adapter_issue_edit "$issue" --body-file "$file" >/dev/null ;;
+        comment) adapter_issue_comment "$issue" --body-file "$file" >/dev/null ;;
+      esac || die "gh could not $did issue #$issue"
       ;;
     *) die "unknown spec op: ${op:-<none>} (want fetch|update|comment)" ;;
   esac
