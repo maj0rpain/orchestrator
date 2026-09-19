@@ -7,8 +7,10 @@ implementation details, no spec, no decisions. Decisions live in `docs/adr/`.
 
 One run of the pipeline, from an approved plan to a pull request. A flow is
 identified by its slug and holds exactly one issue, one branch, and one PR. One
-flow at a time per checkout. Its alternative, for changes that don't need the
-pipeline, is a quick implementation.
+flow at a time per checkout - except a flow at phase `done`, which doesn't
+count against that limit: it no longer blocks a new one, which archives it
+automatically rather than requiring it be cleared by hand. Its alternative,
+for changes that don't need the pipeline, is a quick implementation.
 
 ## Quick implementation
 

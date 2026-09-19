@@ -467,14 +467,23 @@ check_flow_upstream() {
 # against one. The ready-for-agent label is deliberately not re-checked; it is
 # a one-time gate at adoption, not an ongoing flow invariant (docs/adr/0005).
 check_flow_issue() {
-  local issue issue_state
+  local issue issue_state phase
   issue="$(jq -r '.issue // ""' "$STATE")"
   if [ -z "$issue" ]; then d_ok "issue: not published yet"; return 0; fi
   d_gh_gate || return 0
   issue_state="$(gh issue view "$issue" --json state --jq .state 2>/dev/null)" || issue_state=""
+  phase="$(jq -r '.phase // ""' "$STATE")"
   case "$issue_state" in
     OPEN)   d_ok "issue #$issue open" ;;
-    CLOSED) d_fail "issue #$issue is closed."; d_remedy "gh issue reopen $issue" ;;
+    CLOSED)
+      # pr-open always writes `Closes #<issue>`, so a done flow's issue being
+      # closed is the expected result of merging, not a broken flow.
+      if [ "$phase" = done ]; then
+        d_ok "issue #$issue closed"
+      else
+        d_fail "issue #$issue is closed."; d_remedy "gh issue reopen $issue"
+      fi
+      ;;
     *)      d_fail "issue #$issue could not be read from GitHub."; d_remedy "gh issue view $issue" ;;
   esac
 }

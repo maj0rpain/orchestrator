@@ -160,14 +160,23 @@ cmd_init() {
     esac
   done
   slug="$(normalize_slug "$slug")"
-  if [ -f "$STATE" ]; then
+  # A "done" flow already succeeded - its handoffs are read by no later phase,
+  # so it is not "active" in any sense that matters. init archives it and
+  # proceeds instead of refusing; every other phase still blocks a second flow.
+  local archive_note=""
+  if [ -f "$STATE" ] && [ "$(jq -r .phase "$STATE")" != "done" ]; then
     die "a flow is already active (slug: $(jq -r .slug "$STATE"), phase: $(jq -r .phase "$STATE")).
      One flow at a time - finish it, or run /orchestrator:abort."
   fi
   # Adoption is validated before anything is written, mirroring how
   # branch-create and pr-open die on their own preconditions rather than
-  # letting a whole phase run against an issue that cannot back it.
+  # letting a whole phase run against an issue that cannot back it. Validating
+  # before archiving a done flow means a bad --issue leaves it untouched and
+  # re-runnable rather than archived for nothing.
   [ -z "$issue" ] || validate_adopted_issue "$issue"
+  if [ -f "$STATE" ]; then
+    archive_note="$(cmd_archive)"
+  fi
   mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"
   exclude_orch_dir
   # The budget is null until the review loop asks a human for one, and `review
@@ -182,6 +191,7 @@ cmd_init() {
     branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
     flake_rerun_used: false, redo_count: 0, created: $now, updated: $now
   }' >"$STATE"
+  [ -z "$archive_note" ] || note "$archive_note"
   note "$slug"
 }
 
@@ -954,9 +964,11 @@ orch.sh - deterministic operations for the orchestrator flow
   doctor [--env|--flow]       diagnose the machine, the repo, and the active flow
   mp-skill [name]             path to a mattpocock SKILL.md (or the plugin root)
   default-branch              resolve the base branch feature branches fork from
-  init <slug> [--issue N]     start a flow (refuses if one is active); --issue
-                              adopts an already-open, ready-for-agent issue N
-                              as the flow's spec instead of leaving it unset
+  init <slug> [--issue N]     start a flow (refuses if one is active, unless
+                              it is done - a done flow is archived and the
+                              new one starts over it); --issue adopts an
+                              already-open, ready-for-agent issue N as the
+                              flow's spec instead of leaving it unset
   slug <text>                 normalise text to the kebab-case slug init would
                               store - lowercase, non-alphanumeric runs collapsed
                               to a hyphen, trimmed

@@ -698,6 +698,52 @@ healthy_repo
 out="$("$ORCH" init 2>&1)"; st=$?
 assert_status "adoption does not change that a slug is still required" "$st" 1
 
+# --- init archives a done flow -----------------------------------------------
+# issue #13: a "done" flow already succeeded - nothing downstream reads its
+# handoffs - so starting over it is normal pipeline cleanup, not something
+# init should still refuse as "active".
+echo
+echo "init archives a done flow"
+healthy_repo
+"$ORCH" init first >/dev/null
+complete_plan_handoff "$("$ORCH" handoff path spec)"
+"$ORCH" state set phase done
+out="$("$ORCH" init second)"; st=$?
+assert_status "starting over a done flow succeeds" "$st" 0
+archived="$(printf '%s\n' "$out" | sed -n '1p')"
+assert_contains "prints the archive path first, carrying the old slug" "$archived" "first"
+assert_eq "the new slug is the final line" "$(printf '%s\n' "$out" | tail -1)" "second"
+assert_eq "exactly two lines - the archive path, then the slug" \
+  "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
+assert_eq "the old flow's state is archived under .orchestrator/archive/" \
+  "$([ -f "$archived/state.json" ] && echo present || echo gone)" "present"
+assert_eq "the archived state still carries the old slug" \
+  "$(jq -r .slug "$archived/state.json")" "first"
+assert_eq "the new flow's state reflects the new slug" "$("$ORCH" state get slug)" "second"
+assert_eq "the new flow starts at the spec phase, not done" "$("$ORCH" state get phase)" "spec"
+
+healthy_repo
+out="$("$ORCH" init nothing-to-archive)"
+assert_eq "with no prior flow, stdout is still just the slug" "$out" "nothing-to-archive"
+
+healthy_repo
+"$ORCH" init stale >/dev/null
+"$ORCH" state set phase implement
+out="$("$ORCH" init other 2>&1)"; st=$?
+assert_status "an implement-phase flow still refuses, same as spec" "$st" 1
+assert_contains "names the phase" "$out" "phase: implement"
+assert_contains "same message, unchanged" "$out" "One flow at a time"
+
+healthy_repo
+"$ORCH" init willfail >/dev/null
+"$ORCH" state set phase done
+out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" init nope --issue 99 2>&1)"; st=$?
+assert_status "a bad --issue adoption over a done flow refuses" "$st" 1
+assert_contains "names the issue number" "$out" "99"
+assert_eq "the done flow is left untouched, not archived" \
+  "$("$ORCH" state get slug)" "willfail"
+assert_eq "and still reports done, re-runnable" "$("$ORCH" state get phase)" "done"
+
 # --- doctor -----------------------------------------------------------------
 # The two commands doctor replaces both returned success on the failures that
 # actually end flows, so what these assert is the *severity* of each condition,
@@ -1078,6 +1124,16 @@ assert_contains "gives the command that re-checks it" "$out" "gh issue view 11"
 out="$(GH_STUB_ISSUE_LABELS=needs-triage "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an issue whose label was removed after adoption is still healthy" "$st" 0
 assert_contains "still reports it open" "$out" "issue #11 open"
+
+# issue #13: pr-open always writes `Closes #<issue>`, so a merged flow's issue
+# is closed as a matter of course - a done flow reporting that as broken was
+# doctor misreporting every successfully-finished flow.
+complete_implement_handoff "$("$ORCH" handoff path review)"
+"$ORCH" state set phase done
+out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a closed issue is healthy once the flow is done" "$st" 0
+assert_contains "reports it closed instead of failing" "$out" "issue #11 closed"
+"$ORCH" state set phase implement
 
 "$ORCH" state set pr 7
 out="$(GH_STUB_PR_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
