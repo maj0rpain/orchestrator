@@ -960,6 +960,28 @@ assert_eq "the done flow is left untouched, not archived" \
   "$("$ORCH" state get slug)" "willfail"
 assert_eq "and still reports done, re-runnable" "$("$ORCH" state get phase)" "done"
 
+# A good --issue adoption over a done flow is the counterpart to the bad one
+# just above: validation still runs first, but this time it passes, so the
+# done flow must be archived exactly as the no-`--issue` case archives it,
+# and the new flow's state must carry the newly adopted issue rather than
+# null or the old flow's own issue.
+healthy_repo
+"$ORCH" init willsucceed --issue 7 >/dev/null
+"$ORCH" state set phase done
+out="$("$ORCH" init second --issue 42)"; st=$?
+assert_status "a valid --issue adoption over a done flow succeeds" "$st" 0
+archived="$(printf '%s\n' "$out" | sed -n '1p')"
+assert_contains "prints the archive path first, carrying the old slug" "$archived" "willsucceed"
+assert_eq "the new slug is the final line" "$(printf '%s\n' "$out" | tail -1)" "second"
+assert_eq "exactly two lines - the archive path, then the slug" \
+  "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
+assert_eq "the old flow's state is archived under .orchestrator/archive/" \
+  "$([ -f "$archived/state.json" ] && echo present || echo gone)" "present"
+assert_eq "the archived state still carries the old slug" \
+  "$(jq -r .slug "$archived/state.json")" "willsucceed"
+assert_eq "the new flow's state records the newly adopted issue, not the old one" \
+  "$("$ORCH" state get issue)" "42"
+
 # --- doctor -----------------------------------------------------------------
 # The two commands doctor replaces both returned success on the failures that
 # actually end flows, so what these assert is the *severity* of each condition,
