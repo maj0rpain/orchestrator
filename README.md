@@ -45,7 +45,8 @@ starting a flow. `/orchestrator:doctor` reports all of this at any time.
                                         |                          tdd, single-pass code-review,
                                        | /clear                              PR
   spec session         to-spec publishes the issue  <--+
-                       spec review                  ->  02-spec.md
+                       spec review
+                       to-tickets publishes tickets  ->  02-spec.md
                                                        |
                                                        | /clear
   implement session    branch orch/<issue>-<slug>   <--+
@@ -81,10 +82,11 @@ running the flow never dirties a repo's working tree.
 
 ## Why separate sessions
 
-`handoff`, `implement`, `to-spec`, `wayfinder`, and `improve-codebase-architecture`
-are all marked `disable-model-invocation: true` upstream, so the Skill tool cannot
-invoke them. The flow works around this by reading their `SKILL.md` files directly
-and following them, which is what the Skill tool would have injected anyway.
+`handoff`, `implement`, `to-spec`, `to-tickets`, `wayfinder`, and
+`improve-codebase-architecture` are all marked `disable-model-invocation: true`
+upstream, so the Skill tool cannot invoke them. The flow works around this by
+reading their `SKILL.md` files directly and following them, which is what the
+Skill tool would have injected anyway.
 
 That makes invocability a solved problem, **but the separate sessions remain the
 point**: fresh context per phase, and room for the human-in-the-loop exchanges

@@ -24,8 +24,9 @@ it already does.
 
 ## The upstream skills are not callable
 
-`to-spec`, `implement`, `handoff`, `wayfinder`, and `improve-codebase-architecture`
-carry `disable-model-invocation: true`. The Skill tool cannot reach them.
+`to-spec`, `implement`, `handoff`, `to-tickets`, `wayfinder`, and
+`improve-codebase-architecture` carry `disable-model-invocation: true`. The
+Skill tool cannot reach them.
 
 Their `SKILL.md` files are plain markdown. Resolve one with
 `"$ORCH" mp-skill <name>`, read it, and follow its instructions verbatim - that
@@ -86,10 +87,18 @@ which holds the only copy of the plan.
    the human accepts - and returns the changelog. This step is part of the
    phase, not an option in it: no spec reaches the implement phase unreviewed,
    and the human's control is at the batch, where they may decline every edit.
-5. Call `orchestrator:handoff` for `02-spec.md`, with the changelog the review
-   returned as its **Spec review changelog**; validate it, then
-   `"$ORCH" state set phase implement`.
-6. Print the boundary.
+5. Read and follow `"$ORCH" mp-skill to-tickets`, with the just-reviewed spec
+   issue (`"$ORCH" state get issue`) as its source. Publish every ticket it
+   proposes through `"$ORCH" ticket publish <parent> <title> <body-file>
+   [--blocked-by N,N,...]`, in dependency order (blockers first) - never an
+   ad hoc `gh api` call - so the verify-then-die behaviour `ticket publish`
+   already provides applies to every ticket. This step is part of the phase,
+   not an option in it, the same way the review above is not: no spec reaches
+   the implement phase without its tickets published.
+6. Call `orchestrator:handoff` for `02-spec.md`, with the changelog the review
+   returned as its **Spec review changelog** and the spec issue number as its
+   **Ticket breakdown**; validate it, then `"$ORCH" state set phase implement`.
+7. Print the boundary.
 
 ### Phase: implement
 

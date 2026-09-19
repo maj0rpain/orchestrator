@@ -70,6 +70,11 @@ until review.>
 each, declined findings verbatim with the human's reason, "None" for a lens
 that found nothing, "not run - <reason>" for one that failed>
 
+## Ticket breakdown
+<the parent issue number only - the tickets themselves are its GitHub
+sub-issues, already published. The implement phase discovers them live via
+`orch.sh ticket next`; do not duplicate the list here, it would go stale>
+
 ## Suggested skills
 <usually tdd, plus whatever the seams imply>
 ```

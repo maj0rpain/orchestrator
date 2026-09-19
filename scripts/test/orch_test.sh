@@ -67,7 +67,8 @@ complete_plan_handoff() {
 complete_spec_handoff() {
   writeln '## Spec issue' '#1.' '' \
           '## Seams' 'The CLI.' '' \
-          '## Spec review changelog' 'Not reviewed.' >"$1"
+          '## Spec review changelog' 'Not reviewed.' '' \
+          '## Ticket breakdown' '#1.' >"$1"
 }
 
 complete_implement_handoff() {
@@ -586,6 +587,30 @@ writeln '## Decisions' 'Use X.' '' '## Rejected alternatives' '   ' '' \
         '## Constraints' 'None.' '' '## Open assumptions' 'None.' >"$h"
 out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
 assert_status "treats a whitespace-only section as empty" "$st" 1
+
+# --- ticket breakdown handoff ------------------------------------------------
+# The spec phase's last step publishes tickets as sub-issues of the spec
+# issue, so the handoff that follows it must at least name the parent -
+# anything less sends implement's `ticket next` query against nothing.
+echo
+echo "ticket breakdown handoff"
+h2="$("$ORCH" handoff path implement)"
+writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
+        '## Spec review changelog' 'Not reviewed.' >"$h2"
+out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
+assert_status "a spec handoff with no ticket breakdown is incomplete" "$st" 1
+assert_contains "names the section implement would have read" "$out" "Ticket breakdown"
+
+writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
+        '## Spec review changelog' 'Not reviewed.' '' \
+        '## Ticket breakdown' '   ' >"$h2"
+out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
+assert_status "a bare Ticket breakdown heading is no better than none" "$st" 1
+assert_contains "reported as empty, not missing" "$out" "empty section"
+
+complete_spec_handoff "$h2"
+out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
+assert_status "passes once the parent issue is recorded" "$st" 0
 
 # --- archive ----------------------------------------------------------------
 echo
