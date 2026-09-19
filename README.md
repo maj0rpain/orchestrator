@@ -41,9 +41,9 @@ starting a flow. `/orchestrator:doctor` reports all of this at any time.
                                         +----------------+----------------+
                                         |                                 |
                               /orchestrator:start                orchestrator:quick-implement
-                              ->  01-plan.md                     issue, branch quick/<issue>-<slug>,
-                                        |                          tdd, single-pass code-review,
-                                       | /clear                              PR
+                              ->  01-plan.md                     issue, to-tickets publishes tickets,
+                                        |                          branch quick/<issue>-<slug>, tdd,
+                                       | /clear                    single-pass code-review, PR
   spec session         to-spec publishes the issue  <--+
                        spec review
                        to-tickets publishes tickets  ->  02-spec.md
@@ -63,8 +63,8 @@ starting a flow. `/orchestrator:doctor` reports all of this at any time.
 For work that does not need the pipeline, a human can pick a quick
 implementation instead of starting a flow - see CONTEXT.md's **Quick
 implementation** entry. It skips all four phases: no handoff, no
-`.orchestrator/state.json`, just a linked issue, `tdd`, a single-pass
-`code-review`, and a PR.
+`.orchestrator/state.json`, just a linked issue, `to-tickets` publishing that
+issue's ticket breakdown, `tdd`, a single-pass `code-review`, and a PR.
 
 Handoffs live in `.orchestrator/handoff/`, ignored via `.git/info/exclude` so
 running the flow never dirties a repo's working tree.
@@ -121,7 +121,7 @@ skills/flow/              the state machine (judgment)
 skills/review-spec/       the spec review: four lenses, one batch question
 skills/review/            the review loop: rubric, authority rules, terminal states
 skills/handoff/           handoff templates, model-invocable unlike the upstream one
-skills/quick-implement/   the other route: issue, tdd, single-pass review, PR - no flow
+skills/quick-implement/   the other route: issue, to-tickets, tdd, single-pass review, PR - no flow
 scripts/orch.sh           every deterministic operation (mechanism)
 scripts/doctor.sh         diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
 scripts/hook-*.sh         the three hooks

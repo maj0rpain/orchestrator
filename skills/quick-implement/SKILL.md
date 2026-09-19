@@ -1,6 +1,6 @@
 ---
 name: quick-implement
-description: Implement a small, already-understood change directly, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue, test-driven implementation, and a single-pass review before the PR opens.
+description: Implement a small, already-understood change directly, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue, a published ticket breakdown, test-driven implementation, and a single-pass review before the PR opens.
 ---
 
 # Orchestrator quick implementation
@@ -34,7 +34,27 @@ Never proceed without one, and never decide silently whether to make one.
   with no issue behind it is exactly the unaccountable path this skill exists
   to avoid.
 
-## 2. Branch
+## 2. Publish the ticket breakdown
+
+Unconditional, whether the linked issue was just published in step 1 or
+already existed - never gated by a human choice, the same treatment the
+flow's spec phase gives this same call. No `to-spec` step exists on this
+path, so `to-tickets` synthesizes tickets directly off the raw linked issue -
+it is the only spec this path has.
+
+`to-tickets` carries `disable-model-invocation: true` in the installed
+mattpocock-skills version, so the Skill tool cannot reach it. Resolve it with
+`"$ORCH" mp-skill to-tickets`, read it, and follow it directly - the same
+pattern `skills/flow/SKILL.md` uses for the same upstream skill.
+
+Publish every ticket it proposes through `"$ORCH" ticket publish <parent>
+<title> <body-file> [--blocked-by N,N,...]` against the linked issue as
+`<parent>`, in dependency order (blockers first) - never an ad hoc `gh api`
+call - so the verify-then-die guarantee `ticket publish` already provides
+applies to every ticket, the same primitive and the same guarantee the
+flow's spec phase uses.
+
+## 3. Branch
 
 Get the slug from `"$ORCH" slug "<short description>"` - the same
 normalisation `orch.sh init` applies to a flow's slug, exposed as a primitive
@@ -43,13 +63,13 @@ rather than re-derived here - then `"$ORCH" branch-off "quick/<issue>-<slug>"`.
 `branch-create` does, but records no state - a quick implementation keeps
 none.
 
-## 3. Implement
+## 4. Implement
 
 Call the Skill tool with `mattpocock-skills:tdd` yourself - it carries no
 `disable-model-invocation` flag, unlike `implement`. Build the issue as
 written; it is the only spec this path has.
 
-## 4. Review
+## 5. Review
 
 Call the Skill tool with `mattpocock-skills:code-review` yourself - one plain,
 single pass, never `orchestrator:review`'s multi-iteration loop. That loop's
@@ -61,11 +81,11 @@ bare name is ambiguous with another `code-review` skill that may be installed
 alongside this plugin, which reviews the current diff for correctness and
 cleanup, not Standards + Spec fidelity to the issue that this step needs.
 
-## 5. Open the PR
+## 6. Open the PR
 
 Commit, then open the PR with `"$ORCH" pr-publish <issue> "<title>"
 <body-file>` - the same boundary `pr-open` draws for a flow, kept out of
 skill prose. It pushes the branch, closes `<issue>`, and opens the PR against
-the default branch, not as a draft: the single-pass review in step 4 already
+the default branch, not as a draft: the single-pass review in step 5 already
 happened, so there is no loop left to promote it - draft would leave it stuck
 with nothing watching it.
