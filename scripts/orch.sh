@@ -56,30 +56,36 @@ require_state() {
   [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run /orchestrator:start first."
 }
 
-# Prints the flow's PR number, or dies. Every review command that reaches GitHub
-# needs it and none of them can do anything useful without it.
+# Fetches a required state field via jq, dies with $3 if it comes back empty,
+# and otherwise writes it into the variable named by $1 - a caller-named
+# out-param via `printf -v` rather than a nameref: bash 3.2 has neither
+# `local -n` nor `declare -n`, and this file promises to still run there (the
+# same idiom `d_gate` uses in doctor.sh).
 #
-# Call it as a bare assignment on its own line - `local pr` then `pr="$(require_pr)"`.
-# The `die` runs inside the caller's command substitution and so exits only the
-# subshell; what actually stops the command is `set -e` on the failed assignment.
-# Fold it into `local pr="$(require_pr)"` or an `if`, and `set -e` no longer
-# applies: the caller carries on with an empty PR number.
-require_pr() {
-  local pr
-  pr="$(jq -r '.pr // ""' "$STATE")"
-  [ -n "$pr" ] || die "no PR recorded in state - the implement phase opens it"
-  printf '%s\n' "$pr"
+# Call it as a bare statement on its own line - `local pr; require_pr pr` -
+# never folded into `$(...)`. A caller-named out-param has no result to
+# capture with `pr="$(require_pr)"` in the first place, so that old shape no
+# longer compiles into anything that reads state; the only thing left to write
+# is the bare form, and `die` in that form runs directly in the caller's flow
+# rather than inside a command substitution subshell, so `set -e` actually
+# stops it instead of the caller carrying on with an empty value.
+require_field() {
+  local __rf_out="$1" __rf_filter="$2" __rf_msg="$3" __rf_val
+  __rf_val="$(jq -r "$__rf_filter" "$STATE")"
+  [ -n "$__rf_val" ] || die "$__rf_msg"
+  printf -v "$__rf_out" '%s' "$__rf_val"
 }
 
-# Prints the flow's spec issue number, or dies. branch-create, pr-open, and
-# every spec op need it before touching GitHub. Same calling convention as
-# require_pr - assign it bare on its own line so `set -e` catches the die.
-require_issue() {
-  local issue
-  issue="$(jq -r '.issue // ""' "$STATE")"
-  [ -n "$issue" ] || die "no issue recorded in state - the spec phase must publish one first"
-  printf '%s\n' "$issue"
-}
+# Every review command that reaches GitHub needs the flow's PR number and none
+# of them can do anything useful without it.
+require_pr() { require_field "$1" '.pr // ""' "no PR recorded in state - the implement phase opens it"; }
+
+# branch-create, pr-open, and every spec op need the flow's spec issue number
+# before touching GitHub.
+require_issue() { require_field "$1" '.issue // ""' "no issue recorded in state - the spec phase must publish one first"; }
+
+# pr-open and redo review both need the flow's branch before touching GitHub.
+require_branch() { require_field "$1" '.branch // ""' "no branch recorded in state"; }
 
 # --- environment ------------------------------------------------------------
 
@@ -524,7 +530,7 @@ cmd_review() {
     ready)
       require_state
       local pr
-      pr="$(require_pr)"
+      require_pr pr
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.
@@ -537,7 +543,7 @@ cmd_review() {
       require_state
       local pr started slept=0 elapsed=0 res verdict
       require_ci_knobs
-      pr="$(require_pr)"
+      require_pr pr
       started="$(date +%s)"
       while :; do
         # Branch protection's required checks decide it wherever it names any.
@@ -617,7 +623,7 @@ cmd_spec() {
   require_state
   [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment> <file>"
   local file="$1" issue
-  issue="$(require_issue)"
+  require_issue issue
   case "$op" in
     fetch)
       # Written beside the target and moved into place only once gh has
@@ -664,7 +670,7 @@ cmd_branch_create() {
   require_state
   local slug issue name
   slug="$(jq -r .slug "$STATE")"
-  issue="$(require_issue)"
+  require_issue issue
   name="orch/${issue}-${slug}"
   checkout_new_branch "$name"
   cmd_state set branch "$name"
@@ -776,9 +782,8 @@ cmd_pr_open() {
   [ $# -eq 2 ] || die "usage: orch.sh pr-open <title> <body-file>"
   local title="$1" body_file="$2" issue branch pr
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  issue="$(require_issue)"
-  branch="$(jq -r '.branch // ""' "$STATE")"
-  [ -n "$branch" ] || die "no branch recorded in state"
+  require_issue issue
+  require_branch branch
   # Draft is the honest signal: the review loop has not run yet, so marking it
   # ready is the loop's success condition rather than a comment nobody reads.
   pr="$(open_pr "$branch" "$(default_branch)" "$issue" "$title" "$body_file" true)"
@@ -973,10 +978,9 @@ cmd_redo_review() {
   esac
 
   slug="$(jq -r .slug "$STATE")"
-  issue="$(require_issue)"
-  branch="$(jq -r '.branch // ""' "$STATE")"
-  [ -n "$branch" ] || die "no branch recorded in state"
-  pr="$(require_pr)"
+  require_issue issue
+  require_branch branch
+  require_pr pr
   redo_count="$(jq -r '.redo_count // 0' "$STATE")"
 
   # A previous call at this same redo can have already retired the branch
@@ -1036,7 +1040,7 @@ cmd_redo_spec() {
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
   if [ "$new_issue" -eq 1 ]; then
     local issue msg
-    issue="$(require_issue)"
+    require_issue issue
     msg="$(printf 'This issue was closed by /orchestrator:redo because the spec itself needed to change.\n\nA fresh issue will follow from to-spec in this same flow.\n')"
     gh issue close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
     cmd_state set issue null
