@@ -72,18 +72,19 @@ parallel - every ticket commits to the same branch. Loop:
   exhausted - including a linked issue with no tickets published at all, the
   edge case `to-tickets` can still produce - stop looping and continue at
   step 5.
-- Fetch the ready ticket (`gh issue view <n> --comments`, per
-  `docs/agents/issue-tracker.md`'s "fetch the relevant ticket" convention).
 - Call the Agent tool - a fresh agent, explicitly not a fork, so it starts
   with nothing but what this brief hands it - carrying only the ticket's
-  number and body. The brief directs the subagent to call the Skill tool
-  with `mattpocock-skills:tdd` against the ticket - it carries no
-  `disable-model-invocation` flag, unlike `implement`, so the subagent can
-  reach it directly; to build on the current branch, already checked out,
-  and commit its own work to it; to never open a branch or PR of its own;
-  and to never block on a human mid-ticket - a call it cannot make alone is
-  a deviation, recorded and returned instead of asked. Its report is
-  structured: what it built, and the deviation it made, if any.
+  number. The brief's directions open with an explicit first instruction:
+  fetch the ticket itself (`gh issue view <n> --comments`, per
+  `docs/agents/issue-tracker.md`'s "fetch the relevant ticket" convention)
+  before doing anything else. The brief then directs the subagent to call
+  the Skill tool with `mattpocock-skills:tdd` against the ticket - it
+  carries no `disable-model-invocation` flag, unlike `implement`, so the
+  subagent can reach it directly; to build on the current branch, already
+  checked out, and commit its own work to it; to never open a branch or PR
+  of its own; and to never block on a human mid-ticket - a call it cannot
+  make alone is a deviation, recorded and returned instead of asked. Its
+  report is structured: what it built, and the deviation it made, if any.
 - Record the subagent's report, then `"$ORCH" ticket close <n>` - only now
   that the report is back, never before - and go around again.
 
