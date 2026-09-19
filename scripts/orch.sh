@@ -336,10 +336,12 @@ review_budget() {
 # The seam between this file's decision logic and the `gh` CLI. A caller like
 # severity_label_ensure below calls an adapter function, never `gh` itself, so
 # a test can replace one in-process function instead of faking a `gh` binary
-# on PATH. Label creation is the first primitive moved behind it, proving the
+# on PATH. Label creation was the first primitive moved behind it, proving the
 # seam on the narrowest possible slice (issue #91, first of the #78
-# breakdown) - later tickets move the rest of this file's `gh` call sites the
-# same way.
+# breakdown); the issue-resource primitives below (view/edit/comment/create/
+# close, issue #92) extend the same seam to cmd_spec, cmd_issue_publish,
+# cmd_review file, and cmd_redo_spec's issue close - later tickets move the
+# rest of this file's `gh` call sites the same way.
 #
 # ORCH_GH_ADAPTER, read the same way as the ORCH_CI_* knobs above, names a
 # file sourced immediately after the real adapter functions are defined:
@@ -349,6 +351,34 @@ review_budget() {
 # is identical to before the seam existed.
 adapter_label_create() {
   gh label create "$@"
+}
+
+# The spec review's read on an issue's body - and, dynamically, its
+# state/labels the same way `gh issue view` itself answers either.
+adapter_issue_view() {
+  gh issue view "$@"
+}
+
+# cmd_spec calls one of these by name - "adapter_issue_$verb" - the same way
+# it already picks `edit` or `comment` as the literal `gh issue` subcommand.
+adapter_issue_edit() {
+  gh issue edit "$@"
+}
+adapter_issue_comment() {
+  gh issue comment "$@"
+}
+
+# Every issue-filing call site but `ticket publish` (out of scope for issue
+# #92 - see cmd_ticket_publish) goes through this one primitive.
+adapter_issue_create() {
+  gh issue create "$@"
+}
+
+# cmd_redo_spec's --new-issue path is the one issue-close call this ticket
+# moves; `ticket close` keeps its own direct `gh issue close` (also out of
+# scope).
+adapter_issue_close() {
+  gh issue close "$@"
 }
 
 if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
@@ -545,7 +575,7 @@ cmd_review() {
       triage_label_ensure "$triage"
       # The title carries no severity prefix: the label holds it, where triage
       # can change it, and the title reads as an issue.
-      url="$(gh issue create --title "$title" --body-file "$body" \
+      url="$(adapter_issue_create --title "$title" --body-file "$body" \
         --label "review:$severity" --label "$triage")" \
         || die "gh could not create the issue"
       # Prints the number alone: the record cites a number, and the caller
@@ -657,7 +687,7 @@ cmd_spec() {
       local tmp
       mkdir -p "$(dirname "$file")"
       tmp="$(mktemp "$file.XXXXXX")"
-      if ! gh issue view "$issue" --json body --jq .body >"$tmp"; then
+      if ! adapter_issue_view "$issue" --json body --jq .body >"$tmp"; then
         rm -f "$tmp"
         die "gh could not read the body of issue #$issue"
       fi
@@ -669,7 +699,7 @@ cmd_spec() {
       if [ "$op" = comment ]; then verb=comment; did="comment on"; fi
       # --body-file, never --body: a spec carries tables, fences, and `#nn`
       # references, and a heredoc through a shell is where those get mangled.
-      gh issue "$verb" "$issue" --body-file "$file" >/dev/null \
+      "adapter_issue_$verb" "$issue" --body-file "$file" >/dev/null \
         || die "gh could not $did issue #$issue"
       ;;
     *) die "unknown spec op: ${op:-<none>} (want fetch|update|comment)" ;;
@@ -773,7 +803,7 @@ cmd_issue_publish() {
   local title="$1" body_file="$2" url
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  url="$(gh issue create --title "$title" --body-file "$body_file")" \
+  url="$(adapter_issue_create --title "$title" --body-file "$body_file")" \
     || die "gh could not create the issue"
   note "${url##*/}"
 }
@@ -1067,7 +1097,7 @@ cmd_redo_spec() {
     local issue msg
     require_issue issue
     msg="$(printf 'This issue was closed by /orchestrator:redo because the spec itself needed to change.\n\nA fresh issue will follow from to-spec in this same flow.\n')"
-    gh issue close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
+    adapter_issue_close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
     cmd_state set issue null
   fi
   cmd_state set phase spec
