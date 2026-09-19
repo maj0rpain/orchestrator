@@ -21,6 +21,15 @@ no handoff, no `.orchestrator/state.json`. Still produces its own branch and
 PR, and is still held to this project's standards for how a change gets made -
 test-driven, reviewed, then opened as a PR.
 
+## Doctor
+
+A diagnostic surface a maintainer or agent can run at any time, via the
+`doctor` command, to check that the machine, the repo, and the active flow are
+sound. Organized into named scopes - `--env`, `--flow` - with bare `doctor`
+covering everything. Every check it runs reports through one of three states -
+`ok`, `warn`, or `FAIL` - and the overall report reflects the worst state seen
+without aborting partway through.
+
 ## Ticket breakdown
 
 The set of sub-issues `to-tickets` publishes against a flow's spec issue, or
