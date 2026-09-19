@@ -104,6 +104,6 @@ loop runs this every iteration and treats a failure as blocking. You have the
 tests fresh; review would be guessing.>
 
 ## Already found and fixed
-<what implement's own closing mattpocock-skills:code-review caught, so review
-iteration 1 does not re-report it>
+<what each ticket's own closing mattpocock-skills:code-review caught, so
+review iteration 1 does not re-report it>
 ```

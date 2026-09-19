@@ -105,22 +105,34 @@ which holds the only copy of the plan.
 1. Read `"$ORCH" handoff path implement` and fetch the spec issue it names.
 2. `"$ORCH" branch-create` - creates `orch/<issue>-<slug>` off the default branch
    and records the base SHA the review will diff against.
-3. Read and follow `"$ORCH" mp-skill implement`. `02-spec.md`'s **Seams**
-   section *is* the confirmation `tdd` asks for: read it, state the seams in
-   one line, and test at them. Ask about seams only when the code makes an
-   agreed one impossible, and record that as a deviation in `03-implement.md`.
-   Keep the closing `mattpocock-skills:code-review` step: it is the cheapest
-   review in the pipeline, with full context and before anything is pushed.
-   Capture what it found and fixed.
+3. Work the spec issue's ticket frontier, one ticket at a time, never in
+   parallel - every ticket commits to the same branch. Loop:
+   - `"$ORCH" ticket next <spec issue>`. Nothing ready means the frontier is
+     exhausted - stop looping and continue at step 4.
+   - Fetch the ready ticket (`gh issue view <n> --comments`, per
+     `docs/agents/issue-tracker.md`'s "fetch the relevant ticket" convention).
+   - Call the Agent tool - a fresh agent, explicitly not a fork, so it starts
+     with nothing but what this brief hands it - carrying only the ticket's
+     number and body. The brief directs the subagent to resolve and follow
+     `"$ORCH" mp-skill implement` itself, the same way this file resolves any
+     upstream skill, against the ticket; to build on the current branch,
+     already checked out, and commit its own work to it; to never open a
+     branch or PR of its own; and to never block on a human mid-ticket - a
+     call it cannot make alone is a deviation, recorded and returned instead
+     of asked. Its report is structured: what it built, and the deviation it
+     made, if any.
+   - Record the subagent's report, then `"$ORCH" ticket close <n>` - only now
+     that the report is back, never before - and go around again.
 4. `"$ORCH" pr-open "<title>" <body-file>`. The PR opens as a draft; marking it
    ready is the review loop's success condition. `pr-open` itself writes the
    `Closes #<issue>` line ahead of the body - do not add a closing keyword of
    your own to the body file.
 5. Call `orchestrator:handoff` for `03-implement.md`. Its **Deviations** section
-   is what lets review tell an agreed change from scope creep - if there were no
-   deviations, write "None", never leave it blank. Its **Verification** section is
-   the command the review loop runs every iteration: record how you just ran the
-   tests, because review takes it from here rather than guessing from the repo.
+   is assembled from every ticket's report, one bullet per ticket that returned
+   one, naming the ticket - "None" only if not one ticket reported a deviation,
+   never left blank. Its **Verification** section is the command the review loop
+   runs every iteration: record how you just ran the tests, because review takes
+   it from here rather than guessing from the repo.
    Then validate it: `"$ORCH" handoff validate "$("$ORCH" handoff path review)"`.
 6. `"$ORCH" state set phase review`, then print the boundary.
 

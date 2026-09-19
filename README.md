@@ -50,7 +50,8 @@ starting a flow. `/orchestrator:doctor` reports all of this at any time.
                                                        |
                                                        | /clear
   implement session    branch orch/<issue>-<slug>   <--+
-                       implement, push, draft PR    ->  03-implement.md
+                       one subagent per ticket,
+                       ticket next/close, draft PR   ->  03-implement.md
                                                        |
                                                        | /clear
   review session       bounded review loop          <--+
@@ -158,6 +159,16 @@ the glossary, Testability at the agreed seams, Implementability from the spec
 alone - and puts every finding to the human as one batch of proposed edits;
 the edits they accept rewrite the issue body, and the disposition is recorded
 on the issue and in the handoff.
+
+The implement phase works the spec issue's published ticket breakdown one
+ticket at a time: `ticket next` names the ready frontier, and each ready
+ticket goes to a fresh subagent carrying only its number and body. The
+subagent follows the standard `implement` skill itself against that one
+ticket, builds on the flow's single branch, commits its own work, and never
+opens a PR or blocks on a human - a call it cannot make alone comes back as a
+deviation in its report instead. The driving session closes the ticket only
+once that report is in hand, then re-queries the frontier, until none remain
+and it opens the one draft PR for the whole flow.
 
 The review phase is a bounded loop: a budget of iterations the human chooses
 at the start (five by default), `code-review` from the base SHA every one of
