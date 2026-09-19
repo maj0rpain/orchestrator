@@ -45,14 +45,28 @@ it is the only spec this path has.
 `to-tickets` carries `disable-model-invocation: true` in the installed
 mattpocock-skills version, so the Skill tool cannot reach it. Resolve it with
 `"$ORCH" mp-skill to-tickets`, read it, and follow it directly - the same
-pattern `skills/flow/SKILL.md` uses for the same upstream skill.
+pattern `skills/flow/SKILL.md` uses for the same upstream skill. Follow it
+through its own quiz (steps 1-4) until the user approves a breakdown.
 
-Publish every ticket it proposes through `"$ORCH" ticket publish <parent>
-<title> <body-file> [--blocked-by N,N,...]` against the linked issue as
-`<parent>`, in dependency order (blockers first) - never an ad hoc `gh api`
-call - so the verify-then-die guarantee `ticket publish` already provides
-applies to every ticket, the same primitive and the same guarantee the
-flow's spec phase uses.
+**A breakdown of 2 or more tickets** publishes exactly as today: publish
+every ticket it proposes through `"$ORCH" ticket publish <parent> <title>
+<body-file> [--blocked-by N,N,...]` against the linked issue as `<parent>`,
+in dependency order (blockers first) - never an ad hoc `gh api` call - so the
+verify-then-die guarantee `ticket publish` already provides applies to every
+ticket, the same primitive and the same guarantee the flow's spec phase uses.
+
+**A breakdown of 0 or 1 tickets collapses**: skip `to-tickets`' own publish
+step entirely - no child sub-issue is created, and the linked issue is
+worked directly, as if it were the sole ticket. This is the orchestrator's
+own deliberate, narrowly-scoped exception to `to-tickets`' "do NOT close or
+modify any parent issue" instruction - not something `to-tickets` itself
+does, taken here where this step already calls its publish step, and
+reached only in this collapsed case. Fetch the linked issue's current body
+(`"$ORCH" issue fetch <issue> <file>`), append a new section wrapping the
+single drafted ticket's "What to build"/"Acceptance criteria" (when there is
+one) beneath the existing content - never replacing it - and write the
+merged body back (`"$ORCH" issue update <issue> <file>`). No sub-issue
+exists to record anywhere; step 4 below works the linked issue directly.
 
 ## 3. Branch
 
@@ -65,28 +79,33 @@ none.
 
 ## 4. Implement
 
-Work the linked issue's ticket frontier, one ticket at a time, never in
-parallel - every ticket commits to the same branch. Loop:
+If step 2 collapsed (0 or 1 tickets, no sub-issue published): no `ticket
+next`/`ticket close` loop runs against the linked issue - dispatch exactly
+one subagent (below), briefed with the linked issue's own number, then
+continue at step 5.
+
+Otherwise, work the linked issue's ticket frontier, one ticket at a time,
+never in parallel - every ticket commits to the same branch. Loop:
 
 - `"$ORCH" ticket next <linked issue>`. Nothing ready means the frontier is
-  exhausted - including a linked issue with no tickets published at all, the
-  edge case `to-tickets` can still produce - stop looping and continue at
-  step 5.
-- Call the Agent tool - a fresh agent, explicitly not a fork, so it starts
-  with nothing but what this brief hands it - carrying only the ticket's
-  number. The brief's directions open with an explicit first instruction:
-  fetch the ticket itself (`gh issue view <n> --comments`, per
-  `docs/agents/issue-tracker.md`'s "fetch the relevant ticket" convention)
-  before doing anything else. The brief then directs the subagent to call
-  the Skill tool with `mattpocock-skills:tdd` against the ticket - it
-  carries no `disable-model-invocation` flag, unlike `implement`, so the
-  subagent can reach it directly; to build on the current branch, already
-  checked out, and commit its own work to it; to never open a branch or PR
-  of its own; and to never block on a human mid-ticket - a call it cannot
-  make alone is a deviation, recorded and returned instead of asked. Its
-  report is structured: what it built, and the deviation it made, if any.
+  exhausted - stop looping and continue at step 5.
+- Dispatch a subagent (below), briefed with the ticket's number.
 - Record the subagent's report, then `"$ORCH" ticket close <n>` - only now
   that the report is back, never before - and go around again.
+
+**Dispatching a subagent**: call the Agent tool - a fresh agent, explicitly
+not a fork, so it starts with nothing but what this brief hands it -
+carrying only the issue number named above. The brief's directions open
+with an explicit first instruction: fetch the ticket itself (`gh issue view
+<n> --comments`, per `docs/agents/issue-tracker.md`'s "fetch the relevant
+ticket" convention) before doing anything else. The brief then directs the
+subagent to call the Skill tool with `mattpocock-skills:tdd` against the
+ticket - it carries no `disable-model-invocation` flag, unlike `implement`,
+so the subagent can reach it directly; to build on the current branch,
+already checked out, and commit its own work to it; to never open a branch
+or PR of its own; and to never block on a human mid-ticket - a call it
+cannot make alone is a deviation, recorded and returned instead of asked.
+Its report is structured: what it built, and the deviation it made, if any.
 
 ## 5. Review
 

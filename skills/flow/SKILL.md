@@ -88,16 +88,34 @@ which holds the only copy of the plan.
    phase, not an option in it: no spec reaches the implement phase unreviewed,
    and the human's control is at the batch, where they may decline every edit.
 5. Read and follow `"$ORCH" mp-skill to-tickets`, with the just-reviewed spec
-   issue (`"$ORCH" state get issue`) as its source. Publish every ticket it
-   proposes through `"$ORCH" ticket publish <parent> <title> <body-file>
-   [--blocked-by N,N,...]`, in dependency order (blockers first) - never an
-   ad hoc `gh api` call - so the verify-then-die behaviour `ticket publish`
-   already provides applies to every ticket. This step is part of the phase,
-   not an option in it, the same way the review above is not: no spec reaches
-   the implement phase without its tickets published.
+   issue (`"$ORCH" state get issue`) as its source, through its own quiz
+   (steps 1-4) until the user approves a breakdown.
+
+   **A breakdown of 2 or more tickets** publishes exactly as today: publish
+   every ticket it proposes through `"$ORCH" ticket publish <parent> <title>
+   <body-file> [--blocked-by N,N,...]`, in dependency order (blockers first)
+   - never an ad hoc `gh api` call - so the verify-then-die behaviour
+   `ticket publish` already provides applies to every ticket. This step is
+   part of the phase, not an option in it, the same way the review above is
+   not: no spec reaches the implement phase without its tickets published.
+
+   **A breakdown of 0 or 1 tickets collapses**: skip `to-tickets`' own
+   publish step entirely - no child sub-issue is created, and the spec issue
+   is worked directly, as if it were the sole ticket. This is the
+   orchestrator's own deliberate, narrowly-scoped exception to `to-tickets`'
+   "do NOT close or modify any parent issue" instruction - not something
+   `to-tickets` itself does, taken here where this phase already calls its
+   publish step, and reached only in this collapsed case. Fetch the spec
+   issue's current body (`"$ORCH" spec fetch <file>`), append a new section
+   wrapping the single drafted ticket's "What to build"/"Acceptance
+   criteria" (when there is one) beneath the existing content - never
+   replacing it - and write the merged body back (`"$ORCH" spec update
+   <file>`).
 6. Call `orchestrator:handoff` for `02-spec.md`, with the changelog the review
-   returned as its **Spec review changelog** and the spec issue number as its
-   **Ticket breakdown**; validate it, then `"$ORCH" state set phase implement`.
+   returned as its **Spec review changelog**, and its **Ticket breakdown** as
+   either the spec issue number (a published breakdown) or `None: work
+   directly against #<n>` naming the spec issue (a collapsed one, per step
+   5); validate it, then `"$ORCH" state set phase implement`.
 7. Print the boundary.
 
 ### Phase: implement
@@ -105,28 +123,41 @@ which holds the only copy of the plan.
 1. Read `"$ORCH" handoff path implement` and fetch the spec issue it names.
 2. `"$ORCH" branch-create` - creates `orch/<issue>-<slug>` off the default branch
    and records the base SHA the review will diff against.
-3. Work the spec issue's ticket frontier, one ticket at a time, never in
-   parallel - every ticket commits to the same branch. Loop:
+3. Read the handoff's **Ticket breakdown** section, written by the spec
+   phase's step 5.
+
+   **`None: work directly against #<n>`** means that breakdown collapsed to
+   0 or 1 tickets and published no sub-issue - `<n>` names the spec issue
+   itself. No `ticket next`/`ticket close` loop runs against it: an empty
+   frontier there means nothing was ever split out, not "already done."
+   Dispatch exactly one subagent (below), briefed with `<n>`, then continue
+   at step 4.
+
+   **Any other content** names the spec issue as a parent whose GitHub
+   sub-issues carry the real tickets. Work its frontier, one ticket at a
+   time, never in parallel - every ticket commits to the same branch. Loop:
    - `"$ORCH" ticket next <spec issue>`. Nothing ready means the frontier is
      exhausted - stop looping and continue at step 4.
-   - Call the Agent tool - a fresh agent, explicitly not a fork, so it starts
-     with nothing but what this brief hands it - carrying only the ticket's
-     number. The brief's directions open with an explicit first instruction:
-     fetch the ticket itself (`gh issue view <n> --comments`, per
-     `docs/agents/issue-tracker.md`'s "fetch the relevant ticket" convention)
-     before doing anything else. The brief then directs the subagent to
-     resolve and follow `"$ORCH" mp-skill implement` itself, the same way
-     this file resolves any upstream skill, against the ticket - and, when
-     `implement`'s closing step calls for a review, to use
-     `mattpocock-skills:code-review` by its fully scoped name, never the bare
-     name, the same disambiguation this file observes above; to build on the
-     current branch, already checked out, and commit its own work to it; to
-     never open a branch or PR of its own; and to never block on a human
-     mid-ticket - a call it cannot make alone is a deviation, recorded and
-     returned instead of asked. Its report is structured: what it built, and
-     the deviation it made, if any.
+   - Dispatch a subagent (below), briefed with the ticket's number.
    - Record the subagent's report, then `"$ORCH" ticket close <n>` - only now
      that the report is back, never before - and go around again.
+
+   **Dispatching a subagent**: call the Agent tool - a fresh agent,
+   explicitly not a fork, so it starts with nothing but what this brief hands
+   it - carrying only the issue number named above. The brief's directions
+   open with an explicit first instruction: fetch the ticket itself (`gh
+   issue view <n> --comments`, per `docs/agents/issue-tracker.md`'s "fetch
+   the relevant ticket" convention) before doing anything else. The brief
+   then directs the subagent to resolve and follow `"$ORCH" mp-skill
+   implement` itself, the same way this file resolves any upstream skill,
+   against the ticket - and, when `implement`'s closing step calls for a
+   review, to use `mattpocock-skills:code-review` by its fully scoped name,
+   never the bare name, the same disambiguation this file observes above; to
+   build on the current branch, already checked out, and commit its own
+   work to it; to never open a branch or PR of its own; and to never block
+   on a human mid-ticket - a call it cannot make alone is a deviation,
+   recorded and returned instead of asked. Its report is structured: what it
+   built, and the deviation it made, if any.
 4. `"$ORCH" pr-open "<title>" <body-file>`. The PR opens as a draft; marking it
    ready is the review loop's success condition. `pr-open` itself writes the
    `Closes #<issue>` line ahead of the body - do not add a closing keyword of

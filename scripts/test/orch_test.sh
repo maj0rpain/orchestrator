@@ -610,6 +610,17 @@ complete_spec_handoff "$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "passes once the parent issue is recorded" "$st" 0
 
+# A 0/1-ticket breakdown collapses (issue #99/#101): no sub-issue is published,
+# so this section names the spec issue itself via a plain-text sentinel rather
+# than a parent whose GitHub sub-issues carry the real tickets. It is covered
+# today by the same generic non-empty-section check as any other content -
+# named explicitly here so the convention doesn't silently rot.
+writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
+        '## Spec review changelog' 'Not reviewed.' '' \
+        '## Ticket breakdown' 'None: work directly against #1.' >"$h2"
+out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
+assert_status "the collapsed-case sentinel validates like any other content" "$st" 0
+
 # --- archive ----------------------------------------------------------------
 echo
 echo "archive"
@@ -1735,6 +1746,86 @@ unset GH_STUB_DB
 echo
 echo "review begin"
 healthy_repo
+
+# --- issue fetch/update -------------------------------------------------------
+# The stateless issue body read/write pair - the same contract
+# issue-publish/pr-publish/ticket publish already offer, extended to a plain
+# issue's body. cmd_spec's fetch/update ops (further below) become thin
+# wrappers over these, resolving the issue from state exactly as before - so
+# this section proves the primitives work given just an issue number, before
+# `init reviewtest` below ever writes a state.json into this repo.
+#
+# Goes through the ORCH_GH_ADAPTER seam here, pointed at the in-memory fake
+# rather than stub_gh - GH_STUB_LOG stays empty, proving it never spawns a
+# real gh subprocess. The subprocess-real counterpart is folded into the "gh
+# adapter (real issue view/edit/comment, subprocess gh)" block further below,
+# which already exercises adapter_issue_view/adapter_issue_edit for real - the
+# same two functions this primitive calls.
+echo
+echo "issue fetch/update"
+assert_eq "no state.json exists yet in this repo" \
+  "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+issue_body="$(mktemp)"
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" GH_STUB_BODY="Body of #23." \
+  "$ORCH" issue fetch 23 "$issue_body" 2>&1)"; st=$?
+assert_status "fetch writes the issue's body to the file, with no state.json present" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+assert_eq "exactly what gh answered" "$(cat "$issue_body")" "Body of #23."
+assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "the view call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+
+rm -f "$issue_body"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_VIEW_EXIT=1 "$ORCH" issue fetch 23 "$issue_body" 2>&1)"; st=$?
+assert_status "a gh that will not answer fails the fetch" "$st" 1
+assert_contains "naming the issue" "$out" "issue #23"
+assert_eq "and leaves no file a caller could mistake for a body" \
+  "$([ -e "$issue_body" ] && echo present || echo gone)" "gone"
+
+filed="$(mktemp)"
+tricky="$(mktemp)"
+writeln '## Solution' '' 'Tracked in #6; see `$HOME` and '"'"'quoted'"'"' text.' >"$tricky"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
+  "$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
+assert_status "update replaces the issue's body, with no state.json present" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+assert_contains "editing the issue number given, not one from state" \
+  "$(cat "$filed")" "issue edit 23"
+assert_contains "with the file's contents as the body, exactly" \
+  "$(cat "$filed")" "Tracked in #6"
+assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "the edit call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" issue update 23 /nonexistent/body.md 2>&1)"; st=$?
+assert_status "update refuses a file that does not exist" "$st" 1
+assert_contains "naming the file" "$out" "/nonexistent/body.md"
+
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_EDIT_EXIT=1 "$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
+assert_status "a gh that will not edit fails the update" "$st" 1
+assert_contains "naming the issue" "$out" "issue #23"
+
+out="$("$ORCH" issue fetch abc "$issue_body" 2>&1)"; st=$?
+assert_status "fetch refuses an issue number that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$("$ORCH" issue update abc "$tricky" 2>&1)"; st=$?
+assert_status "update refuses the same" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$("$ORCH" issue fetch 23 2>&1)"; st=$?
+assert_status "fetch refuses with no file" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh issue"
+
+out="$("$ORCH" issue publish 23 "$tricky" 2>&1)"; st=$?
+assert_status "refuses an op it does not have" "$st" 1
+assert_contains "naming the two it does" "$out" "fetch|update"
+
+assert_contains "help documents issue fetch" "$("$ORCH" help)" "issue fetch"
+assert_contains "and issue update" "$("$ORCH" help)" "issue update"
+
+assert_eq "still no state.json - this section recorded none" \
+  "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+
 "$ORCH" init reviewtest >/dev/null
 assert_eq "the first iteration is 1" "$("$ORCH" review begin)" "1"
 assert_eq "records the iteration in state" "$("$ORCH" state get iteration)" "1"
