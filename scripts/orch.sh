@@ -802,6 +802,147 @@ cmd_pr_publish() {
   note "$pr"
 }
 
+# --- ticket -------------------------------------------------------------
+#
+# GitHub's native sub-issue and issue-dependency APIs, in one place, so no
+# skill prose ever calls `gh api` on these endpoints directly. Stateless
+# throughout, like issue-publish/pr-publish: callable with no state.json,
+# since quick implementation keeps none.
+
+# The child's *database id*, not its issue number - both `sub_issues` and
+# `dependencies/blocked_by` take the database id, and nowhere else does
+# ticket_publish come by it for free.
+issue_db_id() {
+  gh api "repos/{owner}/{repo}/issues/$1" --jq .id \
+    || die "gh could not read issue #$1"
+}
+
+# True only once both links read back exactly as published: the parent's
+# sub_issues listing contains the child, and the child's blocked_by listing
+# is the same set of numbers requested, in any order. Read fresh every call,
+# never cached - the caller retries this on a mismatch, and a cached answer
+# would just repeat the same wrong verdict.
+ticket_links_verified() {
+  local parent="$1" child="$2" want="$3" have_children have_blockers
+  have_children="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" --jq '.[].number')" \
+    || return 1
+  printf '%s\n' "$have_children" | grep -qxF "$child" || return 1
+  have_blockers="$(gh api --paginate "repos/{owner}/{repo}/issues/$child/dependencies/blocked_by" --jq '.[].number')" \
+    || return 1
+  [ "$(printf '%s\n' "$have_blockers" | sort -n)" = "$(printf '%s\n' "$want" | sort -n)" ]
+}
+
+# Publishes a child issue, links it to <parent> as a native sub-issue, adds a
+# native blocking edge for every --blocked-by argument, and applies this
+# repo's ready-for-agent label - then verifies every link it just wrote by
+# reading it back. One retry on a mismatch; a second failure dies naming the
+# ticket rather than falling back to a text-based `Blocked by:` convention,
+# since nothing downstream ever reads that fallback.
+cmd_ticket_publish() {
+  [ $# -ge 3 ] || die "usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
+  local parent="$1" title="$2" body_file="$3" blocked_by="" want="" b
+  local ready url child child_id blocker_id
+  shift 3
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --blocked-by) blocked_by="$2"; shift 2 ;;
+      *) die "usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]" ;;
+    esac
+  done
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
+  [ -n "$title" ] || die "the title is empty"
+  [ -f "$body_file" ] || die "body file not found: $body_file"
+  if [ -n "$blocked_by" ]; then
+    want="$(printf '%s\n' "$blocked_by" | tr ',' '\n')"
+    while IFS= read -r b; do
+      [ -z "$b" ] && continue
+      case "$b" in ''|*[!0-9]*) die "--blocked-by must be plain issue numbers, got: $blocked_by" ;; esac
+    done <<<"$want"
+    # Deduplicated before the write loop and the verify below: GitHub stores a
+    # blocking edge once no matter how many times it is requested, so a
+    # duplicate in --blocked-by would otherwise make the readback's set
+    # permanently smaller than $want and fail verification for a link that is
+    # actually correct.
+    want="$(printf '%s\n' "$want" | sort -un)"
+  fi
+
+  ready="$(triage_label_for ready-for-agent)"
+  url="$(gh issue create --title "$title" --body-file "$body_file" --label "$ready")" \
+    || die "gh could not create the ticket"
+  child="${url##*/}"
+
+  child_id="$(issue_db_id "$child")"
+  gh api --method POST "repos/{owner}/{repo}/issues/$parent/sub_issues" \
+      -F sub_issue_id="$child_id" >/dev/null \
+    || die "gh could not link ticket #$child as a sub-issue of #$parent"
+
+  if [ -n "$want" ]; then
+    while IFS= read -r b; do
+      [ -z "$b" ] && continue
+      blocker_id="$(issue_db_id "$b")"
+      gh api --method POST "repos/{owner}/{repo}/issues/$child/dependencies/blocked_by" \
+          -F issue_id="$blocker_id" >/dev/null \
+        || die "gh could not add a blocking edge from ticket #$child on #$b"
+    done <<<"$want"
+  fi
+
+  ticket_links_verified "$parent" "$child" "$want" \
+    || ticket_links_verified "$parent" "$child" "$want" \
+    || die "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed"
+
+  note "$child"
+}
+
+# The parent's open sub-issues with zero open blockers
+# (issue_dependencies_summary.blocked_by, which already counts open blockers
+# only), in the order GitHub published them.
+cmd_ticket_next() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket next <parent>"
+  local parent="$1" subs
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
+  subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" \
+      --jq '.[] | select(.state == "open") | select(.issue_dependencies_summary.blocked_by == 0) | .number')" \
+    || die "gh could not list sub-issues of #$parent"
+  if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
+}
+
+cmd_ticket_close() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket close <n>"
+  local n="$1"
+  case "$n" in ''|*[!0-9]*) die "not a plain issue number: $n" ;; esac
+  gh issue close "$n" >/dev/null || die "gh could not close ticket #$n"
+}
+
+# Reopens every sub-issue of <parent> that is currently closed, and only
+# those - the fix `redo review` needs before handing back to a fresh
+# implement phase, whose frontier query would otherwise find nothing.
+cmd_ticket_reset() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket reset <parent>"
+  local parent="$1" closed n
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
+  closed="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" \
+      --jq '.[] | select(.state == "closed") | .number')" \
+    || die "gh could not list sub-issues of #$parent"
+  if [ -n "$closed" ]; then
+    while IFS= read -r n; do
+      [ -z "$n" ] && continue
+      gh issue reopen "$n" >/dev/null || die "gh could not reopen ticket #$n"
+    done <<<"$closed"
+  fi
+}
+
+cmd_ticket() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    publish) cmd_ticket_publish "$@" ;;
+    next)    cmd_ticket_next "$@" ;;
+    close)   cmd_ticket_close "$@" ;;
+    reset)   cmd_ticket_reset "$@" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|close|reset)" ;;
+  esac
+}
+
 # --- redo ---------------------------------------------------------------
 
 # The full `review -> implement` transition: retire the old branch and PR,
@@ -993,6 +1134,17 @@ orch.sh - deterministic operations for the orchestrator flow
                               closing <issue>, recording no state; prints the
                               PR number - for a quick implementation whose
                               single-pass review already ran
+  ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]
+                              create a ticket, link it as a sub-issue of
+                              <parent>, add a blocking edge for every
+                              --blocked-by issue, apply ready-for-agent, and
+                              verify the links it just wrote by reading them
+                              back - recording no state; prints the number
+  ticket next <parent>       print <parent>'s open sub-issues with zero open
+                              blockers, in the order they were published
+  ticket close <n>           close ticket <n>
+  ticket reset <parent>      reopen every sub-issue of <parent> that is
+                              currently closed, and only those
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
@@ -1039,6 +1191,7 @@ main() {
     issue-publish) cmd_issue_publish "$@" ;;
     pr-open)       cmd_pr_open "$@" ;;
     pr-publish)    cmd_pr_publish "$@" ;;
+    ticket)        cmd_ticket "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
     redo)          cmd_redo "$@" ;;

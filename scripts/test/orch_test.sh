@@ -146,6 +146,66 @@ record_flags() {
     shift
   done
 }
+# The `ticket` group's tiny fake GitHub: an issue's open/closed state and its
+# sub-issue/blocked-by edges, persisted as files under GH_STUB_DB so they
+# survive across the separate `gh` subprocesses one `orch.sh ticket ...` call
+# makes. Absent GH_STUB_DB, every issue reads back open with no edges - which
+# is what the argument-validation tests below need and nothing more.
+api_state() {
+  if [ -n "$db" ] && [ -f "$db/state/$1" ]; then cat "$db/state/$1"; else echo open; fi
+}
+api_blocked_count() {
+  local bn=0 bl
+  if [ -n "$db" ] && [ -f "$db/blocked_by/$1" ]; then
+    while IFS= read -r bl; do
+      [ -z "$bl" ] && continue
+      [ "$(api_state "$bl")" = open ] && bn=$((bn + 1))
+    done <"$db/blocked_by/$1"
+  fi
+  printf '%s\n' "$bn"
+}
+# GH_STUB_SUBISSUE_MISS / GH_STUB_BLOCKED_MISS count down how many times the
+# corresponding listing still reports empty after a real write - simulating
+# the lag ticket_publish's verify-then-die retry exists to survive. Each
+# counts independently and persists in GH_STUB_DB across the separate `gh`
+# processes one publish call makes.
+api_list_sub_issues() {
+  local parent="$1" rf remaining out first c
+  if [ -n "$db" ]; then
+    rf="$db/subissue_miss_remaining"
+    remaining="$(cat "$rf" 2>/dev/null)"; [ -n "$remaining" ] || remaining="${GH_STUB_SUBISSUE_MISS:-0}"
+    if [ "$remaining" -gt 0 ]; then echo $((remaining - 1)) >"$rf"; echo '[]'; return; fi
+  fi
+  out="["; first=1
+  if [ -n "$db" ] && [ -f "$db/sub_issues/$parent" ]; then
+    while IFS= read -r c; do
+      [ -z "$c" ] && continue
+      [ "$first" = 1 ] || out="$out,"
+      first=0
+      out="$out{\"number\":$c,\"state\":\"$(api_state "$c")\",\"issue_dependencies_summary\":{\"blocked_by\":$(api_blocked_count "$c")}}"
+    done <"$db/sub_issues/$parent"
+  fi
+  printf '%s]\n' "$out"
+}
+api_list_blocked_by() {
+  local child="$1" rf remaining out first b
+  if [ -n "$db" ]; then
+    rf="$db/blocked_miss_remaining"
+    remaining="$(cat "$rf" 2>/dev/null)"; [ -n "$remaining" ] || remaining="${GH_STUB_BLOCKED_MISS:-0}"
+    if [ "$remaining" -gt 0 ]; then echo $((remaining - 1)) >"$rf"; echo '[]'; return; fi
+  fi
+  out="["; first=1
+  if [ -n "$db" ] && [ -f "$db/blocked_by/$child" ]; then
+    while IFS= read -r b; do
+      [ -z "$b" ] && continue
+      [ "$first" = 1 ] || out="$out,"
+      first=0
+      out="$out{\"number\":$b}"
+    done <"$db/blocked_by/$child"
+  fi
+  printf '%s]\n' "$out"
+}
+db="${GH_STUB_DB:-}"
 if [ "${GH_STUB_MODE:-ok}" = offline ]; then
   echo "dial tcp: lookup api.github.com: no such host" >&2
   exit 1
@@ -195,12 +255,21 @@ ready-for-agent}"
         exit "$st" ;;
       close)
         shift 2
+        cnum="$1"
         if [ -n "${GH_STUB_FILED:-}" ]; then
           printf 'issue close %s\n' "$1" >>"$GH_STUB_FILED"
           shift
           record_flags "$@"
         fi
         [ "${GH_STUB_ISSUE_CLOSE_EXIT:-0}" = 0 ] || { echo "gh stub: issue close refused" >&2; exit "$GH_STUB_ISSUE_CLOSE_EXIT"; }
+        if [ -n "$db" ]; then mkdir -p "$db/state"; echo closed >"$db/state/$cnum"; fi
+        exit 0 ;;
+      reopen)
+        shift 2
+        cnum="$1"
+        if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue reopen %s\n' "$1" >>"$GH_STUB_FILED"; fi
+        [ "${GH_STUB_ISSUE_REOPEN_EXIT:-0}" = 0 ] || { echo "gh stub: issue reopen refused" >&2; exit "$GH_STUB_ISSUE_REOPEN_EXIT"; }
+        if [ -n "$db" ]; then mkdir -p "$db/state"; echo open >"$db/state/$cnum"; fi
         exit 0 ;;
       create) ;;
       *) echo "gh stub: unscripted issue op '$2'" >&2; exit 99 ;;
@@ -208,7 +277,73 @@ ready-for-agent}"
     shift 2
     if [ -n "${GH_STUB_FILED:-}" ]; then record_flags "$@"; fi
     [ "${GH_STUB_ISSUE_EXIT:-0}" = 0 ] || { echo "gh stub: issue create refused" >&2; exit "$GH_STUB_ISSUE_EXIT"; }
-    echo "https://github.com/acme/widgets/issues/${GH_STUB_ISSUE_NUMBER:-42}" ;;
+    if [ -n "$db" ]; then
+      mkdir -p "$db/state"
+      newnum="$(cat "$db/issue_seq" 2>/dev/null)"; [ -n "$newnum" ] || newnum="${GH_STUB_ISSUE_NUMBER:-42}"
+      echo $((newnum + 1)) >"$db/issue_seq"
+      echo open >"$db/state/$newnum"
+      echo "https://github.com/acme/widgets/issues/$newnum"
+    else
+      echo "https://github.com/acme/widgets/issues/${GH_STUB_ISSUE_NUMBER:-42}"
+    fi ;;
+  api)
+    shift
+    api_method=GET; api_jq=""; api_fkey=""; api_fval=""; api_path=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --method)   api_method="$2"; shift 2 ;;
+        -f|-F)      api_fkey="${2%%=*}"; api_fval="${2#*=}"; shift 2 ;;
+        --jq)       api_jq="$2"; shift 2 ;;
+        --paginate) shift ;;
+        *)          api_path="$1"; shift ;;
+      esac
+    done
+    if [ -n "${GH_STUB_LOG:-}" ]; then printf 'api %s %s\n' "$api_method" "$api_path" >>"$GH_STUB_LOG"; fi
+    api_rest="${api_path#repos/*/issues/}"
+    case "$api_rest" in
+      */*) api_num="${api_rest%%/*}"; api_sub="${api_rest#*/}" ;;
+      *)   api_num="$api_rest"; api_sub="" ;;
+    esac
+    if [ "$api_sub" = sub_issues ] && [ "$api_method" = POST ] \
+        && [ "${GH_STUB_SUBISSUE_POST_EXIT:-0}" != 0 ]; then
+      echo "gh stub: sub_issues POST refused" >&2; exit "$GH_STUB_SUBISSUE_POST_EXIT"
+    fi
+    if [ "$api_sub" = dependencies/blocked_by ] && [ "$api_method" = POST ] \
+        && [ "${GH_STUB_BLOCKED_POST_EXIT:-0}" != 0 ]; then
+      echo "gh stub: blocked_by POST refused" >&2; exit "$GH_STUB_BLOCKED_POST_EXIT"
+    fi
+    [ "${GH_STUB_API_EXIT:-0}" = 0 ] || { echo "gh stub: api call refused" >&2; exit "$GH_STUB_API_EXIT"; }
+    case "$api_sub" in
+      "")
+        api_json="$(printf '{"id":%d,"number":%d,"state":"%s","issue_dependencies_summary":{"blocked_by":%s}}' \
+          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_blocked_count "$api_num")")" ;;
+      sub_issues)
+        if [ "$api_method" = POST ]; then
+          if [ -n "$db" ]; then
+            mkdir -p "$db/sub_issues" "$db/state"
+            child_num=$((api_fval / 1000))
+            printf '%s\n' "$child_num" >>"$db/sub_issues/$api_num"
+            [ -f "$db/state/$child_num" ] || echo open >"$db/state/$child_num"
+          fi
+          api_json='{}'
+        else
+          api_json="$(api_list_sub_issues "$api_num")"
+        fi ;;
+      dependencies/blocked_by)
+        if [ "$api_method" = POST ]; then
+          if [ -n "$db" ]; then
+            mkdir -p "$db/blocked_by"
+            blocker_num=$((api_fval / 1000))
+            printf '%s\n' "$blocker_num" >>"$db/blocked_by/$api_num"
+          fi
+          api_json='{}'
+        else
+          api_json="$(api_list_blocked_by "$api_num")"
+        fi ;;
+      *) echo "gh stub: unscripted api path '$api_path'" >&2; exit 99 ;;
+    esac
+    if [ -n "$api_jq" ]; then printf '%s' "$api_json" | jq -r "$api_jq"; else printf '%s\n' "$api_json"; fi
+    ;;
   pr)
     case "$2" in
       ready) exit "${GH_STUB_READY_EXIT:-0}" ;;
@@ -1259,6 +1394,198 @@ out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-publish 16 "Title" "$body" 2>&1)"; st
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "with a clear reason" "$out" "gh could not open the PR"
 
+# --- ticket publish -----------------------------------------------------
+# The one place the ticket-breakdown feature touches GitHub's native
+# sub-issue and issue-dependency APIs, so no skill prose ever calls `gh api`
+# on these endpoints directly. Stateless like issue-publish/pr-publish: the
+# stub's GH_STUB_DB is a throwaway fake GitHub, not orch.sh state.
+echo
+echo "ticket publish"
+healthy_repo
+db="$(mktemp -d)"
+export GH_STUB_DB="$db"
+body="$(mktemp)"
+writeln 'Build the thing.' >"$body"
+filed="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=100 \
+  "$ORCH" ticket publish 50 "First ticket" "$body" 2>&1)"; st=$?
+assert_status "publishes" "$st" 0
+assert_eq "printing the child's issue number and nothing else" "$out" "100"
+assert_contains "passes the title through" "$(cat "$filed")" "title=First ticket"
+assert_contains "sends the body file's contents" "$(cat "$filed")" "Build the thing."
+assert_contains "applies ready-for-agent" "$(cat "$filed")" "label=ready-for-agent"
+assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "links the child as 50's sub-issue" "$("$ORCH" ticket next 50)" "100"
+
+out="$("$ORCH" ticket publish 50 "Second ticket" "$body" --blocked-by 100 2>&1)"; st=$?
+assert_status "publishes a ticket blocked by the first" "$st" 0
+assert_eq "prints the new child's number" "$out" "101"
+assert_eq "the still-blocked ticket is not in the frontier" "$("$ORCH" ticket next 50)" "100"
+
+# GitHub stores a blocking edge once no matter how many times it is asked
+# for - a duplicate in --blocked-by must not make the readback's set
+# permanently smaller than what was requested and fail verification for a
+# link that is actually correct.
+out="$("$ORCH" ticket publish 50 "Third ticket" "$body" --blocked-by 100,100 2>&1)"; st=$?
+assert_status "a duplicate blocker in the list still verifies and succeeds" "$st" 0
+
+out="$("$ORCH" ticket publish 50 "" "$body" 2>&1)"; st=$?
+assert_status "refuses an empty title" "$st" 1
+
+out="$("$ORCH" ticket publish 50 "Title" /nonexistent/body.md 2>&1)"; st=$?
+assert_status "refuses a body file that does not exist" "$st" 1
+assert_contains "naming the file" "$out" "/nonexistent/body.md"
+
+out="$("$ORCH" ticket publish abc "Title" "$body" 2>&1)"; st=$?
+assert_status "refuses a parent that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by "abc,5" 2>&1)"; st=$?
+assert_status "refuses a --blocked-by list with a non-numeric entry" "$st" 1
+assert_contains "naming the whole list" "$out" "abc,5"
+
+out="$("$ORCH" ticket publish 50 "Title" "$body" --bogus 2>&1)"; st=$?
+assert_status "rejects an unknown flag" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket publish"
+
+out="$("$ORCH" ticket publish 50 2>&1)"; st=$?
+assert_status "refuses with no body file" "$st" 1
+
+out="$(GH_STUB_ISSUE_EXIT=1 "$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a gh that will not create the ticket fails the command" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not create the ticket"
+
+out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a gh that cannot read the child's database id fails the command" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not read issue"
+
+out="$(GH_STUB_SUBISSUE_POST_EXIT=1 "$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a gh that refuses the sub-issue link fails the command" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not link ticket"
+
+out="$(GH_STUB_BLOCKED_POST_EXIT=1 "$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100 2>&1)"; st=$?
+assert_status "a gh that refuses the blocking edge fails the command" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not add a blocking edge"
+
+# --- ticket publish verify-then-die ---------------------------------------
+# Immediately after publishing, ticket_publish reads the links back. One
+# retry on a mismatch; a second failure dies naming the ticket, rather than
+# falling back to a text-based `Blocked by:` convention nothing downstream
+# ever reads. GH_STUB_SUBISSUE_MISS/GH_STUB_BLOCKED_MISS force the mismatch
+# by making the readback report stale (empty) data for N calls.
+echo
+echo "ticket publish verify-then-die"
+db="$(mktemp -d)"
+out="$(GH_STUB_DB="$db" GH_STUB_ISSUE_NUMBER=200 GH_STUB_SUBISSUE_MISS=1 \
+  "$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a sub-issue link that only shows up on the retry still succeeds" "$st" 0
+assert_eq "prints the child's number" "$out" "200"
+
+db="$(mktemp -d)"
+out="$(GH_STUB_DB="$db" GH_STUB_ISSUE_NUMBER=201 GH_STUB_SUBISSUE_MISS=2 \
+  "$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a sub-issue link that never shows up dies rather than falling back" "$st" 1
+assert_contains "naming the ticket" "$out" "ticket #201"
+assert_contains "not a silent fallback" "$out" "did not verify"
+
+db="$(mktemp -d)"
+blocker="$(GH_STUB_DB="$db" GH_STUB_ISSUE_NUMBER=300 "$ORCH" ticket publish 50 "Blocker" "$body")"
+out="$(GH_STUB_DB="$db" GH_STUB_BLOCKED_POST_EXIT=0 GH_STUB_BLOCKED_MISS=2 \
+  "$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
+assert_status "a blocking edge that never shows up dies rather than falling back" "$st" 1
+assert_contains "naming the ticket" "$out" "ticket #301"
+
+# --- ticket next -----------------------------------------------------------
+# The parent's open sub-issues with zero open blockers
+# (issue_dependencies_summary.blocked_by, which already counts open blockers
+# only), in the order they were published.
+echo
+echo "ticket next"
+db="$(mktemp -d)"
+export GH_STUB_DB="$db"
+a="$(GH_STUB_ISSUE_NUMBER=400 "$ORCH" ticket publish 90 "A" "$body")"
+b="$("$ORCH" ticket publish 90 "B" "$body" --blocked-by "$a")"
+c="$("$ORCH" ticket publish 90 "C" "$body")"
+out="$("$ORCH" ticket next 90)"
+assert_eq "open-and-unblocked tickets only, in publish order, excluding the still-blocked one" \
+  "$out" "$(printf '%s\n%s' "$a" "$c")"
+
+"$ORCH" ticket close "$a" >/dev/null
+out="$("$ORCH" ticket next 90)"
+assert_eq "a closed blocker drops out, freeing its dependent" "$out" "$(printf '%s\n%s' "$b" "$c")"
+
+"$ORCH" ticket close "$c" >/dev/null
+out="$("$ORCH" ticket next 90)"
+assert_eq "a closed ticket itself is no longer in the frontier" "$out" "$b"
+
+out="$("$ORCH" ticket next abc 2>&1)"; st=$?
+assert_status "refuses a parent that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$("$ORCH" ticket next 2>&1)"; st=$?
+assert_status "refuses with no parent" "$st" 1
+
+out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket next 90 2>&1)"; st=$?
+assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not list sub-issues"
+
+# --- ticket close ------------------------------------------------------------
+echo
+echo "ticket close"
+db="$(mktemp -d)"
+export GH_STUB_DB="$db"
+n="$(GH_STUB_ISSUE_NUMBER=500 "$ORCH" ticket publish 90 "Closeable" "$body")"
+out="$("$ORCH" ticket close "$n" 2>&1)"; st=$?
+assert_status "closes the ticket" "$st" 0
+assert_eq "and it drops out of the parent's open sub-issues" \
+  "$("$ORCH" ticket next 90)" ""
+
+out="$("$ORCH" ticket close abc 2>&1)"; st=$?
+assert_status "refuses a ticket that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$(GH_STUB_ISSUE_CLOSE_EXIT=1 "$ORCH" ticket close "$n" 2>&1)"; st=$?
+assert_status "a gh that will not close the ticket fails" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not close ticket"
+
+# --- ticket reset ------------------------------------------------------------
+# Reopens every sub-issue of <parent> that is currently closed, and only
+# those - what redo review needs before handing back to a fresh implement
+# phase, whose frontier query would otherwise find nothing.
+echo
+echo "ticket reset"
+db="$(mktemp -d)"
+export GH_STUB_DB="$db"
+x="$(GH_STUB_ISSUE_NUMBER=600 "$ORCH" ticket publish 90 "X" "$body")"
+y="$("$ORCH" ticket publish 90 "Y" "$body")"
+z="$("$ORCH" ticket publish 90 "Z" "$body")"
+"$ORCH" ticket close "$x" >/dev/null
+"$ORCH" ticket close "$y" >/dev/null
+out="$("$ORCH" ticket reset 90 2>&1)"; st=$?
+assert_status "resets" "$st" 0
+assert_eq "reopens exactly the tickets that were closed, and only those" \
+  "$("$ORCH" ticket next 90)" "$(printf '%s\n%s\n%s' "$x" "$y" "$z")"
+
+out="$("$ORCH" ticket reset abc 2>&1)"; st=$?
+assert_status "refuses a parent that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+"$ORCH" ticket close "$x" >/dev/null
+out="$(GH_STUB_ISSUE_REOPEN_EXIT=1 "$ORCH" ticket reset 90 2>&1)"; st=$?
+assert_status "a gh that will not reopen a ticket fails the command" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not reopen ticket"
+
+out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket reset 90 2>&1)"; st=$?
+assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not list sub-issues"
+
+# --- ticket: unknown op ------------------------------------------------------
+out="$("$ORCH" ticket bogus 2>&1)"; st=$?
+assert_status "ticket bogus is an unknown op" "$st" 1
+assert_contains "listed alongside the ops that exist" "$out" "unknown ticket op"
+
+unset GH_STUB_DB
+
 # --- review begin -----------------------------------------------------------
 # The bound lives in bash precisely so a long session cannot re-remember five as
 # six, so what matters here is the refusal, not the counting. The budget is the
@@ -1785,6 +2112,10 @@ assert_contains "and the terminal-state classifier" "$("$ORCH" help)" "review te
 assert_contains "and retiring a loop's records" "$("$ORCH" help)" "review retire"
 assert_contains "help documents issue-publish" "$("$ORCH" help)" "issue-publish"
 assert_contains "and pr-publish" "$("$ORCH" help)" "pr-publish"
+assert_contains "and ticket publish" "$("$ORCH" help)" "ticket publish"
+assert_contains "and ticket next" "$("$ORCH" help)" "ticket next"
+assert_contains "and ticket close" "$("$ORCH" help)" "ticket close"
+assert_contains "and ticket reset" "$("$ORCH" help)" "ticket reset"
 assert_contains "and retiring a branch" "$("$ORCH" help)" "branch retire"
 assert_contains "and redo review" "$("$ORCH" help)" "redo review"
 assert_contains "and redo spec" "$("$ORCH" help)" "redo spec"
