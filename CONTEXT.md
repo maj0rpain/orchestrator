@@ -25,11 +25,10 @@ test-driven, reviewed, then opened as a PR.
 
 A diagnostic surface a maintainer or agent can run at any time, via the
 `doctor` command, to check that the machine, the repo, and the active flow are
-sound. Organized into named scopes - `--env`, `--flow` - each named for the
-content it covers rather than the caller that invokes it; bare `doctor`
-covers everything. Every check it runs reports through one of three severity
-states - `ok`, `warn`, or `FAIL` - and the overall report reflects the worst
-state seen without aborting partway through.
+sound. Organized into named scopes - `--env`, `--flow` - with bare `doctor`
+covering everything. Every check it runs reports through one of three states -
+`ok`, `warn`, or `FAIL` - and the overall report reflects the worst state seen
+without aborting partway through.
 
 ## Ticket breakdown
 
