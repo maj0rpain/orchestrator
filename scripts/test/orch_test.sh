@@ -610,6 +610,17 @@ complete_spec_handoff "$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "passes once the parent issue is recorded" "$st" 0
 
+# A 0/1-ticket breakdown collapses (issue #99/#101): no sub-issue is published,
+# so this section names the spec issue itself via a plain-text sentinel rather
+# than a parent whose GitHub sub-issues carry the real tickets. It is covered
+# today by the same generic non-empty-section check as any other content -
+# named explicitly here so the convention doesn't silently rot.
+writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
+        '## Spec review changelog' 'Not reviewed.' '' \
+        '## Ticket breakdown' 'None: work directly against #1.' >"$h2"
+out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
+assert_status "the collapsed-case sentinel validates like any other content" "$st" 0
+
 # --- archive ----------------------------------------------------------------
 echo
 echo "archive"

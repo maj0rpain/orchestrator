@@ -71,9 +71,17 @@ each, declined findings verbatim with the human's reason, "None" for a lens
 that found nothing, "not run - <reason>" for one that failed>
 
 ## Ticket breakdown
-<the parent issue number only - the tickets themselves are its GitHub
-sub-issues, already published. The implement phase discovers them live via
-`orch.sh ticket next`; do not duplicate the list here, it would go stale>
+<usually the parent issue number only - the tickets themselves are its
+GitHub sub-issues, already published. The implement phase discovers them
+live via `orch.sh ticket next`; do not duplicate the list here, it would go
+stale. When the approved breakdown resolved to 0 or 1 tickets, no sub-issue
+was published at all - the spec phase folded that single ticket's content
+into the spec issue itself instead, and this section reads `None: work
+directly against #<n>` (the spec issue's own number), the same convention
+this project already uses for `Blocked by: None (can start immediately)`,
+telling the implement phase to dispatch one subagent against `<n>` directly
+rather than run a `ticket next`/`ticket close` loop against an empty
+frontier>
 
 ## Suggested skills
 <usually tdd, plus whatever the seams imply>
