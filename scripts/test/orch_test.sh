@@ -653,6 +653,25 @@ git symbolic-ref -d refs/remotes/origin/HEAD
 assert_eq "falls back to main when nothing else answers" \
   "$(PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" default-branch)" "main"
 
+# --- branch-create -----------------------------------------------------------
+# Unlike branch-off's caller-named branch, this one derives its own name from
+# state - slug plus the recorded issue - and records both `branch` and
+# `base_sha` for pr-open and redo review to read back later via require_branch.
+echo
+echo "branch-create"
+new_repo >/dev/null
+git remote add origin https://example.invalid/x/y.git
+git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
+git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$(git branch --show-current)"
+"$ORCH" init bcreate >/dev/null
+"$ORCH" state set issue 11
+before_sha="$(git rev-parse HEAD)"
+out="$("$ORCH" branch-create)"
+assert_eq "derives the branch name from slug and the recorded issue" "$out" "orch/11-bcreate"
+assert_eq "checks the new branch out" "$(git branch --show-current)" "orch/11-bcreate"
+assert_eq "records the branch in state" "$("$ORCH" state get branch)" "orch/11-bcreate"
+assert_eq "records the fork point as base_sha" "$("$ORCH" state get base_sha)" "$before_sha"
+
 # --- branch-off --------------------------------------------------------------
 # A quick implementation keeps no state, so this is the primitive it shares
 # with a flow's own branch-create: same fetch/checkout-fallback idiom, naming
@@ -1422,6 +1441,22 @@ assert_contains "and keeps the agent's original body intact after a blank line" 
 out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "with a clear reason" "$out" "gh could not open the PR"
+
+# require_branch's die message is the other half of require_field's coverage
+# (#79) alongside "refuses when state has no issue" above - a fresh flow with
+# an issue recorded but no branch yet is exactly the gap between init and
+# branch-create.
+echo
+echo "pr-open (missing branch)"
+new_repo >/dev/null
+"$ORCH" init nobranch >/dev/null
+"$ORCH" state set issue 21
+body="$(mktemp)"
+writeln 'Implements the thing.' >"$body"
+out="$("$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
+assert_status "refuses when state has no branch" "$st" 1
+assert_contains "with the exact require_branch die message" "$out" \
+  "no branch recorded in state"
 
 # --- pr-publish --------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
