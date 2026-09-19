@@ -21,6 +21,19 @@ no handoff, no `.orchestrator/state.json`. Still produces its own branch and
 PR, and is still held to this project's standards for how a change gets made -
 test-driven, reviewed, then opened as a PR.
 
+## Ticket breakdown
+
+The set of sub-issues `to-tickets` publishes against a flow's spec issue, or
+against quick implementation's linked issue - each one a sub-issue of that
+parent, not a second issue the flow or quick implementation now holds, and
+may block, or be blocked by, other tickets in the same breakdown.
+
+## Ticket subagent
+
+The fresh, non-fork agent that builds exactly one ticket of a ticket
+breakdown and reports back structurally instead of blocking on a human, in
+the implement phase or in quick implementation.
+
 ## Phase
 
 One of the four stages a flow passes through: **plan**, **spec**, **implement**,
