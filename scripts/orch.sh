@@ -695,11 +695,65 @@ cmd_review() {
   esac
 }
 
+# --- issue --------------------------------------------------------------
+#
+# The stateless issue body read/write pair - the same contract
+# issue-publish/pr-publish/ticket publish already offer, extended to a plain
+# issue's body given just its number. cmd_spec's fetch/update ops below are
+# thin wrappers over these two, resolving the issue number from state exactly
+# as they always did, so flow's stateful spec access and quick
+# implementation's stateless issue access share one tested code path instead
+# of two independently-maintained copies of the same body read/write.
+#
+# `issue update` stays a dumb "replace the body with these exact bytes"
+# primitive - fold-in choreography like fetch-then-append-then-write for
+# merging ticket content into a parent belongs in the calling skill's prose,
+# not here.
+
+# Written beside the target and moved into place only once gh has answered:
+# a failed fetch that left a partial file behind is a body a caller would
+# mistake for the issue's actual content.
+cmd_issue_fetch() {
+  local issue="$1" file="$2" tmp
+  mkdir -p "$(dirname "$file")"
+  tmp="$(mktemp "$file.XXXXXX")"
+  if ! adapter_issue_view "$issue" --json body --jq .body >"$tmp"; then
+    rm -f "$tmp"
+    die "gh could not read the body of issue #$issue"
+  fi
+  mv "$tmp" "$file"
+}
+
+cmd_issue_update() {
+  local issue="$1" file="$2"
+  [ -f "$file" ] || die "body file not found: $file"
+  # --body-file, never --body: an issue body carries tables, fences, and
+  # `#nn` references, and a heredoc through a shell is where those get
+  # mangled.
+  adapter_issue_edit "$issue" --body-file "$file" >/dev/null \
+    || die "gh could not replace the body of issue #$issue"
+}
+
+cmd_issue() {
+  local op="${1:-}"
+  shift || true
+  [ $# -eq 2 ] || die "usage: orch.sh issue <fetch|update> <n> <file>"
+  local issue="$1" file="$2"
+  case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
+  case "$op" in
+    fetch)  cmd_issue_fetch "$issue" "$file" ;;
+    update) cmd_issue_update "$issue" "$file" ;;
+    *) die "unknown issue op: ${op:-<none>} (want fetch|update)" ;;
+  esac
+}
+
 # --- spec -------------------------------------------------------------------
 
 # The spec review's one hand on GitHub. The body is the truth the implement
 # phase reads, so the three ways it is read and written go through here, where
 # they are tested, rather than through a `gh issue edit` in skill prose.
+# fetch/update delegate to the issue primitives above; comment has no
+# stateless counterpart to delegate to, so it keeps its own call here.
 cmd_spec() {
   local op="${1:-}"
   shift || true
@@ -708,29 +762,12 @@ cmd_spec() {
   local file="$1" issue
   require_issue issue
   case "$op" in
-    fetch)
-      # Written beside the target and moved into place only once gh has
-      # answered: a failed fetch that left a partial file behind is a body a
-      # lens would read as the spec.
-      local tmp
-      mkdir -p "$(dirname "$file")"
-      tmp="$(mktemp "$file.XXXXXX")"
-      if ! adapter_issue_view "$issue" --json body --jq .body >"$tmp"; then
-        rm -f "$tmp"
-        die "gh could not read the body of issue #$issue"
-      fi
-      mv "$tmp" "$file"
-      ;;
-    update|comment)
+    fetch)  cmd_issue_fetch "$issue" "$file" ;;
+    update) cmd_issue_update "$issue" "$file" ;;
+    comment)
       [ -f "$file" ] || die "body file not found: $file"
-      local did="replace the body of"
-      if [ "$op" = comment ]; then did="comment on"; fi
-      # --body-file, never --body: a spec carries tables, fences, and `#nn`
-      # references, and a heredoc through a shell is where those get mangled.
-      case "$op" in
-        update)  adapter_issue_edit "$issue" --body-file "$file" >/dev/null ;;
-        comment) adapter_issue_comment "$issue" --body-file "$file" >/dev/null ;;
-      esac || die "gh could not $did issue #$issue"
+      adapter_issue_comment "$issue" --body-file "$file" >/dev/null \
+        || die "gh could not comment on issue #$issue"
       ;;
     *) die "unknown spec op: ${op:-<none>} (want fetch|update|comment)" ;;
   esac
@@ -1223,6 +1260,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               create a GitHub issue, recording no state;
                               prints the number - for a quick implementation
                               that needs one
+  issue fetch <n> <file>      write issue <n>'s body to <file>, recording no
+                              state
+  issue update <n> <file>     replace issue <n>'s body with <file>, recording
+                              no state
   pr-open <title> <body-file> push and open a draft PR
   pr-publish <issue> <title> <body-file>
                               push the current branch and open a non-draft PR
@@ -1285,6 +1326,7 @@ main() {
     branch-off)    cmd_branch_off "$@" ;;
     branch)        cmd_branch "$@" ;;
     issue-publish) cmd_issue_publish "$@" ;;
+    issue)         cmd_issue "$@" ;;
     pr-open)       cmd_pr_open "$@" ;;
     pr-publish)    cmd_pr_publish "$@" ;;
     ticket)        cmd_ticket "$@" ;;
