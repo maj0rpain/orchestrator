@@ -51,6 +51,8 @@ which holds the only copy of the plan.
    already-triaged issue to adopt as the flow's spec instead of publishing a
    new one. `init` validates adoption immediately and dies if it cannot -
    report the failure and stop rather than continuing without an issue.
+   Starting over a `done` flow archives it automatically and reports where -
+   only a flow still mid-pipeline (`spec`/`implement`/`review`) refuses.
 3. Call the Skill tool with `orchestrator:handoff` to write `01-plan.md`. **Do
    this before anything that can fail** - a failed precondition must never cost
    the user their plan.
