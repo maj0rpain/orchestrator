@@ -109,18 +109,22 @@ which holds the only copy of the plan.
    parallel - every ticket commits to the same branch. Loop:
    - `"$ORCH" ticket next <spec issue>`. Nothing ready means the frontier is
      exhausted - stop looping and continue at step 4.
-   - Fetch the ready ticket (`gh issue view <n> --comments`, per
-     `docs/agents/issue-tracker.md`'s "fetch the relevant ticket" convention).
    - Call the Agent tool - a fresh agent, explicitly not a fork, so it starts
      with nothing but what this brief hands it - carrying only the ticket's
-     number and body. The brief directs the subagent to resolve and follow
-     `"$ORCH" mp-skill implement` itself, the same way this file resolves any
-     upstream skill, against the ticket; to build on the current branch,
-     already checked out, and commit its own work to it; to never open a
-     branch or PR of its own; and to never block on a human mid-ticket - a
-     call it cannot make alone is a deviation, recorded and returned instead
-     of asked. Its report is structured: what it built, and the deviation it
-     made, if any.
+     number. The brief's directions open with an explicit first instruction:
+     fetch the ticket itself (`gh issue view <n> --comments`, per
+     `docs/agents/issue-tracker.md`'s "fetch the relevant ticket" convention)
+     before doing anything else. The brief then directs the subagent to
+     resolve and follow `"$ORCH" mp-skill implement` itself, the same way
+     this file resolves any upstream skill, against the ticket - and, when
+     `implement`'s closing step calls for a review, to use
+     `mattpocock-skills:code-review` by its fully scoped name, never the bare
+     name, the same disambiguation this file observes above; to build on the
+     current branch, already checked out, and commit its own work to it; to
+     never open a branch or PR of its own; and to never block on a human
+     mid-ticket - a call it cannot make alone is a deviation, recorded and
+     returned instead of asked. Its report is structured: what it built, and
+     the deviation it made, if any.
    - Record the subagent's report, then `"$ORCH" ticket close <n>` - only now
      that the report is back, never before - and go around again.
 4. `"$ORCH" pr-open "<title>" <body-file>`. The PR opens as a draft; marking it
