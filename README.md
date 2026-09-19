@@ -170,9 +170,9 @@ ways: by marking the draft PR ready, or by a **bounded stop** - the loop
 giving up before the PR is ready and recording why, rather than looping
 forever - and it comments on the PR either way. After a bounded stop, a human
 may run the phase again as a fresh loop with its own budget.
-`/orchestrator:doctor` covers the machine, the repo, and the active flow.
-
-Still to come: a review check group in `doctor`.
+`/orchestrator:doctor` covers the machine, the repo, and the active flow,
+including the review loop's iteration count against its budget, the PR's CI
+status, and its draft state against the flow's phase.
 
 ## License
 
