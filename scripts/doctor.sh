@@ -389,6 +389,28 @@ check_labels_exist() {
   while IFS= read -r l; do d_remedy "gh label create \"$l\""; done <<<"$missing"
 }
 
+# Sub-issues carry no separate enable/disable setting - they are a bundled,
+# GA part of Issues on github.com - so the only reliable way to know whether
+# this GitHub instance supports them is to ask the endpoint against an issue
+# that exists and read whether it answers or 404s. warn, never FAIL: the
+# real gate is ticket_publish's own verify-then-die, not this advisory probe
+# - a repo that fails it should be told at setup, not discover it mid-flow.
+check_sub_issues() {
+  d_gh_gate || return 0
+  local probe
+  probe="$(gh issue list --state all --limit 1 --json number \
+    --jq '.[0].number // empty' 2>/dev/null)" || probe=""
+  if [ -z "$probe" ]; then
+    d_warn "sub-issues support could not be probed - the repo has no issue to test it against."
+    return 0
+  fi
+  if gh api "repos/{owner}/{repo}/issues/$probe/sub_issues" >/dev/null 2>&1; then
+    d_ok "sub-issues supported"
+    return 0
+  fi
+  d_warn "sub-issues do not appear to be supported on this GitHub instance - ticket publish will fail its own verify-then-die check at spec time."
+}
+
 check_git_exclude() {
   local ex
   # Unguarded, and unreachable: the script died at load time if this were not a
@@ -411,7 +433,7 @@ ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_mattpocock check_skills check_plugin_root
-h_repo   check_tracker_doc check_labels_doc check_labels_exist check_git_exclude
+h_repo   check_tracker_doc check_labels_doc check_labels_exist check_sub_issues check_git_exclude
 "
 
 # flow state -----------------------------------------------------------------

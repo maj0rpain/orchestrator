@@ -126,6 +126,12 @@ complete_implement_handoff() {
 # `pr close` and `issue close` are redo's boundary. Both record the number and
 # `--comment` text to GH_STUB_FILED like every other write above, and fail on
 # demand: GH_STUB_PR_CLOSE_EXIT, GH_STUB_ISSUE_CLOSE_EXIT.
+#
+# `issue list` is check_sub_issues's way of finding an issue to probe against:
+# it answers GH_STUB_ISSUE_LIST (default "1"), empty when explicitly set to
+# "" to simulate a repo with no issues, or fails on demand with
+# GH_STUB_ISSUE_LIST_EXIT. The sub_issues GET it then makes fails on demand
+# too, independently of the POST one ticket_publish uses: GH_STUB_SUBISSUE_GET_EXIT.
 stub_gh() {
   local d
   d="$(mktemp -d)"
@@ -271,6 +277,12 @@ ready-for-agent}"
         [ "${GH_STUB_ISSUE_REOPEN_EXIT:-0}" = 0 ] || { echo "gh stub: issue reopen refused" >&2; exit "$GH_STUB_ISSUE_REOPEN_EXIT"; }
         if [ -n "$db" ]; then mkdir -p "$db/state"; echo open >"$db/state/$cnum"; fi
         exit 0 ;;
+      list)
+        shift 2
+        if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue list %s\n' "$*" >>"$GH_STUB_FILED"; fi
+        [ "${GH_STUB_ISSUE_LIST_EXIT:-0}" = 0 ] || { echo "gh stub: issue list refused" >&2; exit "$GH_STUB_ISSUE_LIST_EXIT"; }
+        printf '%s\n' "${GH_STUB_ISSUE_LIST-1}"
+        exit 0 ;;
       create) ;;
       *) echo "gh stub: unscripted issue op '$2'" >&2; exit 99 ;;
     esac
@@ -307,6 +319,10 @@ ready-for-agent}"
     if [ "$api_sub" = sub_issues ] && [ "$api_method" = POST ] \
         && [ "${GH_STUB_SUBISSUE_POST_EXIT:-0}" != 0 ]; then
       echo "gh stub: sub_issues POST refused" >&2; exit "$GH_STUB_SUBISSUE_POST_EXIT"
+    fi
+    if [ "$api_sub" = sub_issues ] && [ "$api_method" = GET ] \
+        && [ "${GH_STUB_SUBISSUE_GET_EXIT:-0}" != 0 ]; then
+      echo "gh stub: sub_issues GET refused" >&2; exit "$GH_STUB_SUBISSUE_GET_EXIT"
     fi
     if [ "$api_sub" = dependencies/blocked_by ] && [ "$api_method" = POST ] \
         && [ "${GH_STUB_BLOCKED_POST_EXIT:-0}" != 0 ]; then
@@ -1125,6 +1141,39 @@ assert_contains "does not hedge an answer it actually has" \
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "counts only the documented labels, not the header row" \
   "$out" "2 triage labels"
+
+# Sub-issues carry no enable/disable setting of their own, so the only
+# reliable signal is asking the endpoint against an issue that exists and
+# reading whether it answers or 404s. The default stub answers normally, and
+# the "fully healthy repo" assertion at the end of this section already
+# depends on that, so this is really confirming the ok line it produces.
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "sub-issues supported: still a healthy pass" "$st" 0
+assert_contains "reports sub-issues as supported" "$out" "ok    sub-issues supported"
+
+# The endpoint 404ing (or otherwise refusing) reads as "not supported" -
+# advisory, so a warn, never a FAIL: the real gate is ticket_publish's own
+# verify-then-die, not this probe.
+out="$(GH_STUB_SUBISSUE_GET_EXIT=1 "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "unsupported sub-issues does not block the flow" "$st" 0
+assert_contains "warns rather than fails when sub-issues are unsupported" \
+  "$out" "warn  sub-issues do not appear to be supported"
+assert_contains "explains the consequence rather than leaving it silent" \
+  "$out" "ticket publish will fail"
+
+# A repo with no issues at all has nothing to probe against - still a warn,
+# not a FAIL, and a distinct message from the unsupported case above.
+out="$(GH_STUB_ISSUE_LIST= "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "no issue to probe against does not block the flow" "$st" 0
+assert_contains "says the probe could not run rather than guessing" \
+  "$out" "sub-issues support could not be probed"
+
+# Gated like every other GitHub-backed check: unreachable collapses into the
+# shared skip line rather than adding a check-specific one of its own.
+out="$(GH_STUB_MODE=offline "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "GitHub unreachable does not block the flow either" "$st" 0
+assert_eq "still emits exactly one skip line, not a second for this check" \
+  "$(printf '%s\n' "$out" | grep -c 'skipped:')" "1"
 
 # Still the fixture healthy_repo() built for the label-list checks above -
 # nothing since has touched anything but $out - so truncating the exclude
