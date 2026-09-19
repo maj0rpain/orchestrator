@@ -122,3 +122,126 @@ adapter_issue_close() {
   fi
   return 0
 }
+
+# The PR-resource primitives (issue #93, third of the #78 breakdown):
+# open_pr's create/view, ci_probe's checks, cmd_review ready's ready, and
+# cmd_redo_review's close. Each mirrors the same-named branch under stub_gh's
+# `pr)` dispatch, reusing every GH_STUB_* variable that already drives it
+# there rather than inventing a parallel vocabulary.
+
+# adapter_pr_create - mirrors stub_gh's `pr create` branch: records "pr
+# create" plus the flags (fake_record_flags) to GH_STUB_FILED when set, fails
+# on GH_STUB_PR_CREATE_EXIT, otherwise answers a fake PR URL numbered
+# GH_STUB_PR_NUMBER (default 99) - the same shape open_pr parses the trailing
+# number out of.
+adapter_pr_create() {
+  if [ -n "${GH_STUB_FILED:-}" ]; then
+    printf 'pr create\n' >>"$GH_STUB_FILED"
+    fake_record_flags "$@"
+  fi
+  if [ "${GH_STUB_PR_CREATE_EXIT:-0}" != 0 ]; then
+    echo "gh stub: pr create refused" >&2
+    return "$GH_STUB_PR_CREATE_EXIT"
+  fi
+  printf 'https://github.com/acme/widgets/pull/%s\n' "${GH_STUB_PR_NUMBER:-99}"
+  return 0
+}
+
+# adapter_pr_view - mirrors stub_gh's `pr view` branch: answers
+# GH_STUB_PR_NUMBER when asked `--json number` (the call open_pr makes to
+# learn the PR it just opened), answers state and isDraft together
+# (GH_STUB_PR_STATE and GH_STUB_PR_DRAFT, default false) when asked for
+# isDraft, and falls back to GH_STUB_PR_STATE alone for every other query.
+# Logs nothing to GH_STUB_FILED - stub_gh's own `pr view` branch does not
+# either.
+adapter_pr_view() {
+  local a
+  for a in "$@"; do
+    if [ "$a" = number ]; then
+      printf '%s\n' "${GH_STUB_PR_NUMBER:-99}"
+      return 0
+    fi
+    case "$a" in
+      *isDraft*)
+        printf '%s\n%s\n' "${GH_STUB_PR_STATE:-OPEN}" "${GH_STUB_PR_DRAFT:-false}"
+        return 0 ;;
+    esac
+  done
+  printf '%s\n' "${GH_STUB_PR_STATE:-OPEN}"
+  return 0
+}
+
+# adapter_pr_checks - mirrors stub_gh's `pr checks` branch, the trickiest one
+# to replicate faithfully in-memory: ci_probe calls this once per poll tick,
+# many times within the same process, so a plain shell variable counter would
+# not match stub_gh's cross-subprocess behaviour where GH_STUB_CHECKS_N /
+# GH_STUB_REQUIRED_N name a file the count is persisted to. This fake reads
+# and writes the same file, so a test that sets GH_STUB_REQUIRED_N to advance
+# a script across separate `orch.sh` invocations behaves identically whichever
+# adapter is in play.
+#
+# GH_STUB_REQUIRED (when --required is among the arguments) or GH_STUB_CHECKS
+# otherwise is a `|`-separated script of answers - green, failing, cancel,
+# pending, pending0, garbage, none, boom - consumed one per call with the last
+# one repeating once the script runs out.
+#
+# `pending` returns exit 8 with a pending bucket in its JSON, the real gh
+# pr checks documents but that our JSON-asking calls never actually take
+# (ci_probe's `8)` arm exists only against that documented case); `pending0`
+# is the path real `gh pr checks --json` actually takes - exit 0 with the
+# pending bucket carrying the answer instead. Getting the two exits right is
+# what proves ci_probe's own bucket classification, not just its exit-status
+# read, still drives the verdict.
+adapter_pr_checks() {
+  local a req=0 script counter i answer
+  for a in "$@"; do
+    if [ "$a" = --required ]; then req=1; fi
+  done
+  if [ "$req" = 1 ]; then
+    script="${GH_STUB_REQUIRED:-none}"; counter="${GH_STUB_REQUIRED_N:-}"
+  else
+    script="${GH_STUB_CHECKS:-green}"; counter="${GH_STUB_CHECKS_N:-}"
+  fi
+  i=1
+  if [ -n "$counter" ]; then
+    i=$(( $(cat "$counter" 2>/dev/null || echo 0) + 1 ))
+    printf '%s\n' "$i" >"$counter"
+  fi
+  answer="$(printf '%s' "$script" | awk -F'|' -v i="$i" '{ print (i <= NF) ? $i : $NF }')"
+  case "$answer" in
+    green)    printf '%s\n' '[{"bucket":"pass","name":"build","state":"SUCCESS"}]' ;;
+    failing)  printf '%s\n' '[{"bucket":"fail","name":"build","state":"FAILURE"},{"bucket":"pass","name":"lint","state":"SUCCESS"}]' ;;
+    cancel)   printf '%s\n' '[{"bucket":"cancel","name":"build","state":"CANCELLED"}]' ;;
+    pending)  printf '%s\n' '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]'; return 8 ;;
+    pending0) printf '%s\n' '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]' ;;
+    garbage)  printf '%s\n' 'not json at all' ;;
+    none)     echo "no checks reported on the 'topic' branch" >&2; return 1 ;;
+    boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
+    *)        echo "gh stub: no script named '$answer'" >&2; return 99 ;;
+  esac
+  return 0
+}
+
+# adapter_pr_ready - mirrors stub_gh's `pr ready` branch: fails on
+# GH_STUB_READY_EXIT and logs nothing, same as stub_gh's own ready arm.
+adapter_pr_ready() {
+  return "${GH_STUB_READY_EXIT:-0}"
+}
+
+# adapter_pr_close - mirrors stub_gh's `pr close` branch: logs "pr close <n>"
+# plus the flags (fake_record_flags, so a --comment reaches GH_STUB_FILED the
+# same way issue close's does) to GH_STUB_FILED when set, and fails on
+# GH_STUB_PR_CLOSE_EXIT.
+adapter_pr_close() {
+  local n="$1"
+  if [ -n "${GH_STUB_FILED:-}" ]; then
+    printf 'pr close %s\n' "$n" >>"$GH_STUB_FILED"
+    shift
+    fake_record_flags "$@"
+  fi
+  if [ "${GH_STUB_PR_CLOSE_EXIT:-0}" != 0 ]; then
+    echo "gh stub: pr close refused" >&2
+    return "$GH_STUB_PR_CLOSE_EXIT"
+  fi
+  return 0
+}

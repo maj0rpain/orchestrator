@@ -381,6 +381,33 @@ adapter_issue_close() {
   gh issue close "$@"
 }
 
+# The PR-resource primitives (issue #93, third of the #78 breakdown): open_pr's
+# create/view, ci_probe's checks, cmd_review ready's ready, and
+# cmd_redo_review's close. doctor.sh's own `gh pr view` calls are a separate
+# concern (out of scope, like default_branch and the ticket group's `gh api`
+# calls) - only the four call sites named in issue #93 move here.
+adapter_pr_create() {
+  gh pr create "$@"
+}
+adapter_pr_view() {
+  gh pr view "$@"
+}
+
+# ci_probe's one hand on GitHub, called once for the required scope and once
+# for the all-checks scope - the exit-8-vs-exit-0 handling and bucket
+# classification right around its call sites are unchanged; only the raw `gh
+# pr checks` invocation moves here.
+adapter_pr_checks() {
+  gh pr checks "$@"
+}
+
+adapter_pr_ready() {
+  gh pr ready "$@"
+}
+adapter_pr_close() {
+  gh pr close "$@"
+}
+
 if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
   # shellcheck disable=SC1090
   source "$ORCH_GH_ADAPTER"
@@ -464,9 +491,9 @@ ci_tick() {
 ci_probe() {
   local pr="$1" scope="$2" out st=0 buckets failed name
   if [ "$scope" = required ]; then
-    out="$(gh pr checks "$pr" --required --json bucket,name,state 2>&1)" || st=$?
+    out="$(adapter_pr_checks "$pr" --required --json bucket,name,state 2>&1)" || st=$?
   else
-    out="$(gh pr checks "$pr" --json bucket,name,state 2>&1)" || st=$?
+    out="$(adapter_pr_checks "$pr" --json bucket,name,state 2>&1)" || st=$?
   fi
   case "$st" in
     0) ;;
@@ -589,7 +616,7 @@ cmd_review() {
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.
-      gh pr ready "$pr" >/dev/null 2>&1 \
+      adapter_pr_ready "$pr" >/dev/null 2>&1 \
         || die "gh could not mark PR #$pr ready - the flow stays in review"
       cmd_state set phase done
       note "$pr"
@@ -822,13 +849,13 @@ open_pr() {
   # Unquoted on purpose: this is either empty or the one literal flag below,
   # never a value with spaces or glob characters to mis-split.
   [ "$draft" = true ] && draft_flag="--draft"
-  if ! gh pr create $draft_flag --base "$base" --head "$branch" \
+  if ! adapter_pr_create $draft_flag --base "$base" --head "$branch" \
       --title "$title" --body-file "$tmp" >/dev/null; then
     rm -f "$tmp"
     die "gh could not open the PR"
   fi
   rm -f "$tmp"
-  pr="$(gh pr view "$branch" --json number --jq .number)"
+  pr="$(adapter_pr_view "$branch" --json number --jq .number)"
   printf '%s\n' "$pr"
 }
 
@@ -1061,7 +1088,7 @@ cmd_redo_review() {
   fi
 
   msg="$(printf 'This PR was closed by /orchestrator:redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr-open again.\n' "$new_branch")"
-  gh pr close "$pr" --comment "$msg" >/dev/null || die "gh could not close PR #$pr"
+  adapter_pr_close "$pr" --comment "$msg" >/dev/null || die "gh could not close PR #$pr"
 
   # The prior implement phase closed every ticket it finished, so the redone
   # implement phase's frontier query (ticket next) would otherwise find

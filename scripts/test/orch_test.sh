@@ -1415,6 +1415,12 @@ fi
 # PR #15 merged without closing #14 because the agent's body opened with a verb
 # GitHub does not read as a closer. pr-open owns the keyword instead, so no
 # agent-chosen wording can leave a spec issue open again.
+#
+# open_pr's create/view go through the ORCH_GH_ADAPTER seam here, pointed at
+# the in-memory fake rather than stub_gh - GH_STUB_LOG stays empty across every
+# call below, proving neither ever spawns a real gh subprocess. The
+# subprocess-real counterpart is the "gh adapter (real pr create/view,
+# subprocess gh)" block right after "pr-publish".
 echo
 echo "pr-open"
 healthy_repo
@@ -1435,7 +1441,8 @@ assert_contains "with the guard branch-create uses" "$out" \
 
 "$ORCH" state set issue 16
 filed="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_REPO=main GH_STUB_PR_NUMBER=23 \
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=23 \
   "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
 assert_eq "prints the PR number gh answered" "$out" "23"
@@ -1445,8 +1452,10 @@ assert_first_line "the recorded body opens with the closing keyword" \
   "$body_recorded" "Closes #16"
 assert_contains "and keeps the agent's original body intact after a blank line" \
   "$body_recorded" "Some detail."
+assert_eq "the create/view calls never reached a real gh subprocess" \
+  "$(grep -cx pr "$log")" "0"
 
-out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "with a clear reason" "$out" "gh could not open the PR"
 
@@ -1510,6 +1519,25 @@ assert_status "refuses a body file that does not exist" "$st" 1
 out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "with a clear reason" "$out" "gh could not open the PR"
+
+# --- gh adapter (real pr create/view, subprocess gh) -------------------------
+# pr-open just proved the seam through the in-memory fake, and pr-publish
+# above already shells out for real (ORCH_GH_ADAPTER unset) since it never
+# switched to the fake - this is the narrow assertion that both calls actually
+# reach a real gh subprocess rather than merely compiling: one for the create,
+# one for the view that reads the PR number back.
+echo
+echo "gh adapter (real pr create/view, subprocess gh)"
+: >"$filed"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=24 \
+  "$ORCH" pr-publish 16 "Title" "$body" 2>&1)"; st=$?
+assert_status "shells out for real" "$st" 0
+assert_eq "and reads back the number the real gh answered" "$out" "24"
+assert_contains "the real adapter invoked gh pr create with the base/head flags" \
+  "$(cat "$filed")" "flag=--base"
+assert_eq "gh itself was invoked once for create and once for view, as real subprocesses" \
+  "$(grep -cx pr "$log")" "2"
 
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature touches GitHub's native
@@ -2122,26 +2150,58 @@ assert_eq "and is left where it was" \
 # Marking the PR ready and recording the flow as done are one operation, because
 # either half alone is a lie: a `done` flow over a draft PR, or a PR promoted out
 # of draft by a flow that still thinks it is reviewing.
+#
+# Goes through the ORCH_GH_ADAPTER seam here, pointed at the in-memory fake
+# rather than stub_gh - GH_STUB_LOG stays empty across both calls, proving
+# neither reaches a real gh subprocess. The subprocess-real counterpart is the
+# "gh adapter (real pr ready, subprocess gh)" block right after this one.
 echo
 echo "review ready"
 "$ORCH" state set pr 7
-out="$(GH_STUB_READY_EXIT=1 "$ORCH" review ready 2>&1)"; st=$?
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" GH_STUB_READY_EXIT=1 "$ORCH" review ready 2>&1)"; st=$?
 assert_status "fails when GitHub will not mark the PR ready" "$st" 1
 assert_eq "and leaves the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "review"
-"$ORCH" review ready >/dev/null
+ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" "$ORCH" review ready >/dev/null
 assert_eq "records the flow as done once the PR is ready" "$("$ORCH" state get phase)" "done"
+assert_eq "and neither call ever reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
+"$ORCH" state set phase review
+
+# --- gh adapter (real pr ready, subprocess gh) -------------------------------
+# The block above proved the seam through the in-memory fake; this is the
+# narrow counterpart proving the real half still works - ORCH_GH_ADAPTER left
+# unset, so orch.sh's own adapter_pr_ready runs and has to actually shell out
+# to `gh pr ready` rather than merely compile.
+echo
+echo "gh adapter (real pr ready, subprocess gh)"
+log="$(mktemp)"
+out="$(GH_STUB_LOG="$log" "$ORCH" review ready 2>&1)"; st=$?
+assert_status "shells out for real" "$st" 0
+assert_eq "records the flow as done" "$("$ORCH" state get phase)" "done"
+assert_eq "the real adapter invoked gh pr ready, as a real subprocess" \
+  "$(grep -cx pr "$log")" "1"
 "$ORCH" state set phase review
 
 # --- review ci --------------------------------------------------------------
 # The classification is what decides whether a PR may be marked ready, so each
 # of the four answers is asserted for its exit status as well as its word.
+#
+# ci_probe's `gh pr checks` calls go through the ORCH_GH_ADAPTER seam here,
+# pointed at the in-memory fake rather than stub_gh - a GH_STUB_LOG check right
+# after the first call proves it never spawns a real gh subprocess. The
+# subprocess-real counterpart, including the required-vs-all-checks
+# distinction and the exit-8 handling specifically, is the "gh adapter (real
+# pr checks, subprocess gh)" block right after this section.
 echo
 echo "review ci"
 export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
-out="$(GH_STUB_CHECKS=green "$ORCH" review ci 2>&1)"; st=$?
+export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE"
+log="$(mktemp)"
+out="$(GH_STUB_LOG="$log" GH_STUB_CHECKS=green "$ORCH" review ci 2>&1)"; st=$?
 assert_status "green checks let the loop finish" "$st" 0
 assert_first_line "and say so in one word" "$out" "green"
+assert_eq "the checks call never reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
 
 out="$(GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
 assert_status "a failing check stops the loop" "$st" 1
@@ -2244,7 +2304,48 @@ assert_status "refuses to classify checks on a PR that does not exist yet" "$st"
 # `set -e` on the assignment rather than the exit itself. Asserting the message
 # is what would catch the guard degrading into an empty PR number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
+unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL ORCH_GH_ADAPTER
+
+# --- gh adapter (real pr checks, subprocess gh) -------------------------------
+# The "review ci" section above proved ci_probe's decision logic through the
+# in-memory fake; this is the narrow counterpart proving the real half still
+# works - ORCH_GH_ADAPTER left unset, so orch.sh's own adapter_pr_checks runs
+# and has to actually shell out to `gh pr checks` with the right arguments.
+# Covers what a fake cannot prove on its own: that the required-scope call and
+# the all-checks call are two distinct real `gh pr checks` invocations (one
+# with --required, one without), and that the exit-8-for-pending path a real
+# gh can take is read the same way the exit-0-with-a-pending-bucket path is.
+echo
+echo "gh adapter (real pr checks, subprocess gh)"
+"$ORCH" state set pr 7
+export ORCH_CI_GRACE=0.2 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
+log="$(mktemp)"
+out="$(GH_STUB_LOG="$log" GH_STUB_REQUIRED=green GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
+assert_status "shells out for real and finishes on the required probe" "$st" 0
+assert_first_line "reading green from the required-scope call" "$out" "green"
+assert_eq "gh pr checks was invoked once, for the required scope only" \
+  "$(grep -cx pr "$log")" "1"
+
+# Grace of exactly zero means the very first `float_lt elapsed grace` reads
+# false, so the loop widens on the spot instead of ticking first - the one
+# grace value that pins the required call at exactly once before it does, so
+# the count below proves the two are genuinely separate real `gh` invocations
+# rather than however many required retries the grace window happened to fit.
+log="$(mktemp)"
+out="$(GH_STUB_LOG="$log" ORCH_CI_GRACE=0 GH_STUB_REQUIRED=none GH_STUB_CHECKS=green \
+  "$ORCH" review ci 2>&1)"; st=$?
+assert_status "and falls back to the all-checks call once the grace runs out" "$st" 0
+assert_first_line "reading green from the unfiltered call" "$out" "green"
+assert_eq "gh pr checks was invoked twice - once required, once for every check" \
+  "$(grep -cx pr "$log")" "2"
+
+log="$(mktemp)"
+out="$(GH_STUB_LOG="$log" ORCH_CI_TIMEOUT=0.2 GH_STUB_REQUIRED=pending "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a real gh's documented exit-8-for-pending stops the loop at the cap" "$st" 1
+assert_first_line "classified as unreachable, same as the fake's exit-8 path" "$out" "unreachable"
+assert_contains "saying the wait ran out" "$out" "still pending"
 unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
+"$ORCH" state set pr null
 
 # --- a flow from before the budget shipped ----------------------------------
 # An in-flight flow carries whatever state the version that started it wrote:
@@ -2568,8 +2669,15 @@ assert_contains "with a usage line" "$out" "usage: orch.sh review retire"
 # --- redo review ----------------------------------------------------------
 # The full review -> implement transition: three distinct refusals below a
 # terminal state, and a full composition above it.
+#
+# cmd_redo_review's PR close goes through the ORCH_GH_ADAPTER seam here,
+# pointed at the in-memory fake rather than stub_gh - a GH_STUB_LOG check
+# right after the first successful redo proves it never spawns a real gh
+# subprocess. The subprocess-real counterpart is the "gh adapter (real pr
+# close, subprocess gh)" block right after this section.
 echo
 echo "redo review"
+export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE"
 healthy_repo
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
@@ -2609,7 +2717,8 @@ assert_contains "reading as interrupted, distinct from pending" "$out" "looks in
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
 : >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" redo review 2>&1)"; st=$?
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
 assert_eq "prints the new redo count" "$out" "1"
 assert_eq "records it in state" "$("$ORCH" state get redo_count)" "1"
@@ -2626,6 +2735,7 @@ assert_eq "and republishes it on origin" \
 assert_contains "closes the old PR" "$(cat "$filed")" "pr close 30"
 assert_contains "with a comment naming the retired branch" \
   "$(cat "$filed")" "orch/21-redotest-redo-1"
+assert_eq "the pr close call never reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
 assert_eq "moves the old loop's records aside" \
   "$([ -f .orchestrator/review/pre-redo-1/iteration-05.md ] && echo yes || echo no)" "yes"
 assert_eq "leaving the flat trail empty" \
@@ -2706,6 +2816,40 @@ writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a loop that ended ready is out of scope for redo, same as any done flow" "$st" 1
 assert_contains "the same phase-gate refusal as any other done flow" "$out" "flow is not at the review phase"
+unset ORCH_GH_ADAPTER
+
+# --- gh adapter (real pr close, subprocess gh) -------------------------------
+# The "redo review" section above proved cmd_redo_review's PR close through
+# the in-memory fake; this is the narrow counterpart proving the real half
+# still works - ORCH_GH_ADAPTER left unset, so orch.sh's own adapter_pr_close
+# runs and has to actually shell out to `gh pr close` with the right PR
+# number and comment.
+echo
+echo "gh adapter (real pr close, subprocess gh)"
+healthy_repo
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote set-url origin "$bare"
+git push -q origin HEAD:refs/heads/main
+"$ORCH" init redoclose >/dev/null
+"$ORCH" state set phase review
+"$ORCH" state set issue 21
+git checkout -q -b orch/21-redoclose
+git push -q -u origin orch/21-redoclose
+"$ORCH" state set branch orch/21-redoclose
+"$ORCH" state set pr 34
+"$ORCH" state set iteration 1
+"$ORCH" state set budget 1
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
+filed="$(mktemp)"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
+assert_status "shells out for real" "$st" 0
+assert_contains "the real adapter invoked gh pr close on the flow's PR" \
+  "$(cat "$filed")" "pr close 34"
+assert_eq "gh itself was invoked once for the pr close, as a real subprocess" \
+  "$(grep -cx pr "$log")" "1"
 
 # --- redo review reopens tickets -------------------------------------------
 # Acceptance criterion from issue #88: a prior implement phase closes every
