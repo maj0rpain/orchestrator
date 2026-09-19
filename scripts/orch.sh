@@ -331,12 +331,37 @@ review_budget() {
   printf '%s\n' "$b"
 }
 
+# --- gh adapter ---------------------------------------------------------------
+#
+# The seam between this file's decision logic and the `gh` CLI. A caller like
+# severity_label_ensure below calls an adapter function, never `gh` itself, so
+# a test can replace one in-process function instead of faking a `gh` binary
+# on PATH. Label creation is the first primitive moved behind it, proving the
+# seam on the narrowest possible slice (issue #91, first of the #78
+# breakdown) - later tickets move the rest of this file's `gh` call sites the
+# same way.
+#
+# ORCH_GH_ADAPTER, read the same way as the ORCH_CI_* knobs above, names a
+# file sourced immediately after the real adapter functions are defined:
+# anything it redefines overrides the corresponding real function for the
+# rest of the process, and anything it leaves alone keeps shelling out to the
+# real `gh` below. Unset - every normal run - nothing is sourced and behaviour
+# is identical to before the seam existed.
+adapter_label_create() {
+  gh label create "$@"
+}
+
+if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
+  # shellcheck disable=SC1090
+  source "$ORCH_GH_ADAPTER"
+fi
+
 # The severity label a filed finding carries, so triage can filter on it. It is
 # this plugin's own, so --force is safe: on the current gh that updates a label
 # that exists rather than failing on it, and filing works on a repo that has
 # never seen the label and on one that has, with no listing step in between.
 severity_label_ensure() {
-  gh label create "$1" --force --color "$2" --description "$3" >/dev/null \
+  adapter_label_create "$1" --force --color "$2" --description "$3" >/dev/null \
     || die "gh could not create label $1"
 }
 
@@ -346,7 +371,7 @@ severity_label_ensure() {
 # case and is ignored; one that fails for any other reason surfaces two lines
 # later, when `gh issue create` cannot apply the label.
 triage_label_ensure() {
-  gh label create "$1" --color e4e669 --description "Not yet triaged" >/dev/null 2>&1 || true
+  adapter_label_create "$1" --color e4e669 --description "Not yet triaged" >/dev/null 2>&1 || true
 }
 
 # Float comparison and addition, in awk, because the timings are overridable and

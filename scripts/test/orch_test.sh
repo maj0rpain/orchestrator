@@ -10,6 +10,7 @@
 # against a throwaway git repo in $TMPDIR - nothing here touches a real flow.
 
 ORCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/orch.sh"
+GH_ADAPTER_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh_adapter_fake.sh"
 PASS=0
 FAIL=0
 SKIP=0
@@ -1810,12 +1811,19 @@ assert_contains "listed alongside the ops that exist" "$out" "unknown review op"
 # Filing is mechanism: which labels, what title, which body, and the number
 # printed back. The stub records what reached gh, which is the assertion - a
 # finding filed with no severity label is a finding triage never finds.
+#
+# Label creation goes through the ORCH_GH_ADAPTER seam here, pointed at the
+# in-memory fake (scripts/test/gh_adapter_fake.sh) rather than stub_gh - it
+# never spawns a subprocess for the label calls at all. `gh issue create`
+# itself is unmigrated (a later #78 ticket's job), so stub_gh is still on
+# PATH and still the thing that answers it.
 echo
 echo "review file"
 filed="$(mktemp)"
 body="$(mktemp)"
 writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
-out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=17 \
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=17 \
   "$ORCH" review file major "Comment drifted from the code" --body-file "$body" 2>&1)"; st=$?
 assert_status "files a major" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "17"
@@ -1830,9 +1838,14 @@ assert_contains "passes the title through unprefixed" \
 assert_contains "labels the issue with the severity" "$(cat "$filed")" "label=review:major"
 assert_contains "and with needs-triage" "$(cat "$filed")" "label=needs-triage"
 assert_contains "and sends the body file's contents" "$(cat "$filed")" "The reviewer said this."
+assert_eq "the two labels never reached a real gh subprocess" \
+  "$(grep -cx label "$log")" "0"
+assert_eq "only the still-unmigrated issue create did" \
+  "$(grep -cx issue "$log")" "1"
 
 : >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
 assert_status "files a nit" "$st" 0
 assert_contains "under the nit label" "$(cat "$filed")" "label=review:nit"
 
@@ -1854,13 +1867,13 @@ assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
 out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" "$body" 2>&1)"; st=$?
 assert_status "insists on --body-file rather than guessing a positional" "$st" 1
 
-out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_EXIT=1 \
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_ISSUE_EXIT=1 \
   "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
-out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
   "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the label fails it too" "$st" 1
 
@@ -1873,12 +1886,39 @@ writeln '# Triage Labels' '' \
         '| -------------------------- | -------------------- | ----------- |' \
         '| `needs-triage`             | `triage me`          | Evaluate it |' \
         '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
 assert_status "files under a renamed triage label" "$st" 0
 assert_contains "creating the repo's name for it" "$(cat "$filed")" "label create triage me"
 assert_contains "and applying it" "$(cat "$filed")" "label=triage me"
 assert_eq "rather than the canonical one" "$(grep -c 'needs-triage' "$filed")" "0"
 labels_doc docs/agents/triage-labels.md
+
+# --- gh adapter (real, unset ORCH_GH_ADAPTER) --------------------------------
+# The rest of this section proved the seam through the in-memory fake; this is
+# the narrow counterpart proving the real half still works - ORCH_GH_ADAPTER
+# left unset, so the adapter function defined in orch.sh itself is the one
+# that runs, and it has to actually shell out to `gh label create` with the
+# right arguments rather than merely compile.
+echo
+echo "gh adapter (real label-create, subprocess gh)"
+: >"$filed"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=51 \
+  "$ORCH" review file major "Shells out for real" --body-file "$body" 2>&1)"; st=$?
+assert_status "files through the real adapter" "$st" 0
+assert_eq "printing the issue number gh answered" "$out" "51"
+assert_contains "the real adapter invoked gh label create for the severity label" \
+  "$(cat "$filed")" "label create review:major --force --color d93f0b --description Review finding filed at major severity"
+assert_contains "and for the triage label" \
+  "$(cat "$filed")" "label create needs-triage --color e4e669 --description Not yet triaged"
+assert_eq "gh itself was invoked once per label, as a real subprocess" \
+  "$(grep -cx label "$log")" "2"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
+  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+assert_status "and a real gh that refuses the label still fails the command" "$st" 1
 
 # --- spec ---------------------------------------------------------------------
 # The spec review's one hand on GitHub: fetch the body, replace it, comment on
