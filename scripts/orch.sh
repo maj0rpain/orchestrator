@@ -331,12 +331,95 @@ review_budget() {
   printf '%s\n' "$b"
 }
 
+# --- gh adapter -------------------------------------------------------------
+#
+# The seam between this file's decision logic and the `gh` CLI. A caller like
+# severity_label_ensure below calls an adapter function, never `gh` itself, so
+# a test can replace one in-process function instead of faking a `gh` binary
+# on PATH. Label creation was the first primitive moved behind it, proving the
+# seam on the narrowest possible slice (issue #91, first of the #78
+# breakdown); the issue-resource primitives below (view/edit/comment/create/
+# close, issue #92) extend the same seam to cmd_spec, cmd_issue_publish,
+# cmd_review file, and cmd_redo_spec's issue close - later tickets move the
+# rest of this file's `gh` call sites the same way.
+#
+# ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as the ORCH_CI_*
+# ones above, but read differently: not a value substituted at load time, but
+# a file sourced immediately after the real adapter functions are defined:
+# anything it redefines overrides the corresponding real function for the
+# rest of the process, and anything it leaves alone keeps shelling out to the
+# real `gh` below. Unset - every normal run - nothing is sourced and behaviour
+# is identical to before the seam existed.
+adapter_label_create() {
+  gh label create "$@"
+}
+
+# The spec review's read on an issue's body - and, dynamically, its
+# state/labels the same way `gh issue view` itself answers either.
+adapter_issue_view() {
+  gh issue view "$@"
+}
+
+# cmd_spec's update/comment ops pick between these two, the same way it
+# already picks `edit` or `comment` as the literal `gh issue` subcommand.
+adapter_issue_edit() {
+  gh issue edit "$@"
+}
+adapter_issue_comment() {
+  gh issue comment "$@"
+}
+
+# Every issue-filing call site but `ticket publish` (out of scope for issue
+# #92 - see cmd_ticket_publish) goes through this one primitive.
+adapter_issue_create() {
+  gh issue create "$@"
+}
+
+# cmd_redo_spec's --new-issue path is the one issue-close call this ticket
+# moves; `ticket close` keeps its own direct `gh issue close` (also out of
+# scope).
+adapter_issue_close() {
+  gh issue close "$@"
+}
+
+# The PR-resource primitives (issue #93, third of the #78 breakdown): open_pr's
+# create/view, ci_probe's checks, cmd_review ready's ready, and
+# cmd_redo_review's close. doctor.sh's own `gh pr view` calls are a separate
+# concern (out of scope, like default_branch and the ticket group's `gh api`
+# calls) - only the four call sites named in issue #93 move here.
+adapter_pr_create() {
+  gh pr create "$@"
+}
+adapter_pr_view() {
+  gh pr view "$@"
+}
+
+# ci_probe's one hand on GitHub, called once for the required scope and once
+# for the all-checks scope - the exit-8-vs-exit-0 handling and bucket
+# classification right around its call sites are unchanged; only the raw `gh
+# pr checks` invocation moves here.
+adapter_pr_checks() {
+  gh pr checks "$@"
+}
+
+adapter_pr_ready() {
+  gh pr ready "$@"
+}
+adapter_pr_close() {
+  gh pr close "$@"
+}
+
+if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
+  # shellcheck disable=SC1090
+  source "$ORCH_GH_ADAPTER"
+fi
+
 # The severity label a filed finding carries, so triage can filter on it. It is
 # this plugin's own, so --force is safe: on the current gh that updates a label
 # that exists rather than failing on it, and filing works on a repo that has
 # never seen the label and on one that has, with no listing step in between.
 severity_label_ensure() {
-  gh label create "$1" --force --color "$2" --description "$3" >/dev/null \
+  adapter_label_create "$1" --force --color "$2" --description "$3" >/dev/null \
     || die "gh could not create label $1"
 }
 
@@ -346,7 +429,7 @@ severity_label_ensure() {
 # case and is ignored; one that fails for any other reason surfaces two lines
 # later, when `gh issue create` cannot apply the label.
 triage_label_ensure() {
-  gh label create "$1" --color e4e669 --description "Not yet triaged" >/dev/null 2>&1 || true
+  adapter_label_create "$1" --color e4e669 --description "Not yet triaged" >/dev/null 2>&1 || true
 }
 
 # Float comparison and addition, in awk, because the timings are overridable and
@@ -409,9 +492,9 @@ ci_tick() {
 ci_probe() {
   local pr="$1" scope="$2" out st=0 buckets failed name
   if [ "$scope" = required ]; then
-    out="$(gh pr checks "$pr" --required --json bucket,name,state 2>&1)" || st=$?
+    out="$(adapter_pr_checks "$pr" --required --json bucket,name,state 2>&1)" || st=$?
   else
-    out="$(gh pr checks "$pr" --json bucket,name,state 2>&1)" || st=$?
+    out="$(adapter_pr_checks "$pr" --json bucket,name,state 2>&1)" || st=$?
   fi
   case "$st" in
     0) ;;
@@ -520,7 +603,7 @@ cmd_review() {
       triage_label_ensure "$triage"
       # The title carries no severity prefix: the label holds it, where triage
       # can change it, and the title reads as an issue.
-      url="$(gh issue create --title "$title" --body-file "$body" \
+      url="$(adapter_issue_create --title "$title" --body-file "$body" \
         --label "review:$severity" --label "$triage")" \
         || die "gh could not create the issue"
       # Prints the number alone: the record cites a number, and the caller
@@ -534,7 +617,7 @@ cmd_review() {
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.
-      gh pr ready "$pr" >/dev/null 2>&1 \
+      adapter_pr_ready "$pr" >/dev/null 2>&1 \
         || die "gh could not mark PR #$pr ready - the flow stays in review"
       cmd_state set phase done
       note "$pr"
@@ -632,7 +715,7 @@ cmd_spec() {
       local tmp
       mkdir -p "$(dirname "$file")"
       tmp="$(mktemp "$file.XXXXXX")"
-      if ! gh issue view "$issue" --json body --jq .body >"$tmp"; then
+      if ! adapter_issue_view "$issue" --json body --jq .body >"$tmp"; then
         rm -f "$tmp"
         die "gh could not read the body of issue #$issue"
       fi
@@ -640,12 +723,14 @@ cmd_spec() {
       ;;
     update|comment)
       [ -f "$file" ] || die "body file not found: $file"
-      local verb=edit did="replace the body of"
-      if [ "$op" = comment ]; then verb=comment; did="comment on"; fi
+      local did="replace the body of"
+      if [ "$op" = comment ]; then did="comment on"; fi
       # --body-file, never --body: a spec carries tables, fences, and `#nn`
       # references, and a heredoc through a shell is where those get mangled.
-      gh issue "$verb" "$issue" --body-file "$file" >/dev/null \
-        || die "gh could not $did issue #$issue"
+      case "$op" in
+        update)  adapter_issue_edit "$issue" --body-file "$file" >/dev/null ;;
+        comment) adapter_issue_comment "$issue" --body-file "$file" >/dev/null ;;
+      esac || die "gh could not $did issue #$issue"
       ;;
     *) die "unknown spec op: ${op:-<none>} (want fetch|update|comment)" ;;
   esac
@@ -748,7 +833,7 @@ cmd_issue_publish() {
   local title="$1" body_file="$2" url
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  url="$(gh issue create --title "$title" --body-file "$body_file")" \
+  url="$(adapter_issue_create --title "$title" --body-file "$body_file")" \
     || die "gh could not create the issue"
   note "${url##*/}"
 }
@@ -767,13 +852,13 @@ open_pr() {
   # Unquoted on purpose: this is either empty or the one literal flag below,
   # never a value with spaces or glob characters to mis-split.
   [ "$draft" = true ] && draft_flag="--draft"
-  if ! gh pr create $draft_flag --base "$base" --head "$branch" \
+  if ! adapter_pr_create $draft_flag --base "$base" --head "$branch" \
       --title "$title" --body-file "$tmp" >/dev/null; then
     rm -f "$tmp"
     die "gh could not open the PR"
   fi
   rm -f "$tmp"
-  pr="$(gh pr view "$branch" --json number --jq .number)"
+  pr="$(adapter_pr_view "$branch" --json number --jq .number)"
   printf '%s\n' "$pr"
 }
 
@@ -1006,7 +1091,7 @@ cmd_redo_review() {
   fi
 
   msg="$(printf 'This PR was closed by /orchestrator:redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr-open again.\n' "$new_branch")"
-  gh pr close "$pr" --comment "$msg" >/dev/null || die "gh could not close PR #$pr"
+  adapter_pr_close "$pr" --comment "$msg" >/dev/null || die "gh could not close PR #$pr"
 
   # The prior implement phase closed every ticket it finished, so the redone
   # implement phase's frontier query (ticket next) would otherwise find
@@ -1042,7 +1127,7 @@ cmd_redo_spec() {
     local issue msg
     require_issue issue
     msg="$(printf 'This issue was closed by /orchestrator:redo because the spec itself needed to change.\n\nA fresh issue will follow from to-spec in this same flow.\n')"
-    gh issue close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
+    adapter_issue_close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
     cmd_state set issue null
   fi
   cmd_state set phase spec

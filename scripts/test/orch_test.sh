@@ -10,6 +10,7 @@
 # against a throwaway git repo in $TMPDIR - nothing here touches a real flow.
 
 ORCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/orch.sh"
+GH_ADAPTER_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh_adapter_fake.sh"
 PASS=0
 FAIL=0
 SKIP=0
@@ -105,9 +106,10 @@ complete_implement_handoff() {
 # URL numbered GH_STUB_ISSUE_NUMBER, or fails when GH_STUB_ISSUE_EXIT says so.
 #
 # `issue view`, `issue edit`, and `issue comment` are the spec review's hand on
-# the issue. `view` answers GH_STUB_BODY verbatim; `edit` and `comment` record
-# the number, flags, and body file contents they were handed to GH_STUB_FILED.
-# Each fails on demand: GH_STUB_VIEW_EXIT, GH_STUB_EDIT_EXIT, GH_STUB_COMMENT_EXIT.
+# the issue. `view` answers GH_STUB_BODY verbatim, and fails on demand with
+# GH_STUB_VIEW_EXIT (still exercised for real - `init --issue`/`check_flow_issue`
+# read state and labels through it too); `edit` and `comment` record the
+# number, flags, and body file contents they were handed to GH_STUB_FILED.
 #
 # `view` also answers `--json state` and `--json labels` independently of the
 # body - mirroring the GH_STUB_PR_NUMBER/GH_STUB_PR_STATE split on `pr view`:
@@ -125,14 +127,14 @@ complete_implement_handoff() {
 # `--json state` behaviour (GH_STUB_PR_STATE) for every other query.
 #
 # `pr close` and `issue close` are redo's boundary. Both record the number and
-# `--comment` text to GH_STUB_FILED like every other write above, and fail on
-# demand: GH_STUB_PR_CLOSE_EXIT, GH_STUB_ISSUE_CLOSE_EXIT.
+# `--comment` text to GH_STUB_FILED like every other write above; `issue close`
+# fails on demand with GH_STUB_ISSUE_CLOSE_EXIT.
 #
 # `issue list` is check_sub_issues's way of finding an issue to probe against:
 # it answers GH_STUB_ISSUE_LIST (default "1"), empty when explicitly set to
-# "" to simulate a repo with no issues, or fails on demand with
-# GH_STUB_ISSUE_LIST_EXIT. The sub_issues GET it then makes fails on demand
-# too, independently of the POST one ticket_publish uses: GH_STUB_SUBISSUE_GET_EXIT.
+# "" to simulate a repo with no issues. The sub_issues GET it then makes fails
+# on demand independently of the POST one ticket_publish uses:
+# GH_STUB_SUBISSUE_GET_EXIT.
 stub_gh() {
   local d
   d="$(mktemp -d)"
@@ -257,9 +259,7 @@ ready-for-agent}"
           shift
           record_flags "$@"
         fi
-        if [ "$op" = edit ]; then st="${GH_STUB_EDIT_EXIT:-0}"; else st="${GH_STUB_COMMENT_EXIT:-0}"; fi
-        [ "$st" = 0 ] || echo "gh stub: issue $op refused" >&2
-        exit "$st" ;;
+        exit 0 ;;
       close)
         shift 2
         cnum="$1"
@@ -281,7 +281,6 @@ ready-for-agent}"
       list)
         shift 2
         if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue list %s\n' "$*" >>"$GH_STUB_FILED"; fi
-        [ "${GH_STUB_ISSUE_LIST_EXIT:-0}" = 0 ] || { echo "gh stub: issue list refused" >&2; exit "$GH_STUB_ISSUE_LIST_EXIT"; }
         printf '%s\n' "${GH_STUB_ISSUE_LIST-1}"
         exit 0 ;;
       create) ;;
@@ -363,7 +362,7 @@ ready-for-agent}"
     ;;
   pr)
     case "$2" in
-      ready) exit "${GH_STUB_READY_EXIT:-0}" ;;
+      ready) exit 0 ;;
       close)
         shift 2
         if [ -n "${GH_STUB_FILED:-}" ]; then
@@ -371,7 +370,6 @@ ready-for-agent}"
           shift
           record_flags "$@"
         fi
-        [ "${GH_STUB_PR_CLOSE_EXIT:-0}" = 0 ] || { echo "gh stub: pr close refused" >&2; exit "$GH_STUB_PR_CLOSE_EXIT"; }
         exit 0 ;;
       checks)
         req=0
@@ -810,19 +808,26 @@ assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 # The publishing boundary a quick implementation calls instead of hardcoding
 # `gh issue create` in skill prose - stateless like branch-off, since a quick
 # implementation has no flow to record into.
+#
+# Creation goes through the ORCH_GH_ADAPTER seam here, pointed at the
+# in-memory fake rather than stub_gh - GH_STUB_LOG stays empty, proving it
+# never spawns a real gh subprocess. The subprocess-real counterpart is the
+# "gh adapter (real issue create, subprocess gh)" block right after this one.
 echo
 echo "issue-publish"
 healthy_repo
 filed="$(mktemp)"
 body="$(mktemp)"
 writeln 'The shared understanding, written up.' >"$body"
-out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=7 \
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=7 \
   "$ORCH" issue-publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "publishes" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "7"
 assert_contains "passes the title through" "$(cat "$filed")" "title=Widgets need a handle"
 assert_contains "and sends the body file's contents" "$(cat "$filed")" "The shared understanding, written up."
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "the create call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
 out="$("$ORCH" issue-publish "" "$body" 2>&1)"; st=$?
 assert_status "refuses an empty title" "$st" 1
@@ -834,7 +839,7 @@ assert_contains "naming the file" "$out" "/nonexistent/body.md"
 out="$("$ORCH" issue-publish "Title" 2>&1)"; st=$?
 assert_status "refuses with no body file" "$st" 1
 
-out="$(GH_STUB_ISSUE_EXIT=1 "$ORCH" issue-publish "Title" "$body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_ISSUE_EXIT=1 "$ORCH" issue-publish "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
@@ -1407,6 +1412,12 @@ fi
 # PR #15 merged without closing #14 because the agent's body opened with a verb
 # GitHub does not read as a closer. pr-open owns the keyword instead, so no
 # agent-chosen wording can leave a spec issue open again.
+#
+# open_pr's create/view go through the ORCH_GH_ADAPTER seam here, pointed at
+# the in-memory fake rather than stub_gh - GH_STUB_LOG stays empty across every
+# call below, proving neither ever spawns a real gh subprocess. The
+# subprocess-real counterpart is the "gh adapter (real pr create/view,
+# subprocess gh)" block right after "pr-publish".
 echo
 echo "pr-open"
 healthy_repo
@@ -1427,7 +1438,8 @@ assert_contains "with the guard branch-create uses" "$out" \
 
 "$ORCH" state set issue 16
 filed="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_REPO=main GH_STUB_PR_NUMBER=23 \
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=23 \
   "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
 assert_eq "prints the PR number gh answered" "$out" "23"
@@ -1437,8 +1449,10 @@ assert_first_line "the recorded body opens with the closing keyword" \
   "$body_recorded" "Closes #16"
 assert_contains "and keeps the agent's original body intact after a blank line" \
   "$body_recorded" "Some detail."
+assert_eq "the create/view calls never reached a real gh subprocess" \
+  "$(grep -cx pr "$log")" "0"
 
-out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "with a clear reason" "$out" "gh could not open the PR"
 
@@ -1502,6 +1516,25 @@ assert_status "refuses a body file that does not exist" "$st" 1
 out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "with a clear reason" "$out" "gh could not open the PR"
+
+# --- gh adapter (real pr create/view, subprocess gh) -------------------------
+# pr-open just proved the seam through the in-memory fake, and pr-publish
+# above already shells out for real (ORCH_GH_ADAPTER unset) since it never
+# switched to the fake - this is the narrow assertion that both calls actually
+# reach a real gh subprocess rather than merely compiling: one for the create,
+# one for the view that reads the PR number back.
+echo
+echo "gh adapter (real pr create/view, subprocess gh)"
+: >"$filed"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=24 \
+  "$ORCH" pr-publish 16 "Title" "$body" 2>&1)"; st=$?
+assert_status "shells out for real" "$st" 0
+assert_eq "and reads back the number the real gh answered" "$out" "24"
+assert_contains "the real adapter invoked gh pr create with the base/head flags" \
+  "$(cat "$filed")" "flag=--base"
+assert_eq "gh itself was invoked once for create and once for view, as real subprocesses" \
+  "$(grep -cx pr "$log")" "2"
 
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature touches GitHub's native
@@ -1810,12 +1843,20 @@ assert_contains "listed alongside the ops that exist" "$out" "unknown review op"
 # Filing is mechanism: which labels, what title, which body, and the number
 # printed back. The stub records what reached gh, which is the assertion - a
 # finding filed with no severity label is a finding triage never finds.
+#
+# Label creation and issue creation both go through the ORCH_GH_ADAPTER seam
+# here, pointed at the in-memory fake (scripts/test/gh_adapter_fake.sh) rather
+# than stub_gh - neither ever spawns a subprocess. The subprocess-real
+# counterpart of the label-create half lives in "gh adapter (real
+# label-create, subprocess gh)" right after this section; the create half's
+# in "gh adapter (real issue create, subprocess gh)" beside it.
 echo
 echo "review file"
 filed="$(mktemp)"
 body="$(mktemp)"
 writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
-out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=17 \
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=17 \
   "$ORCH" review file major "Comment drifted from the code" --body-file "$body" 2>&1)"; st=$?
 assert_status "files a major" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "17"
@@ -1830,9 +1871,14 @@ assert_contains "passes the title through unprefixed" \
 assert_contains "labels the issue with the severity" "$(cat "$filed")" "label=review:major"
 assert_contains "and with needs-triage" "$(cat "$filed")" "label=needs-triage"
 assert_contains "and sends the body file's contents" "$(cat "$filed")" "The reviewer said this."
+assert_eq "the two labels never reached a real gh subprocess" \
+  "$(grep -cx label "$log")" "0"
+assert_eq "nor did the issue create" \
+  "$(grep -cx issue "$log")" "0"
 
 : >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
 assert_status "files a nit" "$st" 0
 assert_contains "under the nit label" "$(cat "$filed")" "label=review:nit"
 
@@ -1854,13 +1900,13 @@ assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
 out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" "$body" 2>&1)"; st=$?
 assert_status "insists on --body-file rather than guessing a positional" "$st" 1
 
-out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_EXIT=1 \
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_ISSUE_EXIT=1 \
   "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
-out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
   "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the label fails it too" "$st" 1
 
@@ -1873,18 +1919,61 @@ writeln '# Triage Labels' '' \
         '| -------------------------- | -------------------- | ----------- |' \
         '| `needs-triage`             | `triage me`          | Evaluate it |' \
         '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
 assert_status "files under a renamed triage label" "$st" 0
 assert_contains "creating the repo's name for it" "$(cat "$filed")" "label create triage me"
 assert_contains "and applying it" "$(cat "$filed")" "label=triage me"
 assert_eq "rather than the canonical one" "$(grep -c 'needs-triage' "$filed")" "0"
 labels_doc docs/agents/triage-labels.md
 
+# --- gh adapter (real, unset ORCH_GH_ADAPTER) --------------------------------
+# The rest of this section proved the seam through the in-memory fake; this is
+# the narrow counterpart proving the real half still works - ORCH_GH_ADAPTER
+# left unset, so the adapter functions defined in orch.sh itself are the ones
+# that run, and each has to actually shell out to the real `gh` subcommand
+# with the right arguments rather than merely compile.
+echo
+echo "gh adapter (real label-create, subprocess gh)"
+: >"$filed"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=51 \
+  "$ORCH" review file major "Shells out for real" --body-file "$body" 2>&1)"; st=$?
+assert_status "files through the real adapter" "$st" 0
+assert_eq "printing the issue number gh answered" "$out" "51"
+assert_contains "the real adapter invoked gh label create for the severity label" \
+  "$(cat "$filed")" "label create review:major --force --color d93f0b --description Review finding filed at major severity"
+assert_contains "and for the triage label" \
+  "$(cat "$filed")" "label create needs-triage --color e4e669 --description Not yet triaged"
+assert_eq "gh itself was invoked once per label, as a real subprocess" \
+  "$(grep -cx label "$log")" "2"
+
+echo
+echo "gh adapter (real issue create, subprocess gh)"
+assert_contains "the real adapter invoked gh issue create with the title" \
+  "$(cat "$filed")" "title=Shells out for real"
+assert_contains "the severity label" "$(cat "$filed")" "label=review:major"
+assert_contains "and the body file's contents" "$(cat "$filed")" "The reviewer said this."
+assert_eq "gh itself was invoked once for the issue create, as a real subprocess" \
+  "$(grep -cx issue "$log")" "1"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
+  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+assert_status "and a real gh that refuses the label still fails the command" "$st" 1
+
 # --- spec ---------------------------------------------------------------------
 # The spec review's one hand on GitHub: fetch the body, replace it, comment on
 # it. The number comes from state so a review can never touch the wrong issue,
 # and the stub records what reached gh so the test asserts the body sent, not
 # only that the command exited zero.
+#
+# View/edit/comment go through the ORCH_GH_ADAPTER seam here, pointed at the
+# in-memory fake (scripts/test/gh_adapter_fake.sh) rather than stub_gh - GH_STUB_LOG
+# stays empty across every call below, proving none of the three ever spawns a
+# real gh subprocess. The subprocess-real counterpart lives in its own "gh
+# adapter (real issue view/edit/comment, subprocess gh)" block right after
+# this section.
 echo
 echo "spec"
 spec_body="$(mktemp)"
@@ -1908,61 +1997,69 @@ writeln '## Solution' '' \
         '```sh' 'orch.sh spec fetch "$file"' '```' '' \
         'Tracked in #6; see `$HOME` and '"'"'quoted'"'"' text.' >"$tricky"
 rm -f "$spec_body"
-out="$(GH_STUB_FILED="$filed" GH_STUB_BODY="$(cat "$tricky")" \
-  "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
+  GH_STUB_BODY="$(cat "$tricky")" "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
 assert_status "fetch writes the body to the file" "$st" 0
 assert_eq "exactly as gh answered it - table, fence, and #nn survive" \
   "$(cat "$spec_body")" "$(cat "$tricky")"
 assert_contains "asking gh for the issue state records" "$(cat "$filed")" "issue view 14"
 assert_contains "and for its body alone" "$(cat "$filed")" "--json body"
+assert_eq "the view call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
 # The skill fetches into a fresh directory under .orchestrator/, so the first
 # fetch of a review is the one that has to create it.
-out="$("$ORCH" spec fetch .orchestrator/spec-review/spec.md 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" spec fetch .orchestrator/spec-review/spec.md 2>&1)"; st=$?
 assert_status "fetch creates the directory it is told to write into" "$st" 0
 assert_eq "and the body lands there" "$(cat .orchestrator/spec-review/spec.md)" "Body of the issue."
 rm -rf .orchestrator/spec-review
 
 rm -f "$spec_body"
-out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_VIEW_EXIT=1 "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
 assert_status "a gh that will not answer fails the fetch" "$st" 1
 assert_contains "with the reason" "$out" "issue view refused"
 assert_eq "and leaves no file a lens could mistake for a body" \
   "$([ -e "$spec_body" ] && echo present || echo gone)" "gone"
 
 : >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" spec update "$tricky" 2>&1)"; st=$?
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
+  "$ORCH" spec update "$tricky" 2>&1)"; st=$?
 assert_status "update replaces the body" "$st" 0
 assert_contains "of the issue state records" "$(cat "$filed")" "issue edit 14"
 assert_contains "with the file's contents as the body" \
   "$(cat "$filed")" 'orch.sh spec fetch "$file"'
 assert_eq "and prints nothing" "$out" ""
+assert_eq "the edit call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
 : >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" spec update /nonexistent/body.md 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec update /nonexistent/body.md 2>&1)"; st=$?
 assert_status "update refuses a file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
 assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 
-out="$(GH_STUB_EDIT_EXIT=1 "$ORCH" spec update "$tricky" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_EDIT_EXIT=1 "$ORCH" spec update "$tricky" 2>&1)"; st=$?
 assert_status "a gh that will not edit fails the update" "$st" 1
 assert_contains "with gh's reason" "$out" "issue edit refused"
 assert_contains "and the issue it was for" "$out" "issue #14"
 
 : >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
+  "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
 assert_status "comment posts the file" "$st" 0
 assert_contains "on the issue state records" "$(cat "$filed")" "issue comment 14"
 assert_contains "with the file's contents as the comment" \
   "$(cat "$filed")" "| Fidelity | plan handoff |"
+assert_eq "the comment call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
 : >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" spec comment /nonexistent/body.md 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec comment /nonexistent/body.md 2>&1)"; st=$?
 assert_status "comment refuses a file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
 assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 
-out="$(GH_STUB_COMMENT_EXIT=1 "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_COMMENT_EXIT=1 "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
 assert_status "a gh that will not comment fails it" "$st" 1
 assert_contains "with gh's reason" "$out" "issue comment refused"
 assert_contains "and the issue it was for" "$out" "issue #14"
@@ -1974,6 +2071,44 @@ out="$("$ORCH" spec fetch 2>&1)"; st=$?
 assert_status "and a call with no file" "$st" 1
 assert_contains "with the usage" "$out" "usage: orch.sh spec"
 assert_contains "help documents the spec verb" "$("$ORCH" help)" "spec fetch"
+
+# --- gh adapter (real issue view/edit/comment, subprocess gh) ---------------
+# The rest of the "spec" section proved the seam through the in-memory fake;
+# this is the narrow counterpart proving the real half still works -
+# ORCH_GH_ADAPTER left unset, so the adapter functions defined in orch.sh
+# itself are the ones that run, and each has to actually shell out to the
+# real `gh issue view`/`edit`/`comment` with the right arguments rather than
+# merely compile.
+echo
+echo "gh adapter (real issue view/edit/comment, subprocess gh)"
+: >"$filed"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_BODY="Real body." \
+  "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
+assert_status "fetch shells out for real" "$st" 0
+assert_eq "and reads back what the real gh answered" "$(cat "$spec_body")" "Real body."
+assert_contains "the real adapter invoked gh issue view on the state's issue" \
+  "$(cat "$filed")" "issue view 14"
+assert_contains "asking for the body alone" "$(cat "$filed")" "--json body"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" spec update "$tricky" 2>&1)"; st=$?
+assert_status "update shells out for real" "$st" 0
+assert_contains "the real adapter invoked gh issue edit on the state's issue" \
+  "$(cat "$filed")" "issue edit 14"
+assert_contains "with the file's contents as the body" \
+  "$(cat "$filed")" 'orch.sh spec fetch "$file"'
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
+assert_status "comment shells out for real" "$st" 0
+assert_contains "the real adapter invoked gh issue comment on the state's issue" \
+  "$(cat "$filed")" "issue comment 14"
+assert_contains "with the file's contents as the comment" \
+  "$(cat "$filed")" "| Fidelity | plan handoff |"
+assert_eq "gh itself was invoked once each for view, edit, and comment, as real subprocesses" \
+  "$(grep -cx issue "$log")" "3"
+
 "$ORCH" state set issue null
 
 # --- doctor at the review phase ---------------------------------------------
@@ -2012,26 +2147,58 @@ assert_eq "and is left where it was" \
 # Marking the PR ready and recording the flow as done are one operation, because
 # either half alone is a lie: a `done` flow over a draft PR, or a PR promoted out
 # of draft by a flow that still thinks it is reviewing.
+#
+# Goes through the ORCH_GH_ADAPTER seam here, pointed at the in-memory fake
+# rather than stub_gh - GH_STUB_LOG stays empty across both calls, proving
+# neither reaches a real gh subprocess. The subprocess-real counterpart is the
+# "gh adapter (real pr ready, subprocess gh)" block right after this one.
 echo
 echo "review ready"
 "$ORCH" state set pr 7
-out="$(GH_STUB_READY_EXIT=1 "$ORCH" review ready 2>&1)"; st=$?
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" GH_STUB_READY_EXIT=1 "$ORCH" review ready 2>&1)"; st=$?
 assert_status "fails when GitHub will not mark the PR ready" "$st" 1
 assert_eq "and leaves the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "review"
-"$ORCH" review ready >/dev/null
+ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" "$ORCH" review ready >/dev/null
 assert_eq "records the flow as done once the PR is ready" "$("$ORCH" state get phase)" "done"
+assert_eq "and neither call ever reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
+"$ORCH" state set phase review
+
+# --- gh adapter (real pr ready, subprocess gh) -------------------------------
+# The block above proved the seam through the in-memory fake; this is the
+# narrow counterpart proving the real half still works - ORCH_GH_ADAPTER left
+# unset, so orch.sh's own adapter_pr_ready runs and has to actually shell out
+# to `gh pr ready` rather than merely compile.
+echo
+echo "gh adapter (real pr ready, subprocess gh)"
+log="$(mktemp)"
+out="$(GH_STUB_LOG="$log" "$ORCH" review ready 2>&1)"; st=$?
+assert_status "shells out for real" "$st" 0
+assert_eq "records the flow as done" "$("$ORCH" state get phase)" "done"
+assert_eq "the real adapter invoked gh pr ready, as a real subprocess" \
+  "$(grep -cx pr "$log")" "1"
 "$ORCH" state set phase review
 
 # --- review ci --------------------------------------------------------------
 # The classification is what decides whether a PR may be marked ready, so each
 # of the four answers is asserted for its exit status as well as its word.
+#
+# ci_probe's `gh pr checks` calls go through the ORCH_GH_ADAPTER seam here,
+# pointed at the in-memory fake rather than stub_gh - a GH_STUB_LOG check right
+# after the first call proves it never spawns a real gh subprocess. The
+# subprocess-real counterpart, including the required-vs-all-checks
+# distinction and the exit-8 handling specifically, is the "gh adapter (real
+# pr checks, subprocess gh)" block right after this section.
 echo
 echo "review ci"
 export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
-out="$(GH_STUB_CHECKS=green "$ORCH" review ci 2>&1)"; st=$?
+export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE"
+log="$(mktemp)"
+out="$(GH_STUB_LOG="$log" GH_STUB_CHECKS=green "$ORCH" review ci 2>&1)"; st=$?
 assert_status "green checks let the loop finish" "$st" 0
 assert_first_line "and say so in one word" "$out" "green"
+assert_eq "the checks call never reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
 
 out="$(GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
 assert_status "a failing check stops the loop" "$st" 1
@@ -2134,7 +2301,48 @@ assert_status "refuses to classify checks on a PR that does not exist yet" "$st"
 # `set -e` on the assignment rather than the exit itself. Asserting the message
 # is what would catch the guard degrading into an empty PR number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
+unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL ORCH_GH_ADAPTER
+
+# --- gh adapter (real pr checks, subprocess gh) -------------------------------
+# The "review ci" section above proved ci_probe's decision logic through the
+# in-memory fake; this is the narrow counterpart proving the real half still
+# works - ORCH_GH_ADAPTER left unset, so orch.sh's own adapter_pr_checks runs
+# and has to actually shell out to `gh pr checks` with the right arguments.
+# Covers what a fake cannot prove on its own: that the required-scope call and
+# the all-checks call are two distinct real `gh pr checks` invocations (one
+# with --required, one without), and that the exit-8-for-pending path a real
+# gh can take is read the same way the exit-0-with-a-pending-bucket path is.
+echo
+echo "gh adapter (real pr checks, subprocess gh)"
+"$ORCH" state set pr 7
+export ORCH_CI_GRACE=0.2 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
+log="$(mktemp)"
+out="$(GH_STUB_LOG="$log" GH_STUB_REQUIRED=green GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
+assert_status "shells out for real and finishes on the required probe" "$st" 0
+assert_first_line "reading green from the required-scope call" "$out" "green"
+assert_eq "gh pr checks was invoked once, for the required scope only" \
+  "$(grep -cx pr "$log")" "1"
+
+# Grace of exactly zero means the very first `float_lt elapsed grace` reads
+# false, so the loop widens on the spot instead of ticking first - the one
+# grace value that pins the required call at exactly once before it does, so
+# the count below proves the two are genuinely separate real `gh` invocations
+# rather than however many required retries the grace window happened to fit.
+log="$(mktemp)"
+out="$(GH_STUB_LOG="$log" ORCH_CI_GRACE=0 GH_STUB_REQUIRED=none GH_STUB_CHECKS=green \
+  "$ORCH" review ci 2>&1)"; st=$?
+assert_status "and falls back to the all-checks call once the grace runs out" "$st" 0
+assert_first_line "reading green from the unfiltered call" "$out" "green"
+assert_eq "gh pr checks was invoked twice - once required, once for every check" \
+  "$(grep -cx pr "$log")" "2"
+
+log="$(mktemp)"
+out="$(GH_STUB_LOG="$log" ORCH_CI_TIMEOUT=0.2 GH_STUB_REQUIRED=pending "$ORCH" review ci 2>&1)"; st=$?
+assert_status "a real gh's documented exit-8-for-pending stops the loop at the cap" "$st" 1
+assert_first_line "classified as unreachable, same as the fake's exit-8 path" "$out" "unreachable"
+assert_contains "saying the wait ran out" "$out" "still pending"
 unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
+"$ORCH" state set pr null
 
 # --- a flow from before the budget shipped ----------------------------------
 # An in-flight flow carries whatever state the version that started it wrote:
@@ -2458,8 +2666,15 @@ assert_contains "with a usage line" "$out" "usage: orch.sh review retire"
 # --- redo review ----------------------------------------------------------
 # The full review -> implement transition: three distinct refusals below a
 # terminal state, and a full composition above it.
+#
+# cmd_redo_review's PR close goes through the ORCH_GH_ADAPTER seam here,
+# pointed at the in-memory fake rather than stub_gh - a GH_STUB_LOG check
+# right after the first successful redo proves it never spawns a real gh
+# subprocess. The subprocess-real counterpart is the "gh adapter (real pr
+# close, subprocess gh)" block right after this section.
 echo
 echo "redo review"
+export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE"
 healthy_repo
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
@@ -2499,7 +2714,8 @@ assert_contains "reading as interrupted, distinct from pending" "$out" "looks in
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
 : >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" redo review 2>&1)"; st=$?
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
 assert_eq "prints the new redo count" "$out" "1"
 assert_eq "records it in state" "$("$ORCH" state get redo_count)" "1"
@@ -2516,6 +2732,7 @@ assert_eq "and republishes it on origin" \
 assert_contains "closes the old PR" "$(cat "$filed")" "pr close 30"
 assert_contains "with a comment naming the retired branch" \
   "$(cat "$filed")" "orch/21-redotest-redo-1"
+assert_eq "the pr close call never reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
 assert_eq "moves the old loop's records aside" \
   "$([ -f .orchestrator/review/pre-redo-1/iteration-05.md ] && echo yes || echo no)" "yes"
 assert_eq "leaving the flat trail empty" \
@@ -2596,6 +2813,40 @@ writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a loop that ended ready is out of scope for redo, same as any done flow" "$st" 1
 assert_contains "the same phase-gate refusal as any other done flow" "$out" "flow is not at the review phase"
+unset ORCH_GH_ADAPTER
+
+# --- gh adapter (real pr close, subprocess gh) -------------------------------
+# The "redo review" section above proved cmd_redo_review's PR close through
+# the in-memory fake; this is the narrow counterpart proving the real half
+# still works - ORCH_GH_ADAPTER left unset, so orch.sh's own adapter_pr_close
+# runs and has to actually shell out to `gh pr close` with the right PR
+# number and comment.
+echo
+echo "gh adapter (real pr close, subprocess gh)"
+healthy_repo
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote set-url origin "$bare"
+git push -q origin HEAD:refs/heads/main
+"$ORCH" init redoclose >/dev/null
+"$ORCH" state set phase review
+"$ORCH" state set issue 21
+git checkout -q -b orch/21-redoclose
+git push -q -u origin orch/21-redoclose
+"$ORCH" state set branch orch/21-redoclose
+"$ORCH" state set pr 34
+"$ORCH" state set iteration 1
+"$ORCH" state set budget 1
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
+filed="$(mktemp)"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
+assert_status "shells out for real" "$st" 0
+assert_contains "the real adapter invoked gh pr close on the flow's PR" \
+  "$(cat "$filed")" "pr close 34"
+assert_eq "gh itself was invoked once for the pr close, as a real subprocess" \
+  "$(grep -cx pr "$log")" "1"
 
 # --- redo review reopens tickets -------------------------------------------
 # Acceptance criterion from issue #88: a prior implement phase closes every
@@ -2638,6 +2889,10 @@ assert_eq "reopens exactly the tickets the flow's implement phase had closed" \
 unset GH_STUB_DB
 
 # --- redo spec --------------------------------------------------------------
+# --new-issue's close goes through the ORCH_GH_ADAPTER seam here, pointed at
+# the in-memory fake rather than stub_gh - GH_STUB_LOG stays empty, proving it
+# never spawns a real gh subprocess. The subprocess-real counterpart is the
+# "gh adapter (real issue close, subprocess gh)" block right after this one.
 echo
 echo "redo spec"
 healthy_repo
@@ -2659,15 +2914,18 @@ assert_eq "and touching gh not at all" "$(grep -c . "$filed")" "0"
 "$ORCH" state set phase implement
 "$ORCH" state set issue 41
 : >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
+  "$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue also steps back to spec" "$st" 0
 assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
 assert_eq "clearing the old issue" "$("$ORCH" state get issue)" ""
 assert_contains "closes the old issue" "$(cat "$filed")" "issue close 41"
+assert_eq "the close call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
 "$ORCH" state set phase implement
 "$ORCH" state set issue 42
-out="$(GH_STUB_ISSUE_CLOSE_EXIT=1 "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_ISSUE_CLOSE_EXIT=1 "$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "a gh that will not close the issue fails --new-issue" "$st" 1
 assert_eq "leaving the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "implement"
@@ -2675,6 +2933,27 @@ assert_eq "leaving the phase where it was rather than half-finishing" \
 out="$("$ORCH" redo spec --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh redo spec"
+
+# --- gh adapter (real issue close, subprocess gh) ---------------------------
+# The rest of "redo spec" proved the seam through the in-memory fake; this is
+# the narrow counterpart proving the real half still works - ORCH_GH_ADAPTER
+# left unset, so the adapter function defined in orch.sh itself is the one
+# that runs, and it has to actually shell out to `gh issue close` with the
+# right arguments rather than merely compile.
+echo
+echo "gh adapter (real issue close, subprocess gh)"
+"$ORCH" state set phase implement
+"$ORCH" state set issue 43
+: >"$filed"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+assert_status "--new-issue shells out for real" "$st" 0
+assert_contains "the real adapter invoked gh issue close on the old issue" \
+  "$(cat "$filed")" "issue close 43"
+assert_contains "with the redo comment" \
+  "$(cat "$filed")" "This issue was closed by /orchestrator:redo"
+assert_eq "gh itself was invoked once, as a real subprocess" \
+  "$(grep -cx issue "$log")" "1"
 
 echo
 if [ "$SKIP" -gt 0 ]; then
