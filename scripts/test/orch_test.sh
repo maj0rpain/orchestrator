@@ -106,9 +106,10 @@ complete_implement_handoff() {
 # URL numbered GH_STUB_ISSUE_NUMBER, or fails when GH_STUB_ISSUE_EXIT says so.
 #
 # `issue view`, `issue edit`, and `issue comment` are the spec review's hand on
-# the issue. `view` answers GH_STUB_BODY verbatim; `edit` and `comment` record
-# the number, flags, and body file contents they were handed to GH_STUB_FILED.
-# Each fails on demand: GH_STUB_VIEW_EXIT, GH_STUB_EDIT_EXIT, GH_STUB_COMMENT_EXIT.
+# the issue. `view` answers GH_STUB_BODY verbatim, and fails on demand with
+# GH_STUB_VIEW_EXIT (still exercised for real - `init --issue`/`check_flow_issue`
+# read state and labels through it too); `edit` and `comment` record the
+# number, flags, and body file contents they were handed to GH_STUB_FILED.
 #
 # `view` also answers `--json state` and `--json labels` independently of the
 # body - mirroring the GH_STUB_PR_NUMBER/GH_STUB_PR_STATE split on `pr view`:
@@ -126,14 +127,14 @@ complete_implement_handoff() {
 # `--json state` behaviour (GH_STUB_PR_STATE) for every other query.
 #
 # `pr close` and `issue close` are redo's boundary. Both record the number and
-# `--comment` text to GH_STUB_FILED like every other write above, and fail on
-# demand: GH_STUB_PR_CLOSE_EXIT, GH_STUB_ISSUE_CLOSE_EXIT.
+# `--comment` text to GH_STUB_FILED like every other write above; `issue close`
+# fails on demand with GH_STUB_ISSUE_CLOSE_EXIT.
 #
 # `issue list` is check_sub_issues's way of finding an issue to probe against:
 # it answers GH_STUB_ISSUE_LIST (default "1"), empty when explicitly set to
-# "" to simulate a repo with no issues, or fails on demand with
-# GH_STUB_ISSUE_LIST_EXIT. The sub_issues GET it then makes fails on demand
-# too, independently of the POST one ticket_publish uses: GH_STUB_SUBISSUE_GET_EXIT.
+# "" to simulate a repo with no issues. The sub_issues GET it then makes fails
+# on demand independently of the POST one ticket_publish uses:
+# GH_STUB_SUBISSUE_GET_EXIT.
 stub_gh() {
   local d
   d="$(mktemp -d)"
@@ -258,9 +259,7 @@ ready-for-agent}"
           shift
           record_flags "$@"
         fi
-        if [ "$op" = edit ]; then st="${GH_STUB_EDIT_EXIT:-0}"; else st="${GH_STUB_COMMENT_EXIT:-0}"; fi
-        [ "$st" = 0 ] || echo "gh stub: issue $op refused" >&2
-        exit "$st" ;;
+        exit 0 ;;
       close)
         shift 2
         cnum="$1"
@@ -282,7 +281,6 @@ ready-for-agent}"
       list)
         shift 2
         if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue list %s\n' "$*" >>"$GH_STUB_FILED"; fi
-        [ "${GH_STUB_ISSUE_LIST_EXIT:-0}" = 0 ] || { echo "gh stub: issue list refused" >&2; exit "$GH_STUB_ISSUE_LIST_EXIT"; }
         printf '%s\n' "${GH_STUB_ISSUE_LIST-1}"
         exit 0 ;;
       create) ;;
@@ -364,7 +362,7 @@ ready-for-agent}"
     ;;
   pr)
     case "$2" in
-      ready) exit "${GH_STUB_READY_EXIT:-0}" ;;
+      ready) exit 0 ;;
       close)
         shift 2
         if [ -n "${GH_STUB_FILED:-}" ]; then
@@ -372,7 +370,6 @@ ready-for-agent}"
           shift
           record_flags "$@"
         fi
-        [ "${GH_STUB_PR_CLOSE_EXIT:-0}" = 0 ] || { echo "gh stub: pr close refused" >&2; exit "$GH_STUB_PR_CLOSE_EXIT"; }
         exit 0 ;;
       checks)
         req=0

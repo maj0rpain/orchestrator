@@ -68,9 +68,11 @@ adapter_issue_view() {
 }
 
 # adapter_issue_edit / adapter_issue_comment - mirror stub_gh's `issue
-# edit`/`issue comment` branch: logs "issue <op> <n>" plus the flags
-# (fake_record_flags) to GH_STUB_FILED when set, and fails on
-# GH_STUB_EDIT_EXIT/GH_STUB_COMMENT_EXIT respectively.
+# edit`/`issue comment` branch's logging shape: "issue <op> <n>" plus the
+# flags (fake_record_flags) to GH_STUB_FILED when set. Failing on demand with
+# GH_STUB_EDIT_EXIT/GH_STUB_COMMENT_EXIT respectively is this fake's own job now
+# - once cmd_spec's update/comment fully moved onto this adapter (#94), no live
+# test left a caller for stub_gh's own copy of that check, so it was retired.
 fake_issue_write() {
   local op="$1" n st
   shift
@@ -222,16 +224,20 @@ adapter_pr_checks() {
   return 0
 }
 
-# adapter_pr_ready - mirrors stub_gh's `pr ready` branch: fails on
-# GH_STUB_READY_EXIT and logs nothing, same as stub_gh's own ready arm.
+# adapter_pr_ready - mirrors stub_gh's `pr ready` branch's shape (logs
+# nothing). Failing on demand with GH_STUB_READY_EXIT is this fake's own job
+# now - no live test left a caller for stub_gh's own copy of that check once
+# cmd_review's ready op fully moved onto this adapter (#94), so it was retired.
 adapter_pr_ready() {
   return "${GH_STUB_READY_EXIT:-0}"
 }
 
 # adapter_pr_close - mirrors stub_gh's `pr close` branch: logs "pr close <n>"
 # plus the flags (fake_record_flags, so a --comment reaches GH_STUB_FILED the
-# same way issue close's does) to GH_STUB_FILED when set, and fails on
-# GH_STUB_PR_CLOSE_EXIT.
+# same way issue close's does) to GH_STUB_FILED when set. Failing on demand
+# with GH_STUB_PR_CLOSE_EXIT is this fake's own job now - stub_gh's own copy of
+# that check lost its last caller once cmd_redo_review's close fully moved onto
+# this adapter (#94), so it was retired.
 adapter_pr_close() {
   local n="$1"
   if [ -n "${GH_STUB_FILED:-}" ]; then
