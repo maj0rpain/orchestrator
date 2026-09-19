@@ -26,7 +26,12 @@ test-driven, reviewed, then opened as a PR.
 The set of sub-issues `to-tickets` publishes against a flow's spec issue, or
 against quick implementation's linked issue - each one a sub-issue of that
 parent, not a second issue the flow or quick implementation now holds, and
-may block, or be blocked by, other tickets in the same breakdown.
+may block, or be blocked by, other tickets in the same breakdown. When the
+approved breakdown resolves to 0 or 1 tickets, no sub-issue is published at
+all: the drafted ticket's content, if there is one, is folded into the
+parent issue's own body instead, and the parent is worked directly as if it
+were the sole ticket - a breakdown of one, collapsed onto its own parent
+rather than split out beneath it.
 
 ## Ticket subagent
 
