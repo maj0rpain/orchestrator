@@ -42,8 +42,9 @@ starting a flow. `/orchestrator:doctor` reports all of this at any time.
                                         |                                 |
                               /orchestrator:start                orchestrator:quick-implement
                               ->  01-plan.md                     issue, to-tickets publishes tickets,
-                                        |                          branch quick/<issue>-<slug>, tdd,
-                                       | /clear                    single-pass code-review, PR
+                                        |                          branch quick/<issue>-<slug>,
+                                       | /clear                    one subagent per ticket, tdd,
+                                                                    single-pass code-review, PR
   spec session         to-spec publishes the issue  <--+
                        spec review
                        to-tickets publishes tickets  ->  02-spec.md
@@ -65,7 +66,9 @@ For work that does not need the pipeline, a human can pick a quick
 implementation instead of starting a flow - see CONTEXT.md's **Quick
 implementation** entry. It skips all four phases: no handoff, no
 `.orchestrator/state.json`, just a linked issue, `to-tickets` publishing that
-issue's ticket breakdown, `tdd`, a single-pass `code-review`, and a PR.
+issue's ticket breakdown, the same one-subagent-per-ticket loop the implement
+phase uses (`tdd` instead of `implement`, ending in `pr-publish` instead of a
+draft `pr-open`), a single-pass `code-review`, and a PR.
 
 Handoffs live in `.orchestrator/handoff/`, ignored via `.git/info/exclude` so
 running the flow never dirties a repo's working tree.
