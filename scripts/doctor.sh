@@ -420,7 +420,7 @@ h_repo   check_tracker_doc check_labels_doc check_labels_exist check_git_exclude
 # will not parse each settle all of them at once. Both are decided in d_run_flow,
 # before any of them runs, rather than in a preamble each check has to remember:
 # a check that forgot would run jq at a broken file and report a confident wrong
-# ok, and the review group deferred to #2 is meant to be an append to the list.
+# ok, and the review group added for #2 is exactly such an append to the list.
 # Reaching a check at all is now the proof that its preconditions held.
 
 check_state_phase() {
@@ -532,6 +532,88 @@ check_flow_review_terminal() {
   esac
 }
 
+# `review begin` dies rather than start an iteration past budget, so this is
+# meant to be unreachable - an iteration count past it is not a loop still
+# running, it is state.json in a shape nothing produced on a healthy run.
+check_flow_review_budget() {
+  local phase i b
+  phase="$(jq -r '.phase // ""' "$STATE")"
+  [ "$phase" = review ] || return 0
+  i="$(jq -r '.iteration // 0' "$STATE")"
+  b="$(review_budget)"
+  if [ "$i" -gt "$b" ]; then
+    d_fail "review loop iteration ($i) is past its budget ($b) - the loop's stop enforcement did not hold."
+    d_remedy "/orchestrator:abort"
+    return 0
+  fi
+  d_ok "review loop iteration ($i) within budget ($b)"
+}
+
+# The loop requires CI green (with one flake rerun) before it marks the PR
+# ready, so ci_probe's own classification is the loop's read of exactly this -
+# reused rather than a second query of the same endpoint. Doctor asks once and
+# reports what it sees now; the grace/timeout widening in `review ci` belongs
+# to the live loop deciding whether to keep polling, which a snapshot has no
+# business doing. required, not all: branch protection's required set is what
+# the loop itself waits on once one is named.
+check_flow_review_ci() {
+  local phase pr res verdict detail
+  phase="$(jq -r '.phase // ""' "$STATE")"
+  [ "$phase" = review ] || return 0
+  pr="$(jq -r '.pr // ""' "$STATE")"
+  [ -n "$pr" ] || return 0
+  d_gh_gate || return 0
+  res="$(ci_probe "$pr" required)"
+  verdict="$(first_line "$res")"
+  detail="$(printf '%s\n' "$res" | tail -n +2)"
+  case "$verdict" in
+    green)   d_ok "CI: required checks green" ;;
+    none)    d_ok "CI: no required checks reported" ;;
+    pending) d_ok "CI: required checks still pending" ;;
+    failing)
+      d_fail "CI: required check(s) failing on PR #$pr."
+      d_remedy "gh pr checks $pr"
+      ;;
+    # ci_probe's only other word - a failing round trip. Not fixable from here,
+    # so no remedy: reconnecting to a network, or GitHub answering, is not a
+    # command either.
+    *) d_warn "CI: could not be read from GitHub for PR #$pr." ;;
+  esac
+  [ -z "$detail" ] || note "$detail"
+}
+
+# `review ready` marks the PR ready and records phase: done as one operation
+# precisely so neither half can happen without the other (see `review ready`) -
+# so isDraft and phase disagreeing on GitHub's own PR is evidence that
+# operation only half landed, not a state a healthy flow reaches on its own.
+check_flow_review_draft() {
+  local phase pr out pr_state is_draft
+  phase="$(jq -r '.phase // ""' "$STATE")"
+  case "$phase" in review|done) ;; *) return 0 ;; esac
+  pr="$(jq -r '.pr // ""' "$STATE")"
+  [ -n "$pr" ] || return 0
+  d_gh_gate || return 0
+  out="$(gh pr view "$pr" --json state,isDraft --jq '.state, .isDraft' 2>/dev/null)" || out=""
+  pr_state="$(first_line "$out")"
+  is_draft="$(printf '%s\n' "$out" | sed -n 2p)"
+  if [ -z "$pr_state" ]; then
+    d_warn "PR #$pr draft state could not be read from GitHub."
+    return 0
+  fi
+  # A merged or closed PR cannot go back to draft, so only an open PR's flag
+  # is a live signal - nothing left there to disagree with the flow's phase.
+  [ "$pr_state" = OPEN ] || return 0
+  if [ "$phase" = done ] && [ "$is_draft" = true ]; then
+    d_fail "PR #$pr is still a draft but the flow phase is done - review ready did not take."
+    d_remedy "gh pr ready $pr"
+  elif [ "$phase" = review ] && [ "$is_draft" = false ]; then
+    d_fail "PR #$pr was marked ready on GitHub but the flow phase is still review - state.json fell out of sync."
+    d_remedy "gh pr view $pr"
+  else
+    d_ok "PR #$pr draft state matches phase ($phase)"
+  fi
+}
+
 # Pure reuse: what makes a handoff valid lives in handoff_required and
 # section_body, and a second statement of it here is how the two answers drift.
 # Which handoffs are due is mechanical - phase names what runs *next*, so every
@@ -560,7 +642,7 @@ check_flow_handoffs() {
 }
 
 FLOW_CHECKS="
-h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream check_flow_pr check_flow_review_terminal check_flow_handoffs
+h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream check_flow_pr check_flow_review_terminal check_flow_review_budget check_flow_review_ci check_flow_review_draft check_flow_handoffs
 "
 
 # A registry's entries, one per line. Splitting a whitespace-separated list is

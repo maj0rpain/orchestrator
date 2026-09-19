@@ -118,8 +118,10 @@ complete_implement_handoff() {
 # and body-file contents to GH_STUB_FILED like `issue create`, answering with a
 # fake PR URL numbered GH_STUB_PR_NUMBER, or failing when GH_STUB_PR_CREATE_EXIT
 # says so. `view` answers GH_STUB_PR_NUMBER when asked `--json number` - the
-# call pr-open makes to learn the PR it just opened - and falls back to the
-# existing `--json state` behaviour (GH_STUB_PR_STATE) for every other query.
+# call pr-open makes to learn the PR it just opened - answers `state` and
+# `isDraft` together (GH_STUB_PR_STATE and GH_STUB_PR_DRAFT, default false) for
+# check_flow_review_draft's combined query, and falls back to the existing
+# `--json state` behaviour (GH_STUB_PR_STATE) for every other query.
 #
 # `pr close` and `issue close` are redo's boundary. Both record the number and
 # `--comment` text to GH_STUB_FILED like every other write above, and fail on
@@ -261,6 +263,9 @@ ready-for-agent}"
         shift 2
         for a in "$@"; do
           if [ "$a" = number ]; then echo "${GH_STUB_PR_NUMBER:-99}"; exit 0; fi
+          case "$a" in
+            *isDraft*) printf '%s\n%s\n' "${GH_STUB_PR_STATE:-OPEN}" "${GH_STUB_PR_DRAFT:-false}"; exit 0 ;;
+          esac
         done
         echo "${GH_STUB_PR_STATE:-OPEN}" ;;
       *) echo "${GH_STUB_PR_STATE:-OPEN}" ;;
@@ -1167,7 +1172,7 @@ else
   # gate without anyone remembering to add a preamble - and this number moving is
   # how you find out that happened.
   assert_contains "collapses every flow check into one line when jq is gone" \
-    "$out" "7 flow checks skipped: jq is not installed"
+    "$out" "10 flow checks skipped: jq is not installed"
 fi
 
 # --- pr-open -----------------------------------------------------------------
@@ -1882,6 +1887,95 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a stop record is healthy too" "$st" 0
 assert_contains "names the terminal state and its reason" \
   "$out" "review loop at a terminal state: stop (CI failed twice.)"
+
+# --- doctor: review budget check -----------------------------------------
+# review begin's own `die` at budget is what is meant to make an iteration
+# past it unreachable - this check is for the state.json that got there some
+# other way, not one review begin produced itself.
+echo
+echo "doctor: review budget check"
+"$ORCH" state set iteration 3
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "short of budget is healthy" "$st" 0
+assert_contains "reports it within budget" "$out" "review loop iteration (3) within budget (5)"
+
+"$ORCH" state set iteration 6
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "past budget fails" "$st" 1
+assert_contains "names the impossible count" "$out" \
+  "review loop iteration (6) is past its budget (5)"
+assert_contains "and points at abort" "$out" "/orchestrator:abort"
+"$ORCH" state set iteration 5
+
+# --- doctor: review ci check ----------------------------------------------
+# ci_probe is the loop's own read of the PR's checks, reused rather than a
+# second query of the same endpoint - so its five answers are the five cases
+# here, not a fresh classification doctor derives on its own.
+echo
+echo "doctor: review ci check"
+"$ORCH" state set pr 40
+# A draft PR mid-review agrees with the phase, so the draft check stays quiet
+# and only the CI check's own verdict decides the exit status below.
+export GH_STUB_PR_DRAFT=true
+
+out="$(GH_STUB_REQUIRED=green "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "green required checks are healthy" "$st" 0
+assert_contains "reports it" "$out" "CI: required checks green"
+
+out="$(GH_STUB_REQUIRED=none "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "no required checks reported is not a failure" "$st" 0
+assert_contains "reports it" "$out" "CI: no required checks reported"
+
+out="$(GH_STUB_REQUIRED=pending "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "pending required checks are not a failure yet" "$st" 0
+assert_contains "reports it" "$out" "CI: required checks still pending"
+
+out="$(GH_STUB_REQUIRED=failing "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a failing required check fails doctor" "$st" 1
+assert_contains "names the PR" "$out" "CI: required check(s) failing on PR #40"
+assert_contains "carries the failing check's name" "$out" "build"
+assert_contains "gives the command that shows it" "$out" "gh pr checks 40"
+
+out="$(GH_STUB_REQUIRED=boom "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "an unreachable API warns rather than fails" "$st" 0
+assert_contains "reports it" "$out" "CI: could not be read from GitHub for PR #40"
+assert_contains "carrying the reason" "$out" "dial tcp"
+
+# --- doctor: review draft check -------------------------------------------
+# `review ready` marks the PR ready and records phase: done as one operation,
+# so isDraft and phase disagreeing on GitHub's own PR is evidence that
+# operation only half landed.
+echo
+echo "doctor: review draft check"
+out="$(GH_STUB_PR_DRAFT=true "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a draft PR mid-review is healthy" "$st" 0
+assert_contains "reports it matches phase" "$out" \
+  "PR #40 draft state matches phase (review)"
+
+out="$(GH_STUB_PR_DRAFT=false "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a PR marked ready while still in review fails" "$st" 1
+assert_contains "names the mismatch" "$out" \
+  "PR #40 was marked ready on GitHub but the flow phase is still review"
+assert_contains "gives the command that inspects it" "$out" "gh pr view 40"
+
+"$ORCH" state set phase done
+out="$(GH_STUB_PR_DRAFT=false "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a ready PR once the flow is done is healthy" "$st" 0
+assert_contains "reports it matches phase" "$out" \
+  "PR #40 draft state matches phase (done)"
+
+out="$(GH_STUB_PR_DRAFT=true "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a draft PR left behind once the flow is done fails" "$st" 1
+assert_contains "names the mismatch" "$out" \
+  "PR #40 is still a draft but the flow phase is done"
+assert_contains "gives the command that promotes it" "$out" "gh pr ready 40"
+
+out="$(GH_STUB_PR_STATE=MERGED "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a merged PR has nothing left to disagree with" "$st" 0
+assert_eq "and says nothing about draft state" \
+  "$(printf '%s\n' "$out" | grep -c 'draft state')" "0"
+"$ORCH" state set phase review
+unset GH_STUB_PR_DRAFT
 
 # --- review retire -------------------------------------------------------
 # The archive test's directory-move assertions are the direct template.
