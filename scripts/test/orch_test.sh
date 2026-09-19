@@ -2562,6 +2562,46 @@ out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a loop that ended ready is out of scope for redo, same as any done flow" "$st" 1
 assert_contains "the same phase-gate refusal as any other done flow" "$out" "flow is not at the review phase"
 
+# --- redo review reopens tickets -------------------------------------------
+# Acceptance criterion from issue #88: a prior implement phase closes every
+# ticket of the flow's spec issue as it works the frontier, so a redo back to
+# implement has to reopen them - otherwise the redone implement phase's
+# frontier query (ticket next) finds nothing and opens an empty PR.
+echo
+echo "redo review reopens tickets"
+healthy_repo
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote set-url origin "$bare"
+git push -q origin HEAD:refs/heads/main
+"$ORCH" init tickettest >/dev/null
+
+db="$(mktemp -d)"
+export GH_STUB_DB="$db"
+body="$(mktemp)"; printf 'Body of the ticket.\n' >"$body"
+t1="$("$ORCH" ticket publish 60 "One" "$body")"
+t2="$("$ORCH" ticket publish 60 "Two" "$body")"
+"$ORCH" ticket close "$t1" >/dev/null
+"$ORCH" ticket close "$t2" >/dev/null
+assert_eq "frontier is empty once every ticket is closed" "$("$ORCH" ticket next 60)" ""
+
+"$ORCH" state set phase review
+"$ORCH" state set issue 60
+git checkout -q -b orch/60-tickettest
+git push -q -u origin orch/60-tickettest
+"$ORCH" state set branch orch/60-tickettest
+"$ORCH" state set pr 40
+"$ORCH" state set iteration 1
+"$ORCH" state set budget 1
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "redo review succeeds with every ticket already closed" "$st" 0
+assert_eq "reopens exactly the tickets the flow's implement phase had closed" \
+  "$("$ORCH" ticket next 60)" "$(printf '%s\n%s' "$t1" "$t2")"
+
+unset GH_STUB_DB
+
 # --- redo spec --------------------------------------------------------------
 echo
 echo "redo spec"

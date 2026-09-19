@@ -946,10 +946,11 @@ cmd_ticket() {
 # --- redo ---------------------------------------------------------------
 
 # The full `review -> implement` transition: retire the old branch and PR,
-# move the old loop's records aside, and reset the state a fresh implement
-# attempt needs - never mid-budget, and never over a loop nobody has confirmed
-# actually ended. `flake_rerun_used` is deliberately untouched throughout, per
-# docs/adr/0007: it is a per-flow allowance, not a per-loop one.
+# reopen the spec issue's closed tickets, move the old loop's records aside,
+# and reset the state a fresh implement attempt needs - never mid-budget, and
+# never over a loop nobody has confirmed actually ended. `flake_rerun_used` is
+# deliberately untouched throughout, per docs/adr/0007: it is a per-flow
+# allowance, not a per-loop one.
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
@@ -1002,6 +1003,11 @@ cmd_redo_review() {
 
   msg="$(printf 'This PR was closed by /orchestrator:redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr-open again.\n' "$new_branch")"
   gh pr close "$pr" --comment "$msg" >/dev/null || die "gh could not close PR #$pr"
+
+  # The prior implement phase closed every ticket it finished, so the redone
+  # implement phase's frontier query (ticket next) would otherwise find
+  # nothing and open an empty PR - reopen exactly what ticket close closed.
+  cmd_ticket_reset "$issue" >/dev/null
 
   cmd_review retire "$new_n" >/dev/null
 
@@ -1163,7 +1169,8 @@ orch.sh - deterministic operations for the orchestrator flow
   spec fetch <file>           write the spec issue's body to <file>
   spec update <file>          replace the spec issue's body with <file>
   spec comment <file>         post <file> as a comment on the spec issue
-  redo review                 retire the branch and PR, reset the loop, and
+  redo review                 retire the branch and PR, reopen the spec
+                              issue's closed tickets, reset the loop, and
                               step the flow back to implement - refuses unless
                               the review loop has reached a terminal state
   redo spec [--new-issue]     step the flow back to spec, keeping the existing
