@@ -95,7 +95,7 @@ adapter_issue_comment() { fake_issue_write comment "$@"; }
 # adapter_issue_create - mirrors stub_gh's `issue create` branch: records the
 # flags (fake_record_flags) to GH_STUB_FILED when set, fails on
 # GH_STUB_ISSUE_EXIT, otherwise answers a fake issue URL numbered
-# GH_STUB_ISSUE_NUMBER (default 42) - the same shape review-file/issue publish
+# GH_STUB_ISSUE_NUMBER (default 42) - the same shape review file/issue publish
 # already parse the trailing number out of.
 adapter_issue_create() {
   if [ -n "${GH_STUB_FILED:-}" ]; then fake_record_flags "$@"; fi
