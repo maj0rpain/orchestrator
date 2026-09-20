@@ -1586,6 +1586,8 @@ assert_eq "and records it in state" "$("$ORCH" state get pr)" "23"
 body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
 assert_first_line "the recorded body opens with the closing keyword" \
   "$body_recorded" "Closes #16"
+assert_eq "leaves a blank line before the original body" \
+  "$(printf '%s\n' "$body_recorded" | sed -n 2p)" ""
 assert_contains "and keeps the agent's original body intact after a blank line" \
   "$body_recorded" "Some detail."
 assert_eq "the create/view calls never reached a real gh subprocess" \
