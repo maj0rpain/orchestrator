@@ -1101,8 +1101,8 @@ cmd_redo_review() {
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
   i="$(jq -r '.iteration // 0' "$STATE")"
   b="$(review_budget)"
-  local state; state="$(review_terminal_state)" || true
-  word="$(first_line "$state")"
+  local terminal; terminal="$(review_terminal_state)" || true
+  word="$(first_line "$terminal")"
   case "$word" in
     none)
       die "no review loop has run yet - nothing to redo back from; run /orchestrator:next to start one." ;;
