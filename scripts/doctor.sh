@@ -551,14 +551,14 @@ check_flow_pr() {
 # won't run. Phase-gated like check_flow_upstream: outside review, there is
 # no loop to classify and nothing to say about one.
 check_flow_review_terminal() {
-  local phase i b state word detail
+  local phase i b terminal word detail
   phase="$(jq -r '.phase // ""' "$STATE")"
   [ "$phase" = review ] || return 0
   i="$(jq -r '.iteration // 0' "$STATE")"
   b="$(review_budget)"
-  state="$(review_terminal_state)" || true
-  word="$(first_line "$state")"
-  detail="$(printf '%s\n' "$state" | tail -n +2)"
+  terminal="$(review_terminal_state)" || true
+  word="$(first_line "$terminal")"
+  detail="$(printf '%s\n' "$terminal" | tail -n +2)"
   case "$word" in
     none)  d_ok "review loop: not started yet" ;;
     ready) d_ok "review loop at a terminal state: ready" ;;
