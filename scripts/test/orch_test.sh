@@ -1408,6 +1408,11 @@ complete_plan_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a fresh flow is healthy" "$st" 0
 assert_contains "reports the phase" "$out" "phase: spec"
+# "published" names only one of the two paths an issue can arrive by (to-spec
+# publishing vs. adoption at init, docs/adr/0005) - neutral wording here must
+# not imply the other path doesn't exist.
+assert_contains "reports no issue recorded yet without implying publication is the only path" \
+  "$out" "issue: not recorded yet"
 assert_eq "--flow leaves the environment alone" \
   "$(printf '%s\n' "$out" | grep -c '^tools$')" "0"
 assert_eq "stays quiet about an upstream before the implement phase" \

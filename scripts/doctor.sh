@@ -513,7 +513,7 @@ check_flow_upstream() {
 check_flow_issue() {
   local issue issue_state phase
   issue="$(jq -r '.issue // ""' "$STATE")"
-  if [ -z "$issue" ]; then d_ok "issue: not published yet"; return 0; fi
+  if [ -z "$issue" ]; then d_ok "issue: not recorded yet"; return 0; fi
   d_gh_gate || return 0
   issue_state="$(gh issue view "$issue" --json state --jq .state 2>/dev/null)" || issue_state=""
   phase="$(jq -r '.phase // ""' "$STATE")"
