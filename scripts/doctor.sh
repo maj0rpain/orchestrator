@@ -272,6 +272,17 @@ check_tracker_doc() {
 triage_table_rows() {
   [ -f "$ROOT/$LABELS_DOC" ] || return 0
   awk -F'|' '
+    # One cleanup for any cell pulled out of a split row: restore pipes
+    # masked below, strip backticks, trim the pad markdown tables pad cells
+    # with - shared so l and r can never drift into cleaning a cell two
+    # different ways.
+    function clean(s) {
+      gsub(/\001/, "|", s)
+      gsub(/`/, "", s)
+      sub(/^[[:space:]]+/, "", s)
+      sub(/[[:space:]]+$/, "", s)
+      return s
+    }
     # A table ends where the pipes stop. Without this, cols still holds the
     # previous table width when the next table begins - a header row arrives a
     # line before the separator that would correct it - so a narrower second
@@ -284,8 +295,8 @@ triage_table_rows() {
       line = $0
       gsub(/\\\|/, "\001", line)
       $0 = line
-      l = $2; gsub(/\001/, "|", l); gsub(/`/, "", l); sub(/^[[:space:]]+/, "", l); sub(/[[:space:]]+$/, "", l)
-      r = $3; gsub(/\001/, "|", r); gsub(/`/, "", r); sub(/^[[:space:]]+/, "", r); sub(/[[:space:]]+$/, "", r)
+      l = clean($2)
+      r = clean($3)
       # The separator row settles the width for the whole table, and only it
       # can. Every separator cell holds a dash run, so an empty field at the
       # end of that row is unambiguously the one a trailing pipe leaves behind
