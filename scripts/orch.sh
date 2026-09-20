@@ -162,7 +162,7 @@ cmd_init() {
           ''|*[!0-9]*) die "--issue wants a plain issue number, got: $issue" ;;
         esac
         shift 2 ;;
-      *) die "$usage" ;;
+      *) die "unknown init flag: $1 (want --issue)" ;;
     esac
   done
   slug="$(normalize_slug "$slug")"
