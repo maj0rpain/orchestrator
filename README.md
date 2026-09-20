@@ -158,14 +158,14 @@ label it `needs-triage` if it isn't already.
 ## Status
 
 All four phases run. The spec phase works against the flow's issue, however it
-arrived - published by `to-spec` in this phase, or already adopted at init
-from an issue that already existed and carried the `ready-for-agent` triage
-label, in which case `to-spec` is skipped entirely. Either way, it reviews the
-issue through four independent lenses - Fidelity to the plan, Consistency with
-itself and the glossary, Testability at the agreed seams, Implementability
-from the spec alone - and puts every finding to the human as one batch of
-proposed edits; the edits they accept rewrite the issue body, and the
-disposition is recorded on the issue and in the handoff.
+arrived - published by `to-spec` in this phase, or already adopted at init,
+carrying the required `ready-for-agent` triage label, in which case `to-spec`
+is skipped entirely. Either way, it reviews the issue through four independent
+lenses - Fidelity to the plan, Consistency with itself and the glossary,
+Testability at the agreed seams, Implementability from the spec alone - and
+puts every finding to the human as one batch of proposed edits; the edits
+they accept rewrite the issue body, and the disposition is recorded on the
+issue and in the handoff.
 
 The implement phase works the spec issue's published ticket breakdown one
 ticket at a time: `ticket next` names the ready frontier, and each ready
