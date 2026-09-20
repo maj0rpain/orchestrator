@@ -12,6 +12,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GRILL="$DIR/hook-grilling.sh"
 GUARD="$DIR/hook-guard.sh"
 QUICK="$DIR/hook-quick-implement.sh"
+COMMON="$DIR/hook-common.sh"
 PASS=0
 FAIL=0
 
@@ -39,6 +40,19 @@ edit_event() {
 }
 
 echo "hook tests"
+echo
+echo "hook-common"
+
+source "$COMMON"
+
+hook_read_skill_and_session < <(skill_event "mattpocock-skills:grilling" abc123)
+assert_eq "extracts skill from tool_input.skill" "$skill" "mattpocock-skills:grilling"
+assert_eq "extracts session_id" "$session" "abc123"
+
+hook_read_skill_and_session < <(printf '{}')
+assert_eq "defaults skill to empty string when absent" "$skill" ""
+assert_eq "defaults session_id to unknown when absent" "$session" "unknown"
+
 echo
 echo "grilling hook"
 
