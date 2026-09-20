@@ -351,13 +351,13 @@ triage_label_for() {
 # maintainer's later triage housekeeping must not stop a flow already running
 # against the issue (docs/adr/0005).
 validate_adopted_issue() {
-  local issue="$1" label state labels
+  local issue="$1" label out state labels
   label="$(triage_label_for ready-for-agent)"
-  state="$(gh issue view "$issue" --json state --jq .state 2>/dev/null)" \
+  out="$(gh issue view "$issue" --json state,labels --jq '.state, (.labels[].name)' 2>/dev/null)" \
     || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
+  state="$(first_line "$out")"
+  labels="$(printf '%s\n' "$out" | tail -n +2)"
   [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
-  labels="$(gh issue view "$issue" --json labels --jq '.labels[].name' 2>/dev/null)" \
-    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
   printf '%s\n' "$labels" | grep -qxF "$label" \
     || die "issue #$issue is missing the '$label' triage label - adoption requires it."
 }
