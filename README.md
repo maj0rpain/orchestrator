@@ -67,8 +67,8 @@ implementation instead of starting a flow - see CONTEXT.md's **Quick
 implementation** entry. It skips all four phases: no handoff, no
 `.orchestrator/state.json`, just a linked issue, `to-tickets` publishing that
 issue's ticket breakdown, the same one-subagent-per-ticket loop the implement
-phase uses (`tdd` instead of `implement`, ending in `pr-publish` instead of a
-draft `pr-open`), a single-pass `code-review`, and a PR.
+phase uses (`tdd` instead of `implement`, ending in `pr publish` instead of a
+draft `pr open`), a single-pass `code-review`, and a PR.
 
 Handoffs live in `.orchestrator/handoff/`, ignored via `.git/info/exclude` so
 running the flow never dirties a repo's working tree.

@@ -19,6 +19,11 @@ See `docs/agents/triage-labels.md`.
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root.
 See `docs/agents/domain.md`.
 
+### CLI conventions
+
+`orch.sh` subcommand grammar: noun before verb, e.g. `orch.sh branch retire <old> <new>`.
+See `docs/agents/cli-conventions.md`.
+
 ## Versioning
 
 Every PR that merges to `main` must bump `version` in `.claude-plugin/plugin.json`.

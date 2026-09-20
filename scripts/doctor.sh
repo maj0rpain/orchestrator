@@ -473,7 +473,7 @@ check_flow_upstream() {
   case "$phase" in implement|review|done) ;; *) return 0 ;; esac
   branch="$(jq -r '.branch // ""' "$STATE")"
   [ -n "$branch" ] || return 0
-  # origin/<branch> specifically, not just any upstream: branch-create forks off
+  # origin/<branch> specifically, not just any upstream: branch create forks off
   # origin/<default>, which leaves that as the upstream until the first push. An
   # ok there would report a branch nobody can see as pushed.
   local upstream=""
@@ -498,7 +498,7 @@ check_flow_issue() {
   case "$issue_state" in
     OPEN)   d_ok "issue #$issue open" ;;
     CLOSED)
-      # pr-open always writes `Closes #<issue>`, so a done flow's issue being
+      # pr open always writes `Closes #<issue>`, so a done flow's issue being
       # closed is the expected result of merging, not a broken flow.
       if [ "$phase" = done ]; then
         d_ok "issue #$issue closed"

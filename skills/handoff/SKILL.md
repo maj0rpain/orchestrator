@@ -93,7 +93,7 @@ frontier>
 # Handoff: <slug>
 
 ## PR
-<URL and number. Draft. `pr-open` writes the `Closes #<issue>` line itself -
+<URL and number. Draft. `pr open` writes the `Closes #<issue>` line itself -
 the body file passed to it should not add a closing keyword of its own.>
 
 ## Spec issue
