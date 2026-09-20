@@ -156,8 +156,15 @@ which holds the only copy of the plan.
    build on the current branch, already checked out, and commit its own
    work to it; to never open a branch or PR of its own; and to never block
    on a human mid-ticket - a call it cannot make alone is a deviation,
-   recorded and returned instead of asked. Its report is structured: what it
-   built, and the deviation it made, if any.
+   recorded and returned instead of asked. The brief adds file-read
+   discipline: never re-read a file already read in full this session -
+   grep for the next location and jump there instead of re-reading it
+   wholesale; and on a wide-blast-radius ticket (a rename, a grammar
+   change, anything touching many call sites), run one `grep -rn` pass up
+   front to build a complete reference list, then work that list with
+   targeted reads and edits, never re-scanning the same files afterward.
+   Its report is structured: what it built, and the deviation it made,
+   if any.
 4. `"$ORCH" pr open "<title>" <body-file>`. The PR opens as a draft; marking it
    ready is the review loop's success condition. `pr open` itself writes the
    `Closes #<issue>` line ahead of the body - do not add a closing keyword of
