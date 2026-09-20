@@ -1288,8 +1288,8 @@ assert_status "adopts once the issue carries the escape-restored label" "$st" 0
 # Restores the canonical labels doc and a clean, flow-free repo: the escaped-
 # pipe block above both rewrote the doc away from its default shape and left
 # an adopted flow active, and the sub-issues section right after this expects
-# the plain "fully healthy repo" the earlier healthy_repo() call (line 1213)
-# had left before this block started borrowing it.
+# the plain "fully healthy repo" the earlier healthy_repo() call above had
+# left before this block started borrowing it.
 healthy_repo
 
 # Sub-issues carry no enable/disable setting of their own, so the only
