@@ -535,6 +535,10 @@ out="$("$ORCH" init other 2>&1)"; st=$?
 assert_status "refuses a second concurrent flow" "$st" 1
 assert_contains "explains how to clear the active flow" "$out" "abort"
 
+out="$("$ORCH" init other --bogus 2>&1)"; st=$?
+assert_status "rejects an unknown flag" "$st" 1
+assert_contains "names the flag it rejected" "$out" "--bogus"
+
 # --- slug -------------------------------------------------------------------
 # The same normalisation init applies to its own slug argument, exposed as a
 # primitive so the quick-implement skill can call it instead of restating the
