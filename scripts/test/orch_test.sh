@@ -115,7 +115,10 @@ complete_implement_handoff() {
 # body - mirroring the GH_STUB_PR_NUMBER/GH_STUB_PR_STATE split on `pr view`:
 # GH_STUB_ISSUE_STATE (default OPEN) and GH_STUB_ISSUE_LABELS (default
 # ready-for-agent, one label per line) - so `init --issue` and
-# `check_flow_issue` can be tested without disturbing GH_STUB_BODY.
+# `check_flow_issue` can be tested without disturbing GH_STUB_BODY. The
+# combined `--json state,labels` query validate_adopted_issue makes answers
+# both together, state on the first line and one label per line after -
+# mirroring `pr view`'s own `--json state,isDraft` combined-query case.
 #
 # `pr create` and `pr view` are pr open's boundary. `create` records its flags
 # and body-file contents to GH_STUB_FILED like `issue create`, answering with a
@@ -248,6 +251,16 @@ ready-for-agent}"
         [ "${GH_STUB_VIEW_EXIT:-0}" = 0 ] || { echo "gh stub: issue view refused" >&2; exit "$GH_STUB_VIEW_EXIT"; }
         for a in "$@"; do
           case "$a" in
+            # validate_adopted_issue's combined query: state on the first
+            # line, then one line per label (none at all if the issue is
+            # unlabelled) - the same multi-line shape pr view's isDraft
+            # combined query answers with below.
+            *state,labels*|*labels,state*)
+              printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}"
+              if [ -n "${GH_STUB_ISSUE_LABELS-ready-for-agent}" ]; then
+                printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"
+              fi
+              exit 0 ;;
             state)  printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}"; exit 0 ;;
             labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; exit 0 ;;
           esac
@@ -906,6 +919,17 @@ healthy_repo
 out="$(GH_STUB_ISSUE_LABELS=needs-triage "$ORCH" init nope --issue 7 2>&1)"; st=$?
 assert_status "refuses to adopt an issue missing the triage label" "$st" 1
 assert_contains "names the missing label" "$out" "ready-for-agent"
+
+# validate_adopted_issue's state and labels come off the same issue, so one
+# combined `gh issue view` answers both rather than spending a second
+# round-trip on a resource already in hand.
+healthy_repo
+filed="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" "$ORCH" init combined --issue 42)"; st=$?
+assert_status "adopts via a single combined gh issue view call" "$st" 0
+assert_eq "exactly one issue view call, not two" "$(grep -c '^issue view' "$filed")" "1"
+assert_contains "the one call asks for both state and labels together" \
+  "$(cat "$filed")" "state,labels"
 
 healthy_repo
 out="$("$ORCH" init nope --issue 2>&1)"; st=$?
