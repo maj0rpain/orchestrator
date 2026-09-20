@@ -117,11 +117,11 @@ complete_implement_handoff() {
 # ready-for-agent, one label per line) - so `init --issue` and
 # `check_flow_issue` can be tested without disturbing GH_STUB_BODY.
 #
-# `pr create` and `pr view` are pr-open's boundary. `create` records its flags
+# `pr create` and `pr view` are pr open's boundary. `create` records its flags
 # and body-file contents to GH_STUB_FILED like `issue create`, answering with a
 # fake PR URL numbered GH_STUB_PR_NUMBER, or failing when GH_STUB_PR_CREATE_EXIT
 # says so. `view` answers GH_STUB_PR_NUMBER when asked `--json number` - the
-# call pr-open makes to learn the PR it just opened - answers `state` and
+# call pr open makes to learn the PR it just opened - answers `state` and
 # `isDraft` together (GH_STUB_PR_STATE and GH_STUB_PR_DRAFT, default false) for
 # check_flow_review_draft's combined query, and falls back to the existing
 # `--json state` behaviour (GH_STUB_PR_STATE) for every other query.
@@ -662,12 +662,12 @@ git symbolic-ref -d refs/remotes/origin/HEAD
 assert_eq "falls back to main when nothing else answers" \
   "$(PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" default-branch)" "main"
 
-# --- branch-create -----------------------------------------------------------
-# Unlike branch-off's caller-named branch, this one derives its own name from
+# --- branch create -----------------------------------------------------------
+# Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
-# `base_sha` for pr-open and redo review to read back later via require_branch.
+# `base_sha` for pr open and redo review to read back later via require_branch.
 echo
-echo "branch-create"
+echo "branch create"
 new_repo >/dev/null
 git remote add origin https://example.invalid/x/y.git
 git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
@@ -675,18 +675,18 @@ git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$(git branch --sh
 "$ORCH" init bcreate >/dev/null
 "$ORCH" state set issue 11
 before_sha="$(git rev-parse HEAD)"
-out="$("$ORCH" branch-create)"
+out="$("$ORCH" branch create)"
 assert_eq "derives the branch name from slug and the recorded issue" "$out" "orch/11-bcreate"
 assert_eq "checks the new branch out" "$(git branch --show-current)" "orch/11-bcreate"
 assert_eq "records the branch in state" "$("$ORCH" state get branch)" "orch/11-bcreate"
 assert_eq "records the fork point as base_sha" "$("$ORCH" state get base_sha)" "$before_sha"
 
-# --- branch-off --------------------------------------------------------------
+# --- branch off --------------------------------------------------------------
 # A quick implementation keeps no state, so this is the primitive it shares
-# with a flow's own branch-create: same fetch/checkout-fallback idiom, naming
+# with a flow's own branch create: same fetch/checkout-fallback idiom, naming
 # and recording left entirely to the caller.
 echo
-echo "branch-off"
+echo "branch off"
 new_repo >/dev/null
 # default-branch resolves through git symbolic-ref as a fallback, which this
 # repo has none of yet - give it one rather than letting the answer depend on
@@ -694,22 +694,22 @@ new_repo >/dev/null
 git remote add origin https://example.invalid/x/y.git
 git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
 git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$(git branch --show-current)"
-out="$("$ORCH" branch-off "quick/9-widgets")"
+out="$("$ORCH" branch off "quick/9-widgets")"
 assert_eq "prints the branch it made" "$out" "quick/9-widgets"
 assert_eq "checks it out" "$(git branch --show-current)" "quick/9-widgets"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 
-out="$("$ORCH" branch-off "quick/9-widgets" 2>&1)"; st=$?
+out="$("$ORCH" branch off "quick/9-widgets" 2>&1)"; st=$?
 assert_status "refuses a name that already exists" "$st" 1
 assert_contains "names the branch" "$out" "quick/9-widgets already exists"
 
-out="$("$ORCH" branch-off 2>&1)"; st=$?
+out="$("$ORCH" branch off 2>&1)"; st=$?
 assert_status "refuses with no name" "$st" 1
 
 # --- branch retire ------------------------------------------------------------
 # The rename-aside a redo uses instead of deleting or force-pushing over a
 # discarded attempt's commits. The push/delete-remote-ref assertions reuse the
-# bare-repo-as-origin fixture branch-create and pr-open already use.
+# bare-repo-as-origin fixture branch create and pr open already use.
 echo
 echo "branch retire"
 new_repo >/dev/null
@@ -745,7 +745,7 @@ assert_eq "prints the new name" "$out" "to-retire-redo-1"
 assert_eq "pushes the new name to origin" \
   "$(git -C "$bare" rev-parse --quiet --verify refs/heads/to-retire-redo-1 >/dev/null && echo present || echo gone)" "present"
 # Not optional: a leftover ref under the un-suffixed name is exactly what the
-# next implement attempt's branch-create/pr-open would collide with.
+# next implement attempt's branch create/pr open would collide with.
 assert_eq "and deletes the old remote ref" \
   "$(git -C "$bare" rev-parse --quiet --verify refs/heads/to-retire >/dev/null && echo present || echo gone)" "gone"
 
@@ -815,9 +815,15 @@ out="$("$ORCH" branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 
-# --- issue-publish ------------------------------------------------------------
+# --- branch: unknown op -------------------------------------------------------
+out="$("$ORCH" branch bogus 2>&1)"; st=$?
+assert_status "branch bogus is an unknown op" "$st" 1
+assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
+assert_contains "naming all three" "$out" "create|off|retire"
+
+# --- issue publish ------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
-# `gh issue create` in skill prose - stateless like branch-off, since a quick
+# `gh issue create` in skill prose - stateless like branch off, since a quick
 # implementation has no flow to record into.
 #
 # Creation goes through the ORCH_GH_ADAPTER seam here, pointed at the
@@ -825,14 +831,14 @@ assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 # never spawns a real gh subprocess. The subprocess-real counterpart is the
 # "gh adapter (real issue create, subprocess gh)" block right after this one.
 echo
-echo "issue-publish"
+echo "issue publish"
 healthy_repo
 filed="$(mktemp)"
 body="$(mktemp)"
 writeln 'The shared understanding, written up.' >"$body"
 log="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=7 \
-  "$ORCH" issue-publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+  "$ORCH" issue publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "publishes" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "7"
 assert_contains "passes the title through" "$(cat "$filed")" "title=Widgets need a handle"
@@ -840,17 +846,17 @@ assert_contains "and sends the body file's contents" "$(cat "$filed")" "The shar
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 assert_eq "the create call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
-out="$("$ORCH" issue-publish "" "$body" 2>&1)"; st=$?
+out="$("$ORCH" issue publish "" "$body" 2>&1)"; st=$?
 assert_status "refuses an empty title" "$st" 1
 
-out="$("$ORCH" issue-publish "Title" /nonexistent/body.md 2>&1)"; st=$?
+out="$("$ORCH" issue publish "Title" /nonexistent/body.md 2>&1)"; st=$?
 assert_status "refuses a body file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
 
-out="$("$ORCH" issue-publish "Title" 2>&1)"; st=$?
+out="$("$ORCH" issue publish "Title" 2>&1)"; st=$?
 assert_status "refuses with no body file" "$st" 1
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_ISSUE_EXIT=1 "$ORCH" issue-publish "Title" "$body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_ISSUE_EXIT=1 "$ORCH" issue publish "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
@@ -872,7 +878,7 @@ fi
 
 # --- init --issue -------------------------------------------------------
 # Adoption is validated once, immediately, before state.json is written - a bad
-# issue number must cost nothing, the same promise branch-create and pr-open
+# issue number must cost nothing, the same promise branch create and pr open
 # already make about their own preconditions.
 echo
 echo "init --issue"
@@ -1352,7 +1358,7 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an unpushed branch warns rather than blocking the implement phase" "$st" 0
 assert_contains "gives the command that pushes it" "$out" "git push -u origin orch/9-gone"
 
-# branch-create forks off origin/<default>, so an unpushed branch already has an
+# branch create forks off origin/<default>, so an unpushed branch already has an
 # upstream - just not its own. Accepting any upstream would call a branch nobody
 # else can see pushed.
 git update-ref refs/remotes/origin/main HEAD
@@ -1396,7 +1402,7 @@ out="$(GH_STUB_ISSUE_LABELS=needs-triage "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an issue whose label was removed after adoption is still healthy" "$st" 0
 assert_contains "still reports it open" "$out" "issue #11 open"
 
-# issue #13: pr-open always writes `Closes #<issue>`, so a merged flow's issue
+# issue #13: pr open always writes `Closes #<issue>`, so a merged flow's issue
 # is closed as a matter of course - a done flow reporting that as broken was
 # doctor misreporting every successfully-finished flow.
 complete_implement_handoff "$("$ORCH" handoff path review)"
@@ -1441,18 +1447,18 @@ else
     "$out" "10 flow checks skipped: jq is not installed"
 fi
 
-# --- pr-open -----------------------------------------------------------------
+# --- pr open -----------------------------------------------------------------
 # PR #15 merged without closing #14 because the agent's body opened with a verb
-# GitHub does not read as a closer. pr-open owns the keyword instead, so no
+# GitHub does not read as a closer. pr open owns the keyword instead, so no
 # agent-chosen wording can leave a spec issue open again.
 #
 # open_pr's create/view go through the ORCH_GH_ADAPTER seam here, pointed at
 # the in-memory fake rather than stub_gh - GH_STUB_LOG stays empty across every
 # call below, proving neither ever spawns a real gh subprocess. The
 # subprocess-real counterpart is the "gh adapter (real pr create/view,
-# subprocess gh)" block right after "pr-publish".
+# subprocess gh)" block right after "pr publish".
 echo
-echo "pr-open"
+echo "pr open"
 healthy_repo
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
@@ -1464,16 +1470,16 @@ git checkout -q -b orch/16-propen
 body="$(mktemp)"
 writeln 'Implements the thing.' '' 'Some detail.' >"$body"
 
-out="$("$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "refuses when state has no issue" "$st" 1
-assert_contains "with the guard branch-create uses" "$out" \
+assert_contains "with the guard branch create uses" "$out" \
   "no issue recorded in state - the spec phase must publish one first"
 
 "$ORCH" state set issue 16
 filed="$(mktemp)"
 log="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=23 \
-  "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
+  "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
 assert_eq "prints the PR number gh answered" "$out" "23"
 assert_eq "and records it in state" "$("$ORCH" state get pr)" "23"
@@ -1485,33 +1491,33 @@ assert_contains "and keeps the agent's original body intact after a blank line" 
 assert_eq "the create/view calls never reached a real gh subprocess" \
   "$(grep -cx pr "$log")" "0"
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "with a clear reason" "$out" "gh could not open the PR"
 
 # require_branch's die message is the other half of require_field's coverage
 # (#79) alongside "refuses when state has no issue" above - a fresh flow with
 # an issue recorded but no branch yet is exactly the gap between init and
-# branch-create.
+# branch create.
 echo
-echo "pr-open (missing branch)"
+echo "pr open (missing branch)"
 new_repo >/dev/null
 "$ORCH" init nobranch >/dev/null
 "$ORCH" state set issue 21
 body="$(mktemp)"
 writeln 'Implements the thing.' >"$body"
-out="$("$ORCH" pr-open "Title" "$body" 2>&1)"; st=$?
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "refuses when state has no branch" "$st" 1
 assert_contains "with the exact require_branch die message" "$out" \
   "no branch recorded in state"
 
-# --- pr-publish --------------------------------------------------------------
+# --- pr publish --------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
-# `gh pr create` in skill prose - stateless like branch-off and issue-publish,
-# and not a draft like pr-open is, since a quick implementation's single-pass
+# `gh pr create` in skill prose - stateless like branch off and issue publish,
+# and not a draft like pr open is, since a quick implementation's single-pass
 # review already ran before this is called.
 echo
-echo "pr-publish"
+echo "pr publish"
 new_repo >/dev/null
 git remote add origin https://github.com/acme/widgets.git
 stub_gh
@@ -1525,7 +1531,7 @@ writeln 'Implements the thing.' '' 'Some detail.' >"$body"
 
 filed="$(mktemp)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_REPO=main GH_STUB_PR_NUMBER=23 \
-  "$ORCH" pr-publish 16 "Title" "$body" 2>&1)"; st=$?
+  "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
 assert_eq "prints the PR number gh answered" "$out" "23"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
@@ -1539,19 +1545,25 @@ assert_eq "pushes the current branch" \
   "$(git -C "$bare" rev-parse --quiet --verify refs/heads/quick/16-widgets >/dev/null && echo pushed || echo missing)" \
   "pushed"
 
-out="$("$ORCH" pr-publish abc "Title" "$body" 2>&1)"; st=$?
+out="$("$ORCH" pr publish abc "Title" "$body" 2>&1)"; st=$?
 assert_status "refuses an issue that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
 
-out="$("$ORCH" pr-publish 16 "Title" /nonexistent/body.md 2>&1)"; st=$?
+out="$("$ORCH" pr publish 16 "Title" /nonexistent/body.md 2>&1)"; st=$?
 assert_status "refuses a body file that does not exist" "$st" 1
 
-out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr-publish 16 "Title" "$body" 2>&1)"; st=$?
+out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "with a clear reason" "$out" "gh could not open the PR"
 
+# --- pr: unknown op -----------------------------------------------------------
+out="$("$ORCH" pr bogus 2>&1)"; st=$?
+assert_status "pr bogus is an unknown op" "$st" 1
+assert_contains "listed alongside the ops that exist" "$out" "unknown pr op"
+assert_contains "naming both" "$out" "open|publish"
+
 # --- gh adapter (real pr create/view, subprocess gh) -------------------------
-# pr-open just proved the seam through the in-memory fake, and pr-publish
+# pr open just proved the seam through the in-memory fake, and pr publish
 # above already shells out for real (ORCH_GH_ADAPTER unset) since it never
 # switched to the fake - this is the narrow assertion that both calls actually
 # reach a real gh subprocess rather than merely compiling: one for the create,
@@ -1561,7 +1573,7 @@ echo "gh adapter (real pr create/view, subprocess gh)"
 : >"$filed"
 log="$(mktemp)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=24 \
-  "$ORCH" pr-publish 16 "Title" "$body" 2>&1)"; st=$?
+  "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "shells out for real" "$st" 0
 assert_eq "and reads back the number the real gh answered" "$out" "24"
 assert_contains "the real adapter invoked gh pr create with the base/head flags" \
@@ -1572,7 +1584,7 @@ assert_eq "gh itself was invoked once for create and once for view, as real subp
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature touches GitHub's native
 # sub-issue and issue-dependency APIs, so no skill prose ever calls `gh api`
-# on these endpoints directly. Stateless like issue-publish/pr-publish: the
+# on these endpoints directly. Stateless like issue publish/pr publish: the
 # stub's GH_STUB_DB is a throwaway fake GitHub, not orch.sh state.
 echo
 echo "ticket publish"
@@ -1771,7 +1783,7 @@ healthy_repo
 
 # --- issue fetch/update -------------------------------------------------------
 # The stateless issue body read/write pair - the same contract
-# issue-publish/pr-publish/ticket publish already offer, extended to a plain
+# issue publish/pr publish/ticket publish already offer, extended to a plain
 # issue's body. cmd_spec's fetch/update ops (further below) become thin
 # wrappers over these, resolving the issue from state exactly as before - so
 # this section proves the primitives work given just an issue number, before
@@ -1838,12 +1850,13 @@ out="$("$ORCH" issue fetch 23 2>&1)"; st=$?
 assert_status "fetch refuses with no file" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh issue"
 
-out="$("$ORCH" issue publish 23 "$tricky" 2>&1)"; st=$?
+out="$("$ORCH" issue bogus 23 "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
-assert_contains "naming the two it does" "$out" "fetch|update"
+assert_contains "naming the three it does" "$out" "fetch|update|publish"
 
 assert_contains "help documents issue fetch" "$("$ORCH" help)" "issue fetch"
 assert_contains "and issue update" "$("$ORCH" help)" "issue update"
+assert_contains "and issue publish" "$("$ORCH" help)" "issue publish"
 
 assert_eq "still no state.json - this section recorded none" \
   "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
@@ -2540,13 +2553,16 @@ assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 assert_contains "and filing" "$("$ORCH" help)" "review file"
 assert_contains "and the terminal-state classifier" "$("$ORCH" help)" "review terminal"
 assert_contains "and retiring a loop's records" "$("$ORCH" help)" "review retire"
-assert_contains "help documents issue-publish" "$("$ORCH" help)" "issue-publish"
-assert_contains "and pr-publish" "$("$ORCH" help)" "pr-publish"
+assert_contains "help documents issue publish" "$("$ORCH" help)" "issue publish"
+assert_contains "and pr publish" "$("$ORCH" help)" "pr publish"
 assert_contains "and ticket publish" "$("$ORCH" help)" "ticket publish"
 assert_contains "and ticket next" "$("$ORCH" help)" "ticket next"
 assert_contains "and ticket close" "$("$ORCH" help)" "ticket close"
 assert_contains "and ticket reset" "$("$ORCH" help)" "ticket reset"
 assert_contains "and retiring a branch" "$("$ORCH" help)" "branch retire"
+assert_contains "and creating one" "$("$ORCH" help)" "branch create"
+assert_contains "and forking one for a quick implementation" "$("$ORCH" help)" "branch off"
+assert_contains "and opening a draft PR" "$("$ORCH" help)" "pr open"
 assert_contains "and redo review" "$("$ORCH" help)" "redo review"
 assert_contains "and redo spec" "$("$ORCH" help)" "redo spec"
 assert_eq "and no longer the loop machinery" "$("$ORCH" help | grep -c 'loop-next')" "0"

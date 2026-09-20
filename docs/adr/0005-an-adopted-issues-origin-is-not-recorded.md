@@ -4,7 +4,7 @@ A flow's issue arrives one of two ways: `to-spec` publishes it during the spec
 phase, or the flow adopts one already open, via `init --issue N`. Adoption is
 checked at init only: the issue must exist, be open, and carry the repo's
 `ready-for-agent` triage label, or `init` dies immediately - mirroring how
-`branch-create` and `pr-open` already die on their own preconditions rather
+`branch create` and `pr open` already die on their own preconditions rather
 than deferring the check to a later phase.
 
 Beyond that one-time gate, nothing distinguishes an adopted issue from a

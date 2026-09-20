@@ -121,7 +121,7 @@ which holds the only copy of the plan.
 ### Phase: implement
 
 1. Read `"$ORCH" handoff path implement` and fetch the spec issue it names.
-2. `"$ORCH" branch-create` - creates `orch/<issue>-<slug>` off the default branch
+2. `"$ORCH" branch create` - creates `orch/<issue>-<slug>` off the default branch
    and records the base SHA the review will diff against.
 3. Read the handoff's **Ticket breakdown** section, written by the spec
    phase's step 5.
@@ -158,8 +158,8 @@ which holds the only copy of the plan.
    on a human mid-ticket - a call it cannot make alone is a deviation,
    recorded and returned instead of asked. Its report is structured: what it
    built, and the deviation it made, if any.
-4. `"$ORCH" pr-open "<title>" <body-file>`. The PR opens as a draft; marking it
-   ready is the review loop's success condition. `pr-open` itself writes the
+4. `"$ORCH" pr open "<title>" <body-file>`. The PR opens as a draft; marking it
+   ready is the review loop's success condition. `pr open` itself writes the
    `Closes #<issue>` line ahead of the body - do not add a closing keyword of
    your own to the body file.
 5. Call `orchestrator:handoff` for `03-implement.md`. Its **Deviations** section

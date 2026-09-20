@@ -26,11 +26,11 @@ Never proceed without one, and never decide silently whether to make one.
 - A linked issue already exists (named earlier in this conversation, or on an
   already-checked-out branch): use it.
 - Otherwise, publish one now, per `docs/agents/issue-tracker.md`'s "publish to
-  the issue tracker" convention, with `"$ORCH" issue-publish "<title>"
+  the issue tracker" convention, with `"$ORCH" issue publish "<title>"
   <body-file>` - the same boundary `review file` draws for a filed finding,
   kept out of skill prose - from the shared understanding just reached.
 - If neither holds - no linked issue, and the tracker convention doc does not
-  exist or `issue-publish` fails - stop and say why. A quick implementation
+  exist or `issue publish` fails - stop and say why. A quick implementation
   with no issue behind it is exactly the unaccountable path this skill exists
   to avoid.
 
@@ -72,9 +72,9 @@ exists to record anywhere; step 4 below works the linked issue directly.
 
 Get the slug from `"$ORCH" slug "<short description>"` - the same
 normalisation `orch.sh init` applies to a flow's slug, exposed as a primitive
-rather than re-derived here - then `"$ORCH" branch-off "quick/<issue>-<slug>"`.
-`branch-off` forks it off the default branch the same way a flow's own
-`branch-create` does, but records no state - a quick implementation keeps
+rather than re-derived here - then `"$ORCH" branch off "quick/<issue>-<slug>"`.
+`branch off` forks it off the default branch the same way a flow's own
+`branch create` does, but records no state - a quick implementation keeps
 none.
 
 ## 4. Implement
@@ -121,8 +121,8 @@ cleanup, not Standards + Spec fidelity to the issue that this step needs.
 
 ## 6. Open the PR
 
-Commit, then open the PR with `"$ORCH" pr-publish <issue> "<title>"
-<body-file>` - the same boundary `pr-open` draws for a flow, kept out of
+Commit, then open the PR with `"$ORCH" pr publish <issue> "<title>"
+<body-file>` - the same boundary `pr open` draws for a flow, kept out of
 skill prose. It pushes the branch, closes `<issue>`, and opens the PR against
 the default branch, not as a draft: the single-pass review in step 5 already
 happened, so there is no loop left to promote it - draft would leave it stuck

@@ -80,11 +80,11 @@ require_field() {
 # of them can do anything useful without it.
 require_pr() { require_field "$1" '.pr // ""' "no PR recorded in state - the implement phase opens it"; }
 
-# branch-create, pr-open, and every spec op need the flow's spec issue number
+# branch create, pr open, and every spec op need the flow's spec issue number
 # before touching GitHub.
 require_issue() { require_field "$1" '.issue // ""' "no issue recorded in state - the spec phase must publish one first"; }
 
-# pr-open and redo review both need the flow's branch before touching GitHub.
+# pr open and redo review both need the flow's branch before touching GitHub.
 require_branch() { require_field "$1" '.branch // ""' "no branch recorded in state"; }
 
 # --- environment ------------------------------------------------------------
@@ -175,7 +175,7 @@ cmd_init() {
      One flow at a time - finish it, or run /orchestrator:abort."
   fi
   # Adoption is validated before anything is written, mirroring how
-  # branch-create and pr-open die on their own preconditions rather than
+  # branch create and pr open die on their own preconditions rather than
   # letting a whole phase run against an issue that cannot back it. Validating
   # before archiving a done flow means a bad --issue leaves it untouched and
   # re-runnable rather than archived for nothing.
@@ -698,7 +698,7 @@ cmd_review() {
 # --- issue --------------------------------------------------------------
 #
 # The stateless issue body read/write pair - the same contract
-# issue-publish/pr-publish/ticket publish already offer, extended to a plain
+# issue publish/pr publish/ticket publish already offer, extended to a plain
 # issue's body given just its number. cmd_spec's fetch/update ops below are
 # thin wrappers over these two, resolving the issue number from state exactly
 # as they always did, so flow's stateful spec access and quick
@@ -737,13 +737,15 @@ cmd_issue_update() {
 cmd_issue() {
   local op="${1:-}"
   shift || true
-  [ $# -eq 2 ] || die "usage: orch.sh issue <fetch|update> <n> <file>"
-  local issue="$1" file="$2"
-  case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   case "$op" in
-    fetch)  cmd_issue_fetch "$issue" "$file" ;;
-    update) cmd_issue_update "$issue" "$file" ;;
-    *) die "unknown issue op: ${op:-<none>} (want fetch|update)" ;;
+    fetch|update)
+      [ $# -eq 2 ] || die "usage: orch.sh issue $op <n> <file>"
+      local issue="$1" file="$2"
+      case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
+      if [ "$op" = fetch ]; then cmd_issue_fetch "$issue" "$file"; else cmd_issue_update "$issue" "$file"; fi
+      ;;
+    publish) cmd_issue_publish "$@" ;;
+    *) die "unknown issue op: ${op:-<none>} (want fetch|update|publish)" ;;
   esac
 }
 
@@ -777,8 +779,8 @@ cmd_spec() {
 
 # Forking a named branch off the default branch has exactly one right answer -
 # fetch it, then check it out, falling back to the local ref if origin was
-# unreachable - so both branch-create (a flow's own naming and state) and
-# branch-off (a quick implementation's, which keeps no state) share it rather
+# unreachable - so both branch create (a flow's own naming and state) and
+# branch off (a quick implementation's, which keeps no state) share it rather
 # than each hand-rolling the fetch/checkout-fallback idiom.
 checkout_new_branch() {
   local name="$1" base
@@ -790,6 +792,7 @@ checkout_new_branch() {
 
 cmd_branch_create() {
   require_state
+  [ $# -eq 0 ] || die "usage: orch.sh branch create"
   local slug issue name
   slug="$(jq -r .slug "$STATE")"
   require_issue issue
@@ -804,7 +807,7 @@ cmd_branch_create() {
 # from and nothing to record one in - the caller passes the full name and gets
 # a checked-out branch back, nothing else.
 cmd_branch_off() {
-  [ $# -eq 1 ] || die "usage: orch.sh branch-off <name>"
+  [ $# -eq 1 ] || die "usage: orch.sh branch off <name>"
   checkout_new_branch "$1"
   note "$1"
 }
@@ -813,6 +816,8 @@ cmd_branch() {
   local op="${1:-}"
   shift || true
   case "$op" in
+    create) cmd_branch_create "$@" ;;
+    off)    cmd_branch_off "$@" ;;
     retire)
       [ $# -eq 2 ] || die "usage: orch.sh branch retire <old> <new>"
       local old="$1" new="$2" upstream="" old_ok=1 new_ok=1
@@ -836,7 +841,7 @@ cmd_branch() {
         upstream=origin
       fi
       # A leftover remote ref under the un-suffixed name is exactly what the
-      # next implement attempt's branch-create/pr-open will reuse, and their
+      # next implement attempt's branch create/pr open will reuse, and their
       # plain push is not a force-push - so the old ref's delete is not
       # optional, and both failures die rather than leaving origin out of
       # sync with what this rename just did locally.
@@ -856,17 +861,17 @@ cmd_branch() {
       fi
       note "$new"
       ;;
-    *) die "unknown branch op: ${op:-<none>} (want retire)" ;;
+    *) die "unknown branch op: ${op:-<none>} (want create|off|retire)" ;;
   esac
 }
 
 # The publishing boundary a quick implementation calls instead of hardcoding
 # `gh issue create` in skill prose - the same reason `review file` owns its
 # own `gh issue create` rather than leaving it to whichever skill files a
-# finding. Stateless like branch-off: the caller has no flow to record into,
+# finding. Stateless like branch off: the caller has no flow to record into,
 # so the title and body are its own and nothing here remembers them.
 cmd_issue_publish() {
-  [ $# -eq 2 ] || die "usage: orch.sh issue-publish <title> <body-file>"
+  [ $# -eq 2 ] || die "usage: orch.sh issue publish <title> <body-file>"
   local title="$1" body_file="$2" url
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
@@ -878,7 +883,7 @@ cmd_issue_publish() {
 # Pushing a branch and opening a PR against it has exactly one right answer -
 # push, then prefix the body with a Closes line so GitHub links the PR as a
 # closer (no agent-chosen wording can leave the issue open again), then create
-# the PR - so pr-open (a flow's own, draft, recorded into state) and pr-publish
+# the PR - so pr open (a flow's own, draft, recorded into state) and pr publish
 # (a quick implementation's, not a draft, recording nothing) share it rather
 # than each hand-rolling the push/Closes-line/gh-pr-create idiom.
 open_pr() {
@@ -901,7 +906,7 @@ open_pr() {
 
 cmd_pr_open() {
   require_state
-  [ $# -eq 2 ] || die "usage: orch.sh pr-open <title> <body-file>"
+  [ $# -eq 2 ] || die "usage: orch.sh pr open <title> <body-file>"
   local title="$1" body_file="$2" issue branch pr
   [ -f "$body_file" ] || die "body file not found: $body_file"
   require_issue issue
@@ -914,13 +919,13 @@ cmd_pr_open() {
 }
 
 # The PR-opening boundary a quick implementation calls instead of hardcoding
-# `gh pr create` in skill prose - the same reason `issue-publish` owns its own
+# `gh pr create` in skill prose - the same reason `issue publish` owns its own
 # `gh issue create` rather than leaving it to skill prose. Stateless like
-# branch-off and issue-publish: the caller has no flow to record into, and no
+# branch off and issue publish: the caller has no flow to record into, and no
 # draft to promote later, since a quick implementation's single-pass review
 # already ran before this is called.
 cmd_pr_publish() {
-  [ $# -eq 3 ] || die "usage: orch.sh pr-publish <issue> <title> <body-file>"
+  [ $# -eq 3 ] || die "usage: orch.sh pr publish <issue> <title> <body-file>"
   local issue="$1" title="$2" body_file="$3" branch pr
   [ -f "$body_file" ] || die "body file not found: $body_file"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
@@ -929,11 +934,21 @@ cmd_pr_publish() {
   note "$pr"
 }
 
+cmd_pr() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    open)    cmd_pr_open "$@" ;;
+    publish) cmd_pr_publish "$@" ;;
+    *) die "unknown pr op: ${op:-<none>} (want open|publish)" ;;
+  esac
+}
+
 # --- ticket -------------------------------------------------------------
 #
 # GitHub's native sub-issue and issue-dependency APIs, in one place, so no
 # skill prose ever calls `gh api` on these endpoints directly. Stateless
-# throughout, like issue-publish/pr-publish: callable with no state.json,
+# throughout, like issue publish/pr publish: callable with no state.json,
 # since quick implementation keeps none.
 
 # The child's *database id*, not its issue number - both `sub_issues` and
@@ -1127,7 +1142,7 @@ cmd_redo_review() {
     cmd_state set redo_count "$new_n"
   fi
 
-  msg="$(printf 'This PR was closed by /orchestrator:redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr-open again.\n' "$new_branch")"
+  msg="$(printf 'This PR was closed by /orchestrator:redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
   adapter_pr_close "$pr" --comment "$msg" >/dev/null || die "gh could not close PR #$pr"
 
   # The prior implement phase closed every ticket it finished, so the redone
@@ -1249,14 +1264,14 @@ orch.sh - deterministic operations for the orchestrator flow
   state set <key> <value>     update one key
   handoff path <phase>        print the handoff path for a phase
   handoff validate <file>     check required sections exist and are non-empty
-  branch-create               create orch/<issue>-<slug> off the default branch
-  branch-off <name>            create and check out <name> off the default
-                               branch, recording no state - for a quick
-                               implementation, which keeps none
+  branch create               create orch/<issue>-<slug> off the default branch
+  branch off <name>           create and check out <name> off the default
+                              branch, recording no state - for a quick
+                              implementation, which keeps none
   branch retire <old> <new>   rename <old> aside to <new>, republishing it on
                               origin and deleting the old remote ref, without
                               force-pushing over anything
-  issue-publish <title> <body-file>
+  issue publish <title> <body-file>
                               create a GitHub issue, recording no state;
                               prints the number - for a quick implementation
                               that needs one
@@ -1264,8 +1279,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               state
   issue update <n> <file>     replace issue <n>'s body with <file>, recording
                               no state
-  pr-open <title> <body-file> push and open a draft PR
-  pr-publish <issue> <title> <body-file>
+  pr open <title> <body-file> push and open a draft PR
+  pr publish <issue> <title> <body-file>
                               push the current branch and open a non-draft PR
                               closing <issue>, recording no state; prints the
                               PR number - for a quick implementation whose
@@ -1322,13 +1337,9 @@ main() {
     slug)          cmd_slug "$@" ;;
     state)         cmd_state "$@" ;;
     handoff)       cmd_handoff "$@" ;;
-    branch-create) cmd_branch_create "$@" ;;
-    branch-off)    cmd_branch_off "$@" ;;
     branch)        cmd_branch "$@" ;;
-    issue-publish) cmd_issue_publish "$@" ;;
     issue)         cmd_issue "$@" ;;
-    pr-open)       cmd_pr_open "$@" ;;
-    pr-publish)    cmd_pr_publish "$@" ;;
+    pr)            cmd_pr "$@" ;;
     ticket)        cmd_ticket "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
