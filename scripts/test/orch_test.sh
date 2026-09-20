@@ -148,6 +148,8 @@ record_flags() {
     case "$1" in
       --title)     printf 'title=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
       --label)     printf 'label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
+      --base)      printf 'base=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
+      --head)      printf 'head=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
       --body-file) { printf 'body:\n'; cat "$2"; } >>"$GH_STUB_FILED"; shift ;;
       --comment)   { printf 'comment:\n%s\n' "$2"; } >>"$GH_STUB_FILED"; shift ;;
       *)           printf 'flag=%s\n' "$1" >>"$GH_STUB_FILED" ;;
@@ -1638,7 +1640,10 @@ out="$(GH_STUB_FILED="$filed" GH_STUB_REPO=main GH_STUB_PR_NUMBER=23 \
 assert_status "opens the PR" "$st" 0
 assert_eq "prints the PR number gh answered" "$out" "23"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
-assert_contains "opens against the default branch, not as a draft" "$(cat "$filed")" "flag=--base"
+assert_contains "opens against the default branch, not as a draft" "$(cat "$filed")" "base=main"
+assert_contains "and against the current branch" "$(cat "$filed")" "head=quick/16-widgets"
+assert_eq "with no bogus flag=<value> entries for the base/head values" \
+  "$(grep -c '^flag=' "$filed")" "0"
 body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
 assert_first_line "the recorded body opens with the closing keyword" \
   "$body_recorded" "Closes #16"
@@ -1680,8 +1685,11 @@ out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NU
   "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "shells out for real" "$st" 0
 assert_eq "and reads back the number the real gh answered" "$out" "24"
-assert_contains "the real adapter invoked gh pr create with the base/head flags" \
-  "$(cat "$filed")" "flag=--base"
+assert_contains "the real adapter invoked gh pr create with the base flag's value" \
+  "$(cat "$filed")" "base=main"
+assert_contains "and the head flag's value" "$(cat "$filed")" "head=quick/16-widgets"
+assert_eq "with no bogus flag=<value> entries for the base/head values" \
+  "$(grep -c '^flag=' "$filed")" "0"
 assert_eq "gh itself was invoked once for create and once for view, as real subprocesses" \
   "$(grep -cx pr "$log")" "2"
 
