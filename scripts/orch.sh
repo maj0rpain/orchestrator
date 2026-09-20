@@ -897,7 +897,7 @@ open_pr() {
   if ! adapter_pr_create $draft_flag --base "$base" --head "$branch" \
       --title "$title" --body-file "$tmp" >/dev/null; then
     rm -f "$tmp"
-    die "gh could not open the PR"
+    die "gh could not open the PR for branch $branch (issue #$issue)"
   fi
   rm -f "$tmp"
   pr="$(adapter_pr_view "$branch" --json number --jq .number)"

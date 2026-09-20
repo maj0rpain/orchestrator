@@ -1593,7 +1593,8 @@ assert_eq "the create/view calls never reached a real gh subprocess" \
 
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
-assert_contains "with a clear reason" "$out" "gh could not open the PR"
+assert_contains "naming the branch it would have opened from" "$out" "orch/16-propen"
+assert_contains "and the issue it would have closed" "$out" "#16"
 
 # require_branch's die message is the other half of require_field's coverage
 # (#79) alongside "refuses when state has no issue" above - a fresh flow with
@@ -1654,7 +1655,8 @@ assert_status "refuses a body file that does not exist" "$st" 1
 
 out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
-assert_contains "with a clear reason" "$out" "gh could not open the PR"
+assert_contains "naming the branch it would have opened from" "$out" "quick/16-widgets"
+assert_contains "and the issue it would have closed" "$out" "#16"
 
 # --- pr: unknown op -----------------------------------------------------------
 out="$("$ORCH" pr bogus 2>&1)"; st=$?
