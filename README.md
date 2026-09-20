@@ -130,6 +130,7 @@ skills/quick-implement/   the other route: issue, to-tickets, tdd, single-pass r
 scripts/orch.sh           every deterministic operation (mechanism)
 scripts/doctor.sh         diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
 scripts/hook-*.sh         the three hooks
+scripts/hook-common.sh    skill/session_id extraction shared by the two Skill-matcher hooks
 scripts/test/             shell tests
 hooks/hooks.json          hook wiring
 ```

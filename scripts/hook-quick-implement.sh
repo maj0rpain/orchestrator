@@ -11,9 +11,9 @@
 
 set -euo pipefail
 
-input="$(cat)"
-skill="$(printf '%s' "$input" | jq -r '.tool_input.skill // ""')"
-session="$(printf '%s' "$input" | jq -r '.session_id // "unknown"')"
+source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
+
+hook_read_skill_and_session
 
 case "$skill" in *quick-implement*) ;; *) exit 0 ;; esac
 
