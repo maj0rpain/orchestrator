@@ -1230,6 +1230,68 @@ out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "counts only the documented labels, not the header row" \
   "$out" "2 triage labels"
 
+# Escaped pipes (issue #5): markdown's `\|` inside a cell is a literal `|`,
+# never a column separator. Without that, an escaped cell shifts every column
+# after it for that row - the label column reads a fragment of the escaped
+# cell instead of the real label, and the real label is lost entirely.
+# GH_STUB_MODE=nolabels makes every documented label print a "gh label
+# create" remedy, which is the easiest window onto exactly what triage_labels
+# parsed each row down to.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `needs\|triage`       | Evaluate it |' >docs/agents/triage-labels.md
+out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "an escaped pipe inside the label column becomes a literal pipe" \
+  "$out" 'gh label create "needs|triage"'
+assert_eq "does not truncate the label at the escaped pipe" \
+  "$(printf '%s\n' "$out" | grep -c 'gh label create "needs"')" "0"
+
+# The ticket's own repro: the escape sits in the *other* column (the
+# mattpocock-skills name), yet it is column 3 - the label doctor actually
+# reads - that comes out corrupted, because the escaped cell shifted it.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `a\|b`                     | `needs-triage`        | do it       |' >docs/agents/triage-labels.md
+out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "an escaped pipe in the mattpocock-name column does not shift the label column" \
+  "$out" 'gh label create "needs-triage"'
+assert_eq "does not invent a label out of the shifted fragment" \
+  "$(printf '%s\n' "$out" | grep -c 'gh label create "b"')" "0"
+
+# The Meaning column sits after the one doctor reads, so an escape there is
+# the least likely to leak - which is exactly why it earns a test locking
+# that in, rather than trusting it stays that way by accident.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `needs-triage`        | Look \|out  |' >docs/agents/triage-labels.md
+out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "an escaped pipe in the meaning column does not corrupt the label column" \
+  "$out" 'gh label create "needs-triage"'
+
+# triage_label_for shares the same row-splitting bug: an escape in the
+# repo's local label corrupts the very value validate_adopted_issue compares
+# against a real issue's labels.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `ready-for-agent`          | `ready\|for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
+out="$(GH_STUB_ISSUE_LABELS=needs-triage "$ORCH" init nope --issue 7 2>&1)"; st=$?
+assert_status "refuses adoption when the escape-restored label is missing" "$st" 1
+assert_contains "names the label with its escaped pipe restored, not truncated" \
+  "$out" "ready|for-agent"
+out="$(GH_STUB_ISSUE_LABELS='ready|for-agent' "$ORCH" init nope --issue 7 2>&1)"; st=$?
+assert_status "adopts once the issue carries the escape-restored label" "$st" 0
+
+# Restores the canonical labels doc and a clean, flow-free repo: the escaped-
+# pipe block above both rewrote the doc away from its default shape and left
+# an adopted flow active, and the sub-issues section right after this expects
+# the plain "fully healthy repo" the earlier healthy_repo() call (line 1213)
+# had left before this block started borrowing it.
+healthy_repo
+
 # Sub-issues carry no enable/disable setting of their own, so the only
 # reliable signal is asking the endpoint against an issue that exists and
 # reading whether it answers or 404s. The default stub answers normally, and
