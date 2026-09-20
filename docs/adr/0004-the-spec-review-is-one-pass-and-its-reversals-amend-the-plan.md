@@ -2,14 +2,13 @@
 
 A spec review runs once, in the spec phase, after the issue exists - published
 by `to-spec` or already adopted at init - and before `02-spec.md` is written.
-Four lenses read the issue as fresh
-sub-agents and report findings; every finding reaches the human as a proposed
-edit in one batch; the edits the human accepts rewrite the issue body. There
-is no budget, no second pass, and no severity: findings stay with the lens
-that reported them and are never ranked across lenses. The one document the
-review may change besides the issue is `01-plan.md`, and only its
-**Rejected alternatives** section, and only when the human has just declined
-to restore something the plan ruled out.
+Four lenses read the issue as fresh sub-agents and report findings; every
+finding reaches the human as a proposed edit in one batch; the edits the human
+accepts rewrite the issue body. There is no budget, no second pass, and no
+severity: findings stay with the lens that reported them and are never ranked
+across lenses. The one document the review may change besides the issue is
+`01-plan.md`, and only its **Rejected alternatives** section, and only when
+the human has just declined to restore something the plan ruled out.
 
 The review is one pass because of what ADR-0003 measured: prose findings never
 converge. A spec is all prose. The code loop's later iterations paid off

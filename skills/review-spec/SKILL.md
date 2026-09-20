@@ -7,11 +7,10 @@ description: Review a spec issue once through four independent lenses - Fidelity
 
 One look at the spec, taken once, after the issue exists - published by
 `to-spec` or already adopted at init - and before the handoff is written. Four
-**lenses** read the issue
-independently, as parallel sub-agents that see only files. Every **finding**
-they report reaches the human as a proposed edit in one batch; only the edits
-the human accepts change the issue. The issue body stays the single truth the
-implement phase reads.
+**lenses** read the issue independently, as parallel sub-agents that see only
+files. Every **finding** they report reaches the human as a proposed edit in
+one batch; only the edits the human accepts change the issue. The issue body
+stays the single truth the implement phase reads.
 
 There is no budget, no second pass, and no "review the spec?" question: the
 human's control is at the batch decision, where they may decline every edit.
