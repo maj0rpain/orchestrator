@@ -1292,6 +1292,39 @@ assert_status "adopts once the issue carries the escape-restored label" "$st" 0
 # left before this block started borrowing it.
 healthy_repo
 
+# Issue #39: triage_label_for lacks triage_labels' table-boundary/column-count
+# guard, so a second, differently-shaped table elsewhere in the doc can shadow
+# the real answer. Placed *before* the real table, with a row that resolves to
+# the same role, so a reader with no boundary awareness matches it first and
+# never reaches the real table at all.
+writeln '# Other Reference' '' \
+        '| Role | Other |' \
+        '| ready-for-agent | wrong-label |' \
+        '' \
+        '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| --------------------------- | --------------------- | ----------- |' \
+        '| `needs-triage`              | `needs-triage`         | Evaluate it |' \
+        '| `ready-for-agent`           | `ready-for-agent`      | AFK-ready   |' >docs/agents/triage-labels.md
+
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "list-labels: an unrelated table before the real one still passes" "$st" 0
+assert_contains "still reads exactly the two documented labels" "$out" "2 triage labels"
+assert_eq "does not read the unrelated table's value in as a label" \
+  "$(printf '%s\n' "$out" | grep -c 'wrong-label')" "0"
+
+out="$(GH_STUB_ISSUE_LABELS='wrong-label' "$ORCH" init nope --issue 7 2>&1)"; st=$?
+assert_status "label-for ignores the unrelated table's row rather than matching it" "$st" 1
+assert_contains "resolves the role against the real table's label, not the one before it" \
+  "$out" "ready-for-agent"
+
+out="$(GH_STUB_ISSUE_LABELS='ready-for-agent' "$ORCH" init nope --issue 7 2>&1)"; st=$?
+assert_status "adopts once the issue carries the real table's label" "$st" 0
+
+# Reset again: the successful adopt above just left a flow active, and the
+# sub-issues checks right after this expect the plain flow-free healthy repo.
+healthy_repo
+
 # Sub-issues carry no enable/disable setting of their own, so the only
 # reliable signal is asking the endpoint against an issue that exists and
 # reading whether it answers or 404s. The default stub answers normally, and
