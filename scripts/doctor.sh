@@ -275,7 +275,14 @@ triage_labels() {
     # table anywhere in the doc leaks its heading out as a label name.
     !/^[[:space:]]*\|/ { cols = 0 }
     /^[[:space:]]*\|/ {
+      # `\|` is the markdown escape for a literal pipe, never a column
+      # separator. Mask it before the field split and restore it after, or an
+      # escaped cell shifts every column after it for that row (#5).
+      line = $0
+      gsub(/\\\|/, "\001", line)
+      $0 = line
       s = $3
+      gsub(/\001/, "|", s)
       gsub(/`/, "", s)
       sub(/^[[:space:]]+/, "", s)
       sub(/[[:space:]]+$/, "", s)
@@ -314,8 +321,13 @@ triage_label_for() {
   if [ -f "$ROOT/$LABELS_DOC" ]; then
     name="$(awk -F'|' -v role="$role" '
       /^[[:space:]]*\|/ {
-        l = $2; gsub(/`/, "", l); sub(/^[[:space:]]+/, "", l); sub(/[[:space:]]+$/, "", l)
-        r = $3; gsub(/`/, "", r); sub(/^[[:space:]]+/, "", r); sub(/[[:space:]]+$/, "", r)
+        # See triage_labels: `\|` is a literal pipe, not a separator - same
+        # mask-split-restore, or an escaped cell shifts $2/$3 out from under it.
+        line = $0
+        gsub(/\\\|/, "\001", line)
+        $0 = line
+        l = $2; gsub(/\001/, "|", l); gsub(/`/, "", l); sub(/^[[:space:]]+/, "", l); sub(/[[:space:]]+$/, "", l)
+        r = $3; gsub(/\001/, "|", r); gsub(/`/, "", r); sub(/^[[:space:]]+/, "", r); sub(/[[:space:]]+$/, "", r)
         if (l == role && r != "") { print r; exit }
       }' "$ROOT/$LABELS_DOC")"
   fi
