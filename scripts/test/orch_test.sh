@@ -3632,6 +3632,15 @@ scan_capabilities() {
     # the Claude-scoped form is only ever the generic orchestrator:<name>.
     grep -nE 'orchestrator:orch-' "$f" \
       | sed "s|^|${f#"$r"/}: names a skill by its Claude-scoped name: |"
+    # "Run a plugin command" is Unverified on Junie, so a skill that offers one
+    # also says what to offer on a host without plugin commands.
+    if grep -qE '/orchestrator:[a-z]' "$f" && ! grep -qF 'no plugin commands' "$f"; then
+      echo "${f#"$r"/}: offers a plugin command with no fallback"
+    fi
+    # A host's column holds only verified facts, so a claim about every host
+    # outruns the reference.
+    grep -niE 'no host can' "$f" \
+      | sed "s|^|${f#"$r"/}: claims a fact for every host: |"
   done
   for f in "$r"/commands/*.md; do
     [ -f "$f" ] || continue
@@ -3656,6 +3665,10 @@ assert_contains "the scan flags a sibling skill named by its Claude scope" \
   "$(scan_capabilities "$fixture")" "orch-flow/SKILL.md: names a skill by its Claude-scoped name"
 printf '## Status\nInvoke the `orch-handoff` skill (`orchestrator:<name>` on Claude Code). See docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
 assert_contains "the scan flags a command routed to a missing section" "$out" "missing orch-flow section: Doctor"
+printf 'Offer `/orchestrator:abort`, so no host can stall. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-x/SKILL.md"
+out="$(scan_capabilities "$fixture")"
+assert_contains "the scan flags a plugin command offered with no fallback" "$out" "orch-x/SKILL.md: offers a plugin command with no fallback"
+assert_contains "the scan flags a fact claimed for every host" "$out" "orch-x/SKILL.md: claims a fact for every host"
 printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-x/SKILL.md"
 printf 'Invoke `orchestrator:orch-flow` and follow its **Status** section.\n' >"$fixture/commands/doctor.md"
 printf '%s\n' "$orch_line" >"$fixture/commands/status.md"
@@ -3691,7 +3704,12 @@ the orch-flow skill|`orch-flow`
 the orch-quick-implement skill|`orch-quick-implement`
 the issue-tracker warning|docs/agents/issue-tracker\.md
 the setup fix|setup-matt-pocock-skills
+the Invoke a skill fallback as the step|no Skill tool.*read `skills/<name>/SKILL\.md`
 EOF
+  # Junie's "Invoke a skill" cell is Fallback, so reading SKILL.md is the step,
+  # not a branch taken only when a listed skill is missing.
+  grep -niE 'if it is not listed' "$f" \
+    | sed "s|^|${f#"$r"/}: makes the Invoke a skill fallback conditional: |"
   grep -niE '(call|use|with) the (Skill|Agent) tool' "$f" \
     | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
   # A hand-copied allowlist drifts; every entry of the canonical definition must
@@ -3713,6 +3731,11 @@ out="$(scan_planning_nudge "$fixture")"
 assert_contains "the scan flags unconditional wording" "$out" "missing the conditional wording"
 assert_contains "the scan flags a missing issue-tracker warning" "$out" "missing the issue-tracker warning"
 assert_contains "the scan flags a Claude tool named as the step" "$out" "names a Claude tool as the step"
+assert_contains "the scan flags a missing Invoke a skill fallback" "$out" "missing the Invoke a skill fallback as the step"
+printf 'Pick `orch-flow` from the skills this host lists. If it is not listed, read its SKILL.md.\n' \
+  >"$fixture/guidelines/orch.md"
+assert_contains "the scan flags a conditional Invoke a skill fallback" \
+  "$(scan_planning_nudge "$fixture")" "makes the Invoke a skill fallback conditional"
 rm -rf "$fixture"
 
 echo

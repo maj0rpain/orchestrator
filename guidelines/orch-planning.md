@@ -16,6 +16,6 @@ Ask the human a multiple-choice question (`AskUserQuestion`) with exactly these 
 1. **Start the orchestrator flow**: the full plan -> spec -> implement -> review pipeline, with its own handoff and review loop.
 2. **Quick implementation**: skip the pipeline and implement this directly.
 
-Then invoke the matching skill yourself: `orch-flow` for the first, `orch-quick-implement` for the second. Pick it by that bare name from the skills this host lists. If it is not listed, read `skills/<name>/SKILL.md` in the orchestrator extension (the directory above this `guidelines/` folder, under `~/.junie/extensions/`) and follow it verbatim.
+Then run the matching skill yourself: `orch-flow` for the first, `orch-quick-implement` for the second. You have no Skill tool here, so read `skills/<name>/SKILL.md` in the orchestrator extension (the directory above this `guidelines/` folder, under `~/.junie/extensions/`) and follow it verbatim.
 
 Under the mattpocock-skills `wayfinder` skill, "approved" means the whole map is done, not one ticket resolved. Start the flow only then.

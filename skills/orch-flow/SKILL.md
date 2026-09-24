@@ -37,14 +37,15 @@ start a fresh subagent, start a fresh session. Skills are named bare
 host. Where your host's cell says **Fallback**, or **Unverified** and the
 capability turns out missing, take the fallback it documents and record it in
 this phase's handoff under **Host fallbacks**. Where this file offers the human an
-`/orchestrator:<command>` and your host has no plugin commands, offer the
-matching section of this skill instead.
+`/orchestrator:<command>`, here or in a skill this flow runs, and your host
+has no plugin commands, offer the matching section of this skill instead.
 
 ## The upstream skills are not callable
 
 `to-spec`, `implement`, `handoff`, `to-tickets`, `wayfinder`, and
 `improve-codebase-architecture` carry `disable-model-invocation: true`, so
-no host can invoke them as skills.
+Claude Code's Skill tool refuses them, and Junie gives the model no Skill tool
+at all.
 
 Their `SKILL.md` files are plain markdown. Resolve one with
 `"$ORCH" mp-skill <name>`, read it, and follow its instructions verbatim - that

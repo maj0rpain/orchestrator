@@ -34,8 +34,9 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 1. Fetch the body: `"$ORCH" spec fetch <dir>/spec.md`, with `<dir>` a fresh
    directory under `.orchestrator/` - `spec fetch` creates it. It reads the
    issue number from state. A failure stops the phase: state stays where it
-   is, say what blocked, offer `/orchestrator:abort`. A review with no body to
-   review is never claimed as done.
+   is, say what blocked, offer `/orchestrator:abort` (on a host with
+   no plugin commands, `orch-flow`'s **Abort** section). A review with no
+   body to review is never claimed as done.
 2. Resolve the other files the lenses read, and record the paths:
    - the plan handoff: `"$ORCH" handoff path spec` (always `01-plan.md`);
    - the glossary and decisions: `CONTEXT.md` and `docs/adr/` at the repo

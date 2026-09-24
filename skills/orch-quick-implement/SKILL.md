@@ -53,7 +53,8 @@ path, so `to-tickets` synthesizes tickets directly off the raw linked issue -
 it is the only spec this path has.
 
 `to-tickets` carries `disable-model-invocation: true` in the installed
-mattpocock-skills version, so no host can invoke it as a skill. Resolve it with
+mattpocock-skills version, so Claude Code's Skill tool refuses it, and Junie
+gives the model no Skill tool at all. Resolve it with
 `"$ORCH" mp-skill to-tickets`, read it, and follow it directly - the same
 pattern `skills/orch-flow/SKILL.md` uses for the same upstream skill. Follow it
 through its own quiz (steps 1-4) until the user approves a breakdown.
