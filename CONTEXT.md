@@ -208,3 +208,31 @@ iteration: one per flow, spent or not.
 A CI check that must pass before a change can land. Where branch protection
 names them, those are the required checks; where it does not, every check on the
 commit counts. A change with no checks at all is not thereby failing.
+
+## Host
+
+The agent CLI that has the plugin installed and runs its skills - Claude Code,
+Junie, and so on. Claude Code is the reference host; every other host is
+supported to the extent it can do what the plugin asks, and anything it
+cannot do is reported rather than silently skipped.
+
+## Capability
+
+Something a skill needs its host to do - invoke a skill, start a fresh
+subagent, start a fresh session - named for what it does rather than for any
+host's tool. `docs/host-capabilities.md` says how each host provides each one.
+
+## Host fallback
+
+What a skill does instead when its host lacks a capability, as documented in
+`docs/host-capabilities.md`. Every fallback a phase takes is recorded under
+**Host fallbacks** in its handoff, so a reduced run is never mistaken for a
+full one.
+
+## Planning allowlist
+
+The files a planning session may legitimately change: the glossary, ADRs,
+agent docs, and scratch and flow-state files. Anything outside it is source,
+which planning never touches. The edit guard denies edits outside it while
+planning, where the host can arm the guard. A flow will not start while the
+working tree has changes outside it (ADR-0013).

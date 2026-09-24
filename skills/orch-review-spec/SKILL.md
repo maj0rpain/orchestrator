@@ -1,6 +1,6 @@
 ---
-name: review-spec
-description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orchestrator:flow's spec phase, after the issue exists - published by to-spec or already adopted at init - and before 02-spec.md is written.
+name: orch-review-spec
+description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orch-flow's spec phase, after the issue exists - published by to-spec or already adopted at init - and before 02-spec.md is written.
 ---
 
 # Orchestrator spec review
@@ -21,16 +21,22 @@ loop - see `docs/adr/0001-review-loop-runs-in-a-single-session.md`.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, it is `scripts/orch.sh` two directories above
-this file.
+If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+two directories above this skill's own directory (the plugin root).
+
+If `orch.sh` is at neither path, this is a skills-only install: stop, and
+tell the human `orch.sh` is missing and to install the full orchestrator
+plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
+`maj0rpain/orchestrator` as a Junie extension, which is unverified).
 
 ## Inputs
 
 1. Fetch the body: `"$ORCH" spec fetch <dir>/spec.md`, with `<dir>` a fresh
    directory under `.orchestrator/` - `spec fetch` creates it. It reads the
    issue number from state. A failure stops the phase: state stays where it
-   is, say what blocked, offer `/orchestrator:abort`. A review with no body to
-   review is never claimed as done.
+   is, say what blocked, offer `/orchestrator:abort` (on a host with
+   no plugin commands, `orch-flow`'s **Abort** section). A review with no
+   body to review is never claimed as done.
 2. Resolve the other files the lenses read, and record the paths:
    - the plan handoff: `"$ORCH" handoff path spec` (always `01-plan.md`);
    - the glossary and decisions: `CONTEXT.md` and `docs/adr/` at the repo
@@ -43,8 +49,12 @@ that needs something gets a file path.
 
 ## The lenses
 
-Spawn all four at once with the Agent tool as fresh general-purpose agents -
-never forks, which inherit this context. Each prompt carries only the paths its
+Start all four at once as fresh subagents (on Claude Code, the Agent tool
+as fresh general-purpose agents) - never forks, which inherit this context.
+On a host without fresh subagents, take the fallback in
+`docs/host-capabilities.md` under the plugin root, running the lenses one at
+a time from their briefs alone, and record it in `02-spec.md` under **Host
+fallbacks**. Each prompt carries only the paths its
 row names, the brief below, and the reporting rules:
 
 > Report findings only, never draft edits. Quote the spec line for every
@@ -111,8 +121,8 @@ never a description of the problem. Then, with the whole batch in view:
 Number the items. Present the list - each item's finding, lens, and proposed
 edit or decision - then ask **one blocking question** with the
 `AskUserQuestion` tool: options **Apply all**, **Apply none**, or a list of
-item numbers through Other. Where the tool is unavailable, ask in plain text
-and wait. Asked once; a long spec is one longer question, not twenty prompts.
+item numbers through Other (the tool exists on both Claude Code and Junie).
+Asked once; a long spec is one longer question, not twenty prompts.
 
 ## Applying the answer
 

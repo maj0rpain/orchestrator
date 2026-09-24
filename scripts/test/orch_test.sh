@@ -15,6 +15,13 @@ PASS=0
 FAIL=0
 SKIP=0
 
+# The override outranks every install layout, so one leaking in from the shell
+# running the tests would decide every mattpocock lookup below.
+unset ORCHESTRATOR_MATTPOCOCK_ROOT
+# The same goes for the host signals doctor reads: the shell running the tests
+# is often itself a Claude Code or Junie session. Each test names its host.
+unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT
+
 ok()   { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
 bad()  { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 skip() { printf '  skip %s\n     %s\n' "$1" "$2"; SKIP=$((SKIP + 1)); }
@@ -31,6 +38,9 @@ assert_eq() {
 }
 assert_contains() {
   case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "output did not contain '$3': $2" ;; esac
+}
+assert_not_contains() {
+  case "$2" in *"$3"*) bad "$1" "output contained '$3': $2" ;; *) ok "$1" ;; esac
 }
 assert_status() {
   if [ "$2" -eq "$3" ]; then ok "$1"; else bad "$1" "expected exit $3, got $2"; fi
@@ -62,14 +72,16 @@ complete_plan_handoff() {
   writeln '## Decisions' 'Use X.' '' \
           '## Rejected alternatives' 'Y, because Z.' '' \
           '## Constraints' 'Must run offline.' '' \
-          '## Open assumptions' 'Assumes W.' >"$1"
+          '## Open assumptions' 'Assumes W.' '' \
+          '## Host fallbacks' 'None (Claude Code).' >"$1"
 }
 
 complete_spec_handoff() {
   writeln '## Spec issue' '#1.' '' \
           '## Seams' 'The CLI.' '' \
           '## Spec review changelog' 'Not reviewed.' '' \
-          '## Ticket breakdown' '#1.' >"$1"
+          '## Ticket breakdown' '#1.' '' \
+          '## Host fallbacks' 'None (Claude Code).' >"$1"
 }
 
 complete_implement_handoff() {
@@ -77,7 +89,8 @@ complete_implement_handoff() {
           '## Spec issue' '#1.' '' \
           '## Base SHA' 'abc1234.' '' \
           '## Deviations' 'None.' '' \
-          '## Verification' 'scripts/test/orch_test.sh' >"$1"
+          '## Verification' 'scripts/test/orch_test.sh' '' \
+          '## Host fallbacks' 'None (Claude Code).' >"$1"
 }
 
 # --- doctor harness ---------------------------------------------------------
@@ -457,6 +470,38 @@ stub_mattpocock() {
   printf '%s\n' "$home"
 }
 
+# Add the named skills to HOME ($2) in one install layout ($1), so a lookup can
+# be tested against each layout a supported host produces, alone or stacked.
+#   claude   - Claude's namespaced, versioned plugin cache
+#   junie    - Junie's extension cache, flat skills/<name>
+#   agents   - the skills CLI store, each skill recorded in the lockfile
+#   override - a checkout that ORCHESTRATOR_MATTPOCOCK_ROOT is pointed at
+# `agents-foreign` puts a same-named skill in the skills CLI store but records
+# it as belonging to some other plugin.
+mp_install() {
+  local layout="$1" home="$2" base plugin="mattpocock-skills" s lock
+  shift 2
+  case "$layout" in
+    claude)   base="$home/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/engineering" ;;
+    junie)    base="$home/.junie/extensions/github-mattpocock-skills/mattpocock-skills/skills" ;;
+    agents)   base="$home/.agents/skills" ;;
+    agents-foreign) base="$home/.agents/skills"; plugin="someone-elses-skills" ;;
+    override) base="$home/mp-checkout/skills/engineering" ;;
+  esac
+  lock="$home/.agents/.skill-lock.json"
+  for s in "$@"; do
+    mkdir -p "$base/$s"
+    echo "# $s ($layout)" >"$base/$s/SKILL.md"
+    case "$layout" in
+      agents*)
+        [ -f "$lock" ] || echo '{"version":3,"skills":{}}' >"$lock"
+        jq --arg n "$s" --arg p "$plugin" \
+          '.skills[$n] = {source: "x/y", skillPath: ("skills/" + $n + "/SKILL.md"), pluginName: $p}' \
+          "$lock" >"$lock.tmp" && mv "$lock.tmp" "$lock" ;;
+    esac
+  done
+}
+
 # The documented triage-label table, in the shape the setup skill writes it:
 # a header row, a separator row, and backticked labels in the second column.
 labels_doc() {
@@ -539,6 +584,60 @@ out="$("$ORCH" init other --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "names the flag it rejected" "$out" "--bogus"
 
+# --- init refuses a dirty working tree ----------------------------------------
+# The git-based backstop from ADR-0013: a host with no mechanical trigger for
+# the edit guard can still edit source during planning, so flow start is where
+# those edits get caught. Only the planning allowlist may be dirty.
+echo
+echo "init refuses a dirty working tree"
+flow_repo="$PWD"
+new_repo >/dev/null
+echo "code" >stray.sh
+out="$("$ORCH" init dirty 2>&1)"; st=$?
+assert_status "refuses an untracked file outside the allowlist" "$st" 1
+assert_contains "names the untracked path" "$out" "stray.sh"
+assert_eq "writes no state when it refuses" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_contains "says how to resolve it" "$out" "Commit, stash, or discard"
+assert_contains "says to retry" "$out" "run init again"
+assert_contains "names what planning may change" "$out" "docs/adr/"
+
+rm stray.sh
+echo "changed" >>docs/agents/issue-tracker.md
+echo "base" >src.sh; git add src.sh; git commit -qm src
+echo "edit" >>src.sh
+mkdir -p lib && echo "new" >lib/deep.sh
+out="$("$ORCH" init dirty 2>&1)"; st=$?
+assert_status "refuses a tracked modification outside the allowlist" "$st" 1
+assert_contains "names the modified path" "$out" "src.sh"
+assert_contains "names an untracked file inside a new directory" "$out" "lib/deep.sh"
+case "$out" in *issue-tracker.md*) bad "does not name allowlisted paths" "$out" ;;
+  *) ok "does not name allowlisted paths" ;; esac
+
+git checkout -q src.sh; rm -r lib
+git mv src.sh moved.sh
+out="$("$ORCH" init dirty 2>&1)"; st=$?
+assert_status "refuses a staged rename" "$st" 1
+assert_contains "names the rename's new path" "$out" "moved.sh"
+assert_contains "names the rename's old path" "$out" "src.sh"
+git mv moved.sh src.sh
+
+# A git status that cannot run is not a clean tree - reading it as one would
+# wave through exactly the edits this check exists to catch.
+cp .git/index .git/index.bak; echo garbage >.git/index
+out="$("$ORCH" init dirty 2>&1)"; st=$?
+assert_status "refuses when git status fails" "$st" 1
+assert_eq "writes no state when git status fails" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+mv .git/index.bak .git/index
+
+mkdir -p docs/adr && echo "# ADR" >docs/adr/0001-x.md
+echo "# glossary" >CONTEXT.md
+mkdir -p .scratch && echo "ticket" >.scratch/t.md
+mkdir -p sub
+out="$(cd sub && "$ORCH" init clean-enough 2>&1)"; st=$?
+assert_status "starts with only allowlisted changes, even from a subdirectory" "$st" 0
+assert_eq "records the flow" "$("$ORCH" state get slug)" "clean-enough"
+cd "$flow_repo" || exit 1
+
 # --- slug -------------------------------------------------------------------
 # The same normalisation init applies to its own slug argument, exposed as a
 # primitive so the quick-implement skill can call it instead of restating the
@@ -605,6 +704,31 @@ writeln '## Decisions' 'Use X.' '' '## Rejected alternatives' '   ' '' \
 out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
 assert_status "treats a whitespace-only section as empty" "$st" 1
 
+# Every phase records the host capability fallbacks it used (#127,
+# docs/host-capabilities.md), so a human reading any handoff can see where a
+# host did less than Claude Code would have. "None." is an answer; no section
+# is not.
+for p in spec implement review; do
+  hf="$("$ORCH" handoff path "$p")"
+  case "$p" in
+    spec) complete_plan_handoff "$hf" ;;
+    implement) complete_spec_handoff "$hf" ;;
+    review) complete_implement_handoff "$hf" ;;
+  esac
+  grep -v '^## Host fallbacks$' "$hf" | grep -v '^None (Claude Code)\.$' >"$hf.tmp" && mv "$hf.tmp" "$hf"
+  out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
+  assert_status "$(basename "$hf") without Host fallbacks is incomplete" "$st" 1
+  assert_contains "$(basename "$hf") names the missing Host fallbacks" "$out" "Host fallbacks"
+done
+# A flow started before 1.0.0 has no host_fallbacks in state.json and wrote
+# its handoffs without the section; upgrading mid-flow must not fail them.
+st_saved="$(cat .orchestrator/state.json)"
+jq 'del(.host_fallbacks)' <<<"$st_saved" >.orchestrator/state.json
+out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
+assert_status "a pre-1.0.0 flow's handoff validates without Host fallbacks" "$st" 0
+printf '%s\n' "$st_saved" >.orchestrator/state.json
+complete_plan_handoff "$h"
+
 # --- ticket breakdown handoff ------------------------------------------------
 # The spec phase's last step publishes tickets as sub-issues of the spec
 # issue, so the handoff that follows it must at least name the parent -
@@ -636,7 +760,8 @@ assert_status "passes once the parent issue is recorded" "$st" 0
 # named explicitly here so the convention doesn't silently rot.
 writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
         '## Spec review changelog' 'Not reviewed.' '' \
-        '## Ticket breakdown' 'None: work directly against #1.' >"$h2"
+        '## Ticket breakdown' 'None: work directly against #1.' '' \
+        '## Host fallbacks' 'None (Claude Code).' >"$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "the collapsed-case sentinel validates like any other content" "$st" 0
 
@@ -895,6 +1020,61 @@ else
   echo "  skip (mattpocock-skills not installed)"
 fi
 
+# --- mp-skill across host layouts -------------------------------------------
+# Each supported host installs mattpocock-skills somewhere else, in another
+# shape. The lookup is per skill name, because the skills CLI store has no
+# plugin root to hand back - only a directory shared with every other skill.
+echo
+echo "mp-skill across host layouts"
+for layout in claude junie agents; do
+  h="$(mktemp -d)"; mp_install "$layout" "$h" to-spec handoff
+  out="$(HOME="$h" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
+  assert_status "resolves from the $layout layout" "$st" 0
+  assert_eq "hands back the $layout layout's SKILL.md" "$(head -1 "$out" 2>/dev/null)" "# to-spec ($layout)"
+  assert_contains "says where the $layout layout's skills were found" \
+    "$(HOME="$h" "$ORCH" mp-skill 2>&1)" "$h/"
+done
+
+h="$(mktemp -d)"; mp_install override "$h" to-spec
+out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
+assert_status "resolves from the override" "$st" 0
+assert_eq "hands back the override's SKILL.md" "$(head -1 "$out" 2>/dev/null)" "# to-spec (override)"
+assert_eq "says the override is where the skills were found" \
+  "$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" mp-skill 2>&1)" "$h/mp-checkout"
+
+# Every layout at once: each one removed in turn exposes the next in line.
+h="$(mktemp -d)"
+for layout in override claude junie agents; do mp_install "$layout" "$h" to-spec; done
+first() { head -1 "$(HOME="$h" "$@" "$ORCH" mp-skill to-spec 2>/dev/null)" 2>/dev/null; }
+assert_eq "the override outranks every install" \
+  "$(first env ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout")" "# to-spec (override)"
+assert_eq "Claude's cache outranks Junie's and the skills CLI's" "$(first env)" "# to-spec (claude)"
+rm -rf "$h/.claude"
+assert_eq "Junie's extension cache outranks the skills CLI's" "$(first env)" "# to-spec (junie)"
+rm -rf "$h/.junie"
+assert_eq "the skills CLI store is the last resort" "$(first env)" "# to-spec (agents)"
+
+# ~/.agents/skills is shared by every skill the CLI installed. A same-named
+# skill that the lockfile does not record as mattpocock-skills' is someone
+# else's, and running it in place of mattpocock's would be the worst outcome.
+h="$(mktemp -d)"
+mp_install agents "$h" to-spec
+mp_install agents-foreign "$h" handoff
+out="$(HOME="$h" "$ORCH" mp-skill handoff 2>&1)"; st=$?
+assert_status "ignores a same-named skill the lockfile gives to another plugin" "$st" 1
+mkdir -p "$h/.agents/skills/code-review"; echo "# stray" >"$h/.agents/skills/code-review/SKILL.md"
+out="$(HOME="$h" "$ORCH" mp-skill code-review 2>&1)"; st=$?
+assert_status "ignores a skill the lockfile does not record at all" "$st" 1
+
+# Only user-level locations count: a repo can ship .agents/skills of its own.
+h="$(mktemp -d)"; mp_install agents "$h" to-spec
+d="$(mktemp -d)"; mkdir -p "$d/.agents/skills/handoff"; echo "# project" >"$d/.agents/skills/handoff/SKILL.md"
+out="$(cd "$d" && HOME="$h" "$ORCH" mp-skill handoff 2>&1)"; st=$?
+assert_status "ignores a project-level .agents/skills" "$st" 1
+
+out="$(HOME="$(mktemp -d)" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
+assert_status "fails when no layout holds mattpocock-skills" "$st" 1
+
 # --- init --issue -------------------------------------------------------
 # Adoption is validated once, immediately, before state.json is written - a bad
 # issue number must cost nothing, the same promise branch create and pr open
@@ -1115,8 +1295,8 @@ out="$(GH_STUB_REPO='acme/widgets ' "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unresolved default branch does not block the flow" "$st" 0
 assert_contains "warns that the default branch came from a fallback" "$out" "default branch"
 
-# A partial install is the regression this feature exists to catch: find_mattpocock
-# probes one skill file, so it passes, and the spec phase then dies with the
+# A partial install is the regression this feature exists to catch: a lookup
+# that probes one skill file passes, and the spec phase then dies with the
 # context that could have fixed it already cleared.
 # No healthy_repo() needed: the offline/noauth/default-branch checks above
 # only ever scoped GH_STUB_* to their own command, so the repo is still clean
@@ -1134,6 +1314,67 @@ assert_status "fails cleanly when mattpocock-skills is absent" "$st" 1
 assert_contains "gives the install command" "$out" "/plugin install mattpocock-skills"
 assert_contains "skips the per-skill check rather than deriving a second FAIL" \
   "$out" "1 skill check skipped"
+
+# The fix has to fit the host: a Junie user told to run a Claude /plugin
+# command is left exactly as stuck as before. With no host detected, every
+# host's method is listed.
+out="$(env -u CLAUDE_PLUGIN_ROOT HOME=/nonexistent "$ORCH" doctor --env 2>&1)"
+assert_contains "names the Junie install method too" "$out" "Junie"
+assert_contains "names the skills CLI install" "$out" "npx skills add mattpocock/skills"
+assert_contains "names the override for an install none of these describe" \
+  "$out" "ORCHESTRATOR_MATTPOCOCK_ROOT"
+
+# Once the host is known, the fix names only that host's install method.
+out="$(HOME=/nonexistent ORCHESTRATOR_HOST=junie "$ORCH" doctor --env 2>&1)"
+assert_contains "on Junie, names the Junie install" "$out" "npx skills add mattpocock/skills"
+# Neither Junie install is verified end to end, so the line says so (#121).
+assert_contains "marks the Junie install unverified" "$out" "(both unverified)"
+assert_not_contains "on Junie, does not name a Claude /plugin command" "$out" "/plugin install mattpocock-skills"
+out="$(HOME=/nonexistent CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"
+assert_contains "on Claude Code, names the /plugin install" "$out" "/plugin install mattpocock-skills"
+assert_not_contains "on Claude Code, does not name the Junie install" "$out" "npx skills add"
+
+# The same partial install, in every other layout a host can produce. The
+# lookup finding *a* location is not the same as it holding every skill.
+for layout in junie agents override; do
+  h="$(mktemp -d)"; mp_install "$layout" "$h" implement code-review
+  ov=""; if [ "$layout" = override ]; then ov="$h/mp-checkout"; fi
+  out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$ov" "$ORCH" doctor --env 2>&1)"; st=$?
+  assert_status "fails on a partial install in the $layout layout" "$st" 1
+  assert_contains "names the $layout layout's missing to-spec" "$out" "missing: to-spec"
+  assert_contains "names the $layout layout's missing handoff" "$out" "handoff"
+done
+
+# A skill the lockfile gives to another plugin is missing, not present.
+h="$(mktemp -d)"; mp_install agents "$h" to-spec implement code-review
+mp_install agents-foreign "$h" handoff
+out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails when a skills CLI skill belongs to another plugin" "$st" 1
+assert_contains "names the foreign skill as missing" "$out" "missing: handoff"
+
+# Doctor says where the skills were found, in terms of the host that put them
+# there - the path alone does not tell a user which install to repair.
+h="$(mktemp -d)"
+for layout in claude junie agents; do mp_install "$layout" "$h" to-spec implement code-review handoff; done
+out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
+assert_contains "reports Claude's plugin cache as the source" "$out" "(Claude Code plugin cache)"
+rm -rf "$h/.claude"
+out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
+assert_contains "reports Junie's extension cache as the source" "$out" "(Junie extension cache)"
+rm -rf "$h/.junie"
+out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
+assert_contains "reports the skills CLI store as the source" "$out" "(skills CLI)"
+assert_contains "and where that store is" "$out" "mattpocock-skills: ~/.agents/skills"
+mp_install override "$h" to-spec implement code-review handoff
+out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" doctor --env 2>&1)"
+assert_contains "reports the override as the source" "$out" "(ORCHESTRATOR_MATTPOCOCK_ROOT)"
+
+# An override that points nowhere is a typo to report, not a cue to fall back
+# to some other install the user evidently did not want.
+out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/nope" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails when the override is not a directory" "$st" 1
+assert_contains "names the override that points nowhere" "$out" "ORCHESTRATOR_MATTPOCOCK_ROOT"
+assert_contains "and the path it points at" "$out" "/nope"
 
 # Labels are parsed from the doc rather than hardcoded, so the parser is what
 # decides whether doctor is right in a repo that customised its vocabulary.
@@ -1402,9 +1643,79 @@ assert_contains "gives a command that adds the exclude line" "$out" "info/exclud
 # The exclude line is still truncated from the check above, so this one does
 # need a real reset before layering CLAUDE_PLUGIN_ROOT's own warning on top.
 healthy_repo
-out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" doctor --env 2>&1)"; st=$?
+out="$(env -u CLAUDE_PLUGIN_ROOT CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "running orch.sh by hand is not a broken install" "$st" 0
 assert_contains "warns about the unset plugin root" "$out" "CLAUDE_PLUGIN_ROOT"
+
+# --- doctor: host (#128) ---
+# Reduced enforcement has to be visible: doctor says which host it believes it
+# is under and what that host cannot do, in the words of the capabilities
+# reference - so the two cannot tell a user different stories.
+out="$(env -u CLAUDE_PLUGIN_ROOT CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "detects Claude Code from CLAUDECODE" "$out" "host: Claude Code"
+assert_eq "Claude Code lacks no capability" "$(printf '%s\n' "$out" | grep -c 'lacks')" "0"
+assert_contains "the plugin root check still warns when Claude Code left it unset" \
+  "$out" "warn  CLAUDE_PLUGIN_ROOT"
+
+out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "Junie's missing capabilities warn, never fail" "$st" 0
+assert_contains "detects Junie from JUNIE_EXTENSION_ROOT" "$out" "host: Junie"
+assert_contains "names the edit guard Junie cannot arm" "$out" "Arm the edit guard"
+assert_contains "names the fresh subagent Junie cannot start" "$out" "Start a fresh subagent"
+assert_contains "names the forked subagent Junie cannot start" "$out" "Start a forked subagent"
+# A human on Junie still starts a skill with /<name>; only the model lacks it.
+assert_contains "names only mid-step skill invocation as missing" "$out" "Invoke a skill from a step"
+assert_contains "points at the reference for the fallbacks" "$out" "docs/host-capabilities.md"
+assert_eq "does not list what Junie can do" \
+  "$(printf '%s\n' "$out" | grep -c 'Ask a multiple-choice question')" "0"
+# An unconfirmed cell is not a known gap: doctor must not state it as one.
+assert_contains "names what is unverified on Junie" "$out" "unverified: Run a plugin command"
+assert_eq "does not claim Junie lacks what is only unverified" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Run a plugin command')" "0"
+assert_contains "an unset plugin root is expected on Junie, not a warning" \
+  "$out" "ok    CLAUDE_PLUGIN_ROOT"
+
+out="$(ORCHESTRATOR_HOST=junie "$ORCH" doctor --env 2>&1)"
+assert_contains "ORCHESTRATOR_HOST outranks the Claude signals" "$out" "host: Junie"
+out="$(ORCHESTRATOR_HOST=vim "$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "names an ORCHESTRATOR_HOST it does not know" "$out" "ORCHESTRATOR_HOST=vim"
+
+out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "no detectable host is not a broken install" "$st" 0
+assert_contains "says the host was not detected" "$out" "host not detected"
+assert_contains "and how to name it" "$out" "export ORCHESTRATOR_HOST="
+
+# A skills-only install copies the skills without scripts/, so the relative
+# path every skill resolves orch.sh by leads nowhere. doctor runs from an
+# orch.sh, so what it can see is such a copy sitting in a user skill store.
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "reports the orch.sh it runs from" "$out" "ok    orch.sh:"
+h="$HOME"
+mkdir -p "$h/.agents/skills/orch-flow"
+touch "$h/.agents/skills/orch-flow/SKILL.md"
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "reports a skills-only copy with no orch.sh" "$out" "orch.sh missing"
+assert_contains "names the skills CLI copy" "$out" "~/.agents/skills: orch-flow"
+# Like the mattpocock remedy, the fix names only the detected host's install.
+assert_contains "names the full-plugin install for Claude Code" "$out" "/plugin install orchestrator@orchestrator"
+assert_eq "and not Junie's, under Claude Code" \
+  "$(printf '%s\n' "$out" | grep -c 'as a Junie extension')" "0"
+out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --env 2>&1)"
+assert_contains "names the full-plugin install for Junie" "$out" "maj0rpain/orchestrator as a Junie extension"
+assert_contains "and marks it unverified" "$out" "as a Junie extension (unverified)"
+assert_eq "and not Claude Code's, under Junie" \
+  "$(printf '%s\n' "$out" | grep -c '/plugin install orchestrator@orchestrator')" "0"
+out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" doctor --env 2>&1)"
+assert_contains "names every host's install when none is detected" "$out" "/plugin install orchestrator@orchestrator"
+assert_contains "including Junie's" "$out" "maj0rpain/orchestrator as a Junie extension"
+# ~/.junie/skills is not a verified Junie location (#121: verified facts only).
+rm -rf "$h/.agents/skills/orch-flow"
+mkdir -p "$h/.junie/skills/orch-review"
+touch "$h/.junie/skills/orch-review/SKILL.md"
+out="$("$ORCH" doctor --env 2>&1)"
+assert_eq "does not scan the unverified ~/.junie/skills" \
+  "$(printf '%s\n' "$out" | grep -c 'orch.sh missing')" "0"
+rm -rf "$h/.junie/skills/orch-review"
 
 # env -u above was scoped to that one command too, so this is still the same
 # fully-healthy repo - exactly the state this last check needs to prove out.
@@ -2781,12 +3092,12 @@ assert_contains "reports the loop has not started" "$out" "review loop: not star
 
 "$ORCH" state set iteration 2
 "$ORCH" state set budget 5
-out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+out="$(ORCHESTRATOR_HOST=junie "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "short of budget warns, never fails" "$st" 0
 assert_contains "names the iteration and budget" "$out" "iteration 2 of budget 5"
 assert_contains "reads as pending, not interrupted" "$out" "hasn't reached its budget yet"
-assert_contains "points at next for resuming it" "$out" "/orchestrator:next will resume it"
-assert_contains "and says redo refuses until it is terminal" "$out" "/orchestrator:redo refuses"
+assert_contains "points at next for resuming it" "$out" "/orchestrator:next (or orch-flow's Next phase section) will resume it"
+assert_contains "and says redo refuses until it is terminal" "$out" "redo refuses until it reaches a terminal state"
 
 "$ORCH" state set iteration 5
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -2968,9 +3279,14 @@ assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 
 "$ORCH" state set iteration 2
 "$ORCH" state set budget 5
-out="$("$ORCH" redo review 2>&1)"; st=$?
+out="$(ORCHESTRATOR_HOST=junie "$ORCH" redo review 2>&1)"; st=$?
 assert_status "refuses a loop still short of its budget" "$st" 1
-assert_contains "pointing at /orchestrator:next instead" "$out" "that's what /orchestrator:next is for"
+assert_contains "pointing at /orchestrator:next instead" "$out" "that's what /orchestrator:next (or orch-flow's Next phase section) is for"
+# Claude Code users see the command alone, as before 1.0.0 (#121 story 2).
+out="$(ORCHESTRATOR_HOST=claude "$ORCH" redo review 2>&1)"
+assert_contains "names the bare command on Claude Code" "$out" "that's what /orchestrator:next is for"
+out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" redo review 2>&1)"
+assert_contains "and the orch-flow section when no host is detected" "$out" "/orchestrator:next (or orch-flow's Next phase section)"
 
 "$ORCH" state set iteration 5
 out="$("$ORCH" redo review 2>&1)"; st=$?
@@ -3220,9 +3536,243 @@ assert_status "--new-issue shells out for real" "$st" 0
 assert_contains "the real adapter invoked gh issue close on the old issue" \
   "$(cat "$filed")" "issue close 43"
 assert_contains "with the redo comment" \
-  "$(cat "$filed")" "This issue was closed by /orchestrator:redo"
+  "$(cat "$filed")" "This issue was closed by an orchestrator redo"
 assert_eq "gh itself was invoked once, as a real subprocess" \
   "$(grep -cx issue "$log")" "1"
+
+# --- skill names (ADR-0014) --------------------------------------------------
+# Every orchestrator skill carries the orch- prefix. An old unprefixed name
+# left in a skill, command, hook, or doc points a model at a skill that no
+# longer exists. CHANGELOG and ADRs record history and may name the old ones;
+# scripts/test/ feeds old names in deliberately as negative cases.
+echo
+echo "skill names (ADR-0014)"
+root="$(cd "$(dirname "$ORCH")/.." && pwd)"
+old_names='orchestrator:(flow|handoff|review|review-spec|quick-implement)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement)/|^name: (flow|handoff|review|review-spec|quick-implement)$'
+hits="$(git -C "$root" ls-files -z \
+  | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/)' \
+  | (cd "$root" && xargs -0 grep -nE "$old_names" 2>/dev/null))"
+assert_eq "no old unprefixed orchestrator skill name outside CHANGELOG/ADR history" "$hits" ""
+for d in "$root"/skills/*/; do
+  n="$(basename "$d")"
+  case "$n" in
+    orch-*) ok "skill directory $n carries the orch- prefix" ;;
+    *) bad "skill directory $n carries the orch- prefix" "unprefixed skill directory" ;;
+  esac
+  assert_eq "skill $n declares its directory name" \
+    "$(sed -n 's/^name: //p' "$d/SKILL.md" | head -1)" "$n"
+done
+
+# --- orch.sh resolution (#123) ------------------------------------------------
+# Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
+# other hosts, so skill, command, and guidelines text must pair it with the
+# relative fallback. The one documented form (README, "Resolving orch.sh") is
+# the ORCH= line plus the fallback sentence; any other mention of the variable,
+# or a file that runs orch.sh without that pair, is a regression.
+# hooks/hooks.json is deliberately out of scope: both hosts expand it there.
+echo
+echo "orch.sh resolution (#123)"
+orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'
+fallback='If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`'
+# scan_orch_resolution <plugin root>: print one line per offending file.
+scan_orch_resolution() {
+  local r="$1" f
+  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md "$r"/guidelines/*; do
+    [ -f "$f" ] || continue
+    if grep -n 'CLAUDE_PLUGIN_ROOT' "$f" | grep -vF -e "$orch_line" -e "$fallback" | grep -q .; then
+      echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
+    fi
+    if grep -qE 'orch\.sh|\$ORCH' "$f"; then
+      grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
+      grep -qF "$fallback" "$f" || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
+    fi
+  done
+}
+assert_eq "every skill and command resolves orch.sh the one documented way" \
+  "$(scan_orch_resolution "$root")" ""
+# With no full install at all, doctor has no orch.sh to run from, so the skill
+# is the one that has to explain the failure (#128).
+missing=""
+for f in "$root"/skills/*/SKILL.md; do
+  grep -qF 'skills-only install' "$f" || missing="$missing ${f#"$root"/}"
+done
+assert_eq "every skill names the full-plugin install when orch.sh is missing" "$missing" ""
+# The Junie install in that stop text is unverified, so it has to say so (#121).
+missing=""
+for f in "$root"/skills/*/SKILL.md; do
+  grep -qF 'as a Junie extension, which is unverified' "$f" || missing="$missing ${f#"$root"/}"
+done
+assert_eq "every skill marks its Junie install unverified" "$missing" ""
+# One stop text, copied into each skill: once the Junie install is verified,
+# every copy must change together, so they may not drift apart.
+stop_text() { awk '/^If `orch.sh` is at neither path/,/which is unverified\)\.$/' "$1"; }
+ref="$(stop_text "$root/skills/orch-flow/SKILL.md")"
+assert_contains "orch-flow carries the skills-only stop text" "$ref" "skills-only install"
+drift=""
+for f in "$root"/skills/*/SKILL.md; do
+  [ "$(stop_text "$f")" = "$ref" ] || drift="$drift ${f#"$root"/}"
+done
+assert_eq "every skill's skills-only stop text matches orch-flow's word for word" "$drift" ""
+fixture="$(mktemp -d)"
+mkdir -p "$fixture/guidelines"
+printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/guidelines/orch.md"
+assert_contains "the scan covers guidelines/ and flags a bare CLAUDE_PLUGIN_ROOT" \
+  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: CLAUDE_PLUGIN_ROOT outside"
+printf '%s\n' '```' "$orch_line" '```' "$fallback two directories above this skill's own directory." \
+  >"$fixture/guidelines/orch.md"
+assert_eq "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")" ""
+rm -rf "$fixture"
+
+# --- host capabilities (#127) -------------------------------------------------
+# Skills describe capabilities and point at one reference that maps each
+# capability to each host, so a host without Claude Code's tools can still
+# follow them. Commands are Claude-only shortcuts and hold no behaviour of
+# their own: each routes to an orch-flow section that exists.
+echo
+echo "host capabilities (#127)"
+ref="$root/docs/host-capabilities.md"
+if [ -f "$ref" ]; then ok "the host capabilities reference exists"
+else bad "the host capabilities reference exists" "no $ref"; fi
+header="$(grep -m1 '^| Capability' "$ref" 2>/dev/null)"
+assert_contains "it has a Claude Code column" "$header" "| Claude Code |"
+assert_contains "it has a Junie column" "$header" "| Junie |"
+for cap in 'Invoke a skill from a step' 'Ask a multiple-choice question' 'Start a fresh subagent' \
+           'Start a forked subagent' 'Start a fresh session' \
+           'Inject context at planning time' 'Arm the edit guard'; do
+  row="$(grep -m1 "^| $cap |" "$ref" 2>/dev/null)"
+  assert_eq "it has a filled-in row for: $cap" \
+    "$(printf '%s\n' "$row" | awk -F'|' 'NF >= 5 && $3 !~ /^ *$/ && $4 !~ /^ *$/ { print "filled" }')" "filled"
+done
+# scan_capabilities <plugin root>: print one line per offending skill or command.
+scan_capabilities() {
+  local r="$1" f s
+  for f in "$r"/skills/*/SKILL.md; do
+    [ -f "$f" ] || continue
+    grep -qF 'docs/host-capabilities.md' "$f" \
+      || echo "${f#"$r"/}: never points at docs/host-capabilities.md"
+    grep -niE '(call|use|with) the (Skill|Agent) tool|(call|use|spawn|dispatch)[a-z]* .*the Agent tool' "$f" \
+      | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
+    # Junie has no plugin scope, so a skill names its siblings bare (orch-flow);
+    # the Claude-scoped form is only ever the generic orchestrator:<name>.
+    grep -nE 'orchestrator:orch-' "$f" \
+      | sed "s|^|${f#"$r"/}: names a skill by its Claude-scoped name: |"
+    # "Run a plugin command" is Unverified on Junie, so a skill that offers one
+    # also says what to offer on a host without plugin commands.
+    if grep -qE '/orchestrator:[a-z]' "$f" && ! grep -qF 'no plugin commands' "$f"; then
+      echo "${f#"$r"/}: offers a plugin command with no fallback"
+    fi
+    # A host's column holds only verified facts, so a claim about every host
+    # outruns the reference.
+    grep -niE 'no host can' "$f" \
+      | sed "s|^|${f#"$r"/}: claims a fact for every host: |"
+  done
+  for f in "$r"/commands/*.md; do
+    [ -f "$f" ] || continue
+    grep -qE 'orch\.sh|\$ORCH' "$f" && echo "${f#"$r"/}: runs orch.sh itself"
+    s="$(grep -oE "orch-flow\` and follow its \*\*[^*]+\*\*" "$f" | sed 's/.*\*\*\(.*\)\*\*/\1/')"
+    if [ -z "$s" ]; then echo "${f#"$r"/}: routes to no orch-flow section"
+    else grep -qxF "## $s" "$r/skills/orch-flow/SKILL.md" \
+      || echo "${f#"$r"/}: routes to a missing orch-flow section: $s"; fi
+  done
+}
+assert_eq "every skill points at the reference, and every command is a thin route" \
+  "$(scan_capabilities "$root")" ""
+# orch.sh's and doctor.sh's messages reach the model on every host too, so they
+# name a flow command only through flow_cmd, which adds the orch-flow section
+# for a host with no plugin commands - and every section it names must exist.
+assert_eq "the scripts name a plugin command only through flow_cmd" \
+  "$(grep -nE '/orchestrator:[a-z]' "$root/scripts/orch.sh" "$root/scripts/doctor.sh" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#')" ""
+flow_sections="$(awk '/^flow_cmd\(\)/,/^}/' "$root/scripts/orch.sh" | grep -oE 'section="[^"]+"' | sed 's/section="//; s/"$//')"
+assert_eq "flow_cmd names four orch-flow sections" "$(printf '%s\n' "$flow_sections" | grep -c .)" "4"
+while IFS= read -r s; do
+  grep -qxF "## $s" "$root/skills/orch-flow/SKILL.md" \
+    && ok "flow_cmd's section exists in orch-flow: $s" \
+    || bad "flow_cmd's section exists in orch-flow: $s" "no ## $s"
+done <<<"$flow_sections"
+fixture="$(mktemp -d)"
+mkdir -p "$fixture/skills/orch-x" "$fixture/skills/orch-flow" "$fixture/commands"
+printf '## Status\nSee docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
+printf 'Call the Skill tool with `x`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Invoke `orchestrator:orch-flow` and follow its **Doctor** section.\n' >"$fixture/commands/doctor.md"
+out="$(scan_capabilities "$fixture")"
+assert_contains "the scan flags a Claude tool named as the step" "$out" "orch-x/SKILL.md: names a Claude tool"
+printf '## Status\nInvoke `orchestrator:orch-handoff`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
+assert_contains "the scan flags a sibling skill named by its Claude scope" \
+  "$(scan_capabilities "$fixture")" "orch-flow/SKILL.md: names a skill by its Claude-scoped name"
+printf '## Status\nInvoke the `orch-handoff` skill (`orchestrator:<name>` on Claude Code). See docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
+assert_contains "the scan flags a command routed to a missing section" "$out" "missing orch-flow section: Doctor"
+printf 'Offer `/orchestrator:abort`, so no host can stall. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-x/SKILL.md"
+out="$(scan_capabilities "$fixture")"
+assert_contains "the scan flags a plugin command offered with no fallback" "$out" "orch-x/SKILL.md: offers a plugin command with no fallback"
+assert_contains "the scan flags a fact claimed for every host" "$out" "orch-x/SKILL.md: claims a fact for every host"
+printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Invoke `orchestrator:orch-flow` and follow its **Status** section.\n' >"$fixture/commands/doctor.md"
+printf '%s\n' "$orch_line" >"$fixture/commands/status.md"
+out="$(scan_capabilities "$fixture")"
+assert_contains "the scan flags a command that runs orch.sh itself" "$out" "commands/status.md: runs orch.sh itself"
+rm "$fixture/commands/status.md"
+assert_eq "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")" ""
+rm -rf "$fixture"
+
+# --- Junie planning nudge (#129) ----------------------------------------------
+# Junie has no PostToolUse event, so hook-grilling.sh never fires there. A
+# guidelines/ file carries its message instead, and it loads in every repo the
+# extension is enabled in, so it must stay conditional. The scan checks the
+# message's key points survive, not its exact wording.
+echo
+echo "Junie planning nudge (#129)"
+# scan_planning_nudge <plugin root>: print one line per missing key point.
+scan_planning_nudge() {
+  local r="$1" f
+  f="$(ls "$r"/guidelines/*.md 2>/dev/null | head -1)"
+  if [ -z "$f" ]; then echo "no guidelines/*.md file"; return; fi
+  local label
+  while IFS='|' read -r label pattern; do
+    grep -qiE "$pattern" "$f" || echo "${f#"$r"/}: missing $label"
+  done <<'EOF'
+the conditional wording|only when a grilling session is running and no flow is active
+the active-flow check|\.orchestrator/state\.json
+no implementing during planning|planning artifacts
+the flow option|Start the orchestrator flow
+the quick option|Quick implementation
+the multiple-choice question|AskUserQuestion
+the orch-flow skill|`orch-flow`
+the orch-quick-implement skill|`orch-quick-implement`
+the issue-tracker warning|docs/agents/issue-tracker\.md
+the setup fix|setup-matt-pocock-skills
+the Invoke a skill from a step fallback as the step|no Skill tool.*read `skills/<name>/SKILL\.md`
+EOF
+  # Junie's "Invoke a skill from a step" cell is Fallback, so reading SKILL.md is the step,
+  # not a branch taken only when a listed skill is missing.
+  grep -niE 'if it is not listed' "$f" \
+    | sed "s|^|${f#"$r"/}: makes the Invoke a skill from a step fallback conditional: |"
+  grep -niE '(call|use|with) the (Skill|Agent) tool' "$f" \
+    | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
+  # A hand-copied allowlist drifts; every entry of the canonical definition must
+  # appear, so an addition there fails here until the text catches up.
+  local entry
+  for entry in $(source "$root/scripts/planning-allowlist.sh"; printf '%s\n' "${PLANNING_ALLOWLIST[@]}"); do
+    grep -qF "$entry" "$f" || echo "${f#"$r"/}: missing allowlist entry $entry"
+  done
+}
+assert_eq "the guidelines file carries the grilling hook's key points, conditionally" \
+  "$(scan_planning_nudge "$root")" ""
+fixture="$(mktemp -d)"
+assert_eq "the scan flags a missing guidelines file" \
+  "$(scan_planning_nudge "$fixture")" "no guidelines/*.md file"
+mkdir -p "$fixture/guidelines"
+printf 'Start the orchestrator flow or Quick implementation. Call the Skill tool with `orch-flow`.\n' \
+  >"$fixture/guidelines/orch.md"
+out="$(scan_planning_nudge "$fixture")"
+assert_contains "the scan flags unconditional wording" "$out" "missing the conditional wording"
+assert_contains "the scan flags a missing issue-tracker warning" "$out" "missing the issue-tracker warning"
+assert_contains "the scan flags a Claude tool named as the step" "$out" "names a Claude tool as the step"
+assert_contains "the scan flags a missing Invoke a skill from a step fallback" "$out" "missing the Invoke a skill from a step fallback as the step"
+printf 'Pick `orch-flow` from the skills this host lists. If it is not listed, read its SKILL.md.\n' \
+  >"$fixture/guidelines/orch.md"
+assert_contains "the scan flags a conditional Invoke a skill from a step fallback" \
+  "$(scan_planning_nudge "$fixture")" "makes the Invoke a skill from a step fallback conditional"
+rm -rf "$fixture"
 
 echo
 if [ "$SKIP" -gt 0 ]; then

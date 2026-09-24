@@ -52,8 +52,28 @@ readonly STATE="$ORCH/state.json"
 readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
 
+# Names a flow command so any host can act on it. Plugin commands are
+# unverified on Junie (docs/host-capabilities.md), so off Claude Code each also
+# names the orch-flow section it routes to - the same fallback the skills
+# offer. On Claude Code the message stays as it was before 1.0.0 (#121 story 2).
+flow_cmd() {
+  local section
+  case "$1" in
+    start) section="Starting a flow" ;;
+    next)  section="Next phase" ;;
+    redo)  section="Redo" ;;
+    abort) section="Abort" ;;
+    *) die "flow_cmd: unknown command: $1" ;;
+  esac
+  if [ "$(host_detect)" = claude ]; then
+    printf "/orchestrator:%s" "$1"
+  else
+    printf "/orchestrator:%s (or orch-flow's %s section)" "$1" "$section"
+  fi
+}
+
 require_state() {
-  [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run /orchestrator:start first."
+  [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
 }
 
 # Fetches a required state field via jq, dies with $3 if it comes back empty,
@@ -87,20 +107,97 @@ require_issue() { require_field "$1" '.issue // ""' "no issue recorded in state 
 # pr open and redo review both need the flow's branch before touching GitHub.
 require_branch() { require_field "$1" '.branch // ""' "no branch recorded in state"; }
 
-# --- environment ------------------------------------------------------------
-
-# Locate the newest installed mattpocock-skills plugin. Resolved by glob at
-# runtime and never pinned: the version in the cache path changes under us.
-# No array: bash 3.2 cannot tell an empty array from an unset one, so
-# ${#hits[@]} on a machine with no plugin installed aborts the subshell under
+# --- mattpocock-skills lookup ------------------------------------------------
+#
+# Each supported host installs mattpocock-skills somewhere else, in another
+# shape, so the lookup is one place that knows them all. Shared by mp-skill and
+# doctor so the two can never disagree about where the skills are. Checked in
+# this order, and the first location present wins outright - skills are never
+# mixed across installs, so a partial install is reported rather than papered
+# over with whatever version some other host left behind:
+#
+#   override - $ORCHESTRATOR_MATTPOCOCK_ROOT, for an install none of the below
+#              describe. Authoritative when set: a bad value fails rather than
+#              falling through to something the user did not ask for.
+#   claude   - Claude's plugin cache, namespaced by marketplace and version.
+#              Resolved by glob, never pinned: the version changes under us,
+#              and the newest wins.
+#   junie    - Junie's extension cache under ~/.junie/extensions/, flat and
+#              un-namespaced (#121, from a real install). Whether an extension
+#              sits at the top level or one directory down is unverified, so
+#              both are checked.
+#   agents   - the `skills` CLI store. ~/.agents/skills is shared with every
+#              other skill the CLI installed, so only the entries its lockfile
+#              records as mattpocock-skills' count - a same-named skill from
+#              another plugin is never run in its place.
+#
+# Only user-level locations count. A project's own .agents/skills is ignored:
+# a cloned repo must not be able to substitute the instructions the flow runs.
+#
+# No arrays: bash 3.2 cannot tell an empty array from an unset one, so
+# ${#hits[@]} on a machine with nothing installed aborts the subshell under
 # `set -u` - on the one code path doctor exists to report.
-find_mattpocock() {
+
+MP_PLUGIN="mattpocock-skills"
+MP_LOCK_REL=".agents/.skill-lock.json"
+
+# True when the skills CLI lockfile records $1 as a mattpocock-skills skill, or
+# with no argument, when it records any. jq missing reads as "records nothing".
+mp_agents_owns() {
+  local lock="$HOME/$MP_LOCK_REL"
+  [ -f "$lock" ] || return 1
+  if [ -n "${1:-}" ]; then
+    jq -e --arg n "$1" --arg p "$MP_PLUGIN" \
+      '(.skills // {})[$n].pluginName == $p' "$lock" >/dev/null 2>&1
+  else
+    jq -e --arg p "$MP_PLUGIN" \
+      'any((.skills // {})[]; .pluginName == $p)' "$lock" >/dev/null 2>&1
+  fi
+}
+
+# Where mattpocock-skills will be read from, as "<kind><TAB><path>", or status 1
+# when no location holds it. Kinds are the ones listed above.
+mp_location() {
   local p hits=""
-  for p in "$HOME"/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/implement/SKILL.md; do
-    if [ -f "$p" ]; then hits="$hits$p"$'\n'; fi
+  if [ -n "${ORCHESTRATOR_MATTPOCOCK_ROOT:-}" ]; then
+    [ -d "$ORCHESTRATOR_MATTPOCOCK_ROOT" ] || return 1
+    printf 'override\t%s\n' "${ORCHESTRATOR_MATTPOCOCK_ROOT%/}"
+    return 0
+  fi
+  for p in "$HOME"/.claude/plugins/cache/*/"$MP_PLUGIN"/*/skills; do
+    if [ -d "$p" ]; then hits="$hits${p%/skills}"$'\n'; fi
   done
-  [ -n "$hits" ] || return 1
-  printf '%s' "$hits" | sort -V | tail -1 | sed 's|/skills/engineering/implement/SKILL.md$||'
+  if [ -n "$hits" ]; then
+    printf 'claude\t%s\n' "$(printf '%s' "$hits" | sort -V | tail -1)"
+    return 0
+  fi
+  for p in "$HOME/.junie/extensions/$MP_PLUGIN" "$HOME"/.junie/extensions/*/"$MP_PLUGIN"; do
+    if [ -d "$p" ]; then printf 'junie\t%s\n' "$p"; return 0; fi
+  done
+  if mp_agents_owns; then
+    printf 'agents\t%s\n' "$HOME/.agents/skills"
+    return 0
+  fi
+  return 1
+}
+
+# The SKILL.md for skill $3 in location $2 of kind $1, or status 1. Plugin-shaped
+# locations may file skills under a category (skills/engineering/<name>) or
+# flat (skills/<name>); an override may also point straight at a directory of
+# skills. A name is a single path segment - never a way out of the location.
+mp_skill_path() {
+  local kind="$1" root="$2" name="$3" p
+  case "$name" in ""|*/*|.*) return 1 ;; esac
+  if [ "$kind" = agents ]; then
+    mp_agents_owns "$name" || return 1
+    p="$root/$name/SKILL.md"
+    if [ -f "$p" ]; then printf '%s\n' "$p"; return 0; fi
+    return 1
+  fi
+  for p in "$root/skills"/*/"$name"/SKILL.md "$root/skills/$name/SKILL.md" "$root/$name/SKILL.md"; do
+    if [ -f "$p" ]; then printf '%s\n' "$p"; return 0; fi
+  done
+  return 1
 }
 
 # Ask GitHub first. refs/remotes/origin/HEAD is a *local cached pointer* frozen at
@@ -130,13 +227,11 @@ exclude_orch_dir() {
 # so the Skill tool cannot reach them. Their SKILL.md files are plain markdown
 # and can be read and followed directly - this resolves one by name.
 cmd_mp_skill() {
-  local name="${1:-}" mp p
-  mp="$(find_mattpocock)" || die "mattpocock-skills plugin not installed"
-  if [ -z "$name" ]; then printf '%s\n' "$mp"; return 0; fi
-  for p in "$mp/skills"/*/"$name"/SKILL.md; do
-    if [ -f "$p" ]; then printf '%s\n' "$p"; return 0; fi
-  done
-  die "no such mattpocock skill: $name"
+  local name="${1:-}" loc kind root
+  loc="$(mp_location)" || die "mattpocock-skills not installed - run: orch.sh doctor --env"
+  kind="${loc%%$'\t'*}"; root="${loc#*$'\t'}"
+  if [ -z "$name" ]; then printf '%s\n' "$root"; return 0; fi
+  mp_skill_path "$kind" "$root" "$name" || die "no such mattpocock skill: $name (looked in $root)"
 }
 
 # --- doctor -----------------------------------------------------------------
@@ -146,7 +241,53 @@ cmd_mp_skill() {
 # commands below.
 source "$(dirname "${BASH_SOURCE[0]}")/doctor.sh"
 
+# The one definition of the planning allowlist, shared with hook-guard.sh so
+# the flow-start check and the edit guard can never disagree about it.
+source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
+
 # --- state ------------------------------------------------------------------
+
+# Prints, one per line, every path with tracked modifications or untracked
+# files in this working tree that falls outside the planning allowlist. -z
+# keeps unusual file names intact; a rename or copy carries its source path as
+# a second record, and both sides count - the source is gone from where it was.
+# -uall lists untracked files individually, so a new directory is judged by
+# what is in it rather than by its name.
+dirty_outside_allowlist() {
+  local rec path want_src=0 status
+  # Captured first rather than read through a process substitution, whose
+  # failure set -e never sees: a git status that cannot run must refuse, not
+  # read as a clean tree. A file, not a variable, because the output is
+  # NUL-separated.
+  status="$(mktemp)"
+  git -C "$ROOT" status --porcelain=v1 -z -uall >"$status" \
+    || { rm -f "$status"; die "git status failed - cannot check the working tree"; }
+  while IFS= read -r -d '' rec; do
+    if [ "$want_src" -eq 1 ]; then
+      path="$rec"; want_src=0
+    else
+      path="${rec:3}"
+      case "${rec:0:2}" in *R*|*C*) want_src=1 ;; esac
+    fi
+    planning_allowlisted "$path" || printf '%s\n' "$path"
+  done <"$status"
+  rm -f "$status"
+}
+
+# The git-based backstop from ADR-0013. Where no host hook arms the edit
+# guard, planning can edit source unhindered; flow start is where that gets
+# caught, before any state exists. Runs against $ROOT, this working tree's own
+# top level, so a flow started inside a worktree (ADR-0008) is judged by that
+# worktree's changes and not by the checkout it was forked from.
+require_clean_outside_allowlist() {
+  local dirty
+  dirty="$(dirty_outside_allowlist)" || exit 1
+  [ -z "$dirty" ] && return 0
+  die "the working tree has changes outside the planning allowlist:
+$(printf '%s\n' "$dirty" | sed 's/^/       /')
+     Planning may only change: $(planning_allowlist_text).
+     Commit, stash, or discard these changes, then run init again."
+}
 
 cmd_init() {
   local usage="usage: orch.sh init <slug> [--issue N]"
@@ -172,8 +313,9 @@ cmd_init() {
   local archive_note=""
   if [ -f "$STATE" ] && [ "$(jq -r .phase "$STATE")" != "done" ]; then
     die "a flow is already active (slug: $(jq -r .slug "$STATE"), phase: $(jq -r .phase "$STATE")).
-     One flow at a time - finish it, or run /orchestrator:abort."
+     One flow at a time - finish it, or run $(flow_cmd abort)."
   fi
+  require_clean_outside_allowlist
   # Adoption is validated before anything is written, mirroring how
   # branch create and pr open die on their own preconditions rather than
   # letting a whole phase run against an issue that cannot back it. Validating
@@ -191,11 +333,12 @@ cmd_init() {
   # spent or not, so that one refilled each iteration could not become an
   # infinite retry loop. issue is seeded from --issue when given; state.json
   # carries no field for whether it was adopted or published - nothing
-  # downstream reads that distinction.
+  # downstream reads that distinction. host_fallbacks marks a flow whose
+  # handoffs must record Host fallbacks (see host_fallbacks_required).
   jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" '{
     slug: $slug, phase: "spec", issue: (if $issue == "" then null else ($issue | tonumber) end),
     branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
-    flake_rerun_used: false, redo_count: 0, created: $now, updated: $now
+    flake_rerun_used: false, redo_count: 0, host_fallbacks: true, created: $now, updated: $now
   }' >"$STATE"
   [ -z "$archive_note" ] || note "$archive_note"
   note "$slug"
@@ -253,6 +396,15 @@ handoff_required() {
     03-implement.md) printf '%s\n' '## PR' '## Spec issue' '## Base SHA' '## Deviations' '## Verification' ;;
     *) die "unknown handoff file: $1" ;;
   esac
+  if host_fallbacks_required; then printf '%s\n' '## Host fallbacks'; fi
+}
+
+# A flow started before 1.0.0 wrote its handoffs without Host fallbacks, and
+# its state.json has no host_fallbacks field. It keeps validating as it did, so
+# upgrading mid-flow breaks nothing; every flow init starts now requires the
+# section. With no state at all there is no older flow to spare.
+host_fallbacks_required() {
+  [ ! -f "$STATE" ] || [ "$(jq -r '.host_fallbacks // false' "$STATE" 2>/dev/null)" = true ]
 }
 
 section_body() {
@@ -1105,11 +1257,11 @@ cmd_redo_review() {
   word="$(first_line "$terminal")"
   case "$word" in
     none)
-      die "no review loop has run yet - nothing to redo back from; run /orchestrator:next to start one." ;;
+      die "no review loop has run yet - nothing to redo back from; run $(flow_cmd next) to start one." ;;
     pending)
-      die "the review loop hasn't reached its budget yet (iteration $i of budget $b) - that's what /orchestrator:next is for; redo is for after a loop ends." ;;
+      die "the review loop hasn't reached its budget yet (iteration $i of budget $b) - that's what $(flow_cmd next) is for; redo is for after a loop ends." ;;
     interrupted)
-      die "the review loop's last iteration ($i) has no recorded terminal state - the session looks interrupted, not stopped. Resume it with /orchestrator:next; redo only runs once a loop actually ends." ;;
+      die "the review loop's last iteration ($i) has no recorded terminal state - the session looks interrupted, not stopped. Resume it with $(flow_cmd next); redo only runs once a loop actually ends." ;;
     stop) ;;
     *) die "review_terminal_state answered something redo does not know: $word" ;;
   esac
@@ -1142,7 +1294,7 @@ cmd_redo_review() {
     cmd_state set redo_count "$new_n"
   fi
 
-  msg="$(printf 'This PR was closed by /orchestrator:redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
+  msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
   adapter_pr_close "$pr" --comment "$msg" >/dev/null || die "gh could not close PR #$pr"
 
   # The prior implement phase closed every ticket it finished, so the redone
@@ -1178,7 +1330,7 @@ cmd_redo_spec() {
   if [ "$new_issue" -eq 1 ]; then
     local issue msg
     require_issue issue
-    msg="$(printf 'This issue was closed by /orchestrator:redo because the spec itself needed to change.\n\nA fresh issue will follow from to-spec in this same flow.\n')"
+    msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from to-spec in this same flow.\n')"
     adapter_issue_close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
     cmd_state set issue null
   fi
@@ -1199,7 +1351,7 @@ cmd_redo() {
 
 cmd_status() {
   if [ ! -f "$STATE" ]; then
-    note "No active flow. Run /orchestrator:start from an approved plan."
+    note "No active flow. Run $(flow_cmd start) from an approved plan."
     return 0
   fi
   local slug phase issue branch pr iteration redo_count
@@ -1254,9 +1406,11 @@ orch.sh - deterministic operations for the orchestrator flow
   default-branch              resolve the base branch feature branches fork from
   init <slug> [--issue N]     start a flow (refuses if one is active, unless
                               it is done - a done flow is archived and the
-                              new one starts over it); --issue adopts an
-                              already-open, ready-for-agent issue N as the
-                              flow's spec instead of leaving it unset
+                              new one starts over it, or if the working tree
+                              has changes outside the planning allowlist);
+                              --issue adopts an already-open,
+                              ready-for-agent issue N as the flow's spec
+                              instead of leaving it unset
   slug <text>                 normalise text to the kebab-case slug init would
                               store - lowercase, non-alphanumeric runs collapsed
                               to a hyphen, trimmed

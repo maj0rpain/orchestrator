@@ -1,6 +1,6 @@
 ---
-name: review
-description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing blocking findings only, filing every major and nit as an issue at the end, and either marking the PR ready or stopping with the reason recorded. Use from orchestrator:flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop.
+name: orch-review
+description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing blocking findings only, filing every major and nit as an issue at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop.
 ---
 
 # Orchestrator review loop
@@ -26,8 +26,13 @@ why one session may drive a whole loop - see
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, it is `scripts/orch.sh` two directories above
-this file.
+If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+two directories above this skill's own directory (the plugin root).
+
+If `orch.sh` is at neither path, this is a skills-only install: stop, and
+tell the human `orch.sh` is missing and to install the full orchestrator
+plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
+`maj0rpain/orchestrator` as a Junie extension, which is unverified).
 
 ## Before the first iteration
 
@@ -45,9 +50,9 @@ this file.
    asked for more: read every `.orchestrator/review/iteration-NN.md` already
    there, because their **Filed** lists are what stop this loop re-filing
    what the previous one filed.
-5. Ask the budget. **The question blocks** - use the `AskUserQuestion` tool;
-   where it is unavailable, ask in plain text and wait for the answer. Ask
-   once, before the first iteration, and never again mid-loop:
+5. Ask the budget. **The question blocks** - ask it as a question
+   (`AskUserQuestion` on both Claude Code and Junie). Ask once, before the
+   first iteration, and never again mid-loop:
    - First loop: "How many review iterations?" Default 5. Any integer ≥ 1;
      there is no upper cap.
    - Re-entry: "How many more?" Same default and range. The new loop continues
@@ -62,11 +67,13 @@ this file.
 1. `"$ORCH" review begin`. It prints the iteration number, or refuses with
    "budget of N iterations spent" - a refusal is the end of the loop, so go to
    **Termination**.
-2. Call the Skill tool with `mattpocock-skills:code-review`, giving it the
+2. Invoke `mattpocock-skills:code-review` (see `docs/host-capabilities.md`
+   under the plugin root for how your host invokes a skill), giving it the
    **base SHA** as the fixed point and the **spec issue** as the spec source.
    Always spell it with the `mattpocock-skills:` scope - the bare name is
    ambiguous with another `code-review` skill that may be installed alongside
-   this plugin. **Every iteration reviews from the base SHA**, never from the
+   this plugin. On a host with no scoped names, invoke it through
+   `"$ORCH" mp-skill code-review` for the same reason. **Every iteration reviews from the base SHA**, never from the
    previous iteration's HEAD: each is an independent look at the whole change,
    and the Spec axis cannot answer "is the spec implemented" from a diff
    containing one fix.
@@ -247,4 +254,5 @@ gh pr comment <pr> --body-file <file>
 The PR is the only durable surface another human ever sees. Carry: iterations
 run, what was fixed with commit SHAs, the issues filed with number, severity,
 and title, covered deviations, rejected-alternative proposals with the reason
-each lost, the CI result, and what happens next.
+each lost, the CI result, the host fallbacks the loop took (per
+`docs/host-capabilities.md`, or `None (<host>).`), and what happens next.

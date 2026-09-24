@@ -1,5 +1,5 @@
 ---
-name: quick-implement
+name: orch-quick-implement
 description: Implement a small, already-understood change directly, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue, a published ticket breakdown, test-driven implementation, and a single-pass review before the PR opens.
 ---
 
@@ -16,8 +16,18 @@ for how a change gets made - test-driven, reviewed, then opened as a PR.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, it is `scripts/orch.sh` two directories above
-this file.
+If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+two directories above this skill's own directory (the plugin root).
+
+If `orch.sh` is at neither path, this is a skills-only install: stop, and
+tell the human `orch.sh` is missing and to install the full orchestrator
+plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
+`maj0rpain/orchestrator` as a Junie extension, which is unverified).
+
+Steps here name capabilities (invoke a skill, start a fresh subagent).
+`docs/host-capabilities.md` under the plugin root maps each one to your host.
+Where your host's cell says **Fallback**, or **Unverified** and the capability
+turns out missing, take the fallback it documents and list it under a **Host fallbacks** heading in the PR body (step 6).
 
 ## 1. Require a linked issue
 
@@ -43,9 +53,10 @@ path, so `to-tickets` synthesizes tickets directly off the raw linked issue -
 it is the only spec this path has.
 
 `to-tickets` carries `disable-model-invocation: true` in the installed
-mattpocock-skills version, so the Skill tool cannot reach it. Resolve it with
+mattpocock-skills version, so Claude Code's Skill tool refuses it, and Junie
+gives the model no Skill tool at all. Resolve it with
 `"$ORCH" mp-skill to-tickets`, read it, and follow it directly - the same
-pattern `skills/flow/SKILL.md` uses for the same upstream skill. Follow it
+pattern `skills/orch-flow/SKILL.md` uses for the same upstream skill. Follow it
 through its own quiz (steps 1-4) until the user approves a breakdown.
 
 **A breakdown of 2 or more tickets** publishes exactly as today: publish
@@ -93,15 +104,16 @@ never in parallel - every ticket commits to the same branch. Loop:
 - Record the subagent's report, then `"$ORCH" ticket close <n>` - only now
   that the report is back, never before - and go around again.
 
-**Dispatching a subagent**: call the Agent tool - a fresh agent, explicitly
-not a fork, so it starts with nothing but what this brief hands it -
-carrying only the issue number named above. The brief's directions open
+**Dispatching a subagent**: start a fresh subagent (on Claude Code, the
+Agent tool as a fresh agent, explicitly not a fork), so it starts with
+nothing but what this brief hands it, carrying only the issue number named
+above. Without one, take the documented fallback. The brief's directions open
 with an explicit first instruction: fetch the ticket itself (`gh issue view
 <n> --comments`, per `docs/agents/issue-tracker.md`'s "fetch the relevant
 ticket" convention) before doing anything else. The brief then directs the
-subagent to call the Skill tool with `mattpocock-skills:tdd` against the
-ticket - it carries no `disable-model-invocation` flag, unlike `implement`,
-so the subagent can reach it directly; to build on the current branch,
+subagent to invoke `mattpocock-skills:tdd` against the ticket - it carries
+no `disable-model-invocation` flag, unlike `implement`, so the subagent can
+invoke it as a skill (without a Skill tool, through `"$ORCH" mp-skill tdd`); to build on the current branch,
 already checked out, and commit its own work to it; to never open a branch
 or PR of its own; and to never block on a human mid-ticket - a call it
 cannot make alone is a deviation, recorded and returned instead of asked.
@@ -115,21 +127,24 @@ Its report is structured: what it built, and the deviation it made, if any.
 
 ## 5. Review
 
-Call the Skill tool with `mattpocock-skills:code-review` yourself - one plain,
-single pass, never `orchestrator:review`'s multi-iteration loop. That loop's
+Invoke `mattpocock-skills:code-review` yourself - one plain,
+single pass, never the `orch-review` skill's multi-iteration loop. That loop's
 budget and filed-findings machinery is exactly what a quick implementation is
 choosing to skip. Fix what it finds before opening the PR.
 
 Always spell the code review skill with its `mattpocock-skills:` scope - the
 bare name is ambiguous with another `code-review` skill that may be installed
 alongside this plugin, which reviews the current diff for correctness and
-cleanup, not Standards + Spec fidelity to the issue that this step needs.
+cleanup, not Standards + Spec fidelity to the issue that this step needs. On
+a host with no scoped names, invoke it through `"$ORCH" mp-skill code-review`
+for the same reason.
 
 ## 6. Open the PR
 
 Commit, then open the PR with `"$ORCH" pr publish <issue> "<title>"
 <body-file>` - the same boundary `pr open` draws for a flow, kept out of
-skill prose. It pushes the branch, closes `<issue>`, and opens the PR against
+skill prose. The body ends with a **Host fallbacks** heading listing every
+fallback this run took, or `None (<host>).` It pushes the branch, closes `<issue>`, and opens the PR against
 the default branch, not as a draft: the single-pass review in step 5 already
 happened, so there is no loop left to promote it - draft would leave it stuck
 with nothing watching it.

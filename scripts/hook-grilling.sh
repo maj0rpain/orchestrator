@@ -9,21 +9,28 @@
 # It injects context only. It cannot force compliance, which is why the real
 # durability lives in .orchestrator/state.json and the edit guard. Fires once
 # per session, and says nothing at all when a flow is already running.
+#
+# Junie has no PostToolUse event, so guidelines/orch-planning.md carries the
+# same message there. Change one, change the other.
 
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 
 hook_read_skill_and_session
-cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
 
 # "grilling" only. grill-me and grill-with-docs route through it rather than
 # being it, so matching the substring catches them without double-firing.
 case "$skill" in *grilling*) ;; *) exit 0 ;; esac
 
-marker="${TMPDIR:-/tmp}/orchestrator-grilling-${session}"
-if [ -e "$marker" ]; then exit 0; fi
-: >"$marker"
+# No session_id, no marker: there is nothing to key the guard to, so it stays
+# unarmed and the once-per-session check cannot apply.
+if [ -n "$session" ]; then
+  marker="${TMPDIR:-/tmp}/orchestrator-grilling-${session}"
+  if [ -e "$marker" ]; then exit 0; fi
+  : >"$marker"
+fi
 
 root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 
@@ -50,7 +57,7 @@ runs in a fresh session connected by handoff files.
 While this planning session is running:
 
 - Do NOT offer to implement, and do NOT write or edit code. Planning artifacts
-  (CONTEXT.md, docs/adr/, docs/agents/, .scratch/) are fine; source files are not.
+  ($(planning_allowlist_text)) are fine; source files are not.
 - When you reach a shared understanding, do not close with a scripted line and
   do not decide the next step yourself. Call the AskUserQuestion tool with
   exactly two options:
@@ -60,17 +67,12 @@ While this planning session is running:
       2. Quick implementation - skip the pipeline and implement this directly.
 
 - On \"Start the orchestrator flow\", call the Skill tool with
-  \"orchestrator:flow\" yourself. On \"Quick implementation\", call the Skill
-  tool with \"orchestrator:quick-implement\" yourself. Do not ask the user to
+  \"orchestrator:orch-flow\" yourself. On \"Quick implementation\", call the Skill
+  tool with \"orchestrator:orch-quick-implement\" yourself. Do not ask the user to
   type a command - orchestrator skills are model-invocable, unlike the
   mattpocock ones.
 
 Under /mattpocock-skills:wayfinder, \"approved\" means the whole map is done, not
 that one ticket resolved. Do not start the flow after a single ticket.${warning}"
 
-jq -n --arg c "$context" '{
-  hookSpecificOutput: {
-    hookEventName: "PostToolUse",
-    additionalContext: $c
-  }
-}'
+hook_emit_context PostToolUse "$context"

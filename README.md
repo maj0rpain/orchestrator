@@ -32,6 +32,23 @@ Requires the `mattpocock-skills` plugin, plus `gh`, `jq`, and `git`. Run
 `docs/agents/issue-tracker.md`, which `/orchestrator:start` checks for before
 starting a flow. `/orchestrator:doctor` reports all of this at any time.
 
+`mattpocock-skills` is found wherever your host installed it, checked in this
+order: `$ORCHESTRATOR_MATTPOCOCK_ROOT` if set, Claude Code's plugin cache,
+Junie's extension cache (`~/.junie/extensions/`), then the `skills` CLI store
+(`~/.agents/skills/`, only entries its lockfile records as `mattpocock-skills`).
+The first location present is used for every skill; a project's own
+`.agents/skills/` is never consulted.
+
+Doctor reports the host it detects and the capabilities that host lacks (from
+[docs/host-capabilities.md](docs/host-capabilities.md)). It reads Claude Code
+from `CLAUDECODE` or `CLAUDE_PLUGIN_ROOT` and Junie from `JUNIE_EXTENSION_ROOT`;
+set `ORCHESTRATOR_HOST=claude` or `junie` where neither reaches the shell.
+Install the whole plugin, not just its skills: every skill runs `scripts/orch.sh`.
+
+Upgrading from 0.x: 1.0.0 renamed every skill to carry an `orch-` prefix (the
+flow skill is now `orchestrator:orch-flow`, and so on). See
+[CHANGELOG.md](CHANGELOG.md) for the full old-to-new list.
+
 ## The flow
 
 ```
@@ -40,7 +57,7 @@ starting a flow. `/orchestrator:doctor` reports all of this at any time.
    / improve-codebase-…)                               |
                                         +----------------+----------------+
                                         |                                 |
-                              /orchestrator:start                orchestrator:quick-implement
+                              /orchestrator:start                orchestrator:orch-quick-implement
                               ->  01-plan.md                     issue, to-tickets publishes tickets,
                                         |                          branch quick/<issue>-<slug>,
                                        | /clear                    one subagent per ticket, tdd,
@@ -106,38 +123,78 @@ it. It fires once per session, stays quiet when a flow is already running, warns
 early if the repo is unconfigured, and tells the model that once a shared
 understanding is reached, the next step is a human's call, not the model's:
 call `AskUserQuestion` with exactly two options, start the flow
-(`orchestrator:flow`) or a quick implementation (`orchestrator:quick-implement`),
+(`orchestrator:orch-flow`) or a quick implementation (`orchestrator:orch-quick-implement`),
 and do whichever the human picks.
 
 A `PreToolUse` hook on `Edit`/`Write` enforces that: during a planning session
 with no flow started, source edits are denied. Planning artifacts stay writable -
-`CONTEXT.md`, `CONTEXT-MAP.md`, `docs/adr/`, `docs/agents/`, `.scratch/`,
-`.orchestrator/` - because `improve-codebase-architecture` and `domain-modeling`
+the paths listed in `scripts/planning-allowlist.sh` - because `improve-codebase-architecture` and `domain-modeling`
 legitimately write them mid-planning. A third `PostToolUse` hook on the same
 `Skill` matcher lifts the guard for a quick implementation: it deletes the
-session's marker file when `orchestrator:quick-implement` fires, without
+session's marker file when `orchestrator:orch-quick-implement` fires, without
 `hook-guard.sh` itself changing.
 
 ## Layout
 
 ```
-commands/                start, next, status, doctor, redo, abort
-skills/flow/              the state machine (judgment)
-skills/review-spec/       the spec review: four lenses, one batch question
-skills/review/            the review loop: rubric, authority rules, terminal states
-skills/handoff/           handoff templates, model-invocable unlike the upstream one
-skills/quick-implement/   the other route: issue, to-tickets, tdd, single-pass review, PR - no flow
-scripts/orch.sh           every deterministic operation (mechanism)
-scripts/doctor.sh         diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
-scripts/hook-*.sh         the three hooks
-scripts/hook-common.sh    skill/session_id extraction shared by the two Skill-matcher hooks
-scripts/test/             shell tests
-hooks/hooks.json          hook wiring
+commands/                     start, next, status, doctor, redo, abort
+skills/orch-flow/             the state machine (judgment)
+skills/orch-review-spec/      the spec review: four lenses, one batch question
+skills/orch-review/           the review loop: rubric, authority rules, terminal states
+skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
+skills/orch-quick-implement/  the other route: issue, to-tickets, tdd, single-pass review, PR - no flow
+scripts/orch.sh               every deterministic operation (mechanism)
+scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
+scripts/hook-*.sh             the three hooks
+scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
+scripts/planning-allowlist.sh the planning allowlist, shared by the edit guard and orch.sh
+scripts/test/                 shell tests
+guidelines/orch-planning.md   the planning nudge for Junie, which has no hook to deliver it
+docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
+hooks/hooks.json              hook wiring
 ```
 
 Prose for judgment, bash for facts. Reading state, naming branches, resolving the
 default branch, and validating handoffs all have one right answer, so they live in
 `orch.sh` where they cannot drift between sessions.
+
+### Resolving orch.sh
+
+Only Claude Code expands `CLAUDE_PLUGIN_ROOT` in skills. Other hosts expand it
+only inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is). So every
+skill that runs `orch.sh` states the path one way, as the `ORCH=`
+line followed by the relative fallback:
+
+````
+```
+ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
+```
+
+If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+two directories above this skill's own directory (the plugin root).
+````
+
+Keep the fallback sentence's first line intact, then call `"$ORCH" <subcommand>`
+everywhere else. Do not copy the scripts into a skill. Commands never run
+`orch.sh`: each is a thin route into an `orch-flow` section (see
+[Naming host capabilities](#naming-host-capabilities)). `orch_test.sh` fails when
+a skill, command, or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT` anywhere
+else, or runs `orch.sh` without this pair.
+
+### Naming host capabilities
+
+Skills describe capabilities ("invoke a skill", "start a fresh subagent", "ask
+a multiple-choice question"), may name the Claude Code tool inline as an
+example, and point at [docs/host-capabilities.md](docs/host-capabilities.md),
+which maps each capability to each host and documents the fallback where a
+host lacks one. A phase records every fallback it took in its handoff's
+**Host fallbacks** section, which `handoff validate` requires for flows started
+on 1.0.0 or later (a flow already in progress at upgrade is exempt). Commands are
+Claude Code shortcuts only: each one routes to an `orch-flow` section and
+holds no behaviour of its own, so invoking the skill on another host is
+complete. `orch_test.sh` fails when a skill never points at the reference,
+names the Skill or Agent tool as the step itself, or when a command runs
+`orch.sh` or routes to a section that does not exist.
 
 ## Develop
 

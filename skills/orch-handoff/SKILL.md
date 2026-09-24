@@ -1,6 +1,6 @@
 ---
-name: handoff
-description: Write an orchestrator handoff file into .orchestrator/handoff/ so the next phase can start with fresh context. Use only from the orchestrator:flow skill, at a phase boundary.
+name: orch-handoff
+description: Write an orchestrator handoff file into .orchestrator/handoff/ so the next phase can start with fresh context. Use only from the orch-flow skill, at a phase boundary.
 ---
 
 # Orchestrator handoff
@@ -9,6 +9,20 @@ Write the handoff for the phase that is ending. The upstream
 `mattpocock-skills:handoff` writes to the OS temp directory and cannot be
 model-invoked; this one writes into the repo's git-excluded `.orchestrator/handoff/`
 and can.
+
+`orch.sh` resolves as:
+
+```
+ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
+```
+
+If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+two directories above this skill's own directory (the plugin root).
+
+If `orch.sh` is at neither path, this is a skills-only install: stop, and
+tell the human `orch.sh` is missing and to install the full orchestrator
+plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
+`maj0rpain/orchestrator` as a Junie extension, which is unverified).
 
 Get the path from `"$ORCH" handoff path <phase>`. Validate with
 `"$ORCH" handoff validate <path>` and fix anything it flags before returning.
@@ -25,6 +39,12 @@ The reader is a fresh agent with no memory of this session.
 - **Redact.** No keys, tokens, or personal data.
 - Every required section must have content. "None" is a valid answer; blank is not,
   because a blank section reads as "not yet considered".
+- **Record every host fallback.** Each template ends in **Host fallbacks**: one
+  line per capability this phase ran through its documented fallback in the
+  host capabilities reference (`docs/host-capabilities.md` under the plugin
+  root), naming the capability, the fallback taken, and the step. A phase that
+  used none writes `None (<host>).`, naming the host, so the reader can tell a
+  full-capability run from an unchecked one.
 
 ## Templates
 
@@ -52,6 +72,9 @@ until review.>
 
 ## Suggested skills
 <skills the spec phase should call>
+
+## Host fallbacks
+<per **Record every host fallback** above>
 ```
 
 ### `02-spec.md` (spec -> implement)
@@ -66,7 +89,7 @@ until review.>
 <the test seams agreed with the user, and why these and not lower ones>
 
 ## Spec review changelog
-<the list orchestrator:review-spec returned, per lens: applied edits one line
+<the list orch-review-spec returned, per lens: applied edits one line
 each, declined findings verbatim with the human's reason, "None" for a lens
 that found nothing, "not run - <reason>" for one that failed>
 
@@ -85,6 +108,9 @@ frontier>
 
 ## Suggested skills
 <usually tdd, plus whatever the seams imply>
+
+## Host fallbacks
+<per **Record every host fallback** above>
 ```
 
 ### `03-implement.md` (implement -> review)
@@ -114,4 +140,7 @@ tests fresh; review would be guessing.>
 ## Already found and fixed
 <what each ticket's own closing mattpocock-skills:code-review caught, so
 review iteration 1 does not re-report it>
+
+## Host fallbacks
+<per **Record every host fallback** above>
 ```

@@ -17,7 +17,7 @@
 # copy of the label-table parser.
 #
 # Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
-# now, first_line, default_branch, require_state, find_mattpocock,
+# now, first_line, default_branch, require_state, mp_location, mp_skill_path,
 # ORCH_DIR_NAME, PHASES, LABELS_DOC, LABEL_LIMIT, HANDOFF_DIR) is defined.
 # cmd_doctor is then dispatched from main() exactly like any other command.
 
@@ -65,7 +65,8 @@ d_join() {
 D_GH=""            # "ok", or the reason GitHub could not be asked
 D_REPO_NAME=""     # owner/name, as GitHub resolves it
 D_REPO_BRANCH=""   # the default branch, as GitHub reports it
-D_MP=""            # the mattpocock-skills plugin root, or empty
+D_MP=""            # where mattpocock-skills was found, or empty
+D_MP_KIND=""       # which kind of location that is - see mp_location
 D_JQ=""            # "ok", or empty when jq is missing
 D_STATE=""         # "ok" when state.json parses, or empty
 D_GH_SKIPPED=0
@@ -134,7 +135,11 @@ d_probe() {
   # with no PR recorded has nothing to ask GitHub. It reaches gh through
   # d_gh_gate instead, which probes on first use, so that run costs no round trip.
   if [ "$scope" = flow ]; then return 0; fi
-  D_MP="$(find_mattpocock)" || D_MP=""
+  if D_MP="$(mp_location)"; then
+    D_MP_KIND="${D_MP%%$'\t'*}"; D_MP="${D_MP#*$'\t'}"
+  else
+    D_MP=""
+  fi
   d_probe_gh
   if [ "$D_GH" = ok ]; then
     view="$(gh repo view --json nameWithOwner,defaultBranchRef \
@@ -167,7 +172,7 @@ check_jq() {
 }
 
 # A warn, not a FAIL: macOS still ships 3.2 as /bin/bash, and the flow works
-# there - find_mattpocock avoids arrays precisely so that it keeps doing so.
+# there - mp_location avoids arrays precisely so that it keeps doing so.
 check_bash() {
   if [ "${BASH_VERSINFO[0]:-0}" -ge 4 ]; then d_ok "bash ${BASH_VERSION%%(*}"; return 0; fi
   d_warn "bash ${BASH_VERSION%%(*} - orch.sh is written for 4.0 and up."
@@ -218,40 +223,178 @@ check_default_branch() {
 
 # plugin environment ---------------------------------------------------------
 
-check_mattpocock() {
-  if [ -n "$D_MP" ]; then d_ok "mattpocock-skills: ${D_MP/#$HOME/\~}"; return 0; fi
-  d_fail "mattpocock-skills is not installed - the flow reads its skills directly."
-  d_remedy "/plugin marketplace add anthropics/claude-plugins" \
-           "/plugin install mattpocock-skills"
+# Names only the detected host's install method - a Junie user told to run a
+# Claude /plugin command is no better off. With no host detected, every
+# method is listed. check_host sets D_HOST and runs earlier in the same group.
+# The Junie line names the two installs #121 found on a real machine: the
+# skills CLI store (user story 5) and a Claude plugin installed as a Junie
+# extension (the Problem Statement). Neither is verified end to end, and the
+# line says so (#121: unverified Junie claims are marked).
+d_mp_remedy() {
+  local c1="Claude Code: /plugin marketplace add anthropics/claude-plugins"
+  local c2="             /plugin install mattpocock-skills"
+  local junie="Junie:       npx skills add mattpocock/skills    # or install mattpocock/skills as a Junie extension (both unverified)"
+  local elsewhere="Elsewhere:   export ORCHESTRATOR_MATTPOCOCK_ROOT=/path/to/mattpocock-skills"
+  case "${D_HOST:-}" in
+    claude) d_remedy "$c1" "$c2" "$elsewhere" ;;
+    junie)  d_remedy "$junie" "$elsewhere" ;;
+    *)      d_remedy "$c1" "$c2" "$junie" "$elsewhere" ;;
+  esac
 }
 
-# The check that justifies the feature. find_mattpocock probes a single skill
-# file to decide the whole plugin is present, so a partial or restructured
-# install passes and the flow then dies at the phase that needed the missing
-# one - by which point the session that could have fixed it has been cleared.
+d_mp_source() {
+  case "$D_MP_KIND" in
+    override) printf 'ORCHESTRATOR_MATTPOCOCK_ROOT' ;;
+    claude)   printf 'Claude Code plugin cache' ;;
+    junie)    printf 'Junie extension cache' ;;
+    agents)   printf 'skills CLI' ;;
+  esac
+}
+
+check_mattpocock() {
+  if [ -n "$D_MP" ]; then d_ok "mattpocock-skills: ${D_MP/#$HOME/\~} ($(d_mp_source))"; return 0; fi
+  # The override is authoritative, so the lookup never looked past it - saying
+  # "not installed" would send the user to reinstall what may well be there.
+  if [ -n "${ORCHESTRATOR_MATTPOCOCK_ROOT:-}" ]; then
+    d_fail "ORCHESTRATOR_MATTPOCOCK_ROOT points at $ORCHESTRATOR_MATTPOCOCK_ROOT, which is not a directory."
+    d_remedy "unset ORCHESTRATOR_MATTPOCOCK_ROOT    # or point it at a mattpocock-skills checkout"
+    return 0
+  fi
+  d_fail "mattpocock-skills is not installed - the flow reads its skills directly."
+  d_mp_remedy
+}
+
+# The check that justifies the feature. mp_location settles where the skills
+# are from whatever it finds there first, so a partial or restructured install
+# passes it and the flow then dies at the phase that needed the missing skill -
+# by which point the session that could have fixed it has been cleared.
 MP_SKILLS="to-spec implement code-review handoff"
 
 check_skills() {
   d_gate "${D_MP:+ok}" D_MP_SKIPPED || return 0
-  local name p missing="" found
+  local name missing=""
   for name in $MP_SKILLS; do
-    found=""
-    for p in "$D_MP/skills"/*/"$name"/SKILL.md; do
-      if [ -f "$p" ]; then found=1; break; fi
-    done
-    if [ -z "$found" ]; then missing="$(d_append "$missing" "$name")"; fi
+    mp_skill_path "$D_MP_KIND" "$D_MP" "$name" >/dev/null || missing="$(d_append "$missing" "$name")"
   done
   if [ -z "$missing" ]; then d_ok "every skill the flow reads resolves"; return 0; fi
-  d_fail "mattpocock skills missing: $(d_join "$missing")"
-  d_remedy "/plugin marketplace update claude-plugins" \
-           "/plugin install mattpocock-skills"
+  d_fail "mattpocock skills missing: $(d_join "$missing") (looked in: $(d_mp_source))"
+  d_mp_remedy
 }
 
+# The plugin root doctor runs from: the directory scripts/ sits in, which is
+# also where every skill resolves orch.sh and the capabilities reference from.
+D_PLUGIN="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HOST_REF="docs/host-capabilities.md"
+
+# The one host detector. Prints "claude", "junie", or nothing when no signal
+# is present (orch.sh run by hand in a terminal). ORCHESTRATOR_HOST names the
+# host outright, for a shell no signal reaches. Junie's signal is the variable
+# its docs say it expands for extension hooks; that it also reaches the shell a
+# skill runs orch.sh from is unverified, which is what the override is for.
+# Junie is checked before Claude because a Junie started from inside a Claude
+# Code terminal inherits CLAUDECODE. Whether a Claude Code started from a
+# Junie shell inherits JUNIE_EXTENSION_ROOT is unverified; ORCHESTRATOR_HOST
+# settles it either way.
+host_detect() {
+  if [ -n "${ORCHESTRATOR_HOST:-}" ]; then printf '%s\n' "$ORCHESTRATOR_HOST"; return 0; fi
+  if [ -n "${JUNIE_EXTENSION_ROOT:-}" ]; then printf 'junie\n'; return 0; fi
+  if [ "${CLAUDECODE:-}" = 1 ] || [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then printf 'claude\n'; fi
+}
+
+# The host's column header in the capabilities reference.
+host_name() {
+  case "$1" in
+    claude) printf 'Claude Code\n' ;;
+    junie)  printf 'Junie\n' ;;
+  esac
+}
+
+# The capabilities whose cell in a host's column carries a marker (Fallback or
+# Unverified), read from the reference itself rather than restated here, so
+# doctor and the table can never disagree. One per line.
+host_marked() {
+  [ -f "$D_PLUGIN/$HOST_REF" ] || return 0
+  awk -F'|' -v host="$1" -v mark="**$2**" '
+    function trim(x) { gsub(/^ +| +$/, "", x); return x }
+    /^\| *Capability *\|/ { for (i = 2; i < NF; i++) if (trim($i) == host) col = i; next }
+    col && /^\|/ && index($col, mark) { print trim($2) }
+  ' "$D_PLUGIN/$HOST_REF"
+}
+
+D_HOST=""
+check_host() {
+  local name lacks unverified detail=""
+  D_HOST="$(host_detect)"
+  if [ -z "$D_HOST" ]; then
+    d_warn "host not detected - which capabilities are missing is unknown."
+    d_remedy "export ORCHESTRATOR_HOST=claude    # or junie"
+    return 0
+  fi
+  name="$(host_name "$D_HOST")"
+  if [ -z "$name" ]; then
+    d_warn "ORCHESTRATOR_HOST=$D_HOST names no supported host."
+    d_remedy "export ORCHESTRATOR_HOST=claude    # or junie"
+    D_HOST=""
+    return 0
+  fi
+  lacks="$(host_marked "$name" Fallback)"
+  unverified="$(host_marked "$name" Unverified)"
+  if [ -z "$lacks$unverified" ]; then d_ok "host: $name"; return 0; fi
+  # Not a failure: the flow runs on this host, with the documented fallbacks.
+  # A warn keeps the reduced enforcement in front of the user instead. An
+  # unverified cell is reported apart, so doctor never states it as a gap.
+  if [ -n "$lacks" ]; then detail="lacks: $(d_join "$lacks")"; fi
+  if [ -n "$unverified" ]; then
+    detail="${detail:+$detail; }unverified: $(d_join "$unverified")"
+  fi
+  d_warn "host: $name $detail - fallbacks in $HOST_REF"
+}
+
+# Only Claude Code sets CLAUDE_PLUGIN_ROOT, so whether its absence means
+# anything depends on the host check above, which runs first.
 check_plugin_root() {
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then d_ok "CLAUDE_PLUGIN_ROOT set"; return 0; fi
-  # No remedy, because nothing is broken: unset just means orch.sh was run by
-  # hand rather than through one of the plugin's commands.
-  d_warn "CLAUDE_PLUGIN_ROOT is not set - expected outside a Claude session."
+  # No remedy on any host, because nothing is broken: every skill falls back to
+  # the orch.sh two directories above its own.
+  case "$D_HOST" in
+    junie)  d_ok "CLAUDE_PLUGIN_ROOT unset - Junie expands it only in hooks; skills use the relative path." ;;
+    claude) d_warn "CLAUDE_PLUGIN_ROOT is not set under Claude Code - orch.sh was run by hand, not through a plugin command." ;;
+    *)      d_ok "CLAUDE_PLUGIN_ROOT unset - only Claude Code sets it; skills use the relative path." ;;
+  esac
+}
+
+# A skills-only install copies the skills without scripts/, so the orch.sh two
+# directories above a skill is not there and every step that runs it fails.
+# doctor itself runs from an orch.sh, so it can only see such a copy sitting in
+# a user-level skill store beside the full install; the skills themselves
+# report the case where no full install exists at all. The store is the
+# user-level one the skills CLI installs into; Junie's own skill store is not
+# yet verified, so it is not scanned.
+check_orch_sh() {
+  local store="$HOME/.agents/skills" d names=""
+  for d in "$store"/orch-*/; do
+    [ -f "$d/SKILL.md" ] || continue
+    [ -f "$d/../../scripts/orch.sh" ] && continue
+    d="${d%/}"; names="$(d_append "$names" "${d##*/}")"
+  done
+  if [ -z "$names" ]; then d_ok "orch.sh: ${D_PLUGIN/#$HOME/\~}/scripts/orch.sh"; return 0; fi
+  # A warn, not a FAIL: the install running this is whole, and which host picks
+  # up the skills-only copy is not something doctor can see.
+  d_warn "orch.sh missing beside the orchestrator skills in ${store/#$HOME/\~}: $(d_join "$names") - a skills-only install."
+  d_orch_remedy
+}
+
+# Names only the detected host's install method, like d_mp_remedy.
+d_orch_remedy() {
+  local c1="Claude Code: /plugin marketplace add maj0rpain/orchestrator"
+  local c2="             /plugin install orchestrator@orchestrator"
+  local junie="Junie:       install maj0rpain/orchestrator as a Junie extension (unverified)"
+  local after="then remove the skills-only copy named above."
+  case "${D_HOST:-}" in
+    claude) d_remedy "$c1" "$c2" "$after" ;;
+    junie)  d_remedy "$junie" "$after" ;;
+    *)      d_remedy "$c1" "$c2" "$junie" "$after" ;;
+  esac
 }
 
 # repo config ----------------------------------------------------------------
@@ -454,7 +597,7 @@ check_git_exclude() {
 ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
-h_plugin check_mattpocock check_skills check_plugin_root
+h_plugin check_host check_plugin_root check_orch_sh check_mattpocock check_skills
 h_repo   check_tracker_doc check_labels_doc check_labels_exist check_sub_issues check_git_exclude
 "
 
@@ -473,7 +616,7 @@ check_state_phase() {
   case " $PHASES " in
     *" $phase "*) d_ok "phase: $phase" ;;
     *) d_fail "unknown phase: $phase (want one of: $PHASES)"
-       d_remedy "/orchestrator:abort" ;;
+       d_remedy "$(flow_cmd abort)" ;;
   esac
 }
 
@@ -483,7 +626,7 @@ check_flow_branch() {
   if [ -z "$branch" ]; then d_ok "branch: not created yet"; return 0; fi
   if git rev-parse --verify --quiet "$branch" >/dev/null; then d_ok "branch: $branch"; return 0; fi
   d_fail "branch $branch no longer exists - the flow has nothing left to build on."
-  d_remedy "/orchestrator:abort"
+  d_remedy "$(flow_cmd abort)"
 }
 
 # Only from the phase that pushes onwards: before implement, not having pushed
@@ -570,9 +713,9 @@ check_flow_review_terminal() {
     # normally, where one whose last iteration recorded nothing looks like the
     # session that was driving it simply died.
     pending)
-      d_warn "review loop hasn't reached its budget yet (iteration $i of budget $b) - /orchestrator:next will resume it; /orchestrator:redo refuses until it reaches a terminal state." ;;
+      d_warn "review loop hasn't reached its budget yet (iteration $i of budget $b) - $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
     interrupted)
-      d_warn "review loop's last iteration ($i of budget $b) has no recorded terminal state - the session looks interrupted, not stopped. /orchestrator:next will resume it; /orchestrator:redo refuses until it reaches a terminal state." ;;
+      d_warn "review loop's last iteration ($i of budget $b) has no recorded terminal state - the session looks interrupted, not stopped. $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
   esac
 }
 
@@ -587,7 +730,7 @@ check_flow_review_budget() {
   b="$(review_budget)"
   if [ "$i" -gt "$b" ]; then
     d_fail "review loop iteration ($i) is past its budget ($b) - the loop's stop enforcement did not hold."
-    d_remedy "/orchestrator:abort"
+    d_remedy "$(flow_cmd abort)"
     return 0
   fi
   d_ok "review loop iteration ($i) within budget ($b)"
@@ -675,13 +818,13 @@ check_flow_handoffs() {
     path="$HANDOFF_DIR/$f"
     if [ ! -f "$path" ]; then
       d_fail "handoff $f is missing - the phase that writes it has already run."
-      d_remedy "/orchestrator:redo"
+      d_remedy "$(flow_cmd redo)"
       continue
     fi
     problems="$(handoff_report "$path" | grep -v '^ok ' || true)"
     if [ -z "$problems" ]; then d_ok "handoff $f complete"; continue; fi
     while IFS= read -r line; do d_fail "handoff $f: ${line#FAIL }"; done <<<"$problems"
-    d_remedy "/orchestrator:redo"
+    d_remedy "$(flow_cmd redo)"
   done
 }
 
@@ -732,7 +875,7 @@ d_run_flow() {
   # One problem earns one FAIL. Every check reads this file, so there is nothing
   # left to say about it and nothing that could be said honestly.
   d_fail "$ORCH_DIR_NAME/state.json is not valid JSON."
-  d_remedy "/orchestrator:abort"
+  d_remedy "$(flow_cmd abort)"
 }
 
 d_run() {
