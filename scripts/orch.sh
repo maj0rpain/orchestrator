@@ -1038,12 +1038,16 @@ cmd_branch_create() {
   note "$name"
 }
 
-# A quick implementation keeps no state, so it has nothing to derive a name
-# from and nothing to record one in - the caller passes the full name and gets
-# a checked-out branch back, nothing else.
+# A quick implementation keeps no state.json, so it has nothing to derive a
+# name from - the caller passes the full name. It forks from the base branch in
+# effect and records that base on the branch itself in local git config, so
+# pr publish targets it even if the setting moves in the meantime.
 cmd_branch_off() {
   [ $# -eq 1 ] || die "usage: orch.sh branch off <name>"
-  checkout_new_branch "$1" "$(default_branch)"
+  local base
+  base="$(base_branch)"
+  checkout_new_branch "$1" "$base"
+  git config "branch.$1.orchestrator-base" "$base"
   note "$1"
 }
 
@@ -1165,11 +1169,14 @@ cmd_pr_open() {
 # already ran before this is called.
 cmd_pr_publish() {
   [ $# -eq 3 ] || die "usage: orch.sh pr publish <issue> <title> <body-file>"
-  local issue="$1" title="$2" body_file="$3" branch pr
+  local issue="$1" title="$2" body_file="$3" branch base pr
   [ -f "$body_file" ] || die "body file not found: $body_file"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
-  pr="$(open_pr "$branch" "$(default_branch)" "$issue" "$title" "$body_file" false)"
+  # The base branch off recorded for this branch; a branch made before that
+  # was recorded publishes to the base branch in effect now.
+  base="$(git config --get "branch.$branch.orchestrator-base" 2>/dev/null)" || base="$(base_branch)"
+  pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" false)"
   note "$pr"
 }
 
@@ -1520,8 +1527,10 @@ orch.sh - deterministic operations for the orchestrator flow
   handoff validate <file>     check required sections exist and are non-empty
   branch create               create orch/<issue>-<slug> off the flow's base
                               branch, recorded at init
-  branch off <name>           create and check out <name> off the default
-                              branch, recording no state - for a quick
+  branch off <name>           create and check out <name> off the base branch
+                              in effect, recording that base on the branch
+                              (branch.<name>.orchestrator-base in local git
+                              config) and no state - for a quick
                               implementation, which keeps none
   branch retire <old> <new>   rename <old> aside to <new>, republishing it on
                               origin and deleting the old remote ref, without
@@ -1539,9 +1548,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               branch, Refs it into any other
   pr publish <issue> <title> <body-file>
                               push the current branch and open a non-draft PR
-                              closing <issue>, recording no state; prints the
-                              PR number - for a quick implementation whose
-                              single-pass review already ran
+                              against the base branch branch off recorded for
+                              it (else the base branch in effect) - Closes
+                              <issue> into the default branch, Refs it into any
+                              other - recording no state; prints the PR number
+                              - for a quick implementation whose single-pass
+                              review already ran
   ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]
                               create a ticket, link it as a sub-issue of
                               <parent>, add a blocking edge for every

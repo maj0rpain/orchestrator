@@ -1001,6 +1001,73 @@ assert_eq "from the default branch" "$(git rev-parse HEAD)" "$main_tip"
 base_cmd base clear >/dev/null
 rm -rf "$(dirname "$bare")"
 
+# --- a quick implementation's base branch --------------------------------------
+# A quick implementation keeps no state.json, so branch off records the base
+# branch it forked from on the branch itself - pr publish then targets that
+# base even if the setting moved in the meantime, and falls back to the setting
+# for a branch created before anything was recorded.
+echo
+echo "a quick implementation's base branch"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main
+git checkout -q -b uat
+git commit -q --allow-empty -m "uat only"
+git push -q origin uat:refs/heads/uat
+git checkout -q -
+git branch -q -D uat
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+uat_tip="$(git rev-parse origin/uat)"
+main_tip="$(git rev-parse origin/main)"
+recorded_base() { git config --get "branch.$1.orchestrator-base" || echo "<unset>"; }
+
+base_cmd base set uat >/dev/null
+out="$(base_cmd branch off quick/5-uat 2>&1)"; st=$?
+assert_status "branch off succeeds" "$st" 0
+assert_eq "branch off forks from the base branch in effect" "$(git rev-parse HEAD)" "$uat_tip"
+assert_eq "and records it on the branch" "$(recorded_base quick/5-uat)" "uat"
+
+git checkout -q main
+base_cmd base clear >/dev/null
+base_cmd branch off quick/6-main >/dev/null
+assert_eq "with nothing set, branch off forks from the default branch" "$(git rev-parse HEAD)" "$main_tip"
+assert_eq "and records the default branch" "$(recorded_base quick/6-main)" "main"
+
+body="$(mktemp)"
+writeln 'Implements the thing.' >"$body"
+git checkout -q quick/5-uat
+filed="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=41 \
+  base_cmd pr publish 5 "Title" "$body" 2>&1)"; st=$?
+assert_status "pr publish succeeds" "$st" 0
+assert_contains "pr publish targets the recorded base over the changed setting" \
+  "$(cat "$filed")" "base=uat"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_first_line "a quick PR into a non-default base refers to its issue" \
+  "$body_recorded" "Refs #5"
+
+# A branch made before branch off recorded anything publishes to the setting.
+git checkout -q -b quick/7-legacy "$main_tip"
+base_cmd base set uat >/dev/null
+filed="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=42 \
+  base_cmd pr publish 7 "Title" "$body" 2>&1)"; st=$?
+assert_status "pr publish succeeds with nothing recorded" "$st" 0
+assert_contains "and falls back to the base branch setting" "$(cat "$filed")" "base=uat"
+
+# A deleted base branch must not quietly become a fork from a stale local copy.
+git update-ref refs/remotes/origin/gone "$main_tip"
+git config orchestrator.base gone
+out="$(base_cmd branch off quick/8-gone 2>&1)"; st=$?
+assert_status "branch off refuses a base branch origin says is gone" "$st" 1
+assert_contains "naming the base branch" "$out" "gone"
+assert_eq "and records nothing for the branch it did not make" "$(recorded_base quick/8-gone)" "<unset>"
+base_cmd base clear >/dev/null
+rm -rf "$(dirname "$bare")"
+
 # --- branch retire ------------------------------------------------------------
 # The rename-aside a redo uses instead of deleting or force-pushing over a
 # discarded attempt's commits. The push/delete-remote-ref assertions reuse the
