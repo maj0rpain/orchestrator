@@ -323,9 +323,9 @@ handoff_file_for() {
 # boundary is where it must fail - the context to fix it still exists there.
 handoff_required() {
   case "$1" in
-    01-plan.md)      printf '%s\n' '## Decisions' '## Rejected alternatives' '## Constraints' '## Open assumptions' ;;
-    02-spec.md)      printf '%s\n' '## Spec issue' '## Seams' '## Spec review changelog' '## Ticket breakdown' ;;
-    03-implement.md) printf '%s\n' '## PR' '## Spec issue' '## Base SHA' '## Deviations' '## Verification' ;;
+    01-plan.md)      printf '%s\n' '## Decisions' '## Rejected alternatives' '## Constraints' '## Open assumptions' '## Host fallbacks' ;;
+    02-spec.md)      printf '%s\n' '## Spec issue' '## Seams' '## Spec review changelog' '## Ticket breakdown' '## Host fallbacks' ;;
+    03-implement.md) printf '%s\n' '## PR' '## Spec issue' '## Base SHA' '## Deviations' '## Verification' '## Host fallbacks' ;;
     *) die "unknown handoff file: $1" ;;
   esac
 }

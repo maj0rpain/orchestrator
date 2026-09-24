@@ -66,14 +66,16 @@ complete_plan_handoff() {
   writeln '## Decisions' 'Use X.' '' \
           '## Rejected alternatives' 'Y, because Z.' '' \
           '## Constraints' 'Must run offline.' '' \
-          '## Open assumptions' 'Assumes W.' >"$1"
+          '## Open assumptions' 'Assumes W.' '' \
+          '## Host fallbacks' 'None (Claude Code).' >"$1"
 }
 
 complete_spec_handoff() {
   writeln '## Spec issue' '#1.' '' \
           '## Seams' 'The CLI.' '' \
           '## Spec review changelog' 'Not reviewed.' '' \
-          '## Ticket breakdown' '#1.' >"$1"
+          '## Ticket breakdown' '#1.' '' \
+          '## Host fallbacks' 'None (Claude Code).' >"$1"
 }
 
 complete_implement_handoff() {
@@ -81,7 +83,8 @@ complete_implement_handoff() {
           '## Spec issue' '#1.' '' \
           '## Base SHA' 'abc1234.' '' \
           '## Deviations' 'None.' '' \
-          '## Verification' 'scripts/test/orch_test.sh' >"$1"
+          '## Verification' 'scripts/test/orch_test.sh' '' \
+          '## Host fallbacks' 'None (Claude Code).' >"$1"
 }
 
 # --- doctor harness ---------------------------------------------------------
@@ -641,6 +644,24 @@ writeln '## Decisions' 'Use X.' '' '## Rejected alternatives' '   ' '' \
 out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
 assert_status "treats a whitespace-only section as empty" "$st" 1
 
+# Every phase records the host capability fallbacks it used (#127,
+# docs/host-capabilities.md), so a human reading any handoff can see where a
+# host did less than Claude Code would have. "None." is an answer; no section
+# is not.
+for p in spec implement review; do
+  hf="$("$ORCH" handoff path "$p")"
+  case "$p" in
+    spec) complete_plan_handoff "$hf" ;;
+    implement) complete_spec_handoff "$hf" ;;
+    review) complete_implement_handoff "$hf" ;;
+  esac
+  grep -v '^## Host fallbacks$' "$hf" | grep -v '^None (Claude Code)\.$' >"$hf.tmp" && mv "$hf.tmp" "$hf"
+  out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
+  assert_status "$(basename "$hf") without Host fallbacks is incomplete" "$st" 1
+  assert_contains "$(basename "$hf") names the missing Host fallbacks" "$out" "Host fallbacks"
+done
+complete_plan_handoff "$h"
+
 # --- ticket breakdown handoff ------------------------------------------------
 # The spec phase's last step publishes tickets as sub-issues of the spec
 # issue, so the handoff that follows it must at least name the parent -
@@ -672,7 +693,8 @@ assert_status "passes once the parent issue is recorded" "$st" 0
 # named explicitly here so the convention doesn't silently rot.
 writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
         '## Spec review changelog' 'Not reviewed.' '' \
-        '## Ticket breakdown' 'None: work directly against #1.' >"$h2"
+        '## Ticket breakdown' 'None: work directly against #1.' '' \
+        '## Host fallbacks' 'None (Claude Code).' >"$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "the collapsed-case sentinel validates like any other content" "$st" 0
 

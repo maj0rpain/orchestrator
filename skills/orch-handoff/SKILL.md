@@ -34,6 +34,12 @@ The reader is a fresh agent with no memory of this session.
 - **Redact.** No keys, tokens, or personal data.
 - Every required section must have content. "None" is a valid answer; blank is not,
   because a blank section reads as "not yet considered".
+- **Record every host fallback.** Each template ends in **Host fallbacks**: one
+  line per capability this phase ran through its documented fallback in the
+  host capabilities reference (`docs/host-capabilities.md` under the plugin
+  root), naming the capability, the fallback taken, and the step. A phase that
+  used none writes `None (<host>).`, naming the host, so the reader can tell a
+  full-capability run from an unchecked one.
 
 ## Templates
 
@@ -61,6 +67,9 @@ until review.>
 
 ## Suggested skills
 <skills the spec phase should call>
+
+## Host fallbacks
+<per **Record every host fallback** above>
 ```
 
 ### `02-spec.md` (spec -> implement)
@@ -94,6 +103,9 @@ frontier>
 
 ## Suggested skills
 <usually tdd, plus whatever the seams imply>
+
+## Host fallbacks
+<per **Record every host fallback** above>
 ```
 
 ### `03-implement.md` (implement -> review)
@@ -123,4 +135,7 @@ tests fresh; review would be guessing.>
 ## Already found and fixed
 <what each ticket's own closing mattpocock-skills:code-review caught, so
 review iteration 1 does not re-report it>
+
+## Host fallbacks
+<per **Record every host fallback** above>
 ```
