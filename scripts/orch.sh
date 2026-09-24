@@ -633,6 +633,12 @@ adapter_pr_checks() {
 adapter_pr_ready() {
   gh pr ready "$@"
 }
+
+# pr release's two reads of the base branch's PRs: whether a release PR is
+# already open, and the bodies of everything merged into it (issue #139).
+adapter_pr_list() {
+  gh pr list "$@"
+}
 adapter_pr_close() {
   gh pr close "$@"
 }
@@ -1180,13 +1186,64 @@ cmd_pr_publish() {
   note "$pr"
 }
 
+# The release PR: carries the base branch in effect back into the default
+# branch. Stateless like pr publish, and pushes nothing - the base branch is
+# already on origin.
+cmd_pr_release() {
+  local usage="usage: orch.sh pr release [--force] <title> <body-file>" force=false
+  if [ "${1:-}" = --force ]; then force=true; shift; fi
+  [ $# -eq 2 ] || die "$usage"
+  local title="$1" body_file="$2" base def
+  [ -n "$title" ] || die "the title is empty"
+  [ -f "$body_file" ] || die "body file not found: $body_file"
+  base="$(base_branch)"
+  def="$(default_branch)"
+  [ "$base" != "$def" ] ||
+    die "the base branch is the default branch ($def) - there is nothing to release; set another with base set"
+  local open
+  open="$(adapter_pr_list --head "$base" --base "$def" --state open --json number --jq '.[].number')" ||
+    die "gh could not list the open PRs from $base into $def"
+  [ -z "$open" ] || die "a release PR from $base into $def is already open: #$(first_line "$open")"
+  # Read from the merged PRs' bodies rather than GitHub's closing-issue links:
+  # GitHub only links closing keywords on PRs into the default branch, and a
+  # Refs line never links at all. Any keyword a hand-written PR might use
+  # counts, anywhere in the body.
+  local bodies refs n state issues="" tmp url
+  bodies="$(adapter_pr_list --base "$base" --state merged --limit 1000 --json body --jq '.[].body')" ||
+    die "gh could not list the PRs merged into $base"
+  refs="$(printf '%s\n' "$bodies" |
+    grep -ioE '(^|[^[:alnum:]_])(refs|close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#[0-9]+' |
+    grep -oE '[0-9]+$' | sort -nu)" || true
+  for n in $refs; do
+    state="$(adapter_issue_view "$n" --json state --jq .state)" ||
+      die "gh could not read the state of issue #$n"
+    [ "$state" != OPEN ] || issues="$issues $n"
+  done
+  [ -n "$issues" ] || [ "$force" = true ] ||
+    die "nothing to close: no PR merged into $base refers to a still-open issue - pass --force to release anyway"
+  tmp="$(mktemp)"
+  {
+    for n in $issues; do printf 'Closes #%s\n' "$n"; done
+    [ -z "$issues" ] || printf '\n'
+    cat "$body_file"
+  } >"$tmp"
+  # Not a draft: nothing after this would ever mark it ready.
+  if ! url="$(adapter_pr_create --base "$def" --head "$base" --title "$title" --body-file "$tmp")"; then
+    rm -f "$tmp"
+    die "gh could not open the release PR from $base into $def"
+  fi
+  rm -f "$tmp"
+  note "${url##*/}"
+}
+
 cmd_pr() {
   local op="${1:-}"
   shift || true
   case "$op" in
     open)    cmd_pr_open "$@" ;;
     publish) cmd_pr_publish "$@" ;;
-    *) die "unknown pr op: ${op:-<none>} (want open|publish)" ;;
+    release) cmd_pr_release "$@" ;;
+    *) die "unknown pr op: ${op:-<none>} (want open|publish|release)" ;;
   esac
 }
 
@@ -1554,6 +1611,17 @@ orch.sh - deterministic operations for the orchestrator flow
                               other - recording no state; prints the PR number
                               - for a quick implementation whose single-pass
                               review already ran
+  pr release [--force] <title> <body-file>
+                              open the release PR: a non-draft PR from the
+                              base branch in effect into the default branch,
+                              its body one Closes line per still-open issue
+                              any PR merged into the base branch refers to
+                              (Refs/Closes/Fixes/Resolves #N), then
+                              <body-file>. Refuses on the default branch,
+                              while a release PR is already open (printing
+                              it), and with nothing to close unless --force;
+                              pushes nothing, records no state; prints the
+                              PR number
   ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]
                               create a ticket, link it as a sub-issue of
                               <parent>, add a blocking edge for every

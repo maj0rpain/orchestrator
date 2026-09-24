@@ -52,6 +52,9 @@ fake_record_flags() {
 # GH_STUB_ISSUE_STATE/GH_STUB_ISSUE_LABELS when asked for those fields, and
 # GH_STUB_BODY (default "Body of the issue.") otherwise - the same three
 # answers stub_gh gives, so cmd_spec fetch reads either fake identically.
+# GH_STUB_CLOSED_ISSUES, a space-separated list of issue numbers, answers
+# CLOSED for those issues' state alone, so pr release can see a mix of open
+# and closed issues in one run (issue #139).
 adapter_issue_view() {
   if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue view %s\n' "$*" >>"$GH_STUB_FILED"; fi
   if [ "${GH_STUB_VIEW_EXIT:-0}" != 0 ]; then
@@ -61,7 +64,12 @@ adapter_issue_view() {
   local a
   for a in "$@"; do
     case "$a" in
-      state)  printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}"; return 0 ;;
+      state)
+        case " ${GH_STUB_CLOSED_ISSUES:-} " in
+          *" $1 "*) printf 'CLOSED\n' ;;
+          *)        printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}" ;;
+        esac
+        return 0 ;;
       labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; return 0 ;;
     esac
   done
@@ -252,4 +260,32 @@ adapter_pr_close() {
     return "$GH_STUB_PR_CLOSE_EXIT"
   fi
   return 0
+}
+
+# adapter_pr_list - pr release's two reads (issue #139): logs "pr list
+# <args...>" to GH_STUB_FILED when set, fails on GH_STUB_PR_LIST_EXIT, and
+# answers the JSON array for the --state it was asked for -
+# GH_STUB_PR_LIST_OPEN or GH_STUB_PR_LIST_MERGED, each default "[]" - through
+# the caller's own --jq, the same way the real gh applies it. Filtering by
+# --base/--head is gh's job, not the fake's: a test asserts on the flags.
+adapter_pr_list() {
+  local state="" q="" json
+  if [ -n "${GH_STUB_FILED:-}" ]; then printf 'pr list %s\n' "$*" >>"$GH_STUB_FILED"; fi
+  if [ "${GH_STUB_PR_LIST_EXIT:-0}" != 0 ]; then
+    echo "gh stub: pr list refused" >&2
+    return "$GH_STUB_PR_LIST_EXIT"
+  fi
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --state) state="$2"; shift ;;
+      --jq)    q="$2"; shift ;;
+    esac
+    shift
+  done
+  case "$state" in
+    open)   json="${GH_STUB_PR_LIST_OPEN:-[]}" ;;
+    merged) json="${GH_STUB_PR_LIST_MERGED:-[]}" ;;
+    *)      echo "gh stub: unscripted pr list state '$state'" >&2; return 99 ;;
+  esac
+  if [ -n "$q" ]; then printf '%s' "$json" | jq -r "$q"; else printf '%s\n' "$json"; fi
 }

@@ -146,6 +146,13 @@ complete_implement_handoff() {
 # `--comment` text to GH_STUB_FILED like every other write above; `issue close`
 # fails on demand with GH_STUB_ISSUE_CLOSE_EXIT.
 #
+# `pr list` is pr release's read of the base branch's PRs: it answers the JSON
+# array for the --state asked - GH_STUB_PR_LIST_OPEN or GH_STUB_PR_LIST_MERGED,
+# each default "[]" - through the caller's --jq, and fails on
+# GH_STUB_PR_LIST_EXIT. `issue view --json state` answers CLOSED for any issue
+# listed in GH_STUB_CLOSED_ISSUES (space-separated), GH_STUB_ISSUE_STATE for
+# the rest.
+#
 # `issue list` is check_sub_issues's way of finding an issue to probe against:
 # it answers GH_STUB_ISSUE_LIST (default "1"), empty when explicitly set to
 # "" to simulate a repo with no issues. The sub_issues GET it then makes fails
@@ -281,7 +288,12 @@ ready-for-agent}"
                 printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"
               fi
               exit 0 ;;
-            state)  printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}"; exit 0 ;;
+            state)
+              case " ${GH_STUB_CLOSED_ISSUES:-} " in
+                *" $3 "*) echo CLOSED ;;
+                *)        printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}" ;;
+              esac
+              exit 0 ;;
             labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; exit 0 ;;
           esac
         done
@@ -439,6 +451,24 @@ ready-for-agent}"
           # while asserting nothing.
           *)       echo "gh stub: no script named '$answer'" >&2; exit 99 ;;
         esac ;;
+      list)
+        shift 2
+        if [ -n "${GH_STUB_FILED:-}" ]; then printf 'pr list %s\n' "$*" >>"$GH_STUB_FILED"; fi
+        [ "${GH_STUB_PR_LIST_EXIT:-0}" = 0 ] || { echo "gh stub: pr list refused" >&2; exit "$GH_STUB_PR_LIST_EXIT"; }
+        lstate=""; ljq=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --state) lstate="$2"; shift ;;
+            --jq)    ljq="$2"; shift ;;
+          esac
+          shift
+        done
+        case "$lstate" in
+          open)   ljson="${GH_STUB_PR_LIST_OPEN:-[]}" ;;
+          merged) ljson="${GH_STUB_PR_LIST_MERGED:-[]}" ;;
+          *)      echo "gh stub: unscripted pr list state '$lstate'" >&2; exit 99 ;;
+        esac
+        if [ -n "$ljq" ]; then printf '%s' "$ljson" | jq -r "$ljq"; else printf '%s\n' "$ljson"; fi ;;
       create)
         shift 2
         if [ -n "${GH_STUB_FILED:-}" ]; then printf 'pr create\n' >>"$GH_STUB_FILED"; record_flags "$@"; fi
@@ -2251,6 +2281,120 @@ assert_eq "with no bogus flag=<value> entries for the base/head values" \
 assert_eq "gh itself was invoked once for create and once for view, as real subprocesses" \
   "$(grep -cx pr "$log")" "2"
 
+# --- pr release -----------------------------------------------------------------
+# The release PR carries the base branch back into the default branch and
+# closes every still-open issue whose work reached it - read from the bodies of
+# the PRs merged into the base branch, never remembered by a human. Every
+# GitHub call goes through the in-memory fake; the subprocess-real counterpart
+# is the "gh adapter (real pr list, subprocess gh)" block right after this one.
+echo
+echo "pr release"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+body="$(mktemp)"
+writeln 'Ships the uat project.' '' 'Some detail.' >"$body"
+release() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" base_cmd pr release "$@"; }
+
+filed="$(mktemp)"
+out="$(release "Release" "$body" 2>&1)"; st=$?
+assert_status "refuses when the base branch is the default branch" "$st" 1
+assert_contains "naming it" "$out" "main"
+assert_not_contains "and opens no PR" "$(cat "$filed")" "pr create"
+
+base_cmd base set uat >/dev/null
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' release "Release" "$body" 2>&1)"; st=$?
+assert_status "refuses while a release PR is already open" "$st" 1
+assert_contains "printing that PR's number" "$out" "#57"
+assert_contains "asking only for open PRs" "$(cat "$filed")" "pr list --head uat --base main --state open"
+assert_not_contains "and opens no second one" "$(cat "$filed")" "pr create"
+
+# Every reference the merged PRs make is to an issue that is already closed.
+filed="$(mktemp)"
+merged='[{"number":60,"body":"Refs #3"},{"number":61,"body":"No references here."}]'
+out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_CLOSED_ISSUES="3" release "Release" "$body" 2>&1)"; st=$?
+assert_status "refuses when no referenced issue is still open" "$st" 1
+assert_contains "saying there is nothing to close" "$out" "nothing to close"
+assert_contains "reading the PRs merged into the base branch" "$(cat "$filed")" "pr list --base uat --state merged"
+assert_not_contains "and opens no PR" "$(cat "$filed")" "pr create"
+
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_CLOSED_ISSUES="3" GH_STUB_PR_NUMBER=70 \
+  release --force "Release" "$body" 2>&1)"; st=$?
+assert_status "--force releases with nothing to close" "$st" 0
+assert_eq "printing the PR number" "$out" "70"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_eq "with the caller's body alone" "$body_recorded" "$(cat "$body")"
+
+# Hand-written PRs into uat count too: every keyword, in any case, anywhere in
+# the body. #5 is referenced twice and #8 is already closed.
+filed="$(mktemp)"
+merged='[{"number":62,"body":"Refs #5\n\nImplements it."},
+{"number":63,"body":"Summary first.\n\nThis closes #6 and FIXES #7."},
+{"number":64,"body":"resolves #9\nAlso Refs #5, and Closes #8.\nIt prefixes #4 with nothing."}]'
+out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_CLOSED_ISSUES="8" GH_STUB_PR_NUMBER=71 \
+  release "Release uat" "$body" 2>&1)"; st=$?
+assert_status "opens the release PR" "$st" 0
+assert_eq "prints its number" "$out" "71"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_eq "one Closes line per still-open issue, deduplicated, above the caller's body" \
+  "$body_recorded" "$(writeln 'Closes #5' 'Closes #6' 'Closes #7' 'Closes #9' '' 'Ships the uat project.' '' 'Some detail.')"
+assert_contains "from the base branch" "$(cat "$filed")" "head=uat"
+assert_contains "into the default branch" "$(cat "$filed")" "base=main"
+assert_contains "with the caller's title" "$(cat "$filed")" "title=Release uat"
+assert_not_contains "not as a draft" "$(cat "$filed")" "flag=--draft"
+assert_eq "and pushes nothing" "$(git -C "$bare" for-each-ref --format='%(refname)' | sort | tr '\n' ' ')" \
+  "refs/heads/main refs/heads/uat "
+
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_PR_CREATE_EXIT=1 release "Release" "$body" 2>&1)"; st=$?
+assert_status "a gh that will not open the PR fails it" "$st" 1
+assert_contains "naming both branches" "$out" "from uat into main"
+
+out="$(release "Release" 2>&1)"; st=$?
+assert_status "refuses a missing body file argument" "$st" 1
+assert_contains "with its usage" "$out" "pr release [--force] <title> <body-file>"
+base_cmd base clear >/dev/null
+rm -rf "$(dirname "$bare")"
+
+# --- gh adapter (real pr list, subprocess gh) ---------------------------------
+# pr release just proved its decisions through the in-memory fake - this is
+# the narrow assertion that its list, issue-state and create calls reach a real
+# gh subprocess with ORCH_GH_ADAPTER unset.
+echo
+echo "gh adapter (real pr list, subprocess gh)"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
+git config orchestrator.base uat
+stub_gh
+body="$(mktemp)"
+writeln 'Ships the uat project.' >"$body"
+filed="$(mktemp)"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=72 \
+  GH_STUB_PR_LIST_MERGED='[{"number":62,"body":"Refs #5"},{"number":63,"body":"Fixes #6"}]' \
+  GH_STUB_CLOSED_ISSUES="6" "$ORCH" pr release "Release" "$body" 2>&1)"; st=$?
+assert_status "shells out for real" "$st" 0
+assert_eq "and reads back the number the real gh answered" "$out" "72"
+assert_contains "the real adapter listed the open release PRs" "$(cat "$filed")" \
+  "pr list --head uat --base main --state open"
+assert_contains "and the PRs merged into the base branch" "$(cat "$filed")" \
+  "pr list --base uat --state merged"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_first_line "and closed only the issue the real gh called open" "$body_recorded" "Closes #5"
+assert_eq "gh itself was invoked twice to list and once to create, as real subprocesses" \
+  "$(grep -cx pr "$log")" "3"
+assert_eq "and once per referenced issue to read its state" "$(grep -cx issue "$log")" "2"
+rm -rf "$(dirname "$bare")"
+
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature touches GitHub's native
 # sub-issue and issue-dependency APIs, so no skill prose ever calls `gh api`
@@ -3225,6 +3369,7 @@ assert_contains "and the terminal-state classifier" "$("$ORCH" help)" "review te
 assert_contains "and retiring a loop's records" "$("$ORCH" help)" "review retire"
 assert_contains "help documents issue publish" "$("$ORCH" help)" "issue publish"
 assert_contains "and pr publish" "$("$ORCH" help)" "pr publish"
+assert_contains "and pr release" "$("$ORCH" help)" "pr release [--force] <title> <body-file>"
 assert_contains "and ticket publish" "$("$ORCH" help)" "ticket publish"
 assert_contains "and ticket next" "$("$ORCH" help)" "ticket next"
 assert_contains "and ticket close" "$("$ORCH" help)" "ticket close"
@@ -3866,7 +4011,7 @@ for cap in 'Invoke a skill from a step' 'Ask a multiple-choice question' 'Start 
 done
 # scan_capabilities <plugin root>: print one line per offending skill or command.
 scan_capabilities() {
-  local r="$1" f s
+  local r="$1" f s k
   for f in "$r"/skills/*/SKILL.md; do
     [ -f "$f" ] || continue
     grep -qF 'docs/host-capabilities.md' "$f" \
@@ -3891,13 +4036,20 @@ scan_capabilities() {
     [ -f "$f" ] || continue
     grep -qE 'orch\.sh|\$ORCH' "$f" && echo "${f#"$r"/}: runs orch.sh itself"
     s="$(grep -oE "orch-flow\` and follow its \*\*[^*]+\*\*" "$f" | sed 's/.*\*\*\(.*\)\*\*/\1/')"
-    if [ -z "$s" ]; then echo "${f#"$r"/}: routes to no orch-flow section"
+    # A command that is not a flow step routes to a whole orch- skill of its
+    # own instead (release, #139) - that skill must exist.
+    k="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it' "$f" | sed 's/^`orchestrator://; s/`.*//')"
+    if [ -z "$s" ] && [ -n "$k" ]; then
+      [ -f "$r/skills/$k/SKILL.md" ] || echo "${f#"$r"/}: routes to a missing skill: $k"
+    elif [ -z "$s" ]; then echo "${f#"$r"/}: routes to no orch-flow section"
     else grep -qxF "## $s" "$r/skills/orch-flow/SKILL.md" \
       || echo "${f#"$r"/}: routes to a missing orch-flow section: $s"; fi
   done
 }
 assert_eq "every skill points at the reference, and every command is a thin route" \
   "$(scan_capabilities "$root")" ""
+assert_contains "the release command routes to its own orch- skill" \
+  "$(cat "$root/commands/release.md" 2>/dev/null)" '`orchestrator:orch-release` and follow it' 
 # orch.sh's and doctor.sh's messages reach the model on every host too, so they
 # name a flow command only through flow_cmd, which adds the orch-flow section
 # for a host with no plugin commands - and every section it names must exist.
@@ -3932,6 +4084,11 @@ printf '%s\n' "$orch_line" >"$fixture/commands/status.md"
 out="$(scan_capabilities "$fixture")"
 assert_contains "the scan flags a command that runs orch.sh itself" "$out" "commands/status.md: runs orch.sh itself"
 rm "$fixture/commands/status.md"
+printf 'Invoke `orchestrator:orch-y` and follow it.\n' >"$fixture/commands/y.md"
+assert_contains "the scan flags a command routed to a missing skill" \
+  "$(scan_capabilities "$fixture")" "commands/y.md: routes to a missing skill: orch-y"
+mkdir -p "$fixture/skills/orch-y"
+printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
 assert_eq "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")" ""
 rm -rf "$fixture"
 

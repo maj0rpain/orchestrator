@@ -11,7 +11,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `base`    | `set`, `show`, `clear`                               |
 | `branch`  | `create`, `off`, `retire`                            |
 | `issue`   | `fetch`, `update`, `publish`                         |
-| `pr`      | `open`, `publish`                                    |
+| `pr`      | `open`, `publish`, `release`                         |
 | `review`  | `begin`, `path`, `file`, `ready`, `ci`, `terminal`, `retire` |
 | `spec`    | `fetch`, `update`, `comment`                         |
 | `ticket`  | `publish`, `next`, `close`, `reset`                  |
