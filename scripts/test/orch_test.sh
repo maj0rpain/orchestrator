@@ -3607,6 +3607,50 @@ rm "$fixture/commands/status.md"
 assert_eq "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")" ""
 rm -rf "$fixture"
 
+# --- Junie planning nudge (#129) ----------------------------------------------
+# Junie has no PostToolUse event, so hook-grilling.sh never fires there. A
+# guidelines/ file carries its message instead, and it loads in every repo the
+# extension is enabled in, so it must stay conditional. The scan checks the
+# message's key points survive, not its exact wording.
+echo
+echo "Junie planning nudge (#129)"
+# scan_planning_nudge <plugin root>: print one line per missing key point.
+scan_planning_nudge() {
+  local r="$1" f
+  f="$(ls "$r"/guidelines/*.md 2>/dev/null | head -1)"
+  if [ -z "$f" ]; then echo "no guidelines/*.md file"; return; fi
+  local label
+  while IFS='|' read -r label pattern; do
+    grep -qiE "$pattern" "$f" || echo "${f#"$r"/}: missing $label"
+  done <<'EOF'
+the conditional wording|only when a grilling session is running and no flow is active
+the active-flow check|\.orchestrator/state\.json
+no implementing during planning|planning artifacts
+the flow option|Start the orchestrator flow
+the quick option|Quick implementation
+the multiple-choice question|AskUserQuestion
+the orch-flow skill|`orch-flow`
+the orch-quick-implement skill|`orch-quick-implement`
+the issue-tracker warning|docs/agents/issue-tracker\.md
+the setup fix|setup-matt-pocock-skills
+EOF
+  grep -niE '(call|use|with) the (Skill|Agent) tool' "$f" \
+    | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
+}
+assert_eq "the guidelines file carries the grilling hook's key points, conditionally" \
+  "$(scan_planning_nudge "$root")" ""
+fixture="$(mktemp -d)"
+assert_eq "the scan flags a missing guidelines file" \
+  "$(scan_planning_nudge "$fixture")" "no guidelines/*.md file"
+mkdir -p "$fixture/guidelines"
+printf 'Start the orchestrator flow or Quick implementation. Call the Skill tool with `orch-flow`.\n' \
+  >"$fixture/guidelines/orch.md"
+out="$(scan_planning_nudge "$fixture")"
+assert_contains "the scan flags unconditional wording" "$out" "missing the conditional wording"
+assert_contains "the scan flags a missing issue-tracker warning" "$out" "missing the issue-tracker warning"
+assert_contains "the scan flags a Claude tool named as the step" "$out" "names a Claude tool as the step"
+rm -rf "$fixture"
+
 echo
 if [ "$SKIP" -gt 0 ]; then
   echo "$PASS passed, $FAIL failed, $SKIP skipped"

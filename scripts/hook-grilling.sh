@@ -9,6 +9,9 @@
 # It injects context only. It cannot force compliance, which is why the real
 # durability lives in .orchestrator/state.json and the edit guard. Fires once
 # per session, and says nothing at all when a flow is already running.
+#
+# Junie has no PostToolUse event, so guidelines/orch-planning.md carries the
+# same message there. Change one, change the other.
 
 set -euo pipefail
 

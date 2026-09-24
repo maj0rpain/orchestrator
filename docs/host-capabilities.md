@@ -27,7 +27,7 @@ lacks, so keep the marker on exactly those cells.
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`, which starts another live session. The old one keeps running. |
 | Run a plugin command | `/orchestrator:<command>`. | Unverified whether Junie loads a Claude plugin's `commands/`. **Fallback**. |
-| Inject context at planning time | A `PostToolUse` hook on `Skill(grilling)` (`hook-grilling.sh`). | No `PostToolUse` event and no Skill tool. **Fallback**. |
+| Inject context at planning time | A `PostToolUse` hook on `Skill(grilling)` (`hook-grilling.sh`). | No `PostToolUse` event and no Skill tool. The extension's `guidelines/orch-planning.md` carries the same message, worded conditionally. **Fallback**. |
 | Arm the edit guard | A `PostToolUse` hook on `Skill` writes the planning marker, and `hook-guard.sh` denies source edits (ADR-0013). | Nothing arms it: no `PostToolUse` event. **Fallback**. |
 
 ## Fallbacks
@@ -60,10 +60,14 @@ route into `orch-flow`, so the skill alone is complete.
 
 ### Inject context at planning time
 
-The plugin's `guidelines/` file carries the planning nudge (#129). Whether
-Junie loads it from this plugin's layout is unverified. Where it does not,
-the `orch-flow` and `orch-quick-implement` skill descriptions are the only
-prompt.
+`guidelines/orch-planning.md` carries `hook-grilling.sh`'s planning nudge as
+plain Markdown, the format JetBrains' own extensions use under `guidelines/`.
+Guidelines load with every prompt, in every repo the extension is enabled in,
+so the file applies itself only while a grilling session is running and no
+flow is active. Keep it in step with `hook-grilling.sh`; `orch_test.sh` checks
+its key points. Whether Junie loads `guidelines/` from a Claude-layout
+extension is unverified. Where it does not, the `orch-flow` and
+`orch-quick-implement` skill descriptions are the only prompt.
 
 ### Arm the edit guard
 

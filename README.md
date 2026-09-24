@@ -150,6 +150,7 @@ scripts/hook-*.sh             the three hooks
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist, shared by the edit guard and orch.sh
 scripts/test/                 shell tests
+guidelines/orch-planning.md   the planning nudge for Junie, which has no hook to deliver it
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 hooks/hooks.json              hook wiring
 ```
