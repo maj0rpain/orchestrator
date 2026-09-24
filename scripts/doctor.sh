@@ -228,11 +228,12 @@ check_default_branch() {
 # method is listed. check_host sets D_HOST and runs earlier in the same group.
 # The Junie line names the two installs #121 found on a real machine: the
 # skills CLI store (user story 5) and a Claude plugin installed as a Junie
-# extension (the Problem Statement). Neither command is verified end to end.
+# extension (the Problem Statement). Neither is verified end to end, and the
+# line says so (#121: unverified Junie claims are marked).
 d_mp_remedy() {
   local c1="Claude Code: /plugin marketplace add anthropics/claude-plugins"
   local c2="             /plugin install mattpocock-skills"
-  local junie="Junie:       npx skills add mattpocock/skills    # or install mattpocock/skills as a Junie extension"
+  local junie="Junie:       npx skills add mattpocock/skills    # or install mattpocock/skills as a Junie extension (both unverified)"
   local elsewhere="Elsewhere:   export ORCHESTRATOR_MATTPOCOCK_ROOT=/path/to/mattpocock-skills"
   case "${D_HOST:-}" in
     claude) d_remedy "$c1" "$c2" "$elsewhere" ;;
@@ -385,7 +386,7 @@ check_orch_sh() {
 d_orch_remedy() {
   local c1="Claude Code: /plugin marketplace add maj0rpain/orchestrator"
   local c2="             /plugin install orchestrator@orchestrator"
-  local junie="Junie:       install maj0rpain/orchestrator as a Junie extension"
+  local junie="Junie:       install maj0rpain/orchestrator as a Junie extension (unverified)"
   local after="then remove the skills-only copy named above."
   case "${D_HOST:-}" in
     claude) d_remedy "$c1" "$c2" "$after" ;;

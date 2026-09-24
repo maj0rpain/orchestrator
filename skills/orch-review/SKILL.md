@@ -32,7 +32,7 @@ two directories above this skill's own directory (the plugin root).
 If `orch.sh` is at neither path, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
 plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
-`maj0rpain/orchestrator` as a Junie extension).
+`maj0rpain/orchestrator` as a Junie extension, which is unverified).
 
 ## Before the first iteration
 
@@ -51,9 +51,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    there, because their **Filed** lists are what stop this loop re-filing
    what the previous one filed.
 5. Ask the budget. **The question blocks** - ask it as a question
-   (`AskUserQuestion` on both Claude Code and Junie);
-   where it is unavailable, ask in plain text and wait for the answer. Ask
-   once, before the first iteration, and never again mid-loop:
+   (`AskUserQuestion` on both Claude Code and Junie). Ask once, before the
+   first iteration, and never again mid-loop:
    - First loop: "How many review iterations?" Default 5. Any integer ≥ 1;
      there is no upper cap.
    - Re-entry: "How many more?" Same default and range. The new loop continues

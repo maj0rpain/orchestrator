@@ -1320,6 +1320,8 @@ assert_contains "names the override for an install none of these describe" \
 # Once the host is known, the fix names only that host's install method.
 out="$(HOME=/nonexistent ORCHESTRATOR_HOST=junie "$ORCH" doctor --env 2>&1)"
 assert_contains "on Junie, names the Junie install" "$out" "npx skills add mattpocock/skills"
+# Neither Junie install is verified end to end, so the line says so (#121).
+assert_contains "marks the Junie install unverified" "$out" "(both unverified)"
 assert_not_contains "on Junie, does not name a Claude /plugin command" "$out" "/plugin install mattpocock-skills"
 out="$(HOME=/nonexistent CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"
 assert_contains "on Claude Code, names the /plugin install" "$out" "/plugin install mattpocock-skills"
@@ -1691,6 +1693,7 @@ assert_eq "and not Junie's, under Claude Code" \
   "$(printf '%s\n' "$out" | grep -c 'as a Junie extension')" "0"
 out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --env 2>&1)"
 assert_contains "names the full-plugin install for Junie" "$out" "maj0rpain/orchestrator as a Junie extension"
+assert_contains "and marks it unverified" "$out" "as a Junie extension (unverified)"
 assert_eq "and not Claude Code's, under Junie" \
   "$(printf '%s\n' "$out" | grep -c '/plugin install orchestrator@orchestrator')" "0"
 out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" doctor --env 2>&1)"
@@ -3580,6 +3583,12 @@ for f in "$root"/skills/*/SKILL.md; do
   grep -qF 'skills-only install' "$f" || missing="$missing ${f#"$root"/}"
 done
 assert_eq "every skill names the full-plugin install when orch.sh is missing" "$missing" ""
+# The Junie install in that stop text is unverified, so it has to say so (#121).
+missing=""
+for f in "$root"/skills/*/SKILL.md; do
+  grep -qF 'as a Junie extension, which is unverified' "$f" || missing="$missing ${f#"$root"/}"
+done
+assert_eq "every skill marks its Junie install unverified" "$missing" ""
 fixture="$(mktemp -d)"
 mkdir -p "$fixture/guidelines"
 printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/guidelines/orch.md"

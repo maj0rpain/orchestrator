@@ -228,3 +228,11 @@ What a skill does instead when its host lacks a capability, as documented in
 `docs/host-capabilities.md`. Every fallback a phase takes is recorded under
 **Host fallbacks** in its handoff, so a reduced run is never mistaken for a
 full one.
+
+## Planning allowlist
+
+The files a planning session may legitimately change: the glossary, ADRs,
+agent docs, and scratch and flow-state files. Anything outside it is source,
+which planning never touches. The edit guard denies edits outside it while
+planning, where the host can arm the guard. A flow will not start while the
+working tree has changes outside it (ADR-0013).
