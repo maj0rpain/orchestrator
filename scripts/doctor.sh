@@ -306,21 +306,21 @@ host_name() {
   esac
 }
 
-# The capabilities a host lacks, read from the reference itself rather than
-# restated here, so doctor and the table can never disagree: every row whose
-# cell in that host's column is marked **Fallback**, one per line.
-host_lacks() {
+# The capabilities whose cell in a host's column carries a marker (Fallback or
+# Unverified), read from the reference itself rather than restated here, so
+# doctor and the table can never disagree. One per line.
+host_marked() {
   [ -f "$D_PLUGIN/$HOST_REF" ] || return 0
-  awk -F'|' -v host="$1" '
+  awk -F'|' -v host="$1" -v mark="**$2**" '
     function trim(x) { gsub(/^ +| +$/, "", x); return x }
     /^\| *Capability *\|/ { for (i = 2; i < NF; i++) if (trim($i) == host) col = i; next }
-    col && /^\|/ && $col ~ /\*\*Fallback\*\*/ { print trim($2) }
+    col && /^\|/ && index($col, mark) { print trim($2) }
   ' "$D_PLUGIN/$HOST_REF"
 }
 
 D_HOST=""
 check_host() {
-  local name lacks
+  local name lacks unverified detail=""
   D_HOST="$(host_detect)"
   if [ -z "$D_HOST" ]; then
     d_warn "host not detected - which capabilities are missing is unknown."
@@ -334,11 +334,17 @@ check_host() {
     D_HOST=""
     return 0
   fi
-  lacks="$(host_lacks "$name")"
-  if [ -z "$lacks" ]; then d_ok "host: $name"; return 0; fi
+  lacks="$(host_marked "$name" Fallback)"
+  unverified="$(host_marked "$name" Unverified)"
+  if [ -z "$lacks$unverified" ]; then d_ok "host: $name"; return 0; fi
   # Not a failure: the flow runs on this host, with the documented fallbacks.
-  # A warn keeps the reduced enforcement in front of the user instead.
-  d_warn "host: $name lacks: $(d_join "$lacks") - fallbacks in $HOST_REF"
+  # A warn keeps the reduced enforcement in front of the user instead. An
+  # unverified cell is reported apart, so doctor never states it as a gap.
+  if [ -n "$lacks" ]; then detail="lacks: $(d_join "$lacks")"; fi
+  if [ -n "$unverified" ]; then
+    detail="${detail:+$detail; }unverified: $(d_join "$unverified")"
+  fi
+  d_warn "host: $name $detail - fallbacks in $HOST_REF"
 }
 
 # Only Claude Code sets CLAUDE_PLUGIN_ROOT, so whether its absence means

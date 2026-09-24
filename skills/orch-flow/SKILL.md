@@ -33,7 +33,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 Steps here name capabilities: invoke a skill, ask a multiple-choice question,
 start a fresh subagent, start a fresh session. `docs/host-capabilities.md`
 under the plugin root maps each one to your host. Where your host's cell says
-**Fallback**, take the fallback it documents and record it in this phase's
+**Fallback**, or **Unverified** and the capability turns out missing, take the
+fallback it documents and record it in this phase's
 handoff under **Host fallbacks**. Where this file offers the human an
 `/orchestrator:<command>` and your host has no plugin commands, offer the
 matching section of this skill instead.

@@ -11,13 +11,18 @@ capability, the fallback taken, and the step, in the phase's handoff under
 fallbacks in its terminal PR comment, and a quick implementation records them
 in its PR body. A run that needed none says so, naming the host.
 
+A cell marked **Unverified** means nobody has confirmed whether that host has
+the capability. Try it; if it is missing, take the fallback and record it the
+same way.
+
 Adding a host means adding one column. Fill a cell only with a verified fact,
 and write "unverified" for anything not yet confirmed. The Junie column comes
 from the documentation bundled with Junie CLI 3419.7.
 
 `orch.sh doctor` reads this table: every row whose cell in the detected
 host's column is marked **Fallback** is reported as a capability that host
-lacks, so keep the marker on exactly those cells.
+lacks, and every row marked **Unverified** as unverified, so keep each marker
+on exactly its own cells.
 
 | Capability | Claude Code | Junie |
 | --- | --- | --- |
@@ -26,7 +31,7 @@ lacks, so keep the marker on exactly those cells.
 | Start a fresh subagent | The Agent tool, as a fresh general-purpose agent. | Subagents are only picked and started automatically by Junie, with no explicit fresh or fork control. **Fallback**. |
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. |
-| Run a plugin command | `/orchestrator:<command>`. | Unverified whether Junie loads a Claude plugin's `commands/`. **Fallback**. |
+| Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. |
 | Inject context at planning time | A `PostToolUse` hook on `Skill(grilling)` (`hook-grilling.sh`). | No `PostToolUse` event and no Skill tool. The extension's `guidelines/orch-planning.md` carries the same message, worded conditionally. **Fallback**. |
 | Arm the edit guard | A `PostToolUse` hook on `Skill` writes the planning marker, and `hook-guard.sh` denies source edits (ADR-0013). | Nothing arms it: no `PostToolUse` event. **Fallback**. |
 
@@ -68,8 +73,8 @@ route into `orch-flow`, so the skill alone is complete.
 
 `guidelines/orch-planning.md` carries `hook-grilling.sh`'s planning nudge as
 plain Markdown.
-Guidelines load with every prompt, in every repo the extension is enabled in,
-so the file applies itself only while a grilling session is running and no
+Guidelines load in every repo the extension is enabled in, so the file
+applies itself only while a grilling session is running and no
 flow is active. Keep it in step with `hook-grilling.sh`; `orch_test.sh` checks
 its key points. Whether Junie loads `guidelines/` from a Claude-layout
 extension is unverified. Where it does not, the `orch-flow` and

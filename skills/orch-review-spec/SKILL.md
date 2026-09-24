@@ -121,7 +121,7 @@ Number the items. Present the list - each item's finding, lens, and proposed
 edit or decision - then ask **one blocking question** with the
 `AskUserQuestion` tool: options **Apply all**, **Apply none**, or a list of
 item numbers through Other (the tool exists on both Claude Code and Junie).
-Where it is unavailable, ask in plain text and wait. Asked once; a long spec is one longer question, not twenty prompts.
+Asked once; a long spec is one longer question, not twenty prompts.
 
 ## Applying the answer
 

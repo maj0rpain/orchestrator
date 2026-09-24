@@ -128,8 +128,7 @@ and do whichever the human picks.
 
 A `PreToolUse` hook on `Edit`/`Write` enforces that: during a planning session
 with no flow started, source edits are denied. Planning artifacts stay writable -
-`CONTEXT.md`, `CONTEXT-MAP.md`, `docs/adr/`, `docs/agents/`, `.scratch/`,
-`.orchestrator/` - because `improve-codebase-architecture` and `domain-modeling`
+the paths listed in `scripts/planning-allowlist.sh` - because `improve-codebase-architecture` and `domain-modeling`
 legitimately write them mid-planning. A third `PostToolUse` hook on the same
 `Skill` matcher lifts the guard for a quick implementation: it deletes the
 session's marker file when `orchestrator:orch-quick-implement` fires, without

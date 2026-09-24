@@ -1288,8 +1288,8 @@ out="$(GH_STUB_REPO='acme/widgets ' "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unresolved default branch does not block the flow" "$st" 0
 assert_contains "warns that the default branch came from a fallback" "$out" "default branch"
 
-# A partial install is the regression this feature exists to catch: find_mattpocock
-# probes one skill file, so it passes, and the spec phase then dies with the
+# A partial install is the regression this feature exists to catch: a lookup
+# that probes one skill file passes, and the spec phase then dies with the
 # context that could have fixed it already cleared.
 # No healthy_repo() needed: the offline/noauth/default-branch checks above
 # only ever scoped GH_STUB_* to their own command, so the repo is still clean
@@ -1657,6 +1657,10 @@ assert_contains "names the forked subagent Junie cannot start" "$out" "Start a f
 assert_contains "points at the reference for the fallbacks" "$out" "docs/host-capabilities.md"
 assert_eq "does not list what Junie can do" \
   "$(printf '%s\n' "$out" | grep -c 'Ask a multiple-choice question')" "0"
+# An unconfirmed cell is not a known gap: doctor must not state it as one.
+assert_contains "names what is unverified on Junie" "$out" "unverified: Run a plugin command"
+assert_eq "does not claim Junie lacks what is only unverified" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Run a plugin command')" "0"
 assert_contains "an unset plugin root is expected on Junie, not a warning" \
   "$out" "ok    CLAUDE_PLUGIN_ROOT"
 
