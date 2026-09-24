@@ -10,6 +10,15 @@ Write the handoff for the phase that is ending. The upstream
 model-invoked; this one writes into the repo's git-excluded `.orchestrator/handoff/`
 and can.
 
+`orch.sh` resolves as:
+
+```
+ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
+```
+
+If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+two directories above this skill's own directory (the plugin root).
+
 Get the path from `"$ORCH" handoff path <phase>`. Validate with
 `"$ORCH" handoff validate <path>` and fix anything it flags before returning.
 

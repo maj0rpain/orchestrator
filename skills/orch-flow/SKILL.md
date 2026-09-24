@@ -18,9 +18,10 @@ branches, and validating handoffs cannot drift between sessions:
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, it is `scripts/orch.sh` two directories above
-this file. Run `"$ORCH" help` for the full command list. Never reimplement what
-it already does.
+If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+two directories above this skill's own directory (the plugin root). Run
+`"$ORCH" help` for the full command list. Never reimplement what it already
+does.
 
 ## The upstream skills are not callable
 

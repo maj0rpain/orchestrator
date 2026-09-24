@@ -3387,6 +3387,43 @@ for d in "$root"/skills/*/; do
     "$(sed -n 's/^name: //p' "$d/SKILL.md" | head -1)" "$n"
 done
 
+# --- orch.sh resolution (#123) ------------------------------------------------
+# Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
+# other hosts, so skill, command, and guidelines text must pair it with the
+# relative fallback. The one documented form (README, "Resolving orch.sh") is
+# the ORCH= line plus the fallback sentence; any other mention of the variable,
+# or a file that runs orch.sh without that pair, is a regression.
+# hooks/hooks.json is deliberately out of scope: both hosts expand it there.
+echo
+echo "orch.sh resolution (#123)"
+orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'
+fallback='If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`'
+# scan_orch_resolution <plugin root>: print one line per offending file.
+scan_orch_resolution() {
+  local r="$1" f
+  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md "$r"/guidelines/*; do
+    [ -f "$f" ] || continue
+    if grep -n 'CLAUDE_PLUGIN_ROOT' "$f" | grep -vF -e "$orch_line" -e "$fallback" | grep -q .; then
+      echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
+    fi
+    if grep -qE 'orch\.sh|\$ORCH' "$f"; then
+      grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
+      grep -qF "$fallback" "$f" || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
+    fi
+  done
+}
+assert_eq "every skill and command resolves orch.sh the one documented way" \
+  "$(scan_orch_resolution "$root")" ""
+fixture="$(mktemp -d)"
+mkdir -p "$fixture/guidelines"
+printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/guidelines/orch.md"
+assert_contains "the scan covers guidelines/ and flags a bare CLAUDE_PLUGIN_ROOT" \
+  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: CLAUDE_PLUGIN_ROOT outside"
+printf '%s\n' '```' "$orch_line" '```' "$fallback two directories above this skill's own directory." \
+  >"$fixture/guidelines/orch.md"
+assert_eq "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")" ""
+rm -rf "$fixture"
+
 echo
 if [ "$SKIP" -gt 0 ]; then
   echo "$PASS passed, $FAIL failed, $SKIP skipped"

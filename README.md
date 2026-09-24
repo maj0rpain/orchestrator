@@ -150,6 +150,28 @@ Prose for judgment, bash for facts. Reading state, naming branches, resolving th
 default branch, and validating handoffs all have one right answer, so they live in
 `orch.sh` where they cannot drift between sessions.
 
+### Resolving orch.sh
+
+Only Claude Code expands `CLAUDE_PLUGIN_ROOT`, and other hosts expand it only
+inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is). So every
+skill and command that runs `orch.sh` states the path one way, as the `ORCH=`
+line followed by the relative fallback:
+
+````
+```
+ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
+```
+
+If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+two directories above this skill's own directory (the plugin root).
+````
+
+A command says "one directory above this command's own directory" instead. Keep
+the fallback sentence's first line intact, then call `"$ORCH" <subcommand>`
+everywhere else. Do not copy the scripts into a skill. `orch_test.sh` fails when
+a skill, command, or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT` anywhere
+else, or runs `orch.sh` without this pair.
+
 ## Develop
 
 ```

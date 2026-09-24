@@ -26,8 +26,8 @@ why one session may drive a whole loop - see
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, it is `scripts/orch.sh` two directories above
-this file.
+If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+two directories above this skill's own directory (the plugin root).
 
 ## Before the first iteration
 

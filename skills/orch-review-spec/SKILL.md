@@ -21,8 +21,8 @@ loop - see `docs/adr/0001-review-loop-runs-in-a-single-session.md`.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, it is `scripts/orch.sh` two directories above
-this file.
+If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+two directories above this skill's own directory (the plugin root).
 
 ## Inputs
 

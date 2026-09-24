@@ -16,8 +16,8 @@ for how a change gets made - test-driven, reviewed, then opened as a PR.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, it is `scripts/orch.sh` two directories above
-this file.
+If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+two directories above this skill's own directory (the plugin root).
 
 ## 1. Require a linked issue
 
