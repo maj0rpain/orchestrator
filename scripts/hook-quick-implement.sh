@@ -17,4 +17,5 @@ hook_read_skill_and_session
 
 case "$skill" in orch-quick-implement|*:orch-quick-implement) ;; *) exit 0 ;; esac
 
+[ -n "$session" ] || exit 0
 rm -f "${TMPDIR:-/tmp}/orchestrator-grilling-${session}"

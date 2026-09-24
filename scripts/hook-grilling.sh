@@ -15,15 +15,18 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 
 hook_read_skill_and_session
-cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
 
 # "grilling" only. grill-me and grill-with-docs route through it rather than
 # being it, so matching the substring catches them without double-firing.
 case "$skill" in *grilling*) ;; *) exit 0 ;; esac
 
-marker="${TMPDIR:-/tmp}/orchestrator-grilling-${session}"
-if [ -e "$marker" ]; then exit 0; fi
-: >"$marker"
+# No session_id, no marker: there is nothing to key the guard to, so it stays
+# unarmed and the once-per-session check cannot apply.
+if [ -n "$session" ]; then
+  marker="${TMPDIR:-/tmp}/orchestrator-grilling-${session}"
+  if [ -e "$marker" ]; then exit 0; fi
+  : >"$marker"
+fi
 
 root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 

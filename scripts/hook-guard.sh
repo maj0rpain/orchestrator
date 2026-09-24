@@ -15,12 +15,12 @@ set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 
-input="$(cat)"
-session="$(printf '%s' "$input" | jq -r '.session_id // "unknown"')"
-cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
+hook_read_payload
 file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""')"
 
-# Only guard sessions the grilling hook has marked as planning.
+# Only guard sessions the grilling hook has marked as planning. A payload
+# with no session_id (Junie's PreToolUse) is never guarded - ADR-0013.
+[ -n "$session" ] || exit 0
 [ -e "${TMPDIR:-/tmp}/orchestrator-grilling-${session}" ] || exit 0
 [ -n "$file" ] || exit 0
 

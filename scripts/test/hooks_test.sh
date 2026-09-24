@@ -51,7 +51,7 @@ assert_eq "extracts session_id" "$session" "abc123"
 
 hook_read_skill_and_session < <(printf '{}')
 assert_eq "defaults skill to empty string when absent" "$skill" ""
-assert_eq "defaults session_id to unknown when absent" "$session" "unknown"
+assert_eq "defaults session_id to empty when absent" "$session" ""
 
 echo
 echo "grilling hook"
@@ -77,6 +77,17 @@ assert_empty "stays silent on the second call in one session" "$out"
 
 out="$(skill_event "mattpocock-skills:grilling" s2 | "$GRILL")"
 assert_contains "fires again in a different session" "$out" "additionalContext"
+
+# A payload with no session_id cannot key a marker, so it must not arm the
+# guard under a defaulted id that every other session-less payload would share.
+nosess="$(jq -n --arg cwd "$REPO" '{hook_event_name:"PostToolUse", tool_name:"Skill", cwd:$cwd, tool_input:{skill:"grilling"}}')"
+out="$(printf '%s' "$nosess" | "$GRILL")"
+assert_contains "still injects context without a session_id" "$out" "additionalContext"
+if ls "$TMPDIR"/orchestrator-grilling-unknown "$TMPDIR"/orchestrator-grilling- >/dev/null 2>&1; then
+  bad "arms no marker without a session_id" "a marker was created"
+else
+  ok "arms no marker without a session_id"
+fi
 
 assert_empty "ignores an unrelated skill" "$(skill_event "mattpocock-skills:tdd" s3 | "$GRILL")"
 assert_empty "ignores research"           "$(skill_event "mattpocock-skills:research" s4 | "$GRILL")"
@@ -116,6 +127,16 @@ assert_contains "carries Junie's top-level reason" \
 for f in CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/agents/domain.md .scratch/ticket.md; do
   assert_empty "allows planning artifact: $f" "$(edit_event "$REPO/$f" s1 | "$GUARD")"
 done
+
+# Junie's PreToolUse payload carries neither session_id nor cwd. No session
+# means "not guarded", even if a stale marker for a defaulted id exists.
+: >"$TMPDIR/orchestrator-grilling-unknown"
+: >"$TMPDIR/orchestrator-grilling-"
+junie_edit='{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"'"$REPO"'/src/main.ts"}}'
+out="$(cd "$REPO" && printf '%s' "$junie_edit" | "$GUARD")"; rc=$?
+assert_eq "exits cleanly on a payload with no session_id or cwd" "$rc" "0"
+assert_empty "does not deny without a session_id" "$out"
+rm -f "$TMPDIR/orchestrator-grilling-unknown" "$TMPDIR/orchestrator-grilling-"
 
 assert_empty "ignores files outside the repo" "$(edit_event "/etc/hosts" s1 | "$GUARD")"
 
