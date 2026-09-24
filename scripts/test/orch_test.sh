@@ -244,7 +244,14 @@ case "$1" in
       exit 1
     fi
     echo "Logged in to github.com" ;;
-  repo) printf '%s\n' ${GH_STUB_REPO-acme/widgets main} ;;
+  # doctor asks nameWithOwner and defaultBranchRef together and reads both
+  # lines; default_branch asks defaultBranchRef alone and reads one, so it
+  # gets GH_STUB_REPO's last word.
+  repo)
+    case "$*" in
+      *nameWithOwner*) printf '%s\n' ${GH_STUB_REPO-acme/widgets main} ;;
+      *) set -- ${GH_STUB_REPO-acme/widgets main}; [ $# -eq 0 ] || printf '%s\n' "${!#}" ;;
+    esac ;;
   label)
     if [ "${GH_STUB_MODE:-ok}" = labelfail ]; then exit 1; fi
     if [ "$2" = create ]; then
@@ -910,6 +917,88 @@ out="$(base_cmd base 2>&1)"; st=$?
 assert_status "refuses a missing verb" "$st" 1
 out="$(base_cmd base set 2>&1)"; st=$?
 assert_status "set refuses with no branch" "$st" 1
+rm -rf "$(dirname "$bare")"
+
+# --- a flow's base branch -------------------------------------------------------
+# A flow fixes its base branch at init, so a later `base set` never moves the
+# flow's fork point or its PR. uat carries a commit main does not, so where the
+# flow branch forked from is visible in its history.
+echo
+echo "a flow's base branch"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main
+git checkout -q -b uat
+git commit -q --allow-empty -m "uat only"
+git push -q origin uat:refs/heads/uat
+git checkout -q -
+git branch -q -D uat
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+uat_tip="$(git rev-parse origin/uat)"
+main_tip="$(git rev-parse origin/main)"
+
+base_cmd init nobase >/dev/null
+assert_eq "init records the default branch as base when nothing is set" \
+  "$(base_cmd state get base)" "main"
+rm -rf .orchestrator
+
+base_cmd base set uat >/dev/null
+base_cmd init flowbase >/dev/null
+assert_eq "init records the base branch setting" "$(base_cmd state get base)" "uat"
+
+out="$(base_cmd base set uat 2>&1)"
+assert_not_contains "set says nothing more when the active flow already has that base" \
+  "$out" "keeps its own base branch"
+out="$(base_cmd base set main 2>&1)"; st=$?
+assert_status "set still succeeds while a flow with another base is active" "$st" 0
+assert_contains "and notes that the active flow keeps its own base branch" \
+  "$out" "flowbase keeps its own base branch: uat"
+assert_eq "the flow's recorded base is untouched" "$(base_cmd state get base)" "uat"
+
+base_cmd state set issue 7
+out="$(base_cmd branch create 2>&1)"; st=$?
+assert_status "branch create succeeds" "$st" 0
+assert_eq "branch create forks from the recorded base, not the changed setting" \
+  "$(git rev-parse HEAD)" "$uat_tip"
+assert_eq "base_sha is the recorded base's tip" "$(base_cmd state get base_sha)" "$uat_tip"
+assert_contains "status prints the flow's base branch" "$(base_cmd status)" "base:      uat"
+
+body="$(mktemp)"
+writeln 'Implements the thing.' >"$body"
+filed="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=31 \
+  base_cmd pr open "Title" "$body" 2>&1)"; st=$?
+assert_status "pr open succeeds" "$st" 0
+assert_contains "pr open targets the flow's recorded base" "$(cat "$filed")" "base=uat"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_first_line "a PR into a non-default base refers to its issue instead of closing it" \
+  "$body_recorded" "Refs #7"
+
+# A deleted base branch must not quietly become a fork from a stale local copy.
+git update-ref refs/remotes/origin/gone "$main_tip"
+git branch -q gone "$main_tip"
+base_cmd state set base gone
+base_cmd state set issue 8
+out="$(base_cmd branch create 2>&1)"; st=$?
+assert_status "branch create refuses a base branch origin says is gone" "$st" 1
+assert_contains "naming the base branch" "$out" "gone"
+assert_eq "and creates no branch" \
+  "$(git rev-parse --verify --quiet orch/8-flowbase >/dev/null && echo made || echo none)" "none"
+
+# A flow started before base was recorded forked from the default branch.
+legacy="$(mktemp)"
+jq 'del(.base)' .orchestrator/state.json >"$legacy"
+mv "$legacy" .orchestrator/state.json
+assert_contains "status shows the default branch for a state with no base" \
+  "$(base_cmd status)" "base:      main"
+git checkout -q main
+out="$(base_cmd branch create 2>&1)"; st=$?
+assert_status "and branch create still forks it" "$st" 0
+assert_eq "from the default branch" "$(git rev-parse HEAD)" "$main_tip"
+base_cmd base clear >/dev/null
 rm -rf "$(dirname "$bare")"
 
 # --- branch retire ------------------------------------------------------------
@@ -1989,6 +2078,7 @@ assert_eq "and records it in state" "$("$ORCH" state get pr)" "23"
 body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
 assert_first_line "the recorded body opens with the closing keyword" \
   "$body_recorded" "Closes #16"
+assert_contains "and targets the flow's base, the default branch" "$(cat "$filed")" "base=main"
 assert_eq "leaves a blank line before the original body" \
   "$(printf '%s\n' "$body_recorded" | sed -n 2p)" ""
 assert_contains "and keeps the agent's original body intact after a blank line" \
@@ -3362,8 +3452,10 @@ mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
 : >"$filed"
 log="$(mktemp)"
+base_before="$("$ORCH" state get base)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
+assert_eq "keeps the flow's recorded base branch" "$("$ORCH" state get base)" "$base_before"
 assert_eq "prints the new redo count" "$out" "1"
 assert_eq "records it in state" "$("$ORCH" state get redo_count)" "1"
 assert_eq "resets the iteration for a fresh budget" "$("$ORCH" state get iteration)" "0"

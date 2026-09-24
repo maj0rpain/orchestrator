@@ -228,6 +228,15 @@ base_branch() {
 }
 base_source() { if [ -n "$(base_setting)" ]; then echo set; else echo default; fi; }
 
+# The active flow's own base branch, recorded by init. A flow started before
+# base was recorded has none, and always forked from the default branch.
+flow_base() {
+  local b
+  b="$(jq -r '.base // ""' "$STATE")"
+  if [ -n "$b" ]; then printf '%s
+' "$b"; else default_branch; fi
+}
+
 # Whether origin has branch $1: 0 yes, 2 origin answered and it does not,
 # anything else origin could not be asked. ls-remote's own exit codes carry
 # exactly that split, which is the one doctor's severity rule turns on.
@@ -258,6 +267,13 @@ cmd_base() {
         git config orchestrator.base "$b"
       fi
       note "$(base_branch) ($(base_source))"
+      # The setting only reaches flows started after it; say so rather than
+      # let the active flow's PR surprise anyone by targeting its old base.
+      if [ -f "$STATE" ] && [ "$(jq -r .phase "$STATE")" != done ]; then
+        local fb; fb="$(flow_base)"
+        [ "$fb" = "$(base_branch)" ] ||
+          note "note: the active flow $(jq -r .slug "$STATE") keeps its own base branch: $fb"
+      fi
       ;;
     show)
       [ $# -eq 0 ] || die "usage: orch.sh base show"
@@ -393,9 +409,11 @@ cmd_init() {
   # carries no field for whether it was adopted or published - nothing
   # downstream reads that distinction. host_fallbacks marks a flow whose
   # handoffs must record Host fallbacks (see host_fallbacks_required).
-  jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" '{
+  # base is fixed here and never rewritten - not by redo, not by a later
+  # `base set` - so a flow's fork point and PR target cannot move under it.
+  jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" --arg base "$(base_branch)" '{
     slug: $slug, phase: "spec", issue: (if $issue == "" then null else ($issue | tonumber) end),
-    branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
+    base: $base, branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
     flake_rerun_used: false, redo_count: 0, host_fallbacks: true, created: $now, updated: $now
   }' >"$STATE"
   [ -z "$archive_note" ] || note "$archive_note"
@@ -987,16 +1005,23 @@ cmd_spec() {
 
 # --- git / github -----------------------------------------------------------
 
-# Forking a named branch off the default branch has exactly one right answer -
+# Forking a named branch off a base branch has exactly one right answer -
 # fetch it, then check it out, falling back to the local ref if origin was
 # unreachable - so both branch create (a flow's own naming and state) and
 # branch off (a quick implementation's, which keeps no state) share it rather
-# than each hand-rolling the fetch/checkout-fallback idiom.
+# than each hand-rolling the fetch/checkout-fallback idiom. The caller names
+# the base: a flow's is the one it recorded at init.
 checkout_new_branch() {
-  local name="$1" base
+  local name="$1" base="$2"
   if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
-  base="$(default_branch)"
-  git fetch --quiet origin "$base" 2>/dev/null || true
+  if ! git fetch --quiet origin "$base" 2>/dev/null; then
+    # Only an origin that could not be asked earns the local fallback: one
+    # that answered "no such branch" means the base is gone, and forking from
+    # a stale local copy of it would build on work nobody will merge.
+    local st=0
+    origin_has_branch "$base" || st=$?
+    [ "$st" -ne 2 ] || die "base branch $base does not exist on origin - push it, or start again on another base branch"
+  fi
   git checkout -q -b "$name" "origin/$base" 2>/dev/null || git checkout -q -b "$name" "$base"
 }
 
@@ -1007,7 +1032,7 @@ cmd_branch_create() {
   slug="$(jq -r .slug "$STATE")"
   require_issue issue
   name="orch/${issue}-${slug}"
-  checkout_new_branch "$name"
+  checkout_new_branch "$name" "$(flow_base)"
   cmd_state set branch "$name"
   cmd_state set base_sha "$(git rev-parse HEAD)"
   note "$name"
@@ -1018,7 +1043,7 @@ cmd_branch_create() {
 # a checked-out branch back, nothing else.
 cmd_branch_off() {
   [ $# -eq 1 ] || die "usage: orch.sh branch off <name>"
-  checkout_new_branch "$1"
+  checkout_new_branch "$1" "$(default_branch)"
   note "$1"
 }
 
@@ -1091,16 +1116,20 @@ cmd_issue_publish() {
 }
 
 # Pushing a branch and opening a PR against it has exactly one right answer -
-# push, then prefix the body with a Closes line so GitHub links the PR as a
-# closer (no agent-chosen wording can leave the issue open again), then create
-# the PR - so pr open (a flow's own, draft, recorded into state) and pr publish
+# push, then prefix the body with the issue line - Closes into the default
+# branch, so GitHub links the PR as a closer (no agent-chosen wording can leave
+# the issue open again), Refs into any other base - then create the PR - so pr open (a flow's own, draft, recorded into state) and pr publish
 # (a quick implementation's, not a draft, recording nothing) share it rather
-# than each hand-rolling the push/Closes-line/gh-pr-create idiom.
+# than each hand-rolling the push/issue-line/gh-pr-create idiom.
 open_pr() {
-  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr draft_flag=""
+  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr draft_flag="" keyword=Closes
   git push -q -u origin "$branch"
+  # GitHub only acts on a closing keyword when the PR merges into the default
+  # branch, so a PR into any other base branch refers to its issue instead of
+  # claiming to close it - the release PR is what closes it.
+  [ "$base" = "$(default_branch)" ] || keyword=Refs
   tmp="$(mktemp)"
-  { printf 'Closes #%s\n\n' "$issue"; cat "$body_file"; } >"$tmp"
+  { printf '%s #%s\n\n' "$keyword" "$issue"; cat "$body_file"; } >"$tmp"
   # Unquoted on purpose: this is either empty or the one literal flag below,
   # never a value with spaces or glob characters to mis-split.
   [ "$draft" = true ] && draft_flag="--draft"
@@ -1123,7 +1152,7 @@ cmd_pr_open() {
   require_branch branch
   # Draft is the honest signal: the review loop has not run yet, so marking it
   # ready is the loop's success condition rather than a comment nobody reads.
-  pr="$(open_pr "$branch" "$(default_branch)" "$issue" "$title" "$body_file" true)"
+  pr="$(open_pr "$branch" "$(flow_base)" "$issue" "$title" "$body_file" true)"
   cmd_state set pr "$pr"
   note "$pr"
 }
@@ -1420,6 +1449,7 @@ cmd_status() {
   note "flow:      $slug"
   note "phase:     $phase"
   note "issue:     $issue"
+  note "base:      $(flow_base)"
   note "branch:    $branch"
   note "PR:        $pr"
   # Against the budget, not alone: "iteration 3" does not say how far along
@@ -1467,7 +1497,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               flows and quick implementations fork from and
                               open PRs against; refuses a branch origin does
                               not have. Shared by every worktree, never
-                              committed; the default branch's name clears it
+                              committed; the default branch's name clears it.
+                              An active flow keeps the base it started with
   base show                   print the base branch in effect and its source:
                               set, or default
   base clear                  remove the setting, falling back to the default
@@ -1478,7 +1509,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               has changes outside the planning allowlist);
                               --issue adopts an already-open,
                               ready-for-agent issue N as the flow's spec
-                              instead of leaving it unset
+                              instead of leaving it unset. Records the base
+                              branch in effect as the flow's own
   slug <text>                 normalise text to the kebab-case slug init would
                               store - lowercase, non-alphanumeric runs collapsed
                               to a hyphen, trimmed
@@ -1486,7 +1518,8 @@ orch.sh - deterministic operations for the orchestrator flow
   state set <key> <value>     update one key
   handoff path <phase>        print the handoff path for a phase
   handoff validate <file>     check required sections exist and are non-empty
-  branch create               create orch/<issue>-<slug> off the default branch
+  branch create               create orch/<issue>-<slug> off the flow's base
+                              branch, recorded at init
   branch off <name>           create and check out <name> off the default
                               branch, recording no state - for a quick
                               implementation, which keeps none
@@ -1501,7 +1534,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               state
   issue update <n> <file>     replace issue <n>'s body with <file>, recording
                               no state
-  pr open <title> <body-file> push and open a draft PR
+  pr open <title> <body-file> push and open a draft PR against the flow's base
+                              branch - Closes its issue into the default
+                              branch, Refs it into any other
   pr publish <issue> <title> <body-file>
                               push the current branch and open a non-draft PR
                               closing <issue>, recording no state; prints the

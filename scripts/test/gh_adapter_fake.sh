@@ -37,6 +37,8 @@ fake_record_flags() {
     case "$1" in
       --title)     printf 'title=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
       --label)     printf 'label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
+      --base)      printf 'base=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
+      --head)      printf 'head=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
       --body-file) { printf 'body:\n'; cat "$2"; } >>"$GH_STUB_FILED"; shift ;;
       --comment)   { printf 'comment:\n%s\n' "$2"; } >>"$GH_STUB_FILED"; shift ;;
       *)           printf 'flag=%s\n' "$1" >>"$GH_STUB_FILED" ;;
