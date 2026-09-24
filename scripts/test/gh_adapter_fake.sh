@@ -54,7 +54,9 @@ fake_record_flags() {
 # answers stub_gh gives, so cmd_spec fetch reads either fake identically.
 # GH_STUB_CLOSED_ISSUES, a space-separated list of issue numbers, answers
 # CLOSED for those issues' state alone, so pr release can see a mix of open
-# and closed issues in one run (issue #139).
+# and closed issues in one run (issue #139). pr release asks for state,url;
+# a number in GH_STUB_PR_NUMBERS answers PULL there, as its --jq turns a PR's
+# /pull/ url into.
 adapter_issue_view() {
   if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue view %s\n' "$*" >>"$GH_STUB_FILED"; fi
   if [ "${GH_STUB_VIEW_EXIT:-0}" != 0 ]; then
@@ -64,7 +66,10 @@ adapter_issue_view() {
   local a
   for a in "$@"; do
     case "$a" in
-      state)
+      state|state,url)
+        case " ${GH_STUB_PR_NUMBERS:-} " in
+          *" $1 "*) [ "$a" = state,url ] && { printf 'PULL\n'; return 0; } ;;
+        esac
         case " ${GH_STUB_CLOSED_ISSUES:-} " in
           *" $1 "*) printf 'CLOSED\n' ;;
           *)        printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}" ;;

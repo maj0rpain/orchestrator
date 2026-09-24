@@ -233,8 +233,7 @@ base_source() { if [ -n "$(base_setting)" ]; then echo set; else echo default; f
 flow_base() {
   local b
   b="$(jq -r '.base // ""' "$STATE")"
-  if [ -n "$b" ]; then printf '%s
-' "$b"; else default_branch; fi
+  if [ -n "$b" ]; then printf '%s\n' "$b"; else default_branch; fi
 }
 
 # Whether origin has branch $1: 0 yes, 2 origin answered and it does not,
@@ -1128,8 +1127,9 @@ cmd_issue_publish() {
 # Pushing a branch and opening a PR against it has exactly one right answer -
 # push, then prefix the body with the issue line - Closes into the default
 # branch, so GitHub links the PR as a closer (no agent-chosen wording can leave
-# the issue open again), Refs into any other base - then create the PR - so pr open (a flow's own, draft, recorded into state) and pr publish
-# (a quick implementation's, not a draft, recording nothing) share it rather
+# the issue open again), Refs into any other base - then create the PR - so
+# pr open (a flow's own, draft, recorded into state) and pr publish (a quick
+# implementation's, not a draft, recording nothing) share it rather
 # than each hand-rolling the push/issue-line/gh-pr-create idiom.
 open_pr() {
   local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr draft_flag="" keyword=Closes
@@ -1193,29 +1193,33 @@ cmd_pr_release() {
   local usage="usage: orch.sh pr release [--force] <title> <body-file>" force=false
   if [ "${1:-}" = --force ]; then force=true; shift; fi
   [ $# -eq 2 ] || die "$usage"
-  local title="$1" body_file="$2" base def
+  local title="$1" body_file="$2" base default
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
   base="$(base_branch)"
-  def="$(default_branch)"
-  [ "$base" != "$def" ] ||
-    die "the base branch is the default branch ($def) - there is nothing to release; set another with base set"
+  default="$(default_branch)"
+  [ "$base" != "$default" ] ||
+    die "the base branch is the default branch ($default) - there is nothing to release; set another with base set"
   local open
-  open="$(adapter_pr_list --head "$base" --base "$def" --state open --json number --jq '.[].number')" ||
-    die "gh could not list the open PRs from $base into $def"
-  [ -z "$open" ] || die "a release PR from $base into $def is already open: #$(first_line "$open")"
+  open="$(adapter_pr_list --head "$base" --base "$default" --state open --json number --jq '.[].number')" ||
+    die "gh could not list the open PRs from $base into $default"
+  [ -z "$open" ] || die "a release PR from $base into $default is already open: #$(first_line "$open")"
   # Read from the merged PRs' bodies rather than GitHub's closing-issue links:
   # GitHub only links closing keywords on PRs into the default branch, and a
-  # Refs line never links at all. Any keyword a hand-written PR might use
-  # counts, anywhere in the body.
+  # Refs line never links at all. Refs, Closes, Fixes and Resolves count, in
+  # any case and anywhere in the body - not every closing form GitHub knows,
+  # so prose such as "a quick fix #12" is never mistaken for a reference.
   local bodies refs n state issues="" tmp url
   bodies="$(adapter_pr_list --base "$base" --state merged --limit 1000 --json body --jq '.[].body')" ||
     die "gh could not list the PRs merged into $base"
   refs="$(printf '%s\n' "$bodies" |
-    grep -ioE '(^|[^[:alnum:]_])(refs|close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#[0-9]+' |
+    grep -ioE '(^|[^[:alnum:]_])(refs|closes|fixes|resolves):?[[:space:]]+#[0-9]+' |
     grep -oE '[0-9]+$' | sort -nu)" || true
+  # gh issue view answers for a PR number too, so a reference to a PR reads
+  # as PULL and is dropped - only still-open issues get a Closes line.
   for n in $refs; do
-    state="$(adapter_issue_view "$n" --json state --jq .state)" ||
+    state="$(adapter_issue_view "$n" --json state,url \
+      --jq 'if (.url | test("/pull/")) then "PULL" else .state end')" ||
       die "gh could not read the state of issue #$n"
     [ "$state" != OPEN ] || issues="$issues $n"
   done
@@ -1228,9 +1232,9 @@ cmd_pr_release() {
     cat "$body_file"
   } >"$tmp"
   # Not a draft: nothing after this would ever mark it ready.
-  if ! url="$(adapter_pr_create --base "$def" --head "$base" --title "$title" --body-file "$tmp")"; then
+  if ! url="$(adapter_pr_create --base "$default" --head "$base" --title "$title" --body-file "$tmp")"; then
     rm -f "$tmp"
-    die "gh could not open the release PR from $base into $def"
+    die "gh could not open the release PR from $base into $default"
   fi
   rm -f "$tmp"
   note "${url##*/}"

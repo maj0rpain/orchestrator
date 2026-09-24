@@ -151,7 +151,7 @@ complete_implement_handoff() {
 # each default "[]" - through the caller's --jq, and fails on
 # GH_STUB_PR_LIST_EXIT. `issue view --json state` answers CLOSED for any issue
 # listed in GH_STUB_CLOSED_ISSUES (space-separated), GH_STUB_ISSUE_STATE for
-# the rest.
+# the rest; asked for state,url, a number in GH_STUB_PR_NUMBERS answers PULL.
 #
 # `issue list` is check_sub_issues's way of finding an issue to probe against:
 # it answers GH_STUB_ISSUE_LIST (default "1"), empty when explicitly set to
@@ -288,7 +288,10 @@ ready-for-agent}"
                 printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"
               fi
               exit 0 ;;
-            state)
+            state|state,url)
+              case " ${GH_STUB_PR_NUMBERS:-} " in
+                *" $3 "*) [ "$a" = state,url ] && { echo PULL; exit 0; } ;;
+              esac
               case " ${GH_STUB_CLOSED_ISSUES:-} " in
                 *" $3 "*) echo CLOSED ;;
                 *)        printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}" ;;
@@ -2332,12 +2335,15 @@ body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
 assert_eq "with the caller's body alone" "$body_recorded" "$(cat "$body")"
 
 # Hand-written PRs into uat count too: every keyword, in any case, anywhere in
-# the body. #5 is referenced twice and #8 is already closed.
+# the body. #5 is referenced twice and #8 is already closed. Other closing
+# forms (fix, closed) are prose, not references, and #62 is an open PR, not
+# an issue.
 filed="$(mktemp)"
 merged='[{"number":62,"body":"Refs #5\n\nImplements it."},
 {"number":63,"body":"Summary first.\n\nThis closes #6 and FIXES #7."},
-{"number":64,"body":"resolves #9\nAlso Refs #5, and Closes #8.\nIt prefixes #4 with nothing."}]'
-out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_CLOSED_ISSUES="8" GH_STUB_PR_NUMBER=71 \
+{"number":64,"body":"resolves #9\nAlso Refs #5, and Closes #8.\nIt prefixes #4 with nothing."},
+{"number":65,"body":"A quick fix #12, closed #13. Refs #62, an open PR."}]'
+out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_CLOSED_ISSUES="8" GH_STUB_PR_NUMBERS="62" GH_STUB_PR_NUMBER=71 \
   release "Release uat" "$body" 2>&1)"; st=$?
 assert_status "opens the release PR" "$st" 0
 assert_eq "prints its number" "$out" "71"
