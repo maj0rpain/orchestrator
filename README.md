@@ -102,6 +102,21 @@ running the flow never dirties a repo's working tree.
 | `/orchestrator:redo` | Step back one phase and re-run it. |
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
 
+### Base branch
+
+Flows and quick implementations fork from the repo's default branch unless
+you set another **base branch** (see CONTEXT.md) for the checkout - for
+instance a `uat` branch that gathers a multi-ticket project:
+
+| Command | What it does |
+| --- | --- |
+| `orch.sh base set <branch>` | Set the base branch. Refuses a branch `origin` does not have. Stored in the clone's local git config (`orchestrator.base`): shared by every worktree, never committed, kept through `abort` and archiving. Setting the default branch's name clears it. |
+| `orch.sh base show` | Print the base branch in effect and its source: `set`, or `default`. |
+| `orch.sh base clear` | Go back to the default branch. Succeeds when nothing was set. |
+
+`/orchestrator:doctor` reports the base branch in effect, and FAILs when the
+one you set is gone from `origin`.
+
 ## Why separate sessions
 
 `handoff`, `implement`, `to-spec`, `to-tickets`, `wayfinder`, and

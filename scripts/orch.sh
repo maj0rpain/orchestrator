@@ -214,6 +214,64 @@ default_branch() {
   printf '%s\n' "$b"
 }
 
+# The base branch in effect now: the checkout's orchestrator.base setting, else
+# the default branch. The one answer every fork, PR target and doctor check
+# asks for - default_branch keeps meaning GitHub's default branch alone.
+# Local git config rather than state.json or a tracked file: it outlives
+# abort and archiving, every worktree of the clone shares it, and it never
+# travels with a push.
+base_setting() { git config --get orchestrator.base 2>/dev/null || true; }
+base_branch() {
+  local b
+  b="$(base_setting)"
+  if [ -n "$b" ]; then printf '%s\n' "$b"; else default_branch; fi
+}
+base_source() { if [ -n "$(base_setting)" ]; then echo set; else echo default; fi; }
+
+# Whether origin has branch $1: 0 yes, 2 origin answered and it does not,
+# anything else origin could not be asked. ls-remote's own exit codes carry
+# exactly that split, which is the one doctor's severity rule turns on.
+origin_has_branch() {
+  local st=0
+  git ls-remote --quiet --exit-code origin "refs/heads/$1" >/dev/null 2>&1 || st=$?
+  return "$st"
+}
+
+cmd_base() {
+  local op="${1:-}" b st
+  shift || true
+  case "$op" in
+    set)
+      [ $# -eq 1 ] || die "usage: orch.sh base set <branch>"
+      b="$1"; st=0
+      origin_has_branch "$b" || st=$?
+      case "$st" in
+        0) ;;
+        2) die "branch $b does not exist on origin - push it first, or check the name" ;;
+        *) die "could not reach origin to check that branch $b exists - nothing was set" ;;
+      esac
+      # The default branch's own name is no setting at all: storing it would
+      # pin today's default and outlive a rename of it.
+      if [ "$b" = "$(default_branch)" ]; then
+        git config --unset orchestrator.base 2>/dev/null || true
+      else
+        git config orchestrator.base "$b"
+      fi
+      note "$(base_branch) ($(base_source))"
+      ;;
+    show)
+      [ $# -eq 0 ] || die "usage: orch.sh base show"
+      note "$(base_branch) ($(base_source))"
+      ;;
+    clear)
+      [ $# -eq 0 ] || die "usage: orch.sh base clear"
+      git config --unset orchestrator.base 2>/dev/null || true
+      note "$(base_branch) ($(base_source))"
+      ;;
+    *) die "unknown base op: ${op:-<none>} (want set|show|clear)" ;;
+  esac
+}
+
 # Ignore the flow directory without touching a tracked .gitignore, so running
 # the orchestrator in an unfamiliar repo never dirties its working tree.
 exclude_orch_dir() {
@@ -1403,7 +1461,17 @@ orch.sh - deterministic operations for the orchestrator flow
 
   doctor [--env|--flow]       diagnose the machine, the repo, and the active flow
   mp-skill [name]             path to a mattpocock SKILL.md (or the plugin root)
-  default-branch              resolve the base branch feature branches fork from
+  default-branch              resolve the repo's default branch, as GitHub
+                              reports it
+  base set <branch>           set this checkout's base branch - the branch
+                              flows and quick implementations fork from and
+                              open PRs against; refuses a branch origin does
+                              not have. Shared by every worktree, never
+                              committed; the default branch's name clears it
+  base show                   print the base branch in effect and its source:
+                              set, or default
+  base clear                  remove the setting, falling back to the default
+                              branch; succeeds when nothing was set
   init <slug> [--issue N]     start a flow (refuses if one is active, unless
                               it is done - a done flow is archived and the
                               new one starts over it, or if the working tree
@@ -1487,6 +1555,7 @@ main() {
     doctor)        cmd_doctor "$@" ;;
     mp-skill)      cmd_mp_skill "$@" ;;
     default-branch) default_branch ;;
+    base)          cmd_base "$@" ;;
     init)          cmd_init "$@" ;;
     slug)          cmd_slug "$@" ;;
     state)         cmd_state "$@" ;;

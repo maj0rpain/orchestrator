@@ -17,7 +17,8 @@
 # copy of the label-table parser.
 #
 # Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
-# now, first_line, default_branch, require_state, mp_location, mp_skill_path,
+# now, first_line, default_branch, base_setting, origin_has_branch,
+# require_state, mp_location, mp_skill_path,
 # ORCH_DIR_NAME, PHASES, LABELS_DOC, LABEL_LIMIT, HANDOFF_DIR) is defined.
 # cmd_doctor is then dispatched from main() exactly like any other command.
 
@@ -594,11 +595,34 @@ check_git_exclude() {
   d_remedy "printf '%s\\n' '$ORCH_DIR_NAME/' >>\"\$(git rev-parse --git-dir)/info/exclude\""
 }
 
+# The base branch every new flow and quick implementation will fork from and
+# target. A setting whose branch has since gone from origin is the one stale
+# answer that would send the next fork at nothing, so it FAILs; origin being
+# unreachable only means it could not be checked. The default case reuses the
+# default branch GitHub already answered in d_probe - the same answer
+# base_branch would ask for again - and needs no origin check at all.
+check_base_branch() {
+  local b st=0
+  b="$(base_setting)"
+  if [ -z "$b" ]; then
+    d_ok "base branch: ${D_REPO_BRANCH:-$(default_branch)} (default)"
+    return 0
+  fi
+  origin_has_branch "$b" || st=$?
+  case "$st" in
+    0) d_ok "base branch: $b (set)" ;;
+    2)
+      d_fail "base branch $b is set but no longer exists on origin - new flows would fork from nothing."
+      d_remedy "orch.sh base clear" "orch.sh base set <branch>" ;;
+    *) d_warn "base branch $b (set) could not be verified - origin is not reachable." ;;
+  esac
+}
+
 ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh check_mattpocock check_skills
-h_repo   check_tracker_doc check_labels_doc check_labels_exist check_sub_issues check_git_exclude
+h_repo   check_tracker_doc check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch
 "
 
 # flow state -----------------------------------------------------------------

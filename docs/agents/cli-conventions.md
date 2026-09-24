@@ -8,6 +8,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 
 | Noun      | Verbs                                              |
 | --------- | --------------------------------------------------- |
+| `base`    | `set`, `show`, `clear`                               |
 | `branch`  | `create`, `off`, `retire`                            |
 | `issue`   | `fetch`, `update`, `publish`                         |
 | `pr`      | `open`, `publish`                                    |

@@ -850,6 +850,68 @@ assert_contains "names the branch" "$out" "quick/9-widgets already exists"
 out="$("$ORCH" branch off 2>&1)"; st=$?
 assert_status "refuses with no name" "$st" 1
 
+# --- base --------------------------------------------------------------------
+# The checkout-wide base branch setting and its one resolver. A typo here is
+# silent in the worst way - work quietly forks from and targets a branch nobody
+# will merge - so set must refuse anything origin does not have.
+echo
+echo "base"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+# GitHub cannot answer for a local bare origin, so default-branch settles on
+# origin/HEAD - pinned above rather than left to this machine's gh.
+base_cmd() { PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" "$@"; }
+base_setting() { git config --get orchestrator.base || echo "<unset>"; }
+
+out="$(base_cmd base show)"; st=$?
+assert_status "show succeeds with nothing set" "$st" 0
+assert_eq "show names the default branch as the source when nothing is set" "$out" "main (default)"
+
+out="$(base_cmd base set nosuch 2>&1)"; st=$?
+assert_status "set refuses a branch missing from origin" "$st" 1
+assert_contains "names the missing branch" "$out" "nosuch"
+assert_eq "a refused set leaves the config untouched" "$(base_setting)" "<unset>"
+
+out="$(base_cmd base set uat 2>&1)"; st=$?
+assert_status "set accepts a branch origin has" "$st" 0
+assert_eq "set writes orchestrator.base" "$(base_setting)" "uat"
+assert_eq "show names the setting as the source" "$(base_cmd base show)" "uat (set)"
+assert_eq "default-branch still names the default branch" "$(base_cmd default-branch)" "main"
+
+wt="$(mktemp -d)/wt"
+git worktree add -q "$wt" -b base-wt
+assert_eq "every worktree of the clone shares the setting" "$(cd "$wt" && base_cmd base show)" "uat (set)"
+git worktree remove --force "$wt"
+
+git remote set-url origin "$(dirname "$bare")/unreachable.git"
+out="$(base_cmd base set main 2>&1)"; st=$?
+assert_status "set refuses when origin cannot be reached to verify" "$st" 1
+assert_eq "an unverified set leaves the config untouched" "$(base_setting)" "uat"
+git remote set-url origin "$bare"
+
+out="$(base_cmd base set main 2>&1)"; st=$?
+assert_status "set accepts the default branch's own name" "$st" 0
+assert_eq "setting the default branch acts as clearing" "$(base_setting)" "<unset>"
+assert_eq "show then reports the default source" "$(base_cmd base show)" "main (default)"
+
+base_cmd base set uat >/dev/null
+out="$(base_cmd base clear 2>&1)"; st=$?
+assert_status "clear succeeds when a setting exists" "$st" 0
+assert_eq "clear removes the setting" "$(base_setting)" "<unset>"
+out="$(base_cmd base clear 2>&1)"; st=$?
+assert_status "clear succeeds when nothing was set" "$st" 0
+
+out="$(base_cmd base 2>&1)"; st=$?
+assert_status "refuses a missing verb" "$st" 1
+out="$(base_cmd base set 2>&1)"; st=$?
+assert_status "set refuses with no branch" "$st" 1
+rm -rf "$(dirname "$bare")"
+
 # --- branch retire ------------------------------------------------------------
 # The rename-aside a redo uses instead of deleting or force-pushing over a
 # discarded attempt's commits. The push/delete-remote-ref assertions reuse the
@@ -3773,6 +3835,40 @@ printf 'Pick `orch-flow` from the skills this host lists. If it is not listed, r
 assert_contains "the scan flags a conditional Invoke a skill from a step fallback" \
   "$(scan_planning_nudge "$fixture")" "makes the Invoke a skill from a step fallback conditional"
 rm -rf "$fixture"
+
+# --- doctor: base branch check -----------------------------------------------
+# A set base branch that has vanished from origin is the one stale setting that
+# would send the next flow's fork and PR at nothing, so it FAILs; origin being
+# unreachable only means doctor could not tell, so it warns.
+echo
+echo "doctor: base branch check"
+healthy_repo
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a default base branch passes" "$st" 0
+assert_contains "reports the default branch as the base branch" "$out" "ok    base branch: main (default)"
+assert_contains "keeps the default-branch check" "$out" "ok    default branch: main (from GitHub)"
+
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git push -q "$bare" HEAD:refs/heads/main HEAD:refs/heads/uat
+git remote set-url origin "$bare"
+git config orchestrator.base uat
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a set base branch origin has passes" "$st" 0
+assert_contains "reports the set base branch" "$out" "ok    base branch: uat (set)"
+
+git config orchestrator.base gone
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a set base branch missing from origin fails" "$st" 1
+assert_contains "names the missing base branch" "$out" "FAIL  base branch gone"
+assert_contains "gives the way out" "$out" "base clear"
+
+git remote set-url origin "$(dirname "$bare")/unreachable.git"
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "an unverifiable base branch does not block the flow" "$st" 0
+assert_contains "warns that origin could not be reached" "$out" "warn  base branch gone"
+git config --unset orchestrator.base
+rm -rf "$(dirname "$bare")"
 
 echo
 if [ "$SKIP" -gt 0 ]; then
