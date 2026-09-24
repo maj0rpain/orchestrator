@@ -18,6 +18,9 @@ SKIP=0
 # The override outranks every install layout, so one leaking in from the shell
 # running the tests would decide every mattpocock lookup below.
 unset ORCHESTRATOR_MATTPOCOCK_ROOT
+# The same goes for the host signals doctor reads: the shell running the tests
+# is often itself a Claude Code or Junie session. Each test names its host.
+unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT
 
 ok()   { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
 bad()  { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
@@ -1610,9 +1613,56 @@ assert_contains "gives a command that adds the exclude line" "$out" "info/exclud
 # The exclude line is still truncated from the check above, so this one does
 # need a real reset before layering CLAUDE_PLUGIN_ROOT's own warning on top.
 healthy_repo
-out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" doctor --env 2>&1)"; st=$?
+out="$(env -u CLAUDE_PLUGIN_ROOT CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "running orch.sh by hand is not a broken install" "$st" 0
 assert_contains "warns about the unset plugin root" "$out" "CLAUDE_PLUGIN_ROOT"
+
+# --- doctor: host (#128) ---
+# Reduced enforcement has to be visible: doctor says which host it believes it
+# is under and what that host cannot do, in the words of the capabilities
+# reference - so the two cannot tell a user different stories.
+out="$(env -u CLAUDE_PLUGIN_ROOT CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "detects Claude Code from CLAUDECODE" "$out" "host: Claude Code"
+assert_eq "Claude Code lacks no capability" "$(printf '%s\n' "$out" | grep -c 'lacks')" "0"
+assert_contains "the plugin root check still warns when Claude Code left it unset" \
+  "$out" "warn  CLAUDE_PLUGIN_ROOT"
+
+out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "Junie's missing capabilities warn, never fail" "$st" 0
+assert_contains "detects Junie from JUNIE_EXTENSION_ROOT" "$out" "host: Junie"
+assert_contains "names the edit guard Junie cannot arm" "$out" "Arm the edit guard"
+assert_contains "names the fresh subagent Junie cannot start" "$out" "Start a fresh subagent"
+assert_contains "points at the reference for the fallbacks" "$out" "docs/host-capabilities.md"
+assert_eq "does not list what Junie can do" \
+  "$(printf '%s\n' "$out" | grep -c 'Ask a multiple-choice question')" "0"
+assert_contains "an unset plugin root is expected on Junie, not a warning" \
+  "$out" "ok    CLAUDE_PLUGIN_ROOT"
+
+out="$(ORCHESTRATOR_HOST=junie "$ORCH" doctor --env 2>&1)"
+assert_contains "ORCHESTRATOR_HOST outranks the Claude signals" "$out" "host: Junie"
+out="$(ORCHESTRATOR_HOST=vim "$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "names an ORCHESTRATOR_HOST it does not know" "$out" "ORCHESTRATOR_HOST=vim"
+
+out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "no detectable host is not a broken install" "$st" 0
+assert_contains "says the host was not detected" "$out" "host not detected"
+assert_contains "and how to name it" "$out" "export ORCHESTRATOR_HOST="
+
+# A skills-only install copies the skills without scripts/, so the relative
+# path every skill resolves orch.sh by leads nowhere. doctor runs from an
+# orch.sh, so what it can see is such a copy sitting in a user skill store.
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "reports the orch.sh it runs from" "$out" "ok    orch.sh:"
+h="$HOME"
+mkdir -p "$h/.agents/skills/orch-flow" "$h/.junie/skills/orch-review"
+touch "$h/.agents/skills/orch-flow/SKILL.md" "$h/.junie/skills/orch-review/SKILL.md"
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "reports a skills-only copy with no orch.sh" "$out" "orch.sh missing"
+assert_contains "names the skills CLI copy" "$out" "~/.agents/skills: orch-flow"
+assert_contains "names the Junie skills copy" "$out" "~/.junie/skills: orch-review"
+assert_contains "names the full-plugin install for Claude Code" "$out" "/plugin install orchestrator@orchestrator"
+assert_contains "names the full-plugin install for Junie" "$out" "maj0rpain/orchestrator as a Junie extension"
+rm -rf "$h/.agents/skills/orch-flow" "$h/.junie/skills/orch-review"
 
 # env -u above was scoped to that one command too, so this is still the same
 # fully-healthy repo - exactly the state this last check needs to prove out.
@@ -3482,6 +3532,13 @@ scan_orch_resolution() {
 }
 assert_eq "every skill and command resolves orch.sh the one documented way" \
   "$(scan_orch_resolution "$root")" ""
+# With no full install at all, doctor has no orch.sh to run from, so the skill
+# is the one that has to explain the failure (#128).
+missing=""
+for f in "$root"/skills/*/SKILL.md; do
+  grep -qF 'skills-only install' "$f" || missing="$missing ${f#"$root"/}"
+done
+assert_eq "every skill names the full-plugin install when orch.sh is missing" "$missing" ""
 fixture="$(mktemp -d)"
 mkdir -p "$fixture/guidelines"
 printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/guidelines/orch.md"

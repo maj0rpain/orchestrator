@@ -39,6 +39,12 @@ Junie's extension cache (`~/.junie/extensions/`), then the `skills` CLI store
 The first location present is used for every skill; a project's own
 `.agents/skills/` is never consulted.
 
+Doctor reports the host it detects and the capabilities that host lacks (from
+[docs/host-capabilities.md](docs/host-capabilities.md)). It reads Claude Code
+from `CLAUDECODE` or `CLAUDE_PLUGIN_ROOT` and Junie from `JUNIE_EXTENSION_ROOT`;
+set `ORCHESTRATOR_HOST=claude` or `junie` where neither reaches the shell.
+Install the whole plugin, not just its skills: every skill runs `scripts/orch.sh`.
+
 Upgrading from 0.x: 1.0.0 renamed every skill to carry an `orch-` prefix (the
 flow skill is now `orchestrator:orch-flow`, and so on). See
 [CHANGELOG.md](CHANGELOG.md) for the full old-to-new list.

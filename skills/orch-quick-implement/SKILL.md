@@ -19,6 +19,11 @@ ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
 two directories above this skill's own directory (the plugin root).
 
+If `orch.sh` is at neither path, this is a skills-only install: stop, and
+tell the human `orch.sh` is missing and to install the full orchestrator
+plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
+`maj0rpain/orchestrator` as a Junie extension).
+
 Steps here name capabilities (invoke a skill, start a fresh subagent).
 `docs/host-capabilities.md` under the plugin root maps each one to your host.
 Where your host's cell says **Fallback**, take the fallback it documents and

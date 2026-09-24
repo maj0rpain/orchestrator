@@ -23,6 +23,11 @@ two directories above this skill's own directory (the plugin root). Run
 `"$ORCH" help` for the full command list. Never reimplement what it already
 does.
 
+If `orch.sh` is at neither path, this is a skills-only install: stop, and
+tell the human `orch.sh` is missing and to install the full orchestrator
+plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
+`maj0rpain/orchestrator` as a Junie extension).
+
 ## Host capabilities
 
 Steps here name capabilities: invoke a skill, ask a multiple-choice question,

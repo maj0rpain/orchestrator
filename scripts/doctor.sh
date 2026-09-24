@@ -272,11 +272,107 @@ check_skills() {
   d_mp_remedy
 }
 
+# The plugin root doctor runs from: the directory scripts/ sits in, which is
+# also where every skill resolves orch.sh and the capabilities reference from.
+D_PLUGIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HOST_REF="docs/host-capabilities.md"
+
+# The one host detector. Prints "claude", "junie", or nothing when no signal
+# is present (orch.sh run by hand in a terminal). ORCHESTRATOR_HOST names the
+# host outright, for a shell no signal reaches. Junie's signal is the variable
+# its docs say it expands for extension hooks; that it also reaches the shell a
+# skill runs orch.sh from is unverified, which is what the override is for.
+# Junie is checked before Claude because a Junie started from inside a Claude
+# Code terminal inherits CLAUDECODE, never the other way round.
+host_detect() {
+  if [ -n "${ORCHESTRATOR_HOST:-}" ]; then printf '%s\n' "$ORCHESTRATOR_HOST"; return 0; fi
+  if [ -n "${JUNIE_EXTENSION_ROOT:-}" ]; then printf 'junie\n'; return 0; fi
+  if [ "${CLAUDECODE:-}" = 1 ] || [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then printf 'claude\n'; fi
+}
+
+# The host's column header in the capabilities reference.
+host_name() {
+  case "$1" in
+    claude) printf 'Claude Code\n' ;;
+    junie)  printf 'Junie\n' ;;
+  esac
+}
+
+# The capabilities a host lacks, read from the reference itself rather than
+# restated here, so doctor and the table can never disagree: every row whose
+# cell in that host's column is marked **Fallback**, one per line.
+host_lacks() {
+  [ -f "$D_PLUGIN/$HOST_REF" ] || return 0
+  awk -F'|' -v host="$1" '
+    function trim(x) { gsub(/^ +| +$/, "", x); return x }
+    /^\| *Capability *\|/ { for (i = 2; i < NF; i++) if (trim($i) == host) col = i; next }
+    col && /^\|/ && $col ~ /\*\*Fallback\*\*/ { print trim($2) }
+  ' "$D_PLUGIN/$HOST_REF"
+}
+
+D_HOST=""
+check_host() {
+  local name lacks
+  D_HOST="$(host_detect)"
+  if [ -z "$D_HOST" ]; then
+    d_warn "host not detected - which capabilities are missing is unknown."
+    d_remedy "export ORCHESTRATOR_HOST=claude    # or junie"
+    return 0
+  fi
+  name="$(host_name "$D_HOST")"
+  if [ -z "$name" ]; then
+    d_warn "ORCHESTRATOR_HOST=$D_HOST names no supported host."
+    d_remedy "export ORCHESTRATOR_HOST=claude    # or junie"
+    D_HOST=""
+    return 0
+  fi
+  lacks="$(host_lacks "$name")"
+  if [ -z "$lacks" ]; then d_ok "host: $name"; return 0; fi
+  # Not a failure: the flow runs on this host, with the documented fallbacks.
+  # A warn keeps the reduced enforcement in front of the user instead.
+  d_warn "host: $name lacks: $(d_join "$lacks") - fallbacks in $HOST_REF"
+}
+
+# Only Claude Code sets CLAUDE_PLUGIN_ROOT, so whether its absence means
+# anything depends on the host check above, which runs first.
 check_plugin_root() {
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then d_ok "CLAUDE_PLUGIN_ROOT set"; return 0; fi
-  # No remedy, because nothing is broken: unset just means orch.sh was run by
-  # hand rather than through one of the plugin's commands.
-  d_warn "CLAUDE_PLUGIN_ROOT is not set - expected outside a Claude session."
+  # No remedy on any host, because nothing is broken: every skill falls back to
+  # the orch.sh two directories above its own.
+  case "$D_HOST" in
+    junie)  d_ok "CLAUDE_PLUGIN_ROOT unset - Junie expands it only in hooks; skills use the relative path." ;;
+    claude) d_warn "CLAUDE_PLUGIN_ROOT is not set under Claude Code - orch.sh was run by hand, not through a plugin command." ;;
+    *)      d_ok "CLAUDE_PLUGIN_ROOT unset - only Claude Code sets it; skills use the relative path." ;;
+  esac
+}
+
+# A skills-only install copies the skills without scripts/, so the orch.sh two
+# directories above a skill is not there and every step that runs it fails.
+# doctor itself runs from an orch.sh, so it can only see such a copy sitting in
+# a user-level skill store beside the full install; the skills themselves
+# report the case where no full install exists at all. The stores are the
+# user-level ones the skills CLI and Junie install into.
+check_orch_sh() {
+  local store d found="" names
+  for store in "$HOME/.agents/skills" "$HOME/.junie/skills"; do
+    names=""
+    for d in "$store"/orch-*/; do
+      [ -f "$d/SKILL.md" ] || continue
+      [ -f "$d/../../scripts/orch.sh" ] && continue
+      d="${d%/}"; names="$(d_append "$names" "${d##*/}")"
+    done
+    [ -n "$names" ] && found="$(d_append "$found" "${store/#$HOME/\~}: $(d_join "$names")")"
+  done
+  if [ -z "$found" ]; then d_ok "orch.sh: ${D_PLUGIN/#$HOME/\~}/scripts/orch.sh"; return 0; fi
+  # A warn, not a FAIL: the install running this is whole, and which host picks
+  # up the skills-only copy is not something doctor can see.
+  while IFS= read -r d; do
+    d_warn "orch.sh missing beside the orchestrator skills in $d - a skills-only install."
+  done <<<"$found"
+  d_remedy "Claude Code: /plugin marketplace add maj0rpain/orchestrator" \
+           "             /plugin install orchestrator@orchestrator" \
+           "Junie:       install maj0rpain/orchestrator as a Junie extension" \
+           "then remove the skills-only copy named above."
 }
 
 # repo config ----------------------------------------------------------------
@@ -479,7 +575,7 @@ check_git_exclude() {
 ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
-h_plugin check_mattpocock check_skills check_plugin_root
+h_plugin check_host check_plugin_root check_orch_sh check_mattpocock check_skills
 h_repo   check_tracker_doc check_labels_doc check_labels_exist check_sub_issues check_git_exclude
 "
 

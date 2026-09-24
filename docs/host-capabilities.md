@@ -15,6 +15,10 @@ Adding a host means adding one column. Fill a cell only with a verified fact,
 and write "unverified" for anything not yet confirmed. The Junie column comes
 from the documentation bundled with Junie CLI 3419.7.
 
+`orch.sh doctor` reads this table: every row whose cell in the detected
+host's column is marked **Fallback** is reported as a capability that host
+lacks, so keep the marker on exactly those cells.
+
 | Capability | Claude Code | Junie |
 | --- | --- | --- |
 | Invoke a skill | The Skill tool, by scoped name (`orchestrator:orch-flow`, `mattpocock-skills:tdd`). | No Skill tool. The human runs `/<name>` or writes `$<name>` in a prompt, or Junie picks a skill automatically. **Fallback** for the model. |
