@@ -21,11 +21,10 @@ The slash commands (`/orchestrator:start`, `/orchestrator:next`, and so on) are
 unchanged. The skill directories moved from `skills/<name>/` to
 `skills/orch-<name>/`.
 
-Also breaking, for a flow already under way when you upgrade: every handoff
-(`01-plan.md`, `02-spec.md`, `03-implement.md`) now needs a `## Host fallbacks`
-section, and `handoff validate` / `doctor --flow` fail without one. Add the
-section by hand - `None (Claude Code).` if nothing fell back - or finish the
-flow on 0.x before upgrading.
+A flow started on 1.0.0 needs a `## Host fallbacks` section in every handoff
+(`01-plan.md`, `02-spec.md`, `03-implement.md`), and `handoff validate` /
+`doctor --flow` fail without one. A flow already under way when you upgrade is
+exempt, so it finishes as it would have on 0.x.
 
 Also new in 1.0.0 (see issue #121):
 

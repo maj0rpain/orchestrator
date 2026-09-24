@@ -720,6 +720,13 @@ for p in spec implement review; do
   assert_status "$(basename "$hf") without Host fallbacks is incomplete" "$st" 1
   assert_contains "$(basename "$hf") names the missing Host fallbacks" "$out" "Host fallbacks"
 done
+# A flow started before 1.0.0 has no host_fallbacks in state.json and wrote
+# its handoffs without the section; upgrading mid-flow must not fail them.
+st_saved="$(cat .orchestrator/state.json)"
+jq 'del(.host_fallbacks)' <<<"$st_saved" >.orchestrator/state.json
+out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
+assert_status "a pre-1.0.0 flow's handoff validates without Host fallbacks" "$st" 0
+printf '%s\n' "$st_saved" >.orchestrator/state.json
 complete_plan_handoff "$h"
 
 # --- ticket breakdown handoff ------------------------------------------------
@@ -1656,6 +1663,8 @@ assert_contains "detects Junie from JUNIE_EXTENSION_ROOT" "$out" "host: Junie"
 assert_contains "names the edit guard Junie cannot arm" "$out" "Arm the edit guard"
 assert_contains "names the fresh subagent Junie cannot start" "$out" "Start a fresh subagent"
 assert_contains "names the forked subagent Junie cannot start" "$out" "Start a forked subagent"
+# A human on Junie still starts a skill with /<name>; only the model lacks it.
+assert_contains "names only mid-step skill invocation as missing" "$out" "Invoke a skill from a step"
 assert_contains "points at the reference for the fallbacks" "$out" "docs/host-capabilities.md"
 assert_eq "does not list what Junie can do" \
   "$(printf '%s\n' "$out" | grep -c 'Ask a multiple-choice question')" "0"
@@ -3087,8 +3096,8 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "short of budget warns, never fails" "$st" 0
 assert_contains "names the iteration and budget" "$out" "iteration 2 of budget 5"
 assert_contains "reads as pending, not interrupted" "$out" "hasn't reached its budget yet"
-assert_contains "points at next for resuming it" "$out" "/orchestrator:next will resume it"
-assert_contains "and says redo refuses until it is terminal" "$out" "/orchestrator:redo refuses"
+assert_contains "points at next for resuming it" "$out" "/orchestrator:next (or orch-flow's Next phase section) will resume it"
+assert_contains "and says redo refuses until it is terminal" "$out" "redo refuses until it reaches a terminal state"
 
 "$ORCH" state set iteration 5
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -3272,7 +3281,7 @@ assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 "$ORCH" state set budget 5
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "refuses a loop still short of its budget" "$st" 1
-assert_contains "pointing at /orchestrator:next instead" "$out" "that's what /orchestrator:next is for"
+assert_contains "pointing at /orchestrator:next instead" "$out" "that's what /orchestrator:next (or orch-flow's Next phase section) is for"
 
 "$ORCH" state set iteration 5
 out="$("$ORCH" redo review 2>&1)"; st=$?
@@ -3522,7 +3531,7 @@ assert_status "--new-issue shells out for real" "$st" 0
 assert_contains "the real adapter invoked gh issue close on the old issue" \
   "$(cat "$filed")" "issue close 43"
 assert_contains "with the redo comment" \
-  "$(cat "$filed")" "This issue was closed by /orchestrator:redo"
+  "$(cat "$filed")" "This issue was closed by an orchestrator redo"
 assert_eq "gh itself was invoked once, as a real subprocess" \
   "$(grep -cx issue "$log")" "1"
 
@@ -3612,7 +3621,7 @@ else bad "the host capabilities reference exists" "no $ref"; fi
 header="$(grep -m1 '^| Capability' "$ref" 2>/dev/null)"
 assert_contains "it has a Claude Code column" "$header" "| Claude Code |"
 assert_contains "it has a Junie column" "$header" "| Junie |"
-for cap in 'Invoke a skill' 'Ask a multiple-choice question' 'Start a fresh subagent' \
+for cap in 'Invoke a skill from a step' 'Ask a multiple-choice question' 'Start a fresh subagent' \
            'Start a forked subagent' 'Start a fresh session' \
            'Inject context at planning time' 'Arm the edit guard'; do
   row="$(grep -m1 "^| $cap |" "$ref" 2>/dev/null)"
@@ -3653,6 +3662,18 @@ scan_capabilities() {
 }
 assert_eq "every skill points at the reference, and every command is a thin route" \
   "$(scan_capabilities "$root")" ""
+# orch.sh's and doctor.sh's messages reach the model on every host too, so they
+# name a flow command only through flow_cmd, which adds the orch-flow section
+# for a host with no plugin commands - and every section it names must exist.
+assert_eq "the scripts name a plugin command only through flow_cmd" \
+  "$(grep -nE '/orchestrator:[a-z]' "$root/scripts/orch.sh" "$root/scripts/doctor.sh" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#')" ""
+flow_sections="$(awk '/^flow_cmd\(\)/,/^}/' "$root/scripts/orch.sh" | grep -oE 'section="[^"]+"' | sed 's/section="//; s/"$//')"
+assert_eq "flow_cmd names four orch-flow sections" "$(printf '%s\n' "$flow_sections" | grep -c .)" "4"
+while IFS= read -r s; do
+  grep -qxF "## $s" "$root/skills/orch-flow/SKILL.md" \
+    && ok "flow_cmd's section exists in orch-flow: $s" \
+    || bad "flow_cmd's section exists in orch-flow: $s" "no ## $s"
+done <<<"$flow_sections"
 fixture="$(mktemp -d)"
 mkdir -p "$fixture/skills/orch-x" "$fixture/skills/orch-flow" "$fixture/commands"
 printf '## Status\nSee docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
@@ -3704,12 +3725,12 @@ the orch-flow skill|`orch-flow`
 the orch-quick-implement skill|`orch-quick-implement`
 the issue-tracker warning|docs/agents/issue-tracker\.md
 the setup fix|setup-matt-pocock-skills
-the Invoke a skill fallback as the step|no Skill tool.*read `skills/<name>/SKILL\.md`
+the Invoke a skill from a step fallback as the step|no Skill tool.*read `skills/<name>/SKILL\.md`
 EOF
-  # Junie's "Invoke a skill" cell is Fallback, so reading SKILL.md is the step,
+  # Junie's "Invoke a skill from a step" cell is Fallback, so reading SKILL.md is the step,
   # not a branch taken only when a listed skill is missing.
   grep -niE 'if it is not listed' "$f" \
-    | sed "s|^|${f#"$r"/}: makes the Invoke a skill fallback conditional: |"
+    | sed "s|^|${f#"$r"/}: makes the Invoke a skill from a step fallback conditional: |"
   grep -niE '(call|use|with) the (Skill|Agent) tool' "$f" \
     | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
   # A hand-copied allowlist drifts; every entry of the canonical definition must
@@ -3731,11 +3752,11 @@ out="$(scan_planning_nudge "$fixture")"
 assert_contains "the scan flags unconditional wording" "$out" "missing the conditional wording"
 assert_contains "the scan flags a missing issue-tracker warning" "$out" "missing the issue-tracker warning"
 assert_contains "the scan flags a Claude tool named as the step" "$out" "names a Claude tool as the step"
-assert_contains "the scan flags a missing Invoke a skill fallback" "$out" "missing the Invoke a skill fallback as the step"
+assert_contains "the scan flags a missing Invoke a skill from a step fallback" "$out" "missing the Invoke a skill from a step fallback as the step"
 printf 'Pick `orch-flow` from the skills this host lists. If it is not listed, read its SKILL.md.\n' \
   >"$fixture/guidelines/orch.md"
-assert_contains "the scan flags a conditional Invoke a skill fallback" \
-  "$(scan_planning_nudge "$fixture")" "makes the Invoke a skill fallback conditional"
+assert_contains "the scan flags a conditional Invoke a skill from a step fallback" \
+  "$(scan_planning_nudge "$fixture")" "makes the Invoke a skill from a step fallback conditional"
 rm -rf "$fixture"
 
 echo

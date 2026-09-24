@@ -614,7 +614,7 @@ check_state_phase() {
   case " $PHASES " in
     *" $phase "*) d_ok "phase: $phase" ;;
     *) d_fail "unknown phase: $phase (want one of: $PHASES)"
-       d_remedy "/orchestrator:abort" ;;
+       d_remedy "$(flow_cmd abort)" ;;
   esac
 }
 
@@ -624,7 +624,7 @@ check_flow_branch() {
   if [ -z "$branch" ]; then d_ok "branch: not created yet"; return 0; fi
   if git rev-parse --verify --quiet "$branch" >/dev/null; then d_ok "branch: $branch"; return 0; fi
   d_fail "branch $branch no longer exists - the flow has nothing left to build on."
-  d_remedy "/orchestrator:abort"
+  d_remedy "$(flow_cmd abort)"
 }
 
 # Only from the phase that pushes onwards: before implement, not having pushed
@@ -711,9 +711,9 @@ check_flow_review_terminal() {
     # normally, where one whose last iteration recorded nothing looks like the
     # session that was driving it simply died.
     pending)
-      d_warn "review loop hasn't reached its budget yet (iteration $i of budget $b) - /orchestrator:next will resume it; /orchestrator:redo refuses until it reaches a terminal state." ;;
+      d_warn "review loop hasn't reached its budget yet (iteration $i of budget $b) - $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
     interrupted)
-      d_warn "review loop's last iteration ($i of budget $b) has no recorded terminal state - the session looks interrupted, not stopped. /orchestrator:next will resume it; /orchestrator:redo refuses until it reaches a terminal state." ;;
+      d_warn "review loop's last iteration ($i of budget $b) has no recorded terminal state - the session looks interrupted, not stopped. $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
   esac
 }
 
@@ -728,7 +728,7 @@ check_flow_review_budget() {
   b="$(review_budget)"
   if [ "$i" -gt "$b" ]; then
     d_fail "review loop iteration ($i) is past its budget ($b) - the loop's stop enforcement did not hold."
-    d_remedy "/orchestrator:abort"
+    d_remedy "$(flow_cmd abort)"
     return 0
   fi
   d_ok "review loop iteration ($i) within budget ($b)"
@@ -816,13 +816,13 @@ check_flow_handoffs() {
     path="$HANDOFF_DIR/$f"
     if [ ! -f "$path" ]; then
       d_fail "handoff $f is missing - the phase that writes it has already run."
-      d_remedy "/orchestrator:redo"
+      d_remedy "$(flow_cmd redo)"
       continue
     fi
     problems="$(handoff_report "$path" | grep -v '^ok ' || true)"
     if [ -z "$problems" ]; then d_ok "handoff $f complete"; continue; fi
     while IFS= read -r line; do d_fail "handoff $f: ${line#FAIL }"; done <<<"$problems"
-    d_remedy "/orchestrator:redo"
+    d_remedy "$(flow_cmd redo)"
   done
 }
 
@@ -873,7 +873,7 @@ d_run_flow() {
   # One problem earns one FAIL. Every check reads this file, so there is nothing
   # left to say about it and nothing that could be said honestly.
   d_fail "$ORCH_DIR_NAME/state.json is not valid JSON."
-  d_remedy "/orchestrator:abort"
+  d_remedy "$(flow_cmd abort)"
 }
 
 d_run() {

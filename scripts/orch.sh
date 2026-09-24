@@ -52,8 +52,23 @@ readonly STATE="$ORCH/state.json"
 readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
 
+# Names a flow command so any host can act on it. Plugin commands are
+# unverified on Junie (docs/host-capabilities.md), so each also names the
+# orch-flow section it routes to - the same fallback the skills offer.
+flow_cmd() {
+  local section
+  case "$1" in
+    start) section="Starting a flow" ;;
+    next)  section="Next phase" ;;
+    redo)  section="Redo" ;;
+    abort) section="Abort" ;;
+    *) die "flow_cmd: unknown command: $1" ;;
+  esac
+  printf "/orchestrator:%s (or orch-flow's %s section)" "$1" "$section"
+}
+
 require_state() {
-  [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run /orchestrator:start first."
+  [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
 }
 
 # Fetches a required state field via jq, dies with $3 if it comes back empty,
@@ -293,7 +308,7 @@ cmd_init() {
   local archive_note=""
   if [ -f "$STATE" ] && [ "$(jq -r .phase "$STATE")" != "done" ]; then
     die "a flow is already active (slug: $(jq -r .slug "$STATE"), phase: $(jq -r .phase "$STATE")).
-     One flow at a time - finish it, or run /orchestrator:abort."
+     One flow at a time - finish it, or run $(flow_cmd abort)."
   fi
   require_clean_outside_allowlist
   # Adoption is validated before anything is written, mirroring how
@@ -313,11 +328,12 @@ cmd_init() {
   # spent or not, so that one refilled each iteration could not become an
   # infinite retry loop. issue is seeded from --issue when given; state.json
   # carries no field for whether it was adopted or published - nothing
-  # downstream reads that distinction.
+  # downstream reads that distinction. host_fallbacks marks a flow whose
+  # handoffs must record Host fallbacks (see host_fallbacks_required).
   jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" '{
     slug: $slug, phase: "spec", issue: (if $issue == "" then null else ($issue | tonumber) end),
     branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
-    flake_rerun_used: false, redo_count: 0, created: $now, updated: $now
+    flake_rerun_used: false, redo_count: 0, host_fallbacks: true, created: $now, updated: $now
   }' >"$STATE"
   [ -z "$archive_note" ] || note "$archive_note"
   note "$slug"
@@ -370,11 +386,20 @@ handoff_file_for() {
 # boundary is where it must fail - the context to fix it still exists there.
 handoff_required() {
   case "$1" in
-    01-plan.md)      printf '%s\n' '## Decisions' '## Rejected alternatives' '## Constraints' '## Open assumptions' '## Host fallbacks' ;;
-    02-spec.md)      printf '%s\n' '## Spec issue' '## Seams' '## Spec review changelog' '## Ticket breakdown' '## Host fallbacks' ;;
-    03-implement.md) printf '%s\n' '## PR' '## Spec issue' '## Base SHA' '## Deviations' '## Verification' '## Host fallbacks' ;;
+    01-plan.md)      printf '%s\n' '## Decisions' '## Rejected alternatives' '## Constraints' '## Open assumptions' ;;
+    02-spec.md)      printf '%s\n' '## Spec issue' '## Seams' '## Spec review changelog' '## Ticket breakdown' ;;
+    03-implement.md) printf '%s\n' '## PR' '## Spec issue' '## Base SHA' '## Deviations' '## Verification' ;;
     *) die "unknown handoff file: $1" ;;
   esac
+  if host_fallbacks_required; then printf '%s\n' '## Host fallbacks'; fi
+}
+
+# A flow started before 1.0.0 wrote its handoffs without Host fallbacks, and
+# its state.json has no host_fallbacks field. It keeps validating as it did, so
+# upgrading mid-flow breaks nothing; every flow init starts now requires the
+# section. With no state at all there is no older flow to spare.
+host_fallbacks_required() {
+  [ ! -f "$STATE" ] || [ "$(jq -r '.host_fallbacks // false' "$STATE" 2>/dev/null)" = true ]
 }
 
 section_body() {
@@ -1227,11 +1252,11 @@ cmd_redo_review() {
   word="$(first_line "$terminal")"
   case "$word" in
     none)
-      die "no review loop has run yet - nothing to redo back from; run /orchestrator:next to start one." ;;
+      die "no review loop has run yet - nothing to redo back from; run $(flow_cmd next) to start one." ;;
     pending)
-      die "the review loop hasn't reached its budget yet (iteration $i of budget $b) - that's what /orchestrator:next is for; redo is for after a loop ends." ;;
+      die "the review loop hasn't reached its budget yet (iteration $i of budget $b) - that's what $(flow_cmd next) is for; redo is for after a loop ends." ;;
     interrupted)
-      die "the review loop's last iteration ($i) has no recorded terminal state - the session looks interrupted, not stopped. Resume it with /orchestrator:next; redo only runs once a loop actually ends." ;;
+      die "the review loop's last iteration ($i) has no recorded terminal state - the session looks interrupted, not stopped. Resume it with $(flow_cmd next); redo only runs once a loop actually ends." ;;
     stop) ;;
     *) die "review_terminal_state answered something redo does not know: $word" ;;
   esac
@@ -1264,7 +1289,7 @@ cmd_redo_review() {
     cmd_state set redo_count "$new_n"
   fi
 
-  msg="$(printf 'This PR was closed by /orchestrator:redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
+  msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
   adapter_pr_close "$pr" --comment "$msg" >/dev/null || die "gh could not close PR #$pr"
 
   # The prior implement phase closed every ticket it finished, so the redone
@@ -1300,7 +1325,7 @@ cmd_redo_spec() {
   if [ "$new_issue" -eq 1 ]; then
     local issue msg
     require_issue issue
-    msg="$(printf 'This issue was closed by /orchestrator:redo because the spec itself needed to change.\n\nA fresh issue will follow from to-spec in this same flow.\n')"
+    msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from to-spec in this same flow.\n')"
     adapter_issue_close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
     cmd_state set issue null
   fi
@@ -1321,7 +1346,7 @@ cmd_redo() {
 
 cmd_status() {
   if [ ! -f "$STATE" ]; then
-    note "No active flow. Run /orchestrator:start from an approved plan."
+    note "No active flow. Run $(flow_cmd start) from an approved plan."
     return 0
   fi
   local slug phase issue branch pr iteration redo_count

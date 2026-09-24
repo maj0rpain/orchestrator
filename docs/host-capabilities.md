@@ -26,7 +26,7 @@ on exactly its own cells.
 
 | Capability | Claude Code | Junie |
 | --- | --- | --- |
-| Invoke a skill | The Skill tool, by scoped name (`orchestrator:orch-flow`, `mattpocock-skills:tdd`). | No Skill tool. The human runs `/<name>`, or Junie picks a skill automatically. Naming a skill as `$<name>` in a prompt is unverified. **Fallback** for the model. |
+| Invoke a skill from a step | The Skill tool, by scoped name (`orchestrator:orch-flow`, `mattpocock-skills:tdd`). | No Skill tool, so the model cannot invoke one mid-step. A human still starts one with `/<name>`, or Junie picks one automatically. Naming a skill as `$<name>` in a prompt is unverified. **Fallback**. |
 | Ask a multiple-choice question | `AskUserQuestion`. | `AskUserQuestion`. |
 | Start a fresh subagent | The Agent tool, as a fresh general-purpose agent. | Subagents are only picked and started automatically by Junie, with no explicit fresh or fork control. **Fallback**. |
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
@@ -37,7 +37,7 @@ on exactly its own cells.
 
 ## Fallbacks
 
-### Invoke a skill
+### Invoke a skill from a step
 
 Read the skill's `SKILL.md` and follow it verbatim, which is what the Skill
 tool would have injected:
