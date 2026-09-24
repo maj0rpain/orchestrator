@@ -13,6 +13,8 @@
 
 set -euo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
+
 input="$(cat)"
 session="$(printf '%s' "$input" | jq -r '.session_id // "unknown"')"
 cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
@@ -46,10 +48,4 @@ its own branch, from a written spec.
 Planning artifacts you may still edit: CONTEXT.md, CONTEXT-MAP.md, docs/adr/,
 docs/agents/, .scratch/, .orchestrator/."
 
-jq -n --arg r "$reason" '{
-  hookSpecificOutput: {
-    hookEventName: "PreToolUse",
-    permissionDecision: "deny",
-    permissionDecisionReason: $r
-  }
-}'
+hook_emit_deny "$reason"

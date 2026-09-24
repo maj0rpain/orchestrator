@@ -68,9 +68,4 @@ While this planning session is running:
 Under /mattpocock-skills:wayfinder, \"approved\" means the whole map is done, not
 that one ticket resolved. Do not start the flow after a single ticket.${warning}"
 
-jq -n --arg c "$context" '{
-  hookSpecificOutput: {
-    hookEventName: "PostToolUse",
-    additionalContext: $c
-  }
-}'
+hook_emit_context PostToolUse "$context"

@@ -67,6 +67,10 @@ assert_contains "tells the model to invoke the quick-implement skill itself" "$o
 assert_contains "forbids offering to implement" "$out" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat" "$out" "whole map is done"
 assert_eq "emits valid JSON" "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "PostToolUse"
+assert_contains "carries Junie's top-level additionalContext" \
+  "$(printf '%s' "$out" | jq -r '.additionalContext')" "Do NOT offer to implement"
+assert_eq "top-level context matches Claude's" \
+  "$(printf '%s' "$out" | jq -r '.additionalContext == .hookSpecificOutput.additionalContext')" "true"
 
 out="$(skill_event "mattpocock-skills:grilling" s1 | "$GRILL")"
 assert_empty "stays silent on the second call in one session" "$out"
@@ -102,6 +106,12 @@ assert_eq "denies a source edit during planning" \
   "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
 assert_contains "explains what to do instead" "$out" "orchestrator:orch-flow"
 assert_contains "names the blocked file" "$out" "src/main.ts"
+# One JSON object serves both hosts: Junie reads the top-level decision/reason.
+# "block" is the one value both Claude Code's legacy field and Junie accept.
+assert_eq "carries Junie's top-level block decision" \
+  "$(printf '%s' "$out" | jq -r '.decision')" "block"
+assert_contains "carries Junie's top-level reason" \
+  "$(printf '%s' "$out" | jq -r '.reason')" "src/main.ts"
 
 for f in CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/agents/domain.md .scratch/ticket.md; do
   assert_empty "allows planning artifact: $f" "$(edit_event "$REPO/$f" s1 | "$GUARD")"

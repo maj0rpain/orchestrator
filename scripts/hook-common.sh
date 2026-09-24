@@ -14,3 +14,31 @@ hook_read_skill_and_session() {
   skill="$(printf '%s' "$input" | jq -r '.tool_input.skill // ""')"
   session="$(printf '%s' "$input" | jq -r '.session_id // "unknown"')"
 }
+
+# Writes a PreToolUse deny as one JSON object both hosts understand: Claude
+# Code reads hookSpecificOutput, Junie reads the top-level decision/reason.
+# "block" is the one top-level decision value both hosts accept.
+hook_emit_deny() {
+  jq -n --arg r "$1" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: $r
+    },
+    decision: "block",
+    reason: $r
+  }'
+}
+
+# Writes injected context as one JSON object both hosts understand: Claude
+# Code reads hookSpecificOutput, Junie reads the top-level additionalContext.
+# $1 is the hook event name, $2 the context.
+hook_emit_context() {
+  jq -n --arg e "$1" --arg c "$2" '{
+    hookSpecificOutput: {
+      hookEventName: $e,
+      additionalContext: $c
+    },
+    additionalContext: $c
+  }'
+}
