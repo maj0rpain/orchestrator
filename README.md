@@ -160,8 +160,8 @@ default branch, and validating handoffs all have one right answer, so they live 
 
 ### Resolving orch.sh
 
-Only Claude Code expands `CLAUDE_PLUGIN_ROOT`, and other hosts expand it only
-inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is). So every
+Only Claude Code expands `CLAUDE_PLUGIN_ROOT` in skills. Other hosts expand it
+only inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is). So every
 skill that runs `orch.sh` states the path one way, as the `ORCH=`
 line followed by the relative fallback:
 
@@ -188,7 +188,8 @@ a multiple-choice question"), may name the Claude Code tool inline as an
 example, and point at [docs/host-capabilities.md](docs/host-capabilities.md),
 which maps each capability to each host and documents the fallback where a
 host lacks one. A phase records every fallback it took in its handoff's
-**Host fallbacks** section, which `handoff validate` requires. Commands are
+**Host fallbacks** section, which `handoff validate` requires for flows started
+on 1.0.0 or later (a flow already in progress at upgrade is exempt). Commands are
 Claude Code shortcuts only: each one routes to an `orch-flow` section and
 holds no behaviour of its own, so invoking the skill on another host is
 complete. `orch_test.sh` fails when a skill never points at the reference,
