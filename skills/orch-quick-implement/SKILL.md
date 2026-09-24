@@ -19,6 +19,11 @@ ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
 two directories above this skill's own directory (the plugin root).
 
+Steps here name capabilities (invoke a skill, start a fresh subagent).
+`docs/host-capabilities.md` under the plugin root maps each one to your host.
+Where your host's cell says **Fallback**, take the fallback it documents and
+list it under a **Host fallbacks** heading in the PR body (step 6).
+
 ## 1. Require a linked issue
 
 Never proceed without one, and never decide silently whether to make one.
@@ -43,7 +48,7 @@ path, so `to-tickets` synthesizes tickets directly off the raw linked issue -
 it is the only spec this path has.
 
 `to-tickets` carries `disable-model-invocation: true` in the installed
-mattpocock-skills version, so the Skill tool cannot reach it. Resolve it with
+mattpocock-skills version, so no host can invoke it as a skill. Resolve it with
 `"$ORCH" mp-skill to-tickets`, read it, and follow it directly - the same
 pattern `skills/orch-flow/SKILL.md` uses for the same upstream skill. Follow it
 through its own quiz (steps 1-4) until the user approves a breakdown.
@@ -93,15 +98,16 @@ never in parallel - every ticket commits to the same branch. Loop:
 - Record the subagent's report, then `"$ORCH" ticket close <n>` - only now
   that the report is back, never before - and go around again.
 
-**Dispatching a subagent**: call the Agent tool - a fresh agent, explicitly
-not a fork, so it starts with nothing but what this brief hands it -
-carrying only the issue number named above. The brief's directions open
+**Dispatching a subagent**: start a fresh subagent (on Claude Code, the
+Agent tool as a fresh agent, explicitly not a fork), so it starts with
+nothing but what this brief hands it, carrying only the issue number named
+above. Without one, take the documented fallback. The brief's directions open
 with an explicit first instruction: fetch the ticket itself (`gh issue view
 <n> --comments`, per `docs/agents/issue-tracker.md`'s "fetch the relevant
 ticket" convention) before doing anything else. The brief then directs the
-subagent to call the Skill tool with `mattpocock-skills:tdd` against the
-ticket - it carries no `disable-model-invocation` flag, unlike `implement`,
-so the subagent can reach it directly; to build on the current branch,
+subagent to invoke `mattpocock-skills:tdd` against the ticket - it carries
+no `disable-model-invocation` flag, unlike `implement`, so the subagent can
+invoke it as a skill (without a Skill tool, through `"$ORCH" mp-skill tdd`); to build on the current branch,
 already checked out, and commit its own work to it; to never open a branch
 or PR of its own; and to never block on a human mid-ticket - a call it
 cannot make alone is a deviation, recorded and returned instead of asked.
@@ -115,7 +121,7 @@ Its report is structured: what it built, and the deviation it made, if any.
 
 ## 5. Review
 
-Call the Skill tool with `mattpocock-skills:code-review` yourself - one plain,
+Invoke `mattpocock-skills:code-review` yourself - one plain,
 single pass, never `orchestrator:orch-review`'s multi-iteration loop. That loop's
 budget and filed-findings machinery is exactly what a quick implementation is
 choosing to skip. Fix what it finds before opening the PR.
@@ -123,13 +129,16 @@ choosing to skip. Fix what it finds before opening the PR.
 Always spell the code review skill with its `mattpocock-skills:` scope - the
 bare name is ambiguous with another `code-review` skill that may be installed
 alongside this plugin, which reviews the current diff for correctness and
-cleanup, not Standards + Spec fidelity to the issue that this step needs.
+cleanup, not Standards + Spec fidelity to the issue that this step needs. On
+a host with no scoped names, invoke it through `"$ORCH" mp-skill code-review`
+for the same reason.
 
 ## 6. Open the PR
 
 Commit, then open the PR with `"$ORCH" pr publish <issue> "<title>"
 <body-file>` - the same boundary `pr open` draws for a flow, kept out of
-skill prose. It pushes the branch, closes `<issue>`, and opens the PR against
+skill prose. The body ends with a **Host fallbacks** heading listing every
+fallback this run took, or `None (<host>).` It pushes the branch, closes `<issue>`, and opens the PR against
 the default branch, not as a draft: the single-pass review in step 5 already
 happened, so there is no loop left to promote it - draft would leave it stuck
 with nothing watching it.

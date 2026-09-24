@@ -1,6 +1,6 @@
 ---
 name: orch-flow
-description: Drive the plan/spec/implement/review pipeline recorded in .orchestrator/state.json. Use when a planning session's plan has just been approved, or when the user runs /orchestrator:start, /orchestrator:next, /orchestrator:status, /orchestrator:redo, or /orchestrator:abort.
+description: Drive the plan/spec/implement/review pipeline recorded in .orchestrator/state.json. Use when a planning session's plan has just been approved, when the user asks to start, advance, check, diagnose, redo, or abort a flow, or runs /orchestrator:start, /orchestrator:next, /orchestrator:status, /orchestrator:doctor, /orchestrator:redo, or /orchestrator:abort.
 ---
 
 # Orchestrator flow
@@ -23,39 +23,51 @@ two directories above this skill's own directory (the plugin root). Run
 `"$ORCH" help` for the full command list. Never reimplement what it already
 does.
 
+## Host capabilities
+
+Steps here name capabilities: invoke a skill, ask a multiple-choice question,
+start a fresh subagent, start a fresh session. `docs/host-capabilities.md`
+under the plugin root maps each one to your host. Where your host's cell says
+**Fallback**, take the fallback it documents and record it in this phase's
+handoff under **Host fallbacks**. Where this file offers the human an
+`/orchestrator:<command>` and your host has no plugin commands, offer the
+matching section of this skill instead.
+
 ## The upstream skills are not callable
 
 `to-spec`, `implement`, `handoff`, `to-tickets`, `wayfinder`, and
-`improve-codebase-architecture` carry `disable-model-invocation: true`. The
-Skill tool cannot reach them.
+`improve-codebase-architecture` carry `disable-model-invocation: true`, so
+no host can invoke them as skills.
 
 Their `SKILL.md` files are plain markdown. Resolve one with
 `"$ORCH" mp-skill <name>`, read it, and follow its instructions verbatim - that
-is exactly what the Skill tool would have injected. Never tell the user to type
+is exactly what invoking the skill would have injected. Never tell the user to type
 the slash command themselves, and never claim to have invoked a skill you read.
 
 `mattpocock-skills:code-review`, `tdd`, `research`, and `domain-modeling` have
-no such flag; call those through the Skill tool normally. Always spell the
-code review skill with its `mattpocock-skills:` scope - the bare name is
-ambiguous with another `code-review` skill that may be installed alongside
-this plugin.
+no such flag; invoke those as skills (on Claude Code, the Skill tool). Always
+spell the code review skill with its `mattpocock-skills:` scope - the bare
+name is ambiguous with another `code-review` skill that may be installed
+alongside this plugin. On a host with no scoped names, invoke it through
+`"$ORCH" mp-skill code-review` for the same reason.
 
 ## Starting a flow
 
 Reached when a planning session's plan is approved. Runs in the planning session,
 which holds the only copy of the plan.
 
-1. Pick a slug from the plan's subject, kebab-case. If the user passed one as an
-   argument (after pulling out any `--issue N`, per `commands/start.md`), use
-   theirs. Confirm it in one line.
+1. Read the user's arguments, if any (on Claude Code, `/orchestrator:start`'s):
+   a slug, `--issue N`, both, or neither. Pull `--issue N` out first. Whatever
+   remains is the slug; use it as given. With none left, pick a slug from the
+   plan's subject, kebab-case. Confirm it in one line.
 2. `"$ORCH" init <slug>`, or `"$ORCH" init <slug> --issue N` when the user (or
-   `/orchestrator:start`'s own `--issue N`) named an already-open,
+   step 1's `--issue N`) named an already-open,
    already-triaged issue to adopt as the flow's spec instead of publishing a
    new one. `init` validates adoption immediately and dies if it cannot -
    report the failure and stop rather than continuing without an issue.
    Starting over a `done` flow archives it automatically and reports where -
    only a flow still mid-pipeline (`spec`/`implement`/`review`) refuses.
-3. Call the Skill tool with `orchestrator:orch-handoff` to write `01-plan.md`. **Do
+3. Invoke `orchestrator:orch-handoff` to write `01-plan.md`. **Do
    this before anything that can fail** - a failed precondition must never cost
    the user their plan.
 4. `"$ORCH" handoff validate "$("$ORCH" handoff path spec)"`. Fix and re-validate
@@ -65,7 +77,12 @@ which holds the only copy of the plan.
    restart - the plan is already safe on disk either way.
 6. Print the boundary (see below).
 
-## /orchestrator:next
+## Next phase
+
+Reached by `/orchestrator:next`, or when the user asks to run the flow's next
+phase. Run it in a fresh session: if the context still holds the previous
+phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
+`/new`) and stop rather than continuing.
 
 1. `"$ORCH" doctor --flow`. On a non-zero exit, report and stop - offer
    `/orchestrator:abort` or a concrete repair. Do not proceed on stale state.
@@ -83,7 +100,7 @@ which holds the only copy of the plan.
 2. Read and follow `"$ORCH" mp-skill to-spec`. It will check test seams with the
    user - that exchange is the point, so do not skip it.
 3. Record the published issue: `"$ORCH" state set issue <number>`.
-4. Call the Skill tool with `orchestrator:orch-review-spec` and follow it. It owns
+4. Invoke `orchestrator:orch-review-spec` and follow it. It owns
    the review - four lenses, one batch question, the body rewritten with what
    the human accepts - and returns the changelog. This step is part of the
    phase, not an option in it: no spec reaches the implement phase unreviewed,
@@ -112,7 +129,7 @@ which holds the only copy of the plan.
    criteria" (when there is one) beneath the existing content - never
    replacing it - and write the merged body back (`"$ORCH" spec update
    <file>`).
-6. Call `orchestrator:orch-handoff` for `02-spec.md`, with the changelog the review
+6. Invoke `orchestrator:orch-handoff` for `02-spec.md`, with the changelog the review
    returned as its **Spec review changelog**, and its **Ticket breakdown** as
    either the spec issue number (a published breakdown) or `None: work
    directly against #<n>` naming the spec issue (a collapsed one, per step
@@ -143,9 +160,10 @@ which holds the only copy of the plan.
    - Record the subagent's report, then `"$ORCH" ticket close <n>` - only now
      that the report is back, never before - and go around again.
 
-   **Dispatching a subagent**: call the Agent tool - a fresh agent,
-   explicitly not a fork, so it starts with nothing but what this brief hands
-   it - carrying only the issue number named above. The brief's directions
+   **Dispatching a subagent**: start a fresh subagent (on Claude Code, the
+   Agent tool as a fresh agent, explicitly not a fork), so it starts with
+   nothing but what this brief hands it, carrying only the issue number
+   named above. Without one, take the documented fallback. The brief's directions
    open with an explicit first instruction: fetch the ticket itself (`gh
    issue view <n> --comments`, per `docs/agents/issue-tracker.md`'s "fetch
    the relevant ticket" convention) before doing anything else. The brief
@@ -170,7 +188,7 @@ which holds the only copy of the plan.
    ready is the review loop's success condition. `pr open` itself writes the
    `Closes #<issue>` line ahead of the body - do not add a closing keyword of
    your own to the body file.
-5. Call `orchestrator:orch-handoff` for `03-implement.md`. Its **Deviations** section
+5. Invoke `orchestrator:orch-handoff` for `03-implement.md`. Its **Deviations** section
    is assembled from every ticket's report, one bullet per ticket that returned
    one, naming the ticket - "None" only if not one ticket reported a deviation,
    never left blank. Its **Verification** section is the command the review loop
@@ -182,7 +200,7 @@ which holds the only copy of the plan.
 ### Phase: review
 
 1. `"$ORCH" doctor --flow`.
-2. Call the Skill tool with `orchestrator:orch-review` and follow it. It owns the
+2. Invoke `orchestrator:orch-review` and follow it. It owns the
    loop; this file owns phase dispatch, and has nothing to add to a review
    beyond getting you there.
 
@@ -200,10 +218,28 @@ cannot start:
 ```
 Phase <name> complete. Handoff written to <path>.
 
-  Next: /clear, then /orchestrator:next
+  Next: <fresh session>, then <next phase>
 ```
 
+On Claude Code that line reads `Next: /clear, then /orchestrator:next`. On
+Junie it reads `Next: /new, then ask for the next phase with $orch-flow`.
+
 Say nothing after it. Do not start the next phase, and do not offer to.
+
+## Status
+
+Reached by `/orchestrator:status`, or when the user asks where the flow
+stands. Run `"$ORCH" status` and `"$ORCH" doctor --flow`, and report both
+outputs. Read-only: do not start, advance, or repair a flow from here. If
+`doctor` reports a problem, say what it found and stop.
+
+## Doctor
+
+Reached by `/orchestrator:doctor`, or when the user asks to diagnose the
+machine, the repo, or the flow. Run `"$ORCH" doctor` and report its output.
+Read-only: `doctor` prints the command that fixes each problem, and running
+those is the user's call. A `FAIL` exits non-zero and would block the flow; a
+`warn` is an observation and does not.
 
 ## Redo
 

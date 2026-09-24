@@ -43,8 +43,12 @@ that needs something gets a file path.
 
 ## The lenses
 
-Spawn all four at once with the Agent tool as fresh general-purpose agents -
-never forks, which inherit this context. Each prompt carries only the paths its
+Start all four at once as fresh subagents (on Claude Code, the Agent tool
+as fresh general-purpose agents) - never forks, which inherit this context.
+On a host without fresh subagents, take the fallback in
+`docs/host-capabilities.md` under the plugin root, running the lenses one at
+a time from their briefs alone, and record it in `02-spec.md` under **Host
+fallbacks**. Each prompt carries only the paths its
 row names, the brief below, and the reporting rules:
 
 > Report findings only, never draft edits. Quote the spec line for every
@@ -111,8 +115,8 @@ never a description of the problem. Then, with the whole batch in view:
 Number the items. Present the list - each item's finding, lens, and proposed
 edit or decision - then ask **one blocking question** with the
 `AskUserQuestion` tool: options **Apply all**, **Apply none**, or a list of
-item numbers through Other. Where the tool is unavailable, ask in plain text
-and wait. Asked once; a long spec is one longer question, not twenty prompts.
+item numbers through Other (the tool exists on both Claude Code and Junie).
+Where it is unavailable, ask in plain text and wait. Asked once; a long spec is one longer question, not twenty prompts.
 
 ## Applying the answer
 

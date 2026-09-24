@@ -3446,6 +3446,64 @@ printf '%s\n' '```' "$orch_line" '```' "$fallback two directories above this ski
 assert_eq "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")" ""
 rm -rf "$fixture"
 
+# --- host capabilities (#127) -------------------------------------------------
+# Skills describe capabilities and point at one reference that maps each
+# capability to each host, so a host without Claude Code's tools can still
+# follow them. Commands are Claude-only shortcuts and hold no behaviour of
+# their own: each routes to an orch-flow section that exists.
+echo
+echo "host capabilities (#127)"
+ref="$root/docs/host-capabilities.md"
+if [ -f "$ref" ]; then ok "the host capabilities reference exists"
+else bad "the host capabilities reference exists" "no $ref"; fi
+header="$(grep -m1 '^| Capability' "$ref" 2>/dev/null)"
+assert_contains "it has a Claude Code column" "$header" "| Claude Code |"
+assert_contains "it has a Junie column" "$header" "| Junie |"
+for cap in 'Invoke a skill' 'Ask a multiple-choice question' 'Start a fresh subagent' \
+           'Start a forked subagent' 'Start a fresh session' \
+           'Inject context at planning time' 'Arm the edit guard'; do
+  row="$(grep -m1 "^| $cap |" "$ref" 2>/dev/null)"
+  assert_eq "it has a filled-in row for: $cap" \
+    "$(printf '%s\n' "$row" | awk -F'|' 'NF >= 5 && $3 !~ /^ *$/ && $4 !~ /^ *$/ { print "filled" }')" "filled"
+done
+# scan_capabilities <plugin root>: print one line per offending skill or command.
+scan_capabilities() {
+  local r="$1" f s
+  for f in "$r"/skills/*/SKILL.md; do
+    [ -f "$f" ] || continue
+    grep -qF 'docs/host-capabilities.md' "$f" \
+      || echo "${f#"$r"/}: never points at docs/host-capabilities.md"
+    grep -niE '(call|use|with) the (Skill|Agent) tool|(call|use|spawn|dispatch)[a-z]* .*the Agent tool' "$f" \
+      | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
+  done
+  for f in "$r"/commands/*.md; do
+    [ -f "$f" ] || continue
+    grep -qE 'orch\.sh|\$ORCH' "$f" && echo "${f#"$r"/}: runs orch.sh itself"
+    s="$(grep -oE "orch-flow\` and follow its \*\*[^*]+\*\*" "$f" | sed 's/.*\*\*\(.*\)\*\*/\1/')"
+    if [ -z "$s" ]; then echo "${f#"$r"/}: routes to no orch-flow section"
+    else grep -qxF "## $s" "$r/skills/orch-flow/SKILL.md" \
+      || echo "${f#"$r"/}: routes to a missing orch-flow section: $s"; fi
+  done
+}
+assert_eq "every skill points at the reference, and every command is a thin route" \
+  "$(scan_capabilities "$root")" ""
+fixture="$(mktemp -d)"
+mkdir -p "$fixture/skills/orch-x" "$fixture/skills/orch-flow" "$fixture/commands"
+printf '## Status\nSee docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
+printf 'Call the Skill tool with `x`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Invoke `orchestrator:orch-flow` and follow its **Doctor** section.\n' >"$fixture/commands/doctor.md"
+out="$(scan_capabilities "$fixture")"
+assert_contains "the scan flags a Claude tool named as the step" "$out" "orch-x/SKILL.md: names a Claude tool"
+assert_contains "the scan flags a command routed to a missing section" "$out" "missing orch-flow section: Doctor"
+printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Invoke `orchestrator:orch-flow` and follow its **Status** section.\n' >"$fixture/commands/doctor.md"
+printf '%s\n' "$orch_line" >"$fixture/commands/status.md"
+out="$(scan_capabilities "$fixture")"
+assert_contains "the scan flags a command that runs orch.sh itself" "$out" "commands/status.md: runs orch.sh itself"
+rm "$fixture/commands/status.md"
+assert_eq "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")" ""
+rm -rf "$fixture"
+
 echo
 if [ "$SKIP" -gt 0 ]; then
   echo "$PASS passed, $FAIL failed, $SKIP skipped"
