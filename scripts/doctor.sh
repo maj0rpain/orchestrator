@@ -223,14 +223,19 @@ check_default_branch() {
 
 # plugin environment ---------------------------------------------------------
 
-# The install that fits depends on the host, and a Junie user told to run a
-# Claude /plugin command is left exactly as stuck as before - so the fix names
-# one per host, plus the override for an install none of them describe.
+# Names only the detected host's install method - a Junie user told to run a
+# Claude /plugin command is no better off. With no host detected, every
+# method is listed. check_host sets D_HOST and runs earlier in the same group.
 d_mp_remedy() {
-  d_remedy "Claude Code: /plugin marketplace add anthropics/claude-plugins" \
-           "             /plugin install mattpocock-skills" \
-           "Junie:       npx skills add mattpocock/skills    # or install mattpocock/skills as a Junie extension" \
-           "Elsewhere:   export ORCHESTRATOR_MATTPOCOCK_ROOT=/path/to/mattpocock-skills"
+  local c1="Claude Code: /plugin marketplace add anthropics/claude-plugins"
+  local c2="             /plugin install mattpocock-skills"
+  local junie="Junie:       npx skills add mattpocock/skills    # or install mattpocock/skills as a Junie extension"
+  local elsewhere="Elsewhere:   export ORCHESTRATOR_MATTPOCOCK_ROOT=/path/to/mattpocock-skills"
+  case "${D_HOST:-}" in
+    claude) d_remedy "$c1" "$c2" "$elsewhere" ;;
+    junie)  d_remedy "$junie" "$elsewhere" ;;
+    *)      d_remedy "$c1" "$c2" "$junie" "$elsewhere" ;;
+  esac
 }
 
 d_mp_source() {
@@ -274,7 +279,7 @@ check_skills() {
 
 # The plugin root doctor runs from: the directory scripts/ sits in, which is
 # also where every skill resolves orch.sh and the capabilities reference from.
-D_PLUGIN="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+D_PLUGIN="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_REF="docs/host-capabilities.md"
 
 # The one host detector. Prints "claude", "junie", or nothing when no signal

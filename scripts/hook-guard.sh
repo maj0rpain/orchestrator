@@ -21,6 +21,23 @@ hook_read_payload
 file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.path // ""')"
 case "$file" in ''|/*) ;; *) file="$cwd/$file" ;; esac
 
+# Collapses "." and ".." segments lexically, so a path is judged by where it
+# lands: docs/adr/../../src/x.ts is source, not an ADR. Lexical, not
+# realpath, because the file being written may not exist yet.
+normalize_path() {
+  local seg out="" parts
+  IFS=/ read -ra parts <<<"$1"
+  for seg in "${parts[@]}"; do
+    case "$seg" in
+      ''|.) ;;
+      ..) out="${out%/*}" ;;
+      *) out="$out/$seg" ;;
+    esac
+  done
+  printf '%s' "${out:-/}"
+}
+[ -z "$file" ] || file="$(normalize_path "$file")"
+
 # Only guard sessions the grilling hook has marked as planning. A payload
 # with no session_id (Junie's PreToolUse) is never guarded - ADR-0013.
 [ -n "$session" ] || exit 0

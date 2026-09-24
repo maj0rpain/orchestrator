@@ -6,7 +6,7 @@ Planning is phase one of an orchestrated flow: plan -> spec -> implement -> revi
 
 ## While planning
 
-- Keep this session to planning. Planning artifacts (CONTEXT.md, docs/adr/, docs/agents/, .scratch/) are fine to write; source files wait for a later phase. Offer no implementation.
+- Keep this session to planning. Planning artifacts (CONTEXT.md, CONTEXT-MAP.md, docs/adr/, docs/agents/, .scratch/, .orchestrator/) are fine to write; source files wait for a later phase. Offer no implementation.
 - If the repo has no `docs/agents/issue-tracker.md`, tell the human now, before planning goes further: the spec phase will fail without it, and the fix is to run the mattpocock-skills `setup-matt-pocock-skills` skill first.
 
 ## At shared understanding

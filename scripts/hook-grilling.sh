@@ -16,6 +16,7 @@
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 
 hook_read_skill_and_session
 
@@ -56,7 +57,7 @@ runs in a fresh session connected by handoff files.
 While this planning session is running:
 
 - Do NOT offer to implement, and do NOT write or edit code. Planning artifacts
-  (CONTEXT.md, docs/adr/, docs/agents/, .scratch/) are fine; source files are not.
+  ($(planning_allowlist_text)) are fine; source files are not.
 - When you reach a shared understanding, do not close with a scripted line and
   do not decide the next step yourself. Call the AskUserQuestion tool with
   exactly two options:

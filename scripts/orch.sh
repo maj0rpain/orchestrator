@@ -234,7 +234,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 # -uall lists untracked files individually, so a new directory is judged by
 # what is in it rather than by its name.
 dirty_outside_allowlist() {
-  local rec path want_src=0
+  local rec path want_src=0 status
+  # Captured first rather than read through a process substitution, whose
+  # failure set -e never sees: a git status that cannot run must refuse, not
+  # read as a clean tree. A file, not a variable, because the output is
+  # NUL-separated.
+  status="$(mktemp)"
+  git -C "$ROOT" status --porcelain=v1 -z -uall >"$status" \
+    || { rm -f "$status"; die "git status failed - cannot check the working tree"; }
   while IFS= read -r -d '' rec; do
     if [ "$want_src" -eq 1 ]; then
       path="$rec"; want_src=0
@@ -243,7 +250,8 @@ dirty_outside_allowlist() {
       case "${rec:0:2}" in *R*|*C*) want_src=1 ;; esac
     fi
     planning_allowlisted "$path" || printf '%s\n' "$path"
-  done < <(git -C "$ROOT" status --porcelain=v1 -z -uall)
+  done <"$status"
+  rm -f "$status"
 }
 
 # The git-based backstop from ADR-0013. Where no host hook arms the edit
@@ -253,7 +261,7 @@ dirty_outside_allowlist() {
 # worktree's changes and not by the checkout it was forked from.
 require_clean_outside_allowlist() {
   local dirty
-  dirty="$(dirty_outside_allowlist)"
+  dirty="$(dirty_outside_allowlist)" || exit 1
   [ -z "$dirty" ] && return 0
   die "the working tree has changes outside the planning allowlist:
 $(printf '%s\n' "$dirty" | sed 's/^/       /')

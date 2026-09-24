@@ -71,6 +71,9 @@ assert_contains "carries Junie's top-level additionalContext" \
   "$(printf '%s' "$out" | jq -r '.additionalContext')" "Do NOT offer to implement"
 assert_eq "top-level context matches Claude's" \
   "$(printf '%s' "$out" | jq -r '.additionalContext == .hookSpecificOutput.additionalContext')" "true"
+assert_contains "names every planning artifact from the shared allowlist" \
+  "$(printf '%s' "$out" | jq -r '.additionalContext')" \
+  "CONTEXT.md, CONTEXT-MAP.md, docs/adr/, docs/agents/, .scratch/, .orchestrator/"
 
 out="$(skill_event "mattpocock-skills:grilling" s1 | "$GRILL")"
 assert_empty "stays silent on the second call in one session" "$out"
@@ -152,6 +155,18 @@ rel_ok="$(jq -n --arg cwd "$REPO" \
   '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", cwd:$cwd, tool_input:{path:"docs/adr/0002-y.md"}}')"
 assert_empty "allows a planning artifact given as a relative path" \
   "$(printf '%s' "$rel_ok" | "$GUARD")"
+# A ".." climbing out of an allowlisted directory lands in source, and must
+# be judged by where it lands, not by the prefix it starts with.
+dotdot="$(jq -n --arg cwd "$REPO" \
+  '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", cwd:$cwd, tool_input:{path:"docs/adr/../../src/main.ts"}}')"
+assert_eq "denies a source edit reached through .. from an allowlisted dir" \
+  "$(printf '%s' "$dotdot" | "$GUARD" | jq -r '.decision')" "block"
+dotdot_abs="$(edit_event "$REPO/.scratch/../src/main.ts" s1 | "$GUARD" | jq -r '.decision')"
+assert_eq "denies an absolute source path reached through .." "$dotdot_abs" "block"
+outside="$(jq -n --arg cwd "$REPO" \
+  '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", cwd:$cwd, tool_input:{path:"../sibling/x.ts"}}')"
+assert_empty "ignores a relative path that climbs out of the repo" \
+  "$(printf '%s' "$outside" | "$GUARD")"
 no_cwd="$(jq -n --arg f "$REPO/src/main.ts" \
   '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", tool_input:{file_path:$f}}')"
 assert_eq "falls back to the process working directory without cwd" \

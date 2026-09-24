@@ -39,6 +39,9 @@ assert_eq() {
 assert_contains() {
   case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "output did not contain '$3': $2" ;; esac
 }
+assert_not_contains() {
+  case "$2" in *"$3"*) bad "$1" "output contained '$3': $2" ;; *) ok "$1" ;; esac
+}
 assert_status() {
   if [ "$2" -eq "$3" ]; then ok "$1"; else bad "$1" "expected exit $3, got $2"; fi
 }
@@ -617,6 +620,14 @@ assert_status "refuses a staged rename" "$st" 1
 assert_contains "names the rename's new path" "$out" "moved.sh"
 assert_contains "names the rename's old path" "$out" "src.sh"
 git mv moved.sh src.sh
+
+# A git status that cannot run is not a clean tree - reading it as one would
+# wave through exactly the edits this check exists to catch.
+cp .git/index .git/index.bak; echo garbage >.git/index
+out="$("$ORCH" init dirty 2>&1)"; st=$?
+assert_status "refuses when git status fails" "$st" 1
+assert_eq "writes no state when git status fails" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+mv .git/index.bak .git/index
 
 mkdir -p docs/adr && echo "# ADR" >docs/adr/0001-x.md
 echo "# glossary" >CONTEXT.md
@@ -1298,11 +1309,21 @@ assert_contains "skips the per-skill check rather than deriving a second FAIL" \
   "$out" "1 skill check skipped"
 
 # The fix has to fit the host: a Junie user told to run a Claude /plugin
-# command is left exactly as stuck as before.
+# command is left exactly as stuck as before. With no host detected, every
+# host's method is listed.
+out="$(env -u CLAUDE_PLUGIN_ROOT HOME=/nonexistent "$ORCH" doctor --env 2>&1)"
 assert_contains "names the Junie install method too" "$out" "Junie"
 assert_contains "names the skills CLI install" "$out" "npx skills add mattpocock/skills"
 assert_contains "names the override for an install none of these describe" \
   "$out" "ORCHESTRATOR_MATTPOCOCK_ROOT"
+
+# Once the host is known, the fix names only that host's install method.
+out="$(HOME=/nonexistent ORCHESTRATOR_HOST=junie "$ORCH" doctor --env 2>&1)"
+assert_contains "on Junie, names the Junie install" "$out" "npx skills add mattpocock/skills"
+assert_not_contains "on Junie, does not name a Claude /plugin command" "$out" "/plugin install mattpocock-skills"
+out="$(HOME=/nonexistent CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"
+assert_contains "on Claude Code, names the /plugin install" "$out" "/plugin install mattpocock-skills"
+assert_not_contains "on Claude Code, does not name the Junie install" "$out" "npx skills add"
 
 # The same partial install, in every other layout a host can produce. The
 # lookup finding *a* location is not the same as it holding every skill.
@@ -3636,6 +3657,12 @@ the setup fix|setup-matt-pocock-skills
 EOF
   grep -niE '(call|use|with) the (Skill|Agent) tool' "$f" \
     | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
+  # A hand-copied allowlist drifts; every entry of the one definition must
+  # appear, so an addition there fails here until the text catches up.
+  local entry
+  for entry in $(source "$root/scripts/planning-allowlist.sh"; printf '%s\n' "${PLANNING_ALLOWLIST[@]}"); do
+    grep -qF "$entry" "$f" || echo "${f#"$r"/}: missing allowlist entry $entry"
+  done
 }
 assert_eq "the guidelines file carries the grilling hook's key points, conditionally" \
   "$(scan_planning_nudge "$root")" ""
