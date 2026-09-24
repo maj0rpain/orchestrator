@@ -17,7 +17,7 @@
 # copy of the label-table parser.
 #
 # Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
-# now, first_line, default_branch, require_state, find_mattpocock,
+# now, first_line, default_branch, require_state, mp_location, mp_skill_path,
 # ORCH_DIR_NAME, PHASES, LABELS_DOC, LABEL_LIMIT, HANDOFF_DIR) is defined.
 # cmd_doctor is then dispatched from main() exactly like any other command.
 
@@ -65,7 +65,8 @@ d_join() {
 D_GH=""            # "ok", or the reason GitHub could not be asked
 D_REPO_NAME=""     # owner/name, as GitHub resolves it
 D_REPO_BRANCH=""   # the default branch, as GitHub reports it
-D_MP=""            # the mattpocock-skills plugin root, or empty
+D_MP=""            # where mattpocock-skills was found, or empty
+D_MP_KIND=""       # which kind of location that is - see mp_location
 D_JQ=""            # "ok", or empty when jq is missing
 D_STATE=""         # "ok" when state.json parses, or empty
 D_GH_SKIPPED=0
@@ -134,7 +135,11 @@ d_probe() {
   # with no PR recorded has nothing to ask GitHub. It reaches gh through
   # d_gh_gate instead, which probes on first use, so that run costs no round trip.
   if [ "$scope" = flow ]; then return 0; fi
-  D_MP="$(find_mattpocock)" || D_MP=""
+  if D_MP="$(mp_location)"; then
+    D_MP_KIND="${D_MP%%$'\t'*}"; D_MP="${D_MP#*$'\t'}"
+  else
+    D_MP=""
+  fi
   d_probe_gh
   if [ "$D_GH" = ok ]; then
     view="$(gh repo view --json nameWithOwner,defaultBranchRef \
@@ -167,7 +172,7 @@ check_jq() {
 }
 
 # A warn, not a FAIL: macOS still ships 3.2 as /bin/bash, and the flow works
-# there - find_mattpocock avoids arrays precisely so that it keeps doing so.
+# there - mp_location avoids arrays precisely so that it keeps doing so.
 check_bash() {
   if [ "${BASH_VERSINFO[0]:-0}" -ge 4 ]; then d_ok "bash ${BASH_VERSION%%(*}"; return 0; fi
   d_warn "bash ${BASH_VERSION%%(*} - orch.sh is written for 4.0 and up."
@@ -218,33 +223,53 @@ check_default_branch() {
 
 # plugin environment ---------------------------------------------------------
 
-check_mattpocock() {
-  if [ -n "$D_MP" ]; then d_ok "mattpocock-skills: ${D_MP/#$HOME/\~}"; return 0; fi
-  d_fail "mattpocock-skills is not installed - the flow reads its skills directly."
-  d_remedy "/plugin marketplace add anthropics/claude-plugins" \
-           "/plugin install mattpocock-skills"
+# The install that fits depends on the host, and a Junie user told to run a
+# Claude /plugin command is left exactly as stuck as before - so the fix names
+# one per host, plus the override for an install none of them describe.
+d_mp_remedy() {
+  d_remedy "Claude Code: /plugin marketplace add anthropics/claude-plugins" \
+           "             /plugin install mattpocock-skills" \
+           "Junie:       npx skills add mattpocock/skills    # or install mattpocock/skills as a Junie extension" \
+           "Elsewhere:   export ORCHESTRATOR_MATTPOCOCK_ROOT=/path/to/mattpocock-skills"
 }
 
-# The check that justifies the feature. find_mattpocock probes a single skill
-# file to decide the whole plugin is present, so a partial or restructured
-# install passes and the flow then dies at the phase that needed the missing
-# one - by which point the session that could have fixed it has been cleared.
+d_mp_source() {
+  case "$D_MP_KIND" in
+    override) printf 'ORCHESTRATOR_MATTPOCOCK_ROOT' ;;
+    claude)   printf 'Claude Code plugin cache' ;;
+    junie)    printf 'Junie extension cache' ;;
+    agents)   printf 'skills CLI' ;;
+  esac
+}
+
+check_mattpocock() {
+  if [ -n "$D_MP" ]; then d_ok "mattpocock-skills: ${D_MP/#$HOME/\~} ($(d_mp_source))"; return 0; fi
+  # The override is authoritative, so the lookup never looked past it - saying
+  # "not installed" would send the user to reinstall what may well be there.
+  if [ -n "${ORCHESTRATOR_MATTPOCOCK_ROOT:-}" ]; then
+    d_fail "ORCHESTRATOR_MATTPOCOCK_ROOT points at $ORCHESTRATOR_MATTPOCOCK_ROOT, which is not a directory."
+    d_remedy "unset ORCHESTRATOR_MATTPOCOCK_ROOT    # or point it at a mattpocock-skills checkout"
+    return 0
+  fi
+  d_fail "mattpocock-skills is not installed - the flow reads its skills directly."
+  d_mp_remedy
+}
+
+# The check that justifies the feature. mp_location settles where the skills
+# are from whatever it finds there first, so a partial or restructured install
+# passes it and the flow then dies at the phase that needed the missing skill -
+# by which point the session that could have fixed it has been cleared.
 MP_SKILLS="to-spec implement code-review handoff"
 
 check_skills() {
   d_gate "${D_MP:+ok}" D_MP_SKIPPED || return 0
-  local name p missing="" found
+  local name missing=""
   for name in $MP_SKILLS; do
-    found=""
-    for p in "$D_MP/skills"/*/"$name"/SKILL.md; do
-      if [ -f "$p" ]; then found=1; break; fi
-    done
-    if [ -z "$found" ]; then missing="$(d_append "$missing" "$name")"; fi
+    mp_skill_path "$D_MP_KIND" "$D_MP" "$name" >/dev/null || missing="$(d_append "$missing" "$name")"
   done
   if [ -z "$missing" ]; then d_ok "every skill the flow reads resolves"; return 0; fi
-  d_fail "mattpocock skills missing: $(d_join "$missing")"
-  d_remedy "/plugin marketplace update claude-plugins" \
-           "/plugin install mattpocock-skills"
+  d_fail "mattpocock skills missing: $(d_join "$missing") (looked in: $(d_mp_source))"
+  d_mp_remedy
 }
 
 check_plugin_root() {

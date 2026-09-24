@@ -32,6 +32,13 @@ Requires the `mattpocock-skills` plugin, plus `gh`, `jq`, and `git`. Run
 `docs/agents/issue-tracker.md`, which `/orchestrator:start` checks for before
 starting a flow. `/orchestrator:doctor` reports all of this at any time.
 
+`mattpocock-skills` is found wherever your host installed it, checked in this
+order: `$ORCHESTRATOR_MATTPOCOCK_ROOT` if set, Claude Code's plugin cache,
+Junie's extension cache (`~/.junie/extensions/`), then the `skills` CLI store
+(`~/.agents/skills/`, only entries its lockfile records as `mattpocock-skills`).
+The first location present is used for every skill; a project's own
+`.agents/skills/` is never consulted.
+
 Upgrading from 0.x: 1.0.0 renamed every skill to carry an `orch-` prefix (the
 flow skill is now `orchestrator:orch-flow`, and so on). See
 [CHANGELOG.md](CHANGELOG.md) for the full old-to-new list.

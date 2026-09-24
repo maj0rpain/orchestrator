@@ -15,6 +15,10 @@ PASS=0
 FAIL=0
 SKIP=0
 
+# The override outranks every install layout, so one leaking in from the shell
+# running the tests would decide every mattpocock lookup below.
+unset ORCHESTRATOR_MATTPOCOCK_ROOT
+
 ok()   { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
 bad()  { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 skip() { printf '  skip %s\n     %s\n' "$1" "$2"; SKIP=$((SKIP + 1)); }
@@ -457,6 +461,38 @@ stub_mattpocock() {
   printf '%s\n' "$home"
 }
 
+# Add the named skills to HOME ($2) in one install layout ($1), so a lookup can
+# be tested against each layout a supported host produces, alone or stacked.
+#   claude   - Claude's namespaced, versioned plugin cache
+#   junie    - Junie's extension cache, flat skills/<name>
+#   agents   - the skills CLI store, each skill recorded in the lockfile
+#   override - a checkout that ORCHESTRATOR_MATTPOCOCK_ROOT is pointed at
+# `agents-foreign` puts a same-named skill in the skills CLI store but records
+# it as belonging to some other plugin.
+mp_install() {
+  local layout="$1" home="$2" base plugin="mattpocock-skills" s lock
+  shift 2
+  case "$layout" in
+    claude)   base="$home/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/engineering" ;;
+    junie)    base="$home/.junie/extensions/github-mattpocock-skills/mattpocock-skills/skills" ;;
+    agents)   base="$home/.agents/skills" ;;
+    agents-foreign) base="$home/.agents/skills"; plugin="someone-elses-skills" ;;
+    override) base="$home/mp-checkout/skills/engineering" ;;
+  esac
+  lock="$home/.agents/.skill-lock.json"
+  for s in "$@"; do
+    mkdir -p "$base/$s"
+    echo "# $s ($layout)" >"$base/$s/SKILL.md"
+    case "$layout" in
+      agents*)
+        [ -f "$lock" ] || echo '{"version":3,"skills":{}}' >"$lock"
+        jq --arg n "$s" --arg p "$plugin" \
+          '.skills[$n] = {source: "x/y", skillPath: ("skills/" + $n + "/SKILL.md"), pluginName: $p}' \
+          "$lock" >"$lock.tmp" && mv "$lock.tmp" "$lock" ;;
+    esac
+  done
+}
+
 # The documented triage-label table, in the shape the setup skill writes it:
 # a header row, a separator row, and backticked labels in the second column.
 labels_doc() {
@@ -895,6 +931,61 @@ else
   echo "  skip (mattpocock-skills not installed)"
 fi
 
+# --- mp-skill across host layouts -------------------------------------------
+# Each supported host installs mattpocock-skills somewhere else, in another
+# shape. The lookup is per skill name, because the skills CLI store has no
+# plugin root to hand back - only a directory shared with every other skill.
+echo
+echo "mp-skill across host layouts"
+for layout in claude junie agents; do
+  h="$(mktemp -d)"; mp_install "$layout" "$h" to-spec handoff
+  out="$(HOME="$h" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
+  assert_status "resolves from the $layout layout" "$st" 0
+  assert_eq "hands back the $layout layout's SKILL.md" "$(head -1 "$out" 2>/dev/null)" "# to-spec ($layout)"
+  assert_contains "says where the $layout layout's skills were found" \
+    "$(HOME="$h" "$ORCH" mp-skill 2>&1)" "$h/"
+done
+
+h="$(mktemp -d)"; mp_install override "$h" to-spec
+out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
+assert_status "resolves from the override" "$st" 0
+assert_eq "hands back the override's SKILL.md" "$(head -1 "$out" 2>/dev/null)" "# to-spec (override)"
+assert_eq "says the override is where the skills were found" \
+  "$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" mp-skill 2>&1)" "$h/mp-checkout"
+
+# Every layout at once: each one removed in turn exposes the next in line.
+h="$(mktemp -d)"
+for layout in override claude junie agents; do mp_install "$layout" "$h" to-spec; done
+first() { head -1 "$(HOME="$h" "$@" "$ORCH" mp-skill to-spec 2>/dev/null)" 2>/dev/null; }
+assert_eq "the override outranks every install" \
+  "$(first env ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout")" "# to-spec (override)"
+assert_eq "Claude's cache outranks Junie's and the skills CLI's" "$(first env)" "# to-spec (claude)"
+rm -rf "$h/.claude"
+assert_eq "Junie's extension cache outranks the skills CLI's" "$(first env)" "# to-spec (junie)"
+rm -rf "$h/.junie"
+assert_eq "the skills CLI store is the last resort" "$(first env)" "# to-spec (agents)"
+
+# ~/.agents/skills is shared by every skill the CLI installed. A same-named
+# skill that the lockfile does not record as mattpocock-skills' is someone
+# else's, and running it in place of mattpocock's would be the worst outcome.
+h="$(mktemp -d)"
+mp_install agents "$h" to-spec
+mp_install agents-foreign "$h" handoff
+out="$(HOME="$h" "$ORCH" mp-skill handoff 2>&1)"; st=$?
+assert_status "ignores a same-named skill the lockfile gives to another plugin" "$st" 1
+mkdir -p "$h/.agents/skills/code-review"; echo "# stray" >"$h/.agents/skills/code-review/SKILL.md"
+out="$(HOME="$h" "$ORCH" mp-skill code-review 2>&1)"; st=$?
+assert_status "ignores a skill the lockfile does not record at all" "$st" 1
+
+# Only user-level locations count: a repo can ship .agents/skills of its own.
+h="$(mktemp -d)"; mp_install agents "$h" to-spec
+d="$(mktemp -d)"; mkdir -p "$d/.agents/skills/handoff"; echo "# project" >"$d/.agents/skills/handoff/SKILL.md"
+out="$(cd "$d" && HOME="$h" "$ORCH" mp-skill handoff 2>&1)"; st=$?
+assert_status "ignores a project-level .agents/skills" "$st" 1
+
+out="$(HOME="$(mktemp -d)" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
+assert_status "fails when no layout holds mattpocock-skills" "$st" 1
+
 # --- init --issue -------------------------------------------------------
 # Adoption is validated once, immediately, before state.json is written - a bad
 # issue number must cost nothing, the same promise branch create and pr open
@@ -1134,6 +1225,55 @@ assert_status "fails cleanly when mattpocock-skills is absent" "$st" 1
 assert_contains "gives the install command" "$out" "/plugin install mattpocock-skills"
 assert_contains "skips the per-skill check rather than deriving a second FAIL" \
   "$out" "1 skill check skipped"
+
+# The fix has to fit the host: a Junie user told to run a Claude /plugin
+# command is left exactly as stuck as before.
+assert_contains "names the Junie install method too" "$out" "Junie"
+assert_contains "names the skills CLI install" "$out" "npx skills add mattpocock/skills"
+assert_contains "names the override for an install none of these describe" \
+  "$out" "ORCHESTRATOR_MATTPOCOCK_ROOT"
+
+# The same partial install, in every other layout a host can produce. The
+# lookup finding *a* location is not the same as it holding every skill.
+for layout in junie agents override; do
+  h="$(mktemp -d)"; mp_install "$layout" "$h" implement code-review
+  ov=""; if [ "$layout" = override ]; then ov="$h/mp-checkout"; fi
+  out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$ov" "$ORCH" doctor --env 2>&1)"; st=$?
+  assert_status "fails on a partial install in the $layout layout" "$st" 1
+  assert_contains "names the $layout layout's missing to-spec" "$out" "missing: to-spec"
+  assert_contains "names the $layout layout's missing handoff" "$out" "handoff"
+done
+
+# A skill the lockfile gives to another plugin is missing, not present.
+h="$(mktemp -d)"; mp_install agents "$h" to-spec implement code-review
+mp_install agents-foreign "$h" handoff
+out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails when a skills CLI skill belongs to another plugin" "$st" 1
+assert_contains "names the foreign skill as missing" "$out" "missing: handoff"
+
+# Doctor says where the skills were found, in terms of the host that put them
+# there - the path alone does not tell a user which install to repair.
+h="$(mktemp -d)"
+for layout in claude junie agents; do mp_install "$layout" "$h" to-spec implement code-review handoff; done
+out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
+assert_contains "reports Claude's plugin cache as the source" "$out" "(Claude Code plugin cache)"
+rm -rf "$h/.claude"
+out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
+assert_contains "reports Junie's extension cache as the source" "$out" "(Junie extension cache)"
+rm -rf "$h/.junie"
+out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
+assert_contains "reports the skills CLI store as the source" "$out" "(skills CLI)"
+assert_contains "and where that store is" "$out" "mattpocock-skills: ~/.agents/skills"
+mp_install override "$h" to-spec implement code-review handoff
+out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" doctor --env 2>&1)"
+assert_contains "reports the override as the source" "$out" "(ORCHESTRATOR_MATTPOCOCK_ROOT)"
+
+# An override that points nowhere is a typo to report, not a cue to fall back
+# to some other install the user evidently did not want.
+out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/nope" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "fails when the override is not a directory" "$st" 1
+assert_contains "names the override that points nowhere" "$out" "ORCHESTRATOR_MATTPOCOCK_ROOT"
+assert_contains "and the path it points at" "$out" "/nope"
 
 # Labels are parsed from the doc rather than hardcoded, so the parser is what
 # decides whether doctor is right in a repo that customised its vocabulary.
