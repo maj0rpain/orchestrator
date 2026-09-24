@@ -1,6 +1,6 @@
 ---
 name: orch-review
-description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing blocking findings only, filing every major and nit as an issue at the end, and either marking the PR ready or stopping with the reason recorded. Use from orchestrator:orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop.
+description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing blocking findings only, filing every major and nit as an issue at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop.
 ---
 
 # Orchestrator review loop

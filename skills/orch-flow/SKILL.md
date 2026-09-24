@@ -31,11 +31,12 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 ## Host capabilities
 
 Steps here name capabilities: invoke a skill, ask a multiple-choice question,
-start a fresh subagent, start a fresh session. `docs/host-capabilities.md`
-under the plugin root maps each one to your host. Where your host's cell says
-**Fallback**, or **Unverified** and the capability turns out missing, take the
-fallback it documents and record it in this phase's
-handoff under **Host fallbacks**. Where this file offers the human an
+start a fresh subagent, start a fresh session. Skills are named bare
+(`orch-handoff`); on Claude Code the scoped name is `orchestrator:<name>`.
+`docs/host-capabilities.md` under the plugin root maps each capability to your
+host. Where your host's cell says **Fallback**, or **Unverified** and the
+capability turns out missing, take the fallback it documents and record it in
+this phase's handoff under **Host fallbacks**. Where this file offers the human an
 `/orchestrator:<command>` and your host has no plugin commands, offer the
 matching section of this skill instead.
 
@@ -79,12 +80,12 @@ which holds the only copy of the plan.
    only a flow still mid-pipeline (`spec`/`implement`/`review`) refuses.
    **Whenever `init` fails, save the plan before stopping** - a failed
    precondition must never cost the user their plan. Write it, in the
-   `01-plan.md` template from `orchestrator:orch-handoff`, to
+   `01-plan.md` template from the `orch-handoff` skill, to
    `.scratch/orch-plan-<slug>.md`. `.scratch/` is on the planning allowlist, so
    the file never causes a refusal of its own. Tell the human where it is. Once
    they have fixed what `init` reported, rerun from step 2, in this session or a
    fresh one given that file.
-3. Invoke `orchestrator:orch-handoff` to write `01-plan.md`, from this session's
+3. Invoke the `orch-handoff` skill to write `01-plan.md`, from this session's
    plan or from the `.scratch/orch-plan-<slug>.md` step 2 saved. **Do
    this before anything else that can fail.** `init` is the one check that runs
    first, because it creates the directory the handoff goes in.
@@ -118,7 +119,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 2. Read and follow `"$ORCH" mp-skill to-spec`. It will check test seams with the
    user - that exchange is the point, so do not skip it.
 3. Record the published issue: `"$ORCH" state set issue <number>`.
-4. Invoke `orchestrator:orch-review-spec` and follow it. It owns
+4. Invoke the `orch-review-spec` skill and follow it. It owns
    the review - four lenses, one batch question, the body rewritten with what
    the human accepts - and returns the changelog. This step is part of the
    phase, not an option in it: no spec reaches the implement phase unreviewed,
@@ -147,7 +148,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    criteria" (when there is one) beneath the existing content - never
    replacing it - and write the merged body back (`"$ORCH" spec update
    <file>`).
-6. Invoke `orchestrator:orch-handoff` for `02-spec.md`, with the changelog the review
+6. Invoke the `orch-handoff` skill for `02-spec.md`, with the changelog the review
    returned as its **Spec review changelog**, and its **Ticket breakdown** as
    either the spec issue number (a published breakdown) or `None: work
    directly against #<n>` naming the spec issue (a collapsed one, per step
@@ -206,7 +207,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    ready is the review loop's success condition. `pr open` itself writes the
    `Closes #<issue>` line ahead of the body - do not add a closing keyword of
    your own to the body file.
-5. Invoke `orchestrator:orch-handoff` for `03-implement.md`. Its **Deviations** section
+5. Invoke the `orch-handoff` skill for `03-implement.md`. Its **Deviations** section
    is assembled from every ticket's report, one bullet per ticket that returned
    one, naming the ticket - "None" only if not one ticket reported a deviation,
    never left blank. Its **Verification** section is the command the review loop
@@ -218,7 +219,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 ### Phase: review
 
 1. `"$ORCH" doctor --flow`.
-2. Invoke `orchestrator:orch-review` and follow it. It owns the
+2. Invoke the `orch-review` skill and follow it. It owns the
    loop; this file owns phase dispatch, and has nothing to add to a review
    beyond getting you there.
 

@@ -127,7 +127,7 @@ Its report is structured: what it built, and the deviation it made, if any.
 ## 5. Review
 
 Invoke `mattpocock-skills:code-review` yourself - one plain,
-single pass, never `orchestrator:orch-review`'s multi-iteration loop. That loop's
+single pass, never the `orch-review` skill's multi-iteration loop. That loop's
 budget and filed-findings machinery is exactly what a quick implementation is
 choosing to skip. Fix what it finds before opening the PR.
 

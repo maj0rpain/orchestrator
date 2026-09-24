@@ -1,6 +1,6 @@
 ---
 name: orch-handoff
-description: Write an orchestrator handoff file into .orchestrator/handoff/ so the next phase can start with fresh context. Use only from the orchestrator:orch-flow skill, at a phase boundary.
+description: Write an orchestrator handoff file into .orchestrator/handoff/ so the next phase can start with fresh context. Use only from the orch-flow skill, at a phase boundary.
 ---
 
 # Orchestrator handoff
@@ -89,7 +89,7 @@ until review.>
 <the test seams agreed with the user, and why these and not lower ones>
 
 ## Spec review changelog
-<the list orchestrator:orch-review-spec returned, per lens: applied edits one line
+<the list orch-review-spec returned, per lens: applied edits one line
 each, declined findings verbatim with the human's reason, "None" for a lens
 that found nothing, "not run - <reason>" for one that failed>
 

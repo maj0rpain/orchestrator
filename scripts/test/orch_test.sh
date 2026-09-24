@@ -3619,6 +3619,10 @@ scan_capabilities() {
       || echo "${f#"$r"/}: never points at docs/host-capabilities.md"
     grep -niE '(call|use|with) the (Skill|Agent) tool|(call|use|spawn|dispatch)[a-z]* .*the Agent tool' "$f" \
       | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
+    # Junie has no plugin scope, so a skill names its siblings bare (orch-flow);
+    # the Claude-scoped form is only ever the generic orchestrator:<name>.
+    grep -nE 'orchestrator:orch-' "$f" \
+      | sed "s|^|${f#"$r"/}: names a skill by its Claude-scoped name: |"
   done
   for f in "$r"/commands/*.md; do
     [ -f "$f" ] || continue
@@ -3638,6 +3642,10 @@ printf 'Call the Skill tool with `x`. See docs/host-capabilities.md.\n' >"$fixtu
 printf 'Invoke `orchestrator:orch-flow` and follow its **Doctor** section.\n' >"$fixture/commands/doctor.md"
 out="$(scan_capabilities "$fixture")"
 assert_contains "the scan flags a Claude tool named as the step" "$out" "orch-x/SKILL.md: names a Claude tool"
+printf '## Status\nInvoke `orchestrator:orch-handoff`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
+assert_contains "the scan flags a sibling skill named by its Claude scope" \
+  "$(scan_capabilities "$fixture")" "orch-flow/SKILL.md: names a skill by its Claude-scoped name"
+printf '## Status\nInvoke the `orch-handoff` skill (`orchestrator:<name>` on Claude Code). See docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
 assert_contains "the scan flags a command routed to a missing section" "$out" "missing orch-flow section: Doctor"
 printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-x/SKILL.md"
 printf 'Invoke `orchestrator:orch-flow` and follow its **Status** section.\n' >"$fixture/commands/doctor.md"
