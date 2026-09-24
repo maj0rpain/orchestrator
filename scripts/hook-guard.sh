@@ -16,7 +16,10 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 
 hook_read_payload
-file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // ""')"
+# Claude Code names the file under file_path. Junie's Edit/Write input may use
+# path instead, and may be relative to the working directory.
+file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.path // ""')"
+case "$file" in ''|/*) ;; *) file="$cwd/$file" ;; esac
 
 # Only guard sessions the grilling hook has marked as planning. A payload
 # with no session_id (Junie's PreToolUse) is never guarded - ADR-0013.

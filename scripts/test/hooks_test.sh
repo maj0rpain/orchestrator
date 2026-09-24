@@ -138,6 +138,25 @@ assert_eq "exits cleanly on a payload with no session_id or cwd" "$rc" "0"
 assert_empty "does not deny without a session_id" "$out"
 rm -f "$TMPDIR/orchestrator-grilling-unknown" "$TMPDIR/orchestrator-grilling-"
 
+# Junie's Edit/Write input may name the file under `path` rather than
+# `file_path`, and may give it relative to the working directory.
+path_edit="$(jq -n --arg f "$REPO/src/main.ts" --arg cwd "$REPO" \
+  '{hook_event_name:"PreToolUse", tool_name:"Write", session_id:"s1", cwd:$cwd, tool_input:{path:$f}}')"
+assert_eq "denies a source edit named under tool_input.path" \
+  "$(printf '%s' "$path_edit" | "$GUARD" | jq -r '.decision')" "block"
+rel_edit="$(jq -n --arg cwd "$REPO" \
+  '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", cwd:$cwd, tool_input:{path:"src/main.ts"}}')"
+assert_eq "denies a source edit given as a relative path" \
+  "$(printf '%s' "$rel_edit" | "$GUARD" | jq -r '.decision')" "block"
+rel_ok="$(jq -n --arg cwd "$REPO" \
+  '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", cwd:$cwd, tool_input:{path:"docs/adr/0002-y.md"}}')"
+assert_empty "allows a planning artifact given as a relative path" \
+  "$(printf '%s' "$rel_ok" | "$GUARD")"
+no_cwd="$(jq -n --arg f "$REPO/src/main.ts" \
+  '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", tool_input:{file_path:$f}}')"
+assert_eq "falls back to the process working directory without cwd" \
+  "$(cd "$REPO" && printf '%s' "$no_cwd" | "$GUARD" | jq -r '.decision')" "block"
+
 assert_empty "ignores files outside the repo" "$(edit_event "/etc/hosts" s1 | "$GUARD")"
 
 mkdir -p "$REPO/.orchestrator"
