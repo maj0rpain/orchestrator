@@ -77,8 +77,11 @@ which holds the only copy of the plan.
    Starting over a `done` flow archives it automatically and reports where -
    only a flow still mid-pipeline (`spec`/`implement`/`review`) refuses.
 3. Invoke `orchestrator:orch-handoff` to write `01-plan.md`. **Do
-   this before anything that can fail** - a failed precondition must never cost
-   the user their plan.
+   this before anything else that can fail** - a failed precondition must never
+   cost the user their plan. `init` is the one check that runs first, because
+   it creates the directory the handoff goes in. When `init` refuses, nothing has
+   been written, so the plan survives only in this session: keep the session
+   open, fix what `init` reported, and rerun from step 2.
 4. `"$ORCH" handoff validate "$("$ORCH" handoff path spec)"`. Fix and re-validate
    until it passes.
 5. `"$ORCH" doctor --env`. Report its output; stop only on a non-zero exit. A

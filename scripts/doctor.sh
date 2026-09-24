@@ -355,11 +355,12 @@ check_plugin_root() {
 # directories above a skill is not there and every step that runs it fails.
 # doctor itself runs from an orch.sh, so it can only see such a copy sitting in
 # a user-level skill store beside the full install; the skills themselves
-# report the case where no full install exists at all. The stores are the
-# user-level ones the skills CLI and Junie install into.
+# report the case where no full install exists at all. The store is the
+# user-level one the skills CLI installs into; Junie's own skill store is not
+# yet verified, so it is not scanned.
 check_orch_sh() {
   local store d found="" names
-  for store in "$HOME/.agents/skills" "$HOME/.junie/skills"; do
+  for store in "$HOME/.agents/skills"; do
     names=""
     for d in "$store"/orch-*/; do
       [ -f "$d/SKILL.md" ] || continue
@@ -374,10 +375,20 @@ check_orch_sh() {
   while IFS= read -r d; do
     d_warn "orch.sh missing beside the orchestrator skills in $d - a skills-only install."
   done <<<"$found"
-  d_remedy "Claude Code: /plugin marketplace add maj0rpain/orchestrator" \
-           "             /plugin install orchestrator@orchestrator" \
-           "Junie:       install maj0rpain/orchestrator as a Junie extension" \
-           "then remove the skills-only copy named above."
+  d_orch_remedy
+}
+
+# Names only the detected host's install method, like d_mp_remedy.
+d_orch_remedy() {
+  local c1="Claude Code: /plugin marketplace add maj0rpain/orchestrator"
+  local c2="             /plugin install orchestrator@orchestrator"
+  local junie="Junie:       install maj0rpain/orchestrator as a Junie extension"
+  local after="then remove the skills-only copy named above."
+  case "${D_HOST:-}" in
+    claude) d_remedy "$c1" "$c2" "$after" ;;
+    junie)  d_remedy "$junie" "$after" ;;
+    *)      d_remedy "$c1" "$c2" "$junie" "$after" ;;
+  esac
 }
 
 # repo config ----------------------------------------------------------------

@@ -24,7 +24,7 @@ lacks, so keep the marker on exactly those cells.
 | Invoke a skill | The Skill tool, by scoped name (`orchestrator:orch-flow`, `mattpocock-skills:tdd`). | No Skill tool. The human runs `/<name>` or writes `$<name>` in a prompt, or Junie picks a skill automatically. **Fallback** for the model. |
 | Ask a multiple-choice question | `AskUserQuestion`. | `AskUserQuestion`. |
 | Start a fresh subagent | The Agent tool, as a fresh general-purpose agent. | Subagents are only picked and started automatically by Junie, with no explicit fresh or fork control. **Fallback**. |
-| Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. |
+| Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`, which starts another live session. The old one keeps running. |
 | Run a plugin command | `/orchestrator:<command>`. | Unverified whether Junie loads a Claude plugin's `commands/`. **Fallback**. |
 | Inject context at planning time | A `PostToolUse` hook on `Skill(grilling)` (`hook-grilling.sh`). | No `PostToolUse` event and no Skill tool. The extension's `guidelines/orch-planning.md` carries the same message, worded conditionally. **Fallback**. |
@@ -51,6 +51,12 @@ for before moving on. Where a skill spawns several at once, run them one at a
 time, finishing each report before starting the next. The loop around the
 subagent does not change: a ticket is still closed only once its report is
 written.
+
+### Start a forked subagent
+
+Nothing to do. No skill asks for a fork, so no phase ever takes this
+fallback. The row is marked so doctor reports it and a future skill that
+wants a fork has to write the fallback here first.
 
 ### Run a plugin command
 

@@ -87,8 +87,6 @@ require_issue() { require_field "$1" '.issue // ""' "no issue recorded in state 
 # pr open and redo review both need the flow's branch before touching GitHub.
 require_branch() { require_field "$1" '.branch // ""' "no branch recorded in state"; }
 
-# --- environment ------------------------------------------------------------
-
 # --- mattpocock-skills lookup ------------------------------------------------
 #
 # Each supported host installs mattpocock-skills somewhere else, in another

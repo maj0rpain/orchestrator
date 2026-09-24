@@ -1653,6 +1653,7 @@ assert_status "Junie's missing capabilities warn, never fail" "$st" 0
 assert_contains "detects Junie from JUNIE_EXTENSION_ROOT" "$out" "host: Junie"
 assert_contains "names the edit guard Junie cannot arm" "$out" "Arm the edit guard"
 assert_contains "names the fresh subagent Junie cannot start" "$out" "Start a fresh subagent"
+assert_contains "names the forked subagent Junie cannot start" "$out" "Start a forked subagent"
 assert_contains "points at the reference for the fallbacks" "$out" "docs/host-capabilities.md"
 assert_eq "does not list what Junie can do" \
   "$(printf '%s\n' "$out" | grep -c 'Ask a multiple-choice question')" "0"
@@ -1675,15 +1676,30 @@ assert_contains "and how to name it" "$out" "export ORCHESTRATOR_HOST="
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "reports the orch.sh it runs from" "$out" "ok    orch.sh:"
 h="$HOME"
-mkdir -p "$h/.agents/skills/orch-flow" "$h/.junie/skills/orch-review"
-touch "$h/.agents/skills/orch-flow/SKILL.md" "$h/.junie/skills/orch-review/SKILL.md"
+mkdir -p "$h/.agents/skills/orch-flow"
+touch "$h/.agents/skills/orch-flow/SKILL.md"
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "reports a skills-only copy with no orch.sh" "$out" "orch.sh missing"
 assert_contains "names the skills CLI copy" "$out" "~/.agents/skills: orch-flow"
-assert_contains "names the Junie skills copy" "$out" "~/.junie/skills: orch-review"
+# Like the mattpocock remedy, the fix names only the detected host's install.
 assert_contains "names the full-plugin install for Claude Code" "$out" "/plugin install orchestrator@orchestrator"
+assert_eq "and not Junie's, under Claude Code" \
+  "$(printf '%s\n' "$out" | grep -c 'as a Junie extension')" "0"
+out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --env 2>&1)"
 assert_contains "names the full-plugin install for Junie" "$out" "maj0rpain/orchestrator as a Junie extension"
-rm -rf "$h/.agents/skills/orch-flow" "$h/.junie/skills/orch-review"
+assert_eq "and not Claude Code's, under Junie" \
+  "$(printf '%s\n' "$out" | grep -c '/plugin install orchestrator@orchestrator')" "0"
+out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" doctor --env 2>&1)"
+assert_contains "names every host's install when none is detected" "$out" "/plugin install orchestrator@orchestrator"
+assert_contains "including Junie's" "$out" "maj0rpain/orchestrator as a Junie extension"
+# ~/.junie/skills is not a verified Junie location (#121: verified facts only).
+rm -rf "$h/.agents/skills/orch-flow"
+mkdir -p "$h/.junie/skills/orch-review"
+touch "$h/.junie/skills/orch-review/SKILL.md"
+out="$("$ORCH" doctor --env 2>&1)"
+assert_eq "does not scan the unverified ~/.junie/skills" \
+  "$(printf '%s\n' "$out" | grep -c 'orch.sh missing')" "0"
+rm -rf "$h/.junie/skills/orch-review"
 
 # env -u above was scoped to that one command too, so this is still the same
 # fully-healthy repo - exactly the state this last check needs to prove out.

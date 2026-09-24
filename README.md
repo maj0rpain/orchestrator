@@ -163,7 +163,7 @@ default branch, and validating handoffs all have one right answer, so they live 
 
 Only Claude Code expands `CLAUDE_PLUGIN_ROOT`, and other hosts expand it only
 inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is). So every
-skill and command that runs `orch.sh` states the path one way, as the `ORCH=`
+skill that runs `orch.sh` states the path one way, as the `ORCH=`
 line followed by the relative fallback:
 
 ````
@@ -175,9 +175,10 @@ If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
 two directories above this skill's own directory (the plugin root).
 ````
 
-A command says "one directory above this command's own directory" instead. Keep
-the fallback sentence's first line intact, then call `"$ORCH" <subcommand>`
-everywhere else. Do not copy the scripts into a skill. `orch_test.sh` fails when
+Keep the fallback sentence's first line intact, then call `"$ORCH" <subcommand>`
+everywhere else. Do not copy the scripts into a skill. Commands never run
+`orch.sh`: each is a thin route into an `orch-flow` section (see
+[Naming host capabilities](#naming-host-capabilities)). `orch_test.sh` fails when
 a skill, command, or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT` anywhere
 else, or runs `orch.sh` without this pair.
 
