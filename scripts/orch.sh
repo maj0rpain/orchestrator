@@ -53,8 +53,9 @@ readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
 
 # Names a flow command so any host can act on it. Plugin commands are
-# unverified on Junie (docs/host-capabilities.md), so each also names the
-# orch-flow section it routes to - the same fallback the skills offer.
+# unverified on Junie (docs/host-capabilities.md), so off Claude Code each also
+# names the orch-flow section it routes to - the same fallback the skills
+# offer. On Claude Code the message stays as it was before 1.0.0 (#121 story 2).
 flow_cmd() {
   local section
   case "$1" in
@@ -64,7 +65,11 @@ flow_cmd() {
     abort) section="Abort" ;;
     *) die "flow_cmd: unknown command: $1" ;;
   esac
-  printf "/orchestrator:%s (or orch-flow's %s section)" "$1" "$section"
+  if [ "$(host_detect)" = claude ]; then
+    printf "/orchestrator:%s" "$1"
+  else
+    printf "/orchestrator:%s (or orch-flow's %s section)" "$1" "$section"
+  fi
 }
 
 require_state() {

@@ -2,7 +2,8 @@
 
 Skills name a **capability** ("invoke a skill", "start a fresh subagent"), and
 this table says how each **host** provides it. Read your host's column: Claude
-Code has the Skill and Agent tools; Junie has neither.
+Code has the Skill and Agent tools. Junie has no Skill tool, and whether it has
+the Agent tool under another name is unverified.
 
 A cell marked **Fallback** means that host lacks the capability. Do what
 [Fallbacks](#fallbacks) says for it, and record it: one line naming the
@@ -15,7 +16,8 @@ A cell marked **Unverified** means nobody has confirmed whether that host has
 the capability. Try it; if it is missing, take the fallback and record it the
 same way.
 
-Adding a host means adding one column. Fill a cell only with a verified fact,
+Adding a host means adding a column here, and teaching `doctor.sh` to detect
+it and name its install methods (#132). Fill a cell only with a verified fact,
 and write "unverified" for anything not yet confirmed. The Junie column comes
 from the documentation bundled with Junie CLI 3419.7.
 

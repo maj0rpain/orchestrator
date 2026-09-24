@@ -3092,7 +3092,7 @@ assert_contains "reports the loop has not started" "$out" "review loop: not star
 
 "$ORCH" state set iteration 2
 "$ORCH" state set budget 5
-out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+out="$(ORCHESTRATOR_HOST=junie "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "short of budget warns, never fails" "$st" 0
 assert_contains "names the iteration and budget" "$out" "iteration 2 of budget 5"
 assert_contains "reads as pending, not interrupted" "$out" "hasn't reached its budget yet"
@@ -3279,9 +3279,14 @@ assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 
 "$ORCH" state set iteration 2
 "$ORCH" state set budget 5
-out="$("$ORCH" redo review 2>&1)"; st=$?
+out="$(ORCHESTRATOR_HOST=junie "$ORCH" redo review 2>&1)"; st=$?
 assert_status "refuses a loop still short of its budget" "$st" 1
 assert_contains "pointing at /orchestrator:next instead" "$out" "that's what /orchestrator:next (or orch-flow's Next phase section) is for"
+# Claude Code users see the command alone, as before 1.0.0 (#121 story 2).
+out="$(ORCHESTRATOR_HOST=claude "$ORCH" redo review 2>&1)"
+assert_contains "names the bare command on Claude Code" "$out" "that's what /orchestrator:next is for"
+out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" redo review 2>&1)"
+assert_contains "and the orch-flow section when no host is detected" "$out" "/orchestrator:next (or orch-flow's Next phase section)"
 
 "$ORCH" state set iteration 5
 out="$("$ORCH" redo review 2>&1)"; st=$?
@@ -3598,6 +3603,16 @@ for f in "$root"/skills/*/SKILL.md; do
   grep -qF 'as a Junie extension, which is unverified' "$f" || missing="$missing ${f#"$root"/}"
 done
 assert_eq "every skill marks its Junie install unverified" "$missing" ""
+# One stop text, copied into each skill: once the Junie install is verified,
+# every copy must change together, so they may not drift apart.
+stop_text() { awk '/^If `orch.sh` is at neither path/,/which is unverified\)\.$/' "$1"; }
+ref="$(stop_text "$root/skills/orch-flow/SKILL.md")"
+assert_contains "orch-flow carries the skills-only stop text" "$ref" "skills-only install"
+drift=""
+for f in "$root"/skills/*/SKILL.md; do
+  [ "$(stop_text "$f")" = "$ref" ] || drift="$drift ${f#"$root"/}"
+done
+assert_eq "every skill's skills-only stop text matches orch-flow's word for word" "$drift" ""
 fixture="$(mktemp -d)"
 mkdir -p "$fixture/guidelines"
 printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/guidelines/orch.md"

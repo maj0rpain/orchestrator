@@ -292,7 +292,9 @@ HOST_REF="docs/host-capabilities.md"
 # its docs say it expands for extension hooks; that it also reaches the shell a
 # skill runs orch.sh from is unverified, which is what the override is for.
 # Junie is checked before Claude because a Junie started from inside a Claude
-# Code terminal inherits CLAUDECODE, never the other way round.
+# Code terminal inherits CLAUDECODE. Whether a Claude Code started from a
+# Junie shell inherits JUNIE_EXTENSION_ROOT is unverified; ORCHESTRATOR_HOST
+# settles it either way.
 host_detect() {
   if [ -n "${ORCHESTRATOR_HOST:-}" ]; then printf '%s\n' "$ORCHESTRATOR_HOST"; return 0; fi
   if [ -n "${JUNIE_EXTENSION_ROOT:-}" ]; then printf 'junie\n'; return 0; fi
