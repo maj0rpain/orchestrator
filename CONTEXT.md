@@ -208,3 +208,10 @@ iteration: one per flow, spent or not.
 A CI check that must pass before a change can land. Where branch protection
 names them, those are the required checks; where it does not, every check on the
 commit counts. A change with no checks at all is not thereby failing.
+
+## Host
+
+The agent CLI that has the plugin installed and runs its skills - Claude Code,
+Junie, and so on. Claude Code is the reference host; every other host is
+supported to the extent it can do what the plugin asks, and anything it
+cannot do is reported rather than silently skipped.
