@@ -124,7 +124,7 @@ assert_eq "carries Junie's top-level block decision" \
 assert_contains "carries Junie's top-level reason" \
   "$(printf '%s' "$out" | jq -r '.reason')" "src/main.ts"
 
-for f in CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/agents/domain.md .scratch/ticket.md; do
+for f in CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/agents/domain.md .scratch/ticket.md .orchestrator/handoff/01-plan.md; do
   assert_empty "allows planning artifact: $f" "$(edit_event "$REPO/$f" s1 | "$GUARD")"
 done
 
@@ -156,6 +156,12 @@ no_cwd="$(jq -n --arg f "$REPO/src/main.ts" \
   '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", tool_input:{file_path:$f}}')"
 assert_eq "falls back to the process working directory without cwd" \
   "$(cd "$REPO" && printf '%s' "$no_cwd" | "$GUARD" | jq -r '.decision')" "block"
+
+assert_contains "lists every allowlisted planning artifact" \
+  "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD" | jq -r '.reason')" \
+  "CONTEXT.md, CONTEXT-MAP.md, docs/adr/, docs/agents/, .scratch/, .orchestrator/"
+assert_not_contains "does not allow a lookalike of an allowlisted file" \
+  "$(edit_event "$REPO/docs/CONTEXT.md" s1 | "$GUARD" | jq -r '.decision')" "null"
 
 assert_empty "ignores files outside the repo" "$(edit_event "/etc/hosts" s1 | "$GUARD")"
 

@@ -141,7 +141,8 @@ skills/orch-quick-implement/  the other route: issue, to-tickets, tdd, single-pa
 scripts/orch.sh               every deterministic operation (mechanism)
 scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
 scripts/hook-*.sh             the three hooks
-scripts/hook-common.sh        skill/session_id extraction shared by the two Skill-matcher hooks
+scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
+scripts/planning-allowlist.sh the planning allowlist, shared by the edit guard and orch.sh
 scripts/test/                 shell tests
 hooks/hooks.json              hook wiring
 ```

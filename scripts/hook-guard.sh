@@ -7,13 +7,13 @@
 # planning is live and no flow has started, code edits are denied, and the
 # rejection lands back in the model's context as a correction.
 #
-# The allowlist is the set of files the three planning entry points legitimately
-# write: improve-codebase-architecture and domain-modeling update CONTEXT.md and
-# ADRs inline, and wayfinder writes tickets under .scratch/ on a local tracker.
+# The allowlist of planning artifacts lives in planning-allowlist.sh, shared
+# with orch.sh's flow-start working-tree check.
 
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 
 hook_read_payload
 # Claude Code names the file under file_path. Junie's Edit/Write input may use
@@ -34,9 +34,7 @@ root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 if [ -f "$root/.orchestrator/state.json" ]; then exit 0; fi
 
 rel="${file#"$root"/}"
-case "$rel" in
-  CONTEXT.md|CONTEXT-MAP.md|docs/adr/*|docs/agents/*|.scratch/*|.orchestrator/*) exit 0 ;;
-esac
+if planning_allowlisted "$rel"; then exit 0; fi
 
 # Anything outside the repo is somebody else's business.
 case "$file" in "$root"/*) ;; *) exit 0 ;; esac
@@ -48,7 +46,6 @@ Finish planning, then call the Skill tool with \"orchestrator:orch-flow\" to wri
 handoff and begin the spec phase. Implementation happens in its own session, on
 its own branch, from a written spec.
 
-Planning artifacts you may still edit: CONTEXT.md, CONTEXT-MAP.md, docs/adr/,
-docs/agents/, .scratch/, .orchestrator/."
+Planning artifacts you may still edit: $(planning_allowlist_text)."
 
 hook_emit_deny "$reason"
