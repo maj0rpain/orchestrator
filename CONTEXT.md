@@ -215,3 +215,16 @@ The agent CLI that has the plugin installed and runs its skills - Claude Code,
 Junie, and so on. Claude Code is the reference host; every other host is
 supported to the extent it can do what the plugin asks, and anything it
 cannot do is reported rather than silently skipped.
+
+## Capability
+
+Something a skill needs its host to do - invoke a skill, start a fresh
+subagent, start a fresh session - named for what it does rather than for any
+host's tool. `docs/host-capabilities.md` says how each host provides each one.
+
+## Host fallback
+
+What a skill does instead when its host lacks a capability, as documented in
+`docs/host-capabilities.md`. Every fallback a phase takes is recorded under
+**Host fallbacks** in its handoff, so a reduced run is never mistaken for a
+full one.

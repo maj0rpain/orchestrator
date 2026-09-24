@@ -3673,7 +3673,7 @@ the setup fix|setup-matt-pocock-skills
 EOF
   grep -niE '(call|use|with) the (Skill|Agent) tool' "$f" \
     | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
-  # A hand-copied allowlist drifts; every entry of the one definition must
+  # A hand-copied allowlist drifts; every entry of the canonical definition must
   # appear, so an addition there fails here until the text catches up.
   local entry
   for entry in $(source "$root/scripts/planning-allowlist.sh"; printf '%s\n' "${PLANNING_ALLOWLIST[@]}"); do

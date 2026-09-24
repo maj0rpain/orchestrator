@@ -26,7 +26,8 @@ hook_read_skill_and_session() {
 
 # Writes a PreToolUse deny as one JSON object both hosts understand: Claude
 # Code reads hookSpecificOutput, Junie reads the top-level decision/reason.
-# "block" is the one top-level decision value both hosts accept.
+# "block" is Claude Code's legacy top-level value; that Junie accepts it too is
+# unverified until the manual Junie acceptance run (#121).
 hook_emit_deny() {
   jq -n --arg r "$1" '{
     hookSpecificOutput: {

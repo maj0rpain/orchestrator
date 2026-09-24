@@ -76,12 +76,17 @@ which holds the only copy of the plan.
    exists to catch.
    Starting over a `done` flow archives it automatically and reports where -
    only a flow still mid-pipeline (`spec`/`implement`/`review`) refuses.
-3. Invoke `orchestrator:orch-handoff` to write `01-plan.md`. **Do
-   this before anything else that can fail** - a failed precondition must never
-   cost the user their plan. `init` is the one check that runs first, because
-   it creates the directory the handoff goes in. When `init` refuses, nothing has
-   been written, so the plan survives only in this session: keep the session
-   open, fix what `init` reported, and rerun from step 2.
+   **Whenever `init` fails, save the plan before stopping** - a failed
+   precondition must never cost the user their plan. Write it, in the
+   `01-plan.md` template from `orchestrator:orch-handoff`, to
+   `.scratch/orch-plan-<slug>.md`. `.scratch/` is on the planning allowlist, so
+   the file never causes a refusal of its own. Tell the human where it is. Once
+   they have fixed what `init` reported, rerun from step 2, in this session or a
+   fresh one given that file.
+3. Invoke `orchestrator:orch-handoff` to write `01-plan.md`, from this session's
+   plan or from the `.scratch/orch-plan-<slug>.md` step 2 saved. **Do
+   this before anything else that can fail.** `init` is the one check that runs
+   first, because it creates the directory the handoff goes in.
 4. `"$ORCH" handoff validate "$("$ORCH" handoff path spec)"`. Fix and re-validate
    until it passes.
 5. `"$ORCH" doctor --env`. Report its output; stop only on a non-zero exit. A
@@ -234,7 +239,7 @@ Phase <name> complete. Handoff written to <path>.
 ```
 
 On Claude Code that line reads `Next: /clear, then /orchestrator:next`. On
-Junie it reads `Next: /new, then ask for the next phase with $orch-flow`.
+Junie it reads `Next: /new, then ask for the next phase with /orch-flow`.
 
 Say nothing after it. Do not start the next phase, and do not offer to.
 

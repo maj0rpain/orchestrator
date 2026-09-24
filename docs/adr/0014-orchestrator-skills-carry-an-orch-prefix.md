@@ -21,5 +21,6 @@ are unambiguous everywhere.
 
 This is a breaking rename, released as a major version: every reference to
 the skills changes, including skill prose, `hook-quick-implement.sh`'s skill
-match, commands, README, and tests. The redundant `orch-` on Claude Code is
-deliberate; don't "clean it up".
+match, commands, README, and tests. Earlier ADRs are the exception: they
+record decisions at a point in time, so they keep the names they were written
+with. The redundant `orch-` on Claude Code is deliberate; don't "clean it up".

@@ -226,6 +226,9 @@ check_default_branch() {
 # Names only the detected host's install method - a Junie user told to run a
 # Claude /plugin command is no better off. With no host detected, every
 # method is listed. check_host sets D_HOST and runs earlier in the same group.
+# The Junie line names the two installs #121 found on a real machine: the
+# skills CLI store (user story 5) and a Claude plugin installed as a Junie
+# extension (the Problem Statement). Neither command is verified end to end.
 d_mp_remedy() {
   local c1="Claude Code: /plugin marketplace add anthropics/claude-plugins"
   local c2="             /plugin install mattpocock-skills"
@@ -359,22 +362,16 @@ check_plugin_root() {
 # user-level one the skills CLI installs into; Junie's own skill store is not
 # yet verified, so it is not scanned.
 check_orch_sh() {
-  local store d found="" names
-  for store in "$HOME/.agents/skills"; do
-    names=""
-    for d in "$store"/orch-*/; do
-      [ -f "$d/SKILL.md" ] || continue
-      [ -f "$d/../../scripts/orch.sh" ] && continue
-      d="${d%/}"; names="$(d_append "$names" "${d##*/}")"
-    done
-    [ -n "$names" ] && found="$(d_append "$found" "${store/#$HOME/\~}: $(d_join "$names")")"
+  local store="$HOME/.agents/skills" d names=""
+  for d in "$store"/orch-*/; do
+    [ -f "$d/SKILL.md" ] || continue
+    [ -f "$d/../../scripts/orch.sh" ] && continue
+    d="${d%/}"; names="$(d_append "$names" "${d##*/}")"
   done
-  if [ -z "$found" ]; then d_ok "orch.sh: ${D_PLUGIN/#$HOME/\~}/scripts/orch.sh"; return 0; fi
+  if [ -z "$names" ]; then d_ok "orch.sh: ${D_PLUGIN/#$HOME/\~}/scripts/orch.sh"; return 0; fi
   # A warn, not a FAIL: the install running this is whole, and which host picks
   # up the skills-only copy is not something doctor can see.
-  while IFS= read -r d; do
-    d_warn "orch.sh missing beside the orchestrator skills in $d - a skills-only install."
-  done <<<"$found"
+  d_warn "orch.sh missing beside the orchestrator skills in ${store/#$HOME/\~}: $(d_join "$names") - a skills-only install."
   d_orch_remedy
 }
 

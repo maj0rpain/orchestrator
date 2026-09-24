@@ -121,7 +121,7 @@ assert_eq "denies a source edit during planning" \
 assert_contains "explains what to do instead" "$out" "orchestrator:orch-flow"
 assert_contains "names the blocked file" "$out" "src/main.ts"
 # One JSON object serves both hosts: Junie reads the top-level decision/reason.
-# "block" is the one value both Claude Code's legacy field and Junie accept.
+# "block" is Claude Code's legacy top-level value; Junie accepting it is unverified (#121).
 assert_eq "carries Junie's top-level block decision" \
   "$(printf '%s' "$out" | jq -r '.decision')" "block"
 assert_contains "carries Junie's top-level reason" \

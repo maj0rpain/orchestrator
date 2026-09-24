@@ -102,8 +102,10 @@ require_branch() { require_field "$1" '.branch // ""' "no branch recorded in sta
 #   claude   - Claude's plugin cache, namespaced by marketplace and version.
 #              Resolved by glob, never pinned: the version changes under us,
 #              and the newest wins.
-#   junie    - Junie's extension cache, one un-namespaced directory per
-#              extension.
+#   junie    - Junie's extension cache under ~/.junie/extensions/, flat and
+#              un-namespaced (#121, from a real install). Whether an extension
+#              sits at the top level or one directory down is unverified, so
+#              both are checked.
 #   agents   - the `skills` CLI store. ~/.agents/skills is shared with every
 #              other skill the CLI installed, so only the entries its lockfile
 #              records as mattpocock-skills' count - a same-named skill from

@@ -1,4 +1,4 @@
-# planning-allowlist.sh - the one definition of the planning allowlist.
+# planning-allowlist.sh - the canonical definition of the planning allowlist.
 #
 # The files a planning session may legitimately write: improve-codebase-
 # architecture and domain-modeling update CONTEXT.md and ADRs inline, wayfinder
@@ -6,7 +6,9 @@
 # state under .orchestrator/. The edit guard (hook-guard.sh) denies edits
 # outside it during planning; the flow-start working-tree check in orch.sh
 # refuses to start when changes fall outside it (ADR-0013). Both source this
-# file so they can never disagree. Sourced, not executed on its own.
+# file so they can never disagree. guidelines/orch-planning.md repeats the list
+# as prose for Junie; orch_test.sh fails when that copy drifts from this one.
+# Sourced, not executed on its own.
 
 # Entries ending in "/" are directory prefixes; the rest are exact paths.
 # All are relative to the repo root.
