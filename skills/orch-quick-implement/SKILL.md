@@ -1,5 +1,5 @@
 ---
-name: quick-implement
+name: orch-quick-implement
 description: Implement a small, already-understood change directly, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue, a published ticket breakdown, test-driven implementation, and a single-pass review before the PR opens.
 ---
 
@@ -45,7 +45,7 @@ it is the only spec this path has.
 `to-tickets` carries `disable-model-invocation: true` in the installed
 mattpocock-skills version, so the Skill tool cannot reach it. Resolve it with
 `"$ORCH" mp-skill to-tickets`, read it, and follow it directly - the same
-pattern `skills/flow/SKILL.md` uses for the same upstream skill. Follow it
+pattern `skills/orch-flow/SKILL.md` uses for the same upstream skill. Follow it
 through its own quiz (steps 1-4) until the user approves a breakdown.
 
 **A breakdown of 2 or more tickets** publishes exactly as today: publish
@@ -116,7 +116,7 @@ Its report is structured: what it built, and the deviation it made, if any.
 ## 5. Review
 
 Call the Skill tool with `mattpocock-skills:code-review` yourself - one plain,
-single pass, never `orchestrator:review`'s multi-iteration loop. That loop's
+single pass, never `orchestrator:orch-review`'s multi-iteration loop. That loop's
 budget and filed-findings machinery is exactly what a quick implementation is
 choosing to skip. Fix what it finds before opening the PR.
 

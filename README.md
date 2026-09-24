@@ -32,6 +32,10 @@ Requires the `mattpocock-skills` plugin, plus `gh`, `jq`, and `git`. Run
 `docs/agents/issue-tracker.md`, which `/orchestrator:start` checks for before
 starting a flow. `/orchestrator:doctor` reports all of this at any time.
 
+Upgrading from 0.x: 1.0.0 renamed every skill to carry an `orch-` prefix (the
+flow skill is now `orchestrator:orch-flow`, and so on). See
+[CHANGELOG.md](CHANGELOG.md) for the full old-to-new list.
+
 ## The flow
 
 ```
@@ -40,7 +44,7 @@ starting a flow. `/orchestrator:doctor` reports all of this at any time.
    / improve-codebase-…)                               |
                                         +----------------+----------------+
                                         |                                 |
-                              /orchestrator:start                orchestrator:quick-implement
+                              /orchestrator:start                orchestrator:orch-quick-implement
                               ->  01-plan.md                     issue, to-tickets publishes tickets,
                                         |                          branch quick/<issue>-<slug>,
                                        | /clear                    one subagent per ticket, tdd,
@@ -106,7 +110,7 @@ it. It fires once per session, stays quiet when a flow is already running, warns
 early if the repo is unconfigured, and tells the model that once a shared
 understanding is reached, the next step is a human's call, not the model's:
 call `AskUserQuestion` with exactly two options, start the flow
-(`orchestrator:flow`) or a quick implementation (`orchestrator:quick-implement`),
+(`orchestrator:orch-flow`) or a quick implementation (`orchestrator:orch-quick-implement`),
 and do whichever the human picks.
 
 A `PreToolUse` hook on `Edit`/`Write` enforces that: during a planning session
@@ -115,24 +119,24 @@ with no flow started, source edits are denied. Planning artifacts stay writable 
 `.orchestrator/` - because `improve-codebase-architecture` and `domain-modeling`
 legitimately write them mid-planning. A third `PostToolUse` hook on the same
 `Skill` matcher lifts the guard for a quick implementation: it deletes the
-session's marker file when `orchestrator:quick-implement` fires, without
+session's marker file when `orchestrator:orch-quick-implement` fires, without
 `hook-guard.sh` itself changing.
 
 ## Layout
 
 ```
-commands/                start, next, status, doctor, redo, abort
-skills/flow/              the state machine (judgment)
-skills/review-spec/       the spec review: four lenses, one batch question
-skills/review/            the review loop: rubric, authority rules, terminal states
-skills/handoff/           handoff templates, model-invocable unlike the upstream one
-skills/quick-implement/   the other route: issue, to-tickets, tdd, single-pass review, PR - no flow
-scripts/orch.sh           every deterministic operation (mechanism)
-scripts/doctor.sh         diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
-scripts/hook-*.sh         the three hooks
-scripts/hook-common.sh    skill/session_id extraction shared by the two Skill-matcher hooks
-scripts/test/             shell tests
-hooks/hooks.json          hook wiring
+commands/                     start, next, status, doctor, redo, abort
+skills/orch-flow/             the state machine (judgment)
+skills/orch-review-spec/      the spec review: four lenses, one batch question
+skills/orch-review/           the review loop: rubric, authority rules, terminal states
+skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
+skills/orch-quick-implement/  the other route: issue, to-tickets, tdd, single-pass review, PR - no flow
+scripts/orch.sh               every deterministic operation (mechanism)
+scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
+scripts/hook-*.sh             the three hooks
+scripts/hook-common.sh        skill/session_id extraction shared by the two Skill-matcher hooks
+scripts/test/                 shell tests
+hooks/hooks.json              hook wiring
 ```
 
 Prose for judgment, bash for facts. Reading state, naming branches, resolving the

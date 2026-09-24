@@ -2,7 +2,7 @@
 description: Run the next phase of the active orchestrator flow.
 ---
 
-Call the Skill tool with `orchestrator:flow` and follow its **/orchestrator:next**
+Call the Skill tool with `orchestrator:orch-flow` and follow its **/orchestrator:next**
 section: validate state, read the current phase, run that phase, write its handoff,
 print the boundary, stop.
 

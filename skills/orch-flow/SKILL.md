@@ -1,5 +1,5 @@
 ---
-name: flow
+name: orch-flow
 description: Drive the plan/spec/implement/review pipeline recorded in .orchestrator/state.json. Use when a planning session's plan has just been approved, or when the user runs /orchestrator:start, /orchestrator:next, /orchestrator:status, /orchestrator:redo, or /orchestrator:abort.
 ---
 
@@ -54,7 +54,7 @@ which holds the only copy of the plan.
    report the failure and stop rather than continuing without an issue.
    Starting over a `done` flow archives it automatically and reports where -
    only a flow still mid-pipeline (`spec`/`implement`/`review`) refuses.
-3. Call the Skill tool with `orchestrator:handoff` to write `01-plan.md`. **Do
+3. Call the Skill tool with `orchestrator:orch-handoff` to write `01-plan.md`. **Do
    this before anything that can fail** - a failed precondition must never cost
    the user their plan.
 4. `"$ORCH" handoff validate "$("$ORCH" handoff path spec)"`. Fix and re-validate
@@ -82,7 +82,7 @@ which holds the only copy of the plan.
 2. Read and follow `"$ORCH" mp-skill to-spec`. It will check test seams with the
    user - that exchange is the point, so do not skip it.
 3. Record the published issue: `"$ORCH" state set issue <number>`.
-4. Call the Skill tool with `orchestrator:review-spec` and follow it. It owns
+4. Call the Skill tool with `orchestrator:orch-review-spec` and follow it. It owns
    the review - four lenses, one batch question, the body rewritten with what
    the human accepts - and returns the changelog. This step is part of the
    phase, not an option in it: no spec reaches the implement phase unreviewed,
@@ -111,7 +111,7 @@ which holds the only copy of the plan.
    criteria" (when there is one) beneath the existing content - never
    replacing it - and write the merged body back (`"$ORCH" spec update
    <file>`).
-6. Call `orchestrator:handoff` for `02-spec.md`, with the changelog the review
+6. Call `orchestrator:orch-handoff` for `02-spec.md`, with the changelog the review
    returned as its **Spec review changelog**, and its **Ticket breakdown** as
    either the spec issue number (a published breakdown) or `None: work
    directly against #<n>` naming the spec issue (a collapsed one, per step
@@ -169,7 +169,7 @@ which holds the only copy of the plan.
    ready is the review loop's success condition. `pr open` itself writes the
    `Closes #<issue>` line ahead of the body - do not add a closing keyword of
    your own to the body file.
-5. Call `orchestrator:handoff` for `03-implement.md`. Its **Deviations** section
+5. Call `orchestrator:orch-handoff` for `03-implement.md`. Its **Deviations** section
    is assembled from every ticket's report, one bullet per ticket that returned
    one, naming the ticket - "None" only if not one ticket reported a deviation,
    never left blank. Its **Verification** section is the command the review loop
@@ -181,7 +181,7 @@ which holds the only copy of the plan.
 ### Phase: review
 
 1. `"$ORCH" doctor --flow`.
-2. Call the Skill tool with `orchestrator:review` and follow it. It owns the
+2. Call the Skill tool with `orchestrator:orch-review` and follow it. It owns the
    loop; this file owns phase dispatch, and has nothing to add to a review
    beyond getting you there.
 

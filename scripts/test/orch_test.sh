@@ -3224,6 +3224,29 @@ assert_contains "with the redo comment" \
 assert_eq "gh itself was invoked once, as a real subprocess" \
   "$(grep -cx issue "$log")" "1"
 
+# --- skill names (ADR-0014) --------------------------------------------------
+# Every orchestrator skill carries the orch- prefix. An old unprefixed name
+# left in a skill, command, hook, or doc points a model at a skill that no
+# longer exists. CHANGELOG and ADRs record history and may name the old ones;
+# scripts/test/ feeds old names in deliberately as negative cases.
+echo
+echo "skill names (ADR-0014)"
+root="$(cd "$(dirname "$ORCH")/.." && pwd)"
+old_names='orchestrator:(flow|handoff|review|review-spec|quick-implement)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement)/|^name: (flow|handoff|review|review-spec|quick-implement)$'
+hits="$(git -C "$root" ls-files -z \
+  | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/)' \
+  | (cd "$root" && xargs -0 grep -nE "$old_names" 2>/dev/null))"
+assert_eq "no old unprefixed orchestrator skill name outside CHANGELOG/ADR history" "$hits" ""
+for d in "$root"/skills/*/; do
+  n="$(basename "$d")"
+  case "$n" in
+    orch-*) ok "skill directory $n carries the orch- prefix" ;;
+    *) bad "skill directory $n carries the orch- prefix" "unprefixed skill directory" ;;
+  esac
+  assert_eq "skill $n declares its directory name" \
+    "$(sed -n 's/^name: //p' "$d/SKILL.md" | head -1)" "$n"
+done
+
 echo
 if [ "$SKIP" -gt 0 ]; then
   echo "$PASS passed, $FAIL failed, $SKIP skipped"

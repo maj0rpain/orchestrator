@@ -39,7 +39,7 @@ case "$file" in "$root"/*) ;; *) exit 0 ;; esac
 reason="Blocked by the orchestrator: this is a planning session and no flow has
 started, so '$rel' should not be edited yet.
 
-Finish planning, then call the Skill tool with \"orchestrator:flow\" to write the
+Finish planning, then call the Skill tool with \"orchestrator:orch-flow\" to write the
 handoff and begin the spec phase. Implementation happens in its own session, on
 its own branch, from a written spec.
 

@@ -4,7 +4,7 @@ argument-hint: "[slug] [--issue N]"
 ---
 
 The user has approved a plan in this session. Call the Skill tool with
-`orchestrator:flow` and follow its **Starting a flow** section.
+`orchestrator:orch-flow` and follow its **Starting a flow** section.
 
 `$ARGUMENTS` may carry a slug, `--issue N`, both, or neither. Pull `--issue N`
 out first if present - it adopts an already-open, already-triaged issue as the

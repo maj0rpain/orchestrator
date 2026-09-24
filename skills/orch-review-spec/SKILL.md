@@ -1,6 +1,6 @@
 ---
-name: review-spec
-description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orchestrator:flow's spec phase, after the issue exists - published by to-spec or already adopted at init - and before 02-spec.md is written.
+name: orch-review-spec
+description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orchestrator:orch-flow's spec phase, after the issue exists - published by to-spec or already adopted at init - and before 02-spec.md is written.
 ---
 
 # Orchestrator spec review

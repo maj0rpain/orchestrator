@@ -62,8 +62,8 @@ assert_contains "replaces the scripted closing line with a structured choice" "$
 assert_not_contains "drops the old scripted closing line" "$out" "Plan approved? I'll write the handoff and start the flow."
 assert_contains "offers starting the flow as an option" "$out" "Start the orchestrator flow"
 assert_contains "offers quick implementation as an option" "$out" "Quick implementation"
-assert_contains "tells the model to invoke the flow skill itself" "$out" "orchestrator:flow"
-assert_contains "tells the model to invoke the quick-implement skill itself" "$out" "orchestrator:quick-implement"
+assert_contains "tells the model to invoke the flow skill itself" "$out" "orchestrator:orch-flow"
+assert_contains "tells the model to invoke the quick-implement skill itself" "$out" "orchestrator:orch-quick-implement"
 assert_contains "forbids offering to implement" "$out" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat" "$out" "whole map is done"
 assert_eq "emits valid JSON" "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "PostToolUse"
@@ -100,7 +100,7 @@ assert_empty "ignores sessions that were never planning" \
 out="$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
 assert_eq "denies a source edit during planning" \
   "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
-assert_contains "explains what to do instead" "$out" "orchestrator:flow"
+assert_contains "explains what to do instead" "$out" "orchestrator:orch-flow"
 assert_contains "names the blocked file" "$out" "src/main.ts"
 
 for f in CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/agents/domain.md .scratch/ticket.md; do
@@ -119,7 +119,7 @@ echo
 echo "hook-quick-implement"
 
 : >"$TMPDIR/orchestrator-grilling-s1"
-out="$(skill_event "orchestrator:quick-implement" s1 | "$QUICK")"
+out="$(skill_event "orchestrator:orch-quick-implement" s1 | "$QUICK")"
 assert_empty "prints nothing" "$out"
 if [ -e "$TMPDIR/orchestrator-grilling-s1" ]; then
   bad "deletes the session's marker" "marker still present"
@@ -135,8 +135,17 @@ else
   bad "leaves another skill's marker alone" "marker was deleted"
 fi
 
-skill_event "orchestrator:quick-implement" s3 | "$QUICK" >/dev/null
+skill_event "orchestrator:orch-quick-implement" s3 | "$QUICK" >/dev/null
 ok "does not fail when no marker exists for the session"
+
+# ADR-0014 renamed the skill; the old unprefixed name must not lift the guard.
+: >"$TMPDIR/orchestrator-grilling-s4"
+skill_event "orchestrator:quick-implement" s4 | "$QUICK" >/dev/null
+if [ -e "$TMPDIR/orchestrator-grilling-s4" ]; then
+  ok "ignores the old unprefixed quick-implement name"
+else
+  bad "ignores the old unprefixed quick-implement name" "marker was deleted"
+fi
 
 echo
 echo "$PASS passed, $FAIL failed"

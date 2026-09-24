@@ -60,8 +60,8 @@ While this planning session is running:
       2. Quick implementation - skip the pipeline and implement this directly.
 
 - On \"Start the orchestrator flow\", call the Skill tool with
-  \"orchestrator:flow\" yourself. On \"Quick implementation\", call the Skill
-  tool with \"orchestrator:quick-implement\" yourself. Do not ask the user to
+  \"orchestrator:orch-flow\" yourself. On \"Quick implementation\", call the Skill
+  tool with \"orchestrator:orch-quick-implement\" yourself. Do not ask the user to
   type a command - orchestrator skills are model-invocable, unlike the
   mattpocock ones.
 
