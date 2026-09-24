@@ -578,6 +578,52 @@ out="$("$ORCH" init other --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "names the flag it rejected" "$out" "--bogus"
 
+# --- init refuses a dirty working tree ----------------------------------------
+# The git-based backstop from ADR-0013: a host with no mechanical trigger for
+# the edit guard can still edit source during planning, so flow start is where
+# those edits get caught. Only the planning allowlist may be dirty.
+echo
+echo "init refuses a dirty working tree"
+flow_repo="$PWD"
+new_repo >/dev/null
+echo "code" >stray.sh
+out="$("$ORCH" init dirty 2>&1)"; st=$?
+assert_status "refuses an untracked file outside the allowlist" "$st" 1
+assert_contains "names the untracked path" "$out" "stray.sh"
+assert_eq "writes no state when it refuses" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_contains "says how to resolve it" "$out" "Commit, stash, or discard"
+assert_contains "says to retry" "$out" "run init again"
+assert_contains "names what planning may change" "$out" "docs/adr/"
+
+rm stray.sh
+echo "changed" >>docs/agents/issue-tracker.md
+echo "base" >src.sh; git add src.sh; git commit -qm src
+echo "edit" >>src.sh
+mkdir -p lib && echo "new" >lib/deep.sh
+out="$("$ORCH" init dirty 2>&1)"; st=$?
+assert_status "refuses a tracked modification outside the allowlist" "$st" 1
+assert_contains "names the modified path" "$out" "src.sh"
+assert_contains "names an untracked file inside a new directory" "$out" "lib/deep.sh"
+case "$out" in *issue-tracker.md*) bad "does not name allowlisted paths" "$out" ;;
+  *) ok "does not name allowlisted paths" ;; esac
+
+git checkout -q src.sh; rm -r lib
+git mv src.sh moved.sh
+out="$("$ORCH" init dirty 2>&1)"; st=$?
+assert_status "refuses a staged rename" "$st" 1
+assert_contains "names the rename's new path" "$out" "moved.sh"
+assert_contains "names the rename's old path" "$out" "src.sh"
+git mv moved.sh src.sh
+
+mkdir -p docs/adr && echo "# ADR" >docs/adr/0001-x.md
+echo "# glossary" >CONTEXT.md
+mkdir -p .scratch && echo "ticket" >.scratch/t.md
+mkdir -p sub
+out="$(cd sub && "$ORCH" init clean-enough 2>&1)"; st=$?
+assert_status "starts with only allowlisted changes, even from a subdirectory" "$st" 0
+assert_eq "records the flow" "$("$ORCH" state get slug)" "clean-enough"
+cd "$flow_repo" || exit 1
+
 # --- slug -------------------------------------------------------------------
 # The same normalisation init applies to its own slug argument, exposed as a
 # primitive so the quick-implement skill can call it instead of restating the

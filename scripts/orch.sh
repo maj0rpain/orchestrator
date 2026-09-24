@@ -221,7 +221,45 @@ cmd_mp_skill() {
 # commands below.
 source "$(dirname "${BASH_SOURCE[0]}")/doctor.sh"
 
+# The one definition of the planning allowlist, shared with hook-guard.sh so
+# the flow-start check and the edit guard can never disagree about it.
+source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
+
 # --- state ------------------------------------------------------------------
+
+# Prints, one per line, every path with tracked modifications or untracked
+# files in this working tree that falls outside the planning allowlist. -z
+# keeps unusual file names intact; a rename or copy carries its source path as
+# a second record, and both sides count - the source is gone from where it was.
+# -uall lists untracked files individually, so a new directory is judged by
+# what is in it rather than by its name.
+dirty_outside_allowlist() {
+  local rec path want_src=0
+  while IFS= read -r -d '' rec; do
+    if [ "$want_src" -eq 1 ]; then
+      path="$rec"; want_src=0
+    else
+      path="${rec:3}"
+      case "${rec:0:2}" in *R*|*C*) want_src=1 ;; esac
+    fi
+    planning_allowlisted "$path" || printf '%s\n' "$path"
+  done < <(git -C "$ROOT" status --porcelain=v1 -z -uall)
+}
+
+# The git-based backstop from ADR-0013. Where no host hook arms the edit
+# guard, planning can edit source unhindered; flow start is where that gets
+# caught, before any state exists. Runs against $ROOT, this working tree's own
+# top level, so a flow started inside a worktree (ADR-0008) is judged by that
+# worktree's changes and not by the checkout it was forked from.
+require_clean_outside_allowlist() {
+  local dirty
+  dirty="$(dirty_outside_allowlist)"
+  [ -z "$dirty" ] && return 0
+  die "the working tree has changes outside the planning allowlist:
+$(printf '%s\n' "$dirty" | sed 's/^/       /')
+     Planning may only change: $(planning_allowlist_text).
+     Commit, stash, or discard these changes, then run init again."
+}
 
 cmd_init() {
   local usage="usage: orch.sh init <slug> [--issue N]"
@@ -249,6 +287,7 @@ cmd_init() {
     die "a flow is already active (slug: $(jq -r .slug "$STATE"), phase: $(jq -r .phase "$STATE")).
      One flow at a time - finish it, or run /orchestrator:abort."
   fi
+  require_clean_outside_allowlist
   # Adoption is validated before anything is written, mirroring how
   # branch create and pr open die on their own preconditions rather than
   # letting a whole phase run against an issue that cannot back it. Validating
@@ -1329,9 +1368,11 @@ orch.sh - deterministic operations for the orchestrator flow
   default-branch              resolve the base branch feature branches fork from
   init <slug> [--issue N]     start a flow (refuses if one is active, unless
                               it is done - a done flow is archived and the
-                              new one starts over it); --issue adopts an
-                              already-open, ready-for-agent issue N as the
-                              flow's spec instead of leaving it unset
+                              new one starts over it, or if the working tree
+                              has changes outside the planning allowlist);
+                              --issue adopts an already-open,
+                              ready-for-agent issue N as the flow's spec
+                              instead of leaving it unset
   slug <text>                 normalise text to the kebab-case slug init would
                               store - lowercase, non-alphanumeric runs collapsed
                               to a hyphen, trimmed

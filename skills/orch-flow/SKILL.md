@@ -65,6 +65,10 @@ which holds the only copy of the plan.
    already-triaged issue to adopt as the flow's spec instead of publishing a
    new one. `init` validates adoption immediately and dies if it cannot -
    report the failure and stop rather than continuing without an issue.
+   It also refuses while the working tree has changes outside the planning
+   allowlist, listing them: show the human the list and stop. Do not commit,
+   stash, or discard them yourself - they may be the planning edits the guard
+   exists to catch.
    Starting over a `done` flow archives it automatically and reports where -
    only a flow still mid-pipeline (`spec`/`implement`/`review`) refuses.
 3. Invoke `orchestrator:orch-handoff` to write `01-plan.md`. **Do
