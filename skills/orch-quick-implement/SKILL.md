@@ -84,9 +84,10 @@ exists to record anywhere; step 4 below works the linked issue directly.
 Get the slug from `"$ORCH" slug "<short description>"` - the same
 normalisation `orch.sh init` applies to a flow's slug, exposed as a primitive
 rather than re-derived here - then `"$ORCH" branch off "quick/<issue>-<slug>"`.
-`branch off` forks it off the default branch the same way a flow's own
-`branch create` does, but records no state - a quick implementation keeps
-none.
+`branch off` forks it off the base branch (`"$ORCH" base show`) the same way
+a flow's own `branch create` does, but records no flow state - a quick
+implementation keeps none. It records that base branch on the branch itself,
+so the PR in step 6 targets it even if the setting changes meanwhile.
 
 ## 4. Implement
 
@@ -144,7 +145,12 @@ for the same reason.
 Commit, then open the PR with `"$ORCH" pr publish <issue> "<title>"
 <body-file>` - the same boundary `pr open` draws for a flow, kept out of
 skill prose. The body ends with a **Host fallbacks** heading listing every
-fallback this run took, or `None (<host>).` It pushes the branch, closes `<issue>`, and opens the PR against
-the default branch, not as a draft: the single-pass review in step 5 already
+fallback this run took, or `None (<host>).` It pushes the branch and opens the PR against
+the base branch `branch off` recorded, not as a draft. The body starts with
+`Closes #<issue>` when that base branch is the default branch, and `Refs
+#<issue>` otherwise - the issue closes when the release PR carries the work
+into the default branch (the `orch-release` skill). Either way `pr publish`
+writes that line, so the body file carries no closing keyword of its own.
+Not a draft because the single-pass review in step 5 already
 happened, so there is no loop left to promote it - draft would leave it stuck
 with nothing watching it.

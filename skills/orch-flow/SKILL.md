@@ -159,8 +159,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 ### Phase: implement
 
 1. Read `"$ORCH" handoff path implement` and fetch the spec issue it names.
-2. `"$ORCH" branch create` - creates `orch/<issue>-<slug>` off the default branch
-   and records the base SHA the review will diff against.
+2. `"$ORCH" branch create` - creates `orch/<issue>-<slug>` off the flow's base
+   branch (recorded in state at `init`) and records the base SHA the review will diff against.
 3. Read the handoff's **Ticket breakdown** section, written by the spec
    phase's step 5.
 
@@ -205,9 +205,11 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    Its report is structured: what it built, and the deviation it made,
    if any.
 4. `"$ORCH" pr open "<title>" <body-file>`. The PR opens as a draft; marking it
-   ready is the review loop's success condition. `pr open` itself writes the
-   `Closes #<issue>` line ahead of the body - do not add a closing keyword of
-   your own to the body file.
+   ready is the review loop's success condition. The PR targets the flow's base
+   branch. `pr open` itself writes the issue line ahead of the body -
+   `Closes #<issue>` when the base branch is the default branch, `Refs
+   #<issue>` otherwise - so the body file carries no closing keyword of its
+   own.
 5. Invoke the `orch-handoff` skill for `03-implement.md`. Its **Deviations** section
    is assembled from every ticket's report, one bullet per ticket that returned
    one, naming the ticket - "None" only if not one ticket reported a deviation,

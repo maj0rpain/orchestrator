@@ -41,3 +41,13 @@ failure. `orch.sh status` also stops being purely directory-scoped: it
 cross-references `git worktree list` against which paths carry a
 `.orchestrator/state.json` and summarises every sibling flow, not just the
 current one.
+
+## Note: base branch
+
+Written before a checkout could set a **base branch** (see `CONTEXT.md` and
+ADR-0015), this ADR says "default branch". The decision is unchanged, but the
+second flow's worktree is now checked out from the base branch in effect. The
+setting lives in the clone's shared git config, so every worktree sees the
+same one: the second flow's `init` records that base branch, its
+`branch create` forks from it, and parallel tickets for the same project land
+on the same branch.
