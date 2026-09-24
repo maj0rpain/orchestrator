@@ -146,6 +146,13 @@ complete_implement_handoff() {
 # `--comment` text to GH_STUB_FILED like every other write above; `issue close`
 # fails on demand with GH_STUB_ISSUE_CLOSE_EXIT.
 #
+# `pr list` is pr release's read of the base branch's PRs: it answers the JSON
+# array for the --state asked - GH_STUB_PR_LIST_OPEN or GH_STUB_PR_LIST_MERGED,
+# each default "[]" - through the caller's --jq, and fails on
+# GH_STUB_PR_LIST_EXIT. `issue view --json state` answers CLOSED for any issue
+# listed in GH_STUB_CLOSED_ISSUES (space-separated), GH_STUB_ISSUE_STATE for
+# the rest; asked for state,url, a number in GH_STUB_PR_NUMBERS answers PULL.
+#
 # `issue list` is check_sub_issues's way of finding an issue to probe against:
 # it answers GH_STUB_ISSUE_LIST (default "1"), empty when explicitly set to
 # "" to simulate a repo with no issues. The sub_issues GET it then makes fails
@@ -244,7 +251,14 @@ case "$1" in
       exit 1
     fi
     echo "Logged in to github.com" ;;
-  repo) printf '%s\n' ${GH_STUB_REPO-acme/widgets main} ;;
+  # doctor asks nameWithOwner and defaultBranchRef together and reads both
+  # lines; default_branch asks defaultBranchRef alone and reads one, so it
+  # gets GH_STUB_REPO's last word.
+  repo)
+    case "$*" in
+      *nameWithOwner*) printf '%s\n' ${GH_STUB_REPO-acme/widgets main} ;;
+      *) set -- ${GH_STUB_REPO-acme/widgets main}; [ $# -eq 0 ] || printf '%s\n' "${!#}" ;;
+    esac ;;
   label)
     if [ "${GH_STUB_MODE:-ok}" = labelfail ]; then exit 1; fi
     if [ "$2" = create ]; then
@@ -274,7 +288,15 @@ ready-for-agent}"
                 printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"
               fi
               exit 0 ;;
-            state)  printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}"; exit 0 ;;
+            state|state,url)
+              case " ${GH_STUB_PR_NUMBERS:-} " in
+                *" $3 "*) [ "$a" = state,url ] && { echo PULL; exit 0; } ;;
+              esac
+              case " ${GH_STUB_CLOSED_ISSUES:-} " in
+                *" $3 "*) echo CLOSED ;;
+                *)        printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}" ;;
+              esac
+              exit 0 ;;
             labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; exit 0 ;;
           esac
         done
@@ -432,6 +454,24 @@ ready-for-agent}"
           # while asserting nothing.
           *)       echo "gh stub: no script named '$answer'" >&2; exit 99 ;;
         esac ;;
+      list)
+        shift 2
+        if [ -n "${GH_STUB_FILED:-}" ]; then printf 'pr list %s\n' "$*" >>"$GH_STUB_FILED"; fi
+        [ "${GH_STUB_PR_LIST_EXIT:-0}" = 0 ] || { echo "gh stub: pr list refused" >&2; exit "$GH_STUB_PR_LIST_EXIT"; }
+        lstate=""; ljq=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --state) lstate="$2"; shift ;;
+            --jq)    ljq="$2"; shift ;;
+          esac
+          shift
+        done
+        case "$lstate" in
+          open)   ljson="${GH_STUB_PR_LIST_OPEN:-[]}" ;;
+          merged) ljson="${GH_STUB_PR_LIST_MERGED:-[]}" ;;
+          *)      echo "gh stub: unscripted pr list state '$lstate'" >&2; exit 99 ;;
+        esac
+        if [ -n "$ljq" ]; then printf '%s' "$ljson" | jq -r "$ljq"; else printf '%s\n' "$ljson"; fi ;;
       create)
         shift 2
         if [ -n "${GH_STUB_FILED:-}" ]; then printf 'pr create\n' >>"$GH_STUB_FILED"; record_flags "$@"; fi
@@ -849,6 +889,217 @@ assert_contains "names the branch" "$out" "quick/9-widgets already exists"
 
 out="$("$ORCH" branch off 2>&1)"; st=$?
 assert_status "refuses with no name" "$st" 1
+
+# --- base --------------------------------------------------------------------
+# The checkout-wide base branch setting and its one resolver. A typo here is
+# silent in the worst way - work quietly forks from and targets a branch nobody
+# will merge - so set must refuse anything origin does not have.
+echo
+echo "base"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+# GitHub cannot answer for a local bare origin, so default-branch settles on
+# origin/HEAD - pinned above rather than left to this machine's gh.
+base_cmd() { PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" "$@"; }
+base_setting() { git config --get orchestrator.base || echo "<unset>"; }
+
+out="$(base_cmd base show)"; st=$?
+assert_status "show succeeds with nothing set" "$st" 0
+assert_eq "show names the default branch as the source when nothing is set" "$out" "main (default)"
+
+out="$(base_cmd base set nosuch 2>&1)"; st=$?
+assert_status "set refuses a branch missing from origin" "$st" 1
+assert_contains "names the missing branch" "$out" "nosuch"
+assert_eq "a refused set leaves the config untouched" "$(base_setting)" "<unset>"
+
+out="$(base_cmd base set uat 2>&1)"; st=$?
+assert_status "set accepts a branch origin has" "$st" 0
+assert_eq "set writes orchestrator.base" "$(base_setting)" "uat"
+assert_eq "show names the setting as the source" "$(base_cmd base show)" "uat (set)"
+assert_eq "default-branch still names the default branch" "$(base_cmd default-branch)" "main"
+
+wt="$(mktemp -d)/wt"
+git worktree add -q "$wt" -b base-wt
+assert_eq "every worktree of the clone shares the setting" "$(cd "$wt" && base_cmd base show)" "uat (set)"
+git worktree remove --force "$wt"
+
+git remote set-url origin "$(dirname "$bare")/unreachable.git"
+out="$(base_cmd base set main 2>&1)"; st=$?
+assert_status "set refuses when origin cannot be reached to verify" "$st" 1
+assert_eq "an unverified set leaves the config untouched" "$(base_setting)" "uat"
+git remote set-url origin "$bare"
+
+out="$(base_cmd base set main 2>&1)"; st=$?
+assert_status "set accepts the default branch's own name" "$st" 0
+assert_eq "setting the default branch acts as clearing" "$(base_setting)" "<unset>"
+assert_eq "show then reports the default source" "$(base_cmd base show)" "main (default)"
+
+base_cmd base set uat >/dev/null
+out="$(base_cmd base clear 2>&1)"; st=$?
+assert_status "clear succeeds when a setting exists" "$st" 0
+assert_eq "clear removes the setting" "$(base_setting)" "<unset>"
+out="$(base_cmd base clear 2>&1)"; st=$?
+assert_status "clear succeeds when nothing was set" "$st" 0
+
+out="$(base_cmd base 2>&1)"; st=$?
+assert_status "refuses a missing verb" "$st" 1
+out="$(base_cmd base set 2>&1)"; st=$?
+assert_status "set refuses with no branch" "$st" 1
+rm -rf "$(dirname "$bare")"
+
+# --- a flow's base branch -------------------------------------------------------
+# A flow fixes its base branch at init, so a later `base set` never moves the
+# flow's fork point or its PR. uat carries a commit main does not, so where the
+# flow branch forked from is visible in its history.
+echo
+echo "a flow's base branch"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main
+git checkout -q -b uat
+git commit -q --allow-empty -m "uat only"
+git push -q origin uat:refs/heads/uat
+git checkout -q -
+git branch -q -D uat
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+uat_tip="$(git rev-parse origin/uat)"
+main_tip="$(git rev-parse origin/main)"
+
+base_cmd init nobase >/dev/null
+assert_eq "init records the default branch as base when nothing is set" \
+  "$(base_cmd state get base)" "main"
+rm -rf .orchestrator
+
+base_cmd base set uat >/dev/null
+base_cmd init flowbase >/dev/null
+assert_eq "init records the base branch setting" "$(base_cmd state get base)" "uat"
+
+out="$(base_cmd base set uat 2>&1)"
+assert_not_contains "set says nothing more when the active flow already has that base" \
+  "$out" "keeps its own base branch"
+out="$(base_cmd base set main 2>&1)"; st=$?
+assert_status "set still succeeds while a flow with another base is active" "$st" 0
+assert_contains "and notes that the active flow keeps its own base branch" \
+  "$out" "flowbase keeps its own base branch: uat"
+assert_eq "the flow's recorded base is untouched" "$(base_cmd state get base)" "uat"
+
+base_cmd state set issue 7
+out="$(base_cmd branch create 2>&1)"; st=$?
+assert_status "branch create succeeds" "$st" 0
+assert_eq "branch create forks from the recorded base, not the changed setting" \
+  "$(git rev-parse HEAD)" "$uat_tip"
+assert_eq "base_sha is the recorded base's tip" "$(base_cmd state get base_sha)" "$uat_tip"
+assert_contains "status prints the flow's base branch" "$(base_cmd status)" "base:      uat"
+
+body="$(mktemp)"
+writeln 'Implements the thing.' >"$body"
+filed="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=31 \
+  base_cmd pr open "Title" "$body" 2>&1)"; st=$?
+assert_status "pr open succeeds" "$st" 0
+assert_contains "pr open targets the flow's recorded base" "$(cat "$filed")" "base=uat"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_first_line "a PR into a non-default base refers to its issue instead of closing it" \
+  "$body_recorded" "Refs #7"
+
+# A deleted base branch must not quietly become a fork from a stale local copy.
+git update-ref refs/remotes/origin/gone "$main_tip"
+git branch -q gone "$main_tip"
+base_cmd state set base gone
+base_cmd state set issue 8
+out="$(base_cmd branch create 2>&1)"; st=$?
+assert_status "branch create refuses a base branch origin says is gone" "$st" 1
+assert_contains "naming the base branch" "$out" "gone"
+assert_eq "and creates no branch" \
+  "$(git rev-parse --verify --quiet orch/8-flowbase >/dev/null && echo made || echo none)" "none"
+
+# A flow started before base was recorded forked from the default branch.
+legacy="$(mktemp)"
+jq 'del(.base)' .orchestrator/state.json >"$legacy"
+mv "$legacy" .orchestrator/state.json
+assert_contains "status shows the default branch for a state with no base" \
+  "$(base_cmd status)" "base:      main"
+git checkout -q main
+out="$(base_cmd branch create 2>&1)"; st=$?
+assert_status "and branch create still forks it" "$st" 0
+assert_eq "from the default branch" "$(git rev-parse HEAD)" "$main_tip"
+base_cmd base clear >/dev/null
+rm -rf "$(dirname "$bare")"
+
+# --- a quick implementation's base branch --------------------------------------
+# A quick implementation keeps no state.json, so branch off records the base
+# branch it forked from on the branch itself - pr publish then targets that
+# base even if the setting moved in the meantime, and falls back to the setting
+# for a branch created before anything was recorded.
+echo
+echo "a quick implementation's base branch"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main
+git checkout -q -b uat
+git commit -q --allow-empty -m "uat only"
+git push -q origin uat:refs/heads/uat
+git checkout -q -
+git branch -q -D uat
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+uat_tip="$(git rev-parse origin/uat)"
+main_tip="$(git rev-parse origin/main)"
+recorded_base() { git config --get "branch.$1.orchestrator-base" || echo "<unset>"; }
+
+base_cmd base set uat >/dev/null
+out="$(base_cmd branch off quick/5-uat 2>&1)"; st=$?
+assert_status "branch off succeeds" "$st" 0
+assert_eq "branch off forks from the base branch in effect" "$(git rev-parse HEAD)" "$uat_tip"
+assert_eq "and records it on the branch" "$(recorded_base quick/5-uat)" "uat"
+
+git checkout -q main
+base_cmd base clear >/dev/null
+base_cmd branch off quick/6-main >/dev/null
+assert_eq "with nothing set, branch off forks from the default branch" "$(git rev-parse HEAD)" "$main_tip"
+assert_eq "and records the default branch" "$(recorded_base quick/6-main)" "main"
+
+body="$(mktemp)"
+writeln 'Implements the thing.' >"$body"
+git checkout -q quick/5-uat
+filed="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=41 \
+  base_cmd pr publish 5 "Title" "$body" 2>&1)"; st=$?
+assert_status "pr publish succeeds" "$st" 0
+assert_contains "pr publish targets the recorded base over the changed setting" \
+  "$(cat "$filed")" "base=uat"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_first_line "a quick PR into a non-default base refers to its issue" \
+  "$body_recorded" "Refs #5"
+
+# A branch made before branch off recorded anything publishes to the setting.
+git checkout -q -b quick/7-legacy "$main_tip"
+base_cmd base set uat >/dev/null
+filed="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=42 \
+  base_cmd pr publish 7 "Title" "$body" 2>&1)"; st=$?
+assert_status "pr publish succeeds with nothing recorded" "$st" 0
+assert_contains "and falls back to the base branch setting" "$(cat "$filed")" "base=uat"
+
+# A deleted base branch must not quietly become a fork from a stale local copy.
+git update-ref refs/remotes/origin/gone "$main_tip"
+git config orchestrator.base gone
+out="$(base_cmd branch off quick/8-gone 2>&1)"; st=$?
+assert_status "branch off refuses a base branch origin says is gone" "$st" 1
+assert_contains "naming the base branch" "$out" "gone"
+assert_eq "and records nothing for the branch it did not make" "$(recorded_base quick/8-gone)" "<unset>"
+base_cmd base clear >/dev/null
+rm -rf "$(dirname "$bare")"
 
 # --- branch retire ------------------------------------------------------------
 # The rename-aside a redo uses instead of deleting or force-pushing over a
@@ -1927,6 +2178,7 @@ assert_eq "and records it in state" "$("$ORCH" state get pr)" "23"
 body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
 assert_first_line "the recorded body opens with the closing keyword" \
   "$body_recorded" "Closes #16"
+assert_contains "and targets the flow's base, the default branch" "$(cat "$filed")" "base=main"
 assert_eq "leaves a blank line before the original body" \
   "$(printf '%s\n' "$body_recorded" | sed -n 2p)" ""
 assert_contains "and keeps the agent's original body intact after a blank line" \
@@ -2031,6 +2283,123 @@ assert_eq "with no bogus flag=<value> entries for the base/head values" \
   "$(grep -c '^flag=' "$filed")" "0"
 assert_eq "gh itself was invoked once for create and once for view, as real subprocesses" \
   "$(grep -cx pr "$log")" "2"
+
+# --- pr release -----------------------------------------------------------------
+# The release PR carries the base branch back into the default branch and
+# closes every still-open issue whose work reached it - read from the bodies of
+# the PRs merged into the base branch, never remembered by a human. Every
+# GitHub call goes through the in-memory fake; the subprocess-real counterpart
+# is the "gh adapter (real pr list, subprocess gh)" block right after this one.
+echo
+echo "pr release"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+body="$(mktemp)"
+writeln 'Ships the uat project.' '' 'Some detail.' >"$body"
+release() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" base_cmd pr release "$@"; }
+
+filed="$(mktemp)"
+out="$(release "Release" "$body" 2>&1)"; st=$?
+assert_status "refuses when the base branch is the default branch" "$st" 1
+assert_contains "naming it" "$out" "main"
+assert_not_contains "and opens no PR" "$(cat "$filed")" "pr create"
+
+base_cmd base set uat >/dev/null
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' release "Release" "$body" 2>&1)"; st=$?
+assert_status "refuses while a release PR is already open" "$st" 1
+assert_contains "printing that PR's number" "$out" "#57"
+assert_contains "asking only for open PRs" "$(cat "$filed")" "pr list --head uat --base main --state open"
+assert_not_contains "and opens no second one" "$(cat "$filed")" "pr create"
+
+# Every reference the merged PRs make is to an issue that is already closed.
+filed="$(mktemp)"
+merged='[{"number":60,"body":"Refs #3"},{"number":61,"body":"No references here."}]'
+out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_CLOSED_ISSUES="3" release "Release" "$body" 2>&1)"; st=$?
+assert_status "refuses when no referenced issue is still open" "$st" 1
+assert_contains "saying there is nothing to close" "$out" "nothing to close"
+assert_contains "reading the PRs merged into the base branch" "$(cat "$filed")" "pr list --base uat --state merged"
+assert_not_contains "and opens no PR" "$(cat "$filed")" "pr create"
+
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_CLOSED_ISSUES="3" GH_STUB_PR_NUMBER=70 \
+  release --force "Release" "$body" 2>&1)"; st=$?
+assert_status "--force releases with nothing to close" "$st" 0
+assert_eq "printing the PR number" "$out" "70"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_eq "with the caller's body alone" "$body_recorded" "$(cat "$body")"
+
+# Hand-written PRs into uat count too: every keyword, in any case, anywhere in
+# the body. #5 is referenced twice and #8 is already closed. Other closing
+# forms (fix, closed) are prose, not references, and #62 is an open PR, not
+# an issue.
+filed="$(mktemp)"
+merged='[{"number":62,"body":"Refs #5\n\nImplements it."},
+{"number":63,"body":"Summary first.\n\nThis closes #6 and FIXES #7."},
+{"number":64,"body":"resolves #9\nAlso Refs #5, and Closes #8.\nIt prefixes #4 with nothing."},
+{"number":65,"body":"A quick fix #12, closed #13. Refs #62, an open PR."}]'
+out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_CLOSED_ISSUES="8" GH_STUB_PR_NUMBERS="62" GH_STUB_PR_NUMBER=71 \
+  release "Release uat" "$body" 2>&1)"; st=$?
+assert_status "opens the release PR" "$st" 0
+assert_eq "prints its number" "$out" "71"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_eq "one Closes line per still-open issue, deduplicated, above the caller's body" \
+  "$body_recorded" "$(writeln 'Closes #5' 'Closes #6' 'Closes #7' 'Closes #9' '' 'Ships the uat project.' '' 'Some detail.')"
+assert_contains "from the base branch" "$(cat "$filed")" "head=uat"
+assert_contains "into the default branch" "$(cat "$filed")" "base=main"
+assert_contains "with the caller's title" "$(cat "$filed")" "title=Release uat"
+assert_not_contains "not as a draft" "$(cat "$filed")" "flag=--draft"
+assert_eq "and pushes nothing" "$(git -C "$bare" for-each-ref --format='%(refname)' | sort | tr '\n' ' ')" \
+  "refs/heads/main refs/heads/uat "
+
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_PR_CREATE_EXIT=1 release "Release" "$body" 2>&1)"; st=$?
+assert_status "a gh that will not open the PR fails it" "$st" 1
+assert_contains "naming both branches" "$out" "from uat into main"
+
+out="$(release "Release" 2>&1)"; st=$?
+assert_status "refuses a missing body file argument" "$st" 1
+assert_contains "with its usage" "$out" "pr release [--force] <title> <body-file>"
+base_cmd base clear >/dev/null
+rm -rf "$(dirname "$bare")"
+
+# --- gh adapter (real pr list, subprocess gh) ---------------------------------
+# pr release just proved its decisions through the in-memory fake - this is
+# the narrow assertion that its list, issue-state and create calls reach a real
+# gh subprocess with ORCH_GH_ADAPTER unset.
+echo
+echo "gh adapter (real pr list, subprocess gh)"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
+git config orchestrator.base uat
+stub_gh
+body="$(mktemp)"
+writeln 'Ships the uat project.' >"$body"
+filed="$(mktemp)"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=72 \
+  GH_STUB_PR_LIST_MERGED='[{"number":62,"body":"Refs #5"},{"number":63,"body":"Fixes #6"}]' \
+  GH_STUB_CLOSED_ISSUES="6" "$ORCH" pr release "Release" "$body" 2>&1)"; st=$?
+assert_status "shells out for real" "$st" 0
+assert_eq "and reads back the number the real gh answered" "$out" "72"
+assert_contains "the real adapter listed the open release PRs" "$(cat "$filed")" \
+  "pr list --head uat --base main --state open"
+assert_contains "and the PRs merged into the base branch" "$(cat "$filed")" \
+  "pr list --base uat --state merged"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_first_line "and closed only the issue the real gh called open" "$body_recorded" "Closes #5"
+assert_eq "gh itself was invoked twice to list and once to create, as real subprocesses" \
+  "$(grep -cx pr "$log")" "3"
+assert_eq "and once per referenced issue to read its state" "$(grep -cx issue "$log")" "2"
+rm -rf "$(dirname "$bare")"
 
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature touches GitHub's native
@@ -3006,6 +3375,7 @@ assert_contains "and the terminal-state classifier" "$("$ORCH" help)" "review te
 assert_contains "and retiring a loop's records" "$("$ORCH" help)" "review retire"
 assert_contains "help documents issue publish" "$("$ORCH" help)" "issue publish"
 assert_contains "and pr publish" "$("$ORCH" help)" "pr publish"
+assert_contains "and pr release" "$("$ORCH" help)" "pr release [--force] <title> <body-file>"
 assert_contains "and ticket publish" "$("$ORCH" help)" "ticket publish"
 assert_contains "and ticket next" "$("$ORCH" help)" "ticket next"
 assert_contains "and ticket close" "$("$ORCH" help)" "ticket close"
@@ -3300,8 +3670,10 @@ mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
 : >"$filed"
 log="$(mktemp)"
+base_before="$("$ORCH" state get base)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
+assert_eq "keeps the flow's recorded base branch" "$("$ORCH" state get base)" "$base_before"
 assert_eq "prints the new redo count" "$out" "1"
 assert_eq "records it in state" "$("$ORCH" state get redo_count)" "1"
 assert_eq "resets the iteration for a fresh budget" "$("$ORCH" state get iteration)" "0"
@@ -3645,7 +4017,7 @@ for cap in 'Invoke a skill from a step' 'Ask a multiple-choice question' 'Start 
 done
 # scan_capabilities <plugin root>: print one line per offending skill or command.
 scan_capabilities() {
-  local r="$1" f s
+  local r="$1" f s k
   for f in "$r"/skills/*/SKILL.md; do
     [ -f "$f" ] || continue
     grep -qF 'docs/host-capabilities.md' "$f" \
@@ -3670,13 +4042,20 @@ scan_capabilities() {
     [ -f "$f" ] || continue
     grep -qE 'orch\.sh|\$ORCH' "$f" && echo "${f#"$r"/}: runs orch.sh itself"
     s="$(grep -oE "orch-flow\` and follow its \*\*[^*]+\*\*" "$f" | sed 's/.*\*\*\(.*\)\*\*/\1/')"
-    if [ -z "$s" ]; then echo "${f#"$r"/}: routes to no orch-flow section"
+    # A command that is not a flow step routes to a whole orch- skill of its
+    # own instead (release, #139) - that skill must exist.
+    k="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it' "$f" | sed 's/^`orchestrator://; s/`.*//')"
+    if [ -z "$s" ] && [ -n "$k" ]; then
+      [ -f "$r/skills/$k/SKILL.md" ] || echo "${f#"$r"/}: routes to a missing skill: $k"
+    elif [ -z "$s" ]; then echo "${f#"$r"/}: routes to no orch-flow section"
     else grep -qxF "## $s" "$r/skills/orch-flow/SKILL.md" \
       || echo "${f#"$r"/}: routes to a missing orch-flow section: $s"; fi
   done
 }
 assert_eq "every skill points at the reference, and every command is a thin route" \
   "$(scan_capabilities "$root")" ""
+assert_contains "the release command routes to its own orch- skill" \
+  "$(cat "$root/commands/release.md" 2>/dev/null)" '`orchestrator:orch-release` and follow it' 
 # orch.sh's and doctor.sh's messages reach the model on every host too, so they
 # name a flow command only through flow_cmd, which adds the orch-flow section
 # for a host with no plugin commands - and every section it names must exist.
@@ -3711,6 +4090,11 @@ printf '%s\n' "$orch_line" >"$fixture/commands/status.md"
 out="$(scan_capabilities "$fixture")"
 assert_contains "the scan flags a command that runs orch.sh itself" "$out" "commands/status.md: runs orch.sh itself"
 rm "$fixture/commands/status.md"
+printf 'Invoke `orchestrator:orch-y` and follow it.\n' >"$fixture/commands/y.md"
+assert_contains "the scan flags a command routed to a missing skill" \
+  "$(scan_capabilities "$fixture")" "commands/y.md: routes to a missing skill: orch-y"
+mkdir -p "$fixture/skills/orch-y"
+printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
 assert_eq "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")" ""
 rm -rf "$fixture"
 
@@ -3773,6 +4157,40 @@ printf 'Pick `orch-flow` from the skills this host lists. If it is not listed, r
 assert_contains "the scan flags a conditional Invoke a skill from a step fallback" \
   "$(scan_planning_nudge "$fixture")" "makes the Invoke a skill from a step fallback conditional"
 rm -rf "$fixture"
+
+# --- doctor: base branch check -----------------------------------------------
+# A set base branch that has vanished from origin is the one stale setting that
+# would send the next flow's fork and PR at nothing, so it FAILs; origin being
+# unreachable only means doctor could not tell, so it warns.
+echo
+echo "doctor: base branch check"
+healthy_repo
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a default base branch passes" "$st" 0
+assert_contains "reports the default branch as the base branch" "$out" "ok    base branch: main (default)"
+assert_contains "keeps the default-branch check" "$out" "ok    default branch: main (from GitHub)"
+
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git push -q "$bare" HEAD:refs/heads/main HEAD:refs/heads/uat
+git remote set-url origin "$bare"
+git config orchestrator.base uat
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a set base branch origin has passes" "$st" 0
+assert_contains "reports the set base branch" "$out" "ok    base branch: uat (set)"
+
+git config orchestrator.base gone
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a set base branch missing from origin fails" "$st" 1
+assert_contains "names the missing base branch" "$out" "FAIL  base branch gone"
+assert_contains "gives the way out" "$out" "base clear"
+
+git remote set-url origin "$(dirname "$bare")/unreachable.git"
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "an unverifiable base branch does not block the flow" "$st" 0
+assert_contains "warns that origin could not be reached" "$out" "warn  base branch gone"
+git config --unset orchestrator.base
+rm -rf "$(dirname "$bare")"
 
 echo
 if [ "$SKIP" -gt 0 ]; then

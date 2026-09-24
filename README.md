@@ -101,6 +101,28 @@ running the flow never dirties a repo's working tree.
 | `/orchestrator:doctor` | Diagnose the machine, the repo, and the active flow. |
 | `/orchestrator:redo` | Step back one phase and re-run it. |
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
+| `/orchestrator:release` | Open the release PR that carries the base branch into the default branch (see below). |
+
+### Base branch
+
+Flows and quick implementations fork from the repo's default branch unless
+you set another **base branch** (see CONTEXT.md) for the checkout - for
+instance a `uat` branch that gathers a multi-ticket project:
+
+| Command | What it does |
+| --- | --- |
+| `orch.sh base set <branch>` | Set the base branch. Refuses a branch `origin` does not have. Stored in the clone's local git config (`orchestrator.base`): shared by every worktree, never committed, kept through `abort` and archiving. Setting the default branch's name clears it. |
+| `orch.sh base show` | Print the base branch in effect and its source: `set`, or `default`. |
+| `orch.sh base clear` | Go back to the default branch. Succeeds when nothing was set. |
+| `orch.sh pr release [--force] <title> <body-file>` | Open the **release PR** (see CONTEXT.md): a non-draft PR from the base branch into the default branch. Its body starts with one `Closes #N` line per still-open issue that any PR merged into the base branch refers to (`Refs`, `Closes`, `Fixes` or `Resolves #N`, anywhere in the body). Refuses on the default branch, while a release PR is already open, and with nothing to close unless `--force`. Pushes nothing. |
+
+`/orchestrator:doctor` reports the base branch in effect, and FAILs when the
+one you set is gone from `origin`.
+
+A PR into a base branch other than the default says `Refs #N` rather than
+`Closes #N`, because GitHub only closes issues on merges into the default
+branch. `/orchestrator:release` closes them: the model writes the release PR's
+title and summary, and `orch.sh pr release` writes the `Closes` lines.
 
 ## Why separate sessions
 
@@ -137,12 +159,13 @@ session's marker file when `orchestrator:orch-quick-implement` fires, without
 ## Layout
 
 ```
-commands/                     start, next, status, doctor, redo, abort
+commands/                     start, next, status, doctor, redo, abort, release
 skills/orch-flow/             the state machine (judgment)
 skills/orch-review-spec/      the spec review: four lenses, one batch question
 skills/orch-review/           the review loop: rubric, authority rules, terminal states
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
 skills/orch-quick-implement/  the other route: issue, to-tickets, tdd, single-pass review, PR - no flow
+skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
 scripts/orch.sh               every deterministic operation (mechanism)
 scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
 scripts/hook-*.sh             the three hooks

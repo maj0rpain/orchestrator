@@ -12,6 +12,26 @@ count against that limit: it no longer blocks a new one, which archives it
 automatically rather than requiring it be cleared by hand. Its alternative,
 for changes that don't need the pipeline, is a quick implementation.
 
+## Base branch
+
+The branch a flow or quick implementation forks from and opens its PR
+against. The repo's default branch unless a human has set another for the
+checkout - an integration branch such as `uat`, or a long-running feature
+branch that several tickets feed. A flow fixes its base branch when it starts,
+so changing the setting mid-flow never moves that flow's PR; a quick
+implementation reads it when it branches. A flow's base SHA is the base
+branch's tip at the moment it branched.
+_Avoid_: target branch, integration branch (as the general term).
+
+## Release PR
+
+The PR that carries a base branch other than the default back into the
+default branch, closing every still-open issue whose work reached the base
+branch. Those issues stay open until it merges: a PR into a non-default base
+branch refers to its issue rather than closing it, because the work has not
+landed yet. Which issues it closes is read from what merged into the base
+branch, never remembered by a human.
+
 ## Quick implementation
 
 The other route from an approved plan to a pull request, alongside a flow.

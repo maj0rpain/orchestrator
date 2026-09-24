@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.1.0
+
+Flows and quick implementations can now work against a **base branch** other
+than the default, such as `uat` or a long-running feature branch, and a
+**release PR** carries it back into the default branch (see issue #135 and
+`docs/adr/0015-a-non-default-base-refers-its-issue-and-the-release-pr-closes-it.md`).
+With nothing set, every fork and PR works exactly as before.
+
+- `orch.sh base set <branch>`, `base show` and `base clear` set, print and
+  remove the base branch. `base set` refuses a branch `origin` does not have.
+  The setting lives in the clone's local git config (`orchestrator.base`): it
+  is shared by every worktree, never committed, and kept through `abort` and
+  archiving.
+- A flow records its base branch in `state.json` at `init`, and `branch
+  create` and `pr open` fork from and target it, so changing the setting
+  mid-flow never moves that flow's PR. A flow started before this release
+  uses the default branch.
+- `branch off` forks a quick implementation from the base branch and records
+  it on the branch (`branch.<name>.orchestrator-base`), and `pr publish`
+  targets it.
+- Forking stops with an error when `origin` says the base branch does not
+  exist, and falls back to the local copy only when `origin` can't be reached.
+- A PR into the default branch still starts with `Closes #N`. A PR into any
+  other base branch starts with `Refs #N`, since GitHub would not close the
+  issue on merge anyway.
+- `orch.sh pr release [--force] <title> <body-file>` and
+  `/orchestrator:release` (skill `orch-release`) open the release PR: a
+  non-draft PR from the base branch into the default branch, with one
+  `Closes #N` line per still-open issue referenced by any PR merged into the
+  base branch. It refuses on the default branch, while a release PR is
+  already open, and with nothing to close unless `--force`.
+- `status` prints a `base:` line for the active flow.
+- `doctor` reports the base branch in effect and where it came from, FAILs
+  when a set base branch is gone from `origin`, and warns when `origin` can't
+  be reached to check.
+
 ## 1.0.0
 
 Breaking: every orchestrator skill now carries an `orch-` prefix, whatever the

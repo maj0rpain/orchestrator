@@ -148,7 +148,8 @@ non-zero on the last two:
 - **green** - carry on.
 - **none** - the repo has no checks. Carry on: requiring CI in a repo that has
   none would make this plugin unusable in its own repo.
-- **failing** - a required check failed, and the detail lines name which. If it
+- **failing** - a required check failed, and the detail lines name which.
+  Required means required by the branch protection of the PR's base branch. If it
   looks flaky rather than caused by the change, the flow has **one** flake
   rerun: `"$ORCH" state get flake_rerun_used` reads `true` once it is spent and
   empty while it is not. Spend it on the run behind the failing check -
