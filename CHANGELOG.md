@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.1
+
+The plugin no longer relies on its scripts' execute bit, which some hosts
+(Junie) drop on install or update, so the first hook failed with `Permission
+denied` (see issue #142 and `docs/host-capabilities.md`, "Execute bit").
+
+- `hooks/hooks.json` runs all three hooks through `bash`.
+- Every skill, the README and host capabilities run `bash "$ORCH" …` instead
+  of `"$ORCH" …`.
+- `scripts/test/hooks_test.sh` fails if a hook command skips `bash`, and runs
+  each hook at mode 644. `scripts/test/orch_test.sh` fails if a skill,
+  command, guideline, the README or host capabilities runs `orch.sh` without
+  `bash`.
+
 ## 1.1.0
 
 Flows and quick implementations can now work against a **base branch** other

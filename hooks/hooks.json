@@ -4,8 +4,8 @@
       {
         "matcher": "Skill",
         "hooks": [
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hook-grilling.sh" },
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hook-quick-implement.sh" }
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-grilling.sh\"" },
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-quick-implement.sh\"" }
         ]
       }
     ],
@@ -13,7 +13,7 @@
       {
         "matcher": "Edit|Write",
         "hooks": [
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hook-guard.sh" }
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-guard.sh\"" }
         ]
       }
     ]

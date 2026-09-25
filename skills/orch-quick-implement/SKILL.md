@@ -36,7 +36,7 @@ Never proceed without one, and never decide silently whether to make one.
 - A linked issue already exists (named earlier in this conversation, or on an
   already-checked-out branch): use it.
 - Otherwise, publish one now, per `docs/agents/issue-tracker.md`'s "publish to
-  the issue tracker" convention, with `"$ORCH" issue publish "<title>"
+  the issue tracker" convention, with `bash "$ORCH" issue publish "<title>"
   <body-file>` - the same boundary `review file` draws for a filed finding,
   kept out of skill prose - from the shared understanding just reached.
 - If neither holds - no linked issue, and the tracker convention doc does not
@@ -55,12 +55,12 @@ it is the only spec this path has.
 `to-tickets` carries `disable-model-invocation: true` in the installed
 mattpocock-skills version, so Claude Code's Skill tool refuses it, and Junie
 gives the model no Skill tool at all. Resolve it with
-`"$ORCH" mp-skill to-tickets`, read it, and follow it directly - the same
+`bash "$ORCH" mp-skill to-tickets`, read it, and follow it directly - the same
 pattern `skills/orch-flow/SKILL.md` uses for the same upstream skill. Follow it
 through its own quiz (steps 1-4) until the user approves a breakdown.
 
 **A breakdown of 2 or more tickets** publishes exactly as today: publish
-every ticket it proposes through `"$ORCH" ticket publish <parent> <title>
+every ticket it proposes through `bash "$ORCH" ticket publish <parent> <title>
 <body-file> [--blocked-by N,N,...]` against the linked issue as `<parent>`,
 in dependency order (blockers first) - never an ad hoc `gh api` call - so the
 verify-then-die guarantee `ticket publish` already provides applies to every
@@ -73,18 +73,18 @@ own deliberate, narrowly-scoped exception to `to-tickets`' "do NOT close or
 modify any parent issue" instruction - not something `to-tickets` itself
 does, taken here where this step already calls its publish step, and
 reached only in this collapsed case. Fetch the linked issue's current body
-(`"$ORCH" issue fetch <issue> <file>`), append a new section wrapping the
+(`bash "$ORCH" issue fetch <issue> <file>`), append a new section wrapping the
 single drafted ticket's "What to build"/"Acceptance criteria" (when there is
 one) beneath the existing content - never replacing it - and write the
-merged body back (`"$ORCH" issue update <issue> <file>`). No sub-issue
+merged body back (`bash "$ORCH" issue update <issue> <file>`). No sub-issue
 exists to record anywhere; step 4 below works the linked issue directly.
 
 ## 3. Branch
 
-Get the slug from `"$ORCH" slug "<short description>"` - the same
+Get the slug from `bash "$ORCH" slug "<short description>"` - the same
 normalisation `orch.sh init` applies to a flow's slug, exposed as a primitive
-rather than re-derived here - then `"$ORCH" branch off "quick/<issue>-<slug>"`.
-`branch off` forks it off the base branch (`"$ORCH" base show`) the same way
+rather than re-derived here - then `bash "$ORCH" branch off "quick/<issue>-<slug>"`.
+`branch off` forks it off the base branch (`bash "$ORCH" base show`) the same way
 a flow's own `branch create` does, but records no flow state - a quick
 implementation keeps none. It records that base branch on the branch itself,
 so the PR in step 6 targets it even if the setting changes meanwhile.
@@ -99,10 +99,10 @@ continue at step 5.
 Otherwise, work the linked issue's ticket frontier, one ticket at a time,
 never in parallel - every ticket commits to the same branch. Loop:
 
-- `"$ORCH" ticket next <linked issue>`. Nothing ready means the frontier is
+- `bash "$ORCH" ticket next <linked issue>`. Nothing ready means the frontier is
   exhausted - stop looping and continue at step 5.
 - Dispatch a subagent (below), briefed with the ticket's number.
-- Record the subagent's report, then `"$ORCH" ticket close <n>` - only now
+- Record the subagent's report, then `bash "$ORCH" ticket close <n>` - only now
   that the report is back, never before - and go around again.
 
 **Dispatching a subagent**: start a fresh subagent (on Claude Code, the
@@ -114,7 +114,7 @@ with an explicit first instruction: fetch the ticket itself (`gh issue view
 ticket" convention) before doing anything else. The brief then directs the
 subagent to invoke `mattpocock-skills:tdd` against the ticket - it carries
 no `disable-model-invocation` flag, unlike `implement`, so the subagent can
-invoke it as a skill (without a Skill tool, through `"$ORCH" mp-skill tdd`); to build on the current branch,
+invoke it as a skill (without a Skill tool, through `bash "$ORCH" mp-skill tdd`); to build on the current branch,
 already checked out, and commit its own work to it; to never open a branch
 or PR of its own; and to never block on a human mid-ticket - a call it
 cannot make alone is a deviation, recorded and returned instead of asked.
@@ -137,12 +137,12 @@ Always spell the code review skill with its `mattpocock-skills:` scope - the
 bare name is ambiguous with another `code-review` skill that may be installed
 alongside this plugin, which reviews the current diff for correctness and
 cleanup, not Standards + Spec fidelity to the issue that this step needs. On
-a host with no scoped names, invoke it through `"$ORCH" mp-skill code-review`
+a host with no scoped names, invoke it through `bash "$ORCH" mp-skill code-review`
 for the same reason.
 
 ## 6. Open the PR
 
-Commit, then open the PR with `"$ORCH" pr publish <issue> "<title>"
+Commit, then open the PR with `bash "$ORCH" pr publish <issue> "<title>"
 <body-file>` - the same boundary `pr open` draws for a flow, kept out of
 skill prose. The body ends with a **Host fallbacks** heading listing every
 fallback this run took, or `None (<host>).` It pushes the branch and opens the PR against

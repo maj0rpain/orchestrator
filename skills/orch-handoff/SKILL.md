@@ -24,8 +24,8 @@ tell the human `orch.sh` is missing and to install the full orchestrator
 plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 `maj0rpain/orchestrator` as a Junie extension, which is unverified).
 
-Get the path from `"$ORCH" handoff path <phase>`. Validate with
-`"$ORCH" handoff validate <path>` and fix anything it flags before returning.
+Get the path from `bash "$ORCH" handoff path <phase>`. Validate with
+`bash "$ORCH" handoff validate <path>` and fix anything it flags before returning.
 
 ## What belongs in one
 

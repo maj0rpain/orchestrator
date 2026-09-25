@@ -3962,6 +3962,20 @@ scan_orch_resolution() {
 }
 assert_eq "every skill and command resolves orch.sh the one documented way" \
   "$(scan_orch_resolution "$root")" ""
+# Some hosts drop the execute bit on install or update, so orch.sh is always
+# run through bash, quoted or not (#142; docs/host-capabilities.md, "Execute bit").
+# scan_orch_bash <plugin root>: print one line per call site that skips bash.
+scan_orch_bash() {
+  local r="$1" f
+  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md "$r"/guidelines/* \
+           "$r"/README.md "$r"/docs/host-capabilities.md; do
+    [ -f "$f" ] || continue
+    sed 's/bash "\$ORCH"//g' "$f" | grep -nE '\$\{?ORCH\b' \
+      | sed "s|^|${f#"$r"/}:|"
+  done
+}
+assert_eq "every skill and doc runs orch.sh through bash" \
+  "$(scan_orch_bash "$root")" ""
 # With no full install at all, doctor has no orch.sh to run from, so the skill
 # is the one that has to explain the failure (#128).
 missing=""

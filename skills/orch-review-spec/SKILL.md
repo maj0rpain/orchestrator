@@ -31,14 +31,14 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 
 ## Inputs
 
-1. Fetch the body: `"$ORCH" spec fetch <dir>/spec.md`, with `<dir>` a fresh
+1. Fetch the body: `bash "$ORCH" spec fetch <dir>/spec.md`, with `<dir>` a fresh
    directory under `.orchestrator/` - `spec fetch` creates it. It reads the
    issue number from state. A failure stops the phase: state stays where it
    is, say what blocked, offer `/orchestrator:abort` (on a host with
    no plugin commands, `orch-flow`'s **Abort** section). A review with no
    body to review is never claimed as done.
 2. Resolve the other files the lenses read, and record the paths:
-   - the plan handoff: `"$ORCH" handoff path spec` (always `01-plan.md`);
+   - the plan handoff: `bash "$ORCH" handoff path spec` (always `01-plan.md`);
    - the glossary and decisions: `CONTEXT.md` and `docs/adr/` at the repo
      root, where they exist;
    - the repo root, for the codebase.
@@ -127,12 +127,12 @@ Asked once; a long spec is one longer question, not twenty prompts.
 ## Applying the answer
 
 1. Apply the accepted edits to `<dir>/spec.md`, then
-   `"$ORCH" spec update <dir>/spec.md`. The body is rewritten in place; the
+   `bash "$ORCH" spec update <dir>/spec.md`. The body is rewritten in place; the
    implement phase reads one body and reconciles nothing. Apply none: skip
    this step - an update that writes the body it just read is a no-op edit on
    the issue's history, and the comment in step 2 still records the decision.
 2. Write the changelog - see below - to `<dir>/changelog.md` under a
-   `## Spec review` heading and `"$ORCH" spec comment <dir>/changelog.md`. The
+   `## Spec review` heading and `bash "$ORCH" spec comment <dir>/changelog.md`. The
    comment is history, visible on the issue; the body is the truth.
 3. A declined `contradicts the plan` item: the changelog records **spec
    departs from the plan: <the human's reason>**, and the matching entry in the

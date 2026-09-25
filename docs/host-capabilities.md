@@ -46,7 +46,7 @@ tool would have injected:
 
 - An orchestrator skill (`orch-*`) is `skills/<name>/SKILL.md` under the plugin
   root, the directory `orch.sh`'s `scripts/` sits in.
-- A mattpocock-skills skill is `"$ORCH" mp-skill <name>`. Use that, not a skill
+- A mattpocock-skills skill is `bash "$ORCH" mp-skill <name>`. Use that, not a skill
   of the same bare name, because Junie lists skills unscoped and another
   plugin's `code-review` may shadow mattpocock's.
 
@@ -87,3 +87,14 @@ extension is unverified. Where it does not, the `orch-flow` and
 There is no real-time guard. `orch.sh init` refuses to start a flow while the
 working tree has changes outside the planning allowlist (#126), so planning
 edits are caught at flow start instead of prevented.
+
+## Execute bit
+
+Some hosts drop the execute bit on the plugin's scripts when they install or
+update it: Junie does, and the first hook to run then fails with `Permission
+denied` (#142). So nothing in the plugin relies on the bit. `hooks/hooks.json`
+runs each hook as `bash "${CLAUDE_PLUGIN_ROOT}/scripts/<hook>.sh"`, and every
+skill and doc runs `bash "$ORCH" …`, never the script alone.
+`scripts/test/hooks_test.sh` enforces the hooks rule and runs each hook with
+its script at mode 644; `scripts/test/orch_test.sh` enforces the `orch.sh`
+rule.

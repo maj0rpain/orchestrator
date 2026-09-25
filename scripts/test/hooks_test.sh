@@ -219,5 +219,39 @@ else
 fi
 
 echo
+echo "execute bit (docs/host-capabilities.md, \"Execute bit\")"
+
+ROOT="$(cd "$DIR/.." && pwd)"
+EXEC_BIT_DOC="see docs/host-capabilities.md, \"Execute bit\""
+
+bare_hooks="$(jq -r '.. | objects | select(.type? == "command") | .command | select(startswith("bash ") | not)' "$ROOT/hooks/hooks.json")"
+if [ -z "$bare_hooks" ]; then
+  ok "every hooks.json command runs through bash"
+else
+  bad "every hooks.json command runs through bash" "not run through bash ($EXEC_BIT_DOC): $bare_hooks"
+fi
+
+# A host that drops the execute bit leaves the scripts at 644. Run each
+# hooks.json command, as written, against such a copy.
+PLUGIN_644="$(mktemp -d)"
+cp -r "$ROOT/scripts" "$PLUGIN_644/scripts"
+find "$PLUGIN_644/scripts" -name '*.sh' -exec chmod 644 {} +
+while IFS= read -r cmd; do
+  name="${cmd##*/}"; name="${name%\"}"
+  case "$name" in
+    hook-guard.sh) event="$(edit_event "$REPO/src/x.ts" exec644)" ;;
+    *)             event="$(skill_event "mattpocock-skills:tdd" exec644)" ;;
+  esac
+  printf '%s' "$event" | CLAUDE_PLUGIN_ROOT="$PLUGIN_644" sh -c "$cmd" >/dev/null 2>&1
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    ok "$name runs with its script at mode 644"
+  else
+    bad "$name runs with its script at mode 644" "exit $rc ($EXEC_BIT_DOC)"
+  fi
+done < <(jq -r '.. | objects | select(.type? == "command") | .command' "$ROOT/hooks/hooks.json")
+rm -rf "$PLUGIN_644"
+
+echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

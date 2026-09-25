@@ -197,12 +197,12 @@ If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
 two directories above this skill's own directory (the plugin root).
 ````
 
-Keep the fallback sentence's first line intact, then call `"$ORCH" <subcommand>`
+Keep the fallback sentence's first line intact, then call `bash "$ORCH" <subcommand>`
 everywhere else. Do not copy the scripts into a skill. Commands never run
 `orch.sh`: each is a thin route into an `orch-flow` section (see
 [Naming host capabilities](#naming-host-capabilities)). `orch_test.sh` fails when
 a skill, command, or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT` anywhere
-else, or runs `orch.sh` without this pair.
+else, or runs `orch.sh` without this pair or without `bash`.
 
 ### Naming host capabilities
 
