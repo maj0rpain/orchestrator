@@ -1317,6 +1317,45 @@ mkdir -p "$h/.agents/skills/code-review"; echo "# stray" >"$h/.agents/skills/cod
 out="$(HOME="$h" "$ORCH" mp-skill code-review 2>&1)"; st=$?
 assert_status "ignores a skill the lockfile does not record at all" "$st" 1
 
+# The skills CLI store only counts when its lockfile records mattpocock-skills.
+# Anything short of that - no lockfile, no jq to read it, no skills in it, or
+# only other plugins' skills - means the store does not hold mattpocock-skills.
+h="$(mktemp -d)"; mp_install agents-foreign "$h" to-spec
+out="$(HOME="$h" "$ORCH" mp-skill 2>&1)"; st=$?
+assert_status "the store is not a location when the lockfile records only other plugins" "$st" 1
+out="$(HOME="$h" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
+assert_status "nor is another plugin's skill resolved from it" "$st" 1
+
+h="$(mktemp -d)"; mp_install agents "$h" to-spec
+echo '{"version":3}' >"$h/.agents/.skill-lock.json"
+out="$(HOME="$h" "$ORCH" mp-skill 2>&1)"; st=$?
+assert_status "the store is not a location when the lockfile has no skills" "$st" 1
+out="$(HOME="$h" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
+assert_status "nor is a skill resolved from it" "$st" 1
+
+rm "$h/.agents/.skill-lock.json"
+out="$(HOME="$h" "$ORCH" mp-skill 2>&1)"; st=$?
+assert_status "the store is not a location without a lockfile" "$st" 1
+out="$(HOME="$h" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
+assert_status "nor is a skill resolved from it without a lockfile" "$st" 1
+
+if on_windows_bash; then
+  skip_no_jq "the store is not a location without jq"
+  skip_no_jq "nor is a skill resolved from it without jq"
+  skip_no_jq "and the same install resolves with jq"
+else
+  h="$(mktemp -d)"; mp_install agents "$h" to-spec
+  nojq="$(path_without_jq)"
+  out="$(HOME="$h" PATH="$nojq" "$ORCH" mp-skill 2>&1)"; st=$?
+  assert_status "the store is not a location without jq" "$st" 1
+  out="$(HOME="$h" PATH="$nojq" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
+  assert_status "nor is a skill resolved from it without jq" "$st" 1
+  # Sanity: the same install resolves once jq is back, so the failures above
+  # are down to jq, not to the install.
+  out="$(HOME="$h" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
+  assert_status "and the same install resolves with jq" "$st" 0
+fi
+
 # Only user-level locations count: a repo can ship .agents/skills of its own.
 h="$(mktemp -d)"; mp_install agents "$h" to-spec
 d="$(mktemp -d)"; mkdir -p "$d/.agents/skills/handoff"; echo "# project" >"$d/.agents/skills/handoff/SKILL.md"
