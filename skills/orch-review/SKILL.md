@@ -1,20 +1,22 @@
 ---
 name: orch-review
-description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing blocking findings only, filing every major and nit as an issue at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop.
+description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing every blocking finding plus the majors and mechanical nits that need no decision, filing the rest as issues at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop.
 ---
 
 # Orchestrator review loop
 
 One loop, one session, a **budget** of iterations the human names before the
 first one runs. Every iteration is an independent look at the whole change;
-the loop fixes what is **blocking**, runs its whole budget whatever any
-iteration finds, files every **major** and **nit** as a GitHub issue when it
-ends, and ends in exactly one of two places: the PR marked **ready**, or a
+the loop fixes what is **blocking** and whatever **major** or **nit** needs no
+decision, runs its whole budget whatever any iteration finds, files every
+other major and nit as a GitHub issue when it ends, and ends in exactly one of two places: the PR marked **ready**, or a
 **bounded stop** with the reason written down.
 
 The value of the loop is the number of looks, not the re-review of fixes: the
 fail-open nobody read until the fifth look still gets its fifth look. See
-`docs/adr/0003-the-review-loop-fixes-blocking-only-and-files-the-rest.md`.
+`docs/adr/0003-the-review-loop-fixes-blocking-only-and-files-the-rest.md`, and
+`docs/adr/0016-the-review-loop-fixes-what-needs-no-decision.md` for what the
+loop fixes now and the two guards that keep its fixes from churning.
 
 The reviewing itself is done by `mattpocock-skills:code-review`'s parallel
 sub-agents, spawned fresh every iteration and never shown your reasoning about
@@ -79,11 +81,26 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    containing one fix.
 3. Triage every finding: apply the two demotions under **Authority** first,
    then the **Severity** rubric.
-4. Fix the blocking findings, and only those, writing the fixes yourself. A
-   **blocking finding about behaviour** goes through the `mattpocock-skills:tdd`
-   skill, so the fix arrives with a failing test that proves the problem was
-   real. Majors and nits are recorded for filing; fixing one here manufactures
-   fresh diff for the next iteration to find.
+4. Fix what the **Severity** rubric lets the loop fix, writing the fixes
+   yourself: every blocking finding, every major that needs no decision and
+   changes no behaviour, and every mechanical nit. A **blocking finding about
+   behaviour** goes through the `mattpocock-skills:tdd` skill, so the fix
+   arrives with a failing test that proves the problem was real; a major or
+   nit fix does not, but the verification command in step 5 must still pass
+   over it. Everything else is recorded for filing, with the rule that kept it
+   out:
+   - **Loop-authored lines.** A major or nit on lines this loop's own fix
+     commits wrote is filed, never fixed - fixes drawing findings drawing fixes
+     is what never converges. Tell them apart with `git blame` on the flagged
+     lines against the fix SHAs in *this* loop's iteration records; a previous
+     loop's fixes are not loop-authored. A blocking finding there is still
+     fixed.
+   - **The final iteration** - the one whose number equals `budget` - fixes
+     only what is blocking and files its majors and nits, since nothing reviews
+     what it writes.
+   - **Already filed.** A finding a previous loop's **Filed** list already
+     carries is neither fixed nor filed again; record it with its issue number
+     as met again.
 5. Run the verification command. A failure is a blocking finding, and it is
    fixed in this iteration like any other.
 6. Commit once, subject in this repo's plain imperative style (`Replace precheck
@@ -92,26 +109,41 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    record. An iteration that fixed nothing makes no commit.
 7. Push. CI is not waited on here.
 8. Write the record to `bash "$ORCH" review path`: every finding with its axis and
-   severity on one line, which were fixed and the fix commit SHA, which were
-   demoted and on what authority, and which are waiting to be filed.
+   severity on one line, which were fixed - blocking, major, and nit alike -
+   and the fix commit SHA, which were demoted and on what authority, which are
+   waiting to be filed and the rule that kept each out, and which were met
+   again already filed, with the issue number. The fix SHAs listed here are
+   what later iterations of this loop blame against.
 9. Go to step 1. Nothing found ends the loop early; only the budget does. A
-   **clean iteration** - nothing blocking, so nothing fixed and nothing
-   committed - is the cheap case, and buying the extra looks is the point.
+   **clean iteration** - nothing fixed and nothing committed - is the cheap
+   case, and buying the extra looks is the point.
 
 ## Severity
 
 `code-review` reports findings unranked across two axes and refuses to rank
-across them. The ranking is yours, and only one rank is loop behaviour:
+across them. The ranking is yours, and it decides which findings the loop may
+fix without asking anyone:
 
 - **blocking** - the change is wrong: incorrect behaviour, a spec requirement
   missing or misimplemented, a security problem, a broken or missing test, or a
-  failing verification command. The only severity the loop fixes.
+  failing verification command. Always fixed, in every iteration.
 - **major** - the change works but carries real cost: a documented standard
-  breached, a smell with teeth, scope nobody asked for. Filed at termination,
-  never fixed by the loop. A PR is marked ready with majors open against it -
-  the issue carries the reasoning, and triage decides against the whole
-  codebase whether it is worth fixing at all.
-- **nit** - taste and judgement. Filed at termination, never fixed by the loop.
+  breached, a smell with teeth, scope nobody asked for. Fixed, unless the fix
+  needs a choice between alternatives the plan, spec, and deviations did not
+  settle, or would change behaviour - a major means the change works, so a fix
+  that changes behaviour was never a major fix. Those are filed, the options
+  in the body. A PR is marked ready with filed majors open against it - the
+  issue carries the reasoning, and triage decides against the whole codebase
+  whether it is worth fixing at all.
+- **nit** - taste and judgement. Fixed only when **mechanical**: exactly one
+  correct fix, confined to the lines it names, no behaviour change, no wording
+  or taste to choose - a typo, an unused import, a comment naming the wrong
+  function, a broken link. Rewording prose is never mechanical, however small.
+  Filed otherwise.
+
+Whatever its severity, a major or nit on **loop-authored lines** or found in
+the **final iteration** is filed, never fixed - see step 4 of **The
+iteration**.
 
 Major and nit are triage priorities on a filed finding, which is why they live
 in the issue's label rather than its title: the label can change.
@@ -182,8 +214,8 @@ terminal state follows, in this order:
 1. Wait on CI: `bash "$ORCH" review ci`. Append the answer to the final iteration's
    record (`bash "$ORCH" review path` still names it, because the refusal spent
    nothing).
-2. File the findings - see **Filing**. Every major and nit from every record of
-   this flow, stop included: a bounded stop loses no findings.
+2. File the findings - see **Filing**. Every unfixed major and nit from every
+   record of this flow, stop included: a bounded stop loses no findings.
 3. Post the PR comment - see **The PR comment**.
 4. Decide the terminal state:
 
@@ -194,7 +226,8 @@ PR ready and records the flow `done` as one operation. No question is asked
 first: a loop that ends well ends without parking on a prompt.
 
 **Bounded stop** - two ways in, and the recorded reason says which. The final
-iteration fixed something: nothing has reviewed what it wrote, and marking a PR
+iteration fixed something - which, since it fixes only what is blocking,
+means it found something blocking: nothing has reviewed what it wrote, and marking a PR
 ready over that claims a verification that never happened. Or CI: `failing`
 with the flake rerun spent or the failure not looking flaky, or `unreachable`.
 Append `## Terminal state` to the final iteration's record, first line `stop`,
@@ -213,9 +246,11 @@ from one whose driving session simply died mid-budget.
 
 At termination, gather every major and nit from every
 `.orchestrator/review/iteration-NN.md` of this flow, demoted findings already
-excluded. Deduplicate: findings at the same file and line making the same
-claim are one finding, however many iterations reported it. Drop any already
-carrying an issue number from a previous loop. File each of the rest:
+excluded and fixed ones with them. Deduplicate: findings at the same file and
+line making the same claim are one finding, however many iterations reported
+it. Skip any already carrying an issue number from a previous loop - once
+filed, a finding belongs to triage - and list it for the human in the PR
+comment and your closing message as met again. File each of the rest:
 
 ```
 bash "$ORCH" review file <major|nit> "<title>" --body-file <file>
@@ -234,7 +269,10 @@ The body carries, in this order:
 3. the severity, and the one-line reason it was assigned;
 4. the file and line, at the PR's head SHA;
 5. a link to the PR;
-6. one line on why it was not fixed in the loop.
+6. one line on why it was not fixed in the loop, naming the rule that kept it
+   out: its fix needs a decision (list the options), would change behaviour,
+   the nit is not mechanical, it sits on loop-authored lines, or it was found
+   in the final iteration.
 
 `.orchestrator/` is git-excluded and eventually archived, so the body is the
 record, not a link to one.
@@ -253,7 +291,8 @@ gh pr comment <pr> --body-file <file>
 ```
 
 The PR is the only durable surface another human ever sees. Carry: iterations
-run, what was fixed with commit SHAs, the issues filed with number, severity,
-and title, covered deviations, rejected-alternative proposals with the reason
+run, what was fixed - blocking, majors, and nits - with severity and commit
+SHAs, the issues filed with number, severity, and title, the findings met
+again already filed with their issue numbers so the human can triage them, covered deviations, rejected-alternative proposals with the reason
 each lost, the CI result, the host fallbacks the loop took (per
 `docs/host-capabilities.md`, or `None (<host>).`), and what happens next.

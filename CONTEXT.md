@@ -177,7 +177,10 @@ any other.
 One problem a review reports - about the change, from the review phase, or
 about the spec, from a spec review. Only a finding about the change carries a
 **severity**, which the review phase assigns; the reviewer itself reports
-findings unranked. A finding about the spec carries no severity:## Severity
+findings unranked. A finding about the spec carries no severity: a human
+accepts or declines the edit it proposes, and it is never filed.
+
+## Severity
 
 Which of three roles a finding plays - how wrong the change is, and so which
 findings the loop may fix without asking anyone:
@@ -222,9 +225,6 @@ iterations and across a flow's loops. A filed finding enters triage against
 the whole codebase rather than against one diff: a later loop that meets it
 again leaves it alone, and tells the human it did. Findings the loop demoted on
 a human's earlier decision are reported, never filed.
-
-the loop demoted on a
-human's earlier decision are reported, never filed.
 
 ## Review record
 

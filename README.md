@@ -260,9 +260,11 @@ and it opens the one draft PR for the whole flow.
 
 The review phase is a bounded loop: a budget of iterations the human chooses
 at the start (five by default), `code-review` from the base SHA every one of
-them, a blocking/major/nit rubric applied on top of it, and only blocking
-findings fixed - one fix commit per iteration that fixed anything. The loop
-runs its whole budget; when it ends, every major and nit becomes a GitHub
+them, a blocking/major/nit rubric applied on top of it, and every blocking
+finding fixed along with the majors and mechanical nits that need no decision -
+one fix commit per iteration that fixed anything. The loop never polishes its
+own fixes, and its final iteration fixes only what is blocking. The loop runs
+its whole budget; when it ends, every major and nit it left becomes a GitHub
 issue labelled `review:major` or `review:nit` (a severity the loop assigned)
 plus the repo's `needs-triage` (a label meaning a human hasn't looked at it
 yet), with the reviewer's finding and the loop's reasoning in the body. CI is

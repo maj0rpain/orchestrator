@@ -2911,6 +2911,8 @@ assert_contains "under the nit label" "$(cat "$filed")" "label=review:nit"
 out="$(GH_STUB_FILED="$filed" "$ORCH" review file blocking "Wrong" --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses a blocking severity - the loop fixes those" "$st" 1
 assert_contains "naming what it accepts" "$out" "major"
+assert_contains "saying blocking is always fixed, never filed" "$out" "blocking is always fixed, never filed"
+assert_not_contains "without claiming the loop fixes blocking only" "$out" "the loop fixes blocking)"
 assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 
 out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "" --body-file "$body" 2>&1)"; st=$?
