@@ -120,14 +120,15 @@ at the same change, and the value of the loop is in the number of looks.
 ## Iteration
 
 One pass within a review loop: review the change, triage what came back, fix
-what is blocking, verify. Iterations are numbered from 1 and run on across a
+what the loop fixes, verify. Iterations are numbered from 1 and run on across a
 flow's loops; a flow that has run none sits at 0. A loop runs as many as its
 budget allows.
 
 ## Clean iteration
 
-An iteration whose review found nothing blocking, so it fixed nothing and
-committed nothing. A loop can finish only on a clean final iteration.
+An iteration that fixed nothing and committed nothing. A loop can finish only
+on a clean final iteration - and since a final iteration fixes only what is
+blocking, that means one whose review found nothing blocking.
 
 ## Adopted issue
 
@@ -176,28 +177,53 @@ any other.
 One problem a review reports - about the change, from the review phase, or
 about the spec, from a spec review. Only a finding about the change carries a
 **severity**, which the review phase assigns; the reviewer itself reports
-findings unranked. A finding about the spec carries no severity: a human
-accepts or declines the edit it proposes, and it is never filed.
+findings unranked. A finding about the spec carries no severity:## Severity
 
-## Severity
-
-Which of three roles a finding plays. Only one of them is loop behaviour; the
-other two are triage priorities on filed findings:
+Which of three roles a finding plays - how wrong the change is, and so which
+findings the loop may fix without asking anyone:
 
 - **Blocking** - the change is wrong: incorrect behaviour, a spec requirement
   missing or misimplemented, a security problem, a broken or missing test, or a
-  failing verification command. The only severity the loop fixes.
+  failing verification command. Always fixed, in every iteration.
 - **Major** - the change works but carries real cost: a documented standard
-  breached, a smell with teeth, scope nobody asked for. Filed, never fixed by
-  the loop.
-- **Nit** - taste and judgement calls. Filed, never fixed by the loop.
+  breached, a smell with teeth, scope nobody asked for. Fixed by the loop
+  unless the fix needs a decision, changes behaviour, or would touch the
+  loop's own fixes; filed otherwise.
+- **Nit** - taste and judgement calls. Fixed by the loop only when it is a
+  mechanical nit; filed otherwise.
+
+A final iteration fixes only what is blocking: a major or nit found there is
+filed, so a working change is never held in draft by a style finding.
+
+## Mechanical nit
+
+A nit with exactly one correct fix, confined to the lines it names, changing
+no behaviour and leaving no wording or taste to choose - a typo, an unused
+import, a comment naming the wrong function, a broken link. Rewording prose is
+never mechanical, however small.
+
+## Loop-authored lines
+
+Lines the current review loop's own fix commits wrote. A major or nit on them
+is filed, never fixed: a loop does not polish its own fixes, because fixes
+drawing findings drawing fixes is what never converges. A blocking finding on
+them is still fixed. A previous loop's fixes are not loop-authored for the
+next one: a human who asks for more looks is asking for the code to get
+better, earlier fixes included.
 
 ## Filed finding
 
-A major or nit turned into an issue when a loop terminates, carrying the
-reviewer's finding and the loop's reasoning about it, deduplicated across
-iterations and across a flow's loops. A filed finding enters triage against the
-whole codebase rather than against one diff. Findings the loop demoted on a
+A major or nit the loop did not fix, turned into an issue when a loop
+terminates - because its fix needed a decision, would have changed behaviour,
+was not mechanical, landed on loop-authored lines, or was found in a final
+iteration. It carries the reviewer's finding and the loop's reasoning about
+it, including which of those kept it out of the loop, deduplicated across
+iterations and across a flow's loops. A filed finding enters triage against
+the whole codebase rather than against one diff: a later loop that meets it
+again leaves it alone, and tells the human it did. Findings the loop demoted on
+a human's earlier decision are reported, never filed.
+
+the loop demoted on a
 human's earlier decision are reported, never filed.
 
 ## Review record
