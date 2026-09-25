@@ -368,20 +368,34 @@ check_plugin_root() {
 # directories above a skill is not there and every step that runs it fails.
 # doctor itself runs from an orch.sh, so it can only see such a copy sitting in
 # a user-level skill store beside the full install; the skills themselves
-# report the case where no full install exists at all. The store is the
-# user-level one the skills CLI installs into; Junie's own skill store is not
-# yet verified, so it is not scanned.
+# report the case where no full install exists at all. Two user-level stores
+# are scanned whatever the host: the one the skills CLI installs into, and
+# Claude Code's own. Junie's own skill store is not yet verified, so it is not
+# scanned.
 check_orch_sh() {
-  local store="$HOME/.agents/skills" d names=""
-  for d in "$store"/orch-*/; do
-    [ -f "$d/SKILL.md" ] || continue
-    [ -f "$d/../../scripts/orch.sh" ] && continue
-    d="${d%/}"; names="$(d_append "$names" "${d##*/}")"
+  local store d real names found="" seen=""
+  for store in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
+    names=""
+    for d in "$store"/orch-*/; do
+      [ -f "$d/SKILL.md" ] || continue
+      # `..` after a symlinked folder resolves physically, so this looks beside
+      # the real folder, not beside the link.
+      [ -f "$d/../../scripts/orch.sh" ] && continue
+      # The skills CLI (checked against v1.7.0) links ~/.claude/skills/<skill>
+      # into ~/.agents/skills, so one copy can be reached from both stores:
+      # report it once.
+      real="$(cd "$d" && pwd -P)" || continue
+      if printf '%s\n' "$seen" | grep -qxF "$real"; then continue; fi
+      seen="$(d_append "$seen" "$real")"
+      d="${d%/}"; names="$(d_append "$names" "${d##*/}")"
+    done
+    [ -n "$names" ] || continue
+    # A warn, not a FAIL: the install running this is whole, and which host
+    # picks up the skills-only copy is not something doctor can see.
+    d_warn "orch.sh missing beside the orchestrator skills in ${store/#$HOME/\~}: $(d_join "$names") - a skills-only install."
+    found=1
   done
-  if [ -z "$names" ]; then d_ok "orch.sh: ${D_PLUGIN/#$HOME/\~}/scripts/orch.sh"; return 0; fi
-  # A warn, not a FAIL: the install running this is whole, and which host picks
-  # up the skills-only copy is not something doctor can see.
-  d_warn "orch.sh missing beside the orchestrator skills in ${store/#$HOME/\~}: $(d_join "$names") - a skills-only install."
+  if [ -z "$found" ]; then d_ok "orch.sh: ${D_PLUGIN/#$HOME/\~}/scripts/orch.sh"; return 0; fi
   d_orch_remedy
 }
 

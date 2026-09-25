@@ -1968,6 +1968,46 @@ assert_eq "does not scan the unverified ~/.junie/skills" \
   "$(printf '%s\n' "$out" | grep -c 'orch.sh missing')" "0"
 rm -rf "$h/.junie/skills/orch-review"
 
+# ~/.claude/skills is Claude Code's user-level store: a stray copy there shows
+# up beside the plugin's own orchestrator:orch-flow as a plain orch-flow.
+mkdir -p "$h/.claude/skills/orch-flow"
+touch "$h/.claude/skills/orch-flow/SKILL.md"
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "names a stray copy in Claude Code's user skill store" "$out" "~/.claude/skills: orch-flow"
+# Stray copies in both stores: one warning per store, one remedy.
+mkdir -p "$h/.agents/skills/orch-review"
+touch "$h/.agents/skills/orch-review/SKILL.md"
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "names the skills CLI store's copy too" "$out" "~/.agents/skills: orch-review"
+assert_eq "warns once per store that holds a copy" \
+  "$(printf '%s\n' "$out" | grep -c 'orch.sh missing')" "2"
+assert_eq "and gives the remedy once" \
+  "$(printf '%s\n' "$out" | grep -c '/plugin install orchestrator@orchestrator')" "1"
+rm -rf "$h/.claude/skills/orch-flow"
+# The skills CLI installs into ~/.agents/skills and links Claude Code's store
+# to it: ~/.claude/skills/<skill> -> ../../.agents/skills/<skill>. One copy,
+# one report.
+ln -s ../../.agents/skills/orch-review "$h/.claude/skills/orch-review"
+out="$("$ORCH" doctor --env 2>&1)"
+assert_eq "reports a copy reached by a link only once" \
+  "$(printf '%s\n' "$out" | grep -c 'orch.sh missing')" "1"
+assert_contains "under the store that holds it" "$out" "~/.agents/skills: orch-review"
+rm -f "$h/.claude/skills/orch-review"
+rm -rf "$h/.agents/skills/orch-review"
+# A link into a full checkout has orch.sh beside the real folder.
+full="$(mktemp -d)"
+mkdir -p "$full/skills/orch-flow" "$full/scripts"
+touch "$full/skills/orch-flow/SKILL.md" "$full/scripts/orch.sh"
+ln -s "$full/skills/orch-flow" "$h/.claude/skills/orch-flow"
+out="$("$ORCH" doctor --env 2>&1)"
+assert_eq "does not report a link into a full checkout" \
+  "$(printf '%s\n' "$out" | grep -c 'orch.sh missing')" "0"
+assert_contains "and says orch.sh is fine" "$out" "ok    orch.sh:"
+rm -f "$h/.claude/skills/orch-flow"; rm -rf "$full"
+# ~/.claude/skills exists but holds no orch-* skill: ok, as before.
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "an existing store with no copies is ok" "$out" "ok    orch.sh:"
+
 # env -u above was scoped to that one command too, so this is still the same
 # fully-healthy repo - exactly the state this last check needs to prove out.
 out="$("$ORCH" doctor --env 2>&1)"
