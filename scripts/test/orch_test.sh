@@ -1341,6 +1341,8 @@ assert_status "nor is a skill resolved from it without a lockfile" "$st" 1
 
 if on_windows_bash; then
   skip_no_jq "the store is not a location without jq"
+  skip_no_jq "nor is a skill resolved from it without jq"
+  skip_no_jq "and the same install resolves with jq"
 else
   h="$(mktemp -d)"; mp_install agents "$h" to-spec
   nojq="$(path_without_jq)"
