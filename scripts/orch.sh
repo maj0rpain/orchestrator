@@ -141,18 +141,22 @@ require_branch() { require_field "$1" '.branch // ""' "no branch recorded in sta
 MP_PLUGIN="mattpocock-skills"
 MP_LOCK_REL=".agents/.skill-lock.json"
 
-# True when the skills CLI lockfile records $1 as a mattpocock-skills skill, or
-# with no argument, when it records any. jq missing reads as "records nothing".
-mp_agents_owns() {
+# True when the skills CLI lockfile records skill $1 as a mattpocock-skills
+# skill. No lockfile, or jq missing, reads as "records nothing".
+mp_agents_owns_skill() {
   local lock="$HOME/$MP_LOCK_REL"
   [ -f "$lock" ] || return 1
-  if [ -n "${1:-}" ]; then
-    jq -e --arg n "$1" --arg p "$MP_PLUGIN" \
-      '(.skills // {})[$n].pluginName == $p' "$lock" >/dev/null 2>&1
-  else
-    jq -e --arg p "$MP_PLUGIN" \
-      'any((.skills // {})[]; .pluginName == $p)' "$lock" >/dev/null 2>&1
-  fi
+  jq -e --arg n "$1" --arg p "$MP_PLUGIN" \
+    '(.skills // {})[$n].pluginName == $p' "$lock" >/dev/null 2>&1
+}
+
+# True when the skills CLI lockfile records any skill as a mattpocock-skills
+# skill. No lockfile, or jq missing, reads as "records nothing".
+mp_agents_owns_any() {
+  local lock="$HOME/$MP_LOCK_REL"
+  [ -f "$lock" ] || return 1
+  jq -e --arg p "$MP_PLUGIN" \
+    'any((.skills // {})[]; .pluginName == $p)' "$lock" >/dev/null 2>&1
 }
 
 # Where mattpocock-skills will be read from, as "<kind><TAB><path>", or status 1
@@ -174,7 +178,7 @@ mp_location() {
   for p in "$HOME/.junie/extensions/$MP_PLUGIN" "$HOME"/.junie/extensions/*/"$MP_PLUGIN"; do
     if [ -d "$p" ]; then printf 'junie\t%s\n' "$p"; return 0; fi
   done
-  if mp_agents_owns; then
+  if mp_agents_owns_any; then
     printf 'agents\t%s\n' "$HOME/.agents/skills"
     return 0
   fi
@@ -189,7 +193,7 @@ mp_skill_path() {
   local kind="$1" root="$2" name="$3" p
   case "$name" in ""|*/*|.*) return 1 ;; esac
   if [ "$kind" = agents ]; then
-    mp_agents_owns "$name" || return 1
+    mp_agents_owns_skill "$name" || return 1
     p="$root/$name/SKILL.md"
     if [ -f "$p" ]; then printf '%s\n' "$p"; return 0; fi
     return 1
