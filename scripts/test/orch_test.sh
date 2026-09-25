@@ -2000,8 +2000,13 @@ mkdir -p "$full/skills/orch-flow" "$full/scripts"
 touch "$full/skills/orch-flow/SKILL.md" "$full/scripts/orch.sh"
 ln -s "$full/skills/orch-flow" "$h/.claude/skills/orch-flow"
 out="$("$ORCH" doctor --env 2>&1)"
-assert_contains "does not report a link into a full checkout" "$out" "ok    orch.sh:"
+assert_eq "does not report a link into a full checkout" \
+  "$(printf '%s\n' "$out" | grep -c 'orch.sh missing')" "0"
+assert_contains "and says orch.sh is fine" "$out" "ok    orch.sh:"
 rm -f "$h/.claude/skills/orch-flow"; rm -rf "$full"
+# ~/.claude/skills exists but holds no orch-* skill: ok, as before.
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "an existing store with no copies is ok" "$out" "ok    orch.sh:"
 
 # env -u above was scoped to that one command too, so this is still the same
 # fully-healthy repo - exactly the state this last check needs to prove out.

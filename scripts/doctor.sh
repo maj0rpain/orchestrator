@@ -373,7 +373,7 @@ check_plugin_root() {
 # Claude Code's own. Junie's own skill store is not yet verified, so it is not
 # scanned.
 check_orch_sh() {
-  local store d real names found="" seen=$'\n'
+  local store d real names found="" seen=""
   for store in "$HOME/.agents/skills" "$HOME/.claude/skills"; do
     names=""
     for d in "$store"/orch-*/; do
@@ -381,11 +381,12 @@ check_orch_sh() {
       # `..` after a symlinked folder resolves physically, so this looks beside
       # the real folder, not beside the link.
       [ -f "$d/../../scripts/orch.sh" ] && continue
-      # The skills CLI links ~/.claude/skills/<skill> into ~/.agents/skills, so
-      # one copy can be reached from both stores: report it once.
+      # The skills CLI (checked against v1.7.0) links ~/.claude/skills/<skill>
+      # into ~/.agents/skills, so one copy can be reached from both stores:
+      # report it once.
       real="$(cd "$d" && pwd -P)" || continue
-      case "$seen" in *$'\n'"$real"$'\n'*) continue ;; esac
-      seen+="$real"$'\n'
+      if printf '%s\n' "$seen" | grep -qxF "$real"; then continue; fi
+      seen="$(d_append "$seen" "$real")"
       d="${d%/}"; names="$(d_append "$names" "${d##*/}")"
     done
     [ -n "$names" ] || continue
