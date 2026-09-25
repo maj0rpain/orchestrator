@@ -231,29 +231,20 @@ else
   bad "every hooks.json command runs through bash" "not run through bash ($EXEC_BIT_DOC): $bare_hooks"
 fi
 
-bare_orch="$(grep -rn '"\$ORCH"' "$ROOT/skills" "$ROOT/README.md" "$ROOT/docs/host-capabilities.md" \
-  | sed 's/bash "\$ORCH"//g' | grep '"\$ORCH"' || true)"
-if [ -z "$bare_orch" ]; then
-  ok "every skill and doc runs \"\$ORCH\" through bash"
-else
-  bad "every skill and doc runs \"\$ORCH\" through bash" "not run through bash ($EXEC_BIT_DOC):
-$bare_orch"
-fi
-
 # A host that drops the execute bit leaves the scripts at 644. Run each
 # hooks.json command, as written, against such a copy.
 PLUGIN_644="$(mktemp -d)"
 cp -r "$ROOT/scripts" "$PLUGIN_644/scripts"
 find "$PLUGIN_644/scripts" -name '*.sh' -exec chmod 644 {} +
 while IFS= read -r cmd; do
-  name="$(basename "${cmd##*/}" | tr -d '"')"
+  name="${cmd##*/}"; name="${name%\"}"
   case "$name" in
     hook-guard.sh) event="$(edit_event "$REPO/src/x.ts" exec644)" ;;
     *)             event="$(skill_event "mattpocock-skills:tdd" exec644)" ;;
   esac
   printf '%s' "$event" | CLAUDE_PLUGIN_ROOT="$PLUGIN_644" sh -c "$cmd" >/dev/null 2>&1
   rc=$?
-  if [ "$rc" -ne 126 ] && [ "$rc" -ne 127 ]; then
+  if [ "$rc" -eq 0 ]; then
     ok "$name runs with its script at mode 644"
   else
     bad "$name runs with its script at mode 644" "exit $rc ($EXEC_BIT_DOC)"

@@ -95,5 +95,6 @@ update it: Junie does, and the first hook to run then fails with `Permission
 denied` (#142). So nothing in the plugin relies on the bit. `hooks/hooks.json`
 runs each hook as `bash "${CLAUDE_PLUGIN_ROOT}/scripts/<hook>.sh"`, and every
 skill and doc runs `bash "$ORCH" …`, never the script alone.
-`scripts/test/hooks_test.sh` enforces both, and runs each hook with its script
-at mode 644.
+`scripts/test/hooks_test.sh` enforces the hooks rule and runs each hook with
+its script at mode 644; `scripts/test/orch_test.sh` enforces the `orch.sh`
+rule.

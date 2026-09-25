@@ -202,7 +202,7 @@ everywhere else. Do not copy the scripts into a skill. Commands never run
 `orch.sh`: each is a thin route into an `orch-flow` section (see
 [Naming host capabilities](#naming-host-capabilities)). `orch_test.sh` fails when
 a skill, command, or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT` anywhere
-else, or runs `orch.sh` without this pair.
+else, or runs `orch.sh` without this pair or without `bash`.
 
 ### Naming host capabilities
 
