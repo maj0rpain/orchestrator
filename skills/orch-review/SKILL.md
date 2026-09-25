@@ -9,8 +9,9 @@ One loop, one session, a **budget** of iterations the human names before the
 first one runs. Every iteration is an independent look at the whole change;
 the loop fixes what is **blocking** and whatever **major** or **nit** needs no
 decision, runs its whole budget whatever any iteration finds, files every
-other major and nit as a GitHub issue when it ends, and ends in exactly one of two places: the PR marked **ready**, or a
-**bounded stop** with the reason written down.
+other major and nit as a GitHub issue when it ends, and ends in exactly one
+of two places: the PR marked **ready**, or a **bounded stop** with the reason
+written down.
 
 The value of the loop is the number of looks, not the re-review of fixes: the
 fail-open nobody read until the fifth look still gets its fifth look. See
@@ -92,8 +93,9 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    - **Loop-authored lines.** A major or nit on lines this loop's own fix
      commits wrote is filed, never fixed - fixes drawing findings drawing fixes
      is what never converges. Tell them apart with `git blame` on the flagged
-     lines against the fix SHAs in *this* loop's iteration records; a previous
-     loop's fixes are not loop-authored. A blocking finding there is still
+     lines against the fix SHAs in *this* loop's iteration records - those
+     numbered above the `iteration` read in **Before the first iteration**,
+     step 4; a previous loop's fixes are not loop-authored. A blocking finding there is still
      fixed.
    - **The final iteration** - the one whose number equals `budget` - fixes
      only what is blocking and files its majors and nits, since nothing reviews
@@ -141,7 +143,7 @@ fix without asking anyone:
   function, a broken link. Rewording prose is never mechanical, however small.
   Filed otherwise.
 
-Whatever its severity, a major or nit on **loop-authored lines** or found in
+A major or nit on **loop-authored lines** or found in
 the **final iteration** is filed, never fixed - see step 4 of **The
 iteration**.
 
@@ -227,8 +229,8 @@ first: a loop that ends well ends without parking on a prompt.
 
 **Bounded stop** - two ways in, and the recorded reason says which. The final
 iteration fixed something - which, since it fixes only what is blocking,
-means it found something blocking: nothing has reviewed what it wrote, and marking a PR
-ready over that claims a verification that never happened. Or CI: `failing`
+means it found something blocking: nothing has reviewed what it wrote, and
+marking a PR ready over that claims a verification that never happened. Or CI: `failing`
 with the flake rerun spent or the failure not looking flaky, or `unreachable`.
 Append `## Terminal state` to the final iteration's record, first line `stop`,
 followed by the reason, before stopping. **Leave `phase` at `review` and the
@@ -293,6 +295,7 @@ gh pr comment <pr> --body-file <file>
 The PR is the only durable surface another human ever sees. Carry: iterations
 run, what was fixed - blocking, majors, and nits - with severity and commit
 SHAs, the issues filed with number, severity, and title, the findings met
-again already filed with their issue numbers so the human can triage them, covered deviations, rejected-alternative proposals with the reason
-each lost, the CI result, the host fallbacks the loop took (per
+again already filed with their issue numbers so the human can triage them,
+covered deviations, rejected-alternative proposals with the reason each lost,
+the CI result, the host fallbacks the loop took (per
 `docs/host-capabilities.md`, or `None (<host>).`), and what happens next.

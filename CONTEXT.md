@@ -208,11 +208,8 @@ never mechanical, however small.
 ## Loop-authored lines
 
 Lines the current review loop's own fix commits wrote. A major or nit on them
-is filed, never fixed: a loop does not polish its own fixes, because fixes
-drawing findings drawing fixes is what never converges. A blocking finding on
-them is still fixed. A previous loop's fixes are not loop-authored for the
-next one: a human who asks for more looks is asking for the code to get
-better, earlier fixes included.
+is filed, never fixed; a blocking finding on them is still fixed. A previous
+loop's fixes are not loop-authored for the next one.
 
 ## Filed finding
 

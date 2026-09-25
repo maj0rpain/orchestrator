@@ -28,7 +28,7 @@ A fix in the final iteration still forces a bounded stop, since nothing
 reviews it; letting a style finding force that stop would hold a working
 change in draft over something that does not make it wrong.
 
-## Considered options
+## Considered Options
 
 - **Fix every major, whatever it takes.** Rejected: some majors have several
   reasonable remedies, and a loop picking between designs mid-run is a decision
