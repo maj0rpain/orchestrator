@@ -36,16 +36,16 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 
 ## Before the first iteration
 
-1. Read the handoff: `"$ORCH" handoff path review`. It is always
+1. Read the handoff: `bash "$ORCH" handoff path review`. It is always
    `03-implement.md`, on every loop of the flow.
 2. Take four facts from it, and take them from nowhere else: the **PR**, the
    **spec issue**, the **base SHA**, and the **verification command**. State
    holds the PR and the base SHA as well, and holds the same values; one
    authority is what keeps every loop of a flow reviewing the same change.
 3. Read `01-plan.md`'s **Rejected alternatives** and `03-implement.md`'s
-   **Deviations**, both in `dirname "$("$ORCH" handoff path review)"`. Both are
+   **Deviations**, both in `dirname "$(bash "$ORCH" handoff path review)"`. Both are
    authority over the findings you are about to get.
-4. `"$ORCH" state get iteration`. Zero means this is the flow's first loop.
+4. `bash "$ORCH" state get iteration`. Zero means this is the flow's first loop.
    Anything else means a previous loop ended in a bounded stop and a human
    asked for more: read every `.orchestrator/review/iteration-NN.md` already
    there, because their **Filed** lists are what stop this loop re-filing
@@ -58,13 +58,13 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    - Re-entry: "How many more?" Same default and range. The new loop continues
      the iteration numbering, so set `budget` to `iteration + n`.
 
-   Then `"$ORCH" state set budget <that number>`. The bound is mechanical from
+   Then `bash "$ORCH" state set budget <that number>`. The bound is mechanical from
    here: `review begin` enforces it, and a session that has argued with itself
    for four iterations cannot re-remember five as six.
 
 ## The iteration
 
-1. `"$ORCH" review begin`. It prints the iteration number, or refuses with
+1. `bash "$ORCH" review begin`. It prints the iteration number, or refuses with
    "budget of N iterations spent" - a refusal is the end of the loop, so go to
    **Termination**.
 2. Invoke `mattpocock-skills:code-review` (see `docs/host-capabilities.md`
@@ -73,7 +73,7 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    Always spell it with the `mattpocock-skills:` scope - the bare name is
    ambiguous with another `code-review` skill that may be installed alongside
    this plugin. On a host with no scoped names, invoke it through
-   `"$ORCH" mp-skill code-review` for the same reason. **Every iteration reviews from the base SHA**, never from the
+   `bash "$ORCH" mp-skill code-review` for the same reason. **Every iteration reviews from the base SHA**, never from the
    previous iteration's HEAD: each is an independent look at the whole change,
    and the Spec axis cannot answer "is the spec implemented" from a diff
    containing one fix.
@@ -91,7 +91,7 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    the iteration; the body lists the findings addressed and points at the
    record. An iteration that fixed nothing makes no commit.
 7. Push. CI is not waited on here.
-8. Write the record to `"$ORCH" review path`: every finding with its axis and
+8. Write the record to `bash "$ORCH" review path`: every finding with its axis and
    severity on one line, which were fixed and the fix commit SHA, which were
    demoted and on what authority, and which are waiting to be filed.
 9. Go to step 1. Nothing found ends the loop early; only the budget does. A
@@ -142,7 +142,7 @@ Waited on **once per loop**, at **Termination**, and never inside an
 iteration: that would block a single session for most of an hour, and the fix
 commits are pushed as they land anyway.
 
-`"$ORCH" review ci` polls the PR's checks and prints one of four words, exiting
+`bash "$ORCH" review ci` polls the PR's checks and prints one of four words, exiting
 non-zero on the last two:
 
 - **green** - carry on.
@@ -151,7 +151,7 @@ non-zero on the last two:
 - **failing** - a required check failed, and the detail lines name which.
   Required means required by the branch protection of the PR's base branch. If it
   looks flaky rather than caused by the change, the flow has **one** flake
-  rerun: `"$ORCH" state get flake_rerun_used` reads `true` once it is spent and
+  rerun: `bash "$ORCH" state get flake_rerun_used` reads `true` once it is spent and
   empty while it is not. Spend it on the run behind the failing check -
   `gh run rerun` needs that run's id, and with none it opens a prompt a session
   driving `gh` from non-interactive bash cannot answer:
@@ -165,7 +165,7 @@ non-zero on the last two:
 
   It reruns GitHub Actions and nothing else, so a failing check that is not an
   Actions run has no rerun to spend and is a **bounded stop** on the spot. Then
-  record `"$ORCH" state set flake_rerun_used true` and ask `review ci` again. A
+  record `bash "$ORCH" state set flake_rerun_used true` and ask `review ci` again. A
   second failure is a **bounded stop**. That second ask restarts the
   fifteen-minute wait rather than inheriting what is left of the first, because
   a rerun restarts the checks - so this one path, once per flow, can wait longer
@@ -179,8 +179,8 @@ non-zero on the last two:
 Reached when `review begin` refuses. The same close-out runs whichever
 terminal state follows, in this order:
 
-1. Wait on CI: `"$ORCH" review ci`. Append the answer to the final iteration's
-   record (`"$ORCH" review path` still names it, because the refusal spent
+1. Wait on CI: `bash "$ORCH" review ci`. Append the answer to the final iteration's
+   record (`bash "$ORCH" review path` still names it, because the refusal spent
    nothing).
 2. File the findings - see **Filing**. Every major and nit from every record of
    this flow, stop included: a bounded stop loses no findings.
@@ -189,7 +189,7 @@ terminal state follows, in this order:
 
 **Ready** - the final iteration was clean, and CI said `green` or `none`.
 Append `## Terminal state` to the final iteration's record, first line
-`ready`, before the terminal action itself. `"$ORCH" review ready` marks the
+`ready`, before the terminal action itself. `bash "$ORCH" review ready` marks the
 PR ready and records the flow `done` as one operation. No question is asked
 first: a loop that ends well ends without parking on a prompt.
 
@@ -205,7 +205,7 @@ budget, and **Before the first iteration** describes it.
 
 `## Terminal state` is written exactly once, here, only once a terminal state
 has actually been decided - never guessed or backfilled. It is what
-`"$ORCH" redo review` and `doctor --flow` both read, through the same
+`bash "$ORCH" redo review` and `doctor --flow` both read, through the same
 `review_terminal_state` classifier, to tell a loop that genuinely finished
 from one whose driving session simply died mid-budget.
 
@@ -218,7 +218,7 @@ claim are one finding, however many iterations reported it. Drop any already
 carrying an issue number from a previous loop. File each of the rest:
 
 ```
-"$ORCH" review file <major|nit> "<title>" --body-file <file>
+bash "$ORCH" review file <major|nit> "<title>" --body-file <file>
 ```
 
 It creates the `review:<severity>` label if the repo lacks it, resolves the

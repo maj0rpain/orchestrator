@@ -34,12 +34,12 @@ This skill needs no capability beyond running shell commands.
 
 ## 1. Resolve the base branch
 
-Run `"$ORCH" base show`. It prints `<branch> (set)` or `<branch> (default)`.
+Run `bash "$ORCH" base show`. It prints `<branch> (set)` or `<branch> (default)`.
 If the source is `default`, stop: there is nothing to release, because work
 already lands on the default branch. Tell the human they can set another base
-branch with `"$ORCH" base set <branch>`.
+branch with `bash "$ORCH" base set <branch>`.
 
-Run `"$ORCH" default-branch` to name the default branch.
+Run `bash "$ORCH" default-branch` to name the default branch.
 
 ## 2. Write the title and summary
 
@@ -57,7 +57,7 @@ the only source of that list, so no issue can be dropped from it.
 
 ## 3. Open the release PR
 
-Run `"$ORCH" pr release "<title>" <body-file>`. Add `--force` before the title
+Run `bash "$ORCH" pr release "<title>" <body-file>`. Add `--force` before the title
 only when the human has explicitly asked to release even though nothing would
 be closed. Never add it on your own after a refusal.
 
@@ -75,4 +75,4 @@ a draft. It pushes nothing, because the base branch is already on `origin`.
   only if the human asks.
 
 Leave the base branch setting alone. Clearing it after the release PR merges
-is the human's call (`"$ORCH" base clear`).
+is the human's call (`bash "$ORCH" base clear`).

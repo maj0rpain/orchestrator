@@ -20,7 +20,7 @@ ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 
 If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
 two directories above this skill's own directory (the plugin root). Run
-`"$ORCH" help` for the full command list. Never reimplement what it already
+`bash "$ORCH" help` for the full command list. Never reimplement what it already
 does.
 
 If `orch.sh` is at neither path, this is a skills-only install: stop, and
@@ -48,7 +48,7 @@ Claude Code's Skill tool refuses them, and Junie gives the model no Skill tool
 at all.
 
 Their `SKILL.md` files are plain markdown. Resolve one with
-`"$ORCH" mp-skill <name>`, read it, and follow its instructions verbatim - that
+`bash "$ORCH" mp-skill <name>`, read it, and follow its instructions verbatim - that
 is exactly what invoking the skill would have injected. Never tell the user to type
 the slash command themselves, and never claim to have invoked a skill you read.
 
@@ -57,7 +57,7 @@ no such flag; invoke those as skills (on Claude Code, the Skill tool). Always
 spell the code review skill with its `mattpocock-skills:` scope - the bare
 name is ambiguous with another `code-review` skill that may be installed
 alongside this plugin. On a host with no scoped names, invoke it through
-`"$ORCH" mp-skill code-review` for the same reason.
+`bash "$ORCH" mp-skill code-review` for the same reason.
 
 ## Starting a flow
 
@@ -68,7 +68,7 @@ which holds the only copy of the plan.
    a slug, `--issue N`, both, or neither. Pull `--issue N` out first. Whatever
    remains is the slug; use it as given. With none left, pick a slug from the
    plan's subject, kebab-case. Confirm it in one line.
-2. `"$ORCH" init <slug>`, or `"$ORCH" init <slug> --issue N` when the user (or
+2. `bash "$ORCH" init <slug>`, or `bash "$ORCH" init <slug> --issue N` when the user (or
    step 1's `--issue N`) named an already-open,
    already-triaged issue to adopt as the flow's spec instead of publishing a
    new one. `init` validates adoption immediately and dies if it cannot -
@@ -90,9 +90,9 @@ which holds the only copy of the plan.
    plan or from the `.scratch/orch-plan-<slug>.md` step 2 saved. **Do
    this before anything else that can fail.** `init` is the one check that runs
    first, because it creates the directory the handoff goes in.
-4. `"$ORCH" handoff validate "$("$ORCH" handoff path spec)"`. Fix and re-validate
+4. `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path spec)"`. Fix and re-validate
    until it passes.
-5. `"$ORCH" doctor --env`. Report its output; stop only on a non-zero exit. A
+5. `bash "$ORCH" doctor --env`. Report its output; stop only on a non-zero exit. A
    `warn` is an observation the user should see, not a reason to cost them a
    restart - the plan is already safe on disk either way.
 6. Print the boundary (see below).
@@ -104,33 +104,33 @@ phase. Run it in a fresh session: if the context still holds the previous
 phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 `/new`) and stop rather than continuing.
 
-1. `"$ORCH" doctor --flow`. On a non-zero exit, report and stop - offer
+1. `bash "$ORCH" doctor --flow`. On a non-zero exit, report and stop - offer
    `/orchestrator:abort` or a concrete repair. Do not proceed on stale state.
-2. `"$ORCH" state get phase`, then run that phase below.
+2. `bash "$ORCH" state get phase`, then run that phase below.
 
 ### Phase: spec
 
-0. Check `"$ORCH" state get issue`. Non-empty means the flow adopted an issue
+0. Check `bash "$ORCH" state get issue`. Non-empty means the flow adopted an issue
    at init - skip straight to step 4 below; steps 1-3 do not run, because the
    issue already exists and is already recorded. Empty means no `--issue` was
    given - run the phase from step 1, exactly as it does for every flow that
    has no adopted issue.
-1. Read `"$ORCH" handoff path spec`. The **Rejected alternatives** section is
+1. Read `bash "$ORCH" handoff path spec`. The **Rejected alternatives** section is
    load-bearing: do not re-propose anything it rules out.
-2. Read and follow `"$ORCH" mp-skill to-spec`. It will check test seams with the
+2. Read and follow `bash "$ORCH" mp-skill to-spec`. It will check test seams with the
    user - that exchange is the point, so do not skip it.
-3. Record the published issue: `"$ORCH" state set issue <number>`.
+3. Record the published issue: `bash "$ORCH" state set issue <number>`.
 4. Invoke the `orch-review-spec` skill and follow it. It owns
    the review - four lenses, one batch question, the body rewritten with what
    the human accepts - and returns the changelog. This step is part of the
    phase, not an option in it: no spec reaches the implement phase unreviewed,
    and the human's control is at the batch, where they may decline every edit.
-5. Read and follow `"$ORCH" mp-skill to-tickets`, with the just-reviewed spec
-   issue (`"$ORCH" state get issue`) as its source, through its own quiz
+5. Read and follow `bash "$ORCH" mp-skill to-tickets`, with the just-reviewed spec
+   issue (`bash "$ORCH" state get issue`) as its source, through its own quiz
    (steps 1-4) until the user approves a breakdown.
 
    **A breakdown of 2 or more tickets** publishes exactly as today: publish
-   every ticket it proposes through `"$ORCH" ticket publish <parent> <title>
+   every ticket it proposes through `bash "$ORCH" ticket publish <parent> <title>
    <body-file> [--blocked-by N,N,...]`, in dependency order (blockers first)
    - never an ad hoc `gh api` call - so the verify-then-die behaviour
    `ticket publish` already provides applies to every ticket. This step is
@@ -144,22 +144,22 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    "do NOT close or modify any parent issue" instruction - not something
    `to-tickets` itself does, taken here where this phase already calls its
    publish step, and reached only in this collapsed case. Fetch the spec
-   issue's current body (`"$ORCH" spec fetch <file>`), append a new section
+   issue's current body (`bash "$ORCH" spec fetch <file>`), append a new section
    wrapping the single drafted ticket's "What to build"/"Acceptance
    criteria" (when there is one) beneath the existing content - never
-   replacing it - and write the merged body back (`"$ORCH" spec update
+   replacing it - and write the merged body back (`bash "$ORCH" spec update
    <file>`).
 6. Invoke the `orch-handoff` skill for `02-spec.md`, with the changelog the review
    returned as its **Spec review changelog**, and its **Ticket breakdown** as
    either the spec issue number (a published breakdown) or `None: work
    directly against #<n>` naming the spec issue (a collapsed one, per step
-   5); validate it, then `"$ORCH" state set phase implement`.
+   5); validate it, then `bash "$ORCH" state set phase implement`.
 7. Print the boundary.
 
 ### Phase: implement
 
-1. Read `"$ORCH" handoff path implement` and fetch the spec issue it names.
-2. `"$ORCH" branch create` - creates `orch/<issue>-<slug>` off the flow's base
+1. Read `bash "$ORCH" handoff path implement` and fetch the spec issue it names.
+2. `bash "$ORCH" branch create` - creates `orch/<issue>-<slug>` off the flow's base
    branch (recorded in state at `init`) and records the base SHA the review will diff against.
 3. Read the handoff's **Ticket breakdown** section, written by the spec
    phase's step 5.
@@ -174,10 +174,10 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    **Any other content** names the spec issue as a parent whose GitHub
    sub-issues carry the real tickets. Work its frontier, one ticket at a
    time, never in parallel - every ticket commits to the same branch. Loop:
-   - `"$ORCH" ticket next <spec issue>`. Nothing ready means the frontier is
+   - `bash "$ORCH" ticket next <spec issue>`. Nothing ready means the frontier is
      exhausted - stop looping and continue at step 4.
    - Dispatch a subagent (below), briefed with the ticket's number.
-   - Record the subagent's report, then `"$ORCH" ticket close <n>` - only now
+   - Record the subagent's report, then `bash "$ORCH" ticket close <n>` - only now
      that the report is back, never before - and go around again.
 
    **Dispatching a subagent**: start a fresh subagent (on Claude Code, the
@@ -187,7 +187,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    open with an explicit first instruction: fetch the ticket itself (`gh
    issue view <n> --comments`, per `docs/agents/issue-tracker.md`'s "fetch
    the relevant ticket" convention) before doing anything else. The brief
-   then directs the subagent to resolve and follow `"$ORCH" mp-skill
+   then directs the subagent to resolve and follow `bash "$ORCH" mp-skill
    implement` itself, the same way this file resolves any upstream skill,
    against the ticket - and, when `implement`'s closing step calls for a
    review, to use `mattpocock-skills:code-review` by its fully scoped name,
@@ -204,7 +204,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    targeted reads and edits, never re-scanning the same files afterward.
    Its report is structured: what it built, and the deviation it made,
    if any.
-4. `"$ORCH" pr open "<title>" <body-file>`. The PR opens as a draft; marking it
+4. `bash "$ORCH" pr open "<title>" <body-file>`. The PR opens as a draft; marking it
    ready is the review loop's success condition. The PR targets the flow's base
    branch. `pr open` itself writes the issue line ahead of the body -
    `Closes #<issue>` when the base branch is the default branch, `Refs
@@ -216,12 +216,12 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    never left blank. Its **Verification** section is the command the review loop
    runs every iteration: record how you just ran the tests, because review takes
    it from here rather than guessing from the repo.
-   Then validate it: `"$ORCH" handoff validate "$("$ORCH" handoff path review)"`.
-6. `"$ORCH" state set phase review`, then print the boundary.
+   Then validate it: `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path review)"`.
+6. `bash "$ORCH" state set phase review`, then print the boundary.
 
 ### Phase: review
 
-1. `"$ORCH" doctor --flow`.
+1. `bash "$ORCH" doctor --flow`.
 2. Invoke the `orch-review` skill and follow it. It owns the
    loop; this file owns phase dispatch, and has nothing to add to a review
    beyond getting you there.
@@ -251,14 +251,14 @@ Say nothing after it. Do not start the next phase, and do not offer to.
 ## Status
 
 Reached by `/orchestrator:status`, or when the user asks where the flow
-stands. Run `"$ORCH" status` and `"$ORCH" doctor --flow`, and report both
+stands. Run `bash "$ORCH" status` and `bash "$ORCH" doctor --flow`, and report both
 outputs. Read-only: do not start, advance, or repair a flow from here. If
 `doctor` reports a problem, say what it found and stop.
 
 ## Doctor
 
 Reached by `/orchestrator:doctor`, or when the user asks to diagnose the
-machine, the repo, or the flow. Run `"$ORCH" doctor` and report its output.
+machine, the repo, or the flow. Run `bash "$ORCH" doctor` and report its output.
 Read-only: `doctor` prints the command that fixes each problem, and running
 those is the user's call. A `FAIL` exits non-zero and would block the flow; a
 `warn` is an observation and does not.
@@ -272,7 +272,7 @@ transition driven by `orch.sh`, not a per-artifact interview. Redo targeting
 `phase: done` remains unsupported, exactly as today - it is not discussed by
 the originating issue and is not expanded here.
 
-**From `review`**: `"$ORCH" redo review`. It refuses unless the review loop
+**From `review`**: `bash "$ORCH" redo review`. It refuses unless the review loop
 has reached a **bounded stop**, detected from the `## Terminal state` heading
 the review skill's Termination step writes into the final iteration's
 record. A PR marked ready has already moved `state.phase` to `done` as part
@@ -298,7 +298,7 @@ and `state.phase` becomes `implement`.
 
 **From `implement`**: ask the human once whether to keep the existing spec
 issue and re-review it as-is (default), or publish a fresh one. Then call
-`"$ORCH" redo spec` or `"$ORCH" redo spec --new-issue` accordingly. The
+`bash "$ORCH" redo spec` or `bash "$ORCH" redo spec --new-issue` accordingly. The
 default path only changes `state.phase` to `spec` - the existing "adopted
 issue" path through the spec phase's step 0 does the rest. `--new-issue`
 additionally closes the old issue first (never deletes it) with a comment
@@ -308,7 +308,7 @@ scratch.
 ## Abort
 
 1. Confirm with the user.
-2. `"$ORCH" archive`.
+2. `bash "$ORCH" archive`.
 3. Report what survives: the branch, the spec issue, and the PR are untouched, so
    list whichever exist and let the user clean up.
 
@@ -319,6 +319,6 @@ scratch.
 - **One flow at a time.** `init` enforces it. For a second feature, use a second
   checkout.
 - **Never merge.** The flow opens a draft PR and stops. Merging is the user's.
-- **Never edit `.orchestrator/state.json` by hand.** Use `"$ORCH" state set`.
+- **Never edit `.orchestrator/state.json` by hand.** Use `bash "$ORCH" state set`.
 - If a phase cannot finish, leave the state where it is, say what blocked it, and
   offer `/orchestrator:abort` (which archives rather than deletes).
