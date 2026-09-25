@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.0
+
+The review loop now fixes what needs no decision, not only what is blocking
+(see issue #146 and
+`docs/adr/0016-the-review-loop-fixes-what-needs-no-decision.md`).
+
+- A major is fixed unless its fix needs a choice the plan, spec, and
+  deviations did not settle, or would change behaviour. A nit is fixed only
+  when it is mechanical. Everything else is filed, as before.
+- A major or nit on lines the current loop's own fix commits wrote is filed,
+  never fixed, and the final iteration fixes only what is blocking.
+- A filed issue's "why not fixed" line names the rule that kept it out of the
+  loop. Findings a previous loop already filed are left alone and listed for
+  the human in the PR comment.
+- `orch.sh review file`'s rejection of `blocking` no longer says the loop
+  fixes blocking only.
+
 ## 1.1.1
 
 The plugin no longer relies on its scripts' execute bit, which some hosts

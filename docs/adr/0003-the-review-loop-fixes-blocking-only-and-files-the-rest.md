@@ -1,5 +1,9 @@
 # The review loop fixes blocking only and files the rest
 
+Superseded in part by ADR-0016: the loop now also fixes majors and
+mechanical nits that need no decision. The full budget and the case for
+repeated independent looks below still stand.
+
 A review loop runs a fixed budget of iterations, each a fresh review of the
 whole change from the base SHA. It fixes blocking findings inside the iteration
 that found them. Every major and nit becomes a GitHub issue when the loop

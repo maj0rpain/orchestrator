@@ -831,7 +831,7 @@ cmd_review() {
       case "$severity" in
         major) colour=d93f0b ;;
         nit)   colour=c5def5 ;;
-        *) die "not a severity that gets filed: $severity (want major or nit - the loop fixes blocking)" ;;
+        *) die "not a severity that gets filed: $severity (want major or nit - blocking is always fixed, never filed)" ;;
       esac
       [ -n "$title" ] || die "the title is empty"
       [ -f "$body" ] || die "body file not found: $body"
