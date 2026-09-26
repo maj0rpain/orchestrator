@@ -217,6 +217,7 @@ Verification command: <command>
 Host fallbacks: <this iteration's, or none>
 Missing looks: <each axis whose reviewer failed twice, or none>
 Record path: <bash "$ORCH" review path>
+orch.sh: <the path ORCH holds>
 ```
 
 A disposition names its reason: the authority for a demotion, the rule for

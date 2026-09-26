@@ -4322,18 +4322,17 @@ for cap in 'Invoke a skill from a step' 'Ask a multiple-choice question' 'Start 
     "$(printf '%s\n' "$row" | awk -F'|' 'NF >= 5 && $3 !~ /^ *$/ && $4 !~ /^ *$/ { print "filled" }')" "filled"
 done
 # scan_capabilities <plugin root>: print one line per offending skill, agent,
-# or command. An agent brief names host capabilities as a skill does (#157),
-# but only one that invokes a skill names a capability at all, so only that
-# one must point at the reference.
+# or command. An agent brief names host capabilities as a skill does (#157);
+# only one that invokes a mattpocock-skills skill must point at the reference,
+# since the others name no capability a host could lack.
 scan_capabilities() {
   local r="$1" f s k
   for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
     [ -f "$f" ] || continue
-    case "$f" in
-      "$r"/agents/*) ! grep -qE 'mattpocock-skills:[a-z]' "$f" ;;
-      *) false ;;
-    esac || grep -qF 'docs/host-capabilities.md' "$f" \
-      || echo "${f#"$r"/}: never points at docs/host-capabilities.md"
+    if [[ "$f" != "$r"/agents/* ]] || grep -qE 'mattpocock-skills:[a-z]' "$f"; then
+      grep -qF 'docs/host-capabilities.md' "$f" \
+        || echo "${f#"$r"/}: never points at docs/host-capabilities.md"
+    fi
     grep -niE '(call|use|with) the (Skill|Agent) tool|(call|use|spawn|dispatch)[a-z]* .*the Agent tool' "$f" \
       | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
     # Junie has no plugin scope, so a skill names its siblings bare (orch-flow);

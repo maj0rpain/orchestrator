@@ -32,6 +32,7 @@ your return instead - see **Could not fix**.
 - **Record path** - where the iteration's review record goes. The reviewers'
   reports sit beside it as `iteration-NN-standards.md` and
   `iteration-NN-spec.md`; read them when a claim needs its full wording.
+- **orch.sh** - the path of the plugin's `orch.sh`.
 
 ## Steps
 
@@ -39,14 +40,13 @@ your return instead - see **Could not fix**.
    about behaviour goes through the `mattpocock-skills:tdd` skill, invoked
    as a skill (on Claude Code, the Skill tool), so the fix arrives with a
    failing test that proves the problem was real. On a host with no Skill
-   tool, run `bash "$ORCH" mp-skill tdd` - `ORCH` being `scripts/orch.sh` in
-   the plugin root, the directory that holds this file's `agents/` - and
-   follow the `SKILL.md` it names instead - `docs/host-capabilities.md`'s
-   **Invoke a skill from a step** - and record that fallback under the
-   record's **Host fallbacks**. A major or nit fix needs no new test. Keep each fix confined to what its finding
-   names; the fix SHAs are the loop's record of what it wrote, and the driver
-   blames later findings against them. Done when every item is fixed or on
-   your could-not-fix list.
+   tool, run `bash "<orch.sh>" mp-skill tdd` and follow the `SKILL.md` it
+   names instead, per `docs/host-capabilities.md`'s **Invoke a skill from a
+   step**. Record that fallback under the record's **Host fallbacks**. A
+   major or nit fix needs no new test. Keep each fix confined to what its
+   finding names; the fix SHAs are the loop's record of what it wrote, and
+   the driver blames later findings against them. Done when every item is
+   fixed or on your could-not-fix list.
 2. **Verify.** Run the verification command. A failure is a blocking finding
    of this iteration: fix it. When a fix of yours turns it red and you cannot
    make it pass, undo that fix and move its finding to could-not-fix. When it
