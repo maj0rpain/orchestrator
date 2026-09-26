@@ -273,16 +273,16 @@ finding fixed along with the majors and mechanical nits that need no decision -
 one fix commit per iteration that fixed anything. The driving session only
 triages and decides: a fresh fixer agent makes each fix commit, and a fresh
 closer agent files what is left and comments on the PR. The loop never
-polishes its own fixes, and its final iteration fixes only what is blocking. The loop runs
-its whole budget; when it ends, every major and nit it left becomes a GitHub
-issue labelled `review:major` or `review:nit` (a severity the loop assigned)
-plus the repo's `needs-triage` (a label meaning a human hasn't looked at it
-yet), with the reviewer's finding and the loop's reasoning in the body. CI is
-waited on once per loop with a single flake rerun per flow. It ends one of two
-ways: by marking the draft PR ready, or by a **bounded stop** - the loop
-giving up before the PR is ready and recording why, rather than looping
-forever - and it comments on the PR either way. After a bounded stop, a human
-may run the phase again as a fresh loop with its own budget.
+polishes its own fixes, and its final iteration fixes only what is blocking.
+The loop runs its whole budget; when it ends, every major and nit it left
+becomes a GitHub issue labelled `review:major` or `review:nit` (a severity
+the loop assigned) plus the repo's `needs-triage` (a label meaning a human
+hasn't looked at it yet), with the reviewer's finding and the loop's reasoning
+in the body. CI is waited on once per loop with a single flake rerun per flow.
+It ends one of two ways: by marking the draft PR ready, or by a **bounded
+stop** - the loop giving up before the PR is ready and recording why, rather
+than looping forever - and it comments on the PR either way. After a bounded
+stop, a human may run the phase again as a fresh loop with its own budget.
 `/orchestrator:doctor` covers the machine, the repo, and the active flow,
 including the review loop's iteration count against its budget, the PR's CI
 status, and its draft state against the flow's phase.
