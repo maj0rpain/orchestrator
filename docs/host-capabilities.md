@@ -2,8 +2,10 @@
 
 Skills name a **capability** ("invoke a skill", "start a fresh subagent"), and
 this table says how each **host** provides it. Read your host's column: Claude
-Code has the Skill and Agent tools. Junie has no Skill tool, and whether it has
-the Agent tool under another name is unverified.
+Code has the Skill and Agent tools. "Junie" here and throughout the plugin
+means the Junie CLI, not the Junie plugin for JetBrains IDEs. It has no Skill
+tool, and its custom subagents are documented but not yet confirmed to load
+from a Claude plugin's `agents/`.
 
 A cell marked **Fallback** means that host lacks the capability. Do what
 [Fallbacks](#fallbacks) says for it, and record it: one line naming the
@@ -18,7 +20,7 @@ same way.
 
 Adding a host means adding a column here, and teaching `doctor.sh` to detect
 it and name its install methods (#132). Fill a cell only with a verified fact,
-and write "unverified" for anything not yet confirmed. The Junie column comes
+and write "unverified" for anything not yet confirmed. The Junie CLI column comes
 from the documentation bundled with Junie CLI 3419.7.
 
 `orch.sh doctor` reads this table: every row whose cell in the detected
@@ -26,11 +28,11 @@ host's column is marked **Fallback** is reported as a capability that host
 lacks, and every row marked **Unverified** as unverified, so keep each marker
 on exactly its own cells.
 
-| Capability | Claude Code | Junie |
+| Capability | Claude Code | Junie CLI |
 | --- | --- | --- |
 | Invoke a skill from a step | The Skill tool, by scoped name (`orchestrator:orch-flow`, `mattpocock-skills:tdd`). | No Skill tool, so the model cannot invoke one mid-step. A human still starts one with `/<name>`, or Junie picks one automatically. Naming a skill as `$<name>` in a prompt is unverified. **Fallback**. |
 | Ask a multiple-choice question | `AskUserQuestion`. | `AskUserQuestion`. |
-| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent. | Subagents are only picked and started automatically by Junie, with no explicit fresh or fork control. **Fallback**. |
+| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`. | A custom subagent from the plugin's `agents/`, run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). Whether Junie loads a Claude plugin's `agents/` is not confirmed (#148). **Unverified**. Where it does not, take the fallback below. |
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. |
 | Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. |
@@ -52,7 +54,8 @@ tool would have injected:
 
 ### Start a fresh subagent
 
-Do the subagent's work yourself, in this session, from its brief alone. Read
+Do the subagent's work yourself, in this session, from its brief alone. For
+one of the plugin's agents, the brief is its file under `agents/`. Read
 only the files and the issue the brief names, and write the report it asks
 for before moving on. Where a skill spawns several at once, run them one at a
 time, finishing each report before starting the next. The loop around the

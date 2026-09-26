@@ -2008,9 +2008,14 @@ assert_contains "the plugin root check still warns when Claude Code left it unse
 
 out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "Junie's missing capabilities warn, never fail" "$st" 0
-assert_contains "detects Junie from JUNIE_EXTENSION_ROOT" "$out" "host: Junie"
+assert_contains "detects Junie CLI from JUNIE_EXTENSION_ROOT" "$out" "host: Junie CLI"
 assert_contains "names the edit guard Junie cannot arm" "$out" "Arm the edit guard"
-assert_contains "names the fresh subagent Junie cannot start" "$out" "Start a fresh subagent"
+# Junie CLI documents custom subagents, but loading a plugin's agents/ is
+# unconfirmed (#148), so a fresh subagent is unverified there, not missing.
+assert_contains "names the fresh subagent as unverified on Junie" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*')" "Start a fresh subagent"
+assert_eq "does not claim Junie lacks a fresh subagent" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Start a fresh subagent')" "0"
 assert_contains "names the forked subagent Junie cannot start" "$out" "Start a forked subagent"
 # A human on Junie still starts a skill with /<name>; only the model lacks it.
 assert_contains "names only mid-step skill invocation as missing" "$out" "Invoke a skill from a step"
@@ -2018,7 +2023,8 @@ assert_contains "points at the reference for the fallbacks" "$out" "docs/host-ca
 assert_eq "does not list what Junie can do" \
   "$(printf '%s\n' "$out" | grep -c 'Ask a multiple-choice question')" "0"
 # An unconfirmed cell is not a known gap: doctor must not state it as one.
-assert_contains "names what is unverified on Junie" "$out" "unverified: Run a plugin command"
+assert_contains "names what is unverified on Junie" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*')" "Run a plugin command"
 assert_eq "does not claim Junie lacks what is only unverified" \
   "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Run a plugin command')" "0"
 assert_contains "an unset plugin root is expected on Junie, not a warning" \
@@ -4205,7 +4211,8 @@ if [ -f "$ref" ]; then ok "the host capabilities reference exists"
 else bad "the host capabilities reference exists" "no $ref"; fi
 header="$(grep -m1 '^| Capability' "$ref" 2>/dev/null)"
 assert_contains "it has a Claude Code column" "$header" "| Claude Code |"
-assert_contains "it has a Junie column" "$header" "| Junie |"
+# "Junie" is the Junie CLI, the only Junie the column's facts were read from.
+assert_contains "it has a Junie CLI column" "$header" "| Junie CLI |"
 for cap in 'Invoke a skill from a step' 'Ask a multiple-choice question' 'Start a fresh subagent' \
            'Start a forked subagent' 'Start a fresh session' \
            'Inject context at planning time' 'Arm the edit guard'; do

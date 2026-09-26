@@ -13,8 +13,9 @@ behind it.
 [`mattpocock-skills`](https://github.com/mattpocock/skills) is a separate plugin
 of skills for planning, spec-writing, implementing, and reviewing code. This
 plugin conducts it rather than replacing it: `to-spec` writes the spec,
-`implement` builds it, `code-review` reviews it. This plugin owns the state,
-the handoffs, the branch, and the PR.
+`implement` builds it, `code-review` reviews each ticket's work. This plugin
+owns the state, the handoffs, the branch, the PR, and the review loop's own
+reviewer agents.
 
 ## Install
 
@@ -38,6 +39,11 @@ Junie's extension cache (`~/.junie/extensions/`), then the `skills` CLI store
 (`~/.agents/skills/`, only entries its lockfile records as `mattpocock-skills`).
 The first location present is used for every skill; a project's own
 `.agents/skills/` is never consulted.
+
+"Junie" in this README and across the plugin means the Junie CLI, not the
+Junie plugin for JetBrains IDEs. Junie CLI support rests on its bundled
+documentation, and some of it is unverified, such as whether it loads the
+plugin's `agents/` (see [docs/host-capabilities.md](docs/host-capabilities.md)).
 
 Doctor reports the host it detects and the capabilities that host lacks (from
 [docs/host-capabilities.md](docs/host-capabilities.md)). It reads Claude Code
@@ -160,6 +166,7 @@ session's marker file when `orchestrator:orch-quick-implement` fires, without
 
 ```
 commands/                     start, next, status, doctor, redo, abort, release
+agents/                       the review loop's fresh agents: two reviewers, the fixer, the closer
 skills/orch-flow/             the state machine (judgment)
 skills/orch-review-spec/      the spec review: four lenses, one batch question
 skills/orch-review/           the review loop: rubric, authority rules, terminal states
@@ -259,10 +266,13 @@ once that report is in hand, then re-queries the frontier, until none remain
 and it opens the one draft PR for the whole flow.
 
 The review phase is a bounded loop: a budget of iterations the human chooses
-at the start (five by default), `code-review` from the base SHA every one of
-them, a blocking/major/nit rubric applied on top of it, and every blocking
+at the start (five by default), a fresh review from the base SHA every one of
+them by the plugin's own two reviewer agents (standards and spec), a
+blocking/major/nit rubric applied on top of their reports, and every blocking
 finding fixed along with the majors and mechanical nits that need no decision -
-one fix commit per iteration that fixed anything. The loop never polishes its
+one fix commit per iteration that fixed anything. The driving session only
+triages and decides: a fresh fixer agent makes each fix commit, and a fresh
+closer agent files what is left and comments on the PR. The loop never polishes its
 own fixes, and its final iteration fixes only what is blocking. The loop runs
 its whole budget; when it ends, every major and nit it left becomes a GitHub
 issue labelled `review:major` or `review:nit` (a severity the loop assigned)

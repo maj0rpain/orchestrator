@@ -306,7 +306,7 @@ host_detect() {
 host_name() {
   case "$1" in
     claude) printf 'Claude Code\n' ;;
-    junie)  printf 'Junie\n' ;;
+    junie)  printf 'Junie CLI\n' ;;
   esac
 }
 

@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.3.0
+
+The review loop's driving session hands its work to fresh plugin agents, so
+a loop stays within its context budget (see issue #149,
+`docs/adr/0017-the-review-loops-driver-hands-fixing-and-filing-to-fresh-agents.md`
+and `docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md`).
+
+- The plugin ships an `agents/` directory with four agents:
+  `orch-reviewer-standards`, `orch-reviewer-spec`, `orch-fixer`, and
+  `orch-closer`.
+- Two reviewer agents replace `mattpocock-skills:code-review` in the review
+  loop. They have no Edit or Write tool, and each writes its report to a file
+  and returns one line. The implement phase and quick implementations still
+  use `code-review`.
+- A fixer is started at most once per iteration, only when triage leaves
+  something to fix. It fixes, verifies, commits, pushes, and writes the
+  review record. A closer is started once at termination to file the
+  unfixed findings and comment on the PR. The driver triages, waits on CI,
+  and decides the terminal state, and never edits the change.
+- `orch.sh handoff section <file> <heading>` prints one section of a handoff,
+  so the driver reads only what it needs.
+- "Junie" means the Junie CLI throughout the docs. `orch.sh doctor` reports
+  the host as `Junie CLI`, and a fresh subagent there is now unverified, not
+  missing: the Junie CLI documents custom subagents, but loading them from a
+  plugin's `agents/` is unconfirmed (#148). The inline fallback stays.
+
 ## 1.2.0
 
 The review loop now fixes what needs no decision, not only what is blocking
