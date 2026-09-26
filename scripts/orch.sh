@@ -547,6 +547,9 @@ cmd_handoff() {
       local file="$1" heading="## $2"
       [ -f "$file" ] || die "handoff not found: $file"
       grep -qxF "$heading" "$file" || die "section not found: $heading in $file"
+      # A handoff with two identical sections is malformed; section_body would
+      # print both bodies joined as if they were one.
+      [ "$(grep -cxF "$heading" "$file")" -eq 1 ] || die "repeated section: $heading in $file"
       # Trim leading and trailing blank lines, keeping inner ones. A section
       # holding only whitespace prints nothing - the same condition under which
       # handoff_report calls it empty.
@@ -1621,7 +1624,8 @@ orch.sh - deterministic operations for the orchestrator flow
   handoff section <file> <heading>
                               print the body of the section headed
                               `## <heading>`, blank lines trimmed; a missing
-                              file or heading is an error
+                              file, a missing heading, or a repeated heading
+                              is an error
   branch create               create orch/<issue>-<slug> off the flow's base
                               branch, recorded at init
   branch off <name>           create and check out <name> off the base branch

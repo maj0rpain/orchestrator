@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.8
+
+`orch.sh handoff section` refuses a handoff that repeats the requested
+heading (see issue #168).
+
+- `handoff section <file> <heading>` exits non-zero with `repeated section:
+  ## <heading> in <file>` when the heading appears more than once, and prints
+  no body. It used to print every matching section's body joined together as
+  if they were one. A single match and a missing heading behave as before.
+
 ## 1.5.7
 
 The review loop says exactly what a reviewer started through the host
