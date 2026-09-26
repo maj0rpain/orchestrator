@@ -4214,7 +4214,7 @@ done
 echo
 echo "orch.sh resolution (#123)"
 orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'
-fallback='If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`'
+orch_fallback='If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`'
 # A path under the plugin root other than orch.sh (#155) is the one other
 # documented form: "${CLAUDE_PLUGIN_ROOT}/<path>", in a file that also carries
 # this sentence naming the same unset fallback the ORCH line has.
@@ -4225,14 +4225,14 @@ scan_orch_resolution() {
   local -a allowed
   for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md "$r"/guidelines/*; do
     [ -f "$f" ] || continue
-    allowed=(-e "$orch_line" -e "$fallback")
+    allowed=(-e "$orch_line" -e "$orch_fallback")
     grep -qF "$root_fallback" "$f" && allowed+=(-e "$root_fallback" -e '"${CLAUDE_PLUGIN_ROOT}/')
     if grep -n 'CLAUDE_PLUGIN_ROOT' "$f" | grep -vF "${allowed[@]}" | grep -q .; then
       echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
     fi
     if grep -qE 'orch\.sh|\$ORCH' "$f"; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
-      grep -qF "$fallback" "$f" || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
+      grep -qF "$orch_fallback" "$f" || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
     fi
   done
 }
@@ -4287,7 +4287,7 @@ mkdir -p "$fixture/guidelines"
 printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/guidelines/orch.md"
 assert_contains "the scan covers guidelines/ and flags a bare CLAUDE_PLUGIN_ROOT" \
   "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: CLAUDE_PLUGIN_ROOT outside"
-printf '%s\n' '```' "$orch_line" '```' "$fallback two directories above this skill's own directory." \
+printf '%s\n' '```' "$orch_line" '```' "$orch_fallback two directories above this skill's own directory." \
   >"$fixture/guidelines/orch.md"
 assert_eq "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")" ""
 printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
