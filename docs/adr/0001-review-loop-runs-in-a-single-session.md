@@ -1,8 +1,10 @@
 # The review loop runs in a single session
 
 Superseded in part by ADR-0018: the reviewing is now done by the plugin's own
-reviewer agents, not `code-review`'s sub-agents. One session per loop, and
-the reviewers' independence from its reasoning, still stand.
+reviewer agents, not `code-review`'s sub-agents. And by ADR-0017: the driving
+session no longer keeps the bookkeeping in its context or does the fixing and
+filing - fresh fixer and closer agents do, reading the records. One session
+per loop, and the reviewers' independence from its reasoning, still stand.
 
 Every other phase of a flow gets its own session, because the whole point of the
 plugin is that a phase should judge the work rather than inherit the story

@@ -74,8 +74,9 @@ One of the four stages a flow passes through: **plan**, **spec**, **implement**,
 **review**. Each phase runs in its own session with no memory of the previous
 one - with one deliberate exception: a review loop drives all of its iterations
 from a single session (ADR-0001), so inside the review phase the unit of fresh
-context is the loop, not the iteration. The spec review is a step of the spec
-phase, not a phase of its own.
+context is the loop, not the iteration. The loop is the unit of fresh context
+for its driver; the reviewers and the fixer get fresh context every iteration.
+The spec review is a step of the spec phase, not a phase of its own.
 
 Note the tense: the recorded phase names the stage that runs **next**, not the
 one that just finished.
@@ -91,6 +92,9 @@ options, deviations.
 
 One run of the review phase in one session: a budget of iterations, every one a
 fresh review of the whole change from the base SHA, ending in a terminal state.
+The session that runs it is the loop's driver: it starts the reviewers, triages
+what they report, and decides the terminal state, but never edits the change
+itself - that is the fixer's work, and filing is the closer's.
 A flow runs a loop each time it enters the review phase; a flow's loops share
 one iteration numbering, and only a human decides that a further loop happens.
 That further-loop decision is re-entry, not Redo: re-entry reviews the same
@@ -129,6 +133,18 @@ budget allows.
 An iteration that fixed nothing and committed nothing. A loop can finish only
 on a clean final iteration - and since a final iteration fixes only what is
 blocking, that means one whose review found nothing blocking.
+
+## Fixer
+
+A fresh agent a review loop's driver starts within an iteration, and only when
+triage left something the loop fixes. It fixes, verifies, commits, writes the
+iteration's review record, and ends with the iteration: one fixer never sees
+another iteration's work except through the records.
+
+## Closer
+
+A fresh agent a review loop's driver starts once, at termination, to turn the
+loop's unfixed findings into filed findings and tell the PR what the loop did.
 
 ## Adopted issue
 
@@ -187,7 +203,8 @@ findings the loop may fix without asking anyone:
 
 - **Blocking** - the change is wrong: incorrect behaviour, a spec requirement
   missing or misimplemented, a security problem, a broken or missing test, or a
-  failing verification command. Always fixed, in every iteration.
+  failing verification command. Always fixed, in every iteration - or,
+  when the fixer cannot, left open, holding the change out of ready.
 - **Major** - the change works but carries real cost: a documented standard
   breached, a smell with teeth, scope nobody asked for. Fixed by the loop
   unless the fix needs a decision, changes behaviour, or would touch the
@@ -215,8 +232,8 @@ loop's fixes are not loop-authored for the next one.
 
 A major or nit the loop did not fix, turned into an issue when a loop
 terminates - because its fix needed a decision, would have changed behaviour,
-was not mechanical, landed on loop-authored lines, or was found in a final
-iteration. It carries the reviewer's finding and the loop's reasoning about
+was not mechanical, landed on loop-authored lines, was found in a final
+iteration, or the fixer could not fix it. It carries the reviewer's finding and the loop's reasoning about
 it, including which of those kept it out of the loop, deduplicated across
 iterations and across a flow's loops. A filed finding enters triage against
 the whole codebase rather than against one diff: a later loop that meets it
@@ -226,8 +243,9 @@ a human's earlier decision are reported, never filed.
 ## Review record
 
 The written account of one iteration: what was found, at what severity, what was
-done about it, which issues were filed, and what CI said. A record is a record -
-it is read by humans after the fact, not by the loop to decide anything.
+done about it, which issues were filed, and what CI said. Humans read it after
+the fact; later iterations and loops read it for what earlier ones fixed and
+filed, since no fixer or closer remembers anything the records do not say.
 
 ## Terminal state
 
@@ -237,8 +255,9 @@ stop.
 ## Bounded stop
 
 The terminal state of a loop that ended without the change being ready - because
-its final iteration fixed something nothing has reviewed, or because CI could
-not be called green. A stop is not a failed change and not a successful one.
+its final iteration fixed something nothing has reviewed, left a blocking
+finding its fixer could not fix, or lacked one of its two looks, or because CI
+could not be called green. A stop is not a failed change and not a successful one.
 
 ## Flake rerun
 
