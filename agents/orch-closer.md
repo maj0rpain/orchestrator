@@ -26,7 +26,7 @@ loop's outcome either: the terminal state in your prompt is final, and
 - **Loop boundary** - the `iteration` the driver read before this loop's
   first iteration. This loop's records are those numbered above it; every
   record at or below it belongs to an earlier loop, which you leave alone.
-- **CI result** - what `review ci` said, and any flake rerun spent.
+- **CI result** - the final record's `## CI` section, as the driver wrote it.
 - **Host fallbacks** the loop took, or `None (<host>).`
 - **Terminal state** - `ready`, or `stop` with its reason.
 - **What happens next.**

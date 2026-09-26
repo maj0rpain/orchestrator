@@ -3652,6 +3652,20 @@ out="$("$ORCH" review terminal 2>&1)"; st=$?
 assert_status "a ready heading is terminal" "$st" 0
 assert_first_line "and classifies as ready" "$out" "ready"
 
+# The driver writes `## CI` at termination, before the closer's `## Filed` and
+# its own `## Terminal state`. Only the last is read: a CI answer never
+# classifies a loop on its own.
+writeln '## CI' 'failing' 'build: failed' '' '## Filed' 'None' '' \
+  '## Terminal state' 'ready' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a CI section before Terminal state leaves it terminal" "$st" 0
+assert_first_line "classified from Terminal state, not CI" "$out" "ready"
+
+writeln '## CI' 'green' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a CI section with no Terminal state is not terminal" "$st" 1
+assert_first_line "still classified as interrupted" "$out" "interrupted"
+
 writeln '## Terminal state' 'stop' 'CI failed twice, flake rerun spent.' \
   >.orchestrator/review/iteration-05.md
 out="$("$ORCH" review terminal 2>&1)"; st=$?
