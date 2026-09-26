@@ -186,16 +186,13 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      that the report is back, never before - and go around again.
 
    **Dispatching a subagent**: start the plugin's `orch-implementer` agent
-   (under the plugin root's `agents/`) as a fresh subagent, never a fork - on
-   Claude Code, the Agent tool with `subagent_type` set to
-   `orch-implementer` under the `orchestrator:` plugin scope.
-   Its prompt is the issue number named above and nothing else; the agent
-   owns its brief. It returns five lines: `Ticket`, `Commits`,
-   `Verification`, `Criteria`, `Deviation`. On a host that does not load the
-   plugin's `agents/`, take `docs/host-capabilities.md`'s **Start a fresh
-   subagent** fallback: do the ticket's work yourself, in this session,
-   following `agents/orch-implementer.md` as your brief, and record the
-   fallback under the handoff's **Host fallbacks**.
+   exactly as the **Starting this agent** section of
+   `agents/orch-implementer.md` (under the plugin root) says, with the issue
+   number named above as its prompt. On Claude Code it is the agent named
+   `orch-implementer` under the `orchestrator:` plugin scope. A host that
+   cannot start it natively takes `docs/host-capabilities.md`'s **Start a
+   fresh subagent** fallback; record it under the handoff's **Host
+   fallbacks**.
 4. `bash "$ORCH" pr open "<title>" <body-file>`. The PR opens as a draft; marking it
    ready is the review loop's success condition. The PR targets the flow's base
    branch. `pr open` itself writes the issue line ahead of the body -

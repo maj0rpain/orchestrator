@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.1
+
+Starting a plugin agent is defined once (see issue #181).
+
+- `docs/host-capabilities.md`'s **Start a fresh subagent** fallback is the one
+  definition of how a plugin agent is started on a host that cannot start it
+  natively: first a fresh general-purpose agent briefed with the agent's file,
+  then in-session work that takes the host fallback for any capability the
+  brief names. `orch-review`, `orch-flow`, and `orch-quick-implement` point at
+  it and keep only where they record the fallback.
+- The implement phase and quick implementations now take that first tier too,
+  instead of going straight to in-session work on a host that has fresh
+  subagents but does not load the plugin's `agents/`.
+- `orch-implementer`'s dispatch contract lives once, in the **Starting this
+  agent** section of `agents/orch-implementer.md`.
+
 ## 1.4.0
 
 Ticket subagents run as the plugin's own `orch-implementer` agent and no
