@@ -826,6 +826,17 @@ out="$("$ORCH" handoff section "$h" "Open questions" 2>&1)"; st=$?
 assert_status "a missing heading is an error" "$st" 1
 assert_contains "naming the heading" "$out" "Open questions"
 
+# A handoff with two identical sections is malformed: refuse it rather than
+# print both bodies joined as if they were one section (see issue #168).
+hd="$(mktemp)"
+writeln '## X' 'First.' '## Y' 'Between.' '## X' 'Second.' >"$hd"
+out="$("$ORCH" handoff section "$hd" X 2>&1)"; st=$?
+assert_status "a repeated heading is an error" "$st" 1
+assert_contains "naming the repeated heading and the file" "$out" "repeated section: ## X in $hd"
+assert_not_contains "and printing no body" "$out" "First."
+assert_not_contains "nor the second body" "$out" "Second."
+rm -f "$hd"
+
 # The match is on the whole `## <heading>` line: a prefix is not the section.
 out="$("$ORCH" handoff section "$h" "Rejected" 2>&1)"; st=$?
 assert_status "a heading prefix does not match" "$st" 1
