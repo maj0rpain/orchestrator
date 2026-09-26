@@ -272,8 +272,8 @@ blocking/major/nit rubric applied on top of their reports, and every blocking
 finding fixed along with the majors and mechanical nits that need no decision -
 one fix commit per iteration that fixed anything. The driving session only
 triages and decides: a fresh fixer agent makes each fix commit, and a fresh
-closer agent files what is left and comments on the PR. The loop never polishes its
-own fixes, and its final iteration fixes only what is blocking. The loop runs
+closer agent files what is left and comments on the PR. The loop never
+polishes its own fixes, and its final iteration fixes only what is blocking. The loop runs
 its whole budget; when it ends, every major and nit it left becomes a GitHub
 issue labelled `review:major` or `review:nit` (a severity the loop assigned)
 plus the repo's `needs-triage` (a label meaning a human hasn't looked at it

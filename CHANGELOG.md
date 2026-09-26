@@ -15,8 +15,8 @@ and `docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md`).
   and returns one line. The implement phase and quick implementations still
   use `code-review`.
 - A fixer is started at most once per iteration, only when triage leaves
-  something to fix. It fixes, verifies, commits, pushes, and writes the
-  review record. A closer is started once at termination to file the
+  something to fix. It fixes, verifies, commits, pushes, and writes that
+  iteration's review record; on a clean iteration the driver writes it. A closer is started once at termination to file the
   unfixed findings and comment on the PR. The driver triages, waits on CI,
   and decides the terminal state, and never edits the change.
 - `orch.sh handoff section <file> <heading>` prints one section of a handoff,

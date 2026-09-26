@@ -275,7 +275,8 @@ commit counts. A change with no checks at all is not thereby failing.
 ## Host
 
 The agent CLI that has the plugin installed and runs its skills - Claude Code,
-Junie, and so on. Claude Code is the reference host; every other host is
+Junie, and so on. "Junie" always means the Junie CLI, not the Junie plugin
+for JetBrains IDEs. Claude Code is the reference host; every other host is
 supported to the extent it can do what the plugin asks, and anything it
 cannot do is reported rather than silently skipped.
 
