@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.4
+
+The fixer's brief names its host fallback for the `mattpocock-skills:tdd`
+skill, and the host-capability lint covers `agents/` (see issue #157).
+
+- `orch-fixer`'s first step says what to do on a host with no Skill tool:
+  `bash "$ORCH" mp-skill tdd`, per `docs/host-capabilities.md`'s **Invoke a
+  skill from a step**, recorded under the iteration record's **Host
+  fallbacks**.
+- README's "Naming host capabilities" rule names the agent briefs under
+  `agents/` alongside skills and commands.
+- `orch_test.sh` scans `agents/*.md` with the skill checks; an agent must
+  point at `docs/host-capabilities.md` when it invokes a skill.
+
 ## 1.5.3
 
 `orch-review`'s clean-iteration record command reads the fixer's brief
