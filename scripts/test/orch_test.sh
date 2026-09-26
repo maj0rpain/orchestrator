@@ -4214,18 +4214,25 @@ done
 echo
 echo "orch.sh resolution (#123)"
 orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'
-fallback='If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`'
+orch_fallback='If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`'
+# A path under the plugin root other than orch.sh (#155) is the one other
+# documented form: "${CLAUDE_PLUGIN_ROOT}/<path>", in a file that also carries
+# this sentence naming the same unset fallback the ORCH line has.
+root_fallback='If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is'
 # scan_orch_resolution <plugin root>: print one line per offending file.
 scan_orch_resolution() {
   local r="$1" f
+  local -a allowed
   for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md "$r"/guidelines/*; do
     [ -f "$f" ] || continue
-    if grep -n 'CLAUDE_PLUGIN_ROOT' "$f" | grep -vF -e "$orch_line" -e "$fallback" | grep -q .; then
+    allowed=(-e "$orch_line" -e "$orch_fallback")
+    grep -qF "$root_fallback" "$f" && allowed+=(-e "$root_fallback" -e '"${CLAUDE_PLUGIN_ROOT}/')
+    if grep -n 'CLAUDE_PLUGIN_ROOT' "$f" | grep -vF "${allowed[@]}" | grep -q .; then
       echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
     fi
     if grep -qE 'orch\.sh|\$ORCH' "$f"; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
-      grep -qF "$fallback" "$f" || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
+      grep -qF "$orch_fallback" "$f" || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
     fi
   done
 }
@@ -4245,6 +4252,13 @@ scan_orch_bash() {
 }
 assert_eq "every skill and doc runs orch.sh through bash" \
   "$(scan_orch_bash "$root")" ""
+# A skill's commands name the plugin root through CLAUDE_PLUGIN_ROOT, never a
+# "<plugin root>" placeholder the driver must work out for itself (#155).
+assert_eq "no skill, command, or guideline carries a <plugin root> placeholder" \
+  "$(grep -nF '<plugin root>/' "$root"/skills/*/SKILL.md "$root"/commands/*.md "$root"/guidelines/*)" ""
+assert_contains "orch-review reads the fixer's record through CLAUDE_PLUGIN_ROOT" \
+  "$(cat "$root/skills/orch-review/SKILL.md")" \
+  "\"\${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md\""
 # With no full install at all, doctor has no orch.sh to run from, so the skill
 # is the one that has to explain the failure (#128).
 missing=""
@@ -4273,9 +4287,17 @@ mkdir -p "$fixture/guidelines"
 printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/guidelines/orch.md"
 assert_contains "the scan covers guidelines/ and flags a bare CLAUDE_PLUGIN_ROOT" \
   "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: CLAUDE_PLUGIN_ROOT outside"
-printf '%s\n' '```' "$orch_line" '```' "$fallback two directories above this skill's own directory." \
+printf '%s\n' '```' "$orch_line" '```' "$orch_fallback two directories above this skill's own directory." \
   >"$fixture/guidelines/orch.md"
 assert_eq "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")" ""
+printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
+  >"$fixture/guidelines/orch.md"
+assert_contains "the scan flags a plugin-root path with no unset fallback" \
+  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: CLAUDE_PLUGIN_ROOT outside"
+printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
+  "$root_fallback two directories above this skill's own directory." >"$fixture/guidelines/orch.md"
+assert_eq "the scan accepts a plugin-root path with its unset fallback" \
+  "$(scan_orch_resolution "$fixture")" ""
 rm -rf "$fixture"
 
 # --- host capabilities (#127) -------------------------------------------------

@@ -208,9 +208,15 @@ two directories above this skill's own directory (the plugin root).
 Keep the fallback sentence's first line intact, then call `bash "$ORCH" <subcommand>`
 everywhere else. Do not copy the scripts into a skill. Commands never run
 `orch.sh`: each is a thin route into an `orch-flow` section (see
-[Naming host capabilities](#naming-host-capabilities)). `orch_test.sh` fails when
-a skill, command, or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT` anywhere
-else, or runs `orch.sh` without this pair or without `bash`.
+[Naming host capabilities](#naming-host-capabilities)).
+
+A skill that reads another file under the plugin root names it as
+`"${CLAUDE_PLUGIN_ROOT}/<path>"`, and the same file carries a sentence starting
+``If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is``, naming the same
+directory the `ORCH` fallback does. `orch_test.sh` fails when a skill, command,
+or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT` any other way, runs
+`orch.sh` without this pair or without `bash`, or names a path through a
+`<plugin root>/` placeholder.
 
 ### Naming host capabilities
 
