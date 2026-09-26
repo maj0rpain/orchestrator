@@ -825,7 +825,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh handoff section <file
 
 assert_contains "orch.sh help lists handoff section" "$("$ORCH" help)" "handoff section"
 out="$("$ORCH" handoff bogus 2>&1)"
-assert_contains "an unknown handoff op lists section" "$out" "section"
+assert_contains "an unknown handoff op lists section" "$out" "want path|validate|section"
 rm -f "$hs" "$hi"
 
 # --- ticket breakdown handoff ------------------------------------------------
@@ -3774,16 +3774,15 @@ assert_eq "and the flat trail is empty afterwards" \
   "$([ -e .orchestrator/review/iteration-01.md ] && echo yes || echo no)" "no"
 
 # The per-reviewer report files ride along with their records.
-new_repo >/dev/null
-"$ORCH" init retirereports >/dev/null
-mkdir -p .orchestrator/review
-: >.orchestrator/review/iteration-01.md
-: >.orchestrator/review/iteration-01-standards.md
-: >.orchestrator/review/iteration-01-spec.md
-"$ORCH" review retire 1 >/dev/null
-for f in iteration-01.md iteration-01-standards.md iteration-01-spec.md; do
-  assert_eq "$f moved into pre-redo-1" \
-    "$([ -f ".orchestrator/review/pre-redo-1/$f" ] && [ ! -e ".orchestrator/review/$f" ] && echo yes || echo no)" "yes"
+: >.orchestrator/review/iteration-03.md
+: >.orchestrator/review/iteration-03-standards.md
+: >.orchestrator/review/iteration-03-spec.md
+"$ORCH" review retire 2 >/dev/null
+for f in iteration-03.md iteration-03-standards.md iteration-03-spec.md; do
+  assert_eq "$f landed in pre-redo-2" \
+    "$([ -f ".orchestrator/review/pre-redo-2/$f" ] && echo yes || echo no)" "yes"
+  assert_eq "$f left the flat trail" \
+    "$([ -e ".orchestrator/review/$f" ] && echo yes || echo no)" "no"
 done
 
 : >.orchestrator/review/iteration-01.md
