@@ -1270,7 +1270,7 @@ cmd_pr() {
 # --- ticket -------------------------------------------------------------
 #
 # GitHub's native sub-issue and issue-dependency APIs, in one place, so no
-# skill prose ever calls `gh api` on these endpoints directly. Stateless
+# skill or agent prose ever calls `gh api` on these endpoints directly. Stateless
 # throughout, like issue publish/pr publish: callable with no state.json,
 # since quick implementation keeps none.
 
@@ -1397,10 +1397,11 @@ cmd_ticket_reset() {
 }
 
 # Prints <n>'s parent issue number, or nothing (still exit 0) when <n> is
-# not a sub-issue - how the implementer tells a ticket from a spec issue that
-# is its own ticket. Read from the issue's own parent_issue_url rather than
-# the /parent endpoint, whose "no parent" is a 404 indistinguishable by exit
-# status from a missing issue: here every gh failure is a real one.
+# not a sub-issue. Read from the issue's own parent_issue_url rather than the
+# /parent endpoint, whose "no parent" is a 404 indistinguishable by exit
+# status from a missing issue: here every gh failure is a real one. GitHub
+# omits the key entirely on an issue with no parent, so an absent key and a
+# null one both mean "no parent".
 cmd_ticket_parent() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket parent <n>"
   local n="$1" url

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.0
+
+`orch-implementer` finds its spec issue through `orch.sh` instead of calling
+the sub-issue endpoint with `gh api` itself (see issue #179).
+
+- New `orch.sh ticket parent <n>` prints a sub-issue's parent issue number, or
+  nothing when the issue has no parent, and fails on any gh error.
+- The implementer's prompt is now two lines, the ticket number and the path of
+  the plugin's `orch.sh`, the same way `orch-closer` receives it. The same
+  path serves its `mp-skill tdd` route on a host with no Skill tool, and the
+  dispatching skill records that fallback.
+
 ## 1.4.2
 
 The closer files only what its own review loop left unfixed, and the driver's

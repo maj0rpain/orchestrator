@@ -396,7 +396,11 @@ ready-for-agent}"
     case "$api_sub" in
       "")
         api_json="$(printf '{"id":%d,"number":%d,"state":"%s","parent_issue_url":%s,"issue_dependencies_summary":{"blocked_by":%s}}' \
-          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_parent_url "$api_num")" "$(api_blocked_count "$api_num")")" ;;
+          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_parent_url "$api_num")" "$(api_blocked_count "$api_num")")"
+        # GitHub's real shape for an issue with no parent: the key is absent, not null.
+        if [ -n "${GH_STUB_NO_PARENT_FIELD:-}" ]; then
+          api_json="$(printf '%s' "$api_json" | jq -c 'del(.parent_issue_url)')"
+        fi ;;
       sub_issues)
         if [ "$api_method" = POST ]; then
           if [ -n "$db" ]; then
@@ -2759,6 +2763,10 @@ assert_eq "printing the parent's number" "$out" "95"
 
 out="$("$ORCH" ticket parent 95 2>&1)"; st=$?
 assert_status "an issue with no parent still succeeds" "$st" 0
+assert_eq "printing nothing" "$out" ""
+
+out="$(GH_STUB_NO_PARENT_FIELD=1 "$ORCH" ticket parent 95 2>&1)"; st=$?
+assert_status "an issue whose parent_issue_url key is absent, as GitHub sends it, succeeds" "$st" 0
 assert_eq "printing nothing" "$out" ""
 
 out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket parent "$k" 2>&1)"; st=$?

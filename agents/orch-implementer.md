@@ -32,8 +32,9 @@ orch.sh: <the path ORCH holds>
 It returns the five lines of **Report** below and nothing else. A host that
 cannot start it natively takes `docs/host-capabilities.md`'s **Start a fresh
 subagent** fallback, whose general-purpose-agent tier adds this file's path
-to that prompt. The caller, which knows its host, records any host fallback
-this agent takes - the report carries none.
+to that prompt. On a host with no Skill tool this agent takes the
+`mp-skill tdd` route in step 2; the caller, which knows its host, records
+that fallback too - the report carries none.
 
 ## Steps
 
