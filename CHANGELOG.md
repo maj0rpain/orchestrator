@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.6
+
+The fixer pushes only when it made a commit (see issue #165).
+
+- `orch-fixer`'s **Push** step runs only if its **Commit once** step made a
+  commit. A fixer that fixed nothing skips the push, and still writes its
+  record and returns `no commit`.
+
 ## 1.5.5
 
 The final review record names the section the CI answer goes in: `## CI`
