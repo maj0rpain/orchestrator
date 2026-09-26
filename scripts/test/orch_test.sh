@@ -2973,12 +2973,12 @@ assert_status "passes once the command is recorded" "$st" 0
 # with the ticket that reported it - and Deviations keeps only deviations.
 writeln '## PR' '#3.' '' '## Spec issue' '#1.' '' '## Base SHA' 'abc1234.' '' \
         '## Deviations' 'None.' '' \
-        '## Verification' 'scripts/test/orch_test.sh - fail (reported by ticket #12)' '' \
+        '## Verification' 'bash scripts/test/orch_test.sh' 'fail - ticket #12' '' \
         '## Host fallbacks' 'None (Claude Code).' >"$h3"
 out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "a Verification section recording a failure and its ticket validates" "$st" 0
-assert_eq "and Deviations stays free of it" \
-  "$("$ORCH" handoff section "$h3" Deviations)" "None."
+assert_eq "its first line is still the bare command the review loop runs" \
+  "$("$ORCH" handoff section "$h3" Verification | head -n 1)" "bash scripts/test/orch_test.sh"
 
 # --- the multi-loop machinery is gone ---------------------------------------
 # Every loop reads the implement handoff, whatever the flow has been through.

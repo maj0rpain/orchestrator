@@ -133,10 +133,11 @@ the body file passed to it should not add a closing keyword of its own.>
 it did not. This is how review tells an agreed change from scope creep.>
 
 ## Verification
-<the exact command that proves the change works, as you just ran it, and its
-result - `pass` or `fail`, and on a `fail` the ticket whose report returned it.
-The review loop runs this every iteration and treats a failure as blocking. You
-have the tests fresh; review would be guessing.>
+<first line: the exact command that proves the change works, as you just ran
+it, and nothing else - the review loop runs this line every iteration and
+treats a failure as blocking. Then, on its own line, the result: `pass`, or
+`fail` and the ticket whose report returned it. You have the tests fresh;
+review would be guessing.>
 
 ## Unmet criteria
 <the acceptance criteria the ticket subagents reported unmet on their `Criteria`
