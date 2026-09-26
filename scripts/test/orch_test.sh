@@ -2797,9 +2797,6 @@ assert_contains "and its brief finds the spec issue through ticket parent" \
   "$(cat "$proot/agents/orch-implementer.md")" 'ticket parent'
 assert_contains "and names the mp-skill tdd route for a host with no Skill tool" \
   "$(cat "$proot/agents/orch-implementer.md")" 'mp-skill tdd'
-# A fixer that fixed nothing makes no commit, so it has nothing to push (#165).
-assert_contains "the fixer pushes only when its commit step made a commit" \
-  "$(cat "$proot/agents/orch-fixer.md")" '4. **Push**, only if step 3 made a commit.'
 
 # --- ticket: unknown op ------------------------------------------------------
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?
@@ -4316,6 +4313,11 @@ printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '``
 assert_eq "the scan accepts a plugin-root path with its unset fallback" \
   "$(scan_orch_resolution "$fixture")" ""
 rm -rf "$fixture"
+
+# --- fixer brief (#165) -------------------------------------------------------
+# A fixer that fixed nothing makes no commit, so it has nothing to push.
+assert_contains "the fixer pushes only when its commit step made a commit" \
+  "$(cat "$root/agents/orch-fixer.md")" '**Push**, only if step 3 made a commit.'
 
 # --- host capabilities (#127) -------------------------------------------------
 # Skills describe capabilities and point at one reference that maps each
