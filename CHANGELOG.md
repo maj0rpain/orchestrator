@@ -14,6 +14,9 @@ triage is the one owner of the already-filed rule (see issue #164, covering
   triage marked met again.
 - **Filed** entries read `#<n> <severity>: <file>:<line> <title>`, and triage's
   **Met again** matches on file, line, and claim instead of the title alone.
+  An older entry with no file and line is matched on its title against the
+  finding's claim.
+- ADR-0020 records the decision and supersedes ADR-0017 in part.
 
 ## 1.4.1
 
