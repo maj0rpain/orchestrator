@@ -310,7 +310,8 @@ stop.
 ## Bounded stop
 
 The terminal state of a loop that ended without the change being ready - because
-its final iteration fixed something nothing has reviewed, left a blocking
+its final iteration was not clean (it started a fixer, whose work nothing has
+reviewed), left a blocking
 finding its fixer could not fix, or lacked one of its two looks, or because CI
 could not be called green. A stop is not a failed change and not a successful one.
 

@@ -132,9 +132,9 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
      its title against the finding's claim.
 
    Done when every finding in both reports has exactly one disposition.
-4. Nothing to fix means no fixer - a **clean iteration**. An iteration that
-   starts a fixer is never clean, even if the fixer fixes nothing. Write the record
-   to `bash "$ORCH" review path` yourself, in the shape the fixer's brief
+4. Nothing to fix means no fixer - a **clean iteration**. An iteration
+   that starts a fixer is never clean, even if the fixer fixes nothing.
+   Write the record to `bash "$ORCH" review path` yourself, in the shape the fixer's brief
    gives, reading just that section - the brief's last, whose template holds
    `##` headings of its own, so read to the end of the file:
 
@@ -367,10 +367,9 @@ first: a loop that ends well ends without parking on a prompt.
 
 **Bounded stop** - anything else, and the recorded reason says which, naming
 the finding where there is one. The final iteration was not clean: it started
-a fixer - which, since it fixes only what is blocking, means it found
-something blocking:
-nothing has reviewed what it wrote, and marking a PR ready over that claims a
-verification that never happened. An open blocking finding or a missing look
+a fixer, whether for a blocking finding this review made or for open blocking
+carried in. Nothing has reviewed what it wrote, and marking a PR ready over
+that claims a verification that never happened. An open blocking finding or a missing look
 remains in the final record. Or CI: `failing` with the flake rerun spent or
 the failure not looking flaky, or `unreachable`. The terminal action is to
 stop: **leave `phase` at `review` and the PR in draft**, and tell the human
