@@ -17,10 +17,12 @@ acceptance self-check in step 5 is the only check you run on it.
 
 ## Steps
 
-1. **Fetch the ticket** before anything else: `gh issue view <n> --comments`.
-   Then find its spec issue: `gh api "repos/{owner}/{repo}/issues/<n>/parent"
-   --jq .number` names the parent of a sub-issue ticket; a 404 means the
-   ticket is the spec issue itself. Read the spec issue's **Testing
+1. **Fetch the ticket** before anything else: `gh issue view <ticket>
+   --comments`. Then find its spec issue: `gh api
+   "repos/{owner}/{repo}/issues/<ticket>/parent" --jq .number` names the
+   parent of a sub-issue ticket, and a `404 Not Found` means the ticket is
+   the spec issue itself. Any other failure is retried once, then recorded as
+   a deviation. Read the spec issue's **Testing
    Decisions** - the seams already confirmed with the human.
 2. **Build the ticket test-first** through the `mattpocock-skills:tdd` skill,
    invoked as a skill, at those seams. A test that needs a seam the Testing
@@ -63,10 +65,10 @@ Two different lines of the report carry what you could not settle:
 Exactly these five lines:
 
 ```
-Ticket: #<n>
+Ticket: #<ticket>
 Commits: <sha> <sha> ... | none
 Verification: <full-verification command> - pass|fail
-Criteria: <k>/<n> met | <k>/<n> met; unmet: <criterion>; <criterion> ...
+Criteria: <met>/<total> met | <met>/<total> met; unmet: <criterion>; <criterion> ...
 Deviation: <deviation>; <deviation> ... | None
 ```
 

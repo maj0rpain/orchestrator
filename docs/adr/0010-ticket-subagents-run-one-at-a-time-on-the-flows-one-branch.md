@@ -1,5 +1,8 @@
 # Ticket subagents run one at a time, on the flow's one branch
 
+Superseded in part by ADR-0019: a ticket subagent now runs as the plugin's
+`orch-implementer` agent and follows `tdd` only, not `implement`.
+
 The implement phase and quick implementation both build a ticket breakdown by
 handing each ready ticket to a fresh subagent (`skills/flow/SKILL.md`'s
 Phase: implement step 3, added in #86; `skills/quick-implement/SKILL.md`'s

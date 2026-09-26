@@ -15,7 +15,8 @@ of skills for planning, spec-writing, implementing, and reviewing code. This
 plugin conducts it rather than replacing it: `to-spec` writes the spec,
 `tdd` builds each ticket test-first, `code-review` reviews a quick
 implementation. This plugin owns the state, the handoffs, the branch, the PR,
-the ticket implementer, and the review loop's own reviewer agents.
+the agent each ticket subagent runs as, and the review loop's own reviewer
+agents.
 
 ## Install
 
@@ -262,9 +263,9 @@ The agent builds that one ticket test-first through `tdd`, on the flow's
 single branch, commits its own work, and checks its commits against the
 ticket's acceptance criteria. It cannot start sub-agents or ask the human
 anything: a call it cannot make alone comes back as a deviation in its
-report, and a criterion it could not meet as unmet. The driving session closes the ticket only
-once that report is in hand, then re-queries the frontier, until none remain
-and it opens the one draft PR for the whole flow.
+report, and a criterion it could not meet as unmet. The driving session
+closes the ticket only once that report is in hand, then re-queries the
+frontier, until none remain and it opens the one draft PR for the whole flow.
 
 The review phase is a bounded loop: a budget of iterations the human chooses
 at the start (five by default), a fresh review from the base SHA every one of

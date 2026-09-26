@@ -1,5 +1,8 @@
 # The review loop owns its reviewer briefs
 
+Superseded in part by ADR-0019: the implement phase's ticket subagents no
+longer use `code-review` either; only quick implementation's single pass does.
+
 Supersedes ADR-0001's premise that the reviewing is done by
 `mattpocock-skills:code-review`'s sub-agents. ADR-0001's claim that one
 session drives a loop, and its reason - the reviewers never see the driving
