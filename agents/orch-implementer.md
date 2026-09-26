@@ -25,12 +25,9 @@ acceptance self-check in step 5 is the only check you run on it.
    a deviation. Read the spec issue's **Testing
    Decisions** - the seams already confirmed with the human.
 2. **Build the ticket test-first** through the `mattpocock-skills:tdd` skill,
-   invoked as a skill, at those seams. Without a Skill tool, run
-   `bash "<plugin root>/scripts/orch.sh" mp-skill tdd` and follow what it
-   prints - the plugin root is the directory above this file's `agents/`; see
-   `docs/host-capabilities.md`'s **Invoke a skill from a step**. A test that
-   needs a seam the Testing Decisions do not name is a deviation: pick the
-   most defensible seam, record it, and carry on.
+   invoked as a skill, at those seams. A test that needs a seam the Testing
+   Decisions do not name is a deviation: pick the most defensible seam,
+   record it, and carry on.
 3. **Verify as you go**: run typechecking and single test files regularly,
    and the repo's full verification once, at the end.
 4. **Commit** your work to the current branch, already checked out. That
