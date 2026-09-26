@@ -105,26 +105,17 @@ never in parallel - every ticket commits to the same branch. Loop:
 - Record the subagent's report, then `bash "$ORCH" ticket close <n>` - only now
   that the report is back, never before - and go around again.
 
-**Dispatching a subagent**: start a fresh subagent (on Claude Code, the
-Agent tool as a fresh agent, explicitly not a fork), so it starts with
-nothing but what this brief hands it, carrying only the issue number named
-above. Without one, take the documented fallback. The brief's directions open
-with an explicit first instruction: fetch the ticket itself (`gh issue view
-<n> --comments`, per `docs/agents/issue-tracker.md`'s "fetch the relevant
-ticket" convention) before doing anything else. The brief then directs the
-subagent to invoke `mattpocock-skills:tdd` against the ticket - it carries
-no `disable-model-invocation` flag, unlike `implement`, so the subagent can
-invoke it as a skill (without a Skill tool, through `bash "$ORCH" mp-skill tdd`); to build on the current branch,
-already checked out, and commit its own work to it; to never open a branch
-or PR of its own; and to never block on a human mid-ticket - a call it
-cannot make alone is a deviation, recorded and returned instead of asked.
-The brief adds file-read discipline: never re-read a file already read in
-full this session - grep for the next location and jump there instead of
-re-reading it wholesale; and on a wide-blast-radius ticket (a rename, a
-grammar change, anything touching many call sites), run one `grep -rn` pass
-up front to build a complete reference list, then work that list with
-targeted reads and edits, never re-scanning the same files afterward.
-Its report is structured: what it built, and the deviation it made, if any.
+**Dispatching a subagent**: start the plugin's `orch-implementer` agent
+(under the plugin root's `agents/`) as a fresh subagent, never a fork - on
+Claude Code, the Agent tool with `subagent_type` set to
+`orch-implementer` under the `orchestrator:` plugin scope.
+Its prompt is the issue number named above and nothing else; the agent owns
+its brief. It returns five lines: `Ticket`, `Commits`, `Verification`,
+`Criteria`, `Deviation`. On a host that does not load the plugin's
+`agents/`, take `docs/host-capabilities.md`'s **Start a fresh subagent**
+fallback: do the ticket's work yourself, in this session, following
+`agents/orch-implementer.md` as your brief, and list the fallback under the
+PR body's **Host fallbacks**.
 
 ## 5. Review
 

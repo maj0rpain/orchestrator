@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.4.0
+
+Ticket subagents run as the plugin's own `orch-implementer` agent and no
+longer review their own work (see issue #176 and
+`docs/adr/0019-ticket-subagents-check-acceptance-criteria-and-leave-review-to-the-loop.md`).
+
+- The implement phase and quick implementations start `orch-implementer`
+  with only the ticket number. It builds the ticket test-first through
+  `mattpocock-skills:tdd`, commits, checks its commits against the ticket's
+  acceptance criteria, and returns five lines: `Ticket`, `Commits`,
+  `Verification`, `Criteria`, `Deviation`.
+- Its tools are Read, Edit, Write, Grep, Glob, Bash, and Skill: it cannot
+  start sub-agents or ask the human a question. Per-ticket
+  `mattpocock-skills:code-review` is gone; the review loop reviews the whole
+  change. Quick implementation's own single-pass review is unchanged.
+- `03-implement.md`'s **Already found and fixed** section is now **Unmet
+  criteria**: the criteria the ticket subagents reported unmet, for the review
+  loop's Spec axis to judge. The implement phase assembles it, **Deviations**,
+  and **Verification** from the reports.
+
 ## 1.3.0
 
 The review loop's driving session hands its work to fresh plugin agents, so

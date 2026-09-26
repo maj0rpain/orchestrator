@@ -65,8 +65,12 @@ rather than split out beneath it.
 ## Ticket subagent
 
 The fresh, non-fork agent that builds exactly one ticket of a ticket
-breakdown and reports back structurally instead of blocking on a human, in
-the implement phase or in quick implementation.
+breakdown, test-first, and checks its own work against that ticket's
+acceptance criteria before reporting. It never reviews its work beyond that
+check: review belongs to the review loop, or to quick implementation's single
+pass. It reports back structurally instead of blocking on a human; an unmet
+criterion it cannot meet alone is reported as unmet, for the review loop's
+Spec axis to judge. Used in the implement phase and in quick implementation.
 
 ## Phase
 
