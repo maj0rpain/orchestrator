@@ -159,10 +159,10 @@ The report paths sit beside the record `bash "$ORCH" review path` names, with
 the axis as a suffix: `iteration-NN-standards.md` and `iteration-NN-spec.md`.
 Each reviewer fetches the diff and the spec itself, writes its findings there
 unranked, each with its file, line, and claim, and returns one line naming its
-report and its finding count. A missing report, or one that says the base SHA did not resolve
-or the diff was empty, is a failed review, not a clean one: start that
-reviewer again once, and record a second failure in the record as that axis's
-missing look.
+report and its finding count. A missing report, or one that says the base SHA
+did not resolve or the diff was empty, is a failed review, not a clean one:
+start that reviewer again once, and record a second failure in the record as
+that axis's missing look.
 
 The reviewers have no Edit or Write tool, and their briefs allow exactly one
 write, the report. That is what keeps a review from quietly becoming a fix.
