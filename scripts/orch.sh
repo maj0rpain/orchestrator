@@ -1270,7 +1270,7 @@ cmd_pr() {
 # --- ticket -------------------------------------------------------------
 #
 # GitHub's native sub-issue and issue-dependency APIs, in one place, so no
-# skill prose ever calls `gh api` on these endpoints directly. Stateless
+# skill or agent prose ever calls `gh api` on these endpoints directly. Stateless
 # throughout, like issue publish/pr publish: callable with no state.json,
 # since quick implementation keeps none.
 
@@ -1396,6 +1396,21 @@ cmd_ticket_reset() {
   fi
 }
 
+# Prints <n>'s parent issue number, or nothing (still exit 0) when <n> is
+# not a sub-issue. Read from the issue's own parent_issue_url rather than the
+# /parent endpoint, whose "no parent" is a 404 indistinguishable by exit
+# status from a missing issue: here every gh failure is a real one. GitHub
+# omits the key entirely on an issue with no parent, so an absent key and a
+# null one both mean "no parent".
+cmd_ticket_parent() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket parent <n>"
+  local n="$1" url
+  case "$n" in ''|*[!0-9]*) die "not a plain issue number: $n" ;; esac
+  url="$(gh api "repos/{owner}/{repo}/issues/$n" --jq '.parent_issue_url // empty')" \
+    || die "gh could not read issue #$n's parent"
+  if [ -n "$url" ]; then printf '%s\n' "${url##*/}"; fi
+}
+
 cmd_ticket() {
   local op="${1:-}"
   shift || true
@@ -1404,7 +1419,8 @@ cmd_ticket() {
     next)    cmd_ticket_next "$@" ;;
     close)   cmd_ticket_close "$@" ;;
     reset)   cmd_ticket_reset "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|close|reset)" ;;
+    parent)  cmd_ticket_parent "$@" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|close|reset|parent)" ;;
   esac
 }
 
@@ -1657,6 +1673,8 @@ orch.sh - deterministic operations for the orchestrator flow
   ticket close <n>           close ticket <n>
   ticket reset <parent>      reopen every sub-issue of <parent> that is
                               currently closed, and only those
+  ticket parent <n>          print <n>'s parent issue number, or nothing
+                              when <n> is not a sub-issue
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,

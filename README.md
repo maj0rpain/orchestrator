@@ -258,7 +258,8 @@ issue and in the handoff.
 
 The implement phase works the spec issue's published ticket breakdown one
 ticket at a time: `ticket next` names the ready frontier, and each ready
-ticket goes to a fresh `orch-implementer` agent carrying only its number.
+ticket goes to a fresh `orch-implementer` agent carrying only its number
+and the `orch.sh` path.
 The agent builds that one ticket test-first through `tdd`, on the flow's
 single branch, commits its own work, and checks its commits against the
 ticket's acceptance criteria. It cannot start sub-agents or ask the human

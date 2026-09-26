@@ -239,6 +239,20 @@ api_list_blocked_by() {
   fi
   printf '%s]\n' "$out"
 }
+# The issue's parent, as GitHub's issue object carries it: the API URL of the
+# one issue whose sub_issues listing holds it, or null when none does.
+api_parent_url() {
+  local f
+  if [ -n "$db" ] && [ -d "$db/sub_issues" ]; then
+    for f in "$db/sub_issues"/*; do
+      [ -f "$f" ] || continue
+      if grep -qxF "$1" "$f"; then
+        printf '"https://api.github.com/repos/acme/widgets/issues/%s"\n' "${f##*/}"; return
+      fi
+    done
+  fi
+  echo null
+}
 db="${GH_STUB_DB:-}"
 if [ "${GH_STUB_MODE:-ok}" = offline ]; then
   echo "dial tcp: lookup api.github.com: no such host" >&2
@@ -381,8 +395,12 @@ ready-for-agent}"
     [ "${GH_STUB_API_EXIT:-0}" = 0 ] || { echo "gh stub: api call refused" >&2; exit "$GH_STUB_API_EXIT"; }
     case "$api_sub" in
       "")
-        api_json="$(printf '{"id":%d,"number":%d,"state":"%s","issue_dependencies_summary":{"blocked_by":%s}}' \
-          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_blocked_count "$api_num")")" ;;
+        api_json="$(printf '{"id":%d,"number":%d,"state":"%s","parent_issue_url":%s,"issue_dependencies_summary":{"blocked_by":%s}}' \
+          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_parent_url "$api_num")" "$(api_blocked_count "$api_num")")"
+        # GitHub's real shape for an issue with no parent: the key is absent, not null.
+        if [ -n "${GH_STUB_NO_PARENT_FIELD:-}" ]; then
+          api_json="$(printf '%s' "$api_json" | jq -c 'del(.parent_issue_url)')"
+        fi ;;
       sub_issues)
         if [ "$api_method" = POST ]; then
           if [ -n "$db" ]; then
@@ -2729,6 +2747,56 @@ assert_contains "naming what failed" "$out" "gh could not reopen ticket"
 out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket reset 90 2>&1)"; st=$?
 assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not list sub-issues"
+
+# --- ticket parent -----------------------------------------------------------
+# The implementer's way to find its spec issue without calling the sub-issue
+# endpoints itself: a sub-issue prints its parent's number, an issue with no
+# parent prints nothing and still succeeds, and any gh failure is a failure.
+echo
+echo "ticket parent"
+db="$(mktemp -d)"
+export GH_STUB_DB="$db"
+k="$(GH_STUB_ISSUE_NUMBER=700 "$ORCH" ticket publish 95 "Kid" "$body")"
+out="$("$ORCH" ticket parent "$k" 2>&1)"; st=$?
+assert_status "a sub-issue's parent lookup succeeds" "$st" 0
+assert_eq "printing the parent's number" "$out" "95"
+
+out="$("$ORCH" ticket parent 95 2>&1)"; st=$?
+assert_status "an issue with no parent still succeeds" "$st" 0
+assert_eq "printing nothing" "$out" ""
+
+out="$(GH_STUB_NO_PARENT_FIELD=1 "$ORCH" ticket parent 95 2>&1)"; st=$?
+assert_status "an issue whose parent_issue_url key is absent, as GitHub sends it, succeeds" "$st" 0
+assert_eq "printing nothing" "$out" ""
+
+out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket parent "$k" 2>&1)"; st=$?
+assert_status "a gh that cannot read the issue fails the command" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not read issue #$k"
+
+out="$("$ORCH" ticket parent abc 2>&1)"; st=$?
+assert_status "refuses a ticket that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$("$ORCH" ticket parent 2>&1)"; st=$?
+assert_status "refuses with no ticket" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket parent"
+
+out="$("$ORCH" help 2>&1)"
+assert_contains "ticket parent is in the usage text" "$out" "ticket parent <n>"
+
+# ticket parent exists so no brief calls the sub-issue endpoints itself: the
+# ticket group is their one caller, and the implementer gets orch.sh's path to
+# reach it (#179).
+proot="$(cd "$(dirname "$ORCH")/.." && pwd)"
+assert_eq "no agent or skill calls gh api on a sub-issue endpoint" \
+  "$(grep -rnE 'gh api[^`]*(/parent|sub_issues)|issues/[^ ]*/(parent|sub_issues)' \
+      "$proot/agents" "$proot/skills")" ""
+assert_contains "the implementer's prompt carries the orch.sh path" \
+  "$(cat "$proot/agents/orch-implementer.md")" "orch.sh: <the path ORCH holds>"
+assert_contains "and its brief finds the spec issue through ticket parent" \
+  "$(cat "$proot/agents/orch-implementer.md")" 'ticket parent'
+assert_contains "and names the mp-skill tdd route for a host with no Skill tool" \
+  "$(cat "$proot/agents/orch-implementer.md")" 'mp-skill tdd'
 
 # --- ticket: unknown op ------------------------------------------------------
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?
