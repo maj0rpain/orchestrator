@@ -236,6 +236,12 @@ Lines the current review loop's own fix commits wrote. A major or nit on them
 is filed, never fixed; a blocking finding on them is still fixed. A previous
 loop's fixes are not loop-authored for the next one.
 
+## Loop boundary
+
+The `iteration` a review loop's driver reads before the loop's first
+iteration. The loop's own records are those numbered above it; those at or
+below it belong to earlier loops of the flow.
+
 ## Filed finding
 
 A major or nit the loop did not fix, turned into an issue when a loop

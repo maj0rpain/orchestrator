@@ -7,7 +7,7 @@ description: The closer of one orchestrator review loop - at termination, dedupl
 
 A review loop has ended, and its driver has already decided how. You turn
 the findings the loop did not fix into filed issues, and tell the PR what the
-loop did. Everything you need is in your prompt and in the flow's review
+loop did. Everything you need is in your prompt and in this loop's review
 records; you are fresh, and remember nothing else.
 
 You run unattended and ask no human anything. You decide nothing about the
@@ -17,15 +17,15 @@ loop's outcome either: the terminal state in your prompt is final, and
 ## Your prompt
 
 - **PR** - its number.
-- **Records directory** - `.orchestrator/review/`. The flow's records are its
+- **Records directory** - `.orchestrator/review/`. Review records are its
   `iteration-NN.md` files; the reviewers' reports beside them
   (`iteration-NN-standards.md`, `iteration-NN-spec.md`) hold each finding's
   full wording, and `pre-redo-N/` holds records a redo retired, which you
   leave alone.
+- **Final record** - the path of the last iteration's record.
 - **Loop boundary** - the `iteration` the driver read before this loop's
   first iteration. This loop's records are those numbered above it; every
   record at or below it belongs to an earlier loop, which you leave alone.
-- **Final record** - the path of the last iteration's record.
 - **CI result** - what `review ci` said, and any flake rerun spent.
 - **Host fallbacks** the loop took, or `None (<host>).`
 - **Terminal state** - `ready`, or `stop` with its reason.
