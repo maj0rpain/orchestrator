@@ -131,8 +131,9 @@ budget allows.
 ## Clean iteration
 
 An iteration that fixed nothing and committed nothing. A loop can finish only
-on a clean final iteration - and since a final iteration fixes only what is
-blocking, that means one whose review found nothing blocking.
+on a clean final iteration that leaves no **open blocking** finding - and since
+a final iteration fixes only what is blocking, that means one whose review
+found nothing blocking.
 
 ## Fixer
 
@@ -235,11 +236,11 @@ terminates - because its fix needed a decision, would have changed behaviour,
 was not mechanical, landed on loop-authored lines, was found in a final
 iteration, or the fixer could not fix it. It carries the reviewer's finding
 and the loop's reasoning about it, including which of those kept it out of the
-loop, deduplicated across
-iterations and across a flow's loops. A filed finding enters triage against
-the whole codebase rather than against one diff: a later loop that meets it
-again leaves it alone, and tells the human it did. Findings the loop demoted on
-a human's earlier decision are reported, never filed.
+loop, deduplicated across iterations and across a flow's loops. A filed
+finding enters triage against the whole codebase rather than against one diff:
+a later loop that meets it again leaves it alone, and tells the human it did.
+Findings the loop demoted on a human's earlier decision are reported, never
+filed.
 
 ## Review record
 
