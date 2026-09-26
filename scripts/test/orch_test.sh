@@ -4321,13 +4321,18 @@ for cap in 'Invoke a skill from a step' 'Ask a multiple-choice question' 'Start 
   assert_eq "it has a filled-in row for: $cap" \
     "$(printf '%s\n' "$row" | awk -F'|' 'NF >= 5 && $3 !~ /^ *$/ && $4 !~ /^ *$/ { print "filled" }')" "filled"
 done
-# scan_capabilities <plugin root>: print one line per offending skill or command.
+# scan_capabilities <plugin root>: print one line per offending skill, agent,
+# or command. An agent brief names host capabilities as a skill does (#157);
+# only one that invokes a mattpocock-skills skill must point at the reference,
+# since the others name no capability a host could lack.
 scan_capabilities() {
   local r="$1" f s k
-  for f in "$r"/skills/*/SKILL.md; do
+  for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
     [ -f "$f" ] || continue
-    grep -qF 'docs/host-capabilities.md' "$f" \
-      || echo "${f#"$r"/}: never points at docs/host-capabilities.md"
+    if [[ "$f" != "$r"/agents/* ]] || grep -qE 'mattpocock-skills:[a-z]' "$f"; then
+      grep -qF 'docs/host-capabilities.md' "$f" \
+        || echo "${f#"$r"/}: never points at docs/host-capabilities.md"
+    fi
     grep -niE '(call|use|with) the (Skill|Agent) tool|(call|use|spawn|dispatch)[a-z]* .*the Agent tool' "$f" \
       | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
     # Junie has no plugin scope, so a skill names its siblings bare (orch-flow);
@@ -4402,6 +4407,15 @@ assert_contains "the scan flags a command routed to a missing skill" \
 mkdir -p "$fixture/skills/orch-y"
 printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
 assert_eq "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")" ""
+# An agent brief names host capabilities the way a skill does (#157).
+mkdir -p "$fixture/agents"
+printf 'Fix it through the `mattpocock-skills:tdd` skill.\n' >"$fixture/agents/orch-z.md"
+assert_contains "the scan flags an agent that never points at the reference" \
+  "$(scan_capabilities "$fixture")" "agents/orch-z.md: never points at docs/host-capabilities.md"
+printf 'Fix it through the `mattpocock-skills:tdd` skill (see docs/host-capabilities.md).\n' >"$fixture/agents/orch-z.md"
+assert_eq "the scan accepts an agent that points at the reference" "$(scan_capabilities "$fixture")" ""
+printf 'Read the diff and write the report.\n' >"$fixture/agents/orch-z.md"
+assert_eq "the scan accepts an agent that invokes no skill without the pointer" "$(scan_capabilities "$fixture")" ""
 rm -rf "$fixture"
 
 # --- one definition of starting a plugin agent (#181) -------------------------
