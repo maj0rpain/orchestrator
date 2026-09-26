@@ -181,18 +181,22 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    time, never in parallel - every ticket commits to the same branch. Loop:
    - `bash "$ORCH" ticket next <spec issue>`. Nothing ready means the frontier is
      exhausted - stop looping and continue at step 4.
-   - Dispatch a subagent (below), briefed with the ticket's number.
+   - Dispatch a subagent (below), briefed with the ticket's number and the
+     `orch.sh` path.
    - Record the subagent's report, then `bash "$ORCH" ticket close <n>` - only now
      that the report is back, never before - and go around again.
 
    **Dispatching a subagent**: start the plugin's `orch-implementer` agent
    exactly as the **Starting this agent** section of
-   `agents/orch-implementer.md` (under the plugin root) says, with the issue
-   number named above as its prompt. On Claude Code it is the agent named
+   `agents/orch-implementer.md` (under the plugin root) says: its prompt is
+   that ticket's number and the path `ORCH` holds, in the shape that section
+   gives. On Claude Code it is the agent named
    `orch-implementer` under the `orchestrator:` plugin scope. A host that
    cannot start it natively takes `docs/host-capabilities.md`'s **Start a
    fresh subagent** fallback; record it under the handoff's **Host
-   fallbacks**.
+   fallbacks**. On a host with no Skill tool the agent takes the
+   `mp-skill tdd` route its brief gives; record that fallback the same way,
+   since the agent's report carries none.
 4. `bash "$ORCH" pr open "<title>" <body-file>`. The PR opens as a draft; marking it
    ready is the review loop's success condition. The PR targets the flow's base
    branch. `pr open` itself writes the issue line ahead of the body -
