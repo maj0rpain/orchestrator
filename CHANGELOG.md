@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.1
+
+A failing full verification is recorded in the implement handoff's
+**Verification** section, not under **Deviations** (see issue #184).
+
+- `orch-flow`'s implement phase writes the verification command, its result,
+  and on a `fail` the ticket that reported it, all under **Verification**:
+  the command alone on the first line, the result on its own line after it.
+- `orch-review` takes only that first line as the verification command.
+- **Deviations** holds only the tickets' reported deviations, as the handoff
+  template defines it. The review loop still treats a failure as blocking.
+
 ## 1.5.0
 
 `orch-implementer` finds its spec issue through `orch.sh` instead of calling

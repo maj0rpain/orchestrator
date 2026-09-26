@@ -56,7 +56,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    ```
 2. Take four facts from those sections, and take them from nowhere else: the
    **PR**, the **spec issue**, the **base SHA**, and the **verification
-   command**. State holds the PR and the base SHA as well, and holds the same
+   command** - the **Verification** section's first line, alone; any line
+   after it records a result, not part of the command. State holds the PR and the base SHA as well, and holds the same
    values; one authority is what keeps every loop of a flow reviewing the
    same change.
 3. Read `01-plan.md`'s **Rejected alternatives** and `03-implement.md`'s
