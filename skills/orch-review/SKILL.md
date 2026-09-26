@@ -19,11 +19,13 @@ fail-open nobody read until the fifth look still gets its fifth look. See
 `docs/adr/0016-the-review-loop-fixes-what-needs-no-decision.md` for what the
 loop fixes now and the two guards that keep its fixes from churning.
 
-The reviewing itself is done by `mattpocock-skills:code-review`'s parallel
-sub-agents, spawned fresh every iteration and never shown your reasoning about
-the fixes you just wrote. That is where the independence comes from, and it is
-why one session may drive a whole loop - see
-`docs/adr/0001-review-loop-runs-in-a-single-session.md`.
+The reviewing itself is done by two plugin agents, the **reviewers**, started
+fresh every iteration and never shown your reasoning about the fixes you just
+wrote. That is where the independence comes from, and it is why one session
+may drive a whole loop - see
+`docs/adr/0001-review-loop-runs-in-a-single-session.md`, and
+`docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md` for why the loop
+starts its own reviewers.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -39,19 +41,34 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 
 ## Before the first iteration
 
-1. Read the handoff: `bash "$ORCH" handoff path review`. It is always
-   `03-implement.md`, on every loop of the flow.
-2. Take four facts from it, and take them from nowhere else: the **PR**, the
-   **spec issue**, the **base SHA**, and the **verification command**. State
-   holds the PR and the base SHA as well, and holds the same values; one
-   authority is what keeps every loop of a flow reviewing the same change.
+1. Find the handoff: `bash "$ORCH" handoff path review`. It is always
+   `03-implement.md`, on every loop of the flow. Read it one section at a
+   time, through `bash "$ORCH" handoff section <file> <heading>`, and never
+   whole:
+
+   ```
+   h="$(bash "$ORCH" handoff path review)"
+   bash "$ORCH" handoff section "$h" "PR"        # likewise "Spec issue", "Base SHA", "Verification"
+   ```
+2. Take four facts from those sections, and take them from nowhere else: the
+   **PR**, the **spec issue**, the **base SHA**, and the **verification
+   command**. State holds the PR and the base SHA as well, and holds the same
+   values; one authority is what keeps every loop of a flow reviewing the
+   same change.
 3. Read `01-plan.md`'s **Rejected alternatives** and `03-implement.md`'s
-   **Deviations**, both in `dirname "$(bash "$ORCH" handoff path review)"`. Both are
-   authority over the findings you are about to get.
+   **Deviations**, the same way:
+
+   ```
+   bash "$ORCH" handoff section "$(dirname "$h")/01-plan.md" "Rejected alternatives"
+   bash "$ORCH" handoff section "$h" "Deviations"
+   ```
+
+   Both are authority over the findings you are about to get.
 4. `bash "$ORCH" state get iteration`. Zero means this is the flow's first loop.
    Anything else means a previous loop ended in a bounded stop and a human
-   asked for more: read every `.orchestrator/review/iteration-NN.md` already
-   there, because their **Filed** lists are what stop this loop re-filing
+   asked for more: read every `.orchestrator/review/iteration-NN.md` record
+   already there - the records, not the reviewers' reports beside them -
+   because their **Filed** lists are what stop this loop re-filing
    what the previous one filed.
 5. Ask the budget. **The question blocks** - ask it as a question
    (`AskUserQuestion` on both Claude Code and Junie). Ask once, before the
@@ -70,18 +87,13 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 1. `bash "$ORCH" review begin`. It prints the iteration number, or refuses with
    "budget of N iterations spent" - a refusal is the end of the loop, so go to
    **Termination**.
-2. Invoke `mattpocock-skills:code-review` (see `docs/host-capabilities.md`
-   under the plugin root for how your host invokes a skill), giving it the
-   **base SHA** as the fixed point and the **spec issue** as the spec source.
-   Always spell it with the `mattpocock-skills:` scope - the bare name is
-   ambiguous with another `code-review` skill that may be installed alongside
-   this plugin. On a host with no scoped names, invoke it through
-   `bash "$ORCH" mp-skill code-review` for the same reason. **Every iteration reviews from the base SHA**, never from the
-   previous iteration's HEAD: each is an independent look at the whole change,
-   and the Spec axis cannot answer "is the spec implemented" from a diff
-   containing one fix.
-3. Triage every finding: apply the two demotions under **Authority** first,
-   then the **Severity** rubric.
+2. Start both reviewers in parallel - see **The reviewers** - and wait for
+   both to return. **Every iteration reviews from the base SHA**, never from
+   the previous iteration's HEAD: each is an independent look at the whole
+   change, and the Spec axis cannot answer "is the spec implemented" from a
+   diff containing one fix.
+3. Read both report files, once each, and triage every finding in them: apply
+   the two demotions under **Authority** first, then the **Severity** rubric.
 4. Fix what the **Severity** rubric lets the loop fix, writing the fixes
    yourself: every blocking finding, every major that needs no decision and
    changes no behaviour, and every mechanical nit. A **blocking finding about
@@ -114,17 +126,63 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    severity on one line, which were fixed - blocking, major, and nit alike -
    and the fix commit SHA, which were demoted and on what authority, which are
    waiting to be filed and the rule that kept each out, and which were met
-   again already filed, with the issue number. The fix SHAs listed here are
-   what later iterations of this loop blame against.
+   again already filed, with the issue number, and any host fallback a
+   reviewer took (see **The reviewers**). The fix SHAs listed here are what
+   later iterations of this loop blame against.
 9. Go to step 1. Nothing found ends the loop early; only the budget does. A
    **clean iteration** - nothing fixed and nothing committed - is the cheap
    case, and buying the extra looks is the point.
 
+## The reviewers
+
+Two plugin agents under the plugin root's `agents/`, one per axis:
+
+- **`orch-reviewer-standards`** - the Standards axis: the repo's documented
+  coding standards, plus the plugin's own smell baseline.
+- **`orch-reviewer-spec`** - the Spec axis: whether the change implements what
+  the spec issue asked for.
+
+Start both at once as fresh subagents (on Claude Code, the Agent tool with
+`subagent_type` set to each agent's name under the `orchestrator:` plugin
+scope, both in one message) - never forks, which inherit this context. Each
+prompt carries four variables and nothing else - no spec body, no diff, no
+brief, no word about earlier iterations or fixes:
+
+```
+Base SHA: <base SHA>
+Spec issue: #<spec issue>
+Iteration: <NN>
+Report path: <report path>
+```
+
+The report paths sit beside the record `bash "$ORCH" review path` names, with
+the axis as a suffix: `iteration-NN-standards.md` and `iteration-NN-spec.md`.
+Each reviewer fetches the diff and the spec itself, writes its findings there
+unranked, each with its file, line, and claim, and returns one line naming its
+report and its finding count. A missing report, or one that says the base SHA did not resolve
+or the diff was empty, is a failed review, not a clean one: start that
+reviewer again once, and record a second failure in the record as that axis's
+missing look.
+
+The reviewers have no Edit or Write tool, and their briefs allow exactly one
+write, the report. That is what keeps a review from quietly becoming a fix.
+
+**Host fallback.** On a host that does not load the plugin's `agents/`, or
+cannot restrict an agent's tools, start each reviewer as a fresh
+general-purpose agent whose prompt is the same four variables plus the path of
+its agent file, `agents/orch-reviewer-standards.md` or
+`agents/orch-reviewer-spec.md` under the plugin root, to read and follow as its
+brief. The reviewer loses the mechanical read-only guarantee and keeps the
+brief's instruction. On a host with no fresh subagent at all, take
+`docs/host-capabilities.md`'s **Start a fresh subagent** fallback from the
+same agent files. The review phase writes no handoff, so record either
+fallback in the iteration's record and in the PR comment's host fallbacks.
+
 ## Severity
 
-`code-review` reports findings unranked across two axes and refuses to rank
-across them. The ranking is yours, and it decides which findings the loop may
-fix without asking anyone:
+The reviewers report findings unranked, one report per axis, and never rank
+across the two. The ranking is yours, and it decides which findings the loop
+may fix without asking anyone:
 
 - **blocking** - the change is wrong: incorrect behaviour, a spec requirement
   missing or misimplemented, a security problem, a broken or missing test, or a
@@ -162,9 +220,9 @@ with more context than you have:
   caught.
 - **Rejected alternatives.** A finding proposing something `01-plan.md`'s
   **Rejected alternatives** ruled out becomes a recorded note with the reason it
-  lost: not fixed, not filed. Demote on `code-review`'s **output**, and leave
-  its sub-agent prompts alone: filtering the output also catches a rejected
-  design arrived at by a different route.
+  lost: not fixed, not filed. Demote on the reviewers' **reports**, and leave
+  their briefs alone: filtering the reports also catches a rejected design
+  arrived at by a different route.
 
 Demoted findings go in the record and the PR comment, and are never filed: an
 issue whose only correct triage is "close" is noise, but a deliberate omission
