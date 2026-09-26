@@ -4275,14 +4275,16 @@ assert_contains "orch-review reads the fixer's record through CLAUDE_PLUGIN_ROOT
   "\"\${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md\""
 # The reviewers keep Bash, so the only mechanical restriction is Edit and
 # Write; that is all the host fallback loses (#167).
-adr18="$root/docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md"
-for f in "$root/skills/orch-review/SKILL.md" "$adr18"; do
-  prose="$(tr -s '\n ' ' ' <"$f")"
-  assert_not_contains "${f#"$root"/} never calls the reviewers mechanically read-only" \
-    "$prose" 'mechanical read-only'
-  assert_contains "${f#"$root"/} says the fallback loses the Edit/Write restriction" \
-    "$prose" 'loses the Edit and Write restriction'
-  assert_contains "${f#"$root"/} says Bash read-only always rested on the brief" \
+hostcaps="$(tr -s '\n ' ' ' <"$root/docs/host-capabilities.md")"
+adr18="$(tr -s '\n ' ' ' <"$root/docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md")"
+assert_not_contains "host-capabilities no longer says the fallback loses a mechanical guarantee" \
+  "$hostcaps" 'loses that mechanical guarantee'
+assert_not_contains "ADR-0018 no longer restricts the reviewers mechanically as a whole" \
+  "$adr18" 'restrict the reviewers mechanically'
+for prose in "$hostcaps" "$adr18"; do
+  assert_contains "the fallback loses only the Edit and Write restriction" \
+    "$prose" 'Edit and Write restriction'
+  assert_contains "read-only through Bash always rested on the brief" \
     "$prose" 'through Bash always rested on the brief'
 done
 for a in orch-reviewer-standards orch-reviewer-spec; do

@@ -254,12 +254,9 @@ the `orchestrator:` plugin scope.
 
 **Host fallback.** A host that cannot start one of them natively takes
 `docs/host-capabilities.md`'s **Start a fresh subagent** fallback, with the
-prompt given for that agent here. A reviewer started that way loses the
-Edit and Write restriction its agent file sets, and keeps the brief's one
-allowed write. That is all it loses: the reviewers keep Bash either way, so
-read-only behaviour through Bash always rested on the brief. The review phase
-writes no handoff, so record the fallback in the iteration's record and pass
-it to the closer for the PR comment.
+prompt given for that agent here. The review phase writes no handoff, so
+record the fallback in the iteration's record and pass it to the closer for
+the PR comment.
 
 ## Severity
 
