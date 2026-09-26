@@ -71,9 +71,9 @@ prompt, and where to record the fallback. Take the first tier that fits:
    the plugin's agents, its file under `agents/`. Read only the files and the
    issue the brief names, and write the report it asks for before moving on.
    Where the brief names a capability this host lacks, take that capability's
-   fallback from this file too, and record it the same way - a brief that
-   invokes `mattpocock-skills:tdd` as a skill becomes `bash "$ORCH" mp-skill
-   tdd` on a host with no Skill tool. Where a skill starts several agents at
+   fallback from this file too, and record it where the starting skill
+   says - a brief that invokes `mattpocock-skills:tdd` as a skill becomes
+   `bash "$ORCH" mp-skill tdd` on a host with no Skill tool. Where a skill starts several agents at
    once, run them one at a time, finishing each report before starting the
    next. The loop around the subagent does not change: a ticket is still
    closed only once its report is written.

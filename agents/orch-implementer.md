@@ -17,13 +17,15 @@ acceptance self-check in step 5 is the only check you run on it.
 
 ## Starting this agent
 
-This section is the dispatch contract, for the skill that starts you
-(`orch-flow`'s implement phase or `orch-quick-implement`), and the one place
-it is stated. Start this agent as a fresh subagent, never a fork: a fork
-inherits the dispatching session's context. Its prompt is one issue number
-and nothing else, because this file owns the brief. It returns the five lines
-of **Report** below and nothing else. A host that cannot start it natively
-takes `docs/host-capabilities.md`'s **Start a fresh subagent** fallback.
+This section is the dispatch contract for the ticket subagent, for the skill
+that starts you (`orch-flow`'s implement phase or `orch-quick-implement`), and
+the one place it is stated. Start this agent as a fresh subagent, never a
+fork: a fork inherits the dispatching session's context. Its prompt is one
+issue number and nothing else, because this file owns the brief. It returns
+the five lines of **Report** below and nothing else. A host that cannot start
+it natively takes `docs/host-capabilities.md`'s **Start a fresh subagent**
+fallback, whose general-purpose-agent tier adds this file's path to that
+prompt.
 
 ## Steps
 

@@ -4306,18 +4306,21 @@ rm -rf "$fixture"
 # --- one definition of starting a plugin agent (#181) -------------------------
 # The host fallback for starting a plugin agent lives once, in
 # docs/host-capabilities.md, and orch-implementer's dispatch contract (prompt
-# shape, five report lines) lives once too - so a change to either is made at
-# one site, not copied into every skill that starts an agent.
+# shape, five report lines) lives once too, in agents/orch-implementer.md - so
+# a change to either is made at one site, not copied into every skill that
+# starts an agent.
 echo
 echo "one definition of starting a plugin agent (#181)"
 # scan_dispatch_copies <plugin root>: print one line per restated copy.
 scan_dispatch_copies() {
-  local r="$1" f n=0 hits=""
+  local r="$1" f
   for f in "$r"/skills/*/SKILL.md; do
     [ -f "$f" ] || continue
+    # The contract's one copy is the agent file, so any skill carrying all
+    # five report lines is a second copy.
     if grep -qF '`Ticket`' "$f" && grep -qF '`Commits`' "$f" && grep -qF '`Verification`' "$f" \
        && grep -qF '`Criteria`' "$f" && grep -qF '`Deviation`' "$f"; then
-      n=$((n + 1)); hits="$hits ${f#"$r"/}"
+      echo "${f#"$r"/}: restates the implementer's five report lines"
     fi
     # The general-purpose-agent tier: a general-purpose agent briefed with a
     # plugin agent's file. A skill that starts general-purpose agents as its
@@ -4325,22 +4328,23 @@ scan_dispatch_copies() {
     awk -v f="${f#"$r"/}" 'BEGIN { RS = "" }
       /general-purpose/ && (/agents\// || /agent'"'"'s file/) { print f ": restates the general-purpose-agent tier" }' "$f"
   done
-  [ "$n" -gt 1 ] && echo "the five report lines appear in $n skills:$hits"
   return 0
 }
 assert_eq "the host fallback and the implementer's report are each stated once" \
   "$(scan_dispatch_copies "$root")" ""
+assert_contains "the implementer's agent file carries the report lines" \
+  "$(cat "$root/agents/orch-implementer.md")" '`Deviation`'
 fixture="$(mktemp -d)"
 mkdir -p "$fixture/skills/a" "$fixture/skills/b"
 printf 'Returns `Ticket`, `Commits`, `Verification`, `Criteria`, `Deviation`.\n' >"$fixture/skills/a/SKILL.md"
-printf 'Returns `Ticket`, `Commits`, `Verification`, `Criteria`, `Deviation`.\n' >"$fixture/skills/b/SKILL.md"
-assert_contains "the scan flags the report lines copied into two skills" \
-  "$(scan_dispatch_copies "$fixture")" "the five report lines appear in 2 skills"
+assert_contains "the scan flags the report lines copied into a skill" \
+  "$(scan_dispatch_copies "$fixture")" "skills/a/SKILL.md: restates the implementer's five report lines"
 printf 'Else start a fresh general-purpose agent\nbriefed with its file under `agents/`.\n' >"$fixture/skills/b/SKILL.md"
 assert_contains "the scan flags a skill restating the general-purpose-agent tier" \
   "$(scan_dispatch_copies "$fixture")" "skills/b/SKILL.md: restates the general-purpose-agent tier"
+printf 'Start the implementer as its agent file says.\n' >"$fixture/skills/a/SKILL.md"
 printf 'Start the lenses as fresh general-purpose agents.\n' >"$fixture/skills/b/SKILL.md"
-assert_eq "the scan accepts one copy and general-purpose agents started natively" \
+assert_eq "the scan accepts a pointer and general-purpose agents started natively" \
   "$(scan_dispatch_copies "$fixture")" ""
 rm -rf "$fixture"
 
