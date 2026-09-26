@@ -96,9 +96,11 @@ options, deviations.
 
 One run of the review phase in one session: a budget of iterations, every one a
 fresh review of the whole change from the base SHA, ending in a terminal state.
-The session that runs it is the loop's driver: it starts the reviewers, triages
-what they report, and decides the terminal state, but never edits the change
-itself - that is the fixer's work, and filing is the closer's.
+The session that runs it is the loop's **driver**: it starts the reviewers,
+triages what they report, and decides the terminal state, but never edits the
+change itself - that is the fixer's work, and filing is the closer's - except
+on a host with no fresh subagent, where it does their work itself (see
+**Driver**).
 A flow runs a loop each time it enters the review phase; a flow's loops share
 one iteration numbering, and only a human decides that a further loop happens.
 That further-loop decision is re-entry, not Redo: re-entry reviews the same
@@ -134,10 +136,45 @@ budget allows.
 
 ## Clean iteration
 
-An iteration that fixed nothing and committed nothing. A loop can finish only
-on a clean final iteration that leaves no **open blocking** finding - and since
-a final iteration fixes only what is blocking, that means one whose review
-found nothing blocking.
+An iteration whose triage left nothing to fix, so no fixer ran. An iteration
+whose fixer ran but fixed nothing is not clean: its triage found something to
+fix, and whatever blocking finding the fixer could not fix is now **open
+blocking**.
+
+A loop finishes **Ready** only on a clean final iteration that leaves no open
+blocking finding - one found in this iteration or carried in from an earlier
+one - and no **missing look**, with CI green or absent. Anything else is a
+bounded stop.
+
+## Driver
+
+The session that runs a review loop. It starts the reviewers, the fixer and
+the closer, triages what the reviewers report, waits on CI, and decides the
+terminal state. It does not edit the change: every line the loop fixes is the
+fixer's, and filing is the closer's. The one exception is a host with no fresh
+subagent: there the driver takes the host-capabilities **Start a fresh
+subagent** fallback, does the fixer's and the closer's work in its own
+session, and records that as a host fallback.
+
+## Reviewer
+
+A fresh agent a review loop's driver starts for one axis - Standards or Spec -
+in one iteration. It reviews the whole change from the base SHA, never from
+the previous iteration's HEAD, and writes its findings, unranked, to a report
+file. Two reviewers run every iteration, one per axis.
+
+## Open blocking
+
+A blocking finding the fixer could not fix. It is never filed: it carries into
+the next iteration's triage - and, when a loop ends, into a re-entry's first
+iteration - until a fixer fixes it, and while it stands in the final record it
+blocks **Ready**.
+
+## Missing look
+
+An axis whose reviewer failed twice in one iteration, so that iteration
+reviewed the change along the other axis only. A missing look in the final
+iteration blocks **Ready**: nothing looked along that axis last.
 
 ## Fixer
 
@@ -273,7 +310,8 @@ stop.
 ## Bounded stop
 
 The terminal state of a loop that ended without the change being ready - because
-its final iteration fixed something nothing has reviewed, left a blocking
+its final iteration was not clean (it started a fixer, whose work nothing has
+reviewed), left a blocking
 finding its fixer could not fix, or lacked one of its two looks, or because CI
 could not be called green. A stop is not a failed change and not a successful one.
 

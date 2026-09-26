@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.2
+
+The review loop's vocabulary reads the same in the glossary, `orch-review`
+and ADR-0017 (see issue #169, covering #156, #170 and #171).
+
+- The driver's "never edits the change" rule states its one exception: on a
+  host with no fresh subagent, the driver does the fixer's and the closer's
+  work in its own session and records it as a host fallback.
+- **Clean iteration** has one meaning: triage left nothing to fix, so no fixer
+  ran. An iteration whose fixer ran but fixed nothing is not clean.
+- The glossary's Ready condition names open blocking, whether found in the
+  final iteration or carried in, and the missing look, matching the skill.
+- `CONTEXT.md` gains **Driver**, **Reviewer**, **Open blocking** and
+  **Missing look** entries.
+
 ## 1.5.1
 
 A failing full verification is recorded in the implement handoff's

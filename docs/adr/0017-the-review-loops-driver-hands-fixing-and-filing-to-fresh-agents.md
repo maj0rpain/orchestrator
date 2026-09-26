@@ -9,10 +9,12 @@ per loop stands.
 
 The session that drives a review loop is now its **driver**: it starts every
 agent, triages the reviewers' reports, waits on CI, spends the flake rerun,
-and decides the terminal state. It never edits the change. When triage leaves
-something the loop fixes, it starts a fresh `orch-fixer`, which fixes,
-verifies, commits, pushes, writes the iteration's review record, and returns
-about five lines. At termination it starts a fresh `orch-closer`, which files
+and decides the terminal state. It never edits the change, except on a host
+with no fresh subagent: there it takes the host-capabilities fallback, does the
+fixer's and the closer's work in its own session, and records that as a host
+fallback. When triage leaves something the loop fixes, it starts a fresh
+`orch-fixer`, which fixes, verifies, commits, pushes, writes the iteration's
+review record, and returns about five lines. At termination it starts a fresh `orch-closer`, which files
 the unfixed majors and nits across the flow's records, posts the one PR
 comment, and returns the issue numbers. A clean iteration starts no fixer; the
 driver writes its record itself.
