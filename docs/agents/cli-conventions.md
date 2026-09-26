@@ -16,7 +16,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `spec`    | `fetch`, `update`, `comment`                         |
 | `ticket`  | `publish`, `next`, `close`, `reset`                  |
 | `state`   | `get`, `set`                                         |
-| `handoff` | `path`, `validate`                                   |
+| `handoff` | `path`, `validate`, `section`                        |
 
 This table is a map of the shape, not the source of truth for arguments or
 behavior - run `orch.sh help` for the live list.

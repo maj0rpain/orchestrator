@@ -542,7 +542,19 @@ cmd_handoff() {
       done <<<"$report"
       return "$failed"
       ;;
-    *) die "unknown handoff op: ${op:-<none>} (want path|validate)" ;;
+    section)
+      [ $# -eq 2 ] || die "usage: orch.sh handoff section <file> <heading>"
+      local file="$1" heading="## $2"
+      [ -f "$file" ] || die "handoff not found: $file"
+      grep -qxF "$heading" "$file" || die "section not found: $heading in $file"
+      # Trim leading and trailing blank lines, keeping inner ones. A section
+      # holding only whitespace prints nothing - the same condition under which
+      # handoff_report calls it empty.
+      section_body "$file" "$heading" | awk '
+        /[^[:space:]]/ { for (; held > 0; held--) print ""; print; seen = 1; next }
+        seen { held++ }'
+      ;;
+    *) die "unknown handoff op: ${op:-<none>} (want path|validate|section)" ;;
   esac
 }
 
@@ -1590,6 +1602,10 @@ orch.sh - deterministic operations for the orchestrator flow
   state set <key> <value>     update one key
   handoff path <phase>        print the handoff path for a phase
   handoff validate <file>     check required sections exist and are non-empty
+  handoff section <file> <heading>
+                              print the body of the section headed
+                              `## <heading>`, blank lines trimmed; a missing
+                              file or heading is an error
   branch create               create orch/<issue>-<slug> off the flow's base
                               branch, recorded at init
   branch off <name>           create and check out <name> off the base branch

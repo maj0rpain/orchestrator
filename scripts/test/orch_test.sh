@@ -769,6 +769,65 @@ assert_status "a pre-1.0.0 flow's handoff validates without Host fallbacks" "$st
 printf '%s\n' "$st_saved" >.orchestrator/state.json
 complete_plan_handoff "$h"
 
+# --- handoff section --------------------------------------------------------
+# The review loop's driver reads Rejected alternatives and Deviations through
+# this rather than reading whole handoffs, so it has to print exactly one
+# section's body and nothing of its neighbours.
+echo
+echo "handoff section"
+out="$("$ORCH" handoff section "$h" "Rejected alternatives" 2>&1)"; st=$?
+assert_status "prints a named section" "$st" 0
+assert_eq "prints only that section's body" "$out" "Y, because Z."
+
+hi="$("$ORCH" handoff path review)"
+complete_implement_handoff "$hi"
+assert_eq "reads Deviations out of an implement handoff" \
+  "$("$ORCH" handoff section "$hi" Deviations)" "None."
+
+hs="$(mktemp)"
+writeln '## Decisions' '' '' 'Use X.' '' 'And Y.' '   ' '' \
+        '## Rejected alternatives' '  ' '' \
+        '## Constraints' 'Must run offline.' >"$hs"
+out="$("$ORCH" handoff section "$hs" Decisions)"
+assert_eq "trims leading and trailing blank lines, keeps inner ones" \
+  "$out" "$(writeln 'Use X.' '' 'And Y.')"
+assert_not_contains "does not bleed into the next section" "$out" "Constraints"
+out="$("$ORCH" handoff section "$hs" Constraints)"
+assert_eq "reads the last section to end of file" "$out" "Must run offline."
+
+out="$("$ORCH" handoff section "$hs" "Rejected alternatives" 2>&1)"; st=$?
+assert_status "a whitespace-only section exits 0" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+cp "$hs" "$h"
+out="$("$ORCH" handoff validate "$h" 2>&1)"
+assert_contains "handoff validate reports that same section as empty" \
+  "$out" "empty section: ## Rejected alternatives"
+complete_plan_handoff "$h"
+
+out="$("$ORCH" handoff section "$h" "Open questions" 2>&1)"; st=$?
+assert_status "a missing heading is an error" "$st" 1
+assert_contains "naming the heading" "$out" "Open questions"
+
+# The match is on the whole `## <heading>` line: a prefix is not the section.
+out="$("$ORCH" handoff section "$h" "Rejected" 2>&1)"; st=$?
+assert_status "a heading prefix does not match" "$st" 1
+
+out="$("$ORCH" handoff section "$hs.missing" Decisions 2>&1)"; st=$?
+assert_status "a missing file is an error" "$st" 1
+assert_contains "naming the file" "$out" "$hs.missing"
+
+out="$("$ORCH" handoff section "$h" 2>&1)"; st=$?
+assert_status "too few arguments is an error" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh handoff section <file> <heading>"
+out="$("$ORCH" handoff section "$h" Decisions extra 2>&1)"; st=$?
+assert_status "too many arguments is an error" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh handoff section <file> <heading>"
+
+assert_contains "orch.sh help lists handoff section" "$("$ORCH" help)" "handoff section"
+out="$("$ORCH" handoff bogus 2>&1)"
+assert_contains "an unknown handoff op lists section" "$out" "want path|validate|section"
+rm -f "$hs" "$hi"
+
 # --- ticket breakdown handoff ------------------------------------------------
 # The spec phase's last step publishes tickets as sub-issues of the spec
 # issue, so the handoff that follows it must at least name the parent -
@@ -1949,9 +2008,14 @@ assert_contains "the plugin root check still warns when Claude Code left it unse
 
 out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "Junie's missing capabilities warn, never fail" "$st" 0
-assert_contains "detects Junie from JUNIE_EXTENSION_ROOT" "$out" "host: Junie"
+assert_contains "detects Junie CLI from JUNIE_EXTENSION_ROOT" "$out" "host: Junie CLI"
 assert_contains "names the edit guard Junie cannot arm" "$out" "Arm the edit guard"
-assert_contains "names the fresh subagent Junie cannot start" "$out" "Start a fresh subagent"
+# Junie CLI documents custom subagents, but loading a plugin's agents/ is
+# unconfirmed (#148), so a fresh subagent is unverified there, not missing.
+assert_contains "names the fresh subagent as unverified on Junie" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*')" "Start a fresh subagent"
+assert_eq "does not claim Junie lacks a fresh subagent" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Start a fresh subagent')" "0"
 assert_contains "names the forked subagent Junie cannot start" "$out" "Start a forked subagent"
 # A human on Junie still starts a skill with /<name>; only the model lacks it.
 assert_contains "names only mid-step skill invocation as missing" "$out" "Invoke a skill from a step"
@@ -1959,7 +2023,8 @@ assert_contains "points at the reference for the fallbacks" "$out" "docs/host-ca
 assert_eq "does not list what Junie can do" \
   "$(printf '%s\n' "$out" | grep -c 'Ask a multiple-choice question')" "0"
 # An unconfirmed cell is not a known gap: doctor must not state it as one.
-assert_contains "names what is unverified on Junie" "$out" "unverified: Run a plugin command"
+assert_contains "names what is unverified on Junie" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*')" "Run a plugin command"
 assert_eq "does not claim Junie lacks what is only unverified" \
   "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Run a plugin command')" "0"
 assert_contains "an unset plugin root is expected on Junie, not a warning" \
@@ -3516,6 +3581,24 @@ assert_first_line "classified as stop" "$out" "stop"
 assert_contains "carrying the recorded reason on the lines after it" \
   "$out" "CI failed twice, flake rerun spent."
 
+# Per-reviewer report files sit beside the records under a suffixed name, and
+# records are addressed only by their exact iteration-NN.md name - so a report
+# never changes a classification, even one that reads like a record.
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05-standards.md
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05-spec.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "report files beside a stop record leave it terminal" "$st" 0
+assert_first_line "still classified as stop, not read from a report" "$out" "stop"
+assert_contains "review path still names the record, not a report" \
+  "$("$ORCH" review path 5)" "/review/iteration-05.md"
+rm .orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "report files with no record are not terminal" "$st" 1
+assert_first_line "classified as interrupted" "$out" "interrupted"
+assert_contains "and review path still names the missing record" \
+  "$("$ORCH" review path)" "/review/iteration-05.md"
+rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
+
 out="$("$ORCH" review terminal extra 2>&1)"; st=$?
 assert_status "takes no arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh review terminal"
@@ -3566,6 +3649,20 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a stop record is healthy too" "$st" 0
 assert_contains "names the terminal state and its reason" \
   "$out" "review loop at a terminal state: stop (CI failed twice.)"
+
+# Report files change nothing doctor says about the loop either.
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05-standards.md
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05-spec.md
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "report files beside a stop record stay healthy" "$st" 0
+assert_contains "still reading the stop from the record" \
+  "$out" "review loop at a terminal state: stop (CI failed twice.)"
+mv .orchestrator/review/iteration-05.md .orchestrator/review/stop.saved
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "report files with no record warn rather than fail" "$st" 0
+assert_contains "and read as interrupted" "$out" "looks interrupted, not stopped"
+mv .orchestrator/review/stop.saved .orchestrator/review/iteration-05.md
+rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
 
 # --- doctor: review budget check -----------------------------------------
 # review begin's own `die` at budget is what is meant to make an iteration
@@ -3681,6 +3778,18 @@ assert_eq "iteration-02 landed under it too" \
   "$([ -f .orchestrator/review/pre-redo-1/iteration-02.md ] && echo yes || echo no)" "yes"
 assert_eq "and the flat trail is empty afterwards" \
   "$([ -e .orchestrator/review/iteration-01.md ] && echo yes || echo no)" "no"
+
+# The per-reviewer report files ride along with their records.
+: >.orchestrator/review/iteration-03.md
+: >.orchestrator/review/iteration-03-standards.md
+: >.orchestrator/review/iteration-03-spec.md
+"$ORCH" review retire 2 >/dev/null
+for f in iteration-03.md iteration-03-standards.md iteration-03-spec.md; do
+  assert_eq "$f landed in pre-redo-2" \
+    "$([ -f ".orchestrator/review/pre-redo-2/$f" ] && echo yes || echo no)" "yes"
+  assert_eq "$f left the flat trail" \
+    "$([ -e ".orchestrator/review/$f" ] && echo yes || echo no)" "no"
+done
 
 : >.orchestrator/review/iteration-01.md
 out="$("$ORCH" review retire 1 2>&1)"; st=$?
@@ -4102,7 +4211,8 @@ if [ -f "$ref" ]; then ok "the host capabilities reference exists"
 else bad "the host capabilities reference exists" "no $ref"; fi
 header="$(grep -m1 '^| Capability' "$ref" 2>/dev/null)"
 assert_contains "it has a Claude Code column" "$header" "| Claude Code |"
-assert_contains "it has a Junie column" "$header" "| Junie |"
+# "Junie" is the Junie CLI, the only Junie the column's facts were read from.
+assert_contains "it has a Junie CLI column" "$header" "| Junie CLI |"
 for cap in 'Invoke a skill from a step' 'Ask a multiple-choice question' 'Start a fresh subagent' \
            'Start a forked subagent' 'Start a fresh session' \
            'Inject context at planning time' 'Arm the edit guard'; do

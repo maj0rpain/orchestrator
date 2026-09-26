@@ -57,7 +57,9 @@ no such flag; invoke those as skills (on Claude Code, the Skill tool). Always
 spell the code review skill with its `mattpocock-skills:` scope - the bare
 name is ambiguous with another `code-review` skill that may be installed
 alongside this plugin. On a host with no scoped names, invoke it through
-`bash "$ORCH" mp-skill code-review` for the same reason.
+`bash "$ORCH" mp-skill code-review` for the same reason. The implement
+phase's ticket subagents and a quick implementation use it. The review loop
+does not: `orch-review` starts the plugin's own reviewer agents instead.
 
 ## Starting a flow
 
