@@ -58,7 +58,8 @@ your return instead - see **Could not fix**.
    command`), describing the fix rather than the iteration; the body lists the
    findings addressed and points at the record. Stage the files you changed
    by path. A fixer that fixed nothing makes no commit.
-4. **Push.** `git push`. CI is the driver's to wait on, at termination.
+4. **Push**, only if step 3 made a commit. `git push`. CI is the driver's
+   to wait on, at termination.
 5. **Write the record** to the record path - see **The record**.
 6. **Return** about five lines: what was fixed, the commit SHA (or `no
    commit`), and each could-not-fix finding with its severity and why.

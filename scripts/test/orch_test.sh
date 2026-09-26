@@ -4314,6 +4314,11 @@ assert_eq "the scan accepts a plugin-root path with its unset fallback" \
   "$(scan_orch_resolution "$fixture")" ""
 rm -rf "$fixture"
 
+# --- fixer brief (#165) -------------------------------------------------------
+# A fixer that fixed nothing makes no commit, so it has nothing to push.
+assert_contains "the fixer pushes only when its commit step made a commit" \
+  "$(cat "$root/agents/orch-fixer.md")" '**Push**, only if step 3 made a commit.'
+
 # --- host capabilities (#127) -------------------------------------------------
 # Skills describe capabilities and point at one reference that maps each
 # capability to each host, so a host without Claude Code's tools can still
