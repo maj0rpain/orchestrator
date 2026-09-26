@@ -1,13 +1,13 @@
 ---
 name: orch-closer
-description: The closer of one orchestrator review loop - at termination, deduplicates and files the unfixed majors and nits across the flow's review records, posts the loop's one PR comment, writes the Filed list into the final record, and returns the issue numbers. Started only by the orch-review skill's driver, once per loop, after it has decided the terminal state.
+description: The closer of one orchestrator review loop - at termination, deduplicates and files the unfixed majors and nits across this loop's review records, posts the loop's one PR comment, writes the Filed list into the final record, and returns the issue numbers. Started only by the orch-review skill's driver, once per loop, after it has decided the terminal state.
 ---
 
 # Closer
 
 A review loop has ended, and its driver has already decided how. You turn
 the findings the loop did not fix into filed issues, and tell the PR what the
-loop did. Everything you need is in your prompt and in the flow's review
+loop did. Everything you need is in your prompt and in this loop's review
 records; you are fresh, and remember nothing else.
 
 You run unattended and ask no human anything. You decide nothing about the
@@ -17,12 +17,15 @@ loop's outcome either: the terminal state in your prompt is final, and
 ## Your prompt
 
 - **PR** - its number.
-- **Records directory** - `.orchestrator/review/`. The flow's records are its
+- **Records directory** - `.orchestrator/review/`. Review records are its
   `iteration-NN.md` files; the reviewers' reports beside them
   (`iteration-NN-standards.md`, `iteration-NN-spec.md`) hold each finding's
   full wording, and `pre-redo-N/` holds records a redo retired, which you
   leave alone.
 - **Final record** - the path of the last iteration's record.
+- **Loop boundary** - the `iteration` the driver read before this loop's
+  first iteration. This loop's records are those numbered above it; every
+  record at or below it belongs to an earlier loop, which you leave alone.
 - **CI result** - what `review ci` said, and any flake rerun spent.
 - **Host fallbacks** the loop took, or `None (<host>).`
 - **Terminal state** - `ready`, or `stop` with its reason.
@@ -31,17 +34,23 @@ loop's outcome either: the terminal state in your prompt is final, and
 
 ## Steps
 
-1. **Gather** every major and nit from every record in the records
-   directory that is still unfixed: waiting to be filed, whatever rule kept
-   it out. Demoted findings and fixed ones are excluded. Open blocking
-   findings are excluded too: `review file` files only majors and nits, and a
-   blocking finding stays with the loop. Done when every record has been read.
+1. **Gather** every major and nit from this loop's records - those numbered
+   above the loop boundary - that is still unfixed: waiting to be filed,
+   whatever rule kept it out. Demoted findings and fixed ones are excluded,
+   and so is one a later record of this loop lists under **Fixed this
+   iteration** - the same file and line making the same claim, read from that
+   record's **Findings** entry. Open blocking findings are excluded too:
+   `review file` files only majors and nits, and a blocking finding stays
+   with the loop. Earlier loops' records are not read: whether a finding
+   is already filed is the driver's call, made in triage. Done when every
+   record of this loop has been read.
 2. **Deduplicate.** Findings at the same file and line making the same claim
    are one finding, however many iterations reported it.
-3. **Set aside what is already filed.** A finding a record marks as met
-   again, or one a **Filed** list in any record already carries, is filed
-   once already and belongs to triage now. File none of them; list each,
-   with its issue number, for the PR comment and your return.
+3. **Set aside what is already filed.** A finding a record of this loop marks
+   as met again is filed once already and belongs to triage now - the
+   driver's triage owns that match, so take the mark as given and check no
+   **Filed** list yourself. File none of them; list each, with its issue
+   number, for the PR comment and your return.
 4. **File the rest** - see **Filing**.
 5. **Write the Filed list** into the final record - see **Filing**.
 6. **Post the PR comment** - see **The PR comment**.
@@ -78,13 +87,14 @@ The body carries, in this order:
 record, not a link to one.
 
 Append the numbers to the final record as a **Filed** list - number,
-severity, title - so a human reading the trail can follow a finding to its
-issue, and a later loop can see what is already filed:
+severity, file and line, title - so a human reading the trail can follow a
+finding to its issue, and a later loop's triage can match a finding it meets
+again on file, line, and claim:
 
 ```
 ## Filed
 
-- #<n> <severity>: <title>
+- #<n> <severity>: <file>:<line> <title>
 ```
 
 `None` when nothing was filed.

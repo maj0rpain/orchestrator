@@ -150,6 +150,9 @@ another iteration's work except through the records.
 
 A fresh agent a review loop's driver starts once, at termination, to turn the
 loop's unfixed findings into filed findings and tell the PR what the loop did.
+It reads only this loop's review records, and files nothing the driver's
+triage marked met again; whether a finding is already filed is the driver's
+call, never the closer's.
 
 ## Adopted issue
 
@@ -233,6 +236,12 @@ Lines the current review loop's own fix commits wrote. A major or nit on them
 is filed, never fixed; a blocking finding on them is still fixed. A previous
 loop's fixes are not loop-authored for the next one.
 
+## Loop boundary
+
+The `iteration` a review loop's driver reads before the loop's first
+iteration. The loop's own records are those numbered above it; those at or
+below it belong to earlier loops of the flow.
+
 ## Filed finding
 
 A major or nit the loop did not fix, turned into an issue when a loop
@@ -240,9 +249,12 @@ terminates - because its fix needed a decision, would have changed behaviour,
 was not mechanical, landed on loop-authored lines, was found in a final
 iteration, or the fixer could not fix it. It carries the reviewer's finding
 and the loop's reasoning about it, including which of those kept it out of the
-loop, deduplicated across iterations and across a flow's loops. A filed
-finding enters triage against the whole codebase rather than against one diff:
-a later loop that meets it again leaves it alone, and tells the human it did.
+loop, deduplicated across a loop's iterations by the closer and across a
+flow's loops by the driver's triage. Its **Filed** entry names its file and
+line, so a later loop's triage matches a finding it meets again on file, line,
+and claim. A filed finding enters triage against the whole codebase rather
+than against one diff: a later loop that meets it again leaves it alone, and
+tells the human it did.
 Findings the loop demoted on a human's earlier decision are reported, never
 filed.
 

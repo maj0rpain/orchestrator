@@ -72,9 +72,11 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    Anything else means a previous loop ended in a bounded stop and a human
    asked for more: read every `.orchestrator/review/iteration-NN.md` record
    already there - the records, not the reviewers' reports beside them -
-   because their **Filed** lists are what stop this loop re-filing
-   what the previous one filed, and any **open blocking** finding in the
-   last of them still stands: it goes into this loop's first triage.
+   because their **Filed** lists are what stop this loop re-filing what the
+   previous one filed. Triage's **Met again** is the only check against them,
+   since the closer reads only this loop's records. Any **open blocking**
+   finding in the last of them still stands: it goes into this loop's first
+   triage.
 5. Ask the budget. **The question blocks** - ask it as a question
    (`AskUserQuestion` on both Claude Code and Junie). Ask once, before the
    first iteration, and never again mid-loop:
@@ -111,15 +113,22 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
        commits wrote is filed, never fixed - fixes drawing findings drawing
        fixes is what never converges. Tell them apart with `git blame` on the
        flagged lines against the fix SHAs in *this* loop's iteration records -
-       those numbered above the `iteration` read in **Before the first
-       iteration**, step 4; a previous loop's fixes are not loop-authored. A
+       those numbered above the **loop boundary**, the `iteration` read in
+       **Before the first iteration**, step 4; a previous loop's fixes are
+       not loop-authored. A
        blocking finding there is still fixed.
      - **The final iteration** - the one whose number equals `budget` - fixes
        only what is blocking and files its majors and nits, since nothing
        reviews what it writes.
    - **Demoted**, with its authority - see **Authority**.
    - **Met again** - a finding a previous loop's **Filed** list already
-     carries is neither fixed nor filed again; it keeps its issue number.
+     carries - the same file and line making the same claim, as the
+     closer's deduplication matches, never the title alone - is neither
+     fixed nor filed again; it keeps its issue number. This is the one owner
+     of the already-filed rule: the closer files whatever this loop's records
+     leave waiting and only reports what triage marked met again. A
+     **Filed** entry with no file and line predates that format; match it on
+     its title against the finding's claim.
 
    Done when every finding in both reports has exactly one disposition.
 4. Nothing to fix - a **clean iteration** - means no fixer. Write the record
@@ -209,15 +218,17 @@ a finding to file, the issue number for one met again.
 
 **`orch-closer`**, under the same `agents/`, started fresh (see **Starting an
 agent**) once per loop, at **Termination**, after the terminal state is
-decided. It files every unfixed major and nit across the flow's records
-through `orch.sh review file`, posts the loop's one PR comment, writes the
-**Filed** list into the final record, and returns the issue numbers; its
-brief carries the Filing and PR-comment rules. Its prompt carries:
+decided. It files every unfixed major and nit across this loop's records -
+those numbered above the **loop boundary**, less any a later iteration of
+this loop fixed - through `orch.sh review file`, posts the loop's one PR
+comment, writes the **Filed** list into the final record, and returns the
+issue numbers; its brief carries the Filing and PR-comment rules. Its prompt carries:
 
 ```
 PR: #<pr>
 Records directory: .orchestrator/review/
 Final record: <bash "$ORCH" review path>
+Loop boundary: <the iteration read in Before the first iteration, step 4>
 CI result: <review ci's answer, and any flake rerun spent>
 Host fallbacks: <every fallback the loop took, per docs/host-capabilities.md, or None (<host>).>
 Terminal state: <ready, or stop and its reason>

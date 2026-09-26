@@ -1,5 +1,8 @@
 # The review loop's driver hands fixing and filing to fresh agents
 
+Superseded in part by ADR-0020: the closer now reads only this loop's
+records, and the driver's triage alone decides what is already filed.
+
 Supersedes the argument in ADR-0001's body that the driving session's
 bookkeeping must stay in its context. ADR-0001's claim of one driving session
 per loop stands.

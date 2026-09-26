@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.4.2
+
+The closer files only what its own review loop left unfixed, and the driver's
+triage is the one owner of the already-filed rule (see issue #164, covering
+#172 and #158).
+
+- `orch-closer` gets a **Loop boundary** in its prompt and gathers majors and
+  nits only from records numbered above it, leaving earlier loops' records
+  alone.
+- A finding a later iteration of the same loop fixed is no longer filed.
+- The closer no longer checks **Filed** lists itself; it sets aside only what
+  triage marked met again.
+- **Filed** entries read `#<n> <severity>: <file>:<line> <title>`, and triage's
+  **Met again** matches on file, line, and claim instead of the title alone.
+  An older entry with no file and line is matched on its title against the
+  finding's claim.
+- ADR-0020 records the decision and supersedes ADR-0017 in part.
+
 ## 1.4.1
 
 Starting a plugin agent is defined once (see issue #181).
