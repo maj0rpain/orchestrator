@@ -110,6 +110,18 @@ Host fallbacks: <each fallback taken, or None>
 ## Waiting to be filed
 
 - <Axis>/<severity>: <claim> - <the rule that kept it out>
+
+## CI
+
+<review ci's answer, its detail lines, and any flake rerun spent>
+
+## Filed
+
+- #<n> <severity>: <file>:<line> <title>
+
+## Terminal state
+
+<ready, or stop and its reason>
 ```
 
 Every finding of the iteration appears under **Findings** with its axis and
@@ -121,5 +133,7 @@ listed there as that axis's **missing look**. Write `None` under a heading
 with nothing in it. The fix SHAs listed here are what later iterations of
 this loop blame against.
 
-Leave `## Terminal state`, CI, and the **Filed** list out: the driver and the
-closer write those at termination, and only there.
+The last three sections are written at termination, and only there - leave
+`## CI`, `## Filed`, and `## Terminal state` out of your record. The driver
+writes `## CI`, the closer `## Filed`, and the driver `## Terminal state`, in
+that order.
