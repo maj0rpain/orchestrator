@@ -207,9 +207,11 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    - **Unmet criteria**: one bullet per ticket whose `Criteria` line names an
      unmet criterion, naming the ticket and each criterion. "None" otherwise.
    - **Verification**: the command from the last ticket's `Verification`
-     line - its full verification ran over the whole branch. The review loop
-     runs it every iteration and treats a failure as blocking. A `fail` there
-     is also recorded under **Deviations**, for that ticket.
+     line - its full verification ran over the whole branch - and its result,
+     `pass` or `fail`. On a `fail`, name the ticket whose report returned it,
+     here and nowhere else: a failing verification is not a deviation. The
+     review loop runs the command every iteration and treats a failure as
+     blocking.
    Then validate it: `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path review)"`.
 6. `bash "$ORCH" state set phase review`, then print the boundary.
 
