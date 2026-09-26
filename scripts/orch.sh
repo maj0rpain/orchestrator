@@ -546,10 +546,12 @@ cmd_handoff() {
       [ $# -eq 2 ] || die "usage: orch.sh handoff section <file> <heading>"
       local file="$1" heading="## $2"
       [ -f "$file" ] || die "handoff not found: $file"
-      grep -qxF "$heading" "$file" || die "section not found: $heading in $file"
+      local count
+      count="$(grep -cxF "$heading" "$file")" || true
+      [ "$count" -gt 0 ] || die "section not found: $heading in $file"
       # A handoff with two identical sections is malformed; section_body would
       # print both bodies joined as if they were one.
-      [ "$(grep -cxF "$heading" "$file")" -eq 1 ] || die "repeated section: $heading in $file"
+      [ "$count" -eq 1 ] || die "repeated section: $heading in $file"
       # Trim leading and trailing blank lines, keeping inner ones. A section
       # holding only whitespace prints nothing - the same condition under which
       # handoff_report calls it empty.

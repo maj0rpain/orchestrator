@@ -834,6 +834,7 @@ out="$("$ORCH" handoff section "$hd" X 2>&1)"; st=$?
 assert_status "a repeated heading is an error" "$st" 1
 assert_contains "naming the repeated heading and the file" "$out" "repeated section: ## X in $hd"
 assert_not_contains "and printing no body" "$out" "First."
+assert_not_contains "nor the second body" "$out" "Second."
 rm -f "$hd"
 
 # The match is on the whole `## <heading>` line: a prefix is not the section.
