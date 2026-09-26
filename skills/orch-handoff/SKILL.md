@@ -138,7 +138,7 @@ loop runs this every iteration and treats a failure as blocking. You have the
 tests fresh; review would be guessing.>
 
 ## Unmet criteria
-<the acceptance criteria the implementers reported unmet on their `Criteria`
+<the acceptance criteria the ticket subagents reported unmet on their `Criteria`
 lines, one bullet per ticket, or "None". Not covered by ADR-0002: the review
 loop's Spec axis judges each as an ordinary finding.>
 

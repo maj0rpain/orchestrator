@@ -16,7 +16,7 @@ longer review their own work (see issue #176 and
   `mattpocock-skills:code-review` is gone; the review loop reviews the whole
   change. Quick implementation's own single-pass review is unchanged.
 - `03-implement.md`'s **Already found and fixed** section is now **Unmet
-  criteria**: the criteria the implementers reported unmet, for the review
+  criteria**: the criteria the ticket subagents reported unmet, for the review
   loop's Spec axis to judge. The implement phase assembles it, **Deviations**,
   and **Verification** from the reports.
 
