@@ -4273,6 +4273,24 @@ assert_eq "no skill, command, or guideline carries a <plugin root> placeholder" 
 assert_contains "orch-review reads the fixer's record through CLAUDE_PLUGIN_ROOT" \
   "$(cat "$root/skills/orch-review/SKILL.md")" \
   "\"\${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md\""
+# The reviewers keep Bash, so the only mechanical restriction is Edit and
+# Write; that is all the host fallback loses (#167).
+hostcaps="$(tr -s '\n ' ' ' <"$root/docs/host-capabilities.md")"
+adr18="$(tr -s '\n ' ' ' <"$root/docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md")"
+assert_not_contains "host-capabilities no longer says the fallback loses a mechanical guarantee" \
+  "$hostcaps" 'loses that mechanical guarantee'
+assert_not_contains "ADR-0018 no longer restricts the reviewers mechanically as a whole" \
+  "$adr18" 'restrict the reviewers mechanically'
+for prose in "$hostcaps" "$adr18"; do
+  assert_contains "the fallback loses only the Edit and Write restriction" \
+    "$prose" 'Edit and Write restriction'
+  assert_contains "read-only through Bash always rested on the brief" \
+    "$prose" 'through Bash always rested on the brief'
+done
+for a in orch-reviewer-standards orch-reviewer-spec; do
+  assert_contains "$a keeps its tools list" \
+    "$(cat "$root/agents/$a.md")" 'tools: Read, Grep, Glob, Bash'
+done
 # With no full install at all, doctor has no orch.sh to run from, so the skill
 # is the one that has to explain the failure (#128).
 missing=""

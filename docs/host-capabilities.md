@@ -64,8 +64,10 @@ prompt, and where to record the fallback. Take the first tier that fits:
    start a fresh general-purpose agent - still never a fork. Its prompt is the
    one the skill would have given the plugin's agent, plus the path of the
    agent's file, to read and follow as its brief. An agent whose file
-   restricts its tools, such as a read-only reviewer, loses that mechanical
-   guarantee this way and keeps its brief's instruction.
+   restricts its tools loses that restriction this way and keeps its brief's
+   instruction. For a reviewer that is only the Edit and Write restriction:
+   it keeps Bash either way, so its read-only behaviour through Bash always
+   rested on the brief.
 2. **In this session.** On a host with no fresh subagent at all, do the
    subagent's work yourself, in this session, from its brief alone: for one of
    the plugin's agents, its file under `agents/`. Read only the files and the
