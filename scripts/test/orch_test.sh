@@ -769,6 +769,65 @@ assert_status "a pre-1.0.0 flow's handoff validates without Host fallbacks" "$st
 printf '%s\n' "$st_saved" >.orchestrator/state.json
 complete_plan_handoff "$h"
 
+# --- handoff section --------------------------------------------------------
+# The review loop's driver reads Rejected alternatives and Deviations through
+# this rather than reading whole handoffs, so it has to print exactly one
+# section's body and nothing of its neighbours.
+echo
+echo "handoff section"
+out="$("$ORCH" handoff section "$h" "Rejected alternatives" 2>&1)"; st=$?
+assert_status "prints a named section" "$st" 0
+assert_eq "prints only that section's body" "$out" "Y, because Z."
+
+hi="$("$ORCH" handoff path review)"
+complete_implement_handoff "$hi"
+assert_eq "reads Deviations out of an implement handoff" \
+  "$("$ORCH" handoff section "$hi" Deviations)" "None."
+
+hs="$(mktemp)"
+writeln '## Decisions' '' '' 'Use X.' '' 'And Y.' '   ' '' \
+        '## Rejected alternatives' '  ' '' \
+        '## Constraints' 'Must run offline.' >"$hs"
+out="$("$ORCH" handoff section "$hs" Decisions)"
+assert_eq "trims leading and trailing blank lines, keeps inner ones" \
+  "$out" "$(writeln 'Use X.' '' 'And Y.')"
+assert_not_contains "does not bleed into the next section" "$out" "Constraints"
+out="$("$ORCH" handoff section "$hs" Constraints)"
+assert_eq "reads the last section to end of file" "$out" "Must run offline."
+
+out="$("$ORCH" handoff section "$hs" "Rejected alternatives" 2>&1)"; st=$?
+assert_status "a whitespace-only section exits 0" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+cp "$hs" "$h"
+out="$("$ORCH" handoff validate "$h" 2>&1)"
+assert_contains "handoff validate reports that same section as empty" \
+  "$out" "empty section: ## Rejected alternatives"
+complete_plan_handoff "$h"
+
+out="$("$ORCH" handoff section "$h" "Open questions" 2>&1)"; st=$?
+assert_status "a missing heading is an error" "$st" 1
+assert_contains "naming the heading" "$out" "Open questions"
+
+# The match is on the whole `## <heading>` line: a prefix is not the section.
+out="$("$ORCH" handoff section "$h" "Rejected" 2>&1)"; st=$?
+assert_status "a heading prefix does not match" "$st" 1
+
+out="$("$ORCH" handoff section "$hs.missing" Decisions 2>&1)"; st=$?
+assert_status "a missing file is an error" "$st" 1
+assert_contains "naming the file" "$out" "$hs.missing"
+
+out="$("$ORCH" handoff section "$h" 2>&1)"; st=$?
+assert_status "too few arguments is an error" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh handoff section <file> <heading>"
+out="$("$ORCH" handoff section "$h" Decisions extra 2>&1)"; st=$?
+assert_status "too many arguments is an error" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh handoff section <file> <heading>"
+
+assert_contains "orch.sh help lists handoff section" "$("$ORCH" help)" "handoff section"
+out="$("$ORCH" handoff bogus 2>&1)"
+assert_contains "an unknown handoff op lists section" "$out" "section"
+rm -f "$hs" "$hi"
+
 # --- ticket breakdown handoff ------------------------------------------------
 # The spec phase's last step publishes tickets as sub-issues of the spec
 # issue, so the handoff that follows it must at least name the parent -
@@ -3516,6 +3575,24 @@ assert_first_line "classified as stop" "$out" "stop"
 assert_contains "carrying the recorded reason on the lines after it" \
   "$out" "CI failed twice, flake rerun spent."
 
+# Per-reviewer report files sit beside the records under a suffixed name, and
+# records are addressed only by their exact iteration-NN.md name - so a report
+# never changes a classification, even one that reads like a record.
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05-standards.md
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05-spec.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "report files beside a stop record leave it terminal" "$st" 0
+assert_first_line "still classified as stop, not read from a report" "$out" "stop"
+assert_contains "review path still names the record, not a report" \
+  "$("$ORCH" review path 5)" "/review/iteration-05.md"
+rm .orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "report files with no record are not terminal" "$st" 1
+assert_first_line "classified as interrupted" "$out" "interrupted"
+assert_contains "and review path still names the missing record" \
+  "$("$ORCH" review path)" "/review/iteration-05.md"
+rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
+
 out="$("$ORCH" review terminal extra 2>&1)"; st=$?
 assert_status "takes no arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh review terminal"
@@ -3566,6 +3643,20 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a stop record is healthy too" "$st" 0
 assert_contains "names the terminal state and its reason" \
   "$out" "review loop at a terminal state: stop (CI failed twice.)"
+
+# Report files change nothing doctor says about the loop either.
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05-standards.md
+writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05-spec.md
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "report files beside a stop record stay healthy" "$st" 0
+assert_contains "still reading the stop from the record" \
+  "$out" "review loop at a terminal state: stop (CI failed twice.)"
+mv .orchestrator/review/iteration-05.md .orchestrator/review/stop.saved
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "report files with no record warn rather than fail" "$st" 0
+assert_contains "and read as interrupted" "$out" "looks interrupted, not stopped"
+mv .orchestrator/review/stop.saved .orchestrator/review/iteration-05.md
+rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
 
 # --- doctor: review budget check -----------------------------------------
 # review begin's own `die` at budget is what is meant to make an iteration
@@ -3681,6 +3772,19 @@ assert_eq "iteration-02 landed under it too" \
   "$([ -f .orchestrator/review/pre-redo-1/iteration-02.md ] && echo yes || echo no)" "yes"
 assert_eq "and the flat trail is empty afterwards" \
   "$([ -e .orchestrator/review/iteration-01.md ] && echo yes || echo no)" "no"
+
+# The per-reviewer report files ride along with their records.
+new_repo >/dev/null
+"$ORCH" init retirereports >/dev/null
+mkdir -p .orchestrator/review
+: >.orchestrator/review/iteration-01.md
+: >.orchestrator/review/iteration-01-standards.md
+: >.orchestrator/review/iteration-01-spec.md
+"$ORCH" review retire 1 >/dev/null
+for f in iteration-01.md iteration-01-standards.md iteration-01-spec.md; do
+  assert_eq "$f moved into pre-redo-1" \
+    "$([ -f ".orchestrator/review/pre-redo-1/$f" ] && [ ! -e ".orchestrator/review/$f" ] && echo yes || echo no)" "yes"
+done
 
 : >.orchestrator/review/iteration-01.md
 out="$("$ORCH" review retire 1 2>&1)"; st=$?
