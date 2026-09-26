@@ -73,7 +73,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    asked for more: read every `.orchestrator/review/iteration-NN.md` record
    already there - the records, not the reviewers' reports beside them -
    because their **Filed** lists are what stop this loop re-filing
-   what the previous one filed.
+   what the previous one filed, and any **open blocking** finding in the
+   last of them still stands: it goes into this loop's first triage.
 5. Ask the budget. **The question blocks** - ask it as a question
    (`AskUserQuestion` on both Claude Code and Junie). Ask once, before the
    first iteration, and never again mid-loop:
@@ -97,8 +98,9 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    change, and the Spec axis cannot answer "is the spec implemented" from a
    diff containing one fix.
 3. Read both report files, once each, and triage every finding in them, plus
-   any **open blocking** finding the previous iteration's fixer left: it
-   still stands whether or not a reviewer met it again. Apply the two
+   any **open blocking** finding the previous iteration left - or, on a
+   re-entry's first iteration, the previous loop's final record: it still
+   stands whether or not a reviewer met it again. Apply the two
    demotions under **Authority** first, then the **Severity** rubric, then
    give each finding one disposition:
    - **Fix** - every blocking finding, every major that needs no decision and
@@ -122,10 +124,11 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    Done when every finding in both reports has exactly one disposition.
 4. Nothing to fix - a **clean iteration** - means no fixer. Write the record
    to `bash "$ORCH" review path` yourself, in the shape the fixer's brief
-   gives, reading just that section:
+   gives, reading just that section - the brief's last, whose template holds
+   `##` headings of its own, so read to the end of the file:
 
    ```
-   bash "$ORCH" handoff section "<plugin root>/agents/orch-fixer.md" "The record"
+   sed -n '/^## The record$/,$p' "<plugin root>/agents/orch-fixer.md"
    ```
 
    `Verification` reads `not run - nothing changed`, and **Fixed this
@@ -195,6 +198,7 @@ Fix SHAs: <this loop's earlier fix commits, or none>
 Iteration: <NN> of budget <budget>
 Verification command: <command>
 Host fallbacks: <this iteration's, or none>
+Missing looks: <each axis whose reviewer failed twice, or none>
 Record path: <bash "$ORCH" review path>
 ```
 

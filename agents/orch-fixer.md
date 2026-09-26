@@ -27,6 +27,7 @@ your return instead - see **Could not fix**.
 - **Iteration** and **budget**.
 - **Verification command**.
 - **Host fallbacks** the driver took this iteration, or none.
+- **Missing looks** - each axis whose reviewer failed twice, or none.
 - **Record path** - where the iteration's review record goes. The reviewers'
   reports sit beside it as `iteration-NN-standards.md` and
   `iteration-NN-spec.md`; read them when a claim needs its full wording.

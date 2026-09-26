@@ -28,7 +28,9 @@ earlier fixes, and it never asks a human anything: what it cannot fix goes in
 the record. A major or nit it could not fix is filed. A blocking finding it
 could not fix, including a failing verification command, becomes **open
 blocking**: never filed, carried into the next iteration's triage, and a bar
-to **Ready** while it remains in the final record.
+to **Ready** while it remains in the final record. So is a **missing look** in
+the final iteration - a reviewer whose report failed twice: a final iteration
+with one axis unreviewed cannot vouch that the change is clean.
 
 ## Considered Options
 
