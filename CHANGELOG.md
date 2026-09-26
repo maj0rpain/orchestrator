@@ -7,11 +7,11 @@ through `CLAUDE_PLUGIN_ROOT`, not a `<plugin root>` placeholder (see issue
 #155).
 
 - The `sed` command reads `"${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"`, and
-  the sentence beside it names the unset fallback: the same directory the
-  `ORCH` fallback identifies.
+  the sentence beside it names the unset fallback: two directories above the
+  skill, as for `ORCH`.
 - `orch_test.sh` accepts a `"${CLAUDE_PLUGIN_ROOT}/<path>"` in a skill that
-  carries that fallback sentence, and fails on any `<plugin root>`
-  placeholder in a skill.
+  carries that fallback sentence, and fails on any `<plugin root>/`
+  placeholder in a skill, command, or guideline.
 
 ## 1.5.2
 

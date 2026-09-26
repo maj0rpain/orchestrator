@@ -142,8 +142,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    sed -n '/^## The record$/,$p' "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"
    ```
 
-   If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is the directory the
-   `ORCH` fallback names: two directories above this skill's own directory.
+   If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is two directories
+   above this skill's own directory, as for `ORCH`.
 
    `Verification` reads `not run - nothing changed`, and **Fixed this
    iteration** and **Open blocking** read `None`. Then go to step 1.

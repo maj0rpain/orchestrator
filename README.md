@@ -211,11 +211,12 @@ everywhere else. Do not copy the scripts into a skill. Commands never run
 [Naming host capabilities](#naming-host-capabilities)).
 
 A skill that reads another file under the plugin root names it as
-`"${CLAUDE_PLUGIN_ROOT}/<path>"`, with a sentence starting
-``If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is`` beside it, pointing at
-the same directory the `ORCH` fallback names. `orch_test.sh` fails when a
-skill, command, or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT` any other
-way, or runs `orch.sh` without this pair or without `bash`.
+`"${CLAUDE_PLUGIN_ROOT}/<path>"`, and the same file carries a sentence starting
+``If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is``, naming the same
+directory the `ORCH` fallback does. `orch_test.sh` fails when a skill, command,
+or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT` any other way, runs
+`orch.sh` without this pair or without `bash`, or names a path through a
+`<plugin root>/` placeholder.
 
 ### Naming host capabilities
 

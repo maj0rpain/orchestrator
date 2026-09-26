@@ -4254,8 +4254,8 @@ assert_eq "every skill and doc runs orch.sh through bash" \
   "$(scan_orch_bash "$root")" ""
 # A skill's commands name the plugin root through CLAUDE_PLUGIN_ROOT, never a
 # "<plugin root>" placeholder the driver must work out for itself (#155).
-assert_eq "no skill command carries a <plugin root> placeholder" \
-  "$(grep -nF '"<plugin root>' "$root"/skills/*/SKILL.md)" ""
+assert_eq "no skill, command, or guideline carries a <plugin root> placeholder" \
+  "$(grep -nF '<plugin root>/' "$root"/skills/*/SKILL.md "$root"/commands/*.md "$root"/guidelines/*)" ""
 assert_contains "orch-review reads the fixer's record through CLAUDE_PLUGIN_ROOT" \
   "$(cat "$root/skills/orch-review/SKILL.md")" \
   "\"\${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md\""
