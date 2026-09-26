@@ -126,7 +126,7 @@ the body file passed to it should not add a closing keyword of its own.>
 <URL and number - the Spec review axis diffs against it>
 
 ## Base SHA
-<from state.json; the fixed point mattpocock-skills:code-review diffs from>
+<from state.json; the fixed point the review loop diffs from>
 
 ## Deviations
 <where the implementation knowingly departed from the spec, and why. "None" if
@@ -137,9 +137,10 @@ it did not. This is how review tells an agreed change from scope creep.>
 loop runs this every iteration and treats a failure as blocking. You have the
 tests fresh; review would be guessing.>
 
-## Already found and fixed
-<what each ticket's own closing mattpocock-skills:code-review caught, so
-review iteration 1 does not re-report it>
+## Unmet criteria
+<the acceptance criteria the implementers reported unmet on their `Criteria`
+lines, one bullet per ticket, or "None". Not covered by ADR-0002: the review
+loop's Spec axis judges each as an ordinary finding.>
 
 ## Host fallbacks
 <per **Record every host fallback** above>

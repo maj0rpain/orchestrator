@@ -57,9 +57,12 @@ no such flag; invoke those as skills (on Claude Code, the Skill tool). Always
 spell the code review skill with its `mattpocock-skills:` scope - the bare
 name is ambiguous with another `code-review` skill that may be installed
 alongside this plugin. On a host with no scoped names, invoke it through
-`bash "$ORCH" mp-skill code-review` for the same reason. The implement
-phase's ticket subagents and a quick implementation use it. The review loop
-does not: `orch-review` starts the plugin's own reviewer agents instead.
+`bash "$ORCH" mp-skill code-review` for the same reason. Only a quick
+implementation's own single-pass review uses it. The implement phase's
+ticket subagents do not: they run as the plugin's `orch-implementer` agent,
+which checks each ticket against its acceptance criteria and leaves review
+to the loop. The review loop does not either: `orch-review` starts the
+plugin's own reviewer agents instead.
 
 ## Starting a flow
 
@@ -182,42 +185,34 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    - Record the subagent's report, then `bash "$ORCH" ticket close <n>` - only now
      that the report is back, never before - and go around again.
 
-   **Dispatching a subagent**: start a fresh subagent (on Claude Code, the
-   Agent tool as a fresh agent, explicitly not a fork), so it starts with
-   nothing but what this brief hands it, carrying only the issue number
-   named above. Without one, take the documented fallback. The brief's directions
-   open with an explicit first instruction: fetch the ticket itself (`gh
-   issue view <n> --comments`, per `docs/agents/issue-tracker.md`'s "fetch
-   the relevant ticket" convention) before doing anything else. The brief
-   then directs the subagent to resolve and follow `bash "$ORCH" mp-skill
-   implement` itself, the same way this file resolves any upstream skill,
-   against the ticket - and, when `implement`'s closing step calls for a
-   review, to use `mattpocock-skills:code-review` by its fully scoped name,
-   never the bare name, the same disambiguation this file observes above; to
-   build on the current branch, already checked out, and commit its own
-   work to it; to never open a branch or PR of its own; and to never block
-   on a human mid-ticket - a call it cannot make alone is a deviation,
-   recorded and returned instead of asked. The brief adds file-read
-   discipline: never re-read a file already read in full this session -
-   grep for the next location and jump there instead of re-reading it
-   wholesale; and on a wide-blast-radius ticket (a rename, a grammar
-   change, anything touching many call sites), run one `grep -rn` pass up
-   front to build a complete reference list, then work that list with
-   targeted reads and edits, never re-scanning the same files afterward.
-   Its report is structured: what it built, and the deviation it made,
-   if any.
+   **Dispatching a subagent**: start the plugin's `orch-implementer` agent
+   (under the plugin root's `agents/`) as a fresh subagent, never a fork - on
+   Claude Code, the Agent tool with `subagent_type` set to
+   `orch-implementer` under the `orchestrator:` plugin scope.
+   Its prompt is the issue number named above and nothing else; the agent
+   owns its brief. It returns five lines: `Ticket`, `Commits`,
+   `Verification`, `Criteria`, `Deviation`. On a host that does not load the
+   plugin's `agents/`, take `docs/host-capabilities.md`'s **Start a fresh
+   subagent** fallback: do the ticket's work yourself, in this session,
+   following `agents/orch-implementer.md` as your brief, and record the
+   fallback under the handoff's **Host fallbacks**.
 4. `bash "$ORCH" pr open "<title>" <body-file>`. The PR opens as a draft; marking it
    ready is the review loop's success condition. The PR targets the flow's base
    branch. `pr open` itself writes the issue line ahead of the body -
    `Closes #<issue>` when the base branch is the default branch, `Refs
    #<issue>` otherwise - so the body file carries no closing keyword of its
    own.
-5. Invoke the `orch-handoff` skill for `03-implement.md`. Its **Deviations** section
-   is assembled from every ticket's report, one bullet per ticket that returned
-   one, naming the ticket - "None" only if not one ticket reported a deviation,
-   never left blank. Its **Verification** section is the command the review loop
-   runs every iteration: record how you just ran the tests, because review takes
-   it from here rather than guessing from the repo.
+5. Invoke the `orch-handoff` skill for `03-implement.md`, assembling three
+   sections from the tickets' reports:
+   - **Deviations**: one bullet per ticket whose `Deviation` line is not
+     `None`, naming the ticket and holding all of its deviations. "None" only
+     if not one ticket reported a deviation, never left blank.
+   - **Unmet criteria**: one bullet per ticket whose `Criteria` line names an
+     unmet criterion, naming the ticket and each criterion. "None" otherwise.
+   - **Verification**: the command from the last ticket's `Verification`
+     line - its full verification ran over the whole branch. The review loop
+     runs it every iteration and treats a failure as blocking. A `fail` there
+     is also recorded under **Deviations**, for that ticket.
    Then validate it: `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path review)"`.
 6. `bash "$ORCH" state set phase review`, then print the boundary.
 

@@ -13,9 +13,9 @@ behind it.
 [`mattpocock-skills`](https://github.com/mattpocock/skills) is a separate plugin
 of skills for planning, spec-writing, implementing, and reviewing code. This
 plugin conducts it rather than replacing it: `to-spec` writes the spec,
-`implement` builds it, `code-review` reviews each ticket's work. This plugin
-owns the state, the handoffs, the branch, the PR, and the review loop's own
-reviewer agents.
+`tdd` builds each ticket test-first, `code-review` reviews a quick
+implementation. This plugin owns the state, the handoffs, the branch, the PR,
+the ticket implementer, and the review loop's own reviewer agents.
 
 ## Install
 
@@ -90,9 +90,9 @@ For work that does not need the pipeline, a human can pick a quick
 implementation instead of starting a flow - see CONTEXT.md's **Quick
 implementation** entry. It skips all four phases: no handoff, no
 `.orchestrator/state.json`, just a linked issue, `to-tickets` publishing that
-issue's ticket breakdown, the same one-subagent-per-ticket loop the implement
-phase uses (`tdd` instead of `implement`, ending in `pr publish` instead of a
-draft `pr open`), a single-pass `code-review`, and a PR.
+issue's ticket breakdown, the same one-`orch-implementer`-per-ticket loop the
+implement phase uses (ending in `pr publish` instead of a draft `pr open`), a
+single-pass `code-review`, and a PR.
 
 Handoffs live in `.orchestrator/handoff/`, ignored via `.git/info/exclude` so
 running the flow never dirties a repo's working tree.
@@ -166,7 +166,7 @@ session's marker file when `orchestrator:orch-quick-implement` fires, without
 
 ```
 commands/                     start, next, status, doctor, redo, abort, release
-agents/                       the review loop's fresh agents: two reviewers, the fixer, the closer
+agents/                       the review loop's fresh agents (two reviewers, the fixer, the closer) and the implementer
 skills/orch-flow/             the state machine (judgment)
 skills/orch-review-spec/      the spec review: four lenses, one batch question
 skills/orch-review/           the review loop: rubric, authority rules, terminal states
@@ -257,11 +257,12 @@ issue and in the handoff.
 
 The implement phase works the spec issue's published ticket breakdown one
 ticket at a time: `ticket next` names the ready frontier, and each ready
-ticket goes to a fresh subagent carrying only its number and body. The
-subagent follows the standard `implement` skill itself against that one
-ticket, builds on the flow's single branch, commits its own work, and never
-opens a PR or blocks on a human - a call it cannot make alone comes back as a
-deviation in its report instead. The driving session closes the ticket only
+ticket goes to a fresh `orch-implementer` agent carrying only its number.
+The agent builds that one ticket test-first through `tdd`, on the flow's
+single branch, commits its own work, and checks its commits against the
+ticket's acceptance criteria. It cannot start sub-agents or ask the human
+anything: a call it cannot make alone comes back as a deviation in its
+report, and a criterion it could not meet as unmet. The driving session closes the ticket only
 once that report is in hand, then re-queries the frontier, until none remain
 and it opens the one draft PR for the whole flow.
 
