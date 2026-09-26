@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.7
+
+The review loop says exactly what a reviewer started through the host
+fallback loses: the Edit and Write restriction (see issue #167).
+
+- `orch-review`'s **Host fallback** paragraph and ADR-0018 no longer call the
+  named reviewer agents mechanically read-only. The reviewers keep Bash, so
+  read-only behaviour through Bash always rested on the brief; the fallback
+  loses only the Edit and Write restriction. The reviewers' tools are
+  unchanged.
+
 ## 1.5.6
 
 The fixer pushes only when it made a commit (see issue #165).

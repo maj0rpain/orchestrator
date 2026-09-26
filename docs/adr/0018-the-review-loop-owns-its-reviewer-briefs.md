@@ -18,10 +18,13 @@ the plugin owns takes a prompt of four variables (base SHA, spec issue,
 iteration, report path), fetches the diff and the spec itself, writes its
 report to a file beside the iteration's record, and returns one line.
 
-Owning the briefs also lets the loop restrict the reviewers mechanically:
-they get Read, Grep, Glob, and Bash, no Edit or Write, and a brief that allows
-one write, the report. And the loop no longer depends on another skill's
-internals - its prompt shape, its output shape, or its name staying unshadowed.
+Owning the briefs also lets the loop restrict the reviewers' tools: they get
+Read, Grep, Glob, and Bash, no Edit or Write, and a brief that allows one
+write, the report. Only the Edit and Write restriction is mechanical. The
+reviewers keep Bash, which can write files, so read-only behaviour through
+Bash always rested on the brief. And the loop no longer depends on another
+skill's internals - its prompt shape, its output shape, or its name staying
+unshadowed.
 
 The trade-off: the Standards reviewer carries a local copy of `code-review`'s
 Fowler smell baseline, copied from `mattpocock-skills` 1.2.3. It no longer
@@ -38,4 +41,6 @@ before.
   internals.
 - **Keep the briefs as plain files read by general-purpose agents.** Rejected
   except as the host fallback: a general-purpose agent cannot be denied Edit
-  and Write, so read-only would rest on the brief alone.
+  and Write. A reviewer started that way loses the Edit and Write
+  restriction and nothing more, since read-only behaviour through Bash
+  always rested on the brief.
