@@ -32,7 +32,7 @@ on exactly its own cells.
 | --- | --- | --- |
 | Invoke a skill from a step | The Skill tool, by scoped name (`orchestrator:orch-flow`, `mattpocock-skills:tdd`). | No Skill tool, so the model cannot invoke one mid-step. A human still starts one with `/<name>`, or Junie picks one automatically. Naming a skill as `$<name>` in a prompt is unverified. **Fallback**. |
 | Ask a multiple-choice question | `AskUserQuestion`. | `AskUserQuestion`. |
-| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`. | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). The plugin's would be a custom subagent from its `agents/`. Whether Junie loads a Claude plugin's `agents/` is not confirmed (#148). **Unverified**. Where it does not, take the fallback below. |
+| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`. | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). The plugin's would be a custom subagent from its `agents/`. Whether Junie loads a Claude plugin's `agents/` is not confirmed (#148). **Unverified**. Where it does not, take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file. |
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. |
 | Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. |
@@ -54,13 +54,31 @@ tool would have injected:
 
 ### Start a fresh subagent
 
-Do the subagent's work yourself, in this session, from its brief alone. For
-one of the plugin's agents, the brief is its file under `agents/`. Read
-only the files and the issue the brief names, and write the report it asks
-for before moving on. Where a skill spawns several at once, run them one at a
-time, finishing each report before starting the next. The loop around the
-subagent does not change: a ticket is still closed only once its report is
-written.
+This is the one definition of how any of the plugin's agents (its files under
+`agents/` in the plugin root) is started when the host cannot start it
+natively. The skill that starts the agent says only which agent, with which
+prompt, and where to record the fallback. Take the first tier that fits:
+
+1. **A fresh general-purpose agent.** On a host that has fresh subagents but
+   does not load the plugin's `agents/`, or cannot restrict an agent's tools,
+   start a fresh general-purpose agent - still never a fork. Its prompt is the
+   one the skill would have given the plugin's agent, plus the path of the
+   agent's file, to read and follow as its brief. An agent whose file
+   restricts its tools, such as a read-only reviewer, loses that mechanical
+   guarantee this way and keeps its brief's instruction.
+2. **In this session.** On a host with no fresh subagent at all, do the
+   subagent's work yourself, in this session, from its brief alone: for one of
+   the plugin's agents, its file under `agents/`. Read only the files and the
+   issue the brief names, and write the report it asks for before moving on.
+   Where the brief names a capability this host lacks, take that capability's
+   fallback from this file too, and record it the same way - a brief that
+   invokes `mattpocock-skills:tdd` as a skill becomes `bash "$ORCH" mp-skill
+   tdd` on a host with no Skill tool. Where a skill starts several agents at
+   once, run them one at a time, finishing each report before starting the
+   next. The loop around the subagent does not change: a ticket is still
+   closed only once its report is written.
+
+Record the tier taken where the starting skill says.
 
 ### Start a forked subagent
 

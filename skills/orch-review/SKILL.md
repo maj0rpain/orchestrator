@@ -232,16 +232,11 @@ fresh subagent, never a fork, which would inherit this context. On Claude
 Code that is the Agent tool with `subagent_type` set to the agent's name under
 the `orchestrator:` plugin scope.
 
-**Host fallback.** On a host that does not load the plugin's `agents/`, or
-cannot restrict an agent's tools, start a fresh general-purpose agent whose
-prompt is the same variables plus the path of the agent's file under the
-plugin root's `agents/`, to read and follow as its brief. A reviewer started
-this way loses the mechanical read-only guarantee and keeps the brief's
-instruction. On a host with no fresh subagent at all, take
-`docs/host-capabilities.md`'s **Start a fresh subagent** fallback from the
-same agent files. The review phase writes no handoff, so record either
-fallback in the iteration's record and pass it to the closer for the PR
-comment.
+**Host fallback.** A host that cannot start one of them natively takes
+`docs/host-capabilities.md`'s **Start a fresh subagent** fallback, with the
+prompt given for that agent here. The review phase writes no handoff, so
+record the fallback in the iteration's record and pass it to the closer for
+the PR comment.
 
 ## Severity
 
