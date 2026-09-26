@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.5.3
+
+`orch-review`'s clean-iteration record command reads the fixer's brief
+through `CLAUDE_PLUGIN_ROOT`, not a `<plugin root>` placeholder (see issue
+#155).
+
+- The `sed` command reads `"${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"`, and
+  the sentence beside it names the unset fallback: the same directory the
+  `ORCH` fallback identifies.
+- `orch_test.sh` accepts a `"${CLAUDE_PLUGIN_ROOT}/<path>"` in a skill that
+  carries that fallback sentence, and fails on any `<plugin root>`
+  placeholder in a skill.
+
 ## 1.5.2
 
 The review loop's vocabulary reads the same in the glossary, `orch-review`
