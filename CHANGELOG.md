@@ -6,8 +6,8 @@ The final review record names the section the CI answer goes in: `## CI`
 (see issue #159).
 
 - `orch-review`'s **Termination** step 1 appends the answer under `## CI`:
-  the word `review ci` printed, its detail lines, and whether the flake rerun
-  was spent. The closer's `## Filed` and the driver's `## Terminal state`
+  the word `review ci` printed, its detail lines, and a line saying so if the
+  flake rerun was spent. The closer's `## Filed` and the driver's `## Terminal state`
   follow it.
 - The record template in `orch-fixer`'s brief shows `## CI`, `## Filed`, and
   `## Terminal state` as termination-only sections, and the fixer is told to

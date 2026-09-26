@@ -129,11 +129,10 @@ severity, the triaged-out ones included, each saying what happened to it:
 fixed (with the commit SHA), demoted and on what authority, waiting to be
 filed and the rule that kept it out, met again already filed (with the issue
 number), or open blocking. A reviewer whose report went missing twice is
-listed there as that axis's **missing look**. Write `None` under a heading
-with nothing in it. The fix SHAs listed here are what later iterations of
-this loop blame against.
+listed there as that axis's **missing look**. The fix SHAs listed here are
+what later iterations of this loop blame against.
 
 The last three sections are written at termination, and only there - leave
 `## CI`, `## Filed`, and `## Terminal state` out of your record. The driver
 writes `## CI`, the closer `## Filed`, and the driver `## Terminal state`, in
-that order.
+that order. Write `None` under any other heading with nothing in it.

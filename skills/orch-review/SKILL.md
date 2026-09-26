@@ -238,7 +238,7 @@ PR: #<pr>
 Records directory: .orchestrator/review/
 Final record: <bash "$ORCH" review path>
 Loop boundary: <the iteration read in Before the first iteration, step 4>
-CI result: <the final record's ## CI section: review ci's answer, and any flake rerun spent>
+CI result: <the final record's ## CI section>
 Host fallbacks: <every fallback the loop took, per docs/host-capabilities.md, or None (<host>).>
 Terminal state: <ready, or stop and its reason>
 What happens next: <the PR marked ready and the flow done, or the flow left at review for a human to re-enter>
@@ -355,10 +355,10 @@ terminal state follows, in this order:
 
 1. **CI.** Wait on it, spending the flake rerun if it applies - see **CI**.
    Append a `## CI` section to the final iteration's record (`bash "$ORCH"
-   review path` still names it, because the refusal spent nothing): first
-   line the word `review ci` printed, then its detail lines, then whether
-   the flake rerun was spent. The closer's `## Filed` and your
-   `## Terminal state` follow it.
+   review path` still names it, because the refusal spent nothing), in the
+   shape `agents/orch-fixer.md`'s **The record** shows: first line the word
+   `review ci` printed, then its detail lines, then a line saying so if the
+   flake rerun was spent.
 2. **Decide the terminal state** - **Ready** or **Bounded stop**, below.
 3. **Start the closer** with that decision - see **The closer** - and wait
    for its issue numbers.
