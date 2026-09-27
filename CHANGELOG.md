@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.2
+
+- Doctor requires exactly the mattpocock skills the plugin reads (see issue
+  #191): `to-spec`, `to-tickets`, `tdd` and `code-review`. It no longer fails
+  an install missing `implement` or `handoff`, which nothing reads, and now
+  fails one missing `to-tickets` or `tdd`, in every install layout. A test
+  keeps doctor's list in step with the skills and agents that invoke them.
+
 ## 2.1.1
 
 - ADR-0002 is marked superseded in part by ADR-0018 (see issue #173): the

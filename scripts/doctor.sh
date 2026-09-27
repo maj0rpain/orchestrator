@@ -269,7 +269,11 @@ check_mattpocock() {
 # are from whatever it finds there first, so a partial or restructured install
 # passes it and the flow then dies at the phase that needed the missing skill -
 # by which point the session that could have fixed it has been cleared.
-MP_SKILLS="to-spec implement code-review handoff"
+# The list must match the mattpocock skills that skills/*/SKILL.md and
+# agents/*.md invoke (`mp-skill <name>` or `mattpocock-skills:<name>`): a skill
+# added to or dropped from those files is added to or dropped from here too.
+# orch_test.sh's consistency test fails while the two disagree.
+MP_SKILLS="to-spec to-tickets tdd code-review"
 
 check_skills() {
   d_gate "${D_MP:+ok}" D_MP_SKIPPED || return 0
