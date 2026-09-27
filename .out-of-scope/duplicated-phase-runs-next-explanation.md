@@ -48,3 +48,4 @@ axis when the copies disagree, not by removing the copies.
 - #161: "The two reviewer briefs repeat their read-only, pin-the-change and report sections" — review-loop Standards nit against PR #154
 - #162: "The Severity rubric is written out in both CONTEXT.md and the orch-review skill" — review-loop Standards nit against PR #154
 - #166: "Each fixer and closer prompt field is described in both the skill and the agent file" — review-loop Standards nit against PR #154
+- #211: "Opening paragraph and reporting rules are duplicated word for word across the four lens agents" (review-loop Standards nit against PR #209)

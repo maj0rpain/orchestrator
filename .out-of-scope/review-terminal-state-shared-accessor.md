@@ -29,3 +29,4 @@ see "Updating or removing out-of-scope files" in the triage skill.
 
 - #58: "Terminal-state classification is re-derived independently in three places" — filed by the review loop as a Standards-axis nit against PR #56
 - #59: "review_terminal_state's word/detail result is parsed ad hoc instead of via a shared accessor" — filed by the review loop as a Standards-axis nit against PR #56
+- #220: "The op list fetch|update|comment is duplicated across cmd_issue and cmd_spec" (review-loop Standards nit against PR #218). Same reasoning: two switches, and `cmd_spec` handles its ops differently (it resolves the issue from state and refuses at `done`).
