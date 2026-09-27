@@ -2885,6 +2885,44 @@ out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_EDIT_EXIT=1 "$ORCH" issue upda
 assert_status "a gh that will not edit fails the update" "$st" 1
 assert_contains "naming the issue" "$out" "issue #23"
 
+# issue comment is the stateless counterpart to spec comment, the way issue
+# fetch/update are to spec fetch/update: a standalone spec review posts its
+# summary on whatever issue it was pointed at, with no flow to ask.
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
+  "$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
+assert_status "comment posts the file on the issue, with no state.json present" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+assert_contains "commenting on the issue number given, not one from state" \
+  "$(cat "$filed")" "issue comment 23"
+assert_contains "with the file's contents as the comment, exactly" \
+  "$(cat "$filed")" "Tracked in #6"
+assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "the comment call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" issue comment 23 /nonexistent/body.md 2>&1)"; st=$?
+assert_status "comment refuses a file that does not exist" "$st" 1
+assert_contains "naming the file" "$out" "/nonexistent/body.md"
+assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_COMMENT_EXIT=1 "$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
+assert_status "a gh that will not comment fails it" "$st" 1
+assert_contains "with gh's reason" "$out" "issue comment refused"
+assert_contains "naming the issue" "$out" "issue #23"
+
+out="$("$ORCH" issue comment abc "$tricky" 2>&1)"; st=$?
+assert_status "comment refuses an issue number that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$("$ORCH" issue comment 23 2>&1)"; st=$?
+assert_status "comment refuses with no file" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh issue comment"
+
+out="$("$ORCH" issue 2>&1)"; st=$?
+assert_status "refuses no op at all" "$st" 1
+assert_contains "listing comment among the ops it has" "$out" "comment"
+
 out="$("$ORCH" issue fetch abc "$issue_body" 2>&1)"; st=$?
 assert_status "fetch refuses an issue number that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
@@ -2899,11 +2937,12 @@ assert_contains "with a usage line" "$out" "usage: orch.sh issue"
 
 out="$("$ORCH" issue bogus 23 "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
-assert_contains "naming the three it does" "$out" "fetch|update|publish"
+assert_contains "naming the four it does" "$out" "fetch|update|comment|publish"
 
 assert_contains "help documents issue fetch" "$("$ORCH" help)" "issue fetch"
 assert_contains "and issue update" "$("$ORCH" help)" "issue update"
 assert_contains "and issue publish" "$("$ORCH" help)" "issue publish"
+assert_contains "and issue comment" "$("$ORCH" help)" "issue comment"
 
 assert_eq "still no state.json - this section recorded none" \
   "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
@@ -3250,6 +3289,32 @@ assert_status "a gh that will not comment fails it" "$st" 1
 assert_contains "with gh's reason" "$out" "issue comment refused"
 assert_contains "and the issue it was for" "$out" "issue #14"
 
+# state.json outlives the flow it records: at phase done, the issue it names
+# is finished work, so the flow-bound spec ops refuse it and point at the
+# stateless issue ops for whatever issue the caller actually meant.
+prior_phase="$("$ORCH" state get phase)"
+"$ORCH" state set phase done
+for op in fetch update comment; do
+  : >"$filed"
+  out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec "$op" "$tricky" 2>&1)"; st=$?
+  assert_status "spec $op refuses once the flow is done" "$st" 1
+  assert_contains "naming the flow's issue" "$out" "issue #14"
+  assert_contains "and pointing at issue $op for another issue" "$out" "issue $op <n>"
+  assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+done
+"$ORCH" state set phase spec
+spec_scratch="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" spec fetch "$spec_scratch" 2>&1)"; st=$?
+assert_status "spec fetch still works at phase spec" "$st" 0
+for op in update comment; do
+  : >"$filed"
+  out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec "$op" "$tricky" 2>&1)"; st=$?
+  assert_status "spec $op still works at phase spec" "$st" 0
+  assert_contains "on the flow's issue" "$(cat "$filed")" "issue $([ "$op" = update ] && echo edit || echo comment) 14"
+done
+rm -f "$spec_scratch"
+"$ORCH" state set phase "$prior_phase"
+
 out="$("$ORCH" spec publish "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
 assert_contains "naming the three it does" "$out" "fetch|update|comment"
@@ -3294,6 +3359,17 @@ assert_contains "with the file's contents as the comment" \
   "$(cat "$filed")" "| Fidelity | plan handoff |"
 assert_eq "gh itself was invoked once each for view, edit, and comment, as real subprocesses" \
   "$(grep -cx issue "$log")" "3"
+
+# issue comment's own real-adapter proof: the number given, not state's.
+: >"$filed"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
+assert_status "issue comment shells out for real" "$st" 0
+assert_contains "the real adapter invoked gh issue comment on the issue given" \
+  "$(cat "$filed")" "issue comment 23"
+assert_contains "with the file's contents as the comment" \
+  "$(cat "$filed")" "| Fidelity | plan handoff |"
+assert_eq "as one real gh subprocess" "$(grep -cx issue "$log")" "1"
 
 "$ORCH" state set issue null
 
