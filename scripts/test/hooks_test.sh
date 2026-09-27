@@ -4,8 +4,8 @@
 #
 # The failure modes worth catching: the grilling hook firing on skills that
 # aren't planning, firing twice in one session, or staying silent when it should
-# speak; the edit guard blocking the planning artifacts that
-# improve-codebase-architecture and domain-modeling legitimately write; and the
+# speak; the edit guard blocking the planning artifacts planning legitimately
+# writes, or letting a planning record (glossary, ADR) through; and the
 # quick-implement hook touching a marker it should leave alone.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -78,7 +78,7 @@ assert_eq "top-level context matches Claude's" \
   "$(printf '%s' "$out" | jq -r '.additionalContext == .hookSpecificOutput.additionalContext')" "true"
 assert_contains "names every planning artifact from the shared allowlist" \
   "$(printf '%s' "$out" | jq -r '.additionalContext')" \
-  "CONTEXT.md, CONTEXT-MAP.md, docs/adr/, docs/agents/, .scratch/, .orchestrator/"
+  "docs/agents/, .scratch/, .orchestrator/"
 
 out="$(skill_event "mattpocock-skills:grilling" s1 | "$GRILL")"
 assert_empty "stays silent on the second call in one session" "$out"
@@ -139,7 +139,7 @@ assert_eq "offers exactly two options on Junie" "$(count_closing_options "$out")
 assert_contains "forbids offering to implement on Junie" "$ctx" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat on Junie" "$ctx" "whole map is done"
 assert_contains "names every planning artifact on Junie" "$ctx" \
-  "CONTEXT.md, CONTEXT-MAP.md, docs/adr/, docs/agents/, .scratch/, .orchestrator/"
+  "docs/agents/, .scratch/, .orchestrator/"
 assert_contains "points at orch-flow's SKILL.md in this install" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
 assert_contains "points at orch-quick-implement's SKILL.md in this install" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-quick-implement/SKILL.md"
 assert_contains "says Junie has no Skill tool" "$ctx" "no Skill tool"
@@ -235,9 +235,28 @@ assert_eq "carries Junie's top-level block decision" \
 assert_contains "carries Junie's top-level reason" \
   "$(printf '%s' "$out" | jq -r '.reason')" "src/main.ts"
 
-for f in CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/agents/domain.md .scratch/ticket.md .orchestrator/handoff/01-plan.md; do
+for f in docs/agents/domain.md docs/agents/x.md .scratch/ticket.md .scratch/x.md .orchestrator/handoff/01-plan.md .orchestrator/x; do
   assert_empty "allows planning artifact: $f" "$(edit_event "$REPO/$f" s1 | "$GUARD")"
 done
+
+# The glossary and ADRs are planning records: planning never changes them in
+# place, and the denial redirects the wording into the plan instead (#186).
+for f in CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/adr/../adr/x.md; do
+  out="$(edit_event "$REPO/$f" s1 | "$GUARD")"
+  assert_eq "denies planning record: $f" \
+    "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  assert_contains "gives the records reason for $f" "$(printf '%s' "$out" | jq -r '.reason')" \
+    "is a record of decisions, and planning does not change records in place. Write the exact wording you intended - the new or replaced text, and where it goes - into the plan, so the spec carries it verbatim as an Implementation Decision and it lands with the change it describes. For a quick implementation, put it in the linked issue's body."
+done
+records_reason="$(edit_event "$REPO/CONTEXT.md" s1 | "$GUARD" | jq -r '.reason')"
+assert_contains "records reason names the blocked record" "$records_reason" "'CONTEXT.md' is a record"
+assert_not_contains "records denial does not point at the flow" "$records_reason" "orchestrator:orch-flow"
+assert_not_contains "records denial does not list planning artifacts" "$records_reason" "Planning artifacts you may still edit"
+source_reason="$(edit_event "$REPO/src/x.ts" s1 | "$GUARD" | jq -r '.reason')"
+assert_contains "source denial keeps today's reason" "$source_reason" \
+  "this is a planning session and no flow has
+started, so 'src/x.ts' should not be edited yet."
+assert_contains "source denial still lists planning artifacts" "$source_reason" "Planning artifacts you may still edit"
 
 # Junie's PreToolUse payload carries neither session_id nor cwd. No session
 # means "not guarded", even if a stale marker for a defaulted id exists.
@@ -260,7 +279,7 @@ rel_edit="$(jq -n --arg cwd "$REPO" \
 assert_eq "denies a source edit given as a relative path" \
   "$(printf '%s' "$rel_edit" | "$GUARD" | jq -r '.decision')" "block"
 rel_ok="$(jq -n --arg cwd "$REPO" \
-  '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", cwd:$cwd, tool_input:{path:"docs/adr/0002-y.md"}}')"
+  '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", cwd:$cwd, tool_input:{path:".scratch/y.md"}}')"
 assert_empty "allows a planning artifact given as a relative path" \
   "$(printf '%s' "$rel_ok" | "$GUARD")"
 # A ".." climbing out of an allowlisted directory lands in source, and must
@@ -282,7 +301,7 @@ assert_eq "falls back to the process working directory without cwd" \
 
 assert_contains "lists every allowlisted planning artifact" \
   "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD" | jq -r '.reason')" \
-  "CONTEXT.md, CONTEXT-MAP.md, docs/adr/, docs/agents/, .scratch/, .orchestrator/"
+  "docs/agents/, .scratch/, .orchestrator/"
 assert_not_contains "does not allow a lookalike of an allowlisted file" \
   "$(edit_event "$REPO/docs/CONTEXT.md" s1 | "$GUARD" | jq -r '.decision')" "null"
 

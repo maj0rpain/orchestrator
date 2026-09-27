@@ -1,30 +1,57 @@
-# planning-allowlist.sh - the canonical definition of the planning allowlist.
+# planning-allowlist.sh - the canonical definition of the planning allowlist
+# and of the planning records.
 #
-# The files a planning session may legitimately write: improve-codebase-
-# architecture and domain-modeling update CONTEXT.md and ADRs inline, wayfinder
-# writes tickets under .scratch/ on a local tracker, and the flow keeps its own
-# state under .orchestrator/. The edit guard (hook-guard.sh) denies edits
-# outside it during planning; the flow-start working-tree check in orch.sh
-# refuses to start when changes fall outside it (ADR-0013). Both source this
-# file so they can never disagree, and hook-grilling.sh prints it into the
-# planning message on both hosts.
+# The allowlist holds the files a planning session may legitimately write:
+# agent docs (setup configuration the grilling hook itself asks for), tickets
+# wayfinder writes under .scratch/ on a local tracker, and the flow's own state
+# under .orchestrator/. The records - the glossary and ADRs - are not on it:
+# planning records a glossary or ADR change as spec wording, word for word, not
+# as an edit, so it lands with the change it describes. The edit guard
+# (hook-guard.sh) denies edits outside the allowlist during planning; the
+# flow-start working-tree check in orch.sh refuses to start when changes fall
+# outside it (ADR-0013). Both use the records list to choose the redirect
+# message. Both source this file so they can never disagree, and
+# hook-grilling.sh prints the allowlist into the planning message on both hosts.
 # Sourced, not executed on its own.
 
 # Entries ending in "/" are directory prefixes; the rest are exact paths.
 # All are relative to the repo root.
-PLANNING_ALLOWLIST=(CONTEXT.md CONTEXT-MAP.md docs/adr/ docs/agents/ .scratch/ .orchestrator/)
+PLANNING_ALLOWLIST=(docs/agents/ .scratch/ .orchestrator/)
+
+# The planning records: decisions planning never changes in place. Same entry
+# format as the allowlist.
+PLANNING_RECORDS=(CONTEXT.md CONTEXT-MAP.md docs/adr/)
+
+# planning_list_match <path> <entry>... - succeeds when the path matches one
+# of the entries.
+planning_list_match() {
+  local path="$1" entry
+  shift
+  for entry in "$@"; do
+    case "$entry" in
+      */) case "$path" in "$entry"*) return 0 ;; esac ;;
+      *) [ "$path" = "$entry" ] && return 0 ;;
+    esac
+  done
+  return 1
+}
 
 # planning_allowlisted <repo-relative path> - succeeds when the path is inside
 # the planning allowlist.
 planning_allowlisted() {
-  local entry
-  for entry in "${PLANNING_ALLOWLIST[@]}"; do
-    case "$entry" in
-      */) case "$1" in "$entry"*) return 0 ;; esac ;;
-      *) [ "$1" = "$entry" ] && return 0 ;;
-    esac
-  done
-  return 1
+  planning_list_match "$1" "${PLANNING_ALLOWLIST[@]}"
+}
+
+# planning_record <repo-relative path> - succeeds when the path is a planning
+# record: the glossary or an ADR.
+planning_record() {
+  planning_list_match "$1" "${PLANNING_RECORDS[@]}"
+}
+
+# planning_record_redirect - the sentences that say where a planning record's
+# intended wording goes instead, shared by the guard and the flow-start check.
+planning_record_redirect() {
+  printf '%s' "Write the exact wording you intended - the new or replaced text, and where it goes - into the plan, so the spec carries it verbatim as an Implementation Decision and it lands with the change it describes. For a quick implementation, put it in the linked issue's body."
 }
 
 # planning_allowlist_text - prints the allowlist as one comma-separated line,

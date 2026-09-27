@@ -7,8 +7,9 @@
 # planning is live and no flow has started, code edits are denied, and the
 # rejection lands back in the model's context as a correction.
 #
-# The allowlist of planning artifacts lives in planning-allowlist.sh, shared
-# with orch.sh's flow-start working-tree check.
+# The allowlist of planning artifacts, and the planning records (glossary and
+# ADRs) that get their own redirect, live in planning-allowlist.sh, shared with
+# orch.sh's flow-start working-tree check.
 
 set -euo pipefail
 
@@ -55,6 +56,11 @@ if planning_allowlisted "$rel"; then exit 0; fi
 
 # Anything outside the repo is somebody else's business.
 case "$file" in "$root"/*) ;; *) exit 0 ;; esac
+
+if planning_record "$rel"; then
+  hook_emit_deny "Blocked by the orchestrator: '$rel' is a record of decisions, and planning does not change records in place. $(planning_record_redirect)"
+  exit 0
+fi
 
 reason="Blocked by the orchestrator: this is a planning session and no flow has
 started, so '$rel' should not be edited yet.
