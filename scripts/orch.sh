@@ -1067,7 +1067,7 @@ cmd_spec_review() {
         implement|review)
           die "the active flow holds issue #$issue at phase $phase - the ticket subagents build from this spec, so it cannot change behind the flow; run $(flow_cmd redo) to step back to the spec phase" ;;
         *)
-          die "the active flow holds issue #$issue at phase '$phase', which is not one of: $PHASES - refusing to review it; run orch.sh doctor --flow" ;;
+          die "the active flow holds issue #$issue at phase '$phase', which is not a flow phase - refusing to review it; run orch.sh doctor --flow" ;;
       esac
     fi
   fi
@@ -1754,9 +1754,10 @@ orch.sh - deterministic operations for the orchestrator flow
   spec-review begin <n>       start a standalone spec review of issue <n>:
                               refuse while an active flow holds <n> - at spec
                               (pointing at next) or at implement or review
-                              (pointing at redo) - and otherwise empty .orchestrator/spec-review/<n>/
-                              and print its path. Reads state.json only to
-                              compare, and never writes it
+                              (pointing at redo) - and otherwise empty
+                              .orchestrator/spec-review/<n>/ and print its
+                              path. Reads state.json only to compare, and
+                              never writes it
   redo review                 retire the branch and PR, reopen the spec
                               issue's closed tickets, reset the loop, and
                               step the flow back to implement - refuses unless
