@@ -1,4 +1,9 @@
-# A recorded deviation outranks the Spec review axis
+# A recorded deviation outranks the Spec axis
+
+Superseded in part by ADR-0018: the Spec axis is now reviewed by the plugin's
+own `orch-reviewer-spec` agent, not `code-review`'s Spec sub-agent. That
+reviewer still does not see `03-implement.md`, and a recorded deviation still
+outranks it - the decision below stands.
 
 `code-review`'s Spec sub-agent compares the diff against the spec issue and
 reports requirements that are missing or misimplemented. It does not see

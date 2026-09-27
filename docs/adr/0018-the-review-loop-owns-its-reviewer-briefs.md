@@ -4,9 +4,11 @@ Superseded in part by ADR-0019: the implement phase's ticket subagents no
 longer use `code-review` either; only quick implementation's single pass does.
 
 Supersedes ADR-0001's premise that the reviewing is done by
-`mattpocock-skills:code-review`'s sub-agents. ADR-0001's claim that one
+`mattpocock-skills:code-review`'s sub-agents, and ADR-0002's premise that
+the Spec axis is `code-review`'s Spec sub-agent. ADR-0001's claim that one
 session drives a loop, and its reason - the reviewers never see the driving
-session's reasoning - stand.
+session's reasoning - stand, as does ADR-0002's decision that a recorded
+deviation outranks the Spec axis.
 
 The review loop starts two plugin agents of its own every iteration,
 `orch-reviewer-standards` and `orch-reviewer-spec`, instead of invoking
