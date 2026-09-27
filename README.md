@@ -236,7 +236,7 @@ A skill that reads another file under the plugin root names it as
 ``If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is``, naming the same
 steps the `ORCH` fallback does: two directories above the `orch.sh` that `ls`
 printed, else two directories above the skill's own directory. `orch_test.sh`
-fails when a skill, command, or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT`
+fails when a skill or command mentions `CLAUDE_PLUGIN_ROOT`
 any other way, runs `orch.sh` without these steps in order or without `bash`,
 names the plugin root without the Junie step in that same sentence, or names a
 path through a `<plugin root>/` placeholder.

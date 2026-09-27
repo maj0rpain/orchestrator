@@ -6,16 +6,22 @@
 # decision and context from top-level fields where Claude Code reads
 # hookSpecificOutput. Sourced by each hook, not executed on its own.
 
-# Reads the raw hook JSON from stdin and sets `input`, `session`, and `cwd` in
-# the caller's shell. A missing session_id leaves `session` empty, which means
-# "not guarded": no planning marker can be keyed to it. `cwd` prefers Junie's
-# project_path, because Junie's own cwd is ~/.junie, not the repo (#202). A
-# payload with neither falls back to the process working directory. `input` is left set so a caller can
-# extract further fields without reading stdin a second time.
+# Reads the raw hook JSON from stdin and sets `input`, `session`, `cwd`, and
+# `host` in the caller's shell. A missing session_id leaves `session` empty,
+# which means "not guarded": no planning marker can be keyed to it. `cwd`
+# prefers Junie's project_path, because Junie's own cwd is ~/.junie, not the
+# repo (#202); this also moves where hook-guard.sh resolves a relative path on
+# Junie. A payload with neither falls back to the process working directory.
+# `host` is junie when the payload carries project_path, which Claude Code's
+# never does, else claude. `input` is left set so a caller can extract further
+# fields without reading stdin a second time.
 hook_read_payload() {
   input="$(cat)"
   session="$(printf '%s' "$input" | jq -r '.session_id // ""')"
-  cwd="$(printf '%s' "$input" | jq -r '.project_path // .cwd // ""')"
+  local project
+  project="$(printf '%s' "$input" | jq -r '.project_path // ""')"
+  cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
+  if [ -n "$project" ]; then host=junie; cwd="$project"; else host=claude; fi
   [ -n "$cwd" ] || cwd="$PWD"
 }
 

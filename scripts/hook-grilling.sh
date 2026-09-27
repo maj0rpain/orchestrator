@@ -13,8 +13,8 @@
 # Skill tool, so the hook matches a grilling entry point named in the raw
 # prompt (Junie rewrites a typed /<skill> into $<skill>). Accepted gap: when
 # Junie picks grilling on its own, no prompt names it and nothing is sent.
-# Junie's payload is told apart by its project_path field, which Claude Code's
-# never carries; Claude Code's own UserPromptSubmit exits here silently.
+# hook_read_payload tells the hosts apart; Claude Code's own UserPromptSubmit
+# exits here silently.
 #
 # It injects context only. It cannot force compliance, which is why the real
 # durability lives in .orchestrator/state.json and the edit guard. Fires once
@@ -29,18 +29,16 @@ hook_read_skill_and_session
 
 event="$(printf '%s' "$input" | jq -r '.hook_event_name // "PostToolUse"')"
 if [ "$event" = "UserPromptSubmit" ]; then
-  [ -n "$(printf '%s' "$input" | jq -r '.project_path // ""')" ] || exit 0
+  [ "$host" = junie ] || exit 0
   prompt="$(printf '%s' "$input" | jq -r '.prompt // ""')"
   # A "/" or "$" reference to an entry point, optionally scoped, standing as
   # its own word: "$grill-me x" matches, "$grilling-notes" and prose do not.
   entry='(^|[[:space:]])[/$]([a-z-]+:)?(grilling|grill-me|grill-with-docs|wayfinder|improve-codebase-architecture)([[:space:]]|$)'
   [[ "$prompt" =~ $entry ]] || exit 0
-  host=junie
 else
   # "grilling" only. grill-me and grill-with-docs route through it rather than
   # being it, so matching the substring catches them without double-firing.
   case "$skill" in *grilling*) ;; *) exit 0 ;; esac
-  host=claude
 fi
 
 # No session_id, no marker: there is nothing to key the guard to, so it stays
@@ -68,7 +66,7 @@ if [ ! -f "$root/docs/agents/issue-tracker.md" ]; then
   warning="
 PRECONDITION NOT MET: this repo has no docs/agents/issue-tracker.md, so the spec
 phase would fail. Tell the user now, before they invest an hour in planning, that
-they need to run /mattpocock-skills:setup-matt-pocock-skills first."
+they need to run the mattpocock-skills setup-matt-pocock-skills skill first."
 fi
 
 if [ "$host" = junie ]; then
@@ -77,14 +75,12 @@ if [ "$host" = junie ]; then
   \"Quick implementation\", the orch-quick-implement skill. This host has
   no Skill tool, so read the skill's file and follow it verbatim:
   $plugin_root/skills/orch-flow/SKILL.md or
-  $plugin_root/skills/orch-quick-implement/SKILL.md. Do not ask the user to
-  type a command."
+  $plugin_root/skills/orch-quick-implement/SKILL.md."
 else
   run_next="- On \"Start the orchestrator flow\", call the Skill tool with
   \"orchestrator:orch-flow\" yourself. On \"Quick implementation\", call the Skill
-  tool with \"orchestrator:orch-quick-implement\" yourself. Do not ask the user to
-  type a command - orchestrator skills are model-invocable, unlike the
-  mattpocock ones."
+  tool with \"orchestrator:orch-quick-implement\" yourself. Orchestrator skills
+  are model-invocable, unlike the mattpocock ones."
 fi
 
 context="The orchestrator plugin is installed in this repo. Planning is phase one
@@ -103,9 +99,9 @@ While this planning session is running:
          review pipeline, with its own handoff and review loop.
       2. Quick implementation - skip the pipeline and implement this directly.
 
-${run_next}
+${run_next} Do not ask the user to type a command.
 
-Under /mattpocock-skills:wayfinder, \"approved\" means the whole map is done, not
+Under the mattpocock-skills wayfinder skill, \"approved\" means the whole map is done, not
 that one ticket resolved. Do not start the flow after a single ticket.${warning}"
 
 hook_emit_context "$event" "$context"

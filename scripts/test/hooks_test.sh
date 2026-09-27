@@ -138,6 +138,7 @@ assert_contains "points at orch-quick-implement's SKILL.md in this install" "$ct
 assert_contains "says Junie has no Skill tool" "$ctx" "no Skill tool"
 assert_not_contains "names no Claude tool as the step on Junie" "$ctx" "call the Skill tool"
 assert_not_contains "names no Claude-scoped skill on Junie" "$ctx" "orchestrator:orch-"
+assert_not_contains "names no Claude-scoped mattpocock skill on Junie" "$ctx" "mattpocock-skills:"
 
 assert_empty "stays silent on the second grilling prompt in one Junie session" \
   "$(prompt_event '$grilling again' j1 | "$GRILL")"
