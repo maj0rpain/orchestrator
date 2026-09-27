@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Delivers the planning message once per session when grilling starts with no
-# flow active. One script, two hosts; only the sentence on how to run the
-# next skill differs between them.
+# flow active. One script, two hosts; the tool that asks the closing question
+# and the sentence on how to run the next skill differ between them, and only
+# Junie asks the question again when a plan is confirmed.
 #
 # Claude Code: PostToolUse on the Skill tool. All three planning entry points
 # - grill-me, wayfinder, and improve-codebase-architecture - funnel through
@@ -14,7 +15,7 @@
 # prompt (Junie rewrites a typed /<skill> into $<skill>). Accepted gap: when
 # Junie picks grilling on its own, no prompt names it and nothing is sent.
 # Junie's router sends grilling to its plan agent, which ends on its own
-# approval screen, so on Junie the closing question is asked again when that
+# plan screen, so on Junie the closing question is asked again when that
 # screen is confirmed. hook_read_payload tells the hosts apart; Claude Code's
 # own UserPromptSubmit exits here silently.
 #
@@ -30,18 +31,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 hook_read_skill_and_session
 
 event="$(printf '%s' "$input" | jq -r '.hook_event_name // "PostToolUse"')"
-confirmed=0
+plan_confirmed=0
 if [ "$event" = "UserPromptSubmit" ]; then
   [ "$host" = junie ] || exit 0
   prompt="$(printf '%s' "$input" | jq -r '.prompt // ""')"
   # Junie's router sends grilling to its plan agent, which ends on its own
-  # approval screen without asking the closing question. Confirming that
+  # plan screen without asking the closing question. Confirming that
   # screen submits this fixed prompt to the main agent, which asks it instead.
-  if [ "$prompt" = "Implement the suggested plan" ]; then confirmed=1; fi
+  if [ "$prompt" = "Implement the suggested plan" ]; then plan_confirmed=1; fi
   # A "/" or "$" reference to an entry point, optionally scoped, standing as
   # its own word: "$grill-me x" matches, "$grilling-notes" and prose do not.
   entry='(^|[[:space:]])[/$]([a-z-]+:)?(grilling|grill-me|grill-with-docs|wayfinder|improve-codebase-architecture)([[:space:]]|$)'
-  [ "$confirmed" = 1 ] || [[ "$prompt" =~ $entry ]] || exit 0
+  [ "$plan_confirmed" = 1 ] || [[ "$prompt" =~ $entry ]] || exit 0
 else
   # "grilling" only. grill-me and grill-with-docs route through it rather than
   # being it, so matching the substring catches them without double-firing.
@@ -54,10 +55,11 @@ fi
 # session_id, so the edit guard never reads it there (ADR-0013).
 # A plan confirmation counts only in a session that grilled, so it needs the
 # marker rather than being stopped by it, and asks on every confirmation.
-if [ "$confirmed" = 1 ]; then
-  [ -n "$session" ] && [ -e "${TMPDIR:-/tmp}/orchestrator-grilling-${session}" ] || exit 0
-elif [ -n "$session" ]; then
-  marker="${TMPDIR:-/tmp}/orchestrator-grilling-${session}"
+marker=""
+[ -z "$session" ] || marker="${TMPDIR:-/tmp}/orchestrator-grilling-${session}"
+if [ "$plan_confirmed" = 1 ]; then
+  [ -n "$marker" ] && [ -e "$marker" ] || exit 0
+elif [ -n "$marker" ]; then
   if [ -e "$marker" ]; then exit 0; fi
   : >"$marker"
 fi
@@ -106,7 +108,7 @@ choice="${ask_step}
 
 ${run_next} Do not ask the user to type a command."
 
-if [ "$confirmed" = 1 ]; then
+if [ "$plan_confirmed" = 1 ]; then
   hook_emit_context "$event" "The orchestrator plugin is installed in this repo, and the user just
 confirmed a plan from a planning session.
 

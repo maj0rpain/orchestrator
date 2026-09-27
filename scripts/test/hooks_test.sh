@@ -157,7 +157,7 @@ for p in 'let us talk about grilling' '$tdd fix it' '$grilling-notes' 'a/grillin
 done
 
 # Junie's router sends grilling to its plan agent, which ends on its own
-# approval screen and ignores the closing question. Confirming that screen
+# plan screen and ignores the closing question. Confirming that screen
 # submits this fixed prompt to the main agent, so the question is asked there
 # instead (#202).
 confirm='Implement the suggested plan'

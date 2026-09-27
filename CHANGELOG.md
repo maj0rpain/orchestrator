@@ -15,8 +15,8 @@ with every request (see issue #202).
   screen without asking, so the question is asked again when the human picks
   "Confirm and implement" in a session that grilled.
 - The Junie message names the `SKILL.md` files of this install to follow,
-  since Junie has no Skill tool. The rest of the message is shared by both
-  hosts.
+  since Junie has no Skill tool. The rest of the planning message is shared
+  by both hosts.
 - `guidelines/orch-planning.md` is deleted, so Junie no longer pays about 0.5k
   tokens per request for it. `orch.sh doctor --env` on Junie no longer lists
   "Inject context at planning time" as a capability the host lacks.
