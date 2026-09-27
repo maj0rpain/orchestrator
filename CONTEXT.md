@@ -254,8 +254,9 @@ about the spec, from a spec review, or about the change, from quick
 implementation's single pass. Only a finding about the change from the review
 phase carries a **severity**, which the review phase assigns; the reviewer
 itself reports findings unranked. A finding from quick implementation's single
-pass carries none: the quick session fixes it or declines it in the PR. A finding about the spec carries no severity: a human
-accepts or declines the edit it proposes, and it is never filed.
+pass carries none: the quick session fixes it or declines it in the PR. A
+finding about the spec carries no severity: a human accepts or declines the
+edit it proposes, and it is never filed.
 
 ## Severity
 

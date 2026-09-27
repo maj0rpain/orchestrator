@@ -195,14 +195,13 @@ Commit, then open the PR with `bash "$ORCH" pr publish <issue> "<title>"
 <body-file>` - the same boundary `pr open` draws for a flow, kept out of
 skill prose. The body carries a **Review** heading listing every finding
 step 6 declined, with its location and reason, or `None declined.` It ends
-with a **Host fallbacks** heading listing every
-fallback this run took - including any the spec review in step 2 took - or
-`None (<host>).` It pushes the branch and opens the PR against
-the base branch `branch off` recorded, not as a draft. The body starts with
-`Closes #<issue>` when that base branch is the default branch, and `Refs
-#<issue>` otherwise - the issue closes when the release PR carries the work
-into the default branch (the `orch-release` skill). Either way `pr publish`
-writes that line, so the body file carries no closing keyword of its own.
-Not a draft because the single-pass review in step 6 already
-happened, so there is no loop left to promote it - draft would leave it stuck
-with nothing watching it.
+with a **Host fallbacks** heading listing every fallback this run took -
+including any the spec review in step 2 took - or `None (<host>).` It
+pushes the branch and opens the PR against the base branch `branch off`
+recorded, not as a draft. The body starts with `Closes #<issue>` when that
+base branch is the default branch, and `Refs #<issue>` otherwise - the
+issue closes when the release PR carries the work into the default branch
+(the `orch-release` skill). Either way `pr publish` writes that line, so the
+body file carries no closing keyword of its own. Not a draft because the
+single-pass review in step 6 already happened, so there is no loop left to
+promote it - draft would leave it stuck with nothing watching it.
