@@ -67,8 +67,9 @@ fi
 root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 
 # Mid-flow already: the user is resolving a wayfinder ticket or re-planning
-# inside an active flow, and does not need to be told how to start one.
-if [ -f "$root/.orchestrator/state.json" ]; then exit 0; fi
+# inside an active flow, and does not need to be told how to start one. A done
+# flow is finished work, so planning beside it gets the full message.
+if hook_flow_active "$root"; then exit 0; fi
 
 warning=""
 # Open-coded rather than `orch.sh doctor --env`: this hook runs on every
@@ -125,6 +126,7 @@ While this planning session is running:
 
 - Do NOT offer to implement, and do NOT write or edit code. Planning artifacts
   ($(planning_allowlist_text)) are fine; source files are not.
+- Glossary and ADR changes (CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim.
 - When you reach a shared understanding, do not close with a scripted line and
   do not decide the next step yourself. ${choice}
 

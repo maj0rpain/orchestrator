@@ -109,6 +109,14 @@ mv "$REPO/docs/agents/.hidden" "$REPO/docs/agents/issue-tracker.md"
 mkdir -p "$REPO/.orchestrator"
 echo '{"slug":"x","phase":"spec"}' >"$REPO/.orchestrator/state.json"
 assert_empty "stays silent when a flow is already active" "$(skill_event "grilling" s6 | "$GRILL")"
+# A done flow is finished work, not a running one (ADR-0009): planning in its
+# checkout gets the full message, records rule included (#186).
+echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
+out="$(skill_event "grilling" s7 | "$GRILL")"
+assert_contains "still injects its context when the flow is done" "$out" "Do NOT offer to implement"
+assert_contains "tells planning to write record wording into the plan" \
+  "$(printf '%s' "$out" | jq -r '.additionalContext')" \
+  "- Glossary and ADR changes (CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim."
 rm -rf "$REPO/.orchestrator"
 
 echo
@@ -197,6 +205,11 @@ assert_empty "stays silent on Junie when a flow is already active" \
   "$(prompt_event '$grilling' j3 | "$GRILL")"
 assert_empty "stays silent on plan confirmation when a flow is already active" \
   "$(prompt_event "$confirm" jc1 | "$GRILL")"
+echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
+assert_contains "still fires on Junie's \$grilling when the flow is done" \
+  "$(prompt_event '$grilling' j4 | "$GRILL")" "Do NOT offer to implement"
+assert_contains "still asks at plan confirmation when the flow is done" \
+  "$(prompt_event "$confirm" jc1 | "$GRILL")" "Before you implement"
 rm -rf "$REPO/.orchestrator"
 
 # Claude Code also fires UserPromptSubmit, but its PostToolUse on Skill already
@@ -311,6 +324,34 @@ mkdir -p "$REPO/.orchestrator"
 echo '{"slug":"x","phase":"implement"}' >"$REPO/.orchestrator/state.json"
 assert_empty "stops guarding once a flow is running" \
   "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
+echo '{"slug":"x"}' >"$REPO/.orchestrator/state.json"
+assert_empty "stands down for a state.json with no phase" \
+  "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
+echo 'not json' >"$REPO/.orchestrator/state.json"
+assert_empty "stands down for an unreadable state.json" \
+  "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
+# A done flow is no flow: its lingering state.json must not switch the guard
+# off for the next planning session (#186, extending ADR-0009 to the hooks).
+echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
+out="$(edit_event "$REPO/CONTEXT.md" s1 | "$GUARD" | jq -r '.reason')"
+assert_contains "denies a record with the records reason when the flow is done" "$out" \
+  "'CONTEXT.md' is a record of decisions"
+out="$(edit_event "$REPO/src/main.ts" s1 | "$GUARD" | jq -r '.reason')"
+assert_contains "denies source with the source reason when the flow is done" "$out" \
+  "so 'src/main.ts' should not be edited yet"
+
+# End to end, no hand-seeded marker: grilling arms the guard in a checkout
+# whose flow is done, and the guard then denies a glossary edit.
+rm -f "$TMPDIR/orchestrator-grilling-e2e"
+skill_event "mattpocock-skills:grilling" e2e | "$GRILL" >/dev/null
+if [ -e "$TMPDIR/orchestrator-grilling-e2e" ]; then
+  ok "grilling arms the marker when the flow is done"
+else
+  bad "grilling arms the marker when the flow is done" "no marker"
+fi
+out="$(edit_event "$REPO/CONTEXT.md" e2e | "$GUARD" | jq -r '.reason')"
+assert_contains "the armed guard denies CONTEXT.md with the records reason" "$out" \
+  "'CONTEXT.md' is a record of decisions, and planning does not change records in place."
 rm -rf "$REPO/.orchestrator"
 
 echo
