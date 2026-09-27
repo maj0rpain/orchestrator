@@ -66,7 +66,8 @@ that needs something gets a file path.
 ## Standalone spec review
 
 The issue number comes from the human: the command's argument, or the issue
-they named. With no number, ask for one. Never take it from `state.json`.
+they named. With no number, ask for one and wait. Never take it from
+`state.json` or the active flow.
 
 1. **Guard first**, before fetching. If `.orchestrator/state.json` does not
    exist, proceed - never call `state get` then, which dies without it.

@@ -232,8 +232,8 @@ The Junie step is prose carrying a literal `ls`, not a bash line that sets
 marketplace clone under `extensions/marketplaces/`. Keep the first line of the
 Junie sentence and the three "If it prints" sentences intact, in that order,
 then call `bash "$ORCH" <subcommand>` everywhere else. Do not copy the scripts
-into a skill. Commands never run `orch.sh`: each is a thin route into an
-`orch-flow` section (see [Naming host capabilities](#naming-host-capabilities)).
+into a skill. Commands never run `orch.sh`: each is a thin route into a skill, usually
+an `orch-flow` section (see [Naming host capabilities](#naming-host-capabilities)).
 
 A skill that reads another file under the plugin root names it as
 `"${CLAUDE_PLUGIN_ROOT}/<path>"`, and the same file carries a sentence starting
@@ -256,9 +256,9 @@ phase records every fallback it took in its handoff's **Host fallbacks**
 section, which `handoff validate` requires for flows started on 1.0.0 or later
 (a flow already in progress at upgrade is exempt); an agent records its own
 where its brief says, as the fixer does in its iteration record's **Host
-fallbacks**. Commands are Claude Code shortcuts only: each one routes to an
-`orch-flow` section and holds no behaviour of its own, so invoking the skill on
-another host is complete. `orch_test.sh` fails when a skill, or an agent that
+fallbacks**. Commands are Claude Code shortcuts only: each one routes to a
+skill, or to one section of it (usually an `orch-flow` section), and holds no
+behaviour of its own, so invoking the skill on another host is complete. `orch_test.sh` fails when a skill, or an agent that
 invokes a skill, never points at the reference, when a skill or agent names
 the Skill or Agent tool as the step itself, or when a command runs `orch.sh` or
 routes to a section that does not exist.

@@ -95,11 +95,9 @@ wants a fork has to write the fallback here first.
 
 ### Run a plugin command
 
-Invoke the `orch-flow` skill and ask for the section the command names
-(start, next phase, status, doctor, redo, abort). Every command is a thin
-route into a skill, so the skill alone is complete. For
-`/orchestrator:review-spec <issue>`, invoke `orch-review-spec` directly with
-the issue number and ask for its **Standalone spec review** section.
+Invoke the skill the command names, and ask for the section it names if it
+names one, passing the command's arguments. Every command is a thin route into
+a skill, so the skill alone is complete.
 
 ### Arm the edit guard
 

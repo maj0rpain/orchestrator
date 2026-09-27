@@ -4573,15 +4573,18 @@ scan_capabilities() {
   for f in "$r"/commands/*.md; do
     [ -f "$f" ] || continue
     grep -qE 'orch\.sh|\$ORCH' "$f" && echo "${f#"$r"/}: runs orch.sh itself"
-    s="$(grep -oE "orch-flow\` and follow its \*\*[^*]+\*\*" "$f" | sed 's/.*\*\*\(.*\)\*\*/\1/')"
-    # A command that is not a flow step routes to a whole orch- skill of its
-    # own instead (release, #139) - that skill must exist.
-    k="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it' "$f" | sed 's/^`orchestrator://; s/`.*//')"
-    if [ -z "$s" ] && [ -n "$k" ]; then
-      [ -f "$r/skills/$k/SKILL.md" ] || echo "${f#"$r"/}: routes to a missing skill: $k"
-    elif [ -z "$s" ]; then echo "${f#"$r"/}: routes to no orch-flow section"
-    else grep -qxF "## $s" "$r/skills/orch-flow/SKILL.md" \
-      || echo "${f#"$r"/}: routes to a missing orch-flow section: $s"; fi
+    # A command routes to an orch- skill and follows either one of its
+    # sections (the flow steps, review-spec) or the whole skill (release,
+    # #139). The skill must exist, and so must a section it names. The route
+    # may wrap across lines, so the file is read as one line.
+    local body; body="$(tr '\n' ' ' <"$f" | tr -s ' ')"
+    k="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it(s \*\*[^*]+\*\* section|\.)' <<<"$body" | head -n1)"
+    s="$(sed -n 's/.*follow its \*\*\([^*]*\)\*\* section$/\1/p' <<<"$k")"
+    k="$(sed 's/^`orchestrator://; s/`.*//' <<<"$k")"
+    if [ -z "$k" ]; then echo "${f#"$r"/}: routes to no orch- skill"
+    elif [ ! -f "$r/skills/$k/SKILL.md" ]; then echo "${f#"$r"/}: routes to a missing skill: $k"
+    elif [ -n "$s" ]; then grep -qxF "## $s" "$r/skills/$k/SKILL.md" \
+      || echo "${f#"$r"/}: routes to a missing $k section: $s"; fi
   done
 }
 assert_eq "every skill points at the reference, and every command is a thin route" \
@@ -4628,6 +4631,15 @@ assert_contains "the scan flags a command routed to a missing skill" \
 mkdir -p "$fixture/skills/orch-y"
 printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
 assert_eq "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")" ""
+# A command may route to a named section of a skill other than orch-flow
+# (review-spec, #185) - that section must exist in that skill.
+printf 'Invoke `orchestrator:orch-y` and follow its **Solo run**\nsection.\n' >"$fixture/commands/y.md"
+assert_contains "the scan flags a command routed to a missing section of its own skill" \
+  "$(scan_capabilities "$fixture")" "commands/y.md: routes to a missing orch-y section: Solo run"
+printf '## Solo run\nInvoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
+assert_eq "the scan accepts a command routed to an existing section of its own skill" \
+  "$(scan_capabilities "$fixture")" ""
+printf 'Invoke `orchestrator:orch-y` and follow it.\n' >"$fixture/commands/y.md"
 # An agent brief names host capabilities the way a skill does (#157).
 mkdir -p "$fixture/agents"
 printf 'Fix it through the `mattpocock-skills:tdd` skill.\n' >"$fixture/agents/orch-z.md"
