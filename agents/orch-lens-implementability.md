@@ -1,6 +1,6 @@
 ---
 name: orch-lens-implementability
-description: The Implementability lens of an orchestrator spec review - reads a spec issue's body for its implementability from the issue alone, and returns its findings. Started only by the orch-review-spec skill, with the paths it reads.
+description: The Implementability lens of an orchestrator spec review - reads a spec issue's body for its implementability from the issue alone, and returns its findings. Started only by the orch-spec-review skill, with the paths it reads.
 tools: Read, Grep, Glob
 ---
 

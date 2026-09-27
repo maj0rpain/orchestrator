@@ -92,7 +92,7 @@ until review.>
 <the test seams agreed with the user, and why these and not lower ones>
 
 ## Spec review changelog
-<the list orch-review-spec returned, per lens: applied edits one line
+<the list orch-spec-review returned, per lens: applied edits one line
 each, declined findings verbatim with the human's reason or "declined as
 recommended: <reason>", "None" for a lens that found nothing, "not run -
 <reason>" for one that failed>

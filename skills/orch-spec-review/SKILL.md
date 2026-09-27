@@ -1,6 +1,6 @@
 ---
-name: orch-review-spec
-description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orch-flow's spec phase, after the issue exists - published by to-spec or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:review-spec <issue>: three lenses, no plan handoff, and nothing written to flow state.
+name: orch-spec-review
+description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orch-flow's spec phase, after the issue exists - published by to-spec or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state.
 ---
 
 # Orchestrator spec review
@@ -25,7 +25,7 @@ changelog** is shared between them:
 - **Inputs** - the spec-phase entry, from `orch-flow`'s spec phase. It works
   on the active flow's issue.
 - **Standalone spec review** - a human asks for a review of a given issue,
-  with `/orchestrator:review-spec <issue>` or in plain words, outside any
+  with `/orchestrator:spec-review <issue>` or in plain words, outside any
   flow. It belongs to no flow, leaves no handoff, and runs three lenses:
   Fidelity needs a plan and has none. Another look is another standalone
   review.

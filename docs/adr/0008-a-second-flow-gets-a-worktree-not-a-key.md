@@ -51,3 +51,10 @@ setting lives in the clone's shared git config, so every worktree sees the
 same one: the second flow's `init` records that base branch, its
 `branch create` forks from it, and parallel tickets for the same project land
 on the same branch.
+
+## Note: spec-review
+
+The `review-spec` this ADR names is the spec review. Its command was renamed
+`/orchestrator:spec-review` in 2.0.0 (see issue #235), and its skill
+`orch-spec-review`. The decision is unchanged: the spec review still needs a
+human mid-phase.

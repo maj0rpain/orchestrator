@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.0.0
+
+**Breaking.** The standalone spec review's command and skill are renamed
+`spec-review`, matching the glossary's **Spec review** and `code-review` (see
+issue #235). There is no deprecated alias: the old names no longer exist.
+
+| Before | After |
+| --- | --- |
+| `/orchestrator:review-spec` | `/orchestrator:spec-review` |
+| `orchestrator:orch-review-spec` | `orchestrator:orch-spec-review` |
+
+- The flow's spec phase invokes `orch-spec-review`. A flow already under way
+  needs nothing: `orch.sh` never names the skill, and handoffs name it only in
+  prose.
+- The review loop's reviewer reports are headed `# Spec axis - iteration <NN>`
+  and `# Standards axis - iteration <NN>`, so the Spec-axis report is no longer
+  called a spec review.
+- The skill-name guard in the test suite now flags the old command and skill
+  names.
+
 ## 1.8.0
 
 - New `orch.sh spec-review begin <n>` starts a standalone spec review (see
