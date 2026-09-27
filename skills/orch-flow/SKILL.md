@@ -128,7 +128,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 2. Read and follow `bash "$ORCH" mp-skill to-spec`. It will check test seams with the
    user - that exchange is the point, so do not skip it.
 3. Record the published issue: `bash "$ORCH" state set issue <number>`.
-4. Invoke the `orch-review-spec` skill and follow it. It owns
+4. Invoke the `orch-spec-review` skill and follow it. It owns
    the review - four lenses, one batch question, the body rewritten with what
    the human accepts - and returns the changelog. This step is part of the
    phase, not an option in it: no spec reaches the implement phase unreviewed,

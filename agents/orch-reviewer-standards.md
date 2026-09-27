@@ -90,7 +90,7 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 Write it in one Bash command (`cat > "<report path>" <<'EOF'`), in this shape:
 
 ```
-# Standards review - iteration <NN>
+# Standards axis - iteration <NN>
 
 Base: <base SHA>  Head: <HEAD SHA>
 Standards read: <every file from step 2, comma-separated>

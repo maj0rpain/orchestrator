@@ -4297,22 +4297,32 @@ assert_eq "gh itself was invoked once, as a real subprocess" \
 # --- skill names (ADR-0014) --------------------------------------------------
 # Every orchestrator skill carries the orch- prefix. An old unprefixed name
 # left in a skill, command, hook, or doc points a model at a skill that no
-# longer exists. CHANGELOG and ADRs record history and may name the old ones;
-# scripts/test/ feeds old names in deliberately as negative cases.
-# /orchestrator:review-spec is a command (#185), not the old skill name, so
-# only its slash form is exempt.
+# longer exists. CHANGELOG, ADRs, and .out-of-scope/ record history and may
+# name the old ones; scripts/test/ feeds old names in deliberately as negative cases. The spec
+# review's command and skill were renamed spec-review in 2.0.0 (#235), so the
+# review-spec names, command included, are old names too.
 echo
 echo "skill names (ADR-0014)"
 root="$(cd "$(dirname "$ORCH")/.." && pwd)"
-old_names='orchestrator:(flow|handoff|review|quick-implement)([^a-z-]|$)|(^|[^/])orchestrator:review-spec([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement)/|^name: (flow|handoff|review|review-spec|quick-implement)$'
+old_names='orchestrator:(flow|handoff|review|review-spec|quick-implement|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$'
 assert_eq "the old review-spec skill name is still flagged" \
   "$(printf 'Call `orchestrator:review-spec`.\n' | grep -cE "$old_names")" "1"
-assert_eq "the /orchestrator:review-spec command is not the old skill name" \
-  "$(printf 'Run `/orchestrator:review-spec 12`.\n' | grep -cE "$old_names")" "0"
+assert_eq "the old /orchestrator:review-spec command is flagged" \
+  "$(printf 'Run `/orchestrator:review-spec 12`.\n' | grep -cE "$old_names")" "1"
+assert_eq "the old orch-review-spec skill name is flagged" \
+  "$(printf 'Call `orchestrator:orch-review-spec`.\n' | grep -cE "$old_names")" "1"
+assert_eq "the old orch-review-spec skill directory is flagged" \
+  "$(printf 'See skills/orch-review-spec/SKILL.md.\n' | grep -cE "$old_names")" "1"
+assert_eq "the old orch-review-spec skill name line is flagged" \
+  "$(printf 'name: orch-review-spec\n' | grep -cE "$old_names")" "1"
+assert_eq "the new spec-review names are not flagged" \
+  "$(printf 'Run `/orchestrator:spec-review 12`.\nCall `orchestrator:orch-spec-review`.\nskills/orch-spec-review/\nname: orch-spec-review\n' | grep -cE "$old_names")" "0"
+assert_eq "the old review-spec command and skill files are gone" \
+  "$(ls -d "$root/commands/review-spec.md" "$root/skills/orch-review-spec" 2>/dev/null)" ""
 hits="$(git -C "$root" ls-files -z \
-  | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/)' \
+  | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/|\.out-of-scope/)' \
   | (cd "$root" && xargs -0 grep -nE "$old_names" 2>/dev/null))"
-assert_eq "no old unprefixed orchestrator skill name outside CHANGELOG/ADR history" "$hits" ""
+assert_eq "no old orchestrator skill or command name outside history" "$hits" ""
 for d in "$root"/skills/*/; do
   n="$(basename "$d")"
   case "$n" in
@@ -4582,7 +4592,7 @@ scan_capabilities() {
     [ -f "$f" ] || continue
     grep -qE 'orch\.sh|\$ORCH' "$f" && echo "${f#"$r"/}: runs orch.sh itself"
     # A command routes to an orch- skill and follows either one of its
-    # sections (the flow steps, review-spec) or the whole skill (release,
+    # sections (the flow steps, spec-review) or the whole skill (release,
     # #139). The skill must exist, and so must a section it names. The route
     # may wrap across lines, so the file is read as one line.
     local body; body="$(tr '\n' ' ' <"$f" | tr -s ' ')"
@@ -4599,6 +4609,8 @@ assert_eq "every skill points at the reference, and every command is a thin rout
   "$(scan_capabilities "$root")" ""
 assert_contains "the release command routes to its own orch- skill" \
   "$(cat "$root/commands/release.md" 2>/dev/null)" '`orchestrator:orch-release` and follow it' 
+assert_contains "the spec-review command routes to orch-spec-review's standalone entry" \
+  "$(tr '\n' ' ' <"$root/commands/spec-review.md" 2>/dev/null)" '`orchestrator:orch-spec-review` and follow its **Standalone spec review** section'
 # orch.sh's and doctor.sh's messages reach the model on every host too, so they
 # name a flow command only through flow_cmd, which adds the orch-flow section
 # for a host with no plugin commands - and every section it names must exist.
@@ -4640,7 +4652,7 @@ mkdir -p "$fixture/skills/orch-y"
 printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
 assert_eq "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")" ""
 # A command may route to a named section of a skill other than orch-flow
-# (review-spec, #185) - that section must exist in that skill.
+# (spec-review, #185) - that section must exist in that skill.
 printf 'Invoke `orchestrator:orch-y` and follow its **Solo run**\nsection.\n' >"$fixture/commands/y.md"
 assert_contains "the scan flags a command routed to a missing section of its own skill" \
   "$(scan_capabilities "$fixture")" "commands/y.md: routes to a missing orch-y section: Solo run"
@@ -4706,14 +4718,14 @@ rm -rf "$fixture"
 
 # --- spec-review lenses run as plugin agents (#177) ---------------------------
 # Each lens owns its brief as a read-only plugin agent, the way the review
-# loop's reviewers own theirs (ADR-0018), so orch-review-spec carries only the
+# loop's reviewers own theirs (ADR-0018), so orch-spec-review carries only the
 # lens-to-agent table, and the host fallback runs a lens from its agent file.
 echo
 echo "spec-review lenses run as plugin agents (#177)"
 # scan_lens_briefs <plugin root>: print one line per brief out of place. The
 # briefs' one copy is each lens agent's `## Brief` section, so the check is on
 # structure, never on the briefs' wording: every lens agent has a non-empty
-# `## Brief`, and orch-review-spec has no `**<Lens> brief.**` heading.
+# `## Brief`, and orch-spec-review has no `**<Lens> brief.**` heading.
 lenses="fidelity consistency testability implementability"
 scan_lens_briefs() {
   local r="$1" lens a heading
@@ -4726,15 +4738,15 @@ scan_lens_briefs() {
       END { if (!seen) print f ": has no ## Brief section"
             else if (!body) print f ": has an empty ## Brief section" }' "$a"
     heading="**${lens^} brief.**"
-    grep -qF "$heading" "$r/skills/orch-review-spec/SKILL.md" 2>/dev/null &&
-      echo "skills/orch-review-spec/SKILL.md: carries the $heading heading"
+    grep -qF "$heading" "$r/skills/orch-spec-review/SKILL.md" 2>/dev/null &&
+      echo "skills/orch-spec-review/SKILL.md: carries the $heading heading"
   done
   return 0
 }
 assert_eq "each lens agent owns a non-empty brief and the skill carries none" \
   "$(scan_lens_briefs "$root")" ""
 fixture="$(mktemp -d)"
-mkdir -p "$fixture/agents" "$fixture/skills/orch-review-spec"
+mkdir -p "$fixture/agents" "$fixture/skills/orch-spec-review"
 printf -- '---\nname: orch-lens-fidelity\n---\n\n## Brief\n\n## Reporting rules\n\n- Under 400 words.\n' \
   >"$fixture/agents/orch-lens-fidelity.md"
 printf -- '---\nname: orch-lens-consistency\n---\n\n# Consistency lens\n\nReport.\n' \
@@ -4742,17 +4754,17 @@ printf -- '---\nname: orch-lens-consistency\n---\n\n# Consistency lens\n\nReport
 printf -- '---\nname: orch-lens-testability\n---\n\n## Brief\n\nReport seams.\n\n## Reporting rules\n' \
   >"$fixture/agents/orch-lens-testability.md"
 printf 'Run the lenses.\n\n**Consistency brief.** Placeholder.\n' \
-  >"$fixture/skills/orch-review-spec/SKILL.md"
+  >"$fixture/skills/orch-spec-review/SKILL.md"
 out="$(scan_lens_briefs "$fixture")"
 assert_contains "the scan flags an empty ## Brief section" \
   "$out" "agents/orch-lens-fidelity.md: has an empty ## Brief section"
 assert_contains "the scan flags a lens agent with no ## Brief heading" \
   "$out" "agents/orch-lens-consistency.md: has no ## Brief section"
 assert_not_contains "the scan accepts a brief with content" "$out" "orch-lens-testability"
-assert_contains "the scan flags a brief heading back in orch-review-spec" \
-  "$out" "skills/orch-review-spec/SKILL.md: carries the **Consistency brief.** heading"
+assert_contains "the scan flags a brief heading back in orch-spec-review" \
+  "$out" "skills/orch-spec-review/SKILL.md: carries the **Consistency brief.** heading"
 rm -rf "$fixture"
-review_spec="$(flat_text "$root/skills/orch-review-spec/SKILL.md")"
+spec_review="$(flat_text "$root/skills/orch-spec-review/SKILL.md")"
 for lens in $lenses; do
   a="$root/agents/orch-lens-$lens.md"
   if [ ! -f "$a" ]; then bad "orch-lens-$lens exists" "no $a"; continue; fi
@@ -4768,18 +4780,18 @@ for lens in $lenses; do
     'Report "no findings" if there are none.'; do
     assert_contains "orch-lens-$lens carries the rule: $rule" "$body" "$rule"
   done
-  assert_contains "orch-review-spec names orch-lens-$lens" "$review_spec" "orch-lens-$lens"
+  assert_contains "orch-spec-review names orch-lens-$lens" "$spec_review" "orch-lens-$lens"
 done
-assert_not_contains "orch-review-spec no longer carries the reporting rules" \
-  "$review_spec" 'Report findings only, never draft edits.'
-assert_contains "orch-review-spec keeps the retry rule" "$review_spec" \
+assert_not_contains "orch-spec-review no longer carries the reporting rules" \
+  "$spec_review" 'Report findings only, never draft edits.'
+assert_contains "orch-spec-review keeps the retry rule" "$spec_review" \
   'A second failure makes it **not run - <reason>**'
-assert_contains "orch-review-spec's fallback runs each lens from its agent file" \
-  "$review_spec" "with each lens's agent file, \`agents/<agent>.md\` under the plugin root, as its brief"
-assert_contains "orch-review-spec's fallback is the host-capabilities one" \
-  "$review_spec" '"Start a fresh subagent" fallback in `docs/host-capabilities.md`'
-assert_not_contains "orch-review-spec's fallback no longer points at the brief below" \
-  "$review_spec" 'the brief below'
+assert_contains "orch-spec-review's fallback runs each lens from its agent file" \
+  "$spec_review" "with each lens's agent file, \`agents/<agent>.md\` under the plugin root, as its brief"
+assert_contains "orch-spec-review's fallback is the host-capabilities one" \
+  "$spec_review" '"Start a fresh subagent" fallback in `docs/host-capabilities.md`'
+assert_not_contains "orch-spec-review's fallback no longer points at the brief below" \
+  "$spec_review" 'the brief below'
 assert_contains "the fallback's first tier covers a lens's tool restriction" \
   "$hostcaps" 'A lens loses its Read, Grep, and Glob restriction'
 assert_contains "the fallback's second tier covers a lens's returned findings" \
@@ -4791,8 +4803,8 @@ assert_contains "the fallback's second tier covers a lens's returned findings" \
 # key phrases, not whole sentences.
 echo
 echo "spec review asks its batch question in the same response (#233)"
-review_spec_md="$root/skills/orch-review-spec/SKILL.md"
-skill_section() { "$ORCH" handoff section "$review_spec_md" "$1" | tr -s ' \t\n' '   '; }
+spec_review_md="$root/skills/orch-spec-review/SKILL.md"
+skill_section() { "$ORCH" handoff section "$spec_review_md" "$1" | tr -s ' \t\n' '   '; }
 disposition="$(skill_section Disposition)"
 applying="$(skill_section "Applying the answer")"
 changelog="$(skill_section "The changelog")"
@@ -4906,7 +4918,7 @@ assert_contains "help documents spec-review begin" "$("$ORCH" help)" "spec-revie
 assert_contains "the CLI conventions list the spec-review noun" \
   "$(grep -F '`spec-review`' "$root/docs/agents/cli-conventions.md")" "begin"
 
-standalone="$("$ORCH" handoff section "$root/skills/orch-review-spec/SKILL.md" "Standalone spec review")"
+standalone="$("$ORCH" handoff section "$root/skills/orch-spec-review/SKILL.md" "Standalone spec review")"
 assert_not_contains "the standalone section types no rm -rf" "$standalone" "rm -rf"
 assert_not_contains "the standalone section calls no state get" "$standalone" "state get"
 assert_contains "the standalone section calls spec-review begin" "$standalone" 'spec-review begin <issue>'

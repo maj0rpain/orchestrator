@@ -162,6 +162,7 @@ A fresh agent a review loop's driver starts for one axis - Standards or Spec -
 in one iteration. It reviews the whole change from the base SHA, never from
 the previous iteration's HEAD, and writes its findings, unranked, to a report
 file. Two reviewers run every iteration, one per axis.
+_Avoid_: spec review (for the Spec-axis reviewer or its report).
 
 ## Open blocking
 

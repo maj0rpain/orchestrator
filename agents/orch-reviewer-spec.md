@@ -50,7 +50,7 @@ character away - describe it in the finding instead.
 Write it in one Bash command (`cat > "<report path>" <<'EOF'`), in this shape:
 
 ```
-# Spec review - iteration <NN>
+# Spec axis - iteration <NN>
 
 Base: <base SHA>  Head: <HEAD SHA>
 Spec: #<spec issue> (and any sub-issues read)

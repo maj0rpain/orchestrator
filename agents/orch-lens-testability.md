@@ -1,6 +1,6 @@
 ---
 name: orch-lens-testability
-description: The Testability lens of an orchestrator spec review - reads a spec issue's body for its testability at the agreed seams, and returns its findings. Started only by the orch-review-spec skill, with the paths it reads.
+description: The Testability lens of an orchestrator spec review - reads a spec issue's body for its testability at the agreed seams, and returns its findings. Started only by the orch-spec-review skill, with the paths it reads.
 tools: Read, Grep, Glob
 ---
 
