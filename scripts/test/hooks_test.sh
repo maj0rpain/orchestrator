@@ -126,7 +126,8 @@ out="$(prompt_event '$grill-with-docs probe test' j1 | "$GRILL")"
 ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
 assert_eq "fires on a \$grill-with-docs prompt, as UserPromptSubmit" \
   "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "UserPromptSubmit"
-assert_contains "asks the closing question on Junie" "$ctx" "AskUserQuestion"
+assert_contains "asks the closing question with Junie's ask_user tool" "$ctx" "Call the ask_user tool"
+assert_not_contains "names no Claude question tool on Junie" "$ctx" "AskUserQuestion"
 assert_contains "offers starting the flow on Junie" "$ctx" "Start the orchestrator flow"
 assert_contains "offers quick implementation on Junie" "$ctx" "Quick implementation"
 assert_contains "forbids offering to implement on Junie" "$ctx" "Do NOT offer to implement"
@@ -155,6 +156,29 @@ for p in 'let us talk about grilling' '$tdd fix it' '$grilling-notes' 'a/grillin
     "$(prompt_event "$p" "jn$n" | "$GRILL")"
 done
 
+# Junie's router sends grilling to its plan agent, which ends on its own
+# approval screen and ignores the closing question. Confirming that screen
+# submits this fixed prompt to the main agent, so the question is asked there
+# instead (#202).
+confirm='Implement the suggested plan'
+prompt_event '$grill-with-docs x' jc1 | "$GRILL" >/dev/null
+out="$(prompt_event "$confirm" jc1 | "$GRILL")"
+ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
+assert_eq "fires on plan confirmation, as UserPromptSubmit" \
+  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "UserPromptSubmit"
+assert_contains "asks before implementing the confirmed plan" "$ctx" "Before you implement"
+assert_contains "asks the closing question at plan confirmation" "$ctx" "Call the ask_user tool"
+assert_contains "offers starting the flow at plan confirmation" "$ctx" "Start the orchestrator flow"
+assert_contains "offers quick implementation at plan confirmation" "$ctx" "Quick implementation"
+assert_contains "points at orch-flow's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
+assert_not_contains "repeats no planning rules at plan confirmation" "$ctx" "Do NOT offer to implement"
+assert_contains "asks again on a second plan confirmation" \
+  "$(prompt_event "$confirm" jc1 | "$GRILL")" "Before you implement"
+assert_empty "stays silent on plan confirmation in a session that never grilled" \
+  "$(prompt_event "$confirm" jc2 | "$GRILL")"
+assert_empty "stays silent on a prompt that only mentions the confirmation" \
+  "$(prompt_event "$confirm now" jc1 | "$GRILL")"
+
 mv "$REPO/docs/agents/issue-tracker.md" "$REPO/docs/agents/.hidden"
 assert_contains "reads the repo from project_path for the tracker warning" \
   "$(prompt_event '$grilling' j2 | "$GRILL")" "PRECONDITION NOT MET"
@@ -164,12 +188,16 @@ mkdir -p "$REPO/.orchestrator"
 echo '{"slug":"x","phase":"spec"}' >"$REPO/.orchestrator/state.json"
 assert_empty "stays silent on Junie when a flow is already active" \
   "$(prompt_event '$grilling' j3 | "$GRILL")"
+assert_empty "stays silent on plan confirmation when a flow is already active" \
+  "$(prompt_event "$confirm" jc1 | "$GRILL")"
 rm -rf "$REPO/.orchestrator"
 
 # Claude Code also fires UserPromptSubmit, but its PostToolUse on Skill already
 # delivers the message; its payload has no project_path.
 assert_empty "exits silently on Claude Code's UserPromptSubmit" \
   "$(claude_prompt_event '/grilling' c1 | "$GRILL")"
+assert_empty "exits silently on plan confirmation on Claude Code" \
+  "$(claude_prompt_event "$confirm" c1 | "$GRILL")"
 if [ -e "$TMPDIR/orchestrator-grilling-c1" ]; then
   bad "arms no marker from Claude Code's UserPromptSubmit" "a marker was created"
 else

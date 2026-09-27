@@ -164,8 +164,11 @@ and do whichever the human picks.
 Junie has no `PostToolUse` event, so the same hook also runs on
 `UserPromptSubmit` and fires there when the prompt names a grilling entry
 point (`/grilling`, `$grill-me`, `/wayfinder`, and so on). It sends nothing
-when Junie picks grilling on its own. On Claude Code the `UserPromptSubmit`
-entry exits silently.
+when Junie picks grilling on its own. Junie routes grilling into its plan
+mode, whose plan agent ends on Junie's own plan screen instead of asking the
+closing question. So when the human confirms that screen, which submits
+`Implement the suggested plan`, the hook asks the question there, before any
+file is edited. On Claude Code the `UserPromptSubmit` entry exits silently.
 
 A `PreToolUse` hook on `Edit`/`Write` enforces that: during a planning session
 with no flow started, source edits are denied. Planning artifacts stay writable -

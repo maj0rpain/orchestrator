@@ -10,6 +10,10 @@ with every request (see issue #202).
   `$grill-with-docs`, `/wayfinder`, `/improve-codebase-architecture`), once
   per session and never with a flow active. On Claude Code that entry exits
   silently. When Junie picks grilling on its own, no message is sent.
+- On Junie the closing question names Junie's `ask_user` tool. Junie routes
+  grilling into its plan mode, whose plan agent ends on Junie's own plan
+  screen without asking, so the question is asked again when the human picks
+  "Confirm and implement" in a session that grilled.
 - The Junie message names the `SKILL.md` files of this install to follow,
   since Junie has no Skill tool. The rest of the message is shared by both
   hosts.
