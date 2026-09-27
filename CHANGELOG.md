@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.0
+
+- Quick implementation offers a spec review of its linked issue before its
+  ticket breakdown (see issue #237). It asks on every run, with **Run a spec
+  review (Recommended)** and **Skip**. Run follows `orch-spec-review`'s
+  standalone entry unchanged, and a review that stops stops quick
+  implementation too. `to-tickets` then reads the issue as it stands after the
+  review, and the review's host fallbacks also reach the PR body's **Host
+  fallbacks**. Skip records nothing. Later steps are renumbered 3-7.
+- The grilling hook's closing question is tested to offer exactly two options.
+
 ## 2.0.0
 
 Breaking: the standalone spec review's command and skill are renamed

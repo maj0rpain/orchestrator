@@ -14,8 +14,11 @@ files. Every **finding** they report reaches the human as a proposed edit in
 one batch; only the edits the human accepts change the issue. The issue body
 stays the single truth the implement phase reads.
 
-There is no budget, no second pass, and no "review the spec?" question: the
-human's control is at the batch decision, where they may decline every edit.
+There is no budget and no second pass. In a flow's spec phase there is also
+no "review the spec?" question: the human's control is at the batch decision,
+where they may decline every edit. The question a quick implementation asks
+before its ticket breakdown belongs to quick implementation, not to the spec
+review.
 The independence comes from the sub-agents, the same way it does for the review
 loop - see `docs/adr/0001-review-loop-runs-in-a-single-session.md`.
 
@@ -96,9 +99,11 @@ with these differences:
 - **Disposition**: unchanged. There are no `contradicts the plan` items,
   because Fidelity does not run.
 - **Applying**: see the standalone steps in **Applying the answer**.
-- **Host fallbacks and lens failures** are recorded in the changelog
-  comment only, under a **Host fallbacks** line. A standalone review has one
-  changelog, not two.
+- **Host fallbacks and lens failures**: among the review's own records, they
+  are recorded in the changelog comment only, under a **Host fallbacks**
+  line. A standalone review has one changelog, not two. A quick
+  implementation that runs the review in the same session also lists the
+  host fallbacks it saw in its own PR body.
 
 ## The lenses
 

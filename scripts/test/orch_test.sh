@@ -4923,6 +4923,60 @@ assert_not_contains "the standalone section types no rm -rf" "$standalone" "rm -
 assert_not_contains "the standalone section calls no state get" "$standalone" "state get"
 assert_contains "the standalone section calls spec-review begin" "$standalone" 'spec-review begin <issue>'
 
+# --- quick implementation offers a spec review (#237) ------------------------
+# The model cannot be proven to ask; these checks keep the step, its two
+# options, and its route through the standalone entry from being dropped.
+echo
+echo "quick implementation offers a spec review (#237)"
+quick_md="$root/skills/orch-quick-implement/SKILL.md"
+heading_line() { grep -nxF "$2" "$1" | head -1 | cut -d: -f1; }
+l_link="$(heading_line "$quick_md" "## 1. Require a linked issue")"
+l_offer="$(heading_line "$quick_md" "## 2. Offer a spec review")"
+l_tickets="$(heading_line "$quick_md" "## 3. Publish the ticket breakdown")"
+if [ -n "$l_link" ] && [ -n "$l_offer" ] && [ -n "$l_tickets" ] &&
+  [ "$l_link" -lt "$l_offer" ] && [ "$l_offer" -lt "$l_tickets" ]; then
+  ok "the spec review step sits between the linked issue and the ticket breakdown"
+else
+  bad "the spec review step sits between the linked issue and the ticket breakdown" \
+    "linked issue: ${l_link:-none}, offer: ${l_offer:-none}, tickets: ${l_tickets:-none}"
+fi
+offer="$("$ORCH" handoff section "$quick_md" "2. Offer a spec review" 2>&1 | tr -s ' \t\n' '   ')"
+assert_contains "the step offers Run, recommended" "$offer" '**Run a spec review (Recommended)**'
+assert_contains "the step offers Skip" "$offer" '**Skip**'
+assert_contains "the step asks on every run" "$offer" 'every run'
+assert_contains "the step names orch-spec-review" "$offer" '`orch-spec-review`'
+assert_contains "the step names the standalone entry" "$offer" '**Standalone spec review** entry'
+assert_contains "a stopped review stops quick implementation" "$offer" 'quick implementation stops too'
+tickets="$("$ORCH" handoff section "$quick_md" "3. Publish the ticket breakdown" 2>&1 | tr -s ' \t\n' '   ')"
+assert_contains "to-tickets reads the issue as it stands after the review" \
+  "$tickets" 'the linked issue as it stands after any spec review'
+assert_not_contains "to-tickets no longer reads the raw linked issue" "$tickets" 'raw linked issue'
+pr_step="$("$ORCH" handoff section "$quick_md" "7. Open the PR" 2>&1 | tr -s ' \t\n' '   ')"
+assert_contains "the PR body lists the review's host fallbacks" "$pr_step" 'spec review in step 2'
+
+new_repo >/dev/null
+top="$(git rev-parse --show-toplevel)"
+out="$("$ORCH" spec-review begin 21 2>&1)"; st=$?
+assert_status "spec-review begin with no flow state succeeds" "$st" 0
+assert_eq "and prints the working directory" "$out" "$top/.orchestrator/spec-review/21/"
+
+glossary="$root/CONTEXT.md"
+assert_contains "the Quick implementation entry offers a review before the ticket breakdown" \
+  "$("$ORCH" handoff section "$glossary" "Quick implementation" | tr -s ' \t\n' '   ')" \
+  'spec review of its linked issue before its ticket breakdown'
+assert_contains "the Spec review entry names quick implementation's review" \
+  "$("$ORCH" handoff section "$glossary" "Spec review" | tr -s ' \t\n' '   ')" \
+  'a quick implementation may take one before its ticket breakdown'
+assert_contains "the Host fallback entry names quick implementation's PR body" \
+  "$("$ORCH" handoff section "$glossary" "Host fallback" | tr -s ' \t\n' '   ')" \
+  'including any taken during its spec review'
+assert_contains "orch-spec-review scopes its review-the-spec question to a flow's spec phase" \
+  "$(flat_text "$root/skills/orch-spec-review/SKILL.md")" \
+  'In a flow'"'"'s spec phase there is also no "review the spec?" question'
+assert_contains "orch-spec-review scopes changelog-only to the review's own records" \
+  "$("$ORCH" handoff section "$root/skills/orch-spec-review/SKILL.md" "Standalone spec review" | tr -s ' \t\n' '   ')" \
+  'among the review'"'"'s own records'
+
 # --- doctor: base branch check -----------------------------------------------
 # A set base branch that has vanished from origin is the one stale setting that
 # would send the next flow's fork and PR at nothing, so it FAILs; origin being

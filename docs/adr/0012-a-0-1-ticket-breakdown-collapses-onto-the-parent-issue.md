@@ -47,7 +47,7 @@ title and most of its body for no reader's benefit.
 A flow or quick implementation that collapses dispatches its one subagent
 straight at the parent issue, so `ticket next`/`ticket close` never run for
 that breakdown - the implement loop must branch on the sentinel (flow) or
-on step 2's own collapse decision (quick implementation) before entering
+on step 3's own collapse decision (quick implementation) before entering
 its frontier loop, rather than relying on an empty frontier to mean "done":
 an empty frontier here means "never split out," not "already finished." A
 human or agent inspecting a parent issue after a collapse finds its own
