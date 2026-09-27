@@ -163,10 +163,28 @@ never a description of the problem. Then, with the whole batch in view:
   that label: the human sees a reversal of their own earlier decision before
   anything else.
 
+Items are accepted by default: every plain edit is proposed for applying, a
+finding believed wrong carries **recommend decline** and its reason, and a
+decision item carries its recommended option.
+
 Number the items. Present the list - each item's finding, lens, and proposed
-edit or decision - then ask **one blocking question** with the
-`AskUserQuestion` tool: options **Apply all**, **Apply none**, or a list of
-item numbers through Other (the tool exists on both Claude Code and Junie).
+edit or decision - and ask **one blocking question** with the
+`AskUserQuestion` tool (it exists on both Claude Code and Junie), the list and
+the call in the same response. The review never ends its turn on the list:
+presenting it is not the end of the step, the answer is. No edit is applied and
+no changelog is posted before the answer arrives. The options:
+
+- **Apply as recommended (Recommended)** - every plain edit applied, every
+  decision item takes its recommended option, every **recommend decline** item
+  skipped. Always offered, first.
+- **Apply all** - offered only when at least one item is marked **recommend
+  decline**: as recommended, plus those items too. With no such item it would
+  equal the first option, so it is not shown.
+- **Apply none** - always offered.
+- **Other** - item numbers, with the option letter on decision items, e.g.
+  `1B, 2, 3, 5`. Any item left out is declined; a decision item left out stays
+  undecided and is recorded as declined. The question text states this format.
+
 Asked once; a long spec is one longer question, not twenty prompts.
 
 ## Applying the answer
@@ -182,9 +200,12 @@ Asked once; a long spec is one longer question, not twenty prompts.
 3. A declined `contradicts the plan` item: the changelog records **spec
    departs from the plan: <the human's reason>**, and the matching entry in the
    plan handoff's **Rejected alternatives** is amended to say it was reversed
-   in the spec review and why. The review loop demotes findings that propose a
-   rejected alternative, and without the amendment it would later demote a
-   code reviewer for proposing the spec's own choice.
+   in the spec review and why. Declining it through **Apply as recommended** is
+   allowed, and the item still goes first in the list: the changelog records
+   **spec departs from the plan: declined as recommended: <reason>**, and the
+   amendment cites the same reason. The review loop demotes findings that
+   propose a rejected alternative, and without the amendment it would later
+   demote a code reviewer for proposing the spec's own choice.
 4. Return the changelog to the flow skill: it goes verbatim into
    `02-spec.md`'s **Spec review changelog**, so the implement phase carries the
    disposition without a network call.
@@ -214,7 +235,10 @@ Organised per lens, in the table's order, one heading each:
 - an applied edit: one line naming what changed, not restating the body;
 - a declined finding: the reviewer's finding **verbatim**, then the human's
   reason - a decision visible nowhere else is fully recorded, the same
-  asymmetry the review loop applies to demoted findings;
+  asymmetry the review loop applies to demoted findings. A finding declined
+  because the human chose **Apply as recommended** records **declined as
+  recommended: <the recommendation's reason>** instead, never as the human's
+  own reason;
 - a lens that found nothing: **None**;
 - a lens that failed twice: **not run - <reason>**;
 - in a standalone review, Fidelity: **not run - standalone review, no plan
