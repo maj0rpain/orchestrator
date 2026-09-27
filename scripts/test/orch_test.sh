@@ -580,7 +580,7 @@ healthy_repo() {
   printf '%s\n' ".orchestrator/" >>.git/info/exclude
   stub_gh
   export CLAUDE_PLUGIN_ROOT="$PWD"
-  HOME="$(stub_mattpocock to-spec implement code-review handoff)"
+  HOME="$(stub_mattpocock to-spec to-tickets tdd code-review)"
   export HOME
   unset GH_STUB_MODE
 }
@@ -1351,7 +1351,7 @@ echo
 echo "mp-skill"
 if "$ORCH" mp-skill >/dev/null 2>&1; then
   assert_contains "resolves to-spec across category dirs" "$("$ORCH" mp-skill to-spec)" "/to-spec/SKILL.md"
-  assert_contains "resolves handoff from another category" "$("$ORCH" mp-skill handoff)" "/handoff/SKILL.md"
+  assert_contains "resolves tdd by the same glob" "$("$ORCH" mp-skill tdd)" "/tdd/SKILL.md"
   out="$("$ORCH" mp-skill definitely-not-a-skill 2>&1)"; st=$?
   assert_status "rejects an unknown skill name" "$st" 1
   assert_contains "names what it could not find" "$out" "definitely-not-a-skill"
@@ -1679,13 +1679,19 @@ assert_contains "warns that the default branch came from a fallback" "$out" "def
 # No healthy_repo() needed: the offline/noauth/default-branch checks above
 # only ever scoped GH_STUB_* to their own command, so the repo is still clean
 # going into this one - it's the HOME reassignment right below that dirties it.
-HOME="$(stub_mattpocock implement code-review)"; export HOME
+HOME="$(stub_mattpocock to-spec code-review)"; export HOME
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails on a partial mattpocock-skills install" "$st" 1
-assert_contains "names one missing skill" "$out" "to-spec"
-assert_contains "names the other missing skill" "$out" "handoff"
+assert_contains "names every missing skill" "$out" "missing: to-tickets, tdd"
 assert_eq "says nothing about the skills that are present" \
   "$(printf '%s\n' "$out" | grep -c 'code-review')" "0"
+
+# Only the skills the flow reads are required: an install without the upstream
+# skills the plugin replaced (implement, handoff) is complete.
+HOME="$(stub_mattpocock to-spec to-tickets tdd code-review)"; export HOME
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "passes an install with no implement or handoff" "$st" 0
+assert_contains "and reports every skill the flow reads as resolved" "$out" "every skill the flow reads resolves"
 
 out="$(HOME=/nonexistent "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails cleanly when mattpocock-skills is absent" "$st" 1
@@ -1714,26 +1720,53 @@ assert_not_contains "on Claude Code, does not name the Junie install" "$out" "np
 
 # The same partial install, in every other layout a host can produce. The
 # lookup finding *a* location is not the same as it holding every skill.
-for layout in junie agents override; do
-  h="$(mktemp -d)"; mp_install "$layout" "$h" implement code-review
-  ov=""; if [ "$layout" = override ]; then ov="$h/mp-checkout"; fi
-  out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$ov" "$ORCH" doctor --env 2>&1)"; st=$?
-  assert_status "fails on a partial install in the $layout layout" "$st" 1
-  assert_contains "names the $layout layout's missing to-spec" "$out" "missing: to-spec"
-  assert_contains "names the $layout layout's missing handoff" "$out" "handoff"
+# Each skill is checked on its own: one missing skill fails doctor even with
+# every other one present.
+for layout in claude junie agents override; do
+  ov=""
+  for gone in to-tickets tdd; do
+    h="$(mktemp -d)"
+    # shellcheck disable=SC2046 # word-splitting the kept names is the point
+    mp_install "$layout" "$h" $(printf '%s\n' to-spec to-tickets tdd code-review | grep -vx "$gone")
+    if [ "$layout" = override ]; then ov="$h/mp-checkout"; fi
+    out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$ov" "$ORCH" doctor --env 2>&1)"; st=$?
+    assert_status "fails on a $layout install missing $gone" "$st" 1
+    assert_contains "names the $layout layout's missing $gone" "$out" "missing: $gone "
+  done
 done
 
 # A skill the lockfile gives to another plugin is missing, not present.
-h="$(mktemp -d)"; mp_install agents "$h" to-spec implement code-review
-mp_install agents-foreign "$h" handoff
+h="$(mktemp -d)"; mp_install agents "$h" to-spec to-tickets code-review
+mp_install agents-foreign "$h" tdd
 out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when a skills CLI skill belongs to another plugin" "$st" 1
-assert_contains "names the foreign skill as missing" "$out" "missing: handoff"
+assert_contains "names the foreign skill as missing" "$out" "missing: tdd"
+
+# Doctor's required list is only worth something while it matches what the
+# plugin reads: a skill invoked but not listed passes doctor and then fails its
+# phase, and a skill listed but never invoked fails doctor for nothing. So the
+# list is compared with every mattpocock skill that a skill or agent invokes,
+# through `mp-skill <name>` or `mattpocock-skills:<name>`.
+mp_root="$(cd "$(dirname "$ORCH")/.." && pwd)"
+# Mentions that name an upstream skill without invoking it, one file:name per
+# line (file relative to the plugin root).
+#   orch-handoff says it replaces mattpocock-skills:handoff, not that it runs it.
+mp_not_invoked='skills/orch-handoff/SKILL.md:handoff'
+mp_listed="$(sed -n 's/^MP_SKILLS="\(.*\)"$/\1/p' "$mp_root/scripts/doctor.sh" | tr ' ' '\n' | grep . | sort -u)"
+mp_invoked="$(cd "$mp_root" && grep -oE 'mp-skill [a-z][a-z-]*|mattpocock-skills:[a-z][a-z-]*' \
+    skills/*/SKILL.md agents/*.md \
+  | sed -E 's/:(mp-skill |mattpocock-skills:)/:/' \
+  | grep -vxF "$mp_not_invoked" | sed 's/^.*://' | sort -u)"
+assert_eq "doctor finds MP_SKILLS to check against" "$([ -n "$mp_listed" ] && echo found)" "found"
+assert_eq "every invoked mattpocock skill is in MP_SKILLS" \
+  "$(comm -23 <(printf '%s\n' "$mp_invoked") <(printf '%s\n' "$mp_listed") | tr '\n' ' ')" ""
+assert_eq "every skill in MP_SKILLS is invoked by a skill or agent" \
+  "$(comm -13 <(printf '%s\n' "$mp_invoked") <(printf '%s\n' "$mp_listed") | tr '\n' ' ')" ""
 
 # Doctor says where the skills were found, in terms of the host that put them
 # there - the path alone does not tell a user which install to repair.
 h="$(mktemp -d)"
-for layout in claude junie agents; do mp_install "$layout" "$h" to-spec implement code-review handoff; done
+for layout in claude junie agents; do mp_install "$layout" "$h" to-spec to-tickets tdd code-review; done
 out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
 assert_contains "reports Claude's plugin cache as the source" "$out" "(Claude Code plugin cache)"
 rm -rf "$h/.claude"
@@ -1743,7 +1776,7 @@ rm -rf "$h/.junie"
 out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
 assert_contains "reports the skills CLI store as the source" "$out" "(skills CLI)"
 assert_contains "and where that store is" "$out" "mattpocock-skills: ~/.agents/skills"
-mp_install override "$h" to-spec implement code-review handoff
+mp_install override "$h" to-spec to-tickets tdd code-review
 out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" doctor --env 2>&1)"
 assert_contains "reports the override as the source" "$out" "(ORCHESTRATOR_MATTPOCOCK_ROOT)"
 
