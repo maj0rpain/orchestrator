@@ -4706,21 +4706,20 @@ echo "spec-review lenses run as plugin agents (#177)"
 # briefs' one copy is each lens agent's `## Brief` section, so the check is on
 # structure, never on the briefs' wording: every lens agent has a non-empty
 # `## Brief`, and orch-review-spec has no `**<Lens> brief.**` heading.
+lenses="fidelity consistency testability implementability"
 scan_lens_briefs() {
-  local r="$1" lens a Lens
-  for lens in fidelity consistency testability implementability; do
+  local r="$1" lens a heading
+  for lens in $lenses; do
     a="$r/agents/orch-lens-$lens.md"
-    [ -f "$a" ] || continue
-    awk -v f="${a#"$r"/}" '
+    [ -f "$a" ] && awk -v f="${a#"$r"/}" '
       /^## Brief[[:space:]]*$/ { inb = 1; seen = 1; next }
-      /^#/ { inb = 0 }
+      /^##?[[:space:]]/ { inb = 0 }
       inb && /[^[:space:]]/ { body = 1 }
       END { if (!seen) print f ": has no ## Brief section"
             else if (!body) print f ": has an empty ## Brief section" }' "$a"
-  done
-  for Lens in Fidelity Consistency Testability Implementability; do
-    grep -qF "**$Lens brief.**" "$r/skills/orch-review-spec/SKILL.md" 2>/dev/null &&
-      echo "skills/orch-review-spec/SKILL.md: carries the **$Lens brief.** heading"
+    heading="**${lens^} brief.**"
+    grep -qF "$heading" "$r/skills/orch-review-spec/SKILL.md" 2>/dev/null &&
+      echo "skills/orch-review-spec/SKILL.md: carries the $heading heading"
   done
   return 0
 }
@@ -4734,7 +4733,7 @@ printf -- '---\nname: orch-lens-consistency\n---\n\n# Consistency lens\n\nReport
   >"$fixture/agents/orch-lens-consistency.md"
 printf -- '---\nname: orch-lens-testability\n---\n\n## Brief\n\nReport seams.\n\n## Reporting rules\n' \
   >"$fixture/agents/orch-lens-testability.md"
-printf 'Run the lenses.\n\n**Consistency brief.** Report where the spec disagrees.\n' \
+printf 'Run the lenses.\n\n**Consistency brief.** Placeholder.\n' \
   >"$fixture/skills/orch-review-spec/SKILL.md"
 out="$(scan_lens_briefs "$fixture")"
 assert_contains "the scan flags an empty ## Brief section" \
@@ -4746,7 +4745,7 @@ assert_contains "the scan flags a brief heading back in orch-review-spec" \
   "$out" "skills/orch-review-spec/SKILL.md: carries the **Consistency brief.** heading"
 rm -rf "$fixture"
 review_spec="$(flat_text "$root/skills/orch-review-spec/SKILL.md")"
-for lens in fidelity consistency testability implementability; do
+for lens in $lenses; do
   a="$root/agents/orch-lens-$lens.md"
   if [ ! -f "$a" ]; then bad "orch-lens-$lens exists" "no $a"; continue; fi
   ok "orch-lens-$lens exists"
