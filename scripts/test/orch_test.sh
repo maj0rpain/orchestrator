@@ -4297,8 +4297,8 @@ assert_eq "gh itself was invoked once, as a real subprocess" \
 # --- skill names (ADR-0014) --------------------------------------------------
 # Every orchestrator skill carries the orch- prefix. An old unprefixed name
 # left in a skill, command, hook, or doc points a model at a skill that no
-# longer exists. CHANGELOG and ADRs record history and may name the old ones;
-# scripts/test/ feeds old names in deliberately as negative cases. The spec
+# longer exists. CHANGELOG, ADRs, and .out-of-scope/ record history and may
+# name the old ones; scripts/test/ feeds old names in deliberately as negative cases. The spec
 # review's command and skill were renamed spec-review in 2.0.0 (#235), so the
 # review-spec names, command included, are old names too.
 echo
@@ -4322,7 +4322,7 @@ assert_eq "the old review-spec command and skill files are gone" \
 hits="$(git -C "$root" ls-files -z \
   | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/|\.out-of-scope/)' \
   | (cd "$root" && xargs -0 grep -nE "$old_names" 2>/dev/null))"
-assert_eq "no old unprefixed orchestrator skill name outside CHANGELOG/ADR history" "$hits" ""
+assert_eq "no old orchestrator skill or command name outside history" "$hits" ""
 for d in "$root"/skills/*/; do
   n="$(basename "$d")"
   case "$n" in
@@ -4764,7 +4764,7 @@ assert_not_contains "the scan accepts a brief with content" "$out" "orch-lens-te
 assert_contains "the scan flags a brief heading back in orch-spec-review" \
   "$out" "skills/orch-spec-review/SKILL.md: carries the **Consistency brief.** heading"
 rm -rf "$fixture"
-review_spec="$(flat_text "$root/skills/orch-spec-review/SKILL.md")"
+spec_review="$(flat_text "$root/skills/orch-spec-review/SKILL.md")"
 for lens in $lenses; do
   a="$root/agents/orch-lens-$lens.md"
   if [ ! -f "$a" ]; then bad "orch-lens-$lens exists" "no $a"; continue; fi
@@ -4780,18 +4780,18 @@ for lens in $lenses; do
     'Report "no findings" if there are none.'; do
     assert_contains "orch-lens-$lens carries the rule: $rule" "$body" "$rule"
   done
-  assert_contains "orch-spec-review names orch-lens-$lens" "$review_spec" "orch-lens-$lens"
+  assert_contains "orch-spec-review names orch-lens-$lens" "$spec_review" "orch-lens-$lens"
 done
 assert_not_contains "orch-spec-review no longer carries the reporting rules" \
-  "$review_spec" 'Report findings only, never draft edits.'
-assert_contains "orch-spec-review keeps the retry rule" "$review_spec" \
+  "$spec_review" 'Report findings only, never draft edits.'
+assert_contains "orch-spec-review keeps the retry rule" "$spec_review" \
   'A second failure makes it **not run - <reason>**'
 assert_contains "orch-spec-review's fallback runs each lens from its agent file" \
-  "$review_spec" "with each lens's agent file, \`agents/<agent>.md\` under the plugin root, as its brief"
+  "$spec_review" "with each lens's agent file, \`agents/<agent>.md\` under the plugin root, as its brief"
 assert_contains "orch-spec-review's fallback is the host-capabilities one" \
-  "$review_spec" '"Start a fresh subagent" fallback in `docs/host-capabilities.md`'
+  "$spec_review" '"Start a fresh subagent" fallback in `docs/host-capabilities.md`'
 assert_not_contains "orch-spec-review's fallback no longer points at the brief below" \
-  "$review_spec" 'the brief below'
+  "$spec_review" 'the brief below'
 assert_contains "the fallback's first tier covers a lens's tool restriction" \
   "$hostcaps" 'A lens loses its Read, Grep, and Glob restriction'
 assert_contains "the fallback's second tier covers a lens's returned findings" \
@@ -4803,8 +4803,8 @@ assert_contains "the fallback's second tier covers a lens's returned findings" \
 # key phrases, not whole sentences.
 echo
 echo "spec review asks its batch question in the same response (#233)"
-review_spec_md="$root/skills/orch-spec-review/SKILL.md"
-skill_section() { "$ORCH" handoff section "$review_spec_md" "$1" | tr -s ' \t\n' '   '; }
+spec_review_md="$root/skills/orch-spec-review/SKILL.md"
+skill_section() { "$ORCH" handoff section "$spec_review_md" "$1" | tr -s ' \t\n' '   '; }
 disposition="$(skill_section Disposition)"
 applying="$(skill_section "Applying the answer")"
 changelog="$(skill_section "The changelog")"
