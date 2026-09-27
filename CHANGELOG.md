@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.8.0
+
+- New `orch.sh spec-review begin <n>` starts a standalone spec review (see
+  issue #224). It refuses while an active flow holds issue `<n>` - pointing at
+  `/orchestrator:next` at phase `spec` and `/orchestrator:redo` at
+  `implement` or `review` - and otherwise empties
+  `.orchestrator/spec-review/<n>/` and prints its path. It reads `state.json`
+  only to compare, works with no state file, and never writes state.
+- `orch-review-spec`'s **Standalone spec review** steps call it once, in
+  place of the prose guard and the prose `rm -rf` of the working directory.
+  The review's refusals and their pointers are unchanged.
+
 ## 1.7.2
 
 - `orch.sh doctor --env` detects Junie CLI from `JUNIE_SHIM_PATH`, which Junie

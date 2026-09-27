@@ -14,9 +14,13 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `pr`      | `open`, `publish`, `release`                         |
 | `review`  | `begin`, `path`, `file`, `ready`, `ci`, `terminal`, `retire` |
 | `spec`    | `fetch`, `update`, `comment`                         |
+| `spec-review` | `begin`                                          |
 | `ticket`  | `publish`, `next`, `close`, `reset`, `parent`        |
 | `state`   | `get`, `set`                                         |
 | `handoff` | `path`, `validate`, `section`                        |
+
+A compound noun such as `spec-review` is still one noun, and still follows
+`<noun> <verb>`: `orch.sh spec-review begin <n>`.
 
 This table is a map of the shape, not the source of truth for arguments or
 behavior - run `orch.sh help` for the live list.
