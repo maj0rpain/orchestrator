@@ -67,3 +67,12 @@ Its authority comes entirely from a human having declined a specific
 `contradicts the plan` finding with the spec in view; a session that edits
 **Rejected alternatives** for its own reasons is rewriting the authority the
 review loop reads, and no later phase could tell.
+
+## Note: standalone spec review (2026-09-27)
+
+A spec review may also be standalone: a human runs one on demand against any
+issue, outside a flow (#185). A standalone review never writes the plan
+handoff - there is none - and Fidelity does not run in it, so it has no
+`contradicts the plan` items and nothing to amend. The one-pass decision is
+unchanged: inside a flow, another look is still redo; outside one, it is
+another standalone review.

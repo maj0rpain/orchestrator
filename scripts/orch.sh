@@ -608,8 +608,8 @@ adapter_issue_view() {
   gh issue view "$@"
 }
 
-# cmd_spec's update/comment ops pick between these two, the same way it
-# already picks `edit` or `comment` as the literal `gh issue` subcommand.
+# cmd_issue_update and cmd_issue_comment call these two; cmd_spec's
+# update/comment ops reach them only by delegating to the issue primitives.
 adapter_issue_edit() {
   gh issue edit "$@"
 }
@@ -988,18 +988,28 @@ cmd_issue_update() {
     || die "gh could not replace the body of issue #$issue"
 }
 
+# A standalone spec review posts its summary on whatever issue it was pointed
+# at, with no flow to resolve one from - so comment joins fetch/update as a
+# stateless primitive, and spec comment below wraps it the same way.
+cmd_issue_comment() {
+  local issue="$1" file="$2"
+  [ -f "$file" ] || die "body file not found: $file"
+  adapter_issue_comment "$issue" --body-file "$file" >/dev/null \
+    || die "gh could not comment on issue #$issue"
+}
+
 cmd_issue() {
   local op="${1:-}"
   shift || true
   case "$op" in
-    fetch|update)
+    fetch|update|comment)
       [ $# -eq 2 ] || die "usage: orch.sh issue $op <n> <file>"
       local issue="$1" file="$2"
       case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
-      if [ "$op" = fetch ]; then cmd_issue_fetch "$issue" "$file"; else cmd_issue_update "$issue" "$file"; fi
+      "cmd_issue_$op" "$issue" "$file"
       ;;
     publish) cmd_issue_publish "$@" ;;
-    *) die "unknown issue op: ${op:-<none>} (want fetch|update|publish)" ;;
+    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|publish)" ;;
   esac
 }
 
@@ -1008,25 +1018,24 @@ cmd_issue() {
 # The spec review's one hand on GitHub. The body is the truth the implement
 # phase reads, so the three ways it is read and written go through here, where
 # they are tested, rather than through a `gh issue edit` in skill prose.
-# fetch/update delegate to the issue primitives above; comment has no
-# stateless counterpart to delegate to, so it keeps its own call here.
+# All three ops delegate to the issue primitives above, resolving the number
+# from state. A done flow's issue is finished work: state.json lingers after
+# the flow ends, so a spec op there would quietly touch an issue nobody is
+# reviewing any more - it refuses and points at the stateless issue ops.
 cmd_spec() {
   local op="${1:-}"
   shift || true
   require_state
+  case "$op" in
+    fetch|update|comment) ;;
+    *) die "unknown spec op: ${op:-<none>} (want fetch|update|comment)" ;;
+  esac
   [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment> <file>"
   local file="$1" issue
   require_issue issue
-  case "$op" in
-    fetch)  cmd_issue_fetch "$issue" "$file" ;;
-    update) cmd_issue_update "$issue" "$file" ;;
-    comment)
-      [ -f "$file" ] || die "body file not found: $file"
-      adapter_issue_comment "$issue" --body-file "$file" >/dev/null \
-        || die "gh could not comment on issue #$issue"
-      ;;
-    *) die "unknown spec op: ${op:-<none>} (want fetch|update|comment)" ;;
-  esac
+  [ "$(jq -r '.phase // ""' "$STATE")" != done ] \
+    || die "the flow on issue #$issue is done - spec $op acts only on an active flow's issue; for another issue use orch.sh issue $op <n> <file>"
+  "cmd_issue_$op" "$issue" "$file"
 }
 
 # --- git / github -----------------------------------------------------------
@@ -1646,6 +1655,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               state
   issue update <n> <file>     replace issue <n>'s body with <file>, recording
                               no state
+  issue comment <n> <file>    post <file> as a comment on issue <n>,
+                              recording no state
   pr open <title> <body-file> push and open a draft PR against the flow's base
                               branch - Closes its issue into the default
                               branch, Refs it into any other

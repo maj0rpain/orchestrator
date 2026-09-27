@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.7.0
+
+A spec review can run standalone, against any issue, outside a flow (see
+issue #185).
+
+- New command `/orchestrator:review-spec <issue>` runs `orch-review-spec`'s
+  new **Standalone spec review** entry. With no number it asks for one; it
+  never reads the issue from flow state.
+- The standalone entry refuses when a flow that is not `done` holds the same
+  issue, pointing at `/orchestrator:next` at phase `spec` and
+  `/orchestrator:redo` at `implement` or `review`. It works in
+  `.orchestrator/spec-review/<issue>/`, wiped at the start of each run, and
+  never writes flow state, handoffs, or `02-spec.md`.
+- Consistency, Testability, and Implementability run as in a flow. Fidelity
+  has no plan to check against, and is shown as **not run - standalone
+  review, no plan to check against**.
+- New `orch.sh issue comment <n> <file>` posts a comment with no flow state.
+  `spec comment` now delegates to it, and `spec fetch/update/comment` die
+  when the flow is `done`, naming the flow's issue and pointing at
+  `issue <op> <n>`.
+- `CONTEXT.md`'s **Spec review**, **Lens**, and **Phase** entries and
+  ADR-0004 describe the standalone review.
+
 ## 1.6.0
 
 The spec review's four lenses run as read-only plugin agents (see issue

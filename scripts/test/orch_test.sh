@@ -2885,6 +2885,44 @@ out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_EDIT_EXIT=1 "$ORCH" issue upda
 assert_status "a gh that will not edit fails the update" "$st" 1
 assert_contains "naming the issue" "$out" "issue #23"
 
+# issue comment is the stateless counterpart to spec comment, the way issue
+# fetch/update are to spec fetch/update: a standalone spec review posts its
+# summary on whatever issue it was pointed at, with no flow to ask.
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
+  "$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
+assert_status "comment posts the file on the issue, with no state.json present" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+assert_contains "commenting on the issue number given, not one from state" \
+  "$(cat "$filed")" "issue comment 23"
+assert_contains "with the file's contents as the comment, exactly" \
+  "$(cat "$filed")" "Tracked in #6"
+assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "the comment call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" issue comment 23 /nonexistent/body.md 2>&1)"; st=$?
+assert_status "comment refuses a file that does not exist" "$st" 1
+assert_contains "naming the file" "$out" "/nonexistent/body.md"
+assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_COMMENT_EXIT=1 "$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
+assert_status "a gh that will not comment fails it" "$st" 1
+assert_contains "with gh's reason" "$out" "issue comment refused"
+assert_contains "naming the issue" "$out" "issue #23"
+
+out="$("$ORCH" issue comment abc "$tricky" 2>&1)"; st=$?
+assert_status "comment refuses an issue number that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$("$ORCH" issue comment 23 2>&1)"; st=$?
+assert_status "comment refuses with no file" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh issue comment"
+
+out="$("$ORCH" issue 2>&1)"; st=$?
+assert_status "refuses no op at all" "$st" 1
+assert_contains "listing comment among the ops it has" "$out" "comment"
+
 out="$("$ORCH" issue fetch abc "$issue_body" 2>&1)"; st=$?
 assert_status "fetch refuses an issue number that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
@@ -2899,11 +2937,12 @@ assert_contains "with a usage line" "$out" "usage: orch.sh issue"
 
 out="$("$ORCH" issue bogus 23 "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
-assert_contains "naming the three it does" "$out" "fetch|update|publish"
+assert_contains "naming the four it does" "$out" "fetch|update|comment|publish"
 
 assert_contains "help documents issue fetch" "$("$ORCH" help)" "issue fetch"
 assert_contains "and issue update" "$("$ORCH" help)" "issue update"
 assert_contains "and issue publish" "$("$ORCH" help)" "issue publish"
+assert_contains "and issue comment" "$("$ORCH" help)" "issue comment"
 
 assert_eq "still no state.json - this section recorded none" \
   "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
@@ -3250,6 +3289,32 @@ assert_status "a gh that will not comment fails it" "$st" 1
 assert_contains "with gh's reason" "$out" "issue comment refused"
 assert_contains "and the issue it was for" "$out" "issue #14"
 
+# state.json outlives the flow it records: at phase done, the issue it names
+# is finished work, so the flow-bound spec ops refuse it and point at the
+# stateless issue ops for whatever issue the caller actually meant.
+prior_phase="$("$ORCH" state get phase)"
+"$ORCH" state set phase done
+for op in fetch update comment; do
+  : >"$filed"
+  out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec "$op" "$tricky" 2>&1)"; st=$?
+  assert_status "spec $op refuses once the flow is done" "$st" 1
+  assert_contains "naming the flow's issue" "$out" "issue #14"
+  assert_contains "and pointing at issue $op for another issue" "$out" "issue $op <n>"
+  assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+done
+"$ORCH" state set phase spec
+spec_scratch="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" spec fetch "$spec_scratch" 2>&1)"; st=$?
+assert_status "spec fetch still works at phase spec" "$st" 0
+for op in update comment; do
+  : >"$filed"
+  out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec "$op" "$tricky" 2>&1)"; st=$?
+  assert_status "spec $op still works at phase spec" "$st" 0
+  assert_contains "on the flow's issue" "$(cat "$filed")" "issue $([ "$op" = update ] && echo edit || echo comment) 14"
+done
+rm -f "$spec_scratch"
+"$ORCH" state set phase "$prior_phase"
+
 out="$("$ORCH" spec publish "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
 assert_contains "naming the three it does" "$out" "fetch|update|comment"
@@ -3294,6 +3359,17 @@ assert_contains "with the file's contents as the comment" \
   "$(cat "$filed")" "| Fidelity | plan handoff |"
 assert_eq "gh itself was invoked once each for view, edit, and comment, as real subprocesses" \
   "$(grep -cx issue "$log")" "3"
+
+# issue comment's own real-adapter proof: the number given, not state's.
+: >"$filed"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
+assert_status "issue comment shells out for real" "$st" 0
+assert_contains "the real adapter invoked gh issue comment on the issue given" \
+  "$(cat "$filed")" "issue comment 23"
+assert_contains "with the file's contents as the comment" \
+  "$(cat "$filed")" "| Fidelity | plan handoff |"
+assert_eq "as one real gh subprocess" "$(grep -cx issue "$log")" "1"
 
 "$ORCH" state set issue null
 
@@ -4215,10 +4291,16 @@ assert_eq "gh itself was invoked once, as a real subprocess" \
 # left in a skill, command, hook, or doc points a model at a skill that no
 # longer exists. CHANGELOG and ADRs record history and may name the old ones;
 # scripts/test/ feeds old names in deliberately as negative cases.
+# /orchestrator:review-spec is a command (#185), not the old skill name, so
+# only its slash form is exempt.
 echo
 echo "skill names (ADR-0014)"
 root="$(cd "$(dirname "$ORCH")/.." && pwd)"
-old_names='orchestrator:(flow|handoff|review|review-spec|quick-implement)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement)/|^name: (flow|handoff|review|review-spec|quick-implement)$'
+old_names='orchestrator:(flow|handoff|review|quick-implement)([^a-z-]|$)|(^|[^/])orchestrator:review-spec([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement)/|^name: (flow|handoff|review|review-spec|quick-implement)$'
+assert_eq "the old review-spec skill name is still flagged" \
+  "$(printf 'Call `orchestrator:review-spec`.\n' | grep -cE "$old_names")" "1"
+assert_eq "the /orchestrator:review-spec command is not the old skill name" \
+  "$(printf 'Run `/orchestrator:review-spec 12`.\n' | grep -cE "$old_names")" "0"
 hits="$(git -C "$root" ls-files -z \
   | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/)' \
   | (cd "$root" && xargs -0 grep -nE "$old_names" 2>/dev/null))"
@@ -4491,15 +4573,18 @@ scan_capabilities() {
   for f in "$r"/commands/*.md; do
     [ -f "$f" ] || continue
     grep -qE 'orch\.sh|\$ORCH' "$f" && echo "${f#"$r"/}: runs orch.sh itself"
-    s="$(grep -oE "orch-flow\` and follow its \*\*[^*]+\*\*" "$f" | sed 's/.*\*\*\(.*\)\*\*/\1/')"
-    # A command that is not a flow step routes to a whole orch- skill of its
-    # own instead (release, #139) - that skill must exist.
-    k="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it' "$f" | sed 's/^`orchestrator://; s/`.*//')"
-    if [ -z "$s" ] && [ -n "$k" ]; then
-      [ -f "$r/skills/$k/SKILL.md" ] || echo "${f#"$r"/}: routes to a missing skill: $k"
-    elif [ -z "$s" ]; then echo "${f#"$r"/}: routes to no orch-flow section"
-    else grep -qxF "## $s" "$r/skills/orch-flow/SKILL.md" \
-      || echo "${f#"$r"/}: routes to a missing orch-flow section: $s"; fi
+    # A command routes to an orch- skill and follows either one of its
+    # sections (the flow steps, review-spec) or the whole skill (release,
+    # #139). The skill must exist, and so must a section it names. The route
+    # may wrap across lines, so the file is read as one line.
+    local body; body="$(tr '\n' ' ' <"$f" | tr -s ' ')"
+    k="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it(s \*\*[^*]+\*\* section|\.)' <<<"$body" | head -n1)"
+    s="$(sed -n 's/.*follow its \*\*\([^*]*\)\*\* section$/\1/p' <<<"$k")"
+    k="$(sed 's/^`orchestrator://; s/`.*//' <<<"$k")"
+    if [ -z "$k" ]; then echo "${f#"$r"/}: routes to no orch- skill"
+    elif [ ! -f "$r/skills/$k/SKILL.md" ]; then echo "${f#"$r"/}: routes to a missing skill: $k"
+    elif [ -n "$s" ]; then grep -qxF "## $s" "$r/skills/$k/SKILL.md" \
+      || echo "${f#"$r"/}: routes to a missing $k section: $s"; fi
   done
 }
 assert_eq "every skill points at the reference, and every command is a thin route" \
@@ -4546,6 +4631,15 @@ assert_contains "the scan flags a command routed to a missing skill" \
 mkdir -p "$fixture/skills/orch-y"
 printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
 assert_eq "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")" ""
+# A command may route to a named section of a skill other than orch-flow
+# (review-spec, #185) - that section must exist in that skill.
+printf 'Invoke `orchestrator:orch-y` and follow its **Solo run**\nsection.\n' >"$fixture/commands/y.md"
+assert_contains "the scan flags a command routed to a missing section of its own skill" \
+  "$(scan_capabilities "$fixture")" "commands/y.md: routes to a missing orch-y section: Solo run"
+printf '## Solo run\nInvoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
+assert_eq "the scan accepts a command routed to an existing section of its own skill" \
+  "$(scan_capabilities "$fixture")" ""
+printf 'Invoke `orchestrator:orch-y` and follow it.\n' >"$fixture/commands/y.md"
 # An agent brief names host capabilities the way a skill does (#157).
 mkdir -p "$fixture/agents"
 printf 'Fix it through the `mattpocock-skills:tdd` skill.\n' >"$fixture/agents/orch-z.md"
