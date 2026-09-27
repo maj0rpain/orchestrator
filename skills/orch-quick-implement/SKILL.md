@@ -30,9 +30,7 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 Steps here name capabilities (invoke a skill, start a fresh subagent).
 `docs/host-capabilities.md` under the plugin root maps each one to your host.
 Where your host's cell says **Fallback**, or **Unverified** and the capability
-turns out missing, or names a caveat that applies to this step, take the
-fallback it documents and list it under a **Host fallbacks** heading in the PR
-body (step 6).
+turns out missing, take the fallback it documents and list it under a **Host fallbacks** heading in the PR body (step 6).
 
 ## 1. Require a linked issue
 

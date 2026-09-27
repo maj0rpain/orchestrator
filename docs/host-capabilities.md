@@ -4,9 +4,8 @@ Skills name a **capability** ("invoke a skill", "start a fresh subagent"), and
 this table says how each **host** provides it. Read your host's column: Claude
 Code has the Skill and Agent tools. "Junie" here and throughout the plugin
 means the Junie CLI, not the Junie plugin for JetBrains IDEs. It has no Skill
-tool, and it loads the plugin's `agents/`, but its capability filter may hide
-one of them from the session (see [Junie CLI's capability
-filter](#junie-clis-capability-filter)).
+tool, and it loads the plugin's `agents/`, but its capability filter can hide
+them from the model.
 
 A cell marked **Fallback** means that host lacks the capability. Do what
 [Fallbacks](#fallbacks) says for it, and record it: one line naming the
@@ -17,9 +16,7 @@ in its PR body. A run that needed none says so, naming the host.
 
 A cell marked **Unverified** means nobody has confirmed whether that host has
 the capability. Try it; if it is missing, take the fallback and record it the
-same way. An unmarked cell with a caveat means the host has the capability but
-may not let a step use it; where the caveat applies, take the fallback and
-record it the same way, naming the caveat as the reason.
+same way.
 
 Adding a host means adding a column here, and teaching `doctor.sh` to detect
 it and name its install methods (#132). Fill a cell only with a verified fact,
@@ -35,7 +32,7 @@ on exactly its own cells.
 | --- | --- | --- |
 | Invoke a skill from a step | The Skill tool, by scoped name (`orchestrator:orch-flow`, `mattpocock-skills:tdd`). | No Skill tool, so the model cannot invoke one mid-step. A human still starts one with `/<name>`, or Junie picks one automatically. Naming a skill as `$<name>` in a prompt is unverified. **Fallback**. |
 | Ask a multiple-choice question | `AskUserQuestion`. | `AskUserQuestion`. |
-| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`. | Custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). Junie loads the plugin's `agents/` (#148), but its capability filter usually hides them, and a hidden agent cannot be started by name. Where the agent is hidden, take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file: the expected path on Junie today, not a failure. Record the reason as the agent hidden by Junie's capability filter. |
+| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`. | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). It loads the plugin's `agents/` as custom agents (#200), but a capability filter at agent start usually hides them, and starting a hidden agent by name fails with `Unknown agent`. A visible one gets no tools yet (#204), so a native start does not pay off today. **Fallback**. Take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file, and record the reason as the agent hidden by Junie's capability filter. The README's Junie paragraph has a prompt workaround for the filter. |
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. |
 | Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. |
@@ -63,8 +60,8 @@ natively. The skill that starts the agent says only which agent, with which
 prompt, and where to record the fallback. Take the first tier that fits:
 
 1. **A fresh general-purpose agent.** On a host that has fresh subagents but
-   where the plugin's agent is not available to start natively (not loaded, or
-   hidden by the host), or that cannot restrict an agent's tools,
+   cannot start the plugin's agent natively (did not load `agents/`, or hid
+   it, as Junie's capability filter does), or cannot restrict an agent's tools,
    start a fresh general-purpose agent - still never a fork. Its prompt is the
    one the skill would have given the plugin's agent, plus the path of the
    agent's file, to read and follow as its brief. An agent whose file
@@ -86,22 +83,6 @@ prompt, and where to record the fallback. Take the first tier that fits:
 
 Record the tier taken where the starting skill says, with the reason: which
 agent was not available, and why.
-
-### Junie CLI's capability filter
-
-Junie CLI 3419.7 loads all of the plugin's agents as custom agents. When an
-agent starts, a one-shot capability filter reads the task text and each
-capability's one-line description and decides which the agent may see. It
-usually hides the plugin's agents, and the hiding holds: starting a hidden
-agent by name fails with `Unknown agent`. Naming the agent in a skill's body
-or description does not keep it visible (#200), so the plugin cannot fix this
-from its side, and the fallback above is the expected path.
-
-The one thing that kept an agent visible is the user's prompt naming it by
-name, for example: "For step 4, start the custom agent orch-implementer by
-name." This only pays off once #204 is fixed: until then an agent the filter
-leaves visible still starts with no tools, because of the form of its
-`tools:` frontmatter.
 
 ### Start a forked subagent
 
