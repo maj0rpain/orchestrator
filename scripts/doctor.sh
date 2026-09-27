@@ -289,16 +289,21 @@ HOST_REF="docs/host-capabilities.md"
 
 # The one host detector. Prints "claude", "junie", or nothing when no signal
 # is present (orch.sh run by hand in a terminal). ORCHESTRATOR_HOST names the
-# host outright, for a shell no signal reaches. Junie's signal is the variable
-# its docs say it expands for extension hooks; that it also reaches the shell a
-# skill runs orch.sh from is unverified, which is what the override is for.
+# host outright, for a shell no signal reaches. Junie has two signals:
+# JUNIE_EXTENSION_ROOT, which its docs say it expands for extension hooks, and
+# JUNIE_SHIM_PATH, which Junie CLI exports to the agent's shell a skill runs
+# orch.sh from (orch-bench run j1), where JUNIE_EXTENSION_ROOT is unset. Of the
+# variables that shell gets (JUNIE_DATA, JUNIE_SHIM_PATH, JUNIE_TMPDIR),
+# JUNIE_SHIM_PATH is the one least likely to be set in a user's own profile.
 # Junie is checked before Claude because a Junie started from inside a Claude
-# Code terminal inherits CLAUDECODE. Whether a Claude Code started from a
-# Junie shell inherits JUNIE_EXTENSION_ROOT is unverified; ORCHESTRATOR_HOST
-# settles it either way.
+# Code terminal inherits CLAUDECODE. The reverse case is accepted: a Claude
+# Code started from a Junie shell that inherits JUNIE_SHIM_PATH is detected as
+# Junie, and ORCHESTRATOR_HOST=claude fixes it.
 host_detect() {
   if [ -n "${ORCHESTRATOR_HOST:-}" ]; then printf '%s\n' "$ORCHESTRATOR_HOST"; return 0; fi
-  if [ -n "${JUNIE_EXTENSION_ROOT:-}" ]; then printf 'junie\n'; return 0; fi
+  if [ -n "${JUNIE_EXTENSION_ROOT:-}" ] || [ -n "${JUNIE_SHIM_PATH:-}" ]; then
+    printf 'junie\n'; return 0
+  fi
   if [ "${CLAUDECODE:-}" = 1 ] || [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then printf 'claude\n'; fi
 }
 
