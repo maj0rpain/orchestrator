@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.2
+
+- `orch.sh doctor --env` detects Junie CLI from `JUNIE_SHIM_PATH`, which Junie
+  CLI exports to its agent shell, as well as from `JUNIE_EXTENSION_ROOT` (see
+  issue #205). Junie is still checked before Claude Code's signals.
+
 ## 1.7.1
 
 - The test suite no longer keeps a verbatim copy of the four spec-review lens

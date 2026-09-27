@@ -54,7 +54,8 @@ then an agent left visible starts with no tools.
 
 Doctor reports the host it detects and the capabilities that host lacks (from
 [docs/host-capabilities.md](docs/host-capabilities.md)). It reads Claude Code
-from `CLAUDECODE` or `CLAUDE_PLUGIN_ROOT` and Junie from `JUNIE_EXTENSION_ROOT`;
+from `CLAUDECODE` or `CLAUDE_PLUGIN_ROOT` and Junie from `JUNIE_SHIM_PATH` (set
+in Junie CLI's agent shell) or `JUNIE_EXTENSION_ROOT` (set for extension hooks);
 set `ORCHESTRATOR_HOST=claude` or `junie` where neither reaches the shell.
 Install the whole plugin, not just its skills: every skill runs `scripts/orch.sh`.
 

@@ -20,7 +20,7 @@ SKIP=0
 unset ORCHESTRATOR_MATTPOCOCK_ROOT
 # The same goes for the host signals doctor reads: the shell running the tests
 # is often itself a Claude Code or Junie session. Each test names its host.
-unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT
+unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT JUNIE_SHIM_PATH
 
 ok()   { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
 bad()  { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
@@ -2062,6 +2062,14 @@ assert_eq "does not claim Junie lacks what is only unverified" \
   "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Run a plugin command')" "0"
 assert_contains "an unset plugin root is expected on Junie, not a warning" \
   "$out" "ok    CLAUDE_PLUGIN_ROOT"
+
+# Junie CLI's agent shell has no JUNIE_EXTENSION_ROOT; JUNIE_SHIM_PATH is what
+# it exports there (orch-bench run j1).
+out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_SHIM_PATH="$PWD" "$ORCH" doctor --env 2>&1)"
+assert_contains "detects Junie CLI from JUNIE_SHIM_PATH" "$out" "host: Junie CLI"
+# A Junie started from inside a Claude Code terminal inherits CLAUDECODE.
+out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_SHIM_PATH="$PWD" CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"
+assert_contains "JUNIE_SHIM_PATH outranks CLAUDECODE" "$out" "host: Junie CLI"
 
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" doctor --env 2>&1)"
 assert_contains "ORCHESTRATOR_HOST outranks the Claude signals" "$out" "host: Junie"
