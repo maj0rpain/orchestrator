@@ -9,8 +9,9 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | Noun      | Verbs                                              |
 | --------- | --------------------------------------------------- |
 | `base`    | `set`, `show`, `clear`                               |
-| `branch`  | `create`, `off`, `retire`                            |
+| `branch`  | `create`, `off`, `base-sha`, `retire`                |
 | `issue`   | `fetch`, `update`, `comment`, `publish`              |
+| `quick`   | `path`                                               |
 | `pr`      | `open`, `publish`, `release`                         |
 | `review`  | `begin`, `path`, `file`, `ready`, `ci`, `terminal`, `retire` |
 | `spec`    | `fetch`, `update`, `comment`                         |

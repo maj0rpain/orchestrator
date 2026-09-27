@@ -1189,6 +1189,111 @@ assert_eq "and records nothing for the branch it did not make" "$(recorded_base 
 base_cmd base clear >/dev/null
 rm -rf "$(dirname "$bare")"
 
+# --- a quick implementation's base SHA (#243) ---------------------------------
+# branch off records the base branch's tip at the moment of branching, the same
+# meaning a flow's base_sha has, so a quick implementation's reviewers get a
+# fixed point that a later merge of the base cannot shrink. A branch made before
+# that was recorded falls back to the merge-base with its base branch.
+echo
+echo "a quick implementation's base SHA (#243)"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+branched_tip="$(git rev-parse origin/main)"
+base_cmd branch off quick/1-sha >/dev/null
+assert_eq "branch off records the base branch's tip as the base SHA" \
+  "$(git config --get branch.quick/1-sha.orchestrator-base-sha)" "$branched_tip"
+git commit -q --allow-empty -m "work on the branch"
+
+# The base branch moves on and the branch merges it in.
+git checkout -q -b advance "$branched_tip"
+git commit -q --allow-empty -m "main moves on"
+git push -q origin advance:refs/heads/main
+git fetch -q origin
+moved_tip="$(git rev-parse origin/main)"
+git checkout -q quick/1-sha
+git branch -q -D advance
+git merge -q --no-edit origin/main
+assert_eq "the recorded base SHA is unchanged after the base branch moves on" \
+  "$(git config --get branch.quick/1-sha.orchestrator-base-sha)" "$branched_tip"
+out="$(base_cmd branch base-sha 2>&1)"; st=$?
+assert_status "branch base-sha succeeds" "$st" 0
+assert_eq "branch base-sha prints the recorded base SHA" "$out" "$branched_tip"
+
+git config --unset branch.quick/1-sha.orchestrator-base-sha
+assert_eq "without a recorded SHA it prints the merge-base with the base branch" \
+  "$(base_cmd branch base-sha)" "$(git merge-base HEAD origin/main)"
+assert_eq "which here is the base branch's tip it merged" "$(base_cmd branch base-sha)" "$moved_tip"
+
+# No remote-tracking ref for the recorded base branch: the local one answers.
+git branch -q localbase "$branched_tip"
+git config branch.quick/1-sha.orchestrator-base localbase
+assert_eq "with no remote-tracking ref it uses the local base branch" \
+  "$(base_cmd branch base-sha)" "$branched_tip"
+
+# Neither key: the base branch in effect, as pr publish does.
+git checkout -q -b uat "$branched_tip"
+git commit -q --allow-empty -m "uat only"
+git push -q origin uat:refs/heads/uat
+git fetch -q origin
+uat_tip="$(git rev-parse origin/uat)"
+git checkout -q -b quick/2-legacy uat
+git commit -q --allow-empty -m "legacy work"
+git config orchestrator.base uat
+assert_eq "with neither key it uses the base branch setting" \
+  "$(base_cmd branch base-sha)" "$uat_tip"
+git config --unset orchestrator.base
+assert_eq "and the default branch when nothing is set" \
+  "$(base_cmd branch base-sha)" "$branched_tip"
+
+git checkout -q --detach
+out="$(base_cmd branch base-sha 2>&1)"; st=$?
+assert_status "refuses a detached HEAD" "$st" 1
+assert_contains "saying so" "$out" "detached HEAD"
+out="$(base_cmd branch base-sha extra 2>&1)"; st=$?
+assert_status "refuses arguments" "$st" 1
+assert_contains "with the usage" "$out" "usage: orch.sh branch base-sha"
+assert_contains "help documents branch base-sha" "$("$ORCH" help)" "branch base-sha"
+assert_contains "the CLI conventions table lists branch base-sha" \
+  "$(grep -F '| `branch`' "$(cd "$(dirname "$ORCH")/.." && pwd)/docs/agents/cli-conventions.md")" "base-sha"
+rm -rf "$(dirname "$bare")"
+
+# --- a quick implementation's report directory (#243) --------------------------
+# A quick implementation keeps no state.json and may run where init never did,
+# so quick path needs neither and git-excludes .orchestrator/ itself.
+echo
+echo "a quick implementation's report directory (#243)"
+new_repo >/dev/null
+top="$(git rev-parse --show-toplevel)"
+git checkout -q -b quick/12-foo
+out="$("$ORCH" quick path 2>&1)"; st=$?
+assert_status "quick path with no flow state succeeds" "$st" 0
+assert_eq "prints the branch's directory under .orchestrator/quick/, name used whole" \
+  "$out" "$top/.orchestrator/quick/quick/12-foo/"
+assert_eq "creates it" "$([ -d "$top/.orchestrator/quick/quick/12-foo" ] && echo yes || echo no)" "yes"
+assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_contains "git-excludes .orchestrator/" "$(cat "$(git rev-parse --git-dir)/info/exclude")" ".orchestrator/"
+assert_eq "and leaves the working tree clean" "$(git status --porcelain)" ""
+touch "$top/.orchestrator/quick/quick/12-foo/iteration-01-spec.md"
+out="$("$ORCH" quick path 2>&1)"; st=$?
+assert_status "a second call succeeds" "$st" 0
+assert_eq "and keeps what is already there" \
+  "$([ -f "$top/.orchestrator/quick/quick/12-foo/iteration-01-spec.md" ] && echo yes || echo no)" "yes"
+assert_eq "without excluding twice" "$(grep -cxF '.orchestrator/' "$(git rev-parse --git-dir)/info/exclude")" "1"
+out="$("$ORCH" quick path extra 2>&1)"; st=$?
+assert_status "refuses arguments" "$st" 1
+assert_contains "with the usage" "$out" "usage: orch.sh quick path"
+git checkout -q --detach
+out="$("$ORCH" quick path 2>&1)"; st=$?
+assert_status "refuses a detached HEAD" "$st" 1
+assert_contains "help documents quick path" "$("$ORCH" help)" "quick path"
+assert_contains "the CLI conventions table lists quick path" \
+  "$(grep -F '| `quick`' "$(cd "$(dirname "$ORCH")/.." && pwd)/docs/agents/cli-conventions.md")" "path"
+
 # --- branch retire ------------------------------------------------------------
 # The rename-aside a redo uses instead of deleting or force-pushing over a
 # discarded attempt's commits. The push/delete-remote-ref assertions reuse the
@@ -1302,7 +1407,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 out="$("$ORCH" branch bogus 2>&1)"; st=$?
 assert_status "branch bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
-assert_contains "naming all three" "$out" "create|off|retire"
+assert_contains "naming all four" "$out" "create|off|base-sha|retire"
 
 # --- issue publish ------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding

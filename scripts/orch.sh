@@ -1079,6 +1079,26 @@ cmd_spec_review() {
   printf '%s/\n' "$dir"
 }
 
+# A quick implementation's report directory: .orchestrator/quick/<branch>/,
+# the branch name used whole, slashes and all. Needs no flow state, and
+# excludes the orchestrator directory itself, since a quick implementation may
+# run in a repo where init never did. Never wiped: a rerun keeps its reports.
+cmd_quick() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    path) ;;
+    *) die "unknown quick op: ${op:-<none>} (want path)" ;;
+  esac
+  [ $# -eq 0 ] || die "usage: orch.sh quick path"
+  local branch dir
+  branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  exclude_orch_dir
+  dir="$ORCH/quick/$branch"
+  mkdir -p "$dir"
+  printf '%s/\n' "$dir"
+}
+
 # --- git / github -----------------------------------------------------------
 
 # Forking a named branch off a base branch has exactly one right answer -
@@ -1117,14 +1137,39 @@ cmd_branch_create() {
 # A quick implementation keeps no state.json, so it has nothing to derive a
 # name from - the caller passes the full name. It forks from the base branch in
 # effect and records that base on the branch itself in local git config, so
-# pr publish targets it even if the setting moves in the meantime.
+# pr publish targets it even if the setting moves in the meantime - and records
+# the base branch's tip at branching as the branch's base SHA, the meaning a
+# flow's base_sha has, for its reviewers to diff from.
 cmd_branch_off() {
   [ $# -eq 1 ] || die "usage: orch.sh branch off <name>"
   local base
   base="$(base_branch)"
   checkout_new_branch "$1" "$base"
   git config "branch.$1.orchestrator-base" "$base"
+  git config "branch.$1.orchestrator-base-sha" "$(git rev-parse HEAD)"
   note "$1"
+}
+
+# The current branch's base SHA, as branch off recorded it. A branch made
+# before that was recorded falls back to the merge-base with its base branch -
+# the recorded one, else the base branch in effect, as pr publish does -
+# preferring origin's copy of it. Only a fallback: a base merged in mid-branch
+# moves the merge-base and silently shrinks the diff it bounds.
+cmd_branch_base_sha() {
+  [ $# -eq 0 ] || die "usage: orch.sh branch base-sha"
+  local branch sha base ref
+  branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  sha="$(git config --get "branch.$branch.orchestrator-base-sha" 2>/dev/null)" || sha=""
+  if [ -n "$sha" ]; then note "$sha"; return; fi
+  base="$(git config --get "branch.$branch.orchestrator-base" 2>/dev/null)" || base="$(base_branch)"
+  if git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null; then
+    ref="refs/remotes/origin/$base"
+  elif git rev-parse --verify --quiet "refs/heads/$base" >/dev/null; then
+    ref="refs/heads/$base"
+  else
+    die "base branch $base of $branch is neither on origin nor local - no base SHA to fall back to"
+  fi
+  git merge-base HEAD "$ref" || die "$branch shares no history with base branch $base"
 }
 
 cmd_branch() {
@@ -1133,6 +1178,7 @@ cmd_branch() {
   case "$op" in
     create) cmd_branch_create "$@" ;;
     off)    cmd_branch_off "$@" ;;
+    base-sha) cmd_branch_base_sha "$@" ;;
     retire)
       [ $# -eq 2 ] || die "usage: orch.sh branch retire <old> <new>"
       local old="$1" new="$2" upstream="" old_ok=1 new_ok=1
@@ -1176,7 +1222,7 @@ cmd_branch() {
       fi
       note "$new"
       ;;
-    *) die "unknown branch op: ${op:-<none>} (want create|off|retire)" ;;
+    *) die "unknown branch op: ${op:-<none>} (want create|off|base-sha|retire)" ;;
   esac
 }
 
@@ -1683,8 +1729,15 @@ orch.sh - deterministic operations for the orchestrator flow
   branch off <name>           create and check out <name> off the base branch
                               in effect, recording that base on the branch
                               (branch.<name>.orchestrator-base in local git
-                              config) and no state - for a quick
-                              implementation, which keeps none
+                              config) and its tip at branching as the base
+                              SHA (branch.<name>.orchestrator-base-sha), and
+                              no state - for a quick implementation, which
+                              keeps none
+  branch base-sha             print the current branch's base SHA as branch
+                              off recorded it; a branch without one falls
+                              back to the merge-base with its recorded base
+                              branch (else the base branch in effect), on
+                              origin if there, else local
   branch retire <old> <new>   rename <old> aside to <new>, republishing it on
                               origin and deleting the old remote ref, without
                               force-pushing over anything
@@ -1758,6 +1811,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               .orchestrator/spec-review/<n>/ and print its
                               path. Reads state.json only to compare, and
                               never writes it
+  quick path                  print .orchestrator/quick/<branch>/ for the
+                              current branch, name used whole, creating it and
+                              git-excluding .orchestrator/ - for a quick
+                              implementation's review reports; needs no state
   redo review                 retire the branch and PR, reopen the spec
                               issue's closed tickets, reset the loop, and
                               step the flow back to implement - refuses unless
@@ -1789,6 +1846,7 @@ main() {
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
     spec-review)   cmd_spec_review "$@" ;;
+    quick)         cmd_quick "$@" ;;
     redo)          cmd_redo "$@" ;;
     status)        cmd_status "$@" ;;
     archive)       cmd_archive "$@" ;;
