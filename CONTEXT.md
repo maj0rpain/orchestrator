@@ -343,7 +343,9 @@ host's tool. `docs/host-capabilities.md` says how each host provides each one.
 
 ## Host fallback
 
-What a skill does instead when its host lacks a capability, as documented in
+What a skill does instead when its host lacks a capability, or cannot use it
+for the step at hand (a Junie CLI capability filter hiding one of the
+plugin's agents, say), as documented in
 `docs/host-capabilities.md`. Every fallback a phase takes is recorded under
 **Host fallbacks** in its handoff, so a reduced run is never mistaken for a
 full one.

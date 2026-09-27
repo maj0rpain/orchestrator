@@ -43,8 +43,14 @@ The first location present is used for every skill; a project's own
 
 "Junie" in this README and across the plugin means the Junie CLI, not the
 Junie plugin for JetBrains IDEs. Junie CLI support rests on its bundled
-documentation, and some of it is unverified, such as whether it loads the
-plugin's `agents/` (see [docs/host-capabilities.md](docs/host-capabilities.md)).
+documentation, and some of it is unverified (see
+[docs/host-capabilities.md](docs/host-capabilities.md)). Junie loads the
+plugin's `agents/`, but a capability filter at agent start usually hides them
+from the model, so the flow starts a general-purpose agent briefed with the
+agent's file instead. Naming the agent in your own prompt keeps it visible,
+for example "For step 4, start the custom agent orch-implementer by name."
+Naming it in a skill does not. The tip only pays off once #204 is fixed: until
+then an agent left visible starts with no tools.
 
 Doctor reports the host it detects and the capabilities that host lacks (from
 [docs/host-capabilities.md](docs/host-capabilities.md)). It reads Claude Code

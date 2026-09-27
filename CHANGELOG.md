@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.10
+
+The host capabilities reference states what Junie CLI does with the plugin's
+agents (see issue #203).
+
+- Junie CLI loads the plugin's `agents/`, but its capability filter usually
+  hides them, and a visible one gets no tools yet (#204). Its **Start a fresh
+  subagent** cell is now **Fallback**, not **Unverified**, so `orch.sh doctor
+  --env` on Junie lists it under what the host lacks.
+- The fallback's first tier covers a host that cannot start the plugin's
+  agent natively - it did not load `agents/`, or hid it - so a run on Junie
+  records the capability filter as the reason, not "did not load".
+- The README's Junie paragraph documents the prompt workaround for the
+  filter, which pays off only once #204 is fixed.
+
 ## 1.5.9
 
 Skills find `orch.sh` on Junie CLI with their first command (see issue #201).

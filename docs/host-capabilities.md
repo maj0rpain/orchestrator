@@ -4,10 +4,11 @@ Skills name a **capability** ("invoke a skill", "start a fresh subagent"), and
 this table says how each **host** provides it. Read your host's column: Claude
 Code has the Skill and Agent tools. "Junie" here and throughout the plugin
 means the Junie CLI, not the Junie plugin for JetBrains IDEs. It has no Skill
-tool, and its custom subagents are documented but not yet confirmed to load
-from a Claude plugin's `agents/`.
+tool, and it loads the plugin's `agents/`, but its capability filter can hide
+them from the model.
 
-A cell marked **Fallback** means that host lacks the capability. Do what
+A cell marked **Fallback** means that host lacks the capability, or cannot
+use it for the step at hand. Do what
 [Fallbacks](#fallbacks) says for it, and record it: one line naming the
 capability, the fallback taken, and the step, in the phase's handoff under
 **Host fallbacks** (see the `orch-handoff` skill). A review loop records its
@@ -32,7 +33,7 @@ on exactly its own cells.
 | --- | --- | --- |
 | Invoke a skill from a step | The Skill tool, by scoped name (`orchestrator:orch-flow`, `mattpocock-skills:tdd`). | No Skill tool, so the model cannot invoke one mid-step. A human still starts one with `/<name>`, or Junie picks one automatically. Naming a skill as `$<name>` in a prompt is unverified. **Fallback**. |
 | Ask a multiple-choice question | `AskUserQuestion`. | `AskUserQuestion`. |
-| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`. | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). The plugin's would be a custom subagent from its `agents/`. Whether Junie loads a Claude plugin's `agents/` is not confirmed (#148). **Unverified**. Where it does not, take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file. |
+| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`. | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). It loads the plugin's `agents/` as custom agents (#200), but a capability filter at agent start usually hides them, and starting a hidden agent by name fails with `Unknown agent`. A visible one gets no tools yet (#204), so a native start does not pay off today. **Fallback**. Take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file, and record the reason as the agent hidden by Junie's capability filter. The README's Junie paragraph has a prompt workaround for the filter. |
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. |
 | Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. |
@@ -60,7 +61,8 @@ natively. The skill that starts the agent says only which agent, with which
 prompt, and where to record the fallback. Take the first tier that fits:
 
 1. **A fresh general-purpose agent.** On a host that has fresh subagents but
-   does not load the plugin's `agents/`, or cannot restrict an agent's tools,
+   cannot start the plugin's agent natively (did not load `agents/`, or hid
+   it, as Junie's capability filter does), or cannot restrict an agent's tools,
    start a fresh general-purpose agent - still never a fork. Its prompt is the
    one the skill would have given the plugin's agent, plus the path of the
    agent's file, to read and follow as its brief. An agent whose file
@@ -80,7 +82,8 @@ prompt, and where to record the fallback. Take the first tier that fits:
    next. The loop around the subagent does not change: a ticket is still
    closed only once its report is written.
 
-Record the tier taken where the starting skill says.
+Record the tier taken where the starting skill says, with the reason: which
+agent was not available, and why.
 
 ### Start a forked subagent
 
