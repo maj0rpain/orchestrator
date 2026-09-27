@@ -8,13 +8,14 @@
 
 # Reads the raw hook JSON from stdin and sets `input`, `session`, and `cwd` in
 # the caller's shell. A missing session_id leaves `session` empty, which means
-# "not guarded": no planning marker can be keyed to it. A missing cwd falls
-# back to the process working directory. `input` is left set so a caller can
+# "not guarded": no planning marker can be keyed to it. `cwd` prefers Junie's
+# project_path, because Junie's own cwd is ~/.junie, not the repo (#202). A
+# payload with neither falls back to the process working directory. `input` is left set so a caller can
 # extract further fields without reading stdin a second time.
 hook_read_payload() {
   input="$(cat)"
   session="$(printf '%s' "$input" | jq -r '.session_id // ""')"
-  cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
+  cwd="$(printf '%s' "$input" | jq -r '.project_path // .cwd // ""')"
   [ -n "$cwd" ] || cwd="$PWD"
 }
 

@@ -107,6 +107,78 @@ assert_empty "stays silent when a flow is already active" "$(skill_event "grilli
 rm -rf "$REPO/.orchestrator"
 
 echo
+echo "grilling hook on Junie (UserPromptSubmit, #202)"
+
+# Junie has no PostToolUse event, so the same hook runs on UserPromptSubmit and
+# matches a grilling entry point in the raw prompt. Junie's payload carries
+# the repo in project_path; its cwd is ~/.junie, not the project.
+JUNIE_HOME="$(mktemp -d)"
+prompt_event() {
+  jq -n --arg p "$1" --arg sid "$2" --arg cwd "$JUNIE_HOME" --arg pp "$REPO" \
+    '{hook_event_name:"UserPromptSubmit", session_id:$sid, cwd:$cwd, project_path:$pp, prompt:$p}'
+}
+claude_prompt_event() {
+  jq -n --arg p "$1" --arg sid "$2" --arg cwd "$REPO" \
+    '{hook_event_name:"UserPromptSubmit", session_id:$sid, cwd:$cwd, prompt:$p}'
+}
+
+out="$(prompt_event '$grill-with-docs probe test' j1 | "$GRILL")"
+ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
+assert_eq "fires on a \$grill-with-docs prompt, as UserPromptSubmit" \
+  "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "UserPromptSubmit"
+assert_contains "asks the closing question on Junie" "$ctx" "AskUserQuestion"
+assert_contains "offers starting the flow on Junie" "$ctx" "Start the orchestrator flow"
+assert_contains "offers quick implementation on Junie" "$ctx" "Quick implementation"
+assert_contains "forbids offering to implement on Junie" "$ctx" "Do NOT offer to implement"
+assert_contains "carries the wayfinder caveat on Junie" "$ctx" "whole map is done"
+assert_contains "names every planning artifact on Junie" "$ctx" \
+  "CONTEXT.md, CONTEXT-MAP.md, docs/adr/, docs/agents/, .scratch/, .orchestrator/"
+assert_contains "points at orch-flow's SKILL.md in this install" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
+assert_contains "points at orch-quick-implement's SKILL.md in this install" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-quick-implement/SKILL.md"
+assert_contains "says Junie has no Skill tool" "$ctx" "no Skill tool"
+assert_not_contains "names no Claude tool as the step on Junie" "$ctx" "call the Skill tool"
+assert_not_contains "names no Claude-scoped skill on Junie" "$ctx" "orchestrator:orch-"
+
+assert_empty "stays silent on the second grilling prompt in one Junie session" \
+  "$(prompt_event '$grilling again' j1 | "$GRILL")"
+
+n=0
+for p in '/grilling' '$grill-me x' 'please $wayfinder now' '/improve-codebase-architecture' '/mattpocock-skills:grilling'; do
+  n=$((n + 1))
+  assert_contains "fires on the entry point in: $p" \
+    "$(prompt_event "$p" "jy$n" | "$GRILL")" "additionalContext"
+done
+for p in 'let us talk about grilling' '$tdd fix it' '$grilling-notes' 'a/grilling b'; do
+  n=$((n + 1))
+  assert_empty "ignores a prompt with no grilling entry point: $p" \
+    "$(prompt_event "$p" "jn$n" | "$GRILL")"
+done
+
+mv "$REPO/docs/agents/issue-tracker.md" "$REPO/docs/agents/.hidden"
+assert_contains "reads the repo from project_path for the tracker warning" \
+  "$(prompt_event '$grilling' j2 | "$GRILL")" "PRECONDITION NOT MET"
+mv "$REPO/docs/agents/.hidden" "$REPO/docs/agents/issue-tracker.md"
+
+mkdir -p "$REPO/.orchestrator"
+echo '{"slug":"x","phase":"spec"}' >"$REPO/.orchestrator/state.json"
+assert_empty "stays silent on Junie when a flow is already active" \
+  "$(prompt_event '$grilling' j3 | "$GRILL")"
+rm -rf "$REPO/.orchestrator"
+
+# Claude Code also fires UserPromptSubmit, but its PostToolUse on Skill already
+# delivers the message; its payload has no project_path.
+assert_empty "exits silently on Claude Code's UserPromptSubmit" \
+  "$(claude_prompt_event '/grilling' c1 | "$GRILL")"
+if [ -e "$TMPDIR/orchestrator-grilling-c1" ]; then
+  bad "arms no marker from Claude Code's UserPromptSubmit" "a marker was created"
+else
+  ok "arms no marker from Claude Code's UserPromptSubmit"
+fi
+rm -rf "$JUNIE_HOME"
+assert_contains "hooks.json runs the grilling hook on UserPromptSubmit" \
+  "$(jq -r '.hooks.UserPromptSubmit[]?.hooks[]?.command' "$DIR/../hooks/hooks.json")" "hook-grilling.sh"
+
+echo
 echo "edit guard"
 
 assert_empty "ignores sessions that were never planning" \

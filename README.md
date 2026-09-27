@@ -161,6 +161,12 @@ call `AskUserQuestion` with exactly two options, start the flow
 (`orchestrator:orch-flow`) or a quick implementation (`orchestrator:orch-quick-implement`),
 and do whichever the human picks.
 
+Junie has no `PostToolUse` event, so the same hook also runs on
+`UserPromptSubmit` and fires there when the prompt names a grilling entry
+point (`/grilling`, `$grill-me`, `/wayfinder`, and so on). It sends nothing
+when Junie picks grilling on its own. On Claude Code the `UserPromptSubmit`
+entry exits silently.
+
 A `PreToolUse` hook on `Edit`/`Write` enforces that: during a planning session
 with no flow started, source edits are denied. Planning artifacts stay writable -
 the paths listed in `scripts/planning-allowlist.sh` - because `improve-codebase-architecture` and `domain-modeling`
@@ -182,11 +188,10 @@ skills/orch-quick-implement/  the other route: issue, to-tickets, tdd, single-pa
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
 scripts/orch.sh               every deterministic operation (mechanism)
 scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
-scripts/hook-*.sh             the three hooks
+scripts/hook-*.sh             the three hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist, shared by the edit guard and orch.sh
 scripts/test/                 shell tests
-guidelines/orch-planning.md   the planning nudge for Junie, which has no hook to deliver it
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 hooks/hooks.json              hook wiring
 ```

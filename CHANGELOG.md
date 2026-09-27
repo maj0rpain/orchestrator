@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.5.11
+
+Junie CLI gets the planning message only when grilling starts, instead of
+with every request (see issue #202).
+
+- `hook-grilling.sh` also runs on `UserPromptSubmit`. On Junie it fires when
+  the prompt names a grilling entry point (`/grilling`, `$grill-me`,
+  `$grill-with-docs`, `/wayfinder`, `/improve-codebase-architecture`), once
+  per session and never with a flow active. On Claude Code that entry exits
+  silently. When Junie picks grilling on its own, no message is sent.
+- The Junie message names the `SKILL.md` files of this install to follow,
+  since Junie has no Skill tool. The rest of the message is shared by both
+  hosts.
+- `guidelines/orch-planning.md` is deleted, so Junie no longer pays about 0.5k
+  tokens per request for it. `orch.sh doctor --env` on Junie no longer lists
+  "Inject context at planning time" as a capability the host lacks.
+- The hooks read the repo from Junie's `project_path`, since Junie's `cwd` is
+  `~/.junie`.
+
 ## 1.5.10
 
 The host capabilities reference states what Junie CLI does with the plugin's

@@ -37,7 +37,7 @@ on exactly its own cells.
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. |
 | Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. |
-| Inject context at planning time | A `PostToolUse` hook on `Skill(grilling)` (`hook-grilling.sh`). | No `PostToolUse` event and no Skill tool. The extension's `guidelines/orch-planning.md` carries the same message, worded conditionally. **Fallback**. |
+| Inject context at planning time | A `PostToolUse` hook on `Skill(grilling)` (`hook-grilling.sh`). | A `UserPromptSubmit` hook (`hook-grilling.sh`, #202) that fires when the prompt names a grilling entry point as `/<name>` or `$<name>` (`grilling`, `grill-me`, `grill-with-docs`, `wayfinder`, `improve-codebase-architecture`). Its context reaches the main agent only, and only the interactive TUI fires the event. Gap: when Junie picks grilling on its own, no prompt names it and no message is sent. |
 | Arm the edit guard | A `PostToolUse` hook on `Skill` writes the planning marker, and `hook-guard.sh` denies source edits (ADR-0013). | Nothing arms it: no `PostToolUse` event. **Fallback**. |
 
 ## Fallbacks
@@ -96,17 +96,6 @@ wants a fork has to write the fallback here first.
 Invoke the `orch-flow` skill and ask for the section the command names
 (start, next phase, status, doctor, redo, abort). Every command is a thin
 route into `orch-flow`, so the skill alone is complete.
-
-### Inject context at planning time
-
-`guidelines/orch-planning.md` carries `hook-grilling.sh`'s planning nudge as
-plain Markdown.
-Guidelines load in every repo the extension is enabled in, so the file
-applies itself only while a grilling session is running and no
-flow is active. Keep it in step with `hook-grilling.sh`; `orch_test.sh` checks
-its key points. Whether Junie loads `guidelines/` from a Claude-layout
-extension is unverified. Where it does not, the `orch-flow` and
-`orch-quick-implement` skill descriptions are the only prompt.
 
 ### Arm the edit guard
 

@@ -6,8 +6,8 @@
 # state under .orchestrator/. The edit guard (hook-guard.sh) denies edits
 # outside it during planning; the flow-start working-tree check in orch.sh
 # refuses to start when changes fall outside it (ADR-0013). Both source this
-# file so they can never disagree. guidelines/orch-planning.md repeats the list
-# as prose for Junie; orch_test.sh fails when that copy drifts from this one.
+# file so they can never disagree, and hook-grilling.sh prints it into the
+# planning message on both hosts.
 # Sourced, not executed on its own.
 
 # Entries ending in "/" are directory prefixes; the rest are exact paths.
