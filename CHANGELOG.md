@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.6.0
+
+The spec review's four lenses run as read-only plugin agents (see issue
+#177).
+
+- Four new agents, `orch-lens-fidelity`, `orch-lens-consistency`,
+  `orch-lens-testability`, and `orch-lens-implementability`, each own their
+  lens's brief and the shared reporting rules. Their tools are Read, Grep,
+  and Glob only, so a lens started as a plugin agent cannot edit anything.
+- `orch-review-spec`'s "The lenses" section is now a lens-to-agent table and
+  the spawn rule. Each prompt carries only the paths the lens reads, and each
+  lens returns its findings as its reply. The retry rule, per-lens findings,
+  the batch, and both changelogs are unchanged.
+- On a host that cannot start the plugin's agents natively, the skill takes
+  `docs/host-capabilities.md`'s "Start a fresh subagent" fallback with each
+  lens's agent file as its brief. That fallback now says a lens loses its
+  tool restriction there, and that a lens's report is the findings it
+  returns.
+
 ## 1.5.11
 
 Junie CLI gets the planning message only when grilling starts, instead of

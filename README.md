@@ -182,7 +182,7 @@ session's marker file when `orchestrator:orch-quick-implement` fires, without
 
 ```
 commands/                     start, next, status, doctor, redo, abort, release
-agents/                       the review loop's fresh agents (two reviewers, the fixer, the closer) and the implementer
+agents/                       the review loop's fresh agents (two reviewers, the fixer, the closer), the spec review's four lenses, and the implementer
 skills/orch-flow/             the state machine (judgment)
 skills/orch-review-spec/      the spec review: four lenses, one batch question
 skills/orch-review/           the review loop: rubric, authority rules, terminal states
@@ -286,8 +286,9 @@ arrived - published by `to-spec` in this phase, or already adopted at init,
 carrying the required `ready-for-agent` triage label, in which case `to-spec`
 is skipped entirely. Either way, it reviews the issue through four independent
 lenses - Fidelity to the plan, Consistency with itself and the glossary,
-Testability at the agreed seams, Implementability from the spec alone - and
-puts every finding to the human as one batch of proposed edits; the edits
+Testability at the agreed seams, Implementability from the spec alone - each
+a read-only agent (`orch-lens-fidelity`, `orch-lens-consistency`,
+`orch-lens-testability`, `orch-lens-implementability`), and puts every finding to the human as one batch of proposed edits; the edits
 they accept rewrite the issue body, and the disposition is recorded on the
 issue and in the handoff.
 

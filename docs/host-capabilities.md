@@ -69,11 +69,13 @@ prompt, and where to record the fallback. Take the first tier that fits:
    restricts its tools loses that restriction this way and keeps its brief's
    instruction. For a reviewer that is only the Edit and Write restriction:
    it keeps Bash either way, so its read-only behaviour through Bash always
-   rested on the brief.
+   rested on the brief. A lens loses its Read, Grep, and Glob restriction, so
+   its read-only behaviour rests on its brief.
 2. **In this session.** On a host with no fresh subagent at all, do the
    subagent's work yourself, in this session, from its brief alone: for one of
    the plugin's agents, its file under `agents/`. Read only the files and the
-   issue the brief names, and write the report it asks for before moving on.
+   issue the brief names, and write the report it asks for - for a lens, the
+   findings it returns - before moving on.
    Where the brief names a capability this host lacks, take that capability's
    fallback from this file too, and record it where the starting skill
    says - a brief that invokes `mattpocock-skills:tdd` as a skill becomes

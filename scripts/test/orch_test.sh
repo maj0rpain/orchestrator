@@ -4578,7 +4578,7 @@ scan_dispatch_copies() {
     fi
     # The general-purpose-agent tier: a general-purpose agent briefed with a
     # plugin agent's file. A skill that starts general-purpose agents as its
-    # own mechanism (orch-review-spec's lenses) names no agent file.
+    # own mechanism names no agent file.
     awk -v f="${f#"$r"/}" 'BEGIN { RS = "" }
       /general-purpose/ && (/agents\// || /agent'"'"'s file/) { print f ": restates the general-purpose-agent tier" }' "$f"
   done
@@ -4601,6 +4601,70 @@ printf 'Start the lenses as fresh general-purpose agents.\n' >"$fixture/skills/b
 assert_eq "the scan accepts a pointer and general-purpose agents started natively" \
   "$(scan_dispatch_copies "$fixture")" ""
 rm -rf "$fixture"
+
+# --- spec-review lenses run as plugin agents (#177) ---------------------------
+# Each lens owns its brief as a read-only plugin agent, the way the review
+# loop's reviewers own theirs (ADR-0018), so orch-review-spec carries only the
+# lens-to-agent table, and the host fallback runs a lens from its agent file.
+echo
+echo "spec-review lenses run as plugin agents (#177)"
+flat() { tr -s '\n ' ' ' <"$1"; }
+lens_brief() {
+  case "$1" in
+    fidelity) cat <<'EOF'
+The plan handoff records what a human decided; the spec is what got written. Report: (a) every decision or constraint in the plan that the spec dropped or altered; (b) anything the plan's **Rejected alternatives** ruled out that the spec re-proposes, by whatever route it got there - label each of these `contradicts the plan`.
+EOF
+    ;;
+    consistency) cat <<'EOF'
+Report where the spec disagrees with itself - user stories against Implementation Decisions against Out of Scope - and where it uses a term differently from the glossary or contradicts a recorded decision in the ADRs. Quote both sides of every disagreement.
+EOF
+    ;;
+    testability) cat <<'EOF'
+The seams are the public boundaries the spec's **Testing Decisions** section names; the repo's existing tests are prior art for what those seams can observe. Report: (a) every user story or Implementation Decision that cannot be proven at those seams; (b) if the section names no seams, or names them too loosely to say what a test would observe, report that as a finding in its own right.
+EOF
+    ;;
+    implementability) cat <<'EOF'
+You are a fresh session with only this issue and the repo. Report: (a) every decision that needs context the issue does not carry - a name, a shape, a reason that must have lived in a conversation; (b) every decision the codebase makes impossible as written, quoting the code that makes it so.
+EOF
+    ;;
+  esac
+}
+review_spec="$(flat "$root/skills/orch-review-spec/SKILL.md")"
+for lens in fidelity consistency testability implementability; do
+  a="$root/agents/orch-lens-$lens.md"
+  if [ ! -f "$a" ]; then bad "orch-lens-$lens exists" "no $a"; continue; fi
+  ok "orch-lens-$lens exists"
+  assert_eq "orch-lens-$lens is named for its file" \
+    "$(grep -m1 '^name:' "$a")" "name: orch-lens-$lens"
+  assert_eq "orch-lens-$lens may only read" \
+    "$(grep -m1 '^tools:' "$a")" "tools: Read, Grep, Glob"
+  assert_eq "orch-lens-$lens sets no model" "$(grep -c '^model:' "$a")" "0"
+  body="$(flat "$a")"
+  brief="$(lens_brief "$lens" | tr -s '\n ' ' ' | sed 's/ $//')"
+  assert_contains "orch-lens-$lens carries its brief verbatim" "$body" "$brief"
+  for rule in 'Report findings only, never draft edits.' \
+    'Quote the spec line for every finding.' 'Under 400 words.' \
+    'Report "no findings" if there are none.'; do
+    assert_contains "orch-lens-$lens carries the rule: $rule" "$body" "$rule"
+  done
+  assert_contains "orch-review-spec names orch-lens-$lens" "$review_spec" "orch-lens-$lens"
+  assert_not_contains "orch-review-spec no longer carries the $lens brief" \
+    "$review_spec" "$(printf '%s' "$brief" | cut -c1-60)"
+done
+assert_not_contains "orch-review-spec no longer carries the reporting rules" \
+  "$review_spec" 'Report findings only, never draft edits.'
+assert_contains "orch-review-spec keeps the retry rule" "$review_spec" \
+  'A second failure makes it **not run - <reason>**'
+assert_contains "orch-review-spec's fallback runs each lens from its agent file" \
+  "$review_spec" "with each lens's agent file as its brief"
+assert_contains "orch-review-spec's fallback is the host-capabilities one" \
+  "$review_spec" '"Start a fresh subagent" fallback in `docs/host-capabilities.md`'
+assert_not_contains "orch-review-spec's fallback no longer points at the brief below" \
+  "$review_spec" 'the brief below'
+assert_contains "the fallback's first tier covers a lens's tool restriction" \
+  "$hostcaps" 'A lens loses its Read, Grep, and Glob restriction'
+assert_contains "the fallback's second tier covers a lens's returned findings" \
+  "$hostcaps" 'for a lens, the findings it returns'
 
 # --- doctor: base branch check -----------------------------------------------
 # A set base branch that has vanished from origin is the one stale setting that
