@@ -1747,8 +1747,9 @@ assert_contains "names the foreign skill as missing" "$out" "missing: tdd"
 # phase, and a skill listed but never invoked fails doctor for nothing. So the
 # list is compared with every mattpocock skill that a skill or agent invokes,
 # through `mp-skill <name>` or `mattpocock-skills:<name>`.
-mp_root="$(dirname "$(dirname "$ORCH")")"
-# Mentions that name an upstream skill without invoking it, as file:name.
+mp_root="$(cd "$(dirname "$ORCH")/.." && pwd)"
+# Mentions that name an upstream skill without invoking it, one file:name per
+# line (file relative to the plugin root).
 #   orch-handoff says it replaces mattpocock-skills:handoff, not that it runs it.
 mp_not_invoked='skills/orch-handoff/SKILL.md:handoff'
 mp_listed="$(sed -n 's/^MP_SKILLS="\(.*\)"$/\1/p' "$mp_root/scripts/doctor.sh" | tr ' ' '\n' | grep . | sort -u)"
