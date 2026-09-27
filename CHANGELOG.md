@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.5.9
+
+Skills find `orch.sh` on Junie CLI with their first command (see issue #201).
+
+- Every skill that runs `orch.sh` now looks for the Junie CLI install with
+  `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` when
+  `CLAUDE_PLUGIN_ROOT` is unset, before the path relative to the skill. More
+  than one match stops the skill and shows the human the paths.
+- `orch-review`'s plugin-root sentence takes the same step.
+- `orch_test.sh`'s resolution lint requires the Junie steps, in order, in
+  every file that runs `orch.sh`, and the Junie step inside the plugin-root
+  sentence wherever it appears.
+
 ## 1.5.8
 
 `orch.sh handoff section` refuses a handoff that repeats the requested

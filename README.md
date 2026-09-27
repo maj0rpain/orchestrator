@@ -192,31 +192,43 @@ default branch, and validating handoffs all have one right answer, so they live 
 ### Resolving orch.sh
 
 Only Claude Code expands `CLAUDE_PLUGIN_ROOT` in skills. Other hosts expand it
-only inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is). So every
-skill that runs `orch.sh` states the path one way, as the `ORCH=`
-line followed by the relative fallback:
+only inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is). Junie
+CLI's agent shell has no `JUNIE_EXTENSION_ROOT` either, and Junie does not tell
+the model a skill's own directory. So every skill that runs `orch.sh` states the
+path one way, in this order: the `ORCH=` line, then the Junie CLI install, then
+the relative fallback:
 
 ````
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
+(the Junie CLI install). If it prints one path, `ORCH` is that path.
+If it prints more than one, stop and show the human the paths.
+If it prints nothing, `ORCH` is `scripts/orch.sh`
 two directories above this skill's own directory (the plugin root).
 ````
 
-Keep the fallback sentence's first line intact, then call `bash "$ORCH" <subcommand>`
-everywhere else. Do not copy the scripts into a skill. Commands never run
-`orch.sh`: each is a thin route into an `orch-flow` section (see
-[Naming host capabilities](#naming-host-capabilities)).
+The Junie step is prose carrying a literal `ls`, not a bash line that sets
+`ORCH`, because hosts may not keep shell variables between calls. The glob uses
+`$HOME/.junie`, the one install path confirmed so far, and its one-level
+`extensions/*/orchestrator` matches the installed extension but not the
+marketplace clone under `extensions/marketplaces/`. Keep the first line of the
+Junie sentence and the three "If it prints" sentences intact, in that order,
+then call `bash "$ORCH" <subcommand>` everywhere else. Do not copy the scripts
+into a skill. Commands never run `orch.sh`: each is a thin route into an
+`orch-flow` section (see [Naming host capabilities](#naming-host-capabilities)).
 
 A skill that reads another file under the plugin root names it as
 `"${CLAUDE_PLUGIN_ROOT}/<path>"`, and the same file carries a sentence starting
 ``If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is``, naming the same
-directory the `ORCH` fallback does. `orch_test.sh` fails when a skill, command,
-or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT` any other way, runs
-`orch.sh` without this pair or without `bash`, or names a path through a
-`<plugin root>/` placeholder.
+steps the `ORCH` fallback does: two directories above the `orch.sh` that `ls`
+printed, else two directories above the skill's own directory. `orch_test.sh`
+fails when a skill, command, or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT`
+any other way, runs `orch.sh` without these steps in order or without `bash`,
+names the plugin root without the Junie step in that same sentence, or names a
+path through a `<plugin root>/` placeholder.
 
 ### Naming host capabilities
 
