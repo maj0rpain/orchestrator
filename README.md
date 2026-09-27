@@ -185,7 +185,7 @@ session's marker file when `orchestrator:orch-quick-implement` fires, without
 commands/                     start, next, status, doctor, redo, abort, release, review-spec
 agents/                       the review loop's fresh agents (two reviewers, the fixer, the closer), the spec review's four lenses, and the implementer
 skills/orch-flow/             the state machine (judgment)
-skills/orch-review-spec/      the spec review: four lenses, one batch question
+skills/orch-review-spec/      the spec review: four lenses in a flow, three standalone, one batch question
 skills/orch-review/           the review loop: rubric, authority rules, terminal states
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
 skills/orch-quick-implement/  the other route: issue, to-tickets, tdd, single-pass review, PR - no flow
