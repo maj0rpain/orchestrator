@@ -52,47 +52,25 @@ that needs something gets a file path.
 
 ## The lenses
 
-Start all four at once as fresh subagents (on Claude Code, the Agent tool
-as fresh general-purpose agents) - never forks, which inherit this context.
-On a host without fresh subagents, take the fallback in
-`docs/host-capabilities.md` under the plugin root, running the lenses one at
-a time from their briefs alone, and record it in `02-spec.md` under **Host
-fallbacks**. Each prompt carries only the paths its
-row names, the brief below, and the reporting rules:
+Each lens is one of the plugin's agents, which owns its brief and the
+reporting rules and may only read. Start all four at once as fresh
+subagents - never forks, which inherit this context. On Claude Code that is
+the Agent tool with `subagent_type` set to the lens's agent name under the
+`orchestrator:` plugin scope. Each prompt carries only the paths its row
+names, and each lens returns its findings as its reply.
 
-> Report findings only, never draft edits. Quote the spec line for every
-> finding. Under 400 words. Report "no findings" if there are none.
+| Lens | Agent | Paths |
+|---|---|---|
+| Fidelity | `orch-lens-fidelity` | spec body, plan handoff |
+| Consistency | `orch-lens-consistency` | spec body, glossary, ADR directory |
+| Testability | `orch-lens-testability` | spec body, repo root |
+| Implementability | `orch-lens-implementability` | spec body, repo root |
 
-| Lens | Reads |
-|---|---|
-| Fidelity | spec body, plan handoff |
-| Consistency | spec body, glossary, ADR directory |
-| Testability | spec body, repo root |
-| Implementability | spec body, repo root |
-
-**Fidelity brief.** "The plan handoff records what a human decided; the spec
-is what got written. Report: (a) every decision or constraint in the plan
-that the spec dropped or altered; (b) anything the plan's
-**Rejected alternatives** ruled out that the spec re-proposes, by whatever
-route it got there - label each of these `contradicts the plan`."
-
-**Consistency brief.** "Report where the spec disagrees with itself - user
-stories against Implementation Decisions against Out of Scope - and where it
-uses a term differently from the glossary or contradicts a recorded decision in
-the ADRs. Quote both sides of every disagreement."
-
-**Testability brief.** "The seams are the public boundaries the spec's
-**Testing Decisions** section names; the repo's existing tests are prior art
-for what those seams can observe. Report: (a) every user story or
-Implementation Decision that cannot be proven at those seams; (b) if the
-section names no seams, or names them too loosely to say what a test would
-observe, report that as a finding in its own right."
-
-**Implementability brief.** "You are a fresh session with only this issue and
-the repo. Report: (a) every decision that needs context the issue does not
-carry - a name, a shape, a reason that must have lived in a conversation; (b)
-every decision the codebase makes impossible as written, quoting the code that
-makes it so."
+On a host that cannot start the plugin's agents natively, take the
+"Start a fresh subagent" fallback in `docs/host-capabilities.md` under the
+plugin root, with each lens's agent file, `agents/<agent>.md` under the
+plugin root, as its brief, and record it in `02-spec.md` under **Host
+fallbacks**.
 
 A lens that errors or returns nothing usable is spawned once more with the
 same prompt. A second failure makes it **not run - <reason>**: it appears that
