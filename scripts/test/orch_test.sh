@@ -4336,7 +4336,7 @@ assert_not_contains "the Junie fresh-subagent cell no longer calls loading uncon
 assert_not_contains "the Junie fresh-subagent cell is no longer Unverified" \
   "$junie_subagent" '**Unverified**'
 assert_contains "the fallback's first tier covers an agent the host hides" \
-  "$hostcaps" 'or hid'
+  "$hostcaps" "did not load \`agents/\`, or hid it, as Junie's capability filter does"
 for f in "$root"/docs/host-capabilities.md "$root"/README.md "$root"/skills/*/SKILL.md "$root"/agents/*.md; do
   assert_not_contains "${f#"$root"/} gives no 'does not load agents/' reason" \
     "$(tr -s '\n ' ' ' <"$f")" "not load the plugin's \`agents/\`"

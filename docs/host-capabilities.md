@@ -7,7 +7,8 @@ means the Junie CLI, not the Junie plugin for JetBrains IDEs. It has no Skill
 tool, and it loads the plugin's `agents/`, but its capability filter can hide
 them from the model.
 
-A cell marked **Fallback** means that host lacks the capability. Do what
+A cell marked **Fallback** means that host lacks the capability, or cannot
+use it for the step at hand. Do what
 [Fallbacks](#fallbacks) says for it, and record it: one line naming the
 capability, the fallback taken, and the step, in the phase's handoff under
 **Host fallbacks** (see the `orch-handoff` skill). A review loop records its
