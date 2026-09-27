@@ -4,7 +4,7 @@
 
 - ADR-0002 is marked superseded in part by ADR-0018 (see issue #173): the
   Spec axis is reviewed by the plugin's own `orch-reviewer-spec` agent, not
-  `code-review`'s Spec sub-agent, and its decision stands. ADR-0018's
+  `code-review`'s Spec sub-agent, and ADR-0002's decision stands. ADR-0018's
   Supersedes paragraph names ADR-0002 in turn, and ADR-0002's title now reads
   "the Spec axis".
 
