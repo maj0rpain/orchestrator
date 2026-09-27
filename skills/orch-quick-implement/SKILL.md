@@ -75,10 +75,11 @@ review's changelog comment. Failed lenses stay in the changelog only.
 ## 3. Publish the ticket breakdown
 
 Unconditional, whether the linked issue was just published in step 1 or
-already existed - never gated by a human choice, the same treatment the
-flow's spec phase gives this same call. No `to-spec` step exists on this
-path, so `to-tickets` synthesizes tickets directly off the linked issue as it
-stands after any spec review in step 2 - it is the only spec this path has.
+already existed, and whichever answer step 2 got - never gated by a human
+choice of its own, the same treatment the flow's spec phase gives this same
+call. No `to-spec` step exists on this path, so `to-tickets` synthesizes
+tickets directly off the linked issue as it stands after any spec review in
+step 2 - it is the only spec this path has.
 
 `to-tickets` carries `disable-model-invocation: true` in the installed
 mattpocock-skills version, so Claude Code's Skill tool refuses it, and Junie

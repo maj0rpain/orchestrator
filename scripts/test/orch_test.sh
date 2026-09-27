@@ -4940,18 +4940,20 @@ else
   bad "the spec review step sits between the linked issue and the ticket breakdown" \
     "linked issue: ${l_link:-none}, offer: ${l_offer:-none}, tickets: ${l_tickets:-none}"
 fi
-offer="$("$ORCH" handoff section "$quick_md" "2. Offer a spec review" 2>&1 | tr -s ' \t\n' '   ')"
+# flat_section <file> <heading>: that section on one line, whitespace runs collapsed.
+flat_section() { "$ORCH" handoff section "$1" "$2" 2>&1 | tr -s ' \t\n' '   '; }
+offer="$(flat_section "$quick_md" "2. Offer a spec review")"
 assert_contains "the step offers Run, recommended" "$offer" '**Run a spec review (Recommended)**'
 assert_contains "the step offers Skip" "$offer" '**Skip**'
 assert_contains "the step asks on every run" "$offer" 'every run'
 assert_contains "the step names orch-spec-review" "$offer" '`orch-spec-review`'
 assert_contains "the step names the standalone entry" "$offer" '**Standalone spec review** entry'
 assert_contains "a stopped review stops quick implementation" "$offer" 'quick implementation stops too'
-tickets="$("$ORCH" handoff section "$quick_md" "3. Publish the ticket breakdown" 2>&1 | tr -s ' \t\n' '   ')"
+tickets="$(flat_section "$quick_md" "3. Publish the ticket breakdown")"
 assert_contains "to-tickets reads the issue as it stands after the review" \
   "$tickets" 'the linked issue as it stands after any spec review'
 assert_not_contains "to-tickets no longer reads the raw linked issue" "$tickets" 'raw linked issue'
-pr_step="$("$ORCH" handoff section "$quick_md" "7. Open the PR" 2>&1 | tr -s ' \t\n' '   ')"
+pr_step="$(flat_section "$quick_md" "7. Open the PR")"
 assert_contains "the PR body lists the review's host fallbacks" "$pr_step" 'spec review in step 2'
 
 new_repo >/dev/null
@@ -4962,19 +4964,19 @@ assert_eq "and prints the working directory" "$out" "$top/.orchestrator/spec-rev
 
 glossary="$root/CONTEXT.md"
 assert_contains "the Quick implementation entry offers a review before the ticket breakdown" \
-  "$("$ORCH" handoff section "$glossary" "Quick implementation" | tr -s ' \t\n' '   ')" \
+  "$(flat_section "$glossary" "Quick implementation")" \
   'spec review of its linked issue before its ticket breakdown'
 assert_contains "the Spec review entry names quick implementation's review" \
-  "$("$ORCH" handoff section "$glossary" "Spec review" | tr -s ' \t\n' '   ')" \
+  "$(flat_section "$glossary" "Spec review")" \
   'a quick implementation may take one before its ticket breakdown'
 assert_contains "the Host fallback entry names quick implementation's PR body" \
-  "$("$ORCH" handoff section "$glossary" "Host fallback" | tr -s ' \t\n' '   ')" \
+  "$(flat_section "$glossary" "Host fallback")" \
   'including any taken during its spec review'
 assert_contains "orch-spec-review scopes its review-the-spec question to a flow's spec phase" \
   "$(flat_text "$root/skills/orch-spec-review/SKILL.md")" \
   'In a flow'"'"'s spec phase there is also no "review the spec?" question'
 assert_contains "orch-spec-review scopes changelog-only to the review's own records" \
-  "$("$ORCH" handoff section "$root/skills/orch-spec-review/SKILL.md" "Standalone spec review" | tr -s ' \t\n' '   ')" \
+  "$(flat_section "$root/skills/orch-spec-review/SKILL.md" "Standalone spec review")" \
   'among the review'"'"'s own records'
 
 # --- doctor: base branch check -----------------------------------------------

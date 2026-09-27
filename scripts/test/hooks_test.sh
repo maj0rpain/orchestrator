@@ -64,8 +64,8 @@ assert_contains "offers starting the flow as an option" "$out" "Start the orches
 assert_contains "offers quick implementation as an option" "$out" "Quick implementation"
 # The closing question offers exactly two options, never a third (#237):
 # count its numbered option lines, not only that each option is present.
-closing_options() { printf '%s' "$1" | jq -r '.additionalContext' | grep -cE '^ +[0-9]+\. '; }
-assert_eq "offers exactly two options" "$(closing_options "$out")" "2"
+count_closing_options() { printf '%s' "$1" | jq -r '.additionalContext' | grep -cE '^ +[0-9]+\. '; }
+assert_eq "offers exactly two options" "$(count_closing_options "$out")" "2"
 assert_contains "says exactly two options" "$out" "exactly two options"
 assert_contains "tells the model to invoke the flow skill itself" "$out" "orchestrator:orch-flow"
 assert_contains "tells the model to invoke the quick-implement skill itself" "$out" "orchestrator:orch-quick-implement"
@@ -135,7 +135,7 @@ assert_contains "asks the closing question with Junie's ask_user tool" "$ctx" "C
 assert_not_contains "names no Claude question tool on Junie" "$ctx" "AskUserQuestion"
 assert_contains "offers starting the flow on Junie" "$ctx" "Start the orchestrator flow"
 assert_contains "offers quick implementation on Junie" "$ctx" "Quick implementation"
-assert_eq "offers exactly two options on Junie" "$(closing_options "$out")" "2"
+assert_eq "offers exactly two options on Junie" "$(count_closing_options "$out")" "2"
 assert_contains "forbids offering to implement on Junie" "$ctx" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat on Junie" "$ctx" "whole map is done"
 assert_contains "names every planning artifact on Junie" "$ctx" \
@@ -176,7 +176,7 @@ assert_contains "asks before implementing the confirmed plan" "$ctx" "Before you
 assert_contains "asks the closing question at plan confirmation" "$ctx" "Call the ask_user tool"
 assert_contains "offers starting the flow at plan confirmation" "$ctx" "Start the orchestrator flow"
 assert_contains "offers quick implementation at plan confirmation" "$ctx" "Quick implementation"
-assert_eq "offers exactly two options at plan confirmation" "$(closing_options "$out")" "2"
+assert_eq "offers exactly two options at plan confirmation" "$(count_closing_options "$out")" "2"
 assert_contains "points at orch-flow's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
 assert_not_contains "repeats no planning rules at plan confirmation" "$ctx" "Do NOT offer to implement"
 assert_contains "asks again on a second plan confirmation" \
