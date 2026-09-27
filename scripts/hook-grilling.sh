@@ -126,7 +126,7 @@ While this planning session is running:
 
 - Do NOT offer to implement, and do NOT write or edit code. Planning artifacts
   ($(planning_allowlist_text)) are fine; source files are not.
-- Glossary and ADR changes (CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim.
+- Glossary and ADR changes ($(planning_records_text)) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim.
 - When you reach a shared understanding, do not close with a scripted line and
   do not decide the next step yourself. ${choice}
 

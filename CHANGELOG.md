@@ -12,6 +12,7 @@
   them in the linked issue's body.
 - The edit guard and the grilling hook treat a flow at phase `done` as no
   flow, so a finished flow no longer switches planning's protections off.
+
 ## 2.2.1
 
 - The glossary's **Ticket subagent** entry no longer says "unmet" twice

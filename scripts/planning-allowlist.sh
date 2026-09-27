@@ -60,3 +60,10 @@ planning_allowlist_text() {
   local IFS=,
   printf '%s' "${PLANNING_ALLOWLIST[*]}" | sed 's/,/, /g'
 }
+
+# planning_records_text - prints the records the same way, for messages that
+# tell the human or model what planning never edits in place.
+planning_records_text() {
+  local IFS=,
+  printf '%s' "${PLANNING_RECORDS[*]}" | sed 's/,/, /g'
+}

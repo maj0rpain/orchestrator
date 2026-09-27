@@ -358,33 +358,31 @@ dirty_outside_allowlist() {
 # top level, so a flow started inside a worktree (ADR-0008) is judged by that
 # worktree's changes and not by the checkout it was forked from.
 require_clean_outside_allowlist() {
-  local dirty records="" source="" path msg
+  local dirty records="" outside="" path msg outside_block
   dirty="$(dirty_outside_allowlist)" || exit 1
   [ -z "$dirty" ] && return 0
   while IFS= read -r path; do
     if planning_record "$path"; then
       records+="$path"$'\n'
     else
-      source+="$path"$'\n'
+      outside+="$path"$'\n'
     fi
   done <<<"$dirty"
+  outside_block="$(printf '%s' "$outside" | sed 's/^/       /')
+     Planning may only change: $(planning_allowlist_text)."
   # With only source paths dirty, the message is exactly as before the
   # planning records (#186) got their own block.
   if [ -z "$records" ]; then
-    die "the working tree has changes outside the planning allowlist:
-$(printf '%s' "$source" | sed 's/^/       /')
-     Planning may only change: $(planning_allowlist_text).
-     Commit, stash, or discard these changes, then run init again."
-  fi
-  msg="the working tree has changes planning does not make.
+    msg="the working tree has changes outside the planning allowlist:
+$outside_block"
+  else
+    msg="the working tree has changes planning does not make.
      Planning records changed (planning does not edit these in place):
 $(printf '%s' "$records" | sed 's/^/       /')
      $(planning_record_redirect)"
-  if [ -n "$source" ]; then
-    msg+="
+    [ -z "$outside" ] || msg+="
      Changes outside the planning allowlist:
-$(printf '%s' "$source" | sed 's/^/       /')
-     Planning may only change: $(planning_allowlist_text)."
+$outside_block"
   fi
   die "$msg
      Commit, stash, or discard these changes, then run init again."
