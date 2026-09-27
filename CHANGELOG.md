@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.1
+
+- The test suite no longer keeps a verbatim copy of the four spec-review lens
+  briefs (see issue #212). It checks structure instead: each lens agent has a
+  non-empty `## Brief` section, and `orch-review-spec` carries no
+  `**<Lens> brief.**` heading.
+
 ## 1.7.0
 
 A spec review can run standalone, against any issue, outside a flow (see
