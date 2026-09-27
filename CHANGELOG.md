@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.2.0
+
+- Quick implementation's single-pass review starts the plugin's own
+  `orch-reviewer-standards` and `orch-reviewer-spec` agents instead of
+  `mattpocock-skills:code-review` (see issue #189, ADR-0021). A reviewer that
+  fails twice stops the run before the PR opens, and the PR body lists every
+  declined finding under **Review**. `branch off` now records the base SHA,
+  `branch base-sha` prints it, and `quick path` hands out the per-branch
+  report directory.
+- Nothing in the plugin invokes `code-review` any more, so doctor requires
+  only `to-spec`, `to-tickets` and `tdd`, and no longer fails an install
+  without `code-review`.
+
 ## 2.1.2
 
 - Doctor requires exactly the mattpocock skills the plugin reads (see issue
