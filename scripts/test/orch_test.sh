@@ -695,9 +695,18 @@ out="$("$ORCH" init dirty 2>&1)"; st=$?
 assert_status "refuses a dirty CONTEXT.md" "$st" 1
 assert_contains "heads the records block" "$out" "Planning records changed (planning does not edit these in place):
        CONTEXT.md"
-assert_contains "gives the records redirect" "$out" "into the plan, so the spec carries it verbatim"
-assert_contains "gives the quick-implementation redirect" "$out" "For a quick implementation, put it in the linked issue's body."
+# The redirect is wrapped for the terminal, so its phrases are checked with
+# the line breaks and indentation flattened out.
+flat="$(printf '%s' "$out" | tr '\n' ' ' | tr -s ' ')"
+assert_contains "gives the records redirect" "$flat" "into the plan, so the spec carries it verbatim"
+assert_contains "gives the quick-implementation redirect" "$flat" "For a quick implementation, put it in the linked issue's body."
+assert_eq "wraps the redirect for the terminal" \
+  "$(printf '%s\n' "$out" | awk 'length > 80' | wc -l | tr -d ' ')" "0"
 assert_not_contains "records-only refusal has no source block" "$out" "Changes outside the planning allowlist:"
+# Committing a record from planning is the option ADR-0022 rejects, so a
+# records-only refusal never offers it.
+assert_not_contains "records-only refusal never says to commit" "$out" "Commit"
+assert_contains "says to discard or stash the records" "$out" "Discard or stash these changes, then run init again."
 assert_eq "writes no state for a dirty record" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 rm CONTEXT.md
 
@@ -714,7 +723,8 @@ assert_contains "lists the record under the records heading" "$out" "Planning re
        docs/adr/0001-x.md"
 assert_contains "lists the source path under its own heading" "$out" "Changes outside the planning allowlist:
        stray.sh"
-assert_contains "keeps today's resolution lines" "$out" "Commit, stash, or discard"
+assert_contains "tells the records apart in the resolution line" "$out" "Discard or stash the planning records; commit, stash, or discard the other
+     changes, then run init again."
 case "$out" in *"allowlist:"*docs/adr/0001-x.md*) bad "does not list the record under the source heading" "$out" ;;
   *) ok "does not list the record under the source heading" ;; esac
 rm -r stray.sh docs/adr

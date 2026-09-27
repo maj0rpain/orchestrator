@@ -373,19 +373,27 @@ require_clean_outside_allowlist() {
   # With only source paths dirty, the message is exactly as before the
   # planning records (#186) got their own block.
   if [ -z "$records" ]; then
-    msg="the working tree has changes outside the planning allowlist:
-$outside_block"
-  else
-    msg="the working tree has changes planning does not make.
+    die "the working tree has changes outside the planning allowlist:
+$outside_block
+     Commit, stash, or discard these changes, then run init again."
+  fi
+  # The redirect is one long sentence pair shared with the guard; wrapped here
+  # to the message's own indent and width.
+  msg="the working tree has changes planning does not make.
      Planning records changed (planning does not edit these in place):
 $(printf '%s' "$records" | sed 's/^/       /')
-     $(planning_record_redirect)"
-    [ -z "$outside" ] || msg+="
-     Changes outside the planning allowlist:
-$outside_block"
+$(planning_record_redirect | fold -s -w 75 | sed 's/ *$//; s/^/     /')"
+  # Committing a record from planning is the option ADR-0022 rejects, so
+  # records are only ever discarded or stashed once their wording has moved.
+  if [ -z "$outside" ]; then
+    die "$msg
+     Discard or stash these changes, then run init again."
   fi
   die "$msg
-     Commit, stash, or discard these changes, then run init again."
+     Changes outside the planning allowlist:
+$outside_block
+     Discard or stash the planning records; commit, stash, or discard the other
+     changes, then run init again."
 }
 
 cmd_init() {
