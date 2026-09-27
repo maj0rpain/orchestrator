@@ -1038,6 +1038,47 @@ cmd_spec() {
   "cmd_issue_$op" "$issue" "$file"
 }
 
+# --- spec-review ------------------------------------------------------------
+
+# A standalone spec review's start: the guard and the working-directory reset
+# each have one right answer, so they live here rather than in skill prose.
+# It reads state.json directly, never through require_state or state get -
+# both die with no flow, and no flow is the common case - and never writes it.
+# The issue number is the caller's, never state's: the guard only compares.
+# State holds only the phases in PHASES, so every not-done phase is one below.
+cmd_spec_review() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    begin) ;;
+    *) die "unknown spec-review op: ${op:-<none>} (want begin)" ;;
+  esac
+  [ $# -eq 1 ] || die "usage: orch.sh spec-review begin <n>"
+  local issue="$1"
+  case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
+  if [ -f "$STATE" ]; then
+    local phase held
+    phase="$(jq -r '.phase // ""' "$STATE")"
+    held="$(jq -r '.issue // ""' "$STATE")"
+    if [ "$phase" != done ] && [ "$held" = "$issue" ]; then
+      case "$phase" in
+        spec)
+          die "the active flow holds issue #$issue at phase spec - the flow's own spec phase will review it; run $(flow_cmd next)" ;;
+        implement|review)
+          die "the active flow holds issue #$issue at phase $phase - the ticket subagents build from this spec, so it cannot change behind the flow; run $(flow_cmd redo) to step back to the spec phase" ;;
+        *)
+          die "the active flow holds issue #$issue at phase '$phase', which is not a flow phase - refusing to review it; run orch.sh doctor --flow" ;;
+      esac
+    fi
+  fi
+  # Built from the validated number alone, so the wipe stays inside
+  # spec-review/.
+  local dir="$ORCH/spec-review/$issue"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf '%s/\n' "$dir"
+}
+
 # --- git / github -----------------------------------------------------------
 
 # Forking a named branch off a base branch has exactly one right answer -
@@ -1710,6 +1751,13 @@ orch.sh - deterministic operations for the orchestrator flow
   spec fetch <file>           write the spec issue's body to <file>
   spec update <file>          replace the spec issue's body with <file>
   spec comment <file>         post <file> as a comment on the spec issue
+  spec-review begin <n>       start a standalone spec review of issue <n>:
+                              refuse while an active flow holds <n> - at spec
+                              (pointing at next) or at implement or review
+                              (pointing at redo) - and otherwise empty
+                              .orchestrator/spec-review/<n>/ and print its
+                              path. Reads state.json only to compare, and
+                              never writes it
   redo review                 retire the branch and PR, reopen the spec
                               issue's closed tickets, reset the loop, and
                               step the flow back to implement - refuses unless
@@ -1740,6 +1788,7 @@ main() {
     ticket)        cmd_ticket "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
+    spec-review)   cmd_spec_review "$@" ;;
     redo)          cmd_redo "$@" ;;
     status)        cmd_status "$@" ;;
     archive)       cmd_archive "$@" ;;

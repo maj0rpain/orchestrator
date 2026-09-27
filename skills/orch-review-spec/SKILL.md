@@ -69,27 +69,16 @@ The issue number comes from the human: the command's argument, or the issue
 they named. With no number, ask for one and wait. Never take it from
 `state.json` or the active flow.
 
-1. **Guard first**, before fetching. If `.orchestrator/state.json` does not
-   exist, proceed - never call `state get` then, which dies without it.
-   Otherwise read `bash "$ORCH" state get phase` and `bash "$ORCH" state get
-   issue`. If the phase is not `done` and the issue equals the requested one,
-   refuse and stop:
-   - at phase `spec`: the flow's own spec phase will review it - run
-     `/orchestrator:next`;
-   - at `implement` or `review`: the ticket subagents build from this spec,
-     so it cannot change behind the flow - run `/orchestrator:redo` to step
-     back to the spec phase.
-
-   Any other issue, or a `done` flow, proceeds. This is the review's only
-   read of `state.json`.
-2. **Working directory**: `<dir>` is `.orchestrator/spec-review/<issue>/`.
-   Wipe it at the start of each run - `rm -rf` it - so every run starts from
-   an empty directory.
-3. **Fetch**: `bash "$ORCH" issue fetch <issue> <dir>/spec.md`, which creates
-   `<dir>`. A failure stops the review: say what blocked it. There is no flow
-   to abort, so do not offer `/orchestrator:abort`. The directory is left for
+1. **Begin**, before fetching: `bash "$ORCH" spec-review begin <issue>`. It
+   prints the working directory, `<dir>` from here on, emptied for this run.
+   If it dies, stop and relay its message - when an active flow holds this
+   issue, the message names the command to run instead. This is the review's
+   only read of `state.json`, and it goes through `orch.sh`.
+2. **Fetch**: `bash "$ORCH" issue fetch <issue> <dir>/spec.md`. A failure
+   stops the review: say what blocked it. There is no flow to abort,
+   so do not offer `/orchestrator:abort`. The directory is left for
    inspection and wiped by the next run.
-4. Resolve the glossary and decisions (`CONTEXT.md` and `docs/adr/` at the
+3. Resolve the glossary and decisions (`CONTEXT.md` and `docs/adr/` at the
    repo root, where they exist) and the repo root, as the spec-phase entry
    does. There is no plan handoff.
 
