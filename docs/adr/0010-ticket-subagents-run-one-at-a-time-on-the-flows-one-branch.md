@@ -4,9 +4,9 @@ Superseded in part by ADR-0019: a ticket subagent now runs as the plugin's
 `orch-implementer` agent and follows `tdd` only, not `implement`.
 
 The implement phase and quick implementation both build a ticket breakdown by
-handing each ready ticket to a fresh subagent (`skills/flow/SKILL.md`'s
-Phase: implement step 3, added in #86; `skills/quick-implement/SKILL.md`'s
-step 4, added in #87). That subagent resolves and follows `implement` or
+handing each ready ticket to a fresh subagent (`skills/orch-flow/SKILL.md`'s
+Phase: implement step 3, added in #86; `skills/orch-quick-implement/SKILL.md`'s
+step 5, added in #87). That subagent resolves and follows `implement` or
 `tdd` itself, builds on the branch the driving session already checked out,
 and commits its own work there - never a branch or PR of its own. The
 driving session dispatches
@@ -43,6 +43,6 @@ session pays for one report and one `ticket close` per ticket, not a
 teardown and rebuild of shared state between them. A ticket that can't be
 completed exactly as written comes back as a deviation in that report
 instead of stalling the loop, and every deviation is collected into the
-phase's one handoff (`skills/handoff/SKILL.md`) rather than scattered across
+phase's one handoff (`skills/orch-handoff/SKILL.md`) rather than scattered across
 per-ticket artefacts - there is still only one implement-phase handoff and
 one review, of the whole diff, same as before this feature existed.

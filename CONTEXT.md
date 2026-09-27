@@ -39,7 +39,8 @@ Chosen once, by a human, at the close of a grilling session - never assumed by
 the model. Skips the plan/spec/implement/review pipeline entirely: no phases,
 no handoff, no `.orchestrator/state.json`. Still produces its own branch and
 PR, and is still held to this project's standards for how a change gets made -
-test-driven, reviewed, then opened as a PR.
+test-driven, reviewed, then opened as a PR. It offers a spec review of its linked
+issue before its ticket breakdown - the human's choice, asked on every run.
 
 ## Doctor
 
@@ -205,7 +206,8 @@ _Avoid_: existing issue, pre-existing issue, given issue.
 One look at a spec issue, taken once. Usually a step of a flow's spec phase,
 after the issue exists - published by `to-spec` or already adopted at init -
 and before its handoff is written. A human may also ask for one on demand,
-against any issue: a standalone spec review, which belongs to no flow and
+against any issue, and a quick implementation may take one before its ticket
+breakdown: either way a standalone spec review, which belongs to no flow and
 leaves no handoff. Its lenses read the spec independently - four in a flow,
 three in a standalone review; every finding they
 report is put to a human with a proposed edit, and only the edits the human
@@ -352,8 +354,9 @@ What a skill does instead when its host lacks a capability, or cannot use it
 for the step at hand (a Junie CLI capability filter hiding one of the
 plugin's agents, say), as documented in
 `docs/host-capabilities.md`. Every fallback a phase takes is recorded under
-**Host fallbacks** in its handoff, so a reduced run is never mistaken for a
-full one.
+**Host fallbacks** in its handoff, and a quick implementation records its
+fallbacks, including any taken during its spec review, under its PR body's
+**Host fallbacks**, so a reduced run is never mistaken for a full one.
 
 ## Planning allowlist
 

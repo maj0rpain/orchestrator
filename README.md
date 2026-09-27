@@ -189,7 +189,7 @@ skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: four lenses in a flow, three standalone, one batch question
 skills/orch-review/           the review loop: rubric, authority rules, terminal states
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
-skills/orch-quick-implement/  the other route: issue, to-tickets, tdd, single-pass review, PR - no flow
+skills/orch-quick-implement/  the other route: issue, optional spec review, to-tickets, tdd, single-pass review, PR - no flow
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
 scripts/orch.sh               every deterministic operation (mechanism)
 scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
