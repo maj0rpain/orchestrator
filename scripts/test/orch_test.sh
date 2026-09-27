@@ -4243,6 +4243,7 @@ orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'
 # Junie install is found by a literal ls before the relative fallback (#201).
 # This prose sentence opens with the same fixed prefix in every file.
 orch_junie='If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`'
+orch_junie_one='If it prints one path, `ORCH` is that path.'
 orch_junie_many='If it prints more than one, stop and show the human the paths.'
 orch_fallback='If it prints nothing, `ORCH` is `scripts/orch.sh`'
 # A path under the plugin root other than orch.sh (#155) is the one other
@@ -4251,25 +4252,38 @@ orch_fallback='If it prints nothing, `ORCH` is `scripts/orch.sh`'
 root_fallback='If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is'
 # ...and that sentence takes the same Junie step first (#201).
 root_junie='two directories above the `orch.sh` that `ls` printed'
+# The steps wrap differently from file to file, so order is checked on the
+# file's text with every run of whitespace collapsed to one space.
+orch_steps="$orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_many $orch_fallback"
+# flat_text <file>: the file on one line, whitespace runs collapsed.
+flat_text() { tr -s ' \t\n' '   ' <"$1"; }
 # scan_orch_resolution <plugin root>: print one line per offending file.
 scan_orch_resolution() {
-  local r="$1" f
+  local r="$1" f flat root_sentence
   local -a allowed
   for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md "$r"/guidelines/*; do
     [ -f "$f" ] || continue
+    flat="$(flat_text "$f")"
     allowed=(-e "$orch_line" -e "$orch_junie")
     grep -qF "$root_fallback" "$f" && allowed+=(-e "$root_fallback" -e '"${CLAUDE_PLUGIN_ROOT}/')
     if grep -n 'CLAUDE_PLUGIN_ROOT' "$f" | grep -vF "${allowed[@]}" | grep -q .; then
       echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
     fi
-    if grep -qF "$root_fallback" "$f" && ! grep -qF "$root_junie" "$f"; then
-      echo "${f#"$r"/}: names the plugin root without the Junie step"
+    if grep -qF "$root_fallback" "$f"; then
+      # The sentence runs to the first full stop followed by a space;
+      # orch.sh's own dot is followed by a backtick, so it does not end it.
+      root_sentence="${flat#*"$root_fallback"}"
+      root_sentence="${root_sentence%%. *}"
+      [[ "$root_sentence" == *"$root_junie"* ]] ||
+        echo "${f#"$r"/}: names the plugin root without the Junie step"
     fi
     if grep -qE 'orch\.sh|\$ORCH' "$f"; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
       grep -qF "$orch_junie" "$f" || echo "${f#"$r"/}: uses orch.sh without the Junie step"
+      grep -qF "$orch_junie_one" "$f" || echo "${f#"$r"/}: uses orch.sh without the one-install step"
       grep -qF "$orch_junie_many" "$f" || echo "${f#"$r"/}: uses orch.sh without the stop on several Junie installs"
       grep -qF "$orch_fallback" "$f" || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
+      [[ "$flat" == *"$orch_steps"* ]] || echo "${f#"$r"/}: resolves orch.sh out of the documented order"
     fi
   done
 }
@@ -4347,14 +4361,27 @@ printf '%s\n' '```' "$orch_line" '```' \
   >"$fixture/guidelines/orch.md"
 assert_contains "the scan flags orch.sh resolved without the Junie step" \
   "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: uses orch.sh without the Junie step"
-printf '%s\n' '```' "$orch_line" '```' "$orch_junie (the Junie CLI install)." \
-  'If it prints one path, `ORCH` is that path.' \
-  "$orch_fallback two directories above this skill's own directory." >"$fixture/guidelines/orch.md"
+# documented_orch_form [step]...: the documented form, minus each step named.
+documented_orch_form() {
+  local -a steps=("$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many"
+    "$orch_fallback two directories above this skill's own directory.")
+  local step skip
+  printf '%s\n' '```' "$orch_line" '```'
+  for step in "${steps[@]}"; do
+    for skip in "$@"; do [ "$step" = "$skip" ] && continue 2; done
+    printf '%s\n' "$step"
+  done
+}
+documented_orch_form "$orch_junie_one" >"$fixture/guidelines/orch.md"
+assert_contains "the scan flags a Junie step with no one-install step" \
+  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: uses orch.sh without the one-install step"
+documented_orch_form "$orch_junie_many" >"$fixture/guidelines/orch.md"
 assert_contains "the scan flags a Junie step with no stop on several installs" \
   "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: uses orch.sh without the stop on several Junie installs"
-printf '%s\n' '```' "$orch_line" '```' "$orch_junie (the Junie CLI install)." \
-  'If it prints one path, `ORCH` is that path.' "$orch_junie_many" \
-  "$orch_fallback two directories above this skill's own directory." >"$fixture/guidelines/orch.md"
+{ documented_orch_form "$orch_junie_one"; printf '%s\n' "$orch_junie_one"; } >"$fixture/guidelines/orch.md"
+assert_contains "the scan flags the Junie steps out of order" \
+  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: resolves orch.sh out of the documented order"
+documented_orch_form >"$fixture/guidelines/orch.md"
 assert_eq "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")" ""
 printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
   >"$fixture/guidelines/orch.md"
@@ -4364,12 +4391,16 @@ printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '``
   "$root_fallback two directories above this skill's own directory." >"$fixture/guidelines/orch.md"
 assert_contains "the scan flags a plugin-root fallback with no Junie step" \
   "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: names the plugin root without the Junie step"
-printf '%s\n' '```' "$orch_line" '```' "$orch_junie (the Junie CLI install)." \
-  'If it prints one path, `ORCH` is that path.' "$orch_junie_many" \
-  "$orch_fallback two directories above this skill's own directory." \
-  '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  "$root_fallback $root_junie, else two directories above this skill's own directory." \
-  >"$fixture/guidelines/orch.md"
+printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
+  "$root_fallback two directories above this skill's own directory." \
+  "Elsewhere, $root_junie." >"$fixture/guidelines/orch.md"
+assert_contains "the scan flags a Junie step outside the plugin-root sentence" \
+  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: names the plugin root without the Junie step"
+{ documented_orch_form
+  printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
+    "$root_fallback found as for \`ORCH\`:" \
+    "$root_junie, else two directories above this skill's own directory."
+} >"$fixture/guidelines/orch.md"
 assert_eq "the scan accepts a plugin-root path with its unset fallback" \
   "$(scan_orch_resolution "$fixture")" ""
 rm -rf "$fixture"

@@ -215,20 +215,20 @@ The Junie step is prose carrying a literal `ls`, not a bash line that sets
 `$HOME/.junie`, the one install path confirmed so far, and its one-level
 `extensions/*/orchestrator` matches the installed extension but not the
 marketplace clone under `extensions/marketplaces/`. Keep the first line of the
-Junie sentence, the "more than one" sentence, and the "prints nothing" sentence
-intact, then call `bash "$ORCH" <subcommand>` everywhere else. Do not copy the scripts into a skill. Commands never run
-`orch.sh`: each is a thin route into an `orch-flow` section (see
-[Naming host capabilities](#naming-host-capabilities)).
+Junie sentence and the three "If it prints" sentences intact, in that order,
+then call `bash "$ORCH" <subcommand>` everywhere else. Do not copy the scripts
+into a skill. Commands never run `orch.sh`: each is a thin route into an
+`orch-flow` section (see [Naming host capabilities](#naming-host-capabilities)).
 
 A skill that reads another file under the plugin root names it as
 `"${CLAUDE_PLUGIN_ROOT}/<path>"`, and the same file carries a sentence starting
 ``If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is``, naming the same
 steps the `ORCH` fallback does: two directories above the `orch.sh` that `ls`
-printed, else two directories above the skill's own directory. `orch_test.sh` fails when a skill, command,
-or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT` any other way, runs
-`orch.sh` without these steps or without `bash`, names the plugin root
-without the Junie step, or names a path through a
-`<plugin root>/` placeholder.
+printed, else two directories above the skill's own directory. `orch_test.sh`
+fails when a skill, command, or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT`
+any other way, runs `orch.sh` without these steps in order or without `bash`,
+names the plugin root without the Junie step in that same sentence, or names a
+path through a `<plugin root>/` placeholder.
 
 ### Naming host capabilities
 
