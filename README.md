@@ -173,9 +173,14 @@ closing question. So when the human confirms that screen, which submits
 file is edited. On Junie the question is asked with its `ask_user` tool. On Claude Code the `UserPromptSubmit` entry exits silently.
 
 A `PreToolUse` hook on `Edit`/`Write` enforces that: during a planning session
-with no flow started, source edits are denied. Planning artifacts stay writable -
-the paths listed in `scripts/planning-allowlist.sh` - because `improve-codebase-architecture` and `domain-modeling`
-legitimately write them mid-planning. A third `PostToolUse` hook on the same
+with no flow started, or with only a `done` flow, source edits are denied. Agent
+docs, scratch and flow-state files stay writable - the paths listed in
+`scripts/planning-allowlist.sh`. The glossary and ADRs (`CONTEXT.md`,
+`CONTEXT-MAP.md`, `docs/adr/`) are records, and planning never changes them in
+place: an edit to one is denied with a redirect, and the exact wording goes
+into the plan instead, so the spec carries it verbatim and it lands with the
+change it describes (ADR-0022). This holds even when `domain-modeling` or
+`improve-codebase-architecture` asks to update them inline. A third `PostToolUse` hook on the same
 `Skill` matcher lifts the guard for a quick implementation: it deletes the
 session's marker file when `orchestrator:orch-quick-implement` fires, without
 `hook-guard.sh` itself changing.

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.3.0
+
+- Planning records glossary and ADR changes in the spec instead of editing
+  them (see issue #186, ADR-0022). `CONTEXT.md`, `CONTEXT-MAP.md` and
+  `docs/adr/` leave the planning allowlist: the edit guard denies an edit to
+  one while planning with a reason saying to write the exact wording into the
+  plan, and `init` refuses a dirty one under its own heading with the same
+  redirect. The `01-plan.md` template asks for such changes under
+  **Decisions** as verbatim replacement text, and quick implementation puts
+  them in the linked issue's body.
+- The edit guard and the grilling hook treat a flow at phase `done` as no
+  flow, so a finished flow no longer switches planning's protections off.
 ## 2.2.1
 
 - The glossary's **Ticket subagent** entry no longer says "unmet" twice

@@ -370,8 +370,12 @@ fallbacks, including any taken during its spec review, under its PR body's
 
 ## Planning allowlist
 
-The files a planning session may legitimately change: the glossary, ADRs,
-agent docs, and scratch and flow-state files. Anything outside it is source,
-which planning never touches. The edit guard denies edits outside it while
-planning, where the host can arm the guard. A flow will not start while the
-working tree has changes outside it (ADR-0013).
+The files a planning session may legitimately change: agent docs, and
+scratch and flow-state files. Anything outside it is either source, which
+planning never touches, or a record - the glossary and ADRs - which planning
+never changes in place: a change planning decides for a record is written
+word for word into the spec, or into the linked issue's body for a quick
+implementation, and lands with the change it describes. The edit
+guard denies edits outside it while planning, where the host can arm the
+guard, and a flow at `done` does not disarm it. A flow will not start while
+the working tree has changes outside it (ADR-0013).
