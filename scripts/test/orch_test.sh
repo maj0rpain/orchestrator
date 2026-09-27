@@ -5205,6 +5205,15 @@ assert_contains "warns that origin could not be reached" "$out" "warn  base bran
 git config --unset orchestrator.base
 rm -rf "$(dirname "$bare")"
 
+# --- the Ticket subagent entry names an unmet criterion once (#182) ---
+echo
+echo "the Ticket subagent entry names an unmet criterion once (#182)"
+ticket_entry="$(flat_section "$glossary" "Ticket subagent")"
+assert_contains "the Ticket subagent entry reports a criterion it cannot meet" \
+  "$ticket_entry" "a criterion it cannot meet alone is reported as unmet, for the review loop's Spec axis to judge"
+assert_not_contains "the Ticket subagent entry no longer says unmet twice" \
+  "$ticket_entry" 'an unmet criterion it cannot meet alone'
+
 echo
 if [ "$SKIP" -gt 0 ]; then
   echo "$PASS passed, $FAIL failed, $SKIP skipped"

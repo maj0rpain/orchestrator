@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.1
+
+- The glossary's **Ticket subagent** entry no longer says "unmet" twice
+  about one criterion (see issue #182).
+
 ## 2.2.0
 
 - Quick implementation's single-pass review starts the plugin's own
