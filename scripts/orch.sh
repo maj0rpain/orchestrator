@@ -1150,9 +1150,16 @@ cmd_branch_off() {
   note "$1"
 }
 
+# The base branch a branch belongs to: the one branch off recorded for it, else,
+# for a branch made before that was recorded, the base branch in effect now.
+# The one rule pr publish targets and branch base-sha falls back to, so the PR
+# and the SHA its review diffs from never name different bases.
+recorded_base() {
+  git config --get "branch.$1.orchestrator-base" 2>/dev/null || base_branch
+}
+
 # The current branch's base SHA, as branch off recorded it. A branch made
-# before that was recorded falls back to the merge-base with its base branch -
-# the recorded one, else the base branch in effect, as pr publish does -
+# before that was recorded falls back to the merge-base with its recorded_base,
 # preferring origin's copy of it. Only a fallback: a base merged in mid-branch
 # moves the merge-base and silently shrinks the diff it bounds.
 cmd_branch_base_sha() {
@@ -1161,7 +1168,7 @@ cmd_branch_base_sha() {
   branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
   sha="$(git config --get "branch.$branch.orchestrator-base-sha" 2>/dev/null)" || sha=""
   if [ -n "$sha" ]; then note "$sha"; return; fi
-  base="$(git config --get "branch.$branch.orchestrator-base" 2>/dev/null)" || base="$(base_branch)"
+  base="$(recorded_base "$branch")"
   if git rev-parse --verify --quiet "refs/remotes/origin/$base" >/dev/null; then
     ref="refs/remotes/origin/$base"
   elif git rev-parse --verify --quiet "refs/heads/$base" >/dev/null; then
@@ -1296,9 +1303,7 @@ cmd_pr_publish() {
   [ -f "$body_file" ] || die "body file not found: $body_file"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
-  # The base branch off recorded for this branch; a branch made before that
-  # was recorded publishes to the base branch in effect now.
-  base="$(git config --get "branch.$branch.orchestrator-base" 2>/dev/null)" || base="$(base_branch)"
+  base="$(recorded_base "$branch")"
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" false)"
   note "$pr"
 }
