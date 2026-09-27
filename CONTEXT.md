@@ -42,8 +42,9 @@ no handoff, no `.orchestrator/state.json`. Still produces its own branch and
 PR, and is still held to this project's standards for how a change gets made -
 test-driven, reviewed, then opened as a PR. Its review is one pass by the same
 two reviewers a review loop starts, with no loop around them: the quick
-session fixes what it agrees with and names what it declines in the PR. It offers a spec review of its linked
-issue before its ticket breakdown - the human's choice, asked on every run.
+session fixes what it agrees with and names what it declines in the PR. It
+offers a spec review of its linked issue before its ticket breakdown - the
+human's choice, asked on every run.
 
 ## Doctor
 
