@@ -3,6 +3,8 @@
 Superseded in part by ADR-0019: the implement phase's ticket subagents no
 longer use `code-review` either; only quick implementation's single pass does.
 
+Superseded in part by ADR-0021: quick implementation's single pass no longer uses `code-review` either.
+
 Supersedes ADR-0001's premise that the reviewing is done by
 `mattpocock-skills:code-review`'s sub-agents, and ADR-0002's premise that
 the Spec axis is `code-review`'s Spec sub-agent. ADR-0001's claim that one

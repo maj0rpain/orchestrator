@@ -5117,6 +5117,57 @@ assert_contains "orch-spec-review scopes changelog-only to the review's own reco
   "$(flat_section "$root/skills/orch-spec-review/SKILL.md" "Standalone spec review")" \
   'among the review'"'"'s own records'
 
+# --- quick implementation reviews with the plugin's reviewer agents (#244) ---
+# The model cannot be proven to start the reviewers; these checks keep the
+# step's agents, prompt, retry rule, stop, and declined-findings list in place.
+echo
+echo "quick implementation reviews with the plugin's reviewer agents (#244)"
+review_step="$(flat_section "$quick_md" "6. Review")"
+for want in '`orch-reviewer-standards`' '`orch-reviewer-spec`' \
+  'Base SHA: <recorded base SHA>' 'Spec issue: #<linked issue>' 'Iteration: 01' \
+  'Report path: <quick report dir>/iteration-01-<standards|spec>.md' \
+  'bash "$ORCH" branch base-sha' 'bash "$ORCH" quick path' \
+  'never forks' 'in one message' 'Start that reviewer again once' \
+  'stop before opening the PR' '**Review**' '`None declined.`' \
+  '**Start a fresh subagent** fallback'; do
+  assert_contains "the review step names $want" "$review_step" "$want"
+done
+for gone in 'mp-skill code-review' 'mattpocock-skills:code-review' 'orch-fixer'; do
+  assert_not_contains "the review step no longer names $gone" "$review_step" "$gone"
+done
+assert_contains "the PR step names the Review heading" \
+  "$(flat_section "$quick_md" "7. Open the PR")" '**Review**'
+for a in orch-reviewer-standards orch-reviewer-spec; do
+  desc="$(grep -m1 '^description:' "$root/agents/$a.md")"
+  assert_contains "$a describes one review pass" "$desc" 'one orchestrator review pass'
+  assert_contains "$a names both starters" "$desc" \
+    "Started only by the orch-review skill's driver, or by the orch-quick-implement skill's single pass, with a base SHA, a spec issue, an iteration, and a report path."
+done
+adr21="$root/docs/adr/0021-quick-implementation-reviews-with-the-plugins-reviewer-agents.md"
+assert_contains "ADR-0021 exists with its title" \
+  "$(head -1 "$adr21" 2>&1)" "# Quick implementation reviews with the plugin's reviewer agents"
+assert_contains "ADR-0021 says nothing invokes code-review any more" \
+  "$(flat_text "$adr21" 2>&1)" 'nothing in the plugin invokes `mattpocock-skills:code-review`'
+assert_contains "ADR-0018 points at ADR-0021" "$adr18" \
+  "Superseded in part by ADR-0021: quick implementation's single pass no longer uses \`code-review\` either."
+assert_contains "the Quick implementation entry names its one review pass" \
+  "$(flat_section "$glossary" "Quick implementation")" \
+  'Its review is one pass by the same two reviewers a review loop starts, with no loop around them'
+finding="$(flat_section "$glossary" "Finding")"
+assert_contains "the Finding entry names quick implementation's pass" \
+  "$finding" "or about the change, from quick implementation's single pass"
+assert_contains "the Finding entry gives a quick finding no severity" \
+  "$finding" "A finding from quick implementation's single pass carries none"
+assert_contains "the Base branch entry names a quick implementation's base SHA" \
+  "$(flat_section "$glossary" "Base branch")" \
+  "A quick implementation's base SHA means the same, recorded on its branch."
+assert_contains "the Reviewer entry names quick implementation's single pass" \
+  "$(flat_section "$glossary" "Reviewer")" \
+  "A quick implementation's single pass starts the same two reviewers once, outside any loop."
+assert_contains "the Iteration entry names quick implementation's iteration 01" \
+  "$(flat_section "$glossary" "Iteration")" \
+  "labels its reviewer prompts iteration \`01\`; it is not part of a loop."
+
 # --- doctor: base branch check -----------------------------------------------
 # A set base branch that has vanished from origin is the one stale setting that
 # would send the next flow's fork and PR at nothing, so it FAILs; origin being
