@@ -4787,40 +4787,40 @@ assert_contains "the fallback's second tier covers a lens's returned findings" \
 
 # --- spec review asks its batch question in the same response (#233) --------
 # The model cannot be proven to ask; these checks keep the instructions from
-# being dropped by a later edit. Each is scoped to its own ## section.
+# being dropped by a later edit. Each is scoped to its own ## section and pins
+# key phrases, not whole sentences.
 echo
 echo "spec review asks its batch question in the same response (#233)"
-# md_section <file> <heading>: the named ## section's text, flattened.
-md_section() {
-  awk -v h="## $2" '$0 == h { on = 1; next } on && /^## / { exit } on' "$1" |
-    tr -s ' \t\n' '   '
-}
-rs="$root/skills/orch-review-spec/SKILL.md"
-disposition="$(md_section "$rs" Disposition)"
-applying="$(md_section "$rs" "Applying the answer")"
-changelog="$(md_section "$rs" "The changelog")"
-sections="$(mktemp)"
-printf '## A\nin a\n## B\nin b\n' >"$sections"
-assert_contains "the helper reads a section's own text" "$(md_section "$sections" A)" "in a"
-assert_not_contains "the helper stops at the next section" "$(md_section "$sections" A)" "in b"
-rm -f "$sections"
+review_spec_md="$root/skills/orch-review-spec/SKILL.md"
+skill_section() { "$ORCH" handoff section "$review_spec_md" "$1" | tr -s ' \t\n' '   '; }
+disposition="$(skill_section Disposition)"
+applying="$(skill_section "Applying the answer")"
+changelog="$(skill_section "The changelog")"
 assert_contains "Disposition asks with AskUserQuestion" "$disposition" '`AskUserQuestion`'
 assert_contains "Disposition puts the list and the question in the same response" \
-  "$disposition" 'in the same response'
+  "$disposition" 'same response'
 assert_contains "Disposition never ends the turn on the list" \
   "$disposition" 'never ends its turn on the list'
-assert_contains "Disposition applies and posts nothing before the answer" \
-  "$disposition" 'No edit is applied and no changelog is posted before the answer arrives'
+assert_contains "Disposition applies nothing before the answer" \
+  "$disposition" 'before the answer arrives'
 assert_contains "Disposition offers Apply as recommended first" \
   "$disposition" '**Apply as recommended (Recommended)**'
-assert_contains "Disposition offers Apply all only with a recommend-decline item" \
-  "$disposition" '**Apply all** - offered only when at least one item is marked **recommend decline**'
+assert_contains "Disposition offers Apply all" "$disposition" '**Apply all**'
+assert_contains "Apply all depends on a recommend-decline item" \
+  "$disposition" 'at least one item is marked **recommend decline**'
 assert_contains "Disposition offers Apply none" "$disposition" '**Apply none**'
+assert_contains "Apply as recommended is offered first" "$disposition" 'Always offered, first'
 assert_contains "Disposition states the Other format" "$disposition" '`1B, 2, 3, 5`'
+assert_contains "the question states the Other format" \
+  "$disposition" 'The question text states this format'
 assert_contains "the changelog records declined as recommended" \
-  "$changelog" '**declined as recommended: <the recommendation'"'"'s reason>**'
+  "$changelog" '**declined as recommended:'
+assert_contains "the changelog records a decision item left undecided" \
+  "$changelog" '**left undecided**'
 assert_contains "a declined contradicts-the-plan item is declined as recommended too" \
-  "$applying" '**spec departs from the plan: declined as recommended: <reason>**'
+  "$applying" 'spec departs from the plan: declined as recommended'
+assert_contains "the Rejected alternatives amendment cites the same reason" \
+  "$applying" 'the amendment cites the same reason'
 
 # --- doctor: base branch check -----------------------------------------------
 # A set base branch that has vanished from origin is the one stale setting that
