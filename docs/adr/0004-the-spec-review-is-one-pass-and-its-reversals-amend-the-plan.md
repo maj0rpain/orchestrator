@@ -53,7 +53,8 @@ implement phase discovers.
 
 The spec phase can end with a spec that departs from the plan. That is the
 intended outcome, and it is only safe if it is visible: the changelog comment
-on the issue records **spec departs from the plan** with the human's reason,
+on the issue records **spec departs from the plan** with its reason (the
+human's, or **declined as recommended** when they took the review's advice),
 `02-spec.md` carries the same changelog, and the plan handoff's entry says it
 was reversed. Nothing downstream has to remember the reversal, because every
 document it might consult has been told.

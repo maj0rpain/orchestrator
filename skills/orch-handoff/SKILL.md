@@ -93,8 +93,9 @@ until review.>
 
 ## Spec review changelog
 <the list orch-review-spec returned, per lens: applied edits one line
-each, declined findings verbatim with the human's reason, "None" for a lens
-that found nothing, "not run - <reason>" for one that failed>
+each, declined findings verbatim with the human's reason or "declined as
+recommended: <reason>", "None" for a lens that found nothing, "not run -
+<reason>" for one that failed>
 
 ## Ticket breakdown
 <usually the parent issue number only - the tickets themselves are its
