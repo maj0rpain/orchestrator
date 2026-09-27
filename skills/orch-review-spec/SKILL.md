@@ -5,9 +5,11 @@ description: Review a spec issue once through four independent lenses - Fidelity
 
 # Orchestrator spec review
 
-One look at the spec, taken once, after the issue exists - published by
-`to-spec` or already adopted at init - and before the handoff is written. Four
-**lenses** read the issue independently, as parallel sub-agents that see only
+One look at the spec, taken once. In a flow it comes after the issue exists -
+published by `to-spec` or already adopted at init - and before the handoff is
+written; a standalone review takes it on a given issue, outside any flow, and
+writes no handoff. The **lenses** - four in a flow, three in a standalone
+review - read the issue independently, as parallel sub-agents that see only
 files. Every **finding** they report reaches the human as a proposed edit in
 one batch; only the edits the human accepts change the issue. The issue body
 stays the single truth the implement phase reads.
@@ -57,6 +59,10 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
      root, where they exist;
    - the repo root, for the codebase.
 
+Nothing from this session's conversation reaches a lens: not the plan as you
+remember it, not `to-spec`'s reasoning, not the seams as agreed in chat. A lens
+that needs something gets a file path.
+
 ## Standalone spec review
 
 The issue number comes from the human: the command's argument, or the issue
@@ -103,10 +109,6 @@ with these differences:
 - **Host fallbacks and lens failures** are recorded in the changelog
   comment only, under a **Host fallbacks** line. A standalone review has one
   changelog, not two.
-
-Nothing from this session's conversation reaches a lens: not the plan as you
-remember it, not `to-spec`'s reasoning, not the seams as agreed in chat. A lens
-that needs something gets a file path.
 
 ## The lenses
 

@@ -608,8 +608,8 @@ adapter_issue_view() {
   gh issue view "$@"
 }
 
-# cmd_spec's update/comment ops pick between these two, the same way it
-# already picks `edit` or `comment` as the literal `gh issue` subcommand.
+# cmd_issue_update and cmd_issue_comment call these two; cmd_spec's
+# update/comment ops reach them only by delegating to the issue primitives.
 adapter_issue_edit() {
   gh issue edit "$@"
 }
