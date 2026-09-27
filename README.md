@@ -161,6 +161,15 @@ call `AskUserQuestion` with exactly two options, start the flow
 (`orchestrator:orch-flow`) or a quick implementation (`orchestrator:orch-quick-implement`),
 and do whichever the human picks.
 
+Junie has no `PostToolUse` event, so the same hook also runs on
+`UserPromptSubmit` and fires there when the prompt names a grilling entry
+point (`/grilling`, `$grill-me`, `/wayfinder`, and so on). It sends nothing
+when Junie picks grilling on its own. Junie routes grilling into its plan
+mode, whose plan agent ends on Junie's own plan screen instead of asking the
+closing question. So when the human confirms that screen, which submits
+`Implement the suggested plan`, the hook asks the question there, before any
+file is edited. On Junie the question is asked with its `ask_user` tool. On Claude Code the `UserPromptSubmit` entry exits silently.
+
 A `PreToolUse` hook on `Edit`/`Write` enforces that: during a planning session
 with no flow started, source edits are denied. Planning artifacts stay writable -
 the paths listed in `scripts/planning-allowlist.sh` - because `improve-codebase-architecture` and `domain-modeling`
@@ -182,11 +191,10 @@ skills/orch-quick-implement/  the other route: issue, to-tickets, tdd, single-pa
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
 scripts/orch.sh               every deterministic operation (mechanism)
 scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
-scripts/hook-*.sh             the three hooks
+scripts/hook-*.sh             the three hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist, shared by the edit guard and orch.sh
 scripts/test/                 shell tests
-guidelines/orch-planning.md   the planning nudge for Junie, which has no hook to deliver it
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 hooks/hooks.json              hook wiring
 ```
@@ -231,7 +239,7 @@ A skill that reads another file under the plugin root names it as
 ``If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is``, naming the same
 steps the `ORCH` fallback does: two directories above the `orch.sh` that `ls`
 printed, else two directories above the skill's own directory. `orch_test.sh`
-fails when a skill, command, or `guidelines/` file mentions `CLAUDE_PLUGIN_ROOT`
+fails when a skill or command mentions `CLAUDE_PLUGIN_ROOT`
 any other way, runs `orch.sh` without these steps in order or without `bash`,
 names the plugin root without the Junie step in that same sentence, or names a
 path through a `<plugin root>/` placeholder.

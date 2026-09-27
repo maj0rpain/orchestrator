@@ -2039,6 +2039,9 @@ out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --en
 assert_status "Junie's missing capabilities warn, never fail" "$st" 0
 assert_contains "detects Junie CLI from JUNIE_EXTENSION_ROOT" "$out" "host: Junie CLI"
 assert_contains "names the edit guard Junie cannot arm" "$out" "Arm the edit guard"
+# Junie's UserPromptSubmit hook now delivers the planning message (#202).
+assert_eq "does not claim Junie lacks planning-time context" \
+  "$(printf '%s\n' "$out" | grep -c 'Inject context at planning time')" "0"
 # Junie CLI loads the plugin's agents/ (#200), but its capability filter hides
 # them and a visible one gets no tools (#204), so a native start never pays off
 # today: the cell is a Fallback, not Unverified (#203).
@@ -4232,7 +4235,7 @@ done
 
 # --- orch.sh resolution (#123) ------------------------------------------------
 # Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
-# other hosts, so skill, command, and guidelines text must pair it with the
+# other hosts, so skill and command text must pair it with the
 # relative fallback. The one documented form (README, "Resolving orch.sh") is
 # the ORCH= line, the Junie step, and the fallback sentence; any other mention
 # of the variable, or a file that runs orch.sh without them, is a regression.
@@ -4262,7 +4265,7 @@ flat_text() { tr -s ' \t\n' '   ' <"$1"; }
 scan_orch_resolution() {
   local r="$1" f flat root_sentence
   local -a allowed
-  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md "$r"/guidelines/*; do
+  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md; do
     [ -f "$f" ] || continue
     flat="$(flat_text "$f")"
     allowed=(-e "$orch_line" -e "$orch_junie")
@@ -4295,7 +4298,7 @@ assert_eq "every skill and command resolves orch.sh the one documented way" \
 # scan_orch_bash <plugin root>: print one line per call site that skips bash.
 scan_orch_bash() {
   local r="$1" f
-  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md "$r"/guidelines/* \
+  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md \
            "$r"/README.md "$r"/docs/host-capabilities.md; do
     [ -f "$f" ] || continue
     sed 's/bash "\$ORCH"//g' "$f" | grep -nE '\$\{?ORCH\b' \
@@ -4306,8 +4309,8 @@ assert_eq "every skill and doc runs orch.sh through bash" \
   "$(scan_orch_bash "$root")" ""
 # A skill's commands name the plugin root through CLAUDE_PLUGIN_ROOT, never a
 # "<plugin root>" placeholder the driver must work out for itself (#155).
-assert_eq "no skill, command, or guideline carries a <plugin root> placeholder" \
-  "$(grep -nF '<plugin root>/' "$root"/skills/*/SKILL.md "$root"/commands/*.md "$root"/guidelines/*)" ""
+assert_eq "no skill or command carries a <plugin root> placeholder" \
+  "$(grep -nF '<plugin root>/' "$root"/skills/*/SKILL.md "$root"/commands/*.md)" ""
 assert_contains "orch-review reads the fixer's record through CLAUDE_PLUGIN_ROOT" \
   "$(cat "$root/skills/orch-review/SKILL.md")" \
   "\"\${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md\""
@@ -4378,15 +4381,15 @@ for f in "$root"/skills/*/SKILL.md; do
 done
 assert_eq "every skill's skills-only stop text matches orch-flow's word for word" "$drift" ""
 fixture="$(mktemp -d)"
-mkdir -p "$fixture/guidelines"
-printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/guidelines/orch.md"
-assert_contains "the scan covers guidelines/ and flags a bare CLAUDE_PLUGIN_ROOT" \
-  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: CLAUDE_PLUGIN_ROOT outside"
+mkdir -p "$fixture/commands"
+printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/commands/orch.md"
+assert_contains "the scan covers commands/ and flags a bare CLAUDE_PLUGIN_ROOT" \
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
 printf '%s\n' '```' "$orch_line" '```' \
   'If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh` two directories above this skill.' \
-  >"$fixture/guidelines/orch.md"
+  >"$fixture/commands/orch.md"
 assert_contains "the scan flags orch.sh resolved without the Junie step" \
-  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: uses orch.sh without the Junie step"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the Junie step"
 # documented_orch_form [step]...: the documented form, minus each step named.
 documented_orch_form() {
   local -a steps=("$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many"
@@ -4398,35 +4401,35 @@ documented_orch_form() {
     printf '%s\n' "$step"
   done
 }
-documented_orch_form "$orch_junie_one" >"$fixture/guidelines/orch.md"
+documented_orch_form "$orch_junie_one" >"$fixture/commands/orch.md"
 assert_contains "the scan flags a Junie step with no one-install step" \
-  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: uses orch.sh without the one-install step"
-documented_orch_form "$orch_junie_many" >"$fixture/guidelines/orch.md"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the one-install step"
+documented_orch_form "$orch_junie_many" >"$fixture/commands/orch.md"
 assert_contains "the scan flags a Junie step with no stop on several installs" \
-  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: uses orch.sh without the stop on several Junie installs"
-{ documented_orch_form "$orch_junie_one"; printf '%s\n' "$orch_junie_one"; } >"$fixture/guidelines/orch.md"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the stop on several Junie installs"
+{ documented_orch_form "$orch_junie_one"; printf '%s\n' "$orch_junie_one"; } >"$fixture/commands/orch.md"
 assert_contains "the scan flags the Junie steps out of order" \
-  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: resolves orch.sh out of the documented order"
-documented_orch_form >"$fixture/guidelines/orch.md"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: resolves orch.sh out of the documented order"
+documented_orch_form >"$fixture/commands/orch.md"
 assert_eq "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")" ""
 printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  >"$fixture/guidelines/orch.md"
+  >"$fixture/commands/orch.md"
 assert_contains "the scan flags a plugin-root path with no unset fallback" \
-  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: CLAUDE_PLUGIN_ROOT outside"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
 printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  "$root_fallback two directories above this skill's own directory." >"$fixture/guidelines/orch.md"
+  "$root_fallback two directories above this skill's own directory." >"$fixture/commands/orch.md"
 assert_contains "the scan flags a plugin-root fallback with no Junie step" \
-  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: names the plugin root without the Junie step"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
 printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
   "$root_fallback two directories above this skill's own directory." \
-  "Elsewhere, $root_junie." >"$fixture/guidelines/orch.md"
+  "Elsewhere, $root_junie." >"$fixture/commands/orch.md"
 assert_contains "the scan flags a Junie step outside the plugin-root sentence" \
-  "$(scan_orch_resolution "$fixture")" "guidelines/orch.md: names the plugin root without the Junie step"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
 { documented_orch_form
   printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
     "$root_fallback found as for \`ORCH\`:" \
     "$root_junie, else two directories above this skill's own directory."
-} >"$fixture/guidelines/orch.md"
+} >"$fixture/commands/orch.md"
 assert_eq "the scan accepts a plugin-root path with its unset fallback" \
   "$(scan_orch_resolution "$fixture")" ""
 rm -rf "$fixture"
@@ -4597,66 +4600,6 @@ printf 'Start the implementer as its agent file says.\n' >"$fixture/skills/a/SKI
 printf 'Start the lenses as fresh general-purpose agents.\n' >"$fixture/skills/b/SKILL.md"
 assert_eq "the scan accepts a pointer and general-purpose agents started natively" \
   "$(scan_dispatch_copies "$fixture")" ""
-rm -rf "$fixture"
-
-# --- Junie planning nudge (#129) ----------------------------------------------
-# Junie has no PostToolUse event, so hook-grilling.sh never fires there. A
-# guidelines/ file carries its message instead, and it loads in every repo the
-# extension is enabled in, so it must stay conditional. The scan checks the
-# message's key points survive, not its exact wording.
-echo
-echo "Junie planning nudge (#129)"
-# scan_planning_nudge <plugin root>: print one line per missing key point.
-scan_planning_nudge() {
-  local r="$1" f
-  f="$(ls "$r"/guidelines/*.md 2>/dev/null | head -1)"
-  if [ -z "$f" ]; then echo "no guidelines/*.md file"; return; fi
-  local label
-  while IFS='|' read -r label pattern; do
-    grep -qiE "$pattern" "$f" || echo "${f#"$r"/}: missing $label"
-  done <<'EOF'
-the conditional wording|only when a grilling session is running and no flow is active
-the active-flow check|\.orchestrator/state\.json
-no implementing during planning|planning artifacts
-the flow option|Start the orchestrator flow
-the quick option|Quick implementation
-the multiple-choice question|AskUserQuestion
-the orch-flow skill|`orch-flow`
-the orch-quick-implement skill|`orch-quick-implement`
-the issue-tracker warning|docs/agents/issue-tracker\.md
-the setup fix|setup-matt-pocock-skills
-the Invoke a skill from a step fallback as the step|no Skill tool.*read `skills/<name>/SKILL\.md`
-EOF
-  # Junie's "Invoke a skill from a step" cell is Fallback, so reading SKILL.md is the step,
-  # not a branch taken only when a listed skill is missing.
-  grep -niE 'if it is not listed' "$f" \
-    | sed "s|^|${f#"$r"/}: makes the Invoke a skill from a step fallback conditional: |"
-  grep -niE '(call|use|with) the (Skill|Agent) tool' "$f" \
-    | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
-  # A hand-copied allowlist drifts; every entry of the canonical definition must
-  # appear, so an addition there fails here until the text catches up.
-  local entry
-  for entry in $(source "$root/scripts/planning-allowlist.sh"; printf '%s\n' "${PLANNING_ALLOWLIST[@]}"); do
-    grep -qF "$entry" "$f" || echo "${f#"$r"/}: missing allowlist entry $entry"
-  done
-}
-assert_eq "the guidelines file carries the grilling hook's key points, conditionally" \
-  "$(scan_planning_nudge "$root")" ""
-fixture="$(mktemp -d)"
-assert_eq "the scan flags a missing guidelines file" \
-  "$(scan_planning_nudge "$fixture")" "no guidelines/*.md file"
-mkdir -p "$fixture/guidelines"
-printf 'Start the orchestrator flow or Quick implementation. Call the Skill tool with `orch-flow`.\n' \
-  >"$fixture/guidelines/orch.md"
-out="$(scan_planning_nudge "$fixture")"
-assert_contains "the scan flags unconditional wording" "$out" "missing the conditional wording"
-assert_contains "the scan flags a missing issue-tracker warning" "$out" "missing the issue-tracker warning"
-assert_contains "the scan flags a Claude tool named as the step" "$out" "names a Claude tool as the step"
-assert_contains "the scan flags a missing Invoke a skill from a step fallback" "$out" "missing the Invoke a skill from a step fallback as the step"
-printf 'Pick `orch-flow` from the skills this host lists. If it is not listed, read its SKILL.md.\n' \
-  >"$fixture/guidelines/orch.md"
-assert_contains "the scan flags a conditional Invoke a skill from a step fallback" \
-  "$(scan_planning_nudge "$fixture")" "makes the Invoke a skill from a step fallback conditional"
 rm -rf "$fixture"
 
 # --- doctor: base branch check -----------------------------------------------
