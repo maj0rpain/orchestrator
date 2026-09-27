@@ -51,7 +51,7 @@ tool would have injected:
   root, the directory `orch.sh`'s `scripts/` sits in.
 - A mattpocock-skills skill is `bash "$ORCH" mp-skill <name>`. Use that, not a skill
   of the same bare name, because Junie lists skills unscoped and another
-  plugin's `code-review` may shadow mattpocock's.
+  plugin's `tdd` may shadow mattpocock's.
 
 ### Start a fresh subagent
 

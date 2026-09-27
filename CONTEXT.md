@@ -20,7 +20,8 @@ checkout - an integration branch such as `uat`, or a long-running feature
 branch that several tickets feed. A flow fixes its base branch when it starts,
 so changing the setting mid-flow never moves that flow's PR; a quick
 implementation reads it when it branches. A flow's base SHA is the base
-branch's tip at the moment it branched.
+branch's tip at the moment it branched. A quick implementation's base SHA
+means the same, recorded on its branch.
 _Avoid_: target branch, integration branch (as the general term).
 
 ## Release PR
@@ -39,8 +40,11 @@ Chosen once, by a human, at the close of a grilling session - never assumed by
 the model. Skips the plan/spec/implement/review pipeline entirely: no phases,
 no handoff, no `.orchestrator/state.json`. Still produces its own branch and
 PR, and is still held to this project's standards for how a change gets made -
-test-driven, reviewed, then opened as a PR. It offers a spec review of its linked
-issue before its ticket breakdown - the human's choice, asked on every run.
+test-driven, reviewed, then opened as a PR. Its review is one pass by the same
+two reviewers a review loop starts, with no loop around them: the quick
+session fixes what it agrees with and names what it declines in the PR. It
+offers a spec review of its linked issue before its ticket breakdown - the
+human's choice, asked on every run.
 
 ## Doctor
 
@@ -133,7 +137,8 @@ at the same change, and the value of the loop is in the number of looks.
 One pass within a review loop: review the change, triage what came back, fix
 what the loop fixes, verify. Iterations are numbered from 1 and run on across a
 flow's loops; a flow that has run none sits at 0. A loop runs as many as its
-budget allows.
+budget allows. A quick implementation's single pass labels its reviewer
+prompts iteration `01`; it is not part of a loop.
 
 ## Clean iteration
 
@@ -162,7 +167,9 @@ session, and records that as a host fallback.
 A fresh agent a review loop's driver starts for one axis - Standards or Spec -
 in one iteration. It reviews the whole change from the base SHA, never from
 the previous iteration's HEAD, and writes its findings, unranked, to a report
-file. Two reviewers run every iteration, one per axis.
+file. Two reviewers run every iteration, one per axis. A quick
+implementation's single pass starts the same two reviewers once, outside any
+loop.
 _Avoid_: spec review (for the Spec-axis reviewer or its report).
 
 ## Open blocking
@@ -243,10 +250,13 @@ any other.
 ## Finding
 
 One problem a review reports - about the change, from the review phase, or
-about the spec, from a spec review. Only a finding about the change carries a
-**severity**, which the review phase assigns; the reviewer itself reports
-findings unranked. A finding about the spec carries no severity: a human
-accepts or declines the edit it proposes, and it is never filed.
+about the spec, from a spec review, or about the change, from quick
+implementation's single pass. Only a finding about the change from the review
+phase carries a **severity**, which the review phase assigns; the reviewer
+itself reports findings unranked. A finding from quick implementation's single
+pass carries none: the quick session fixes it or declines it in the PR. A
+finding about the spec carries no severity: a human accepts or declines the
+edit it proposes, and it is never filed.
 
 ## Severity
 

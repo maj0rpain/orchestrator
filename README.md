@@ -13,10 +13,10 @@ behind it.
 [`mattpocock-skills`](https://github.com/mattpocock/skills) is a separate plugin
 of skills for planning, spec-writing, implementing, and reviewing code. This
 plugin conducts it rather than replacing it: `to-spec` writes the spec,
-`tdd` builds each ticket test-first, `code-review` reviews a quick
-implementation. This plugin owns the state, the handoffs, the branch, the PR,
-the agent each ticket subagent runs as, and the review loop's own reviewer
-agents.
+and `tdd` builds each ticket test-first. This plugin owns the state, the
+handoffs, the branch, the PR, the agent each ticket subagent runs as, and the
+reviewer agents that both the review loop and a quick implementation's single
+pass start.
 
 ## Install
 
@@ -75,7 +75,7 @@ flow skill is now `orchestrator:orch-flow`, and so on). See
                               ->  01-plan.md                     issue, to-tickets publishes tickets,
                                         |                          branch quick/<issue>-<slug>,
                                        | /clear                    one subagent per ticket, tdd,
-                                                                    single-pass code-review, PR
+                                                                    single-pass review, PR
   spec session         to-spec publishes the issue,  <--+
                        or already adopted at init
                        spec review
@@ -100,7 +100,7 @@ implementation** entry. It skips all four phases: no handoff, no
 `.orchestrator/state.json`, just a linked issue, `to-tickets` publishing that
 issue's ticket breakdown, the same one-`orch-implementer`-per-ticket loop the
 implement phase uses (ending in `pr publish` instead of a draft `pr open`), a
-single-pass `code-review`, and a PR.
+single-pass review by the plugin's own reviewer agents, and a PR.
 
 Handoffs live in `.orchestrator/handoff/`, ignored via `.git/info/exclude` so
 running the flow never dirties a repo's working tree.
@@ -184,7 +184,7 @@ session's marker file when `orchestrator:orch-quick-implement` fires, without
 
 ```
 commands/                     start, next, status, doctor, redo, abort, release, spec-review
-agents/                       the review loop's fresh agents (two reviewers, the fixer, the closer), the spec review's four lenses, and the implementer
+agents/                       the fresh agents: two reviewers (the review loop's and quick implementation's), the review loop's fixer and closer, the spec review's four lenses, and the implementer
 skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: four lenses in a flow, three standalone, one batch question
 skills/orch-review/           the review loop: rubric, authority rules, terminal states

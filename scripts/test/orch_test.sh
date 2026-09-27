@@ -580,7 +580,7 @@ healthy_repo() {
   printf '%s\n' ".orchestrator/" >>.git/info/exclude
   stub_gh
   export CLAUDE_PLUGIN_ROOT="$PWD"
-  HOME="$(stub_mattpocock to-spec to-tickets tdd code-review)"
+  HOME="$(stub_mattpocock to-spec to-tickets tdd)"
   export HOME
   unset GH_STUB_MODE
 }
@@ -1189,6 +1189,111 @@ assert_eq "and records nothing for the branch it did not make" "$(recorded_base 
 base_cmd base clear >/dev/null
 rm -rf "$(dirname "$bare")"
 
+# --- a quick implementation's base SHA (#243) ---------------------------------
+# branch off records the base branch's tip at the moment of branching, the same
+# meaning a flow's base_sha has, so a quick implementation's reviewers get a
+# fixed point that a later merge of the base cannot shrink. A branch made before
+# that was recorded falls back to the merge-base with its base branch.
+echo
+echo "a quick implementation's base SHA (#243)"
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin HEAD:refs/heads/main
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+branched_tip="$(git rev-parse origin/main)"
+base_cmd branch off quick/1-sha >/dev/null
+assert_eq "branch off records the base branch's tip as the base SHA" \
+  "$(git config --get branch.quick/1-sha.orchestrator-base-sha)" "$branched_tip"
+git commit -q --allow-empty -m "work on the branch"
+
+# The base branch moves on and the branch merges it in.
+git checkout -q -b advance "$branched_tip"
+git commit -q --allow-empty -m "main moves on"
+git push -q origin advance:refs/heads/main
+git fetch -q origin
+moved_tip="$(git rev-parse origin/main)"
+git checkout -q quick/1-sha
+git branch -q -D advance
+git merge -q --no-edit origin/main
+assert_eq "the recorded base SHA is unchanged after the base branch moves on" \
+  "$(git config --get branch.quick/1-sha.orchestrator-base-sha)" "$branched_tip"
+out="$(base_cmd branch base-sha 2>&1)"; st=$?
+assert_status "branch base-sha succeeds" "$st" 0
+assert_eq "branch base-sha prints the recorded base SHA" "$out" "$branched_tip"
+
+git config --unset branch.quick/1-sha.orchestrator-base-sha
+assert_eq "without a recorded SHA it prints the merge-base with the base branch" \
+  "$(base_cmd branch base-sha)" "$(git merge-base HEAD origin/main)"
+assert_eq "which here is the base branch's tip it merged" "$(base_cmd branch base-sha)" "$moved_tip"
+
+# No remote-tracking ref for the recorded base branch: the local one answers.
+git branch -q localbase "$branched_tip"
+git config branch.quick/1-sha.orchestrator-base localbase
+assert_eq "with no remote-tracking ref it uses the local base branch" \
+  "$(base_cmd branch base-sha)" "$branched_tip"
+
+# Neither key: the base branch in effect, as pr publish does.
+git checkout -q -b uat "$branched_tip"
+git commit -q --allow-empty -m "uat only"
+git push -q origin uat:refs/heads/uat
+git fetch -q origin
+uat_tip="$(git rev-parse origin/uat)"
+git checkout -q -b quick/2-legacy uat
+git commit -q --allow-empty -m "legacy work"
+git config orchestrator.base uat
+assert_eq "with neither key it uses the base branch setting" \
+  "$(base_cmd branch base-sha)" "$uat_tip"
+git config --unset orchestrator.base
+assert_eq "and the default branch when nothing is set" \
+  "$(base_cmd branch base-sha)" "$branched_tip"
+
+git checkout -q --detach
+out="$(base_cmd branch base-sha 2>&1)"; st=$?
+assert_status "refuses a detached HEAD" "$st" 1
+assert_contains "saying so" "$out" "detached HEAD"
+out="$(base_cmd branch base-sha extra 2>&1)"; st=$?
+assert_status "refuses arguments" "$st" 1
+assert_contains "with the usage" "$out" "usage: orch.sh branch base-sha"
+assert_contains "help documents branch base-sha" "$("$ORCH" help)" "branch base-sha"
+assert_contains "the CLI conventions table lists branch base-sha" \
+  "$(grep -F '| `branch`' "$(cd "$(dirname "$ORCH")/.." && pwd)/docs/agents/cli-conventions.md")" "base-sha"
+rm -rf "$(dirname "$bare")"
+
+# --- a quick implementation's report directory (#243) --------------------------
+# A quick implementation keeps no state.json and may run where init never did,
+# so quick path needs neither and git-excludes .orchestrator/ itself.
+echo
+echo "a quick implementation's report directory (#243)"
+new_repo >/dev/null
+top="$(git rev-parse --show-toplevel)"
+git checkout -q -b quick/12-foo
+out="$("$ORCH" quick path 2>&1)"; st=$?
+assert_status "quick path with no flow state succeeds" "$st" 0
+assert_eq "prints the branch's directory under .orchestrator/quick/, name used whole" \
+  "$out" "$top/.orchestrator/quick/quick/12-foo/"
+assert_eq "creates it" "$([ -d "$top/.orchestrator/quick/quick/12-foo" ] && echo yes || echo no)" "yes"
+assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_contains "git-excludes .orchestrator/" "$(cat "$(git rev-parse --git-dir)/info/exclude")" ".orchestrator/"
+assert_eq "and leaves the working tree clean" "$(git status --porcelain)" ""
+touch "$top/.orchestrator/quick/quick/12-foo/iteration-01-spec.md"
+out="$("$ORCH" quick path 2>&1)"; st=$?
+assert_status "a second call succeeds" "$st" 0
+assert_eq "and keeps what is already there" \
+  "$([ -f "$top/.orchestrator/quick/quick/12-foo/iteration-01-spec.md" ] && echo yes || echo no)" "yes"
+assert_eq "without excluding twice" "$(grep -cxF '.orchestrator/' "$(git rev-parse --git-dir)/info/exclude")" "1"
+out="$("$ORCH" quick path extra 2>&1)"; st=$?
+assert_status "refuses arguments" "$st" 1
+assert_contains "with the usage" "$out" "usage: orch.sh quick path"
+git checkout -q --detach
+out="$("$ORCH" quick path 2>&1)"; st=$?
+assert_status "refuses a detached HEAD" "$st" 1
+assert_contains "help documents quick path" "$("$ORCH" help)" "quick path"
+assert_contains "the CLI conventions table lists quick path" \
+  "$(grep -F '| `quick`' "$(cd "$(dirname "$ORCH")/.." && pwd)/docs/agents/cli-conventions.md")" "path"
+
 # --- branch retire ------------------------------------------------------------
 # The rename-aside a redo uses instead of deleting or force-pushing over a
 # discarded attempt's commits. The push/delete-remote-ref assertions reuse the
@@ -1302,7 +1407,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 out="$("$ORCH" branch bogus 2>&1)"; st=$?
 assert_status "branch bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
-assert_contains "naming all three" "$out" "create|off|retire"
+assert_contains "naming all four" "$out" "create|off|base-sha|retire"
 
 # --- issue publish ------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
@@ -1679,19 +1784,22 @@ assert_contains "warns that the default branch came from a fallback" "$out" "def
 # No healthy_repo() needed: the offline/noauth/default-branch checks above
 # only ever scoped GH_STUB_* to their own command, so the repo is still clean
 # going into this one - it's the HOME reassignment right below that dirties it.
-HOME="$(stub_mattpocock to-spec code-review)"; export HOME
+HOME="$(stub_mattpocock to-spec)"; export HOME
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails on a partial mattpocock-skills install" "$st" 1
 assert_contains "names every missing skill" "$out" "missing: to-tickets, tdd"
 assert_eq "says nothing about the skills that are present" \
-  "$(printf '%s\n' "$out" | grep -c 'code-review')" "0"
+  "$(printf '%s\n' "$out" | grep -c 'missing:.*to-spec')" "0"
 
 # Only the skills the flow reads are required: an install without the upstream
 # skills the plugin replaced (implement, handoff) is complete.
-HOME="$(stub_mattpocock to-spec to-tickets tdd code-review)"; export HOME
+HOME="$(stub_mattpocock to-spec to-tickets tdd)"; export HOME
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "passes an install with no implement or handoff" "$st" 0
 assert_contains "and reports every skill the flow reads as resolved" "$out" "every skill the flow reads resolves"
+# Nothing in the plugin invokes the upstream code review skill any more (#189),
+# so an install without it is complete: no failure, no warning naming it.
+assert_not_contains "does not require the upstream code review skill" "$out" "code-review"
 
 out="$(HOME=/nonexistent "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails cleanly when mattpocock-skills is absent" "$st" 1
@@ -1727,7 +1835,7 @@ for layout in claude junie agents override; do
   for gone in to-tickets tdd; do
     h="$(mktemp -d)"
     # shellcheck disable=SC2046 # word-splitting the kept names is the point
-    mp_install "$layout" "$h" $(printf '%s\n' to-spec to-tickets tdd code-review | grep -vx "$gone")
+    mp_install "$layout" "$h" $(printf '%s\n' to-spec to-tickets tdd | grep -vx "$gone")
     if [ "$layout" = override ]; then ov="$h/mp-checkout"; fi
     out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$ov" "$ORCH" doctor --env 2>&1)"; st=$?
     assert_status "fails on a $layout install missing $gone" "$st" 1
@@ -1736,7 +1844,7 @@ for layout in claude junie agents override; do
 done
 
 # A skill the lockfile gives to another plugin is missing, not present.
-h="$(mktemp -d)"; mp_install agents "$h" to-spec to-tickets code-review
+h="$(mktemp -d)"; mp_install agents "$h" to-spec to-tickets
 mp_install agents-foreign "$h" tdd
 out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when a skills CLI skill belongs to another plugin" "$st" 1
@@ -1766,7 +1874,7 @@ assert_eq "every skill in MP_SKILLS is invoked by a skill or agent" \
 # Doctor says where the skills were found, in terms of the host that put them
 # there - the path alone does not tell a user which install to repair.
 h="$(mktemp -d)"
-for layout in claude junie agents; do mp_install "$layout" "$h" to-spec to-tickets tdd code-review; done
+for layout in claude junie agents; do mp_install "$layout" "$h" to-spec to-tickets tdd; done
 out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
 assert_contains "reports Claude's plugin cache as the source" "$out" "(Claude Code plugin cache)"
 rm -rf "$h/.claude"
@@ -1776,7 +1884,7 @@ rm -rf "$h/.junie"
 out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
 assert_contains "reports the skills CLI store as the source" "$out" "(skills CLI)"
 assert_contains "and where that store is" "$out" "mattpocock-skills: ~/.agents/skills"
-mp_install override "$h" to-spec to-tickets tdd code-review
+mp_install override "$h" to-spec to-tickets tdd
 out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" doctor --env 2>&1)"
 assert_contains "reports the override as the source" "$out" "(ORCHESTRATOR_MATTPOCOCK_ROOT)"
 
@@ -5011,6 +5119,57 @@ assert_contains "orch-spec-review scopes its review-the-spec question to a flow'
 assert_contains "orch-spec-review scopes changelog-only to the review's own records" \
   "$(flat_section "$root/skills/orch-spec-review/SKILL.md" "Standalone spec review")" \
   'among the review'"'"'s own records'
+
+# --- quick implementation reviews with the plugin's reviewer agents (#244) ---
+# The model cannot be proven to start the reviewers; these checks keep the
+# step's agents, prompt, retry rule, stop, and declined-findings list in place.
+echo
+echo "quick implementation reviews with the plugin's reviewer agents (#244)"
+review_step="$(flat_section "$quick_md" "6. Review")"
+for want in '`orch-reviewer-standards`' '`orch-reviewer-spec`' \
+  'Base SHA: <recorded base SHA>' 'Spec issue: #<linked issue>' 'Iteration: 01' \
+  'Report path: <quick report dir>/iteration-01-<standards|spec>.md' \
+  'bash "$ORCH" branch base-sha' 'bash "$ORCH" quick path' \
+  'never forks' 'in one message' 'Start that reviewer again once' \
+  'stop before opening the PR' '**Review**' '`None declined.`' \
+  '**Start a fresh subagent** fallback'; do
+  assert_contains "the review step names $want" "$review_step" "$want"
+done
+for gone in 'mp-skill code-review' 'mattpocock-skills:code-review' 'orch-fixer'; do
+  assert_not_contains "the review step no longer names $gone" "$review_step" "$gone"
+done
+assert_contains "the PR step names the Review heading" \
+  "$(flat_section "$quick_md" "7. Open the PR")" '**Review**'
+for a in orch-reviewer-standards orch-reviewer-spec; do
+  desc="$(grep -m1 '^description:' "$root/agents/$a.md")"
+  assert_contains "$a describes one review pass" "$desc" 'one orchestrator review pass'
+  assert_contains "$a names both starters" "$desc" \
+    "Started only by the orch-review skill's driver, or by the orch-quick-implement skill's single pass, with a base SHA, a spec issue, an iteration, and a report path."
+done
+adr21="$root/docs/adr/0021-quick-implementation-reviews-with-the-plugins-reviewer-agents.md"
+assert_contains "ADR-0021 exists with its title" \
+  "$(head -1 "$adr21" 2>&1)" "# Quick implementation reviews with the plugin's reviewer agents"
+assert_contains "ADR-0021 says nothing invokes code-review any more" \
+  "$(flat_text "$adr21" 2>&1)" 'nothing in the plugin invokes `mattpocock-skills:code-review`'
+assert_contains "ADR-0018 points at ADR-0021" "$adr18" \
+  "Superseded in part by ADR-0021: quick implementation's single pass no longer uses \`code-review\` either."
+assert_contains "the Quick implementation entry names its one review pass" \
+  "$(flat_section "$glossary" "Quick implementation")" \
+  'Its review is one pass by the same two reviewers a review loop starts, with no loop around them'
+finding="$(flat_section "$glossary" "Finding")"
+assert_contains "the Finding entry names quick implementation's pass" \
+  "$finding" "or about the change, from quick implementation's single pass"
+assert_contains "the Finding entry gives a quick finding no severity" \
+  "$finding" "A finding from quick implementation's single pass carries none"
+assert_contains "the Base branch entry names a quick implementation's base SHA" \
+  "$(flat_section "$glossary" "Base branch")" \
+  "A quick implementation's base SHA means the same, recorded on its branch."
+assert_contains "the Reviewer entry names quick implementation's single pass" \
+  "$(flat_section "$glossary" "Reviewer")" \
+  "A quick implementation's single pass starts the same two reviewers once, outside any loop."
+assert_contains "the Iteration entry names quick implementation's iteration 01" \
+  "$(flat_section "$glossary" "Iteration")" \
+  "labels its reviewer prompts iteration \`01\`; it is not part of a loop."
 
 # --- doctor: base branch check -----------------------------------------------
 # A set base branch that has vanished from origin is the one stale setting that

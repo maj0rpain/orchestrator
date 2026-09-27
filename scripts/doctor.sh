@@ -273,7 +273,7 @@ check_mattpocock() {
 # agents/*.md invoke (`mp-skill <name>` or `mattpocock-skills:<name>`): a skill
 # added to or dropped from those files is added to or dropped from here too.
 # orch_test.sh's consistency test fails while the two disagree.
-MP_SKILLS="to-spec to-tickets tdd code-review"
+MP_SKILLS="to-spec to-tickets tdd"
 
 check_skills() {
   d_gate "${D_MP:+ok}" D_MP_SKIPPED || return 0
@@ -425,7 +425,7 @@ d_orch_remedy() {
 
 check_tracker_doc() {
   if [ -f "$ROOT/docs/agents/issue-tracker.md" ]; then d_ok "issue tracker configured"; return 0; fi
-  d_fail "docs/agents/issue-tracker.md is missing - to-spec and code-review both read it."
+  d_fail "docs/agents/issue-tracker.md is missing - to-spec reads it."
   d_remedy "/mattpocock-skills:setup-matt-pocock-skills"
 }
 

@@ -145,30 +145,63 @@ with any fallback that section says the agent takes.
 
 ## 6. Review
 
-Invoke `mattpocock-skills:code-review` yourself - one plain,
-single pass, never the `orch-review` skill's multi-iteration loop. That loop's
-budget and filed-findings machinery is exactly what a quick implementation is
-choosing to skip. Fix what it finds before opening the PR.
+One pass, never the `orch-review` skill's multi-iteration loop - that loop's
+budget, severity triage and filed-findings machinery is exactly what a quick
+implementation is choosing to skip. The pass starts the same two plugin agents
+the loop does, under the plugin root's `agents/`:
 
-Always spell the code review skill with its `mattpocock-skills:` scope - the
-bare name is ambiguous with another `code-review` skill that may be installed
-alongside this plugin, which reviews the current diff for correctness and
-cleanup, not Standards + Spec fidelity to the issue that this step needs. On
-a host with no scoped names, invoke it through `bash "$ORCH" mp-skill code-review`
-for the same reason.
+- **`orch-reviewer-standards`** - the Standards axis: the repo's documented
+  coding standards, plus the plugin's own smell baseline.
+- **`orch-reviewer-spec`** - the Spec axis: whether the change implements what
+  the linked issue asked for.
+
+Get the base SHA with `bash "$ORCH" branch base-sha` - the base branch's tip
+that `branch off` recorded in step 4 - and the report directory with
+`bash "$ORCH" quick path`. Start both reviewers at once, as fresh agents,
+never forks, both in one message. On Claude Code each is the agent of that
+name under the `orchestrator:` plugin scope. Each prompt carries these four
+variables and nothing else - no issue body, no diff, no brief:
+
+```
+Base SHA: <recorded base SHA>
+Spec issue: #<linked issue>
+Iteration: 01
+Report path: <quick report dir>/iteration-01-<standards|spec>.md
+```
+
+Each reviewer fetches the diff and the issue itself, writes its findings there
+unranked, each with its file, line, and claim, and returns one line naming its
+report and its finding count. A missing report, or one that says the base SHA
+did not resolve or the diff was empty, is a failed review, not a clean one.
+Start that reviewer again once. If it fails a second time, stop before opening
+the PR and tell the human which axis failed: this skill promises a review
+before the PR, so it never opens one with an axis unreviewed.
+
+Read both reports and fix, yourself, every finding you agree with - no fixer
+agent, no severity, nothing filed. Commit the fixes. Each finding you decline
+goes under a **Review** heading in the PR body (step 7), one line each: the
+finding's `file:line` - or `-` when the report gave `-` for its location - and
+your reason for declining it. If you declined none, the heading says
+`None declined.`
+
+A host that cannot start the reviewers natively takes
+`docs/host-capabilities.md`'s **Start a fresh subagent** fallback, with the
+prompt above, the same as the loop; list it under the PR body's **Host
+fallbacks**.
 
 ## 7. Open the PR
 
 Commit, then open the PR with `bash "$ORCH" pr publish <issue> "<title>"
 <body-file>` - the same boundary `pr open` draws for a flow, kept out of
-skill prose. The body ends with a **Host fallbacks** heading listing every
-fallback this run took - including any the spec review in step 2 took - or
-`None (<host>).` It pushes the branch and opens the PR against
-the base branch `branch off` recorded, not as a draft. The body starts with
-`Closes #<issue>` when that base branch is the default branch, and `Refs
-#<issue>` otherwise - the issue closes when the release PR carries the work
-into the default branch (the `orch-release` skill). Either way `pr publish`
-writes that line, so the body file carries no closing keyword of its own.
-Not a draft because the single-pass review in step 6 already
-happened, so there is no loop left to promote it - draft would leave it stuck
-with nothing watching it.
+skill prose. The body carries a **Review** heading listing every finding
+step 6 declined, with its location and reason, or `None declined.` It ends
+with a **Host fallbacks** heading listing every fallback this run took -
+including any the spec review in step 2 took - or `None (<host>).` It
+pushes the branch and opens the PR against the base branch `branch off`
+recorded, not as a draft. The body starts with `Closes #<issue>` when that
+base branch is the default branch, and `Refs #<issue>` otherwise - the
+issue closes when the release PR carries the work into the default branch
+(the `orch-release` skill). Either way `pr publish` writes that line, so the
+body file carries no closing keyword of its own. Not a draft because the
+single-pass review in step 6 already happened, so there is no loop left to
+promote it - draft would leave it stuck with nothing watching it.

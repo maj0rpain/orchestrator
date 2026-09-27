@@ -55,17 +55,13 @@ Their `SKILL.md` files are plain markdown. Resolve one with
 is exactly what invoking the skill would have injected. Never tell the user to type
 the slash command themselves, and never claim to have invoked a skill you read.
 
-`mattpocock-skills:code-review`, `tdd`, `research`, and `domain-modeling` have
-no such flag; invoke those as skills (on Claude Code, the Skill tool). Always
-spell the code review skill with its `mattpocock-skills:` scope - the bare
-name is ambiguous with another `code-review` skill that may be installed
-alongside this plugin. On a host with no scoped names, invoke it through
-`bash "$ORCH" mp-skill code-review` for the same reason. Only a quick
-implementation's own single-pass review uses it. The implement phase's
-ticket subagents do not: they run as the plugin's `orch-implementer` agent,
-which checks each ticket against its acceptance criteria and leaves review
-to the loop. The review loop does not either: `orch-review` starts the
-plugin's own reviewer agents instead.
+`tdd`, `research`, and `domain-modeling` have no such flag; invoke those as
+skills (on Claude Code, the Skill tool). Nothing in this plugin invokes a
+code review skill: the implement phase's ticket subagents run as the
+plugin's `orch-implementer` agent, which checks each ticket against its
+acceptance criteria and leaves review to the loop, and both the review loop
+and quick implementation's single pass start the plugin's own reviewer
+agents.
 
 ## Starting a flow
 
