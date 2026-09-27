@@ -38,8 +38,8 @@ start a fresh subagent, start a fresh session. Skills are named bare
 (`orch-handoff`); on Claude Code the scoped name is `orchestrator:<name>`.
 `docs/host-capabilities.md` under the plugin root maps each capability to your
 host. Where your host's cell says **Fallback**, or **Unverified** and the
-capability turns out missing, take the fallback it documents and record it in
-this phase's handoff under **Host fallbacks**. Where this file offers the human an
+capability turns out missing, or names a caveat that applies to this step,
+take the fallback it documents and record it in this phase's handoff under **Host fallbacks**. Where this file offers the human an
 `/orchestrator:<command>`, here or in a skill this flow runs, and your host
 has no plugin commands, offer the matching section of this skill instead.
 

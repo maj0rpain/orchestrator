@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.5.10
+
+The host capabilities reference states what Junie CLI does with the plugin's
+agents (see issue #203).
+
+- The Junie CLI **Start a fresh subagent** cell is no longer **Unverified**:
+  Junie loads the plugin's `agents/`, but its capability filter usually hides
+  them, so the fallback's general-purpose-agent tier is the expected path
+  there. `orch.sh doctor --env` on Junie no longer lists the fresh subagent
+  as unverified.
+- The fallback's first tier covers an agent that is not available to start
+  natively (not loaded, or hidden by the host), and a recorded fallback names
+  the reason. A cell's caveat that applies to a step is a reason to take the
+  fallback, in `orch-flow` and `orch-quick-implement` too.
+- The reference and README document the prompt workaround (naming the agent
+  in the user's prompt), which pays off only once #204 is fixed.
+
 ## 1.5.9
 
 Skills find `orch.sh` on Junie CLI with their first command (see issue #201).

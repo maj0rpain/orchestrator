@@ -2039,10 +2039,11 @@ out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --en
 assert_status "Junie's missing capabilities warn, never fail" "$st" 0
 assert_contains "detects Junie CLI from JUNIE_EXTENSION_ROOT" "$out" "host: Junie CLI"
 assert_contains "names the edit guard Junie cannot arm" "$out" "Arm the edit guard"
-# Junie CLI documents custom subagents, but loading a plugin's agents/ is
-# unconfirmed (#148), so a fresh subagent is unverified there, not missing.
-assert_contains "names the fresh subagent as unverified on Junie" \
-  "$(printf '%s\n' "$out" | grep -o 'unverified: .*')" "Start a fresh subagent"
+# Junie CLI loads the plugin's agents/ (#148, #203); its capability filter may
+# hide one, which the cell states as a caveat. So a fresh subagent is neither
+# missing nor unverified there.
+assert_eq "does not call the fresh subagent unverified on Junie" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*' | grep -c 'Start a fresh subagent')" "0"
 assert_eq "does not claim Junie lacks a fresh subagent" \
   "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Start a fresh subagent')" "0"
 assert_contains "names the forked subagent Junie cannot start" "$out" "Start a forked subagent"
@@ -4324,6 +4325,25 @@ for prose in "$hostcaps" "$adr18"; do
   assert_contains "read-only through Bash always rested on the brief" \
     "$prose" 'through Bash always rested on the brief'
 done
+# Junie CLI loads the plugin's agents/ but its capability filter may hide one
+# (#203): the fresh-subagent cell says so, the fallback names a hidden agent,
+# and no text gives "does not load agents/" as the reason for the fallback.
+junie_subagent="$(grep -m1 '^| Start a fresh subagent |' "$root/docs/host-capabilities.md" | awk -F'|' '{ print $4 }')"
+assert_contains "the Junie fresh-subagent cell names the capability filter" \
+  "$junie_subagent" 'capability filter'
+assert_not_contains "the Junie fresh-subagent cell no longer calls loading unconfirmed" \
+  "$junie_subagent" 'not confirmed'
+assert_not_contains "the Junie fresh-subagent cell is no longer Unverified" \
+  "$junie_subagent" '**Unverified**'
+assert_contains "the fallback's first tier covers an agent the host hides" \
+  "$hostcaps" 'hidden by the host'
+for f in "$root"/docs/host-capabilities.md "$root"/README.md "$root"/skills/*/SKILL.md "$root"/agents/*.md; do
+  assert_not_contains "${f#"$root"/} gives no 'does not load agents/' reason" \
+    "$(tr -s '\n ' ' ' <"$f")" "not load the plugin's \`agents/\`"
+done
+assert_contains "the prompt workaround is documented for Junie users" \
+  "$hostcaps" 'by name'
+assert_contains "the workaround names its dependency on #204" "$hostcaps" '#204'
 for a in orch-reviewer-standards orch-reviewer-spec; do
   assert_contains "$a keeps its tools list" \
     "$(cat "$root/agents/$a.md")" 'tools: Read, Grep, Glob, Bash'
