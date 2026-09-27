@@ -4656,7 +4656,7 @@ assert_not_contains "orch-review-spec no longer carries the reporting rules" \
 assert_contains "orch-review-spec keeps the retry rule" "$review_spec" \
   'A second failure makes it **not run - <reason>**'
 assert_contains "orch-review-spec's fallback runs each lens from its agent file" \
-  "$review_spec" "with each lens's agent file as its brief"
+  "$review_spec" "with each lens's agent file, \`agents/<agent>.md\` under the plugin root, as its brief"
 assert_contains "orch-review-spec's fallback is the host-capabilities one" \
   "$review_spec" '"Start a fresh subagent" fallback in `docs/host-capabilities.md`'
 assert_not_contains "orch-review-spec's fallback no longer points at the brief below" \

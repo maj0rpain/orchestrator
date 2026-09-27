@@ -68,8 +68,9 @@ names, and each lens returns its findings as its reply.
 
 On a host that cannot start the plugin's agents natively, take the
 "Start a fresh subagent" fallback in `docs/host-capabilities.md` under the
-plugin root, with each lens's agent file as its brief, and record it in
-`02-spec.md` under **Host fallbacks**.
+plugin root, with each lens's agent file, `agents/<agent>.md` under the
+plugin root, as its brief, and record it in `02-spec.md` under **Host
+fallbacks**.
 
 A lens that errors or returns nothing usable is spawned once more with the
 same prompt. A second failure makes it **not run - <reason>**: it appears that
