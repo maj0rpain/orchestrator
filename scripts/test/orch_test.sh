@@ -4702,29 +4702,50 @@ rm -rf "$fixture"
 # lens-to-agent table, and the host fallback runs a lens from its agent file.
 echo
 echo "spec-review lenses run as plugin agents (#177)"
-flat() { tr -s '\n ' ' ' <"$1"; }
-lens_brief() {
-  case "$1" in
-    fidelity) cat <<'EOF'
-The plan handoff records what a human decided; the spec is what got written. Report: (a) every decision or constraint in the plan that the spec dropped or altered; (b) anything the plan's **Rejected alternatives** ruled out that the spec re-proposes, by whatever route it got there - label each of these `contradicts the plan`.
-EOF
-    ;;
-    consistency) cat <<'EOF'
-Report where the spec disagrees with itself - user stories against Implementation Decisions against Out of Scope - and where it uses a term differently from the glossary or contradicts a recorded decision in the ADRs. Quote both sides of every disagreement.
-EOF
-    ;;
-    testability) cat <<'EOF'
-The seams are the public boundaries the spec's **Testing Decisions** section names; the repo's existing tests are prior art for what those seams can observe. Report: (a) every user story or Implementation Decision that cannot be proven at those seams; (b) if the section names no seams, or names them too loosely to say what a test would observe, report that as a finding in its own right.
-EOF
-    ;;
-    implementability) cat <<'EOF'
-You are a fresh session with only this issue and the repo. Report: (a) every decision that needs context the issue does not carry - a name, a shape, a reason that must have lived in a conversation; (b) every decision the codebase makes impossible as written, quoting the code that makes it so.
-EOF
-    ;;
-  esac
+# scan_lens_briefs <plugin root>: print one line per brief out of place. The
+# briefs' one copy is each lens agent's `## Brief` section, so the check is on
+# structure, never on the briefs' wording: every lens agent has a non-empty
+# `## Brief`, and orch-review-spec has no `**<Lens> brief.**` heading.
+lenses="fidelity consistency testability implementability"
+scan_lens_briefs() {
+  local r="$1" lens a heading
+  for lens in $lenses; do
+    a="$r/agents/orch-lens-$lens.md"
+    [ -f "$a" ] && awk -v f="${a#"$r"/}" '
+      /^## Brief[[:space:]]*$/ { inb = 1; seen = 1; next }
+      /^##?[[:space:]]/ { inb = 0 }
+      inb && /[^[:space:]]/ { body = 1 }
+      END { if (!seen) print f ": has no ## Brief section"
+            else if (!body) print f ": has an empty ## Brief section" }' "$a"
+    heading="**${lens^} brief.**"
+    grep -qF "$heading" "$r/skills/orch-review-spec/SKILL.md" 2>/dev/null &&
+      echo "skills/orch-review-spec/SKILL.md: carries the $heading heading"
+  done
+  return 0
 }
-review_spec="$(flat "$root/skills/orch-review-spec/SKILL.md")"
-for lens in fidelity consistency testability implementability; do
+assert_eq "each lens agent owns a non-empty brief and the skill carries none" \
+  "$(scan_lens_briefs "$root")" ""
+fixture="$(mktemp -d)"
+mkdir -p "$fixture/agents" "$fixture/skills/orch-review-spec"
+printf -- '---\nname: orch-lens-fidelity\n---\n\n## Brief\n\n## Reporting rules\n\n- Under 400 words.\n' \
+  >"$fixture/agents/orch-lens-fidelity.md"
+printf -- '---\nname: orch-lens-consistency\n---\n\n# Consistency lens\n\nReport.\n' \
+  >"$fixture/agents/orch-lens-consistency.md"
+printf -- '---\nname: orch-lens-testability\n---\n\n## Brief\n\nReport seams.\n\n## Reporting rules\n' \
+  >"$fixture/agents/orch-lens-testability.md"
+printf 'Run the lenses.\n\n**Consistency brief.** Placeholder.\n' \
+  >"$fixture/skills/orch-review-spec/SKILL.md"
+out="$(scan_lens_briefs "$fixture")"
+assert_contains "the scan flags an empty ## Brief section" \
+  "$out" "agents/orch-lens-fidelity.md: has an empty ## Brief section"
+assert_contains "the scan flags a lens agent with no ## Brief heading" \
+  "$out" "agents/orch-lens-consistency.md: has no ## Brief section"
+assert_not_contains "the scan accepts a brief with content" "$out" "orch-lens-testability"
+assert_contains "the scan flags a brief heading back in orch-review-spec" \
+  "$out" "skills/orch-review-spec/SKILL.md: carries the **Consistency brief.** heading"
+rm -rf "$fixture"
+review_spec="$(flat_text "$root/skills/orch-review-spec/SKILL.md")"
+for lens in $lenses; do
   a="$root/agents/orch-lens-$lens.md"
   if [ ! -f "$a" ]; then bad "orch-lens-$lens exists" "no $a"; continue; fi
   ok "orch-lens-$lens exists"
@@ -4733,17 +4754,13 @@ for lens in fidelity consistency testability implementability; do
   assert_eq "orch-lens-$lens may only read" \
     "$(grep -m1 '^tools:' "$a")" "tools: Read, Grep, Glob"
   assert_eq "orch-lens-$lens sets no model" "$(grep -c '^model:' "$a")" "0"
-  body="$(flat "$a")"
-  brief="$(lens_brief "$lens" | tr -s '\n ' ' ' | sed 's/ $//')"
-  assert_contains "orch-lens-$lens carries its brief verbatim" "$body" "$brief"
+  body="$(flat_text "$a")"
   for rule in 'Report findings only, never draft edits.' \
     'Quote the spec line for every finding.' 'Under 400 words.' \
     'Report "no findings" if there are none.'; do
     assert_contains "orch-lens-$lens carries the rule: $rule" "$body" "$rule"
   done
   assert_contains "orch-review-spec names orch-lens-$lens" "$review_spec" "orch-lens-$lens"
-  assert_not_contains "orch-review-spec no longer carries the $lens brief" \
-    "$review_spec" "$(printf '%s' "$brief" | cut -c1-60)"
 done
 assert_not_contains "orch-review-spec no longer carries the reporting rules" \
   "$review_spec" 'Report findings only, never draft edits.'
