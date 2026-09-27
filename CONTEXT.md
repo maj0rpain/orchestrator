@@ -80,7 +80,7 @@ one - with one deliberate exception: a review loop drives all of its iterations
 from a single session (ADR-0001), so inside the review phase the unit of fresh
 context is the loop, not the iteration. The loop is the unit of fresh context
 for its driver; the reviewers and the fixer get fresh context every iteration.
-The spec review is a step of the spec phase, not a phase of its own.
+A flow's spec review is a step of the spec phase, not a phase of its own.
 
 Note the tense: the recorded phase names the stage that runs **next**, not the
 one that just finished.
@@ -201,12 +201,15 @@ _Avoid_: existing issue, pre-existing issue, given issue.
 
 ## Spec review
 
-One look at a spec, taken once in the spec phase after the issue exists -
-published by `to-spec` or already adopted at init - and before its handoff is
-written. Four lenses read the spec independently; every finding they report
-is put to a human with a proposed edit, and only the edits the human accepts
-change the spec. A spec review runs once - it is not a loop and has no
-budget.
+One look at a spec issue, taken once. Usually a step of a flow's spec phase,
+after the issue exists - published by `to-spec` or already adopted at init -
+and before its handoff is written. A human may also ask for one on demand,
+against any issue: a standalone spec review, which belongs to no flow and
+leaves no handoff. Its lenses read the spec independently - four in a flow,
+three in a standalone review; every finding they
+report is put to a human with a proposed edit, and only the edits the human
+accepts change the spec. A spec review runs once - it is not a loop and has no
+budget; another look is another spec review.
 
 ## Lens
 
@@ -223,7 +226,8 @@ spec and nothing else:
   and does the codebase allow what it asks?
 
 Findings stay with the lens that reported them and are never ranked across
-lenses.
+lenses. Fidelity needs a plan, so a standalone spec review runs without it and
+records it as not run.
 
 ## Seam
 

@@ -115,6 +115,7 @@ running the flow never dirties a repo's working tree.
 | `/orchestrator:redo` | Step back one phase and re-run it. |
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
 | `/orchestrator:release` | Open the release PR that carries the base branch into the default branch (see below). |
+| `/orchestrator:review-spec <issue>` | Review any spec issue on demand, outside a flow: a standalone spec review. |
 
 ### Base branch
 
@@ -181,7 +182,7 @@ session's marker file when `orchestrator:orch-quick-implement` fires, without
 ## Layout
 
 ```
-commands/                     start, next, status, doctor, redo, abort, release
+commands/                     start, next, status, doctor, redo, abort, release, review-spec
 agents/                       the review loop's fresh agents (two reviewers, the fixer, the closer), the spec review's four lenses, and the implementer
 skills/orch-flow/             the state machine (judgment)
 skills/orch-review-spec/      the spec review: four lenses, one batch question

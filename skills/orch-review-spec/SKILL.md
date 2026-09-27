@@ -1,6 +1,6 @@
 ---
 name: orch-review-spec
-description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orch-flow's spec phase, after the issue exists - published by to-spec or already adopted at init - and before 02-spec.md is written.
+description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orch-flow's spec phase, after the issue exists - published by to-spec or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:review-spec <issue>: three lenses, no plan handoff, and nothing written to flow state.
 ---
 
 # Orchestrator spec review
@@ -16,6 +16,17 @@ There is no budget, no second pass, and no "review the spec?" question: the
 human's control is at the batch decision, where they may decline every edit.
 The independence comes from the sub-agents, the same way it does for the review
 loop - see `docs/adr/0001-review-loop-runs-in-a-single-session.md`.
+
+There are two entries, and everything from **The lenses** through **The
+changelog** is shared between them:
+
+- **Inputs** - the spec-phase entry, from `orch-flow`'s spec phase. It works
+  on the active flow's issue.
+- **Standalone spec review** - a human asks for a review of a given issue,
+  with `/orchestrator:review-spec <issue>` or in plain words, outside any
+  flow. It belongs to no flow, leaves no handoff, and runs three lenses:
+  Fidelity needs a plan and has none. Another look is another standalone
+  review.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -46,6 +57,53 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
      root, where they exist;
    - the repo root, for the codebase.
 
+## Standalone spec review
+
+The issue number comes from the human: the command's argument, or the issue
+they named. With no number, ask for one. Never take it from `state.json`.
+
+1. **Guard first**, before fetching. If `.orchestrator/state.json` does not
+   exist, proceed - never call `state get` then, which dies without it.
+   Otherwise read `bash "$ORCH" state get phase` and `bash "$ORCH" state get
+   issue`. If the phase is not `done` and the issue equals the requested one,
+   refuse and stop:
+   - at phase `spec`: the flow's own spec phase will review it - run
+     `/orchestrator:next`;
+   - at `implement` or `review`: the ticket subagents build from this spec,
+     so it cannot change behind the flow - run `/orchestrator:redo` to step
+     back to the spec phase.
+
+   Any other issue, or a `done` flow, proceeds. This is the review's only
+   read of `state.json`.
+2. **Working directory**: `<dir>` is `.orchestrator/spec-review/<issue>/`.
+   Wipe it at the start of each run - `rm -rf` it - so every run starts from
+   an empty directory.
+3. **Fetch**: `bash "$ORCH" issue fetch <issue> <dir>/spec.md`, which creates
+   `<dir>`. A failure stops the review: say what blocked it. There is no flow
+   to abort, so do not offer `/orchestrator:abort`. The directory is left for
+   inspection and wiped by the next run.
+4. Resolve the glossary and decisions (`CONTEXT.md` and `docs/adr/` at the
+   repo root, where they exist) and the repo root, as the spec-phase entry
+   does. There is no plan handoff.
+
+The standalone entry never calls `spec fetch`, `spec update`, `spec comment`,
+or `handoff path`, never reads under `.orchestrator/handoff/`, and never
+calls `gh issue` directly.
+
+Then run **The lenses**, **Disposition**, and **Applying the answer** below,
+with these differences:
+
+- **Lenses**: start Consistency, Testability, and Implementability only.
+  Fidelity is never started. It appears in the batch and the changelog as
+  **not run - standalone review, no plan to check against**. That is not a
+  failure, so the retry rule does not apply to it.
+- **Disposition**: unchanged. There are no `contradicts the plan` items,
+  because Fidelity does not run.
+- **Applying**: see the standalone steps in **Applying the answer**.
+- **Host fallbacks and lens failures** are recorded in the changelog
+  comment only, under a **Host fallbacks** line. A standalone review has one
+  changelog, not two.
+
 Nothing from this session's conversation reaches a lens: not the plan as you
 remember it, not `to-spec`'s reasoning, not the seams as agreed in chat. A lens
 that needs something gets a file path.
@@ -53,7 +111,8 @@ that needs something gets a file path.
 ## The lenses
 
 Each lens is one of the plugin's agents, which owns its brief and the
-reporting rules and may only read. Start all four at once as fresh
+reporting rules and may only read. Start all four at once (three in a
+standalone review, without Fidelity) as fresh
 subagents - never forks, which inherit this context. On Claude Code that is
 the Agent tool with `subagent_type` set to the lens's agent name under the
 `orchestrator:` plugin scope. Each prompt carries only the paths its row
@@ -70,11 +129,13 @@ On a host that cannot start the plugin's agents natively, take the
 "Start a fresh subagent" fallback in `docs/host-capabilities.md` under the
 plugin root, with each lens's agent file, `agents/<agent>.md` under the
 plugin root, as its brief, and record it in `02-spec.md` under **Host
-fallbacks**.
+fallbacks** (a standalone review records it in its changelog comment
+instead).
 
 A lens that errors or returns nothing usable is spawned once more with the
 same prompt. A second failure makes it **not run - <reason>**: it appears that
-way in the batch and in both changelogs, and the review continues on the
+way in the batch and in both changelogs (the one changelog, in a standalone
+review), and the review continues on the
 lenses that answered. Three lenses and a recorded gap is a spec review; a
 silent gap is not.
 
@@ -125,9 +186,23 @@ Asked once; a long spec is one longer question, not twenty prompts.
    `02-spec.md`'s **Spec review changelog**, so the implement phase carries the
    disposition without a network call.
 
-Nothing calls `gh issue edit` or `gh issue comment` directly: the three
-`spec` commands are the one place body writes happen, and the one place they
-are tested.
+A standalone review applies through the stateless `issue` commands instead:
+
+1. Apply the accepted edits to `<dir>/spec.md`, then
+   `bash "$ORCH" issue update <issue> <dir>/spec.md`. Apply none: skip this
+   step, as above.
+2. Write the changelog to `<dir>/changelog.md` under a `## Spec review`
+   heading, with Fidelity's **not run - standalone review, no plan to check
+   against** line and any **Host fallbacks** line, and
+   `bash "$ORCH" issue comment <issue> <dir>/changelog.md`. The comment is
+   posted on Apply none too.
+
+It never writes `state.json`, `.orchestrator/handoff/`, `02-spec.md`, or a
+plan's **Rejected alternatives**, and returns nothing to a flow skill.
+
+Nothing calls `gh issue edit` or `gh issue comment` directly: `orch.sh`'s
+`spec` and `issue` commands are the one place body writes and comments
+happen, and the one place they are tested.
 
 ## The changelog
 
@@ -138,6 +213,8 @@ Organised per lens, in the table's order, one heading each:
   reason - a decision visible nowhere else is fully recorded, the same
   asymmetry the review loop applies to demoted findings;
 - a lens that found nothing: **None**;
-- a lens that failed twice: **not run - <reason>**.
+- a lens that failed twice: **not run - <reason>**;
+- in a standalone review, Fidelity: **not run - standalone review, no plan
+  to check against**.
 
 Silence is never ambiguous: every lens has a line.

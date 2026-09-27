@@ -4291,10 +4291,16 @@ assert_eq "gh itself was invoked once, as a real subprocess" \
 # left in a skill, command, hook, or doc points a model at a skill that no
 # longer exists. CHANGELOG and ADRs record history and may name the old ones;
 # scripts/test/ feeds old names in deliberately as negative cases.
+# /orchestrator:review-spec is a command (#185), not the old skill name, so
+# only its slash form is exempt.
 echo
 echo "skill names (ADR-0014)"
 root="$(cd "$(dirname "$ORCH")/.." && pwd)"
-old_names='orchestrator:(flow|handoff|review|review-spec|quick-implement)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement)/|^name: (flow|handoff|review|review-spec|quick-implement)$'
+old_names='orchestrator:(flow|handoff|review|quick-implement)([^a-z-]|$)|(^|[^/])orchestrator:review-spec([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement)/|^name: (flow|handoff|review|review-spec|quick-implement)$'
+assert_eq "the old review-spec skill name is still flagged" \
+  "$(printf 'Call `orchestrator:review-spec`.\n' | grep -cE "$old_names")" "1"
+assert_eq "the /orchestrator:review-spec command is not the old skill name" \
+  "$(printf 'Run `/orchestrator:review-spec 12`.\n' | grep -cE "$old_names")" "0"
 hits="$(git -C "$root" ls-files -z \
   | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/)' \
   | (cd "$root" && xargs -0 grep -nE "$old_names" 2>/dev/null))"
