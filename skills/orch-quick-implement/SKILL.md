@@ -42,6 +42,12 @@ Never proceed without one, and never decide silently whether to make one.
   the issue tracker" convention, with `bash "$ORCH" issue publish "<title>"
   <body-file>` - the same boundary `review file` draws for a filed finding,
   kept out of skill prose - from the shared understanding just reached.
+- Either way, a glossary or ADR change (`CONTEXT.md`, `CONTEXT-MAP.md`,
+  `docs/adr/`) the planning session decided goes into the linked issue's body
+  word for word - the new or replaced text, naming the file and entry - never
+  into those files during planning. It lands with the change it describes
+  (ADR-0022). The standalone spec review in step 2 runs no Fidelity lens, so
+  nothing else checks the wording survived.
 - If neither holds - no linked issue, and the tracker convention doc does not
   exist or `issue publish` fails - stop and say why. A quick implementation
   with no issue behind it is exactly the unaccountable path this skill exists

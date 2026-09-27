@@ -657,7 +657,8 @@ assert_contains "names the untracked path" "$out" "stray.sh"
 assert_eq "writes no state when it refuses" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 assert_contains "says how to resolve it" "$out" "Commit, stash, or discard"
 assert_contains "says to retry" "$out" "run init again"
-assert_contains "names what planning may change" "$out" "docs/adr/"
+assert_contains "names what planning may change" "$out" "docs/agents/"
+assert_not_contains "source-only refusal has no records block" "$out" "Planning records changed"
 
 rm stray.sh
 echo "changed" >>docs/agents/issue-tracker.md
@@ -687,8 +688,47 @@ assert_status "refuses when git status fails" "$st" 1
 assert_eq "writes no state when git status fails" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 mv .git/index.bak .git/index
 
-mkdir -p docs/adr && echo "# ADR" >docs/adr/0001-x.md
+# The glossary and ADRs are planning records: a dirty one refuses init with
+# the guard's redirect, under its own heading (#186).
 echo "# glossary" >CONTEXT.md
+out="$("$ORCH" init dirty 2>&1)"; st=$?
+assert_status "refuses a dirty CONTEXT.md" "$st" 1
+assert_contains "heads the records block" "$out" "Planning records changed (planning does not edit these in place):
+       CONTEXT.md"
+# The redirect is wrapped for the terminal, so its phrases are checked with
+# the line breaks and indentation flattened out.
+flat="$(printf '%s' "$out" | tr '\n' ' ' | tr -s ' ')"
+assert_contains "gives the records redirect" "$flat" "into the plan, so the spec carries it verbatim"
+assert_contains "gives the quick-implementation redirect" "$flat" "For a quick implementation, put it in the linked issue's body."
+assert_eq "wraps the redirect for the terminal" \
+  "$(printf '%s\n' "$out" | awk 'length > 80' | wc -l | tr -d ' ')" "0"
+assert_not_contains "records-only refusal has no source block" "$out" "Changes outside the planning allowlist:"
+# Committing a record from planning is the option ADR-0022 rejects, so a
+# records-only refusal never offers it.
+assert_not_contains "records-only refusal never says to commit" "$out" "Commit"
+assert_contains "says to discard or stash the records" "$out" "Discard or stash these changes, then run init again."
+assert_eq "writes no state for a dirty record" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+rm CONTEXT.md
+
+mkdir -p docs/adr && echo "# ADR" >docs/adr/0001-x.md
+out="$("$ORCH" init dirty 2>&1)"; st=$?
+assert_status "refuses a dirty ADR" "$st" 1
+assert_contains "lists the ADR under the records heading" "$out" "Planning records changed (planning does not edit these in place):
+       docs/adr/0001-x.md"
+
+echo "code" >stray.sh
+out="$("$ORCH" init dirty 2>&1)"; st=$?
+assert_status "refuses both dirty lists" "$st" 1
+assert_contains "lists the record under the records heading" "$out" "Planning records changed (planning does not edit these in place):
+       docs/adr/0001-x.md"
+assert_contains "lists the source path under its own heading" "$out" "Changes outside the planning allowlist:
+       stray.sh"
+assert_contains "tells the records apart in the resolution line" "$out" "Discard or stash the planning records; commit, stash, or discard the other
+     changes, then run init again."
+case "$out" in *"allowlist:"*docs/adr/0001-x.md*) bad "does not list the record under the source heading" "$out" ;;
+  *) ok "does not list the record under the source heading" ;; esac
+rm -r stray.sh docs/adr
+
 mkdir -p .scratch && echo "ticket" >.scratch/t.md
 mkdir -p sub
 out="$(cd sub && "$ORCH" init clean-enough 2>&1)"; st=$?

@@ -4,8 +4,8 @@
 #
 # The failure modes worth catching: the grilling hook firing on skills that
 # aren't planning, firing twice in one session, or staying silent when it should
-# speak; the edit guard blocking the planning artifacts that
-# improve-codebase-architecture and domain-modeling legitimately write; and the
+# speak; the edit guard blocking the planning artifacts planning legitimately
+# writes, or letting a planning record (glossary, ADR) through; and the
 # quick-implement hook touching a marker it should leave alone.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -78,7 +78,7 @@ assert_eq "top-level context matches Claude's" \
   "$(printf '%s' "$out" | jq -r '.additionalContext == .hookSpecificOutput.additionalContext')" "true"
 assert_contains "names every planning artifact from the shared allowlist" \
   "$(printf '%s' "$out" | jq -r '.additionalContext')" \
-  "CONTEXT.md, CONTEXT-MAP.md, docs/adr/, docs/agents/, .scratch/, .orchestrator/"
+  "docs/agents/, .scratch/, .orchestrator/"
 
 out="$(skill_event "mattpocock-skills:grilling" s1 | "$GRILL")"
 assert_empty "stays silent on the second call in one session" "$out"
@@ -109,6 +109,14 @@ mv "$REPO/docs/agents/.hidden" "$REPO/docs/agents/issue-tracker.md"
 mkdir -p "$REPO/.orchestrator"
 echo '{"slug":"x","phase":"spec"}' >"$REPO/.orchestrator/state.json"
 assert_empty "stays silent when a flow is already active" "$(skill_event "grilling" s6 | "$GRILL")"
+# A done flow is finished work, not a running one (ADR-0009): planning in its
+# checkout gets the full message, records rule included (#186).
+echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
+out="$(skill_event "grilling" s7 | "$GRILL")"
+assert_contains "still injects its context when the flow is done" "$out" "Do NOT offer to implement"
+assert_contains "tells planning to write record wording into the plan" \
+  "$(printf '%s' "$out" | jq -r '.additionalContext')" \
+  "- Glossary and ADR changes (CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim."
 rm -rf "$REPO/.orchestrator"
 
 echo
@@ -139,7 +147,7 @@ assert_eq "offers exactly two options on Junie" "$(count_closing_options "$out")
 assert_contains "forbids offering to implement on Junie" "$ctx" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat on Junie" "$ctx" "whole map is done"
 assert_contains "names every planning artifact on Junie" "$ctx" \
-  "CONTEXT.md, CONTEXT-MAP.md, docs/adr/, docs/agents/, .scratch/, .orchestrator/"
+  "docs/agents/, .scratch/, .orchestrator/"
 assert_contains "points at orch-flow's SKILL.md in this install" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
 assert_contains "points at orch-quick-implement's SKILL.md in this install" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-quick-implement/SKILL.md"
 assert_contains "says Junie has no Skill tool" "$ctx" "no Skill tool"
@@ -197,6 +205,11 @@ assert_empty "stays silent on Junie when a flow is already active" \
   "$(prompt_event '$grilling' j3 | "$GRILL")"
 assert_empty "stays silent on plan confirmation when a flow is already active" \
   "$(prompt_event "$confirm" jc1 | "$GRILL")"
+echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
+assert_contains "still fires on Junie's \$grilling when the flow is done" \
+  "$(prompt_event '$grilling' j4 | "$GRILL")" "Do NOT offer to implement"
+assert_contains "still asks at plan confirmation when the flow is done" \
+  "$(prompt_event "$confirm" jc1 | "$GRILL")" "Before you implement"
 rm -rf "$REPO/.orchestrator"
 
 # Claude Code also fires UserPromptSubmit, but its PostToolUse on Skill already
@@ -235,9 +248,28 @@ assert_eq "carries Junie's top-level block decision" \
 assert_contains "carries Junie's top-level reason" \
   "$(printf '%s' "$out" | jq -r '.reason')" "src/main.ts"
 
-for f in CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/agents/domain.md .scratch/ticket.md .orchestrator/handoff/01-plan.md; do
+for f in docs/agents/domain.md docs/agents/x.md .scratch/ticket.md .scratch/x.md .orchestrator/handoff/01-plan.md .orchestrator/x; do
   assert_empty "allows planning artifact: $f" "$(edit_event "$REPO/$f" s1 | "$GUARD")"
 done
+
+# The glossary and ADRs are planning records: planning never changes them in
+# place, and the denial redirects the wording into the plan instead (#186).
+for f in CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/adr/../adr/x.md; do
+  out="$(edit_event "$REPO/$f" s1 | "$GUARD")"
+  assert_eq "denies planning record: $f" \
+    "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+  assert_contains "gives the records reason for $f" "$(printf '%s' "$out" | jq -r '.reason')" \
+    "is a record of decisions, and planning does not change records in place. Write the exact wording you intended - the new or replaced text, and where it goes - into the plan, so the spec carries it verbatim as an Implementation Decision and it lands with the change it describes. For a quick implementation, put it in the linked issue's body."
+done
+records_reason="$(edit_event "$REPO/CONTEXT.md" s1 | "$GUARD" | jq -r '.reason')"
+assert_contains "records reason names the blocked record" "$records_reason" "'CONTEXT.md' is a record"
+assert_not_contains "records denial does not point at the flow" "$records_reason" "orchestrator:orch-flow"
+assert_not_contains "records denial does not list planning artifacts" "$records_reason" "Planning artifacts you may still edit"
+source_reason="$(edit_event "$REPO/src/x.ts" s1 | "$GUARD" | jq -r '.reason')"
+assert_contains "source denial keeps today's reason" "$source_reason" \
+  "this is a planning session and no flow has
+started, so 'src/x.ts' should not be edited yet."
+assert_contains "source denial still lists planning artifacts" "$source_reason" "Planning artifacts you may still edit"
 
 # Junie's PreToolUse payload carries neither session_id nor cwd. No session
 # means "not guarded", even if a stale marker for a defaulted id exists.
@@ -260,7 +292,7 @@ rel_edit="$(jq -n --arg cwd "$REPO" \
 assert_eq "denies a source edit given as a relative path" \
   "$(printf '%s' "$rel_edit" | "$GUARD" | jq -r '.decision')" "block"
 rel_ok="$(jq -n --arg cwd "$REPO" \
-  '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", cwd:$cwd, tool_input:{path:"docs/adr/0002-y.md"}}')"
+  '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"s1", cwd:$cwd, tool_input:{path:".scratch/y.md"}}')"
 assert_empty "allows a planning artifact given as a relative path" \
   "$(printf '%s' "$rel_ok" | "$GUARD")"
 # A ".." climbing out of an allowlisted directory lands in source, and must
@@ -282,7 +314,7 @@ assert_eq "falls back to the process working directory without cwd" \
 
 assert_contains "lists every allowlisted planning artifact" \
   "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD" | jq -r '.reason')" \
-  "CONTEXT.md, CONTEXT-MAP.md, docs/adr/, docs/agents/, .scratch/, .orchestrator/"
+  "docs/agents/, .scratch/, .orchestrator/"
 assert_not_contains "does not allow a lookalike of an allowlisted file" \
   "$(edit_event "$REPO/docs/CONTEXT.md" s1 | "$GUARD" | jq -r '.decision')" "null"
 
@@ -292,6 +324,34 @@ mkdir -p "$REPO/.orchestrator"
 echo '{"slug":"x","phase":"implement"}' >"$REPO/.orchestrator/state.json"
 assert_empty "stops guarding once a flow is running" \
   "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
+echo '{"slug":"x"}' >"$REPO/.orchestrator/state.json"
+assert_empty "stands down for a state.json with no phase" \
+  "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
+echo 'not json' >"$REPO/.orchestrator/state.json"
+assert_empty "stands down for an unreadable state.json" \
+  "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
+# A done flow is no flow: its lingering state.json must not switch the guard
+# off for the next planning session (#186, extending ADR-0009 to the hooks).
+echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
+out="$(edit_event "$REPO/CONTEXT.md" s1 | "$GUARD" | jq -r '.reason')"
+assert_contains "denies a record with the records reason when the flow is done" "$out" \
+  "'CONTEXT.md' is a record of decisions"
+out="$(edit_event "$REPO/src/main.ts" s1 | "$GUARD" | jq -r '.reason')"
+assert_contains "denies source with the source reason when the flow is done" "$out" \
+  "so 'src/main.ts' should not be edited yet"
+
+# End to end, no hand-seeded marker: grilling arms the guard in a checkout
+# whose flow is done, and the guard then denies a glossary edit.
+rm -f "$TMPDIR/orchestrator-grilling-e2e"
+skill_event "mattpocock-skills:grilling" e2e | "$GRILL" >/dev/null
+if [ -e "$TMPDIR/orchestrator-grilling-e2e" ]; then
+  ok "grilling arms the marker when the flow is done"
+else
+  bad "grilling arms the marker when the flow is done" "no marker"
+fi
+out="$(edit_event "$REPO/CONTEXT.md" e2e | "$GUARD" | jq -r '.reason')"
+assert_contains "the armed guard denies CONTEXT.md with the records reason" "$out" \
+  "'CONTEXT.md' is a record of decisions, and planning does not change records in place."
 rm -rf "$REPO/.orchestrator"
 
 echo
