@@ -111,6 +111,17 @@ There is no real-time guard. `orch.sh init` refuses to start a flow while the
 working tree has changes outside the planning allowlist (#126), so planning
 edits are caught at flow start instead of prevented.
 
+## Finding orch.sh
+
+Only Claude Code sets `CLAUDE_PLUGIN_ROOT` in a skill's shell. Junie CLI's agent
+shell does not set `JUNIE_EXTENSION_ROOT` either - only `JUNIE_DATA`,
+`JUNIE_SHIM_PATH`, and `JUNIE_TMPDIR` - and Junie does not tell the model a
+skill's own directory (#201). So every skill that runs `orch.sh` looks for the
+Junie CLI install with a literal
+`ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` before falling back
+to the path relative to the skill; README.md, "Resolving orch.sh", gives the
+order.
+
 ## Execute bit
 
 Some hosts drop the execute bit on the plugin's scripts when they install or

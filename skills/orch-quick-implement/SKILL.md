@@ -16,10 +16,13 @@ for how a change gets made - test-driven, reviewed, then opened as a PR.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh`
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
+(the Junie CLI install). If it prints one path, `ORCH` is that path.
+If it prints more than one, stop and show the human the paths.
+If it prints nothing, `ORCH` is `scripts/orch.sh`
 two directories above this skill's own directory (the plugin root).
 
-If `orch.sh` is at neither path, this is a skills-only install: stop, and
+If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
 plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 `maj0rpain/orchestrator` as a Junie extension, which is unverified).
