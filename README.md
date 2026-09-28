@@ -296,9 +296,9 @@ is skipped entirely. Either way, it reviews the issue through four independent
 lenses - Fidelity to the plan, Consistency with itself and the glossary,
 Testability at the agreed seams, Implementability from the spec alone - each
 a read-only agent (`orch-lens-fidelity`, `orch-lens-consistency`,
-`orch-lens-testability`, `orch-lens-implementability`), and puts every finding to the human as one batch of proposed edits; the edits
-they accept rewrite the issue body, and the disposition is recorded on the
-issue and in the handoff.
+`orch-lens-testability`, `orch-lens-implementability`), and puts every finding
+to the human as one batch of proposed edits; the edits they accept rewrite the
+issue body, and the disposition is recorded on the issue and in the handoff.
 
 The implement phase works the spec issue's published ticket breakdown one
 ticket at a time: `ticket next` names the ready frontier, and each ready
