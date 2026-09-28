@@ -981,9 +981,9 @@ cmd_review() {
 
 # --- issue --------------------------------------------------------------
 #
-# The three stateless issue body ops - fetch, update and comment - on an
-# issue given just its number: the same contract issue publish/pr
-# publish/ticket publish already offer, extended to a plain issue. cmd_spec's
+# The three stateless issue ops - fetch, update and comment - on an issue
+# given just its number: the same contract issue publish/pr publish/ticket
+# publish already offer, extended to a plain issue. cmd_spec's
 # fetch/update/comment ops below are thin wrappers over all three, resolving
 # the issue number from state, so flow's stateful spec access and quick
 # implementation's stateless issue access share one tested code path instead
