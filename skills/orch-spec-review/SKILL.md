@@ -93,9 +93,9 @@ Then run **The lenses**, **Disposition**, and **Applying the answer** below,
 with these differences:
 
 - **Lenses**: start Consistency, Testability, and Implementability only.
-  Fidelity is never started. It appears in the batch and the changelog as
-  **not run - standalone review, no plan to check against**. That is not a
-  failure, so the retry rule does not apply to it.
+  Fidelity is never started. It appears in the batch and the changelog with
+  Fidelity's not-run line, as in **The changelog**. That is not a failure,
+  so the retry rule does not apply to it.
 - **Disposition**: unchanged. There are no `contradicts the plan` items,
   because Fidelity does not run.
 - **Applying**: see the standalone steps in **Applying the answer**.
@@ -108,8 +108,8 @@ with these differences:
 ## The lenses
 
 Each lens is one of the plugin's agents, which owns its brief and the
-reporting rules and may only read. Start all four at once (three in a
-standalone review, without Fidelity) as fresh
+reporting rules and may only read. Start them all at once (a
+standalone review starts fewer - see **Standalone spec review**) as fresh
 subagents - never forks, which inherit this context. On Claude Code that is
 the Agent tool with `subagent_type` set to the lens's agent name under the
 `orchestrator:` plugin scope. Each prompt carries only the paths its row
@@ -126,13 +126,13 @@ On a host that cannot start the plugin's agents natively, take the
 "Start a fresh subagent" fallback in `docs/host-capabilities.md` under the
 plugin root, with each lens's agent file, `agents/<agent>.md` under the
 plugin root, as its brief, and record it in `02-spec.md` under **Host
-fallbacks** (a standalone review records it in its changelog comment
-instead).
+fallbacks** (a standalone review records it elsewhere - see **Standalone
+spec review**).
 
 A lens that errors or returns nothing usable is spawned once more with the
 same prompt. A second failure makes it **not run - <reason>**: it appears that
-way in the batch and in both changelogs (the one changelog, in a standalone
-review), and the review continues on the
+way in the batch and in both changelogs (a standalone review differs here -
+see **Standalone spec review**), and the review continues on the
 lenses that answered. Three lenses and a recorded gap is a spec review; a
 silent gap is not.
 
@@ -209,8 +209,8 @@ A standalone review applies through the stateless `issue` commands instead:
    `bash "$ORCH" issue update <issue> <dir>/spec.md`. Apply none: skip this
    step, as above.
 2. Write the changelog to `<dir>/changelog.md` under a `## Spec review`
-   heading, with Fidelity's **not run - standalone review, no plan to check
-   against** line and any **Host fallbacks** line, and
+   heading, with Fidelity's not-run line, as in **The changelog**, and any
+   **Host fallbacks** line, and
    `bash "$ORCH" issue comment <issue> <dir>/changelog.md`. The comment is
    posted on Apply none too.
 
