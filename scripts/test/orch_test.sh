@@ -5161,6 +5161,15 @@ assert_contains "orch-spec-review scopes changelog-only to the review's own reco
   "$(flat_section "$root/skills/orch-spec-review/SKILL.md" "Standalone spec review")" \
   'among the review'"'"'s own records'
 
+# --- orch-spec-review states its standalone differences once (#221, #225) ----
+echo
+echo "orch-spec-review states its standalone differences once (#221, #225)"
+fidelity_line='not run - standalone review, no plan to check against'
+assert_eq "the Fidelity not-run line occurs once in orch-spec-review" \
+  "$(flat_text "$root/skills/orch-spec-review/SKILL.md" | grep -oF "$fidelity_line" | wc -l | tr -d ' ')" "1"
+assert_contains "and that one occurrence is in The changelog" \
+  "$(flat_section "$root/skills/orch-spec-review/SKILL.md" "The changelog")" "$fidelity_line"
+
 # --- quick implementation reviews with the plugin's reviewer agents (#244) ---
 # The model cannot be proven to start the reviewers; these checks keep the
 # step's agents, prompt, retry rule, stop, and declined-findings list in place.
