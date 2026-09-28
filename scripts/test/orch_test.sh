@@ -4873,8 +4873,8 @@ scan_dispatch_copies() {
       echo "${f#"$r"/}: restates the implementer's five report lines"
     fi
     # The general-purpose-agent tier: a general-purpose agent briefed with a
-    # plugin agent's file. A skill that starts general-purpose agents as its
-    # own mechanism names no agent file.
+    # plugin agent's file. A general-purpose agent named with no agent file
+    # is not the tier and is left alone.
     awk -v f="${f#"$r"/}" 'BEGIN { RS = "" }
       /general-purpose/ && (/agents\// || /agent'"'"'s file/) { print f ": restates the general-purpose-agent tier" }' "$f"
   done
@@ -4893,8 +4893,8 @@ printf 'Else start a fresh general-purpose agent\nbriefed with its file under `a
 assert_contains "the scan flags a skill restating the general-purpose-agent tier" \
   "$(scan_dispatch_copies "$fixture")" "skills/b/SKILL.md: restates the general-purpose-agent tier"
 printf 'Start the implementer as its agent file says.\n' >"$fixture/skills/a/SKILL.md"
-printf 'Start the lenses as fresh general-purpose agents.\n' >"$fixture/skills/b/SKILL.md"
-assert_eq "the scan accepts a pointer and general-purpose agents started natively" \
+printf 'Summarise the log with a fresh general-purpose agent.\n' >"$fixture/skills/b/SKILL.md"
+assert_eq "the scan accepts a pointer and a general-purpose agent with no agent file" \
   "$(scan_dispatch_copies "$fixture")" ""
 rm -rf "$fixture"
 
