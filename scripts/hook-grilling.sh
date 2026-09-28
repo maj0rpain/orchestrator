@@ -86,12 +86,12 @@ fi
 if [ "$host" = junie ]; then
   ask_step="Call the ask_user tool with
   exactly two options:"
-  plugin_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  plugin_root="$(hook_plugin_root)"
   run_next="- On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
   \"Quick implementation\", the orch-quick-implement skill. This host has
   no Skill tool, so read the skill's file and follow it verbatim:
   $plugin_root/skills/orch-flow/SKILL.md or
-  $plugin_root/skills/orch-quick-implement/SKILL.md."
+  $(hook_quick_skill_file)."
 else
   ask_step="Call the AskUserQuestion tool with
   exactly two options:"

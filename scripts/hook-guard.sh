@@ -46,7 +46,6 @@ fi
 
 # Named on every host: Junie's PreToolUse may lack project_path, so the host
 # cannot be told apart here - ADR-0023.
-plugin_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 reason="Blocked by the orchestrator: this is a planning session and no flow has
 started, so '$rel' should not be edited yet.
 
@@ -56,7 +55,7 @@ its own branch, from a written spec.
 
 If the human chose quick implementation instead, either of these lifts this block:
 call the Skill tool with \"orchestrator:orch-quick-implement\", or, on a host
-with no Skill tool, read $plugin_root/skills/orch-quick-implement/SKILL.md with the Read tool.
+with no Skill tool, read $(hook_quick_skill_file) with the Read tool.
 
 Planning artifacts you may still edit: $(planning_allowlist_text)."
 

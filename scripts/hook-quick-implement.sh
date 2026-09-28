@@ -16,8 +16,9 @@
 # docs/adr/0023-quick-implementation-lifts-the-edit-guard-on-a-read-of-its-skill-file.md.
 # No host gate: Junie's PreToolUse may lack project_path, which is how
 # hook_read_payload tells the hosts apart, so the exact installed path is the
-# whole condition. Reading a repo checkout's copy, as when working on this
-# plugin, does not lift it.
+# whole condition. "Exactly" means the same file, so a symlinked spelling of
+# the plugin root still matches; reading a repo checkout's copy, as when
+# working on this plugin, does not lift it.
 
 set -euo pipefail
 
@@ -27,10 +28,12 @@ hook_read_skill_and_session
 
 # Either trigger lifts it; hooks.json scopes which events reach this hook, so
 # neither branch leans on a tool_name Junie's payload may not carry.
-plugin_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 case "$skill" in
   orch-quick-implement|*:orch-quick-implement) ;;
-  *) [ "$(hook_tool_path)" = "$plugin_root/skills/orch-quick-implement/SKILL.md" ] || exit 0 ;;
+  *)
+    read_path="$(hook_tool_path)"
+    [ -n "$read_path" ] && [ "$read_path" -ef "$(hook_quick_skill_file)" ] || exit 0
+    ;;
 esac
 
 [ -n "$session" ] || exit 0

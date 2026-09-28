@@ -18,9 +18,10 @@ its `SKILL.md`, the path `hook-grilling.sh` hands it. That read is the choke
 point Junie does have. `hook-quick-implement.sh` also runs as a `PreToolUse`
 hook on `Read`, and deletes the session's marker when the read path -
 `tool_input.file_path` or `tool_input.path`, a relative one resolved against
-the working directory, normalized - is exactly
+the working directory, normalized - is the same file as
 `<plugin_root>/skills/orch-quick-implement/SKILL.md`, where `<plugin_root>` is
-the hook script's own plugin root. There is no host gate: Junie's `PreToolUse`
+the hook script's own plugin root. Same file, not same string, so a host that
+resolves a symlinked plugin root to its real path still matches. There is no host gate: Junie's `PreToolUse`
 may lack `project_path`, which is how the hooks tell Junie apart, so the exact
 installed path is the whole condition, on every host. The `Skill` trigger is
 unchanged, and so is `hook-guard.sh`'s guarding logic (ADR-0006).

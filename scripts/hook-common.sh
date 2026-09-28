@@ -11,8 +11,8 @@
 # `host` in the caller's shell. A missing session_id leaves `session` empty,
 # which means "not guarded": no planning marker can be keyed to it. `cwd`
 # prefers Junie's project_path, because Junie's own cwd is ~/.junie, not the
-# repo (#202); this also moves where hook-guard.sh resolves a relative path on
-# Junie. A payload with neither falls back to the process working directory.
+# repo (#202); this also moves where hook_tool_path resolves a relative path
+# on Junie. A payload with neither falls back to the process working directory.
 # `host` is junie when the payload carries project_path, which Claude Code's
 # never does, else claude. `input` is left set so a caller can extract further
 # fields without reading stdin a second time.
@@ -41,13 +41,13 @@ hook_tool_path() {
   file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.path // ""')"
   [ -n "$file" ] || return 0
   case "$file" in /*) ;; *) file="$cwd/$file" ;; esac
-  normalize_path "$file"
+  hook_normalize_path "$file"
 }
 
 # Collapses "." and ".." segments lexically, so a path is judged by where it
 # lands: docs/adr/../../src/x.ts is source, not an ADR. Lexical, not
 # realpath, because the file being written may not exist yet.
-normalize_path() {
+hook_normalize_path() {
   local seg out="" parts
   IFS=/ read -ra parts <<<"$1"
   for seg in "${parts[@]}"; do
@@ -58,6 +58,18 @@ normalize_path() {
     esac
   done
   printf '%s' "${out:-/}"
+}
+
+# Prints this install's plugin root: the directory above scripts/, as the
+# logical path the hooks hand the model, not a symlink-resolved one.
+hook_plugin_root() {
+  (cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+}
+
+# Prints the installed orch-quick-implement SKILL.md. A host with no Skill tool
+# is told to read this file, and a Read of it lifts the edit guard - ADR-0023.
+hook_quick_skill_file() {
+  printf '%s/skills/orch-quick-implement/SKILL.md' "$(hook_plugin_root)"
 }
 
 # Writes a PreToolUse deny as one JSON object both hosts understand: Claude
