@@ -38,7 +38,7 @@ on exactly its own cells.
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. |
 | Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. Where commands do not load, `orch-spec-review` is invoked directly with the issue number. |
 | Inject context at planning time | A `PostToolUse` hook on `Skill(grilling)` (`hook-grilling.sh`). | A `UserPromptSubmit` hook (`hook-grilling.sh`, #202) that fires when the prompt names a grilling entry point as `/<name>` or `$<name>` (`grilling`, `grill-me`, `grill-with-docs`, `wayfinder`, `improve-codebase-architecture`). Per the bundled docs, only the interactive TUI fires the event and its context reaches the main agent only. A live probe on #202 confirmed the hook fires from the extension's `hooks.json` and that Junie rewrites a typed `/<name>` into `$<name>`. When Junie picks grilling on its own, no prompt names it and no message is sent. Junie's router sends a grilling prompt to its plan agent, which ends on Junie's own plan screen and skips the closing question, so the hook asks it again when the human picks "Confirm and implement". That submits the fixed prompt `Implement the suggested plan` to the main agent, and a live run on #202 showed the question appear there. "Save the plan and stop" submits no prompt, so nothing is asked. |
-| Arm the edit guard | A `PostToolUse` hook on `Skill` writes the planning marker, and `hook-guard.sh` denies source edits (ADR-0013). | Nothing arms it: no `PostToolUse` event. **Fallback**. |
+| Arm the edit guard | A `PostToolUse` hook on `Skill` writes the planning marker, and `hook-guard.sh` denies source edits (ADR-0006). A `Skill` call to `orchestrator:orch-quick-implement` lifts it. | Supported from Junie CLI build 3419.7: the `UserPromptSubmit` hook writes the marker, and Junie's `PreToolUse` now carries `session_id` (established by a live denial on #260; the bundled docs still show it without one), so `hook-guard.sh` denies source edits (ADR-0023). With no Skill tool, quick implementation lifts it on a `PreToolUse` `Read` of this install's `skills/orch-quick-implement/SKILL.md`. Which field Junie's `Read` names the path under is not confirmed; the hook accepts `file_path` and `path`. **Unverified**. |
 
 ## Fallbacks
 
@@ -101,9 +101,16 @@ a skill, so the skill alone is complete.
 
 ### Arm the edit guard
 
-There is no real-time guard. `orch.sh init` refuses to start a flow while the
-working tree has changes outside the planning allowlist (#126), so planning
-edits are caught at flow start instead of prevented.
+On a host with no Skill tool, lift the guard for a quick implementation by
+reading `skills/orch-quick-implement/SKILL.md` under the plugin root with the
+Read tool, which is how the skill is run there anyway; the guard's own denial
+names that path. A copy read through the shell (`cat`) does not lift it.
+
+Where no hook arms the guard at all - a Junie session whose `PreToolUse`
+carries no `session_id`, or one where grilling started without a prompt
+naming it - there is no real-time guard. `orch.sh init` refuses to start a
+flow while the working tree has changes outside the planning allowlist
+(#126), so planning edits are caught at flow start instead of prevented.
 
 ## Finding orch.sh
 

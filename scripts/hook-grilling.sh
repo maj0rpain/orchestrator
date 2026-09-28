@@ -50,9 +50,9 @@ else
 fi
 
 # No session_id, no marker: there is nothing to key the guard to, so it stays
-# unarmed and the once-per-session check cannot apply. On Junie the marker only
-# keeps the message to once per session: Junie's PreToolUse carries no
-# session_id, so the edit guard never reads it there (ADR-0013).
+# unarmed and the once-per-session check cannot apply. On Junie the marker
+# arms the edit guard too: its PreToolUse carries session_id from build 3419.7
+# (ADR-0023).
 # A plan confirmation counts only in a session that grilled, so it needs the
 # marker rather than being stopped by it, and asks on every confirmation.
 marker=""

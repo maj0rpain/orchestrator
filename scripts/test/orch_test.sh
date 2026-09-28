@@ -2222,7 +2222,13 @@ assert_contains "the plugin root check still warns when Claude Code left it unse
 out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "Junie's missing capabilities warn, never fail" "$st" 0
 assert_contains "detects Junie CLI from JUNIE_EXTENSION_ROOT" "$out" "host: Junie CLI"
-assert_contains "names the edit guard Junie cannot arm" "$out" "Arm the edit guard"
+# Junie's PreToolUse carries session_id from build 3419.7, so the guard arms
+# there; only the Read path field its quick-implement lift reads is unconfirmed
+# (ADR-0023), so the row is Unverified, not a gap.
+assert_eq "does not claim Junie lacks the edit guard" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Arm the edit guard')" "0"
+assert_contains "names the edit guard as unverified on Junie" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*')" "Arm the edit guard"
 # Junie's UserPromptSubmit hook now delivers the planning message (#202).
 assert_eq "does not claim Junie lacks planning-time context" \
   "$(printf '%s\n' "$out" | grep -c 'Inject context at planning time')" "0"
