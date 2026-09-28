@@ -270,8 +270,15 @@ assert_contains "source denial keeps today's reason" "$source_reason" \
   "this is a planning session and no flow has
 started, so 'src/x.ts' should not be edited yet."
 assert_contains "source denial still lists planning artifacts" "$source_reason" "Planning artifacts you may still edit"
+# Host detection is not reliable on Junie's PreToolUse, so the source denial
+# names both quick-implementation lifts on every host - ADR-0023.
+assert_contains "source denial names the quick-implement Skill lift" "$source_reason" \
+  'call the Skill tool with "orchestrator:orch-quick-implement"'
+assert_contains "source denial names the Read lift of the installed SKILL.md" "$source_reason" \
+  "read $(cd "$DIR/.." && pwd)/skills/orch-quick-implement/SKILL.md with the Read tool"
 
-# Junie's PreToolUse payload carries neither session_id nor cwd. No session
+# Junie's PreToolUse payload carries no cwd, and its bundled docs show no
+# session_id either, though build 3419.7 sends one (ADR-0023). No session
 # means "not guarded", even if a stale marker for a defaulted id exists.
 : >"$TMPDIR/orchestrator-grilling-unknown"
 : >"$TMPDIR/orchestrator-grilling-"
@@ -357,22 +364,21 @@ rm -rf "$REPO/.orchestrator"
 echo
 echo "hook-quick-implement"
 
+assert_marker_gone() {
+  if [ -e "$TMPDIR/orchestrator-grilling-$2" ]; then bad "$1" "marker still present"; else ok "$1"; fi
+}
+assert_marker_kept() {
+  if [ -e "$TMPDIR/orchestrator-grilling-$2" ]; then ok "$1"; else bad "$1" "marker was deleted"; fi
+}
+
 : >"$TMPDIR/orchestrator-grilling-s1"
 out="$(skill_event "orchestrator:orch-quick-implement" s1 | "$QUICK")"
 assert_empty "prints nothing" "$out"
-if [ -e "$TMPDIR/orchestrator-grilling-s1" ]; then
-  bad "deletes the session's marker" "marker still present"
-else
-  ok "deletes the session's marker"
-fi
+assert_marker_gone "deletes the session's marker" s1
 
 : >"$TMPDIR/orchestrator-grilling-s2"
 skill_event "mattpocock-skills:tdd" s2 | "$QUICK" >/dev/null
-if [ -e "$TMPDIR/orchestrator-grilling-s2" ]; then
-  ok "leaves another skill's marker alone"
-else
-  bad "leaves another skill's marker alone" "marker was deleted"
-fi
+assert_marker_kept "leaves another skill's marker alone" s2
 
 skill_event "orchestrator:orch-quick-implement" s3 | "$QUICK" >/dev/null
 ok "does not fail when no marker exists for the session"
@@ -380,11 +386,74 @@ ok "does not fail when no marker exists for the session"
 # ADR-0014 renamed the skill; the old unprefixed name must not lift the guard.
 : >"$TMPDIR/orchestrator-grilling-s4"
 skill_event "orchestrator:quick-implement" s4 | "$QUICK" >/dev/null
-if [ -e "$TMPDIR/orchestrator-grilling-s4" ]; then
-  ok "ignores the old unprefixed quick-implement name"
-else
-  bad "ignores the old unprefixed quick-implement name" "marker was deleted"
-fi
+assert_marker_kept "ignores the old unprefixed quick-implement name" s4
+
+# On a host with no Skill tool (Junie), the model runs orch-quick-implement by
+# reading its SKILL.md, so a PreToolUse Read of the installed copy lifts the
+# guard too - ADR-0023. Junie's PreToolUse may or may not carry project_path.
+PLUGIN_ROOT="$(cd "$DIR/.." && pwd)"
+QUICK_SKILL="$PLUGIN_ROOT/skills/orch-quick-implement/SKILL.md"
+read_event() {
+  jq -n --arg f "$1" --arg sid "$2" --arg k "${3:-file_path}" \
+    '{hook_event_name:"PreToolUse", tool_name:"Read", session_id:$sid, tool_input:{($k):$f}}'
+}
+
+: >"$TMPDIR/orchestrator-grilling-r1"
+out="$(read_event "$QUICK_SKILL" r1 | "$QUICK")"
+assert_empty "prints nothing on a Read" "$out"
+assert_marker_gone "a Read of the installed SKILL.md via file_path deletes the marker" r1
+
+: >"$TMPDIR/orchestrator-grilling-r2"
+read_event "$QUICK_SKILL" r2 path | "$QUICK" >/dev/null
+assert_marker_gone "a Read of the installed SKILL.md via path deletes the marker" r2
+
+# With project_path present, a relative path resolves against it, and ".."
+# segments are judged by where they land.
+: >"$TMPDIR/orchestrator-grilling-r3"
+jq -n --arg p "$PLUGIN_ROOT/skills" \
+  '{hook_event_name:"PreToolUse", tool_name:"Read", session_id:"r3", project_path:$p,
+    tool_input:{path:"x/../orch-quick-implement/SKILL.md"}}' | "$QUICK" >/dev/null
+assert_marker_gone "a relative Read resolved against the working directory deletes the marker" r3
+
+: >"$TMPDIR/orchestrator-grilling-r7"
+jq -n --arg f "$QUICK_SKILL" --arg p "$REPO" \
+  '{hook_event_name:"PreToolUse", tool_name:"Read", session_id:"r7", project_path:$p,
+    tool_input:{file_path:$f}}' | "$QUICK" >/dev/null
+assert_marker_gone "an absolute Read with project_path present deletes the marker" r7
+
+# The same file reached through a symlinked plugin root is the same file: a
+# host that hands over, or resolves to, the other spelling still lifts it.
+ln -s "$PLUGIN_ROOT" "$TMPDIR/linked-root"
+: >"$TMPDIR/orchestrator-grilling-r8"
+read_event "$TMPDIR/linked-root/skills/orch-quick-implement/SKILL.md" r8 | "$QUICK" >/dev/null
+assert_marker_gone "a Read of the installed SKILL.md through a symlink deletes the marker" r8
+rm -f "$TMPDIR/linked-root"
+
+: >"$TMPDIR/orchestrator-grilling-r4"
+read_event "$PLUGIN_ROOT/skills/orch-flow/SKILL.md" r4 | "$QUICK" >/dev/null
+assert_marker_kept "a Read of another skill's SKILL.md leaves the marker" r4
+
+# A repo checkout of this plugin carries its own copy; reading that while
+# working on the plugin must not lift the guard.
+mkdir -p "$REPO/skills/orch-quick-implement"
+: >"$REPO/skills/orch-quick-implement/SKILL.md"
+: >"$TMPDIR/orchestrator-grilling-r5"
+read_event "$REPO/skills/orch-quick-implement/SKILL.md" r5 | "$QUICK" >/dev/null
+assert_marker_kept "a Read of a repo checkout's quick-implement SKILL.md leaves the marker" r5
+rm -rf "$REPO/skills"
+
+: >"$TMPDIR/orchestrator-grilling-"
+out="$(jq -n --arg f "$QUICK_SKILL" '{hook_event_name:"PreToolUse", tool_name:"Read", tool_input:{file_path:$f}}' | "$QUICK")"; rc=$?
+assert_eq "exits cleanly on a Read with no session_id" "$rc" "0"
+assert_marker_kept "a Read with no session_id touches no marker" ""
+rm -f "$TMPDIR/orchestrator-grilling-"
+
+: >"$TMPDIR/orchestrator-grilling-r6"
+read_event "" r6 | "$QUICK" >/dev/null
+assert_marker_kept "a Read naming no path leaves the marker" r6
+
+assert_contains "hooks.json runs the quick-implement hook on PreToolUse Read" \
+  "$(jq -r '.hooks.PreToolUse[]? | select(.matcher == "Read") | .hooks[]?.command' "$DIR/../hooks/hooks.json")" "hook-quick-implement.sh"
 
 echo
 echo "execute bit (docs/host-capabilities.md, \"Execute bit\")"

@@ -184,7 +184,9 @@ change it describes (ADR-0022). This holds even when `domain-modeling` or
 `PostToolUse` hook on the same `Skill` matcher lifts the guard for a quick
 implementation: it deletes the session's marker file when
 `orchestrator:orch-quick-implement` fires, without `hook-guard.sh` itself
-changing.
+changing. Junie has no Skill tool and runs the skill by reading its file, so
+the same hook also runs on `PreToolUse` `Read` and lifts the guard on a read
+of this install's `skills/orch-quick-implement/SKILL.md` (ADR-0023).
 
 ## Layout
 

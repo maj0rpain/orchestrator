@@ -50,9 +50,9 @@ else
 fi
 
 # No session_id, no marker: there is nothing to key the guard to, so it stays
-# unarmed and the once-per-session check cannot apply. On Junie the marker only
-# keeps the message to once per session: Junie's PreToolUse carries no
-# session_id, so the edit guard never reads it there (ADR-0013).
+# unarmed and the once-per-session check cannot apply. On Junie the marker
+# arms the edit guard too: its PreToolUse carries session_id from build 3419.7
+# (ADR-0023).
 # A plan confirmation counts only in a session that grilled, so it needs the
 # marker rather than being stopped by it, and asks on every confirmation.
 marker=""
@@ -86,12 +86,12 @@ fi
 if [ "$host" = junie ]; then
   ask_step="Call the ask_user tool with
   exactly two options:"
-  plugin_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  plugin_root="$(hook_plugin_root)"
   run_next="- On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
   \"Quick implementation\", the orch-quick-implement skill. This host has
   no Skill tool, so read the skill's file and follow it verbatim:
   $plugin_root/skills/orch-flow/SKILL.md or
-  $plugin_root/skills/orch-quick-implement/SKILL.md."
+  $(hook_quick_skill_file)."
 else
   ask_step="Call the AskUserQuestion tool with
   exactly two options:"

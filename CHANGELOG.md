@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.3.5
+
+- Quick implementation lifts the edit guard on Junie (see issue #260,
+  ADR-0023). Junie's `PreToolUse` now carries `session_id`, so the planning
+  marker arms the guard there, and nothing on Junie could lift it. The
+  quick-implement hook also runs on `PreToolUse` `Read`, and deletes the
+  session's marker on a read of this install's
+  `skills/orch-quick-implement/SKILL.md` - not a repo checkout's copy. The
+  guard's planning denial names both ways to lift it. Doctor no longer
+  reports the edit guard as missing on Junie, only as unverified.
+
 ## 2.3.0
 
 - Planning records glossary and ADR changes in the spec instead of editing

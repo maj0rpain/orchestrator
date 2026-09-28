@@ -17,30 +17,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 
 hook_read_payload
-# Claude Code names the file under file_path. Junie's Edit/Write input may use
-# path instead, and may be relative to the working directory.
-file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.path // ""')"
-case "$file" in ''|/*) ;; *) file="$cwd/$file" ;; esac
-
-# Collapses "." and ".." segments lexically, so a path is judged by where it
-# lands: docs/adr/../../src/x.ts is source, not an ADR. Lexical, not
-# realpath, because the file being written may not exist yet.
-normalize_path() {
-  local seg out="" parts
-  IFS=/ read -ra parts <<<"$1"
-  for seg in "${parts[@]}"; do
-    case "$seg" in
-      ''|.) ;;
-      ..) out="${out%/*}" ;;
-      *) out="$out/$seg" ;;
-    esac
-  done
-  printf '%s' "${out:-/}"
-}
-[ -z "$file" ] || file="$(normalize_path "$file")"
+# The file being written, absolute and normalized - see hook_tool_path.
+file="$(hook_tool_path)"
 
 # Only guard sessions the grilling hook has marked as planning. A payload
-# with no session_id (Junie's PreToolUse) is never guarded - ADR-0013.
+# with no session_id is never guarded; Junie's PreToolUse carries one from
+# build 3419.7 - ADR-0023.
 [ -n "$session" ] || exit 0
 [ -e "${TMPDIR:-/tmp}/orchestrator-grilling-${session}" ] || exit 0
 [ -n "$file" ] || exit 0
@@ -62,12 +44,18 @@ if planning_record "$rel"; then
   exit 0
 fi
 
+# Named on every host: Junie's PreToolUse may lack project_path, so the host
+# cannot be told apart here - ADR-0023.
 reason="Blocked by the orchestrator: this is a planning session and no flow has
 started, so '$rel' should not be edited yet.
 
 Finish planning, then call the Skill tool with \"orchestrator:orch-flow\" to write the
 handoff and begin the spec phase. Implementation happens in its own session, on
 its own branch, from a written spec.
+
+If the human chose quick implementation instead, either of these lifts this block:
+call the Skill tool with \"orchestrator:orch-quick-implement\", or, on a host
+with no Skill tool, read $(hook_quick_skill_file) with the Read tool.
 
 Planning artifacts you may still edit: $(planning_allowlist_text)."
 

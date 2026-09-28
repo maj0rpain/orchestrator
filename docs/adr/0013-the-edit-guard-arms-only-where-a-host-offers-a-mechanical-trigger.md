@@ -1,5 +1,10 @@
 # The edit guard arms only where a host offers a mechanical trigger
 
+Superseded in part by ADR-0023: Junie's `PreToolUse` carries `session_id` from build
+3419.7, so the guard arms there, and quick implementation lifts it on a Read
+of its installed `SKILL.md`. The flow-start working-tree check below still
+stands as the backstop wherever the guard does not arm.
+
 The planning edit guard (`hook-guard.sh`) is armed by a marker that a
 `PostToolUse` hook on the `Skill` tool creates when grilling starts. Junie,
 the first host after Claude Code, has neither a `PostToolUse` event nor a
