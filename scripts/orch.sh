@@ -981,13 +981,15 @@ cmd_review() {
 
 # --- issue --------------------------------------------------------------
 #
-# The stateless issue body read/write pair - the same contract
-# issue publish/pr publish/ticket publish already offer, extended to a plain
-# issue's body given just its number. cmd_spec's fetch/update ops below are
-# thin wrappers over these two, resolving the issue number from state exactly
-# as they always did, so flow's stateful spec access and quick
+# The three stateless issue ops - fetch, update and comment - on an issue
+# given just its number: the same contract issue publish/pr publish/ticket
+# publish already offer, extended to a plain issue. cmd_spec's
+# fetch/update/comment ops below are thin wrappers over all three, resolving
+# the issue number from state, so flow's stateful spec access and quick
 # implementation's stateless issue access share one tested code path instead
-# of two independently-maintained copies of the same body read/write.
+# of two independently-maintained copies. comment is stateless because a
+# standalone spec review posts its summary on whatever issue it was pointed
+# at, with no flow to resolve one from.
 #
 # `issue update` stays a dumb "replace the body with these exact bytes"
 # primitive - fold-in choreography like fetch-then-append-then-write for
@@ -1018,9 +1020,6 @@ cmd_issue_update() {
     || die "gh could not replace the body of issue #$issue"
 }
 
-# A standalone spec review posts its summary on whatever issue it was pointed
-# at, with no flow to resolve one from - so comment joins fetch/update as a
-# stateless primitive, and spec comment below wraps it the same way.
 cmd_issue_comment() {
   local issue="$1" file="$2"
   [ -f "$file" ] || die "body file not found: $file"
