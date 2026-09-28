@@ -67,6 +67,9 @@ new_repo() {
 }
 
 writeln() { printf '%s\n' "$@"; }
+# flat_text [file]: the file, or stdin when given none, on one line with
+# every whitespace run collapsed to one space.
+flat_text() { tr -s ' \t\n' '   ' <"${1:-/dev/stdin}"; }
 
 complete_plan_handoff() {
   writeln '## Decisions' 'Use X.' '' \
@@ -697,7 +700,7 @@ assert_contains "heads the records block" "$out" "Planning records changed (plan
        CONTEXT.md"
 # The redirect is wrapped for the terminal, so its phrases are checked with
 # the line breaks and indentation flattened out.
-flat="$(printf '%s' "$out" | tr '\n' ' ' | tr -s ' ')"
+flat="$(printf '%s' "$out" | flat_text)"
 assert_contains "gives the records redirect" "$flat" "into the plan, so the spec carries it verbatim"
 assert_contains "gives the quick-implementation redirect" "$flat" "For a quick implementation, put it in the linked issue's body."
 assert_eq "wraps the redirect for the terminal" \
@@ -4540,8 +4543,6 @@ root_junie='two directories above the `orch.sh` that `ls` printed'
 # The steps wrap differently from file to file, so order is checked on the
 # file's text with every run of whitespace collapsed to one space.
 orch_steps="$orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_many $orch_fallback"
-# flat_text <file>: the file on one line, whitespace runs collapsed.
-flat_text() { tr -s ' \t\n' '   ' <"$1"; }
 # scan_orch_resolution <plugin root>: print one line per offending file.
 scan_orch_resolution() {
   local r="$1" f flat root_sentence
@@ -4597,8 +4598,8 @@ assert_contains "orch-review reads the fixer's record through CLAUDE_PLUGIN_ROOT
   "\"\${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md\""
 # The reviewers keep Bash, so the only mechanical restriction is Edit and
 # Write; that is all the host fallback loses (#167).
-hostcaps="$(tr -s '\n ' ' ' <"$root/docs/host-capabilities.md")"
-adr18="$(tr -s '\n ' ' ' <"$root/docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md")"
+hostcaps="$(flat_text "$root/docs/host-capabilities.md")"
+adr18="$(flat_text "$root/docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md")"
 assert_not_contains "host-capabilities no longer says the fallback loses a mechanical guarantee" \
   "$hostcaps" 'loses that mechanical guarantee'
 assert_not_contains "ADR-0018 no longer restricts the reviewers mechanically as a whole" \
@@ -4623,9 +4624,9 @@ assert_contains "the fallback's first tier covers an agent the host hides" \
   "$hostcaps" "did not load \`agents/\`, or hid it, as Junie's capability filter does"
 for f in "$root"/docs/host-capabilities.md "$root"/README.md "$root"/skills/*/SKILL.md "$root"/agents/*.md; do
   assert_not_contains "${f#"$root"/} gives no 'does not load agents/' reason" \
-    "$(tr -s '\n ' ' ' <"$f")" "not load the plugin's \`agents/\`"
+    "$(flat_text "$f")" "not load the plugin's \`agents/\`"
 done
-readme="$(tr -s '\n ' ' ' <"$root/README.md")"
+readme="$(flat_text "$root/README.md")"
 assert_contains "the prompt workaround is documented for Junie users" \
   "$readme" 'start the custom agent orch-implementer by name'
 assert_contains "the workaround names its dependency on #204" \
@@ -4776,7 +4777,7 @@ scan_capabilities() {
     # sections (the flow steps, spec-review) or the whole skill (release,
     # #139). The skill must exist, and so must a section it names. The route
     # may wrap across lines, so the file is read as one line.
-    local body; body="$(tr '\n' ' ' <"$f" | tr -s ' ')"
+    local body; body="$(flat_text "$f")"
     k="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it(s \*\*[^*]+\*\* section|\.)' <<<"$body" | head -n1)"
     s="$(sed -n 's/.*follow its \*\*\([^*]*\)\*\* section$/\1/p' <<<"$k")"
     k="$(sed 's/^`orchestrator://; s/`.*//' <<<"$k")"
@@ -4985,7 +4986,7 @@ assert_contains "the fallback's second tier covers a lens's returned findings" \
 echo
 echo "spec review asks its batch question in the same response (#233)"
 spec_review_md="$root/skills/orch-spec-review/SKILL.md"
-skill_section() { "$ORCH" handoff section "$spec_review_md" "$1" | tr -s ' \t\n' '   '; }
+skill_section() { "$ORCH" handoff section "$spec_review_md" "$1" | flat_text; }
 disposition="$(skill_section Disposition)"
 applying="$(skill_section "Applying the answer")"
 changelog="$(skill_section "The changelog")"
@@ -5122,7 +5123,7 @@ else
     "linked issue: ${l_link:-none}, offer: ${l_offer:-none}, tickets: ${l_tickets:-none}"
 fi
 # flat_section <file> <heading>: that section on one line, whitespace runs collapsed.
-flat_section() { "$ORCH" handoff section "$1" "$2" 2>&1 | tr -s ' \t\n' '   '; }
+flat_section() { "$ORCH" handoff section "$1" "$2" 2>&1 | flat_text; }
 offer="$(flat_section "$quick_md" "2. Offer a spec review")"
 assert_contains "the step offers Run, recommended" "$offer" '**Run a spec review (Recommended)**'
 assert_contains "the step offers Skip" "$offer" '**Skip**'
