@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.3
+
+- The `03-implement.md` handoff template calls the Spec axis by its glossary
+  name instead of "Spec review axis" (see issue #241). Docs only; no behaviour
+  change.
+
 ## 2.5.2
 
 - `orch.sh help` says the `spec` ops refuse once the flow is done and points at

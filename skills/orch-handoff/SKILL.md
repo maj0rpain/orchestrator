@@ -131,7 +131,7 @@ frontier>
 the body file passed to it should not add a closing keyword of its own.>
 
 ## Spec issue
-<URL and number - the Spec review axis diffs against it>
+<URL and number - the Spec axis diffs against it>
 
 ## Base SHA
 <from state.json; the fixed point the review loop diffs from>
