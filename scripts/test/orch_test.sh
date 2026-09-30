@@ -4892,7 +4892,7 @@ done
 # only one that invokes a mattpocock-skills skill must point at the reference,
 # since the others name no capability a host could lack.
 scan_capabilities() {
-  local r="$1" f s k
+  local r="$1" f route skill section body
   for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
     [ -f "$f" ] || continue
     if [[ "$f" != "$r"/agents/* ]] || grep -qE 'mattpocock-skills:[a-z]' "$f"; then
@@ -4922,14 +4922,14 @@ scan_capabilities() {
     # sections (the flow steps, spec-review) or the whole skill (release,
     # #139). The skill must exist, and so must a section it names. The route
     # may wrap across lines, so the file is read as one line.
-    local body; body="$(flat_text "$f")"
-    k="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it(s \*\*[^*]+\*\* section|\.)' <<<"$body" | head -n1)"
-    s="$(sed -n 's/.*follow its \*\*\([^*]*\)\*\* section$/\1/p' <<<"$k")"
-    k="$(sed 's/^`orchestrator://; s/`.*//' <<<"$k")"
-    if [ -z "$k" ]; then echo "${f#"$r"/}: routes to no orch- skill"
-    elif [ ! -f "$r/skills/$k/SKILL.md" ]; then echo "${f#"$r"/}: routes to a missing skill: $k"
-    elif [ -n "$s" ]; then grep -qxF "## $s" "$r/skills/$k/SKILL.md" \
-      || echo "${f#"$r"/}: routes to a missing $k section: $s"; fi
+    body="$(flat_text "$f")"
+    route="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it(s \*\*[^*]+\*\* section|\.)' <<<"$body" | head -n1)"
+    section="$(sed -n 's/.*follow its \*\*\([^*]*\)\*\* section$/\1/p' <<<"$route")"
+    skill="$(sed 's/^`orchestrator://; s/`.*//' <<<"$route")"
+    if [ -z "$skill" ]; then echo "${f#"$r"/}: routes to no orch- skill"
+    elif [ ! -f "$r/skills/$skill/SKILL.md" ]; then echo "${f#"$r"/}: routes to a missing skill: $skill"
+    elif [ -n "$section" ]; then grep -qxF "## $section" "$r/skills/$skill/SKILL.md" \
+      || echo "${f#"$r"/}: routes to a missing $skill section: $section"; fi
   done
 }
 assert_eq "every skill points at the reference, and every command is a thin route" \
