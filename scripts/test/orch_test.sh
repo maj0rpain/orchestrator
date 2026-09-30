@@ -4892,7 +4892,7 @@ done
 # only one that invokes a mattpocock-skills skill must point at the reference,
 # since the others name no capability a host could lack.
 scan_capabilities() {
-  local r="$1" f route skill section
+  local r="$1" f route skill section body
   for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
     [ -f "$f" ] || continue
     if [[ "$f" != "$r"/agents/* ]] || grep -qE 'mattpocock-skills:[a-z]' "$f"; then
@@ -4922,7 +4922,7 @@ scan_capabilities() {
     # sections (the flow steps, spec-review) or the whole skill (release,
     # #139). The skill must exist, and so must a section it names. The route
     # may wrap across lines, so the file is read as one line.
-    local body; body="$(flat_text "$f")"
+    body="$(flat_text "$f")"
     route="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it(s \*\*[^*]+\*\* section|\.)' <<<"$body" | head -n1)"
     section="$(sed -n 's/.*follow its \*\*\([^*]*\)\*\* section$/\1/p' <<<"$route")"
     skill="$(sed 's/^`orchestrator://; s/`.*//' <<<"$route")"
