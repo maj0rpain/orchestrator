@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.2
+
+- `orch.sh help` says the `spec` ops refuse once the flow is done and points at
+  `issue <op> <n> <file>` (see issue #226). Help text only; no behaviour change.
+
 ## 2.5.1
 
 - The Redo section of `orch-flow` says why redo skips the confirmation Abort
