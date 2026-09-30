@@ -289,6 +289,11 @@ resets to 0, `state.redo_count` increments, `flake_rerun_used` is left
 untouched (`docs/adr/0007-redo-resets-the-review-loops-iteration-and-budget.md`),
 and `state.phase` becomes `implement`.
 
+Abort differs on purpose: it ends the flow with no successor phase, so a
+mistaken call loses the live flow's state, whereas redo always leaves a live
+flow behind and every transition it makes can be undone by another `redo` or
+`next`.
+
 **From `implement`**: ask the human once whether to keep the existing spec
 issue and re-review it as-is (default), or publish a fresh one. Then call
 `bash "$ORCH" redo spec` or `bash "$ORCH" redo spec --new-issue` accordingly. The
