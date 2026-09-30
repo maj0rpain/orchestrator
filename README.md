@@ -275,8 +275,7 @@ capability to each host and documents the fallback where a host lacks one. A
 phase records every fallback it took in its handoff's **Host fallbacks**
 section, which `handoff validate` requires for flows started on 1.0.0 or later
 (a flow already in progress at upgrade is exempt); an agent records its own
-where its brief says, as the fixer does in its iteration record's **Host
-fallbacks**. Commands are Claude Code shortcuts only: each one routes to a
+where its brief says. Commands are Claude Code shortcuts only: each one routes to a
 skill, or to one section of it (usually an `orch-flow` section), and holds no
 behaviour of its own, so invoking the skill on another host is complete. `orch_test.sh` fails when a skill, or an agent that
 invokes a skill, never points at the reference, when a skill or agent names

@@ -3009,21 +3009,10 @@ assert_contains "the implementer's prompt carries the orch.sh path" \
   "$(cat "$proot/agents/orch-implementer.md")" "orch.sh: <the path ORCH holds>"
 assert_contains "and its brief finds the spec issue through ticket parent" \
   "$(cat "$proot/agents/orch-implementer.md")" 'ticket parent'
-# Every tools: line is a YAML flow list, which Claude Code and Junie CLI both
-# read as the allowlist, and none lists Skill, which Junie has no group for
-# (#204, ADR-0024).
-bad_tools=""
-for a in "$proot"/agents/*.md; do
-  t="$(grep -m1 '^tools:' "$a")" || continue
-  case "$t" in
-    'tools: ['*']') ;;
-    *) bad_tools="$bad_tools ${a##*/}(not a list)" ;;
-  esac
-  case "$t" in *Skill*) bad_tools="$bad_tools ${a##*/}(lists Skill)" ;; esac
-done
-assert_eq "every agent's tools: line is a YAML list without Skill" "$bad_tools" ""
-# Every agent declares an allowlist, and none can start sub-agents, invoke a
-# skill, or block on a human (#262, ADR-0026).
+# Every agent declares its allowlist as a YAML flow list, which Claude Code and
+# Junie CLI both read as the allowlist (#204, ADR-0024), and none lists Agent,
+# Skill or AskUserQuestion, so none can start sub-agents, invoke a skill, or
+# block on a human (#262, ADR-0026). Junie has no group for Skill either.
 unguarded=""
 for a in "$proot"/agents/*.md; do
   t="$(grep -m1 '^tools:' "$a")" || { unguarded="$unguarded ${a##*/}(no tools:)"; continue; }
@@ -3039,15 +3028,14 @@ for a in "$proot"/agents/*.md; do
 done
 assert_eq "every agent declares a tools: list without Agent, Skill or AskUserQuestion" \
   "$unguarded" ""
+impl="$(cat "$proot/agents/orch-implementer.md")"
+impl_tools="$(printf '%s\n' "$impl" | grep -m1 '^tools:')"
+assert_eq "the implementer's allowlist is exactly its brief's tools" \
+  "$impl_tools" "tools: [Read, Edit, Write, Grep, Glob, Bash]"
 for a in orch-fixer orch-closer; do
   assert_eq "$a's allowlist is the implementer's" \
-    "$(grep -m1 '^tools:' "$proot/agents/$a.md")" \
-    "tools: [Read, Edit, Write, Grep, Glob, Bash]"
+    "$(grep -m1 '^tools:' "$proot/agents/$a.md")" "$impl_tools"
 done
-impl="$(cat "$proot/agents/orch-implementer.md")"
-assert_eq "the implementer's allowlist is exactly its brief's tools" \
-  "$(printf '%s\n' "$impl" | grep -m1 '^tools:')" \
-  "tools: [Read, Edit, Write, Grep, Glob, Bash]"
 for s in 'mattpocock-skills:tdd' 'mp-skill' 'codebase-design' 'code-review'; do
   assert_not_contains "the implementer does not name $s" "$impl" "$s"
 done
