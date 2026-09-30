@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.1
+
+- The Redo section of `orch-flow` says why redo skips the confirmation Abort
+  asks for (see issue #62): abort ends the flow with no successor phase, while
+  redo always leaves a live flow behind and every transition it makes can be
+  undone. Docs only; no behaviour change.
+
 ## 2.5.0
 
 - The fixer and closer have tool allowlists (see issue #262, ADR-0026). Both
