@@ -1,5 +1,7 @@
 # The implementer carries its own TDD rules
 
+Superseded in part by ADR-0026: the fixer no longer invokes `mattpocock-skills:tdd`; the shared-file option this ADR deferred is rejected for now, to be reopened if a third reader appears; and this ADR's statement that agents have no way to locate a plugin file at runtime no longer holds: the plugin root sits beside the `orch.sh` path every agent receives.
+
 Supersedes in part ADR-0019: `orch-implementer`'s tools are Read, Edit,
 Write, Grep, Glob, and Bash, without Skill, and it builds test-first from
 its own adapted copy of `tdd`'s rules instead of invoking the skill.

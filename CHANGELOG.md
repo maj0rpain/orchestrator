@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.5.0
+
+- The fixer and closer have tool allowlists (see issue #262, ADR-0026). Both
+  declare `tools: [Read, Edit, Write, Grep, Glob, Bash]`, the implementer's
+  list, so neither can start sub-agents, invoke a skill, or block on a human.
+  The fixer builds a blocking behaviour fix test-first from its own adapted
+  copy of `tdd`'s rules instead of invoking `mattpocock-skills:tdd`, and
+  `doctor` no longer checks that `tdd` is installed. A test fails if any
+  agent loses its `tools:` list or lists `Agent`, `Skill` or `AskUserQuestion`.
+
 ## 2.4.0
 
 - On Junie, planning is a nudge, not a guard (see issue #266, ADR-0025). A

@@ -55,7 +55,7 @@ Their `SKILL.md` files are plain markdown. Resolve one with
 is exactly what invoking the skill would have injected. Never tell the user to type
 the slash command themselves, and never claim to have invoked a skill you read.
 
-`tdd`, `research`, and `domain-modeling` have no such flag; invoke those as
+`research` and `domain-modeling` have no such flag; invoke those as
 skills (on Claude Code, the Skill tool). Nothing in this plugin invokes a
 code review skill: the implement phase's ticket subagents run as the
 plugin's `orch-implementer` agent, which checks each ticket against its
