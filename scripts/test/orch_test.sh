@@ -3569,6 +3569,8 @@ out="$("$ORCH" spec fetch 2>&1)"; st=$?
 assert_status "and a call with no file" "$st" 1
 assert_contains "with the usage" "$out" "usage: orch.sh spec"
 assert_contains "help documents the spec verb" "$("$ORCH" help)" "spec fetch"
+assert_contains "help says the spec ops refuse once the flow is done" "$("$ORCH" help)" "refusing once the flow is done"
+assert_contains "and points at issue <op> for any other issue" "$("$ORCH" help)" "issue <op> <n> <file>"
 
 # --- gh adapter (real issue view/edit/comment, subprocess gh) ---------------
 # The rest of the "spec" section proved the seam through the in-memory fake;

@@ -1838,6 +1838,9 @@ orch.sh - deterministic operations for the orchestrator flow
   spec fetch <file>           write the spec issue's body to <file>
   spec update <file>          replace the spec issue's body with <file>
   spec comment <file>         post <file> as a comment on the spec issue
+                              all three act on the active flow's issue,
+                              refusing once the flow is done; for any other
+                              issue use issue <op> <n> <file>
   spec-review begin <n>       start a standalone spec review of issue <n>:
                               refuse while an active flow holds <n> - at spec
                               (pointing at next) or at implement or review
