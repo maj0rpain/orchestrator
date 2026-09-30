@@ -1,7 +1,7 @@
 ---
 name: orch-lens-consistency
 description: The Consistency lens of an orchestrator spec review - reads a spec issue's body for its consistency with itself, the glossary, and the ADRs, and returns its findings. Started only by the orch-spec-review skill, with the paths it reads.
-tools: Read, Grep, Glob
+tools: [Read, Grep, Glob]
 ---
 
 # Consistency lens

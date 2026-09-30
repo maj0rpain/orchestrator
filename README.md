@@ -49,8 +49,7 @@ plugin's `agents/`, but a capability filter at agent start usually hides them
 from the model, so the flow starts a general-purpose agent briefed with the
 agent's file instead. Naming the agent in your own prompt keeps it visible,
 for example "For step 4, start the custom agent orch-implementer by name."
-Naming it in a skill does not. The tip only pays off once #204 is fixed: until
-then an agent left visible starts with no tools.
+Naming it in a skill does not.
 
 Doctor reports the host it detects and the capabilities that host lacks (from
 [docs/host-capabilities.md](docs/host-capabilities.md)). It reads Claude Code
@@ -306,7 +305,7 @@ The implement phase works the spec issue's published ticket breakdown one
 ticket at a time: `ticket next` names the ready frontier, and each ready
 ticket goes to a fresh `orch-implementer` agent carrying only its number
 and the `orch.sh` path.
-The agent builds that one ticket test-first through `tdd`, on the flow's
+The agent builds that one ticket test-first from its own adapted copy of `tdd`'s rules, on the flow's
 single branch, commits its own work, and checks its commits against the
 ticket's acceptance criteria. It cannot start sub-agents or ask the human
 anything: a call it cannot make alone comes back as a deviation in its

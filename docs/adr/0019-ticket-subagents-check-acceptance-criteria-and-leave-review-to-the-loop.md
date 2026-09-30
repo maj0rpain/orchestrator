@@ -1,5 +1,9 @@
 # Ticket subagents check acceptance criteria and leave review to the loop
 
+Superseded in part by ADR-0024: the implementer's tools no longer include
+Skill, and it follows its own adapted copy of `tdd`'s rules instead of the
+skill.
+
 Supersedes ADR-0018's note that the implement phase's ticket subagents still
 use `code-review`, and ADR-0010's "resolves and follows `implement` or `tdd`
 itself": a ticket subagent now follows `tdd` only.

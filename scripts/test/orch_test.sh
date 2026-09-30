@@ -2233,8 +2233,8 @@ assert_contains "names the edit guard as unverified on Junie" \
 assert_eq "does not claim Junie lacks planning-time context" \
   "$(printf '%s\n' "$out" | grep -c 'Inject context at planning time')" "0"
 # Junie CLI loads the plugin's agents/ (#200), but its capability filter hides
-# them and a visible one gets no tools (#204), so a native start never pays off
-# today: the cell is a Fallback, not Unverified (#203).
+# them, so a native start usually fails: the cell is a Fallback, not
+# Unverified (#203).
 assert_contains "names the fresh subagent Junie cannot use" \
   "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Start a fresh subagent"
 assert_eq "does not call the fresh subagent unverified on Junie" \
@@ -3008,8 +3008,34 @@ assert_contains "the implementer's prompt carries the orch.sh path" \
   "$(cat "$proot/agents/orch-implementer.md")" "orch.sh: <the path ORCH holds>"
 assert_contains "and its brief finds the spec issue through ticket parent" \
   "$(cat "$proot/agents/orch-implementer.md")" 'ticket parent'
-assert_contains "and names the mp-skill tdd route for a host with no Skill tool" \
-  "$(cat "$proot/agents/orch-implementer.md")" 'mp-skill tdd'
+# Every tools: line is a YAML flow list, which Claude Code and Junie CLI both
+# read as the allowlist, and none lists Skill, which Junie has no group for
+# (#204, ADR-0024).
+bad_tools=""
+for a in "$proot"/agents/*.md; do
+  t="$(grep -m1 '^tools:' "$a")" || continue
+  case "$t" in
+    'tools: ['*']') ;;
+    *) bad_tools="$bad_tools ${a##*/}(not a list)" ;;
+  esac
+  case "$t" in *Skill*) bad_tools="$bad_tools ${a##*/}(lists Skill)" ;; esac
+done
+assert_eq "every agent's tools: line is a YAML list without Skill" "$bad_tools" ""
+impl="$(cat "$proot/agents/orch-implementer.md")"
+assert_eq "the implementer's allowlist is exactly its brief's tools" \
+  "$(grep -m1 '^tools:' "$proot/agents/orch-implementer.md")" \
+  "tools: [Read, Edit, Write, Grep, Glob, Bash]"
+for s in 'mattpocock-skills:tdd' 'mp-skill' 'codebase-design' 'code-review'; do
+  assert_not_contains "the implementer does not name $s" "$impl" "$s"
+done
+assert_contains "the implementer carries its own TDD section" \
+  "$impl" '## Test-driven development'
+assert_contains "which names its source" \
+  "$impl" 'Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.'
+assert_contains "and keeps the rules of the loop" "$impl" 'Red before green'
+assert_not_contains "Starting this agent no longer mentions the Skill tool" \
+  "$(sed -n '/^## Starting this agent/,/^## Steps/p' "$proot/agents/orch-implementer.md")" \
+  'Skill tool'
 
 # --- ticket: unknown op ------------------------------------------------------
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?
@@ -4635,15 +4661,24 @@ done
 readme="$(flat_text "$root/README.md")"
 assert_contains "the prompt workaround is documented for Junie users" \
   "$readme" 'start the custom agent orch-implementer by name'
-assert_contains "the workaround names its dependency on #204" \
-  "$readme" 'only pays off once #204 is fixed'
+assert_not_contains "the workaround no longer waits on #204" \
+  "$readme" 'only pays off once #204'
+assert_contains "the Junie fresh-subagent cell says both hosts read the tools: list" \
+  "$junie_subagent" 'Both hosts read its'
+assert_not_contains "the Junie fresh-subagent cell no longer says a visible agent has no tools" \
+  "$junie_subagent" 'gets no tools yet'
+assert_eq "ADR-0024 records the implementer's own TDD rules" \
+  "$(test -f "$root/docs/adr/0024-the-implementer-carries-its-own-tdd-rules.md" && echo yes)" "yes"
+assert_contains "ADR-0019 opens with a note naming ADR-0024" \
+  "$(sed -n '1,5p' "$root/docs/adr/0019-ticket-subagents-check-acceptance-criteria-and-leave-review-to-the-loop.md")" \
+  'Superseded in part by ADR-0024'
 assert_contains "the Junie cell points to the README's workaround" \
   "$junie_subagent" "README's Junie paragraph"
 assert_contains "the Junie fresh-subagent cell is a Fallback" \
   "$junie_subagent" '**Fallback**'
 for a in orch-reviewer-standards orch-reviewer-spec; do
   assert_contains "$a keeps its tools list" \
-    "$(cat "$root/agents/$a.md")" 'tools: Read, Grep, Glob, Bash'
+    "$(cat "$root/agents/$a.md")" 'tools: [Read, Grep, Glob, Bash]'
 done
 # With no full install at all, doctor has no orch.sh to run from, so the skill
 # is the one that has to explain the failure (#128).
@@ -4960,7 +4995,7 @@ for lens in $lenses; do
   assert_eq "orch-lens-$lens is named for its file" \
     "$(grep -m1 '^name:' "$a")" "name: orch-lens-$lens"
   assert_eq "orch-lens-$lens may only read" \
-    "$(grep -m1 '^tools:' "$a")" "tools: Read, Grep, Glob"
+    "$(grep -m1 '^tools:' "$a")" "tools: [Read, Grep, Glob]"
   assert_eq "orch-lens-$lens sets no model" "$(grep -c '^model:' "$a")" "0"
   body="$(flat_text "$a")"
   for rule in 'Report findings only, never draft edits.' \

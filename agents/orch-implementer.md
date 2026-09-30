@@ -1,7 +1,7 @@
 ---
 name: orch-implementer
 description: The ticket subagent of an orchestrator flow - builds exactly one ticket test-first on the current branch, commits, checks its own commits against the ticket's acceptance criteria, and returns a five-line report. Started only by the orch-flow skill's implement phase or by the orch-quick-implement skill, with a ticket number and the orch.sh path and nothing else.
-tools: Read, Edit, Write, Grep, Glob, Bash, Skill
+tools: [Read, Edit, Write, Grep, Glob, Bash]
 ---
 
 # Implementer
@@ -32,9 +32,7 @@ orch.sh: <the path ORCH holds>
 It returns the five lines of **Report** below and nothing else. A host that
 cannot start it natively takes `docs/host-capabilities.md`'s **Start a fresh
 subagent** fallback, whose general-purpose-agent tier adds this file's path
-to that prompt. On a host with no Skill tool this agent takes the
-`mp-skill tdd` route in step 2; the caller, which knows its host, records
-that fallback too - the report carries none.
+to that prompt.
 
 ## Steps
 
@@ -44,11 +42,8 @@ that fallback too - the report carries none.
    the ticket is the spec issue itself. A failure is retried once, then
    recorded as a deviation. Read the spec issue's **Testing Decisions** - the
    seams already confirmed with the human.
-2. **Build the ticket test-first** through the `mattpocock-skills:tdd` skill,
-   invoked as a skill (on Claude Code, the Skill tool), at those seams. On a
-   host with no Skill tool, run `bash "<orch.sh>" mp-skill tdd` and follow
-   the `SKILL.md` it names instead - `docs/host-capabilities.md`'s **Invoke a
-   skill from a step**. A test that needs a seam the Testing
+2. **Build the ticket test-first**, per **Test-driven development** below,
+   at those seams. A test that needs a seam the Testing
    Decisions do not name is a deviation: pick the most defensible seam,
    record it, and carry on.
 3. **Verify as you go**: run typechecking and single test files regularly,
@@ -62,6 +57,55 @@ that fallback too - the report carries none.
    criteria is checked against its "What to build" instead. An unmet
    criterion you can meet, meet now - then commit and check again.
 6. **Return** the report below, and nothing else.
+
+## Test-driven development
+
+Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.
+
+TDD is the red-green loop. These rules make it produce tests worth keeping,
+and every one applies on every cycle. Read `CONTEXT.md`, if the repo has one,
+so test names match the domain's language, and respect the ADRs in the area
+you touch.
+
+**What a good test is.** A test verifies behaviour through a public
+interface, never through implementation details. The code behind it can
+change entirely and the test still passes. A good test reads like a
+specification - "user can checkout with a valid cart" names a capability -
+and survives refactors because it does not care about internal structure. It
+uses the public interface only, describes what, not how, and makes one
+logical assertion. Verify through the interface itself: a created user is
+checked by fetching it back, not by querying the database behind it.
+
+**Mock only at system boundaries**: external APIs, time and randomness, and
+sometimes databases or the file system. Never mock your own modules or
+internal collaborators - anything you control. At a boundary, pass the
+dependency in rather than building it inside, and prefer one function per
+external operation over one generic fetcher, so each mock returns one shape.
+
+**Anti-patterns.**
+
+- **Implementation-coupled**: mocks internal collaborators, tests private
+  functions, asserts on call counts or order, or verifies through a side
+  channel. The tell: the test breaks on a refactor that changed no
+  behaviour.
+- **Tautological**: the assertion recomputes the expected value the way the
+  code does, so it passes by construction and can never disagree with the
+  code. Expected values come from an independent source of truth: a
+  known-good literal, a worked example, the spec.
+- **Horizontal slicing**: writing all the tests first, then all the code.
+  Bulk tests verify imagined behaviour and commit to a test structure before
+  you understand the implementation. Work in vertical slices instead, each
+  test a tracer bullet that answers to what the last cycle taught you.
+
+**Rules of the loop.**
+
+- **Red before green.** Write the failing test first and see it fail, then
+  write only enough code to pass it. Anticipate no future tests and add no
+  speculative features.
+- **One slice at a time.** One seam, one test, one minimal implementation
+  per cycle.
+- **Refactoring is not part of the loop.** It belongs to the review loop,
+  not to the red-green cycle.
 
 ## File-read discipline
 
