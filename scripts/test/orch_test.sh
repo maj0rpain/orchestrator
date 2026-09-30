@@ -3553,12 +3553,14 @@ done
 spec_scratch="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" spec fetch "$spec_scratch" 2>&1)"; st=$?
 assert_status "spec fetch still works at phase spec" "$st" 0
-for op in update comment; do
-  : >"$filed"
-  out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec "$op" "$tricky" 2>&1)"; st=$?
-  assert_status "spec $op still works at phase spec" "$st" 0
-  assert_contains "on the flow's issue" "$(cat "$filed")" "issue $([ "$op" = update ] && echo edit || echo comment) 14"
-done
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec update "$tricky" 2>&1)"; st=$?
+assert_status "spec update still works at phase spec" "$st" 0
+assert_contains "on the flow's issue" "$(cat "$filed")" "issue edit 14"
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
+assert_status "spec comment still works at phase spec" "$st" 0
+assert_contains "on the flow's issue" "$(cat "$filed")" "issue comment 14"
 rm -f "$spec_scratch"
 "$ORCH" state set phase "$prior_phase"
 
