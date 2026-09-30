@@ -214,6 +214,7 @@ scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
 scripts/test/                 shell tests
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
+docs/junie/AGENTS.md          Junie snippet naming each skill's custom agents (JUNIE-5493 workaround)
 hooks/hooks.json              hook wiring
 ```
 

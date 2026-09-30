@@ -4680,6 +4680,8 @@ assert_contains "the Junie fresh-subagent cell is a Fallback" \
 # Junie's capability filter keeps it visible. Delete these tests along with the
 # snippet once JUNIE-5493 is fixed.
 # junie_snippet_drift <plugin root>: print each agents/*.md name the snippet omits.
+# It checks names only, not which skill lists which agent: that per-skill
+# mapping is hand-kept, an accepted drift for a temporary workaround.
 junie_snippet_drift() {
   local r="$1" a n
   for a in "$r"/agents/*.md; do
@@ -4705,6 +4707,7 @@ assert_contains "the README points Junie users at the snippet" \
 assert_contains "the README links JUNIE-5493" "$readme" 'JUNIE-5493'
 assert_contains "the Junie fresh-subagent cell points at the snippet" \
   "$junie_subagent" 'docs/junie/AGENTS.md'
+# 3 cells -> 4 pipes -> awk NF of 5; a stray | in a cell raises it.
 assert_eq "the Junie fresh-subagent row has no literal pipe in a cell" \
   "$(grep -m1 '^| Start a fresh subagent |' "$root/docs/host-capabilities.md" | awk -F'|' '{ print NF }')" "5"
 for a in orch-reviewer-standards orch-reviewer-spec; do
