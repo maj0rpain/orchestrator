@@ -47,9 +47,18 @@ documentation, and some of it is unverified (see
 [docs/host-capabilities.md](docs/host-capabilities.md)). Junie loads the
 plugin's `agents/`, but a capability filter at agent start usually hides them
 from the model, so the flow starts a general-purpose agent briefed with the
-agent's file instead. Naming the agent in your own prompt keeps it visible,
-for example "For step 4, start the custom agent orch-implementer by name."
-Naming it in a skill does not.
+agent's file instead. JetBrains tracks this as
+[JUNIE-5493](https://youtrack.jetbrains.com/issue/JUNIE-5493); until it is
+fixed, append the plugin's snippet
+[docs/junie/AGENTS.md](docs/junie/AGENTS.md) to your user-scoped
+`~/.junie/AGENTS.md`, which tells Junie each skill needs its custom agents:
+`cat "$HOME"/.junie/extensions/*/orchestrator/docs/junie/AGENTS.md >> ~/.junie/AGENTS.md`.
+If the glob matches more than one install, pick one path and `cat` only that.
+The snippet sits between `<!-- orchestrator:begin -->` and
+`<!-- orchestrator:end -->` markers, so it can be removed cleanly once
+JUNIE-5493 is fixed. As a fallback, naming the agent in your own prompt keeps it
+visible, for example "For step 4, start the custom agent orch-implementer by
+name." Naming it in a skill does not.
 
 Doctor reports the host it detects and the capabilities that host lacks (from
 [docs/host-capabilities.md](docs/host-capabilities.md)). It reads Claude Code
