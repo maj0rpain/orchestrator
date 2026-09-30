@@ -3,7 +3,7 @@
 # Every hook reads the same JSON payload from stdin and, when it decides or
 # injects context, writes one JSON object. Hosts differ in both: Junie's
 # PreToolUse payload carries no cwd (its session_id, missing from Junie's
-# bundled docs, is there from build 3419.7 - ADR-0023), and Junie reads its
+# bundled docs, is there from build 3419.7), and Junie reads its
 # decision and context from top-level fields where Claude Code reads
 # hookSpecificOutput. Sourced by each hook, not executed on its own.
 
@@ -60,6 +60,15 @@ hook_normalize_path() {
   printf '%s' "${out:-/}"
 }
 
+# Prints the session's marker of the given kind: grilling, the marker that
+# arms the edit guard, or planning, Junie's marker the guard never reads
+# (ADR-0025). Every hook that names a marker goes through here, so a rename
+# cannot silently re-arm or disarm the guard. Call after hook_read_payload,
+# with a non-empty `session`.
+hook_marker_path() {
+  printf '%s/orchestrator-%s-%s' "${TMPDIR:-/tmp}" "$1" "$session"
+}
+
 # Prints this install's plugin root: the directory above scripts/, as the
 # logical path the hooks hand the model, not a symlink-resolved one.
 hook_plugin_root() {
@@ -67,7 +76,7 @@ hook_plugin_root() {
 }
 
 # Prints the installed orch-quick-implement SKILL.md. A host with no Skill tool
-# is told to read this file, and a Read of it lifts the edit guard - ADR-0023.
+# is told to read this file.
 hook_quick_skill_file() {
   printf '%s/skills/orch-quick-implement/SKILL.md' "$(hook_plugin_root)"
 }

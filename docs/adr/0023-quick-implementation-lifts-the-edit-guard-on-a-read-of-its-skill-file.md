@@ -1,5 +1,7 @@
 # Quick implementation lifts the edit guard on a read of its skill file
 
+Superseded by ADR-0025: the edit guard no longer arms on Junie, and the Read lift is removed.
+
 Supersedes ADR-0013: on Junie the edit guard now arms, so the premise that
 nothing mechanical can arm it there no longer holds. Its flow-start
 working-tree check stands, as the backstop wherever the guard does not arm.

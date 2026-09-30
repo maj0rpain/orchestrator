@@ -158,6 +158,24 @@ assert_not_contains "names no Claude-scoped mattpocock skill on Junie" "$ctx" "m
 assert_empty "stays silent on the second grilling prompt in one Junie session" \
   "$(prompt_event '$grilling again' j1 | "$GRILL")"
 
+# On Junie the guard does not arm (ADR-0025): the marker that keeps the
+# message to once per session is named so hook-guard.sh never reads it, and a
+# Junie-style Edit in the same session, with no project_path, is allowed.
+if [ -e "$TMPDIR/orchestrator-planning-j1" ]; then
+  ok "a Junie grilling prompt writes the planning marker"
+else
+  bad "a Junie grilling prompt writes the planning marker" "no orchestrator-planning-j1"
+fi
+if [ -e "$TMPDIR/orchestrator-grilling-j1" ]; then
+  bad "a Junie grilling prompt writes no guard marker" "orchestrator-grilling-j1 exists"
+else
+  ok "a Junie grilling prompt writes no guard marker"
+fi
+junie_same_session_edit="$(jq -n --arg f "$REPO/src/main.ts" \
+  '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"j1", tool_input:{file_path:$f}}')"
+assert_empty "a source edit after a Junie grilling prompt is allowed" \
+  "$(cd "$REPO" && printf '%s' "$junie_same_session_edit" | "$GUARD")"
+
 n=0
 for p in '/grilling' '$grill-me x' 'please $wayfinder now' '/improve-codebase-architecture' '/mattpocock-skills:grilling'; do
   n=$((n + 1))
@@ -270,15 +288,15 @@ assert_contains "source denial keeps today's reason" "$source_reason" \
   "this is a planning session and no flow has
 started, so 'src/x.ts' should not be edited yet."
 assert_contains "source denial still lists planning artifacts" "$source_reason" "Planning artifacts you may still edit"
-# Host detection is not reliable on Junie's PreToolUse, so the source denial
-# names both quick-implementation lifts on every host - ADR-0023.
+# The guard arms only on Claude Code (ADR-0025), so the source denial names
+# the Skill lift alone, and no Read lift.
 assert_contains "source denial names the quick-implement Skill lift" "$source_reason" \
   'call the Skill tool with "orchestrator:orch-quick-implement"'
-assert_contains "source denial names the Read lift of the installed SKILL.md" "$source_reason" \
-  "read $(cd "$DIR/.." && pwd)/skills/orch-quick-implement/SKILL.md with the Read tool"
+assert_not_contains "source denial names no SKILL.md" "$source_reason" "SKILL.md"
+assert_not_contains "source denial names no Read tool" "$source_reason" "Read tool"
 
 # Junie's PreToolUse payload carries no cwd, and its bundled docs show no
-# session_id either, though build 3419.7 sends one (ADR-0023). No session
+# session_id either, though build 3419.7 sends one. No session
 # means "not guarded", even if a stale marker for a defaulted id exists.
 : >"$TMPDIR/orchestrator-grilling-unknown"
 : >"$TMPDIR/orchestrator-grilling-"
@@ -388,72 +406,19 @@ ok "does not fail when no marker exists for the session"
 skill_event "orchestrator:quick-implement" s4 | "$QUICK" >/dev/null
 assert_marker_kept "ignores the old unprefixed quick-implement name" s4
 
-# On a host with no Skill tool (Junie), the model runs orch-quick-implement by
-# reading its SKILL.md, so a PreToolUse Read of the installed copy lifts the
-# guard too - ADR-0023. Junie's PreToolUse may or may not carry project_path.
-PLUGIN_ROOT="$(cd "$DIR/.." && pwd)"
-QUICK_SKILL="$PLUGIN_ROOT/skills/orch-quick-implement/SKILL.md"
-read_event() {
-  jq -n --arg f "$1" --arg sid "$2" --arg k "${3:-file_path}" \
-    '{hook_event_name:"PreToolUse", tool_name:"Read", session_id:$sid, tool_input:{($k):$f}}'
-}
-
+# The Read lift is gone (ADR-0025): the guard does not arm on Junie, so
+# nothing needs lifting there, and a Read of the installed SKILL.md is no
+# longer a trigger.
+QUICK_SKILL="$(cd "$DIR/.." && pwd)/skills/orch-quick-implement/SKILL.md"
 : >"$TMPDIR/orchestrator-grilling-r1"
-out="$(read_event "$QUICK_SKILL" r1 | "$QUICK")"
-assert_empty "prints nothing on a Read" "$out"
-assert_marker_gone "a Read of the installed SKILL.md via file_path deletes the marker" r1
+jq -n --arg f "$QUICK_SKILL" \
+  '{hook_event_name:"PreToolUse", tool_name:"Read", session_id:"r1", tool_input:{file_path:$f}}' \
+  | "$QUICK" >/dev/null
+assert_marker_kept "a PreToolUse Read of the installed SKILL.md leaves the marker" r1
+rm -f "$TMPDIR/orchestrator-grilling-r1"
 
-: >"$TMPDIR/orchestrator-grilling-r2"
-read_event "$QUICK_SKILL" r2 path | "$QUICK" >/dev/null
-assert_marker_gone "a Read of the installed SKILL.md via path deletes the marker" r2
-
-# With project_path present, a relative path resolves against it, and ".."
-# segments are judged by where they land.
-: >"$TMPDIR/orchestrator-grilling-r3"
-jq -n --arg p "$PLUGIN_ROOT/skills" \
-  '{hook_event_name:"PreToolUse", tool_name:"Read", session_id:"r3", project_path:$p,
-    tool_input:{path:"x/../orch-quick-implement/SKILL.md"}}' | "$QUICK" >/dev/null
-assert_marker_gone "a relative Read resolved against the working directory deletes the marker" r3
-
-: >"$TMPDIR/orchestrator-grilling-r7"
-jq -n --arg f "$QUICK_SKILL" --arg p "$REPO" \
-  '{hook_event_name:"PreToolUse", tool_name:"Read", session_id:"r7", project_path:$p,
-    tool_input:{file_path:$f}}' | "$QUICK" >/dev/null
-assert_marker_gone "an absolute Read with project_path present deletes the marker" r7
-
-# The same file reached through a symlinked plugin root is the same file: a
-# host that hands over, or resolves to, the other spelling still lifts it.
-ln -s "$PLUGIN_ROOT" "$TMPDIR/linked-root"
-: >"$TMPDIR/orchestrator-grilling-r8"
-read_event "$TMPDIR/linked-root/skills/orch-quick-implement/SKILL.md" r8 | "$QUICK" >/dev/null
-assert_marker_gone "a Read of the installed SKILL.md through a symlink deletes the marker" r8
-rm -f "$TMPDIR/linked-root"
-
-: >"$TMPDIR/orchestrator-grilling-r4"
-read_event "$PLUGIN_ROOT/skills/orch-flow/SKILL.md" r4 | "$QUICK" >/dev/null
-assert_marker_kept "a Read of another skill's SKILL.md leaves the marker" r4
-
-# A repo checkout of this plugin carries its own copy; reading that while
-# working on the plugin must not lift the guard.
-mkdir -p "$REPO/skills/orch-quick-implement"
-: >"$REPO/skills/orch-quick-implement/SKILL.md"
-: >"$TMPDIR/orchestrator-grilling-r5"
-read_event "$REPO/skills/orch-quick-implement/SKILL.md" r5 | "$QUICK" >/dev/null
-assert_marker_kept "a Read of a repo checkout's quick-implement SKILL.md leaves the marker" r5
-rm -rf "$REPO/skills"
-
-: >"$TMPDIR/orchestrator-grilling-"
-out="$(jq -n --arg f "$QUICK_SKILL" '{hook_event_name:"PreToolUse", tool_name:"Read", tool_input:{file_path:$f}}' | "$QUICK")"; rc=$?
-assert_eq "exits cleanly on a Read with no session_id" "$rc" "0"
-assert_marker_kept "a Read with no session_id touches no marker" ""
-rm -f "$TMPDIR/orchestrator-grilling-"
-
-: >"$TMPDIR/orchestrator-grilling-r6"
-read_event "" r6 | "$QUICK" >/dev/null
-assert_marker_kept "a Read naming no path leaves the marker" r6
-
-assert_contains "hooks.json runs the quick-implement hook on PreToolUse Read" \
-  "$(jq -r '.hooks.PreToolUse[]? | select(.matcher == "Read") | .hooks[]?.command' "$DIR/../hooks/hooks.json")" "hook-quick-implement.sh"
+assert_empty "hooks.json has no PreToolUse Read matcher" \
+  "$(jq -r '.hooks.PreToolUse[]? | select(.matcher == "Read") | .matcher' "$DIR/../hooks/hooks.json")"
 
 echo
 echo "execute bit (docs/host-capabilities.md, \"Execute bit\")"

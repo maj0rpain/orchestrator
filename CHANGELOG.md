@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.4.0
+
+- On Junie, planning is a nudge, not a guard (see issue #266, ADR-0025). A
+  Junie grilling session no longer arms the edit guard, so source edits are
+  allowed; the planning message and the closing question on `Implement the
+  suggested plan` keep working. The `PreToolUse` `Read` lift ADR-0023 added is
+  removed, and the guard's denial names only the `orchestrator:orch-quick-implement`
+  Skill call. `docs/junie/AGENTS.md` gains a standing planning section: no
+  source edits while planning, and glossary and ADR wording written into the
+  plan. `orch.sh init`'s working-tree check is the Junie backstop, and doctor
+  reports the edit guard as a capability Junie lacks. Claude Code's guard is
+  unchanged.
+
 ## 2.3.7
 
 - Junie users can append `docs/junie/AGENTS.md` to `~/.junie/AGENTS.md` (see

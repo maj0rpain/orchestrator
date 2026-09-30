@@ -20,7 +20,8 @@
 # own UserPromptSubmit exits here silently.
 #
 # It injects context only. It cannot force compliance, which is why the real
-# durability lives in .orchestrator/state.json and the edit guard. Fires once
+# durability lives in .orchestrator/state.json and, on Claude Code, the edit
+# guard; on Junie, orch.sh init's flow-start working-tree check (ADR-0025). Fires once
 # per session, and says nothing at all when a flow is already running.
 
 set -euo pipefail
@@ -50,13 +51,18 @@ else
 fi
 
 # No session_id, no marker: there is nothing to key the guard to, so it stays
-# unarmed and the once-per-session check cannot apply. On Junie the marker
-# arms the edit guard too: its PreToolUse carries session_id from build 3419.7
-# (ADR-0023).
+# unarmed and the once-per-session check cannot apply. On Claude Code the
+# marker also arms the edit guard. On Junie it does not (ADR-0025): the marker
+# is named orchestrator-planning-<session>, a name hook-guard.sh never reads,
+# and only keeps the message to once per session and gates the plan
+# confirmation. The guard cannot skip Junie itself, because Junie's PreToolUse
+# may lack project_path.
 # A plan confirmation counts only in a session that grilled, so it needs the
 # marker rather than being stopped by it, and asks on every confirmation.
+marker_kind=grilling
+[ "$host" != junie ] || marker_kind=planning
 marker=""
-[ -z "$session" ] || marker="${TMPDIR:-/tmp}/orchestrator-grilling-${session}"
+[ -z "$session" ] || marker="$(hook_marker_path "$marker_kind")"
 if [ "$plan_confirmed" = 1 ]; then
   [ -n "$marker" ] && [ -e "$marker" ] || exit 0
 elif [ -n "$marker" ]; then

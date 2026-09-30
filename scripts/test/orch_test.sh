@@ -2222,13 +2222,12 @@ assert_contains "the plugin root check still warns when Claude Code left it unse
 out="$(env -u CLAUDE_PLUGIN_ROOT JUNIE_EXTENSION_ROOT="$PWD" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "Junie's missing capabilities warn, never fail" "$st" 0
 assert_contains "detects Junie CLI from JUNIE_EXTENSION_ROOT" "$out" "host: Junie CLI"
-# Junie's PreToolUse carries session_id from build 3419.7, so the guard arms
-# there; only the Read path field its quick-implement lift reads is unconfirmed
-# (ADR-0023), so the row is Unverified, not a gap.
-assert_eq "does not claim Junie lacks the edit guard" \
-  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*' | grep -c 'Arm the edit guard')" "0"
-assert_contains "names the edit guard as unverified on Junie" \
-  "$(printf '%s\n' "$out" | grep -o 'unverified: .*')" "Arm the edit guard"
+# The edit guard does not arm on Junie (ADR-0025): planning there is a nudge,
+# backstopped at flow start, so the row is a Fallback - a gap, not Unverified.
+assert_contains "names the edit guard as lacking on Junie" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Arm the edit guard"
+assert_eq "does not call the edit guard unverified on Junie" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*' | grep -c 'Arm the edit guard')" "0"
 # Junie's UserPromptSubmit hook now delivers the planning message (#202).
 assert_eq "does not claim Junie lacks planning-time context" \
   "$(printf '%s\n' "$out" | grep -c 'Inject context at planning time')" "0"
@@ -4707,6 +4706,53 @@ assert_contains "the README points Junie users at the snippet" \
 assert_contains "the README links JUNIE-5493" "$readme" 'JUNIE-5493'
 assert_contains "the Junie fresh-subagent cell points at the snippet" \
   "$junie_subagent" 'docs/junie/AGENTS.md'
+# On Junie planning is a nudge, not a guard (ADR-0025): the snippet carries a
+# standing planning section first, and the JUNIE-5493 comment scopes itself to
+# the custom-agents section it sits directly above.
+junie_block="$(sed -n '/^<!-- orchestrator:begin -->$/,/^<!-- orchestrator:end -->$/p' "$root/docs/junie/AGENTS.md")"
+planning_line="$(printf '%s\n' "$junie_block" | grep -nxF '## orchestrator plugin: planning' | cut -d: -f1)"
+comment_line="$(printf '%s\n' "$junie_block" | grep -n 'JUNIE-5493' | head -1 | cut -d: -f1)"
+agents_line="$(printf '%s\n' "$junie_block" | grep -nxF '## orchestrator plugin: custom agents' | cut -d: -f1)"
+assert_eq "the planning section opens the Junie snippet" "${planning_line:-none}" "2"
+if [ -n "$planning_line" ] && [ -n "$comment_line" ] && [ "$planning_line" -lt "$comment_line" ]; then
+  ok "the planning section precedes the JUNIE-5493 comment"
+else
+  bad "the planning section precedes the JUNIE-5493 comment" "planning at ${planning_line:-none}, comment at ${comment_line:-none}"
+fi
+assert_eq "the JUNIE-5493 comment sits directly above the custom-agents heading" \
+  "$(printf '%s\n' "$junie_block" | sed -n "$((${agents_line:-1} - 1))p")" \
+  "     (Junie's capability filter hides plugin custom agents). Remove this section once fixed. -->"
+assert_contains "the planning section keeps records out of planning edits" \
+  "$(flat_text "$root/docs/junie/AGENTS.md")" \
+  "Glossary and ADR changes (CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are recorded, not edited"
+assert_eq "ADR-0025 exists" \
+  "$(test -f "$root/docs/adr/0025-on-junie-planning-is-a-nudge-not-a-guard.md" && echo yes)" "yes"
+assert_contains "ADR-0023 opens with a note naming ADR-0025" \
+  "$(sed -n '1,5p' "$root/docs/adr/0023-quick-implementation-lifts-the-edit-guard-on-a-read-of-its-skill-file.md")" \
+  'Superseded by ADR-0025: the edit guard no longer arms on Junie, and the Read lift is removed.'
+assert_contains "ADR-0013 opens with a note naming ADR-0025" \
+  "$(sed -n '1,5p' "$root/docs/adr/0013-the-edit-guard-arms-only-where-a-host-offers-a-mechanical-trigger.md")" \
+  'Superseded in part by ADR-0023, itself superseded by ADR-0025'
+junie_guard="$(grep -m1 '^| Arm the edit guard |' "$root/docs/host-capabilities.md" | awk -F'|' '{ print $4 }')"
+assert_contains "the Junie edit-guard cell is a Fallback" "$junie_guard" '**Fallback**'
+assert_not_contains "the Junie edit-guard cell is not Unverified" "$junie_guard" '**Unverified**'
+assert_contains "the Junie edit-guard cell says the guard does not arm" "$junie_guard" \
+  'None: the guard does not arm on Junie (ADR-0025).'
+for doc in README.md docs/host-capabilities.md; do
+  prose="$(flat_text "$root/$doc")"
+  assert_not_contains "$doc describes no Read lift" "$prose" 'Read` lift'
+  assert_not_contains "$doc describes no PreToolUse Read hook" "$prose" "\`PreToolUse\` \`Read\`"
+  assert_not_contains "$doc has no Read of the quick-implement SKILL.md lift the guard" "$prose" 'with the Read tool'
+done
+assert_contains "the README says the guard does not arm on Junie" "$readme" 'does not arm on Junie (ADR-0025)'
+# The snippet's planning section restates the allowlist and records; it must
+# match planning-allowlist.sh, the one definition the hooks print from.
+snippet="$(flat_text "$root/docs/junie/AGENTS.md")"
+assert_contains "the Junie snippet lists the planning records as planning-allowlist.sh does" \
+  "$snippet" "($(source "$root/scripts/planning-allowlist.sh" && planning_records_text))"
+assert_contains "the Junie snippet lists the planning allowlist as planning-allowlist.sh does" \
+  "$snippet" "($(source "$root/scripts/planning-allowlist.sh" && planning_allowlist_text))"
+assert_contains "the README says the snippet carries a planning section" "$readme" 'standing planning section'
 # 3 cells -> 4 pipes -> awk NF of 5; a stray | in a cell raises it.
 assert_eq "the Junie fresh-subagent row has no literal pipe in a cell" \
   "$(grep -m1 '^| Start a fresh subagent |' "$root/docs/host-capabilities.md" | awk -F'|' '{ print NF }')" "5"
