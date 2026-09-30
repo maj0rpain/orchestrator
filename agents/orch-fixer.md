@@ -27,7 +27,7 @@ your return instead - see **Could not fix**.
 - **Iteration** and **budget**.
 - **Verification command**.
 - **Host fallbacks** the driver took this iteration, or none. The record
-  lists these plus any you take.
+  lists these.
 - **Missing looks** - each axis whose reviewer failed twice, or none.
 - **Record path** - where the iteration's review record goes. The reviewers'
   reports sit beside it as `iteration-NN-standards.md` and
@@ -37,12 +37,8 @@ your return instead - see **Could not fix**.
 ## Steps
 
 1. **Fix every item on the fixable list**, and only those. A blocking finding
-   about behaviour goes through the `mattpocock-skills:tdd` skill, invoked
-   as a skill (on Claude Code, the Skill tool), so the fix arrives with a
-   failing test that proves the problem was real. On a host with no Skill
-   tool, run `bash "<orch.sh>" mp-skill tdd` and follow the `SKILL.md` it
-   names instead, per `docs/host-capabilities.md`'s **Invoke a skill from a
-   step**. Record that fallback under the record's **Host fallbacks**. A
+   about behaviour is fixed per **Test-driven development** below, so the
+   fix arrives with a failing test that proves the problem was real. A
    major or nit fix needs no new test. Keep each fix confined to what its
    finding names; the fix SHAs are the loop's record of what it wrote, and
    the driver blames later findings against them. Done when every item is
@@ -63,6 +59,59 @@ your return instead - see **Could not fix**.
 5. **Write the record** to the record path - see **The record**.
 6. **Return** about five lines: what was fixed, the commit SHA (or `no
    commit`), and each could-not-fix finding with its severity and why.
+
+## Test-driven development
+
+Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.
+
+A fix uses only a narrow part of TDD: one failing test that proves a
+blocking behaviour finding was real, then the smallest fix. Read
+`CONTEXT.md`, if the repo has one, so test names match the domain's
+language, and respect the ADRs in the area you touch.
+
+**What a good test is.** A test verifies behaviour through a public
+interface, never through implementation details. The code behind it can
+change entirely and the test still passes. A good test reads like a
+specification - "user can checkout with a valid cart" names a capability -
+and survives refactors because it does not care about internal structure. It
+uses the public interface only, describes what, not how, and makes one
+logical assertion. Verify through the interface itself: a created user is
+checked by fetching it back, not by querying the database behind it.
+
+**Mock only at system boundaries**: external APIs, time and randomness, and
+sometimes databases or the file system. Never mock your own modules or
+internal collaborators - anything you control. At a boundary, pass the
+dependency in rather than building it inside, and prefer one function per
+external operation over one generic fetcher, so each mock returns one shape.
+
+**Anti-patterns.**
+
+- **Implementation-coupled**: mocks internal collaborators, tests private
+  functions, asserts on call counts or order, or verifies through a side
+  channel. The tell: the test breaks on a refactor that changed no
+  behaviour.
+- **Tautological**: the assertion recomputes the expected value the way the
+  code does, so it passes by construction and can never disagree with the
+  code. Expected values come from an independent source of truth: a
+  known-good literal, a worked example, the spec.
+
+**Rules for a fix.**
+
+- **One test per blocking behaviour finding**, at a seam the repo's existing
+  tests already use.
+- **Watch it fail on the unfixed code.** That failure is the proof the
+  problem was real.
+- **Then the smallest fix** that makes it pass.
+- **No refactoring** beyond what the finding names.
+
+**When no test can show it.**
+
+- **No existing seam can observe the behaviour**: fix it anyway, with no
+  test, and have the finding's line under **Findings** in the record say why
+  no test proves it.
+- **The test passes on the unfixed code**: do not fix it. The finding goes
+  on your could-not-fix list as **open blocking**, with the reason
+  "could not reproduce", so the next iteration's triage looks at it again.
 
 ## Could not fix
 

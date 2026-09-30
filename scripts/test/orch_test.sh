@@ -583,6 +583,8 @@ healthy_repo() {
   printf '%s\n' ".orchestrator/" >>.git/info/exclude
   stub_gh
   export CLAUDE_PLUGIN_ROOT="$PWD"
+  # tdd is not a skill the flow reads, but mp-skill resolves any upstream
+  # skill, and its test below resolves tdd from this install.
   HOME="$(stub_mattpocock to-spec to-tickets tdd)"
   export HOME
   unset GH_STUB_MODE
@@ -1830,13 +1832,13 @@ assert_contains "warns that the default branch came from a fallback" "$out" "def
 HOME="$(stub_mattpocock to-spec)"; export HOME
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails on a partial mattpocock-skills install" "$st" 1
-assert_contains "names every missing skill" "$out" "missing: to-tickets, tdd"
+assert_contains "names every missing skill" "$out" "missing: to-tickets"
 assert_eq "says nothing about the skills that are present" \
   "$(printf '%s\n' "$out" | grep -c 'missing:.*to-spec')" "0"
 
 # Only the skills the flow reads are required: an install without the upstream
 # skills the plugin replaced (implement, handoff) is complete.
-HOME="$(stub_mattpocock to-spec to-tickets tdd)"; export HOME
+HOME="$(stub_mattpocock to-spec to-tickets)"; export HOME
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "passes an install with no implement or handoff" "$st" 0
 assert_contains "and reports every skill the flow reads as resolved" "$out" "every skill the flow reads resolves"
@@ -1875,10 +1877,10 @@ assert_not_contains "on Claude Code, does not name the Junie install" "$out" "np
 # every other one present.
 for layout in claude junie agents override; do
   ov=""
-  for gone in to-tickets tdd; do
+  for gone in to-spec to-tickets; do
     h="$(mktemp -d)"
     # shellcheck disable=SC2046 # word-splitting the kept names is the point
-    mp_install "$layout" "$h" $(printf '%s\n' to-spec to-tickets tdd | grep -vx "$gone")
+    mp_install "$layout" "$h" $(printf '%s\n' to-spec to-tickets | grep -vx "$gone")
     if [ "$layout" = override ]; then ov="$h/mp-checkout"; fi
     out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$ov" "$ORCH" doctor --env 2>&1)"; st=$?
     assert_status "fails on a $layout install missing $gone" "$st" 1
@@ -1887,11 +1889,11 @@ for layout in claude junie agents override; do
 done
 
 # A skill the lockfile gives to another plugin is missing, not present.
-h="$(mktemp -d)"; mp_install agents "$h" to-spec to-tickets
-mp_install agents-foreign "$h" tdd
+h="$(mktemp -d)"; mp_install agents "$h" to-spec
+mp_install agents-foreign "$h" to-tickets
 out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when a skills CLI skill belongs to another plugin" "$st" 1
-assert_contains "names the foreign skill as missing" "$out" "missing: tdd"
+assert_contains "names the foreign skill as missing" "$out" "missing: to-tickets"
 
 # Doctor's required list is only worth something while it matches what the
 # plugin reads: a skill invoked but not listed passes doctor and then fails its
@@ -1917,7 +1919,7 @@ assert_eq "every skill in MP_SKILLS is invoked by a skill or agent" \
 # Doctor says where the skills were found, in terms of the host that put them
 # there - the path alone does not tell a user which install to repair.
 h="$(mktemp -d)"
-for layout in claude junie agents; do mp_install "$layout" "$h" to-spec to-tickets tdd; done
+for layout in claude junie agents; do mp_install "$layout" "$h" to-spec to-tickets; done
 out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
 assert_contains "reports Claude's plugin cache as the source" "$out" "(Claude Code plugin cache)"
 rm -rf "$h/.claude"
@@ -1927,7 +1929,7 @@ rm -rf "$h/.junie"
 out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
 assert_contains "reports the skills CLI store as the source" "$out" "(skills CLI)"
 assert_contains "and where that store is" "$out" "mattpocock-skills: ~/.agents/skills"
-mp_install override "$h" to-spec to-tickets tdd
+mp_install override "$h" to-spec to-tickets
 out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" doctor --env 2>&1)"
 assert_contains "reports the override as the source" "$out" "(ORCHESTRATOR_MATTPOCOCK_ROOT)"
 
@@ -3035,6 +3037,18 @@ assert_contains "and keeps the rules of the loop" "$impl" 'Red before green'
 assert_not_contains "Starting this agent no longer mentions the Skill tool" \
   "$(printf '%s\n' "$impl" | sed -n '/^## Starting this agent/,/^## Steps/p')" \
   'Skill tool'
+# The fixer builds a blocking behaviour fix from its own cut-down TDD copy,
+# not the upstream skill (#262, #268).
+fixer="$(cat "$proot/agents/orch-fixer.md")"
+for s in 'mattpocock-skills:tdd' 'mp-skill tdd'; do
+  assert_not_contains "the fixer does not name $s" "$fixer" "$s"
+done
+assert_contains "the fixer carries its own TDD section" \
+  "$fixer" '## Test-driven development'
+assert_contains "which names its source" \
+  "$fixer" 'Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3'
+assert_contains "and leaves a test that will not go red open blocking" \
+  "$fixer" 'could not reproduce'
 
 # --- ticket: unknown op ------------------------------------------------------
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?
