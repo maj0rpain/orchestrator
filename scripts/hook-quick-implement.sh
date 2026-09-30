@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
-# PostToolUse hook on the Skill tool, same matcher as hook-grilling.sh, and
-# PreToolUse hook on the Read tool.
+# PostToolUse hook on the Skill tool, same matcher as hook-grilling.sh.
 #
 # A human choosing "quick implementation" at hook-grilling.sh's closing
 # question calls Skill("orchestrator:orch-quick-implement"), which is the one
@@ -10,15 +9,9 @@
 # itself changing at all - see
 # docs/adr/0006-quick-implementation-unblocks-the-edit-guard-by-deleting-the-planning-marker.md.
 #
-# A host with no Skill tool (Junie) runs the skill by reading its SKILL.md,
-# the path hook-grilling.sh hands it, so a Read of exactly this install's
-# copy is the same choke point there - see
-# docs/adr/0023-quick-implementation-lifts-the-edit-guard-on-a-read-of-its-skill-file.md.
-# No host gate: Junie's PreToolUse may lack project_path, which is how
-# hook_read_payload tells the hosts apart, so the exact installed path is the
-# whole condition. "Exactly" means the same file, so a symlinked spelling of
-# the plugin root still matches; reading a repo checkout's copy, as when
-# working on this plugin, does not lift it.
+# Claude Code only. The guard does not arm on Junie, so there is nothing to
+# lift there, and the PreToolUse Read lift ADR-0023 added is removed - see
+# docs/adr/0025-on-junie-planning-is-a-nudge-not-a-guard.md.
 
 set -euo pipefail
 
@@ -26,14 +19,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 
 hook_read_skill_and_session
 
-# Either trigger lifts it; hooks.json scopes which events reach this hook, so
-# neither branch leans on a tool_name Junie's payload may not carry.
 case "$skill" in
   orch-quick-implement|*:orch-quick-implement) ;;
-  *)
-    read_path="$(hook_tool_path)"
-    [ -n "$read_path" ] && [ "$read_path" -ef "$(hook_quick_skill_file)" ] || exit 0
-    ;;
+  *) exit 0 ;;
 esac
 
 [ -n "$session" ] || exit 0

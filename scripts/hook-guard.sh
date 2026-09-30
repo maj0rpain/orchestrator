@@ -21,8 +21,9 @@ hook_read_payload
 file="$(hook_tool_path)"
 
 # Only guard sessions the grilling hook has marked as planning. A payload
-# with no session_id is never guarded; Junie's PreToolUse carries one from
-# build 3419.7 - ADR-0023.
+# with no session_id is never guarded. On Junie the grilling hook writes a
+# marker under another name, which this hook never reads, so the guard does
+# not arm there - ADR-0025.
 [ -n "$session" ] || exit 0
 [ -e "${TMPDIR:-/tmp}/orchestrator-grilling-${session}" ] || exit 0
 [ -n "$file" ] || exit 0
@@ -44,8 +45,7 @@ if planning_record "$rel"; then
   exit 0
 fi
 
-# Named on every host: Junie's PreToolUse may lack project_path, so the host
-# cannot be told apart here - ADR-0023.
+# Only the Skill lift: the guard does not arm on Junie - ADR-0025.
 reason="Blocked by the orchestrator: this is a planning session and no flow has
 started, so '$rel' should not be edited yet.
 
@@ -53,9 +53,8 @@ Finish planning, then call the Skill tool with \"orchestrator:orch-flow\" to wri
 handoff and begin the spec phase. Implementation happens in its own session, on
 its own branch, from a written spec.
 
-If the human chose quick implementation instead, either of these lifts this block:
-call the Skill tool with \"orchestrator:orch-quick-implement\", or, on a host
-with no Skill tool, read $(hook_quick_skill_file) with the Read tool.
+If the human chose quick implementation instead, lift this block:
+call the Skill tool with \"orchestrator:orch-quick-implement\".
 
 Planning artifacts you may still edit: $(planning_allowlist_text)."
 

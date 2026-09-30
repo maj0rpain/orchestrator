@@ -376,6 +376,6 @@ planning never touches, or a record - the glossary and ADRs - which planning
 never changes in place: a change planning decides for a record is written
 word for word into the spec, or into the linked issue's body for a quick
 implementation, and lands with the change it describes. The edit
-guard denies edits outside it while planning, where the host can arm the
-guard, and a flow at `done` does not disarm it. A flow will not start while
-the working tree has changes outside it (ADR-0013).
+guard denies edits outside it while planning, on a host where the guard
+arms - not Junie (ADR-0025) - and a flow at `done` does not disarm it. A flow
+will not start while the working tree has changes outside it (ADR-0013).

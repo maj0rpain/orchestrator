@@ -51,12 +51,13 @@ agent's file instead. JetBrains tracks this as
 [JUNIE-5493](https://youtrack.jetbrains.com/issue/JUNIE-5493); until it is
 fixed, append the plugin's snippet
 [docs/junie/AGENTS.md](docs/junie/AGENTS.md) to your user-scoped
-`~/.junie/AGENTS.md`, which tells Junie each skill needs its custom agents:
+`~/.junie/AGENTS.md`, which tells Junie each skill needs its custom agents
+and also carries a standing planning section:
 `cat "$HOME"/.junie/extensions/*/orchestrator/docs/junie/AGENTS.md >> ~/.junie/AGENTS.md`.
 If the glob matches more than one install, pick one path and `cat` only that.
 The snippet sits between `<!-- orchestrator:begin -->` and
-`<!-- orchestrator:end -->` markers, so it can be removed cleanly once
-JUNIE-5493 is fixed. As a fallback, naming the agent in your own prompt keeps it
+`<!-- orchestrator:end -->` markers, so it can be replaced cleanly; its
+custom-agents section goes once JUNIE-5493 is fixed. As a fallback, naming the agent in your own prompt keeps it
 visible, for example "For step 4, start the custom agent orch-implementer by
 name." Naming it in a skill does not.
 
@@ -192,9 +193,10 @@ change it describes (ADR-0022). This holds even when `domain-modeling` or
 `PostToolUse` hook on the same `Skill` matcher lifts the guard for a quick
 implementation: it deletes the session's marker file when
 `orchestrator:orch-quick-implement` fires, without `hook-guard.sh` itself
-changing. Junie has no Skill tool and runs the skill by reading its file, so
-the same hook also runs on `PreToolUse` `Read` and lifts the guard on a read
-of this install's `skills/orch-quick-implement/SKILL.md` (ADR-0023).
+changing. The guard does not arm on Junie (ADR-0025): there the planning
+message and the snippet's standing planning section steer planning away from
+source edits, and `orch.sh init`'s working-tree check catches any at flow
+start.
 
 ## Layout
 
@@ -214,7 +216,7 @@ scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
 scripts/test/                 shell tests
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
-docs/junie/AGENTS.md          Junie snippet naming each skill's custom agents (JUNIE-5493 workaround)
+docs/junie/AGENTS.md          Junie snippet: a standing planning section, and each skill's custom agents (JUNIE-5493 workaround)
 hooks/hooks.json              hook wiring
 ```
 
