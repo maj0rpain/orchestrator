@@ -1,6 +1,7 @@
 ---
 name: orch-fixer
 description: The fixer of one orchestrator review-loop iteration - fixes the findings the driver's triage handed it, verifies, commits once, pushes, writes the iteration's review record, and returns about five lines. Started only by the orch-review skill's driver, and only on an iteration whose triage left something to fix.
+tools: [Read, Edit, Write, Grep, Glob, Bash]
 ---
 
 # Fixer

@@ -3022,6 +3022,28 @@ for a in "$proot"/agents/*.md; do
   case "$t" in *Skill*) bad_tools="$bad_tools ${a##*/}(lists Skill)" ;; esac
 done
 assert_eq "every agent's tools: line is a YAML list without Skill" "$bad_tools" ""
+# Every agent declares an allowlist, and none can start sub-agents, invoke a
+# skill, or block on a human (#262, ADR-0026).
+unguarded=""
+for a in "$proot"/agents/*.md; do
+  t="$(grep -m1 '^tools:' "$a")" || { unguarded="$unguarded ${a##*/}(no tools:)"; continue; }
+  case "$t" in
+    'tools: ['*']') ;;
+    *) unguarded="$unguarded ${a##*/}(not a list)" ;;
+  esac
+  for tool in $(printf '%s\n' "${t#tools: }" | tr -d '[] ' | tr ',' ' '); do
+    case "$tool" in
+      Agent|Skill|AskUserQuestion) unguarded="$unguarded ${a##*/}(lists $tool)" ;;
+    esac
+  done
+done
+assert_eq "every agent declares a tools: list without Agent, Skill or AskUserQuestion" \
+  "$unguarded" ""
+for a in orch-fixer orch-closer; do
+  assert_eq "$a's allowlist is the implementer's" \
+    "$(grep -m1 '^tools:' "$proot/agents/$a.md")" \
+    "tools: [Read, Edit, Write, Grep, Glob, Bash]"
+done
 impl="$(cat "$proot/agents/orch-implementer.md")"
 assert_eq "the implementer's allowlist is exactly its brief's tools" \
   "$(printf '%s\n' "$impl" | grep -m1 '^tools:')" \

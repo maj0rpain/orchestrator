@@ -1,6 +1,7 @@
 ---
 name: orch-closer
 description: The closer of one orchestrator review loop - at termination, deduplicates and files the unfixed majors and nits across this loop's review records, posts the loop's one PR comment, writes the Filed list into the final record, and returns the issue numbers. Started only by the orch-review skill's driver, once per loop, after it has decided the terminal state.
+tools: [Read, Edit, Write, Grep, Glob, Bash]
 ---
 
 # Closer
