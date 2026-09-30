@@ -3023,7 +3023,7 @@ done
 assert_eq "every agent's tools: line is a YAML list without Skill" "$bad_tools" ""
 impl="$(cat "$proot/agents/orch-implementer.md")"
 assert_eq "the implementer's allowlist is exactly its brief's tools" \
-  "$(grep -m1 '^tools:' "$proot/agents/orch-implementer.md")" \
+  "$(printf '%s\n' "$impl" | grep -m1 '^tools:')" \
   "tools: [Read, Edit, Write, Grep, Glob, Bash]"
 for s in 'mattpocock-skills:tdd' 'mp-skill' 'codebase-design' 'code-review'; do
   assert_not_contains "the implementer does not name $s" "$impl" "$s"
@@ -3034,7 +3034,7 @@ assert_contains "which names its source" \
   "$impl" 'Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.'
 assert_contains "and keeps the rules of the loop" "$impl" 'Red before green'
 assert_not_contains "Starting this agent no longer mentions the Skill tool" \
-  "$(sed -n '/^## Starting this agent/,/^## Steps/p' "$proot/agents/orch-implementer.md")" \
+  "$(printf '%s\n' "$impl" | sed -n '/^## Starting this agent/,/^## Steps/p')" \
   'Skill tool'
 
 # --- ticket: unknown op ------------------------------------------------------
