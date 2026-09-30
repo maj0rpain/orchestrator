@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.6
+
+- Every agent's `tools:` line is a YAML flow list, which Claude Code and Junie
+  CLI both read as the allowlist (see issue #204, ADR-0024). On Junie a
+  native start of the implementer, whose comma-form list named Skill, got no
+  tools at all. The implementer no longer uses the Skill tool: it builds
+  test-first from its own adapted copy of `mattpocock-skills` 1.2.3 `tdd`'s
+  rules, with no `mp-skill tdd` route. The fixer still invokes `tdd`.
+
 ## 2.3.5
 
 - Quick implementation lifts the edit guard on Junie (see issue #260,
