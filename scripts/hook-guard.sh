@@ -25,7 +25,7 @@ file="$(hook_tool_path)"
 # marker under another name, which this hook never reads, so the guard does
 # not arm there - ADR-0025.
 [ -n "$session" ] || exit 0
-[ -e "${TMPDIR:-/tmp}/orchestrator-grilling-${session}" ] || exit 0
+[ -e "$(hook_marker_path grilling)" ] || exit 0
 [ -n "$file" ] || exit 0
 
 root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0

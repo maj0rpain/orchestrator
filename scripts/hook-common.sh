@@ -60,6 +60,15 @@ hook_normalize_path() {
   printf '%s' "${out:-/}"
 }
 
+# Prints the session's marker of the given kind: grilling, the marker that
+# arms the edit guard, or planning, Junie's marker the guard never reads
+# (ADR-0025). Every hook that names a marker goes through here, so a rename
+# cannot silently re-arm or disarm the guard. Call after hook_read_payload,
+# with a non-empty `session`.
+hook_marker_path() {
+  printf '%s/orchestrator-%s-%s' "${TMPDIR:-/tmp}" "$1" "$session"
+}
+
 # Prints this install's plugin root: the directory above scripts/, as the
 # logical path the hooks hand the model, not a symlink-resolved one.
 hook_plugin_root() {

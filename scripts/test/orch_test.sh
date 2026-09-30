@@ -4738,12 +4738,20 @@ assert_contains "the Junie edit-guard cell is a Fallback" "$junie_guard" '**Fall
 assert_not_contains "the Junie edit-guard cell is not Unverified" "$junie_guard" '**Unverified**'
 assert_contains "the Junie edit-guard cell says the guard does not arm" "$junie_guard" \
   'None: the guard does not arm on Junie (ADR-0025).'
-for prose in "$readme" "$hostcaps"; do
-  assert_not_contains "no Read lift is described" "$prose" 'Read` lift'
-  assert_not_contains "no PreToolUse Read hook is described" "$prose" "\`PreToolUse\` \`Read\`"
-  assert_not_contains "no Read of the quick-implement SKILL.md lifts the guard" "$prose" 'with the Read tool'
+for doc in README.md docs/host-capabilities.md; do
+  prose="$(flat_text "$root/$doc")"
+  assert_not_contains "$doc describes no Read lift" "$prose" 'Read` lift'
+  assert_not_contains "$doc describes no PreToolUse Read hook" "$prose" "\`PreToolUse\` \`Read\`"
+  assert_not_contains "$doc has no Read of the quick-implement SKILL.md lift the guard" "$prose" 'with the Read tool'
 done
 assert_contains "the README says the guard does not arm on Junie" "$readme" 'does not arm on Junie (ADR-0025)'
+# The snippet's planning section restates the allowlist and records; it must
+# match planning-allowlist.sh, the one definition the hooks print from.
+snippet="$(flat_text "$root/docs/junie/AGENTS.md")"
+assert_contains "the Junie snippet lists the planning records as planning-allowlist.sh does" \
+  "$snippet" "($(source "$root/scripts/planning-allowlist.sh" && planning_records_text))"
+assert_contains "the Junie snippet lists the planning allowlist as planning-allowlist.sh does" \
+  "$snippet" "($(source "$root/scripts/planning-allowlist.sh" && planning_allowlist_text))"
 assert_contains "the README says the snippet carries a planning section" "$readme" 'standing planning section'
 # 3 cells -> 4 pipes -> awk NF of 5; a stray | in a cell raises it.
 assert_eq "the Junie fresh-subagent row has no literal pipe in a cell" \

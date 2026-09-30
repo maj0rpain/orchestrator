@@ -25,4 +25,4 @@ case "$skill" in
 esac
 
 [ -n "$session" ] || exit 0
-rm -f "${TMPDIR:-/tmp}/orchestrator-grilling-${session}"
+rm -f "$(hook_marker_path grilling)"

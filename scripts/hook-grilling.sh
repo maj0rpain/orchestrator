@@ -62,7 +62,7 @@ fi
 marker_kind=grilling
 [ "$host" != junie ] || marker_kind=planning
 marker=""
-[ -z "$session" ] || marker="${TMPDIR:-/tmp}/orchestrator-${marker_kind}-${session}"
+[ -z "$session" ] || marker="$(hook_marker_path "$marker_kind")"
 if [ "$plan_confirmed" = 1 ]; then
   [ -n "$marker" ] && [ -e "$marker" ] || exit 0
 elif [ -n "$marker" ]; then
