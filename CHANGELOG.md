@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.3.7
+
+- Junie users can append `docs/junie/AGENTS.md` to `~/.junie/AGENTS.md` (see
+  issue #264). It works around
+  [JUNIE-5493](https://youtrack.jetbrains.com/issue/JUNIE-5493), whose
+  capability filter hides the plugin's custom agents, by stating which agents
+  each skill needs. The README gives the append command, and naming the agent
+  in your own prompt stays as a fallback. Remove the marker-wrapped snippet
+  once JUNIE-5493 is fixed.
+
 ## 2.3.6
 
 - Every agent's `tools:` line is a YAML flow list, which Claude Code and Junie

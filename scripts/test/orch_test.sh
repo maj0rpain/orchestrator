@@ -4676,6 +4676,40 @@ assert_contains "the Junie cell points to the README's workaround" \
   "$junie_subagent" "README's Junie paragraph"
 assert_contains "the Junie fresh-subagent cell is a Fallback" \
   "$junie_subagent" '**Fallback**'
+# JUNIE-5493's workaround (#264): docs/junie/AGENTS.md names every agent so
+# Junie's capability filter keeps it visible. Delete these tests along with the
+# snippet once JUNIE-5493 is fixed.
+# junie_snippet_drift <plugin root>: print each agents/*.md name the snippet omits.
+# It checks names only, not which skill lists which agent: that per-skill
+# mapping is hand-kept, an accepted drift for a temporary workaround.
+junie_snippet_drift() {
+  local r="$1" a n
+  for a in "$r"/agents/*.md; do
+    n="$(basename "$a" .md)"
+    grep -qw -- "$n" "$r/docs/junie/AGENTS.md" 2>/dev/null || echo "$n"
+  done
+}
+assert_eq "the Junie snippet names every agent" "$(junie_snippet_drift "$root")" ""
+fixture="$(mktemp -d)"
+mkdir -p "$fixture/agents" "$fixture/docs/junie"
+cp "$root"/agents/*.md "$fixture/agents/"
+cp "$root/docs/junie/AGENTS.md" "$fixture/docs/junie/AGENTS.md" 2>/dev/null
+printf -- '---\nname: orch-extra\n---\n' >"$fixture/agents/orch-extra.md"
+assert_eq "the drift check flags an agent the snippet omits" \
+  "$(junie_snippet_drift "$fixture")" "orch-extra"
+rm -rf "$fixture"
+assert_eq "the Junie snippet has one begin marker" \
+  "$(grep -cxF '<!-- orchestrator:begin -->' "$root/docs/junie/AGENTS.md" 2>/dev/null)" "1"
+assert_eq "the Junie snippet has one end marker" \
+  "$(grep -cxF '<!-- orchestrator:end -->' "$root/docs/junie/AGENTS.md" 2>/dev/null)" "1"
+assert_contains "the README points Junie users at the snippet" \
+  "$readme" 'docs/junie/AGENTS.md'
+assert_contains "the README links JUNIE-5493" "$readme" 'JUNIE-5493'
+assert_contains "the Junie fresh-subagent cell points at the snippet" \
+  "$junie_subagent" 'docs/junie/AGENTS.md'
+# 3 cells -> 4 pipes -> awk NF of 5; a stray | in a cell raises it.
+assert_eq "the Junie fresh-subagent row has no literal pipe in a cell" \
+  "$(grep -m1 '^| Start a fresh subagent |' "$root/docs/host-capabilities.md" | awk -F'|' '{ print NF }')" "5"
 for a in orch-reviewer-standards orch-reviewer-spec; do
   assert_contains "$a keeps its tools list" \
     "$(cat "$root/agents/$a.md")" 'tools: [Read, Grep, Glob, Bash]'
