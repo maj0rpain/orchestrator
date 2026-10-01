@@ -14,8 +14,10 @@
   command that owns it, so the phase moves only through `phase advance`,
   `review ready`, and redo.
 - Every state read goes through one getter with one table of per-key
-  defaults. Visible change: `state get flake_rerun_used` prints `false`
-  rather than an empty line when the flag is unset.
+  defaults. Two visible changes: `state get flake_rerun_used` prints `false`
+  rather than an empty line when the flag is unset, and `state get` on a key
+  the table does not know now fails (exit 1, `unknown state key: <key>`)
+  where it used to print an empty line.
 - Redo retires the handoffs it makes stale: `redo review` moves
   `03-implement.md` into `.orchestrator/handoff/pre-redo-N/`, and `redo spec`
   moves `02-spec.md` (and `03-implement.md`) into
