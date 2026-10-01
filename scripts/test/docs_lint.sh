@@ -17,7 +17,6 @@ FAIL=0
 ok()  { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
 bad() { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
-assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in: $2" ;; esac; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
 
 # flat_text [file]: the file, or stdin when given none, on one line with
@@ -378,10 +377,10 @@ check "doctor's MP_SKILLS is exactly the mattpocock skills invoked" "$(scan_mp_s
 # once JUNIE-5493 is fixed.
 echo
 echo "Junie snippet names every agent (#264)"
-# junie_snippet_drift <plugin root>: each agents/*.md the snippet does not name.
+# scan_junie_snippet_drift <plugin root>: each agents/*.md the snippet does not name.
 # It checks names only, not which skill lists which agent: that per-skill
 # mapping is hand-kept, an accepted drift for a temporary workaround.
-junie_snippet_drift() {
+scan_junie_snippet_drift() {
   local r="$1" a n
   for a in "$r"/agents/*.md; do
     [ -f "$a" ] || continue
@@ -396,11 +395,11 @@ mkdir -p "$f/agents" "$f/docs/junie"
 printf -- '---\nname: orch-named\n---\n' >"$f/agents/orch-named.md"
 printf -- '---\nname: orch-extra\n---\n' >"$f/agents/orch-extra.md"
 printf 'Start `orch-named` by name.\n' >"$f/docs/junie/AGENTS.md"
-out="$(junie_snippet_drift "$f")"
+out="$(scan_junie_snippet_drift "$f")"
 flags "the drift check flags an agent the snippet omits" "$out" "agents/orch-extra.md: not named in docs/junie/AGENTS.md"
 assert_eq "the drift check accepts an agent the snippet names" \
   "$(printf '%s\n' "$out" | grep -c 'orch-named')" "0"
-check "the Junie snippet names every agent" "$(junie_snippet_drift "$PLUGIN_ROOT")"
+check "the Junie snippet names every agent" "$(scan_junie_snippet_drift "$PLUGIN_ROOT")"
 
 # --- host capabilities (#127) -------------------------------------------------
 echo
@@ -868,12 +867,12 @@ echo "host capability table"
 # carries the capability and both hosts' cells, filled, and no stray pipe.
 # scan_capability_table <plugin root>: each row off the rule, with its line.
 scan_capability_table() {
-  local doc="docs/host-capabilities.md"
+  local r="$1" doc="docs/host-capabilities.md"
   awk -F'|' -v f="$doc" '
     /^\|/ && !/^\| *---/ {
       if (NF != 5) { print f ":" NR ": a row with " NF - 2 " cells, not 3"; next }
       for (i = 2; i <= 4; i++) if ($i ~ /^ *$/) { print f ":" NR ": a row with an empty cell"; next }
-    }' "$1/$doc"
+    }' "$r/$doc"
   return 0
 }
 f="$(new_fixture)"
