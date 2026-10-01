@@ -300,7 +300,7 @@ flow behind and every transition it makes can be undone by another `redo` or
 **From `implement`**: ask the human once whether to keep the existing spec
 issue and re-review it as-is (default), or publish a fresh one. Then call
 `bash "$ORCH" redo spec` or `bash "$ORCH" redo spec --new-issue` accordingly. The
-default path only changes `state.phase` to `spec` - the existing "adopted
+default path changes `state.phase` to `spec` - the existing "adopted
 issue" path through the spec phase's step 0 does the rest. Either way the
 stale `02-spec.md` handoff, and `03-implement.md` if one exists, move into
 `.orchestrator/handoff/pre-redo-spec-<UTC timestamp>/`, so `phase advance`
