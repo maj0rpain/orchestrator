@@ -272,7 +272,7 @@ check_mattpocock() {
 # The list must match the mattpocock skills that skills/*/SKILL.md and
 # agents/*.md invoke (`mp-skill <name>` or `mattpocock-skills:<name>`): a skill
 # added to or dropped from those files is added to or dropped from here too.
-# orch_test.sh's consistency test fails while the two disagree.
+# docs_lint.sh's scan_mp_skills rule fails while the two disagree.
 MP_SKILLS="to-spec to-tickets"
 
 check_skills() {
