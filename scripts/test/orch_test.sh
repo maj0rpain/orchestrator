@@ -72,6 +72,20 @@ writeln() { printf '%s\n' "$@"; }
 # every whitespace run collapsed to one space.
 flat_text() { tr -s ' \t\n' '   ' <"${1:-/dev/stdin}"; }
 
+# state_fixture <key> <value>: arrange state.json directly, for the keys
+# `state set` refuses (phase, branch, pr, iteration, ...) - each owned by a
+# command whose guard a test's setup has to step around. It stores values the
+# way orch.sh's own writer does: "null" as null, all digits as a number.
+state_fixture() {
+  local f tmp
+  f="$(git rev-parse --show-toplevel)/.orchestrator/state.json"
+  tmp="$(mktemp)"
+  jq --arg k "$1" --arg v "$2" '
+    .[$k] = (if $v == "null" then null
+             elif ($v | test("^[0-9]+$")) then ($v | tonumber)
+             else $v end)' "$f" >"$tmp" && mv "$tmp" "$f"
+}
+
 complete_plan_handoff() {
   writeln '## Decisions' 'Use X.' '' \
           '## Rejected alternatives' 'Y, because Z.' '' \
@@ -759,7 +773,27 @@ assert_status "refuses no argument at all" "$st" 1
 echo
 echo "state"
 assert_eq "round-trips a string value" \
-  "$("$ORCH" state set branch orch/1-x; "$ORCH" state get branch)" "orch/1-x"
+  "$("$ORCH" state set budget unbounded; "$ORCH" state get budget)" "unbounded"
+"$ORCH" state set budget 3
+assert_eq "sets budget" "$("$ORCH" state get budget)" "3"
+"$ORCH" state set flake_rerun_used true
+assert_eq "sets flake_rerun_used" "$("$ORCH" state get flake_rerun_used)" "true"
+"$ORCH" state set budget null
+"$ORCH" state set flake_rerun_used false
+before="$("$ORCH" state get phase)"
+out="$("$ORCH" state set phase review 2>&1)"; st=$?
+assert_status "refuses to set phase" "$st" 1
+assert_contains "naming phase advance as its owner" "$out" "phase advance"
+assert_eq "and leaves the phase as it was" "$("$ORCH" state get phase)" "$before"
+for pair in branch:"branch create" base_sha:"branch create" pr:"pr open" \
+            iteration:"review begin" redo_count:"redo review" slug:init \
+            base:init created:init host_fallbacks:init updated:"state change" \
+            bogus:"issue, budget, flake_rerun_used"; do
+  key="${pair%%:*}"; owner="${pair#*:}"
+  out="$("$ORCH" state set "$key" 1 2>&1)"; st=$?
+  assert_status "refuses to set $key" "$st" 1
+  assert_contains "naming what owns $key" "$out" "$owner"
+done
 "$ORCH" state set issue 42
 assert_eq "coerces a numeric value to a number" "$("$ORCH" state get issue)" "42"
 assert_eq "stores issue as JSON number, not string" \
@@ -1176,7 +1210,7 @@ assert_first_line "a PR into a non-default base refers to its issue instead of c
 # A deleted base branch must not quietly become a fork from a stale local copy.
 git update-ref refs/remotes/origin/gone "$main_tip"
 git branch -q gone "$main_tip"
-base_cmd state set base gone
+state_fixture base gone
 base_cmd state set issue 8
 out="$(base_cmd branch create 2>&1)"; st=$?
 assert_status "branch create refuses a base branch origin says is gone" "$st" 1
@@ -1693,7 +1727,7 @@ echo "init archives a done flow"
 healthy_repo
 "$ORCH" init first >/dev/null
 complete_plan_handoff "$("$ORCH" handoff path spec)"
-"$ORCH" state set phase done
+state_fixture phase done
 out="$("$ORCH" init second)"; st=$?
 assert_status "starting over a done flow succeeds" "$st" 0
 archived="$(printf '%s\n' "$out" | sed -n '1p')"
@@ -1714,7 +1748,7 @@ assert_eq "with no prior flow, stdout is still just the slug" "$out" "nothing-to
 
 healthy_repo
 "$ORCH" init stale >/dev/null
-"$ORCH" state set phase implement
+state_fixture phase implement
 out="$("$ORCH" init other 2>&1)"; st=$?
 assert_status "an implement-phase flow still refuses, same as spec" "$st" 1
 assert_contains "names the phase" "$out" "phase: implement"
@@ -1722,7 +1756,7 @@ assert_contains "same message, unchanged" "$out" "One flow at a time"
 
 healthy_repo
 "$ORCH" init willfail >/dev/null
-"$ORCH" state set phase done
+state_fixture phase done
 out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" init nope --issue 99 2>&1)"; st=$?
 assert_status "a bad --issue adoption over a done flow refuses" "$st" 1
 assert_contains "names the issue number" "$out" "99"
@@ -1737,7 +1771,7 @@ assert_eq "and still reports done, re-runnable" "$("$ORCH" state get phase)" "do
 # null or the old flow's own issue.
 healthy_repo
 "$ORCH" init willsucceed --issue 7 >/dev/null
-"$ORCH" state set phase done
+state_fixture phase done
 out="$("$ORCH" init second --issue 42)"; st=$?
 assert_status "a valid --issue adoption over a done flow succeeds" "$st" 0
 archived="$(printf '%s\n' "$out" | sed -n '1p')"
@@ -2413,19 +2447,19 @@ assert_eq "does not leak jq's parse error into the report" \
   "$(printf '%s\n' "$out" | grep -c 'parse error')" "0"
 cp "$statebak" .orchestrator/state.json
 
-"$ORCH" state set phase nonsense
+state_fixture phase nonsense
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "rejects an unknown phase" "$st" 1
 assert_contains "names the phase it does not know" "$out" "nonsense"
-"$ORCH" state set phase spec
+state_fixture phase spec
 
-"$ORCH" state set branch orch/9-gone
+state_fixture branch orch/9-gone
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the recorded branch is gone" "$st" 1
 assert_contains "names the missing branch" "$out" "orch/9-gone"
 
 git checkout -q -b orch/9-gone
-"$ORCH" state set phase implement
+state_fixture phase implement
 complete_spec_handoff "$("$ORCH" handoff path implement)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an unpushed branch warns rather than blocking the implement phase" "$st" 0
@@ -2479,13 +2513,13 @@ assert_contains "still reports it open" "$out" "issue #11 open"
 # is closed as a matter of course - a done flow reporting that as broken was
 # doctor misreporting every successfully-finished flow.
 complete_implement_handoff "$("$ORCH" handoff path review)"
-"$ORCH" state set phase done
+state_fixture phase done
 out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a closed issue is healthy once the flow is done" "$st" 0
 assert_contains "reports it closed instead of failing" "$out" "issue #11 closed"
-"$ORCH" state set phase implement
+state_fixture phase implement
 
-"$ORCH" state set pr 7
+state_fixture pr 7
 out="$(GH_STUB_PR_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the recorded PR has been closed" "$st" 1
 assert_contains "names the closed PR" "$out" "#7"
@@ -2539,7 +2573,7 @@ git remote set-url origin "$bare"
 git push -q origin HEAD:refs/heads/main
 "$ORCH" init propen >/dev/null
 git checkout -q -b orch/16-propen
-"$ORCH" state set branch orch/16-propen
+state_fixture branch orch/16-propen
 body="$(mktemp)"
 writeln 'Implements the thing.' '' 'Some detail.' >"$body"
 
@@ -3148,7 +3182,7 @@ assert_status "refuses a sixth iteration on the default budget" "$st" 1
 assert_contains "names the budget that stopped it" "$out" "budget of 5 iterations"
 assert_eq "and does not spend the refused iteration" "$("$ORCH" state get iteration)" "5"
 
-"$ORCH" state set iteration 0
+state_fixture iteration 0
 "$ORCH" state set budget 2
 assert_eq "a budget of 2 admits the first iteration" "$("$ORCH" review begin)" "1"
 assert_eq "and the second" "$("$ORCH" review begin)" "2"
@@ -3156,7 +3190,7 @@ out="$("$ORCH" review begin 2>&1)"; st=$?
 assert_status "and refuses the third" "$st" 1
 assert_contains "naming the budget it honoured" "$out" "budget of 2 iterations"
 
-"$ORCH" state set iteration 0
+state_fixture iteration 0
 "$ORCH" state set budget 8
 for i in 1 2 3 4 5 6 7 8; do "$ORCH" review begin >/dev/null; done
 assert_eq "a budget of 8 runs past the old bound of five" "$("$ORCH" state get iteration)" "8"
@@ -3165,12 +3199,12 @@ assert_status "and stops at eight" "$st" 1
 
 # A budget nothing can read is the default, not a refusal: the only flows that
 # carry one are the ones started before it existed.
-"$ORCH" state set iteration 4
+state_fixture iteration 4
 "$ORCH" state set budget null
 assert_eq "a null budget reads as five" "$("$ORCH" review begin)" "5"
 out="$("$ORCH" review begin 2>&1)"; st=$?
 assert_status "and refuses the sixth" "$st" 1
-"$ORCH" state set iteration 4
+state_fixture iteration 4
 "$ORCH" state set budget lots
 assert_eq "a budget that is not a number reads as five" "$("$ORCH" review begin)" "5"
 out="$("$ORCH" review begin 2>&1)"; st=$?
@@ -3231,11 +3265,11 @@ assert_eq "its first line is still the bare command the review loop runs" \
 # loop nothing else understands.
 echo
 echo "the multi-loop machinery is gone"
-"$ORCH" state set phase review
-"$ORCH" state set iteration 7
+state_fixture phase review
+state_fixture iteration 7
 assert_contains "review reads the implement handoff however far in the flow is" \
   "$("$ORCH" handoff path review)" "03-implement.md"
-"$ORCH" state set iteration 5
+state_fixture iteration 5
 
 out="$("$ORCH" handoff path review-next 2>&1)"; st=$?
 assert_status "there is no handoff for a next loop to read" "$st" 1
@@ -3483,7 +3517,7 @@ assert_contains "and the issue it was for" "$out" "issue #14"
 # is finished work, so the flow-bound spec ops refuse it and point at the
 # stateless issue ops for whatever issue the caller actually meant.
 prior_phase="$("$ORCH" state get phase)"
-"$ORCH" state set phase done
+state_fixture phase done
 for op in fetch update comment; do
   : >"$filed"
   out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec "$op" "$tricky" 2>&1)"; st=$?
@@ -3492,7 +3526,7 @@ for op in fetch update comment; do
   assert_contains "and pointing at issue $op for another issue" "$out" "issue $op <n>"
   assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 done
-"$ORCH" state set phase spec
+state_fixture phase spec
 spec_scratch="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" spec fetch "$spec_scratch" 2>&1)"; st=$?
 assert_status "spec fetch still works at phase spec" "$st" 0
@@ -3505,7 +3539,7 @@ out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec co
 assert_status "spec comment still works at phase spec" "$st" 0
 assert_contains "on the flow's issue" "$(cat "$filed")" "issue comment 14"
 rm -f "$spec_scratch"
-"$ORCH" state set phase "$prior_phase"
+state_fixture phase "$prior_phase"
 
 out="$("$ORCH" spec publish "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
@@ -3579,7 +3613,7 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a review-phase flow with its three handoffs is healthy" "$st" 0
 assert_contains "counts the implement handoff among them" "$out" "handoff 03-implement.md complete"
 
-"$ORCH" state set loop 2
+state_fixture loop 2
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a stray loop key from an older flow still passes" "$st" 0
 assert_eq "and earns no mention of a handoff no loop writes any more" \
@@ -3610,7 +3644,7 @@ assert_eq "and is left where it was" \
 # "gh adapter (real pr ready, subprocess gh)" block right after this one.
 echo
 echo "review ready"
-"$ORCH" state set pr 7
+state_fixture pr 7
 log="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" GH_STUB_READY_EXIT=1 "$ORCH" review ready 2>&1)"; st=$?
 assert_status "fails when GitHub will not mark the PR ready" "$st" 1
@@ -3619,7 +3653,7 @@ assert_eq "and leaves the phase where it was rather than half-finishing" \
 ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" "$ORCH" review ready >/dev/null
 assert_eq "records the flow as done once the PR is ready" "$("$ORCH" state get phase)" "done"
 assert_eq "and neither call ever reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
-"$ORCH" state set phase review
+state_fixture phase review
 
 # --- gh adapter (real pr ready, subprocess gh) -------------------------------
 # The block above proved the seam through the in-memory fake; this is the
@@ -3634,7 +3668,7 @@ assert_status "shells out for real" "$st" 0
 assert_eq "records the flow as done" "$("$ORCH" state get phase)" "done"
 assert_eq "the real adapter invoked gh pr ready, as a real subprocess" \
   "$(grep -cx pr "$log")" "1"
-"$ORCH" state set phase review
+state_fixture phase review
 
 # --- review ci --------------------------------------------------------------
 # The classification is what decides whether a PR may be marked ready, so each
@@ -3750,7 +3784,7 @@ assert_status "output jq cannot parse stops the loop" "$st" 1
 assert_first_line "rather than passing as a repo with no checks" "$out" "unreachable"
 assert_contains "saying what it could not read" "$out" "could not read"
 
-"$ORCH" state set pr null
+state_fixture pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 1
 # require_pr dies inside a command substitution, so what stops the command is
@@ -3770,7 +3804,7 @@ unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL ORCH_GH_ADAPTER
 # gh can take is read the same way the exit-0-with-a-pending-bucket path is.
 echo
 echo "gh adapter (real pr checks, subprocess gh)"
-"$ORCH" state set pr 7
+state_fixture pr 7
 export ORCH_CI_GRACE=0.2 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
 log="$(mktemp)"
 out="$(GH_STUB_LOG="$log" GH_STUB_REQUIRED=green GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
@@ -3798,7 +3832,7 @@ assert_status "a real gh's documented exit-8-for-pending stops the loop at the c
 assert_first_line "classified as unreachable, same as the fake's exit-8 path" "$out" "unreachable"
 assert_contains "saying the wait ran out" "$out" "still pending"
 unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-"$ORCH" state set pr null
+state_fixture pr null
 
 # --- a flow from before the budget shipped ----------------------------------
 # An in-flight flow carries whatever state the version that started it wrote:
@@ -3821,7 +3855,7 @@ out="$("$ORCH" review begin 2>&1)"; st=$?
 assert_status "and it runs the default budget" "$st" 1
 assert_contains "of five" "$out" "budget of 5 iterations"
 
-"$ORCH" state set phase review
+state_fixture phase review
 complete_plan_handoff "$("$ORCH" handoff path spec)"
 complete_spec_handoff "$("$ORCH" handoff path implement)"
 complete_implement_handoff "$("$ORCH" handoff path review)"
@@ -3830,7 +3864,7 @@ assert_status "doctor does not strand it either" "$st" 0
 assert_contains "status reads its budget as the default" "$("$ORCH" status)" "iteration 5 of 5"
 
 # ci and ready need a PR, which a flow this old still records the same way.
-"$ORCH" state set pr 3 >/dev/null
+state_fixture pr 3 >/dev/null
 out="$(ORCH_CI_GRACE=0.2 ORCH_CI_INTERVAL=0.05 GH_STUB_CHECKS=green \
   "$ORCH" review ci 2>&1)"; st=$?
 assert_status "review ci reads its PR from a state with no budget key" "$st" 0
@@ -3871,12 +3905,12 @@ assert_eq "recorded as a number, not a string" \
 assert_contains "status names the iteration against the default budget" \
   "$("$ORCH" status)" "iteration 0 of 5"
 "$ORCH" state set budget 3
-"$ORCH" state set iteration 2
+state_fixture iteration 2
 assert_contains "and against the budget once one is set" \
   "$("$ORCH" status)" "iteration 2 of 3"
 assert_contains "status shows how many times the flow has been redone" \
   "$("$ORCH" status)" "redo:      0"
-"$ORCH" state set redo_count 2
+state_fixture redo_count 2
 assert_contains "and updates once it has been" "$("$ORCH" status)" "redo:      2"
 assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin"
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
@@ -3931,13 +3965,13 @@ out="$("$ORCH" review terminal 2>&1)"; st=$?
 assert_status "no loop yet is not terminal" "$st" 1
 assert_first_line "and classifies as none" "$out" "none"
 
-"$ORCH" state set iteration 3
+state_fixture iteration 3
 "$ORCH" state set budget 5
 out="$("$ORCH" review terminal 2>&1)"; st=$?
 assert_status "short of its budget is not terminal" "$st" 1
 assert_first_line "and classifies as pending" "$out" "pending"
 
-"$ORCH" state set iteration 5
+state_fixture iteration 5
 out="$("$ORCH" review terminal 2>&1)"; st=$?
 assert_status "at budget with no iteration record is not terminal" "$st" 1
 assert_first_line "classified as interrupted, not pending" "$out" "interrupted"
@@ -4011,19 +4045,19 @@ healthy_repo
 "$ORCH" init doctorterm >/dev/null
 complete_plan_handoff "$("$ORCH" handoff path spec)"
 complete_spec_handoff "$("$ORCH" handoff path implement)"
-"$ORCH" state set phase implement
+state_fixture phase implement
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "implement phase still passes" "$st" 0
 assert_eq "and says nothing about a review loop" \
   "$(printf '%s\n' "$out" | grep -c 'review loop')" "0"
 
 complete_implement_handoff "$("$ORCH" handoff path review)"
-"$ORCH" state set phase review
+state_fixture phase review
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "no loop yet is healthy" "$st" 0
 assert_contains "reports the loop has not started" "$out" "review loop: not started yet"
 
-"$ORCH" state set iteration 2
+state_fixture iteration 2
 "$ORCH" state set budget 5
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "short of budget warns, never fails" "$st" 0
@@ -4032,7 +4066,7 @@ assert_contains "reads as pending, not interrupted" "$out" "hasn't reached its b
 assert_contains "points at next for resuming it" "$out" "/orchestrator:next (or orch-flow's Next phase section) will resume it"
 assert_contains "and says redo refuses until it is terminal" "$out" "redo refuses until it reaches a terminal state"
 
-"$ORCH" state set iteration 5
+state_fixture iteration 5
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "at budget with no terminal record warns rather than fails" "$st" 0
 assert_contains "reads as interrupted, not pending" "$out" "looks interrupted, not stopped"
@@ -4069,18 +4103,18 @@ rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration
 # other way, not one review begin produced itself.
 echo
 echo "doctor: review budget check"
-"$ORCH" state set iteration 3
+state_fixture iteration 3
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "short of budget is healthy" "$st" 0
 assert_contains "reports it within budget" "$out" "review loop iteration (3) within budget (5)"
 
-"$ORCH" state set iteration 6
+state_fixture iteration 6
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "past budget fails" "$st" 1
 assert_contains "names the impossible count" "$out" \
   "review loop iteration (6) is past its budget (5)"
 assert_contains "and points at abort" "$out" "/orchestrator:abort"
-"$ORCH" state set iteration 5
+state_fixture iteration 5
 
 # --- doctor: review ci check ----------------------------------------------
 # ci_probe is the loop's own read of the PR's checks, reused rather than a
@@ -4088,7 +4122,7 @@ assert_contains "and points at abort" "$out" "/orchestrator:abort"
 # here, not a fresh classification doctor derives on its own.
 echo
 echo "doctor: review ci check"
-"$ORCH" state set pr 40
+state_fixture pr 40
 # A draft PR mid-review agrees with the phase, so the draft check stays quiet
 # and only the CI check's own verdict decides the exit status below.
 export GH_STUB_PR_DRAFT=true
@@ -4133,7 +4167,7 @@ assert_contains "names the mismatch" "$out" \
   "PR #40 was marked ready on GitHub but the flow phase is still review"
 assert_contains "gives the command that inspects it" "$out" "gh pr view 40"
 
-"$ORCH" state set phase done
+state_fixture phase done
 out="$(GH_STUB_PR_DRAFT=false "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a ready PR once the flow is done is healthy" "$st" 0
 assert_contains "reports it matches phase" "$out" \
@@ -4149,7 +4183,7 @@ out="$(GH_STUB_PR_STATE=MERGED "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a merged PR has nothing left to disagree with" "$st" 0
 assert_eq "and says nothing about draft state" \
   "$(printf '%s\n' "$out" | grep -c 'draft state')" "0"
-"$ORCH" state set phase review
+state_fixture phase review
 unset GH_STUB_PR_DRAFT
 
 # --- review retire -------------------------------------------------------
@@ -4225,18 +4259,18 @@ out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "refuses outside the review phase" "$st" 1
 assert_contains "naming the reason" "$out" "flow is not at the review phase"
 
-"$ORCH" state set phase review
+state_fixture phase review
 "$ORCH" state set issue 21
 git checkout -q -b orch/21-redotest
 git push -q -u origin orch/21-redotest
-"$ORCH" state set branch orch/21-redotest
+state_fixture branch orch/21-redotest
 filed="$(mktemp)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=30 "$ORCH" redo review 2>&1)"; st=$?
 assert_status "refuses with no loop run yet" "$st" 1
 assert_contains "distinct from the other two refusals" "$out" "no review loop has run yet"
 assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 
-"$ORCH" state set iteration 2
+state_fixture iteration 2
 "$ORCH" state set budget 5
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" redo review 2>&1)"; st=$?
 assert_status "refuses a loop still short of its budget" "$st" 1
@@ -4247,13 +4281,13 @@ assert_contains "names the bare command on Claude Code" "$out" "that's what /orc
 out="$(env -u CLAUDE_PLUGIN_ROOT "$ORCH" redo review 2>&1)"
 assert_contains "and the orch-flow section when no host is detected" "$out" "/orchestrator:next (or orch-flow's Next phase section)"
 
-"$ORCH" state set iteration 5
+state_fixture iteration 5
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "refuses a budget-spent loop with no terminal record" "$st" 1
 assert_contains "reading as interrupted, distinct from pending" "$out" "looks interrupted, not stopped"
 
-"$ORCH" state set pr 30
-"$ORCH" state set base_sha deadbeefcafe
+state_fixture pr 30
+state_fixture base_sha deadbeefcafe
 "$ORCH" state set flake_rerun_used true
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
@@ -4296,13 +4330,13 @@ assert_status "phase advance then refuses to leave implement" "$st" 1
 assert_contains "for want of the implement handoff" "$out" "/.orchestrator/handoff/03-implement.md - write it before leaving"
 
 # A second redo in the same flow numbers on rather than overwriting the first.
-"$ORCH" state set phase review
+state_fixture phase review
 "$ORCH" state set issue 21
 git checkout -q -b orch/21-redotest orch/21-redotest-redo-1
 stub_pushed_branch orch/21-redotest
-"$ORCH" state set branch orch/21-redotest
-"$ORCH" state set pr 31
-"$ORCH" state set iteration 5
+state_fixture branch orch/21-redotest
+state_fixture pr 31
+state_fixture iteration 5
 "$ORCH" state set budget 5
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
@@ -4316,13 +4350,13 @@ assert_eq "without disturbing redo-1's records" \
 assert_eq "moving the second loop's records into pre-redo-2" \
   "$([ -f .orchestrator/review/pre-redo-2/iteration-05.md ] && echo yes || echo no)" "yes"
 
-"$ORCH" state set phase review
+state_fixture phase review
 "$ORCH" state set issue 21
 git checkout -q -b orch/21-redotest
 stub_pushed_branch orch/21-redotest
-"$ORCH" state set branch orch/21-redotest
-"$ORCH" state set pr 32
-"$ORCH" state set iteration 1
+state_fixture branch orch/21-redotest
+state_fixture pr 32
+state_fixture iteration 1
 "$ORCH" state set budget 1
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
 out="$(GH_STUB_PR_CLOSE_EXIT=1 GH_STUB_PR_NUMBER=32 "$ORCH" redo review 2>&1)"; st=$?
@@ -4361,9 +4395,9 @@ assert_eq "and clears branch, PR, and base SHA on the now-successful redo" \
 # record. Produced the way the system actually produces it (review ready
 # itself, not a hand-crafted state), redo rejects it exactly as it would any
 # other done flow, through the same phase gate, not a ready-specific branch.
-"$ORCH" state set phase review
-"$ORCH" state set pr 33
-"$ORCH" state set iteration 1
+state_fixture phase review
+state_fixture pr 33
+state_fixture iteration 1
 "$ORCH" state set budget 1
 writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md
 "$ORCH" review ready >/dev/null
@@ -4386,13 +4420,13 @@ git init -q --bare "$bare"
 git remote set-url origin "$bare"
 git push -q origin HEAD:refs/heads/main
 "$ORCH" init redoclose >/dev/null
-"$ORCH" state set phase review
+state_fixture phase review
 "$ORCH" state set issue 21
 git checkout -q -b orch/21-redoclose
 git push -q -u origin orch/21-redoclose
-"$ORCH" state set branch orch/21-redoclose
-"$ORCH" state set pr 34
-"$ORCH" state set iteration 1
+state_fixture branch orch/21-redoclose
+state_fixture pr 34
+state_fixture iteration 1
 "$ORCH" state set budget 1
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
@@ -4428,13 +4462,13 @@ t2="$("$ORCH" ticket publish 60 "Two" "$body")"
 "$ORCH" ticket close "$t2" >/dev/null
 assert_eq "frontier is empty once every ticket is closed" "$("$ORCH" ticket next 60)" ""
 
-"$ORCH" state set phase review
+state_fixture phase review
 "$ORCH" state set issue 60
 git checkout -q -b orch/60-tickettest
 git push -q -u origin orch/60-tickettest
-"$ORCH" state set branch orch/60-tickettest
-"$ORCH" state set pr 40
-"$ORCH" state set iteration 1
+state_fixture branch orch/60-tickettest
+state_fixture pr 40
+state_fixture iteration 1
 "$ORCH" state set budget 1
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
@@ -4459,9 +4493,9 @@ out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "refuses outside the implement phase" "$st" 1
 assert_contains "naming the reason" "$out" "flow is not at the implement phase"
 
-"$ORCH" state set phase implement
+state_fixture phase implement
 "$ORCH" state set issue 40
-"$ORCH" state set redo_count 2
+state_fixture redo_count 2
 writeln '# plan' >.orchestrator/handoff/01-plan.md
 writeln '# spec' >.orchestrator/handoff/02-spec.md
 writeln '# implement' >.orchestrator/handoff/03-implement.md
@@ -4484,7 +4518,7 @@ out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance then refuses to leave spec" "$st" 1
 assert_contains "for want of the spec handoff" "$out" "/.orchestrator/handoff/02-spec.md - write it before leaving"
 
-"$ORCH" state set phase implement
+state_fixture phase implement
 "$ORCH" state set issue 41
 writeln '# spec again' >.orchestrator/handoff/02-spec.md
 : >"$filed"
@@ -4499,7 +4533,7 @@ assert_eq "clearing the old issue" "$("$ORCH" state get issue)" ""
 assert_contains "closes the old issue" "$(cat "$filed")" "issue close 41"
 assert_eq "the close call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
-"$ORCH" state set phase implement
+state_fixture phase implement
 "$ORCH" state set issue 42
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_ISSUE_CLOSE_EXIT=1 "$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "a gh that will not close the issue fails --new-issue" "$st" 1
@@ -4518,7 +4552,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh redo spec"
 # right arguments rather than merely compile.
 echo
 echo "gh adapter (real issue close, subprocess gh)"
-"$ORCH" state set phase implement
+state_fixture phase implement
 "$ORCH" state set issue 43
 : >"$filed"
 log="$(mktemp)"
@@ -4705,10 +4739,10 @@ assert_eq "leaves the phase at implement" "$("$ORCH" state get phase)" "implemen
 hi2="$("$ORCH" handoff path review)"
 complete_implement_handoff "$hi2"
 for field in branch base_sha pr; do
-  "$ORCH" state set branch orch/7-advancing
-  "$ORCH" state set base_sha abc1234
-  "$ORCH" state set pr 3
-  "$ORCH" state set "$field" null
+  state_fixture branch orch/7-advancing
+  state_fixture base_sha abc1234
+  state_fixture pr 3
+  state_fixture "$field" null
   out="$("$ORCH" phase advance 2>&1)"; st=$?
   assert_status "refuses at implement with no $field recorded" "$st" 1
   case "$field" in
@@ -4720,7 +4754,7 @@ for field in branch base_sha pr; do
   assert_eq "and leaves the phase at implement (no $field)" "$("$ORCH" state get phase)" "implement"
 done
 
-"$ORCH" state set pr 3
+state_fixture pr 3
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "advances implement to review with a valid handoff and the fields" "$st" 0
 assert_eq "records the review phase" "$("$ORCH" state get phase)" "review"
@@ -4732,7 +4766,7 @@ assert_status "refuses at review" "$st" 1
 assert_contains "pointing at review ready" "$out" "review ready"
 assert_eq "and leaves the phase at review" "$("$ORCH" state get phase)" "review"
 
-"$ORCH" state set phase done
+state_fixture phase done
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at done" "$st" 1
 assert_eq "and leaves the phase at done" "$("$ORCH" state get phase)" "done"
@@ -4743,16 +4777,16 @@ assert_contains "with a usage line" "$out" "usage: orch.sh phase advance"
 
 echo
 echo "phase boundary"
-"$ORCH" state set phase spec
+state_fixture phase spec
 out="$("$ORCH" phase boundary 2>&1)"; st=$?
 assert_status "prints at flow start" "$st" 0
 assert_eq "names the plan handoff and the Claude Code Next line" "$out" \
   "$(printf 'Phase plan complete. Handoff written to %s.\n\n  Next: /clear, then /orchestrator:next' "$("$ORCH" handoff path spec)")"
-"$ORCH" state set phase review
+state_fixture phase review
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" phase boundary 2>&1)"
 assert_eq "on Junie names the Junie Next line" "$out" \
   "$(printf 'Phase implement complete. Handoff written to %s.\n\n  Next: /new, then ask for the next phase with /orch-flow' "$hi2")"
-"$ORCH" state set phase done
+state_fixture phase done
 out="$("$ORCH" phase boundary 2>&1)"; st=$?
 assert_status "refuses once the flow is done" "$st" 1
 out="$("$ORCH" phase bogus 2>&1)"; st=$?

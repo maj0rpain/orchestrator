@@ -516,6 +516,20 @@ cmd_state() {
     set)
       require_state
       [ $# -eq 2 ] || die "usage: orch.sh state set <key> <value>"
+      # Only the keys skill prose sets are public. Every other key has a
+      # command that owns it, and that command's guard is the point: a phase
+      # set here would skip the handoff phase advance validates.
+      case "$1" in
+        issue|budget|flake_rerun_used) ;;
+        phase)          die "state set refuses phase: use phase advance (review ready and redo also move it)" ;;
+        branch|base_sha) die "state set refuses $1: branch create records it" ;;
+        pr)             die "state set refuses pr: pr open records it" ;;
+        iteration)      die "state set refuses iteration: review begin counts it" ;;
+        redo_count)     die "state set refuses redo_count: redo review counts it" ;;
+        slug|base|created|host_fallbacks) die "state set refuses $1: init seeds it" ;;
+        updated)        die "state set refuses updated: every state change stamps it" ;;
+        *)              die "state set refuses $1: settable keys are issue, budget, flake_rerun_used" ;;
+      esac
       state_write "$1" "$2"
       ;;
     *) die "unknown state op: $op (want get|set)" ;;
@@ -1894,7 +1908,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               store - lowercase, non-alphanumeric runs collapsed
                               to a hyphen, trimmed
   state get [key]             print state.json, or one key
-  state set <key> <value>     update one key
+  state set <key> <value>     update one of issue, budget, flake_rerun_used
+                              (all digits store a number). Any other key is
+                              refused, naming the command that owns it -
+                              phase moves only through phase advance,
+                              review ready, and redo
   phase advance               leave the current phase: validate the handoff
                               it writes for the next one (02-spec.md from
                               spec, 03-implement.md from implement) and the
