@@ -5354,8 +5354,8 @@ assert_contains "the Quick implementation entry names its one review pass" \
   "$(flat_section "$glossary" "Quick implementation")" \
   'Its review is one pass by the same two reviewers a review loop starts, with no loop around them'
 finding="$(flat_section "$glossary" "Finding")"
-assert_contains "the Finding entry names quick implementation's pass" \
-  "$finding" "or about the change, from quick implementation's single pass"
+assert_contains "the Finding entry names its two change sources together" \
+  "$finding" "about the change, from the review phase or quick implementation's single pass, or about the spec, from a spec review"
 assert_contains "the Finding entry gives a quick finding no severity" \
   "$finding" "A finding from quick implementation's single pass carries none"
 assert_contains "the Base branch entry names a quick implementation's base SHA" \

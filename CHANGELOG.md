@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.4
+
+- The glossary's **Finding** entry names its two sources about the change
+  together (see issue #249). Docs only; no behaviour change.
+
 ## 2.5.3
 
 - The `03-implement.md` handoff template calls the Spec axis by its glossary
