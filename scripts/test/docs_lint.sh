@@ -701,6 +701,193 @@ assert_eq "ADRs may name an orch- name that no longer resolves" \
 check "every backticked orch- name resolves to a skill or an agent" \
   "$(scan_orch_names "$PLUGIN_ROOT")"
 
+# --- agent frontmatter (ADR-0026) --------------------------------------------
+echo
+echo "agent frontmatter (ADR-0026)"
+# Every agent declares its name and its allowlist. Claude Code and Junie CLI
+# both read a YAML flow list as the allowlist (#204, ADR-0024), and an agent
+# listing Agent, Skill or AskUserQuestion could start sub-agents, invoke a
+# skill, or block on a human (#262, ADR-0026). The fixer and the closer build
+# as the implementer does, so their allowlists are copies of its.
+# scan_agent_frontmatter <plugin root>: one line per agent off the rule.
+scan_agent_frontmatter() {
+  local r="$1" a n name t tool impl
+  impl="$(grep -m1 '^tools:' "$r/agents/orch-implementer.md" 2>/dev/null)"
+  for a in "$r"/agents/*.md; do
+    [ -f "$a" ] || continue
+    n="$(basename "$a" .md)"
+    name="$(sed -n 's/^name: //p' "$a" | head -1)"
+    [ "$name" = "$n" ] || echo "agents/$n.md: name: is '$name', not its file"
+    t="$(grep -m1 '^tools:' "$a")" || { echo "agents/$n.md: declares no tools:"; continue; }
+    case "$t" in
+      'tools: ['*']') ;;
+      *) echo "agents/$n.md: tools: is not a YAML flow list" ;;
+    esac
+    for tool in $(printf '%s\n' "${t#tools: }" | tr -d '[] ' | tr ',' ' '); do
+      case "$tool" in
+        Agent|Skill|AskUserQuestion) echo "agents/$n.md: lists $tool" ;;
+      esac
+    done
+    case "$n" in
+      orch-fixer|orch-closer)
+        [ "$t" = "$impl" ] || echo "agents/$n.md: tools: is not the implementer's" ;;
+    esac
+  done
+  return 0
+}
+f="$(new_fixture)"
+mkdir -p "$f/agents"
+printf -- '---\nname: orch-implementer\ntools: [Read, Bash]\n---\n' >"$f/agents/orch-implementer.md"
+printf -- '---\nname: orch-fixer\ntools: [Read, Bash]\n---\n' >"$f/agents/orch-fixer.md"
+printf -- '---\nname: orch-closer\ntools: [Read]\n---\n' >"$f/agents/orch-closer.md"
+printf -- '---\nname: orch-other\ntools: Read, Bash\n---\n' >"$f/agents/orch-a.md"
+printf -- '---\nname: orch-b\n---\n' >"$f/agents/orch-b.md"
+printf -- '---\nname: orch-c\ntools: [Read, Skill]\n---\n' >"$f/agents/orch-c.md"
+out="$(scan_agent_frontmatter "$f")"
+flags "an agent whose name: is not its file is flagged" \
+  "$out" "agents/orch-a.md: name: is 'orch-other', not its file"
+flags "an agent whose tools: is not a list is flagged" \
+  "$out" "agents/orch-a.md: tools: is not a YAML flow list"
+flags "an agent with no tools: is flagged" "$out" "agents/orch-b.md: declares no tools:"
+flags "an agent listing Skill is flagged" "$out" "agents/orch-c.md: lists Skill"
+flags "a closer whose allowlist is not the implementer's is flagged" \
+  "$out" "agents/orch-closer.md: tools: is not the implementer's"
+assert_eq "agents named for their files with a matching list are not flagged" \
+  "$(printf '%s\n' "$out" | grep -cE 'orch-(implementer|fixer)\.md')" "0"
+check "every agent is named for its file and declares a safe tools: list" \
+  "$(scan_agent_frontmatter "$PLUGIN_ROOT")"
+
+# --- sub-issue endpoints (#179) -----------------------------------------------
+echo
+echo "sub-issue endpoints (#179)"
+# orch.sh's ticket group is the one caller of GitHub's sub-issue endpoints, so
+# no brief calls them itself: an agent finds its spec issue through `ticket
+# parent`.
+# scan_subissue_endpoints <plugin root>: each skill or agent line that calls one.
+scan_subissue_endpoints() {
+  (cd "$1" && grep -rnE 'gh api[^`]*(/parent|sub_issues)|issues/[^ ]*/(parent|sub_issues)' agents skills 2>/dev/null) \
+    | sed -E 's/^([^:]+:[0-9]+):.*/\1: calls a sub-issue endpoint/'
+  return 0
+}
+f="$(new_fixture)"
+mkdir -p "$f/agents" "$f/skills/orch-x"
+printf 'Run `gh api repos/o/r/issues/7/parent`.\n' >"$f/agents/orch-a.md"
+printf 'Run `gh api repos/o/r/issues/7/sub_issues`.\n' >"$f/skills/orch-x/SKILL.md"
+printf 'Run `bash "$ORCH" ticket parent 7`.\n' >"$f/agents/orch-b.md"
+out="$(scan_subissue_endpoints "$f")"
+flags "an agent calling the parent endpoint is flagged" "$out" "agents/orch-a.md:1: calls a sub-issue endpoint"
+flags "a skill calling the sub_issues endpoint is flagged" "$out" "skills/orch-x/SKILL.md:1: calls a sub-issue endpoint"
+assert_eq "ticket parent is not flagged" "$(printf '%s\n' "$out" | grep -c 'orch-b')" "0"
+check "no agent or skill calls a sub-issue endpoint" "$(scan_subissue_endpoints "$PLUGIN_ROOT")"
+
+# --- flow commands in script messages -----------------------------------------
+echo
+echo "flow commands in script messages"
+# orch.sh's and doctor.sh's messages reach the model on every host, so they
+# name a flow command only through flow_cmd, which adds the orch-flow section
+# for a host with no plugin commands - and every section it names must exist.
+# scan_flow_cmd <plugin root>: each script line naming a plugin command
+# outside flow_cmd, and each flow_cmd section orch-flow lacks.
+scan_flow_cmd() {
+  local r="$1" s
+  (cd "$r" && grep -nE '/orchestrator:[a-z]' scripts/orch.sh scripts/doctor.sh 2>/dev/null) \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
+    | sed -E 's/^([^:]+:[0-9]+):.*/\1: names a plugin command outside flow_cmd/'
+  awk '/^flow_cmd\(\)/,/^}/' "$r/scripts/orch.sh" 2>/dev/null \
+    | grep -oE 'section="[^"]+"' | sed 's/section="//; s/"$//' \
+    | while IFS= read -r s; do
+        grep -qxF "## $s" "$r/skills/orch-flow/SKILL.md" 2>/dev/null ||
+          echo "skills/orch-flow/SKILL.md: has no section flow_cmd names: $s"
+      done
+  return 0
+}
+f="$(new_fixture)"
+mkdir -p "$f/scripts" "$f/skills/orch-flow"
+printf '%s\n' 'flow_cmd() {' '  case "$1" in' '    start) section="Starting a flow" ;;' \
+  '    next)  section="Next phase" ;;' '  esac' '  printf "/orchestrator:%s" "$1"' '}' \
+  '# /orchestrator:next in a comment is fine' 'die "run /orchestrator:abort"' >"$f/scripts/orch.sh"
+printf 'echo ok\n' >"$f/scripts/doctor.sh"
+printf '# Flow\n\n## Starting a flow\n\n## Next steps\n' >"$f/skills/orch-flow/SKILL.md"
+out="$(scan_flow_cmd "$f")"
+flags "a script naming a plugin command outside flow_cmd is flagged" \
+  "$out" "scripts/orch.sh:9: names a plugin command outside flow_cmd"
+flags "a flow_cmd section orch-flow lacks is flagged" \
+  "$out" "skills/orch-flow/SKILL.md: has no section flow_cmd names: Next phase"
+assert_eq "a comment and an existing section are not flagged" \
+  "$(printf '%s\n' "$out" | grep -cE ':8:|Starting a flow')" "0"
+check "the scripts name a plugin command only through flow_cmd, whose sections exist" \
+  "$(scan_flow_cmd "$PLUGIN_ROOT")"
+
+# --- Junie planning snippet (ADR-0025) ----------------------------------------
+echo
+echo "Junie planning snippet (ADR-0025)"
+# docs/junie/AGENTS.md is pasted between one begin and one end marker, and its
+# planning section restates the allowlist and the records, whose one
+# definition is scripts/planning-allowlist.sh, the list the hooks print from.
+# scan_junie_planning <plugin root>: each way the snippet is off the rule.
+scan_junie_planning() {
+  local r="$1" doc="docs/junie/AGENTS.md" n which text body
+  for which in begin end; do
+    n="$(grep -cxF "<!-- orchestrator:$which -->" "$r/$doc" 2>/dev/null)"
+    [ "${n:-0}" = 1 ] || echo "$doc: has ${n:-0} $which markers, not 1"
+  done
+  body="$(flat_text "$r/$doc" 2>/dev/null)"
+  for which in records allowlist; do
+    text="($(source "$r/scripts/planning-allowlist.sh" && "planning_${which}_text"))"
+    case "$body" in
+      *"$text"*) ;;
+      *) echo "$doc: does not list the planning $which as planning-allowlist.sh does: $text" ;;
+    esac
+  done
+  return 0
+}
+f="$(new_fixture)"
+mkdir -p "$f/scripts" "$f/docs/junie"
+printf '%s\n' 'PLANNING_ALLOWLIST=(docs/agents/ .scratch/)' 'PLANNING_RECORDS=(CONTEXT.md docs/adr/)' \
+  'planning_allowlist_text() { local IFS=,; printf "%s" "${PLANNING_ALLOWLIST[*]}" | sed "s/,/, /g"; }' \
+  'planning_records_text() { local IFS=,; printf "%s" "${PLANNING_RECORDS[*]}" | sed "s/,/, /g"; }' \
+  >"$f/scripts/planning-allowlist.sh"
+printf '%s\n' '<!-- orchestrator:begin -->' 'Records (CONTEXT.md) are recorded.' \
+  'Artifacts (docs/agents/,' '.scratch/) are fine.' '<!-- orchestrator:begin -->' >"$f/docs/junie/AGENTS.md"
+out="$(scan_junie_planning "$f")"
+flags "a snippet with two begin markers is flagged" \
+  "$out" "docs/junie/AGENTS.md: has 2 begin markers, not 1"
+flags "a snippet with no end marker is flagged" \
+  "$out" "docs/junie/AGENTS.md: has 0 end markers, not 1"
+flags "a snippet whose records drift from planning-allowlist.sh is flagged" \
+  "$out" "docs/junie/AGENTS.md: does not list the planning records as planning-allowlist.sh does: (CONTEXT.md, docs/adr/)"
+assert_eq "an allowlist that matches across a line break is not flagged" \
+  "$(printf '%s\n' "$out" | grep -c 'planning allowlist')" "0"
+check "the Junie snippet is marked once and lists planning-allowlist.sh's lists" \
+  "$(scan_junie_planning "$PLUGIN_ROOT")"
+
+# --- host capability table ------------------------------------------------------
+echo
+echo "host capability table"
+# docs/host-capabilities.md maps each capability to each host, so every row
+# carries the capability and both hosts' cells, filled, and no stray pipe.
+# scan_capability_table <plugin root>: each row off the rule, with its line.
+scan_capability_table() {
+  local doc="docs/host-capabilities.md"
+  awk -F'|' -v f="$doc" '
+    /^\|/ && !/^\| *---/ {
+      if (NF != 5) { print f ":" NR ": a row with " NF - 2 " cells, not 3"; next }
+      for (i = 2; i <= 4; i++) if ($i ~ /^ *$/) { print f ":" NR ": a row with an empty cell"; next }
+    }' "$1/$doc"
+  return 0
+}
+f="$(new_fixture)"
+mkdir -p "$f/docs"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  '| Ask | `AskUserQuestion`. | Plain text. |' '| Guard | A hook. |  |' \
+  '| Start | The Agent tool. | One | two. |' >"$f/docs/host-capabilities.md"
+out="$(scan_capability_table "$f")"
+flags "a row with an empty cell is flagged" "$out" "docs/host-capabilities.md:4: a row with an empty cell"
+flags "a row with a stray pipe is flagged" "$out" "docs/host-capabilities.md:5: a row with 4 cells, not 3"
+assert_eq "a filled row is not flagged" "$(printf '%s\n' "$out" | grep -cE ':(1|2|3):')" "0"
+check "every host capability row has both hosts' cells filled" \
+  "$(scan_capability_table "$PLUGIN_ROOT")"
+
 # --- summary -----------------------------------------------------------------
 echo
 echo "$PASS passed, $FAIL failed"
