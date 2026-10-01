@@ -3586,7 +3586,7 @@ assert_eq "and earns no mention of a handoff no loop writes any more" \
   "$(printf '%s\n' "$out" | grep -c '04-review.md')" "0"
 assert_eq "nor a line reporting the key" \
   "$(printf '%s\n' "$out" | grep -c 'loop: 2')" "0"
-assert_eq "and the key is left as it was" "$("$ORCH" state get loop)" "2"
+assert_eq "and the key is left as it was" "$("$ORCH" state get | jq -r .loop)" "2"
 
 # The per-loop record directories an older flow left behind are the other
 # artefact story 37 names: ignored, not moved, and never a reason to fail.
@@ -3852,12 +3852,12 @@ assert_eq "with somewhere to file its records" \
 assert_eq "and no per-loop directory under it" \
   "$([ -e .orchestrator/review/loop-01 ] && echo present || echo gone)" "gone"
 # The flake rerun belongs to the flow, so it is seeded once here and never
-# refilled. `state get` reads a JSON false back as empty, which is the shape the
-# review skill tests against - spent is "true", and anything else is unspent.
+# refilled. `state get` reads it back as "false" - the review skill tests only
+# for "true", so spent is "true" and anything else is unspent.
 assert_eq "and one flake rerun unspent" \
   "$("$ORCH" state get | jq -r '.flake_rerun_used')" "false"
 assert_eq "which reads as unspent through state get" \
-  "$("$ORCH" state get flake_rerun_used)" ""
+  "$("$ORCH" state get flake_rerun_used)" "false"
 "$ORCH" state set flake_rerun_used true
 assert_eq "and as spent once it has been" \
   "$("$ORCH" state get flake_rerun_used)" "true"
@@ -3897,6 +3897,27 @@ assert_contains "and opening a draft PR" "$("$ORCH" help)" "pr open"
 assert_contains "and redo review" "$("$ORCH" help)" "redo review"
 assert_contains "and redo spec" "$("$ORCH" help)" "redo spec"
 assert_eq "and no longer the loop machinery" "$("$ORCH" help | grep -c 'loop-next')" "0"
+
+# --- state get reads every key with its default -----------------------------
+# A state file written by an older flow lacks keys a fresh one seeds; each key
+# still reads back as what an absent value has always meant.
+echo
+echo "state get defaults"
+healthy_repo
+"$ORCH" init sparse >/dev/null
+jq 'del(.iteration, .redo_count, .host_fallbacks, .flake_rerun_used, .budget)' \
+  .orchestrator/state.json >state.tmp && mv state.tmp .orchestrator/state.json
+assert_eq "an absent iteration reads as 0" "$("$ORCH" state get iteration)" "0"
+assert_eq "an absent redo_count reads as 0" "$("$ORCH" state get redo_count)" "0"
+assert_eq "an absent host_fallbacks reads as false" "$("$ORCH" state get host_fallbacks)" "false"
+assert_eq "an absent flake_rerun_used reads as false" "$("$ORCH" state get flake_rerun_used)" "false"
+assert_eq "an absent budget reads as empty" "$("$ORCH" state get budget)" ""
+out="$("$ORCH" state get nonsense 2>&1)"; st=$?
+assert_status "a key outside the schema is refused" "$st" 1
+assert_contains "naming the key" "$out" "nonsense"
+complete_plan_handoff "$("$ORCH" handoff path spec)"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
 
 # --- review terminal ----------------------------------------------------
 # The one classifier `review terminal` and doctor's check both read - none and
