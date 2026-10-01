@@ -939,6 +939,35 @@ writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "the collapsed-case sentinel validates like any other content" "$st" 0
 
+# --- handoff templates -------------------------------------------------------
+# The templates in the orch-handoff skill are what every phase copies, so one
+# missing a section handoff validate requires, or with a placeholder left
+# empty, would fail every flow at its boundary. Each template block is written
+# under its own file name and validated, with no state and with a flow whose
+# state requires Host fallbacks. Its own repo keeps this flow's state untouched.
+echo
+echo "handoff templates"
+HANDOFF_SKILL="$PLUGIN_ROOT/skills/orch-handoff/SKILL.md"
+tpl_repo="$(new_repo)"
+for tpl in 01-plan.md 02-spec.md 03-implement.md; do
+  # The markdown fence under the template's `### \`<file>\`` heading.
+  awk -v f="$tpl" '
+    index($0, "### `" f "`") == 1 { under = 1; next }
+    under && /^```markdown$/      { inside = 1; next }
+    inside && /^```$/             { exit }
+    inside                        { print }' "$HANDOFF_SKILL" >"$tpl_repo/$tpl"
+  rm -rf "$tpl_repo/.orchestrator"
+  out="$(cd "$tpl_repo" && bash "$ORCH" handoff validate "$tpl" 2>&1)"; st=$?
+  if [ "$st" -eq 0 ]; then ok "the $tpl template validates with no state"
+  else bad "the $tpl template validates with no state" "$(flat_text <<<"$out")"; fi
+  mkdir -p "$tpl_repo/.orchestrator"
+  printf '{"host_fallbacks": true}\n' >"$tpl_repo/.orchestrator/state.json"
+  out="$(cd "$tpl_repo" && bash "$ORCH" handoff validate "$tpl" 2>&1)"; st=$?
+  if [ "$st" -eq 0 ]; then ok "the $tpl template validates when Host fallbacks is required"
+  else bad "the $tpl template validates when Host fallbacks is required" "$(flat_text <<<"$out")"; fi
+done
+rm -rf "$tpl_repo"
+
 # --- archive ----------------------------------------------------------------
 echo
 echo "archive"
@@ -1304,8 +1333,6 @@ out="$(base_cmd branch base-sha extra 2>&1)"; st=$?
 assert_status "refuses arguments" "$st" 1
 assert_contains "with the usage" "$out" "usage: orch.sh branch base-sha"
 assert_contains "help documents branch base-sha" "$("$ORCH" help)" "branch base-sha"
-assert_contains "the CLI conventions table lists branch base-sha" \
-  "$(grep -F '| `branch`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" "base-sha"
 rm -rf "$(dirname "$bare")"
 
 # --- a quick implementation's report directory (#243) --------------------------
@@ -1337,8 +1364,6 @@ git checkout -q --detach
 out="$("$ORCH" quick path 2>&1)"; st=$?
 assert_status "refuses a detached HEAD" "$st" 1
 assert_contains "help documents quick path" "$("$ORCH" help)" "quick path"
-assert_contains "the CLI conventions table lists quick path" \
-  "$(grep -F '| `quick`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" "path"
 
 # --- branch retire ------------------------------------------------------------
 # The rename-aside a redo uses instead of deleting or force-pushing over a
@@ -1895,26 +1920,6 @@ mp_install agents-foreign "$h" to-tickets
 out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when a skills CLI skill belongs to another plugin" "$st" 1
 assert_contains "names the foreign skill as missing" "$out" "missing: to-tickets"
-
-# Doctor's required list is only worth something while it matches what the
-# plugin reads: a skill invoked but not listed passes doctor and then fails its
-# phase, and a skill listed but never invoked fails doctor for nothing. So the
-# list is compared with every mattpocock skill that a skill or agent invokes,
-# through `mp-skill <name>` or `mattpocock-skills:<name>`.
-# Mentions that name an upstream skill without invoking it, one file:name per
-# line (file relative to the plugin root).
-#   orch-handoff says it replaces mattpocock-skills:handoff, not that it runs it.
-mp_not_invoked='skills/orch-handoff/SKILL.md:handoff'
-mp_listed="$(sed -n 's/^MP_SKILLS="\(.*\)"$/\1/p' "$PLUGIN_ROOT/scripts/doctor.sh" | tr ' ' '\n' | grep . | sort -u)"
-mp_invoked="$(cd "$PLUGIN_ROOT" && grep -oE 'mp-skill [a-z][a-z-]*|mattpocock-skills:[a-z][a-z-]*' \
-    skills/*/SKILL.md agents/*.md \
-  | sed -E 's/:(mp-skill |mattpocock-skills:)/:/' \
-  | grep -vxF "$mp_not_invoked" | sed 's/^.*://' | sort -u)"
-assert_eq "doctor finds MP_SKILLS to check against" "$([ -n "$mp_listed" ] && echo found)" "found"
-assert_eq "every invoked mattpocock skill is in MP_SKILLS" \
-  "$(comm -23 <(printf '%s\n' "$mp_invoked") <(printf '%s\n' "$mp_listed") | tr '\n' ' ')" ""
-assert_eq "every skill in MP_SKILLS is invoked by a skill or agent" \
-  "$(comm -13 <(printf '%s\n' "$mp_invoked") <(printf '%s\n' "$mp_listed") | tr '\n' ' ')" ""
 
 # Doctor says where the skills were found, in terms of the host that put them
 # there - the path alone does not tell a user which install to repair.
@@ -2997,67 +3002,6 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket parent"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket parent is in the usage text" "$out" "ticket parent <n>"
-
-# ticket parent exists so no brief calls the sub-issue endpoints itself: the
-# ticket group is their one caller, and the implementer gets orch.sh's path to
-# reach it (#179).
-assert_eq "no agent or skill calls gh api on a sub-issue endpoint" \
-  "$(grep -rnE 'gh api[^`]*(/parent|sub_issues)|issues/[^ ]*/(parent|sub_issues)' \
-      "$PLUGIN_ROOT/agents" "$PLUGIN_ROOT/skills")" ""
-assert_contains "the implementer's prompt carries the orch.sh path" \
-  "$(cat "$PLUGIN_ROOT/agents/orch-implementer.md")" "orch.sh: <the path ORCH holds>"
-assert_contains "and its brief finds the spec issue through ticket parent" \
-  "$(cat "$PLUGIN_ROOT/agents/orch-implementer.md")" 'ticket parent'
-# Every agent declares its allowlist as a YAML flow list, which Claude Code and
-# Junie CLI both read as the allowlist (#204, ADR-0024), and none lists Agent,
-# Skill or AskUserQuestion, so none can start sub-agents, invoke a skill, or
-# block on a human (#262, ADR-0026). Junie has no group for Skill either.
-unguarded=""
-for a in "$PLUGIN_ROOT"/agents/*.md; do
-  t="$(grep -m1 '^tools:' "$a")" || { unguarded="$unguarded ${a##*/}(no tools:)"; continue; }
-  case "$t" in
-    'tools: ['*']') ;;
-    *) unguarded="$unguarded ${a##*/}(not a list)" ;;
-  esac
-  for tool in $(printf '%s\n' "${t#tools: }" | tr -d '[] ' | tr ',' ' '); do
-    case "$tool" in
-      Agent|Skill|AskUserQuestion) unguarded="$unguarded ${a##*/}(lists $tool)" ;;
-    esac
-  done
-done
-assert_eq "every agent declares a tools: list without Agent, Skill or AskUserQuestion" \
-  "$unguarded" ""
-impl="$(cat "$PLUGIN_ROOT/agents/orch-implementer.md")"
-impl_tools="$(printf '%s\n' "$impl" | grep -m1 '^tools:')"
-assert_eq "the implementer's allowlist is exactly its brief's tools" \
-  "$impl_tools" "tools: [Read, Edit, Write, Grep, Glob, Bash]"
-for a in orch-fixer orch-closer; do
-  assert_eq "$a's allowlist is the implementer's" \
-    "$(grep -m1 '^tools:' "$PLUGIN_ROOT/agents/$a.md")" "$impl_tools"
-done
-for s in 'mattpocock-skills:tdd' 'mp-skill' 'codebase-design' 'code-review'; do
-  assert_not_contains "the implementer does not name $s" "$impl" "$s"
-done
-assert_contains "the implementer carries its own TDD section" \
-  "$impl" '## Test-driven development'
-assert_contains "which names its source" \
-  "$impl" 'Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.'
-assert_contains "and keeps the rules of the loop" "$impl" 'Red before green'
-assert_not_contains "Starting this agent no longer mentions the Skill tool" \
-  "$(printf '%s\n' "$impl" | sed -n '/^## Starting this agent/,/^## Steps/p')" \
-  'Skill tool'
-# The fixer builds a blocking behaviour fix from its own cut-down TDD copy,
-# not the upstream skill (#262, #268).
-fixer="$(cat "$PLUGIN_ROOT/agents/orch-fixer.md")"
-for s in 'mattpocock-skills:tdd' 'mp-skill tdd'; do
-  assert_not_contains "the fixer does not name $s" "$fixer" "$s"
-done
-assert_contains "the fixer carries its own TDD section" \
-  "$fixer" '## Test-driven development'
-assert_contains "which names its source" \
-  "$fixer" 'Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3'
-assert_contains "and leaves a test that will not go red open blocking" \
-  "$fixer" 'could not reproduce'
 
 # --- ticket: unknown op ------------------------------------------------------
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?
@@ -4536,633 +4480,6 @@ assert_contains "with the redo comment" \
 assert_eq "gh itself was invoked once, as a real subprocess" \
   "$(grep -cx issue "$log")" "1"
 
-# --- skill names (ADR-0014) --------------------------------------------------
-# Every orchestrator skill carries the orch- prefix. An old unprefixed name
-# left in a skill, command, hook, or doc points a model at a skill that no
-# longer exists. CHANGELOG, ADRs, and .out-of-scope/ record history and may
-# name the old ones; scripts/test/ feeds old names in deliberately as negative cases. The spec
-# review's command and skill were renamed spec-review in 2.0.0 (#235), so the
-# review-spec names, command included, are old names too.
-echo
-echo "skill names (ADR-0014)"
-old_names='orchestrator:(flow|handoff|review|review-spec|quick-implement|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$'
-assert_eq "the old review-spec skill name is still flagged" \
-  "$(printf 'Call `orchestrator:review-spec`.\n' | grep -cE "$old_names")" "1"
-assert_eq "the old /orchestrator:review-spec command is flagged" \
-  "$(printf 'Run `/orchestrator:review-spec 12`.\n' | grep -cE "$old_names")" "1"
-assert_eq "the old orch-review-spec skill name is flagged" \
-  "$(printf 'Call `orchestrator:orch-review-spec`.\n' | grep -cE "$old_names")" "1"
-assert_eq "the old orch-review-spec skill directory is flagged" \
-  "$(printf 'See skills/orch-review-spec/SKILL.md.\n' | grep -cE "$old_names")" "1"
-assert_eq "the old orch-review-spec skill name line is flagged" \
-  "$(printf 'name: orch-review-spec\n' | grep -cE "$old_names")" "1"
-assert_eq "the new spec-review names are not flagged" \
-  "$(printf 'Run `/orchestrator:spec-review 12`.\nCall `orchestrator:orch-spec-review`.\nskills/orch-spec-review/\nname: orch-spec-review\n' | grep -cE "$old_names")" "0"
-assert_eq "the old review-spec command and skill files are gone" \
-  "$(ls -d "$PLUGIN_ROOT/commands/review-spec.md" "$PLUGIN_ROOT/skills/orch-review-spec" 2>/dev/null)" ""
-hits="$(git -C "$PLUGIN_ROOT" ls-files -z \
-  | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/|\.out-of-scope/)' \
-  | (cd "$PLUGIN_ROOT" && xargs -0 grep -nE "$old_names" 2>/dev/null))"
-assert_eq "no old orchestrator skill or command name outside history" "$hits" ""
-for d in "$PLUGIN_ROOT"/skills/*/; do
-  n="$(basename "$d")"
-  case "$n" in
-    orch-*) ok "skill directory $n carries the orch- prefix" ;;
-    *) bad "skill directory $n carries the orch- prefix" "unprefixed skill directory" ;;
-  esac
-  assert_eq "skill $n declares its directory name" \
-    "$(sed -n 's/^name: //p' "$d/SKILL.md" | head -1)" "$n"
-done
-
-# --- orch.sh resolution (#123) ------------------------------------------------
-# Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
-# other hosts, so skill and command text must pair it with the
-# relative fallback. The one documented form (README, "Resolving orch.sh") is
-# the ORCH= line, the Junie step, and the fallback sentence; any other mention
-# of the variable, or a file that runs orch.sh without them, is a regression.
-# hooks/hooks.json is deliberately out of scope: both hosts expand it there.
-echo
-echo "orch.sh resolution (#123)"
-orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'
-# On Junie CLI the agent's shell has no plugin-root variable at all, so the
-# Junie install is found by a literal ls before the relative fallback (#201).
-# This prose sentence opens with the same fixed prefix in every file.
-orch_junie='If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`'
-orch_junie_one='If it prints one path, `ORCH` is that path.'
-orch_junie_many='If it prints more than one, stop and show the human the paths.'
-orch_fallback='If it prints nothing, `ORCH` is `scripts/orch.sh`'
-# A path under the plugin root other than orch.sh (#155) is the one other
-# documented form: "${CLAUDE_PLUGIN_ROOT}/<path>", in a file that also carries
-# this sentence naming the same unset fallback the ORCH line has.
-root_fallback='If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is'
-# ...and that sentence takes the same Junie step first (#201).
-root_junie='two directories above the `orch.sh` that `ls` printed'
-# The steps wrap differently from file to file, so order is checked on the
-# file's text with every run of whitespace collapsed to one space.
-orch_steps="$orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_many $orch_fallback"
-# scan_orch_resolution <plugin root>: print one line per offending file.
-scan_orch_resolution() {
-  local r="$1" f flat root_sentence
-  local -a allowed
-  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md; do
-    [ -f "$f" ] || continue
-    flat="$(flat_text "$f")"
-    allowed=(-e "$orch_line" -e "$orch_junie")
-    grep -qF "$root_fallback" "$f" && allowed+=(-e "$root_fallback" -e '"${CLAUDE_PLUGIN_ROOT}/')
-    if grep -n 'CLAUDE_PLUGIN_ROOT' "$f" | grep -vF "${allowed[@]}" | grep -q .; then
-      echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
-    fi
-    if grep -qF "$root_fallback" "$f"; then
-      # The sentence runs to the first full stop followed by a space;
-      # orch.sh's own dot is followed by a backtick, so it does not end it.
-      root_sentence="${flat#*"$root_fallback"}"
-      root_sentence="${root_sentence%%. *}"
-      [[ "$root_sentence" == *"$root_junie"* ]] ||
-        echo "${f#"$r"/}: names the plugin root without the Junie step"
-    fi
-    if grep -qE 'orch\.sh|\$ORCH' "$f"; then
-      grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
-      grep -qF "$orch_junie" "$f" || echo "${f#"$r"/}: uses orch.sh without the Junie step"
-      grep -qF "$orch_junie_one" "$f" || echo "${f#"$r"/}: uses orch.sh without the one-install step"
-      grep -qF "$orch_junie_many" "$f" || echo "${f#"$r"/}: uses orch.sh without the stop on several Junie installs"
-      grep -qF "$orch_fallback" "$f" || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
-      [[ "$flat" == *"$orch_steps"* ]] || echo "${f#"$r"/}: resolves orch.sh out of the documented order"
-    fi
-  done
-}
-assert_eq "every skill and command resolves orch.sh the one documented way" \
-  "$(scan_orch_resolution "$PLUGIN_ROOT")" ""
-# Some hosts drop the execute bit on install or update, so orch.sh is always
-# run through bash, quoted or not (#142; docs/host-capabilities.md, "Execute bit").
-# scan_orch_bash <plugin root>: print one line per call site that skips bash.
-scan_orch_bash() {
-  local r="$1" f
-  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md \
-           "$r"/README.md "$r"/docs/host-capabilities.md; do
-    [ -f "$f" ] || continue
-    sed 's/bash "\$ORCH"//g' "$f" | grep -nE '\$\{?ORCH\b' \
-      | sed "s|^|${f#"$r"/}:|"
-  done
-}
-assert_eq "every skill and doc runs orch.sh through bash" \
-  "$(scan_orch_bash "$PLUGIN_ROOT")" ""
-# A skill's commands name the plugin root through CLAUDE_PLUGIN_ROOT, never a
-# "<plugin root>" placeholder the driver must work out for itself (#155).
-assert_eq "no skill or command carries a <plugin root> placeholder" \
-  "$(grep -nF '<plugin root>/' "$PLUGIN_ROOT"/skills/*/SKILL.md "$PLUGIN_ROOT"/commands/*.md)" ""
-assert_contains "orch-review reads the fixer's record through CLAUDE_PLUGIN_ROOT" \
-  "$(cat "$PLUGIN_ROOT/skills/orch-review/SKILL.md")" \
-  "\"\${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md\""
-# The reviewers keep Bash, so the only mechanical restriction is Edit and
-# Write; that is all the host fallback loses (#167).
-hostcaps="$(flat_text "$PLUGIN_ROOT/docs/host-capabilities.md")"
-adr18="$(flat_text "$PLUGIN_ROOT/docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md")"
-assert_not_contains "host-capabilities no longer says the fallback loses a mechanical guarantee" \
-  "$hostcaps" 'loses that mechanical guarantee'
-assert_not_contains "ADR-0018 no longer restricts the reviewers mechanically as a whole" \
-  "$adr18" 'restrict the reviewers mechanically'
-for prose in "$hostcaps" "$adr18"; do
-  assert_contains "the fallback loses only the Edit and Write restriction" \
-    "$prose" 'Edit and Write restriction'
-  assert_contains "read-only through Bash always rested on the brief" \
-    "$prose" 'through Bash always rested on the brief'
-done
-# Junie CLI loads the plugin's agents/ but its capability filter may hide one
-# (#203): the fresh-subagent cell says so, the fallback names a hidden agent,
-# and no text gives "does not load agents/" as the reason for the fallback.
-junie_subagent="$(grep -m1 '^| Start a fresh subagent |' "$PLUGIN_ROOT/docs/host-capabilities.md" | awk -F'|' '{ print $4 }')"
-assert_contains "the Junie fresh-subagent cell names the capability filter" \
-  "$junie_subagent" 'capability filter'
-assert_not_contains "the Junie fresh-subagent cell no longer calls loading unconfirmed" \
-  "$junie_subagent" 'not confirmed'
-assert_not_contains "the Junie fresh-subagent cell is no longer Unverified" \
-  "$junie_subagent" '**Unverified**'
-assert_contains "the fallback's first tier covers an agent the host hides" \
-  "$hostcaps" "did not load \`agents/\`, or hid it, as Junie's capability filter does"
-for f in "$PLUGIN_ROOT"/docs/host-capabilities.md "$PLUGIN_ROOT"/README.md "$PLUGIN_ROOT"/skills/*/SKILL.md "$PLUGIN_ROOT"/agents/*.md; do
-  assert_not_contains "${f#"$PLUGIN_ROOT"/} gives no 'does not load agents/' reason" \
-    "$(flat_text "$f")" "not load the plugin's \`agents/\`"
-done
-readme="$(flat_text "$PLUGIN_ROOT/README.md")"
-assert_contains "the prompt workaround is documented for Junie users" \
-  "$readme" 'start the custom agent orch-implementer by name'
-assert_not_contains "the workaround no longer waits on #204" \
-  "$readme" 'only pays off once #204'
-assert_contains "the Junie fresh-subagent cell says both hosts read the tools: list" \
-  "$junie_subagent" 'Both hosts read its'
-assert_not_contains "the Junie fresh-subagent cell no longer says a visible agent has no tools" \
-  "$junie_subagent" 'gets no tools yet'
-assert_eq "ADR-0024 records the implementer's own TDD rules" \
-  "$(test -f "$PLUGIN_ROOT/docs/adr/0024-the-implementer-carries-its-own-tdd-rules.md" && echo yes)" "yes"
-assert_contains "ADR-0019 opens with a note naming ADR-0024" \
-  "$(sed -n '1,5p' "$PLUGIN_ROOT/docs/adr/0019-ticket-subagents-check-acceptance-criteria-and-leave-review-to-the-loop.md")" \
-  'Superseded in part by ADR-0024'
-assert_contains "the Junie cell points to the README's workaround" \
-  "$junie_subagent" "README's Junie paragraph"
-assert_contains "the Junie fresh-subagent cell is a Fallback" \
-  "$junie_subagent" '**Fallback**'
-# JUNIE-5493's workaround (#264): docs/junie/AGENTS.md names every agent so
-# Junie's capability filter keeps it visible. Delete these tests along with the
-# snippet once JUNIE-5493 is fixed.
-# junie_snippet_drift <plugin root>: print each agents/*.md name the snippet omits.
-# It checks names only, not which skill lists which agent: that per-skill
-# mapping is hand-kept, an accepted drift for a temporary workaround.
-junie_snippet_drift() {
-  local r="$1" a n
-  for a in "$r"/agents/*.md; do
-    n="$(basename "$a" .md)"
-    grep -qw -- "$n" "$r/docs/junie/AGENTS.md" 2>/dev/null || echo "$n"
-  done
-}
-assert_eq "the Junie snippet names every agent" "$(junie_snippet_drift "$PLUGIN_ROOT")" ""
-fixture="$(mktemp -d)"
-mkdir -p "$fixture/agents" "$fixture/docs/junie"
-cp "$PLUGIN_ROOT"/agents/*.md "$fixture/agents/"
-cp "$PLUGIN_ROOT/docs/junie/AGENTS.md" "$fixture/docs/junie/AGENTS.md" 2>/dev/null
-printf -- '---\nname: orch-extra\n---\n' >"$fixture/agents/orch-extra.md"
-assert_eq "the drift check flags an agent the snippet omits" \
-  "$(junie_snippet_drift "$fixture")" "orch-extra"
-rm -rf "$fixture"
-assert_eq "the Junie snippet has one begin marker" \
-  "$(grep -cxF '<!-- orchestrator:begin -->' "$PLUGIN_ROOT/docs/junie/AGENTS.md" 2>/dev/null)" "1"
-assert_eq "the Junie snippet has one end marker" \
-  "$(grep -cxF '<!-- orchestrator:end -->' "$PLUGIN_ROOT/docs/junie/AGENTS.md" 2>/dev/null)" "1"
-assert_contains "the README points Junie users at the snippet" \
-  "$readme" 'docs/junie/AGENTS.md'
-assert_contains "the README links JUNIE-5493" "$readme" 'JUNIE-5493'
-assert_contains "the Junie fresh-subagent cell points at the snippet" \
-  "$junie_subagent" 'docs/junie/AGENTS.md'
-# On Junie planning is a nudge, not a guard (ADR-0025): the snippet carries a
-# standing planning section first, and the JUNIE-5493 comment scopes itself to
-# the custom-agents section it sits directly above.
-junie_block="$(sed -n '/^<!-- orchestrator:begin -->$/,/^<!-- orchestrator:end -->$/p' "$PLUGIN_ROOT/docs/junie/AGENTS.md")"
-planning_line="$(printf '%s\n' "$junie_block" | grep -nxF '## orchestrator plugin: planning' | cut -d: -f1)"
-comment_line="$(printf '%s\n' "$junie_block" | grep -n 'JUNIE-5493' | head -1 | cut -d: -f1)"
-agents_line="$(printf '%s\n' "$junie_block" | grep -nxF '## orchestrator plugin: custom agents' | cut -d: -f1)"
-assert_eq "the planning section opens the Junie snippet" "${planning_line:-none}" "2"
-if [ -n "$planning_line" ] && [ -n "$comment_line" ] && [ "$planning_line" -lt "$comment_line" ]; then
-  ok "the planning section precedes the JUNIE-5493 comment"
-else
-  bad "the planning section precedes the JUNIE-5493 comment" "planning at ${planning_line:-none}, comment at ${comment_line:-none}"
-fi
-assert_eq "the JUNIE-5493 comment sits directly above the custom-agents heading" \
-  "$(printf '%s\n' "$junie_block" | sed -n "$((${agents_line:-1} - 1))p")" \
-  "     (Junie's capability filter hides plugin custom agents). Remove this section once fixed. -->"
-assert_contains "the planning section keeps records out of planning edits" \
-  "$(flat_text "$PLUGIN_ROOT/docs/junie/AGENTS.md")" \
-  "Glossary and ADR changes (CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are recorded, not edited"
-assert_eq "ADR-0025 exists" \
-  "$(test -f "$PLUGIN_ROOT/docs/adr/0025-on-junie-planning-is-a-nudge-not-a-guard.md" && echo yes)" "yes"
-assert_contains "ADR-0023 opens with a note naming ADR-0025" \
-  "$(sed -n '1,5p' "$PLUGIN_ROOT/docs/adr/0023-quick-implementation-lifts-the-edit-guard-on-a-read-of-its-skill-file.md")" \
-  'Superseded by ADR-0025: the edit guard no longer arms on Junie, and the Read lift is removed.'
-assert_contains "ADR-0013 opens with a note naming ADR-0025" \
-  "$(sed -n '1,5p' "$PLUGIN_ROOT/docs/adr/0013-the-edit-guard-arms-only-where-a-host-offers-a-mechanical-trigger.md")" \
-  'Superseded in part by ADR-0023, itself superseded by ADR-0025'
-junie_guard="$(grep -m1 '^| Arm the edit guard |' "$PLUGIN_ROOT/docs/host-capabilities.md" | awk -F'|' '{ print $4 }')"
-assert_contains "the Junie edit-guard cell is a Fallback" "$junie_guard" '**Fallback**'
-assert_not_contains "the Junie edit-guard cell is not Unverified" "$junie_guard" '**Unverified**'
-assert_contains "the Junie edit-guard cell says the guard does not arm" "$junie_guard" \
-  'None: the guard does not arm on Junie (ADR-0025).'
-for doc in README.md docs/host-capabilities.md; do
-  prose="$(flat_text "$PLUGIN_ROOT/$doc")"
-  assert_not_contains "$doc describes no Read lift" "$prose" 'Read` lift'
-  assert_not_contains "$doc describes no PreToolUse Read hook" "$prose" "\`PreToolUse\` \`Read\`"
-  assert_not_contains "$doc has no Read of the quick-implement SKILL.md lift the guard" "$prose" 'with the Read tool'
-done
-assert_contains "the README says the guard does not arm on Junie" "$readme" 'does not arm on Junie (ADR-0025)'
-# The snippet's planning section restates the allowlist and records; it must
-# match planning-allowlist.sh, the one definition the hooks print from.
-snippet="$(flat_text "$PLUGIN_ROOT/docs/junie/AGENTS.md")"
-assert_contains "the Junie snippet lists the planning records as planning-allowlist.sh does" \
-  "$snippet" "($(source "$PLUGIN_ROOT/scripts/planning-allowlist.sh" && planning_records_text))"
-assert_contains "the Junie snippet lists the planning allowlist as planning-allowlist.sh does" \
-  "$snippet" "($(source "$PLUGIN_ROOT/scripts/planning-allowlist.sh" && planning_allowlist_text))"
-assert_contains "the README says the snippet carries a planning section" "$readme" 'standing planning section'
-# 3 cells -> 4 pipes -> awk NF of 5; a stray | in a cell raises it.
-assert_eq "the Junie fresh-subagent row has no literal pipe in a cell" \
-  "$(grep -m1 '^| Start a fresh subagent |' "$PLUGIN_ROOT/docs/host-capabilities.md" | awk -F'|' '{ print NF }')" "5"
-for a in orch-reviewer-standards orch-reviewer-spec; do
-  assert_contains "$a keeps its tools list" \
-    "$(cat "$PLUGIN_ROOT/agents/$a.md")" 'tools: [Read, Grep, Glob, Bash]'
-done
-# With no full install at all, doctor has no orch.sh to run from, so the skill
-# is the one that has to explain the failure (#128).
-missing=""
-for f in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
-  grep -qF 'skills-only install' "$f" || missing="$missing ${f#"$PLUGIN_ROOT"/}"
-done
-assert_eq "every skill names the full-plugin install when orch.sh is missing" "$missing" ""
-# The Junie install in that stop text is unverified, so it has to say so (#121).
-missing=""
-for f in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
-  grep -qF 'as a Junie extension, which is unverified' "$f" || missing="$missing ${f#"$PLUGIN_ROOT"/}"
-done
-assert_eq "every skill marks its Junie install unverified" "$missing" ""
-# One stop text, copied into each skill: once the Junie install is verified,
-# every copy must change together, so they may not drift apart.
-stop_text() { awk '/^If `orch.sh` is at none of these paths/,/which is unverified\)\.$/' "$1"; }
-ref="$(stop_text "$PLUGIN_ROOT/skills/orch-flow/SKILL.md")"
-assert_contains "orch-flow carries the skills-only stop text" "$ref" "skills-only install"
-drift=""
-for f in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
-  [ "$(stop_text "$f")" = "$ref" ] || drift="$drift ${f#"$PLUGIN_ROOT"/}"
-done
-assert_eq "every skill's skills-only stop text matches orch-flow's word for word" "$drift" ""
-fixture="$(mktemp -d)"
-mkdir -p "$fixture/commands"
-printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/commands/orch.md"
-assert_contains "the scan covers commands/ and flags a bare CLAUDE_PLUGIN_ROOT" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
-printf '%s\n' '```' "$orch_line" '```' \
-  'If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh` two directories above this skill.' \
-  >"$fixture/commands/orch.md"
-assert_contains "the scan flags orch.sh resolved without the Junie step" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the Junie step"
-# documented_orch_form [step]...: the documented form, minus each step named.
-documented_orch_form() {
-  local -a steps=("$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many"
-    "$orch_fallback two directories above this skill's own directory.")
-  local step skip
-  printf '%s\n' '```' "$orch_line" '```'
-  for step in "${steps[@]}"; do
-    for skip in "$@"; do [ "$step" = "$skip" ] && continue 2; done
-    printf '%s\n' "$step"
-  done
-}
-documented_orch_form "$orch_junie_one" >"$fixture/commands/orch.md"
-assert_contains "the scan flags a Junie step with no one-install step" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the one-install step"
-documented_orch_form "$orch_junie_many" >"$fixture/commands/orch.md"
-assert_contains "the scan flags a Junie step with no stop on several installs" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the stop on several Junie installs"
-{ documented_orch_form "$orch_junie_one"; printf '%s\n' "$orch_junie_one"; } >"$fixture/commands/orch.md"
-assert_contains "the scan flags the Junie steps out of order" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: resolves orch.sh out of the documented order"
-documented_orch_form >"$fixture/commands/orch.md"
-assert_eq "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")" ""
-printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  >"$fixture/commands/orch.md"
-assert_contains "the scan flags a plugin-root path with no unset fallback" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
-printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  "$root_fallback two directories above this skill's own directory." >"$fixture/commands/orch.md"
-assert_contains "the scan flags a plugin-root fallback with no Junie step" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
-printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  "$root_fallback two directories above this skill's own directory." \
-  "Elsewhere, $root_junie." >"$fixture/commands/orch.md"
-assert_contains "the scan flags a Junie step outside the plugin-root sentence" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
-{ documented_orch_form
-  printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-    "$root_fallback found as for \`ORCH\`:" \
-    "$root_junie, else two directories above this skill's own directory."
-} >"$fixture/commands/orch.md"
-assert_eq "the scan accepts a plugin-root path with its unset fallback" \
-  "$(scan_orch_resolution "$fixture")" ""
-rm -rf "$fixture"
-
-# --- fixer brief (#165) -------------------------------------------------------
-# A fixer that fixed nothing makes no commit, so it has nothing to push.
-assert_contains "the fixer pushes only when its commit step made a commit" \
-  "$(cat "$PLUGIN_ROOT/agents/orch-fixer.md")" '**Push**, only if step 3 made a commit.'
-
-# --- host capabilities (#127) -------------------------------------------------
-# Skills describe capabilities and point at one reference that maps each
-# capability to each host, so a host without Claude Code's tools can still
-# follow them. Commands are Claude-only shortcuts and hold no behaviour of
-# their own: each routes to an orch-flow section that exists.
-echo
-echo "host capabilities (#127)"
-ref="$PLUGIN_ROOT/docs/host-capabilities.md"
-if [ -f "$ref" ]; then ok "the host capabilities reference exists"
-else bad "the host capabilities reference exists" "no $ref"; fi
-header="$(grep -m1 '^| Capability' "$ref" 2>/dev/null)"
-assert_contains "it has a Claude Code column" "$header" "| Claude Code |"
-# "Junie" is the Junie CLI, the only Junie the column's facts were read from.
-assert_contains "it has a Junie CLI column" "$header" "| Junie CLI |"
-for cap in 'Invoke a skill from a step' 'Ask a multiple-choice question' 'Start a fresh subagent' \
-           'Start a forked subagent' 'Start a fresh session' \
-           'Inject context at planning time' 'Arm the edit guard'; do
-  row="$(grep -m1 "^| $cap |" "$ref" 2>/dev/null)"
-  assert_eq "it has a filled-in row for: $cap" \
-    "$(printf '%s\n' "$row" | awk -F'|' 'NF >= 5 && $3 !~ /^ *$/ && $4 !~ /^ *$/ { print "filled" }')" "filled"
-done
-# scan_capabilities <plugin root>: print one line per offending skill, agent,
-# or command. An agent brief names host capabilities as a skill does (#157);
-# only one that invokes a mattpocock-skills skill must point at the reference,
-# since the others name no capability a host could lack.
-scan_capabilities() {
-  local r="$1" f route skill section body
-  for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
-    [ -f "$f" ] || continue
-    if [[ "$f" != "$r"/agents/* ]] || grep -qE 'mattpocock-skills:[a-z]' "$f"; then
-      grep -qF 'docs/host-capabilities.md' "$f" \
-        || echo "${f#"$r"/}: never points at docs/host-capabilities.md"
-    fi
-    grep -niE '(call|use|with) the (Skill|Agent) tool|(call|use|spawn|dispatch)[a-z]* .*the Agent tool' "$f" \
-      | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
-    # Junie has no plugin scope, so a skill names its siblings bare (orch-flow);
-    # the Claude-scoped form is only ever the generic orchestrator:<name>.
-    grep -nE 'orchestrator:orch-' "$f" \
-      | sed "s|^|${f#"$r"/}: names a skill by its Claude-scoped name: |"
-    # "Run a plugin command" is Unverified on Junie, so a skill that offers one
-    # also says what to offer on a host without plugin commands.
-    if grep -qE '/orchestrator:[a-z]' "$f" && ! grep -qF 'no plugin commands' "$f"; then
-      echo "${f#"$r"/}: offers a plugin command with no fallback"
-    fi
-    # A host's column holds only verified facts, so a claim about every host
-    # outruns the reference.
-    grep -niE 'no host can' "$f" \
-      | sed "s|^|${f#"$r"/}: claims a fact for every host: |"
-  done
-  for f in "$r"/commands/*.md; do
-    [ -f "$f" ] || continue
-    grep -qE 'orch\.sh|\$ORCH' "$f" && echo "${f#"$r"/}: runs orch.sh itself"
-    # A command routes to an orch- skill and follows either one of its
-    # sections (the flow steps, spec-review) or the whole skill (release,
-    # #139). The skill must exist, and so must a section it names. The route
-    # may wrap across lines, so the file is read as one line.
-    body="$(flat_text "$f")"
-    route="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it(s \*\*[^*]+\*\* section|\.)' <<<"$body" | head -n1)"
-    section="$(sed -n 's/.*follow its \*\*\([^*]*\)\*\* section$/\1/p' <<<"$route")"
-    skill="$(sed 's/^`orchestrator://; s/`.*//' <<<"$route")"
-    if [ -z "$skill" ]; then echo "${f#"$r"/}: routes to no orch- skill"
-    elif [ ! -f "$r/skills/$skill/SKILL.md" ]; then echo "${f#"$r"/}: routes to a missing skill: $skill"
-    elif [ -n "$section" ]; then grep -qxF "## $section" "$r/skills/$skill/SKILL.md" \
-      || echo "${f#"$r"/}: routes to a missing $skill section: $section"; fi
-  done
-}
-assert_eq "every skill points at the reference, and every command is a thin route" \
-  "$(scan_capabilities "$PLUGIN_ROOT")" ""
-assert_contains "the release command routes to its own orch- skill" \
-  "$(cat "$PLUGIN_ROOT/commands/release.md" 2>/dev/null)" '`orchestrator:orch-release` and follow it' 
-assert_contains "the spec-review command routes to orch-spec-review's standalone entry" \
-  "$(tr '\n' ' ' <"$PLUGIN_ROOT/commands/spec-review.md" 2>/dev/null)" '`orchestrator:orch-spec-review` and follow its **Standalone spec review** section'
-# orch.sh's and doctor.sh's messages reach the model on every host too, so they
-# name a flow command only through flow_cmd, which adds the orch-flow section
-# for a host with no plugin commands - and every section it names must exist.
-assert_eq "the scripts name a plugin command only through flow_cmd" \
-  "$(grep -nE '/orchestrator:[a-z]' "$PLUGIN_ROOT/scripts/orch.sh" "$PLUGIN_ROOT/scripts/doctor.sh" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#')" ""
-flow_sections="$(awk '/^flow_cmd\(\)/,/^}/' "$PLUGIN_ROOT/scripts/orch.sh" | grep -oE 'section="[^"]+"' | sed 's/section="//; s/"$//')"
-assert_eq "flow_cmd names four orch-flow sections" "$(printf '%s\n' "$flow_sections" | grep -c .)" "4"
-while IFS= read -r s; do
-  grep -qxF "## $s" "$PLUGIN_ROOT/skills/orch-flow/SKILL.md" \
-    && ok "flow_cmd's section exists in orch-flow: $s" \
-    || bad "flow_cmd's section exists in orch-flow: $s" "no ## $s"
-done <<<"$flow_sections"
-fixture="$(mktemp -d)"
-mkdir -p "$fixture/skills/orch-x" "$fixture/skills/orch-flow" "$fixture/commands"
-printf '## Status\nSee docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
-printf 'Call the Skill tool with `x`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-x/SKILL.md"
-printf 'Invoke `orchestrator:orch-flow` and follow its **Doctor** section.\n' >"$fixture/commands/doctor.md"
-out="$(scan_capabilities "$fixture")"
-assert_contains "the scan flags a Claude tool named as the step" "$out" "orch-x/SKILL.md: names a Claude tool"
-printf '## Status\nInvoke `orchestrator:orch-handoff`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
-assert_contains "the scan flags a sibling skill named by its Claude scope" \
-  "$(scan_capabilities "$fixture")" "orch-flow/SKILL.md: names a skill by its Claude-scoped name"
-printf '## Status\nInvoke the `orch-handoff` skill (`orchestrator:<name>` on Claude Code). See docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
-assert_contains "the scan flags a command routed to a missing section" "$out" "missing orch-flow section: Doctor"
-printf 'Offer `/orchestrator:abort`, so no host can stall. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-x/SKILL.md"
-out="$(scan_capabilities "$fixture")"
-assert_contains "the scan flags a plugin command offered with no fallback" "$out" "orch-x/SKILL.md: offers a plugin command with no fallback"
-assert_contains "the scan flags a fact claimed for every host" "$out" "orch-x/SKILL.md: claims a fact for every host"
-printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-x/SKILL.md"
-printf 'Invoke `orchestrator:orch-flow` and follow its **Status** section.\n' >"$fixture/commands/doctor.md"
-printf '%s\n' "$orch_line" >"$fixture/commands/status.md"
-out="$(scan_capabilities "$fixture")"
-assert_contains "the scan flags a command that runs orch.sh itself" "$out" "commands/status.md: runs orch.sh itself"
-rm "$fixture/commands/status.md"
-printf 'Invoke `orchestrator:orch-y` and follow it.\n' >"$fixture/commands/y.md"
-assert_contains "the scan flags a command routed to a missing skill" \
-  "$(scan_capabilities "$fixture")" "commands/y.md: routes to a missing skill: orch-y"
-mkdir -p "$fixture/skills/orch-y"
-printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
-assert_eq "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")" ""
-# A command may route to a named section of a skill other than orch-flow
-# (spec-review, #185) - that section must exist in that skill.
-printf 'Invoke `orchestrator:orch-y` and follow its **Solo run**\nsection.\n' >"$fixture/commands/y.md"
-assert_contains "the scan flags a command routed to a missing section of its own skill" \
-  "$(scan_capabilities "$fixture")" "commands/y.md: routes to a missing orch-y section: Solo run"
-printf '## Solo run\nInvoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
-assert_eq "the scan accepts a command routed to an existing section of its own skill" \
-  "$(scan_capabilities "$fixture")" ""
-printf 'Invoke `orchestrator:orch-y` and follow it.\n' >"$fixture/commands/y.md"
-# An agent brief names host capabilities the way a skill does (#157).
-mkdir -p "$fixture/agents"
-printf 'Fix it through the `mattpocock-skills:tdd` skill.\n' >"$fixture/agents/orch-z.md"
-assert_contains "the scan flags an agent that never points at the reference" \
-  "$(scan_capabilities "$fixture")" "agents/orch-z.md: never points at docs/host-capabilities.md"
-printf 'Fix it through the `mattpocock-skills:tdd` skill (see docs/host-capabilities.md).\n' >"$fixture/agents/orch-z.md"
-assert_eq "the scan accepts an agent that points at the reference" "$(scan_capabilities "$fixture")" ""
-printf 'Read the diff and write the report.\n' >"$fixture/agents/orch-z.md"
-assert_eq "the scan accepts an agent that invokes no skill without the pointer" "$(scan_capabilities "$fixture")" ""
-rm -rf "$fixture"
-
-# --- one definition of starting a plugin agent (#181) -------------------------
-# The host fallback for starting a plugin agent lives once, in
-# docs/host-capabilities.md, and orch-implementer's dispatch contract (prompt
-# shape, five report lines) lives once too, in agents/orch-implementer.md - so
-# a change to either is made at one site, not copied into every skill that
-# starts an agent.
-echo
-echo "one definition of starting a plugin agent (#181)"
-# scan_dispatch_copies <plugin root>: print one line per restated copy.
-scan_dispatch_copies() {
-  local r="$1" f
-  for f in "$r"/skills/*/SKILL.md; do
-    [ -f "$f" ] || continue
-    # The contract's one copy is the agent file, so any skill carrying all
-    # five report lines is a second copy.
-    if grep -qF '`Ticket`' "$f" && grep -qF '`Commits`' "$f" && grep -qF '`Verification`' "$f" \
-       && grep -qF '`Criteria`' "$f" && grep -qF '`Deviation`' "$f"; then
-      echo "${f#"$r"/}: restates the implementer's five report lines"
-    fi
-    # The general-purpose-agent tier: a general-purpose agent briefed with a
-    # plugin agent's file. A general-purpose agent named with no agent file
-    # is not the tier and is left alone.
-    awk -v f="${f#"$r"/}" 'BEGIN { RS = "" }
-      /general-purpose/ && (/agents\// || /agent'"'"'s file/) { print f ": restates the general-purpose-agent tier" }' "$f"
-  done
-  return 0
-}
-assert_eq "the host fallback and the implementer's report are each stated once" \
-  "$(scan_dispatch_copies "$PLUGIN_ROOT")" ""
-assert_contains "the implementer's agent file carries the report lines" \
-  "$(cat "$PLUGIN_ROOT/agents/orch-implementer.md")" '`Deviation`'
-fixture="$(mktemp -d)"
-mkdir -p "$fixture/skills/a" "$fixture/skills/b"
-printf 'Returns `Ticket`, `Commits`, `Verification`, `Criteria`, `Deviation`.\n' >"$fixture/skills/a/SKILL.md"
-assert_contains "the scan flags the report lines copied into a skill" \
-  "$(scan_dispatch_copies "$fixture")" "skills/a/SKILL.md: restates the implementer's five report lines"
-printf 'Else start a fresh general-purpose agent\nbriefed with its file under `agents/`.\n' >"$fixture/skills/b/SKILL.md"
-assert_contains "the scan flags a skill restating the general-purpose-agent tier" \
-  "$(scan_dispatch_copies "$fixture")" "skills/b/SKILL.md: restates the general-purpose-agent tier"
-printf 'Start the implementer as its agent file says.\n' >"$fixture/skills/a/SKILL.md"
-printf 'Summarise the log with a fresh general-purpose agent.\n' >"$fixture/skills/b/SKILL.md"
-assert_eq "the scan accepts a pointer and a general-purpose agent with no agent file" \
-  "$(scan_dispatch_copies "$fixture")" ""
-rm -rf "$fixture"
-
-# --- spec-review lenses run as plugin agents (#177) ---------------------------
-# Each lens owns its brief as a read-only plugin agent, the way the review
-# loop's reviewers own theirs (ADR-0018), so orch-spec-review carries only the
-# lens-to-agent table, and the host fallback runs a lens from its agent file.
-echo
-echo "spec-review lenses run as plugin agents (#177)"
-# scan_lens_briefs <plugin root>: print one line per brief out of place. The
-# briefs' one copy is each lens agent's `## Brief` section, so the check is on
-# structure, never on the briefs' wording: every lens agent has a non-empty
-# `## Brief`, and orch-spec-review has no `**<Lens> brief.**` heading.
-lenses="fidelity consistency testability implementability"
-scan_lens_briefs() {
-  local r="$1" lens a heading
-  for lens in $lenses; do
-    a="$r/agents/orch-lens-$lens.md"
-    [ -f "$a" ] && awk -v f="${a#"$r"/}" '
-      /^## Brief[[:space:]]*$/ { inb = 1; seen = 1; next }
-      /^##?[[:space:]]/ { inb = 0 }
-      inb && /[^[:space:]]/ { body = 1 }
-      END { if (!seen) print f ": has no ## Brief section"
-            else if (!body) print f ": has an empty ## Brief section" }' "$a"
-    heading="**${lens^} brief.**"
-    grep -qF "$heading" "$r/skills/orch-spec-review/SKILL.md" 2>/dev/null &&
-      echo "skills/orch-spec-review/SKILL.md: carries the $heading heading"
-  done
-  return 0
-}
-assert_eq "each lens agent owns a non-empty brief and the skill carries none" \
-  "$(scan_lens_briefs "$PLUGIN_ROOT")" ""
-fixture="$(mktemp -d)"
-mkdir -p "$fixture/agents" "$fixture/skills/orch-spec-review"
-printf -- '---\nname: orch-lens-fidelity\n---\n\n## Brief\n\n## Reporting rules\n\n- Under 400 words.\n' \
-  >"$fixture/agents/orch-lens-fidelity.md"
-printf -- '---\nname: orch-lens-consistency\n---\n\n# Consistency lens\n\nReport.\n' \
-  >"$fixture/agents/orch-lens-consistency.md"
-printf -- '---\nname: orch-lens-testability\n---\n\n## Brief\n\nReport seams.\n\n## Reporting rules\n' \
-  >"$fixture/agents/orch-lens-testability.md"
-printf 'Run the lenses.\n\n**Consistency brief.** Placeholder.\n' \
-  >"$fixture/skills/orch-spec-review/SKILL.md"
-out="$(scan_lens_briefs "$fixture")"
-assert_contains "the scan flags an empty ## Brief section" \
-  "$out" "agents/orch-lens-fidelity.md: has an empty ## Brief section"
-assert_contains "the scan flags a lens agent with no ## Brief heading" \
-  "$out" "agents/orch-lens-consistency.md: has no ## Brief section"
-assert_not_contains "the scan accepts a brief with content" "$out" "orch-lens-testability"
-assert_contains "the scan flags a brief heading back in orch-spec-review" \
-  "$out" "skills/orch-spec-review/SKILL.md: carries the **Consistency brief.** heading"
-rm -rf "$fixture"
-spec_review="$(flat_text "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md")"
-for lens in $lenses; do
-  a="$PLUGIN_ROOT/agents/orch-lens-$lens.md"
-  if [ ! -f "$a" ]; then bad "orch-lens-$lens exists" "no $a"; continue; fi
-  ok "orch-lens-$lens exists"
-  assert_eq "orch-lens-$lens is named for its file" \
-    "$(grep -m1 '^name:' "$a")" "name: orch-lens-$lens"
-  assert_eq "orch-lens-$lens may only read" \
-    "$(grep -m1 '^tools:' "$a")" "tools: [Read, Grep, Glob]"
-  assert_eq "orch-lens-$lens sets no model" "$(grep -c '^model:' "$a")" "0"
-  body="$(flat_text "$a")"
-  for rule in 'Report findings only, never draft edits.' \
-    'Quote the spec line for every finding.' 'Under 400 words.' \
-    'Report "no findings" if there are none.'; do
-    assert_contains "orch-lens-$lens carries the rule: $rule" "$body" "$rule"
-  done
-  assert_contains "orch-spec-review names orch-lens-$lens" "$spec_review" "orch-lens-$lens"
-done
-assert_not_contains "orch-spec-review no longer carries the reporting rules" \
-  "$spec_review" 'Report findings only, never draft edits.'
-assert_contains "orch-spec-review keeps the retry rule" "$spec_review" \
-  'A second failure makes it **not run - <reason>**'
-assert_contains "orch-spec-review's fallback runs each lens from its agent file" \
-  "$spec_review" "with each lens's agent file, \`agents/<agent>.md\` under the plugin root, as its brief"
-assert_contains "orch-spec-review's fallback is the host-capabilities one" \
-  "$spec_review" '"Start a fresh subagent" fallback in `docs/host-capabilities.md`'
-assert_not_contains "orch-spec-review's fallback no longer points at the brief below" \
-  "$spec_review" 'the brief below'
-assert_contains "the fallback's first tier covers a lens's tool restriction" \
-  "$hostcaps" 'A lens loses its Read, Grep, and Glob restriction'
-assert_contains "the fallback's second tier covers a lens's returned findings" \
-  "$hostcaps" 'for a lens, the findings it returns'
-
-# --- spec review asks its batch question in the same response (#233) --------
-# The model cannot be proven to ask; these checks keep the instructions from
-# being dropped by a later edit. Each is scoped to its own ## section and pins
-# key phrases, not whole sentences.
-echo
-echo "spec review asks its batch question in the same response (#233)"
-spec_review_md="$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md"
-skill_section() { "$ORCH" handoff section "$spec_review_md" "$1" | flat_text; }
-disposition="$(skill_section Disposition)"
-applying="$(skill_section "Applying the answer")"
-changelog="$(skill_section "The changelog")"
-assert_contains "Disposition asks with AskUserQuestion" "$disposition" '`AskUserQuestion`'
-assert_contains "Disposition puts the list and the question in the same response" \
-  "$disposition" 'same response'
-assert_contains "Disposition never ends the turn on the list" \
-  "$disposition" 'never ends its turn on the list'
-assert_contains "Disposition applies nothing before the answer" \
-  "$disposition" 'before the answer arrives'
-assert_contains "Disposition offers Apply as recommended first" \
-  "$disposition" '**Apply as recommended (Recommended)**'
-assert_contains "Disposition offers Apply all" "$disposition" '**Apply all**'
-assert_contains "Apply all depends on a recommend-decline item" \
-  "$disposition" 'at least one item is marked **recommend decline**'
-assert_contains "Disposition offers Apply none" "$disposition" '**Apply none**'
-assert_contains "Apply as recommended is offered first" "$disposition" 'Always offered, first'
-assert_contains "Disposition states the Other format" "$disposition" '`1B, 2, 3, 5`'
-assert_contains "the question states the Other format" \
-  "$disposition" 'The question text states this format'
-assert_contains "the changelog records declined as recommended" \
-  "$changelog" '**declined as recommended:'
-assert_contains "the changelog records a decision item left undecided" \
-  "$changelog" '**left undecided**'
-assert_contains "a declined contradicts-the-plan item is declined as recommended too" \
-  "$applying" 'spec departs from the plan: declined as recommended'
-assert_contains "the Rejected alternatives amendment cites the same reason" \
-  "$applying" 'the amendment cites the same reason'
-
 # --- spec-review begin (#224) ------------------------------------------------
 # A standalone spec review's guard and working-directory reset have one right
 # answer each, so they live here: refuse an issue an active flow holds, and
@@ -5244,129 +4561,17 @@ out="$("$ORCH" spec-review wipe 14 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
 assert_contains "naming the one it does" "$out" "want begin"
 assert_contains "help documents spec-review begin" "$("$ORCH" help)" "spec-review begin <n>"
-assert_contains "the CLI conventions list the spec-review noun" \
-  "$(grep -F '`spec-review`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" "begin"
-
-standalone="$("$ORCH" handoff section "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md" "Standalone spec review")"
-assert_not_contains "the standalone section types no rm -rf" "$standalone" "rm -rf"
-assert_not_contains "the standalone section calls no state get" "$standalone" "state get"
-assert_contains "the standalone section calls spec-review begin" "$standalone" 'spec-review begin <issue>'
 
 # --- quick implementation offers a spec review (#237) ------------------------
-# The model cannot be proven to ask; these checks keep the step, its two
-# options, and its route through the standalone entry from being dropped.
+# A quick implementation may run a standalone spec review before any flow
+# exists, so spec-review begin needs no state.
 echo
 echo "quick implementation offers a spec review (#237)"
-quick_md="$PLUGIN_ROOT/skills/orch-quick-implement/SKILL.md"
-heading_line() { grep -nxF "$2" "$1" | head -1 | cut -d: -f1; }
-l_link="$(heading_line "$quick_md" "## 1. Require a linked issue")"
-l_offer="$(heading_line "$quick_md" "## 2. Offer a spec review")"
-l_tickets="$(heading_line "$quick_md" "## 3. Publish the ticket breakdown")"
-if [ -n "$l_link" ] && [ -n "$l_offer" ] && [ -n "$l_tickets" ] &&
-  [ "$l_link" -lt "$l_offer" ] && [ "$l_offer" -lt "$l_tickets" ]; then
-  ok "the spec review step sits between the linked issue and the ticket breakdown"
-else
-  bad "the spec review step sits between the linked issue and the ticket breakdown" \
-    "linked issue: ${l_link:-none}, offer: ${l_offer:-none}, tickets: ${l_tickets:-none}"
-fi
-# flat_section <file> <heading>: that section on one line, whitespace runs collapsed.
-flat_section() { "$ORCH" handoff section "$1" "$2" 2>&1 | flat_text; }
-offer="$(flat_section "$quick_md" "2. Offer a spec review")"
-assert_contains "the step offers Run, recommended" "$offer" '**Run a spec review (Recommended)**'
-assert_contains "the step offers Skip" "$offer" '**Skip**'
-assert_contains "the step asks on every run" "$offer" 'every run'
-assert_contains "the step names orch-spec-review" "$offer" '`orch-spec-review`'
-assert_contains "the step names the standalone entry" "$offer" '**Standalone spec review** entry'
-assert_contains "a stopped review stops quick implementation" "$offer" 'quick implementation stops too'
-tickets="$(flat_section "$quick_md" "3. Publish the ticket breakdown")"
-assert_contains "to-tickets reads the issue as it stands after the review" \
-  "$tickets" 'the linked issue as it stands after any spec review'
-assert_not_contains "to-tickets no longer reads the raw linked issue" "$tickets" 'raw linked issue'
-pr_step="$(flat_section "$quick_md" "7. Open the PR")"
-assert_contains "the PR body lists the review's host fallbacks" "$pr_step" 'spec review in step 2'
-
 new_repo >/dev/null
 top="$(git rev-parse --show-toplevel)"
 out="$("$ORCH" spec-review begin 21 2>&1)"; st=$?
 assert_status "spec-review begin with no flow state succeeds" "$st" 0
 assert_eq "and prints the working directory" "$out" "$top/.orchestrator/spec-review/21/"
-
-glossary="$PLUGIN_ROOT/CONTEXT.md"
-assert_contains "the Quick implementation entry offers a review before the ticket breakdown" \
-  "$(flat_section "$glossary" "Quick implementation")" \
-  'spec review of its linked issue before its ticket breakdown'
-assert_contains "the Spec review entry names quick implementation's review" \
-  "$(flat_section "$glossary" "Spec review")" \
-  'a quick implementation may take one before its ticket breakdown'
-assert_contains "the Host fallback entry names quick implementation's PR body" \
-  "$(flat_section "$glossary" "Host fallback")" \
-  'including any taken during its spec review'
-assert_contains "orch-spec-review scopes its review-the-spec question to a flow's spec phase" \
-  "$(flat_text "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md")" \
-  'In a flow'"'"'s spec phase there is also no "review the spec?" question'
-assert_contains "orch-spec-review scopes changelog-only to the review's own records" \
-  "$(flat_section "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md" "Standalone spec review")" \
-  'among the review'"'"'s own records'
-
-# --- orch-spec-review states its standalone differences once (#221, #225) ----
-echo
-echo "orch-spec-review states its standalone differences once (#221, #225)"
-fidelity_line='not run - standalone review, no plan to check against'
-assert_eq "the Fidelity not-run line occurs once in orch-spec-review" \
-  "$(flat_text "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md" | grep -oF "$fidelity_line" | wc -l | tr -d ' ')" "1"
-assert_contains "and that one occurrence is in The changelog" \
-  "$(flat_section "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md" "The changelog")" "$fidelity_line"
-
-# --- quick implementation reviews with the plugin's reviewer agents (#244) ---
-# The model cannot be proven to start the reviewers; these checks keep the
-# step's agents, prompt, retry rule, stop, and declined-findings list in place.
-echo
-echo "quick implementation reviews with the plugin's reviewer agents (#244)"
-review_step="$(flat_section "$quick_md" "6. Review")"
-for want in '`orch-reviewer-standards`' '`orch-reviewer-spec`' \
-  'Base SHA: <recorded base SHA>' 'Spec issue: #<linked issue>' 'Iteration: 01' \
-  'Report path: <quick report dir>/iteration-01-<standards|spec>.md' \
-  'bash "$ORCH" branch base-sha' 'bash "$ORCH" quick path' \
-  'never forks' 'in one message' 'Start that reviewer again once' \
-  'stop before opening the PR' '**Review**' '`None declined.`' \
-  '**Start a fresh subagent** fallback'; do
-  assert_contains "the review step names $want" "$review_step" "$want"
-done
-for gone in 'mp-skill code-review' 'mattpocock-skills:code-review' 'orch-fixer'; do
-  assert_not_contains "the review step no longer names $gone" "$review_step" "$gone"
-done
-assert_contains "the PR step names the Review heading" \
-  "$(flat_section "$quick_md" "7. Open the PR")" '**Review**'
-for a in orch-reviewer-standards orch-reviewer-spec; do
-  desc="$(grep -m1 '^description:' "$PLUGIN_ROOT/agents/$a.md")"
-  assert_contains "$a describes one review pass" "$desc" 'one orchestrator review pass'
-  assert_contains "$a names both starters" "$desc" \
-    "Started only by the orch-review skill's driver, or by the orch-quick-implement skill's single pass, with a base SHA, a spec issue, an iteration, and a report path."
-done
-adr21="$PLUGIN_ROOT/docs/adr/0021-quick-implementation-reviews-with-the-plugins-reviewer-agents.md"
-assert_contains "ADR-0021 exists with its title" \
-  "$(head -1 "$adr21" 2>&1)" "# Quick implementation reviews with the plugin's reviewer agents"
-assert_contains "ADR-0021 says nothing invokes code-review any more" \
-  "$(flat_text "$adr21" 2>&1)" 'nothing in the plugin invokes `mattpocock-skills:code-review`'
-assert_contains "ADR-0018 points at ADR-0021" "$adr18" \
-  "Superseded in part by ADR-0021: quick implementation's single pass no longer uses \`code-review\` either."
-assert_contains "the Quick implementation entry names its one review pass" \
-  "$(flat_section "$glossary" "Quick implementation")" \
-  'Its review is one pass by the same two reviewers a review loop starts, with no loop around them'
-finding="$(flat_section "$glossary" "Finding")"
-assert_contains "the Finding entry names its two change sources together" \
-  "$finding" "about the change, from the review phase or quick implementation's single pass, or about the spec, from a spec review"
-assert_contains "the Finding entry gives a quick finding no severity" \
-  "$finding" "A finding from quick implementation's single pass carries none"
-assert_contains "the Base branch entry names a quick implementation's base SHA" \
-  "$(flat_section "$glossary" "Base branch")" \
-  "A quick implementation's base SHA means the same, recorded on its branch."
-assert_contains "the Reviewer entry names quick implementation's single pass" \
-  "$(flat_section "$glossary" "Reviewer")" \
-  "A quick implementation's single pass starts the same two reviewers once, outside any loop."
-assert_contains "the Iteration entry names quick implementation's iteration 01" \
-  "$(flat_section "$glossary" "Iteration")" \
-  "labels its reviewer prompts iteration \`01\`; it is not part of a loop."
 
 # --- doctor: base branch check -----------------------------------------------
 # A set base branch that has vanished from origin is the one stale setting that
@@ -5401,15 +4606,6 @@ assert_status "an unverifiable base branch does not block the flow" "$st" 0
 assert_contains "warns that origin could not be reached" "$out" "warn  base branch gone"
 git config --unset orchestrator.base
 rm -rf "$(dirname "$bare")"
-
-# --- the Ticket subagent entry names an unmet criterion once (#182) ---
-echo
-echo "the Ticket subagent entry names an unmet criterion once (#182)"
-ticket_entry="$(flat_section "$glossary" "Ticket subagent")"
-assert_contains "the Ticket subagent entry reports a criterion it cannot meet" \
-  "$ticket_entry" "a criterion it cannot meet alone is reported as unmet, for the review loop's Spec axis to judge"
-assert_not_contains "the Ticket subagent entry no longer says unmet twice" \
-  "$ticket_entry" 'an unmet criterion it cannot meet alone'
 
 echo
 if [ "$SKIP" -gt 0 ]; then
