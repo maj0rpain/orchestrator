@@ -99,7 +99,8 @@ which holds the only copy of the plan.
 5. `bash "$ORCH" doctor --env`. Report its output; stop only on a non-zero exit. A
    `warn` is an observation the user should see, not a reason to cost them a
    restart - the plan is already safe on disk either way.
-6. Print the boundary (see below).
+6. `bash "$ORCH" phase boundary`, and relay its output (see **Printing the
+   boundary** below).
 
 ## Next phase
 
@@ -157,8 +158,12 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    returned as its **Spec review changelog**, and its **Ticket breakdown** as
    either the spec issue number (a published breakdown) or `None: work
    directly against #<n>` naming the spec issue (a collapsed one, per step
-   5); validate it, then `bash "$ORCH" state set phase implement`.
-7. Print the boundary.
+   5); validate it with `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path implement)"`,
+   fixing and re-validating until it passes.
+7. `bash "$ORCH" phase advance`. It validates `02-spec.md` again and checks the
+   issue is recorded before recording the implement phase; on a FAIL the phase
+   stays at spec - fix what it names and run it again. Relay its output (see
+   **Printing the boundary**).
 
 ### Phase: implement
 
@@ -209,8 +214,12 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      verification ran over the whole branch - in the shape the `orch-handoff`
      template gives. A `fail` stays here, never under **Deviations**: a
      failing verification is not a deviation.
-   Then validate it: `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path review)"`.
-6. `bash "$ORCH" state set phase review`, then print the boundary.
+   Then validate it: `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path review)"`,
+   fixing and re-validating until it passes.
+6. `bash "$ORCH" phase advance`. It validates `03-implement.md` again and checks
+   the branch, base SHA, and PR are recorded before recording the review phase;
+   on a FAIL the phase stays at implement - fix what it names and run it again.
+   Relay its output (see **Printing the boundary**).
 
 ### Phase: review
 
@@ -228,16 +237,9 @@ one did.
 ## Printing the boundary
 
 Every phase ends the same way, because the next phase needs a session this one
-cannot start:
-
-```
-Phase <name> complete. Handoff written to <path>.
-
-  Next: <fresh session>, then <next phase>
-```
-
-On Claude Code that line reads `Next: /clear, then /orchestrator:next`. On
-Junie it reads `Next: /new, then ask for the next phase with /orch-flow`.
+cannot start. `orch.sh` owns the block that says so, and its host's `Next:`
+line: `phase advance` prints it on success, and `phase boundary` prints it at
+flow start. Relay that output verbatim - never compose the block yourself.
 
 Say nothing after it. Do not start the next phase, and do not offer to.
 
@@ -322,6 +324,7 @@ scratch.
 - **One flow at a time.** `init` enforces it. For a second feature, use a second
   checkout.
 - **Never merge.** The flow opens a draft PR and stops. Merging is the user's.
-- **Never edit `.orchestrator/state.json` by hand.** Use `bash "$ORCH" state set`.
+- **Never edit `.orchestrator/state.json` by hand; the phase moves only through
+  `phase advance`, `review ready`, and redo.**
 - If a phase cannot finish, leave the state where it is, say what blocked it, and
   offer `/orchestrator:abort` (which archives rather than deletes).
