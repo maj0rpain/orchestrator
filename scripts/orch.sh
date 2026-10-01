@@ -137,6 +137,20 @@ require_issue() { require_field "$1" issue "no issue recorded in state - the spe
 # pr open and redo review both need the flow's branch before touching GitHub.
 require_branch() { require_field "$1" branch "no branch recorded in state"; }
 
+# advance needs the base SHA the review diffs against before leaving implement.
+require_base_sha() { require_field "$1" base_sha "no base SHA recorded in state - branch create records it"; }
+
+# The one writer of state.phase. It knows only which phases exist: every caller
+# - advance, review ready, both redos, and init's seed - keeps its own guard on
+# which transition it may make, so a step back needs no handoff check here.
+phase_write() {
+  case " $PHASES " in
+    *" $1 "*) ;;
+    *) die "not a flow phase: $1 (want one of: $PHASES)" ;;
+  esac
+  state_write phase "$1"
+}
+
 # --- mattpocock-skills lookup ------------------------------------------------
 #
 # Each supported host installs mattpocock-skills somewhere else, in another
@@ -475,10 +489,11 @@ cmd_init() {
   # base is fixed here and never rewritten - not by redo, not by a later
   # `base set` - so a flow's fork point and PR target cannot move under it.
   jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" --arg base "$(base_branch)" '{
-    slug: $slug, phase: "spec", issue: (if $issue == "" then null else ($issue | tonumber) end),
+    slug: $slug, phase: null, issue: (if $issue == "" then null else ($issue | tonumber) end),
     base: $base, branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
     flake_rerun_used: false, redo_count: 0, host_fallbacks: true, created: $now, updated: $now
   }' >"$STATE"
+  phase_write spec
   [ -z "$archive_note" ] || note "$archive_note"
   note "$slug"
 }
@@ -614,6 +629,76 @@ cmd_handoff() {
         seen { held++ }'
       ;;
     *) die "unknown handoff op: ${op:-<none>} (want path|validate|section)" ;;
+  esac
+}
+
+# --- phases -----------------------------------------------------------------
+
+# The block that ends every phase, for the handoff the phase now recorded
+# reads: the next phase needs a fresh session this one cannot start, so the
+# block names it in the host's own words. Off a known host it falls back to
+# naming the flow command the way flow_cmd does.
+print_boundary() {
+  local phase="$1" done_name file next
+  case "$phase" in
+    spec)      done_name=plan ;;
+    implement) done_name=spec ;;
+    review)    done_name=implement ;;
+    *) die "no phase boundary at phase: $phase - the flow is not between phases" ;;
+  esac
+  file="$(handoff_file_for "$phase")"
+  case "$(host_detect)" in
+    claude) next="/clear, then $(flow_cmd next)" ;;
+    junie)  next="/new, then ask for the next phase with /orch-flow" ;;
+    *)      next="a fresh session, then $(flow_cmd next)" ;;
+  esac
+  printf 'Phase %s complete. Handoff written to %s/%s.\n\n  Next: %s\n' \
+    "$done_name" "$HANDOFF_DIR" "$file" "$next"
+}
+
+cmd_phase() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    advance)
+      [ $# -eq 0 ] || die "usage: orch.sh phase advance"
+      require_state
+      local phase next file report line failed=0 field
+      phase="$(state_get phase)"
+      case "$phase" in
+        spec)      next=implement ;;
+        implement) next=review ;;
+        review)    die "the review phase ends through review ready, once the PR is ready - phase advance does not leave it" ;;
+        done)      die "the flow is done - there is no phase to advance to" ;;
+        *)         die "not a flow phase: '$phase' - run orch.sh doctor --flow" ;;
+      esac
+      # The handoff this phase writes is the one the next phase reads. It is
+      # checked before the state fields so a missing handoff - the likelier
+      # gap - is the one reported.
+      file="$HANDOFF_DIR/$(handoff_file_for "$next")"
+      [ -f "$file" ] || die "handoff not found: $file - write it before leaving the $phase phase"
+      report="$(handoff_report "$file")" || failed=1
+      if [ "$failed" -ne 0 ]; then
+        while IFS= read -r line; do
+          case "$line" in
+            "FAIL "*) note "FAIL  ${line#FAIL }" ;;
+          esac
+        done <<<"$report"
+        die "$file is not valid - fix it, then run phase advance again; the flow stays at $phase"
+      fi
+      case "$next" in
+        implement) require_issue field ;;
+        review)    require_branch field; require_base_sha field; require_pr field ;;
+      esac
+      phase_write "$next"
+      print_boundary "$next"
+      ;;
+    boundary)
+      [ $# -eq 0 ] || die "usage: orch.sh phase boundary"
+      require_state
+      print_boundary "$(state_get phase)"
+      ;;
+    *) die "unknown phase op: ${op:-<none>} (want advance|boundary)" ;;
   esac
 }
 
@@ -927,7 +1012,7 @@ cmd_review() {
       # phase left to retry it from.
       adapter_pr_ready "$pr" >/dev/null 2>&1 \
         || die "gh could not mark PR #$pr ready - the flow stays in review"
-      state_write phase done
+      phase_write done
       note "$pr"
       ;;
     ci)
@@ -1654,7 +1739,7 @@ cmd_redo_review() {
   state_write pr null
   state_write base_sha null
   state_write iteration 0
-  state_write phase implement
+  phase_write implement
   note "$new_n"
 }
 
@@ -1680,7 +1765,7 @@ cmd_redo_spec() {
     adapter_issue_close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
     state_write issue null
   fi
-  state_write phase spec
+  phase_write spec
 }
 
 cmd_redo() {
@@ -1776,6 +1861,16 @@ orch.sh - deterministic operations for the orchestrator flow
                               to a hyphen, trimmed
   state get [key]             print state.json, or one key
   state set <key> <value>     update one key
+  phase advance               leave the current phase: validate the handoff
+                              it writes for the next one (02-spec.md from
+                              spec, 03-implement.md from implement) and the
+                              state the next one needs (issue; branch,
+                              base_sha, pr), then record the next phase and
+                              print the boundary. On a FAIL the phase stays.
+                              Refuses at review (use review ready) and done
+  phase boundary              print the block that ends a phase - the
+                              handoff the current phase reads, and the
+                              host's Next line
   handoff path <phase>        print the handoff path for a phase
   handoff validate <file>     check required sections exist and are non-empty
   handoff section <file> <heading>
@@ -1901,6 +1996,7 @@ main() {
     slug)          cmd_slug "$@" ;;
     state)         cmd_state "$@" ;;
     handoff)       cmd_handoff "$@" ;;
+    phase)         cmd_phase "$@" ;;
     branch)        cmd_branch "$@" ;;
     issue)         cmd_issue "$@" ;;
     pr)            cmd_pr "$@" ;;
