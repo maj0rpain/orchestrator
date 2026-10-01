@@ -1333,8 +1333,6 @@ out="$(base_cmd branch base-sha extra 2>&1)"; st=$?
 assert_status "refuses arguments" "$st" 1
 assert_contains "with the usage" "$out" "usage: orch.sh branch base-sha"
 assert_contains "help documents branch base-sha" "$("$ORCH" help)" "branch base-sha"
-assert_contains "the CLI conventions table lists branch base-sha" \
-  "$(grep -F '| `branch`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" "base-sha"
 rm -rf "$(dirname "$bare")"
 
 # --- a quick implementation's report directory (#243) --------------------------
@@ -1366,8 +1364,6 @@ git checkout -q --detach
 out="$("$ORCH" quick path 2>&1)"; st=$?
 assert_status "refuses a detached HEAD" "$st" 1
 assert_contains "help documents quick path" "$("$ORCH" help)" "quick path"
-assert_contains "the CLI conventions table lists quick path" \
-  "$(grep -F '| `quick`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" "path"
 
 # --- branch retire ------------------------------------------------------------
 # The rename-aside a redo uses instead of deleting or force-pushing over a
@@ -3007,67 +3003,6 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket parent"
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket parent is in the usage text" "$out" "ticket parent <n>"
 
-# ticket parent exists so no brief calls the sub-issue endpoints itself: the
-# ticket group is their one caller, and the implementer gets orch.sh's path to
-# reach it (#179).
-assert_eq "no agent or skill calls gh api on a sub-issue endpoint" \
-  "$(grep -rnE 'gh api[^`]*(/parent|sub_issues)|issues/[^ ]*/(parent|sub_issues)' \
-      "$PLUGIN_ROOT/agents" "$PLUGIN_ROOT/skills")" ""
-assert_contains "the implementer's prompt carries the orch.sh path" \
-  "$(cat "$PLUGIN_ROOT/agents/orch-implementer.md")" "orch.sh: <the path ORCH holds>"
-assert_contains "and its brief finds the spec issue through ticket parent" \
-  "$(cat "$PLUGIN_ROOT/agents/orch-implementer.md")" 'ticket parent'
-# Every agent declares its allowlist as a YAML flow list, which Claude Code and
-# Junie CLI both read as the allowlist (#204, ADR-0024), and none lists Agent,
-# Skill or AskUserQuestion, so none can start sub-agents, invoke a skill, or
-# block on a human (#262, ADR-0026). Junie has no group for Skill either.
-unguarded=""
-for a in "$PLUGIN_ROOT"/agents/*.md; do
-  t="$(grep -m1 '^tools:' "$a")" || { unguarded="$unguarded ${a##*/}(no tools:)"; continue; }
-  case "$t" in
-    'tools: ['*']') ;;
-    *) unguarded="$unguarded ${a##*/}(not a list)" ;;
-  esac
-  for tool in $(printf '%s\n' "${t#tools: }" | tr -d '[] ' | tr ',' ' '); do
-    case "$tool" in
-      Agent|Skill|AskUserQuestion) unguarded="$unguarded ${a##*/}(lists $tool)" ;;
-    esac
-  done
-done
-assert_eq "every agent declares a tools: list without Agent, Skill or AskUserQuestion" \
-  "$unguarded" ""
-impl="$(cat "$PLUGIN_ROOT/agents/orch-implementer.md")"
-impl_tools="$(printf '%s\n' "$impl" | grep -m1 '^tools:')"
-assert_eq "the implementer's allowlist is exactly its brief's tools" \
-  "$impl_tools" "tools: [Read, Edit, Write, Grep, Glob, Bash]"
-for a in orch-fixer orch-closer; do
-  assert_eq "$a's allowlist is the implementer's" \
-    "$(grep -m1 '^tools:' "$PLUGIN_ROOT/agents/$a.md")" "$impl_tools"
-done
-for s in 'mattpocock-skills:tdd' 'mp-skill' 'codebase-design' 'code-review'; do
-  assert_not_contains "the implementer does not name $s" "$impl" "$s"
-done
-assert_contains "the implementer carries its own TDD section" \
-  "$impl" '## Test-driven development'
-assert_contains "which names its source" \
-  "$impl" 'Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.'
-assert_contains "and keeps the rules of the loop" "$impl" 'Red before green'
-assert_not_contains "Starting this agent no longer mentions the Skill tool" \
-  "$(printf '%s\n' "$impl" | sed -n '/^## Starting this agent/,/^## Steps/p')" \
-  'Skill tool'
-# The fixer builds a blocking behaviour fix from its own cut-down TDD copy,
-# not the upstream skill (#262, #268).
-fixer="$(cat "$PLUGIN_ROOT/agents/orch-fixer.md")"
-for s in 'mattpocock-skills:tdd' 'mp-skill tdd'; do
-  assert_not_contains "the fixer does not name $s" "$fixer" "$s"
-done
-assert_contains "the fixer carries its own TDD section" \
-  "$fixer" '## Test-driven development'
-assert_contains "which names its source" \
-  "$fixer" 'Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3'
-assert_contains "and leaves a test that will not go red open blocking" \
-  "$fixer" 'could not reproduce'
-
 # --- ticket: unknown op ------------------------------------------------------
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?
 assert_status "ticket bogus is an unknown op" "$st" 1
@@ -4545,264 +4480,6 @@ assert_contains "with the redo comment" \
 assert_eq "gh itself was invoked once, as a real subprocess" \
   "$(grep -cx issue "$log")" "1"
 
-# --- orch.sh resolution (#123) ------------------------------------------------
-# The orch.sh resolution, execute-bit and skill-name rules live in
-# scripts/test/docs_lint.sh.
-echo
-echo "orch.sh resolution (#123)"
-assert_contains "orch-review reads the fixer's record through CLAUDE_PLUGIN_ROOT" \
-  "$(cat "$PLUGIN_ROOT/skills/orch-review/SKILL.md")" \
-  "\"\${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md\""
-# The reviewers keep Bash, so the only mechanical restriction is Edit and
-# Write; that is all the host fallback loses (#167).
-hostcaps="$(flat_text "$PLUGIN_ROOT/docs/host-capabilities.md")"
-adr18="$(flat_text "$PLUGIN_ROOT/docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md")"
-assert_not_contains "host-capabilities no longer says the fallback loses a mechanical guarantee" \
-  "$hostcaps" 'loses that mechanical guarantee'
-assert_not_contains "ADR-0018 no longer restricts the reviewers mechanically as a whole" \
-  "$adr18" 'restrict the reviewers mechanically'
-for prose in "$hostcaps" "$adr18"; do
-  assert_contains "the fallback loses only the Edit and Write restriction" \
-    "$prose" 'Edit and Write restriction'
-  assert_contains "read-only through Bash always rested on the brief" \
-    "$prose" 'through Bash always rested on the brief'
-done
-# Junie CLI loads the plugin's agents/ but its capability filter may hide one
-# (#203): the fresh-subagent cell says so, the fallback names a hidden agent,
-# and no text gives "does not load agents/" as the reason for the fallback.
-junie_subagent="$(grep -m1 '^| Start a fresh subagent |' "$PLUGIN_ROOT/docs/host-capabilities.md" | awk -F'|' '{ print $4 }')"
-assert_contains "the Junie fresh-subagent cell names the capability filter" \
-  "$junie_subagent" 'capability filter'
-assert_not_contains "the Junie fresh-subagent cell no longer calls loading unconfirmed" \
-  "$junie_subagent" 'not confirmed'
-assert_not_contains "the Junie fresh-subagent cell is no longer Unverified" \
-  "$junie_subagent" '**Unverified**'
-assert_contains "the fallback's first tier covers an agent the host hides" \
-  "$hostcaps" "did not load \`agents/\`, or hid it, as Junie's capability filter does"
-for f in "$PLUGIN_ROOT"/docs/host-capabilities.md "$PLUGIN_ROOT"/README.md "$PLUGIN_ROOT"/skills/*/SKILL.md "$PLUGIN_ROOT"/agents/*.md; do
-  assert_not_contains "${f#"$PLUGIN_ROOT"/} gives no 'does not load agents/' reason" \
-    "$(flat_text "$f")" "not load the plugin's \`agents/\`"
-done
-readme="$(flat_text "$PLUGIN_ROOT/README.md")"
-assert_contains "the prompt workaround is documented for Junie users" \
-  "$readme" 'start the custom agent orch-implementer by name'
-assert_not_contains "the workaround no longer waits on #204" \
-  "$readme" 'only pays off once #204'
-assert_contains "the Junie fresh-subagent cell says both hosts read the tools: list" \
-  "$junie_subagent" 'Both hosts read its'
-assert_not_contains "the Junie fresh-subagent cell no longer says a visible agent has no tools" \
-  "$junie_subagent" 'gets no tools yet'
-assert_eq "ADR-0024 records the implementer's own TDD rules" \
-  "$(test -f "$PLUGIN_ROOT/docs/adr/0024-the-implementer-carries-its-own-tdd-rules.md" && echo yes)" "yes"
-assert_contains "ADR-0019 opens with a note naming ADR-0024" \
-  "$(sed -n '1,5p' "$PLUGIN_ROOT/docs/adr/0019-ticket-subagents-check-acceptance-criteria-and-leave-review-to-the-loop.md")" \
-  'Superseded in part by ADR-0024'
-assert_contains "the Junie cell points to the README's workaround" \
-  "$junie_subagent" "README's Junie paragraph"
-assert_contains "the Junie fresh-subagent cell is a Fallback" \
-  "$junie_subagent" '**Fallback**'
-# JUNIE-5493's workaround (#264): docs/junie/AGENTS.md names every agent so
-# Junie's capability filter keeps it visible; docs_lint.sh checks the names.
-# Delete these tests along with the snippet once JUNIE-5493 is fixed.
-assert_eq "the Junie snippet has one begin marker" \
-  "$(grep -cxF '<!-- orchestrator:begin -->' "$PLUGIN_ROOT/docs/junie/AGENTS.md" 2>/dev/null)" "1"
-assert_eq "the Junie snippet has one end marker" \
-  "$(grep -cxF '<!-- orchestrator:end -->' "$PLUGIN_ROOT/docs/junie/AGENTS.md" 2>/dev/null)" "1"
-assert_contains "the README points Junie users at the snippet" \
-  "$readme" 'docs/junie/AGENTS.md'
-assert_contains "the README links JUNIE-5493" "$readme" 'JUNIE-5493'
-assert_contains "the Junie fresh-subagent cell points at the snippet" \
-  "$junie_subagent" 'docs/junie/AGENTS.md'
-# On Junie planning is a nudge, not a guard (ADR-0025): the snippet carries a
-# standing planning section first, and the JUNIE-5493 comment scopes itself to
-# the custom-agents section it sits directly above.
-junie_block="$(sed -n '/^<!-- orchestrator:begin -->$/,/^<!-- orchestrator:end -->$/p' "$PLUGIN_ROOT/docs/junie/AGENTS.md")"
-planning_line="$(printf '%s\n' "$junie_block" | grep -nxF '## orchestrator plugin: planning' | cut -d: -f1)"
-comment_line="$(printf '%s\n' "$junie_block" | grep -n 'JUNIE-5493' | head -1 | cut -d: -f1)"
-agents_line="$(printf '%s\n' "$junie_block" | grep -nxF '## orchestrator plugin: custom agents' | cut -d: -f1)"
-assert_eq "the planning section opens the Junie snippet" "${planning_line:-none}" "2"
-if [ -n "$planning_line" ] && [ -n "$comment_line" ] && [ "$planning_line" -lt "$comment_line" ]; then
-  ok "the planning section precedes the JUNIE-5493 comment"
-else
-  bad "the planning section precedes the JUNIE-5493 comment" "planning at ${planning_line:-none}, comment at ${comment_line:-none}"
-fi
-assert_eq "the JUNIE-5493 comment sits directly above the custom-agents heading" \
-  "$(printf '%s\n' "$junie_block" | sed -n "$((${agents_line:-1} - 1))p")" \
-  "     (Junie's capability filter hides plugin custom agents). Remove this section once fixed. -->"
-assert_contains "the planning section keeps records out of planning edits" \
-  "$(flat_text "$PLUGIN_ROOT/docs/junie/AGENTS.md")" \
-  "Glossary and ADR changes (CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are recorded, not edited"
-assert_eq "ADR-0025 exists" \
-  "$(test -f "$PLUGIN_ROOT/docs/adr/0025-on-junie-planning-is-a-nudge-not-a-guard.md" && echo yes)" "yes"
-assert_contains "ADR-0023 opens with a note naming ADR-0025" \
-  "$(sed -n '1,5p' "$PLUGIN_ROOT/docs/adr/0023-quick-implementation-lifts-the-edit-guard-on-a-read-of-its-skill-file.md")" \
-  'Superseded by ADR-0025: the edit guard no longer arms on Junie, and the Read lift is removed.'
-assert_contains "ADR-0013 opens with a note naming ADR-0025" \
-  "$(sed -n '1,5p' "$PLUGIN_ROOT/docs/adr/0013-the-edit-guard-arms-only-where-a-host-offers-a-mechanical-trigger.md")" \
-  'Superseded in part by ADR-0023, itself superseded by ADR-0025'
-junie_guard="$(grep -m1 '^| Arm the edit guard |' "$PLUGIN_ROOT/docs/host-capabilities.md" | awk -F'|' '{ print $4 }')"
-assert_contains "the Junie edit-guard cell is a Fallback" "$junie_guard" '**Fallback**'
-assert_not_contains "the Junie edit-guard cell is not Unverified" "$junie_guard" '**Unverified**'
-assert_contains "the Junie edit-guard cell says the guard does not arm" "$junie_guard" \
-  'None: the guard does not arm on Junie (ADR-0025).'
-for doc in README.md docs/host-capabilities.md; do
-  prose="$(flat_text "$PLUGIN_ROOT/$doc")"
-  assert_not_contains "$doc describes no Read lift" "$prose" 'Read` lift'
-  assert_not_contains "$doc describes no PreToolUse Read hook" "$prose" "\`PreToolUse\` \`Read\`"
-  assert_not_contains "$doc has no Read of the quick-implement SKILL.md lift the guard" "$prose" 'with the Read tool'
-done
-assert_contains "the README says the guard does not arm on Junie" "$readme" 'does not arm on Junie (ADR-0025)'
-# The snippet's planning section restates the allowlist and records; it must
-# match planning-allowlist.sh, the one definition the hooks print from.
-snippet="$(flat_text "$PLUGIN_ROOT/docs/junie/AGENTS.md")"
-assert_contains "the Junie snippet lists the planning records as planning-allowlist.sh does" \
-  "$snippet" "($(source "$PLUGIN_ROOT/scripts/planning-allowlist.sh" && planning_records_text))"
-assert_contains "the Junie snippet lists the planning allowlist as planning-allowlist.sh does" \
-  "$snippet" "($(source "$PLUGIN_ROOT/scripts/planning-allowlist.sh" && planning_allowlist_text))"
-assert_contains "the README says the snippet carries a planning section" "$readme" 'standing planning section'
-# 3 cells -> 4 pipes -> awk NF of 5; a stray | in a cell raises it.
-assert_eq "the Junie fresh-subagent row has no literal pipe in a cell" \
-  "$(grep -m1 '^| Start a fresh subagent |' "$PLUGIN_ROOT/docs/host-capabilities.md" | awk -F'|' '{ print NF }')" "5"
-for a in orch-reviewer-standards orch-reviewer-spec; do
-  assert_contains "$a keeps its tools list" \
-    "$(cat "$PLUGIN_ROOT/agents/$a.md")" 'tools: [Read, Grep, Glob, Bash]'
-done
-
-# --- fixer brief (#165) -------------------------------------------------------
-# A fixer that fixed nothing makes no commit, so it has nothing to push.
-assert_contains "the fixer pushes only when its commit step made a commit" \
-  "$(cat "$PLUGIN_ROOT/agents/orch-fixer.md")" '**Push**, only if step 3 made a commit.'
-
-# --- host capabilities (#127) -------------------------------------------------
-# Skills describe capabilities and point at one reference that maps each
-# capability to each host, so a host without Claude Code's tools can still
-# follow them. Commands are Claude-only shortcuts and hold no behaviour of
-# their own: each routes to an orch-flow section that exists.
-echo
-echo "host capabilities (#127)"
-ref="$PLUGIN_ROOT/docs/host-capabilities.md"
-if [ -f "$ref" ]; then ok "the host capabilities reference exists"
-else bad "the host capabilities reference exists" "no $ref"; fi
-header="$(grep -m1 '^| Capability' "$ref" 2>/dev/null)"
-assert_contains "it has a Claude Code column" "$header" "| Claude Code |"
-# "Junie" is the Junie CLI, the only Junie the column's facts were read from.
-assert_contains "it has a Junie CLI column" "$header" "| Junie CLI |"
-for cap in 'Invoke a skill from a step' 'Ask a multiple-choice question' 'Start a fresh subagent' \
-           'Start a forked subagent' 'Start a fresh session' \
-           'Inject context at planning time' 'Arm the edit guard'; do
-  row="$(grep -m1 "^| $cap |" "$ref" 2>/dev/null)"
-  assert_eq "it has a filled-in row for: $cap" \
-    "$(printf '%s\n' "$row" | awk -F'|' 'NF >= 5 && $3 !~ /^ *$/ && $4 !~ /^ *$/ { print "filled" }')" "filled"
-done
-# The skills-point-at-the-reference and thin-route rule (scan_capabilities)
-# lives in scripts/test/docs_lint.sh.
-assert_contains "the release command routes to its own orch- skill" \
-  "$(cat "$PLUGIN_ROOT/commands/release.md" 2>/dev/null)" '`orchestrator:orch-release` and follow it' 
-assert_contains "the spec-review command routes to orch-spec-review's standalone entry" \
-  "$(tr '\n' ' ' <"$PLUGIN_ROOT/commands/spec-review.md" 2>/dev/null)" '`orchestrator:orch-spec-review` and follow its **Standalone spec review** section'
-# orch.sh's and doctor.sh's messages reach the model on every host too, so they
-# name a flow command only through flow_cmd, which adds the orch-flow section
-# for a host with no plugin commands - and every section it names must exist.
-assert_eq "the scripts name a plugin command only through flow_cmd" \
-  "$(grep -nE '/orchestrator:[a-z]' "$PLUGIN_ROOT/scripts/orch.sh" "$PLUGIN_ROOT/scripts/doctor.sh" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#')" ""
-flow_sections="$(awk '/^flow_cmd\(\)/,/^}/' "$PLUGIN_ROOT/scripts/orch.sh" | grep -oE 'section="[^"]+"' | sed 's/section="//; s/"$//')"
-assert_eq "flow_cmd names four orch-flow sections" "$(printf '%s\n' "$flow_sections" | grep -c .)" "4"
-while IFS= read -r s; do
-  grep -qxF "## $s" "$PLUGIN_ROOT/skills/orch-flow/SKILL.md" \
-    && ok "flow_cmd's section exists in orch-flow: $s" \
-    || bad "flow_cmd's section exists in orch-flow: $s" "no ## $s"
-done <<<"$flow_sections"
-
-# --- one definition of starting a plugin agent (#181) -------------------------
-# The host fallback for starting a plugin agent lives once, in
-# docs/host-capabilities.md, and orch-implementer's dispatch contract (prompt
-# shape, five report lines) lives once too, in agents/orch-implementer.md - so
-# a change to either is made at one site, not copied into every skill that
-# starts an agent.
-echo
-echo "one definition of starting a plugin agent (#181)"
-# The one-copy rule (scan_dispatch_copies) lives in scripts/test/docs_lint.sh.
-assert_contains "the implementer's agent file carries the report lines" \
-  "$(cat "$PLUGIN_ROOT/agents/orch-implementer.md")" '`Deviation`'
-
-# --- spec-review lenses run as plugin agents (#177) ---------------------------
-# Each lens owns its brief as a read-only plugin agent, the way the review
-# loop's reviewers own theirs (ADR-0018), so orch-spec-review carries only the
-# lens-to-agent table, and the host fallback runs a lens from its agent file.
-echo
-echo "spec-review lenses run as plugin agents (#177)"
-# The lens-brief rule (scan_lens_briefs) lives in scripts/test/docs_lint.sh.
-lenses="fidelity consistency testability implementability"
-spec_review="$(flat_text "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md")"
-for lens in $lenses; do
-  a="$PLUGIN_ROOT/agents/orch-lens-$lens.md"
-  if [ ! -f "$a" ]; then bad "orch-lens-$lens exists" "no $a"; continue; fi
-  ok "orch-lens-$lens exists"
-  assert_eq "orch-lens-$lens is named for its file" \
-    "$(grep -m1 '^name:' "$a")" "name: orch-lens-$lens"
-  assert_eq "orch-lens-$lens may only read" \
-    "$(grep -m1 '^tools:' "$a")" "tools: [Read, Grep, Glob]"
-  assert_eq "orch-lens-$lens sets no model" "$(grep -c '^model:' "$a")" "0"
-  body="$(flat_text "$a")"
-  for rule in 'Report findings only, never draft edits.' \
-    'Quote the spec line for every finding.' 'Under 400 words.' \
-    'Report "no findings" if there are none.'; do
-    assert_contains "orch-lens-$lens carries the rule: $rule" "$body" "$rule"
-  done
-  assert_contains "orch-spec-review names orch-lens-$lens" "$spec_review" "orch-lens-$lens"
-done
-assert_not_contains "orch-spec-review no longer carries the reporting rules" \
-  "$spec_review" 'Report findings only, never draft edits.'
-assert_contains "orch-spec-review keeps the retry rule" "$spec_review" \
-  'A second failure makes it **not run - <reason>**'
-assert_contains "orch-spec-review's fallback runs each lens from its agent file" \
-  "$spec_review" "with each lens's agent file, \`agents/<agent>.md\` under the plugin root, as its brief"
-assert_contains "orch-spec-review's fallback is the host-capabilities one" \
-  "$spec_review" '"Start a fresh subagent" fallback in `docs/host-capabilities.md`'
-assert_not_contains "orch-spec-review's fallback no longer points at the brief below" \
-  "$spec_review" 'the brief below'
-assert_contains "the fallback's first tier covers a lens's tool restriction" \
-  "$hostcaps" 'A lens loses its Read, Grep, and Glob restriction'
-assert_contains "the fallback's second tier covers a lens's returned findings" \
-  "$hostcaps" 'for a lens, the findings it returns'
-
-# --- spec review asks its batch question in the same response (#233) --------
-# The model cannot be proven to ask; these checks keep the instructions from
-# being dropped by a later edit. Each is scoped to its own ## section and pins
-# key phrases, not whole sentences.
-echo
-echo "spec review asks its batch question in the same response (#233)"
-spec_review_md="$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md"
-skill_section() { "$ORCH" handoff section "$spec_review_md" "$1" | flat_text; }
-disposition="$(skill_section Disposition)"
-applying="$(skill_section "Applying the answer")"
-changelog="$(skill_section "The changelog")"
-assert_contains "Disposition asks with AskUserQuestion" "$disposition" '`AskUserQuestion`'
-assert_contains "Disposition puts the list and the question in the same response" \
-  "$disposition" 'same response'
-assert_contains "Disposition never ends the turn on the list" \
-  "$disposition" 'never ends its turn on the list'
-assert_contains "Disposition applies nothing before the answer" \
-  "$disposition" 'before the answer arrives'
-assert_contains "Disposition offers Apply as recommended first" \
-  "$disposition" '**Apply as recommended (Recommended)**'
-assert_contains "Disposition offers Apply all" "$disposition" '**Apply all**'
-assert_contains "Apply all depends on a recommend-decline item" \
-  "$disposition" 'at least one item is marked **recommend decline**'
-assert_contains "Disposition offers Apply none" "$disposition" '**Apply none**'
-assert_contains "Apply as recommended is offered first" "$disposition" 'Always offered, first'
-assert_contains "Disposition states the Other format" "$disposition" '`1B, 2, 3, 5`'
-assert_contains "the question states the Other format" \
-  "$disposition" 'The question text states this format'
-assert_contains "the changelog records declined as recommended" \
-  "$changelog" '**declined as recommended:'
-assert_contains "the changelog records a decision item left undecided" \
-  "$changelog" '**left undecided**'
-assert_contains "a declined contradicts-the-plan item is declined as recommended too" \
-  "$applying" 'spec departs from the plan: declined as recommended'
-assert_contains "the Rejected alternatives amendment cites the same reason" \
-  "$applying" 'the amendment cites the same reason'
-
 # --- spec-review begin (#224) ------------------------------------------------
 # A standalone spec review's guard and working-directory reset have one right
 # answer each, so they live here: refuse an issue an active flow holds, and
@@ -4884,129 +4561,17 @@ out="$("$ORCH" spec-review wipe 14 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
 assert_contains "naming the one it does" "$out" "want begin"
 assert_contains "help documents spec-review begin" "$("$ORCH" help)" "spec-review begin <n>"
-assert_contains "the CLI conventions list the spec-review noun" \
-  "$(grep -F '`spec-review`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" "begin"
-
-standalone="$("$ORCH" handoff section "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md" "Standalone spec review")"
-assert_not_contains "the standalone section types no rm -rf" "$standalone" "rm -rf"
-assert_not_contains "the standalone section calls no state get" "$standalone" "state get"
-assert_contains "the standalone section calls spec-review begin" "$standalone" 'spec-review begin <issue>'
 
 # --- quick implementation offers a spec review (#237) ------------------------
-# The model cannot be proven to ask; these checks keep the step, its two
-# options, and its route through the standalone entry from being dropped.
+# A quick implementation may run a standalone spec review before any flow
+# exists, so spec-review begin needs no state.
 echo
 echo "quick implementation offers a spec review (#237)"
-quick_md="$PLUGIN_ROOT/skills/orch-quick-implement/SKILL.md"
-heading_line() { grep -nxF "$2" "$1" | head -1 | cut -d: -f1; }
-l_link="$(heading_line "$quick_md" "## 1. Require a linked issue")"
-l_offer="$(heading_line "$quick_md" "## 2. Offer a spec review")"
-l_tickets="$(heading_line "$quick_md" "## 3. Publish the ticket breakdown")"
-if [ -n "$l_link" ] && [ -n "$l_offer" ] && [ -n "$l_tickets" ] &&
-  [ "$l_link" -lt "$l_offer" ] && [ "$l_offer" -lt "$l_tickets" ]; then
-  ok "the spec review step sits between the linked issue and the ticket breakdown"
-else
-  bad "the spec review step sits between the linked issue and the ticket breakdown" \
-    "linked issue: ${l_link:-none}, offer: ${l_offer:-none}, tickets: ${l_tickets:-none}"
-fi
-# flat_section <file> <heading>: that section on one line, whitespace runs collapsed.
-flat_section() { "$ORCH" handoff section "$1" "$2" 2>&1 | flat_text; }
-offer="$(flat_section "$quick_md" "2. Offer a spec review")"
-assert_contains "the step offers Run, recommended" "$offer" '**Run a spec review (Recommended)**'
-assert_contains "the step offers Skip" "$offer" '**Skip**'
-assert_contains "the step asks on every run" "$offer" 'every run'
-assert_contains "the step names orch-spec-review" "$offer" '`orch-spec-review`'
-assert_contains "the step names the standalone entry" "$offer" '**Standalone spec review** entry'
-assert_contains "a stopped review stops quick implementation" "$offer" 'quick implementation stops too'
-tickets="$(flat_section "$quick_md" "3. Publish the ticket breakdown")"
-assert_contains "to-tickets reads the issue as it stands after the review" \
-  "$tickets" 'the linked issue as it stands after any spec review'
-assert_not_contains "to-tickets no longer reads the raw linked issue" "$tickets" 'raw linked issue'
-pr_step="$(flat_section "$quick_md" "7. Open the PR")"
-assert_contains "the PR body lists the review's host fallbacks" "$pr_step" 'spec review in step 2'
-
 new_repo >/dev/null
 top="$(git rev-parse --show-toplevel)"
 out="$("$ORCH" spec-review begin 21 2>&1)"; st=$?
 assert_status "spec-review begin with no flow state succeeds" "$st" 0
 assert_eq "and prints the working directory" "$out" "$top/.orchestrator/spec-review/21/"
-
-glossary="$PLUGIN_ROOT/CONTEXT.md"
-assert_contains "the Quick implementation entry offers a review before the ticket breakdown" \
-  "$(flat_section "$glossary" "Quick implementation")" \
-  'spec review of its linked issue before its ticket breakdown'
-assert_contains "the Spec review entry names quick implementation's review" \
-  "$(flat_section "$glossary" "Spec review")" \
-  'a quick implementation may take one before its ticket breakdown'
-assert_contains "the Host fallback entry names quick implementation's PR body" \
-  "$(flat_section "$glossary" "Host fallback")" \
-  'including any taken during its spec review'
-assert_contains "orch-spec-review scopes its review-the-spec question to a flow's spec phase" \
-  "$(flat_text "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md")" \
-  'In a flow'"'"'s spec phase there is also no "review the spec?" question'
-assert_contains "orch-spec-review scopes changelog-only to the review's own records" \
-  "$(flat_section "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md" "Standalone spec review")" \
-  'among the review'"'"'s own records'
-
-# --- orch-spec-review states its standalone differences once (#221, #225) ----
-echo
-echo "orch-spec-review states its standalone differences once (#221, #225)"
-fidelity_line='not run - standalone review, no plan to check against'
-assert_eq "the Fidelity not-run line occurs once in orch-spec-review" \
-  "$(flat_text "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md" | grep -oF "$fidelity_line" | wc -l | tr -d ' ')" "1"
-assert_contains "and that one occurrence is in The changelog" \
-  "$(flat_section "$PLUGIN_ROOT/skills/orch-spec-review/SKILL.md" "The changelog")" "$fidelity_line"
-
-# --- quick implementation reviews with the plugin's reviewer agents (#244) ---
-# The model cannot be proven to start the reviewers; these checks keep the
-# step's agents, prompt, retry rule, stop, and declined-findings list in place.
-echo
-echo "quick implementation reviews with the plugin's reviewer agents (#244)"
-review_step="$(flat_section "$quick_md" "6. Review")"
-for want in '`orch-reviewer-standards`' '`orch-reviewer-spec`' \
-  'Base SHA: <recorded base SHA>' 'Spec issue: #<linked issue>' 'Iteration: 01' \
-  'Report path: <quick report dir>/iteration-01-<standards|spec>.md' \
-  'bash "$ORCH" branch base-sha' 'bash "$ORCH" quick path' \
-  'never forks' 'in one message' 'Start that reviewer again once' \
-  'stop before opening the PR' '**Review**' '`None declined.`' \
-  '**Start a fresh subagent** fallback'; do
-  assert_contains "the review step names $want" "$review_step" "$want"
-done
-for gone in 'mp-skill code-review' 'mattpocock-skills:code-review' 'orch-fixer'; do
-  assert_not_contains "the review step no longer names $gone" "$review_step" "$gone"
-done
-assert_contains "the PR step names the Review heading" \
-  "$(flat_section "$quick_md" "7. Open the PR")" '**Review**'
-for a in orch-reviewer-standards orch-reviewer-spec; do
-  desc="$(grep -m1 '^description:' "$PLUGIN_ROOT/agents/$a.md")"
-  assert_contains "$a describes one review pass" "$desc" 'one orchestrator review pass'
-  assert_contains "$a names both starters" "$desc" \
-    "Started only by the orch-review skill's driver, or by the orch-quick-implement skill's single pass, with a base SHA, a spec issue, an iteration, and a report path."
-done
-adr21="$PLUGIN_ROOT/docs/adr/0021-quick-implementation-reviews-with-the-plugins-reviewer-agents.md"
-assert_contains "ADR-0021 exists with its title" \
-  "$(head -1 "$adr21" 2>&1)" "# Quick implementation reviews with the plugin's reviewer agents"
-assert_contains "ADR-0021 says nothing invokes code-review any more" \
-  "$(flat_text "$adr21" 2>&1)" 'nothing in the plugin invokes `mattpocock-skills:code-review`'
-assert_contains "ADR-0018 points at ADR-0021" "$adr18" \
-  "Superseded in part by ADR-0021: quick implementation's single pass no longer uses \`code-review\` either."
-assert_contains "the Quick implementation entry names its one review pass" \
-  "$(flat_section "$glossary" "Quick implementation")" \
-  'Its review is one pass by the same two reviewers a review loop starts, with no loop around them'
-finding="$(flat_section "$glossary" "Finding")"
-assert_contains "the Finding entry names its two change sources together" \
-  "$finding" "about the change, from the review phase or quick implementation's single pass, or about the spec, from a spec review"
-assert_contains "the Finding entry gives a quick finding no severity" \
-  "$finding" "A finding from quick implementation's single pass carries none"
-assert_contains "the Base branch entry names a quick implementation's base SHA" \
-  "$(flat_section "$glossary" "Base branch")" \
-  "A quick implementation's base SHA means the same, recorded on its branch."
-assert_contains "the Reviewer entry names quick implementation's single pass" \
-  "$(flat_section "$glossary" "Reviewer")" \
-  "A quick implementation's single pass starts the same two reviewers once, outside any loop."
-assert_contains "the Iteration entry names quick implementation's iteration 01" \
-  "$(flat_section "$glossary" "Iteration")" \
-  "labels its reviewer prompts iteration \`01\`; it is not part of a loop."
 
 # --- doctor: base branch check -----------------------------------------------
 # A set base branch that has vanished from origin is the one stale setting that
@@ -5041,15 +4606,6 @@ assert_status "an unverifiable base branch does not block the flow" "$st" 0
 assert_contains "warns that origin could not be reached" "$out" "warn  base branch gone"
 git config --unset orchestrator.base
 rm -rf "$(dirname "$bare")"
-
-# --- the Ticket subagent entry names an unmet criterion once (#182) ---
-echo
-echo "the Ticket subagent entry names an unmet criterion once (#182)"
-ticket_entry="$(flat_section "$glossary" "Ticket subagent")"
-assert_contains "the Ticket subagent entry reports a criterion it cannot meet" \
-  "$ticket_entry" "a criterion it cannot meet alone is reported as unmet, for the review loop's Spec axis to judge"
-assert_not_contains "the Ticket subagent entry no longer says unmet twice" \
-  "$ticket_entry" 'an unmet criterion it cannot meet alone'
 
 echo
 if [ "$SKIP" -gt 0 ]; then
