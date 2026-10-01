@@ -939,6 +939,35 @@ writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "the collapsed-case sentinel validates like any other content" "$st" 0
 
+# --- handoff templates -------------------------------------------------------
+# The templates in the orch-handoff skill are what every phase copies, so one
+# missing a section handoff validate requires, or with a placeholder left
+# empty, would fail every flow at its boundary. Each template block is written
+# under its own file name and validated, with no state and with a flow whose
+# state requires Host fallbacks. Its own repo keeps this flow's state untouched.
+echo
+echo "handoff templates"
+HANDOFF_SKILL="$PLUGIN_ROOT/skills/orch-handoff/SKILL.md"
+tpl_repo="$(new_repo)"
+for tpl in 01-plan.md 02-spec.md 03-implement.md; do
+  # The markdown fence under the template's `### \`<file>\`` heading.
+  awk -v f="$tpl" '
+    index($0, "### `" f "`") == 1 { under = 1; next }
+    under && /^```markdown$/      { inside = 1; next }
+    inside && /^```$/             { exit }
+    inside                        { print }' "$HANDOFF_SKILL" >"$tpl_repo/$tpl"
+  rm -rf "$tpl_repo/.orchestrator"
+  out="$(cd "$tpl_repo" && bash "$ORCH" handoff validate "$tpl" 2>&1)"; st=$?
+  if [ "$st" -eq 0 ]; then ok "the $tpl template validates with no state"
+  else bad "the $tpl template validates with no state" "$(flat_text <<<"$out")"; fi
+  mkdir -p "$tpl_repo/.orchestrator"
+  printf '{"host_fallbacks": true}\n' >"$tpl_repo/.orchestrator/state.json"
+  out="$(cd "$tpl_repo" && bash "$ORCH" handoff validate "$tpl" 2>&1)"; st=$?
+  if [ "$st" -eq 0 ]; then ok "the $tpl template validates when Host fallbacks is required"
+  else bad "the $tpl template validates when Host fallbacks is required" "$(flat_text <<<"$out")"; fi
+done
+rm -rf "$tpl_repo"
+
 # --- archive ----------------------------------------------------------------
 echo
 echo "archive"
