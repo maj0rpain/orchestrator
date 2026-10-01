@@ -90,7 +90,8 @@ A flow's spec review is a step of the spec phase, not a phase of its own.
 Note the tense: the recorded phase names the stage that runs **next**, not the
 one that just finished.
 
-A flow leaves a phase only once the handoff it writes for the next one is valid; the step back of a Redo retires the handoffs it makes stale.
+A flow leaves a phase only once the handoff it writes for the next one is
+valid; the step back of a Redo retires the handoffs it makes stale.
 
 ## Handoff
 

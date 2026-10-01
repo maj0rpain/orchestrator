@@ -3864,7 +3864,7 @@ assert_status "doctor does not strand it either" "$st" 0
 assert_contains "status reads its budget as the default" "$("$ORCH" status)" "iteration 5 of 5"
 
 # ci and ready need a PR, which a flow this old still records the same way.
-state_fixture pr 3 >/dev/null
+state_fixture pr 3
 out="$(ORCH_CI_GRACE=0.2 ORCH_CI_INTERVAL=0.05 GH_STUB_CHECKS=green \
   "$ORCH" review ci 2>&1)"; st=$?
 assert_status "review ci reads its PR from a state with no budget key" "$st" 0
@@ -4705,6 +4705,7 @@ export ORCHESTRATOR_HOST=claude
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at spec with no spec handoff" "$st" 1
 assert_contains "names the missing handoff" "$out" "02-spec.md"
+assert_contains "prints a FAIL line for it" "$out" "FAIL  handoff not found:"
 assert_eq "leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
 "$ORCH" state set issue 7

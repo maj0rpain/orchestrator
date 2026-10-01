@@ -690,7 +690,10 @@ cmd_phase() {
       # checked before the state fields so a missing handoff - the likelier
       # gap - is the one reported.
       file="$HANDOFF_DIR/$(handoff_file_for "$next")"
-      [ -f "$file" ] || die "handoff not found: $file - write it before leaving the $phase phase"
+      if [ ! -f "$file" ]; then
+        note "FAIL  handoff not found: $file"
+        die "handoff not found: $file - write it before leaving the $phase phase"
+      fi
       report="$(handoff_report "$file")" || failed=1
       if [ "$failed" -ne 0 ]; then
         while IFS= read -r line; do
@@ -1194,8 +1197,8 @@ cmd_spec() {
 
 # A standalone spec review's start: the guard and the working-directory reset
 # each have one right answer, so they live here rather than in skill prose.
-# It reads state.json only when one exists, never through require_state or
-# state get - both die with no flow, and no flow is the common case - and never writes it.
+# It reads state.json only when one exists, never through require_state - it
+# dies with no flow, and no flow is the common case - and never writes it.
 # The issue number is the caller's, never state's: the guard only compares.
 # State holds only the phases in PHASES, so every not-done phase is one below.
 cmd_spec_review() {
