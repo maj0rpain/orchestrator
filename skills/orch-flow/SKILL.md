@@ -99,7 +99,8 @@ which holds the only copy of the plan.
 5. `bash "$ORCH" doctor --env`. Report its output; stop only on a non-zero exit. A
    `warn` is an observation the user should see, not a reason to cost them a
    restart - the plan is already safe on disk either way.
-6. Print the boundary (see below).
+6. `bash "$ORCH" phase boundary`, and relay its output (see **Printing the
+   boundary** below).
 
 ## Next phase
 
@@ -157,8 +158,12 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    returned as its **Spec review changelog**, and its **Ticket breakdown** as
    either the spec issue number (a published breakdown) or `None: work
    directly against #<n>` naming the spec issue (a collapsed one, per step
-   5); validate it, then `bash "$ORCH" state set phase implement`.
-7. Print the boundary.
+   5); validate it with `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path implement)"`,
+   fixing and re-validating until it passes.
+7. `bash "$ORCH" phase advance`. It validates `02-spec.md` again and checks the
+   issue is recorded before recording the implement phase; on a FAIL the phase
+   stays at spec - fix what it names and run it again. Relay its output (see
+   **Printing the boundary**).
 
 ### Phase: implement
 
@@ -209,8 +214,12 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      verification ran over the whole branch - in the shape the `orch-handoff`
      template gives. A `fail` stays here, never under **Deviations**: a
      failing verification is not a deviation.
-   Then validate it: `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path review)"`.
-6. `bash "$ORCH" state set phase review`, then print the boundary.
+   Then validate it: `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path review)"`,
+   fixing and re-validating until it passes.
+6. `bash "$ORCH" phase advance`. It validates `03-implement.md` again and checks
+   the branch, base SHA, and PR are recorded before recording the review phase;
+   on a FAIL the phase stays at implement - fix what it names and run it again.
+   Relay its output (see **Printing the boundary**).
 
 ### Phase: review
 
@@ -228,16 +237,9 @@ one did.
 ## Printing the boundary
 
 Every phase ends the same way, because the next phase needs a session this one
-cannot start:
-
-```
-Phase <name> complete. Handoff written to <path>.
-
-  Next: <fresh session>, then <next phase>
-```
-
-On Claude Code that line reads `Next: /clear, then /orchestrator:next`. On
-Junie it reads `Next: /new, then ask for the next phase with /orch-flow`.
+cannot start. `orch.sh` owns the block that says so, and its host's `Next:`
+line: `phase advance` prints it on success, and `phase boundary` prints it at
+flow start. Relay that output verbatim - never compose the block yourself.
 
 Say nothing after it. Do not start the next phase, and do not offer to.
 
@@ -284,7 +286,8 @@ and closing are not destructive: the old branch is renamed aside
 (`orch/<issue>-<slug>-redo-N`, never force-pushed over), the old draft PR is
 closed with a comment pointing at the redo, the old loop's
 `.orchestrator/review/iteration-NN.md` records move into `pre-redo-N/`,
-`state.branch`/`state.pr`/`state.base_sha` are cleared, `state.iteration`
+the stale `03-implement.md` handoff moves into `.orchestrator/handoff/pre-redo-N/`
+(the same N), `state.branch`/`state.pr`/`state.base_sha` are cleared, `state.iteration`
 resets to 0, `state.redo_count` increments, `flake_rerun_used` is left
 untouched (`docs/adr/0007-redo-resets-the-review-loops-iteration-and-budget.md`),
 and `state.phase` becomes `implement`.
@@ -297,8 +300,12 @@ flow behind and every transition it makes can be undone by another `redo` or
 **From `implement`**: ask the human once whether to keep the existing spec
 issue and re-review it as-is (default), or publish a fresh one. Then call
 `bash "$ORCH" redo spec` or `bash "$ORCH" redo spec --new-issue` accordingly. The
-default path only changes `state.phase` to `spec` - the existing "adopted
-issue" path through the spec phase's step 0 does the rest. `--new-issue`
+default path changes `state.phase` to `spec` - the existing "adopted
+issue" path through the spec phase's step 0 does the rest. Either way the
+stale `02-spec.md` handoff, and `03-implement.md` if one exists, move into
+`.orchestrator/handoff/pre-redo-spec-<UTC timestamp>/`, so `phase advance`
+cannot leave the redone spec phase on them; `state.redo_count` is not bumped.
+`01-plan.md` is never touched by either redo. `--new-issue`
 additionally closes the old issue first (never deletes it) with a comment
 explaining why, and clears `state.issue`, so `to-spec` runs again from
 scratch.
@@ -317,6 +324,7 @@ scratch.
 - **One flow at a time.** `init` enforces it. For a second feature, use a second
   checkout.
 - **Never merge.** The flow opens a draft PR and stops. Merging is the user's.
-- **Never edit `.orchestrator/state.json` by hand.** Use `bash "$ORCH" state set`.
+- **Never edit `.orchestrator/state.json` by hand; the phase moves only through
+  `phase advance`, `review ready`, and redo.**
 - If a phase cannot finish, leave the state where it is, say what blocked it, and
   offer `/orchestrator:abort` (which archives rather than deletes).

@@ -659,7 +659,7 @@ h_repo   check_tracker_doc check_labels_doc check_labels_exist check_sub_issues 
 
 check_state_phase() {
   local phase
-  phase="$(jq -r '.phase // ""' "$STATE")"
+  phase="$(state_get phase)"
   case " $PHASES " in
     *" $phase "*) d_ok "phase: $phase" ;;
     *) d_fail "unknown phase: $phase (want one of: $PHASES)"
@@ -669,7 +669,7 @@ check_state_phase() {
 
 check_flow_branch() {
   local branch
-  branch="$(jq -r '.branch // ""' "$STATE")"
+  branch="$(state_get branch)"
   if [ -z "$branch" ]; then d_ok "branch: not created yet"; return 0; fi
   if git rev-parse --verify --quiet "$branch" >/dev/null; then d_ok "branch: $branch"; return 0; fi
   d_fail "branch $branch no longer exists - the flow has nothing left to build on."
@@ -681,9 +681,9 @@ check_flow_branch() {
 # the word.
 check_flow_upstream() {
   local phase branch
-  phase="$(jq -r '.phase // ""' "$STATE")"
+  phase="$(state_get phase)"
   case "$phase" in implement|review|done) ;; *) return 0 ;; esac
-  branch="$(jq -r '.branch // ""' "$STATE")"
+  branch="$(state_get branch)"
   [ -n "$branch" ] || return 0
   # origin/<branch> specifically, not just any upstream: branch create forks off
   # origin/<default>, which leaves that as the upstream until the first push. An
@@ -702,11 +702,11 @@ check_flow_upstream() {
 # a one-time gate at adoption, not an ongoing flow invariant (docs/adr/0005).
 check_flow_issue() {
   local issue issue_state phase
-  issue="$(jq -r '.issue // ""' "$STATE")"
+  issue="$(state_get issue)"
   if [ -z "$issue" ]; then d_ok "issue: not recorded yet"; return 0; fi
   d_gh_gate || return 0
   issue_state="$(gh issue view "$issue" --json state --jq .state 2>/dev/null)" || issue_state=""
-  phase="$(jq -r '.phase // ""' "$STATE")"
+  phase="$(state_get phase)"
   case "$issue_state" in
     OPEN)   d_ok "issue #$issue open" ;;
     CLOSED)
@@ -724,7 +724,7 @@ check_flow_issue() {
 
 check_flow_pr() {
   local pr pr_state
-  pr="$(jq -r '.pr // ""' "$STATE")"
+  pr="$(state_get pr)"
   if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
   d_gh_gate || return 0
   pr_state="$(gh pr view "$pr" --json state --jq .state 2>/dev/null)" || pr_state=""
@@ -742,9 +742,9 @@ check_flow_pr() {
 # no loop to classify and nothing to say about one.
 check_flow_review_terminal() {
   local phase i b terminal word detail
-  phase="$(jq -r '.phase // ""' "$STATE")"
+  phase="$(state_get phase)"
   [ "$phase" = review ] || return 0
-  i="$(jq -r '.iteration // 0' "$STATE")"
+  i="$(state_get iteration)"
   b="$(review_budget)"
   terminal="$(review_terminal_state)" || true
   word="$(first_line "$terminal")"
@@ -771,9 +771,9 @@ check_flow_review_terminal() {
 # running, it is state.json in a shape nothing produced on a healthy run.
 check_flow_review_budget() {
   local phase i b
-  phase="$(jq -r '.phase // ""' "$STATE")"
+  phase="$(state_get phase)"
   [ "$phase" = review ] || return 0
-  i="$(jq -r '.iteration // 0' "$STATE")"
+  i="$(state_get iteration)"
   b="$(review_budget)"
   if [ "$i" -gt "$b" ]; then
     d_fail "review loop iteration ($i) is past its budget ($b) - the loop's stop enforcement did not hold."
@@ -792,9 +792,9 @@ check_flow_review_budget() {
 # the loop itself waits on once one is named.
 check_flow_review_ci() {
   local phase pr res verdict detail
-  phase="$(jq -r '.phase // ""' "$STATE")"
+  phase="$(state_get phase)"
   [ "$phase" = review ] || return 0
-  pr="$(jq -r '.pr // ""' "$STATE")"
+  pr="$(state_get pr)"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
   res="$(ci_probe "$pr" required)"
@@ -822,9 +822,9 @@ check_flow_review_ci() {
 # operation only half landed, not a state a healthy flow reaches on its own.
 check_flow_review_draft() {
   local phase pr out pr_state is_draft
-  phase="$(jq -r '.phase // ""' "$STATE")"
+  phase="$(state_get phase)"
   case "$phase" in review|done) ;; *) return 0 ;; esac
-  pr="$(jq -r '.pr // ""' "$STATE")"
+  pr="$(state_get pr)"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
   out="$(gh pr view "$pr" --json state,isDraft --jq '.state, .isDraft' 2>/dev/null)" || out=""
@@ -854,7 +854,7 @@ check_flow_review_draft() {
 # earlier phase has already written one.
 check_flow_handoffs() {
   local phase files f path problems line
-  phase="$(jq -r '.phase // ""' "$STATE")"
+  phase="$(state_get phase)"
   case "$phase" in
     spec)        files="01-plan.md" ;;
     implement)   files="01-plan.md 02-spec.md" ;;

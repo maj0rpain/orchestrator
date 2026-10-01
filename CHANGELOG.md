@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.6.0
+
+- A phase change now validates its handoff (see issue #279). New
+  `orch.sh phase advance` leaves spec or implement only once the handoff it
+  writes for the next phase validates and the state that phase needs is
+  recorded; on a FAIL the phase stays. It refuses at review (use
+  `review ready`) and at done. `orch.sh phase boundary` prints the block that
+  ends a phase with the host's `Next:` line, and `orch-flow` relays both
+  verbatim instead of composing the boundary itself.
+- `orch.sh state set` accepts only `issue`, `budget`, and `flake_rerun_used`.
+  Any other key, `phase` included, is refused with a message naming the
+  command that owns it, so the phase moves only through `phase advance`,
+  `review ready`, and redo.
+- Every state read goes through one getter with one table of per-key
+  defaults. Two visible changes: `state get flake_rerun_used` prints `false`
+  rather than an empty line when the flag is unset, and `state get` on a key
+  the table does not know now fails (exit 1, `unknown state key: <key>`)
+  where it used to print an empty line.
+- Redo retires the handoffs it makes stale: `redo review` moves
+  `03-implement.md` into `.orchestrator/handoff/pre-redo-N/`, and `redo spec`
+  moves `02-spec.md` (and `03-implement.md`) into
+  `.orchestrator/handoff/pre-redo-spec-<UTC timestamp>/`.
+
 ## 2.5.5
 
 - The orch.sh test suite is split in two (see issue #278, ADR-0027). The

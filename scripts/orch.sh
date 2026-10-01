@@ -72,11 +72,41 @@ flow_cmd() {
   fi
 }
 
+# Every read of state.json goes through here, so what an absent key means is
+# decided in one table rather than at each call site. A flow started by an
+# older release lacks keys a fresh one seeds; each reads back as its default.
+# jq's `//` treats false like null, which is why the boolean keys default to
+# false rather than "". A key outside the schema dies: a misspelt read would
+# otherwise look exactly like an unset one.
+state_get() {
+  local default
+  case "$1" in
+    iteration|redo_count)            default=0 ;;
+    host_fallbacks|flake_rerun_used) default=false ;;
+    slug|phase|issue|base|branch|pr|base_sha|budget|created|updated) default="" ;;
+    *) die "unknown state key: $1" ;;
+  esac
+  jq -r --arg k "$1" --arg d "$default" '.[$k] // $d | tostring' "$STATE"
+}
+
+# The unrestricted writer behind every internal state change. "null" stores a
+# JSON null and an all-digit value a number, so a key cleared or counted here
+# reads back through state_get the way init seeded it.
+state_write() {
+  local tmp; tmp="$(mktemp)"
+  jq --arg k "$1" --arg v "$2" --arg now "$(now)" '
+    .[$k] = (if $v == "null" then null
+             elif ($v | test("^[0-9]+$")) then ($v | tonumber)
+             else $v end)
+    | .updated = $now' "$STATE" >"$tmp"
+  mv "$tmp" "$STATE"
+}
+
 require_state() {
   [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
 }
 
-# Fetches a required state field via jq, dies with $3 if it comes back empty,
+# Fetches a required state field through state_get, dies with $3 if it comes back empty,
 # and otherwise writes it into the variable named by $1 - a caller-named
 # out-param via `printf -v` rather than a nameref: bash 3.2 has neither
 # `local -n` nor `declare -n`, and this file promises to still run there (the
@@ -90,22 +120,36 @@ require_state() {
 # rather than inside a command substitution subshell, so `set -e` actually
 # stops it instead of the caller carrying on with an empty value.
 require_field() {
-  local __rf_out="$1" __rf_filter="$2" __rf_msg="$3" __rf_val
-  __rf_val="$(jq -r "$__rf_filter" "$STATE")"
+  local __rf_out="$1" __rf_key="$2" __rf_msg="$3" __rf_val
+  __rf_val="$(state_get "$__rf_key")"
   [ -n "$__rf_val" ] || die "$__rf_msg"
   printf -v "$__rf_out" '%s' "$__rf_val"
 }
 
 # Every review command that reaches GitHub needs the flow's PR number and none
 # of them can do anything useful without it.
-require_pr() { require_field "$1" '.pr // ""' "no PR recorded in state - the implement phase opens it"; }
+require_pr() { require_field "$1" pr "no PR recorded in state - the implement phase opens it"; }
 
 # branch create, pr open, and every spec op need the flow's spec issue number
 # before touching GitHub.
-require_issue() { require_field "$1" '.issue // ""' "no issue recorded in state - the spec phase must publish one first"; }
+require_issue() { require_field "$1" issue "no issue recorded in state - the spec phase must publish one first"; }
 
 # pr open and redo review both need the flow's branch before touching GitHub.
-require_branch() { require_field "$1" '.branch // ""' "no branch recorded in state"; }
+require_branch() { require_field "$1" branch "no branch recorded in state"; }
+
+# advance needs the base SHA the review diffs against before leaving implement.
+require_base_sha() { require_field "$1" base_sha "no base SHA recorded in state - branch create records it"; }
+
+# The one writer of state.phase. It knows only which phases exist: every caller
+# - advance, review ready, both redos, and init's seed - keeps its own guard on
+# which transition it may make, so a step back needs no handoff check here.
+phase_write() {
+  case " $PHASES " in
+    *" $1 "*) ;;
+    *) die "not a flow phase: $1 (want one of: $PHASES)" ;;
+  esac
+  state_write phase "$1"
+}
 
 # --- mattpocock-skills lookup ------------------------------------------------
 #
@@ -236,7 +280,7 @@ base_source() { if [ -n "$(base_setting)" ]; then echo set; else echo default; f
 # base was recorded has none, and always forked from the default branch.
 flow_base() {
   local b
-  b="$(jq -r '.base // ""' "$STATE")"
+  b="$(state_get base)"
   if [ -n "$b" ]; then printf '%s\n' "$b"; else default_branch; fi
 }
 
@@ -272,10 +316,10 @@ cmd_base() {
       note "$(base_branch) ($(base_source))"
       # The setting only reaches flows started after it; say so rather than
       # let the active flow's PR surprise anyone by targeting its old base.
-      if [ -f "$STATE" ] && [ "$(jq -r .phase "$STATE")" != done ]; then
+      if [ -f "$STATE" ] && [ "$(state_get phase)" != done ]; then
         local fb; fb="$(flow_base)"
         [ "$fb" = "$(base_branch)" ] ||
-          note "note: the active flow $(jq -r .slug "$STATE") keeps its own base branch: $fb"
+          note "note: the active flow $(state_get slug) keeps its own base branch: $fb"
       fi
       ;;
     show)
@@ -418,8 +462,8 @@ cmd_init() {
   # so it is not "active" in any sense that matters. init archives it and
   # proceeds instead of refusing; every other phase still blocks a second flow.
   local archive_note=""
-  if [ -f "$STATE" ] && [ "$(jq -r .phase "$STATE")" != "done" ]; then
-    die "a flow is already active (slug: $(jq -r .slug "$STATE"), phase: $(jq -r .phase "$STATE")).
+  if [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; then
+    die "a flow is already active (slug: $(state_get slug), phase: $(state_get phase)).
      One flow at a time - finish it, or run $(flow_cmd abort)."
   fi
   require_clean_outside_allowlist
@@ -445,10 +489,11 @@ cmd_init() {
   # base is fixed here and never rewritten - not by redo, not by a later
   # `base set` - so a flow's fork point and PR target cannot move under it.
   jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" --arg base "$(base_branch)" '{
-    slug: $slug, phase: "spec", issue: (if $issue == "" then null else ($issue | tonumber) end),
+    slug: $slug, phase: null, issue: (if $issue == "" then null else ($issue | tonumber) end),
     base: $base, branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
     flake_rerun_used: false, redo_count: 0, host_fallbacks: true, created: $now, updated: $now
   }' >"$STATE"
+  phase_write spec
   [ -z "$archive_note" ] || note "$archive_note"
   note "$slug"
 }
@@ -466,18 +511,26 @@ cmd_state() {
   case "$op" in
     get)
       require_state
-      if [ $# -gt 0 ]; then jq -r --arg k "$1" '.[$k] // "" | tostring' "$STATE"; else cat "$STATE"; fi
+      if [ $# -gt 0 ]; then state_get "$1"; else cat "$STATE"; fi
       ;;
     set)
       require_state
       [ $# -eq 2 ] || die "usage: orch.sh state set <key> <value>"
-      local tmp; tmp="$(mktemp)"
-      jq --arg k "$1" --arg v "$2" --arg now "$(now)" '
-        .[$k] = (if $v == "null" then null
-                 elif ($v | test("^[0-9]+$")) then ($v | tonumber)
-                 else $v end)
-        | .updated = $now' "$STATE" >"$tmp"
-      mv "$tmp" "$STATE"
+      # Only the keys skill prose sets are public. Every other key has a
+      # command that owns it, and that command's guard is the point: a phase
+      # set here would skip the handoff phase advance validates.
+      case "$1" in
+        issue|budget|flake_rerun_used) ;;
+        phase)          die "state set refuses phase: use phase advance (review ready and redo also move it)" ;;
+        branch|base_sha) die "state set refuses $1: branch create records it" ;;
+        pr)             die "state set refuses pr: pr open records it" ;;
+        iteration)      die "state set refuses iteration: review begin counts it" ;;
+        redo_count)     die "state set refuses redo_count: redo review counts it" ;;
+        slug|base|created|host_fallbacks) die "state set refuses $1: init seeds it" ;;
+        updated)        die "state set refuses updated: every state change stamps it" ;;
+        *)              die "state set refuses $1: settable keys are issue, budget, flake_rerun_used" ;;
+      esac
+      state_write "$1" "$2"
       ;;
     *) die "unknown state op: $op (want get|set)" ;;
   esac
@@ -513,7 +566,7 @@ handoff_required() {
 # upgrading mid-flow breaks nothing; every flow init starts now requires the
 # section. With no state at all there is no older flow to spare.
 host_fallbacks_required() {
-  [ ! -f "$STATE" ] || [ "$(jq -r '.host_fallbacks // false' "$STATE" 2>/dev/null)" = true ]
+  [ ! -f "$STATE" ] || [ "$(state_get host_fallbacks 2>/dev/null)" = true ]
 }
 
 section_body() {
@@ -593,6 +646,79 @@ cmd_handoff() {
   esac
 }
 
+# --- phases -----------------------------------------------------------------
+
+# The block that ends every phase, for the handoff the phase now recorded
+# reads: the next phase needs a fresh session this one cannot start, so the
+# block names it in the host's own words. Off a known host it falls back to
+# naming the flow command the way flow_cmd does.
+print_boundary() {
+  local phase="$1" done_name file next
+  case "$phase" in
+    spec)      done_name=plan ;;
+    implement) done_name=spec ;;
+    review)    done_name=implement ;;
+    *) die "no phase boundary at phase: $phase - the flow is not between phases" ;;
+  esac
+  file="$(handoff_file_for "$phase")"
+  case "$(host_detect)" in
+    claude) next="/clear, then $(flow_cmd next)" ;;
+    junie)  next="/new, then ask for the next phase with /orch-flow" ;;
+    *)      next="a fresh session, then $(flow_cmd next)" ;;
+  esac
+  printf 'Phase %s complete. Handoff written to %s/%s.\n\n  Next: %s\n' \
+    "$done_name" "$HANDOFF_DIR" "$file" "$next"
+}
+
+cmd_phase() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    advance)
+      [ $# -eq 0 ] || die "usage: orch.sh phase advance"
+      require_state
+      local phase next file report line failed=0 field
+      phase="$(state_get phase)"
+      case "$phase" in
+        spec)      next=implement ;;
+        implement) next=review ;;
+        review)    die "the review phase ends through review ready, once the PR is ready - phase advance does not leave it" ;;
+        done)      die "the flow is done - there is no phase to advance to" ;;
+        *)         die "not a flow phase: '$phase' - run orch.sh doctor --flow" ;;
+      esac
+      # The handoff this phase writes is the one the next phase reads. It is
+      # checked before the state fields so a missing handoff - the likelier
+      # gap - is the one reported.
+      file="$HANDOFF_DIR/$(handoff_file_for "$next")"
+      if [ ! -f "$file" ]; then
+        note "FAIL  handoff not found: $file"
+        die "handoff not found: $file - write it before leaving the $phase phase"
+      fi
+      report="$(handoff_report "$file")" || failed=1
+      if [ "$failed" -ne 0 ]; then
+        while IFS= read -r line; do
+          case "$line" in
+            "FAIL "*) note "FAIL  ${line#FAIL }" ;;
+          esac
+        done <<<"$report"
+        die "$file is not valid - fix it, then run phase advance again; the flow stays at $phase"
+      fi
+      case "$next" in
+        implement) require_issue field ;;
+        review)    require_branch field; require_base_sha field; require_pr field ;;
+      esac
+      phase_write "$next"
+      print_boundary "$next"
+      ;;
+    boundary)
+      [ $# -eq 0 ] || die "usage: orch.sh phase boundary"
+      require_state
+      print_boundary "$(state_get phase)"
+      ;;
+    *) die "unknown phase op: ${op:-<none>} (want advance|boundary)" ;;
+  esac
+}
+
 # --- review -----------------------------------------------------------------
 
 # The bound belongs here rather than in the skill's prose: a session that has
@@ -604,7 +730,7 @@ readonly DEFAULT_BUDGET=5
 
 review_budget() {
   local b
-  b="$(jq -r '.budget // ""' "$STATE")"
+  b="$(state_get budget)"
   case "$b" in ''|*[!0-9]*) b="$DEFAULT_BUDGET" ;; esac
   printf '%s\n' "$b"
 }
@@ -821,7 +947,7 @@ ci_probe() {
 review_terminal_state() {
   require_state
   local i b path first rest
-  i="$(jq -r '.iteration // 0' "$STATE")"
+  i="$(state_get iteration)"
   b="$(review_budget)"
   if [ "$i" -eq 0 ]; then note none; return 1; fi
   if [ "$i" -lt "$b" ]; then note pending; return 1; fi
@@ -849,18 +975,18 @@ cmd_review() {
     begin)
       require_state
       local n budget
-      n=$(( $(jq -r '.iteration // 0' "$STATE") + 1 ))
+      n=$(( $(state_get iteration) + 1 ))
       budget="$(review_budget)"
       [ "$n" -le "$budget" ] || \
         die "budget of $budget iterations spent - stop the loop and report, do not start another"
-      cmd_state set iteration "$n"
+      state_write iteration "$n"
       note "$n"
       ;;
     path)
       require_state
       [ $# -le 1 ] || die "usage: orch.sh review path [iteration]"
       local n
-      n="${1:-$(jq -r '.iteration // 0' "$STATE")}"
+      n="${1:-$(state_get iteration)}"
       case "$n" in ''|*[!0-9]*) die "not an iteration number: $n" ;; esac
       # Base 10 explicitly: printf reads a zero-padded argument as octal, and
       # `08` is not a number in base 8.
@@ -903,7 +1029,7 @@ cmd_review() {
       # phase left to retry it from.
       adapter_pr_ready "$pr" >/dev/null 2>&1 \
         || die "gh could not mark PR #$pr ready - the flow stays in review"
-      cmd_state set phase done
+      phase_write done
       note "$pr"
       ;;
     ci)
@@ -1062,7 +1188,7 @@ cmd_spec() {
   [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment> <file>"
   local file="$1" issue
   require_issue issue
-  [ "$(jq -r '.phase // ""' "$STATE")" != done ] \
+  [ "$(state_get phase)" != done ] \
     || die "the flow on issue #$issue is done - spec $op acts only on an active flow's issue; for another issue use orch.sh issue $op <n> <file>"
   "cmd_issue_$op" "$issue" "$file"
 }
@@ -1071,8 +1197,8 @@ cmd_spec() {
 
 # A standalone spec review's start: the guard and the working-directory reset
 # each have one right answer, so they live here rather than in skill prose.
-# It reads state.json directly, never through require_state or state get -
-# both die with no flow, and no flow is the common case - and never writes it.
+# It reads state.json only when one exists, never through require_state - it
+# dies with no flow, and no flow is the common case - and never writes it.
 # The issue number is the caller's, never state's: the guard only compares.
 # State holds only the phases in PHASES, so every not-done phase is one below.
 cmd_spec_review() {
@@ -1087,8 +1213,8 @@ cmd_spec_review() {
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   if [ -f "$STATE" ]; then
     local phase held
-    phase="$(jq -r '.phase // ""' "$STATE")"
-    held="$(jq -r '.issue // ""' "$STATE")"
+    phase="$(state_get phase)"
+    held="$(state_get issue)"
     if [ "$phase" != done ] && [ "$held" = "$issue" ]; then
       case "$phase" in
         spec)
@@ -1154,12 +1280,12 @@ cmd_branch_create() {
   require_state
   [ $# -eq 0 ] || die "usage: orch.sh branch create"
   local slug issue name
-  slug="$(jq -r .slug "$STATE")"
+  slug="$(state_get slug)"
   require_issue issue
   name="orch/${issue}-${slug}"
   checkout_new_branch "$name" "$(flow_base)"
-  cmd_state set branch "$name"
-  cmd_state set base_sha "$(git rev-parse HEAD)"
+  state_write branch "$name"
+  state_write base_sha "$(git rev-parse HEAD)"
   note "$name"
 }
 
@@ -1316,7 +1442,7 @@ cmd_pr_open() {
   # Draft is the honest signal: the review loop has not run yet, so marking it
   # ready is the loop's success condition rather than a comment nobody reads.
   pr="$(open_pr "$branch" "$(flow_base)" "$issue" "$title" "$body_file" true)"
-  cmd_state set pr "$pr"
+  state_write pr "$pr"
   note "$pr"
 }
 
@@ -1561,6 +1687,29 @@ cmd_ticket() {
 
 # --- redo ---------------------------------------------------------------
 
+# Moves each named handoff that exists into <dest>, created only when there is
+# something to move. A <dest> already holding one of them (two redo spec runs
+# in the same second) gets a -2, -3... suffix rather than being overwritten.
+retire_handoffs() {
+  local dest="$1" base f n=1 any=0
+  shift
+  for f in "$@"; do [ -e "$HANDOFF_DIR/$f" ] && any=1; done
+  [ "$any" -eq 1 ] || return 0
+  base="$dest"
+  while :; do
+    any=0
+    for f in "$@"; do [ -e "$dest/$f" ] && any=1; done
+    [ "$any" -eq 1 ] || break
+    n=$(( n + 1 ))
+    dest="$base-$n"
+  done
+  mkdir -p "$dest"
+  for f in "$@"; do
+    [ -e "$HANDOFF_DIR/$f" ] && mv "$HANDOFF_DIR/$f" "$dest/"
+  done
+  return 0
+}
+
 # The full `review -> implement` transition: retire the old branch and PR,
 # reopen the spec issue's closed tickets, move the old loop's records aside,
 # and reset the state a fresh implement attempt needs - never mid-budget, and
@@ -1571,9 +1720,9 @@ cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
   local phase i b word slug issue branch pr redo_count new_n new_branch msg
-  phase="$(jq -r '.phase // ""' "$STATE")"
+  phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
-  i="$(jq -r '.iteration // 0' "$STATE")"
+  i="$(state_get iteration)"
   b="$(review_budget)"
   local terminal; terminal="$(review_terminal_state)" || true
   word="$(first_line "$terminal")"
@@ -1588,11 +1737,11 @@ cmd_redo_review() {
     *) die "review_terminal_state answered something redo does not know: $word" ;;
   esac
 
-  slug="$(jq -r .slug "$STATE")"
+  slug="$(state_get slug)"
   require_issue issue
   require_branch branch
   require_pr pr
-  redo_count="$(jq -r '.redo_count // 0' "$STATE")"
+  redo_count="$(state_get redo_count)"
 
   # A previous call at this same redo can have already retired the branch
   # and recorded it here before dying on the PR close below - branch and
@@ -1612,8 +1761,8 @@ cmd_redo_review() {
     # the rename already happened for real, so state.branch has to track it
     # now rather than keep naming a branch that no longer exists if pr
     # close dies and a retry has to find the real current name.
-    cmd_state set branch "$new_branch"
-    cmd_state set redo_count "$new_n"
+    state_write branch "$new_branch"
+    state_write redo_count "$new_n"
   fi
 
   msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
@@ -1625,12 +1774,16 @@ cmd_redo_review() {
   cmd_ticket_reset "$issue" >/dev/null
 
   cmd_review retire "$new_n" >/dev/null
+  # The implement handoff described the attempt just retired; left in place,
+  # phase advance would let the redone implement phase leave on it (#279).
+  # Same N as the review records beside it. 01-plan.md is never touched.
+  retire_handoffs "$HANDOFF_DIR/pre-redo-$new_n" 03-implement.md
 
-  cmd_state set branch null
-  cmd_state set pr null
-  cmd_state set base_sha null
-  cmd_state set iteration 0
-  cmd_state set phase implement
+  state_write branch null
+  state_write pr null
+  state_write base_sha null
+  state_write iteration 0
+  phase_write implement
   note "$new_n"
 }
 
@@ -1641,7 +1794,7 @@ cmd_redo_review() {
 cmd_redo_spec() {
   require_state
   local phase new_issue=0
-  phase="$(jq -r '.phase // ""' "$STATE")"
+  phase="$(state_get phase)"
   [ "$phase" = implement ] || die "flow is not at the implement phase - nothing to redo back from"
   case "${1:-}" in
     "") ;;
@@ -1654,9 +1807,16 @@ cmd_redo_spec() {
     require_issue issue
     msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from to-spec in this same flow.\n')"
     adapter_issue_close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
-    cmd_state set issue null
+    state_write issue null
   fi
-  cmd_state set phase spec
+  # The spec handoff - and the implement handoff built on it, if any - are
+  # stale once the spec is being redone, so phase advance must not pass on
+  # them (#279). redo_count stays put: it counts review step-backs and names
+  # the retired branch, so the directory is told apart by a UTC timestamp.
+  local dest
+  dest="$HANDOFF_DIR/pre-redo-spec-$(date -u +%Y%m%dT%H%M%SZ)"
+  retire_handoffs "$dest" 02-spec.md 03-implement.md
+  phase_write spec
 }
 
 cmd_redo() {
@@ -1677,10 +1837,11 @@ cmd_status() {
     return 0
   fi
   local slug phase issue branch pr iteration redo_count
-  slug="$(jq -r .slug "$STATE")";       phase="$(jq -r .phase "$STATE")"
-  issue="$(jq -r '.issue // "-"' "$STATE")";  branch="$(jq -r '.branch // "-"' "$STATE")"
-  pr="$(jq -r '.pr // "-"' "$STATE")";  iteration="$(jq -r '.iteration // 0' "$STATE")"
-  redo_count="$(jq -r '.redo_count // 0' "$STATE")"
+  slug="$(state_get slug)";       phase="$(state_get phase)"
+  issue="$(state_get issue)";     branch="$(state_get branch)"
+  pr="$(state_get pr)";           iteration="$(state_get iteration)"
+  redo_count="$(state_get redo_count)"
+  issue="${issue:--}";            branch="${branch:--}";  pr="${pr:--}"
   note "flow:      $slug"
   note "phase:     $phase"
   note "issue:     $issue"
@@ -1708,7 +1869,7 @@ cmd_status() {
 cmd_archive() {
   require_state
   local slug ts dest entry
-  slug="$(jq -r .slug "$STATE")"
+  slug="$(state_get slug)"
   ts="$(date -u +%Y%m%d-%H%M%S)"
   dest="$ORCH/archive/$ts-$slug"
   mkdir -p "$dest"
@@ -1750,7 +1911,21 @@ orch.sh - deterministic operations for the orchestrator flow
                               store - lowercase, non-alphanumeric runs collapsed
                               to a hyphen, trimmed
   state get [key]             print state.json, or one key
-  state set <key> <value>     update one key
+  state set <key> <value>     update one of issue, budget, flake_rerun_used
+                              (all digits store a number). Any other key is
+                              refused, naming the command that owns it -
+                              phase moves only through phase advance,
+                              review ready, and redo
+  phase advance               leave the current phase: validate the handoff
+                              it writes for the next one (02-spec.md from
+                              spec, 03-implement.md from implement) and the
+                              state the next one needs (issue; branch,
+                              base_sha, pr), then record the next phase and
+                              print the boundary. On a FAIL the phase stays.
+                              Refuses at review (use review ready) and done
+  phase boundary              print the block that ends a phase - the
+                              handoff the current phase reads, and the
+                              host's Next line
   handoff path <phase>        print the handoff path for a phase
   handoff validate <file>     check required sections exist and are non-empty
   handoff section <file> <heading>
@@ -1853,12 +2028,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               git-excluding .orchestrator/ - for a quick
                               implementation's review reports; needs no state
   redo review                 retire the branch and PR, reopen the spec
-                              issue's closed tickets, reset the loop, and
+                              issue's closed tickets, reset the loop, retire
+                              03-implement.md into handoff/pre-redo-<n>/, and
                               step the flow back to implement - refuses unless
                               the review loop has reached a terminal state
   redo spec [--new-issue]     step the flow back to spec, keeping the existing
                               issue by default; --new-issue closes it and
-                              clears state.issue so to-spec starts fresh
+                              clears state.issue so to-spec starts fresh;
+                              02-spec.md and any 03-implement.md move into
+                              handoff/pre-redo-spec-<UTC timestamp>/
   status                      human-readable summary
   archive                     move the live flow into .orchestrator/archive/
 USAGE
@@ -1876,6 +2054,7 @@ main() {
     slug)          cmd_slug "$@" ;;
     state)         cmd_state "$@" ;;
     handoff)       cmd_handoff "$@" ;;
+    phase)         cmd_phase "$@" ;;
     branch)        cmd_branch "$@" ;;
     issue)         cmd_issue "$@" ;;
     pr)            cmd_pr "$@" ;;

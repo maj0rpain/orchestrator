@@ -19,6 +19,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `ticket`  | `publish`, `next`, `close`, `reset`, `parent`        |
 | `state`   | `get`, `set`                                         |
 | `handoff` | `path`, `validate`, `section`                        |
+| `phase`   | `advance`, `boundary`                                |
 
 A compound noun such as `spec-review` is still one noun, and still follows
 `<noun> <verb>`: `orch.sh spec-review begin <n>`.
