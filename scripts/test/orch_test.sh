@@ -1925,26 +1925,6 @@ out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when a skills CLI skill belongs to another plugin" "$st" 1
 assert_contains "names the foreign skill as missing" "$out" "missing: to-tickets"
 
-# Doctor's required list is only worth something while it matches what the
-# plugin reads: a skill invoked but not listed passes doctor and then fails its
-# phase, and a skill listed but never invoked fails doctor for nothing. So the
-# list is compared with every mattpocock skill that a skill or agent invokes,
-# through `mp-skill <name>` or `mattpocock-skills:<name>`.
-# Mentions that name an upstream skill without invoking it, one file:name per
-# line (file relative to the plugin root).
-#   orch-handoff says it replaces mattpocock-skills:handoff, not that it runs it.
-mp_not_invoked='skills/orch-handoff/SKILL.md:handoff'
-mp_listed="$(sed -n 's/^MP_SKILLS="\(.*\)"$/\1/p' "$PLUGIN_ROOT/scripts/doctor.sh" | tr ' ' '\n' | grep . | sort -u)"
-mp_invoked="$(cd "$PLUGIN_ROOT" && grep -oE 'mp-skill [a-z][a-z-]*|mattpocock-skills:[a-z][a-z-]*' \
-    skills/*/SKILL.md agents/*.md \
-  | sed -E 's/:(mp-skill |mattpocock-skills:)/:/' \
-  | grep -vxF "$mp_not_invoked" | sed 's/^.*://' | sort -u)"
-assert_eq "doctor finds MP_SKILLS to check against" "$([ -n "$mp_listed" ] && echo found)" "found"
-assert_eq "every invoked mattpocock skill is in MP_SKILLS" \
-  "$(comm -23 <(printf '%s\n' "$mp_invoked") <(printf '%s\n' "$mp_listed") | tr '\n' ' ')" ""
-assert_eq "every skill in MP_SKILLS is invoked by a skill or agent" \
-  "$(comm -13 <(printf '%s\n' "$mp_invoked") <(printf '%s\n' "$mp_listed") | tr '\n' ' ')" ""
-
 # Doctor says where the skills were found, in terms of the host that put them
 # there - the path alone does not tell a user which install to repair.
 h="$(mktemp -d)"
@@ -4565,120 +4545,12 @@ assert_contains "with the redo comment" \
 assert_eq "gh itself was invoked once, as a real subprocess" \
   "$(grep -cx issue "$log")" "1"
 
-# --- skill names (ADR-0014) --------------------------------------------------
-# Every orchestrator skill carries the orch- prefix. An old unprefixed name
-# left in a skill, command, hook, or doc points a model at a skill that no
-# longer exists. CHANGELOG, ADRs, and .out-of-scope/ record history and may
-# name the old ones; scripts/test/ feeds old names in deliberately as negative cases. The spec
-# review's command and skill were renamed spec-review in 2.0.0 (#235), so the
-# review-spec names, command included, are old names too.
-echo
-echo "skill names (ADR-0014)"
-old_names='orchestrator:(flow|handoff|review|review-spec|quick-implement|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$'
-assert_eq "the old review-spec skill name is still flagged" \
-  "$(printf 'Call `orchestrator:review-spec`.\n' | grep -cE "$old_names")" "1"
-assert_eq "the old /orchestrator:review-spec command is flagged" \
-  "$(printf 'Run `/orchestrator:review-spec 12`.\n' | grep -cE "$old_names")" "1"
-assert_eq "the old orch-review-spec skill name is flagged" \
-  "$(printf 'Call `orchestrator:orch-review-spec`.\n' | grep -cE "$old_names")" "1"
-assert_eq "the old orch-review-spec skill directory is flagged" \
-  "$(printf 'See skills/orch-review-spec/SKILL.md.\n' | grep -cE "$old_names")" "1"
-assert_eq "the old orch-review-spec skill name line is flagged" \
-  "$(printf 'name: orch-review-spec\n' | grep -cE "$old_names")" "1"
-assert_eq "the new spec-review names are not flagged" \
-  "$(printf 'Run `/orchestrator:spec-review 12`.\nCall `orchestrator:orch-spec-review`.\nskills/orch-spec-review/\nname: orch-spec-review\n' | grep -cE "$old_names")" "0"
-assert_eq "the old review-spec command and skill files are gone" \
-  "$(ls -d "$PLUGIN_ROOT/commands/review-spec.md" "$PLUGIN_ROOT/skills/orch-review-spec" 2>/dev/null)" ""
-hits="$(git -C "$PLUGIN_ROOT" ls-files -z \
-  | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/|\.out-of-scope/)' \
-  | (cd "$PLUGIN_ROOT" && xargs -0 grep -nE "$old_names" 2>/dev/null))"
-assert_eq "no old orchestrator skill or command name outside history" "$hits" ""
-for d in "$PLUGIN_ROOT"/skills/*/; do
-  n="$(basename "$d")"
-  case "$n" in
-    orch-*) ok "skill directory $n carries the orch- prefix" ;;
-    *) bad "skill directory $n carries the orch- prefix" "unprefixed skill directory" ;;
-  esac
-  assert_eq "skill $n declares its directory name" \
-    "$(sed -n 's/^name: //p' "$d/SKILL.md" | head -1)" "$n"
-done
-
 # --- orch.sh resolution (#123) ------------------------------------------------
-# Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
-# other hosts, so skill and command text must pair it with the
-# relative fallback. The one documented form (README, "Resolving orch.sh") is
-# the ORCH= line, the Junie step, and the fallback sentence; any other mention
-# of the variable, or a file that runs orch.sh without them, is a regression.
-# hooks/hooks.json is deliberately out of scope: both hosts expand it there.
+# The orch.sh resolution, execute-bit and skill-name rules live in
+# scripts/test/docs_lint.sh; orch_line stays for the scan_capabilities fixture below.
 echo
 echo "orch.sh resolution (#123)"
 orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'
-# On Junie CLI the agent's shell has no plugin-root variable at all, so the
-# Junie install is found by a literal ls before the relative fallback (#201).
-# This prose sentence opens with the same fixed prefix in every file.
-orch_junie='If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`'
-orch_junie_one='If it prints one path, `ORCH` is that path.'
-orch_junie_many='If it prints more than one, stop and show the human the paths.'
-orch_fallback='If it prints nothing, `ORCH` is `scripts/orch.sh`'
-# A path under the plugin root other than orch.sh (#155) is the one other
-# documented form: "${CLAUDE_PLUGIN_ROOT}/<path>", in a file that also carries
-# this sentence naming the same unset fallback the ORCH line has.
-root_fallback='If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is'
-# ...and that sentence takes the same Junie step first (#201).
-root_junie='two directories above the `orch.sh` that `ls` printed'
-# The steps wrap differently from file to file, so order is checked on the
-# file's text with every run of whitespace collapsed to one space.
-orch_steps="$orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_many $orch_fallback"
-# scan_orch_resolution <plugin root>: print one line per offending file.
-scan_orch_resolution() {
-  local r="$1" f flat root_sentence
-  local -a allowed
-  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md; do
-    [ -f "$f" ] || continue
-    flat="$(flat_text "$f")"
-    allowed=(-e "$orch_line" -e "$orch_junie")
-    grep -qF "$root_fallback" "$f" && allowed+=(-e "$root_fallback" -e '"${CLAUDE_PLUGIN_ROOT}/')
-    if grep -n 'CLAUDE_PLUGIN_ROOT' "$f" | grep -vF "${allowed[@]}" | grep -q .; then
-      echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
-    fi
-    if grep -qF "$root_fallback" "$f"; then
-      # The sentence runs to the first full stop followed by a space;
-      # orch.sh's own dot is followed by a backtick, so it does not end it.
-      root_sentence="${flat#*"$root_fallback"}"
-      root_sentence="${root_sentence%%. *}"
-      [[ "$root_sentence" == *"$root_junie"* ]] ||
-        echo "${f#"$r"/}: names the plugin root without the Junie step"
-    fi
-    if grep -qE 'orch\.sh|\$ORCH' "$f"; then
-      grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
-      grep -qF "$orch_junie" "$f" || echo "${f#"$r"/}: uses orch.sh without the Junie step"
-      grep -qF "$orch_junie_one" "$f" || echo "${f#"$r"/}: uses orch.sh without the one-install step"
-      grep -qF "$orch_junie_many" "$f" || echo "${f#"$r"/}: uses orch.sh without the stop on several Junie installs"
-      grep -qF "$orch_fallback" "$f" || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
-      [[ "$flat" == *"$orch_steps"* ]] || echo "${f#"$r"/}: resolves orch.sh out of the documented order"
-    fi
-  done
-}
-assert_eq "every skill and command resolves orch.sh the one documented way" \
-  "$(scan_orch_resolution "$PLUGIN_ROOT")" ""
-# Some hosts drop the execute bit on install or update, so orch.sh is always
-# run through bash, quoted or not (#142; docs/host-capabilities.md, "Execute bit").
-# scan_orch_bash <plugin root>: print one line per call site that skips bash.
-scan_orch_bash() {
-  local r="$1" f
-  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md \
-           "$r"/README.md "$r"/docs/host-capabilities.md; do
-    [ -f "$f" ] || continue
-    sed 's/bash "\$ORCH"//g' "$f" | grep -nE '\$\{?ORCH\b' \
-      | sed "s|^|${f#"$r"/}:|"
-  done
-}
-assert_eq "every skill and doc runs orch.sh through bash" \
-  "$(scan_orch_bash "$PLUGIN_ROOT")" ""
-# A skill's commands name the plugin root through CLAUDE_PLUGIN_ROOT, never a
-# "<plugin root>" placeholder the driver must work out for itself (#155).
-assert_eq "no skill or command carries a <plugin root> placeholder" \
-  "$(grep -nF '<plugin root>/' "$PLUGIN_ROOT"/skills/*/SKILL.md "$PLUGIN_ROOT"/commands/*.md)" ""
 assert_contains "orch-review reads the fixer's record through CLAUDE_PLUGIN_ROOT" \
   "$(cat "$PLUGIN_ROOT/skills/orch-review/SKILL.md")" \
   "\"\${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md\""
@@ -4815,82 +4687,6 @@ for a in orch-reviewer-standards orch-reviewer-spec; do
   assert_contains "$a keeps its tools list" \
     "$(cat "$PLUGIN_ROOT/agents/$a.md")" 'tools: [Read, Grep, Glob, Bash]'
 done
-# With no full install at all, doctor has no orch.sh to run from, so the skill
-# is the one that has to explain the failure (#128).
-missing=""
-for f in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
-  grep -qF 'skills-only install' "$f" || missing="$missing ${f#"$PLUGIN_ROOT"/}"
-done
-assert_eq "every skill names the full-plugin install when orch.sh is missing" "$missing" ""
-# The Junie install in that stop text is unverified, so it has to say so (#121).
-missing=""
-for f in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
-  grep -qF 'as a Junie extension, which is unverified' "$f" || missing="$missing ${f#"$PLUGIN_ROOT"/}"
-done
-assert_eq "every skill marks its Junie install unverified" "$missing" ""
-# One stop text, copied into each skill: once the Junie install is verified,
-# every copy must change together, so they may not drift apart.
-stop_text() { awk '/^If `orch.sh` is at none of these paths/,/which is unverified\)\.$/' "$1"; }
-ref="$(stop_text "$PLUGIN_ROOT/skills/orch-flow/SKILL.md")"
-assert_contains "orch-flow carries the skills-only stop text" "$ref" "skills-only install"
-drift=""
-for f in "$PLUGIN_ROOT"/skills/*/SKILL.md; do
-  [ "$(stop_text "$f")" = "$ref" ] || drift="$drift ${f#"$PLUGIN_ROOT"/}"
-done
-assert_eq "every skill's skills-only stop text matches orch-flow's word for word" "$drift" ""
-fixture="$(mktemp -d)"
-mkdir -p "$fixture/commands"
-printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/commands/orch.md"
-assert_contains "the scan covers commands/ and flags a bare CLAUDE_PLUGIN_ROOT" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
-printf '%s\n' '```' "$orch_line" '```' \
-  'If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh` two directories above this skill.' \
-  >"$fixture/commands/orch.md"
-assert_contains "the scan flags orch.sh resolved without the Junie step" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the Junie step"
-# documented_orch_form [step]...: the documented form, minus each step named.
-documented_orch_form() {
-  local -a steps=("$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many"
-    "$orch_fallback two directories above this skill's own directory.")
-  local step skip
-  printf '%s\n' '```' "$orch_line" '```'
-  for step in "${steps[@]}"; do
-    for skip in "$@"; do [ "$step" = "$skip" ] && continue 2; done
-    printf '%s\n' "$step"
-  done
-}
-documented_orch_form "$orch_junie_one" >"$fixture/commands/orch.md"
-assert_contains "the scan flags a Junie step with no one-install step" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the one-install step"
-documented_orch_form "$orch_junie_many" >"$fixture/commands/orch.md"
-assert_contains "the scan flags a Junie step with no stop on several installs" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the stop on several Junie installs"
-{ documented_orch_form "$orch_junie_one"; printf '%s\n' "$orch_junie_one"; } >"$fixture/commands/orch.md"
-assert_contains "the scan flags the Junie steps out of order" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: resolves orch.sh out of the documented order"
-documented_orch_form >"$fixture/commands/orch.md"
-assert_eq "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")" ""
-printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  >"$fixture/commands/orch.md"
-assert_contains "the scan flags a plugin-root path with no unset fallback" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
-printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  "$root_fallback two directories above this skill's own directory." >"$fixture/commands/orch.md"
-assert_contains "the scan flags a plugin-root fallback with no Junie step" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
-printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  "$root_fallback two directories above this skill's own directory." \
-  "Elsewhere, $root_junie." >"$fixture/commands/orch.md"
-assert_contains "the scan flags a Junie step outside the plugin-root sentence" \
-  "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
-{ documented_orch_form
-  printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-    "$root_fallback found as for \`ORCH\`:" \
-    "$root_junie, else two directories above this skill's own directory."
-} >"$fixture/commands/orch.md"
-assert_eq "the scan accepts a plugin-root path with its unset fallback" \
-  "$(scan_orch_resolution "$fixture")" ""
-rm -rf "$fixture"
 
 # --- fixer brief (#165) -------------------------------------------------------
 # A fixer that fixed nothing makes no commit, so it has nothing to push.

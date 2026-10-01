@@ -259,7 +259,7 @@ A skill that reads another file under the plugin root names it as
 `"${CLAUDE_PLUGIN_ROOT}/<path>"`, and the same file carries a sentence starting
 ``If `CLAUDE_PLUGIN_ROOT` is unset, the plugin root is``, naming the same
 steps the `ORCH` fallback does: two directories above the `orch.sh` that `ls`
-printed, else two directories above the skill's own directory. `orch_test.sh`
+printed, else two directories above the skill's own directory. `docs_lint.sh`
 fails when a skill or command mentions `CLAUDE_PLUGIN_ROOT`
 any other way, runs `orch.sh` without these steps in order or without `bash`,
 names the plugin root without the Junie step in that same sentence, or names a
@@ -287,7 +287,7 @@ routes to a section that does not exist.
 ```
 claude --plugin-dir /path/to/orchestrator     # load the working tree directly
 claude plugin validate .
-scripts/test/orch_test.sh && scripts/test/hooks_test.sh
+scripts/test/orch_test.sh && scripts/test/hooks_test.sh && scripts/test/docs_lint.sh
 ```
 
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
