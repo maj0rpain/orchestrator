@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5.5
+
+- The orch.sh test suite is split in two (see issue #278, ADR-0027). The
+  structural docs rules moved to a new linter, `scripts/test/docs_lint.sh`,
+  which also checks required headings and that every backticked `orch-<name>`
+  resolves to a skill or agent. The phrase pins and removed-text assertions
+  were dropped, and the handoff templates in `orch-handoff` are now checked
+  against `handoff validate`. Tests and docs only; no behaviour change.
+
 ## 2.5.4
 
 - The glossary's **Finding** entry names its two sources about the change

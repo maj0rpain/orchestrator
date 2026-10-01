@@ -277,7 +277,7 @@ section, which `handoff validate` requires for flows started on 1.0.0 or later
 (a flow already in progress at upgrade is exempt); an agent records its own
 where its brief says. Commands are Claude Code shortcuts only: each one routes to a
 skill, or to one section of it (usually an `orch-flow` section), and holds no
-behaviour of its own, so invoking the skill on another host is complete. `orch_test.sh` fails when a skill, or an agent that
+behaviour of its own, so invoking the skill on another host is complete. `docs_lint.sh` fails when a skill, or an agent that
 invokes a skill, never points at the reference, when a skill or agent names
 the Skill or Agent tool as the step itself, or when a command runs `orch.sh` or
 routes to a section that does not exist.

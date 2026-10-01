@@ -125,5 +125,5 @@ denied` (#142). So nothing in the plugin relies on the bit. `hooks/hooks.json`
 runs each hook as `bash "${CLAUDE_PLUGIN_ROOT}/scripts/<hook>.sh"`, and every
 skill and doc runs `bash "$ORCH" …`, never the script alone.
 `scripts/test/hooks_test.sh` enforces the hooks rule and runs each hook with
-its script at mode 644; `scripts/test/orch_test.sh` enforces the `orch.sh`
+its script at mode 644; `scripts/test/docs_lint.sh` enforces the `orch.sh`
 rule.
