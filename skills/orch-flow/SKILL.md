@@ -284,7 +284,8 @@ and closing are not destructive: the old branch is renamed aside
 (`orch/<issue>-<slug>-redo-N`, never force-pushed over), the old draft PR is
 closed with a comment pointing at the redo, the old loop's
 `.orchestrator/review/iteration-NN.md` records move into `pre-redo-N/`,
-`state.branch`/`state.pr`/`state.base_sha` are cleared, `state.iteration`
+the stale `03-implement.md` handoff moves into `.orchestrator/handoff/pre-redo-N/`
+(the same N), `state.branch`/`state.pr`/`state.base_sha` are cleared, `state.iteration`
 resets to 0, `state.redo_count` increments, `flake_rerun_used` is left
 untouched (`docs/adr/0007-redo-resets-the-review-loops-iteration-and-budget.md`),
 and `state.phase` becomes `implement`.
@@ -298,7 +299,11 @@ flow behind and every transition it makes can be undone by another `redo` or
 issue and re-review it as-is (default), or publish a fresh one. Then call
 `bash "$ORCH" redo spec` or `bash "$ORCH" redo spec --new-issue` accordingly. The
 default path only changes `state.phase` to `spec` - the existing "adopted
-issue" path through the spec phase's step 0 does the rest. `--new-issue`
+issue" path through the spec phase's step 0 does the rest. Either way the
+stale `02-spec.md` handoff, and `03-implement.md` if one exists, move into
+`.orchestrator/handoff/pre-redo-spec-<UTC timestamp>/`, so `phase advance`
+cannot leave the redone spec phase on them; `state.redo_count` is not bumped.
+`01-plan.md` is never touched by either redo. `--new-issue`
 additionally closes the old issue first (never deletes it) with a comment
 explaining why, and clears `state.issue`, so `to-spec` runs again from
 scratch.

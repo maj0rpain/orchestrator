@@ -4260,6 +4260,9 @@ writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iter
 : >"$filed"
 log="$(mktemp)"
 base_before="$("$ORCH" state get base)"
+writeln '# plan' >.orchestrator/handoff/01-plan.md
+writeln '# implement' >.orchestrator/handoff/03-implement.md
+plan_before="$(cat .orchestrator/handoff/01-plan.md)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
 assert_eq "keeps the flow's recorded base branch" "$("$ORCH" state get base)" "$base_before"
@@ -4283,6 +4286,14 @@ assert_eq "moves the old loop's records aside" \
   "$([ -f .orchestrator/review/pre-redo-1/iteration-05.md ] && echo yes || echo no)" "yes"
 assert_eq "leaving the flat trail empty" \
   "$([ -e .orchestrator/review/iteration-05.md ] && echo yes || echo no)" "no"
+assert_eq "retires the stale implement handoff under the same redo number" \
+  "$(cat .orchestrator/handoff/pre-redo-1/03-implement.md)" "# implement"
+assert_eq "leaving no implement handoff behind" \
+  "$([ -e .orchestrator/handoff/03-implement.md ] && echo yes || echo no)" "no"
+assert_eq "and the plan handoff untouched" "$(cat .orchestrator/handoff/01-plan.md)" "$plan_before"
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "phase advance then refuses to leave implement" "$st" 1
+assert_contains "for want of the implement handoff" "$out" "/.orchestrator/handoff/03-implement.md - write it before leaving"
 
 # A second redo in the same flow numbers on rather than overwriting the first.
 "$ORCH" state set phase review
@@ -4450,20 +4461,39 @@ assert_contains "naming the reason" "$out" "flow is not at the implement phase"
 
 "$ORCH" state set phase implement
 "$ORCH" state set issue 40
+"$ORCH" state set redo_count 2
+writeln '# plan' >.orchestrator/handoff/01-plan.md
+writeln '# spec' >.orchestrator/handoff/02-spec.md
+writeln '# implement' >.orchestrator/handoff/03-implement.md
 filed="$(mktemp)"
 out="$(GH_STUB_FILED="$filed" "$ORCH" redo spec 2>&1)"; st=$?
 assert_status "the default path steps back to spec" "$st" 0
 assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
 assert_eq "keeping the existing issue" "$("$ORCH" state get issue)" "40"
 assert_eq "and touching gh not at all" "$(grep -c . "$filed")" "0"
+retired="$(ls -d .orchestrator/handoff/pre-redo-spec-* 2>/dev/null)"
+assert_eq "retires the handoffs into one timestamped directory" \
+  "$(printf '%s\n' "$retired" | grep -c '^\.orchestrator/handoff/pre-redo-spec-[0-9]\{8\}T[0-9]\{6\}Z$')" "1"
+assert_eq "holding the stale spec handoff" "$(cat "$retired/02-spec.md" 2>/dev/null)" "# spec"
+assert_eq "and the stale implement handoff" "$(cat "$retired/03-implement.md" 2>/dev/null)" "# implement"
+assert_eq "leaving neither behind" \
+  "$(ls .orchestrator/handoff/02-spec.md .orchestrator/handoff/03-implement.md 2>/dev/null)" ""
+assert_eq "the plan handoff untouched" "$(cat .orchestrator/handoff/01-plan.md)" "# plan"
+assert_eq "without bumping redo_count" "$("$ORCH" state get redo_count)" "2"
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "phase advance then refuses to leave spec" "$st" 1
+assert_contains "for want of the spec handoff" "$out" "/.orchestrator/handoff/02-spec.md - write it before leaving"
 
 "$ORCH" state set phase implement
 "$ORCH" state set issue 41
+writeln '# spec again' >.orchestrator/handoff/02-spec.md
 : >"$filed"
 log="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
   "$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue also steps back to spec" "$st" 0
+assert_eq "with no implement handoff, retires the spec handoff alone" \
+  "$(ls .orchestrator/handoff/pre-redo-spec-*/02-spec.md | grep -c .) $(ls .orchestrator/handoff/pre-redo-spec-*/03-implement.md | grep -c .)" "2 1"
 assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
 assert_eq "clearing the old issue" "$("$ORCH" state get issue)" ""
 assert_contains "closes the old issue" "$(cat "$filed")" "issue close 41"

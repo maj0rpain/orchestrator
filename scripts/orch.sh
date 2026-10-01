@@ -1670,6 +1670,29 @@ cmd_ticket() {
 
 # --- redo ---------------------------------------------------------------
 
+# Moves each named handoff that exists into <dest>, created only when there is
+# something to move. A <dest> already holding one of them (two redo spec runs
+# in the same second) gets a -2, -3... suffix rather than being overwritten.
+retire_handoffs() {
+  local dest="$1" base f n=1 any=0
+  shift
+  for f in "$@"; do [ -e "$HANDOFF_DIR/$f" ] && any=1; done
+  [ "$any" -eq 1 ] || return 0
+  base="$dest"
+  while :; do
+    any=0
+    for f in "$@"; do [ -e "$dest/$f" ] && any=1; done
+    [ "$any" -eq 1 ] || break
+    n=$(( n + 1 ))
+    dest="$base-$n"
+  done
+  mkdir -p "$dest"
+  for f in "$@"; do
+    [ -e "$HANDOFF_DIR/$f" ] && mv "$HANDOFF_DIR/$f" "$dest/"
+  done
+  return 0
+}
+
 # The full `review -> implement` transition: retire the old branch and PR,
 # reopen the spec issue's closed tickets, move the old loop's records aside,
 # and reset the state a fresh implement attempt needs - never mid-budget, and
@@ -1734,6 +1757,10 @@ cmd_redo_review() {
   cmd_ticket_reset "$issue" >/dev/null
 
   cmd_review retire "$new_n" >/dev/null
+  # The implement handoff described the attempt just retired; left in place,
+  # phase advance would let the redone implement phase leave on it (#279).
+  # Same N as the review records beside it. 01-plan.md is never touched.
+  retire_handoffs "$HANDOFF_DIR/pre-redo-$new_n" 03-implement.md
 
   state_write branch null
   state_write pr null
@@ -1765,6 +1792,13 @@ cmd_redo_spec() {
     adapter_issue_close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
     state_write issue null
   fi
+  # The spec handoff - and the implement handoff built on it, if any - are
+  # stale once the spec is being redone, so phase advance must not pass on
+  # them (#279). redo_count stays put: it counts review step-backs and names
+  # the retired branch, so the directory is told apart by a UTC timestamp.
+  local dest
+  dest="$HANDOFF_DIR/pre-redo-spec-$(date -u +%Y%m%dT%H%M%SZ)"
+  retire_handoffs "$dest" 02-spec.md 03-implement.md
   phase_write spec
 }
 
@@ -1973,12 +2007,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               git-excluding .orchestrator/ - for a quick
                               implementation's review reports; needs no state
   redo review                 retire the branch and PR, reopen the spec
-                              issue's closed tickets, reset the loop, and
+                              issue's closed tickets, reset the loop, retire
+                              03-implement.md into handoff/pre-redo-<n>/, and
                               step the flow back to implement - refuses unless
                               the review loop has reached a terminal state
   redo spec [--new-issue]     step the flow back to spec, keeping the existing
                               issue by default; --new-issue closes it and
-                              clears state.issue so to-spec starts fresh
+                              clears state.issue so to-spec starts fresh;
+                              02-spec.md and any 03-implement.md move into
+                              handoff/pre-redo-spec-<UTC timestamp>/
   status                      human-readable summary
   archive                     move the live flow into .orchestrator/archive/
 USAGE
