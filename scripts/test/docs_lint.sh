@@ -604,6 +604,103 @@ flags "the scan flags a brief heading back in orch-spec-review" \
 check "each lens agent owns a non-empty brief and the skill carries none" \
   "$(scan_lens_briefs "$PLUGIN_ROOT")"
 
+# --- required headings (#285) ------------------------------------------------
+echo
+echo "required headings (#285)"
+# Some headings are load-bearing: a step or section that a model is sent to by
+# name. Each must stay present exactly as written, in the listed order. The
+# list holds skill and agent headings only, never glossary or ADR entries, and
+# nothing below heading level.
+# One "<file>|<heading>" pair per line, file relative to the plugin root, in
+# the order the headings must appear within their file.
+required_headings='skills/orch-quick-implement/SKILL.md|## 1. Require a linked issue
+skills/orch-quick-implement/SKILL.md|## 2. Offer a spec review
+skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
+skills/orch-quick-implement/SKILL.md|## 6. Review
+skills/orch-quick-implement/SKILL.md|## 7. Open the PR
+skills/orch-spec-review/SKILL.md|## Standalone spec review
+skills/orch-spec-review/SKILL.md|## Disposition
+skills/orch-spec-review/SKILL.md|## Applying the answer
+skills/orch-spec-review/SKILL.md|## The changelog'
+# scan_required_headings <plugin root> [pairs]: each listed heading missing
+# from its file, or found above the heading listed before it in that file.
+scan_required_headings() {
+  local r="$1" pairs="${2:-$required_headings}" file heading n last="" prev=0
+  while IFS='|' read -r file heading; do
+    [ -n "$file" ] || continue
+    [ "$file" = "$last" ] || { last="$file"; prev=0; }
+    n="$(grep -nxF -- "$heading" "$r/$file" 2>/dev/null | head -n1 | cut -d: -f1)"
+    if [ -z "$n" ]; then echo "$file: missing required heading: $heading"
+    elif [ "$n" -lt "$prev" ]; then echo "$file: required heading out of order: $heading"
+    else prev="$n"; fi
+  done <<<"$pairs"
+  return 0
+}
+f="$(new_fixture)"
+mkdir -p "$f/skills/a" "$f/skills/b" "$f/skills/c"
+printf '# A\n\n## One\n\ntext\n\n## Two\n' >"$f/skills/a/SKILL.md"
+printf '# B\n\n## Two\n\n## One\n' >"$f/skills/b/SKILL.md"
+printf '# C\n\n## One\n\n### Two\n' >"$f/skills/c/SKILL.md"
+pairs='skills/a/SKILL.md|## One
+skills/a/SKILL.md|## Two
+skills/b/SKILL.md|## One
+skills/b/SKILL.md|## Two
+skills/c/SKILL.md|## One
+skills/c/SKILL.md|## Two'
+out="$(scan_required_headings "$f" "$pairs")"
+flags "a required heading missing from its file is flagged" \
+  "$out" "skills/c/SKILL.md: missing required heading: ## Two"
+flags "required headings out of order are flagged" \
+  "$out" "skills/b/SKILL.md: required heading out of order: ## Two"
+assert_eq "required headings present and in order are not flagged" \
+  "$(printf '%s\n' "$out" | grep -c '^skills/a/')" "0"
+check "every required heading is present and in order" \
+  "$(scan_required_headings "$PLUGIN_ROOT")"
+
+# --- orch- names resolve (#285) -----------------------------------------------
+echo
+echo "orch- names resolve (#285)"
+# A backticked `orch-<name>` sends a model to a skill or an agent, so it must
+# name a skills/<name>/ directory or an agents/<name>.md file. ADRs record
+# history and may name what no longer exists.
+# scan_orch_names <plugin root>: each backticked orch- name that resolves to
+# neither a skill nor an agent, with its file and line.
+scan_orch_names() {
+  local r="$1" hit file line name
+  (cd "$r" && grep -rnoE '`orch-[a-z0-9-]+`' skills agents commands docs README.md 2>/dev/null) \
+    | while IFS= read -r hit; do
+        file="${hit%%:*}"; hit="${hit#*:}"
+        line="${hit%%:*}"; name="${hit#*:}"; name="${name//\`/}"
+        case "$file" in docs/adr/*) continue ;; esac
+        [ -d "$r/skills/$name" ] || [ -f "$r/agents/$name.md" ] ||
+          echo "$file:$line: names no skill or agent: $name"
+      done
+  return 0
+}
+f="$(new_fixture)"
+mkdir -p "$f/skills/orch-real" "$f/agents" "$f/commands" "$f/docs/adr" "$f/docs/x"
+printf -- '---\nname: orch-real\n---\nStart `orch-helper`, then `orch-ghost`.\n' >"$f/skills/orch-real/SKILL.md"
+printf -- '---\nname: orch-helper\n---\nInvoke `orch-real`.\n' >"$f/agents/orch-helper.md"
+printf 'Invoke `orch-phantom`.\n' >"$f/commands/c.md"
+printf 'See `orch-lost`.\n' >"$f/docs/x/d.md"
+printf 'Use `orch-missing`.\n' >"$f/README.md"
+printf 'Renamed `orch-retired`.\n' >"$f/docs/adr/0001-x.md"
+out="$(scan_orch_names "$f")"
+flags "an orch- name in a skill that resolves to nothing is flagged" \
+  "$out" "skills/orch-real/SKILL.md:4: names no skill or agent: orch-ghost"
+flags "an orch- name in a command that resolves to nothing is flagged" \
+  "$out" "commands/c.md:1: names no skill or agent: orch-phantom"
+flags "an orch- name in docs that resolves to nothing is flagged" \
+  "$out" "docs/x/d.md:1: names no skill or agent: orch-lost"
+flags "an orch- name in the README that resolves to nothing is flagged" \
+  "$out" "README.md:1: names no skill or agent: orch-missing"
+assert_eq "orch- names of a skill or an agent are not flagged" \
+  "$(printf '%s\n' "$out" | grep -cE 'orch-(real|helper)$')" "0"
+assert_eq "ADRs may name an orch- name that no longer resolves" \
+  "$(printf '%s\n' "$out" | grep -c 'orch-retired')" "0"
+check "every backticked orch- name resolves to a skill or an agent" \
+  "$(scan_orch_names "$PLUGIN_ROOT")"
+
 # --- summary -----------------------------------------------------------------
 echo
 echo "$PASS passed, $FAIL failed"
