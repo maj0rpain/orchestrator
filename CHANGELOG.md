@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.6.2
+
+- Internal: the phase boundary's `Next:` line is now named by
+  `next_phase_cmd`, beside `flow_cmd`, so host-aware command naming lives in
+  one place (see issue #307). No output change on any host.
+
 ## 2.6.1
 
 - The docs linter no longer pins or bans phrases outside a copy-match (see
