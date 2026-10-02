@@ -280,12 +280,14 @@ check "no skill or command carries a <plugin root> placeholder" "$(scan_plugin_r
 
 # --- skills-only stop text (#128, #121) ---------------------------------------
 # With no full install at all, doctor has no orch.sh to run from, so the skill
-# is the one that has to explain the failure (#128). The Junie install in that
-# stop text is unverified, so it has to say so (#121). One stop text, copied
-# into each skill: once the Junie install is verified, every copy must change
-# together, so they may not drift apart.
+# is the one that has to explain the failure (#128). One stop text, copied
+# into each skill, checked only as a copy-match against orch-flow's (ADR-0027):
+# once the Junie install is verified (#121), every copy must change together,
+# so they may not drift apart.
 echo
 echo "skills-only stop text (#128, #121)"
+# stop_text <file>: the stop text, located by its first and last lines - the
+# copy-match's anchor, not a pinned phrase.
 stop_text() { awk '/^If `orch.sh` is at none of these paths/,/which is unverified\)\.$/' "$1"; }
 # scan_stop_text <plugin root>: each skill off orch-flow's stop text.
 scan_stop_text() {
@@ -316,14 +318,14 @@ printf 'No stop text here.\n' >"$f/skills/orch-flow/SKILL.md"
 flags "the scan flags orch-flow with no stop text to match" \
   "$(scan_stop_text "$f")" "skills/orch-flow/SKILL.md: carries no skills-only stop text"
 # The rule is a copy-match only (ADR-0027): a stop text worded any other way
-# passes, so long as every copy matches orch-flow's.
+# between its anchor lines passes, so long as every copy matches orch-flow's.
 f="$(new_fixture)"
 mkdir -p "$f/skills/orch-flow" "$f/skills/orch-same"
 stop='If `orch.sh` is at none of these paths, stop and install it whole (the Junie route, which is unverified).'
 printf '%s\n' "$stop" >"$f/skills/orch-flow/SKILL.md"
 printf '%s\n' "$stop" >"$f/skills/orch-same/SKILL.md"
-assert_empty "the scan accepts any wording copied word for word" "$(scan_stop_text "$f")"
-check "every skill carries orch-flow's skills-only stop text, Junie unverified" "$(scan_stop_text "$PLUGIN_ROOT")"
+assert_empty "the scan accepts any wording between the anchors, copied word for word" "$(scan_stop_text "$f")"
+check "every skill carries orch-flow's skills-only stop text word for word" "$(scan_stop_text "$PLUGIN_ROOT")"
 
 # --- doctor's mattpocock skill list -------------------------------------------
 # Doctor's required list is only worth something while it matches what the
