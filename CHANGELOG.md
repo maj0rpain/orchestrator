@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.1
+
+- The docs linter no longer pins or bans phrases outside a copy-match (see
+  issue #290, ADR-0027). The skills-only stop text is checked only by its
+  copy-match against orch-flow's, which is flagged when it carries none. The
+  bans on naming the Skill or Agent tool as the step and on `no host can` are
+  dropped, and the `no plugin commands` requirement becomes a route check:
+  each `/orchestrator:<cmd>` a skill or agent offers must have a
+  `commands/<cmd>.md`.
+
 ## 2.6.0
 
 - A phase change now validates its handoff (see issue #279). New
