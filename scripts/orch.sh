@@ -1694,22 +1694,23 @@ cmd_ticket() {
 
 # --- redo ---------------------------------------------------------------
 
-# Moves each named handoff that exists into <dest>, created only when there is
-# something to move. A <dest> already holding one of them (two redo spec runs
-# in the same second) gets a -2, -3... suffix rather than being overwritten.
-retire_handoffs() {
-  local dest="$1" base f n=1 any=0
+# True when any of the named files exists under <dir>.
+any_exist_under() {
+  local dir="$1" f
   shift
-  for f in "$@"; do [ -e "$HANDOFF_DIR/$f" ] && any=1; done
-  [ "$any" -eq 1 ] || return 0
-  base="$dest"
-  while :; do
-    any=0
-    for f in "$@"; do [ -e "$dest/$f" ] && any=1; done
-    [ "$any" -eq 1 ] || break
-    n=$(( n + 1 ))
-    dest="$base-$n"
-  done
+  for f in "$@"; do [ -e "$dir/$f" ] && return 0; done
+  return 1
+}
+
+# Moves each named handoff that exists into exactly <dest>, created only when
+# there is something to move. A <dest> already holding one of them is refused
+# before anything moves, as `review retire` refuses a taken pre-redo-N/.
+retire_handoffs() {
+  local dest="$1" f
+  shift
+  any_exist_under "$HANDOFF_DIR" "$@" || return 0
+  ! any_exist_under "$dest" "$@" \
+    || die "$dest already holds a retired handoff - refusing to overwrite it"
   mkdir -p "$dest"
   for f in "$@"; do
     [ -e "$HANDOFF_DIR/$f" ] && mv "$HANDOFF_DIR/$f" "$dest/"

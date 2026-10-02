@@ -4440,6 +4440,40 @@ assert_contains "the real adapter invoked gh pr close on the flow's PR" \
 assert_eq "gh itself was invoked once for the pr close, as a real subprocess" \
   "$(grep -cx pr "$log")" "1"
 
+# --- redo review refuses a taken handoff destination ------------------------
+# Issue #304: the implement handoff retires into exactly the pre-redo-N/ that
+# pairs with review/pre-redo-N/, or redo stops naming it - never a suffixed
+# pre-redo-N-2/. The destination is pre-created, so no clock is involved.
+echo
+echo "redo review refuses a taken handoff destination"
+healthy_repo
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote set-url origin "$bare"
+git push -q origin HEAD:refs/heads/main
+"$ORCH" init redotaken >/dev/null
+state_fixture phase review
+"$ORCH" state set issue 21
+git checkout -q -b orch/21-redotaken
+git push -q -u origin orch/21-redotaken
+state_fixture branch orch/21-redotaken
+state_fixture pr 35
+state_fixture iteration 1
+"$ORCH" state set budget 1
+mkdir -p .orchestrator/review .orchestrator/handoff/pre-redo-1
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
+writeln '# older implement' >.orchestrator/handoff/pre-redo-1/03-implement.md
+writeln '# implement' >.orchestrator/handoff/03-implement.md
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" redo review 2>&1)"; st=$?
+assert_status "a destination already holding the handoff fails the redo" "$st" 1
+assert_contains "naming the destination" "$out" "pre-redo-1"
+assert_eq "leaving the live implement handoff in place" \
+  "$(cat .orchestrator/handoff/03-implement.md 2>/dev/null)" "# implement"
+assert_eq "and the retired one untouched" \
+  "$(cat .orchestrator/handoff/pre-redo-1/03-implement.md)" "# older implement"
+assert_eq "never retiring into a suffixed pre-redo-1-2" \
+  "$([ -e .orchestrator/handoff/pre-redo-1-2 ] && echo present || echo gone)" "gone"
+
 # --- redo review reopens tickets -------------------------------------------
 # Acceptance criterion from issue #88: a prior implement phase closes every
 # ticket of the flow's spec issue as it works the frontier, so a redo back to
@@ -4521,6 +4555,9 @@ assert_contains "for want of the spec handoff" "$out" "/.orchestrator/handoff/02
 
 state_fixture phase implement
 "$ORCH" state set issue 41
+# Clear the first run's directory so a second run in the same second does not
+# meet a taken destination, which retire_handoffs refuses (#304).
+rm -rf .orchestrator/handoff/pre-redo-spec-*
 writeln '# spec again' >.orchestrator/handoff/02-spec.md
 : >"$filed"
 log="$(mktemp)"
@@ -4528,7 +4565,7 @@ out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$l
   "$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue also steps back to spec" "$st" 0
 assert_eq "with no implement handoff, retires the spec handoff alone" \
-  "$(ls .orchestrator/handoff/pre-redo-spec-*/02-spec.md | grep -c .) $(ls .orchestrator/handoff/pre-redo-spec-*/03-implement.md | grep -c .)" "2 1"
+  "$(ls .orchestrator/handoff/pre-redo-spec-*/02-spec.md 2>/dev/null | grep -c .) $(ls .orchestrator/handoff/pre-redo-spec-*/03-implement.md 2>/dev/null | grep -c .)" "1 0"
 assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
 assert_eq "clearing the old issue" "$("$ORCH" state get issue)" ""
 assert_contains "closes the old issue" "$(cat "$filed")" "issue close 41"
