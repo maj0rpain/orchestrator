@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.6.4
+
+- `handoff validate` on a missing file now prints `FAIL  handoff not found:
+  <file>` on stdout and exits 1, the same shape as an invalid handoff, instead
+  of dying. `phase advance` on a missing handoff keeps that FAIL line, and its
+  die line now gives only the remedy: `write <file> before leaving the <phase>
+  phase` (see issues #316, #309). Both commands share one `handoff_check`
+  helper for the not-found check and the FAIL-line relay.
+
 ## 2.6.3
 
 - `redo review` and `redo spec` retire their stale handoffs into exactly the
