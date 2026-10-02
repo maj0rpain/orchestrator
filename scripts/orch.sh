@@ -1704,13 +1704,15 @@ any_exist_under() {
 
 # Moves each named handoff that exists into exactly <dest>, created only when
 # there is something to move. A <dest> already holding one of them is refused
-# before anything moves, as `review retire` refuses a taken pre-redo-N/.
+# before any handoff moves; unlike `review retire`, a <dest> that merely
+# exists is fine.
 retire_handoffs() {
   local dest="$1" f
   shift
   any_exist_under "$HANDOFF_DIR" "$@" || return 0
-  ! any_exist_under "$dest" "$@" \
-    || die "$dest already holds a retired handoff - refusing to overwrite it"
+  if any_exist_under "$dest" "$@"; then
+    die "$dest already holds a retired handoff - refusing to overwrite it"
+  fi
   mkdir -p "$dest"
   for f in "$@"; do
     [ -e "$HANDOFF_DIR/$f" ] && mv "$HANDOFF_DIR/$f" "$dest/"

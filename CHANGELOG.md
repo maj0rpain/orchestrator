@@ -5,8 +5,10 @@
 - `redo review` and `redo spec` retire their stale handoffs into exactly the
   directory they name, so `redo review`'s implement handoff always pairs with
   `review/pre-redo-N/` (see issues #304, #310). If that directory already
-  holds one of the handoffs, redo stops with a message naming it and moves
-  nothing, as `review retire` does.
+  holds one of the handoffs, redo stops with a message naming it and moves no
+  handoff. Its earlier steps have already run by then (for `redo review`: the
+  branch retire, PR close, ticket reset and `review retire`; for
+  `redo spec --new-issue`, the issue close).
 
 ## 2.6.2
 
