@@ -610,6 +610,26 @@ handoff_report() {
   return "$failed"
 }
 
+# Check one handoff and relay the verdict in the aligned `ok    ` / `FAIL  `
+# form: every FAIL line, and the ok lines too when the second argument is `ok`.
+# A missing file is one FAIL line. It never dies - the status is the verdict,
+# and each caller keeps its own reaction to it.
+handoff_check() {
+  local file="$1" show_ok="${2:-}" report line failed=0
+  if [ ! -f "$file" ]; then
+    note "FAIL  handoff not found: $file"
+    return 1
+  fi
+  report="$(handoff_report "$file")" || failed=1
+  while IFS= read -r line; do
+    case "$line" in
+      "ok "*)   [ "$show_ok" = ok ] && note "ok    ${line#ok }" ;;
+      "FAIL "*) note "FAIL  ${line#FAIL }" ;;
+    esac
+  done <<<"$report"
+  return "$failed"
+}
+
 cmd_handoff() {
   local op="${1:-}"
   shift || true
@@ -626,16 +646,7 @@ cmd_handoff() {
       ;;
     validate)
       [ $# -eq 1 ] || die "usage: orch.sh handoff validate <file>"
-      local file="$1" report line failed=0
-      [ -f "$file" ] || die "handoff not found: $file"
-      report="$(handoff_report "$file")" || failed=1
-      while IFS= read -r line; do
-        case "$line" in
-          "ok "*)   note "ok    ${line#ok }" ;;
-          "FAIL "*) note "FAIL  ${line#FAIL }" ;;
-        esac
-      done <<<"$report"
-      return "$failed"
+      handoff_check "$1" ok
       ;;
     section)
       [ $# -eq 2 ] || die "usage: orch.sh handoff section <file> <heading>"
@@ -684,7 +695,7 @@ cmd_phase() {
     advance)
       [ $# -eq 0 ] || die "usage: orch.sh phase advance"
       require_state
-      local phase next file report line failed=0 field
+      local phase next file field
       phase="$(state_get phase)"
       case "$phase" in
         spec)      next=implement ;;
@@ -698,18 +709,11 @@ cmd_phase() {
       # gap - is the one reported.
       file="$HANDOFF_DIR/$(handoff_file_for "$next")"
       if [ ! -f "$file" ]; then
-        note "FAIL  handoff not found: $file"
-        die "handoff not found: $file - write it before leaving the $phase phase"
+        handoff_check "$file" || true
+        die "write $file before leaving the $phase phase"
       fi
-      report="$(handoff_report "$file")" || failed=1
-      if [ "$failed" -ne 0 ]; then
-        while IFS= read -r line; do
-          case "$line" in
-            "FAIL "*) note "FAIL  ${line#FAIL }" ;;
-          esac
-        done <<<"$report"
+      handoff_check "$file" ||
         die "$file is not valid - fix it, then run phase advance again; the flow stays at $phase"
-      fi
       case "$next" in
         implement) require_issue field ;;
         review)    require_branch field; require_base_sha field; require_pr field ;;

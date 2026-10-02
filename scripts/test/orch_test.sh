@@ -842,6 +842,12 @@ writeln '## Decisions' 'Use X.' '' '## Rejected alternatives' '   ' '' \
 out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
 assert_status "treats a whitespace-only section as empty" "$st" 1
 
+# A missing file is reported the way an invalid one is - a FAIL line on stdout
+# and exit 1, no die - so a reader of FAIL lines sees what phase advance prints.
+out="$("$ORCH" handoff validate "$h.missing" 2>/dev/null)"; st=$?
+assert_status "fails on a missing handoff" "$st" 1
+assert_eq "reports it as a FAIL line on stdout" "$out" "FAIL  handoff not found: $h.missing"
+
 # Every phase records the host capability fallbacks it used (#127,
 # docs/host-capabilities.md), so a human reading any handoff can see where a
 # host did less than Claude Code would have. "None." is an answer; no section
@@ -4328,7 +4334,7 @@ assert_eq "leaving no implement handoff behind" \
 assert_eq "and the plan handoff untouched" "$(cat .orchestrator/handoff/01-plan.md)" "$plan_before"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance then refuses to leave implement" "$st" 1
-assert_contains "for want of the implement handoff" "$out" "/.orchestrator/handoff/03-implement.md - write it before leaving"
+assert_contains "for want of the implement handoff" "$out" "/.orchestrator/handoff/03-implement.md before leaving the implement phase"
 
 # A second redo in the same flow numbers on rather than overwriting the first.
 state_fixture phase review
@@ -4551,7 +4557,7 @@ assert_eq "the plan handoff untouched" "$(cat .orchestrator/handoff/01-plan.md)"
 assert_eq "without bumping redo_count" "$("$ORCH" state get redo_count)" "2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance then refuses to leave spec" "$st" 1
-assert_contains "for want of the spec handoff" "$out" "/.orchestrator/handoff/02-spec.md - write it before leaving"
+assert_contains "for want of the spec handoff" "$out" "/.orchestrator/handoff/02-spec.md before leaving the spec phase"
 
 state_fixture phase implement
 "$ORCH" state set issue 41
@@ -4744,6 +4750,8 @@ out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at spec with no spec handoff" "$st" 1
 assert_contains "names the missing handoff" "$out" "02-spec.md"
 assert_contains "prints a FAIL line for it" "$out" "FAIL  handoff not found:"
+assert_contains "dies with only the remedy" "$out" "02-spec.md before leaving the spec phase"
+assert_not_contains "without repeating that it was not found" "$(printf '%s\n' "$out" | grep '^orch:')" "handoff not found"
 assert_eq "leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
 "$ORCH" state set issue 7
