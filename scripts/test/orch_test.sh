@@ -1015,6 +1015,8 @@ echo "archive"
 complete_plan_handoff "$h"
 dest="$("$ORCH" archive)"
 assert_contains "archive path carries the slug" "$dest" "my-feature"
+assert_eq "archive names its directory <YYYYMMDD-HHMMSS>-<slug>" \
+  "$(printf '%s\n' "$dest" | grep -c '^\.orchestrator/archive/[0-9]\{8\}-[0-9]\{6\}-my-feature$')" "1"
 assert_eq "live state is cleared" "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
 assert_eq "handoff is preserved under archive/" \
   "$([ -f "$dest/handoff/01-plan.md" ] && echo present || echo gone)" "present"
@@ -4548,7 +4550,7 @@ assert_eq "keeping the existing issue" "$("$ORCH" state get issue)" "40"
 assert_eq "and touching gh not at all" "$(grep -c . "$filed")" "0"
 retired="$(ls -d .orchestrator/handoff/pre-redo-spec-* 2>/dev/null)"
 assert_eq "retires the handoffs into one timestamped directory" \
-  "$(printf '%s\n' "$retired" | grep -c '^\.orchestrator/handoff/pre-redo-spec-[0-9]\{8\}T[0-9]\{6\}Z$')" "1"
+  "$(printf '%s\n' "$retired" | grep -c '^\.orchestrator/handoff/pre-redo-spec-[0-9]\{8\}-[0-9]\{6\}$')" "1"
 assert_eq "holding the stale spec handoff" "$(cat "$retired/02-spec.md" 2>/dev/null)" "# spec"
 assert_eq "and the stale implement handoff" "$(cat "$retired/03-implement.md" 2>/dev/null)" "# implement"
 assert_eq "leaving neither behind" \

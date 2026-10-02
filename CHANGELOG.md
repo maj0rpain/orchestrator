@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.6.5
+
+- `redo spec` now names its retire directory
+  `handoff/pre-redo-spec-YYYYMMDD-HHMMSS/`, the same UTC timestamp shape
+  `archive` uses, instead of `…THHMMSSZ` (see issue #312). One `dir_stamp`
+  helper in `orch.sh` owns that shape for both commands. Archive directory
+  names are unchanged.
+
 ## 2.6.4
 
 - `handoff validate` on a missing file now prints `FAIL  handoff not found:
