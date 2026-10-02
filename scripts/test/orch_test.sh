@@ -4788,6 +4788,13 @@ state_fixture phase review
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" phase boundary 2>&1)"
 assert_eq "on Junie names the Junie Next line" "$out" \
   "$(printf 'Phase implement complete. Handoff written to %s.\n\n  Next: /new, then ask for the next phase with /orch-flow' "$hi2")"
+out="$(ORCHESTRATOR_HOST=other "$ORCH" phase boundary 2>&1)"
+assert_eq "on an unknown host names the fresh-session Next line" "$out" \
+  "$(printf 'Phase implement complete. Handoff written to %s.\n\n  Next: a fresh session, then /orchestrator:next (or orch-flow'"'"'s Next phase section)' "$hi2")"
+# Host-aware command naming lives beside flow_cmd (#307): the boundary block
+# asks next_phase_cmd for its Next line instead of switching on the host itself.
+body="$(sed -n '/^print_boundary() {/,/^}/p' "$ORCH")"
+assert_not_contains "print_boundary leaves host detection to next_phase_cmd" "$body" "host_detect"
 state_fixture phase done
 out="$("$ORCH" phase boundary 2>&1)"; st=$?
 assert_status "refuses once the flow is done" "$st" 1

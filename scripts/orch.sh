@@ -72,6 +72,17 @@ flow_cmd() {
   fi
 }
 
+# Names how to start the next phase in a fresh session, in the host's own
+# words: the boundary block's Next line. Junie's wording is its own, not a
+# flow_cmd name (ADR-0013, ADR-0025); every other host gets flow_cmd's.
+next_phase_cmd() {
+  case "$(host_detect)" in
+    claude) printf '/clear, then %s' "$(flow_cmd next)" ;;
+    junie)  printf '/new, then ask for the next phase with /orch-flow' ;;
+    *)      printf 'a fresh session, then %s' "$(flow_cmd next)" ;;
+  esac
+}
+
 # Every read of state.json goes through here, so what an absent key means is
 # decided in one table rather than at each call site. A flow started by an
 # older release lacks keys a fresh one seeds; each reads back as its default.
@@ -650,8 +661,7 @@ cmd_handoff() {
 
 # The block that ends every phase, for the handoff the phase now recorded
 # reads: the next phase needs a fresh session this one cannot start, so the
-# block names it in the host's own words. Off a known host it falls back to
-# naming the flow command the way flow_cmd does.
+# block names it in the host's own words, through next_phase_cmd.
 print_boundary() {
   local phase="$1" done_name file next
   case "$phase" in
@@ -661,11 +671,7 @@ print_boundary() {
     *) die "no phase boundary at phase: $phase - the flow is not between phases" ;;
   esac
   file="$(handoff_file_for "$phase")"
-  case "$(host_detect)" in
-    claude) next="/clear, then $(flow_cmd next)" ;;
-    junie)  next="/new, then ask for the next phase with /orch-flow" ;;
-    *)      next="a fresh session, then $(flow_cmd next)" ;;
-  esac
+  next="$(next_phase_cmd)"
   printf 'Phase %s complete. Handoff written to %s/%s.\n\n  Next: %s\n' \
     "$done_name" "$HANDOFF_DIR" "$file" "$next"
 }
