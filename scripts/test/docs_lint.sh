@@ -280,25 +280,25 @@ check "no skill or command carries a <plugin root> placeholder" "$(scan_plugin_r
 
 # --- skills-only stop text (#128, #121) ---------------------------------------
 # With no full install at all, doctor has no orch.sh to run from, so the skill
-# is the one that has to explain the failure (#128). The Junie install in that
-# stop text is unverified, so it has to say so (#121). One stop text, copied
-# into each skill: once the Junie install is verified, every copy must change
-# together, so they may not drift apart.
+# is the one that has to explain the failure (#128). One stop text, copied
+# into each skill, checked only as a copy-match against orch-flow's (ADR-0027):
+# once the Junie install is verified (#121), every copy must change together,
+# so they may not drift apart.
 echo
 echo "skills-only stop text (#128, #121)"
+# stop_text <file>: the stop text, located by its first and last lines - the
+# copy-match's anchor, not a pinned phrase.
 stop_text() { awk '/^If `orch.sh` is at none of these paths/,/which is unverified\)\.$/' "$1"; }
 # scan_stop_text <plugin root>: each skill off orch-flow's stop text.
 scan_stop_text() {
   local r="$1" f ref n
   ref="$(stop_text "$r/skills/orch-flow/SKILL.md")"
-  [[ "$ref" == *"skills-only install"* ]] ||
+  if [ -z "$ref" ]; then
     echo "skills/orch-flow/SKILL.md: carries no skills-only stop text"
+    return 0
+  fi
   for f in "$r"/skills/*/SKILL.md; do
     n="${f#"$r"/}"
-    grep -qF 'skills-only install' "$f" ||
-      echo "$n: names no full-plugin install when orch.sh is missing"
-    grep -qF 'as a Junie extension, which is unverified' "$f" ||
-      echo "$n: does not mark its Junie install unverified"
     [ "$(stop_text "$f")" = "$ref" ] ||
       echo "$n: skills-only stop text differs from orch-flow's"
   done
@@ -312,13 +312,20 @@ printf '%s\n' "${stop/the full plugin/it all}" >"$f/skills/orch-drift/SKILL.md"
 printf 'No stop text here.\n' >"$f/skills/orch-none/SKILL.md"
 out="$(scan_stop_text "$f")"
 flags "the scan flags stop text that drifts from orch-flow's" "$out" "skills/orch-drift/SKILL.md: skills-only stop text differs from orch-flow's"
-flags "the scan flags a skill with no full-plugin install named" "$out" "skills/orch-none/SKILL.md: names no full-plugin install when orch.sh is missing"
-flags "the scan flags a skill that does not mark its Junie install unverified" "$out" "skills/orch-none/SKILL.md: does not mark its Junie install unverified"
+flags "the scan flags a skill with no stop text" "$out" "skills/orch-none/SKILL.md: skills-only stop text differs from orch-flow's"
 assert_eq "the scan accepts a word-for-word copy" "$(printf '%s\n' "$out" | grep -c 'orch-same')" "0"
 printf 'No stop text here.\n' >"$f/skills/orch-flow/SKILL.md"
 flags "the scan flags orch-flow with no stop text to match" \
   "$(scan_stop_text "$f")" "skills/orch-flow/SKILL.md: carries no skills-only stop text"
-check "every skill carries orch-flow's skills-only stop text, Junie unverified" "$(scan_stop_text "$PLUGIN_ROOT")"
+# The rule is a copy-match only (ADR-0027): a stop text worded any other way
+# between its anchor lines passes, so long as every copy matches orch-flow's.
+f="$(new_fixture)"
+mkdir -p "$f/skills/orch-flow" "$f/skills/orch-same"
+stop='If `orch.sh` is at none of these paths, stop and install it whole (the Junie route, which is unverified).'
+printf '%s\n' "$stop" >"$f/skills/orch-flow/SKILL.md"
+printf '%s\n' "$stop" >"$f/skills/orch-same/SKILL.md"
+assert_empty "the scan accepts any wording between the anchors, copied word for word" "$(scan_stop_text "$f")"
+check "every skill carries orch-flow's skills-only stop text word for word" "$(scan_stop_text "$PLUGIN_ROOT")"
 
 # --- doctor's mattpocock skill list -------------------------------------------
 # Doctor's required list is only worth something while it matches what the
@@ -413,28 +420,23 @@ echo "host capabilities (#127)"
 # only one that invokes a mattpocock-skills skill must point at the reference,
 # since the others name no capability a host could lack.
 scan_capabilities() {
-  local r="$1" f route skill section body
+  local r="$1" f route skill section body cmd
   for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
     [ -f "$f" ] || continue
     if [[ "$f" != "$r"/agents/* ]] || grep -qE 'mattpocock-skills:[a-z]' "$f"; then
       grep -qF 'docs/host-capabilities.md' "$f" \
         || echo "${f#"$r"/}: never points at docs/host-capabilities.md"
     fi
-    grep -niE '(call|use|with) the (Skill|Agent) tool|(call|use|spawn|dispatch)[a-z]* .*the Agent tool' "$f" \
-      | sed "s|^|${f#"$r"/}: names a Claude tool as the step: |"
     # Junie has no plugin scope, so a skill names its siblings bare (orch-flow);
     # the Claude-scoped form is only ever the generic orchestrator:<name>.
     grep -nE 'orchestrator:orch-' "$f" \
       | sed "s|^|${f#"$r"/}: names a skill by its Claude-scoped name: |"
-    # "Run a plugin command" is Unverified on Junie, so a skill that offers one
-    # also says what to offer on a host without plugin commands.
-    if grep -qE '/orchestrator:[a-z]' "$f" && ! grep -qF 'no plugin commands' "$f"; then
-      echo "${f#"$r"/}: offers a plugin command with no fallback"
-    fi
-    # A host's column holds only verified facts, so a claim about every host
-    # outruns the reference.
-    grep -niE 'no host can' "$f" \
-      | sed "s|^|${f#"$r"/}: claims a fact for every host: |"
+    # A plugin command offered must exist: its commands/<cmd>.md is the route
+    # the command scan below checks reaches a skill section.
+    for cmd in $(grep -oE '/orchestrator:[a-z][a-z-]*' "$f" | sed 's|^/orchestrator:||' | sort -u); do
+      [ -f "$r/commands/$cmd.md" ] \
+        || echo "${f#"$r"/}: offers /orchestrator:$cmd, which has no commands/$cmd.md"
+    done
   done
   for f in "$r"/commands/*.md; do
     [ -f "$f" ] || continue
@@ -457,22 +459,14 @@ scan_capabilities() {
 f="$(new_fixture)"
 mkdir -p "$f/skills/orch-x" "$f/skills/orch-flow" "$f/commands"
 printf '## Status\nSee docs/host-capabilities.md.\n' >"$f/skills/orch-flow/SKILL.md"
-printf 'Call the Skill tool with `x`. See docs/host-capabilities.md.\n' >"$f/skills/orch-x/SKILL.md"
+printf 'Invoke the skill `x`. See docs/host-capabilities.md.\n' >"$f/skills/orch-x/SKILL.md"
 printf 'Invoke `orchestrator:orch-flow` and follow its **Doctor** section.\n' >"$f/commands/doctor.md"
-out="$(scan_capabilities "$f")"
-flags "the scan flags a Claude tool named as the step" "$out" "skills/orch-x/SKILL.md: names a Claude tool"
-flags "the scan flags a command routed to a missing section" "$out" "commands/doctor.md: routes to a missing orch-flow section: Doctor"
+flags "the scan flags a command routed to a missing section" \
+  "$(scan_capabilities "$f")" "commands/doctor.md: routes to a missing orch-flow section: Doctor"
 printf '## Status\nInvoke `orchestrator:orch-handoff`. See docs/host-capabilities.md.\n' >"$f/skills/orch-flow/SKILL.md"
 flags "the scan flags a sibling skill named by its Claude scope" \
   "$(scan_capabilities "$f")" "skills/orch-flow/SKILL.md: names a skill by its Claude-scoped name"
 printf '## Status\nInvoke the `orch-handoff` skill (`orchestrator:<name>` on Claude Code). See docs/host-capabilities.md.\n' >"$f/skills/orch-flow/SKILL.md"
-printf 'Offer `/orchestrator:abort`, so no host can stall. See docs/host-capabilities.md.\n' >"$f/skills/orch-x/SKILL.md"
-out="$(scan_capabilities "$f")"
-flags "the scan flags a plugin command offered with no fallback" "$out" "skills/orch-x/SKILL.md: offers a plugin command with no fallback"
-flags "the scan flags a fact claimed for every host" "$out" "skills/orch-x/SKILL.md: claims a fact for every host"
-printf 'Offer `/orchestrator:abort`, or on a host with no plugin commands, the Abort section. See docs/host-capabilities.md.\n' >"$f/skills/orch-x/SKILL.md"
-assert_eq "the scan accepts a plugin command with its fallback" \
-  "$(scan_capabilities "$f" | grep -c 'orch-x')" "0"
 printf 'Invoke the skill `x`.\n' >"$f/skills/orch-x/SKILL.md"
 flags "the scan flags a skill that never points at the reference" \
   "$(scan_capabilities "$f")" "skills/orch-x/SKILL.md: never points at docs/host-capabilities.md"
@@ -508,6 +502,20 @@ printf 'Fix it through the `mattpocock-skills:tdd` skill (see docs/host-capabili
 assert_empty "the scan accepts an agent that points at the reference" "$(scan_capabilities "$f")"
 printf 'Read the diff and write the report.\n' >"$f/agents/orch-z.md"
 assert_empty "the scan accepts an agent that invokes no skill without the pointer" "$(scan_capabilities "$f")"
+# A plugin command a skill or agent offers must route somewhere: it needs its
+# own commands/<cmd>.md, whose route the command scan above checks.
+f="$(new_fixture)"
+mkdir -p "$f/skills/orch-x" "$f/agents" "$f/commands"
+printf 'Offer `/orchestrator:abort`. See docs/host-capabilities.md.\n' >"$f/skills/orch-x/SKILL.md"
+printf 'Offer `/orchestrator:nope 12`.\n' >"$f/agents/orch-z.md"
+out="$(scan_capabilities "$f")"
+flags "the scan flags a skill offering a plugin command with no command file" "$out" "skills/orch-x/SKILL.md: offers /orchestrator:abort, which has no commands/abort.md"
+flags "the scan flags an agent offering a plugin command with no command file" "$out" "agents/orch-z.md: offers /orchestrator:nope, which has no commands/nope.md"
+mkdir -p "$f/skills/orch-flow"
+printf '## Abort\nSee docs/host-capabilities.md.\n' >"$f/skills/orch-flow/SKILL.md"
+printf 'Invoke `orchestrator:orch-flow` and follow its **Abort** section.\n' >"$f/commands/abort.md"
+cp "$f/commands/abort.md" "$f/commands/nope.md"
+assert_empty "the scan accepts plugin commands that each have a command file" "$(scan_capabilities "$f")"
 check "every skill points at the reference, and every command is a thin route" \
   "$(scan_capabilities "$PLUGIN_ROOT")"
 
