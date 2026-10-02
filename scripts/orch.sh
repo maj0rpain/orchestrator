@@ -28,6 +28,10 @@ ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
 note() { printf '%s\n' "$*"; }
 now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
+# The one timestamp shape for .orchestrator/ directory names: compact, UTC, and
+# colon-free so the path is valid on Windows too. now() stays ISO-8601: it is a
+# field value, never a path segment.
+dir_stamp() { date -u +%Y%m%d-%H%M%S; }
 # Several answers here are one line of prose followed by detail lines, and it is
 # always the first line that carries the verdict.
 first_line() { printf '%s\n' "$1" | sed -n 1p; }
@@ -1827,7 +1831,7 @@ cmd_redo_spec() {
   # them (#279). redo_count stays put: it counts review step-backs and names
   # the retired branch, so the directory is told apart by a UTC timestamp.
   local dest
-  dest="$HANDOFF_DIR/pre-redo-spec-$(date -u +%Y%m%dT%H%M%SZ)"
+  dest="$HANDOFF_DIR/pre-redo-spec-$(dir_stamp)"
   retire_handoffs "$dest" 02-spec.md 03-implement.md
   phase_write spec
 }
@@ -1883,7 +1887,7 @@ cmd_archive() {
   require_state
   local slug ts dest entry
   slug="$(state_get slug)"
-  ts="$(date -u +%Y%m%d-%H%M%S)"
+  ts="$(dir_stamp)"
   dest="$ORCH/archive/$ts-$slug"
   mkdir -p "$dest"
   for entry in "$ORCH"/*; do
