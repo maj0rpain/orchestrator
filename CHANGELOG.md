@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.10.0
+
+- The spec review now reads an issue's comments as well as its body (see
+  issue #360, and ADR-0030). Before the lenses' findings, the session running
+  the review proposes one **consolidation item** per comment that says
+  something the body does not - a triage agent brief, a follow-up - as
+  concrete body text. These come first in the batch, under a
+  **Consolidation** heading, and are answered under the same one question as
+  the lens findings. The review's own `## Spec review` changelogs are
+  skipped. The changelog gains a **Consolidation** section ahead of the lens
+  headings. The lenses read the comments too: a gap a comment fills is not a
+  finding, and a comment contradicting the body or another comment is. A
+  failed comments fetch stops the review, as a failed body fetch does.
+- New `orch.sh issue comments <n> <file>` and `orch.sh spec comments <file>`,
+  which write every comment of an issue to a file, each opened by a
+  `<!-- comment @<login> <createdAt> -->` marker line. No comments: an empty
+  file. `spec comments` refuses a done flow, as `spec fetch` does.
+
 ## 2.9.0
 
 - A default `redo spec` now retires the kept issue's ticket breakdown before

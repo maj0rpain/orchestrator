@@ -306,7 +306,9 @@ label it `needs-triage` if it isn't already.
 All four phases run. The spec phase works against the flow's issue, however it
 arrived - published by `orch-to-spec` in this phase, or already adopted at
 init, carrying the required `ready-for-agent` triage label, in which case
-`orch-to-spec` is skipped entirely. Either way, it reviews the issue through four independent
+`orch-to-spec` is skipped entirely. Either way, it first proposes folding into
+the issue body whatever the issue's comments say that the body does not, then
+reviews the issue, body and comments, through four independent
 lenses - Fidelity to the plan, Consistency with itself and the glossary,
 Testability at the agreed seams, Implementability from the spec alone - each
 a read-only agent (`orch-lens-fidelity`, `orch-lens-consistency`,
