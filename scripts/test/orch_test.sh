@@ -342,6 +342,8 @@ ready-for-agent}"
               esac
               exit 0 ;;
             labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; exit 0 ;;
+            # Under GH_STUB_DB, every comment comments/<n> has collected.
+            comments) [ -n "$db" ] && cat "$db/comments/$1" 2>/dev/null; exit 0 ;;
           esac
         done
         if [ -n "$db" ] && [ -f "$db/body/$1" ]; then cat "$db/body/$1"
@@ -367,6 +369,9 @@ ready-for-agent}"
             if [ "$1" = --body-file ]; then
               if [ "$op" = edit ]; then mkdir -p "$db/body"; cat "$2" >"$db/body/$cnum"
               else mkdir -p "$db/comments"; cat "$2" >>"$db/comments/$cnum"; fi
+              shift
+            elif [ "$1" = --body ] && [ "$op" = comment ]; then
+              mkdir -p "$db/comments"; printf '%s\n' "$2" >>"$db/comments/$cnum"
               shift
             fi
             shift
@@ -4776,6 +4781,28 @@ out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a re-run after the failure resumes and succeeds" "$st" 0
 assert_eq "retiring the ticket it could not unlink before" \
   "$(gh api "repos/{owner}/{repo}/issues/53/sub_issues" --jq length) $(cat "$db/state/$rt4")" "0 closed"
+
+assert_eq "without commenting on it a second time" \
+  "$(grep -c "retired by an orchestrator redo" "$db/comments/$rt4")" "1"
+
+writeln 'Intro' '```md' '## Ticket' 'example' '```' '' '## Ticket' 'Build.' >"$db/body/56"
+out="$("$ORCH" ticket retire 56 2>&1)"; st=$?
+assert_status "a body with a fenced ## Ticket example: retire succeeds" "$st" 0
+assert_eq "cutting only the real section, the fenced example kept" \
+  "$(od -c <"$db/body/56")" "$(writeln 'Intro' '```md' '## Ticket' 'example' '```' | od -c)"
+writeln 'Intro' '```md' '## Ticket' '```' >"$db/body/57"
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" "$ORCH" ticket retire 57 2>&1)"; st=$?
+assert_status "a body whose only ## Ticket is fenced: retire succeeds" "$st" 0
+assert_eq "writing nothing to GitHub" "$(grep -c '^issue edit' "$filed")" "0"
+printf 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.\n\n\n' >"$db/body/58"
+"$ORCH" ticket retire 58 >/dev/null 2>&1
+assert_eq "trailing blank lines after the section are kept" \
+  "$(od -c <"$db/body/58")" "$(printf 'Spec.\n\n## After\nTail.\n\n\n' | od -c)"
+printf 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.' >"$db/body/59"
+"$ORCH" ticket retire 59 >/dev/null 2>&1
+assert_eq "a body with no final newline gets none" \
+  "$(od -c <"$db/body/59")" "$(printf 'Spec.\n\n## After\nTail.' | od -c)"
 
 rt5="$("$ORCH" ticket publish 55 "Five" "$tbody")"
 redo_spec_at 55

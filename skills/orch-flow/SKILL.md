@@ -275,7 +275,8 @@ flow behind and every transition it makes can be undone by another `redo` or
 `next`.
 
 **From `implement`**: ask the human once whether to keep the existing spec
-issue and re-review it as-is (default), or publish a fresh one. Then call
+issue and re-review it, retiring its ticket breakdown (default), or publish a
+fresh one. Then call
 `bash "$ORCH" redo spec` or `bash "$ORCH" redo spec --new-issue` accordingly. The
 default keeps the issue and retires its ticket breakdown - each sub-issue
 closed as not planned if still open, commented on and unlinked, or the

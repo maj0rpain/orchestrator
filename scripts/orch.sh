@@ -1695,69 +1695,93 @@ cmd_ticket_exists() {
     printf "orch: gh could not read issue #%s's body\n" "$parent" >&2
     exit 2
   fi
-  if printf '%s\n' "$body" | tr -d '\r' | grep -qxF '## Ticket'; then
+  if printf '%s\n' "$body" | has_ticket_heading; then
     printf 'collapsed\n'
     return 0
   fi
   return 1
 }
 
-# The body with every `## Ticket` section removed - the heading line
-# `ticket exists` detects, through the line before the next `#` or `##`
-# heading outside a code fence, or the end of the body - and the blank lines a
-# section at the end leaves behind trimmed. Every other line is kept byte for
-# byte, CRLF ends included.
+# The fixed heading line a collapsed ticket breakdown sits under (ADR-0012).
+TICKET_HEADING='## Ticket'
+
+# True when the body on stdin has a line that is exactly TICKET_HEADING, CRLF
+# ends allowed - the one test `ticket exists` and `ticket retire` share.
+has_ticket_heading() {
+  tr -d '\r' | grep -qxF "$TICKET_HEADING"
+}
+
+# The body on stdin with every `## Ticket` section removed - the heading line
+# `ticket exists` detects, outside a code fence, through the line before the
+# next `#` or `##` heading outside a code fence, or the end of the body - and
+# the blank lines a section at the end leaves behind trimmed. Every other
+# line is kept byte for byte, CRLF ends and trailing blank lines included.
 strip_ticket_sections() {
-  awk '
+  awk -v heading="$TICKET_HEADING" '
     { l = $0; sub(/\r$/, "", l) }
-    skip && l ~ /^(```|~~~)/ { fence = !fence }
-    skip && !fence && l ~ /^##?([ \t]|$)/ && l != "## Ticket" { skip = 0 }
-    !fence && l == "## Ticket" { skip = 1; next }
+    skip && !fence && l ~ /^##?([ \t]|$)/ && l != heading { skip = 0 }
+    !fence && l == heading { skip = 1; next }
+    l ~ /^(```|~~~)/ { fence = !fence }
     skip { next }
     l == "" { held = held $0 "\n"; next }
     { printf "%s%s\n", held, $0; held = "" }
+    END { if (!skip) printf "%s", held }
   '
 }
 
 # Retires <parent>'s ticket breakdown so nothing later picks it up again
 # (issue #334): every sub-issue is closed as not planned if still open,
 # commented on, and unlinked from <parent> - unlinked last, so a run that
-# dies part-way still finds what it has not finished - and every `## Ticket`
-# section is cut from <parent>'s body. Afterwards `ticket exists <parent>`
-# exits 1. A breakdown already retired has nothing to list and no section to
-# cut, so a repeat writes nothing. Any GitHub failure dies.
+# dies part-way still finds what it has not finished, and a ticket that
+# already carries the retirement comment is not commented on again - and
+# every `## Ticket` section is cut from <parent>'s body. Afterwards `ticket
+# exists <parent>` exits 1. A breakdown already retired has nothing to list
+# and no section to cut, so a repeat writes nothing. Any GitHub failure dies.
 cmd_ticket_retire() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
-  local parent="$1" subs n state child_id body stripped msg_file
+  local parent="$1" subs n state child_id comments body stripped msg
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" \
       --jq '.[] | "\(.number) \(.state)"')" \
     || die "gh could not list sub-issues of #$parent"
-  if [ -n "$subs" ]; then
-    msg_file="$(mktemp)"
-    printf 'This ticket was retired by an orchestrator redo: its spec, #%s, is being redone and will be broken down into tickets again.\n' \
-      "$parent" >"$msg_file"
-    while read -r n state; do
-      [ -z "$n" ] && continue
-      if [ "$state" = open ]; then
-        adapter_issue_close "$n" --reason "not planned" --comment "$(cat "$msg_file")" >/dev/null \
-          || { rm -f "$msg_file"; die "gh could not close ticket #$n"; }
-      else
-        adapter_issue_comment "$n" --body-file "$msg_file" >/dev/null \
-          || { rm -f "$msg_file"; die "gh could not comment on ticket #$n"; }
+  msg="This ticket was retired by an orchestrator redo: its spec, #$parent, is being redone and will be broken down into tickets again."
+  while read -r n state; do
+    [ -z "$n" ] && continue
+    if [ "$state" = open ]; then
+      adapter_issue_close "$n" --reason "not planned" --comment "$msg" >/dev/null \
+        || die "gh could not close ticket #$n"
+    else
+      comments="$(adapter_issue_view "$n" --json comments --jq '.comments[].body')" \
+        || die "gh could not read ticket #$n's comments"
+      if ! grep -qF "$msg" <<<"$comments"; then
+        adapter_issue_comment "$n" --body "$msg" >/dev/null \
+          || die "gh could not comment on ticket #$n"
       fi
-      child_id="$(issue_db_id "$n")"
-      gh api --method DELETE "repos/{owner}/{repo}/issues/$parent/sub_issue" \
-          -F sub_issue_id="$child_id" >/dev/null \
-        || { rm -f "$msg_file"; die "gh could not unlink ticket #$n from #$parent"; }
-    done <<<"$subs"
-    rm -f "$msg_file"
-  fi
-  body="$(adapter_issue_view "$parent" --json body --jq .body)" \
-    || die "gh could not read issue #$parent's body"
-  printf '%s\n' "$body" | tr -d '\r' | grep -qxF '## Ticket' || return 0
+    fi
+    child_id="$(issue_db_id "$n")"
+    gh api --method DELETE "repos/{owner}/{repo}/issues/$parent/sub_issue" \
+        -F sub_issue_id="$child_id" >/dev/null \
+      || die "gh could not unlink ticket #$n from #$parent"
+  done <<<"$subs"
+  # Read into a file, never through $(...), which would drop the body's
+  # trailing newlines: the bytes outside the section go back unchanged, the
+  # same round trip `issue fetch` and `issue update` make.
+  body="$(mktemp)"
+  adapter_issue_view "$parent" --json body --jq .body >"$body" \
+    || { rm -f "$body"; die "gh could not read issue #$parent's body"; }
+  has_ticket_heading <"$body" || { rm -f "$body"; return 0; }
   stripped="$(mktemp)"
-  printf '%s\n' "$body" | strip_ticket_sections >"$stripped"
+  strip_ticket_sections <"$body" >"$stripped"
+  # awk ends every line it prints with a newline; a body that had no final
+  # newline gets none back.
+  if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
+    local out
+    out="$(cat "$stripped"; printf x)"; out="${out%x}"
+    printf '%s' "${out%$'\n'}" >"$stripped"
+  fi
+  # A `## Ticket` line only inside a code fence leaves nothing to cut: no write.
+  if cmp -s "$body" "$stripped"; then rm -f "$body" "$stripped"; return 0; fi
+  rm -f "$body"
   adapter_issue_edit "$parent" --body-file "$stripped" >/dev/null \
     || { rm -f "$stripped"; die "gh could not remove the ## Ticket section from #$parent"; }
   rm -f "$stripped"
