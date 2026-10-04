@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.7
+
+- `phase advance` names the out-param it hands the `require_*` presence
+  checks `_unused`, so it reads as discarded (see issue #308).
+
 ## 2.6.6
 
 - orch-flow's rule against hand-editing `.orchestrator/state.json` now also
