@@ -374,7 +374,8 @@ mp_not_invoked='skills/orch-handoff/SKILL.md:handoff'
 scan_mp_skills() {
   local r="$1" listed invoked name
   listed="$(sed -n 's/^MP_SKILLS="\(.*\)"$/\1/p' "$r/scripts/doctor.sh" 2>/dev/null | tr ' ' '\n' | grep . | sort -u)"
-  if [ -z "$listed" ]; then
+  # An empty list is still a list: it matches a plugin that invokes nothing.
+  if ! grep -q '^MP_SKILLS="' "$r/scripts/doctor.sh" 2>/dev/null; then
     echo "scripts/doctor.sh: no MP_SKILLS to check against"
     return
   fi
@@ -403,6 +404,15 @@ flags "the scan flags an invoked skill missing from MP_SKILLS" "$out" "skills/or
 flags "the scan flags a listed skill nothing invokes" "$out" "scripts/doctor.sh: MP_SKILLS lists grilling, which no skill or agent invokes"
 assert_eq "orch-handoff naming the skill it replaces is not an invocation" \
   "$(printf '%s\n' "$out" | grep -c 'handoff')" "0"
+# A list emptied in step with the last invocation is a match, not a missing list.
+f2="$(new_fixture)"
+mkdir -p "$f2/scripts" "$f2/skills/orch-a"
+printf 'MP_SKILLS=""\n' >"$f2/scripts/doctor.sh"
+printf 'Invoke the `orch-a` skill.\n' >"$f2/skills/orch-a/SKILL.md"
+assert_empty "the scan accepts an empty MP_SKILLS when nothing is invoked" "$(scan_mp_skills "$f2")"
+printf 'Run `bash "$ORCH" mp-skill to-spec`.\n' >"$f2/skills/orch-a/SKILL.md"
+flags "the scan flags an invocation against an empty MP_SKILLS" \
+  "$(scan_mp_skills "$f2")" "skills/orch-a/SKILL.md: invokes to-spec, which MP_SKILLS omits"
 printf 'nothing\n' >"$f/scripts/doctor.sh"
 flags "the scan flags a doctor.sh with no MP_SKILLS" \
   "$(scan_mp_skills "$f")" "scripts/doctor.sh: no MP_SKILLS to check against"
