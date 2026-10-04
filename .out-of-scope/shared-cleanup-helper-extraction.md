@@ -37,3 +37,4 @@ tmp="$(mktemp)"
 ## Prior requests
 
 - #21: "Duplicated mktemp/rm-f/die cleanup shape between cmd_spec fetch and cmd_pr_open" — filed by the review loop as a Standards-axis nit against PR #20; the reviewers themselves judged extraction not clearly worth it across only two-to-three sites.
+- #366: "cmd_issue_comments duplicates cmd_issue_fetch's atomic-write shape" (review-loop Standards major against PR #363). The two copies do share the *same* rename-into-place shape, but two sites of about eight lines each is still below the threshold above.
