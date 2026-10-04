@@ -3334,7 +3334,6 @@ assert_contains "the issue op listing includes comments" "$out" "comments"
 assert_contains "help documents issue comments" "$("$ORCH" help)" "issue comments"
 rm -f "$issue_comments"
 
-
 assert_eq "still no state.json - this section recorded none" \
   "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 
