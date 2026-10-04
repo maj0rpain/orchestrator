@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.1
+
+- Quick implementation's step 6 no longer restates the review pass's own
+  rules - what `review-pass begin` prints, why it refuses, and the
+  fails-twice retry - and leaves them to `orch-review`'s **Review pass** (see
+  issue #350, and ADR-0029). It still stops before opening the PR when the
+  pass stops.
+
 ## 2.8.0
 
 - A **review pass** - one look by the two plugin reviewers with no loop
