@@ -101,10 +101,13 @@ scan_old_names() {
     | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/|\.out-of-scope/)' \
     | (cd "$r" && xargs -0 grep -nE "$old_names" 2>/dev/null) \
     | sed -E 's/^([^:]*:[0-9]+):/\1: old skill or command name: /'
-  [ -e "$r/commands/review-spec.md" ] && echo "commands/review-spec.md: old command file"
-  [ -e "$r/skills/orch-review-spec" ] && echo "skills/orch-review-spec/: old skill directory"
-  [ -e "$r/commands/plan.md" ] && echo "commands/plan.md: old command file"
-  [ -e "$r/skills/orch-plan" ] && echo "skills/orch-plan/: old skill directory"
+  local p
+  for p in commands/review-spec.md commands/plan.md; do
+    [ -e "$r/$p" ] && echo "$p: old command file"
+  done
+  for p in skills/orch-review-spec skills/orch-plan; do
+    [ -e "$r/$p" ] && echo "$p/: old skill directory"
+  done
   return 0
 }
 f="$(new_fixture)"

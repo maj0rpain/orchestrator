@@ -153,7 +153,7 @@ A PR into a base branch other than the default says `Refs #N` rather than
 branch. `/orchestrator:release` closes them: the model writes the release PR's
 title and summary, and `orch.sh pr release` writes the `Closes` lines.
 
-A new command must not share its bare name with a host built-in command (for
+A command must not share its bare name with a host built-in command (for
 example Claude Code's `/plan`, `/review`, `/status` or `/doctor`), because the
 typeahead lists both.
 
