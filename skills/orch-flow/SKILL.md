@@ -114,8 +114,9 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 5. Run `bash "$ORCH" ticket exists <spec issue>` first, with the spec issue
    from `bash "$ORCH" state get issue`.
 
-   **Exit 0** means the issue already has a ticket breakdown - reachable only
-   for an issue adopted at init, such as a blueprint. Skip the breakdown and
+   **Exit 0** means the issue already has a ticket breakdown - as for a
+   blueprint adopted at init; a default `redo spec` retires the breakdown
+   first, so it never reaches this exit. Skip the breakdown and
    ask nothing. It printed one word, which settles step 6's **Ticket
    breakdown**: `sub-issues` means the spec issue number, and `collapsed`
    means `None: work directly against #<n>` naming the spec issue.
@@ -276,8 +277,13 @@ flow behind and every transition it makes can be undone by another `redo` or
 **From `implement`**: ask the human once whether to keep the existing spec
 issue and re-review it as-is (default), or publish a fresh one. Then call
 `bash "$ORCH" redo spec` or `bash "$ORCH" redo spec --new-issue` accordingly. The
-default path changes `state.phase` to `spec` - the existing "adopted
-issue" path through the spec phase's step 0 does the rest. Either way the
+default keeps the issue and retires its ticket breakdown - each sub-issue
+closed as not planned if still open, commented on and unlinked, or the
+collapsed `## Ticket` section cut from the body - then changes `state.phase`
+to `spec`, so the spec phase's step 5 breaks the redone spec down again; the
+existing "adopted issue" path through the spec phase's step 0 does the rest.
+If GitHub fails while retiring, it dies with the phase still `implement`, and
+a re-run resumes. Either way the
 stale `02-spec.md` handoff, and `03-implement.md` if one exists, move into
 `.orchestrator/handoff/pre-redo-spec-<UTC timestamp>/`, so `phase advance`
 cannot leave the redone spec phase on them; `state.redo_count` is not bumped.

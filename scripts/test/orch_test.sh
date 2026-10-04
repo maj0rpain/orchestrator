@@ -174,6 +174,13 @@ complete_implement_handoff() {
 # "" to simulate a repo with no issues. The sub_issues GET it then makes fails
 # on demand independently of the POST one ticket_publish uses:
 # GH_STUB_SUBISSUE_GET_EXIT.
+#
+# `ticket retire` is the one caller of the parent's singular `sub_issue`
+# DELETE, which unlinks a child from GH_STUB_DB's listing and fails on
+# GH_STUB_SUBISSUE_DELETE_EXIT. Under GH_STUB_DB, `issue edit --body-file`
+# writes body/<n>, `issue comment --body-file` and `issue close --comment`
+# append to comments/<n>, and `issue close --reason` writes reason/<n>;
+# `issue edit` fails on GH_STUB_EDIT_EXIT.
 stub_gh() {
   local d
   d="$(mktemp -d)"
@@ -342,10 +349,28 @@ ready-for-agent}"
         exit 0 ;;
       edit|comment)
         op="$2"; shift 2
+        cnum="$1"
         if [ -n "${GH_STUB_FILED:-}" ]; then
           printf 'issue %s %s\n' "$op" "$1" >>"$GH_STUB_FILED"
           shift
           record_flags "$@"
+        else
+          shift
+        fi
+        if [ "$op" = edit ] && [ "${GH_STUB_EDIT_EXIT:-0}" != 0 ]; then
+          echo "gh stub: issue edit refused" >&2; exit "$GH_STUB_EDIT_EXIT"
+        fi
+        # Under GH_STUB_DB an edit's body becomes the issue's body, and a
+        # comment is appended to comments/<n>, so a later read sees both.
+        if [ -n "$db" ]; then
+          while [ $# -gt 0 ]; do
+            if [ "$1" = --body-file ]; then
+              if [ "$op" = edit ]; then mkdir -p "$db/body"; cat "$2" >"$db/body/$cnum"
+              else mkdir -p "$db/comments"; cat "$2" >>"$db/comments/$cnum"; fi
+              shift
+            fi
+            shift
+          done
         fi
         exit 0 ;;
       close)
@@ -353,11 +378,22 @@ ready-for-agent}"
         cnum="$1"
         if [ -n "${GH_STUB_FILED:-}" ]; then
           printf 'issue close %s\n' "$1" >>"$GH_STUB_FILED"
-          shift
-          record_flags "$@"
+          record_flags "${@:2}"
         fi
         [ "${GH_STUB_ISSUE_CLOSE_EXIT:-0}" = 0 ] || { echo "gh stub: issue close refused" >&2; exit "$GH_STUB_ISSUE_CLOSE_EXIT"; }
-        if [ -n "$db" ]; then mkdir -p "$db/state"; echo closed >"$db/state/$cnum"; fi
+        if [ -n "$db" ]; then
+          mkdir -p "$db/state"; echo closed >"$db/state/$cnum"
+          shift
+          # The close's --reason lands in reason/<n> and its --comment in
+          # comments/<n>, the same file `issue comment` appends to.
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              --reason)  mkdir -p "$db/reason"; printf '%s\n' "$2" >"$db/reason/$cnum"; shift ;;
+              --comment) mkdir -p "$db/comments"; printf '%s\n' "$2" >>"$db/comments/$cnum"; shift ;;
+            esac
+            shift
+          done
+        fi
         exit 0 ;;
       reopen)
         shift 2
@@ -412,6 +448,10 @@ ready-for-agent}"
         && [ "${GH_STUB_SUBISSUE_GET_EXIT:-0}" != 0 ]; then
       echo "gh stub: sub_issues GET refused" >&2; exit "$GH_STUB_SUBISSUE_GET_EXIT"
     fi
+    if [ "$api_sub" = sub_issue ] && [ "$api_method" = DELETE ] \
+        && [ "${GH_STUB_SUBISSUE_DELETE_EXIT:-0}" != 0 ]; then
+      echo "gh stub: sub_issue DELETE refused" >&2; exit "$GH_STUB_SUBISSUE_DELETE_EXIT"
+    fi
     if [ "$api_sub" = dependencies/blocked_by ] && [ "$api_method" = POST ] \
         && [ "${GH_STUB_BLOCKED_POST_EXIT:-0}" != 0 ]; then
       echo "gh stub: blocked_by POST refused" >&2; exit "$GH_STUB_BLOCKED_POST_EXIT"
@@ -437,6 +477,16 @@ ready-for-agent}"
         else
           api_json="$(api_list_sub_issues "$api_num")"
         fi ;;
+      # GitHub's unlink: DELETE on the parent's singular sub_issue path, with
+      # the child's database id.
+      sub_issue)
+        [ "$api_method" = DELETE ] || { echo "gh stub: unscripted $api_method on '$api_path'" >&2; exit 99; }
+        if [ -n "$db" ] && [ -f "$db/sub_issues/$api_num" ]; then
+          child_num=$((api_fval / 1000))
+          grep -vxF "$child_num" "$db/sub_issues/$api_num" >"$db/sub_issues/$api_num.tmp"
+          mv "$db/sub_issues/$api_num.tmp" "$db/sub_issues/$api_num"
+        fi
+        api_json='{}' ;;
       dependencies/blocked_by)
         if [ "$api_method" = POST ]; then
           if [ -n "$db" ]; then
@@ -4592,7 +4642,8 @@ out="$(GH_STUB_FILED="$filed" "$ORCH" redo spec 2>&1)"; st=$?
 assert_status "the default path steps back to spec" "$st" 0
 assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
 assert_eq "keeping the existing issue" "$("$ORCH" state get issue)" "40"
-assert_eq "and touching gh not at all" "$(grep -c . "$filed")" "0"
+assert_eq "and, with no breakdown to retire, writing nothing to GitHub" \
+  "$(grep -c '^issue \(close\|comment\|edit\)' "$filed")" "0"
 retired="$(ls -d .orchestrator/handoff/pre-redo-spec-* 2>/dev/null)"
 assert_eq "retires the handoffs into one timestamped directory" \
   "$(printf '%s\n' "$retired" | grep -c '^\.orchestrator/handoff/pre-redo-spec-[0-9]\{8\}-[0-9]\{6\}$')" "1"
@@ -4634,6 +4685,108 @@ assert_eq "leaving the phase where it was rather than half-finishing" \
 out="$("$ORCH" redo spec --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh redo spec"
+
+# --- redo spec retires the ticket breakdown (#334) ---------------------------
+# A spec redone because it had to change gets a fresh breakdown: the default
+# path retires the kept issue's old one before stepping back, so the spec
+# phase's `ticket exists` answers 1 and orch-to-tickets runs again.
+echo
+echo "redo spec retires the ticket breakdown (#334)"
+db="$(mktemp -d)"
+export GH_STUB_DB="$db"
+mkdir -p "$db/body"
+tbody="$(mktemp)"
+writeln 'A ticket.' >"$tbody"
+rt1="$(GH_STUB_ISSUE_NUMBER=900 "$ORCH" ticket publish 50 "One" "$tbody")"
+rt2="$("$ORCH" ticket publish 50 "Two" "$tbody")"
+rt3="$("$ORCH" ticket publish 50 "Three" "$tbody")"
+"$ORCH" ticket close "$rt2" >/dev/null
+writeln 'The spec of #50.' >"$db/body/50"
+redo_spec_at() {
+  state_fixture phase implement
+  "$ORCH" state set issue "$1"
+  rm -rf .orchestrator/handoff/pre-redo-spec-*
+  writeln '# spec' >.orchestrator/handoff/02-spec.md
+  writeln '# implement' >.orchestrator/handoff/03-implement.md
+}
+redo_spec_at 50
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a sub-issue breakdown: redo spec succeeds" "$st" 0
+assert_eq "the parent is left with no sub-issues" \
+  "$(gh api "repos/{owner}/{repo}/issues/50/sub_issues" --jq length)" "0"
+for t in "$rt1" "$rt2" "$rt3"; do
+  assert_eq "old ticket #$t is closed" "$(cat "$db/state/$t")" "closed"
+  assert_contains "old ticket #$t carries the retirement comment" \
+    "$(cat "$db/comments/$t" 2>/dev/null)" "retired by an orchestrator redo"
+done
+assert_eq "an open old ticket is closed as not planned" "$(cat "$db/reason/$rt1" 2>/dev/null)" "not planned"
+out="$("$ORCH" ticket exists 50 2>&1)"; st=$?
+assert_status "ticket exists then finds no breakdown" "$st" 1
+assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
+assert_eq "keeping the issue" "$("$ORCH" state get issue)" "50"
+out="$("$ORCH" ticket reset 50 2>&1)"; st=$?
+assert_eq "a later ticket reset reopens none of the old tickets" \
+  "$(cat "$db/state/$rt1" "$db/state/$rt2" "$db/state/$rt3" | sort -u)" "closed"
+
+crlf='Intro\r\n\r\n## Ticket\r\n\r\n### What to build\r\nBuild.\r\n\r\n## After\r\nTail.\r\n'
+printf "$crlf" >"$db/body/51"
+redo_spec_at 51
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a collapsed CRLF breakdown: redo spec succeeds" "$st" 0
+assert_eq "the ## Ticket section is gone and the rest of the CRLF body is unchanged" \
+  "$(od -c <"$db/body/51")" "$(printf 'Intro\r\n\r\n## After\r\nTail.\r\n' | od -c)"
+out="$("$ORCH" ticket exists 51 2>&1)"; st=$?
+assert_status "ticket exists then finds no breakdown" "$st" 1
+
+writeln 'The spec.' '' '## Ticket' '' '```sh' '# not a heading' '```' 'Build it.' >"$db/body/52"
+redo_spec_at 52
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a collapsed breakdown at the body's end: redo spec succeeds" "$st" 0
+assert_eq "drops the section and the blank line before it, a fenced # line included" \
+  "$(od -c <"$db/body/52")" "$(writeln 'The spec.' | od -c)"
+
+db_snapshot() { (cd "$db" && find . -type f | sort | xargs cat | cksum); }
+before="$(db_snapshot)"
+filed="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" "$ORCH" ticket retire 50 2>&1)"; st=$?
+assert_status "retiring an already-retired sub-issue breakdown succeeds" "$st" 0
+out="$(GH_STUB_FILED="$filed" "$ORCH" ticket retire 52 2>&1)"; st=$?
+assert_status "retiring an already-retired collapsed breakdown succeeds" "$st" 0
+assert_eq "and changes nothing" "$(db_snapshot)" "$before"
+assert_eq "writing nothing to GitHub" "$(grep -c '^issue \(close\|comment\|edit\)' "$filed")" "0"
+
+rt4="$("$ORCH" ticket publish 53 "Four" "$tbody")"
+redo_spec_at 53
+out="$(GH_STUB_SUBISSUE_DELETE_EXIT=1 "$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a gh that will not unlink a ticket fails redo spec" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not unlink ticket #$rt4"
+assert_eq "leaving the phase at implement" "$("$ORCH" state get phase)" "implement"
+assert_eq "and the handoffs in place" "$(cat .orchestrator/handoff/02-spec.md .orchestrator/handoff/03-implement.md)" \
+  "$(printf '# spec\n# implement')"
+out="$(GH_STUB_SUBISSUE_GET_EXIT=1 "$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a gh that cannot list sub-issues fails redo spec" "$st" 1
+assert_eq "leaving the phase at implement" "$("$ORCH" state get phase)" "implement"
+writeln 'Spec.' '' '## Ticket' 'Build.' >"$db/body/54"
+redo_spec_at 54
+out="$(GH_STUB_EDIT_EXIT=1 "$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a gh that will not rewrite the body fails redo spec" "$st" 1
+assert_eq "leaving the phase at implement" "$("$ORCH" state get phase)" "implement"
+redo_spec_at 53
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a re-run after the failure resumes and succeeds" "$st" 0
+assert_eq "retiring the ticket it could not unlink before" \
+  "$(gh api "repos/{owner}/{repo}/issues/53/sub_issues" --jq length) $(cat "$db/state/$rt4")" "0 closed"
+
+rt5="$("$ORCH" ticket publish 55 "Five" "$tbody")"
+redo_spec_at 55
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+assert_status "--new-issue still steps back to spec" "$st" 0
+assert_eq "without retiring the closed issue's tickets" \
+  "$(gh api "repos/{owner}/{repo}/issues/55/sub_issues" --jq '.[].number') $(cat "$db/state/$rt5")" "$rt5 open"
+
+out="$("$ORCH" help 2>&1)"
+assert_contains "ticket retire is in the usage text" "$out" "ticket retire <parent>"
+unset GH_STUB_DB
 
 # --- gh adapter (real issue close, subprocess gh) ---------------------------
 # The rest of "redo spec" proved the seam through the in-memory fake; this is
