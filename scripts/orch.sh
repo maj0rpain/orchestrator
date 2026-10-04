@@ -1140,24 +1140,55 @@ cmd_spec_review() {
   printf '%s/\n' "$dir"
 }
 
-# A quick implementation's report directory: .orchestrator/quick/<branch>/,
-# the branch name used whole, slashes and all. Needs no flow state, and
-# excludes the orchestrator directory itself, since a quick implementation may
-# run in a repo where init never did. Never wiped: a rerun keeps its reports.
-cmd_quick() {
+# --- review-pass ------------------------------------------------------------
+
+# A review pass's start, for a quick implementation's step 6 and a standalone
+# review pass alike: the guard and the numbered report prefix each have one
+# right answer, so they live here rather than in skill prose. Needs no flow
+# state and may run where init never did, so it excludes the orchestrator
+# directory itself. It reads state.json only when one exists, never through
+# require_state, and never writes it: a branch or issue an active flow holds
+# belongs to that flow (ADR-0029). Never wipes - each pass takes the next
+# number, so a second pass on a branch never overwrites the first.
+cmd_review_pass() {
   local op="${1:-}"
   shift || true
   case "$op" in
-    path) ;;
-    *) die "unknown quick op: ${op:-<none>} (want path)" ;;
+    begin) ;;
+    *) die "unknown review-pass op: ${op:-<none>} (want begin)" ;;
   esac
-  [ $# -eq 0 ] || die "usage: orch.sh quick path"
-  local branch dir
+  [ $# -eq 1 ] || die "usage: orch.sh review-pass begin <issue>"
+  local issue="$1" branch
+  case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  [ "$branch" != "$(recorded_base "$branch")" ] \
+    || die "$branch is the base branch - a review pass reviews a branch's change against it; check out the change's branch"
+  if [ -f "$STATE" ]; then
+    local phase held held_branch
+    phase="$(state_get phase)"
+    held="$(state_get issue)"
+    held_branch="$(state_get branch)"
+    if [ "$phase" != done ] && { [ "$held" = "$issue" ] || [ "$held_branch" = "$branch" ]; }; then
+      case "$phase" in
+        implement|review)
+          die "the active flow holds issue #$held at phase $phase - this change belongs to that flow's review loop; run $(flow_cmd next)" ;;
+        spec)
+          die "the active flow holds issue #$held at phase spec - its change has not been built yet; run $(flow_cmd next)" ;;
+        *)
+          die "the active flow holds issue #$held at phase '$phase', which is not a flow phase - refusing to review it; run orch.sh doctor --flow" ;;
+      esac
+    fi
+  fi
   exclude_orch_dir
-  dir="$ORCH/quick/$branch"
+  local dir="$ORCH/review-pass/$branch" f n max=0
   mkdir -p "$dir"
-  printf '%s/\n' "$dir"
+  for f in "$dir"/iteration-[0-9][0-9]-*; do
+    [ -e "$f" ] || continue
+    n="${f##*/iteration-}"
+    n="${n%%-*}"
+    [ "$((10#$n))" -le "$max" ] || max="$((10#$n))"
+  done
+  printf '%s/iteration-%02d\n' "$dir" "$((max + 1))"
 }
 
 # --- git / github -----------------------------------------------------------
@@ -1377,8 +1408,8 @@ cmd_pr_open() {
 # `gh pr create` in skill prose - the same reason `issue publish` owns its own
 # `gh issue create` rather than leaving it to skill prose. Stateless like
 # branch off and issue publish: the caller has no flow to record into, and no
-# draft to promote later, since a quick implementation's single-pass review
-# already ran before this is called.
+# draft to promote later, since a quick implementation's review pass already
+# ran before this is called.
 cmd_pr_publish() {
   [ $# -eq 3 ] || die "usage: orch.sh pr publish <issue> <title> <body-file>"
   local issue="$1" title="$2" body_file="$3" branch base pr
@@ -1931,8 +1962,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               it (else the base branch in effect) - Closes
                               <issue> into the default branch, Refs it into any
                               other - recording no state; prints the PR number
-                              - for a quick implementation whose single-pass
-                              review already ran
+                              - for a quick implementation whose review pass
+                              already ran
   pr release [--force] <title> <body-file>
                               open the release PR: a non-draft PR from the
                               base branch in effect into the default branch,
@@ -1991,10 +2022,16 @@ orch.sh - deterministic operations for the orchestrator flow
                               .orchestrator/spec-review/<n>/ and print its
                               path. Reads state.json only to compare, and
                               never writes it
-  quick path                  print .orchestrator/quick/<branch>/ for the
-                              current branch, name used whole, creating it and
-                              git-excluding .orchestrator/ - for a quick
-                              implementation's review reports; needs no state
+  review-pass begin <issue>   start a review pass of the current branch
+                              against issue <issue>: refuse on a detached
+                              HEAD, on the base branch, and while an active
+                              flow holds <issue> or the branch (pointing at
+                              next, or at doctor --flow for an unknown phase);
+                              otherwise print the next free report prefix
+                              .orchestrator/review-pass/<branch>/iteration-NN,
+                              branch name used whole, git-excluding
+                              .orchestrator/. Never wipes; reads state.json
+                              only to compare, and never writes it
   redo review                 retire the branch and PR, reopen the spec
                               issue's closed tickets, reset the loop, retire
                               03-implement.md into handoff/pre-redo-<n>/, and
@@ -2029,7 +2066,7 @@ main() {
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
     spec-review)   cmd_spec_review "$@" ;;
-    quick)         cmd_quick "$@" ;;
+    review-pass)   cmd_review_pass "$@" ;;
     redo)          cmd_redo "$@" ;;
     status)        cmd_status "$@" ;;
     archive)       cmd_archive "$@" ;;
