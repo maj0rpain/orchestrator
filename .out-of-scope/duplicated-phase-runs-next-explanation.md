@@ -49,3 +49,4 @@ axis when the copies disagree, not by removing the copies.
 - #162: "The Severity rubric is written out in both CONTEXT.md and the orch-review skill" — review-loop Standards nit against PR #154
 - #166: "Each fixer and closer prompt field is described in both the skill and the agent file" — review-loop Standards nit against PR #154
 - #211: "Opening paragraph and reporting rules are duplicated word for word across the four lens agents" (review-loop Standards nit against PR #209)
+- #339: "The ticket exists exit contract is written twice, in orch-flow and orch-quick-implement" (review-loop Standards nit against PR #332). The two copies agree on the exit codes but not on what exit 0's word settles: the flow's step 6 **Ticket breakdown**, or quick implementation's step 5 frontier. Each caller's reader needs its own consequence in place; the exit codes themselves are stated once, in `cmd_ticket_exists`'s header comment.

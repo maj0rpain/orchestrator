@@ -40,3 +40,5 @@ nobody would pick, is not covered here. Triage it on its merits.
 - #228: "README Naming host capabilities paragraphs and orch-review-spec layout line reworded beyond the spec's README edits" (Spec-axis finding against PR #218)
 - #229: "host-capabilities Run a plugin command fallback section rewritten beyond the spec's row note" (Spec-axis finding against PR #218)
 - #230: "scan_capabilities refactored to check a named section in any orch- skill, unrequested by the spec" (Spec-axis finding against PR #218)
+- #352: "orch-implementer body reworded to 'review pass', outside the spec's agent changes" (Spec-axis finding against PR #345). The new wording is the glossary's term; reverting it would restore a phrase the glossary marks _Avoid_.
+- #355: "docs lint requires the ## Review pass heading, not asked by Seam 2" (Spec-axis finding against PR #345). A required heading is one of ADR-0027's own structural rules, and quick implementation's step 6 routes to that heading.
