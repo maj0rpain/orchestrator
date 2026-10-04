@@ -337,7 +337,8 @@ ready-for-agent}"
             labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; exit 0 ;;
           esac
         done
-        printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"
+        if [ -n "$db" ] && [ -f "$db/body/$1" ]; then cat "$db/body/$1"
+        else printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"; fi
         exit 0 ;;
       edit|comment)
         op="$2"; shift 2
@@ -2947,12 +2948,14 @@ out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
 assert_status "a mid-line ## Ticket is not the collapse heading" "$st" 1
 assert_eq "and prints nothing" "$out" ""
 
+# An unreadable GitHub is not "no breakdown": a caller that read exit 1 as
+# "neither" would publish a second breakdown, so a gh failure dies with 2.
 out="$(GH_STUB_SUBISSUE_GET_EXIT=1 "$ORCH" ticket exists 98 2>&1)"; st=$?
-assert_status "a gh that cannot list sub-issues dies" "$st" 1
+assert_status "a gh that cannot list sub-issues dies with 2, not no-breakdown's 1" "$st" 2
 assert_contains "naming what failed" "$out" "gh could not list sub-issues of #98"
 
-out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket exists 98 2>&1)"; st=$?
-assert_status "a gh that cannot read the issue dies" "$st" 1
+out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" ticket exists 98 2>&1)"; st=$?
+assert_status "a gh that cannot read the issue dies with 2, not no-breakdown's 1" "$st" 2
 assert_not_contains "never printing a verdict" "$out" "collapsed"
 
 out="$("$ORCH" ticket exists abc 2>&1)"; st=$?

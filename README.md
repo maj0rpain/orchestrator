@@ -72,19 +72,20 @@ flow skill is now `orchestrator:orch-flow`, and so on). See
 
 ```
   planning session          shared understanding reached
-  (grill-me / wayfinder  ->  AskUserQuestion: flow, or quick?
-   / improve-codebase-…)                               |
+  (orch-plan, or a      ->  AskUserQuestion: flow, or quick?
+   mattpocock grilling)                                |
                                         +----------------+----------------+
                                         |                                 |
                               /orchestrator:start                orchestrator:orch-quick-implement
-                              ->  01-plan.md                     issue, to-tickets publishes tickets,
-                                        |                          branch quick/<issue>-<slug>,
+                              ->  01-plan.md                     issue, orch-to-tickets publishes
+                                        |                          tickets, branch quick/<issue>-<slug>,
                                        | /clear                    one subagent per ticket, tdd,
                                                                     single-pass review, PR
-  spec session         to-spec publishes the issue,  <--+
-                       or already adopted at init
+  spec session         orch-to-spec publishes the    <--+
+                       issue, or already adopted at init
                        spec review
-                       to-tickets publishes tickets  ->  02-spec.md
+                       orch-to-tickets publishes
+                       tickets                       ->  02-spec.md
                                                        |
                                                        | /clear
   implement session    branch orch/<issue>-<slug>   <--+
@@ -102,7 +103,7 @@ flow skill is now `orchestrator:orch-flow`, and so on). See
 For work that does not need the pipeline, a human can pick a quick
 implementation instead of starting a flow - see CONTEXT.md's **Quick
 implementation** entry. It skips all four phases: no handoff, no
-`.orchestrator/state.json`, just a linked issue, `to-tickets` publishing that
+`.orchestrator/state.json`, just a linked issue, `orch-to-tickets` publishing that
 issue's ticket breakdown, the same one-`orch-implementer`-per-ticket loop the
 implement phase uses (ending in `pr publish` instead of a draft `pr open`), a
 single-pass review by the plugin's own reviewer agents, and a PR.
@@ -149,24 +150,16 @@ title and summary, and `orch.sh pr release` writes the `Closes` lines.
 
 ## Why separate sessions
 
-`handoff`, `implement`, `to-spec`, `to-tickets`, `wayfinder`, and
-`improve-codebase-architecture` are all marked `disable-model-invocation: true`
-upstream, so the Skill tool cannot invoke them. The flow works around this by
-reading their `SKILL.md` files directly and following them, which is what the
-Skill tool would have injected anyway.
-
-That makes invocability a solved problem, **but the separate sessions remain the
-point**: fresh context per phase, and room for the human-in-the-loop exchanges
-that `to-spec` (test seams) and the spec review depend on. If those upstream flags
-ever change, the architecture does not need to.
+The separate sessions are the point: fresh context per phase, and room for
+the human-in-the-loop exchanges that `orch-to-spec` (test seams) and the spec
+review depend on.
 
 ## Activation
 
-A `PostToolUse` hook on `Skill(orch-plan)`, and on `Skill(grilling)` when
-mattpocock-skills is installed (its `grill-me`, `wayfinder`, and
-`improve-codebase-architecture` all route through it), starts a planning
-session. It fires once per session, stays quiet when a flow is already running,
-and tells the model that once a shared understanding is reached, the next step
+A `PostToolUse` hook on `Skill(orch-plan)`, and on the mattpocock-skills
+entry points named above when they are installed, starts a planning session.
+It fires once per session, stays quiet when a flow is already running, and
+tells the model that once a shared understanding is reached, the next step
 is a human's call, not the model's: call `AskUserQuestion` with exactly three
 options, start the flow (`orchestrator:orch-flow`), a quick implementation
 (`orchestrator:orch-quick-implement`), or a blueprint only (publish the spec,
@@ -175,8 +168,8 @@ the human picks.
 
 Junie has no `PostToolUse` event, so the same hook also runs on
 `UserPromptSubmit` and fires there when the prompt names a grilling entry
-point (`/grilling`, `$grill-me`, `/wayfinder`, and so on). It sends nothing
-when Junie picks grilling on its own. Junie routes grilling into its plan
+point (`/orch-plan`, `/orchestrator:plan`, `/grilling`, `$grill-me`,
+`/wayfinder`, and so on). It sends nothing when Junie picks grilling on its own. Junie routes grilling into its plan
 mode, whose plan agent ends on Junie's own plan screen instead of asking the
 closing question. So when the human confirms that screen, which submits
 `Implement the suggested plan`, the hook asks the question there, before any
@@ -202,13 +195,16 @@ start.
 ## Layout
 
 ```
-commands/                     start, next, status, doctor, redo, abort, release, spec-review
+commands/                     start, next, status, doctor, redo, abort, release, spec-review, plan, to-spec, to-tickets
 agents/                       the fresh agents: two reviewers (the review loop's and quick implementation's), the review loop's fixer and closer, the spec review's four lenses, and the implementer
 skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: four lenses in a flow, three standalone, one batch question
 skills/orch-review/           the review loop: rubric, authority rules, terminal states
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
-skills/orch-quick-implement/  the other route: issue, optional spec review, to-tickets, tdd, single-pass review, PR - no flow
+skills/orch-quick-implement/  the other route: issue, optional spec review, orch-to-tickets, tdd, single-pass review, PR - no flow
+skills/orch-plan/             the planning interview, ending on the closing question: flow, quick implementation, or blueprint
+skills/orch-to-spec/          turns the conversation into a spec and publishes it as an issue
+skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
 scripts/orch.sh               every deterministic operation (mechanism)
 scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
@@ -303,9 +299,9 @@ label it `needs-triage` if it isn't already.
 ## Status
 
 All four phases run. The spec phase works against the flow's issue, however it
-arrived - published by `to-spec` in this phase, or already adopted at init,
-carrying the required `ready-for-agent` triage label, in which case `to-spec`
-is skipped entirely. Either way, it reviews the issue through four independent
+arrived - published by `orch-to-spec` in this phase, or already adopted at
+init, carrying the required `ready-for-agent` triage label, in which case
+`orch-to-spec` is skipped entirely. Either way, it reviews the issue through four independent
 lenses - Fidelity to the plan, Consistency with itself and the glossary,
 Testability at the agreed seams, Implementability from the spec alone - each
 a read-only agent (`orch-lens-fidelity`, `orch-lens-consistency`,
