@@ -237,17 +237,17 @@ _Avoid_: existing issue, pre-existing issue, given issue.
 
 One look at a spec issue, taken once. Usually a step of a flow's spec phase,
 after the issue exists - published by the spec phase or already adopted at
-init - and before its handoff is written. A human may also ask for one on demand,
-against any issue, and a quick implementation may take one before its ticket
-breakdown: either way a standalone spec review, which belongs to no flow and
-leaves no handoff. It first proposes folding into the body anything the issue's comments say
-that the body does not - a triage agent brief, a follow-up - so the body
-stays the one place the spec is written. Its lenses then read the spec,
-body and comments, independently - four in a flow, three in a standalone
-review; every finding they report, and every proposed fold, is put to a
-human with a proposed edit, and only the edits the human accepts change the
-spec. A spec review runs once - it is not a loop and has no
-budget; another look is another spec review.
+init - and before its handoff is written. A human may also ask for one on
+demand, against any issue, and a quick implementation may take one before its
+ticket breakdown: either way a standalone spec review, which belongs to no
+flow and leaves no handoff. It first proposes folding into the body anything
+the issue's comments say that the body does not - a triage agent brief, a
+follow-up - so the body stays the one place the spec is written. Its lenses
+then read the spec, body and comments, independently - four in a flow, three
+in a standalone review; every finding they report, and every proposed fold, is
+put to a human with a proposed edit, and only the edits the human accepts
+change the spec. A spec review runs once - it is not a loop and has no budget;
+another look is another spec review.
 
 ## Lens
 

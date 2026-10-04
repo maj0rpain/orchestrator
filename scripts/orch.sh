@@ -1100,7 +1100,7 @@ cmd_issue() {
 # --- spec -------------------------------------------------------------------
 
 # The spec review's one hand on GitHub. The body is the truth the implement
-# phase reads, so the three ways it is read and written go through here, where
+# phase reads, so the four ways it is read and written go through here, where
 # they are tested, rather than through a `gh issue edit` in skill prose.
 # All four ops delegate to the issue primitives above, resolving the number
 # from state. A done flow's issue is finished work: state.json lingers after
