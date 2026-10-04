@@ -12,7 +12,7 @@ writes no handoff. First, the session running the review proposes folding
 into the body whatever the issue's comments say that the body does not - see
 **Consolidation**. The **lenses** - four in a flow, three in a standalone
 review - then read the issue, body and comments, independently, as parallel
-sub-agents that see only files. Every proposed fold and every **finding**
+sub-agents that see only files. Every consolidation item and every **finding**
 they report reaches the human as a proposed edit in one batch; only the edits
 the human accepts change the issue. The issue body stays the single truth the
 implement phase reads; after a review, the comments are history.

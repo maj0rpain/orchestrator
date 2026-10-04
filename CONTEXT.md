@@ -244,10 +244,21 @@ flow and leaves no handoff. It first proposes folding into the body anything
 the issue's comments say that the body does not - a triage agent brief, a
 follow-up - so the body stays the one place the spec is written. Its lenses
 then read the spec, body and comments, independently - four in a flow, three
-in a standalone review; every finding they report, and every proposed fold, is
+in a standalone review; every finding they report, and every consolidation item, is
 put to a human with a proposed edit, and only the edits the human accepts
 change the spec. A spec review runs once - it is not a loop and has no budget;
 another look is another spec review.
+
+## Consolidation item
+
+One proposed edit in a spec review that folds into the spec body what an
+issue comment says and the body does not - a triage agent brief, a
+follow-up. The review's own session drafts it, never a lens, and it reaches
+the human ahead of the lenses' findings, in the same batch, accepted or
+declined like any other proposed edit. Two comments that contradict each
+other become one decision item instead. A comment that opens with a
+`## Spec review` heading is the review's own history and never produces one.
+_Avoid_: fold (as a noun), proposed fold.
 
 ## Lens
 
