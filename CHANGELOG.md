@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.2
+
+The README's Layout row for `skills/orch-interview/` no longer says the
+skill ends on the closing question: the planning hook's message asks it, and
+the skill defers to that message (see issue #333).
+
 ## 3.0.1
 
 The glossary now defines the spec review's **consolidation item**, and
