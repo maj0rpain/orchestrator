@@ -56,16 +56,28 @@ fake_record_flags() {
 # CLOSED for those issues' state alone, so pr release can see a mix of open
 # and closed issues in one run (issue #139). pr release asks for state,url;
 # a number in GH_STUB_PR_NUMBERS answers PULL there, as its --jq turns a PR's
-# /pull/ url into.
+# /pull/ url into. Asked for comments with GH_STUB_COMMENTS_JSON set - raw
+# gh-shaped JSON, {"comments":[{"author":{"login":..},"createdAt":..,"body":..}]}
+# - it applies the request's own --jq with real jq, as adapter_pr_list does,
+# so the formatting under test is orch.sh's; unset, it answers as before.
 adapter_issue_view() {
   if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue view %s\n' "$*" >>"$GH_STUB_FILED"; fi
   if [ "${GH_STUB_VIEW_EXIT:-0}" != 0 ]; then
     echo "gh stub: issue view refused" >&2
     return "$GH_STUB_VIEW_EXIT"
   fi
-  local a
+  local a prev="" q=""
+  for a in "$@"; do
+    if [ "$prev" = --jq ]; then q="$a"; fi
+    prev="$a"
+  done
   for a in "$@"; do
     case "$a" in
+      comments)
+        if [ -n "${GH_STUB_COMMENTS_JSON:-}" ]; then
+          printf '%s' "$GH_STUB_COMMENTS_JSON" | jq -r "${q:-.}"
+          return
+        fi ;;
       title,labels) fake_readback; return 0 ;;
       state|state,url)
         case " ${GH_STUB_PR_NUMBERS:-} " in

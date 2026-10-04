@@ -342,8 +342,16 @@ ready-for-agent}"
               esac
               exit 0 ;;
             labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; exit 0 ;;
-            # Under GH_STUB_DB, every comment comments/<n> has collected.
-            comments) [ -n "$db" ] && cat "$db/comments/$1" 2>/dev/null; exit 0 ;;
+            # GH_STUB_COMMENTS_JSON, raw gh-shaped JSON, answers through the
+            # request's own --jq with real jq; otherwise, under GH_STUB_DB,
+            # every comment comments/<n> has collected.
+            comments)
+              if [ -n "${GH_STUB_COMMENTS_JSON:-}" ]; then
+                q=.; prev=
+                for b in "$@"; do [ "$prev" = --jq ] && q="$b"; prev="$b"; done
+                printf '%s' "$GH_STUB_COMMENTS_JSON" | jq -r "$q"; exit
+              fi
+              [ -n "$db" ] && cat "$db/comments/$1" 2>/dev/null; exit 0 ;;
           esac
         done
         if [ -n "$db" ] && [ -f "$db/body/$1" ]; then cat "$db/body/$1"
@@ -3275,12 +3283,57 @@ assert_contains "with a usage line" "$out" "usage: orch.sh issue"
 
 out="$("$ORCH" issue bogus 23 "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
-assert_contains "naming the four it does" "$out" "fetch|update|comment|publish"
+assert_contains "naming the five it does" "$out" "fetch|update|comment|comments|publish"
 
 assert_contains "help documents issue fetch" "$("$ORCH" help)" "issue fetch"
 assert_contains "and issue update" "$("$ORCH" help)" "issue update"
 assert_contains "and issue publish" "$("$ORCH" help)" "issue publish"
 assert_contains "and issue comment" "$("$ORCH" help)" "issue comment"
+
+# issue comments: every comment on an issue, each opened by a marker line
+# naming its author and timestamp, so the spec review reads the issue's
+# comments alongside its body (issue #361).
+comments_json='{"comments":[{"author":{"login":"triage-bot"},"createdAt":"2026-09-01T10:00:00Z","body":"## Agent brief\n\nDo the `$HOME` thing in #6."},{"author":{"login":"pat"},"createdAt":"2026-09-02T11:30:00Z","body":"Also: the second line\n\\\\ stays unescaped."}]}'
+issue_comments="$(mktemp)"
+log="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" GH_STUB_COMMENTS_JSON="$comments_json" \
+  "$ORCH" issue comments 23 "$issue_comments" 2>&1)"; st=$?
+assert_status "comments writes the issue's comments to the file, with no state.json present" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+assert_eq "each comment in order, opened by its author-and-date marker, one blank line between" \
+  "$(cat "$issue_comments")" "$(writeln '<!-- comment @triage-bot 2026-09-01T10:00:00Z -->' \
+    '## Agent brief' '' 'Do the `$HOME` thing in #6.' '' \
+    '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Also: the second line' '\\ stays unescaped.')"
+assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "the view call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_COMMENTS_JSON='{"comments":[]}' \
+  "$ORCH" issue comments 23 "$issue_comments" 2>&1)"; st=$?
+assert_status "an issue with no comments still succeeds" "$st" 0
+assert_eq "leaving an empty file" "$(wc -c <"$issue_comments" | tr -d ' ')" "0"
+
+printf 'known content\n' >"$issue_comments"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_VIEW_EXIT=1 GH_STUB_COMMENTS_JSON="$comments_json" \
+  "$ORCH" issue comments 23 "$issue_comments" 2>&1)"; st=$?
+assert_status "a gh that will not answer fails the comments fetch" "$st" 1
+assert_contains "naming the issue" "$out" "issue #23"
+assert_eq "and leaves the file that was already there byte-identical" \
+  "$(od -c "$issue_comments")" "$(printf 'known content\n' | od -c)"
+
+out="$("$ORCH" issue comments abc "$issue_comments" 2>&1)"; st=$?
+assert_status "comments refuses an issue number that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+assert_contains "with a usage line" "$out" "usage: orch.sh issue"
+
+out="$("$ORCH" issue comments 23 2>&1)"; st=$?
+assert_status "comments refuses with no file" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh issue comments"
+
+out="$("$ORCH" issue bogus 23 "$tricky" 2>&1)"; st=$?
+assert_contains "the issue op listing includes comments" "$out" "comments"
+assert_contains "help documents issue comments" "$("$ORCH" help)" "issue comments"
+rm -f "$issue_comments"
+
 
 assert_eq "still no state.json - this section recorded none" \
   "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
@@ -3655,9 +3708,33 @@ assert_contains "on the flow's issue" "$(cat "$filed")" "issue comment 14"
 rm -f "$spec_scratch"
 state_fixture phase "$prior_phase"
 
+# spec comments: the active flow's spec issue's comments, the number from
+# state (issue #361).
+spec_comments="$(mktemp)"
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  GH_STUB_COMMENTS_JSON='{"comments":[{"author":{"login":"pat"},"createdAt":"2026-09-02T11:30:00Z","body":"A follow-up."}]}' \
+  "$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
+assert_status "spec comments writes the flow issue's comments" "$st" 0
+assert_contains "of the issue state records" "$(cat "$filed")" "issue view 14"
+assert_eq "each opened by its marker line" "$(cat "$spec_comments")" \
+  "$(writeln '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'A follow-up.')"
+state_fixture phase done
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
+assert_status "spec comments refuses once the flow is done" "$st" 1
+assert_contains "naming the flow's issue" "$out" "issue #14"
+assert_contains "and pointing at issue comments for another issue" "$out" "issue comments <n>"
+assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+state_fixture phase "$prior_phase"
+rm -f "$spec_comments"
+assert_contains "help documents spec comments" "$("$ORCH" help)" "spec comments"
+out="$("$ORCH" spec 2>&1)"; st=$?
+assert_contains "the spec op listing includes comments" "$out" "fetch|update|comment|comments"
+
 out="$("$ORCH" spec publish "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
-assert_contains "naming the three it does" "$out" "fetch|update|comment"
+assert_contains "naming the four it does" "$out" "fetch|update|comment|comments"
 out="$("$ORCH" spec fetch 2>&1)"; st=$?
 assert_status "and a call with no file" "$st" 1
 assert_contains "with the usage" "$out" "usage: orch.sh spec"
@@ -3712,6 +3789,23 @@ assert_contains "the real adapter invoked gh issue comment on the issue given" \
 assert_contains "with the file's contents as the comment" \
   "$(cat "$filed")" "| Fidelity | plan handoff |"
 assert_eq "as one real gh subprocess" "$(grep -cx issue "$log")" "1"
+
+# issue comments' own real-adapter proof: the real request asks gh for the
+# comments field, and what gh answers parses into the marker-line file.
+issue_comments="$(mktemp)"
+: >"$filed"
+log="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
+  GH_STUB_COMMENTS_JSON='{"comments":[{"author":{"login":"pat"},"createdAt":"2026-09-02T11:30:00Z","body":"Real comment."}]}' \
+  "$ORCH" issue comments 23 "$issue_comments" 2>&1)"; st=$?
+assert_status "issue comments shells out for real" "$st" 0
+assert_contains "the real adapter invoked gh issue view on the issue given" \
+  "$(cat "$filed")" "issue view 23"
+assert_contains "asking for the comments field" "$(cat "$filed")" "--json comments"
+assert_eq "and what gh answered parses into the file" "$(cat "$issue_comments")" \
+  "$(writeln '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Real comment.')"
+assert_eq "as one real gh subprocess" "$(grep -cx issue "$log")" "1"
+rm -f "$issue_comments"
 
 "$ORCH" state set issue null
 

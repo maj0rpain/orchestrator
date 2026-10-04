@@ -1047,6 +1047,24 @@ cmd_issue_fetch() {
   mv "$tmp" "$file"
 }
 
+# Every comment on the issue, in order, each opened by a marker line naming
+# its author and gh's ISO-8601 timestamp, one blank line between comments and
+# bodies unescaped - so the spec review reads the comments beside the body.
+# No comments is an empty file, not an error. Written beside the target and
+# moved into place only on success, as cmd_issue_fetch is.
+cmd_issue_comments() {
+  local issue="$1" file="$2" tmp
+  mkdir -p "$(dirname "$file")"
+  tmp="$(mktemp "$file.XXXXXX")"
+  if ! adapter_issue_view "$issue" --json comments \
+      --jq '[.comments[] | "<!-- comment @\(.author.login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n")' \
+      >"$tmp"; then
+    rm -f "$tmp"
+    die "gh could not read the comments of issue #$issue"
+  fi
+  mv "$tmp" "$file"
+}
+
 cmd_issue_update() {
   local issue="$1" file="$2"
   [ -f "$file" ] || die "body file not found: $file"
@@ -1068,14 +1086,14 @@ cmd_issue() {
   local op="${1:-}"
   shift || true
   case "$op" in
-    fetch|update|comment)
+    fetch|update|comment|comments)
       [ $# -eq 2 ] || die "usage: orch.sh issue $op <n> <file>"
       local issue="$1" file="$2"
-      case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
+      case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue (usage: orch.sh issue $op <n> <file>)" ;; esac
       "cmd_issue_$op" "$issue" "$file"
       ;;
     publish) cmd_issue_publish "$@" ;;
-    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|publish)" ;;
+    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|comments|publish)" ;;
   esac
 }
 
@@ -1093,10 +1111,10 @@ cmd_spec() {
   shift || true
   require_state
   case "$op" in
-    fetch|update|comment) ;;
-    *) die "unknown spec op: ${op:-<none>} (want fetch|update|comment)" ;;
+    fetch|update|comment|comments) ;;
+    *) die "unknown spec op: ${op:-<none>} (want fetch|update|comment|comments)" ;;
   esac
-  [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment> <file>"
+  [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment|comments> <file>"
   local file="$1" issue
   require_issue issue
   [ "$(state_get phase)" != done ] \
@@ -2093,6 +2111,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               no state
   issue comment <n> <file>    post <file> as a comment on issue <n>,
                               recording no state
+  issue comments <n> <file>   write every comment on issue <n> to <file>, in
+                              order, each opened by a line
+                              <!-- comment @<login> <createdAt> --> - recording
+                              no state; no comments is an empty file
   pr open <title> <body-file> push and open a draft PR against the flow's base
                               branch - Closes its issue into the default
                               branch, Refs it into any other
@@ -2163,7 +2185,9 @@ orch.sh - deterministic operations for the orchestrator flow
   spec fetch <file>           write the spec issue's body to <file>
   spec update <file>          replace the spec issue's body with <file>
   spec comment <file>         post <file> as a comment on the spec issue
-                              all three act on the active flow's issue,
+  spec comments <file>        write every comment on the spec issue to
+                              <file>, as issue comments does
+                              all four act on the active flow's issue,
                               refusing once the flow is done; for any other
                               issue use issue <op> <n> <file>
   spec-review begin <n>       start a standalone spec review of issue <n>:
