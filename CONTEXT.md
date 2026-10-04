@@ -82,9 +82,10 @@ rather than split out beneath it.
 The fresh, non-fork agent that builds exactly one ticket of a ticket
 breakdown, test-first, and checks its own work against that ticket's
 acceptance criteria before reporting. It never reviews its work beyond that
-check: review belongs to the review loop, or to a review pass. It reports back structurally instead of blocking on a human; a
-criterion it cannot meet alone is reported as unmet, for the review loop's
-Spec axis to judge. Used in the implement phase and in quick implementation.
+check: review belongs to the review loop, or to a review pass. It reports back
+structurally instead of blocking on a human; a criterion it cannot meet alone
+is reported as unmet, for the review loop's Spec axis to judge. Used in the
+implement phase and in quick implementation.
 
 ## Phase
 
