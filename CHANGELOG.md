@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.1
+
+The glossary now defines the spec review's **consolidation item**, and
+`CONTEXT.md` and the `orch-spec-review` skill call it that instead of a
+"proposed fold"; "fold" stays a verb (see issue #365).
+
 ## 3.0.0
 
 Breaking: the planning entry point is renamed `interview`, so that typing
