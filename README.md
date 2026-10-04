@@ -13,8 +13,8 @@ behind it.
 The plugin carries everything it runs: `orch-to-spec` writes the spec,
 `orch-to-tickets` breaks it into tickets, each ticket subagent builds its
 ticket test-first, and the plugin owns the state, the handoffs, the branch, the
-PR, and the reviewer agents that both the review loop and a quick
-implementation's single pass start. If you have
+PR, and the reviewer agents that both the review loop and a review pass
+start. If you have
 [`mattpocock-skills`](https://github.com/mattpocock/skills) installed, its
 `grilling`, `grill-me`, `grill-with-docs`, and `wayfinder` also start a
 planning session.
@@ -80,7 +80,7 @@ flow skill is now `orchestrator:orch-flow`, and so on). See
        ->  01-plan.md               issue, orch-to-tickets publishes    orch-to-spec publishes
                  |                  tickets, branch quick/<issue>-      the issue, spec review
                  | /clear           <slug>, one subagent per ticket,    offered, orch-to-tickets
-                 |                  tdd, single-pass review, PR         publishes tickets, stop
+                 |                  tdd, review pass, PR                publishes tickets, stop
                  +-------------------------------------+
                                                        |
   spec session         orch-to-spec publishes the    <--+
@@ -108,7 +108,9 @@ implementation** entry. It skips all four phases: no handoff, no
 `.orchestrator/state.json`, just a linked issue, `orch-to-tickets` publishing that
 issue's ticket breakdown, the same one-`orch-implementer`-per-ticket loop the
 implement phase uses (ending in `pr publish` instead of a draft `pr open`), a
-single-pass review by the plugin's own reviewer agents, and a PR.
+review pass by the plugin's own reviewer agents, and a PR. A human can run
+another review pass of the same branch on demand, with
+`/orchestrator:review <issue>` - see CONTEXT.md's **Review pass** entry.
 
 Handoffs live in `.orchestrator/handoff/`, ignored via `.git/info/exclude` so
 running the flow never dirties a repo's working tree.
@@ -125,6 +127,7 @@ running the flow never dirties a repo's working tree.
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
 | `/orchestrator:release` | Open the release PR that carries the base branch into the default branch (see below). |
 | `/orchestrator:spec-review <issue>` | Review any spec issue on demand, outside a flow: a standalone spec review. |
+| `/orchestrator:review <issue>` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Fixes what it agrees with, and posts what it declines on the branch's open PR. |
 | `/orchestrator:plan` | Start a planning session: an interview that reaches a shared understanding, then asks how to carry it forward. |
 | `/orchestrator:to-spec` | Turn the current conversation into a spec and publish it as an issue, outside any flow. |
 | `/orchestrator:to-tickets <issue>` | Break an existing issue into tickets published as its sub-issues, or collapse it into the issue, outside any flow. |
@@ -197,13 +200,13 @@ start.
 ## Layout
 
 ```
-commands/                     start, next, status, doctor, redo, abort, release, spec-review, plan, to-spec, to-tickets
-agents/                       the fresh agents: two reviewers (the review loop's and quick implementation's), the review loop's fixer and closer, the spec review's four lenses, and the implementer
+commands/                     start, next, status, doctor, redo, abort, release, spec-review, review, plan, to-spec, to-tickets
+agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, and the implementer
 skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: four lenses in a flow, three standalone, one batch question
-skills/orch-review/           the review loop: rubric, authority rules, terminal states
+skills/orch-review/           the review loop: rubric, authority rules, terminal states; and the review pass, quick or standalone
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
-skills/orch-quick-implement/  the other route: issue, optional spec review, orch-to-tickets, tdd, single-pass review, PR - no flow
+skills/orch-quick-implement/  the other route: issue, optional spec review, orch-to-tickets, tdd, review pass, PR - no flow
 skills/orch-plan/             the planning interview, ending on the closing question: flow, quick implementation, or blueprint
 skills/orch-to-spec/          turns the conversation into a spec and publishes it as an issue
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue

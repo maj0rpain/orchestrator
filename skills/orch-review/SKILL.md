@@ -1,6 +1,6 @@
 ---
 name: orch-review
-description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing every blocking finding plus the majors and mechanical nits that need no decision, filing the rest as issues at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop.
+description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing every blocking finding plus the majors and mechanical nits that need no decision, filing the rest as issues at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop. Also holds the review pass, one look by the same two reviewers with no loop around it: run by orch-quick-implement before its PR opens, and standalone, outside any flow, when a human asks for a review of the current branch against a given issue or runs /orchestrator:review <issue>.
 ---
 
 # Orchestrator review loop
@@ -403,7 +403,8 @@ from one whose driving session simply died mid-budget.
 One look at a change by the two reviewers above, with no loop around it: no
 budget, no severity, no fixer, no closer, nothing filed. A quick
 implementation runs one before its PR opens (the `orch-quick-implement`
-skill's step 6). Nothing else in this skill applies to a pass. The loop's
+skill's step 6), and a human may run one on demand (see **Standalone review
+pass**). Nothing else in this skill applies to a pass. The loop's
 rule that the driver never edits does not apply either, because a review pass
 has no driver: the session that runs it fixes what it agrees with itself.
 
@@ -448,3 +449,44 @@ fallbacks go.
 A host that cannot start the reviewers natively takes
 `docs/host-capabilities.md`'s **Start a fresh subagent** fallback, with the
 prompt above. Record each fallback where the caller puts host fallbacks.
+
+## Standalone review pass
+
+A human may ask for a review pass on demand - `/orchestrator:review <issue>`,
+or in plain words - after a quick implementation, say, or on any branch. It
+reviews the branch they are on, from its base SHA, with the given issue as the
+spec. It is **Review pass** above with the differences below, never a review
+loop: no budget, and nothing filed. See
+`docs/adr/0029-a-review-on-demand-is-a-review-pass-not-a-loop.md`.
+
+The issue number comes from the human: the command's argument, or the issue
+they named. With no number, ask for one and wait. Never take it from
+`state.json` or the active flow.
+
+1. **Begin.** Run `bash "$ORCH" review-pass begin <issue>`. If it dies, relay
+   its message and stop - when an active flow holds this issue or this
+   branch, the message names the command to run instead. Its output is the
+   report prefix, `<prefix>` from here on.
+2. **Base SHA.** Run `bash "$ORCH" branch base-sha`.
+3. **Run the pass**: **Review pass** steps 3 to 6, with that prefix, its
+   `NN` and that base SHA. Its declines and host fallbacks go to step 5
+   below.
+4. **Commit and push.** The fixes are one commit, as the pass says. When the
+   branch has an upstream (`git rev-parse --abbrev-ref @{upstream}`
+   succeeds), push it, so an open PR shows the fixes. With no fixes there is
+   nothing to commit or push.
+5. **Report.** Write `<prefix>-comment.md` with two headings, **Review** -
+   the declines, or `None declined.` - and **Host fallbacks** - each fallback
+   taken, or `None (<host>).` Then run
+   `bash "$ORCH" pr comment <prefix>-comment.md`:
+   - exit 0: the comment is posted; tell the human, with the PR number it
+     printed;
+   - exit 1: the branch has no open PR; report the declines and host
+     fallbacks in the session instead;
+   - exit 2: GitHub could not be read, or the post failed; stop and say so,
+     relaying its reason. Never report this as nothing declined.
+
+A standalone review pass does not lift the planning edit guard (ADR-0006,
+ADR-0025). In a session where planning ran and neither a flow nor a quick
+implementation lifted it, the pass's first edit is denied: stop, and tell the
+human to run the review pass in a fresh session.

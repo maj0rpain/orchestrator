@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.8.0
+
+- A **review pass** - one look by the two plugin reviewers with no loop
+  around it - is defined once, in the `orch-review` skill's **Review pass**
+  section (see issue #341, and ADR-0029). Quick implementation's step 6 runs
+  it instead of its own copy, so its pass number now counts up per branch and
+  it refuses an issue or branch an active flow holds.
+- New `/orchestrator:review <issue>`: a standalone review pass of the current
+  branch against an issue, outside any flow. The session fixes what it agrees
+  with in one commit, pushed when the branch has an upstream, and posts the
+  findings it declines and any host fallbacks as one comment on the branch's
+  open PR, or reports them in the session when there is none.
+- New `orch.sh review-pass begin <issue>`, which guards the pass and prints
+  its numbered report prefix under `.orchestrator/review-pass/<branch>/`, and
+  `orch.sh pr comment <file>`, which posts a file on the current branch's
+  open PR (exit 1: no open PR; exit 2: GitHub could not be read).
+- Removed: `orch.sh quick path`. Reports already under `.orchestrator/quick/`
+  are left where they are.
+
 ## 2.7.0
 
 - The plugin no longer requires `mattpocock-skills` (see issue #326, and

@@ -85,9 +85,11 @@ assert_eq "md_section matches the heading line exactly" \
 # name the old ones; scripts/test/ feeds old names in deliberately as negative
 # cases. The spec review's command and skill were renamed spec-review in 2.0.0
 # (#235), so the review-spec names, command included, are old names too.
+# /orchestrator:review is a live command again (#341), so only the review
+# skill's directory and name line remain old names.
 echo
 echo "skill names (ADR-0014)"
-old_names='orchestrator:(flow|handoff|review|review-spec|quick-implement|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$'
+old_names='orchestrator:(flow|handoff|review-spec|quick-implement|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$'
 # scan_old_names <plugin root>: each old skill or command name in a tracked
 # file outside history, and each old command file or skill directory.
 scan_old_names() {
@@ -111,6 +113,11 @@ printf 'name: orch-review-spec\n' >"$f/commands/e.md"
 printf 'Run `/orchestrator:spec-review 12`.\nCall `orchestrator:orch-spec-review`.\nskills/orch-spec-review/\n' >"$f/commands/new.md"
 printf -- '---\nname: orch-spec-review\n---\n' >"$f/skills/orch-spec-review/SKILL.md"
 printf 'Renamed `orchestrator:review-spec`.\n' >"$f/docs/adr/0001-x.md"
+# /orchestrator:review is a live command again (#341), routed to orch-review's
+# Standalone review pass; the old review skill's directory and name stay old.
+printf 'Run `/orchestrator:review 12`.\nCall `orchestrator:review`.\n' >"$f/commands/review.md"
+printf 'See skills/review/SKILL.md.\n' >"$f/commands/f.md"
+printf 'name: review\n' >"$f/commands/g.md"
 git -C "$f" add -A
 out="$(scan_old_names "$f")"
 flags "the old review-spec skill name is flagged" "$out" "commands/a.md:1: old skill or command name"
@@ -120,6 +127,10 @@ flags "the old orch-review-spec skill directory is flagged" "$out" "commands/d.m
 flags "the old orch-review-spec skill name line is flagged" "$out" "commands/e.md:1: old skill or command name"
 assert_eq "the new spec-review names are not flagged" \
   "$(printf '%s\n' "$out" | grep -cE '^(commands/new\.md|skills/)')" "0"
+assert_eq "the live /orchestrator:review command is not flagged" \
+  "$(printf '%s\n' "$out" | grep -c '^commands/review\.md')" "0"
+flags "the old review skill directory is flagged" "$out" "commands/f.md:1: old skill or command name"
+flags "the old review skill name line is flagged" "$out" "commands/g.md:1: old skill or command name"
 assert_eq "history may name the old ones" \
   "$(printf '%s\n' "$out" | grep -c '^docs/adr/')" "0"
 mkdir -p "$f/skills/orch-review-spec"
@@ -606,6 +617,7 @@ skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
 skills/orch-quick-implement/SKILL.md|## 6. Review
 skills/orch-quick-implement/SKILL.md|## 7. Open the PR
 skills/orch-review/SKILL.md|## Review pass
+skills/orch-review/SKILL.md|## Standalone review pass
 skills/orch-spec-review/SKILL.md|## Standalone spec review
 skills/orch-spec-review/SKILL.md|## Disposition
 skills/orch-spec-review/SKILL.md|## Applying the answer
