@@ -1,5 +1,7 @@
 # The spec review is one pass, and its reversals amend the plan handoff
 
+Superseded in part by ADR-0030: a failed comments fetch now stops the review too.
+
 A spec review runs once, in the spec phase, after the issue exists - published
 by `to-spec` or already adopted at init - and before `02-spec.md` is written.
 Four lenses read the issue as fresh sub-agents and report findings; every

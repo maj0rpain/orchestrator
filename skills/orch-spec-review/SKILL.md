@@ -1,6 +1,6 @@
 ---
 name: orch-spec-review
-description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state.
+description: Review a spec issue once - propose folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state.
 ---
 
 # Orchestrator spec review
@@ -8,11 +8,14 @@ description: Review a spec issue once through four independent lenses - Fidelity
 One look at the spec, taken once. In a flow it comes after the issue exists -
 published by the spec phase or already adopted at init - and before the handoff is
 written; a standalone review takes it on a given issue, outside any flow, and
-writes no handoff. The **lenses** - four in a flow, three in a standalone
-review - read the issue independently, as parallel sub-agents that see only
-files. Every **finding** they report reaches the human as a proposed edit in
-one batch; only the edits the human accepts change the issue. The issue body
-stays the single truth the implement phase reads.
+writes no handoff. First, the session running the review proposes folding
+into the body whatever the issue's comments say that the body does not - see
+**Consolidation**. The **lenses** - four in a flow, three in a standalone
+review - then read the issue, body and comments, independently, as parallel
+sub-agents that see only files. Every proposed fold and every **finding**
+they report reaches the human as a proposed edit in one batch; only the edits
+the human accepts change the issue. The issue body stays the single truth the
+implement phase reads; after a review, the comments are history.
 
 There is no budget and no second pass. In a flow's spec phase there is also
 no "review the spec?" question: the human's control is at the batch decision,
@@ -22,7 +25,7 @@ review.
 The independence comes from the sub-agents, the same way it does for the review
 loop - see `docs/adr/0001-review-loop-runs-in-a-single-session.md`.
 
-There are two entries, and everything from **The lenses** through **The
+There are two entries, and everything from **Consolidation** through **The
 changelog** is shared between them:
 
 - **Inputs** - the spec-phase entry, from `orch-flow`'s spec phase. It works
@@ -56,7 +59,11 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    is, say what blocked, offer `/orchestrator:abort` (on a host with
    no plugin commands, `orch-flow`'s **Abort** section). A review with no
    body to review is never claimed as done.
-2. Resolve the other files the lenses read, and record the paths:
+2. Fetch the comments: `bash "$ORCH" spec comments <dir>/comments.md`, in the
+   same directory. It reads the issue number from state, and writes an empty
+   file when the issue has no comments. A failure stops the phase exactly as
+   a failed body fetch does: the lenses would otherwise review half the spec.
+3. Resolve the other files the lenses read, and record the paths:
    - the plan handoff: `bash "$ORCH" handoff path spec` (always `01-plan.md`);
    - the glossary and decisions: `CONTEXT.md` and `docs/adr/` at the repo
      root, where they exist;
@@ -81,16 +88,19 @@ they named. With no number, ask for one and wait. Never take it from
    stops the review: say what blocked it. There is no flow to abort,
    so do not offer `/orchestrator:abort`. The directory is left for
    inspection and wiped by the next run.
-3. Resolve the glossary and decisions (`CONTEXT.md` and `docs/adr/` at the
+3. **Fetch the comments**: `bash "$ORCH" issue comments <issue>
+   <dir>/comments.md`. A failure stops the review, as a failed body fetch
+   does.
+4. Resolve the glossary and decisions (`CONTEXT.md` and `docs/adr/` at the
    repo root, where they exist) and the repo root, as the spec-phase entry
    does. There is no plan handoff.
 
-The standalone entry never calls `spec fetch`, `spec update`, `spec comment`,
-or `handoff path`, never reads under `.orchestrator/handoff/`, and never
-calls `gh issue` directly.
+The standalone entry never calls `spec fetch`, `spec comments`, `spec update`,
+`spec comment`, or `handoff path`, never reads under `.orchestrator/handoff/`,
+and never calls `gh issue` directly.
 
-Then run **The lenses**, **Disposition**, and **Applying the answer** below,
-with these differences:
+Then run **Consolidation**, **The lenses**, **Disposition**, and **Applying
+the answer** below, with these differences:
 
 - **Lenses**: start Consistency, Testability, and Implementability only.
   Fidelity is never started. It appears in the batch and the changelog with
@@ -105,6 +115,30 @@ with these differences:
   implementation that runs the review in the same session also lists the
   host fallbacks it saw in its own PR body.
 
+## Consolidation
+
+Spec content often arrives as a comment - a triage agent brief, a human's
+follow-up - and every later phase reads the body alone. So before the lenses'
+findings, the session running the review (never a lens) reads
+`<dir>/comments.md` against `<dir>/spec.md` and drafts the **consolidation
+items**:
+
+- Skip any comment whose body opens with a `## Spec review` heading: that is
+  this review's own history, never folded back into the spec.
+- For every other comment, draft one item - concrete replacement or insertion
+  text for the body - if and only if the comment says something the body does
+  not already say. Judge the content, not the author. A comment the body
+  already reflects produces no item, so a re-run on the same issue proposes
+  nothing new.
+- A comment that contradicts the body gets one item proposing the comment's
+  version: a later comment is presumed to amend the body.
+- Two comments that contradict each other become one **decision** item, as in
+  **Disposition**.
+
+Each item names its comment by the author and date on the comment's
+`<!-- comment @<login> <createdAt> -->` marker line. No comment, or none that
+adds anything: no items, and the changelog's Consolidation line says **None**.
+
 ## The lenses
 
 Each lens is one of the plugin's agents, which owns its brief and the
@@ -117,10 +151,10 @@ names, and each lens returns its findings as its reply.
 
 | Lens | Agent | Paths |
 |---|---|---|
-| Fidelity | `orch-lens-fidelity` | spec body, plan handoff |
-| Consistency | `orch-lens-consistency` | spec body, glossary, ADR directory |
-| Testability | `orch-lens-testability` | spec body, repo root |
-| Implementability | `orch-lens-implementability` | spec body, repo root |
+| Fidelity | `orch-lens-fidelity` | spec body, comments file, plan handoff |
+| Consistency | `orch-lens-consistency` | spec body, comments file, glossary, ADR directory |
+| Testability | `orch-lens-testability` | spec body, comments file, repo root |
+| Implementability | `orch-lens-implementability` | spec body, comments file, repo root |
 
 On a host that cannot start the plugin's agents natively, take the
 "Start a fresh subagent" fallback in `docs/host-capabilities.md` under the
@@ -142,7 +176,8 @@ deduplicated across lenses: the separation is what the lenses exist for.
 ## Disposition
 
 Draft one proposed edit per finding - concrete replacement text for the body,
-never a description of the problem. Then, with the whole batch in view:
+never a description of the problem. Then, with the whole batch in view,
+consolidation items included:
 
 - One edit that satisfies several findings is proposed once, naming every
   finding it resolves.
@@ -153,20 +188,29 @@ never a description of the problem. Then, with the whole batch in view:
 - A finding you believe is wrong is still presented, marked **recommend
   decline** with the reason. You have no recorded human decision to demote on,
   so nothing is dropped silently.
-- A Fidelity finding labelled `contradicts the plan` goes **first**, under
-  that label: the human sees a reversal of their own earlier decision before
-  anything else.
+- Consolidation items go **first**, under a **Consolidation** heading, ahead
+  even of `contradicts the plan` items: the human sees the body as it will
+  read before seeing what the lenses make of it. They are their own group,
+  never merged into a lens.
+- A lens finding about a contradiction a consolidation item already resolves
+  stays under its lens and names that item's number instead of proposing a
+  second edit.
+- A Fidelity finding labelled `contradicts the plan` goes next, under that
+  label: the human sees a reversal of their own earlier decision before any
+  other finding.
 
 Each item carries a recommendation: a proposed edit is recommended for
 applying unless it is marked **recommend decline** with its reason, and a
 decision item carries its recommended option.
 
-Number the items. Present the list - each item's finding, lens, and proposed
-edit or decision - and ask **one blocking question** with the
-`AskUserQuestion` tool (it exists on both Claude Code and Junie), the list and
-the call in the same response. The review never ends its turn on the list:
-presenting it is not the end of the step, the answer is. No edit is applied and
-no changelog is posted before the answer arrives. The options:
+Number the items, consolidation items included, in one sequence. Present the
+list - each item's finding (or, for a consolidation item, its comment), lens
+or **Consolidation**, and proposed edit or decision - and ask **one blocking
+question** with the `AskUserQuestion` tool (it exists on both Claude Code and
+Junie), the list and the call in the same response. The review never ends its
+turn on the list: presenting it is not the end of the step, the answer is. No
+edit is applied and no changelog is posted before the answer arrives. The
+options:
 
 - **Apply as recommended (Recommended)** - every proposed edit applied, every
   decision item takes its recommended option, every **recommend decline** item
@@ -223,7 +267,17 @@ happen, and the one place they are tested.
 
 ## The changelog
 
-Organised per lens, in the table's order, one heading each:
+A **Consolidation** section comes first, ahead of the lens headings:
+
+- an applied item: one line naming the comment folded in, by its author and
+  date;
+- a declined item: the comment's spec-bearing part **verbatim**, then the
+  human's reason, or **declined as recommended: <reason>** as below;
+- a decision item left out of an Other answer: both comments' spec-bearing
+  parts **verbatim**, then **left undecided**;
+- no item proposed: **None**.
+
+Then the lenses, organised per lens, in the table's order, one heading each:
 
 - an applied edit: one line naming what changed, not restating the body;
 - a declined finding: the reviewer's finding **verbatim**, then the human's
@@ -238,4 +292,4 @@ Organised per lens, in the table's order, one heading each:
 - in a standalone review, Fidelity: **not run - standalone review, no plan
   to check against**.
 
-Silence is never ambiguous: every lens has a line.
+Silence is never ambiguous: Consolidation and every lens have a line.
