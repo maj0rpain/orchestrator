@@ -16,7 +16,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `review`  | `begin`, `path`, `file`, `ready`, `ci`, `terminal`, `retire` |
 | `spec`    | `fetch`, `update`, `comment`                         |
 | `spec-review` | `begin`                                          |
-| `ticket`  | `publish`, `next`, `close`, `reset`, `parent`        |
+| `ticket`  | `publish`, `next`, `close`, `reset`, `parent`, `exists` |
 | `state`   | `get`, `set`                                         |
 | `handoff` | `path`, `validate`, `section`                        |
 | `phase`   | `advance`, `boundary`                                |

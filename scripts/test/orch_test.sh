@@ -257,6 +257,13 @@ api_list_blocked_by() {
   fi
   printf '%s]\n' "$out"
 }
+# The issue's body as a JSON string's contents: GH_STUB_DB's body/<n> when a
+# test wrote one, GH_STUB_BODY (or its default) otherwise.
+api_body() {
+  if [ -n "$db" ] && [ -f "$db/body/$1" ]; then cat "$db/body/$1"
+  else printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"; fi \
+    | awk '{ gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); printf "%s%s", (NR > 1 ? "\\n" : ""), $0 }'
+}
 # The issue's parent, as GitHub's issue object carries it: the API URL of the
 # one issue whose sub_issues listing holds it, or null when none does.
 api_parent_url() {
@@ -413,8 +420,8 @@ ready-for-agent}"
     [ "${GH_STUB_API_EXIT:-0}" = 0 ] || { echo "gh stub: api call refused" >&2; exit "$GH_STUB_API_EXIT"; }
     case "$api_sub" in
       "")
-        api_json="$(printf '{"id":%d,"number":%d,"state":"%s","parent_issue_url":%s,"issue_dependencies_summary":{"blocked_by":%s}}' \
-          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_parent_url "$api_num")" "$(api_blocked_count "$api_num")")"
+        api_json="$(printf '{"id":%d,"number":%d,"state":"%s","body":"%s","parent_issue_url":%s,"issue_dependencies_summary":{"blocked_by":%s}}' \
+          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_body "$api_num")" "$(api_parent_url "$api_num")" "$(api_blocked_count "$api_num")")"
         # GitHub's real shape for an issue with no parent: the key is absent, not null.
         if [ -n "${GH_STUB_NO_PARENT_FIELD:-}" ]; then
           api_json="$(printf '%s' "$api_json" | jq -c 'del(.parent_issue_url)')"
@@ -3103,6 +3110,71 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket parent"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket parent is in the usage text" "$out" "ticket parent <n>"
+
+# --- ticket exists -----------------------------------------------------------
+# "Already broken down" decided by structure, not prose: a blueprint's spec
+# issue carries sub-issues, or - when its breakdown collapsed into it - a line
+# that is exactly `## Ticket`. A body under GH_STUB_DB's body/<n> is what the
+# stub's issue read answers for <n>.
+echo
+echo "ticket exists"
+db="$(mktemp -d)"
+export GH_STUB_DB="$db"
+mkdir -p "$db/body"
+GH_STUB_ISSUE_NUMBER=800 "$ORCH" ticket publish 96 "Open kid" "$body" >/dev/null
+out="$("$ORCH" ticket exists 96 2>&1)"; st=$?
+assert_status "an issue with a sub-issue has a breakdown" "$st" 0
+assert_eq "printing sub-issues" "$out" "sub-issues"
+
+closed_kid="$("$ORCH" ticket publish 97 "Closed kid" "$body")"
+"$ORCH" ticket close "$closed_kid"
+out="$("$ORCH" ticket exists 97 2>&1)"; st=$?
+assert_status "an issue whose only sub-issue is closed still has a breakdown" "$st" 0
+assert_eq "printing sub-issues" "$out" "sub-issues"
+
+writeln 'The spec.' '' '## Ticket' '' 'Build it.' >"$db/body/96"
+out="$("$ORCH" ticket exists 96 2>&1)"; st=$?
+assert_status "sub-issues and the heading together" "$st" 0
+assert_eq "print sub-issues, which wins" "$out" "sub-issues"
+
+writeln 'The spec.' '' '## Ticket' '' 'Build it.' >"$db/body/98"
+out="$("$ORCH" ticket exists 98 2>&1)"; st=$?
+assert_status "a collapsed breakdown, the heading and no sub-issues" "$st" 0
+assert_eq "prints collapsed" "$out" "collapsed"
+
+writeln 'The spec, no breakdown yet.' >"$db/body/99"
+out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
+assert_status "an issue with neither has no breakdown" "$st" 1
+assert_eq "and prints nothing" "$out" ""
+
+writeln 'The spec.' '' '### Ticket' '' 'Not the heading.' >"$db/body/99"
+out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
+assert_status "a ### Ticket heading is not the collapse heading" "$st" 1
+assert_eq "and prints nothing" "$out" ""
+
+writeln 'The spec mentions ## Ticket mid-line.' >"$db/body/99"
+out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
+assert_status "a mid-line ## Ticket is not the collapse heading" "$st" 1
+assert_eq "and prints nothing" "$out" ""
+
+out="$(GH_STUB_SUBISSUE_GET_EXIT=1 "$ORCH" ticket exists 98 2>&1)"; st=$?
+assert_status "a gh that cannot list sub-issues dies" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not list sub-issues of #98"
+
+out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket exists 98 2>&1)"; st=$?
+assert_status "a gh that cannot read the issue dies" "$st" 1
+assert_not_contains "never printing a verdict" "$out" "collapsed"
+
+out="$("$ORCH" ticket exists abc 2>&1)"; st=$?
+assert_status "refuses a parent that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$("$ORCH" ticket exists 2>&1)"; st=$?
+assert_status "refuses with no parent" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket exists"
+
+out="$("$ORCH" help 2>&1)"
+assert_contains "ticket exists is in the usage text" "$out" "ticket exists <parent>"
 
 # --- ticket: unknown op ------------------------------------------------------
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?

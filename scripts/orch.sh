@@ -1707,6 +1707,32 @@ cmd_ticket_parent() {
   if [ -n "$url" ]; then printf '%s\n' "${url##*/}"; fi
 }
 
+# Whether <parent> already has a ticket breakdown, decided by structure
+# rather than prose (ADR-0027): `sub-issues` when it has at least one,
+# open or closed; `collapsed` when it has none but its body carries a line
+# that is exactly `## Ticket`, the heading a 0-1-ticket collapse appends
+# under; exit 1 and no output when neither. Sub-issues win when both hold.
+# A body edited on the web arrives with CRLF line ends, so a trailing CR
+# does not stop the heading's line from matching.
+cmd_ticket_exists() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket exists <parent>"
+  local parent="$1" subs body
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
+  subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" --jq '.[].number')" \
+    || die "gh could not list sub-issues of #$parent"
+  if [ -n "$subs" ]; then
+    printf 'sub-issues\n'
+    return 0
+  fi
+  body="$(gh api "repos/{owner}/{repo}/issues/$parent" --jq '.body // ""')" \
+    || die "gh could not read issue #$parent's body"
+  if printf '%s\n' "$body" | tr -d '\r' | grep -qxF '## Ticket'; then
+    printf 'collapsed\n'
+    return 0
+  fi
+  return 1
+}
+
 cmd_ticket() {
   local op="${1:-}"
   shift || true
@@ -1716,7 +1742,8 @@ cmd_ticket() {
     close)   cmd_ticket_close "$@" ;;
     reset)   cmd_ticket_reset "$@" ;;
     parent)  cmd_ticket_parent "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|close|reset|parent)" ;;
+    exists)  cmd_ticket_exists "$@" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|close|reset|parent|exists)" ;;
   esac
 }
 
@@ -2033,6 +2060,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               currently closed, and only those
   ticket parent <n>          print <n>'s parent issue number, or nothing
                               when <n> is not a sub-issue
+  ticket exists <parent>      whether <parent> already has a ticket
+                              breakdown: prints sub-issues (it has any, open
+                              or closed) or collapsed (none, but its body has
+                              a line that is exactly `## Ticket`); exits 1
+                              printing nothing when neither
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
