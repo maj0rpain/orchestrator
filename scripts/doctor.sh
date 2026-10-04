@@ -273,7 +273,8 @@ check_mattpocock() {
 # agents/*.md invoke (`mp-skill <name>` or `mattpocock-skills:<name>`): a skill
 # added to or dropped from those files is added to or dropped from here too.
 # docs_lint.sh's scan_mp_skills rule fails while the two disagree.
-MP_SKILLS="to-spec to-tickets"
+# Empty since orch-to-spec and orch-to-tickets replaced the last two.
+MP_SKILLS=""
 
 check_skills() {
   d_gate "${D_MP:+ok}" D_MP_SKIPPED || return 0

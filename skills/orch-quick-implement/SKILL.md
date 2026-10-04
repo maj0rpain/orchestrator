@@ -38,18 +38,18 @@ Never proceed without one, and never decide silently whether to make one.
 
 - A linked issue already exists (named earlier in this conversation, or on an
   already-checked-out branch): use it.
-- Otherwise, publish one now, per `docs/agents/issue-tracker.md`'s "publish to
-  the issue tracker" convention, with `bash "$ORCH" issue publish "<title>"
-  <body-file>` - the same boundary `review file` draws for a filed finding,
-  kept out of skill prose - from the shared understanding just reached.
+- Otherwise, publish one now with `bash "$ORCH" issue publish "<title>"
+  <body-file>`, from the shared understanding just reached. It applies the
+  `ready-for-agent` triage role's label and reads the title and label back
+  before it reports success - never an ad hoc `gh` call.
 - Either way, a glossary or ADR change (`CONTEXT.md`, `CONTEXT-MAP.md`,
   `docs/adr/`) the planning session decided goes into the linked issue's body
   word for word - the new or replaced text, naming the file and entry - never
   into those files during planning. It lands with the change it describes
   (ADR-0022). The standalone spec review in step 2 runs no Fidelity lens, so
   nothing else checks the wording survived.
-- If neither holds - no linked issue, and the tracker convention doc does not
-  exist or `issue publish` fails - stop and say why. A quick implementation
+- If neither holds - no linked issue, and `issue publish` fails - stop and
+  say why. A quick implementation
   with no issue behind it is exactly the unaccountable path this skill exists
   to avoid.
 
@@ -83,36 +83,23 @@ review's changelog comment. Failed lenses stay in the changelog only.
 Unconditional, whether the linked issue was just published in step 1 or
 already existed, and whichever answer step 2 got - never gated by a human
 choice of its own, the same treatment the flow's spec phase gives this same
-call. No `to-spec` step exists on this path, so `to-tickets` synthesizes
-tickets directly off the linked issue as it stands after any spec review in
-step 2 - it is the only spec this path has.
+step. No spec-writing step exists on this path, so the breakdown is drawn
+directly off the linked issue as it stands after any spec review in step 2 -
+it is the only spec this path has.
 
-`to-tickets` carries `disable-model-invocation: true` in the installed
-mattpocock-skills version, so Claude Code's Skill tool refuses it, and Junie
-gives the model no Skill tool at all. Resolve it with
-`bash "$ORCH" mp-skill to-tickets`, read it, and follow it directly - the same
-pattern `skills/orch-flow/SKILL.md` uses for the same upstream skill. Follow it
-through its own quiz (steps 1-4) until the user approves a breakdown.
+First run `bash "$ORCH" ticket exists <linked issue>`:
 
-**A breakdown of 2 or more tickets** publishes exactly as today: publish
-every ticket it proposes through `bash "$ORCH" ticket publish <parent> <title>
-<body-file> [--blocked-by N,N,...]` against the linked issue as `<parent>`,
-in dependency order (blockers first) - never an ad hoc `gh api` call - so the
-verify-then-die guarantee `ticket publish` already provides applies to every
-ticket, the same primitive and the same guarantee the flow's spec phase uses.
-
-**A breakdown of 0 or 1 tickets collapses**: skip `to-tickets`' own publish
-step entirely - no child sub-issue is created, and the linked issue is
-worked directly, as if it were the sole ticket. This is the orchestrator's
-own deliberate, narrowly-scoped exception to `to-tickets`' "do NOT close or
-modify any parent issue" instruction - not something `to-tickets` itself
-does, taken here where this step already calls its publish step, and
-reached only in this collapsed case. Fetch the linked issue's current body
-(`bash "$ORCH" issue fetch <issue> <file>`), append a new section wrapping the
-single drafted ticket's "What to build"/"Acceptance criteria" (when there is
-one) beneath the existing content - never replacing it - and write the
-merged body back (`bash "$ORCH" issue update <issue> <file>`). No sub-issue
-exists to record anywhere; step 5 below works the linked issue directly.
+- **Exit 0**: the linked issue already has a breakdown - a blueprint, say.
+  Skip the breakdown and ask nothing. It printed one word for step 5:
+  `sub-issues` means step 5 works the linked issue's ticket frontier, and
+  `collapsed` means step 5 treats the breakdown as collapsed.
+- **Exit 1**: it has none. Invoke the `orch-to-tickets` skill on the linked
+  issue and follow it, through its own quiz until the user approves a
+  breakdown. It publishes 2 or more tickets as sub-issues of the linked
+  issue, or collapses 0 or 1 into the linked issue under its fixed
+  `## Ticket` heading, and reports which: the published numbers, or
+  `collapsed`. Step 5 follows that outcome.
+- **Any other exit**: GitHub could not be read. Stop and say why.
 
 ## 4. Branch
 
@@ -126,7 +113,7 @@ so the PR in step 7 targets it even if the setting changes meanwhile.
 
 ## 5. Implement
 
-If step 3 collapsed (0 or 1 tickets, no sub-issue published): no `ticket
+If step 3's breakdown is collapsed (no sub-issue published): no `ticket
 next`/`ticket close` loop runs against the linked issue - dispatch exactly
 one subagent (below), for the linked issue itself as the ticket, then
 continue at step 6.

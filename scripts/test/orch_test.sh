@@ -1957,21 +1957,11 @@ out="$(GH_STUB_REPO='acme/widgets ' "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unresolved default branch does not block the flow" "$st" 0
 assert_contains "warns that the default branch came from a fallback" "$out" "default branch"
 
-# A partial install is the regression this feature exists to catch: a lookup
-# that probes one skill file passes, and the spec phase then dies with the
-# context that could have fixed it already cleared.
 # No healthy_repo() needed: the offline/noauth/default-branch checks above
 # only ever scoped GH_STUB_* to their own command, so the repo is still clean
 # going into this one - it's the HOME reassignment right below that dirties it.
-HOME="$(stub_mattpocock to-spec)"; export HOME
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "fails on a partial mattpocock-skills install" "$st" 1
-assert_contains "names every missing skill" "$out" "missing: to-tickets"
-assert_eq "says nothing about the skills that are present" \
-  "$(printf '%s\n' "$out" | grep -c 'missing:.*to-spec')" "0"
-
-# Only the skills the flow reads are required: an install without the upstream
-# skills the plugin replaced (implement, handoff) is complete.
+# The plugin reads no upstream skill any more (orch-to-spec and orch-to-tickets
+# replaced the last two), so any install is complete.
 HOME="$(stub_mattpocock to-spec to-tickets)"; export HOME
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "passes an install with no implement or handoff" "$st" 0
@@ -2004,30 +1994,6 @@ assert_not_contains "on Junie, does not name a Claude /plugin command" "$out" "/
 out="$(HOME=/nonexistent CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"
 assert_contains "on Claude Code, names the /plugin install" "$out" "/plugin install mattpocock-skills"
 assert_not_contains "on Claude Code, does not name the Junie install" "$out" "npx skills add"
-
-# The same partial install, in every other layout a host can produce. The
-# lookup finding *a* location is not the same as it holding every skill.
-# Each skill is checked on its own: one missing skill fails doctor even with
-# every other one present.
-for layout in claude junie agents override; do
-  ov=""
-  for gone in to-spec to-tickets; do
-    h="$(mktemp -d)"
-    # shellcheck disable=SC2046 # word-splitting the kept names is the point
-    mp_install "$layout" "$h" $(printf '%s\n' to-spec to-tickets | grep -vx "$gone")
-    if [ "$layout" = override ]; then ov="$h/mp-checkout"; fi
-    out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$ov" "$ORCH" doctor --env 2>&1)"; st=$?
-    assert_status "fails on a $layout install missing $gone" "$st" 1
-    assert_contains "names the $layout layout's missing $gone" "$out" "missing: $gone "
-  done
-done
-
-# A skill the lockfile gives to another plugin is missing, not present.
-h="$(mktemp -d)"; mp_install agents "$h" to-spec
-mp_install agents-foreign "$h" to-tickets
-out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "fails when a skills CLI skill belongs to another plugin" "$st" 1
-assert_contains "names the foreign skill as missing" "$out" "missing: to-tickets"
 
 # Doctor says where the skills were found, in terms of the host that put them
 # there - the path alone does not tell a user which install to repair.
