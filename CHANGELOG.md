@@ -11,6 +11,8 @@
   still `implement`, and a re-run resumes. `--new-issue` is unchanged.
 - New `orch.sh ticket retire <parent>`, which does that retirement. A repeat
   on an already-retired breakdown changes nothing.
+- `ticket exists` no longer counts a `## Ticket` line inside a code fence as
+  a collapsed breakdown, the same heading `ticket retire` cuts.
 
 ## 2.8.1
 

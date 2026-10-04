@@ -3082,7 +3082,7 @@ assert_contains "ticket parent is in the usage text" "$out" "ticket parent <n>"
 # --- ticket exists -----------------------------------------------------------
 # "Already broken down" decided by structure, not prose: a blueprint's spec
 # issue carries sub-issues, or - when its breakdown collapsed into it - a line
-# that is exactly `## Ticket`. A body under GH_STUB_DB's body/<n> is what the
+# that is exactly `## Ticket` outside a code fence. A body under GH_STUB_DB's body/<n> is what the
 # stub's issue read answers for <n>.
 echo
 echo "ticket exists"
@@ -3123,6 +3123,11 @@ assert_eq "and prints nothing" "$out" ""
 writeln 'The spec mentions ## Ticket mid-line.' >"$db/body/99"
 out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
 assert_status "a mid-line ## Ticket is not the collapse heading" "$st" 1
+assert_eq "and prints nothing" "$out" ""
+
+writeln 'The spec quotes the format:' '```md' '## Ticket' '```' >"$db/body/99"
+out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
+assert_status "a ## Ticket inside a code fence is not the collapse heading" "$st" 1
 assert_eq "and prints nothing" "$out" ""
 
 # An unreadable GitHub is not "no breakdown": a caller that read exit 1 as
@@ -4790,11 +4795,15 @@ out="$("$ORCH" ticket retire 56 2>&1)"; st=$?
 assert_status "a body with a fenced ## Ticket example: retire succeeds" "$st" 0
 assert_eq "cutting only the real section, the fenced example kept" \
   "$(od -c <"$db/body/56")" "$(writeln 'Intro' '```md' '## Ticket' 'example' '```' | od -c)"
+out="$("$ORCH" ticket exists 56 2>&1)"; st=$?
+assert_status "ticket exists then ignores the fenced example" "$st" 1
 writeln 'Intro' '```md' '## Ticket' '```' >"$db/body/57"
 : >"$filed"
 out="$(GH_STUB_FILED="$filed" "$ORCH" ticket retire 57 2>&1)"; st=$?
 assert_status "a body whose only ## Ticket is fenced: retire succeeds" "$st" 0
 assert_eq "writing nothing to GitHub" "$(grep -c '^issue edit' "$filed")" "0"
+out="$("$ORCH" ticket exists 57 2>&1)"; st=$?
+assert_status "ticket exists finds no breakdown in a fenced ## Ticket alone" "$st" 1
 printf 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.\n\n\n' >"$db/body/58"
 "$ORCH" ticket retire 58 >/dev/null 2>&1
 assert_eq "trailing blank lines after the section are kept" \

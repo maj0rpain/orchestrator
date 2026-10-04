@@ -685,9 +685,9 @@ adapter_issue_create() {
   gh issue create "$@"
 }
 
-# cmd_redo_spec's --new-issue path is the one issue-close call this ticket
-# moves; `ticket close` keeps its own direct `gh issue close` (also out of
-# scope).
+# cmd_redo_spec's --new-issue path and `ticket retire` close issues through
+# this primitive; `ticket close` keeps its own direct `gh issue close` (out of
+# scope for issue #92).
 adapter_issue_close() {
   gh issue close "$@"
 }
@@ -1673,8 +1673,8 @@ cmd_ticket_parent() {
 # Whether <parent> already has a ticket breakdown, decided by structure
 # rather than prose (ADR-0028): `sub-issues` when it has at least one,
 # open or closed; `collapsed` when it has none but its body carries a line
-# that is exactly `## Ticket`, the heading a 0-1-ticket collapse appends
-# under; exit 1 and no output when neither. Sub-issues win when both hold.
+# that is exactly `## Ticket` outside a code fence, the heading a
+# 0-1-ticket collapse appends under; exit 1 and no output when neither. Sub-issues win when both hold.
 # A body edited on the web arrives with CRLF line ends, so a trailing CR
 # does not stop the heading's line from matching. A GitHub it cannot read
 # exits 2, never 1: a caller reading 1 as "no breakdown" would publish a
@@ -1705,10 +1705,16 @@ cmd_ticket_exists() {
 # The fixed heading line a collapsed ticket breakdown sits under (ADR-0012).
 TICKET_HEADING='## Ticket'
 
-# True when the body on stdin has a line that is exactly TICKET_HEADING, CRLF
-# ends allowed - the one test `ticket exists` and `ticket retire` share.
+# True when the body on stdin has a line that is exactly TICKET_HEADING outside
+# a code fence, CRLF ends allowed - the one test `ticket exists` and `ticket
+# retire` share, and the line `strip_ticket_sections` cuts from.
 has_ticket_heading() {
-  tr -d '\r' | grep -qxF "$TICKET_HEADING"
+  awk -v heading="$TICKET_HEADING" '
+    { l = $0; sub(/\r$/, "", l) }
+    !fence && l == heading { found = 1 }
+    l ~ /^(```|~~~)/ { fence = !fence }
+    END { exit !found }
+  '
 }
 
 # The body on stdin with every `## Ticket` section removed - the heading line
