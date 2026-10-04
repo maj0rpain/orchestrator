@@ -10,13 +10,14 @@ believes the implementer's reasoning. Splitting the phases and passing only a
 written handoff between them means each phase judges the work, not the story
 behind it.
 
-[`mattpocock-skills`](https://github.com/mattpocock/skills) is a separate plugin
-of skills for planning, spec-writing, implementing, and reviewing code. This
-plugin conducts it rather than replacing it: `to-spec` writes the spec,
-and `tdd` builds each ticket test-first. This plugin owns the state, the
-handoffs, the branch, the PR, the agent each ticket subagent runs as, and the
-reviewer agents that both the review loop and a quick implementation's single
-pass start.
+The plugin carries everything it runs: `orch-to-spec` writes the spec,
+`orch-to-tickets` breaks it into tickets, each ticket subagent builds its
+ticket test-first, and the plugin owns the state, the handoffs, the branch, the
+PR, and the reviewer agents that both the review loop and a quick
+implementation's single pass start. If you have
+[`mattpocock-skills`](https://github.com/mattpocock/skills) installed, its
+`grilling`, `grill-me`, `grill-with-docs`, and `wayfinder` also start a
+planning session.
 
 ## Install
 
@@ -29,17 +30,12 @@ The repo doubles as its own single-plugin marketplace, so there is no separate
 marketplace repo. Installs at user scope, so it is available in every project on
 that machine.
 
-Requires the `mattpocock-skills` plugin, plus `gh`, `jq`, and `git`. Run
-`/mattpocock-skills:setup-matt-pocock-skills` once per repo first - it writes
-`docs/agents/issue-tracker.md`, which `/orchestrator:start` checks for before
-starting a flow. `/orchestrator:doctor` reports all of this at any time.
-
-`mattpocock-skills` is found wherever your host installed it, checked in this
-order: `$ORCHESTRATOR_MATTPOCOCK_ROOT` if set, Claude Code's plugin cache,
-Junie's extension cache (`~/.junie/extensions/`), then the `skills` CLI store
-(`~/.agents/skills/`, only entries its lockfile records as `mattpocock-skills`).
-The first location present is used for every skill; a project's own
-`.agents/skills/` is never consulted.
+Requires `gh`, `jq`, and `git`. No per-repo setup is needed: issues are
+labelled with the five canonical triage label names (`needs-triage`,
+`needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), or with the
+names a `docs/agents/triage-labels.md` table maps them to, when the repo has
+one. `/orchestrator:doctor` reports all of this at any time, including any of
+those labels the repo is missing.
 
 "Junie" in this README and across the plugin means the Junie CLI, not the
 Junie plugin for JetBrains IDEs. Junie CLI support rests on its bundled
@@ -126,6 +122,8 @@ running the flow never dirties a repo's working tree.
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
 | `/orchestrator:release` | Open the release PR that carries the base branch into the default branch (see below). |
 | `/orchestrator:spec-review <issue>` | Review any spec issue on demand, outside a flow: a standalone spec review. |
+| `/orchestrator:to-spec` | Turn the current conversation into a spec and publish it as an issue, outside any flow. |
+| `/orchestrator:to-tickets <issue>` | Break an existing issue into tickets published as its sub-issues, or collapse it into the issue, outside any flow. |
 
 ### Base branch
 

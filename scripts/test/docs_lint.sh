@@ -357,67 +357,6 @@ printf '%s\n' "$stop" >"$f/skills/orch-same/SKILL.md"
 assert_empty "the scan accepts any wording between the anchors, copied word for word" "$(scan_stop_text "$f")"
 check "every skill carries orch-flow's skills-only stop text word for word" "$(scan_stop_text "$PLUGIN_ROOT")"
 
-# --- doctor's mattpocock skill list -------------------------------------------
-# Doctor's required list is only worth something while it matches what the
-# plugin reads: a skill invoked but not listed passes doctor and then fails its
-# phase, and a skill listed but never invoked fails doctor for nothing. So the
-# list is compared with every mattpocock skill that a skill or agent invokes,
-# through `mp-skill <name>` or `mattpocock-skills:<name>`.
-echo
-echo "doctor's mattpocock skill list"
-# Mentions that name an upstream skill without invoking it, one file:name per
-# line (file relative to the plugin root).
-#   orch-handoff says it replaces mattpocock-skills:handoff, not that it runs it.
-mp_not_invoked='skills/orch-handoff/SKILL.md:handoff'
-# scan_mp_skills <plugin root>: each skill invoked but not listed, or listed
-# but not invoked.
-scan_mp_skills() {
-  local r="$1" listed invoked name
-  listed="$(sed -n 's/^MP_SKILLS="\(.*\)"$/\1/p' "$r/scripts/doctor.sh" 2>/dev/null | tr ' ' '\n' | grep . | sort -u)"
-  # An empty list is still a list: it matches a plugin that invokes nothing.
-  if ! grep -q '^MP_SKILLS="' "$r/scripts/doctor.sh" 2>/dev/null; then
-    echo "scripts/doctor.sh: no MP_SKILLS to check against"
-    return
-  fi
-  # file:name, one per invocation.
-  invoked="$(cd "$r" && grep -oE 'mp-skill [a-z][a-z-]*|mattpocock-skills:[a-z][a-z-]*' \
-      skills/*/SKILL.md agents/*.md 2>/dev/null \
-    | sed -E 's/:(mp-skill |mattpocock-skills:)/:/' \
-    | grep -vxF "$mp_not_invoked" | sort -u)"
-  printf '%s\n' "$invoked" | grep . | while IFS=: read -r file name; do
-    printf '%s\n' "$listed" | grep -qxF "$name" ||
-      echo "$file: invokes $name, which MP_SKILLS omits"
-  done
-  for name in $listed; do
-    printf '%s\n' "$invoked" | grep -q ":$name\$" ||
-      echo "scripts/doctor.sh: MP_SKILLS lists $name, which no skill or agent invokes"
-  done
-}
-f="$(new_fixture)"
-mkdir -p "$f/scripts" "$f/skills/orch-a" "$f/skills/orch-handoff" "$f/agents"
-printf 'MP_SKILLS="to-spec grilling"\n' >"$f/scripts/doctor.sh"
-printf 'Run `bash "$ORCH" mp-skill to-spec`, then `mattpocock-skills:to-tickets`.\n' >"$f/skills/orch-a/SKILL.md"
-printf 'This replaces `mattpocock-skills:handoff`.\n' >"$f/skills/orch-handoff/SKILL.md"
-printf 'Invoke `mattpocock-skills:to-spec`.\n' >"$f/agents/orch-b.md"
-out="$(scan_mp_skills "$f")"
-flags "the scan flags an invoked skill missing from MP_SKILLS" "$out" "skills/orch-a/SKILL.md: invokes to-tickets, which MP_SKILLS omits"
-flags "the scan flags a listed skill nothing invokes" "$out" "scripts/doctor.sh: MP_SKILLS lists grilling, which no skill or agent invokes"
-assert_eq "orch-handoff naming the skill it replaces is not an invocation" \
-  "$(printf '%s\n' "$out" | grep -c 'handoff')" "0"
-# A list emptied in step with the last invocation is a match, not a missing list.
-f2="$(new_fixture)"
-mkdir -p "$f2/scripts" "$f2/skills/orch-a"
-printf 'MP_SKILLS=""\n' >"$f2/scripts/doctor.sh"
-printf 'Invoke the `orch-a` skill.\n' >"$f2/skills/orch-a/SKILL.md"
-assert_empty "the scan accepts an empty MP_SKILLS when nothing is invoked" "$(scan_mp_skills "$f2")"
-printf 'Run `bash "$ORCH" mp-skill to-spec`.\n' >"$f2/skills/orch-a/SKILL.md"
-flags "the scan flags an invocation against an empty MP_SKILLS" \
-  "$(scan_mp_skills "$f2")" "skills/orch-a/SKILL.md: invokes to-spec, which MP_SKILLS omits"
-printf 'nothing\n' >"$f/scripts/doctor.sh"
-flags "the scan flags a doctor.sh with no MP_SKILLS" \
-  "$(scan_mp_skills "$f")" "scripts/doctor.sh: no MP_SKILLS to check against"
-check "doctor's MP_SKILLS is exactly the mattpocock skills invoked" "$(scan_mp_skills "$PLUGIN_ROOT")"
-
 # --- Junie snippet names every agent (#264) -----------------------------------
 # JUNIE-5493's workaround: docs/junie/AGENTS.md names every agent so Junie's
 # capability filter keeps it visible. Delete this rule along with the snippet

@@ -167,103 +167,6 @@ phase_write() {
   state_write phase "$1"
 }
 
-# --- mattpocock-skills lookup ------------------------------------------------
-#
-# Each supported host installs mattpocock-skills somewhere else, in another
-# shape, so the lookup is one place that knows them all. Shared by mp-skill and
-# doctor so the two can never disagree about where the skills are. Checked in
-# this order, and the first location present wins outright - skills are never
-# mixed across installs, so a partial install is reported rather than papered
-# over with whatever version some other host left behind:
-#
-#   override - $ORCHESTRATOR_MATTPOCOCK_ROOT, for an install none of the below
-#              describe. Authoritative when set: a bad value fails rather than
-#              falling through to something the user did not ask for.
-#   claude   - Claude's plugin cache, namespaced by marketplace and version.
-#              Resolved by glob, never pinned: the version changes under us,
-#              and the newest wins.
-#   junie    - Junie's extension cache under ~/.junie/extensions/, flat and
-#              un-namespaced (#121, from a real install). Whether an extension
-#              sits at the top level or one directory down is unverified, so
-#              both are checked.
-#   agents   - the `skills` CLI store. ~/.agents/skills is shared with every
-#              other skill the CLI installed, so only the entries its lockfile
-#              records as mattpocock-skills' count - a same-named skill from
-#              another plugin is never run in its place.
-#
-# Only user-level locations count. A project's own .agents/skills is ignored:
-# a cloned repo must not be able to substitute the instructions the flow runs.
-#
-# No arrays: bash 3.2 cannot tell an empty array from an unset one, so
-# ${#hits[@]} on a machine with nothing installed aborts the subshell under
-# `set -u` - on the one code path doctor exists to report.
-
-MP_PLUGIN="mattpocock-skills"
-MP_LOCK_REL=".agents/.skill-lock.json"
-
-# True when the skills CLI lockfile records skill $1 as a mattpocock-skills
-# skill. No lockfile, or jq missing, reads as "records nothing".
-mp_agents_owns_skill() {
-  local lock="$HOME/$MP_LOCK_REL"
-  [ -f "$lock" ] || return 1
-  jq -e --arg n "$1" --arg p "$MP_PLUGIN" \
-    '(.skills // {})[$n].pluginName == $p' "$lock" >/dev/null 2>&1
-}
-
-# True when the skills CLI lockfile records any skill as a mattpocock-skills
-# skill. No lockfile, or jq missing, reads as "records nothing".
-mp_agents_owns_any() {
-  local lock="$HOME/$MP_LOCK_REL"
-  [ -f "$lock" ] || return 1
-  jq -e --arg p "$MP_PLUGIN" \
-    'any((.skills // {})[]; .pluginName == $p)' "$lock" >/dev/null 2>&1
-}
-
-# Where mattpocock-skills will be read from, as "<kind><TAB><path>", or status 1
-# when no location holds it. Kinds are the ones listed above.
-mp_location() {
-  local p hits=""
-  if [ -n "${ORCHESTRATOR_MATTPOCOCK_ROOT:-}" ]; then
-    [ -d "$ORCHESTRATOR_MATTPOCOCK_ROOT" ] || return 1
-    printf 'override\t%s\n' "${ORCHESTRATOR_MATTPOCOCK_ROOT%/}"
-    return 0
-  fi
-  for p in "$HOME"/.claude/plugins/cache/*/"$MP_PLUGIN"/*/skills; do
-    if [ -d "$p" ]; then hits="$hits${p%/skills}"$'\n'; fi
-  done
-  if [ -n "$hits" ]; then
-    printf 'claude\t%s\n' "$(printf '%s' "$hits" | sort -V | tail -1)"
-    return 0
-  fi
-  for p in "$HOME/.junie/extensions/$MP_PLUGIN" "$HOME"/.junie/extensions/*/"$MP_PLUGIN"; do
-    if [ -d "$p" ]; then printf 'junie\t%s\n' "$p"; return 0; fi
-  done
-  if mp_agents_owns_any; then
-    printf 'agents\t%s\n' "$HOME/.agents/skills"
-    return 0
-  fi
-  return 1
-}
-
-# The SKILL.md for skill $3 in location $2 of kind $1, or status 1. Plugin-shaped
-# locations may file skills under a category (skills/engineering/<name>) or
-# flat (skills/<name>); an override may also point straight at a directory of
-# skills. A name is a single path segment - never a way out of the location.
-mp_skill_path() {
-  local kind="$1" root="$2" name="$3" p
-  case "$name" in ""|*/*|.*) return 1 ;; esac
-  if [ "$kind" = agents ]; then
-    mp_agents_owns_skill "$name" || return 1
-    p="$root/$name/SKILL.md"
-    if [ -f "$p" ]; then printf '%s\n' "$p"; return 0; fi
-    return 1
-  fi
-  for p in "$root/skills"/*/"$name"/SKILL.md "$root/skills/$name/SKILL.md" "$root/$name/SKILL.md"; do
-    if [ -f "$p" ]; then printf '%s\n' "$p"; return 0; fi
-  done
-  return 1
-}
-
 # Ask GitHub first. refs/remotes/origin/HEAD is a *local cached pointer* frozen at
 # clone time - in a clone taken while a feature branch was checked out it names
 # that branch, which would silently base every feature branch off the wrong place.
@@ -358,17 +261,6 @@ exclude_orch_dir() {
   ex="$(git rev-parse --git-dir)/info/exclude"
   mkdir -p "$(dirname "$ex")"
   grep -qxF "$ORCH_DIR_NAME/" "$ex" 2>/dev/null || printf '%s\n' "$ORCH_DIR_NAME/" >>"$ex"
-}
-
-# The mattpocock skills the flow depends on are `disable-model-invocation: true`,
-# so the Skill tool cannot reach them. Their SKILL.md files are plain markdown
-# and can be read and followed directly - this resolves one by name.
-cmd_mp_skill() {
-  local name="${1:-}" loc kind root
-  loc="$(mp_location)" || die "mattpocock-skills not installed - run: orch.sh doctor --env"
-  kind="${loc%%$'\t'*}"; root="${loc#*$'\t'}"
-  if [ -z "$name" ]; then printf '%s\n' "$root"; return 0; fi
-  mp_skill_path "$kind" "$root" "$name" || die "no such mattpocock skill: $name (looked in $root)"
 }
 
 # --- doctor -----------------------------------------------------------------
@@ -1951,7 +1843,6 @@ cmd_help() {
 orch.sh - deterministic operations for the orchestrator flow
 
   doctor [--env|--flow]       diagnose the machine, the repo, and the active flow
-  mp-skill [name]             path to a mattpocock SKILL.md (or the plugin root)
   default-branch              resolve the repo's default branch, as GitHub
                               reports it
   base set <branch>           set this checkout's base branch - the branch
@@ -2117,7 +2008,6 @@ main() {
   shift || true
   case "$cmd" in
     doctor)        cmd_doctor "$@" ;;
-    mp-skill)      cmd_mp_skill "$@" ;;
     default-branch) default_branch ;;
     base)          cmd_base "$@" ;;
     init)          cmd_init "$@" ;;
