@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.6.6
+
+- orch-flow's rule against hand-editing `.orchestrator/state.json` now also
+  says `issue`, `budget`, and `flake_rerun_used` change only through
+  `orch.sh state set` (see issue #313).
+
 ## 2.6.5
 
 - `redo spec` now names its retire directory

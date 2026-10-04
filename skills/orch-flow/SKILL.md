@@ -325,6 +325,7 @@ scratch.
   checkout.
 - **Never merge.** The flow opens a draft PR and stops. Merging is the user's.
 - **Never edit `.orchestrator/state.json` by hand; the phase moves only through
-  `phase advance`, `review ready`, and redo.**
+  `phase advance`, `review ready`, and redo, and `issue`, `budget`, and
+  `flake_rerun_used` change only through `orch.sh state set`.**
 - If a phase cannot finish, leave the state where it is, say what blocked it, and
   offer `/orchestrator:abort` (which archives rather than deletes).
