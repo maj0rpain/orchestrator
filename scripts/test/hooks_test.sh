@@ -26,7 +26,6 @@ assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no out
 REPO="$(mktemp -d)"
 git -C "$REPO" init -q
 mkdir -p "$REPO/docs/agents" "$REPO/docs/adr"
-echo "# tracker" >"$REPO/docs/agents/issue-tracker.md"
 
 export TMPDIR="$(mktemp -d)"
 
@@ -122,12 +121,10 @@ assert_eq "orch-plan arms the guard, which denies a source edit" \
 rm -f "$TMPDIR/orchestrator-grilling-p1"
 
 # No setup step: a repo with no issue-tracker.md gets no precondition warning.
-mv "$REPO/docs/agents/issue-tracker.md" "$REPO/docs/agents/.hidden"
 out="$(skill_event "grilling" s5 | "$GRILL")"
 assert_contains "still fires without issue-tracker.md" "$out" "Do NOT offer to implement"
 assert_not_contains "no precondition warning without issue-tracker.md" "$out" "PRECONDITION"
 assert_not_contains "never sends the user to the mattpocock setup skill" "$out" "setup-matt-pocock-skills"
-mv "$REPO/docs/agents/.hidden" "$REPO/docs/agents/issue-tracker.md"
 
 mkdir -p "$REPO/.orchestrator"
 echo '{"slug":"x","phase":"spec"}' >"$REPO/.orchestrator/state.json"
@@ -246,10 +243,8 @@ assert_empty "stays silent on plan confirmation in a session that never grilled"
 assert_empty "stays silent on a prompt that only mentions the confirmation" \
   "$(prompt_event "$confirm now" jc1 | "$GRILL")"
 
-mv "$REPO/docs/agents/issue-tracker.md" "$REPO/docs/agents/.hidden"
 assert_not_contains "no precondition warning on Junie without issue-tracker.md" \
   "$(prompt_event '$grilling' j2 | "$GRILL")" "PRECONDITION"
-mv "$REPO/docs/agents/.hidden" "$REPO/docs/agents/issue-tracker.md"
 
 mkdir -p "$REPO/.orchestrator"
 echo '{"slug":"x","phase":"spec"}' >"$REPO/.orchestrator/state.json"
