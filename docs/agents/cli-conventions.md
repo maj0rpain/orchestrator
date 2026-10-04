@@ -16,7 +16,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `review`  | `begin`, `path`, `file`, `ready`, `ci`, `terminal`, `retire` |
 | `spec`    | `fetch`, `update`, `comment`                         |
 | `spec-review` | `begin`                                          |
-| `ticket`  | `publish`, `next`, `close`, `reset`, `parent`        |
+| `ticket`  | `publish`, `next`, `close`, `reset`, `parent`, `exists` |
 | `state`   | `get`, `set`                                         |
 | `handoff` | `path`, `validate`, `section`                        |
 | `phase`   | `advance`, `boundary`                                |
@@ -32,7 +32,7 @@ behavior - run `orch.sh help` for the live list.
 Two kinds of command don't take this shape, deliberately:
 
 - **Bare global commands** with no noun to act on: `doctor`, `init`, `slug`,
-  `status`, `archive`, `help`, `mp-skill`, `default-branch`. Each is already
+  `status`, `archive`, `help`, `default-branch`. Each is already
   the whole idea; splitting it into a fake noun+verb pair would just add
   ceremony.
 - **`redo review` / `redo spec`**: verb-first on purpose. These act on the

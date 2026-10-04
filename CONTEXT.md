@@ -36,7 +36,7 @@ branch, never remembered by a human.
 ## Quick implementation
 
 The other route from an approved plan to a pull request, alongside a flow.
-Chosen once, by a human, at the close of a grilling session - never assumed by
+Chosen once, by a human, at the close of a planning session - never assumed by
 the model. Skips the plan/spec/implement/review pipeline entirely: no phases,
 no handoff, no `.orchestrator/state.json`. Still produces its own branch and
 PR, and is still held to this project's standards for how a change gets made -
@@ -44,7 +44,18 @@ test-driven, reviewed, then opened as a PR. Its review is one pass by the same
 two reviewers a review loop starts, with no loop around them: the quick
 session fixes what it agrees with and names what it declines in the PR. It
 offers a spec review of its linked issue before its ticket breakdown - the
-human's choice, asked on every run.
+human's choice, asked on every run - and skips that breakdown when the linked
+issue is a blueprint.
+
+## Blueprint
+
+Everything a change needs before implementation, published and carried no
+further: its spec issue, reviewed if the human chose to, and its ticket
+breakdown. Chosen once, by a human, at the close of a planning session, as
+the alternative to starting a flow or a quick implementation. A flow later
+adopts it, or a quick implementation links it; either way its ticket
+breakdown is already published and is not run again.
+_Avoid_: planning-only, parked spec, banked spec.
 
 ## Doctor
 
@@ -57,8 +68,8 @@ without aborting partway through.
 
 ## Ticket breakdown
 
-The set of sub-issues `to-tickets` publishes against a flow's spec issue, or
-against quick implementation's linked issue - each one a sub-issue of that
+The set of sub-issues published against a spec issue (a flow's, a quick
+implementation's linked issue, or a blueprint's) - each one a sub-issue of that
 parent, not a second issue the flow or quick implementation now holds, and
 may block, or be blocked by, other tickets in the same breakdown. When the
 approved breakdown resolves to 0 or 1 tickets, no sub-issue is published at
@@ -205,17 +216,17 @@ call, never the closer's.
 
 ## Adopted issue
 
-An issue given to a flow at init, instead of one `to-spec` publishes during
-the spec phase. Checked once, at init, for existing, open, and carrying the
-`ready-for-agent` triage label; the spec phase then skips `to-spec` entirely
-and runs the spec review straight against it.
+An issue given to a flow at init, instead of one the spec phase publishes.
+Checked once, at init, for existing, open, and carrying the `ready-for-agent`
+triage label; the spec phase then skips writing a spec entirely and runs the
+spec review straight against it.
 _Avoid_: existing issue, pre-existing issue, given issue.
 
 ## Spec review
 
 One look at a spec issue, taken once. Usually a step of a flow's spec phase,
-after the issue exists - published by `to-spec` or already adopted at init -
-and before its handoff is written. A human may also ask for one on demand,
+after the issue exists - published by the spec phase or already adopted at
+init - and before its handoff is written. A human may also ask for one on demand,
 against any issue, and a quick implementation may take one before its ticket
 breakdown: either way a standalone spec review, which belongs to no flow and
 leaves no handoff. Its lenses read the spec independently - four in a flow,

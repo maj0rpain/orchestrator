@@ -18,7 +18,7 @@
 #
 # Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
 # now, first_line, default_branch, base_setting, origin_has_branch,
-# require_state, mp_location, mp_skill_path,
+# require_state,
 # ORCH_DIR_NAME, PHASES, LABELS_DOC, LABEL_LIMIT, HANDOFF_DIR) is defined.
 # cmd_doctor is then dispatched from main() exactly like any other command.
 
@@ -66,12 +66,9 @@ d_join() {
 D_GH=""            # "ok", or the reason GitHub could not be asked
 D_REPO_NAME=""     # owner/name, as GitHub resolves it
 D_REPO_BRANCH=""   # the default branch, as GitHub reports it
-D_MP=""            # where mattpocock-skills was found, or empty
-D_MP_KIND=""       # which kind of location that is - see mp_location
 D_JQ=""            # "ok", or empty when jq is missing
 D_STATE=""         # "ok" when state.json parses, or empty
 D_GH_SKIPPED=0
-D_MP_SKIPPED=0
 D_JQ_SKIPPED=0
 
 # A check that needed an answer it could not get counts itself as skipped and
@@ -96,10 +93,9 @@ d_skip_line() {
 }
 
 d_skip_report() {
-  if [ $((D_GH_SKIPPED + D_MP_SKIPPED + D_JQ_SKIPPED)) -eq 0 ]; then return 0; fi
+  if [ $((D_GH_SKIPPED + D_JQ_SKIPPED)) -eq 0 ]; then return 0; fi
   d_head "skipped"
   d_skip_line "$D_GH_SKIPPED" "GitHub" "$D_GH"
-  d_skip_line "$D_MP_SKIPPED" "skill"  "mattpocock-skills is not installed"
   d_skip_line "$D_JQ_SKIPPED" "flow"   "jq is not installed"
 }
 
@@ -136,11 +132,6 @@ d_probe() {
   # with no PR recorded has nothing to ask GitHub. It reaches gh through
   # d_gh_gate instead, which probes on first use, so that run costs no round trip.
   if [ "$scope" = flow ]; then return 0; fi
-  if D_MP="$(mp_location)"; then
-    D_MP_KIND="${D_MP%%$'\t'*}"; D_MP="${D_MP#*$'\t'}"
-  else
-    D_MP=""
-  fi
   d_probe_gh
   if [ "$D_GH" = ok ]; then
     view="$(gh repo view --json nameWithOwner,defaultBranchRef \
@@ -173,7 +164,7 @@ check_jq() {
 }
 
 # A warn, not a FAIL: macOS still ships 3.2 as /bin/bash, and the flow works
-# there - mp_location avoids arrays precisely so that it keeps doing so.
+# there.
 check_bash() {
   if [ "${BASH_VERSINFO[0]:-0}" -ge 4 ]; then d_ok "bash ${BASH_VERSION%%(*}"; return 0; fi
   d_warn "bash ${BASH_VERSION%%(*} - orch.sh is written for 4.0 and up."
@@ -223,68 +214,6 @@ check_default_branch() {
 }
 
 # plugin environment ---------------------------------------------------------
-
-# Names only the detected host's install method - a Junie user told to run a
-# Claude /plugin command is no better off. With no host detected, every
-# method is listed. check_host sets D_HOST and runs earlier in the same group.
-# The Junie line names the two installs #121 found on a real machine: the
-# skills CLI store (user story 5) and a Claude plugin installed as a Junie
-# extension (the Problem Statement). Neither is verified end to end, and the
-# line says so (#121: unverified Junie claims are marked).
-d_mp_remedy() {
-  local c1="Claude Code: /plugin marketplace add anthropics/claude-plugins"
-  local c2="             /plugin install mattpocock-skills"
-  local junie="Junie:       npx skills add mattpocock/skills    # or install mattpocock/skills as a Junie extension (both unverified)"
-  local elsewhere="Elsewhere:   export ORCHESTRATOR_MATTPOCOCK_ROOT=/path/to/mattpocock-skills"
-  case "${D_HOST:-}" in
-    claude) d_remedy "$c1" "$c2" "$elsewhere" ;;
-    junie)  d_remedy "$junie" "$elsewhere" ;;
-    *)      d_remedy "$c1" "$c2" "$junie" "$elsewhere" ;;
-  esac
-}
-
-d_mp_source() {
-  case "$D_MP_KIND" in
-    override) printf 'ORCHESTRATOR_MATTPOCOCK_ROOT' ;;
-    claude)   printf 'Claude Code plugin cache' ;;
-    junie)    printf 'Junie extension cache' ;;
-    agents)   printf 'skills CLI' ;;
-  esac
-}
-
-check_mattpocock() {
-  if [ -n "$D_MP" ]; then d_ok "mattpocock-skills: ${D_MP/#$HOME/\~} ($(d_mp_source))"; return 0; fi
-  # The override is authoritative, so the lookup never looked past it - saying
-  # "not installed" would send the user to reinstall what may well be there.
-  if [ -n "${ORCHESTRATOR_MATTPOCOCK_ROOT:-}" ]; then
-    d_fail "ORCHESTRATOR_MATTPOCOCK_ROOT points at $ORCHESTRATOR_MATTPOCOCK_ROOT, which is not a directory."
-    d_remedy "unset ORCHESTRATOR_MATTPOCOCK_ROOT    # or point it at a mattpocock-skills checkout"
-    return 0
-  fi
-  d_fail "mattpocock-skills is not installed - the flow reads its skills directly."
-  d_mp_remedy
-}
-
-# The check that justifies the feature. mp_location settles where the skills
-# are from whatever it finds there first, so a partial or restructured install
-# passes it and the flow then dies at the phase that needed the missing skill -
-# by which point the session that could have fixed it has been cleared.
-# The list must match the mattpocock skills that skills/*/SKILL.md and
-# agents/*.md invoke (`mp-skill <name>` or `mattpocock-skills:<name>`): a skill
-# added to or dropped from those files is added to or dropped from here too.
-# docs_lint.sh's scan_mp_skills rule fails while the two disagree.
-MP_SKILLS="to-spec to-tickets"
-
-check_skills() {
-  d_gate "${D_MP:+ok}" D_MP_SKIPPED || return 0
-  local name missing=""
-  for name in $MP_SKILLS; do
-    mp_skill_path "$D_MP_KIND" "$D_MP" "$name" >/dev/null || missing="$(d_append "$missing" "$name")"
-  done
-  if [ -z "$missing" ]; then d_ok "every skill the flow reads resolves"; return 0; fi
-  d_fail "mattpocock skills missing: $(d_join "$missing") (looked in: $(d_mp_source))"
-  d_mp_remedy
-}
 
 # The plugin root doctor runs from: the directory scripts/ sits in, which is
 # also where every skill resolves orch.sh and the capabilities reference from.
@@ -408,7 +337,9 @@ check_orch_sh() {
   d_orch_remedy
 }
 
-# Names only the detected host's install method, like d_mp_remedy.
+# Names only the detected host's install method - a Junie user told to run a
+# Claude /plugin command is no better off. With no host detected, every
+# method is listed.
 d_orch_remedy() {
   local c1="Claude Code: /plugin marketplace add maj0rpain/orchestrator"
   local c2="             /plugin install orchestrator@orchestrator"
@@ -423,16 +354,10 @@ d_orch_remedy() {
 
 # repo config ----------------------------------------------------------------
 
-check_tracker_doc() {
-  if [ -f "$ROOT/docs/agents/issue-tracker.md" ]; then d_ok "issue tracker configured"; return 0; fi
-  d_fail "docs/agents/issue-tracker.md is missing - to-spec reads it."
-  d_remedy "/mattpocock-skills:setup-matt-pocock-skills"
-}
-
 # The one place that knows how to read a row out of the triage-label table:
 # where it starts and ends, which rows belong to it, and how to clean a cell
 # once split out. Emits "role<TAB>name" for every valid data row - the left
-# column (the mattpocock/skills role name) and the right column (this repo's
+# column (the canonical triage role name) and the right column (this repo's
 # local label for it) - so triage_labels and triage_label_for always agree on
 # what the table contains, including correctly ignoring any other table
 # elsewhere in the doc (#39).
@@ -529,26 +454,39 @@ validate_adopted_issue() {
     || die "issue #$issue is missing the '$label' triage label - adoption requires it."
 }
 
+# The five canonical triage roles, each also the label name a repo with no
+# labels doc uses (ADR-0028: setup is optional).
+TRIAGE_ROLES="needs-triage needs-info ready-for-agent ready-for-human wontfix"
+
+# The label names this repo is expected to carry, one per line: the doc's when
+# it is present, the canonical names when it is not. A present doc that parses
+# to nothing yields nothing - check_labels_doc reports that one.
+triage_expected_labels() {
+  if [ -f "$ROOT/$LABELS_DOC" ]; then triage_labels; return 0; fi
+  printf '%s\n' $TRIAGE_ROLES
+}
+
+# Absent is fine: the canonical names apply. Present but unreadable is a FAIL,
+# because a doc that exists was meant to say something.
 check_labels_doc() {
   local n
   if [ ! -f "$ROOT/$LABELS_DOC" ]; then
-    d_fail "$LABELS_DOC is missing - the spec phase labels its issue from it."
-    d_remedy "/mattpocock-skills:setup-matt-pocock-skills"
+    d_ok "no $LABELS_DOC - the canonical triage label names apply"
     return 0
   fi
   n="$(triage_labels | grep -c .)" || n=0
   if [ "$n" -gt 0 ]; then d_ok "$n triage labels documented in $LABELS_DOC"; return 0; fi
   d_fail "$LABELS_DOC lists no triage labels - the spec phase labels its issue from it."
-  d_remedy "/mattpocock-skills:setup-matt-pocock-skills"
+  d_remedy "fix $LABELS_DOC's table, or delete it to use the canonical names"
 }
 
 # The other check that justifies the feature: the spec phase applies a label at
 # `gh issue create`, so a label the repo does not have kills the phase after the
-# whole to-spec exchange has already been spent.
+# whole orch-to-spec exchange has already been spent.
 check_labels_exist() {
   d_gh_gate || return 0
   local want have missing="" l n
-  want="$(triage_labels)" || want=""
+  want="$(triage_expected_labels)" || want=""
   # Nothing to compare against, and check_labels_doc has already said so. One
   # problem earns one FAIL, never a second derived from the first.
   [ -n "$want" ] || return 0
@@ -562,7 +500,7 @@ check_labels_exist() {
     if [ -z "$l" ]; then continue; fi
     if ! printf '%s\n' "$have" | grep -qxF "$l"; then missing="$(d_append "$missing" "$l")"; fi
   done <<<"$want"
-  if [ -z "$missing" ]; then d_ok "every documented triage label exists on the repo"; return 0; fi
+  if [ -z "$missing" ]; then d_ok "every triage label exists on the repo"; return 0; fi
   # Found every one of them is a definitive answer whatever the page held, so
   # the cut-off caveat only ever qualifies a *negative*: a label named as
   # missing because it fell past the boundary is exactly the FAIL that teaches
@@ -644,8 +582,8 @@ check_base_branch() {
 ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
-h_plugin check_host check_plugin_root check_orch_sh check_mattpocock check_skills
-h_repo   check_tracker_doc check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch
+h_plugin check_host check_plugin_root check_orch_sh
+h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch
 "
 
 # flow state -----------------------------------------------------------------
@@ -696,7 +634,7 @@ check_flow_upstream() {
 }
 
 # Unconditional on how the issue arrived - adopted at init or published by
-# to-spec, state.json carries no field distinguishing the two, and none is
+# orch-to-spec, state.json carries no field distinguishing the two, and none is
 # needed here: both are just "the flow's spec issue" once a flow is running
 # against one. The ready-for-agent label is deliberately not re-checked; it is
 # a one-time gate at adoption, not an ongoing flow invariant (docs/adr/0005).

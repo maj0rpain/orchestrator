@@ -31,13 +31,13 @@ on exactly its own cells.
 
 | Capability | Claude Code | Junie CLI |
 | --- | --- | --- |
-| Invoke a skill from a step | The Skill tool, by scoped name (`orchestrator:orch-flow`, `mattpocock-skills:tdd`). | No Skill tool, so the model cannot invoke one mid-step. A human still starts one with `/<name>`, or Junie picks one automatically. Naming a skill as `$<name>` in a prompt is unverified. **Fallback**. |
+| Invoke a skill from a step | The Skill tool, by scoped name (`orchestrator:orch-flow`). | No Skill tool, so the model cannot invoke one mid-step. A human still starts one with `/<name>`, or Junie picks one automatically. Naming a skill as `$<name>` in a prompt is unverified. **Fallback**. |
 | Ask a multiple-choice question | `AskUserQuestion`. | `ask_user`, which the plan agent and the main agent both have (#202). |
 | Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`. | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). It loads the plugin's `agents/` as custom agents (#200), but a capability filter at agent start usually hides them, and starting a hidden agent by name fails with `Unknown agent`. Both hosts read its `tools:` YAML list as the agent's allowlist, so an agent left visible starts with the tools it needs. **Fallback**. Take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file, and record the reason as the agent hidden by Junie's capability filter. JetBrains tracks the filter as JUNIE-5493: appending the plugin's `docs/junie/AGENTS.md` snippet to `~/.junie/AGENTS.md` keeps the agents visible, and the README's Junie paragraph gives the command and a per-prompt fallback. |
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. |
 | Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. Where commands do not load, `orch-spec-review` is invoked directly with the issue number. |
-| Inject context at planning time | A `PostToolUse` hook on `Skill(grilling)` (`hook-grilling.sh`). | A `UserPromptSubmit` hook (`hook-grilling.sh`, #202) that fires when the prompt names a grilling entry point as `/<name>` or `$<name>` (`grilling`, `grill-me`, `grill-with-docs`, `wayfinder`, `improve-codebase-architecture`). Per the bundled docs, only the interactive TUI fires the event and its context reaches the main agent only. A live probe on #202 confirmed the hook fires from the extension's `hooks.json` and that Junie rewrites a typed `/<name>` into `$<name>`. When Junie picks grilling on its own, no prompt names it and no message is sent. Junie's router sends a grilling prompt to its plan agent, which ends on Junie's own plan screen and skips the closing question, so the hook asks it again when the human picks "Confirm and implement". That submits the fixed prompt `Implement the suggested plan` to the main agent, and a live run on #202 showed the question appear there. "Save the plan and stop" submits no prompt, so nothing is asked. |
+| Inject context at planning time | A `PostToolUse` hook on `Skill` (`hook-grilling.sh`) that fires when the skill name contains `grilling` or `orch-plan`. | A `UserPromptSubmit` hook (`hook-grilling.sh`, #202) that fires when the prompt names a grilling entry point as `/<name>` or `$<name>` (`grilling`, `grill-me`, `grill-with-docs`, `wayfinder`, `improve-codebase-architecture`, or `orch-plan`, each under any scope, or `orchestrator:plan`). Per the bundled docs, only the interactive TUI fires the event and its context reaches the main agent only. A live probe on #202 confirmed the hook fires from the extension's `hooks.json` and that Junie rewrites a typed `/<name>` into `$<name>`. When Junie picks grilling on its own, no prompt names it and no message is sent. Junie's router sends a grilling prompt to its plan agent, which ends on Junie's own plan screen and skips the closing question, so the hook asks it again when the human picks "Confirm and implement". That submits the fixed prompt `Implement the suggested plan` to the main agent, and a live run on #202 showed the question appear there. "Save the plan and stop" submits no prompt, so nothing is asked. |
 | Arm the edit guard | A `PostToolUse` hook on `Skill` writes the planning marker, and `hook-guard.sh` denies source edits (ADR-0006). A `Skill` call to `orchestrator:orch-quick-implement` lifts it. | None: the guard does not arm on Junie (ADR-0025). The planning message and the `docs/junie/AGENTS.md` planning section steer planning away from source edits, and `orch.sh init`'s working-tree check catches any at flow start. **Fallback**. |
 
 ## Fallbacks
@@ -49,9 +49,6 @@ tool would have injected:
 
 - An orchestrator skill (`orch-*`) is `skills/<name>/SKILL.md` under the plugin
   root, the directory `orch.sh`'s `scripts/` sits in.
-- A mattpocock-skills skill is `bash "$ORCH" mp-skill <name>`. Use that, not a skill
-  of the same bare name, because Junie lists skills unscoped and another
-  plugin's `tdd` may shadow mattpocock's.
 
 ### Start a fresh subagent
 
@@ -78,10 +75,8 @@ prompt, and where to record the fallback. Take the first tier that fits:
    findings it returns - before moving on.
    Where the brief names a capability this host lacks, take that capability's
    fallback from this file too, and record it where the starting skill
-   says - a brief that invokes a mattpocock skill as a skill becomes
-   `bash "$ORCH" mp-skill <name>` on a host with no Skill tool. Where a skill starts several agents at
-   once, run them one at a time, finishing each report before starting the
-   next. The loop around the subagent does not change: a ticket is still
+   says. Where a skill starts several agents at once, run them one at a
+   time, finishing each report before starting the next. The loop around the subagent does not change: a ticket is still
    closed only once its report is written.
 
 Record the tier taken where the starting skill says, with the reason: which

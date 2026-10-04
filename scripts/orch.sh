@@ -167,103 +167,6 @@ phase_write() {
   state_write phase "$1"
 }
 
-# --- mattpocock-skills lookup ------------------------------------------------
-#
-# Each supported host installs mattpocock-skills somewhere else, in another
-# shape, so the lookup is one place that knows them all. Shared by mp-skill and
-# doctor so the two can never disagree about where the skills are. Checked in
-# this order, and the first location present wins outright - skills are never
-# mixed across installs, so a partial install is reported rather than papered
-# over with whatever version some other host left behind:
-#
-#   override - $ORCHESTRATOR_MATTPOCOCK_ROOT, for an install none of the below
-#              describe. Authoritative when set: a bad value fails rather than
-#              falling through to something the user did not ask for.
-#   claude   - Claude's plugin cache, namespaced by marketplace and version.
-#              Resolved by glob, never pinned: the version changes under us,
-#              and the newest wins.
-#   junie    - Junie's extension cache under ~/.junie/extensions/, flat and
-#              un-namespaced (#121, from a real install). Whether an extension
-#              sits at the top level or one directory down is unverified, so
-#              both are checked.
-#   agents   - the `skills` CLI store. ~/.agents/skills is shared with every
-#              other skill the CLI installed, so only the entries its lockfile
-#              records as mattpocock-skills' count - a same-named skill from
-#              another plugin is never run in its place.
-#
-# Only user-level locations count. A project's own .agents/skills is ignored:
-# a cloned repo must not be able to substitute the instructions the flow runs.
-#
-# No arrays: bash 3.2 cannot tell an empty array from an unset one, so
-# ${#hits[@]} on a machine with nothing installed aborts the subshell under
-# `set -u` - on the one code path doctor exists to report.
-
-MP_PLUGIN="mattpocock-skills"
-MP_LOCK_REL=".agents/.skill-lock.json"
-
-# True when the skills CLI lockfile records skill $1 as a mattpocock-skills
-# skill. No lockfile, or jq missing, reads as "records nothing".
-mp_agents_owns_skill() {
-  local lock="$HOME/$MP_LOCK_REL"
-  [ -f "$lock" ] || return 1
-  jq -e --arg n "$1" --arg p "$MP_PLUGIN" \
-    '(.skills // {})[$n].pluginName == $p' "$lock" >/dev/null 2>&1
-}
-
-# True when the skills CLI lockfile records any skill as a mattpocock-skills
-# skill. No lockfile, or jq missing, reads as "records nothing".
-mp_agents_owns_any() {
-  local lock="$HOME/$MP_LOCK_REL"
-  [ -f "$lock" ] || return 1
-  jq -e --arg p "$MP_PLUGIN" \
-    'any((.skills // {})[]; .pluginName == $p)' "$lock" >/dev/null 2>&1
-}
-
-# Where mattpocock-skills will be read from, as "<kind><TAB><path>", or status 1
-# when no location holds it. Kinds are the ones listed above.
-mp_location() {
-  local p hits=""
-  if [ -n "${ORCHESTRATOR_MATTPOCOCK_ROOT:-}" ]; then
-    [ -d "$ORCHESTRATOR_MATTPOCOCK_ROOT" ] || return 1
-    printf 'override\t%s\n' "${ORCHESTRATOR_MATTPOCOCK_ROOT%/}"
-    return 0
-  fi
-  for p in "$HOME"/.claude/plugins/cache/*/"$MP_PLUGIN"/*/skills; do
-    if [ -d "$p" ]; then hits="$hits${p%/skills}"$'\n'; fi
-  done
-  if [ -n "$hits" ]; then
-    printf 'claude\t%s\n' "$(printf '%s' "$hits" | sort -V | tail -1)"
-    return 0
-  fi
-  for p in "$HOME/.junie/extensions/$MP_PLUGIN" "$HOME"/.junie/extensions/*/"$MP_PLUGIN"; do
-    if [ -d "$p" ]; then printf 'junie\t%s\n' "$p"; return 0; fi
-  done
-  if mp_agents_owns_any; then
-    printf 'agents\t%s\n' "$HOME/.agents/skills"
-    return 0
-  fi
-  return 1
-}
-
-# The SKILL.md for skill $3 in location $2 of kind $1, or status 1. Plugin-shaped
-# locations may file skills under a category (skills/engineering/<name>) or
-# flat (skills/<name>); an override may also point straight at a directory of
-# skills. A name is a single path segment - never a way out of the location.
-mp_skill_path() {
-  local kind="$1" root="$2" name="$3" p
-  case "$name" in ""|*/*|.*) return 1 ;; esac
-  if [ "$kind" = agents ]; then
-    mp_agents_owns_skill "$name" || return 1
-    p="$root/$name/SKILL.md"
-    if [ -f "$p" ]; then printf '%s\n' "$p"; return 0; fi
-    return 1
-  fi
-  for p in "$root/skills"/*/"$name"/SKILL.md "$root/skills/$name/SKILL.md" "$root/$name/SKILL.md"; do
-    if [ -f "$p" ]; then printf '%s\n' "$p"; return 0; fi
-  done
-  return 1
-}
-
 # Ask GitHub first. refs/remotes/origin/HEAD is a *local cached pointer* frozen at
 # clone time - in a clone taken while a feature branch was checked out it names
 # that branch, which would silently base every feature branch off the wrong place.
@@ -358,17 +261,6 @@ exclude_orch_dir() {
   ex="$(git rev-parse --git-dir)/info/exclude"
   mkdir -p "$(dirname "$ex")"
   grep -qxF "$ORCH_DIR_NAME/" "$ex" 2>/dev/null || printf '%s\n' "$ORCH_DIR_NAME/" >>"$ex"
-}
-
-# The mattpocock skills the flow depends on are `disable-model-invocation: true`,
-# so the Skill tool cannot reach them. Their SKILL.md files are plain markdown
-# and can be read and followed directly - this resolves one by name.
-cmd_mp_skill() {
-  local name="${1:-}" loc kind root
-  loc="$(mp_location)" || die "mattpocock-skills not installed - run: orch.sh doctor --env"
-  kind="${loc%%$'\t'*}"; root="${loc#*$'\t'}"
-  if [ -z "$name" ]; then printf '%s\n' "$root"; return 0; fi
-  mp_skill_path "$kind" "$root" "$name" || die "no such mattpocock skill: $name (looked in $root)"
 }
 
 # --- doctor -----------------------------------------------------------------
@@ -1402,19 +1294,40 @@ cmd_branch() {
   esac
 }
 
-# The publishing boundary a quick implementation calls instead of hardcoding
-# `gh issue create` in skill prose - the same reason `review file` owns its
-# own `gh issue create` rather than leaving it to whichever skill files a
-# finding. Stateless like branch off: the caller has no flow to record into,
-# so the title and body are its own and nothing here remembers them.
+# True only once the created issue reads back with the title it was given
+# and the ready-for-agent role's label among its labels. Read fresh every
+# call, never cached - the caller retries this on a mismatch, as
+# ticket_links_verified's caller does.
+issue_publish_verified() {
+  local n="$1" title="$2" label="$3" out
+  out="$(adapter_issue_view "$n" --json title,labels --jq '.title, (.labels[].name)' 2>/dev/null)" \
+    || return 1
+  [ "$(first_line "$out")" = "$title" ] || return 1
+  printf '%s\n' "$out" | tail -n +2 | grep -qxF "$label"
+}
+
+# The publishing boundary a spec and a quick implementation call instead of
+# hardcoding `gh issue create` in skill prose - the same reason `review file`
+# owns its own `gh issue create` rather than leaving it to whichever skill
+# files a finding. Stateless like branch off: the caller may have no flow to
+# record into, so the title and body are its own and nothing here remembers
+# them. Verify-then-die like ticket publish: the issue is created under the
+# ready-for-agent role's label (an agent works it next), then its title and
+# labels are read back - one retry on a mismatch, a second failure dies
+# naming the issue, so a half-published spec never reaches the next step.
 cmd_issue_publish() {
   [ $# -eq 2 ] || die "usage: orch.sh issue publish <title> <body-file>"
-  local title="$1" body_file="$2" url
+  local title="$1" body_file="$2" ready url n
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  url="$(adapter_issue_create --title "$title" --body-file "$body_file")" \
+  ready="$(triage_label_for ready-for-agent)"
+  url="$(adapter_issue_create --title "$title" --body-file "$body_file" --label "$ready")" \
     || die "gh could not create the issue"
-  note "${url##*/}"
+  n="${url##*/}"
+  issue_publish_verified "$n" "$title" "$ready" \
+    || issue_publish_verified "$n" "$title" "$ready" \
+    || die "issue #$n's title and '$ready' label did not verify - checked twice, both failed"
+  note "$n"
 }
 
 # Pushing a branch and opening a PR against it has exactly one right answer -
@@ -1686,6 +1599,38 @@ cmd_ticket_parent() {
   if [ -n "$url" ]; then printf '%s\n' "${url##*/}"; fi
 }
 
+# Whether <parent> already has a ticket breakdown, decided by structure
+# rather than prose (ADR-0028): `sub-issues` when it has at least one,
+# open or closed; `collapsed` when it has none but its body carries a line
+# that is exactly `## Ticket`, the heading a 0-1-ticket collapse appends
+# under; exit 1 and no output when neither. Sub-issues win when both hold.
+# A body edited on the web arrives with CRLF line ends, so a trailing CR
+# does not stop the heading's line from matching. A GitHub it cannot read
+# exits 2, never 1: a caller reading 1 as "no breakdown" would publish a
+# second one.
+cmd_ticket_exists() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket exists <parent>"
+  local parent="$1" subs body
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
+  if ! subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" --jq '.[].number')"; then
+    printf 'orch: gh could not list sub-issues of #%s\n' "$parent" >&2
+    exit 2
+  fi
+  if [ -n "$subs" ]; then
+    printf 'sub-issues\n'
+    return 0
+  fi
+  if ! body="$(adapter_issue_view "$parent" --json body --jq .body)"; then
+    printf "orch: gh could not read issue #%s's body\n" "$parent" >&2
+    exit 2
+  fi
+  if printf '%s\n' "$body" | tr -d '\r' | grep -qxF '## Ticket'; then
+    printf 'collapsed\n'
+    return 0
+  fi
+  return 1
+}
+
 cmd_ticket() {
   local op="${1:-}"
   shift || true
@@ -1695,7 +1640,8 @@ cmd_ticket() {
     close)   cmd_ticket_close "$@" ;;
     reset)   cmd_ticket_reset "$@" ;;
     parent)  cmd_ticket_parent "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|close|reset|parent)" ;;
+    exists)  cmd_ticket_exists "$@" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|close|reset|parent|exists)" ;;
   esac
 }
 
@@ -1807,7 +1753,7 @@ cmd_redo_review() {
 # The full `implement -> spec` transition. Defaults to keeping the existing
 # spec issue and re-reviewing it as-is - the same path an adopted issue
 # already takes through the spec phase's step 0. Only `--new-issue` closes the
-# old one and clears state.issue, so to-spec runs again from scratch.
+# old one and clears state.issue, so orch-to-spec runs again from scratch.
 cmd_redo_spec() {
   require_state
   local phase new_issue=0
@@ -1822,7 +1768,7 @@ cmd_redo_spec() {
   if [ "$new_issue" -eq 1 ]; then
     local issue msg
     require_issue issue
-    msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from to-spec in this same flow.\n')"
+    msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from orch-to-spec in this same flow.\n')"
     adapter_issue_close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
     state_write issue null
   fi
@@ -1903,7 +1849,6 @@ cmd_help() {
 orch.sh - deterministic operations for the orchestrator flow
 
   doctor [--env|--flow]       diagnose the machine, the repo, and the active flow
-  mp-skill [name]             path to a mattpocock SKILL.md (or the plugin root)
   default-branch              resolve the repo's default branch, as GitHub
                               reports it
   base set <branch>           set this checkout's base branch - the branch
@@ -1968,9 +1913,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               origin and deleting the old remote ref, without
                               force-pushing over anything
   issue publish <title> <body-file>
-                              create a GitHub issue, recording no state;
-                              prints the number - for a quick implementation
-                              that needs one
+                              create a GitHub issue under ready-for-agent
+                              and verify its title and label by reading them
+                              back - recording no state; prints the number
   issue fetch <n> <file>      write issue <n>'s body to <file>, recording no
                               state
   issue update <n> <file>     replace issue <n>'s body with <file>, recording
@@ -2012,6 +1957,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               currently closed, and only those
   ticket parent <n>          print <n>'s parent issue number, or nothing
                               when <n> is not a sub-issue
+  ticket exists <parent>      whether <parent> already has a ticket
+                              breakdown: prints sub-issues (it has any, open
+                              or closed) or collapsed (none, but its body has
+                              a line that is exactly `## Ticket`); exits 1
+                              printing nothing when neither, 2 when GitHub
+                              cannot be read
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
@@ -2051,7 +2002,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               the review loop has reached a terminal state
   redo spec [--new-issue]     step the flow back to spec, keeping the existing
                               issue by default; --new-issue closes it and
-                              clears state.issue so to-spec starts fresh;
+                              clears state.issue so orch-to-spec starts fresh;
                               02-spec.md and any 03-implement.md move into
                               handoff/pre-redo-spec-<UTC timestamp>/
   status                      human-readable summary
@@ -2064,7 +2015,6 @@ main() {
   shift || true
   case "$cmd" in
     doctor)        cmd_doctor "$@" ;;
-    mp-skill)      cmd_mp_skill "$@" ;;
     default-branch) default_branch ;;
     base)          cmd_base "$@" ;;
     init)          cmd_init "$@" ;;

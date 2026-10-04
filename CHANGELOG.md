@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.7.0
+
+- The plugin no longer requires `mattpocock-skills` (see issue #326, and
+  ADR-0028). `orch-to-spec` and `orch-to-tickets`, adapted from
+  mattpocock-skills 1.2.3, write the spec and break it into tickets, and are
+  usable standalone as `/orchestrator:to-spec` and
+  `/orchestrator:to-tickets <issue>`. `orch-plan` (`/orchestrator:plan`) is the
+  plugin's own planning entry point; mattpocock's `grilling`, `grill-me`,
+  `grill-with-docs`, and `wayfinder` still start planning when installed.
+- The planning session's closing question gains a third option, **Blueprint
+  only**: publish the spec, offer a spec review, publish the ticket breakdown,
+  then stop. A flow adopting the issue, or a quick implementation linking it,
+  skips the breakdown that already exists, decided by the new
+  `orch.sh ticket exists <parent>`.
+- `orch.sh issue publish` applies the `ready-for-agent` role's label and
+  verifies the title and label by readback, dying after one failed retry.
+- No setup step: a missing `docs/agents/` falls back to GitHub and the
+  canonical triage label names. Doctor no longer checks for mattpocock-skills
+  or `issue-tracker.md`, and a missing `triage-labels.md` is not a failure.
+- Removed: `orch.sh mp-skill` and `ORCHESTRATOR_MATTPOCOCK_ROOT`, which is now
+  ignored if set.
+
 ## 2.6.8
 
 - The docs linter reads markdown sections through one `md_section` reader,

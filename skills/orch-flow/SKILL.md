@@ -43,26 +43,6 @@ this phase's handoff under **Host fallbacks**. Where this file offers the human 
 `/orchestrator:<command>`, here or in a skill this flow runs, and your host
 has no plugin commands, offer the matching section of this skill instead.
 
-## The upstream skills are not callable
-
-`to-spec`, `implement`, `handoff`, `to-tickets`, `wayfinder`, and
-`improve-codebase-architecture` carry `disable-model-invocation: true`, so
-Claude Code's Skill tool refuses them, and Junie gives the model no Skill tool
-at all.
-
-Their `SKILL.md` files are plain markdown. Resolve one with
-`bash "$ORCH" mp-skill <name>`, read it, and follow its instructions verbatim - that
-is exactly what invoking the skill would have injected. Never tell the user to type
-the slash command themselves, and never claim to have invoked a skill you read.
-
-`research` and `domain-modeling` have no such flag; invoke those as
-skills (on Claude Code, the Skill tool). Nothing in this plugin invokes a
-code review skill: the implement phase's ticket subagents run as the
-plugin's `orch-implementer` agent, which checks each ticket against its
-acceptance criteria and leaves review to the loop, and both the review loop
-and quick implementation's single pass start the plugin's own reviewer
-agents.
-
 ## Starting a flow
 
 Reached when a planning session's plan is approved. Runs in the planning session,
@@ -122,43 +102,39 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    has no adopted issue.
 1. Read `bash "$ORCH" handoff path spec`. The **Rejected alternatives** section is
    load-bearing: do not re-propose anything it rules out.
-2. Read and follow `bash "$ORCH" mp-skill to-spec`. It will check test seams with the
-   user - that exchange is the point, so do not skip it.
+2. Invoke the `orch-to-spec` skill and follow it. It will check test seams
+   with the user - that exchange is the point, so do not skip it - and
+   reports the issue it published.
 3. Record the published issue: `bash "$ORCH" state set issue <number>`.
 4. Invoke the `orch-spec-review` skill and follow it. It owns
    the review - four lenses, one batch question, the body rewritten with what
    the human accepts - and returns the changelog. This step is part of the
    phase, not an option in it: no spec reaches the implement phase unreviewed,
    and the human's control is at the batch, where they may decline every edit.
-5. Read and follow `bash "$ORCH" mp-skill to-tickets`, with the just-reviewed spec
-   issue (`bash "$ORCH" state get issue`) as its source, through its own quiz
-   (steps 1-4) until the user approves a breakdown.
+5. Run `bash "$ORCH" ticket exists <spec issue>` first, with the spec issue
+   from `bash "$ORCH" state get issue`.
 
-   **A breakdown of 2 or more tickets** publishes exactly as today: publish
-   every ticket it proposes through `bash "$ORCH" ticket publish <parent> <title>
-   <body-file> [--blocked-by N,N,...]`, in dependency order (blockers first)
-   - never an ad hoc `gh api` call - so the verify-then-die behaviour
-   `ticket publish` already provides applies to every ticket. This step is
-   part of the phase, not an option in it, the same way the review above is
-   not: no spec reaches the implement phase without its tickets published.
+   **Exit 0** means the issue already has a ticket breakdown - reachable only
+   for an issue adopted at init, such as a blueprint. Skip the breakdown and
+   ask nothing. It printed one word, which settles step 6's **Ticket
+   breakdown**: `sub-issues` means the spec issue number, and `collapsed`
+   means `None: work directly against #<n>` naming the spec issue.
 
-   **A breakdown of 0 or 1 tickets collapses**: skip `to-tickets`' own
-   publish step entirely - no child sub-issue is created, and the spec issue
-   is worked directly, as if it were the sole ticket. This is the
-   orchestrator's own deliberate, narrowly-scoped exception to `to-tickets`'
-   "do NOT close or modify any parent issue" instruction - not something
-   `to-tickets` itself does, taken here where this phase already calls its
-   publish step, and reached only in this collapsed case. Fetch the spec
-   issue's current body (`bash "$ORCH" spec fetch <file>`), append a new section
-   wrapping the single drafted ticket's "What to build"/"Acceptance
-   criteria" (when there is one) beneath the existing content - never
-   replacing it - and write the merged body back (`bash "$ORCH" spec update
-   <file>`).
+   **Exit 1** means it has none: invoke the `orch-to-tickets` skill on the
+   just-reviewed spec issue and follow it, through its own quiz until the
+   user approves a breakdown. It publishes 2 or more tickets as sub-issues,
+   or collapses 0 or 1 into the spec issue under its fixed `## Ticket`
+   heading, and reports which: the published numbers, or `collapsed`. This
+   step is part of the phase, not an option in it, the same way the review
+   above is not: no spec reaches the implement phase without its breakdown.
+
+   **Any other exit** means GitHub could not be read: stop, leaving the state
+   where it is, say what blocked, and offer `/orchestrator:abort`.
 6. Invoke the `orch-handoff` skill for `02-spec.md`, with the changelog the review
    returned as its **Spec review changelog**, and its **Ticket breakdown** as
-   either the spec issue number (a published breakdown) or `None: work
-   directly against #<n>` naming the spec issue (a collapsed one, per step
-   5); validate it with `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path implement)"`,
+   either the spec issue number (published or found as sub-issues) or
+   `None: work directly against #<n>` naming the spec issue (collapsed, per
+   step 5); validate it with `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path implement)"`,
    fixing and re-validating until it passes.
 7. `bash "$ORCH" phase advance`. It validates `02-spec.md` again and checks the
    issue is recorded before recording the implement phase; on a FAIL the phase
@@ -307,7 +283,7 @@ stale `02-spec.md` handoff, and `03-implement.md` if one exists, move into
 cannot leave the redone spec phase on them; `state.redo_count` is not bumped.
 `01-plan.md` is never touched by either redo. `--new-issue`
 additionally closes the old issue first (never deletes it) with a comment
-explaining why, and clears `state.issue`, so `to-spec` runs again from
+explaining why, and clears `state.issue`, so `orch-to-spec` runs again from
 scratch.
 
 ## Abort

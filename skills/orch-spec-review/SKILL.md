@@ -1,12 +1,12 @@
 ---
 name: orch-spec-review
-description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orch-flow's spec phase, after the issue exists - published by to-spec or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state.
+description: Review a spec issue once through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state.
 ---
 
 # Orchestrator spec review
 
 One look at the spec, taken once. In a flow it comes after the issue exists -
-published by `to-spec` or already adopted at init - and before the handoff is
+published by the spec phase or already adopted at init - and before the handoff is
 written; a standalone review takes it on a given issue, outside any flow, and
 writes no handoff. The **lenses** - four in a flow, three in a standalone
 review - read the issue independently, as parallel sub-agents that see only
@@ -63,7 +63,7 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    - the repo root, for the codebase.
 
 Nothing from this session's conversation reaches a lens: not the plan as you
-remember it, not `to-spec`'s reasoning, not the seams as agreed in chat. A lens
+remember it, not `orch-to-spec`'s reasoning, not the seams as agreed in chat. A lens
 that needs something gets a file path.
 
 ## Standalone spec review

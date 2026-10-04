@@ -16,11 +16,8 @@ PASS=0
 FAIL=0
 SKIP=0
 
-# The override outranks every install layout, so one leaking in from the shell
-# running the tests would decide every mattpocock lookup below.
-unset ORCHESTRATOR_MATTPOCOCK_ROOT
-# The same goes for the host signals doctor reads: the shell running the tests
-# is often itself a Claude Code or Junie session. Each test names its host.
+# The host signals doctor reads: the shell running the tests is often itself
+# a Claude Code or Junie session. Each test names its host.
 unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT JUNIE_SHIM_PATH
 
 ok()   { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
@@ -52,7 +49,8 @@ assert_first_line() {
   assert_eq "$1" "$(printf '%s\n' "$2" | sed -n 1p)" "$3"
 }
 
-# A fresh repo with the tracker precondition satisfied, cwd inside it.
+# A fresh repo with one commit and an empty docs/agents/ for a labels doc,
+# cwd inside it. No setup is required of it (ADR-0028).
 new_repo() {
   local d
   d="$(mktemp -d)"
@@ -60,7 +58,7 @@ new_repo() {
   git -C "$d" config user.email test@example.com
   git -C "$d" config user.name Test
   mkdir -p "$d/docs/agents"
-  echo "# tracker" >"$d/docs/agents/issue-tracker.md"
+  echo "# repo" >"$d/README.md"
   git -C "$d" add -A
   git -C "$d" commit -qm init
   cd "$d" || exit 1
@@ -257,6 +255,13 @@ api_list_blocked_by() {
   fi
   printf '%s]\n' "$out"
 }
+# The issue's body as a JSON string's contents: GH_STUB_DB's body/<n> when a
+# test wrote one, GH_STUB_BODY (or its default) otherwise.
+api_body() {
+  if [ -n "$db" ] && [ -f "$db/body/$1" ]; then cat "$db/body/$1"
+  else printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"; fi \
+    | awk '{ gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); printf "%s%s", (NR > 1 ? "\\n" : ""), $0 }'
+}
 # The issue's parent, as GitHub's issue object carries it: the API URL of the
 # one issue whose sub_issues listing holds it, or null when none does.
 api_parent_url() {
@@ -332,7 +337,8 @@ ready-for-agent}"
             labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; exit 0 ;;
           esac
         done
-        printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"
+        if [ -n "$db" ] && [ -f "$db/body/$1" ]; then cat "$db/body/$1"
+        else printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"; fi
         exit 0 ;;
       edit|comment)
         op="$2"; shift 2
@@ -413,8 +419,8 @@ ready-for-agent}"
     [ "${GH_STUB_API_EXIT:-0}" = 0 ] || { echo "gh stub: api call refused" >&2; exit "$GH_STUB_API_EXIT"; }
     case "$api_sub" in
       "")
-        api_json="$(printf '{"id":%d,"number":%d,"state":"%s","parent_issue_url":%s,"issue_dependencies_summary":{"blocked_by":%s}}' \
-          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_parent_url "$api_num")" "$(api_blocked_count "$api_num")")"
+        api_json="$(printf '{"id":%d,"number":%d,"state":"%s","body":"%s","parent_issue_url":%s,"issue_dependencies_summary":{"blocked_by":%s}}' \
+          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_body "$api_num")" "$(api_parent_url "$api_num")" "$(api_blocked_count "$api_num")")"
         # GitHub's real shape for an issue with no parent: the key is absent, not null.
         if [ -n "${GH_STUB_NO_PARENT_FIELD:-}" ]; then
           api_json="$(printf '%s' "$api_json" | jq -c 'del(.parent_issue_url)')"
@@ -530,54 +536,6 @@ GH
   PATH="$d:$PATH"
 }
 
-# A fake mattpocock-skills install under a throwaway HOME holding exactly the
-# skills named. The *partial* install is the regression doctor exists to catch,
-# and it is unreachable through the extremes: with only all-present and
-# all-absent, the per-skill check is exercised by whatever happens to be
-# installed on the machine running the tests, which is to say not at all.
-stub_mattpocock() {
-  local home base s
-  home="$(mktemp -d)"
-  base="$home/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/engineering"
-  for s in "$@"; do
-    mkdir -p "$base/$s"
-    echo "# $s" >"$base/$s/SKILL.md"
-  done
-  printf '%s\n' "$home"
-}
-
-# Add the named skills to HOME ($2) in one install layout ($1), so a lookup can
-# be tested against each layout a supported host produces, alone or stacked.
-#   claude   - Claude's namespaced, versioned plugin cache
-#   junie    - Junie's extension cache, flat skills/<name>
-#   agents   - the skills CLI store, each skill recorded in the lockfile
-#   override - a checkout that ORCHESTRATOR_MATTPOCOCK_ROOT is pointed at
-# `agents-foreign` puts a same-named skill in the skills CLI store but records
-# it as belonging to some other plugin.
-mp_install() {
-  local layout="$1" home="$2" base plugin="mattpocock-skills" s lock
-  shift 2
-  case "$layout" in
-    claude)   base="$home/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.2.3/skills/engineering" ;;
-    junie)    base="$home/.junie/extensions/github-mattpocock-skills/mattpocock-skills/skills" ;;
-    agents)   base="$home/.agents/skills" ;;
-    agents-foreign) base="$home/.agents/skills"; plugin="someone-elses-skills" ;;
-    override) base="$home/mp-checkout/skills/engineering" ;;
-  esac
-  lock="$home/.agents/.skill-lock.json"
-  for s in "$@"; do
-    mkdir -p "$base/$s"
-    echo "# $s ($layout)" >"$base/$s/SKILL.md"
-    case "$layout" in
-      agents*)
-        [ -f "$lock" ] || echo '{"version":3,"skills":{}}' >"$lock"
-        jq --arg n "$s" --arg p "$plugin" \
-          '.skills[$n] = {source: "x/y", skillPath: ("skills/" + $n + "/SKILL.md"), pluginName: $p}' \
-          "$lock" >"$lock.tmp" && mv "$lock.tmp" "$lock" ;;
-    esac
-  done
-}
-
 # The documented triage-label table, in the shape the setup skill writes it:
 # a header row, a separator row, and backticked labels in the second column.
 labels_doc() {
@@ -598,9 +556,9 @@ healthy_repo() {
   printf '%s\n' ".orchestrator/" >>.git/info/exclude
   stub_gh
   export CLAUDE_PLUGIN_ROOT="$PWD"
-  # tdd is not a skill the flow reads, but mp-skill resolves any upstream
-  # skill, and its test below resolves tdd from this install.
-  HOME="$(stub_mattpocock to-spec to-tickets tdd)"
+  # A throwaway HOME, so no skill store on the machine running the tests
+  # reaches doctor's checks.
+  HOME="$(mktemp -d)"
   export HOME
   unset GH_STUB_MODE
 }
@@ -681,7 +639,7 @@ assert_contains "names what planning may change" "$out" "docs/agents/"
 assert_not_contains "source-only refusal has no records block" "$out" "Planning records changed"
 
 rm stray.sh
-echo "changed" >>docs/agents/issue-tracker.md
+echo "changed" >>docs/agents/triage-labels.md
 echo "base" >src.sh; git add src.sh; git commit -qm src
 echo "edit" >>src.sh
 mkdir -p lib && echo "new" >lib/deep.sh
@@ -689,7 +647,7 @@ out="$("$ORCH" init dirty 2>&1)"; st=$?
 assert_status "refuses a tracked modification outside the allowlist" "$st" 1
 assert_contains "names the modified path" "$out" "src.sh"
 assert_contains "names an untracked file inside a new directory" "$out" "lib/deep.sh"
-case "$out" in *issue-tracker.md*) bad "does not name allowlisted paths" "$out" ;;
+case "$out" in *triage-labels.md*) bad "does not name allowlisted paths" "$out" ;;
   *) ok "does not name allowlisted paths" ;; esac
 
 git checkout -q src.sh; rm -r lib
@@ -1563,114 +1521,71 @@ assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
+# --- issue publish verify-then-die -------------------------------------------
+# The spec a flow or a quick implementation works from gets the guarantee
+# ticket publish gives its tickets: created under the ready-for-agent role's
+# label, then read back - title and labels - with one retry on a mismatch and
+# a death naming the issue on the second. GH_STUB_READBACK_MISS makes the
+# readback stale for N calls; GH_STUB_READBACK_TITLE/_LABELS make it wrong
+# for good.
+echo
+echo "issue publish verify-then-die"
+publish() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" issue publish "$@"; }
+
+: >"$filed"
+out="$(GH_STUB_ISSUE_NUMBER=8 publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "publishes with the canonical labels" "$st" 0
+assert_eq "printing the issue number and nothing else" "$out" "8"
+assert_contains "applies ready-for-agent" "$(cat "$filed")" "label=ready-for-agent"
+
+: >"$filed"
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+        '| `ready-for-agent`          | `agent go`           | AFK-ready   |' >docs/agents/triage-labels.md
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "publishes under a renamed ready-for-agent label" "$st" 0
+assert_contains "applying the repo's name for it" "$(cat "$filed")" "label=agent go"
+assert_eq "rather than the canonical one" "$(grep -c 'ready-for-agent' "$filed")" "0"
+
+: >"$filed"
+rm docs/agents/triage-labels.md
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "publishes with no labels doc at all" "$st" 0
+assert_contains "applying the canonical ready-for-agent name" "$(cat "$filed")" "label=ready-for-agent"
+labels_doc docs/agents/triage-labels.md
+
+out="$(GH_STUB_ISSUE_NUMBER=9 GH_STUB_READBACK_MISS=1 publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a readback that is stale once, then right, succeeds" "$st" 0
+assert_eq "printing the issue number" "$out" "9"
+
+out="$(GH_STUB_ISSUE_NUMBER=10 GH_STUB_READBACK_MISS=2 publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a readback stale twice dies" "$st" 1
+assert_contains "naming the issue" "$out" "issue #10"
+assert_contains "saying it did not verify" "$out" "did not verify"
+assert_eq "with no number printed for a record to cite" \
+  "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
+
+out="$(GH_STUB_ISSUE_NUMBER=11 GH_STUB_READBACK_TITLE="Something else" publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a title that reads back wrong fails verification" "$st" 1
+assert_contains "naming the issue" "$out" "issue #11"
+
+out="$(GH_STUB_ISSUE_NUMBER=12 GH_STUB_READBACK_LABELS="needs-triage" publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a label set missing ready-for-agent fails verification" "$st" 1
+assert_contains "naming the issue" "$out" "issue #12"
+
+out="$(GH_STUB_ISSUE_NUMBER=13 GH_STUB_READBACK_LABELS="$(printf 'bug\nready-for-agent')" \
+  publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "extra labels beside ready-for-agent still verify" "$st" 0
+
 # --- mp-skill ---------------------------------------------------------------
-# Resolved by glob at runtime, never by pinned version: the version in the cache
-# path changes underneath us.
+# The plugin reads no upstream skill any more (ADR-0028), so the resolver is gone.
 echo
 echo "mp-skill"
-if "$ORCH" mp-skill >/dev/null 2>&1; then
-  assert_contains "resolves to-spec across category dirs" "$("$ORCH" mp-skill to-spec)" "/to-spec/SKILL.md"
-  assert_contains "resolves tdd by the same glob" "$("$ORCH" mp-skill tdd)" "/tdd/SKILL.md"
-  out="$("$ORCH" mp-skill definitely-not-a-skill 2>&1)"; st=$?
-  assert_status "rejects an unknown skill name" "$st" 1
-  assert_contains "names what it could not find" "$out" "definitely-not-a-skill"
-else
-  echo "  skip (mattpocock-skills not installed)"
-fi
-
-# --- mp-skill across host layouts -------------------------------------------
-# Each supported host installs mattpocock-skills somewhere else, in another
-# shape. The lookup is per skill name, because the skills CLI store has no
-# plugin root to hand back - only a directory shared with every other skill.
-echo
-echo "mp-skill across host layouts"
-for layout in claude junie agents; do
-  h="$(mktemp -d)"; mp_install "$layout" "$h" to-spec handoff
-  out="$(HOME="$h" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
-  assert_status "resolves from the $layout layout" "$st" 0
-  assert_eq "hands back the $layout layout's SKILL.md" "$(head -1 "$out" 2>/dev/null)" "# to-spec ($layout)"
-  assert_contains "says where the $layout layout's skills were found" \
-    "$(HOME="$h" "$ORCH" mp-skill 2>&1)" "$h/"
-done
-
-h="$(mktemp -d)"; mp_install override "$h" to-spec
-out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
-assert_status "resolves from the override" "$st" 0
-assert_eq "hands back the override's SKILL.md" "$(head -1 "$out" 2>/dev/null)" "# to-spec (override)"
-assert_eq "says the override is where the skills were found" \
-  "$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" mp-skill 2>&1)" "$h/mp-checkout"
-
-# Every layout at once: each one removed in turn exposes the next in line.
-h="$(mktemp -d)"
-for layout in override claude junie agents; do mp_install "$layout" "$h" to-spec; done
-first() { head -1 "$(HOME="$h" "$@" "$ORCH" mp-skill to-spec 2>/dev/null)" 2>/dev/null; }
-assert_eq "the override outranks every install" \
-  "$(first env ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout")" "# to-spec (override)"
-assert_eq "Claude's cache outranks Junie's and the skills CLI's" "$(first env)" "# to-spec (claude)"
-rm -rf "$h/.claude"
-assert_eq "Junie's extension cache outranks the skills CLI's" "$(first env)" "# to-spec (junie)"
-rm -rf "$h/.junie"
-assert_eq "the skills CLI store is the last resort" "$(first env)" "# to-spec (agents)"
-
-# ~/.agents/skills is shared by every skill the CLI installed. A same-named
-# skill that the lockfile does not record as mattpocock-skills' is someone
-# else's, and running it in place of mattpocock's would be the worst outcome.
-h="$(mktemp -d)"
-mp_install agents "$h" to-spec
-mp_install agents-foreign "$h" handoff
-out="$(HOME="$h" "$ORCH" mp-skill handoff 2>&1)"; st=$?
-assert_status "ignores a same-named skill the lockfile gives to another plugin" "$st" 1
-mkdir -p "$h/.agents/skills/code-review"; echo "# stray" >"$h/.agents/skills/code-review/SKILL.md"
-out="$(HOME="$h" "$ORCH" mp-skill code-review 2>&1)"; st=$?
-assert_status "ignores a skill the lockfile does not record at all" "$st" 1
-
-# The skills CLI store only counts when its lockfile records mattpocock-skills.
-# Anything short of that - no lockfile, no jq to read it, no skills in it, or
-# only other plugins' skills - means the store does not hold mattpocock-skills.
-h="$(mktemp -d)"; mp_install agents-foreign "$h" to-spec
-out="$(HOME="$h" "$ORCH" mp-skill 2>&1)"; st=$?
-assert_status "the store is not a location when the lockfile records only other plugins" "$st" 1
-out="$(HOME="$h" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
-assert_status "nor is another plugin's skill resolved from it" "$st" 1
-
-h="$(mktemp -d)"; mp_install agents "$h" to-spec
-echo '{"version":3}' >"$h/.agents/.skill-lock.json"
-out="$(HOME="$h" "$ORCH" mp-skill 2>&1)"; st=$?
-assert_status "the store is not a location when the lockfile has no skills" "$st" 1
-out="$(HOME="$h" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
-assert_status "nor is a skill resolved from it" "$st" 1
-
-rm "$h/.agents/.skill-lock.json"
-out="$(HOME="$h" "$ORCH" mp-skill 2>&1)"; st=$?
-assert_status "the store is not a location without a lockfile" "$st" 1
-out="$(HOME="$h" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
-assert_status "nor is a skill resolved from it without a lockfile" "$st" 1
-
-if on_windows_bash; then
-  skip_no_jq "the store is not a location without jq"
-  skip_no_jq "nor is a skill resolved from it without jq"
-  skip_no_jq "and the same install resolves with jq"
-else
-  h="$(mktemp -d)"; mp_install agents "$h" to-spec
-  nojq="$(path_without_jq)"
-  out="$(HOME="$h" PATH="$nojq" "$ORCH" mp-skill 2>&1)"; st=$?
-  assert_status "the store is not a location without jq" "$st" 1
-  out="$(HOME="$h" PATH="$nojq" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
-  assert_status "nor is a skill resolved from it without jq" "$st" 1
-  # Sanity: the same install resolves once jq is back, so the failures above
-  # are down to jq, not to the install.
-  out="$(HOME="$h" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
-  assert_status "and the same install resolves with jq" "$st" 0
-fi
-
-# Only user-level locations count: a repo can ship .agents/skills of its own.
-h="$(mktemp -d)"; mp_install agents "$h" to-spec
-d="$(mktemp -d)"; mkdir -p "$d/.agents/skills/handoff"; echo "# project" >"$d/.agents/skills/handoff/SKILL.md"
-out="$(cd "$d" && HOME="$h" "$ORCH" mp-skill handoff 2>&1)"; st=$?
-assert_status "ignores a project-level .agents/skills" "$st" 1
-
-out="$(HOME="$(mktemp -d)" "$ORCH" mp-skill to-spec 2>&1)"; st=$?
-assert_status "fails when no layout holds mattpocock-skills" "$st" 1
+out="$("$ORCH" mp-skill to-spec 2>&1)"; st=$?
+assert_status "mp-skill is an unknown command" "$st" 1
+assert_contains "and says so" "$out" "unknown command: mp-skill"
 
 # --- init --issue -------------------------------------------------------
 # Adoption is validated once, immediately, before state.json is written - a bad
@@ -1892,101 +1807,44 @@ out="$(GH_STUB_REPO='acme/widgets ' "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unresolved default branch does not block the flow" "$st" 0
 assert_contains "warns that the default branch came from a fallback" "$out" "default branch"
 
-# A partial install is the regression this feature exists to catch: a lookup
-# that probes one skill file passes, and the spec phase then dies with the
-# context that could have fixed it already cleared.
-# No healthy_repo() needed: the offline/noauth/default-branch checks above
-# only ever scoped GH_STUB_* to their own command, so the repo is still clean
-# going into this one - it's the HOME reassignment right below that dirties it.
-HOME="$(stub_mattpocock to-spec)"; export HOME
+# The plugin depends on no other plugin (ADR-0028): doctor says nothing of
+# mattpocock-skills, and the old override pointing nowhere changes nothing.
+# No healthy_repo() needed: the checks above only scoped GH_STUB_* to their
+# own command, so the repo is still clean.
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "fails on a partial mattpocock-skills install" "$st" 1
-assert_contains "names every missing skill" "$out" "missing: to-tickets"
-assert_eq "says nothing about the skills that are present" \
-  "$(printf '%s\n' "$out" | grep -c 'missing:.*to-spec')" "0"
+out_mp="$(ORCHESTRATOR_MATTPOCOCK_ROOT=/nonexistent "$ORCH" doctor --env 2>&1)"; st_mp=$?
+assert_eq "the old mattpocock override changes no exit status" "$st_mp" "$st"
+assert_eq "nor any line of the output" "$out_mp" "$out"
+assert_not_contains "says nothing of mattpocock-skills" "$out" "mattpocock"
 
-# Only the skills the flow reads are required: an install without the upstream
-# skills the plugin replaced (implement, handoff) is complete.
-HOME="$(stub_mattpocock to-spec to-tickets)"; export HOME
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "passes an install with no implement or handoff" "$st" 0
-assert_contains "and reports every skill the flow reads as resolved" "$out" "every skill the flow reads resolves"
-# Nothing in the plugin invokes the upstream code review skill any more (#189),
-# so an install without it is complete: no failure, no warning naming it.
-assert_not_contains "does not require the upstream code review skill" "$out" "code-review"
-
-out="$(HOME=/nonexistent "$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "fails cleanly when mattpocock-skills is absent" "$st" 1
-assert_contains "gives the install command" "$out" "/plugin install mattpocock-skills"
-assert_contains "skips the per-skill check rather than deriving a second FAIL" \
-  "$out" "1 skill check skipped"
-
-# The fix has to fit the host: a Junie user told to run a Claude /plugin
-# command is left exactly as stuck as before. With no host detected, every
-# host's method is listed.
-out="$(env -u CLAUDE_PLUGIN_ROOT HOME=/nonexistent "$ORCH" doctor --env 2>&1)"
-assert_contains "names the Junie install method too" "$out" "Junie"
-assert_contains "names the skills CLI install" "$out" "npx skills add mattpocock/skills"
-assert_contains "names the override for an install none of these describe" \
-  "$out" "ORCHESTRATOR_MATTPOCOCK_ROOT"
-
-# Once the host is known, the fix names only that host's install method.
-out="$(HOME=/nonexistent ORCHESTRATOR_HOST=junie "$ORCH" doctor --env 2>&1)"
-assert_contains "on Junie, names the Junie install" "$out" "npx skills add mattpocock/skills"
-# Neither Junie install is verified end to end, so the line says so (#121).
-assert_contains "marks the Junie install unverified" "$out" "(both unverified)"
-assert_not_contains "on Junie, does not name a Claude /plugin command" "$out" "/plugin install mattpocock-skills"
-out="$(HOME=/nonexistent CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"
-assert_contains "on Claude Code, names the /plugin install" "$out" "/plugin install mattpocock-skills"
-assert_not_contains "on Claude Code, does not name the Junie install" "$out" "npx skills add"
-
-# The same partial install, in every other layout a host can produce. The
-# lookup finding *a* location is not the same as it holding every skill.
-# Each skill is checked on its own: one missing skill fails doctor even with
-# every other one present.
-for layout in claude junie agents override; do
-  ov=""
-  for gone in to-spec to-tickets; do
-    h="$(mktemp -d)"
-    # shellcheck disable=SC2046 # word-splitting the kept names is the point
-    mp_install "$layout" "$h" $(printf '%s\n' to-spec to-tickets | grep -vx "$gone")
-    if [ "$layout" = override ]; then ov="$h/mp-checkout"; fi
-    out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$ov" "$ORCH" doctor --env 2>&1)"; st=$?
-    assert_status "fails on a $layout install missing $gone" "$st" 1
-    assert_contains "names the $layout layout's missing $gone" "$out" "missing: $gone "
-  done
+# Setup is optional: a repo with no docs/agents/ at all is a working repo, its
+# labels the five canonical names.
+canonical_labels="$(printf '%s\n' needs-triage needs-info ready-for-agent ready-for-human wontfix)"
+healthy_repo
+rm -rf docs/agents
+out="$(GH_STUB_LABELS="$canonical_labels" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a repo with no docs/agents/ passes" "$st" 0
+assert_not_contains "and names no mattpocock" "$out" "mattpocock"
+assert_not_contains "nor its setup skill" "$out" "setup-matt-pocock-skills"
+out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "with no labels doc, the canonical names are checked on the repo" "$st" 1
+for l in needs-triage needs-info ready-for-agent ready-for-human wontfix; do
+  assert_contains "and a missing $l is named" "$out" "gh label create \"$l\""
 done
+out="$(GH_STUB_LABELS='needs-triage' "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a repo missing only some canonical labels fails" "$st" 1
+assert_not_contains "and does not name the ones it has" "$out" 'gh label create "needs-triage"'
 
-# A skill the lockfile gives to another plugin is missing, not present.
-h="$(mktemp -d)"; mp_install agents "$h" to-spec
-mp_install agents-foreign "$h" to-tickets
-out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "fails when a skills CLI skill belongs to another plugin" "$st" 1
-assert_contains "names the foreign skill as missing" "$out" "missing: to-tickets"
-
-# Doctor says where the skills were found, in terms of the host that put them
-# there - the path alone does not tell a user which install to repair.
-h="$(mktemp -d)"
-for layout in claude junie agents; do mp_install "$layout" "$h" to-spec to-tickets; done
-out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
-assert_contains "reports Claude's plugin cache as the source" "$out" "(Claude Code plugin cache)"
-rm -rf "$h/.claude"
-out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
-assert_contains "reports Junie's extension cache as the source" "$out" "(Junie extension cache)"
-rm -rf "$h/.junie"
-out="$(HOME="$h" "$ORCH" doctor --env 2>&1)"
-assert_contains "reports the skills CLI store as the source" "$out" "(skills CLI)"
-assert_contains "and where that store is" "$out" "mattpocock-skills: ~/.agents/skills"
-mp_install override "$h" to-spec to-tickets
-out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/mp-checkout" "$ORCH" doctor --env 2>&1)"
-assert_contains "reports the override as the source" "$out" "(ORCHESTRATOR_MATTPOCOCK_ROOT)"
-
-# An override that points nowhere is a typo to report, not a cue to fall back
-# to some other install the user evidently did not want.
-out="$(HOME="$h" ORCHESTRATOR_MATTPOCOCK_ROOT="$h/nope" "$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "fails when the override is not a directory" "$st" 1
-assert_contains "names the override that points nowhere" "$out" "ORCHESTRATOR_MATTPOCOCK_ROOT"
-assert_contains "and the path it points at" "$out" "/nope"
+# A present doc still wins: a renamed label is checked under its local name.
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `ready-for-agent`          | `agent go`           | AFK-ready   |' >docs/agents/triage-labels.md
+out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a renamed-label doc is still checked" "$st" 1
+assert_contains "under the repo's own label name" "$out" 'gh label create "agent go"'
+assert_not_contains "not the canonical one" "$out" 'gh label create "ready-for-agent"'
 
 # Labels are parsed from the doc rather than hardcoded, so the parser is what
 # decides whether doctor is right in a repo that customised its vocabulary.
@@ -1998,10 +1856,9 @@ assert_contains "and the path it points at" "$out" "/nope"
 # narrower table's *header* row arrives a line before the separator that would
 # correct the width, so without a reset at the end of the block that heading
 # gets read out as a label and demanded of the repo.
-# This healthy_repo() does earn its keep: the partial-install check above left
-# HOME pointed at a mattpocock-skills stub missing two skills, and every
-# labels-doc variant below needs the full install so the only FAIL it can
-# produce is the one the table shape under test is supposed to cause.
+# This healthy_repo() does earn its keep: the renamed-label check above left a
+# one-row doc behind, and every labels-doc variant below needs a clean repo so
+# the only FAIL it can produce is the one the table shape under test causes.
 healthy_repo
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
@@ -2054,7 +1911,7 @@ out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails on a table that is not the documented shape" "$st" 1
 assert_eq "does not read a label out of some other column" \
   "$(printf '%s\n' "$out" | grep -c 'Evaluate it')" "0"
-assert_contains "points at the setup skill instead" "$out" "setup-matt-pocock-skills"
+assert_contains "says to fix the table or delete it" "$out" "delete it to use the canonical names"
 
 # The width rule now hinges entirely on recognising the separator row, and these
 # are the two ways that recognition goes wrong: a separator dressed with
@@ -2075,18 +1932,17 @@ out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a table with no separator row parses to nothing" "$st" 1
 assert_eq "reads no label out of a table it never confirmed the width of" \
   "$(printf '%s\n' "$out" | grep -c 'needs-triage')" "0"
-assert_contains "points at the setup skill" "$out" "setup-matt-pocock-skills"
+assert_contains "says to fix the table or delete it" "$out" "delete it to use the canonical names"
 
 writeln '# Triage Labels' '' 'This repo does not use a table.' >docs/agents/triage-labels.md
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when the labels doc parses to no labels" "$st" 1
-assert_contains "points at the setup skill" "$out" "setup-matt-pocock-skills"
+assert_contains "says to fix the table or delete it" "$out" "delete it to use the canonical names"
 
 rm docs/agents/triage-labels.md
-out="$("$ORCH" doctor --env 2>&1)"; st=$?
-assert_status "fails when the labels doc is absent entirely" "$st" 1
-assert_contains "says the doc is missing rather than that it lists nothing" \
-  "$out" "triage-labels.md is missing"
+out="$(GH_STUB_LABELS="$canonical_labels" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "passes when the labels doc is absent entirely" "$st" 0
+assert_not_contains "and does not call the doc missing" "$out" "triage-labels.md is missing"
 
 # A label list long enough to fill the page is a list that may be cut off, so
 # naming labels as missing from it would be a FAIL derived from not knowing.
@@ -2331,7 +2187,7 @@ touch "$h/.agents/skills/orch-flow/SKILL.md"
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "reports a skills-only copy with no orch.sh" "$out" "orch.sh missing"
 assert_contains "names the skills CLI copy" "$out" "~/.agents/skills: orch-flow"
-# Like the mattpocock remedy, the fix names only the detected host's install.
+# The fix names only the detected host's install.
 assert_contains "names the full-plugin install for Claude Code" "$out" "/plugin install orchestrator@orchestrator"
 assert_eq "and not Junie's, under Claude Code" \
   "$(printf '%s\n' "$out" | grep -c 'as a Junie extension')" "0"
@@ -2424,7 +2280,7 @@ complete_plan_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a fresh flow is healthy" "$st" 0
 assert_contains "reports the phase" "$out" "phase: spec"
-# "published" names only one of the two paths an issue can arrive by (to-spec
+# "published" names only one of the two paths an issue can arrive by (orch-to-spec
 # publishing vs. adoption at init, docs/adr/0005) - neutral wording here must
 # not imply the other path doesn't exist.
 assert_contains "reports no issue recorded yet without implying publication is the only path" \
@@ -2494,7 +2350,7 @@ assert_contains "reports it as empty, not missing" "$out" "empty section"
 complete_spec_handoff "$("$ORCH" handoff path implement)"
 
 # check_flow_issue runs unconditionally on state.issue, whichever path put it
-# there - adopted at init or published by to-spec - and mirrors check_flow_pr's
+# there - adopted at init or published by orch-to-spec - and mirrors check_flow_pr's
 # open/closed/unreadable shape.
 "$ORCH" state set issue 11
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -3045,6 +2901,73 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket parent"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket parent is in the usage text" "$out" "ticket parent <n>"
+
+# --- ticket exists -----------------------------------------------------------
+# "Already broken down" decided by structure, not prose: a blueprint's spec
+# issue carries sub-issues, or - when its breakdown collapsed into it - a line
+# that is exactly `## Ticket`. A body under GH_STUB_DB's body/<n> is what the
+# stub's issue read answers for <n>.
+echo
+echo "ticket exists"
+db="$(mktemp -d)"
+export GH_STUB_DB="$db"
+mkdir -p "$db/body"
+GH_STUB_ISSUE_NUMBER=800 "$ORCH" ticket publish 96 "Open kid" "$body" >/dev/null
+out="$("$ORCH" ticket exists 96 2>&1)"; st=$?
+assert_status "an issue with a sub-issue has a breakdown" "$st" 0
+assert_eq "printing sub-issues" "$out" "sub-issues"
+
+closed_kid="$("$ORCH" ticket publish 97 "Closed kid" "$body")"
+"$ORCH" ticket close "$closed_kid"
+out="$("$ORCH" ticket exists 97 2>&1)"; st=$?
+assert_status "an issue whose only sub-issue is closed still has a breakdown" "$st" 0
+assert_eq "printing sub-issues" "$out" "sub-issues"
+
+writeln 'The spec.' '' '## Ticket' '' 'Build it.' >"$db/body/96"
+out="$("$ORCH" ticket exists 96 2>&1)"; st=$?
+assert_status "sub-issues and the heading together" "$st" 0
+assert_eq "print sub-issues, which wins" "$out" "sub-issues"
+
+writeln 'The spec.' '' '## Ticket' '' 'Build it.' >"$db/body/98"
+out="$("$ORCH" ticket exists 98 2>&1)"; st=$?
+assert_status "a collapsed breakdown, the heading and no sub-issues" "$st" 0
+assert_eq "prints collapsed" "$out" "collapsed"
+
+writeln 'The spec, no breakdown yet.' >"$db/body/99"
+out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
+assert_status "an issue with neither has no breakdown" "$st" 1
+assert_eq "and prints nothing" "$out" ""
+
+writeln 'The spec.' '' '### Ticket' '' 'Not the heading.' >"$db/body/99"
+out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
+assert_status "a ### Ticket heading is not the collapse heading" "$st" 1
+assert_eq "and prints nothing" "$out" ""
+
+writeln 'The spec mentions ## Ticket mid-line.' >"$db/body/99"
+out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
+assert_status "a mid-line ## Ticket is not the collapse heading" "$st" 1
+assert_eq "and prints nothing" "$out" ""
+
+# An unreadable GitHub is not "no breakdown": a caller that read exit 1 as
+# "neither" would publish a second breakdown, so a gh failure dies with 2.
+out="$(GH_STUB_SUBISSUE_GET_EXIT=1 "$ORCH" ticket exists 98 2>&1)"; st=$?
+assert_status "a gh that cannot list sub-issues dies with 2, not no-breakdown's 1" "$st" 2
+assert_contains "naming what failed" "$out" "gh could not list sub-issues of #98"
+
+out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" ticket exists 98 2>&1)"; st=$?
+assert_status "a gh that cannot read the issue dies with 2, not no-breakdown's 1" "$st" 2
+assert_not_contains "never printing a verdict" "$out" "collapsed"
+
+out="$("$ORCH" ticket exists abc 2>&1)"; st=$?
+assert_status "refuses a parent that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$("$ORCH" ticket exists 2>&1)"; st=$?
+assert_status "refuses with no parent" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket exists"
+
+out="$("$ORCH" help 2>&1)"
+assert_contains "ticket exists is in the usage text" "$out" "ticket exists <parent>"
 
 # --- ticket: unknown op ------------------------------------------------------
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?
