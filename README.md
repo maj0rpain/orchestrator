@@ -72,15 +72,17 @@ flow skill is now `orchestrator:orch-flow`, and so on). See
 
 ```
   planning session          shared understanding reached
-  (orch-plan, or a      ->  AskUserQuestion: flow, or quick?
+  (orch-plan, or a      ->  AskUserQuestion: flow, quick, or blueprint only?
    mattpocock grilling)                                |
-                                        +----------------+----------------+
-                                        |                                 |
-                              /orchestrator:start                orchestrator:orch-quick-implement
-                              ->  01-plan.md                     issue, orch-to-tickets publishes
-                                        |                          tickets, branch quick/<issue>-<slug>,
-                                       | /clear                    one subagent per ticket, tdd,
-                                                                    single-pass review, PR
+                 +-------------------------------------+-------------------+
+                 |                                     |                   |
+       /orchestrator:start          orchestrator:orch-quick-implement   blueprint only
+       ->  01-plan.md               issue, orch-to-tickets publishes    orch-to-spec publishes
+                 |                  tickets, branch quick/<issue>-      the issue, spec review
+                 | /clear           <slug>, one subagent per ticket,    offered, orch-to-tickets
+                 |                  tdd, single-pass review, PR         publishes tickets, stop
+                 +-------------------------------------+
+                                                       |
   spec session         orch-to-spec publishes the    <--+
                        issue, or already adopted at init
                        spec review

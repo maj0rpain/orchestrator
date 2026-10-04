@@ -482,7 +482,7 @@ check_labels_doc() {
 
 # The other check that justifies the feature: the spec phase applies a label at
 # `gh issue create`, so a label the repo does not have kills the phase after the
-# whole to-spec exchange has already been spent.
+# whole orch-to-spec exchange has already been spent.
 check_labels_exist() {
   d_gh_gate || return 0
   local want have missing="" l n
@@ -634,7 +634,7 @@ check_flow_upstream() {
 }
 
 # Unconditional on how the issue arrived - adopted at init or published by
-# to-spec, state.json carries no field distinguishing the two, and none is
+# orch-to-spec, state.json carries no field distinguishing the two, and none is
 # needed here: both are just "the flow's spec issue" once a flow is running
 # against one. The ready-for-agent label is deliberately not re-checked; it is
 # a one-time gate at adoption, not an ongoing flow invariant (docs/adr/0005).
