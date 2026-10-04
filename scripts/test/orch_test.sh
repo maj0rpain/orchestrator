@@ -2280,7 +2280,7 @@ complete_plan_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a fresh flow is healthy" "$st" 0
 assert_contains "reports the phase" "$out" "phase: spec"
-# "published" names only one of the two paths an issue can arrive by (to-spec
+# "published" names only one of the two paths an issue can arrive by (orch-to-spec
 # publishing vs. adoption at init, docs/adr/0005) - neutral wording here must
 # not imply the other path doesn't exist.
 assert_contains "reports no issue recorded yet without implying publication is the only path" \
@@ -2350,7 +2350,7 @@ assert_contains "reports it as empty, not missing" "$out" "empty section"
 complete_spec_handoff "$("$ORCH" handoff path implement)"
 
 # check_flow_issue runs unconditionally on state.issue, whichever path put it
-# there - adopted at init or published by to-spec - and mirrors check_flow_pr's
+# there - adopted at init or published by orch-to-spec - and mirrors check_flow_pr's
 # open/closed/unreadable shape.
 "$ORCH" state set issue 11
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
