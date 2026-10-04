@@ -660,6 +660,36 @@ stub_pushed_branch() {
   git branch -q --set-upstream-to="origin/$branch" "$branch"
 }
 
+# A gh that answers default-branch's question with "trunk", or fails when
+# GH_STUB_FAIL=1 - the narrow stub the default-branch and base resolution
+# tests put first on PATH themselves, instead of stub_gh's full fake.
+STUB="$(mktemp -d)"
+cat >"$STUB/gh" <<'GH'
+#!/usr/bin/env bash
+[ "${GH_STUB_FAIL:-0}" = "1" ] && exit 1
+echo "trunk"
+GH
+chmod +x "$STUB/gh"
+
+# orch.sh with $STUB's gh failing, for a repo whose origin GitHub cannot
+# answer for (a local bare repo): default-branch settles on origin/HEAD, so a
+# test using it pins that rather than leaving it to this machine's gh.
+base_cmd() { PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" "$@"; }
+
+# path_without_jq() builds its restricted PATH from whatever's really on PATH,
+# not from repo state, so the one built here serves every no-jq assertion
+# (in doctor and in doctor --flow) instead of symlinking the same ~20 tools
+# afresh at each call site. Its gh is a stub_gh fake, made in the subshell so
+# the suite's own PATH is left alone. Empty on Windows/Git Bash, where callers
+# skip.
+nojq_path=""
+on_windows_bash || nojq_path="$(stub_gh; path_without_jq)"
+
+# fresh_flow <slug>: a section's own starting point - a healthy_repo with a
+# flow named <slug> just started in it, at the spec phase, cwd inside it. A
+# section that needs a later phase arranges it with state_fixture.
+fresh_flow() { healthy_repo; "$ORCH" init "$1" >/dev/null; }
+
 echo "orch.sh tests"
 
 # --- init -------------------------------------------------------------------
@@ -1052,13 +1082,6 @@ assert_status "a new flow can start after archiving" "$st" 0
 echo
 echo "default-branch"
 new_repo >/dev/null
-STUB="$(mktemp -d)"
-cat >"$STUB/gh" <<'GH'
-#!/usr/bin/env bash
-[ "${GH_STUB_FAIL:-0}" = "1" ] && exit 1
-echo "trunk"
-GH
-chmod +x "$STUB/gh"
 
 # origin/HEAD is a local pointer frozen at clone time; GitHub's answer must win.
 git remote add origin https://example.invalid/x/y.git
@@ -1130,9 +1153,8 @@ git remote add origin "$bare"
 git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
-# GitHub cannot answer for a local bare origin, so default-branch settles on
-# origin/HEAD - pinned above rather than left to this machine's gh.
-base_cmd() { PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" "$@"; }
+# base_cmd's gh cannot answer, so default-branch settles on origin/HEAD -
+# pinned above rather than left to this machine's gh.
 base_setting() { git config --get orchestrator.base || echo "<unset>"; }
 
 out="$(base_cmd base show)"; st=$?
@@ -1779,8 +1801,7 @@ assert_status "adoption does not change that a slug is still required" "$st" 1
 # init should still refuse as "active".
 echo
 echo "init archives a done flow"
-healthy_repo
-"$ORCH" init first >/dev/null
+fresh_flow first
 complete_plan_handoff "$("$ORCH" handoff path spec)"
 state_fixture phase done
 out="$("$ORCH" init second)"; st=$?
@@ -1801,16 +1822,14 @@ healthy_repo
 out="$("$ORCH" init nothing-to-archive)"
 assert_eq "with no prior flow, stdout is still just the slug" "$out" "nothing-to-archive"
 
-healthy_repo
-"$ORCH" init stale >/dev/null
+fresh_flow stale
 state_fixture phase implement
 out="$("$ORCH" init other 2>&1)"; st=$?
 assert_status "an implement-phase flow still refuses, same as spec" "$st" 1
 assert_contains "names the phase" "$out" "phase: implement"
 assert_contains "same message, unchanged" "$out" "One flow at a time"
 
-healthy_repo
-"$ORCH" init willfail >/dev/null
+fresh_flow willfail
 state_fixture phase done
 out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" init nope --issue 99 2>&1)"; st=$?
 assert_status "a bad --issue adoption over a done flow refuses" "$st" 1
@@ -1848,13 +1867,6 @@ assert_eq "the new flow's state records the newly adopted issue, not the old one
 echo
 echo "doctor"
 healthy_repo
-
-# path_without_jq() builds its restricted PATH from whatever's really on PATH,
-# not from repo state, so the same one built here serves every no-jq
-# assertion below (in this section and in doctor --flow) instead of
-# symlinking the same ~20 tools afresh at each call site.
-nojq_path=""
-on_windows_bash || nojq_path="$(path_without_jq)"
 
 out="$("$ORCH" doctor --nonsense 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
@@ -4047,8 +4059,7 @@ state_fixture pr null
 # strand exactly the flows this change was meant to finish.
 echo
 echo "a flow started before the budget shipped"
-healthy_repo
-"$ORCH" init legacy >/dev/null
+fresh_flow legacy
 legacy="$(mktemp)"
 jq 'del(.budget, .loop, .flake_rerun_used)' .orchestrator/state.json >"$legacy"
 mv "$legacy" .orchestrator/state.json
@@ -4083,8 +4094,7 @@ assert_eq "recording done as it goes" "$("$ORCH" state get phase)" "done"
 # --- init seeds the review loop ---------------------------------------------
 echo
 echo "init seeds the review loop"
-healthy_repo
-"$ORCH" init seeded >/dev/null
+fresh_flow seeded
 assert_eq "a flow starts with no loop counter" \
   "$("$ORCH" state get | jq -r 'has("loop")')" "false"
 assert_eq "and no budget until a human names one" "$("$ORCH" state get budget)" ""
@@ -4144,8 +4154,7 @@ assert_eq "and no longer the loop machinery" "$("$ORCH" help | grep -c 'loop-nex
 # still reads back as what an absent value has always meant.
 echo
 echo "state get defaults"
-healthy_repo
-"$ORCH" init sparse >/dev/null
+fresh_flow sparse
 jq 'del(.iteration, .redo_count, .host_fallbacks, .flake_rerun_used, .budget)' \
   .orchestrator/state.json >state.tmp && mv state.tmp .orchestrator/state.json
 assert_eq "an absent iteration reads as 0" "$("$ORCH" state get iteration)" "0"
@@ -4165,8 +4174,7 @@ assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
 # pending need no iteration file at all, interrupted/ready/stop all do.
 echo
 echo "review terminal"
-healthy_repo
-"$ORCH" init terminaltest >/dev/null
+fresh_flow terminaltest
 
 out="$("$ORCH" review terminal 2>&1)"; st=$?
 assert_status "no loop yet is not terminal" "$st" 1
@@ -4248,8 +4256,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh review terminal"
 # ok/warn on the classification, and phase-gated silent outside review.
 echo
 echo "doctor: review terminal check"
-healthy_repo
-"$ORCH" init doctorterm >/dev/null
+fresh_flow doctorterm
 complete_plan_handoff "$("$ORCH" handoff path spec)"
 complete_spec_handoff "$("$ORCH" handoff path implement)"
 state_fixture phase implement
@@ -4727,8 +4734,7 @@ unset GH_STUB_DB
 # "gh adapter (real issue close, subprocess gh)" block right after this one.
 echo
 echo "redo spec"
-healthy_repo
-"$ORCH" init redospec >/dev/null
+fresh_flow redospec
 
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "refuses outside the implement phase" "$st" 1
