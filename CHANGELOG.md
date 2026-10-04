@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.6.8
+
+- The docs linter reads markdown sections through one `md_section` reader,
+  and the lens agents' `## Brief` check now uses it (see issue #297). Its
+  checks and messages are unchanged.
+
 ## 2.6.7
 
 - `phase advance` names the out-param it hands the `require_*` presence

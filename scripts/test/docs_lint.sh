@@ -23,6 +23,20 @@ assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no out
 # every whitespace run collapsed to one space.
 flat_text() { tr -s ' \t\n' '   ' <"${1:-/dev/stdin}"; }
 
+# md_section <file> <heading>: the lines after the first line that is exactly
+# <heading> (trailing whitespace allowed), up to the next heading of the same
+# or higher level. Exits 1 when the heading is absent, so a missing section is
+# told apart from an empty one. The linter never runs orch.sh, so this is its
+# own reader rather than orch.sh handoff section.
+md_section() {
+  H="$2" awk '
+    BEGIN { h = ENVIRON["H"]; match(h, /^#+/); lvl = RLENGTH }
+    inb { if (match($0, /^#+[[:space:]]/) && RLENGTH - 1 <= lvl) exit; print; next }
+    { line = $0; sub(/[[:space:]]+$/, "", line) }
+    line == h { inb = 1; seen = 1 }
+    END { exit !seen }' "$1"
+}
+
 # check <rule> <findings>: ok when the scan found nothing, else one FAIL line
 # per finding, each naming the file and the problem.
 check() {
@@ -48,6 +62,21 @@ trap 'rm -rf "$FIXTURES"' EXIT
 new_fixture() { mktemp -d "$FIXTURES/root.XXXXXX"; }
 
 echo "docs lint"
+
+# --- markdown section reader -------------------------------------------------
+echo
+echo "markdown section reader"
+f="$(new_fixture)"
+printf '%s\n' '# Doc' '' '## Brief  ' '' 'Body.' '' '### Detail' '' 'Deeper.' '' '## Next' '' 'Other.' \
+  '' '## Empty' '# Top' >"$f/doc.md"
+assert_eq "md_section prints the body up to the next same-level heading, deeper subheadings kept" \
+  "$(md_section "$f/doc.md" "## Brief")" "$(printf '\nBody.\n\n### Detail\n\nDeeper.\n')"
+assert_eq "md_section stops at a higher-level heading" \
+  "$(md_section "$f/doc.md" "## Empty"; echo "exit $?")" "exit 0"
+assert_eq "md_section exits 1 on a missing heading" \
+  "$(md_section "$f/doc.md" "## Missing"; echo "exit $?")" "exit 1"
+assert_eq "md_section matches the heading line exactly" \
+  "$(md_section "$f/doc.md" "## Brie"; echo "exit $?")" "exit 1"
 
 # --- skill names (ADR-0014) --------------------------------------------------
 # Every orchestrator skill carries the orch- prefix. An old unprefixed name
@@ -288,6 +317,7 @@ echo
 echo "skills-only stop text (#128, #121)"
 # stop_text <file>: the stop text, located by its first and last lines - the
 # copy-match's anchor, not a pinned phrase.
+# Not a section read: the stop text is anchored by its own lines, not a heading.
 stop_text() { awk '/^If `orch.sh` is at none of these paths/,/which is unverified\)\.$/' "$1"; }
 # scan_stop_text <plugin root>: each skill off orch-flow's stop text.
 scan_stop_text() {
@@ -574,15 +604,16 @@ echo "spec-review lenses run as plugin agents (#177)"
 # `## Brief`, and orch-spec-review has no `**<Lens> brief.**` heading.
 lenses="fidelity consistency testability implementability"
 scan_lens_briefs() {
-  local r="$1" lens a heading
+  local r="$1" lens a heading brief
   for lens in $lenses; do
     a="$r/agents/orch-lens-$lens.md"
-    [ -f "$a" ] && awk -v f="${a#"$r"/}" '
-      /^## Brief[[:space:]]*$/ { inb = 1; seen = 1; next }
-      /^##?[[:space:]]/ { inb = 0 }
-      inb && /[^[:space:]]/ { body = 1 }
-      END { if (!seen) print f ": has no ## Brief section"
-            else if (!body) print f ": has an empty ## Brief section" }' "$a"
+    if [ -f "$a" ]; then
+      if ! brief="$(md_section "$a" "## Brief")"; then
+        echo "${a#"$r"/}: has no ## Brief section"
+      elif ! grep -q '[^[:space:]]' <<<"$brief"; then
+        echo "${a#"$r"/}: has an empty ## Brief section"
+      fi
+    fi
     heading="**${lens^} brief.**"
     grep -qF "$heading" "$r/skills/orch-spec-review/SKILL.md" 2>/dev/null &&
       echo "skills/orch-spec-review/SKILL.md: carries the $heading heading"
@@ -800,6 +831,7 @@ scan_flow_cmd() {
   (cd "$r" && grep -nE '/orchestrator:[a-z]' scripts/orch.sh scripts/doctor.sh 2>/dev/null) \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
     | sed -E 's/^([^:]+:[0-9]+):.*/\1: names a plugin command outside flow_cmd/'
+  # Not a section read: this range is a shell function body in orch.sh.
   awk '/^flow_cmd\(\)/,/^}/' "$r/scripts/orch.sh" 2>/dev/null \
     | grep -oE 'section="[^"]+"' | sed 's/section="//; s/"$//' \
     | while IFS= read -r s; do
