@@ -700,7 +700,7 @@ cmd_phase() {
     advance)
       [ $# -eq 0 ] || die "usage: orch.sh phase advance"
       require_state
-      local phase next file field
+      local phase next file _unused
       phase="$(state_get phase)"
       case "$phase" in
         spec)      next=implement ;;
@@ -718,8 +718,8 @@ cmd_phase() {
         *) die "$file is not valid - fix it, then run phase advance again; the flow stays at $phase" ;;
       esac
       case "$next" in
-        implement) require_issue field ;;
-        review)    require_branch field; require_base_sha field; require_pr field ;;
+        implement) require_issue _unused ;;
+        review)    require_branch _unused; require_base_sha _unused; require_pr _unused ;;
       esac
       phase_write "$next"
       print_boundary "$next"
