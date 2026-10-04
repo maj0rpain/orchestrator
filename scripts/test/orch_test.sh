@@ -2287,11 +2287,13 @@ healthy_repo
 out="$(env -u CLAUDE_PLUGIN_ROOT CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "running orch.sh by hand is not a broken install" "$st" 0
 assert_contains "warns about the unset plugin root" "$out" "CLAUDE_PLUGIN_ROOT"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- doctor: host (#128) ---
 # Reduced enforcement has to be visible: doctor says which host it believes it
 # is under and what that host cannot do, in the words of the capabilities
 # reference - so the two cannot tell a user different stories.
+healthy_repo
 out="$(env -u CLAUDE_PLUGIN_ROOT CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "detects Claude Code from CLAUDECODE" "$out" "host: Claude Code"
 assert_eq "Claude Code lacks no capability" "$(printf '%s\n' "$out" | grep -c 'lacks')" "0"
@@ -2433,6 +2435,7 @@ assert_contains "a fully healthy repo reports no warns and no FAILs" \
 assert_eq "the summary's ok count matches the ok lines it printed" \
   "$(printf '%s\n' "$out" | tail -1 | sed 's/ ok,.*//')" \
   "$(printf '%s\n' "$out" | grep -c '^ok    ')"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- doctor --flow ----------------------------------------------------------
 # An empty answer must never read as a healthy one: --flow is asked explicitly
@@ -2591,6 +2594,7 @@ else
   assert_contains "collapses every flow check into one line when jq is gone" \
     "$out" "10 flow checks skipped: jq is not installed"
 fi
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- pr open -----------------------------------------------------------------
 # PR #15 merged without closing #14 because the agent's body opened with a verb
@@ -2659,6 +2663,7 @@ out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "refuses when state has no branch" "$st" 1
 assert_contains "with the exact require_branch die message" "$out" \
   "no branch recorded in state"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- pr publish --------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
@@ -2708,8 +2713,10 @@ out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "naming the branch it would have opened from" "$out" "quick/16-widgets"
 assert_contains "and the issue it would have closed" "$out" "#16"
+PATH="$SUITE_PATH"
 
 # --- pr: unknown op -----------------------------------------------------------
+new_repo >/dev/null
 out="$("$ORCH" pr bogus 2>&1)"; st=$?
 assert_status "pr bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown pr op"
@@ -2723,6 +2730,17 @@ assert_contains "naming both" "$out" "open|publish"
 # one for the view that reads the PR number back.
 echo
 echo "gh adapter (real pr create/view, subprocess gh)"
+new_repo >/dev/null
+git remote add origin https://github.com/acme/widgets.git
+stub_gh
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote set-url origin "$bare"
+git push -q origin HEAD:refs/heads/main
+git checkout -q -b quick/16-widgets
+body="$(mktemp)"
+writeln 'Implements the thing.' '' 'Some detail.' >"$body"
+filed="$(mktemp)"
 : >"$filed"
 log="$(mktemp)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=24 \
@@ -2736,6 +2754,7 @@ assert_eq "with no bogus flag=<value> entries for the base/head values" \
   "$(grep -c '^flag=' "$filed")" "0"
 assert_eq "gh itself was invoked once for create and once for view, as real subprocesses" \
   "$(grep -cx pr "$log")" "2"
+PATH="$SUITE_PATH"
 
 # --- pr release -----------------------------------------------------------------
 # The release PR carries the base branch back into the default branch and
@@ -2907,6 +2926,7 @@ assert_eq "gh itself was invoked twice to list and once to create, as real subpr
   "$(grep -cx pr "$log")" "3"
 assert_eq "and once per referenced issue to read its state" "$(grep -cx issue "$log")" "2"
 rm -rf "$(dirname "$bare")"
+PATH="$SUITE_PATH"
 
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature touches GitHub's native
@@ -2980,6 +3000,7 @@ assert_contains "naming what failed" "$out" "gh could not link ticket"
 out="$(GH_STUB_BLOCKED_POST_EXIT=1 "$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100 2>&1)"; st=$?
 assert_status "a gh that refuses the blocking edge fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not add a blocking edge"
+unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- ticket publish verify-then-die ---------------------------------------
 # Immediately after publishing, ticket_publish reads the links back. One
@@ -2989,6 +3010,9 @@ assert_contains "naming what failed" "$out" "gh could not add a blocking edge"
 # by making the readback report stale (empty) data for N calls.
 echo
 echo "ticket publish verify-then-die"
+healthy_repo
+body="$(mktemp)"
+writeln 'Build the thing.' >"$body"
 db="$(mktemp -d)"
 out="$(GH_STUB_DB="$db" GH_STUB_ISSUE_NUMBER=200 GH_STUB_SUBISSUE_MISS=1 \
   "$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
@@ -3008,6 +3032,7 @@ out="$(GH_STUB_DB="$db" GH_STUB_BLOCKED_POST_EXIT=0 GH_STUB_BLOCKED_MISS=2 \
   "$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
 assert_status "a blocking edge that never shows up dies rather than falling back" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #301"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- ticket next -----------------------------------------------------------
 # The parent's open sub-issues with zero open blockers
@@ -3015,6 +3040,9 @@ assert_contains "naming the ticket" "$out" "ticket #301"
 # only), in the order they were published.
 echo
 echo "ticket next"
+healthy_repo
+body="$(mktemp)"
+writeln 'Build the thing.' >"$body"
 db="$(mktemp -d)"
 export GH_STUB_DB="$db"
 a="$(GH_STUB_ISSUE_NUMBER=400 "$ORCH" ticket publish 90 "A" "$body")"
@@ -3042,10 +3070,14 @@ assert_status "refuses with no parent" "$st" 1
 out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket next 90 2>&1)"; st=$?
 assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not list sub-issues"
+unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- ticket close ------------------------------------------------------------
 echo
 echo "ticket close"
+healthy_repo
+body="$(mktemp)"
+writeln 'Build the thing.' >"$body"
 db="$(mktemp -d)"
 export GH_STUB_DB="$db"
 n="$(GH_STUB_ISSUE_NUMBER=500 "$ORCH" ticket publish 90 "Closeable" "$body")"
@@ -3061,6 +3093,7 @@ assert_contains "naming it" "$out" "abc"
 out="$(GH_STUB_ISSUE_CLOSE_EXIT=1 "$ORCH" ticket close "$n" 2>&1)"; st=$?
 assert_status "a gh that will not close the ticket fails" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not close ticket"
+unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- ticket reset ------------------------------------------------------------
 # Reopens every sub-issue of <parent> that is currently closed, and only
@@ -3068,6 +3101,9 @@ assert_contains "naming what failed" "$out" "gh could not close ticket"
 # phase, whose frontier query would otherwise find nothing.
 echo
 echo "ticket reset"
+healthy_repo
+body="$(mktemp)"
+writeln 'Build the thing.' >"$body"
 db="$(mktemp -d)"
 export GH_STUB_DB="$db"
 x="$(GH_STUB_ISSUE_NUMBER=600 "$ORCH" ticket publish 90 "X" "$body")"
@@ -3092,6 +3128,7 @@ assert_contains "naming what failed" "$out" "gh could not reopen ticket"
 out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket reset 90 2>&1)"; st=$?
 assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not list sub-issues"
+unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- ticket parent -----------------------------------------------------------
 # The implementer's way to find its spec issue without calling the sub-issue
@@ -3099,6 +3136,9 @@ assert_contains "naming what failed" "$out" "gh could not list sub-issues"
 # parent prints nothing and still succeeds, and any gh failure is a failure.
 echo
 echo "ticket parent"
+healthy_repo
+body="$(mktemp)"
+writeln 'Build the thing.' >"$body"
 db="$(mktemp -d)"
 export GH_STUB_DB="$db"
 k="$(GH_STUB_ISSUE_NUMBER=700 "$ORCH" ticket publish 95 "Kid" "$body")"
@@ -3128,6 +3168,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket parent"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket parent is in the usage text" "$out" "ticket parent <n>"
+unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- ticket exists -----------------------------------------------------------
 # "Already broken down" decided by structure, not prose: a blueprint's spec
@@ -3136,6 +3177,9 @@ assert_contains "ticket parent is in the usage text" "$out" "ticket parent <n>"
 # stub's issue read answers for <n>.
 echo
 echo "ticket exists"
+healthy_repo
+body="$(mktemp)"
+writeln 'Build the thing.' >"$body"
 db="$(mktemp -d)"
 export GH_STUB_DB="$db"
 mkdir -p "$db/body"
@@ -3200,13 +3244,13 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket exists"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket exists is in the usage text" "$out" "ticket exists <parent>"
+unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- ticket: unknown op ------------------------------------------------------
+new_repo >/dev/null
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?
 assert_status "ticket bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown ticket op"
-
-unset GH_STUB_DB
 
 # --- review begin -----------------------------------------------------------
 # The bound lives in bash precisely so a long session cannot re-remember five as
