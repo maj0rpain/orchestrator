@@ -143,12 +143,8 @@ pass** section only, with the linked issue as its spec issue. It is one pass,
 never that skill's multi-iteration loop. The loop's budget, severity triage and
 filed findings are exactly what a quick implementation chooses to skip.
 
-The pass starts with `review-pass begin <linked issue>`, which hands it its
-report prefix and pass number. If it dies, stop and relay its message: an
-issue or branch that an active flow holds belongs to that flow. If a
-reviewer fails twice, stop before opening the PR and tell the human which
-axis failed. This skill promises a review before the PR, so it never opens
-one with an axis unreviewed.
+If the pass stops, stop before opening the PR. This skill promises a review
+before the PR, so it never opens one with an axis unreviewed.
 
 The pass's declines go under a **Review** heading in the PR body (step 7),
 with `None declined.` when there are none. Any host fallback it takes goes
