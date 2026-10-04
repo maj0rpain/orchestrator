@@ -1,6 +1,6 @@
 ---
-name: orch-plan
-description: Plan a change with the user before any code is written - an interview in rounds that settles every decision and sharpens the project's domain language, ending in a plan the orchestrator can carry to a flow, a quick implementation, or a blueprint. Use when the user asks to plan a feature or change with the orchestrator ("plan this", "let's plan"), or runs /orchestrator:plan. Not for stress-testing an idea for its own sake.
+name: orch-interview
+description: Plan a change with the user before any code is written - an interview in rounds that settles every decision and sharpens the project's domain language, ending in a plan the orchestrator can carry to a flow, a quick implementation, or a blueprint. Use when the user asks to plan a feature or change with the orchestrator ("plan this", "let's plan"), or runs /orchestrator:interview. Not for stress-testing an idea for its own sake.
 ---
 
 # Orchestrator plan

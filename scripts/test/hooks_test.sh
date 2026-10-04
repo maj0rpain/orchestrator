@@ -112,13 +112,17 @@ fi
 assert_empty "ignores an unrelated skill" "$(skill_event "mattpocock-skills:tdd" s3 | "$GRILL")"
 assert_empty "ignores research"           "$(skill_event "mattpocock-skills:research" s4 | "$GRILL")"
 
-# orch-plan is the plugin's own planning entry point (#330): it arms the same
-# message and the same edit guard as grilling.
-out="$(skill_event "orchestrator:orch-plan" p1 | "$GRILL")"
-assert_contains "fires on Skill(orchestrator:orch-plan)" "$out" "Do NOT offer to implement"
-assert_eq "orch-plan arms the guard, which denies a source edit" \
+# orch-interview is the plugin's own planning entry point (#330, renamed from
+# orch-plan in #373): it arms the same message and the same edit guard as
+# grilling.
+out="$(skill_event "orchestrator:orch-interview" p1 | "$GRILL")"
+assert_contains "fires on Skill(orchestrator:orch-interview)" "$out" "Do NOT offer to implement"
+assert_eq "orch-interview arms the guard, which denies a source edit" \
   "$(edit_event "$REPO/src/main.ts" p1 | "$GUARD" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
 rm -f "$TMPDIR/orchestrator-grilling-p1"
+# The old name is removed outright, with no alias.
+assert_empty "ignores the removed Skill(orchestrator:orch-plan)" \
+  "$(skill_event "orchestrator:orch-plan" p2 | "$GRILL")"
 
 # No setup step: a repo with no issue-tracker.md gets no precondition warning.
 out="$(skill_event "grilling" s5 | "$GRILL")"
@@ -203,13 +207,14 @@ assert_empty "a source edit after a Junie grilling prompt is allowed" \
 
 n=0
 for p in '/grilling' '$grill-me x' 'please $wayfinder now' '/improve-codebase-architecture' '/mattpocock-skills:grilling' \
-         '$orch-plan' '/orchestrator:orch-plan' '/orchestrator:plan' '$orchestrator:orch-plan x'; do
+         '$orch-interview' '/orchestrator:orch-interview' '/orchestrator:interview' '$orchestrator:orch-interview x'; do
   n=$((n + 1))
   assert_contains "fires on the entry point in: $p" \
     "$(prompt_event "$p" "jy$n" | "$GRILL")" "additionalContext"
 done
 for p in 'let us talk about grilling' '$tdd fix it' '$grilling-notes' 'a/grilling b' \
-         'let us plan this' 'plan the orch-plan rollout' '/plan' '$orch-planner'; do
+         'let us plan this' 'plan the orch-plan rollout' '/plan' '$orch-planner' \
+         '$orch-plan' '/orchestrator:plan' '/interview' 'let us interview the user' '$orch-interviewer'; do
   n=$((n + 1))
   assert_empty "ignores a prompt with no grilling entry point: $p" \
     "$(prompt_event "$p" "jn$n" | "$GRILL")"

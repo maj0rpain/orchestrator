@@ -6,7 +6,7 @@
 # Junie asks the question again when a plan is confirmed.
 #
 # Claude Code: PostToolUse on the Skill tool. Two skills mark that planning
-# has begun: the plugin's own orch-plan, and, when mattpocock-skills is
+# has begun: the plugin's own orch-interview, and, when mattpocock-skills is
 # installed, its grilling, through which grill-me, grill-with-docs,
 # wayfinder, and improve-codebase-architecture all funnel.
 #
@@ -42,15 +42,15 @@ if [ "$event" = "UserPromptSubmit" ]; then
   if [ "$prompt" = "Implement the suggested plan" ]; then plan_confirmed=1; fi
   # A "/" or "$" reference to an entry point, optionally scoped, standing as
   # its own word: "$grill-me x" matches, "$grilling-notes" and prose do not.
-  # orch-plan matches under any scope; its command, plan, only under
-  # orchestrator:, because a bare /plan is not ours.
-  entry='(^|[[:space:]])[/$](([a-z-]+:)?(grilling|grill-me|grill-with-docs|wayfinder|improve-codebase-architecture|orch-plan)|orchestrator:plan)([[:space:]]|$)'
+  # orch-interview matches under any scope; its command, interview, only
+  # under orchestrator:, because a bare /interview is not ours.
+  entry='(^|[[:space:]])[/$](([a-z-]+:)?(grilling|grill-me|grill-with-docs|wayfinder|improve-codebase-architecture|orch-interview)|orchestrator:interview)([[:space:]]|$)'
   [ "$plan_confirmed" = 1 ] || [[ "$prompt" =~ $entry ]] || exit 0
 else
-  # "grilling" or "orch-plan" only. grill-me and grill-with-docs route through
+  # "grilling" or "orch-interview" only. grill-me and grill-with-docs route through
   # grilling rather than being it, so matching the substring catches them
   # without double-firing.
-  case "$skill" in *grilling*|*orch-plan*) ;; *) exit 0 ;; esac
+  case "$skill" in *grilling*|*orch-interview*) ;; *) exit 0 ;; esac
 fi
 
 # No session_id, no marker: there is nothing to key the guard to, so it stays

@@ -1,7 +1,7 @@
 <!-- orchestrator:begin -->
 ## orchestrator plugin: planning
 
-While planning (orch-plan, grilling, wayfinder, or any plan agent session),
+While planning (orch-interview, grilling, wayfinder, or any plan agent session),
 do not edit source files. Planning ends on a closing question with three
 options - an orchestrator flow, a quick implementation, or a blueprint only
 (publish the spec, offer a spec review, publish the ticket breakdown, then
