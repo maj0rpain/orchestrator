@@ -1764,12 +1764,15 @@ strip_ticket_sections() {
 # and no section to cut, so a repeat writes nothing. Any GitHub failure dies.
 cmd_ticket_retire() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
-  local parent="$1" subs n state child_id comments body stripped msg out
+  local parent="$1" subs n state child_id comments body stripped msg old_msg out
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" \
       --jq '.[] | "\(.number) \(.state)"')" \
     || die "gh could not list sub-issues of #$parent"
-  msg="This ticket was retired by an orchestrator redo: its spec, #$parent, is being redone and will be broken down into tickets again."
+  msg="This ticket was retired: its spec, #$parent, changed and will be broken down into tickets again."
+  # The wording a retire posted before a spec review could retire too: a
+  # ticket carrying it from a run that died part-way is already commented on.
+  old_msg="This ticket was retired by an orchestrator redo: its spec, #$parent, is being redone and will be broken down into tickets again."
   while read -r n state; do
     [ -z "$n" ] && continue
     if [ "$state" = open ]; then
@@ -1778,7 +1781,7 @@ cmd_ticket_retire() {
     else
       comments="$(adapter_issue_view "$n" --json comments --jq '.comments[].body')" \
         || die "gh could not read ticket #$n's comments"
-      if ! grep -qF "$msg" <<<"$comments"; then
+      if ! grep -qF -e "$msg" -e "$old_msg" <<<"$comments"; then
         adapter_issue_comment "$n" --body "$msg" >/dev/null \
           || die "gh could not comment on ticket #$n"
       fi
