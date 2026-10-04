@@ -1,5 +1,9 @@
 # A 0/1-ticket breakdown collapses onto the parent issue
 
+Superseded in part by ADR-0028: the collapse is now `orch-to-tickets`' own
+rule, appended under the fixed `## Ticket` heading, so this ADR's
+"exception to `to-tickets`' contract" consequence no longer holds.
+
 `to-tickets`' quiz can approve a breakdown that resolves to zero or one
 ticket - the work turns out too small to split, or splits into exactly one
 item. `skills/flow/SKILL.md` (the spec phase's `to-tickets` step, and the

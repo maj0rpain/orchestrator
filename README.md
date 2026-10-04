@@ -122,6 +122,7 @@ running the flow never dirties a repo's working tree.
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
 | `/orchestrator:release` | Open the release PR that carries the base branch into the default branch (see below). |
 | `/orchestrator:spec-review <issue>` | Review any spec issue on demand, outside a flow: a standalone spec review. |
+| `/orchestrator:plan` | Start a planning session: an interview that reaches a shared understanding, then asks how to carry it forward. |
 | `/orchestrator:to-spec` | Turn the current conversation into a spec and publish it as an issue, outside any flow. |
 | `/orchestrator:to-tickets <issue>` | Break an existing issue into tickets published as its sub-issues, or collapse it into the issue, outside any flow. |
 
@@ -161,14 +162,16 @@ ever change, the architecture does not need to.
 
 ## Activation
 
-A `PostToolUse` hook on `Skill(grilling)` catches all three planning entry points
-- `grill-me`, `wayfinder`, and `improve-codebase-architecture` all route through
-it. It fires once per session, stays quiet when a flow is already running, warns
-early if the repo is unconfigured, and tells the model that once a shared
-understanding is reached, the next step is a human's call, not the model's:
-call `AskUserQuestion` with exactly two options, start the flow
-(`orchestrator:orch-flow`) or a quick implementation (`orchestrator:orch-quick-implement`),
-and do whichever the human picks.
+A `PostToolUse` hook on `Skill(orch-plan)`, and on `Skill(grilling)` when
+mattpocock-skills is installed (its `grill-me`, `wayfinder`, and
+`improve-codebase-architecture` all route through it), starts a planning
+session. It fires once per session, stays quiet when a flow is already running,
+and tells the model that once a shared understanding is reached, the next step
+is a human's call, not the model's: call `AskUserQuestion` with exactly three
+options, start the flow (`orchestrator:orch-flow`), a quick implementation
+(`orchestrator:orch-quick-implement`), or a blueprint only (publish the spec,
+offer a spec review, publish the ticket breakdown, then stop), and do whichever
+the human picks.
 
 Junie has no `PostToolUse` event, so the same hook also runs on
 `UserPromptSubmit` and fires there when the prompt names a grilling entry
