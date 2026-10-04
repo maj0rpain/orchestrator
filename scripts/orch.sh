@@ -1018,15 +1018,15 @@ cmd_review() {
 
 # --- issue --------------------------------------------------------------
 #
-# The three stateless issue ops - fetch, update and comment - on an issue
-# given just its number: the same contract issue publish/pr publish/ticket
-# publish already offer, extended to a plain issue. cmd_spec's
-# fetch/update/comment ops below are thin wrappers over all three, resolving
-# the issue number from state, so flow's stateful spec access and quick
-# implementation's stateless issue access share one tested code path instead
-# of two independently-maintained copies. comment is stateless because a
-# standalone spec review posts its summary on whatever issue it was pointed
-# at, with no flow to resolve one from.
+# The four stateless issue ops - fetch, comments, update and comment - on an
+# issue given just its number: the same contract issue publish/pr
+# publish/ticket publish already offer, extended to a plain issue. cmd_spec's
+# fetch/comments/update/comment ops below are thin wrappers over all four,
+# resolving the issue number from state, so flow's stateful spec access and
+# quick implementation's stateless issue access share one tested code path
+# instead of two independently-maintained copies. comment is stateless
+# because a standalone spec review posts its summary on whatever issue it was
+# pointed at, with no flow to resolve one from.
 #
 # `issue update` stays a dumb "replace the body with these exact bytes"
 # primitive - fold-in choreography like fetch-then-append-then-write for
@@ -1102,7 +1102,7 @@ cmd_issue() {
 # The spec review's one hand on GitHub. The body is the truth the implement
 # phase reads, so the three ways it is read and written go through here, where
 # they are tested, rather than through a `gh issue edit` in skill prose.
-# All three ops delegate to the issue primitives above, resolving the number
+# All four ops delegate to the issue primitives above, resolving the number
 # from state. A done flow's issue is finished work: state.json lingers after
 # the flow ends, so a spec op there would quietly touch an issue nobody is
 # reviewing any more - it refuses and points at the stateless issue ops.

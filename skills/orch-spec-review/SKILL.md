@@ -96,12 +96,11 @@ they named. With no number, ask for one and wait. Never take it from
    does. There is no plan handoff.
 
 The standalone entry never calls `spec fetch`, `spec comments`, `spec update`,
-`spec comment`, or `handoff path`, never reads under `.orchestrator/handoff/`, and never
-calls `gh issue` directly.
+`spec comment`, or `handoff path`, never reads under `.orchestrator/handoff/`,
+and never calls `gh issue` directly.
 
 Then run **Consolidation**, **The lenses**, **Disposition**, and **Applying
-the answer** below,
-with these differences:
+the answer** below, with these differences:
 
 - **Lenses**: start Consistency, Testability, and Implementability only.
   Fidelity is never started. It appears in the batch and the changelog with
@@ -206,11 +205,12 @@ decision item carries its recommended option.
 
 Number the items, consolidation items included, in one sequence. Present the
 list - each item's finding (or, for a consolidation item, its comment), lens
-or **Consolidation**, and proposed edit or decision - and ask **one blocking question** with the
-`AskUserQuestion` tool (it exists on both Claude Code and Junie), the list and
-the call in the same response. The review never ends its turn on the list:
-presenting it is not the end of the step, the answer is. No edit is applied and
-no changelog is posted before the answer arrives. The options:
+or **Consolidation**, and proposed edit or decision - and ask **one blocking
+question** with the `AskUserQuestion` tool (it exists on both Claude Code and
+Junie), the list and the call in the same response. The review never ends its
+turn on the list: presenting it is not the end of the step, the answer is. No
+edit is applied and no changelog is posted before the answer arrives. The
+options:
 
 - **Apply as recommended (Recommended)** - every proposed edit applied, every
   decision item takes its recommended option, every **recommend decline** item
