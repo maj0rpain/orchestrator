@@ -72,7 +72,7 @@ flow skill is now `orchestrator:orch-flow`, and so on). See
 
 ```
   planning session          shared understanding reached
-  (orch-plan, or a      ->  AskUserQuestion: flow, quick, or blueprint only?
+  (orch-interview, or a ->  AskUserQuestion: flow, quick, or blueprint only?
    mattpocock grilling)                                |
                  +-------------------------------------+-------------------+
                  |                                     |                   |
@@ -128,7 +128,7 @@ running the flow never dirties a repo's working tree.
 | `/orchestrator:release` | Open the release PR that carries the base branch into the default branch (see below). |
 | `/orchestrator:spec-review <issue>` | Review any spec issue on demand, outside a flow: a standalone spec review. |
 | `/orchestrator:review <issue>` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Fixes what it agrees with, and posts what it declines on the branch's open PR. |
-| `/orchestrator:plan` | Start a planning session: an interview that reaches a shared understanding, then asks how to carry it forward. |
+| `/orchestrator:interview` | Start a planning session: an interview that reaches a shared understanding, then asks how to carry it forward. |
 | `/orchestrator:to-spec` | Turn the current conversation into a spec and publish it as an issue, outside any flow. |
 | `/orchestrator:to-tickets <issue>` | Break an existing issue into tickets published as its sub-issues, or collapse it into the issue, outside any flow. |
 
@@ -153,6 +153,10 @@ A PR into a base branch other than the default says `Refs #N` rather than
 branch. `/orchestrator:release` closes them: the model writes the release PR's
 title and summary, and `orch.sh pr release` writes the `Closes` lines.
 
+A command must not share its bare name with a host built-in command (for
+example Claude Code's `/plan`, `/review`, `/status` or `/doctor`), because the
+typeahead lists both.
+
 ## Why separate sessions
 
 The separate sessions are the point: fresh context per phase, and room for
@@ -161,7 +165,7 @@ review depend on.
 
 ## Activation
 
-A `PostToolUse` hook on `Skill(orch-plan)`, and on the mattpocock-skills
+A `PostToolUse` hook on `Skill(orch-interview)`, and on the mattpocock-skills
 entry points named above when they are installed, starts a planning session.
 It fires once per session, stays quiet when a flow is already running, and
 tells the model that once a shared understanding is reached, the next step
@@ -173,7 +177,7 @@ the human picks.
 
 Junie has no `PostToolUse` event, so the same hook also runs on
 `UserPromptSubmit` and fires there when the prompt names a grilling entry
-point (`/orch-plan`, `/orchestrator:plan`, `/grilling`, `$grill-me`,
+point (`/orch-interview`, `/orchestrator:interview`, `/grilling`, `$grill-me`,
 `/wayfinder`, and so on). It sends nothing when Junie picks grilling on its own. Junie routes grilling into its plan
 mode, whose plan agent ends on Junie's own plan screen instead of asking the
 closing question. So when the human confirms that screen, which submits
@@ -200,14 +204,14 @@ start.
 ## Layout
 
 ```
-commands/                     start, next, status, doctor, redo, abort, release, spec-review, review, plan, to-spec, to-tickets
+commands/                     start, next, status, doctor, redo, abort, release, spec-review, review, interview, to-spec, to-tickets
 agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, and the implementer
 skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: four lenses in a flow, three standalone, one batch question
 skills/orch-review/           the review loop: rubric, authority rules, terminal states; and the review pass, quick or standalone
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
 skills/orch-quick-implement/  the other route: issue, optional spec review, orch-to-tickets, tdd, review pass, PR - no flow
-skills/orch-plan/             the planning interview, ending on the closing question: flow, quick implementation, or blueprint
+skills/orch-interview/        the planning interview, ending on the closing question: flow, quick implementation, or blueprint
 skills/orch-to-spec/          turns the conversation into a spec and publishes it as an issue
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines

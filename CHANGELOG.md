@@ -1,5 +1,34 @@
 # Changelog
 
+## 3.0.0
+
+Breaking: the planning entry point is renamed `interview`, so that typing
+`/plan` no longer lists the plugin command beside Claude Code's built-in
+`/plan` (see issue #373). There is no deprecated alias: the old names no
+longer exist, and on Junie the old entry points no longer fire the planning
+hook.
+
+Migration - update any muscle memory, notes, or scripts that name them:
+
+| Old name              | New name                   |
+| --------------------- | -------------------------- |
+| `/orchestrator:plan`  | `/orchestrator:interview`  |
+| `orch-plan`           | `orch-interview`           |
+
+- The skill still triggers on its own when you say "plan this" or "let's
+  plan", and the interview, the planning message and the edit guard are
+  unchanged. "Planning session" stays the glossary term, and the plan phase
+  and its `01-plan.md` handoff keep their names.
+- The planning hook matches `Skill(orch-interview)` on Claude Code, and
+  `orch-interview` (any scope) or `/orchestrator:interview` on Junie. A bare
+  `/interview` is not ours and fires nothing.
+- The README's `## Commands` section gains an authoring rule: a command must
+  not share its bare name with a host built-in command. The existing clashes
+  (`/orchestrator:review`, `/orchestrator:status`, `/orchestrator:doctor`)
+  are tracked in issue #374 and left unchanged for now.
+- The skill-name guard in the test suite now flags the old command and skill
+  names.
+
 ## 2.10.0
 
 - The spec review now reads an issue's comments as well as its body (see

@@ -86,10 +86,13 @@ assert_eq "md_section matches the heading line exactly" \
 # cases. The spec review's command and skill were renamed spec-review in 2.0.0
 # (#235), so the review-spec names, command included, are old names too.
 # /orchestrator:review is a live command again (#341), so only the review
-# skill's directory and name line remain old names.
+# skill's directory and name line remain old names. The planning entry point
+# was renamed interview in 3.0.0 (#373), so orch-plan, under any prefix, and
+# the command orchestrator:plan are old names too, each matched as a whole
+# token: .scratch/orch-plan-<slug>.md names a saved plan, not the skill.
 echo
 echo "skill names (ADR-0014)"
-old_names='orchestrator:(flow|handoff|review-spec|quick-implement|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$'
+old_names='orchestrator:(flow|handoff|review-spec|quick-implement|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$|(^|[^a-z-])(orch-plan|orchestrator:plan)([^a-z-]|$)'
 # scan_old_names <plugin root>: each old skill or command name in a tracked
 # file outside history, and each old command file or skill directory.
 scan_old_names() {
@@ -98,8 +101,13 @@ scan_old_names() {
     | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/|\.out-of-scope/)' \
     | (cd "$r" && xargs -0 grep -nE "$old_names" 2>/dev/null) \
     | sed -E 's/^([^:]*:[0-9]+):/\1: old skill or command name: /'
-  [ -e "$r/commands/review-spec.md" ] && echo "commands/review-spec.md: old command file"
-  [ -e "$r/skills/orch-review-spec" ] && echo "skills/orch-review-spec/: old skill directory"
+  local p
+  for p in commands/review-spec.md commands/plan.md; do
+    [ -e "$r/$p" ] && echo "$p: old command file"
+  done
+  for p in skills/orch-review-spec skills/orch-plan; do
+    [ -e "$r/$p" ] && echo "$p/: old skill directory"
+  done
   return 0
 }
 f="$(new_fixture)"
@@ -118,6 +126,17 @@ printf 'Renamed `orchestrator:review-spec`.\n' >"$f/docs/adr/0001-x.md"
 printf 'Run `/orchestrator:review 12`.\nCall `orchestrator:review`.\n' >"$f/commands/review.md"
 printf 'See skills/review/SKILL.md.\n' >"$f/commands/f.md"
 printf 'name: review\n' >"$f/commands/g.md"
+# The planning entry point was renamed interview (#373).
+printf 'Call `orchestrator:orch-plan`.\n' >"$f/commands/p1.md"
+printf 'Run `$orch-plan`.\n' >"$f/commands/p2.md"
+printf 'Run `/orch-plan`.\n' >"$f/commands/p3.md"
+printf 'A hook on `Skill(orch-plan)`.\n' >"$f/commands/p4.md"
+printf 'While planning (orch-plan, grilling)\n' >"$f/commands/p5.md"
+printf 'Run `/orchestrator:plan`.\n' >"$f/commands/p6.md"
+printf 'See skills/orch-plan/SKILL.md.\n' >"$f/commands/p7.md"
+printf 'name: orch-plan\n' >"$f/commands/p8.md"
+printf 'Run `/orchestrator:interview`.\nCall `orchestrator:orch-interview`.\nskills/orch-interview/\n$orch-interview\n' >"$f/commands/interview.md"
+printf 'Save it to `.scratch/orch-plan-<slug>.md`.\n' >"$f/commands/scratch.md"
 git -C "$f" add -A
 out="$(scan_old_names "$f")"
 flags "the old review-spec skill name is flagged" "$out" "commands/a.md:1: old skill or command name"
@@ -131,13 +150,29 @@ assert_eq "the live /orchestrator:review command is not flagged" \
   "$(printf '%s\n' "$out" | grep -c '^commands/review\.md')" "0"
 flags "the old review skill directory is flagged" "$out" "commands/f.md:1: old skill or command name"
 flags "the old review skill name line is flagged" "$out" "commands/g.md:1: old skill or command name"
+flags "the old orchestrator:orch-plan skill name is flagged" "$out" "commands/p1.md:1: old skill or command name"
+flags "the old \$orch-plan reference is flagged" "$out" "commands/p2.md:1: old skill or command name"
+flags "the old /orch-plan reference is flagged" "$out" "commands/p3.md:1: old skill or command name"
+flags "the old Skill(orch-plan) reference is flagged" "$out" "commands/p4.md:1: old skill or command name"
+flags "a bare orch-plan mention is flagged" "$out" "commands/p5.md:1: old skill or command name"
+flags "the old /orchestrator:plan command is flagged" "$out" "commands/p6.md:1: old skill or command name"
+flags "the old orch-plan skill directory is flagged" "$out" "commands/p7.md:1: old skill or command name"
+flags "the old orch-plan skill name line is flagged" "$out" "commands/p8.md:1: old skill or command name"
+assert_eq "the new interview names are not flagged" \
+  "$(printf '%s\n' "$out" | grep -c '^commands/interview\.md')" "0"
+assert_eq "the saved-plan scratch file is not flagged" \
+  "$(printf '%s\n' "$out" | grep -c '^commands/scratch\.md')" "0"
 assert_eq "history may name the old ones" \
   "$(printf '%s\n' "$out" | grep -c '^docs/adr/')" "0"
 mkdir -p "$f/skills/orch-review-spec"
 : >"$f/commands/review-spec.md"
+mkdir -p "$f/skills/orch-plan"
+: >"$f/commands/plan.md"
 out="$(scan_old_names "$f")"
 flags "an old review-spec command file is flagged" "$out" "commands/review-spec.md: old command file"
 flags "an old orch-review-spec skill directory is flagged" "$out" "skills/orch-review-spec/: old skill directory"
+flags "an old plan command file is flagged" "$out" "commands/plan.md: old command file"
+flags "an old orch-plan skill directory is flagged" "$out" "skills/orch-plan/: old skill directory"
 check "no old orchestrator skill or command name outside history" "$(scan_old_names "$PLUGIN_ROOT")"
 
 # Each skill directory carries the orch- prefix, and its SKILL.md declares the
