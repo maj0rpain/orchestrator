@@ -31,6 +31,9 @@ for why the driver hands off the fixing and filing, and
 `docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md` for why the loop
 starts its own reviewers.
 
+The same two reviewers also run once with no loop around them, as a **review
+pass** - see **Review pass**, the one definition of it.
+
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
@@ -394,3 +397,54 @@ has actually been decided - never guessed or backfilled. It is what
 `bash "$ORCH" redo review` and `doctor --flow` both read, through the same
 `review_terminal_state` classifier, to tell a loop that genuinely finished
 from one whose driving session simply died mid-budget.
+
+## Review pass
+
+One look at a change by the two reviewers above, with no loop around it: no
+budget, no severity, no fixer, no closer, nothing filed. A quick
+implementation runs one before its PR opens (the `orch-quick-implement`
+skill's step 6). Nothing else in this skill applies to a pass. The loop's
+rule that the driver never edits does not apply either, because a review pass
+has no driver: the session that runs it fixes what it agrees with itself.
+
+The caller names the spec issue and says where the declines and host
+fallbacks go.
+
+1. **Begin.** Run `bash "$ORCH" review-pass begin <issue>`. If it dies,
+   relay its message and stop. It refuses a detached HEAD, the base branch,
+   and an issue or branch that an active flow holds: that change belongs to
+   that flow, never to a review pass. Otherwise it prints this pass's report
+   prefix, `.../iteration-NN`, and `NN` is this pass's number. Each pass on
+   a branch takes the next number, so a second pass never overwrites the
+   first.
+2. **Base SHA.** Run `bash "$ORCH" branch base-sha`. That is the base
+   branch's tip that `branch off` recorded, or, on a branch made without it,
+   the merge-base with its base branch.
+3. **Start both reviewers** - `orch-reviewer-standards` and
+   `orch-reviewer-spec` - at once, as fresh agents, never forks, both in one
+   message (see **Starting an agent**). Each prompt carries these four
+   variables and nothing else - no issue body, no diff, no brief:
+
+   ```
+   Base SHA: <base SHA>
+   Spec issue: #<issue>
+   Iteration: <NN>
+   Report path: <prefix>-<standards|spec>.md
+   ```
+
+4. **A failed review.** A missing report, or one that says the base SHA did
+   not resolve or the diff was empty, is a failed review, not a clean one.
+   Start that reviewer again once. If it fails a second time, stop the pass
+   and tell the human which axis failed. A pass never claims an axis nobody
+   looked along.
+5. **Fix.** Read both reports, and fix, yourself, every finding you agree
+   with. Use no fixer agent, no closer, no severity, no budget, and file
+   nothing. Commit the fixes as one commit.
+6. **Declines.** Record each finding you decline, one line each: its
+   `file:line` - or `-` when the report gave `-` for its location - and your
+   reason for declining it. If you declined none, the record says
+   `None declined.` The caller says where this record goes.
+
+A host that cannot start the reviewers natively takes
+`docs/host-capabilities.md`'s **Start a fresh subagent** fallback, with the
+prompt above. Record each fallback where the caller puts host fallbacks.

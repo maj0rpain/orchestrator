@@ -605,6 +605,7 @@ skills/orch-quick-implement/SKILL.md|## 2. Offer a spec review
 skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
 skills/orch-quick-implement/SKILL.md|## 6. Review
 skills/orch-quick-implement/SKILL.md|## 7. Open the PR
+skills/orch-review/SKILL.md|## Review pass
 skills/orch-spec-review/SKILL.md|## Standalone spec review
 skills/orch-spec-review/SKILL.md|## Disposition
 skills/orch-spec-review/SKILL.md|## Applying the answer
@@ -875,6 +876,56 @@ flags "a row with a stray pipe is flagged" "$out" "docs/host-capabilities.md:5: 
 assert_eq "a filled row is not flagged" "$(printf '%s\n' "$out" | grep -cE ':(1|2|3):')" "0"
 check "every host capability row has both hosts' cells filled" \
   "$(scan_capability_table "$PLUGIN_ROOT")"
+
+# --- review pass (#342) --------------------------------------------------------
+echo
+echo "review pass (#342)"
+# A review pass is defined once, in orch-review's ## Review pass section, which
+# starts with review-pass begin. Quick implementation's step 6 runs that
+# section rather than keeping its own copy, so it names neither reviewer, and
+# no skill still calls the removed quick path.
+# scan_review_pass <plugin root>: one line per break of that rule.
+scan_review_pass() {
+  local r="$1" review="skills/orch-review/SKILL.md" quick="skills/orch-quick-implement/SKILL.md" body
+  if body="$(md_section "$r/$review" "## Review pass")"; then
+    flat_text <<<"$body" | grep -qF 'review-pass begin' \
+      || echo "$review: ## Review pass does not name review-pass begin"
+  else
+    echo "$review: no ## Review pass section"
+  fi
+  body="$(md_section "$r/$quick" "## 6. Review" | flat_text)"
+  { grep -qF '`orch-review`' <<<"$body" && grep -qF '**Review pass**' <<<"$body"; } \
+    || echo "$quick: step 6 does not refer to orch-review's **Review pass** section"
+  (cd "$r" && grep -HnoE 'orch-reviewer-(standards|spec)' "$quick" 2>/dev/null) \
+    | sed -E 's/^([^:]+:[0-9]+):(.*)$/\1: names \2 - its review is orch-review'"'"'s Review pass/'
+  (cd "$r" && grep -rnF 'quick path' skills 2>/dev/null) \
+    | sed -E 's/^([^:]+:[0-9]+):.*/\1: names the removed quick path/'
+  return 0
+}
+f="$(new_fixture)"
+mkdir -p "$f/skills/orch-review" "$f/skills/orch-quick-implement"
+printf '# R\n\n## Review pass\n\nStart the reviewers.\n\n## Other\n\nrun review-pass begin\n' \
+  >"$f/skills/orch-review/SKILL.md"
+printf '# Q\n\n## 6. Review\n\nStart `orch-reviewer-spec`; run `bash "$ORCH" quick path`.\n\n## 7. Open the PR\n\nSee `orch-review` **Review pass**.\n' \
+  >"$f/skills/orch-quick-implement/SKILL.md"
+out="$(scan_review_pass "$f")"
+flags "a Review pass section that skips review-pass begin is flagged" \
+  "$out" "skills/orch-review/SKILL.md: ## Review pass does not name review-pass begin"
+flags "a step 6 that does not run orch-review's Review pass is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md: step 6 does not refer to orch-review's **Review pass** section"
+flags "quick implementation naming a reviewer is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md:5: names orch-reviewer-spec"
+flags "a skill naming quick path is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md:5: names the removed quick path"
+printf '# R\n\n## Other\n' >"$f/skills/orch-review/SKILL.md"
+flags "a missing Review pass section is flagged" \
+  "$(scan_review_pass "$f")" "skills/orch-review/SKILL.md: no ## Review pass section"
+printf '# R\n\n## Review pass\n\nRun `orch.sh review-pass begin <issue>`.\n' >"$f/skills/orch-review/SKILL.md"
+printf '# Q\n\n## 6. Review\n\nRun the `orch-review` skill'"'"'s **Review\npass** section.\n' \
+  >"$f/skills/orch-quick-implement/SKILL.md"
+assert_empty "a review pass defined once and run by step 6 is not flagged" "$(scan_review_pass "$f")"
+check "the review pass is defined once in orch-review and quick implementation runs it" \
+  "$(scan_review_pass "$PLUGIN_ROOT")"
 
 # --- summary -----------------------------------------------------------------
 echo
