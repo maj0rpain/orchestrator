@@ -211,7 +211,7 @@ skills/orch-spec-review/      the spec review: four lenses in a flow, three stan
 skills/orch-review/           the review loop: rubric, authority rules, terminal states; and the review pass, quick or standalone
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
 skills/orch-quick-implement/  the other route: issue, optional spec review, orch-to-tickets, tdd, review pass, PR - no flow
-skills/orch-interview/        the planning interview; the planning hook's message asks the closing question
+skills/orch-interview/        the planning interview; hook-grilling.sh's message asks the closing question
 skills/orch-to-spec/          turns the conversation into a spec and publishes it as an issue
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
