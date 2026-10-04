@@ -1674,7 +1674,8 @@ cmd_ticket_parent() {
 # rather than prose (ADR-0028): `sub-issues` when it has at least one,
 # open or closed; `collapsed` when it has none but its body carries a line
 # that is exactly `## Ticket` outside a code fence, the heading a
-# 0-1-ticket collapse appends under; exit 1 and no output when neither. Sub-issues win when both hold.
+# 0-1-ticket collapse appends under; exit 1 and no output when neither.
+# Sub-issues win when both hold.
 # A body edited on the web arrives with CRLF line ends, so a trailing CR
 # does not stop the heading's line from matching. A GitHub it cannot read
 # exits 2, never 1: a caller reading 1 as "no breakdown" would publish a
@@ -1745,7 +1746,7 @@ strip_ticket_sections() {
 # and no section to cut, so a repeat writes nothing. Any GitHub failure dies.
 cmd_ticket_retire() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
-  local parent="$1" subs n state child_id comments body stripped msg
+  local parent="$1" subs n state child_id comments body stripped msg out
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" \
       --jq '.[] | "\(.number) \(.state)"')" \
@@ -1781,7 +1782,6 @@ cmd_ticket_retire() {
   # awk ends every line it prints with a newline; a body that had no final
   # newline gets none back.
   if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
-    local out
     out="$(cat "$stripped"; printf x)"; out="${out%x}"
     printf '%s' "${out%$'\n'}" >"$stripped"
   fi
@@ -2137,9 +2137,9 @@ orch.sh - deterministic operations for the orchestrator flow
   ticket exists <parent>      whether <parent> already has a ticket
                               breakdown: prints sub-issues (it has any, open
                               or closed) or collapsed (none, but its body has
-                              a line that is exactly `## Ticket`); exits 1
-                              printing nothing when neither, 2 when GitHub
-                              cannot be read
+                              a line that is exactly `## Ticket` outside a
+                              code fence); exits 1 printing nothing when
+                              neither, 2 when GitHub cannot be read
   ticket retire <parent>      retire <parent>'s ticket breakdown: close each
                               open sub-issue as not planned, comment on every
                               one, unlink it, and cut every `## Ticket`
