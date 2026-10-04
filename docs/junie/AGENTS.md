@@ -1,7 +1,7 @@
 <!-- orchestrator:begin -->
 ## orchestrator plugin: planning
 
-While planning (grilling, wayfinder, or any plan agent session) and before an
+While planning (orch-plan, grilling, wayfinder, or any plan agent session) and before an
 orchestrator flow or a quick implementation has started, do not edit source
 files. Glossary and ADR changes (CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are
 recorded, not edited: write the exact new or replaced wording, and where it

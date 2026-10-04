@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #
-# Delivers the planning message once per session when grilling starts with no
+# Delivers the planning message once per session when planning starts with no
 # flow active. One script, two hosts; the tool that asks the closing question
 # and the sentence on how to run the next skill differ between them, and only
 # Junie asks the question again when a plan is confirmed.
 #
-# Claude Code: PostToolUse on the Skill tool. All three planning entry points
-# - grill-me, wayfinder, and improve-codebase-architecture - funnel through
-# Skill("grilling"), which makes it the one reliable choke point for noticing
-# that planning has begun.
+# Claude Code: PostToolUse on the Skill tool. Two skills mark that planning
+# has begun: the plugin's own orch-plan, and, when mattpocock-skills is
+# installed, its grilling, through which grill-me, grill-with-docs,
+# wayfinder, and improve-codebase-architecture all funnel.
 #
 # Junie CLI: UserPromptSubmit (#202). Junie has no PostToolUse event and no
-# Skill tool, so the hook matches a grilling entry point named in the raw
+# Skill tool, so the hook matches a planning entry point named in the raw
 # prompt (Junie rewrites a typed /<skill> into $<skill>). Accepted gap: when
 # Junie picks grilling on its own, no prompt names it and nothing is sent.
 # Junie's router sends grilling to its plan agent, which ends on its own
@@ -42,12 +42,15 @@ if [ "$event" = "UserPromptSubmit" ]; then
   if [ "$prompt" = "Implement the suggested plan" ]; then plan_confirmed=1; fi
   # A "/" or "$" reference to an entry point, optionally scoped, standing as
   # its own word: "$grill-me x" matches, "$grilling-notes" and prose do not.
-  entry='(^|[[:space:]])[/$]([a-z-]+:)?(grilling|grill-me|grill-with-docs|wayfinder|improve-codebase-architecture)([[:space:]]|$)'
+  # orch-plan matches under any scope; its command, plan, only under
+  # orchestrator:, because a bare /plan is not ours.
+  entry='(^|[[:space:]])[/$](([a-z-]+:)?(grilling|grill-me|grill-with-docs|wayfinder|improve-codebase-architecture|orch-plan)|orchestrator:plan)([[:space:]]|$)'
   [ "$plan_confirmed" = 1 ] || [[ "$prompt" =~ $entry ]] || exit 0
 else
-  # "grilling" only. grill-me and grill-with-docs route through it rather than
-  # being it, so matching the substring catches them without double-firing.
-  case "$skill" in *grilling*) ;; *) exit 0 ;; esac
+  # "grilling" or "orch-plan" only. grill-me and grill-with-docs route through
+  # grilling rather than being it, so matching the substring catches them
+  # without double-firing.
+  case "$skill" in *grilling*|*orch-plan*) ;; *) exit 0 ;; esac
 fi
 
 # No session_id, no marker: there is nothing to key the guard to, so it stays
@@ -77,34 +80,31 @@ root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 # flow is finished work, so planning beside it gets the full message.
 if hook_flow_active "$root"; then exit 0; fi
 
-warning=""
-# Open-coded rather than `orch.sh doctor --env`: this hook runs on every
-# planning session, so it has to be instant and offline, and doctor costs
-# several gh calls and a few seconds. One early warning about the precondition
-# that wastes an hour of planning is the whole job here.
-if [ ! -f "$root/docs/agents/issue-tracker.md" ]; then
-  warning="
-PRECONDITION NOT MET: this repo has no docs/agents/issue-tracker.md, so the spec
-phase would fail. Tell the user now, before they invest an hour in planning, that
-they need to run the mattpocock-skills setup-matt-pocock-skills skill first."
-fi
-
 if [ "$host" = junie ]; then
   ask_step="Call the ask_user tool with
-  exactly two options:"
+  exactly three options:"
   plugin_root="$(hook_plugin_root)"
   run_next="- On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
-  \"Quick implementation\", the orch-quick-implement skill. This host has
-  no Skill tool, so read the skill's file and follow it verbatim:
-  $plugin_root/skills/orch-flow/SKILL.md or
-  $(hook_quick_skill_file)."
+  \"Quick implementation\", the orch-quick-implement skill; on \"Blueprint
+  only\", the orch-to-spec skill, then orch-spec-review if the user wants a
+  review, then orch-to-tickets. This host has no Skill tool, so read each
+  skill's file and follow it verbatim:
+  $plugin_root/skills/orch-flow/SKILL.md,
+  $(hook_quick_skill_file),
+  $plugin_root/skills/orch-to-spec/SKILL.md,
+  $plugin_root/skills/orch-spec-review/SKILL.md (its standalone spec review), or
+  $plugin_root/skills/orch-to-tickets/SKILL.md."
 else
   ask_step="Call the AskUserQuestion tool with
-  exactly two options:"
+  exactly three options:"
   run_next="- On \"Start the orchestrator flow\", call the Skill tool with
   \"orchestrator:orch-flow\" yourself. On \"Quick implementation\", call the Skill
-  tool with \"orchestrator:orch-quick-implement\" yourself. Orchestrator skills
-  are model-invocable, unlike the mattpocock ones."
+  tool with \"orchestrator:orch-quick-implement\" yourself. On \"Blueprint
+  only\", call the Skill tool with \"orchestrator:orch-to-spec\", then with
+  \"orchestrator:orch-spec-review\" (its standalone spec review) if the user
+  wants a review, then with \"orchestrator:orch-to-tickets\", yourself. The
+  orchestrator's skills are model-invocable: call them, do not hand them to the
+  user."
 fi
 
 choice="${ask_step}
@@ -112,8 +112,19 @@ choice="${ask_step}
       1. Start the orchestrator flow - the full plan -> spec -> implement ->
          review pipeline, with its own handoff and review loop.
       2. Quick implementation - skip the pipeline and implement this directly.
+      3. Blueprint only - publish the spec and its ticket breakdown, then
+         stop; implement later.
 
-${run_next} Do not ask the user to type a command."
+${run_next} Do not ask the user to type a command.
+
+- On \"Blueprint only\": publish the spec (orch-to-spec), with any glossary or
+  ADR wording the planning decided written into the issue body verbatim. Then
+  ask the user whether to run a spec review on it - ask every time, never
+  assume - and run the standalone orch-spec-review only on a yes. Then publish
+  its ticket breakdown (orch-to-tickets) against that issue. Then stop: do not
+  implement or edit source. Report the issue number and how to pick it up
+  later: /orchestrator:start --issue <n>, or a quick implementation that names
+  the issue."
 
 if [ "$plan_confirmed" = 1 ]; then
   hook_emit_context "$event" "The orchestrator plugin is installed in this repo, and the user just
@@ -136,7 +147,7 @@ While this planning session is running:
 - When you reach a shared understanding, do not close with a scripted line and
   do not decide the next step yourself. ${choice}
 
-Under the mattpocock-skills wayfinder skill, \"approved\" means the whole map is done, not
-that one ticket resolved. Do not start the flow after a single ticket.${warning}"
+If this session runs under a wayfinder skill, \"approved\" means the
+whole map is done, not that one ticket resolved. Do not start the flow after a single ticket."
 
 hook_emit_context "$event" "$context"

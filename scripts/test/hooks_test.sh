@@ -62,13 +62,26 @@ assert_contains "replaces the scripted closing line with a structured choice" "$
 assert_not_contains "drops the old scripted closing line" "$out" "Plan approved? I'll write the handoff and start the flow."
 assert_contains "offers starting the flow as an option" "$out" "Start the orchestrator flow"
 assert_contains "offers quick implementation as an option" "$out" "Quick implementation"
-# The closing question offers exactly two options, never a third (#237):
-# count its numbered option lines, not only that each option is present.
+assert_contains "offers Blueprint only as an option" "$out" "Blueprint only"
+# The closing question offers exactly three options (#237, #330): count its
+# numbered option lines, not only that each option is present.
 count_closing_options() { printf '%s' "$1" | jq -r '.additionalContext' | grep -cE '^ +[0-9]+\. '; }
-assert_eq "offers exactly two options" "$(count_closing_options "$out")" "2"
-assert_contains "says exactly two options" "$out" "exactly two options"
+assert_eq "offers exactly three options" "$(count_closing_options "$out")" "3"
+assert_contains "says exactly three options" "$out" "exactly three options"
 assert_contains "tells the model to invoke the flow skill itself" "$out" "orchestrator:orch-flow"
 assert_contains "tells the model to invoke the quick-implement skill itself" "$out" "orchestrator:orch-quick-implement"
+# Blueprint only publishes the spec, offers a review, publishes the tickets,
+# then stops; the run-next sentence names all three skills by their Claude name.
+ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
+for s in orch-to-spec orch-spec-review orch-to-tickets; do
+  assert_contains "Blueprint names orchestrator:$s on Claude Code" "$ctx" "\"orchestrator:$s\""
+done
+assert_contains "Blueprint asks about a spec review every time" "$ctx" "every time"
+assert_contains "Blueprint says how to pick the issue up" "$ctx" "/orchestrator:start --issue"
+assert_contains "Blueprint puts glossary/ADR wording into the issue verbatim" "$ctx" "into the issue body verbatim"
+assert_not_contains "no route tells the model to delete the marker" "$ctx" "marker"
+assert_not_contains "drops the mattpocock model-invocable line" "$ctx" "unlike the mattpocock ones"
+assert_not_contains "drops the mattpocock wayfinder line" "$ctx" "Under the mattpocock-skills wayfinder skill"
 assert_contains "forbids offering to implement" "$out" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat" "$out" "whole map is done"
 assert_eq "emits valid JSON" "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "PostToolUse"
@@ -100,10 +113,20 @@ fi
 assert_empty "ignores an unrelated skill" "$(skill_event "mattpocock-skills:tdd" s3 | "$GRILL")"
 assert_empty "ignores research"           "$(skill_event "mattpocock-skills:research" s4 | "$GRILL")"
 
-# The precondition warning has to land while planning is cheap to abandon.
+# orch-plan is the plugin's own planning entry point (#330): it arms the same
+# message and the same edit guard as grilling.
+out="$(skill_event "orchestrator:orch-plan" p1 | "$GRILL")"
+assert_contains "fires on Skill(orchestrator:orch-plan)" "$out" "Do NOT offer to implement"
+assert_eq "orch-plan arms the guard, which denies a source edit" \
+  "$(edit_event "$REPO/src/main.ts" p1 | "$GUARD" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+rm -f "$TMPDIR/orchestrator-grilling-p1"
+
+# No setup step: a repo with no issue-tracker.md gets no precondition warning.
 mv "$REPO/docs/agents/issue-tracker.md" "$REPO/docs/agents/.hidden"
 out="$(skill_event "grilling" s5 | "$GRILL")"
-assert_contains "warns early when the tracker is unconfigured" "$out" "PRECONDITION NOT MET"
+assert_contains "still fires without issue-tracker.md" "$out" "Do NOT offer to implement"
+assert_not_contains "no precondition warning without issue-tracker.md" "$out" "PRECONDITION"
+assert_not_contains "never sends the user to the mattpocock setup skill" "$out" "setup-matt-pocock-skills"
 mv "$REPO/docs/agents/.hidden" "$REPO/docs/agents/issue-tracker.md"
 
 mkdir -p "$REPO/.orchestrator"
@@ -143,7 +166,12 @@ assert_contains "asks the closing question with Junie's ask_user tool" "$ctx" "C
 assert_not_contains "names no Claude question tool on Junie" "$ctx" "AskUserQuestion"
 assert_contains "offers starting the flow on Junie" "$ctx" "Start the orchestrator flow"
 assert_contains "offers quick implementation on Junie" "$ctx" "Quick implementation"
-assert_eq "offers exactly two options on Junie" "$(count_closing_options "$out")" "2"
+assert_contains "offers Blueprint only on Junie" "$ctx" "Blueprint only"
+assert_eq "offers exactly three options on Junie" "$(count_closing_options "$out")" "3"
+for s in orch-to-spec orch-spec-review orch-to-tickets; do
+  assert_contains "points at $s's SKILL.md on Junie" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
+done
+assert_not_contains "no route tells the model to delete the marker on Junie" "$ctx" "marker"
 assert_contains "forbids offering to implement on Junie" "$ctx" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat on Junie" "$ctx" "whole map is done"
 assert_contains "names every planning artifact on Junie" "$ctx" \
@@ -177,12 +205,14 @@ assert_empty "a source edit after a Junie grilling prompt is allowed" \
   "$(cd "$REPO" && printf '%s' "$junie_same_session_edit" | "$GUARD")"
 
 n=0
-for p in '/grilling' '$grill-me x' 'please $wayfinder now' '/improve-codebase-architecture' '/mattpocock-skills:grilling'; do
+for p in '/grilling' '$grill-me x' 'please $wayfinder now' '/improve-codebase-architecture' '/mattpocock-skills:grilling' \
+         '$orch-plan' '/orchestrator:orch-plan' '/orchestrator:plan' '$orchestrator:orch-plan x'; do
   n=$((n + 1))
   assert_contains "fires on the entry point in: $p" \
     "$(prompt_event "$p" "jy$n" | "$GRILL")" "additionalContext"
 done
-for p in 'let us talk about grilling' '$tdd fix it' '$grilling-notes' 'a/grilling b'; do
+for p in 'let us talk about grilling' '$tdd fix it' '$grilling-notes' 'a/grilling b' \
+         'let us plan this' 'plan the orch-plan rollout' '/plan' '$orch-planner'; do
   n=$((n + 1))
   assert_empty "ignores a prompt with no grilling entry point: $p" \
     "$(prompt_event "$p" "jn$n" | "$GRILL")"
@@ -202,7 +232,11 @@ assert_contains "asks before implementing the confirmed plan" "$ctx" "Before you
 assert_contains "asks the closing question at plan confirmation" "$ctx" "Call the ask_user tool"
 assert_contains "offers starting the flow at plan confirmation" "$ctx" "Start the orchestrator flow"
 assert_contains "offers quick implementation at plan confirmation" "$ctx" "Quick implementation"
-assert_eq "offers exactly two options at plan confirmation" "$(count_closing_options "$out")" "2"
+assert_eq "offers exactly three options at plan confirmation" "$(count_closing_options "$out")" "3"
+assert_contains "offers Blueprint only at plan confirmation" "$ctx" "Blueprint only"
+for s in orch-to-spec orch-spec-review orch-to-tickets; do
+  assert_contains "points at $s's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
+done
 assert_contains "points at orch-flow's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
 assert_not_contains "repeats no planning rules at plan confirmation" "$ctx" "Do NOT offer to implement"
 assert_contains "asks again on a second plan confirmation" \
@@ -213,8 +247,8 @@ assert_empty "stays silent on a prompt that only mentions the confirmation" \
   "$(prompt_event "$confirm now" jc1 | "$GRILL")"
 
 mv "$REPO/docs/agents/issue-tracker.md" "$REPO/docs/agents/.hidden"
-assert_contains "reads the repo from project_path for the tracker warning" \
-  "$(prompt_event '$grilling' j2 | "$GRILL")" "PRECONDITION NOT MET"
+assert_not_contains "no precondition warning on Junie without issue-tracker.md" \
+  "$(prompt_event '$grilling' j2 | "$GRILL")" "PRECONDITION"
 mv "$REPO/docs/agents/.hidden" "$REPO/docs/agents/issue-tracker.md"
 
 mkdir -p "$REPO/.orchestrator"
