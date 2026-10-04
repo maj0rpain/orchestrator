@@ -2716,6 +2716,60 @@ assert_contains "with its usage" "$out" "pr release [--force] <title> <body-file
 base_cmd base clear >/dev/null
 rm -rf "$(dirname "$bare")"
 
+# --- pr comment (#343) ----------------------------------------------------------
+# A stateless post on the current branch's open PR, so a standalone review pass
+# records its declines without calling gh itself. Three outcomes, like ticket
+# exists: 0 posted (printing the PR), 1 only for no open PR, 2 for the rest.
+echo
+echo "pr comment (#343)"
+new_repo >/dev/null
+git checkout -q -b quick/12-foo
+body="$(mktemp)"
+writeln '## Review' '' '- `a.sh:3` - declined: out of scope.' >"$body"
+prc() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" pr comment "$@"; }
+
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc "$body" 2>&1)"; st=$?
+assert_status "posts on the branch's open PR" "$st" 0
+assert_eq "printing the PR number" "$out" "57"
+assert_contains "looking the PR up by the current branch" "$(cat "$filed")" \
+  "pr list --head quick/12-foo --state open --json number"
+assert_contains "commenting on that PR" "$(cat "$filed")" "pr comment 57"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_eq "with the file's contents" "$body_recorded" "$(cat "$body")"
+
+filed="$(mktemp)"
+out="$(prc "$body" 2>/dev/null)"; st=$?
+assert_status "no open PR exits 1" "$st" 1
+assert_eq "printing nothing" "$out" ""
+assert_not_contains "and posts nothing" "$(cat "$filed")" "pr comment"
+
+filed="$(mktemp)"
+err="$(GH_STUB_PR_LIST_EXIT=1 prc "$body" 2>&1 >/dev/null)"; st=$?
+assert_status "a GitHub that cannot be read exits 2" "$st" 2
+[ -n "$err" ] && ok "with a reason on stderr" || bad "with a reason on stderr" "stderr was empty"
+
+filed="$(mktemp)"
+err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' GH_STUB_PR_COMMENT_EXIT=1 prc "$body" 2>&1 >/dev/null)"; st=$?
+assert_status "a failed post exits 2" "$st" 2
+assert_contains "naming the PR" "$err" "#57"
+
+err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc /nonexistent/body.md 2>&1 >/dev/null)"; st=$?
+assert_status "a missing file exits 2" "$st" 2
+assert_contains "naming it" "$err" "/nonexistent/body.md"
+
+err="$(prc 2>&1 >/dev/null)"; st=$?
+assert_status "no file argument exits 2" "$st" 2
+assert_contains "with its usage" "$err" "usage: orch.sh pr comment <file>"
+
+git checkout -q --detach
+err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc "$body" 2>&1 >/dev/null)"; st=$?
+assert_status "a detached HEAD exits 2" "$st" 2
+assert_contains "saying so" "$err" "detached HEAD"
+
+help="$("$ORCH" help)"
+assert_contains "help documents pr comment" "$help" "pr comment <file>"
+
 # --- gh adapter (real pr list, subprocess gh) ---------------------------------
 # pr release just proved its decisions through the in-memory fake - this is
 # the narrow assertion that its list, issue-state and create calls reach a real

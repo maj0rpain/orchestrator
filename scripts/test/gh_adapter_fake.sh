@@ -321,3 +321,20 @@ adapter_pr_list() {
   esac
   if [ -n "$q" ]; then printf '%s' "$json" | jq -r "$q"; else printf '%s\n' "$json"; fi
 }
+
+# adapter_pr_comment - pr comment's post (issue #343): logs "pr comment <n>"
+# plus the flags (fake_record_flags, so the --body-file's contents reach
+# GH_STUB_FILED under body:) when set, and fails on GH_STUB_PR_COMMENT_EXIT.
+adapter_pr_comment() {
+  local n="$1"
+  if [ -n "${GH_STUB_FILED:-}" ]; then
+    printf 'pr comment %s\n' "$n" >>"$GH_STUB_FILED"
+    shift
+    fake_record_flags "$@"
+  fi
+  if [ "${GH_STUB_PR_COMMENT_EXIT:-0}" != 0 ]; then
+    echo "gh stub: pr comment refused" >&2
+    return "$GH_STUB_PR_COMMENT_EXIT"
+  fi
+  return 0
+}

@@ -725,6 +725,11 @@ adapter_pr_close() {
   gh pr close "$@"
 }
 
+# pr comment's post on the current branch's open PR (issue #343).
+adapter_pr_comment() {
+  gh pr comment "$@"
+}
+
 if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
   # shellcheck disable=SC1090
   source "$ORCH_GH_ADAPTER"
@@ -1475,6 +1480,40 @@ cmd_pr_release() {
   note "${url##*/}"
 }
 
+# A stateless post on the current branch's open PR, the PR counterpart of
+# issue comment - for a standalone review pass, which records its declines
+# there. Three outcomes, as ticket exists signals them: 0 posted (printing the
+# PR number), 1 only when the branch has no open PR, and 2 for everything
+# else - GitHub unreadable, a failed post, a usage error, a missing file, a
+# detached HEAD. The exit-2 cases exit explicitly, since die exits 1 and a
+# caller reading 1 would take a failure for "no PR".
+cmd_pr_comment() {
+  if [ $# -ne 1 ]; then
+    printf 'orch: usage: orch.sh pr comment <file>\n' >&2
+    exit 2
+  fi
+  local file="$1" branch open pr
+  if [ ! -f "$file" ]; then
+    printf 'orch: body file not found: %s\n' "$file" >&2
+    exit 2
+  fi
+  if ! branch="$(git symbolic-ref --quiet --short HEAD)"; then
+    printf 'orch: not on a branch (detached HEAD)\n' >&2
+    exit 2
+  fi
+  if ! open="$(adapter_pr_list --head "$branch" --state open --json number --jq '.[].number')"; then
+    printf 'orch: gh could not list the open PRs from %s\n' "$branch" >&2
+    exit 2
+  fi
+  [ -n "$open" ] || return 1
+  pr="$(first_line "$open")"
+  if ! adapter_pr_comment "$pr" --body-file "$file" >/dev/null; then
+    printf 'orch: gh could not comment on PR #%s\n' "$pr" >&2
+    exit 2
+  fi
+  printf '%s\n' "$pr"
+}
+
 cmd_pr() {
   local op="${1:-}"
   shift || true
@@ -1482,7 +1521,8 @@ cmd_pr() {
     open)    cmd_pr_open "$@" ;;
     publish) cmd_pr_publish "$@" ;;
     release) cmd_pr_release "$@" ;;
-    *) die "unknown pr op: ${op:-<none>} (want open|publish|release)" ;;
+    comment) cmd_pr_comment "$@" ;;
+    *) die "unknown pr op: ${op:-<none>} (want open|publish|release|comment)" ;;
   esac
 }
 
@@ -1975,6 +2015,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               it), and with nothing to close unless --force;
                               pushes nothing, records no state; prints the
                               PR number
+  pr comment <file>           post <file> as a comment on the current
+                              branch's open PR, recording no state; prints
+                              the PR number. Exits 1 printing nothing when
+                              the branch has no open PR, 2 when GitHub
+                              cannot be read, the post fails, or the call
+                              is wrong (no file, detached HEAD)
   ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]
                               create a ticket, link it as a sub-issue of
                               <parent>, add a blocking edge for every
