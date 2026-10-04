@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.9.0
+
+- A default `redo spec` now retires the kept issue's ticket breakdown before
+  it steps the flow back, so the redone spec phase breaks the spec down again
+  instead of silently keeping stale tickets (see issue #334). Each old
+  sub-issue is closed as not planned if still open, commented on, and
+  unlinked from the issue; a collapsed `## Ticket` section is cut from the
+  issue body. If GitHub fails while retiring, `redo spec` dies with the phase
+  still `implement`, and a re-run resumes. `--new-issue` is unchanged.
+- New `orch.sh ticket retire <parent>`, which does that retirement. A repeat
+  on an already-retired breakdown changes nothing.
+- `ticket exists` no longer counts a `## Ticket` line inside a code fence as
+  a collapsed breakdown, the same heading `ticket retire` cuts.
+
 ## 2.8.1
 
 - Quick implementation's step 6 no longer restates the review pass's own

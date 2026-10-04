@@ -148,7 +148,8 @@ Redoing back to `implement` is only available once the review loop has reached
 a terminal state, never mid-budget - re-entry already covers "give this change
 more looks," so Redo only has a distinct meaning once the loop is done deciding
 that on its own. Redoing back to `spec` re-reviews the flow's existing issue by
-default, rather than publishing a second one.
+default, rather than publishing a second one, and retires that issue's ticket
+breakdown so the redone spec is broken down again.
 
 ## Budget
 

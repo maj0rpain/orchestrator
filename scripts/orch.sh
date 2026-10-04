@@ -685,9 +685,9 @@ adapter_issue_create() {
   gh issue create "$@"
 }
 
-# cmd_redo_spec's --new-issue path is the one issue-close call this ticket
-# moves; `ticket close` keeps its own direct `gh issue close` (also out of
-# scope).
+# cmd_redo_spec's --new-issue path and `ticket retire` close issues through
+# this primitive; `ticket close` keeps its own direct `gh issue close` (out of
+# scope for issue #92).
 adapter_issue_close() {
   gh issue close "$@"
 }
@@ -1673,8 +1673,9 @@ cmd_ticket_parent() {
 # Whether <parent> already has a ticket breakdown, decided by structure
 # rather than prose (ADR-0028): `sub-issues` when it has at least one,
 # open or closed; `collapsed` when it has none but its body carries a line
-# that is exactly `## Ticket`, the heading a 0-1-ticket collapse appends
-# under; exit 1 and no output when neither. Sub-issues win when both hold.
+# that is exactly `## Ticket` outside a code fence, the heading a
+# 0-1-ticket collapse appends under; exit 1 and no output when neither.
+# Sub-issues win when both hold.
 # A body edited on the web arrives with CRLF line ends, so a trailing CR
 # does not stop the heading's line from matching. A GitHub it cannot read
 # exits 2, never 1: a caller reading 1 as "no breakdown" would publish a
@@ -1695,11 +1696,101 @@ cmd_ticket_exists() {
     printf "orch: gh could not read issue #%s's body\n" "$parent" >&2
     exit 2
   fi
-  if printf '%s\n' "$body" | tr -d '\r' | grep -qxF '## Ticket'; then
+  if printf '%s\n' "$body" | has_ticket_heading; then
     printf 'collapsed\n'
     return 0
   fi
   return 1
+}
+
+# The fixed heading line a collapsed ticket breakdown sits under (ADR-0012).
+TICKET_HEADING='## Ticket'
+
+# True when the body on stdin has a line that is exactly TICKET_HEADING outside
+# a code fence, CRLF ends allowed - the one test `ticket exists` and `ticket
+# retire` share, and the line `strip_ticket_sections` cuts from.
+has_ticket_heading() {
+  awk -v heading="$TICKET_HEADING" '
+    { l = $0; sub(/\r$/, "", l) }
+    !fence && l == heading { found = 1 }
+    l ~ /^(```|~~~)/ { fence = !fence }
+    END { exit !found }
+  '
+}
+
+# The body on stdin with every `## Ticket` section removed - the heading line
+# `ticket exists` detects, outside a code fence, through the line before the
+# next `#` or `##` heading outside a code fence, or the end of the body - and
+# the blank lines a section at the end leaves behind trimmed. Every other
+# line is kept byte for byte, CRLF ends and trailing blank lines included.
+strip_ticket_sections() {
+  awk -v heading="$TICKET_HEADING" '
+    { l = $0; sub(/\r$/, "", l) }
+    skip && !fence && l ~ /^##?([ \t]|$)/ && l != heading { skip = 0 }
+    !fence && l == heading { skip = 1; next }
+    l ~ /^(```|~~~)/ { fence = !fence }
+    skip { next }
+    l == "" { held = held $0 "\n"; next }
+    { printf "%s%s\n", held, $0; held = "" }
+    END { if (!skip) printf "%s", held }
+  '
+}
+
+# Retires <parent>'s ticket breakdown so nothing later picks it up again
+# (issue #334): every sub-issue is closed as not planned if still open,
+# commented on, and unlinked from <parent> - unlinked last, so a run that
+# dies part-way still finds what it has not finished, and a ticket that
+# already carries the retirement comment is not commented on again - and
+# every `## Ticket` section is cut from <parent>'s body. Afterwards `ticket
+# exists <parent>` exits 1. A breakdown already retired has nothing to list
+# and no section to cut, so a repeat writes nothing. Any GitHub failure dies.
+cmd_ticket_retire() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
+  local parent="$1" subs n state child_id comments body stripped msg out
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
+  subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" \
+      --jq '.[] | "\(.number) \(.state)"')" \
+    || die "gh could not list sub-issues of #$parent"
+  msg="This ticket was retired by an orchestrator redo: its spec, #$parent, is being redone and will be broken down into tickets again."
+  while read -r n state; do
+    [ -z "$n" ] && continue
+    if [ "$state" = open ]; then
+      adapter_issue_close "$n" --reason "not planned" --comment "$msg" >/dev/null \
+        || die "gh could not close ticket #$n"
+    else
+      comments="$(adapter_issue_view "$n" --json comments --jq '.comments[].body')" \
+        || die "gh could not read ticket #$n's comments"
+      if ! grep -qF "$msg" <<<"$comments"; then
+        adapter_issue_comment "$n" --body "$msg" >/dev/null \
+          || die "gh could not comment on ticket #$n"
+      fi
+    fi
+    child_id="$(issue_db_id "$n")"
+    gh api --method DELETE "repos/{owner}/{repo}/issues/$parent/sub_issue" \
+        -F sub_issue_id="$child_id" >/dev/null \
+      || die "gh could not unlink ticket #$n from #$parent"
+  done <<<"$subs"
+  # Read into a file, never through $(...), which would drop the body's
+  # trailing newlines: the bytes outside the section go back unchanged, the
+  # same round trip `issue fetch` and `issue update` make.
+  body="$(mktemp)"
+  adapter_issue_view "$parent" --json body --jq .body >"$body" \
+    || { rm -f "$body"; die "gh could not read issue #$parent's body"; }
+  has_ticket_heading <"$body" || { rm -f "$body"; return 0; }
+  stripped="$(mktemp)"
+  strip_ticket_sections <"$body" >"$stripped"
+  # awk ends every line it prints with a newline; a body that had no final
+  # newline gets none back.
+  if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
+    out="$(cat "$stripped"; printf x)"; out="${out%x}"
+    printf '%s' "${out%$'\n'}" >"$stripped"
+  fi
+  # A `## Ticket` line only inside a code fence leaves nothing to cut: no write.
+  if cmp -s "$body" "$stripped"; then rm -f "$body" "$stripped"; return 0; fi
+  rm -f "$body"
+  adapter_issue_edit "$parent" --body-file "$stripped" >/dev/null \
+    || { rm -f "$stripped"; die "gh could not remove the ## Ticket section from #$parent"; }
+  rm -f "$stripped"
 }
 
 cmd_ticket() {
@@ -1712,7 +1803,8 @@ cmd_ticket() {
     reset)   cmd_ticket_reset "$@" ;;
     parent)  cmd_ticket_parent "$@" ;;
     exists)  cmd_ticket_exists "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|close|reset|parent|exists)" ;;
+    retire)  cmd_ticket_retire "$@" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|close|reset|parent|exists|retire)" ;;
   esac
 }
 
@@ -1822,9 +1914,13 @@ cmd_redo_review() {
 }
 
 # The full `implement -> spec` transition. Defaults to keeping the existing
-# spec issue and re-reviewing it as-is - the same path an adopted issue
-# already takes through the spec phase's step 0. Only `--new-issue` closes the
-# old one and clears state.issue, so orch-to-spec runs again from scratch.
+# spec issue and re-reviewing it - the same path an adopted issue already
+# takes through the spec phase's step 0 - and retires that issue's ticket
+# breakdown (`ticket retire`, issue #334) so the redone spec is broken down
+# again. The retire runs first: a GitHub failure there dies with the phase
+# still `implement` and the handoffs in place, so a re-run resumes. Only
+# `--new-issue` closes the old one and clears state.issue, so orch-to-spec
+# runs again from scratch; its tickets are left as they are.
 cmd_redo_spec() {
   require_state
   local phase new_issue=0
@@ -1842,6 +1938,10 @@ cmd_redo_spec() {
     msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from orch-to-spec in this same flow.\n')"
     adapter_issue_close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
     state_write issue null
+  else
+    local kept
+    require_issue kept
+    cmd_ticket_retire "$kept"
   fi
   # The spec handoff - and the implement handoff built on it, if any - are
   # stale once the spec is being redone, so phase advance must not pass on
@@ -2037,9 +2137,14 @@ orch.sh - deterministic operations for the orchestrator flow
   ticket exists <parent>      whether <parent> already has a ticket
                               breakdown: prints sub-issues (it has any, open
                               or closed) or collapsed (none, but its body has
-                              a line that is exactly `## Ticket`); exits 1
-                              printing nothing when neither, 2 when GitHub
-                              cannot be read
+                              a line that is exactly `## Ticket` outside a
+                              code fence); exits 1 printing nothing when
+                              neither, 2 when GitHub cannot be read
+  ticket retire <parent>      retire <parent>'s ticket breakdown: close each
+                              open sub-issue as not planned, comment on every
+                              one, unlink it, and cut every `## Ticket`
+                              section from the body; afterwards ticket exists
+                              exits 1. A repeat changes nothing
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
@@ -2084,7 +2189,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               step the flow back to implement - refuses unless
                               the review loop has reached a terminal state
   redo spec [--new-issue]     step the flow back to spec, keeping the existing
-                              issue by default; --new-issue closes it and
+                              issue by default and retiring its ticket
+                              breakdown (ticket retire) so the redone spec is
+                              broken down again; --new-issue closes it and
                               clears state.issue so orch-to-spec starts fresh;
                               02-spec.md and any 03-implement.md move into
                               handoff/pre-redo-spec-<UTC timestamp>/
