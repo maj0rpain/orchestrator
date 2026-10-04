@@ -1336,35 +1336,103 @@ assert_contains "with the usage" "$out" "usage: orch.sh branch base-sha"
 assert_contains "help documents branch base-sha" "$("$ORCH" help)" "branch base-sha"
 rm -rf "$(dirname "$bare")"
 
-# --- a quick implementation's report directory (#243) --------------------------
-# A quick implementation keeps no state.json and may run where init never did,
-# so quick path needs neither and git-excludes .orchestrator/ itself.
+# --- review-pass begin (#342) --------------------------------------------------
+# A review pass's start: the guard and the numbered report prefix each have one
+# right answer, so they live here. Needs no flow state, may run where init never
+# did, and never wipes: a second pass on a branch never overwrites the first.
 echo
-echo "a quick implementation's report directory (#243)"
+echo "review-pass begin (#342)"
 new_repo >/dev/null
 top="$(git rev-parse --show-toplevel)"
+git config orchestrator.base trunk
+git checkout -q -b trunk
 git checkout -q -b quick/12-foo
-out="$("$ORCH" quick path 2>&1)"; st=$?
-assert_status "quick path with no flow state succeeds" "$st" 0
-assert_eq "prints the branch's directory under .orchestrator/quick/, name used whole" \
-  "$out" "$top/.orchestrator/quick/quick/12-foo/"
-assert_eq "creates it" "$([ -d "$top/.orchestrator/quick/quick/12-foo" ] && echo yes || echo no)" "yes"
-assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+rp_dir="$top/.orchestrator/review-pass/quick/12-foo"
+out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
+assert_status "with no state file it proceeds" "$st" 0
+assert_eq "printing the absolute iteration-01 prefix, the slashed branch as nested directories" \
+  "$out" "$rp_dir/iteration-01"
+assert_eq "creating the branch's directory" "$([ -d "$rp_dir" ] && echo yes || echo no)" "yes"
+assert_eq "records no state" "$([ -f "$top/.orchestrator/state.json" ] && echo yes || echo no)" "no"
 assert_contains "git-excludes .orchestrator/" "$(cat "$(git rev-parse --git-dir)/info/exclude")" ".orchestrator/"
 assert_eq "and leaves the working tree clean" "$(git status --porcelain)" ""
-touch "$top/.orchestrator/quick/quick/12-foo/iteration-01-spec.md"
-out="$("$ORCH" quick path 2>&1)"; st=$?
-assert_status "a second call succeeds" "$st" 0
-assert_eq "and keeps what is already there" \
-  "$([ -f "$top/.orchestrator/quick/quick/12-foo/iteration-01-spec.md" ] && echo yes || echo no)" "yes"
-assert_eq "without excluding twice" "$(grep -cxF '.orchestrator/' "$(git rev-parse --git-dir)/info/exclude")" "1"
-out="$("$ORCH" quick path extra 2>&1)"; st=$?
-assert_status "refuses arguments" "$st" 1
-assert_contains "with the usage" "$out" "usage: orch.sh quick path"
+echo first >"$rp_dir/iteration-01-spec.md"
+out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
+assert_status "a second pass succeeds" "$st" 0
+assert_eq "numbered iteration-02 once a report for 01 exists" "$out" "$rp_dir/iteration-02"
+assert_eq "leaving the 01 report in place" "$(cat "$rp_dir/iteration-01-spec.md" 2>&1)" "first"
+echo third >"$rp_dir/iteration-03-standards.md"
+echo stray >"$rp_dir/iteration-09.md"
+echo stray >"$rp_dir/notes-11-x.md"
+out="$("$ORCH" review-pass begin 12 2>&1)"
+assert_eq "one past the highest number, over a gap, ignoring stray files" "$out" "$rp_dir/iteration-04"
+
+rp_state="$top/.orchestrator/state.json"
+rp_flow() { printf '{"slug":"x","phase":"%s","issue":%s,"branch":%s}\n' "$1" "$2" "$3" >"$rp_state"; }
+rp_next="/orchestrator:next (or orch-flow's Next phase section)"
+for p in implement review; do
+  rp_flow "$p" 12 '"orch/12-x"'
+  before="$(cksum <"$rp_state")"
+  out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
+  assert_status "an active flow holding the issue at $p refuses it" "$st" 1
+  assert_eq "naming the next command at $p" "$out" \
+    "orch: the active flow holds issue #12 at phase $p - this change belongs to that flow's review loop; run $rp_next"
+  assert_eq "state.json byte-identical at $p" "$(cksum <"$rp_state")" "$before"
+done
+rp_flow review 30 '"quick/12-foo"'
+out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
+assert_status "an active flow holding the current branch under another issue refuses it" "$st" 1
+assert_eq "naming the flow's own issue" "$out" \
+  "orch: the active flow holds issue #30 at phase review - this change belongs to that flow's review loop; run $rp_next"
+rp_flow spec 12 null
+before="$(cksum <"$rp_state")"
+out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
+assert_status "a flow at spec holding the issue refuses it" "$st" 1
+assert_eq "with the spec-phase message" "$out" \
+  "orch: the active flow holds issue #12 at phase spec - its change has not been built yet; run $rp_next"
+assert_eq "state.json byte-identical at spec" "$(cksum <"$rp_state")" "$before"
+rp_flow bogus 12 null
+out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
+assert_status "a phase outside PHASES refuses it" "$st" 1
+assert_eq "pointing at doctor --flow" "$out" \
+  "orch: the active flow holds issue #12 at phase 'bogus', which is not a flow phase - refusing to review it; run orch.sh doctor --flow"
+rp_flow done 12 '"quick/12-foo"'
+before="$(cksum <"$rp_state")"
+out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
+assert_status "a done flow holding the issue and branch is allowed" "$st" 0
+assert_eq "printing the next prefix" "$out" "$rp_dir/iteration-04"
+assert_eq "state.json byte-identical after begin" "$(cksum <"$rp_state")" "$before"
+rp_flow implement 14 '"orch/14-x"'
+out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
+assert_status "an active flow on another issue and branch lets it through" "$st" 0
+rm -f "$rp_state"
+
+for args in "" "abc" "12x" "../12" "12 13"; do
+  # shellcheck disable=SC2086 # word splitting is the point: "12 13" is two args
+  out="$("$ORCH" review-pass begin $args 2>&1)"; st=$?
+  assert_status "refuses begin '$args'" "$st" 1
+done
+out="$("$ORCH" review-pass begin 2>&1)"
+assert_contains "a missing number gets the usage" "$out" "usage: orch.sh review-pass begin <issue>"
+out="$("$ORCH" review-pass begin abc 2>&1)"
+assert_contains "a non-numeric issue is named" "$out" "issue must be a plain issue number"
+out="$("$ORCH" review-pass wipe 12 2>&1)"; st=$?
+assert_status "refuses an op it does not have" "$st" 1
+assert_contains "naming the one it does" "$out" "want begin"
+git checkout -q trunk
+out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
+assert_status "refuses the base branch" "$st" 1
+assert_contains "saying so" "$out" "is the base branch"
 git checkout -q --detach
-out="$("$ORCH" quick path 2>&1)"; st=$?
+out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
 assert_status "refuses a detached HEAD" "$st" 1
-assert_contains "help documents quick path" "$("$ORCH" help)" "quick path"
+assert_contains "saying so" "$out" "not on a branch (detached HEAD)"
+out="$("$ORCH" quick path 2>&1)"; st=$?
+assert_status "quick path is gone" "$st" 1
+assert_contains "as an unknown command" "$out" "unknown command: quick"
+help="$("$ORCH" help)"
+assert_contains "help documents review-pass begin" "$help" "review-pass begin <issue>"
+assert_not_contains "help no longer mentions quick path" "$help" "quick path"
 
 # --- branch retire ------------------------------------------------------------
 # The rename-aside a redo uses instead of deleting or force-pushing over a
@@ -2490,8 +2558,8 @@ assert_contains "with the exact require_branch die message" "$out" \
 # --- pr publish --------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
 # `gh pr create` in skill prose - stateless like branch off and issue publish,
-# and not a draft like pr open is, since a quick implementation's single-pass
-# review already ran before this is called.
+# and not a draft like pr open is, since a quick implementation's review pass
+# already ran before this is called.
 echo
 echo "pr publish"
 new_repo >/dev/null
@@ -2647,6 +2715,60 @@ assert_status "refuses a missing body file argument" "$st" 1
 assert_contains "with its usage" "$out" "pr release [--force] <title> <body-file>"
 base_cmd base clear >/dev/null
 rm -rf "$(dirname "$bare")"
+
+# --- pr comment (#343) ----------------------------------------------------------
+# A stateless post on the current branch's open PR, so a standalone review pass
+# records its declines without calling gh itself. Three outcomes, like ticket
+# exists: 0 posted (printing the PR), 1 only for no open PR, 2 for the rest.
+echo
+echo "pr comment (#343)"
+new_repo >/dev/null
+git checkout -q -b quick/12-foo
+body="$(mktemp)"
+writeln '## Review' '' '- `a.sh:3` - declined: out of scope.' >"$body"
+prc() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" pr comment "$@"; }
+
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc "$body" 2>&1)"; st=$?
+assert_status "posts on the branch's open PR" "$st" 0
+assert_eq "printing the PR number" "$out" "57"
+assert_contains "looking the PR up by the current branch" "$(cat "$filed")" \
+  "pr list --head quick/12-foo --state open --json number"
+assert_contains "commenting on that PR" "$(cat "$filed")" "pr comment 57"
+body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_eq "with the file's contents" "$body_recorded" "$(cat "$body")"
+
+filed="$(mktemp)"
+out="$(prc "$body" 2>/dev/null)"; st=$?
+assert_status "no open PR exits 1" "$st" 1
+assert_eq "printing nothing" "$out" ""
+assert_not_contains "and posts nothing" "$(cat "$filed")" "pr comment"
+
+filed="$(mktemp)"
+err="$(GH_STUB_PR_LIST_EXIT=1 prc "$body" 2>&1 >/dev/null)"; st=$?
+assert_status "a GitHub that cannot be read exits 2" "$st" 2
+[ -n "$err" ] && ok "with a reason on stderr" || bad "with a reason on stderr" "stderr was empty"
+
+filed="$(mktemp)"
+err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' GH_STUB_PR_COMMENT_EXIT=1 prc "$body" 2>&1 >/dev/null)"; st=$?
+assert_status "a failed post exits 2" "$st" 2
+assert_contains "naming the PR" "$err" "#57"
+
+err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc /nonexistent/body.md 2>&1 >/dev/null)"; st=$?
+assert_status "a missing file exits 2" "$st" 2
+assert_contains "naming it" "$err" "/nonexistent/body.md"
+
+err="$(prc 2>&1 >/dev/null)"; st=$?
+assert_status "no file argument exits 2" "$st" 2
+assert_contains "with its usage" "$err" "usage: orch.sh pr comment <file>"
+
+git checkout -q --detach
+err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc "$body" 2>&1 >/dev/null)"; st=$?
+assert_status "a detached HEAD exits 2" "$st" 2
+assert_contains "saying so" "$err" "detached HEAD"
+
+help="$("$ORCH" help)"
+assert_contains "help documents pr comment" "$help" "pr comment <file>"
 
 # --- gh adapter (real pr list, subprocess gh) ---------------------------------
 # pr release just proved its decisions through the in-memory fake - this is

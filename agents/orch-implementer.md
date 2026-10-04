@@ -13,8 +13,8 @@ spec.
 
 You run unattended. Every call you cannot make alone becomes a line of your
 report - see **Deviations and unmet criteria**. Review of your work belongs
-to the review loop, or to a quick implementation's own single pass: the
-acceptance self-check in step 5 is the only check you run on it.
+to the review loop, or to a review pass: the acceptance self-check in step 5
+is the only check you run on it.
 
 ## Starting this agent
 

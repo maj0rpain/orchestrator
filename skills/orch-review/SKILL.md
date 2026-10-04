@@ -1,6 +1,6 @@
 ---
 name: orch-review
-description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing every blocking finding plus the majors and mechanical nits that need no decision, filing the rest as issues at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop.
+description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing every blocking finding plus the majors and mechanical nits that need no decision, filing the rest as issues at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop. Also holds the review pass, one look by the same two reviewers with no loop around it: run by orch-quick-implement before its PR opens, and standalone, outside any flow, when a human asks for a review of the current branch against a given issue or runs /orchestrator:review <issue>.
 ---
 
 # Orchestrator review loop
@@ -30,6 +30,9 @@ whole loop - see `docs/adr/0001-review-loop-runs-in-a-single-session.md`,
 for why the driver hands off the fixing and filing, and
 `docs/adr/0018-the-review-loop-owns-its-reviewer-briefs.md` for why the loop
 starts its own reviewers.
+
+The same two reviewers also run once with no loop around them, as a **review
+pass** - see **Review pass**, the one definition of it.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -394,3 +397,99 @@ has actually been decided - never guessed or backfilled. It is what
 `bash "$ORCH" redo review` and `doctor --flow` both read, through the same
 `review_terminal_state` classifier, to tell a loop that genuinely finished
 from one whose driving session simply died mid-budget.
+
+## Review pass
+
+One look at a change by the two reviewers above, with no loop around it: no
+budget, no severity, no fixer, no closer, nothing filed. A quick
+implementation runs one before its PR opens (the `orch-quick-implement`
+skill's step 6), and a human may run one on demand (see **Standalone review
+pass**). Nothing else in this skill applies to a pass. The loop's
+rule that the driver never edits does not apply either, because a review pass
+has no driver: the session that runs it fixes what it agrees with itself.
+
+The caller names the spec issue and says where the declines and host
+fallbacks go.
+
+1. **Begin.** Run `bash "$ORCH" review-pass begin <issue>`. If it dies,
+   relay its message and stop. It refuses a detached HEAD, the base branch,
+   and an issue or branch that an active flow holds: that change belongs to
+   that flow, never to a review pass. Otherwise it prints this pass's report
+   prefix, `.../iteration-NN`, and `NN` is this pass's number. Each pass on
+   a branch takes the next number, so a second pass never overwrites the
+   first.
+2. **Base SHA.** Run `bash "$ORCH" branch base-sha`. That is the base
+   branch's tip that `branch off` recorded, or, on a branch made without it,
+   the merge-base with its base branch.
+3. **Start both reviewers** - `orch-reviewer-standards` and
+   `orch-reviewer-spec` - at once, as fresh agents, never forks, both in one
+   message (see **Starting an agent** for how to start one and which
+   fallback a host takes; its rule for recording that fallback is the
+   loop's, and a pass records it where its caller says). Each prompt
+   carries these four
+   variables and nothing else - no issue body, no diff, no brief:
+
+   ```
+   Base SHA: <base SHA>
+   Spec issue: #<issue>
+   Iteration: <NN>
+   Report path: <prefix>-<standards|spec>.md
+   ```
+
+4. **A failed review.** A missing report, or one that says the base SHA did
+   not resolve or the diff was empty, is a failed review, not a clean one.
+   Start that reviewer again once. If it fails a second time, stop the pass
+   and tell the human which axis failed. A pass never claims an axis nobody
+   looked along.
+5. **Fix.** Read both reports, and fix, yourself, every finding you agree
+   with. Use no fixer agent, no closer, no severity, no budget, and file
+   nothing. Commit the fixes as one commit.
+6. **Declines.** Record each finding you decline, one line each: its
+   `file:line` - or `-` when the report gave `-` for its location - and your
+   reason for declining it. If you declined none, the record says
+   `None declined.` The caller says where this record goes.
+
+A host that cannot start the reviewers natively takes
+`docs/host-capabilities.md`'s **Start a fresh subagent** fallback, with the
+prompt above. Record each fallback where the caller puts host fallbacks.
+
+## Standalone review pass
+
+A human may ask for a review pass on demand - `/orchestrator:review <issue>`,
+or in plain words - after a quick implementation, say, or on any branch. It
+reviews the branch they are on, from its base SHA, with the given issue as the
+spec. It is **Review pass** above with the differences below, never a review
+loop: no budget, and nothing filed. See
+`docs/adr/0029-a-review-on-demand-is-a-review-pass-not-a-loop.md`.
+
+The issue number comes from the human: the command's argument, or the issue
+they named. With no number, ask for one and wait. Never take it from
+`state.json` or the active flow.
+
+1. **Begin.** Run `bash "$ORCH" review-pass begin <issue>`. If it dies, relay
+   its message and stop - when an active flow holds this issue or this
+   branch, the message names the command to run instead. Its output is the
+   report prefix, `<prefix>` from here on.
+2. **Base SHA.** Run `bash "$ORCH" branch base-sha`.
+3. **Run the pass**: **Review pass** steps 3 to 6, with that prefix, its
+   `NN` and that base SHA. Its declines and host fallbacks go to step 5
+   below.
+4. **Commit and push.** The fixes are one commit, as the pass says. When the
+   branch has an upstream (`git rev-parse --abbrev-ref @{upstream}`
+   succeeds), push it, so an open PR shows the fixes. With no fixes there is
+   nothing to commit or push.
+5. **Report.** Write `<prefix>-comment.md` with two headings, **Review** -
+   the declines, or `None declined.` - and **Host fallbacks** - each fallback
+   taken, or `None (<host>).` Then run
+   `bash "$ORCH" pr comment <prefix>-comment.md`:
+   - exit 0: the comment is posted; tell the human, with the PR number it
+     printed;
+   - exit 1: the branch has no open PR; report the declines and host
+     fallbacks in the session instead;
+   - exit 2: GitHub could not be read, or the post failed; stop and say so,
+     relaying its reason. Never report this as nothing declined.
+
+A standalone review pass does not lift the planning edit guard (ADR-0006,
+ADR-0025). In a session where planning ran and neither a flow nor a quick
+implementation lifted it, the pass's first edit is denied: stop, and tell the
+human to run the review pass in a fresh session.

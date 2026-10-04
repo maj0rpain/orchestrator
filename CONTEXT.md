@@ -40,9 +40,8 @@ Chosen once, by a human, at the close of a planning session - never assumed by
 the model. Skips the plan/spec/implement/review pipeline entirely: no phases,
 no handoff, no `.orchestrator/state.json`. Still produces its own branch and
 PR, and is still held to this project's standards for how a change gets made -
-test-driven, reviewed, then opened as a PR. Its review is one pass by the same
-two reviewers a review loop starts, with no loop around them: the quick
-session fixes what it agrees with and names what it declines in the PR. It
+test-driven, reviewed, then opened as a PR. Its review is a review pass, and
+it names what it declines in the PR. It
 offers a spec review of its linked issue before its ticket breakdown - the
 human's choice, asked on every run - and skips that breakdown when the linked
 issue is a blueprint.
@@ -83,10 +82,10 @@ rather than split out beneath it.
 The fresh, non-fork agent that builds exactly one ticket of a ticket
 breakdown, test-first, and checks its own work against that ticket's
 acceptance criteria before reporting. It never reviews its work beyond that
-check: review belongs to the review loop, or to quick implementation's single
-pass. It reports back structurally instead of blocking on a human; a
-criterion it cannot meet alone is reported as unmet, for the review loop's
-Spec axis to judge. Used in the implement phase and in quick implementation.
+check: review belongs to the review loop, or to a review pass. It reports back
+structurally instead of blocking on a human; a criterion it cannot meet alone
+is reported as unmet, for the review loop's Spec axis to judge. Used in the
+implement phase and in quick implementation.
 
 ## Phase
 
@@ -125,6 +124,18 @@ one iteration numbering, and only a human decides that a further loop happens.
 That further-loop decision is re-entry, not Redo: re-entry reviews the same
 accepted change for more looks, Redo disowns it.
 
+## Review pass
+
+One look at a change by the two reviewers a review loop starts, with no loop
+around it: no budget, no severity, nothing filed. The session that starts it
+fixes the findings it agrees with and records each one it declines, with its
+reason. A quick implementation takes one before its PR opens. A human may also
+ask for one on demand, against an issue and the branch they are on - after a
+quick implementation, say - which is a standalone review pass. Another look is
+another review pass. A branch or issue an active flow holds belongs to that
+flow, never to a review pass.
+_Avoid_: single pass, quick review
+
 ## Redo
 
 A deliberate step back to re-run a phase whose output was wrong - never the
@@ -151,8 +162,8 @@ at the same change, and the value of the loop is in the number of looks.
 One pass within a review loop: review the change, triage what came back, fix
 what the loop fixes, verify. Iterations are numbered from 1 and run on across a
 flow's loops; a flow that has run none sits at 0. A loop runs as many as its
-budget allows. A quick implementation's single pass labels its reviewer
-prompts iteration `01`; it is not part of a loop.
+budget allows. A review pass labels its reviewer prompts with its own pass
+number, counted from `01` on each branch; it is not part of a loop.
 
 ## Clean iteration
 
@@ -181,9 +192,8 @@ session, and records that as a host fallback.
 A fresh agent a review loop's driver starts for one axis - Standards or Spec -
 in one iteration. It reviews the whole change from the base SHA, never from
 the previous iteration's HEAD, and writes its findings, unranked, to a report
-file. Two reviewers run every iteration, one per axis. A quick
-implementation's single pass starts the same two reviewers once, outside any
-loop.
+file. Two reviewers run every iteration, one per axis. A review pass starts
+the same two reviewers once, outside any loop.
 _Avoid_: spec review (for the Spec-axis reviewer or its report).
 
 ## Open blocking
@@ -263,12 +273,12 @@ any other.
 
 ## Finding
 
-One problem a review reports - about the change, from the review phase or
-quick implementation's single pass, or about the spec, from a spec review.
+One problem a review reports - about the change, from the review phase or a
+review pass, or about the spec, from a spec review.
 Only a finding about the change from the review phase carries a **severity**,
 which the review phase assigns; the reviewer itself reports findings unranked.
-A finding from quick implementation's single pass carries none: the quick
-session fixes it or declines it in the PR. A finding about the spec carries no
+A finding from a review pass carries none: the session that ran the pass
+fixes it or declines it. A finding about the spec carries no
 severity: a human accepts or declines the edit it proposes, and it is never
 filed.
 
@@ -378,9 +388,11 @@ What a skill does instead when its host lacks a capability, or cannot use it
 for the step at hand (a Junie CLI capability filter hiding one of the
 plugin's agents, say), as documented in
 `docs/host-capabilities.md`. Every fallback a phase takes is recorded under
-**Host fallbacks** in its handoff, and a quick implementation records its
+**Host fallbacks** in its handoff; a quick implementation records its
 fallbacks, including any taken during its spec review, under its PR body's
-**Host fallbacks**, so a reduced run is never mistaken for a full one.
+**Host fallbacks**; and a standalone review pass records them in its PR
+comment, or reports them in the session when the branch has no PR - so a
+reduced run is never mistaken for a full one.
 
 ## Planning allowlist
 

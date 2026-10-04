@@ -1,5 +1,9 @@
 # Quick implementation reviews with the plugin's reviewer agents
 
+Superseded in part by ADR-0029: the single pass is now the review pass,
+defined once in `orch-review`; its reviewer prompts take their iteration and
+report path from `review-pass begin`, not iteration `01` and `quick path`.
+
 Supersedes ADR-0018's note, added alongside ADR-0019, that quick
 implementation's single pass still uses `code-review`. After this, nothing in
 the plugin invokes `mattpocock-skills:code-review`.

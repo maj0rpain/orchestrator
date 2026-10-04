@@ -1,6 +1,6 @@
 ---
 name: orch-reviewer-spec
-description: The Spec axis of one orchestrator review pass - checks whether the whole change since a base SHA implements what the spec issue asked for, writes its findings unranked to a report file, and returns one line. Started only by the orch-review skill's driver, or by the orch-quick-implement skill's single pass, with a base SHA, a spec issue, an iteration, and a report path.
+description: The Spec axis of one orchestrator review - an iteration of a review loop, or a review pass - checks whether the whole change since a base SHA implements what the spec issue asked for, writes its findings unranked to a report file, and returns one line. Started only by the orch-review skill's driver, or by a review pass, with a base SHA, a spec issue, an iteration, and a report path.
 tools: [Read, Grep, Glob, Bash]
 ---
 
