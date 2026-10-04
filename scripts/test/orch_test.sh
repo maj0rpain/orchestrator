@@ -20,6 +20,12 @@ SKIP=0
 # a Claude Code or Junie session. Each test names its host.
 unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT JUNIE_SHIM_PATH
 
+# The environment the suite started with. healthy_repo exports HOME and
+# CLAUDE_PLUGIN_ROOT and puts stub_gh on PATH, so a section that calls it puts
+# these back before it ends, leaving the next section the environment it had.
+SUITE_HOME="$HOME"
+SUITE_PATH="$PATH"
+
 ok()   { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
 bad()  { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 skip() { printf '  skip %s\n     %s\n' "$1" "$2"; SKIP=$((SKIP + 1)); }
@@ -719,7 +725,6 @@ assert_contains "names the flag it rejected" "$out" "--bogus"
 # those edits get caught. Only the planning allowlist may be dirty.
 echo
 echo "init refuses a dirty working tree"
-flow_repo="$PWD"
 new_repo >/dev/null
 echo "code" >stray.sh
 out="$("$ORCH" init dirty 2>&1)"; st=$?
@@ -805,7 +810,6 @@ mkdir -p sub
 out="$(cd sub && "$ORCH" init clean-enough 2>&1)"; st=$?
 assert_status "starts with only allowlisted changes, even from a subdirectory" "$st" 0
 assert_eq "records the flow" "$("$ORCH" state get slug)" "clean-enough"
-cd "$flow_repo" || exit 1
 
 # --- slug -------------------------------------------------------------------
 # The same normalisation init applies to its own slug argument, exposed as a
@@ -813,6 +817,7 @@ cd "$flow_repo" || exit 1
 # algorithm as prose.
 echo
 echo "slug"
+new_repo >/dev/null
 assert_eq "matches init's own normalisation" "$("$ORCH" slug "My Feature!!")" "my-feature"
 out="$("$ORCH" slug "!!!" 2>&1)"; st=$?
 assert_status "refuses a slug empty after normalisation" "$st" 1
@@ -823,6 +828,8 @@ assert_status "refuses no argument at all" "$st" 1
 # --- state ------------------------------------------------------------------
 echo
 echo "state"
+new_repo >/dev/null
+"$ORCH" init state >/dev/null
 assert_eq "round-trips a string value" \
   "$("$ORCH" state set budget unbounded; "$ORCH" state get budget)" "unbounded"
 "$ORCH" state set budget 3
@@ -855,6 +862,8 @@ assert_eq "accepts an explicit null" "$("$ORCH" state get | jq -r '.issue | type
 # --- handoff path -----------------------------------------------------------
 echo
 echo "handoff path"
+new_repo >/dev/null
+"$ORCH" init handoff-path >/dev/null
 assert_contains "spec phase reads the plan handoff"      "$("$ORCH" handoff path spec)"      "01-plan.md"
 assert_contains "implement phase reads the spec handoff" "$("$ORCH" handoff path implement)" "02-spec.md"
 assert_contains "review phase reads the implement handoff" "$("$ORCH" handoff path review)"  "03-implement.md"
@@ -869,6 +878,8 @@ assert_eq "and prints no path for a caller to use" "$out" ""
 # --- handoff validate -------------------------------------------------------
 echo
 echo "handoff validate"
+new_repo >/dev/null
+"$ORCH" init handoff-validate >/dev/null
 h="$("$ORCH" handoff path spec)"
 complete_plan_handoff "$h"
 out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
@@ -930,6 +941,10 @@ complete_plan_handoff "$h"
 # section's body and nothing of its neighbours.
 echo
 echo "handoff section"
+new_repo >/dev/null
+"$ORCH" init handoff-section >/dev/null
+h="$("$ORCH" handoff path spec)"
+complete_plan_handoff "$h"
 out="$("$ORCH" handoff section "$h" "Rejected alternatives" 2>&1)"; st=$?
 assert_status "prints a named section" "$st" 0
 assert_eq "prints only that section's body" "$out" "Y, because Z."
@@ -1000,6 +1015,8 @@ rm -f "$hs" "$hi"
 # anything less sends implement's `ticket next` query against nothing.
 echo
 echo "ticket breakdown handoff"
+new_repo >/dev/null
+"$ORCH" init ticket-breakdown >/dev/null
 h2="$("$ORCH" handoff path implement)"
 writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
         '## Spec review changelog' 'Not reviewed.' >"$h2"
@@ -1063,6 +1080,9 @@ rm -rf "$tpl_repo"
 # --- archive ----------------------------------------------------------------
 echo
 echo "archive"
+new_repo >/dev/null
+"$ORCH" init my-feature >/dev/null
+h="$("$ORCH" handoff path spec)"
 complete_plan_handoff "$h"
 dest="$("$ORCH" archive)"
 assert_contains "archive path carries the slug" "$dest" "my-feature"
@@ -1629,6 +1649,7 @@ assert_status "refuses with the wrong number of arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 
 # --- branch: unknown op -------------------------------------------------------
+new_repo >/dev/null
 out="$("$ORCH" branch bogus 2>&1)"; st=$?
 assert_status "branch bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
@@ -1673,6 +1694,7 @@ out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_ISSUE_EXIT=1 "$ORCH" issue pub
 assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- issue publish verify-then-die -------------------------------------------
 # The spec a flow or a quick implementation works from gets the guarantee
@@ -1683,6 +1705,10 @@ assert_eq "with no number printed for a record to cite" \
 # for good.
 echo
 echo "issue publish verify-then-die"
+healthy_repo
+filed="$(mktemp)"
+body="$(mktemp)"
+writeln 'The shared understanding, written up.' >"$body"
 publish() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" issue publish "$@"; }
 
 : >"$filed"
@@ -1731,11 +1757,13 @@ assert_contains "naming the issue" "$out" "issue #12"
 out="$(GH_STUB_ISSUE_NUMBER=13 GH_STUB_READBACK_LABELS="$(printf 'bug\nready-for-agent')" \
   publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "extra labels beside ready-for-agent still verify" "$st" 0
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- mp-skill ---------------------------------------------------------------
 # The plugin reads no upstream skill any more (ADR-0028), so the resolver is gone.
 echo
 echo "mp-skill"
+new_repo >/dev/null
 out="$("$ORCH" mp-skill to-spec 2>&1)"; st=$?
 assert_status "mp-skill is an unknown command" "$st" 1
 assert_contains "and says so" "$out" "unknown command: mp-skill"
@@ -1794,6 +1822,7 @@ assert_eq "no flow is left active after a malformed --issue" \
 healthy_repo
 out="$("$ORCH" init 2>&1)"; st=$?
 assert_status "adoption does not change that a slug is still required" "$st" 1
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- init archives a done flow -----------------------------------------------
 # issue #13: a "done" flow already succeeded - nothing downstream reads its
@@ -1859,6 +1888,7 @@ assert_eq "the archived state still carries the old slug" \
   "$(jq -r .slug "$archived/state.json")" "willsucceed"
 assert_eq "the new flow's state records the newly adopted issue, not the old one" \
   "$("$ORCH" state get issue)" "42"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- doctor -----------------------------------------------------------------
 # The two commands doctor replaces both returned success on the failures that
