@@ -66,6 +66,7 @@ adapter_issue_view() {
   local a
   for a in "$@"; do
     case "$a" in
+      title,labels) fake_readback; return 0 ;;
       state|state,url)
         case " ${GH_STUB_PR_NUMBERS:-} " in
           *" $1 "*) [ "$a" = state,url ] && { printf 'PULL\n'; return 0; } ;;
@@ -107,17 +108,43 @@ fake_issue_write() {
 adapter_issue_edit()    { fake_issue_write edit "$@"; }
 adapter_issue_comment() { fake_issue_write comment "$@"; }
 
+# issue publish's readback: the title on the first line, then one line per
+# label - by default exactly what the last adapter_issue_create in this
+# process was given, kept in GH_FAKE_DIR because creation runs in a command
+# substitution whose variables never reach the parent. GH_STUB_READBACK_MISS
+# answers stale (an empty title, no labels) for that many calls first, the
+# lag verify-then-die's retry exists to survive; GH_STUB_READBACK_TITLE and
+# GH_STUB_READBACK_LABELS (newline-separated) override the answer for good.
+GH_FAKE_DIR="$(mktemp -d)"
+fake_readback() {
+  local rf="$GH_FAKE_DIR/readback_miss_remaining" remaining labels
+  remaining="$(cat "$rf" 2>/dev/null)"; [ -n "$remaining" ] || remaining="${GH_STUB_READBACK_MISS:-0}"
+  if [ "$remaining" -gt 0 ]; then echo $((remaining - 1)) >"$rf"; printf '\n'; return 0; fi
+  printf '%s\n' "${GH_STUB_READBACK_TITLE-$(cat "$GH_FAKE_DIR/created_title" 2>/dev/null)}"
+  labels="${GH_STUB_READBACK_LABELS-$(cat "$GH_FAKE_DIR/created_labels" 2>/dev/null)}"
+  if [ -n "$labels" ]; then printf '%s\n' "$labels"; fi
+}
+
 # adapter_issue_create - mirrors stub_gh's `issue create` branch: records the
 # flags (fake_record_flags) to GH_STUB_FILED when set, fails on
 # GH_STUB_ISSUE_EXIT, otherwise answers a fake issue URL numbered
 # GH_STUB_ISSUE_NUMBER (default 42) - the same shape review file/issue publish
-# already parse the trailing number out of.
+# already parse the trailing number out of. Remembers its title and labels
+# for fake_readback above.
 adapter_issue_create() {
   if [ -n "${GH_STUB_FILED:-}" ]; then fake_record_flags "$@"; fi
   if [ "${GH_STUB_ISSUE_EXIT:-0}" != 0 ]; then
     echo "gh stub: issue create refused" >&2
     return "$GH_STUB_ISSUE_EXIT"
   fi
+  : >"$GH_FAKE_DIR/created_labels"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --title) printf '%s\n' "$2" >"$GH_FAKE_DIR/created_title"; shift ;;
+      --label) printf '%s\n' "$2" >>"$GH_FAKE_DIR/created_labels"; shift ;;
+    esac
+    shift
+  done
   printf 'https://github.com/acme/widgets/issues/%s\n' "${GH_STUB_ISSUE_NUMBER:-42}"
   return 0
 }

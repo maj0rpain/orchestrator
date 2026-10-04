@@ -1563,6 +1563,64 @@ assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
+# --- issue publish verify-then-die -------------------------------------------
+# The spec a flow or a quick implementation works from gets the guarantee
+# ticket publish gives its tickets: created under the ready-for-agent role's
+# label, then read back - title and labels - with one retry on a mismatch and
+# a death naming the issue on the second. GH_STUB_READBACK_MISS makes the
+# readback stale for N calls; GH_STUB_READBACK_TITLE/_LABELS make it wrong
+# for good.
+echo
+echo "issue publish verify-then-die"
+publish() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" issue publish "$@"; }
+
+: >"$filed"
+out="$(GH_STUB_ISSUE_NUMBER=8 publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "publishes with the canonical labels" "$st" 0
+assert_eq "printing the issue number and nothing else" "$out" "8"
+assert_contains "applies ready-for-agent" "$(cat "$filed")" "label=ready-for-agent"
+
+: >"$filed"
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `needs-triage`       | Evaluate it |' \
+        '| `ready-for-agent`          | `agent go`           | AFK-ready   |' >docs/agents/triage-labels.md
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "publishes under a renamed ready-for-agent label" "$st" 0
+assert_contains "applying the repo's name for it" "$(cat "$filed")" "label=agent go"
+assert_eq "rather than the canonical one" "$(grep -c 'ready-for-agent' "$filed")" "0"
+
+: >"$filed"
+rm docs/agents/triage-labels.md
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "publishes with no labels doc at all" "$st" 0
+assert_contains "applying the canonical ready-for-agent name" "$(cat "$filed")" "label=ready-for-agent"
+labels_doc docs/agents/triage-labels.md
+
+out="$(GH_STUB_ISSUE_NUMBER=9 GH_STUB_READBACK_MISS=1 publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a readback that is stale once, then right, succeeds" "$st" 0
+assert_eq "printing the issue number" "$out" "9"
+
+out="$(GH_STUB_ISSUE_NUMBER=10 GH_STUB_READBACK_MISS=2 publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a readback stale twice dies" "$st" 1
+assert_contains "naming the issue" "$out" "issue #10"
+assert_contains "saying it did not verify" "$out" "did not verify"
+assert_eq "with no number printed for a record to cite" \
+  "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
+
+out="$(GH_STUB_ISSUE_NUMBER=11 GH_STUB_READBACK_TITLE="Something else" publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a title that reads back wrong fails verification" "$st" 1
+assert_contains "naming the issue" "$out" "issue #11"
+
+out="$(GH_STUB_ISSUE_NUMBER=12 GH_STUB_READBACK_LABELS="needs-triage" publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a label set missing ready-for-agent fails verification" "$st" 1
+assert_contains "naming the issue" "$out" "issue #12"
+
+out="$(GH_STUB_ISSUE_NUMBER=13 GH_STUB_READBACK_LABELS="$(printf 'bug\nready-for-agent')" \
+  publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "extra labels beside ready-for-agent still verify" "$st" 0
+
 # --- mp-skill ---------------------------------------------------------------
 # Resolved by glob at runtime, never by pinned version: the version in the cache
 # path changes underneath us.

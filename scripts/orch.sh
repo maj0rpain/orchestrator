@@ -1402,19 +1402,40 @@ cmd_branch() {
   esac
 }
 
-# The publishing boundary a quick implementation calls instead of hardcoding
-# `gh issue create` in skill prose - the same reason `review file` owns its
-# own `gh issue create` rather than leaving it to whichever skill files a
-# finding. Stateless like branch off: the caller has no flow to record into,
-# so the title and body are its own and nothing here remembers them.
+# True only once the created issue reads back with the title it was given
+# and the ready-for-agent role's label among its labels. Read fresh every
+# call, never cached - the caller retries this on a mismatch, as
+# ticket_links_verified's caller does.
+issue_publish_verified() {
+  local n="$1" title="$2" label="$3" out
+  out="$(adapter_issue_view "$n" --json title,labels --jq '.title, (.labels[].name)' 2>/dev/null)" \
+    || return 1
+  [ "$(first_line "$out")" = "$title" ] || return 1
+  printf '%s\n' "$out" | tail -n +2 | grep -qxF "$label"
+}
+
+# The publishing boundary a spec and a quick implementation call instead of
+# hardcoding `gh issue create` in skill prose - the same reason `review file`
+# owns its own `gh issue create` rather than leaving it to whichever skill
+# files a finding. Stateless like branch off: the caller may have no flow to
+# record into, so the title and body are its own and nothing here remembers
+# them. Verify-then-die like ticket publish: the issue is created under the
+# ready-for-agent role's label (an agent works it next), then its title and
+# labels are read back - one retry on a mismatch, a second failure dies
+# naming the issue, so a half-published spec never reaches the next step.
 cmd_issue_publish() {
   [ $# -eq 2 ] || die "usage: orch.sh issue publish <title> <body-file>"
-  local title="$1" body_file="$2" url
+  local title="$1" body_file="$2" ready url n
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  url="$(adapter_issue_create --title "$title" --body-file "$body_file")" \
+  ready="$(triage_label_for ready-for-agent)"
+  url="$(adapter_issue_create --title "$title" --body-file "$body_file" --label "$ready")" \
     || die "gh could not create the issue"
-  note "${url##*/}"
+  n="${url##*/}"
+  issue_publish_verified "$n" "$title" "$ready" \
+    || issue_publish_verified "$n" "$title" "$ready" \
+    || die "issue #$n's title and '$ready' label did not verify - checked twice, both failed"
+  note "$n"
 }
 
 # Pushing a branch and opening a PR against it has exactly one right answer -
@@ -1968,9 +1989,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               origin and deleting the old remote ref, without
                               force-pushing over anything
   issue publish <title> <body-file>
-                              create a GitHub issue, recording no state;
-                              prints the number - for a quick implementation
-                              that needs one
+                              create a GitHub issue under ready-for-agent
+                              and verify its title and label by reading them
+                              back - recording no state; prints the number
   issue fetch <n> <file>      write issue <n>'s body to <file>, recording no
                               state
   issue update <n> <file>     replace issue <n>'s body with <file>, recording
