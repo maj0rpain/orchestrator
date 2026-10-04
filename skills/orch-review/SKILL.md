@@ -423,7 +423,10 @@ fallbacks go.
    the merge-base with its base branch.
 3. **Start both reviewers** - `orch-reviewer-standards` and
    `orch-reviewer-spec` - at once, as fresh agents, never forks, both in one
-   message (see **Starting an agent**). Each prompt carries these four
+   message (see **Starting an agent** for how to start one and which
+   fallback a host takes; its rule for recording that fallback is the
+   loop's, and a pass records it where its caller says). Each prompt
+   carries these four
    variables and nothing else - no issue body, no diff, no brief:
 
    ```
