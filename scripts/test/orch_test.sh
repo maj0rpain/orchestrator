@@ -3462,12 +3462,15 @@ assert_eq "a budget that is not a number reads as five" "$("$ORCH" review begin)
 out="$("$ORCH" review begin 2>&1)"; st=$?
 assert_status "and refuses the sixth too" "$st" 1
 "$ORCH" state set budget null
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- review path ------------------------------------------------------------
 # One flow, one trail: the records sit flat under review/, numbered on across
 # every loop the flow runs, so nothing is ever moved aside.
 echo
 echo "review path"
+fresh_flow reviewpath
+state_fixture iteration 5
 assert_contains "files the record flat under review/" \
   "$("$ORCH" review path)" "/review/iteration-05.md"
 assert_contains "zero-pads an explicit iteration" \
@@ -3476,12 +3479,14 @@ assert_eq "creates the directory it names" \
   "$([ -d .orchestrator/review ] && echo present || echo gone)" "present"
 out="$("$ORCH" review path nope 2>&1)"; st=$?
 assert_status "rejects an iteration that is not a number" "$st" 1
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- handoff verification ---------------------------------------------------
 # The review loop runs the command the implement phase recorded rather than
 # sniffing the repo for one, so a handoff without it sends review in blind.
 echo
 echo "handoff verification"
+fresh_flow handoffverify
 h3="$("$ORCH" handoff path review)"
 writeln '## PR' '#3' '' '## Spec issue' '#1' '' '## Base SHA' 'abc1234' '' \
         '## Deviations' 'None.' >"$h3"
@@ -3509,6 +3514,7 @@ out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "a Verification section recording a failure and its ticket validates" "$st" 0
 assert_eq "its first line is still the bare command the review loop runs" \
   "$("$ORCH" handoff section "$h3" Verification | head -n 1)" "bash scripts/test/orch_test.sh"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- the multi-loop machinery is gone ---------------------------------------
 # Every loop reads the implement handoff, whatever the flow has been through.
@@ -3517,6 +3523,7 @@ assert_eq "its first line is still the bare command the review loop runs" \
 # loop nothing else understands.
 echo
 echo "the multi-loop machinery is gone"
+fresh_flow multiloop
 state_fixture phase review
 state_fixture iteration 7
 assert_contains "review reads the implement handoff however far in the flow is" \
@@ -3537,6 +3544,7 @@ rm .orchestrator/handoff/04-review.md
 out="$("$ORCH" review loop-next 2>&1)"; st=$?
 assert_status "review loop-next is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown review op"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- review file ------------------------------------------------------------
 # Filing is mechanism: which labels, what title, which body, and the number
@@ -3551,6 +3559,7 @@ assert_contains "listed alongside the ops that exist" "$out" "unknown review op"
 # in "gh adapter (real issue create, subprocess gh)" beside it.
 echo
 echo "review file"
+fresh_flow reviewfile
 filed="$(mktemp)"
 body="$(mktemp)"
 writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
@@ -3627,6 +3636,7 @@ assert_contains "creating the repo's name for it" "$(cat "$filed")" "label creat
 assert_contains "and applying it" "$(cat "$filed")" "label=triage me"
 assert_eq "rather than the canonical one" "$(grep -c 'needs-triage' "$filed")" "0"
 labels_doc docs/agents/triage-labels.md
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- gh adapter (real, unset ORCH_GH_ADAPTER) --------------------------------
 # The rest of this section proved the seam through the in-memory fake; this is
@@ -3636,7 +3646,10 @@ labels_doc docs/agents/triage-labels.md
 # with the right arguments rather than merely compile.
 echo
 echo "gh adapter (real label-create, subprocess gh)"
-: >"$filed"
+fresh_flow reallabel
+filed="$(mktemp)"
+body="$(mktemp)"
+writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
 log="$(mktemp)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=51 \
   "$ORCH" review file major "Shells out for real" --body-file "$body" 2>&1)"; st=$?
@@ -3662,6 +3675,7 @@ assert_eq "gh itself was invoked once for the issue create, as a real subprocess
 out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
   "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
 assert_status "and a real gh that refuses the label still fails the command" "$st" 1
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- spec ---------------------------------------------------------------------
 # The spec review's one hand on GitHub: fetch the body, replace it, comment on
@@ -3677,6 +3691,8 @@ assert_status "and a real gh that refuses the label still fails the command" "$s
 # this section.
 echo
 echo "spec"
+fresh_flow spectest
+state_fixture phase review
 spec_body="$(mktemp)"
 out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
 assert_status "fetch refuses when state records no issue" "$st" 1
@@ -3826,6 +3842,7 @@ assert_contains "with the usage" "$out" "usage: orch.sh spec"
 assert_contains "help documents the spec verb" "$("$ORCH" help)" "spec fetch"
 assert_contains "help says the spec ops refuse once the flow is done" "$("$ORCH" help)" "refusing once the flow is done"
 assert_contains "and points at issue <op> for any other issue" "$("$ORCH" help)" "issue <op> <n> <file>"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- gh adapter (real issue view/edit/comment, subprocess gh) ---------------
 # The rest of the "spec" section proved the seam through the in-memory fake;
@@ -3836,7 +3853,15 @@ assert_contains "and points at issue <op> for any other issue" "$("$ORCH" help)"
 # merely compile.
 echo
 echo "gh adapter (real issue view/edit/comment, subprocess gh)"
-: >"$filed"
+fresh_flow realspec
+"$ORCH" state set issue 14
+spec_body="$(mktemp)"
+tricky="$(mktemp)"
+writeln '## Solution' '' \
+        '| Lens | Reads |' '|---|---|' '| Fidelity | plan handoff |' '' \
+        '```sh' 'orch.sh spec fetch "$file"' '```' '' \
+        'Tracked in #6; see `$HOME` and '"'"'quoted'"'"' text.' >"$tricky"
+filed="$(mktemp)"
 log="$(mktemp)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_BODY="Real body." \
   "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
@@ -3893,6 +3918,7 @@ assert_eq "as one real gh subprocess" "$(grep -cx issue "$log")" "1"
 rm -f "$issue_comments"
 
 "$ORCH" state set issue null
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- doctor at the review phase ---------------------------------------------
 # Three handoffs are due from review onwards, and only three: a flow started
@@ -3900,6 +3926,9 @@ rm -f "$issue_comments"
 # touches, and is asked for no handoff a loop would have written.
 echo
 echo "doctor at the review phase"
+fresh_flow reviewdoctor
+state_fixture phase review
+complete_implement_handoff "$("$ORCH" handoff path review)"
 complete_plan_handoff "$("$ORCH" handoff path spec)"
 complete_spec_handoff "$("$ORCH" handoff path implement)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -3925,6 +3954,7 @@ assert_eq "and earns no line of its own" \
   "$(printf '%s\n' "$out" | grep -c 'loop-01')" "0"
 assert_eq "and is left where it was" \
   "$([ -f .orchestrator/review/loop-01/iteration-01.md ] && echo present || echo gone)" "present"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- review ready -----------------------------------------------------------
 # Marking the PR ready and recording the flow as done are one operation, because
@@ -3937,6 +3967,8 @@ assert_eq "and is left where it was" \
 # "gh adapter (real pr ready, subprocess gh)" block right after this one.
 echo
 echo "review ready"
+fresh_flow reviewready
+state_fixture phase review
 state_fixture pr 7
 log="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" GH_STUB_READY_EXIT=1 "$ORCH" review ready 2>&1)"; st=$?
@@ -3947,6 +3979,7 @@ ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" "$ORCH" review ready >/dev
 assert_eq "records the flow as done once the PR is ready" "$("$ORCH" state get phase)" "done"
 assert_eq "and neither call ever reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
 state_fixture phase review
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- gh adapter (real pr ready, subprocess gh) -------------------------------
 # The block above proved the seam through the in-memory fake; this is the
@@ -3955,6 +3988,9 @@ state_fixture phase review
 # to `gh pr ready` rather than merely compile.
 echo
 echo "gh adapter (real pr ready, subprocess gh)"
+fresh_flow realready
+state_fixture phase review
+state_fixture pr 7
 log="$(mktemp)"
 out="$(GH_STUB_LOG="$log" "$ORCH" review ready 2>&1)"; st=$?
 assert_status "shells out for real" "$st" 0
@@ -3962,6 +3998,7 @@ assert_eq "records the flow as done" "$("$ORCH" state get phase)" "done"
 assert_eq "the real adapter invoked gh pr ready, as a real subprocess" \
   "$(grep -cx pr "$log")" "1"
 state_fixture phase review
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- review ci --------------------------------------------------------------
 # The classification is what decides whether a PR may be marked ready, so each
@@ -3975,6 +4012,9 @@ state_fixture phase review
 # pr checks, subprocess gh)" block right after this section.
 echo
 echo "review ci"
+fresh_flow reviewci
+state_fixture phase review
+state_fixture pr 7
 export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
 export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE"
 log="$(mktemp)"
@@ -4085,6 +4125,7 @@ assert_status "refuses to classify checks on a PR that does not exist yet" "$st"
 # is what would catch the guard degrading into an empty PR number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
 unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL ORCH_GH_ADAPTER
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- gh adapter (real pr checks, subprocess gh) -------------------------------
 # The "review ci" section above proved ci_probe's decision logic through the
@@ -4097,6 +4138,8 @@ unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL ORCH_GH_ADAPTER
 # gh can take is read the same way the exit-0-with-a-pending-bucket path is.
 echo
 echo "gh adapter (real pr checks, subprocess gh)"
+fresh_flow realchecks
+state_fixture phase review
 state_fixture pr 7
 export ORCH_CI_GRACE=0.2 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
 log="$(mktemp)"
@@ -4126,6 +4169,7 @@ assert_first_line "classified as unreachable, same as the fake's exit-8 path" "$
 assert_contains "saying the wait ran out" "$out" "still pending"
 unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 state_fixture pr null
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- a flow from before the budget shipped ----------------------------------
 # An in-flight flow carries whatever state the version that started it wrote:
@@ -4164,6 +4208,7 @@ assert_first_line "and classifies it" "$out" "green"
 assert_eq "review ready marks the PR and finishes the flow" \
   "$("$ORCH" review ready)" "3"
 assert_eq "recording done as it goes" "$("$ORCH" state get phase)" "done"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- init seeds the review loop ---------------------------------------------
 echo
@@ -4222,6 +4267,7 @@ assert_contains "and opening a draft PR" "$("$ORCH" help)" "pr open"
 assert_contains "and redo review" "$("$ORCH" help)" "redo review"
 assert_contains "and redo spec" "$("$ORCH" help)" "redo spec"
 assert_eq "and no longer the loop machinery" "$("$ORCH" help | grep -c 'loop-next')" "0"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- state get reads every key with its default -----------------------------
 # A state file written by an older flow lacks keys a fresh one seeds; each key
@@ -4242,6 +4288,7 @@ assert_contains "naming the key" "$out" "nonsense"
 complete_plan_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- review terminal ----------------------------------------------------
 # The one classifier `review terminal` and doctor's check both read - none and
@@ -4324,6 +4371,7 @@ rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration
 out="$("$ORCH" review terminal extra 2>&1)"; st=$?
 assert_status "takes no arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh review terminal"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- doctor: review terminal check --------------------------------------
 # check_flow_pr's open/closed/unreadable branching is the direct template:
@@ -4384,6 +4432,7 @@ assert_status "report files with no record warn rather than fail" "$st" 0
 assert_contains "and read as interrupted" "$out" "looks interrupted, not stopped"
 mv .orchestrator/review/stop.saved .orchestrator/review/iteration-05.md
 rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- doctor: review budget check -----------------------------------------
 # review begin's own `die` at budget is what is meant to make an iteration
@@ -4391,6 +4440,12 @@ rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration
 # other way, not one review begin produced itself.
 echo
 echo "doctor: review budget check"
+fresh_flow doctorbudget
+complete_plan_handoff "$("$ORCH" handoff path spec)"
+complete_spec_handoff "$("$ORCH" handoff path implement)"
+complete_implement_handoff "$("$ORCH" handoff path review)"
+state_fixture phase review
+"$ORCH" state set budget 5
 state_fixture iteration 3
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "short of budget is healthy" "$st" 0
@@ -4403,6 +4458,7 @@ assert_contains "names the impossible count" "$out" \
   "review loop iteration (6) is past its budget (5)"
 assert_contains "and points at abort" "$out" "/orchestrator:abort"
 state_fixture iteration 5
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- doctor: review ci check ----------------------------------------------
 # ci_probe is the loop's own read of the PR's checks, reused rather than a
@@ -4410,6 +4466,11 @@ state_fixture iteration 5
 # here, not a fresh classification doctor derives on its own.
 echo
 echo "doctor: review ci check"
+fresh_flow doctorci
+complete_plan_handoff "$("$ORCH" handoff path spec)"
+complete_spec_handoff "$("$ORCH" handoff path implement)"
+complete_implement_handoff "$("$ORCH" handoff path review)"
+state_fixture phase review
 state_fixture pr 40
 # A draft PR mid-review agrees with the phase, so the draft check stays quiet
 # and only the CI check's own verdict decides the exit status below.
@@ -4437,6 +4498,7 @@ out="$(GH_STUB_REQUIRED=boom "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an unreachable API warns rather than fails" "$st" 0
 assert_contains "reports it" "$out" "CI: could not be read from GitHub for PR #40"
 assert_contains "carrying the reason" "$out" "dial tcp"
+unset GH_STUB_PR_DRAFT CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- doctor: review draft check -------------------------------------------
 # `review ready` marks the PR ready and records phase: done as one operation,
@@ -4444,6 +4506,13 @@ assert_contains "carrying the reason" "$out" "dial tcp"
 # operation only half landed.
 echo
 echo "doctor: review draft check"
+fresh_flow doctordraft
+complete_plan_handoff "$("$ORCH" handoff path spec)"
+complete_spec_handoff "$("$ORCH" handoff path implement)"
+complete_implement_handoff "$("$ORCH" handoff path review)"
+state_fixture phase review
+state_fixture pr 40
+export GH_STUB_PR_DRAFT=true
 out="$(GH_STUB_PR_DRAFT=true "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a draft PR mid-review is healthy" "$st" 0
 assert_contains "reports it matches phase" "$out" \
@@ -4472,7 +4541,7 @@ assert_status "a merged PR has nothing left to disagree with" "$st" 0
 assert_eq "and says nothing about draft state" \
   "$(printf '%s\n' "$out" | grep -c 'draft state')" "0"
 state_fixture phase review
-unset GH_STUB_PR_DRAFT
+unset GH_STUB_PR_DRAFT CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- review retire -------------------------------------------------------
 # The archive test's directory-move assertions are the direct template.
@@ -4692,7 +4761,7 @@ writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a loop that ended ready is out of scope for redo, same as any done flow" "$st" 1
 assert_contains "the same phase-gate refusal as any other done flow" "$out" "flow is not at the review phase"
-unset ORCH_GH_ADAPTER
+unset ORCH_GH_ADAPTER CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- gh adapter (real pr close, subprocess gh) -------------------------------
 # The "redo review" section above proved cmd_redo_review's PR close through
@@ -4726,6 +4795,7 @@ assert_contains "the real adapter invoked gh pr close on the flow's PR" \
   "$(cat "$filed")" "pr close 34"
 assert_eq "gh itself was invoked once for the pr close, as a real subprocess" \
   "$(grep -cx pr "$log")" "1"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- redo review refuses a taken handoff destination ------------------------
 # Issue #304: the implement handoff retires into exactly the pre-redo-N/ that
@@ -4760,6 +4830,7 @@ assert_eq "and the retired one untouched" \
   "$(cat .orchestrator/handoff/pre-redo-1/03-implement.md)" "# older implement"
 assert_eq "never retiring into a suffixed pre-redo-1-2" \
   "$([ -e .orchestrator/handoff/pre-redo-1-2 ] && echo present || echo gone)" "gone"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- redo review reopens tickets -------------------------------------------
 # Acceptance criterion from issue #88: a prior implement phase closes every
@@ -4799,7 +4870,7 @@ assert_status "redo review succeeds with every ticket already closed" "$st" 0
 assert_eq "reopens exactly the tickets the flow's implement phase had closed" \
   "$("$ORCH" ticket next 60)" "$(printf '%s\n%s' "$t1" "$t2")"
 
-unset GH_STUB_DB
+unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- redo spec --------------------------------------------------------------
 # --new-issue's close goes through the ORCH_GH_ADAPTER seam here, pointed at
@@ -4868,6 +4939,7 @@ assert_eq "leaving the phase where it was rather than half-finishing" \
 out="$("$ORCH" redo spec --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh redo spec"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- redo spec retires the ticket breakdown (#334) ---------------------------
 # A spec redone because it had to change gets a fresh breakdown: the default
@@ -4875,6 +4947,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh redo spec"
 # phase's `ticket exists` answers 1 and orch-to-tickets runs again.
 echo
 echo "redo spec retires the ticket breakdown (#334)"
+fresh_flow redospecbreakdown
 db="$(mktemp -d)"
 export GH_STUB_DB="$db"
 mkdir -p "$db/body"
@@ -4995,7 +5068,7 @@ assert_eq "without retiring the closed issue's tickets" \
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket retire is in the usage text" "$out" "ticket retire <parent>"
-unset GH_STUB_DB
+unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- gh adapter (real issue close, subprocess gh) ---------------------------
 # The rest of "redo spec" proved the seam through the in-memory fake; this is
@@ -5005,9 +5078,10 @@ unset GH_STUB_DB
 # right arguments rather than merely compile.
 echo
 echo "gh adapter (real issue close, subprocess gh)"
+fresh_flow realclose
 state_fixture phase implement
 "$ORCH" state set issue 43
-: >"$filed"
+filed="$(mktemp)"
 log="$(mktemp)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue shells out for real" "$st" 0
@@ -5017,6 +5091,7 @@ assert_contains "with the redo comment" \
   "$(cat "$filed")" "This issue was closed by an orchestrator redo"
 assert_eq "gh itself was invoked once, as a real subprocess" \
   "$(grep -cx issue "$log")" "1"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- spec-review begin (#224) ------------------------------------------------
 # A standalone spec review's guard and working-directory reset have one right
@@ -5144,6 +5219,7 @@ assert_status "an unverifiable base branch does not block the flow" "$st" 0
 assert_contains "warns that origin could not be reached" "$out" "warn  base branch gone"
 git config --unset orchestrator.base
 rm -rf "$(dirname "$bare")"
+unset CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
 # --- phase advance / phase boundary ------------------------------------------
 # A phase is left only once the handoff it writes for the next one is valid
