@@ -728,6 +728,13 @@ adapter_pr_view() {
   gh pr view "$@"
 }
 
+# review ci's read of the PR's own head and base (issue #475): the SHA and
+# branch its grace is anchored to come from the PR, not from local HEAD, which
+# can be anywhere by the time the loop ends.
+adapter_pr_refs() {
+  gh pr view "$1" --json headRefOid,headRefName,baseRefName
+}
+
 # ci_probe's one hand on GitHub, called once for the required scope and once
 # for the all-checks scope - the exit-8-vs-exit-0 handling and bucket
 # classification right around its call sites are unchanged; only the raw `gh
@@ -835,6 +842,18 @@ ci_tick() {
   sleep "$ORCH_CI_INTERVAL"
   slept="$(float_add "$slept" "$ORCH_CI_INTERVAL")"
   elapsed="$(ci_elapsed "$started" "$slept")"
+}
+
+# When the PR's head was pushed, in epoch seconds: the newest reflog entry of
+# the head branch's remote-tracking ref whose new value is the head SHA. Prints
+# nothing when there is no such entry - pushed from another machine, or a
+# reflog that is not kept - and the grace then counts from the call instead.
+ci_push_time() {
+  local oid="$1" branch="$2"
+  [ -n "$oid" ] && [ -n "$branch" ] || return 0
+  git rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null || return 0
+  git reflog show --date=unix --format='%H %gd' "refs/remotes/origin/$branch" -- 2>/dev/null \
+    | awk -v h="$oid" '$1 == h { sub(/.*@\{/, "", $2); sub(/\}$/, "", $2); print $2; exit }' || true
 }
 
 # One look at the PR's checks, classified. Prints the classification on the first
@@ -996,10 +1015,26 @@ cmd_review() {
       ;;
     ci)
       require_state
-      local pr started slept=0 elapsed=0 res verdict
+      local pr started slept=0 elapsed=0 res verdict refs head_oid head_ref base_ref pushed ahead=0
       require_ci_knobs
       require_pr pr
       started="$(date +%s)"
+      # Two clocks: the timeout counts from this call, the grace from the push.
+      # By the time the loop ends the fixer's last push is usually minutes old,
+      # and a CI that has not registered a check in that time is not about to.
+      # `ahead` is how long before this call the push landed; a PR that will not
+      # say what its head is, or a head with no reflog entry, leaves it at zero,
+      # and the grace counts from the call as it always did.
+      if refs="$(adapter_pr_refs "$pr" 2>/dev/null)" \
+        && head_oid="$(printf '%s' "$refs" | jq -r '.headRefOid // empty' 2>/dev/null)" \
+        && head_ref="$(printf '%s' "$refs" | jq -r '.headRefName // empty' 2>/dev/null)" \
+        && base_ref="$(printf '%s' "$refs" | jq -r '.baseRefName // empty' 2>/dev/null)"; then
+        pushed="$(ci_push_time "$head_oid" "$head_ref")"
+        case "$pushed" in
+          ''|*[!0-9]*) ;;
+          *) [ "$pushed" -ge "$started" ] || ahead=$(( started - pushed )) ;;
+        esac
+      fi
       while :; do
         # Branch protection's required checks decide it wherever it names any.
         # When nothing required has reported, gh's message cannot tell "this repo
@@ -1011,7 +1046,7 @@ cmd_review() {
         res="$(ci_probe "$pr" required)"
         verdict="$(first_line "$res")"
         if [ "$verdict" = none ]; then
-          if float_lt "$elapsed" "$ORCH_CI_GRACE"; then ci_tick; continue; fi
+          if float_lt "$(float_add "$ahead" "$elapsed")" "$ORCH_CI_GRACE"; then ci_tick; continue; fi
           res="$(ci_probe "$pr" all)"
           verdict="$(first_line "$res")"
         fi

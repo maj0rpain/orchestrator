@@ -599,6 +599,11 @@ ready-for-agent}"
         for a in "$@"; do
           if [ "$a" = number ]; then echo "${GH_STUB_PR_NUMBER:-99}"; exit 0; fi
           case "$a" in
+            *headRefOid*)
+              jq -cn --arg o "${GH_STUB_PR_HEAD_OID:-0000000000000000000000000000000000000000}" \
+                --arg h "${GH_STUB_PR_HEAD_REF:-topic}" --arg b "${GH_STUB_PR_BASE_REF:-main}" \
+                '{headRefOid: $o, headRefName: $h, baseRefName: $b}'
+              exit 0 ;;
             *isDraft*) printf '%s\n%s\n' "${GH_STUB_PR_STATE:-OPEN}" "${GH_STUB_PR_DRAFT:-false}"; exit 0 ;;
           esac
         done
@@ -4813,6 +4818,73 @@ assert_status "output jq cannot parse stops the loop" "$st" 1
 assert_first_line "rather than passing as a repo with no checks" "$out" "unreachable"
 assert_contains "saying what it could not read" "$out" "could not read"
 
+# --- the grace counts from the push (issue #475) ---
+# review ci runs when the loop ends, usually minutes after the fixer's last
+# push, so a grace counted from the call is a minute paid for nothing. It
+# counts from the push instead: the newest reflog entry of the head branch's
+# remote-tracking ref that set it to the PR's head SHA. The anchor is real git
+# - a push to a local bare remote, its entry rewritten under a past committer
+# date - while the PR's head and branch come from the fake adapter.
+# pushed_head <branch> [<seconds ago>]: pushes HEAD to <branch> on a bare
+# origin and prints its SHA; given an age, backdates the push's reflog entry.
+pushed_head() {
+  local bare sha
+  bare="$(mktemp -d)"
+  git init -q --bare "$bare"
+  git remote set-url origin "$bare"
+  git update-ref -d "refs/remotes/origin/$1" 2>/dev/null || true
+  git push -q origin "HEAD:refs/heads/$1" 2>/dev/null
+  sha="$(git rev-parse HEAD)"
+  if [ -n "${2:-}" ]; then
+    git update-ref -d "refs/remotes/origin/$1"
+    GIT_COMMITTER_DATE="@$(( $(date +%s) - $2 )) +0000" \
+      git update-ref -m 'update by push' "refs/remotes/origin/$1" "$sha"
+  fi
+  printf '%s\n' "$sha"
+}
+head_sha="$(pushed_head topic 3600)"
+export GH_STUB_PR_HEAD_OID="$head_sha" GH_STUB_PR_HEAD_REF=topic
+
+# With the push an hour old, the grace is long spent: the first answer of
+# nothing required widens at once, and nothing at all reported is `none`. A
+# grace counted from the call would wait for the green the second answer holds.
+reqn="$(mktemp)"; : >"$reqn"
+out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
+  GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "an old push with nothing reported is none without waiting the grace" "$out" "none"
+assert_status "and none still lets the loop finish" "$st" 0
+
+# The grace is measured from that one push alone: an entry for another SHA
+# says nothing about when this head arrived, so the grace counts from the call.
+reqn="$(mktemp)"; : >"$reqn"
+out="$(ORCH_CI_GRACE=5 GH_STUB_PR_HEAD_OID=1111111111111111111111111111111111111111 \
+  GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
+  GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "with no reflog entry for the head SHA, the grace counts from the call" "$out" "green"
+
+# A PR whose head branch has no remote-tracking ref at all is the same case.
+reqn="$(mktemp)"; : >"$reqn"
+out="$(ORCH_CI_GRACE=5 GH_STUB_PR_HEAD_REF=elsewhere \
+  GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
+  GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "nor with no remote-tracking ref for the head branch" "$out" "green"
+
+# The timeout keeps counting from the call: an hour-old push is no reason to
+# give up on checks that are still running now.
+reqn="$(mktemp)"; : >"$reqn"
+out="$(ORCH_CI_TIMEOUT=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='pending0|green' \
+  "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "the timeout counts from the call even when the push is old" "$out" "green"
+
+# A fresh push still waits: nothing required yet, and the green that arrives
+# within the grace wins over the unfiltered failure.
+head_sha="$(pushed_head topic)"
+reqn="$(mktemp)"; : >"$reqn"
+out="$(ORCH_CI_GRACE=5 GH_STUB_PR_HEAD_OID="$head_sha" GH_STUB_REQUIRED_N="$reqn" \
+  GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "a fresh push still waits the grace before widening" "$out" "green"
+unset GH_STUB_PR_HEAD_OID GH_STUB_PR_HEAD_REF
+
 state_fixture pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "refuses to classify checks on a PR that does not exist yet" "$st" 1
@@ -4841,8 +4913,11 @@ log="$(mktemp)"
 out="$(GH_STUB_LOG="$log" GH_STUB_REQUIRED=green GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
 assert_status "shells out for real and finishes on the required probe" "$st" 0
 assert_first_line "reading green from the required-scope call" "$out" "green"
+# GH_STUB_LOG logs the subcommand group alone, so each count below carries
+# one more `pr` than there are checks calls: review ci's `gh pr view` for the
+# PR's head, made once before the loop starts.
 assert_eq "gh pr checks was invoked once, for the required scope only" \
-  "$(grep -cx pr "$log")" "1"
+  "$(grep -cx pr "$log")" "2"
 
 # Grace of exactly zero means the very first `float_lt elapsed grace` reads
 # false, so the loop widens on the spot instead of ticking first - the one
@@ -4855,7 +4930,15 @@ out="$(GH_STUB_LOG="$log" ORCH_CI_GRACE=0 GH_STUB_REQUIRED=none GH_STUB_CHECKS=g
 assert_status "and falls back to the all-checks call once the grace runs out" "$st" 0
 assert_first_line "reading green from the unfiltered call" "$out" "green"
 assert_eq "gh pr checks was invoked twice - once required, once for every check" \
-  "$(grep -cx pr "$log")" "2"
+  "$(grep -cx pr "$log")" "3"
+
+# The real adapter's read of the PR's head reaches the same anchor: an
+# hour-old push widens on the first answer instead of waiting the grace.
+GH_STUB_PR_HEAD_OID="$(pushed_head topic 3600)"
+out="$(GH_STUB_PR_HEAD_OID="$GH_STUB_PR_HEAD_OID" ORCH_CI_GRACE=5 \
+  GH_STUB_REQUIRED=none GH_STUB_CHECKS=none timeout 4 "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "a real gh pr view anchors the grace to the push" "$out" "none"
+unset GH_STUB_PR_HEAD_OID
 
 log="$(mktemp)"
 out="$(GH_STUB_LOG="$log" ORCH_CI_TIMEOUT=0.2 GH_STUB_REQUIRED=pending "$ORCH" review ci 2>&1)"; st=$?

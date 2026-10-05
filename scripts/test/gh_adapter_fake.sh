@@ -334,6 +334,21 @@ adapter_pr_view() {
   return 0
 }
 
+# adapter_pr_refs - review ci's read of the PR's head and base (issue #475),
+# mirroring stub_gh's `pr view --json headRefOid,...` arm: answers
+# GH_STUB_PR_HEAD_OID (default forty zeros, a SHA no reflog holds),
+# GH_STUB_PR_HEAD_REF (default topic) and GH_STUB_PR_BASE_REF (default main)
+# as the JSON object gh would, and fails on GH_STUB_PR_REFS_EXIT.
+adapter_pr_refs() {
+  if [ "${GH_STUB_PR_REFS_EXIT:-0}" != 0 ]; then
+    echo "gh stub: pr view refused" >&2
+    return "$GH_STUB_PR_REFS_EXIT"
+  fi
+  jq -cn --arg o "${GH_STUB_PR_HEAD_OID:-0000000000000000000000000000000000000000}" \
+    --arg h "${GH_STUB_PR_HEAD_REF:-topic}" --arg b "${GH_STUB_PR_BASE_REF:-main}" \
+    '{headRefOid: $o, headRefName: $h, baseRefName: $b}'
+}
+
 # adapter_pr_checks - mirrors stub_gh's `pr checks` branch, the trickiest one
 # to replicate faithfully in-memory: ci_probe calls this once per poll tick,
 # many times within the same process, so a plain shell variable counter would
