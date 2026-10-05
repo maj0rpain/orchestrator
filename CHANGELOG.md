@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.3.2
+
+Issue and PR reads no longer go through piped `--comments`, which prints only
+the comments when stdout is not a terminal (see issue #414). The implementer's
+ticket fetch, to-tickets' parent fetch and `docs/agents/issue-tracker.md`'s
+read conventions now use one `gh issue view --json title,body,comments` (or
+`gh pr view --json`) call written to a temporary file outside the repo, so the
+title and body always arrive and a large issue cannot overflow tool output.
+
 ## 3.3.1
 
 `.scratch/`, where planning drafts land, is now kept out of `git status`
