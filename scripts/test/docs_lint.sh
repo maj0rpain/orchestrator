@@ -466,36 +466,122 @@ echo "host capabilities (#127)"
 # capability to each host, so a host without Claude Code's tools can still
 # follow them. Commands are Claude-only shortcuts and hold no behaviour of
 # their own: each routes to an orch- skill, or a section of one, that exists.
-# scan_capabilities <plugin root>: print one line per offending skill, agent,
-# or command. An agent brief names host capabilities as a skill does (#157);
-# only one that invokes a mattpocock-skills skill must point at the reference,
-# since the others name no capability a host could lack.
-scan_capabilities() {
-  local r="$1" f route skill section body cmd
+
+# scan_capability_pointer <plugin root>: each skill, and each agent that
+# invokes a mattpocock-skills skill, that never points at the reference. An
+# agent brief names host capabilities as a skill does (#157); only one that
+# invokes a mattpocock-skills skill must point at the reference, since the
+# others name no capability a host could lack.
+scan_capability_pointer() {
+  local r="$1" f
   for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
     [ -f "$f" ] || continue
     if [[ "$f" != "$r"/agents/* ]] || grep -qE 'mattpocock-skills:[a-z]' "$f"; then
       grep -qF 'docs/host-capabilities.md' "$f" \
         || echo "${f#"$r"/}: never points at docs/host-capabilities.md"
     fi
-    # Junie has no plugin scope, so a skill names its siblings bare (orch-flow);
-    # the Claude-scoped form is only ever the generic orchestrator:<name>.
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-x" "$fixture/skills/orch-y" "$fixture/agents"
+printf 'Invoke the skill `x`.\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
+printf 'Fix it through the `mattpocock-skills:tdd` skill.\n' >"$fixture/agents/orch-z.md"
+printf 'Fix it through the `mattpocock-skills:tdd` skill (see docs/host-capabilities.md).\n' >"$fixture/agents/orch-p.md"
+printf 'Read the diff and write the report.\n' >"$fixture/agents/orch-q.md"
+out="$(scan_capability_pointer "$fixture")"
+flags "the scan flags a skill that never points at the reference" \
+  "$out" "skills/orch-x/SKILL.md: never points at docs/host-capabilities.md"
+flags "the scan flags an agent that never points at the reference" \
+  "$out" "agents/orch-z.md: never points at docs/host-capabilities.md"
+spares "the scan accepts a skill that points at the reference" "$out" '^skills/orch-y/'
+spares "the scan accepts an agent that points at the reference" "$out" '^agents/orch-p\.md:'
+spares "the scan accepts an agent that invokes no skill without the pointer" "$out" '^agents/orch-q\.md:'
+check "every skill, and every agent invoking a mattpocock-skills skill, points at the reference" \
+  "$(scan_capability_pointer "$PLUGIN_ROOT")"
+
+# scan_claude_scoped_names <plugin root>: each line of a skill or agent that
+# names a skill by its Claude-scoped name. Junie has no plugin scope, so a
+# skill names its siblings bare (orch-flow); the Claude-scoped form is only
+# ever the generic orchestrator:<name>.
+scan_claude_scoped_names() {
+  local r="$1" f
+  for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
+    [ -f "$f" ] || continue
     grep -nE 'orchestrator:orch-' "$f" \
       | sed "s|^|${f#"$r"/}: names a skill by its Claude-scoped name: |"
-    # A plugin command offered must exist: its commands/<cmd>.md is the route
-    # the command scan below checks reaches a skill section.
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-flow" "$fixture/skills/orch-x"
+printf 'Invoke `orchestrator:orch-handoff`.\n' >"$fixture/skills/orch-flow/SKILL.md"
+printf 'Invoke the `orch-handoff` skill (`orchestrator:<name>` on Claude Code).\n' >"$fixture/skills/orch-x/SKILL.md"
+out="$(scan_claude_scoped_names "$fixture")"
+flags "the scan flags a sibling skill named by its Claude scope" \
+  "$out" "skills/orch-flow/SKILL.md: names a skill by its Claude-scoped name"
+spares "the scan accepts a bare skill name and the generic scoped form" "$out" '^skills/orch-x/'
+check "no skill or agent names a skill by its Claude-scoped name" \
+  "$(scan_claude_scoped_names "$PLUGIN_ROOT")"
+
+# scan_offered_commands <plugin root>: each plugin command a skill or agent
+# offers that has no commands/<cmd>.md. That file is the route
+# scan_command_routes checks reaches a skill section.
+scan_offered_commands() {
+  local r="$1" f cmd
+  for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
+    [ -f "$f" ] || continue
     for cmd in $(grep -oE '/orchestrator:[a-z][a-z-]*' "$f" | sed 's|^/orchestrator:||' | sort -u); do
       [ -f "$r/commands/$cmd.md" ] \
         || echo "${f#"$r"/}: offers /orchestrator:$cmd, which has no commands/$cmd.md"
     done
   done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-x" "$fixture/skills/orch-y" "$fixture/agents" "$fixture/commands"
+printf 'Offer `/orchestrator:abort`.\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Offer `/orchestrator:nope 12`.\n' >"$fixture/agents/orch-z.md"
+printf 'Offer `/orchestrator:status`.\n' >"$fixture/skills/orch-y/SKILL.md"
+: >"$fixture/commands/status.md"
+out="$(scan_offered_commands "$fixture")"
+flags "the scan flags a skill offering a plugin command with no command file" \
+  "$out" "skills/orch-x/SKILL.md: offers /orchestrator:abort, which has no commands/abort.md"
+flags "the scan flags an agent offering a plugin command with no command file" \
+  "$out" "agents/orch-z.md: offers /orchestrator:nope, which has no commands/nope.md"
+spares "the scan accepts a plugin command that has a command file" "$out" '^skills/orch-y/'
+check "every plugin command a skill or agent offers has a command file" \
+  "$(scan_offered_commands "$PLUGIN_ROOT")"
+
+# scan_command_runs_orch <plugin root>: each command that runs orch.sh itself
+# rather than leaving the work to the skill it routes to.
+scan_command_runs_orch() {
+  local r="$1" f
   for f in "$r"/commands/*.md; do
     [ -f "$f" ] || continue
     grep -qE 'orch\.sh|\$ORCH' "$f" && echo "${f#"$r"/}: runs orch.sh itself"
-    # A command routes to an orch- skill and follows either one of its
-    # sections (the flow steps, spec-review) or the whole skill (release,
-    # #139). The skill must exist, and so must a section it names. The route
-    # may wrap across lines, so the file is read as one line.
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/commands"
+printf '%s\n' "$orch_line" >"$fixture/commands/status.md"
+printf 'Invoke `orchestrator:orch-flow` and follow its **Status** section.\n' >"$fixture/commands/doctor.md"
+out="$(scan_command_runs_orch "$fixture")"
+flags "the scan flags a command that runs orch.sh itself" "$out" "commands/status.md: runs orch.sh itself"
+spares "the scan accepts a command that only routes to a skill" "$out" '^commands/doctor\.md:'
+check "no command runs orch.sh itself" "$(scan_command_runs_orch "$PLUGIN_ROOT")"
+
+# scan_command_routes <plugin root>: each command that routes to no orch-
+# skill, to a missing skill, or to a missing section of its skill. A command
+# follows either one of its skill's sections (the flow steps, spec-review) or
+# the whole skill (release, #139). The route may wrap across lines, so the
+# file is read as one line.
+scan_command_routes() {
+  local r="$1" f route skill section body
+  for f in "$r"/commands/*.md; do
+    [ -f "$f" ] || continue
     body="$(flat_text "$f")"
     route="$(grep -oE '`orchestrator:orch-[a-z-]+` and follow it(s \*\*[^*]+\*\* section|\.)' <<<"$body" | head -n1)"
     section="$(sed -n 's/.*follow its \*\*\([^*]*\)\*\* section$/\1/p' <<<"$route")"
@@ -508,67 +594,30 @@ scan_capabilities() {
   return 0
 }
 fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-x" "$fixture/skills/orch-flow" "$fixture/commands"
-printf '## Status\nSee docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
-printf 'Invoke the skill `x`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-x/SKILL.md"
+mkdir -p "$fixture/skills/orch-flow" "$fixture/skills/orch-y" "$fixture/commands"
+printf '## Status\n' >"$fixture/skills/orch-flow/SKILL.md"
+printf '## Solo run\n' >"$fixture/skills/orch-y/SKILL.md"
 printf 'Invoke `orchestrator:orch-flow` and follow its **Doctor** section.\n' >"$fixture/commands/doctor.md"
-flags "the scan flags a command routed to a missing section" \
-  "$(scan_capabilities "$fixture")" "commands/doctor.md: routes to a missing orch-flow section: Doctor"
-printf '## Status\nInvoke `orchestrator:orch-handoff`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
-flags "the scan flags a sibling skill named by its Claude scope" \
-  "$(scan_capabilities "$fixture")" "skills/orch-flow/SKILL.md: names a skill by its Claude-scoped name"
-printf '## Status\nInvoke the `orch-handoff` skill (`orchestrator:<name>` on Claude Code). See docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
-printf 'Invoke the skill `x`.\n' >"$fixture/skills/orch-x/SKILL.md"
-flags "the scan flags a skill that never points at the reference" \
-  "$(scan_capabilities "$fixture")" "skills/orch-x/SKILL.md: never points at docs/host-capabilities.md"
-printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-x/SKILL.md"
-printf 'Invoke `orchestrator:orch-flow` and follow its **Status** section.\n' >"$fixture/commands/doctor.md"
-printf '%s\n' "$orch_line" >"$fixture/commands/status.md"
-flags "the scan flags a command that runs orch.sh itself" \
-  "$(scan_capabilities "$fixture")" "commands/status.md: runs orch.sh itself"
-printf 'Do the thing.\n' >"$fixture/commands/status.md"
-flags "the scan flags a command that routes to no skill" \
-  "$(scan_capabilities "$fixture")" "commands/status.md: routes to no orch- skill"
-rm "$fixture/commands/status.md"
-printf 'Invoke `orchestrator:orch-y` and follow it.\n' >"$fixture/commands/y.md"
-flags "the scan flags a command routed to a missing skill" \
-  "$(scan_capabilities "$fixture")" "commands/y.md: routes to a missing skill: orch-y"
-mkdir -p "$fixture/skills/orch-y"
-printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
-assert_empty "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")"
+printf 'Do the thing.\n' >"$fixture/commands/none.md"
+printf 'Invoke `orchestrator:orch-w` and follow it.\n' >"$fixture/commands/w.md"
+printf 'Invoke `orchestrator:orch-flow` and follow its **Status** section.\n' >"$fixture/commands/status.md"
+printf 'Invoke `orchestrator:orch-y` and follow it.\n' >"$fixture/commands/whole.md"
 # A command may route to a named section of a skill other than orch-flow
 # (spec-review, #185) - that section must exist in that skill.
-printf 'Invoke `orchestrator:orch-y` and follow its **Solo run**\nsection.\n' >"$fixture/commands/y.md"
+printf 'Invoke `orchestrator:orch-y` and follow its **Deep run**\nsection.\n' >"$fixture/commands/deep.md"
+printf 'Invoke `orchestrator:orch-y` and follow its **Solo run**\nsection.\n' >"$fixture/commands/solo.md"
+out="$(scan_command_routes "$fixture")"
+flags "the scan flags a command routed to a missing section" \
+  "$out" "commands/doctor.md: routes to a missing orch-flow section: Doctor"
+flags "the scan flags a command that routes to no skill" "$out" "commands/none.md: routes to no orch- skill"
+flags "the scan flags a command routed to a missing skill" "$out" "commands/w.md: routes to a missing skill: orch-w"
 flags "the scan flags a command routed to a missing section of its own skill" \
-  "$(scan_capabilities "$fixture")" "commands/y.md: routes to a missing orch-y section: Solo run"
-printf '## Solo run\nInvoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
-assert_empty "the scan accepts a command routed to an existing section of its own skill" \
-  "$(scan_capabilities "$fixture")"
-# An agent brief names host capabilities the way a skill does (#157).
-mkdir -p "$fixture/agents"
-printf 'Fix it through the `mattpocock-skills:tdd` skill.\n' >"$fixture/agents/orch-z.md"
-flags "the scan flags an agent that never points at the reference" \
-  "$(scan_capabilities "$fixture")" "agents/orch-z.md: never points at docs/host-capabilities.md"
-printf 'Fix it through the `mattpocock-skills:tdd` skill (see docs/host-capabilities.md).\n' >"$fixture/agents/orch-z.md"
-assert_empty "the scan accepts an agent that points at the reference" "$(scan_capabilities "$fixture")"
-printf 'Read the diff and write the report.\n' >"$fixture/agents/orch-z.md"
-assert_empty "the scan accepts an agent that invokes no skill without the pointer" "$(scan_capabilities "$fixture")"
-# A plugin command a skill or agent offers must route somewhere: it needs its
-# own commands/<cmd>.md, whose route the command scan above checks.
-fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-x" "$fixture/agents" "$fixture/commands"
-printf 'Offer `/orchestrator:abort`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-x/SKILL.md"
-printf 'Offer `/orchestrator:nope 12`.\n' >"$fixture/agents/orch-z.md"
-out="$(scan_capabilities "$fixture")"
-flags "the scan flags a skill offering a plugin command with no command file" "$out" "skills/orch-x/SKILL.md: offers /orchestrator:abort, which has no commands/abort.md"
-flags "the scan flags an agent offering a plugin command with no command file" "$out" "agents/orch-z.md: offers /orchestrator:nope, which has no commands/nope.md"
-mkdir -p "$fixture/skills/orch-flow"
-printf '## Abort\nSee docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
-printf 'Invoke `orchestrator:orch-flow` and follow its **Abort** section.\n' >"$fixture/commands/abort.md"
-cp "$fixture/commands/abort.md" "$fixture/commands/nope.md"
-assert_empty "the scan accepts plugin commands that each have a command file" "$(scan_capabilities "$fixture")"
-check "every skill points at the reference, and every command is a thin route" \
-  "$(scan_capabilities "$PLUGIN_ROOT")"
+  "$out" "commands/deep.md: routes to a missing orch-y section: Deep run"
+spares "the scan accepts a command routed to an existing orch-flow section" "$out" '^commands/status\.md:'
+spares "the scan accepts a thin route to a whole skill" "$out" '^commands/whole\.md:'
+spares "the scan accepts a wrapped route to an existing section of its own skill" "$out" '^commands/solo\.md:'
+check "every command is a thin route to an orch- skill section that exists" \
+  "$(scan_command_routes "$PLUGIN_ROOT")"
 
 # --- one definition of starting a plugin agent (#181) -------------------------
 echo
