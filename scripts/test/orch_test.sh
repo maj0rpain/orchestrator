@@ -1268,12 +1268,14 @@ rm -f "$mise_log"
 
 new_repo >/dev/null
 git remote add origin https://example.invalid/x/y.git
-git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
-git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$(git branch --show-current)"
+# origin/HEAD names a branch that is not `main`, so an origin/HEAD fallback
+# cannot pass for the final literal-`main` one.
+git update-ref refs/remotes/origin/some-feature HEAD
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/some-feature
 PATH="$STUB:$PATH" GH_STUB_BANNER=1 "$ORCH" init banner >/dev/null
 recorded="$("$ORCH" state get base)"
 assert_eq "init records a single-line base past a banner" "$(printf '%s\n' "$recorded" | wc -l | tr -d ' ')" "1"
-assert_eq "init records origin/HEAD's branch as the base" "$recorded" "$(git branch --show-current)"
+assert_eq "init records origin/HEAD's branch as the base" "$recorded" "some-feature"
 
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
