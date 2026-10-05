@@ -196,6 +196,38 @@ flags "an old plan command file is flagged" "$out" "commands/plan.md: old comman
 flags "an old orch-plan skill directory is flagged" "$out" "skills/orch-plan/: old skill directory"
 check "no old orchestrator skill or command name outside history" "$(scan_old_names "$PLUGIN_ROOT")"
 
+# The glossary was renamed upstream: CONTEXT.md became GLOSSARY.md, and
+# CONTEXT-MAP.md became GLOSSARY-MAP.md (#461). Like the old skill names, an
+# old glossary name in a skill or agent points a model at a file that no
+# longer exists. Only skills/ and agents/ are scanned: README, CLAUDE.md, the
+# Junie snippet and planning-allowlist.sh still list the legacy names, which
+# the planning guard keeps protecting.
+echo
+echo "glossary names (#461)"
+# scan_old_glossary_names <plugin root>: each CONTEXT.md or CONTEXT-MAP.md in
+# a tracked file under skills/ or agents/.
+scan_old_glossary_names() {
+  local r="$1"
+  git -C "$r" ls-files -z -- skills agents \
+    | (cd "$r" && xargs -0 grep -nE 'CONTEXT(-MAP)?\.md' 2>/dev/null) \
+    | sed -E 's/^([^:]*:[0-9]+):/\1: old glossary name: /'
+  return 0
+}
+fixture="$(new_fixture)"
+git -C "$fixture" init -q
+mkdir -p "$fixture/skills/orch-x" "$fixture/agents"
+printf 'Read `CONTEXT.md` first.\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'With a `CONTEXT-MAP.md` at the root.\n' >"$fixture/agents/orch-a.md"
+printf 'Read `GLOSSARY.md`, or with a `GLOSSARY-MAP.md`, the one it points to.\n' >"$fixture/agents/orch-new.md"
+printf 'Records (GLOSSARY.md, GLOSSARY-MAP.md, CONTEXT.md, CONTEXT-MAP.md, docs/adr/).\n' >"$fixture/README.md"
+git -C "$fixture" add -A
+out="$(scan_old_glossary_names "$fixture")"
+flags "an old CONTEXT.md in a skill is flagged" "$out" "skills/orch-x/SKILL.md:1: old glossary name"
+flags "an old CONTEXT-MAP.md in an agent is flagged" "$out" "agents/orch-a.md:1: old glossary name"
+spares "the new glossary names are not flagged" "$out" '^agents/orch-new\.md'
+spares "the legacy names outside skills and agents are not flagged" "$out" '^README\.md'
+check "no skill or agent names the old glossary files" "$(scan_old_glossary_names "$PLUGIN_ROOT")"
+
 # Each skill directory carries the orch- prefix, and its SKILL.md declares the
 # directory's name.
 # scan_skill_names <plugin root>: each skill directory off the rule.
@@ -1012,11 +1044,11 @@ scan_junie_planning() {
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/scripts" "$fixture/docs/junie"
-printf '%s\n' 'PLANNING_ALLOWLIST=(docs/agents/ .scratch/)' 'PLANNING_RECORDS=(CONTEXT.md docs/adr/)' \
+printf '%s\n' 'PLANNING_ALLOWLIST=(docs/agents/ .scratch/)' 'PLANNING_RECORDS=(GLOSSARY.md docs/adr/)' \
   'planning_allowlist_text() { local IFS=,; printf "%s" "${PLANNING_ALLOWLIST[*]}" | sed "s/,/, /g"; }' \
   'planning_records_text() { local IFS=,; printf "%s" "${PLANNING_RECORDS[*]}" | sed "s/,/, /g"; }' \
   >"$fixture/scripts/planning-allowlist.sh"
-printf '%s\n' '<!-- orchestrator:begin -->' 'Records (CONTEXT.md) are recorded.' \
+printf '%s\n' '<!-- orchestrator:begin -->' 'Records (GLOSSARY.md) are recorded.' \
   'Artifacts (docs/agents/,' '.scratch/) are fine.' '<!-- orchestrator:begin -->' >"$fixture/docs/junie/AGENTS.md"
 out="$(scan_junie_planning "$fixture")"
 flags "a snippet with two begin markers is flagged" \
@@ -1024,7 +1056,7 @@ flags "a snippet with two begin markers is flagged" \
 flags "a snippet with no end marker is flagged" \
   "$out" "docs/junie/AGENTS.md: has 0 end markers, not 1"
 flags "a snippet whose records drift from planning-allowlist.sh is flagged" \
-  "$out" "docs/junie/AGENTS.md: does not list the planning records as planning-allowlist.sh does: (CONTEXT.md, docs/adr/)"
+  "$out" "docs/junie/AGENTS.md: does not list the planning records as planning-allowlist.sh does: (GLOSSARY.md, docs/adr/)"
 spares "an allowlist that matches across a line break is not flagged" \
   "$out" 'planning allowlist'
 check "the Junie snippet is marked once and lists planning-allowlist.sh's lists" \

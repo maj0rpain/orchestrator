@@ -61,7 +61,7 @@ writing carefully.
 
 ## Decisions
 <what was settled, and the shape of the thing being built. A glossary or ADR
-change (`CONTEXT.md`, `CONTEXT-MAP.md`, `docs/adr/`) goes here as verbatim
+change (`GLOSSARY.md`, `GLOSSARY-MAP.md`, `docs/adr/`) goes here as verbatim
 replacement text, naming the file and the entry it replaces or joins -
 planning never edits those files in place, so this is the only record of the
 wording until the spec carries it.>

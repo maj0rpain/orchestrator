@@ -103,8 +103,8 @@ planning hook's message says.
 
 ## Domain language
 
-Sharpen the project's domain model as you plan. Read `CONTEXT.md` (or, with a
-`CONTEXT-MAP.md` at the root, the context it points to for the area you are
+Sharpen the project's domain model as you plan. Read `GLOSSARY.md` (or, with a
+`GLOSSARY-MAP.md` at the root, the context it points to for the area you are
 touching) and the ADRs under `docs/adr/` before the first round, then keep
 these habits on every round:
 
@@ -130,7 +130,7 @@ these habits on every round:
 ## Glossary and ADR wording goes into the plan
 
 A term the interview resolves, or an ADR it decides to record, is written into
-the plan, never into `CONTEXT.md`, `CONTEXT-MAP.md`, or `docs/adr/` now. Those
+the plan, never into `GLOSSARY.md`, `GLOSSARY-MAP.md`, or `docs/adr/` now. Those
 files are records, and a record changes only with the change it describes
 (ADR-0022). Write the exact wording - the new or replaced text, and which file
 and entry it goes in - into the plan, so the spec or the linked issue carries

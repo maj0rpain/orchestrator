@@ -68,7 +68,7 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    a failed body fetch does: the lenses would otherwise review half the spec.
 3. Resolve the other files the lenses read, and record the paths:
    - the plan handoff: `bash "$ORCH" handoff path spec` (always `01-plan.md`);
-   - the glossary and decisions: `CONTEXT.md` and `docs/adr/` at the repo
+   - the glossary and decisions: `GLOSSARY.md` and `docs/adr/` at the repo
      root, where they exist;
    - the repo root, for the codebase.
 
@@ -94,7 +94,7 @@ they named. With no number, ask for one and wait. Never take it from
 3. **Fetch the comments**: `bash "$ORCH" issue comments <issue>
    <dir>/comments.md`. A failure stops the review, as a failed body fetch
    does.
-4. Resolve the glossary and decisions (`CONTEXT.md` and `docs/adr/` at the
+4. Resolve the glossary and decisions (`GLOSSARY.md` and `docs/adr/` at the
    repo root, where they exist) and the repo root, as the spec-phase entry
    does. There is no plan handoff.
 

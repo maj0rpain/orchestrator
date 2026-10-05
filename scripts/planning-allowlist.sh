@@ -19,8 +19,10 @@
 PLANNING_ALLOWLIST=(docs/agents/ .scratch/ .orchestrator/)
 
 # The planning records: decisions planning never changes in place. Same entry
-# format as the allowlist.
-PLANNING_RECORDS=(CONTEXT.md CONTEXT-MAP.md docs/adr/)
+# format as the allowlist. The glossary is GLOSSARY.md / GLOSSARY-MAP.md,
+# following upstream's rename; the legacy CONTEXT.md / CONTEXT-MAP.md names stay
+# so repos that have not renamed their glossary yet stay protected.
+PLANNING_RECORDS=(GLOSSARY.md GLOSSARY-MAP.md CONTEXT.md CONTEXT-MAP.md docs/adr/)
 
 # planning_list_match <path> <entry>... - succeeds when the path matches one
 # of the entries.

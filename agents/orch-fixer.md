@@ -84,7 +84,7 @@ Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.
 
 A fix uses only a narrow part of TDD: one failing test that proves a
 blocking behaviour finding was real, then the smallest fix. Read
-`CONTEXT.md`, if the repo has one, so test names match the domain's
+`GLOSSARY.md`, if the repo has one, so test names match the domain's
 language, and respect the ADRs in the area you touch.
 
 **What a good test is.** A test verifies behaviour through a public

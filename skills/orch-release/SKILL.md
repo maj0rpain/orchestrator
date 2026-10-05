@@ -5,7 +5,7 @@ description: Open the release PR that carries the base branch back into the defa
 
 # Orchestrator release
 
-Opens a **release PR** (see `CONTEXT.md`): the PR that carries a base branch
+Opens a **release PR** (see `GLOSSARY.md`): the PR that carries a base branch
 other than the default back into the default branch. PRs into that base
 branch only refer to their issues (`Refs #N`), so this PR is the one that
 closes them. `orch.sh pr release` decides which issues those are, from the
