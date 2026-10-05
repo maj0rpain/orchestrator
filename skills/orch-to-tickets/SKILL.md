@@ -41,7 +41,9 @@ turns out missing, take the fallback it documents and tell your caller which.
 
 The parent is the issue number you were given (a caller's spec issue, or the
 argument to `/orchestrator:to-tickets`). Fetch it and read its full body and
-comments: `gh issue view <parent> --comments`.
+comments, written to a temporary file outside the repo (`mktemp`):
+`gh issue view <parent> --json title,body,comments > <file>`, then read that
+file.
 
 ### 2. Explore the codebase (optional)
 

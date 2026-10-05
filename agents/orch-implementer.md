@@ -36,8 +36,10 @@ to that prompt.
 
 ## Steps
 
-1. **Fetch the ticket** before anything else: `gh issue view <ticket>
-   --comments`. Then find its spec issue: `bash "<orch.sh>" ticket parent
+1. **Fetch the ticket** before anything else, into a temporary file
+   outside the repo (`mktemp`): `gh issue view <ticket> --json
+   title,body,comments > <file>`, then read that file. Piped, `--comments`
+   drops the title and body. Then find its spec issue: `bash "<orch.sh>" ticket parent
    <ticket>` prints the parent of a sub-issue ticket, and empty output means
    the ticket is the spec issue itself. A failure is retried once, then
    recorded as a deviation. Read the spec issue's **Testing Decisions** - the
