@@ -4,9 +4,9 @@
 # commands and docs.
 #
 # Each rule is a scan_* function that takes a plugin root and prints one line
-# per problem, "<file>: <problem>", and nothing when the root obeys it. The
-# rules run once against the real plugin root, then against fixture plugin
-# roots that break them, so a rule that stops flagging anything fails here too.
+# per problem, "<file>: <problem>", and nothing when the root obeys it. Each
+# rule runs first against fixture plugin roots that break it, so a rule that
+# stops flagging anything fails here too, then once against the real plugin root.
 # The linter checks structure only: it never runs orch.sh and holds no flow
 # state.
 
@@ -256,8 +256,6 @@ scan_orch_resolution() {
     fi
   done
 }
-check "every skill and command resolves orch.sh the one documented way" \
-  "$(scan_orch_resolution "$PLUGIN_ROOT")"
 f="$(new_fixture)"
 mkdir -p "$f/commands"
 printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$f/commands/orch.md"
@@ -310,6 +308,8 @@ flags "the scan flags a Junie step outside the plugin-root sentence" \
 } >"$f/commands/orch.md"
 assert_empty "the scan accepts a plugin-root path with its unset fallback" \
   "$(scan_orch_resolution "$f")"
+check "every skill and command resolves orch.sh the one documented way" \
+  "$(scan_orch_resolution "$PLUGIN_ROOT")"
 
 # Some hosts drop the execute bit on install or update, so orch.sh is always
 # run through bash, quoted or not (#142; docs/host-capabilities.md, "Execute bit").
