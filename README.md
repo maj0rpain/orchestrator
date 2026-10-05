@@ -105,14 +105,14 @@ flow skill is now `orchestrator:orch-flow`, and so on). See
 ```
 
 For work that does not need the pipeline, a human can pick a quick
-implementation instead of starting a flow - see CONTEXT.md's **Quick
+implementation instead of starting a flow - see GLOSSARY.md's **Quick
 implementation** entry. It skips all four phases: no handoff, no
 `.orchestrator/state.json`, just a linked issue, `orch-to-tickets` publishing that
 issue's ticket breakdown, the same one-`orch-implementer`-per-ticket loop the
 implement phase uses (ending in `pr publish` instead of a draft `pr open`), a
 review pass by the plugin's own reviewer agents, and a PR. A human can run
 another review pass of the same branch on demand, with
-`/orchestrator:review <issue>` - see CONTEXT.md's **Review pass** entry.
+`/orchestrator:review <issue>` - see GLOSSARY.md's **Review pass** entry.
 
 Handoffs live in `.orchestrator/handoff/`. It and `.scratch/`, where planning
 drafts land, are ignored via `.git/info/exclude` so running the flow never
@@ -139,7 +139,7 @@ dirties a repo's working tree.
 ### Base branch
 
 Flows and quick implementations fork from the repo's default branch unless
-you set another **base branch** (see CONTEXT.md) for the checkout - for
+you set another **base branch** (see GLOSSARY.md) for the checkout - for
 instance a `uat` branch that gathers a multi-ticket project:
 
 | Command | What it does |
@@ -147,7 +147,7 @@ instance a `uat` branch that gathers a multi-ticket project:
 | `orch.sh base set <branch>` | Set the base branch. Refuses a branch `origin` does not have. Stored in the clone's local git config (`orchestrator.base`): shared by every worktree, never committed, kept through `abort` and archiving. Setting the default branch's name clears it. |
 | `orch.sh base show` | Print the base branch in effect and its source: `set`, or `default`. |
 | `orch.sh base clear` | Go back to the default branch. Succeeds when nothing was set. |
-| `orch.sh pr release [--force] <title> <body-file>` | Open the **release PR** (see CONTEXT.md): a non-draft PR from the base branch into the default branch. Its body starts with one `Closes #N` line per still-open issue that any PR merged into the base branch refers to (`Refs`, `Closes`, `Fixes` or `Resolves #N`, anywhere in the body). Refuses on the default branch, while a release PR is already open, and with nothing to close unless `--force`. Pushes nothing. |
+| `orch.sh pr release [--force] <title> <body-file>` | Open the **release PR** (see GLOSSARY.md): a non-draft PR from the base branch into the default branch. Its body starts with one `Closes #N` line per still-open issue that any PR merged into the base branch refers to (`Refs`, `Closes`, `Fixes` or `Resolves #N`, anywhere in the body). Refuses on the default branch, while a release PR is already open, and with nothing to close unless `--force`. Pushes nothing. |
 
 `/orchestrator:doctor` reports the base branch in effect, and FAILs when the
 one you set is gone from `origin`.

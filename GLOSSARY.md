@@ -1,4 +1,4 @@
-# Context
+# Glossary
 
 The vocabulary this repo uses to talk about itself. Glossary only: no
 implementation details, no spec, no decisions. Decisions live in `docs/adr/`.

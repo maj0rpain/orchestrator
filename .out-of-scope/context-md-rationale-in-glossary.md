@@ -1,13 +1,13 @@
-# CONTEXT.md entries stating rationale, not just definitions
+# GLOSSARY.md entries stating rationale, not just definitions
 
-This project does not enforce CONTEXT.md's "glossary only, no decisions"
+This project does not enforce GLOSSARY.md's "glossary only, no decisions"
 scope rule strictly enough to bar an entry from explaining *why* a
 constraint holds, when that explanation is what makes the term's boundary
 legible on its own.
 
 ## Why this is out of scope
 
-CONTEXT.md's stated scope pushes decisions out to `docs/adr/`, but a handful
+GLOSSARY.md's stated scope pushes decisions out to `docs/adr/`, but a handful
 of entries (Quick implementation, and now Redo) already state a behavioral
 constraint together with a sentence of the reasoning behind it, because the
 constraint reads as arbitrary without it. Splitting that sentence out into

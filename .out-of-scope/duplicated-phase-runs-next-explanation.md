@@ -15,7 +15,7 @@ consequence for an agent mid-task. This project's phase and skill docs are
 deliberately self-contained — each runs in its own session with no memory of
 the last — so a reader landing on any one of them needs the explanation
 restated in place rather than needing to go cross-reference the glossary.
-Introducing a "see CONTEXT.md" pointer instead would save three sentences at
+Introducing a "see GLOSSARY.md" pointer instead would save three sentences at
 the cost of every one of those standalone reads.
 
 ## The same rule for the review loop's agents
@@ -30,7 +30,7 @@ things each agent needs are written out in that agent's own brief:
 - the prompt fields, described once in the orch-review skill for the driver
   that sends them and again in the agent file for the agent that receives
   them;
-- the Severity rubric, given as a glossary definition in `CONTEXT.md` and
+- the Severity rubric, given as a glossary definition in `GLOSSARY.md` and
   restated in the skill that applies it;
 - the rules that keep a finding unfixed, which the glossary, the driver's
   triage, the fixer's could-not-fix list and the closer's filing each need.
