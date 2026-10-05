@@ -1081,6 +1081,54 @@ assert_empty "a Filing section naming all five is not flagged" "$(scan_closer_fi
 check "the closer's Filing section names every labelled line the scan parses" \
   "$(scan_closer_filing "$PLUGIN_ROOT")"
 
+# --- routed nouns are in the CLI conventions ----------------------------------
+# docs/agents/cli-conventions.md maps orch.sh's grammar: every noun the
+# dispatcher in main() routes is either a row of its Current nouns table or is
+# named in its Exceptions section, so a new noun cannot ship unmapped.
+echo
+echo "routed nouns are in the CLI conventions"
+# routed_nouns <orch.sh>: one line per command main()'s case statement routes,
+# its option spellings (-h, --help) and the catch-all left out.
+routed_nouns() {
+  awk '
+    /^main\(\) \{/ { inm = 1; next }
+    inm && /^\}/ { exit }
+    inm && match($0, /^[[:space:]]+[a-z][a-z|-]*\)/) {
+      arm = substr($0, RSTART, RLENGTH - 1); gsub(/[[:space:]]/, "", arm)
+      n = split(arm, names, "|")
+      for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
+    }' "$1"
+}
+# scan_cli_nouns <plugin root>: each routed noun in neither the table nor the
+# Exceptions section.
+scan_cli_nouns() {
+  local r="$1" orch="scripts/orch.sh" doc="docs/agents/cli-conventions.md" table exceptions noun
+  table="$(md_section "$r/$doc" "## Current nouns" | grep -E '^[[:space:]]*\|')"
+  exceptions="$(md_section "$r/$doc" "## Exceptions")"
+  while IFS= read -r noun; do
+    [ -n "$noun" ] || continue
+    grep -qE -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" && continue
+    grep -qE -- "\`$noun[\` ]" <<<"$exceptions" && continue
+    echo "$doc: routed noun $noun is in neither the Current nouns table nor Exceptions"
+  done < <(routed_nouns "$r/$orch")
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/scripts" "$fixture/docs/agents"
+printf '%s\n' 'main() {' '  case "$cmd" in' '    base)   cmd_base "$@" ;;' '    redo)   cmd_redo "$@" ;;' \
+  '    help|-h|--help) cmd_help ;;' '    widget) cmd_widget "$@" ;;' '    *) die nope ;;' '  esac' '}' \
+  '  stray) not_routed ;;' >"$fixture/scripts/orch.sh"
+printf '%s\n' '# CLI' '' '## Current nouns' '' '| Noun | Verbs |' '| --- | --- |' '| `base` | `set` |' '' \
+  'widget is mentioned here but not in the table.' '' '## Exceptions' '' '- `help`, and `redo review` / `redo spec`.' \
+  >"$fixture/docs/agents/cli-conventions.md"
+out="$(scan_cli_nouns "$fixture")"
+flags "a routed noun in neither the table nor Exceptions is flagged" \
+  "$out" "docs/agents/cli-conventions.md: routed noun widget is in neither"
+spares "a noun in the table, or in Exceptions, is not" "$out" 'noun (base|redo|help) '
+spares "nor an option spelling, the catch-all, or an arm outside main" "$out" 'noun (-h|--help|\*|stray) '
+check "every noun orch.sh routes is in the CLI conventions table or its Exceptions" \
+  "$(scan_cli_nouns "$PLUGIN_ROOT")"
+
 # --- summary -----------------------------------------------------------------
 echo
 echo "$PASS passed, $FAIL failed"

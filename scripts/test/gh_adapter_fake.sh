@@ -75,6 +75,10 @@ adapter_issue_view() {
     if [ "$prev" = --jq ]; then q="$a"; fi
     prev="$a"
   done
+  if [ -n "${GH_STUB_FINDINGS:-}" ] && [ -d "$GH_STUB_FINDINGS/$1" ]; then
+    fake_finding_json "$1" | jq -r "${q:-.}"
+    return
+  fi
   for a in "$@"; do
     case "$a" in
       comments)
@@ -97,6 +101,57 @@ adapter_issue_view() {
   done
   printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"
   return 0
+}
+
+# GH_STUB_FINDINGS names a directory of issues, one subdirectory per number
+# holding its body, its labels (one per line) and, optionally, its state
+# (default OPEN) - so one run can mix issues with different bodies and labels,
+# as finding triage's scan needs. An issue there answers adapter_issue_view
+# as gh-shaped JSON - number, state, labels, body - through the request's own
+# --jq, and adapter_issue_list lists them.
+fake_finding_json() {
+  local d="$GH_STUB_FINDINGS/$1"
+  jq -n --argjson n "$1" \
+    --arg state "$(cat "$d/state" 2>/dev/null || echo OPEN)" \
+    --arg labels "$(cat "$d/labels" 2>/dev/null)" \
+    --rawfile body "$d/body" \
+    '{number: $n, state: $state, body: $body,
+      labels: [$labels | split("\n")[] | select(. != "") | {name: .}]}'
+}
+
+# adapter_issue_list - logs "issue list <args...>" to GH_STUB_FILED when set,
+# fails on GH_STUB_ISSUE_LIST_EXIT, and answers a JSON array of the issues in
+# GH_STUB_FINDINGS that carry every --label asked for, in the --state asked
+# for (default open), through the caller's own --jq - the filter gh applies
+# server side.
+adapter_issue_list() {
+  local state=open q="" labels=() d n json="[]" l keep
+  if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue list %s\n' "$*" >>"$GH_STUB_FILED"; fi
+  if [ "${GH_STUB_ISSUE_LIST_EXIT:-0}" != 0 ]; then
+    echo "gh stub: issue list refused" >&2
+    return "$GH_STUB_ISSUE_LIST_EXIT"
+  fi
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --state) state="$2"; shift ;;
+      --label) labels+=("$2"); shift ;;
+      --jq)    q="$2"; shift ;;
+    esac
+    shift
+  done
+  for d in "${GH_STUB_FINDINGS:-/nonexistent}"/*/; do
+    [ -d "$d" ] || continue
+    n="$(basename "$d")"
+    keep=1
+    for l in "${labels[@]}"; do grep -qxF -- "$l" "$d/labels" 2>/dev/null || keep=0; done
+    case "$state" in
+      all) ;;
+      *) [ "$(cat "$d/state" 2>/dev/null || echo OPEN)" = "$(printf '%s' "$state" | tr '[:lower:]' '[:upper:]')" ] || keep=0 ;;
+    esac
+    [ "$keep" = 1 ] || continue
+    json="$(jq --argjson x "$(fake_finding_json "$n")" '. + [$x]' <<<"$json")"
+  done
+  if [ -n "$q" ]; then printf '%s' "$json" | jq -r "$q"; else printf '%s\n' "$json"; fi
 }
 
 # adapter_issue_edit / adapter_issue_comment - mirror stub_gh's `issue

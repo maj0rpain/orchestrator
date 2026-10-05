@@ -3816,6 +3816,161 @@ out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
 assert_status "and a real gh that refuses the label still fails the command" "$st" 1
 restore_suite_env
 
+# --- finding-triage scan -------------------------------------------------------
+# The scan sorts each open filed finding still in needs-triage against the
+# default branch: whether the code its **Location:** names, at the PR's head
+# SHA, has changed since. The issues come from the in-memory fake's
+# GH_STUB_FINDINGS store; the git side is a real fixture: a bare origin, a
+# local clone that holds only the filing-time commit, and a second clone that
+# pushes everything after it, so the scan has to fetch the default branch to
+# see it.
+echo
+echo "finding-triage scan"
+new_repo >/dev/null
+git checkout -q -B main
+seq_lines() { local i; for i in $(seq 1 "$2"); do echo "$1 line $i"; done; }
+mkdir -p src
+seq_lines app 12 >src/app.sh
+seq_lines other 4 >src/other.sh
+seq_lines gone 3 >src/gone.sh
+git add -A && git commit -qm "the reviewed code"
+head_sha="$(git rev-parse HEAD)"
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin main
+git -C "$bare" symbolic-ref HEAD refs/heads/main
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+scan_repo="$PWD"
+# Everything after the filing, made in a second clone and pushed: a fix on
+# app.sh's line 3, then an unrelated edit further down the same file, then
+# gone.sh deleted - and, under refs/pull/8/head alone, a PR head commit the
+# local clone has never seen, as a squash merge leaves it.
+work="$(mktemp -d)/work"
+git clone -q "$bare" "$work"
+git -C "$work" config user.email test@example.com
+git -C "$work" config user.name Test
+git -C "$work" checkout -q main
+sed -i 's/^app line 3$/app line 3, fixed/' "$work/src/app.sh"
+git -C "$work" commit -qam "fix line 3"
+fix_sha="$(git -C "$work" rev-parse HEAD)"
+sed -i 's/^app line 11$/app line 11, reworded/' "$work/src/app.sh"
+git -C "$work" commit -qam "reword line 11"
+reword_sha="$(git -C "$work" rev-parse HEAD)"
+git -C "$work" rm -q src/gone.sh
+git -C "$work" commit -qm "drop gone.sh"
+git -C "$work" push -q origin main
+git -C "$work" checkout -q -b pr8 "$head_sha"
+echo "notes" >"$work/notes.txt"
+git -C "$work" add notes.txt
+git -C "$work" commit -qm "a later PR head"
+pr_head_sha="$(git -C "$work" rev-parse HEAD)"
+git -C "$work" push -q origin HEAD:refs/pull/8/head
+origin_main="$(git -C "$bare" rev-parse main)"
+
+findings="$(mktemp -d)"
+# finding <n> <labels, comma-separated> <location line|-> [pr] [state]: one
+# issue in the fake's store, its body in the closer's filed shape.
+finding() {
+  local d="$findings/$1"
+  mkdir -p "$d"
+  printf '%s\n' "$2" | tr ',' '\n' >"$d/labels"
+  [ -z "${5:-}" ] || printf '%s\n' "$5" >"$d/state"
+  if [ "$3" = - ]; then
+    writeln 'A finding written by hand, with no labelled lines.' >"$d/body"
+  else
+    writeln '## Finding' '' '> The reviewer said this.' '' '**Axis:** Standards' '' \
+      '**Severity:** nit - a reason.' '' "**Location:** $3" '' \
+      "**PR:** https://github.com/acme/widgets/pull/${4:-7}" '' \
+      '**Why not fixed in the loop:** found in the final iteration.' >"$d/body"
+  fi
+}
+finding 1 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha"
+finding 2 "review:major,needs-triage,bug" "\`src/app.sh:3\` at $head_sha"
+finding 3 "review:nit,needs-triage" "\`src/app.sh:40\` (and \`:41\`) at $head_sha"
+finding 4 "review:nit,needs-triage" "\`src/gone.sh:1\` at $head_sha"
+finding 5 "review:major,needs-triage" "\`src/app.sh:3\` at 0123456789abcdef0123456789abcdef01234567"
+finding 6 "review:nit,needs-triage" -
+finding 7 "review:nit,needs-triage" "\`src/other.sh:2\` at $pr_head_sha" 8
+finding 8 "review:nit,ready-for-agent" "\`src/other.sh:2\` at $head_sha"
+finding 9 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha" 7 CLOSED
+finding 10 "needs-triage" "\`src/other.sh:2\` at $head_sha"
+scan() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" GH_STUB_FILED="$filed" \
+  base_cmd finding-triage scan "$@"; }
+# line_of <n> <out>: the scan's line for issue n.
+line_of() { printf '%s\n' "$2" | awk -F'\t' -v n="$1" '$1 == n'; }
+field_of() { line_of "$1" "$3" | cut -f"$2"; }
+
+before_refs="$(git for-each-ref refs/heads)"
+before_head="$(git rev-parse HEAD) $(git symbolic-ref -q HEAD)"
+before_tree="$(git status --porcelain)"
+filed="$(mktemp)"
+out="$(scan 2>&1)"; st=$?
+assert_status "scans the open filed findings" "$st" 0
+assert_eq "one tab-separated line of five fields per finding" \
+  "$(printf '%s\n' "$out" | awk -F'\t' 'NF != 5' | wc -l | tr -d ' ')" "0"
+assert_eq "an unchanged file's finding: issue, PR, location, result, empty detail" \
+  "$(line_of 1 "$out")" "$(printf '1\t7\tsrc/other.sh:2\tunchanged\t')"
+assert_eq "a finding whose lines a later commit fixed is changed" "$(field_of 2 4 "$out")" "changed"
+assert_eq "naming that commit's full SHA, not the newer one elsewhere in the file" \
+  "$(field_of 2 5 "$out")" "$fix_sha"
+assert_eq "a line range the file no longer reaches is changed too" "$(field_of 3 4 "$out")" "changed"
+assert_eq "naming the newest commit touching the file" "$(field_of 3 5 "$out")" "$reword_sha"
+assert_eq "a deleted file's finding is gone" "$(field_of 4 4 "$out")" "gone"
+assert_eq "with no detail" "$(field_of 4 5 "$out")" ""
+assert_eq "an unreachable head SHA is unknown" "$(field_of 5 4 "$out")" "unknown"
+assert_contains "saying the SHA was unreachable" "$(field_of 5 5 "$out")" "unreachable"
+assert_eq "a body without the labelled lines is unknown" "$(field_of 6 4 "$out")" "unknown"
+assert_contains "saying the body does not parse" "$(field_of 6 5 "$out")" "Location"
+assert_eq "a SHA only the PR's head ref holds is fetched, not unknown" "$(field_of 7 4 "$out")" "unchanged"
+assert_eq "naming that PR" "$(field_of 7 2 "$out")" "8"
+assert_eq "an already triaged finding is not scanned" "$(line_of 8 "$out")" ""
+assert_eq "nor a closed one" "$(line_of 9 "$out")" ""
+assert_eq "nor an issue that is not a filed finding" "$(line_of 10 "$out")" ""
+assert_eq "the findings come in issue order" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 "
+assert_contains "lists the major findings still in needs-triage" "$(cat "$filed")" \
+  "issue list --state open --label review:major --label needs-triage"
+assert_contains "and the nit ones" "$(cat "$filed")" \
+  "issue list --state open --label review:nit --label needs-triage"
+assert_eq "makes no write call to gh" \
+  "$(grep -vE '^issue (list|view) ' "$filed" | wc -l | tr -d ' ')" "0"
+assert_eq "fetches the default branch first" "$(git rev-parse origin/main)" "$origin_main"
+assert_eq "and leaves the branches as they were" "$(git for-each-ref refs/heads)" "$before_refs"
+assert_eq "HEAD too" "$(git rev-parse HEAD) $(git symbolic-ref -q HEAD)" "$before_head"
+assert_eq "and the working tree" "$(git status --porcelain)" "$before_tree"
+
+out="$(scan --pr 8 2>&1)"; st=$?
+assert_status "narrows to one source PR" "$st" 0
+assert_eq "scanning only that PR's findings" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "7 "
+
+out="$(scan 2 2>&1)"; st=$?
+assert_status "scans one explicit finding" "$st" 0
+assert_eq "and only it" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "2 "
+out="$(scan 9 2>&1)"; st=$?
+assert_status "refuses an explicit finding that is closed" "$st" 1
+assert_contains "saying so" "$out" "not open"
+out="$(scan 8 2>&1)"; st=$?
+assert_status "refuses one already triaged" "$st" 1
+assert_contains "naming the missing triage label" "$out" "needs-triage"
+out="$(scan 10 2>&1)"; st=$?
+assert_status "refuses an issue that is not a filed finding" "$st" 1
+assert_contains "naming the missing severity label" "$out" "review:"
+out="$(scan 2 --pr 8 2>&1)"; st=$?
+assert_status "takes an issue or a PR, not both" "$st" 1
+
+# The triage label is the repo's name for the role, as review file files it.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `triage me`          | Evaluate it |' >docs/agents/triage-labels.md
+: >"$filed"
+out="$(scan 2>&1)"
+assert_contains "lists under the repo's own name for needs-triage" "$(cat "$filed")" \
+  "issue list --state open --label review:nit --label triage me"
+rm docs/agents/triage-labels.md
+restore_suite_env
+
 # --- spec ---------------------------------------------------------------------
 # The spec review's one hand on GitHub: fetch the body, replace it, comment on
 # it. The number comes from state so a review can never touch the wrong issue,
@@ -4385,6 +4540,7 @@ assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 assert_contains "and filing" "$("$ORCH" help)" "review file"
 assert_contains "with the finding's axis" "$("$ORCH" help)" "review file <major|nit> <title> --axis <spec|standards> --body-file <file>"
+assert_contains "and finding triage's scan" "$("$ORCH" help)" "finding-triage scan [<issue> | --pr <n>]"
 assert_contains "and the terminal-state classifier" "$("$ORCH" help)" "review terminal"
 assert_contains "and retiring a loop's records" "$("$ORCH" help)" "review retire"
 assert_contains "help documents issue publish" "$("$ORCH" help)" "issue publish"

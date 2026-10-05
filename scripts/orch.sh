@@ -698,6 +698,12 @@ adapter_issue_close() {
   gh issue close "$@"
 }
 
+# finding-triage scan's listing of the open filed findings, once per severity
+# label: gh filters on whole labels, not on a prefix.
+adapter_issue_list() {
+  gh issue list "$@"
+}
+
 # The PR-resource primitives (issue #93, third of the #78 breakdown): open_pr's
 # create/view, ci_probe's checks, cmd_review ready's ready, and
 # cmd_redo_review's close. doctor.sh's own `gh pr view` calls are a separate
@@ -1241,6 +1247,150 @@ cmd_review_pass() {
 }
 
 # --- git / github -----------------------------------------------------------
+
+# The severities a filed finding carries as review:<severity> - the ones
+# `review file` files. Blocking is always fixed in the loop, never filed.
+FILED_SEVERITIES="major nit"
+
+# finding_location <body>: "<file>\t<line>\t<sha>" from a filed body's
+# **Location:** line - the first backticked <file>:<line> on it, the line
+# alone or a range, and the SHA after its last "at" - or nothing when the
+# line is missing or does not parse.
+finding_location() {
+  printf '%s\n' "$1" | awk '
+    /^\*\*Location:\*\*/ {
+      if (!match($0, /`[^`:]+:[0-9]+(-[0-9]+)?`/)) exit
+      loc = substr($0, RSTART + 1, RLENGTH - 2)
+      rest = $0; sha = ""
+      while (match(rest, / at [0-9a-fA-F]+/)) { sha = substr(rest, RSTART + 4, RLENGTH - 4); rest = substr(rest, RSTART + RLENGTH) }
+      if (sha == "") exit
+      i = match(loc, /:[0-9]+(-[0-9]+)?$/)
+      printf "%s\t%s\t%s\n", substr(loc, 1, i - 1), substr(loc, i + 1), sha
+      exit
+    }'
+}
+
+# finding_pr <body>: the PR number - the trailing number of the **PR:** line's
+# URL - or nothing.
+finding_pr() {
+  printf '%s\n' "$1" | sed -n 's|^\*\*PR:\*\*.*/pull/\([0-9][0-9]*\)/*[[:space:]]*$|\1|p' | sed -n 1p
+}
+
+# map_line <old sha> <new ref> <file> <line>: where <line> of <file> at <old
+# sha> sits at <new ref>, read off the zero-context diff between them. A line
+# inside a changed hunk maps to that hunk's start.
+map_line() {
+  git diff -U0 "$1" "$2" -- "$3" 2>/dev/null | awk -v L="$4" '
+    /^@@ / {
+      split($2, o, ","); split($3, n, ",")
+      a = substr(o[1], 2) + 0; b = (2 in o) ? o[2] + 0 : 1
+      c = substr(n[1], 2) + 0; d = (2 in n) ? n[2] + 0 : 1
+      if (b > 0 && a <= L && L <= a + b - 1) { done = 1; print (c > 0 ? c : 1); exit }
+      if ((b > 0 && a + b - 1 < L) || (b == 0 && a < L)) off += d - b
+      else exit
+    }
+    END { if (!done) print L + off }'
+}
+
+# finding_scan_one <issue> <body> <default ref>: the scan's one line for one
+# finding.
+finding_scan_one() {
+  local n="$1" body="$2" ref="$3" loc pr file lines sha full start end s e detail
+  pr="$(finding_pr "$body")"
+  loc="$(finding_location "$body")"
+  if [ -z "$loc" ]; then
+    printf '%s\t%s\t-\tunknown\tbody does not parse: no **Location:** line naming `<file>:<line>` at <SHA>\n' "$n" "${pr:--}"
+    return
+  fi
+  IFS=$'\t' read -r file lines sha <<<"$loc"
+  if [ -z "$pr" ]; then
+    printf '%s\t-\t%s:%s\tunknown\tbody does not parse: no **PR:** line ending in a pull request URL\n' "$n" "$file" "$lines"
+    return
+  fi
+  # A squash merge leaves the PR's head commit off every branch: the PR's own
+  # head ref still holds it.
+  if ! full="$(git rev-parse --verify -q "$sha^{commit}")"; then
+    git fetch -q origin "refs/pull/$pr/head" >/dev/null 2>&1 || true
+    if ! full="$(git rev-parse --verify -q "$sha^{commit}")"; then
+      printf '%s\t%s\t%s:%s\tunknown\thead SHA %s is unreachable, even after fetching refs/pull/%s/head\n' \
+        "$n" "$pr" "$file" "$lines" "$sha" "$pr"
+      return
+    fi
+  fi
+  if ! git cat-file -e "$ref:$file" 2>/dev/null; then
+    printf '%s\t%s\t%s:%s\tgone\t\n' "$n" "$pr" "$file" "$lines"
+    return
+  fi
+  if git diff --quiet "$full" "$ref" -- "$file" 2>/dev/null; then
+    printf '%s\t%s\t%s:%s\tunchanged\t\n' "$n" "$pr" "$file" "$lines"
+    return
+  fi
+  start="${lines%%-*}"; end="${lines#*-}"
+  s="$(map_line "$full" "$ref" "$file" "$start")"
+  e="$(map_line "$full" "$ref" "$file" "$end")"
+  [ "$e" -ge "$s" ] || e="$s"
+  # The newest commit since the filing that touched the finding's lines;
+  # failing that - a range the file no longer reaches - the newest that
+  # touched the file.
+  detail="$(git log -1 --format=%H -L "$s,$e:$file" "$ref" "^$full" 2>/dev/null | grep -Exm1 '[0-9a-f]{40}')" || true
+  [ -n "$detail" ] || detail="$(git log -1 --format=%H "$ref" "^$full" -- "$file" 2>/dev/null)"
+  [ -n "$detail" ] || detail="$(git log -1 --format=%H "$ref" -- "$file" 2>/dev/null)"
+  printf '%s\t%s\t%s:%s\tchanged\t%s\n' "$n" "$pr" "$file" "$lines" "$detail"
+}
+
+# finding-triage scan [<issue> | --pr <n>]: read-only. Sorts each open filed
+# finding still in needs-triage against origin/<default>, one tab-separated
+# line apiece: <issue> <pr> <file>:<line> <result> <detail>.
+cmd_finding_triage_scan() {
+  local usage="usage: orch.sh finding-triage scan [<issue> | --pr <n>]"
+  local issue="" pr_filter="" triage sev nums="" n out state labels body def ref line
+  case $# in
+    0) ;;
+    1) issue="$1" ;;
+    2) [ "$1" = --pr ] && [ -n "$2" ] || die "$usage"; pr_filter="$2" ;;
+    *) die "$usage" ;;
+  esac
+  case "$issue$pr_filter" in *[!0-9]*) die "$usage" ;; esac
+  triage="$(triage_label_for needs-triage)"
+  if [ -n "$issue" ]; then
+    out="$(adapter_issue_view "$issue" --json state,labels --jq '.state, (.labels[].name)')" \
+      || die "gh could not read issue #$issue"
+    state="$(first_line "$out")"
+    labels="$(printf '%s\n' "$out" | tail -n +2)"
+    [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
+    printf '%s\n' "$labels" | grep -q '^review:' \
+      || die "issue #$issue is not a filed finding - it carries no review:<severity> label"
+    printf '%s\n' "$labels" | grep -qxF "$triage" \
+      || die "issue #$issue is not in triage - it carries no '$triage' label"
+    nums="$issue"
+  else
+    for sev in $FILED_SEVERITIES; do
+      out="$(adapter_issue_list --state open --label "review:$sev" --label "$triage" \
+        --limit 1000 --json number --jq '.[].number')" \
+        || die "gh could not list the review:$sev findings"
+      nums="$nums $out"
+    done
+  fi
+  def="$(default_branch)"
+  ref="refs/remotes/origin/$def"
+  git fetch -q origin "+refs/heads/$def:$ref" >/dev/null 2>&1 \
+    || die "could not fetch origin/$def"
+  for n in $(printf '%s\n' $nums | sort -nu); do
+    body="$(adapter_issue_view "$n" --json body --jq .body)" || die "gh could not read issue #$n"
+    if [ -n "$pr_filter" ] && [ "$(finding_pr "$body")" != "$pr_filter" ]; then continue; fi
+    line="$(finding_scan_one "$n" "$body" "$ref")"
+    printf '%s\n' "$line"
+  done
+}
+
+cmd_finding_triage() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    scan) cmd_finding_triage_scan "$@" ;;
+    *) die "usage: orch.sh finding-triage scan [<issue> | --pr <n>]" ;;
+  esac
+}
 
 # Forking a named branch off a base branch has exactly one right answer -
 # fetch it, then check it out, falling back to the local ref if origin was
@@ -2236,6 +2386,17 @@ orch.sh - deterministic operations for the orchestrator flow
                               branch name used whole, git-excluding
                               .orchestrator/. Never wipes; reads state.json
                               only to compare, and never writes it
+  finding-triage scan [<issue> | --pr <n>]
+                              read-only: fetch origin/<default> and sort each
+                              open review:<severity> finding still in the
+                              repo's needs-triage - or the one <issue>, or
+                              those whose **PR:** is <n> - one line apiece:
+                              <issue> TAB <pr> TAB <file>:<line> TAB <result>
+                              TAB <detail>; result unchanged, changed (detail:
+                              the newest touching commit's full SHA), gone, or
+                              unknown (detail: why), fetching
+                              refs/pull/<pr>/head before calling a SHA
+                              unreachable
   redo review                 retire the branch and PR, reopen the spec
                               issue's closed tickets, reset the loop, retire
                               03-implement.md into handoff/pre-redo-<n>/, and
@@ -2273,6 +2434,7 @@ main() {
     spec)          cmd_spec "$@" ;;
     spec-review)   cmd_spec_review "$@" ;;
     review-pass)   cmd_review_pass "$@" ;;
+    finding-triage) cmd_finding_triage "$@" ;;
     redo)          cmd_redo "$@" ;;
     status)        cmd_status "$@" ;;
     archive)       cmd_archive "$@" ;;
