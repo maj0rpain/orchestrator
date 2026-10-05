@@ -11,6 +11,12 @@
 
 set -euo pipefail
 
+# A tool manager's shim (mise) can print a status line on stdout ahead of the
+# tool's own output, which then lands in every `$(gh ...)` capture (#465).
+# Silence it for every command this script runs, doctor.sh's checks included.
+# Where mise is absent this does nothing.
+export MISE_QUIET=1
+
 readonly ORCH_DIR_NAME=".orchestrator"
 # The directories the plugin writes to and keeps out of git status: its flow
 # state, and .scratch/, where planning drafts land. The one list both
@@ -193,14 +199,21 @@ phase_write() {
 # clone time - in a clone taken while a feature branch was checked out it names
 # that branch, which would silently base every feature branch off the wrong place.
 # It is a fallback for repos gh cannot answer for, not the primary source.
+# Each candidate counts only when it is a valid branch name, so noise around
+# gh's answer - or a failed gh's output - falls through to the next (#465).
 default_branch() {
   local b
-  b="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)" || true
-  if [ -z "$b" ]; then
-    b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')" || true
+  b="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)" || b=""
+  if ! is_branch_name "$b"; then
+    b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')" || b=""
   fi
-  [ -n "$b" ] || b="main"
+  is_branch_name "$b" || b="main"
   printf '%s\n' "$b"
+}
+
+# Whether $1 is a non-empty, valid branch name.
+is_branch_name() {
+  [ -n "$1" ] && git check-ref-format --branch "$1" >/dev/null 2>&1
 }
 
 # The base branch in effect now: the checkout's orchestrator.base setting, else

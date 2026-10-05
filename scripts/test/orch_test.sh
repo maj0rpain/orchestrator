@@ -714,12 +714,22 @@ stub_pushed_branch() {
 
 # A gh that answers default-branch's question with "trunk", or fails when
 # GH_STUB_FAIL=1 - the narrow stub the default-branch and base resolution
-# tests put first on PATH themselves, instead of stub_gh's full fake.
+# tests put first on PATH themselves, instead of stub_gh's full fake. Its
+# knobs play a tool manager's shim around it (issue #465):
+# GH_STUB_BANNER=1 prints a mise-style status line before the answer and
+# still exits 0; GH_STUB_FAIL_NOISY=1 prints the answer and exits non-zero;
+# GH_STUB_ENV_LOG names a file it appends the MISE_QUIET it sees to.
 STUB="$(mktemp -d)"
 cat >"$STUB/gh" <<'GH'
 #!/usr/bin/env bash
+if [ -n "${GH_STUB_ENV_LOG:-}" ]; then
+  printf 'MISE_QUIET=%s\n' "${MISE_QUIET-<unset>}" >>"$GH_STUB_ENV_LOG"
+fi
 [ "${GH_STUB_FAIL:-0}" = "1" ] && exit 1
+[ "${GH_STUB_BANNER:-0}" = "1" ] && echo "mise ~/.config/mise/config.toml tools: gh@2.102.0"
 echo "trunk"
+[ "${GH_STUB_FAIL_NOISY:-0}" = "1" ] && exit 1
+exit 0
 GH
 chmod +x "$STUB/gh"
 
@@ -1237,6 +1247,36 @@ git symbolic-ref -d refs/remotes/origin/HEAD
 assert_eq "falls back to main when nothing else answers" \
   "$(PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" default-branch)" "main"
 
+# A tool manager's shim (mise) can print a status line on stdout around gh's
+# own answer (#465). Neither a two-line answer nor a failed gh's output may
+# become the default branch: only a valid branch name is ever resolved.
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/some-feature
+assert_eq "falls back past a gh answer polluted by a banner line" \
+  "$(PATH="$STUB:$PATH" GH_STUB_BANNER=1 "$ORCH" default-branch)" "some-feature"
+assert_eq "ignores the output of a gh that failed" \
+  "$(PATH="$STUB:$PATH" GH_STUB_FAIL_NOISY=1 "$ORCH" default-branch)" "some-feature"
+git update-ref refs/remotes/origin/-dash HEAD
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/-dash
+assert_eq "falls back to main past an origin/HEAD that is no valid branch name" \
+  "$(PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" default-branch)" "main"
+git symbolic-ref -d refs/remotes/origin/HEAD
+git update-ref -d refs/remotes/origin/-dash
+mise_log="$(mktemp)"
+env -u MISE_QUIET PATH="$STUB:$PATH" GH_STUB_ENV_LOG="$mise_log" "$ORCH" default-branch >/dev/null
+assert_eq "gh run from orch.sh sees MISE_QUIET=1" "$(sort -u "$mise_log")" "MISE_QUIET=1"
+rm -f "$mise_log"
+
+new_repo >/dev/null
+git remote add origin https://example.invalid/x/y.git
+# origin/HEAD names a branch that is not `main`, so an origin/HEAD fallback
+# cannot pass for the final literal-`main` one.
+git update-ref refs/remotes/origin/some-feature HEAD
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/some-feature
+PATH="$STUB:$PATH" GH_STUB_BANNER=1 "$ORCH" init banner >/dev/null
+recorded="$("$ORCH" state get base)"
+assert_eq "init records a single-line base past a banner" "$(printf '%s\n' "$recorded" | wc -l | tr -d ' ')" "1"
+assert_eq "init records origin/HEAD's branch as the base" "$recorded" "some-feature"
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
@@ -1247,14 +1287,14 @@ new_repo >/dev/null
 git remote add origin https://example.invalid/x/y.git
 git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
 git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$(git branch --show-current)"
-"$ORCH" init bcreate >/dev/null
-"$ORCH" state set issue 11
+base_cmd init bcreate >/dev/null
+base_cmd state set issue 11
 before_sha="$(git rev-parse HEAD)"
-out="$("$ORCH" branch create)"
+out="$(base_cmd branch create)"
 assert_eq "derives the branch name from slug and the recorded issue" "$out" "orch/11-bcreate"
 assert_eq "checks the new branch out" "$(git branch --show-current)" "orch/11-bcreate"
-assert_eq "records the branch in state" "$("$ORCH" state get branch)" "orch/11-bcreate"
-assert_eq "records the fork point as base_sha" "$("$ORCH" state get base_sha)" "$before_sha"
+assert_eq "records the branch in state" "$(base_cmd state get branch)" "orch/11-bcreate"
+assert_eq "records the fork point as base_sha" "$(base_cmd state get base_sha)" "$before_sha"
 
 # --- branch off --------------------------------------------------------------
 # A quick implementation keeps no state, so this is the primitive it shares
@@ -1269,16 +1309,16 @@ new_repo >/dev/null
 git remote add origin https://example.invalid/x/y.git
 git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
 git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$(git branch --show-current)"
-out="$("$ORCH" branch off "quick/9-widgets")"
+out="$(base_cmd branch off "quick/9-widgets")"
 assert_eq "prints the branch it made" "$out" "quick/9-widgets"
 assert_eq "checks it out" "$(git branch --show-current)" "quick/9-widgets"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 
-out="$("$ORCH" branch off "quick/9-widgets" 2>&1)"; st=$?
+out="$(base_cmd branch off "quick/9-widgets" 2>&1)"; st=$?
 assert_status "refuses a name that already exists" "$st" 1
 assert_contains "names the branch" "$out" "quick/9-widgets already exists"
 
-out="$("$ORCH" branch off 2>&1)"; st=$?
+out="$(base_cmd branch off 2>&1)"; st=$?
 assert_status "refuses with no name" "$st" 1
 
 # --- base --------------------------------------------------------------------
@@ -1673,18 +1713,18 @@ git init -q --bare "$bare"
 git remote add origin "$bare"
 git push -q origin HEAD:refs/heads/main
 
-out="$("$ORCH" branch retire nosuchbranch new 2>&1)"; st=$?
+out="$(base_cmd branch retire nosuchbranch new 2>&1)"; st=$?
 assert_status "refuses a branch that does not exist" "$st" 1
 assert_contains "naming it" "$out" "nosuchbranch does not exist"
 
 git branch old-attempt
 git branch taken
-out="$("$ORCH" branch retire old-attempt taken 2>&1)"; st=$?
+out="$(base_cmd branch retire old-attempt taken 2>&1)"; st=$?
 assert_status "refuses a destination name already in use" "$st" 1
 assert_contains "naming it" "$out" "taken already exists"
 git branch -d taken
 
-out="$("$ORCH" branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$?
 assert_status "renames a branch with no upstream" "$st" 0
 assert_eq "prints the new name" "$out" "old-attempt-redo-1"
 assert_eq "the old name is gone locally" \
@@ -1694,7 +1734,7 @@ assert_eq "the new name exists" \
 
 git checkout -q -b to-retire
 git push -q -u origin to-retire
-out="$("$ORCH" branch retire to-retire to-retire-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire to-retire to-retire-redo-1 2>&1)"; st=$?
 assert_status "renames and republishes a branch with an upstream" "$st" 0
 assert_eq "prints the new name" "$out" "to-retire-redo-1"
 assert_eq "pushes the new name to origin" \
@@ -1710,7 +1750,7 @@ assert_eq "and deletes the old remote ref" \
 git checkout -q -b to-fail
 git push -q -u origin to-fail
 rm -rf "$bare"
-out="$("$ORCH" branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "dies when the push to origin fails" "$st" 1
 assert_contains "with a clear reason" "$out" "could not push"
 # The local rename happens before the push is even attempted - issue #63:
@@ -1726,7 +1766,7 @@ assert_eq "and the new name is not left dangling in its place" \
 bare2="$(mktemp -d)/origin.git"
 git init -q --bare "$bare2"
 git remote set-url origin "$bare2"
-out="$("$ORCH" branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "retrying the same rename succeeds once origin is reachable again" "$st" 0
 assert_eq "prints the new name" "$out" "to-fail-redo-1"
 assert_eq "renames locally" \
@@ -1747,7 +1787,7 @@ git branch -m to-resume to-resume-redo-1
 git push -q -u origin to-resume-redo-1
 # The old ref is deliberately left on origin, standing in for the failed
 # delete a real partial failure would leave behind.
-out="$("$ORCH" branch retire to-resume to-resume-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire to-resume to-resume-redo-1 2>&1)"; st=$?
 assert_status "resumes rather than failing on the already-gone old name" "$st" 0
 assert_eq "prints the new name" "$out" "to-resume-redo-1"
 assert_eq "and finishes the delete the earlier attempt left undone" \
@@ -1762,17 +1802,17 @@ git -C "$bare4" config receive.denyDeleteCurrentBranch refuse
 git remote set-url origin "$bare4"
 git checkout -q -b to-protect
 git push -q -u origin to-protect
-out="$("$ORCH" branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
 assert_status "dies when the old ref genuinely cannot be deleted" "$st" 1
 assert_contains "with a clear reason" "$out" "could not delete origin/to-protect"
 
-out="$("$ORCH" branch retire 2>&1)"; st=$?
+out="$(base_cmd branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 
 # --- branch: unknown op -------------------------------------------------------
 new_repo >/dev/null
-out="$("$ORCH" branch bogus 2>&1)"; st=$?
+out="$(base_cmd branch bogus 2>&1)"; st=$?
 assert_status "branch bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
 assert_contains "naming all four" "$out" "create|off|base-sha|retire"
