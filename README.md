@@ -207,7 +207,7 @@ start.
 commands/                     start, next, status, doctor, redo, abort, release, spec-review, review, interview, to-spec, to-tickets
 agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, and the implementer
 skills/orch-flow/             the state machine (judgment)
-skills/orch-spec-review/      the spec review: four lenses in a flow, three standalone, one batch question, plus a ticket question when an existing breakdown is touched
+skills/orch-spec-review/      the spec review: consolidation of the issue's comments, then four lenses in a flow (three standalone), one batch question, plus a ticket question when an existing breakdown is touched
 skills/orch-review/           the review loop: rubric, authority rules, terminal states; and the review pass, quick or standalone
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
 skills/orch-quick-implement/  the other route: issue, optional spec review, orch-to-tickets, tdd, review pass, PR - no flow
