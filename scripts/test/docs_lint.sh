@@ -1098,6 +1098,50 @@ assert_empty "a review pass defined once and run by step 6 is not flagged" "$(sc
 check "the review pass is defined once in orch-review and quick implementation runs it" \
   "$(scan_review_pass "$PLUGIN_ROOT")"
 
+# --- previously declined (#418) ------------------------------------------------
+echo
+echo "previously declined (#418)"
+# A standalone review pass reads earlier passes' declines through pr comments
+# and lists what it dropped as **Previously declined** - while the reviewers
+# stay fresh: Review pass step 3's prompt stays the four variables, no word
+# about earlier passes.
+# scan_previously_declined <plugin root>: one line per break of that rule.
+scan_previously_declined() {
+  local r="$1" review="skills/orch-review/SKILL.md" body prompt
+  body="$(md_section "$r/$review" "## Standalone review pass" | flat_text)"
+  grep -qF 'pr comments' <<<"$body" \
+    || echo "$review: ## Standalone review pass does not name pr comments"
+  grep -qF '**Previously declined**' <<<"$body" \
+    || echo "$review: ## Standalone review pass does not name **Previously declined**"
+  prompt="$(md_section "$r/$review" "## Review pass" \
+    | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//')"
+  [ "$prompt" = "$(printf '%s\n' 'Base SHA: <base SHA>' 'Spec issue: #<issue>' 'Iteration: <NN>' \
+    'Report path: <prefix>-<standards|spec>.md')" ] \
+    || echo "$review: ## Review pass step 3's reviewer prompt is not the four variables"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-review"
+printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base SHA: <base SHA>' \
+  '   Spec issue: #<issue>' '   Earlier declines: <list>' '   Iteration: <NN>' \
+  '   Report path: <prefix>-<standards|spec>.md' '   ```' '' '## Standalone review pass' '' 'Post it.' \
+  >"$fixture/skills/orch-review/SKILL.md"
+out="$(scan_previously_declined "$fixture")"
+flags "a standalone pass that never reads pr comments is flagged" \
+  "$out" "skills/orch-review/SKILL.md: ## Standalone review pass does not name pr comments"
+flags "a standalone pass with no Previously declined is flagged" \
+  "$out" "skills/orch-review/SKILL.md: ## Standalone review pass does not name **Previously declined**"
+flags "a reviewer prompt carrying earlier declines is flagged" \
+  "$out" "skills/orch-review/SKILL.md: ## Review pass step 3's reviewer prompt is not the four variables"
+printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base SHA: <base SHA>' \
+  '   Spec issue: #<issue>' '   Iteration: <NN>' '   Report path: <prefix>-<standards|spec>.md' '   ```' '' \
+  '## Standalone review pass' '' 'Run `orch.sh pr comments <file>`; list **Previously' 'declined**.' \
+  >"$fixture/skills/orch-review/SKILL.md"
+assert_empty "a pass that reads earlier declines and keeps the prompt is not flagged" \
+  "$(scan_previously_declined "$fixture")"
+check "a standalone review pass drops earlier declines and the reviewer prompt stays four variables" \
+  "$(scan_previously_declined "$PLUGIN_ROOT")"
+
 # --- closer's filed body lines -----------------------------------------------
 # Finding triage's scan parses a filed finding's body by its labelled lines, so
 # the closer, which writes that body, must name each one in its **Filing**

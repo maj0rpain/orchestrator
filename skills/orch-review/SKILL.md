@@ -443,9 +443,10 @@ fallbacks go.
 5. **Fix.** Read both reports, and fix, yourself, every finding you agree
    with. Use no fixer agent, no closer, no severity, no budget, and file
    nothing. Commit the fixes as one commit.
-6. **Declines.** Record each finding you decline, one line each: its
-   `file:line` - or `-` when the report gave `-` for its location - and your
-   reason for declining it. If you declined none, the record says
+6. **Declines.** Record each finding you decline, one line each:
+   `` `file:line` - <claim> - <reason> `` - its `file:line`, or `-` when the
+   report gave `-` for its location; the finding's claim, in a few words;
+   and your reason for declining it. If you declined none, the record says
    `None declined.` The caller says where this record goes.
 
 A host that cannot start the reviewers natively takes
@@ -465,22 +466,47 @@ The issue number comes from the human: the command's argument, or the issue
 they named. With no number, ask for one and wait. Never take it from
 `state.json` or the active flow.
 
-1. **Run the pass**: **Review pass** steps 1 to 6, with the human's issue.
+1. **Run the pass**: **Review pass** steps 1 to 4, with the human's issue.
    When step 1 dies because an active flow holds this issue or this branch,
-   its message names the command to run instead. The pass's declines and
-   host fallbacks go to step 3 below.
-2. **Commit and push.** The fixes are one commit, as the pass says. When the
+   its message names the command to run instead.
+2. **Earlier declines.** Before fixing anything, read what earlier review
+   passes on the branch's PR declined. Run
+   `bash "$ORCH" pr comments <prefix>-comments.md`:
+   - exit 0: the PR's comments are in the file (an empty file when there
+     are none). Also run `bash "$ORCH" pr fetch <prefix>-body.md` for the
+     PR body; if it fails, stop and say so, relaying its reason;
+   - exit 1: the branch has no open PR; there is nothing to read, and the
+     pass goes on as if no pass had run before;
+   - exit 2: GitHub could not be read; stop and say so, relaying its
+     reason.
+
+   An earlier review pass is the PR body - a quick implementation's pass -
+   or any comment, carrying both a **Review** and a **Host fallbacks**
+   heading; its declines are the lines under **Review**. `None declined.`
+   contributes nothing, and a comment without both headings is ignored.
+   Drop every finding in the two reports that matches an earlier decline,
+   and keep it aside for step 5. A finding matches when it names the same
+   file and makes the same claim, judged as triage's **Met again** judges
+   a finding against an earlier one; line numbers are ignored, since they
+   move between passes. A finding at `-` matches on the claim alone, and an
+   older decline line with no claim matches on file plus reason. The
+   reviewers hear nothing of this: their prompts stay **Review pass** step
+   3's four variables.
+3. **Fix and decline**: **Review pass** steps 5 and 6, on the findings
+   step 2 kept. The pass's declines and host fallbacks go to step 5 below.
+4. **Commit and push.** The fixes are one commit, as the pass says. When the
    branch has an upstream (`git rev-parse --abbrev-ref @{upstream}`
    succeeds), push it, so an open PR shows the fixes. With no fixes there is
    nothing to commit or push.
-3. **Report.** Write `<prefix>-comment.md` with two headings, **Review** -
-   the declines, or `None declined.` - and **Host fallbacks** - each fallback
-   taken, or `None (<host>).` Then run
+5. **Report.** Write `<prefix>-comment.md` with three headings, **Review** -
+   the declines, or `None declined.` - **Previously declined** - each
+   finding step 2 dropped, as its `file:line` and claim, or `None.` - and
+   **Host fallbacks** - each fallback taken, or `None (<host>).` Then run
    `bash "$ORCH" pr comment <prefix>-comment.md`:
    - exit 0: the comment is posted; tell the human, with the PR number it
      printed;
-   - exit 1: the branch has no open PR; report the declines and host
-     fallbacks in the session instead;
+   - exit 1: the branch has no open PR; report the declines, the previously
+     declined findings and host fallbacks in the session instead;
    - exit 2: GitHub could not be read, or the post failed; stop and say so,
      relaying its reason. Never report this as nothing declined.
 

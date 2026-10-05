@@ -3152,6 +3152,61 @@ help="$("$ORCH" help)"
 assert_contains "help documents pr fetch" "$help" "pr fetch <file>"
 assert_contains "help documents pr update" "$help" "pr update <file>"
 
+# --- pr comments (#418) --------------------------------------------------------
+# Every comment on the current branch's open PR, in issue comments' format, so a
+# standalone review pass reads earlier passes' declines without calling gh
+# itself. Three outcomes, like pr comment: 0 written, 1 only for no open PR, 2
+# when GitHub cannot be read.
+echo
+echo "pr comments (#418)"
+new_repo >/dev/null
+git checkout -q -b quick/18-foo
+prcs() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" pr comments "$@"; }
+pr_comments_json='{"comments":[{"author":{"login":"pat"},"createdAt":"2026-10-01T09:00:00Z","body":"## Review\n\n- `a.sh:3` - unused helper - declined: out of scope.\n\n## Host fallbacks\n\nNone."},{"author":{"login":"bot"},"createdAt":"2026-10-02T10:00:00Z","body":"LGTM"}]}'
+pr_comments="$(mktemp -d)/comments.md"
+
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' GH_STUB_PR_COMMENTS_JSON="$pr_comments_json" \
+  prcs "$pr_comments" 2>&1)"; st=$?
+assert_status "pr comments writes the open PR's comments" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+assert_eq "in issue comments' format: each opened by its author-and-date marker" \
+  "$(cat "$pr_comments")" "$(writeln '<!-- comment @pat 2026-10-01T09:00:00Z -->' \
+    '## Review' '' '- `a.sh:3` - unused helper - declined: out of scope.' '' '## Host fallbacks' '' 'None.' '' \
+    '<!-- comment @bot 2026-10-02T10:00:00Z -->' 'LGTM')"
+assert_contains "looking the PR up by the current branch" "$(cat "$filed")" \
+  "pr list --head quick/18-foo --state open --json number"
+
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' GH_STUB_PR_COMMENTS_JSON='{"comments":[]}' \
+  prcs "$pr_comments" 2>&1)"; st=$?
+assert_status "a PR with no comments still succeeds" "$st" 0
+assert_eq "leaving an empty file" "$(wc -c <"$pr_comments" | tr -d ' ')" "0"
+
+printf 'known content\n' >"$pr_comments"
+filed="$(mktemp)"
+out="$(GH_STUB_PR_COMMENTS_JSON="$pr_comments_json" prcs "$pr_comments" 2>/dev/null)"; st=$?
+assert_status "no open PR exits 1" "$st" 1
+assert_eq "printing nothing" "$out" ""
+assert_eq "and writing nothing" "$(cat "$pr_comments")" "known content"
+
+err="$(GH_STUB_PR_LIST_EXIT=1 prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
+assert_status "an unreadable PR list exits 2" "$st" 2
+assert_eq "and writes nothing" "$(cat "$pr_comments")" "known content"
+
+err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' GH_STUB_PR_COMMENTS_EXIT=1 \
+  GH_STUB_PR_COMMENTS_JSON="$pr_comments_json" prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
+assert_status "unreadable comments exit 2" "$st" 2
+assert_contains "naming the PR" "$err" "PR #57"
+assert_eq "leaving the file that was already there unchanged" "$(cat "$pr_comments")" "known content"
+
+err="$(prcs 2>&1 >/dev/null)"; st=$?
+assert_status "no file argument exits 2" "$st" 2
+assert_contains "with its usage" "$err" "usage: orch.sh pr comments <file>"
+
+assert_contains "help documents pr comments" "$("$ORCH" help)" "pr comments <file>"
+rm -f "$pr_comments"
+
 # --- gh adapter (real pr list, subprocess gh) ---------------------------------
 # pr release just proved its decisions through the in-memory fake - this is
 # the narrow assertion that its list, issue-state and create calls reach a real
