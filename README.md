@@ -334,9 +334,10 @@ ticket goes to a fresh `orch-implementer` agent carrying only its number
 and the `orch.sh` path.
 The agent builds that one ticket test-first from its own adapted copy of `tdd`'s rules, on the flow's
 single branch, commits its own work, and checks its commits against the
-ticket's acceptance criteria. It cannot start sub-agents or ask the human
-anything: a call it cannot make alone comes back as a deviation in its
-report, and a criterion it could not meet as unmet. The driving session
+ticket's acceptance criteria, and that a test exercises every source file
+they changed. It cannot start sub-agents or ask the human anything: a call it
+cannot make alone comes back as a deviation in its report, a criterion it
+could not meet as unmet, and a source file it could not cover as untested. The driving session
 closes the ticket only once that report is in hand, then re-queries the
 frontier, until none remain and it opens the one draft PR for the whole flow.
 

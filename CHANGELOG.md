@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.9.0
+
+The implementer's acceptance self-check now also names, for each source file
+its commits changed, the test that exercises it (see issue #425). A file no
+test loads or runs is covered then and there if it can be; one it cannot cover
+is listed on the report's `Criteria` line after `untested:`, and orch-flow's
+implement handoff carries it under **Unmet criteria**, so the review loop's
+Spec axis judges it like an unmet criterion. The report stays five lines.
+
 ## 3.8.0
 
 `review ci` no longer pays its 60-second grace in a repo with no CI (see issue
