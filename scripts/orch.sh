@@ -709,10 +709,10 @@ adapter_issue_list() {
 
 # The PR-resource primitives (issue #93, third of the #78 breakdown): open_pr's
 # create/view, ci_probe's checks, cmd_review ready's ready, and
-# cmd_redo_review's close. pr fetch and pr update read a PR's body through the
-# same view (issue #444). doctor.sh's own `gh pr view` calls are a separate
+# cmd_redo_review's close. doctor.sh's own `gh pr view` calls are a separate
 # concern (out of scope, like default_branch and the ticket group's `gh api`
-# calls) - only the four call sites named in issue #93 move here.
+# calls). Since issue #93, pr fetch and pr update have also read a PR's body
+# through the same view (issue #444).
 adapter_pr_create() {
   gh pr create "$@"
 }
@@ -1827,8 +1827,7 @@ cmd_pr_update() {
   pr="$(required_open_pr)" || exit 1
   current="$(adapter_pr_view "$pr" --json body --jq .body)" \
     || die "gh could not read the body of PR #$pr"
-  line="$(first_line "$current")"
-  line="${line%$'\r'}"
+  line="$(printf '%s\n' "$current" | sed -n '1{s/\r$//;p;}')"
   printf '%s\n' "$line" | grep -qE '^(Closes|Refs) #[0-9]+$' \
     || die "PR #$pr's body does not open with a Closes/Refs #<issue> line, so there is no issue line to keep - refusing to replace it"
   [ "$(sed -n '1{s/\r$//;p;}' "$file")" = "$line" ] \
