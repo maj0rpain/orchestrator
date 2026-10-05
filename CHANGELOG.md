@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.1.2
+
+The header comment on `orch.sh pr comment` no longer claims its exit codes
+work as `ticket exists` signals them (see issue #353). It states the
+command's own contract - 0 posted, 1 no open PR, 2 everything else - and
+names the one rule the two share: a GitHub that cannot be read exits 2,
+never 1. Behaviour does not change.
+
 ## 3.1.1
 
 `orch.sh state set` now stores `true` and `false` as JSON booleans, matching
