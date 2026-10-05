@@ -1,6 +1,6 @@
 ---
 name: orch-implementer
-description: The ticket subagent of an orchestrator flow - builds exactly one ticket test-first on the current branch, commits, checks its own commits against the ticket's acceptance criteria, and returns a five-line report. Started only by the orch-flow skill's implement phase or by the orch-quick-implement skill, with a ticket number and the orch.sh path and nothing else.
+description: The ticket subagent of an orchestrator flow - builds exactly one ticket test-first on the current branch, commits, checks its own commits against the ticket's acceptance criteria and that a test exercises every source file they changed, and returns a five-line report. Started only by the orch-flow skill's implement phase or by the orch-quick-implement skill, with a ticket number and the orch.sh path and nothing else.
 tools: [Read, Edit, Write, Grep, Glob, Bash]
 ---
 

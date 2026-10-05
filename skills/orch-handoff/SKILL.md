@@ -149,8 +149,9 @@ review would be guessing.>
 
 ## Unmet criteria
 <the acceptance criteria the ticket subagents reported unmet on their `Criteria`
-lines, one bullet per ticket, or "None". Not covered by ADR-0002: the review
-loop's Spec axis judges each as an ordinary finding.>
+lines, and the source files they listed there as `untested:`, one bullet per
+ticket, or "None". Not covered by ADR-0002: the review loop's Spec axis judges
+each as an ordinary finding.>
 
 ## Host fallbacks
 <per **Record every host fallback** above>
