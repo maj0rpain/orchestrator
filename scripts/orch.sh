@@ -2169,10 +2169,17 @@ cmd_ticket_reset() {
 # null one both mean "no parent".
 cmd_ticket_parent() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket parent <n>"
-  local n="$1" url
+  local n="$1"
   case "$n" in ''|*[!0-9]*) die "not a plain issue number: $n" ;; esac
-  url="$(gh api "repos/{owner}/{repo}/issues/$n" --jq '.parent_issue_url // empty')" \
-    || die "gh could not read issue #$n's parent"
+  issue_parent "$n"
+}
+
+# The lookup behind `ticket parent`, shared with `ticket block`'s
+# preconditions: <n>'s parent number, or nothing when it has none.
+issue_parent() {
+  local url
+  url="$(gh api "repos/{owner}/{repo}/issues/$1" --jq '.parent_issue_url // empty')" \
+    || die "gh could not read issue #$1's parent"
   if [ -n "$url" ]; then printf '%s\n' "${url##*/}"; fi
 }
 
@@ -2295,6 +2302,149 @@ cmd_ticket_retire() {
   rm -f "$stripped"
 }
 
+# `ticket block`'s arguments, checked before anything touches GitHub: <n>
+# and every --by entry plain issue numbers, --by required. Prints the --by
+# numbers one per line, sorted and de-duplicated, as `ticket publish
+# --blocked-by` does.
+ticket_edge_args() {
+  local verb="$1" usage n="" by="" have_by="" b
+  usage="usage: orch.sh ticket $verb <n> --by N,N,..."
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --by) [ $# -ge 2 ] || die "$usage"; by="$2"; have_by=1; shift 2 ;;
+      -*)   die "$usage" ;;
+      *)    [ -z "$n" ] || die "$usage"; n="$1"; shift ;;
+    esac
+  done
+  [ -n "$n" ] || die "$usage"
+  [ -n "$have_by" ] || die "$usage"
+  case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
+  [ -n "$by" ] || die "--by must be plain issue numbers, got nothing"
+  while IFS= read -r b; do
+    case "$b" in ''|*[!0-9]*) die "--by must be plain issue numbers, got: $by" ;; esac
+  done <<<"$(printf '%s\n' "$by" | tr ',' '\n')"
+  printf '%s\n' "$n"
+  printf '%s\n' "$by" | tr ',' '\n' | sort -un
+}
+
+# Dies, before any write, unless ticket <n> is open, is a sub-issue, and
+# every --by issue is its sibling: a sub-issue of the same parent. A closed
+# blocker is allowed - an edge to a finished ticket is still a record.
+ticket_edge_preconditions() {
+  local n="$1" by="$2" state parent b bp
+  state="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state)" \
+    || die "gh could not read ticket #$n"
+  [ "$state" = open ] || die "ticket #$n is closed - its blocking edges can no longer change anything"
+  parent="$(issue_parent "$n")" || exit 1
+  [ -n "$parent" ] || die "#$n is not a sub-issue, so it is no ticket of a breakdown"
+  while IFS= read -r b; do
+    bp="$(issue_parent "$b")" || exit 1
+    [ "$bp" = "$parent" ] \
+      || die "#$b is not a sub-issue of #$parent, ticket #$n's parent - edges never cross breakdowns"
+  done <<<"$by"
+}
+
+# Ticket <n>'s blocker numbers, read fresh from its native blocked-by
+# listing, one per line, sorted. A gh failure dies naming the ticket.
+ticket_blockers() {
+  local have
+  have="$(gh api --paginate "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by" --jq '.[].number')" \
+    || die "gh could not read ticket #$1's blockers"
+  if [ -n "$have" ]; then printf '%s\n' "$have" | sort -un; fi
+}
+
+# Verify-then-die (ADR-0011): ticket <n>'s blocked-by listing, read back
+# fresh, must be exactly the set <want>. A mismatch is re-read once; a second
+# mismatch dies naming the ticket. Never falls back to body text.
+ticket_edges_verify() {
+  local n="$1" want="$2" have
+  have="$(ticket_blockers "$n")" || exit 1
+  [ "$have" = "$want" ] && return 0
+  have="$(ticket_blockers "$n")" || exit 1
+  [ "$have" = "$want" ] \
+    || die "ticket #$n's blocking edges did not verify - checked twice, both failed"
+}
+
+# The heading of a ticket body's section listing its blockers - kept in line
+# with the native edges for human readers; no command reads it.
+BLOCKED_BY_HEADING='## Blocked by'
+
+# The body on stdin with its first `## Blocked by` section outside a code
+# fence - the heading through the line before the next `#` or `##` heading
+# outside a code fence, or the end of the body; `###` does not end it -
+# rewritten as: the heading, a blank line, one `- #<n>` line per blocker in
+# <blockers> (or `None (can start immediately)` when empty), then a blank line
+# if another heading follows. The section's lines end the way its heading's
+# line did, CRLF included. With no such section, one is appended after one
+# blank line. Every other line is kept byte for byte.
+rewrite_blocked_by_section() {
+  awk -v heading="$BLOCKED_BY_HEADING" -v blockers="$1" '
+    function section(eol,   i, n, b) {
+      printf "%s%s%s", heading, eol, eol
+      n = split(blockers, b, "\n")
+      if (blockers == "") printf "None (can start immediately)%s", eol
+      else for (i = 1; i <= n; i++) printf "- #%s%s", b[i], eol
+    }
+    { l = $0; cr = ($0 ~ /\r$/) ? "\r" : ""; sub(/\r$/, "", l); last = l; lastcr = cr }
+    skip && !fence && l ~ /^##?([ \t]|$)/ { skip = 0; printf "%s\n", seol }
+    !done && !fence && l == heading { seol = cr; section(cr "\n"); skip = 1; done = 1; next }
+    l ~ /^(```|~~~)/ { fence = !fence }
+    skip { next }
+    { print }
+    END {
+      if (!done) {
+        if (NR > 0 && last != "") printf "%s\n", lastcr
+        section(lastcr "\n")
+      }
+    }
+  '
+}
+
+# Brings ticket <n>'s `## Blocked by` section in line with <blockers>, the
+# same file-based round trip `ticket retire` makes: read into a file, never
+# through $(...); a body with no final newline gets none back; no write when
+# the result is byte-identical. The write is not read back - ADR-0011 governs
+# the edges, not the body.
+ticket_blocked_by_rewrite() {
+  local n="$1" blockers="$2" body rewritten out
+  body="$(mktemp)"
+  adapter_issue_view "$n" --json body --jq .body >"$body" \
+    || { rm -f "$body"; die "gh could not read ticket #$n's body"; }
+  rewritten="$(mktemp)"
+  rewrite_blocked_by_section "$blockers" <"$body" >"$rewritten"
+  if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
+    out="$(cat "$rewritten"; printf x)"; out="${out%x}"
+    printf '%s' "${out%$'\n'}" >"$rewritten"
+  fi
+  if cmp -s "$body" "$rewritten"; then rm -f "$body" "$rewritten"; return 0; fi
+  rm -f "$body"
+  adapter_issue_edit "$n" --body-file "$rewritten" >/dev/null \
+    || { rm -f "$rewritten"; die "gh could not rewrite ticket #$n's ## Blocked by section"; }
+  rm -f "$rewritten"
+}
+
+# Adds a native blocking edge on <n> for every --by issue it lacks.
+cmd_ticket_block() {
+  local args n by before want b blocker_id
+  args="$(ticket_edge_args block "$@")" || exit 1
+  n="$(printf '%s\n' "$args" | sed -n 1p)"
+  by="$(printf '%s\n' "$args" | sed 1d)"
+  ticket_edge_preconditions "$n" "$by"
+  before="$(ticket_blockers "$n")" || exit 1
+  while IFS= read -r b; do
+    if printf '%s\n' "$before" | grep -qxF "$b"; then continue; fi
+    blocker_id="$(gh api "repos/{owner}/{repo}/issues/$b" --jq .id)" \
+      || die "gh could not read issue #$b, a blocker of ticket #$n"
+    gh api --method POST "repos/{owner}/{repo}/issues/$n/dependencies/blocked_by" \
+        -F issue_id="$blocker_id" >/dev/null \
+      || die "gh could not add a blocking edge from ticket #$n on #$b"
+  done <<<"$by"
+  want="$(printf '%s\n%s\n' "$before" "$by" | sed '/^$/d' | sort -un)"
+  ticket_edges_verify "$n" "$want"
+  ticket_blocked_by_rewrite "$n" "$want"
+}
+
 cmd_ticket() {
   local op="${1:-}"
   shift || true
@@ -2307,7 +2457,8 @@ cmd_ticket() {
     parent)  cmd_ticket_parent "$@" ;;
     exists)  cmd_ticket_exists "$@" ;;
     retire)  cmd_ticket_retire "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire)" ;;
+    block)   cmd_ticket_block "$@" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|block)" ;;
   esac
 }
 
@@ -2667,6 +2818,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               one, unlink it, and cut every `## Ticket`
                               section from the body; afterwards ticket exists
                               exits 1. A repeat changes nothing
+  ticket block <n> --by N,N,...
+                              add a blocking edge on open ticket <n> for every
+                              --by sibling (a sub-issue of <n>'s parent; a
+                              closed one is fine) it lacks, verify the edges
+                              by reading them back, and rewrite <n>'s body's
+                              `## Blocked by` section to match. A repeat
+                              writes no edge; re-running a failed run
+                              finishes it
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,

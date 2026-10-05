@@ -264,6 +264,15 @@ api_list_blocked_by() {
     if [ "$remaining" -gt 0 ]; then echo $((remaining - 1)) >"$rf"; echo '[]'; return; fi
   fi
   out="["; first=1
+  # GH_STUB_BLOCKED_MISMATCH counts down how many reads of a listing written
+  # to (an edge added since the stub began) still answer a wrong set - the
+  # real one plus #999999 - rather than an empty one, so a readback that
+  # clears on the retry can be staged for a ticket that already had edges.
+  if [ -n "$db" ] && [ -f "$db/blocked_written/$child" ]; then
+    rf="$db/blocked_mismatch_remaining"
+    remaining="$(cat "$rf" 2>/dev/null)"; [ -n "$remaining" ] || remaining="${GH_STUB_BLOCKED_MISMATCH:-0}"
+    if [ "$remaining" -gt 0 ]; then echo $((remaining - 1)) >"$rf"; out='[{"number":999999}'; first=0; fi
+  fi
   if [ -n "$db" ] && [ -f "$db/blocked_by/$child" ]; then
     while IFS= read -r b; do
       [ -z "$b" ] && continue
@@ -279,7 +288,7 @@ api_list_blocked_by() {
 api_body() {
   if [ -n "$db" ] && [ -f "$db/body/$1" ]; then cat "$db/body/$1"
   else printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"; fi \
-    | awk '{ gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); printf "%s%s", (NR > 1 ? "\\n" : ""), $0 }'
+    | awk '{ gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\r/, "\\r"); printf "%s%s", (NR > 1 ? "\\n" : ""), $0 }'
 }
 # The issue's parent, as GitHub's issue object carries it: the API URL of the
 # one issue whose sub_issues listing holds it, or null when none does.
@@ -513,6 +522,20 @@ ready-for-agent}"
         && [ "${GH_STUB_BLOCKED_POST_EXIT:-0}" != 0 ]; then
       echo "gh stub: blocked_by POST refused" >&2; exit "$GH_STUB_BLOCKED_POST_EXIT"
     fi
+    if [ "$api_sub" = dependencies/blocked_by ] && [ "$api_method" = GET ] \
+        && [ "${GH_STUB_BLOCKED_GET_EXIT:-0}" != 0 ]; then
+      echo "gh stub: blocked_by GET refused" >&2; exit "$GH_STUB_BLOCKED_GET_EXIT"
+    fi
+    # GH_STUB_BLOCKED_POST_OK lets that many blocked_by POSTs through and
+    # refuses every later one - a multi-edge write that dies part-way.
+    if [ "$api_sub" = dependencies/blocked_by ] && [ "$api_method" = POST ] \
+        && [ -n "${GH_STUB_BLOCKED_POST_OK:-}" ] && [ -n "$db" ]; then
+      posted="$(cat "$db/blocked_posted" 2>/dev/null)"; [ -n "$posted" ] || posted=0
+      if [ "$posted" -ge "$GH_STUB_BLOCKED_POST_OK" ]; then
+        echo "gh stub: blocked_by POST refused" >&2; exit 1
+      fi
+      echo $((posted + 1)) >"$db/blocked_posted"
+    fi
     [ "${GH_STUB_API_EXIT:-0}" = 0 ] || { echo "gh stub: api call refused" >&2; exit "$GH_STUB_API_EXIT"; }
     case "$api_sub" in
       "")
@@ -550,6 +573,7 @@ ready-for-agent}"
             mkdir -p "$db/blocked_by"
             blocker_num=$((api_fval / 1000))
             printf '%s\n' "$blocker_num" >>"$db/blocked_by/$api_num"
+            mkdir -p "$db/blocked_written"; : >"$db/blocked_written/$api_num"
           fi
           api_json='{}'
         else
@@ -3662,6 +3686,176 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket exists"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket exists is in the usage text" "$out" "ticket exists <parent>"
+restore_suite_env GH_STUB_DB
+
+# --- ticket block ------------------------------------------------------------
+# Adds native blocking edges to a published, open ticket, verifies them by
+# reading the target's blocked-by list back (ADR-0011's verify-then-die), and
+# rewrites the body's `## Blocked by` section to match. Idempotent, so a run
+# that died part-way is finished by running it again.
+echo
+echo "ticket block"
+ticket_fixture
+ba="$(GH_STUB_ISSUE_NUMBER=800 "$ORCH" ticket publish 96 "A" "$body")"
+bb="$("$ORCH" ticket publish 96 "B" "$body")"
+bc="$("$ORCH" ticket publish 96 "C" "$body")"
+bd="$("$ORCH" ticket publish 96 "D" "$body")"
+filed="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" "$ORCH" ticket block "$bb" --by "$ba" 2>&1)"; st=$?
+assert_status "blocking one ticket on a sibling succeeds" "$st" 0
+assert_eq "adding the edge" "$(cat "$db/blocked_by/$bb")" "$ba"
+assert_eq "after block, ticket next no longer lists the target while its blocker is open" \
+  "$("$ORCH" ticket next 96)" "$(printf '%s\n%s\n%s' "$ba" "$bc" "$bd")"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$filed" "$ORCH" ticket block "$bb" --by "$ba" 2>&1)"; st=$?
+assert_status "blocking on an edge already present succeeds" "$st" 0
+assert_eq "writing no edge" "$(grep -c '^api POST' "$filed")" "0"
+assert_eq "the edge is still there once" "$(cat "$db/blocked_by/$bb")" "$ba"
+
+out="$("$ORCH" ticket block "$bd" --by "$bc,$ba,$bc" 2>&1)"; st=$?
+assert_status "blocking on several siblings, one repeated, succeeds" "$st" 0
+assert_eq "adding each edge once" "$(sort -n "$db/blocked_by/$bd")" "$(printf '%s\n%s' "$ba" "$bc")"
+
+out="$("$ORCH" ticket block abc --by "$ba" 2>&1)"; st=$?
+assert_status "refuses a target that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+out="$("$ORCH" ticket block "$bc" --by "$ba,x1" 2>&1)"; st=$?
+assert_status "refuses a --by list with a non-numeric entry" "$st" 1
+assert_contains "naming the list" "$out" "$ba,x1"
+out="$("$ORCH" ticket block "$bc" 2>&1)"; st=$?
+assert_status "refuses a missing --by" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket block"
+out="$("$ORCH" ticket block --by "$ba" 2>&1)"; st=$?
+assert_status "refuses a missing target" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket block"
+assert_eq "none of the refusals wrote an edge" "$([ -f "$db/blocked_by/$bc" ] && echo yes || echo no)" "no"
+
+be="$("$ORCH" ticket publish 96 "E" "$body")"
+bx="$("$ORCH" ticket publish 97 "Elsewhere" "$body")"
+"$ORCH" ticket close "$be" >/dev/null
+out="$("$ORCH" ticket block "$be" --by "$ba" 2>&1)"; st=$?
+assert_status "refuses a closed target" "$st" 1
+assert_contains "naming it" "$out" "ticket #$be is closed"
+out="$("$ORCH" ticket block 96 --by "$ba" 2>&1)"; st=$?
+assert_status "refuses a target that is not a sub-issue" "$st" 1
+assert_contains "naming it" "$out" "#96 is not a sub-issue"
+out="$("$ORCH" ticket block "$bc" --by "$ba,$bx" 2>&1)"; st=$?
+assert_status "refuses a --by issue under another parent" "$st" 1
+assert_contains "naming it" "$out" "#$bx is not a sub-issue of #96"
+out="$("$ORCH" ticket block "$bc" --by 96 2>&1)"; st=$?
+assert_status "refuses a --by issue with no parent" "$st" 1
+assert_contains "naming it" "$out" "#96 is not a sub-issue of #96"
+assert_eq "the refusals wrote no edge, not even the sibling one" \
+  "$([ -f "$db/blocked_by/$be" ] || [ -f "$db/blocked_by/96" ] || [ -f "$db/blocked_by/$bc" ] && echo yes || echo no)" "no"
+out="$("$ORCH" ticket block "$bc" --by "$be" 2>&1)"; st=$?
+assert_status "accepts a closed blocker" "$st" 0
+assert_eq "adding its edge" "$(cat "$db/blocked_by/$bc")" "$be"
+
+bf="$("$ORCH" ticket publish 96 "F" "$body")"
+bg="$("$ORCH" ticket publish 96 "G" "$body")"
+rm -f "$db/blocked_mismatch_remaining"
+out="$(GH_STUB_BLOCKED_MISMATCH=1 "$ORCH" ticket block "$bf" --by "$ba" 2>&1)"; st=$?
+assert_status "a readback that is wrong once and right on the retry succeeds" "$st" 0
+rm -f "$db/blocked_mismatch_remaining"
+out="$(GH_STUB_BLOCKED_MISMATCH=2 "$ORCH" ticket block "$bg" --by "$ba" 2>&1)"; st=$?
+assert_status "a readback that is wrong twice dies" "$st" 1
+assert_contains "naming the ticket" "$out" "ticket #$bg's blocking edges did not verify"
+rm -f "$db/blocked_mismatch_remaining"
+out="$(GH_STUB_BLOCKED_POST_EXIT=1 "$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+assert_status "a gh that refuses the edge write fails the command" "$st" 1
+assert_contains "naming the ticket" "$out" "gh could not add a blocking edge from ticket #$bf on #$bb"
+out="$(GH_STUB_BLOCKED_GET_EXIT=1 "$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+assert_status "a gh that cannot read the blockers fails the command" "$st" 1
+assert_contains "naming the ticket" "$out" "gh could not read ticket #$bf's blockers"
+out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+assert_status "a gh that cannot read the target fails the command" "$st" 1
+assert_contains "naming the ticket" "$out" "gh could not read ticket #$bf"
+assert_eq "none of the failures added the edge" "$(cat "$db/blocked_by/$bf")" "$ba"
+
+# The body rewrite, driven by no-op runs: $bb is blocked by $ba alone and
+# $bd by $ba and $bc, so each run below writes no edge and only brings the
+# body's section in line.
+printf 'Intro\n\n## Blocked by\n\n- #999\nold\n\n### Detail\nx\n\n## After\nTail.\n' >"$db/body/$bd"
+out="$("$ORCH" ticket block "$bd" --by "$ba" 2>&1)"; st=$?
+assert_status "a no-op run with a stale section succeeds" "$st" 0
+assert_eq "replaces a section in the middle of the body, a ### heading inside it included" \
+  "$(od -c <"$db/body/$bd")" \
+  "$(printf 'Intro\n\n## Blocked by\n\n- #%s\n- #%s\n\n## After\nTail.\n' "$ba" "$bc" | od -c)"
+
+printf 'Intro\n\n## Blocked by\n\nNone (can start immediately)\n' >"$db/body/$bb"
+"$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
+assert_eq "replaces a section at the end of the body" \
+  "$(od -c <"$db/body/$bb")" "$(printf 'Intro\n\n## Blocked by\n\n- #%s\n' "$ba" | od -c)"
+
+printf 'Intro\n\nMore.\n' >"$db/body/$bb"
+"$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
+assert_eq "appends a missing section after one blank line" \
+  "$(od -c <"$db/body/$bb")" "$(printf 'Intro\n\nMore.\n\n## Blocked by\n\n- #%s\n' "$ba" | od -c)"
+
+printf 'Intro\n\n## Blocked by\n\nNone\n# Top\nTail.' >"$db/body/$bb"
+"$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
+assert_eq "a # heading ends the section, and a body with no final newline gets none" \
+  "$(od -c <"$db/body/$bb")" "$(printf 'Intro\n\n## Blocked by\n\n- #%s\n\n# Top\nTail.' "$ba" | od -c)"
+
+printf 'Intro\r\n\r\n## Blocked by\r\n\r\nNone\r\n\r\n## After\r\nTail.\r\n' >"$db/body/$bb"
+"$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
+assert_eq "a CRLF body keeps its CRLF lines, the rewritten section in kind" \
+  "$(od -c <"$db/body/$bb")" "$(printf 'Intro\r\n\r\n## Blocked by\r\n\r\n- #%s\r\n\r\n## After\r\nTail.\r\n' "$ba" | od -c)"
+
+printf 'Intro\n\n```md\n## Blocked by\n\n- #1\n```\n' >"$db/body/$bb"
+"$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
+assert_eq "a fenced ## Blocked by is ignored and a real section appended" \
+  "$(od -c <"$db/body/$bb")" "$(printf 'Intro\n\n```md\n## Blocked by\n\n- #1\n```\n\n## Blocked by\n\n- #%s\n' "$ba" | od -c)"
+
+printf '## Blocked by\n\n```\n## Not a heading\n```\n\n## After\nTail.\n' >"$db/body/$bb"
+"$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
+assert_eq "a fenced ## line inside the section does not end it" \
+  "$(od -c <"$db/body/$bb")" "$(printf '## Blocked by\n\n- #%s\n\n## After\nTail.\n' "$ba" | od -c)"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" "$ORCH" ticket block "$bb" --by "$ba" 2>&1)"; st=$?
+assert_status "a run with nothing to change succeeds" "$st" 0
+assert_eq "writing no body when the result is byte-identical" "$(grep -c '^issue edit' "$filed")" "0"
+
+# Ascending means numeric: #98 sorts before #100.
+echo 98 >"$db/issue_seq"
+s98="$("$ORCH" ticket publish 99 "S98" "$body")"
+s99="$("$ORCH" ticket publish 99 "S99" "$body")"
+s100="$("$ORCH" ticket publish 99 "S100" "$body")"
+"$ORCH" ticket block "$s99" --by "$s100,$s98" >/dev/null 2>&1
+assert_eq "lists the blockers sorted ascending by number" \
+  "$(cat "$db/body/$s99")" "$(printf 'Body of the issue.\n\n## Blocked by\n\n- #98\n- #100')"
+
+# Any gh failure dies naming the ticket; edges already written stay, and the
+# same command run again finishes the job.
+bh="$("$ORCH" ticket publish 96 "H" "$body")"
+printf 'Intro\n' >"$db/body/$bh"
+out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
+assert_status "a gh that cannot read the body fails the command" "$st" 1
+assert_contains "naming the ticket" "$out" "gh could not read ticket #$bh's body"
+assert_eq "the edge it wrote stays" "$(cat "$db/blocked_by/$bh")" "$ba"
+out="$(GH_STUB_EDIT_EXIT=1 "$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
+assert_status "a gh that cannot write the body fails the command" "$st" 1
+assert_contains "naming the ticket" "$out" "gh could not rewrite ticket #$bh's ## Blocked by section"
+out="$("$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
+assert_status "re-running after the body failures succeeds" "$st" 0
+assert_eq "finishing the body" "$(cat "$db/body/$bh")" "$(printf 'Intro\n\n## Blocked by\n\n- #%s' "$ba")"
+
+bi="$("$ORCH" ticket publish 96 "I" "$body")"
+rm -f "$db/blocked_posted"
+out="$(GH_STUB_BLOCKED_POST_OK=1 "$ORCH" ticket block "$bi" --by "$ba,$bb" 2>&1)"; st=$?
+assert_status "a multi-edge run that dies part-way fails" "$st" 1
+assert_contains "naming the ticket" "$out" "ticket #$bi"
+assert_eq "keeping the edge it wrote" "$(cat "$db/blocked_by/$bi")" "$ba"
+out="$("$ORCH" ticket block "$bi" --by "$ba,$bb" 2>&1)"; st=$?
+assert_status "re-running the same command succeeds" "$st" 0
+assert_eq "adding only the missing edge" "$(sort -n "$db/blocked_by/$bi")" "$(printf '%s\n%s' "$ba" "$bb")"
+assert_contains "and bringing the body in line" "$(cat "$db/body/$bi")" "$(printf -- '- #%s\n- #%s' "$ba" "$bb")"
+
+out="$("$ORCH" help 2>&1)"
+assert_contains "ticket block is in the usage text" "$out" "ticket block <n> --by N,N,..."
+
 restore_suite_env GH_STUB_DB
 
 # --- ticket: unknown op ------------------------------------------------------
