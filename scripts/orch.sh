@@ -23,6 +23,15 @@ readonly LABEL_LIMIT=1000
 # `review file` files. Blocking is always fixed in the loop, never filed.
 readonly FILED_SEVERITIES="major nit"
 
+# Whether <sev> is a filed severity: the one membership check over
+# FILED_SEVERITIES, so adding a severity edits the constant and its label
+# colour in `review file`, not every membership check.
+is_filed_severity() {
+  local s
+  for s in $FILED_SEVERITIES; do [ "$1" != "$s" ] || return 0; done
+  return 1
+}
+
 # How long `review ci` waits, and how often it looks. Overridable through the
 # environment rather than through positional arguments: the 60-second grace is
 # what stops a repo whose checks have not registered yet being declared CI-less,
@@ -1037,15 +1046,15 @@ cmd_review() {
       ;;
     file)
       require_state
-      local usage="usage: orch.sh review file <major|nit> <title> --axis <spec|standards> --body-file <file>"
+      local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards> --body-file <file>"
       [ $# -eq 6 ] && [ "$3" = --axis ] && [ "$5" = --body-file ] || die "$usage"
-      local severity="$1" title="$2" axis="$4" body="$6" colour category triage url s filed=""
-      for s in $FILED_SEVERITIES; do [ "$severity" != "$s" ] || filed=1; done
-      [ -n "$filed" ] \
-        || die "not a severity that gets filed: $severity (want major or nit - blocking is always fixed, never filed)"
+      local severity="$1" title="$2" axis="$4" body="$6" colour category triage url
+      is_filed_severity "$severity" \
+        || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
       case "$severity" in
         major) colour=d93f0b ;;
         nit)   colour=c5def5 ;;
+        *) die "no label colour for filed severity: $severity" ;;
       esac
       # The category follows the axis: a Spec finding misses what was asked
       # for, so it is a bug; a Standards finding improves how it was built.
@@ -1490,7 +1499,7 @@ finding_scan_one() {
 # line apiece: <issue> <pr> <file>:<line> <result> <detail>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [<issue> | --pr <n>]"
-  local issue="" pr_filter="" triage sev nums="" n out state labels body def ref filed
+  local issue="" pr_filter="" triage sev nums="" n out state labels label body def ref filed
   case $# in
     0) ;;
     1) issue="$1" ;;
@@ -1506,9 +1515,9 @@ cmd_finding_triage_scan() {
     labels="$(printf '%s\n' "$out" | tail -n +2)"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
     filed=""
-    for sev in $FILED_SEVERITIES; do
-      if printf '%s\n' "$labels" | grep -qxF "review:$sev"; then filed=1; fi
-    done
+    while IFS= read -r label; do
+      case "$label" in review:*) ! is_filed_severity "${label#review:}" || filed=1 ;; esac
+    done <<<"$labels"
     [ -n "$filed" ] \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
     printf '%s\n' "$labels" | grep -qxF "$triage" \
@@ -2756,4 +2765,6 @@ main() {
   esac
 }
 
-main "$@"
+# Run as a command, not when sourced: a test sources this file to reach a
+# helper such as is_filed_severity directly.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then main "$@"; fi
