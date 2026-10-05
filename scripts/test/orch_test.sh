@@ -702,6 +702,19 @@ on_windows_bash || nojq_path="$(stub_gh; path_without_jq)"
 # section that needs a later phase arranges it with state_fixture.
 fresh_flow() { healthy_repo; "$ORCH" init "$1" >/dev/null; }
 
+# ticket_fixture: a ticket section's starting point - a healthy_repo with a
+# throwaway fake GitHub. Leaves the globals db (that fake GitHub's directory)
+# and body (a ticket body file reading "Build the thing.") set, GH_STUB_DB
+# exported to db, and whatever healthy_repo exports. A section that calls it
+# ends with restore_suite_env GH_STUB_DB.
+ticket_fixture() {
+  healthy_repo
+  db="$(mktemp -d)"
+  export GH_STUB_DB="$db"
+  body="$(mktemp)"
+  writeln 'Build the thing.' >"$body"
+}
+
 echo "orch.sh tests"
 
 # --- init -------------------------------------------------------------------
@@ -2955,11 +2968,7 @@ restore_suite_env
 # stub's GH_STUB_DB is a throwaway fake GitHub, not orch.sh state.
 echo
 echo "ticket publish"
-healthy_repo
-db="$(mktemp -d)"
-export GH_STUB_DB="$db"
-body="$(mktemp)"
-writeln 'Build the thing.' >"$body"
+ticket_fixture
 filed="$(mktemp)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=100 \
   "$ORCH" ticket publish 50 "First ticket" "$body" 2>&1)"; st=$?
@@ -3060,11 +3069,7 @@ restore_suite_env
 # only), in the order they were published.
 echo
 echo "ticket next"
-healthy_repo
-body="$(mktemp)"
-writeln 'Build the thing.' >"$body"
-db="$(mktemp -d)"
-export GH_STUB_DB="$db"
+ticket_fixture
 a="$(GH_STUB_ISSUE_NUMBER=400 "$ORCH" ticket publish 90 "A" "$body")"
 b="$("$ORCH" ticket publish 90 "B" "$body" --blocked-by "$a")"
 c="$("$ORCH" ticket publish 90 "C" "$body")"
@@ -3098,11 +3103,7 @@ restore_suite_env GH_STUB_DB
 # accepted edits touch, without calling a sub-issue endpoint itself.
 echo
 echo "ticket list"
-healthy_repo
-body="$(mktemp)"
-writeln 'Build the thing.' >"$body"
-db="$(mktemp -d)"
-export GH_STUB_DB="$db"
+ticket_fixture
 a="$(GH_STUB_ISSUE_NUMBER=450 "$ORCH" ticket publish 90 "A" "$body")"
 b="$("$ORCH" ticket publish 90 "B" "$body" --blocked-by "$a")"
 "$ORCH" ticket close "$a" >/dev/null
@@ -3124,11 +3125,7 @@ restore_suite_env GH_STUB_DB
 # --- ticket close ------------------------------------------------------------
 echo
 echo "ticket close"
-healthy_repo
-body="$(mktemp)"
-writeln 'Build the thing.' >"$body"
-db="$(mktemp -d)"
-export GH_STUB_DB="$db"
+ticket_fixture
 n="$(GH_STUB_ISSUE_NUMBER=500 "$ORCH" ticket publish 90 "Closeable" "$body")"
 out="$("$ORCH" ticket close "$n" 2>&1)"; st=$?
 assert_status "closes the ticket" "$st" 0
@@ -3150,11 +3147,7 @@ restore_suite_env GH_STUB_DB
 # phase, whose frontier query would otherwise find nothing.
 echo
 echo "ticket reset"
-healthy_repo
-body="$(mktemp)"
-writeln 'Build the thing.' >"$body"
-db="$(mktemp -d)"
-export GH_STUB_DB="$db"
+ticket_fixture
 x="$(GH_STUB_ISSUE_NUMBER=600 "$ORCH" ticket publish 90 "X" "$body")"
 y="$("$ORCH" ticket publish 90 "Y" "$body")"
 z="$("$ORCH" ticket publish 90 "Z" "$body")"
@@ -3185,11 +3178,7 @@ restore_suite_env GH_STUB_DB
 # parent prints nothing and still succeeds, and any gh failure is a failure.
 echo
 echo "ticket parent"
-healthy_repo
-body="$(mktemp)"
-writeln 'Build the thing.' >"$body"
-db="$(mktemp -d)"
-export GH_STUB_DB="$db"
+ticket_fixture
 k="$(GH_STUB_ISSUE_NUMBER=700 "$ORCH" ticket publish 95 "Kid" "$body")"
 out="$("$ORCH" ticket parent "$k" 2>&1)"; st=$?
 assert_status "a sub-issue's parent lookup succeeds" "$st" 0
@@ -3226,11 +3215,7 @@ restore_suite_env GH_STUB_DB
 # stub's issue read answers for <n>.
 echo
 echo "ticket exists"
-healthy_repo
-body="$(mktemp)"
-writeln 'Build the thing.' >"$body"
-db="$(mktemp -d)"
-export GH_STUB_DB="$db"
+ticket_fixture
 mkdir -p "$db/body"
 GH_STUB_ISSUE_NUMBER=800 "$ORCH" ticket publish 96 "Open kid" "$body" >/dev/null
 out="$("$ORCH" ticket exists 96 2>&1)"; st=$?
