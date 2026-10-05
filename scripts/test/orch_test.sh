@@ -823,11 +823,11 @@ mv .git/index.bak .git/index
 
 # The glossary and ADRs are planning records: a dirty one refuses init with
 # the guard's redirect, under its own heading (#186).
-echo "# glossary" >CONTEXT.md
+echo "# glossary" >GLOSSARY.md
 out="$("$ORCH" init dirty 2>&1)"; st=$?
-assert_status "refuses a dirty CONTEXT.md" "$st" 1
+assert_status "refuses a dirty GLOSSARY.md" "$st" 1
 assert_contains "heads the records block" "$out" "Planning records changed (planning does not edit these in place):
-       CONTEXT.md"
+       GLOSSARY.md"
 # The redirect is wrapped for the terminal, so its phrases are checked with
 # the line breaks and indentation flattened out.
 flat="$(printf '%s' "$out" | flat_text)"
@@ -841,7 +841,17 @@ assert_not_contains "records-only refusal has no source block" "$out" "Changes o
 assert_not_contains "records-only refusal never says to commit" "$out" "Commit"
 assert_contains "says to discard or stash the records" "$out" "Discard or stash these changes, then run init again."
 assert_eq "writes no state for a dirty record" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
-rm CONTEXT.md
+rm GLOSSARY.md
+
+# The legacy glossary names stay records, for repos not yet renamed (#461).
+for f in CONTEXT.md CONTEXT-MAP.md; do
+  echo "# glossary" >"$f"
+  out="$("$ORCH" init dirty 2>&1)"; st=$?
+  assert_status "refuses a dirty legacy $f" "$st" 1
+  assert_contains "lists legacy $f under the records heading" "$out" "Planning records changed (planning does not edit these in place):
+       $f"
+  rm "$f"
+done
 
 mkdir -p docs/adr && echo "# ADR" >docs/adr/0001-x.md
 out="$("$ORCH" init dirty 2>&1)"; st=$?

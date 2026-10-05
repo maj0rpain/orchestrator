@@ -5,7 +5,7 @@ description: Triage the review loop's filed findings - the open review:<severity
 
 # Orchestrator finding triage
 
-**Finding triage** (see `CONTEXT.md`) checks open **filed findings** against
+**Finding triage** (see `GLOSSARY.md`) checks open **filed findings** against
 the current default branch and moves each out of `needs-triage`: closed as
 completed when the code it names has since been fixed, otherwise to
 `ready-for-agent`, `ready-for-human`, or `wontfix`. It takes only the issues
@@ -22,7 +22,7 @@ What this skill never does:
 - **No grilling.** A finding whose fix needs a decision goes to the human as
   `ready-for-human`, with the options its body names; you do not decide it
   here, and you write no agent brief beyond the triage comment.
-- **No record edits.** Never edit `CONTEXT.md`, `CONTEXT-MAP.md` or anything
+- **No record edits.** Never edit `GLOSSARY.md`, `GLOSSARY-MAP.md` or anything
   under `docs/adr/` (ADR-0022): a record changes only with the change it
   describes.
 - **No subagent.** This skill does all its work in this session, so it needs

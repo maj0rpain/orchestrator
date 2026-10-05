@@ -49,7 +49,7 @@ file.
 
 If you have not already explored the codebase, do so to understand the current
 state of the code. Ticket titles and descriptions use the project's glossary
-vocabulary (`CONTEXT.md`, when there is one), and respect the ADRs in the area
+vocabulary (`GLOSSARY.md`, when there is one), and respect the ADRs in the area
 you are touching.
 
 Look for opportunities to prefactor the code to make the implementation

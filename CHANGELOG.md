@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.7.0
+
+The skills and agents now point at `GLOSSARY.md` and `GLOSSARY-MAP.md` instead
+of `CONTEXT.md` and `CONTEXT-MAP.md`, following upstream's rename (see issue
+#461). Rename your own repo's glossary files to match, with `git mv` to keep
+their history. Until you do, nothing breaks: the edit guard and `init` still
+protect `CONTEXT.md` and `CONTEXT-MAP.md` as planning records, alongside the
+new names. This repo's own glossary is now `GLOSSARY.md`.
+
 ## 3.6.0
 
 An interview round now defines new terms and gives the reason for each

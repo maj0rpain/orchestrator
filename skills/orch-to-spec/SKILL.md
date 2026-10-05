@@ -39,7 +39,7 @@ turns out missing, take the fallback it documents and tell your caller which.
 
 1. **Explore** the repo to understand the current state of the code, if you
    have not already. Use the vocabulary of the project's glossary
-   (`CONTEXT.md`, when there is one) throughout the spec, and respect the ADRs
+   (`GLOSSARY.md`, when there is one) throughout the spec, and respect the ADRs
    in the area you are touching.
 
 2. **Check the test seams.** Sketch the seams at which the feature will be
@@ -52,7 +52,7 @@ turns out missing, take the fallback it documents and tell your caller which.
 
 3. **Write the spec** from the template below into a body file outside the
    repo's tracked tree (`.scratch/` serves). A glossary or ADR change
-   (`CONTEXT.md`, `docs/adr/`) the conversation decided goes into the body word
+   (`GLOSSARY.md`, `docs/adr/`) the conversation decided goes into the body word
    for word, naming the file and entry - never into those files now. It lands
    with the change it describes (ADR-0022).
 

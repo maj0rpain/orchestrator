@@ -6,7 +6,7 @@ description: Implement a small, already-understood change directly, skipping the
 # Orchestrator quick implementation
 
 The other route from an approved plan to a pull request, alongside a flow -
-see `CONTEXT.md`'s **Quick implementation** entry and
+see `GLOSSARY.md`'s **Quick implementation** entry and
 `docs/adr/0006-quick-implementation-unblocks-the-edit-guard-by-deleting-the-planning-marker.md`.
 A thin router, not a second pipeline: no phases, no handoff, no
 `.orchestrator/state.json`. What it does not skip is this project's standard
@@ -42,7 +42,7 @@ Never proceed without one, and never decide silently whether to make one.
   <body-file>`, from the shared understanding just reached. It applies the
   `ready-for-agent` triage role's label and reads the title and label back
   before it reports success - never an ad hoc `gh` call.
-- Either way, a glossary or ADR change (`CONTEXT.md`, `CONTEXT-MAP.md`,
+- Either way, a glossary or ADR change (`GLOSSARY.md`, `GLOSSARY-MAP.md`,
   `docs/adr/`) the planning session decided goes into the linked issue's body
   word for word - the new or replaced text, naming the file and entry - never
   into those files during planning. It lands with the change it describes

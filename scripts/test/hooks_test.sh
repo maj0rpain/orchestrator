@@ -137,7 +137,7 @@ out="$(skill_event "grilling" s7 | "$GRILL")"
 assert_contains "still injects its context when the flow is done" "$out" "Do NOT offer to implement"
 assert_contains "tells planning to write record wording into the plan" \
   "$(printf '%s' "$out" | jq -r '.additionalContext')" \
-  "- Glossary and ADR changes (CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim."
+  "- Glossary and ADR changes (GLOSSARY.md, GLOSSARY-MAP.md, CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim."
 rm -rf "$REPO/.orchestrator"
 
 echo
@@ -303,15 +303,16 @@ done
 
 # The glossary and ADRs are planning records: planning never changes them in
 # place, and the denial redirects the wording into the plan instead (#186).
-for f in CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/adr/../adr/x.md; do
+# The legacy CONTEXT names stay records for repos not yet renamed (#461).
+for f in GLOSSARY.md GLOSSARY-MAP.md CONTEXT.md CONTEXT-MAP.md docs/adr/0001-x.md docs/adr/../adr/x.md; do
   out="$(edit_event "$REPO/$f" s1 | "$GUARD")"
   assert_eq "denies planning record: $f" \
     "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
   assert_contains "gives the records reason for $f" "$(printf '%s' "$out" | jq -r '.reason')" \
     "is a record of decisions, and planning does not change records in place. Write the exact wording you intended - the new or replaced text, and where it goes - into the plan, so the spec carries it verbatim as an Implementation Decision and it lands with the change it describes. For a quick implementation, put it in the linked issue's body."
 done
-records_reason="$(edit_event "$REPO/CONTEXT.md" s1 | "$GUARD" | jq -r '.reason')"
-assert_contains "records reason names the blocked record" "$records_reason" "'CONTEXT.md' is a record"
+records_reason="$(edit_event "$REPO/GLOSSARY.md" s1 | "$GUARD" | jq -r '.reason')"
+assert_contains "records reason names the blocked record" "$records_reason" "'GLOSSARY.md' is a record"
 assert_not_contains "records denial does not point at the flow" "$records_reason" "orchestrator:orch-flow"
 assert_not_contains "records denial does not list planning artifacts" "$records_reason" "Planning artifacts you may still edit"
 source_reason="$(edit_event "$REPO/src/x.ts" s1 | "$GUARD" | jq -r '.reason')"
@@ -373,6 +374,8 @@ assert_contains "lists every allowlisted planning artifact" \
   "docs/agents/, .scratch/, .orchestrator/"
 assert_not_contains "does not allow a lookalike of an allowlisted file" \
   "$(edit_event "$REPO/docs/CONTEXT.md" s1 | "$GUARD" | jq -r '.decision')" "null"
+assert_not_contains "a nested docs/GLOSSARY.md is not a record" \
+  "$(edit_event "$REPO/docs/GLOSSARY.md" s1 | "$GUARD" | jq -r '.reason')" "is a record of decisions"
 
 assert_empty "ignores files outside the repo" "$(edit_event "/etc/hosts" s1 | "$GUARD")"
 
@@ -405,9 +408,9 @@ if [ -e "$TMPDIR/orchestrator-grilling-e2e" ]; then
 else
   bad "grilling arms the marker when the flow is done" "no marker"
 fi
-out="$(edit_event "$REPO/CONTEXT.md" e2e | "$GUARD" | jq -r '.reason')"
-assert_contains "the armed guard denies CONTEXT.md with the records reason" "$out" \
-  "'CONTEXT.md' is a record of decisions, and planning does not change records in place."
+out="$(edit_event "$REPO/GLOSSARY.md" e2e | "$GUARD" | jq -r '.reason')"
+assert_contains "the armed guard denies GLOSSARY.md with the records reason" "$out" \
+  "'GLOSSARY.md' is a record of decisions, and planning does not change records in place."
 rm -rf "$REPO/.orchestrator"
 
 echo

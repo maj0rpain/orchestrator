@@ -6,11 +6,12 @@ do not edit source files. Planning ends on a closing question with three
 options - an orchestrator flow, a quick implementation, or a blueprint only
 (publish the spec, offer a spec review, publish the ticket breakdown, then
 stop) - and source edits wait until the human has picked the flow or a quick
-implementation and it has started. Glossary and ADR changes (CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are
-recorded, not edited: write the exact new or replaced wording, and where it
-goes, into the plan, so the spec carries it verbatim for the implementer, or
-into the linked issue's body for a quick implementation. Planning artifacts
-(docs/agents/, .scratch/, .orchestrator/) are fine to edit.
+implementation and it has started. Glossary and ADR changes (GLOSSARY.md,
+GLOSSARY-MAP.md, CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are recorded,
+not edited: write the exact new or replaced wording, and where it goes,
+into the plan, so the spec carries it verbatim for the implementer,
+or into the linked issue's body for a quick implementation. Planning
+artifacts (docs/agents/, .scratch/, .orchestrator/) are fine to edit.
 
 ## orchestrator plugin: finding the plugin
 

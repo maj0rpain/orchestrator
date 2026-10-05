@@ -65,7 +65,7 @@ to that prompt.
 Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.
 
 TDD is the red-green loop. These rules make it produce tests worth keeping,
-and every one applies on every cycle. Read `CONTEXT.md`, if the repo has one,
+and every one applies on every cycle. Read `GLOSSARY.md`, if the repo has one,
 so test names match the domain's language, and respect the ADRs in the area
 you touch.
 
