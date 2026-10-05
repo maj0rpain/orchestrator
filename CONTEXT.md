@@ -350,11 +350,15 @@ and the loop's reasoning about it, including which of those kept it out of the
 loop, deduplicated across a loop's iterations by the closer and across a
 flow's loops by the driver's triage. Its **Filed** entry names its file and
 line, so a later loop's triage matches a finding it meets again on file, line,
-and claim. A filed finding enters triage against the whole codebase rather
+and claim. A filed finding enters **finding triage** against the whole codebase rather
 than against one diff: a later loop that meets it again leaves it alone, and
 tells the human it did.
 Findings the loop demoted on a human's earlier decision are reported, never
 filed.
+
+## Finding triage
+
+Checking open filed findings against the current default branch and moving each out of `needs-triage`: closed as completed when the code it names has since been fixed, otherwise to `ready-for-agent`, `ready-for-human`, or `wontfix`. A finding whose fix needs a decision goes to a human, never to an agent. Not the driver's triage, which ranks one iteration's findings inside a review loop.
 
 ## Review record
 
