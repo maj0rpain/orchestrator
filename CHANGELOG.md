@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.3.0
+
+The review loop's fixer now re-checks the PR body after each fix commit (see
+issue #420). A new step between **Push** and **Write the record** reads the
+body with `orch.sh pr fetch`, checks it against `git diff <base SHA>..HEAD`,
+and rewords or removes every helper, function, file or stated reason the diff
+no longer supports, writing the result back with `orch.sh pr update`.
+Statements the diff cannot settle are left alone. The check runs only when the
+fixer made a commit, and adds none of its own.
+
+Two new `orch.sh` commands back it: `pr fetch <file>` writes the current
+branch's open PR body to a file, and `pr update <file>` replaces it, refusing
+a file whose first line is not the PR's existing `Closes`/`Refs #<issue>`
+line.
+
+Each iteration's review record gains a `## PR body` section between
+`## Waiting to be filed` and `## CI`: one line per corrected statement,
+`None`, or `Not checked - no commit`.
+
 ## 3.2.0
 
 The plugin now triages its own filed findings (see issue #426). A new

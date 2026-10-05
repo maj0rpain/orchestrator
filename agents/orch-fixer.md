@@ -1,6 +1,6 @@
 ---
 name: orch-fixer
-description: The fixer of one orchestrator review-loop iteration - fixes the findings the driver's triage handed it, verifies, commits once, pushes, writes the iteration's review record, and returns about five lines. Started only by the orch-review skill's driver, and only on an iteration whose triage left something to fix.
+description: The fixer of one orchestrator review-loop iteration - fixes the findings the driver's triage handed it, verifies, commits once, pushes, corrects the PR body against the diff, writes the iteration's review record, and returns about five lines. Started only by the orch-review skill's driver, and only on an iteration whose triage left something to fix.
 tools: [Read, Edit, Write, Grep, Glob, Bash]
 ---
 
@@ -57,9 +57,26 @@ your return instead - see **Could not fix**.
    by path. A fixer that fixed nothing makes no commit.
 4. **Push**, only if step 3 made a commit. `git push`. CI is the driver's
    to wait on, at termination.
-5. **Write the record** to the record path - see **The record**.
-6. **Return** about five lines: what was fixed, the commit SHA (or `no
-   commit`), and each could-not-fix finding with its severity and why.
+5. **Check the PR body against the diff**, only if step 3 made a commit.
+   With no commit the diff did not change, so skip this step: the record's
+   **PR body** reads `Not checked - no commit`. Otherwise read the body into
+   a temporary file outside the repo (`mktemp`) with `bash "<orch.sh>" pr
+   fetch <file>`, and check it against `git diff <base SHA>..HEAD`.
+   Correct, in that file, every statement the diff no longer supports - a
+   helper added or removed, a claimed reason, a file list - by rewording or
+   removing it, and leave alone any statement the diff cannot settle either
+   way. Keep the first line, the `Closes #<issue>` or
+   `Refs #<issue>` line, as it is. If you changed anything, write it back
+   with `bash "<orch.sh>" pr update <file>`. This adds no commit: a body
+   edit is a GitHub edit, and corrects what the PR claims rather than
+   reporting on the loop, so the closer still posts the loop's one PR
+   comment. Done when every helper, function, file and stated reason the
+   body names has been checked against that diff, and each is supported by
+   it or has been reworded or removed.
+6. **Write the record** to the record path - see **The record**.
+7. **Return** about five lines: what was fixed, the commit SHA (or `no
+   commit`), each could-not-fix finding with its severity and why, and, if
+   step 5 corrected the PR body, that it did.
 
 ## Test-driven development
 
@@ -162,6 +179,10 @@ Host fallbacks: <each fallback taken, or None>
 
 - <Axis>/<severity>: <claim> - <the rule that kept it out>
 
+## PR body
+
+- <old claim> -> <new claim, or removed>
+
 ## CI
 
 <review ci's answer, its detail lines, and any flake rerun spent>
@@ -182,6 +203,10 @@ filed and the rule that kept it out, met again already filed (with the issue
 number), or open blocking. A reviewer whose report went missing twice is
 listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
+
+**PR body** is filled every iteration, from step 5: one line per statement
+the check corrected, `None` when it corrected nothing, or `Not checked - no
+commit` when there was no commit to check against.
 
 The last three sections are written at termination, and only there - leave
 `## CI`, `## Filed`, and `## Terminal state` out of your record. The driver
