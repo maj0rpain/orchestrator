@@ -199,9 +199,9 @@ check "no old orchestrator skill or command name outside history" "$(scan_old_na
 # The glossary was renamed upstream: CONTEXT.md became GLOSSARY.md, and
 # CONTEXT-MAP.md became GLOSSARY-MAP.md (#461). Like the old skill names, an
 # old glossary name in a skill or agent points a model at a file that no
-# longer exists. Only skills/ and agents/ are scanned: README, CLAUDE.md, the
-# Junie snippet and planning-allowlist.sh still list the legacy names, which
-# the planning guard keeps protecting.
+# longer exists. Only skills/ and agents/ are scanned: README, the Junie
+# snippet and planning-allowlist.sh still list the legacy names, which the
+# planning guard keeps protecting.
 echo
 echo "glossary names (#461)"
 # scan_old_glossary_names <plugin root>: each CONTEXT.md or CONTEXT-MAP.md in
