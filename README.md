@@ -112,8 +112,9 @@ review pass by the plugin's own reviewer agents, and a PR. A human can run
 another review pass of the same branch on demand, with
 `/orchestrator:review <issue>` - see CONTEXT.md's **Review pass** entry.
 
-Handoffs live in `.orchestrator/handoff/`, ignored via `.git/info/exclude` so
-running the flow never dirties a repo's working tree.
+Handoffs live in `.orchestrator/handoff/`. It and `.scratch/`, where planning
+drafts land, are ignored via `.git/info/exclude` so running the flow never
+dirties a repo's working tree.
 
 ## Commands
 

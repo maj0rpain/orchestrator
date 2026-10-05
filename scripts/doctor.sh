@@ -539,21 +539,33 @@ check_sub_issues() {
 }
 
 check_git_exclude() {
-  local ex
+  local ex d missing=()
   # Unguarded, and unreachable: the script died at load time if this were not a
   # git repo, so a check for one could only ever report a world that cannot
   # exist. Not covered by d_run's abort warn either - a check runs as the left
   # operand of ||, which disables errexit for its whole body, so a failure here
   # would carry on with a wrong path rather than stop.
   ex="$(git rev-parse --git-dir)/info/exclude"
-  if grep -qxF "$ORCH_DIR_NAME/" "$ex" 2>/dev/null; then
-    d_ok "$ORCH_DIR_NAME/ is git-excluded"
+  for d in "${EXCLUDED_DIRS[@]}"; do
+    grep -qxF "$d" "$ex" 2>/dev/null || missing+=("$d")
+  done
+  if [ "${#missing[@]}" -eq 0 ]; then
+    d_ok "$(join_by ', ' "${EXCLUDED_DIRS[@]}") git-excluded"
     return 0
   fi
-  # A warn, not a FAIL: init writes this line, so it only bites someone who
-  # arrived mid-flow in a repo that is not theirs.
-  d_warn "$ORCH_DIR_NAME/ is not git-excluded - flow state would show as untracked."
-  d_remedy "printf '%s\\n' '$ORCH_DIR_NAME/' >>\"\$(git rev-parse --git-dir)/info/exclude\""
+  # A warn, not a FAIL: init writes these lines, so it only bites someone who
+  # arrived mid-flow in a repo that is not theirs. One warning for every missing
+  # line, and a remedy that appends only those.
+  d_warn "$(join_by ', ' "${missing[@]}") not git-excluded - flow state and planning drafts would show as untracked."
+  d_remedy "printf '%s\\n' $(printf "'%s' " "${missing[@]}")>>\"\$(git rev-parse --git-dir)/info/exclude\""
+}
+
+# join_by <sep> <item>...: the items joined by <sep>.
+join_by() {
+  local sep="$1" out="$2" d
+  shift 2
+  for d in "$@"; do out="$out$sep$d"; done
+  printf '%s' "$out"
 }
 
 # The base branch every new flow and quick implementation will fork from and
