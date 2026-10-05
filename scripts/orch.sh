@@ -24,7 +24,8 @@ readonly LABEL_LIMIT=1000
 readonly FILED_SEVERITIES="major nit"
 
 # Whether <sev> is a filed severity: the one membership check over
-# FILED_SEVERITIES, so adding a severity edits the constant, not its callers.
+# FILED_SEVERITIES, so adding a severity edits the constant and its label
+# colour in `review file`, not every membership check.
 is_filed_severity() {
   local s
   for s in $FILED_SEVERITIES; do [ "$1" != "$s" ] || return 0; done
@@ -1053,6 +1054,7 @@ cmd_review() {
       case "$severity" in
         major) colour=d93f0b ;;
         nit)   colour=c5def5 ;;
+        *) die "no label colour for filed severity: $severity" ;;
       esac
       # The category follows the axis: a Spec finding misses what was asked
       # for, so it is a bug; a Standards finding improves how it was built.

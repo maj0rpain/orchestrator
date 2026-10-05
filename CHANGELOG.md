@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.9.1
+
+Whether a severity gets filed is now answered in one place, an
+`is_filed_severity` helper built on `FILED_SEVERITIES` (see issue #434).
+`review file` and finding triage's single-issue check both call it, and
+`review file`'s usage line and refusal message list the filed severities from
+the constant rather than by hand. No behaviour changes.
+
 ## 3.9.0
 
 The implementer's acceptance self-check now also names, for each source file

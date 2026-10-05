@@ -3922,7 +3922,7 @@ assert_status "review loop-next is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown review op"
 restore_suite_env
 
-# --- review file ------------------------------------------------------------
+# --- is_filed_severity ------------------------------------------------------
 
 echo "is_filed_severity"
 # Sourced rather than run: the helper is the one answer to "is this severity
@@ -3932,6 +3932,9 @@ filed_sev major; assert_status "accepts major" "$?" 0
 filed_sev nit; assert_status "accepts nit" "$?" 0
 filed_sev blocking; assert_status "refuses blocking - it is always fixed, never filed" "$?" 1
 filed_sev ""; assert_status "refuses an empty severity" "$?" 1
+
+# --- review file ------------------------------------------------------------
+
 # Filing is mechanism: which labels, what title, which body, and the number
 # printed back. The stub records what reached gh, which is the assertion - a
 # finding filed with no severity label is a finding triage never finds.
