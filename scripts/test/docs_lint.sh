@@ -1041,6 +1041,46 @@ assert_empty "a review pass defined once and run by step 6 is not flagged" "$(sc
 check "the review pass is defined once in orch-review and quick implementation runs it" \
   "$(scan_review_pass "$PLUGIN_ROOT")"
 
+# --- closer's filed body lines -----------------------------------------------
+# Finding triage's scan parses a filed finding's body by its labelled lines, so
+# the closer, which writes that body, must name each one in its **Filing**
+# section: a line dropped there is a finding the scan reports as unknown.
+echo
+echo "closer's filed body lines"
+closer_filing_lines='**Axis:**
+**Severity:**
+**Location:**
+**PR:**
+**Why not fixed in the loop:**'
+# scan_closer_filing <plugin root>: each labelled body line the closer's
+# ## Filing section does not name, or the section itself when it is missing.
+scan_closer_filing() {
+  local r="$1" closer="agents/orch-closer.md" body line
+  if ! body="$(md_section "$r/$closer" "## Filing")"; then
+    echo "$closer: no ## Filing section"
+    return 0
+  fi
+  while IFS= read -r line; do
+    grep -qF -- "$line" <<<"$body" || echo "$closer: ## Filing does not name $line"
+  done <<<"$closer_filing_lines"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents"
+printf '# C\n\n## Filing\n\n**Axis:** **Severity:** **Location:** **Why not fixed in the loop:**\n\n## Other\n\n**PR:**\n' \
+  >"$fixture/agents/orch-closer.md"
+flags "a Filing section that drops a labelled line is flagged" \
+  "$(scan_closer_filing "$fixture")" "agents/orch-closer.md: ## Filing does not name **PR:**"
+spares "and the lines it names are not" "$(scan_closer_filing "$fixture")" 'name \*\*(Axis|Severity|Location|Why)'
+printf '# C\n\n## Other\n' >"$fixture/agents/orch-closer.md"
+flags "a missing Filing section is flagged" \
+  "$(scan_closer_filing "$fixture")" "agents/orch-closer.md: no ## Filing section"
+printf '# C\n\n## Filing\n\n**Axis:** **Severity:** **Location:** **PR:** **Why not fixed in the loop:**\n' \
+  >"$fixture/agents/orch-closer.md"
+assert_empty "a Filing section naming all five is not flagged" "$(scan_closer_filing "$fixture")"
+check "the closer's Filing section names every labelled line the scan parses" \
+  "$(scan_closer_filing "$PLUGIN_ROOT")"
+
 # --- summary -----------------------------------------------------------------
 echo
 echo "$PASS passed, $FAIL failed"

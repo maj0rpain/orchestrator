@@ -759,6 +759,17 @@ triage_label_ensure() {
   adapter_label_create "$1" --color e4e669 --description "Not yet triaged" >/dev/null 2>&1 || true
 }
 
+# The category label - bug or enhancement - is the repo's too, like the triage
+# label: created only where missing, never with --force, with GitHub's own
+# default colour and description, and a failed create ignored for the same
+# reason.
+category_label_ensure() {
+  case "$1" in
+    bug)         adapter_label_create bug --color d73a4a --description "Something isn't working" >/dev/null 2>&1 || true ;;
+    enhancement) adapter_label_create enhancement --color a2eeef --description "New feature or request" >/dev/null 2>&1 || true ;;
+  esac
+}
+
 # Float comparison and addition, in awk, because the timings are overridable and
 # the tests turn them down to fractions of a second; bash arithmetic is integer
 # only and would read a grace of 0.3 as 0. A fractional `sleep` is a GNU/BSD
@@ -915,23 +926,32 @@ cmd_review() {
       ;;
     file)
       require_state
-      [ $# -eq 4 ] && [ "$3" = --body-file ] \
-        || die "usage: orch.sh review file <major|nit> <title> --body-file <file>"
-      local severity="$1" title="$2" body="$4" colour triage url
+      local usage="usage: orch.sh review file <major|nit> <title> --axis <spec|standards> --body-file <file>"
+      [ $# -eq 6 ] && [ "$3" = --axis ] && [ "$5" = --body-file ] || die "$usage"
+      local severity="$1" title="$2" axis="$4" body="$6" colour category triage url
       case "$severity" in
         major) colour=d93f0b ;;
         nit)   colour=c5def5 ;;
         *) die "not a severity that gets filed: $severity (want major or nit - blocking is always fixed, never filed)" ;;
+      esac
+      # The category follows the axis: a Spec finding misses what was asked
+      # for, so it is a bug; a Standards finding improves how it was built.
+      # Finding triage confirms or flips it later.
+      case "$(printf '%s' "$axis" | tr '[:upper:]' '[:lower:]')" in
+        spec)      category=bug ;;
+        standards) category=enhancement ;;
+        *) die "not a review axis: $axis (want spec or standards)" ;;
       esac
       [ -n "$title" ] || die "the title is empty"
       [ -f "$body" ] || die "body file not found: $body"
       severity_label_ensure "review:$severity" "$colour" "Review finding filed at $severity severity"
       triage="$(triage_label_for needs-triage)"
       triage_label_ensure "$triage"
+      category_label_ensure "$category"
       # The title carries no severity prefix: the label holds it, where triage
       # can change it, and the title reads as an issue.
       url="$(adapter_issue_create --title "$title" --body-file "$body" \
-        --label "review:$severity" --label "$triage")" \
+        --label "review:$severity" --label "$triage" --label "$category")" \
         || die "gh could not create the issue"
       # Prints the number alone: the record cites a number, and the caller
       # would otherwise be parsing a URL out of prose every time.
@@ -2179,9 +2199,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
                               creating the directory if it is not there yet
-  review file <major|nit> <title> --body-file <file>
+  review file <major|nit> <title> --axis <spec|standards> --body-file <file>
                               file a finding as a GitHub issue labelled
-                              review:<severity> and the repo's needs-triage,
+                              review:<severity>, the repo's needs-triage, and
+                              bug (spec axis) or enhancement (standards axis),
                               creating the labels if missing; prints the number
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two

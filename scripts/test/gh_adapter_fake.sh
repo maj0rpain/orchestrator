@@ -17,12 +17,16 @@
 #
 # adapter_label_create - mirrors stub_gh's `label create` branch:
 #   GH_STUB_MODE=labelfail   fails the call, like a `gh` that cannot create it
+#   GH_STUB_LABEL_FAIL=<name> fails the call for that one label alone, so a
+#                             test can refuse the category label and still
+#                             see the rest of the filing go through
 #   GH_STUB_FILED            when set, appended with "label create <args...>",
 #                             the same line shape stub_gh writes, so an
 #                             assertion against GH_STUB_FILED does not care
 #                             which fake produced it
 adapter_label_create() {
   if [ "${GH_STUB_MODE:-ok}" = labelfail ]; then return 1; fi
+  if [ -n "${GH_STUB_LABEL_FAIL:-}" ] && [ "$1" = "$GH_STUB_LABEL_FAIL" ]; then return 1; fi
   if [ -n "${GH_STUB_FILED:-}" ]; then printf 'label create %s\n' "$*" >>"$GH_STUB_FILED"; fi
   return 0
 }

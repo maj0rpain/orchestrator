@@ -3656,7 +3656,7 @@ body="$(mktemp)"
 writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
 log="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=17 \
-  "$ORCH" review file major "Comment drifted from the code" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file major "Comment drifted from the code" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files a major" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "17"
 assert_contains "creates the severity label" "$(cat "$filed")" "label create review:major"
@@ -3677,38 +3677,84 @@ assert_eq "nor did the issue create" \
 
 : >"$filed"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
-  "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files a nit" "$st" 0
 assert_contains "under the nit label" "$(cat "$filed")" "label=review:nit"
 
+# The category is the axis's: a Spec finding is a defect against what was
+# asked for, a Standards finding an improvement on how it was built.
 : >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file blocking "Wrong" --body-file "$body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
+assert_status "files a Spec finding" "$st" 0
+assert_contains "labelled bug" "$(cat "$filed")" "label=bug"
+assert_eq "and not enhancement" "$(grep -cx 'label=enhancement' "$filed")" "0"
+assert_contains "creating bug with GitHub's default colour and description" \
+  "$(cat "$filed")" "label create bug --color d73a4a --description Something isn't working"
+assert_eq "never over the repo's own bug label" "$(grep -c 'label create bug --force' "$filed")" "0"
+
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file nit "Rename it" --axis Standards --body-file "$body" 2>&1)"; st=$?
+assert_status "files a Standards finding, whatever the axis's case" "$st" 0
+assert_contains "labelled enhancement" "$(cat "$filed")" "label=enhancement"
+assert_eq "and not bug" "$(grep -cx 'label=bug' "$filed")" "0"
+assert_contains "creating enhancement with GitHub's default colour and description" \
+  "$(cat "$filed")" "label create enhancement --color a2eeef --description New feature or request"
+assert_eq "never over the repo's own enhancement label" \
+  "$(grep -c 'label create enhancement --force' "$filed")" "0"
+
+# A category label that cannot be created - most often because the repo has
+# it already - does not stop the filing.
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LABEL_FAIL=bug GH_STUB_ISSUE_NUMBER=23 \
+  "$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
+assert_status "a category label gh will not create does not stop filing" "$st" 0
+assert_eq "the number is still printed" "$out" "23"
+assert_contains "and the issue still asks for the label" "$(cat "$filed")" "label=bug"
+
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+assert_status "refuses a finding with no axis" "$st" 1
+assert_contains "naming the axis" "$out" "--axis"
+assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
+
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file major "Title" --axis style --body-file "$body" 2>&1)"; st=$?
+assert_status "refuses an unknown axis" "$st" 1
+assert_contains "naming it" "$out" "style"
+assert_contains "and what it accepts" "$out" "spec or standards"
+assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file blocking "Wrong" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses a blocking severity - the loop fixes those" "$st" 1
 assert_contains "naming what it accepts" "$out" "major"
 assert_contains "saying blocking is always fixed, never filed" "$out" "blocking is always fixed, never filed"
 assert_not_contains "without claiming the loop fixes blocking only" "$out" "the loop fixes blocking)"
 assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "" --body-file "$body" 2>&1)"; st=$?
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses an empty title" "$st" 1
 assert_eq "before anything reaches gh" "$(grep -c . "$filed")" "0"
 
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" --body-file /nonexistent/body.md 2>&1)"; st=$?
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" --axis spec --body-file /nonexistent/body.md 2>&1)"; st=$?
 assert_status "refuses a body file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
 assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
 
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" "$body" 2>&1)"; st=$?
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" --axis spec "$body" 2>&1)"; st=$?
 assert_status "insists on --body-file rather than guessing a positional" "$st" 1
 
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_ISSUE_EXIT=1 \
-  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
-  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the label fails it too" "$st" 1
 
 # The triage label is the repo's vocabulary, read from the doc the spec phase
@@ -3721,7 +3767,7 @@ writeln '# Triage Labels' '' \
         '| `needs-triage`             | `triage me`          | Evaluate it |' \
         '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
-  "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files under a renamed triage label" "$st" 0
 assert_contains "creating the repo's name for it" "$(cat "$filed")" "label create triage me"
 assert_contains "and applying it" "$(cat "$filed")" "label=triage me"
@@ -3743,15 +3789,17 @@ body="$(mktemp)"
 writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
 log="$(mktemp)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=51 \
-  "$ORCH" review file major "Shells out for real" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file major "Shells out for real" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "files through the real adapter" "$st" 0
 assert_eq "printing the issue number gh answered" "$out" "51"
 assert_contains "the real adapter invoked gh label create for the severity label" \
   "$(cat "$filed")" "label create review:major --force --color d93f0b --description Review finding filed at major severity"
 assert_contains "and for the triage label" \
   "$(cat "$filed")" "label create needs-triage --color e4e669 --description Not yet triaged"
+assert_contains "and for the category label" \
+  "$(cat "$filed")" "label create bug --color d73a4a --description Something isn't working"
 assert_eq "gh itself was invoked once per label, as a real subprocess" \
-  "$(grep -cx label "$log")" "2"
+  "$(grep -cx label "$log")" "3"
 
 echo
 echo "gh adapter (real issue create, subprocess gh)"
@@ -3764,7 +3812,7 @@ assert_eq "gh itself was invoked once for the issue create, as a real subprocess
 
 : >"$filed"
 out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
-  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "and a real gh that refuses the label still fails the command" "$st" 1
 restore_suite_env
 
@@ -4336,6 +4384,7 @@ assert_contains "and updates once it has been" "$("$ORCH" status)" "redo:      2
 assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin"
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 assert_contains "and filing" "$("$ORCH" help)" "review file"
+assert_contains "with the finding's axis" "$("$ORCH" help)" "review file <major|nit> <title> --axis <spec|standards> --body-file <file>"
 assert_contains "and the terminal-state classifier" "$("$ORCH" help)" "review terminal"
 assert_contains "and retiring a loop's records" "$("$ORCH" help)" "review retire"
 assert_contains "help documents issue publish" "$("$ORCH" help)" "issue publish"

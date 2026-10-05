@@ -63,26 +63,34 @@ loop's outcome either: the terminal state in your prompt is final, and
 Each finding is filed with:
 
 ```
-bash "<orch.sh>" review file <major|nit> "<title>" --body-file <file>
+bash "<orch.sh>" review file <major|nit> "<title>" --axis <spec|standards> --body-file <file>
 ```
 
-It creates the `review:<severity>` label if the repo lacks it, resolves the
-repo's own name for `needs-triage` from `docs/agents/triage-labels.md`, opens
-the issue with both, and prints the number. The title is the finding's
-one-line claim with no prefix - the severity lives in the label. Nothing
-calls `gh issue create` or `gh label create` directly.
+`--axis` is the finding's axis, the same one its body's `**Axis:**` line
+names. It creates the `review:<severity>` label if the repo lacks it, resolves
+the repo's own name for `needs-triage` from `docs/agents/triage-labels.md`,
+labels the finding by category - `bug` for the Spec axis, `enhancement` for
+the Standards axis - opens the issue with all three, and prints the number.
+The title is the finding's one-line claim with no prefix - the severity lives
+in the label. Nothing calls `gh issue create` or `gh label create` directly.
 
 The body carries, in this order:
 
 1. the reviewer's finding, verbatim;
-2. the axis - Standards or Spec;
-3. the severity, and the one-line reason it was assigned;
-4. the file and line, at the PR's head SHA;
-5. a link to the PR;
-6. one line on why it was not fixed in the loop, naming the rule that kept it
+2. the axis, on its own line: `**Axis:** <Spec|Standards>`;
+3. the severity, and the one-line reason it was assigned:
+   `**Severity:** <major|nit> - <reason>`;
+4. the file and line, at the PR's head SHA:
+   ``**Location:** `<file>:<line>` at <head SHA>``;
+5. a link to the PR: `**PR:** <url>`;
+6. one line on why it was not fixed in the loop,
+   `**Why not fixed in the loop:** <reason>`, naming the rule that kept it
    out: its fix needs a decision (list the options), would change behaviour,
    the nit is not mechanical, it sits on loop-authored lines, it was found in
    the final iteration, or the fixer could not fix it (with its reason).
+
+Items 2 to 6 are labelled lines, written exactly as shown: finding triage
+parses them, and a body without them is one it cannot place.
 
 `.orchestrator/` is git-excluded and eventually archived, so the body is the
 record, not a link to one.
