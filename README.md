@@ -131,6 +131,7 @@ running the flow never dirties a repo's working tree.
 | `/orchestrator:interview` | Start a planning session: an interview that reaches a shared understanding, then asks how to carry it forward. |
 | `/orchestrator:to-spec` | Turn the current conversation into a spec and publish it as an issue, outside any flow. |
 | `/orchestrator:to-tickets <issue>` | Break an existing issue into tickets published as its sub-issues, or collapse it into the issue, outside any flow. |
+| `/orchestrator:finding-triage [<issue> \| --pr <n>]` | Finding triage: check the review loop's open filed findings against the default branch and move each out of `needs-triage`, one batch of proposed outcomes per source PR. |
 
 ### Base branch
 
@@ -204,7 +205,7 @@ start.
 ## Layout
 
 ```
-commands/                     start, next, status, doctor, redo, abort, release, spec-review, review, interview, to-spec, to-tickets
+commands/                     start, next, status, doctor, redo, abort, release, spec-review, review, interview, to-spec, to-tickets, finding-triage
 agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, and the implementer
 skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: consolidation of the issue's comments, then four lenses in a flow (three standalone), one batch question, plus a ticket question when an existing breakdown is touched
@@ -215,6 +216,7 @@ skills/orch-interview/        the planning interview; hook-grilling.sh's message
 skills/orch-to-spec/          turns the conversation into a spec and publishes it as an issue
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
+skills/orch-finding-triage/   finding triage: scan the filed findings against the default branch, one batch per source PR, apply
 scripts/orch.sh               every deterministic operation (mechanism)
 scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
 scripts/hook-*.sh             the three hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie
@@ -346,9 +348,13 @@ closer agent files what is left and comments on the PR. The loop never
 polishes its own fixes, and its final iteration fixes only what is blocking.
 The loop runs its whole budget; when it ends, every major and nit it left
 becomes a GitHub issue labelled `review:major` or `review:nit` (a severity
-the loop assigned) plus the repo's `needs-triage` (a label meaning a human
-hasn't looked at it yet), with the reviewer's finding and the loop's reasoning
-in the body. CI is waited on once per loop with a single flake rerun per flow.
+the loop assigned), the repo's `needs-triage` (a label meaning a human
+hasn't looked at it yet), and a category - `bug` for a Spec-axis finding,
+`enhancement` for a Standards-axis one - with the reviewer's finding and the
+loop's reasoning in the body. A filed finding returns to the pipeline
+through **finding triage** (`/orchestrator:finding-triage`), which checks it
+against the default branch and closes it as completed, or moves it to
+`ready-for-agent`, `ready-for-human`, or `wontfix`. CI is waited on once per loop with a single flake rerun per flow.
 It ends one of two ways: by marking the draft PR ready, or by a **bounded
 stop** - the loop giving up before the PR is ready and recording why, rather
 than looping forever - and it comments on the PR either way. After a bounded

@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.2.0
+
+The plugin now triages its own filed findings (see issue #426). A new
+`/orchestrator:finding-triage` command, skill `orch-finding-triage`, takes the
+open `review:major` and `review:nit` issues still labelled `needs-triage`,
+checks each against the default branch, and puts one numbered batch of
+proposed outcomes per source PR to the human: close as completed,
+`ready-for-agent`, `ready-for-human`, or `wontfix`. It applies them only once
+the human answers, and never grills or edits the glossary or ADRs.
+
+Two new `orch.sh` commands back it. `finding-triage scan [<issue> | --pr <n>]`
+is read-only: it fetches the default branch and prints one tab-separated line
+per finding, saying whether the code it names is `unchanged`, `changed` (with
+the commit), `gone`, or `unknown` (with the reason). `finding-triage apply`
+is finding triage's one write to GitHub: it posts the comment, moves the
+issue out of `needs-triage`, and closes or labels it.
+
+`orch.sh review file` now takes `--axis <spec|standards>` and labels every
+filed finding with a category from it: `bug` for a Spec finding, `enhancement`
+for a Standards one. The closer passes the axis.
+
 ## 3.1.6
 
 `orch-review`'s **Review pass** step 3 now points to **Starting an agent**

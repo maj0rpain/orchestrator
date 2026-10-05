@@ -15,6 +15,9 @@ readonly ORCH_DIR_NAME=".orchestrator"
 readonly PHASES="spec implement review done"
 readonly LABELS_DOC="docs/agents/triage-labels.md"
 readonly LABEL_LIMIT=1000
+# The severities a filed finding carries as review:<severity> - the ones
+# `review file` files. Blocking is always fixed in the loop, never filed.
+readonly FILED_SEVERITIES="major nit"
 
 # How long `review ci` waits, and how often it looks. Overridable through the
 # environment rather than through positional arguments: the 60-second grace is
@@ -698,6 +701,12 @@ adapter_issue_close() {
   gh issue close "$@"
 }
 
+# finding-triage scan's listing of the open filed findings, once per severity
+# label: gh filters on whole labels, not on a prefix.
+adapter_issue_list() {
+  gh issue list "$@"
+}
+
 # The PR-resource primitives (issue #93, third of the #78 breakdown): open_pr's
 # create/view, ci_probe's checks, cmd_review ready's ready, and
 # cmd_redo_review's close. doctor.sh's own `gh pr view` calls are a separate
@@ -757,6 +766,17 @@ severity_label_ensure() {
 # later, when `gh issue create` cannot apply the label.
 triage_label_ensure() {
   adapter_label_create "$1" --color e4e669 --description "Not yet triaged" >/dev/null 2>&1 || true
+}
+
+# The category label - bug or enhancement - is the repo's too, like the triage
+# label: created only where missing, never with --force, with GitHub's own
+# default colour and description, and a failed create ignored for the same
+# reason.
+category_label_ensure() {
+  case "$1" in
+    bug)         adapter_label_create bug --color d73a4a --description "Something isn't working" >/dev/null 2>&1 || true ;;
+    enhancement) adapter_label_create enhancement --color a2eeef --description "New feature or request" >/dev/null 2>&1 || true ;;
+  esac
 }
 
 # Float comparison and addition, in awk, because the timings are overridable and
@@ -915,23 +935,34 @@ cmd_review() {
       ;;
     file)
       require_state
-      [ $# -eq 4 ] && [ "$3" = --body-file ] \
-        || die "usage: orch.sh review file <major|nit> <title> --body-file <file>"
-      local severity="$1" title="$2" body="$4" colour triage url
+      local usage="usage: orch.sh review file <major|nit> <title> --axis <spec|standards> --body-file <file>"
+      [ $# -eq 6 ] && [ "$3" = --axis ] && [ "$5" = --body-file ] || die "$usage"
+      local severity="$1" title="$2" axis="$4" body="$6" colour category triage url s filed=""
+      for s in $FILED_SEVERITIES; do [ "$severity" != "$s" ] || filed=1; done
+      [ -n "$filed" ] \
+        || die "not a severity that gets filed: $severity (want major or nit - blocking is always fixed, never filed)"
       case "$severity" in
         major) colour=d93f0b ;;
         nit)   colour=c5def5 ;;
-        *) die "not a severity that gets filed: $severity (want major or nit - blocking is always fixed, never filed)" ;;
+      esac
+      # The category follows the axis: a Spec finding misses what was asked
+      # for, so it is a bug; a Standards finding improves how it was built.
+      # Finding triage confirms or flips it later.
+      case "$(printf '%s' "$axis" | tr '[:upper:]' '[:lower:]')" in
+        spec)      category=bug ;;
+        standards) category=enhancement ;;
+        *) die "not a review axis: $axis (want spec or standards)" ;;
       esac
       [ -n "$title" ] || die "the title is empty"
       [ -f "$body" ] || die "body file not found: $body"
       severity_label_ensure "review:$severity" "$colour" "Review finding filed at $severity severity"
       triage="$(triage_label_for needs-triage)"
       triage_label_ensure "$triage"
+      category_label_ensure "$category"
       # The title carries no severity prefix: the label holds it, where triage
       # can change it, and the title reads as an issue.
       url="$(adapter_issue_create --title "$title" --body-file "$body" \
-        --label "review:$severity" --label "$triage")" \
+        --label "review:$severity" --label "$triage" --label "$category")" \
         || die "gh could not create the issue"
       # Prints the number alone: the record cites a number, and the caller
       # would otherwise be parsing a URL out of prose every time.
@@ -1218,6 +1249,230 @@ cmd_review_pass() {
     [ "$((10#$n))" -le "$max" ] || max="$((10#$n))"
   done
   printf '%s/iteration-%02d\n' "$dir" "$((max + 1))"
+}
+
+# --- finding-triage ---------------------------------------------------------
+
+# finding_location <body>: "<file>\t<line>\t<sha>" from a filed body's
+# **Location:** line - the first backticked <file>:<line> on it, the line
+# alone or a range, and the SHA after its last "at" - or nothing when the
+# line is missing or does not parse.
+finding_location() {
+  printf '%s\n' "$1" | awk '
+    /^\*\*Location:\*\*/ {
+      if (!match($0, /`[^`:]+:[0-9]+(-[0-9]+)?`/)) exit
+      loc = substr($0, RSTART + 1, RLENGTH - 2)
+      rest = $0; sha = ""
+      while (match(rest, / at [0-9a-fA-F]+/)) { sha = substr(rest, RSTART + 4, RLENGTH - 4); rest = substr(rest, RSTART + RLENGTH) }
+      if (sha == "") exit
+      i = match(loc, /:[0-9]+(-[0-9]+)?$/)
+      printf "%s\t%s\t%s\n", substr(loc, 1, i - 1), substr(loc, i + 1), sha
+      exit
+    }'
+}
+
+# finding_pr <body>: the PR number - the trailing number of the **PR:** line's
+# URL - or nothing.
+finding_pr() {
+  printf '%s\n' "$1" | sed -n 's|^\*\*PR:\*\*.*/pull/\([0-9][0-9]*\)/*[[:space:]]*$|\1|p' | sed -n 1p
+}
+
+# map_line <old sha> <new ref> <file> <line>: where <line> of <file> at <old
+# sha> sits at <new ref>, read off the zero-context diff between them. A line
+# inside a changed hunk maps to that hunk's start.
+map_line() {
+  git diff -U0 "$1" "$2" -- "$3" 2>/dev/null | awk -v L="$4" '
+    /^@@ / {
+      split($2, o, ","); split($3, n, ",")
+      a = substr(o[1], 2) + 0; b = (2 in o) ? o[2] + 0 : 1
+      c = substr(n[1], 2) + 0; d = (2 in n) ? n[2] + 0 : 1
+      if (b > 0 && a <= L && L <= a + b - 1) { done = 1; print (c > 0 ? c : 1); exit }
+      if ((b > 0 && a + b - 1 < L) || (b == 0 && a < L)) off += d - b
+      else exit
+    }
+    END { if (!done) print L + off }'
+}
+
+# finding_scan_one <issue> <body> <default ref>: the scan's one line for one
+# finding.
+finding_scan_one() {
+  local n="$1" body="$2" ref="$3" loc pr file lines sha full start end s e detail
+  pr="$(finding_pr "$body")"
+  loc="$(finding_location "$body")"
+  if [ -z "$loc" ]; then
+    printf '%s\t%s\t-\tunknown\tbody does not parse: no **Location:** line naming `<file>:<line>` at <SHA>\n' "$n" "${pr:--}"
+    return
+  fi
+  IFS=$'\t' read -r file lines sha <<<"$loc"
+  if [ -z "$pr" ]; then
+    printf '%s\t-\t%s:%s\tunknown\tbody does not parse: no **PR:** line ending in a pull request URL\n' "$n" "$file" "$lines"
+    return
+  fi
+  # A squash merge leaves the PR's head commit off every branch: the PR's own
+  # head ref still holds it.
+  if ! full="$(git rev-parse --verify -q "$sha^{commit}")"; then
+    git fetch -q origin "refs/pull/$pr/head" >/dev/null 2>&1 || true
+    if ! full="$(git rev-parse --verify -q "$sha^{commit}")"; then
+      printf '%s\t%s\t%s:%s\tunknown\thead SHA %s is unreachable, even after fetching refs/pull/%s/head\n' \
+        "$n" "$pr" "$file" "$lines" "$sha" "$pr"
+      return
+    fi
+  fi
+  if ! git cat-file -e "$ref:$file" 2>/dev/null; then
+    printf '%s\t%s\t%s:%s\tgone\t\n' "$n" "$pr" "$file" "$lines"
+    return
+  fi
+  if git diff --quiet "$full" "$ref" -- "$file" 2>/dev/null; then
+    printf '%s\t%s\t%s:%s\tunchanged\t\n' "$n" "$pr" "$file" "$lines"
+    return
+  fi
+  start="${lines%%-*}"; end="${lines#*-}"
+  s="$(map_line "$full" "$ref" "$file" "$start")"
+  e="$(map_line "$full" "$ref" "$file" "$end")"
+  [ "$e" -ge "$s" ] || e="$s"
+  # The newest commit since the filing that touched the finding's lines;
+  # failing that - a range the file no longer reaches - the newest that
+  # touched the file.
+  detail="$(git log -1 --format=%H -L "$s,$e:$file" "$ref" "^$full" 2>/dev/null | grep -Exm1 '[0-9a-f]{40}')" || true
+  [ -n "$detail" ] || detail="$(git log -1 --format=%H "$ref" "^$full" -- "$file" 2>/dev/null)"
+  # None at all: the difference is the PR's own commits, never on the default
+  # branch, and any older commit would predate the filing.
+  if [ -z "$detail" ]; then
+    printf '%s\t%s\t%s:%s\tunknown\tno commit on the default branch since %s touched %s - the difference is commits that never reached it\n' \
+      "$n" "$pr" "$file" "$lines" "$sha" "$file"
+    return
+  fi
+  printf '%s\t%s\t%s:%s\tchanged\t%s\n' "$n" "$pr" "$file" "$lines" "$detail"
+}
+
+# finding-triage scan [<issue> | --pr <n>]: read-only. Sorts each open filed
+# finding still in needs-triage against origin/<default>, one tab-separated
+# line apiece: <issue> <pr> <file>:<line> <result> <detail>.
+cmd_finding_triage_scan() {
+  local usage="usage: orch.sh finding-triage scan [<issue> | --pr <n>]"
+  local issue="" pr_filter="" triage sev nums="" n out state labels body def ref filed
+  case $# in
+    0) ;;
+    1) issue="$1" ;;
+    2) [ "$1" = --pr ] && [ -n "$2" ] || die "$usage"; pr_filter="$2" ;;
+    *) die "$usage" ;;
+  esac
+  case "$issue$pr_filter" in *[!0-9]*) die "$usage" ;; esac
+  triage="$(triage_label_for needs-triage)"
+  if [ -n "$issue" ]; then
+    out="$(adapter_issue_view "$issue" --json state,labels --jq '.state, (.labels[].name)')" \
+      || die "gh could not read issue #$issue"
+    state="$(first_line "$out")"
+    labels="$(printf '%s\n' "$out" | tail -n +2)"
+    [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
+    filed=""
+    for sev in $FILED_SEVERITIES; do
+      if printf '%s\n' "$labels" | grep -qxF "review:$sev"; then filed=1; fi
+    done
+    [ -n "$filed" ] \
+      || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
+    printf '%s\n' "$labels" | grep -qxF "$triage" \
+      || die "issue #$issue is not in triage - it carries no '$triage' label"
+    nums="$issue"
+  else
+    for sev in $FILED_SEVERITIES; do
+      out="$(adapter_issue_list --state open --label "review:$sev" --label "$triage" \
+        --limit 1000 --json number --jq '.[].number')" \
+        || die "gh could not list the review:$sev findings"
+      nums="$nums $out"
+    done
+  fi
+  def="$(default_branch)"
+  ref="refs/remotes/origin/$def"
+  git fetch -q origin "+refs/heads/$def:$ref" >/dev/null 2>&1 \
+    || die "could not fetch origin/$def"
+  for n in $(printf '%s\n' $nums | sort -nu); do
+    body="$(adapter_issue_view "$n" --json body --jq .body)" || die "gh could not read issue #$n"
+    if [ -n "$pr_filter" ] && [ "$(finding_pr "$body")" != "$pr_filter" ]; then continue; fi
+    finding_scan_one "$n" "$body" "$ref"
+  done
+}
+
+# finding-triage apply <issue> <outcome> [--category <bug|enhancement>]
+# --comment-file <file>: finding triage's one write to GitHub. Posts the
+# comment under the AI disclaimer, moves the issue out of needs-triage, and
+# either closes it (close-fixed: completed; wontfix: not planned, labelled
+# wontfix) or labels it with its state, keeping review:<severity> and leaving
+# exactly the one category asked for. Every state label is the repo's name for
+# the role. Only a failed category-label create is forgiven; any other failed
+# gh call dies.
+cmd_finding_triage_apply() {
+  local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
+       orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
+  local issue="${1:-}" outcome="${2:-}" category="" file="" labels triage other tmp
+  [ $# -ge 2 ] || die "$usage"
+  shift 2
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --category)     [ $# -ge 2 ] || die "$usage"; category="$2"; shift 2 ;;
+      --comment-file) [ $# -ge 2 ] || die "$usage"; file="$2"; shift 2 ;;
+      *) die "$usage" ;;
+    esac
+  done
+  case "$issue" in ''|*[!0-9]*) die "$usage" ;; esac
+  case "$outcome" in
+    close-fixed|wontfix)
+      [ -z "$category" ] || die "--category is for an outcome that stays open, not $outcome" ;;
+    ready-for-agent|ready-for-human)
+      case "$category" in
+        bug) other=enhancement ;;
+        enhancement) other=bug ;;
+        '') die "$outcome needs --category <bug|enhancement>" ;;
+        *) die "unknown --category '$category' - expected bug or enhancement" ;;
+      esac ;;
+    *) die "$usage" ;;
+  esac
+  [ -n "$file" ] || die "$usage"
+  [ -f "$file" ] || die "comment file not found: $file"
+
+  labels="$(adapter_issue_view "$issue" --json labels --jq '.labels[].name')" \
+    || die "gh could not read issue #$issue"
+  triage="$(triage_label_for needs-triage)"
+  # Remove only what the issue carries: gh refuses to remove a label the
+  # repo does not have at all. ${edit[@]+...} below, because bash 3.2's
+  # set -u calls an empty array unbound.
+  local edit=()
+  if printf '%s\n' "$labels" | grep -qxF -- "$triage"; then edit+=(--remove-label "$triage"); fi
+
+  tmp="$(mktemp)"
+  { printf '%s\n\n' '> *This was generated by AI during triage.*'; cat "$file"; } >"$tmp"
+  if ! adapter_issue_comment "$issue" --body-file "$tmp" >/dev/null; then
+    rm -f "$tmp"
+    die "gh could not comment on issue #$issue"
+  fi
+  rm -f "$tmp"
+
+  case "$outcome" in
+    close-fixed)
+      if [ -n "${edit[*]+x}" ]; then
+        adapter_issue_edit "$issue" "${edit[@]}" >/dev/null || die "gh could not relabel issue #$issue"
+      fi
+      adapter_issue_close "$issue" --reason completed >/dev/null || die "gh could not close issue #$issue" ;;
+    wontfix)
+      adapter_issue_edit "$issue" ${edit[@]+"${edit[@]}"} --add-label "$(triage_label_for wontfix)" >/dev/null \
+        || die "gh could not relabel issue #$issue"
+      adapter_issue_close "$issue" --reason "not planned" >/dev/null || die "gh could not close issue #$issue" ;;
+    *)
+      category_label_ensure "$category"
+      if printf '%s\n' "$labels" | grep -qxF -- "$other"; then edit+=(--remove-label "$other"); fi
+      adapter_issue_edit "$issue" ${edit[@]+"${edit[@]}"} --add-label "$(triage_label_for "$outcome")" \
+        --add-label "$category" >/dev/null || die "gh could not relabel issue #$issue" ;;
+  esac
+}
+
+cmd_finding_triage() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    scan) cmd_finding_triage_scan "$@" ;;
+    apply) cmd_finding_triage_apply "$@" ;;
+    *) die "usage: orch.sh finding-triage <scan|apply> ..." ;;
+  esac
 }
 
 # --- git / github -----------------------------------------------------------
@@ -2179,9 +2434,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
                               creating the directory if it is not there yet
-  review file <major|nit> <title> --body-file <file>
+  review file <major|nit> <title> --axis <spec|standards> --body-file <file>
                               file a finding as a GitHub issue labelled
-                              review:<severity> and the repo's needs-triage,
+                              review:<severity>, the repo's needs-triage, and
+                              bug (spec axis) or enhancement (standards axis),
                               creating the labels if missing; prints the number
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
@@ -2215,6 +2471,30 @@ orch.sh - deterministic operations for the orchestrator flow
                               branch name used whole, git-excluding
                               .orchestrator/. Never wipes; reads state.json
                               only to compare, and never writes it
+  finding-triage scan [<issue> | --pr <n>]
+                              read-only: fetch origin/<default> and sort each
+                              open review:<severity> finding still in the
+                              repo's needs-triage - or the one <issue>, or
+                              those whose **PR:** is <n> - one line apiece:
+                              <issue> TAB <pr> TAB <file>:<line> TAB <result>
+                              TAB <detail>; result unchanged, changed (detail:
+                              the newest touching commit's full SHA), gone, or
+                              unknown (detail: why), fetching
+                              refs/pull/<pr>/head before calling a SHA
+                              unreachable
+  finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
+  finding-triage apply <issue> <ready-for-agent|ready-for-human>
+                       --category <bug|enhancement> --comment-file <file>
+                              finding triage's one write: post <file> under
+                              the AI disclaimer, take the issue out of the
+                              repo's needs-triage, then close it as completed
+                              (close-fixed) or as not planned labelled wontfix,
+                              or label it with that state, keeping
+                              review:<severity> and leaving exactly the one
+                              category - created only where missing, never
+                              with --force. --category is required on the open
+                              outcomes and refused on the closing ones; state
+                              labels are the repo's names for the roles
   redo review                 retire the branch and PR, reopen the spec
                               issue's closed tickets, reset the loop, retire
                               03-implement.md into handoff/pre-redo-<n>/, and
@@ -2252,6 +2532,7 @@ main() {
     spec)          cmd_spec "$@" ;;
     spec-review)   cmd_spec_review "$@" ;;
     review-pass)   cmd_review_pass "$@" ;;
+    finding-triage) cmd_finding_triage "$@" ;;
     redo)          cmd_redo "$@" ;;
     status)        cmd_status "$@" ;;
     archive)       cmd_archive "$@" ;;

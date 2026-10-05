@@ -3656,7 +3656,7 @@ body="$(mktemp)"
 writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
 log="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=17 \
-  "$ORCH" review file major "Comment drifted from the code" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file major "Comment drifted from the code" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files a major" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "17"
 assert_contains "creates the severity label" "$(cat "$filed")" "label create review:major"
@@ -3677,38 +3677,84 @@ assert_eq "nor did the issue create" \
 
 : >"$filed"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
-  "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files a nit" "$st" 0
 assert_contains "under the nit label" "$(cat "$filed")" "label=review:nit"
 
+# The category is the axis's: a Spec finding is a defect against what was
+# asked for, a Standards finding an improvement on how it was built.
 : >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file blocking "Wrong" --body-file "$body" 2>&1)"; st=$?
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
+assert_status "files a Spec finding" "$st" 0
+assert_contains "labelled bug" "$(cat "$filed")" "label=bug"
+assert_eq "and not enhancement" "$(grep -cx 'label=enhancement' "$filed")" "0"
+assert_contains "creating bug with GitHub's default colour and description" \
+  "$(cat "$filed")" "label create bug --color d73a4a --description Something isn't working"
+assert_eq "never over the repo's own bug label" "$(grep -c 'label create bug --force' "$filed")" "0"
+
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file nit "Rename it" --axis Standards --body-file "$body" 2>&1)"; st=$?
+assert_status "files a Standards finding, whatever the axis's case" "$st" 0
+assert_contains "labelled enhancement" "$(cat "$filed")" "label=enhancement"
+assert_eq "and not bug" "$(grep -cx 'label=bug' "$filed")" "0"
+assert_contains "creating enhancement with GitHub's default colour and description" \
+  "$(cat "$filed")" "label create enhancement --color a2eeef --description New feature or request"
+assert_eq "never over the repo's own enhancement label" \
+  "$(grep -c 'label create enhancement --force' "$filed")" "0"
+
+# A category label that cannot be created - most often because the repo has
+# it already - does not stop the filing.
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LABEL_FAIL=bug GH_STUB_ISSUE_NUMBER=23 \
+  "$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
+assert_status "a category label gh will not create does not stop filing" "$st" 0
+assert_eq "the number is still printed" "$out" "23"
+assert_contains "and the issue still asks for the label" "$(cat "$filed")" "label=bug"
+
+: >"$filed"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+assert_status "refuses a finding with no axis" "$st" 1
+assert_contains "naming the axis" "$out" "--axis"
+assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
+
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+  "$ORCH" review file major "Title" --axis style --body-file "$body" 2>&1)"; st=$?
+assert_status "refuses an unknown axis" "$st" 1
+assert_contains "naming it" "$out" "style"
+assert_contains "and what it accepts" "$out" "spec or standards"
+assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file blocking "Wrong" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses a blocking severity - the loop fixes those" "$st" 1
 assert_contains "naming what it accepts" "$out" "major"
 assert_contains "saying blocking is always fixed, never filed" "$out" "blocking is always fixed, never filed"
 assert_not_contains "without claiming the loop fixes blocking only" "$out" "the loop fixes blocking)"
 assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "" --body-file "$body" 2>&1)"; st=$?
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses an empty title" "$st" 1
 assert_eq "before anything reaches gh" "$(grep -c . "$filed")" "0"
 
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" --body-file /nonexistent/body.md 2>&1)"; st=$?
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" --axis spec --body-file /nonexistent/body.md 2>&1)"; st=$?
 assert_status "refuses a body file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
 assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
 
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" "$body" 2>&1)"; st=$?
+out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" --axis spec "$body" 2>&1)"; st=$?
 assert_status "insists on --body-file rather than guessing a positional" "$st" 1
 
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_ISSUE_EXIT=1 \
-  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
-  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the label fails it too" "$st" 1
 
 # The triage label is the repo's vocabulary, read from the doc the spec phase
@@ -3721,7 +3767,7 @@ writeln '# Triage Labels' '' \
         '| `needs-triage`             | `triage me`          | Evaluate it |' \
         '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
-  "$ORCH" review file nit "Rename it" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files under a renamed triage label" "$st" 0
 assert_contains "creating the repo's name for it" "$(cat "$filed")" "label create triage me"
 assert_contains "and applying it" "$(cat "$filed")" "label=triage me"
@@ -3743,15 +3789,17 @@ body="$(mktemp)"
 writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
 log="$(mktemp)"
 out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=51 \
-  "$ORCH" review file major "Shells out for real" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file major "Shells out for real" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "files through the real adapter" "$st" 0
 assert_eq "printing the issue number gh answered" "$out" "51"
 assert_contains "the real adapter invoked gh label create for the severity label" \
   "$(cat "$filed")" "label create review:major --force --color d93f0b --description Review finding filed at major severity"
 assert_contains "and for the triage label" \
   "$(cat "$filed")" "label create needs-triage --color e4e669 --description Not yet triaged"
+assert_contains "and for the category label" \
+  "$(cat "$filed")" "label create bug --color d73a4a --description Something isn't working"
 assert_eq "gh itself was invoked once per label, as a real subprocess" \
-  "$(grep -cx label "$log")" "2"
+  "$(grep -cx label "$log")" "3"
 
 echo
 echo "gh adapter (real issue create, subprocess gh)"
@@ -3764,8 +3812,325 @@ assert_eq "gh itself was invoked once for the issue create, as a real subprocess
 
 : >"$filed"
 out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
-  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+  "$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "and a real gh that refuses the label still fails the command" "$st" 1
+restore_suite_env
+
+# --- finding-triage scan -------------------------------------------------------
+# The scan sorts each open filed finding still in needs-triage against the
+# default branch: whether the code its **Location:** names, at the PR's head
+# SHA, has changed since. The issues come from the in-memory fake's
+# GH_STUB_FINDINGS store; the git side is a real fixture: a bare origin, a
+# local clone that holds only the filing-time commit, and a second clone that
+# pushes everything after it, so the scan has to fetch the default branch to
+# see it.
+echo
+echo "finding-triage scan"
+new_repo >/dev/null
+git checkout -q -B main
+seq_lines() { local i; for i in $(seq 1 "$2"); do echo "$1 line $i"; done; }
+mkdir -p src
+seq_lines app 12 >src/app.sh
+seq_lines other 4 >src/other.sh
+seq_lines gone 3 >src/gone.sh
+git add -A && git commit -qm "the reviewed code"
+head_sha="$(git rev-parse HEAD)"
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote add origin "$bare"
+git push -q origin main
+git -C "$bare" symbolic-ref HEAD refs/heads/main
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+scan_repo="$PWD"
+# Everything after the filing, made in a second clone and pushed: a fix on
+# app.sh's line 3, then an unrelated edit further down the same file, then
+# gone.sh deleted - and, under refs/pull/8/head alone, a PR head commit the
+# local clone has never seen, as a squash merge leaves it.
+work="$(mktemp -d)/work"
+git clone -q "$bare" "$work"
+git -C "$work" config user.email test@example.com
+git -C "$work" config user.name Test
+git -C "$work" checkout -q main
+sed -i 's/^app line 3$/app line 3, fixed/' "$work/src/app.sh"
+git -C "$work" commit -qam "fix line 3"
+fix_sha="$(git -C "$work" rev-parse HEAD)"
+sed -i 's/^app line 11$/app line 11, reworded/' "$work/src/app.sh"
+git -C "$work" commit -qam "reword line 11"
+reword_sha="$(git -C "$work" rev-parse HEAD)"
+git -C "$work" rm -q src/gone.sh
+git -C "$work" commit -qm "drop gone.sh"
+git -C "$work" push -q origin main
+git -C "$work" checkout -q -b pr8 "$head_sha"
+echo "notes" >"$work/notes.txt"
+git -C "$work" add notes.txt
+git -C "$work" commit -qm "a later PR head"
+pr_head_sha="$(git -C "$work" rev-parse HEAD)"
+git -C "$work" push -q origin HEAD:refs/pull/8/head
+origin_main="$(git -C "$bare" rev-parse main)"
+
+findings="$(mktemp -d)"
+# finding <n> <labels, comma-separated> <location line|-> [pr] [state]: one
+# issue in the fake's store, its body in the closer's filed shape.
+finding() {
+  local d="$findings/$1"
+  mkdir -p "$d"
+  printf '%s\n' "$2" | tr ',' '\n' >"$d/labels"
+  [ -z "${5:-}" ] || printf '%s\n' "$5" >"$d/state"
+  if [ "$3" = - ]; then
+    writeln 'A finding written by hand, with no labelled lines.' >"$d/body"
+  else
+    writeln '## Finding' '' '> The reviewer said this.' '' '**Axis:** Standards' '' \
+      '**Severity:** nit - a reason.' '' "**Location:** $3" '' \
+      "**PR:** https://github.com/acme/widgets/pull/${4:-7}" '' \
+      '**Why not fixed in the loop:** found in the final iteration.' >"$d/body"
+  fi
+}
+finding 1 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha"
+finding 2 "review:major,needs-triage,bug" "\`src/app.sh:3\` at $head_sha"
+finding 3 "review:nit,needs-triage" "\`src/app.sh:40\` (and \`:41\`) at $head_sha"
+finding 4 "review:nit,needs-triage" "\`src/gone.sh:1\` at $head_sha"
+finding 5 "review:major,needs-triage" "\`src/app.sh:3\` at 0123456789abcdef0123456789abcdef01234567"
+finding 6 "review:nit,needs-triage" -
+finding 7 "review:nit,needs-triage" "\`src/other.sh:2\` at $pr_head_sha" 8
+finding 8 "review:nit,ready-for-agent" "\`src/other.sh:2\` at $head_sha"
+finding 9 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha" 7 CLOSED
+finding 10 "needs-triage" "\`src/other.sh:2\` at $head_sha"
+scan() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" GH_STUB_FILED="$filed" \
+  base_cmd finding-triage scan "$@"; }
+# line_of <n> <out>: the scan's line for issue n.
+line_of() { printf '%s\n' "$2" | awk -F'\t' -v n="$1" '$1 == n'; }
+field_of() { line_of "$1" "$3" | cut -f"$2"; }
+
+before_refs="$(git for-each-ref refs/heads)"
+before_head="$(git rev-parse HEAD) $(git symbolic-ref -q HEAD)"
+before_tree="$(git status --porcelain)"
+filed="$(mktemp)"
+out="$(scan 2>&1)"; st=$?
+assert_status "scans the open filed findings" "$st" 0
+assert_eq "one tab-separated line of five fields per finding" \
+  "$(printf '%s\n' "$out" | awk -F'\t' 'NF != 5' | wc -l | tr -d ' ')" "0"
+assert_eq "an unchanged file's finding: issue, PR, location, result, empty detail" \
+  "$(line_of 1 "$out")" "$(printf '1\t7\tsrc/other.sh:2\tunchanged\t')"
+assert_eq "a finding whose lines a later commit fixed is changed" "$(field_of 2 4 "$out")" "changed"
+assert_eq "naming that commit's full SHA, not the newer one elsewhere in the file" \
+  "$(field_of 2 5 "$out")" "$fix_sha"
+assert_eq "a line range the file no longer reaches is changed too" "$(field_of 3 4 "$out")" "changed"
+assert_eq "naming the newest commit touching the file" "$(field_of 3 5 "$out")" "$reword_sha"
+assert_eq "a deleted file's finding is gone" "$(field_of 4 4 "$out")" "gone"
+assert_eq "with no detail" "$(field_of 4 5 "$out")" ""
+assert_eq "an unreachable head SHA is unknown" "$(field_of 5 4 "$out")" "unknown"
+assert_contains "saying the SHA was unreachable" "$(field_of 5 5 "$out")" "unreachable"
+assert_eq "a body without the labelled lines is unknown" "$(field_of 6 4 "$out")" "unknown"
+assert_contains "saying the body does not parse" "$(field_of 6 5 "$out")" "Location"
+assert_eq "a SHA only the PR's head ref holds is fetched, not unknown" "$(field_of 7 4 "$out")" "unchanged"
+assert_eq "naming that PR" "$(field_of 7 2 "$out")" "8"
+assert_eq "an already triaged finding is not scanned" "$(line_of 8 "$out")" ""
+assert_eq "nor a closed one" "$(line_of 9 "$out")" ""
+assert_eq "nor an issue that is not a filed finding" "$(line_of 10 "$out")" ""
+assert_eq "the findings come in issue order" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 "
+assert_contains "lists the major findings still in needs-triage" "$(cat "$filed")" \
+  "issue list --state open --label review:major --label needs-triage"
+assert_contains "and the nit ones" "$(cat "$filed")" \
+  "issue list --state open --label review:nit --label needs-triage"
+assert_eq "makes no write call to gh" \
+  "$(grep -vE '^issue (list|view) ' "$filed" | wc -l | tr -d ' ')" "0"
+assert_eq "fetches the default branch first" "$(git rev-parse origin/main)" "$origin_main"
+assert_eq "and leaves the branches as they were" "$(git for-each-ref refs/heads)" "$before_refs"
+assert_eq "HEAD too" "$(git rev-parse HEAD) $(git symbolic-ref -q HEAD)" "$before_head"
+assert_eq "and the working tree" "$(git status --porcelain)" "$before_tree"
+
+out="$(scan --pr 8 2>&1)"; st=$?
+assert_status "narrows to one source PR" "$st" 0
+assert_eq "scanning only that PR's findings" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "7 "
+
+out="$(scan 2 2>&1)"; st=$?
+assert_status "scans one explicit finding" "$st" 0
+assert_eq "and only it" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "2 "
+out="$(scan 9 2>&1)"; st=$?
+assert_status "refuses an explicit finding that is closed" "$st" 1
+assert_contains "saying so" "$out" "not open"
+out="$(scan 8 2>&1)"; st=$?
+assert_status "refuses one already triaged" "$st" 1
+assert_contains "naming the missing triage label" "$out" "needs-triage"
+out="$(scan 10 2>&1)"; st=$?
+assert_status "refuses an issue that is not a filed finding" "$st" 1
+assert_contains "naming the missing severity label" "$out" "review:"
+out="$(scan 2 --pr 8 2>&1)"; st=$?
+assert_status "takes an issue or a PR, not both" "$st" 1
+
+# A blocking finding is fixed in the loop, never filed: an explicit issue
+# labelled review:blocking is not a filed finding.
+finding 12 "review:blocking,needs-triage" "\`src/other.sh:2\` at $head_sha"
+out="$(scan 12 2>&1)"; st=$?
+assert_status "refuses an explicit issue whose severity is never filed" "$st" 1
+assert_contains "naming the filed severities" "$out" "review:major"
+rm -rf "${findings:?}/12"
+
+# A PR head that edited the file and never reached the default branch: the
+# file differs, yet no commit since the filing touched it there, so the scan
+# names no commit older than the filing.
+git -C "$work" checkout -q -b pr11 "$head_sha"
+sed -i 's/^other line 2$/other line 2, on the PR only/' "$work/src/other.sh"
+git -C "$work" commit -qam "an unmerged PR edit"
+unmerged_sha="$(git -C "$work" rev-parse HEAD)"
+git -C "$work" push -q origin HEAD:refs/pull/11/head
+finding 11 "review:nit,needs-triage" "\`src/other.sh:2\` at $unmerged_sha" 11
+out="$(scan 11 2>&1)"; st=$?
+assert_status "scans a finding filed on a PR edit that never landed" "$st" 0
+assert_eq "it is unknown, not changed by a commit older than the filing" "$(field_of 11 4 "$out")" "unknown"
+assert_contains "saying no commit since the filing touched the file" "$(field_of 11 5 "$out")" "no commit"
+rm -rf "${findings:?}/11"
+
+# The triage label is the repo's name for the role, as review file files it.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `triage me`          | Evaluate it |' >docs/agents/triage-labels.md
+: >"$filed"
+out="$(scan 2>&1)"
+assert_contains "lists under the repo's own name for needs-triage" "$(cat "$filed")" \
+  "issue list --state open --label review:nit --label triage me"
+rm docs/agents/triage-labels.md
+restore_suite_env
+
+# --- finding-triage apply ------------------------------------------------------
+# Apply is finding triage's one write to GitHub: the comment, with the AI
+# disclaimer on top, then the labels and, for the closing outcomes, the close.
+# The in-memory fake's GH_STUB_FINDINGS store applies each label edit and close
+# to the issue it holds, so what an outcome leaves on the issue is read back
+# from the issue itself; GH_STUB_FILED records what reached gh.
+echo
+echo "finding-triage apply"
+new_repo >/dev/null
+findings="$(mktemp -d)"
+filed="$(mktemp)"
+comment="$(mktemp)"
+writeln 'Fixed by abc1234 on main.' >"$comment"
+disclaimer='> *This was generated by AI during triage.*'
+# triaged <n> <labels, comma-separated>: one filed finding in the fake's store.
+triaged() {
+  rm -rf "${findings:?}/$1"
+  mkdir -p "$findings/$1"
+  printf '%s\n' "$2" | tr ',' '\n' >"$findings/$1/labels"
+  writeln '**Axis:** Spec' >"$findings/$1/body"
+}
+labels_of() { sort "$findings/$1/labels" | tr '\n' ' '; }
+state_of() { cat "$findings/$1/state" 2>/dev/null || echo OPEN; }
+apply() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" GH_STUB_FILED="$filed" \
+  base_cmd finding-triage apply "$@"; }
+# posted <n>: the comment body apply posted on issue n.
+posted() { awk -v n="$1" '/^(issue|label) / { on = ($0 == "issue comment " n); b = 0; next }
+  on && /^body:$/ { b = 1; next } on && b' "$filed"; }
+
+for outcome in close-fixed wontfix ready-for-agent ready-for-human; do
+  triaged 2 "review:major,needs-triage,bug"
+  : >"$filed"
+  case "$outcome" in
+    close-fixed|wontfix) out="$(apply 2 "$outcome" --comment-file "$comment" 2>&1)"; st=$? ;;
+    *) out="$(apply 2 "$outcome" --category bug --comment-file "$comment" 2>&1)"; st=$? ;;
+  esac
+  assert_status "applies $outcome" "$st" 0
+  assert_eq "posting the comment under the AI disclaimer ($outcome)" \
+    "$(posted 2)" "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
+done
+
+triaged 2 "review:major,needs-triage,bug"
+: >"$filed"
+out="$(apply 2 close-fixed --comment-file "$comment" 2>&1)"; st=$?
+assert_status "closes a fixed finding" "$st" 0
+assert_eq "as completed" "$(state_of 2)" "CLOSED"
+assert_contains "giving gh the completed reason" "$(cat "$filed")" "reason=completed"
+assert_eq "out of needs-triage, with no state label added" "$(labels_of 2)" "bug review:major "
+
+triaged 3 "review:nit,needs-triage,enhancement"
+: >"$filed"
+out="$(apply 3 wontfix --comment-file "$comment" 2>&1)"; st=$?
+assert_status "closes a finding as wontfix" "$st" 0
+assert_eq "closed" "$(state_of 3)" "CLOSED"
+assert_contains "as not planned" "$(cat "$filed")" "reason=not planned"
+assert_eq "out of needs-triage and into wontfix" "$(labels_of 3)" "enhancement review:nit wontfix "
+
+triaged 2 "review:major,needs-triage,bug"
+: >"$filed"
+out="$(apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
+assert_status "sends a finding to an agent" "$st" 0
+assert_eq "out of needs-triage, into ready-for-agent, its severity and category kept" \
+  "$(labels_of 2)" "bug ready-for-agent review:major "
+assert_eq "and left open" "$(state_of 2)" "OPEN"
+assert_eq "never closing it" "$(grep -c '^issue close' "$filed")" "0"
+
+triaged 2 "review:major,needs-triage,bug"
+: >"$filed"
+out="$(apply 2 ready-for-human --category enhancement --comment-file "$comment" 2>&1)"; st=$?
+assert_status "sends a finding to a human, flipping its category" "$st" 0
+assert_eq "leaving exactly the one category asked for" \
+  "$(labels_of 2)" "enhancement ready-for-human review:major "
+assert_contains "creating that category's label with GitHub's default colour and description" \
+  "$(cat "$filed")" "label create enhancement --color a2eeef --description New feature or request"
+assert_eq "never over the repo's own" "$(grep -c 'label create enhancement --force' "$filed")" "0"
+
+# A finding filed before categories were has none: apply gives it one.
+triaged 4 "review:nit,needs-triage"
+out="$(apply 4 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
+assert_status "categorises a finding filed with no category" "$st" 0
+assert_eq "with the one asked for" "$(labels_of 4)" "bug ready-for-agent review:nit "
+
+for outcome in ready-for-agent ready-for-human; do
+  triaged 2 "review:major,needs-triage,bug"
+  : >"$filed"
+  out="$(apply 2 "$outcome" --comment-file "$comment" 2>&1)"; st=$?
+  assert_status "refuses $outcome with no category" "$st" 1
+  assert_contains "naming --category ($outcome)" "$out" "--category"
+  assert_eq "touching nothing ($outcome)" "$(grep -vE '^issue view ' "$filed" | wc -l | tr -d ' ')" "0"
+done
+for outcome in close-fixed wontfix; do
+  : >"$filed"
+  out="$(apply 2 "$outcome" --category bug --comment-file "$comment" 2>&1)"; st=$?
+  assert_status "refuses a category on $outcome" "$st" 1
+  assert_contains "naming --category ($outcome)" "$out" "--category"
+  assert_eq "touching nothing ($outcome)" "$(grep -vE '^issue view ' "$filed" | wc -l | tr -d ' ')" "0"
+done
+out="$(apply 2 ready-for-agent --category feature --comment-file "$comment" 2>&1)"; st=$?
+assert_status "refuses a category that is neither bug nor enhancement" "$st" 1
+out="$(apply 2 promote --comment-file "$comment" 2>&1)"; st=$?
+assert_status "refuses an unknown outcome" "$st" 1
+out="$(apply 2 close-fixed 2>&1)"; st=$?
+assert_status "refuses no comment file" "$st" 1
+out="$(apply 2 close-fixed --comment-file /nonexistent/comment.md 2>&1)"; st=$?
+assert_status "refuses a comment file that is not there" "$st" 1
+
+# A category label gh will not create - most often because the repo has it -
+# does not stop apply.
+triaged 2 "review:major,needs-triage,bug"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" GH_STUB_LABEL_FAIL=bug \
+  base_cmd finding-triage apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a category label gh will not create does not stop apply" "$st" 0
+assert_eq "the labels are still applied" "$(labels_of 2)" "bug ready-for-agent review:major "
+
+# Any other failed gh call does, with the reason.
+for knob in GH_STUB_VIEW_EXIT GH_STUB_COMMENT_EXIT GH_STUB_EDIT_EXIT GH_STUB_ISSUE_CLOSE_EXIT; do
+  triaged 2 "review:major,needs-triage,bug"
+  out="$(env "$knob=1" ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" \
+    PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" finding-triage apply 2 wontfix --comment-file "$comment" 2>&1)"; st=$?
+  assert_status "dies when gh fails ($knob)" "$st" 1
+  assert_contains "saying gh failed on the issue ($knob)" "$out" "gh could not"
+done
+
+# Every state label is the repo's name for the role.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `triage me`          | Evaluate it |' \
+        '| `ready-for-agent`          | `afk`                | Agent it    |' \
+        '| `wontfix`                  | `nope`               | Not doing   |' >docs/agents/triage-labels.md
+triaged 2 "review:major,triage me,bug"
+out="$(apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
+assert_eq "moves a finding between the repo's own triage labels" "$(labels_of 2)" "afk bug review:major "
+triaged 3 "review:nit,triage me,enhancement"
+out="$(apply 3 wontfix --comment-file "$comment" 2>&1)"; st=$?
+assert_eq "wontfix included" "$(labels_of 3)" "enhancement nope review:nit "
+rm docs/agents/triage-labels.md
 restore_suite_env
 
 # --- spec ---------------------------------------------------------------------
@@ -4336,6 +4701,10 @@ assert_contains "and updates once it has been" "$("$ORCH" status)" "redo:      2
 assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin"
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 assert_contains "and filing" "$("$ORCH" help)" "review file"
+assert_contains "with the finding's axis" "$("$ORCH" help)" "review file <major|nit> <title> --axis <spec|standards> --body-file <file>"
+assert_contains "and finding triage's scan" "$("$ORCH" help)" "finding-triage scan [<issue> | --pr <n>]"
+assert_contains "and its apply, in both forms" "$("$ORCH" help)" "finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>"
+assert_contains "the open one with its category" "$("$ORCH" help)" "--category <bug|enhancement> --comment-file <file>"
 assert_contains "and the terminal-state classifier" "$("$ORCH" help)" "review terminal"
 assert_contains "and retiring a loop's records" "$("$ORCH" help)" "review retire"
 assert_contains "help documents issue publish" "$("$ORCH" help)" "issue publish"

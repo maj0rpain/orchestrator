@@ -2,7 +2,8 @@
 
 `orch.sh`'s subcommand grammar: when a command acts on a thing, the thing comes
 first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
-<new>`, `orch.sh review file <major|nit> <title> --body-file <file>`.
+<new>`, `orch.sh review file <major|nit> <title> --axis <spec|standards> --body-file
+<file>`.
 
 ## Current nouns
 
@@ -16,13 +17,15 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `review-pass` | `begin`                                          |
 | `spec`    | `fetch`, `update`, `comment`, `comments`             |
 | `spec-review` | `begin`                                          |
+| `finding-triage` | `scan`, `apply`                               |
 | `ticket`  | `publish`, `next`, `list`, `close`, `reset`, `parent`, `exists`, `retire` |
 | `state`   | `get`, `set`                                         |
 | `handoff` | `path`, `validate`, `section`                        |
 | `phase`   | `advance`, `boundary`                                |
 
-A compound noun such as `spec-review` or `review-pass` is still one noun, and
-still follows `<noun> <verb>`: `orch.sh spec-review begin <n>`.
+A compound noun such as `spec-review`, `review-pass` or `finding-triage` is
+still one noun, and still follows `<noun> <verb>`: `orch.sh spec-review begin
+<n>`.
 
 This table is a map of the shape, not the source of truth for arguments or
 behavior - run `orch.sh help` for the live list.
