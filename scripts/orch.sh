@@ -1778,10 +1778,7 @@ strip_ticket_sections() {
 cmd_ticket_retire() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
   local parent="$1" subs n state child_id comments body stripped msg old_msg out
-  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
-  subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" \
-      --jq '.[] | "\(.number) \(.state)"')" \
-    || die "gh could not list sub-issues of #$parent"
+  subs="$(cmd_ticket_list "$parent")" || exit 1
   msg="This ticket was retired: its spec, #$parent, changed and will be broken down into tickets again."
   # The wording a retire posted before a spec review could retire too: a
   # ticket carrying it from a run that died part-way is already commented on.
