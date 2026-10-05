@@ -2936,6 +2936,39 @@ err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc "$body" 2>&1 >/dev/null)"; st=
 assert_status "a detached HEAD exits 2" "$st" 2
 assert_contains "saying so" "$err" "detached HEAD"
 
+# Each exit-2 failure pinned byte for byte: the exact stderr line with its
+# `orch: ` prefix, exit 2, and nothing on stdout (#347). Where gh itself
+# failed, the stub's own complaint precedes it, so orch's line is the last.
+errf="$(mktemp)"
+out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc "$body" 2>"$errf")"; st=$?
+assert_status "detached HEAD: exit 2" "$st" 2
+assert_eq "detached HEAD: exact stderr" "$(cat "$errf")" "orch: not on a branch (detached HEAD)"
+assert_eq "detached HEAD: empty stdout" "$out" ""
+git checkout -q quick/12-foo
+
+out="$(prc 2>"$errf")"; st=$?
+assert_status "no file argument: exit 2" "$st" 2
+assert_eq "no file argument: exact stderr" "$(cat "$errf")" "orch: usage: orch.sh pr comment <file>"
+assert_eq "no file argument: empty stdout" "$out" ""
+
+out="$(prc /nonexistent/body.md 2>"$errf")"; st=$?
+assert_status "missing file: exit 2" "$st" 2
+assert_eq "missing file: exact stderr" "$(cat "$errf")" "orch: body file not found: /nonexistent/body.md"
+assert_eq "missing file: empty stdout" "$out" ""
+
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_EXIT=1 prc "$body" 2>"$errf")"; st=$?
+assert_status "unreadable PR list: exit 2" "$st" 2
+assert_eq "unreadable PR list: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not list the open PRs from quick/12-foo"
+assert_eq "unreadable PR list: empty stdout" "$out" ""
+
+filed="$(mktemp)"
+out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' GH_STUB_PR_COMMENT_EXIT=1 prc "$body" 2>"$errf")"; st=$?
+assert_status "failed post: exit 2" "$st" 2
+assert_eq "failed post: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not comment on PR #57"
+assert_eq "failed post: empty stdout" "$out" ""
+rm -f "$errf"
+
 help="$("$ORCH" help)"
 assert_contains "help documents pr comment" "$help" "pr comment <file>"
 
@@ -3279,6 +3312,20 @@ assert_contains "naming what failed" "$out" "gh could not list sub-issues of #98
 out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" ticket exists 98 2>&1)"; st=$?
 assert_status "a gh that cannot read the issue dies with 2, not no-breakdown's 1" "$st" 2
 assert_not_contains "never printing a verdict" "$out" "collapsed"
+
+# The same two failures pinned byte for byte: exact stderr, exit 2, empty
+# stdout (#347).
+errf="$(mktemp)"
+out="$(GH_STUB_SUBISSUE_GET_EXIT=1 "$ORCH" ticket exists 98 2>"$errf")"; st=$?
+assert_status "unlistable sub-issues: exit 2" "$st" 2
+assert_eq "unlistable sub-issues: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not list sub-issues of #98"
+assert_eq "unlistable sub-issues: empty stdout" "$out" ""
+
+out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" ticket exists 98 2>"$errf")"; st=$?
+assert_status "unreadable body: exit 2" "$st" 2
+assert_eq "unreadable body: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not read issue #98's body"
+assert_eq "unreadable body: empty stdout" "$out" ""
+rm -f "$errf"
 
 out="$("$ORCH" ticket exists abc 2>&1)"; st=$?
 assert_status "refuses a parent that is not a plain number" "$st" 1

@@ -26,6 +26,9 @@ ORCH_CI_TIMEOUT="${ORCH_CI_TIMEOUT:-900}"
 ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
 
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
+# die for commands that reserve exit 1 for a meaningful "no" (pr comment: no
+# open PR; ticket exists: no breakdown), so their failures exit with status 2 instead.
+die2() { printf 'orch: %s\n' "$*" >&2; exit 2; }
 note() { printf '%s\n' "$*"; }
 now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # The one timestamp shape for .orchestrator/ directory names: compact, UTC, and
@@ -1506,33 +1509,21 @@ cmd_pr_release() {
 # there. Three outcomes: 0 posted (printing the PR number), 1 only when the
 # branch has no open PR, and 2 for everything else - GitHub unreadable, a
 # failed post, a usage error, a missing file, a detached HEAD. The exit-2
-# cases exit explicitly, since die exits 1 and a caller reading 1 would take
+# cases go through die2, since die exits 1 and a caller reading 1 would take
 # a failure for "no PR". Only the GitHub-unreadable rule is shared with ticket
 # exists: a GitHub that cannot be read exits 2, never 1.
 cmd_pr_comment() {
-  if [ $# -ne 1 ]; then
-    printf 'orch: usage: orch.sh pr comment <file>\n' >&2
-    exit 2
-  fi
+  [ $# -eq 1 ] || die2 "usage: orch.sh pr comment <file>"
   local file="$1" branch open pr
-  if [ ! -f "$file" ]; then
-    printf 'orch: body file not found: %s\n' "$file" >&2
-    exit 2
-  fi
-  if ! branch="$(git symbolic-ref --quiet --short HEAD)"; then
-    printf 'orch: not on a branch (detached HEAD)\n' >&2
-    exit 2
-  fi
-  if ! open="$(adapter_pr_list --head "$branch" --state open --json number --jq '.[].number')"; then
-    printf 'orch: gh could not list the open PRs from %s\n' "$branch" >&2
-    exit 2
-  fi
+  [ -f "$file" ] || die2 "body file not found: $file"
+  branch="$(git symbolic-ref --quiet --short HEAD)" \
+    || die2 "not on a branch (detached HEAD)"
+  open="$(adapter_pr_list --head "$branch" --state open --json number --jq '.[].number')" \
+    || die2 "gh could not list the open PRs from $branch"
   [ -n "$open" ] || return 1
   pr="$(first_line "$open")"
-  if ! adapter_pr_comment "$pr" --body-file "$file" >/dev/null; then
-    printf 'orch: gh could not comment on PR #%s\n' "$pr" >&2
-    exit 2
-  fi
+  adapter_pr_comment "$pr" --body-file "$file" >/dev/null \
+    || die2 "gh could not comment on PR #$pr"
   printf '%s\n' "$pr"
 }
 
@@ -1719,18 +1710,14 @@ cmd_ticket_exists() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket exists <parent>"
   local parent="$1" subs body
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
-  if ! subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" --jq '.[].number')"; then
-    printf 'orch: gh could not list sub-issues of #%s\n' "$parent" >&2
-    exit 2
-  fi
+  subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" --jq '.[].number')" \
+    || die2 "gh could not list sub-issues of #$parent"
   if [ -n "$subs" ]; then
     printf 'sub-issues\n'
     return 0
   fi
-  if ! body="$(adapter_issue_view "$parent" --json body --jq .body)"; then
-    printf "orch: gh could not read issue #%s's body\n" "$parent" >&2
-    exit 2
-  fi
+  body="$(adapter_issue_view "$parent" --json body --jq .body)" \
+    || die2 "gh could not read issue #$parent's body"
   if printf '%s\n' "$body" | has_ticket_heading; then
     printf 'collapsed\n'
     return 0

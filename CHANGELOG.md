@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.1.4
+
+`orch.sh`'s exit-2 failures in `pr comment` and `ticket exists` now go
+through one `die2` helper, a sibling of `die` that exits 2, instead of seven
+hand-written `printf 'orch: ...' >&2; exit 2` pairs (see issue #347). Their
+stderr, exit status and stdout do not change, and new tests pin each one.
+
 ## 3.1.3
 
 The README's Layout row for `skills/orch-spec-review/` now names the
