@@ -459,6 +459,60 @@ spares "the drift check accepts an agent the snippet names" \
   "$out" 'orch-named'
 check "the Junie snippet names every agent" "$(scan_junie_snippet_drift "$PLUGIN_ROOT")"
 
+# --- Junie snippet finds the plugin (#416) ------------------------------------
+# Junie's agent shell has no plugin-root variable, and its capability filter
+# can hide an orch-* skill or agent. The snippet's permanent "finding the
+# plugin" section carries the orch.sh lookup the skills state, so a session
+# resolves it once, and points at docs/host-capabilities.md for the fallback
+# when a piece is hidden. Unlike the JUNIE-5493 section, it stays.
+echo
+echo "Junie snippet finds the plugin (#416)"
+junie_find_heading='## orchestrator plugin: finding the plugin'
+# scan_junie_snippet_lookup <plugin root>: one line per thing the snippet's
+# finding-the-plugin section lacks.
+scan_junie_snippet_lookup() {
+  local f="$1/docs/junie/AGENTS.md" body flat
+  if ! body="$(md_section "$f" "$junie_find_heading" 2>/dev/null)"; then
+    echo "docs/junie/AGENTS.md: no '$junie_find_heading' section"
+    return 0
+  fi
+  flat="$(flat_text <<<"$body")"
+  [[ "$flat" == *"$orch_junie"*"$orch_junie_one"*"$orch_junie_many"* ]] ||
+    echo "docs/junie/AGENTS.md: finding the plugin without the orch.sh lookup, in order"
+  [[ "$flat" == *"docs/host-capabilities.md"* ]] ||
+    echo "docs/junie/AGENTS.md: finding the plugin never points at docs/host-capabilities.md"
+  return 0
+}
+# junie_find_section [line]...: the section's heading, then each line given.
+junie_find_section() { printf '%s\n' '<!-- orchestrator:begin -->' "$junie_find_heading" "$@" '<!-- orchestrator:end -->'; }
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs/junie"
+printf '%s\n' '## orchestrator plugin: planning' "$orch_junie." "$orch_junie_one" "$orch_junie_many" \
+  'See docs/host-capabilities.md.' >"$fixture/docs/junie/AGENTS.md"
+flags "the lookup check flags a snippet with no finding-the-plugin section" \
+  "$(scan_junie_snippet_lookup "$fixture")" "docs/junie/AGENTS.md: no '$junie_find_heading' section"
+junie_find_section "$orch_junie." "$orch_junie_many" 'See docs/host-capabilities.md.' \
+  >"$fixture/docs/junie/AGENTS.md"
+flags "the lookup check flags a lookup missing its one-install step" \
+  "$(scan_junie_snippet_lookup "$fixture")" "docs/junie/AGENTS.md: finding the plugin without the orch.sh lookup"
+junie_find_section "$orch_junie." "$orch_junie_many" "$orch_junie_one" 'See docs/host-capabilities.md.' \
+  >"$fixture/docs/junie/AGENTS.md"
+flags "the lookup check flags the lookup's steps out of order" \
+  "$(scan_junie_snippet_lookup "$fixture")" "docs/junie/AGENTS.md: finding the plugin without the orch.sh lookup"
+junie_find_section "$orch_junie." "$orch_junie_one" "$orch_junie_many" >"$fixture/docs/junie/AGENTS.md"
+out="$(scan_junie_snippet_lookup "$fixture")"
+flags "the lookup check flags a section that never points at the reference" \
+  "$out" "docs/junie/AGENTS.md: finding the plugin never points at docs/host-capabilities.md"
+spares "the lookup check accepts the lookup in order" "$out" 'orch\.sh lookup'
+junie_find_section "$orch_junie." "$orch_junie_one" "$orch_junie_many" '## other section' \
+  'See docs/host-capabilities.md.' >"$fixture/docs/junie/AGENTS.md"
+flags "the lookup check flags a reference only outside the section" \
+  "$(scan_junie_snippet_lookup "$fixture")" "docs/junie/AGENTS.md: finding the plugin never points at docs/host-capabilities.md"
+junie_find_section "$orch_junie." "$orch_junie_one" "$orch_junie_many" \
+  'See docs/host-capabilities.md.' >"$fixture/docs/junie/AGENTS.md"
+spares "the lookup check accepts a complete section" "$(scan_junie_snippet_lookup "$fixture")" '.'
+check "the Junie snippet finds the plugin" "$(scan_junie_snippet_lookup "$PLUGIN_ROOT")"
+
 # --- host capabilities (#127) -------------------------------------------------
 echo
 echo "host capabilities (#127)"

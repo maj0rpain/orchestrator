@@ -48,7 +48,9 @@ agent's file instead. JetBrains tracks this as
 fixed, append the plugin's snippet
 [docs/junie/AGENTS.md](docs/junie/AGENTS.md) to your user-scoped
 `~/.junie/AGENTS.md`, which tells Junie each skill needs its custom agents
-and also carries a standing planning section:
+and also carries a standing planning section and a standing finding-the-plugin
+section: where `orch.sh` is, and what to do when an orch-* skill or agent is
+hidden:
 `cat "$HOME"/.junie/extensions/*/orchestrator/docs/junie/AGENTS.md >> ~/.junie/AGENTS.md`.
 If the glob matches more than one install, pick one path and `cat` only that.
 The snippet sits between `<!-- orchestrator:begin -->` and
@@ -225,7 +227,7 @@ scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
 scripts/test/                 shell tests
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
-docs/junie/AGENTS.md          Junie snippet: a standing planning section, and each skill's custom agents (JUNIE-5493 workaround)
+docs/junie/AGENTS.md          Junie snippet: standing planning and finding-the-plugin sections (where orch.sh is, what to do when an orch-* skill or agent is hidden), and each skill's custom agents (JUNIE-5493 workaround)
 hooks/hooks.json              hook wiring
 ```
 
