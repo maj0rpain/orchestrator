@@ -170,3 +170,14 @@ issue closes when the release PR carries the work into the default branch
 body file carries no closing keyword of its own. Not a draft because the
 review pass in step 6 already happened, so there is no loop left to
 promote it - draft would leave it stuck with nothing watching it.
+
+Before `pr publish`, check the body file against what the branch actually
+changed: `git diff <base SHA>..HEAD`, with the base SHA from `bash "$ORCH"
+branch base-sha`. Correct, in the body file itself, every statement that
+diff does not support - a helper added or removed, a claimed reason, a file
+list - by rewording or removing it, and leave alone any statement the diff
+cannot settle either way. Done when every helper, function, file and stated
+reason the body names has been checked against that diff, and each is
+supported by it or has been reworded or removed. The body is corrected
+before anyone sees it, so no live PR is edited (no `pr update`) and nothing
+is recorded about the check.

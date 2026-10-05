@@ -19,6 +19,12 @@ Each iteration's review record gains a `## PR body` section between
 `## Waiting to be filed` and `## CI`: one line per corrected statement,
 `None`, or `Not checked - no commit`.
 
+A quick implementation now checks its drafted PR body the same way before
+step 7's `pr publish`, against `git diff <base SHA>..HEAD` with the base SHA
+from `orch.sh branch base-sha`, correcting the body file in place. No live
+PR is edited and nothing is recorded, since the body is fixed before anyone
+sees it.
+
 ## 3.2.0
 
 The plugin now triages its own filed findings (see issue #426). A new
