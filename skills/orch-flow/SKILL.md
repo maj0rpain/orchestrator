@@ -191,7 +191,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      `None`, naming the ticket and holding all of its deviations. "None" only
      if not one ticket reported a deviation, never left blank.
    - **Unmet criteria**: one bullet per ticket whose `Criteria` line names an
-     unmet criterion, naming the ticket and each criterion. "None" otherwise.
+     unmet criterion or an `untested:` file, naming the ticket, each
+     criterion, and each untested file. "None" otherwise.
    - **Verification**: from the last ticket's `Verification` line - its full
      verification ran over the whole branch - in the shape the `orch-handoff`
      template gives. A `fail` stays here, never under **Deviations**: a

@@ -58,6 +58,17 @@ to that prompt.
    evidence: a test name, or a file and line. A ticket with no acceptance
    criteria is checked against its "What to build" instead. An unmet
    criterion you can meet, meet now - then commit and check again.
+   Then, for each source file your commits changed, name the test that
+   exercises it. A **source file** is a file of executable code: a script,
+   module or program the repo runs. Markdown (prompts, skills, docs) and
+   config or data files are not source files. A test **exercises** a source
+   file when it loads it (imports or sources it) or runs it (invokes it as a
+   command): search the repo's test files for the file's path or module name.
+   An untested file you can cover, cover now - write the test, commit, and
+   check again. One you cannot cover is listed on the `Criteria` line after
+   `untested:`, never as a deviation. The check is done when every criterion
+   is marked with its evidence and every changed source file is named with
+   its test or listed as untested.
 6. **Return** the report below, and nothing else.
 
 ## Test-driven development
@@ -127,7 +138,9 @@ Two different lines of the report carry what you could not settle:
   most defensible choice, build it, and name the choice and its reason.
 - **Unmet criterion**: an acceptance criterion you could not meet alone.
   Name it on the `Criteria` line, never as a deviation. The review loop's
-  Spec axis judges it as an ordinary finding.
+  Spec axis judges it as an ordinary finding. A changed source file no test
+  exercises, and that you could not cover, goes on the same line after
+  `untested:`, and is judged the same way.
 
 ## Report
 
@@ -137,11 +150,12 @@ Exactly these five lines:
 Ticket: #<ticket>
 Commits: <sha> <sha> ... | none
 Verification: <full-verification command> - pass|fail
-Criteria: <met>/<total> met | <met>/<total> met; unmet: <criterion>; <criterion> ...
+Criteria: <met>/<total> met[; unmet: <criterion>; <criterion> ...][; untested: <file> <file> ...]
 Deviation: <deviation>; <deviation> ... | None
 ```
 
 - `Commits`: your commits' short SHAs, oldest first, space-separated.
 - `Criteria`: each unmet criterion in its ticket wording, shortened to fit
-  the line.
+  the line, after `unmet:`; then each changed source file no test exercises,
+  by its repo path, after `untested:`. Either part is left out when empty.
 - `Deviation`: each deviation with its reason, separated by "; ".
