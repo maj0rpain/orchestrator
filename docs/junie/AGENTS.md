@@ -16,9 +16,10 @@ into the linked issue's body for a quick implementation. Planning artifacts
 
 To find the orchestrator plugin's `orch.sh` (`ORCH`), as its skills do:
 If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install; Junie never sets it).
+(the Junie CLI install).
 If it prints one path, `ORCH` is that path.
 If it prints more than one, stop and show the human the paths.
+If it prints nothing, find `orch.sh` as the running skill's own lookup says.
 The plugin root is two directories above that `orch.sh`. Resolve `ORCH` and
 the plugin root once per session and reuse them; do not probe for them again.
 
