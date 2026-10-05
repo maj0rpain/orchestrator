@@ -78,9 +78,9 @@ Recommended: UTC, because exports are compared across machines in different zone
 
 ---
 
-**Q2 - Watermark format**: Where should `HWM_FORMAT` (the config key that sets how the high-water mark - the last exported row's timestamp - is written) live: in the export's config file, or as a flag on each run?
+**Q2 - Timestamp format key**: Where should `HWM_FORMAT` (the config key that sets how the last exported row's timestamp is written) live: in the export's config file, or as a flag on each run?
 
-Recommended: In the config file, because every run of one export must read the mark the same way.
+Recommended: In the config file, because every run of one export must read that timestamp the same way.
 ```
 
 Each round's answers reshape the tree: settled decisions push the frontier
