@@ -3923,6 +3923,15 @@ assert_contains "listed alongside the ops that exist" "$out" "unknown review op"
 restore_suite_env
 
 # --- review file ------------------------------------------------------------
+
+echo "is_filed_severity"
+# Sourced rather than run: the helper is the one answer to "is this severity
+# filed", and sourcing orch.sh defines its functions without running main.
+filed_sev() { bash -c 'source "$1" && is_filed_severity "$2"' _ "$ORCH" "$1"; }
+filed_sev major; assert_status "accepts major" "$?" 0
+filed_sev nit; assert_status "accepts nit" "$?" 0
+filed_sev blocking; assert_status "refuses blocking - it is always fixed, never filed" "$?" 1
+filed_sev ""; assert_status "refuses an empty severity" "$?" 1
 # Filing is mechanism: which labels, what title, which body, and the number
 # printed back. The stub records what reached gh, which is the assertion - a
 # finding filed with no severity label is a finding triage never finds.
@@ -4018,6 +4027,9 @@ assert_status "refuses a blocking severity - the loop fixes those" "$st" 1
 assert_contains "naming what it accepts" "$out" "major"
 assert_contains "saying blocking is always fixed, never filed" "$out" "blocking is always fixed, never filed"
 assert_not_contains "without claiming the loop fixes blocking only" "$out" "the loop fixes blocking)"
+for sev in $(bash -c 'source "$1" && printf "%s\n" "$FILED_SEVERITIES"' _ "$ORCH"); do
+  assert_contains "naming filed severity $sev, read from FILED_SEVERITIES" "$out" "$sev"
+done
 assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
 
 out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "" --axis spec --body-file "$body" 2>&1)"; st=$?
