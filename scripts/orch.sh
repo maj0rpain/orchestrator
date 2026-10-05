@@ -728,6 +728,30 @@ adapter_pr_view() {
   gh pr view "$@"
 }
 
+# review ci's read of the PR's own head, base and commits (issues #475, #476):
+# the SHA and branch its grace is anchored to, and the commits its CI-evidence
+# pre-check reads, come from the PR, not from local HEAD, which can be anywhere
+# by the time the loop ends.
+adapter_pr_refs() {
+  gh pr view "$1" --json headRefOid,headRefName,baseRefName,commits
+}
+
+# review ci's CI-evidence reads (issue #476), one per GitHub operation. Each
+# prints gh's raw answer - and a failed call's error - for no_ci_evidence to
+# judge; none of them decides anything.
+adapter_branch_protection() {
+  gh api "repos/{owner}/{repo}/branches/$1/protection/required_status_checks"
+}
+adapter_branch_rules() {
+  gh api "repos/{owner}/{repo}/rules/branches/$1"
+}
+adapter_commit_check_runs() {
+  gh api "repos/{owner}/{repo}/commits/$1/check-runs?per_page=1"
+}
+adapter_commit_statuses() {
+  gh api "repos/{owner}/{repo}/commits/$1/status"
+}
+
 # ci_probe's one hand on GitHub, called once for the required scope and once
 # for the all-checks scope - the exit-8-vs-exit-0 handling and bucket
 # classification right around its call sites are unchanged; only the raw `gh
@@ -835,6 +859,70 @@ ci_tick() {
   sleep "$ORCH_CI_INTERVAL"
   slept="$(float_add "$slept" "$ORCH_CI_INTERVAL")"
   elapsed="$(ci_elapsed "$started" "$slept")"
+}
+
+# When the PR's head was pushed, in epoch seconds: the newest reflog entry of
+# the head branch's remote-tracking ref whose new value is the head SHA. Prints
+# nothing when there is no such entry - pushed from another machine, or a
+# reflog that is not kept - and the grace then counts from the call instead.
+ci_push_time() {
+  local oid="$1" branch="$2"
+  [ -n "$oid" ] && [ -n "$branch" ] || return 0
+  git rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null || return 0
+  git reflog show --date=unix --format='%H %gd' "refs/remotes/origin/$branch" -- 2>/dev/null \
+    | awk -v h="$oid" '$1 == h { sub(/.*@\{/, "", $2); sub(/\}$/, "", $2); print $2; exit }' || true
+}
+
+# Whether the repo shows no evidence of CI, for review ci's grace (issue
+# #476, ADR-0032). Succeeds only when all four signals read as absent:
+#   1. workflow files in the PR head's tree, read locally;
+#   2. required checks on the base branch, by classic protection or a ruleset;
+#   3. a check-run or commit status on an earlier commit of the PR;
+#   4. a check-run or commit status on the base branch tip.
+# Fails on the first signal present or unreadable. The errors are asymmetric:
+# a false "has CI" costs a minute of grace, a false "no CI" marks a PR ready
+# over checks nobody verified - so anything this cannot read counts as CI.
+# Recomputed on every call: a workflow the PR itself adds is always seen.
+no_ci_evidence() {
+  local head="$1" base="$2" commits="$3" out st n sha
+  [ -n "$head" ] && [ -n "$base" ] || return 1
+  # 1. A head this clone has never fetched is unreadable, not empty.
+  git cat-file -e "$head^{commit}" 2>/dev/null || return 1
+  # --full-tree: the pathspec is otherwise read from the current directory,
+  # and from a subdirectory an empty listing would read as no workflows.
+  out="$(git ls-tree --full-tree --name-only "$head" -- .github/workflows/ 2>/dev/null)" || return 1
+  if printf '%s\n' "$out" | grep -Eq '\.ya?ml$'; then return 1; fi
+  # 2. Classic protection answers 404 `Branch not protected` where there is
+  # none; any other failure, a bare 404 `Not Found` from lacking access
+  # included, is an answer nobody has.
+  st=0; out="$(adapter_branch_protection "$base" 2>&1)" || st=$?
+  if [ "$st" = 0 ]; then
+    n="$(printf '%s' "$out" | jq -r '(.contexts // []) + [(.checks // [])[] | .context] | length' 2>/dev/null)" || return 1
+    case "$n" in 0) ;; *) return 1 ;; esac
+  else
+    case "$out" in *"Branch not protected"*) ;; *) return 1 ;; esac
+  fi
+  out="$(adapter_branch_rules "$base" 2>/dev/null)" || return 1
+  n="$(printf '%s' "$out" | jq -r '[.[] | select(.type == "required_status_checks")] | length' 2>/dev/null)" || return 1
+  [ "$n" = 0 ] || return 1
+  # 4, then 3: the base tip is one ref, the PR's earlier commits may be many.
+  ci_ref_unchecked "$base" || return 1
+  while IFS= read -r sha; do
+    [ -z "$sha" ] || [ "$sha" = "$head" ] || ci_ref_unchecked "$sha" || return 1
+  done <<<"$commits"
+  return 0
+}
+
+# Succeeds when one ref has neither a check-run nor a commit status, and the
+# two reads both answered.
+ci_ref_unchecked() {
+  local out n
+  out="$(adapter_commit_check_runs "$1" 2>/dev/null)" || return 1
+  n="$(printf '%s' "$out" | jq -r '.total_count' 2>/dev/null)" || return 1
+  [ "$n" = 0 ] || return 1
+  out="$(adapter_commit_statuses "$1" 2>/dev/null)" || return 1
+  n="$(printf '%s' "$out" | jq -r '.total_count' 2>/dev/null)" || return 1
+  [ "$n" = 0 ]
 }
 
 # One look at the PR's checks, classified. Prints the classification on the first
@@ -996,10 +1084,34 @@ cmd_review() {
       ;;
     ci)
       require_state
-      local pr started slept=0 elapsed=0 res verdict
+      local pr started slept=0 elapsed=0 res verdict refs head_oid head_ref base_ref pushed push_age=0
+      local commits="" no_ci=0
       require_ci_knobs
       require_pr pr
       started="$(date +%s)"
+      # Two clocks: the timeout counts from this call, the grace from the push.
+      # By the time the loop ends the fixer's last push is usually minutes old,
+      # and a CI that has not registered a check in that time is not about to.
+      # `push_age` is how long before this call the push landed; a PR that will
+      # not say what its head is, or a head with no reflog entry, leaves it at zero,
+      # and the grace counts from the call as it always did.
+      if refs="$(adapter_pr_refs "$pr" 2>/dev/null)" \
+        && head_oid="$(printf '%s' "$refs" | jq -r '.headRefOid // empty' 2>/dev/null)" \
+        && head_ref="$(printf '%s' "$refs" | jq -r '.headRefName // empty' 2>/dev/null)" \
+        && base_ref="$(printf '%s' "$refs" | jq -r '.baseRefName // empty' 2>/dev/null)"; then
+        pushed="$(ci_push_time "$head_oid" "$head_ref")"
+        case "$pushed" in
+          ''|*[!0-9]*) ;;
+          *) [ "$pushed" -ge "$started" ] || push_age=$(( started - pushed )) ;;
+        esac
+        # With no evidence of CI anywhere, there is nothing for the grace to
+        # wait on. It replaces only the wait: the unfiltered probe still runs,
+        # so a check already reported on the head gives its verdict as before.
+        if commits="$(printf '%s' "$refs" | jq -r '(.commits // [])[].oid' 2>/dev/null)" \
+          && no_ci_evidence "$head_oid" "$base_ref" "$commits"; then
+          no_ci=1
+        fi
+      fi
       while :; do
         # Branch protection's required checks decide it wherever it names any.
         # When nothing required has reported, gh's message cannot tell "this repo
@@ -1011,7 +1123,9 @@ cmd_review() {
         res="$(ci_probe "$pr" required)"
         verdict="$(first_line "$res")"
         if [ "$verdict" = none ]; then
-          if float_lt "$elapsed" "$ORCH_CI_GRACE"; then ci_tick; continue; fi
+          if [ "$no_ci" = 0 ] && float_lt "$(float_add "$push_age" "$elapsed")" "$ORCH_CI_GRACE"; then
+            ci_tick; continue
+          fi
           res="$(ci_probe "$pr" all)"
           verdict="$(first_line "$res")"
         fi
@@ -1021,9 +1135,18 @@ cmd_review() {
           # judgement, and the budget for it belongs to the flow.
           failing)     printf '%s\n' "$res"; return 1 ;;
           unreachable) printf '%s\n' "$res"; return 1 ;;
-          # Only reachable with the grace already spent: nothing required
-          # reported, and then nothing at all reported either.
-          none)        printf '%s\n' "$res"; return 0 ;;
+          # Only reachable with the grace spent or skipped: nothing required
+          # reported, and then nothing at all reported either. The detail line
+          # says which, here rather than in ci_probe, so doctor's lines are
+          # unchanged.
+          none)
+            printf '%s\n' "$res"
+            if [ "$no_ci" = 1 ]; then
+              note "      no CI signals found: no workflow files in the head, no required checks on $base_ref, no checks or statuses on earlier PR commits or the $base_ref tip"
+            else
+              note "      nothing reported before the ${ORCH_CI_GRACE}s grace ran out"
+            fi
+            return 0 ;;
           pending)
             if float_lt "$elapsed" "$ORCH_CI_TIMEOUT"; then ci_tick; continue; fi
             # Still pending at the cap is an answer we do not have, not a green
