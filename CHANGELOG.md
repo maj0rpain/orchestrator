@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.1.6
+
+`orch-review`'s **Review pass** step 3 now points to **Starting an agent**
+only for how to start one (see issue #354). It no longer names the fallback
+a host takes or the loop's rule for recording it, so the paragraph closing
+**Review pass** is the one place that says which fallback a host takes and
+where a pass records it. Step 3's paragraph is also reflowed. Behaviour does
+not change.
+
 ## 3.1.5
 
 `orch-review`'s **Standalone review pass** now runs **Review pass** steps 1
