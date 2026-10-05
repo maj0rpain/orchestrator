@@ -737,7 +737,7 @@ adapter_pr_refs() {
 }
 
 # review ci's CI-evidence reads (issue #476), one per GitHub operation. Each
-# prints gh's raw answer - and a failed call's error - for ci_evidence to
+# prints gh's raw answer - and a failed call's error - for no_ci_evidence to
 # judge; none of them decides anything.
 adapter_branch_protection() {
   gh api "repos/{owner}/{repo}/branches/$1/protection/required_status_checks"
@@ -873,7 +873,7 @@ ci_push_time() {
     | awk -v h="$oid" '$1 == h { sub(/.*@\{/, "", $2); sub(/\}$/, "", $2); print $2; exit }' || true
 }
 
-# Whether the repo shows any evidence of CI, for review ci's grace (issue
+# Whether the repo shows no evidence of CI, for review ci's grace (issue
 # #476, ADR-0032). Succeeds only when all four signals read as absent:
 #   1. workflow files in the PR head's tree, read locally;
 #   2. required checks on the base branch, by classic protection or a ruleset;
@@ -883,7 +883,7 @@ ci_push_time() {
 # a false "has CI" costs a minute of grace, a false "no CI" marks a PR ready
 # over checks nobody verified - so anything this cannot read counts as CI.
 # Recomputed on every call: a workflow the PR itself adds is always seen.
-ci_evidence() {
+no_ci_evidence() {
   local head="$1" base="$2" commits="$3" out st n sha
   [ -n "$head" ] && [ -n "$base" ] || return 1
   # 1. A head this clone has never fetched is unreadable, not empty.
@@ -1084,7 +1084,7 @@ cmd_review() {
       ;;
     ci)
       require_state
-      local pr started slept=0 elapsed=0 res verdict refs head_oid head_ref base_ref pushed ahead=0
+      local pr started slept=0 elapsed=0 res verdict refs head_oid head_ref base_ref pushed push_age=0
       local commits="" no_ci=0
       require_ci_knobs
       require_pr pr
@@ -1092,8 +1092,8 @@ cmd_review() {
       # Two clocks: the timeout counts from this call, the grace from the push.
       # By the time the loop ends the fixer's last push is usually minutes old,
       # and a CI that has not registered a check in that time is not about to.
-      # `ahead` is how long before this call the push landed; a PR that will not
-      # say what its head is, or a head with no reflog entry, leaves it at zero,
+      # `push_age` is how long before this call the push landed; a PR that will
+      # not say what its head is, or a head with no reflog entry, leaves it at zero,
       # and the grace counts from the call as it always did.
       if refs="$(adapter_pr_refs "$pr" 2>/dev/null)" \
         && head_oid="$(printf '%s' "$refs" | jq -r '.headRefOid // empty' 2>/dev/null)" \
@@ -1102,13 +1102,13 @@ cmd_review() {
         pushed="$(ci_push_time "$head_oid" "$head_ref")"
         case "$pushed" in
           ''|*[!0-9]*) ;;
-          *) [ "$pushed" -ge "$started" ] || ahead=$(( started - pushed )) ;;
+          *) [ "$pushed" -ge "$started" ] || push_age=$(( started - pushed )) ;;
         esac
         # With no evidence of CI anywhere, there is nothing for the grace to
         # wait on. It replaces only the wait: the unfiltered probe still runs,
         # so a check already reported on the head gives its verdict as before.
         if commits="$(printf '%s' "$refs" | jq -r '(.commits // [])[].oid' 2>/dev/null)" \
-          && ci_evidence "$head_oid" "$base_ref" "$commits"; then
+          && no_ci_evidence "$head_oid" "$base_ref" "$commits"; then
           no_ci=1
         fi
       fi
@@ -1123,7 +1123,7 @@ cmd_review() {
         res="$(ci_probe "$pr" required)"
         verdict="$(first_line "$res")"
         if [ "$verdict" = none ]; then
-          if [ "$no_ci" = 0 ] && float_lt "$(float_add "$ahead" "$elapsed")" "$ORCH_CI_GRACE"; then
+          if [ "$no_ci" = 0 ] && float_lt "$(float_add "$push_age" "$elapsed")" "$ORCH_CI_GRACE"; then
             ci_tick; continue
           fi
           res="$(ci_probe "$pr" all)"

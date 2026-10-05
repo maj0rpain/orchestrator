@@ -472,14 +472,16 @@ ready-for-agent}"
           required) echo '{"strict":false,"contexts":["build"],"checks":[{"context":"build","app_id":null}]}'; exit 0 ;;
           notfound) echo '{"message":"Not Found","status":"404"}'
                     echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
-          *)        echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
+          boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
+          *)        echo "gh stub: no protection named '$GH_STUB_PROTECTION'" >&2; exit 99 ;;
         esac ;;
       */rules/branches/*)
         case "${GH_STUB_RULES:-none}" in
           none)     echo '[]'; exit 0 ;;
           required) echo '[{"type":"required_status_checks"}]'; exit 0 ;;
           other)    echo '[{"type":"deletion"}]'; exit 0 ;;
-          *)        echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
+          boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
+          *)        echo "gh stub: no rules named '$GH_STUB_RULES'" >&2; exit 99 ;;
         esac ;;
       */check-runs*)
         api_ref="${api_path#repos/*/commits/}"; api_ref="${api_ref%%/check-runs*}"
