@@ -1794,7 +1794,8 @@ cmd_pr_comment() {
   printf '%s\n' "$pr"
 }
 
-# The current branch's open PR number, for pr comment, pr fetch and pr update.
+# The current branch's open PR number, for pr comment, pr comments, pr fetch
+# and pr update.
 # Returns 1, printing nothing, when the branch has no open PR; every other
 # failure - a detached HEAD, a GitHub that cannot be read - goes through die2,
 # so a caller in a subshell can tell "no PR" apart from an error and map each
