@@ -291,10 +291,22 @@ adapter_pr_create() {
 # learn the PR it just opened), answers state and isDraft together
 # (GH_STUB_PR_STATE and GH_STUB_PR_DRAFT, default false) when asked for
 # isDraft, and falls back to GH_STUB_PR_STATE alone for every other query.
-# Logs nothing to GH_STUB_FILED - stub_gh's own `pr view` branch does not
-# either.
+# Asked `--json body` (pr fetch's and pr update's read, issue #444), it
+# answers the body held in the file GH_STUB_PR_BODY names through the caller's
+# own --jq, the same way the real gh applies it, and fails on
+# GH_STUB_PR_BODY_EXIT. Logs nothing to GH_STUB_FILED - stub_gh's own
+# `pr view` branch does not either.
 adapter_pr_view() {
-  local a
+  local a q=""
+  if [ "${2:-}" = --json ] && [ "${3:-}" = body ]; then
+    if [ "${GH_STUB_PR_BODY_EXIT:-0}" != 0 ]; then
+      echo "gh stub: pr view refused" >&2
+      return "$GH_STUB_PR_BODY_EXIT"
+    fi
+    [ "${4:-}" = --jq ] && q="${5:-}"
+    jq -n --rawfile b "${GH_STUB_PR_BODY:?gh stub: GH_STUB_PR_BODY is unset}" '{body: $b}' | jq -r "${q:-.}"
+    return
+  fi
   for a in "$@"; do
     if [ "$a" = number ]; then
       printf '%s\n' "${GH_STUB_PR_NUMBER:-99}"
@@ -432,23 +444,6 @@ adapter_pr_comment() {
     return "$GH_STUB_PR_COMMENT_EXIT"
   fi
   return 0
-}
-
-# adapter_pr_body - pr fetch's and pr update's read of a PR's body (issue
-# #444): answers the body held in the file GH_STUB_PR_BODY names through the
-# caller's own --jq, the same way the real gh applies it, and fails on
-# GH_STUB_PR_BODY_EXIT.
-adapter_pr_body() {
-  local q=""
-  if [ "${GH_STUB_PR_BODY_EXIT:-0}" != 0 ]; then
-    echo "gh stub: pr view refused" >&2
-    return "$GH_STUB_PR_BODY_EXIT"
-  fi
-  while [ $# -gt 0 ]; do
-    case "$1" in --jq) q="$2"; shift ;; esac
-    shift
-  done
-  jq -n --rawfile b "${GH_STUB_PR_BODY:?gh stub: GH_STUB_PR_BODY is unset}" '{body: $b}' | jq -r "${q:-.}"
 }
 
 # adapter_pr_edit - pr update's replacement of a PR's body (issue #444): logs

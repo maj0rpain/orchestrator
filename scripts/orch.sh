@@ -709,7 +709,8 @@ adapter_issue_list() {
 
 # The PR-resource primitives (issue #93, third of the #78 breakdown): open_pr's
 # create/view, ci_probe's checks, cmd_review ready's ready, and
-# cmd_redo_review's close. doctor.sh's own `gh pr view` calls are a separate
+# cmd_redo_review's close. pr fetch and pr update read a PR's body through the
+# same view (issue #444). doctor.sh's own `gh pr view` calls are a separate
 # concern (out of scope, like default_branch and the ticket group's `gh api`
 # calls) - only the four call sites named in issue #93 move here.
 adapter_pr_create() {
@@ -745,11 +746,7 @@ adapter_pr_comment() {
   gh pr comment "$@"
 }
 
-# pr fetch's and pr update's read of the current branch's open PR body, and pr
-# update's replacement of it (issue #444).
-adapter_pr_body() {
-  gh pr view "$@"
-}
+# pr update's replacement of the current branch's open PR body (issue #444).
 adapter_pr_edit() {
   gh pr edit "$@"
 }
@@ -1079,36 +1076,37 @@ cmd_review() {
 # merging ticket content into a parent belongs in the calling skill's prose,
 # not here.
 
-# Written beside the target and moved into place only once gh has answered:
-# a failed fetch that left a partial file behind is a body a caller would
-# mistake for the issue's actual content.
-cmd_issue_fetch() {
-  local issue="$1" file="$2" tmp
+# Runs a gh read into <file>, written beside the target and moved into place
+# only once gh has answered: a failed fetch that left a partial file behind is
+# a body a caller would mistake for the actual content. <what> names the read
+# in the error.
+fetch_into() {
+  local file="$1" what="$2" tmp
+  shift 2
   mkdir -p "$(dirname "$file")"
   tmp="$(mktemp "$file.XXXXXX")"
-  if ! adapter_issue_view "$issue" --json body --jq .body >"$tmp"; then
+  if ! "$@" >"$tmp"; then
     rm -f "$tmp"
-    die "gh could not read the body of issue #$issue"
+    die "gh could not read $what"
   fi
   mv "$tmp" "$file"
+}
+
+cmd_issue_fetch() {
+  local issue="$1" file="$2"
+  fetch_into "$file" "the body of issue #$issue" \
+    adapter_issue_view "$issue" --json body --jq .body
 }
 
 # Every comment on the issue, in order, each opened by a marker line naming
 # its author and gh's ISO-8601 timestamp, one blank line between comments and
 # bodies unescaped - so the spec review reads the comments beside the body.
-# No comments is an empty file, not an error. Written beside the target and
-# moved into place only on success, as cmd_issue_fetch is.
+# No comments is an empty file, not an error.
 cmd_issue_comments() {
-  local issue="$1" file="$2" tmp
-  mkdir -p "$(dirname "$file")"
-  tmp="$(mktemp "$file.XXXXXX")"
-  if ! adapter_issue_view "$issue" --json comments \
-      --jq '[.comments[] | "<!-- comment @\(.author.login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n")' \
-      >"$tmp"; then
-    rm -f "$tmp"
-    die "gh could not read the comments of issue #$issue"
-  fi
-  mv "$tmp" "$file"
+  local issue="$1" file="$2"
+  fetch_into "$file" "the comments of issue #$issue" \
+    adapter_issue_view "$issue" --json comments \
+      --jq '[.comments[] | "<!-- comment @\(.author.login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n")'
 }
 
 cmd_issue_update() {
@@ -1778,43 +1776,44 @@ cmd_pr_release() {
 # exists: a GitHub that cannot be read exits 2, never 1.
 cmd_pr_comment() {
   [ $# -eq 1 ] || die2 "usage: orch.sh pr comment <file>"
-  local file="$1" branch open pr
+  local file="$1" pr
   [ -f "$file" ] || die2 "body file not found: $file"
-  branch="$(git symbolic-ref --quiet --short HEAD)" \
-    || die2 "not on a branch (detached HEAD)"
-  open="$(adapter_pr_list --head "$branch" --state open --json number --jq '.[].number')" \
-    || die2 "gh could not list the open PRs from $branch"
-  [ -n "$open" ] || return 1
-  pr="$(first_line "$open")"
+  pr="$(current_open_pr)" || return $?
   adapter_pr_comment "$pr" --body-file "$file" >/dev/null \
     || die2 "gh could not comment on PR #$pr"
   printf '%s\n' "$pr"
 }
 
-# The current branch's open PR, for pr fetch and pr update. Unlike pr comment,
-# no open PR is an ordinary failure here: both run where a PR is known to exist.
+# The current branch's open PR number, for pr comment, pr fetch and pr update.
+# Returns 1, printing nothing, when the branch has no open PR; every other
+# failure - a detached HEAD, a GitHub that cannot be read - goes through die2,
+# so a caller in a subshell can tell "no PR" apart from an error and map each
+# to its own exit code.
 current_open_pr() {
   local branch open
-  branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  branch="$(git symbolic-ref --quiet --short HEAD)" \
+    || die2 "not on a branch (detached HEAD)"
   open="$(adapter_pr_list --head "$branch" --state open --json number --jq '.[].number')" \
-    || die "gh could not list the open PRs from $branch"
-  [ -n "$open" ] || die "no open PR for branch $branch"
+    || die2 "gh could not list the open PRs from $branch"
+  [ -n "$open" ] || return 1
   first_line "$open"
 }
 
-# The PR counterpart of issue fetch: written beside the target and moved into
-# place only once gh has answered, so a failed read never leaves a partial body.
+# The PR pr fetch and pr update work on. Unlike pr comment, no open PR is an
+# ordinary failure here, since both run where a PR is known to exist; a caller
+# maps every failure to exit 1.
+required_open_pr() {
+  current_open_pr \
+    || die "no open PR for branch $(git symbolic-ref --quiet --short HEAD)"
+}
+
+# The PR counterpart of issue fetch.
 cmd_pr_fetch() {
   [ $# -eq 1 ] || die "usage: orch.sh pr fetch <file>"
-  local file="$1" pr tmp
-  pr="$(current_open_pr)" || exit 1
-  mkdir -p "$(dirname "$file")"
-  tmp="$(mktemp "$file.XXXXXX")"
-  if ! adapter_pr_body "$pr" --json body --jq .body >"$tmp"; then
-    rm -f "$tmp"
-    die "gh could not read the body of PR #$pr"
-  fi
-  mv "$tmp" "$file"
+  local file="$1" pr
+  pr="$(required_open_pr)" || exit 1
+  fetch_into "$file" "the body of PR #$pr" \
+    adapter_pr_view "$pr" --json body --jq .body
 }
 
 # The PR counterpart of issue update, with one guard issue update has no need
@@ -1825,8 +1824,8 @@ cmd_pr_update() {
   [ $# -eq 1 ] || die "usage: orch.sh pr update <file>"
   local file="$1" pr current line
   [ -f "$file" ] || die "body file not found: $file"
-  pr="$(current_open_pr)" || exit 1
-  current="$(adapter_pr_body "$pr" --json body --jq .body)" \
+  pr="$(required_open_pr)" || exit 1
+  current="$(adapter_pr_view "$pr" --json body --jq .body)" \
     || die "gh could not read the body of PR #$pr"
   line="$(first_line "$current")"
   line="${line%$'\r'}"
