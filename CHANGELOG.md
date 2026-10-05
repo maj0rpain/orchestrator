@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.5.0
+
+The Testability lens of a spec review now reports a step that changes
+persistent state - a file, a commit, an issue or label, a recorded state
+value - but names only its success path (see issue #421). Such a step must
+name what happens on failure and in every mode the spec mentions (a dry-run,
+a debug run, a flag), and the Testing Decisions must call for a test that
+asserts each branch. The rule is the lens Brief's new item (c); its findings
+carry the `(judgement call)` label, a heuristic the human weighs.
+
 ## 3.4.0
 
 A standalone review pass no longer brings back findings an earlier pass on the
