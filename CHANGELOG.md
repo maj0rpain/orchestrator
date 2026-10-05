@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.1.1
+
+`orch.sh state set` now stores `true` and `false` as JSON booleans, matching
+what `init` seeds, so `flake_rerun_used` keeps one type in `state.json` (see
+issue #397). `state get` falls back to a key's default only for a null or
+missing value, so a stored `false` reads back as `false` for every key.
+
 ## 3.1.0
 
 A spec review on an issue that already has a ticket breakdown now brings that
