@@ -45,6 +45,9 @@ fake_record_flags() {
       --head)      printf 'head=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
       --body-file) { printf 'body:\n'; cat "$2"; } >>"$GH_STUB_FILED"; shift ;;
       --comment)   { printf 'comment:\n%s\n' "$2"; } >>"$GH_STUB_FILED"; shift ;;
+      --add-label)    printf 'add-label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
+      --remove-label) printf 'remove-label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
+      --reason)       printf 'reason=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
       *)           printf 'flag=%s\n' "$1" >>"$GH_STUB_FILED" ;;
     esac
     shift
@@ -164,9 +167,9 @@ fake_issue_write() {
   local op="$1" n st
   shift
   n="$1"
+  shift
   if [ -n "${GH_STUB_FILED:-}" ]; then
     printf 'issue %s %s\n' "$op" "$n" >>"$GH_STUB_FILED"
-    shift
     fake_record_flags "$@"
   fi
   if [ "$op" = edit ]; then st="${GH_STUB_EDIT_EXIT:-0}"; else st="${GH_STUB_COMMENT_EXIT:-0}"; fi
@@ -174,7 +177,24 @@ fake_issue_write() {
     echo "gh stub: issue $op refused" >&2
     return "$st"
   fi
+  if [ "$op" = edit ]; then fake_finding_relabel "$n" "$@"; fi
   return 0
+}
+
+# An edit of an issue in the GH_STUB_FINDINGS store applies its --add-label
+# and --remove-label flags to the labels it holds, as gh would, so a test reads
+# what an edit left on the issue back from the issue itself.
+fake_finding_relabel() {
+  local f="${GH_STUB_FINDINGS:-/nonexistent}/$1/labels"
+  [ -f "$f" ] || return 0
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --add-label)    grep -qxF -- "$2" "$f" || printf '%s\n' "$2" >>"$f"; shift ;;
+      --remove-label) { grep -vxF -- "$2" "$f" || true; } >"$f.tmp"; mv "$f.tmp" "$f"; shift ;;
+    esac
+    shift
+  done
 }
 adapter_issue_edit()    { fake_issue_write edit "$@"; }
 adapter_issue_comment() { fake_issue_write comment "$@"; }
@@ -223,7 +243,8 @@ adapter_issue_create() {
 # adapter_issue_close - mirrors stub_gh's `issue close` branch: logs "issue
 # close <n>" plus the flags (fake_record_flags, so a --comment reaches
 # GH_STUB_FILED the same way pr close's does) to GH_STUB_FILED when set, and
-# fails on GH_STUB_ISSUE_CLOSE_EXIT.
+# fails on GH_STUB_ISSUE_CLOSE_EXIT. An issue in the GH_STUB_FINDINGS store is
+# closed there too.
 adapter_issue_close() {
   local n="$1"
   if [ -n "${GH_STUB_FILED:-}" ]; then
@@ -234,6 +255,9 @@ adapter_issue_close() {
   if [ "${GH_STUB_ISSUE_CLOSE_EXIT:-0}" != 0 ]; then
     echo "gh stub: issue close refused" >&2
     return "$GH_STUB_ISSUE_CLOSE_EXIT"
+  fi
+  if [ -n "${GH_STUB_FINDINGS:-}" ] && [ -d "$GH_STUB_FINDINGS/$n" ]; then
+    printf 'CLOSED\n' >"$GH_STUB_FINDINGS/$n/state"
   fi
   return 0
 }
