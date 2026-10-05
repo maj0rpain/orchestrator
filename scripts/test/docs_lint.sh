@@ -66,17 +66,17 @@ echo "docs lint"
 # --- markdown section reader -------------------------------------------------
 echo
 echo "markdown section reader"
-f="$(new_fixture)"
+fixture="$(new_fixture)"
 printf '%s\n' '# Doc' '' '## Brief  ' '' 'Body.' '' '### Detail' '' 'Deeper.' '' '## Next' '' 'Other.' \
-  '' '## Empty' '# Top' >"$f/doc.md"
+  '' '## Empty' '# Top' >"$fixture/doc.md"
 assert_eq "md_section prints the body up to the next same-level heading, deeper subheadings kept" \
-  "$(md_section "$f/doc.md" "## Brief")" "$(printf '\nBody.\n\n### Detail\n\nDeeper.\n')"
+  "$(md_section "$fixture/doc.md" "## Brief")" "$(printf '\nBody.\n\n### Detail\n\nDeeper.\n')"
 assert_eq "md_section stops at a higher-level heading" \
-  "$(md_section "$f/doc.md" "## Empty"; echo "exit $?")" "exit 0"
+  "$(md_section "$fixture/doc.md" "## Empty"; echo "exit $?")" "exit 0"
 assert_eq "md_section exits 1 on a missing heading" \
-  "$(md_section "$f/doc.md" "## Missing"; echo "exit $?")" "exit 1"
+  "$(md_section "$fixture/doc.md" "## Missing"; echo "exit $?")" "exit 1"
 assert_eq "md_section matches the heading line exactly" \
-  "$(md_section "$f/doc.md" "## Brie"; echo "exit $?")" "exit 1"
+  "$(md_section "$fixture/doc.md" "## Brie"; echo "exit $?")" "exit 1"
 
 # --- skill names (ADR-0014) --------------------------------------------------
 # Every orchestrator skill carries the orch- prefix. An old unprefixed name
@@ -110,35 +110,35 @@ scan_old_names() {
   done
   return 0
 }
-f="$(new_fixture)"
-git -C "$f" init -q
-mkdir -p "$f/skills/orch-spec-review" "$f/commands" "$f/docs/adr"
-printf 'Call `orchestrator:review-spec`.\n' >"$f/commands/a.md"
-printf 'Run `/orchestrator:review-spec 12`.\n' >"$f/commands/b.md"
-printf 'Call `orchestrator:orch-review-spec`.\n' >"$f/commands/c.md"
-printf 'See skills/orch-review-spec/SKILL.md.\n' >"$f/commands/d.md"
-printf 'name: orch-review-spec\n' >"$f/commands/e.md"
-printf 'Run `/orchestrator:spec-review 12`.\nCall `orchestrator:orch-spec-review`.\nskills/orch-spec-review/\n' >"$f/commands/new.md"
-printf -- '---\nname: orch-spec-review\n---\n' >"$f/skills/orch-spec-review/SKILL.md"
-printf 'Renamed `orchestrator:review-spec`.\n' >"$f/docs/adr/0001-x.md"
+fixture="$(new_fixture)"
+git -C "$fixture" init -q
+mkdir -p "$fixture/skills/orch-spec-review" "$fixture/commands" "$fixture/docs/adr"
+printf 'Call `orchestrator:review-spec`.\n' >"$fixture/commands/a.md"
+printf 'Run `/orchestrator:review-spec 12`.\n' >"$fixture/commands/b.md"
+printf 'Call `orchestrator:orch-review-spec`.\n' >"$fixture/commands/c.md"
+printf 'See skills/orch-review-spec/SKILL.md.\n' >"$fixture/commands/d.md"
+printf 'name: orch-review-spec\n' >"$fixture/commands/e.md"
+printf 'Run `/orchestrator:spec-review 12`.\nCall `orchestrator:orch-spec-review`.\nskills/orch-spec-review/\n' >"$fixture/commands/new.md"
+printf -- '---\nname: orch-spec-review\n---\n' >"$fixture/skills/orch-spec-review/SKILL.md"
+printf 'Renamed `orchestrator:review-spec`.\n' >"$fixture/docs/adr/0001-x.md"
 # /orchestrator:review is a live command again (#341), routed to orch-review's
 # Standalone review pass; the old review skill's directory and name stay old.
-printf 'Run `/orchestrator:review 12`.\nCall `orchestrator:review`.\n' >"$f/commands/review.md"
-printf 'See skills/review/SKILL.md.\n' >"$f/commands/f.md"
-printf 'name: review\n' >"$f/commands/g.md"
+printf 'Run `/orchestrator:review 12`.\nCall `orchestrator:review`.\n' >"$fixture/commands/review.md"
+printf 'See skills/review/SKILL.md.\n' >"$fixture/commands/f.md"
+printf 'name: review\n' >"$fixture/commands/g.md"
 # The planning entry point was renamed interview (#373).
-printf 'Call `orchestrator:orch-plan`.\n' >"$f/commands/p1.md"
-printf 'Run `$orch-plan`.\n' >"$f/commands/p2.md"
-printf 'Run `/orch-plan`.\n' >"$f/commands/p3.md"
-printf 'A hook on `Skill(orch-plan)`.\n' >"$f/commands/p4.md"
-printf 'While planning (orch-plan, grilling)\n' >"$f/commands/p5.md"
-printf 'Run `/orchestrator:plan`.\n' >"$f/commands/p6.md"
-printf 'See skills/orch-plan/SKILL.md.\n' >"$f/commands/p7.md"
-printf 'name: orch-plan\n' >"$f/commands/p8.md"
-printf 'Run `/orchestrator:interview`.\nCall `orchestrator:orch-interview`.\nskills/orch-interview/\n$orch-interview\n' >"$f/commands/interview.md"
-printf 'Save it to `.scratch/orch-plan-<slug>.md`.\n' >"$f/commands/scratch.md"
-git -C "$f" add -A
-out="$(scan_old_names "$f")"
+printf 'Call `orchestrator:orch-plan`.\n' >"$fixture/commands/p1.md"
+printf 'Run `$orch-plan`.\n' >"$fixture/commands/p2.md"
+printf 'Run `/orch-plan`.\n' >"$fixture/commands/p3.md"
+printf 'A hook on `Skill(orch-plan)`.\n' >"$fixture/commands/p4.md"
+printf 'While planning (orch-plan, grilling)\n' >"$fixture/commands/p5.md"
+printf 'Run `/orchestrator:plan`.\n' >"$fixture/commands/p6.md"
+printf 'See skills/orch-plan/SKILL.md.\n' >"$fixture/commands/p7.md"
+printf 'name: orch-plan\n' >"$fixture/commands/p8.md"
+printf 'Run `/orchestrator:interview`.\nCall `orchestrator:orch-interview`.\nskills/orch-interview/\n$orch-interview\n' >"$fixture/commands/interview.md"
+printf 'Save it to `.scratch/orch-plan-<slug>.md`.\n' >"$fixture/commands/scratch.md"
+git -C "$fixture" add -A
+out="$(scan_old_names "$fixture")"
 flags "the old review-spec skill name is flagged" "$out" "commands/a.md:1: old skill or command name"
 flags "the old /orchestrator:review-spec command is flagged" "$out" "commands/b.md:1: old skill or command name"
 flags "the old orch-review-spec skill name is flagged" "$out" "commands/c.md:1: old skill or command name"
@@ -164,11 +164,11 @@ assert_eq "the saved-plan scratch file is not flagged" \
   "$(printf '%s\n' "$out" | grep -c '^commands/scratch\.md')" "0"
 assert_eq "history may name the old ones" \
   "$(printf '%s\n' "$out" | grep -c '^docs/adr/')" "0"
-mkdir -p "$f/skills/orch-review-spec"
-: >"$f/commands/review-spec.md"
-mkdir -p "$f/skills/orch-plan"
-: >"$f/commands/plan.md"
-out="$(scan_old_names "$f")"
+mkdir -p "$fixture/skills/orch-review-spec"
+: >"$fixture/commands/review-spec.md"
+mkdir -p "$fixture/skills/orch-plan"
+: >"$fixture/commands/plan.md"
+out="$(scan_old_names "$fixture")"
 flags "an old review-spec command file is flagged" "$out" "commands/review-spec.md: old command file"
 flags "an old orch-review-spec skill directory is flagged" "$out" "skills/orch-review-spec/: old skill directory"
 flags "an old plan command file is flagged" "$out" "commands/plan.md: old command file"
@@ -188,12 +188,12 @@ scan_skill_names() {
     [ "$name" = "$n" ] || echo "skills/$n/SKILL.md: name: is '$name', not its directory"
   done
 }
-f="$(new_fixture)"
-mkdir -p "$f/skills/flow" "$f/skills/orch-x" "$f/skills/orch-ok"
-printf -- '---\nname: flow\n---\n' >"$f/skills/flow/SKILL.md"
-printf -- '---\nname: orch-y\n---\n' >"$f/skills/orch-x/SKILL.md"
-printf -- '---\nname: orch-ok\n---\n' >"$f/skills/orch-ok/SKILL.md"
-out="$(scan_skill_names "$f")"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/flow" "$fixture/skills/orch-x" "$fixture/skills/orch-ok"
+printf -- '---\nname: flow\n---\n' >"$fixture/skills/flow/SKILL.md"
+printf -- '---\nname: orch-y\n---\n' >"$fixture/skills/orch-x/SKILL.md"
+printf -- '---\nname: orch-ok\n---\n' >"$fixture/skills/orch-ok/SKILL.md"
+out="$(scan_skill_names "$fixture")"
 flags "an unprefixed skill directory is flagged" "$out" "skills/flow/: no orch- prefix"
 flags "a skill whose name: is not its directory is flagged" "$out" "skills/orch-x/SKILL.md: name: is 'orch-y', not its directory"
 assert_eq "a prefixed skill named for its directory is not flagged" \
@@ -256,16 +256,16 @@ scan_orch_resolution() {
     fi
   done
 }
-f="$(new_fixture)"
-mkdir -p "$f/commands"
-printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$f/commands/orch.md"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/commands"
+printf 'Run `${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh status`.\n' >"$fixture/commands/orch.md"
 flags "the scan covers commands/ and flags a bare CLAUDE_PLUGIN_ROOT" \
-  "$(scan_orch_resolution "$f")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
 printf '%s\n' '```' "$orch_line" '```' \
   'If `CLAUDE_PLUGIN_ROOT` is unset, `ORCH` is `scripts/orch.sh` two directories above this skill.' \
-  >"$f/commands/orch.md"
+  >"$fixture/commands/orch.md"
 flags "the scan flags orch.sh resolved without the Junie step" \
-  "$(scan_orch_resolution "$f")" "commands/orch.md: uses orch.sh without the Junie step"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the Junie step"
 # documented_orch_form [step]...: the documented form, minus each step named.
 documented_orch_form() {
   local -a steps=("$orch_junie (the Junie CLI install)." "$orch_junie_one" "$orch_junie_many"
@@ -277,37 +277,37 @@ documented_orch_form() {
     printf '%s\n' "$step"
   done
 }
-documented_orch_form "$orch_junie_one" >"$f/commands/orch.md"
+documented_orch_form "$orch_junie_one" >"$fixture/commands/orch.md"
 flags "the scan flags a Junie step with no one-install step" \
-  "$(scan_orch_resolution "$f")" "commands/orch.md: uses orch.sh without the one-install step"
-documented_orch_form "$orch_junie_many" >"$f/commands/orch.md"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the one-install step"
+documented_orch_form "$orch_junie_many" >"$fixture/commands/orch.md"
 flags "the scan flags a Junie step with no stop on several installs" \
-  "$(scan_orch_resolution "$f")" "commands/orch.md: uses orch.sh without the stop on several Junie installs"
-{ documented_orch_form "$orch_junie_one"; printf '%s\n' "$orch_junie_one"; } >"$f/commands/orch.md"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: uses orch.sh without the stop on several Junie installs"
+{ documented_orch_form "$orch_junie_one"; printf '%s\n' "$orch_junie_one"; } >"$fixture/commands/orch.md"
 flags "the scan flags the Junie steps out of order" \
-  "$(scan_orch_resolution "$f")" "commands/orch.md: resolves orch.sh out of the documented order"
-documented_orch_form >"$f/commands/orch.md"
-assert_empty "the scan accepts the documented form" "$(scan_orch_resolution "$f")"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: resolves orch.sh out of the documented order"
+documented_orch_form >"$fixture/commands/orch.md"
+assert_empty "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")"
 printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  >"$f/commands/orch.md"
+  >"$fixture/commands/orch.md"
 flags "the scan flags a plugin-root path with no unset fallback" \
-  "$(scan_orch_resolution "$f")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
 printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  "$root_fallback two directories above this skill's own directory." >"$f/commands/orch.md"
+  "$root_fallback two directories above this skill's own directory." >"$fixture/commands/orch.md"
 flags "the scan flags a plugin-root fallback with no Junie step" \
-  "$(scan_orch_resolution "$f")" "commands/orch.md: names the plugin root without the Junie step"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
 printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
   "$root_fallback two directories above this skill's own directory." \
-  "Elsewhere, $root_junie." >"$f/commands/orch.md"
+  "Elsewhere, $root_junie." >"$fixture/commands/orch.md"
 flags "the scan flags a Junie step outside the plugin-root sentence" \
-  "$(scan_orch_resolution "$f")" "commands/orch.md: names the plugin root without the Junie step"
+  "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
 { documented_orch_form
   printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
     "$root_fallback found as for \`ORCH\`:" \
     "$root_junie, else two directories above this skill's own directory."
-} >"$f/commands/orch.md"
+} >"$fixture/commands/orch.md"
 assert_empty "the scan accepts a plugin-root path with its unset fallback" \
-  "$(scan_orch_resolution "$f")"
+  "$(scan_orch_resolution "$fixture")"
 check "every skill and command resolves orch.sh the one documented way" \
   "$(scan_orch_resolution "$PLUGIN_ROOT")"
 
@@ -323,11 +323,11 @@ scan_orch_bash() {
       | sed -E "s|^([0-9]+):|${f#"$r"/}:\\1: runs orch.sh without bash: |"
   done
 }
-f="$(new_fixture)"
-mkdir -p "$f/skills/orch-x" "$f/docs"
-printf 'Run `bash "$ORCH" status`.\nRun `"$ORCH" doctor`.\n' >"$f/skills/orch-x/SKILL.md"
-printf 'Run `${ORCH} status`.\n' >"$f/README.md"
-out="$(scan_orch_bash "$f")"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-x" "$fixture/docs"
+printf 'Run `bash "$ORCH" status`.\nRun `"$ORCH" doctor`.\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Run `${ORCH} status`.\n' >"$fixture/README.md"
+out="$(scan_orch_bash "$fixture")"
 flags "the scan flags a quoted \$ORCH run without bash" "$out" "skills/orch-x/SKILL.md:2: runs orch.sh without bash"
 flags "the scan flags \${ORCH} run without bash" "$out" "README.md:1: runs orch.sh without bash"
 assert_eq "the scan accepts bash \"\$ORCH\"" "$(printf '%s\n' "$out" | grep -c 'SKILL.md:1:')" "0"
@@ -344,11 +344,11 @@ scan_plugin_root_placeholder() {
       | sed -E "s|^([0-9]+):.*|${f#"$r"/}:\\1: <plugin root>/ placeholder|"
   done
 }
-f="$(new_fixture)"
-mkdir -p "$f/skills/orch-x" "$f/commands"
-printf 'Read `<plugin root>/agents/orch-fixer.md`.\n' >"$f/skills/orch-x/SKILL.md"
-printf 'Run `<plugin root>/scripts/orch.sh`.\n' >"$f/commands/x.md"
-out="$(scan_plugin_root_placeholder "$f")"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-x" "$fixture/commands"
+printf 'Read `<plugin root>/agents/orch-fixer.md`.\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Run `<plugin root>/scripts/orch.sh`.\n' >"$fixture/commands/x.md"
+out="$(scan_plugin_root_placeholder "$fixture")"
 flags "the scan flags a <plugin root> placeholder in a skill" "$out" "skills/orch-x/SKILL.md:1: <plugin root>/ placeholder"
 flags "the scan flags a <plugin root> placeholder in a command" "$out" "commands/x.md:1: <plugin root>/ placeholder"
 check "no skill or command carries a <plugin root> placeholder" "$(scan_plugin_root_placeholder "$PLUGIN_ROOT")"
@@ -379,28 +379,28 @@ scan_stop_text() {
       echo "$n: skills-only stop text differs from orch-flow's"
   done
 }
-f="$(new_fixture)"
-mkdir -p "$f/skills/orch-flow" "$f/skills/orch-same" "$f/skills/orch-drift" "$f/skills/orch-none"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-flow" "$fixture/skills/orch-same" "$fixture/skills/orch-drift" "$fixture/skills/orch-none"
 stop='If `orch.sh` is at none of these paths, stop: this is a skills-only install. Install the full plugin (or as a Junie extension, which is unverified).'
-printf '%s\n' "$stop" >"$f/skills/orch-flow/SKILL.md"
-printf '%s\n' "$stop" >"$f/skills/orch-same/SKILL.md"
-printf '%s\n' "${stop/the full plugin/it all}" >"$f/skills/orch-drift/SKILL.md"
-printf 'No stop text here.\n' >"$f/skills/orch-none/SKILL.md"
-out="$(scan_stop_text "$f")"
+printf '%s\n' "$stop" >"$fixture/skills/orch-flow/SKILL.md"
+printf '%s\n' "$stop" >"$fixture/skills/orch-same/SKILL.md"
+printf '%s\n' "${stop/the full plugin/it all}" >"$fixture/skills/orch-drift/SKILL.md"
+printf 'No stop text here.\n' >"$fixture/skills/orch-none/SKILL.md"
+out="$(scan_stop_text "$fixture")"
 flags "the scan flags stop text that drifts from orch-flow's" "$out" "skills/orch-drift/SKILL.md: skills-only stop text differs from orch-flow's"
 flags "the scan flags a skill with no stop text" "$out" "skills/orch-none/SKILL.md: skills-only stop text differs from orch-flow's"
 assert_eq "the scan accepts a word-for-word copy" "$(printf '%s\n' "$out" | grep -c 'orch-same')" "0"
-printf 'No stop text here.\n' >"$f/skills/orch-flow/SKILL.md"
+printf 'No stop text here.\n' >"$fixture/skills/orch-flow/SKILL.md"
 flags "the scan flags orch-flow with no stop text to match" \
-  "$(scan_stop_text "$f")" "skills/orch-flow/SKILL.md: carries no skills-only stop text"
+  "$(scan_stop_text "$fixture")" "skills/orch-flow/SKILL.md: carries no skills-only stop text"
 # The rule is a copy-match only (ADR-0027): a stop text worded any other way
 # between its anchor lines passes, so long as every copy matches orch-flow's.
-f="$(new_fixture)"
-mkdir -p "$f/skills/orch-flow" "$f/skills/orch-same"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-flow" "$fixture/skills/orch-same"
 stop='If `orch.sh` is at none of these paths, stop and install it whole (the Junie route, which is unverified).'
-printf '%s\n' "$stop" >"$f/skills/orch-flow/SKILL.md"
-printf '%s\n' "$stop" >"$f/skills/orch-same/SKILL.md"
-assert_empty "the scan accepts any wording between the anchors, copied word for word" "$(scan_stop_text "$f")"
+printf '%s\n' "$stop" >"$fixture/skills/orch-flow/SKILL.md"
+printf '%s\n' "$stop" >"$fixture/skills/orch-same/SKILL.md"
+assert_empty "the scan accepts any wording between the anchors, copied word for word" "$(scan_stop_text "$fixture")"
 check "every skill carries orch-flow's skills-only stop text word for word" "$(scan_stop_text "$PLUGIN_ROOT")"
 
 # --- Junie snippet names every agent (#264) -----------------------------------
@@ -422,12 +422,12 @@ scan_junie_snippet_drift() {
   done
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/agents" "$f/docs/junie"
-printf -- '---\nname: orch-named\n---\n' >"$f/agents/orch-named.md"
-printf -- '---\nname: orch-extra\n---\n' >"$f/agents/orch-extra.md"
-printf 'Start `orch-named` by name.\n' >"$f/docs/junie/AGENTS.md"
-out="$(scan_junie_snippet_drift "$f")"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents" "$fixture/docs/junie"
+printf -- '---\nname: orch-named\n---\n' >"$fixture/agents/orch-named.md"
+printf -- '---\nname: orch-extra\n---\n' >"$fixture/agents/orch-extra.md"
+printf 'Start `orch-named` by name.\n' >"$fixture/docs/junie/AGENTS.md"
+out="$(scan_junie_snippet_drift "$fixture")"
 flags "the drift check flags an agent the snippet omits" "$out" "agents/orch-extra.md: not named in docs/junie/AGENTS.md"
 assert_eq "the drift check accepts an agent the snippet names" \
   "$(printf '%s\n' "$out" | grep -c 'orch-named')" "0"
@@ -481,66 +481,66 @@ scan_capabilities() {
   done
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/skills/orch-x" "$f/skills/orch-flow" "$f/commands"
-printf '## Status\nSee docs/host-capabilities.md.\n' >"$f/skills/orch-flow/SKILL.md"
-printf 'Invoke the skill `x`. See docs/host-capabilities.md.\n' >"$f/skills/orch-x/SKILL.md"
-printf 'Invoke `orchestrator:orch-flow` and follow its **Doctor** section.\n' >"$f/commands/doctor.md"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-x" "$fixture/skills/orch-flow" "$fixture/commands"
+printf '## Status\nSee docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
+printf 'Invoke the skill `x`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Invoke `orchestrator:orch-flow` and follow its **Doctor** section.\n' >"$fixture/commands/doctor.md"
 flags "the scan flags a command routed to a missing section" \
-  "$(scan_capabilities "$f")" "commands/doctor.md: routes to a missing orch-flow section: Doctor"
-printf '## Status\nInvoke `orchestrator:orch-handoff`. See docs/host-capabilities.md.\n' >"$f/skills/orch-flow/SKILL.md"
+  "$(scan_capabilities "$fixture")" "commands/doctor.md: routes to a missing orch-flow section: Doctor"
+printf '## Status\nInvoke `orchestrator:orch-handoff`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
 flags "the scan flags a sibling skill named by its Claude scope" \
-  "$(scan_capabilities "$f")" "skills/orch-flow/SKILL.md: names a skill by its Claude-scoped name"
-printf '## Status\nInvoke the `orch-handoff` skill (`orchestrator:<name>` on Claude Code). See docs/host-capabilities.md.\n' >"$f/skills/orch-flow/SKILL.md"
-printf 'Invoke the skill `x`.\n' >"$f/skills/orch-x/SKILL.md"
+  "$(scan_capabilities "$fixture")" "skills/orch-flow/SKILL.md: names a skill by its Claude-scoped name"
+printf '## Status\nInvoke the `orch-handoff` skill (`orchestrator:<name>` on Claude Code). See docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
+printf 'Invoke the skill `x`.\n' >"$fixture/skills/orch-x/SKILL.md"
 flags "the scan flags a skill that never points at the reference" \
-  "$(scan_capabilities "$f")" "skills/orch-x/SKILL.md: never points at docs/host-capabilities.md"
-printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$f/skills/orch-x/SKILL.md"
-printf 'Invoke `orchestrator:orch-flow` and follow its **Status** section.\n' >"$f/commands/doctor.md"
-printf '%s\n' "$orch_line" >"$f/commands/status.md"
+  "$(scan_capabilities "$fixture")" "skills/orch-x/SKILL.md: never points at docs/host-capabilities.md"
+printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Invoke `orchestrator:orch-flow` and follow its **Status** section.\n' >"$fixture/commands/doctor.md"
+printf '%s\n' "$orch_line" >"$fixture/commands/status.md"
 flags "the scan flags a command that runs orch.sh itself" \
-  "$(scan_capabilities "$f")" "commands/status.md: runs orch.sh itself"
-printf 'Do the thing.\n' >"$f/commands/status.md"
+  "$(scan_capabilities "$fixture")" "commands/status.md: runs orch.sh itself"
+printf 'Do the thing.\n' >"$fixture/commands/status.md"
 flags "the scan flags a command that routes to no skill" \
-  "$(scan_capabilities "$f")" "commands/status.md: routes to no orch- skill"
-rm "$f/commands/status.md"
-printf 'Invoke `orchestrator:orch-y` and follow it.\n' >"$f/commands/y.md"
+  "$(scan_capabilities "$fixture")" "commands/status.md: routes to no orch- skill"
+rm "$fixture/commands/status.md"
+printf 'Invoke `orchestrator:orch-y` and follow it.\n' >"$fixture/commands/y.md"
 flags "the scan flags a command routed to a missing skill" \
-  "$(scan_capabilities "$f")" "commands/y.md: routes to a missing skill: orch-y"
-mkdir -p "$f/skills/orch-y"
-printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$f/skills/orch-y/SKILL.md"
-assert_empty "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$f")"
+  "$(scan_capabilities "$fixture")" "commands/y.md: routes to a missing skill: orch-y"
+mkdir -p "$fixture/skills/orch-y"
+printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
+assert_empty "the scan accepts capability phrasing and a thin route" "$(scan_capabilities "$fixture")"
 # A command may route to a named section of a skill other than orch-flow
 # (spec-review, #185) - that section must exist in that skill.
-printf 'Invoke `orchestrator:orch-y` and follow its **Solo run**\nsection.\n' >"$f/commands/y.md"
+printf 'Invoke `orchestrator:orch-y` and follow its **Solo run**\nsection.\n' >"$fixture/commands/y.md"
 flags "the scan flags a command routed to a missing section of its own skill" \
-  "$(scan_capabilities "$f")" "commands/y.md: routes to a missing orch-y section: Solo run"
-printf '## Solo run\nInvoke the skill `x` (see docs/host-capabilities.md).\n' >"$f/skills/orch-y/SKILL.md"
+  "$(scan_capabilities "$fixture")" "commands/y.md: routes to a missing orch-y section: Solo run"
+printf '## Solo run\nInvoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
 assert_empty "the scan accepts a command routed to an existing section of its own skill" \
-  "$(scan_capabilities "$f")"
+  "$(scan_capabilities "$fixture")"
 # An agent brief names host capabilities the way a skill does (#157).
-mkdir -p "$f/agents"
-printf 'Fix it through the `mattpocock-skills:tdd` skill.\n' >"$f/agents/orch-z.md"
+mkdir -p "$fixture/agents"
+printf 'Fix it through the `mattpocock-skills:tdd` skill.\n' >"$fixture/agents/orch-z.md"
 flags "the scan flags an agent that never points at the reference" \
-  "$(scan_capabilities "$f")" "agents/orch-z.md: never points at docs/host-capabilities.md"
-printf 'Fix it through the `mattpocock-skills:tdd` skill (see docs/host-capabilities.md).\n' >"$f/agents/orch-z.md"
-assert_empty "the scan accepts an agent that points at the reference" "$(scan_capabilities "$f")"
-printf 'Read the diff and write the report.\n' >"$f/agents/orch-z.md"
-assert_empty "the scan accepts an agent that invokes no skill without the pointer" "$(scan_capabilities "$f")"
+  "$(scan_capabilities "$fixture")" "agents/orch-z.md: never points at docs/host-capabilities.md"
+printf 'Fix it through the `mattpocock-skills:tdd` skill (see docs/host-capabilities.md).\n' >"$fixture/agents/orch-z.md"
+assert_empty "the scan accepts an agent that points at the reference" "$(scan_capabilities "$fixture")"
+printf 'Read the diff and write the report.\n' >"$fixture/agents/orch-z.md"
+assert_empty "the scan accepts an agent that invokes no skill without the pointer" "$(scan_capabilities "$fixture")"
 # A plugin command a skill or agent offers must route somewhere: it needs its
 # own commands/<cmd>.md, whose route the command scan above checks.
-f="$(new_fixture)"
-mkdir -p "$f/skills/orch-x" "$f/agents" "$f/commands"
-printf 'Offer `/orchestrator:abort`. See docs/host-capabilities.md.\n' >"$f/skills/orch-x/SKILL.md"
-printf 'Offer `/orchestrator:nope 12`.\n' >"$f/agents/orch-z.md"
-out="$(scan_capabilities "$f")"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-x" "$fixture/agents" "$fixture/commands"
+printf 'Offer `/orchestrator:abort`. See docs/host-capabilities.md.\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Offer `/orchestrator:nope 12`.\n' >"$fixture/agents/orch-z.md"
+out="$(scan_capabilities "$fixture")"
 flags "the scan flags a skill offering a plugin command with no command file" "$out" "skills/orch-x/SKILL.md: offers /orchestrator:abort, which has no commands/abort.md"
 flags "the scan flags an agent offering a plugin command with no command file" "$out" "agents/orch-z.md: offers /orchestrator:nope, which has no commands/nope.md"
-mkdir -p "$f/skills/orch-flow"
-printf '## Abort\nSee docs/host-capabilities.md.\n' >"$f/skills/orch-flow/SKILL.md"
-printf 'Invoke `orchestrator:orch-flow` and follow its **Abort** section.\n' >"$f/commands/abort.md"
-cp "$f/commands/abort.md" "$f/commands/nope.md"
-assert_empty "the scan accepts plugin commands that each have a command file" "$(scan_capabilities "$f")"
+mkdir -p "$fixture/skills/orch-flow"
+printf '## Abort\nSee docs/host-capabilities.md.\n' >"$fixture/skills/orch-flow/SKILL.md"
+printf 'Invoke `orchestrator:orch-flow` and follow its **Abort** section.\n' >"$fixture/commands/abort.md"
+cp "$fixture/commands/abort.md" "$fixture/commands/nope.md"
+assert_empty "the scan accepts plugin commands that each have a command file" "$(scan_capabilities "$fixture")"
 check "every skill points at the reference, and every command is a thin route" \
   "$(scan_capabilities "$PLUGIN_ROOT")"
 
@@ -571,19 +571,19 @@ scan_dispatch_copies() {
   done
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/skills/a" "$f/skills/b"
-printf 'Returns `Ticket`, `Commits`, `Verification`, `Criteria`, `Deviation`.\n' >"$f/skills/a/SKILL.md"
-printf 'Else start a fresh general-purpose agent\nbriefed with its file under `agents/`.\n' >"$f/skills/b/SKILL.md"
-out="$(scan_dispatch_copies "$f")"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/a" "$fixture/skills/b"
+printf 'Returns `Ticket`, `Commits`, `Verification`, `Criteria`, `Deviation`.\n' >"$fixture/skills/a/SKILL.md"
+printf 'Else start a fresh general-purpose agent\nbriefed with its file under `agents/`.\n' >"$fixture/skills/b/SKILL.md"
+out="$(scan_dispatch_copies "$fixture")"
 flags "the scan flags the report lines copied into a skill" \
   "$out" "skills/a/SKILL.md: restates the implementer's five report lines"
 flags "the scan flags a skill restating the general-purpose-agent tier" \
   "$out" "skills/b/SKILL.md: restates the general-purpose-agent tier"
-printf 'Start the implementer as its agent file says.\n' >"$f/skills/a/SKILL.md"
-printf 'Summarise the log with a fresh general-purpose agent.\n' >"$f/skills/b/SKILL.md"
+printf 'Start the implementer as its agent file says.\n' >"$fixture/skills/a/SKILL.md"
+printf 'Summarise the log with a fresh general-purpose agent.\n' >"$fixture/skills/b/SKILL.md"
 assert_empty "the scan accepts a pointer and a general-purpose agent with no agent file" \
-  "$(scan_dispatch_copies "$f")"
+  "$(scan_dispatch_copies "$fixture")"
 check "the host fallback and the implementer's report are each stated once" \
   "$(scan_dispatch_copies "$PLUGIN_ROOT")"
 
@@ -615,17 +615,17 @@ scan_lens_briefs() {
   done
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/agents" "$f/skills/orch-spec-review"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents" "$fixture/skills/orch-spec-review"
 printf -- '---\nname: orch-lens-fidelity\n---\n\n## Brief\n\n## Reporting rules\n\n- Under 400 words.\n' \
-  >"$f/agents/orch-lens-fidelity.md"
+  >"$fixture/agents/orch-lens-fidelity.md"
 printf -- '---\nname: orch-lens-consistency\n---\n\n# Consistency lens\n\nReport.\n' \
-  >"$f/agents/orch-lens-consistency.md"
+  >"$fixture/agents/orch-lens-consistency.md"
 printf -- '---\nname: orch-lens-testability\n---\n\n## Brief\n\nReport seams.\n\n## Reporting rules\n' \
-  >"$f/agents/orch-lens-testability.md"
+  >"$fixture/agents/orch-lens-testability.md"
 printf 'Run the lenses.\n\n**Consistency brief.** Placeholder.\n' \
-  >"$f/skills/orch-spec-review/SKILL.md"
-out="$(scan_lens_briefs "$f")"
+  >"$fixture/skills/orch-spec-review/SKILL.md"
+out="$(scan_lens_briefs "$fixture")"
 flags "the scan flags an empty ## Brief section" \
   "$out" "agents/orch-lens-fidelity.md: has an empty ## Brief section"
 flags "the scan flags a lens agent with no ## Brief heading" \
@@ -672,18 +672,18 @@ scan_required_headings() {
   done <<<"$pairs"
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/skills/a" "$f/skills/b" "$f/skills/c"
-printf '# A\n\n## One\n\ntext\n\n## Two\n' >"$f/skills/a/SKILL.md"
-printf '# B\n\n## Two\n\n## One\n' >"$f/skills/b/SKILL.md"
-printf '# C\n\n## One\n\n### Two\n' >"$f/skills/c/SKILL.md"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/a" "$fixture/skills/b" "$fixture/skills/c"
+printf '# A\n\n## One\n\ntext\n\n## Two\n' >"$fixture/skills/a/SKILL.md"
+printf '# B\n\n## Two\n\n## One\n' >"$fixture/skills/b/SKILL.md"
+printf '# C\n\n## One\n\n### Two\n' >"$fixture/skills/c/SKILL.md"
 pairs='skills/a/SKILL.md|## One
 skills/a/SKILL.md|## Two
 skills/b/SKILL.md|## One
 skills/b/SKILL.md|## Two
 skills/c/SKILL.md|## One
 skills/c/SKILL.md|## Two'
-out="$(scan_required_headings "$f" "$pairs")"
+out="$(scan_required_headings "$fixture" "$pairs")"
 flags "a required heading missing from its file is flagged" \
   "$out" "skills/c/SKILL.md: missing required heading: ## Two"
 flags "required headings out of order are flagged" \
@@ -713,15 +713,15 @@ scan_orch_names() {
       done
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/skills/orch-real" "$f/agents" "$f/commands" "$f/docs/adr" "$f/docs/x"
-printf -- '---\nname: orch-real\n---\nStart `orch-helper`, then `orch-ghost`.\n' >"$f/skills/orch-real/SKILL.md"
-printf -- '---\nname: orch-helper\n---\nInvoke `orch-real`.\n' >"$f/agents/orch-helper.md"
-printf 'Invoke `orch-phantom`.\n' >"$f/commands/c.md"
-printf 'See `orch-lost`.\n' >"$f/docs/x/d.md"
-printf 'Use `orch-missing`.\n' >"$f/README.md"
-printf 'Renamed `orch-retired`.\n' >"$f/docs/adr/0001-x.md"
-out="$(scan_orch_names "$f")"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-real" "$fixture/agents" "$fixture/commands" "$fixture/docs/adr" "$fixture/docs/x"
+printf -- '---\nname: orch-real\n---\nStart `orch-helper`, then `orch-ghost`.\n' >"$fixture/skills/orch-real/SKILL.md"
+printf -- '---\nname: orch-helper\n---\nInvoke `orch-real`.\n' >"$fixture/agents/orch-helper.md"
+printf 'Invoke `orch-phantom`.\n' >"$fixture/commands/c.md"
+printf 'See `orch-lost`.\n' >"$fixture/docs/x/d.md"
+printf 'Use `orch-missing`.\n' >"$fixture/README.md"
+printf 'Renamed `orch-retired`.\n' >"$fixture/docs/adr/0001-x.md"
+out="$(scan_orch_names "$fixture")"
 flags "an orch- name in a skill that resolves to nothing is flagged" \
   "$out" "skills/orch-real/SKILL.md:4: names no skill or agent: orch-ghost"
 flags "an orch- name in a command that resolves to nothing is flagged" \
@@ -771,15 +771,15 @@ scan_agent_frontmatter() {
   done
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/agents"
-printf -- '---\nname: orch-implementer\ntools: [Read, Bash]\n---\n' >"$f/agents/orch-implementer.md"
-printf -- '---\nname: orch-fixer\ntools: [Read, Bash]\n---\n' >"$f/agents/orch-fixer.md"
-printf -- '---\nname: orch-closer\ntools: [Read]\n---\n' >"$f/agents/orch-closer.md"
-printf -- '---\nname: orch-other\ntools: Read, Bash\n---\n' >"$f/agents/orch-a.md"
-printf -- '---\nname: orch-b\n---\n' >"$f/agents/orch-b.md"
-printf -- '---\nname: orch-c\ntools: [Read, Skill]\n---\n' >"$f/agents/orch-c.md"
-out="$(scan_agent_frontmatter "$f")"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents"
+printf -- '---\nname: orch-implementer\ntools: [Read, Bash]\n---\n' >"$fixture/agents/orch-implementer.md"
+printf -- '---\nname: orch-fixer\ntools: [Read, Bash]\n---\n' >"$fixture/agents/orch-fixer.md"
+printf -- '---\nname: orch-closer\ntools: [Read]\n---\n' >"$fixture/agents/orch-closer.md"
+printf -- '---\nname: orch-other\ntools: Read, Bash\n---\n' >"$fixture/agents/orch-a.md"
+printf -- '---\nname: orch-b\n---\n' >"$fixture/agents/orch-b.md"
+printf -- '---\nname: orch-c\ntools: [Read, Skill]\n---\n' >"$fixture/agents/orch-c.md"
+out="$(scan_agent_frontmatter "$fixture")"
 flags "an agent whose name: is not its file is flagged" \
   "$out" "agents/orch-a.md: name: is 'orch-other', not its file"
 flags "an agent whose tools: is not a list is flagged" \
@@ -805,12 +805,12 @@ scan_subissue_endpoints() {
     | sed -E 's/^([^:]+:[0-9]+):.*/\1: calls a sub-issue endpoint/'
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/agents" "$f/skills/orch-x"
-printf 'Run `gh api repos/o/r/issues/7/parent`.\n' >"$f/agents/orch-a.md"
-printf 'Run `gh api repos/o/r/issues/7/sub_issues`.\n' >"$f/skills/orch-x/SKILL.md"
-printf 'Run `bash "$ORCH" ticket parent 7`.\n' >"$f/agents/orch-b.md"
-out="$(scan_subissue_endpoints "$f")"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents" "$fixture/skills/orch-x"
+printf 'Run `gh api repos/o/r/issues/7/parent`.\n' >"$fixture/agents/orch-a.md"
+printf 'Run `gh api repos/o/r/issues/7/sub_issues`.\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Run `bash "$ORCH" ticket parent 7`.\n' >"$fixture/agents/orch-b.md"
+out="$(scan_subissue_endpoints "$fixture")"
 flags "an agent calling the parent endpoint is flagged" "$out" "agents/orch-a.md:1: calls a sub-issue endpoint"
 flags "a skill calling the sub_issues endpoint is flagged" "$out" "skills/orch-x/SKILL.md:1: calls a sub-issue endpoint"
 assert_eq "ticket parent is not flagged" "$(printf '%s\n' "$out" | grep -c 'orch-b')" "0"
@@ -838,14 +838,14 @@ scan_flow_cmd() {
       done
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/scripts" "$f/skills/orch-flow"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/scripts" "$fixture/skills/orch-flow"
 printf '%s\n' 'flow_cmd() {' '  case "$1" in' '    start) section="Starting a flow" ;;' \
   '    next)  section="Next phase" ;;' '  esac' '  printf "/orchestrator:%s" "$1"' '}' \
-  '# /orchestrator:next in a comment is fine' 'die "run /orchestrator:abort"' >"$f/scripts/orch.sh"
-printf 'echo ok\n' >"$f/scripts/doctor.sh"
-printf '# Flow\n\n## Starting a flow\n\n## Next steps\n' >"$f/skills/orch-flow/SKILL.md"
-out="$(scan_flow_cmd "$f")"
+  '# /orchestrator:next in a comment is fine' 'die "run /orchestrator:abort"' >"$fixture/scripts/orch.sh"
+printf 'echo ok\n' >"$fixture/scripts/doctor.sh"
+printf '# Flow\n\n## Starting a flow\n\n## Next steps\n' >"$fixture/skills/orch-flow/SKILL.md"
+out="$(scan_flow_cmd "$fixture")"
 flags "a script naming a plugin command outside flow_cmd is flagged" \
   "$out" "scripts/orch.sh:9: names a plugin command outside flow_cmd"
 flags "a flow_cmd section orch-flow lacks is flagged" \
@@ -878,15 +878,15 @@ scan_junie_planning() {
   done
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/scripts" "$f/docs/junie"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/scripts" "$fixture/docs/junie"
 printf '%s\n' 'PLANNING_ALLOWLIST=(docs/agents/ .scratch/)' 'PLANNING_RECORDS=(CONTEXT.md docs/adr/)' \
   'planning_allowlist_text() { local IFS=,; printf "%s" "${PLANNING_ALLOWLIST[*]}" | sed "s/,/, /g"; }' \
   'planning_records_text() { local IFS=,; printf "%s" "${PLANNING_RECORDS[*]}" | sed "s/,/, /g"; }' \
-  >"$f/scripts/planning-allowlist.sh"
+  >"$fixture/scripts/planning-allowlist.sh"
 printf '%s\n' '<!-- orchestrator:begin -->' 'Records (CONTEXT.md) are recorded.' \
-  'Artifacts (docs/agents/,' '.scratch/) are fine.' '<!-- orchestrator:begin -->' >"$f/docs/junie/AGENTS.md"
-out="$(scan_junie_planning "$f")"
+  'Artifacts (docs/agents/,' '.scratch/) are fine.' '<!-- orchestrator:begin -->' >"$fixture/docs/junie/AGENTS.md"
+out="$(scan_junie_planning "$fixture")"
 flags "a snippet with two begin markers is flagged" \
   "$out" "docs/junie/AGENTS.md: has 2 begin markers, not 1"
 flags "a snippet with no end marker is flagged" \
@@ -913,12 +913,12 @@ scan_capability_table() {
     }' "$r/$doc"
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/docs"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs"
 printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
   '| Ask | `AskUserQuestion`. | Plain text. |' '| Guard | A hook. |  |' \
-  '| Start | The Agent tool. | One | two. |' >"$f/docs/host-capabilities.md"
-out="$(scan_capability_table "$f")"
+  '| Start | The Agent tool. | One | two. |' >"$fixture/docs/host-capabilities.md"
+out="$(scan_capability_table "$fixture")"
 flags "a row with an empty cell is flagged" "$out" "docs/host-capabilities.md:4: a row with an empty cell"
 flags "a row with a stray pipe is flagged" "$out" "docs/host-capabilities.md:5: a row with 4 cells, not 3"
 assert_eq "a filled row is not flagged" "$(printf '%s\n' "$out" | grep -cE ':(1|2|3):')" "0"
@@ -945,24 +945,24 @@ scan_review_pass() {
     || echo "$quick: step 6 does not refer to orch-review's **Review pass** section"
   return 0
 }
-f="$(new_fixture)"
-mkdir -p "$f/skills/orch-review" "$f/skills/orch-quick-implement"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-review" "$fixture/skills/orch-quick-implement"
 printf '# R\n\n## Review pass\n\nStart the reviewers.\n\n## Other\n\nrun review-pass begin\n' \
-  >"$f/skills/orch-review/SKILL.md"
+  >"$fixture/skills/orch-review/SKILL.md"
 printf '# Q\n\n## 6. Review\n\nStart the reviewers.\n\n## 7. Open the PR\n\nSee `orch-review` **Review pass**.\n' \
-  >"$f/skills/orch-quick-implement/SKILL.md"
-out="$(scan_review_pass "$f")"
+  >"$fixture/skills/orch-quick-implement/SKILL.md"
+out="$(scan_review_pass "$fixture")"
 flags "a Review pass section that skips review-pass begin is flagged" \
   "$out" "skills/orch-review/SKILL.md: ## Review pass does not name review-pass begin"
 flags "a step 6 that does not run orch-review's Review pass is flagged" \
   "$out" "skills/orch-quick-implement/SKILL.md: step 6 does not refer to orch-review's **Review pass** section"
-printf '# R\n\n## Other\n' >"$f/skills/orch-review/SKILL.md"
+printf '# R\n\n## Other\n' >"$fixture/skills/orch-review/SKILL.md"
 flags "a missing Review pass section is flagged" \
-  "$(scan_review_pass "$f")" "skills/orch-review/SKILL.md: no ## Review pass section"
-printf '# R\n\n## Review pass\n\nRun `orch.sh review-pass begin <issue>`.\n' >"$f/skills/orch-review/SKILL.md"
+  "$(scan_review_pass "$fixture")" "skills/orch-review/SKILL.md: no ## Review pass section"
+printf '# R\n\n## Review pass\n\nRun `orch.sh review-pass begin <issue>`.\n' >"$fixture/skills/orch-review/SKILL.md"
 printf '# Q\n\n## 6. Review\n\nRun the `orch-review` skill'"'"'s **Review\npass** section.\n' \
-  >"$f/skills/orch-quick-implement/SKILL.md"
-assert_empty "a review pass defined once and run by step 6 is not flagged" "$(scan_review_pass "$f")"
+  >"$fixture/skills/orch-quick-implement/SKILL.md"
+assert_empty "a review pass defined once and run by step 6 is not flagged" "$(scan_review_pass "$fixture")"
 check "the review pass is defined once in orch-review and quick implementation runs it" \
   "$(scan_review_pass "$PLUGIN_ROOT")"
 
