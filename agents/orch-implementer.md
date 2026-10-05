@@ -39,9 +39,9 @@ to that prompt.
 1. **Fetch the ticket** before anything else, into a temporary file
    outside the repo (`mktemp`): `gh issue view <ticket> --json
    title,body,comments > <file>`, then read that file. Piped, `--comments`
-   drops the title and body. Then find its spec issue: `bash "<orch.sh>" ticket parent
-   <ticket>` prints the parent of a sub-issue ticket, and empty output means
-   the ticket is the spec issue itself. A failure is retried once, then
+   drops the title and body. Then find its spec issue: `bash "<orch.sh>"
+   ticket parent <ticket>` prints the parent of a sub-issue ticket, and empty
+   output means the ticket is the spec issue itself. A failure is retried once, then
    recorded as a deviation. Read the spec issue's **Testing Decisions** - the
    seams already confirmed with the human.
 2. **Build the ticket test-first**, per **Test-driven development** below,
