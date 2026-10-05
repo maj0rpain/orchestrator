@@ -1249,7 +1249,7 @@ assert_eq "falls back to main when nothing else answers" \
 
 # A tool manager's shim (mise) can print a status line on stdout around gh's
 # own answer (#465). Neither a two-line answer nor a failed gh's output may
-# become the base branch: only a valid branch name is ever resolved.
+# become the default branch: only a valid branch name is ever resolved.
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/some-feature
 assert_eq "falls back past a gh answer polluted by a banner line" \
   "$(PATH="$STUB:$PATH" GH_STUB_BANNER=1 "$ORCH" default-branch)" "some-feature"
