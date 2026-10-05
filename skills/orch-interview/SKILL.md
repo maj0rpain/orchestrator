@@ -45,18 +45,42 @@ guessing at answers you have not heard yet. Ask the whole frontier in one
 round, numbering each question and giving your recommended answer to each.
 Then wait for the user's answers before the next round.
 
+Two rules hold for every question in a round:
+
+- **Define each new term.** The first time a question uses a term the user
+  has not yet met in this interview - neither used by them nor defined in an
+  earlier question - give it a one-line definition inline, in parentheses
+  after it. This covers a config key, a glossary term, or a name you
+  invented for the plan.
+- **Give the reason for each recommendation.** Every **Recommended** line
+  carries its reason in one clause, after "because".
+
 Format a round like so:
 
 ```
-**Q1 - <question title>**: <question body, possibly several paragraphs, possibly with choices>
+**Q1 - <question title>**: <question body, possibly several paragraphs, possibly with choices; a term the user has not yet met appears as <term> (<one-line definition>)>
 
-Recommended: <your recommended answer>
+Recommended: <your recommended answer>, because <reason>
 
 ---
 
 **Q2 - <question title>**: <question body>
 
-Recommended: <your recommended answer>
+Recommended: <your recommended answer>, because <reason>
+```
+
+A worked example round:
+
+```
+**Q1 - Timestamp zone**: Should the export write its timestamps in UTC or in the user's local zone?
+
+Recommended: UTC, because exports are compared across machines in different zones.
+
+---
+
+**Q2 - Timestamp format key**: Where should `HWM_FORMAT` (the config key that sets how the last exported row's timestamp is written) live: in the export's config file, or as a flag on each run?
+
+Recommended: In the config file, because every run of one export must read that timestamp the same way.
 ```
 
 Each round's answers reshape the tree: settled decisions push the frontier

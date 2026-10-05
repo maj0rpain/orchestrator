@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.6.0
+
+An interview round now defines new terms and gives the reason for each
+recommendation (see issue #424). The first time a question uses a term the
+user has not yet met in the interview - a config key, a glossary term, an
+invented name - it carries a one-line definition inline, and every
+**Recommended** line states its reason in one clause. The round format's
+template in `orch-interview` shows both, followed by a worked example round.
+
 ## 3.5.0
 
 The Testability lens of a spec review now reports a step that changes
