@@ -117,7 +117,10 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    **Exit 0** means the issue already has a ticket breakdown - as for a
    blueprint adopted at init; a default `redo spec` retires the breakdown
    first, so it never reaches this exit. Skip the breakdown and
-   ask nothing. It printed one word, which settles step 6's **Ticket
+   ask nothing: step 4's spec review may already have reconciled the
+   breakdown with the edits it applied. If that review retired the
+   breakdown instead, this step sees exit 1 and runs `orch-to-tickets` as
+   below. It printed one word, which settles step 6's **Ticket
    breakdown**: `sub-issues` means the spec issue number, and `collapsed`
    means `None: work directly against #<n>` naming the spec issue.
 

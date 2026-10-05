@@ -44,7 +44,8 @@ test-driven, reviewed, then opened as a PR. Its review is a review pass, and
 it names what it declines in the PR. It
 offers a spec review of its linked issue before its ticket breakdown - the
 human's choice, asked on every run - and skips that breakdown when the linked
-issue is a blueprint.
+issue is a blueprint, including when its spec review retired the blueprint's
+breakdown and broke the issue down again.
 
 ## Blueprint
 
@@ -53,7 +54,8 @@ further: its spec issue, reviewed if the human chose to, and its ticket
 breakdown. Chosen once, by a human, at the close of a planning session, as
 the alternative to starting a flow or a quick implementation. A flow later
 adopts it, or a quick implementation links it; either way its ticket
-breakdown is already published and is not run again.
+breakdown is already published and is not run again, unless a spec review
+changes the spec and the human retires that breakdown.
 _Avoid_: planning-only, parked spec, banked spec.
 
 ## Doctor
@@ -246,7 +248,10 @@ follow-up - so the body stays the one place the spec is written. Its lenses
 then read the spec, body and comments, independently - four in a flow, three
 in a standalone review; every finding they report, and every consolidation item, is
 put to a human with a proposed edit, and only the edits the human accepts
-change the spec. A spec review runs once - it is not a loop and has no budget;
+change the spec. When the issue already has a ticket breakdown and the
+accepted edits touch an open ticket, it then puts to the human how that
+breakdown should follow: edits to the tickets the change touches, or retiring
+the breakdown so the issue is broken down again. A spec review runs once - it is not a loop and has no budget;
 another look is another spec review.
 
 ## Consolidation item

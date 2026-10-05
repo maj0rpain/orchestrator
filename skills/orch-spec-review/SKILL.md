@@ -227,15 +227,25 @@ Asked once; a long spec is one longer question, not twenty prompts.
 
 ## Applying the answer
 
-1. Apply the accepted edits to `<dir>/spec.md`, then
-   `bash "$ORCH" spec update <dir>/spec.md`. The body is rewritten in place; the
-   implement phase reads one body and reconciles nothing. Apply none: skip
-   this step - an update that writes the body it just read is a no-op edit on
-   the issue's history, and the comment in step 2 still records the decision.
-2. Write the changelog - see below - to `<dir>/changelog.md` under a
+1. Apply the accepted edits to `<dir>/spec.md`, the working copy. Keep a copy
+   of the body as fetched: **Tickets follow the spec** reads both.
+2. Run **Tickets follow the spec** below: draft, ask, and apply the accepted
+   ticket edits. Sub-issue edits go through `issue update`; an edit to a
+   collapsed `## Ticket` section goes into `<dir>/spec.md`.
+3. Publish the body once: `bash "$ORCH" spec update <dir>/spec.md`. The body
+   is rewritten in place; the implement phase reads one body and reconciles
+   nothing. Skip this step when nothing in `<dir>/spec.md` changed - on Apply
+   none, say: an update that writes the body it just read is a no-op edit on
+   the issue's history, and the comment in step 5 still records the decision.
+4. If the human chose **Retire and break down again**, run
+   `bash "$ORCH" ticket retire <issue>` now, after the publish, so it cuts any
+   `## Ticket` section from the body just published. Breaking the issue down
+   again is left to `orch-flow`'s spec phase step 5, which then sees
+   `ticket exists` exit 1.
+5. Write the changelog - see below - to `<dir>/changelog.md` under a
    `## Spec review` heading and `bash "$ORCH" spec comment <dir>/changelog.md`. The
    comment is history, visible on the issue; the body is the truth.
-3. A declined `contradicts the plan` item: the changelog records **spec
+6. A declined `contradicts the plan` item: the changelog records **spec
    departs from the plan: <the human's reason>**, and the matching entry in the
    plan handoff's **Rejected alternatives** is amended to say it was reversed
    in the spec review and why. Declining it through **Apply as recommended** is
@@ -243,16 +253,24 @@ Asked once; a long spec is one longer question, not twenty prompts.
    recommended: <reason>**, and the amendment cites the same reason. The review loop demotes findings that
    propose a rejected alternative, and without the amendment it would later
    demote a code reviewer for proposing the spec's own choice.
-4. Return the changelog to the flow skill: it goes verbatim into
-   `02-spec.md`'s **Spec review changelog**, so the implement phase carries the
-   disposition without a network call.
+7. Return the changelog to the flow skill: it goes verbatim into
+   `02-spec.md`'s **Spec review changelog**, its **Tickets** section included,
+   so the implement phase carries the disposition without a network call.
 
 A standalone review applies through the stateless `issue` commands instead:
 
-1. Apply the accepted edits to `<dir>/spec.md`, then
-   `bash "$ORCH" issue update <issue> <dir>/spec.md`. Apply none: skip this
-   step, as above.
-2. Write the changelog to `<dir>/changelog.md` under a `## Spec review`
+1. Apply the accepted edits to `<dir>/spec.md`, the working copy, keeping a
+   copy of the body as fetched, as above.
+2. Run **Tickets follow the spec**, as above.
+3. Publish the body once: `bash "$ORCH" issue update <issue> <dir>/spec.md`.
+   Skip this step when nothing in `<dir>/spec.md` changed, as above.
+4. If the human chose **Retire and break down again**, run
+   `bash "$ORCH" ticket retire <issue>` now, after the publish. Then invoke the
+   `orch-to-tickets` skill on the issue and follow it, through its own quiz
+   until the human approves a breakdown: it reads the published, edited body.
+   This holds for the standalone review a quick implementation runs too, whose
+   step 3 then sees `ticket exists` exit 0 and works the new breakdown.
+5. Write the changelog to `<dir>/changelog.md` under a `## Spec review`
    heading, with Fidelity's not-run line, as in **The changelog**, and any
    **Host fallbacks** line, and
    `bash "$ORCH" issue comment <issue> <dir>/changelog.md`. The comment is
@@ -262,8 +280,81 @@ It never writes `state.json`, `.orchestrator/handoff/`, `02-spec.md`, or a
 plan's **Rejected alternatives**, and returns nothing to a flow skill.
 
 Nothing calls `gh issue edit` or `gh issue comment` directly: `orch.sh`'s
-`spec` and `issue` commands are the one place body writes and comments
-happen, and the one place they are tested.
+`spec`, `issue` and `ticket` commands are the one place body writes, comments
+and retirements happen, and the one place they are tested.
+
+## Tickets follow the spec
+
+A spec review on an issue that already has a ticket breakdown - a blueprint a
+flow adopted or a quick implementation linked, or any issue reviewed
+standalone - would otherwise leave tickets drawn from the old body, and the
+implement phase would build them. This step brings the breakdown in line with
+the edits just accepted, before the body is published. It is not a second
+pass: no lens runs and the spec is not reviewed again (ADR-0004). Both
+entries share it. `<issue>` is the issue under review: in a flow,
+the number `bash "$ORCH" state get issue` prints.
+
+**When it runs.** Only when both hold:
+
+- at least one accepted edit was applied to `<dir>/spec.md`;
+- `bash "$ORCH" ticket exists <issue>` exits 0, printing `sub-issues` or
+  `collapsed`.
+
+With no edit applied, `ticket exists` is not run, and the changelog's
+**Tickets** line is **Not checked - no edit applied**. Exit 1 means no
+breakdown: the line is **None - no ticket breakdown**. Any other exit stops
+the review the way a failed fetch does: say what blocked, publish nothing,
+and in a flow leave state where it is.
+
+**Drafting.** The session running the review drafts - never a lens, never a
+new agent: this is reconciliation, the same kind of work as
+**Consolidation**.
+
+- Read the body as fetched and as edited, plus each ticket's body.
+- `sub-issues`: `bash "$ORCH" ticket list <issue>` prints each ticket as
+  `<n> open` or `<n> closed`; fetch each with
+  `bash "$ORCH" issue fetch <n> <dir>/ticket-<n>.md`. `collapsed`: the ticket
+  is the body's `## Ticket` section.
+- Draft concrete replacement text only for **open** tickets the accepted
+  edits touch. A closed ticket is never edited and nothing reopens it: note
+  what changed for it, for the changelog.
+- A ticket edit never changes a ticket's `## Blocked by` section or the
+  GitHub dependency links. If the accepted edits change what blocks what, or
+  add, remove or re-order slices, recommend **Retire and break down again**
+  instead of per-ticket edits.
+- A drafted edit you believe is wrong is still presented, marked **recommend
+  decline** with the reason.
+
+**The question.** If no open ticket is affected, ask nothing: the line is
+**None - no ticket affected**, and each closed ticket the edits touch is
+still listed. Otherwise number the ticket items - each naming its ticket
+(`#<n>`, or the `## Ticket` section), what the accepted edits changed for it,
+and its replacement text - and ask **one blocking question** with the
+`AskUserQuestion` tool, the list and the call in the same response, as for
+the spec batch. The options, each offered once:
+
+- **Apply as recommended** - every ticket edit applied except those marked
+  **recommend decline**.
+- **Apply all** - offered only when some item is marked **recommend
+  decline**: as recommended, plus those items too.
+- **Apply none**.
+- **Retire and break down again** - no ticket is edited; the breakdown is
+  retired after the body is published, and the issue broken down again.
+- **Other** - item numbers, e.g. `1, 3`, as in the spec batch; any item left
+  out is declined. The question text states this format.
+
+The option you recommend comes first and carries **(Recommended)**: **Retire
+and break down again** when you recommend a retire, otherwise **Apply as
+recommended**.
+
+**Applying.** Each accepted sub-issue edit replaces that ticket's body: write
+it to `<dir>/ticket-<n>.md`, then
+`bash "$ORCH" issue update <n> <dir>/ticket-<n>.md`. An accepted edit to a
+collapsed `## Ticket` section goes into `<dir>/spec.md`, published with the
+review's one body update. A retire edits no ticket here: it runs at
+**Applying the answer**'s step 4, after the publish. A failed `issue update`
+stops the review the way a failed fetch does. Nothing calls `gh issue`
+directly.
 
 ## The changelog
 
@@ -292,4 +383,19 @@ Then the lenses, organised per lens, in the table's order, one heading each:
 - in a standalone review, Fidelity: **not run - standalone review, no plan
   to check against**.
 
-Silence is never ambiguous: Consolidation and every lens have a line.
+Then a **Tickets** section, after the lens headings, one line per outcome:
+
+- an applied ticket edit: one line naming the ticket and what changed;
+- a declined ticket edit: the proposed change **verbatim**, then the human's
+  reason, or **declined as recommended: <reason>**;
+- a retire: **retired, to be broken down again**;
+- a closed ticket the edits touch: **closed, built against the earlier spec:
+  <what changed>**;
+- otherwise exactly one of **None - no ticket breakdown**, **None - no ticket
+  affected**, or **Not checked - no edit applied**.
+
+The **Tickets** line is written even when **Tickets follow the spec** does
+not run.
+
+Silence is never ambiguous: Consolidation, every lens, and Tickets have a
+line.

@@ -1648,6 +1648,19 @@ cmd_ticket_next() {
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
 }
 
+# Every sub-issue of <parent>, open or closed, one "<n> open|closed" line
+# each, in the order GitHub published them - how a spec review finds the
+# tickets its accepted edits touch without calling a sub-issue endpoint.
+cmd_ticket_list() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket list <parent>"
+  local parent="$1" subs
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
+  subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" \
+      --jq '.[] | "\(.number) \(.state)"')" \
+    || die "gh could not list sub-issues of #$parent"
+  if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
+}
+
 cmd_ticket_close() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket close <n>"
   local n="$1"
@@ -1820,12 +1833,13 @@ cmd_ticket() {
   case "$op" in
     publish) cmd_ticket_publish "$@" ;;
     next)    cmd_ticket_next "$@" ;;
+    list)    cmd_ticket_list "$@" ;;
     close)   cmd_ticket_close "$@" ;;
     reset)   cmd_ticket_reset "$@" ;;
     parent)  cmd_ticket_parent "$@" ;;
     exists)  cmd_ticket_exists "$@" ;;
     retire)  cmd_ticket_retire "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|close|reset|parent|exists|retire)" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire)" ;;
   esac
 }
 
@@ -2154,6 +2168,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               back - recording no state; prints the number
   ticket next <parent>       print <parent>'s open sub-issues with zero open
                               blockers, in the order they were published
+  ticket list <parent>       print every sub-issue of <parent>, open or
+                              closed, as <n> open|closed, in the order they
+                              were published
   ticket close <n>           close ticket <n>
   ticket reset <parent>      reopen every sub-issue of <parent> that is
                               currently closed, and only those

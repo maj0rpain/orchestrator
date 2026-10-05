@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.1.0
+
+A spec review on an issue that already has a ticket breakdown now brings that
+breakdown in line with the edits the human accepts (see issue #382). When
+those edits touch an open ticket, the review asks one more question: apply
+proposed edits to the touched tickets, or retire the breakdown so the issue
+is broken down again - by the flow's spec phase, or by the standalone review
+itself. Closed tickets are never edited, only listed. The outcome is recorded
+in a new **Tickets** section of the review's changelog comment. A retired
+ticket's comment now says its spec changed rather than naming a redo, and the
+new `orch.sh ticket list <parent>` prints every sub-issue with its state.
+
 ## 3.0.2
 
 The README's Layout row for `skills/orch-interview/` no longer says the

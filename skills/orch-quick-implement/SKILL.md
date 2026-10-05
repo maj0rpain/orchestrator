@@ -90,7 +90,9 @@ it is the only spec this path has.
 First run `bash "$ORCH" ticket exists <linked issue>`:
 
 - **Exit 0**: the linked issue already has a breakdown - a blueprint, say.
-  Skip the breakdown and ask nothing. It printed one word for step 5:
+  Skip the breakdown and ask nothing: step 2's spec review may already have
+  reconciled the breakdown with the edits it applied, or retired it and
+  broken the issue down again. It printed one word for step 5:
   `sub-issues` means step 5 works the linked issue's ticket frontier, and
   `collapsed` means step 5 treats the breakdown as collapsed.
 - **Exit 1**: it has none. Invoke the `orch-to-tickets` skill on the linked

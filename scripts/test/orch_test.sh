@@ -3072,6 +3072,35 @@ assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not list sub-issues"
 unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
+# --- ticket list -------------------------------------------------------------
+# Every sub-issue of <parent>, open or closed, one "<n> open|closed" line
+# each in publish order - what a spec review reads to find the tickets its
+# accepted edits touch, without calling a sub-issue endpoint itself.
+echo
+echo "ticket list"
+healthy_repo
+body="$(mktemp)"
+writeln 'Build the thing.' >"$body"
+db="$(mktemp -d)"
+export GH_STUB_DB="$db"
+a="$(GH_STUB_ISSUE_NUMBER=450 "$ORCH" ticket publish 90 "A" "$body")"
+b="$("$ORCH" ticket publish 90 "B" "$body" --blocked-by "$a")"
+"$ORCH" ticket close "$a" >/dev/null
+out="$("$ORCH" ticket list 90)"
+assert_eq "lists every sub-issue with its state, closed ones included, in publish order" \
+  "$out" "$(printf '450 closed\n451 open')"
+
+assert_eq "a parent with no sub-issues lists nothing" "$("$ORCH" ticket list 91)" ""
+
+out="$("$ORCH" ticket list abc 2>&1)"; st=$?
+assert_status "refuses a parent that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket list 90 2>&1)"; st=$?
+assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not list sub-issues"
+unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
+
 # --- ticket close ------------------------------------------------------------
 echo
 echo "ticket close"
