@@ -3508,8 +3508,6 @@ out="$("$ORCH" issue comments 23 2>&1)"; st=$?
 assert_status "comments refuses with no file" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh issue comments"
 
-out="$("$ORCH" issue bogus 23 "$tricky" 2>&1)"; st=$?
-assert_contains "the issue op listing includes comments" "$out" "comments"
 assert_contains "help documents issue comments" "$("$ORCH" help)" "issue comments"
 rm -f "$issue_comments"
 
@@ -3924,7 +3922,9 @@ state_fixture phase "$prior_phase"
 rm -f "$spec_comments"
 assert_contains "help documents spec comments" "$("$ORCH" help)" "spec comments"
 out="$("$ORCH" spec 2>&1)"; st=$?
-assert_contains "the spec op listing includes comments" "$out" "fetch|update|comment|comments"
+assert_status "spec with no op refuses" "$st" 1
+assert_contains "naming the missing op as <none>" "$out" "unknown spec op: <none>"
+assert_contains "and listing the ops, comments among them" "$out" "fetch|update|comment|comments"
 
 out="$("$ORCH" spec publish "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
