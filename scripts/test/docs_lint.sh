@@ -309,22 +309,27 @@ flags "the scan flags the Junie steps out of order" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: resolves orch.sh out of the documented order"
 documented_orch_form >"$fixture/commands/orch.md"
 assert_empty "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")"
-printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  >"$fixture/commands/orch.md"
+# plugin_root_fence: a fenced command that reads a file under the plugin root.
+plugin_root_fence() {
+  printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```'
+}
+plugin_root_fence >"$fixture/commands/orch.md"
 flags "the scan flags a plugin-root path with no unset fallback" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: CLAUDE_PLUGIN_ROOT outside"
-printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  "$root_fallback two directories above this skill's own directory." >"$fixture/commands/orch.md"
+{ plugin_root_fence
+  printf '%s\n' "$root_fallback two directories above this skill's own directory."
+} >"$fixture/commands/orch.md"
 flags "the scan flags a plugin-root fallback with no Junie step" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
-printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-  "$root_fallback two directories above this skill's own directory." \
-  "Elsewhere, $root_junie." >"$fixture/commands/orch.md"
+{ plugin_root_fence
+  printf '%s\n' "$root_fallback two directories above this skill's own directory." \
+    "Elsewhere, $root_junie."
+} >"$fixture/commands/orch.md"
 flags "the scan flags a Junie step outside the plugin-root sentence" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: names the plugin root without the Junie step"
 { documented_orch_form
-  printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```' \
-    "$root_fallback found as for \`ORCH\`:" \
+  plugin_root_fence
+  printf '%s\n' "$root_fallback found as for \`ORCH\`:" \
     "$root_junie, else two directories above this skill's own directory."
 } >"$fixture/commands/orch.md"
 assert_empty "the scan accepts a plugin-root path with its unset fallback" \
