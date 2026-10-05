@@ -76,8 +76,9 @@ It fetches `origin/<default>` and prints one tab-separated line per finding:
 - `changed` - `<detail>` is the full SHA of the newest commit touching the
   finding's lines (or its file).
 - `gone` - the file no longer exists on the default branch.
-- `unknown` - `<detail>` says why: an unreachable SHA, or a body that does not
-  parse.
+- `unknown` - `<detail>` says why: an unreachable SHA, a body that does not
+  parse, or a file that differs only by commits that never reached the
+  default branch.
 
 If it dies, relay its reason and stop. If it prints nothing, tell the human
 there is no filed finding to triage and stop.

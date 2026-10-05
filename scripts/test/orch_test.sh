@@ -3959,6 +3959,29 @@ assert_contains "naming the missing severity label" "$out" "review:"
 out="$(scan 2 --pr 8 2>&1)"; st=$?
 assert_status "takes an issue or a PR, not both" "$st" 1
 
+# A blocking finding is fixed in the loop, never filed: an explicit issue
+# labelled review:blocking is not a filed finding.
+finding 12 "review:blocking,needs-triage" "\`src/other.sh:2\` at $head_sha"
+out="$(scan 12 2>&1)"; st=$?
+assert_status "refuses an explicit issue whose severity is never filed" "$st" 1
+assert_contains "naming the filed severities" "$out" "review:major"
+rm -rf "${findings:?}/12"
+
+# A PR head that edited the file and never reached the default branch: the
+# file differs, yet no commit since the filing touched it there, so the scan
+# names no commit older than the filing.
+git -C "$work" checkout -q -b pr11 "$head_sha"
+sed -i 's/^other line 2$/other line 2, on the PR only/' "$work/src/other.sh"
+git -C "$work" commit -qam "an unmerged PR edit"
+unmerged_sha="$(git -C "$work" rev-parse HEAD)"
+git -C "$work" push -q origin HEAD:refs/pull/11/head
+finding 11 "review:nit,needs-triage" "\`src/other.sh:2\` at $unmerged_sha" 11
+out="$(scan 11 2>&1)"; st=$?
+assert_status "scans a finding filed on a PR edit that never landed" "$st" 0
+assert_eq "it is unknown, not changed by a commit older than the filing" "$(field_of 11 4 "$out")" "unknown"
+assert_contains "saying no commit since the filing touched the file" "$(field_of 11 5 "$out")" "no commit"
+rm -rf "${findings:?}/11"
+
 # The triage label is the repo's name for the role, as review file files it.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \

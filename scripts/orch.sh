@@ -15,6 +15,9 @@ readonly ORCH_DIR_NAME=".orchestrator"
 readonly PHASES="spec implement review done"
 readonly LABELS_DOC="docs/agents/triage-labels.md"
 readonly LABEL_LIMIT=1000
+# The severities a filed finding carries as review:<severity> - the ones
+# `review file` files. Blocking is always fixed in the loop, never filed.
+readonly FILED_SEVERITIES="major nit"
 
 # How long `review ci` waits, and how often it looks. Overridable through the
 # environment rather than through positional arguments: the 60-second grace is
@@ -934,11 +937,13 @@ cmd_review() {
       require_state
       local usage="usage: orch.sh review file <major|nit> <title> --axis <spec|standards> --body-file <file>"
       [ $# -eq 6 ] && [ "$3" = --axis ] && [ "$5" = --body-file ] || die "$usage"
-      local severity="$1" title="$2" axis="$4" body="$6" colour category triage url
+      local severity="$1" title="$2" axis="$4" body="$6" colour category triage url s filed=""
+      for s in $FILED_SEVERITIES; do [ "$severity" != "$s" ] || filed=1; done
+      [ -n "$filed" ] \
+        || die "not a severity that gets filed: $severity (want major or nit - blocking is always fixed, never filed)"
       case "$severity" in
         major) colour=d93f0b ;;
         nit)   colour=c5def5 ;;
-        *) die "not a severity that gets filed: $severity (want major or nit - blocking is always fixed, never filed)" ;;
       esac
       # The category follows the axis: a Spec finding misses what was asked
       # for, so it is a bug; a Standards finding improves how it was built.
@@ -1246,11 +1251,7 @@ cmd_review_pass() {
   printf '%s/iteration-%02d\n' "$dir" "$((max + 1))"
 }
 
-# --- git / github -----------------------------------------------------------
-
-# The severities a filed finding carries as review:<severity> - the ones
-# `review file` files. Blocking is always fixed in the loop, never filed.
-FILED_SEVERITIES="major nit"
+# --- finding-triage ---------------------------------------------------------
 
 # finding_location <body>: "<file>\t<line>\t<sha>" from a filed body's
 # **Location:** line - the first backticked <file>:<line> on it, the line
@@ -1334,7 +1335,13 @@ finding_scan_one() {
   # touched the file.
   detail="$(git log -1 --format=%H -L "$s,$e:$file" "$ref" "^$full" 2>/dev/null | grep -Exm1 '[0-9a-f]{40}')" || true
   [ -n "$detail" ] || detail="$(git log -1 --format=%H "$ref" "^$full" -- "$file" 2>/dev/null)"
-  [ -n "$detail" ] || detail="$(git log -1 --format=%H "$ref" -- "$file" 2>/dev/null)"
+  # None at all: the difference is the PR's own commits, never on the default
+  # branch, and any older commit would predate the filing.
+  if [ -z "$detail" ]; then
+    printf '%s\t%s\t%s:%s\tunknown\tno commit on the default branch since %s touched %s - the difference is commits that never reached it\n' \
+      "$n" "$pr" "$file" "$lines" "$sha" "$file"
+    return
+  fi
   printf '%s\t%s\t%s:%s\tchanged\t%s\n' "$n" "$pr" "$file" "$lines" "$detail"
 }
 
@@ -1343,7 +1350,7 @@ finding_scan_one() {
 # line apiece: <issue> <pr> <file>:<line> <result> <detail>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [<issue> | --pr <n>]"
-  local issue="" pr_filter="" triage sev nums="" n out state labels body def ref line
+  local issue="" pr_filter="" triage sev nums="" n out state labels body def ref filed
   case $# in
     0) ;;
     1) issue="$1" ;;
@@ -1358,8 +1365,12 @@ cmd_finding_triage_scan() {
     state="$(first_line "$out")"
     labels="$(printf '%s\n' "$out" | tail -n +2)"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
-    printf '%s\n' "$labels" | grep -q '^review:' \
-      || die "issue #$issue is not a filed finding - it carries no review:<severity> label"
+    filed=""
+    for sev in $FILED_SEVERITIES; do
+      if printf '%s\n' "$labels" | grep -qxF "review:$sev"; then filed=1; fi
+    done
+    [ -n "$filed" ] \
+      || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
     printf '%s\n' "$labels" | grep -qxF "$triage" \
       || die "issue #$issue is not in triage - it carries no '$triage' label"
     nums="$issue"
@@ -1378,8 +1389,7 @@ cmd_finding_triage_scan() {
   for n in $(printf '%s\n' $nums | sort -nu); do
     body="$(adapter_issue_view "$n" --json body --jq .body)" || die "gh could not read issue #$n"
     if [ -n "$pr_filter" ] && [ "$(finding_pr "$body")" != "$pr_filter" ]; then continue; fi
-    line="$(finding_scan_one "$n" "$body" "$ref")"
-    printf '%s\n' "$line"
+    finding_scan_one "$n" "$body" "$ref"
   done
 }
 
@@ -1464,6 +1474,8 @@ cmd_finding_triage() {
     *) die "usage: orch.sh finding-triage <scan|apply> ..." ;;
   esac
 }
+
+# --- git / github -----------------------------------------------------------
 
 # Forking a named branch off a base branch has exactly one right answer -
 # fetch it, then check it out, falling back to the local ref if origin was
