@@ -1110,11 +1110,13 @@ cmd_issue_fetch() {
 # its author and gh's ISO-8601 timestamp, one blank line between comments and
 # bodies unescaped - so the spec review reads the comments beside the body.
 # No comments is an empty file, not an error.
+# pr comments (issue #418) writes a PR's comments through this same --jq, so
+# the two files read alike.
+COMMENTS_JQ='[.comments[] | "<!-- comment @\(.author.login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n")'
 cmd_issue_comments() {
   local issue="$1" file="$2"
   fetch_into "$file" "the comments of issue #$issue" \
-    adapter_issue_view "$issue" --json comments \
-      --jq '[.comments[] | "<!-- comment @\(.author.login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n")'
+    adapter_issue_view "$issue" --json comments --jq "$COMMENTS_JQ"
 }
 
 cmd_issue_update() {
@@ -1792,7 +1794,8 @@ cmd_pr_comment() {
   printf '%s\n' "$pr"
 }
 
-# The current branch's open PR number, for pr comment, pr fetch and pr update.
+# The current branch's open PR number, for pr comment, pr comments, pr fetch
+# and pr update.
 # Returns 1, printing nothing, when the branch has no open PR; every other
 # failure - a detached HEAD, a GitHub that cannot be read - goes through die2,
 # so a caller in a subshell can tell "no PR" apart from an error and map each
@@ -1824,6 +1827,18 @@ cmd_pr_fetch() {
     adapter_pr_view "$pr" --json body --jq .body
 }
 
+# The PR counterpart of issue comments (issue #418), so a standalone review
+# pass reads earlier passes' declines. Exits as pr comment does: 1, writing
+# nothing, only when the branch has no open PR, and 2 for everything else -
+# GitHub unreadable, a usage error, a detached HEAD - with the file untouched.
+cmd_pr_comments() {
+  [ $# -eq 1 ] || die2 "usage: orch.sh pr comments <file>"
+  local file="$1" pr
+  pr="$(current_open_pr)" || return $?
+  ( fetch_into "$file" "the comments of PR #$pr" \
+      adapter_pr_view "$pr" --json comments --jq "$COMMENTS_JQ" ) || exit 2
+}
+
 # The PR counterpart of issue update, with one guard issue update has no need
 # for: the body's first line is the Closes/Refs line open_pr wrote, and a
 # correction must never drop or change it, so a file that does not open with
@@ -1852,9 +1867,10 @@ cmd_pr() {
     publish) cmd_pr_publish "$@" ;;
     release) cmd_pr_release "$@" ;;
     comment) cmd_pr_comment "$@" ;;
+    comments) cmd_pr_comments "$@" ;;
     fetch)   cmd_pr_fetch "$@" ;;
     update)  cmd_pr_update "$@" ;;
-    *) die "unknown pr op: ${op:-<none>} (want open|publish|release|comment|fetch|update)" ;;
+    *) die "unknown pr op: ${op:-<none>} (want open|publish|release|comment|comments|fetch|update)" ;;
   esac
 }
 
@@ -2467,6 +2483,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               the branch has no open PR, 2 when GitHub
                               cannot be read, the post fails, or the call
                               is wrong (no file, detached HEAD)
+  pr comments <file>          write every comment on the current branch's
+                              open PR to <file>, as issue comments does -
+                              recording no state; no comments is an empty
+                              file. Exits 1 writing nothing when the branch
+                              has no open PR, 2 when GitHub cannot be read
+                              or the call is wrong
   pr fetch <file>             write the current branch's open PR body to
                               <file>, recording no state
   pr update <file>            replace the current branch's open PR body with

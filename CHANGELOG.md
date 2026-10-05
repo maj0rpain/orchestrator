@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.4.0
+
+A standalone review pass no longer brings back findings an earlier pass on the
+same PR already declined (see issue #418). Before it fixes anything, it reads
+the declines of every earlier review pass on the branch's PR - the PR body's
+**Review** heading (a quick implementation's pass) and every earlier
+standalone-pass comment - through the new `orch.sh pr comments <file>` and the
+existing `pr fetch`. It drops each finding that names the same file and makes
+the same claim as an earlier decline, line numbers ignored, and lists it under
+a new **Previously declined** heading in its PR comment, between **Review** and
+**Host fallbacks**. The reviewers stay fresh: their prompt is unchanged. A
+review pass's decline line now also records the finding's claim:
+`` `file:line` - <claim> - <reason> ``. `pr comments` writes every comment on
+the current branch's open PR in `issue comments`' format, exiting 1 when the
+branch has no open PR (the pass behaves as before) and 2 when GitHub cannot be
+read (the pass stops). New orch_test and docs_lint checks cover both.
+
 ## 3.3.4
 
 The Junie snippet, `docs/junie/AGENTS.md`, gains a permanent section,

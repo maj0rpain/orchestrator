@@ -134,8 +134,10 @@ fixes the findings it agrees with and records each one it declines, with its
 reason. A quick implementation takes one before its PR opens. A human may also
 ask for one on demand, against an issue and the branch they are on - after a
 quick implementation, say - which is a standalone review pass. Another look is
-another review pass. A branch or issue an active flow holds belongs to that
-flow, never to a review pass.
+another review pass. A standalone review pass drops any finding an earlier
+review pass on the same PR already declined, and lists it as previously
+declined. A branch or issue an active flow holds belongs to that flow, never
+to a review pass.
 _Avoid_: single pass, quick review
 
 ## Redo

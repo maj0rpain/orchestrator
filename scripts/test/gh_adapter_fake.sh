@@ -294,10 +294,22 @@ adapter_pr_create() {
 # Asked `--json body` (pr fetch's and pr update's read, issue #444), it
 # answers the body held in the file GH_STUB_PR_BODY names through the caller's
 # own --jq, the same way the real gh applies it, and fails on
-# GH_STUB_PR_BODY_EXIT. Logs nothing to GH_STUB_FILED - stub_gh's own
+# GH_STUB_PR_BODY_EXIT. Asked `--json comments` (pr comments' read, issue
+# #418), it applies the caller's own --jq to GH_STUB_PR_COMMENTS_JSON - the
+# same gh-shaped JSON GH_STUB_COMMENTS_JSON holds for an issue - and fails on
+# GH_STUB_PR_COMMENTS_EXIT. Logs nothing to GH_STUB_FILED - stub_gh's own
 # `pr view` branch does not either.
 adapter_pr_view() {
   local a q=""
+  if [ "${2:-}" = --json ] && [ "${3:-}" = comments ]; then
+    if [ "${GH_STUB_PR_COMMENTS_EXIT:-0}" != 0 ]; then
+      echo "gh stub: pr view refused" >&2
+      return "$GH_STUB_PR_COMMENTS_EXIT"
+    fi
+    [ "${4:-}" = --jq ] && q="${5:-}"
+    printf '%s' "${GH_STUB_PR_COMMENTS_JSON:?gh stub: GH_STUB_PR_COMMENTS_JSON is unset}" | jq -r "${q:-.}"
+    return
+  fi
   if [ "${2:-}" = --json ] && [ "${3:-}" = body ]; then
     if [ "${GH_STUB_PR_BODY_EXIT:-0}" != 0 ]; then
       echo "gh stub: pr view refused" >&2

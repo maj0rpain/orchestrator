@@ -171,8 +171,8 @@ is recorded about the check.
 Then open the PR with `bash "$ORCH" pr publish <issue> "<title>"
 <body-file>` - the same boundary `pr open` draws for a flow, kept out of
 skill prose. The body carries a **Review** heading listing every finding
-step 6 declined, with its location and reason, or `None declined.` It ends
-with a **Host fallbacks** heading listing every fallback this run took -
+step 6 declined, with its location, claim and reason, or `None declined.` It
+ends with a **Host fallbacks** heading listing every fallback this run took -
 including any the spec review in step 2 took - or `None (<host>).` It
 pushes the branch and opens the PR against the base branch `branch off`
 recorded, not as a draft. The body starts with `Closes #<issue>` when that
