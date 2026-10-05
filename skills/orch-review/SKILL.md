@@ -415,9 +415,9 @@ fallbacks go.
    relay its message and stop. It refuses a detached HEAD, the base branch,
    and an issue or branch that an active flow holds: that change belongs to
    that flow, never to a review pass. Otherwise it prints this pass's report
-   prefix, `.../iteration-NN`, and `NN` is this pass's number. Its output
-   is the report prefix, `<prefix>` from here on. Each pass on a branch
-   takes the next number, so a second pass never overwrites the first.
+   prefix, `.../iteration-NN` - `<prefix>` from here on - and `NN` is this
+   pass's number. Each pass on a branch takes the next number, so a second
+   pass never overwrites the first.
 2. **Base SHA.** Run `bash "$ORCH" branch base-sha`. That is the base
    branch's tip that `branch off` recorded, or, on a branch made without it,
    the merge-base with its base branch.
