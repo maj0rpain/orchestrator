@@ -600,11 +600,11 @@ printf '## Solo run\n' >"$fixture/skills/orch-y/SKILL.md"
 printf 'Invoke `orchestrator:orch-flow` and follow its **Doctor** section.\n' >"$fixture/commands/doctor.md"
 printf 'Do the thing.\n' >"$fixture/commands/none.md"
 printf 'Invoke `orchestrator:orch-w` and follow it.\n' >"$fixture/commands/w.md"
-printf 'Invoke `orchestrator:orch-y` and follow its **Deep run**\nsection.\n' >"$fixture/commands/deep.md"
 printf 'Invoke `orchestrator:orch-flow` and follow its **Status** section.\n' >"$fixture/commands/status.md"
 printf 'Invoke `orchestrator:orch-y` and follow it.\n' >"$fixture/commands/whole.md"
 # A command may route to a named section of a skill other than orch-flow
 # (spec-review, #185) - that section must exist in that skill.
+printf 'Invoke `orchestrator:orch-y` and follow its **Deep run**\nsection.\n' >"$fixture/commands/deep.md"
 printf 'Invoke `orchestrator:orch-y` and follow its **Solo run**\nsection.\n' >"$fixture/commands/solo.md"
 out="$(scan_command_routes "$fixture")"
 flags "the scan flags a command routed to a missing section" \
