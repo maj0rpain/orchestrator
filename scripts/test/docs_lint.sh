@@ -55,6 +55,14 @@ flags() {
     *) bad "$1" "expected a FAIL line naming '$3', got: ${out:-nothing}" ;;
   esac
 }
+# spares <test> <findings> <pattern>: the negative fixture self-test. ok when
+# no finding line matches the extended regex <pattern>, else a FAIL that
+# prints the matching finding lines.
+spares() {
+  local hits
+  hits="$(printf '%s\n' "$2" | grep -E -- "$3")"
+  if [ -z "$hits" ]; then ok "$1"; else bad "$1" "expected no finding matching '$3', got: $hits"; fi
+}
 
 FIXTURES="$(mktemp -d)"
 trap 'rm -rf "$FIXTURES"' EXIT
@@ -77,6 +85,19 @@ assert_eq "md_section exits 1 on a missing heading" \
   "$(md_section "$fixture/doc.md" "## Missing"; echo "exit $?")" "exit 1"
 assert_eq "md_section matches the heading line exactly" \
   "$(md_section "$fixture/doc.md" "## Brie"; echo "exit $?")" "exit 1"
+
+# --- spares self-test --------------------------------------------------------
+# spares runs in a subshell here, so the deliberate FAIL never reaches the count.
+echo
+echo "spares self-test"
+findings="$(printf '%s\n' 'skills/a.md:1: a problem' 'skills/b.md:2: another problem')"
+out="$(spares "probe" "$findings" '^skills/b\.md:')"
+case "$out" in
+  *"FAIL probe"*"skills/b.md:2: another problem"*) ok "spares fails on a matching finding, printing its line" ;;
+  *) bad "spares fails on a matching finding, printing its line" "got: ${out:-nothing}" ;;
+esac
+assert_eq "spares passes when no finding matches" \
+  "$(spares "probe" "$findings" '^skills/c\.md:')" "  ok   probe"
 
 # --- skill names (ADR-0014) --------------------------------------------------
 # Every orchestrator skill carries the orch- prefix. An old unprefixed name
@@ -144,10 +165,10 @@ flags "the old /orchestrator:review-spec command is flagged" "$out" "commands/b.
 flags "the old orch-review-spec skill name is flagged" "$out" "commands/c.md:1: old skill or command name"
 flags "the old orch-review-spec skill directory is flagged" "$out" "commands/d.md:1: old skill or command name"
 flags "the old orch-review-spec skill name line is flagged" "$out" "commands/e.md:1: old skill or command name"
-assert_eq "the new spec-review names are not flagged" \
-  "$(printf '%s\n' "$out" | grep -cE '^(commands/new\.md|skills/)')" "0"
-assert_eq "the live /orchestrator:review command is not flagged" \
-  "$(printf '%s\n' "$out" | grep -c '^commands/review\.md')" "0"
+spares "the new spec-review names are not flagged" \
+  "$out" '^(commands/new\.md|skills/)'
+spares "the live /orchestrator:review command is not flagged" \
+  "$out" '^commands/review\.md'
 flags "the old review skill directory is flagged" "$out" "commands/f.md:1: old skill or command name"
 flags "the old review skill name line is flagged" "$out" "commands/g.md:1: old skill or command name"
 flags "the old orchestrator:orch-plan skill name is flagged" "$out" "commands/p1.md:1: old skill or command name"
@@ -158,12 +179,12 @@ flags "a bare orch-plan mention is flagged" "$out" "commands/p5.md:1: old skill 
 flags "the old /orchestrator:plan command is flagged" "$out" "commands/p6.md:1: old skill or command name"
 flags "the old orch-plan skill directory is flagged" "$out" "commands/p7.md:1: old skill or command name"
 flags "the old orch-plan skill name line is flagged" "$out" "commands/p8.md:1: old skill or command name"
-assert_eq "the new interview names are not flagged" \
-  "$(printf '%s\n' "$out" | grep -c '^commands/interview\.md')" "0"
-assert_eq "the saved-plan scratch file is not flagged" \
-  "$(printf '%s\n' "$out" | grep -c '^commands/scratch\.md')" "0"
-assert_eq "history may name the old ones" \
-  "$(printf '%s\n' "$out" | grep -c '^docs/adr/')" "0"
+spares "the new interview names are not flagged" \
+  "$out" '^commands/interview\.md'
+spares "the saved-plan scratch file is not flagged" \
+  "$out" '^commands/scratch\.md'
+spares "history may name the old ones" \
+  "$out" '^docs/adr/'
 mkdir -p "$fixture/skills/orch-review-spec"
 : >"$fixture/commands/review-spec.md"
 mkdir -p "$fixture/skills/orch-plan"
@@ -196,8 +217,8 @@ printf -- '---\nname: orch-ok\n---\n' >"$fixture/skills/orch-ok/SKILL.md"
 out="$(scan_skill_names "$fixture")"
 flags "an unprefixed skill directory is flagged" "$out" "skills/flow/: no orch- prefix"
 flags "a skill whose name: is not its directory is flagged" "$out" "skills/orch-x/SKILL.md: name: is 'orch-y', not its directory"
-assert_eq "a prefixed skill named for its directory is not flagged" \
-  "$(printf '%s\n' "$out" | grep -c 'orch-ok')" "0"
+spares "a prefixed skill named for its directory is not flagged" \
+  "$out" 'orch-ok'
 check "every skill directory carries the orch- prefix and declares its name" "$(scan_skill_names "$PLUGIN_ROOT")"
 
 # --- orch.sh resolution (#123) ------------------------------------------------
@@ -330,7 +351,7 @@ printf 'Run `${ORCH} status`.\n' >"$fixture/README.md"
 out="$(scan_orch_bash "$fixture")"
 flags "the scan flags a quoted \$ORCH run without bash" "$out" "skills/orch-x/SKILL.md:2: runs orch.sh without bash"
 flags "the scan flags \${ORCH} run without bash" "$out" "README.md:1: runs orch.sh without bash"
-assert_eq "the scan accepts bash \"\$ORCH\"" "$(printf '%s\n' "$out" | grep -c 'SKILL.md:1:')" "0"
+spares "the scan accepts bash \"\$ORCH\"" "$out" 'SKILL.md:1:'
 check "every skill and doc runs orch.sh through bash" "$(scan_orch_bash "$PLUGIN_ROOT")"
 
 # A skill's commands name the plugin root through CLAUDE_PLUGIN_ROOT, never a
@@ -389,7 +410,7 @@ printf 'No stop text here.\n' >"$fixture/skills/orch-none/SKILL.md"
 out="$(scan_stop_text "$fixture")"
 flags "the scan flags stop text that drifts from orch-flow's" "$out" "skills/orch-drift/SKILL.md: skills-only stop text differs from orch-flow's"
 flags "the scan flags a skill with no stop text" "$out" "skills/orch-none/SKILL.md: skills-only stop text differs from orch-flow's"
-assert_eq "the scan accepts a word-for-word copy" "$(printf '%s\n' "$out" | grep -c 'orch-same')" "0"
+spares "the scan accepts a word-for-word copy" "$out" 'orch-same'
 printf 'No stop text here.\n' >"$fixture/skills/orch-flow/SKILL.md"
 flags "the scan flags orch-flow with no stop text to match" \
   "$(scan_stop_text "$fixture")" "skills/orch-flow/SKILL.md: carries no skills-only stop text"
@@ -429,8 +450,8 @@ printf -- '---\nname: orch-extra\n---\n' >"$fixture/agents/orch-extra.md"
 printf 'Start `orch-named` by name.\n' >"$fixture/docs/junie/AGENTS.md"
 out="$(scan_junie_snippet_drift "$fixture")"
 flags "the drift check flags an agent the snippet omits" "$out" "agents/orch-extra.md: not named in docs/junie/AGENTS.md"
-assert_eq "the drift check accepts an agent the snippet names" \
-  "$(printf '%s\n' "$out" | grep -c 'orch-named')" "0"
+spares "the drift check accepts an agent the snippet names" \
+  "$out" 'orch-named'
 check "the Junie snippet names every agent" "$(scan_junie_snippet_drift "$PLUGIN_ROOT")"
 
 # --- host capabilities (#127) -------------------------------------------------
@@ -630,8 +651,8 @@ flags "the scan flags an empty ## Brief section" \
   "$out" "agents/orch-lens-fidelity.md: has an empty ## Brief section"
 flags "the scan flags a lens agent with no ## Brief heading" \
   "$out" "agents/orch-lens-consistency.md: has no ## Brief section"
-assert_eq "the scan accepts a brief with content" \
-  "$(printf '%s\n' "$out" | grep -c 'orch-lens-testability')" "0"
+spares "the scan accepts a brief with content" \
+  "$out" 'orch-lens-testability'
 flags "the scan flags a brief heading back in orch-spec-review" \
   "$out" "skills/orch-spec-review/SKILL.md: carries the **Consistency brief.** heading"
 check "each lens agent owns a non-empty brief and the skill carries none" \
@@ -688,8 +709,8 @@ flags "a required heading missing from its file is flagged" \
   "$out" "skills/c/SKILL.md: missing required heading: ## Two"
 flags "required headings out of order are flagged" \
   "$out" "skills/b/SKILL.md: required heading out of order: ## Two"
-assert_eq "required headings present and in order are not flagged" \
-  "$(printf '%s\n' "$out" | grep -c '^skills/a/')" "0"
+spares "required headings present and in order are not flagged" \
+  "$out" '^skills/a/'
 check "every required heading is present and in order" \
   "$(scan_required_headings "$PLUGIN_ROOT")"
 
@@ -730,10 +751,10 @@ flags "an orch- name in docs that resolves to nothing is flagged" \
   "$out" "docs/x/d.md:1: names no skill or agent: orch-lost"
 flags "an orch- name in the README that resolves to nothing is flagged" \
   "$out" "README.md:1: names no skill or agent: orch-missing"
-assert_eq "orch- names of a skill or an agent are not flagged" \
-  "$(printf '%s\n' "$out" | grep -cE 'orch-(real|helper)$')" "0"
-assert_eq "ADRs may name an orch- name that no longer resolves" \
-  "$(printf '%s\n' "$out" | grep -c 'orch-retired')" "0"
+spares "orch- names of a skill or an agent are not flagged" \
+  "$out" 'orch-(real|helper)$'
+spares "ADRs may name an orch- name that no longer resolves" \
+  "$out" 'orch-retired'
 check "every backticked orch- name resolves to a skill or an agent" \
   "$(scan_orch_names "$PLUGIN_ROOT")"
 
@@ -788,8 +809,8 @@ flags "an agent with no tools: is flagged" "$out" "agents/orch-b.md: declares no
 flags "an agent listing Skill is flagged" "$out" "agents/orch-c.md: lists Skill"
 flags "a closer whose allowlist is not the implementer's is flagged" \
   "$out" "agents/orch-closer.md: tools: is not the implementer's"
-assert_eq "agents named for their files with a matching list are not flagged" \
-  "$(printf '%s\n' "$out" | grep -cE 'orch-(implementer|fixer)\.md')" "0"
+spares "agents named for their files with a matching list are not flagged" \
+  "$out" 'orch-(implementer|fixer)\.md'
 check "every agent is named for its file and declares a safe tools: list" \
   "$(scan_agent_frontmatter "$PLUGIN_ROOT")"
 
@@ -813,7 +834,7 @@ printf 'Run `bash "$ORCH" ticket parent 7`.\n' >"$fixture/agents/orch-b.md"
 out="$(scan_subissue_endpoints "$fixture")"
 flags "an agent calling the parent endpoint is flagged" "$out" "agents/orch-a.md:1: calls a sub-issue endpoint"
 flags "a skill calling the sub_issues endpoint is flagged" "$out" "skills/orch-x/SKILL.md:1: calls a sub-issue endpoint"
-assert_eq "ticket parent is not flagged" "$(printf '%s\n' "$out" | grep -c 'orch-b')" "0"
+spares "ticket parent is not flagged" "$out" 'orch-b'
 check "no agent or skill calls a sub-issue endpoint" "$(scan_subissue_endpoints "$PLUGIN_ROOT")"
 
 # --- flow commands in script messages -----------------------------------------
@@ -850,8 +871,8 @@ flags "a script naming a plugin command outside flow_cmd is flagged" \
   "$out" "scripts/orch.sh:9: names a plugin command outside flow_cmd"
 flags "a flow_cmd section orch-flow lacks is flagged" \
   "$out" "skills/orch-flow/SKILL.md: has no section flow_cmd names: Next phase"
-assert_eq "a comment and an existing section are not flagged" \
-  "$(printf '%s\n' "$out" | grep -cE ':8:|Starting a flow')" "0"
+spares "a comment and an existing section are not flagged" \
+  "$out" ':8:|Starting a flow'
 check "the scripts name a plugin command only through flow_cmd, whose sections exist" \
   "$(scan_flow_cmd "$PLUGIN_ROOT")"
 
@@ -893,8 +914,8 @@ flags "a snippet with no end marker is flagged" \
   "$out" "docs/junie/AGENTS.md: has 0 end markers, not 1"
 flags "a snippet whose records drift from planning-allowlist.sh is flagged" \
   "$out" "docs/junie/AGENTS.md: does not list the planning records as planning-allowlist.sh does: (CONTEXT.md, docs/adr/)"
-assert_eq "an allowlist that matches across a line break is not flagged" \
-  "$(printf '%s\n' "$out" | grep -c 'planning allowlist')" "0"
+spares "an allowlist that matches across a line break is not flagged" \
+  "$out" 'planning allowlist'
 check "the Junie snippet is marked once and lists planning-allowlist.sh's lists" \
   "$(scan_junie_planning "$PLUGIN_ROOT")"
 
@@ -921,7 +942,7 @@ printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
 out="$(scan_capability_table "$fixture")"
 flags "a row with an empty cell is flagged" "$out" "docs/host-capabilities.md:4: a row with an empty cell"
 flags "a row with a stray pipe is flagged" "$out" "docs/host-capabilities.md:5: a row with 4 cells, not 3"
-assert_eq "a filled row is not flagged" "$(printf '%s\n' "$out" | grep -cE ':(1|2|3):')" "0"
+spares "a filled row is not flagged" "$out" ':(1|2|3):'
 check "every host capability row has both hosts' cells filled" \
   "$(scan_capability_table "$PLUGIN_ROOT")"
 
