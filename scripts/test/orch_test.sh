@@ -1711,18 +1711,18 @@ git init -q --bare "$bare"
 git remote add origin "$bare"
 git push -q origin HEAD:refs/heads/main
 
-out="$("$ORCH" branch retire nosuchbranch new 2>&1)"; st=$?
+out="$(base_cmd branch retire nosuchbranch new 2>&1)"; st=$?
 assert_status "refuses a branch that does not exist" "$st" 1
 assert_contains "naming it" "$out" "nosuchbranch does not exist"
 
 git branch old-attempt
 git branch taken
-out="$("$ORCH" branch retire old-attempt taken 2>&1)"; st=$?
+out="$(base_cmd branch retire old-attempt taken 2>&1)"; st=$?
 assert_status "refuses a destination name already in use" "$st" 1
 assert_contains "naming it" "$out" "taken already exists"
 git branch -d taken
 
-out="$("$ORCH" branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$?
 assert_status "renames a branch with no upstream" "$st" 0
 assert_eq "prints the new name" "$out" "old-attempt-redo-1"
 assert_eq "the old name is gone locally" \
@@ -1732,7 +1732,7 @@ assert_eq "the new name exists" \
 
 git checkout -q -b to-retire
 git push -q -u origin to-retire
-out="$("$ORCH" branch retire to-retire to-retire-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire to-retire to-retire-redo-1 2>&1)"; st=$?
 assert_status "renames and republishes a branch with an upstream" "$st" 0
 assert_eq "prints the new name" "$out" "to-retire-redo-1"
 assert_eq "pushes the new name to origin" \
@@ -1748,7 +1748,7 @@ assert_eq "and deletes the old remote ref" \
 git checkout -q -b to-fail
 git push -q -u origin to-fail
 rm -rf "$bare"
-out="$("$ORCH" branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "dies when the push to origin fails" "$st" 1
 assert_contains "with a clear reason" "$out" "could not push"
 # The local rename happens before the push is even attempted - issue #63:
@@ -1764,7 +1764,7 @@ assert_eq "and the new name is not left dangling in its place" \
 bare2="$(mktemp -d)/origin.git"
 git init -q --bare "$bare2"
 git remote set-url origin "$bare2"
-out="$("$ORCH" branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "retrying the same rename succeeds once origin is reachable again" "$st" 0
 assert_eq "prints the new name" "$out" "to-fail-redo-1"
 assert_eq "renames locally" \
@@ -1785,7 +1785,7 @@ git branch -m to-resume to-resume-redo-1
 git push -q -u origin to-resume-redo-1
 # The old ref is deliberately left on origin, standing in for the failed
 # delete a real partial failure would leave behind.
-out="$("$ORCH" branch retire to-resume to-resume-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire to-resume to-resume-redo-1 2>&1)"; st=$?
 assert_status "resumes rather than failing on the already-gone old name" "$st" 0
 assert_eq "prints the new name" "$out" "to-resume-redo-1"
 assert_eq "and finishes the delete the earlier attempt left undone" \
@@ -1800,17 +1800,17 @@ git -C "$bare4" config receive.denyDeleteCurrentBranch refuse
 git remote set-url origin "$bare4"
 git checkout -q -b to-protect
 git push -q -u origin to-protect
-out="$("$ORCH" branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
+out="$(base_cmd branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
 assert_status "dies when the old ref genuinely cannot be deleted" "$st" 1
 assert_contains "with a clear reason" "$out" "could not delete origin/to-protect"
 
-out="$("$ORCH" branch retire 2>&1)"; st=$?
+out="$(base_cmd branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 
 # --- branch: unknown op -------------------------------------------------------
 new_repo >/dev/null
-out="$("$ORCH" branch bogus 2>&1)"; st=$?
+out="$(base_cmd branch bogus 2>&1)"; st=$?
 assert_status "branch bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
 assert_contains "naming all four" "$out" "create|off|base-sha|retire"

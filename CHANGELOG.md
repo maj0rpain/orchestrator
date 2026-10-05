@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.9.2
+
+The base branch no longer picks up a tool manager's noise (see issue #465).
+`orch.sh` exports `MISE_QUIET=1`, so a mise shim around `gh` stays silent, and
+`default_branch` accepts an answer only when it is a valid branch name: a
+multi-line answer, or the output of a `gh` that failed, falls through to
+`origin/HEAD` and then to `main` instead of being recorded as the base.
+
 ## 3.9.1
 
 Whether a severity gets filed is now answered in one place, an
