@@ -628,7 +628,7 @@ healthy_repo() {
   new_repo >/dev/null
   git remote add origin https://github.com/acme/widgets.git
   labels_doc docs/agents/triage-labels.md
-  printf '%s\n' ".orchestrator/" >>.git/info/exclude
+  printf '%s\n' ".orchestrator/" ".scratch/" >>.git/info/exclude
   stub_gh
   export CLAUDE_PLUGIN_ROOT="$PWD"
   # A throwaway HOME, so no skill store on the machine running the tests
@@ -741,6 +741,10 @@ assert_eq "issue starts unset" "$("$ORCH" state get issue)" ""
 assert_contains "excludes .orchestrator/ without touching .gitignore" \
   "$(cat .git/info/exclude)" ".orchestrator/"
 assert_eq "leaves the working tree clean" "$(git status --porcelain)" ""
+# exclude_count <line>: how many times <line> appears whole in the exclude file.
+exclude_count() { grep -cxF "$1" "$(git rev-parse --git-dir)/info/exclude" || true; }
+assert_eq "excludes .orchestrator/ exactly once" "$(exclude_count .orchestrator/)" "1"
+assert_eq "excludes .scratch/ exactly once" "$(exclude_count .scratch/)" "1"
 
 out="$("$ORCH" init other 2>&1)"; st=$?
 assert_status "refuses a second concurrent flow" "$st" 1
@@ -749,6 +753,28 @@ assert_contains "explains how to clear the active flow" "$out" "abort"
 out="$("$ORCH" init other --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "names the flag it rejected" "$out" "--bogus"
+
+# --- init git-excludes the plugin's directories once ---------------------------
+echo
+echo "init git-excludes the plugin's directories once"
+new_repo >/dev/null
+"$ORCH" init first >/dev/null
+rm -rf .orchestrator
+"$ORCH" init second >/dev/null
+assert_eq "a second init leaves .orchestrator/ excluded once" "$(exclude_count .orchestrator/)" "1"
+assert_eq "a second init leaves .scratch/ excluded once" "$(exclude_count .scratch/)" "1"
+git checkout -q -b quick/7-bar
+"$ORCH" review-pass begin 7 >/dev/null
+assert_eq "init then review-pass begin leaves .orchestrator/ excluded once" "$(exclude_count .orchestrator/)" "1"
+assert_eq "init then review-pass begin leaves .scratch/ excluded once" "$(exclude_count .scratch/)" "1"
+
+new_repo >/dev/null
+printf '%s\n' ".scratch/" >>.git/info/exclude
+"$ORCH" init third >/dev/null
+assert_eq "a .scratch/ line already present is not written again" "$(exclude_count .scratch/)" "1"
+assert_eq "and .orchestrator/ is still added beside it" "$(exclude_count .orchestrator/)" "1"
+mkdir -p .scratch && echo plan >.scratch/plan.md
+assert_eq "an untracked .scratch/ stays out of git status" "$(git status --porcelain)" ""
 
 # --- init refuses a dirty working tree ----------------------------------------
 # The git-based backstop from ADR-0013: a host with no mechanical trigger for
@@ -1505,6 +1531,7 @@ assert_eq "printing the absolute iteration-01 prefix, the slashed branch as nest
 assert_eq "creating the branch's directory" "$([ -d "$rp_dir" ] && echo yes || echo no)" "yes"
 assert_eq "records no state" "$([ -f "$top/.orchestrator/state.json" ] && echo yes || echo no)" "no"
 assert_contains "git-excludes .orchestrator/" "$(cat "$(git rev-parse --git-dir)/info/exclude")" ".orchestrator/"
+assert_contains "git-excludes .scratch/" "$(cat "$(git rev-parse --git-dir)/info/exclude")" ".scratch/"
 assert_eq "and leaves the working tree clean" "$(git status --porcelain)" ""
 echo first >"$rp_dir/iteration-01-spec.md"
 out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
@@ -2325,6 +2352,29 @@ assert_status "a missing git exclude line warns without blocking" "$st" 0
 assert_contains "counts one warn and no FAILs" \
   "$(printf '%s\n' "$out" | tail -1)" "1 warn, 0 FAIL"
 assert_contains "gives a command that adds the exclude line" "$out" "info/exclude"
+assert_contains "one warning names both missing lines" "$out" "warn  .orchestrator/, .scratch/ not git-excluded"
+remedy="$(printf '%s\n' "$out" | grep -A1 'not git-excluded' | sed -n '2s/^ *//p')"
+eval "$remedy"
+assert_eq "the remedy for both writes .orchestrator/ once" "$(exclude_count .orchestrator/)" "1"
+assert_eq "the remedy for both writes .scratch/ once" "$(exclude_count .scratch/)" "1"
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "running the remedy clears the warning" \
+  "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
+
+printf '%s\n' ".orchestrator/" >.git/info/exclude
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a missing .scratch/ line alone warns without blocking" "$st" 0
+assert_contains "and counts as one warn" "$(printf '%s\n' "$out" | tail -1)" "1 warn, 0 FAIL"
+assert_contains "the warning names .scratch/ alone" "$out" "warn  .scratch/ not git-excluded"
+remedy="$(printf '%s\n' "$out" | grep -A1 'not git-excluded' | sed -n '2s/^ *//p')"
+assert_contains "the remedy names .scratch/" "$remedy" ".scratch/"
+assert_not_contains "the remedy leaves .orchestrator/ alone" "$remedy" ".orchestrator/"
+eval "$remedy"
+assert_eq "the remedy appends .scratch/" "$(exclude_count .scratch/)" "1"
+assert_eq "without repeating .orchestrator/" "$(exclude_count .orchestrator/)" "1"
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "and clears the warning" "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
+: >.git/info/exclude
 
 # The exclude line is still truncated from the check above, so this one does
 # need a real reset before layering CLAUDE_PLUGIN_ROOT's own warning on top.

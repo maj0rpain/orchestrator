@@ -12,6 +12,10 @@
 set -euo pipefail
 
 readonly ORCH_DIR_NAME=".orchestrator"
+# The directories the plugin writes to and keeps out of git status: its flow
+# state, and .scratch/, where planning drafts land. The one list both
+# exclude_orch_dirs and doctor's exclude check read.
+readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 readonly PHASES="spec implement review done"
 readonly LABELS_DOC="docs/agents/triage-labels.md"
 readonly LABEL_LIMIT=1000
@@ -263,13 +267,17 @@ cmd_base() {
   esac
 }
 
-# Ignore the flow directory without touching a tracked .gitignore, so running
-# the orchestrator in an unfamiliar repo never dirties its working tree.
-exclude_orch_dir() {
-  local ex
+# Ignore every directory in EXCLUDED_DIRS - the flow directory and .scratch/ -
+# without touching a tracked .gitignore, so running the orchestrator in an
+# unfamiliar repo never dirties its working tree. A line already present is
+# never written again.
+exclude_orch_dirs() {
+  local ex d
   ex="$(git rev-parse --git-dir)/info/exclude"
   mkdir -p "$(dirname "$ex")"
-  grep -qxF "$ORCH_DIR_NAME/" "$ex" 2>/dev/null || printf '%s\n' "$ORCH_DIR_NAME/" >>"$ex"
+  for d in "${EXCLUDED_DIRS[@]}"; do
+    grep -qxF "$d" "$ex" 2>/dev/null || printf '%s\n' "$d" >>"$ex"
+  done
 }
 
 # --- doctor -----------------------------------------------------------------
@@ -394,7 +402,7 @@ cmd_init() {
     archive_note="$(cmd_archive)"
   fi
   mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"
-  exclude_orch_dir
+  exclude_orch_dirs
   # The budget is null until the review loop asks a human for one, and `review
   # begin` reads null as the default. The flake rerun is seeded here rather than
   # at the review phase because its allowance belongs to the flow: one per flow,
@@ -1213,7 +1221,7 @@ cmd_spec_review() {
 # review pass alike: the guard and the numbered report prefix each have one
 # right answer, so they live here rather than in skill prose. Needs no flow
 # state and may run where init never did, so it excludes the orchestrator
-# directory itself. It reads state.json only when one exists, never through
+# directories itself. It reads state.json only when one exists, never through
 # require_state, and never writes it: a branch or issue an active flow holds
 # belongs to that flow (ADR-0029). Never wipes - each pass takes the next
 # number, so a second pass on a branch never overwrites the first.
@@ -1246,7 +1254,7 @@ cmd_review_pass() {
       esac
     fi
   fi
-  exclude_orch_dir
+  exclude_orch_dirs
   local dir="$ORCH/review-pass/$branch" f n max=0
   mkdir -p "$dir"
   for f in "$dir"/iteration-[0-9][0-9]-*; do
