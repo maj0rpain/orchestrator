@@ -699,8 +699,20 @@ on_windows_bash || nojq_path="$(stub_gh; path_without_jq)"
 
 # fresh_flow <slug>: a section's own starting point - a healthy_repo with a
 # flow named <slug> just started in it, at the spec phase, cwd inside it. A
-# section that needs a later phase arranges it with state_fixture.
+# section that needs a later phase arranges it with state_fixture, or
+# review_flow for the review phase.
 fresh_flow() { healthy_repo; "$ORCH" init "$1" >/dev/null; }
+
+# review_flow <slug>: fresh_flow, then on to the review phase - leaves a flow
+# named <slug> at the review phase with the plan, spec and implement handoffs
+# complete, cwd inside it, and whatever healthy_repo exports.
+review_flow() {
+  fresh_flow "$1"
+  complete_plan_handoff "$("$ORCH" handoff path spec)"
+  complete_spec_handoff "$("$ORCH" handoff path implement)"
+  complete_implement_handoff "$("$ORCH" handoff path review)"
+  state_fixture phase review
+}
 
 # ticket_fixture: a ticket section's starting point - a healthy_repo with a
 # throwaway fake GitHub. Leaves the globals db (that fake GitHub's directory)
@@ -3960,11 +3972,7 @@ restore_suite_env
 # touches, and is asked for no handoff a loop would have written.
 echo
 echo "doctor at the review phase"
-fresh_flow reviewdoctor
-state_fixture phase review
-complete_implement_handoff "$("$ORCH" handoff path review)"
-complete_plan_handoff "$("$ORCH" handoff path spec)"
-complete_spec_handoff "$("$ORCH" handoff path implement)"
+review_flow reviewdoctor
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a review-phase flow with its three handoffs is healthy" "$st" 0
 assert_contains "counts the implement handoff among them" "$out" "handoff 03-implement.md complete"
@@ -4001,8 +4009,7 @@ restore_suite_env
 # "gh adapter (real pr ready, subprocess gh)" block right after this one.
 echo
 echo "review ready"
-fresh_flow reviewready
-state_fixture phase review
+review_flow reviewready
 state_fixture pr 7
 log="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" GH_STUB_READY_EXIT=1 "$ORCH" review ready 2>&1)"; st=$?
@@ -4022,8 +4029,7 @@ restore_suite_env
 # to `gh pr ready` rather than merely compile.
 echo
 echo "gh adapter (real pr ready, subprocess gh)"
-fresh_flow realready
-state_fixture phase review
+review_flow realready
 state_fixture pr 7
 log="$(mktemp)"
 out="$(GH_STUB_LOG="$log" "$ORCH" review ready 2>&1)"; st=$?
@@ -4046,8 +4052,7 @@ restore_suite_env
 # pr checks, subprocess gh)" block right after this section.
 echo
 echo "review ci"
-fresh_flow reviewci
-state_fixture phase review
+review_flow reviewci
 state_fixture pr 7
 export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
 export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE"
@@ -4172,8 +4177,7 @@ restore_suite_env
 # gh can take is read the same way the exit-0-with-a-pending-bucket path is.
 echo
 echo "gh adapter (real pr checks, subprocess gh)"
-fresh_flow realchecks
-state_fixture phase review
+review_flow realchecks
 state_fixture pr 7
 export ORCH_CI_GRACE=0.2 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
 log="$(mktemp)"
@@ -4474,11 +4478,7 @@ restore_suite_env
 # other way, not one review begin produced itself.
 echo
 echo "doctor: review budget check"
-fresh_flow doctorbudget
-complete_plan_handoff "$("$ORCH" handoff path spec)"
-complete_spec_handoff "$("$ORCH" handoff path implement)"
-complete_implement_handoff "$("$ORCH" handoff path review)"
-state_fixture phase review
+review_flow doctorbudget
 "$ORCH" state set budget 5
 state_fixture iteration 3
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -4500,11 +4500,7 @@ restore_suite_env
 # here, not a fresh classification doctor derives on its own.
 echo
 echo "doctor: review ci check"
-fresh_flow doctorci
-complete_plan_handoff "$("$ORCH" handoff path spec)"
-complete_spec_handoff "$("$ORCH" handoff path implement)"
-complete_implement_handoff "$("$ORCH" handoff path review)"
-state_fixture phase review
+review_flow doctorci
 state_fixture pr 40
 # A draft PR mid-review agrees with the phase, so the draft check stays quiet
 # and only the CI check's own verdict decides the exit status below.
@@ -4540,11 +4536,7 @@ restore_suite_env GH_STUB_PR_DRAFT
 # operation only half landed.
 echo
 echo "doctor: review draft check"
-fresh_flow doctordraft
-complete_plan_handoff "$("$ORCH" handoff path spec)"
-complete_spec_handoff "$("$ORCH" handoff path implement)"
-complete_implement_handoff "$("$ORCH" handoff path review)"
-state_fixture phase review
+review_flow doctordraft
 state_fixture pr 40
 export GH_STUB_PR_DRAFT=true
 out="$(GH_STUB_PR_DRAFT=true "$ORCH" doctor --flow 2>&1)"; st=$?
