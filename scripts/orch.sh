@@ -2174,8 +2174,9 @@ cmd_ticket_parent() {
   issue_parent "$n"
 }
 
-# The lookup behind `ticket parent`, shared with `ticket block`'s
-# preconditions: <n>'s parent number, or nothing when it has none.
+# The lookup behind `ticket parent`, shared with `ticket block` and
+# `ticket unblock`'s preconditions: <n>'s parent number, or nothing when it
+# has none.
 issue_parent() {
   local url
   url="$(gh api "repos/{owner}/{repo}/issues/$1" --jq '.parent_issue_url // empty')" \
@@ -2302,10 +2303,10 @@ cmd_ticket_retire() {
   rm -f "$stripped"
 }
 
-# `ticket block`'s arguments, checked before anything touches GitHub: <n>
-# and every --by entry plain issue numbers, --by required. Prints the --by
-# numbers one per line, sorted and de-duplicated, as `ticket publish
-# --blocked-by` does.
+# `ticket block` and `ticket unblock`'s arguments, checked before anything
+# touches GitHub: <n> and every --by entry plain issue numbers, --by
+# required. Prints the --by numbers one per line, sorted and de-duplicated,
+# as `ticket publish --blocked-by` does.
 ticket_edge_args() {
   local verb="$1" usage n="" by="" have_by="" b
   usage="usage: orch.sh ticket $verb <n> --by N,N,..."
@@ -2424,6 +2425,13 @@ ticket_blocked_by_rewrite() {
   rm -f "$rewritten"
 }
 
+# Blocker <b>'s database id, the id GitHub's blocked_by endpoints take. A gh
+# failure dies naming ticket <n>.
+issue_database_id() {
+  gh api "repos/{owner}/{repo}/issues/$2" --jq .id \
+    || die "gh could not read issue #$2, a blocker of ticket #$1"
+}
+
 # Adds a native blocking edge on <n> for every --by issue it lacks.
 cmd_ticket_block() {
   local args n by before want b blocker_id
@@ -2434,13 +2442,32 @@ cmd_ticket_block() {
   before="$(ticket_blockers "$n")" || exit 1
   while IFS= read -r b; do
     if printf '%s\n' "$before" | grep -qxF "$b"; then continue; fi
-    blocker_id="$(gh api "repos/{owner}/{repo}/issues/$b" --jq .id)" \
-      || die "gh could not read issue #$b, a blocker of ticket #$n"
+    blocker_id="$(issue_database_id "$n" "$b")" || exit 1
     gh api --method POST "repos/{owner}/{repo}/issues/$n/dependencies/blocked_by" \
         -F issue_id="$blocker_id" >/dev/null \
       || die "gh could not add a blocking edge from ticket #$n on #$b"
   done <<<"$by"
   want="$(printf '%s\n%s\n' "$before" "$by" | sed '/^$/d' | sort -un)"
+  ticket_edges_verify "$n" "$want"
+  ticket_blocked_by_rewrite "$n" "$want"
+}
+
+# Removes the native blocking edge on <n> for every --by issue it has.
+cmd_ticket_unblock() {
+  local args n by before want b blocker_id
+  args="$(ticket_edge_args unblock "$@")" || exit 1
+  n="$(printf '%s\n' "$args" | sed -n 1p)"
+  by="$(printf '%s\n' "$args" | sed 1d)"
+  ticket_edge_preconditions "$n" "$by"
+  before="$(ticket_blockers "$n")" || exit 1
+  while IFS= read -r b; do
+    if ! printf '%s\n' "$before" | grep -qxF "$b"; then continue; fi
+    blocker_id="$(issue_database_id "$n" "$b")" || exit 1
+    gh api --method DELETE \
+        "repos/{owner}/{repo}/issues/$n/dependencies/blocked_by/$blocker_id" >/dev/null \
+      || die "gh could not remove a blocking edge from ticket #$n on #$b"
+  done <<<"$by"
+  want="$(printf '%s\n' "$before" | grep -vxF -f <(printf '%s\n' "$by") || true)"
   ticket_edges_verify "$n" "$want"
   ticket_blocked_by_rewrite "$n" "$want"
 }
@@ -2458,7 +2485,8 @@ cmd_ticket() {
     exists)  cmd_ticket_exists "$@" ;;
     retire)  cmd_ticket_retire "$@" ;;
     block)   cmd_ticket_block "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|block)" ;;
+    unblock) cmd_ticket_unblock "$@" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|block|unblock)" ;;
   esac
 }
 
@@ -2825,6 +2853,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               by reading them back, and rewrite <n>'s body's
                               `## Blocked by` section to match. A repeat
                               writes no edge; re-running a failed run
+                              finishes it
+  ticket unblock <n> --by N,N,...
+                              remove the blocking edge on open ticket <n> for
+                              every --by sibling it has, verify the rest by
+                              reading them back, and rewrite <n>'s body's
+                              `## Blocked by` section to match (`None (can
+                              start immediately)` once none is left). A repeat
+                              removes no edge; re-running a failed run
                               finishes it
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)

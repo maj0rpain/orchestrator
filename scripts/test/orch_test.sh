@@ -536,6 +536,22 @@ ready-for-agent}"
       fi
       echo $((posted + 1)) >"$db/blocked_posted"
     fi
+    # GH_STUB_BLOCKED_DELETE_EXIT refuses every blocked_by edge DELETE;
+    # GH_STUB_BLOCKED_DELETE_OK lets that many through and refuses every later
+    # one - a multi-edge removal that dies part-way.
+    case "$api_sub" in
+      dependencies/blocked_by/*)
+        if [ "$api_method" = DELETE ] && [ "${GH_STUB_BLOCKED_DELETE_EXIT:-0}" != 0 ]; then
+          echo "gh stub: blocked_by DELETE refused" >&2; exit "$GH_STUB_BLOCKED_DELETE_EXIT"
+        fi
+        if [ "$api_method" = DELETE ] && [ -n "${GH_STUB_BLOCKED_DELETE_OK:-}" ] && [ -n "$db" ]; then
+          deleted="$(cat "$db/blocked_deleted" 2>/dev/null)"; [ -n "$deleted" ] || deleted=0
+          if [ "$deleted" -ge "$GH_STUB_BLOCKED_DELETE_OK" ]; then
+            echo "gh stub: blocked_by DELETE refused" >&2; exit 1
+          fi
+          echo $((deleted + 1)) >"$db/blocked_deleted"
+        fi ;;
+    esac
     [ "${GH_STUB_API_EXIT:-0}" = 0 ] || { echo "gh stub: api call refused" >&2; exit "$GH_STUB_API_EXIT"; }
     case "$api_sub" in
       "")
@@ -579,6 +595,17 @@ ready-for-agent}"
         else
           api_json="$(api_list_blocked_by "$api_num")"
         fi ;;
+      # GitHub's edge removal: DELETE on the blocked_by path with the
+      # blocker's database id.
+      dependencies/blocked_by/*)
+        [ "$api_method" = DELETE ] || { echo "gh stub: unscripted $api_method on '$api_path'" >&2; exit 99; }
+        if [ -n "$db" ] && [ -f "$db/blocked_by/$api_num" ]; then
+          blocker_num=$(( ${api_sub##*/} / 1000 ))
+          grep -vxF "$blocker_num" "$db/blocked_by/$api_num" >"$db/blocked_by/$api_num.tmp"
+          mv "$db/blocked_by/$api_num.tmp" "$db/blocked_by/$api_num"
+          mkdir -p "$db/blocked_written"; : >"$db/blocked_written/$api_num"
+        fi
+        api_json='{}' ;;
       *) echo "gh stub: unscripted api path '$api_path'" >&2; exit 99 ;;
     esac
     if [ -n "$api_jq" ]; then printf '%s' "$api_json" | jq -r "$api_jq"; else printf '%s\n' "$api_json"; fi
@@ -3855,6 +3882,129 @@ assert_contains "and bringing the body in line" "$(cat "$db/body/$bi")" "$(print
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket block is in the usage text" "$out" "ticket block <n> --by N,N,..."
+
+restore_suite_env GH_STUB_DB
+
+# --- ticket unblock ----------------------------------------------------------
+# Removes native blocking edges from a published, open ticket, verifies the
+# rest by reading them back (ADR-0011), and rewrites the body's `## Blocked
+# by` section to match. Idempotent, so a run that died part-way is finished
+# by running it again.
+echo
+echo "ticket unblock"
+ticket_fixture
+ua="$(GH_STUB_ISSUE_NUMBER=900 "$ORCH" ticket publish 96 "A" "$body")"
+ub="$("$ORCH" ticket publish 96 "B" "$body")"
+uc="$("$ORCH" ticket publish 96 "C" "$body")"
+ud="$("$ORCH" ticket publish 96 "D" "$body")"
+"$ORCH" ticket block "$ud" --by "$ua,$ub,$uc" >/dev/null 2>&1
+out="$("$ORCH" ticket unblock "$ud" --by "$ub" 2>&1)"; st=$?
+assert_status "unblocking one edge succeeds" "$st" 0
+assert_eq "removing that edge alone" "$(sort -n "$db/blocked_by/$ud")" "$(printf '%s\n%s' "$ua" "$uc")"
+assert_eq "and bringing the body in line" \
+  "$(cat "$db/body/$ud")" "$(printf 'Body of the issue.\n\n## Blocked by\n\n- #%s\n- #%s' "$ua" "$uc")"
+out="$("$ORCH" ticket unblock "$ud" --by "$uc,$ua,$uc" 2>&1)"; st=$?
+assert_status "unblocking several edges, one repeated, succeeds" "$st" 0
+assert_eq "removing each of them" "$(sed '/^$/d' "$db/blocked_by/$ud")" ""
+assert_eq "removing the last edge writes None (can start immediately)" \
+  "$(cat "$db/body/$ud")" "$(printf 'Body of the issue.\n\n## Blocked by\n\nNone (can start immediately)')"
+assert_eq "after unblock, ticket next lists the target again" \
+  "$("$ORCH" ticket next 96)" "$(printf '%s\n%s\n%s\n%s' "$ua" "$ub" "$uc" "$ud")"
+
+filed="$(mktemp)"
+printf 'Intro\n\n## Blocked by\n\n- #%s\n' "$ua" >"$db/body/$ud"
+out="$(GH_STUB_LOG="$filed" "$ORCH" ticket unblock "$ud" --by "$ua" 2>&1)"; st=$?
+assert_status "unblocking an edge already absent succeeds" "$st" 0
+assert_eq "writing no edge" "$(grep -c '^api DELETE' "$filed")" "0"
+assert_eq "still bringing the body section in line" \
+  "$(od -c <"$db/body/$ud")" "$(printf 'Intro\n\n## Blocked by\n\nNone (can start immediately)\n' | od -c)"
+
+out="$("$ORCH" ticket unblock abc --by "$ua" 2>&1)"; st=$?
+assert_status "refuses a target that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+out="$("$ORCH" ticket unblock "$uc" --by "$ua,x1" 2>&1)"; st=$?
+assert_status "refuses a --by list with a non-numeric entry" "$st" 1
+assert_contains "naming the list" "$out" "$ua,x1"
+out="$("$ORCH" ticket unblock "$uc" 2>&1)"; st=$?
+assert_status "refuses a missing --by" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket unblock"
+out="$("$ORCH" ticket unblock --by "$ua" 2>&1)"; st=$?
+assert_status "refuses a missing target" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket unblock"
+
+ue="$("$ORCH" ticket publish 96 "E" "$body")"
+ux="$("$ORCH" ticket publish 97 "Elsewhere" "$body")"
+uf="$("$ORCH" ticket publish 96 "F" "$body")"
+"$ORCH" ticket block "$ue" --by "$ua" >/dev/null 2>&1
+"$ORCH" ticket block "$uf" --by "$ua,$ub" >/dev/null 2>&1
+"$ORCH" ticket close "$ue" >/dev/null
+out="$("$ORCH" ticket unblock "$ue" --by "$ua" 2>&1)"; st=$?
+assert_status "refuses a closed target" "$st" 1
+assert_contains "naming it" "$out" "ticket #$ue is closed"
+assert_eq "leaving its edge" "$(cat "$db/blocked_by/$ue")" "$ua"
+out="$("$ORCH" ticket unblock 96 --by "$ua" 2>&1)"; st=$?
+assert_status "refuses a target that is not a sub-issue" "$st" 1
+assert_contains "naming it" "$out" "#96 is not a sub-issue"
+out="$("$ORCH" ticket unblock "$uf" --by "$ua,$ux" 2>&1)"; st=$?
+assert_status "refuses a --by issue under another parent" "$st" 1
+assert_contains "naming it" "$out" "#$ux is not a sub-issue of #96"
+assert_eq "the refusal removed no edge, not even the sibling one" \
+  "$(sort -n "$db/blocked_by/$uf")" "$(printf '%s\n%s' "$ua" "$ub")"
+"$ORCH" ticket block "$uf" --by "$ue" >/dev/null 2>&1
+out="$("$ORCH" ticket unblock "$uf" --by "$ue" 2>&1)"; st=$?
+assert_status "accepts a closed blocker" "$st" 0
+assert_eq "removing its edge" "$(sort -n "$db/blocked_by/$uf")" "$(printf '%s\n%s' "$ua" "$ub")"
+
+# The mismatch switch fires on reads of a listing written to; clearing the
+# mark first makes it fire only on this run's readback, after its DELETE.
+rm -f "$db/blocked_mismatch_remaining" "$db/blocked_written/$uf"
+out="$(GH_STUB_BLOCKED_MISMATCH=1 "$ORCH" ticket unblock "$uf" --by "$ub" 2>&1)"; st=$?
+assert_status "a readback that is wrong once and right on the retry succeeds" "$st" 0
+assert_eq "having removed the edge" "$(sed '/^$/d' "$db/blocked_by/$uf")" "$ua"
+rm -f "$db/blocked_mismatch_remaining" "$db/blocked_written/$uf"
+out="$(GH_STUB_BLOCKED_MISMATCH=2 "$ORCH" ticket unblock "$uf" --by "$ua" 2>&1)"; st=$?
+assert_status "a readback that is wrong twice dies" "$st" 1
+assert_contains "naming the ticket" "$out" "ticket #$uf's blocking edges did not verify"
+rm -f "$db/blocked_mismatch_remaining"
+
+ug="$("$ORCH" ticket publish 96 "G" "$body")"
+"$ORCH" ticket block "$ug" --by "$ua,$ub" >/dev/null 2>&1
+out="$(GH_STUB_BLOCKED_DELETE_EXIT=1 "$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
+assert_status "a gh that refuses the edge removal fails the command" "$st" 1
+assert_contains "naming the ticket" "$out" "gh could not remove a blocking edge from ticket #$ug on #$ua"
+out="$(GH_STUB_BLOCKED_GET_EXIT=1 "$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
+assert_status "a gh that cannot read the blockers fails the command" "$st" 1
+assert_contains "naming the ticket" "$out" "gh could not read ticket #$ug's blockers"
+out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
+assert_status "a gh that cannot read the target fails the command" "$st" 1
+assert_contains "naming the ticket" "$out" "gh could not read ticket #$ug"
+assert_eq "none of the failures removed an edge" "$(sort -n "$db/blocked_by/$ug")" "$(printf '%s\n%s' "$ua" "$ub")"
+
+out="$(GH_STUB_EDIT_EXIT=1 "$ORCH" ticket unblock "$ug" --by "$ub" 2>&1)"; st=$?
+assert_status "a gh that cannot write the body fails the command" "$st" 1
+assert_contains "naming the ticket" "$out" "gh could not rewrite ticket #$ug's ## Blocked by section"
+assert_eq "the edge it removed stays removed" "$(sed '/^$/d' "$db/blocked_by/$ug")" "$ua"
+out="$("$ORCH" ticket unblock "$ug" --by "$ub" 2>&1)"; st=$?
+assert_status "re-running after the body failure succeeds" "$st" 0
+assert_eq "finishing the body" "$(cat "$db/body/$ug")" "$(printf 'Body of the issue.\n\n## Blocked by\n\n- #%s' "$ua")"
+
+uh="$("$ORCH" ticket publish 96 "H" "$body")"
+"$ORCH" ticket block "$uh" --by "$ua,$ub,$uc" >/dev/null 2>&1
+rm -f "$db/blocked_deleted"
+out="$(GH_STUB_BLOCKED_DELETE_OK=1 "$ORCH" ticket unblock "$uh" --by "$ua,$ub" 2>&1)"; st=$?
+assert_status "a multi-edge run that dies part-way fails" "$st" 1
+assert_contains "naming the ticket" "$out" "ticket #$uh"
+assert_eq "the edge it removed stays removed" "$(sort -n "$db/blocked_by/$uh" | sed '/^$/d')" "$(printf '%s\n%s' "$ub" "$uc")"
+: >"$filed"
+out="$(GH_STUB_LOG="$filed" "$ORCH" ticket unblock "$uh" --by "$ua,$ub" 2>&1)"; st=$?
+assert_status "re-running the same command succeeds" "$st" 0
+assert_eq "removing only the edge still present" "$(grep -c '^api DELETE' "$filed")" "1"
+assert_eq "leaving the other edge" "$(sed '/^$/d' "$db/blocked_by/$uh")" "$uc"
+assert_eq "and bringing the body in line" \
+  "$(cat "$db/body/$uh")" "$(printf 'Body of the issue.\n\n## Blocked by\n\n- #%s' "$uc")"
+
+out="$("$ORCH" help 2>&1)"
+assert_contains "ticket unblock is in the usage text" "$out" "ticket unblock <n> --by N,N,..."
 
 restore_suite_env GH_STUB_DB
 
