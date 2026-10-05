@@ -92,8 +92,8 @@ next_phase_cmd() {
 # decided in one table rather than at each call site. A flow started by an
 # older release lacks keys a fresh one seeds; each reads back as its default.
 # The default applies only to a null or missing value, never to a stored false
-# (jq's `//` would treat false like null). A key outside the schema dies: a misspelt read would
-# otherwise look exactly like an unset one.
+# (jq's `//` would treat false like null). A key outside the schema dies: a
+# misspelt read would otherwise look exactly like an unset one.
 state_get() {
   local default
   case "$1" in
