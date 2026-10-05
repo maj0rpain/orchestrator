@@ -79,13 +79,16 @@ flat_text() { tr -s ' \t\n' '   ' <"${1:-/dev/stdin}"; }
 # state_fixture <key> <value>: arrange state.json directly, for the keys
 # `state set` refuses (phase, branch, pr, iteration, ...) - each owned by a
 # command whose guard a test's setup has to step around. It stores values the
-# way orch.sh's own writer does: "null" as null, all digits as a number.
+# way orch.sh's own writer does: "null" as null, "true" and "false" as a
+# boolean, all digits as a number, anything else as a string.
 state_fixture() {
   local f tmp
   f="$(git rev-parse --show-toplevel)/.orchestrator/state.json"
   tmp="$(mktemp)"
   jq --arg k "$1" --arg v "$2" '
     .[$k] = (if $v == "null" then null
+             elif $v == "true" then true
+             elif $v == "false" then false
              elif ($v | test("^[0-9]+$")) then ($v | tonumber)
              else $v end)' "$f" >"$tmp" && mv "$tmp" "$f"
 }
@@ -858,6 +861,20 @@ assert_eq "stores issue as JSON number, not string" \
   "$("$ORCH" state get | jq -r '.issue | type')" "number"
 "$ORCH" state set issue null
 assert_eq "accepts an explicit null" "$("$ORCH" state get | jq -r '.issue | type')" "null"
+for b in true false; do
+  "$ORCH" state set flake_rerun_used "$b"
+  assert_eq "stores flake_rerun_used $b as a JSON boolean" \
+    "$("$ORCH" state get | jq -r '.flake_rerun_used | type')" "boolean"
+  assert_eq "reads flake_rerun_used $b back as $b" "$("$ORCH" state get flake_rerun_used)" "$b"
+done
+for pair in unbounded:string 3:number null:null; do
+  "$ORCH" state set budget "${pair%%:*}"
+  assert_eq "stores budget ${pair%%:*} as a JSON ${pair#*:}" \
+    "$("$ORCH" state get | jq -r '.budget | type')" "${pair#*:}"
+done
+"$ORCH" state set budget false
+assert_eq "reads a stored false back as false, not the key's default" \
+  "$("$ORCH" state get budget)" "false"
 
 # --- handoff path -----------------------------------------------------------
 echo

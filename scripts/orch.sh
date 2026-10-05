@@ -91,8 +91,8 @@ next_phase_cmd() {
 # Every read of state.json goes through here, so what an absent key means is
 # decided in one table rather than at each call site. A flow started by an
 # older release lacks keys a fresh one seeds; each reads back as its default.
-# jq's `//` treats false like null, which is why the boolean keys default to
-# false rather than "". A key outside the schema dies: a misspelt read would
+# The default applies only to a null or missing value, never to a stored false
+# (jq's `//` would treat false like null). A key outside the schema dies: a misspelt read would
 # otherwise look exactly like an unset one.
 state_get() {
   local default
@@ -102,16 +102,19 @@ state_get() {
     slug|phase|issue|base|branch|pr|base_sha|budget|created|updated) default="" ;;
     *) die "unknown state key: $1" ;;
   esac
-  jq -r --arg k "$1" --arg d "$default" '.[$k] // $d | tostring' "$STATE"
+  jq -r --arg k "$1" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$STATE"
 }
 
 # The unrestricted writer behind every internal state change. "null" stores a
-# JSON null and an all-digit value a number, so a key cleared or counted here
-# reads back through state_get the way init seeded it.
+# JSON null, "true" and "false" a boolean, and an all-digit value a number, so
+# a key cleared, flagged or counted here reads back through state_get the way
+# init seeded it. Every other value is stored as a string.
 state_write() {
   local tmp; tmp="$(mktemp)"
   jq --arg k "$1" --arg v "$2" --arg now "$(now)" '
     .[$k] = (if $v == "null" then null
+             elif $v == "true" then true
+             elif $v == "false" then false
              elif ($v | test("^[0-9]+$")) then ($v | tonumber)
              else $v end)
     | .updated = $now' "$STATE" >"$tmp"
