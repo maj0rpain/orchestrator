@@ -3072,6 +3072,35 @@ assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not list sub-issues"
 unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 
+# --- ticket list -------------------------------------------------------------
+# Every sub-issue of <parent>, open or closed, one "<n> open|closed" line
+# each in publish order - what a spec review reads to find the tickets its
+# accepted edits touch, without calling a sub-issue endpoint itself.
+echo
+echo "ticket list"
+healthy_repo
+body="$(mktemp)"
+writeln 'Build the thing.' >"$body"
+db="$(mktemp -d)"
+export GH_STUB_DB="$db"
+a="$(GH_STUB_ISSUE_NUMBER=450 "$ORCH" ticket publish 90 "A" "$body")"
+b="$("$ORCH" ticket publish 90 "B" "$body" --blocked-by "$a")"
+"$ORCH" ticket close "$a" >/dev/null
+out="$("$ORCH" ticket list 90)"
+assert_eq "lists every sub-issue with its state, closed ones included, in publish order" \
+  "$out" "$(printf '450 closed\n451 open')"
+
+assert_eq "a parent with no sub-issues lists nothing" "$("$ORCH" ticket list 91)" ""
+
+out="$("$ORCH" ticket list abc 2>&1)"; st=$?
+assert_status "refuses a parent that is not a plain number" "$st" 1
+assert_contains "naming it" "$out" "abc"
+
+out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket list 90 2>&1)"; st=$?
+assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
+assert_contains "naming what failed" "$out" "gh could not list sub-issues"
+unset GH_STUB_DB CLAUDE_PLUGIN_ROOT; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
+
 # --- ticket close ------------------------------------------------------------
 echo
 echo "ticket close"
@@ -4970,10 +4999,13 @@ out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a sub-issue breakdown: redo spec succeeds" "$st" 0
 assert_eq "the parent is left with no sub-issues" \
   "$(gh api "repos/{owner}/{repo}/issues/50/sub_issues" --jq length)" "0"
+retire_msg="This ticket was retired: its spec, #50, changed and will be broken down into tickets again."
 for t in "$rt1" "$rt2" "$rt3"; do
   assert_eq "old ticket #$t is closed" "$(cat "$db/state/$t")" "closed"
-  assert_contains "old ticket #$t carries the retirement comment" \
-    "$(cat "$db/comments/$t" 2>/dev/null)" "retired by an orchestrator redo"
+  assert_contains "old ticket #$t carries the retirement comment, naming a changed spec" \
+    "$(cat "$db/comments/$t" 2>/dev/null)" "$retire_msg"
+  assert_eq "old ticket #$t carries no comment in the old redo wording" \
+    "$(grep -c "retired by an orchestrator redo" "$db/comments/$t" 2>/dev/null)" "0"
 done
 assert_eq "an open old ticket is closed as not planned" "$(cat "$db/reason/$rt1" 2>/dev/null)" "not planned"
 out="$("$ORCH" ticket exists 50 2>&1)"; st=$?
@@ -5034,7 +5066,25 @@ assert_eq "retiring the ticket it could not unlink before" \
   "$(gh api "repos/{owner}/{repo}/issues/53/sub_issues" --jq length) $(cat "$db/state/$rt4")" "0 closed"
 
 assert_eq "without commenting on it a second time" \
-  "$(grep -c "retired by an orchestrator redo" "$db/comments/$rt4")" "1"
+  "$(grep -cxF "This ticket was retired: its spec, #53, changed and will be broken down into tickets again." \
+    "$db/comments/$rt4")" "1"
+
+# A closed ticket still linked to its parent, carrying a comment in the old
+# redo wording: the state a retire that died part-way under the old wording
+# leaves. A retire now treats that comment as already posted.
+rt5="$("$ORCH" ticket publish 55 "Five" "$tbody")"
+"$ORCH" ticket close "$rt5" >/dev/null
+mkdir -p "$db/comments"
+writeln "This ticket was retired by an orchestrator redo: its spec, #55, is being redone and will be broken down into tickets again." \
+  >"$db/comments/$rt5"
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" "$ORCH" ticket retire 55 2>&1)"; st=$?
+assert_status "a closed, linked ticket with an old-wording comment: retire succeeds" "$st" 0
+assert_eq "posting no second comment on it" "$(grep -c '^issue comment' "$filed")" "0"
+assert_eq "leaving its one old-wording comment alone" "$(wc -l <"$db/comments/$rt5" | tr -d ' ')" "1"
+assert_eq "and unlinking it" "$(gh api "repos/{owner}/{repo}/issues/55/sub_issues" --jq length)" "0"
+out="$("$ORCH" ticket exists 55 2>&1)"; st=$?
+assert_status "ticket exists then finds no breakdown" "$st" 1
 
 writeln 'Intro' '```md' '## Ticket' 'example' '```' '' '## Ticket' 'Build.' >"$db/body/56"
 out="$("$ORCH" ticket retire 56 2>&1)"; st=$?

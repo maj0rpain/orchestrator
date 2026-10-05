@@ -656,6 +656,7 @@ skills/orch-review/SKILL.md|## Standalone review pass
 skills/orch-spec-review/SKILL.md|## Standalone spec review
 skills/orch-spec-review/SKILL.md|## Disposition
 skills/orch-spec-review/SKILL.md|## Applying the answer
+skills/orch-spec-review/SKILL.md|## Tickets follow the spec
 skills/orch-spec-review/SKILL.md|## The changelog'
 # scan_required_headings <plugin root> [pairs]: each listed heading missing
 # from its file, or found above the heading listed before it in that file.

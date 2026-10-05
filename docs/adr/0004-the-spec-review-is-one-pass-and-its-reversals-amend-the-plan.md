@@ -79,3 +79,7 @@ handoff - there is none - and Fidelity does not run in it, so it has no
 `contradicts the plan` items and nothing to amend. The one-pass decision is
 unchanged: inside a flow, another look is still redo; outside one, it is
 another standalone review.
+
+## Note: tickets follow the spec (2026-10-04)
+
+When the spec review's accepted edits touch an open ticket of an existing breakdown, it asks the human a second question: how the breakdown should follow the edits just accepted - per-ticket edits, or retiring the breakdown so it is broken down again. This is not a second pass. No lens runs and the spec is not reviewed again; the question only brings existing tickets in line with a spec the human has already decided. The one-pass decision is unchanged. The review may now also write the issue's tickets - their bodies, or retiring the breakdown and, in a standalone review, breaking the issue down again - and only to follow edits the human has already accepted.
