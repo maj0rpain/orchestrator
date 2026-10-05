@@ -2653,6 +2653,49 @@ state_fixture phase done
 out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a closed issue is healthy once the flow is done" "$st" 0
 assert_contains "reports it closed instead of failing" "$out" "issue #11 closed"
+
+# issue #415: a merged flow stays in done until the next init archives it
+# (ADR-0009), and deleting its branch after the merge is routine. Neither the
+# local nor the origin branch being gone is a problem then, and a push remedy
+# would recreate a branch somebody just deleted on purpose.
+assert_done_branch_gone_ok() {
+  local label="$1" out="$2"
+  assert_contains "$label: branch reports ok" "$out" "ok    branch: "
+  assert_contains "$label: upstream reports ok" "$out" "ok    upstream: "
+  assert_not_contains "$label: no missing-branch FAIL" "$out" "no longer exists"
+  assert_not_contains "$label: no unpushed warning" "$out" "not on origin yet"
+  assert_not_contains "$label: no push remedy" "$out" "git push -u origin"
+}
+state_fixture branch orch/9-merged
+out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"
+assert_done_branch_gone_ok "done, branch gone locally and on origin" "$out"
+assert_contains "names the branch as gone after merge" "$out" \
+  "branch: orch/9-merged gone - expected after merge"
+assert_contains "names no upstream as expected after merge" "$out" \
+  "upstream: none - expected after merge"
+
+state_fixture branch orch/9-gone
+out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"
+assert_done_branch_gone_ok "done, local branch kept but origin branch gone" "$out"
+
+git update-ref refs/remotes/origin/orch/9-merged HEAD
+state_fixture branch orch/9-merged
+out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"
+assert_done_branch_gone_ok "done, local branch gone but origin branch kept" "$out"
+
+# Outside done, the same states are still what they were: a review flow with
+# its branch gone has nothing to build on, and an unpushed one still needs it.
+state_fixture phase review
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a review flow with its branch gone still fails" "$st" 1
+assert_contains "still says it no longer exists" "$out" "orch/9-merged no longer exists"
+assert_contains "still gives the abort remedy" "$out" "/orchestrator:abort"
+git update-ref -d refs/remotes/origin/orch/9-merged
+
+state_fixture branch orch/9-gone
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "an unpushed review flow still warns" "$out" "not on origin yet"
+assert_contains "and still gives the push remedy" "$out" "git push -u origin orch/9-gone"
 state_fixture phase implement
 
 state_fixture pr 7

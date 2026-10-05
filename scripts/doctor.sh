@@ -614,6 +614,12 @@ check_flow_branch() {
   branch="$(state_get branch)"
   if [ -z "$branch" ]; then d_ok "branch: not created yet"; return 0; fi
   if git rev-parse --verify --quiet "$branch" >/dev/null; then d_ok "branch: $branch"; return 0; fi
+  # A done flow stays put until the next init archives it (ADR-0009), and its
+  # branch being deleted after the merge is the routine end of a flow, not a
+  # broken one - the same reading check_flow_issue gives its closed issue.
+  if [ "$(state_get phase)" = done ]; then
+    d_ok "branch: $branch gone - expected after merge"; return 0
+  fi
   d_fail "branch $branch no longer exists - the flow has nothing left to build on."
   d_remedy "$(flow_cmd abort)"
 }
@@ -633,6 +639,9 @@ check_flow_upstream() {
   local upstream=""
   upstream="$(git rev-parse --abbrev-ref --verify --quiet "$branch@{upstream}" 2>/dev/null)" || upstream=""
   if [ "$upstream" = "origin/$branch" ]; then d_ok "upstream: $upstream"; return 0; fi
+  # After the merge the remote branch is routinely deleted; a push remedy here
+  # would recreate a branch somebody removed on purpose.
+  if [ "$phase" = done ]; then d_ok "upstream: none - expected after merge"; return 0; fi
   d_warn "branch $branch is not on origin yet."
   d_remedy "git push -u origin $branch"
 }

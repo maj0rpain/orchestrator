@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.3.3
+
+`orch.sh doctor --flow` no longer flags a `done` flow whose branch was deleted
+after merge (see issue #415). In phase `done`, a branch gone locally reports
+`ok    branch: <branch> gone - expected after merge` instead of a FAIL, and a
+branch not on origin reports `ok    upstream: none - expected after merge`
+instead of a warn with a `git push -u origin` remedy. Every other phase reports
+exactly as before.
+
 ## 3.3.2
 
 Issue and PR reads no longer go through piped `--comments`, which prints only
