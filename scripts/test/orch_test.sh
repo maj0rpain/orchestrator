@@ -460,6 +460,35 @@ ready-for-agent}"
       esac
     done
     if [ -n "${GH_STUB_LOG:-}" ]; then printf 'api %s %s\n' "$api_method" "$api_path" >>"$GH_STUB_LOG"; fi
+    # review ci's CI-evidence reads (issue #476), the same GH_STUB_* vocabulary
+    # and defaults gh_adapter_fake.sh answers to: one signal present, a
+    # check-run on the base tip (main).
+    in_refs() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }
+    case "$api_path" in
+      */protection/required_status_checks)
+        case "${GH_STUB_PROTECTION:-none}" in
+          none)     echo '{"message":"Branch not protected","status":"404"}'
+                    echo "gh: Branch not protected (HTTP 404)" >&2; exit 1 ;;
+          required) echo '{"strict":false,"contexts":["build"],"checks":[{"context":"build","app_id":null}]}'; exit 0 ;;
+          notfound) echo '{"message":"Not Found","status":"404"}'
+                    echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+          *)        echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
+        esac ;;
+      */rules/branches/*)
+        case "${GH_STUB_RULES:-none}" in
+          none)     echo '[]'; exit 0 ;;
+          required) echo '[{"type":"required_status_checks"}]'; exit 0 ;;
+          *)        echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
+        esac ;;
+      */check-runs*)
+        api_ref="${api_path#repos/*/commits/}"; api_ref="${api_ref%%/check-runs*}"
+        if in_refs "$api_ref" "${GH_STUB_CHECKED_REFS-main}"; then echo '{"total_count":1}'; else echo '{"total_count":0}'; fi
+        exit 0 ;;
+      */commits/*/status)
+        api_ref="${api_path#repos/*/commits/}"; api_ref="${api_ref%/status}"
+        if in_refs "$api_ref" "${GH_STUB_STATUSED_REFS:-}"; then echo '{"total_count":1}'; else echo '{"total_count":0}'; fi
+        exit 0 ;;
+    esac
     api_rest="${api_path#repos/*/issues/}"
     case "$api_rest" in
       */*) api_num="${api_rest%%/*}"; api_sub="${api_rest#*/}" ;;
@@ -600,9 +629,12 @@ ready-for-agent}"
           if [ "$a" = number ]; then echo "${GH_STUB_PR_NUMBER:-99}"; exit 0; fi
           case "$a" in
             *headRefOid*)
-              jq -cn --arg o "${GH_STUB_PR_HEAD_OID:-0000000000000000000000000000000000000000}" \
+              o="${GH_STUB_PR_HEAD_OID:-0000000000000000000000000000000000000000}"
+              jq -cn --arg o "$o" \
                 --arg h "${GH_STUB_PR_HEAD_REF:-topic}" --arg b "${GH_STUB_PR_BASE_REF:-main}" \
-                '{headRefOid: $o, headRefName: $h, baseRefName: $b}'
+                --arg c "${GH_STUB_PR_COMMITS-$o}" \
+                '{headRefOid: $o, headRefName: $h, baseRefName: $b,
+                  commits: [$c | splits(" +") | select(. != "") | {oid: .}]}'
               exit 0 ;;
             *isDraft*) printf '%s\n%s\n' "${GH_STUB_PR_STATE:-OPEN}" "${GH_STUB_PR_DRAFT:-false}"; exit 0 ;;
           esac
@@ -4883,6 +4915,76 @@ reqn="$(mktemp)"; : >"$reqn"
 out="$(ORCH_CI_GRACE=5 GH_STUB_PR_HEAD_OID="$head_sha" GH_STUB_REQUIRED_N="$reqn" \
   GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "a fresh push still waits the grace before widening" "$out" "green"
+
+# --- the grace is skipped on no evidence of CI (issue #476) ---
+# Zero checks straight after a push is ambiguous only where the repo might have
+# CI. With no workflow in the head, nothing required on the base, and no check
+# or status on an earlier PR commit or the base tip, there is nothing to wait
+# for, and `none` arrives without the grace. Each case below uses a fresh push,
+# so the grace is unspent: `none|green` on the required probe tells the two
+# apart, green meaning the grace was waited and none that it was skipped.
+# no_ci <expected first line> <name> [VAR=value...]: one review ci call with
+# every signal absent but what the extra assignments turn back on.
+no_ci() {
+  local want="$1" name="$2"; shift 2
+  reqn="$(mktemp)"; : >"$reqn"
+  out="$(env ORCH_CI_GRACE=5 GH_STUB_PR_HEAD_OID="$head_sha" GH_STUB_CHECKED_REFS= \
+    GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=none \
+    "$@" "$ORCH" review ci 2>&1)"; st=$?
+  assert_first_line "$name" "$out" "$want"
+}
+no_ci none "with no evidence of CI anywhere, none arrives without the grace"
+assert_status "and lets the loop finish" "$st" 0
+assert_contains "saying it found no CI signals" "$out" "no CI signals found"
+assert_contains "naming the signals it looked for" "$out" "no workflow files in the head"
+
+# The other path to none: the grace waited and ran out with nothing reported.
+out="$(GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "evidence of CI keeps the grace, and none still comes after it" "$out" "none"
+assert_contains "saying the grace ran out" "$out" "grace ran out"
+assert_eq "and not that no signals were found" "$(printf '%s\n' "$out" | grep -c 'no CI signals')" "0"
+
+# The pre-check replaces only the wait: the unfiltered probe still runs, so a
+# check already reported on the head gives its verdict, not none.
+no_ci failing "with no evidence of CI, a check reported on the head still decides it" \
+  GH_STUB_REQUIRED=none GH_STUB_CHECKS=failing
+no_ci green "and a green one reads green" GH_STUB_REQUIRED=none GH_STUB_CHECKS=green
+
+# Each signal alone keeps the grace.
+wf_index="$(mktemp -u)"
+GIT_INDEX_FILE="$wf_index" git read-tree HEAD
+GIT_INDEX_FILE="$wf_index" git update-index --add --cacheinfo \
+  "100644,$(printf 'on: push\n' | git hash-object -w --stdin),.github/workflows/ci.yml"
+wf_sha="$(git commit-tree "$(GIT_INDEX_FILE="$wf_index" git write-tree)" -p HEAD -m 'add CI')"
+no_ci green "a workflow file in the head's tree keeps the grace" \
+  GH_STUB_PR_HEAD_OID="$wf_sha" GH_STUB_PR_COMMITS="$wf_sha"
+no_ci green "required checks from classic branch protection keep the grace" GH_STUB_PROTECTION=required
+no_ci green "required checks from a ruleset keep the grace" GH_STUB_RULES=required
+no_ci none "a ruleset that requires no checks is not evidence of CI" GH_STUB_RULES=other
+earlier=2222222222222222222222222222222222222222
+no_ci green "a check-run on an earlier PR commit keeps the grace" \
+  GH_STUB_PR_COMMITS="$earlier $head_sha" GH_STUB_CHECKED_REFS="$earlier"
+no_ci green "a commit status on an earlier PR commit keeps the grace" \
+  GH_STUB_PR_COMMITS="$earlier $head_sha" GH_STUB_STATUSED_REFS="$earlier"
+no_ci green "a check-run on the base tip keeps the grace" GH_STUB_CHECKED_REFS=main
+no_ci green "a commit status on the base tip keeps the grace" GH_STUB_STATUSED_REFS=main
+
+# A single-commit PR has no earlier commit: the head's own checks are what the
+# probes read, not evidence the grace is worth waiting for.
+no_ci none "a single-commit PR has no earlier-commit signal" \
+  GH_STUB_PR_COMMITS="$head_sha" GH_STUB_CHECKED_REFS="$head_sha" GH_STUB_STATUSED_REFS="$head_sha"
+
+# A signal that cannot be read counts as CI.
+no_ci green "a classic-protection 404 other than Branch not protected keeps the grace" \
+  GH_STUB_PROTECTION=notfound
+no_ci green "a protection read that fails keeps the grace" GH_STUB_PROTECTION=boom
+no_ci green "a ruleset read that fails keeps the grace" GH_STUB_RULES=boom
+no_ci green "a base-tip read that fails keeps the grace" GH_STUB_REF_READ_FAIL=main
+no_ci green "an earlier commit's read that fails keeps the grace" \
+  GH_STUB_PR_COMMITS="$earlier $head_sha" GH_STUB_REF_READ_FAIL="$earlier"
+no_ci green "a head this clone does not hold keeps the grace" \
+  GH_STUB_PR_HEAD_OID=3333333333333333333333333333333333333333
+no_ci green "a PR that will not say what its head is keeps the grace" GH_STUB_PR_REFS_EXIT=1
 unset GH_STUB_PR_HEAD_OID GH_STUB_PR_HEAD_REF
 
 state_fixture pr null
@@ -4938,6 +5040,28 @@ GH_STUB_PR_HEAD_OID="$(pushed_head topic 3600)"
 out="$(GH_STUB_PR_HEAD_OID="$GH_STUB_PR_HEAD_OID" ORCH_CI_GRACE=5 \
   GH_STUB_REQUIRED=none GH_STUB_CHECKS=none timeout 4 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "a real gh pr view anchors the grace to the push" "$out" "none"
+unset GH_STUB_PR_HEAD_OID
+
+# The real CI-evidence reads reach the same verdicts: gh api's 404 `Branch not
+# protected` reads as absent, so with nothing else present none comes at once
+# on a fresh push; a bare 404 `Not Found` keeps the grace.
+GH_STUB_PR_HEAD_OID="$(pushed_head topic)"
+reqn="$(mktemp)"; : >"$reqn"
+out="$(GH_STUB_PR_HEAD_OID="$GH_STUB_PR_HEAD_OID" ORCH_CI_GRACE=5 GH_STUB_CHECKED_REFS= \
+  GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=none \
+  timeout 4 "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "real gh api reads with no evidence of CI skip the grace" "$out" "none"
+assert_contains "and say no CI signals were found" "$out" "no CI signals found"
+reqn="$(mktemp)"; : >"$reqn"
+out="$(GH_STUB_PR_HEAD_OID="$GH_STUB_PR_HEAD_OID" ORCH_CI_GRACE=5 GH_STUB_CHECKED_REFS= \
+  GH_STUB_PROTECTION=notfound GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
+  GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "a real gh api 404 Not Found on protection keeps the grace" "$out" "green"
+reqn="$(mktemp)"; : >"$reqn"
+out="$(GH_STUB_PR_HEAD_OID="$GH_STUB_PR_HEAD_OID" ORCH_CI_GRACE=5 \
+  GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=none \
+  "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "a real gh api check-run on the base tip keeps the grace" "$out" "green"
 unset GH_STUB_PR_HEAD_OID
 
 log="$(mktemp)"
@@ -5257,6 +5381,10 @@ assert_contains "reports it" "$out" "CI: required checks green"
 out="$(GH_STUB_REQUIRED=none "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "no required checks reported is not a failure" "$st" 0
 assert_contains "reports it" "$out" "CI: no required checks reported"
+# review ci's none detail (issue #476) is added in review ci, not ci_probe,
+# so doctor's own none line is unchanged and carries neither path's detail.
+assert_eq "without review ci's none detail" \
+  "$(printf '%s\n' "$out" | grep -c 'no CI signals\|grace ran out')" "0"
 
 out="$(GH_STUB_REQUIRED=pending "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "pending required checks are not a failure yet" "$st" 0

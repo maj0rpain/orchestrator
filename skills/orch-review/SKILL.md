@@ -329,7 +329,10 @@ non-zero on the last two:
 
 - **green** - carry on.
 - **none** - the repo has no checks. Carry on: requiring CI in a repo that has
-  none would make this plugin unusable in its own repo.
+  none would make this plugin unusable in its own repo. It arrives without
+  waiting the grace when the repo shows no evidence of CI - no workflow files
+  in the head, no required checks on the base branch, and no check or status
+  on an earlier PR commit or the base tip - and its detail line says which.
 - **failing** - a required check failed, and the detail lines name which.
   Required means required by the branch protection of the PR's base branch. If it
   looks flaky rather than caused by the change, the flow has **one** flake

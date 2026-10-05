@@ -334,19 +334,92 @@ adapter_pr_view() {
   return 0
 }
 
-# adapter_pr_refs - review ci's read of the PR's head and base (issue #475),
-# mirroring stub_gh's `pr view --json headRefOid,...` arm: answers
-# GH_STUB_PR_HEAD_OID (default forty zeros, a SHA no reflog holds),
-# GH_STUB_PR_HEAD_REF (default topic) and GH_STUB_PR_BASE_REF (default main)
-# as the JSON object gh would, and fails on GH_STUB_PR_REFS_EXIT.
+# adapter_pr_refs - review ci's read of the PR's head, base and commits
+# (issues #475, #476), mirroring stub_gh's `pr view --json headRefOid,...`
+# arm: answers GH_STUB_PR_HEAD_OID (default forty zeros, a SHA no reflog or
+# object store holds), GH_STUB_PR_HEAD_REF (default topic),
+# GH_STUB_PR_BASE_REF (default main) and GH_STUB_PR_COMMITS (space-separated
+# SHAs, oldest first; default the head alone, a single-commit PR) as the JSON
+# object gh would, and fails on GH_STUB_PR_REFS_EXIT.
 adapter_pr_refs() {
   if [ "${GH_STUB_PR_REFS_EXIT:-0}" != 0 ]; then
     echo "gh stub: pr view refused" >&2
     return "$GH_STUB_PR_REFS_EXIT"
   fi
-  jq -cn --arg o "${GH_STUB_PR_HEAD_OID:-0000000000000000000000000000000000000000}" \
+  local o="${GH_STUB_PR_HEAD_OID:-0000000000000000000000000000000000000000}"
+  jq -cn --arg o "$o" \
     --arg h "${GH_STUB_PR_HEAD_REF:-topic}" --arg b "${GH_STUB_PR_BASE_REF:-main}" \
-    '{headRefOid: $o, headRefName: $h, baseRefName: $b}'
+    --arg c "${GH_STUB_PR_COMMITS-$o}" \
+    '{headRefOid: $o, headRefName: $h, baseRefName: $b,
+      commits: [$c | splits(" +") | select(. != "") | {oid: .}]}'
+}
+
+# review ci's CI-evidence reads (issue #476). The fakes default to exactly one
+# signal present - a check-run on the base branch tip - so a grace test that
+# says nothing about evidence keeps the grace; a test opts into each absence.
+#
+# adapter_branch_protection - the base branch's classic required status
+# checks. GH_STUB_PROTECTION picks gh api's answer: none (default) is the 404
+# `Branch not protected` GitHub gives an unprotected branch, required a 200
+# naming one context, notfound the bare 404 `Not Found` of a token without
+# access, boom a failed round trip.
+adapter_branch_protection() {
+  case "${GH_STUB_PROTECTION:-none}" in
+    none)     printf '%s
+' '{"message":"Branch not protected","status":"404"}'
+              echo "gh: Branch not protected (HTTP 404)" >&2; return 1 ;;
+    required) printf '%s
+' '{"strict":false,"contexts":["build"],"checks":[{"context":"build","app_id":null}]}' ;;
+    notfound) printf '%s
+' '{"message":"Not Found","status":"404"}'
+              echo "gh: Not Found (HTTP 404)" >&2; return 1 ;;
+    boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
+    *)        echo "gh stub: no protection named '$GH_STUB_PROTECTION'" >&2; return 99 ;;
+  esac
+}
+
+# adapter_branch_rules - the rules every ruleset applies to the base branch.
+# GH_STUB_RULES: none (default) is the `[]` of a branch no ruleset touches,
+# required a required_status_checks rule, other a ruleset rule that requires
+# no checks, boom a failed round trip.
+adapter_branch_rules() {
+  case "${GH_STUB_RULES:-none}" in
+    none)     printf '%s
+' '[]' ;;
+    required) printf '%s
+' '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"build"}]}}]' ;;
+    other)    printf '%s
+' '[{"type":"deletion"}]' ;;
+    boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
+    *)        echo "gh stub: no rules named '$GH_STUB_RULES'" >&2; return 99 ;;
+  esac
+}
+
+# adapter_commit_check_runs / adapter_commit_statuses - the check-runs and
+# the combined commit status of one ref (a SHA, or the base branch's name for
+# its tip). GH_STUB_CHECKED_REFS (default main, the base tip) and
+# GH_STUB_STATUSED_REFS (default none) are space-separated lists of the refs
+# that have one; a ref in GH_STUB_REF_READ_FAIL fails both reads.
+fake_ref_in() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }
+adapter_commit_check_runs() {
+  if fake_ref_in "$1" "${GH_STUB_REF_READ_FAIL:-}"; then echo "gh: Server Error (HTTP 502)" >&2; return 1; fi
+  if fake_ref_in "$1" "${GH_STUB_CHECKED_REFS-main}"; then
+    printf '%s
+' '{"total_count":1,"check_runs":[{"name":"build"}]}'
+  else
+    printf '%s
+' '{"total_count":0,"check_runs":[]}'
+  fi
+}
+adapter_commit_statuses() {
+  if fake_ref_in "$1" "${GH_STUB_REF_READ_FAIL:-}"; then echo "gh: Server Error (HTTP 502)" >&2; return 1; fi
+  if fake_ref_in "$1" "${GH_STUB_STATUSED_REFS:-}"; then
+    printf '%s
+' '{"state":"success","total_count":1,"statuses":[{"context":"ci/legacy"}]}'
+  else
+    printf '%s
+' '{"state":"pending","total_count":0,"statuses":[]}'
+  fi
 }
 
 # adapter_pr_checks - mirrors stub_gh's `pr checks` branch, the trickiest one

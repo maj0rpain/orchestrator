@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.8.0
+
+`review ci` no longer pays its 60-second grace in a repo with no CI (see issue
+#474). Before waiting, it looks for evidence of CI: workflow files in the PR
+head, required checks on the base branch (classic protection or a ruleset),
+and any check or status on an earlier PR commit or the base branch tip. With
+none of them, a PR with nothing reported is `none` at once; any signal
+present, or one it cannot read, keeps the grace. The grace itself now counts
+from the head's push, read from the remote-tracking ref's reflog, rather than
+from the call. `none` gains a detail line naming which path reached it. See
+ADR-0032.
+
 ## 3.7.1
 
 This repo's `GLOSSARY.md` now follows upstream's glossary layout (see issue
