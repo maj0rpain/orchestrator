@@ -433,3 +433,43 @@ adapter_pr_comment() {
   fi
   return 0
 }
+
+# adapter_pr_body - pr fetch's and pr update's read of a PR's body (issue
+# #444): answers the body held in the file GH_STUB_PR_BODY names through the
+# caller's own --jq, the same way the real gh applies it, and fails on
+# GH_STUB_PR_BODY_EXIT.
+adapter_pr_body() {
+  local q=""
+  if [ "${GH_STUB_PR_BODY_EXIT:-0}" != 0 ]; then
+    echo "gh stub: pr view refused" >&2
+    return "$GH_STUB_PR_BODY_EXIT"
+  fi
+  while [ $# -gt 0 ]; do
+    case "$1" in --jq) q="$2"; shift ;; esac
+    shift
+  done
+  jq -n --rawfile b "${GH_STUB_PR_BODY:?gh stub: GH_STUB_PR_BODY is unset}" '{body: $b}' | jq -r "${q:-.}"
+}
+
+# adapter_pr_edit - pr update's replacement of a PR's body (issue #444): logs
+# "pr edit <n>" plus the flags (fake_record_flags) to GH_STUB_FILED when set,
+# fails on GH_STUB_PR_EDIT_EXIT, and otherwise writes the --body-file's
+# contents into the GH_STUB_PR_BODY file, so a test reads the edit back from
+# the PR itself.
+adapter_pr_edit() {
+  local n="$1"
+  shift
+  if [ -n "${GH_STUB_FILED:-}" ]; then
+    printf 'pr edit %s\n' "$n" >>"$GH_STUB_FILED"
+    fake_record_flags "$@"
+  fi
+  if [ "${GH_STUB_PR_EDIT_EXIT:-0}" != 0 ]; then
+    echo "gh stub: pr edit refused" >&2
+    return "$GH_STUB_PR_EDIT_EXIT"
+  fi
+  while [ $# -gt 0 ]; do
+    case "$1" in --body-file) cat "$2" >"${GH_STUB_PR_BODY:?gh stub: GH_STUB_PR_BODY is unset}"; shift ;; esac
+    shift
+  done
+  return 0
+}

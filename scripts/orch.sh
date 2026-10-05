@@ -745,6 +745,15 @@ adapter_pr_comment() {
   gh pr comment "$@"
 }
 
+# pr fetch's and pr update's read of the current branch's open PR body, and pr
+# update's replacement of it (issue #444).
+adapter_pr_body() {
+  gh pr view "$@"
+}
+adapter_pr_edit() {
+  gh pr edit "$@"
+}
+
 if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
   # shellcheck disable=SC1090
   source "$ORCH_GH_ADAPTER"
@@ -1782,6 +1791,53 @@ cmd_pr_comment() {
   printf '%s\n' "$pr"
 }
 
+# The current branch's open PR, for pr fetch and pr update. Unlike pr comment,
+# no open PR is an ordinary failure here: both run where a PR is known to exist.
+current_open_pr() {
+  local branch open
+  branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  open="$(adapter_pr_list --head "$branch" --state open --json number --jq '.[].number')" \
+    || die "gh could not list the open PRs from $branch"
+  [ -n "$open" ] || die "no open PR for branch $branch"
+  first_line "$open"
+}
+
+# The PR counterpart of issue fetch: written beside the target and moved into
+# place only once gh has answered, so a failed read never leaves a partial body.
+cmd_pr_fetch() {
+  [ $# -eq 1 ] || die "usage: orch.sh pr fetch <file>"
+  local file="$1" pr tmp
+  pr="$(current_open_pr)" || exit 1
+  mkdir -p "$(dirname "$file")"
+  tmp="$(mktemp "$file.XXXXXX")"
+  if ! adapter_pr_body "$pr" --json body --jq .body >"$tmp"; then
+    rm -f "$tmp"
+    die "gh could not read the body of PR #$pr"
+  fi
+  mv "$tmp" "$file"
+}
+
+# The PR counterpart of issue update, with one guard issue update has no need
+# for: the body's first line is the Closes/Refs line open_pr wrote, and a
+# correction must never drop or change it, so a file that does not open with
+# exactly that line is refused and the body left as it was.
+cmd_pr_update() {
+  [ $# -eq 1 ] || die "usage: orch.sh pr update <file>"
+  local file="$1" pr current line
+  [ -f "$file" ] || die "body file not found: $file"
+  pr="$(current_open_pr)" || exit 1
+  current="$(adapter_pr_body "$pr" --json body --jq .body)" \
+    || die "gh could not read the body of PR #$pr"
+  line="$(first_line "$current")"
+  line="${line%$'\r'}"
+  printf '%s\n' "$line" | grep -qE '^(Closes|Refs) #[0-9]+$' \
+    || die "PR #$pr's body does not open with a Closes/Refs #<issue> line, so there is no issue line to keep - refusing to replace it"
+  [ "$(sed -n '1{s/\r$//;p;}' "$file")" = "$line" ] \
+    || die "$file must open with PR #$pr's issue line, '$line' - refusing to replace the body"
+  adapter_pr_edit "$pr" --body-file "$file" >/dev/null \
+    || die "gh could not replace the body of PR #$pr"
+}
+
 cmd_pr() {
   local op="${1:-}"
   shift || true
@@ -1790,7 +1846,9 @@ cmd_pr() {
     publish) cmd_pr_publish "$@" ;;
     release) cmd_pr_release "$@" ;;
     comment) cmd_pr_comment "$@" ;;
-    *) die "unknown pr op: ${op:-<none>} (want open|publish|release|comment)" ;;
+    fetch)   cmd_pr_fetch "$@" ;;
+    update)  cmd_pr_update "$@" ;;
+    *) die "unknown pr op: ${op:-<none>} (want open|publish|release|comment|fetch|update)" ;;
   esac
 }
 
@@ -2403,6 +2461,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               the branch has no open PR, 2 when GitHub
                               cannot be read, the post fails, or the call
                               is wrong (no file, detached HEAD)
+  pr fetch <file>             write the current branch's open PR body to
+                              <file>, recording no state
+  pr update <file>            replace the current branch's open PR body with
+                              <file>, recording no state. Refuses, leaving
+                              the body unchanged, unless <file> opens with
+                              the PR's existing Closes/Refs #<issue> line
   ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]
                               create a ticket, link it as a sub-issue of
                               <parent>, add a blocking edge for every
