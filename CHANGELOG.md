@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.3
+
+The README's Layout row for `skills/orch-spec-review/` now names the
+review's first step, the consolidation of the issue's comments, ahead of
+its lenses (see issue #369).
+
 ## 3.1.2
 
 The header comment on `orch.sh pr comment` no longer claims its exit codes
