@@ -415,9 +415,9 @@ fallbacks go.
    relay its message and stop. It refuses a detached HEAD, the base branch,
    and an issue or branch that an active flow holds: that change belongs to
    that flow, never to a review pass. Otherwise it prints this pass's report
-   prefix, `.../iteration-NN`, and `NN` is this pass's number. Each pass on
-   a branch takes the next number, so a second pass never overwrites the
-   first.
+   prefix, `.../iteration-NN` - `<prefix>` from here on - and `NN` is this
+   pass's number. Each pass on a branch takes the next number, so a second
+   pass never overwrites the first.
 2. **Base SHA.** Run `bash "$ORCH" branch base-sha`. That is the base
    branch's tip that `branch off` recorded, or, on a branch made without it,
    the merge-base with its base branch.
@@ -466,19 +466,15 @@ The issue number comes from the human: the command's argument, or the issue
 they named. With no number, ask for one and wait. Never take it from
 `state.json` or the active flow.
 
-1. **Begin.** Run `bash "$ORCH" review-pass begin <issue>`. If it dies, relay
-   its message and stop - when an active flow holds this issue or this
-   branch, the message names the command to run instead. Its output is the
-   report prefix, `<prefix>` from here on.
-2. **Base SHA.** Run `bash "$ORCH" branch base-sha`.
-3. **Run the pass**: **Review pass** steps 3 to 6, with that prefix, its
-   `NN` and that base SHA. Its declines and host fallbacks go to step 5
-   below.
-4. **Commit and push.** The fixes are one commit, as the pass says. When the
+1. **Run the pass**: **Review pass** steps 1 to 6, with the human's issue.
+   When step 1 dies because an active flow holds this issue or this branch,
+   its message names the command to run instead. The pass's declines and
+   host fallbacks go to step 3 below.
+2. **Commit and push.** The fixes are one commit, as the pass says. When the
    branch has an upstream (`git rev-parse --abbrev-ref @{upstream}`
    succeeds), push it, so an open PR shows the fixes. With no fixes there is
    nothing to commit or push.
-5. **Report.** Write `<prefix>-comment.md` with two headings, **Review** -
+3. **Report.** Write `<prefix>-comment.md` with two headings, **Review** -
    the declines, or `None declined.` - and **Host fallbacks** - each fallback
    taken, or `None (<host>).` Then run
    `bash "$ORCH" pr comment <prefix>-comment.md`:

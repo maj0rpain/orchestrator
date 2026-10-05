@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.1.5
+
+`orch-review`'s **Standalone review pass** now runs **Review pass** steps 1
+to 6 with the human's issue instead of restating its begin and base-SHA
+steps, so those are told once (see issue #351). **Review pass** step 1 now
+defines `<prefix>`. The standalone section keeps only what differs: where
+the issue number comes from, the active-flow note on `begin`'s message,
+commit and push, the report, and the edit-guard note. Behaviour does not
+change.
+
 ## 3.1.4
 
 `orch.sh`'s exit-2 failures in `pr comment` and `ticket exists` now go
