@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.7.1
+
+This repo's `GLOSSARY.md` now follows upstream's glossary layout (see issue
+#462): an `# Orchestrator` title, one `## Language` section, and the terms
+grouped under six `###` subheadings, each as a `**Term**:` entry. No term's
+name or text changed.
+
 ## 3.7.0
 
 The skills and agents now point at `GLOSSARY.md` and `GLOSSARY-MAP.md` instead
