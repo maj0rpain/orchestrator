@@ -23,7 +23,13 @@ names; the repo's existing tests are prior art for what those seams can
 observe. Report: (a) every user story or Implementation Decision that cannot
 be proven at those seams; (b) if the section names no seams, or names them
 too loosely to say what a test would observe, report that as a finding in
-its own right.
+its own right; (c) every step that changes persistent state - anything that
+outlives the step: a file, a commit, an issue or label, a recorded state
+value - but names only its success path. Such a step must name what happens
+on failure, and in every mode the spec mentions (a dry-run, a debug run, a
+flag), and the Testing Decisions must call for a test that asserts each
+branch: a branch the spec does not name has no behaviour a test could
+assert, so no seam can prove it.
 
 The spec is the body and its comments together. A comment may amend or
 extend the body, and the body will absorb it: a gap a comment fills is not a
@@ -34,6 +40,8 @@ both sides.
 
 - Report findings only, never draft edits.
 - Quote the spec line for every finding.
+- Label every (c) finding `(judgement call)`: a heuristic the human weighs,
+  never a hard violation.
 - Under 400 words.
 - Report "no findings" if there are none.
 
