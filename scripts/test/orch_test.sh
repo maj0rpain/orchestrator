@@ -2972,6 +2972,93 @@ rm -f "$errf"
 help="$("$ORCH" help)"
 assert_contains "help documents pr comment" "$help" "pr comment <file>"
 
+# --- pr fetch / pr update (#444) -----------------------------------------------
+# The PR counterpart of issue fetch/update, on the current branch's open PR, so
+# the fixer corrects a PR body without calling gh itself. pr update refuses a
+# body that would drop the Closes/Refs line pr open/pr publish wrote.
+echo
+echo "pr fetch / pr update (#444)"
+new_repo >/dev/null
+git checkout -q -b orch/12-foo
+prbody="$(mktemp)"
+writeln 'Closes #12' '' 'Adds `quote_meta`, needed for meta#ts.' >"$prbody"
+prb() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_BODY="$prbody" \
+  GH_STUB_PR_LIST_OPEN='[{"number":57}]' "$ORCH" pr "$@"; }
+
+filed="$(mktemp)"
+out_file="$(mktemp -d)/body.md"
+out="$(prb fetch "$out_file" 2>&1)"; st=$?
+assert_status "pr fetch succeeds" "$st" 0
+assert_eq "pr fetch writes the open PR's body to the file" "$(cat "$out_file")" "$(cat "$prbody")"
+assert_contains "pr fetch looks the PR up by the current branch" "$(cat "$filed")" \
+  "pr list --head orch/12-foo --state open --json number"
+
+filed="$(mktemp)"
+newbody="$(mktemp)"
+writeln 'Closes #12' '' 'Adds nothing new.' >"$newbody"
+out="$(prb update "$newbody" 2>&1)"; st=$?
+assert_status "pr update succeeds" "$st" 0
+assert_eq "pr update replaces the PR's body with the file" "$(cat "$prbody")" "$(cat "$newbody")"
+assert_contains "editing that PR" "$(cat "$filed")" "pr edit 57"
+prb fetch "$out_file" >/dev/null 2>&1
+assert_eq "a fetch after the update reads the new body back" "$(cat "$out_file")" "$(cat "$newbody")"
+
+writeln 'Refs #12' '' 'Into uat.' >"$prbody"
+writeln 'Refs #12' '' 'Into uat, corrected.' >"$newbody"
+out="$(prb update "$newbody" 2>&1)"; st=$?
+assert_status "pr update keeps a Refs line too" "$st" 0
+assert_eq "replacing the body" "$(cat "$prbody")" "$(cat "$newbody")"
+
+writeln 'Closes #12' '' 'Original body.' >"$prbody"
+before="$(cat "$prbody")"
+for bad_first in 'Adds nothing new.' 'Closes #13' 'Refs #12' ''; do
+  filed="$(mktemp)"
+  { printf '%s\n' "$bad_first"; printf '\nCorrected body.\n'; } >"$newbody"
+  err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
+  assert_status "pr update refuses a first line of '$bad_first'" "$st" 1
+  assert_eq "leaving the body unchanged ('$bad_first')" "$(cat "$prbody")" "$before"
+  assert_not_contains "and editing nothing ('$bad_first')" "$(cat "$filed")" "pr edit"
+  assert_contains "naming the line it must keep ('$bad_first')" "$err" "Closes #12"
+done
+
+writeln 'Hand-edited, no issue line.' >"$prbody"
+writeln 'Hand-edited, no issue line.' '' 'More.' >"$newbody"
+err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
+assert_status "pr update refuses when the PR's body has no Closes/Refs first line" "$st" 1
+assert_eq "leaving that body unchanged" "$(cat "$prbody")" "Hand-edited, no issue line."
+
+writeln 'Closes #12' >"$prbody"
+filed="$(mktemp)"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_BODY="$prbody" \
+  "$ORCH" pr fetch "$out_file" 2>&1)"; st=$?
+assert_status "pr fetch with no open PR fails" "$st" 1
+assert_contains "saying so" "$out" "no open PR"
+out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_BODY="$prbody" \
+  "$ORCH" pr update "$newbody" 2>&1)"; st=$?
+assert_status "pr update with no open PR fails" "$st" 1
+
+err="$(prb update /nonexistent/body.md 2>&1 >/dev/null)"; st=$?
+assert_status "pr update refuses a missing file" "$st" 1
+assert_contains "naming it" "$err" "/nonexistent/body.md"
+
+err="$(prb fetch 2>&1 >/dev/null)"; st=$?
+assert_status "pr fetch with no file argument fails" "$st" 1
+assert_contains "with its usage" "$err" "usage: orch.sh pr fetch <file>"
+err="$(prb update 2>&1 >/dev/null)"; st=$?
+assert_contains "pr update with no file argument gives its usage" "$err" "usage: orch.sh pr update <file>"
+
+writeln 'Closes #12' '' 'x' >"$newbody"
+err="$(GH_STUB_PR_EDIT_EXIT=1 prb update "$newbody" 2>&1 >/dev/null)"; st=$?
+assert_status "a failed edit fails" "$st" 1
+assert_contains "naming the PR" "$err" "#57"
+err="$(GH_STUB_PR_BODY_EXIT=1 prb fetch "$out_file" 2>&1 >/dev/null)"; st=$?
+assert_status "a failed read fails" "$st" 1
+assert_contains "naming the PR" "$err" "#57"
+
+help="$("$ORCH" help)"
+assert_contains "help documents pr fetch" "$help" "pr fetch <file>"
+assert_contains "help documents pr update" "$help" "pr update <file>"
+
 # --- gh adapter (real pr list, subprocess gh) ---------------------------------
 # pr release just proved its decisions through the in-memory fake - this is
 # the narrow assertion that its list, issue-state and create calls reach a real

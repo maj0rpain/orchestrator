@@ -152,8 +152,9 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    two directories above the `orch.sh` that `ls` printed, else two directories
    above this skill's own directory.
 
-   `Verification` reads `not run - nothing changed`, and **Fixed this
-   iteration** and **Open blocking** read `None`. Then go to step 1.
+   `Verification` reads `not run - nothing changed`, **Fixed this
+   iteration** and **Open blocking** read `None`, and **PR body** reads
+   `Not checked - no commit`. Then go to step 1.
 5. Otherwise start the **fixer** - see **The fixer** - and wait for it. Of the
    five or so lines it returns, keep two things for the rest of the loop:
    its commit SHA, for later iterations' loop-authored-lines check, and any
