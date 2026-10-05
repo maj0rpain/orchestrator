@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.3.4
+
+The Junie snippet, `docs/junie/AGENTS.md`, gains a permanent section,
+`## orchestrator plugin: finding the plugin` (see issue #416). It carries the
+`orch.sh` lookup as the skills state it, says the plugin root is two
+directories above that `orch.sh`, and says to resolve both once per session.
+It also says a hidden orch-* skill or agent is not a missing dependency: a
+hidden skill is read from `skills/<name>/SKILL.md` and followed in the
+session, and a hidden agent is started as a fresh general-purpose agent
+briefed with `agents/<name>.md`, each per its `docs/host-capabilities.md`
+section and recorded under **Host fallbacks**. Re-append the snippet to
+`~/.junie/AGENTS.md` to pick it up. A new docs_lint rule pins the section.
+
 ## 3.3.3
 
 `orch.sh doctor --flow` no longer flags a `done` flow whose branch was deleted
