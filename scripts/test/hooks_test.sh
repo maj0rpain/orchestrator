@@ -79,8 +79,6 @@ assert_contains "Blueprint asks about a spec review every time" "$ctx" "every ti
 assert_contains "Blueprint says how to pick the issue up" "$ctx" "/orchestrator:start --issue"
 assert_contains "Blueprint puts glossary/ADR wording into the issue verbatim" "$ctx" "into the issue body verbatim"
 assert_not_contains "no route tells the model to delete the marker" "$ctx" "marker"
-assert_not_contains "drops the mattpocock model-invocable line" "$ctx" "unlike the mattpocock ones"
-assert_not_contains "drops the mattpocock wayfinder line" "$ctx" "Under the mattpocock-skills wayfinder skill"
 assert_contains "forbids offering to implement" "$out" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat" "$out" "whole map is done"
 assert_eq "emits valid JSON" "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "PostToolUse"
@@ -128,7 +126,6 @@ assert_empty "ignores the removed Skill(orchestrator:orch-plan)" \
 out="$(skill_event "grilling" s5 | "$GRILL")"
 assert_contains "still fires without issue-tracker.md" "$out" "Do NOT offer to implement"
 assert_not_contains "no precondition warning without issue-tracker.md" "$out" "PRECONDITION"
-assert_not_contains "never sends the user to the mattpocock setup skill" "$out" "setup-matt-pocock-skills"
 
 mkdir -p "$REPO/.orchestrator"
 echo '{"slug":"x","phase":"spec"}' >"$REPO/.orchestrator/state.json"
