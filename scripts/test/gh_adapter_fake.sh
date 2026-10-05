@@ -365,13 +365,10 @@ adapter_pr_refs() {
 # access, boom a failed round trip.
 adapter_branch_protection() {
   case "${GH_STUB_PROTECTION:-none}" in
-    none)     printf '%s
-' '{"message":"Branch not protected","status":"404"}'
+    none)     printf '%s\n' '{"message":"Branch not protected","status":"404"}'
               echo "gh: Branch not protected (HTTP 404)" >&2; return 1 ;;
-    required) printf '%s
-' '{"strict":false,"contexts":["build"],"checks":[{"context":"build","app_id":null}]}' ;;
-    notfound) printf '%s
-' '{"message":"Not Found","status":"404"}'
+    required) printf '%s\n' '{"strict":false,"contexts":["build"],"checks":[{"context":"build","app_id":null}]}' ;;
+    notfound) printf '%s\n' '{"message":"Not Found","status":"404"}'
               echo "gh: Not Found (HTTP 404)" >&2; return 1 ;;
     boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
     *)        echo "gh stub: no protection named '$GH_STUB_PROTECTION'" >&2; return 99 ;;
@@ -384,12 +381,9 @@ adapter_branch_protection() {
 # no checks, boom a failed round trip.
 adapter_branch_rules() {
   case "${GH_STUB_RULES:-none}" in
-    none)     printf '%s
-' '[]' ;;
-    required) printf '%s
-' '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"build"}]}}]' ;;
-    other)    printf '%s
-' '[{"type":"deletion"}]' ;;
+    none)     printf '%s\n' '[]' ;;
+    required) printf '%s\n' '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"build"}]}}]' ;;
+    other)    printf '%s\n' '[{"type":"deletion"}]' ;;
     boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
     *)        echo "gh stub: no rules named '$GH_STUB_RULES'" >&2; return 99 ;;
   esac
@@ -404,21 +398,17 @@ fake_ref_in() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }
 adapter_commit_check_runs() {
   if fake_ref_in "$1" "${GH_STUB_REF_READ_FAIL:-}"; then echo "gh: Server Error (HTTP 502)" >&2; return 1; fi
   if fake_ref_in "$1" "${GH_STUB_CHECKED_REFS-main}"; then
-    printf '%s
-' '{"total_count":1,"check_runs":[{"name":"build"}]}'
+    printf '%s\n' '{"total_count":1,"check_runs":[{"name":"build"}]}'
   else
-    printf '%s
-' '{"total_count":0,"check_runs":[]}'
+    printf '%s\n' '{"total_count":0,"check_runs":[]}'
   fi
 }
 adapter_commit_statuses() {
   if fake_ref_in "$1" "${GH_STUB_REF_READ_FAIL:-}"; then echo "gh: Server Error (HTTP 502)" >&2; return 1; fi
   if fake_ref_in "$1" "${GH_STUB_STATUSED_REFS:-}"; then
-    printf '%s
-' '{"state":"success","total_count":1,"statuses":[{"context":"ci/legacy"}]}'
+    printf '%s\n' '{"state":"success","total_count":1,"statuses":[{"context":"ci/legacy"}]}'
   else
-    printf '%s
-' '{"state":"pending","total_count":0,"statuses":[]}'
+    printf '%s\n' '{"state":"pending","total_count":0,"statuses":[]}'
   fi
 }
 

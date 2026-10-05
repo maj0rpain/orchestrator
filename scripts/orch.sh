@@ -884,29 +884,31 @@ ci_push_time() {
 # over checks nobody verified - so anything this cannot read counts as CI.
 # Recomputed on every call: a workflow the PR itself adds is always seen.
 ci_evidence() {
-  local head="$1" base="$2" commits="$3" out st c
+  local head="$1" base="$2" commits="$3" out st n sha
   [ -n "$head" ] && [ -n "$base" ] || return 1
   # 1. A head this clone has never fetched is unreadable, not empty.
   git cat-file -e "$head^{commit}" 2>/dev/null || return 1
-  out="$(git ls-tree --name-only "$head" -- .github/workflows/ 2>/dev/null)" || return 1
+  # --full-tree: the pathspec is otherwise read from the current directory,
+  # and from a subdirectory an empty listing would read as no workflows.
+  out="$(git ls-tree --full-tree --name-only "$head" -- .github/workflows/ 2>/dev/null)" || return 1
   if printf '%s\n' "$out" | grep -Eq '\.ya?ml$'; then return 1; fi
   # 2. Classic protection answers 404 `Branch not protected` where there is
   # none; any other failure, a bare 404 `Not Found` from lacking access
   # included, is an answer nobody has.
   st=0; out="$(adapter_branch_protection "$base" 2>&1)" || st=$?
   if [ "$st" = 0 ]; then
-    c="$(printf '%s' "$out" | jq -r '(.contexts // []) + [(.checks // [])[] | .context] | length' 2>/dev/null)" || return 1
-    case "$c" in 0) ;; *) return 1 ;; esac
+    n="$(printf '%s' "$out" | jq -r '(.contexts // []) + [(.checks // [])[] | .context] | length' 2>/dev/null)" || return 1
+    case "$n" in 0) ;; *) return 1 ;; esac
   else
     case "$out" in *"Branch not protected"*) ;; *) return 1 ;; esac
   fi
   out="$(adapter_branch_rules "$base" 2>/dev/null)" || return 1
-  c="$(printf '%s' "$out" | jq -r '[.[] | select(.type == "required_status_checks")] | length' 2>/dev/null)" || return 1
-  [ "$c" = 0 ] || return 1
+  n="$(printf '%s' "$out" | jq -r '[.[] | select(.type == "required_status_checks")] | length' 2>/dev/null)" || return 1
+  [ "$n" = 0 ] || return 1
   # 4, then 3: the base tip is one ref, the PR's earlier commits may be many.
   ci_ref_unchecked "$base" || return 1
-  while IFS= read -r c; do
-    [ -z "$c" ] || [ "$c" = "$head" ] || ci_ref_unchecked "$c" || return 1
+  while IFS= read -r sha; do
+    [ -z "$sha" ] || [ "$sha" = "$head" ] || ci_ref_unchecked "$sha" || return 1
   done <<<"$commits"
   return 0
 }

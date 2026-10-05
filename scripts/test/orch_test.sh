@@ -478,6 +478,7 @@ ready-for-agent}"
         case "${GH_STUB_RULES:-none}" in
           none)     echo '[]'; exit 0 ;;
           required) echo '[{"type":"required_status_checks"}]'; exit 0 ;;
+          other)    echo '[{"type":"deletion"}]'; exit 0 ;;
           *)        echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
         esac ;;
       */check-runs*)
@@ -4958,6 +4959,15 @@ GIT_INDEX_FILE="$wf_index" git update-index --add --cacheinfo \
 wf_sha="$(git commit-tree "$(GIT_INDEX_FILE="$wf_index" git write-tree)" -p HEAD -m 'add CI')"
 no_ci green "a workflow file in the head's tree keeps the grace" \
   GH_STUB_PR_HEAD_OID="$wf_sha" GH_STUB_PR_COMMITS="$wf_sha"
+# git ls-tree reads its pathspec from the current directory: from a
+# subdirectory, the workflow must still be seen, not read as absent.
+mkdir -p wf-subdir
+reqn="$(mktemp)"; : >"$reqn"
+out="$(cd wf-subdir && env ORCH_CI_GRACE=5 GH_STUB_PR_HEAD_OID="$wf_sha" GH_STUB_PR_COMMITS="$wf_sha" \
+  GH_STUB_CHECKED_REFS= GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=none \
+  "$ORCH" review ci 2>&1)"
+assert_first_line "and so does one seen from a subdirectory" "$out" "green"
+rmdir wf-subdir
 no_ci green "required checks from classic branch protection keep the grace" GH_STUB_PROTECTION=required
 no_ci green "required checks from a ruleset keep the grace" GH_STUB_RULES=required
 no_ci none "a ruleset that requires no checks is not evidence of CI" GH_STUB_RULES=other
