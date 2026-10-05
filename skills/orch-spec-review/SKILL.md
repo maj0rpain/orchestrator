@@ -1,6 +1,6 @@
 ---
 name: orch-spec-review
-description: Review a spec issue once - propose folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state.
+description: Review a spec issue once - propose folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask a second question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state.
 ---
 
 # Orchestrator spec review
@@ -14,7 +14,10 @@ into the body whatever the issue's comments say that the body does not - see
 review - then read the issue, body and comments, independently, as parallel
 sub-agents that see only files. Every consolidation item and every **finding**
 they report reaches the human as a proposed edit in one batch; only the edits
-the human accepts change the issue. The issue body stays the single truth the
+the human accepts change the issue. When the issue already has a ticket
+breakdown and the accepted edits touch an open ticket, a second question asks
+how the breakdown should follow - see **Tickets follow the spec**; the review
+writes the issue's tickets only to follow edits already accepted. The issue body stays the single truth the
 implement phase reads; after a review, the comments are history.
 
 There is no budget and no second pass. In a flow's spec phase there is also
@@ -223,7 +226,8 @@ options:
   `1B, 2, 3, 5`. Any item left out is declined; a decision item left out stays
   undecided, and the changelog says so. The question text states this format.
 
-Asked once; a long spec is one longer question, not twenty prompts.
+The spec batch is asked once; a long spec is one longer question, not twenty
+prompts.
 
 ## Applying the answer
 

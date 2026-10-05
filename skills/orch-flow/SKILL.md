@@ -108,7 +108,9 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 3. Record the published issue: `bash "$ORCH" state set issue <number>`.
 4. Invoke the `orch-spec-review` skill and follow it. It owns
    the review - four lenses, one batch question, the body rewritten with what
-   the human accepts - and returns the changelog. This step is part of the
+   the human accepts, and, when the accepted edits touch an open ticket of an
+   existing breakdown, a ticket question that edits those tickets or retires
+   the breakdown - and returns the changelog. This step is part of the
    phase, not an option in it: no spec reaches the implement phase unreviewed,
    and the human's control is at the batch, where they may decline every edit.
 5. Run `bash "$ORCH" ticket exists <spec issue>` first, with the spec issue

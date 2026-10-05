@@ -68,8 +68,10 @@ options:
 review** entry on the linked issue through to its end, unchanged - the same
 review a human gets on demand: `spec-review begin <issue>`,
 three lenses with Fidelity recorded as not run, one batch question, the
-accepted edits written back to the issue body, and the changelog posted as an
-issue comment. There is no quick-specific variant: Fidelity does not run, and
+accepted edits written back to the issue body, a ticket question when those
+edits touch an open ticket of an existing breakdown - editing the tickets, or
+retiring the breakdown and running `orch-to-tickets` itself - and the
+changelog posted as an issue comment. There is no quick-specific variant: Fidelity does not run, and
 no plan file is written. If the review stops - the guard refuses, or a fetch
 or write fails - quick implementation stops too: relay the review's message
 and do not go on to step 3. Note every host fallback the review takes, and
