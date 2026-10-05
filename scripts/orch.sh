@@ -1503,11 +1503,12 @@ cmd_pr_release() {
 
 # A stateless post on the current branch's open PR, the PR counterpart of
 # issue comment - for a standalone review pass, which records its declines
-# there. Three outcomes, as ticket exists signals them: 0 posted (printing the
-# PR number), 1 only when the branch has no open PR, and 2 for everything
-# else - GitHub unreadable, a failed post, a usage error, a missing file, a
-# detached HEAD. The exit-2 cases exit explicitly, since die exits 1 and a
-# caller reading 1 would take a failure for "no PR".
+# there. Three outcomes: 0 posted (printing the PR number), 1 only when the
+# branch has no open PR, and 2 for everything else - GitHub unreadable, a
+# failed post, a usage error, a missing file, a detached HEAD. The exit-2
+# cases exit explicitly, since die exits 1 and a caller reading 1 would take
+# a failure for "no PR". Only the GitHub-unreadable rule is shared with ticket
+# exists: a GitHub that cannot be read exits 2, never 1.
 cmd_pr_comment() {
   if [ $# -ne 1 ]; then
     printf 'orch: usage: orch.sh pr comment <file>\n' >&2
