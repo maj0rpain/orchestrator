@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.1
+
+`.scratch/`, where planning drafts land, is now kept out of `git status`
+alongside `.orchestrator/` (see issue #423). `orch.sh init` and `orch.sh
+review-pass begin` add both lines to `.git/info/exclude`, never writing one
+twice. Doctor's exclude check covers both: still one warn-only check, whose
+warning names each missing line and whose remedy appends only those.
+
 ## 3.3.0
 
 The review loop's fixer now re-checks the PR body after each fix commit (see
