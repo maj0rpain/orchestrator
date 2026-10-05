@@ -1,10 +1,13 @@
-# Glossary
+# Orchestrator
 
 The vocabulary this repo uses to talk about itself. Glossary only: no
 implementation details, no spec, no decisions. Decisions live in `docs/adr/`.
 
-## Flow
+## Language
 
+### Flow and phases
+
+**Flow**:
 One run of the pipeline, from an approved plan to a pull request. A flow is
 identified by its slug and holds exactly one issue, one branch, and one PR. One
 flow at a time per checkout - except a flow at phase `done`, which doesn't
@@ -12,8 +15,7 @@ count against that limit: it no longer blocks a new one, which archives it
 automatically rather than requiring it be cleared by hand. Its alternative,
 for changes that don't need the pipeline, is a quick implementation.
 
-## Base branch
-
+**Base branch**:
 The branch a flow or quick implementation forks from and opens its PR
 against. The repo's default branch unless a human has set another for the
 checkout - an integration branch such as `uat`, or a long-running feature
@@ -24,8 +26,7 @@ branch's tip at the moment it branched. A quick implementation's base SHA
 means the same, recorded on its branch.
 _Avoid_: target branch, integration branch (as the general term).
 
-## Release PR
-
+**Release PR**:
 The PR that carries a base branch other than the default back into the
 default branch, closing every still-open issue whose work reached the base
 branch. Those issues stay open until it merges: a PR into a non-default base
@@ -33,33 +34,7 @@ branch refers to its issue rather than closing it, because the work has not
 landed yet. Which issues it closes is read from what merged into the base
 branch, never remembered by a human.
 
-## Quick implementation
-
-The other route from an approved plan to a pull request, alongside a flow.
-Chosen once, by a human, at the close of a planning session - never assumed by
-the model. Skips the plan/spec/implement/review pipeline entirely: no phases,
-no handoff, no `.orchestrator/state.json`. Still produces its own branch and
-PR, and is still held to this project's standards for how a change gets made -
-test-driven, reviewed, then opened as a PR. Its review is a review pass, and
-it names what it declines in the PR. It
-offers a spec review of its linked issue before its ticket breakdown - the
-human's choice, asked on every run - and skips that breakdown when the linked
-issue is a blueprint, including when its spec review retired the blueprint's
-breakdown and broke the issue down again.
-
-## Blueprint
-
-Everything a change needs before implementation, published and carried no
-further: its spec issue, reviewed if the human chose to, and its ticket
-breakdown. Chosen once, by a human, at the close of a planning session, as
-the alternative to starting a flow or a quick implementation. A flow later
-adopts it, or a quick implementation links it; either way its ticket
-breakdown is already published and is not run again, unless a spec review
-changes the spec and the human retires that breakdown.
-_Avoid_: planning-only, parked spec, banked spec.
-
-## Doctor
-
+**Doctor**:
 A diagnostic surface a maintainer or agent can run at any time, via the
 `doctor` command, to check that the machine, the repo, and the active flow are
 sound. Organized into named scopes - `--env`, `--flow` - with bare `doctor`
@@ -67,30 +42,7 @@ covering everything. Every check it runs reports through one of three states -
 `ok`, `warn`, or `FAIL` - and the overall report reflects the worst state seen
 without aborting partway through.
 
-## Ticket breakdown
-
-The set of sub-issues published against a spec issue (a flow's, a quick
-implementation's linked issue, or a blueprint's) - each one a sub-issue of that
-parent, not a second issue the flow or quick implementation now holds, and
-may block, or be blocked by, other tickets in the same breakdown. When the
-approved breakdown resolves to 0 or 1 tickets, no sub-issue is published at
-all: the drafted ticket's content, if there is one, is folded into the
-parent issue's own body instead, and the parent is worked directly as if it
-were the sole ticket - a breakdown of one, collapsed onto its own parent
-rather than split out beneath it.
-
-## Ticket subagent
-
-The fresh, non-fork agent that builds exactly one ticket of a ticket
-breakdown, test-first, and checks its own work against that ticket's
-acceptance criteria before reporting. It never reviews its work beyond that
-check: review belongs to the review loop, or to a review pass. It reports back
-structurally instead of blocking on a human; a criterion it cannot meet alone
-is reported as unmet, for the review loop's Spec axis to judge. Used in the
-implement phase and in quick implementation.
-
-## Phase
-
+**Phase**:
 One of the four stages a flow passes through: **plan**, **spec**, **implement**,
 **review**. Each phase runs in its own session with no memory of the previous
 one - with one deliberate exception: a review loop drives all of its iterations
@@ -105,43 +57,13 @@ one that just finished.
 A flow leaves a phase only once the handoff it writes for the next one is
 valid; the step back of a Redo retires the handoffs it makes stale.
 
-## Handoff
-
+**Handoff**:
 The written record one phase leaves for the next, and the only thing that
 crosses a phase boundary. A handoff references artefacts that already exist (an
 issue, a PR, a diff) and states what exists nowhere else: reasoning, rejected
 options, deviations.
 
-## Review loop
-
-One run of the review phase in one session: a budget of iterations, every one a
-fresh review of the whole change from the base SHA, ending in a terminal state.
-The session that runs it is the loop's **driver**: it starts the reviewers,
-triages what they report, and decides the terminal state, but never edits the
-change itself - that is the fixer's work, and filing is the closer's - except
-on a host with no fresh subagent, where it does their work itself (see
-**Driver**).
-A flow runs a loop each time it enters the review phase; a flow's loops share
-one iteration numbering, and only a human decides that a further loop happens.
-That further-loop decision is re-entry, not Redo: re-entry reviews the same
-accepted change for more looks, Redo disowns it.
-
-## Review pass
-
-One look at a change by the two reviewers a review loop starts, with no loop
-around it: no budget, no severity, nothing filed. The session that starts it
-fixes the findings it agrees with and records each one it declines, with its
-reason. A quick implementation takes one before its PR opens. A human may also
-ask for one on demand, against an issue and the branch they are on - after a
-quick implementation, say - which is a standalone review pass. Another look is
-another review pass. A standalone review pass drops any finding an earlier
-review pass on the same PR already declined, and lists it as previously
-declined. A branch or issue an active flow holds belongs to that flow, never
-to a review pass.
-_Avoid_: single pass, quick review
-
-## Redo
-
+**Redo**:
 A deliberate step back to re-run a phase whose output was wrong - never the
 review loop's own re-entry, which reruns the *same* accepted change for more
 looks. `state.phase` names the phase that runs next, so redoing the phase that
@@ -155,91 +77,72 @@ that on its own. Redoing back to `spec` re-reviews the flow's existing issue by
 default, rather than publishing a second one, and retires that issue's ticket
 breakdown so the redone spec is broken down again.
 
-## Budget
-
-The number of iterations a review loop runs, chosen by a human when the loop
-starts - five unless they say otherwise. A loop runs its whole budget: finding
-nothing does not end it early, because every iteration is an independent look
-at the same change, and the value of the loop is in the number of looks.
-
-## Iteration
-
-One pass within a review loop: review the change, triage what came back, fix
-what the loop fixes, verify. Iterations are numbered from 1 and run on across a
-flow's loops; a flow that has run none sits at 0. A loop runs as many as its
-budget allows. A review pass labels its reviewer prompts with its own pass
-number, counted from `01` on each branch; it is not part of a loop.
-
-## Clean iteration
-
-An iteration whose triage left nothing to fix, so no fixer ran. An iteration
-whose fixer ran but fixed nothing is not clean: its triage found something to
-fix, and whatever blocking finding the fixer could not fix is now **open
-blocking**.
-
-A loop finishes **Ready** only on a clean final iteration that leaves no open
-blocking finding - one found in this iteration or carried in from an earlier
-one - and no **missing look**, with CI green or absent. Anything else is a
-bounded stop.
-
-## Driver
-
-The session that runs a review loop. It starts the reviewers, the fixer and
-the closer, triages what the reviewers report, waits on CI, and decides the
-terminal state. It does not edit the change: every line the loop fixes is the
-fixer's, and filing is the closer's. The one exception is a host with no fresh
-subagent: there the driver takes the host-capabilities **Start a fresh
-subagent** fallback, does the fixer's and the closer's work in its own
-session, and records that as a host fallback.
-
-## Reviewer
-
-A fresh agent a review loop's driver starts for one axis - Standards or Spec -
-in one iteration. It reviews the whole change from the base SHA, never from
-the previous iteration's HEAD, and writes its findings, unranked, to a report
-file. Two reviewers run every iteration, one per axis. A review pass starts
-the same two reviewers once, outside any loop.
-_Avoid_: spec review (for the Spec-axis reviewer or its report).
-
-## Open blocking
-
-A blocking finding the fixer could not fix. It is never filed: it carries into
-the next iteration's triage - and, when a loop ends, into a re-entry's first
-iteration - until a fixer fixes it, and while it stands in the final record it
-blocks **Ready**.
-
-## Missing look
-
-An axis whose reviewer failed twice in one iteration, so that iteration
-reviewed the change along the other axis only. A missing look in the final
-iteration blocks **Ready**: nothing looked along that axis last.
-
-## Fixer
-
-A fresh agent a review loop's driver starts within an iteration, and only when
-triage left something the loop fixes. It fixes, verifies, commits, corrects
-any PR body statement its commit left unsupported, writes the iteration's
-review record, and ends with the iteration: one fixer never sees another
-iteration's work except through the records.
-
-## Closer
-
-A fresh agent a review loop's driver starts once, at termination, to turn the
-loop's unfixed findings into filed findings and tell the PR what the loop did.
-It reads only this loop's review records, and files nothing the driver's
-triage marked met again; whether a finding is already filed is the driver's
-call, never the closer's.
-
-## Adopted issue
-
+**Adopted issue**:
 An issue given to a flow at init, instead of one the spec phase publishes.
 Checked once, at init, for existing, open, and carrying the `ready-for-agent`
 triage label; the spec phase then skips writing a spec entirely and runs the
 spec review straight against it.
 _Avoid_: existing issue, pre-existing issue, given issue.
 
-## Spec review
+**Planning allowlist**:
+The files a planning session may legitimately change: agent docs, and
+scratch and flow-state files. Anything outside it is either source, which
+planning never touches, or a record - the glossary and ADRs - which planning
+never changes in place: a change planning decides for a record is written
+word for word into the spec, or into the linked issue's body for a quick
+implementation, and lands with the change it describes. The edit
+guard denies edits outside it while planning, on a host where the guard
+arms - not Junie (ADR-0025) - and a flow at `done` does not disarm it. A flow
+will not start while the working tree has changes outside it (ADR-0013).
 
+### Quick implementation and blueprint
+
+**Quick implementation**:
+The other route from an approved plan to a pull request, alongside a flow.
+Chosen once, by a human, at the close of a planning session - never assumed by
+the model. Skips the plan/spec/implement/review pipeline entirely: no phases,
+no handoff, no `.orchestrator/state.json`. Still produces its own branch and
+PR, and is still held to this project's standards for how a change gets made -
+test-driven, reviewed, then opened as a PR. Its review is a review pass, and
+it names what it declines in the PR. It
+offers a spec review of its linked issue before its ticket breakdown - the
+human's choice, asked on every run - and skips that breakdown when the linked
+issue is a blueprint, including when its spec review retired the blueprint's
+breakdown and broke the issue down again.
+
+**Blueprint**:
+Everything a change needs before implementation, published and carried no
+further: its spec issue, reviewed if the human chose to, and its ticket
+breakdown. Chosen once, by a human, at the close of a planning session, as
+the alternative to starting a flow or a quick implementation. A flow later
+adopts it, or a quick implementation links it; either way its ticket
+breakdown is already published and is not run again, unless a spec review
+changes the spec and the human retires that breakdown.
+_Avoid_: planning-only, parked spec, banked spec.
+
+**Ticket breakdown**:
+The set of sub-issues published against a spec issue (a flow's, a quick
+implementation's linked issue, or a blueprint's) - each one a sub-issue of that
+parent, not a second issue the flow or quick implementation now holds, and
+may block, or be blocked by, other tickets in the same breakdown. When the
+approved breakdown resolves to 0 or 1 tickets, no sub-issue is published at
+all: the drafted ticket's content, if there is one, is folded into the
+parent issue's own body instead, and the parent is worked directly as if it
+were the sole ticket - a breakdown of one, collapsed onto its own parent
+rather than split out beneath it.
+
+**Ticket subagent**:
+The fresh, non-fork agent that builds exactly one ticket of a ticket
+breakdown, test-first, and checks its own work against that ticket's
+acceptance criteria before reporting. It never reviews its work beyond that
+check: review belongs to the review loop, or to a review pass. It reports back
+structurally instead of blocking on a human; a criterion it cannot meet alone
+is reported as unmet, for the review loop's Spec axis to judge. Used in the
+implement phase and in quick implementation.
+
+### Spec review
+
+**Spec review**:
 One look at a spec issue, taken once. Usually a step of a flow's spec phase,
 after the issue exists - published by the spec phase or already adopted at
 init - and before its handoff is written. A human may also ask for one on
@@ -257,8 +160,7 @@ breakdown should follow: edits to the tickets the change touches, or retiring
 the breakdown so the issue is broken down again. A spec review runs once - it is not a loop and has no budget;
 another look is another spec review.
 
-## Consolidation item
-
+**Consolidation item**:
 One proposed edit in a spec review that folds into the spec body what an
 issue comment says and the body does not - a triage agent brief, a
 follow-up. The review's own session drafts it, never a lens, and it reaches
@@ -268,8 +170,7 @@ other become one decision item instead. A comment that opens with a
 `## Spec review` heading is the review's own history and never produces one.
 _Avoid_: fold (as a noun), proposed fold.
 
-## Lens
-
+**Lens**:
 One of the four angles a spec review takes, each answering one question of the
 spec and nothing else:
 
@@ -286,16 +187,147 @@ Findings stay with the lens that reported them and are never ranked across
 lenses. Fidelity needs a plan, so a standalone spec review runs without it and
 records it as not run.
 
-## Seam
-
+**Seam**:
 The public boundary a test observes behaviour at. Seams are agreed with a human
 in the spec phase, recorded in the spec and its handoff, and that agreement is
 the only one: the implement phase tests at the seams it is given and does not
 re-ask. A seam the code turns out not to allow is a deviation, recorded like
 any other.
 
-## Finding
+### Review loop
 
+**Review loop**:
+One run of the review phase in one session: a budget of iterations, every one a
+fresh review of the whole change from the base SHA, ending in a terminal state.
+The session that runs it is the loop's **driver**: it starts the reviewers,
+triages what they report, and decides the terminal state, but never edits the
+change itself - that is the fixer's work, and filing is the closer's - except
+on a host with no fresh subagent, where it does their work itself (see
+**Driver**).
+A flow runs a loop each time it enters the review phase; a flow's loops share
+one iteration numbering, and only a human decides that a further loop happens.
+That further-loop decision is re-entry, not Redo: re-entry reviews the same
+accepted change for more looks, Redo disowns it.
+
+**Review pass**:
+One look at a change by the two reviewers a review loop starts, with no loop
+around it: no budget, no severity, nothing filed. The session that starts it
+fixes the findings it agrees with and records each one it declines, with its
+reason. A quick implementation takes one before its PR opens. A human may also
+ask for one on demand, against an issue and the branch they are on - after a
+quick implementation, say - which is a standalone review pass. Another look is
+another review pass. A standalone review pass drops any finding an earlier
+review pass on the same PR already declined, and lists it as previously
+declined. A branch or issue an active flow holds belongs to that flow, never
+to a review pass.
+_Avoid_: single pass, quick review
+
+**Budget**:
+The number of iterations a review loop runs, chosen by a human when the loop
+starts - five unless they say otherwise. A loop runs its whole budget: finding
+nothing does not end it early, because every iteration is an independent look
+at the same change, and the value of the loop is in the number of looks.
+
+**Iteration**:
+One pass within a review loop: review the change, triage what came back, fix
+what the loop fixes, verify. Iterations are numbered from 1 and run on across a
+flow's loops; a flow that has run none sits at 0. A loop runs as many as its
+budget allows. A review pass labels its reviewer prompts with its own pass
+number, counted from `01` on each branch; it is not part of a loop.
+
+**Clean iteration**:
+An iteration whose triage left nothing to fix, so no fixer ran. An iteration
+whose fixer ran but fixed nothing is not clean: its triage found something to
+fix, and whatever blocking finding the fixer could not fix is now **open
+blocking**.
+
+A loop finishes **Ready** only on a clean final iteration that leaves no open
+blocking finding - one found in this iteration or carried in from an earlier
+one - and no **missing look**, with CI green or absent. Anything else is a
+bounded stop.
+
+**Driver**:
+The session that runs a review loop. It starts the reviewers, the fixer and
+the closer, triages what the reviewers report, waits on CI, and decides the
+terminal state. It does not edit the change: every line the loop fixes is the
+fixer's, and filing is the closer's. The one exception is a host with no fresh
+subagent: there the driver takes the host-capabilities **Start a fresh
+subagent** fallback, does the fixer's and the closer's work in its own
+session, and records that as a host fallback.
+
+**Reviewer**:
+A fresh agent a review loop's driver starts for one axis - Standards or Spec -
+in one iteration. It reviews the whole change from the base SHA, never from
+the previous iteration's HEAD, and writes its findings, unranked, to a report
+file. Two reviewers run every iteration, one per axis. A review pass starts
+the same two reviewers once, outside any loop.
+_Avoid_: spec review (for the Spec-axis reviewer or its report).
+
+**Open blocking**:
+A blocking finding the fixer could not fix. It is never filed: it carries into
+the next iteration's triage - and, when a loop ends, into a re-entry's first
+iteration - until a fixer fixes it, and while it stands in the final record it
+blocks **Ready**.
+
+**Missing look**:
+An axis whose reviewer failed twice in one iteration, so that iteration
+reviewed the change along the other axis only. A missing look in the final
+iteration blocks **Ready**: nothing looked along that axis last.
+
+**Fixer**:
+A fresh agent a review loop's driver starts within an iteration, and only when
+triage left something the loop fixes. It fixes, verifies, commits, corrects
+any PR body statement its commit left unsupported, writes the iteration's
+review record, and ends with the iteration: one fixer never sees another
+iteration's work except through the records.
+
+**Closer**:
+A fresh agent a review loop's driver starts once, at termination, to turn the
+loop's unfixed findings into filed findings and tell the PR what the loop did.
+It reads only this loop's review records, and files nothing the driver's
+triage marked met again; whether a finding is already filed is the driver's
+call, never the closer's.
+
+**Loop-authored lines**:
+Lines the current review loop's own fix commits wrote. A major or nit on them
+is filed, never fixed; a blocking finding on them is still fixed. A previous
+loop's fixes are not loop-authored for the next one.
+
+**Loop boundary**:
+The `iteration` a review loop's driver reads before the loop's first
+iteration. The loop's own records are those numbered above it; those at or
+below it belong to earlier loops of the flow.
+
+**Review record**:
+The written account of one iteration: what was found, at what severity, what was
+done about it, which issues were filed, and what CI said. Humans read it after
+the fact; later iterations and loops read it for what earlier ones fixed and
+filed, since no fixer or closer remembers anything the records do not say.
+
+**Terminal state**:
+One of the two ways a review loop can end: the PR marked ready, or a bounded
+stop.
+
+**Bounded stop**:
+The terminal state of a loop that ended without the change being ready - because
+its final iteration was not clean (it started a fixer, whose work nothing has
+reviewed), left a blocking
+finding its fixer could not fix, or lacked one of its two looks, or because CI
+could not be called green. A stop is not a failed change and not a successful one.
+
+**Flake rerun**:
+The one permitted re-run of a failing CI check on the theory that it failed for
+reasons unrelated to the change. The allowance belongs to the flow, not to the
+iteration: one per flow, spent or not.
+
+**Required check**:
+A CI check that must pass before a change can land. Where branch protection
+names them, those are the required checks; where it does not, every check on the
+commit counts. A change with no checks at all is not thereby failing.
+
+### Findings and triage
+
+**Finding**:
 One problem a review reports - about the change, from the review phase or a
 review pass, or about the spec, from a spec review.
 Only a finding about the change from the review phase carries a **severity**,
@@ -305,8 +337,7 @@ fixes it or declines it. A finding about the spec carries no
 severity: a human accepts or declines the edit it proposes, and it is never
 filed.
 
-## Severity
-
+**Severity**:
 Which of three roles a finding plays - how wrong the change is, and so which
 findings the loop may fix without asking anyone:
 
@@ -324,27 +355,13 @@ findings the loop may fix without asking anyone:
 A final iteration fixes only what is blocking: a major or nit found there is
 filed, so a working change is never held in draft by a style finding.
 
-## Mechanical nit
-
+**Mechanical nit**:
 A nit with exactly one correct fix, confined to the lines it names, changing
 no behaviour and leaving no wording or taste to choose - a typo, an unused
 import, a comment naming the wrong function, a broken link. Rewording prose is
 never mechanical, however small.
 
-## Loop-authored lines
-
-Lines the current review loop's own fix commits wrote. A major or nit on them
-is filed, never fixed; a blocking finding on them is still fixed. A previous
-loop's fixes are not loop-authored for the next one.
-
-## Loop boundary
-
-The `iteration` a review loop's driver reads before the loop's first
-iteration. The loop's own records are those numbered above it; those at or
-below it belong to earlier loops of the flow.
-
-## Filed finding
-
+**Filed finding**:
 A major or nit the loop did not fix, turned into an issue when a loop
 terminates - because its fix needed a decision, would have changed behaviour,
 was not mechanical, landed on loop-authored lines, was found in a final
@@ -359,58 +376,24 @@ tells the human it did.
 Findings the loop demoted on a human's earlier decision are reported, never
 filed.
 
-## Finding triage
-
+**Finding triage**:
 Checking open filed findings against the current default branch and moving each out of `needs-triage`: closed as completed when the code it names has since been fixed, otherwise to `ready-for-agent`, `ready-for-human`, or `wontfix`. A finding whose fix needs a decision goes to a human, never to an agent. Not the driver's triage, which ranks one iteration's findings inside a review loop.
 
-## Review record
+### Hosts
 
-The written account of one iteration: what was found, at what severity, what was
-done about it, which issues were filed, and what CI said. Humans read it after
-the fact; later iterations and loops read it for what earlier ones fixed and
-filed, since no fixer or closer remembers anything the records do not say.
-
-## Terminal state
-
-One of the two ways a review loop can end: the PR marked ready, or a bounded
-stop.
-
-## Bounded stop
-
-The terminal state of a loop that ended without the change being ready - because
-its final iteration was not clean (it started a fixer, whose work nothing has
-reviewed), left a blocking
-finding its fixer could not fix, or lacked one of its two looks, or because CI
-could not be called green. A stop is not a failed change and not a successful one.
-
-## Flake rerun
-
-The one permitted re-run of a failing CI check on the theory that it failed for
-reasons unrelated to the change. The allowance belongs to the flow, not to the
-iteration: one per flow, spent or not.
-
-## Required check
-
-A CI check that must pass before a change can land. Where branch protection
-names them, those are the required checks; where it does not, every check on the
-commit counts. A change with no checks at all is not thereby failing.
-
-## Host
-
+**Host**:
 The agent CLI that has the plugin installed and runs its skills - Claude Code,
 Junie, and so on. "Junie" always means the Junie CLI, not the Junie plugin
 for JetBrains IDEs. Claude Code is the reference host; every other host is
 supported to the extent it can do what the plugin asks, and anything it
 cannot do is reported rather than silently skipped.
 
-## Capability
-
+**Capability**:
 Something a skill needs its host to do - invoke a skill, start a fresh
 subagent, start a fresh session - named for what it does rather than for any
 host's tool. `docs/host-capabilities.md` says how each host provides each one.
 
-## Host fallback
-
+**Host fallback**:
 What a skill does instead when its host lacks a capability, or cannot use it
 for the step at hand (a Junie CLI capability filter hiding one of the
 plugin's agents, say), as documented in
@@ -420,15 +403,3 @@ fallbacks, including any taken during its spec review, under its PR body's
 **Host fallbacks**; and a standalone review pass records them in its PR
 comment, or reports them in the session when the branch has no PR - so a
 reduced run is never mistaken for a full one.
-
-## Planning allowlist
-
-The files a planning session may legitimately change: agent docs, and
-scratch and flow-state files. Anything outside it is either source, which
-planning never touches, or a record - the glossary and ADRs - which planning
-never changes in place: a change planning decides for a record is written
-word for word into the spec, or into the linked issue's body for a quick
-implementation, and lands with the change it describes. The edit
-guard denies edits outside it while planning, on a host where the guard
-arms - not Junie (ADR-0025) - and a flow at `done` does not disarm it. A flow
-will not start while the working tree has changes outside it (ADR-0013).
