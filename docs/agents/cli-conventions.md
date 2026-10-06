@@ -18,7 +18,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `spec`    | `fetch`, `update`, `comment`, `comments`             |
 | `spec-review` | `begin`                                          |
 | `finding-triage` | `scan`, `apply`                               |
-| `ticket`  | `publish`, `next`, `list`, `close`, `reset`, `parent`, `exists`, `retire` |
+| `ticket`  | `publish`, `next`, `list`, `close`, `reset`, `parent`, `exists`, `retire`, `block`, `unblock` |
 | `state`   | `get`, `set`                                         |
 | `handoff` | `path`, `validate`, `section`                        |
 | `phase`   | `advance`, `boundary`                                |

@@ -322,10 +322,12 @@ new agent: this is reconciliation, the same kind of work as
 - Draft concrete replacement text only for **open** tickets the accepted
   edits touch. A closed ticket is never edited and nothing reopens it: note
   what changed for it, for the changelog.
-- A ticket edit never changes a ticket's `## Blocked by` section or the
-  GitHub dependency links. If the accepted edits change what blocks what, or
-  add, remove or re-order slices, recommend **Retire and break down again**
-  instead of per-ticket edits.
+- An edit that changes only which open tickets block which is applied with
+  `ticket block`/`ticket unblock` and rewrites no other part of the body.
+  Adding, removing or re-ordering slices still recommends **Retire and break
+  down again**. "Open tickets" names the ticket whose edges change: its
+  blocker may be open or closed. Each edge change - one edge added or
+  removed - is its own numbered item in the ticket question below.
 - A drafted edit you believe is wrong is still presented, marked **recommend
   decline** with the reason.
 
@@ -333,7 +335,8 @@ new agent: this is reconciliation, the same kind of work as
 **None - no ticket affected**, and each closed ticket the edits touch is
 still listed. Otherwise number the ticket items - each naming its ticket
 (`#<n>`, or the `## Ticket` section), what the accepted edits changed for it,
-and its replacement text - and ask **one blocking question** with the
+and its replacement text, or for an edge change the one edge added or removed -
+and ask **one blocking question** with the
 `AskUserQuestion` tool, the list and the call in the same response, as for
 the spec batch. The options, each offered once:
 
@@ -355,7 +358,14 @@ recommended**.
 it to `<dir>/ticket-<n>.md`, then
 `bash "$ORCH" issue update <n> <dir>/ticket-<n>.md`. An accepted edit to a
 collapsed `## Ticket` section goes into `<dir>/spec.md`, published with the
-review's one body update. A retire edits no ticket here: it runs at
+review's one body update. Each accepted edge change runs
+`bash "$ORCH" ticket block <n> --by <blocker>` to add the edge, or
+`bash "$ORCH" ticket unblock <n> --by <blocker>` to remove it; the command
+rewrites `<n>`'s `## Blocked by` section itself. When one ticket gets both a
+text edit and an edge change, the text edit is applied first, its
+`## Blocked by` section left as fetched, then `ticket block`/`unblock` runs and
+rewrites that section. A failed `ticket block` or `ticket unblock` stops the
+review the way a failed `issue update` does. A retire edits no ticket here: it runs at
 **Applying the answer**'s step 4, after the publish. A failed `issue update`
 stops the review the way a failed fetch does. Nothing calls `gh issue`
 directly.
@@ -390,6 +400,8 @@ Then the lenses, organised per lens, in the table's order, one heading each:
 Then a **Tickets** section, after the lens headings, one line per outcome:
 
 - an applied ticket edit: one line naming the ticket and what changed;
+- an applied edge change: one line per changed edge, e.g. **#12 now blocked
+  by #10** or **#12 no longer blocked by #11**;
 - a declined ticket edit: the proposed change **verbatim**, then the human's
   reason, or **declined as recommended: <reason>**;
 - a retire: **retired, to be broken down again**;

@@ -116,6 +116,18 @@ label, and reads all of it back before it reports success. Never publish with
 an ad hoc `gh` call. If it fails, stop and report which tickets were published
 before it did.
 
+When a published ticket's blocking edges are wrong - any number missing or extra -
+repair them in place rather than retiring the breakdown:
+
+```
+bash "$ORCH" ticket block <n> --by N,N,...
+bash "$ORCH" ticket unblock <n> --by N,N,...
+```
+
+`ticket block` adds each missing edge, `ticket unblock` removes each extra one;
+both read the edges back and rewrite the ticket's `## Blocked by` section to
+match. Never repair edges with an ad hoc `gh` call.
+
 **0 or 1 tickets: collapse.** No sub-issue is created; the parent is worked
 directly, as its own sole ticket. Record that in the parent's body, always
 through the stateless issue verbs:

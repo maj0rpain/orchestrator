@@ -120,6 +120,11 @@ breakdown is already published and is not run again, unless a spec review
 changes the spec and the human retires that breakdown.
 _Avoid_: planning-only, parked spec, banked spec.
 
+**Blocking edge**:
+A native GitHub dependency recording that one ticket of a breakdown cannot
+start until another, its blocker, is closed. `ticket next` reads only
+these, never a ticket body's `## Blocked by` text.
+
 **Ticket breakdown**:
 The set of sub-issues published against a spec issue (a flow's, a quick
 implementation's linked issue, or a blueprint's) - each one a sub-issue of that

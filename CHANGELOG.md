@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.10.0
+
+A published ticket's blocking edges can now be repaired in place (see issue
+#488). `orch.sh ticket block <n> --by N,N,...` adds a blocking edge on open
+ticket `<n>` for each sibling blocker it lacks, and `ticket unblock <n> --by
+N,N,...` removes each one it has; both read the edges back, retrying once on a
+mismatch, and rewrite the ticket's `## Blocked by` section to match, leaving the
+rest of the body byte for byte. A repeat changes nothing, and re-running a
+failed run finishes it. `orch-to-tickets` repairs wrong edges with these
+commands, never ad hoc `gh`. `orch-spec-review` no longer recommends retiring a
+breakdown when the accepted edits change only which open tickets block which:
+each edge change is one item in its ticket question, applied with `ticket
+block`/`unblock` after any text edit to the same ticket, and logged as one
+changelog line per edge. Adding, removing or re-ordering slices still
+recommends **Retire and break down again**. `GLOSSARY.md` defines **Blocking
+edge**.
+
 ## 3.9.2
 
 The base branch no longer picks up a tool manager's noise (see issue #465).
