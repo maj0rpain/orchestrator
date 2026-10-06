@@ -2366,13 +2366,12 @@ cmd_issue_triage() {
   [ "$(first_line "$out")" = OPEN ] \
     || die "issue #$issue is not open - only an open issue is triaged to '$ready'"
   # A filed finding comes back into the pipeline through finding triage alone,
-  # which checks it against the default branch first (ADR-0031).
-  local sev
-  for sev in $FILED_SEVERITIES; do
-    if printf '%s\n' "$labels" | grep -qxF -- "review:$sev"; then
-      die "issue #$issue is a filed finding (review:$sev) - triage it with $(finding_triage_cmd)"
-    fi
-  done
+  # which checks it against the default branch first (ADR-0031). Any
+  # review:<severity> label marks one, not only the severities filed today.
+  local finding
+  finding="$(printf '%s\n' "$labels" | grep -m1 '^review:.')" || true
+  [ -z "$finding" ] \
+    || die "issue #$issue is a filed finding ($finding) - triage it with $(finding_triage_cmd)"
   # Already ready: nothing to move, and no comment to leave as noise.
   if printf '%s\n' "$labels" | grep -qxF -- "$ready"; then return 0; fi
   # A deliberate triage decision is the human's to reverse: exit 2 is no
@@ -2386,7 +2385,8 @@ cmd_issue_triage() {
       fi
     done
   fi
-  for role in needs-triage needs-info ready-for-human wontfix; do
+  for role in $TRIAGE_ROLES; do
+    [ "$role" != ready-for-agent ] || continue
     label="$(triage_label_for "$role")"
     if printf '%s\n' "$labels" | grep -qxF -- "$label"; then
       remove="${remove:+$remove,}$label"

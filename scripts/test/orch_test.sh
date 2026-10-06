@@ -2017,6 +2017,14 @@ out="$(ORCHESTRATOR_HOST=junie "$ORCH" issue triage 45 2>&1)"
 assert_contains "naming the finding-triage skill off Claude Code" "$out" "orch-finding-triage skill"
 assert_eq "changing nothing" "$(fake_snapshot)" "$before"
 
+fake_issue 52 open needs-triage review:minor
+before="$(fake_snapshot)"
+out="$(triage 52 2>&1)"; st=$?
+assert_status "a finding under any review:<severity> label is refused" "$st" 1
+assert_contains "naming the issue" "$out" "issue #52"
+assert_contains "pointing at finding triage" "$out" "/orchestrator:finding-triage"
+assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+
 fake_issue 46 closed needs-triage
 before="$(fake_snapshot)"
 out="$(triage 46 2>&1)"; st=$?
