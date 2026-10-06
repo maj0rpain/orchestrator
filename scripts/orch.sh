@@ -1507,7 +1507,7 @@ map_line() {
 # finding_scan_one <issue> <body> <default ref>: the scan's one line for one
 # finding.
 finding_scan_one() {
-  local n="$1" body="$2" ref="$3" loc pr file lines sha full start end s e detail
+  local n="$1" body="$2" ref="$3" loc pr file lines sha resolved_sha start end new_start new_end detail
   pr="$(finding_pr "$body")"
   loc="$(finding_location "$body")"
   if [ -z "$loc" ]; then
@@ -1521,9 +1521,9 @@ finding_scan_one() {
   fi
   # A squash merge leaves the PR's head commit off every branch: the PR's own
   # head ref still holds it.
-  if ! full="$(git rev-parse --verify -q "$sha^{commit}")"; then
+  if ! resolved_sha="$(git rev-parse --verify -q "$sha^{commit}")"; then
     git fetch -q origin "refs/pull/$pr/head" >/dev/null 2>&1 || true
-    if ! full="$(git rev-parse --verify -q "$sha^{commit}")"; then
+    if ! resolved_sha="$(git rev-parse --verify -q "$sha^{commit}")"; then
       printf '%s\t%s\t%s:%s\tunknown\thead SHA %s is unreachable, even after fetching refs/pull/%s/head\n' \
         "$n" "$pr" "$file" "$lines" "$sha" "$pr"
       return
@@ -1533,19 +1533,19 @@ finding_scan_one() {
     printf '%s\t%s\t%s:%s\tgone\t\n' "$n" "$pr" "$file" "$lines"
     return
   fi
-  if git diff --quiet "$full" "$ref" -- "$file" 2>/dev/null; then
+  if git diff --quiet "$resolved_sha" "$ref" -- "$file" 2>/dev/null; then
     printf '%s\t%s\t%s:%s\tunchanged\t\n' "$n" "$pr" "$file" "$lines"
     return
   fi
   start="${lines%%-*}"; end="${lines#*-}"
-  s="$(map_line "$full" "$ref" "$file" "$start")"
-  e="$(map_line "$full" "$ref" "$file" "$end")"
-  [ "$e" -ge "$s" ] || e="$s"
+  new_start="$(map_line "$resolved_sha" "$ref" "$file" "$start")"
+  new_end="$(map_line "$resolved_sha" "$ref" "$file" "$end")"
+  [ "$new_end" -ge "$new_start" ] || new_end="$new_start"
   # The newest commit since the filing that touched the finding's lines;
   # failing that - a range the file no longer reaches - the newest that
   # touched the file.
-  detail="$(git log -1 --format=%H -L "$s,$e:$file" "$ref" "^$full" 2>/dev/null | grep -Exm1 '[0-9a-f]{40}')" || true
-  [ -n "$detail" ] || detail="$(git log -1 --format=%H "$ref" "^$full" -- "$file" 2>/dev/null)"
+  detail="$(git log -1 --format=%H -L "$new_start,$new_end:$file" "$ref" "^$resolved_sha" 2>/dev/null | grep -Exm1 '[0-9a-f]{40}')" || true
+  [ -n "$detail" ] || detail="$(git log -1 --format=%H "$ref" "^$resolved_sha" -- "$file" 2>/dev/null)"
   # None at all: the difference is the PR's own commits, never on the default
   # branch, and any older commit would predate the filing.
   if [ -z "$detail" ]; then
@@ -1561,7 +1561,7 @@ finding_scan_one() {
 # line apiece: <issue> <pr> <file>:<line> <result> <detail>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [<issue> | --pr <n>]"
-  local issue="" pr_filter="" triage sev nums="" n out state labels label body def ref filed
+  local issue="" pr_filter="" triage sev nums="" n out state labels label body default ref filed
   case $# in
     0) ;;
     1) issue="$1" ;;
@@ -1593,10 +1593,10 @@ cmd_finding_triage_scan() {
       nums="$nums $out"
     done
   fi
-  def="$(default_branch)"
-  ref="refs/remotes/origin/$def"
-  git fetch -q origin "+refs/heads/$def:$ref" >/dev/null 2>&1 \
-    || die "could not fetch origin/$def"
+  default="$(default_branch)"
+  ref="refs/remotes/origin/$default"
+  git fetch -q origin "+refs/heads/$default:$ref" >/dev/null 2>&1 \
+    || die "could not fetch origin/$default"
   for n in $(printf '%s\n' $nums | sort -nu); do
     body="$(adapter_issue_view "$n" --json body --jq .body)" || die "gh could not read issue #$n"
     if [ -n "$pr_filter" ] && [ "$(finding_pr "$body")" != "$pr_filter" ]; then continue; fi
@@ -1615,7 +1615,7 @@ cmd_finding_triage_scan() {
 cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
-  local issue="${1:-}" outcome="${2:-}" category="" file="" labels triage other tmp
+  local issue="${1:-}" outcome="${2:-}" category="" file="" labels triage stale_category tmp
   # The labels to remove, possibly none. Bash 3.2's set -u calls an empty
   # array unbound, so every expansion splices ${edit[@]+"${edit[@]}"}, and
   # close-fixed, where edit is the relabel's only argument, guards on its
@@ -1636,8 +1636,8 @@ cmd_finding_triage_apply() {
       [ -z "$category" ] || die "--category is for an outcome that stays open, not $outcome" ;;
     ready-for-agent|ready-for-human)
       case "$category" in
-        bug) other=enhancement ;;
-        enhancement) other=bug ;;
+        bug) stale_category=enhancement ;;
+        enhancement) stale_category=bug ;;
         '') die "$outcome needs --category <bug|enhancement>" ;;
         *) die "unknown --category '$category' - expected bug or enhancement" ;;
       esac ;;
@@ -1673,7 +1673,7 @@ cmd_finding_triage_apply() {
       adapter_issue_close "$issue" --reason "not planned" >/dev/null || die "gh could not close issue #$issue" ;;
     *)
       category_label_ensure "$category"
-      if printf '%s\n' "$labels" | grep -qxF -- "$other"; then edit+=(--remove-label "$other"); fi
+      if printf '%s\n' "$labels" | grep -qxF -- "$stale_category"; then edit+=(--remove-label "$stale_category"); fi
       adapter_issue_edit "$issue" ${edit[@]+"${edit[@]}"} --add-label "$(triage_label_for "$outcome")" \
         --add-label "$category" >/dev/null || die "gh could not relabel issue #$issue" ;;
   esac
