@@ -450,7 +450,7 @@ cmd_init() {
   # so it is not "active" in any sense that matters. init archives it and
   # proceeds instead of refusing; every other phase still blocks a second flow.
   local archive_note=""
-  if [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; then
+  if flow_active; then
     die "a flow is already active (slug: $(state_get slug), phase: $(state_get phase)).
      One flow at a time - finish it, or run $(flow_cmd abort)."
   fi

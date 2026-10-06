@@ -1533,12 +1533,18 @@ assert_contains "an invalid name is refused before origin is contacted" "$out" \
   "bad..name is not a valid branch name - nothing was set"
 git remote set-url origin "$bare"
 
+# A flow init recorded on the default branch, corrected to uat before it
+# branches: only the correction can make branch create fork from uat's tip,
+# since neither the init-recorded base nor the unset checkout setting names it.
+rm -rf .orchestrator
+orch_gh_failing init flowbase >/dev/null
+assert_eq "a flow started with nothing set records the default branch" \
+  "$(orch_gh_failing state get base)" "main"
+orch_gh_failing base set uat --flow >/dev/null
 orch_gh_failing state set issue 7
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create succeeds" "$st" 0
 assert_eq "the flow's next branch create forks from the corrected base's tip" \
-  "$(git rev-parse HEAD)" "$uat_tip"
-assert_eq "branch create forks from the recorded base, not the changed setting" \
   "$(git rev-parse HEAD)" "$uat_tip"
 
 out="$(orch_gh_failing base set main --flow 2>&1)"; st=$?
