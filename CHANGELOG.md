@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.12.3
+
+`orch.sh` reaches GitHub through need-based adapter operations - issue, PR,
+label, comment, CI, sub-issue, dependency and repo reads and writes - instead
+of raw `gh` calls, and the test suite fakes GitHub at those operations with
+one store-backed, in-process fake, pinned to the real adapter by contract
+tests; `stub_gh` and `GH_STUB_*` are gone (ADR-0033). Output and exit codes
+are unchanged, with these edges: `issue create` and `pr create` fail when
+`gh` succeeds but prints no URL, and `ticket block`, `unblock`, `publish` and
+`retire` report the link or edge failure, not a separate "could not read
+issue" line, when an issue's database id cannot be read (see issue #280).
+
 ## 3.12.2
 
 `orch.sh finding-triage scan` reports a finding whose lines it followed to
