@@ -2905,31 +2905,6 @@ issue_body_rewrite() {
   rm -f "$result"
 }
 
-# `ticket block` and `ticket unblock`'s arguments, checked before anything
-# touches GitHub: <n> and every --by entry plain issue numbers, --by
-# required and given once - a second --by would otherwise replace the
-# first. Prints the --by numbers one per line, sorted and de-duplicated, as
-# `ticket publish --blocked-by` does.
-ticket_edge_args() {
-  local verb="$1" usage n="" by="" have_by=""
-  usage="usage: orch.sh ticket $verb <n> --by N,N,..."
-  shift
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --by) [ $# -ge 2 ] && [ -z "$have_by" ] || die "$usage"; by="$2"; have_by=1; shift 2 ;;
-      -*)   die "$usage" ;;
-      *)    [ -z "$n" ] || die "$usage"; n="$1"; shift ;;
-    esac
-  done
-  [ -n "$n" ] || die "$usage"
-  [ -n "$have_by" ] || die "$usage"
-  case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
-  [ -n "$by" ] || die "--by must be plain issue numbers, got nothing"
-  by="$(issue_number_list --by "$by")" || exit 1
-  printf '%s\n' "$n"
-  printf '%s\n' "$by"
-}
-
 # Dies, before any write, unless ticket <n> is open, is a sub-issue, and
 # every --by issue is its sibling: a sub-issue of the same parent. A closed
 # blocker is allowed - an edge to a finished ticket is still a record. The
@@ -3018,41 +2993,61 @@ ticket_blocked_by_rewrite() {
     rewrite_blocked_by_section "$2"
 }
 
-# Adds a native blocking edge on <n> for every --by issue it lacks.
-cmd_ticket_block() {
-  local args n by before want b
-  args="$(ticket_edge_args block "$@")" || exit 1
-  n="$(printf '%s\n' "$args" | sed -n 1p)"
-  by="$(printf '%s\n' "$args" | sed 1d)"
+# `ticket block` and `ticket unblock`'s one driver: `ticket <verb> <n> --by
+# N,N,...`. The arguments are checked before anything touches GitHub: <n>
+# and every --by entry plain issue numbers, --by required and given once - a
+# second --by would otherwise replace the first - and the --by list sorted
+# and de-duplicated, as `ticket publish --blocked-by` does. Then the
+# preconditions, the current edges, one adapter write per edge that needs
+# it, verify-then-die (ADR-0011) against the wanted set, and the `## Blocked
+# by` rewrite. Only the verb varies: block skips edges already present, adds
+# the rest and wants the union; unblock skips edges already absent, removes
+# the rest and wants the difference. Either re-run is idempotent.
+ticket_edges_change() {
+  local verb="$1" usage n="" by="" have_by="" before want b present
+  usage="usage: orch.sh ticket $verb <n> --by N,N,..."
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --by) [ $# -ge 2 ] && [ -z "$have_by" ] || die "$usage"; by="$2"; have_by=1; shift 2 ;;
+      -*)   die "$usage" ;;
+      *)    [ -z "$n" ] || die "$usage"; n="$1"; shift ;;
+    esac
+  done
+  [ -n "$n" ] || die "$usage"
+  [ -n "$have_by" ] || die "$usage"
+  case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
+  [ -n "$by" ] || die "--by must be plain issue numbers, got nothing"
+  by="$(issue_number_list --by "$by")" || exit 1
   ticket_edge_preconditions "$n" "$by"
   before="$(ticket_blockers "$n")" || exit 1
   while IFS= read -r b; do
-    if printf '%s\n' "$before" | grep -qxF "$b"; then continue; fi
-    adapter_blocker_add "$n" "$b" \
-      || die "gh could not add a blocking edge from ticket #$n on #$b"
+    present=""
+    if printf '%s\n' "$before" | grep -qxF "$b"; then present=1; fi
+    case "$verb" in
+      block)
+        [ -z "$present" ] || continue
+        adapter_blocker_add "$n" "$b" \
+          || die "gh could not add a blocking edge from ticket #$n on #$b" ;;
+      unblock)
+        [ -n "$present" ] || continue
+        adapter_blocker_remove "$n" "$b" \
+          || die "gh could not remove a blocking edge from ticket #$n on #$b" ;;
+    esac
   done <<<"$by"
-  want="$(printf '%s\n%s\n' "$before" "$by" | sed '/^$/d' | sort -un)"
+  case "$verb" in
+    block)   want="$(printf '%s\n%s\n' "$before" "$by" | sed '/^$/d' | sort -un)" ;;
+    unblock) want="$(printf '%s\n' "$before" | grep -vxF -f <(printf '%s\n' "$by") || true)" ;;
+  esac
   ticket_edges_verify "$n" "$want"
   ticket_blocked_by_rewrite "$n" "$want"
 }
 
+# Adds a native blocking edge on <n> for every --by issue it lacks.
+cmd_ticket_block() { ticket_edges_change block "$@"; }
+
 # Removes the native blocking edge on <n> for every --by issue it has.
-cmd_ticket_unblock() {
-  local args n by before want b
-  args="$(ticket_edge_args unblock "$@")" || exit 1
-  n="$(printf '%s\n' "$args" | sed -n 1p)"
-  by="$(printf '%s\n' "$args" | sed 1d)"
-  ticket_edge_preconditions "$n" "$by"
-  before="$(ticket_blockers "$n")" || exit 1
-  while IFS= read -r b; do
-    if ! printf '%s\n' "$before" | grep -qxF "$b"; then continue; fi
-    adapter_blocker_remove "$n" "$b" \
-      || die "gh could not remove a blocking edge from ticket #$n on #$b"
-  done <<<"$by"
-  want="$(printf '%s\n' "$before" | grep -vxF -f <(printf '%s\n' "$by") || true)"
-  ticket_edges_verify "$n" "$want"
-  ticket_blocked_by_rewrite "$n" "$want"
-}
+cmd_ticket_unblock() { ticket_edges_change unblock "$@"; }
 
 cmd_ticket() {
   local op="${1:-}"
