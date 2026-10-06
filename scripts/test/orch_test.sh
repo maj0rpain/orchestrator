@@ -215,6 +215,18 @@ record_flags() {
     shift
   done
 }
+# stub_allow_n <counter-file> <limit> <what>: lets <limit> calls through and
+# refuses every later one with "gh stub: <what> refused" - a multi-call write
+# that dies part-way. Counts in $db/<counter-file>; a no-op without $db.
+stub_allow_n() {
+  [ -n "$db" ] || return 0
+  local counter="$1" limit="$2" what="$3" n
+  n="$(cat "$db/$counter" 2>/dev/null)"; [ -n "$n" ] || n=0
+  if [ "$n" -ge "$limit" ]; then
+    echo "gh stub: $what refused" >&2; exit 1
+  fi
+  echo $((n + 1)) >"$db/$counter"
+}
 # The `ticket` group's tiny fake GitHub: an issue's open/closed state and its
 # sub-issue/blocked-by edges, persisted as files under GH_STUB_DB so they
 # survive across the separate `gh` subprocesses one `orch.sh ticket ...` call
@@ -526,30 +538,20 @@ ready-for-agent}"
         && [ "${GH_STUB_BLOCKED_GET_EXIT:-0}" != 0 ]; then
       echo "gh stub: blocked_by GET refused" >&2; exit "$GH_STUB_BLOCKED_GET_EXIT"
     fi
-    # GH_STUB_BLOCKED_POST_OK lets that many blocked_by POSTs through and
-    # refuses every later one - a multi-edge write that dies part-way.
+    # GH_STUB_BLOCKED_POST_OK is stub_allow_n's limit for blocked_by POSTs.
     if [ "$api_sub" = dependencies/blocked_by ] && [ "$api_method" = POST ] \
-        && [ -n "${GH_STUB_BLOCKED_POST_OK:-}" ] && [ -n "$db" ]; then
-      posted="$(cat "$db/blocked_posted" 2>/dev/null)"; [ -n "$posted" ] || posted=0
-      if [ "$posted" -ge "$GH_STUB_BLOCKED_POST_OK" ]; then
-        echo "gh stub: blocked_by POST refused" >&2; exit 1
-      fi
-      echo $((posted + 1)) >"$db/blocked_posted"
+        && [ -n "${GH_STUB_BLOCKED_POST_OK:-}" ]; then
+      stub_allow_n blocked_posted "$GH_STUB_BLOCKED_POST_OK" "blocked_by POST"
     fi
     # GH_STUB_BLOCKED_DELETE_EXIT refuses every blocked_by edge DELETE;
-    # GH_STUB_BLOCKED_DELETE_OK lets that many through and refuses every later
-    # one - a multi-edge removal that dies part-way.
+    # GH_STUB_BLOCKED_DELETE_OK is stub_allow_n's limit for blocked_by edge DELETEs.
     case "$api_sub" in
       dependencies/blocked_by/*)
         if [ "$api_method" = DELETE ] && [ "${GH_STUB_BLOCKED_DELETE_EXIT:-0}" != 0 ]; then
           echo "gh stub: blocked_by DELETE refused" >&2; exit "$GH_STUB_BLOCKED_DELETE_EXIT"
         fi
-        if [ "$api_method" = DELETE ] && [ -n "${GH_STUB_BLOCKED_DELETE_OK:-}" ] && [ -n "$db" ]; then
-          deleted="$(cat "$db/blocked_deleted" 2>/dev/null)"; [ -n "$deleted" ] || deleted=0
-          if [ "$deleted" -ge "$GH_STUB_BLOCKED_DELETE_OK" ]; then
-            echo "gh stub: blocked_by DELETE refused" >&2; exit 1
-          fi
-          echo $((deleted + 1)) >"$db/blocked_deleted"
+        if [ "$api_method" = DELETE ] && [ -n "${GH_STUB_BLOCKED_DELETE_OK:-}" ]; then
+          stub_allow_n blocked_deleted "$GH_STUB_BLOCKED_DELETE_OK" "blocked_by DELETE"
         fi ;;
     esac
     [ "${GH_STUB_API_EXIT:-0}" = 0 ] || { echo "gh stub: api call refused" >&2; exit "$GH_STUB_API_EXIT"; }
