@@ -123,7 +123,7 @@ fi
 # offered a move to ready-for-agent before the route question, so init
 # --issue can adopt it. Its lines are bullets, never numbered: the route
 # question's three options are the only numbered lines in the message.
-interviewed_step="- At the close, if this planning was about an existing open issue - named in the
+interviewed_step="- At the close, if this planning was about an open issue - named in the
   interview's arguments or its conversation - that is the interviewed issue,
   and this step comes before the route question below.
   With no interviewed issue, skip this step entirely.

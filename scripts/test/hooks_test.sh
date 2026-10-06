@@ -264,7 +264,7 @@ rm -rf "$REPO/.orchestrator"
 echo
 echo "grilling hook's interviewed-issue step (#573)"
 
-# When a planning interview was about an existing open issue, the close
+# When a planning interview was about an open issue, the close
 # offers to move it to ready-for-agent before the route question, through
 # orch.sh issue triage. Checked on every message that carries the route
 # question: the start-of-session message on both hosts, and Junie's

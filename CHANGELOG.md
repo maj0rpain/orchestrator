@@ -2,7 +2,7 @@
 
 ## 3.13.0
 
-A planning interview about an existing open issue - the **Interviewed
+A planning interview about an open issue - the **Interviewed
 issue** - offers, before the route question, to move that issue to the
 repo's `ready-for-agent` triage label, so `init --issue` can adopt it without
 a manual relabel. The new `orch.sh issue triage <n> [--override]` does the
