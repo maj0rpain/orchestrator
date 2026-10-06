@@ -152,6 +152,9 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 1. Read `bash "$ORCH" handoff path implement` and fetch the spec issue it names.
 2. `bash "$ORCH" branch create` - creates `orch/<issue>-<slug>` off the flow's base
    branch (recorded in state at `init`) and records the base SHA the review will diff against.
+   When it dies because the flow's base does not exist on origin, offer the
+   maintainer the repair rather than an abort: `bash "$ORCH" base set <branch> --flow`
+   points the flow at another base, then rerun `branch create`.
 3. Read the handoff's **Ticket breakdown** section, written by the spec
    phase's step 5.
 

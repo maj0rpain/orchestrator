@@ -19,9 +19,11 @@ for changes that don't need the pipeline, is a quick implementation.
 The branch a flow or quick implementation forks from and opens its PR
 against. The repo's default branch unless a human has set another for the
 checkout - an integration branch such as `uat`, or a long-running feature
-branch that several tickets feed. A flow fixes its base branch when it starts,
-so changing the setting mid-flow never moves that flow's PR; a quick
-implementation reads it when it branches. A flow's base SHA is the base
+branch that several tickets feed. A flow fixes its base branch when it starts.
+Neither a later change to the setting nor a redo moves it; a human can correct
+it explicitly only while the flow has no branch: before it first branches, or
+after `redo review` retires that branch. A quick implementation reads it when
+it branches. A flow's base SHA is the base
 branch's tip at the moment it branched. A quick implementation's base SHA
 means the same, recorded on its branch.
 _Avoid_: target branch, integration branch (as the general term).
