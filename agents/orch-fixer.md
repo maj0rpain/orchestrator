@@ -70,13 +70,17 @@ your return instead - see **Could not fix**.
    with `bash "<orch.sh>" pr update <file>`. This adds no commit: a body
    edit is a GitHub edit, and corrects what the PR claims rather than
    reporting on the loop, so the closer still posts the loop's one PR
-   comment. Done when every helper, function, file and stated reason the
-   body names has been checked against that diff, and each is supported by
-   it or has been reworded or removed.
+   comment. If `pr fetch` or `pr update` fails, the step ends there: do not
+   retry, and do not count the failure as a finding - the loop goes on, and
+   the record's **PR body** reads `Not updated - <reason>`, with the
+   `orch.sh` message as the reason. Otherwise done when every helper,
+   function, file and stated reason the body names has been checked against
+   that diff, and each is supported by it or has been reworded or removed.
 6. **Write the record** to the record path - see **The record**.
 7. **Return** about five lines: what was fixed, the commit SHA (or `no
    commit`), each could-not-fix finding with its severity and why, and, if
-   step 5 corrected the PR body, that it did.
+   step 5 corrected the PR body, that it did - or, if step 5 ended `Not
+   updated`, that the PR body was not updated, and why.
 
 ## Test-driven development
 
@@ -205,8 +209,13 @@ listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
 
 **PR body** is filled every iteration, from step 5: one line per statement
-the check corrected, `None` when it corrected nothing, or `Not checked - no
-commit` when there was no commit to check against.
+the check corrected, `None` when it corrected nothing, `Not checked - no
+commit` when there was no commit to check against, or `Not updated -
+<reason>` when `pr fetch` or `pr update` failed, `<reason>` being the
+`orch.sh` message. After a failed `pr update`, that line is followed by one
+line per correction that did not land (`<old claim> -> <new claim, or
+removed>`); after a failed `pr fetch`, no correction was attempted, so the
+line stands alone. Never list a correction as made unless it reached GitHub.
 
 The last three sections are written at termination, and only there - leave
 `## CI`, `## Filed`, and `## Terminal state` out of your record. The driver

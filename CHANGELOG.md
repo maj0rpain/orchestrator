@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.12.1
+
+The fixer's PR-body check has a defined path when `orch.sh pr fetch` or
+`pr update` fails: the step ends without a retry, the failure is not a
+finding, and the loop goes on. The review record's **PR body** section gains
+a fourth shape, `Not updated - <reason>`, which after a failed `pr update`
+lists the corrections that did not land, and the fixer's return line reports
+it (see issue #448).
+
 ## 3.12.0
 
 `orch.sh` works on one GitHub repo, made explicit: `GH_REPO` when the caller
