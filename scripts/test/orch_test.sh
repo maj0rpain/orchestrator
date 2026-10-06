@@ -7,7 +7,15 @@
 # section, are bugs you would experience as generic confusion three phases
 # later - or, worse, as a phase that dies once the session that could have
 # fixed it has been cleared. Each runs
-# against a throwaway git repo in $TMPDIR - nothing here touches a real flow.
+# against a throwaway git repo in $TMPDIR.
+#
+# What keeps the suite off a real flow is the harness below, not section
+# order: before any section runs it cd's into a fresh `mktemp -d` directory
+# that is no git repo, points HOME (and SUITE_HOME, which sections restore)
+# at a fresh temp directory, and unsets CLAUDE_PLUGIN_ROOT - exiting non-zero
+# if it cannot. A section run on its own that forgets to arrange its own repo
+# then fails against an empty directory instead of the caller's checkout. The
+# isolation section, the suite's first, asserts all of this.
 
 ORCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/orch.sh"
 GH_ADAPTER_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh_adapter_fake.sh"
@@ -20,12 +28,24 @@ SKIP=0
 # a Claude Code or Junie session. Each test names its host.
 unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT JUNIE_SHIM_PATH
 
-# The environment the suite started with. healthy_repo exports HOME and
+# ORCH, GH_ADAPTER_FAKE and PLUGIN_ROOT derive from this script's location, so
+# they are computed before the cd below. CALLER_HOME keeps the HOME the suite
+# started with, only for the isolation section to check HOME differs from it.
+# XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL go too: git would otherwise still read
+# the caller's global config through them.
+CALLER_HOME="$HOME"
+SUITE_CWD="$(mktemp -d)" && cd "$SUITE_CWD" || {
+  echo "orch_test.sh: cannot cd into a fresh temp directory" >&2; exit 1; }
+SUITE_HOME="$(mktemp -d)" || {
+  echo "orch_test.sh: cannot create a temp HOME" >&2; exit 1; }
+export HOME="$SUITE_HOME"
+unset CLAUDE_PLUGIN_ROOT XDG_CONFIG_HOME GIT_CONFIG_GLOBAL
+
+# The environment every section starts from. healthy_repo exports HOME and
 # CLAUDE_PLUGIN_ROOT and puts stub_gh on PATH, so a section that calls it, or
 # that puts stub_gh on PATH itself, ends with restore_suite_env, leaving the
 # next section the environment it had. A section that exported more names
 # passes them to restore_suite_env to unset them too.
-SUITE_HOME="$HOME"
 SUITE_PATH="$PATH"
 restore_suite_env() { unset CLAUDE_PLUGIN_ROOT GH_REPO "$@"; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"; }
 
@@ -42,6 +62,9 @@ skip_no_jq() { skip "$1" "path_without_jq doesn't work on Windows/Git Bash - see
 
 assert_eq() {
   if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi
+}
+assert_ne() {
+  if [ "$2" != "$3" ]; then ok "$1"; else bad "$1" "expected anything but '$3'"; fi
 }
 assert_contains() {
   case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "output did not contain '$3': $2" ;; esac
@@ -884,6 +907,21 @@ ticket_fixture() {
 }
 
 echo "orch.sh tests"
+
+# --- isolation --------------------------------------------------------------
+echo
+echo "isolation"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  bad "the suite starts outside any git work tree" "cwd $(pwd) is inside one"
+else
+  ok "the suite starts outside any git work tree"
+fi
+assert_eq "HOME is the suite's own HOME" "$HOME" "$SUITE_HOME"
+assert_ne "HOME is not the HOME the suite started with" "$HOME" "$CALLER_HOME"
+assert_eq "CLAUDE_PLUGIN_ROOT is unset" "${CLAUDE_PLUGIN_ROOT-unset}" "unset"
+assert_eq "no caller git config is reachable" \
+  "${XDG_CONFIG_HOME-unset} ${GIT_CONFIG_GLOBAL-unset}" "unset unset"
+assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
 
 # --- init -------------------------------------------------------------------
 echo
