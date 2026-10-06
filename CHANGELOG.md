@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.10.4
+
+`GLOSSARY.md` now defines **Default SHA**, **Source PR** and **Category**, the
+terms `orch-finding-triage` relies on, and its **Finding triage** entry names
+the category kept or flipped (see issue #443).
+
 ## 3.10.3
 
 `orch.sh`'s branch-name check drops its separate empty-name test and relies on
