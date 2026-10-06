@@ -201,9 +201,16 @@ phase_write() {
 # It is a fallback for repos gh cannot answer for, not the primary source.
 # Each candidate counts only when it is a valid branch name, so noise around
 # gh's answer - or a failed gh's output - falls through to the next (#465).
+#
+# GitHub is asked only when the repo resolves - `gh repo view` ignores GH_REPO,
+# so the repo is passed positionally - and a checkout with none falls through
+# to the local pointer rather than dying: the answer has always been
+# best-effort, and init and base show ask it before anything needs GitHub.
 default_branch() {
-  local b
-  b="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)" || b=""
+  local b=""
+  if repo_resolve; then
+    b="$(gh repo view "$REPO_NAME" --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)" || b=""
+  fi
   if ! is_branch_name "$b"; then
     b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')" || b=""
   fi
@@ -268,6 +275,28 @@ repo_from_url() {
     printf '%s/%s\n' "$host" "$path"
   fi
 }
+
+# The guard every GitHub call in this file - and in doctor.sh, sourced into it
+# - goes through by name (#520): `gh` itself, defined ahead of doctor.sh and the
+# ORCH_GH_ADAPTER seam so both pick it up. On first use it resolves the repo
+# and exports it as GH_REPO for the rest of the run, so every later call -
+# `gh api`'s {owner}/{repo} placeholders included - is pinned to it, never to
+# gh's own default repo, which in a fork is the upstream. With no repo it dies
+# naming GH_REPO. Inside a command substitution `die` would end only that
+# subshell, and its message could land in a 2>/dev/null, so there it signals
+# the main shell, whose USR1 trap dies with the remedy instead. Its last line is
+# the only call to the real gh binary in orch.sh and doctor.sh.
+gh() {
+  if [ -z "${GH_REPO:-}" ]; then
+    if ! repo_resolve; then
+      if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
+      die "$REPO_REMEDY"
+    fi
+    export GH_REPO="$REPO_NAME"
+  fi
+  command gh "$@"
+}
+trap 'die "$REPO_REMEDY"' USR1
 
 cmd_repo() {
   local op="${1:-}"
