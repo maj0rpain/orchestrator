@@ -1671,7 +1671,7 @@ map_line() {
 # finding_scan_one <issue> <body> <default ref>: the scan's one line for one
 # finding.
 finding_scan_one() {
-  local n="$1" body="$2" ref="$3" loc pr file lines sha resolved_sha start end new_start new_end detail
+  local n="$1" body="$2" ref="$3" loc pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out
   pr="$(finding_pr "$body")"
   loc="$(finding_location "$body")"
   if [ -z "$loc" ]; then
@@ -1705,17 +1705,30 @@ finding_scan_one() {
   new_start="$(map_line "$resolved_sha" "$ref" "$file" "$start")"
   new_end="$(map_line "$resolved_sha" "$ref" "$file" "$end")"
   [ "$new_end" -ge "$new_start" ] || new_end="$new_start"
-  # The newest commit since the filing that touched the finding's lines;
-  # failing that - a range the file no longer reaches - the newest that
-  # touched the file.
-  detail="$(git log -1 --format=%H -L "$new_start,$new_end:$file" "$ref" "^$resolved_sha" 2>/dev/null | grep -Exm1 '[0-9a-f]{40}')" || true
-  [ -n "$detail" ] || detail="$(git log -1 --format=%H "$ref" "^$resolved_sha" -- "$file" 2>/dev/null)"
-  # None at all: the difference is the PR's own commits, never on the default
-  # branch, and any older commit would predate the filing.
-  if [ -z "$detail" ]; then
+  # The newest commit since the filing that touched the file. None at all: the
+  # difference is the PR's own commits, never on the default branch, and any
+  # older commit would predate the filing.
+  file_commit="$(git log -1 --format=%H "$ref" "^$resolved_sha" -- "$file" 2>/dev/null)" || true
+  if [ -z "$file_commit" ]; then
     printf '%s\t%s\t%s:%s\tunknown\tno commit on the default branch since %s touched %s - the difference is commits that never reached it\n' \
       "$n" "$pr" "$file" "$lines" "$sha" "$file"
     return
+  fi
+  # The newest commit since the filing that touched the finding's lines. The
+  # output is captured whole before filtering: piping it into grep -m1 could
+  # SIGPIPE git and pass for a failure under pipefail.
+  if log_out="$(git log -1 --format=%H -L "$new_start,$new_end:$file" "$ref" "^$resolved_sha" 2>/dev/null)"; then
+    detail="$(printf '%s\n' "$log_out" | grep -Ex '[0-9a-f]{40}' | head -n 1)" || true
+    # The lines were followed and nothing since the filing touched them: the
+    # file changed only elsewhere.
+    if [ -z "$detail" ]; then
+      printf '%s\t%s\t%s:%s\tunchanged\t\n' "$n" "$pr" "$file" "$lines"
+      return
+    fi
+  else
+    # A range starting past the file's end can't be followed: the newest
+    # commit touching the file stands in.
+    detail="$file_commit"
   fi
   printf '%s\t%s\t%s:%s\tchanged\t%s\n' "$n" "$pr" "$file" "$lines" "$detail"
 }

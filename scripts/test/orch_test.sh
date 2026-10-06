@@ -5025,6 +5025,16 @@ assert_eq "it is unknown, not changed by a commit older than the filing" "$(fiel
 assert_contains "saying no commit since the filing touched the file" "$(field_of 11 5 "$out")" "no commit"
 rm -rf "${findings:?}/11"
 
+# A finding whose lines the scan follows to the default branch, where later
+# commits touched only other lines of its file (line 3's fix, line 11's
+# reword): its lines are unchanged, so no commit is named.
+finding 14 "review:nit,needs-triage" "\`src/app.sh:6\` at $head_sha" 14
+out="$(scan 14 2>&1)"; st=$?
+assert_status "scans a finding whose file changed only elsewhere" "$st" 0
+assert_eq "its followed, untouched lines are unchanged, with empty detail" \
+  "$(line_of 14 "$out")" "$(printf '14\t14\tsrc/app.sh:6\tunchanged\t')"
+rm -rf "${findings:?}/14"
+
 # A finding whose file later gets hunks both before and after its line, with
 # far more diff after the matching hunk than a pipe buffer holds: the line
 # mapping stops reading the diff early, and the scan must still finish. Lines

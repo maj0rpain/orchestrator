@@ -71,10 +71,11 @@ It fetches `origin/<default>` and prints one tab-separated line per finding:
 <issue>	<pr>	<file>:<line>	<result>	<detail>
 ```
 
-- `unchanged` - the file has no change since the filed SHA. The finding still
-  holds; it needs no read.
+- `unchanged` - the finding's lines have no change since the filed SHA, even
+  if the file changed elsewhere. The finding still holds; it needs no read.
 - `changed` - `<detail>` is the full SHA of the newest commit touching the
-  finding's lines (or its file).
+  finding's lines, or touching its file when the line range can't be followed
+  (it starts past the file's end).
 - `gone` - the file no longer exists on the default branch.
 - `unknown` - `<detail>` says why: an unreachable SHA, a body that does not
   parse, or a file that differs only by commits that never reached the
