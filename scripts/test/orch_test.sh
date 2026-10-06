@@ -205,11 +205,11 @@ complete_implement_handoff() {
 # both together, state on the first line and one label per line after -
 # mirroring `pr view`'s own `--json state,isDraft` combined-query case.
 #
-# `pr create` and `pr view` are pr open's boundary. `create` records its flags
-# and body-file contents to GH_STUB_FILED like `issue create`, answering with a
-# fake PR URL numbered GH_STUB_PR_NUMBER, or failing when GH_STUB_PR_CREATE_EXIT
-# says so. `view` answers GH_STUB_PR_NUMBER when asked `--json number` - the
-# call pr open makes to learn the PR it just opened - answers `state` and
+# `pr create` records its flags and body-file contents to GH_STUB_FILED like
+# `issue create`, answering with a fake PR URL numbered GH_STUB_PR_NUMBER, or
+# failing when GH_STUB_PR_CREATE_EXIT says so. `pr view` answers
+# GH_STUB_PR_NUMBER when asked `--json number`, review ci's head, base and
+# commits through the caller's --jq when asked for headRefOid, answers `state` and
 # `isDraft` together (GH_STUB_PR_STATE and GH_STUB_PR_DRAFT, default false) for
 # check_flow_review_draft's combined query, and falls back to the existing
 # `--json state` behaviour (GH_STUB_PR_STATE) for every other query.
@@ -763,11 +763,12 @@ ready-for-agent}"
           case "$a" in
             *headRefOid*)
               o="${GH_STUB_PR_HEAD_OID:-0000000000000000000000000000000000000000}"
+              # The caller's own --jq, the last argument, applied as gh would.
               jq -cn --arg o "$o" \
                 --arg h "${GH_STUB_PR_HEAD_REF:-topic}" --arg b "${GH_STUB_PR_BASE_REF:-main}" \
                 --arg c "${GH_STUB_PR_COMMITS-$o}" \
                 '{headRefOid: $o, headRefName: $h, baseRefName: $b,
-                  commits: [$c | splits(" +") | select(. != "") | {oid: .}]}'
+                  commits: [$c | splits(" +") | select(. != "") | {oid: .}]}' | jq -r "${!#}"
               exit 0 ;;
             *isDraft*) printf '%s\n%s\n' "${GH_STUB_PR_STATE:-OPEN}" "${GH_STUB_PR_DRAFT:-false}"; exit 0 ;;
           esac
@@ -989,6 +990,72 @@ fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' 
 fake_snapshot() {
   (cd "$ORCH_GH_FAKE_STORE" && find . -type f -print0 | sort -z | xargs -0 -r cksum)
 }
+
+# fake_pr <n> <state> <head> <base>: seeds PR #n afresh, open, closed or
+# merged, from the head branch into the base - no body, comments or commits,
+# and not a draft.
+fake_pr() {
+  local d="$ORCH_GH_FAKE_STORE/prs/$1"
+  rm -rf "$d"
+  mkdir -p "$d"
+  printf '%s\n' "$2" | tr '[:lower:]' '[:upper:]' >"$d/state"
+  printf '%s\n' "$3" >"$d/head"
+  printf '%s\n' "$4" >"$d/base"
+}
+
+# fake_pr_body <n> <text>: seeds PR #n's body, byte for byte.
+fake_pr_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/body"; }
+
+# fake_pr_comment <n> <author> <created-at> <body>: seeds a comment on PR #n,
+# after any it has.
+fake_pr_comment() {
+  local d k
+  d="$ORCH_GH_FAKE_STORE/prs/$1/comments"
+  mkdir -p "$d"
+  k=$(( $(find "$d" -mindepth 1 -maxdepth 1 | wc -l) + 1 ))
+  mkdir "$d/$k"
+  printf '%s\n' "$2" >"$d/$k/author"
+  printf '%s\n' "$3" >"$d/$k/created"
+  printf '%s' "$4" >"$d/$k/body"
+}
+
+# fake_pr_draft <n>: seeds PR #n as a draft.
+fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
+
+# fake_pr_head <n> <sha> [commit...]: seeds PR #n's head SHA and its commits,
+# oldest first - given none, the head alone.
+fake_pr_head() {
+  local d="$ORCH_GH_FAKE_STORE/prs/$1"
+  printf '%s\n' "$2" >"$d/head_oid"
+  shift 2
+  rm -f "$d/commits"
+  [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/commits"
+}
+
+# fake_next_pr <n>: the number the next PR opened takes.
+fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }
+
+# PR #n read back from the store: its state (OPEN, CLOSED or MERGED), head and
+# base branches, title, body, whether it is a draft (yes or no), and the bodies
+# of its comments, in order, one blank line between.
+fake_pr_state_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/state" 2>/dev/null; }
+fake_pr_head_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/head" 2>/dev/null; }
+fake_pr_base_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/base" 2>/dev/null; }
+fake_pr_title_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/title" 2>/dev/null; }
+fake_pr_body_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/body" 2>/dev/null; }
+fake_pr_draft_of() { [ -f "$ORCH_GH_FAKE_STORE/prs/$1/draft" ] && echo yes || echo no; }
+fake_pr_comments_of() {
+  local d="$ORCH_GH_FAKE_STORE/prs/$1/comments" k first=1
+  [ -d "$d" ] || return 0
+  for k in $(ls "$d" | sort -n); do
+    [ "$first" = 1 ] || printf '\n\n'
+    first=0
+    cat "$d/$k/body"
+  done
+}
+
+# fake_prs: every PR number the store holds, in order, space-separated.
+fake_prs() { ls "$ORCH_GH_FAKE_STORE/prs" 2>/dev/null | sort -n | tr '\n' ' '; }
 
 # fake_label <name> <colour> <description>: seeds a label the repo already
 # has. An unseeded store has no labels.
@@ -1852,14 +1919,14 @@ assert_contains "status prints the flow's base branch" "$(orch_gh_failing status
 
 body="$(mktemp)"
 writeln 'Implements the thing.' >"$body"
-filed="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=31 \
-  orch_gh_failing pr open "Title" "$body" 2>&1)"; st=$?
+fake_github
+fake_next_pr 31
+out="$(orch_gh_failing pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "pr open succeeds" "$st" 0
-assert_contains "pr open targets the flow's recorded base" "$(cat "$filed")" "base=uat"
-body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_eq "pr open targets the flow's recorded base" "$(fake_pr_base_of 31)" "uat"
 assert_first_line "a PR into a non-default base refers to its issue instead of closing it" \
-  "$body_recorded" "Refs #7"
+  "$(fake_pr_body_of 31)" "Refs #7"
+unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 # A deleted base branch must not quietly become a fork from a stale local copy.
 git update-ref refs/remotes/origin/gone "$main_tip"
@@ -1940,24 +2007,22 @@ assert_eq "and records the default branch" "$(recorded_base quick/6-main)" "main
 body="$(mktemp)"
 writeln 'Implements the thing.' >"$body"
 git checkout -q quick/5-uat
-filed="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=41 \
-  orch_gh_failing pr publish 5 "Title" "$body" 2>&1)"; st=$?
+fake_github
+fake_next_pr 41
+out="$(orch_gh_failing pr publish 5 "Title" "$body" 2>&1)"; st=$?
 assert_status "pr publish succeeds" "$st" 0
-assert_contains "pr publish targets the recorded base over the changed setting" \
-  "$(cat "$filed")" "base=uat"
-body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_eq "pr publish targets the recorded base over the changed setting" \
+  "$(fake_pr_base_of 41)" "uat"
 assert_first_line "a quick PR into a non-default base refers to its issue" \
-  "$body_recorded" "Refs #5"
+  "$(fake_pr_body_of 41)" "Refs #5"
 
 # A branch made before branch off recorded anything publishes to the setting.
 git checkout -q -b quick/7-legacy "$main_tip"
 orch_gh_failing base set uat >/dev/null
-filed="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=42 \
-  orch_gh_failing pr publish 7 "Title" "$body" 2>&1)"; st=$?
+out="$(orch_gh_failing pr publish 7 "Title" "$body" 2>&1)"; st=$?
 assert_status "pr publish succeeds with nothing recorded" "$st" 0
-assert_contains "and falls back to the base branch setting" "$(cat "$filed")" "base=uat"
+assert_eq "and falls back to the base branch setting" "$(fake_pr_base_of "$out")" "uat"
+unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 # A deleted base branch must not quietly become a fork from a stale local copy.
 git update-ref refs/remotes/origin/gone "$main_tip"
@@ -3316,11 +3381,10 @@ restore_suite_env
 # GitHub does not read as a closer. pr open owns the keyword instead, so no
 # agent-chosen wording can leave a spec issue open again.
 #
-# open_pr's create/view go through the ORCH_GH_ADAPTER seam here, pointed at
-# the in-memory fake rather than stub_gh - GH_STUB_LOG stays empty across every
-# call below, proving neither ever spawns a real gh subprocess. The
-# subprocess-real counterpart is the "gh adapter (real pr create/view,
-# subprocess gh)" block right after "pr publish".
+# open_pr's create goes through the store-backed fake (fake_github), and the
+# PR it opened is read back from the store - GH_STUB_LOG stays empty, proving
+# it never spawns a real gh subprocess. The real operation is pinned in "gh
+# adapter contract".
 echo
 echo "pr open"
 healthy_repo
@@ -3340,28 +3404,35 @@ assert_contains "with the guard branch create uses" "$out" \
   "no issue recorded in state - the spec phase must publish one first"
 
 "$ORCH" state set issue 16
-filed="$(mktemp)"
+fake_github
+fake_next_pr 23
 log="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=23 \
-  "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+out="$(GH_STUB_LOG="$log" GH_STUB_REPO=main "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
-assert_eq "prints the PR number gh answered" "$out" "23"
+assert_eq "prints the PR number GitHub gave it" "$out" "23"
 assert_eq "and records it in state" "$("$ORCH" state get pr)" "23"
-body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_eq "opening it as a draft" "$(fake_pr_draft_of 23)" "yes"
+assert_eq "from the flow's branch" "$(fake_pr_head_of 23)" "orch/16-propen"
+assert_eq "under the title given" "$(fake_pr_title_of 23)" "Title"
+body_recorded="$(fake_pr_body_of 23)"
 assert_first_line "the recorded body opens with the closing keyword" \
   "$body_recorded" "Closes #16"
-assert_contains "and targets the flow's base, the default branch" "$(cat "$filed")" "base=main"
+assert_eq "and targets the flow's base, the default branch" "$(fake_pr_base_of 23)" "main"
 assert_eq "leaves a blank line before the original body" \
   "$(printf '%s\n' "$body_recorded" | sed -n 2p)" ""
 assert_contains "and keeps the agent's original body intact after a blank line" \
   "$body_recorded" "Some detail."
-assert_eq "the create/view calls never reached a real gh subprocess" \
+assert_eq "the create call never reached a real gh subprocess" \
   "$(grep -cx pr "$log")" "0"
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+fake_fail adapter_pr_create 'a pull request for branch "orch/16-propen" into branch "main" already exists'
+out="$(GH_STUB_REPO=main "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
+assert_contains "passing gh's reason through" "$out" "already exists"
 assert_contains "naming the branch it would have opened from" "$out" "orch/16-propen"
 assert_contains "and the issue it would have closed" "$out" "#16"
+assert_eq "opening nothing" "$(fake_prs)" "23 "
+unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 # require_branch's die message is the other half of require_field's coverage
 # (#79) alongside "refuses when state has no issue" above - a fresh flow with
@@ -3398,17 +3469,16 @@ git checkout -q -b quick/16-widgets
 body="$(mktemp)"
 writeln 'Implements the thing.' '' 'Some detail.' >"$body"
 
-filed="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_REPO=main GH_STUB_PR_NUMBER=23 \
-  "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
+fake_github
+fake_next_pr 23
+out="$(GH_STUB_REPO=main "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
-assert_eq "prints the PR number gh answered" "$out" "23"
+assert_eq "prints the PR number GitHub gave it" "$out" "23"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
-assert_contains "opens against the default branch, not as a draft" "$(cat "$filed")" "base=main"
-assert_contains "and against the current branch" "$(cat "$filed")" "head=quick/16-widgets"
-assert_eq "with no bogus flag=<value> entries for the base/head values" \
-  "$(grep -c '^flag=' "$filed")" "0"
-body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
+assert_eq "opens against the default branch" "$(fake_pr_base_of 23)" "main"
+assert_eq "not as a draft" "$(fake_pr_draft_of 23)" "no"
+assert_eq "and from the current branch" "$(fake_pr_head_of 23)" "quick/16-widgets"
+body_recorded="$(fake_pr_body_of 23)"
 assert_first_line "the recorded body opens with the closing keyword" \
   "$body_recorded" "Closes #16"
 assert_contains "and keeps the agent's original body intact after a blank line" \
@@ -3424,7 +3494,8 @@ assert_contains "naming it" "$out" "abc"
 out="$("$ORCH" pr publish 16 "Title" /nonexistent/body.md 2>&1)"; st=$?
 assert_status "refuses a body file that does not exist" "$st" 1
 
-out="$(GH_STUB_PR_CREATE_EXIT=1 "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
+fake_fail adapter_pr_create
+out="$(GH_STUB_REPO=main "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "naming the branch it would have opened from" "$out" "quick/16-widgets"
 assert_contains "and the issue it would have closed" "$out" "#16"
@@ -3437,14 +3508,13 @@ assert_status "pr bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown pr op"
 assert_contains "naming both" "$out" "open|publish"
 
-# --- gh adapter (real pr create/view, subprocess gh) -------------------------
-# pr open just proved the seam through the in-memory fake, and pr publish
-# above already shells out for real (ORCH_GH_ADAPTER unset) since it never
-# switched to the fake - this is the narrow assertion that both calls actually
-# reach a real gh subprocess rather than merely compiling: one for the create,
-# one for the view that reads the PR number back.
+# --- gh adapter (real pr create, subprocess gh) ------------------------------
+# pr open and pr publish just proved the seam through the store-backed fake -
+# this is the narrow assertion that the create actually reaches a real gh
+# subprocess rather than merely compiling, the PR number read off the URL it
+# prints. The operation itself is pinned in "gh adapter contract".
 echo
-echo "gh adapter (real pr create/view, subprocess gh)"
+echo "gh adapter (real pr create, subprocess gh)"
 new_repo >/dev/null
 git remote set-url origin https://github.com/acme/widgets.git
 stub_gh
@@ -3467,8 +3537,8 @@ assert_contains "the real adapter invoked gh pr create with the base flag's valu
 assert_contains "and the head flag's value" "$(cat "$filed")" "head=quick/16-widgets"
 assert_eq "with no bogus flag=<value> entries for the base/head values" \
   "$(grep -c '^flag=' "$filed")" "0"
-assert_eq "gh itself was invoked once for create and once for view, as real subprocesses" \
-  "$(grep -cx pr "$log")" "2"
+assert_eq "gh itself was invoked once, for the create, as a real subprocess" \
+  "$(grep -cx pr "$log")" "1"
 restore_suite_env
 
 # --- every gh call pinned to the repo (#520) -----------------------------------
@@ -3560,7 +3630,7 @@ restore_suite_env GH_HOST
 # The release PR carries the base branch back into the default branch and
 # closes every still-open issue whose work reached it - read from the bodies of
 # the PRs merged into the base branch, never remembered by a human. Every
-# GitHub call goes through the in-memory fake; the subprocess-real counterpart
+# GitHub call goes through the store-backed fake; the subprocess-real counterpart
 # is the "gh adapter (real pr list, subprocess gh)" block right after this one.
 echo
 echo "pr release"
@@ -3573,7 +3643,7 @@ git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 body="$(mktemp)"
 writeln 'Ships the uat project.' '' 'Some detail.' >"$body"
-release() { GH_STUB_FILED="$filed" orch_gh_failing pr release "$@"; }
+release() { orch_gh_failing pr release "$@"; }
 # The issues the merged PRs below refer to: #3 and #8 already closed, #62 a
 # pull request, not an issue.
 fake_github
@@ -3582,62 +3652,76 @@ fake_issue 3 closed
 fake_issue 8 closed
 fake_pull 62
 
-filed="$(mktemp)"
 out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses when the base branch is the default branch" "$st" 1
 assert_contains "naming it" "$out" "main"
-assert_not_contains "and opens no PR" "$(cat "$filed")" "pr create"
+assert_eq "and opens no PR" "$(fake_prs)" ""
 
 orch_gh_failing base set uat >/dev/null
-filed="$(mktemp)"
-out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' release "Release" "$body" 2>&1)"; st=$?
+# Open PRs that are not a release PR: from uat into another base, and from
+# another branch into main.
+fake_pr 55 open uat staging
+fake_pr 56 open topic main
+fake_pr 57 open uat main
+out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses while a release PR is already open" "$st" 1
 assert_contains "printing that PR's number" "$out" "#57"
-assert_contains "asking only for open PRs" "$(cat "$filed")" "pr list --head uat --base main --state open"
-assert_not_contains "and opens no second one" "$(cat "$filed")" "pr create"
+assert_eq "and opens no second one" "$(fake_prs)" "55 56 57 "
+fake_pr 57 closed uat main
+fake_fail adapter_prs_merged_bodies "HTTP 502: Bad Gateway"
+out="$(release "Release" "$body" 2>&1)"; st=$?
+assert_status "with the release PR closed, only open PRs from uat into main counted" "$st" 1
+assert_contains "it goes on to read the merged PRs" "$out" "gh could not list the PRs merged into uat"
+rm -rf "$ORCH_GH_FAKE_STORE/prs" "$ORCH_GH_FAKE_STORE/fail"
 
 # Every reference the merged PRs make is to an issue that is already closed.
-filed="$(mktemp)"
-merged='[{"number":60,"body":"Refs #3"},{"number":61,"body":"No references here."}]'
-out="$(GH_STUB_PR_LIST_MERGED="$merged" release "Release" "$body" 2>&1)"; st=$?
+# A PR merged into another base refers to an open issue, and does not count.
+fake_pr 60 merged topic uat
+fake_pr_body 60 "Refs #3"
+fake_pr 61 merged topic uat
+fake_pr_body 61 "No references here."
+fake_pr 66 merged topic main
+fake_pr_body 66 "Closes #5"
+out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses when no referenced issue is still open" "$st" 1
 assert_contains "saying there is nothing to close" "$out" "nothing to close"
-assert_contains "reading the PRs merged into the base branch" "$(cat "$filed")" "pr list --base uat --state merged"
-assert_not_contains "and opens no PR" "$(cat "$filed")" "pr create"
+assert_eq "and opens no PR" "$(fake_prs)" "60 61 66 "
 
-filed="$(mktemp)"
-out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_PR_NUMBER=70 \
-  release --force "Release" "$body" 2>&1)"; st=$?
+fake_next_pr 70
+out="$(release --force "Release" "$body" 2>&1)"; st=$?
 assert_status "--force releases with nothing to close" "$st" 0
 assert_eq "printing the PR number" "$out" "70"
-body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
-assert_eq "with the caller's body alone" "$body_recorded" "$(cat "$body")"
+assert_eq "with the caller's body alone" "$(fake_pr_body_of 70)" "$(cat "$body")"
+rm -rf "$ORCH_GH_FAKE_STORE/prs"
 
 # Hand-written PRs into uat count too: every keyword, in any case, anywhere in
 # the body. #5 is referenced twice and #8 is already closed. Other closing
 # forms (fix, closed) are prose, not references, and #62 is an open PR, not
 # an issue.
-filed="$(mktemp)"
-merged='[{"number":62,"body":"Refs #5\n\nImplements it."},
-{"number":63,"body":"Summary first.\n\nThis closes #6 and FIXES #7."},
-{"number":64,"body":"resolves #9\nAlso Refs #5, and Closes #8.\nIt prefixes #4 with nothing."},
-{"number":65,"body":"A quick fix #12, closed #13. Refs #62, an open PR."}]'
-out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_PR_NUMBER=71 \
-  release "Release uat" "$body" 2>&1)"; st=$?
+fake_pr 62 merged topic uat
+fake_pr_body 62 $'Refs #5\n\nImplements it.'
+fake_pr 63 merged topic uat
+fake_pr_body 63 $'Summary first.\n\nThis closes #6 and FIXES #7.'
+fake_pr 64 merged topic uat
+fake_pr_body 64 $'resolves #9\nAlso Refs #5, and Closes #8.\nIt prefixes #4 with nothing.'
+fake_pr 65 merged topic uat
+fake_pr_body 65 'A quick fix #12, closed #13. Refs #62, an open PR.'
+fake_next_pr 71
+out="$(release "Release uat" "$body" 2>&1)"; st=$?
 assert_status "opens the release PR" "$st" 0
 assert_eq "prints its number" "$out" "71"
-body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
 assert_eq "one Closes line per still-open issue, deduplicated, above the caller's body" \
-  "$body_recorded" "$(writeln 'Closes #5' 'Closes #6' 'Closes #7' 'Closes #9' '' 'Ships the uat project.' '' 'Some detail.')"
-assert_contains "from the base branch" "$(cat "$filed")" "head=uat"
-assert_contains "into the default branch" "$(cat "$filed")" "base=main"
-assert_contains "with the caller's title" "$(cat "$filed")" "title=Release uat"
-assert_not_contains "not as a draft" "$(cat "$filed")" "flag=--draft"
+  "$(fake_pr_body_of 71)" "$(writeln 'Closes #5' 'Closes #6' 'Closes #7' 'Closes #9' '' 'Ships the uat project.' '' 'Some detail.')"
+assert_eq "from the base branch" "$(fake_pr_head_of 71)" "uat"
+assert_eq "into the default branch" "$(fake_pr_base_of 71)" "main"
+assert_eq "with the caller's title" "$(fake_pr_title_of 71)" "Release uat"
+assert_eq "not as a draft" "$(fake_pr_draft_of 71)" "no"
 assert_eq "and pushes nothing" "$(git -C "$bare" for-each-ref --format='%(refname)' | sort | tr '\n' ' ')" \
   "refs/heads/main refs/heads/uat "
 
-filed="$(mktemp)"
-out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_PR_CREATE_EXIT=1 release "Release" "$body" 2>&1)"; st=$?
+fake_pr 71 closed uat main
+fake_fail adapter_pr_create
+out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "naming both branches" "$out" "from uat into main"
 
@@ -3658,35 +3742,37 @@ new_repo >/dev/null
 git checkout -q -b quick/12-foo
 body="$(mktemp)"
 writeln '## Review' '' '- `a.sh:3` - declined: out of scope.' >"$body"
-prc() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" pr comment "$@"; }
+prc() { "$ORCH" pr comment "$@"; }
+fake_github
+# Open PRs that are not this branch's: one from another branch, and a closed
+# one from this branch.
+fake_pr 50 open quick/99-other main
+fake_pr 51 closed quick/12-foo main
 
-filed="$(mktemp)"
-out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc "$body" 2>&1)"; st=$?
-assert_status "posts on the branch's open PR" "$st" 0
-assert_eq "printing the PR number" "$out" "57"
-assert_contains "looking the PR up by the current branch" "$(cat "$filed")" \
-  "pr list --head quick/12-foo --state open --json number"
-assert_contains "commenting on that PR" "$(cat "$filed")" "pr comment 57"
-body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
-assert_eq "with the file's contents" "$body_recorded" "$(cat "$body")"
-
-filed="$(mktemp)"
 out="$(prc "$body" 2>/dev/null)"; st=$?
 assert_status "no open PR exits 1" "$st" 1
 assert_eq "printing nothing" "$out" ""
-assert_not_contains "and posts nothing" "$(cat "$filed")" "pr comment"
+assert_eq "and posts nothing" "$(fake_pr_comments_of 50)$(fake_pr_comments_of 51)" ""
 
-filed="$(mktemp)"
-err="$(GH_STUB_PR_LIST_EXIT=1 prc "$body" 2>&1 >/dev/null)"; st=$?
+fake_pr 57 open quick/12-foo main
+out="$(prc "$body" 2>&1)"; st=$?
+assert_status "posts on the branch's open PR" "$st" 0
+assert_eq "printing the PR number" "$out" "57"
+assert_eq "commenting on that PR, with the file's contents" "$(fake_pr_comments_of 57)" "$(cat "$body")"
+
+fake_fail adapter_prs_open
+err="$(prc "$body" 2>&1 >/dev/null)"; st=$?
 assert_status "a GitHub that cannot be read exits 2" "$st" 2
 [ -n "$err" ] && ok "with a reason on stderr" || bad "with a reason on stderr" "stderr was empty"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
 
-filed="$(mktemp)"
-err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' GH_STUB_PR_COMMENT_EXIT=1 prc "$body" 2>&1 >/dev/null)"; st=$?
+fake_fail adapter_pr_comment
+err="$(prc "$body" 2>&1 >/dev/null)"; st=$?
 assert_status "a failed post exits 2" "$st" 2
 assert_contains "naming the PR" "$err" "#57"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
 
-err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc /nonexistent/body.md 2>&1 >/dev/null)"; st=$?
+err="$(prc /nonexistent/body.md 2>&1 >/dev/null)"; st=$?
 assert_status "a missing file exits 2" "$st" 2
 assert_contains "naming it" "$err" "/nonexistent/body.md"
 
@@ -3695,15 +3781,15 @@ assert_status "no file argument exits 2" "$st" 2
 assert_contains "with its usage" "$err" "usage: orch.sh pr comment <file>"
 
 git checkout -q --detach
-err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc "$body" 2>&1 >/dev/null)"; st=$?
+err="$(prc "$body" 2>&1 >/dev/null)"; st=$?
 assert_status "a detached HEAD exits 2" "$st" 2
 assert_contains "saying so" "$err" "detached HEAD"
 
 # Each exit-2 failure pinned byte for byte: the exact stderr line with its
 # `orch: ` prefix, exit 2, and nothing on stdout (#347). Where gh itself
-# failed, the stub's own complaint precedes it, so orch's line is the last.
+# failed, the fake's own complaint precedes it, so orch's line is the last.
 errf="$(mktemp)"
-out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' prc "$body" 2>"$errf")"; st=$?
+out="$(prc "$body" 2>"$errf")"; st=$?
 assert_status "detached HEAD: exit 2" "$st" 2
 assert_eq "detached HEAD: exact stderr" "$(cat "$errf")" "orch: not on a branch (detached HEAD)"
 assert_eq "detached HEAD: empty stdout" "$out" ""
@@ -3719,18 +3805,21 @@ assert_status "missing file: exit 2" "$st" 2
 assert_eq "missing file: exact stderr" "$(cat "$errf")" "orch: body file not found: /nonexistent/body.md"
 assert_eq "missing file: empty stdout" "$out" ""
 
-filed="$(mktemp)"
-out="$(GH_STUB_PR_LIST_EXIT=1 prc "$body" 2>"$errf")"; st=$?
+fake_fail adapter_prs_open
+out="$(prc "$body" 2>"$errf")"; st=$?
 assert_status "unreadable PR list: exit 2" "$st" 2
 assert_eq "unreadable PR list: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not list the open PRs from quick/12-foo"
 assert_eq "unreadable PR list: empty stdout" "$out" ""
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
 
-filed="$(mktemp)"
-out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' GH_STUB_PR_COMMENT_EXIT=1 prc "$body" 2>"$errf")"; st=$?
+fake_fail adapter_pr_comment
+out="$(prc "$body" 2>"$errf")"; st=$?
 assert_status "failed post: exit 2" "$st" 2
 assert_eq "failed post: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not comment on PR #57"
 assert_eq "failed post: empty stdout" "$out" ""
 rm -f "$errf"
+assert_eq "no failed call posted anything" "$(fake_pr_comments_of 57)" "$(cat "$body")"
+unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 help="$("$ORCH" help)"
 assert_contains "help documents pr comment" "$help" "pr comment <file>"
@@ -3743,63 +3832,59 @@ echo
 echo "pr fetch / pr update (#444)"
 new_repo >/dev/null
 git checkout -q -b orch/12-foo
-prbody="$(mktemp)"
-writeln 'Closes #12' '' 'Adds `quote_meta`, needed for meta#ts.' >"$prbody"
-prb() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_BODY="$prbody" \
-  GH_STUB_PR_LIST_OPEN='[{"number":57}]' "$ORCH" pr "$@"; }
+fake_github
+prb() { "$ORCH" pr "$@"; }
+# set_pr_body <line>...: PR #57's body, one line each, as writeln writes it.
+set_pr_body() { fake_pr_body 57 "$(writeln "$@")"$'\n'; }
 
-filed="$(mktemp)"
 out_file="$(mktemp -d)/body.md"
 out="$(prb fetch "$out_file" 2>&1)"; st=$?
-assert_status "pr fetch succeeds" "$st" 0
-assert_eq "pr fetch writes the open PR's body to the file" "$(cat "$out_file")" "$(cat "$prbody")"
-assert_contains "pr fetch looks the PR up by the current branch" "$(cat "$filed")" \
-  "pr list --head orch/12-foo --state open --json number"
-
-filed="$(mktemp)"
+assert_status "pr fetch with no open PR fails" "$st" 1
+assert_contains "saying so" "$out" "no open PR"
 newbody="$(mktemp)"
 writeln 'Closes #12' '' 'Adds nothing new.' >"$newbody"
 out="$(prb update "$newbody" 2>&1)"; st=$?
+assert_status "pr update with no open PR fails" "$st" 1
+
+fake_pr 56 open orch/99-other main
+fake_pr_body 56 "Closes #99"
+fake_pr 57 open orch/12-foo main
+set_pr_body 'Closes #12' '' 'Adds `quote_meta`, needed for meta#ts.'
+out="$(prb fetch "$out_file" 2>&1)"; st=$?
+assert_status "pr fetch succeeds" "$st" 0
+assert_eq "pr fetch writes the current branch's open PR's body to the file" \
+  "$(cat "$out_file")" "$(writeln 'Closes #12' '' 'Adds `quote_meta`, needed for meta#ts.')"
+
+out="$(prb update "$newbody" 2>&1)"; st=$?
 assert_status "pr update succeeds" "$st" 0
-assert_eq "pr update replaces the PR's body with the file" "$(cat "$prbody")" "$(cat "$newbody")"
-assert_contains "editing that PR" "$(cat "$filed")" "pr edit 57"
+assert_eq "pr update replaces that PR's body with the file" "$(fake_pr_body_of 57)" "$(cat "$newbody")"
+assert_eq "and no other" "$(fake_pr_body_of 56)" "Closes #99"
 prb fetch "$out_file" >/dev/null 2>&1
 assert_eq "a fetch after the update reads the new body back" "$(cat "$out_file")" "$(cat "$newbody")"
 
-writeln 'Refs #12' '' 'Into uat.' >"$prbody"
+set_pr_body 'Refs #12' '' 'Into uat.'
 writeln 'Refs #12' '' 'Into uat, corrected.' >"$newbody"
 out="$(prb update "$newbody" 2>&1)"; st=$?
 assert_status "pr update keeps a Refs line too" "$st" 0
-assert_eq "replacing the body" "$(cat "$prbody")" "$(cat "$newbody")"
+assert_eq "replacing the body" "$(fake_pr_body_of 57)" "$(cat "$newbody")"
 
-writeln 'Closes #12' '' 'Original body.' >"$prbody"
-before="$(cat "$prbody")"
+set_pr_body 'Closes #12' '' 'Original body.'
+before="$(fake_pr_body_of 57)"
 for bad_first in 'Adds nothing new.' 'Closes #13' 'Refs #12' ''; do
-  filed="$(mktemp)"
   { printf '%s\n' "$bad_first"; printf '\nCorrected body.\n'; } >"$newbody"
   err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
   assert_status "pr update refuses a first line of '$bad_first'" "$st" 1
-  assert_eq "leaving the body unchanged ('$bad_first')" "$(cat "$prbody")" "$before"
-  assert_not_contains "and editing nothing ('$bad_first')" "$(cat "$filed")" "pr edit"
+  assert_eq "leaving the body unchanged ('$bad_first')" "$(fake_pr_body_of 57)" "$before"
   assert_contains "naming the line it must keep ('$bad_first')" "$err" "Closes #12"
 done
 
-writeln 'Hand-edited, no issue line.' >"$prbody"
+set_pr_body 'Hand-edited, no issue line.'
 writeln 'Hand-edited, no issue line.' '' 'More.' >"$newbody"
 err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
 assert_status "pr update refuses when the PR's body has no Closes/Refs first line" "$st" 1
-assert_eq "leaving that body unchanged" "$(cat "$prbody")" "Hand-edited, no issue line."
+assert_eq "leaving that body unchanged" "$(fake_pr_body_of 57)" "$(writeln 'Hand-edited, no issue line.')"
 
-writeln 'Closes #12' >"$prbody"
-filed="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_BODY="$prbody" \
-  "$ORCH" pr fetch "$out_file" 2>&1)"; st=$?
-assert_status "pr fetch with no open PR fails" "$st" 1
-assert_contains "saying so" "$out" "no open PR"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_BODY="$prbody" \
-  "$ORCH" pr update "$newbody" 2>&1)"; st=$?
-assert_status "pr update with no open PR fails" "$st" 1
-
+set_pr_body 'Closes #12'
 err="$(prb update /nonexistent/body.md 2>&1 >/dev/null)"; st=$?
 assert_status "pr update refuses a missing file" "$st" 1
 assert_contains "naming it" "$err" "/nonexistent/body.md"
@@ -3811,12 +3896,16 @@ err="$(prb update 2>&1 >/dev/null)"; st=$?
 assert_contains "pr update with no file argument gives its usage" "$err" "usage: orch.sh pr update <file>"
 
 writeln 'Closes #12' '' 'x' >"$newbody"
-err="$(GH_STUB_PR_EDIT_EXIT=1 prb update "$newbody" 2>&1 >/dev/null)"; st=$?
+fake_fail adapter_pr_body_edit
+err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
 assert_status "a failed edit fails" "$st" 1
 assert_contains "naming the PR" "$err" "#57"
-err="$(GH_STUB_PR_BODY_EXIT=1 prb fetch "$out_file" 2>&1 >/dev/null)"; st=$?
+fake_fail adapter_pr_body
+err="$(prb fetch "$out_file" 2>&1 >/dev/null)"; st=$?
 assert_status "a failed read fails" "$st" 1
 assert_contains "naming the PR" "$err" "#57"
+assert_eq "leaving the body as it was" "$(fake_pr_body_of 57)" "$(writeln 'Closes #12')"
+unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 help="$("$ORCH" help)"
 assert_contains "help documents pr fetch" "$help" "pr fetch <file>"
@@ -3831,44 +3920,46 @@ echo
 echo "pr comments (#418)"
 new_repo >/dev/null
 git checkout -q -b quick/18-foo
-prcs() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" pr comments "$@"; }
-pr_comments_json='{"comments":[{"author":{"login":"pat"},"createdAt":"2026-10-01T09:00:00Z","body":"## Review\n\n- `a.sh:3` - unused helper - declined: out of scope.\n\n## Host fallbacks\n\nNone."},{"author":{"login":"bot"},"createdAt":"2026-10-02T10:00:00Z","body":"LGTM"}]}'
+prcs() { "$ORCH" pr comments "$@"; }
+fake_github
 pr_comments="$(mktemp -d)/comments.md"
 
-filed="$(mktemp)"
-out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' GH_STUB_PR_COMMENTS_JSON="$pr_comments_json" \
-  prcs "$pr_comments" 2>&1)"; st=$?
-assert_status "pr comments writes the open PR's comments" "$st" 0
+printf 'known content\n' >"$pr_comments"
+fake_pr 56 open quick/99-other main
+fake_pr_comment 56 pat 2026-10-01T09:00:00Z "Not this one."
+out="$(prcs "$pr_comments" 2>/dev/null)"; st=$?
+assert_status "no open PR exits 1" "$st" 1
+assert_eq "printing nothing" "$out" ""
+assert_eq "and writing nothing" "$(cat "$pr_comments")" "known content"
+
+fake_pr 57 open quick/18-foo main
+out="$(prcs "$pr_comments" 2>&1)"; st=$?
+assert_status "a PR with no comments still succeeds" "$st" 0
+assert_eq "leaving an empty file" "$(wc -c <"$pr_comments" | tr -d ' ')" "0"
+
+fake_pr_comment 57 pat 2026-10-01T09:00:00Z $'## Review\n\n- `a.sh:3` - unused helper - declined: out of scope.\n\n## Host fallbacks\n\nNone.'
+fake_pr_comment 57 bot 2026-10-02T10:00:00Z "LGTM"
+out="$(prcs "$pr_comments" 2>&1)"; st=$?
+assert_status "pr comments writes the current branch's open PR's comments" "$st" 0
 assert_eq "and prints nothing" "$out" ""
 assert_eq "in issue comments' format: each opened by its author-and-date marker" \
   "$(cat "$pr_comments")" "$(writeln '<!-- comment @pat 2026-10-01T09:00:00Z -->' \
     '## Review' '' '- `a.sh:3` - unused helper - declined: out of scope.' '' '## Host fallbacks' '' 'None.' '' \
     '<!-- comment @bot 2026-10-02T10:00:00Z -->' 'LGTM')"
-assert_contains "looking the PR up by the current branch" "$(cat "$filed")" \
-  "pr list --head quick/18-foo --state open --json number"
-
-filed="$(mktemp)"
-out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' GH_STUB_PR_COMMENTS_JSON='{"comments":[]}' \
-  prcs "$pr_comments" 2>&1)"; st=$?
-assert_status "a PR with no comments still succeeds" "$st" 0
-assert_eq "leaving an empty file" "$(wc -c <"$pr_comments" | tr -d ' ')" "0"
 
 printf 'known content\n' >"$pr_comments"
-filed="$(mktemp)"
-out="$(GH_STUB_PR_COMMENTS_JSON="$pr_comments_json" prcs "$pr_comments" 2>/dev/null)"; st=$?
-assert_status "no open PR exits 1" "$st" 1
-assert_eq "printing nothing" "$out" ""
-assert_eq "and writing nothing" "$(cat "$pr_comments")" "known content"
-
-err="$(GH_STUB_PR_LIST_EXIT=1 prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
+fake_fail adapter_prs_open
+err="$(prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
 assert_status "an unreadable PR list exits 2" "$st" 2
 assert_eq "and writes nothing" "$(cat "$pr_comments")" "known content"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
 
-err="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' GH_STUB_PR_COMMENTS_EXIT=1 \
-  GH_STUB_PR_COMMENTS_JSON="$pr_comments_json" prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
+fake_fail adapter_pr_comments
+err="$(prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
 assert_status "unreadable comments exit 2" "$st" 2
 assert_contains "naming the PR" "$err" "PR #57"
 assert_eq "leaving the file that was already there unchanged" "$(cat "$pr_comments")" "known content"
+unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 err="$(prcs 2>&1 >/dev/null)"; st=$?
 assert_status "no file argument exits 2" "$st" 2
@@ -3878,7 +3969,7 @@ assert_contains "help documents pr comments" "$("$ORCH" help)" "pr comments <fil
 rm -f "$pr_comments"
 
 # --- gh adapter (real pr list, subprocess gh) ---------------------------------
-# pr release just proved its decisions through the in-memory fake - this is
+# pr release just proved its decisions through the store-backed fake - this is
 # the narrow assertion that its list, issue-state and create calls reach a real
 # gh subprocess with ORCH_GH_ADAPTER unset.
 echo
@@ -5249,6 +5340,117 @@ assert_status "issue reopen: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 assert_eq "every issue operation was pinned to the resolved repo" \
   "$(grep ' issue ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> issue ')" "0"
+
+# The PR operations, the same way: each read's reply is what gh's own --jq
+# printed.
+gh_reply 0 $'https://github.com/acme/widgets/pull/31\n' '' \
+  pr create --draft --base main --head orch/16-x --title "Add it" --body-file "$ibody"
+out="$(contract adapter_pr_create main orch/16-x "Add it" "$ibody" true 2>&1)"; st=$?
+assert_status "pr create: opens a draft PR from head into base" "$st" 0
+assert_eq "printing its number alone" "$out" "31"
+gh_reply 0 $'https://github.com/acme/widgets/pull/32\n' '' \
+  pr create --base main --head uat --title "Release" --body-file "$ibody"
+out="$(contract adapter_pr_create main uat "Release" "$ibody" 2>&1)"; st=$?
+assert_status "pr create: opens a PR that is not a draft" "$st" 0
+assert_eq "printing its number" "$out" "32"
+gh_reply 0 $'Warning: 1 uncommitted change\n' '' \
+  pr create --base main --head no-url --title "No URL" --body-file "$ibody"
+out="$(contract adapter_pr_create main no-url "No URL" "$ibody" 2>/dev/null)"; st=$?
+assert_status "pr create: gh output with no PR URL fails it" "$st" 1
+assert_eq "printing no number" "$out" ""
+gh_reply 1 '' 'a pull request for branch "dup" into branch "main" already exists' \
+  pr create --base main --head dup --title "Dup" --body-file "$ibody"
+out="$(contract adapter_pr_create main dup "Dup" "$ibody" 2>&1)"; st=$?
+assert_status "pr create: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" 'a pull request for branch "dup" into branch "main" already exists'
+
+gh_reply 0 $'Closes #12\n\nAdds it.\n' '' pr view 57 --json body --jq .body
+out="$(contract adapter_pr_body 57 2>&1)"; st=$?
+assert_status "pr body: reads the body" "$st" 0
+assert_eq "printing it as it is" "$out" "$(writeln 'Closes #12' '' 'Adds it.')"
+gh_reply 1 '' 'no pull requests found for 404' pr view 404 --json body --jq .body
+out="$(contract adapter_pr_body 404 2>&1)"; st=$?
+assert_status "pr body: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "no pull requests found for 404"
+
+gh_reply 0 $'<!-- comment @pat 2026-10-01T09:00:00Z -->\nLGTM\n' '' \
+  pr view 57 --json comments --jq "$comments_jq"
+out="$(contract adapter_pr_comments 57 2>&1)"; st=$?
+assert_status "pr comments: reads the comments through COMMENTS_JQ" "$st" 0
+assert_eq "printing what it formatted" "$out" "$(writeln '<!-- comment @pat 2026-10-01T09:00:00Z -->' 'LGTM')"
+
+refs_jq='(.headRefOid // ""), (.headRefName // ""), (.baseRefName // ""), ((.commits // [])[].oid)'
+gh_reply 0 $'bbbb\ntopic\nmain\naaaa\nbbbb\n' '' \
+  pr view 57 --json headRefOid,headRefName,baseRefName,commits --jq "$refs_jq"
+out="$(contract adapter_pr_refs 57 2>&1)"; st=$?
+assert_status "pr refs: reads the PR's head, base and commits" "$st" 0
+assert_eq "head SHA, head branch, base branch, then one commit per line, oldest first" \
+  "$out" "$(writeln bbbb topic main aaaa bbbb)"
+assert_eq "its --jq prints an empty line for a field GitHub leaves null" \
+  "$(printf '%s' '{"headRefOid":null,"headRefName":"topic","baseRefName":"main","commits":null}' | jq -r "$refs_jq")" \
+  "$(writeln '' topic main)"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' \
+  pr view 58 --json headRefOid,headRefName,baseRefName,commits --jq "$refs_jq"
+out="$(contract adapter_pr_refs 58 2>&1)"; st=$?
+assert_status "pr refs: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
+gh_reply 0 '✓ Pull request acme/widgets#57 is marked as "ready for review"' '' pr ready 57
+out="$(contract adapter_pr_ready 57 2>&1)"; st=$?
+assert_status "pr ready: marks the PR ready" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' pr ready 58
+out="$(contract adapter_pr_ready 58 2>&1)"; st=$?
+assert_status "pr ready: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
+
+gh_reply 0 $'57\n' '' pr list --head quick/12-foo --state open --json number --jq '.[].number'
+out="$(contract adapter_prs_open quick/12-foo 2>&1)"; st=$?
+assert_status "prs open: lists the open PRs from a branch" "$st" 0
+assert_eq "one number per line" "$out" "57"
+gh_reply 0 '' '' pr list --head uat --base main --state open --json number --jq '.[].number'
+out="$(contract adapter_prs_open uat main 2>&1)"; st=$?
+assert_status "prs open: lists the open PRs from a branch into a base" "$st" 0
+assert_eq "nothing at all for none" "$out" ""
+gh_reply 1 '' 'HTTP 502: Bad Gateway' pr list --head down --state open --json number --jq '.[].number'
+out="$(contract adapter_prs_open down 2>&1)"; st=$?
+assert_status "prs open: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
+gh_reply 0 $'Refs #5\n\nImplements it.\nFixes #6\n' '' \
+  pr list --base uat --state merged --limit 1000 --json body --jq '.[].body'
+out="$(contract adapter_prs_merged_bodies uat 2>&1)"; st=$?
+assert_status "prs merged bodies: reads the bodies of the PRs merged into a base" "$st" 0
+assert_eq "each body followed by a newline" "$out" "$(writeln 'Refs #5' '' 'Implements it.' 'Fixes #6')"
+
+gh_reply 0 '✓ Closed pull request acme/widgets#30' '' pr close 30 --comment "Redone."
+out="$(contract adapter_pr_close 30 "Redone." 2>&1)"; st=$?
+assert_status "pr close: closes the PR with a comment" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 502: Bad Gateway' pr close 31 --comment "Redone."
+out="$(contract adapter_pr_close 31 "Redone." 2>&1)"; st=$?
+assert_status "pr close: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
+gh_reply 0 'https://github.com/acme/widgets/pull/57#issuecomment-1' '' pr comment 57 --body-file "$ibody"
+out="$(contract adapter_pr_comment 57 "$ibody" 2>&1)"; st=$?
+assert_status "pr comment: posts the file as a comment" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' pr comment 58 --body-file "$ibody"
+out="$(contract adapter_pr_comment 58 "$ibody" 2>&1)"; st=$?
+assert_status "pr comment: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
+
+gh_reply 0 'https://github.com/acme/widgets/pull/57' '' pr edit 57 --body-file "$ibody"
+out="$(contract adapter_pr_body_edit 57 "$ibody" 2>&1)"; st=$?
+assert_status "pr body edit: replaces the body from the file" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 502: Bad Gateway' pr edit 58 --body-file "$ibody"
+out="$(contract adapter_pr_body_edit 58 "$ibody" 2>&1)"; st=$?
+assert_status "pr body edit: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+assert_eq "every PR operation was pinned to the resolved repo" \
+  "$(grep ' pr ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> pr ')" "0"
 rm -f "$ibody"
 restore_suite_env GH_FIXTURE GH_HOST
 
@@ -5892,21 +6094,27 @@ restore_suite_env
 # either half alone is a lie: a `done` flow over a draft PR, or a PR promoted out
 # of draft by a flow that still thinks it is reviewing.
 #
-# Goes through the ORCH_GH_ADAPTER seam here, pointed at the in-memory fake
-# rather than stub_gh - GH_STUB_LOG stays empty across both calls, proving
-# neither reaches a real gh subprocess. The subprocess-real counterpart is the
-# "gh adapter (real pr ready, subprocess gh)" block right after this one.
+# Goes through the store-backed fake (fake_github) - GH_STUB_LOG stays empty
+# across both calls, proving neither reaches a real gh subprocess. The real
+# operation is pinned in "gh adapter contract".
 echo
 echo "review ready"
 review_flow reviewready
 state_fixture pr 7
+fake_github
+fake_pr 7 open orch/1-reviewready main
+fake_pr_draft 7
 log="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" GH_STUB_READY_EXIT=1 "$ORCH" review ready 2>&1)"; st=$?
+fake_fail adapter_pr_ready
+out="$(GH_STUB_LOG="$log" "$ORCH" review ready 2>&1)"; st=$?
 assert_status "fails when GitHub will not mark the PR ready" "$st" 1
 assert_eq "and leaves the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "review"
-ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" "$ORCH" review ready >/dev/null
+assert_eq "with the PR still a draft" "$(fake_pr_draft_of 7)" "yes"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
+GH_STUB_LOG="$log" "$ORCH" review ready >/dev/null
 assert_eq "records the flow as done once the PR is ready" "$("$ORCH" state get phase)" "done"
+assert_eq "the PR no longer a draft" "$(fake_pr_draft_of 7)" "no"
 assert_eq "and neither call ever reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
 state_fixture phase review
 restore_suite_env
@@ -5944,7 +6152,8 @@ echo "review ci"
 review_flow reviewci
 state_fixture pr 7
 export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
-export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE"
+fake_github
+fake_pr 7 open topic main
 log="$(mktemp)"
 out="$(GH_STUB_LOG="$log" GH_STUB_CHECKS=green "$ORCH" review ci 2>&1)"; st=$?
 assert_status "green checks let the loop finish" "$st" 0
@@ -6070,7 +6279,7 @@ pushed_head() {
   printf '%s\n' "$sha"
 }
 head_sha="$(pushed_head topic 3600)"
-export GH_STUB_PR_HEAD_OID="$head_sha" GH_STUB_PR_HEAD_REF=topic
+fake_pr_head 7 "$head_sha"
 
 # With the push an hour old, the grace is long spent: the first answer of
 # nothing required widens at once, and nothing at all reported is `none`. A
@@ -6084,17 +6293,21 @@ assert_status "and none still lets the loop finish" "$st" 0
 # The grace is measured from that one push alone: an entry for another SHA
 # says nothing about when this head arrived, so the grace counts from the call.
 reqn="$(mktemp)"; : >"$reqn"
-out="$(ORCH_CI_GRACE=5 GH_STUB_PR_HEAD_OID=1111111111111111111111111111111111111111 \
-  GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
+fake_pr_head 7 1111111111111111111111111111111111111111
+out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
   GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "with no reflog entry for the head SHA, the grace counts from the call" "$out" "green"
+fake_pr_head 7 "$head_sha"
 
 # A PR whose head branch has no remote-tracking ref at all is the same case.
 reqn="$(mktemp)"; : >"$reqn"
-out="$(ORCH_CI_GRACE=5 GH_STUB_PR_HEAD_REF=elsewhere \
-  GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
+fake_pr 7 open elsewhere main
+fake_pr_head 7 "$head_sha"
+out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
   GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "nor with no remote-tracking ref for the head branch" "$out" "green"
+fake_pr 7 open topic main
+fake_pr_head 7 "$head_sha"
 
 # The timeout keeps counting from the call: an hour-old push is no reason to
 # give up on checks that are still running now.
@@ -6106,8 +6319,9 @@ assert_first_line "the timeout counts from the call even when the push is old" "
 # A fresh push still waits: nothing required yet, and the green that arrives
 # within the grace wins over the unfiltered failure.
 head_sha="$(pushed_head topic)"
+fake_pr_head 7 "$head_sha"
 reqn="$(mktemp)"; : >"$reqn"
-out="$(ORCH_CI_GRACE=5 GH_STUB_PR_HEAD_OID="$head_sha" GH_STUB_REQUIRED_N="$reqn" \
+out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" \
   GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "a fresh push still waits the grace before widening" "$out" "green"
 
@@ -6119,11 +6333,12 @@ assert_first_line "a fresh push still waits the grace before widening" "$out" "g
 # so the grace is unspent: `none|green` on the required probe tells the two
 # apart, green meaning the grace was waited and none that it was skipped.
 # no_ci <expected first line> <name> [VAR=value...]: one review ci call with
-# every signal absent but what the extra assignments turn back on.
+# every signal absent but what the extra assignments turn back on, on PR #7 as
+# the store holds it - by default, a single-commit PR whose head is head_sha.
 no_ci() {
   local want="$1" name="$2"; shift 2
   reqn="$(mktemp)"; : >"$reqn"
-  out="$(env ORCH_CI_GRACE=5 GH_STUB_PR_HEAD_OID="$head_sha" GH_STUB_CHECKED_REFS= \
+  out="$(env ORCH_CI_GRACE=5 GH_STUB_CHECKED_REFS= \
     GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=none \
     "$@" "$ORCH" review ci 2>&1)"; st=$?
   assert_first_line "$name" "$out" "$want"
@@ -6151,32 +6366,33 @@ GIT_INDEX_FILE="$wf_index" git read-tree HEAD
 GIT_INDEX_FILE="$wf_index" git update-index --add --cacheinfo \
   "100644,$(printf 'on: push\n' | git hash-object -w --stdin),.github/workflows/ci.yml"
 wf_sha="$(git commit-tree "$(GIT_INDEX_FILE="$wf_index" git write-tree)" -p HEAD -m 'add CI')"
-no_ci green "a workflow file in the head's tree keeps the grace" \
-  GH_STUB_PR_HEAD_OID="$wf_sha" GH_STUB_PR_COMMITS="$wf_sha"
+fake_pr_head 7 "$wf_sha"
+no_ci green "a workflow file in the head's tree keeps the grace"
 # git ls-tree reads its pathspec from the current directory: from a
 # subdirectory, the workflow must still be seen, not read as absent.
 mkdir -p wf-subdir
 reqn="$(mktemp)"; : >"$reqn"
-out="$(cd wf-subdir && env ORCH_CI_GRACE=5 GH_STUB_PR_HEAD_OID="$wf_sha" GH_STUB_PR_COMMITS="$wf_sha" \
+out="$(cd wf-subdir && env ORCH_CI_GRACE=5 \
   GH_STUB_CHECKED_REFS= GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=none \
   "$ORCH" review ci 2>&1)"
 assert_first_line "and so does one seen from a subdirectory" "$out" "green"
 rmdir wf-subdir
+fake_pr_head 7 "$head_sha"
 no_ci green "required checks from classic branch protection keep the grace" GH_STUB_PROTECTION=required
 no_ci green "required checks from a ruleset keep the grace" GH_STUB_RULES=required
 no_ci none "a ruleset that requires no checks is not evidence of CI" GH_STUB_RULES=other
 earlier=2222222222222222222222222222222222222222
-no_ci green "a check-run on an earlier PR commit keeps the grace" \
-  GH_STUB_PR_COMMITS="$earlier $head_sha" GH_STUB_CHECKED_REFS="$earlier"
-no_ci green "a commit status on an earlier PR commit keeps the grace" \
-  GH_STUB_PR_COMMITS="$earlier $head_sha" GH_STUB_STATUSED_REFS="$earlier"
+fake_pr_head 7 "$head_sha" "$earlier" "$head_sha"
+no_ci green "a check-run on an earlier PR commit keeps the grace" GH_STUB_CHECKED_REFS="$earlier"
+no_ci green "a commit status on an earlier PR commit keeps the grace" GH_STUB_STATUSED_REFS="$earlier"
+fake_pr_head 7 "$head_sha"
 no_ci green "a check-run on the base tip keeps the grace" GH_STUB_CHECKED_REFS=main
 no_ci green "a commit status on the base tip keeps the grace" GH_STUB_STATUSED_REFS=main
 
 # A single-commit PR has no earlier commit: the head's own checks are what the
 # probes read, not evidence the grace is worth waiting for.
 no_ci none "a single-commit PR has no earlier-commit signal" \
-  GH_STUB_PR_COMMITS="$head_sha" GH_STUB_CHECKED_REFS="$head_sha" GH_STUB_STATUSED_REFS="$head_sha"
+  GH_STUB_CHECKED_REFS="$head_sha" GH_STUB_STATUSED_REFS="$head_sha"
 
 # A signal that cannot be read counts as CI.
 no_ci green "a classic-protection 404 other than Branch not protected keeps the grace" \
@@ -6184,12 +6400,14 @@ no_ci green "a classic-protection 404 other than Branch not protected keeps the 
 no_ci green "a protection read that fails keeps the grace" GH_STUB_PROTECTION=boom
 no_ci green "a ruleset read that fails keeps the grace" GH_STUB_RULES=boom
 no_ci green "a base-tip read that fails keeps the grace" GH_STUB_REF_READ_FAIL=main
-no_ci green "an earlier commit's read that fails keeps the grace" \
-  GH_STUB_PR_COMMITS="$earlier $head_sha" GH_STUB_REF_READ_FAIL="$earlier"
-no_ci green "a head this clone does not hold keeps the grace" \
-  GH_STUB_PR_HEAD_OID=3333333333333333333333333333333333333333
-no_ci green "a PR that will not say what its head is keeps the grace" GH_STUB_PR_REFS_EXIT=1
-unset GH_STUB_PR_HEAD_OID GH_STUB_PR_HEAD_REF
+fake_pr_head 7 "$head_sha" "$earlier" "$head_sha"
+no_ci green "an earlier commit's read that fails keeps the grace" GH_STUB_REF_READ_FAIL="$earlier"
+fake_pr_head 7 3333333333333333333333333333333333333333
+no_ci green "a head this clone does not hold keeps the grace"
+fake_pr_head 7 "$head_sha"
+fake_fail adapter_pr_refs
+no_ci green "a PR that will not say what its head is keeps the grace"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
 
 state_fixture pr null
 out="$("$ORCH" review ci 2>&1)"; st=$?
@@ -6198,7 +6416,7 @@ assert_status "refuses to classify checks on a PR that does not exist yet" "$st"
 # `set -e` on the assignment rather than the exit itself. Asserting the message
 # is what would catch the guard degrading into an empty PR number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
-unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL ORCH_GH_ADAPTER
+unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 restore_suite_env
 
 # --- gh adapter (real pr checks, subprocess gh) -------------------------------
@@ -6747,15 +6965,15 @@ assert_contains "with a usage line" "$out" "usage: orch.sh review retire"
 # The full review -> implement transition: three distinct refusals below a
 # terminal state, and a full composition above it.
 #
-# cmd_redo_review's PR close goes through the ORCH_GH_ADAPTER seam here,
-# pointed at the in-memory fake rather than stub_gh - a GH_STUB_LOG check
-# right after the first successful redo proves it never spawns a real gh
-# subprocess. The subprocess-real counterpart is the "gh adapter (real pr
-# close, subprocess gh)" block right after this section.
+# cmd_redo_review's PR close goes through the store-backed fake (fake_github)
+# - a GH_STUB_LOG check right after the first successful redo proves it never
+# spawns a real gh subprocess. The real operation is pinned in "gh adapter
+# contract".
 echo
 echo "redo review"
-export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE"
 healthy_repo
+fake_github
+for n in 30 31 32 33; do fake_pr "$n" open orch/21-redotest main; done
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
 bare_origin "$bare"
@@ -6771,11 +6989,12 @@ state_fixture phase review
 git checkout -q -b orch/21-redotest
 git push -q -u origin orch/21-redotest
 state_fixture branch orch/21-redotest
-filed="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=30 "$ORCH" redo review 2>&1)"; st=$?
+state_fixture pr 30
+store_before="$(fake_snapshot)"
+out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "refuses with no loop run yet" "$st" 1
 assert_contains "distinct from the other two refusals" "$out" "no review loop has run yet"
-assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+assert_eq "and nothing reaches GitHub" "$(fake_snapshot)" "$store_before"
 
 state_fixture iteration 2
 "$ORCH" state set budget 5
@@ -6798,7 +7017,6 @@ state_fixture base_sha deadbeefcafe
 "$ORCH" state set flake_rerun_used true
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
-: >"$filed"
 log="$(mktemp)"
 base_before="$("$ORCH" state get base)"
 writeln '# plan' >.orchestrator/handoff/01-plan.md
@@ -6809,7 +7027,7 @@ out="$("$ORCH" base set redo-base --flow 2>&1)"; st=$?
 assert_status "base set --flow refuses a branched flow at the review phase" "$st" 1
 assert_contains "naming redo review as the way back" "$out" \
   "flow redotest already has branch orch/21-redotest - its base can change again once orch.sh redo review retires it"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
+out="$(GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
 assert_eq "keeps the flow's recorded base branch" "$("$ORCH" state get base)" "$base_before"
 assert_eq "prints the new redo count" "$out" "1"
@@ -6824,9 +7042,9 @@ assert_eq "renames the old branch aside" \
   "$(git rev-parse --verify --quiet orch/21-redotest-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
 assert_eq "and republishes it on origin" \
   "$(git -C "$bare" rev-parse --quiet --verify refs/heads/orch/21-redotest-redo-1 >/dev/null && echo present || echo gone)" "present"
-assert_contains "closes the old PR" "$(cat "$filed")" "pr close 30"
+assert_eq "closes the old PR" "$(fake_pr_state_of 30)" "CLOSED"
 assert_contains "with a comment naming the retired branch" \
-  "$(cat "$filed")" "orch/21-redotest-redo-1"
+  "$(fake_pr_comments_of 30)" "orch/21-redotest-redo-1"
 assert_eq "the pr close call never reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
 assert_eq "moves the old loop's records aside" \
   "$([ -f .orchestrator/review/pre-redo-1/iteration-05.md ] && echo yes || echo no)" "yes"
@@ -6855,7 +7073,7 @@ state_fixture iteration 5
 "$ORCH" state set budget 5
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
-out="$(GH_STUB_PR_NUMBER=31 "$ORCH" redo review 2>&1)"; st=$?
+out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a second stopped loop redoes just as the first did" "$st" 0
 assert_eq "and numbers on rather than repeating redo-1" "$out" "2"
 assert_eq "naming the branch redo-2" \
@@ -6874,8 +7092,10 @@ state_fixture pr 32
 state_fixture iteration 1
 "$ORCH" state set budget 1
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
-out="$(GH_STUB_PR_CLOSE_EXIT=1 GH_STUB_PR_NUMBER=32 "$ORCH" redo review 2>&1)"; st=$?
+fake_fail adapter_pr_close
+out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a gh that will not close the PR fails the redo" "$st" 1
+assert_eq "leaving the PR open" "$(fake_pr_state_of 32)" "OPEN"
 assert_contains "naming the reason" "$out" "gh could not close PR #32"
 assert_eq "leaving the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "review"
@@ -6894,8 +7114,10 @@ assert_eq "and records the bumped redo_count so a retry numbers on, not over" \
 # A retry after that failure has to work from the state the failure left
 # behind, and must not retire the already-retired branch a second time -
 # issue #63 acceptance criterion 3: it should pick up from closing the PR.
-out="$(GH_STUB_PR_NUMBER=32 "$ORCH" redo review 2>&1)"; st=$?
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
+out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "retrying redo review after the gh failure now succeeds" "$st" 0
+assert_eq "closing the PR this time" "$(fake_pr_state_of 32)" "CLOSED"
 assert_eq "reuses redo-3 rather than numbering on to redo-4" "$out" "3"
 assert_eq "does not retire the branch a second time" \
   "$(git rev-parse --verify --quiet orch/21-redotest-redo-4 >/dev/null 2>&1 && echo present || echo gone)" "gone"
@@ -6919,7 +7141,8 @@ writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-01.md
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a loop that ended ready is out of scope for redo, same as any done flow" "$st" 1
 assert_contains "the same phase-gate refusal as any other done flow" "$out" "flow is not at the review phase"
-restore_suite_env ORCH_GH_ADAPTER
+assert_eq "leaving the ready PR open" "$(fake_pr_state_of 33)" "OPEN"
+restore_suite_env
 
 # --- gh adapter (real pr close, subprocess gh) -------------------------------
 # The "redo review" section above proved cmd_redo_review's PR close through
@@ -6979,7 +7202,9 @@ mkdir -p .orchestrator/review .orchestrator/handoff/pre-redo-1
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
 writeln '# older implement' >.orchestrator/handoff/pre-redo-1/03-implement.md
 writeln '# implement' >.orchestrator/handoff/03-implement.md
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" redo review 2>&1)"; st=$?
+fake_github
+fake_pr 35 open orch/21-redotaken main
+out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a destination already holding the handoff fails the redo" "$st" 1
 assert_contains "naming the destination" "$out" "pre-redo-1"
 assert_eq "leaving the live implement handoff in place" \

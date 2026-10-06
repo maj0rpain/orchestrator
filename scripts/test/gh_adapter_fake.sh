@@ -26,6 +26,19 @@
 #                     the issue's k-th comment
 #   next_issue        the number the next created issue takes; absent, one
 #                     past the highest the store holds
+#   prs/<n>/state     OPEN, CLOSED or MERGED
+#   prs/<n>/head, prs/<n>/base
+#                     the head and base branch names
+#   prs/<n>/title     the title
+#   prs/<n>/body      the body, byte for byte; absent, an empty one
+#   prs/<n>/draft     present, the PR is a draft
+#   prs/<n>/head_oid  the head commit's SHA; absent, forty zeros
+#   prs/<n>/commits   the PR's commit SHAs, one per line, oldest first;
+#                     absent, the head alone
+#   prs/<n>/comments/<k>/{author,created,body}
+#                     the PR's k-th comment
+#   next_pr           the number the next opened PR takes; absent, one past
+#                     the highest issue or PR number the store holds
 #   fail/<operation>  present, every call of that operation fails, non-zero,
 #                     with the file's contents as gh's stderr
 #   lag/<operation>   a countdown: while above zero, each call of that
@@ -33,8 +46,8 @@
 #   lag/<operation>.stale
 #                     the stale answer, where the operation takes one
 #
-# The operations not yet moved onto the store keep mirroring the GH_STUB_*
-# vocabulary stub_gh answers to, below.
+# The CI operations, not yet moved onto the store, keep mirroring the
+# GH_STUB_* vocabulary stub_gh answers to, below.
 
 fake_store() {
   printf '%s\n' "${ORCH_GH_FAKE_STORE:?the gh fake has no store - call fake_github}"
@@ -101,29 +114,6 @@ adapter_label_create() {
   fake_label_put "$1" "$2" "$3"
 }
 
-# Shared by the PR-write primitives below - mirrors stub_gh's own
-# record_flags: title/label/body-file/comment flags are appended to
-# GH_STUB_FILED with the body-file's contents inlined, everything else as a
-# bare flag=value line, so an assertion reads either fake's GH_STUB_FILED the
-# same way.
-fake_record_flags() {
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --title)     printf 'title=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-      --label)     printf 'label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-      --base)      printf 'base=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-      --head)      printf 'head=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-      --body-file) { printf 'body:\n'; cat "$2"; } >>"$GH_STUB_FILED"; shift ;;
-      --comment)   { printf 'comment:\n%s\n' "$2"; } >>"$GH_STUB_FILED"; shift ;;
-      --add-label)    printf 'add-label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-      --remove-label) printf 'remove-label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-      --reason)       printf 'reason=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-      *)           printf 'flag=%s\n' "$1" >>"$GH_STUB_FILED" ;;
-    esac
-    shift
-  done
-}
-
 # --- issue operations, on the store ---------------------------------------------
 
 fake_issue_dir() { printf '%s/issues/%s\n' "$(fake_store)" "$1"; }
@@ -138,17 +128,35 @@ fake_issue_known() {
 
 fake_issue_labels() { cat "$(fake_issue_dir "$1")/labels" 2>/dev/null || true; }
 
-# fake_comment_add <n> <author> <created-at> <body-file>: one comment appended
-# to issue #n, numbered in order under its comments directory.
-fake_comment_add() {
-  local d k
-  d="$(fake_issue_dir "$1")/comments"
+# fake_comment_append <comments-dir> <author> <created-at> <body-file>: one
+# comment appended to an issue's or PR's comments directory, numbered in order.
+fake_comment_append() {
+  local d="$1" k
   mkdir -p "$d"
   k=$(( $(find "$d" -mindepth 1 -maxdepth 1 | wc -l) + 1 ))
   mkdir "$d/$k"
   printf '%s\n' "$2" >"$d/$k/author"
   printf '%s\n' "$3" >"$d/$k/created"
   cat "$4" >"$d/$k/body"
+}
+
+# fake_comment_add <n> <author> <created-at> <body-file>: one comment appended
+# to issue #n.
+fake_comment_add() { fake_comment_append "$(fake_issue_dir "$1")/comments" "$2" "$3" "$4"; }
+
+# fake_comments_print <comments-dir>: the directory's comments in COMMENTS_JQ's
+# shape - each opened by its marker line, one blank line between, a newline
+# after the last; nothing at all for none.
+fake_comments_print() {
+  local d="$1" k first=1
+  [ -d "$d" ] || return 0
+  for k in $(ls "$d" | sort -n); do
+    [ "$first" = 1 ] || printf '\n\n'
+    first=0
+    printf '<!-- comment @%s %s -->\n' "$(cat "$d/$k/author")" "$(cat "$d/$k/created")"
+    cat "$d/$k/body"
+  done
+  printf '\n'
 }
 
 # adapter_issue_body <n>: the stored body, then a newline, as gh's --jq .body
@@ -164,18 +172,9 @@ adapter_issue_body() {
 # each opened by its marker line, one blank line between, a newline after the
 # last; nothing at all for none.
 adapter_issue_comments() {
-  local d k first=1
   ! fake_failing adapter_issue_comments || return 1
   fake_issue_known "$1" || return 1
-  d="$(fake_issue_dir "$1")/comments"
-  [ -d "$d" ] || return 0
-  for k in $(ls "$d" | sort -n); do
-    [ "$first" = 1 ] || printf '\n\n'
-    first=0
-    printf '<!-- comment @%s %s -->\n' "$(cat "$d/$k/author")" "$(cat "$d/$k/created")"
-    cat "$d/$k/body"
-  done
-  printf '\n'
+  fake_comments_print "$(fake_issue_dir "$1")/comments"
 }
 
 # adapter_issue_state_labels <n>: the stored state, then its labels.
@@ -200,10 +199,11 @@ adapter_issue_title_labels() {
   fake_issue_labels "$1"
 }
 
-# adapter_issue_state <n>: PULL for a number fake_pull seeded, the stored state
-# otherwise.
+# adapter_issue_state <n>: PULL for a PR the store holds or a number fake_pull
+# seeded, the stored state otherwise.
 adapter_issue_state() {
   ! fake_failing adapter_issue_state || return 1
+  if [ -d "$(fake_store)/prs/$1" ]; then printf 'PULL\n'; return 0; fi
   fake_issue_known "$1" || return 1
   if [ -f "$(fake_issue_dir "$1")/pull" ]; then printf 'PULL\n'; return 0; fi
   cat "$(fake_issue_dir "$1")/state"
@@ -305,97 +305,136 @@ adapter_issue_reopen() {
   rm -f "$(fake_issue_dir "$1")/reason"
 }
 
-# The PR-resource primitives (issue #93, third of the #78 breakdown):
-# open_pr's create/view, ci_probe's checks, cmd_review ready's ready, and
-# cmd_redo_review's close. Each mirrors the same-named branch under stub_gh's
-# `pr)` dispatch, reusing every GH_STUB_* variable that already drives it
-# there rather than inventing a parallel vocabulary.
+# --- pr operations, on the store ------------------------------------------------
 
-# adapter_pr_create - mirrors stub_gh's `pr create` branch: records "pr
-# create" plus the flags (fake_record_flags) to GH_STUB_FILED when set, fails
-# on GH_STUB_PR_CREATE_EXIT, otherwise answers a fake PR URL numbered
-# GH_STUB_PR_NUMBER (default 99) - the same shape open_pr parses the trailing
-# number out of.
+fake_pr_dir() { printf '%s/prs/%s\n' "$(fake_store)" "$1"; }
+
+# fake_pr_known <n>: true where the store holds PR #n; otherwise gh's own
+# error on stderr, as `gh pr view` gives for a number with no PR.
+fake_pr_known() {
+  [ -d "$(fake_pr_dir "$1")" ] && return 0
+  printf 'GraphQL: Could not resolve to a PullRequest with the number of %s. (repository.pullRequest)\n' "$1" >&2
+  return 1
+}
+
+# adapter_pr_create <base> <head> <title> <body-file> [draft]: a new open PR in
+# the store, numbered as next_pr set (default one past the highest issue or PR
+# number the store holds, the two sharing GitHub's numbering), its number
+# printed.
 adapter_pr_create() {
-  if [ -n "${GH_STUB_FILED:-}" ]; then
-    printf 'pr create\n' >>"$GH_STUB_FILED"
-    fake_record_flags "$@"
+  local n d
+  ! fake_failing adapter_pr_create || return 1
+  n="$(cat "$(fake_store)/next_pr" 2>/dev/null)"
+  if [ -z "$n" ]; then
+    n="$(ls "$(fake_store)/issues" "$(fake_store)/prs" 2>/dev/null | grep -x '[0-9][0-9]*' | sort -n | tail -n 1)"
+    n=$(( ${n:-0} + 1 ))
   fi
-  if [ "${GH_STUB_PR_CREATE_EXIT:-0}" != 0 ]; then
-    echo "gh stub: pr create refused" >&2
-    return "$GH_STUB_PR_CREATE_EXIT"
-  fi
-  printf 'https://github.com/acme/widgets/pull/%s\n' "${GH_STUB_PR_NUMBER:-99}"
-  return 0
+  printf '%s\n' "$((n + 1))" >"$(fake_store)/next_pr"
+  d="$(fake_pr_dir "$n")"
+  mkdir -p "$d"
+  printf 'OPEN\n' >"$d/state"
+  printf '%s\n' "$1" >"$d/base"
+  printf '%s\n' "$2" >"$d/head"
+  printf '%s\n' "$3" >"$d/title"
+  cat "$4" >"$d/body"
+  [ "${5:-false}" != true ] || : >"$d/draft"
+  printf '%s\n' "$n"
 }
 
-# adapter_pr_view - mirrors stub_gh's `pr view` branch: answers
-# GH_STUB_PR_NUMBER when asked `--json number` (the call open_pr makes to
-# learn the PR it just opened), answers state and isDraft together
-# (GH_STUB_PR_STATE and GH_STUB_PR_DRAFT, default false) when asked for
-# isDraft, and falls back to GH_STUB_PR_STATE alone for every other query.
-# Asked `--json body` (pr fetch's and pr update's read, issue #444), it
-# answers the body held in the file GH_STUB_PR_BODY names through the caller's
-# own --jq, the same way the real gh applies it, and fails on
-# GH_STUB_PR_BODY_EXIT. Asked `--json comments` (pr comments' read, issue
-# #418), it applies the caller's own --jq to GH_STUB_PR_COMMENTS_JSON - the
-# same gh-shaped JSON GH_STUB_COMMENTS_JSON holds for an issue - and fails on
-# GH_STUB_PR_COMMENTS_EXIT. Logs nothing to GH_STUB_FILED - stub_gh's own
-# `pr view` branch does not either.
-adapter_pr_view() {
-  local a q=""
-  if [ "${2:-}" = --json ] && [ "${3:-}" = comments ]; then
-    if [ "${GH_STUB_PR_COMMENTS_EXIT:-0}" != 0 ]; then
-      echo "gh stub: pr view refused" >&2
-      return "$GH_STUB_PR_COMMENTS_EXIT"
-    fi
-    [ "${4:-}" = --jq ] && q="${5:-}"
-    printf '%s' "${GH_STUB_PR_COMMENTS_JSON:?gh stub: GH_STUB_PR_COMMENTS_JSON is unset}" | jq -r "${q:-.}"
-    return
-  fi
-  if [ "${2:-}" = --json ] && [ "${3:-}" = body ]; then
-    if [ "${GH_STUB_PR_BODY_EXIT:-0}" != 0 ]; then
-      echo "gh stub: pr view refused" >&2
-      return "$GH_STUB_PR_BODY_EXIT"
-    fi
-    [ "${4:-}" = --jq ] && q="${5:-}"
-    jq -n --rawfile b "${GH_STUB_PR_BODY:?gh stub: GH_STUB_PR_BODY is unset}" '{body: $b}' | jq -r "${q:-.}"
-    return
-  fi
-  for a in "$@"; do
-    if [ "$a" = number ]; then
-      printf '%s\n' "${GH_STUB_PR_NUMBER:-99}"
-      return 0
-    fi
-    case "$a" in
-      *isDraft*)
-        printf '%s\n%s\n' "${GH_STUB_PR_STATE:-OPEN}" "${GH_STUB_PR_DRAFT:-false}"
-        return 0 ;;
-    esac
-  done
-  printf '%s\n' "${GH_STUB_PR_STATE:-OPEN}"
-  return 0
+# adapter_pr_body <n>: the stored body, then a newline, as gh's --jq .body
+# prints it.
+adapter_pr_body() {
+  ! fake_failing adapter_pr_body || return 1
+  fake_pr_known "$1" || return 1
+  cat "$(fake_pr_dir "$1")/body" 2>/dev/null
+  printf '\n'
 }
 
-# adapter_pr_refs - review ci's read of the PR's head, base and commits
-# (issues #475, #476), mirroring stub_gh's `pr view --json headRefOid,...`
-# arm: answers GH_STUB_PR_HEAD_OID (default forty zeros, a SHA no reflog or
-# object store holds), GH_STUB_PR_HEAD_REF (default topic),
-# GH_STUB_PR_BASE_REF (default main) and GH_STUB_PR_COMMITS (space-separated
-# SHAs, oldest first; default the head alone, a single-commit PR) as the JSON
-# object gh would, and fails on GH_STUB_PR_REFS_EXIT.
+# adapter_pr_comments <n>: the stored comments in COMMENTS_JQ's shape, as
+# adapter_issue_comments prints an issue's.
+adapter_pr_comments() {
+  ! fake_failing adapter_pr_comments || return 1
+  fake_pr_known "$1" || return 1
+  fake_comments_print "$(fake_pr_dir "$1")/comments"
+}
+
+# adapter_pr_refs <n>: the stored head SHA (default forty zeros, a SHA no
+# reflog or object store holds), head branch and base branch, then the stored
+# commits (default the head alone, a single-commit PR).
 adapter_pr_refs() {
-  if [ "${GH_STUB_PR_REFS_EXIT:-0}" != 0 ]; then
-    echo "gh stub: pr view refused" >&2
-    return "$GH_STUB_PR_REFS_EXIT"
-  fi
-  local o="${GH_STUB_PR_HEAD_OID:-0000000000000000000000000000000000000000}"
-  jq -cn --arg o "$o" \
-    --arg h "${GH_STUB_PR_HEAD_REF:-topic}" --arg b "${GH_STUB_PR_BASE_REF:-main}" \
-    --arg c "${GH_STUB_PR_COMMITS-$o}" \
-    '{headRefOid: $o, headRefName: $h, baseRefName: $b,
-      commits: [$c | splits(" +") | select(. != "") | {oid: .}]}'
+  local d oid
+  ! fake_failing adapter_pr_refs || return 1
+  fake_pr_known "$1" || return 1
+  d="$(fake_pr_dir "$1")"
+  oid="$(cat "$d/head_oid" 2>/dev/null)"
+  oid="${oid:-0000000000000000000000000000000000000000}"
+  printf '%s\n' "$oid"
+  cat "$d/head" "$d/base"
+  if [ -f "$d/commits" ]; then cat "$d/commits"; else printf '%s\n' "$oid"; fi
 }
+
+# adapter_pr_ready <n>: the stored PR no longer a draft.
+adapter_pr_ready() {
+  ! fake_failing adapter_pr_ready || return 1
+  fake_pr_known "$1" || return 1
+  rm -f "$(fake_pr_dir "$1")/draft"
+}
+
+# adapter_prs_open <head> [base]: the open PRs in the store from the head
+# branch, into the base where one is named, newest first.
+adapter_prs_open() {
+  local d
+  ! fake_failing adapter_prs_open || return 1
+  for d in "$(fake_store)"/prs/*/; do
+    [ -d "$d" ] || continue
+    [ "$(cat "$d/state")" = OPEN ] && [ "$(cat "$d/head")" = "$1" ] || continue
+    [ -z "${2:-}" ] || [ "$(cat "$d/base")" = "$2" ] || continue
+    basename "$d"
+  done | sort -rn
+}
+
+# adapter_prs_merged_bodies <base>: the stored body of every merged PR into the
+# base, each followed by a newline, newest first.
+adapter_prs_merged_bodies() {
+  local n d
+  ! fake_failing adapter_prs_merged_bodies || return 1
+  for n in $(ls "$(fake_store)/prs" 2>/dev/null | sort -rn); do
+    d="$(fake_pr_dir "$n")"
+    [ "$(cat "$d/state")" = MERGED ] && [ "$(cat "$d/base")" = "$1" ] || continue
+    cat "$d/body" 2>/dev/null
+    printf '\n'
+  done
+}
+
+# adapter_pr_close <n> <comment>: the stored PR CLOSED, the comment appended
+# by fake-gh.
+adapter_pr_close() {
+  local c
+  ! fake_failing adapter_pr_close || return 1
+  fake_pr_known "$1" || return 1
+  c="$(mktemp)"
+  printf '%s' "$2" >"$c"
+  fake_comment_append "$(fake_pr_dir "$1")/comments" fake-gh 2026-01-01T00:00:00Z "$c"
+  rm -f "$c"
+  printf 'CLOSED\n' >"$(fake_pr_dir "$1")/state"
+}
+
+# adapter_pr_comment <n> <file>: the file's contents appended as a comment, by
+# fake-gh.
+adapter_pr_comment() {
+  ! fake_failing adapter_pr_comment || return 1
+  fake_pr_known "$1" || return 1
+  fake_comment_append "$(fake_pr_dir "$1")/comments" fake-gh 2026-01-01T00:00:00Z "$2"
+}
+
+# adapter_pr_body_edit <n> <file>: the file's contents as the stored body.
+adapter_pr_body_edit() {
+  ! fake_failing adapter_pr_body_edit || return 1
+  fake_pr_known "$1" || return 1
+  cat "$2" >"$(fake_pr_dir "$1")/body"
+}
+
+# --- ci operations, still on the GH_STUB_* knobs ---------------------------------
 
 # review ci's CI-evidence reads (issue #476). The fakes default to exactly one
 # signal present - a check-run on the base branch tip - so a grace test that
@@ -503,101 +542,5 @@ adapter_pr_checks() {
     boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
     *)        echo "gh stub: no script named '$answer'" >&2; return 99 ;;
   esac
-  return 0
-}
-
-# adapter_pr_ready - mirrors stub_gh's `pr ready` branch's shape (logs
-# nothing). Failing on demand with GH_STUB_READY_EXIT is this fake's own job
-# now - no live test left a caller for stub_gh's own copy of that check once
-# cmd_review's ready op fully moved onto this adapter (#94), so it was retired.
-adapter_pr_ready() {
-  return "${GH_STUB_READY_EXIT:-0}"
-}
-
-# adapter_pr_close - mirrors stub_gh's `pr close` branch: logs "pr close <n>"
-# plus the flags (fake_record_flags, so a --comment reaches GH_STUB_FILED the
-# same way issue close's does) to GH_STUB_FILED when set. Failing on demand
-# with GH_STUB_PR_CLOSE_EXIT is this fake's own job now - stub_gh's own copy of
-# that check lost its last caller once cmd_redo_review's close fully moved onto
-# this adapter (#94), so it was retired.
-adapter_pr_close() {
-  local n="$1"
-  if [ -n "${GH_STUB_FILED:-}" ]; then
-    printf 'pr close %s\n' "$n" >>"$GH_STUB_FILED"
-    shift
-    fake_record_flags "$@"
-  fi
-  if [ "${GH_STUB_PR_CLOSE_EXIT:-0}" != 0 ]; then
-    echo "gh stub: pr close refused" >&2
-    return "$GH_STUB_PR_CLOSE_EXIT"
-  fi
-  return 0
-}
-
-# adapter_pr_list - pr release's two reads (issue #139): logs "pr list
-# <args...>" to GH_STUB_FILED when set, fails on GH_STUB_PR_LIST_EXIT, and
-# answers the JSON array for the --state it was asked for -
-# GH_STUB_PR_LIST_OPEN or GH_STUB_PR_LIST_MERGED, each default "[]" - through
-# the caller's own --jq, the same way the real gh applies it. Filtering by
-# --base/--head is gh's job, not the fake's: a test asserts on the flags.
-adapter_pr_list() {
-  local state="" q="" json
-  if [ -n "${GH_STUB_FILED:-}" ]; then printf 'pr list %s\n' "$*" >>"$GH_STUB_FILED"; fi
-  if [ "${GH_STUB_PR_LIST_EXIT:-0}" != 0 ]; then
-    echo "gh stub: pr list refused" >&2
-    return "$GH_STUB_PR_LIST_EXIT"
-  fi
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --state) state="$2"; shift ;;
-      --jq)    q="$2"; shift ;;
-    esac
-    shift
-  done
-  case "$state" in
-    open)   json="${GH_STUB_PR_LIST_OPEN:-[]}" ;;
-    merged) json="${GH_STUB_PR_LIST_MERGED:-[]}" ;;
-    *)      echo "gh stub: unscripted pr list state '$state'" >&2; return 99 ;;
-  esac
-  if [ -n "$q" ]; then printf '%s' "$json" | jq -r "$q"; else printf '%s\n' "$json"; fi
-}
-
-# adapter_pr_comment - pr comment's post (issue #343): logs "pr comment <n>"
-# plus the flags (fake_record_flags, so the --body-file's contents reach
-# GH_STUB_FILED under body:) when set, and fails on GH_STUB_PR_COMMENT_EXIT.
-adapter_pr_comment() {
-  local n="$1"
-  if [ -n "${GH_STUB_FILED:-}" ]; then
-    printf 'pr comment %s\n' "$n" >>"$GH_STUB_FILED"
-    shift
-    fake_record_flags "$@"
-  fi
-  if [ "${GH_STUB_PR_COMMENT_EXIT:-0}" != 0 ]; then
-    echo "gh stub: pr comment refused" >&2
-    return "$GH_STUB_PR_COMMENT_EXIT"
-  fi
-  return 0
-}
-
-# adapter_pr_edit - pr update's replacement of a PR's body (issue #444): logs
-# "pr edit <n>" plus the flags (fake_record_flags) to GH_STUB_FILED when set,
-# fails on GH_STUB_PR_EDIT_EXIT, and otherwise writes the --body-file's
-# contents into the GH_STUB_PR_BODY file, so a test reads the edit back from
-# the PR itself.
-adapter_pr_edit() {
-  local n="$1"
-  shift
-  if [ -n "${GH_STUB_FILED:-}" ]; then
-    printf 'pr edit %s\n' "$n" >>"$GH_STUB_FILED"
-    fake_record_flags "$@"
-  fi
-  if [ "${GH_STUB_PR_EDIT_EXIT:-0}" != 0 ]; then
-    echo "gh stub: pr edit refused" >&2
-    return "$GH_STUB_PR_EDIT_EXIT"
-  fi
-  while [ $# -gt 0 ]; do
-    case "$1" in --body-file) cat "$2" >"${GH_STUB_PR_BODY:?gh stub: GH_STUB_PR_BODY is unset}"; shift ;; esac
-    shift
-  done
   return 0
 }

@@ -864,10 +864,10 @@ review_budget() {
 # real `gh` below. Unset - every normal run - nothing is sourced and behaviour
 # is identical to before the seam existed.
 #
-# Operations under the #280 contract - the label and issue ones - are named for
-# what their callers need and own gh's flags: each prints plain text in the
-# shape documented on it, and on a gh failure returns non-zero with gh's stderr
-# passed through. The PR and CI ones below are still pass-throughs, moved over
+# Operations under the #280 contract - the label, issue and PR ones - are
+# named for what their callers need and own gh's flags: each prints plain text
+# in the shape documented on it, and on a gh failure returns non-zero with gh's
+# stderr passed through. The CI ones below are still pass-throughs, moved over
 # one noun at a time.
 
 # adapter_label_upsert <name> <colour> <description>: creates the label, or
@@ -981,28 +981,84 @@ adapter_issue_reopen() {
   gh issue reopen "$1" >/dev/null
 }
 
-# The PR-resource primitives (issue #93, third of the #78 breakdown): open_pr's
-# create/view, ci_probe's checks, cmd_review ready's ready, and
-# cmd_redo_review's close. doctor.sh's own `gh pr view` calls, default_branch,
-# and the ticket group's `gh api` calls call gh directly rather than through
-# these primitives, but all go through the gh guard and so are pinned to the
-# resolved repo too (default_branch names it positionally, as `gh repo view`
-# ignores GH_REPO). Since issue #93, pr fetch and pr update have also read a
-# PR's body through the same view (issue #444).
+# --- pr operations ---
+
+# adapter_pr_create <base> <head> <title> <body-file> [draft]: opens the PR
+# from head into base - a draft where draft is "true" - and prints its number
+# alone. Fails, printing nothing, where gh succeeded but printed no PR URL.
 adapter_pr_create() {
-  gh pr create "$@"
-}
-adapter_pr_view() {
-  gh pr view "$@"
+  local args=() out n
+  [ "${5:-false}" != true ] || args+=(--draft)
+  out="$(gh pr create ${args[@]+"${args[@]}"} --base "$1" --head "$2" --title "$3" --body-file "$4")" || return
+  n="$(printf '%s\n' "$out" | sed -n 's#^https\{0,1\}://.*/pull/\([0-9][0-9]*\)$#\1#p' | tail -n 1)"
+  if [ -z "$n" ]; then
+    printf 'gh pr create printed no PR URL: %s\n' "$out" >&2
+    return 1
+  fi
+  printf '%s\n' "$n"
 }
 
-# review ci's read of the PR's own head, base and commits (issues #475, #476):
-# the SHA and branch its grace is anchored to, and the commits its CI-evidence
-# pre-check reads, come from the PR, not from local HEAD, which can be anywhere
-# by the time the loop ends.
-adapter_pr_refs() {
-  gh pr view "$1" --json headRefOid,headRefName,baseRefName,commits
+# adapter_pr_body <n>: the PR's body as GitHub holds it, then a newline.
+adapter_pr_body() {
+  gh pr view "$1" --json body --jq .body
 }
+
+# adapter_pr_comments <n>: the PR's comments in COMMENTS_JQ's shape, as
+# adapter_issue_comments prints an issue's (issue #418).
+adapter_pr_comments() {
+  gh pr view "$1" --json comments --jq "$COMMENTS_JQ"
+}
+
+# adapter_pr_refs <n>: review ci's read of the PR's own head, base and commits
+# (issues #475, #476) - the SHA and branch its grace is anchored to, and the
+# commits its CI-evidence pre-check reads, come from the PR, not from local
+# HEAD, which can be anywhere by the time the loop ends. Prints the head SHA,
+# the head branch and the base branch on the first three lines, an empty line
+# for one GitHub leaves unset, then one commit SHA per line, oldest first.
+adapter_pr_refs() {
+  gh pr view "$1" --json headRefOid,headRefName,baseRefName,commits \
+    --jq '(.headRefOid // ""), (.headRefName // ""), (.baseRefName // ""), ((.commits // [])[].oid)'
+}
+
+# adapter_pr_ready <n>: marks the draft PR ready for review. Prints nothing.
+adapter_pr_ready() {
+  gh pr ready "$1" >/dev/null
+}
+
+# adapter_prs_open <head> [base]: the open PRs from the head branch - into the
+# base branch, where one is named - one number per line, newest first.
+adapter_prs_open() {
+  local args=(--head "$1")
+  [ -z "${2:-}" ] || args+=(--base "$2")
+  gh pr list "${args[@]}" --state open --json number --jq '.[].number'
+}
+
+# adapter_prs_merged_bodies <base>: the body of every PR merged into the base
+# branch, each followed by a newline - pr release reads its issue references
+# out of them (issue #139).
+adapter_prs_merged_bodies() {
+  gh pr list --base "$1" --state merged --limit 1000 --json body --jq '.[].body'
+}
+
+# adapter_pr_close <n> <comment>: closes the PR, posting the comment on it.
+# Prints nothing.
+adapter_pr_close() {
+  gh pr close "$1" --comment "$2" >/dev/null
+}
+
+# adapter_pr_comment <n> <file>: posts the file's contents as a comment on the
+# PR (issue #343). Prints nothing.
+adapter_pr_comment() {
+  gh pr comment "$1" --body-file "$2" >/dev/null
+}
+
+# adapter_pr_body_edit <n> <file>: replaces the PR's body with the file's
+# contents (issue #444). Prints nothing.
+adapter_pr_body_edit() {
+  gh pr edit "$1" --body-file "$2" >/dev/null
+}
+
+# --- ci operations, still pass-throughs ---
 
 # review ci's CI-evidence reads (issue #476), one per GitHub operation. Each
 # prints gh's raw answer - and a failed call's error - for no_ci_evidence to
@@ -1028,32 +1084,9 @@ adapter_pr_checks() {
   gh pr checks "$@"
 }
 
-adapter_pr_ready() {
-  gh pr ready "$@"
-}
-
 # review rerun's rerun of one GitHub Actions run's failed jobs (issue #525).
 adapter_run_rerun() {
   gh run rerun "$@"
-}
-
-# pr release's two reads of the base branch's PRs: whether a release PR is
-# already open, and the bodies of everything merged into it (issue #139).
-adapter_pr_list() {
-  gh pr list "$@"
-}
-adapter_pr_close() {
-  gh pr close "$@"
-}
-
-# pr comment's post on the current branch's open PR (issue #343).
-adapter_pr_comment() {
-  gh pr comment "$@"
-}
-
-# pr update's replacement of the current branch's open PR body (issue #444).
-adapter_pr_edit() {
-  gh pr edit "$@"
 }
 
 if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
@@ -1388,7 +1421,7 @@ cmd_review() {
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.
-      adapter_pr_ready "$pr" >/dev/null 2>&1 \
+      adapter_pr_ready "$pr" 2>/dev/null \
         || die "gh could not mark PR #$pr ready - the flow stays in review"
       phase_write done
       note "$pr"
@@ -1406,10 +1439,11 @@ cmd_review() {
       # `push_age` is how long before this call the push landed; a PR that will
       # not say what its head is, or a head with no reflog entry, leaves it at zero,
       # and the grace counts from the call as it always did.
-      if refs="$(adapter_pr_refs "$pr" 2>/dev/null)" \
-        && head_oid="$(printf '%s' "$refs" | jq -r '.headRefOid // empty' 2>/dev/null)" \
-        && head_ref="$(printf '%s' "$refs" | jq -r '.headRefName // empty' 2>/dev/null)" \
-        && base_ref="$(printf '%s' "$refs" | jq -r '.baseRefName // empty' 2>/dev/null)"; then
+      if refs="$(adapter_pr_refs "$pr" 2>/dev/null)"; then
+        head_oid="$(printf '%s\n' "$refs" | sed -n 1p)"
+        head_ref="$(printf '%s\n' "$refs" | sed -n 2p)"
+        base_ref="$(printf '%s\n' "$refs" | sed -n 3p)"
+        commits="$(printf '%s\n' "$refs" | sed -n '4,$p')"
         pushed="$(ci_push_time "$head_oid" "$head_ref")"
         case "$pushed" in
           ''|*[!0-9]*) ;;
@@ -1418,8 +1452,7 @@ cmd_review() {
         # With no evidence of CI anywhere, there is nothing for the grace to
         # wait on. It replaces only the wait: the unfiltered probe still runs,
         # so a check already reported on the head gives its verdict as before.
-        if commits="$(printf '%s' "$refs" | jq -r '(.commits // [])[].oid' 2>/dev/null)" \
-          && no_ci_evidence "$head_oid" "$base_ref" "$commits"; then
+        if no_ci_evidence "$head_oid" "$base_ref" "$commits"; then
           no_ci=1
         fi
       fi
@@ -2117,7 +2150,7 @@ cmd_issue_publish() {
 # implementation's, not a draft, recording nothing) share it rather
 # than each hand-rolling the push/issue-line/gh-pr-create idiom.
 open_pr() {
-  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr draft_flag="" keyword=Closes
+  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr keyword=Closes
   git push -q -u origin "$branch"
   # GitHub only acts on a closing keyword when the PR merges into the default
   # branch, so a PR into any other base branch refers to its issue instead of
@@ -2125,16 +2158,11 @@ open_pr() {
   [ "$base" = "$(default_branch)" ] || keyword=Refs
   tmp="$(mktemp)"
   { printf '%s #%s\n\n' "$keyword" "$issue"; cat "$body_file"; } >"$tmp"
-  # Unquoted on purpose: this is either empty or the one literal flag below,
-  # never a value with spaces or glob characters to mis-split.
-  [ "$draft" = true ] && draft_flag="--draft"
-  if ! adapter_pr_create $draft_flag --base "$base" --head "$branch" \
-      --title "$title" --body-file "$tmp" >/dev/null; then
+  if ! pr="$(adapter_pr_create "$base" "$branch" "$title" "$tmp" "$draft")"; then
     rm -f "$tmp"
     die "gh could not open the PR for branch $branch (issue #$issue)"
   fi
   rm -f "$tmp"
-  pr="$(adapter_pr_view "$branch" --json number --jq .number)"
   printf '%s\n' "$pr"
 }
 
@@ -2184,7 +2212,7 @@ cmd_pr_release() {
   [ "$base" != "$default" ] ||
     die "the base branch is the default branch ($default) - there is nothing to release; set another with base set"
   local open
-  open="$(adapter_pr_list --head "$base" --base "$default" --state open --json number --jq '.[].number')" ||
+  open="$(adapter_prs_open "$base" "$default")" ||
     die "gh could not list the open PRs from $base into $default"
   [ -z "$open" ] || die "a release PR from $base into $default is already open: #$(first_line "$open")"
   # Read from the merged PRs' bodies rather than GitHub's closing-issue links:
@@ -2192,8 +2220,8 @@ cmd_pr_release() {
   # Refs line never links at all. Refs, Closes, Fixes and Resolves count, in
   # any case and anywhere in the body - not every closing form GitHub knows,
   # so prose such as "a quick fix #12" is never mistaken for a reference.
-  local bodies refs n state issues="" tmp url
-  bodies="$(adapter_pr_list --base "$base" --state merged --limit 1000 --json body --jq '.[].body')" ||
+  local bodies refs n state issues="" tmp pr
+  bodies="$(adapter_prs_merged_bodies "$base")" ||
     die "gh could not list the PRs merged into $base"
   refs="$(printf '%s\n' "$bodies" |
     grep -ioE '(^|[^[:alnum:]_])(refs|closes|fixes|resolves):?[[:space:]]+#[0-9]+' |
@@ -2214,12 +2242,12 @@ cmd_pr_release() {
     cat "$body_file"
   } >"$tmp"
   # Not a draft: nothing after this would ever mark it ready.
-  if ! url="$(adapter_pr_create --base "$default" --head "$base" --title "$title" --body-file "$tmp")"; then
+  if ! pr="$(adapter_pr_create "$default" "$base" "$title" "$tmp")"; then
     rm -f "$tmp"
     die "gh could not open the release PR from $base into $default"
   fi
   rm -f "$tmp"
-  note "${url##*/}"
+  note "$pr"
 }
 
 # A stateless post on the current branch's open PR, the PR counterpart of
@@ -2235,7 +2263,7 @@ cmd_pr_comment() {
   local file="$1" pr
   [ -f "$file" ] || die2 "body file not found: $file"
   pr="$(current_open_pr)" || return $?
-  adapter_pr_comment "$pr" --body-file "$file" >/dev/null \
+  adapter_pr_comment "$pr" "$file" \
     || die2 "gh could not comment on PR #$pr"
   printf '%s\n' "$pr"
 }
@@ -2250,7 +2278,7 @@ current_open_pr() {
   local branch open
   branch="$(git symbolic-ref --quiet --short HEAD)" \
     || die2 "not on a branch (detached HEAD)"
-  open="$(adapter_pr_list --head "$branch" --state open --json number --jq '.[].number')" \
+  open="$(adapter_prs_open "$branch")" \
     || die2 "gh could not list the open PRs from $branch"
   [ -n "$open" ] || return 1
   first_line "$open"
@@ -2270,7 +2298,7 @@ cmd_pr_fetch() {
   local file="$1" pr
   pr="$(required_open_pr)" || exit 1
   fetch_into "$file" "the body of PR #$pr" \
-    adapter_pr_view "$pr" --json body --jq .body
+    adapter_pr_body "$pr"
 }
 
 # The PR counterpart of issue comments (issue #418), so a standalone review
@@ -2282,7 +2310,7 @@ cmd_pr_comments() {
   local file="$1" pr
   pr="$(current_open_pr)" || return $?
   ( fetch_into "$file" "the comments of PR #$pr" \
-      adapter_pr_view "$pr" --json comments --jq "$COMMENTS_JQ" ) || exit 2
+      adapter_pr_comments "$pr" ) || exit 2
 }
 
 # The PR counterpart of issue update, with one guard issue update has no need
@@ -2294,14 +2322,14 @@ cmd_pr_update() {
   local file="$1" pr current line
   [ -f "$file" ] || die "body file not found: $file"
   pr="$(required_open_pr)" || exit 1
-  current="$(adapter_pr_view "$pr" --json body --jq .body)" \
+  current="$(adapter_pr_body "$pr")" \
     || die "gh could not read the body of PR #$pr"
   line="$(printf '%s\n' "$current" | sed -n '1{s/\r$//;p;}')"
   printf '%s\n' "$line" | grep -qE '^(Closes|Refs) #[0-9]+$' \
     || die "PR #$pr's body does not open with a Closes/Refs #<issue> line, so there is no issue line to keep - refusing to replace it"
   [ "$(sed -n '1{s/\r$//;p;}' "$file")" = "$line" ] \
     || die "$file must open with PR #$pr's issue line, '$line' - refusing to replace the body"
-  adapter_pr_edit "$pr" --body-file "$file" >/dev/null \
+  adapter_pr_body_edit "$pr" "$file" \
     || die "gh could not replace the body of PR #$pr"
 }
 
@@ -2873,7 +2901,7 @@ cmd_redo_review() {
   fi
 
   msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
-  adapter_pr_close "$pr" --comment "$msg" >/dev/null || die "gh could not close PR #$pr"
+  adapter_pr_close "$pr" "$msg" || die "gh could not close PR #$pr"
 
   # The prior implement phase closed every ticket it finished, so the redone
   # implement phase's frontier query (ticket next) would otherwise find
