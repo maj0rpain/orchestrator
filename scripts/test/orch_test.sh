@@ -44,10 +44,14 @@ unset CLAUDE_PLUGIN_ROOT XDG_CONFIG_HOME GIT_CONFIG_GLOBAL
 # The environment every section starts from. healthy_repo exports HOME and
 # CLAUDE_PLUGIN_ROOT and puts stub_gh on PATH, so a section that calls it, or
 # that puts stub_gh on PATH itself, ends with restore_suite_env, leaving the
-# next section the environment it had. A section that exported more names
-# passes them to restore_suite_env to unset them too.
+# next section the environment it had - fake_github's two exports included. A
+# section that exported more names passes them to restore_suite_env to unset
+# them too.
 SUITE_PATH="$PATH"
-restore_suite_env() { unset CLAUDE_PLUGIN_ROOT GH_REPO "$@"; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"; }
+restore_suite_env() {
+  unset CLAUDE_PLUGIN_ROOT GH_REPO ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE "$@"
+  HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
+}
 
 ok()   { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
 bad()  { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
@@ -905,6 +909,111 @@ ticket_fixture() {
   body="$(mktemp)"
   writeln 'Build the thing.' >"$body"
 }
+
+# --- the store-backed gh fake (#280) ------------------------------------------
+#
+# fake_github: a behaviour test's GitHub. It creates a fresh, empty store and
+# exports ORCH_GH_ADAPTER, naming the fake (scripts/test/gh_adapter_fake.sh)
+# every orch.sh the test runs sources in place of the real adapter, and
+# ORCH_GH_FAKE_STORE, naming the store, a directory, so what one orch.sh
+# process wrote is there for the next. restore_suite_env unsets both. The
+# store's layout is documented at the top of the fake; the helpers below are a
+# test's only hand on it. The fake's operations not yet store-backed still
+# answer to the GH_STUB_* knobs, so a test can use both.
+fake_github() {
+  ORCH_GH_FAKE_STORE="$(mktemp -d)" || return 1
+  export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" ORCH_GH_FAKE_STORE
+}
+
+# fake_issue <n> <state> [labels...]: seeds issue #n, open or closed, carrying
+# the labels named.
+fake_issue() {
+  local d="$ORCH_GH_FAKE_STORE/issues/$1"
+  mkdir -p "$d"
+  printf '%s\n' "$2" | tr '[:lower:]' '[:upper:]' >"$d/state"
+  shift 2
+  : >"$d/labels"
+  [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/labels"
+}
+
+# fake_label <name> <colour> <description>: seeds a label the repo already
+# has. An unseeded store has no labels.
+fake_label() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$ORCH_GH_FAKE_STORE/labels"; }
+
+# fake_labels: the store's labels read back, sorted, one per line as
+# "<name><TAB><colour><TAB><description>".
+fake_labels() { sort "$ORCH_GH_FAKE_STORE/labels" 2>/dev/null || true; }
+
+# fake_fail <operation> [stderr]: every later call of the named adapter
+# operation fails, non-zero, with stderr (default "fake gh: <operation>
+# failed") as gh's own error.
+fake_fail() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/fail"
+  printf '%s\n' "${2:-fake gh: $1 failed}" >"$ORCH_GH_FAKE_STORE/fail/$1"
+}
+
+# fake_lag <operation> <n>: the next n calls of the named operation answer
+# stale, as GitHub does for a moment after a write; the call after them is
+# current again.
+fake_lag() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/lag"
+  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/lag/$1"
+}
+
+# --- the fixture gh (adapter contract tests, #280) -----------------------------
+#
+# gh_fixture: puts a fixture `gh` on PATH for the real adapter operations'
+# contract tests, and leaves its directory in GH_FIXTURE. It holds no logic and
+# parses no flags: each call looks its whole argv up, byte for byte, among the
+# replies gh_reply registered, and answers that reply's stdout, stderr and exit
+# status. An argv with no reply fails, exit 127, naming the argv on stderr. Every
+# call appends "GH_REPO=<repo> GH_HOST=<host> <argv>" to $GH_FIXTURE/env.log
+# (<unset> for an unset one), so a test asserts which repo a call was pinned to.
+# A section that calls it ends with restore_suite_env GH_FIXTURE.
+gh_fixture() {
+  GH_FIXTURE="$(mktemp -d)" || return 1
+  export GH_FIXTURE
+  mkdir "$GH_FIXTURE/bin" "$GH_FIXTURE/replies"
+  cat >"$GH_FIXTURE/bin/gh" <<'GH'
+#!/usr/bin/env bash
+d="$(cd "$(dirname "$0")/.." && pwd)"
+printf 'GH_REPO=%s GH_HOST=%s %s\n' "${GH_REPO-<unset>}" "${GH_HOST-<unset>}" "$*" >>"$d/env.log"
+argv="$(mktemp)"
+printf '%s\0' "$@" >"$argv"
+for r in "$d"/replies/*/; do
+  [ -f "$r/argv" ] || continue
+  if cmp -s "$argv" "$r/argv"; then
+    rm -f "$argv"
+    cat "$r/stdout"
+    cat "$r/stderr" >&2
+    exit "$(cat "$r/exit")"
+  fi
+done
+rm -f "$argv"
+printf 'fixture gh: no reply for:' >&2
+printf ' %q' "$@" >&2
+printf '\n' >&2
+exit 127
+GH
+  chmod +x "$GH_FIXTURE/bin/gh"
+  PATH="$GH_FIXTURE/bin:$PATH"
+}
+
+# gh_reply <exit> <stdout> <stderr> <argv...>: the canned reply the fixture gh
+# answers to exactly that argv.
+gh_reply() {
+  local r
+  r="$(mktemp -d "$GH_FIXTURE/replies/XXXXXX")"
+  printf '%s' "$1" >"$r/exit"
+  printf '%s' "$2" >"$r/stdout"
+  printf '%s' "$3" >"$r/stderr"
+  shift 3
+  printf '%s\0' "$@" >"$r/argv"
+}
+
+# contract <operation> [args...]: runs one real adapter operation, orch.sh
+# sourced with ORCH_GH_ADAPTER unset, against whatever gh is on PATH.
+contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
 
 echo "orch.sh tests"
 
@@ -4679,93 +4788,120 @@ filed_sev ""; assert_status "refuses an empty severity" "$?" 1
 # --- review file ------------------------------------------------------------
 
 # Filing is mechanism: which labels, what title, which body, and the number
-# printed back. The stub records what reached gh, which is the assertion - a
-# finding filed with no severity label is a finding triage never finds.
+# printed back. What reached GitHub is the assertion - a finding filed with no
+# severity label is a finding triage never finds.
 #
-# Label creation and issue creation both go through the ORCH_GH_ADAPTER seam
-# here, pointed at the in-memory fake (scripts/test/gh_adapter_fake.sh) rather
-# than stub_gh - neither ever spawns a subprocess. The subprocess-real
-# counterpart of the label-create half lives in "gh adapter (real
-# label-create, subprocess gh)" right after this section; the create half's
-# in "gh adapter (real issue create, subprocess gh)" beside it.
+# The labels go to the store-backed fake (fake_github) and are read back from
+# its store; issue creation still goes through the same fake's GH_STUB_*
+# half, which records it to GH_STUB_FILED - neither ever spawns a subprocess.
+# The real label operations are pinned in "gh adapter contract" after this
+# section; the create half's subprocess-real counterpart is in "gh adapter
+# (real issue create, subprocess gh)".
 echo
 echo "review file"
 fresh_flow reviewfile
+fake_github
 filed="$(mktemp)"
 body="$(mktemp)"
 writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
 log="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=17 \
+tab="$(printf '\t')"
+fake_label review:major ffffff "An older description"
+fake_label needs-triage 000000 "The repo's own"
+out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=17 \
   "$ORCH" review file major "Comment drifted from the code" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files a major" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "17"
-assert_contains "creates the severity label" "$(cat "$filed")" "label create review:major"
-assert_contains "and the triage label" "$(cat "$filed")" "label create needs-triage"
-assert_contains "creating ours over one that exists already" \
-  "$(cat "$filed")" "label create review:major --force"
-assert_eq "and leaving the repo's own triage label as the repo has it" \
-  "$(grep -c 'label create needs-triage --force' "$filed")" "0"
+assert_contains "making the severity label ours over one that exists already" "$(fake_labels)" \
+  "review:major${tab}d93f0b${tab}Review finding filed at major severity"
+assert_contains "and leaving the repo's own triage label as the repo has it" "$(fake_labels)" \
+  "needs-triage${tab}000000${tab}The repo's own"
+assert_contains "and creating the category label the repo lacks" "$(fake_labels)" \
+  "enhancement${tab}a2eeef${tab}New feature or request"
 assert_contains "passes the title through unprefixed" \
   "$(cat "$filed")" "title=Comment drifted from the code"
 assert_contains "labels the issue with the severity" "$(cat "$filed")" "label=review:major"
 assert_contains "and with needs-triage" "$(cat "$filed")" "label=needs-triage"
 assert_contains "and sends the body file's contents" "$(cat "$filed")" "The reviewer said this."
-assert_eq "the two labels never reached a real gh subprocess" \
+assert_eq "the labels never reached a real gh subprocess" \
   "$(grep -cx label "$log")" "0"
 assert_eq "nor did the issue create" \
   "$(grep -cx issue "$log")" "0"
 
 : >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+fake_github
+out="$(GH_STUB_FILED="$filed" \
   "$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files a nit" "$st" 0
 assert_contains "under the nit label" "$(cat "$filed")" "label=review:nit"
+assert_contains "creating it" "$(fake_labels)" "review:nit${tab}c5def5${tab}Review finding filed at nit severity"
+assert_contains "and the triage label a repo without one lacks" "$(fake_labels)" \
+  "needs-triage${tab}e4e669${tab}Not yet triaged"
 
 # The category is the axis's: a Spec finding is a defect against what was
 # asked for, a Standards finding an improvement on how it was built.
 : >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+fake_github
+out="$(GH_STUB_FILED="$filed" \
   "$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "files a Spec finding" "$st" 0
 assert_contains "labelled bug" "$(cat "$filed")" "label=bug"
 assert_eq "and not enhancement" "$(grep -cx 'label=enhancement' "$filed")" "0"
 assert_contains "creating bug with GitHub's default colour and description" \
-  "$(cat "$filed")" "label create bug --color d73a4a --description Something isn't working"
-assert_eq "never over the repo's own bug label" "$(grep -c 'label create bug --force' "$filed")" "0"
+  "$(fake_labels)" "bug${tab}d73a4a${tab}Something isn't working"
+assert_not_contains "and no enhancement label" "$(fake_labels)" "enhancement${tab}"
 
 : >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+fake_github
+out="$(GH_STUB_FILED="$filed" \
   "$ORCH" review file nit "Rename it" --axis Standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files a Standards finding, whatever the axis's case" "$st" 0
 assert_contains "labelled enhancement" "$(cat "$filed")" "label=enhancement"
 assert_eq "and not bug" "$(grep -cx 'label=bug' "$filed")" "0"
 assert_contains "creating enhancement with GitHub's default colour and description" \
-  "$(cat "$filed")" "label create enhancement --color a2eeef --description New feature or request"
-assert_eq "never over the repo's own enhancement label" \
-  "$(grep -c 'label create enhancement --force' "$filed")" "0"
+  "$(fake_labels)" "enhancement${tab}a2eeef${tab}New feature or request"
 
 # A category label that cannot be created - most often because the repo has
-# it already - does not stop the filing.
+# it already - does not stop the filing, and the repo's own is left as it is.
 : >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LABEL_FAIL=bug GH_STUB_ISSUE_NUMBER=23 \
+fake_github
+fake_label bug 123456 "The repo's own bug"
+fake_label enhancement 654321 "The repo's own enhancement"
+out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=23 \
   "$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
-assert_status "a category label gh will not create does not stop filing" "$st" 0
+assert_status "a category label the repo has already does not stop filing" "$st" 0
 assert_eq "the number is still printed" "$out" "23"
 assert_contains "and the issue still asks for the label" "$(cat "$filed")" "label=bug"
+assert_contains "never over the repo's own bug label" "$(fake_labels)" "bug${tab}123456${tab}The repo's own bug"
+out="$(GH_STUB_FILED="$filed" \
+  "$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
+assert_contains "nor over its own enhancement label" "$(fake_labels)" \
+  "enhancement${tab}654321${tab}The repo's own enhancement"
 
 : >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+fake_github
+fake_fail adapter_label_create "HTTP 502: Bad Gateway"
+out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=24 \
+  "$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
+assert_status "nor does one gh fails to create for another reason" "$st" 0
+assert_eq "the number alone printed, gh's error kept out of it" "$out" "24"
+
+: >"$filed"
+fake_github
+out="$(GH_STUB_FILED="$filed" \
   "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses a finding with no axis" "$st" 1
 assert_contains "naming the axis" "$out" "--axis"
 assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
+assert_eq "nor creates a label" "$(fake_labels)" ""
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+out="$(GH_STUB_FILED="$filed" \
   "$ORCH" review file major "Title" --axis style --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses an unknown axis" "$st" 1
 assert_contains "naming it" "$out" "style"
 assert_contains "and what it accepts" "$out" "spec or standards"
 assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
+assert_eq "nor creates a label" "$(fake_labels)" ""
 
 : >"$filed"
 out="$(GH_STUB_FILED="$filed" "$ORCH" review file blocking "Wrong" --axis spec --body-file "$body" 2>&1)"; st=$?
@@ -4777,15 +4913,18 @@ for sev in $(bash -c 'source "$1" && printf "%s\n" "$FILED_SEVERITIES"' _ "$ORCH
   assert_contains "naming filed severity $sev, read from FILED_SEVERITIES" "$out" "$sev"
 done
 assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+assert_eq "not even a label" "$(fake_labels)" ""
 
 out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses an empty title" "$st" 1
 assert_eq "before anything reaches gh" "$(grep -c . "$filed")" "0"
+assert_eq "a label included" "$(fake_labels)" ""
 
 out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" --axis spec --body-file /nonexistent/body.md 2>&1)"; st=$?
 assert_status "refuses a body file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
 assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
+assert_eq "nor creates a label" "$(fake_labels)" ""
 
 out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" --axis spec "$body" 2>&1)"; st=$?
 assert_status "insists on --body-file rather than guessing a positional" "$st" 1
@@ -4796,25 +4935,31 @@ assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
+fake_github
+fake_fail adapter_label_upsert "HTTP 403: Resource not accessible by integration"
+out="$(GH_STUB_FILED="$filed" \
   "$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the label fails it too" "$st" 1
+assert_contains "passing gh's reason through" "$out" "HTTP 403: Resource not accessible by integration"
+assert_contains "and naming the label" "$out" "gh could not create label review:major"
 
 # The triage label is the repo's vocabulary, read from the doc the spec phase
 # labels from: a repo that renamed it must not get a second label the name
 # this plugin happens to know.
 : >"$filed"
+fake_github
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
         '| `needs-triage`             | `triage me`          | Evaluate it |' \
         '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
+out="$(GH_STUB_FILED="$filed" \
   "$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files under a renamed triage label" "$st" 0
-assert_contains "creating the repo's name for it" "$(cat "$filed")" "label create triage me"
+assert_contains "creating the repo's name for it" "$(fake_labels)" "triage me${tab}e4e669${tab}Not yet triaged"
 assert_contains "and applying it" "$(cat "$filed")" "label=triage me"
 assert_eq "rather than the canonical one" "$(grep -c 'needs-triage' "$filed")" "0"
+assert_not_contains "nor creating it" "$(fake_labels)" "needs-triage"
 labels_doc docs/agents/triage-labels.md
 restore_suite_env
 
@@ -4858,6 +5003,80 @@ out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
   "$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "and a real gh that refuses the label still fails the command" "$st" 1
 restore_suite_env
+
+# --- gh fake (#280) --------------------------------------------------------------
+# The store-backed fake's own helpers: the store fake_github makes, the seeds
+# that land in it in the layout documented at the top of gh_adapter_fake.sh,
+# and the lag countdown an operation answers stale by.
+echo
+echo "gh fake"
+fake_github
+first_store="$ORCH_GH_FAKE_STORE"
+assert_eq "fake_github points orch.sh at the fake" "$ORCH_GH_ADAPTER" "$GH_ADAPTER_FAKE"
+assert_eq "with an empty store" "$(find "$first_store" -mindepth 1 | wc -l | tr -d ' ')" "0"
+fake_github
+assert_ne "a fresh store each time" "$ORCH_GH_FAKE_STORE" "$first_store"
+fake_issue 12 open ready-for-agent "needs triage"
+assert_eq "fake_issue seeds the issue's state as gh reports it" \
+  "$(cat "$ORCH_GH_FAKE_STORE/issues/12/state")" "OPEN"
+assert_eq "and its labels, one per line" \
+  "$(cat "$ORCH_GH_FAKE_STORE/issues/12/labels")" "$(printf 'ready-for-agent\nneeds triage')"
+fake_issue 13 closed
+assert_eq "an issue seeded with no labels has none" \
+  "$(cat "$ORCH_GH_FAKE_STORE/issues/13/state")|$(cat "$ORCH_GH_FAKE_STORE/issues/13/labels")" "CLOSED|"
+lagging() { bash -c 'source "$1"; fake_lagging "$2"' _ "$GH_ADAPTER_FAKE" "$1"; }
+fake_lag adapter_issue_body 2
+lagging adapter_issue_body; assert_status "a lagged operation answers stale" "$?" 0
+lagging adapter_issue_body; assert_status "for as many calls as fake_lag asked" "$?" 0
+lagging adapter_issue_body; assert_status "and current after them" "$?" 1
+lagging adapter_label_create; assert_status "an operation with no lag is current" "$?" 1
+restore_suite_env
+assert_eq "restore_suite_env undoes fake_github" \
+  "${ORCH_GH_ADAPTER-unset} ${ORCH_GH_FAKE_STORE-unset}" "unset unset"
+
+# --- gh adapter contract (#280) ------------------------------------------------
+# Each real adapter operation, run against the fixture gh: the exact argv it
+# hands gh, the plain text it prints, and a failure - non-zero, gh's stderr
+# passed through. The behaviour tests fake these same operations, so these are
+# what keeps the fake honest about the real ones.
+echo
+echo "gh adapter contract"
+gh_fixture
+export GH_REPO=acme/widgets
+sev_desc="Review finding filed at major severity"
+
+gh_reply 0 'Label "review:major" created' '' \
+  label create review:major --force --color d93f0b --description "$sev_desc"
+out="$(contract adapter_label_upsert review:major d93f0b "$sev_desc" 2>&1)"; st=$?
+assert_status "label upsert: creates or updates the label with --force" "$st" 0
+assert_eq "printing nothing" "$out" ""
+assert_contains "pinned to the resolved repo" "$(cat "$GH_FIXTURE/env.log")" \
+  "GH_REPO=acme/widgets GH_HOST=<unset> label create review:major --force"
+
+gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' \
+  label create review:nit --force --color c5def5 --description "Review finding filed at nit severity"
+out="$(contract adapter_label_upsert review:nit c5def5 "Review finding filed at nit severity" 2>&1)"; st=$?
+assert_status "label upsert: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
+
+gh_reply 0 '' '' label create "triage me" --color e4e669 --description "Not yet triaged"
+out="$(contract adapter_label_create "triage me" e4e669 "Not yet triaged" 2>&1)"; st=$?
+assert_status "label create: creates a missing label, never with --force" "$st" 0
+assert_eq "printing nothing" "$out" ""
+
+gh_reply 1 '' 'label with name "bug" already exists; use `--force` to update its color and description' \
+  label create bug --color d73a4a --description "Something isn't working"
+out="$(contract adapter_label_create bug d73a4a "Something isn't working" 2>&1)"; st=$?
+assert_status "label create: a label that exists fails it" "$st" 1
+assert_contains "passing gh's stderr through" "$out" 'label with name "bug" already exists'
+
+: >"$GH_FIXTURE/env.log"
+export GH_REPO=ghe.example.com/acme/widgets
+gh_reply 0 '' '' label create enhancement --color a2eeef --description "New feature or request"
+contract adapter_label_create enhancement a2eeef "New feature or request" >/dev/null 2>&1
+assert_contains "a repo on another host pins gh's host too" "$(cat "$GH_FIXTURE/env.log")" \
+  "GH_REPO=ghe.example.com/acme/widgets GH_HOST=ghe.example.com label create enhancement"
+restore_suite_env GH_FIXTURE GH_HOST
 
 # --- finding-triage scan -------------------------------------------------------
 # The scan sorts each open filed finding still in needs-triage against the
@@ -5077,10 +5296,14 @@ restore_suite_env
 # disclaimer on top, then the labels and, for the closing outcomes, the close.
 # The in-memory fake's GH_STUB_FINDINGS store applies each label edit and close
 # to the issue it holds, so what an outcome leaves on the issue is read back
-# from the issue itself; GH_STUB_FILED records what reached gh.
+# from the issue itself; GH_STUB_FILED records what reached gh. The category
+# label apply creates goes to the store-backed fake (fake_github), read back
+# from its store.
 echo
 echo "finding-triage apply"
 new_repo >/dev/null
+fake_github
+tab="$(printf '\t')"
 findings="$(mktemp -d)"
 filed="$(mktemp)"
 comment="$(mktemp)"
@@ -5145,8 +5368,7 @@ assert_status "sends a finding to a human, flipping its category" "$st" 0
 assert_eq "leaving exactly the one category asked for" \
   "$(labels_of 2)" "enhancement ready-for-human review:major "
 assert_contains "creating that category's label with GitHub's default colour and description" \
-  "$(cat "$filed")" "label create enhancement --color a2eeef --description New feature or request"
-assert_eq "never over the repo's own" "$(grep -c 'label create enhancement --force' "$filed")" "0"
+  "$(fake_labels)" "enhancement${tab}a2eeef${tab}New feature or request"
 
 # A finding already out of needs-triage leaves apply nothing to remove: a
 # close needs no relabel, and a relabel removes nothing.
@@ -5201,12 +5423,14 @@ out="$(apply 2 close-fixed --comment-file /nonexistent/comment.md 2>&1)"; st=$?
 assert_status "refuses a comment file that is not there" "$st" 1
 
 # A category label gh will not create - most often because the repo has it -
-# does not stop apply.
+# does not stop apply, and the repo's own is never overwritten.
 triaged 2 "review:major,needs-triage,bug"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" GH_STUB_LABEL_FAIL=bug \
+fake_label bug 123456 "The repo's own bug"
+out="$(GH_STUB_FINDINGS="$findings" \
   orch_gh_failing finding-triage apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
-assert_status "a category label gh will not create does not stop apply" "$st" 0
+assert_status "a category label the repo has already does not stop apply" "$st" 0
 assert_eq "the labels are still applied" "$(labels_of 2)" "bug ready-for-agent review:major "
+assert_contains "and the repo's own is left as it is" "$(fake_labels)" "bug${tab}123456${tab}The repo's own bug"
 
 # Any other failed gh call does, with the reason.
 for knob in GH_STUB_VIEW_EXIT GH_STUB_COMMENT_EXIT GH_STUB_EDIT_EXIT GH_STUB_ISSUE_CLOSE_EXIT; do

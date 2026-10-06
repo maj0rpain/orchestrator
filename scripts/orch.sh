@@ -863,8 +863,23 @@ review_budget() {
 # rest of the process, and anything it leaves alone keeps shelling out to the
 # real `gh` below. Unset - every normal run - nothing is sourced and behaviour
 # is identical to before the seam existed.
+#
+# Operations under the #280 contract are named for what their callers need and
+# own gh's flags: each prints plain text in the shape documented on it, and on
+# a gh failure returns non-zero with gh's stderr passed through. The rest below
+# are still pass-throughs, moved over one noun at a time.
+
+# adapter_label_upsert <name> <colour> <description>: creates the label, or
+# updates the one that exists, to that colour and description. Prints nothing.
+adapter_label_upsert() {
+  gh label create "$1" --force --color "$2" --description "$3" >/dev/null
+}
+
+# adapter_label_create <name> <colour> <description>: creates the label where
+# the repo has none of that name; fails where it has one, leaving it as it is.
+# Prints nothing.
 adapter_label_create() {
-  gh label create "$@"
+  gh label create "$1" --color "$2" --description "$3" >/dev/null
 }
 
 # The spec review's read on an issue's body - and, dynamically, its
@@ -982,12 +997,11 @@ if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
 fi
 
 # The severity label a filed finding carries, so triage can filter on it. It is
-# this plugin's own, so --force is safe: on the current gh that updates a label
-# that exists rather than failing on it, and filing works on a repo that has
-# never seen the label and on one that has, with no listing step in between.
+# this plugin's own, so overwriting it is safe: adapter_label_upsert updates a
+# label that exists rather than failing on it, and filing works on a repo that
+# has never seen the label and on one that has, with no listing step in between.
 severity_label_ensure() {
-  adapter_label_create "$1" --force --color "$2" --description "$3" >/dev/null \
-    || die "gh could not create label $1"
+  adapter_label_upsert "$1" "$2" "$3" || die "gh could not create label $1"
 }
 
 # The triage label is the repo's, not ours: created only where it is missing,
@@ -996,17 +1010,17 @@ severity_label_ensure() {
 # case and is ignored; one that fails for any other reason surfaces two lines
 # later, when `gh issue create` cannot apply the label.
 triage_label_ensure() {
-  adapter_label_create "$1" --color e4e669 --description "Not yet triaged" >/dev/null 2>&1 || true
+  adapter_label_create "$1" e4e669 "Not yet triaged" 2>/dev/null || true
 }
 
 # The category label - bug or enhancement - is the repo's too, like the triage
-# label: created only where missing, never with --force, with GitHub's own
+# label: created only where missing, never overwritten, with GitHub's own
 # default colour and description, and a failed create ignored for the same
 # reason.
 category_label_ensure() {
   case "$1" in
-    bug)         adapter_label_create bug --color d73a4a --description "Something isn't working" >/dev/null 2>&1 || true ;;
-    enhancement) adapter_label_create enhancement --color a2eeef --description "New feature or request" >/dev/null 2>&1 || true ;;
+    bug)         adapter_label_create bug d73a4a "Something isn't working" 2>/dev/null || true ;;
+    enhancement) adapter_label_create enhancement a2eeef "New feature or request" 2>/dev/null || true ;;
   esac
 }
 

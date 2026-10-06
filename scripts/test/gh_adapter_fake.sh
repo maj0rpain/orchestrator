@@ -8,27 +8,81 @@
 # the two fakes without learning a second vocabulary, and an assertion written
 # against one reads the other's output too.
 #
-# Label creation was the first primitive covered - the narrowest slice that
-# proved the seam works end to end (issue #91, first of the #78 breakdown).
-# The issue-resource primitives below (view/edit/comment/create/close, issue
-# #92) extend it the same way: each addition keeps mirroring whatever
-# GH_STUB_* variable already drives that call's subprocess behaviour in
-# stub_gh, rather than inventing a parallel vocabulary.
+# The fake is moving onto a file store (#280). An operation under the #280
+# operation contract parses no arguments: it keeps its state in the directory
+# ORCH_GH_FAKE_STORE names, so what one orch.sh process wrote is there for the
+# next one a test runs. orch_test.sh's fake_github creates the store, and its
+# fake_* helpers seed and read it back. Its layout:
 #
-# adapter_label_create - mirrors stub_gh's `label create` branch:
-#   GH_STUB_MODE=labelfail   fails the call, like a `gh` that cannot create it
-#   GH_STUB_LABEL_FAIL=<name> fails the call for that one label alone, so a
-#                             test can refuse the category label and still
-#                             see the rest of the filing go through
-#   GH_STUB_FILED            when set, appended with "label create <args...>",
-#                             the same line shape stub_gh writes, so an
-#                             assertion against GH_STUB_FILED does not care
-#                             which fake produced it
+#   labels           one label per line, "<name><TAB><colour><TAB><description>";
+#                    absent, the repo has no labels
+#   issues/<n>/state  OPEN or CLOSED
+#   issues/<n>/labels one label per line
+#   fail/<operation>  present, every call of that operation fails, non-zero,
+#                     with the file's contents as gh's stderr
+#   lag/<operation>   a countdown: while above zero, each call of that
+#                     operation answers stale and counts it down
+#
+# The operations not yet moved onto the store keep mirroring the GH_STUB_*
+# vocabulary stub_gh answers to, below.
+
+fake_store() {
+  printf '%s\n' "${ORCH_GH_FAKE_STORE:?the gh fake has no store - call fake_github}"
+}
+
+# fake_failing <operation>: true when fake_fail named the operation, with its
+# stderr written, so an operation opens with `! fake_failing <op> || return 1`.
+fake_failing() {
+  local f
+  f="$(fake_store)/fail/$1" || return 1
+  [ -f "$f" ] || return 1
+  cat "$f" >&2
+}
+
+# fake_lagging <operation>: true while the operation's lag countdown is above
+# zero, counting it down by one, so an operation answers stale for exactly the
+# calls fake_lag asked for.
+fake_lagging() {
+  local f n
+  f="$(fake_store)/lag/$1" || return 1
+  [ -f "$f" ] || return 1
+  n="$(cat "$f")"
+  [ "${n:-0}" -gt 0 ] || return 1
+  printf '%s\n' "$((n - 1))" >"$f"
+}
+
+fake_label_exists() {
+  local f
+  f="$(fake_store)/labels"
+  [ -f "$f" ] && cut -f1 "$f" | grep -qxF -- "$1"
+}
+
+fake_label_put() {
+  local f
+  f="$(fake_store)/labels"
+  if [ -f "$f" ]; then
+    awk -F '\t' -v n="$1" '$1 != n' "$f" >"$f.tmp" && mv "$f.tmp" "$f"
+  fi
+  printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$f"
+}
+
+# adapter_label_upsert <name> <colour> <description>: the label, created or
+# rewritten, in the store.
+adapter_label_upsert() {
+  ! fake_failing adapter_label_upsert || return 1
+  fake_label_put "$1" "$2" "$3"
+}
+
+# adapter_label_create <name> <colour> <description>: the label added to the
+# store where it has none of that name; one it has fails the call, as gh does,
+# and is left as it is.
 adapter_label_create() {
-  if [ "${GH_STUB_MODE:-ok}" = labelfail ]; then return 1; fi
-  if [ -n "${GH_STUB_LABEL_FAIL:-}" ] && [ "$1" = "$GH_STUB_LABEL_FAIL" ]; then return 1; fi
-  if [ -n "${GH_STUB_FILED:-}" ]; then printf 'label create %s\n' "$*" >>"$GH_STUB_FILED"; fi
-  return 0
+  ! fake_failing adapter_label_create || return 1
+  if fake_label_exists "$1"; then
+    printf 'label with name "%s" already exists; use `--force` to update its color and description\n' "$1" >&2
+    return 1
+  fi
+  fake_label_put "$1" "$2" "$3"
 }
 
 # Shared by every issue-write primitive below - mirrors stub_gh's own
