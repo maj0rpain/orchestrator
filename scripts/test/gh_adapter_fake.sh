@@ -18,10 +18,20 @@
 #                    absent, the repo has no labels
 #   issues/<n>/state  OPEN or CLOSED
 #   issues/<n>/labels one label per line
+#   issues/<n>/title  the title; absent, an empty one
+#   issues/<n>/body   the body, byte for byte; absent, an empty one
+#   issues/<n>/reason a closed issue's reason: completed or not planned
+#   issues/<n>/pull   present, #n is a pull request, not an issue
+#   issues/<n>/comments/<k>/{author,created,body}
+#                     the issue's k-th comment
+#   next_issue        the number the next created issue takes; absent, one
+#                     past the highest the store holds
 #   fail/<operation>  present, every call of that operation fails, non-zero,
 #                     with the file's contents as gh's stderr
 #   lag/<operation>   a countdown: while above zero, each call of that
 #                     operation answers stale and counts it down
+#   lag/<operation>.stale
+#                     the stale answer, where the operation takes one
 #
 # The operations not yet moved onto the store keep mirroring the GH_STUB_*
 # vocabulary stub_gh answers to, below.
@@ -49,6 +59,12 @@ fake_lagging() {
   n="$(cat "$f")"
   [ "${n:-0}" -gt 0 ] || return 1
   printf '%s\n' "$((n - 1))" >"$f"
+}
+
+# fake_stale <operation>: the stale answer fake_lag gave the operation, or
+# nothing where it gave none.
+fake_stale() {
+  cat "$(fake_store)/lag/$1.stale" 2>/dev/null || true
 }
 
 fake_label_exists() {
@@ -85,7 +101,7 @@ adapter_label_create() {
   fake_label_put "$1" "$2" "$3"
 }
 
-# Shared by every issue-write primitive below - mirrors stub_gh's own
+# Shared by the PR-write primitives below - mirrors stub_gh's own
 # record_flags: title/label/body-file/comment flags are appended to
 # GH_STUB_FILED with the body-file's contents inlined, everything else as a
 # bare flag=value line, so an assertion reads either fake's GH_STUB_FILED the
@@ -108,212 +124,185 @@ fake_record_flags() {
   done
 }
 
-# adapter_issue_view - mirrors stub_gh's `issue view` branch: logs "issue view
-# <args...>" to GH_STUB_FILED when set, fails on GH_STUB_VIEW_EXIT, answers
-# GH_STUB_ISSUE_STATE/GH_STUB_ISSUE_LABELS when asked for those fields, and
-# GH_STUB_BODY (default "Body of the issue.") otherwise - the same three
-# answers stub_gh gives, so cmd_spec fetch reads either fake identically.
-# GH_STUB_CLOSED_ISSUES, a space-separated list of issue numbers, answers
-# CLOSED for those issues' state alone, so pr release can see a mix of open
-# and closed issues in one run (issue #139). pr release asks for state,url;
-# a number in GH_STUB_PR_NUMBERS answers PULL there, as its --jq turns a PR's
-# /pull/ url into. Asked for comments with GH_STUB_COMMENTS_JSON set - raw
-# gh-shaped JSON, {"comments":[{"author":{"login":..},"createdAt":..,"body":..}]}
-# - it applies the request's own --jq with real jq, as adapter_pr_list does,
-# so the formatting under test is orch.sh's; unset, it answers as before.
-adapter_issue_view() {
-  if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue view %s\n' "$*" >>"$GH_STUB_FILED"; fi
-  if [ "${GH_STUB_VIEW_EXIT:-0}" != 0 ]; then
-    echo "gh stub: issue view refused" >&2
-    return "$GH_STUB_VIEW_EXIT"
-  fi
-  local a prev="" q=""
-  for a in "$@"; do
-    if [ "$prev" = --jq ]; then q="$a"; fi
-    prev="$a"
-  done
-  if [ -n "${GH_STUB_FINDINGS:-}" ] && [ -d "$GH_STUB_FINDINGS/$1" ]; then
-    fake_finding_json "$1" | jq -r "${q:-.}"
-    return
-  fi
-  for a in "$@"; do
-    case "$a" in
-      comments)
-        if [ -n "${GH_STUB_COMMENTS_JSON:-}" ]; then
-          printf '%s' "$GH_STUB_COMMENTS_JSON" | jq -r "${q:-.}"
-          return
-        fi ;;
-      title,labels) fake_readback; return 0 ;;
-      state|state,url)
-        case " ${GH_STUB_PR_NUMBERS:-} " in
-          *" $1 "*) [ "$a" = state,url ] && { printf 'PULL\n'; return 0; } ;;
-        esac
-        case " ${GH_STUB_CLOSED_ISSUES:-} " in
-          *" $1 "*) printf 'CLOSED\n' ;;
-          *)        printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}" ;;
-        esac
-        return 0 ;;
-      labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; return 0 ;;
-    esac
-  done
-  printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"
-  return 0
+# --- issue operations, on the store ---------------------------------------------
+
+fake_issue_dir() { printf '%s/issues/%s\n' "$(fake_store)" "$1"; }
+
+# fake_issue_known <n>: true where the store holds issue #n; otherwise gh's
+# own error on stderr, as `gh issue view` gives for a number with no issue.
+fake_issue_known() {
+  [ -d "$(fake_issue_dir "$1")" ] && return 0
+  printf 'GraphQL: Could not resolve to an issue or pull request with the number of %s. (repository.issue)\n' "$1" >&2
+  return 1
 }
 
-# GH_STUB_FINDINGS names a directory of issues, one subdirectory per number
-# holding its body, its labels (one per line) and, optionally, its state
-# (default OPEN) - so one run can mix issues with different bodies and labels,
-# as finding triage's scan needs. An issue there answers adapter_issue_view
-# as gh-shaped JSON - number, state, labels, body - through the request's own
-# --jq, and adapter_issue_list lists them.
-fake_finding_json() {
-  local d="$GH_STUB_FINDINGS/$1"
-  jq -n --argjson n "$1" \
-    --arg state "$(cat "$d/state" 2>/dev/null || echo OPEN)" \
-    --arg labels "$(cat "$d/labels" 2>/dev/null)" \
-    --rawfile body "$d/body" \
-    '{number: $n, state: $state, body: $body,
-      labels: [$labels | split("\n")[] | select(. != "") | {name: .}]}'
+fake_issue_labels() { cat "$(fake_issue_dir "$1")/labels" 2>/dev/null || true; }
+
+# fake_comment_add <n> <author> <created-at> <body-file>: one comment appended
+# to issue #n, numbered in order under its comments directory.
+fake_comment_add() {
+  local d k
+  d="$(fake_issue_dir "$1")/comments"
+  mkdir -p "$d"
+  k=$(( $(find "$d" -mindepth 1 -maxdepth 1 | wc -l) + 1 ))
+  mkdir "$d/$k"
+  printf '%s\n' "$2" >"$d/$k/author"
+  printf '%s\n' "$3" >"$d/$k/created"
+  cat "$4" >"$d/$k/body"
 }
 
-# adapter_issue_list - logs "issue list <args...>" to GH_STUB_FILED when set,
-# fails on GH_STUB_ISSUE_LIST_EXIT, and answers a JSON array of the issues in
-# GH_STUB_FINDINGS that carry every --label asked for, in the --state asked
-# for (default open), through the caller's own --jq - the filter gh applies
-# server side.
-adapter_issue_list() {
-  local state=open q="" labels=() d n json="[]" l keep
-  if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue list %s\n' "$*" >>"$GH_STUB_FILED"; fi
-  if [ "${GH_STUB_ISSUE_LIST_EXIT:-0}" != 0 ]; then
-    echo "gh stub: issue list refused" >&2
-    return "$GH_STUB_ISSUE_LIST_EXIT"
-  fi
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --state) state="$2"; shift ;;
-      --label) labels+=("$2"); shift ;;
-      --jq)    q="$2"; shift ;;
-    esac
-    shift
+# adapter_issue_body <n>: the stored body, then a newline, as gh's --jq .body
+# prints it.
+adapter_issue_body() {
+  ! fake_failing adapter_issue_body || return 1
+  fake_issue_known "$1" || return 1
+  cat "$(fake_issue_dir "$1")/body" 2>/dev/null
+  printf '\n'
+}
+
+# adapter_issue_comments <n>: the stored comments in COMMENTS_JQ's shape -
+# each opened by its marker line, one blank line between, a newline after the
+# last; nothing at all for none.
+adapter_issue_comments() {
+  local d k first=1
+  ! fake_failing adapter_issue_comments || return 1
+  fake_issue_known "$1" || return 1
+  d="$(fake_issue_dir "$1")/comments"
+  [ -d "$d" ] || return 0
+  for k in $(ls "$d" | sort -n); do
+    [ "$first" = 1 ] || printf '\n\n'
+    first=0
+    printf '<!-- comment @%s %s -->\n' "$(cat "$d/$k/author")" "$(cat "$d/$k/created")"
+    cat "$d/$k/body"
   done
-  for d in "${GH_STUB_FINDINGS:-/nonexistent}"/*/; do
+  printf '\n'
+}
+
+# adapter_issue_state_labels <n>: the stored state, then its labels.
+adapter_issue_state_labels() {
+  ! fake_failing adapter_issue_state_labels || return 1
+  fake_issue_known "$1" || return 1
+  cat "$(fake_issue_dir "$1")/state"
+  fake_issue_labels "$1"
+}
+
+# adapter_issue_title_labels <n>: the stored title, then its labels. Lagging
+# (fake_lag), it answers the stale answer fake_lag was given, or an empty
+# title and no labels.
+adapter_issue_title_labels() {
+  ! fake_failing adapter_issue_title_labels || return 1
+  if fake_lagging adapter_issue_title_labels; then
+    fake_stale adapter_issue_title_labels
+    return 0
+  fi
+  fake_issue_known "$1" || return 1
+  printf '%s\n' "$(cat "$(fake_issue_dir "$1")/title" 2>/dev/null)"
+  fake_issue_labels "$1"
+}
+
+# adapter_issue_state <n>: PULL for a number fake_pull seeded, the stored state
+# otherwise.
+adapter_issue_state() {
+  ! fake_failing adapter_issue_state || return 1
+  fake_issue_known "$1" || return 1
+  if [ -f "$(fake_issue_dir "$1")/pull" ]; then printf 'PULL\n'; return 0; fi
+  cat "$(fake_issue_dir "$1")/state"
+}
+
+# adapter_issues_labelled <label>...: the open issues in the store carrying
+# every label named, in number order.
+adapter_issues_labelled() {
+  local d n l keep
+  ! fake_failing adapter_issues_labelled || return 1
+  for d in "$(fake_store)"/issues/*/; do
     [ -d "$d" ] || continue
     n="$(basename "$d")"
+    [ ! -f "$d/pull" ] && [ "$(cat "$d/state")" = OPEN ] || continue
     keep=1
-    for l in "${labels[@]}"; do grep -qxF -- "$l" "$d/labels" 2>/dev/null || keep=0; done
-    case "$state" in
-      all) ;;
-      *) [ "$(cat "$d/state" 2>/dev/null || echo OPEN)" = "$(printf '%s' "$state" | tr '[:lower:]' '[:upper:]')" ] || keep=0 ;;
-    esac
-    [ "$keep" = 1 ] || continue
-    json="$(jq --argjson x "$(fake_finding_json "$n")" '. + [$x]' <<<"$json")"
-  done
-  if [ -n "$q" ]; then printf '%s' "$json" | jq -r "$q"; else printf '%s\n' "$json"; fi
+    for l in "$@"; do grep -qxF -- "$l" "$d/labels" 2>/dev/null || keep=0; done
+    [ "$keep" = 1 ] && printf '%s\n' "$n"
+  done | sort -n
 }
 
-# adapter_issue_edit / adapter_issue_comment - mirror stub_gh's `issue
-# edit`/`issue comment` branch's logging shape: "issue <op> <n>" plus the
-# flags (fake_record_flags) to GH_STUB_FILED when set. Failing on demand with
-# GH_STUB_EDIT_EXIT/GH_STUB_COMMENT_EXIT respectively is this fake's own job now
-# - once cmd_spec's update/comment fully moved onto this adapter (#94), no live
-# test left a caller for stub_gh's own copy of that check, so it was retired.
-fake_issue_write() {
-  local op="$1" n st
-  shift
-  n="$1"
-  shift
-  if [ -n "${GH_STUB_FILED:-}" ]; then
-    printf 'issue %s %s\n' "$op" "$n" >>"$GH_STUB_FILED"
-    fake_record_flags "$@"
-  fi
-  if [ "$op" = edit ]; then st="${GH_STUB_EDIT_EXIT:-0}"; else st="${GH_STUB_COMMENT_EXIT:-0}"; fi
-  if [ "$st" != 0 ]; then
-    echo "gh stub: issue $op refused" >&2
-    return "$st"
-  fi
-  if [ "$op" = edit ]; then fake_finding_relabel "$n" "$@"; fi
-  return 0
-}
-
-# An edit of an issue in the GH_STUB_FINDINGS store applies its --add-label
-# and --remove-label flags to the labels it holds, as gh would, so a test reads
-# what an edit left on the issue back from the issue itself.
-fake_finding_relabel() {
-  local f="${GH_STUB_FINDINGS:-/nonexistent}/$1/labels"
-  [ -f "$f" ] || return 0
-  shift
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --add-label)    grep -qxF -- "$2" "$f" || printf '%s\n' "$2" >>"$f"; shift ;;
-      --remove-label) { grep -vxF -- "$2" "$f" || true; } >"$f.tmp"; mv "$f.tmp" "$f"; shift ;;
-    esac
-    shift
-  done
-}
-adapter_issue_edit()    { fake_issue_write edit "$@"; }
-adapter_issue_comment() { fake_issue_write comment "$@"; }
-
-# issue publish's readback: the title on the first line, then one line per
-# label - by default exactly what the last adapter_issue_create in this
-# process was given, kept in GH_FAKE_DIR because creation runs in a command
-# substitution whose variables never reach the parent. GH_STUB_READBACK_MISS
-# answers stale (an empty title, no labels) for that many calls first, the
-# lag verify-then-die's retry exists to survive; GH_STUB_READBACK_TITLE and
-# GH_STUB_READBACK_LABELS (newline-separated) override the answer for good.
-GH_FAKE_DIR="$(mktemp -d)"
-fake_readback() {
-  local rf="$GH_FAKE_DIR/readback_miss_remaining" remaining labels
-  remaining="$(cat "$rf" 2>/dev/null)"; [ -n "$remaining" ] || remaining="${GH_STUB_READBACK_MISS:-0}"
-  if [ "$remaining" -gt 0 ]; then echo $((remaining - 1)) >"$rf"; printf '\n'; return 0; fi
-  printf '%s\n' "${GH_STUB_READBACK_TITLE-$(cat "$GH_FAKE_DIR/created_title" 2>/dev/null)}"
-  labels="${GH_STUB_READBACK_LABELS-$(cat "$GH_FAKE_DIR/created_labels" 2>/dev/null)}"
-  if [ -n "$labels" ]; then printf '%s\n' "$labels"; fi
-}
-
-# adapter_issue_create - mirrors stub_gh's `issue create` branch: records the
-# flags (fake_record_flags) to GH_STUB_FILED when set, fails on
-# GH_STUB_ISSUE_EXIT, otherwise answers a fake issue URL numbered
-# GH_STUB_ISSUE_NUMBER (default 42) - the same shape review file/issue publish
-# already parse the trailing number out of. Remembers its title and labels
-# for fake_readback above.
+# adapter_issue_create <title> <body-file> [label...]: a new open issue in the
+# store, numbered as fake_next_issue set (default one past the highest the
+# store holds), its number printed.
 adapter_issue_create() {
-  if [ -n "${GH_STUB_FILED:-}" ]; then fake_record_flags "$@"; fi
-  if [ "${GH_STUB_ISSUE_EXIT:-0}" != 0 ]; then
-    echo "gh stub: issue create refused" >&2
-    return "$GH_STUB_ISSUE_EXIT"
+  local title="$1" body="$2" n d
+  shift 2
+  ! fake_failing adapter_issue_create || return 1
+  n="$(cat "$(fake_store)/next_issue" 2>/dev/null)"
+  if [ -z "$n" ]; then
+    n="$(ls "$(fake_store)/issues" 2>/dev/null | sort -n | tail -n 1)"
+    n=$(( ${n:-0} + 1 ))
   fi
-  : >"$GH_FAKE_DIR/created_labels"
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --title) printf '%s\n' "$2" >"$GH_FAKE_DIR/created_title"; shift ;;
-      --label) printf '%s\n' "$2" >>"$GH_FAKE_DIR/created_labels"; shift ;;
-    esac
-    shift
-  done
-  printf 'https://github.com/acme/widgets/issues/%s\n' "${GH_STUB_ISSUE_NUMBER:-42}"
-  return 0
+  printf '%s\n' "$((n + 1))" >"$(fake_store)/next_issue"
+  d="$(fake_issue_dir "$n")"
+  mkdir -p "$d"
+  printf 'OPEN\n' >"$d/state"
+  printf '%s\n' "$title" >"$d/title"
+  cat "$body" >"$d/body"
+  : >"$d/labels"
+  [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/labels"
+  printf '%s\n' "$n"
 }
 
-# adapter_issue_close - mirrors stub_gh's `issue close` branch: logs "issue
-# close <n>" plus the flags (fake_record_flags, so a --comment reaches
-# GH_STUB_FILED the same way pr close's does) to GH_STUB_FILED when set, and
-# fails on GH_STUB_ISSUE_CLOSE_EXIT. An issue in the GH_STUB_FINDINGS store is
-# closed there too.
+# adapter_issue_body_edit <n> <file>: the file's contents as the stored body.
+adapter_issue_body_edit() {
+  ! fake_failing adapter_issue_body_edit || return 1
+  fake_issue_known "$1" || return 1
+  cat "$2" >"$(fake_issue_dir "$1")/body"
+}
+
+# adapter_issue_comment <n> <file>: the file's contents appended as a comment,
+# by fake-gh.
+adapter_issue_comment() {
+  ! fake_failing adapter_issue_comment || return 1
+  fake_issue_known "$1" || return 1
+  fake_comment_add "$1" fake-gh 2026-01-01T00:00:00Z "$2"
+}
+
+# adapter_issue_relabel <n> <add> <remove>: the comma-separated labels removed
+# from, then added to, the stored labels, each once.
+adapter_issue_relabel() {
+  local f l add=() remove=()
+  ! fake_failing adapter_issue_relabel || return 1
+  fake_issue_known "$1" || return 1
+  f="$(fake_issue_dir "$1")/labels"
+  [ -z "$2" ] || IFS=, read -r -a add <<<"$2"
+  [ -z "$3" ] || IFS=, read -r -a remove <<<"$3"
+  for l in ${remove[@]+"${remove[@]}"}; do
+    { grep -vxF -- "$l" "$f" || true; } >"$f.tmp"; mv "$f.tmp" "$f"
+  done
+  for l in ${add[@]+"${add[@]}"}; do
+    grep -qxF -- "$l" "$f" || printf '%s\n' "$l" >>"$f"
+  done
+}
+
+# adapter_issue_close <n> [reason] [comment]: the stored issue CLOSED, its
+# reason (completed where none is given, as GitHub defaults) in reason, and
+# the comment, where given, appended by fake-gh.
 adapter_issue_close() {
-  local n="$1"
-  if [ -n "${GH_STUB_FILED:-}" ]; then
-    printf 'issue close %s\n' "$n" >>"$GH_STUB_FILED"
-    shift
-    fake_record_flags "$@"
+  local d c
+  ! fake_failing adapter_issue_close || return 1
+  fake_issue_known "$1" || return 1
+  d="$(fake_issue_dir "$1")"
+  if [ -n "${3:-}" ]; then
+    c="$(mktemp)"
+    printf '%s' "$3" >"$c"
+    fake_comment_add "$1" fake-gh 2026-01-01T00:00:00Z "$c"
+    rm -f "$c"
   fi
-  if [ "${GH_STUB_ISSUE_CLOSE_EXIT:-0}" != 0 ]; then
-    echo "gh stub: issue close refused" >&2
-    return "$GH_STUB_ISSUE_CLOSE_EXIT"
-  fi
-  if [ -n "${GH_STUB_FINDINGS:-}" ] && [ -d "$GH_STUB_FINDINGS/$n" ]; then
-    printf 'CLOSED\n' >"$GH_STUB_FINDINGS/$n/state"
-  fi
-  return 0
+  printf 'CLOSED\n' >"$d/state"
+  printf '%s\n' "${2:-completed}" >"$d/reason"
+}
+
+# adapter_issue_reopen <n>: the stored issue OPEN again.
+adapter_issue_reopen() {
+  ! fake_failing adapter_issue_reopen || return 1
+  fake_issue_known "$1" || return 1
+  printf 'OPEN\n' >"$(fake_issue_dir "$1")/state"
+  rm -f "$(fake_issue_dir "$1")/reason"
 }
 
 # The PR-resource primitives (issue #93, third of the #78 breakdown):

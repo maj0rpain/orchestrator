@@ -864,10 +864,11 @@ review_budget() {
 # real `gh` below. Unset - every normal run - nothing is sourced and behaviour
 # is identical to before the seam existed.
 #
-# Operations under the #280 contract are named for what their callers need and
-# own gh's flags: each prints plain text in the shape documented on it, and on
-# a gh failure returns non-zero with gh's stderr passed through. The rest below
-# are still pass-throughs, moved over one noun at a time.
+# Operations under the #280 contract - the label and issue ones - are named for
+# what their callers need and own gh's flags: each prints plain text in the
+# shape documented on it, and on a gh failure returns non-zero with gh's stderr
+# passed through. The PR and CI ones below are still pass-throughs, moved over
+# one noun at a time.
 
 # adapter_label_upsert <name> <colour> <description>: creates the label, or
 # updates the one that exists, to that colour and description. Prints nothing.
@@ -882,38 +883,102 @@ adapter_label_create() {
   gh label create "$1" --color "$2" --description "$3" >/dev/null
 }
 
-# The spec review's read on an issue's body - and, dynamically, its
-# state/labels the same way `gh issue view` itself answers either.
-adapter_issue_view() {
-  gh issue view "$@"
+# --- issue operations ---
+
+# Every comment on an issue or PR, in order, each opened by a marker line
+# naming its author and gh's ISO-8601 timestamp, one blank line between
+# comments and bodies unescaped; nothing at all for none. pr comments (issue
+# #418) reads a PR's comments through this same --jq, so the two read alike.
+COMMENTS_JQ='[.comments[] | "<!-- comment @\(.author.login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n")'
+
+# adapter_issue_body <n>: the issue's body as GitHub holds it, then a newline.
+adapter_issue_body() {
+  gh issue view "$1" --json body --jq .body
 }
 
-# cmd_issue_update and cmd_issue_comment call these two; cmd_spec's
-# update/comment ops reach them only by delegating to the issue primitives.
-adapter_issue_edit() {
-  gh issue edit "$@"
-}
-adapter_issue_comment() {
-  gh issue comment "$@"
+# adapter_issue_comments <n>: the issue's comments in COMMENTS_JQ's shape.
+adapter_issue_comments() {
+  gh issue view "$1" --json comments --jq "$COMMENTS_JQ"
 }
 
-# Every issue-filing call site but `ticket publish` (out of scope for issue
-# #92 - see cmd_ticket_publish) goes through this one primitive.
+# adapter_issue_state_labels <n>: OPEN or CLOSED on the first line, then one
+# label per line - none at all for an unlabelled issue.
+adapter_issue_state_labels() {
+  gh issue view "$1" --json state,labels --jq '.state, (.labels[].name)'
+}
+
+# adapter_issue_title_labels <n>: the title on the first line, then one label
+# per line.
+adapter_issue_title_labels() {
+  gh issue view "$1" --json title,labels --jq '.title, (.labels[].name)'
+}
+
+# adapter_issue_state <n>: OPEN or CLOSED - or PULL where <n> is a pull
+# request's number, which gh issue view answers for too.
+adapter_issue_state() {
+  gh issue view "$1" --json state,url --jq 'if (.url | test("/pull/")) then "PULL" else .state end'
+}
+
+# adapter_issues_labelled <label>...: the open issues carrying every label
+# named, one number per line - gh filters on whole labels, not on a prefix.
+adapter_issues_labelled() {
+  local args=() l
+  for l in "$@"; do args+=(--label "$l"); done
+  gh issue list --state open ${args[@]+"${args[@]}"} --limit 1000 --json number --jq '.[].number'
+}
+
+# adapter_issue_create <title> <body-file> [label...]: files the issue under
+# every label named and prints its number alone. Fails, printing nothing, where
+# gh succeeded but printed no issue URL.
 adapter_issue_create() {
-  gh issue create "$@"
+  local title="$1" body="$2" args=() l out n
+  shift 2
+  for l in "$@"; do args+=(--label "$l"); done
+  out="$(gh issue create --title "$title" --body-file "$body" ${args[@]+"${args[@]}"})" || return
+  n="$(printf '%s\n' "$out" | sed -n 's#^https\{0,1\}://.*/issues/\([0-9][0-9]*\)$#\1#p' | tail -n 1)"
+  if [ -z "$n" ]; then
+    printf 'gh issue create printed no issue URL: %s\n' "$out" >&2
+    return 1
+  fi
+  printf '%s\n' "$n"
 }
 
-# cmd_redo_spec's --new-issue path and `ticket retire` close issues through
-# this primitive; `ticket close` calls `gh issue close` directly, through the
-# same gh guard, so it too is pinned to the resolved repo.
+# adapter_issue_body_edit <n> <file>: replaces the issue's body with the
+# file's contents. Prints nothing.
+adapter_issue_body_edit() {
+  gh issue edit "$1" --body-file "$2" >/dev/null
+}
+
+# adapter_issue_comment <n> <file>: posts the file's contents as a comment on
+# the issue. Prints nothing.
+adapter_issue_comment() {
+  gh issue comment "$1" --body-file "$2" >/dev/null
+}
+
+# adapter_issue_relabel <n> <add> <remove>: one edit adding and removing
+# labels, each list comma-separated and either one empty. Prints nothing.
+adapter_issue_relabel() {
+  local n="$1" args=() add=() remove=() l
+  [ -z "$2" ] || IFS=, read -r -a add <<<"$2"
+  [ -z "$3" ] || IFS=, read -r -a remove <<<"$3"
+  for l in ${remove[@]+"${remove[@]}"}; do args+=(--remove-label "$l"); done
+  for l in ${add[@]+"${add[@]}"}; do args+=(--add-label "$l"); done
+  gh issue edit "$n" ${args[@]+"${args[@]}"} >/dev/null
+}
+
+# adapter_issue_close <n> [reason] [comment]: closes the issue, reason
+# "completed" or "not planned" (empty or absent, gh's default), posting the
+# comment on it where one is given. Prints nothing.
 adapter_issue_close() {
-  gh issue close "$@"
+  local args=()
+  [ -z "${2:-}" ] || args+=(--reason "$2")
+  [ -z "${3:-}" ] || args+=(--comment "$3")
+  gh issue close "$1" ${args[@]+"${args[@]}"} >/dev/null
 }
 
-# finding-triage scan's listing of the open filed findings, once per severity
-# label: gh filters on whole labels, not on a prefix.
-adapter_issue_list() {
-  gh issue list "$@"
+# adapter_issue_reopen <n>: reopens the issue. Prints nothing.
+adapter_issue_reopen() {
+  gh issue reopen "$1" >/dev/null
 }
 
 # The PR-resource primitives (issue #93, third of the #78 breakdown): open_pr's
@@ -1286,7 +1351,7 @@ cmd_review() {
       require_state
       local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards> --body-file <file>"
       [ $# -eq 6 ] && [ "$3" = --axis ] && [ "$5" = --body-file ] || die "$usage"
-      local severity="$1" title="$2" axis="$4" body="$6" colour category triage url
+      local severity="$1" title="$2" axis="$4" body="$6" colour category triage n
       is_filed_severity "$severity" \
         || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
       case "$severity" in
@@ -1310,12 +1375,11 @@ cmd_review() {
       category_label_ensure "$category"
       # The title carries no severity prefix: the label holds it, where triage
       # can change it, and the title reads as an issue.
-      url="$(adapter_issue_create --title "$title" --body-file "$body" \
-        --label "review:$severity" --label "$triage" --label "$category")" \
+      n="$(adapter_issue_create "$title" "$body" "review:$severity" "$triage" "$category")" \
         || die "gh could not create the issue"
       # Prints the number alone: the record cites a number, and the caller
       # would otherwise be parsing a URL out of prose every time.
-      note "${url##*/}"
+      note "$n"
       ;;
     ready)
       require_state
@@ -1474,20 +1538,15 @@ fetch_into() {
 cmd_issue_fetch() {
   local issue="$1" file="$2"
   fetch_into "$file" "the body of issue #$issue" \
-    adapter_issue_view "$issue" --json body --jq .body
+    adapter_issue_body "$issue"
 }
 
-# Every comment on the issue, in order, each opened by a marker line naming
-# its author and gh's ISO-8601 timestamp, one blank line between comments and
-# bodies unescaped - so the spec review reads the comments beside the body.
-# No comments is an empty file, not an error.
-# pr comments (issue #418) writes a PR's comments through this same --jq, so
-# the two files read alike.
-COMMENTS_JQ='[.comments[] | "<!-- comment @\(.author.login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n")'
+# Every comment on the issue, in COMMENTS_JQ's shape - so the spec review reads
+# the comments beside the body. No comments is an empty file, not an error.
 cmd_issue_comments() {
   local issue="$1" file="$2"
   fetch_into "$file" "the comments of issue #$issue" \
-    adapter_issue_view "$issue" --json comments --jq "$COMMENTS_JQ"
+    adapter_issue_comments "$issue"
 }
 
 cmd_issue_update() {
@@ -1496,14 +1555,14 @@ cmd_issue_update() {
   # --body-file, never --body: an issue body carries tables, fences, and
   # `#nn` references, and a heredoc through a shell is where those get
   # mangled.
-  adapter_issue_edit "$issue" --body-file "$file" >/dev/null \
+  adapter_issue_body_edit "$issue" "$file" \
     || die "gh could not replace the body of issue #$issue"
 }
 
 cmd_issue_comment() {
   local issue="$1" file="$2"
   [ -f "$file" ] || die "body file not found: $file"
-  adapter_issue_comment "$issue" --body-file "$file" >/dev/null \
+  adapter_issue_comment "$issue" "$file" \
     || die "gh could not comment on issue #$issue"
 }
 
@@ -1762,7 +1821,7 @@ cmd_finding_triage_scan() {
   case "$issue$pr_filter" in *[!0-9]*) die "$usage" ;; esac
   triage="$(triage_label_for needs-triage)"
   if [ -n "$issue" ]; then
-    out="$(adapter_issue_view "$issue" --json state,labels --jq '.state, (.labels[].name)')" \
+    out="$(adapter_issue_state_labels "$issue")" \
       || die "gh could not read issue #$issue"
     state="$(first_line "$out")"
     labels="$(printf '%s\n' "$out" | tail -n +2)"
@@ -1778,8 +1837,7 @@ cmd_finding_triage_scan() {
     nums="$issue"
   else
     for sev in $FILED_SEVERITIES; do
-      out="$(adapter_issue_list --state open --label "review:$sev" --label "$triage" \
-        --limit 1000 --json number --jq '.[].number')" \
+      out="$(adapter_issues_labelled "review:$sev" "$triage")" \
         || die "gh could not list the review:$sev findings"
       nums="$nums $out"
     done
@@ -1789,7 +1847,7 @@ cmd_finding_triage_scan() {
   git fetch -q origin "+refs/heads/$default:$ref" >/dev/null 2>&1 \
     || die "could not fetch origin/$default"
   for n in $(printf '%s\n' $nums | sort -nu); do
-    body="$(adapter_issue_view "$n" --json body --jq .body)" || die "gh could not read issue #$n"
+    body="$(adapter_issue_body "$n")" || die "gh could not read issue #$n"
     if [ -n "$pr_filter" ] && [ "$(finding_pr "$body")" != "$pr_filter" ]; then continue; fi
     finding_scan_one "$n" "$body" "$ref"
   done
@@ -1807,11 +1865,9 @@ cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
   local issue="${1:-}" outcome="${2:-}" category="" file="" labels triage stale_category tmp
-  # The labels to remove, possibly none. Bash 3.2's set -u calls an empty
-  # array unbound, so every expansion splices ${edit[@]+"${edit[@]}"}, and
-  # close-fixed, where edit is the relabel's only argument, guards on its
-  # count: an empty splice there would run a bare `gh issue edit`.
-  local edit=()
+  # The labels to remove, comma-separated, possibly none: close-fixed, where
+  # that is the whole relabel, skips an empty one rather than send a bare edit.
+  local remove=""
   [ $# -ge 2 ] || die "$usage"
   shift 2
   while [ $# -gt 0 ]; do
@@ -1837,16 +1893,17 @@ cmd_finding_triage_apply() {
   [ -n "$file" ] || die "$usage"
   [ -f "$file" ] || die "comment file not found: $file"
 
-  labels="$(adapter_issue_view "$issue" --json labels --jq '.labels[].name')" \
+  labels="$(adapter_issue_state_labels "$issue")" \
     || die "gh could not read issue #$issue"
+  labels="$(printf '%s\n' "$labels" | tail -n +2)"
   triage="$(triage_label_for needs-triage)"
   # Remove only what the issue carries: gh refuses to remove a label the
   # repo does not have at all.
-  if printf '%s\n' "$labels" | grep -qxF -- "$triage"; then edit+=(--remove-label "$triage"); fi
+  if printf '%s\n' "$labels" | grep -qxF -- "$triage"; then remove="$triage"; fi
 
   tmp="$(mktemp)"
   { printf '%s\n\n' '> *This was generated by AI during triage.*'; cat "$file"; } >"$tmp"
-  if ! adapter_issue_comment "$issue" --body-file "$tmp" >/dev/null; then
+  if ! adapter_issue_comment "$issue" "$tmp"; then
     rm -f "$tmp"
     die "gh could not comment on issue #$issue"
   fi
@@ -1854,19 +1911,19 @@ cmd_finding_triage_apply() {
 
   case "$outcome" in
     close-fixed)
-      if [ ${#edit[@]} -gt 0 ]; then
-        adapter_issue_edit "$issue" ${edit[@]+"${edit[@]}"} >/dev/null || die "gh could not relabel issue #$issue"
+      if [ -n "$remove" ]; then
+        adapter_issue_relabel "$issue" "" "$remove" || die "gh could not relabel issue #$issue"
       fi
-      adapter_issue_close "$issue" --reason completed >/dev/null || die "gh could not close issue #$issue" ;;
+      adapter_issue_close "$issue" completed || die "gh could not close issue #$issue" ;;
     wontfix)
-      adapter_issue_edit "$issue" ${edit[@]+"${edit[@]}"} --add-label "$(triage_label_for wontfix)" >/dev/null \
+      adapter_issue_relabel "$issue" "$(triage_label_for wontfix)" "$remove" \
         || die "gh could not relabel issue #$issue"
-      adapter_issue_close "$issue" --reason "not planned" >/dev/null || die "gh could not close issue #$issue" ;;
+      adapter_issue_close "$issue" "not planned" || die "gh could not close issue #$issue" ;;
     *)
       category_label_ensure "$category"
-      if printf '%s\n' "$labels" | grep -qxF -- "$stale_category"; then edit+=(--remove-label "$stale_category"); fi
-      adapter_issue_edit "$issue" ${edit[@]+"${edit[@]}"} --add-label "$(triage_label_for "$outcome")" \
-        --add-label "$category" >/dev/null || die "gh could not relabel issue #$issue" ;;
+      if printf '%s\n' "$labels" | grep -qxF -- "$stale_category"; then remove="${remove:+$remove,}$stale_category"; fi
+      adapter_issue_relabel "$issue" "$(triage_label_for "$outcome"),$category" "$remove" \
+        || die "gh could not relabel issue #$issue" ;;
   esac
 }
 
@@ -2023,7 +2080,7 @@ cmd_branch() {
 # ticket_links_verified's caller does.
 issue_publish_verified() {
   local n="$1" title="$2" label="$3" out
-  out="$(adapter_issue_view "$n" --json title,labels --jq '.title, (.labels[].name)' 2>/dev/null)" \
+  out="$(adapter_issue_title_labels "$n" 2>/dev/null)" \
     || return 1
   [ "$(first_line "$out")" = "$title" ] || return 1
   printf '%s\n' "$out" | tail -n +2 | grep -qxF "$label"
@@ -2040,13 +2097,12 @@ issue_publish_verified() {
 # naming the issue, so a half-published spec never reaches the next step.
 cmd_issue_publish() {
   [ $# -eq 2 ] || die "usage: orch.sh issue publish <title> <body-file>"
-  local title="$1" body_file="$2" ready url n
+  local title="$1" body_file="$2" ready n
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
   ready="$(triage_label_for ready-for-agent)"
-  url="$(adapter_issue_create --title "$title" --body-file "$body_file" --label "$ready")" \
+  n="$(adapter_issue_create "$title" "$body_file" "$ready")" \
     || die "gh could not create the issue"
-  n="${url##*/}"
   issue_publish_verified "$n" "$title" "$ready" \
     || issue_publish_verified "$n" "$title" "$ready" \
     || die "issue #$n's title and '$ready' label did not verify - checked twice, both failed"
@@ -2145,8 +2201,7 @@ cmd_pr_release() {
   # gh issue view answers for a PR number too, so a reference to a PR reads
   # as PULL and is dropped - only still-open issues get a Closes line.
   for n in $refs; do
-    state="$(adapter_issue_view "$n" --json state,url \
-      --jq 'if (.url | test("/pull/")) then "PULL" else .state end')" ||
+    state="$(adapter_issue_state "$n")" ||
       die "gh could not read the state of issue #$n"
     [ "$state" != OPEN ] || issues="$issues $n"
   done
@@ -2305,7 +2360,7 @@ ticket_links_verified() {
 cmd_ticket_publish() {
   [ $# -ge 3 ] || die "usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
   local parent="$1" title="$2" body_file="$3" blocked_by="" want="" b
-  local ready url child child_id blocker_id
+  local ready child child_id blocker_id
   shift 3
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -2331,9 +2386,8 @@ cmd_ticket_publish() {
   fi
 
   ready="$(triage_label_for ready-for-agent)"
-  url="$(gh issue create --title "$title" --body-file "$body_file" --label "$ready")" \
+  child="$(adapter_issue_create "$title" "$body_file" "$ready")" \
     || die "gh could not create the ticket"
-  child="${url##*/}"
 
   child_id="$(issue_db_id "$child")"
   gh api --method POST "repos/{owner}/{repo}/issues/$parent/sub_issues" \
@@ -2387,7 +2441,7 @@ cmd_ticket_close() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket close <n>"
   local n="$1"
   case "$n" in ''|*[!0-9]*) die "not a plain issue number: $n" ;; esac
-  gh issue close "$n" >/dev/null || die "gh could not close ticket #$n"
+  adapter_issue_close "$n" || die "gh could not close ticket #$n"
 }
 
 # Reopens every sub-issue of <parent> that is currently closed, and only
@@ -2403,7 +2457,7 @@ cmd_ticket_reset() {
   if [ -n "$closed" ]; then
     while IFS= read -r n; do
       [ -z "$n" ] && continue
-      gh issue reopen "$n" >/dev/null || die "gh could not reopen ticket #$n"
+      adapter_issue_reopen "$n" || die "gh could not reopen ticket #$n"
     done <<<"$closed"
   fi
 }
@@ -2452,7 +2506,7 @@ cmd_ticket_exists() {
     printf 'sub-issues\n'
     return 0
   fi
-  body="$(adapter_issue_view "$parent" --json body --jq .body)" \
+  body="$(adapter_issue_body "$parent")" \
     || die2 "gh could not read issue #$parent's body"
   if printf '%s\n' "$body" | has_ticket_heading; then
     printf 'collapsed\n'
@@ -2504,7 +2558,7 @@ strip_ticket_sections() {
 # and no section to cut, so a repeat writes nothing. Any GitHub failure dies.
 cmd_ticket_retire() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
-  local parent="$1" subs n state child_id comments body stripped msg old_msg out
+  local parent="$1" subs n state child_id comments body stripped msg old_msg out note
   subs="$(cmd_ticket_list "$parent")" || exit 1
   msg="This ticket was retired: its spec, #$parent, changed and will be broken down into tickets again."
   # The wording a retire posted before a spec review could retire too: a
@@ -2513,14 +2567,17 @@ cmd_ticket_retire() {
   while read -r n state; do
     [ -z "$n" ] && continue
     if [ "$state" = open ]; then
-      adapter_issue_close "$n" --reason "not planned" --comment "$msg" >/dev/null \
+      adapter_issue_close "$n" "not planned" "$msg" \
         || die "gh could not close ticket #$n"
     else
-      comments="$(adapter_issue_view "$n" --json comments --jq '.comments[].body')" \
+      comments="$(adapter_issue_comments "$n")" \
         || die "gh could not read ticket #$n's comments"
       if ! grep -qF -e "$msg" -e "$old_msg" <<<"$comments"; then
-        adapter_issue_comment "$n" --body "$msg" >/dev/null \
-          || die "gh could not comment on ticket #$n"
+        note="$(mktemp)"
+        printf '%s\n' "$msg" >"$note"
+        adapter_issue_comment "$n" "$note" \
+          || { rm -f "$note"; die "gh could not comment on ticket #$n"; }
+        rm -f "$note"
       fi
     fi
     child_id="$(issue_db_id "$n")"
@@ -2532,7 +2589,7 @@ cmd_ticket_retire() {
   # trailing newlines: the bytes outside the section go back unchanged, the
   # same round trip `issue fetch` and `issue update` make.
   body="$(mktemp)"
-  adapter_issue_view "$parent" --json body --jq .body >"$body" \
+  adapter_issue_body "$parent" >"$body" \
     || { rm -f "$body"; die "gh could not read issue #$parent's body"; }
   has_ticket_heading <"$body" || { rm -f "$body"; return 0; }
   stripped="$(mktemp)"
@@ -2546,7 +2603,7 @@ cmd_ticket_retire() {
   # A `## Ticket` line only inside a code fence leaves nothing to cut: no write.
   if cmp -s "$body" "$stripped"; then rm -f "$body" "$stripped"; return 0; fi
   rm -f "$body"
-  adapter_issue_edit "$parent" --body-file "$stripped" >/dev/null \
+  adapter_issue_body_edit "$parent" "$stripped" \
     || { rm -f "$stripped"; die "gh could not remove the ## Ticket section from #$parent"; }
   rm -f "$stripped"
 }
@@ -2659,7 +2716,7 @@ rewrite_blocked_by_section() {
 ticket_blocked_by_rewrite() {
   local n="$1" blockers="$2" body rewritten out
   body="$(mktemp)"
-  adapter_issue_view "$n" --json body --jq .body >"$body" \
+  adapter_issue_body "$n" >"$body" \
     || { rm -f "$body"; die "gh could not read ticket #$n's body"; }
   rewritten="$(mktemp)"
   rewrite_blocked_by_section "$blockers" <"$body" >"$rewritten"
@@ -2669,7 +2726,7 @@ ticket_blocked_by_rewrite() {
   fi
   if cmp -s "$body" "$rewritten"; then rm -f "$body" "$rewritten"; return 0; fi
   rm -f "$body"
-  adapter_issue_edit "$n" --body-file "$rewritten" >/dev/null \
+  adapter_issue_body_edit "$n" "$rewritten" \
     || { rm -f "$rewritten"; die "gh could not rewrite ticket #$n's ## Blocked by section"; }
   rm -f "$rewritten"
 }
@@ -2860,7 +2917,7 @@ cmd_redo_spec() {
     local issue msg
     require_issue issue
     msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from orch-to-spec in this same flow.\n')"
-    adapter_issue_close "$issue" --comment "$msg" >/dev/null || die "gh could not close issue #$issue"
+    adapter_issue_close "$issue" "" "$msg" || die "gh could not close issue #$issue"
     state_write issue null
   else
     local kept

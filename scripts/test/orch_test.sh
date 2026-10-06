@@ -925,15 +925,69 @@ fake_github() {
   export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" ORCH_GH_FAKE_STORE
 }
 
-# fake_issue <n> <state> [labels...]: seeds issue #n, open or closed, carrying
-# the labels named.
+# fake_issue <n> <state> [labels...]: seeds issue #n afresh, open or closed,
+# carrying the labels named - no title, body or comments.
 fake_issue() {
   local d="$ORCH_GH_FAKE_STORE/issues/$1"
+  rm -rf "$d"
   mkdir -p "$d"
   printf '%s\n' "$2" | tr '[:lower:]' '[:upper:]' >"$d/state"
   shift 2
   : >"$d/labels"
   [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/labels"
+}
+
+# fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
+fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
+
+# fake_issue_title <n> <title>: seeds issue #n's title.
+fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
+
+# fake_comment <n> <author> <created-at> <body>: seeds a comment on issue #n,
+# after any it has.
+fake_comment() {
+  local d k
+  d="$ORCH_GH_FAKE_STORE/issues/$1/comments"
+  mkdir -p "$d"
+  k=$(( $(find "$d" -mindepth 1 -maxdepth 1 | wc -l) + 1 ))
+  mkdir "$d/$k"
+  printf '%s\n' "$2" >"$d/$k/author"
+  printf '%s\n' "$3" >"$d/$k/created"
+  printf '%s' "$4" >"$d/$k/body"
+}
+
+# fake_pull <n>: seeds #n as an open pull request, which gh's issue reads
+# answer for too.
+fake_pull() { fake_issue "$1" open; : >"$ORCH_GH_FAKE_STORE/issues/$1/pull"; }
+
+# fake_next_issue <n>: the number the next issue created takes.
+fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
+
+# Issue #n read back from the store: its state (OPEN or CLOSED), closing
+# reason, title, body, labels (sorted, space-separated, one trailing space)
+# and the bodies of its comments, in order, one blank line between.
+fake_state_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/state" 2>/dev/null; }
+fake_reason_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/reason" 2>/dev/null; }
+fake_title_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
+fake_body_of()   { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
+fake_labels_of() { sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
+fake_comments_of() {
+  local d="$ORCH_GH_FAKE_STORE/issues/$1/comments" k first=1
+  [ -d "$d" ] || return 0
+  for k in $(ls "$d" | sort -n); do
+    [ "$first" = 1 ] || printf '\n\n'
+    first=0
+    cat "$d/$k/body"
+  done
+}
+
+# fake_issues: every issue number the store holds, in order, space-separated.
+fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' ' '; }
+
+# fake_snapshot: a digest of the whole store, so a test asserts a read-only
+# command left it as it was.
+fake_snapshot() {
+  (cd "$ORCH_GH_FAKE_STORE" && find . -type f -print0 | sort -z | xargs -0 -r cksum)
 }
 
 # fake_label <name> <colour> <description>: seeds a label the repo already
@@ -952,12 +1006,14 @@ fake_fail() {
   printf '%s\n' "${2:-fake gh: $1 failed}" >"$ORCH_GH_FAKE_STORE/fail/$1"
 }
 
-# fake_lag <operation> <n>: the next n calls of the named operation answer
-# stale, as GitHub does for a moment after a write; the call after them is
-# current again.
+# fake_lag <operation> <n> [stale]: the next n calls of the named operation
+# answer stale, as GitHub does for a moment after a write; the call after them
+# is current again. An operation that reads answers the stale text given, in
+# its own documented shape - or, given none, an empty one.
 fake_lag() {
   mkdir -p "$ORCH_GH_FAKE_STORE/lag"
   printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/lag/$1"
+  if [ $# -ge 3 ]; then printf '%s\n' "$3" >"$ORCH_GH_FAKE_STORE/lag/$1.stale"; fi
 }
 
 # --- the fixture gh (adapter contract tests, #280) -----------------------------
@@ -2206,26 +2262,28 @@ assert_contains "naming all four" "$out" "create|off|base-sha|retire"
 # `gh issue create` in skill prose - stateless like branch off, since a quick
 # implementation has no flow to record into.
 #
-# Creation goes through the ORCH_GH_ADAPTER seam here, pointed at the
-# in-memory fake rather than stub_gh - GH_STUB_LOG stays empty, proving it
-# never spawns a real gh subprocess. The subprocess-real counterpart is the
-# "gh adapter (real issue create, subprocess gh)" block right after this one.
+# Creation goes through the store-backed fake (fake_github), and what it filed
+# is read back from the store - GH_STUB_LOG stays empty, proving it never
+# spawns a real gh subprocess. The real operation is pinned in "gh adapter
+# contract".
 echo
 echo "issue publish"
 healthy_repo
-filed="$(mktemp)"
+fake_github
 body="$(mktemp)"
 writeln 'The shared understanding, written up.' >"$body"
 log="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=7 \
-  "$ORCH" issue publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+fake_next_issue 7
+out="$(GH_STUB_LOG="$log" "$ORCH" issue publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "publishes" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "7"
-assert_contains "passes the title through" "$(cat "$filed")" "title=Widgets need a handle"
-assert_contains "and sends the body file's contents" "$(cat "$filed")" "The shared understanding, written up."
+assert_eq "filing an open issue" "$(fake_state_of 7)" "OPEN"
+assert_eq "under the title given" "$(fake_title_of 7)" "Widgets need a handle"
+assert_eq "with the body file's contents" "$(fake_body_of 7)" "The shared understanding, written up."
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 assert_eq "the create call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
+fake_github
 out="$("$ORCH" issue publish "" "$body" 2>&1)"; st=$?
 assert_status "refuses an empty title" "$st" 1
 
@@ -2235,9 +2293,12 @@ assert_contains "naming the file" "$out" "/nonexistent/body.md"
 
 out="$("$ORCH" issue publish "Title" 2>&1)"; st=$?
 assert_status "refuses with no body file" "$st" 1
+assert_eq "filing nothing for any of them" "$(fake_issues)" ""
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_ISSUE_EXIT=1 "$ORCH" issue publish "Title" "$body" 2>&1)"; st=$?
+fake_fail adapter_issue_create "HTTP 502: Bad Gateway"
+out="$("$ORCH" issue publish "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
+assert_contains "passing gh's reason through" "$out" "HTTP 502: Bad Gateway"
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 restore_suite_env
@@ -2246,24 +2307,22 @@ restore_suite_env
 # The spec a flow or a quick implementation works from gets the guarantee
 # ticket publish gives its tickets: created under the ready-for-agent role's
 # label, then read back - title and labels - with one retry on a mismatch and
-# a death naming the issue on the second. GH_STUB_READBACK_MISS makes the
-# readback stale for N calls; GH_STUB_READBACK_TITLE/_LABELS make it wrong
-# for good.
+# a death naming the issue on the second. fake_lag makes the readback stale
+# for N calls, answering nothing, or the stale title and labels it is given.
 echo
 echo "issue publish verify-then-die"
 healthy_repo
-filed="$(mktemp)"
+fake_github
 body="$(mktemp)"
 writeln 'The shared understanding, written up.' >"$body"
-publish() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" issue publish "$@"; }
+publish() { "$ORCH" issue publish "$@"; }
 
-: >"$filed"
-out="$(GH_STUB_ISSUE_NUMBER=8 publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+fake_next_issue 8
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "publishes with the canonical labels" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "8"
-assert_contains "applies ready-for-agent" "$(cat "$filed")" "label=ready-for-agent"
+assert_eq "applies ready-for-agent" "$(fake_labels_of 8)" "ready-for-agent "
 
-: >"$filed"
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
@@ -2271,37 +2330,44 @@ writeln '# Triage Labels' '' \
         '| `ready-for-agent`          | `agent go`           | AFK-ready   |' >docs/agents/triage-labels.md
 out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "publishes under a renamed ready-for-agent label" "$st" 0
-assert_contains "applying the repo's name for it" "$(cat "$filed")" "label=agent go"
-assert_eq "rather than the canonical one" "$(grep -c 'ready-for-agent' "$filed")" "0"
+assert_eq "applying the repo's name for it, rather than the canonical one" "$(fake_labels_of "$out")" "agent go "
 
-: >"$filed"
 rm docs/agents/triage-labels.md
 out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "publishes with no labels doc at all" "$st" 0
-assert_contains "applying the canonical ready-for-agent name" "$(cat "$filed")" "label=ready-for-agent"
+assert_eq "applying the canonical ready-for-agent name" "$(fake_labels_of "$out")" "ready-for-agent "
 labels_doc docs/agents/triage-labels.md
 
-out="$(GH_STUB_ISSUE_NUMBER=9 GH_STUB_READBACK_MISS=1 publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+fake_next_issue 9
+fake_lag adapter_issue_title_labels 1
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "a readback that is stale once, then right, succeeds" "$st" 0
 assert_eq "printing the issue number" "$out" "9"
 
-out="$(GH_STUB_ISSUE_NUMBER=10 GH_STUB_READBACK_MISS=2 publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+fake_next_issue 10
+fake_lag adapter_issue_title_labels 2
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "a readback stale twice dies" "$st" 1
 assert_contains "naming the issue" "$out" "issue #10"
 assert_contains "saying it did not verify" "$out" "did not verify"
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
-out="$(GH_STUB_ISSUE_NUMBER=11 GH_STUB_READBACK_TITLE="Something else" publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+fake_next_issue 11
+fake_lag adapter_issue_title_labels 2 "$(writeln "Something else" ready-for-agent)"
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "a title that reads back wrong fails verification" "$st" 1
 assert_contains "naming the issue" "$out" "issue #11"
 
-out="$(GH_STUB_ISSUE_NUMBER=12 GH_STUB_READBACK_LABELS="needs-triage" publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+fake_next_issue 12
+fake_lag adapter_issue_title_labels 2 "$(writeln "Widgets need a handle" needs-triage)"
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "a label set missing ready-for-agent fails verification" "$st" 1
 assert_contains "naming the issue" "$out" "issue #12"
 
-out="$(GH_STUB_ISSUE_NUMBER=13 GH_STUB_READBACK_LABELS="$(printf 'bug\nready-for-agent')" \
-  publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+fake_next_issue 13
+fake_lag adapter_issue_title_labels 2 "$(writeln "Widgets need a handle" bug ready-for-agent)"
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "extra labels beside ready-for-agent still verify" "$st" 0
 restore_suite_env
 
@@ -3507,7 +3573,14 @@ git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 body="$(mktemp)"
 writeln 'Ships the uat project.' '' 'Some detail.' >"$body"
-release() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" orch_gh_failing pr release "$@"; }
+release() { GH_STUB_FILED="$filed" orch_gh_failing pr release "$@"; }
+# The issues the merged PRs below refer to: #3 and #8 already closed, #62 a
+# pull request, not an issue.
+fake_github
+for n in 5 6 7 9; do fake_issue "$n" open; done
+fake_issue 3 closed
+fake_issue 8 closed
+fake_pull 62
 
 filed="$(mktemp)"
 out="$(release "Release" "$body" 2>&1)"; st=$?
@@ -3526,14 +3599,14 @@ assert_not_contains "and opens no second one" "$(cat "$filed")" "pr create"
 # Every reference the merged PRs make is to an issue that is already closed.
 filed="$(mktemp)"
 merged='[{"number":60,"body":"Refs #3"},{"number":61,"body":"No references here."}]'
-out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_CLOSED_ISSUES="3" release "Release" "$body" 2>&1)"; st=$?
+out="$(GH_STUB_PR_LIST_MERGED="$merged" release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses when no referenced issue is still open" "$st" 1
 assert_contains "saying there is nothing to close" "$out" "nothing to close"
 assert_contains "reading the PRs merged into the base branch" "$(cat "$filed")" "pr list --base uat --state merged"
 assert_not_contains "and opens no PR" "$(cat "$filed")" "pr create"
 
 filed="$(mktemp)"
-out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_CLOSED_ISSUES="3" GH_STUB_PR_NUMBER=70 \
+out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_PR_NUMBER=70 \
   release --force "Release" "$body" 2>&1)"; st=$?
 assert_status "--force releases with nothing to close" "$st" 0
 assert_eq "printing the PR number" "$out" "70"
@@ -3549,7 +3622,7 @@ merged='[{"number":62,"body":"Refs #5\n\nImplements it."},
 {"number":63,"body":"Summary first.\n\nThis closes #6 and FIXES #7."},
 {"number":64,"body":"resolves #9\nAlso Refs #5, and Closes #8.\nIt prefixes #4 with nothing."},
 {"number":65,"body":"A quick fix #12, closed #13. Refs #62, an open PR."}]'
-out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_CLOSED_ISSUES="8" GH_STUB_PR_NUMBERS="62" GH_STUB_PR_NUMBER=71 \
+out="$(GH_STUB_PR_LIST_MERGED="$merged" GH_STUB_PR_NUMBER=71 \
   release "Release uat" "$body" 2>&1)"; st=$?
 assert_status "opens the release PR" "$st" 0
 assert_eq "prints its number" "$out" "71"
@@ -3573,6 +3646,7 @@ assert_status "refuses a missing body file argument" "$st" 1
 assert_contains "with its usage" "$out" "pr release [--force] <title> <body-file>"
 orch_gh_failing base clear >/dev/null
 rm -rf "$(dirname "$bare")"
+restore_suite_env
 
 # --- pr comment (#343) ----------------------------------------------------------
 # A stateless post on the current branch's open PR, so a standalone review pass
@@ -4498,77 +4572,70 @@ healthy_repo
 # this section proves the primitives work given just an issue number, before
 # `init reviewtest` below ever writes a state.json into this repo.
 #
-# Goes through the ORCH_GH_ADAPTER seam here, pointed at the in-memory fake
-# rather than stub_gh - GH_STUB_LOG stays empty, proving it never spawns a
-# real gh subprocess. The subprocess-real counterpart is folded into the "gh
-# adapter (real issue view/edit/comment, subprocess gh)" block further below,
-# which already exercises adapter_issue_view/adapter_issue_edit for real - the
-# same two functions this primitive calls.
+# Goes through the store-backed fake (fake_github), what each op wrote read
+# back from the store - GH_STUB_LOG stays empty, proving it never spawns a real
+# gh subprocess. The real operations are pinned in "gh adapter contract".
 echo
 echo "issue fetch/update"
+fake_github
+fake_issue 23 open
+fake_issue_body 23 "Body of #23."
 assert_eq "no state.json exists yet in this repo" \
   "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 issue_body="$(mktemp)"
 log="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" GH_STUB_BODY="Body of #23." \
-  "$ORCH" issue fetch 23 "$issue_body" 2>&1)"; st=$?
+out="$(GH_STUB_LOG="$log" "$ORCH" issue fetch 23 "$issue_body" 2>&1)"; st=$?
 assert_status "fetch writes the issue's body to the file, with no state.json present" "$st" 0
 assert_eq "and prints nothing" "$out" ""
-assert_eq "exactly what gh answered" "$(cat "$issue_body")" "Body of #23."
+assert_eq "exactly what GitHub holds" "$(cat "$issue_body")" "Body of #23."
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 assert_eq "the view call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
 rm -f "$issue_body"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_VIEW_EXIT=1 "$ORCH" issue fetch 23 "$issue_body" 2>&1)"; st=$?
-assert_status "a gh that will not answer fails the fetch" "$st" 1
-assert_contains "naming the issue" "$out" "issue #23"
+out="$("$ORCH" issue fetch 404 "$issue_body" 2>&1)"; st=$?
+assert_status "an issue gh cannot read fails the fetch" "$st" 1
+assert_contains "naming the issue" "$out" "issue #404"
 assert_eq "and leaves no file a caller could mistake for a body" \
   "$([ -e "$issue_body" ] && echo present || echo gone)" "gone"
 
-filed="$(mktemp)"
 tricky="$(mktemp)"
 writeln '## Solution' '' 'Tracked in #6; see `$HOME` and '"'"'quoted'"'"' text.' >"$tricky"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
-  "$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
+out="$(GH_STUB_LOG="$log" "$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
 assert_status "update replaces the issue's body, with no state.json present" "$st" 0
 assert_eq "and prints nothing" "$out" ""
-assert_contains "editing the issue number given, not one from state" \
-  "$(cat "$filed")" "issue edit 23"
-assert_contains "with the file's contents as the body, exactly" \
-  "$(cat "$filed")" "Tracked in #6"
+assert_eq "the issue number given, not one from state, holds the file's contents, exactly" \
+  "$(fake_body_of 23)" "$(cat "$tricky")"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 assert_eq "the edit call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" issue update 23 /nonexistent/body.md 2>&1)"; st=$?
+out="$("$ORCH" issue update 23 /nonexistent/body.md 2>&1)"; st=$?
 assert_status "update refuses a file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_EDIT_EXIT=1 "$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
+fake_fail adapter_issue_body_edit "HTTP 403: Resource not accessible by integration"
+out="$("$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
 assert_status "a gh that will not edit fails the update" "$st" 1
+assert_contains "with gh's reason" "$out" "HTTP 403"
 assert_contains "naming the issue" "$out" "issue #23"
 
 # issue comment is the stateless counterpart to spec comment, the way issue
 # fetch/update are to spec fetch/update: a standalone spec review posts its
 # summary on whatever issue it was pointed at, with no flow to ask.
-: >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
-  "$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
+out="$(GH_STUB_LOG="$log" "$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
 assert_status "comment posts the file on the issue, with no state.json present" "$st" 0
 assert_eq "and prints nothing" "$out" ""
-assert_contains "commenting on the issue number given, not one from state" \
-  "$(cat "$filed")" "issue comment 23"
-assert_contains "with the file's contents as the comment, exactly" \
-  "$(cat "$filed")" "Tracked in #6"
+assert_eq "on the issue number given, not one from state, the file's contents as the comment, exactly" \
+  "$(fake_comments_of 23)" "$(cat "$tricky")"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 assert_eq "the comment call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
-: >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" issue comment 23 /nonexistent/body.md 2>&1)"; st=$?
+out="$("$ORCH" issue comment 23 /nonexistent/body.md 2>&1)"; st=$?
 assert_status "comment refuses a file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
-assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+assert_eq "and posts nothing" "$(fake_comments_of 23)" "$(cat "$tricky")"
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_COMMENT_EXIT=1 "$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
+fake_fail adapter_issue_comment "fake gh: issue comment refused"
+out="$("$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
 assert_status "a gh that will not comment fails it" "$st" 1
 assert_contains "with gh's reason" "$out" "issue comment refused"
 assert_contains "naming the issue" "$out" "issue #23"
@@ -4608,12 +4675,14 @@ assert_contains "and issue comment" "$("$ORCH" help)" "issue comment"
 
 # issue comments: every comment on an issue, each opened by a marker line
 # naming its author and timestamp, so the spec review reads the issue's
-# comments alongside its body (issue #361).
-comments_json='{"comments":[{"author":{"login":"triage-bot"},"createdAt":"2026-09-01T10:00:00Z","body":"## Agent brief\n\nDo the `$HOME` thing in #6."},{"author":{"login":"pat"},"createdAt":"2026-09-02T11:30:00Z","body":"Also: the second line\n\\\\ stays unescaped."}]}'
+# comments alongside its body (issue #361). The marker's own format is
+# COMMENTS_JQ's, pinned in "gh adapter contract".
+fake_issue 24 open
+fake_comment 24 triage-bot 2026-09-01T10:00:00Z "$(writeln '## Agent brief' '' 'Do the `$HOME` thing in #6.')"
+fake_comment 24 pat 2026-09-02T11:30:00Z "$(writeln 'Also: the second line' '\\ stays unescaped.')"
 issue_comments="$(mktemp)"
 log="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_LOG="$log" GH_STUB_COMMENTS_JSON="$comments_json" \
-  "$ORCH" issue comments 23 "$issue_comments" 2>&1)"; st=$?
+out="$(GH_STUB_LOG="$log" "$ORCH" issue comments 24 "$issue_comments" 2>&1)"; st=$?
 assert_status "comments writes the issue's comments to the file, with no state.json present" "$st" 0
 assert_eq "and prints nothing" "$out" ""
 assert_eq "each comment in order, opened by its author-and-date marker, one blank line between" \
@@ -4623,16 +4692,16 @@ assert_eq "each comment in order, opened by its author-and-date marker, one blan
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 assert_eq "the view call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_COMMENTS_JSON='{"comments":[]}' \
-  "$ORCH" issue comments 23 "$issue_comments" 2>&1)"; st=$?
+fake_issue 25 open
+out="$("$ORCH" issue comments 25 "$issue_comments" 2>&1)"; st=$?
 assert_status "an issue with no comments still succeeds" "$st" 0
 assert_eq "leaving an empty file" "$(wc -c <"$issue_comments" | tr -d ' ')" "0"
 
 printf 'known content\n' >"$issue_comments"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_VIEW_EXIT=1 GH_STUB_COMMENTS_JSON="$comments_json" \
-  "$ORCH" issue comments 23 "$issue_comments" 2>&1)"; st=$?
+fake_fail adapter_issue_comments "fake gh: issue view refused"
+out="$("$ORCH" issue comments 24 "$issue_comments" 2>&1)"; st=$?
 assert_status "a gh that will not answer fails the comments fetch" "$st" 1
-assert_contains "naming the issue" "$out" "issue #23"
+assert_contains "naming the issue" "$out" "issue #24"
 assert_eq "and leaves the file that was already there byte-identical" \
   "$(od -c "$issue_comments")" "$(printf 'known content\n' | od -c)"
 
@@ -4791,24 +4860,21 @@ filed_sev ""; assert_status "refuses an empty severity" "$?" 1
 # printed back. What reached GitHub is the assertion - a finding filed with no
 # severity label is a finding triage never finds.
 #
-# The labels go to the store-backed fake (fake_github) and are read back from
-# its store; issue creation still goes through the same fake's GH_STUB_*
-# half, which records it to GH_STUB_FILED - neither ever spawns a subprocess.
-# The real label operations are pinned in "gh adapter contract" after this
-# section; the create half's subprocess-real counterpart is in "gh adapter
-# (real issue create, subprocess gh)".
+# Labels and issue both go to the store-backed fake (fake_github) and are read
+# back from its store - neither ever spawns a subprocess. The real operations
+# are pinned in "gh adapter contract" after this section.
 echo
 echo "review file"
 fresh_flow reviewfile
 fake_github
-filed="$(mktemp)"
 body="$(mktemp)"
 writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
 log="$(mktemp)"
 tab="$(printf '\t')"
 fake_label review:major ffffff "An older description"
 fake_label needs-triage 000000 "The repo's own"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=17 \
+fake_next_issue 17
+out="$(GH_STUB_LOG="$log" \
   "$ORCH" review file major "Comment drifted from the code" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files a major" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "17"
@@ -4818,93 +4884,77 @@ assert_contains "and leaving the repo's own triage label as the repo has it" "$(
   "needs-triage${tab}000000${tab}The repo's own"
 assert_contains "and creating the category label the repo lacks" "$(fake_labels)" \
   "enhancement${tab}a2eeef${tab}New feature or request"
-assert_contains "passes the title through unprefixed" \
-  "$(cat "$filed")" "title=Comment drifted from the code"
-assert_contains "labels the issue with the severity" "$(cat "$filed")" "label=review:major"
-assert_contains "and with needs-triage" "$(cat "$filed")" "label=needs-triage"
-assert_contains "and sends the body file's contents" "$(cat "$filed")" "The reviewer said this."
+assert_eq "passes the title through unprefixed" "$(fake_title_of 17)" "Comment drifted from the code"
+assert_eq "labels the issue with the severity, needs-triage and the category" \
+  "$(fake_labels_of 17)" "enhancement needs-triage review:major "
+assert_eq "and sends the body file's contents" "$(fake_body_of 17)" "$(cat "$body")"
 assert_eq "the labels never reached a real gh subprocess" \
   "$(grep -cx label "$log")" "0"
 assert_eq "nor did the issue create" \
   "$(grep -cx issue "$log")" "0"
 
-: >"$filed"
 fake_github
-out="$(GH_STUB_FILED="$filed" \
-  "$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files a nit" "$st" 0
-assert_contains "under the nit label" "$(cat "$filed")" "label=review:nit"
+assert_contains "under the nit label" "$(fake_labels_of "$out")" "review:nit "
 assert_contains "creating it" "$(fake_labels)" "review:nit${tab}c5def5${tab}Review finding filed at nit severity"
 assert_contains "and the triage label a repo without one lacks" "$(fake_labels)" \
   "needs-triage${tab}e4e669${tab}Not yet triaged"
 
 # The category is the axis's: a Spec finding is a defect against what was
 # asked for, a Standards finding an improvement on how it was built.
-: >"$filed"
 fake_github
-out="$(GH_STUB_FILED="$filed" \
-  "$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "files a Spec finding" "$st" 0
-assert_contains "labelled bug" "$(cat "$filed")" "label=bug"
-assert_eq "and not enhancement" "$(grep -cx 'label=enhancement' "$filed")" "0"
+assert_eq "labelled bug, and not enhancement" "$(fake_labels_of "$out")" "bug needs-triage review:major "
 assert_contains "creating bug with GitHub's default colour and description" \
   "$(fake_labels)" "bug${tab}d73a4a${tab}Something isn't working"
 assert_not_contains "and no enhancement label" "$(fake_labels)" "enhancement${tab}"
 
-: >"$filed"
 fake_github
-out="$(GH_STUB_FILED="$filed" \
-  "$ORCH" review file nit "Rename it" --axis Standards --body-file "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file nit "Rename it" --axis Standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files a Standards finding, whatever the axis's case" "$st" 0
-assert_contains "labelled enhancement" "$(cat "$filed")" "label=enhancement"
-assert_eq "and not bug" "$(grep -cx 'label=bug' "$filed")" "0"
+assert_eq "labelled enhancement, and not bug" "$(fake_labels_of "$out")" "enhancement needs-triage review:nit "
 assert_contains "creating enhancement with GitHub's default colour and description" \
   "$(fake_labels)" "enhancement${tab}a2eeef${tab}New feature or request"
 
 # A category label that cannot be created - most often because the repo has
 # it already - does not stop the filing, and the repo's own is left as it is.
-: >"$filed"
 fake_github
 fake_label bug 123456 "The repo's own bug"
 fake_label enhancement 654321 "The repo's own enhancement"
-out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=23 \
-  "$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
+fake_next_issue 23
+out="$("$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "a category label the repo has already does not stop filing" "$st" 0
 assert_eq "the number is still printed" "$out" "23"
-assert_contains "and the issue still asks for the label" "$(cat "$filed")" "label=bug"
+assert_contains "and the issue still carries the label" "$(fake_labels_of 23)" "bug "
 assert_contains "never over the repo's own bug label" "$(fake_labels)" "bug${tab}123456${tab}The repo's own bug"
-out="$(GH_STUB_FILED="$filed" \
-  "$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_contains "nor over its own enhancement label" "$(fake_labels)" \
   "enhancement${tab}654321${tab}The repo's own enhancement"
 
-: >"$filed"
 fake_github
 fake_fail adapter_label_create "HTTP 502: Bad Gateway"
-out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=24 \
-  "$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
+fake_next_issue 24
+out="$("$ORCH" review file major "Misses a criterion" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "nor does one gh fails to create for another reason" "$st" 0
 assert_eq "the number alone printed, gh's error kept out of it" "$out" "24"
 
-: >"$filed"
 fake_github
-out="$(GH_STUB_FILED="$filed" \
-  "$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file major "Title" --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses a finding with no axis" "$st" 1
 assert_contains "naming the axis" "$out" "--axis"
-assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
+assert_eq "and files nothing" "$(fake_issues)" ""
 assert_eq "nor creates a label" "$(fake_labels)" ""
 
-out="$(GH_STUB_FILED="$filed" \
-  "$ORCH" review file major "Title" --axis style --body-file "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file major "Title" --axis style --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses an unknown axis" "$st" 1
 assert_contains "naming it" "$out" "style"
 assert_contains "and what it accepts" "$out" "spec or standards"
-assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
+assert_eq "and files nothing" "$(fake_issues)" ""
 assert_eq "nor creates a label" "$(fake_labels)" ""
 
-: >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file blocking "Wrong" --axis spec --body-file "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file blocking "Wrong" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses a blocking severity - the loop fixes those" "$st" 1
 assert_contains "naming what it accepts" "$out" "major"
 assert_contains "saying blocking is always fixed, never filed" "$out" "blocking is always fixed, never filed"
@@ -4912,53 +4962,52 @@ assert_not_contains "without claiming the loop fixes blocking only" "$out" "the 
 for sev in $(bash -c 'source "$1" && printf "%s\n" "$FILED_SEVERITIES"' _ "$ORCH"); do
   assert_contains "naming filed severity $sev, read from FILED_SEVERITIES" "$out" "$sev"
 done
-assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+assert_eq "and nothing reaches gh" "$(fake_issues)" ""
 assert_eq "not even a label" "$(fake_labels)" ""
 
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "" --axis spec --body-file "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file major "" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "refuses an empty title" "$st" 1
-assert_eq "before anything reaches gh" "$(grep -c . "$filed")" "0"
+assert_eq "before anything reaches gh" "$(fake_issues)" ""
 assert_eq "a label included" "$(fake_labels)" ""
 
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" --axis spec --body-file /nonexistent/body.md 2>&1)"; st=$?
+out="$("$ORCH" review file major "Title" --axis spec --body-file /nonexistent/body.md 2>&1)"; st=$?
 assert_status "refuses a body file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
-assert_eq "and files nothing" "$(grep -c . "$filed")" "0"
+assert_eq "and files nothing" "$(fake_issues)" ""
 assert_eq "nor creates a label" "$(fake_labels)" ""
 
-out="$(GH_STUB_FILED="$filed" "$ORCH" review file major "Title" --axis spec "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file major "Title" --axis spec "$body" 2>&1)"; st=$?
 assert_status "insists on --body-file rather than guessing a positional" "$st" 1
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_ISSUE_EXIT=1 \
-  "$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
+fake_fail adapter_issue_create "HTTP 502: Bad Gateway"
+out="$("$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
+assert_contains "passing gh's reason through" "$out" "HTTP 502: Bad Gateway"
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
 fake_github
 fake_fail adapter_label_upsert "HTTP 403: Resource not accessible by integration"
-out="$(GH_STUB_FILED="$filed" \
-  "$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the label fails it too" "$st" 1
 assert_contains "passing gh's reason through" "$out" "HTTP 403: Resource not accessible by integration"
 assert_contains "and naming the label" "$out" "gh could not create label review:major"
+assert_eq "filing no issue" "$(fake_issues)" ""
 
 # The triage label is the repo's vocabulary, read from the doc the spec phase
 # labels from: a repo that renamed it must not get a second label the name
 # this plugin happens to know.
-: >"$filed"
 fake_github
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
         '| `needs-triage`             | `triage me`          | Evaluate it |' \
         '| `ready-for-agent`          | `ready-for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
-out="$(GH_STUB_FILED="$filed" \
-  "$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
 assert_status "files under a renamed triage label" "$st" 0
 assert_contains "creating the repo's name for it" "$(fake_labels)" "triage me${tab}e4e669${tab}Not yet triaged"
-assert_contains "and applying it" "$(cat "$filed")" "label=triage me"
-assert_eq "rather than the canonical one" "$(grep -c 'needs-triage' "$filed")" "0"
+assert_eq "and applying it rather than the canonical one" \
+  "$(fake_labels_of "$out")" "enhancement review:nit triage me "
 assert_not_contains "nor creating it" "$(fake_labels)" "needs-triage"
 labels_doc docs/agents/triage-labels.md
 restore_suite_env
@@ -5076,13 +5125,130 @@ gh_reply 0 '' '' label create enhancement --color a2eeef --description "New feat
 contract adapter_label_create enhancement a2eeef "New feature or request" >/dev/null 2>&1
 assert_contains "a repo on another host pins gh's host too" "$(cat "$GH_FIXTURE/env.log")" \
   "GH_REPO=ghe.example.com/acme/widgets GH_HOST=ghe.example.com label create enhancement"
+export GH_REPO=acme/widgets
+unset GH_HOST
+
+# The issue operations. Each read prints what gh's own --jq printed, so its
+# reply here is that already-formatted text.
+gh_reply 0 $'## Problem\n\nTracked in #6.\n' '' issue view 23 --json body --jq .body
+out="$(contract adapter_issue_body 23 2>&1)"; st=$?
+assert_status "issue body: reads the body" "$st" 0
+assert_eq "printing it as it is" "$out" "$(printf '## Problem\n\nTracked in #6.')"
+gh_reply 1 '' 'GraphQL: Could not resolve to an issue or pull request with the number of 404.' \
+  issue view 404 --json body --jq .body
+out="$(contract adapter_issue_body 404 2>&1)"; st=$?
+assert_status "issue body: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" \
+  "GraphQL: Could not resolve to an issue or pull request with the number of 404."
+
+comments_jq="$(bash -c 'source "$1"; printf "%s" "$COMMENTS_JQ"' _ "$ORCH")"
+gh_reply 0 $'<!-- comment @pat 2026-09-02T11:30:00Z -->\nA follow-up.\n' '' \
+  issue view 23 --json comments --jq "$comments_jq"
+out="$(contract adapter_issue_comments 23 2>&1)"; st=$?
+assert_status "issue comments: reads the comments through COMMENTS_JQ" "$st" 0
+assert_eq "printing what it formatted" "$out" "$(writeln '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'A follow-up.')"
+# COMMENTS_JQ itself, run on gh-shaped JSON: what the fixture's canned reply
+# above stands in for.
+comments_json='{"comments":[{"author":{"login":"triage-bot"},"createdAt":"2026-09-01T10:00:00Z","body":"## Agent brief\n\nDo the `$HOME` thing in #6."},{"author":{"login":"pat"},"createdAt":"2026-09-02T11:30:00Z","body":"Also: the second line\n\\\\ stays unescaped."}]}'
+assert_eq "COMMENTS_JQ opens each comment with its author-and-date marker, one blank line between" \
+  "$(printf '%s' "$comments_json" | jq -r "$comments_jq")" \
+  "$(writeln '<!-- comment @triage-bot 2026-09-01T10:00:00Z -->' \
+    '## Agent brief' '' 'Do the `$HOME` thing in #6.' '' \
+    '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Also: the second line' '\\ stays unescaped.')"
+assert_eq "and prints nothing at all for no comments" \
+  "$(printf '%s' '{"comments":[]}' | jq -r "$comments_jq" | wc -c | tr -d ' ')" "0"
+
+gh_reply 0 $'OPEN\nreview:nit\nneeds-triage\n' '' issue view 23 --json state,labels --jq '.state, (.labels[].name)'
+out="$(contract adapter_issue_state_labels 23 2>&1)"; st=$?
+assert_status "issue state and labels: reads both" "$st" 0
+assert_eq "the state first, then one label per line" "$out" "$(writeln OPEN review:nit needs-triage)"
+
+gh_reply 0 $'Widgets need a handle\nready-for-agent\n' '' \
+  issue view 23 --json title,labels --jq '.title, (.labels[].name)'
+out="$(contract adapter_issue_title_labels 23 2>&1)"; st=$?
+assert_status "issue title and labels: reads both" "$st" 0
+assert_eq "the title first, then one label per line" "$out" "$(writeln 'Widgets need a handle' ready-for-agent)"
+
+gh_reply 0 $'PULL\n' '' \
+  issue view 62 --json state,url --jq 'if (.url | test("/pull/")) then "PULL" else .state end'
+out="$(contract adapter_issue_state 62 2>&1)"; st=$?
+assert_status "issue state: reads the state" "$st" 0
+assert_eq "PULL for a pull request's number" "$out" "PULL"
+
+gh_reply 0 $'3\n9\n' '' \
+  issue list --state open --label review:nit --label "triage me" --limit 1000 --json number --jq '.[].number'
+out="$(contract adapter_issues_labelled review:nit "triage me" 2>&1)"; st=$?
+assert_status "issues labelled: lists the open issues carrying every label" "$st" 0
+assert_eq "one number per line" "$out" "$(writeln 3 9)"
+
+ibody="$(mktemp)"
+writeln 'The body.' >"$ibody"
+gh_reply 0 $'https://github.com/acme/widgets/issues/17\n' '' \
+  issue create --title "Rename it" --body-file "$ibody" --label review:nit --label "triage me"
+out="$(contract adapter_issue_create "Rename it" "$ibody" review:nit "triage me" 2>&1)"; st=$?
+assert_status "issue create: files the issue under every label" "$st" 0
+assert_eq "printing its number alone" "$out" "17"
+gh_reply 0 $'https://github.com/acme/widgets/issues/18\n' '' \
+  issue create --title "Unlabelled" --body-file "$ibody"
+out="$(contract adapter_issue_create "Unlabelled" "$ibody" 2>&1)"; st=$?
+assert_status "issue create: files an issue with no label" "$st" 0
+assert_eq "printing its number" "$out" "18"
+gh_reply 0 $'Something went sideways\n' '' issue create --title "No URL" --body-file "$ibody"
+out="$(contract adapter_issue_create "No URL" "$ibody" 2>/dev/null)"; st=$?
+assert_status "issue create: gh output with no issue URL fails it" "$st" 1
+assert_eq "printing no number" "$out" ""
+gh_reply 1 '' 'could not add label: review:nit not found' issue create --title "Refused" --body-file "$ibody"
+out="$(contract adapter_issue_create "Refused" "$ibody" 2>&1)"; st=$?
+assert_status "issue create: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "could not add label: review:nit not found"
+
+gh_reply 0 'https://github.com/acme/widgets/issues/23' '' issue edit 23 --body-file "$ibody"
+out="$(contract adapter_issue_body_edit 23 "$ibody" 2>&1)"; st=$?
+assert_status "issue body edit: replaces the body from the file" "$st" 0
+assert_eq "printing nothing" "$out" ""
+
+gh_reply 0 'https://github.com/acme/widgets/issues/23#issuecomment-1' '' issue comment 23 --body-file "$ibody"
+out="$(contract adapter_issue_comment 23 "$ibody" 2>&1)"; st=$?
+assert_status "issue comment: posts the file as a comment" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' issue comment 24 --body-file "$ibody"
+out="$(contract adapter_issue_comment 24 "$ibody" 2>&1)"; st=$?
+assert_status "issue comment: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
+
+gh_reply 0 'https://github.com/acme/widgets/issues/23' '' \
+  issue edit 23 --remove-label "triage me" --remove-label bug --add-label afk --add-label enhancement
+out="$(contract adapter_issue_relabel 23 "afk,enhancement" "triage me,bug" 2>&1)"; st=$?
+assert_status "issue relabel: removes and adds in one edit" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 0 '' '' issue edit 24 --add-label wontfix
+out="$(contract adapter_issue_relabel 24 wontfix "" 2>&1)"; st=$?
+assert_status "issue relabel: with nothing to remove, only adds" "$st" 0
+
+gh_reply 0 'Closed issue #23' '' issue close 23 --reason completed
+out="$(contract adapter_issue_close 23 completed 2>&1)"; st=$?
+assert_status "issue close: closes with the reason given" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 0 '' '' issue close 24 --reason "not planned" --comment "Retired."
+out="$(contract adapter_issue_close 24 "not planned" "Retired." 2>&1)"; st=$?
+assert_status "issue close: with a reason and a comment" "$st" 0
+gh_reply 0 '' '' issue close 25 --comment "Redone."
+out="$(contract adapter_issue_close 25 "" "Redone." 2>&1)"; st=$?
+assert_status "issue close: with a comment and gh's default reason" "$st" 0
+gh_reply 1 '' 'HTTP 502: Bad Gateway' issue close 26
+out="$(contract adapter_issue_close 26 2>&1)"; st=$?
+assert_status "issue close: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+assert_eq "every issue operation was pinned to the resolved repo" \
+  "$(grep ' issue ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> issue ')" "0"
+rm -f "$ibody"
 restore_suite_env GH_FIXTURE GH_HOST
 
 # --- finding-triage scan -------------------------------------------------------
 # The scan sorts each open filed finding still in needs-triage against the
 # default branch: whether the code its **Location:** names, at the PR's head
-# SHA, has changed since. The issues come from the in-memory fake's
-# GH_STUB_FINDINGS store; the git side is a real fixture: a bare origin, a
+# SHA, has changed since. The issues come from the store-backed fake
+# (fake_github); the git side is a real fixture: a bare origin, a
 # local clone that holds only the filing-time commit, and a second clone that
 # pushes everything after it, so the scan has to fetch the default branch to
 # see it.
@@ -5131,21 +5297,20 @@ pr_head_sha="$(git -C "$work" rev-parse HEAD)"
 git -C "$work" push -q origin HEAD:refs/pull/8/head
 origin_main="$(git -C "$bare" rev-parse main)"
 
-findings="$(mktemp -d)"
+fake_github
 # finding <n> <labels, comma-separated> <location line|-> [pr] [state]: one
 # issue in the fake's store, its body in the closer's filed shape.
 finding() {
-  local d="$findings/$1"
-  mkdir -p "$d"
-  printf '%s\n' "$2" | tr ',' '\n' >"$d/labels"
-  [ -z "${5:-}" ] || printf '%s\n' "$5" >"$d/state"
+  local labels=()
+  IFS=, read -r -a labels <<<"$2"
+  fake_issue "$1" "${5:-open}" "${labels[@]}"
   if [ "$3" = - ]; then
-    writeln 'A finding written by hand, with no labelled lines.' >"$d/body"
+    fake_issue_body "$1" "$(writeln 'A finding written by hand, with no labelled lines.')"
   else
-    writeln '## Finding' '' '> The reviewer said this.' '' '**Axis:** Standards' '' \
+    fake_issue_body "$1" "$(writeln '## Finding' '' '> The reviewer said this.' '' '**Axis:** Standards' '' \
       '**Severity:** nit - a reason.' '' "**Location:** $3" '' \
       "**PR:** https://github.com/acme/widgets/pull/${4:-7}" '' \
-      '**Why not fixed in the loop:** found in the final iteration.' >"$d/body"
+      '**Why not fixed in the loop:** found in the final iteration.')"
   fi
 }
 finding 1 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha"
@@ -5158,8 +5323,7 @@ finding 7 "review:nit,needs-triage" "\`src/other.sh:2\` at $pr_head_sha" 8
 finding 8 "review:nit,ready-for-agent" "\`src/other.sh:2\` at $head_sha"
 finding 9 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha" 7 CLOSED
 finding 10 "needs-triage" "\`src/other.sh:2\` at $head_sha"
-scan() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" GH_STUB_FILED="$filed" \
-  orch_gh_failing finding-triage scan "$@"; }
+scan() { orch_gh_failing finding-triage scan "$@"; }
 # line_of <n> <out>: the scan's line for issue n.
 line_of() { printf '%s\n' "$2" | awk -F'\t' -v n="$1" '$1 == n'; }
 field_of() { line_of "$1" "$3" | cut -f"$2"; }
@@ -5167,7 +5331,7 @@ field_of() { line_of "$1" "$3" | cut -f"$2"; }
 before_refs="$(git for-each-ref refs/heads)"
 before_head="$(git rev-parse HEAD) $(git symbolic-ref -q HEAD)"
 before_tree="$(git status --porcelain)"
-filed="$(mktemp)"
+before_store="$(fake_snapshot)"
 out="$(scan 2>&1)"; st=$?
 assert_status "scans the open filed findings" "$st" 0
 assert_eq "one tab-separated line of five fields per finding" \
@@ -5191,12 +5355,9 @@ assert_eq "an already triaged finding is not scanned" "$(line_of 8 "$out")" ""
 assert_eq "nor a closed one" "$(line_of 9 "$out")" ""
 assert_eq "nor an issue that is not a filed finding" "$(line_of 10 "$out")" ""
 assert_eq "the findings come in issue order" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 "
-assert_contains "lists the major findings still in needs-triage" "$(cat "$filed")" \
-  "issue list --state open --label review:major --label needs-triage"
-assert_contains "and the nit ones" "$(cat "$filed")" \
-  "issue list --state open --label review:nit --label needs-triage"
-assert_eq "makes no write call to gh" \
-  "$(grep -vE '^issue (list|view) ' "$filed" | wc -l | tr -d ' ')" "0"
+assert_ne "lists the major findings still in needs-triage" "$(line_of 5 "$out")" ""
+assert_ne "and the nit ones" "$(line_of 6 "$out")" ""
+assert_eq "writes nothing to GitHub" "$(fake_snapshot)" "$before_store"
 assert_eq "fetches the default branch first" "$(git rev-parse origin/main)" "$origin_main"
 assert_eq "and leaves the branches as they were" "$(git for-each-ref refs/heads)" "$before_refs"
 assert_eq "HEAD too" "$(git rev-parse HEAD) $(git symbolic-ref -q HEAD)" "$before_head"
@@ -5227,7 +5388,7 @@ finding 12 "review:blocking,needs-triage" "\`src/other.sh:2\` at $head_sha"
 out="$(scan 12 2>&1)"; st=$?
 assert_status "refuses an explicit issue whose severity is never filed" "$st" 1
 assert_contains "naming the filed severities" "$out" "review:major"
-rm -rf "${findings:?}/12"
+fake_issue 12 closed
 
 # A PR head that edited the file and never reached the default branch: the
 # file differs, yet no commit since the filing touched it there, so the scan
@@ -5242,7 +5403,7 @@ out="$(scan 11 2>&1)"; st=$?
 assert_status "scans a finding filed on a PR edit that never landed" "$st" 0
 assert_eq "it is unknown, not changed by a commit older than the filing" "$(field_of 11 4 "$out")" "unknown"
 assert_contains "saying no commit since the filing touched the file" "$(field_of 11 5 "$out")" "no commit"
-rm -rf "${findings:?}/11"
+fake_issue 11 closed
 
 # A finding whose lines the scan follows to the default branch, where later
 # commits touched only other lines of its file (line 3's fix, line 11's
@@ -5252,7 +5413,7 @@ out="$(scan 14 2>&1)"; st=$?
 assert_status "scans a finding whose file changed only elsewhere" "$st" 0
 assert_eq "its followed, untouched lines are unchanged, with empty detail" \
   "$(line_of 14 "$out")" "$(printf '14\t14\tsrc/app.sh:6\tunchanged\t')"
-rm -rf "${findings:?}/14"
+fake_issue 14 closed
 
 # A finding whose file later gets hunks both before and after its line, with
 # far more diff after the matching hunk than a pipe buffer holds: the line
@@ -5277,141 +5438,121 @@ out="$(scan 13 2>&1)"; st=$?
 assert_status "scans a finding whose file has a large diff after its line" "$st" 0
 assert_eq "it is changed" "$(field_of 13 4 "$out")" "changed"
 assert_eq "naming the commit that touched the shifted line" "$(field_of 13 5 "$out")" "$shifted_fix_sha"
-rm -rf "${findings:?}/13"
+fake_issue 13 closed
 
 # The triage label is the repo's name for the role, as review file files it.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
         '| `needs-triage`             | `triage me`          | Evaluate it |' >docs/agents/triage-labels.md
-: >"$filed"
+finding 15 "review:nit,triage me" "\`src/other.sh:2\` at $head_sha"
 out="$(scan 2>&1)"
-assert_contains "lists under the repo's own name for needs-triage" "$(cat "$filed")" \
-  "issue list --state open --label review:nit --label triage me"
+assert_eq "lists under the repo's own name for needs-triage, and only it" \
+  "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "15 "
 rm docs/agents/triage-labels.md
 restore_suite_env
 
 # --- finding-triage apply ------------------------------------------------------
 # Apply is finding triage's one write to GitHub: the comment, with the AI
 # disclaimer on top, then the labels and, for the closing outcomes, the close.
-# The in-memory fake's GH_STUB_FINDINGS store applies each label edit and close
-# to the issue it holds, so what an outcome leaves on the issue is read back
-# from the issue itself; GH_STUB_FILED records what reached gh. The category
-# label apply creates goes to the store-backed fake (fake_github), read back
-# from its store.
+# The store-backed fake (fake_github) applies each comment, label edit and
+# close to the issue it holds, so what an outcome leaves on the issue is read
+# back from the issue itself, as is the category label apply creates.
 echo
 echo "finding-triage apply"
 new_repo >/dev/null
 fake_github
 tab="$(printf '\t')"
-findings="$(mktemp -d)"
-filed="$(mktemp)"
 comment="$(mktemp)"
 writeln 'Fixed by abc1234 on main.' >"$comment"
 disclaimer='> *This was generated by AI during triage.*'
 # triaged <n> <labels, comma-separated>: one filed finding in the fake's store.
 triaged() {
-  rm -rf "${findings:?}/$1"
-  mkdir -p "$findings/$1"
-  printf '%s\n' "$2" | tr ',' '\n' >"$findings/$1/labels"
-  writeln '**Axis:** Spec' >"$findings/$1/body"
+  local labels=()
+  IFS=, read -r -a labels <<<"$2"
+  fake_issue "$1" open "${labels[@]}"
+  fake_issue_body "$1" '**Axis:** Spec'
 }
-labels_of() { sort "$findings/$1/labels" | tr '\n' ' '; }
-state_of() { cat "$findings/$1/state" 2>/dev/null || echo OPEN; }
-apply() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" GH_STUB_FILED="$filed" \
-  orch_gh_failing finding-triage apply "$@"; }
-# posted <n>: the comment body apply posted on issue n.
-posted() { awk -v n="$1" '/^(issue|label) / { on = ($0 == "issue comment " n); b = 0; next }
-  on && /^body:$/ { b = 1; next } on && b' "$filed"; }
+apply() { orch_gh_failing finding-triage apply "$@"; }
 
 for outcome in close-fixed wontfix ready-for-agent ready-for-human; do
   triaged 2 "review:major,needs-triage,bug"
-  : >"$filed"
   case "$outcome" in
     close-fixed|wontfix) out="$(apply 2 "$outcome" --comment-file "$comment" 2>&1)"; st=$? ;;
     *) out="$(apply 2 "$outcome" --category bug --comment-file "$comment" 2>&1)"; st=$? ;;
   esac
   assert_status "applies $outcome" "$st" 0
   assert_eq "posting the comment under the AI disclaimer ($outcome)" \
-    "$(posted 2)" "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
+    "$(fake_comments_of 2)" "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
 done
 
 triaged 2 "review:major,needs-triage,bug"
-: >"$filed"
 out="$(apply 2 close-fixed --comment-file "$comment" 2>&1)"; st=$?
 assert_status "closes a fixed finding" "$st" 0
-assert_eq "as completed" "$(state_of 2)" "CLOSED"
-assert_contains "giving gh the completed reason" "$(cat "$filed")" "reason=completed"
-assert_eq "out of needs-triage, with no state label added" "$(labels_of 2)" "bug review:major "
+assert_eq "closed" "$(fake_state_of 2)" "CLOSED"
+assert_eq "as completed" "$(fake_reason_of 2)" "completed"
+assert_eq "out of needs-triage, with no state label added" "$(fake_labels_of 2)" "bug review:major "
 
 triaged 3 "review:nit,needs-triage,enhancement"
-: >"$filed"
 out="$(apply 3 wontfix --comment-file "$comment" 2>&1)"; st=$?
 assert_status "closes a finding as wontfix" "$st" 0
-assert_eq "closed" "$(state_of 3)" "CLOSED"
-assert_contains "as not planned" "$(cat "$filed")" "reason=not planned"
-assert_eq "out of needs-triage and into wontfix" "$(labels_of 3)" "enhancement review:nit wontfix "
+assert_eq "closed" "$(fake_state_of 3)" "CLOSED"
+assert_eq "as not planned" "$(fake_reason_of 3)" "not planned"
+assert_eq "out of needs-triage and into wontfix" "$(fake_labels_of 3)" "enhancement review:nit wontfix "
 
 triaged 2 "review:major,needs-triage,bug"
-: >"$filed"
 out="$(apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
 assert_status "sends a finding to an agent" "$st" 0
 assert_eq "out of needs-triage, into ready-for-agent, its severity and category kept" \
-  "$(labels_of 2)" "bug ready-for-agent review:major "
-assert_eq "and left open" "$(state_of 2)" "OPEN"
-assert_eq "never closing it" "$(grep -c '^issue close' "$filed")" "0"
+  "$(fake_labels_of 2)" "bug ready-for-agent review:major "
+assert_eq "and left open" "$(fake_state_of 2)" "OPEN"
 
 triaged 2 "review:major,needs-triage,bug"
-: >"$filed"
 out="$(apply 2 ready-for-human --category enhancement --comment-file "$comment" 2>&1)"; st=$?
 assert_status "sends a finding to a human, flipping its category" "$st" 0
 assert_eq "leaving exactly the one category asked for" \
-  "$(labels_of 2)" "enhancement ready-for-human review:major "
+  "$(fake_labels_of 2)" "enhancement ready-for-human review:major "
 assert_contains "creating that category's label with GitHub's default colour and description" \
   "$(fake_labels)" "enhancement${tab}a2eeef${tab}New feature or request"
 
 # A finding already out of needs-triage leaves apply nothing to remove: a
 # close needs no relabel, and a relabel removes nothing.
 triaged 5 "review:minor,bug"
-: >"$filed"
+fake_fail adapter_issue_relabel
 out="$(apply 5 close-fixed --comment-file "$comment" 2>&1)"; st=$?
-assert_status "closes a fixed finding not in needs-triage" "$st" 0
-assert_eq "with no relabel" "$(grep -c '^issue edit' "$filed")" "0"
-assert_eq "as completed" "$(state_of 5)" "CLOSED"
-assert_contains "giving gh the completed reason" "$(cat "$filed")" "reason=completed"
+assert_status "closes a fixed finding not in needs-triage, with no relabel" "$st" 0
+assert_eq "its labels as they were" "$(fake_labels_of 5)" "bug review:minor "
+assert_eq "as completed" "$(fake_state_of 5) $(fake_reason_of 5)" "CLOSED completed"
+fake_github
 triaged 5 "review:minor,bug"
-: >"$filed"
 out="$(apply 5 wontfix --comment-file "$comment" 2>&1)"; st=$?
 assert_status "closes a finding not in needs-triage as wontfix" "$st" 0
-assert_eq "into wontfix" "$(labels_of 5)" "bug review:minor wontfix "
-assert_not_contains "removing no needs-triage" "$(cat "$filed")" "needs-triage"
+assert_eq "into wontfix" "$(fake_labels_of 5)" "bug review:minor wontfix "
 triaged 5 "review:minor,bug"
-: >"$filed"
 out="$(apply 5 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
 assert_status "sends a finding not in needs-triage to an agent" "$st" 0
-assert_eq "into ready-for-agent" "$(labels_of 5)" "bug ready-for-agent review:minor "
-assert_not_contains "removing no needs-triage" "$(cat "$filed")" "needs-triage"
+assert_eq "into ready-for-agent" "$(fake_labels_of 5)" "bug ready-for-agent review:minor "
 
 # A finding filed before categories were has none: apply gives it one.
 triaged 4 "review:nit,needs-triage"
 out="$(apply 4 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
 assert_status "categorises a finding filed with no category" "$st" 0
-assert_eq "with the one asked for" "$(labels_of 4)" "bug ready-for-agent review:nit "
+assert_eq "with the one asked for" "$(fake_labels_of 4)" "bug ready-for-agent review:nit "
 
 for outcome in ready-for-agent ready-for-human; do
   triaged 2 "review:major,needs-triage,bug"
-  : >"$filed"
+  before_store="$(fake_snapshot)"
   out="$(apply 2 "$outcome" --comment-file "$comment" 2>&1)"; st=$?
   assert_status "refuses $outcome with no category" "$st" 1
   assert_contains "naming --category ($outcome)" "$out" "--category"
-  assert_eq "touching nothing ($outcome)" "$(grep -vE '^issue view ' "$filed" | wc -l | tr -d ' ')" "0"
+  assert_eq "touching nothing ($outcome)" "$(fake_snapshot)" "$before_store"
 done
 for outcome in close-fixed wontfix; do
-  : >"$filed"
+  before_store="$(fake_snapshot)"
   out="$(apply 2 "$outcome" --category bug --comment-file "$comment" 2>&1)"; st=$?
   assert_status "refuses a category on $outcome" "$st" 1
   assert_contains "naming --category ($outcome)" "$out" "--category"
-  assert_eq "touching nothing ($outcome)" "$(grep -vE '^issue view ' "$filed" | wc -l | tr -d ' ')" "0"
+  assert_eq "touching nothing ($outcome)" "$(fake_snapshot)" "$before_store"
 done
 out="$(apply 2 ready-for-agent --category feature --comment-file "$comment" 2>&1)"; st=$?
 assert_status "refuses a category that is neither bug nor enhancement" "$st" 1
@@ -5426,19 +5567,20 @@ assert_status "refuses a comment file that is not there" "$st" 1
 # does not stop apply, and the repo's own is never overwritten.
 triaged 2 "review:major,needs-triage,bug"
 fake_label bug 123456 "The repo's own bug"
-out="$(GH_STUB_FINDINGS="$findings" \
-  orch_gh_failing finding-triage apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
+out="$(apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
 assert_status "a category label the repo has already does not stop apply" "$st" 0
-assert_eq "the labels are still applied" "$(labels_of 2)" "bug ready-for-agent review:major "
+assert_eq "the labels are still applied" "$(fake_labels_of 2)" "bug ready-for-agent review:major "
 assert_contains "and the repo's own is left as it is" "$(fake_labels)" "bug${tab}123456${tab}The repo's own bug"
 
 # Any other failed gh call does, with the reason.
-for knob in GH_STUB_VIEW_EXIT GH_STUB_COMMENT_EXIT GH_STUB_EDIT_EXIT GH_STUB_ISSUE_CLOSE_EXIT; do
+for op in adapter_issue_state_labels adapter_issue_comment adapter_issue_relabel adapter_issue_close; do
+  fake_github
   triaged 2 "review:major,needs-triage,bug"
-  out="$(env "$knob=1" ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" \
-    PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" finding-triage apply 2 wontfix --comment-file "$comment" 2>&1)"; st=$?
-  assert_status "dies when gh fails ($knob)" "$st" 1
-  assert_contains "saying gh failed on the issue ($knob)" "$out" "gh could not"
+  fake_fail "$op" "HTTP 502: Bad Gateway"
+  out="$(apply 2 wontfix --comment-file "$comment" 2>&1)"; st=$?
+  assert_status "dies when gh fails ($op)" "$st" 1
+  assert_contains "saying gh failed on the issue ($op)" "$out" "gh could not"
+  assert_contains "with gh's reason ($op)" "$out" "HTTP 502: Bad Gateway"
 done
 
 # Every state label is the repo's name for the role.
@@ -5450,28 +5592,25 @@ writeln '# Triage Labels' '' \
         '| `wontfix`                  | `nope`               | Not doing   |' >docs/agents/triage-labels.md
 triaged 2 "review:major,triage me,bug"
 out="$(apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
-assert_eq "moves a finding between the repo's own triage labels" "$(labels_of 2)" "afk bug review:major "
+assert_eq "moves a finding between the repo's own triage labels" "$(fake_labels_of 2)" "afk bug review:major "
 triaged 3 "review:nit,triage me,enhancement"
 out="$(apply 3 wontfix --comment-file "$comment" 2>&1)"; st=$?
-assert_eq "wontfix included" "$(labels_of 3)" "enhancement nope review:nit "
+assert_eq "wontfix included" "$(fake_labels_of 3)" "enhancement nope review:nit "
 rm docs/agents/triage-labels.md
 restore_suite_env
 
 # --- spec ---------------------------------------------------------------------
 # The spec review's one hand on GitHub: fetch the body, replace it, comment on
 # it. The number comes from state so a review can never touch the wrong issue,
-# and the stub records what reached gh so the test asserts the body sent, not
-# only that the command exited zero.
-#
-# View/edit/comment go through the ORCH_GH_ADAPTER seam here, pointed at the
-# in-memory fake (scripts/test/gh_adapter_fake.sh) rather than stub_gh - GH_STUB_LOG
-# stays empty across every call below, proving none of the three ever spawns a
-# real gh subprocess. The subprocess-real counterpart lives in its own "gh
-# adapter (real issue view/edit/comment, subprocess gh)" block right after
-# this section.
+# and the store-backed fake (fake_github) holds what reached GitHub, so the
+# test reads the body sent back, not only that the command exited zero -
+# GH_STUB_LOG stays empty across every call below, proving none of them ever
+# spawns a real gh subprocess. The real operations are pinned in "gh adapter
+# contract".
 echo
 echo "spec"
 fresh_flow spectest
+fake_github
 state_fixture phase review
 spec_body="$(mktemp)"
 out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
@@ -5485,7 +5624,8 @@ assert_status "and comment" "$st" 1
 assert_contains "likewise" "$out" "spec phase"
 
 "$ORCH" state set issue 14
-filed="$(mktemp)"
+fake_issue 14 open
+fake_issue 15 open
 # A body with everything a heredoc or a shell quote would mangle: a table, a
 # fence, a `#nn` reference. What the lenses read must be what GitHub holds.
 tricky="$(mktemp)"
@@ -5495,24 +5635,25 @@ writeln '## Solution' '' \
         'Tracked in #6; see `$HOME` and '"'"'quoted'"'"' text.' >"$tricky"
 rm -f "$spec_body"
 log="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
-  GH_STUB_BODY="$(cat "$tricky")" "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
+fake_issue_body 14 "$(cat "$tricky")"
+fake_issue_body 15 "Not the flow's issue."
+untouched_15="$(fake_snapshot | grep '/issues/15/')"
+out="$(GH_STUB_LOG="$log" "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
 assert_status "fetch writes the body to the file" "$st" 0
-assert_eq "exactly as gh answered it - table, fence, and #nn survive" \
+assert_eq "of the issue state records, exactly as GitHub holds it - table, fence, and #nn survive" \
   "$(cat "$spec_body")" "$(cat "$tricky")"
-assert_contains "asking gh for the issue state records" "$(cat "$filed")" "issue view 14"
-assert_contains "and for its body alone" "$(cat "$filed")" "--json body"
 assert_eq "the view call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
 # The skill fetches into a fresh directory under .orchestrator/, so the first
 # fetch of a review is the one that has to create it.
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" spec fetch .orchestrator/spec-review/spec.md 2>&1)"; st=$?
+out="$("$ORCH" spec fetch .orchestrator/spec-review/spec.md 2>&1)"; st=$?
 assert_status "fetch creates the directory it is told to write into" "$st" 0
-assert_eq "and the body lands there" "$(cat .orchestrator/spec-review/spec.md)" "Body of the issue."
+assert_eq "and the body lands there" "$(cat .orchestrator/spec-review/spec.md)" "$(cat "$tricky")"
 rm -rf .orchestrator/spec-review
 
 rm -f "$spec_body"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_VIEW_EXIT=1 "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
+fake_fail adapter_issue_body "fake gh: issue view refused"
+out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
 assert_status "a gh that will not answer fails the fetch" "$st" 1
 assert_contains "with the reason" "$out" "issue view refused"
 assert_eq "and leaves no file a lens could mistake for a body" \
@@ -5520,43 +5661,45 @@ assert_eq "and leaves no file a lens could mistake for a body" \
 
 : >"$filed"
 log="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
-  "$ORCH" spec update "$tricky" 2>&1)"; st=$?
+fake_issue_body 14 "The old body."
+out="$(GH_STUB_LOG="$log" "$ORCH" spec update "$tricky" 2>&1)"; st=$?
 assert_status "update replaces the body" "$st" 0
-assert_contains "of the issue state records" "$(cat "$filed")" "issue edit 14"
-assert_contains "with the file's contents as the body" \
-  "$(cat "$filed")" 'orch.sh spec fetch "$file"'
+assert_eq "of the issue state records, with the file's contents" "$(fake_body_of 14)" "$(cat "$tricky")"
+assert_eq "and no other" "$(fake_snapshot | grep '/issues/15/')" "$untouched_15"
 assert_eq "and prints nothing" "$out" ""
 assert_eq "the edit call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
 : >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec update /nonexistent/body.md 2>&1)"; st=$?
+before_store="$(fake_snapshot)"
+out="$("$ORCH" spec update /nonexistent/body.md 2>&1)"; st=$?
 assert_status "update refuses a file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
-assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+assert_eq "and nothing reaches gh" "$(fake_snapshot)" "$before_store"
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_EDIT_EXIT=1 "$ORCH" spec update "$tricky" 2>&1)"; st=$?
+fake_fail adapter_issue_body_edit "fake gh: issue edit refused"
+out="$("$ORCH" spec update "$tricky" 2>&1)"; st=$?
 assert_status "a gh that will not edit fails the update" "$st" 1
 assert_contains "with gh's reason" "$out" "issue edit refused"
 assert_contains "and the issue it was for" "$out" "issue #14"
 
 : >"$filed"
 log="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
-  "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
+out="$(GH_STUB_LOG="$log" "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
 assert_status "comment posts the file" "$st" 0
-assert_contains "on the issue state records" "$(cat "$filed")" "issue comment 14"
-assert_contains "with the file's contents as the comment" \
-  "$(cat "$filed")" "| Fidelity | plan handoff |"
+assert_eq "on the issue state records, with the file's contents as the comment" \
+  "$(fake_comments_of 14)" "$(cat "$tricky")"
+assert_eq "and no other" "$(fake_snapshot | grep '/issues/15/')" "$untouched_15"
 assert_eq "the comment call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
 : >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec comment /nonexistent/body.md 2>&1)"; st=$?
+before_store="$(fake_snapshot)"
+out="$("$ORCH" spec comment /nonexistent/body.md 2>&1)"; st=$?
 assert_status "comment refuses a file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
-assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+assert_eq "and nothing reaches gh" "$(fake_snapshot)" "$before_store"
 
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_COMMENT_EXIT=1 "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
+fake_fail adapter_issue_comment "fake gh: issue comment refused"
+out="$("$ORCH" spec comment "$tricky" 2>&1)"; st=$?
 assert_status "a gh that will not comment fails it" "$st" 1
 assert_contains "with gh's reason" "$out" "issue comment refused"
 assert_contains "and the issue it was for" "$out" "issue #14"
@@ -5566,47 +5709,49 @@ assert_contains "and the issue it was for" "$out" "issue #14"
 # stateless issue ops for whatever issue the caller actually meant.
 prior_phase="$("$ORCH" state get phase)"
 state_fixture phase done
+fake_github
+fake_issue 14 open
+fake_issue_body 14 "The flow's spec."
 for op in fetch update comment; do
-  : >"$filed"
-  out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec "$op" "$tricky" 2>&1)"; st=$?
+  before_store="$(fake_snapshot)"
+  out="$("$ORCH" spec "$op" "$tricky" 2>&1)"; st=$?
   assert_status "spec $op refuses once the flow is done" "$st" 1
   assert_contains "naming the flow's issue" "$out" "issue #14"
   assert_contains "and pointing at issue $op for another issue" "$out" "issue $op <n>"
-  assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+  assert_eq "and nothing reaches gh" "$(fake_snapshot)" "$before_store"
 done
 state_fixture phase spec
 spec_scratch="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" spec fetch "$spec_scratch" 2>&1)"; st=$?
+out="$("$ORCH" spec fetch "$spec_scratch" 2>&1)"; st=$?
 assert_status "spec fetch still works at phase spec" "$st" 0
-: >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec update "$tricky" 2>&1)"; st=$?
+out="$("$ORCH" spec update "$tricky" 2>&1)"; st=$?
 assert_status "spec update still works at phase spec" "$st" 0
-assert_contains "on the flow's issue" "$(cat "$filed")" "issue edit 14"
-: >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
+assert_eq "on the flow's issue" "$(fake_body_of 14)" "$(cat "$tricky")"
+out="$("$ORCH" spec comment "$tricky" 2>&1)"; st=$?
 assert_status "spec comment still works at phase spec" "$st" 0
-assert_contains "on the flow's issue" "$(cat "$filed")" "issue comment 14"
+assert_eq "on the flow's issue" "$(fake_comments_of 14)" "$(cat "$tricky")"
 rm -f "$spec_scratch"
 state_fixture phase "$prior_phase"
 
 # spec comments: the active flow's spec issue's comments, the number from
 # state (issue #361).
 spec_comments="$(mktemp)"
-: >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" \
-  GH_STUB_COMMENTS_JSON='{"comments":[{"author":{"login":"pat"},"createdAt":"2026-09-02T11:30:00Z","body":"A follow-up."}]}' \
-  "$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
+fake_github
+fake_issue 14 open
+fake_comment 14 pat 2026-09-02T11:30:00Z "A follow-up."
+fake_issue 15 open
+fake_comment 15 pat 2026-09-02T11:31:00Z "Not the flow's issue."
+out="$("$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
 assert_status "spec comments writes the flow issue's comments" "$st" 0
-assert_contains "of the issue state records" "$(cat "$filed")" "issue view 14"
-assert_eq "each opened by its marker line" "$(cat "$spec_comments")" \
+assert_eq "of the issue state records, each opened by its marker line" "$(cat "$spec_comments")" \
   "$(writeln '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'A follow-up.')"
 state_fixture phase done
-: >"$filed"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" "$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
+: >"$spec_comments"
+out="$("$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
 assert_status "spec comments refuses once the flow is done" "$st" 1
 assert_contains "naming the flow's issue" "$out" "issue #14"
 assert_contains "and pointing at issue comments for another issue" "$out" "issue comments <n>"
-assert_eq "and nothing reaches gh" "$(grep -c . "$filed")" "0"
+assert_eq "and reads nothing into the file" "$(wc -c <"$spec_comments" | tr -d ' ')" "0"
 state_fixture phase "$prior_phase"
 rm -f "$spec_comments"
 assert_contains "help documents spec comments" "$("$ORCH" help)" "spec comments"
@@ -6878,10 +7023,10 @@ assert_eq "reopens exactly the tickets the flow's implement phase had closed" \
 restore_suite_env GH_STUB_DB
 
 # --- redo spec --------------------------------------------------------------
-# --new-issue's close goes through the ORCH_GH_ADAPTER seam here, pointed at
-# the in-memory fake rather than stub_gh - GH_STUB_LOG stays empty, proving it
-# never spawns a real gh subprocess. The subprocess-real counterpart is the
-# "gh adapter (real issue close, subprocess gh)" block right after this one.
+# --new-issue's close goes through the store-backed fake (fake_github), the
+# closed issue read back from its store - GH_STUB_LOG stays empty, proving it
+# never spawns a real gh subprocess. The real operation is pinned in "gh
+# adapter contract".
 echo
 echo "redo spec"
 fresh_flow redospec
@@ -6922,22 +7067,27 @@ state_fixture phase implement
 # meet a taken destination, which retire_handoffs refuses (#304).
 rm -rf .orchestrator/handoff/pre-redo-spec-*
 writeln '# spec again' >.orchestrator/handoff/02-spec.md
-: >"$filed"
 log="$(mktemp)"
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
-  "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+fake_github
+fake_issue 41 open
+out="$(GH_STUB_LOG="$log" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue also steps back to spec" "$st" 0
 assert_eq "with no implement handoff, retires the spec handoff alone" \
   "$(ls .orchestrator/handoff/pre-redo-spec-*/02-spec.md 2>/dev/null | grep -c .) $(ls .orchestrator/handoff/pre-redo-spec-*/03-implement.md 2>/dev/null | grep -c .)" "1 0"
 assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
 assert_eq "clearing the old issue" "$("$ORCH" state get issue)" ""
-assert_contains "closes the old issue" "$(cat "$filed")" "issue close 41"
+assert_eq "closes the old issue" "$(fake_state_of 41)" "CLOSED"
+assert_contains "saying why, in a comment on it" "$(fake_comments_of 41)" \
+  "This issue was closed by an orchestrator redo because the spec itself needed to change."
 assert_eq "the close call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
 
 state_fixture phase implement
 "$ORCH" state set issue 42
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_ISSUE_CLOSE_EXIT=1 "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+fake_issue 42 open
+fake_fail adapter_issue_close "HTTP 502: Bad Gateway"
+out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "a gh that will not close the issue fails --new-issue" "$st" 1
+assert_contains "passing gh's reason through" "$out" "HTTP 502: Bad Gateway"
 assert_eq "leaving the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "implement"
 
@@ -7087,7 +7237,7 @@ assert_eq "a body with no final newline gets none" \
 
 rt5="$("$ORCH" ticket publish 55 "Five" "$tbody")"
 redo_spec_at 55
-out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+out="$(fake_github && fake_issue 55 open && "$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue still steps back to spec" "$st" 0
 assert_eq "without retiring the closed issue's tickets" \
   "$(gh api "repos/{owner}/{repo}/issues/55/sub_issues" --jq '.[].number') $(cat "$db/state/$rt5")" "$rt5 open"
