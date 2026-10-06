@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.10.3
+
+`orch.sh`'s branch-name check drops its separate empty-name test and relies on
+`git check-ref-format --branch` alone, which already rejects an empty name (see
+issue #486). Behaviour is unchanged: an empty name is still no valid branch
+name, so `default-branch` falls back exactly as before.
+
 ## 3.10.2
 
 `orch-spec-review`'s **Tickets follow the spec** now says how a failed `issue

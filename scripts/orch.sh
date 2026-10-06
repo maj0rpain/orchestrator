@@ -211,9 +211,9 @@ default_branch() {
   printf '%s\n' "$b"
 }
 
-# Whether $1 is a non-empty, valid branch name.
+# Whether $1 is a valid branch name (git check-ref-format --branch rejects an empty one).
 is_branch_name() {
-  [ -n "$1" ] && git check-ref-format --branch "$1" >/dev/null 2>&1
+  git check-ref-format --branch "$1" >/dev/null 2>&1
 }
 
 # The base branch in effect now: the checkout's orchestrator.base setting, else

@@ -775,6 +775,7 @@ stub_pushed_branch() {
 # knobs play a tool manager's shim around it (issue #465):
 # GH_STUB_BANNER=1 prints a mise-style status line before the answer and
 # still exits 0; GH_STUB_FAIL_NOISY=1 prints the answer and exits non-zero;
+# GH_STUB_EMPTY=1 answers with an empty name and exits 0;
 # GH_STUB_ENV_LOG names a file it appends the MISE_QUIET it sees to.
 STUB="$(mktemp -d)"
 cat >"$STUB/gh" <<'GH'
@@ -783,6 +784,7 @@ if [ -n "${GH_STUB_ENV_LOG:-}" ]; then
   printf 'MISE_QUIET=%s\n' "${MISE_QUIET-<unset>}" >>"$GH_STUB_ENV_LOG"
 fi
 [ "${GH_STUB_FAIL:-0}" = "1" ] && exit 1
+[ "${GH_STUB_EMPTY:-0}" = "1" ] && { echo ""; exit 0; }
 [ "${GH_STUB_BANNER:-0}" = "1" ] && echo "mise ~/.config/mise/config.toml tools: gh@2.102.0"
 echo "trunk"
 [ "${GH_STUB_FAIL_NOISY:-0}" = "1" ] && exit 1
@@ -1313,6 +1315,8 @@ assert_eq "falls back past a gh answer polluted by a banner line" \
   "$(PATH="$STUB:$PATH" GH_STUB_BANNER=1 "$ORCH" default-branch)" "some-feature"
 assert_eq "ignores the output of a gh that failed" \
   "$(PATH="$STUB:$PATH" GH_STUB_FAIL_NOISY=1 "$ORCH" default-branch)" "some-feature"
+assert_eq "an empty name from gh is no valid branch name" \
+  "$(PATH="$STUB:$PATH" GH_STUB_EMPTY=1 "$ORCH" default-branch)" "some-feature"
 git update-ref refs/remotes/origin/-dash HEAD
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/-dash
 assert_eq "falls back to main past an origin/HEAD that is no valid branch name" \
