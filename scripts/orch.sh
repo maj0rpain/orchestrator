@@ -864,11 +864,10 @@ review_budget() {
 # real `gh` below. Unset - every normal run - nothing is sourced and behaviour
 # is identical to before the seam existed.
 #
-# Operations under the #280 contract - the label, issue and PR ones - are
+# Operations under the #280 contract - the label, issue, PR and CI ones - are
 # named for what their callers need and own gh's flags: each prints plain text
 # in the shape documented on it, and on a gh failure returns non-zero with gh's
-# stderr passed through. The CI ones below are still pass-throughs, moved over
-# one noun at a time.
+# stderr passed through.
 
 # adapter_label_upsert <name> <colour> <description>: creates the label, or
 # updates the one that exists, to that colour and description. Prints nothing.
@@ -1058,35 +1057,107 @@ adapter_pr_body_edit() {
   gh pr edit "$1" --body-file "$2" >/dev/null
 }
 
-# --- ci operations, still pass-throughs ---
+# --- ci operations ---
 
-# review ci's CI-evidence reads (issue #476), one per GitHub operation. Each
-# prints gh's raw answer - and a failed call's error - for no_ci_evidence to
-# judge; none of them decides anything.
-adapter_branch_protection() {
-  gh api "repos/{owner}/{repo}/branches/$1/protection/required_status_checks"
-}
-adapter_branch_rules() {
-  gh api "repos/{owner}/{repo}/rules/branches/$1"
-}
-adapter_commit_check_runs() {
-  gh api "repos/{owner}/{repo}/commits/$1/check-runs?per_page=1"
-}
-adapter_commit_statuses() {
-  gh api "repos/{owner}/{repo}/commits/$1/status"
-}
-
-# ci_probe's one hand on GitHub, called once for the required scope and once
-# for the all-checks scope - the exit-8-vs-exit-0 handling and bucket
-# classification right around its call sites are unchanged; only the raw `gh
-# pr checks` invocation moves here.
+# adapter_pr_checks <n> <required|all>: the PR's checks - the ones branch
+# protection requires, or every check on its head - one per line as TSV,
+# "<bucket><TAB><name><TAB><link>", in gh's order; an empty link for a check
+# that has none. Nothing at all where gh reports no checks, or no required
+# ones. gh documents exit 8 for pending checks, still answering the JSON: that
+# is read like an exit 0, and where it leaves nothing readable, a single
+# pending check with no name or link is printed. Fails where gh answered with
+# something jq cannot read.
 adapter_pr_checks() {
-  gh pr checks "$@"
+  local args=("$1") err out tsv st=0
+  [ "$2" != required ] || args+=(--required)
+  err="$(mktemp)"
+  out="$(gh pr checks "${args[@]}" --json bucket,name,link 2>"$err")" || st=$?
+  case "$st" in
+    0|8) rm -f "$err" ;;
+    *)
+      if grep -q 'no checks reported\|no required checks' "$err"; then
+        rm -f "$err"
+        return 0
+      fi
+      cat "$err" >&2
+      rm -f "$err"
+      return "$st" ;;
+  esac
+  if ! tsv="$(printf '%s' "$out" | jq -r '.[] | "\(.bucket)\t\(.name)\t\(.link // "")"' 2>/dev/null)"; then
+    if [ "$st" = 8 ]; then printf 'pending\t\t\n'; return 0; fi
+    printf 'gh pr checks answered with something jq could not read\n' >&2
+    return 1
+  fi
+  if [ -z "$tsv" ]; then
+    [ "$st" != 8 ] || printf 'pending\t\t\n'
+    return 0
+  fi
+  printf '%s\n' "$tsv"
 }
 
-# review rerun's rerun of one GitHub Actions run's failed jobs (issue #525).
+# ci_api_read <what> <path> <jq>: one gh api read, its JSON answer run through
+# the jq expression. On a gh failure, gh's stderr passes through - except
+# where <what> is given and gh's answer names it: GitHub's message for an
+# absence it reports as an error, which succeeds printing nothing. Shared by the
+# CI-evidence operations below; not called from anywhere else.
+ci_api_read() {
+  local err out res st=0
+  err="$(mktemp)"
+  out="$(gh api "$2" 2>"$err")" || st=$?
+  if [ "$st" != 0 ]; then
+    if [ -n "$1" ] && printf '%s\n' "$out" | cat - "$err" | grep -qF -- "$1"; then
+      rm -f "$err"
+      return 0
+    fi
+    cat "$err" >&2
+    rm -f "$err"
+    return "$st"
+  fi
+  rm -f "$err"
+  if ! res="$(printf '%s' "$out" | jq -r "$3" 2>/dev/null)"; then
+    printf 'gh api answered with something jq could not read\n' >&2
+    return 1
+  fi
+  [ -z "$res" ] || printf '%s\n' "$res"
+}
+
+# review ci's CI-evidence reads (issue #476). None of them decides anything:
+# no_ci_evidence judges what they print.
+#
+# adapter_branch_required_checks <branch>: the check contexts classic branch
+# protection requires on the branch, one per line, each once. Nothing at all
+# for an unprotected branch - GitHub's 404 `Branch not protected`. Any other
+# failure, a bare 404 `Not Found` from lacking access included, fails it.
+adapter_branch_required_checks() {
+  ci_api_read 'Branch not protected' \
+    "repos/{owner}/{repo}/branches/$1/protection/required_status_checks" \
+    '[(.contexts // [])[], ((.checks // [])[] | .context)] | unique | .[]'
+}
+
+# adapter_branch_rules <branch>: the type of every rule the repo's rulesets
+# apply to the branch, one per line; nothing at all for none.
+adapter_branch_rules() {
+  ci_api_read '' "repos/{owner}/{repo}/rules/branches/$1" '.[].type'
+}
+
+# adapter_commit_has_check_runs <ref>: "yes" where the commit (a SHA, or a
+# branch name for its tip) has any check run, "no" where it has none.
+adapter_commit_has_check_runs() {
+  ci_api_read '' "repos/{owner}/{repo}/commits/$1/check-runs?per_page=1" \
+    'if .total_count == 0 then "no" else "yes" end'
+}
+
+# adapter_commit_has_statuses <ref>: "yes" where the commit has any commit
+# status, "no" where it has none.
+adapter_commit_has_statuses() {
+  ci_api_read '' "repos/{owner}/{repo}/commits/$1/status" \
+    'if .total_count == 0 then "no" else "yes" end'
+}
+
+# adapter_run_rerun <run>: reruns the failed jobs of GitHub Actions run <run>
+# (issue #525). Prints nothing.
 adapter_run_rerun() {
-  gh run rerun "$@"
+  gh run rerun "$1" --failed >/dev/null
 }
 
 if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
@@ -1189,7 +1260,7 @@ ci_push_time() {
 # over checks nobody verified - so anything this cannot read counts as CI.
 # Recomputed on every call: a workflow the PR itself adds is always seen.
 no_ci_evidence() {
-  local head="$1" base="$2" commits="$3" out st n sha
+  local head="$1" base="$2" commits="$3" out sha
   [ -n "$head" ] && [ -n "$base" ] || return 1
   # 1. A head this clone has never fetched is unreadable, not empty.
   git cat-file -e "$head^{commit}" 2>/dev/null || return 1
@@ -1197,19 +1268,12 @@ no_ci_evidence() {
   # and from a subdirectory an empty listing would read as no workflows.
   out="$(git ls-tree --full-tree --name-only "$head" -- .github/workflows/ 2>/dev/null)" || return 1
   if printf '%s\n' "$out" | grep -Eq '\.ya?ml$'; then return 1; fi
-  # 2. Classic protection answers 404 `Branch not protected` where there is
-  # none; any other failure, a bare 404 `Not Found` from lacking access
-  # included, is an answer nobody has.
-  st=0; out="$(adapter_branch_protection "$base" 2>&1)" || st=$?
-  if [ "$st" = 0 ]; then
-    n="$(printf '%s' "$out" | jq -r '(.contexts // []) + [(.checks // [])[] | .context] | length' 2>/dev/null)" || return 1
-    case "$n" in 0) ;; *) return 1 ;; esac
-  else
-    case "$out" in *"Branch not protected"*) ;; *) return 1 ;; esac
-  fi
+  # 2. Required checks, from classic protection or a ruleset. A read that
+  # fails is an answer nobody has.
+  out="$(adapter_branch_required_checks "$base" 2>/dev/null)" || return 1
+  [ -z "$out" ] || return 1
   out="$(adapter_branch_rules "$base" 2>/dev/null)" || return 1
-  n="$(printf '%s' "$out" | jq -r '[.[] | select(.type == "required_status_checks")] | length' 2>/dev/null)" || return 1
-  [ "$n" = 0 ] || return 1
+  if printf '%s\n' "$out" | grep -qx required_status_checks; then return 1; fi
   # 4, then 3: the base tip is one ref, the PR's earlier commits may be many.
   ci_ref_unchecked "$base" || return 1
   while IFS= read -r sha; do
@@ -1221,61 +1285,36 @@ no_ci_evidence() {
 # Succeeds when one ref has neither a check-run nor a commit status, and the
 # two reads both answered.
 ci_ref_unchecked() {
-  local out n
-  out="$(adapter_commit_check_runs "$1" 2>/dev/null)" || return 1
-  n="$(printf '%s' "$out" | jq -r '.total_count' 2>/dev/null)" || return 1
-  [ "$n" = 0 ] || return 1
-  out="$(adapter_commit_statuses "$1" 2>/dev/null)" || return 1
-  n="$(printf '%s' "$out" | jq -r '.total_count' 2>/dev/null)" || return 1
-  [ "$n" = 0 ]
+  [ "$(adapter_commit_has_check_runs "$1" 2>/dev/null)" = no ] || return 1
+  [ "$(adapter_commit_has_statuses "$1" 2>/dev/null)" = no ]
 }
 
 # One look at the PR's checks, classified. Prints the classification on the first
 # line and any detail on the lines after it, indented like doctor's remedies.
 #
-# The buckets carry this, not the exit status. `gh pr checks` documents exit 8
-# for pending checks, but it returns through its JSON exporter before it reaches
-# the code that sets 8 or 1 - so with `--json`, which is the only way this
-# function asks, gh exits 0 whatever the checks are doing. The `8)` arm below is
-# kept against a gh that stops doing that, and is not the path taken.
-#
-# What the exit status does still carry is the difference between a repo with no
-# checks at all and an API that would not answer, and only the error *text*
-# separates those two. Getting that distinction backwards is what would make the
-# loop declare a CI-having repo CI-less.
+# adapter_pr_checks answers nothing at all for a repo with no checks, and fails
+# for an API that would not answer or an answer it could not read - so the two
+# meanings an empty read could carry stay apart. Getting that distinction
+# backwards is what would make the loop declare a CI-having repo CI-less, or
+# mark a PR ready over checks nobody read.
 ci_probe() {
-  local pr="$1" scope="$2" out st=0 buckets failed name
-  if [ "$scope" = required ]; then
-    out="$(adapter_pr_checks "$pr" --required --json bucket,name,state 2>&1)" || st=$?
-  else
-    out="$(adapter_pr_checks "$pr" --json bucket,name,state 2>&1)" || st=$?
-  fi
-  case "$st" in
-    0) ;;
-    8) note pending; return 0 ;;
-    *)
-      case "$out" in
-        *"no checks reported"*|*"no required checks"*) note none; return 0 ;;
-        *) note unreachable; note "      $(first_line "$out")"; return 0 ;;
-      esac ;;
-  esac
-  # jq's failure and jq's empty answer both arrive as an empty string, and they
-  # mean opposite things: an empty array is a repo with no checks, which passes,
-  # while output jq cannot read is an answer nobody has, which must not. Kept
-  # apart here, because conflating them marks a PR ready over unread checks.
-  if ! buckets="$(printf '%s' "$out" | jq -r '.[].bucket' 2>/dev/null)"; then
+  local pr="$1" scope="$2" out err failed name
+  err="$(mktemp)"
+  if ! out="$(adapter_pr_checks "$pr" "$scope" 2>"$err")"; then
     note unreachable
-    note "      gh pr checks answered with something jq could not read"
+    note "      $(first_line "$(cat "$err")")"
+    rm -f "$err"
     return 0
   fi
-  if [ -z "$buckets" ]; then note none; return 0; fi
-  failed="$(printf '%s' "$out" | jq -r '.[] | select(.bucket == "fail" or .bucket == "cancel") | .name' 2>/dev/null)" || failed=""
+  rm -f "$err"
+  if [ -z "$out" ]; then note none; return 0; fi
+  failed="$(printf '%s\n' "$out" | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2 }')"
   if [ -n "$failed" ]; then
     note failing
     while IFS= read -r name; do [ -z "$name" ] || note "      $name"; done <<<"$failed"
     return 0
   fi
-  if printf '%s\n' "$buckets" | grep -qx pending; then note pending; return 0; fi
+  if printf '%s\n' "$out" | cut -f1 | grep -qx pending; then note pending; return 0; fi
   note green
 }
 
@@ -1298,12 +1337,10 @@ review_rerun() {
     export GH_REPO="$REPO_NAME"
   fi
   repo_pin_host
-  # Exit 8 is gh's "some checks pending", which still answers the JSON.
-  out="$(adapter_pr_checks "$pr" --json bucket,name,link 2>&1)" || [ $? -eq 8 ] \
+  out="$(adapter_pr_checks "$pr" all 2>&1)" \
     || die2 "gh could not read the checks of PR #$pr: $(first_line "$out")"
-  link="$(printf '%s' "$out" | jq -er \
-    'first(.[] | select(.bucket == "fail" or .bucket == "cancel")) | "\(.name)\t\(.link // "")"' 2>/dev/null)" \
-    || die2 "PR #$pr has no failed or cancelled check to rerun"
+  link="$(printf '%s\n' "$out" | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2 "\t" $3; exit }')"
+  [ -n "$link" ] || die2 "PR #$pr has no failed or cancelled check to rerun"
   name="${link%%$'\t'*}"
   link="${link#*$'\t'}"
   case "$link" in
@@ -1314,7 +1351,7 @@ review_rerun() {
   run="${link##*/actions/runs/}"   # N/job/M -> N
   run="${run%%/*}"
   case "$run" in ''|*[!0-9]*) printf 'orch: check %s on PR #%s links no Actions run id - nothing to rerun\n' "$name" "$pr" >&2; return 1 ;; esac
-  adapter_run_rerun "$run" --failed >/dev/null 2>&1 \
+  adapter_run_rerun "$run" 2>/dev/null \
     || die2 "gh could not rerun the failed jobs of Actions run $run"
   note "$run"
 }

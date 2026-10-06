@@ -919,8 +919,7 @@ ticket_fixture() {
 # ORCH_GH_FAKE_STORE, naming the store, a directory, so what one orch.sh
 # process wrote is there for the next. restore_suite_env unsets both. The
 # store's layout is documented at the top of the fake; the helpers below are a
-# test's only hand on it. The fake's operations not yet store-backed still
-# answer to the GH_STUB_* knobs, so a test can use both.
+# test's only hand on it.
 fake_github() {
   ORCH_GH_FAKE_STORE="$(mktemp -d)" || return 1
   export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" ORCH_GH_FAKE_STORE
@@ -1082,6 +1081,55 @@ fake_lag() {
   printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/lag/$1"
   if [ $# -ge 3 ]; then printf '%s\n' "$3" >"$ORCH_GH_FAKE_STORE/lag/$1.stale"; fi
 }
+
+# fake_checks <n> <required|all> <answer>...: scripts PR #n's checks for the
+# scope, answered one per call, the last repeating: green, failing (build
+# fails, Actions run 4242; lint passes), cancel (build cancelled, run 5150),
+# external (a failing outside-CI check, ext-ci, ahead of build failing in run
+# 4242), pending, none (no checks reported) or boom (a connection error). An
+# unscripted scope has no checks.
+fake_checks() {
+  local d="$ORCH_GH_FAKE_STORE/checks/$1" scope="$2"
+  shift 2
+  mkdir -p "$d"
+  printf '%s\n' "$@" >"$d/$scope"
+  rm -f "$d/$scope.n"
+}
+
+# fake_required_checks <branch> <context>...: classic branch protection on the
+# branch, requiring the checks named.
+fake_required_checks() {
+  local b="$1"
+  shift
+  mkdir -p "$ORCH_GH_FAKE_STORE/protection"
+  printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/protection/$b"
+}
+
+# fake_rules <branch> <type>...: the rules the repo's rulesets apply to the
+# branch, by type.
+fake_rules() {
+  local b="$1"
+  shift
+  mkdir -p "$ORCH_GH_FAKE_STORE/rules"
+  printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/rules/$b"
+}
+
+# fake_check_run <ref> / fake_status <ref>: the ref - a SHA, or a branch name
+# for its tip - has a check run, or a commit status. fake_unreadable_ref <ref>:
+# both reads of the ref fail.
+fake_check_run() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/check_runs"; }
+fake_status() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/statuses"; }
+fake_unreadable_ref() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/unreadable_refs"; }
+
+# fake_ci_reset: no checks scripted, nothing required, no rules, and no ref
+# with a check run or status - every CI signal absent.
+fake_ci_reset() {
+  rm -rf "$ORCH_GH_FAKE_STORE/checks" "$ORCH_GH_FAKE_STORE/protection" "$ORCH_GH_FAKE_STORE/rules" \
+    "$ORCH_GH_FAKE_STORE/check_runs" "$ORCH_GH_FAKE_STORE/statuses" "$ORCH_GH_FAKE_STORE/unreadable_refs"
+}
+
+# fake_reruns: the Actions run ids rerun, read back, space-separated, in order.
+fake_reruns() { tr '\n' ' ' <"$ORCH_GH_FAKE_STORE/reruns" 2>/dev/null | sed 's/ $//'; }
 
 # --- the fixture gh (adapter contract tests, #280) -----------------------------
 #
@@ -5451,6 +5499,121 @@ assert_status "pr body edit: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 assert_eq "every PR operation was pinned to the resolved repo" \
   "$(grep ' pr ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> pr ')" "0"
+
+# The CI operations. These parse gh's JSON themselves, so each reply here is
+# gh's raw answer.
+checks_tsv() { printf '%s\t%s\t%s\n' "$@"; }
+runs=https://github.com/acme/widgets/actions/runs
+gh_reply 0 "[{\"bucket\":\"fail\",\"name\":\"build\",\"link\":\"$runs/4242/job/77\"},{\"bucket\":\"pass\",\"name\":\"lint\",\"link\":null}]" '' \
+  pr checks 57 --required --json bucket,name,link
+out="$(contract adapter_pr_checks 57 required 2>&1)"; st=$?
+assert_status "pr checks: reads the required checks" "$st" 0
+assert_eq "one check per line, bucket, name and link as TSV, an empty link for none" \
+  "$out" "$(checks_tsv fail build "$runs/4242/job/77" pass lint '')"
+gh_reply 0 '[{"bucket":"pass","name":"build","link":"x"}]' '' pr checks 57 --json bucket,name,link
+out="$(contract adapter_pr_checks 57 all 2>&1)"; st=$?
+assert_status "pr checks: reads every check, without --required" "$st" 0
+assert_eq "in the same shape" "$out" "$(checks_tsv pass build x)"
+gh_reply 8 '[{"bucket":"pending","name":"build","link":"y"}]' '' pr checks 60 --json bucket,name,link
+out="$(contract adapter_pr_checks 60 all 2>&1)"; st=$?
+assert_status "pr checks: gh's exit 8 for pending checks is absorbed" "$st" 0
+assert_eq "its answer read like an exit 0's" "$out" "$(checks_tsv pending build y)"
+gh_reply 8 '' '' pr checks 61 --json bucket,name,link
+out="$(contract adapter_pr_checks 61 all 2>&1)"; st=$?
+assert_status "pr checks: an exit 8 with nothing readable still succeeds" "$st" 0
+assert_eq "as one pending check with no name or link" "$out" "$(checks_tsv pending '' '')"
+gh_reply 1 '' "no checks reported on the 'topic' branch" pr checks 62 --json bucket,name,link
+out="$(contract adapter_pr_checks 62 all 2>&1)"; st=$?
+assert_status "pr checks: no checks reported succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+gh_reply 1 '' "no required checks reported on the 'topic' branch" pr checks 62 --required --json bucket,name,link
+out="$(contract adapter_pr_checks 62 required 2>&1)"; st=$?
+assert_status "pr checks: no required checks reported succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+gh_reply 0 '[]' '' pr checks 63 --json bucket,name,link
+out="$(contract adapter_pr_checks 63 all 2>&1)"; st=$?
+assert_status "pr checks: an empty list succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+gh_reply 0 'not json at all' '' pr checks 64 --json bucket,name,link
+out="$(contract adapter_pr_checks 64 all 2>&1)"; st=$?
+assert_status "pr checks: an answer jq cannot read fails it, never reads as no checks" "$st" 1
+assert_eq "saying what it could not read" "$out" "gh pr checks answered with something jq could not read"
+gh_reply 1 '' 'dial tcp: lookup api.github.com: no such host' pr checks 65 --json bucket,name,link
+out="$(contract adapter_pr_checks 65 all 2>&1)"; st=$?
+assert_status "pr checks: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "dial tcp: lookup api.github.com: no such host"
+
+prot=repos/{owner}/{repo}/branches/main/protection/required_status_checks
+gh_reply 0 '{"strict":false,"contexts":["build","lint"],"checks":[{"context":"build","app_id":null}]}' '' api "$prot"
+out="$(contract adapter_branch_required_checks main 2>&1)"; st=$?
+assert_status "branch required checks: reads classic protection" "$st" 0
+assert_eq "each required context once, one per line" "$out" "$(writeln build lint)"
+gh_reply 1 '{"message":"Branch not protected","status":"404"}' 'gh: Branch not protected (HTTP 404)' \
+  api repos/{owner}/{repo}/branches/open/protection/required_status_checks
+out="$(contract adapter_branch_required_checks open 2>&1)"; st=$?
+assert_status "branch required checks: GitHub's 404 for an unprotected branch succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+gh_reply 1 '{"message":"Not Found","status":"404"}' 'gh: Not Found (HTTP 404)' \
+  api repos/{owner}/{repo}/branches/hidden/protection/required_status_checks
+out="$(contract adapter_branch_required_checks hidden 2>&1)"; st=$?
+assert_status "branch required checks: a bare 404 Not Found fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "gh: Not Found (HTTP 404)"
+gh_reply 0 '{"strict":true}' '' api repos/{owner}/{repo}/branches/loose/protection/required_status_checks
+out="$(contract adapter_branch_required_checks loose 2>&1)"; st=$?
+assert_status "branch required checks: protection requiring no checks succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+
+gh_reply 0 '[{"type":"deletion"},{"type":"required_status_checks","parameters":{}}]' '' \
+  api repos/{owner}/{repo}/rules/branches/main
+out="$(contract adapter_branch_rules main 2>&1)"; st=$?
+assert_status "branch rules: reads the rules on a branch" "$st" 0
+assert_eq "one rule type per line" "$out" "$(writeln deletion required_status_checks)"
+gh_reply 0 '[]' '' api repos/{owner}/{repo}/rules/branches/bare
+out="$(contract adapter_branch_rules bare 2>&1)"; st=$?
+assert_status "branch rules: a branch no ruleset touches succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+gh_reply 1 '' 'HTTP 502: Bad Gateway' api repos/{owner}/{repo}/rules/branches/down
+out="$(contract adapter_branch_rules down 2>&1)"; st=$?
+assert_status "branch rules: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
+gh_reply 0 '{"total_count":3,"check_runs":[{"name":"build"}]}' '' \
+  api 'repos/{owner}/{repo}/commits/aaaa/check-runs?per_page=1'
+out="$(contract adapter_commit_has_check_runs aaaa 2>&1)"; st=$?
+assert_status "commit has check runs: reads a commit's check runs" "$st" 0
+assert_eq "yes where it has any" "$out" "yes"
+gh_reply 0 '{"total_count":0,"check_runs":[]}' '' api 'repos/{owner}/{repo}/commits/bbbb/check-runs?per_page=1'
+assert_eq "commit has check runs: no where it has none" "$(contract adapter_commit_has_check_runs bbbb 2>&1)" "no"
+gh_reply 1 '' 'gh: Server Error (HTTP 502)' api 'repos/{owner}/{repo}/commits/cccc/check-runs?per_page=1'
+out="$(contract adapter_commit_has_check_runs cccc 2>&1)"; st=$?
+assert_status "commit has check runs: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "gh: Server Error (HTTP 502)"
+gh_reply 0 'not json' '' api 'repos/{owner}/{repo}/commits/dddd/check-runs?per_page=1'
+out="$(contract adapter_commit_has_check_runs dddd 2>&1)"; st=$?
+assert_status "commit has check runs: an answer jq cannot read fails it" "$st" 1
+
+gh_reply 0 '{"state":"success","total_count":1,"statuses":[{"context":"ci/legacy"}]}' '' \
+  api repos/{owner}/{repo}/commits/aaaa/status
+out="$(contract adapter_commit_has_statuses aaaa 2>&1)"; st=$?
+assert_status "commit has statuses: reads a commit's combined status" "$st" 0
+assert_eq "yes where it has any" "$out" "yes"
+gh_reply 0 '{"state":"pending","total_count":0,"statuses":[]}' '' api repos/{owner}/{repo}/commits/main/status
+assert_eq "commit has statuses: no where it has none" "$(contract adapter_commit_has_statuses main 2>&1)" "no"
+gh_reply 1 '' 'gh: Server Error (HTTP 502)' api repos/{owner}/{repo}/commits/cccc/status
+out="$(contract adapter_commit_has_statuses cccc 2>&1)"; st=$?
+assert_status "commit has statuses: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "gh: Server Error (HTTP 502)"
+
+gh_reply 0 '✓ Requested rerun of failed jobs' '' run rerun 4242 --failed
+out="$(contract adapter_run_rerun 4242 2>&1)"; st=$?
+assert_status "run rerun: reruns the run's failed jobs" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' run rerun 4243 --failed
+out="$(contract adapter_run_rerun 4243 2>&1)"; st=$?
+assert_status "run rerun: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
+assert_eq "every CI operation was pinned to the resolved repo" \
+  "$(grep -E ' (pr checks|api|run rerun) ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> ')" "0"
 rm -f "$ibody"
 restore_suite_env GH_FIXTURE GH_HOST
 
@@ -6141,12 +6304,12 @@ restore_suite_env
 # The classification is what decides whether a PR may be marked ready, so each
 # of the four answers is asserted for its exit status as well as its word.
 #
-# ci_probe's `gh pr checks` calls go through the ORCH_GH_ADAPTER seam here,
-# pointed at the in-memory fake rather than stub_gh - a GH_STUB_LOG check right
-# after the first call proves it never spawns a real gh subprocess. The
-# subprocess-real counterpart, including the required-vs-all-checks
-# distinction and the exit-8 handling specifically, is the "gh adapter (real
-# pr checks, subprocess gh)" block right after this section.
+# Every GitHub read here goes through the store-backed fake: fake_checks
+# scripts the checks each scope answers, call by call, and the base tip's one
+# check run (fake_check_run main) is the CI evidence that keeps the grace,
+# until a case below says otherwise. How the real operations read gh -
+# --required, exit 8 for pending, an answer jq cannot read - is pinned by
+# their contract tests in "gh adapter contract".
 echo
 echo "review ci"
 review_flow reviewci
@@ -6154,13 +6317,16 @@ state_fixture pr 7
 export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
 fake_github
 fake_pr 7 open topic main
+fake_check_run main
 log="$(mktemp)"
-out="$(GH_STUB_LOG="$log" GH_STUB_CHECKS=green "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 all green
+out="$(GH_STUB_LOG="$log" "$ORCH" review ci 2>&1)"; st=$?
 assert_status "green checks let the loop finish" "$st" 0
 assert_first_line "and say so in one word" "$out" "green"
 assert_eq "the checks call never reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
 
-out="$(GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 all failing
+out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "a failing check stops the loop" "$st" 1
 assert_first_line "classified as failing" "$out" "failing"
 assert_contains "names the check that failed" "$out" "build"
@@ -6169,14 +6335,16 @@ assert_eq "and not the ones that passed" "$(printf '%s\n' "$out" | grep -c 'lint
 # A cancelled run is not a run that passed, and it is never going to report. It
 # classifies as failing, which is also the arm that offers the flake rerun - the
 # right remedy for a check that was killed rather than one that judged the change.
-out="$(GH_STUB_CHECKS=cancel "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 all cancel
+out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "a cancelled check stops the loop too" "$st" 1
 assert_first_line "classified as failing rather than waited on" "$out" "failing"
 assert_contains "naming the check that was cancelled" "$out" "build"
 
 # Requiring CI in a repo that has none would make the plugin unusable in its own
 # repo, which has none.
-out="$(GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 all none
+out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "a repo with no checks at all is not thereby failing" "$st" 0
 assert_first_line "classified as none" "$out" "none"
 
@@ -6190,26 +6358,30 @@ assert_first_line "classified as none" "$out" "none"
 # consulted. The grace is set well clear of a whole-second wall-clock tick, so
 # what the test proves is the second answer winning rather than how fast the
 # first one came.
-reqn="$(mktemp)"; : >"$reqn"
-out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
-  GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 required none green
+fake_checks 7 all failing
+out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "a required check that has not registered yet is waited for" "$out" "green"
 assert_status "and the loop finishes on the answer it waited for" "$st" 0
 
 # Where branch protection names required checks, those are the checks that
 # matter - and a failure outside them is not the flow's business.
-out="$(GH_STUB_REQUIRED=green GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 required green
+fake_checks 7 all failing
+out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "required checks decide it where branch protection names them" "$st" 0
 assert_first_line "so the unfiltered answer is never asked for" "$out" "green"
 
 # ...and where it names none, the answer is every check on the commit, but only
 # once the grace has run out.
-out="$(ORCH_CI_GRACE=0.2 GH_STUB_REQUIRED=none GH_STUB_CHECKS=green \
-  "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 required none
+fake_checks 7 all green
+out="$(ORCH_CI_GRACE=0.2 "$ORCH" review ci 2>&1)"; st=$?
 assert_status "a repo that requires nothing falls back to every check" "$st" 0
 assert_first_line "reading the commit's own checks for its answer" "$out" "green"
 
-out="$(GH_STUB_CHECKS=boom "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 all boom
+out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "an API that will not answer stops the loop" "$st" 1
 assert_first_line "classified as unreachable" "$out" "unreachable"
 assert_contains "carrying the reason it could not be asked" "$out" "dial tcp"
@@ -6217,19 +6389,11 @@ assert_contains "carrying the reason it could not be asked" "$out" "dial tcp"
 # doctor's "an unreachable API is a warn" rule was written for a read-only
 # diagnostic. Here the outcome is an action, so an answer that never arrived
 # cannot be treated as a green one.
-out="$(ORCH_CI_TIMEOUT=0.2 GH_STUB_CHECKS=pending "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 all pending
+out="$(ORCH_CI_TIMEOUT=0.2 "$ORCH" review ci 2>&1)"; st=$?
 assert_status "checks still pending at the cap stop the loop" "$st" 1
 assert_first_line "rather than being read as green" "$out" "unreachable"
 assert_contains "and it says the wait ran out" "$out" "still pending"
-
-# The same wait, reached the way real gh reports it. `gh pr checks --json` exits
-# 0 whatever the buckets hold, so the exit-8 arm above is the path the stub
-# takes and this is the path the live command takes - and until both are
-# asserted, the classifier's bucket-reading half ships unexercised.
-out="$(ORCH_CI_TIMEOUT=0.2 GH_STUB_CHECKS=pending0 "$ORCH" review ci 2>&1)"; st=$?
-assert_status "a pending bucket is a wait even when gh exits 0" "$st" 1
-assert_first_line "classified from the bucket rather than the exit status" "$out" "unreachable"
-assert_contains "and says the same thing the exit-8 path says" "$out" "still pending"
 
 # The clocks are compared with awk, which compares a number against a
 # non-numeric string as strings - so a mistyped knob makes every comparison
@@ -6248,11 +6412,14 @@ assert_status "an interval of zero is refused rather than busy-polled" "$st" 1
 assert_contains "saying the interval has to be above zero" "$out" "greater than zero"
 
 # The one direction this classifier must never fail in: an answer nobody could
-# read is not an answer that there is nothing to read.
-out="$(GH_STUB_CHECKS=garbage "$ORCH" review ci 2>&1)"; st=$?
-assert_status "output jq cannot parse stops the loop" "$st" 1
+# read is not an answer that there is nothing to read. adapter_pr_checks fails
+# on one (its contract test), and that failure's reason is what review ci says.
+fake_fail adapter_pr_checks "gh pr checks answered with something jq could not read"
+out="$("$ORCH" review ci 2>&1)"; st=$?
+assert_status "checks nobody could read stop the loop" "$st" 1
 assert_first_line "rather than passing as a repo with no checks" "$out" "unreachable"
 assert_contains "saying what it could not read" "$out" "could not read"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
 
 # --- the grace counts from the push (issue #475) ---
 # review ci runs when the loop ends, usually minutes after the fixer's last
@@ -6284,45 +6451,42 @@ fake_pr_head 7 "$head_sha"
 # With the push an hour old, the grace is long spent: the first answer of
 # nothing required widens at once, and nothing at all reported is `none`. A
 # grace counted from the call would wait for the green the second answer holds.
-reqn="$(mktemp)"; : >"$reqn"
-out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
-  GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 required none green
+fake_checks 7 all none
+out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "an old push with nothing reported is none without waiting the grace" "$out" "none"
 assert_status "and none still lets the loop finish" "$st" 0
 
 # The grace is measured from that one push alone: an entry for another SHA
 # says nothing about when this head arrived, so the grace counts from the call.
-reqn="$(mktemp)"; : >"$reqn"
+fake_checks 7 required none green
 fake_pr_head 7 1111111111111111111111111111111111111111
-out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
-  GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
+out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "with no reflog entry for the head SHA, the grace counts from the call" "$out" "green"
 fake_pr_head 7 "$head_sha"
 
 # A PR whose head branch has no remote-tracking ref at all is the same case.
-reqn="$(mktemp)"; : >"$reqn"
+fake_checks 7 required none green
 fake_pr 7 open elsewhere main
 fake_pr_head 7 "$head_sha"
-out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
-  GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
+out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "nor with no remote-tracking ref for the head branch" "$out" "green"
 fake_pr 7 open topic main
 fake_pr_head 7 "$head_sha"
 
 # The timeout keeps counting from the call: an hour-old push is no reason to
 # give up on checks that are still running now.
-reqn="$(mktemp)"; : >"$reqn"
-out="$(ORCH_CI_TIMEOUT=5 GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='pending0|green' \
-  "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 required pending green
+out="$(ORCH_CI_TIMEOUT=5 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "the timeout counts from the call even when the push is old" "$out" "green"
 
 # A fresh push still waits: nothing required yet, and the green that arrives
 # within the grace wins over the unfiltered failure.
 head_sha="$(pushed_head topic)"
 fake_pr_head 7 "$head_sha"
-reqn="$(mktemp)"; : >"$reqn"
-out="$(ORCH_CI_GRACE=5 GH_STUB_REQUIRED_N="$reqn" \
-  GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
+fake_checks 7 required none green
+fake_checks 7 all failing
+out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "a fresh push still waits the grace before widening" "$out" "green"
 
 # --- the grace is skipped on no evidence of CI (issue #476) ---
@@ -6330,35 +6494,41 @@ assert_first_line "a fresh push still waits the grace before widening" "$out" "g
 # CI. With no workflow in the head, nothing required on the base, and no check
 # or status on an earlier PR commit or the base tip, there is nothing to wait
 # for, and `none` arrives without the grace. Each case below uses a fresh push,
-# so the grace is unspent: `none|green` on the required probe tells the two
-# apart, green meaning the grace was waited and none that it was skipped.
-# no_ci <expected first line> <name> [VAR=value...]: one review ci call with
-# every signal absent but what the extra assignments turn back on, on PR #7 as
-# the store holds it - by default, a single-commit PR whose head is head_sha.
-no_ci() {
-  local want="$1" name="$2"; shift 2
-  reqn="$(mktemp)"; : >"$reqn"
-  out="$(env ORCH_CI_GRACE=5 GH_STUB_CHECKED_REFS= \
-    GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=none \
-    "$@" "$ORCH" review ci 2>&1)"; st=$?
-  assert_first_line "$name" "$out" "$want"
+# so the grace is unspent: `none`, then `green`, on the required probe tells the
+# two apart, green meaning the grace was waited and none that it was skipped.
+# ci_absent: every CI signal absent, and the checks scripted that way - the
+# store each case below turns one signal back on in.
+ci_absent() {
+  fake_ci_reset
+  fake_checks 7 required none green
+  fake_checks 7 all none
 }
+# no_ci <expected first line> <name>: one review ci call, on PR #7 as the store
+# holds it - by default, a single-commit PR whose head is head_sha.
+no_ci() {
+  out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
+  assert_first_line "$2" "$out" "$1"
+}
+ci_absent
 no_ci none "with no evidence of CI anywhere, none arrives without the grace"
 assert_status "and lets the loop finish" "$st" 0
 assert_contains "saying it found no CI signals" "$out" "no CI signals found"
 assert_contains "naming the signals it looked for" "$out" "no workflow files in the head"
 
 # The other path to none: the grace waited and ran out with nothing reported.
-out="$(GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
+fake_ci_reset
+fake_check_run main
+out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "evidence of CI keeps the grace, and none still comes after it" "$out" "none"
 assert_contains "saying the grace ran out" "$out" "grace ran out"
 assert_eq "and not that no signals were found" "$(printf '%s\n' "$out" | grep -c 'no CI signals')" "0"
 
 # The pre-check replaces only the wait: the unfiltered probe still runs, so a
 # check already reported on the head gives its verdict, not none.
-no_ci failing "with no evidence of CI, a check reported on the head still decides it" \
-  GH_STUB_REQUIRED=none GH_STUB_CHECKS=failing
-no_ci green "and a green one reads green" GH_STUB_REQUIRED=none GH_STUB_CHECKS=green
+ci_absent; fake_checks 7 all failing
+no_ci failing "with no evidence of CI, a check reported on the head still decides it"
+ci_absent; fake_checks 7 all green
+no_ci green "and a green one reads green"
 
 # Each signal alone keeps the grace.
 wf_index="$(mktemp -u)"
@@ -6367,45 +6537,58 @@ GIT_INDEX_FILE="$wf_index" git update-index --add --cacheinfo \
   "100644,$(printf 'on: push\n' | git hash-object -w --stdin),.github/workflows/ci.yml"
 wf_sha="$(git commit-tree "$(GIT_INDEX_FILE="$wf_index" git write-tree)" -p HEAD -m 'add CI')"
 fake_pr_head 7 "$wf_sha"
+ci_absent
 no_ci green "a workflow file in the head's tree keeps the grace"
 # git ls-tree reads its pathspec from the current directory: from a
 # subdirectory, the workflow must still be seen, not read as absent.
 mkdir -p wf-subdir
-reqn="$(mktemp)"; : >"$reqn"
-out="$(cd wf-subdir && env ORCH_CI_GRACE=5 \
-  GH_STUB_CHECKED_REFS= GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=none \
-  "$ORCH" review ci 2>&1)"
+ci_absent
+out="$(cd wf-subdir && ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"
 assert_first_line "and so does one seen from a subdirectory" "$out" "green"
 rmdir wf-subdir
 fake_pr_head 7 "$head_sha"
-no_ci green "required checks from classic branch protection keep the grace" GH_STUB_PROTECTION=required
-no_ci green "required checks from a ruleset keep the grace" GH_STUB_RULES=required
-no_ci none "a ruleset that requires no checks is not evidence of CI" GH_STUB_RULES=other
+ci_absent; fake_required_checks main build
+no_ci green "required checks from classic branch protection keep the grace"
+ci_absent; fake_rules main required_status_checks
+no_ci green "required checks from a ruleset keep the grace"
+ci_absent; fake_rules main deletion
+no_ci none "a ruleset that requires no checks is not evidence of CI"
 earlier=2222222222222222222222222222222222222222
 fake_pr_head 7 "$head_sha" "$earlier" "$head_sha"
-no_ci green "a check-run on an earlier PR commit keeps the grace" GH_STUB_CHECKED_REFS="$earlier"
-no_ci green "a commit status on an earlier PR commit keeps the grace" GH_STUB_STATUSED_REFS="$earlier"
+ci_absent; fake_check_run "$earlier"
+no_ci green "a check-run on an earlier PR commit keeps the grace"
+ci_absent; fake_status "$earlier"
+no_ci green "a commit status on an earlier PR commit keeps the grace"
 fake_pr_head 7 "$head_sha"
-no_ci green "a check-run on the base tip keeps the grace" GH_STUB_CHECKED_REFS=main
-no_ci green "a commit status on the base tip keeps the grace" GH_STUB_STATUSED_REFS=main
+ci_absent; fake_check_run main
+no_ci green "a check-run on the base tip keeps the grace"
+ci_absent; fake_status main
+no_ci green "a commit status on the base tip keeps the grace"
 
 # A single-commit PR has no earlier commit: the head's own checks are what the
 # probes read, not evidence the grace is worth waiting for.
-no_ci none "a single-commit PR has no earlier-commit signal" \
-  GH_STUB_CHECKED_REFS="$head_sha" GH_STUB_STATUSED_REFS="$head_sha"
+ci_absent; fake_check_run "$head_sha"; fake_status "$head_sha"
+no_ci none "a single-commit PR has no earlier-commit signal"
 
-# A signal that cannot be read counts as CI.
-no_ci green "a classic-protection 404 other than Branch not protected keeps the grace" \
-  GH_STUB_PROTECTION=notfound
-no_ci green "a protection read that fails keeps the grace" GH_STUB_PROTECTION=boom
-no_ci green "a ruleset read that fails keeps the grace" GH_STUB_RULES=boom
-no_ci green "a base-tip read that fails keeps the grace" GH_STUB_REF_READ_FAIL=main
+# A signal that cannot be read counts as CI - a protection read GitHub refused
+# with anything but its 404 for an unprotected branch included, which
+# adapter_branch_required_checks fails on (its contract test).
+ci_absent; fake_fail adapter_branch_required_checks "gh: Not Found (HTTP 404)"
+no_ci green "a protection read that fails keeps the grace"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
+ci_absent; fake_fail adapter_branch_rules
+no_ci green "a ruleset read that fails keeps the grace"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
+ci_absent; fake_unreadable_ref main
+no_ci green "a base-tip read that fails keeps the grace"
 fake_pr_head 7 "$head_sha" "$earlier" "$head_sha"
-no_ci green "an earlier commit's read that fails keeps the grace" GH_STUB_REF_READ_FAIL="$earlier"
+ci_absent; fake_unreadable_ref "$earlier"
+no_ci green "an earlier commit's read that fails keeps the grace"
 fake_pr_head 7 3333333333333333333333333333333333333333
+ci_absent
 no_ci green "a head this clone does not hold keeps the grace"
 fake_pr_head 7 "$head_sha"
-fake_fail adapter_pr_refs
+ci_absent; fake_fail adapter_pr_refs
 no_ci green "a PR that will not say what its head is keeps the grace"
 rm -rf "$ORCH_GH_FAKE_STORE/fail"
 
@@ -6505,39 +6688,49 @@ restore_suite_env
 echo
 echo "review rerun"
 new_repo >/dev/null
-stub_gh
-filed="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_CHECKS=failing "$ORCH" review rerun 7 2>&1)"; st=$?
+fake_github
+fake_checks 7 all failing
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a failed Actions check is rerun" "$st" 0
-assert_eq "gh got run rerun with the run id from the failing check's link" \
-  "$(grep '^run ' "$filed")" "run rerun 4242 --failed"
+assert_eq "printing the run it reran" "$out" "4242"
+assert_eq "the run id taken from the failing check's link" "$(fake_reruns)" "4242"
 
-: >"$filed"
-out="$(GH_STUB_FILED="$filed" GH_STUB_CHECKS=cancel "$ORCH" review rerun 7 2>&1)"; st=$?
+rm -f "$ORCH_GH_FAKE_STORE/reruns"
+fake_checks 7 all cancel
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a cancelled Actions check is rerun too" "$st" 0
-assert_eq "from the cancelled check's run" "$(grep '^run ' "$filed")" "run rerun 5150 --failed"
+assert_eq "from the cancelled check's run" "$(fake_reruns)" "5150"
 
-: >"$filed"
-out="$(GH_STUB_FILED="$filed" GH_STUB_CHECKS=external "$ORCH" review rerun 7 2>&1)"; st=$?
+rm -f "$ORCH_GH_FAKE_STORE/reruns"
+fake_checks 7 all external
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a first failing check that is no Actions run has nothing to rerun" "$st" 1
 assert_contains "naming the check" "$out" "ext-ci"
-assert_eq "and reruns nothing, not even a later Actions run" "$(grep -c '^run ' "$filed")" "0"
+assert_eq "and reruns nothing, not even a later Actions run" "$(fake_reruns)" ""
 
-out="$(GH_STUB_CHECKS=boom "$ORCH" review rerun 7 2>&1)"; st=$?
+fake_checks 7 all boom
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a GitHub that cannot be read is exit 2" "$st" 2
-out="$(GH_STUB_CHECKS=garbage "$ORCH" review rerun 7 2>&1)"; st=$?
-assert_status "checks jq cannot read are exit 2" "$st" 2
-out="$(GH_STUB_CHECKS=green "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_contains "carrying gh's reason" "$out" "dial tcp"
+fake_checks 7 all green
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "no failed or cancelled check is exit 2" "$st" 2
-out="$(GH_STUB_RERUN_EXIT=1 GH_STUB_CHECKS=failing "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_contains "saying there is nothing failed to rerun" "$out" "no failed or cancelled check"
+fake_checks 7 all none
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "no checks at all is exit 2" "$st" 2
+fake_checks 7 all failing
+fake_fail adapter_run_rerun
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a rerun gh refuses is exit 2" "$st" 2
 assert_contains "naming the run" "$out" "4242"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
 out="$("$ORCH" review rerun 2>&1)"; st=$?
 assert_status "no PR is a usage error, exit 2" "$st" 2
 out="$("$ORCH" review rerun abc 2>&1)"; st=$?
 assert_status "a PR that is not a number is a usage error, exit 2" "$st" 2
 git remote remove origin
-out="$(GH_STUB_CHECKS=failing "$ORCH" review rerun 7 2>&1)"; st=$?
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "no repo to work on is exit 2, not the guard's 1" "$st" 2
 assert_contains "naming the GH_REPO remedy" "$out" "GH_REPO=<owner>/<repo>"
 assert_contains "help documents review rerun" "$("$ORCH" help)" "review rerun <pr>"
@@ -6573,13 +6766,17 @@ assert_contains "status reads its budget as the default" "$("$ORCH" status)" "it
 
 # ci and ready need a PR, which a flow this old still records the same way.
 state_fixture pr 3
-out="$(ORCH_CI_GRACE=0.2 ORCH_CI_INTERVAL=0.05 GH_STUB_CHECKS=green \
-  "$ORCH" review ci 2>&1)"; st=$?
+fake_github
+fake_pr 3 open orch/legacy main
+fake_pr_draft 3
+fake_checks 3 all green
+out="$(ORCH_CI_GRACE=0.2 ORCH_CI_INTERVAL=0.05 "$ORCH" review ci 2>&1)"; st=$?
 assert_status "review ci reads its PR from a state with no budget key" "$st" 0
 assert_first_line "and classifies it" "$out" "green"
 assert_eq "review ready marks the PR and finishes the flow" \
   "$("$ORCH" review ready)" "3"
 assert_eq "recording done as it goes" "$("$ORCH" state get phase)" "done"
+assert_eq "with the PR no longer a draft" "$(fake_pr_draft_of 3)" "no"
 restore_suite_env
 
 # --- init seeds the review loop ---------------------------------------------

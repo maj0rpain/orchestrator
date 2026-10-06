@@ -3,13 +3,10 @@
 # Sourced into orch.sh's own process via ORCH_GH_ADAPTER, this redefines the
 # adapter functions orch.sh calls instead of shelling out to `gh` - so a test
 # exercises orch.sh's decision logic without spawning a subprocess for every
-# GitHub call. Parameterized by the same GH_STUB_* vocabulary orch_test.sh's
-# subprocess fake (`stub_gh`) already answers to, so a test switches between
-# the two fakes without learning a second vocabulary, and an assertion written
-# against one reads the other's output too.
+# GitHub call.
 #
-# The fake is moving onto a file store (#280). An operation under the #280
-# operation contract parses no arguments: it keeps its state in the directory
+# The fake is a file store (#280). Its operations, under the #280 operation
+# contract, parse no arguments: each keeps its state in the directory
 # ORCH_GH_FAKE_STORE names, so what one orch.sh process wrote is there for the
 # next one a test runs. orch_test.sh's fake_github creates the store, and its
 # fake_* helpers seed and read it back. Its layout:
@@ -45,9 +42,23 @@
 #                     operation answers stale and counts it down
 #   lag/<operation>.stale
 #                     the stale answer, where the operation takes one
-#
-# The CI operations, not yet moved onto the store, keep mirroring the
-# GH_STUB_* vocabulary stub_gh answers to, below.
+#   checks/<n>/<scope>
+#                     PR #n's scripted checks answers for a scope, required
+#                     or all, one per line - green, failing, cancel,
+#                     external, pending, none or boom - consumed one per
+#                     call, the last repeating; absent, no checks
+#   checks/<n>/<scope>.n
+#                     how many calls the script has answered
+#   protection/<branch>
+#                     the check contexts classic protection requires on the
+#                     branch, one per line; absent, the branch is unprotected
+#   rules/<branch>    the type of each ruleset rule on the branch, one per
+#                     line; absent, none
+#   check_runs, statuses
+#                     the refs (SHAs or branch names) that have a check run,
+#                     or a commit status, one per line; absent, none do
+#   unreadable_refs   refs whose check-run and status reads both fail
+#   reruns            the Actions run ids rerun, one per line, in order
 
 fake_store() {
   printf '%s\n' "${ORCH_GH_FAKE_STORE:?the gh fake has no store - call fake_github}"
@@ -434,113 +445,84 @@ adapter_pr_body_edit() {
   cat "$2" >"$(fake_pr_dir "$1")/body"
 }
 
-# --- ci operations, still on the GH_STUB_* knobs ---------------------------------
+# --- ci operations, on the store ------------------------------------------------
 
-# review ci's CI-evidence reads (issue #476). The fakes default to exactly one
-# signal present - a check-run on the base branch tip - so a grace test that
-# says nothing about evidence keeps the grace; a test opts into each absence.
-#
-# adapter_branch_protection - the base branch's classic required status
-# checks. GH_STUB_PROTECTION picks gh api's answer: none (default) is the 404
-# `Branch not protected` GitHub gives an unprotected branch, required a 200
-# naming one context, notfound the bare 404 `Not Found` of a token without
-# access, boom a failed round trip.
-adapter_branch_protection() {
-  case "${GH_STUB_PROTECTION:-none}" in
-    none)     printf '%s\n' '{"message":"Branch not protected","status":"404"}'
-              echo "gh: Branch not protected (HTTP 404)" >&2; return 1 ;;
-    required) printf '%s\n' '{"strict":false,"contexts":["build"],"checks":[{"context":"build","app_id":null}]}' ;;
-    notfound) printf '%s\n' '{"message":"Not Found","status":"404"}'
-              echo "gh: Not Found (HTTP 404)" >&2; return 1 ;;
+# fake_checks_answer <answer>: the checks one scripted answer stands for, in
+# adapter_pr_checks's TSV shape - or, for boom, a connection error.
+fake_checks_answer() {
+  local runs=https://github.com/acme/widgets/actions/runs
+  case "$1" in
+    green)    printf 'pass\tbuild\t%s/1/job/1\n' "$runs" ;;
+    failing)  printf 'fail\tbuild\t%s/4242/job/77\npass\tlint\t%s/1/job/1\n' "$runs" "$runs" ;;
+    cancel)   printf 'cancel\tbuild\t%s/5150/job/9\n' "$runs" ;;
+    # A failing check that is no Actions run - a commit status from an outside
+    # CI - listed first, ahead of a failing Actions run.
+    external) printf 'pass\tlint\t%s/1/job/1\nfail\text-ci\thttps://ci.example.com/build/9\nfail\tbuild\t%s/4242/job/77\n' "$runs" "$runs" ;;
+    pending)  printf 'pending\tbuild\t\n' ;;
+    none)     ;;
     boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
-    *)        echo "gh stub: no protection named '$GH_STUB_PROTECTION'" >&2; return 99 ;;
+    # Without this arm a mistyped answer prints nothing and succeeds, which
+    # ci_probe reads as a repo with no checks - a test that passes while
+    # asserting nothing.
+    *)        echo "gh fake: no checks answer named '$1'" >&2; return 99 ;;
   esac
 }
 
-# adapter_branch_rules - the rules every ruleset applies to the base branch.
-# GH_STUB_RULES: none (default) is the `[]` of a branch no ruleset touches,
-# required a required_status_checks rule, other a ruleset rule that requires
-# no checks, boom a failed round trip.
-adapter_branch_rules() {
-  case "${GH_STUB_RULES:-none}" in
-    none)     printf '%s\n' '[]' ;;
-    required) printf '%s\n' '[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"build"}]}}]' ;;
-    other)    printf '%s\n' '[{"type":"deletion"}]' ;;
-    boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
-    *)        echo "gh stub: no rules named '$GH_STUB_RULES'" >&2; return 99 ;;
-  esac
-}
-
-# adapter_commit_check_runs / adapter_commit_statuses - the check-runs and
-# the combined commit status of one ref (a SHA, or the base branch's name for
-# its tip). GH_STUB_CHECKED_REFS (default main, the base tip) and
-# GH_STUB_STATUSED_REFS (default none) are space-separated lists of the refs
-# that have one; a ref in GH_STUB_REF_READ_FAIL fails both reads.
-fake_ref_in() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }
-adapter_commit_check_runs() {
-  if fake_ref_in "$1" "${GH_STUB_REF_READ_FAIL:-}"; then echo "gh: Server Error (HTTP 502)" >&2; return 1; fi
-  if fake_ref_in "$1" "${GH_STUB_CHECKED_REFS-main}"; then
-    printf '%s\n' '{"total_count":1,"check_runs":[{"name":"build"}]}'
-  else
-    printf '%s\n' '{"total_count":0,"check_runs":[]}'
-  fi
-}
-adapter_commit_statuses() {
-  if fake_ref_in "$1" "${GH_STUB_REF_READ_FAIL:-}"; then echo "gh: Server Error (HTTP 502)" >&2; return 1; fi
-  if fake_ref_in "$1" "${GH_STUB_STATUSED_REFS:-}"; then
-    printf '%s\n' '{"state":"success","total_count":1,"statuses":[{"context":"ci/legacy"}]}'
-  else
-    printf '%s\n' '{"state":"pending","total_count":0,"statuses":[]}'
-  fi
-}
-
-# adapter_pr_checks - mirrors stub_gh's `pr checks` branch, the trickiest one
-# to replicate faithfully in-memory: ci_probe calls this once per poll tick,
-# many times within the same process, so a plain shell variable counter would
-# not match stub_gh's cross-subprocess behaviour where GH_STUB_CHECKS_N /
-# GH_STUB_REQUIRED_N name a file the count is persisted to. This fake reads
-# and writes the same file, so a test that sets GH_STUB_REQUIRED_N to advance
-# a script across separate `orch.sh` invocations behaves identically whichever
-# adapter is in play.
-#
-# GH_STUB_REQUIRED (when --required is among the arguments) or GH_STUB_CHECKS
-# otherwise is a `|`-separated script of answers - green, failing, cancel,
-# pending, pending0, garbage, none, boom - consumed one per call with the last
-# one repeating once the script runs out.
-#
-# `pending` returns exit 8 with a pending bucket in its JSON, the real gh
-# pr checks documents but that our JSON-asking calls never actually take
-# (ci_probe's `8)` arm exists only against that documented case); `pending0`
-# is the path real `gh pr checks --json` actually takes - exit 0 with the
-# pending bucket carrying the answer instead. Getting the two exits right is
-# what proves ci_probe's own bucket classification, not just its exit-status
-# read, still drives the verdict.
+# adapter_pr_checks <n> <required|all>: the next answer of the script
+# fake_checks seeded for the PR and scope - one per call, the last repeating
+# once the script runs out. An unseeded scope has no checks.
 adapter_pr_checks() {
-  local a req=0 script counter i answer
-  for a in "$@"; do
-    if [ "$a" = --required ]; then req=1; fi
-  done
-  if [ "$req" = 1 ]; then
-    script="${GH_STUB_REQUIRED:-none}"; counter="${GH_STUB_REQUIRED_N:-}"
-  else
-    script="${GH_STUB_CHECKS:-green}"; counter="${GH_STUB_CHECKS_N:-}"
-  fi
-  i=1
-  if [ -n "$counter" ]; then
-    i=$(( $(cat "$counter" 2>/dev/null || echo 0) + 1 ))
-    printf '%s\n' "$i" >"$counter"
-  fi
-  answer="$(printf '%s' "$script" | awk -F'|' -v i="$i" '{ print (i <= NF) ? $i : $NF }')"
-  case "$answer" in
-    green)    printf '%s\n' '[{"bucket":"pass","name":"build","state":"SUCCESS"}]' ;;
-    failing)  printf '%s\n' '[{"bucket":"fail","name":"build","state":"FAILURE"},{"bucket":"pass","name":"lint","state":"SUCCESS"}]' ;;
-    cancel)   printf '%s\n' '[{"bucket":"cancel","name":"build","state":"CANCELLED"}]' ;;
-    pending)  printf '%s\n' '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]'; return 8 ;;
-    pending0) printf '%s\n' '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]' ;;
-    garbage)  printf '%s\n' 'not json at all' ;;
-    none)     echo "no checks reported on the 'topic' branch" >&2; return 1 ;;
-    boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
-    *)        echo "gh stub: no script named '$answer'" >&2; return 99 ;;
-  esac
-  return 0
+  local d f i answer
+  ! fake_failing adapter_pr_checks || return 1
+  d="$(fake_store)/checks/$1"
+  f="$d/$2"
+  [ -f "$f" ] || return 0
+  i=$(( $(cat "$f.n" 2>/dev/null || echo 0) + 1 ))
+  printf '%s\n' "$i" >"$f.n"
+  answer="$(sed -n "${i}p" "$f")"
+  [ -n "$answer" ] || answer="$(tail -n 1 "$f")"
+  fake_checks_answer "$answer"
+}
+
+# fake_ref_unreadable <ref>: true, with a server error on stderr, where
+# fake_unreadable_ref named the ref, so both commit reads of it fail.
+fake_ref_unreadable() {
+  grep -qxF -- "$1" "$(fake_store)/unreadable_refs" 2>/dev/null || return 1
+  echo "gh: Server Error (HTTP 502)" >&2
+}
+
+# adapter_branch_required_checks <branch>: the stored contexts the branch
+# requires; nothing for an unprotected branch.
+adapter_branch_required_checks() {
+  ! fake_failing adapter_branch_required_checks || return 1
+  cat "$(fake_store)/protection/$1" 2>/dev/null || true
+}
+
+# adapter_branch_rules <branch>: the stored rule types the branch's rulesets
+# apply; nothing for none.
+adapter_branch_rules() {
+  ! fake_failing adapter_branch_rules || return 1
+  cat "$(fake_store)/rules/$1" 2>/dev/null || true
+}
+
+# adapter_commit_has_check_runs <ref>: yes where the ref is listed in
+# check_runs, no otherwise.
+adapter_commit_has_check_runs() {
+  ! fake_failing adapter_commit_has_check_runs || return 1
+  ! fake_ref_unreadable "$1" || return 1
+  if grep -qxF -- "$1" "$(fake_store)/check_runs" 2>/dev/null; then echo yes; else echo no; fi
+}
+
+# adapter_commit_has_statuses <ref>: yes where the ref is listed in statuses,
+# no otherwise.
+adapter_commit_has_statuses() {
+  ! fake_failing adapter_commit_has_statuses || return 1
+  ! fake_ref_unreadable "$1" || return 1
+  if grep -qxF -- "$1" "$(fake_store)/statuses" 2>/dev/null; then echo yes; else echo no; fi
+}
+
+# adapter_run_rerun <run>: the run appended to reruns.
+adapter_run_rerun() {
+  ! fake_failing adapter_run_rerun || return 1
+  printf '%s\n' "$1" >>"$(fake_store)/reruns"
 }
