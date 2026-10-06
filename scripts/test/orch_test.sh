@@ -3993,12 +3993,16 @@ assert_status "a gh that cannot read the target fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not read ticket #$ug"
 assert_eq "none of the failures removed an edge" "$(sort -n "$db/blocked_by/$ug")" "$(printf '%s\n%s' "$ua" "$ub")"
 
+out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" ticket unblock "$ug" --by "$ub" 2>&1)"; st=$?
+assert_status "a gh that cannot read the body fails the command" "$st" 1
+assert_contains "naming the ticket" "$out" "gh could not read ticket #$ug's body"
+assert_eq "the edge it removed stays removed" "$(sed '/^$/d' "$db/blocked_by/$ug")" "$ua"
 out="$(GH_STUB_EDIT_EXIT=1 "$ORCH" ticket unblock "$ug" --by "$ub" 2>&1)"; st=$?
 assert_status "a gh that cannot write the body fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not rewrite ticket #$ug's ## Blocked by section"
-assert_eq "the edge it removed stays removed" "$(sed '/^$/d' "$db/blocked_by/$ug")" "$ua"
+assert_eq "the edge stays removed" "$(sed '/^$/d' "$db/blocked_by/$ug")" "$ua"
 out="$("$ORCH" ticket unblock "$ug" --by "$ub" 2>&1)"; st=$?
-assert_status "re-running after the body failure succeeds" "$st" 0
+assert_status "re-running after the body failures succeeds" "$st" 0
 assert_eq "finishing the body" "$(cat "$db/body/$ug")" "$(printf 'Body of the issue.\n\n## Blocked by\n\n- #%s' "$ua")"
 
 uh="$("$ORCH" ticket publish 96 "H" "$body")"
