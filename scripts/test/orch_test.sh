@@ -5118,10 +5118,11 @@ assert_status "sub-issues: lists a parent's sub-issues" "$st" 0
 assert_eq "one per line: number, OPEN or CLOSED, and its open blockers, as TSV" \
   "$out" "$(printf '51\tOPEN\t0\n52\tCLOSED\t1')"
 # The --jq itself, run on gh-shaped JSON: what the canned reply above stands
-# in for. GitHub leaves the dependency summary off an issue that has none.
-assert_eq "its --jq reads GitHub's listing, a missing dependency summary as no blockers" \
+# in for. GitHub can leave the dependency summary off an issue; its blocker
+# field is then empty, not a count.
+assert_eq "its --jq reads GitHub's listing, a missing dependency summary as an empty blocker field" \
   "$(printf '%s' '[{"number":51,"state":"open","issue_dependencies_summary":{"blocked_by":0}},{"number":52,"state":"closed","issue_dependencies_summary":{"blocked_by":2}},{"number":53,"state":"open"}]' \
-    | jq -r "$subs_jq")" "$(printf '51\tOPEN\t0\n52\tCLOSED\t2\n53\tOPEN\t0')"
+    | jq -r "$subs_jq")" "$(printf '51\tOPEN\t0\n52\tCLOSED\t2\n53\tOPEN\t')"
 gh_reply 0 '' '' api --paginate repos/{owner}/{repo}/issues/49/sub_issues --jq "$subs_jq"
 out="$(contract adapter_sub_issues 49 2>&1)"; st=$?
 assert_status "sub-issues: a parent with none succeeds" "$st" 0
@@ -6219,6 +6220,7 @@ assert_contains "saying there is nothing failed to rerun" "$out" "no failed or c
 fake_checks 7 all none
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "no checks at all is exit 2" "$st" 2
+assert_contains "saying gh reported no checks" "$out" "gh could not read the checks of PR #7: no checks reported"
 fake_checks 7 all failing
 fake_fail adapter_run_rerun
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?

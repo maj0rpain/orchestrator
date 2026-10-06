@@ -1080,14 +1080,16 @@ issue_api_id() {
   gh api "repos/{owner}/{repo}/issues/$1" --jq .id
 }
 
-# A parent's sub-issues as adapter_sub_issues prints them. GitHub leaves the
-# dependency summary off an issue that has none, which counts as no blockers.
-SUB_ISSUES_JQ='.[] | "\(.number)\t\(.state | ascii_upcase)\t\(.issue_dependencies_summary.blocked_by // 0)"'
+# A parent's sub-issues as adapter_sub_issues prints them. GitHub can leave
+# the dependency summary off an issue; its blocker field is then empty rather
+# than a count, so `ticket next` does not read it as unblocked.
+SUB_ISSUES_JQ='.[] | "\(.number)\t\(.state | ascii_upcase)\t\(.issue_dependencies_summary.blocked_by // "")"'
 
 # adapter_sub_issues <parent>: every sub-issue of the parent, open or closed,
 # in the order GitHub published them, one per line as TSV:
 # "<n><TAB><OPEN|CLOSED><TAB><open blockers>" - the count of its blockers that
-# are still open. Nothing at all for a parent with none.
+# are still open, or empty where GitHub gave no dependency summary. Nothing
+# at all for a parent with none.
 adapter_sub_issues() {
   gh api --paginate "repos/{owner}/{repo}/issues/$1/sub_issues" --jq "$SUB_ISSUES_JQ"
 }
@@ -1473,6 +1475,7 @@ review_rerun() {
   out="$(adapter_pr_checks "$pr" all 2>&1)" \
     || die2 "gh could not read the checks of PR #$pr: $(first_line "$out")"
   link="$(printf '%s\n' "$out" | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2 "\t" $3; exit }')"
+  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: no checks reported"
   [ -n "$link" ] || die2 "PR #$pr has no failed or cancelled check to rerun"
   name="${link%%$'\t'*}"
   link="${link#*$'\t'}"

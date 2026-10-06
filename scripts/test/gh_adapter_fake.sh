@@ -291,18 +291,24 @@ adapter_issues_labelled() {
   done | sort -n
 }
 
+# fake_next_number: one past the highest issue or PR number the store holds,
+# the two sharing GitHub's numbering - where a new issue or PR is numbered
+# when no next number was set.
+fake_next_number() {
+  local n
+  n="$(ls "$(fake_store)/issues" "$(fake_store)/prs" 2>/dev/null | grep -x '[0-9][0-9]*' | sort -n | tail -n 1)"
+  printf '%s\n' "$(( ${n:-0} + 1 ))"
+}
+
 # adapter_issue_create <title> <body-file> [label...]: a new open issue in the
-# store, numbered as fake_next_issue set (default one past the highest the
-# store holds), its number printed.
+# store, numbered as fake_next_issue set (default one past the highest issue
+# or PR number the store holds), its number printed.
 adapter_issue_create() {
   local title="$1" body="$2" n d
   shift 2
   ! fake_failing adapter_issue_create || return 1
   n="$(cat "$(fake_store)/next_issue" 2>/dev/null)"
-  if [ -z "$n" ]; then
-    n="$(ls "$(fake_store)/issues" 2>/dev/null | sort -n | tail -n 1)"
-    n=$(( ${n:-0} + 1 ))
-  fi
+  [ -n "$n" ] || n="$(fake_next_number)"
   printf '%s\n' "$((n + 1))" >"$(fake_store)/next_issue"
   d="$(fake_issue_dir "$n")"
   mkdir -p "$d"
@@ -392,10 +398,7 @@ adapter_pr_create() {
   local n d
   ! fake_failing adapter_pr_create || return 1
   n="$(cat "$(fake_store)/next_pr" 2>/dev/null)"
-  if [ -z "$n" ]; then
-    n="$(ls "$(fake_store)/issues" "$(fake_store)/prs" 2>/dev/null | grep -x '[0-9][0-9]*' | sort -n | tail -n 1)"
-    n=$(( ${n:-0} + 1 ))
-  fi
+  [ -n "$n" ] || n="$(fake_next_number)"
   printf '%s\n' "$((n + 1))" >"$(fake_store)/next_pr"
   d="$(fake_pr_dir "$n")"
   mkdir -p "$d"
