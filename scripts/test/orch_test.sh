@@ -4683,6 +4683,31 @@ assert_eq "it is unknown, not changed by a commit older than the filing" "$(fiel
 assert_contains "saying no commit since the filing touched the file" "$(field_of 11 5 "$out")" "no commit"
 rm -rf "${findings:?}/11"
 
+# A finding whose file later gets hunks both before and after its line, with
+# far more diff after the matching hunk than a pipe buffer holds: the line
+# mapping stops reading the diff early, and the scan must still finish. Lines
+# inserted above the finding shift it; only the commit that touched the
+# shifted line is the answer, the bulk rewrite below it is not.
+git -C "$work" checkout -q main
+seq_lines "big file" 6000 >"$work/src/big.sh"
+git -C "$work" add src/big.sh
+git -C "$work" commit -qm "a big file"
+big_sha="$(git -C "$work" rev-parse HEAD)"
+{ seq_lines inserted 5; cat "$work/src/big.sh"; } >"$work/big.tmp" && mv "$work/big.tmp" "$work/src/big.sh"
+git -C "$work" commit -qam "insert five lines on top"
+sed -i 's/^big file line 10$/big file line 10, fixed/' "$work/src/big.sh"
+git -C "$work" commit -qam "fix the shifted line"
+shifted_fix_sha="$(git -C "$work" rev-parse HEAD)"
+sed -i '200,$ s/$/, rewritten in bulk/' "$work/src/big.sh"
+git -C "$work" commit -qam "rewrite everything below"
+git -C "$work" push -q origin main
+finding 13 "review:nit,needs-triage" "\`src/big.sh:10\` at $big_sha" 13
+out="$(scan 13 2>&1)"; st=$?
+assert_status "scans a finding whose file has a large diff after its line" "$st" 0
+assert_eq "it is changed" "$(field_of 13 4 "$out")" "changed"
+assert_eq "naming the commit that touched the shifted line" "$(field_of 13 5 "$out")" "$shifted_fix_sha"
+rm -rf "${findings:?}/13"
+
 # The triage label is the repo's name for the role, as review file files it.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \

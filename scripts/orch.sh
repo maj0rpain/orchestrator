@@ -1441,9 +1441,10 @@ finding_pr() {
 
 # map_line <old sha> <new ref> <file> <line>: where <line> of <file> at <old
 # sha> sits at <new ref>, read off the zero-context diff between them. A line
-# inside a changed hunk maps to that hunk's start.
+# inside a changed hunk maps to that hunk's start. The awk exits as soon as it
+# knows the answer; under pipefail, git diff's SIGPIPE must not fail the call.
 map_line() {
-  git diff -U0 "$1" "$2" -- "$3" 2>/dev/null | awk -v L="$4" '
+  { git diff -U0 "$1" "$2" -- "$3" 2>/dev/null || true; } | awk -v L="$4" '
     /^@@ / {
       split($2, o, ","); split($3, n, ",")
       a = substr(o[1], 2) + 0; b = (2 in o) ? o[2] + 0 : 1

@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.10.1
+
+`orch.sh finding-triage scan` no longer dies silently with exit 141 when a
+filed finding's file has diff hunks after the finding's line (see issue #502).
+The line mapping's awk stops reading the diff early, and under `pipefail` the
+`git diff` feeding it took SIGPIPE and ended the whole scan; that SIGPIPE is
+now let through. Line mapping and the scan's output are unchanged.
+
 ## 3.10.0
 
 A published ticket's blocking edges can now be repaired in place (see issue
