@@ -2307,15 +2307,16 @@ cmd_ticket_retire() {
 
 # `ticket block` and `ticket unblock`'s arguments, checked before anything
 # touches GitHub: <n> and every --by entry plain issue numbers, --by
-# required. Prints the --by numbers one per line, sorted and de-duplicated,
-# as `ticket publish --blocked-by` does.
+# required and given once - a second --by would otherwise replace the
+# first. Prints the --by numbers one per line, sorted and de-duplicated, as
+# `ticket publish --blocked-by` does.
 ticket_edge_args() {
   local verb="$1" usage n="" by="" have_by="" b
   usage="usage: orch.sh ticket $verb <n> --by N,N,..."
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --by) [ $# -ge 2 ] || die "$usage"; by="$2"; have_by=1; shift 2 ;;
+      --by) [ $# -ge 2 ] && [ -z "$have_by" ] || die "$usage"; by="$2"; have_by=1; shift 2 ;;
       -*)   die "$usage" ;;
       *)    [ -z "$n" ] || die "$usage"; n="$1"; shift ;;
     esac

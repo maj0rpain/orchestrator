@@ -3760,6 +3760,9 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket block"
 out="$("$ORCH" ticket block --by "$ba" 2>&1)"; st=$?
 assert_status "refuses a missing target" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket block"
+out="$("$ORCH" ticket block "$bc" --by "$ba" --by "$bb" 2>&1)"; st=$?
+assert_status "refuses a repeated --by" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket block"
 assert_eq "none of the refusals wrote an edge" "$([ -f "$db/blocked_by/$bc" ] && echo yes || echo no)" "no"
 
 be="$("$ORCH" ticket publish 96 "E" "$body")"
@@ -3937,6 +3940,9 @@ assert_status "refuses a missing --by" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket unblock"
 out="$("$ORCH" ticket unblock --by "$ua" 2>&1)"; st=$?
 assert_status "refuses a missing target" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket unblock"
+out="$("$ORCH" ticket unblock "$uc" --by "$ua" --by "$ub" 2>&1)"; st=$?
+assert_status "refuses a repeated --by" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket unblock"
 
 ue="$("$ORCH" ticket publish 96 "E" "$body")"
