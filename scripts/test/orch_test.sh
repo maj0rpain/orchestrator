@@ -1336,7 +1336,6 @@ git update-ref refs/remotes/origin/some-feature HEAD
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/some-feature
 PATH="$STUB:$PATH" GH_STUB_BANNER=1 "$ORCH" init banner >/dev/null
 recorded="$("$ORCH" state get base)"
-assert_eq "init records a single-line base past a banner" "$(printf '%s\n' "$recorded" | wc -l | tr -d ' ')" "1"
 assert_eq "init records origin/HEAD's branch as the base" "$recorded" "some-feature"
 
 # --- branch create -----------------------------------------------------------
