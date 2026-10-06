@@ -195,15 +195,15 @@ docs, scratch and flow-state files stay writable - the paths listed in
 `GLOSSARY-MAP.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, `docs/adr/`) are records,
 and planning never changes them in place: an edit to one is denied with a
 redirect, and the exact wording goes into the plan instead, so the spec
-carries it verbatim and it lands with the change it describes (ADR-0022). This holds even when `domain-modeling` or
-`improve-codebase-architecture` asks to update them inline. A third
-`PostToolUse` hook on the same `Skill` matcher lifts the guard for a quick
-implementation: it deletes the session's marker file when
-`orchestrator:orch-quick-implement` fires, without `hook-guard.sh` itself
-changing. The guard does not arm on Junie (ADR-0025): there the planning
-message and the snippet's standing planning section steer planning away from
-source edits, and `orch.sh init`'s working-tree check catches any at flow
-start.
+carries it verbatim and it lands with the change it describes (ADR-0022).
+This holds even when `domain-modeling` or `improve-codebase-architecture`
+asks to update them inline. A third `PostToolUse` hook on the same `Skill`
+matcher lifts the guard for a quick implementation: it deletes the session's
+marker file when `orchestrator:orch-quick-implement` fires, without
+`hook-guard.sh` itself changing. The guard does not arm on Junie (ADR-0025):
+there the planning message and the snippet's standing planning section steer
+planning away from source edits, and `orch.sh init`'s working-tree check
+catches any at flow start.
 
 ## Layout
 
