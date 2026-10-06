@@ -228,12 +228,11 @@ complete_implement_handoff() {
 # `issue list` is check_sub_issues's way of finding an issue to probe against:
 # it answers GH_STUB_ISSUE_LIST (default "1"), empty when explicitly set to
 # "" to simulate a repo with no issues. The sub_issues GET it then makes fails
-# on demand independently of the POST one ticket_publish uses:
-# GH_STUB_SUBISSUE_GET_EXIT.
+# on demand: GH_STUB_SUBISSUE_GET_EXIT.
 #
-# `ticket retire` is the one caller of the parent's singular `sub_issue`
-# DELETE, which unlinks a child from GH_STUB_DB's listing and fails on
-# GH_STUB_SUBISSUE_DELETE_EXIT. Under GH_STUB_DB, `issue edit --body-file`
+# The ticket group's behaviour tests run on the store-backed fake; its real
+# adapter operations reach this stub only where a test proves gh's repo
+# pinning. Under GH_STUB_DB, `issue edit --body-file`
 # writes body/<n>, `issue comment --body-file` and `issue close --comment`
 # append to comments/<n>, and `issue close --reason` writes reason/<n>;
 # `issue edit` fails on GH_STUB_EDIT_EXIT.
@@ -270,18 +269,6 @@ record_flags() {
     shift
   done
 }
-# stub_allow_n <counter-file> <limit> <what>: lets <limit> calls through and
-# refuses every later one with "gh stub: <what> refused" - a multi-call write
-# that dies part-way. Counts in $db/<counter-file>; a no-op without $db.
-stub_allow_n() {
-  [ -n "$db" ] || return 0
-  local counter="$1" limit="$2" what="$3" n
-  n="$(cat "$db/$counter" 2>/dev/null)"; [ -n "$n" ] || n=0
-  if [ "$n" -ge "$limit" ]; then
-    echo "gh stub: $what refused" >&2; exit 1
-  fi
-  echo $((n + 1)) >"$db/$counter"
-}
 # The `ticket` group's tiny fake GitHub: an issue's open/closed state and its
 # sub-issue/blocked-by edges, persisted as files under GH_STUB_DB so they
 # survive across the separate `gh` subprocesses one `orch.sh ticket ...` call
@@ -300,18 +287,8 @@ api_blocked_count() {
   fi
   printf '%s\n' "$bn"
 }
-# GH_STUB_SUBISSUE_MISS / GH_STUB_BLOCKED_MISS count down how many times the
-# corresponding listing still reports empty after a real write - simulating
-# the lag ticket_publish's verify-then-die retry exists to survive. Each
-# counts independently and persists in GH_STUB_DB across the separate `gh`
-# processes one publish call makes.
 api_list_sub_issues() {
-  local parent="$1" rf remaining out first c
-  if [ -n "$db" ]; then
-    rf="$db/subissue_miss_remaining"
-    remaining="$(cat "$rf" 2>/dev/null)"; [ -n "$remaining" ] || remaining="${GH_STUB_SUBISSUE_MISS:-0}"
-    if [ "$remaining" -gt 0 ]; then echo $((remaining - 1)) >"$rf"; echo '[]'; return; fi
-  fi
+  local parent="$1" out first c
   out="["; first=1
   if [ -n "$db" ] && [ -f "$db/sub_issues/$parent" ]; then
     while IFS= read -r c; do
@@ -324,22 +301,8 @@ api_list_sub_issues() {
   printf '%s]\n' "$out"
 }
 api_list_blocked_by() {
-  local child="$1" rf remaining out first b
-  if [ -n "$db" ]; then
-    rf="$db/blocked_miss_remaining"
-    remaining="$(cat "$rf" 2>/dev/null)"; [ -n "$remaining" ] || remaining="${GH_STUB_BLOCKED_MISS:-0}"
-    if [ "$remaining" -gt 0 ]; then echo $((remaining - 1)) >"$rf"; echo '[]'; return; fi
-  fi
+  local child="$1" out first b
   out="["; first=1
-  # GH_STUB_BLOCKED_MISMATCH counts down how many reads of a listing written
-  # to (an edge added since the stub began) still answer a wrong set - the
-  # real one plus #999999 - rather than an empty one, so a readback that
-  # clears on the retry can be staged for a ticket that already had edges.
-  if [ -n "$db" ] && [ -f "$db/blocked_written/$child" ]; then
-    rf="$db/blocked_mismatch_remaining"
-    remaining="$(cat "$rf" 2>/dev/null)"; [ -n "$remaining" ] || remaining="${GH_STUB_BLOCKED_MISMATCH:-0}"
-    if [ "$remaining" -gt 0 ]; then echo $((remaining - 1)) >"$rf"; out='[{"number":999999}'; first=0; fi
-  fi
   if [ -n "$db" ] && [ -f "$db/blocked_by/$child" ]; then
     while IFS= read -r b; do
       [ -z "$b" ] && continue
@@ -582,55 +545,14 @@ ready-for-agent}"
       */*) api_num="${api_rest%%/*}"; api_sub="${api_rest#*/}" ;;
       *)   api_num="$api_rest"; api_sub="" ;;
     esac
-    if [ "$api_sub" = sub_issues ] && [ "$api_method" = POST ] \
-        && [ "${GH_STUB_SUBISSUE_POST_EXIT:-0}" != 0 ]; then
-      echo "gh stub: sub_issues POST refused" >&2; exit "$GH_STUB_SUBISSUE_POST_EXIT"
-    fi
     if [ "$api_sub" = sub_issues ] && [ "$api_method" = GET ] \
         && [ "${GH_STUB_SUBISSUE_GET_EXIT:-0}" != 0 ]; then
       echo "gh stub: sub_issues GET refused" >&2; exit "$GH_STUB_SUBISSUE_GET_EXIT"
     fi
-    if [ "$api_sub" = sub_issue ] && [ "$api_method" = DELETE ] \
-        && [ "${GH_STUB_SUBISSUE_DELETE_EXIT:-0}" != 0 ]; then
-      echo "gh stub: sub_issue DELETE refused" >&2; exit "$GH_STUB_SUBISSUE_DELETE_EXIT"
-    fi
-    if [ "$api_sub" = dependencies/blocked_by ] && [ "$api_method" = POST ] \
-        && [ "${GH_STUB_BLOCKED_POST_EXIT:-0}" != 0 ]; then
-      echo "gh stub: blocked_by POST refused" >&2; exit "$GH_STUB_BLOCKED_POST_EXIT"
-    fi
-    if [ "$api_sub" = dependencies/blocked_by ] && [ "$api_method" = GET ] \
-        && [ "${GH_STUB_BLOCKED_GET_EXIT:-0}" != 0 ]; then
-      echo "gh stub: blocked_by GET refused" >&2; exit "$GH_STUB_BLOCKED_GET_EXIT"
-    fi
-    # GH_STUB_BLOCKED_POST_OK is stub_allow_n's limit for blocked_by POSTs.
-    if [ "$api_sub" = dependencies/blocked_by ] && [ "$api_method" = POST ] \
-        && [ -n "${GH_STUB_BLOCKED_POST_OK:-}" ]; then
-      stub_allow_n blocked_posted "$GH_STUB_BLOCKED_POST_OK" "blocked_by POST"
-    fi
-    # GH_STUB_BLOCKED_DELETE_EXIT refuses every blocked_by edge DELETE;
-    # GH_STUB_BLOCKED_DELETE_OK is stub_allow_n's limit for blocked_by edge DELETEs.
-    case "$api_sub" in
-      dependencies/blocked_by/*)
-        if [ "$api_method" = DELETE ] && [ "${GH_STUB_BLOCKED_DELETE_EXIT:-0}" != 0 ]; then
-          echo "gh stub: blocked_by DELETE refused" >&2; exit "$GH_STUB_BLOCKED_DELETE_EXIT"
-        fi
-        if [ "$api_method" = DELETE ] && [ -n "${GH_STUB_BLOCKED_DELETE_OK:-}" ]; then
-          stub_allow_n blocked_deleted "$GH_STUB_BLOCKED_DELETE_OK" "blocked_by DELETE"
-        fi ;;
-    esac
-    [ "${GH_STUB_API_EXIT:-0}" = 0 ] || { echo "gh stub: api call refused" >&2; exit "$GH_STUB_API_EXIT"; }
-    # GH_STUB_API_EXIT_ON=<n> refuses only the read of issue <n> itself.
-    if [ -n "${GH_STUB_API_EXIT_ON:-}" ] && [ "$api_num" = "$GH_STUB_API_EXIT_ON" ] && [ -z "$api_sub" ]; then
-      echo "gh stub: api read of #$api_num refused" >&2; exit 1
-    fi
     case "$api_sub" in
       "")
         api_json="$(printf '{"id":%d,"number":%d,"state":"%s","body":"%s","parent_issue_url":%s,"issue_dependencies_summary":{"blocked_by":%s}}' \
-          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_body "$api_num")" "$(api_parent_url "$api_num")" "$(api_blocked_count "$api_num")")"
-        # GitHub's real shape for an issue with no parent: the key is absent, not null.
-        if [ -n "${GH_STUB_NO_PARENT_FIELD:-}" ]; then
-          api_json="$(printf '%s' "$api_json" | jq -c 'del(.parent_issue_url)')"
-        fi ;;
+          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_body "$api_num")" "$(api_parent_url "$api_num")" "$(api_blocked_count "$api_num")")" ;;
       sub_issues)
         if [ "$api_method" = POST ]; then
           if [ -n "$db" ]; then
@@ -659,7 +581,6 @@ ready-for-agent}"
             mkdir -p "$db/blocked_by"
             blocker_num=$((api_fval / 1000))
             printf '%s\n' "$blocker_num" >>"$db/blocked_by/$api_num"
-            mkdir -p "$db/blocked_written"; : >"$db/blocked_written/$api_num"
           fi
           api_json='{}'
         else
@@ -673,7 +594,6 @@ ready-for-agent}"
           blocker_num=$(( ${api_sub##*/} / 1000 ))
           grep -vxF "$blocker_num" "$db/blocked_by/$api_num" >"$db/blocked_by/$api_num.tmp"
           mv "$db/blocked_by/$api_num.tmp" "$db/blocked_by/$api_num"
-          mkdir -p "$db/blocked_written"; : >"$db/blocked_written/$api_num"
         fi
         api_json='{}' ;;
       *) echo "gh stub: unscripted api path '$api_path'" >&2; exit 99 ;;
@@ -898,15 +818,14 @@ review_flow() {
   state_fixture phase review
 }
 
-# ticket_fixture: a ticket section's starting point - a healthy_repo with a
-# throwaway fake GitHub. Leaves the globals db (that fake GitHub's directory)
-# and body (a ticket body file reading "Build the thing.") set, GH_STUB_DB
-# exported to db, and whatever healthy_repo exports. A section that calls it
-# ends with restore_suite_env GH_STUB_DB.
+# ticket_fixture: a ticket section's starting point - a healthy_repo with the
+# store-backed fake GitHub (fake_github), no issue in it yet. Leaves the global
+# body (a ticket body file reading "Build the thing.") set, and whatever
+# healthy_repo and fake_github export. A section that calls it ends with
+# restore_suite_env.
 ticket_fixture() {
   healthy_repo
-  db="$(mktemp -d)"
-  export GH_STUB_DB="$db"
+  fake_github
   body="$(mktemp)"
   writeln 'Build the thing.' >"$body"
 }
@@ -1072,6 +991,38 @@ fake_fail() {
   printf '%s\n' "${2:-fake gh: $1 failed}" >"$ORCH_GH_FAKE_STORE/fail/$1"
 }
 
+# fake_fail_after <operation> <n> [stderr]: fake_fail, but the next n calls of
+# the operation still succeed - a run of writes that dies part-way.
+fake_fail_after() {
+  fake_fail "$1" "${3:-}"
+  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.after"
+}
+
+# fake_unfail: every operation fake_fail named succeeds again.
+fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
+
+# fake_sub_issue <parent> <child>...: seeds each child as a sub-issue of the
+# parent, after any it has.
+fake_sub_issue() {
+  local p="$1"
+  shift
+  mkdir -p "$ORCH_GH_FAKE_STORE/subs"
+  printf '%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/subs/$p"
+}
+
+# fake_blocker <n> <blocker>...: seeds #n as blocked by each blocker.
+fake_blocker() {
+  local n="$1"
+  shift
+  mkdir -p "$ORCH_GH_FAKE_STORE/blocked_by"
+  printf '%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/blocked_by/$n"
+}
+
+# The edges read back from the store: a parent's sub-issues in link order, and
+# #n's blockers sorted by number - each space-separated, nothing for none.
+fake_sub_issues_of() { paste -sd ' ' "$ORCH_GH_FAKE_STORE/subs/$1" 2>/dev/null || true; }
+fake_blockers_of() { sort -n "$ORCH_GH_FAKE_STORE/blocked_by/$1" 2>/dev/null | paste -sd ' ' -; }
+
 # fake_lag <operation> <n> [stale]: the next n calls of the named operation
 # answer stale, as GitHub does for a moment after a write; the call after them
 # is current again. An operation that reads answers the stale text given, in
@@ -1080,6 +1031,28 @@ fake_lag() {
   mkdir -p "$ORCH_GH_FAKE_STORE/lag"
   printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/lag/$1"
   if [ $# -ge 3 ]; then printf '%s\n' "$3" >"$ORCH_GH_FAKE_STORE/lag/$1.stale"; fi
+}
+
+# fake_lag_after <operation> <k> <n> [stale]: fake_lag, but only once k calls
+# of the operation have answered current - a readback that lags after the
+# reads ahead of a write did not.
+fake_lag_after() {
+  local op="$1" k="$2"
+  shift 2
+  fake_lag "$op" "$@"
+  printf '%s\n' "$k" >"$ORCH_GH_FAKE_STORE/lag/$op.after"
+}
+
+# fake_body_read <n> <format> [arg...]: seeds issue #n's body so that a read
+# of it - the stored body, then a newline, as gh's --jq .body prints it -
+# answers exactly what printf prints, which ends in a newline.
+fake_body_read() {
+  local n="$1" t
+  shift
+  # shellcheck disable=SC2059
+  t="$(printf "$@"; printf x)"
+  t="${t%x}"
+  printf '%s' "${t%$'\n'}" >"$ORCH_GH_FAKE_STORE/issues/$n/body"
 }
 
 # fake_checks <n> <required|all> <answer>...: scripts PR #n's checks for the
@@ -4051,27 +4024,28 @@ rm -rf "$(dirname "$bare")"
 restore_suite_env
 
 # --- ticket publish -----------------------------------------------------
-# The one place the ticket-breakdown feature touches GitHub's native
-# sub-issue and issue-dependency APIs, so no skill prose ever calls `gh api`
+# The one place the ticket-breakdown feature files a ticket and writes its
+# sub-issue link and blocked-by edges, so no skill prose ever calls `gh api`
 # on these endpoints directly. Stateless like issue publish/pr publish: the
-# stub's GH_STUB_DB is a throwaway fake GitHub, not orch.sh state.
+# store-backed fake is the GitHub it writes to, not orch.sh state.
 echo
 echo "ticket publish"
 ticket_fixture
-filed="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_ISSUE_NUMBER=100 \
-  "$ORCH" ticket publish 50 "First ticket" "$body" 2>&1)"; st=$?
+fake_issue 50 open
+fake_next_issue 100
+out="$("$ORCH" ticket publish 50 "First ticket" "$body" 2>&1)"; st=$?
 assert_status "publishes" "$st" 0
 assert_eq "printing the child's issue number and nothing else" "$out" "100"
-assert_contains "passes the title through" "$(cat "$filed")" "title=First ticket"
-assert_contains "sends the body file's contents" "$(cat "$filed")" "Build the thing."
-assert_contains "applies ready-for-agent" "$(cat "$filed")" "label=ready-for-agent"
+assert_eq "passes the title through" "$(fake_title_of 100)" "First ticket"
+assert_eq "sends the body file's contents" "$(fake_body_of 100)" "Build the thing."
+assert_eq "applies ready-for-agent" "$(fake_labels_of 100)" "ready-for-agent "
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
-assert_eq "links the child as 50's sub-issue" "$("$ORCH" ticket next 50)" "100"
+assert_eq "links the child as 50's sub-issue" "$(fake_sub_issues_of 50)" "100"
 
 out="$("$ORCH" ticket publish 50 "Second ticket" "$body" --blocked-by 100 2>&1)"; st=$?
 assert_status "publishes a ticket blocked by the first" "$st" 0
 assert_eq "prints the new child's number" "$out" "101"
+assert_eq "adding its blocking edge" "$(fake_blockers_of 101)" "100"
 assert_eq "the still-blocked ticket is not in the frontier" "$("$ORCH" ticket next 50)" "100"
 
 # GitHub stores a blocking edge once no matter how many times it is asked
@@ -4080,7 +4054,9 @@ assert_eq "the still-blocked ticket is not in the frontier" "$("$ORCH" ticket ne
 # link that is actually correct.
 out="$("$ORCH" ticket publish 50 "Third ticket" "$body" --blocked-by 100,100 2>&1)"; st=$?
 assert_status "a duplicate blocker in the list still verifies and succeeds" "$st" 0
+assert_eq "adding the edge once" "$(fake_blockers_of 102)" "100"
 
+before="$(fake_snapshot)"
 out="$("$ORCH" ticket publish 50 "" "$body" 2>&1)"; st=$?
 assert_status "refuses an empty title" "$st" 1
 
@@ -4102,64 +4078,69 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket publish"
 
 out="$("$ORCH" ticket publish 50 2>&1)"; st=$?
 assert_status "refuses with no body file" "$st" 1
+assert_eq "none of the refusals wrote anything to GitHub" "$(fake_snapshot)" "$before"
 
-out="$(GH_STUB_ISSUE_EXIT=1 "$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+fake_fail adapter_issue_create
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the ticket fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not create the ticket"
+fake_unfail
 
-out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
-assert_status "a gh that cannot read the child's database id fails the command" "$st" 1
-assert_contains "naming what failed" "$out" "gh could not read issue"
-
-out="$(GH_STUB_SUBISSUE_POST_EXIT=1 "$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+fake_fail adapter_sub_issue_link "HTTP 422: Sub issue may only have one parent"
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that refuses the sub-issue link fails the command" "$st" 1
-assert_contains "naming what failed" "$out" "gh could not link ticket"
+assert_contains "naming what failed" "$out" "gh could not link ticket #103 as a sub-issue of #50"
+assert_contains "with gh's reason" "$out" "HTTP 422"
+fake_unfail
 
-out="$(GH_STUB_BLOCKED_POST_EXIT=1 "$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100 2>&1)"; st=$?
+fake_fail adapter_blocker_add
+out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100 2>&1)"; st=$?
 assert_status "a gh that refuses the blocking edge fails the command" "$st" 1
-assert_contains "naming what failed" "$out" "gh could not add a blocking edge"
-restore_suite_env GH_STUB_DB
+assert_contains "naming what failed" "$out" "gh could not add a blocking edge from ticket #104 on #100"
+fake_unfail
+restore_suite_env
 
 # --- ticket publish verify-then-die ---------------------------------------
-# Immediately after publishing, ticket_publish reads the links back. One
-# retry on a mismatch; a second failure dies naming the ticket, rather than
-# falling back to a text-based `Blocked by:` convention nothing downstream
-# ever reads. GH_STUB_SUBISSUE_MISS/GH_STUB_BLOCKED_MISS force the mismatch
-# by making the readback report stale (empty) data for N calls.
+# Immediately after publishing, ticket_publish reads the links back (ADR-0011).
+# One retry on a mismatch; a second failure dies naming the ticket, rather
+# than falling back to a text-based `Blocked by:` convention nothing
+# downstream ever reads. fake_lag makes a readback answer stale (empty) for N
+# calls.
 echo
 echo "ticket publish verify-then-die"
-healthy_repo
-body="$(mktemp)"
-writeln 'Build the thing.' >"$body"
-db="$(mktemp -d)"
-out="$(GH_STUB_DB="$db" GH_STUB_ISSUE_NUMBER=200 GH_STUB_SUBISSUE_MISS=1 \
-  "$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+ticket_fixture
+fake_issue 50 open
+fake_next_issue 200
+fake_lag adapter_sub_issues 1
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
 assert_status "a sub-issue link that only shows up on the retry still succeeds" "$st" 0
 assert_eq "prints the child's number" "$out" "200"
 
-db="$(mktemp -d)"
-out="$(GH_STUB_DB="$db" GH_STUB_ISSUE_NUMBER=201 GH_STUB_SUBISSUE_MISS=2 \
-  "$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+fake_lag adapter_sub_issues 2
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
 assert_status "a sub-issue link that never shows up dies rather than falling back" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #201"
 assert_contains "not a silent fallback" "$out" "did not verify"
+assert_eq "the link it wrote stays, for a human to see" "$(fake_sub_issues_of 50)" "200 201"
 
-db="$(mktemp -d)"
-blocker="$(GH_STUB_DB="$db" GH_STUB_ISSUE_NUMBER=300 "$ORCH" ticket publish 50 "Blocker" "$body")"
-out="$(GH_STUB_DB="$db" GH_STUB_BLOCKED_POST_EXIT=0 GH_STUB_BLOCKED_MISS=2 \
-  "$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
+fake_next_issue 300
+blocker="$("$ORCH" ticket publish 50 "Blocker" "$body")"
+fake_lag adapter_blockers 2
+out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
 assert_status "a blocking edge that never shows up dies rather than falling back" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #301"
+assert_contains "not a silent fallback" "$out" "did not verify"
 restore_suite_env
 
 # --- ticket next -----------------------------------------------------------
-# The parent's open sub-issues with zero open blockers
-# (issue_dependencies_summary.blocked_by, which already counts open blockers
-# only), in the order they were published.
+# The parent's open sub-issues with zero open blockers, in the order they were
+# published.
 echo
 echo "ticket next"
 ticket_fixture
-a="$(GH_STUB_ISSUE_NUMBER=400 "$ORCH" ticket publish 90 "A" "$body")"
+fake_issue 90 open
+fake_next_issue 400
+a="$("$ORCH" ticket publish 90 "A" "$body")"
 b="$("$ORCH" ticket publish 90 "B" "$body" --blocked-by "$a")"
 c="$("$ORCH" ticket publish 90 "C" "$body")"
 out="$("$ORCH" ticket next 90)"
@@ -4181,10 +4162,11 @@ assert_contains "naming it" "$out" "abc"
 out="$("$ORCH" ticket next 2>&1)"; st=$?
 assert_status "refuses with no parent" "$st" 1
 
-out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket next 90 2>&1)"; st=$?
+fake_fail adapter_sub_issues
+out="$("$ORCH" ticket next 90 2>&1)"; st=$?
 assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
-assert_contains "naming what failed" "$out" "gh could not list sub-issues"
-restore_suite_env GH_STUB_DB
+assert_contains "naming what failed" "$out" "gh could not list sub-issues of #90"
+restore_suite_env
 
 # --- ticket list -------------------------------------------------------------
 # Every sub-issue of <parent>, open or closed, one "<n> open|closed" line
@@ -4193,7 +4175,10 @@ restore_suite_env GH_STUB_DB
 echo
 echo "ticket list"
 ticket_fixture
-a="$(GH_STUB_ISSUE_NUMBER=450 "$ORCH" ticket publish 90 "A" "$body")"
+fake_issue 90 open
+fake_issue 91 open
+fake_next_issue 450
+a="$("$ORCH" ticket publish 90 "A" "$body")"
 b="$("$ORCH" ticket publish 90 "B" "$body" --blocked-by "$a")"
 "$ORCH" ticket close "$a" >/dev/null
 out="$("$ORCH" ticket list 90)"
@@ -4206,18 +4191,22 @@ out="$("$ORCH" ticket list abc 2>&1)"; st=$?
 assert_status "refuses a parent that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
 
-out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket list 90 2>&1)"; st=$?
+fake_fail adapter_sub_issues
+out="$("$ORCH" ticket list 90 2>&1)"; st=$?
 assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
-assert_contains "naming what failed" "$out" "gh could not list sub-issues"
-restore_suite_env GH_STUB_DB
+assert_contains "naming what failed" "$out" "gh could not list sub-issues of #90"
+restore_suite_env
 
 # --- ticket close ------------------------------------------------------------
 echo
 echo "ticket close"
 ticket_fixture
-n="$(GH_STUB_ISSUE_NUMBER=500 "$ORCH" ticket publish 90 "Closeable" "$body")"
+fake_issue 90 open
+fake_next_issue 500
+n="$("$ORCH" ticket publish 90 "Closeable" "$body")"
 out="$("$ORCH" ticket close "$n" 2>&1)"; st=$?
 assert_status "closes the ticket" "$st" 0
+assert_eq "closing it" "$(fake_state_of "$n")" "CLOSED"
 assert_eq "and it drops out of the parent's open sub-issues" \
   "$("$ORCH" ticket next 90)" ""
 
@@ -4225,10 +4214,11 @@ out="$("$ORCH" ticket close abc 2>&1)"; st=$?
 assert_status "refuses a ticket that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
 
-out="$(GH_STUB_ISSUE_CLOSE_EXIT=1 "$ORCH" ticket close "$n" 2>&1)"; st=$?
+fake_fail adapter_issue_close
+out="$("$ORCH" ticket close "$n" 2>&1)"; st=$?
 assert_status "a gh that will not close the ticket fails" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not close ticket"
-restore_suite_env GH_STUB_DB
+restore_suite_env
 
 # --- ticket reset ------------------------------------------------------------
 # Reopens every sub-issue of <parent> that is currently closed, and only
@@ -4237,7 +4227,9 @@ restore_suite_env GH_STUB_DB
 echo
 echo "ticket reset"
 ticket_fixture
-x="$(GH_STUB_ISSUE_NUMBER=600 "$ORCH" ticket publish 90 "X" "$body")"
+fake_issue 90 open
+fake_next_issue 600
+x="$("$ORCH" ticket publish 90 "X" "$body")"
 y="$("$ORCH" ticket publish 90 "Y" "$body")"
 z="$("$ORCH" ticket publish 90 "Z" "$body")"
 "$ORCH" ticket close "$x" >/dev/null
@@ -4245,6 +4237,8 @@ z="$("$ORCH" ticket publish 90 "Z" "$body")"
 out="$("$ORCH" ticket reset 90 2>&1)"; st=$?
 assert_status "resets" "$st" 0
 assert_eq "reopens exactly the tickets that were closed, and only those" \
+  "$(fake_state_of "$x") $(fake_state_of "$y") $(fake_state_of "$z")" "OPEN OPEN OPEN"
+assert_eq "in the frontier again" \
   "$("$ORCH" ticket next 90)" "$(printf '%s\n%s\n%s' "$x" "$y" "$z")"
 
 out="$("$ORCH" ticket reset abc 2>&1)"; st=$?
@@ -4252,14 +4246,17 @@ assert_status "refuses a parent that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
 
 "$ORCH" ticket close "$x" >/dev/null
-out="$(GH_STUB_ISSUE_REOPEN_EXIT=1 "$ORCH" ticket reset 90 2>&1)"; st=$?
+fake_fail adapter_issue_reopen
+out="$("$ORCH" ticket reset 90 2>&1)"; st=$?
 assert_status "a gh that will not reopen a ticket fails the command" "$st" 1
-assert_contains "naming what failed" "$out" "gh could not reopen ticket"
+assert_contains "naming what failed" "$out" "gh could not reopen ticket #$x"
+fake_unfail
 
-out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket reset 90 2>&1)"; st=$?
+fake_fail adapter_sub_issues
+out="$("$ORCH" ticket reset 90 2>&1)"; st=$?
 assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
-assert_contains "naming what failed" "$out" "gh could not list sub-issues"
-restore_suite_env GH_STUB_DB
+assert_contains "naming what failed" "$out" "gh could not list sub-issues of #90"
+restore_suite_env
 
 # --- ticket parent -----------------------------------------------------------
 # The implementer's way to find its spec issue without calling the sub-issue
@@ -4268,7 +4265,9 @@ restore_suite_env GH_STUB_DB
 echo
 echo "ticket parent"
 ticket_fixture
-k="$(GH_STUB_ISSUE_NUMBER=700 "$ORCH" ticket publish 95 "Kid" "$body")"
+fake_issue 95 open
+fake_next_issue 700
+k="$("$ORCH" ticket publish 95 "Kid" "$body")"
 out="$("$ORCH" ticket parent "$k" 2>&1)"; st=$?
 assert_status "a sub-issue's parent lookup succeeds" "$st" 0
 assert_eq "printing the parent's number" "$out" "95"
@@ -4277,13 +4276,11 @@ out="$("$ORCH" ticket parent 95 2>&1)"; st=$?
 assert_status "an issue with no parent still succeeds" "$st" 0
 assert_eq "printing nothing" "$out" ""
 
-out="$(GH_STUB_NO_PARENT_FIELD=1 "$ORCH" ticket parent 95 2>&1)"; st=$?
-assert_status "an issue whose parent_issue_url key is absent, as GitHub sends it, succeeds" "$st" 0
-assert_eq "printing nothing" "$out" ""
-
-out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket parent "$k" 2>&1)"; st=$?
+fake_fail adapter_issue_parent
+out="$("$ORCH" ticket parent "$k" 2>&1)"; st=$?
 assert_status "a gh that cannot read the issue fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not read issue #$k"
+fake_unfail
 
 out="$("$ORCH" ticket parent abc 2>&1)"; st=$?
 assert_status "refuses a ticket that is not a plain number" "$st" 1
@@ -4295,18 +4292,18 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket parent"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket parent is in the usage text" "$out" "ticket parent <n>"
-restore_suite_env GH_STUB_DB
+restore_suite_env
 
 # --- ticket exists -----------------------------------------------------------
 # "Already broken down" decided by structure, not prose: a blueprint's spec
 # issue carries sub-issues, or - when its breakdown collapsed into it - a line
-# that is exactly `## Ticket` outside a code fence. A body under GH_STUB_DB's body/<n> is what the
-# stub's issue read answers for <n>.
+# that is exactly `## Ticket` outside a code fence.
 echo
 echo "ticket exists"
 ticket_fixture
-mkdir -p "$db/body"
-GH_STUB_ISSUE_NUMBER=800 "$ORCH" ticket publish 96 "Open kid" "$body" >/dev/null
+for p in 96 97 98 99; do fake_issue "$p" open; done
+fake_next_issue 800
+"$ORCH" ticket publish 96 "Open kid" "$body" >/dev/null
 out="$("$ORCH" ticket exists 96 2>&1)"; st=$?
 assert_status "an issue with a sub-issue has a breakdown" "$st" 0
 assert_eq "printing sub-issues" "$out" "sub-issues"
@@ -4317,58 +4314,66 @@ out="$("$ORCH" ticket exists 97 2>&1)"; st=$?
 assert_status "an issue whose only sub-issue is closed still has a breakdown" "$st" 0
 assert_eq "printing sub-issues" "$out" "sub-issues"
 
-writeln 'The spec.' '' '## Ticket' '' 'Build it.' >"$db/body/96"
+fake_issue_body 96 "$(writeln 'The spec.' '' '## Ticket' '' 'Build it.')"
 out="$("$ORCH" ticket exists 96 2>&1)"; st=$?
 assert_status "sub-issues and the heading together" "$st" 0
 assert_eq "print sub-issues, which wins" "$out" "sub-issues"
 
-writeln 'The spec.' '' '## Ticket' '' 'Build it.' >"$db/body/98"
+fake_issue_body 98 "$(writeln 'The spec.' '' '## Ticket' '' 'Build it.')"
 out="$("$ORCH" ticket exists 98 2>&1)"; st=$?
 assert_status "a collapsed breakdown, the heading and no sub-issues" "$st" 0
 assert_eq "prints collapsed" "$out" "collapsed"
 
-writeln 'The spec, no breakdown yet.' >"$db/body/99"
+fake_issue_body 99 'The spec, no breakdown yet.'
 out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
 assert_status "an issue with neither has no breakdown" "$st" 1
 assert_eq "and prints nothing" "$out" ""
 
-writeln 'The spec.' '' '### Ticket' '' 'Not the heading.' >"$db/body/99"
+fake_issue_body 99 "$(writeln 'The spec.' '' '### Ticket' '' 'Not the heading.')"
 out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
 assert_status "a ### Ticket heading is not the collapse heading" "$st" 1
 assert_eq "and prints nothing" "$out" ""
 
-writeln 'The spec mentions ## Ticket mid-line.' >"$db/body/99"
+fake_issue_body 99 'The spec mentions ## Ticket mid-line.'
 out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
 assert_status "a mid-line ## Ticket is not the collapse heading" "$st" 1
 assert_eq "and prints nothing" "$out" ""
 
-writeln 'The spec quotes the format:' '```md' '## Ticket' '```' >"$db/body/99"
+fake_issue_body 99 "$(writeln 'The spec quotes the format:' '```md' '## Ticket' '```')"
 out="$("$ORCH" ticket exists 99 2>&1)"; st=$?
 assert_status "a ## Ticket inside a code fence is not the collapse heading" "$st" 1
 assert_eq "and prints nothing" "$out" ""
 
 # An unreadable GitHub is not "no breakdown": a caller that read exit 1 as
 # "neither" would publish a second breakdown, so a gh failure dies with 2.
-out="$(GH_STUB_SUBISSUE_GET_EXIT=1 "$ORCH" ticket exists 98 2>&1)"; st=$?
+fake_fail adapter_sub_issues
+out="$("$ORCH" ticket exists 98 2>&1)"; st=$?
 assert_status "a gh that cannot list sub-issues dies with 2, not no-breakdown's 1" "$st" 2
 assert_contains "naming what failed" "$out" "gh could not list sub-issues of #98"
+fake_unfail
 
-out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" ticket exists 98 2>&1)"; st=$?
+fake_fail adapter_issue_body
+out="$("$ORCH" ticket exists 98 2>&1)"; st=$?
 assert_status "a gh that cannot read the issue dies with 2, not no-breakdown's 1" "$st" 2
 assert_not_contains "never printing a verdict" "$out" "collapsed"
+fake_unfail
 
-# The same two failures pinned byte for byte: exact stderr, exit 2, empty
-# stdout (#347).
+# The same two failures pinned byte for byte: exact last line of stderr,
+# exit 2, empty stdout (#347).
 errf="$(mktemp)"
-out="$(GH_STUB_SUBISSUE_GET_EXIT=1 "$ORCH" ticket exists 98 2>"$errf")"; st=$?
+fake_fail adapter_sub_issues
+out="$("$ORCH" ticket exists 98 2>"$errf")"; st=$?
 assert_status "unlistable sub-issues: exit 2" "$st" 2
 assert_eq "unlistable sub-issues: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not list sub-issues of #98"
 assert_eq "unlistable sub-issues: empty stdout" "$out" ""
+fake_unfail
 
-out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" ticket exists 98 2>"$errf")"; st=$?
+fake_fail adapter_issue_body
+out="$("$ORCH" ticket exists 98 2>"$errf")"; st=$?
 assert_status "unreadable body: exit 2" "$st" 2
 assert_eq "unreadable body: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not read issue #98's body"
 assert_eq "unreadable body: empty stdout" "$out" ""
+fake_unfail
 rm -f "$errf"
 
 out="$("$ORCH" ticket exists abc 2>&1)"; st=$?
@@ -4381,7 +4386,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket exists"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket exists is in the usage text" "$out" "ticket exists <parent>"
-restore_suite_env GH_STUB_DB
+restore_suite_env
 
 # --- ticket block ------------------------------------------------------------
 # Adds native blocking edges to a published, open ticket, verifies them by
@@ -4391,26 +4396,27 @@ restore_suite_env GH_STUB_DB
 echo
 echo "ticket block"
 ticket_fixture
-ba="$(GH_STUB_ISSUE_NUMBER=800 "$ORCH" ticket publish 96 "A" "$body")"
+for p in 96 97 199; do fake_issue "$p" open; done
+fake_next_issue 800
+ba="$("$ORCH" ticket publish 96 "A" "$body")"
 bb="$("$ORCH" ticket publish 96 "B" "$body")"
 bc="$("$ORCH" ticket publish 96 "C" "$body")"
 bd="$("$ORCH" ticket publish 96 "D" "$body")"
-filed="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" "$ORCH" ticket block "$bb" --by "$ba" 2>&1)"; st=$?
+out="$("$ORCH" ticket block "$bb" --by "$ba" 2>&1)"; st=$?
 assert_status "blocking one ticket on a sibling succeeds" "$st" 0
-assert_eq "adding the edge" "$(cat "$db/blocked_by/$bb")" "$ba"
+assert_eq "adding the edge" "$(fake_blockers_of "$bb")" "$ba"
 assert_eq "after block, ticket next no longer lists the target while its blocker is open" \
   "$("$ORCH" ticket next 96)" "$(printf '%s\n%s\n%s' "$ba" "$bc" "$bd")"
 
-: >"$filed"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$filed" "$ORCH" ticket block "$bb" --by "$ba" 2>&1)"; st=$?
-assert_status "blocking on an edge already present succeeds" "$st" 0
-assert_eq "writing no edge" "$(grep -c '^api POST' "$filed")" "0"
-assert_eq "the edge is still there once" "$(cat "$db/blocked_by/$bb")" "$ba"
+fake_fail adapter_blocker_add
+out="$("$ORCH" ticket block "$bb" --by "$ba" 2>&1)"; st=$?
+assert_status "blocking on an edge already present succeeds, writing no edge" "$st" 0
+assert_eq "the edge is still there once" "$(fake_blockers_of "$bb")" "$ba"
+fake_unfail
 
 out="$("$ORCH" ticket block "$bd" --by "$bc,$ba,$bc" 2>&1)"; st=$?
 assert_status "blocking on several siblings, one repeated, succeeds" "$st" 0
-assert_eq "adding each edge once" "$(sort -n "$db/blocked_by/$bd")" "$(printf '%s\n%s' "$ba" "$bc")"
+assert_eq "adding each edge once" "$(fake_blockers_of "$bd")" "$ba $bc"
 
 out="$("$ORCH" ticket block abc --by "$ba" 2>&1)"; st=$?
 assert_status "refuses a target that is not a plain number" "$st" 1
@@ -4427,7 +4433,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh ticket block"
 out="$("$ORCH" ticket block "$bc" --by "$ba" --by "$bb" 2>&1)"; st=$?
 assert_status "refuses a repeated --by" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket block"
-assert_eq "none of the refusals wrote an edge" "$([ -f "$db/blocked_by/$bc" ] && echo yes || echo no)" "no"
+assert_eq "none of the refusals wrote an edge" "$(fake_blockers_of "$bc")" ""
 
 be="$("$ORCH" ticket publish 96 "E" "$body")"
 bx="$("$ORCH" ticket publish 97 "Elsewhere" "$body")"
@@ -4445,119 +4451,136 @@ out="$("$ORCH" ticket block "$bc" --by 96 2>&1)"; st=$?
 assert_status "refuses a --by issue with no parent" "$st" 1
 assert_contains "naming it" "$out" "#96 is not a sub-issue of #96"
 assert_eq "the refusals wrote no edge, not even the sibling one" \
-  "$([ -f "$db/blocked_by/$be" ] || [ -f "$db/blocked_by/96" ] || [ -f "$db/blocked_by/$bc" ] && echo yes || echo no)" "no"
+  "$(fake_blockers_of "$be")$(fake_blockers_of 96)$(fake_blockers_of "$bc")" ""
 out="$("$ORCH" ticket block "$bc" --by "$be" 2>&1)"; st=$?
 assert_status "accepts a closed blocker" "$st" 0
-assert_eq "adding its edge" "$(cat "$db/blocked_by/$bc")" "$be"
+assert_eq "adding its edge" "$(fake_blockers_of "$bc")" "$be"
 
+# The readback lags only after the read ahead of the write answered current.
 bf="$("$ORCH" ticket publish 96 "F" "$body")"
 bg="$("$ORCH" ticket publish 96 "G" "$body")"
-rm -f "$db/blocked_mismatch_remaining"
-out="$(GH_STUB_BLOCKED_MISMATCH=1 "$ORCH" ticket block "$bf" --by "$ba" 2>&1)"; st=$?
+fake_lag_after adapter_blockers 1 1 999999
+out="$("$ORCH" ticket block "$bf" --by "$ba" 2>&1)"; st=$?
 assert_status "a readback that is wrong once and right on the retry succeeds" "$st" 0
-rm -f "$db/blocked_mismatch_remaining"
-out="$(GH_STUB_BLOCKED_MISMATCH=2 "$ORCH" ticket block "$bg" --by "$ba" 2>&1)"; st=$?
+fake_lag_after adapter_blockers 1 2 999999
+out="$("$ORCH" ticket block "$bg" --by "$ba" 2>&1)"; st=$?
 assert_status "a readback that is wrong twice dies" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #$bg's blocking edges did not verify"
-rm -f "$db/blocked_mismatch_remaining"
-out="$(GH_STUB_BLOCKED_POST_EXIT=1 "$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+fake_fail adapter_blocker_add "HTTP 422: Validation Failed"
+out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that refuses the edge write fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not add a blocking edge from ticket #$bf on #$bb"
-out="$(GH_STUB_BLOCKED_GET_EXIT=1 "$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+assert_contains "with gh's reason" "$out" "HTTP 422"
+fake_unfail
+fake_fail adapter_blockers
+out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that cannot read the blockers fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not read ticket #$bf's blockers"
-out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+fake_unfail
+fake_fail adapter_issue_state
+out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that cannot read the target fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not read ticket #$bf"
-out="$(GH_STUB_API_EXIT_ON="$bb" "$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+fake_unfail
+fake_fail_after adapter_issue_parent 1
+out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that cannot read a blocker's parent fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "a blocker of ticket #$bf"
-assert_eq "none of the failures added the edge" "$(cat "$db/blocked_by/$bf")" "$ba"
+fake_unfail
+assert_eq "none of the failures added the edge" "$(fake_blockers_of "$bf")" "$ba"
 
 # The body rewrite, driven by no-op runs: $bb is blocked by $ba alone and
 # $bd by $ba and $bc, so each run below writes no edge and only brings the
-# body's section in line.
-printf 'Intro\n\n## Blocked by\n\n- #999\nold\n\n### Detail\nx\n\n## After\nTail.\n' >"$db/body/$bd"
+# body's section in line. Each body is seeded as gh's read of it answers.
+fake_body_read "$bd" 'Intro\n\n## Blocked by\n\n- #999\nold\n\n### Detail\nx\n\n## After\nTail.\n'
 out="$("$ORCH" ticket block "$bd" --by "$ba" 2>&1)"; st=$?
 assert_status "a no-op run with a stale section succeeds" "$st" 0
 assert_eq "replaces a section in the middle of the body, a ### heading inside it included" \
-  "$(od -c <"$db/body/$bd")" \
+  "$(fake_body_of "$bd" | od -c)" \
   "$(printf 'Intro\n\n## Blocked by\n\n- #%s\n- #%s\n\n## After\nTail.\n' "$ba" "$bc" | od -c)"
 
-printf 'Intro\n\n## Blocked by\n\nNone (can start immediately)\n' >"$db/body/$bb"
+fake_body_read "$bb" 'Intro\n\n## Blocked by\n\nNone (can start immediately)\n'
 "$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
 assert_eq "replaces a section at the end of the body" \
-  "$(od -c <"$db/body/$bb")" "$(printf 'Intro\n\n## Blocked by\n\n- #%s\n' "$ba" | od -c)"
+  "$(fake_body_of "$bb" | od -c)" "$(printf 'Intro\n\n## Blocked by\n\n- #%s\n' "$ba" | od -c)"
 
-printf 'Intro\n\nMore.\n' >"$db/body/$bb"
+fake_body_read "$bb" 'Intro\n\nMore.\n'
 "$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
 assert_eq "appends a missing section after one blank line" \
-  "$(od -c <"$db/body/$bb")" "$(printf 'Intro\n\nMore.\n\n## Blocked by\n\n- #%s\n' "$ba" | od -c)"
+  "$(fake_body_of "$bb" | od -c)" "$(printf 'Intro\n\nMore.\n\n## Blocked by\n\n- #%s\n' "$ba" | od -c)"
 
-printf 'Intro\n\n## Blocked by\n\nNone\n# Top\nTail.' >"$db/body/$bb"
+fake_body_read "$bb" 'Intro\n\n## Blocked by\n\nNone\n# Top\nTail.\n'
 "$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
-assert_eq "a # heading ends the section, and a body with no final newline gets none" \
-  "$(od -c <"$db/body/$bb")" "$(printf 'Intro\n\n## Blocked by\n\n- #%s\n\n# Top\nTail.' "$ba" | od -c)"
+assert_eq "a # heading ends the section" \
+  "$(fake_body_of "$bb" | od -c)" "$(printf 'Intro\n\n## Blocked by\n\n- #%s\n\n# Top\nTail.\n' "$ba" | od -c)"
 
-printf 'Intro\r\n\r\n## Blocked by\r\n\r\nNone\r\n\r\n## After\r\nTail.\r\n' >"$db/body/$bb"
+fake_body_read "$bb" 'Intro\r\n\r\n## Blocked by\r\n\r\nNone\r\n\r\n## After\r\nTail.\r\n'
 "$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
 assert_eq "a CRLF body keeps its CRLF lines, the rewritten section in kind" \
-  "$(od -c <"$db/body/$bb")" "$(printf 'Intro\r\n\r\n## Blocked by\r\n\r\n- #%s\r\n\r\n## After\r\nTail.\r\n' "$ba" | od -c)"
+  "$(fake_body_of "$bb" | od -c)" "$(printf 'Intro\r\n\r\n## Blocked by\r\n\r\n- #%s\r\n\r\n## After\r\nTail.\r\n' "$ba" | od -c)"
 
-printf 'Intro\n\n```md\n## Blocked by\n\n- #1\n```\n' >"$db/body/$bb"
+fake_body_read "$bb" 'Intro\n\n```md\n## Blocked by\n\n- #1\n```\n'
 "$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
 assert_eq "a fenced ## Blocked by is ignored and a real section appended" \
-  "$(od -c <"$db/body/$bb")" "$(printf 'Intro\n\n```md\n## Blocked by\n\n- #1\n```\n\n## Blocked by\n\n- #%s\n' "$ba" | od -c)"
+  "$(fake_body_of "$bb" | od -c)" "$(printf 'Intro\n\n```md\n## Blocked by\n\n- #1\n```\n\n## Blocked by\n\n- #%s\n' "$ba" | od -c)"
 
-printf '## Blocked by\n\n```\n## Not a heading\n```\n\n## After\nTail.\n' >"$db/body/$bb"
+fake_body_read "$bb" '## Blocked by\n\n```\n## Not a heading\n```\n\n## After\nTail.\n'
 "$ORCH" ticket block "$bb" --by "$ba" >/dev/null 2>&1
 assert_eq "a fenced ## line inside the section does not end it" \
-  "$(od -c <"$db/body/$bb")" "$(printf '## Blocked by\n\n- #%s\n\n## After\nTail.\n' "$ba" | od -c)"
+  "$(fake_body_of "$bb" | od -c)" "$(printf '## Blocked by\n\n- #%s\n\n## After\nTail.\n' "$ba" | od -c)"
 
-: >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" ticket block "$bb" --by "$ba" 2>&1)"; st=$?
-assert_status "a run with nothing to change succeeds" "$st" 0
-assert_eq "writing no body when the result is byte-identical" "$(grep -c '^issue edit' "$filed")" "0"
+fake_body_read "$bb" '## Blocked by\n\n- #%s\n' "$ba"
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket block "$bb" --by "$ba" 2>&1)"; st=$?
+assert_status "a run with nothing to change succeeds, writing no body when the result is byte-identical" "$st" 0
+fake_unfail
 
 # Ascending means numeric: #98 sorts before #100.
-echo 98 >"$db/issue_seq"
-s98="$("$ORCH" ticket publish 99 "S98" "$body")"
-s99="$("$ORCH" ticket publish 99 "S99" "$body")"
-s100="$("$ORCH" ticket publish 99 "S100" "$body")"
+fake_next_issue 98
+s98="$("$ORCH" ticket publish 199 "S98" "$body")"
+s99="$("$ORCH" ticket publish 199 "S99" "$body")"
+s100="$("$ORCH" ticket publish 199 "S100" "$body")"
 "$ORCH" ticket block "$s99" --by "$s100,$s98" >/dev/null 2>&1
 assert_eq "lists the blockers sorted ascending by number" \
-  "$(cat "$db/body/$s99")" "$(printf 'Body of the issue.\n\n## Blocked by\n\n- #98\n- #100')"
+  "$(fake_body_of "$s99")" "$(printf 'Build the thing.\n\n## Blocked by\n\n- #98\n- #100')"
 
 # Any gh failure dies naming the ticket; edges already written stay, and the
 # same command run again finishes the job.
+fake_next_issue 820
 bh="$("$ORCH" ticket publish 96 "H" "$body")"
-printf 'Intro\n' >"$db/body/$bh"
-out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
+fake_body_read "$bh" 'Intro\n'
+fake_fail adapter_issue_body
+out="$("$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
 assert_status "a gh that cannot read the body fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not read ticket #$bh's body"
-assert_eq "the edge it wrote stays" "$(cat "$db/blocked_by/$bh")" "$ba"
-out="$(GH_STUB_EDIT_EXIT=1 "$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
+assert_eq "the edge it wrote stays" "$(fake_blockers_of "$bh")" "$ba"
+fake_unfail
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
 assert_status "a gh that cannot write the body fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not rewrite ticket #$bh's ## Blocked by section"
+fake_unfail
 out="$("$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
 assert_status "re-running after the body failures succeeds" "$st" 0
-assert_eq "finishing the body" "$(cat "$db/body/$bh")" "$(printf 'Intro\n\n## Blocked by\n\n- #%s' "$ba")"
+assert_eq "finishing the body" "$(fake_body_of "$bh")" "$(printf 'Intro\n\n## Blocked by\n\n- #%s' "$ba")"
 
 bi="$("$ORCH" ticket publish 96 "I" "$body")"
-rm -f "$db/blocked_posted"
-out="$(GH_STUB_BLOCKED_POST_OK=1 "$ORCH" ticket block "$bi" --by "$ba,$bb" 2>&1)"; st=$?
+fake_fail_after adapter_blocker_add 1
+out="$("$ORCH" ticket block "$bi" --by "$ba,$bb" 2>&1)"; st=$?
 assert_status "a multi-edge run that dies part-way fails" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #$bi"
-assert_eq "keeping the edge it wrote" "$(cat "$db/blocked_by/$bi")" "$ba"
+assert_eq "keeping the edge it wrote" "$(fake_blockers_of "$bi")" "$ba"
+fake_fail_after adapter_blocker_add 1
 out="$("$ORCH" ticket block "$bi" --by "$ba,$bb" 2>&1)"; st=$?
-assert_status "re-running the same command succeeds" "$st" 0
-assert_eq "adding only the missing edge" "$(sort -n "$db/blocked_by/$bi")" "$(printf '%s\n%s' "$ba" "$bb")"
-assert_contains "and bringing the body in line" "$(cat "$db/body/$bi")" "$(printf -- '- #%s\n- #%s' "$ba" "$bb")"
+assert_status "re-running the same command succeeds, adding only the missing edge" "$st" 0
+fake_unfail
+assert_eq "both edges in place" "$(fake_blockers_of "$bi")" "$ba $bb"
+assert_contains "and bringing the body in line" "$(fake_body_of "$bi")" "$(printf -- '- #%s\n- #%s' "$ba" "$bb")"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket block is in the usage text" "$out" "ticket block <n> --by N,N,..."
 
-restore_suite_env GH_STUB_DB
+restore_suite_env
 
 # --- ticket unblock ----------------------------------------------------------
 # Removes native blocking edges from a published, open ticket, verifies the
@@ -4567,31 +4590,33 @@ restore_suite_env GH_STUB_DB
 echo
 echo "ticket unblock"
 ticket_fixture
-ua="$(GH_STUB_ISSUE_NUMBER=900 "$ORCH" ticket publish 96 "A" "$body")"
+for p in 96 97; do fake_issue "$p" open; done
+fake_next_issue 900
+ua="$("$ORCH" ticket publish 96 "A" "$body")"
 ub="$("$ORCH" ticket publish 96 "B" "$body")"
 uc="$("$ORCH" ticket publish 96 "C" "$body")"
 ud="$("$ORCH" ticket publish 96 "D" "$body")"
 "$ORCH" ticket block "$ud" --by "$ua,$ub,$uc" >/dev/null 2>&1
 out="$("$ORCH" ticket unblock "$ud" --by "$ub" 2>&1)"; st=$?
 assert_status "unblocking one edge succeeds" "$st" 0
-assert_eq "removing that edge alone" "$(sort -n "$db/blocked_by/$ud")" "$(printf '%s\n%s' "$ua" "$uc")"
+assert_eq "removing that edge alone" "$(fake_blockers_of "$ud")" "$ua $uc"
 assert_eq "and bringing the body in line" \
-  "$(cat "$db/body/$ud")" "$(printf 'Body of the issue.\n\n## Blocked by\n\n- #%s\n- #%s' "$ua" "$uc")"
+  "$(fake_body_of "$ud")" "$(printf 'Build the thing.\n\n## Blocked by\n\n- #%s\n- #%s' "$ua" "$uc")"
 out="$("$ORCH" ticket unblock "$ud" --by "$uc,$ua,$uc" 2>&1)"; st=$?
 assert_status "unblocking several edges, one repeated, succeeds" "$st" 0
-assert_eq "removing each of them" "$(sed '/^$/d' "$db/blocked_by/$ud")" ""
+assert_eq "removing each of them" "$(fake_blockers_of "$ud")" ""
 assert_eq "removing the last edge writes None (can start immediately)" \
-  "$(cat "$db/body/$ud")" "$(printf 'Body of the issue.\n\n## Blocked by\n\nNone (can start immediately)')"
+  "$(fake_body_of "$ud")" "$(printf 'Build the thing.\n\n## Blocked by\n\nNone (can start immediately)')"
 assert_eq "after unblock, ticket next lists the target again" \
   "$("$ORCH" ticket next 96)" "$(printf '%s\n%s\n%s\n%s' "$ua" "$ub" "$uc" "$ud")"
 
-filed="$(mktemp)"
-printf 'Intro\n\n## Blocked by\n\n- #%s\n' "$ua" >"$db/body/$ud"
-out="$(GH_STUB_LOG="$filed" "$ORCH" ticket unblock "$ud" --by "$ua" 2>&1)"; st=$?
-assert_status "unblocking an edge already absent succeeds" "$st" 0
-assert_eq "writing no edge" "$(grep -c '^api DELETE' "$filed")" "0"
+fake_body_read "$ud" 'Intro\n\n## Blocked by\n\n- #%s\n' "$ua"
+fake_fail adapter_blocker_remove
+out="$("$ORCH" ticket unblock "$ud" --by "$ua" 2>&1)"; st=$?
+assert_status "unblocking an edge already absent succeeds, writing no edge" "$st" 0
+fake_unfail
 assert_eq "still bringing the body section in line" \
-  "$(od -c <"$db/body/$ud")" "$(printf 'Intro\n\n## Blocked by\n\nNone (can start immediately)\n' | od -c)"
+  "$(fake_body_of "$ud" | od -c)" "$(printf 'Intro\n\n## Blocked by\n\nNone (can start immediately)\n' | od -c)"
 
 out="$("$ORCH" ticket unblock abc --by "$ua" 2>&1)"; st=$?
 assert_status "refuses a target that is not a plain number" "$st" 1
@@ -4618,7 +4643,7 @@ uf="$("$ORCH" ticket publish 96 "F" "$body")"
 out="$("$ORCH" ticket unblock "$ue" --by "$ua" 2>&1)"; st=$?
 assert_status "refuses a closed target" "$st" 1
 assert_contains "naming it" "$out" "ticket #$ue is closed"
-assert_eq "leaving its edge" "$(cat "$db/blocked_by/$ue")" "$ua"
+assert_eq "leaving its edge" "$(fake_blockers_of "$ue")" "$ua"
 out="$("$ORCH" ticket unblock 96 --by "$ua" 2>&1)"; st=$?
 assert_status "refuses a target that is not a sub-issue" "$st" 1
 assert_contains "naming it" "$out" "#96 is not a sub-issue"
@@ -4626,68 +4651,76 @@ out="$("$ORCH" ticket unblock "$uf" --by "$ua,$ux" 2>&1)"; st=$?
 assert_status "refuses a --by issue under another parent" "$st" 1
 assert_contains "naming it" "$out" "#$ux is not a sub-issue of #96"
 assert_eq "the refusal removed no edge, not even the sibling one" \
-  "$(sort -n "$db/blocked_by/$uf")" "$(printf '%s\n%s' "$ua" "$ub")"
+  "$(fake_blockers_of "$uf")" "$ua $ub"
 "$ORCH" ticket block "$uf" --by "$ue" >/dev/null 2>&1
 out="$("$ORCH" ticket unblock "$uf" --by "$ue" 2>&1)"; st=$?
 assert_status "accepts a closed blocker" "$st" 0
-assert_eq "removing its edge" "$(sort -n "$db/blocked_by/$uf")" "$(printf '%s\n%s' "$ua" "$ub")"
+assert_eq "removing its edge" "$(fake_blockers_of "$uf")" "$ua $ub"
 
-# The mismatch switch fires on reads of a listing written to; clearing the
-# mark first makes it fire only on this run's readback, after its DELETE.
-rm -f "$db/blocked_mismatch_remaining" "$db/blocked_written/$uf"
-out="$(GH_STUB_BLOCKED_MISMATCH=1 "$ORCH" ticket unblock "$uf" --by "$ub" 2>&1)"; st=$?
+# The readback lags only after the read ahead of the write answered current.
+fake_lag_after adapter_blockers 1 1 999999
+out="$("$ORCH" ticket unblock "$uf" --by "$ub" 2>&1)"; st=$?
 assert_status "a readback that is wrong once and right on the retry succeeds" "$st" 0
-assert_eq "having removed the edge" "$(sed '/^$/d' "$db/blocked_by/$uf")" "$ua"
-rm -f "$db/blocked_mismatch_remaining" "$db/blocked_written/$uf"
-out="$(GH_STUB_BLOCKED_MISMATCH=2 "$ORCH" ticket unblock "$uf" --by "$ua" 2>&1)"; st=$?
+assert_eq "having removed the edge" "$(fake_blockers_of "$uf")" "$ua"
+fake_lag_after adapter_blockers 1 2 999999
+out="$("$ORCH" ticket unblock "$uf" --by "$ua" 2>&1)"; st=$?
 assert_status "a readback that is wrong twice dies" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #$uf's blocking edges did not verify"
-rm -f "$db/blocked_mismatch_remaining"
 
 ug="$("$ORCH" ticket publish 96 "G" "$body")"
 "$ORCH" ticket block "$ug" --by "$ua,$ub" >/dev/null 2>&1
-out="$(GH_STUB_BLOCKED_DELETE_EXIT=1 "$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
+fake_fail adapter_blocker_remove
+out="$("$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
 assert_status "a gh that refuses the edge removal fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not remove a blocking edge from ticket #$ug on #$ua"
-out="$(GH_STUB_BLOCKED_GET_EXIT=1 "$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
+fake_unfail
+fake_fail adapter_blockers
+out="$("$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
 assert_status "a gh that cannot read the blockers fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not read ticket #$ug's blockers"
-out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
+fake_unfail
+fake_fail adapter_issue_state
+out="$("$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
 assert_status "a gh that cannot read the target fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not read ticket #$ug"
-assert_eq "none of the failures removed an edge" "$(sort -n "$db/blocked_by/$ug")" "$(printf '%s\n%s' "$ua" "$ub")"
+fake_unfail
+assert_eq "none of the failures removed an edge" "$(fake_blockers_of "$ug")" "$ua $ub"
 
-out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" ticket unblock "$ug" --by "$ub" 2>&1)"; st=$?
+fake_fail adapter_issue_body
+out="$("$ORCH" ticket unblock "$ug" --by "$ub" 2>&1)"; st=$?
 assert_status "a gh that cannot read the body fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not read ticket #$ug's body"
-assert_eq "the edge it removed stays removed" "$(sed '/^$/d' "$db/blocked_by/$ug")" "$ua"
-out="$(GH_STUB_EDIT_EXIT=1 "$ORCH" ticket unblock "$ug" --by "$ub" 2>&1)"; st=$?
+assert_eq "the edge it removed stays removed" "$(fake_blockers_of "$ug")" "$ua"
+fake_unfail
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket unblock "$ug" --by "$ub" 2>&1)"; st=$?
 assert_status "a gh that cannot write the body fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not rewrite ticket #$ug's ## Blocked by section"
-assert_eq "the edge stays removed" "$(sed '/^$/d' "$db/blocked_by/$ug")" "$ua"
+assert_eq "the edge stays removed" "$(fake_blockers_of "$ug")" "$ua"
+fake_unfail
 out="$("$ORCH" ticket unblock "$ug" --by "$ub" 2>&1)"; st=$?
 assert_status "re-running after the body failures succeeds" "$st" 0
-assert_eq "finishing the body" "$(cat "$db/body/$ug")" "$(printf 'Body of the issue.\n\n## Blocked by\n\n- #%s' "$ua")"
+assert_eq "finishing the body" "$(fake_body_of "$ug")" "$(printf 'Build the thing.\n\n## Blocked by\n\n- #%s' "$ua")"
 
 uh="$("$ORCH" ticket publish 96 "H" "$body")"
 "$ORCH" ticket block "$uh" --by "$ua,$ub,$uc" >/dev/null 2>&1
-rm -f "$db/blocked_deleted"
-out="$(GH_STUB_BLOCKED_DELETE_OK=1 "$ORCH" ticket unblock "$uh" --by "$ua,$ub" 2>&1)"; st=$?
+fake_fail_after adapter_blocker_remove 1
+out="$("$ORCH" ticket unblock "$uh" --by "$ua,$ub" 2>&1)"; st=$?
 assert_status "a multi-edge run that dies part-way fails" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #$uh"
-assert_eq "the edge it removed stays removed" "$(sort -n "$db/blocked_by/$uh" | sed '/^$/d')" "$(printf '%s\n%s' "$ub" "$uc")"
-: >"$filed"
-out="$(GH_STUB_LOG="$filed" "$ORCH" ticket unblock "$uh" --by "$ua,$ub" 2>&1)"; st=$?
-assert_status "re-running the same command succeeds" "$st" 0
-assert_eq "removing only the edge still present" "$(grep -c '^api DELETE' "$filed")" "1"
-assert_eq "leaving the other edge" "$(sed '/^$/d' "$db/blocked_by/$uh")" "$uc"
+assert_eq "the edge it removed stays removed" "$(fake_blockers_of "$uh")" "$ub $uc"
+fake_fail_after adapter_blocker_remove 1
+out="$("$ORCH" ticket unblock "$uh" --by "$ua,$ub" 2>&1)"; st=$?
+assert_status "re-running the same command succeeds, removing only the edge still present" "$st" 0
+fake_unfail
+assert_eq "leaving the other edge" "$(fake_blockers_of "$uh")" "$uc"
 assert_eq "and bringing the body in line" \
-  "$(cat "$db/body/$uh")" "$(printf 'Body of the issue.\n\n## Blocked by\n\n- #%s' "$uc")"
+  "$(fake_body_of "$uh")" "$(printf 'Build the thing.\n\n## Blocked by\n\n- #%s' "$uc")"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket unblock is in the usage text" "$out" "ticket unblock <n> --by N,N,..."
 
-restore_suite_env GH_STUB_DB
+restore_suite_env
 
 # --- ticket: unknown op ------------------------------------------------------
 new_repo >/dev/null
@@ -5614,6 +5647,107 @@ assert_status "run rerun: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
 assert_eq "every CI operation was pinned to the resolved repo" \
   "$(grep -E ' (pr checks|api|run rerun) ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> ')" "0"
+
+# The sub-issue and dependency operations. These run gh api, whose --jq the
+# operation owns, so each reply here is what that --jq printed. The writes
+# take GitHub's database id, which the operation reads itself.
+subs=repos/{owner}/{repo}/issues/50/sub_issues
+subs_jq="$(bash -c 'source "$1"; printf "%s" "$SUB_ISSUES_JQ"' _ "$ORCH")"
+gh_reply 0 $'51\tOPEN\t0\n52\tCLOSED\t1\n' '' api --paginate "$subs" --jq "$subs_jq"
+out="$(contract adapter_sub_issues 50 2>&1)"; st=$?
+assert_status "sub-issues: lists a parent's sub-issues" "$st" 0
+assert_eq "one per line: number, OPEN or CLOSED, and its open blockers, as TSV" \
+  "$out" "$(printf '51\tOPEN\t0\n52\tCLOSED\t1')"
+# The --jq itself, run on gh-shaped JSON: what the canned reply above stands
+# in for. GitHub leaves the dependency summary off an issue that has none.
+assert_eq "its --jq reads GitHub's listing, a missing dependency summary as no blockers" \
+  "$(printf '%s' '[{"number":51,"state":"open","issue_dependencies_summary":{"blocked_by":0}},{"number":52,"state":"closed","issue_dependencies_summary":{"blocked_by":2}},{"number":53,"state":"open"}]' \
+    | jq -r "$subs_jq")" "$(printf '51\tOPEN\t0\n52\tCLOSED\t2\n53\tOPEN\t0')"
+gh_reply 0 '' '' api --paginate repos/{owner}/{repo}/issues/49/sub_issues --jq "$subs_jq"
+out="$(contract adapter_sub_issues 49 2>&1)"; st=$?
+assert_status "sub-issues: a parent with none succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+gh_reply 1 '' 'HTTP 502: Bad Gateway' api --paginate repos/{owner}/{repo}/issues/48/sub_issues --jq "$subs_jq"
+out="$(contract adapter_sub_issues 48 2>&1)"; st=$?
+assert_status "sub-issues: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
+gh_reply 0 $'51000\n' '' api repos/{owner}/{repo}/issues/51 --jq .id
+gh_reply 0 '{}' '' api --method POST "$subs" -F sub_issue_id=51000
+out="$(contract adapter_sub_issue_link 50 51 2>&1)"; st=$?
+assert_status "sub-issue link: links the child by its database id" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 0 $'53000\n' '' api repos/{owner}/{repo}/issues/53 --jq .id
+gh_reply 1 '' 'HTTP 422: Sub issue may only have one parent' api --method POST "$subs" -F sub_issue_id=53000
+out="$(contract adapter_sub_issue_link 50 53 2>&1)"; st=$?
+assert_status "sub-issue link: a refused link fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 422: Sub issue may only have one parent"
+gh_reply 1 '' 'HTTP 404: Not Found' api repos/{owner}/{repo}/issues/404 --jq .id
+out="$(contract adapter_sub_issue_link 50 404 2>&1)"; st=$?
+assert_status "sub-issue link: a child gh cannot read fails it" "$st" 1
+assert_eq "passing gh's stderr through, with no link attempted" "$out" "HTTP 404: Not Found"
+
+gh_reply 0 '{}' '' api --method DELETE repos/{owner}/{repo}/issues/50/sub_issue -F sub_issue_id=51000
+out="$(contract adapter_sub_issue_unlink 50 51 2>&1)"; st=$?
+assert_status "sub-issue unlink: unlinks the child by its database id" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' \
+  api --method DELETE repos/{owner}/{repo}/issues/50/sub_issue -F sub_issue_id=53000
+out="$(contract adapter_sub_issue_unlink 50 53 2>&1)"; st=$?
+assert_status "sub-issue unlink: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
+
+gh_reply 0 $'https://api.github.com/repos/acme/widgets/issues/50\n' '' \
+  api repos/{owner}/{repo}/issues/51 --jq '.parent_issue_url // empty'
+out="$(contract adapter_issue_parent 51 2>&1)"; st=$?
+assert_status "issue parent: reads a sub-issue's parent" "$st" 0
+assert_eq "printing its number alone, off the parent's URL" "$out" "50"
+gh_reply 0 '' '' api repos/{owner}/{repo}/issues/50 --jq '.parent_issue_url // empty'
+out="$(contract adapter_issue_parent 50 2>&1)"; st=$?
+assert_status "issue parent: an issue with no parent succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+gh_reply 0 $'https://api.github.com/repos/acme/widgets/issues/\n' '' \
+  api repos/{owner}/{repo}/issues/52 --jq '.parent_issue_url // empty'
+out="$(contract adapter_issue_parent 52 2>&1)"; st=$?
+assert_status "issue parent: a parent URL with no number fails it" "$st" 1
+assert_contains "saying what it could not read" "$out" "no issue number"
+gh_reply 1 '' 'HTTP 404: Not Found' api repos/{owner}/{repo}/issues/404 --jq '.parent_issue_url // empty'
+out="$(contract adapter_issue_parent 404 2>&1)"; st=$?
+assert_status "issue parent: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 404: Not Found"
+
+blocked=repos/{owner}/{repo}/issues/52/dependencies/blocked_by
+gh_reply 0 $'53\n51\n' '' api --paginate "$blocked" --jq '.[].number'
+out="$(contract adapter_blockers 52 2>&1)"; st=$?
+assert_status "blockers: lists an issue's blocked-by edges" "$st" 0
+assert_eq "one blocker number per line, in GitHub's order" "$out" "$(writeln 53 51)"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' api --paginate repos/{owner}/{repo}/issues/404/dependencies/blocked_by --jq '.[].number'
+out="$(contract adapter_blockers 404 2>&1)"; st=$?
+assert_status "blockers: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
+gh_reply 0 '{}' '' api --method POST "$blocked" -F issue_id=51000
+out="$(contract adapter_blocker_add 52 51 2>&1)"; st=$?
+assert_status "blocker add: adds the edge by the blocker's database id" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 422: Validation Failed' api --method POST "$blocked" -F issue_id=53000
+out="$(contract adapter_blocker_add 52 53 2>&1)"; st=$?
+assert_status "blocker add: a refused edge fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 422: Validation Failed"
+out="$(contract adapter_blocker_add 52 404 2>&1)"; st=$?
+assert_status "blocker add: a blocker gh cannot read fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 404: Not Found"
+
+gh_reply 0 '{}' '' api --method DELETE "$blocked/51000"
+out="$(contract adapter_blocker_remove 52 51 2>&1)"; st=$?
+assert_status "blocker remove: removes the edge by the blocker's database id" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 404: Not Found' api --method DELETE "$blocked/53000"
+out="$(contract adapter_blocker_remove 52 53 2>&1)"; st=$?
+assert_status "blocker remove: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 404: Not Found"
+assert_eq "every sub-issue and dependency operation was pinned to the resolved repo" \
+  "$(grep -E ' api .*issues/' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> ')" "0"
 rm -f "$ibody"
 restore_suite_env GH_FIXTURE GH_HOST
 
@@ -7170,6 +7304,7 @@ echo
 echo "redo review"
 healthy_repo
 fake_github
+fake_issue 21 open
 for n in 30 31 32 33; do fake_pr "$n" open orch/21-redotest main; done
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
@@ -7400,6 +7535,7 @@ writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iter
 writeln '# older implement' >.orchestrator/handoff/pre-redo-1/03-implement.md
 writeln '# implement' >.orchestrator/handoff/03-implement.md
 fake_github
+fake_issue 21 open
 fake_pr 35 open orch/21-redotaken main
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a destination already holding the handoff fails the redo" "$st" 1
@@ -7426,8 +7562,9 @@ bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 "$ORCH" init tickettest >/dev/null
 
-db="$(mktemp -d)"
-export GH_STUB_DB="$db"
+fake_github
+fake_issue 60 open
+fake_pr 40 open orch/60-tickettest main
 body="$(mktemp)"; printf 'Body of the ticket.\n' >"$body"
 t1="$("$ORCH" ticket publish 60 "One" "$body")"
 t2="$("$ORCH" ticket publish 60 "Two" "$body")"
@@ -7450,7 +7587,7 @@ assert_status "redo review succeeds with every ticket already closed" "$st" 0
 assert_eq "reopens exactly the tickets the flow's implement phase had closed" \
   "$("$ORCH" ticket next 60)" "$(printf '%s\n%s' "$t1" "$t2")"
 
-restore_suite_env GH_STUB_DB
+restore_suite_env
 
 # --- redo spec --------------------------------------------------------------
 # --new-issue's close goes through the store-backed fake (fake_github), the
@@ -7533,16 +7670,16 @@ restore_suite_env
 echo
 echo "redo spec retires the ticket breakdown (#334)"
 fresh_flow redospecbreakdown
-db="$(mktemp -d)"
-export GH_STUB_DB="$db"
-mkdir -p "$db/body"
+fake_github
+for p in 50 51 52 53 54 55 56 57 58; do fake_issue "$p" open; done
 tbody="$(mktemp)"
 writeln 'A ticket.' >"$tbody"
-rt1="$(GH_STUB_ISSUE_NUMBER=900 "$ORCH" ticket publish 50 "One" "$tbody")"
+fake_next_issue 900
+rt1="$("$ORCH" ticket publish 50 "One" "$tbody")"
 rt2="$("$ORCH" ticket publish 50 "Two" "$tbody")"
 rt3="$("$ORCH" ticket publish 50 "Three" "$tbody")"
 "$ORCH" ticket close "$rt2" >/dev/null
-writeln 'The spec of #50.' >"$db/body/50"
+fake_issue_body 50 'The spec of #50.'
 redo_spec_at() {
   state_fixture phase implement
   "$ORCH" state set issue "$1"
@@ -7553,128 +7690,124 @@ redo_spec_at() {
 redo_spec_at 50
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a sub-issue breakdown: redo spec succeeds" "$st" 0
-assert_eq "the parent is left with no sub-issues" \
-  "$(gh api "repos/{owner}/{repo}/issues/50/sub_issues" --jq length)" "0"
+assert_eq "the parent is left with no sub-issues" "$(fake_sub_issues_of 50)" ""
 retire_msg="This ticket was retired: its spec, #50, changed and will be broken down into tickets again."
 for t in "$rt1" "$rt2" "$rt3"; do
-  assert_eq "old ticket #$t is closed" "$(cat "$db/state/$t")" "closed"
+  assert_eq "old ticket #$t is closed" "$(fake_state_of "$t")" "CLOSED"
   assert_contains "old ticket #$t carries the retirement comment, naming a changed spec" \
-    "$(cat "$db/comments/$t" 2>/dev/null)" "$retire_msg"
+    "$(fake_comments_of "$t")" "$retire_msg"
   assert_eq "old ticket #$t carries no comment in the old redo wording" \
-    "$(grep -c "retired by an orchestrator redo" "$db/comments/$t" 2>/dev/null)" "0"
+    "$(fake_comments_of "$t" | grep -c "retired by an orchestrator redo")" "0"
 done
-assert_eq "an open old ticket is closed as not planned" "$(cat "$db/reason/$rt1" 2>/dev/null)" "not planned"
+assert_eq "an open old ticket is closed as not planned" "$(fake_reason_of "$rt1")" "not planned"
 out="$("$ORCH" ticket exists 50 2>&1)"; st=$?
 assert_status "ticket exists then finds no breakdown" "$st" 1
 assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
 assert_eq "keeping the issue" "$("$ORCH" state get issue)" "50"
 out="$("$ORCH" ticket reset 50 2>&1)"; st=$?
 assert_eq "a later ticket reset reopens none of the old tickets" \
-  "$(cat "$db/state/$rt1" "$db/state/$rt2" "$db/state/$rt3" | sort -u)" "closed"
+  "$(fake_state_of "$rt1") $(fake_state_of "$rt2") $(fake_state_of "$rt3")" "CLOSED CLOSED CLOSED"
 
-crlf='Intro\r\n\r\n## Ticket\r\n\r\n### What to build\r\nBuild.\r\n\r\n## After\r\nTail.\r\n'
-printf "$crlf" >"$db/body/51"
+# Each body below is seeded as gh's read of it answers.
+fake_body_read 51 'Intro\r\n\r\n## Ticket\r\n\r\n### What to build\r\nBuild.\r\n\r\n## After\r\nTail.\r\n'
 redo_spec_at 51
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a collapsed CRLF breakdown: redo spec succeeds" "$st" 0
 assert_eq "the ## Ticket section is gone and the rest of the CRLF body is unchanged" \
-  "$(od -c <"$db/body/51")" "$(printf 'Intro\r\n\r\n## After\r\nTail.\r\n' | od -c)"
+  "$(fake_body_of 51 | od -c)" "$(printf 'Intro\r\n\r\n## After\r\nTail.\r\n' | od -c)"
 out="$("$ORCH" ticket exists 51 2>&1)"; st=$?
 assert_status "ticket exists then finds no breakdown" "$st" 1
 
-writeln 'The spec.' '' '## Ticket' '' '```sh' '# not a heading' '```' 'Build it.' >"$db/body/52"
+fake_body_read 52 '%s\n' 'The spec.' '' '## Ticket' '' '```sh' '# not a heading' '```' 'Build it.'
 redo_spec_at 52
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a collapsed breakdown at the body's end: redo spec succeeds" "$st" 0
 assert_eq "drops the section and the blank line before it, a fenced # line included" \
-  "$(od -c <"$db/body/52")" "$(writeln 'The spec.' | od -c)"
+  "$(fake_body_of 52 | od -c)" "$(writeln 'The spec.' | od -c)"
 
-db_snapshot() { (cd "$db" && find . -type f | sort | xargs cat | cksum); }
-before="$(db_snapshot)"
-filed="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" "$ORCH" ticket retire 50 2>&1)"; st=$?
+before="$(fake_snapshot)"
+out="$("$ORCH" ticket retire 50 2>&1)"; st=$?
 assert_status "retiring an already-retired sub-issue breakdown succeeds" "$st" 0
-out="$(GH_STUB_FILED="$filed" "$ORCH" ticket retire 52 2>&1)"; st=$?
+out="$("$ORCH" ticket retire 52 2>&1)"; st=$?
 assert_status "retiring an already-retired collapsed breakdown succeeds" "$st" 0
-assert_eq "and changes nothing" "$(db_snapshot)" "$before"
-assert_eq "writing nothing to GitHub" "$(grep -c '^issue \(close\|comment\|edit\)' "$filed")" "0"
+assert_eq "and writes nothing to GitHub" "$(fake_snapshot)" "$before"
 
 rt4="$("$ORCH" ticket publish 53 "Four" "$tbody")"
 redo_spec_at 53
-out="$(GH_STUB_SUBISSUE_DELETE_EXIT=1 "$ORCH" redo spec 2>&1)"; st=$?
+fake_fail adapter_sub_issue_unlink
+out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a gh that will not unlink a ticket fails redo spec" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not unlink ticket #$rt4"
 assert_eq "leaving the phase at implement" "$("$ORCH" state get phase)" "implement"
 assert_eq "and the handoffs in place" "$(cat .orchestrator/handoff/02-spec.md .orchestrator/handoff/03-implement.md)" \
   "$(printf '# spec\n# implement')"
-out="$(GH_STUB_SUBISSUE_GET_EXIT=1 "$ORCH" redo spec 2>&1)"; st=$?
+fake_unfail
+fake_fail adapter_sub_issues
+out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a gh that cannot list sub-issues fails redo spec" "$st" 1
 assert_eq "leaving the phase at implement" "$("$ORCH" state get phase)" "implement"
-writeln 'Spec.' '' '## Ticket' 'Build.' >"$db/body/54"
+fake_unfail
+fake_issue_body 54 "$(writeln 'Spec.' '' '## Ticket' 'Build.')"
 redo_spec_at 54
-out="$(GH_STUB_EDIT_EXIT=1 "$ORCH" redo spec 2>&1)"; st=$?
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a gh that will not rewrite the body fails redo spec" "$st" 1
 assert_eq "leaving the phase at implement" "$("$ORCH" state get phase)" "implement"
+fake_unfail
 redo_spec_at 53
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a re-run after the failure resumes and succeeds" "$st" 0
 assert_eq "retiring the ticket it could not unlink before" \
-  "$(gh api "repos/{owner}/{repo}/issues/53/sub_issues" --jq length) $(cat "$db/state/$rt4")" "0 closed"
+  "$(fake_sub_issues_of 53) $(fake_state_of "$rt4")" " CLOSED"
 
 assert_eq "without commenting on it a second time" \
-  "$(grep -cxF "This ticket was retired: its spec, #53, changed and will be broken down into tickets again." \
-    "$db/comments/$rt4")" "1"
+  "$(fake_comments_of "$rt4" | grep -cxF "This ticket was retired: its spec, #53, changed and will be broken down into tickets again.")" "1"
 
 # A closed ticket still linked to its parent, carrying a comment in the old
 # redo wording: the state a retire that died part-way under the old wording
 # leaves. A retire now treats that comment as already posted.
 rt5="$("$ORCH" ticket publish 55 "Five" "$tbody")"
 "$ORCH" ticket close "$rt5" >/dev/null
-mkdir -p "$db/comments"
-writeln "This ticket was retired by an orchestrator redo: its spec, #55, is being redone and will be broken down into tickets again." \
-  >"$db/comments/$rt5"
-: >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" ticket retire 55 2>&1)"; st=$?
-assert_status "a closed, linked ticket with an old-wording comment: retire succeeds" "$st" 0
-assert_eq "posting no second comment on it" "$(grep -c '^issue comment' "$filed")" "0"
-assert_eq "leaving its one old-wording comment alone" "$(wc -l <"$db/comments/$rt5" | tr -d ' ')" "1"
-assert_eq "and unlinking it" "$(gh api "repos/{owner}/{repo}/issues/55/sub_issues" --jq length)" "0"
+fake_comment "$rt5" fake-gh 2026-01-01T00:00:00Z \
+  "This ticket was retired by an orchestrator redo: its spec, #55, is being redone and will be broken down into tickets again."
+fake_fail adapter_issue_comment
+out="$("$ORCH" ticket retire 55 2>&1)"; st=$?
+assert_status "a closed, linked ticket with an old-wording comment: retire succeeds, posting no second comment" "$st" 0
+fake_unfail
+assert_eq "leaving its one old-wording comment alone" "$(fake_comments_of "$rt5" | grep -c .)" "1"
+assert_eq "and unlinking it" "$(fake_sub_issues_of 55)" ""
 out="$("$ORCH" ticket exists 55 2>&1)"; st=$?
 assert_status "ticket exists then finds no breakdown" "$st" 1
 
-writeln 'Intro' '```md' '## Ticket' 'example' '```' '' '## Ticket' 'Build.' >"$db/body/56"
+fake_issue_body 56 "$(writeln 'Intro' '```md' '## Ticket' 'example' '```' '' '## Ticket' 'Build.')"
 out="$("$ORCH" ticket retire 56 2>&1)"; st=$?
 assert_status "a body with a fenced ## Ticket example: retire succeeds" "$st" 0
 assert_eq "cutting only the real section, the fenced example kept" \
-  "$(od -c <"$db/body/56")" "$(writeln 'Intro' '```md' '## Ticket' 'example' '```' | od -c)"
+  "$(fake_body_of 56 | od -c)" "$(writeln 'Intro' '```md' '## Ticket' 'example' '```' | od -c)"
 out="$("$ORCH" ticket exists 56 2>&1)"; st=$?
 assert_status "ticket exists then ignores the fenced example" "$st" 1
-writeln 'Intro' '```md' '## Ticket' '```' >"$db/body/57"
-: >"$filed"
-out="$(GH_STUB_FILED="$filed" "$ORCH" ticket retire 57 2>&1)"; st=$?
-assert_status "a body whose only ## Ticket is fenced: retire succeeds" "$st" 0
-assert_eq "writing nothing to GitHub" "$(grep -c '^issue edit' "$filed")" "0"
+fake_issue_body 57 "$(writeln 'Intro' '```md' '## Ticket' '```')"
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket retire 57 2>&1)"; st=$?
+assert_status "a body whose only ## Ticket is fenced: retire succeeds, writing nothing to GitHub" "$st" 0
+fake_unfail
 out="$("$ORCH" ticket exists 57 2>&1)"; st=$?
 assert_status "ticket exists finds no breakdown in a fenced ## Ticket alone" "$st" 1
-printf 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.\n\n\n' >"$db/body/58"
+fake_body_read 58 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.\n\n\n'
 "$ORCH" ticket retire 58 >/dev/null 2>&1
 assert_eq "trailing blank lines after the section are kept" \
-  "$(od -c <"$db/body/58")" "$(printf 'Spec.\n\n## After\nTail.\n\n\n' | od -c)"
-printf 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.' >"$db/body/59"
-"$ORCH" ticket retire 59 >/dev/null 2>&1
-assert_eq "a body with no final newline gets none" \
-  "$(od -c <"$db/body/59")" "$(printf 'Spec.\n\n## After\nTail.' | od -c)"
+  "$(fake_body_of 58 | od -c)" "$(printf 'Spec.\n\n## After\nTail.\n\n\n' | od -c)"
 
 rt5="$("$ORCH" ticket publish 55 "Five" "$tbody")"
 redo_spec_at 55
-out="$(fake_github && fake_issue 55 open && "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue still steps back to spec" "$st" 0
 assert_eq "without retiring the closed issue's tickets" \
-  "$(gh api "repos/{owner}/{repo}/issues/55/sub_issues" --jq '.[].number') $(cat "$db/state/$rt5")" "$rt5 open"
+  "$(fake_sub_issues_of 55) $(fake_state_of "$rt5")" "$rt5 OPEN"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket retire is in the usage text" "$out" "ticket retire <parent>"
-restore_suite_env GH_STUB_DB
+restore_suite_env
 
 # --- gh adapter (real issue close, subprocess gh) ---------------------------
 # The rest of "redo spec" proved the seam through the in-memory fake; this is

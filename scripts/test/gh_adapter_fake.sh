@@ -36,10 +36,22 @@
 #                     the PR's k-th comment
 #   next_pr           the number the next opened PR takes; absent, one past
 #                     the highest issue or PR number the store holds
+#   subs/<parent>     the parent's sub-issues, one number per line, in the
+#                     order they were linked
+#   blocked_by/<n>    the issues #n is blocked by, one number per line, in the
+#                     order the edges were added
 #   fail/<operation>  present, every call of that operation fails, non-zero,
 #                     with the file's contents as gh's stderr
+#   fail/<operation>.after
+#                     a countdown: while above zero, each call of that
+#                     operation succeeds despite fail/<operation> and counts it
+#                     down
 #   lag/<operation>   a countdown: while above zero, each call of that
 #                     operation answers stale and counts it down
+#   lag/<operation>.after
+#                     a countdown: while above zero, each call of that
+#                     operation answers current, before its lag starts, and
+#                     counts it down
 #   lag/<operation>.stale
 #                     the stale answer, where the operation takes one
 #   checks/<n>/<scope>
@@ -67,9 +79,16 @@ fake_store() {
 # fake_failing <operation>: true when fake_fail named the operation, with its
 # stderr written, so an operation opens with `! fake_failing <op> || return 1`.
 fake_failing() {
-  local f
+  local f n
   f="$(fake_store)/fail/$1" || return 1
   [ -f "$f" ] || return 1
+  if [ -f "$f.after" ]; then
+    n="$(cat "$f.after")"
+    if [ "${n:-0}" -gt 0 ]; then
+      printf '%s\n' "$((n - 1))" >"$f.after"
+      return 1
+    fi
+  fi
   cat "$f" >&2
 }
 
@@ -80,6 +99,13 @@ fake_lagging() {
   local f n
   f="$(fake_store)/lag/$1" || return 1
   [ -f "$f" ] || return 1
+  if [ -f "$f.after" ]; then
+    n="$(cat "$f.after")"
+    if [ "${n:-0}" -gt 0 ]; then
+      printf '%s\n' "$((n - 1))" >"$f.after"
+      return 1
+    fi
+  fi
   n="$(cat "$f")"
   [ "${n:-0}" -gt 0 ] || return 1
   printf '%s\n' "$((n - 1))" >"$f"
@@ -443,6 +469,104 @@ adapter_pr_body_edit() {
   ! fake_failing adapter_pr_body_edit || return 1
   fake_pr_known "$1" || return 1
   cat "$2" >"$(fake_pr_dir "$1")/body"
+}
+
+# --- sub-issue and dependency operations, on the store --------------------------
+
+# fake_open_blockers <n>: how many of #n's stored blockers are still open.
+fake_open_blockers() {
+  local b c=0
+  while IFS= read -r b; do
+    [ -n "$b" ] || continue
+    [ "$(cat "$(fake_issue_dir "$b")/state" 2>/dev/null)" = OPEN ] && c=$((c + 1))
+  done < <(cat "$(fake_store)/blocked_by/$1" 2>/dev/null)
+  printf '%s\n' "$c"
+}
+
+# fake_lines_drop <file> <line>: the file without that line, where it exists.
+fake_lines_drop() {
+  [ -f "$1" ] || return 0
+  { grep -vxF -- "$2" "$1" || true; } >"$1.tmp"
+  mv "$1.tmp" "$1"
+}
+
+# adapter_sub_issues <parent>: the stored sub-issues, in link order, each with
+# its stored state and its count of open blockers. Lagging (fake_lag), it
+# answers the stale answer fake_lag was given, or none.
+adapter_sub_issues() {
+  local n
+  ! fake_failing adapter_sub_issues || return 1
+  if fake_lagging adapter_sub_issues; then
+    fake_stale adapter_sub_issues
+    return 0
+  fi
+  fake_issue_known "$1" || return 1
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    printf '%s\t%s\t%s\n' "$n" "$(cat "$(fake_issue_dir "$n")/state")" "$(fake_open_blockers "$n")"
+  done < <(cat "$(fake_store)/subs/$1" 2>/dev/null)
+}
+
+# adapter_sub_issue_link <parent> <child>: the child appended to the parent's
+# stored sub-issues, once.
+adapter_sub_issue_link() {
+  local f
+  ! fake_failing adapter_sub_issue_link || return 1
+  fake_issue_known "$1" && fake_issue_known "$2" || return 1
+  mkdir -p "$(fake_store)/subs"
+  f="$(fake_store)/subs/$1"
+  grep -qxF -- "$2" "$f" 2>/dev/null || printf '%s\n' "$2" >>"$f"
+}
+
+# adapter_sub_issue_unlink <parent> <child>: the child dropped from the
+# parent's stored sub-issues.
+adapter_sub_issue_unlink() {
+  ! fake_failing adapter_sub_issue_unlink || return 1
+  fake_issue_known "$1" && fake_issue_known "$2" || return 1
+  fake_lines_drop "$(fake_store)/subs/$1" "$2"
+}
+
+# adapter_issue_parent <n>: the parent whose stored sub-issues hold #n, or
+# nothing.
+adapter_issue_parent() {
+  local f
+  ! fake_failing adapter_issue_parent || return 1
+  fake_issue_known "$1" || return 1
+  for f in "$(fake_store)"/subs/*; do
+    [ -f "$f" ] || continue
+    if grep -qxF -- "$1" "$f"; then basename "$f"; return 0; fi
+  done
+}
+
+# adapter_blockers <n>: #n's stored blockers, in the order they were added.
+# Lagging (fake_lag), it answers the stale answer fake_lag was given, or none.
+adapter_blockers() {
+  ! fake_failing adapter_blockers || return 1
+  if fake_lagging adapter_blockers; then
+    fake_stale adapter_blockers
+    return 0
+  fi
+  fake_issue_known "$1" || return 1
+  cat "$(fake_store)/blocked_by/$1" 2>/dev/null || true
+}
+
+# adapter_blocker_add <n> <blocker>: the blocker appended to #n's stored
+# blockers, once - GitHub stores an edge once however often it is asked for.
+adapter_blocker_add() {
+  local f
+  ! fake_failing adapter_blocker_add || return 1
+  fake_issue_known "$1" && fake_issue_known "$2" || return 1
+  mkdir -p "$(fake_store)/blocked_by"
+  f="$(fake_store)/blocked_by/$1"
+  grep -qxF -- "$2" "$f" 2>/dev/null || printf '%s\n' "$2" >>"$f"
+}
+
+# adapter_blocker_remove <n> <blocker>: the blocker dropped from #n's stored
+# blockers.
+adapter_blocker_remove() {
+  ! fake_failing adapter_blocker_remove || return 1
+  fake_issue_known "$1" && fake_issue_known "$2" || return 1
+  fake_lines_drop "$(fake_store)/blocked_by/$1" "$2"
 }
 
 # --- ci operations, on the store ------------------------------------------------

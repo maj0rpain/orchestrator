@@ -864,10 +864,11 @@ review_budget() {
 # real `gh` below. Unset - every normal run - nothing is sourced and behaviour
 # is identical to before the seam existed.
 #
-# Operations under the #280 contract - the label, issue, PR and CI ones - are
-# named for what their callers need and own gh's flags: each prints plain text
-# in the shape documented on it, and on a gh failure returns non-zero with gh's
-# stderr passed through.
+# Operations under the #280 contract - the label, issue, PR, sub-issue and
+# dependency, and CI ones - are named for what their callers need and own gh's
+# flags, --jq and GitHub's database ids: each prints plain text in the shape
+# documented on it, and on a gh failure returns non-zero with gh's stderr
+# passed through.
 
 # adapter_label_upsert <name> <colour> <description>: creates the label, or
 # updates the one that exists, to that colour and description. Prints nothing.
@@ -1055,6 +1056,84 @@ adapter_pr_comment() {
 # contents (issue #444). Prints nothing.
 adapter_pr_body_edit() {
   gh pr edit "$1" --body-file "$2" >/dev/null
+}
+
+# --- sub-issue and dependency operations ---
+
+# issue_api_id <n>: issue #n's GitHub database id, which the sub-issue and
+# blocked-by writes below take in place of its number. Shared by those
+# operations; not called from anywhere else.
+issue_api_id() {
+  gh api "repos/{owner}/{repo}/issues/$1" --jq .id
+}
+
+# A parent's sub-issues as adapter_sub_issues prints them. GitHub leaves the
+# dependency summary off an issue that has none, which counts as no blockers.
+SUB_ISSUES_JQ='.[] | "\(.number)\t\(.state | ascii_upcase)\t\(.issue_dependencies_summary.blocked_by // 0)"'
+
+# adapter_sub_issues <parent>: every sub-issue of the parent, open or closed,
+# in the order GitHub published them, one per line as TSV:
+# "<n><TAB><OPEN|CLOSED><TAB><open blockers>" - the count of its blockers that
+# are still open. Nothing at all for a parent with none.
+adapter_sub_issues() {
+  gh api --paginate "repos/{owner}/{repo}/issues/$1/sub_issues" --jq "$SUB_ISSUES_JQ"
+}
+
+# adapter_sub_issue_link <parent> <child>: links the child as a sub-issue of
+# the parent. Prints nothing.
+adapter_sub_issue_link() {
+  local id
+  id="$(issue_api_id "$2")" || return
+  gh api --method POST "repos/{owner}/{repo}/issues/$1/sub_issues" -F sub_issue_id="$id" >/dev/null
+}
+
+# adapter_sub_issue_unlink <parent> <child>: unlinks the child from the
+# parent's sub-issues. Prints nothing.
+adapter_sub_issue_unlink() {
+  local id
+  id="$(issue_api_id "$2")" || return
+  gh api --method DELETE "repos/{owner}/{repo}/issues/$1/sub_issue" -F sub_issue_id="$id" >/dev/null
+}
+
+# adapter_issue_parent <n>: the number of the issue #n is a sub-issue of, or
+# nothing at all where it is none. Read from the issue's own parent_issue_url
+# rather than the /parent endpoint, whose "no parent" is a 404 indistinguishable
+# by exit status from a missing issue: here every gh failure is a real one.
+# GitHub omits the key on an issue with no parent, so an absent key and a null
+# one both mean none. Fails where the URL carries no issue number.
+adapter_issue_parent() {
+  local url n
+  url="$(gh api "repos/{owner}/{repo}/issues/$1" --jq '.parent_issue_url // empty')" || return
+  [ -n "$url" ] || return 0
+  n="${url##*/}"
+  case "$n" in
+    ''|*[!0-9]*)
+      printf 'gh api printed a parent URL with no issue number: %s\n' "$url" >&2
+      return 1 ;;
+  esac
+  printf '%s\n' "$n"
+}
+
+# adapter_blockers <n>: the issues #n is blocked by, open or closed, one number
+# per line, in GitHub's order. Nothing at all for none.
+adapter_blockers() {
+  gh api --paginate "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by" --jq '.[].number'
+}
+
+# adapter_blocker_add <n> <blocker>: adds the edge marking #n blocked by the
+# blocker. Prints nothing.
+adapter_blocker_add() {
+  local id
+  id="$(issue_api_id "$2")" || return
+  gh api --method POST "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by" -F issue_id="$id" >/dev/null
+}
+
+# adapter_blocker_remove <n> <blocker>: removes the edge marking #n blocked by
+# the blocker. Prints nothing.
+adapter_blocker_remove() {
+  local id
+  id="$(issue_api_id "$2")" || return
+  gh api --method DELETE "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by/$id" >/dev/null
 }
 
 # --- ci operations ---
@@ -2387,32 +2466,34 @@ cmd_pr() {
 
 # --- ticket -------------------------------------------------------------
 #
-# GitHub's native sub-issue and issue-dependency APIs, in one place, so no
-# skill or agent prose ever calls `gh api` on these endpoints directly. Stateless
-# throughout, like issue publish/pr publish: callable with no state.json,
-# since quick implementation keeps none.
+# GitHub's native sub-issues and issue dependencies, in one place, so no skill
+# or agent prose ever calls `gh api` on these endpoints directly. Every read
+# and write goes through the adapter's sub-issue and dependency operations.
+# Stateless throughout, like issue publish/pr publish: callable with no
+# state.json, since quick implementation keeps none.
 
-# The child's *database id*, not its issue number - both `sub_issues` and
-# `dependencies/blocked_by` take the database id, and nowhere else does
-# ticket_publish come by it for free. An optional <context> is appended to
-# the failure message, so a caller can name the ticket it was working on.
-issue_db_id() {
-  gh api "repos/{owner}/{repo}/issues/$1" --jq .id \
-    || die "gh could not read issue #$1${2:+, $2}"
+# ticket_sub_issues <parent> [die|die2]: the parent's sub-issues as
+# adapter_sub_issues prints them - the one listing every ticket command reads
+# (#394). Dies, before asking GitHub, on a parent that is no plain number;
+# dies through the second argument (default die) where GitHub cannot list
+# them.
+ticket_sub_issues() {
+  local parent="$1" fail="${2:-die}" subs
+  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
+  subs="$(adapter_sub_issues "$parent")" || "$fail" "gh could not list sub-issues of #$parent"
+  if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
 }
 
 # True only once both links read back exactly as published: the parent's
-# sub_issues listing contains the child, and the child's blocked_by listing
+# sub-issue listing contains the child, and the child's blocked-by listing
 # is the same set of numbers requested, in any order. Read fresh every call,
 # never cached - the caller retries this on a mismatch, and a cached answer
 # would just repeat the same wrong verdict.
 ticket_links_verified() {
   local parent="$1" child="$2" want="$3" have_children have_blockers
-  have_children="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" --jq '.[].number')" \
-    || return 1
-  printf '%s\n' "$have_children" | grep -qxF "$child" || return 1
-  have_blockers="$(gh api --paginate "repos/{owner}/{repo}/issues/$child/dependencies/blocked_by" --jq '.[].number')" \
-    || return 1
+  have_children="$(adapter_sub_issues "$parent")" || return 1
+  printf '%s\n' "$have_children" | cut -f1 | grep -qxF "$child" || return 1
+  have_blockers="$(adapter_blockers "$child")" || return 1
   [ "$(printf '%s\n' "$have_blockers" | sort -n)" = "$(printf '%s\n' "$want" | sort -n)" ]
 }
 
@@ -2425,7 +2506,7 @@ ticket_links_verified() {
 cmd_ticket_publish() {
   [ $# -ge 3 ] || die "usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
   local parent="$1" title="$2" body_file="$3" blocked_by="" want="" b
-  local ready child child_id blocker_id
+  local ready child
   shift 3
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -2454,17 +2535,13 @@ cmd_ticket_publish() {
   child="$(adapter_issue_create "$title" "$body_file" "$ready")" \
     || die "gh could not create the ticket"
 
-  child_id="$(issue_db_id "$child")"
-  gh api --method POST "repos/{owner}/{repo}/issues/$parent/sub_issues" \
-      -F sub_issue_id="$child_id" >/dev/null \
+  adapter_sub_issue_link "$parent" "$child" \
     || die "gh could not link ticket #$child as a sub-issue of #$parent"
 
   if [ -n "$want" ]; then
     while IFS= read -r b; do
       [ -z "$b" ] && continue
-      blocker_id="$(issue_db_id "$b")"
-      gh api --method POST "repos/{owner}/{repo}/issues/$child/dependencies/blocked_by" \
-          -F issue_id="$blocker_id" >/dev/null \
+      adapter_blocker_add "$child" "$b" \
         || die "gh could not add a blocking edge from ticket #$child on #$b"
     done <<<"$want"
   fi
@@ -2476,17 +2553,13 @@ cmd_ticket_publish() {
   note "$child"
 }
 
-# The parent's open sub-issues with zero open blockers
-# (issue_dependencies_summary.blocked_by, which already counts open blockers
-# only), in the order GitHub published them.
+# The parent's open sub-issues with zero open blockers, in the order GitHub
+# published them.
 cmd_ticket_next() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket next <parent>"
-  local parent="$1" subs
-  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
-  subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" \
-      --jq '.[] | select(.state == "open") | select(.issue_dependencies_summary.blocked_by == 0) | .number')" \
-    || die "gh could not list sub-issues of #$parent"
-  if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
+  local subs
+  subs="$(ticket_sub_issues "$1")" || exit 1
+  printf '%s\n' "$subs" | awk -F '\t' '$2 == "OPEN" && $3 == 0 { print $1 }'
 }
 
 # Every sub-issue of <parent>, open or closed, one "<n> open|closed" line
@@ -2494,12 +2567,9 @@ cmd_ticket_next() {
 # tickets its accepted edits touch without calling a sub-issue endpoint.
 cmd_ticket_list() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket list <parent>"
-  local parent="$1" subs
-  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
-  subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" \
-      --jq '.[] | "\(.number) \(.state)"')" \
-    || die "gh could not list sub-issues of #$parent"
-  if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
+  local subs
+  subs="$(ticket_sub_issues "$1")" || exit 1
+  printf '%s\n' "$subs" | awk -F '\t' 'NF { print $1, tolower($2) }'
 }
 
 cmd_ticket_close() {
@@ -2514,11 +2584,9 @@ cmd_ticket_close() {
 # implement phase, whose frontier query would otherwise find nothing.
 cmd_ticket_reset() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reset <parent>"
-  local parent="$1" closed n
-  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
-  closed="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" \
-      --jq '.[] | select(.state == "closed") | .number')" \
-    || die "gh could not list sub-issues of #$parent"
+  local subs closed n
+  subs="$(ticket_sub_issues "$1")" || exit 1
+  closed="$(printf '%s\n' "$subs" | awk -F '\t' '$2 == "CLOSED" { print $1 }')"
   if [ -n "$closed" ]; then
     while IFS= read -r n; do
       [ -z "$n" ] && continue
@@ -2528,11 +2596,7 @@ cmd_ticket_reset() {
 }
 
 # Prints <n>'s parent issue number, or nothing (still exit 0) when <n> is
-# not a sub-issue. Read from the issue's own parent_issue_url rather than the
-# /parent endpoint, whose "no parent" is a 404 indistinguishable by exit
-# status from a missing issue: here every gh failure is a real one. GitHub
-# omits the key entirely on an issue with no parent, so an absent key and a
-# null one both mean "no parent".
+# not a sub-issue. Every gh failure is a real one (see adapter_issue_parent).
 cmd_ticket_parent() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket parent <n>"
   local n="$1"
@@ -2545,10 +2609,7 @@ cmd_ticket_parent() {
 # has none. An optional <context> is appended to the failure message, so a
 # caller can name the ticket it was working on.
 issue_parent() {
-  local url
-  url="$(gh api "repos/{owner}/{repo}/issues/$1" --jq '.parent_issue_url // empty')" \
-    || die "gh could not read issue #$1's parent${2:+, $2}"
-  if [ -n "$url" ]; then printf '%s\n' "${url##*/}"; fi
+  adapter_issue_parent "$1" || die "gh could not read issue #$1's parent${2:+, $2}"
 }
 
 # Whether <parent> already has a ticket breakdown, decided by structure
@@ -2564,9 +2625,7 @@ issue_parent() {
 cmd_ticket_exists() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket exists <parent>"
   local parent="$1" subs body
-  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
-  subs="$(gh api --paginate "repos/{owner}/{repo}/issues/$parent/sub_issues" --jq '.[].number')" \
-    || die2 "gh could not list sub-issues of #$parent"
+  subs="$(ticket_sub_issues "$parent" die2)" || exit "$?"
   if [ -n "$subs" ]; then
     printf 'sub-issues\n'
     return 0
@@ -2623,15 +2682,15 @@ strip_ticket_sections() {
 # and no section to cut, so a repeat writes nothing. Any GitHub failure dies.
 cmd_ticket_retire() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
-  local parent="$1" subs n state child_id comments body stripped msg old_msg out note
-  subs="$(cmd_ticket_list "$parent")" || exit 1
+  local parent="$1" subs n state comments body stripped msg old_msg out note
+  subs="$(ticket_sub_issues "$parent")" || exit 1
   msg="This ticket was retired: its spec, #$parent, changed and will be broken down into tickets again."
   # The wording a retire posted before a spec review could retire too: a
   # ticket carrying it from a run that died part-way is already commented on.
   old_msg="This ticket was retired by an orchestrator redo: its spec, #$parent, is being redone and will be broken down into tickets again."
-  while read -r n state; do
+  while IFS=$'\t' read -r n state _; do
     [ -z "$n" ] && continue
-    if [ "$state" = open ]; then
+    if [ "$state" = OPEN ]; then
       adapter_issue_close "$n" "not planned" "$msg" \
         || die "gh could not close ticket #$n"
     else
@@ -2645,9 +2704,7 @@ cmd_ticket_retire() {
         rm -f "$note"
       fi
     fi
-    child_id="$(issue_db_id "$n")"
-    gh api --method DELETE "repos/{owner}/{repo}/issues/$parent/sub_issue" \
-        -F sub_issue_id="$child_id" >/dev/null \
+    adapter_sub_issue_unlink "$parent" "$n" \
       || die "gh could not unlink ticket #$n from #$parent"
   done <<<"$subs"
   # Read into a file, never through $(...), which would drop the body's
@@ -2702,12 +2759,14 @@ ticket_edge_args() {
 
 # Dies, before any write, unless ticket <n> is open, is a sub-issue, and
 # every --by issue is its sibling: a sub-issue of the same parent. A closed
-# blocker is allowed - an edge to a finished ticket is still a record.
+# blocker is allowed - an edge to a finished ticket is still a record. The
+# state is the issue noun's own read (#496); a pull request's number passes it
+# and is refused as no sub-issue.
 ticket_edge_preconditions() {
   local n="$1" by="$2" state parent b bp
-  state="$(gh api "repos/{owner}/{repo}/issues/$n" --jq .state)" \
+  state="$(adapter_issue_state "$n")" \
     || die "gh could not read ticket #$n"
-  [ "$state" = open ] || die "ticket #$n is closed - its blocking edges can no longer change anything"
+  [ "$state" != CLOSED ] || die "ticket #$n is closed - its blocking edges can no longer change anything"
   parent="$(issue_parent "$n")" || exit 1
   [ -n "$parent" ] || die "#$n is not a sub-issue, so it is no ticket of a breakdown"
   while IFS= read -r b; do
@@ -2721,7 +2780,7 @@ ticket_edge_preconditions() {
 # listing, one per line, sorted. A gh failure dies naming the ticket.
 ticket_blockers() {
   local have
-  have="$(gh api --paginate "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by" --jq '.[].number')" \
+  have="$(adapter_blockers "$1")" \
     || die "gh could not read ticket #$1's blockers"
   if [ -n "$have" ]; then printf '%s\n' "$have" | sort -un; fi
 }
@@ -2798,7 +2857,7 @@ ticket_blocked_by_rewrite() {
 
 # Adds a native blocking edge on <n> for every --by issue it lacks.
 cmd_ticket_block() {
-  local args n by before want b blocker_id
+  local args n by before want b
   args="$(ticket_edge_args block "$@")" || exit 1
   n="$(printf '%s\n' "$args" | sed -n 1p)"
   by="$(printf '%s\n' "$args" | sed 1d)"
@@ -2806,9 +2865,7 @@ cmd_ticket_block() {
   before="$(ticket_blockers "$n")" || exit 1
   while IFS= read -r b; do
     if printf '%s\n' "$before" | grep -qxF "$b"; then continue; fi
-    blocker_id="$(issue_db_id "$b" "a blocker of ticket #$n")" || exit 1
-    gh api --method POST "repos/{owner}/{repo}/issues/$n/dependencies/blocked_by" \
-        -F issue_id="$blocker_id" >/dev/null \
+    adapter_blocker_add "$n" "$b" \
       || die "gh could not add a blocking edge from ticket #$n on #$b"
   done <<<"$by"
   want="$(printf '%s\n%s\n' "$before" "$by" | sed '/^$/d' | sort -un)"
@@ -2818,7 +2875,7 @@ cmd_ticket_block() {
 
 # Removes the native blocking edge on <n> for every --by issue it has.
 cmd_ticket_unblock() {
-  local args n by before want b blocker_id
+  local args n by before want b
   args="$(ticket_edge_args unblock "$@")" || exit 1
   n="$(printf '%s\n' "$args" | sed -n 1p)"
   by="$(printf '%s\n' "$args" | sed 1d)"
@@ -2826,9 +2883,7 @@ cmd_ticket_unblock() {
   before="$(ticket_blockers "$n")" || exit 1
   while IFS= read -r b; do
     if ! printf '%s\n' "$before" | grep -qxF "$b"; then continue; fi
-    blocker_id="$(issue_db_id "$b" "a blocker of ticket #$n")" || exit 1
-    gh api --method DELETE \
-        "repos/{owner}/{repo}/issues/$n/dependencies/blocked_by/$blocker_id" >/dev/null \
+    adapter_blocker_remove "$n" "$b" \
       || die "gh could not remove a blocking edge from ticket #$n on #$b"
   done <<<"$by"
   want="$(printf '%s\n' "$before" | grep -vxF -f <(printf '%s\n' "$by") || true)"
