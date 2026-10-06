@@ -2845,7 +2845,7 @@ strip_ticket_sections() {
 # and no section to cut, so a repeat writes nothing. Any GitHub failure dies.
 cmd_ticket_retire() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
-  local parent="$1" subs n state comments body stripped msg old_msg out note
+  local parent="$1" subs n state comments msg old_msg note
   subs="$(ticket_sub_issues "$parent")" || exit 1
   msg="This ticket was retired: its spec, #$parent, changed and will be broken down into tickets again."
   # The wording a retire posted before a spec review could retire too: a
@@ -2870,27 +2870,38 @@ cmd_ticket_retire() {
     adapter_sub_issue_unlink "$parent" "$n" \
       || die "gh could not unlink ticket #$n from #$parent"
   done <<<"$subs"
-  # Read into a file, never through $(...), which would drop the body's
-  # trailing newlines: the bytes outside the section go back unchanged, the
-  # same round trip `issue fetch` and `issue update` make.
+  # A body with no `## Ticket` line outside a code fence comes back
+  # unchanged, so it is not written.
+  issue_body_rewrite "$parent" "gh could not read issue #$parent's body" \
+    "gh could not remove the ## Ticket section from #$parent" strip_ticket_sections
+}
+
+# issue_body_rewrite <n> <read-msg> <write-msg> <filter> [<arg>...]: issue
+# <n>'s body through <filter> (stdin to stdout) and back. The body is read
+# into a file, never through $(...), which would drop its trailing newlines,
+# so the bytes the filter keeps go back unchanged - the same round trip
+# `issue fetch` and `issue update` make. A body with no final newline gets
+# none back; a result byte-identical to the body is not written. A failed
+# read dies with <read-msg>, a failed write with <write-msg>.
+issue_body_rewrite() {
+  local n="$1" read_msg="$2" write_msg="$3" body result out
+  shift 3
   body="$(mktemp)"
-  adapter_issue_body "$parent" >"$body" \
-    || { rm -f "$body"; die "gh could not read issue #$parent's body"; }
-  has_ticket_heading <"$body" || { rm -f "$body"; return 0; }
-  stripped="$(mktemp)"
-  strip_ticket_sections <"$body" >"$stripped"
+  adapter_issue_body "$n" >"$body" \
+    || { rm -f "$body"; die "$read_msg"; }
+  result="$(mktemp)"
+  "$@" <"$body" >"$result"
   # awk ends every line it prints with a newline; a body that had no final
   # newline gets none back.
   if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
-    out="$(cat "$stripped"; printf x)"; out="${out%x}"
-    printf '%s' "${out%$'\n'}" >"$stripped"
+    out="$(cat "$result"; printf x)"; out="${out%x}"
+    printf '%s' "${out%$'\n'}" >"$result"
   fi
-  # A `## Ticket` line only inside a code fence leaves nothing to cut: no write.
-  if cmp -s "$body" "$stripped"; then rm -f "$body" "$stripped"; return 0; fi
+  if cmp -s "$body" "$result"; then rm -f "$body" "$result"; return 0; fi
   rm -f "$body"
-  adapter_issue_body_edit "$parent" "$stripped" \
-    || { rm -f "$stripped"; die "gh could not remove the ## Ticket section from #$parent"; }
-  rm -f "$stripped"
+  adapter_issue_body_edit "$n" "$result" \
+    || { rm -f "$result"; die "$write_msg"; }
+  rm -f "$result"
 }
 
 # `ticket block` and `ticket unblock`'s arguments, checked before anything
@@ -2993,27 +3004,13 @@ rewrite_blocked_by_section() {
   '
 }
 
-# Brings ticket <n>'s `## Blocked by` section in line with <blockers>, the
-# same file-based round trip `ticket retire` makes: read into a file, never
-# through $(...); a body with no final newline gets none back; no write when
-# the result is byte-identical. The write is not read back - ADR-0011 governs
+# Brings ticket <n>'s `## Blocked by` section in line with <blockers>
+# through issue_body_rewrite. The write is not read back - ADR-0011 governs
 # the edges, not the body.
 ticket_blocked_by_rewrite() {
-  local n="$1" blockers="$2" body rewritten out
-  body="$(mktemp)"
-  adapter_issue_body "$n" >"$body" \
-    || { rm -f "$body"; die "gh could not read ticket #$n's body"; }
-  rewritten="$(mktemp)"
-  rewrite_blocked_by_section "$blockers" <"$body" >"$rewritten"
-  if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
-    out="$(cat "$rewritten"; printf x)"; out="${out%x}"
-    printf '%s' "${out%$'\n'}" >"$rewritten"
-  fi
-  if cmp -s "$body" "$rewritten"; then rm -f "$body" "$rewritten"; return 0; fi
-  rm -f "$body"
-  adapter_issue_body_edit "$n" "$rewritten" \
-    || { rm -f "$rewritten"; die "gh could not rewrite ticket #$n's ## Blocked by section"; }
-  rm -f "$rewritten"
+  issue_body_rewrite "$1" "gh could not read ticket #$1's body" \
+    "gh could not rewrite ticket #$1's ## Blocked by section" \
+    rewrite_blocked_by_section "$2"
 }
 
 # Adds a native blocking edge on <n> for every --by issue it lacks.

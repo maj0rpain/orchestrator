@@ -7335,6 +7335,25 @@ fake_body_read 58 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.\n\n\n'
 "$ORCH" ticket retire 58 >/dev/null 2>&1
 assert_eq "trailing blank lines after the section are kept" \
   "$(fake_body_of 58 | od -c)" "$(printf 'Spec.\n\n## After\nTail.\n\n\n' | od -c)"
+fake_body_read 58 'Spec, no ticket heading.\n'
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket retire 58 2>&1)"; st=$?
+assert_status "a body with no ## Ticket heading: retire succeeds, writing nothing to GitHub" "$st" 0
+fake_unfail
+
+errf="$(mktemp)"
+fake_issue_body 58 "$(writeln 'Spec.' '' '## Ticket' 'Build.')"
+fake_fail adapter_issue_body
+out="$("$ORCH" ticket retire 58 2>"$errf")"; st=$?
+assert_status "a gh that cannot read the body fails ticket retire" "$st" 1
+assert_eq "naming the body read: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not read issue #58's body"
+fake_unfail
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket retire 58 2>"$errf")"; st=$?
+assert_status "a gh that cannot write the body fails ticket retire" "$st" 1
+assert_eq "naming the section cut: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not remove the ## Ticket section from #58"
+fake_unfail
+rm -f "$errf"
 
 rt5="$("$ORCH" ticket publish 55 "Five" "$tbody")"
 redo_spec_at 55
