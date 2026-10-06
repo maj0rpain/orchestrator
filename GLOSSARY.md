@@ -28,6 +28,14 @@ branch's tip at the moment it branched. A quick implementation's base SHA
 means the same, recorded on its branch.
 _Avoid_: target branch, integration branch (as the general term).
 
+**Repo**:
+The GitHub repo whose issues, PRs and checks the orchestrator reads and
+writes. The one the checkout's `origin` remote points at, unless the caller
+names another; never the one `gh` would pick by default. In a fork, that is
+the fork, not the upstream. Its default branch is the one **Base branch**
+falls back to.
+_Avoid_: upstream, gh's default repo (as the general term).
+
 **Release PR**:
 The PR that carries a base branch other than the default back into the
 default branch, closing every still-open issue whose work reached the base

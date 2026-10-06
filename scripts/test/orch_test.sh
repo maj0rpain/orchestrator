@@ -58,8 +58,9 @@ assert_first_line() {
   assert_eq "$1" "$(printf '%s\n' "$2" | sed -n 1p)" "$3"
 }
 
-# A fresh repo with one commit and an empty docs/agents/ for a labels doc,
-# cwd inside it. No setup is required of it (ADR-0028).
+# A fresh repo with one commit, an empty docs/agents/ for a labels doc and an
+# origin of https://github.com/o/r.git (so it resolves to the repo o/r), cwd
+# inside it. No setup is required of it (ADR-0028).
 new_repo() {
   local d
   d="$(mktemp -d)"
@@ -70,17 +71,17 @@ new_repo() {
   echo "# repo" >"$d/README.md"
   git -C "$d" add -A
   git -C "$d" commit -qm init
+  git -C "$d" remote add origin https://github.com/o/r.git
   cd "$d" || exit 1
   printf '%s\n' "$d"
 }
 
-# new_repo_with_origin [branch]: new_repo, plus an example.invalid origin whose
-# origin/HEAD points at <branch> (default: the checked-out branch), set to
-# HEAD. Call it in the current shell, never inside $(...): new_repo cd's.
+# new_repo_with_origin [branch]: new_repo, plus tracking refs for its origin:
+# origin/<branch> (default: the checked-out branch) set to HEAD, and
+# origin/HEAD pointing at it. Call it in the current shell, never inside $(...): new_repo cd's.
 new_repo_with_origin() {
   new_repo >/dev/null
   local b="${1:-$(git branch --show-current)}"
-  git remote add origin https://example.invalid/x/y.git
   git update-ref "refs/remotes/origin/$b" HEAD
   git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$b"
 }
@@ -734,7 +735,7 @@ labels_doc() {
 # and attribute the result to it.
 healthy_repo() {
   new_repo >/dev/null
-  git remote add origin https://github.com/acme/widgets.git
+  git remote set-url origin https://github.com/acme/widgets.git
   labels_doc docs/agents/triage-labels.md
   printf '%s\n' ".orchestrator/" ".scratch/" >>.git/info/exclude
   stub_gh
@@ -1298,6 +1299,53 @@ assert_contains "status reports no active flow afterwards" "$out" "No active flo
 out="$("$ORCH" init second 2>&1)"; st=$?
 assert_status "a new flow can start after archiving" "$st" 0
 
+# --- repo show ----------------------------------------------------------------
+# The GitHub repo orch.sh works on (#520): GH_REPO when the caller set it, else
+# the checkout's origin - never gh's own default, which in a fork is upstream.
+echo
+echo "repo show"
+new_repo >/dev/null
+unset GH_REPO
+assert_eq "a fresh test repo resolves to its github.com origin" \
+  "$("$ORCH" repo show)" "o/r (origin)"
+for url in https://github.com/acme/widgets.git https://github.com/acme/widgets \
+           git@github.com:acme/widgets.git git@github.com:acme/widgets \
+           ssh://git@github.com/acme/widgets.git ssh://git@github.com/acme/widgets; do
+  git remote set-url origin "$url"
+  assert_eq "origin $url resolves to acme/widgets" "$("$ORCH" repo show --name)" "acme/widgets"
+done
+for url in https://ghe.example.com/acme/widgets.git git@ghe.example.com:acme/widgets \
+           ssh://git@ghe.example.com/acme/widgets.git; do
+  git remote set-url origin "$url"
+  assert_eq "origin $url keeps its host" "$("$ORCH" repo show --name)" "ghe.example.com/acme/widgets"
+done
+git remote set-url origin https://github.com/acme/widgets.git
+assert_eq "GH_REPO wins over origin" "$(GH_REPO=fork/widgets "$ORCH" repo show)" "fork/widgets (GH_REPO)"
+assert_eq "repo show --name prints GH_REPO bare" \
+  "$(GH_REPO=fork/widgets "$ORCH" repo show --name)" "fork/widgets"
+assert_eq "repo show names origin as the source" "$("$ORCH" repo show)" "acme/widgets (origin)"
+out="$("$ORCH" repo show extra 2>&1)"; st=$?
+assert_status "repo show refuses a stray argument" "$st" 1
+
+# No GH_REPO and no usable origin: local commands still work, repo show fails.
+git remote remove origin
+"$ORCH" init norepo >/dev/null 2>&1
+out="$("$ORCH" state get phase 2>&1)"; st=$?
+assert_status "state get works with no repo to resolve" "$st" 0
+for args in "" "--name"; do
+  err="$(mktemp)"
+  label="repo show${args:+ $args}"
+  # shellcheck disable=SC2086
+  out="$("$ORCH" repo show $args 2>"$err")"; st=$?
+  assert_status "$label exits 1 with no repo" "$st" 1
+  assert_eq "$label prints nothing on stdout with no repo" "$out" ""
+  assert_contains "$label names GH_REPO as the remedy" "$(cat "$err")" "GH_REPO=<owner>/<repo>"
+  rm -f "$err"
+done
+git remote add origin https://example.invalid/notgithub
+out="$("$ORCH" repo show 2>/dev/null)"; st=$?
+assert_status "an origin with no owner/name path does not resolve" "$st" 1
+
 # --- default-branch ---------------------------------------------------------
 # The base every feature branch forks from. Getting this wrong is silent: work
 # lands on top of the wrong branch and nothing complains until review.
@@ -1306,7 +1354,7 @@ echo "default-branch"
 new_repo >/dev/null
 
 # origin/HEAD is a local pointer frozen at clone time; GitHub's answer must win.
-git remote add origin https://example.invalid/x/y.git
+git remote set-url origin https://example.invalid/x/y.git
 git checkout -q -b some-feature
 git update-ref refs/remotes/origin/some-feature HEAD
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/some-feature
@@ -1393,7 +1441,7 @@ echo "base"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+git remote set-url origin "$bare"
 git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -1454,7 +1502,7 @@ echo "a flow's base branch"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+git remote set-url origin "$bare"
 git push -q origin HEAD:refs/heads/main
 git checkout -q -b uat
 git commit -q --allow-empty -m "uat only"
@@ -1627,7 +1675,7 @@ echo "a quick implementation's base branch"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+git remote set-url origin "$bare"
 git push -q origin HEAD:refs/heads/main
 git checkout -q -b uat
 git commit -q --allow-empty -m "uat only"
@@ -1696,7 +1744,7 @@ echo "a quick implementation's base SHA (#243)"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+git remote set-url origin "$bare"
 git push -q origin HEAD:refs/heads/main
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -1865,7 +1913,7 @@ echo "branch retire"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+git remote set-url origin "$bare"
 git push -q origin HEAD:refs/heads/main
 
 out="$(orch_gh_failing branch retire nosuchbranch new 2>&1)"; st=$?
@@ -3056,7 +3104,7 @@ restore_suite_env
 echo
 echo "pr publish"
 new_repo >/dev/null
-git remote add origin https://github.com/acme/widgets.git
+git remote set-url origin https://github.com/acme/widgets.git
 stub_gh
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
@@ -3114,7 +3162,7 @@ assert_contains "naming both" "$out" "open|publish"
 echo
 echo "gh adapter (real pr create/view, subprocess gh)"
 new_repo >/dev/null
-git remote add origin https://github.com/acme/widgets.git
+git remote set-url origin https://github.com/acme/widgets.git
 stub_gh
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
@@ -3150,7 +3198,7 @@ echo "pr release"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+git remote set-url origin "$bare"
 git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -3461,7 +3509,7 @@ echo "gh adapter (real pr list, subprocess gh)"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+git remote set-url origin "$bare"
 git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git config orchestrator.base uat
 stub_gh
@@ -4638,7 +4686,7 @@ git add -A && git commit -qm "the reviewed code"
 head_sha="$(git rev-parse HEAD)"
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+git remote set-url origin "$bare"
 git push -q origin main
 git -C "$bare" symbolic-ref HEAD refs/heads/main
 git fetch -q origin

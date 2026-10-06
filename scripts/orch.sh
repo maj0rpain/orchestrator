@@ -211,6 +211,81 @@ default_branch() {
   printf '%s\n' "$b"
 }
 
+# The repo orch.sh works on (#520): GH_REPO when the caller set it, else the
+# owner/name parsed from the checkout's origin remote - never gh's own default
+# repo, which in a fork is the upstream. repo_resolve sets REPO_NAME to
+# [HOST/]OWNER/REPO and REPO_SOURCE to GH_REPO or origin, printing nothing; it
+# returns non-zero, with both empty, when nothing resolves. A caller that must
+# have a repo dies with REPO_REMEDY; doctor reports it instead.
+REPO_REMEDY="no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
+repo_resolve() {
+  local url
+  REPO_NAME=""
+  REPO_SOURCE=""
+  if [ -n "${GH_REPO:-}" ]; then
+    REPO_NAME="$GH_REPO"
+    REPO_SOURCE=GH_REPO
+    return 0
+  fi
+  url="$(git remote get-url origin 2>/dev/null)" || return 1
+  REPO_NAME="$(repo_from_url "$url")" || { REPO_NAME=""; return 1; }
+  REPO_SOURCE=origin
+}
+
+# repo_from_url <url>: [HOST/]OWNER/REPO from a clone URL in any of its three
+# forms - https://host/o/r, git@host:o/r, ssh://[user@]host[:port]/o/r - with
+# or without .git. github.com is left implicit, as gh -R expects; any other
+# host is kept. A URL with no host or not exactly owner/name fails.
+repo_from_url() {
+  local url="$1" host path
+  case "$url" in
+    https://*|http://*|ssh://*|git://*)
+      url="${url#*://}"
+      host="${url%%/*}"
+      path="${url#*/}"
+      [ "$path" != "$url" ] || return 1
+      host="${host##*@}"
+      host="${host%%:*}"
+      ;;
+    *@*:*)
+      host="${url%%:*}"
+      host="${host##*@}"
+      path="${url#*:}"
+      ;;
+    *) return 1 ;;
+  esac
+  path="${path%/}"
+  path="${path%.git}"
+  case "$path" in
+    */*/*|/*|*/|"") return 1 ;;
+    */*) ;;
+    *) return 1 ;;
+  esac
+  [ -n "$host" ] || return 1
+  if [ "$host" = github.com ]; then
+    printf '%s\n' "$path"
+  else
+    printf '%s/%s\n' "$host" "$path"
+  fi
+}
+
+cmd_repo() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    show)
+      case "$*" in
+        "") ;;
+        --name) ;;
+        *) die "usage: orch.sh repo show [--name]" ;;
+      esac
+      repo_resolve || die "$REPO_REMEDY"
+      if [ "${1:-}" = --name ]; then note "$REPO_NAME"; else note "$REPO_NAME ($REPO_SOURCE)"; fi
+      ;;
+    *) die "unknown repo op: ${op:-<none>} (want show)" ;;
+  esac
+}
+
 # Whether $1 is a valid branch name (git check-ref-format --branch rejects an empty one).
 is_branch_name() {
   git check-ref-format --branch "$1" >/dev/null 2>&1
@@ -2771,6 +2846,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               set, or default
   base clear                  remove the setting, falling back to the default
                               branch; succeeds when nothing was set
+  repo show [--name]          print the GitHub repo orch.sh works on and its
+                              source: GH_REPO when set, else the checkout's
+                              origin - never gh's default repo. --name prints
+                              the bare [HOST/]OWNER/REPO alone, for gh -R.
+                              Exits 1, naming GH_REPO, when neither resolves
   init <slug> [--issue N]     start a flow (refuses if one is active, unless
                               it is done - a done flow is archived and the
                               new one starts over it, or if the working tree
@@ -3008,6 +3088,7 @@ main() {
     doctor)        cmd_doctor "$@" ;;
     default-branch) default_branch ;;
     base)          cmd_base "$@" ;;
+    repo)          cmd_repo "$@" ;;
     init)          cmd_init "$@" ;;
     slug)          cmd_slug "$@" ;;
     state)         cmd_state "$@" ;;
