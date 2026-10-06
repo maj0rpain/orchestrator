@@ -1,4 +1,4 @@
-# The in-memory half of the ORCH_GH_ADAPTER seam.
+# The in-process half of the ORCH_GH_ADAPTER seam.
 #
 # Sourced into orch.sh's own process via ORCH_GH_ADAPTER, this redefines the
 # adapter functions orch.sh calls instead of shelling out to `gh` - so a test
