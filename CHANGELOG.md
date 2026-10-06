@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.11.1
+
+`orch.sh finding-triage apply` handles its possibly-empty list of labels to
+remove with one idiom per job: close-fixed guards its relabel on the list's
+count, every expansion uses the same bash-3.2-safe splice, and the declaration
+sits with the function's other locals (see issue #438). Behaviour is
+unchanged; tests now cover a finding applied without `needs-triage`.
+
 ## 3.11.0
 
 `orch.sh base set <branch> --flow` corrects the active flow's own base branch,
