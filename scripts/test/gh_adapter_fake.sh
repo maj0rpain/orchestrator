@@ -54,6 +54,8 @@
 #                     counts it down
 #   lag/<operation>.stale
 #                     the stale answer, where the operation takes one
+#   default_branch    the answer to the repo's default branch, byte for byte;
+#                     absent, gh cannot answer for the repo
 #   checks/<n>/<scope>
 #                     PR #n's scripted checks answers for a scope, required
 #                     or all, one per line - green, failing, cancel,
@@ -567,6 +569,20 @@ adapter_blocker_remove() {
   ! fake_failing adapter_blocker_remove || return 1
   fake_issue_known "$1" && fake_issue_known "$2" || return 1
   fake_lines_drop "$(fake_store)/blocked_by/$1" "$2"
+}
+
+# --- repo operations, on the store ----------------------------------------------
+
+# adapter_repo_default_branch <repo>: the stored default_branch answer, as is.
+# A store with none fails it, as gh does for a repo it cannot resolve. Failing
+# (fake_fail), it still prints the stored answer first, as a tool manager's
+# shim around a failed gh can (#465).
+adapter_repo_default_branch() {
+  local f
+  f="$(fake_store)/default_branch"
+  [ ! -f "$f" ] || cat "$f"
+  ! fake_failing adapter_repo_default_branch || return 1
+  [ -f "$f" ] || { printf "GraphQL: Could not resolve to a Repository with the name '%s'. (repository)\n" "$1" >&2; return 1; }
 }
 
 # --- ci operations, on the store ------------------------------------------------

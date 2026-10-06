@@ -1101,6 +1101,10 @@ fake_ci_reset() {
     "$ORCH_GH_FAKE_STORE/check_runs" "$ORCH_GH_FAKE_STORE/statuses" "$ORCH_GH_FAKE_STORE/unreadable_refs"
 }
 
+# fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
+# byte for byte, so a test can seed a polluted or empty one.
+fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; }
+
 # fake_reruns: the Actions run ids rerun, read back, space-separated, in order.
 fake_reruns() { tr '\n' ' ' <"$ORCH_GH_FAKE_STORE/reruns" 2>/dev/null | sed 's/ $//'; }
 
@@ -1678,35 +1682,45 @@ echo
 echo "default-branch"
 new_repo >/dev/null
 
+# GitHub's answer comes from the store-backed fake (fake_default_branch); a
+# store with none seeded is a repo gh cannot answer for.
+fake_github
+
 # origin/HEAD is a local pointer frozen at clone time; GitHub's answer must win.
 git remote set-url origin https://example.invalid/x/y.git
 git checkout -q -b some-feature
 git update-ref refs/remotes/origin/some-feature HEAD
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/some-feature
-assert_eq "prefers GitHub's answer over a stale origin/HEAD" \
-  "$(PATH="$STUB:$PATH" "$ORCH" default-branch)" "trunk"
-assert_eq "falls back to origin/HEAD when gh cannot answer" \
-  "$(PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" default-branch)" "some-feature"
+fake_default_branch $'trunk\n'
+assert_eq "prefers GitHub's answer over a stale origin/HEAD" "$("$ORCH" default-branch)" "trunk"
+rm -f "$ORCH_GH_FAKE_STORE/default_branch"
+assert_eq "falls back to origin/HEAD when gh cannot answer" "$("$ORCH" default-branch)" "some-feature"
 git symbolic-ref -d refs/remotes/origin/HEAD
-assert_eq "falls back to main when nothing else answers" \
-  "$(PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" default-branch)" "main"
+assert_eq "falls back to main when nothing else answers" "$("$ORCH" default-branch)" "main"
 
 # A tool manager's shim (mise) can print a status line on stdout around gh's
 # own answer (#465). Neither a two-line answer nor a failed gh's output may
 # become the default branch: only a valid branch name is ever resolved.
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/some-feature
-assert_eq "falls back past a gh answer polluted by a banner line" \
-  "$(PATH="$STUB:$PATH" GH_STUB_BANNER=1 "$ORCH" default-branch)" "some-feature"
-assert_eq "ignores the output of a gh that failed" \
-  "$(PATH="$STUB:$PATH" GH_STUB_FAIL_NOISY=1 "$ORCH" default-branch)" "some-feature"
-assert_eq "an empty name from gh is no valid branch name" \
-  "$(PATH="$STUB:$PATH" GH_STUB_EMPTY=1 "$ORCH" default-branch)" "some-feature"
+fake_default_branch $'mise ~/.config/mise/config.toml tools: gh@2.102.0\ntrunk\n'
+assert_eq "falls back past a gh answer polluted by a banner line" "$("$ORCH" default-branch)" "some-feature"
+fake_default_branch $'trunk\n'
+fake_fail adapter_repo_default_branch
+assert_eq "ignores the output of a gh that failed" "$("$ORCH" default-branch)" "some-feature"
+fake_unfail
+fake_default_branch $'\n'
+assert_eq "an empty name from gh is no valid branch name" "$("$ORCH" default-branch)" "some-feature"
+rm -f "$ORCH_GH_FAKE_STORE/default_branch"
 git update-ref refs/remotes/origin/-dash HEAD
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/-dash
 assert_eq "falls back to main past an origin/HEAD that is no valid branch name" \
-  "$(PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" default-branch)" "main"
+  "$("$ORCH" default-branch)" "main"
 git symbolic-ref -d refs/remotes/origin/HEAD
 git update-ref -d refs/remotes/origin/-dash
+restore_suite_env
+
+# MISE_QUIET reaches the gh process itself, so this one runs the real adapter
+# against $STUB's gh.
 mise_log="$(mktemp)"
 env -u MISE_QUIET PATH="$STUB:$PATH" GH_STUB_ENV_LOG="$mise_log" "$ORCH" default-branch >/dev/null
 assert_eq "gh run from orch.sh sees MISE_QUIET=1" "$(sort -u "$mise_log")" "MISE_QUIET=1"
@@ -1715,9 +1729,13 @@ rm -f "$mise_log"
 # origin/HEAD names a branch that is not `main`, so an origin/HEAD fallback
 # cannot pass for the final literal-`main` one.
 new_repo_with_origin some-feature
-PATH="$STUB:$PATH" GH_STUB_BANNER=1 "$ORCH" init banner >/dev/null
+fake_github
+export GH_REPO=acme/widgets
+fake_default_branch $'mise ~/.config/mise/config.toml tools: gh@2.102.0\ntrunk\n'
+"$ORCH" init banner >/dev/null
 recorded="$("$ORCH" state get base)"
 assert_eq "init records origin/HEAD's branch as the base" "$recorded" "some-feature"
+restore_suite_env
 
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
@@ -5748,6 +5766,21 @@ assert_status "blocker remove: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 404: Not Found"
 assert_eq "every sub-issue and dependency operation was pinned to the resolved repo" \
   "$(grep -E ' api .*issues/' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> ')" "0"
+
+# The repo operation. `gh repo view` ignores GH_REPO, so the operation names
+# the repo it is handed in gh's argv, never leaving it to the guard's pin.
+gh_reply 0 $'trunk\n' '' repo view acme/widgets --json defaultBranchRef --jq .defaultBranchRef.name
+out="$(contract adapter_repo_default_branch acme/widgets 2>&1)"; st=$?
+assert_status "repo default branch: reads the repo's default branch" "$st" 0
+assert_eq "printing the bare branch name" "$out" "trunk"
+assert_contains "naming the repo positionally, as gh repo view needs" "$(cat "$GH_FIXTURE/env.log")" \
+  "GH_REPO=acme/widgets GH_HOST=<unset> repo view acme/widgets --json defaultBranchRef"
+gh_reply 1 '' "GraphQL: Could not resolve to a Repository with the name 'acme/gone'. (repository)" \
+  repo view acme/gone --json defaultBranchRef --jq .defaultBranchRef.name
+out="$(contract adapter_repo_default_branch acme/gone 2>&1)"; st=$?
+assert_status "repo default branch: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" \
+  "GraphQL: Could not resolve to a Repository with the name 'acme/gone'. (repository)"
 rm -f "$ibody"
 restore_suite_env GH_FIXTURE GH_HOST
 

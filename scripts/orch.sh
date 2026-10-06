@@ -202,14 +202,15 @@ phase_write() {
 # Each candidate counts only when it is a valid branch name, so noise around
 # gh's answer - or a failed gh's output - falls through to the next (#465).
 #
-# GitHub is asked only when the repo resolves - `gh repo view` ignores GH_REPO,
-# so the repo is passed positionally - and a checkout with none falls through
-# to the local pointer rather than dying: the answer has always been
-# best-effort, and init and base show ask it before anything needs GitHub.
+# GitHub is asked only when the repo resolves - adapter_repo_default_branch
+# takes it positionally, since `gh repo view` ignores GH_REPO - and a checkout
+# with none falls through to the local pointer rather than dying: the answer
+# has always been best-effort, and init and base show ask it before anything
+# needs GitHub.
 default_branch() {
   local b=""
   if repo_resolve; then
-    b="$(gh repo view "$REPO_NAME" --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)" || b=""
+    b="$(adapter_repo_default_branch "$REPO_NAME" 2>/dev/null)" || b=""
   fi
   if ! is_branch_name "$b"; then
     b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')" || b=""
@@ -865,7 +866,7 @@ review_budget() {
 # is identical to before the seam existed.
 #
 # Operations under the #280 contract - the label, issue, PR, sub-issue and
-# dependency, and CI ones - are named for what their callers need and own gh's
+# dependency, repo, and CI ones - are named for what their callers need and own gh's
 # flags, --jq and GitHub's database ids: each prints plain text in the shape
 # documented on it, and on a gh failure returns non-zero with gh's stderr
 # passed through.
@@ -1134,6 +1135,16 @@ adapter_blocker_remove() {
   local id
   id="$(issue_api_id "$2")" || return
   gh api --method DELETE "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by/$id" >/dev/null
+}
+
+# --- repo operations ---
+
+# adapter_repo_default_branch <repo>: the default branch of the repo, named
+# [HOST/]OWNER/REPO, as a bare branch name on one line. The repo goes in gh's
+# argv because `gh repo view` ignores GH_REPO and would otherwise read gh's own
+# default repo. The answer is gh's stdout as is: a caller validates it.
+adapter_repo_default_branch() {
+  gh repo view "$1" --json defaultBranchRef --jq .defaultBranchRef.name
 }
 
 # --- ci operations ---
