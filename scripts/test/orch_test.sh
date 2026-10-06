@@ -215,16 +215,17 @@ record_flags() {
     shift
   done
 }
-# Lets <limit> calls through and refuses every later one - a multi-call
-# write that dies part-way. Counts in $db/<counter-file>; a no-op without $db.
+# stub_allow_n <counter-file> <limit> <what>: lets <limit> calls through and
+# refuses every later one with "gh stub: <what> refused" - a multi-call write
+# that dies part-way. Counts in $db/<counter-file>; a no-op without $db.
 stub_allow_n() {
   [ -n "$db" ] || return 0
-  local n
-  n="$(cat "$db/$1" 2>/dev/null)"; [ -n "$n" ] || n=0
-  if [ "$n" -ge "$2" ]; then
-    echo "gh stub: $3 refused" >&2; exit 1
+  local counter="$1" limit="$2" what="$3" n
+  n="$(cat "$db/$counter" 2>/dev/null)"; [ -n "$n" ] || n=0
+  if [ "$n" -ge "$limit" ]; then
+    echo "gh stub: $what refused" >&2; exit 1
   fi
-  echo $((n + 1)) >"$db/$1"
+  echo $((n + 1)) >"$db/$counter"
 }
 # The `ticket` group's tiny fake GitHub: an issue's open/closed state and its
 # sub-issue/blocked-by edges, persisted as files under GH_STUB_DB so they
@@ -537,15 +538,13 @@ ready-for-agent}"
         && [ "${GH_STUB_BLOCKED_GET_EXIT:-0}" != 0 ]; then
       echo "gh stub: blocked_by GET refused" >&2; exit "$GH_STUB_BLOCKED_GET_EXIT"
     fi
-    # GH_STUB_BLOCKED_POST_OK lets that many blocked_by POSTs through and
-    # refuses every later one - a multi-edge write that dies part-way.
+    # GH_STUB_BLOCKED_POST_OK is stub_allow_n's limit for blocked_by POSTs.
     if [ "$api_sub" = dependencies/blocked_by ] && [ "$api_method" = POST ] \
         && [ -n "${GH_STUB_BLOCKED_POST_OK:-}" ]; then
       stub_allow_n blocked_posted "$GH_STUB_BLOCKED_POST_OK" "blocked_by POST"
     fi
     # GH_STUB_BLOCKED_DELETE_EXIT refuses every blocked_by edge DELETE;
-    # GH_STUB_BLOCKED_DELETE_OK lets that many through and refuses every later
-    # one - a multi-edge removal that dies part-way.
+    # GH_STUB_BLOCKED_DELETE_OK is stub_allow_n's limit for blocked_by edge DELETEs.
     case "$api_sub" in
       dependencies/blocked_by/*)
         if [ "$api_method" = DELETE ] && [ "${GH_STUB_BLOCKED_DELETE_EXIT:-0}" != 0 ]; then
