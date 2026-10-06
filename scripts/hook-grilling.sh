@@ -28,6 +28,10 @@ set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
+# For triage_label_for, so the closing step names this repo's own triage
+# labels. doctor.sh reads the labels doc at $ROOT/$LABELS_DOC, the path
+# orch.sh sets too.
+source "$(dirname "${BASH_SOURCE[0]}")/doctor.sh"
 
 hook_read_skill_and_session
 
@@ -80,7 +84,14 @@ root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 # flow is finished work, so planning beside it gets the full message.
 if hook_flow_active "$root"; then exit 0; fi
 
+ROOT="$root"
+LABELS_DOC="docs/agents/triage-labels.md"
+ready_label="$(triage_label_for ready-for-agent)"
+wontfix_label="$(triage_label_for wontfix)"
+human_label="$(triage_label_for ready-for-human)"
+
 if [ "$host" = junie ]; then
+  ask_tool="the ask_user tool"
   ask_step="Call the ask_user tool with
   exactly three options:"
   plugin_root="$(hook_plugin_root)"
@@ -95,6 +106,7 @@ if [ "$host" = junie ]; then
   $plugin_root/skills/orch-spec-review/SKILL.md (its standalone spec review), or
   $plugin_root/skills/orch-to-tickets/SKILL.md."
 else
+  ask_tool="the AskUserQuestion tool"
   ask_step="Call the AskUserQuestion tool with
   exactly three options:"
   run_next="- On \"Start the orchestrator flow\", call the Skill tool with
@@ -106,6 +118,24 @@ else
   orchestrator's skills are model-invocable: call them, do not hand them to the
   user."
 fi
+
+# The interviewed issue (#571): an open issue the planning was about is
+# offered a move to ready-for-agent before the route question, so init
+# --issue can adopt it. Its lines are bullets, never numbered: the route
+# question's three options are the only numbered lines in the message.
+interviewed_step="- At the close, if this planning was about an existing open issue - named in the
+  interview's arguments or its conversation - that is the interviewed issue,
+  and this step comes before the route question below.
+  With no interviewed issue, skip this step entirely.
+  Otherwise ask one blocking question with ${ask_tool}, naming its number:
+  \"Move #<n> to \`${ready_label}\`\", \"Skip\", or \"It's a different issue\"
+  (the user names it, and you use that one).
+  On \"Skip\", go straight to the route question. On a move, run
+  bash \"$(hook_plugin_root)/scripts/orch.sh\" issue triage <n>
+  through that path - never a raw gh call. If it exits 2, the issue carries
+  \`${wontfix_label}\` or \`${human_label}\` and it printed which: ask the user
+  whether to override that label; on a yes, rerun it with --override;
+  on a no, skip the relabel. On any other failure, warn the user that init --issue will refuse #<n> until it carries \`${ready_label}\`, and continue to the route question."
 
 choice="${ask_step}
 
@@ -130,6 +160,7 @@ if [ "$plan_confirmed" = 1 ]; then
   hook_emit_context "$event" "The orchestrator plugin is installed in this repo, and the user just
 confirmed a plan from a planning session.
 
+${interviewed_step}
 - Before you implement anything, and without editing any file first, ask the
   user how to carry the plan out. ${choice}"
   exit 0
@@ -144,6 +175,7 @@ While this planning session is running:
 - Do NOT offer to implement, and do NOT write or edit code. Planning artifacts
   ($(planning_allowlist_text)) are fine; source files are not.
 - Glossary and ADR changes ($(planning_records_text)) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim.
+${interviewed_step}
 - When you reach a shared understanding, do not close with a scripted line and
   do not decide the next step yourself. ${choice}
 

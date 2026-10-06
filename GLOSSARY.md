@@ -94,6 +94,10 @@ triage label; the spec phase then skips writing a spec entirely and runs the
 spec review straight against it.
 _Avoid_: existing issue, pre-existing issue, given issue.
 
+**Interviewed issue**:
+An open issue a planning session was run about. When the human confirms the plan, the session offers to move it to the `ready-for-agent` triage label, since the interview settled what triage would have.
+_Avoid_: planned issue, subject issue.
+
 **Planning allowlist**:
 The files a planning session may legitimately change: agent docs, and
 scratch and flow-state files. Anything outside it is either source, which
