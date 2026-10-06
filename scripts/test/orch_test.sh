@@ -74,6 +74,17 @@ new_repo() {
   printf '%s\n' "$d"
 }
 
+# new_repo_with_origin [branch]: new_repo, plus an example.invalid origin whose
+# origin/HEAD points at <branch> (default: the checked-out branch), set to
+# HEAD. Call it in the current shell, never inside $(...): new_repo cd's.
+new_repo_with_origin() {
+  new_repo >/dev/null
+  local b="${1:-$(git branch --show-current)}"
+  git remote add origin https://example.invalid/x/y.git
+  git update-ref "refs/remotes/origin/$b" HEAD
+  git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$b"
+}
+
 writeln() { printf '%s\n' "$@"; }
 # flat_text [file]: the file, or stdin when given none, on one line with
 # every whitespace run collapsed to one space.
@@ -1328,12 +1339,9 @@ env -u MISE_QUIET PATH="$STUB:$PATH" GH_STUB_ENV_LOG="$mise_log" "$ORCH" default
 assert_eq "gh run from orch.sh sees MISE_QUIET=1" "$(sort -u "$mise_log")" "MISE_QUIET=1"
 rm -f "$mise_log"
 
-new_repo >/dev/null
-git remote add origin https://example.invalid/x/y.git
 # origin/HEAD names a branch that is not `main`, so an origin/HEAD fallback
 # cannot pass for the final literal-`main` one.
-git update-ref refs/remotes/origin/some-feature HEAD
-git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/some-feature
+new_repo_with_origin some-feature
 PATH="$STUB:$PATH" GH_STUB_BANNER=1 "$ORCH" init banner >/dev/null
 recorded="$("$ORCH" state get base)"
 assert_eq "init records origin/HEAD's branch as the base" "$recorded" "some-feature"
@@ -1344,10 +1352,7 @@ assert_eq "init records origin/HEAD's branch as the base" "$recorded" "some-feat
 # `base_sha` for pr open and redo review to read back later via require_branch.
 echo
 echo "branch create"
-new_repo >/dev/null
-git remote add origin https://example.invalid/x/y.git
-git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
-git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$(git branch --show-current)"
+new_repo_with_origin
 orch_gh_failing init bcreate >/dev/null
 orch_gh_failing state set issue 11
 before_sha="$(git rev-parse HEAD)"
@@ -1363,13 +1368,10 @@ assert_eq "records the fork point as base_sha" "$(orch_gh_failing state get base
 # and recording left entirely to the caller.
 echo
 echo "branch off"
-new_repo >/dev/null
-# default-branch resolves through git symbolic-ref as a fallback, which this
-# repo has none of yet - give it one rather than letting the answer depend on
-# this machine's git init.defaultBranch.
-git remote add origin https://example.invalid/x/y.git
-git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
-git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$(git branch --show-current)"
+# default-branch resolves through git symbolic-ref as a fallback - give the
+# repo one rather than letting the answer depend on this machine's git
+# init.defaultBranch.
+new_repo_with_origin
 out="$(orch_gh_failing branch off "quick/9-widgets")"
 assert_eq "prints the branch it made" "$out" "quick/9-widgets"
 assert_eq "checks it out" "$(git branch --show-current)" "quick/9-widgets"
