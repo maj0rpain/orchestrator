@@ -7,7 +7,15 @@
 # section, are bugs you would experience as generic confusion three phases
 # later - or, worse, as a phase that dies once the session that could have
 # fixed it has been cleared. Each runs
-# against a throwaway git repo in $TMPDIR - nothing here touches a real flow.
+# against a throwaway git repo in $TMPDIR.
+#
+# What keeps the suite off a real flow is the harness below, not section
+# order: before any section runs it cd's into a fresh `mktemp -d` directory
+# that is no git repo, points HOME (and SUITE_HOME, which sections restore)
+# at a fresh temp directory, and unsets CLAUDE_PLUGIN_ROOT - exiting non-zero
+# if it cannot. A section run on its own that forgets to arrange its own repo
+# then fails against an empty directory instead of the caller's checkout. The
+# isolation section, the suite's first, asserts all of this.
 
 ORCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/orch.sh"
 GH_ADAPTER_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh_adapter_fake.sh"
@@ -25,7 +33,16 @@ unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT JUNIE_SHIM_PATH
 # that puts stub_gh on PATH itself, ends with restore_suite_env, leaving the
 # next section the environment it had. A section that exported more names
 # passes them to restore_suite_env to unset them too.
-SUITE_HOME="$HOME"
+# The paths above derive from this script's location, so they are computed
+# before the cd below. CALLER_HOME keeps the HOME the suite started with, only
+# for the isolation section to check HOME differs from it.
+CALLER_HOME="$HOME"
+SUITE_CWD="$(mktemp -d)" && cd "$SUITE_CWD" || {
+  echo "orch_test.sh: cannot cd into a fresh temp directory" >&2; exit 1; }
+SUITE_HOME="$(mktemp -d)" || {
+  echo "orch_test.sh: cannot create a temp HOME" >&2; exit 1; }
+export HOME="$SUITE_HOME"
+unset CLAUDE_PLUGIN_ROOT
 SUITE_PATH="$PATH"
 restore_suite_env() { unset CLAUDE_PLUGIN_ROOT GH_REPO "$@"; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"; }
 
@@ -884,6 +901,23 @@ ticket_fixture() {
 }
 
 echo "orch.sh tests"
+
+# --- isolation --------------------------------------------------------------
+echo
+echo "isolation"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  bad "the suite starts outside any git work tree" "cwd $(pwd) is inside one"
+else
+  ok "the suite starts outside any git work tree"
+fi
+assert_eq "HOME is the suite's own HOME" "$HOME" "$SUITE_HOME"
+if [ "$HOME" != "$CALLER_HOME" ]; then
+  ok "HOME is not the HOME the suite started with"
+else
+  bad "HOME is not the HOME the suite started with" "HOME is still $CALLER_HOME"
+fi
+assert_eq "CLAUDE_PLUGIN_ROOT is unset" "${CLAUDE_PLUGIN_ROOT-unset}" "unset"
+assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
 
 # --- init -------------------------------------------------------------------
 echo
