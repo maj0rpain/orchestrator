@@ -356,6 +356,11 @@ case "$1" in
   # gets GH_STUB_REPO's last word.
   repo)
     case "$*" in
+      # gh's own default repo, which ignores GH_REPO: GH_STUB_DEFAULT_REPO, or
+      # gh's "none set" message on stderr - with exit 0, as gh 2.102.0 does.
+      *set-default*--view*)
+        if [ -n "${GH_STUB_DEFAULT_REPO:-}" ]; then printf '%s\n' "$GH_STUB_DEFAULT_REPO"
+        else echo "X No default remote repository has been set." >&2; fi ;;
       *nameWithOwner*) printf '%s\n' ${GH_STUB_REPO-acme/widgets main} ;;
       *) set -- ${GH_STUB_REPO-acme/widgets main}; [ $# -eq 0 ] || printf '%s\n' "${!#}" ;;
     esac ;;
@@ -2359,6 +2364,39 @@ assert_contains "skips the checks that depended on the answer" "$out" "skipped: 
 out="$(GH_STUB_REPO='acme/widgets ' "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unresolved default branch does not block the flow" "$st" 0
 assert_contains "warns that the default branch came from a fallback" "$out" "default branch"
+
+# doctor reports the repo the orchestrator works on (#520): resolved locally,
+# with its source, and never gh's own default, which in a fork is the upstream.
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "the repo line names the resolved repo and its source" \
+  "$out" "ok    repo: acme/widgets (origin)"
+out="$(GH_REPO=fork/widgets "$ORCH" doctor --env 2>&1)"
+assert_contains "the repo line names GH_REPO when the caller set it" \
+  "$out" "ok    repo: fork/widgets (GH_REPO)"
+repolog="$(mktemp)"
+GH_STUB_REPO_LOG="$repolog" "$ORCH" doctor --env >/dev/null 2>&1
+assert_contains "doctor's gh repo view gets the resolved repo positionally" \
+  "$(cat "$repolog")" "GH_REPO=acme/widgets repo view acme/widgets "
+assert_eq "every gh call doctor makes is pinned to the resolved repo" \
+  "$(grep -cv '^GH_REPO=acme/widgets ' "$repolog")" "0"
+out="$(GH_STUB_DEFAULT_REPO=upstream/widgets "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a differing gh default repo does not block the flow" "$st" 0
+assert_contains "warns naming gh's default repo and the one in use" "$out" \
+  "warn  gh's default repo is upstream/widgets; the orchestrator uses acme/widgets"
+out="$(GH_STUB_DEFAULT_REPO=acme/widgets "$ORCH" doctor --env 2>&1)"
+assert_not_contains "a matching gh default repo raises no warn" "$out" "gh's default repo"
+# No repo at all: a FAIL with the remedy, and doctor carries on past it - the
+# later GitHub checks counted on the skip line, no gh call made at all.
+: >"$repolog"
+out="$(cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
+  && GH_STUB_REPO_LOG="$repolog" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "no resolvable repo fails doctor" "$st" 1
+assert_contains "names the missing repo as a FAIL" "$out" "FAIL  no GitHub repo to work on"
+assert_contains "gives the GH_REPO remedy" "$out" "GH_REPO=<owner>/<repo>"
+assert_contains "counts the later GitHub checks on the skip line" \
+  "$out" "GitHub checks skipped: no GitHub repo to work on"
+assert_contains "still reaches the summary line" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
+assert_eq "makes no gh call without a repo to pin it to" "$(wc -l <"$repolog" | tr -d ' ')" "0"
 
 # The plugin depends on no other plugin (ADR-0028): doctor says nothing of
 # mattpocock-skills, and the old override pointing nowhere changes nothing.

@@ -110,7 +110,7 @@ d_probe_gh() {
   # would report as present with no gh installed.
   if ! type -P gh >/dev/null 2>&1; then D_GH="gh is not installed"; return 0; fi
   # The guard dies with no repo to pin its calls to; ask nothing instead.
-  if ! repo_resolve; then D_GH="no GitHub repo to work on - set GH_REPO=<owner>/<repo>"; return 0; fi
+  if ! repo_resolve; then D_GH="no GitHub repo to work on"; return 0; fi
   if out="$(gh auth status 2>&1)"; then
     D_GH=ok
   else
@@ -138,7 +138,8 @@ d_probe() {
   if [ "$scope" = flow ]; then return 0; fi
   d_probe_gh
   if [ "$D_GH" = ok ]; then
-    view="$(gh repo view --json nameWithOwner,defaultBranchRef \
+    # gh repo view ignores GH_REPO, so the repo goes in positionally.
+    view="$(gh repo view "$REPO_NAME" --json nameWithOwner,defaultBranchRef \
       --jq '.nameWithOwner, (.defaultBranchRef.name // "")' 2>/dev/null)" || view=""
     D_REPO_NAME="$(first_line "$view")"
     D_REPO_BRANCH="$(printf '%s\n' "$view" | sed -n 2p)"
@@ -197,10 +198,32 @@ check_gh_auth() {
   esac
 }
 
+# The repo the orchestrator works on (#520), resolved locally through
+# repo_resolve - never the dying guard - so a checkout with none is a FAIL here
+# while d_gh_gate counts every later GitHub check on the skip line. gh's own
+# default repo, which in a fork is the upstream, is only a warn: orch.sh pins
+# every call to the resolved repo regardless.
 check_gh_repo() {
+  local default
+  if ! repo_resolve; then
+    d_fail "no GitHub repo to work on - origin is missing or not a GitHub owner/name."
+    d_remedy "export GH_REPO=<owner>/<repo>"
+    return 0
+  fi
+  d_ok "repo: $REPO_NAME ($REPO_SOURCE)"
+  # set-default --view reads local git config, so it needs gh but no network.
+  if type -P gh >/dev/null 2>&1; then
+    default="$(gh repo set-default --view 2>/dev/null)" || default=""
+    default="$(first_line "$default")"
+    case "$default" in
+      */*) if [ "$default" != "$REPO_NAME" ]; then
+             d_warn "gh's default repo is $default; the orchestrator uses $REPO_NAME"
+           fi ;;
+    esac
+  fi
   d_gh_gate || return 0
-  if [ -n "$D_REPO_NAME" ]; then d_ok "repo: $D_REPO_NAME"; return 0; fi
-  d_fail "gh cannot resolve this repo - origin may point somewhere you cannot see."
+  if [ -n "$D_REPO_NAME" ]; then return 0; fi
+  d_fail "GitHub cannot see $REPO_NAME - origin may point somewhere you cannot see."
   d_remedy "git remote set-url origin https://github.com/<owner>/<repo>.git"
 }
 
