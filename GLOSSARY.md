@@ -384,7 +384,16 @@ Findings the loop demoted on a human's earlier decision are reported, never
 filed.
 
 **Finding triage**:
-Checking open filed findings against the current default branch and moving each out of `needs-triage`: closed as completed when the code it names has since been fixed, otherwise to `ready-for-agent`, `ready-for-human`, or `wontfix`. A finding whose fix needs a decision goes to a human, never to an agent. Not the driver's triage, which ranks one iteration's findings inside a review loop.
+Checking open filed findings against the current default branch and moving each out of `needs-triage`: closed as completed when the code it names has since been fixed, otherwise to `ready-for-agent`, `ready-for-human`, or `wontfix`, with its category kept or flipped. A finding whose fix needs a decision goes to a human, never to an agent. The findings are checked at the default SHA and put to the human one batch per source PR. Not the driver's triage, which ranks one iteration's findings inside a review loop.
+
+**Default SHA**:
+The default branch's remote tip at the moment a finding triage starts: the commit every finding in that triage is checked at, and the one its comments cite. Not a base SHA, which is a base branch's tip at the moment a flow or quick implementation branched.
+
+**Source PR**:
+The PR whose review loop filed a finding, named on the filed finding's `**PR:**` line.
+
+**Category**:
+A filed finding's `bug` or `enhancement` label. The closer sets it from the finding's axis - `bug` for Spec, `enhancement` for Standards - and finding triage keeps or flips it: a Standards finding that is a real defect becomes `bug`, a Spec finding that is a nice-to-have becomes `enhancement`.
 
 ### Hosts
 
