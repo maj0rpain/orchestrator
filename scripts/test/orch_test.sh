@@ -5239,6 +5239,14 @@ gh_reply 1 '' 'HTTP 502: Bad Gateway' issue close 26
 out="$(contract adapter_issue_close 26 2>&1)"; st=$?
 assert_status "issue close: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+gh_reply 0 'Reopened issue #23' '' issue reopen 23
+out="$(contract adapter_issue_reopen 23 2>&1)"; st=$?
+assert_status "issue reopen: reopens the issue" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 502: Bad Gateway' issue reopen 26
+out="$(contract adapter_issue_reopen 26 2>&1)"; st=$?
+assert_status "issue reopen: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 assert_eq "every issue operation was pinned to the resolved repo" \
   "$(grep ' issue ' "$GH_FIXTURE/env.log" | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> issue ')" "0"
 rm -f "$ibody"
