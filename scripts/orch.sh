@@ -854,8 +854,8 @@ review_budget() {
 # seam on the narrowest possible slice (issue #91, first of the #78
 # breakdown); the issue-resource primitives below (view/edit/comment/create/
 # close, issue #92) extend the same seam to cmd_spec, cmd_issue_publish,
-# cmd_review file, and cmd_redo_spec's issue close - later tickets move the
-# rest of this file's `gh` call sites the same way.
+# cmd_review file, and cmd_redo_spec's issue close. Every GitHub call in this
+# file, and in doctor.sh, sourced into it, now goes through one (#280).
 #
 # ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as the ORCH_CI_*
 # ones above, but read differently: not a value substituted at load time, but
@@ -882,6 +882,12 @@ adapter_label_upsert() {
 # Prints nothing.
 adapter_label_create() {
   gh label create "$1" --color "$2" --description "$3" >/dev/null
+}
+
+# adapter_labels <limit>: the names of the repo's labels, at most <limit> of
+# them, one per line. Nothing at all for a repo with none.
+adapter_labels() {
+  gh label list --limit "$1" --json name --jq '.[].name'
 }
 
 # --- issue operations ---
@@ -1026,6 +1032,12 @@ adapter_pr_ready() {
   gh pr ready "$1" >/dev/null
 }
 
+# adapter_pr_state_draft <n>: the PR's state - OPEN, CLOSED or MERGED - on the
+# first line, then true or false, whether it is a draft.
+adapter_pr_state_draft() {
+  gh pr view "$1" --json state,isDraft --jq '.state, .isDraft'
+}
+
 # adapter_prs_open <head> [base]: the open PRs from the head branch - into the
 # base branch, where one is named - one number per line, newest first.
 adapter_prs_open() {
@@ -1137,6 +1149,21 @@ adapter_blocker_remove() {
   gh api --method DELETE "repos/{owner}/{repo}/issues/$1/dependencies/blocked_by/$id" >/dev/null
 }
 
+# adapter_sub_issues_supported: whether this GitHub answers the sub-issues
+# endpoint, asked of the repo's most recent issue: "yes" where it answers,
+# "no" where it refuses, nothing at all where the repo has no issue to ask it
+# of. Fails only where the issue listing itself fails.
+adapter_sub_issues_supported() {
+  local n
+  n="$(gh issue list --state all --limit 1 --json number --jq '.[0].number // empty')" || return
+  [ -n "$n" ] || return 0
+  if gh api "repos/{owner}/{repo}/issues/$n/sub_issues" >/dev/null 2>&1; then
+    printf 'yes\n'
+  else
+    printf 'no\n'
+  fi
+}
+
 # --- repo operations ---
 
 # adapter_repo_default_branch <repo>: the default branch of the repo, named
@@ -1145,6 +1172,22 @@ adapter_blocker_remove() {
 # default repo. The answer is gh's stdout as is: a caller validates it.
 adapter_repo_default_branch() {
   gh repo view "$1" --json defaultBranchRef --jq .defaultBranchRef.name
+}
+
+# adapter_repo_local_default: gh's own default repo for this checkout, as the
+# bare OWNER/REPO gh prints even for one off github.com, read from local git
+# config, so no network is needed. Nothing at all where none is set: gh says so
+# on stderr, exiting 0.
+adapter_repo_local_default() {
+  gh repo set-default --view
+}
+
+# adapter_auth_status: succeeds where gh is authenticated to the host,
+# printing gh's own report; fails where it is not, or cannot tell, with gh's
+# report passed through - its text is the only signal telling "not
+# authenticated" from "could not connect".
+adapter_auth_status() {
+  gh auth status
 }
 
 # --- ci operations ---

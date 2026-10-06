@@ -64,8 +64,8 @@ d_join() {
 # naming the cause - N warns, or worse N invented FAILs, would bury the one real
 # problem underneath them.
 D_GH=""            # "ok", or the reason GitHub could not be asked
-D_REPO_NAME=""     # owner/name, as GitHub resolves it
-D_REPO_BRANCH=""   # the default branch, as GitHub reports it
+D_REPO_SEEN=""     # "ok" when GitHub answered for the repo, or empty
+D_REPO_BRANCH=""   # the default branch, as GitHub reports it, when valid
 D_JQ=""            # "ok", or empty when jq is missing
 D_STATE=""         # "ok" when state.json parses, or empty
 D_GH_SKIPPED=0
@@ -111,7 +111,7 @@ d_probe_gh() {
   if ! type -P gh >/dev/null 2>&1; then D_GH="gh is not installed"; return 0; fi
   # The guard dies with no repo to pin its calls to; ask nothing instead.
   if ! repo_resolve; then D_GH="no GitHub repo to work on"; return 0; fi
-  if out="$(gh auth status 2>&1)"; then
+  if out="$(adapter_auth_status 2>&1)"; then
     D_GH=ok
   else
     case "$out" in
@@ -137,12 +137,12 @@ d_probe() {
   # d_gh_gate instead, which probes on first use, so that run costs no round trip.
   if [ "$scope" = flow ]; then return 0; fi
   d_probe_gh
-  if [ "$D_GH" = ok ]; then
-    # gh repo view ignores GH_REPO, so the repo goes in positionally.
-    view="$(gh repo view "$REPO_NAME" --json nameWithOwner,defaultBranchRef \
-      --jq '.nameWithOwner, (.defaultBranchRef.name // "")' 2>/dev/null)" || view=""
-    D_REPO_NAME="$(first_line "$view")"
-    D_REPO_BRANCH="$(printf '%s\n' "$view" | sed -n 2p)"
+  # The same read default_branch makes, validated the same way (#485): an
+  # answer that is no branch name - a tool manager's banner around it, or an
+  # empty one - is GitHub not having said, never a name to report.
+  if [ "$D_GH" = ok ] && view="$(adapter_repo_default_branch "$REPO_NAME" 2>/dev/null)"; then
+    D_REPO_SEEN=ok
+    if is_branch_name "$view"; then D_REPO_BRANCH="$view"; fi
   fi
 }
 
@@ -215,7 +215,7 @@ check_gh_repo() {
   # It prints a bare owner/name even for a default off github.com, so it is
   # compared with REPO_NAME's owner/name, any host dropped.
   if type -P gh >/dev/null 2>&1; then
-    default="$(gh repo set-default --view 2>/dev/null)" || default=""
+    default="$(adapter_repo_local_default 2>/dev/null)" || default=""
     default="$(first_line "$default")"
     owner_name="${REPO_NAME#"${REPO_NAME%/*/*}/"}"
     case "$default" in
@@ -225,7 +225,7 @@ check_gh_repo() {
     esac
   fi
   d_gh_gate || return 0
-  if [ -n "$D_REPO_NAME" ]; then return 0; fi
+  if [ -n "$D_REPO_SEEN" ]; then return 0; fi
   d_fail "GitHub cannot see $REPO_NAME - origin may point somewhere you cannot see."
   d_remedy "git remote set-url origin https://github.com/<owner>/<repo>.git"
 }
@@ -237,7 +237,7 @@ check_default_branch() {
   d_gh_gate || return 0
   # Silent when the repo itself did not resolve: check_gh_repo has already said
   # so, and a second line derived from the first buries it.
-  [ -n "$D_REPO_NAME" ] || return 0
+  [ -n "$D_REPO_SEEN" ] || return 0
   if [ -n "$D_REPO_BRANCH" ]; then d_ok "default branch: $D_REPO_BRANCH (from GitHub)"; return 0; fi
   d_warn "default branch not resolved from GitHub - falling back to $(default_branch)."
   d_remedy "git remote set-head origin --auto"
@@ -475,7 +475,7 @@ triage_label_for() {
 validate_adopted_issue() {
   local issue="$1" label out state labels
   label="$(triage_label_for ready-for-agent)"
-  out="$(gh issue view "$issue" --json state,labels --jq '.state, (.labels[].name)' 2>/dev/null)" \
+  out="$(adapter_issue_state_labels "$issue" 2>/dev/null)" \
     || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
   state="$(first_line "$out")"
   labels="$(printf '%s\n' "$out" | tail -n +2)"
@@ -520,7 +520,7 @@ check_labels_exist() {
   # Nothing to compare against, and check_labels_doc has already said so. One
   # problem earns one FAIL, never a second derived from the first.
   [ -n "$want" ] || return 0
-  if ! have="$(gh label list --limit "$LABEL_LIMIT" --json name --jq '.[].name' 2>/dev/null)"; then
+  if ! have="$(adapter_labels "$LABEL_LIMIT" 2>/dev/null)"; then
     # One check, one cause, one warn: GitHub answered the auth probe and then
     # would not answer this, which is an absent answer rather than a "no".
     d_warn "the repo's labels could not be listed."
@@ -555,13 +555,12 @@ check_labels_exist() {
 check_sub_issues() {
   d_gh_gate || return 0
   local probe
-  probe="$(gh issue list --state all --limit 1 --json number \
-    --jq '.[0].number // empty' 2>/dev/null)" || probe=""
+  probe="$(adapter_sub_issues_supported 2>/dev/null)" || probe=""
   if [ -z "$probe" ]; then
     d_warn "sub-issues support could not be probed - the repo has no issue to test it against."
     return 0
   fi
-  if gh api "repos/{owner}/{repo}/issues/$probe/sub_issues" >/dev/null 2>&1; then
+  if [ "$probe" = yes ]; then
     d_ok "sub-issues supported"
     return 0
   fi
@@ -686,7 +685,8 @@ check_flow_issue() {
   issue="$(state_get issue)"
   if [ -z "$issue" ]; then d_ok "issue: not recorded yet"; return 0; fi
   d_gh_gate || return 0
-  issue_state="$(gh issue view "$issue" --json state --jq .state 2>/dev/null)" || issue_state=""
+  issue_state="$(adapter_issue_state_labels "$issue" 2>/dev/null)" || issue_state=""
+  issue_state="$(first_line "$issue_state")"
   phase="$(state_get phase)"
   case "$issue_state" in
     OPEN)   d_ok "issue #$issue open" ;;
@@ -708,7 +708,8 @@ check_flow_pr() {
   pr="$(state_get pr)"
   if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
   d_gh_gate || return 0
-  pr_state="$(gh pr view "$pr" --json state --jq .state 2>/dev/null)" || pr_state=""
+  pr_state="$(adapter_pr_state_draft "$pr" 2>/dev/null)" || pr_state=""
+  pr_state="$(first_line "$pr_state")"
   case "$pr_state" in
     OPEN)   d_ok "PR #$pr open" ;;
     MERGED) d_ok "PR #$pr merged" ;;
@@ -808,7 +809,7 @@ check_flow_review_draft() {
   pr="$(state_get pr)"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
-  out="$(gh pr view "$pr" --json state,isDraft --jq '.state, .isDraft' 2>/dev/null)" || out=""
+  out="$(adapter_pr_state_draft "$pr" 2>/dev/null)" || out=""
   pr_state="$(first_line "$out")"
   is_draft="$(printf '%s\n' "$out" | sed -n 2p)"
   if [ -z "$pr_state" ]; then

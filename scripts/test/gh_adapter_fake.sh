@@ -73,6 +73,12 @@
 #                     or a commit status, one per line; absent, none do
 #   unreadable_refs   refs whose check-run and status reads both fail
 #   reruns            the Actions run ids rerun, one per line, in order
+#   local_default     gh's own local default repo, as OWNER/REPO; absent,
+#                     none is set
+#   no_sub_issues     present, the sub-issues endpoint refuses every issue
+#   offline           present, every operation fails with a connection error
+#   noauth            present, gh is not authenticated: the auth status fails
+#                     saying so, every other operation as unauthorised
 
 fake_store() {
   printf '%s\n' "${ORCH_GH_FAKE_STORE:?the gh fake has no store - call fake_github}"
@@ -81,8 +87,21 @@ fake_store() {
 # fake_failing <operation>: true when fake_fail named the operation, with its
 # stderr written, so an operation opens with `! fake_failing <op> || return 1`.
 fake_failing() {
-  local f n
-  f="$(fake_store)/fail/$1" || return 1
+  local f n s
+  s="$(fake_store)" || return 1
+  if [ -f "$s/offline" ]; then
+    echo "dial tcp: lookup api.github.com: no such host" >&2
+    return 0
+  fi
+  if [ -f "$s/noauth" ]; then
+    if [ "$1" = adapter_auth_status ]; then
+      echo "You are not logged into any GitHub hosts. To log in, run: gh auth login" >&2
+    else
+      echo "HTTP 401: Bad credentials (https://api.github.com/graphql)" >&2
+    fi
+    return 0
+  fi
+  f="$s/fail/$1"
   [ -f "$f" ] || return 1
   if [ -f "$f.after" ]; then
     n="$(cat "$f.after")"
@@ -151,6 +170,15 @@ adapter_label_create() {
     return 1
   fi
   fake_label_put "$1" "$2" "$3"
+}
+
+# adapter_labels <limit>: the stored label names, the first <limit> of them.
+adapter_labels() {
+  local f
+  ! fake_failing adapter_labels || return 1
+  f="$(fake_store)/labels"
+  [ -f "$f" ] || return 0
+  cut -f1 "$f" | head -n "$1"
 }
 
 # --- issue operations, on the store ---------------------------------------------
@@ -473,6 +501,15 @@ adapter_pr_body_edit() {
   cat "$2" >"$(fake_pr_dir "$1")/body"
 }
 
+# adapter_pr_state_draft <n>: the stored state, then true for a draft, false
+# otherwise.
+adapter_pr_state_draft() {
+  ! fake_failing adapter_pr_state_draft || return 1
+  fake_pr_known "$1" || return 1
+  cat "$(fake_pr_dir "$1")/state"
+  if [ -f "$(fake_pr_dir "$1")/draft" ]; then echo true; else echo false; fi
+}
+
 # --- sub-issue and dependency operations, on the store --------------------------
 
 # fake_open_blockers <n>: how many of #n's stored blockers are still open.
@@ -571,6 +608,14 @@ adapter_blocker_remove() {
   fake_lines_drop "$(fake_store)/blocked_by/$1" "$2"
 }
 
+# adapter_sub_issues_supported: nothing where the store holds no issue; no
+# where no_sub_issues is present; yes otherwise.
+adapter_sub_issues_supported() {
+  ! fake_failing adapter_sub_issues_supported || return 1
+  [ -n "$(ls "$(fake_store)/issues" 2>/dev/null)" ] || return 0
+  if [ -f "$(fake_store)/no_sub_issues" ]; then echo no; else echo yes; fi
+}
+
 # --- repo operations, on the store ----------------------------------------------
 
 # adapter_repo_default_branch <repo>: the stored default_branch answer, as is.
@@ -583,6 +628,20 @@ adapter_repo_default_branch() {
   [ ! -f "$f" ] || cat "$f"
   ! fake_failing adapter_repo_default_branch || return 1
   [ -f "$f" ] || { printf "GraphQL: Could not resolve to a Repository with the name '%s'. (repository)\n" "$1" >&2; return 1; }
+}
+
+# adapter_repo_local_default: the stored local_default; nothing where none
+# is set.
+adapter_repo_local_default() {
+  ! fake_failing adapter_repo_local_default || return 1
+  cat "$(fake_store)/local_default" 2>/dev/null || true
+}
+
+# adapter_auth_status: gh's report of a login - failing, as every operation
+# does, under offline or noauth.
+adapter_auth_status() {
+  ! fake_failing adapter_auth_status || return 1
+  echo "Logged in to github.com account fake-gh"
 }
 
 # --- ci operations, on the store ------------------------------------------------

@@ -1108,6 +1108,41 @@ fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; 
 # fake_reruns: the Actions run ids rerun, read back, space-separated, in order.
 fake_reruns() { tr '\n' ' ' <"$ORCH_GH_FAKE_STORE/reruns" 2>/dev/null | sed 's/ $//'; }
 
+# fake_label_names <name>...: the repo's labels are exactly the names given,
+# each with no colour or description - none given, the repo has no labels.
+fake_label_names() {
+  : >"$ORCH_GH_FAKE_STORE/labels"
+  [ $# -eq 0 ] || printf '%s\t\t\n' "$@" >"$ORCH_GH_FAKE_STORE/labels"
+}
+
+# fake_local_default <owner/name>: gh's own local default repo for the
+# checkout; given an empty one, none is set.
+fake_local_default() {
+  if [ -n "$1" ]; then printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/local_default"
+  else rm -f "$ORCH_GH_FAKE_STORE/local_default"; fi
+}
+
+# fake_no_sub_issues: the sub-issues endpoint refuses every issue, as on a
+# GitHub that does not support them.
+fake_no_sub_issues() { : >"$ORCH_GH_FAKE_STORE/no_sub_issues"; }
+
+# fake_offline: every operation fails with a connection error, as with GitHub
+# unreachable. fake_noauth: gh is not authenticated - the auth status fails
+# saying so, every other operation as unauthorised. fake_online undoes both.
+fake_offline() { : >"$ORCH_GH_FAKE_STORE/offline"; }
+fake_noauth()  { : >"$ORCH_GH_FAKE_STORE/noauth"; }
+fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth"; }
+
+# doctor_github: fake_github, seeded as the GitHub a healthy repo has for
+# doctor - the default labels doc's two labels, default branch main, and one
+# open issue for the sub-issues probe to ask about.
+doctor_github() {
+  fake_github
+  fake_label_names needs-triage ready-for-agent
+  fake_default_branch main
+  fake_issue 1 open
+}
+
 # --- the fixture gh (adapter contract tests, #280) -----------------------------
 #
 # gh_fixture: puts a fixture `gh` on PATH for the real adapter operations'
@@ -2491,38 +2526,35 @@ assert_contains "and says so" "$out" "unknown command: mp-skill"
 echo
 echo "init --issue"
 healthy_repo
+fake_github
+fake_issue 42 open ready-for-agent
 out="$("$ORCH" init adopted --issue 42)"
 assert_eq "adopts an open, labelled issue" "$out" "adopted"
 assert_eq "issue is recorded as a number" "$("$ORCH" state get | jq -r '.issue | type')" "number"
 assert_eq "issue value matches the adopted number" "$("$ORCH" state get issue)" "42"
 
 healthy_repo
-out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" init nope --issue 99 2>&1)"; st=$?
+out="$("$ORCH" init nope --issue 99 2>&1)"; st=$?
 assert_status "refuses to adopt an issue gh cannot read" "$st" 1
 assert_contains "names the issue number" "$out" "99"
 assert_eq "no flow is left active after a failed adoption" \
   "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
 
 healthy_repo
-out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" init nope --issue 7 2>&1)"; st=$?
+fake_issue 7 closed ready-for-agent
+out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
 assert_status "refuses to adopt a closed issue" "$st" 1
 assert_contains "says the issue is not open" "$out" "not open"
 
 healthy_repo
-out="$(GH_STUB_ISSUE_LABELS=needs-triage "$ORCH" init nope --issue 7 2>&1)"; st=$?
+fake_issue 7 open needs-triage
+out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
 assert_status "refuses to adopt an issue missing the triage label" "$st" 1
 assert_contains "names the missing label" "$out" "ready-for-agent"
 
 # validate_adopted_issue's state and labels come off the same issue, so one
-# combined `gh issue view` answers both rather than spending a second
-# round-trip on a resource already in hand.
-healthy_repo
-filed="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" "$ORCH" init combined --issue 42)"; st=$?
-assert_status "adopts via a single combined gh issue view call" "$st" 0
-assert_eq "exactly one issue view call, not two" "$(grep -c '^issue view' "$filed")" "1"
-assert_contains "the one call asks for both state and labels together" \
-  "$(cat "$filed")" "state,labels"
+# read answers both: adapter_issue_state_labels, whose single gh call is
+# pinned in "gh adapter contract".
 
 healthy_repo
 out="$("$ORCH" init nope --issue 2>&1)"; st=$?
@@ -2575,8 +2607,9 @@ assert_contains "names the phase" "$out" "phase: implement"
 assert_contains "same message, unchanged" "$out" "One flow at a time"
 
 fresh_flow willfail
+fake_github
 state_fixture phase done
-out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" init nope --issue 99 2>&1)"; st=$?
+out="$("$ORCH" init nope --issue 99 2>&1)"; st=$?
 assert_status "a bad --issue adoption over a done flow refuses" "$st" 1
 assert_contains "names the issue number" "$out" "99"
 assert_eq "the done flow is left untouched, not archived" \
@@ -2589,6 +2622,8 @@ assert_eq "and still reports done, re-runnable" "$("$ORCH" state get phase)" "do
 # and the new flow's state must carry the newly adopted issue rather than
 # null or the old flow's own issue.
 healthy_repo
+fake_issue 7 open ready-for-agent
+fake_issue 42 open ready-for-agent
 "$ORCH" init willsucceed --issue 7 >/dev/null
 state_fixture phase done
 out="$("$ORCH" init second --issue 42)"; st=$?
@@ -2613,6 +2648,7 @@ restore_suite_env
 echo
 echo "doctor"
 healthy_repo
+doctor_github
 
 out="$("$ORCH" doctor --nonsense 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
@@ -2645,7 +2681,8 @@ fi
 # No healthy_repo() here: nothing above this point wrote to the repo (doctor
 # itself never mutates, and the jq-missing checks only scoped PATH to a
 # subshell), so the fixture from the top of the section is still clean.
-out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when a documented label is missing from the repo" "$st" 1
 assert_contains "names the missing label with its backticks stripped" "$out" "ready-for-agent"
 assert_contains "gives the command that creates it" "$out" 'gh label create "ready-for-agent"'
@@ -2662,21 +2699,27 @@ writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning |' \
         '| -------------------------- | -------------------- | ------- |' \
         '| `needs-triage`             | `needs triage`       | Look    |' >docs/agents/triage-labels.md
-out="$(GH_STUB_LABELS='needs triage' "$ORCH" doctor --env 2>&1)"; st=$?
+fake_label_names 'needs triage'
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a label with a space in it is one label, not two" "$st" 0
-out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "quotes a multi-word label in the remedy" "$out" 'gh label create "needs triage"'
 
 # GitHub answered the auth probe and then would not answer this one: an absent
 # answer, not a "no", so it warns.
 healthy_repo
-out="$(GH_STUB_MODE=labelfail "$ORCH" doctor --env 2>&1)"; st=$?
+doctor_github
+fake_fail adapter_labels
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unlistable label set does not block the flow" "$st" 0
 assert_contains "says the labels could not be listed" "$out" "could not be listed"
 
-# The labelfail check above only scoped GH_STUB_MODE to its own command, so
-# the repo the healthy_repo() call before it built is still clean here.
-out="$(GH_STUB_MODE=offline "$ORCH" doctor --env 2>&1)"; st=$?
+# The repo the healthy_repo() call before the labels check built is still
+# clean here; only its failing label listing is undone.
+fake_unfail
+fake_offline
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "does not fail merely because GitHub is unreachable" "$st" 0
 assert_contains "collapses the checks that needed GitHub into one line" \
   "$out" "checks skipped: GitHub is not reachable"
@@ -2687,14 +2730,29 @@ assert_eq "emits one skip line, not one per skipped check" \
 assert_contains "puts the skipped group under a bare header" \
   "$out" "$(printf '\n\nskipped\nwarn  ')"
 
-out="$(GH_STUB_MODE=noauth "$ORCH" doctor --env 2>&1)"; st=$?
+fake_online
+fake_noauth
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "fails when gh is not authenticated" "$st" 1
 assert_contains "gives the login command" "$out" "gh auth login"
 assert_contains "skips the checks that depended on the answer" "$out" "skipped: not authenticated"
+fake_online
 
-out="$(GH_STUB_REPO='acme/widgets ' "$ORCH" doctor --env 2>&1)"; st=$?
+fake_default_branch ''
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unresolved default branch does not block the flow" "$st" 0
 assert_contains "warns that the default branch came from a fallback" "$out" "default branch"
+
+# GitHub's answer is validated as default_branch validates it (#485): a tool
+# manager's banner around the name is no branch name, so doctor falls back as
+# default_branch does rather than reporting the banner as the branch.
+fake_default_branch "$(printf 'mise ~/.config/mise/config.toml tools: gh@2.102.0\nmain\n')"
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a polluted default branch does not block the flow" "$st" 0
+assert_contains "warns the default branch was not resolved from GitHub" \
+  "$out" "warn  default branch not resolved from GitHub"
+assert_not_contains "and never reports the banner as the branch" "$out" "mise"
+fake_default_branch main
 
 # doctor reports the repo the orchestrator works on (#520): resolved locally,
 # with its source, and never gh's own default, which in a fork is the upstream.
@@ -2704,39 +2762,40 @@ assert_contains "the repo line names the resolved repo and its source" \
 out="$(GH_REPO=fork/widgets "$ORCH" doctor --env 2>&1)"
 assert_contains "the repo line names GH_REPO when the caller set it" \
   "$out" "ok    repo: fork/widgets (GH_REPO)"
-repolog="$(mktemp)"
-GH_STUB_REPO_LOG="$repolog" "$ORCH" doctor --env >/dev/null 2>&1
-assert_contains "doctor's gh repo view gets the resolved repo positionally" \
-  "$(cat "$repolog")" "GH_REPO=acme/widgets repo view acme/widgets "
-assert_eq "every gh call doctor makes is pinned to the resolved repo" \
-  "$(grep -cv '^GH_REPO=acme/widgets ' "$repolog")" "0"
-out="$(GH_STUB_DEFAULT_REPO=upstream/widgets "$ORCH" doctor --env 2>&1)"; st=$?
+# Which repo doctor's operations are pinned to, and the repo view's
+# positional repo, are the operations' own, pinned in "gh adapter contract".
+fake_local_default upstream/widgets
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a differing gh default repo does not block the flow" "$st" 0
 assert_contains "warns naming gh's default repo and the one in use" "$out" \
   "warn  gh's default repo is upstream/widgets; the orchestrator uses acme/widgets"
-out="$(GH_STUB_DEFAULT_REPO=acme/widgets "$ORCH" doctor --env 2>&1)"
+fake_local_default acme/widgets
+out="$("$ORCH" doctor --env 2>&1)"
 assert_not_contains "a matching gh default repo raises no warn" "$out" "gh's default repo"
 # gh repo set-default --view prints a bare owner/name even for a default on a
 # host other than github.com (gh 2.102.0), so the same repo there is no warn.
-out="$(GH_REPO=ghe.example.com/acme/widgets GH_STUB_DEFAULT_REPO=acme/widgets "$ORCH" doctor --env 2>&1)"
+out="$(GH_REPO=ghe.example.com/acme/widgets "$ORCH" doctor --env 2>&1)"
 assert_not_contains "a matching gh default repo on another host raises no warn" "$out" "gh's default repo"
+fake_local_default ""
 # No repo at all: a FAIL with the remedy, and doctor carries on past it - the
-# later GitHub checks counted on the skip line, no gh call made at all.
-: >"$repolog"
+# later GitHub checks counted on the skip line, no gh call made at all. The
+# real adapter runs here, over a fixture gh that logs every call it gets.
+savepath="$PATH"; gh_fixture; PATH="$savepath"
 out="$(cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
-  && GH_STUB_REPO_LOG="$repolog" "$ORCH" doctor --env 2>&1)"; st=$?
+  && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER= "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "no resolvable repo fails doctor" "$st" 1
 assert_contains "names the missing repo as a FAIL" "$out" "FAIL  no GitHub repo to work on"
 assert_contains "gives the GH_REPO remedy" "$out" "GH_REPO=<owner>/<repo>"
 assert_contains "counts the later GitHub checks on the skip line" \
   "$out" "GitHub checks skipped: no GitHub repo to work on"
 assert_contains "still reaches the summary line" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
-assert_eq "makes no gh call without a repo to pin it to" "$(wc -l <"$repolog" | tr -d ' ')" "0"
+assert_eq "makes no gh call without a repo to pin it to" "$(cat "$GH_FIXTURE/env.log" 2>/dev/null | wc -l | tr -d ' ')" "0"
+unset GH_FIXTURE
 
 # The plugin depends on no other plugin (ADR-0028): doctor says nothing of
 # mattpocock-skills, and the old override pointing nowhere changes nothing.
-# No healthy_repo() needed: the checks above only scoped GH_STUB_* to their
-# own command, so the repo is still clean.
+# No healthy_repo() needed: the checks above put back each GitHub condition
+# they seeded, so the repo is still clean.
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 out_mp="$(ORCHESTRATOR_MATTPOCOCK_ROOT=/nonexistent "$ORCH" doctor --env 2>&1)"; st_mp=$?
 assert_eq "the old mattpocock override changes no exit status" "$st_mp" "$st"
@@ -2747,27 +2806,34 @@ assert_not_contains "says nothing of mattpocock-skills" "$out" "mattpocock"
 # labels the five canonical names.
 canonical_labels="$(printf '%s\n' needs-triage needs-info ready-for-agent ready-for-human wontfix)"
 healthy_repo
+doctor_github
 rm -rf docs/agents
-out="$(GH_STUB_LABELS="$canonical_labels" "$ORCH" doctor --env 2>&1)"; st=$?
+# shellcheck disable=SC2086 # one label per word
+fake_label_names $canonical_labels
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a repo with no docs/agents/ passes" "$st" 0
 assert_not_contains "and names no mattpocock" "$out" "mattpocock"
 assert_not_contains "nor its setup skill" "$out" "setup-matt-pocock-skills"
-out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "with no labels doc, the canonical names are checked on the repo" "$st" 1
 for l in needs-triage needs-info ready-for-agent ready-for-human wontfix; do
   assert_contains "and a missing $l is named" "$out" "gh label create \"$l\""
 done
-out="$(GH_STUB_LABELS='needs-triage' "$ORCH" doctor --env 2>&1)"; st=$?
+fake_label_names needs-triage
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a repo missing only some canonical labels fails" "$st" 1
 assert_not_contains "and does not name the ones it has" "$out" 'gh label create "needs-triage"'
 
 # A present doc still wins: a renamed label is checked under its local name.
 healthy_repo
+doctor_github
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
         '| `ready-for-agent`          | `agent go`           | AFK-ready   |' >docs/agents/triage-labels.md
-out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a renamed-label doc is still checked" "$st" 1
 assert_contains "under the repo's own label name" "$out" 'gh label create "agent go"'
 assert_not_contains "not the canonical one" "$out" 'gh label create "ready-for-agent"'
@@ -2786,6 +2852,7 @@ assert_not_contains "not the canonical one" "$out" 'gh label create "ready-for-a
 # one-row doc behind, and every labels-doc variant below needs a clean repo so
 # the only FAIL it can produce is the one the table shape under test causes.
 healthy_repo
+doctor_github
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
@@ -2866,7 +2933,9 @@ assert_status "fails when the labels doc parses to no labels" "$st" 1
 assert_contains "says to fix the table or delete it" "$out" "delete it to use the canonical names"
 
 rm docs/agents/triage-labels.md
-out="$(GH_STUB_LABELS="$canonical_labels" "$ORCH" doctor --env 2>&1)"; st=$?
+# shellcheck disable=SC2086 # one label per word
+fake_label_names $canonical_labels
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "passes when the labels doc is absent entirely" "$st" 0
 assert_not_contains "and does not call the doc missing" "$out" "triage-labels.md is missing"
 
@@ -2876,17 +2945,20 @@ assert_not_contains "and does not call the doc missing" "$out" "triage-labels.md
 # every check from here through the exclude-line one below needs the default
 # labels doc back, with nothing else in between rewriting it.
 healthy_repo
-out="$(GH_STUB_LABELS="$(seq 1 1000)" "$ORCH" doctor --env 2>&1)"; st=$?
+doctor_github
+# shellcheck disable=SC2046 # one label per word
+fake_label_names $(seq 1 1000)
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a label list that filled the page does not FAIL" "$st" 0
 assert_contains "names the labels it cannot vouch for" "$out" "cannot confirm:"
 assert_contains "names them individually" "$out" "needs-triage, ready-for-agent"
 
 # ...but a page that filled up and still held every documented label answered
 # the question. The caveat qualifies a negative; there is no negative here.
-# GH_STUB_LABELS above was command-scoped, so the repo is still the one
-# healthy_repo() built two checks up.
-out="$(GH_STUB_LABELS="$(printf '%s\n' needs-triage ready-for-agent; seq 1 1000)" \
-  "$ORCH" doctor --env 2>&1)"; st=$?
+# The repo is still the one healthy_repo() built two checks up.
+# shellcheck disable=SC2046 # one label per word
+fake_label_names needs-triage ready-for-agent $(seq 1 1000)
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a full page that held every label is still a pass" "$st" 0
 assert_contains "does not hedge an answer it actually has" \
   "$(printf '%s\n' "$out" | tail -1)" "0 warn, 0 FAIL"
@@ -2899,14 +2971,15 @@ assert_contains "counts only the documented labels, not the header row" \
 # never a column separator. Without that, an escaped cell shifts every column
 # after it for that row - the label column reads a fragment of the escaped
 # cell instead of the real label, and the real label is lost entirely.
-# GH_STUB_MODE=nolabels makes every documented label print a "gh label
+# A repo with no labels makes every documented label print a "gh label
 # create" remedy, which is the easiest window onto exactly what triage_labels
 # parsed each row down to.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
         '| `needs-triage`             | `needs\|triage`       | Evaluate it |' >docs/agents/triage-labels.md
-out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "an escaped pipe inside the label column becomes a literal pipe" \
   "$out" 'gh label create "needs|triage"'
 assert_eq "does not truncate the label at the escaped pipe" \
@@ -2919,7 +2992,8 @@ writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
         '| `a\|b`                     | `needs-triage`        | do it       |' >docs/agents/triage-labels.md
-out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "an escaped pipe in the mattpocock-name column does not shift the label column" \
   "$out" 'gh label create "needs-triage"'
 assert_eq "does not invent a label out of the shifted fragment" \
@@ -2932,7 +3006,8 @@ writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
         '| `needs-triage`             | `needs-triage`        | Look \|out  |' >docs/agents/triage-labels.md
-out="$(GH_STUB_MODE=nolabels "$ORCH" doctor --env 2>&1)"; st=$?
+fake_label_names
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "an escaped pipe in the meaning column does not corrupt the label column" \
   "$out" 'gh label create "needs-triage"'
 
@@ -2943,11 +3018,13 @@ writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
         '| -------------------------- | -------------------- | ----------- |' \
         '| `ready-for-agent`          | `ready\|for-agent`    | AFK-ready   |' >docs/agents/triage-labels.md
-out="$(GH_STUB_ISSUE_LABELS=needs-triage "$ORCH" init nope --issue 7 2>&1)"; st=$?
+fake_issue 7 open needs-triage
+out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
 assert_status "refuses adoption when the escape-restored label is missing" "$st" 1
 assert_contains "names the label with its escaped pipe restored, not truncated" \
   "$out" "ready|for-agent"
-out="$(GH_STUB_ISSUE_LABELS='ready|for-agent' "$ORCH" init nope --issue 7 2>&1)"; st=$?
+fake_issue 7 open 'ready|for-agent'
+out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
 assert_status "adopts once the issue carries the escape-restored label" "$st" 0
 
 # Restores the canonical labels doc and a clean, flow-free repo: the escaped-
@@ -2956,6 +3033,7 @@ assert_status "adopts once the issue carries the escape-restored label" "$st" 0
 # the plain "fully healthy repo" the earlier healthy_repo() call above had
 # left before this block started borrowing it.
 healthy_repo
+doctor_github
 
 # Issue #39: triage_label_for lacks triage_labels' table-boundary/column-count
 # guard, so a second, differently-shaped table elsewhere in the doc can shadow
@@ -2978,21 +3056,24 @@ assert_contains "still reads exactly the two documented labels" "$out" "2 triage
 assert_eq "does not read the unrelated table's value in as a label" \
   "$(printf '%s\n' "$out" | grep -c 'wrong-label')" "0"
 
-out="$(GH_STUB_ISSUE_LABELS='wrong-label' "$ORCH" init nope --issue 7 2>&1)"; st=$?
+fake_issue 7 open wrong-label
+out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
 assert_status "label-for ignores the unrelated table's row rather than matching it" "$st" 1
 assert_contains "resolves the role against the real table's label, not the one before it" \
   "$out" "ready-for-agent"
 
-out="$(GH_STUB_ISSUE_LABELS='ready-for-agent' "$ORCH" init nope --issue 7 2>&1)"; st=$?
+fake_issue 7 open ready-for-agent
+out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
 assert_status "adopts once the issue carries the real table's label" "$st" 0
 
 # Reset again: the successful adopt above just left a flow active, and the
 # sub-issues checks right after this expect the plain flow-free healthy repo.
 healthy_repo
+doctor_github
 
 # Sub-issues carry no enable/disable setting of their own, so the only
 # reliable signal is asking the endpoint against an issue that exists and
-# reading whether it answers or 404s. The default stub answers normally, and
+# reading whether it answers or 404s. doctor_github's issue answers, and
 # the "fully healthy repo" assertion at the end of this section already
 # depends on that, so this is really confirming the ok line it produces.
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
@@ -3002,7 +3083,8 @@ assert_contains "reports sub-issues as supported" "$out" "ok    sub-issues suppo
 # The endpoint 404ing (or otherwise refusing) reads as "not supported" -
 # advisory, so a warn, never a FAIL: the real gate is ticket_publish's own
 # verify-then-die, not this probe.
-out="$(GH_STUB_SUBISSUE_GET_EXIT=1 "$ORCH" doctor --env 2>&1)"; st=$?
+fake_no_sub_issues
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "unsupported sub-issues does not block the flow" "$st" 0
 assert_contains "warns rather than fails when sub-issues are unsupported" \
   "$out" "warn  sub-issues do not appear to be supported"
@@ -3011,17 +3093,24 @@ assert_contains "explains the consequence rather than leaving it silent" \
 
 # A repo with no issues at all has nothing to probe against - still a warn,
 # not a FAIL, and a distinct message from the unsupported case above.
-out="$(GH_STUB_ISSUE_LIST= "$ORCH" doctor --env 2>&1)"; st=$?
+fake_github
+fake_label_names needs-triage ready-for-agent
+fake_default_branch main
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "no issue to probe against does not block the flow" "$st" 0
 assert_contains "says the probe could not run rather than guessing" \
   "$out" "sub-issues support could not be probed"
 
 # Gated like every other GitHub-backed check: unreachable collapses into the
 # shared skip line rather than adding a check-specific one of its own.
-out="$(GH_STUB_MODE=offline "$ORCH" doctor --env 2>&1)"; st=$?
+doctor_github
+fake_offline
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "GitHub unreachable does not block the flow either" "$st" 0
 assert_eq "still emits exactly one skip line, not a second for this check" \
   "$(printf '%s\n' "$out" | grep -c 'skipped:')" "1"
+
+fake_online
 
 # Still the fixture healthy_repo() built for the label-list checks above -
 # nothing since has touched anything but $out - so truncating the exclude
@@ -3060,6 +3149,7 @@ assert_contains "and clears the warning" "$(printf '%s\n' "$out" | tail -1)" "0 
 # The exclude line is still truncated from the check above, so this one does
 # need a real reset before layering CLAUDE_PLUGIN_ROOT's own warning on top.
 healthy_repo
+doctor_github
 out="$(env -u CLAUDE_PLUGIN_ROOT CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "running orch.sh by hand is not a broken install" "$st" 0
 assert_contains "warns about the unset plugin root" "$out" "CLAUDE_PLUGIN_ROOT"
@@ -3070,6 +3160,7 @@ restore_suite_env
 # is under and what that host cannot do, in the words of the capabilities
 # reference - so the two cannot tell a user different stories.
 healthy_repo
+doctor_github
 out="$(env -u CLAUDE_PLUGIN_ROOT CLAUDECODE=1 "$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "detects Claude Code from CLAUDECODE" "$out" "host: Claude Code"
 assert_eq "Claude Code lacks no capability" "$(printf '%s\n' "$out" | grep -c 'lacks')" "0"
@@ -3218,6 +3309,7 @@ restore_suite_env
 # about a flow, so no flow is a failure there and a plain statement everywhere
 # else.
 healthy_repo
+doctor_github
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "--flow refuses to answer when there is no flow" "$st" 1
 assert_contains "says why it cannot answer" "$out" "no active flow"
@@ -3244,9 +3336,11 @@ assert_eq "stays quiet about an upstream before the implement phase" \
 
 # /orchestrator:next and /orchestrator:status both run this scope every time, and
 # a flow with no PR recorded has nothing to ask GitHub about.
-ghlog="$(mktemp)"
-GH_STUB_LOG="$ghlog" "$ORCH" doctor --flow >/dev/null 2>&1
-assert_eq "a flow with no PR asks GitHub nothing" "$(grep -c . "$ghlog")" "0"
+# GitHub unreachable shows it: one question would put a skip line in the report.
+fake_offline
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_not_contains "a flow with no PR asks GitHub nothing" "$out" "skipped"
+fake_online
 
 # One unparseable file is one problem. Four checks each reading it again would
 # print jq's parse error mid-report and then four ok lines that are not true.
@@ -3305,16 +3399,19 @@ complete_spec_handoff "$("$ORCH" handoff path implement)"
 # there - adopted at init or published by orch-to-spec - and mirrors check_flow_pr's
 # open/closed/unreadable shape.
 "$ORCH" state set issue 11
+fake_issue 11 open ready-for-agent
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an open issue is healthy" "$st" 0
 assert_contains "reports the open issue" "$out" "issue #11 open"
 
-out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_issue 11 closed ready-for-agent
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the recorded issue has been closed" "$st" 1
 assert_contains "names the closed issue" "$out" "issue #11 is closed"
 assert_contains "gives the command that reopens it" "$out" "gh issue reopen 11"
 
-out="$(GH_STUB_VIEW_EXIT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_fail adapter_issue_state_labels
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the issue cannot be read from GitHub" "$st" 1
 assert_contains "names the unreadable issue" "$out" "issue #11 could not be read from GitHub"
 assert_contains "gives the command that re-checks it" "$out" "gh issue view 11"
@@ -3322,7 +3419,9 @@ assert_contains "gives the command that re-checks it" "$out" "gh issue view 11"
 # The ready-for-agent label is a one-time gate at adoption, not an ongoing flow
 # invariant (docs/adr/0005) - a maintainer's later triage housekeeping must not
 # stop a flow already running against the issue.
-out="$(GH_STUB_ISSUE_LABELS=needs-triage "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_unfail
+fake_issue 11 open needs-triage
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an issue whose label was removed after adoption is still healthy" "$st" 0
 assert_contains "still reports it open" "$out" "issue #11 open"
 
@@ -3331,7 +3430,8 @@ assert_contains "still reports it open" "$out" "issue #11 open"
 # doctor misreporting every successfully-finished flow.
 complete_implement_handoff "$("$ORCH" handoff path review)"
 state_fixture phase done
-out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_issue 11 closed
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a closed issue is healthy once the flow is done" "$st" 0
 assert_contains "reports it closed instead of failing" "$out" "issue #11 closed"
 
@@ -3348,7 +3448,7 @@ assert_done_branch_gone_ok() {
   assert_not_contains "$label: no push remedy" "$out" "git push -u origin"
 }
 state_fixture branch orch/9-merged
-out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"
+out="$("$ORCH" doctor --flow 2>&1)"
 assert_done_branch_gone_ok "done, branch gone locally and on origin" "$out"
 assert_contains "names the branch as gone after merge" "$out" \
   "branch: orch/9-merged gone - expected after merge"
@@ -3356,16 +3456,17 @@ assert_contains "names no upstream as expected after merge" "$out" \
   "upstream: none - expected after merge"
 
 state_fixture branch orch/9-gone
-out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"
+out="$("$ORCH" doctor --flow 2>&1)"
 assert_done_branch_gone_ok "done, local branch kept but origin branch gone" "$out"
 
 git update-ref refs/remotes/origin/orch/9-merged HEAD
 state_fixture branch orch/9-merged
-out="$(GH_STUB_ISSUE_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"
+out="$("$ORCH" doctor --flow 2>&1)"
 assert_done_branch_gone_ok "done, local branch gone but origin branch kept" "$out"
 
 # Outside done, the same states are still what they were: a review flow with
 # its branch gone has nothing to build on, and an unpushed one still needs it.
+fake_issue 11 open
 state_fixture phase review
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a review flow with its branch gone still fails" "$st" 1
@@ -3380,15 +3481,19 @@ assert_contains "and still gives the push remedy" "$out" "git push -u origin orc
 state_fixture phase implement
 
 state_fixture pr 7
-out="$(GH_STUB_PR_STATE=CLOSED "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_pr 7 closed orch/9-gone main
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the recorded PR has been closed" "$st" 1
 assert_contains "names the closed PR" "$out" "#7"
-out="$(GH_STUB_PR_STATE=MERGED "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_pr 7 merged orch/9-gone main
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a merged PR is not a failure" "$st" 0
 
-out="$(GH_STUB_MODE=offline "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_offline
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an unreachable GitHub does not fail the flow scope" "$st" 0
 assert_contains "skips the PR check with its cause" "$out" "skipped: GitHub is not reachable"
+fake_online
 
 # --flow never runs the tools group, so if it skipped every check it has and
 # still exited 0, /orchestrator:next would advance a flow nothing had checked.
@@ -5503,6 +5608,16 @@ out="$(contract adapter_pr_ready 58 2>&1)"; st=$?
 assert_status "pr ready: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
 
+gh_reply 0 $'OPEN\ntrue\n' '' pr view 57 --json state,isDraft --jq '.state, .isDraft'
+out="$(contract adapter_pr_state_draft 57 2>&1)"; st=$?
+assert_status "pr state draft: reads the PR's state and draft flag" "$st" 0
+assert_eq "the state, then true or false" "$out" "$(writeln OPEN true)"
+gh_reply 1 '' 'GraphQL: Could not resolve to a PullRequest with the number of 58.' \
+  pr view 58 --json state,isDraft --jq '.state, .isDraft'
+out="$(contract adapter_pr_state_draft 58 2>&1)"; st=$?
+assert_status "pr state draft: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "GraphQL: Could not resolve to a PullRequest with the number of 58."
+
 gh_reply 0 $'57\n' '' pr list --head quick/12-foo --state open --json number --jq '.[].number'
 out="$(contract adapter_prs_open quick/12-foo 2>&1)"; st=$?
 assert_status "prs open: lists the open PRs from a branch" "$st" 0
@@ -5781,6 +5896,69 @@ out="$(contract adapter_repo_default_branch acme/gone 2>&1)"; st=$?
 assert_status "repo default branch: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" \
   "GraphQL: Could not resolve to a Repository with the name 'acme/gone'. (repository)"
+
+# The doctor-only operations (#551). Each case that asks gh the same argv as
+# another runs in its own command substitution, with its own fixture gh, since
+# the fixture answers one reply per argv.
+gh_reply 0 $'github.com\n  Logged in to github.com account acme (keyring)\n' '' auth status
+out="$(contract adapter_auth_status 2>&1)"; st=$?
+assert_status "auth status: succeeds where gh is authenticated" "$st" 0
+assert_contains "printing gh's own report" "$out" "Logged in to github.com"
+assert_contains "pinned to the resolved repo" "$(cat "$GH_FIXTURE/env.log")" \
+  "GH_REPO=acme/widgets GH_HOST=<unset> auth status"
+out="$(gh_fixture; gh_reply 1 '' 'You are not logged into any GitHub hosts. To log in, run: gh auth login' auth status
+  contract adapter_auth_status 2>&1)"; st=$?
+assert_status "auth status: an unauthenticated gh fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "You are not logged into any GitHub hosts. To log in, run: gh auth login"
+
+gh_reply 0 $'upstream/widgets\n' '' repo set-default --view
+out="$(contract adapter_repo_local_default 2>&1)"; st=$?
+assert_status "repo local default: reads gh's local default repo" "$st" 0
+assert_eq "printing its owner/name" "$out" "upstream/widgets"
+# gh 2.102.0 answers "none set" on stderr, exit 0.
+out="$(gh_fixture; gh_reply 0 '' 'X No default remote repository has been set.' repo set-default --view
+  contract adapter_repo_local_default 2>/dev/null)"; st=$?
+assert_status "repo local default: none set succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+out="$(gh_fixture; gh_reply 1 '' 'not a git repository' repo set-default --view
+  contract adapter_repo_local_default 2>&1)"; st=$?
+assert_status "repo local default: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "not a git repository"
+
+gh_reply 0 $'bug\nneeds-triage\n' '' label list --limit 1000 --json name --jq '.[].name'
+out="$(contract adapter_labels 1000 2>&1)"; st=$?
+assert_status "labels: lists the repo's label names" "$st" 0
+assert_eq "one name per line" "$out" "$(writeln bug needs-triage)"
+gh_reply 0 '' '' label list --limit 5 --json name --jq '.[].name'
+out="$(contract adapter_labels 5 2>&1)"; st=$?
+assert_status "labels: a repo with none succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+gh_reply 1 '' 'HTTP 502: Bad Gateway' label list --limit 7 --json name --jq '.[].name'
+out="$(contract adapter_labels 7 2>&1)"; st=$?
+assert_status "labels: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
+probe_list=(issue list --state all --limit 1 --json number --jq '.[0].number // empty')
+gh_reply 0 $'7\n' '' "${probe_list[@]}"
+gh_reply 0 '[]' '' api repos/{owner}/{repo}/issues/7/sub_issues
+out="$(contract adapter_sub_issues_supported 2>&1)"; st=$?
+assert_status "sub-issues supported: probes the sub-issues endpoint on an issue" "$st" 0
+assert_eq "yes where it answers" "$out" "yes"
+out="$(gh_fixture; gh_reply 0 $'8\n' '' "${probe_list[@]}"
+  gh_reply 1 '' 'HTTP 404: Not Found' api repos/{owner}/{repo}/issues/8/sub_issues
+  contract adapter_sub_issues_supported 2>/dev/null)"; st=$?
+assert_status "sub-issues supported: an endpoint that refuses succeeds" "$st" 0
+assert_eq "printing no" "$out" "no"
+out="$(gh_fixture; gh_reply 0 '' '' "${probe_list[@]}"; contract adapter_sub_issues_supported 2>&1)"; st=$?
+assert_status "sub-issues supported: a repo with no issue succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+out="$(gh_fixture; gh_reply 1 '' 'HTTP 502: Bad Gateway' "${probe_list[@]}"
+  contract adapter_sub_issues_supported 2>&1)"; st=$?
+assert_status "sub-issues supported: a gh failure listing issues fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+assert_eq "every doctor operation was pinned to the resolved repo" \
+  "$(grep -E ' (auth status|repo set-default|label list|issue list --state all|api repos/[{]owner[}]/[{]repo[}]/issues/7/)' "$GH_FIXTURE/env.log" \
+    | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> ')" "0"
 rm -f "$ibody"
 restore_suite_env GH_FIXTURE GH_HOST
 
@@ -6394,6 +6572,7 @@ restore_suite_env
 echo
 echo "doctor at the review phase"
 review_flow reviewdoctor
+doctor_github
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a review-phase flow with its three handoffs is healthy" "$st" 0
 assert_contains "counts the implement handoff among them" "$out" "handoff 03-implement.md complete"
@@ -7119,6 +7298,7 @@ restore_suite_env
 echo
 echo "doctor: review terminal check"
 fresh_flow doctorterm
+doctor_github
 complete_plan_handoff "$("$ORCH" handoff path spec)"
 complete_spec_handoff "$("$ORCH" handoff path implement)"
 state_fixture phase implement
@@ -7181,6 +7361,7 @@ restore_suite_env
 echo
 echo "doctor: review budget check"
 review_flow doctorbudget
+doctor_github
 "$ORCH" state set budget 5
 state_fixture iteration 3
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -7203,16 +7384,20 @@ restore_suite_env
 echo
 echo "doctor: review ci check"
 review_flow doctorci
+doctor_github
 state_fixture pr 40
 # A draft PR mid-review agrees with the phase, so the draft check stays quiet
 # and only the CI check's own verdict decides the exit status below.
-export GH_STUB_PR_DRAFT=true
+fake_pr 40 open orch/doctorci main
+fake_pr_draft 40
 
-out="$(GH_STUB_REQUIRED=green "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_checks 40 required green
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "green required checks are healthy" "$st" 0
 assert_contains "reports it" "$out" "CI: required checks green"
 
-out="$(GH_STUB_REQUIRED=none "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_checks 40 required none
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "no required checks reported is not a failure" "$st" 0
 assert_contains "reports it" "$out" "CI: no required checks reported"
 # review ci's none detail (issue #476) is added in review ci, not ci_probe,
@@ -7220,21 +7405,24 @@ assert_contains "reports it" "$out" "CI: no required checks reported"
 assert_eq "without review ci's none detail" \
   "$(printf '%s\n' "$out" | grep -c 'no CI signals\|grace ran out')" "0"
 
-out="$(GH_STUB_REQUIRED=pending "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_checks 40 required pending
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "pending required checks are not a failure yet" "$st" 0
 assert_contains "reports it" "$out" "CI: required checks still pending"
 
-out="$(GH_STUB_REQUIRED=failing "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_checks 40 required failing
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a failing required check fails doctor" "$st" 1
 assert_contains "names the PR" "$out" "CI: required check(s) failing on PR #40"
 assert_contains "carries the failing check's name" "$out" "build"
 assert_contains "gives the command that shows it" "$out" "gh pr checks 40"
 
-out="$(GH_STUB_REQUIRED=boom "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_checks 40 required boom
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an unreachable API warns rather than fails" "$st" 0
 assert_contains "reports it" "$out" "CI: could not be read from GitHub for PR #40"
 assert_contains "carrying the reason" "$out" "dial tcp"
-restore_suite_env GH_STUB_PR_DRAFT
+restore_suite_env
 
 # --- doctor: review draft check -------------------------------------------
 # `review ready` marks the PR ready and records phase: done as one operation,
@@ -7243,37 +7431,43 @@ restore_suite_env GH_STUB_PR_DRAFT
 echo
 echo "doctor: review draft check"
 review_flow doctordraft
+doctor_github
 state_fixture pr 40
-export GH_STUB_PR_DRAFT=true
-out="$(GH_STUB_PR_DRAFT=true "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_pr 40 open orch/doctordraft main
+fake_pr_draft 40
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a draft PR mid-review is healthy" "$st" 0
 assert_contains "reports it matches phase" "$out" \
   "PR #40 draft state matches phase (review)"
 
-out="$(GH_STUB_PR_DRAFT=false "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_pr 40 open orch/doctordraft main
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a PR marked ready while still in review fails" "$st" 1
 assert_contains "names the mismatch" "$out" \
   "PR #40 was marked ready on GitHub but the flow phase is still review"
 assert_contains "gives the command that inspects it" "$out" "gh pr view 40"
 
 state_fixture phase done
-out="$(GH_STUB_PR_DRAFT=false "$ORCH" doctor --flow 2>&1)"; st=$?
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a ready PR once the flow is done is healthy" "$st" 0
 assert_contains "reports it matches phase" "$out" \
   "PR #40 draft state matches phase (done)"
 
-out="$(GH_STUB_PR_DRAFT=true "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_pr_draft 40
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a draft PR left behind once the flow is done fails" "$st" 1
 assert_contains "names the mismatch" "$out" \
   "PR #40 is still a draft but the flow phase is done"
 assert_contains "gives the command that promotes it" "$out" "gh pr ready 40"
 
-out="$(GH_STUB_PR_STATE=MERGED "$ORCH" doctor --flow 2>&1)"; st=$?
+fake_pr 40 merged orch/doctordraft main
+fake_pr_draft 40
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a merged PR has nothing left to disagree with" "$st" 0
 assert_eq "and says nothing about draft state" \
   "$(printf '%s\n' "$out" | grep -c 'draft state')" "0"
 state_fixture phase review
-restore_suite_env GH_STUB_PR_DRAFT
+restore_suite_env
 
 # --- review retire -------------------------------------------------------
 # The archive test's directory-move assertions are the direct template.
@@ -7965,6 +8159,7 @@ assert_eq "and prints the working directory" "$out" "$top/.orchestrator/spec-rev
 echo
 echo "doctor: base branch check"
 healthy_repo
+doctor_github
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a default base branch passes" "$st" 0
 assert_contains "reports the default branch as the base branch" "$out" "ok    base branch: main (default)"
