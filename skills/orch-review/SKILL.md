@@ -337,20 +337,17 @@ non-zero on the last two:
   Required means required by the branch protection of the PR's base branch. If it
   looks flaky rather than caused by the change, the flow has **one** flake
   rerun: `bash "$ORCH" state get flake_rerun_used` reads `true` once it is spent and
-  empty while it is not. Spend it on the run behind the failing check -
-  `gh run rerun` needs that run's id, and with none it opens a prompt a session
-  driving `gh` from non-interactive bash cannot answer:
+  empty while it is not. Spend it with `bash "$ORCH" review rerun <pr>`, which
+  reruns the failed jobs of the GitHub Actions run behind the PR's first failed
+  or cancelled check:
 
-  ```
-  link="$(gh pr checks <pr> --json bucket,link \
-    -q 'first(.[] | select(.bucket == "fail" or .bucket == "cancel") | .link)')"
-  run="${link##*/runs/}"          # .../actions/runs/N/job/M -> N/job/M
-  gh run rerun "${run%%/*}" --failed
-  ```
+  - **exit 0** - the rerun started. Only this spends the flake rerun.
+  - **exit 1** - that check is not an Actions run, so there is no rerun to
+    spend: a **bounded stop** on the spot, spending nothing.
+  - **exit 2** - anything else (GitHub unreadable, the rerun refused): a
+    **bounded stop**.
 
-  It reruns GitHub Actions and nothing else, so a failing check that is not an
-  Actions run has no rerun to spend and is a **bounded stop** on the spot. Then
-  record `bash "$ORCH" state set flake_rerun_used true` and ask `review ci` again. A
+  On exit 0, record `bash "$ORCH" state set flake_rerun_used true` and ask `review ci` again. A
   second failure is a **bounded stop**. That second ask restarts the
   fifteen-minute wait rather than inheriting what is left of the first, because
   a rerun restarts the checks - so this one path, once per flow, can wait longer

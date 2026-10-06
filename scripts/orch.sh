@@ -938,6 +938,11 @@ adapter_pr_ready() {
   gh pr ready "$@"
 }
 
+# review rerun's rerun of one GitHub Actions run's failed jobs (issue #525).
+adapter_run_rerun() {
+  gh run rerun "$@"
+}
+
 # pr release's two reads of the base branch's PRs: whether a release PR is
 # already open, and the bodies of everything merged into it (issue #139).
 adapter_pr_list() {
@@ -1148,6 +1153,45 @@ ci_probe() {
   note green
 }
 
+# The flow's flake rerun (issue #525): the failed jobs of the GitHub Actions
+# run behind the PR's first failed or cancelled check, whose id is the
+# `runs/<id>` segment of that check's link. `gh run rerun` with no id opens a
+# prompt a non-interactive caller cannot answer, so the id is always passed.
+# Exit 0 means the rerun started, and is the only answer that spends the
+# flow's rerun. Exit 1 means the first failing check is no Actions run - an
+# outside CI's status - so there is nothing to rerun. Everything else - a usage
+# error, no repo, a GitHub that cannot be read, no failing check, a refused
+# rerun - goes through die2. The repo is resolved here rather than left to the
+# guard, whose death exits 1 and would read as "nothing to rerun".
+review_rerun() {
+  local pr="${1:-}" out link run
+  [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
+  case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
+  if [ -z "${GH_REPO:-}" ]; then
+    repo_resolve || die2 "$REPO_REMEDY"
+    export GH_REPO="$REPO_NAME"
+  fi
+  # Exit 8 is gh's "some checks pending", which still answers the JSON.
+  out="$(adapter_pr_checks "$pr" --json bucket,name,link 2>&1)" || [ $? -eq 8 ] \
+    || die2 "gh could not read the checks of PR #$pr: $(first_line "$out")"
+  link="$(printf '%s' "$out" | jq -er \
+    'first(.[] | select(.bucket == "fail" or .bucket == "cancel")) | "\(.name)\t\(.link // "")"' 2>/dev/null)" \
+    || die2 "PR #$pr has no failed or cancelled check to rerun"
+  local name="${link%%$'\t'*}"
+  link="${link#*$'\t'}"
+  case "$link" in
+    */actions/runs/[0-9]*) ;;
+    *) printf 'orch: check %s on PR #%s is not a GitHub Actions run - nothing to rerun\n' "$name" "$pr" >&2
+       return 1 ;;
+  esac
+  run="${link##*/actions/runs/}"   # N/job/M -> N
+  run="${run%%/*}"
+  case "$run" in ''|*[!0-9]*) printf 'orch: check %s on PR #%s links no Actions run id - nothing to rerun\n' "$name" "$pr" >&2; return 1 ;; esac
+  adapter_run_rerun "$run" --failed >/dev/null 2>&1 \
+    || die2 "gh could not rerun the failed jobs of Actions run $run"
+  note "$run"
+}
+
 # Classifies the review loop's last iteration against its budget - the one
 # answer `review terminal` and doctor's `check_flow_review_terminal` both read,
 # rather than each re-deriving which iteration counts as done. Checked with
@@ -1340,6 +1384,7 @@ cmd_review() {
         esac
       done
       ;;
+    rerun) review_rerun "$@" ;;
     terminal)
       require_state
       [ $# -eq 0 ] || die "usage: orch.sh review terminal"
@@ -1360,7 +1405,7 @@ cmd_review() {
       done
       note "$dest"
       ;;
-    *) die "unknown review op: ${op:-<none>} (want begin|path|file|ci|ready|terminal|retire)" ;;
+    *) die "unknown review op: ${op:-<none>} (want begin|path|file|ci|rerun|ready|terminal|retire)" ;;
   esac
 }
 
@@ -3039,6 +3084,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               creating the labels if missing; prints the number
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
+  review rerun <pr>           rerun the failed jobs of the Actions run behind
+                              the PR's first failed or cancelled check; prints
+                              the run id. Exits 1 when that check is no Actions
+                              run, 2 on any other failure
   review ready                mark the draft PR ready and set the phase to done
   review terminal             classify the last iteration: none, pending,
                               interrupted, ready, or stop; exits non-zero on

@@ -648,6 +648,12 @@ ready-for-agent}"
     esac
     if [ -n "$api_jq" ]; then printf '%s' "$api_json" | jq -r "$api_jq"; else printf '%s\n' "$api_json"; fi
     ;;
+  # review rerun's rerun of an Actions run: recorded to GH_STUB_FILED as
+  # "run rerun <args>", and refused on GH_STUB_RERUN_EXIT.
+  run)
+    if [ -n "${GH_STUB_FILED:-}" ]; then printf 'run %s\n' "${*:2}" >>"$GH_STUB_FILED"; fi
+    [ "${GH_STUB_RERUN_EXIT:-0}" = 0 ] || { echo "gh stub: run rerun refused" >&2; exit "$GH_STUB_RERUN_EXIT"; }
+    exit 0 ;;
   pr)
     case "$2" in
       ready) exit 0 ;;
@@ -675,8 +681,11 @@ ready-for-agent}"
         answer="$(printf '%s' "$script" | awk -F'|' -v i="$i" '{ print (i <= NF) ? $i : $NF }')"
         case "$answer" in
           green)   echo '[{"bucket":"pass","name":"build","state":"SUCCESS"}]' ;;
-          failing) echo '[{"bucket":"fail","name":"build","state":"FAILURE"},{"bucket":"pass","name":"lint","state":"SUCCESS"}]' ;;
-          cancel)  echo '[{"bucket":"cancel","name":"build","state":"CANCELLED"}]' ;;
+          failing) echo '[{"bucket":"fail","name":"build","state":"FAILURE","link":"https://github.com/acme/widgets/actions/runs/4242/job/77"},{"bucket":"pass","name":"lint","state":"SUCCESS","link":"https://github.com/acme/widgets/actions/runs/1/job/1"}]' ;;
+          cancel)  echo '[{"bucket":"cancel","name":"build","state":"CANCELLED","link":"https://github.com/acme/widgets/actions/runs/5150/job/9"}]' ;;
+          # A failing check that is no Actions run - a commit status from an
+          # outside CI - listed first, ahead of a failing Actions run.
+          external) echo '[{"bucket":"pass","name":"lint","state":"SUCCESS","link":"https://github.com/acme/widgets/actions/runs/1/job/1"},{"bucket":"fail","name":"ext-ci","state":"FAILURE","link":"https://ci.example.com/build/9"},{"bucket":"fail","name":"build","state":"FAILURE","link":"https://github.com/acme/widgets/actions/runs/4242/job/77"}]' ;;
           pending) echo '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]'; exit 8 ;;
           # gh documents exit 8 for pending checks, but with --json it answers 0
           # and reports the state in the bucket instead. Both reach the same
@@ -3273,6 +3282,10 @@ out="$(GH_STUB_PR_NUMBER=24 pinned pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "pr publish runs in the fork" "$st" 0
 out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' pinned pr comment "$body" 2>&1)"; st=$?
 assert_status "pr comment runs in the fork" "$st" 0
+out="$(GH_STUB_CHECKS=failing pinned review rerun 7 2>&1)"; st=$?
+assert_status "review rerun runs in the fork" "$st" 0
+assert_contains "and its rerun reached gh pinned to the fork" \
+  "$(cat "$repolog")" "GH_REPO=fork/widgets run rerun 4242 --failed"
 assert_eq "every gh call carried the fork" \
   "$(grep -cv '^GH_REPO=fork/widgets ' "$repolog")" "0"
 assert_contains "and gh was called at all" "$(cat "$repolog")" "GH_REPO=fork/widgets issue"
@@ -5807,6 +5820,52 @@ assert_first_line "classified as unreachable, same as the fake's exit-8 path" "$
 assert_contains "saying the wait ran out" "$out" "still pending"
 unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 state_fixture pr null
+restore_suite_env
+
+# --- review rerun -------------------------------------------------------------
+# The flow's one flake rerun (#525): the failed jobs of the Actions run behind
+# the PR's first failed or cancelled check, taken from that check's link. Exit 0
+# is the only answer that spends the rerun; 1 is "no Actions run to rerun" and
+# 2 everything else. Stateless: the PR is named on the command line.
+echo
+echo "review rerun"
+new_repo >/dev/null
+stub_gh
+filed="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_CHECKS=failing "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a failed Actions check is rerun" "$st" 0
+assert_eq "gh got run rerun with the run id from the failing check's link" \
+  "$(grep '^run ' "$filed")" "run rerun 4242 --failed"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" GH_STUB_CHECKS=cancel "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a cancelled Actions check is rerun too" "$st" 0
+assert_eq "from the cancelled check's run" "$(grep '^run ' "$filed")" "run rerun 5150 --failed"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" GH_STUB_CHECKS=external "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a first failing check that is no Actions run has nothing to rerun" "$st" 1
+assert_contains "naming the check" "$out" "ext-ci"
+assert_eq "and reruns nothing, not even a later Actions run" "$(grep -c '^run ' "$filed")" "0"
+
+out="$(GH_STUB_CHECKS=boom "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a GitHub that cannot be read is exit 2" "$st" 2
+out="$(GH_STUB_CHECKS=garbage "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "checks jq cannot read are exit 2" "$st" 2
+out="$(GH_STUB_CHECKS=green "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "no failed or cancelled check is exit 2" "$st" 2
+out="$(GH_STUB_RERUN_EXIT=1 GH_STUB_CHECKS=failing "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a rerun gh refuses is exit 2" "$st" 2
+assert_contains "naming the run" "$out" "4242"
+out="$("$ORCH" review rerun 2>&1)"; st=$?
+assert_status "no PR is a usage error, exit 2" "$st" 2
+out="$("$ORCH" review rerun abc 2>&1)"; st=$?
+assert_status "a PR that is not a number is a usage error, exit 2" "$st" 2
+git remote remove origin
+out="$(GH_STUB_CHECKS=failing "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "no repo to work on is exit 2, not the guard's 1" "$st" 2
+assert_contains "naming the GH_REPO remedy" "$out" "GH_REPO=<owner>/<repo>"
+assert_contains "help documents review rerun" "$("$ORCH" help)" "review rerun <pr>"
 restore_suite_env
 
 # --- a flow from before the budget shipped ----------------------------------
