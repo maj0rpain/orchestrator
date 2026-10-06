@@ -261,6 +261,85 @@ assert_contains "still asks at plan confirmation when the flow is done" \
   "$(prompt_event "$confirm" jc1 | "$GRILL")" "Before you implement"
 rm -rf "$REPO/.orchestrator"
 
+echo
+echo "grilling hook's interviewed-issue step (#573)"
+
+# When a planning interview was about an open issue, the close
+# offers to move it to ready-for-agent before the route question, through
+# orch.sh issue triage. Checked on every message that carries the route
+# question: the start-of-session message on both hosts, and Junie's
+# plan-confirmed message (Claude Code has none, ADR-0025).
+ORCH_PATH="$(cd "$DIR/.." && pwd)/scripts/orch.sh"
+route_block='      1. Start the orchestrator flow - the full plan -> spec -> implement ->
+         review pipeline, with its own handoff and review loop.
+      2. Quick implementation - skip the pipeline and implement this directly.
+      3. Blueprint only - publish the spec and its ticket breakdown, then
+         stop; implement later.'
+# True when $2 occurs in $1 before $3 does, both present.
+occurs_before() {
+  case "$1" in *"$2"*) ;; *) return 1 ;; esac
+  case "$1" in *"$3"*) ;; *) return 1 ;; esac
+  local a="${1%%"$2"*}" b="${1%%"$3"*}"
+  [ "${#a}" -lt "${#b}" ]
+}
+check_interviewed_step() {
+  local where="$1" ctx="$2" tool="$3"
+  assert_contains "names the interviewed issue $where" "$ctx" "interviewed issue"
+  assert_contains "the step is conditional on an interviewed issue $where" "$ctx" \
+    "With no interviewed issue, skip this step entirely"
+  assert_contains "asks the move question with the host's tool $where" "$ctx" \
+    "ask one blocking question with $tool"
+  assert_contains "the question names the issue number $where" "$ctx" "Move #<n> to \`ready-for-agent\`"
+  assert_contains "offers skip $where" "$ctx" "\"Skip\""
+  assert_contains "offers a different issue $where" "$ctx" "\"It's a different issue\""
+  assert_contains "skip continues to the route question $where" "$ctx" \
+    "On \"Skip\", go straight to the route question"
+  assert_contains "runs orch.sh issue triage via the resolved path $where" "$ctx" \
+    "bash \"$ORCH_PATH\" issue triage <n>"
+  assert_contains "forbids a raw gh call $where" "$ctx" "never a raw gh call"
+  assert_not_contains "carries no raw gh issue call $where" "$ctx" "gh issue"
+  assert_contains "asks to override on exit 2 $where" "$ctx" "If it exits 2"
+  assert_contains "reruns with --override on a yes $where" "$ctx" "on a yes, rerun it with --override"
+  assert_contains "skips the relabel on a no $where" "$ctx" "on a no, skip the relabel"
+  assert_contains "warns and continues on any other failure $where" "$ctx" \
+    "On any other failure, warn the user that init --issue will refuse #<n> until it carries \`ready-for-agent\`, and continue to the route question"
+  assert_contains "keeps the route question's text unchanged $where" "$ctx" "$route_block"
+  if occurs_before "$ctx" "issue triage <n>" "$route_block"; then
+    ok "puts the interviewed-issue step before the route question $where"
+  else
+    bad "puts the interviewed-issue step before the route question $where" "step not before route question"
+  fi
+}
+
+ctx="$(skill_event "mattpocock-skills:grilling" ii1 | "$GRILL" | jq -r '.additionalContext')"
+check_interviewed_step "on Claude Code" "$ctx" "the AskUserQuestion tool"
+ctx="$(prompt_event '$grilling' ii2 | "$GRILL" | jq -r '.additionalContext')"
+check_interviewed_step "on Junie" "$ctx" "the ask_user tool"
+ctx="$(prompt_event "$confirm" ii2 | "$GRILL" | jq -r '.additionalContext')"
+check_interviewed_step "at Junie's plan confirmation" "$ctx" "the ask_user tool"
+
+# A repo that renamed its triage labels gets its own names in the step.
+cat >"$REPO/docs/agents/triage-labels.md" <<'DOC'
+| Role            | Ours          | Meaning |
+| --------------- | ------------- | ------- |
+| needs-triage    | triage-me     | x       |
+| needs-info      | need-more     | x       |
+| ready-for-agent | agent-ready   | x       |
+| ready-for-human | human-only    | x       |
+| wontfix         | not-planned   | x       |
+DOC
+for v in "skill_event mattpocock-skills:grilling ii3|on Claude Code" "prompt_event \$grilling ii4|on Junie" \
+         "prompt_event Implement_the_suggested_plan ii4|at Junie's plan confirmation"; do
+  call="${v%%|*}" where="${v#*|}"
+  set -- $call
+  ctx="$("$1" "${2//_/ }" "$3" | "$GRILL" | jq -r '.additionalContext')"
+  assert_contains "names the repo's ready-for-agent label $where" "$ctx" "Move #<n> to \`agent-ready\`"
+  assert_contains "warns with the repo's ready-for-agent label $where" "$ctx" "until it carries \`agent-ready\`"
+  assert_contains "names the repo's wontfix and ready-for-human labels $where" "$ctx" "\`not-planned\` or \`human-only\`"
+  assert_not_contains "names no canonical ready-for-agent label $where" "$ctx" "ready-for-agent"
+done
+rm -f "$REPO/docs/agents/triage-labels.md"
+
 # Claude Code also fires UserPromptSubmit, but its PostToolUse on Skill already
 # delivers the message; its payload has no project_path.
 assert_empty "exits silently on Claude Code's UserPromptSubmit" \

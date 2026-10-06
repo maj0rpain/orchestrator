@@ -101,6 +101,17 @@ flow_cmd() {
   fi
 }
 
+# Names finding triage as flow_cmd names a flow command: off Claude Code,
+# where plugin commands are unverified, it also names the skill the command
+# runs, since finding triage is no orch-flow section.
+finding_triage_cmd() {
+  if [ "$(host_detect)" = claude ]; then
+    printf "/orchestrator:%s" finding-triage
+  else
+    printf "/orchestrator:%s (or the orch-finding-triage skill)" finding-triage
+  fi
+}
+
 # Names how to start the next phase in a fresh session, in the host's own
 # words: the boundary block's Next line. Junie's fresh-session wording is its
 # own, not a flow_cmd name (docs/host-capabilities.md, "Start a fresh
@@ -1783,7 +1794,8 @@ cmd_issue() {
       "cmd_issue_$op" "$issue" "$file"
       ;;
     publish) cmd_issue_publish "$@" ;;
-    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|comments|publish)" ;;
+    triage) cmd_issue_triage "$@" ;;
+    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|comments|publish|triage)" ;;
   esac
 }
 
@@ -2313,6 +2325,86 @@ cmd_issue_publish() {
     || issue_publish_verified "$n" "$title" "$ready" \
     || die "issue #$n's title and '$ready' label did not verify - checked twice, both failed"
   note "$n"
+}
+
+# True only once the issue reads back carrying <ready> and none of the
+# comma-separated <removed> labels. Read fresh every call, never cached - the
+# caller re-reads once on a mismatch, as issue publish's does.
+issue_triage_verified() {
+  local n="$1" ready="$2" out labels l removed=()
+  out="$(adapter_issue_state_labels "$n" 2>/dev/null)" || return 1
+  labels="$(printf '%s\n' "$out" | tail -n +2)"
+  printf '%s\n' "$labels" | grep -qxF -- "$ready" || return 1
+  [ -z "$3" ] || IFS=, read -r -a removed <<<"$3"
+  for l in ${removed[@]+"${removed[@]}"}; do
+    ! printf '%s\n' "$labels" | grep -qxF -- "$l" || return 1
+  done
+}
+
+# issue triage <n> [--override]: moves an open issue to the repo's
+# ready-for-agent label, so init --issue can adopt it - the planning close's
+# one write to GitHub (#571). One relabel adds ready-for-agent and removes
+# whichever other triage-role labels the issue carries, then the labels are
+# read back (ADR-0011), and one comment names the label it now carries.
+cmd_issue_triage() {
+  local usage="usage: orch.sh issue triage <n> [--override]"
+  local issue="" override=false ready out labels remove="" role label
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --override) override=true ;;
+      -*) die "$usage" ;;
+      *) [ -z "$issue" ] || die "$usage"; issue="$1" ;;
+    esac
+    shift
+  done
+  case "$issue" in ''|*[!0-9]*) die "$usage" ;; esac
+  ready="$(triage_label_for ready-for-agent)"
+
+  out="$(adapter_issue_state_labels "$issue")" \
+    || die "gh could not read issue #$issue"
+  labels="$(printf '%s\n' "$out" | tail -n +2)"
+  [ "$(first_line "$out")" = OPEN ] \
+    || die "issue #$issue is not open - only an open issue is triaged to '$ready'"
+  # A filed finding comes back into the pipeline through finding triage alone,
+  # which checks it against the default branch first (ADR-0031). Any
+  # review:<severity> label marks one, not only the severities filed today.
+  local finding
+  finding="$(printf '%s\n' "$labels" | grep -m1 '^review:.')" || true
+  [ -z "$finding" ] \
+    || die "issue #$issue is a filed finding ($finding) - triage it with $(finding_triage_cmd)"
+  # Already ready: nothing to move, and no comment to leave as noise.
+  if printf '%s\n' "$labels" | grep -qxF -- "$ready"; then return 0; fi
+  # A deliberate triage decision is the human's to reverse: exit 2 is no
+  # failure but a request for that decision, the label found on stdout.
+  if [ "$override" = false ]; then
+    for role in wontfix ready-for-human; do
+      label="$(triage_label_for "$role")"
+      if printf '%s\n' "$labels" | grep -qxF -- "$label"; then
+        note "$label"
+        exit 2
+      fi
+    done
+  fi
+  for role in $TRIAGE_ROLES; do
+    [ "$role" != ready-for-agent ] || continue
+    label="$(triage_label_for "$role")"
+    if printf '%s\n' "$labels" | grep -qxF -- "$label"; then
+      remove="${remove:+$remove,}$label"
+    fi
+  done
+
+  adapter_issue_relabel "$issue" "$ready" "$remove" \
+    || die "gh could not relabel issue #$issue"
+  issue_triage_verified "$issue" "$ready" "$remove" \
+    || issue_triage_verified "$issue" "$ready" "$remove" \
+    || die "issue #$issue's '$ready' label did not verify - checked twice, both failed"
+
+  local tmp
+  tmp="$(mktemp)"
+  printf 'An orchestrator planning session triaged this issue to `%s`.\n' "$ready" >"$tmp"
+  adapter_issue_comment "$issue" "$tmp" \
+    || printf 'orch: warning: issue #%s is labelled %s, but gh could not post the triage comment on it\n' "$issue" "$ready" >&2
+  rm -f "$tmp"
 }
 
 # Pushing a branch and opening a PR against it has exactly one right answer -
@@ -3266,6 +3358,17 @@ orch.sh - deterministic operations for the orchestrator flow
                               order, each opened by a line
                               <!-- comment @<login> <createdAt> --> - recording
                               no state; no comments is an empty file
+  issue triage <n> [--override]
+                              move open issue <n> to ready-for-agent, removing
+                              its other triage labels, verify by reading the
+                              labels back, and post one comment saying so -
+                              recording no state. Exit 0 when moved, or when
+                              it already carries ready-for-agent (nothing
+                              changed); exit 2, printing the label, on
+                              wontfix or ready-for-human without --override;
+                              exit 1 on a closed issue, a filed finding (finding
+                              triage moves those) or a gh failure.
+                              A failed comment only warns
   pr open <title> <body-file> push and open a draft PR against the flow's base
                               branch - Closes its issue into the default
                               branch, Refs it into any other

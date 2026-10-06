@@ -244,9 +244,14 @@ adapter_issue_comments() {
   fake_comments_print "$(fake_issue_dir "$1")/comments"
 }
 
-# adapter_issue_state_labels <n>: the stored state, then its labels.
+# adapter_issue_state_labels <n>: the stored state, then its labels. Lagging
+# (fake_lag), it answers the stale answer fake_lag was given, or nothing.
 adapter_issue_state_labels() {
   ! fake_failing adapter_issue_state_labels || return 1
+  if fake_lagging adapter_issue_state_labels; then
+    fake_stale adapter_issue_state_labels
+    return 0
+  fi
   fake_issue_known "$1" || return 1
   cat "$(fake_issue_dir "$1")/state"
   fake_issue_labels "$1"

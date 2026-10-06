@@ -1,4 +1,5 @@
-# doctor.sh - diagnostics for the orchestrator plugin, sourced by orch.sh.
+# doctor.sh - diagnostics for the orchestrator plugin, sourced by orch.sh and
+# by hook-grilling.sh.
 #
 # One diagnostic replacing the two health checks that came before it. Scopes
 # are named for the content they cover, never for the caller that asks -
@@ -21,6 +22,11 @@
 # require_state,
 # ORCH_DIR_NAME, PHASES, LABELS_DOC, LABEL_LIMIT, HANDOFF_DIR) is defined.
 # cmd_doctor is then dispatched from main() exactly like any other command.
+#
+# Also sourced by hook-grilling.sh, which defines only ROOT and LABELS_DOC.
+# The triage-label parser (triage_table_rows/triage_labels/triage_label_for)
+# is the part safe to call with just those two set; everything else here
+# needs orch.sh's shared mechanism.
 
 D_OK=0
 D_WARN=0

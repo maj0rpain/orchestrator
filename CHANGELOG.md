@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.13.0
+
+A planning interview about an open issue - the **Interviewed
+issue** - offers, before the route question, to move that issue to the
+repo's `ready-for-agent` triage label, so `init --issue` can adopt it without
+a manual relabel. The new `orch.sh issue triage <n> [--override]` does the
+move: one relabel, verified by reading the labels back, then one comment. It
+refuses closed issues and filed findings, and exits 2 on `wontfix` or
+`ready-for-human` until the human approves `--override`. A failed move warns
+and the close carries on to the route question. Label names follow the
+repo's triage-labels doc (see issue #571).
+
 ## 3.12.3
 
 `orch.sh` reaches GitHub through need-based adapter operations - issue, PR,
