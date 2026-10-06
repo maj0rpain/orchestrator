@@ -28,21 +28,24 @@ SKIP=0
 # a Claude Code or Junie session. Each test names its host.
 unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT JUNIE_SHIM_PATH
 
-# The environment the suite started with. healthy_repo exports HOME and
-# CLAUDE_PLUGIN_ROOT and puts stub_gh on PATH, so a section that calls it, or
-# that puts stub_gh on PATH itself, ends with restore_suite_env, leaving the
-# next section the environment it had. A section that exported more names
-# passes them to restore_suite_env to unset them too.
-# The paths above derive from this script's location, so they are computed
-# before the cd below. CALLER_HOME keeps the HOME the suite started with, only
-# for the isolation section to check HOME differs from it.
+# ORCH, GH_ADAPTER_FAKE and PLUGIN_ROOT derive from this script's location, so
+# they are computed before the cd below. CALLER_HOME keeps the HOME the suite
+# started with, only for the isolation section to check HOME differs from it.
+# XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL go too: git would otherwise still read
+# the caller's global config through them.
 CALLER_HOME="$HOME"
 SUITE_CWD="$(mktemp -d)" && cd "$SUITE_CWD" || {
   echo "orch_test.sh: cannot cd into a fresh temp directory" >&2; exit 1; }
 SUITE_HOME="$(mktemp -d)" || {
   echo "orch_test.sh: cannot create a temp HOME" >&2; exit 1; }
 export HOME="$SUITE_HOME"
-unset CLAUDE_PLUGIN_ROOT
+unset CLAUDE_PLUGIN_ROOT XDG_CONFIG_HOME GIT_CONFIG_GLOBAL
+
+# The environment every section starts from. healthy_repo exports HOME and
+# CLAUDE_PLUGIN_ROOT and puts stub_gh on PATH, so a section that calls it, or
+# that puts stub_gh on PATH itself, ends with restore_suite_env, leaving the
+# next section the environment it had. A section that exported more names
+# passes them to restore_suite_env to unset them too.
 SUITE_PATH="$PATH"
 restore_suite_env() { unset CLAUDE_PLUGIN_ROOT GH_REPO "$@"; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"; }
 
@@ -59,6 +62,9 @@ skip_no_jq() { skip "$1" "path_without_jq doesn't work on Windows/Git Bash - see
 
 assert_eq() {
   if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi
+}
+assert_ne() {
+  if [ "$2" != "$3" ]; then ok "$1"; else bad "$1" "expected anything but '$3'"; fi
 }
 assert_contains() {
   case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "output did not contain '$3': $2" ;; esac
@@ -911,12 +917,10 @@ else
   ok "the suite starts outside any git work tree"
 fi
 assert_eq "HOME is the suite's own HOME" "$HOME" "$SUITE_HOME"
-if [ "$HOME" != "$CALLER_HOME" ]; then
-  ok "HOME is not the HOME the suite started with"
-else
-  bad "HOME is not the HOME the suite started with" "HOME is still $CALLER_HOME"
-fi
+assert_ne "HOME is not the HOME the suite started with" "$HOME" "$CALLER_HOME"
 assert_eq "CLAUDE_PLUGIN_ROOT is unset" "${CLAUDE_PLUGIN_ROOT-unset}" "unset"
+assert_eq "no caller git config is reachable" \
+  "${XDG_CONFIG_HOME-unset} ${GIT_CONFIG_GLOBAL-unset}" "unset unset"
 assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
 
 # --- init -------------------------------------------------------------------
