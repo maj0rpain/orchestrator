@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.10.2
+
+`orch-spec-review`'s **Tickets follow the spec** now says how a failed `issue
+update` stops the review before comparing a failed `ticket block` or `ticket
+unblock` to it (see issue #501). The sentences are reordered; the meaning is
+unchanged.
+
 ## 3.10.1
 
 `orch.sh finding-triage scan` no longer dies silently with exit 141 when a
