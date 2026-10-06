@@ -222,7 +222,7 @@ skills/orch-to-tickets/       breaks an issue into tickets published as sub-issu
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
 skills/orch-finding-triage/   finding triage: scan the filed findings against the default branch, one batch per source PR, apply
 scripts/orch.sh               every deterministic operation (mechanism)
-scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh
+scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh and hook-grilling.sh
 scripts/hook-*.sh             the three hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
