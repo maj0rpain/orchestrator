@@ -294,9 +294,10 @@ iteration blocks **Ready**: nothing looked along that axis last.
 **Fixer**:
 A fresh agent a review loop's driver starts within an iteration, and only when
 triage left something the loop fixes. It fixes, verifies, commits, corrects
-any PR body statement its commit left unsupported, writes the iteration's
-review record, and ends with the iteration: one fixer never sees another
-iteration's work except through the records.
+any PR body statement its commit left unsupported (or records the corrections
+that did not land when the body write fails), writes the iteration's review
+record, and ends with the iteration: one fixer never sees another iteration's
+work except through the records.
 
 **Closer**:
 A fresh agent a review loop's driver starts once, at termination, to turn the
