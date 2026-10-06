@@ -3721,6 +3721,20 @@ out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by "abc,5" 2>&1)"; st
 assert_status "refuses a --blocked-by list with a non-numeric entry" "$st" 1
 assert_contains "naming the whole list" "$out" "abc,5"
 
+for list in "1,,2" ",5" "5,"; do
+  out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by "$list" 2>&1)"; st=$?
+  assert_status "refuses a --blocked-by list with an empty entry: $list" "$st" 1
+  assert_contains "naming the whole list" "$out" "--blocked-by must be plain issue numbers, got: $list"
+done
+
+out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100 --blocked-by "" 2>&1)"; st=$?
+assert_status "refuses a repeated --blocked-by, an empty one included" "$st" 1
+assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
+
+out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by 2>&1)"; st=$?
+assert_status "refuses a --blocked-by with no value" "$st" 1
+assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
+
 out="$("$ORCH" ticket publish 50 "Title" "$body" --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket publish"
@@ -3747,6 +3761,11 @@ out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100 2>&1)"; st=$?
 assert_status "a gh that refuses the blocking edge fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not add a blocking edge from ticket #104 on #100"
 fake_unfail
+
+out="$("$ORCH" ticket publish 50 "Unblocked" "$body" --blocked-by "" 2>&1)"; st=$?
+assert_status "an empty --blocked-by still publishes" "$st" 0
+assert_eq "printing the child's number" "$out" "105"
+assert_eq "with no blockers" "$(fake_blockers_of 105)" ""
 restore_suite_env
 
 # --- ticket publish verify-then-die ---------------------------------------
@@ -4073,6 +4092,12 @@ assert_contains "naming it" "$out" "abc"
 out="$("$ORCH" ticket block "$bc" --by "$ba,x1" 2>&1)"; st=$?
 assert_status "refuses a --by list with a non-numeric entry" "$st" 1
 assert_contains "naming the list" "$out" "$ba,x1"
+out="$("$ORCH" ticket block "$bc" --by "$ba,,$ba" 2>&1)"; st=$?
+assert_status "refuses a --by list with an empty entry" "$st" 1
+assert_contains "naming the list" "$out" "--by must be plain issue numbers, got: $ba,,$ba"
+out="$("$ORCH" ticket block "$bc" --by "" 2>&1)"; st=$?
+assert_status "refuses an empty --by" "$st" 1
+assert_contains "saying it got nothing" "$out" "--by must be plain issue numbers, got nothing"
 out="$("$ORCH" ticket block "$bc" 2>&1)"; st=$?
 assert_status "refuses a missing --by" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket block"
@@ -4273,6 +4298,12 @@ assert_contains "naming it" "$out" "abc"
 out="$("$ORCH" ticket unblock "$uc" --by "$ua,x1" 2>&1)"; st=$?
 assert_status "refuses a --by list with a non-numeric entry" "$st" 1
 assert_contains "naming the list" "$out" "$ua,x1"
+out="$("$ORCH" ticket unblock "$uc" --by "$ua,,$ua" 2>&1)"; st=$?
+assert_status "refuses a --by list with an empty entry" "$st" 1
+assert_contains "naming the list" "$out" "--by must be plain issue numbers, got: $ua,,$ua"
+out="$("$ORCH" ticket unblock "$uc" --by "" 2>&1)"; st=$?
+assert_status "refuses an empty --by" "$st" 1
+assert_contains "saying it got nothing" "$out" "--by must be plain issue numbers, got nothing"
 out="$("$ORCH" ticket unblock "$uc" 2>&1)"; st=$?
 assert_status "refuses a missing --by" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket unblock"

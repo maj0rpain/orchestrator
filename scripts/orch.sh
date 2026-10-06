@@ -2633,6 +2633,21 @@ ticket_sub_issues() {
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
 }
 
+# The one parser of a comma list of issue numbers for every `ticket` command:
+# `ticket publish --blocked-by` and `ticket block`/`unblock --by`. Prints the
+# numbers one per line, sorted and de-duplicated. Dies naming <flag> and the
+# whole list on any entry that is not a plain issue number, an empty one
+# included (`1,,2`, `,5`, `5,`). An empty <list> is the caller's to handle.
+issue_number_list() {
+  local flag="$1" list="$2"
+  # Digits and commas only, with no comma leading, trailing or doubled - a
+  # per-entry loop over a command substitution would lose a trailing empty.
+  case "$list" in
+    ''|*[!0-9,]*|,*|*,|*,,*) die "$flag must be plain issue numbers, got: $list" ;;
+  esac
+  printf '%s\n' "$list" | tr ',' '\n' | sort -un
+}
+
 # True only once both links read back exactly as published: the parent's
 # sub-issue listing contains the child, and the child's blocked-by listing
 # is the same set of numbers requested, in any order. Read fresh every call,
@@ -2654,30 +2669,29 @@ ticket_links_verified() {
 # since nothing downstream ever reads that fallback.
 cmd_ticket_publish() {
   [ $# -ge 3 ] || die "usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
-  local parent="$1" title="$2" body_file="$3" blocked_by="" want="" b
+  local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
+  local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want="" b
   local ready child
   shift 3
+  # Every argument check runs here, before the first GitHub write. A second
+  # --blocked-by is refused, never allowed to replace the first.
   while [ $# -gt 0 ]; do
     case "$1" in
-      --blocked-by) blocked_by="$2"; shift 2 ;;
-      *) die "usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]" ;;
+      --blocked-by)
+        [ $# -ge 2 ] && [ -z "$have_blocked_by" ] || die "$usage"
+        blocked_by="$2"; have_blocked_by=1; shift 2 ;;
+      *) die "$usage" ;;
     esac
   done
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
+  # A wholly empty --blocked-by "" means no blockers. The list comes back
+  # de-duplicated: GitHub stores a blocking edge once however often it is
+  # requested, so a duplicate would leave the readback's set permanently
+  # smaller than $want and fail verification for a correct link.
   if [ -n "$blocked_by" ]; then
-    want="$(printf '%s\n' "$blocked_by" | tr ',' '\n')"
-    while IFS= read -r b; do
-      [ -z "$b" ] && continue
-      case "$b" in ''|*[!0-9]*) die "--blocked-by must be plain issue numbers, got: $blocked_by" ;; esac
-    done <<<"$want"
-    # Deduplicated before the write loop and the verify below: GitHub stores a
-    # blocking edge once no matter how many times it is requested, so a
-    # duplicate in --blocked-by would otherwise make the readback's set
-    # permanently smaller than $want and fail verification for a link that is
-    # actually correct.
-    want="$(printf '%s\n' "$want" | sort -un)"
+    want="$(issue_number_list --blocked-by "$blocked_by")" || exit 1
   fi
 
   ready="$(triage_label_for ready-for-agent)"
@@ -2885,7 +2899,7 @@ cmd_ticket_retire() {
 # first. Prints the --by numbers one per line, sorted and de-duplicated, as
 # `ticket publish --blocked-by` does.
 ticket_edge_args() {
-  local verb="$1" usage n="" by="" have_by="" b
+  local verb="$1" usage n="" by="" have_by=""
   usage="usage: orch.sh ticket $verb <n> --by N,N,..."
   shift
   while [ $# -gt 0 ]; do
@@ -2899,11 +2913,9 @@ ticket_edge_args() {
   [ -n "$have_by" ] || die "$usage"
   case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
   [ -n "$by" ] || die "--by must be plain issue numbers, got nothing"
-  while IFS= read -r b; do
-    case "$b" in ''|*[!0-9]*) die "--by must be plain issue numbers, got: $by" ;; esac
-  done <<<"$(printf '%s\n' "$by" | tr ',' '\n')"
+  by="$(issue_number_list --by "$by")" || exit 1
   printf '%s\n' "$n"
-  printf '%s\n' "$by" | tr ',' '\n' | sort -un
+  printf '%s\n' "$by"
 }
 
 # Dies, before any write, unless ticket <n> is open, is a sub-issue, and
