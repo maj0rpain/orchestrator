@@ -72,10 +72,10 @@ your return instead - see **Could not fix**.
    reporting on the loop, so the closer still posts the loop's one PR
    comment. If `pr fetch` or `pr update` fails, the step ends there: do not
    retry, and do not count the failure as a finding - the loop goes on, and
-   the record's **PR body** reads `Not updated - <reason>`, with the
-   `orch.sh` message as the reason. Otherwise done when every helper,
-   function, file and stated reason the body names has been checked against
-   that diff, and each is supported by it or has been reworded or removed.
+   the record's **PR body** says so (see **The record**). Otherwise done
+   when every helper, function, file and stated reason the body names has
+   been checked against that diff, and each is supported by it or has been
+   reworded or removed.
 6. **Write the record** to the record path - see **The record**.
 7. **Return** about five lines: what was fixed, the commit SHA (or `no
    commit`), each could-not-fix finding with its severity and why, and, if
