@@ -204,7 +204,7 @@ check_gh_auth() {
 # default repo, which in a fork is the upstream, is only a warn: orch.sh pins
 # every call to the resolved repo regardless.
 check_gh_repo() {
-  local default
+  local default owner_name
   if ! repo_resolve; then
     d_fail "no GitHub repo to work on - origin is missing or not a GitHub owner/name."
     d_remedy "export GH_REPO=<owner>/<repo>"
@@ -212,11 +212,14 @@ check_gh_repo() {
   fi
   d_ok "repo: $REPO_NAME ($REPO_SOURCE)"
   # set-default --view reads local git config, so it needs gh but no network.
+  # It prints a bare owner/name even for a default off github.com, so it is
+  # compared with REPO_NAME's owner/name, any host dropped.
   if type -P gh >/dev/null 2>&1; then
     default="$(gh repo set-default --view 2>/dev/null)" || default=""
     default="$(first_line "$default")"
+    owner_name="${REPO_NAME#"${REPO_NAME%/*/*}/"}"
     case "$default" in
-      */*) if [ "$default" != "$REPO_NAME" ]; then
+      */*) if [ "$default" != "$owner_name" ]; then
              d_warn "gh's default repo is $default; the orchestrator uses $REPO_NAME"
            fi ;;
     esac

@@ -2399,6 +2399,10 @@ assert_contains "warns naming gh's default repo and the one in use" "$out" \
   "warn  gh's default repo is upstream/widgets; the orchestrator uses acme/widgets"
 out="$(GH_STUB_DEFAULT_REPO=acme/widgets "$ORCH" doctor --env 2>&1)"
 assert_not_contains "a matching gh default repo raises no warn" "$out" "gh's default repo"
+# gh repo set-default --view prints a bare owner/name even for a default on a
+# host other than github.com (gh 2.102.0), so the same repo there is no warn.
+out="$(GH_REPO=ghe.example.com/acme/widgets GH_STUB_DEFAULT_REPO=acme/widgets "$ORCH" doctor --env 2>&1)"
+assert_not_contains "a matching gh default repo on another host raises no warn" "$out" "gh's default repo"
 # No repo at all: a FAIL with the remedy, and doctor carries on past it - the
 # later GitHub checks counted on the skip line, no gh call made at all.
 : >"$repolog"
