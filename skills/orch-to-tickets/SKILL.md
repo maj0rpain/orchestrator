@@ -116,7 +116,7 @@ label, and reads all of it back before it reports success. Never publish with
 an ad hoc `gh` call. If it fails, stop and report which tickets were published
 before it did.
 
-When a published ticket's blocking edges are wrong - one missing or one extra -
+When a published ticket's blocking edges are wrong - any number missing or extra -
 repair them in place rather than retiring the breakdown:
 
 ```

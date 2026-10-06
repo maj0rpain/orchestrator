@@ -2028,10 +2028,11 @@ cmd_pr() {
 
 # The child's *database id*, not its issue number - both `sub_issues` and
 # `dependencies/blocked_by` take the database id, and nowhere else does
-# ticket_publish come by it for free.
+# ticket_publish come by it for free. An optional <context> is appended to
+# the failure message, so a caller can name the ticket it was working on.
 issue_db_id() {
   gh api "repos/{owner}/{repo}/issues/$1" --jq .id \
-    || die "gh could not read issue #$1"
+    || die "gh could not read issue #$1${2:+, $2}"
 }
 
 # True only once both links read back exactly as published: the parent's
@@ -2176,11 +2177,12 @@ cmd_ticket_parent() {
 
 # The lookup behind `ticket parent`, shared with `ticket block` and
 # `ticket unblock`'s preconditions: <n>'s parent number, or nothing when it
-# has none.
+# has none. An optional <context> is appended to the failure message, so a
+# caller can name the ticket it was working on.
 issue_parent() {
   local url
   url="$(gh api "repos/{owner}/{repo}/issues/$1" --jq '.parent_issue_url // empty')" \
-    || die "gh could not read issue #$1's parent"
+    || die "gh could not read issue #$1's parent${2:+, $2}"
   if [ -n "$url" ]; then printf '%s\n' "${url##*/}"; fi
 }
 
@@ -2340,7 +2342,7 @@ ticket_edge_preconditions() {
   parent="$(issue_parent "$n")" || exit 1
   [ -n "$parent" ] || die "#$n is not a sub-issue, so it is no ticket of a breakdown"
   while IFS= read -r b; do
-    bp="$(issue_parent "$b")" || exit 1
+    bp="$(issue_parent "$b" "a blocker of ticket #$n")" || exit 1
     [ "$bp" = "$parent" ] \
       || die "#$b is not a sub-issue of #$parent, ticket #$n's parent - edges never cross breakdowns"
   done <<<"$by"
@@ -2425,13 +2427,6 @@ ticket_blocked_by_rewrite() {
   rm -f "$rewritten"
 }
 
-# Blocker <b>'s database id, the id GitHub's blocked_by endpoints take. A gh
-# failure dies naming ticket <n>.
-issue_database_id() {
-  gh api "repos/{owner}/{repo}/issues/$2" --jq .id \
-    || die "gh could not read issue #$2, a blocker of ticket #$1"
-}
-
 # Adds a native blocking edge on <n> for every --by issue it lacks.
 cmd_ticket_block() {
   local args n by before want b blocker_id
@@ -2442,7 +2437,7 @@ cmd_ticket_block() {
   before="$(ticket_blockers "$n")" || exit 1
   while IFS= read -r b; do
     if printf '%s\n' "$before" | grep -qxF "$b"; then continue; fi
-    blocker_id="$(issue_database_id "$n" "$b")" || exit 1
+    blocker_id="$(issue_db_id "$b" "a blocker of ticket #$n")" || exit 1
     gh api --method POST "repos/{owner}/{repo}/issues/$n/dependencies/blocked_by" \
         -F issue_id="$blocker_id" >/dev/null \
       || die "gh could not add a blocking edge from ticket #$n on #$b"
@@ -2462,7 +2457,7 @@ cmd_ticket_unblock() {
   before="$(ticket_blockers "$n")" || exit 1
   while IFS= read -r b; do
     if ! printf '%s\n' "$before" | grep -qxF "$b"; then continue; fi
-    blocker_id="$(issue_database_id "$n" "$b")" || exit 1
+    blocker_id="$(issue_db_id "$b" "a blocker of ticket #$n")" || exit 1
     gh api --method DELETE \
         "repos/{owner}/{repo}/issues/$n/dependencies/blocked_by/$blocker_id" >/dev/null \
       || die "gh could not remove a blocking edge from ticket #$n on #$b"

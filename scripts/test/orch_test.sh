@@ -553,6 +553,10 @@ ready-for-agent}"
         fi ;;
     esac
     [ "${GH_STUB_API_EXIT:-0}" = 0 ] || { echo "gh stub: api call refused" >&2; exit "$GH_STUB_API_EXIT"; }
+    # GH_STUB_API_EXIT_ON=<n> refuses only the read of issue <n> itself.
+    if [ -n "${GH_STUB_API_EXIT_ON:-}" ] && [ "$api_num" = "$GH_STUB_API_EXIT_ON" ] && [ -z "$api_sub" ]; then
+      echo "gh stub: api read of #$api_num refused" >&2; exit 1
+    fi
     case "$api_sub" in
       "")
         api_json="$(printf '{"id":%d,"number":%d,"state":"%s","body":"%s","parent_issue_url":%s,"issue_dependencies_summary":{"blocked_by":%s}}' \
@@ -3798,6 +3802,9 @@ assert_contains "naming the ticket" "$out" "gh could not read ticket #$bf's bloc
 out="$(GH_STUB_API_EXIT=1 "$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that cannot read the target fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not read ticket #$bf"
+out="$(GH_STUB_API_EXIT_ON="$bb" "$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+assert_status "a gh that cannot read a blocker's parent fails the command" "$st" 1
+assert_contains "naming the ticket" "$out" "a blocker of ticket #$bf"
 assert_eq "none of the failures added the edge" "$(cat "$db/blocked_by/$bf")" "$ba"
 
 # The body rewrite, driven by no-op runs: $bb is blocked by $ba alone and
