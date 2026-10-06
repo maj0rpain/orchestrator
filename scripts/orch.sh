@@ -877,8 +877,8 @@ adapter_issue_create() {
 }
 
 # cmd_redo_spec's --new-issue path and `ticket retire` close issues through
-# this primitive; `ticket close` keeps its own direct `gh issue close` (out of
-# scope for issue #92).
+# this primitive; `ticket close` calls `gh issue close` directly, through the
+# same gh guard, so it too is pinned to the resolved repo.
 adapter_issue_close() {
   gh issue close "$@"
 }
@@ -891,10 +891,12 @@ adapter_issue_list() {
 
 # The PR-resource primitives (issue #93, third of the #78 breakdown): open_pr's
 # create/view, ci_probe's checks, cmd_review ready's ready, and
-# cmd_redo_review's close. doctor.sh's own `gh pr view` calls are a separate
-# concern (out of scope, like default_branch and the ticket group's `gh api`
-# calls). Since issue #93, pr fetch and pr update have also read a PR's body
-# through the same view (issue #444).
+# cmd_redo_review's close. doctor.sh's own `gh pr view` calls, default_branch,
+# and the ticket group's `gh api` calls call gh directly rather than through
+# these primitives, but all go through the gh guard and so are pinned to the
+# resolved repo too (default_branch names it positionally, as `gh repo view`
+# ignores GH_REPO). Since issue #93, pr fetch and pr update have also read a
+# PR's body through the same view (issue #444).
 adapter_pr_create() {
   gh pr create "$@"
 }
