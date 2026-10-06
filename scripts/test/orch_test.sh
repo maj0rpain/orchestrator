@@ -222,6 +222,11 @@ if [ -n "${GH_STUB_LOG:-}" ]; then printf '%s\n' "$1" >>"$GH_STUB_LOG"; fi
 if [ -n "${GH_STUB_REPO_LOG:-}" ]; then
   printf 'GH_REPO=%s %s\n' "${GH_REPO-<unset>}" "$*" >>"$GH_STUB_REPO_LOG"
 fi
+# GH_STUB_HOST_LOG does the same for GH_HOST - "GH_HOST=<host> <args>" - since
+# gh api takes its host from GH_HOST, never from GH_REPO's host part (#520).
+if [ -n "${GH_STUB_HOST_LOG:-}" ]; then
+  printf 'GH_HOST=%s %s\n' "${GH_HOST-<unset>}" "$*" >>"$GH_STUB_HOST_LOG"
+fi
 # Records the flags of an issue write to GH_STUB_FILED, the body file's
 # contents inlined, so a test asserts what reached gh rather than the exit.
 record_flags() {
@@ -3256,7 +3261,7 @@ restore_suite_env
 echo
 echo "every gh call pinned to the repo"
 new_repo >/dev/null
-unset GH_REPO
+unset GH_REPO GH_HOST
 git remote set-url origin https://github.com/fork/widgets.git
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
@@ -3288,6 +3293,10 @@ assert_contains "and its rerun reached gh pinned to the fork" \
   "$(cat "$repolog")" "GH_REPO=fork/widgets run rerun 4242 --failed"
 assert_eq "every gh call carried the fork" \
   "$(grep -cv '^GH_REPO=fork/widgets ' "$repolog")" "0"
+ghhost="$(mktemp)"
+out="$(GH_STUB_HOST_LOG="$ghhost" pinned ticket reset 50 2>&1)"
+assert_eq "a github.com repo leaves GH_HOST unset" \
+  "$(grep -cv '^GH_HOST=<unset> ' "$ghhost")" "0"
 assert_contains "and gh was called at all" "$(cat "$repolog")" "GH_REPO=fork/widgets issue"
 assert_contains "gh repo view got the fork as its positional argument" \
   "$(cat "$repolog")" "GH_REPO=fork/widgets repo view fork/widgets "
@@ -3309,7 +3318,26 @@ done
 assert_eq "and nothing reached gh unpinned" "$(cat "$repolog")" ""
 out="$(pinned slug "Some title" 2>&1)"; st=$?
 assert_status "a local-only command is unaffected" "$st" 0
-restore_suite_env
+
+# A host other than github.com: gh api takes its host from GH_HOST, not from
+# GH_REPO's host part, so every call - gh api's included - must carry both.
+git remote add origin git@ghe.example.com:fork/widgets.git
+git remote set-url --push origin "$bare"
+: >"$repolog"
+hostlog="$(mktemp)"
+for args in "ticket publish 52 Ticket $body" "ticket close 51" "ticket reset 50" "issue fetch 5 $fetched"; do
+  # shellcheck disable=SC2086
+  out="$(GH_STUB_HOST_LOG="$hostlog" pinned $args 2>&1)"; st=$?
+  assert_status "$args runs on the repo's own host" "$st" 0
+done
+out="$(GH_STUB_CHECKS=failing GH_STUB_HOST_LOG="$hostlog" pinned review rerun 7 2>&1)"; st=$?
+assert_status "review rerun runs on the repo's own host" "$st" 0
+assert_contains "gh api was among the calls" "$(cat "$hostlog")" "GH_HOST=ghe.example.com api "
+assert_eq "every gh call carried the repo's host" \
+  "$(grep -cv '^GH_HOST=ghe.example.com ' "$hostlog")" "0"
+assert_eq "and the host-qualified repo" \
+  "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets ' "$repolog")" "0"
+restore_suite_env GH_HOST
 
 # --- pr release -----------------------------------------------------------------
 # The release PR carries the base branch back into the default branch and

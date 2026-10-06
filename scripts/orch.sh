@@ -279,8 +279,9 @@ repo_from_url() {
 # The guard every GitHub call in this file - and in doctor.sh, sourced into it
 # - goes through by name (#520): `gh` itself, defined ahead of doctor.sh and the
 # ORCH_GH_ADAPTER seam so both pick it up. On first use it resolves the repo
-# and exports it as GH_REPO for the rest of the run, so every later call -
-# `gh api`'s {owner}/{repo} placeholders included - is pinned to it, never to
+# and exports it as GH_REPO for the rest of the run - with GH_HOST beside it for
+# a host other than github.com - so every later call - `gh api`'s
+# {owner}/{repo} placeholders and host included - is pinned to it, never to
 # gh's own default repo, which in a fork is the upstream. With no repo it dies
 # naming GH_REPO. Inside a command substitution `die` would end only that
 # subshell, and its message could land in a 2>/dev/null, so there it signals
@@ -294,7 +295,18 @@ gh() {
     fi
     export GH_REPO="$REPO_NAME"
   fi
+  repo_pin_host
   command gh "$@"
+}
+
+# gh api fills {owner}/{repo} from GH_REPO but takes its host only from
+# GH_HOST, never from GH_REPO's host part (gh 2.102.0). So a HOST/OWNER/REPO
+# GH_REPO also exports GH_HOST=HOST; an OWNER/REPO one, a github.com repo,
+# leaves GH_HOST as it is.
+repo_pin_host() {
+  case "$GH_REPO" in
+    */*/*) export GH_HOST="${GH_REPO%%/*}" ;;
+  esac
 }
 trap 'die "$REPO_REMEDY"' USR1
 
@@ -1166,20 +1178,21 @@ ci_probe() {
 # rerun - goes through die2. The repo is resolved here rather than left to the
 # guard, whose death exits 1 and would read as "nothing to rerun".
 review_rerun() {
-  local pr="${1:-}" out link run
+  local pr="${1:-}" out link run name
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
   if [ -z "${GH_REPO:-}" ]; then
     repo_resolve || die2 "$REPO_REMEDY"
     export GH_REPO="$REPO_NAME"
   fi
+  repo_pin_host
   # Exit 8 is gh's "some checks pending", which still answers the JSON.
   out="$(adapter_pr_checks "$pr" --json bucket,name,link 2>&1)" || [ $? -eq 8 ] \
     || die2 "gh could not read the checks of PR #$pr: $(first_line "$out")"
   link="$(printf '%s' "$out" | jq -er \
     'first(.[] | select(.bucket == "fail" or .bucket == "cancel")) | "\(.name)\t\(.link // "")"' 2>/dev/null)" \
     || die2 "PR #$pr has no failed or cancelled check to rerun"
-  local name="${link%%$'\t'*}"
+  name="${link%%$'\t'*}"
   link="${link#*$'\t'}"
   case "$link" in
     */actions/runs/[0-9]*) ;;
