@@ -1958,6 +1958,155 @@ out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "extra labels beside ready-for-agent still verify" "$st" 0
 restore_suite_env
 
+# --- issue triage -------------------------------------------------------------
+# The planning close's one write to GitHub (#571): an open issue moved to the
+# repo's ready-for-agent label, so init --issue can adopt it. Run against the
+# store-backed fake; what it did is read back from the store.
+echo
+echo "issue triage"
+healthy_repo
+fake_github
+triage() { "$ORCH" issue triage "$@"; }
+comment_count() { ls "$ORCH_GH_FAKE_STORE/issues/$1/comments" 2>/dev/null | wc -l | tr -d ' '; }
+
+fake_issue 40 open needs-triage bug
+out="$(triage 40 2>&1)"; st=$?
+assert_status "triages a needs-triage issue" "$st" 0
+assert_eq "leaving ready-for-agent and no other triage label" "$(fake_labels_of 40)" "bug ready-for-agent "
+assert_eq "with exactly one comment" "$(comment_count 40)" "1"
+assert_contains "naming ready-for-agent in it" "$(fake_comments_of 40)" "ready-for-agent"
+
+fake_issue 41 open needs-info
+out="$(triage 41 2>&1)"; st=$?
+assert_status "triages a needs-info issue" "$st" 0
+assert_eq "leaving ready-for-agent alone" "$(fake_labels_of 41)" "ready-for-agent "
+assert_eq "with exactly one comment" "$(comment_count 41)" "1"
+
+fake_issue 42 open
+out="$(triage 42 2>&1)"; st=$?
+assert_status "triages an unlabelled issue" "$st" 0
+assert_eq "leaving ready-for-agent alone" "$(fake_labels_of 42)" "ready-for-agent "
+assert_eq "with exactly one comment" "$(comment_count 42)" "1"
+
+fake_issue 43 open ready-for-agent bug
+before="$(fake_snapshot)"
+out="$(triage 43 2>&1)"; st=$?
+assert_status "an issue already ready-for-agent is a no-op" "$st" 0
+assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
+
+for held in wontfix ready-for-human; do
+  fake_issue 44 open "$held"
+  before="$(fake_snapshot)"
+  out="$(triage 44 2>&1)"; st=$?
+  assert_status "$held without --override asks for a decision, exit 2" "$st" 2
+  assert_contains "printing the label it found" "$out" "$held"
+  assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+  out="$(triage 44 --override 2>&1)"; st=$?
+  assert_status "$held with --override is triaged" "$st" 0
+  assert_eq "replaced by ready-for-agent" "$(fake_labels_of 44)" "ready-for-agent "
+  assert_eq "with exactly one comment" "$(comment_count 44)" "1"
+done
+
+fake_issue 45 open needs-triage review:major
+before="$(fake_snapshot)"
+out="$(triage 45 2>&1)"; st=$?
+assert_status "a filed finding is refused" "$st" 1
+assert_contains "naming the issue" "$out" "issue #45"
+assert_contains "pointing at finding triage" "$out" "/orchestrator:finding-triage"
+out="$(ORCHESTRATOR_HOST=junie "$ORCH" issue triage 45 2>&1)"
+assert_contains "naming the finding-triage skill off Claude Code" "$out" "orch-finding-triage skill"
+assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+
+fake_issue 46 closed needs-triage
+before="$(fake_snapshot)"
+out="$(triage 46 2>&1)"; st=$?
+assert_status "a closed issue is refused" "$st" 1
+assert_contains "naming the issue" "$out" "issue #46"
+assert_eq "changing nothing and posting no comment" "$(fake_snapshot)" "$before"
+
+fake_issue 47 open needs-triage
+fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
+before="$(fake_snapshot)"
+out="$(triage 47 2>&1)"; st=$?
+assert_status "a failed read dies" "$st" 1
+assert_contains "naming the issue" "$out" "issue #47"
+assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+fake_unfail
+
+fake_issue 48 open needs-triage
+fake_fail adapter_issue_relabel "HTTP 502: Bad Gateway"
+out="$(triage 48 2>&1)"; st=$?
+assert_status "a failed relabel dies" "$st" 1
+assert_contains "naming the issue" "$out" "issue #48"
+assert_eq "posting no comment" "$(comment_count 48)" "0"
+fake_unfail
+
+# The readback lags after the first read, which answered current. A second
+# relabel would fail (fake_fail_after), so a re-read that relabelled again
+# could not pass.
+fake_issue 49 open needs-triage
+fake_lag_after adapter_issue_state_labels 1 1 "$(writeln OPEN needs-triage)"
+fake_fail_after adapter_issue_relabel 1
+out="$(triage 49 2>&1)"; st=$?
+assert_status "a readback stale once, then right, succeeds" "$st" 0
+assert_eq "re-reading without relabelling again" "$(fake_labels_of 49)" "ready-for-agent "
+assert_eq "with exactly one comment" "$(comment_count 49)" "1"
+fake_unfail
+
+fake_issue 50 open needs-triage
+fake_lag_after adapter_issue_state_labels 1 2 "$(writeln OPEN needs-triage ready-for-agent)"
+out="$(triage 50 2>&1)"; st=$?
+assert_status "a readback stale twice dies" "$st" 1
+assert_contains "naming the issue" "$out" "issue #50"
+assert_eq "posting no comment" "$(comment_count 50)" "0"
+
+fake_issue 51 open needs-triage
+fake_fail adapter_issue_comment "HTTP 502: Bad Gateway"
+errf="$(mktemp)"
+triage 51 >/dev/null 2>"$errf"; st=$?
+assert_status "a failed comment after a verified relabel still exits 0" "$st" 0
+assert_contains "warning on stderr, naming the issue" "$(cat "$errf")" "issue #51"
+assert_eq "the relabel standing" "$(fake_labels_of 51)" "ready-for-agent "
+fake_unfail
+
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `triage me`          | Evaluate it |' \
+        '| `needs-info`               | `more info`          | Waiting     |' \
+        '| `ready-for-agent`          | `agent go`           | AFK-ready   |' \
+        '| `ready-for-human`          | `human go`           | Needs human |' \
+        '| `wontfix`                  | `nope`               | Not doing   |' >docs/agents/triage-labels.md
+fake_issue 53 open "triage me" needs-triage
+out="$(triage 53 2>&1)"; st=$?
+assert_status "triages under renamed labels" "$st" 0
+assert_eq "removing the repo's name for needs-triage, adding its ready-for-agent" \
+  "$(fake_labels_of 53)" "agent go needs-triage "
+assert_contains "naming the local label in the comment" "$(fake_comments_of 53)" "agent go"
+fake_issue 54 open nope
+out="$(triage 54 2>&1)"; st=$?
+assert_status "a renamed wontfix asks for a decision" "$st" 2
+assert_eq "printing the repo's name for it" "$out" "nope"
+fake_issue 55 open "agent go"
+before="$(fake_snapshot)"
+out="$(triage 55 2>&1)"; st=$?
+assert_status "a renamed ready-for-agent is a no-op" "$st" 0
+assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+labels_doc docs/agents/triage-labels.md
+
+out="$(triage abc 2>&1)"; st=$?
+assert_status "a non-numeric issue is a usage error" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh issue triage"
+out="$(triage 40 --force 2>&1)"; st=$?
+assert_status "an unknown flag is a usage error" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh issue triage"
+out="$(triage 2>&1)"; st=$?
+assert_status "no issue at all is a usage error" "$st" 1
+out="$("$ORCH" issue bogus 2>&1)"
+assert_contains "the unknown-op message lists triage" "$out" "|triage"
+assert_contains "help documents issue triage" "$("$ORCH" help)" "issue triage <n> [--override]"
+restore_suite_env
+
 # --- mp-skill ---------------------------------------------------------------
 # The plugin reads no upstream skill any more (ADR-0028), so the resolver is gone.
 echo
@@ -4330,7 +4479,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh issue"
 
 out="$("$ORCH" issue bogus 23 "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
-assert_contains "naming the five it does" "$out" "fetch|update|comment|comments|publish"
+assert_contains "naming the six it does" "$out" "fetch|update|comment|comments|publish|triage"
 
 assert_contains "help documents issue fetch" "$("$ORCH" help)" "issue fetch"
 assert_contains "and issue update" "$("$ORCH" help)" "issue update"
