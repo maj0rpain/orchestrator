@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.12.2
+
+`orch.sh finding-triage scan` reports a finding whose lines it followed to
+the default branch, untouched since the filing while the file changed only
+elsewhere, as `unchanged` - no longer as `changed` with a commit that never
+touched those lines. It falls back to the newest commit touching the file
+only when `git log -L` can't follow the range, and the finding-triage skill's
+result bullets say so (see issue #433).
+
 ## 3.12.1
 
 The fixer's PR-body check has a defined path when `orch.sh pr fetch` or
