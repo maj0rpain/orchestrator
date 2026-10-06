@@ -364,11 +364,11 @@ review's one body update. Each accepted edge change runs
 rewrites `<n>`'s `## Blocked by` section itself. When one ticket gets both a
 text edit and an edge change, the text edit is applied first, its
 `## Blocked by` section left as fetched, then `ticket block`/`unblock` runs and
-rewrites that section. A failed `ticket block` or `ticket unblock` stops the
-review the way a failed `issue update` does. A retire edits no ticket here: it runs at
+rewrites that section. A retire edits no ticket here: it runs at
 **Applying the answer**'s step 4, after the publish. A failed `issue update`
-stops the review the way a failed fetch does. Nothing calls `gh issue`
-directly.
+stops the review the way a failed fetch does. A failed `ticket block` or
+`ticket unblock` stops the review the way a failed `issue update` does.
+Nothing calls `gh issue` directly.
 
 ## The changelog
 
