@@ -425,6 +425,14 @@ fake_fail_after() {
   printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.after"
 }
 
+# fake_fail_times <operation> <n> [stderr]: the next n calls of the operation
+# fail, then it succeeds again - a transient failure. stderr defaults to none.
+fake_fail_times() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/fail"
+  printf '%s' "${3-}" >"$ORCH_GH_FAKE_STORE/fail/$1"
+  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.times"
+}
+
 # fake_unfail: every operation fake_fail named succeeds again.
 fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
 
@@ -3798,6 +3806,19 @@ out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)
 assert_status "a blocking edge that never shows up dies rather than falling back" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #301"
 assert_contains "not a silent fallback" "$out" "did not verify"
+
+fake_fail_times adapter_blockers 1
+out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
+assert_status "a transient blocked-by read failure is retried, not died on" "$st" 0
+assert_eq "printing only the child's number, no stray stderr" "$out" "302"
+assert_eq "its edge is in place" "$(fake_blockers_of 302)" "$blocker"
+
+fake_fail adapter_blockers
+out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
+assert_status "a blocked-by read that fails twice dies" "$st" 1
+assert_contains "with the verify message" "$out" \
+  "ticket #303's sub-issue/blocked-by links did not verify - checked twice, both failed"
+assert_not_contains "never the block/unblock read message" "$out" "could not read ticket"
 restore_suite_env
 
 # --- ticket next -----------------------------------------------------------

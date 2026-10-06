@@ -2650,15 +2650,16 @@ issue_number_list() {
 
 # True only once both links read back exactly as published: the parent's
 # sub-issue listing contains the child, and the child's blocked-by listing
-# is the same set of numbers requested, in any order. Read fresh every call,
+# is the same set of numbers requested, in any order, both sides
+# de-duplicated. Read fresh every call,
 # never cached - the caller retries this on a mismatch, and a cached answer
 # would just repeat the same wrong verdict.
 ticket_links_verified() {
   local parent="$1" child="$2" want="$3" have_children have_blockers
   have_children="$(adapter_sub_issues "$parent")" || return 1
   printf '%s\n' "$have_children" | cut -f1 | grep -qxF "$child" || return 1
-  have_blockers="$(adapter_blockers "$child")" || return 1
-  [ "$(printf '%s\n' "$have_blockers" | sort -n)" = "$(printf '%s\n' "$want" | sort -n)" ]
+  have_blockers="$(ticket_blockers "$child" return)" || return 1
+  [ "$have_blockers" = "$(printf '%s\n' "$want" | sort -un)" ]
 }
 
 # Publishes a child issue, links it to <parent> as a native sub-issue, adds a
@@ -2949,11 +2950,15 @@ ticket_edge_preconditions() {
 }
 
 # Ticket <n>'s blocker numbers, read fresh from its native blocked-by
-# listing, one per line, sorted. A gh failure dies naming the ticket.
+# listing, one per line, sorted and de-duplicated: edges are a set. A gh
+# failure dies naming the ticket; with `return`, it returns 1 and prints
+# nothing, so a caller that retries (publish's verify, ADR-0011) can.
 ticket_blockers() {
   local have
-  have="$(adapter_blockers "$1")" \
-    || die "gh could not read ticket #$1's blockers"
+  if ! have="$(adapter_blockers "$1")"; then
+    [ "${2:-}" = return ] && return 1
+    die "gh could not read ticket #$1's blockers"
+  fi
   if [ -n "$have" ]; then printf '%s\n' "$have" | sort -un; fi
 }
 
