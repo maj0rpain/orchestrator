@@ -790,10 +790,11 @@ exit 0
 GH
 chmod +x "$STUB/gh"
 
-# orch.sh with $STUB's gh failing, for a repo whose origin GitHub cannot
-# answer for (a local bare repo): default-branch settles on origin/HEAD, so a
-# test using it pins that rather than leaving it to this machine's gh.
-base_cmd() { PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" "$@"; }
+# orch.sh run with a PATH gh that fails ($STUB's gh, exiting 1), for a repo
+# whose origin GitHub cannot answer for (a local bare repo): default-branch
+# settles on origin/HEAD, so a test using it pins that rather than leaving it
+# to this machine's gh.
+orch_gh_failing() { PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" "$@"; }
 
 # path_without_jq() builds its restricted PATH from whatever's really on PATH,
 # not from repo state, so the one built here serves every no-jq assertion
@@ -1344,14 +1345,14 @@ new_repo >/dev/null
 git remote add origin https://example.invalid/x/y.git
 git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
 git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$(git branch --show-current)"
-base_cmd init bcreate >/dev/null
-base_cmd state set issue 11
+orch_gh_failing init bcreate >/dev/null
+orch_gh_failing state set issue 11
 before_sha="$(git rev-parse HEAD)"
-out="$(base_cmd branch create)"
+out="$(orch_gh_failing branch create)"
 assert_eq "derives the branch name from slug and the recorded issue" "$out" "orch/11-bcreate"
 assert_eq "checks the new branch out" "$(git branch --show-current)" "orch/11-bcreate"
-assert_eq "records the branch in state" "$(base_cmd state get branch)" "orch/11-bcreate"
-assert_eq "records the fork point as base_sha" "$(base_cmd state get base_sha)" "$before_sha"
+assert_eq "records the branch in state" "$(orch_gh_failing state get branch)" "orch/11-bcreate"
+assert_eq "records the fork point as base_sha" "$(orch_gh_failing state get base_sha)" "$before_sha"
 
 # --- branch off --------------------------------------------------------------
 # A quick implementation keeps no state, so this is the primitive it shares
@@ -1366,16 +1367,16 @@ new_repo >/dev/null
 git remote add origin https://example.invalid/x/y.git
 git update-ref "refs/remotes/origin/$(git branch --show-current)" HEAD
 git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$(git branch --show-current)"
-out="$(base_cmd branch off "quick/9-widgets")"
+out="$(orch_gh_failing branch off "quick/9-widgets")"
 assert_eq "prints the branch it made" "$out" "quick/9-widgets"
 assert_eq "checks it out" "$(git branch --show-current)" "quick/9-widgets"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 
-out="$(base_cmd branch off "quick/9-widgets" 2>&1)"; st=$?
+out="$(orch_gh_failing branch off "quick/9-widgets" 2>&1)"; st=$?
 assert_status "refuses a name that already exists" "$st" 1
 assert_contains "names the branch" "$out" "quick/9-widgets already exists"
 
-out="$(base_cmd branch off 2>&1)"; st=$?
+out="$(orch_gh_failing branch off 2>&1)"; st=$?
 assert_status "refuses with no name" "$st" 1
 
 # --- base --------------------------------------------------------------------
@@ -1391,51 +1392,51 @@ git remote add origin "$bare"
 git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
-# base_cmd's gh cannot answer, so default-branch settles on origin/HEAD -
+# orch_gh_failing's gh cannot answer, so default-branch settles on origin/HEAD -
 # pinned above rather than left to this machine's gh.
 base_setting() { git config --get orchestrator.base || echo "<unset>"; }
 
-out="$(base_cmd base show)"; st=$?
+out="$(orch_gh_failing base show)"; st=$?
 assert_status "show succeeds with nothing set" "$st" 0
 assert_eq "show names the default branch as the source when nothing is set" "$out" "main (default)"
 
-out="$(base_cmd base set nosuch 2>&1)"; st=$?
+out="$(orch_gh_failing base set nosuch 2>&1)"; st=$?
 assert_status "set refuses a branch missing from origin" "$st" 1
 assert_contains "names the missing branch" "$out" "nosuch"
 assert_eq "a refused set leaves the config untouched" "$(base_setting)" "<unset>"
 
-out="$(base_cmd base set uat 2>&1)"; st=$?
+out="$(orch_gh_failing base set uat 2>&1)"; st=$?
 assert_status "set accepts a branch origin has" "$st" 0
 assert_eq "set writes orchestrator.base" "$(base_setting)" "uat"
-assert_eq "show names the setting as the source" "$(base_cmd base show)" "uat (set)"
-assert_eq "default-branch still names the default branch" "$(base_cmd default-branch)" "main"
+assert_eq "show names the setting as the source" "$(orch_gh_failing base show)" "uat (set)"
+assert_eq "default-branch still names the default branch" "$(orch_gh_failing default-branch)" "main"
 
 wt="$(mktemp -d)/wt"
 git worktree add -q "$wt" -b base-wt
-assert_eq "every worktree of the clone shares the setting" "$(cd "$wt" && base_cmd base show)" "uat (set)"
+assert_eq "every worktree of the clone shares the setting" "$(cd "$wt" && orch_gh_failing base show)" "uat (set)"
 git worktree remove --force "$wt"
 
 git remote set-url origin "$(dirname "$bare")/unreachable.git"
-out="$(base_cmd base set main 2>&1)"; st=$?
+out="$(orch_gh_failing base set main 2>&1)"; st=$?
 assert_status "set refuses when origin cannot be reached to verify" "$st" 1
 assert_eq "an unverified set leaves the config untouched" "$(base_setting)" "uat"
 git remote set-url origin "$bare"
 
-out="$(base_cmd base set main 2>&1)"; st=$?
+out="$(orch_gh_failing base set main 2>&1)"; st=$?
 assert_status "set accepts the default branch's own name" "$st" 0
 assert_eq "setting the default branch acts as clearing" "$(base_setting)" "<unset>"
-assert_eq "show then reports the default source" "$(base_cmd base show)" "main (default)"
+assert_eq "show then reports the default source" "$(orch_gh_failing base show)" "main (default)"
 
-base_cmd base set uat >/dev/null
-out="$(base_cmd base clear 2>&1)"; st=$?
+orch_gh_failing base set uat >/dev/null
+out="$(orch_gh_failing base clear 2>&1)"; st=$?
 assert_status "clear succeeds when a setting exists" "$st" 0
 assert_eq "clear removes the setting" "$(base_setting)" "<unset>"
-out="$(base_cmd base clear 2>&1)"; st=$?
+out="$(orch_gh_failing base clear 2>&1)"; st=$?
 assert_status "clear succeeds when nothing was set" "$st" 0
 
-out="$(base_cmd base 2>&1)"; st=$?
+out="$(orch_gh_failing base 2>&1)"; st=$?
 assert_status "refuses a missing verb" "$st" 1
-out="$(base_cmd base set 2>&1)"; st=$?
+out="$(orch_gh_failing base set 2>&1)"; st=$?
 assert_status "set refuses with no branch" "$st" 1
 rm -rf "$(dirname "$bare")"
 
@@ -1460,37 +1461,37 @@ git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 uat_tip="$(git rev-parse origin/uat)"
 main_tip="$(git rev-parse origin/main)"
 
-base_cmd init nobase >/dev/null
+orch_gh_failing init nobase >/dev/null
 assert_eq "init records the default branch as base when nothing is set" \
-  "$(base_cmd state get base)" "main"
+  "$(orch_gh_failing state get base)" "main"
 rm -rf .orchestrator
 
-base_cmd base set uat >/dev/null
-base_cmd init flowbase >/dev/null
-assert_eq "init records the base branch setting" "$(base_cmd state get base)" "uat"
+orch_gh_failing base set uat >/dev/null
+orch_gh_failing init flowbase >/dev/null
+assert_eq "init records the base branch setting" "$(orch_gh_failing state get base)" "uat"
 
-out="$(base_cmd base set uat 2>&1)"
+out="$(orch_gh_failing base set uat 2>&1)"
 assert_not_contains "set says nothing more when the active flow already has that base" \
   "$out" "keeps its own base branch"
-out="$(base_cmd base set main 2>&1)"; st=$?
+out="$(orch_gh_failing base set main 2>&1)"; st=$?
 assert_status "set still succeeds while a flow with another base is active" "$st" 0
 assert_contains "and notes that the active flow keeps its own base branch" \
   "$out" "flowbase keeps its own base branch: uat"
-assert_eq "the flow's recorded base is untouched" "$(base_cmd state get base)" "uat"
+assert_eq "the flow's recorded base is untouched" "$(orch_gh_failing state get base)" "uat"
 
-base_cmd state set issue 7
-out="$(base_cmd branch create 2>&1)"; st=$?
+orch_gh_failing state set issue 7
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create succeeds" "$st" 0
 assert_eq "branch create forks from the recorded base, not the changed setting" \
   "$(git rev-parse HEAD)" "$uat_tip"
-assert_eq "base_sha is the recorded base's tip" "$(base_cmd state get base_sha)" "$uat_tip"
-assert_contains "status prints the flow's base branch" "$(base_cmd status)" "base:      uat"
+assert_eq "base_sha is the recorded base's tip" "$(orch_gh_failing state get base_sha)" "$uat_tip"
+assert_contains "status prints the flow's base branch" "$(orch_gh_failing status)" "base:      uat"
 
 body="$(mktemp)"
 writeln 'Implements the thing.' >"$body"
 filed="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=31 \
-  base_cmd pr open "Title" "$body" 2>&1)"; st=$?
+  orch_gh_failing pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "pr open succeeds" "$st" 0
 assert_contains "pr open targets the flow's recorded base" "$(cat "$filed")" "base=uat"
 body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
@@ -1501,8 +1502,8 @@ assert_first_line "a PR into a non-default base refers to its issue instead of c
 git update-ref refs/remotes/origin/gone "$main_tip"
 git branch -q gone "$main_tip"
 state_fixture base gone
-base_cmd state set issue 8
-out="$(base_cmd branch create 2>&1)"; st=$?
+orch_gh_failing state set issue 8
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create refuses a base branch origin says is gone" "$st" 1
 assert_contains "naming the base branch" "$out" "gone"
 assert_eq "and creates no branch" \
@@ -1513,12 +1514,12 @@ legacy="$(mktemp)"
 jq 'del(.base)' .orchestrator/state.json >"$legacy"
 mv "$legacy" .orchestrator/state.json
 assert_contains "status shows the default branch for a state with no base" \
-  "$(base_cmd status)" "base:      main"
+  "$(orch_gh_failing status)" "base:      main"
 git checkout -q main
-out="$(base_cmd branch create 2>&1)"; st=$?
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "and branch create still forks it" "$st" 0
 assert_eq "from the default branch" "$(git rev-parse HEAD)" "$main_tip"
-base_cmd base clear >/dev/null
+orch_gh_failing base clear >/dev/null
 rm -rf "$(dirname "$bare")"
 
 # --- a quick implementation's base branch --------------------------------------
@@ -1544,15 +1545,15 @@ uat_tip="$(git rev-parse origin/uat)"
 main_tip="$(git rev-parse origin/main)"
 recorded_base() { git config --get "branch.$1.orchestrator-base" || echo "<unset>"; }
 
-base_cmd base set uat >/dev/null
-out="$(base_cmd branch off quick/5-uat 2>&1)"; st=$?
+orch_gh_failing base set uat >/dev/null
+out="$(orch_gh_failing branch off quick/5-uat 2>&1)"; st=$?
 assert_status "branch off succeeds" "$st" 0
 assert_eq "branch off forks from the base branch in effect" "$(git rev-parse HEAD)" "$uat_tip"
 assert_eq "and records it on the branch" "$(recorded_base quick/5-uat)" "uat"
 
 git checkout -q main
-base_cmd base clear >/dev/null
-base_cmd branch off quick/6-main >/dev/null
+orch_gh_failing base clear >/dev/null
+orch_gh_failing branch off quick/6-main >/dev/null
 assert_eq "with nothing set, branch off forks from the default branch" "$(git rev-parse HEAD)" "$main_tip"
 assert_eq "and records the default branch" "$(recorded_base quick/6-main)" "main"
 
@@ -1561,7 +1562,7 @@ writeln 'Implements the thing.' >"$body"
 git checkout -q quick/5-uat
 filed="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=41 \
-  base_cmd pr publish 5 "Title" "$body" 2>&1)"; st=$?
+  orch_gh_failing pr publish 5 "Title" "$body" 2>&1)"; st=$?
 assert_status "pr publish succeeds" "$st" 0
 assert_contains "pr publish targets the recorded base over the changed setting" \
   "$(cat "$filed")" "base=uat"
@@ -1571,21 +1572,21 @@ assert_first_line "a quick PR into a non-default base refers to its issue" \
 
 # A branch made before branch off recorded anything publishes to the setting.
 git checkout -q -b quick/7-legacy "$main_tip"
-base_cmd base set uat >/dev/null
+orch_gh_failing base set uat >/dev/null
 filed="$(mktemp)"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" GH_STUB_PR_NUMBER=42 \
-  base_cmd pr publish 7 "Title" "$body" 2>&1)"; st=$?
+  orch_gh_failing pr publish 7 "Title" "$body" 2>&1)"; st=$?
 assert_status "pr publish succeeds with nothing recorded" "$st" 0
 assert_contains "and falls back to the base branch setting" "$(cat "$filed")" "base=uat"
 
 # A deleted base branch must not quietly become a fork from a stale local copy.
 git update-ref refs/remotes/origin/gone "$main_tip"
 git config orchestrator.base gone
-out="$(base_cmd branch off quick/8-gone 2>&1)"; st=$?
+out="$(orch_gh_failing branch off quick/8-gone 2>&1)"; st=$?
 assert_status "branch off refuses a base branch origin says is gone" "$st" 1
 assert_contains "naming the base branch" "$out" "gone"
 assert_eq "and records nothing for the branch it did not make" "$(recorded_base quick/8-gone)" "<unset>"
-base_cmd base clear >/dev/null
+orch_gh_failing base clear >/dev/null
 rm -rf "$(dirname "$bare")"
 
 # --- a quick implementation's base SHA (#243) ---------------------------------
@@ -1603,7 +1604,7 @@ git push -q origin HEAD:refs/heads/main
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 branched_tip="$(git rev-parse origin/main)"
-base_cmd branch off quick/1-sha >/dev/null
+orch_gh_failing branch off quick/1-sha >/dev/null
 assert_eq "branch off records the base branch's tip as the base SHA" \
   "$(git config --get branch.quick/1-sha.orchestrator-base-sha)" "$branched_tip"
 git commit -q --allow-empty -m "work on the branch"
@@ -1619,20 +1620,20 @@ git branch -q -D advance
 git merge -q --no-edit origin/main
 assert_eq "the recorded base SHA is unchanged after the base branch moves on" \
   "$(git config --get branch.quick/1-sha.orchestrator-base-sha)" "$branched_tip"
-out="$(base_cmd branch base-sha 2>&1)"; st=$?
+out="$(orch_gh_failing branch base-sha 2>&1)"; st=$?
 assert_status "branch base-sha succeeds" "$st" 0
 assert_eq "branch base-sha prints the recorded base SHA" "$out" "$branched_tip"
 
 git config --unset branch.quick/1-sha.orchestrator-base-sha
 assert_eq "without a recorded SHA it prints the merge-base with the base branch" \
-  "$(base_cmd branch base-sha)" "$(git merge-base HEAD origin/main)"
-assert_eq "which here is the base branch's tip it merged" "$(base_cmd branch base-sha)" "$moved_tip"
+  "$(orch_gh_failing branch base-sha)" "$(git merge-base HEAD origin/main)"
+assert_eq "which here is the base branch's tip it merged" "$(orch_gh_failing branch base-sha)" "$moved_tip"
 
 # No remote-tracking ref for the recorded base branch: the local one answers.
 git branch -q localbase "$branched_tip"
 git config branch.quick/1-sha.orchestrator-base localbase
 assert_eq "with no remote-tracking ref it uses the local base branch" \
-  "$(base_cmd branch base-sha)" "$branched_tip"
+  "$(orch_gh_failing branch base-sha)" "$branched_tip"
 
 # Neither key: the base branch in effect, as pr publish does.
 git checkout -q -b uat "$branched_tip"
@@ -1644,16 +1645,16 @@ git checkout -q -b quick/2-legacy uat
 git commit -q --allow-empty -m "legacy work"
 git config orchestrator.base uat
 assert_eq "with neither key it uses the base branch setting" \
-  "$(base_cmd branch base-sha)" "$uat_tip"
+  "$(orch_gh_failing branch base-sha)" "$uat_tip"
 git config --unset orchestrator.base
 assert_eq "and the default branch when nothing is set" \
-  "$(base_cmd branch base-sha)" "$branched_tip"
+  "$(orch_gh_failing branch base-sha)" "$branched_tip"
 
 git checkout -q --detach
-out="$(base_cmd branch base-sha 2>&1)"; st=$?
+out="$(orch_gh_failing branch base-sha 2>&1)"; st=$?
 assert_status "refuses a detached HEAD" "$st" 1
 assert_contains "saying so" "$out" "detached HEAD"
-out="$(base_cmd branch base-sha extra 2>&1)"; st=$?
+out="$(orch_gh_failing branch base-sha extra 2>&1)"; st=$?
 assert_status "refuses arguments" "$st" 1
 assert_contains "with the usage" "$out" "usage: orch.sh branch base-sha"
 assert_contains "help documents branch base-sha" "$("$ORCH" help)" "branch base-sha"
@@ -1770,18 +1771,18 @@ git init -q --bare "$bare"
 git remote add origin "$bare"
 git push -q origin HEAD:refs/heads/main
 
-out="$(base_cmd branch retire nosuchbranch new 2>&1)"; st=$?
+out="$(orch_gh_failing branch retire nosuchbranch new 2>&1)"; st=$?
 assert_status "refuses a branch that does not exist" "$st" 1
 assert_contains "naming it" "$out" "nosuchbranch does not exist"
 
 git branch old-attempt
 git branch taken
-out="$(base_cmd branch retire old-attempt taken 2>&1)"; st=$?
+out="$(orch_gh_failing branch retire old-attempt taken 2>&1)"; st=$?
 assert_status "refuses a destination name already in use" "$st" 1
 assert_contains "naming it" "$out" "taken already exists"
 git branch -d taken
 
-out="$(base_cmd branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$?
+out="$(orch_gh_failing branch retire old-attempt old-attempt-redo-1 2>&1)"; st=$?
 assert_status "renames a branch with no upstream" "$st" 0
 assert_eq "prints the new name" "$out" "old-attempt-redo-1"
 assert_eq "the old name is gone locally" \
@@ -1791,7 +1792,7 @@ assert_eq "the new name exists" \
 
 git checkout -q -b to-retire
 git push -q -u origin to-retire
-out="$(base_cmd branch retire to-retire to-retire-redo-1 2>&1)"; st=$?
+out="$(orch_gh_failing branch retire to-retire to-retire-redo-1 2>&1)"; st=$?
 assert_status "renames and republishes a branch with an upstream" "$st" 0
 assert_eq "prints the new name" "$out" "to-retire-redo-1"
 assert_eq "pushes the new name to origin" \
@@ -1807,7 +1808,7 @@ assert_eq "and deletes the old remote ref" \
 git checkout -q -b to-fail
 git push -q -u origin to-fail
 rm -rf "$bare"
-out="$(base_cmd branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
+out="$(orch_gh_failing branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "dies when the push to origin fails" "$st" 1
 assert_contains "with a clear reason" "$out" "could not push"
 # The local rename happens before the push is even attempted - issue #63:
@@ -1823,7 +1824,7 @@ assert_eq "and the new name is not left dangling in its place" \
 bare2="$(mktemp -d)/origin.git"
 git init -q --bare "$bare2"
 git remote set-url origin "$bare2"
-out="$(base_cmd branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
+out="$(orch_gh_failing branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "retrying the same rename succeeds once origin is reachable again" "$st" 0
 assert_eq "prints the new name" "$out" "to-fail-redo-1"
 assert_eq "renames locally" \
@@ -1844,7 +1845,7 @@ git branch -m to-resume to-resume-redo-1
 git push -q -u origin to-resume-redo-1
 # The old ref is deliberately left on origin, standing in for the failed
 # delete a real partial failure would leave behind.
-out="$(base_cmd branch retire to-resume to-resume-redo-1 2>&1)"; st=$?
+out="$(orch_gh_failing branch retire to-resume to-resume-redo-1 2>&1)"; st=$?
 assert_status "resumes rather than failing on the already-gone old name" "$st" 0
 assert_eq "prints the new name" "$out" "to-resume-redo-1"
 assert_eq "and finishes the delete the earlier attempt left undone" \
@@ -1859,17 +1860,17 @@ git -C "$bare4" config receive.denyDeleteCurrentBranch refuse
 git remote set-url origin "$bare4"
 git checkout -q -b to-protect
 git push -q -u origin to-protect
-out="$(base_cmd branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
+out="$(orch_gh_failing branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
 assert_status "dies when the old ref genuinely cannot be deleted" "$st" 1
 assert_contains "with a clear reason" "$out" "could not delete origin/to-protect"
 
-out="$(base_cmd branch retire 2>&1)"; st=$?
+out="$(orch_gh_failing branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 
 # --- branch: unknown op -------------------------------------------------------
 new_repo >/dev/null
-out="$(base_cmd branch bogus 2>&1)"; st=$?
+out="$(orch_gh_failing branch bogus 2>&1)"; st=$?
 assert_status "branch bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
 assert_contains "naming all four" "$out" "create|off|base-sha|retire"
@@ -3058,7 +3059,7 @@ git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 body="$(mktemp)"
 writeln 'Ships the uat project.' '' 'Some detail.' >"$body"
-release() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" base_cmd pr release "$@"; }
+release() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FILED="$filed" orch_gh_failing pr release "$@"; }
 
 filed="$(mktemp)"
 out="$(release "Release" "$body" 2>&1)"; st=$?
@@ -3066,7 +3067,7 @@ assert_status "refuses when the base branch is the default branch" "$st" 1
 assert_contains "naming it" "$out" "main"
 assert_not_contains "and opens no PR" "$(cat "$filed")" "pr create"
 
-base_cmd base set uat >/dev/null
+orch_gh_failing base set uat >/dev/null
 filed="$(mktemp)"
 out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses while a release PR is already open" "$st" 1
@@ -3122,7 +3123,7 @@ assert_contains "naming both branches" "$out" "from uat into main"
 out="$(release "Release" 2>&1)"; st=$?
 assert_status "refuses a missing body file argument" "$st" 1
 assert_contains "with its usage" "$out" "pr release [--force] <title> <body-file>"
-base_cmd base clear >/dev/null
+orch_gh_failing base clear >/dev/null
 rm -rf "$(dirname "$bare")"
 
 # --- pr comment (#343) ----------------------------------------------------------
@@ -4600,7 +4601,7 @@ finding 8 "review:nit,ready-for-agent" "\`src/other.sh:2\` at $head_sha"
 finding 9 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha" 7 CLOSED
 finding 10 "needs-triage" "\`src/other.sh:2\` at $head_sha"
 scan() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" GH_STUB_FILED="$filed" \
-  base_cmd finding-triage scan "$@"; }
+  orch_gh_failing finding-triage scan "$@"; }
 # line_of <n> <out>: the scan's line for issue n.
 line_of() { printf '%s\n' "$2" | awk -F'\t' -v n="$1" '$1 == n'; }
 field_of() { line_of "$1" "$3" | cut -f"$2"; }
@@ -4746,7 +4747,7 @@ triaged() {
 labels_of() { sort "$findings/$1/labels" | tr '\n' ' '; }
 state_of() { cat "$findings/$1/state" 2>/dev/null || echo OPEN; }
 apply() { ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" GH_STUB_FILED="$filed" \
-  base_cmd finding-triage apply "$@"; }
+  orch_gh_failing finding-triage apply "$@"; }
 # posted <n>: the comment body apply posted on issue n.
 posted() { awk -v n="$1" '/^(issue|label) / { on = ($0 == "issue comment " n); b = 0; next }
   on && /^body:$/ { b = 1; next } on && b' "$filed"; }
@@ -4832,7 +4833,7 @@ assert_status "refuses a comment file that is not there" "$st" 1
 # does not stop apply.
 triaged 2 "review:major,needs-triage,bug"
 out="$(ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" GH_STUB_FINDINGS="$findings" GH_STUB_LABEL_FAIL=bug \
-  base_cmd finding-triage apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
+  orch_gh_failing finding-triage apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
 assert_status "a category label gh will not create does not stop apply" "$st" 0
 assert_eq "the labels are still applied" "$(labels_of 2)" "bug ready-for-agent review:major "
 
