@@ -110,11 +110,15 @@ again on file, line, and claim:
 
 ## The PR comment
 
-One comment per termination, ready and stop alike:
+One comment per termination, ready and stop alike, posted through `orch.sh`
+so it reaches the repo the orchestrator works on, never `gh`'s default:
 
 ```
-gh pr comment <pr> --body-file <file>
+bash "<orch.sh>" pr comment <file>
 ```
+
+It posts on the current branch's open PR. You run on the loop's PR branch,
+so that is the loop's PR, and the number it prints is your prompt's PR.
 
 The PR is the only durable surface another human ever sees. Carry:
 

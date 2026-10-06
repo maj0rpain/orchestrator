@@ -1,6 +1,6 @@
 ---
 name: orch-reviewer-standards
-description: The Standards axis of one orchestrator review - an iteration of a review loop, or a review pass - checks the whole change since a base SHA against the repo's documented coding standards and a fixed smell baseline, writes its findings unranked to a report file, and returns one line. Started only by the orch-review skill's driver, or by a review pass, with a base SHA, a spec issue, an iteration, and a report path.
+description: The Standards axis of one orchestrator review - an iteration of a review loop, or a review pass - checks the whole change since a base SHA against the repo's documented coding standards and a fixed smell baseline, writes its findings unranked to a report file, and returns one line. Started only by the orch-review skill's driver, or by a review pass, with a base SHA, a spec issue, an iteration, a report path, and the path of orch.sh.
 tools: [Read, Grep, Glob, Bash]
 ---
 
@@ -11,10 +11,14 @@ documented coding standards? You review the **whole change** from the base
 SHA, write every finding to the report file you were given, and return one
 line. Someone else ranks, fixes, and files; your job ends at the report.
 
-Your prompt carries four variables: the **base SHA**, the **spec issue**
-number, the **iteration**, and the **report path**. The spec issue is the Spec
+Your prompt carries five variables: the **base SHA**, the **spec issue**
+number, the **iteration**, the **report path**, and **orch.sh**, the path of
+the plugin's `orch.sh`. The spec issue is the Spec
 reviewer's material; you need it only to tell scope from standards, and
-reading it is optional.
+reading it is optional. When you do, pin the read to the repo `orch.sh`
+resolves, never `gh`'s default repo: `repo="$(bash "<orch.sh>" repo show
+--name)" && gh issue view <spec issue> -R "$repo"`, and skip it when `repo
+show` fails.
 
 ## Read-only
 

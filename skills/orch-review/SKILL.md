@@ -181,7 +181,7 @@ Two plugin agents under the plugin root's `agents/`, one per axis:
   the spec issue asked for.
 
 Start both at once, as fresh agents (see **Starting an agent**), both in one
-message. Each prompt carries four variables and nothing else - no spec body,
+message. Each prompt carries five variables and nothing else - no spec body,
 no diff, no brief, no word about earlier iterations or fixes:
 
 ```
@@ -189,6 +189,7 @@ Base SHA: <base SHA>
 Spec issue: #<spec issue>
 Iteration: <NN>
 Report path: <report path>
+orch.sh: <the path ORCH holds>
 ```
 
 The report paths sit beside the record `bash "$ORCH" review path` names, with
@@ -425,7 +426,7 @@ fallbacks go.
 3. **Start both reviewers** - `orch-reviewer-standards` and
    `orch-reviewer-spec` - at once, as fresh agents, never forks, both in one
    message (see **Starting an agent** for how to start one). Each prompt
-   carries these four variables and nothing else - no issue body, no diff,
+   carries these five variables and nothing else - no issue body, no diff,
    no brief:
 
    ```
@@ -433,6 +434,7 @@ fallbacks go.
    Spec issue: #<issue>
    Iteration: <NN>
    Report path: <prefix>-<standards|spec>.md
+   orch.sh: <the path ORCH holds>
    ```
 
 4. **A failed review.** A missing report, or one that says the base SHA did
@@ -491,7 +493,7 @@ they named. With no number, ask for one and wait. Never take it from
    move between passes. A finding at `-` matches on the claim alone, and an
    older decline line with no claim matches on file plus reason. The
    reviewers hear nothing of this: their prompts stay **Review pass** step
-   3's four variables.
+   3's five variables.
 3. **Fix and decline**: **Review pass** steps 5 and 6, on the findings
    step 2 kept. The pass's declines and host fallbacks go to step 5 below.
 4. **Commit and push.** The fixes are one commit, as the pass says. When the
