@@ -1616,6 +1616,11 @@ cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
   local issue="${1:-}" outcome="${2:-}" category="" file="" labels triage other tmp
+  # The labels to remove, possibly none. Bash 3.2's set -u calls an empty
+  # array unbound, so every expansion splices ${edit[@]+"${edit[@]}"}, and
+  # close-fixed, where edit is the relabel's only argument, guards on its
+  # count: an empty splice there would run a bare `gh issue edit`.
+  local edit=()
   [ $# -ge 2 ] || die "$usage"
   shift 2
   while [ $# -gt 0 ]; do
@@ -1645,9 +1650,7 @@ cmd_finding_triage_apply() {
     || die "gh could not read issue #$issue"
   triage="$(triage_label_for needs-triage)"
   # Remove only what the issue carries: gh refuses to remove a label the
-  # repo does not have at all. ${edit[@]+...} below, because bash 3.2's
-  # set -u calls an empty array unbound.
-  local edit=()
+  # repo does not have at all.
   if printf '%s\n' "$labels" | grep -qxF -- "$triage"; then edit+=(--remove-label "$triage"); fi
 
   tmp="$(mktemp)"
@@ -1660,8 +1663,8 @@ cmd_finding_triage_apply() {
 
   case "$outcome" in
     close-fixed)
-      if [ -n "${edit[*]+x}" ]; then
-        adapter_issue_edit "$issue" "${edit[@]}" >/dev/null || die "gh could not relabel issue #$issue"
+      if [ ${#edit[@]} -gt 0 ]; then
+        adapter_issue_edit "$issue" ${edit[@]+"${edit[@]}"} >/dev/null || die "gh could not relabel issue #$issue"
       fi
       adapter_issue_close "$issue" --reason completed >/dev/null || die "gh could not close issue #$issue" ;;
     wontfix)

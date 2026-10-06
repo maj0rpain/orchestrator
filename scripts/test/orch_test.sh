@@ -4896,6 +4896,28 @@ assert_contains "creating that category's label with GitHub's default colour and
   "$(cat "$filed")" "label create enhancement --color a2eeef --description New feature or request"
 assert_eq "never over the repo's own" "$(grep -c 'label create enhancement --force' "$filed")" "0"
 
+# A finding already out of needs-triage leaves apply nothing to remove: a
+# close needs no relabel, and a relabel removes nothing.
+triaged 5 "review:minor,bug"
+: >"$filed"
+out="$(apply 5 close-fixed --comment-file "$comment" 2>&1)"; st=$?
+assert_status "closes a fixed finding not in needs-triage" "$st" 0
+assert_eq "with no relabel" "$(grep -c '^issue edit' "$filed")" "0"
+assert_eq "as completed" "$(state_of 5)" "CLOSED"
+assert_contains "giving gh the completed reason" "$(cat "$filed")" "reason=completed"
+triaged 5 "review:minor,bug"
+: >"$filed"
+out="$(apply 5 wontfix --comment-file "$comment" 2>&1)"; st=$?
+assert_status "closes a finding not in needs-triage as wontfix" "$st" 0
+assert_eq "into wontfix" "$(labels_of 5)" "bug review:minor wontfix "
+assert_not_contains "removing no needs-triage" "$(cat "$filed")" "needs-triage"
+triaged 5 "review:minor,bug"
+: >"$filed"
+out="$(apply 5 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
+assert_status "sends a finding not in needs-triage to an agent" "$st" 0
+assert_eq "into ready-for-agent" "$(labels_of 5)" "bug ready-for-agent review:minor "
+assert_not_contains "removing no needs-triage" "$(cat "$filed")" "needs-triage"
+
 # A finding filed before categories were has none: apply gives it one.
 triaged 4 "review:nit,needs-triage"
 out="$(apply 4 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
