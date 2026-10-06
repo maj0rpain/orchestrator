@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.11.0
+
+`orch.sh base set <branch> --flow` corrects the active flow's own base branch,
+leaving the checkout's setting alone, while the flow has no branch: before
+`branch create`, or after `redo review` retires it. `branch create`'s
+missing-base error now names it, and orch-flow's implement phase offers it
+(see issue #479).
+
 ## 3.10.4
 
 `GLOSSARY.md` now defines **Default SHA**, **Source PR** and **Category**, the

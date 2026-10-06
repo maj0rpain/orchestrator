@@ -247,19 +247,65 @@ origin_has_branch() {
   return "$st"
 }
 
+# Dies unless origin answers that it has branch $1 - the one check both
+# `base set` and `base set --flow` make before writing anything.
+require_on_origin() {
+  local st=0
+  origin_has_branch "$1" || st=$?
+  case "$st" in
+    0) ;;
+    2) die "branch $1 does not exist on origin - push it first, or check the name" ;;
+    *) die "could not reach origin to check that branch $1 exists - nothing was set" ;;
+  esac
+}
+
+# Whether a flow is active: state.json exists and its phase is not done.
+flow_active() { [ -f "$STATE" ] && [ "$(state_get phase)" != done ]; }
+
+# base set --flow: the explicit correction of the active flow's own base,
+# allowed only while the flow has no branch - before it first branches, or
+# after redo review retires that branch. The checks run in a fixed order and
+# the first that fails is reported; nothing is written unless all pass. The
+# name is stored literally, the default branch's own included: a flow's base
+# is pinned, unlike the checkout setting.
+base_set_flow() {
+  local b="$1" branch slug
+  flow_active || die "no active flow - nothing was set"
+  branch="$(state_get branch)"
+  if [ -n "$branch" ]; then
+    slug="$(state_get slug)"
+    if [ "$(state_get phase)" = review ]; then
+      die "flow $slug already has branch $branch - its base can change again once orch.sh redo review retires it"
+    fi
+    die "flow $slug already has branch $branch - its base can no longer change; abort to start again on another base"
+  fi
+  is_branch_name "$b" || die "$b is not a valid branch name - nothing was set"
+  require_on_origin "$b"
+  # Not state_write: it would turn a branch named null, true, false or all
+  # digits into JSON null, a boolean or a number. A base is always a string,
+  # as init stores it.
+  local tmp; tmp="$(mktemp)"
+  jq --arg b "$b" --arg now "$(now)" '.base = $b | .updated = $now' "$STATE" >"$tmp"
+  mv "$tmp" "$STATE"
+  note "$b (flow)"
+}
+
 cmd_base() {
-  local op="${1:-}" b st
+  local op="${1:-}" b="" flow=0 a
   shift || true
   case "$op" in
     set)
-      [ $# -eq 1 ] || die "usage: orch.sh base set <branch>"
-      b="$1"; st=0
-      origin_has_branch "$b" || st=$?
-      case "$st" in
-        0) ;;
-        2) die "branch $b does not exist on origin - push it first, or check the name" ;;
-        *) die "could not reach origin to check that branch $b exists - nothing was set" ;;
-      esac
+      # --flow may come before or after the one branch name; anything else is
+      # a usage error.
+      for a in "$@"; do
+        if [ "$a" = --flow ] && [ "$flow" -eq 0 ]; then flow=1
+        elif [ -z "$b" ] && [ "$a" != --flow ]; then b="$a"
+        else die "usage: orch.sh base set <branch> [--flow]"
+        fi
+      done
+      [ -n "$b" ] || die "usage: orch.sh base set <branch> [--flow]"
+      if [ "$flow" -eq 1 ]; then base_set_flow "$b"; return; fi
+      require_on_origin "$b"
       # The default branch's own name is no setting at all: storing it would
       # pin today's default and outlive a rename of it.
       if [ "$b" = "$(default_branch)" ]; then
@@ -270,7 +316,7 @@ cmd_base() {
       note "$(base_branch) ($(base_source))"
       # The setting only reaches flows started after it; say so rather than
       # let the active flow's PR surprise anyone by targeting its old base.
-      if [ -f "$STATE" ] && [ "$(state_get phase)" != done ]; then
+      if flow_active; then
         local fb; fb="$(flow_base)"
         [ "$fb" = "$(base_branch)" ] ||
           note "note: the active flow $(state_get slug) keeps its own base branch: $fb"
@@ -409,7 +455,7 @@ cmd_init() {
   # so it is not "active" in any sense that matters. init archives it and
   # proceeds instead of refusing; every other phase still blocks a second flow.
   local archive_note=""
-  if [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; then
+  if flow_active; then
     die "a flow is already active (slug: $(state_get slug), phase: $(state_get phase)).
      One flow at a time - finish it, or run $(flow_cmd abort)."
   fi
@@ -433,8 +479,10 @@ cmd_init() {
   # carries no field for whether it was adopted or published - nothing
   # downstream reads that distinction. host_fallbacks marks a flow whose
   # handoffs must record Host fallbacks (see host_fallbacks_required).
-  # base is fixed here and never rewritten - not by redo, not by a later
-  # `base set` - so a flow's fork point and PR target cannot move under it.
+  # base is fixed here: no redo and no change to the checkout setting rewrites
+  # it, so a flow's fork point and PR target cannot move under it. The explicit
+  # `base set --flow` correction does, but only while the flow has no branch:
+  # before it first branches, or after `redo review` retires that branch.
   jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" --arg base "$(base_branch)" '{
     slug: $slug, phase: null, issue: (if $issue == "" then null else ($issue | tonumber) end),
     base: $base, branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
@@ -1645,9 +1693,11 @@ cmd_finding_triage() {
 # unreachable - so both branch create (a flow's own naming and state) and
 # branch off (a quick implementation's, which keeps no state) share it rather
 # than each hand-rolling the fetch/checkout-fallback idiom. The caller names
-# the base: a flow's is the one it recorded at init.
+# the base: a flow's is the one it recorded at init. The caller also names
+# the remedy for a base origin says is gone ($3), since only a flow has a
+# base it can correct.
 checkout_new_branch() {
-  local name="$1" base="$2"
+  local name="$1" base="$2" remedy="${3:-start again on another base branch}"
   if git rev-parse --verify --quiet "$name" >/dev/null; then die "branch $name already exists"; fi
   if ! git fetch --quiet origin "$base" 2>/dev/null; then
     # Only an origin that could not be asked earns the local fallback: one
@@ -1655,7 +1705,7 @@ checkout_new_branch() {
     # a stale local copy of it would build on work nobody will merge.
     local st=0
     origin_has_branch "$base" || st=$?
-    [ "$st" -ne 2 ] || die "base branch $base does not exist on origin - push it, or start again on another base branch"
+    [ "$st" -ne 2 ] || die "base branch $base does not exist on origin - push it, or $remedy"
   fi
   git checkout -q -b "$name" "origin/$base" 2>/dev/null || git checkout -q -b "$name" "$base"
 }
@@ -1667,7 +1717,8 @@ cmd_branch_create() {
   slug="$(state_get slug)"
   require_issue issue
   name="orch/${issue}-${slug}"
-  checkout_new_branch "$name" "$(flow_base)"
+  checkout_new_branch "$name" "$(flow_base)" \
+    "point this flow at another base: orch.sh base set <branch> --flow"
   state_write branch "$name"
   state_write base_sha "$(git rev-parse HEAD)"
   note "$name"
@@ -2707,6 +2758,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               not have. Shared by every worktree, never
                               committed; the default branch's name clears it.
                               An active flow keeps the base it started with
+  base set <branch> --flow    correct the active flow's own base branch
+                              instead, leaving the checkout setting alone;
+                              only while the flow has no branch (before
+                              branch create, or after redo review). Stores
+                              the name as given; refuses a name that is not
+                              a valid branch or that origin does not have
   base show                   print the base branch in effect and its source:
                               set, or default
   base clear                  remove the setting, falling back to the default

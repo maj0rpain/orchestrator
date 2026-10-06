@@ -1484,11 +1484,84 @@ assert_contains "and notes that the active flow keeps its own base branch" \
   "$out" "flowbase keeps its own base branch: uat"
 assert_eq "the flow's recorded base is untouched" "$(orch_gh_failing state get base)" "uat"
 
+# base set --flow: the explicit correction of the flow's own base, allowed only
+# while the flow has no branch. The checkout's setting is never its target.
+flow_setting() { git config --get orchestrator.base || echo "<unset>"; }
+orch_gh_failing base set uat >/dev/null
+out="$(orch_gh_failing base set main --flow 2>&1)"; st=$?
+assert_status "base set --flow accepts the flag after the branch name" "$st" 0
+assert_eq "and reports the flow's new base" "$out" "main (flow)"
+assert_eq "storing the default branch's own name literally" "$(orch_gh_failing state get base)" "main"
+assert_eq "leaving the checkout's base branch setting unchanged" "$(flow_setting)" "uat"
+orch_gh_failing base clear >/dev/null
+out="$(orch_gh_failing base set --flow uat 2>&1)"; st=$?
+assert_status "base set --flow accepts the flag before the branch name" "$st" 0
+assert_eq "in the spec phase it prints the branch and its flow source" "$out" "uat (flow)"
+assert_eq "state get base reads the corrected base" "$(orch_gh_failing state get base)" "uat"
+assert_eq "and the unset checkout setting stays unset" "$(flow_setting)" "<unset>"
+for name in null 007; do
+  git push -q origin "HEAD:refs/heads/$name"
+  orch_gh_failing base set "$name" --flow >/dev/null
+  assert_eq "base set --flow stores a branch named $name literally" \
+    "$(orch_gh_failing state get base)" "$name"
+done
+orch_gh_failing base set uat --flow >/dev/null
+
+for args in "" "--flow" "uat main --flow" "uat --flow --flow" "uat --flaw"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  out="$(orch_gh_failing base set $args 2>&1)"; st=$?
+  assert_status "base set refuses the arguments '$args'" "$st" 1
+  assert_contains "with its usage line" "$out" "usage: orch.sh base set <branch> [--flow]"
+done
+out="$(orch_gh_failing base show --flow 2>&1)"; st=$?
+assert_status "base show refuses --flow" "$st" 1
+assert_contains "with its usage error" "$out" "usage: orch.sh base show"
+out="$(orch_gh_failing base clear --flow 2>&1)"; st=$?
+assert_status "base clear refuses --flow" "$st" 1
+assert_contains "with its usage error" "$out" "usage: orch.sh base clear"
+
+out="$(orch_gh_failing base set 'bad..name' --flow 2>&1)"; st=$?
+assert_status "base set --flow refuses an invalid branch name" "$st" 1
+assert_contains "saying nothing was set" "$out" "bad..name is not a valid branch name - nothing was set"
+assert_eq "leaving the flow's base unchanged" "$(orch_gh_failing state get base)" "uat"
+out="$(orch_gh_failing base set nosuch --flow 2>&1)"; st=$?
+assert_status "base set --flow refuses a branch missing from origin" "$st" 1
+assert_contains "with plain base set's message" "$out" \
+  "branch nosuch does not exist on origin - push it first, or check the name"
+assert_eq "leaving the flow's base unchanged" "$(orch_gh_failing state get base)" "uat"
+git remote set-url origin "$(dirname "$bare")/unreachable.git"
+out="$(orch_gh_failing base set main --flow 2>&1)"; st=$?
+assert_status "base set --flow refuses when origin cannot be reached" "$st" 1
+assert_contains "with plain base set's message" "$out" \
+  "could not reach origin to check that branch main exists - nothing was set"
+assert_eq "leaving the flow's base unchanged" "$(orch_gh_failing state get base)" "uat"
+out="$(orch_gh_failing base set 'bad..name' --flow 2>&1)"
+assert_contains "an invalid name is refused before origin is contacted" "$out" \
+  "bad..name is not a valid branch name - nothing was set"
+git remote set-url origin "$bare"
+
+# A flow init recorded on the default branch, corrected to uat before it
+# branches: only the correction can make branch create fork from uat's tip,
+# since neither the init-recorded base nor the unset checkout setting names it.
+rm -rf .orchestrator
+orch_gh_failing init flowbase >/dev/null
+assert_eq "a flow started with nothing set records the default branch" \
+  "$(orch_gh_failing state get base)" "main"
+orch_gh_failing base set uat --flow >/dev/null
 orch_gh_failing state set issue 7
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create succeeds" "$st" 0
-assert_eq "branch create forks from the recorded base, not the changed setting" \
+assert_eq "the flow's next branch create forks from the corrected base's tip" \
   "$(git rev-parse HEAD)" "$uat_tip"
+
+out="$(orch_gh_failing base set main --flow 2>&1)"; st=$?
+assert_status "base set --flow refuses once the flow has a branch" "$st" 1
+assert_contains "outside the review phase saying to abort" "$out" \
+  "flow flowbase already has branch orch/7-flowbase - its base can no longer change; abort to start again on another base"
+assert_eq "leaving the flow's base unchanged" "$(orch_gh_failing state get base)" "uat"
+out="$(orch_gh_failing base set 'bad..name' --flow 2>&1)"
+assert_contains "a branched flow given an invalid name reports the branch refusal" "$out" \
+  "flow flowbase already has branch orch/7-flowbase"
 assert_eq "base_sha is the recorded base's tip" "$(orch_gh_failing state get base_sha)" "$uat_tip"
 assert_contains "status prints the flow's base branch" "$(orch_gh_failing status)" "base:      uat"
 
@@ -1510,7 +1583,8 @@ state_fixture base gone
 orch_gh_failing state set issue 8
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create refuses a base branch origin says is gone" "$st" 1
-assert_contains "naming the base branch" "$out" "gone"
+assert_contains "naming the base branch and the correction" "$out" \
+  "base branch gone does not exist on origin - push it, or point this flow at another base: orch.sh base set <branch> --flow"
 assert_eq "and creates no branch" \
   "$(git rev-parse --verify --quiet orch/8-flowbase >/dev/null && echo made || echo none)" "none"
 
@@ -1525,6 +1599,22 @@ out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "and branch create still forks it" "$st" 0
 assert_eq "from the default branch" "$(git rev-parse HEAD)" "$main_tip"
 orch_gh_failing base clear >/dev/null
+
+# A done flow, or none at all, is no active flow to correct.
+state_fixture phase done
+out="$(orch_gh_failing base set uat --flow 2>&1)"; st=$?
+assert_status "base set --flow refuses a done flow" "$st" 1
+assert_contains "as no active flow" "$out" "no active flow - nothing was set"
+assert_eq "leaving its base unchanged" "$(orch_gh_failing state get base)" ""
+rm -rf .orchestrator
+out="$(orch_gh_failing base set uat --flow 2>&1)"; st=$?
+assert_status "base set --flow refuses with no state.json" "$st" 1
+assert_contains "as no active flow" "$out" "no active flow - nothing was set"
+out="$(orch_gh_failing base set 'bad..name' --flow 2>&1)"
+assert_contains "no state.json plus an invalid name reports no active flow" "$out" \
+  "no active flow - nothing was set"
+assert_eq "and never touches the checkout setting" "$(flow_setting)" "<unset>"
+assert_contains "orch.sh help lists base set --flow" "$(orch_gh_failing help)" "base set <branch> --flow"
 rm -rf "$(dirname "$bare")"
 
 # --- a quick implementation's base branch --------------------------------------
@@ -1589,7 +1679,9 @@ git update-ref refs/remotes/origin/gone "$main_tip"
 git config orchestrator.base gone
 out="$(orch_gh_failing branch off quick/8-gone 2>&1)"; st=$?
 assert_status "branch off refuses a base branch origin says is gone" "$st" 1
-assert_contains "naming the base branch" "$out" "gone"
+assert_contains "naming the base branch" "$out" \
+  "base branch gone does not exist on origin - push it, or start again on another base branch"
+assert_not_contains "never pointing at a flow's correction" "$out" "--flow"
 assert_eq "and records nothing for the branch it did not make" "$(recorded_base quick/8-gone)" "<unset>"
 orch_gh_failing base clear >/dev/null
 rm -rf "$(dirname "$bare")"
@@ -6013,6 +6105,11 @@ base_before="$("$ORCH" state get base)"
 writeln '# plan' >.orchestrator/handoff/01-plan.md
 writeln '# implement' >.orchestrator/handoff/03-implement.md
 plan_before="$(cat .orchestrator/handoff/01-plan.md)"
+git push -q origin HEAD:refs/heads/redo-base
+out="$("$ORCH" base set redo-base --flow 2>&1)"; st=$?
+assert_status "base set --flow refuses a branched flow at the review phase" "$st" 1
+assert_contains "naming redo review as the way back" "$out" \
+  "flow redotest already has branch orch/21-redotest - its base can change again once orch.sh redo review retires it"
 out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
 assert_eq "keeps the flow's recorded base branch" "$("$ORCH" state get base)" "$base_before"
@@ -6044,6 +6141,9 @@ assert_eq "and the plan handoff untouched" "$(cat .orchestrator/handoff/01-plan.
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance then refuses to leave implement" "$st" 1
 assert_contains "for want of the implement handoff" "$out" "/.orchestrator/handoff/03-implement.md before leaving the implement phase"
+out="$("$ORCH" base set redo-base --flow 2>&1)"; st=$?
+assert_status "base set --flow succeeds again once redo review retired the branch" "$st" 0
+assert_eq "recording the corrected base" "$("$ORCH" state get base)" "redo-base"
 
 # A second redo in the same flow numbers on rather than overwriting the first.
 state_fixture phase review
