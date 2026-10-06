@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.11.2
+
+`orch.sh finding-triage scan` and `apply` give their locals names that say
+what they hold: `new_start`/`new_end` for the mapped line range,
+`resolved_sha` for the resolved filing commit, `default` for the default
+branch, and `stale_category` for the category label to remove (see issue
+#439). Behaviour is unchanged.
+
 ## 3.11.1
 
 `orch.sh finding-triage apply` handles its possibly-empty list of labels to
