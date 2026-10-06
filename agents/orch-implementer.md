@@ -37,9 +37,12 @@ to that prompt.
 ## Steps
 
 1. **Fetch the ticket** before anything else, into a temporary file
-   outside the repo (`mktemp`): `gh issue view <ticket> --json
-   title,body,comments > <file>`, then read that file. Piped, `--comments`
-   drops the title and body. Then find its spec issue: `bash "<orch.sh>"
+   outside the repo (`mktemp`), pinned to the repo `orch.sh` resolves, never
+   `gh`'s default repo: `repo="$(bash "<orch.sh>" repo show --name)" && gh
+   issue view <ticket> -R "$repo" --json title,body,comments > <file>`, then
+   read that file. When `repo show` fails, stop and return the report with
+   the failure as a deviation: an empty `-R` would fall back to the default.
+   Piped, `--comments` drops the title and body. Then find its spec issue: `bash "<orch.sh>"
    ticket parent <ticket>` prints the parent of a sub-issue ticket, and empty
    output means the ticket is the spec issue itself. A failure is retried once, then
    recorded as a deviation. Read the spec issue's **Testing Decisions** - the

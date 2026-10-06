@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.12.0
+
+`orch.sh` works on one GitHub repo, made explicit: `GH_REPO` when the caller
+sets it, else the checkout's `origin` remote - never the repo `gh` would pick
+by default, so in a fork whose `gh` default points upstream nothing is read
+or written upstream. Every `gh` call in `orch.sh` and `doctor.sh` is pinned to
+it, `orch.sh repo show [--name]` prints it, and doctor reports it, warning
+when `gh`'s default repo differs. The flake rerun goes through the new
+`orch.sh review rerun <pr>`. Skill and agent prose pins its own `gh` calls
+with `-R`, the closer posts its PR comment through `orch.sh pr comment`, the
+reviewer prompts carry an `orch.sh:` line, and the docs linter flags any `gh`
+call in a skill or agent that lacks `-R` (see issue #520).
+
 ## 3.11.2
 
 `orch.sh finding-triage scan` and `apply` give their locals names that say

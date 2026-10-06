@@ -41,9 +41,17 @@ turns out missing, take the fallback it documents and tell your caller which.
 
 The parent is the issue number you were given (a caller's spec issue, or the
 argument to `/orchestrator:to-tickets`). Fetch it and read its full body and
-comments, written to a temporary file outside the repo (`mktemp`):
-`gh issue view <parent> --json title,body,comments > <file>`, then read that
-file.
+comments, written to a temporary file outside the repo (`mktemp`). The read
+is pinned to the repo `orch.sh` resolves, never `gh`'s default repo, and runs
+only once that resolves - an empty `-R` would fall back to the default:
+
+```bash
+repo="$(bash "$ORCH" repo show --name)" &&
+  gh issue view <parent> -R "$repo" --json title,body,comments > <file>
+```
+
+When `repo show` fails, stop and tell the human what it printed. Otherwise
+read that file.
 
 ### 2. Explore the codebase (optional)
 

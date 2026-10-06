@@ -980,6 +980,41 @@ flags "a skill calling the sub_issues endpoint is flagged" "$out" "skills/orch-x
 spares "ticket parent is not flagged" "$out" 'orch-b'
 check "no agent or skill calls a sub-issue endpoint" "$(scan_subissue_endpoints "$PLUGIN_ROOT")"
 
+# --- gh calls pinned to the repo (#520) ---------------------------------------
+echo
+echo "gh calls pinned to the repo (#520)"
+# A gh call left to gh's own default repo reaches the upstream in a fork, so
+# every gh call in a brief either goes through orch.sh or passes -R with the
+# repo `orch.sh repo show --name` resolved. A call is `gh <group> <verb>`
+# followed by an argument - a flag, a <placeholder>, a quote, or a $ - read up
+# to the next backtick, pipe or semicolon; a bare `gh <group> <verb>` in
+# running text is a mention, not a call. Each file is read with whitespace
+# collapsed, so a call wrapped across lines is still seen.
+# scan_unpinned_gh <plugin root>: each skill or agent gh call without -R.
+scan_unpinned_gh() {
+  local f call
+  while IFS= read -r f; do
+    while IFS= read -r call; do
+      [ -n "$call" ] || continue
+      grep -qE -- '(^| )(-R|--repo)( |=|$)' <<<"$call" && continue
+      echo "${f#"$1"/}: gh call without -R: $call"
+    done < <(flat_text "$f" | grep -oE -- "gh [a-z][a-z-]* [a-z][a-z-]* [-<\"'\$][^\`|;]*")
+  done < <(find "$1/agents" "$1/skills" -name '*.md' 2>/dev/null | sort)
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents" "$fixture/skills/orch-x"
+printf 'Read it: `gh issue view <n> --json body`.\n' >"$fixture/agents/orch-a.md"
+printf 'Read it (`gh issue\n  view <n>`).\n' >"$fixture/skills/orch-x/SKILL.md"
+printf '%s\n' 'Nothing calls `gh issue create` or `gh label create` directly.' \
+  'Read it: `gh issue view <n> -R "$repo" --json body`.' >"$fixture/agents/orch-b.md"
+out="$(scan_unpinned_gh "$fixture")"
+flags "a gh call without -R is flagged" "$out" "agents/orch-a.md: gh call without -R: gh issue view <n>"
+flags "a gh call wrapped across lines is flagged" \
+  "$out" "skills/orch-x/SKILL.md: gh call without -R: gh issue view <n>"
+spares "a bare gh command named in running text, or a call with -R, is not flagged" "$out" 'orch-b'
+check "every gh call in an agent or skill passes -R" "$(scan_unpinned_gh "$PLUGIN_ROOT")"
+
 # --- flow commands in script messages -----------------------------------------
 echo
 echo "flow commands in script messages"
@@ -1135,7 +1170,7 @@ echo
 echo "previously declined (#418)"
 # A standalone review pass reads earlier passes' declines through pr comments
 # and lists what it dropped as **Previously declined** - while the reviewers
-# stay fresh: Review pass step 3's prompt stays the four variables, no word
+# stay fresh: Review pass step 3's prompt stays the five variables, no word
 # about earlier passes.
 # scan_previously_declined <plugin root>: one line per break of that rule.
 scan_previously_declined() {
@@ -1148,15 +1183,16 @@ scan_previously_declined() {
   prompt="$(md_section "$r/$review" "## Review pass" \
     | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//')"
   [ "$prompt" = "$(printf '%s\n' 'Base SHA: <base SHA>' 'Spec issue: #<issue>' 'Iteration: <NN>' \
-    'Report path: <prefix>-<standards|spec>.md')" ] \
-    || echo "$review: ## Review pass step 3's reviewer prompt is not the four variables"
+    'Report path: <prefix>-<standards|spec>.md' 'orch.sh: <the path ORCH holds>')" ] \
+    || echo "$review: ## Review pass step 3's reviewer prompt is not the five variables"
   return 0
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-review"
 printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base SHA: <base SHA>' \
   '   Spec issue: #<issue>' '   Earlier declines: <list>' '   Iteration: <NN>' \
-  '   Report path: <prefix>-<standards|spec>.md' '   ```' '' '## Standalone review pass' '' 'Post it.' \
+  '   Report path: <prefix>-<standards|spec>.md' '   orch.sh: <the path ORCH holds>' '   ```' '' \
+  '## Standalone review pass' '' 'Post it.' \
   >"$fixture/skills/orch-review/SKILL.md"
 out="$(scan_previously_declined "$fixture")"
 flags "a standalone pass that never reads pr comments is flagged" \
@@ -1164,14 +1200,15 @@ flags "a standalone pass that never reads pr comments is flagged" \
 flags "a standalone pass with no Previously declined is flagged" \
   "$out" "skills/orch-review/SKILL.md: ## Standalone review pass does not name **Previously declined**"
 flags "a reviewer prompt carrying earlier declines is flagged" \
-  "$out" "skills/orch-review/SKILL.md: ## Review pass step 3's reviewer prompt is not the four variables"
+  "$out" "skills/orch-review/SKILL.md: ## Review pass step 3's reviewer prompt is not the five variables"
 printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base SHA: <base SHA>' \
-  '   Spec issue: #<issue>' '   Iteration: <NN>' '   Report path: <prefix>-<standards|spec>.md' '   ```' '' \
+  '   Spec issue: #<issue>' '   Iteration: <NN>' '   Report path: <prefix>-<standards|spec>.md' \
+  '   orch.sh: <the path ORCH holds>' '   ```' '' \
   '## Standalone review pass' '' 'Run `orch.sh pr comments <file>`; list **Previously' 'declined**.' \
   >"$fixture/skills/orch-review/SKILL.md"
 assert_empty "a pass that reads earlier declines and keeps the prompt is not flagged" \
   "$(scan_previously_declined "$fixture")"
-check "a standalone review pass drops earlier declines and the reviewer prompt stays four variables" \
+check "a standalone review pass drops earlier declines and the reviewer prompt stays five variables" \
   "$(scan_previously_declined "$PLUGIN_ROOT")"
 
 # --- closer's filed body lines -----------------------------------------------

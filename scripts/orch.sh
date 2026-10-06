@@ -201,14 +201,130 @@ phase_write() {
 # It is a fallback for repos gh cannot answer for, not the primary source.
 # Each candidate counts only when it is a valid branch name, so noise around
 # gh's answer - or a failed gh's output - falls through to the next (#465).
+#
+# GitHub is asked only when the repo resolves - `gh repo view` ignores GH_REPO,
+# so the repo is passed positionally - and a checkout with none falls through
+# to the local pointer rather than dying: the answer has always been
+# best-effort, and init and base show ask it before anything needs GitHub.
 default_branch() {
-  local b
-  b="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)" || b=""
+  local b=""
+  if repo_resolve; then
+    b="$(gh repo view "$REPO_NAME" --json defaultBranchRef --jq .defaultBranchRef.name 2>/dev/null)" || b=""
+  fi
   if ! is_branch_name "$b"; then
     b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')" || b=""
   fi
   is_branch_name "$b" || b="main"
   printf '%s\n' "$b"
+}
+
+# The repo orch.sh works on (#520): GH_REPO when the caller set it, else the
+# owner/name parsed from the checkout's origin remote - never gh's own default
+# repo, which in a fork is the upstream. repo_resolve sets REPO_NAME to
+# [HOST/]OWNER/REPO and REPO_SOURCE to GH_REPO or origin, printing nothing; it
+# returns non-zero, with both empty, when nothing resolves. A caller that must
+# have a repo dies with REPO_REMEDY; doctor reports it instead.
+REPO_REMEDY="no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
+repo_resolve() {
+  local url
+  REPO_NAME=""
+  REPO_SOURCE=""
+  if [ -n "${GH_REPO:-}" ]; then
+    REPO_NAME="$GH_REPO"
+    REPO_SOURCE=GH_REPO
+    return 0
+  fi
+  url="$(git remote get-url origin 2>/dev/null)" || return 1
+  REPO_NAME="$(repo_from_url "$url")" || { REPO_NAME=""; return 1; }
+  REPO_SOURCE=origin
+}
+
+# repo_from_url <url>: [HOST/]OWNER/REPO from a clone URL in any of its three
+# forms - https://host/o/r, git@host:o/r, ssh://[user@]host[:port]/o/r - with
+# or without .git. github.com is left implicit, as gh -R expects; any other
+# host is kept. A URL with no host or not exactly owner/name fails.
+repo_from_url() {
+  local url="$1" host path
+  case "$url" in
+    https://*|http://*|ssh://*|git://*)
+      url="${url#*://}"
+      host="${url%%/*}"
+      path="${url#*/}"
+      [ "$path" != "$url" ] || return 1
+      host="${host##*@}"
+      host="${host%%:*}"
+      ;;
+    *@*:*)
+      host="${url%%:*}"
+      host="${host##*@}"
+      path="${url#*:}"
+      ;;
+    *) return 1 ;;
+  esac
+  path="${path%/}"
+  path="${path%.git}"
+  case "$path" in
+    */*/*|/*|*/|"") return 1 ;;
+    */*) ;;
+    *) return 1 ;;
+  esac
+  [ -n "$host" ] || return 1
+  if [ "$host" = github.com ]; then
+    printf '%s\n' "$path"
+  else
+    printf '%s/%s\n' "$host" "$path"
+  fi
+}
+
+# The guard every GitHub call in this file - and in doctor.sh, sourced into it
+# - goes through by name (#520): `gh` itself, defined ahead of doctor.sh and the
+# ORCH_GH_ADAPTER seam so both pick it up. On first use it resolves the repo
+# and exports it as GH_REPO for the rest of the run - with GH_HOST beside it for
+# a host other than github.com - so every later call - `gh api`'s
+# {owner}/{repo} placeholders and host included - is pinned to it, never to
+# gh's own default repo, which in a fork is the upstream. With no repo it dies
+# naming GH_REPO. Inside a command substitution `die` would end only that
+# subshell, and its message could land in a 2>/dev/null, so there it signals
+# the main shell, whose USR1 trap dies with the remedy instead. Its last line is
+# the only call to the real gh binary in orch.sh and doctor.sh.
+gh() {
+  if [ -z "${GH_REPO:-}" ]; then
+    if ! repo_resolve; then
+      if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
+      die "$REPO_REMEDY"
+    fi
+    export GH_REPO="$REPO_NAME"
+  fi
+  repo_pin_host
+  command gh "$@"
+}
+
+# gh api fills {owner}/{repo} from GH_REPO but takes its host only from
+# GH_HOST, never from GH_REPO's host part (gh 2.102.0). So a HOST/OWNER/REPO
+# GH_REPO also exports GH_HOST=HOST; an OWNER/REPO one, a github.com repo,
+# leaves GH_HOST as it is.
+repo_pin_host() {
+  case "$GH_REPO" in
+    */*/*) export GH_HOST="${GH_REPO%%/*}" ;;
+  esac
+}
+trap 'die "$REPO_REMEDY"' USR1
+
+cmd_repo() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    show)
+      case "$*" in
+        "") ;;
+        --name) ;;
+        *) die "usage: orch.sh repo show [--name]" ;;
+      esac
+      repo_resolve || die "$REPO_REMEDY"
+      if [ "${1:-}" = --name ]; then note "$REPO_NAME"; else note "$REPO_NAME ($REPO_SOURCE)"; fi
+      ;;
+    *) die "unknown repo op: ${op:-<none>} (want show)" ;;
+  esac
 }
 
 # Whether $1 is a valid branch name (git check-ref-format --branch rejects an empty one).
@@ -773,8 +889,8 @@ adapter_issue_create() {
 }
 
 # cmd_redo_spec's --new-issue path and `ticket retire` close issues through
-# this primitive; `ticket close` keeps its own direct `gh issue close` (out of
-# scope for issue #92).
+# this primitive; `ticket close` calls `gh issue close` directly, through the
+# same gh guard, so it too is pinned to the resolved repo.
 adapter_issue_close() {
   gh issue close "$@"
 }
@@ -787,10 +903,12 @@ adapter_issue_list() {
 
 # The PR-resource primitives (issue #93, third of the #78 breakdown): open_pr's
 # create/view, ci_probe's checks, cmd_review ready's ready, and
-# cmd_redo_review's close. doctor.sh's own `gh pr view` calls are a separate
-# concern (out of scope, like default_branch and the ticket group's `gh api`
-# calls). Since issue #93, pr fetch and pr update have also read a PR's body
-# through the same view (issue #444).
+# cmd_redo_review's close. doctor.sh's own `gh pr view` calls, default_branch,
+# and the ticket group's `gh api` calls call gh directly rather than through
+# these primitives, but all go through the gh guard and so are pinned to the
+# resolved repo too (default_branch names it positionally, as `gh repo view`
+# ignores GH_REPO). Since issue #93, pr fetch and pr update have also read a
+# PR's body through the same view (issue #444).
 adapter_pr_create() {
   gh pr create "$@"
 }
@@ -832,6 +950,11 @@ adapter_pr_checks() {
 
 adapter_pr_ready() {
   gh pr ready "$@"
+}
+
+# review rerun's rerun of one GitHub Actions run's failed jobs (issue #525).
+adapter_run_rerun() {
+  gh run rerun "$@"
 }
 
 # pr release's two reads of the base branch's PRs: whether a release PR is
@@ -1044,6 +1167,46 @@ ci_probe() {
   note green
 }
 
+# The flow's flake rerun (issue #525): the failed jobs of the GitHub Actions
+# run behind the PR's first failed or cancelled check, whose id is the
+# `runs/<id>` segment of that check's link. `gh run rerun` with no id opens a
+# prompt a non-interactive caller cannot answer, so the id is always passed.
+# Exit 0 means the rerun started, and is the only answer that spends the
+# flow's rerun. Exit 1 means the first failing check is no Actions run - an
+# outside CI's status - so there is nothing to rerun. Everything else - a usage
+# error, no repo, a GitHub that cannot be read, no failing check, a refused
+# rerun - goes through die2. The repo is resolved here rather than left to the
+# guard, whose death exits 1 and would read as "nothing to rerun".
+review_rerun() {
+  local pr="${1:-}" out link run name
+  [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
+  case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
+  if [ -z "${GH_REPO:-}" ]; then
+    repo_resolve || die2 "$REPO_REMEDY"
+    export GH_REPO="$REPO_NAME"
+  fi
+  repo_pin_host
+  # Exit 8 is gh's "some checks pending", which still answers the JSON.
+  out="$(adapter_pr_checks "$pr" --json bucket,name,link 2>&1)" || [ $? -eq 8 ] \
+    || die2 "gh could not read the checks of PR #$pr: $(first_line "$out")"
+  link="$(printf '%s' "$out" | jq -er \
+    'first(.[] | select(.bucket == "fail" or .bucket == "cancel")) | "\(.name)\t\(.link // "")"' 2>/dev/null)" \
+    || die2 "PR #$pr has no failed or cancelled check to rerun"
+  name="${link%%$'\t'*}"
+  link="${link#*$'\t'}"
+  case "$link" in
+    */actions/runs/[0-9]*) ;;
+    *) printf 'orch: check %s on PR #%s is not a GitHub Actions run - nothing to rerun\n' "$name" "$pr" >&2
+       return 1 ;;
+  esac
+  run="${link##*/actions/runs/}"   # N/job/M -> N
+  run="${run%%/*}"
+  case "$run" in ''|*[!0-9]*) printf 'orch: check %s on PR #%s links no Actions run id - nothing to rerun\n' "$name" "$pr" >&2; return 1 ;; esac
+  adapter_run_rerun "$run" --failed >/dev/null 2>&1 \
+    || die2 "gh could not rerun the failed jobs of Actions run $run"
+  note "$run"
+}
+
 # Classifies the review loop's last iteration against its budget - the one
 # answer `review terminal` and doctor's `check_flow_review_terminal` both read,
 # rather than each re-deriving which iteration counts as done. Checked with
@@ -1236,6 +1399,7 @@ cmd_review() {
         esac
       done
       ;;
+    rerun) review_rerun "$@" ;;
     terminal)
       require_state
       [ $# -eq 0 ] || die "usage: orch.sh review terminal"
@@ -1256,7 +1420,7 @@ cmd_review() {
       done
       note "$dest"
       ;;
-    *) die "unknown review op: ${op:-<none>} (want begin|path|file|ci|ready|terminal|retire)" ;;
+    *) die "unknown review op: ${op:-<none>} (want begin|path|file|ci|rerun|ready|terminal|retire)" ;;
   esac
 }
 
@@ -2771,6 +2935,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               set, or default
   base clear                  remove the setting, falling back to the default
                               branch; succeeds when nothing was set
+  repo show [--name]          print the GitHub repo orch.sh works on and its
+                              source: GH_REPO when set, else the checkout's
+                              origin - never gh's default repo. --name prints
+                              the bare [HOST/]OWNER/REPO alone, for gh -R.
+                              Exits 1, naming GH_REPO, when neither resolves
   init <slug> [--issue N]     start a flow (refuses if one is active, unless
                               it is done - a done flow is archived and the
                               new one starts over it, or if the working tree
@@ -2930,6 +3099,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               creating the labels if missing; prints the number
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
+  review rerun <pr>           rerun the failed jobs of the Actions run behind
+                              the PR's first failed or cancelled check; prints
+                              the run id. Exits 1 when that check is no Actions
+                              run, 2 on any other failure
   review ready                mark the draft PR ready and set the phase to done
   review terminal             classify the last iteration: none, pending,
                               interrupted, ready, or stop; exits non-zero on
@@ -3008,6 +3181,7 @@ main() {
     doctor)        cmd_doctor "$@" ;;
     default-branch) default_branch ;;
     base)          cmd_base "$@" ;;
+    repo)          cmd_repo "$@" ;;
     init)          cmd_init "$@" ;;
     slug)          cmd_slug "$@" ;;
     state)         cmd_state "$@" ;;

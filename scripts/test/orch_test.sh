@@ -27,7 +27,7 @@ unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT JUNIE_SHIM_PATH
 # passes them to restore_suite_env to unset them too.
 SUITE_HOME="$HOME"
 SUITE_PATH="$PATH"
-restore_suite_env() { unset CLAUDE_PLUGIN_ROOT "$@"; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"; }
+restore_suite_env() { unset CLAUDE_PLUGIN_ROOT GH_REPO "$@"; HOME="$SUITE_HOME"; PATH="$SUITE_PATH"; }
 
 ok()   { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
 bad()  { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
@@ -58,8 +58,9 @@ assert_first_line() {
   assert_eq "$1" "$(printf '%s\n' "$2" | sed -n 1p)" "$3"
 }
 
-# A fresh repo with one commit and an empty docs/agents/ for a labels doc,
-# cwd inside it. No setup is required of it (ADR-0028).
+# A fresh repo with one commit, an empty docs/agents/ for a labels doc and an
+# origin of https://github.com/o/r.git (so it resolves to the repo o/r), cwd
+# inside it. No setup is required of it (ADR-0028).
 new_repo() {
   local d
   d="$(mktemp -d)"
@@ -70,17 +71,22 @@ new_repo() {
   echo "# repo" >"$d/README.md"
   git -C "$d" add -A
   git -C "$d" commit -qm init
+  git -C "$d" remote add origin https://github.com/o/r.git
   cd "$d" || exit 1
   printf '%s\n' "$d"
 }
 
-# new_repo_with_origin [branch]: new_repo, plus an example.invalid origin whose
-# origin/HEAD points at <branch> (default: the checked-out branch), set to
-# HEAD. Call it in the current shell, never inside $(...): new_repo cd's.
+# bare_origin <path>: point origin at a local bare repo. A path names no GitHub
+# repo, so it names one through GH_REPO, as a caller would (#520); the stub
+# gh answers for acme/widgets. restore_suite_env unsets it again.
+bare_origin() { git remote set-url origin "$1"; export GH_REPO=acme/widgets; }
+
+# new_repo_with_origin [branch]: new_repo, plus tracking refs for its origin:
+# origin/<branch> (default: the checked-out branch) set to HEAD, and
+# origin/HEAD pointing at it. Call it in the current shell, never inside $(...): new_repo cd's.
 new_repo_with_origin() {
   new_repo >/dev/null
   local b="${1:-$(git branch --show-current)}"
-  git remote add origin https://example.invalid/x/y.git
   git update-ref "refs/remotes/origin/$b" HEAD
   git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$b"
 }
@@ -210,6 +216,17 @@ stub_gh() {
   cat >"$d/gh" <<'GH'
 #!/usr/bin/env bash
 if [ -n "${GH_STUB_LOG:-}" ]; then printf '%s\n' "$1" >>"$GH_STUB_LOG"; fi
+# GH_STUB_REPO_LOG names a file each call appends the GH_REPO it sees to,
+# followed by its arguments - "GH_REPO=<repo> <args>" - so a test asserts
+# which repo every call was pinned to (#520).
+if [ -n "${GH_STUB_REPO_LOG:-}" ]; then
+  printf 'GH_REPO=%s %s\n' "${GH_REPO-<unset>}" "$*" >>"$GH_STUB_REPO_LOG"
+fi
+# GH_STUB_HOST_LOG does the same for GH_HOST - "GH_HOST=<host> <args>" - since
+# gh api takes its host from GH_HOST, never from GH_REPO's host part (#520).
+if [ -n "${GH_STUB_HOST_LOG:-}" ]; then
+  printf 'GH_HOST=%s %s\n' "${GH_HOST-<unset>}" "$*" >>"$GH_STUB_HOST_LOG"
+fi
 # Records the flags of an issue write to GH_STUB_FILED, the body file's
 # contents inlined, so a test asserts what reached gh rather than the exit.
 record_flags() {
@@ -344,6 +361,11 @@ case "$1" in
   # gets GH_STUB_REPO's last word.
   repo)
     case "$*" in
+      # gh's own default repo, which ignores GH_REPO: GH_STUB_DEFAULT_REPO, or
+      # gh's "none set" message on stderr - with exit 0, as gh 2.102.0 does.
+      *set-default*--view*)
+        if [ -n "${GH_STUB_DEFAULT_REPO:-}" ]; then printf '%s\n' "$GH_STUB_DEFAULT_REPO"
+        else echo "X No default remote repository has been set." >&2; fi ;;
       *nameWithOwner*) printf '%s\n' ${GH_STUB_REPO-acme/widgets main} ;;
       *) set -- ${GH_STUB_REPO-acme/widgets main}; [ $# -eq 0 ] || printf '%s\n' "${!#}" ;;
     esac ;;
@@ -386,6 +408,10 @@ ready-for-agent}"
               esac
               exit 0 ;;
             labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; exit 0 ;;
+            # issue publish's readback: GH_STUB_ISSUE_TITLE, then the labels.
+            title,labels)
+              printf '%s\n' "${GH_STUB_ISSUE_TITLE-Title}" "${GH_STUB_ISSUE_LABELS-ready-for-agent}"
+              exit 0 ;;
             # GH_STUB_COMMENTS_JSON, raw gh-shaped JSON, answers through the
             # request's own --jq with real jq; otherwise, under GH_STUB_DB,
             # every comment comments/<n> has collected.
@@ -627,6 +653,12 @@ ready-for-agent}"
     esac
     if [ -n "$api_jq" ]; then printf '%s' "$api_json" | jq -r "$api_jq"; else printf '%s\n' "$api_json"; fi
     ;;
+  # review rerun's rerun of an Actions run: recorded to GH_STUB_FILED as
+  # "run rerun <args>", and refused on GH_STUB_RERUN_EXIT.
+  run)
+    if [ -n "${GH_STUB_FILED:-}" ]; then printf 'run %s\n' "${*:2}" >>"$GH_STUB_FILED"; fi
+    [ "${GH_STUB_RERUN_EXIT:-0}" = 0 ] || { echo "gh stub: run rerun refused" >&2; exit "$GH_STUB_RERUN_EXIT"; }
+    exit 0 ;;
   pr)
     case "$2" in
       ready) exit 0 ;;
@@ -654,8 +686,11 @@ ready-for-agent}"
         answer="$(printf '%s' "$script" | awk -F'|' -v i="$i" '{ print (i <= NF) ? $i : $NF }')"
         case "$answer" in
           green)   echo '[{"bucket":"pass","name":"build","state":"SUCCESS"}]' ;;
-          failing) echo '[{"bucket":"fail","name":"build","state":"FAILURE"},{"bucket":"pass","name":"lint","state":"SUCCESS"}]' ;;
-          cancel)  echo '[{"bucket":"cancel","name":"build","state":"CANCELLED"}]' ;;
+          failing) echo '[{"bucket":"fail","name":"build","state":"FAILURE","link":"https://github.com/acme/widgets/actions/runs/4242/job/77"},{"bucket":"pass","name":"lint","state":"SUCCESS","link":"https://github.com/acme/widgets/actions/runs/1/job/1"}]' ;;
+          cancel)  echo '[{"bucket":"cancel","name":"build","state":"CANCELLED","link":"https://github.com/acme/widgets/actions/runs/5150/job/9"}]' ;;
+          # A failing check that is no Actions run - a commit status from an
+          # outside CI - listed first, ahead of a failing Actions run.
+          external) echo '[{"bucket":"pass","name":"lint","state":"SUCCESS","link":"https://github.com/acme/widgets/actions/runs/1/job/1"},{"bucket":"fail","name":"ext-ci","state":"FAILURE","link":"https://ci.example.com/build/9"},{"bucket":"fail","name":"build","state":"FAILURE","link":"https://github.com/acme/widgets/actions/runs/4242/job/77"}]' ;;
           pending) echo '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]'; exit 8 ;;
           # gh documents exit 8 for pending checks, but with --json it answers 0
           # and reports the state in the bucket instead. Both reach the same
@@ -734,7 +769,7 @@ labels_doc() {
 # and attribute the result to it.
 healthy_repo() {
   new_repo >/dev/null
-  git remote add origin https://github.com/acme/widgets.git
+  git remote set-url origin https://github.com/acme/widgets.git
   labels_doc docs/agents/triage-labels.md
   printf '%s\n' ".orchestrator/" ".scratch/" >>.git/info/exclude
   stub_gh
@@ -1298,6 +1333,53 @@ assert_contains "status reports no active flow afterwards" "$out" "No active flo
 out="$("$ORCH" init second 2>&1)"; st=$?
 assert_status "a new flow can start after archiving" "$st" 0
 
+# --- repo show ----------------------------------------------------------------
+# The GitHub repo orch.sh works on (#520): GH_REPO when the caller set it, else
+# the checkout's origin - never gh's own default, which in a fork is upstream.
+echo
+echo "repo show"
+new_repo >/dev/null
+unset GH_REPO
+assert_eq "a fresh test repo resolves to its github.com origin" \
+  "$("$ORCH" repo show)" "o/r (origin)"
+for url in https://github.com/acme/widgets.git https://github.com/acme/widgets \
+           git@github.com:acme/widgets.git git@github.com:acme/widgets \
+           ssh://git@github.com/acme/widgets.git ssh://git@github.com/acme/widgets; do
+  git remote set-url origin "$url"
+  assert_eq "origin $url resolves to acme/widgets" "$("$ORCH" repo show --name)" "acme/widgets"
+done
+for url in https://ghe.example.com/acme/widgets.git git@ghe.example.com:acme/widgets \
+           ssh://git@ghe.example.com/acme/widgets.git; do
+  git remote set-url origin "$url"
+  assert_eq "origin $url keeps its host" "$("$ORCH" repo show --name)" "ghe.example.com/acme/widgets"
+done
+git remote set-url origin https://github.com/acme/widgets.git
+assert_eq "GH_REPO wins over origin" "$(GH_REPO=fork/widgets "$ORCH" repo show)" "fork/widgets (GH_REPO)"
+assert_eq "repo show --name prints GH_REPO bare" \
+  "$(GH_REPO=fork/widgets "$ORCH" repo show --name)" "fork/widgets"
+assert_eq "repo show names origin as the source" "$("$ORCH" repo show)" "acme/widgets (origin)"
+out="$("$ORCH" repo show extra 2>&1)"; st=$?
+assert_status "repo show refuses a stray argument" "$st" 1
+
+# No GH_REPO and no usable origin: local commands still work, repo show fails.
+git remote remove origin
+"$ORCH" init norepo >/dev/null 2>&1
+out="$("$ORCH" state get phase 2>&1)"; st=$?
+assert_status "state get works with no repo to resolve" "$st" 0
+for args in "" "--name"; do
+  err="$(mktemp)"
+  label="repo show${args:+ $args}"
+  # shellcheck disable=SC2086
+  out="$("$ORCH" repo show $args 2>"$err")"; st=$?
+  assert_status "$label exits 1 with no repo" "$st" 1
+  assert_eq "$label prints nothing on stdout with no repo" "$out" ""
+  assert_contains "$label names GH_REPO as the remedy" "$(cat "$err")" "GH_REPO=<owner>/<repo>"
+  rm -f "$err"
+done
+git remote add origin https://example.invalid/notgithub
+out="$("$ORCH" repo show 2>/dev/null)"; st=$?
+assert_status "an origin with no owner/name path does not resolve" "$st" 1
+
 # --- default-branch ---------------------------------------------------------
 # The base every feature branch forks from. Getting this wrong is silent: work
 # lands on top of the wrong branch and nothing complains until review.
@@ -1306,7 +1388,7 @@ echo "default-branch"
 new_repo >/dev/null
 
 # origin/HEAD is a local pointer frozen at clone time; GitHub's answer must win.
-git remote add origin https://example.invalid/x/y.git
+git remote set-url origin https://example.invalid/x/y.git
 git checkout -q -b some-feature
 git update-ref refs/remotes/origin/some-feature HEAD
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/some-feature
@@ -1393,7 +1475,7 @@ echo "base"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -1425,7 +1507,7 @@ git remote set-url origin "$(dirname "$bare")/unreachable.git"
 out="$(orch_gh_failing base set main 2>&1)"; st=$?
 assert_status "set refuses when origin cannot be reached to verify" "$st" 1
 assert_eq "an unverified set leaves the config untouched" "$(base_setting)" "uat"
-git remote set-url origin "$bare"
+bare_origin "$bare"
 
 out="$(orch_gh_failing base set main 2>&1)"; st=$?
 assert_status "set accepts the default branch's own name" "$st" 0
@@ -1454,7 +1536,7 @@ echo "a flow's base branch"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 git checkout -q -b uat
 git commit -q --allow-empty -m "uat only"
@@ -1538,7 +1620,7 @@ assert_eq "leaving the flow's base unchanged" "$(orch_gh_failing state get base)
 out="$(orch_gh_failing base set 'bad..name' --flow 2>&1)"
 assert_contains "an invalid name is refused before origin is contacted" "$out" \
   "bad..name is not a valid branch name - nothing was set"
-git remote set-url origin "$bare"
+bare_origin "$bare"
 
 # A flow init recorded on the default branch, corrected to uat before it
 # branches: only the correction can make branch create fork from uat's tip,
@@ -1627,7 +1709,7 @@ echo "a quick implementation's base branch"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 git checkout -q -b uat
 git commit -q --allow-empty -m "uat only"
@@ -1696,7 +1778,7 @@ echo "a quick implementation's base SHA (#243)"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -1865,7 +1947,7 @@ echo "branch retire"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 
 out="$(orch_gh_failing branch retire nosuchbranch new 2>&1)"; st=$?
@@ -1920,7 +2002,7 @@ assert_eq "and the new name is not left dangling in its place" \
 # the push clears - issue #63 acceptance criterion 1.
 bare2="$(mktemp -d)/origin.git"
 git init -q --bare "$bare2"
-git remote set-url origin "$bare2"
+bare_origin "$bare2"
 out="$(orch_gh_failing branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "retrying the same rename succeeds once origin is reachable again" "$st" 0
 assert_eq "prints the new name" "$out" "to-fail-redo-1"
@@ -1935,7 +2017,7 @@ assert_eq "and publishes it" \
 # fail on "$old does not exist" when $old really is gone locally already.
 bare3="$(mktemp -d)/origin.git"
 git init -q --bare "$bare3"
-git remote set-url origin "$bare3"
+bare_origin "$bare3"
 git checkout -q -b to-resume
 git push -q -u origin to-resume
 git branch -m to-resume to-resume-redo-1
@@ -1954,7 +2036,7 @@ bare4="$(mktemp -d)/origin.git"
 git init -q --bare "$bare4"
 git -C "$bare4" symbolic-ref HEAD refs/heads/to-protect
 git -C "$bare4" config receive.denyDeleteCurrentBranch refuse
-git remote set-url origin "$bare4"
+bare_origin "$bare4"
 git checkout -q -b to-protect
 git push -q -u origin to-protect
 out="$(orch_gh_failing branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
@@ -2296,6 +2378,43 @@ assert_contains "skips the checks that depended on the answer" "$out" "skipped: 
 out="$(GH_STUB_REPO='acme/widgets ' "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unresolved default branch does not block the flow" "$st" 0
 assert_contains "warns that the default branch came from a fallback" "$out" "default branch"
+
+# doctor reports the repo the orchestrator works on (#520): resolved locally,
+# with its source, and never gh's own default, which in a fork is the upstream.
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "the repo line names the resolved repo and its source" \
+  "$out" "ok    repo: acme/widgets (origin)"
+out="$(GH_REPO=fork/widgets "$ORCH" doctor --env 2>&1)"
+assert_contains "the repo line names GH_REPO when the caller set it" \
+  "$out" "ok    repo: fork/widgets (GH_REPO)"
+repolog="$(mktemp)"
+GH_STUB_REPO_LOG="$repolog" "$ORCH" doctor --env >/dev/null 2>&1
+assert_contains "doctor's gh repo view gets the resolved repo positionally" \
+  "$(cat "$repolog")" "GH_REPO=acme/widgets repo view acme/widgets "
+assert_eq "every gh call doctor makes is pinned to the resolved repo" \
+  "$(grep -cv '^GH_REPO=acme/widgets ' "$repolog")" "0"
+out="$(GH_STUB_DEFAULT_REPO=upstream/widgets "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a differing gh default repo does not block the flow" "$st" 0
+assert_contains "warns naming gh's default repo and the one in use" "$out" \
+  "warn  gh's default repo is upstream/widgets; the orchestrator uses acme/widgets"
+out="$(GH_STUB_DEFAULT_REPO=acme/widgets "$ORCH" doctor --env 2>&1)"
+assert_not_contains "a matching gh default repo raises no warn" "$out" "gh's default repo"
+# gh repo set-default --view prints a bare owner/name even for a default on a
+# host other than github.com (gh 2.102.0), so the same repo there is no warn.
+out="$(GH_REPO=ghe.example.com/acme/widgets GH_STUB_DEFAULT_REPO=acme/widgets "$ORCH" doctor --env 2>&1)"
+assert_not_contains "a matching gh default repo on another host raises no warn" "$out" "gh's default repo"
+# No repo at all: a FAIL with the remedy, and doctor carries on past it - the
+# later GitHub checks counted on the skip line, no gh call made at all.
+: >"$repolog"
+out="$(cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
+  && GH_STUB_REPO_LOG="$repolog" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "no resolvable repo fails doctor" "$st" 1
+assert_contains "names the missing repo as a FAIL" "$out" "FAIL  no GitHub repo to work on"
+assert_contains "gives the GH_REPO remedy" "$out" "GH_REPO=<owner>/<repo>"
+assert_contains "counts the later GitHub checks on the skip line" \
+  "$out" "GitHub checks skipped: no GitHub repo to work on"
+assert_contains "still reaches the summary line" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
+assert_eq "makes no gh call without a repo to pin it to" "$(wc -l <"$repolog" | tr -d ' ')" "0"
 
 # The plugin depends on no other plugin (ADR-0028): doctor says nothing of
 # mattpocock-skills, and the old override pointing nowhere changes nothing.
@@ -2994,7 +3113,7 @@ echo "pr open"
 healthy_repo
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote set-url origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 "$ORCH" init propen >/dev/null
 git checkout -q -b orch/16-propen
@@ -3056,11 +3175,11 @@ restore_suite_env
 echo
 echo "pr publish"
 new_repo >/dev/null
-git remote add origin https://github.com/acme/widgets.git
+git remote set-url origin https://github.com/acme/widgets.git
 stub_gh
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote set-url origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 git checkout -q -b quick/16-widgets
 body="$(mktemp)"
@@ -3114,11 +3233,11 @@ assert_contains "naming both" "$out" "open|publish"
 echo
 echo "gh adapter (real pr create/view, subprocess gh)"
 new_repo >/dev/null
-git remote add origin https://github.com/acme/widgets.git
+git remote set-url origin https://github.com/acme/widgets.git
 stub_gh
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote set-url origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 git checkout -q -b quick/16-widgets
 body="$(mktemp)"
@@ -3139,6 +3258,91 @@ assert_eq "gh itself was invoked once for create and once for view, as real subp
   "$(grep -cx pr "$log")" "2"
 restore_suite_env
 
+# --- every gh call pinned to the repo (#520) -----------------------------------
+# A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
+# ORCH_GH_ADAPTER unset so the real adapter_* bodies run. Every call that
+# reaches stub_gh must carry the fork - none may fall back to gh's default.
+echo
+echo "every gh call pinned to the repo"
+new_repo >/dev/null
+unset GH_REPO GH_HOST
+git remote set-url origin https://github.com/fork/widgets.git
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+git remote set-url --push origin "$bare"
+git push -q origin HEAD:refs/heads/main
+stub_gh
+repolog="$(mktemp)"
+body="$(mktemp)"
+writeln 'Some body.' >"$body"
+fetched="$(mktemp)"
+db="$(mktemp -d)"
+pinned() { GH_STUB_DB="$db" GH_STUB_REPO_LOG="$repolog" "$ORCH" "$@"; }
+for args in "issue fetch 5 $fetched" "issue update 5 $body" "issue comment 5 $body" \
+            "ticket publish 50 Ticket $body" "ticket close 51" "ticket reset 50" "base show"; do
+  # shellcheck disable=SC2086
+  out="$(pinned $args 2>&1)"; st=$?
+  assert_status "$args runs in the fork" "$st" 0
+done
+out="$(pinned issue publish "Title" "$body" 2>&1)"; st=$?
+assert_status "issue publish runs in the fork" "$st" 0
+git checkout -q -b quick/16-widgets
+out="$(GH_STUB_PR_NUMBER=24 pinned pr publish 16 "Title" "$body" 2>&1)"; st=$?
+assert_status "pr publish runs in the fork" "$st" 0
+out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' pinned pr comment "$body" 2>&1)"; st=$?
+assert_status "pr comment runs in the fork" "$st" 0
+out="$(GH_STUB_CHECKS=failing pinned review rerun 7 2>&1)"; st=$?
+assert_status "review rerun runs in the fork" "$st" 0
+assert_contains "and its rerun reached gh pinned to the fork" \
+  "$(cat "$repolog")" "GH_REPO=fork/widgets run rerun 4242 --failed"
+assert_eq "every gh call carried the fork" \
+  "$(grep -cv '^GH_REPO=fork/widgets ' "$repolog")" "0"
+ghhost="$(mktemp)"
+out="$(GH_STUB_HOST_LOG="$ghhost" pinned ticket reset 50 2>&1)"
+assert_eq "a github.com repo leaves GH_HOST unset" \
+  "$(grep -cv '^GH_HOST=<unset> ' "$ghhost")" "0"
+assert_contains "and gh was called at all" "$(cat "$repolog")" "GH_REPO=fork/widgets issue"
+assert_contains "gh repo view got the fork as its positional argument" \
+  "$(cat "$repolog")" "GH_REPO=fork/widgets repo view fork/widgets "
+assert_eq "command gh appears in orch.sh and doctor.sh only inside the guard" \
+  "$(cat "$ORCH" "$(dirname "$ORCH")/doctor.sh" | grep -c '\bcommand gh\b')" "1"
+assert_contains "and that one is the gh guard's own" \
+  "$(sed -n '/^gh() {$/,/^}$/p' "$ORCH")" 'command gh "$@"'
+
+# No usable repo: the first command that reaches GitHub dies naming GH_REPO,
+# in the parent shell or in a command substitution alike.
+git remote remove origin
+: >"$repolog"
+for args in "issue fetch 5 $fetched" "ticket reset 50" "ticket close 51"; do
+  # shellcheck disable=SC2086
+  out="$(pinned $args 2>&1)"; st=$?
+  assert_status "$args dies with no repo" "$st" 1
+  assert_contains "$args names GH_REPO as the remedy" "$out" "GH_REPO=<owner>/<repo>"
+done
+assert_eq "and nothing reached gh unpinned" "$(cat "$repolog")" ""
+out="$(pinned slug "Some title" 2>&1)"; st=$?
+assert_status "a local-only command is unaffected" "$st" 0
+
+# A host other than github.com: gh api takes its host from GH_HOST, not from
+# GH_REPO's host part, so every call - gh api's included - must carry both.
+git remote add origin git@ghe.example.com:fork/widgets.git
+git remote set-url --push origin "$bare"
+: >"$repolog"
+hostlog="$(mktemp)"
+for args in "ticket publish 52 Ticket $body" "ticket close 51" "ticket reset 50" "issue fetch 5 $fetched"; do
+  # shellcheck disable=SC2086
+  out="$(GH_STUB_HOST_LOG="$hostlog" pinned $args 2>&1)"; st=$?
+  assert_status "$args runs on the repo's own host" "$st" 0
+done
+out="$(GH_STUB_CHECKS=failing GH_STUB_HOST_LOG="$hostlog" pinned review rerun 7 2>&1)"; st=$?
+assert_status "review rerun runs on the repo's own host" "$st" 0
+assert_contains "gh api was among the calls" "$(cat "$hostlog")" "GH_HOST=ghe.example.com api "
+assert_eq "every gh call carried the repo's host" \
+  "$(grep -cv '^GH_HOST=ghe.example.com ' "$hostlog")" "0"
+assert_eq "and the host-qualified repo" \
+  "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets ' "$repolog")" "0"
+restore_suite_env GH_HOST
+
 # --- pr release -----------------------------------------------------------------
 # The release PR carries the base branch back into the default branch and
 # closes every still-open issue whose work reached it - read from the bodies of
@@ -3150,7 +3354,7 @@ echo "pr release"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
@@ -3461,7 +3665,7 @@ echo "gh adapter (real pr list, subprocess gh)"
 new_repo >/dev/null
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git config orchestrator.base uat
 stub_gh
@@ -4638,7 +4842,7 @@ git add -A && git commit -qm "the reviewed code"
 head_sha="$(git rev-parse HEAD)"
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote add origin "$bare"
+bare_origin "$bare"
 git push -q origin main
 git -C "$bare" symbolic-ref HEAD refs/heads/main
 git fetch -q origin
@@ -5429,7 +5633,7 @@ pushed_head() {
   local bare sha
   bare="$(mktemp -d)"
   git init -q --bare "$bare"
-  git remote set-url origin "$bare"
+  bare_origin "$bare"
   git update-ref -d "refs/remotes/origin/$1" 2>/dev/null || true
   git push -q origin "HEAD:refs/heads/$1" 2>/dev/null
   sha="$(git rev-parse HEAD)"
@@ -5611,7 +5815,9 @@ assert_eq "gh pr checks was invoked twice - once required, once for every check"
 
 # The real adapter's read of the PR's head reaches the same anchor: an
 # hour-old push widens on the first answer instead of waiting the grace.
+# pushed_head runs in a command substitution here, so its GH_REPO stays there.
 GH_STUB_PR_HEAD_OID="$(pushed_head topic 3600)"
+export GH_REPO=acme/widgets
 out="$(GH_STUB_PR_HEAD_OID="$GH_STUB_PR_HEAD_OID" ORCH_CI_GRACE=5 \
   GH_STUB_REQUIRED=none GH_STUB_CHECKS=none timeout 4 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "a real gh pr view anchors the grace to the push" "$out" "none"
@@ -5646,6 +5852,52 @@ assert_first_line "classified as unreachable, same as the fake's exit-8 path" "$
 assert_contains "saying the wait ran out" "$out" "still pending"
 unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 state_fixture pr null
+restore_suite_env
+
+# --- review rerun -------------------------------------------------------------
+# The flow's one flake rerun (#525): the failed jobs of the Actions run behind
+# the PR's first failed or cancelled check, taken from that check's link. Exit 0
+# is the only answer that spends the rerun; 1 is "no Actions run to rerun" and
+# 2 everything else. Stateless: the PR is named on the command line.
+echo
+echo "review rerun"
+new_repo >/dev/null
+stub_gh
+filed="$(mktemp)"
+out="$(GH_STUB_FILED="$filed" GH_STUB_CHECKS=failing "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a failed Actions check is rerun" "$st" 0
+assert_eq "gh got run rerun with the run id from the failing check's link" \
+  "$(grep '^run ' "$filed")" "run rerun 4242 --failed"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" GH_STUB_CHECKS=cancel "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a cancelled Actions check is rerun too" "$st" 0
+assert_eq "from the cancelled check's run" "$(grep '^run ' "$filed")" "run rerun 5150 --failed"
+
+: >"$filed"
+out="$(GH_STUB_FILED="$filed" GH_STUB_CHECKS=external "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a first failing check that is no Actions run has nothing to rerun" "$st" 1
+assert_contains "naming the check" "$out" "ext-ci"
+assert_eq "and reruns nothing, not even a later Actions run" "$(grep -c '^run ' "$filed")" "0"
+
+out="$(GH_STUB_CHECKS=boom "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a GitHub that cannot be read is exit 2" "$st" 2
+out="$(GH_STUB_CHECKS=garbage "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "checks jq cannot read are exit 2" "$st" 2
+out="$(GH_STUB_CHECKS=green "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "no failed or cancelled check is exit 2" "$st" 2
+out="$(GH_STUB_RERUN_EXIT=1 GH_STUB_CHECKS=failing "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a rerun gh refuses is exit 2" "$st" 2
+assert_contains "naming the run" "$out" "4242"
+out="$("$ORCH" review rerun 2>&1)"; st=$?
+assert_status "no PR is a usage error, exit 2" "$st" 2
+out="$("$ORCH" review rerun abc 2>&1)"; st=$?
+assert_status "a PR that is not a number is a usage error, exit 2" "$st" 2
+git remote remove origin
+out="$(GH_STUB_CHECKS=failing "$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "no repo to work on is exit 2, not the guard's 1" "$st" 2
+assert_contains "naming the GH_REPO remedy" "$out" "GH_REPO=<owner>/<repo>"
+assert_contains "help documents review rerun" "$("$ORCH" help)" "review rerun <pr>"
 restore_suite_env
 
 # --- a flow from before the budget shipped ----------------------------------
@@ -6081,7 +6333,7 @@ export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE"
 healthy_repo
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote set-url origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 "$ORCH" init redotest >/dev/null
 
@@ -6255,7 +6507,7 @@ echo "gh adapter (real pr close, subprocess gh)"
 healthy_repo
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote set-url origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 "$ORCH" init redoclose >/dev/null
 state_fixture phase review
@@ -6287,7 +6539,7 @@ echo "redo review refuses a taken handoff destination"
 healthy_repo
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote set-url origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 "$ORCH" init redotaken >/dev/null
 state_fixture phase review
@@ -6323,7 +6575,7 @@ echo "redo review reopens tickets"
 healthy_repo
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
-git remote set-url origin "$bare"
+bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 "$ORCH" init tickettest >/dev/null
 
@@ -6703,7 +6955,7 @@ assert_contains "keeps the default-branch check" "$out" "ok    default branch: m
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
 git push -q "$bare" HEAD:refs/heads/main HEAD:refs/heads/uat
-git remote set-url origin "$bare"
+bare_origin "$bare"
 git config orchestrator.base uat
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a set base branch origin has passes" "$st" 0

@@ -181,7 +181,7 @@ Two plugin agents under the plugin root's `agents/`, one per axis:
   the spec issue asked for.
 
 Start both at once, as fresh agents (see **Starting an agent**), both in one
-message. Each prompt carries four variables and nothing else - no spec body,
+message. Each prompt carries five variables and nothing else - no spec body,
 no diff, no brief, no word about earlier iterations or fixes:
 
 ```
@@ -189,6 +189,7 @@ Base SHA: <base SHA>
 Spec issue: #<spec issue>
 Iteration: <NN>
 Report path: <report path>
+orch.sh: <the path ORCH holds>
 ```
 
 The report paths sit beside the record `bash "$ORCH" review path` names, with
@@ -337,20 +338,17 @@ non-zero on the last two:
   Required means required by the branch protection of the PR's base branch. If it
   looks flaky rather than caused by the change, the flow has **one** flake
   rerun: `bash "$ORCH" state get flake_rerun_used` reads `true` once it is spent and
-  empty while it is not. Spend it on the run behind the failing check -
-  `gh run rerun` needs that run's id, and with none it opens a prompt a session
-  driving `gh` from non-interactive bash cannot answer:
+  empty while it is not. Spend it with `bash "$ORCH" review rerun <pr>`, which
+  reruns the failed jobs of the GitHub Actions run behind the PR's first failed
+  or cancelled check:
 
-  ```
-  link="$(gh pr checks <pr> --json bucket,link \
-    -q 'first(.[] | select(.bucket == "fail" or .bucket == "cancel") | .link)')"
-  run="${link##*/runs/}"          # .../actions/runs/N/job/M -> N/job/M
-  gh run rerun "${run%%/*}" --failed
-  ```
+  - **exit 0** - the rerun started. Only this spends the flake rerun.
+  - **exit 1** - that check is not an Actions run, so there is no rerun to
+    spend: a **bounded stop** on the spot, spending nothing.
+  - **exit 2** - anything else (GitHub unreadable, the rerun refused): a
+    **bounded stop**.
 
-  It reruns GitHub Actions and nothing else, so a failing check that is not an
-  Actions run has no rerun to spend and is a **bounded stop** on the spot. Then
-  record `bash "$ORCH" state set flake_rerun_used true` and ask `review ci` again. A
+  On exit 0, record `bash "$ORCH" state set flake_rerun_used true` and ask `review ci` again. A
   second failure is a **bounded stop**. That second ask restarts the
   fifteen-minute wait rather than inheriting what is left of the first, because
   a rerun restarts the checks - so this one path, once per flow, can wait longer
@@ -428,7 +426,7 @@ fallbacks go.
 3. **Start both reviewers** - `orch-reviewer-standards` and
    `orch-reviewer-spec` - at once, as fresh agents, never forks, both in one
    message (see **Starting an agent** for how to start one). Each prompt
-   carries these four variables and nothing else - no issue body, no diff,
+   carries these five variables and nothing else - no issue body, no diff,
    no brief:
 
    ```
@@ -436,6 +434,7 @@ fallbacks go.
    Spec issue: #<issue>
    Iteration: <NN>
    Report path: <prefix>-<standards|spec>.md
+   orch.sh: <the path ORCH holds>
    ```
 
 4. **A failed review.** A missing report, or one that says the base SHA did
@@ -494,7 +493,7 @@ they named. With no number, ask for one and wait. Never take it from
    move between passes. A finding at `-` matches on the claim alone, and an
    older decline line with no claim matches on file plus reason. The
    reviewers hear nothing of this: their prompts stay **Review pass** step
-   3's four variables.
+   3's five variables.
 3. **Fix and decline**: **Review pass** steps 5 and 6, on the findings
    step 2 kept. The pass's declines and host fallbacks go to step 5 below.
 4. **Commit and push.** The fixes are one commit, as the pass says. When the
