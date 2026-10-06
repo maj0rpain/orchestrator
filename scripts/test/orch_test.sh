@@ -42,14 +42,14 @@ export HOME="$SUITE_HOME"
 unset CLAUDE_PLUGIN_ROOT XDG_CONFIG_HOME GIT_CONFIG_GLOBAL
 
 # The environment every section starts from. healthy_repo exports HOME and
-# CLAUDE_PLUGIN_ROOT and puts stub_gh on PATH, so a section that calls it, or
-# that puts stub_gh on PATH itself, ends with restore_suite_env, leaving the
-# next section the environment it had - fake_github's two exports included. A
-# section that exported more names passes them to restore_suite_env to unset
-# them too.
+# CLAUDE_PLUGIN_ROOT and puts the fixture gh on PATH, so a section that calls
+# it, or that calls gh_fixture itself, ends with restore_suite_env, leaving the
+# next section the environment it had - fake_github's two exports and
+# gh_fixture's GH_FIXTURE included. A section that exported more names passes
+# them to restore_suite_env to unset them too.
 SUITE_PATH="$PATH"
 restore_suite_env() {
-  unset CLAUDE_PLUGIN_ROOT GH_REPO ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE "$@"
+  unset CLAUDE_PLUGIN_ROOT GH_REPO GH_FIXTURE ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE "$@"
   HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 }
 
@@ -167,541 +167,6 @@ complete_implement_handoff() {
 
 # --- doctor harness ---------------------------------------------------------
 
-# A fake `gh` on PATH. doctor's severity rules turn on the difference between
-# "GitHub said no" and "GitHub could not tell us", and that difference cannot be
-# arranged against a real gh. GH_STUB_MODE picks which answer comes back:
-#   ok        authenticated, repo resolves, every documented label exists
-#   noauth    `gh auth status` fails the way an unauthenticated gh does
-#   offline   every call fails with a connection error
-#   nolabels  authenticated, but the repo carries none of the documented labels
-# GH_STUB_LOG, when set, names a file the stub appends each subcommand to, which
-# is how a test asserts that a scope made no network call at all.
-#
-# `pr checks` answers separately, because the CI classifier is the one caller
-# that has to see the answer *change* between calls. GH_STUB_CHECKS and
-# GH_STUB_REQUIRED are each a `|`-separated script of answers (green, failing,
-# pending, none, boom), consumed one per call with the last repeating and counted
-# in the file GH_STUB_CHECKS_N / GH_STUB_REQUIRED_N names. They advance
-# independently, because the classifier asks the two probes different questions:
-# what branch protection requires, and what ran on the commit.
-#
-# `label create` and `issue create` are the filing boundary. GH_STUB_FILED names
-# a file the stub appends what it was asked for to - label names and flags, the
-# issue's title, labels, and body - and `issue create` answers with a fake issue
-# URL numbered GH_STUB_ISSUE_NUMBER, or fails when GH_STUB_ISSUE_EXIT says so.
-#
-# `issue view`, `issue edit`, and `issue comment` are the spec review's hand on
-# the issue. `view` answers GH_STUB_BODY verbatim, and fails on demand with
-# GH_STUB_VIEW_EXIT (still exercised for real - `init --issue`/`check_flow_issue`
-# read state and labels through it too); `edit` and `comment` record the
-# number, flags, and body file contents they were handed to GH_STUB_FILED.
-#
-# `view` also answers `--json state` and `--json labels` independently of the
-# body - mirroring the GH_STUB_PR_NUMBER/GH_STUB_PR_STATE split on `pr view`:
-# GH_STUB_ISSUE_STATE (default OPEN) and GH_STUB_ISSUE_LABELS (default
-# ready-for-agent, one label per line) - so `init --issue` and
-# `check_flow_issue` can be tested without disturbing GH_STUB_BODY. The
-# combined `--json state,labels` query validate_adopted_issue makes answers
-# both together, state on the first line and one label per line after -
-# mirroring `pr view`'s own `--json state,isDraft` combined-query case.
-#
-# `pr create` records its flags and body-file contents to GH_STUB_FILED like
-# `issue create`, answering with a fake PR URL numbered GH_STUB_PR_NUMBER, or
-# failing when GH_STUB_PR_CREATE_EXIT says so. `pr view` answers
-# GH_STUB_PR_NUMBER when asked `--json number`, review ci's head, base and
-# commits through the caller's --jq when asked for headRefOid, answers `state` and
-# `isDraft` together (GH_STUB_PR_STATE and GH_STUB_PR_DRAFT, default false) for
-# check_flow_review_draft's combined query, and falls back to the existing
-# `--json state` behaviour (GH_STUB_PR_STATE) for every other query.
-#
-# `pr close` and `issue close` are redo's boundary. Both record the number and
-# `--comment` text to GH_STUB_FILED like every other write above; `issue close`
-# fails on demand with GH_STUB_ISSUE_CLOSE_EXIT.
-#
-# `pr list` is pr release's read of the base branch's PRs: it answers the JSON
-# array for the --state asked - GH_STUB_PR_LIST_OPEN or GH_STUB_PR_LIST_MERGED,
-# each default "[]" - through the caller's --jq, and fails on
-# GH_STUB_PR_LIST_EXIT. `issue view --json state` answers CLOSED for any issue
-# listed in GH_STUB_CLOSED_ISSUES (space-separated), GH_STUB_ISSUE_STATE for
-# the rest; asked for state,url, a number in GH_STUB_PR_NUMBERS answers PULL.
-#
-# `issue list` is check_sub_issues's way of finding an issue to probe against:
-# it answers GH_STUB_ISSUE_LIST (default "1"), empty when explicitly set to
-# "" to simulate a repo with no issues. The sub_issues GET it then makes fails
-# on demand: GH_STUB_SUBISSUE_GET_EXIT.
-#
-# The ticket group's behaviour tests run on the store-backed fake; its real
-# adapter operations reach this stub only where a test proves gh's repo
-# pinning. Under GH_STUB_DB, `issue edit --body-file`
-# writes body/<n>, `issue comment --body-file` and `issue close --comment`
-# append to comments/<n>, and `issue close --reason` writes reason/<n>;
-# `issue edit` fails on GH_STUB_EDIT_EXIT.
-stub_gh() {
-  local d
-  d="$(mktemp -d)"
-  cat >"$d/gh" <<'GH'
-#!/usr/bin/env bash
-if [ -n "${GH_STUB_LOG:-}" ]; then printf '%s\n' "$1" >>"$GH_STUB_LOG"; fi
-# GH_STUB_REPO_LOG names a file each call appends the GH_REPO it sees to,
-# followed by its arguments - "GH_REPO=<repo> <args>" - so a test asserts
-# which repo every call was pinned to (#520).
-if [ -n "${GH_STUB_REPO_LOG:-}" ]; then
-  printf 'GH_REPO=%s %s\n' "${GH_REPO-<unset>}" "$*" >>"$GH_STUB_REPO_LOG"
-fi
-# GH_STUB_HOST_LOG does the same for GH_HOST - "GH_HOST=<host> <args>" - since
-# gh api takes its host from GH_HOST, never from GH_REPO's host part (#520).
-if [ -n "${GH_STUB_HOST_LOG:-}" ]; then
-  printf 'GH_HOST=%s %s\n' "${GH_HOST-<unset>}" "$*" >>"$GH_STUB_HOST_LOG"
-fi
-# Records the flags of an issue write to GH_STUB_FILED, the body file's
-# contents inlined, so a test asserts what reached gh rather than the exit.
-record_flags() {
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --title)     printf 'title=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-      --label)     printf 'label=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-      --base)      printf 'base=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-      --head)      printf 'head=%s\n' "$2" >>"$GH_STUB_FILED"; shift ;;
-      --body-file) { printf 'body:\n'; cat "$2"; } >>"$GH_STUB_FILED"; shift ;;
-      --comment)   { printf 'comment:\n%s\n' "$2"; } >>"$GH_STUB_FILED"; shift ;;
-      *)           printf 'flag=%s\n' "$1" >>"$GH_STUB_FILED" ;;
-    esac
-    shift
-  done
-}
-# The `ticket` group's tiny fake GitHub: an issue's open/closed state and its
-# sub-issue/blocked-by edges, persisted as files under GH_STUB_DB so they
-# survive across the separate `gh` subprocesses one `orch.sh ticket ...` call
-# makes. Absent GH_STUB_DB, every issue reads back open with no edges - which
-# is what the argument-validation tests below need and nothing more.
-api_state() {
-  if [ -n "$db" ] && [ -f "$db/state/$1" ]; then cat "$db/state/$1"; else echo open; fi
-}
-api_blocked_count() {
-  local bn=0 bl
-  if [ -n "$db" ] && [ -f "$db/blocked_by/$1" ]; then
-    while IFS= read -r bl; do
-      [ -z "$bl" ] && continue
-      [ "$(api_state "$bl")" = open ] && bn=$((bn + 1))
-    done <"$db/blocked_by/$1"
-  fi
-  printf '%s\n' "$bn"
-}
-api_list_sub_issues() {
-  local parent="$1" out first c
-  out="["; first=1
-  if [ -n "$db" ] && [ -f "$db/sub_issues/$parent" ]; then
-    while IFS= read -r c; do
-      [ -z "$c" ] && continue
-      [ "$first" = 1 ] || out="$out,"
-      first=0
-      out="$out{\"number\":$c,\"state\":\"$(api_state "$c")\",\"issue_dependencies_summary\":{\"blocked_by\":$(api_blocked_count "$c")}}"
-    done <"$db/sub_issues/$parent"
-  fi
-  printf '%s]\n' "$out"
-}
-api_list_blocked_by() {
-  local child="$1" out first b
-  out="["; first=1
-  if [ -n "$db" ] && [ -f "$db/blocked_by/$child" ]; then
-    while IFS= read -r b; do
-      [ -z "$b" ] && continue
-      [ "$first" = 1 ] || out="$out,"
-      first=0
-      out="$out{\"number\":$b}"
-    done <"$db/blocked_by/$child"
-  fi
-  printf '%s]\n' "$out"
-}
-# The issue's body as a JSON string's contents: GH_STUB_DB's body/<n> when a
-# test wrote one, GH_STUB_BODY (or its default) otherwise.
-api_body() {
-  if [ -n "$db" ] && [ -f "$db/body/$1" ]; then cat "$db/body/$1"
-  else printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"; fi \
-    | awk '{ gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\r/, "\\r"); printf "%s%s", (NR > 1 ? "\\n" : ""), $0 }'
-}
-# The issue's parent, as GitHub's issue object carries it: the API URL of the
-# one issue whose sub_issues listing holds it, or null when none does.
-api_parent_url() {
-  local f
-  if [ -n "$db" ] && [ -d "$db/sub_issues" ]; then
-    for f in "$db/sub_issues"/*; do
-      [ -f "$f" ] || continue
-      if grep -qxF "$1" "$f"; then
-        printf '"https://api.github.com/repos/acme/widgets/issues/%s"\n' "${f##*/}"; return
-      fi
-    done
-  fi
-  echo null
-}
-db="${GH_STUB_DB:-}"
-if [ "${GH_STUB_MODE:-ok}" = offline ]; then
-  echo "dial tcp: lookup api.github.com: no such host" >&2
-  exit 1
-fi
-case "$1" in
-  auth)
-    if [ "${GH_STUB_MODE:-ok}" = noauth ]; then
-      echo "You are not logged into any GitHub hosts." >&2
-      exit 1
-    fi
-    echo "Logged in to github.com" ;;
-  # doctor asks nameWithOwner and defaultBranchRef together and reads both
-  # lines; default_branch asks defaultBranchRef alone and reads one, so it
-  # gets GH_STUB_REPO's last word.
-  repo)
-    case "$*" in
-      # gh's own default repo, which ignores GH_REPO: GH_STUB_DEFAULT_REPO, or
-      # gh's "none set" message on stderr - with exit 0, as gh 2.102.0 does.
-      *set-default*--view*)
-        if [ -n "${GH_STUB_DEFAULT_REPO:-}" ]; then printf '%s\n' "$GH_STUB_DEFAULT_REPO"
-        else echo "X No default remote repository has been set." >&2; fi ;;
-      *nameWithOwner*) printf '%s\n' ${GH_STUB_REPO-acme/widgets main} ;;
-      *) set -- ${GH_STUB_REPO-acme/widgets main}; [ $# -eq 0 ] || printf '%s\n' "${!#}" ;;
-    esac ;;
-  label)
-    if [ "${GH_STUB_MODE:-ok}" = labelfail ]; then exit 1; fi
-    if [ "$2" = create ]; then
-      shift 2
-      if [ -n "${GH_STUB_FILED:-}" ]; then printf 'label create %s\n' "$*" >>"$GH_STUB_FILED"; fi
-      exit 0
-    fi
-    if [ "${GH_STUB_MODE:-ok}" != nolabels ]; then
-      printf '%s\n' "${GH_STUB_LABELS-needs-triage
-ready-for-agent}"
-    fi ;;
-  issue)
-    case "$2" in
-      view)
-        shift 2
-        if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue view %s\n' "$*" >>"$GH_STUB_FILED"; fi
-        [ "${GH_STUB_VIEW_EXIT:-0}" = 0 ] || { echo "gh stub: issue view refused" >&2; exit "$GH_STUB_VIEW_EXIT"; }
-        for a in "$@"; do
-          case "$a" in
-            # validate_adopted_issue's combined query: state on the first
-            # line, then one line per label (none at all if the issue is
-            # unlabelled) - the same multi-line shape pr view's isDraft
-            # combined query answers with below.
-            *state,labels*|*labels,state*)
-              printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}"
-              if [ -n "${GH_STUB_ISSUE_LABELS-ready-for-agent}" ]; then
-                printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"
-              fi
-              exit 0 ;;
-            state|state,url)
-              case " ${GH_STUB_PR_NUMBERS:-} " in
-                *" $3 "*) [ "$a" = state,url ] && { echo PULL; exit 0; } ;;
-              esac
-              case " ${GH_STUB_CLOSED_ISSUES:-} " in
-                *" $3 "*) echo CLOSED ;;
-                *)        printf '%s\n' "${GH_STUB_ISSUE_STATE:-OPEN}" ;;
-              esac
-              exit 0 ;;
-            labels) printf '%s\n' "${GH_STUB_ISSUE_LABELS-ready-for-agent}"; exit 0 ;;
-            # issue publish's readback: GH_STUB_ISSUE_TITLE, then the labels.
-            title,labels)
-              printf '%s\n' "${GH_STUB_ISSUE_TITLE-Title}" "${GH_STUB_ISSUE_LABELS-ready-for-agent}"
-              exit 0 ;;
-            # GH_STUB_COMMENTS_JSON, raw gh-shaped JSON, answers through the
-            # request's own --jq with real jq; otherwise, under GH_STUB_DB,
-            # every comment comments/<n> has collected.
-            comments)
-              if [ -n "${GH_STUB_COMMENTS_JSON:-}" ]; then
-                q=.; prev=
-                for b in "$@"; do [ "$prev" = --jq ] && q="$b"; prev="$b"; done
-                printf '%s' "$GH_STUB_COMMENTS_JSON" | jq -r "$q"; exit
-              fi
-              [ -n "$db" ] && cat "$db/comments/$1" 2>/dev/null; exit 0 ;;
-          esac
-        done
-        if [ -n "$db" ] && [ -f "$db/body/$1" ]; then cat "$db/body/$1"
-        else printf '%s\n' "${GH_STUB_BODY-Body of the issue.}"; fi
-        exit 0 ;;
-      edit|comment)
-        op="$2"; shift 2
-        cnum="$1"
-        if [ -n "${GH_STUB_FILED:-}" ]; then
-          printf 'issue %s %s\n' "$op" "$1" >>"$GH_STUB_FILED"
-          shift
-          record_flags "$@"
-        else
-          shift
-        fi
-        if [ "$op" = edit ] && [ "${GH_STUB_EDIT_EXIT:-0}" != 0 ]; then
-          echo "gh stub: issue edit refused" >&2; exit "$GH_STUB_EDIT_EXIT"
-        fi
-        # Under GH_STUB_DB an edit's body becomes the issue's body, and a
-        # comment is appended to comments/<n>, so a later read sees both.
-        if [ -n "$db" ]; then
-          while [ $# -gt 0 ]; do
-            if [ "$1" = --body-file ]; then
-              if [ "$op" = edit ]; then mkdir -p "$db/body"; cat "$2" >"$db/body/$cnum"
-              else mkdir -p "$db/comments"; cat "$2" >>"$db/comments/$cnum"; fi
-              shift
-            elif [ "$1" = --body ] && [ "$op" = comment ]; then
-              mkdir -p "$db/comments"; printf '%s\n' "$2" >>"$db/comments/$cnum"
-              shift
-            fi
-            shift
-          done
-        fi
-        exit 0 ;;
-      close)
-        shift 2
-        cnum="$1"
-        if [ -n "${GH_STUB_FILED:-}" ]; then
-          printf 'issue close %s\n' "$1" >>"$GH_STUB_FILED"
-          record_flags "${@:2}"
-        fi
-        [ "${GH_STUB_ISSUE_CLOSE_EXIT:-0}" = 0 ] || { echo "gh stub: issue close refused" >&2; exit "$GH_STUB_ISSUE_CLOSE_EXIT"; }
-        if [ -n "$db" ]; then
-          mkdir -p "$db/state"; echo closed >"$db/state/$cnum"
-          shift
-          # The close's --reason lands in reason/<n> and its --comment in
-          # comments/<n>, the same file `issue comment` appends to.
-          while [ $# -gt 0 ]; do
-            case "$1" in
-              --reason)  mkdir -p "$db/reason"; printf '%s\n' "$2" >"$db/reason/$cnum"; shift ;;
-              --comment) mkdir -p "$db/comments"; printf '%s\n' "$2" >>"$db/comments/$cnum"; shift ;;
-            esac
-            shift
-          done
-        fi
-        exit 0 ;;
-      reopen)
-        shift 2
-        cnum="$1"
-        if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue reopen %s\n' "$1" >>"$GH_STUB_FILED"; fi
-        [ "${GH_STUB_ISSUE_REOPEN_EXIT:-0}" = 0 ] || { echo "gh stub: issue reopen refused" >&2; exit "$GH_STUB_ISSUE_REOPEN_EXIT"; }
-        if [ -n "$db" ]; then mkdir -p "$db/state"; echo open >"$db/state/$cnum"; fi
-        exit 0 ;;
-      list)
-        shift 2
-        if [ -n "${GH_STUB_FILED:-}" ]; then printf 'issue list %s\n' "$*" >>"$GH_STUB_FILED"; fi
-        printf '%s\n' "${GH_STUB_ISSUE_LIST-1}"
-        exit 0 ;;
-      create) ;;
-      *) echo "gh stub: unscripted issue op '$2'" >&2; exit 99 ;;
-    esac
-    shift 2
-    if [ -n "${GH_STUB_FILED:-}" ]; then record_flags "$@"; fi
-    [ "${GH_STUB_ISSUE_EXIT:-0}" = 0 ] || { echo "gh stub: issue create refused" >&2; exit "$GH_STUB_ISSUE_EXIT"; }
-    if [ -n "$db" ]; then
-      mkdir -p "$db/state"
-      newnum="$(cat "$db/issue_seq" 2>/dev/null)"; [ -n "$newnum" ] || newnum="${GH_STUB_ISSUE_NUMBER:-42}"
-      echo $((newnum + 1)) >"$db/issue_seq"
-      echo open >"$db/state/$newnum"
-      echo "https://github.com/acme/widgets/issues/$newnum"
-    else
-      echo "https://github.com/acme/widgets/issues/${GH_STUB_ISSUE_NUMBER:-42}"
-    fi ;;
-  api)
-    shift
-    api_method=GET; api_jq=""; api_fkey=""; api_fval=""; api_path=""
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        --method)   api_method="$2"; shift 2 ;;
-        -f|-F)      api_fkey="${2%%=*}"; api_fval="${2#*=}"; shift 2 ;;
-        --jq)       api_jq="$2"; shift 2 ;;
-        --paginate) shift ;;
-        *)          api_path="$1"; shift ;;
-      esac
-    done
-    if [ -n "${GH_STUB_LOG:-}" ]; then printf 'api %s %s\n' "$api_method" "$api_path" >>"$GH_STUB_LOG"; fi
-    # review ci's CI-evidence reads (issue #476), the same GH_STUB_* vocabulary
-    # and defaults gh_adapter_fake.sh answers to: one signal present, a
-    # check-run on the base tip (main).
-    in_refs() { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }
-    case "$api_path" in
-      */protection/required_status_checks)
-        case "${GH_STUB_PROTECTION:-none}" in
-          none)     echo '{"message":"Branch not protected","status":"404"}'
-                    echo "gh: Branch not protected (HTTP 404)" >&2; exit 1 ;;
-          required) echo '{"strict":false,"contexts":["build"],"checks":[{"context":"build","app_id":null}]}'; exit 0 ;;
-          notfound) echo '{"message":"Not Found","status":"404"}'
-                    echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
-          boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
-          *)        echo "gh stub: no protection named '$GH_STUB_PROTECTION'" >&2; exit 99 ;;
-        esac ;;
-      */rules/branches/*)
-        case "${GH_STUB_RULES:-none}" in
-          none)     echo '[]'; exit 0 ;;
-          required) echo '[{"type":"required_status_checks"}]'; exit 0 ;;
-          other)    echo '[{"type":"deletion"}]'; exit 0 ;;
-          boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
-          *)        echo "gh stub: no rules named '$GH_STUB_RULES'" >&2; exit 99 ;;
-        esac ;;
-      */check-runs*)
-        api_ref="${api_path#repos/*/commits/}"; api_ref="${api_ref%%/check-runs*}"
-        if in_refs "$api_ref" "${GH_STUB_CHECKED_REFS-main}"; then echo '{"total_count":1}'; else echo '{"total_count":0}'; fi
-        exit 0 ;;
-      */commits/*/status)
-        api_ref="${api_path#repos/*/commits/}"; api_ref="${api_ref%/status}"
-        if in_refs "$api_ref" "${GH_STUB_STATUSED_REFS:-}"; then echo '{"total_count":1}'; else echo '{"total_count":0}'; fi
-        exit 0 ;;
-    esac
-    api_rest="${api_path#repos/*/issues/}"
-    case "$api_rest" in
-      */*) api_num="${api_rest%%/*}"; api_sub="${api_rest#*/}" ;;
-      *)   api_num="$api_rest"; api_sub="" ;;
-    esac
-    if [ "$api_sub" = sub_issues ] && [ "$api_method" = GET ] \
-        && [ "${GH_STUB_SUBISSUE_GET_EXIT:-0}" != 0 ]; then
-      echo "gh stub: sub_issues GET refused" >&2; exit "$GH_STUB_SUBISSUE_GET_EXIT"
-    fi
-    case "$api_sub" in
-      "")
-        api_json="$(printf '{"id":%d,"number":%d,"state":"%s","body":"%s","parent_issue_url":%s,"issue_dependencies_summary":{"blocked_by":%s}}' \
-          "$((api_num * 1000))" "$api_num" "$(api_state "$api_num")" "$(api_body "$api_num")" "$(api_parent_url "$api_num")" "$(api_blocked_count "$api_num")")" ;;
-      sub_issues)
-        if [ "$api_method" = POST ]; then
-          if [ -n "$db" ]; then
-            mkdir -p "$db/sub_issues" "$db/state"
-            child_num=$((api_fval / 1000))
-            printf '%s\n' "$child_num" >>"$db/sub_issues/$api_num"
-            [ -f "$db/state/$child_num" ] || echo open >"$db/state/$child_num"
-          fi
-          api_json='{}'
-        else
-          api_json="$(api_list_sub_issues "$api_num")"
-        fi ;;
-      # GitHub's unlink: DELETE on the parent's singular sub_issue path, with
-      # the child's database id.
-      sub_issue)
-        [ "$api_method" = DELETE ] || { echo "gh stub: unscripted $api_method on '$api_path'" >&2; exit 99; }
-        if [ -n "$db" ] && [ -f "$db/sub_issues/$api_num" ]; then
-          child_num=$((api_fval / 1000))
-          grep -vxF "$child_num" "$db/sub_issues/$api_num" >"$db/sub_issues/$api_num.tmp"
-          mv "$db/sub_issues/$api_num.tmp" "$db/sub_issues/$api_num"
-        fi
-        api_json='{}' ;;
-      dependencies/blocked_by)
-        if [ "$api_method" = POST ]; then
-          if [ -n "$db" ]; then
-            mkdir -p "$db/blocked_by"
-            blocker_num=$((api_fval / 1000))
-            printf '%s\n' "$blocker_num" >>"$db/blocked_by/$api_num"
-          fi
-          api_json='{}'
-        else
-          api_json="$(api_list_blocked_by "$api_num")"
-        fi ;;
-      # GitHub's edge removal: DELETE on the blocked_by path with the
-      # blocker's database id.
-      dependencies/blocked_by/*)
-        [ "$api_method" = DELETE ] || { echo "gh stub: unscripted $api_method on '$api_path'" >&2; exit 99; }
-        if [ -n "$db" ] && [ -f "$db/blocked_by/$api_num" ]; then
-          blocker_num=$(( ${api_sub##*/} / 1000 ))
-          grep -vxF "$blocker_num" "$db/blocked_by/$api_num" >"$db/blocked_by/$api_num.tmp"
-          mv "$db/blocked_by/$api_num.tmp" "$db/blocked_by/$api_num"
-        fi
-        api_json='{}' ;;
-      *) echo "gh stub: unscripted api path '$api_path'" >&2; exit 99 ;;
-    esac
-    if [ -n "$api_jq" ]; then printf '%s' "$api_json" | jq -r "$api_jq"; else printf '%s\n' "$api_json"; fi
-    ;;
-  # review rerun's rerun of an Actions run: recorded to GH_STUB_FILED as
-  # "run rerun <args>", and refused on GH_STUB_RERUN_EXIT.
-  run)
-    if [ -n "${GH_STUB_FILED:-}" ]; then printf 'run %s\n' "${*:2}" >>"$GH_STUB_FILED"; fi
-    [ "${GH_STUB_RERUN_EXIT:-0}" = 0 ] || { echo "gh stub: run rerun refused" >&2; exit "$GH_STUB_RERUN_EXIT"; }
-    exit 0 ;;
-  pr)
-    case "$2" in
-      ready) exit 0 ;;
-      close)
-        shift 2
-        if [ -n "${GH_STUB_FILED:-}" ]; then
-          printf 'pr close %s\n' "$1" >>"$GH_STUB_FILED"
-          shift
-          record_flags "$@"
-        fi
-        exit 0 ;;
-      checks)
-        req=0
-        for a in "$@"; do if [ "$a" = --required ]; then req=1; fi; done
-        if [ "$req" = 1 ]; then
-          script="${GH_STUB_REQUIRED:-none}"; counter="${GH_STUB_REQUIRED_N:-}"
-        else
-          script="${GH_STUB_CHECKS:-green}"; counter="${GH_STUB_CHECKS_N:-}"
-        fi
-        i=1
-        if [ -n "$counter" ]; then
-          i=$(( $(cat "$counter" 2>/dev/null || echo 0) + 1 ))
-          printf '%s\n' "$i" >"$counter"
-        fi
-        answer="$(printf '%s' "$script" | awk -F'|' -v i="$i" '{ print (i <= NF) ? $i : $NF }')"
-        case "$answer" in
-          green)   echo '[{"bucket":"pass","name":"build","state":"SUCCESS"}]' ;;
-          failing) echo '[{"bucket":"fail","name":"build","state":"FAILURE","link":"https://github.com/acme/widgets/actions/runs/4242/job/77"},{"bucket":"pass","name":"lint","state":"SUCCESS","link":"https://github.com/acme/widgets/actions/runs/1/job/1"}]' ;;
-          cancel)  echo '[{"bucket":"cancel","name":"build","state":"CANCELLED","link":"https://github.com/acme/widgets/actions/runs/5150/job/9"}]' ;;
-          # A failing check that is no Actions run - a commit status from an
-          # outside CI - listed first, ahead of a failing Actions run.
-          external) echo '[{"bucket":"pass","name":"lint","state":"SUCCESS","link":"https://github.com/acme/widgets/actions/runs/1/job/1"},{"bucket":"fail","name":"ext-ci","state":"FAILURE","link":"https://ci.example.com/build/9"},{"bucket":"fail","name":"build","state":"FAILURE","link":"https://github.com/acme/widgets/actions/runs/4242/job/77"}]' ;;
-          pending) echo '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]'; exit 8 ;;
-          # gh documents exit 8 for pending checks, but with --json it answers 0
-          # and reports the state in the bucket instead. Both reach the same
-          # verdict, and only this arm exercises the one real gh takes.
-          pending0) echo '[{"bucket":"pending","name":"build","state":"IN_PROGRESS"}]' ;;
-          # Exit 0 with something that is not JSON. jq fails, and the answer
-          # must not be read as the empty array that means "no checks".
-          garbage) echo 'not json at all' ;;
-          none)    echo "no checks reported on the 'topic' branch" >&2; exit 1 ;;
-          boom)    echo "dial tcp: lookup api.github.com: no such host" >&2; exit 1 ;;
-          # Without this arm a typo in GH_STUB_CHECKS prints nothing and exits 0,
-          # which ci_probe reads as a repo with no checks - a test that passes
-          # while asserting nothing.
-          *)       echo "gh stub: no script named '$answer'" >&2; exit 99 ;;
-        esac ;;
-      list)
-        shift 2
-        if [ -n "${GH_STUB_FILED:-}" ]; then printf 'pr list %s\n' "$*" >>"$GH_STUB_FILED"; fi
-        [ "${GH_STUB_PR_LIST_EXIT:-0}" = 0 ] || { echo "gh stub: pr list refused" >&2; exit "$GH_STUB_PR_LIST_EXIT"; }
-        lstate=""; ljq=""
-        while [ $# -gt 0 ]; do
-          case "$1" in
-            --state) lstate="$2"; shift ;;
-            --jq)    ljq="$2"; shift ;;
-          esac
-          shift
-        done
-        case "$lstate" in
-          open)   ljson="${GH_STUB_PR_LIST_OPEN:-[]}" ;;
-          merged) ljson="${GH_STUB_PR_LIST_MERGED:-[]}" ;;
-          *)      echo "gh stub: unscripted pr list state '$lstate'" >&2; exit 99 ;;
-        esac
-        if [ -n "$ljq" ]; then printf '%s' "$ljson" | jq -r "$ljq"; else printf '%s\n' "$ljson"; fi ;;
-      create)
-        shift 2
-        if [ -n "${GH_STUB_FILED:-}" ]; then printf 'pr create\n' >>"$GH_STUB_FILED"; record_flags "$@"; fi
-        [ "${GH_STUB_PR_CREATE_EXIT:-0}" = 0 ] || { echo "gh stub: pr create refused" >&2; exit "$GH_STUB_PR_CREATE_EXIT"; }
-        echo "https://github.com/acme/widgets/pull/${GH_STUB_PR_NUMBER:-99}" ;;
-      view)
-        shift 2
-        for a in "$@"; do
-          if [ "$a" = number ]; then echo "${GH_STUB_PR_NUMBER:-99}"; exit 0; fi
-          case "$a" in
-            *headRefOid*)
-              o="${GH_STUB_PR_HEAD_OID:-0000000000000000000000000000000000000000}"
-              # The caller's own --jq, the last argument, applied as gh would.
-              jq -cn --arg o "$o" \
-                --arg h "${GH_STUB_PR_HEAD_REF:-topic}" --arg b "${GH_STUB_PR_BASE_REF:-main}" \
-                --arg c "${GH_STUB_PR_COMMITS-$o}" \
-                '{headRefOid: $o, headRefName: $h, baseRefName: $b,
-                  commits: [$c | splits(" +") | select(. != "") | {oid: .}]}' | jq -r "${!#}"
-              exit 0 ;;
-            *isDraft*) printf '%s\n%s\n' "${GH_STUB_PR_STATE:-OPEN}" "${GH_STUB_PR_DRAFT:-false}"; exit 0 ;;
-          esac
-        done
-        echo "${GH_STUB_PR_STATE:-OPEN}" ;;
-      *) echo "${GH_STUB_PR_STATE:-OPEN}" ;;
-    esac ;;
-esac
-GH
-  chmod +x "$d/gh"
-  PATH="$d:$PATH"
-}
-
 # The documented triage-label table, in the shape the setup skill writes it:
 # a header row, a separator row, and backticked labels in the second column.
 labels_doc() {
@@ -720,13 +185,12 @@ healthy_repo() {
   git remote set-url origin https://github.com/acme/widgets.git
   labels_doc docs/agents/triage-labels.md
   printf '%s\n' ".orchestrator/" ".scratch/" >>.git/info/exclude
-  stub_gh
+  gh_fixture
   export CLAUDE_PLUGIN_ROOT="$PWD"
   # A throwaway HOME, so no skill store on the machine running the tests
   # reaches doctor's checks.
   HOME="$(mktemp -d)"
   export HOME
-  unset GH_STUB_MODE
 }
 
 # A PATH with everything orch.sh reaches for except jq. Reporting "jq is
@@ -763,43 +227,6 @@ stub_pushed_branch() {
   git branch -q --set-upstream-to="origin/$branch" "$branch"
 }
 
-# A gh that answers default-branch's question with "trunk", or fails when
-# GH_STUB_FAIL=1 - the narrow stub the default-branch and base resolution
-# tests put first on PATH themselves, instead of stub_gh's full fake. Its
-# knobs play a tool manager's shim around it (issue #465):
-# GH_STUB_BANNER=1 prints a mise-style status line before the answer and
-# still exits 0; GH_STUB_FAIL_NOISY=1 prints the answer and exits non-zero;
-# GH_STUB_EMPTY=1 answers with an empty name and exits 0;
-# GH_STUB_ENV_LOG names a file it appends the MISE_QUIET it sees to.
-STUB="$(mktemp -d)"
-cat >"$STUB/gh" <<'GH'
-#!/usr/bin/env bash
-if [ -n "${GH_STUB_ENV_LOG:-}" ]; then
-  printf 'MISE_QUIET=%s\n' "${MISE_QUIET-<unset>}" >>"$GH_STUB_ENV_LOG"
-fi
-[ "${GH_STUB_FAIL:-0}" = "1" ] && exit 1
-[ "${GH_STUB_EMPTY:-0}" = "1" ] && { echo ""; exit 0; }
-[ "${GH_STUB_BANNER:-0}" = "1" ] && echo "mise ~/.config/mise/config.toml tools: gh@2.102.0"
-echo "trunk"
-[ "${GH_STUB_FAIL_NOISY:-0}" = "1" ] && exit 1
-exit 0
-GH
-chmod +x "$STUB/gh"
-
-# orch.sh run with a PATH gh that fails ($STUB's gh, exiting 1), for a repo
-# whose origin GitHub cannot answer for (a local bare repo): default-branch
-# settles on origin/HEAD, so a test using it pins that rather than leaving it
-# to this machine's gh.
-orch_gh_failing() { PATH="$STUB:$PATH" GH_STUB_FAIL=1 "$ORCH" "$@"; }
-
-# path_without_jq() builds its restricted PATH from whatever's really on PATH,
-# not from repo state, so the one built here serves every no-jq assertion
-# (in doctor and in doctor --flow) instead of symlinking the same ~20 tools
-# afresh at each call site. Its gh is a stub_gh fake, made in the subshell so
-# the suite's own PATH is left alone. Empty on Windows/Git Bash, where callers
-# skip.
-nojq_path=""
-on_windows_bash || nojq_path="$(stub_gh; path_without_jq)"
 
 # fresh_flow <slug>: a section's own starting point - a healthy_repo with a
 # flow named <slug> just started in it, at the spec phase, cwd inside it. A
@@ -1194,9 +621,32 @@ gh_reply() {
   printf '%s\0' "$@" >"$r/argv"
 }
 
+# gh_calls: how many calls the fixture gh on PATH has answered or refused - 0
+# for none. A behaviour test on the store-backed fake asserts it stays 0, so
+# no command reached a gh subprocess.
+gh_calls() {
+  if [ -f "$GH_FIXTURE/env.log" ]; then wc -l <"$GH_FIXTURE/env.log" | tr -d ' '; else echo 0; fi
+}
+
 # contract <operation> [args...]: runs one real adapter operation, orch.sh
 # sourced with ORCH_GH_ADAPTER unset, against whatever gh is on PATH.
 contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
+
+# orch.sh run with a PATH gh that fails - a fixture gh given no reply - for a
+# repo whose origin GitHub cannot answer for (a local bare repo): default-branch
+# settles on origin/HEAD, so a test using it pins that rather than leaving it to
+# this machine's gh.
+GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
+orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
+
+# path_without_jq() builds its restricted PATH from whatever's really on PATH,
+# not from repo state, so the one built here serves every no-jq assertion
+# (in doctor and in doctor --flow) instead of symlinking the same ~20 tools
+# afresh at each call site. Its gh is a fixture gh, made in the subshell so
+# the suite's own PATH is left alone. Empty on Windows/Git Bash, where callers
+# skip.
+nojq_path=""
+on_windows_bash || nojq_path="$(gh_fixture && path_without_jq)"
 
 echo "orch.sh tests"
 
@@ -1754,12 +1204,10 @@ git symbolic-ref -d refs/remotes/origin/HEAD
 git update-ref -d refs/remotes/origin/-dash
 restore_suite_env
 
-# MISE_QUIET reaches the gh process itself, so this one runs the real adapter
-# against $STUB's gh.
-mise_log="$(mktemp)"
-env -u MISE_QUIET PATH="$STUB:$PATH" GH_STUB_ENV_LOG="$mise_log" "$ORCH" default-branch >/dev/null
-assert_eq "gh run from orch.sh sees MISE_QUIET=1" "$(sort -u "$mise_log")" "MISE_QUIET=1"
-rm -f "$mise_log"
+# MISE_QUIET reaches every process orch.sh runs, the gh binary included, so a
+# child process of orch.sh's own shell sees it.
+assert_eq "gh run from orch.sh sees MISE_QUIET=1" \
+  "$(env -u MISE_QUIET bash -c 'source "$1"; command printenv MISE_QUIET' _ "$ORCH")" "1"
 
 # origin/HEAD names a branch that is not `main`, so an origin/HEAD fallback
 # cannot pass for the final literal-`main` one.
@@ -2402,7 +1850,7 @@ assert_contains "naming all four" "$out" "create|off|base-sha|retire"
 # implementation has no flow to record into.
 #
 # Creation goes through the store-backed fake (fake_github), and what it filed
-# is read back from the store - GH_STUB_LOG stays empty, proving it never
+# is read back from the store - the fixture gh's log stays empty, proving it never
 # spawns a real gh subprocess. The real operation is pinned in "gh adapter
 # contract".
 echo
@@ -2411,16 +1859,16 @@ healthy_repo
 fake_github
 body="$(mktemp)"
 writeln 'The shared understanding, written up.' >"$body"
-log="$(mktemp)"
+: >"$GH_FIXTURE/env.log"
 fake_next_issue 7
-out="$(GH_STUB_LOG="$log" "$ORCH" issue publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+out="$("$ORCH" issue publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "publishes" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "7"
 assert_eq "filing an open issue" "$(fake_state_of 7)" "OPEN"
 assert_eq "under the title given" "$(fake_title_of 7)" "Widgets need a handle"
 assert_eq "with the body file's contents" "$(fake_body_of 7)" "The shared understanding, written up."
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
-assert_eq "the create call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+assert_eq "the create call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 fake_github
 out="$("$ORCH" issue publish "" "$body" 2>&1)"; st=$?
@@ -3526,7 +2974,7 @@ restore_suite_env
 # agent-chosen wording can leave a spec issue open again.
 #
 # open_pr's create goes through the store-backed fake (fake_github), and the
-# PR it opened is read back from the store - GH_STUB_LOG stays empty, proving
+# PR it opened is read back from the store - the fixture gh's log stays empty, proving
 # it never spawns a real gh subprocess. The real operation is pinned in "gh
 # adapter contract".
 echo
@@ -3550,8 +2998,8 @@ assert_contains "with the guard branch create uses" "$out" \
 "$ORCH" state set issue 16
 fake_github
 fake_next_pr 23
-log="$(mktemp)"
-out="$(GH_STUB_LOG="$log" GH_STUB_REPO=main "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+: >"$GH_FIXTURE/env.log"
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
 assert_eq "prints the PR number GitHub gave it" "$out" "23"
 assert_eq "and records it in state" "$("$ORCH" state get pr)" "23"
@@ -3567,10 +3015,10 @@ assert_eq "leaves a blank line before the original body" \
 assert_contains "and keeps the agent's original body intact after a blank line" \
   "$body_recorded" "Some detail."
 assert_eq "the create call never reached a real gh subprocess" \
-  "$(grep -cx pr "$log")" "0"
+  "$(gh_calls)" "0"
 
 fake_fail adapter_pr_create 'a pull request for branch "orch/16-propen" into branch "main" already exists'
-out="$(GH_STUB_REPO=main "$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "passing gh's reason through" "$out" "already exists"
 assert_contains "naming the branch it would have opened from" "$out" "orch/16-propen"
@@ -3604,7 +3052,7 @@ echo
 echo "pr publish"
 new_repo >/dev/null
 git remote set-url origin https://github.com/acme/widgets.git
-stub_gh
+gh_fixture
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
 bare_origin "$bare"
@@ -3615,7 +3063,7 @@ writeln 'Implements the thing.' '' 'Some detail.' >"$body"
 
 fake_github
 fake_next_pr 23
-out="$(GH_STUB_REPO=main "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
+out="$("$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
 assert_eq "prints the PR number GitHub gave it" "$out" "23"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
@@ -3639,7 +3087,7 @@ out="$("$ORCH" pr publish 16 "Title" /nonexistent/body.md 2>&1)"; st=$?
 assert_status "refuses a body file that does not exist" "$st" 1
 
 fake_fail adapter_pr_create
-out="$(GH_STUB_REPO=main "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
+out="$("$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "naming the branch it would have opened from" "$out" "quick/16-widgets"
 assert_contains "and the issue it would have closed" "$out" "#16"
@@ -3652,130 +3100,85 @@ assert_status "pr bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown pr op"
 assert_contains "naming both" "$out" "open|publish"
 
-# --- gh adapter (real pr create, subprocess gh) ------------------------------
-# pr open and pr publish just proved the seam through the store-backed fake -
-# this is the narrow assertion that the create actually reaches a real gh
-# subprocess rather than merely compiling, the PR number read off the URL it
-# prints. The operation itself is pinned in "gh adapter contract".
-echo
-echo "gh adapter (real pr create, subprocess gh)"
-new_repo >/dev/null
-git remote set-url origin https://github.com/acme/widgets.git
-stub_gh
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
-git push -q origin HEAD:refs/heads/main
-git checkout -q -b quick/16-widgets
-body="$(mktemp)"
-writeln 'Implements the thing.' '' 'Some detail.' >"$body"
-filed="$(mktemp)"
-: >"$filed"
-log="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=24 \
-  "$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
-assert_status "shells out for real" "$st" 0
-assert_eq "and reads back the number the real gh answered" "$out" "24"
-assert_contains "the real adapter invoked gh pr create with the base flag's value" \
-  "$(cat "$filed")" "base=main"
-assert_contains "and the head flag's value" "$(cat "$filed")" "head=quick/16-widgets"
-assert_eq "with no bogus flag=<value> entries for the base/head values" \
-  "$(grep -c '^flag=' "$filed")" "0"
-assert_eq "gh itself was invoked once, for the create, as a real subprocess" \
-  "$(grep -cx pr "$log")" "1"
-restore_suite_env
-
 # --- every gh call pinned to the repo (#520) -----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
-# ORCH_GH_ADAPTER unset so the real adapter_* bodies run. Every call that
-# reaches stub_gh must carry the fork - none may fall back to gh's default.
+# ORCH_GH_ADAPTER unset so the real adapter operations run, against the fixture
+# gh. Every call that reaches it must carry the fork - none may fall back to
+# gh's default. The argv each operation hands gh is pinned in "gh adapter
+# contract"; this is the guard's own resolution of the repo, from origin.
 echo
 echo "every gh call pinned to the repo"
 new_repo >/dev/null
 unset GH_REPO GH_HOST
 git remote set-url origin https://github.com/fork/widgets.git
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-git remote set-url --push origin "$bare"
-git push -q origin HEAD:refs/heads/main
-stub_gh
-repolog="$(mktemp)"
+gh_fixture
 body="$(mktemp)"
 writeln 'Some body.' >"$body"
 fetched="$(mktemp)"
-db="$(mktemp -d)"
-pinned() { GH_STUB_DB="$db" GH_STUB_REPO_LOG="$repolog" "$ORCH" "$@"; }
-for args in "issue fetch 5 $fetched" "issue update 5 $body" "issue comment 5 $body" \
-            "ticket publish 50 Ticket $body" "ticket close 51" "ticket reset 50" "base show"; do
+# pinned_replies <repo>: the fixture's answers to every call below, for the
+# repo named - gh repo view alone takes it in its argv.
+pinned_replies() {
+  gh_reply 0 $'Some body.\n' '' issue view 5 --json body --jq .body
+  gh_reply 0 '' '' issue edit 5 --body-file "$body"
+  gh_reply 0 '' '' api 'repos/{owner}/{repo}/issues/50' --jq '.parent_issue_url // empty'
+  gh_reply 0 $'main\n' '' repo view "$1" --json defaultBranchRef --jq .defaultBranchRef.name
+  gh_reply 0 '[{"bucket":"fail","name":"build","link":"https://github.com/x/y/actions/runs/4242/job/1"}]' '' \
+    pr checks 7 --json bucket,name,link
+  gh_reply 0 '' '' run rerun 4242 --failed
+}
+pinned_replies fork/widgets
+for args in "issue fetch 5 $fetched" "issue update 5 $body" "ticket parent 50" "base show" "review rerun 7"; do
   # shellcheck disable=SC2086
-  out="$(pinned $args 2>&1)"; st=$?
+  out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
   assert_status "$args runs in the fork" "$st" 0
 done
-out="$(pinned issue publish "Title" "$body" 2>&1)"; st=$?
-assert_status "issue publish runs in the fork" "$st" 0
-git checkout -q -b quick/16-widgets
-out="$(GH_STUB_PR_NUMBER=24 pinned pr publish 16 "Title" "$body" 2>&1)"; st=$?
-assert_status "pr publish runs in the fork" "$st" 0
-out="$(GH_STUB_PR_LIST_OPEN='[{"number":57}]' pinned pr comment "$body" 2>&1)"; st=$?
-assert_status "pr comment runs in the fork" "$st" 0
-out="$(GH_STUB_CHECKS=failing pinned review rerun 7 2>&1)"; st=$?
-assert_status "review rerun runs in the fork" "$st" 0
-assert_contains "and its rerun reached gh pinned to the fork" \
-  "$(cat "$repolog")" "GH_REPO=fork/widgets run rerun 4242 --failed"
-assert_eq "every gh call carried the fork" \
-  "$(grep -cv '^GH_REPO=fork/widgets ' "$repolog")" "0"
-ghhost="$(mktemp)"
-out="$(GH_STUB_HOST_LOG="$ghhost" pinned ticket reset 50 2>&1)"
-assert_eq "a github.com repo leaves GH_HOST unset" \
-  "$(grep -cv '^GH_HOST=<unset> ' "$ghhost")" "0"
-assert_contains "and gh was called at all" "$(cat "$repolog")" "GH_REPO=fork/widgets issue"
+assert_contains "the rerun reached gh pinned to the fork" \
+  "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets GH_HOST=<unset> run rerun 4242 --failed"
 assert_contains "gh repo view got the fork as its positional argument" \
-  "$(cat "$repolog")" "GH_REPO=fork/widgets repo view fork/widgets "
+  "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets GH_HOST=<unset> repo view fork/widgets "
+assert_eq "every gh call carried the fork, and a github.com repo leaves GH_HOST unset" \
+  "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=<unset> ' "$GH_FIXTURE/env.log")" "0"
 assert_eq "command gh appears in orch.sh and doctor.sh only inside the guard" \
   "$(cat "$ORCH" "$(dirname "$ORCH")/doctor.sh" | grep -c '\bcommand gh\b')" "1"
 assert_contains "and that one is the gh guard's own" \
   "$(sed -n '/^gh() {$/,/^}$/p' "$ORCH")" 'command gh "$@"'
 
 # No usable repo: the first command that reaches GitHub dies naming GH_REPO,
-# in the parent shell or in a command substitution alike.
+# in the parent shell (issue fetch) or in a command substitution (ticket
+# parent) alike.
 git remote remove origin
-: >"$repolog"
-for args in "issue fetch 5 $fetched" "ticket reset 50" "ticket close 51"; do
+: >"$GH_FIXTURE/env.log"
+for args in "issue fetch 5 $fetched" "ticket parent 50"; do
   # shellcheck disable=SC2086
-  out="$(pinned $args 2>&1)"; st=$?
+  out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
   assert_status "$args dies with no repo" "$st" 1
   assert_contains "$args names GH_REPO as the remedy" "$out" "GH_REPO=<owner>/<repo>"
 done
-assert_eq "and nothing reached gh unpinned" "$(cat "$repolog")" ""
-out="$(pinned slug "Some title" 2>&1)"; st=$?
+assert_eq "and nothing reached gh unpinned" "$(cat "$GH_FIXTURE/env.log")" ""
+out="$("$ORCH" slug "Some title" 2>&1)"; st=$?
 assert_status "a local-only command is unaffected" "$st" 0
 
 # A host other than github.com: gh api takes its host from GH_HOST, not from
 # GH_REPO's host part, so every call - gh api's included - must carry both.
 git remote add origin git@ghe.example.com:fork/widgets.git
-git remote set-url --push origin "$bare"
-: >"$repolog"
-hostlog="$(mktemp)"
-for args in "ticket publish 52 Ticket $body" "ticket close 51" "ticket reset 50" "issue fetch 5 $fetched"; do
+pinned_replies ghe.example.com/fork/widgets
+for args in "issue fetch 5 $fetched" "ticket parent 50" "base show" "review rerun 7"; do
   # shellcheck disable=SC2086
-  out="$(GH_STUB_HOST_LOG="$hostlog" pinned $args 2>&1)"; st=$?
+  out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
   assert_status "$args runs on the repo's own host" "$st" 0
 done
-out="$(GH_STUB_CHECKS=failing GH_STUB_HOST_LOG="$hostlog" pinned review rerun 7 2>&1)"; st=$?
-assert_status "review rerun runs on the repo's own host" "$st" 0
-assert_contains "gh api was among the calls" "$(cat "$hostlog")" "GH_HOST=ghe.example.com api "
-assert_eq "every gh call carried the repo's host" \
-  "$(grep -cv '^GH_HOST=ghe.example.com ' "$hostlog")" "0"
-assert_eq "and the host-qualified repo" \
-  "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets ' "$repolog")" "0"
-restore_suite_env GH_HOST
+assert_contains "gh api was among the calls" "$(cat "$GH_FIXTURE/env.log")" \
+  "GH_HOST=ghe.example.com api "
+assert_eq "every gh call carried the host-qualified repo and its host" \
+  "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
+restore_suite_env GH_HOST GH_FIXTURE
 
 # --- pr release -----------------------------------------------------------------
 # The release PR carries the base branch back into the default branch and
 # closes every still-open issue whose work reached it - read from the bodies of
 # the PRs merged into the base branch, never remembered by a human. Every
-# GitHub call goes through the store-backed fake; the subprocess-real counterpart
-# is the "gh adapter (real pr list, subprocess gh)" block right after this one.
+# GitHub call goes through the store-backed fake; the real operations are
+# pinned in "gh adapter contract".
 echo
 echo "pr release"
 new_repo >/dev/null
@@ -4111,40 +3514,6 @@ assert_contains "with its usage" "$err" "usage: orch.sh pr comments <file>"
 
 assert_contains "help documents pr comments" "$("$ORCH" help)" "pr comments <file>"
 rm -f "$pr_comments"
-
-# --- gh adapter (real pr list, subprocess gh) ---------------------------------
-# pr release just proved its decisions through the store-backed fake - this is
-# the narrow assertion that its list, issue-state and create calls reach a real
-# gh subprocess with ORCH_GH_ADAPTER unset.
-echo
-echo "gh adapter (real pr list, subprocess gh)"
-new_repo >/dev/null
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
-git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
-git config orchestrator.base uat
-stub_gh
-body="$(mktemp)"
-writeln 'Ships the uat project.' >"$body"
-filed="$(mktemp)"
-log="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_REPO=main GH_STUB_PR_NUMBER=72 \
-  GH_STUB_PR_LIST_MERGED='[{"number":62,"body":"Refs #5"},{"number":63,"body":"Fixes #6"}]' \
-  GH_STUB_CLOSED_ISSUES="6" "$ORCH" pr release "Release" "$body" 2>&1)"; st=$?
-assert_status "shells out for real" "$st" 0
-assert_eq "and reads back the number the real gh answered" "$out" "72"
-assert_contains "the real adapter listed the open release PRs" "$(cat "$filed")" \
-  "pr list --head uat --base main --state open"
-assert_contains "and the PRs merged into the base branch" "$(cat "$filed")" \
-  "pr list --base uat --state merged"
-body_recorded="$(sed -n '/^body:$/,$p' "$filed" | tail -n +2)"
-assert_first_line "and closed only the issue the real gh called open" "$body_recorded" "Closes #5"
-assert_eq "gh itself was invoked twice to list and once to create, as real subprocesses" \
-  "$(grep -cx pr "$log")" "3"
-assert_eq "and once per referenced issue to read its state" "$(grep -cx issue "$log")" "2"
-rm -rf "$(dirname "$bare")"
-restore_suite_env
 
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature files a ticket and writes its
@@ -4868,7 +4237,7 @@ healthy_repo
 # `init reviewtest` below ever writes a state.json into this repo.
 #
 # Goes through the store-backed fake (fake_github), what each op wrote read
-# back from the store - GH_STUB_LOG stays empty, proving it never spawns a real
+# back from the store - the fixture gh's log stays empty, proving it never spawns a real
 # gh subprocess. The real operations are pinned in "gh adapter contract".
 echo
 echo "issue fetch/update"
@@ -4878,13 +4247,13 @@ fake_issue_body 23 "Body of #23."
 assert_eq "no state.json exists yet in this repo" \
   "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 issue_body="$(mktemp)"
-log="$(mktemp)"
-out="$(GH_STUB_LOG="$log" "$ORCH" issue fetch 23 "$issue_body" 2>&1)"; st=$?
+: >"$GH_FIXTURE/env.log"
+out="$("$ORCH" issue fetch 23 "$issue_body" 2>&1)"; st=$?
 assert_status "fetch writes the issue's body to the file, with no state.json present" "$st" 0
 assert_eq "and prints nothing" "$out" ""
 assert_eq "exactly what GitHub holds" "$(cat "$issue_body")" "Body of #23."
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
-assert_eq "the view call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+assert_eq "the view call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 rm -f "$issue_body"
 out="$("$ORCH" issue fetch 404 "$issue_body" 2>&1)"; st=$?
@@ -4895,13 +4264,13 @@ assert_eq "and leaves no file a caller could mistake for a body" \
 
 tricky="$(mktemp)"
 writeln '## Solution' '' 'Tracked in #6; see `$HOME` and '"'"'quoted'"'"' text.' >"$tricky"
-out="$(GH_STUB_LOG="$log" "$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
+out="$("$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
 assert_status "update replaces the issue's body, with no state.json present" "$st" 0
 assert_eq "and prints nothing" "$out" ""
 assert_eq "the issue number given, not one from state, holds the file's contents, exactly" \
   "$(fake_body_of 23)" "$(cat "$tricky")"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
-assert_eq "the edit call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+assert_eq "the edit call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 out="$("$ORCH" issue update 23 /nonexistent/body.md 2>&1)"; st=$?
 assert_status "update refuses a file that does not exist" "$st" 1
@@ -4916,13 +4285,13 @@ assert_contains "naming the issue" "$out" "issue #23"
 # issue comment is the stateless counterpart to spec comment, the way issue
 # fetch/update are to spec fetch/update: a standalone spec review posts its
 # summary on whatever issue it was pointed at, with no flow to ask.
-out="$(GH_STUB_LOG="$log" "$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
+out="$("$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
 assert_status "comment posts the file on the issue, with no state.json present" "$st" 0
 assert_eq "and prints nothing" "$out" ""
 assert_eq "on the issue number given, not one from state, the file's contents as the comment, exactly" \
   "$(fake_comments_of 23)" "$(cat "$tricky")"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
-assert_eq "the comment call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+assert_eq "the comment call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 out="$("$ORCH" issue comment 23 /nonexistent/body.md 2>&1)"; st=$?
 assert_status "comment refuses a file that does not exist" "$st" 1
@@ -4976,8 +4345,8 @@ fake_issue 24 open
 fake_comment 24 triage-bot 2026-09-01T10:00:00Z "$(writeln '## Agent brief' '' 'Do the `$HOME` thing in #6.')"
 fake_comment 24 pat 2026-09-02T11:30:00Z "$(writeln 'Also: the second line' '\\ stays unescaped.')"
 issue_comments="$(mktemp)"
-log="$(mktemp)"
-out="$(GH_STUB_LOG="$log" "$ORCH" issue comments 24 "$issue_comments" 2>&1)"; st=$?
+: >"$GH_FIXTURE/env.log"
+out="$("$ORCH" issue comments 24 "$issue_comments" 2>&1)"; st=$?
 assert_status "comments writes the issue's comments to the file, with no state.json present" "$st" 0
 assert_eq "and prints nothing" "$out" ""
 assert_eq "each comment in order, opened by its author-and-date marker, one blank line between" \
@@ -4985,7 +4354,7 @@ assert_eq "each comment in order, opened by its author-and-date marker, one blan
     '## Agent brief' '' 'Do the `$HOME` thing in #6.' '' \
     '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Also: the second line' '\\ stays unescaped.')"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
-assert_eq "the view call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+assert_eq "the view call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 fake_issue 25 open
 out="$("$ORCH" issue comments 25 "$issue_comments" 2>&1)"; st=$?
@@ -5164,13 +4533,13 @@ fresh_flow reviewfile
 fake_github
 body="$(mktemp)"
 writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
-log="$(mktemp)"
+: >"$GH_FIXTURE/env.log"
 tab="$(printf '\t')"
 fake_label review:major ffffff "An older description"
 fake_label needs-triage 000000 "The repo's own"
 fake_next_issue 17
-out="$(GH_STUB_LOG="$log" \
-  "$ORCH" review file major "Comment drifted from the code" --axis standards --body-file "$body" 2>&1)"; st=$?
+out="$("$ORCH" review file major "Comment drifted from the code" --axis standards \
+  --body-file "$body" 2>&1)"; st=$?
 assert_status "files a major" "$st" 0
 assert_eq "printing the issue number and nothing else" "$out" "17"
 assert_contains "making the severity label ours over one that exists already" "$(fake_labels)" \
@@ -5183,10 +4552,8 @@ assert_eq "passes the title through unprefixed" "$(fake_title_of 17)" "Comment d
 assert_eq "labels the issue with the severity, needs-triage and the category" \
   "$(fake_labels_of 17)" "enhancement needs-triage review:major "
 assert_eq "and sends the body file's contents" "$(fake_body_of 17)" "$(cat "$body")"
-assert_eq "the labels never reached a real gh subprocess" \
-  "$(grep -cx label "$log")" "0"
-assert_eq "nor did the issue create" \
-  "$(grep -cx issue "$log")" "0"
+assert_eq "neither the labels nor the issue create reached a real gh subprocess" \
+  "$(gh_calls)" "0"
 
 fake_github
 out="$("$ORCH" review file nit "Rename it" --axis standards --body-file "$body" 2>&1)"; st=$?
@@ -5305,47 +4672,6 @@ assert_eq "and applying it rather than the canonical one" \
   "$(fake_labels_of "$out")" "enhancement review:nit triage me "
 assert_not_contains "nor creating it" "$(fake_labels)" "needs-triage"
 labels_doc docs/agents/triage-labels.md
-restore_suite_env
-
-# --- gh adapter (real, unset ORCH_GH_ADAPTER) --------------------------------
-# The rest of this section proved the seam through the in-memory fake; this is
-# the narrow counterpart proving the real half still works - ORCH_GH_ADAPTER
-# left unset, so the adapter functions defined in orch.sh itself are the ones
-# that run, and each has to actually shell out to the real `gh` subcommand
-# with the right arguments rather than merely compile.
-echo
-echo "gh adapter (real label-create, subprocess gh)"
-fresh_flow reallabel
-filed="$(mktemp)"
-body="$(mktemp)"
-writeln 'The reviewer said this.' '' 'Axis: Standards' >"$body"
-log="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_ISSUE_NUMBER=51 \
-  "$ORCH" review file major "Shells out for real" --axis spec --body-file "$body" 2>&1)"; st=$?
-assert_status "files through the real adapter" "$st" 0
-assert_eq "printing the issue number gh answered" "$out" "51"
-assert_contains "the real adapter invoked gh label create for the severity label" \
-  "$(cat "$filed")" "label create review:major --force --color d93f0b --description Review finding filed at major severity"
-assert_contains "and for the triage label" \
-  "$(cat "$filed")" "label create needs-triage --color e4e669 --description Not yet triaged"
-assert_contains "and for the category label" \
-  "$(cat "$filed")" "label create bug --color d73a4a --description Something isn't working"
-assert_eq "gh itself was invoked once per label, as a real subprocess" \
-  "$(grep -cx label "$log")" "3"
-
-echo
-echo "gh adapter (real issue create, subprocess gh)"
-assert_contains "the real adapter invoked gh issue create with the title" \
-  "$(cat "$filed")" "title=Shells out for real"
-assert_contains "the severity label" "$(cat "$filed")" "label=review:major"
-assert_contains "and the body file's contents" "$(cat "$filed")" "The reviewer said this."
-assert_eq "gh itself was invoked once for the issue create, as a real subprocess" \
-  "$(grep -cx issue "$log")" "1"
-
-: >"$filed"
-out="$(GH_STUB_FILED="$filed" GH_STUB_MODE=labelfail \
-  "$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
-assert_status "and a real gh that refuses the label still fails the command" "$st" 1
 restore_suite_env
 
 # --- gh fake (#280) --------------------------------------------------------------
@@ -6322,7 +5648,7 @@ restore_suite_env
 # it. The number comes from state so a review can never touch the wrong issue,
 # and the store-backed fake (fake_github) holds what reached GitHub, so the
 # test reads the body sent back, not only that the command exited zero -
-# GH_STUB_LOG stays empty across every call below, proving none of them ever
+# the fixture gh's log stays empty across every call below, proving none of them ever
 # spawns a real gh subprocess. The real operations are pinned in "gh adapter
 # contract".
 echo
@@ -6352,15 +5678,15 @@ writeln '## Solution' '' \
         '```sh' 'orch.sh spec fetch "$file"' '```' '' \
         'Tracked in #6; see `$HOME` and '"'"'quoted'"'"' text.' >"$tricky"
 rm -f "$spec_body"
-log="$(mktemp)"
+: >"$GH_FIXTURE/env.log"
 fake_issue_body 14 "$(cat "$tricky")"
 fake_issue_body 15 "Not the flow's issue."
 untouched_15="$(fake_snapshot | grep '/issues/15/')"
-out="$(GH_STUB_LOG="$log" "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
+out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
 assert_status "fetch writes the body to the file" "$st" 0
 assert_eq "of the issue state records, exactly as GitHub holds it - table, fence, and #nn survive" \
   "$(cat "$spec_body")" "$(cat "$tricky")"
-assert_eq "the view call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+assert_eq "the view call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 # The skill fetches into a fresh directory under .orchestrator/, so the first
 # fetch of a review is the one that has to create it.
@@ -6378,14 +5704,14 @@ assert_eq "and leaves no file a lens could mistake for a body" \
   "$([ -e "$spec_body" ] && echo present || echo gone)" "gone"
 
 : >"$filed"
-log="$(mktemp)"
+: >"$GH_FIXTURE/env.log"
 fake_issue_body 14 "The old body."
-out="$(GH_STUB_LOG="$log" "$ORCH" spec update "$tricky" 2>&1)"; st=$?
+out="$("$ORCH" spec update "$tricky" 2>&1)"; st=$?
 assert_status "update replaces the body" "$st" 0
 assert_eq "of the issue state records, with the file's contents" "$(fake_body_of 14)" "$(cat "$tricky")"
 assert_eq "and no other" "$(fake_snapshot | grep '/issues/15/')" "$untouched_15"
 assert_eq "and prints nothing" "$out" ""
-assert_eq "the edit call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+assert_eq "the edit call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 : >"$filed"
 before_store="$(fake_snapshot)"
@@ -6401,13 +5727,13 @@ assert_contains "with gh's reason" "$out" "issue edit refused"
 assert_contains "and the issue it was for" "$out" "issue #14"
 
 : >"$filed"
-log="$(mktemp)"
-out="$(GH_STUB_LOG="$log" "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
+: >"$GH_FIXTURE/env.log"
+out="$("$ORCH" spec comment "$tricky" 2>&1)"; st=$?
 assert_status "comment posts the file" "$st" 0
 assert_eq "on the issue state records, with the file's contents as the comment" \
   "$(fake_comments_of 14)" "$(cat "$tricky")"
 assert_eq "and no other" "$(fake_snapshot | grep '/issues/15/')" "$untouched_15"
-assert_eq "the comment call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+assert_eq "the comment call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 : >"$filed"
 before_store="$(fake_snapshot)"
@@ -6489,82 +5815,6 @@ assert_contains "help says the spec ops refuse once the flow is done" "$("$ORCH"
 assert_contains "and points at issue <op> for any other issue" "$("$ORCH" help)" "issue <op> <n> <file>"
 restore_suite_env
 
-# --- gh adapter (real issue view/edit/comment, subprocess gh) ---------------
-# The rest of the "spec" section proved the seam through the in-memory fake;
-# this is the narrow counterpart proving the real half still works -
-# ORCH_GH_ADAPTER left unset, so the adapter functions defined in orch.sh
-# itself are the ones that run, and each has to actually shell out to the
-# real `gh issue view`/`edit`/`comment` with the right arguments rather than
-# merely compile.
-echo
-echo "gh adapter (real issue view/edit/comment, subprocess gh)"
-fresh_flow realspec
-"$ORCH" state set issue 14
-spec_body="$(mktemp)"
-tricky="$(mktemp)"
-writeln '## Solution' '' \
-        '| Lens | Reads |' '|---|---|' '| Fidelity | plan handoff |' '' \
-        '```sh' 'orch.sh spec fetch "$file"' '```' '' \
-        'Tracked in #6; see `$HOME` and '"'"'quoted'"'"' text.' >"$tricky"
-filed="$(mktemp)"
-log="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" GH_STUB_BODY="Real body." \
-  "$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
-assert_status "fetch shells out for real" "$st" 0
-assert_eq "and reads back what the real gh answered" "$(cat "$spec_body")" "Real body."
-assert_contains "the real adapter invoked gh issue view on the state's issue" \
-  "$(cat "$filed")" "issue view 14"
-assert_contains "asking for the body alone" "$(cat "$filed")" "--json body"
-
-: >"$filed"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" spec update "$tricky" 2>&1)"; st=$?
-assert_status "update shells out for real" "$st" 0
-assert_contains "the real adapter invoked gh issue edit on the state's issue" \
-  "$(cat "$filed")" "issue edit 14"
-assert_contains "with the file's contents as the body" \
-  "$(cat "$filed")" 'orch.sh spec fetch "$file"'
-
-: >"$filed"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" spec comment "$tricky" 2>&1)"; st=$?
-assert_status "comment shells out for real" "$st" 0
-assert_contains "the real adapter invoked gh issue comment on the state's issue" \
-  "$(cat "$filed")" "issue comment 14"
-assert_contains "with the file's contents as the comment" \
-  "$(cat "$filed")" "| Fidelity | plan handoff |"
-assert_eq "gh itself was invoked once each for view, edit, and comment, as real subprocesses" \
-  "$(grep -cx issue "$log")" "3"
-
-# issue comment's own real-adapter proof: the number given, not state's.
-: >"$filed"
-log="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
-assert_status "issue comment shells out for real" "$st" 0
-assert_contains "the real adapter invoked gh issue comment on the issue given" \
-  "$(cat "$filed")" "issue comment 23"
-assert_contains "with the file's contents as the comment" \
-  "$(cat "$filed")" "| Fidelity | plan handoff |"
-assert_eq "as one real gh subprocess" "$(grep -cx issue "$log")" "1"
-
-# issue comments' own real-adapter proof: the real request asks gh for the
-# comments field, and what gh answers parses into the marker-line file.
-issue_comments="$(mktemp)"
-: >"$filed"
-log="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" \
-  GH_STUB_COMMENTS_JSON='{"comments":[{"author":{"login":"pat"},"createdAt":"2026-09-02T11:30:00Z","body":"Real comment."}]}' \
-  "$ORCH" issue comments 23 "$issue_comments" 2>&1)"; st=$?
-assert_status "issue comments shells out for real" "$st" 0
-assert_contains "the real adapter invoked gh issue view on the issue given" \
-  "$(cat "$filed")" "issue view 23"
-assert_contains "asking for the comments field" "$(cat "$filed")" "--json comments"
-assert_eq "and what gh answered parses into the file" "$(cat "$issue_comments")" \
-  "$(writeln '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Real comment.')"
-assert_eq "as one real gh subprocess" "$(grep -cx issue "$log")" "1"
-rm -f "$issue_comments"
-
-"$ORCH" state set issue null
-restore_suite_env
-
 # --- doctor at the review phase ---------------------------------------------
 # Three handoffs are due from review onwards, and only three: a flow started
 # under the old loop machinery carries a `loop` key doctor neither reports nor
@@ -6603,7 +5853,7 @@ restore_suite_env
 # either half alone is a lie: a `done` flow over a draft PR, or a PR promoted out
 # of draft by a flow that still thinks it is reviewing.
 #
-# Goes through the store-backed fake (fake_github) - GH_STUB_LOG stays empty
+# Goes through the store-backed fake (fake_github) - the fixture gh's log stays empty
 # across both calls, proving neither reaches a real gh subprocess. The real
 # operation is pinned in "gh adapter contract".
 echo
@@ -6613,36 +5863,18 @@ state_fixture pr 7
 fake_github
 fake_pr 7 open orch/1-reviewready main
 fake_pr_draft 7
-log="$(mktemp)"
+: >"$GH_FIXTURE/env.log"
 fake_fail adapter_pr_ready
-out="$(GH_STUB_LOG="$log" "$ORCH" review ready 2>&1)"; st=$?
+out="$("$ORCH" review ready 2>&1)"; st=$?
 assert_status "fails when GitHub will not mark the PR ready" "$st" 1
 assert_eq "and leaves the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "review"
 assert_eq "with the PR still a draft" "$(fake_pr_draft_of 7)" "yes"
 rm -rf "$ORCH_GH_FAKE_STORE/fail"
-GH_STUB_LOG="$log" "$ORCH" review ready >/dev/null
+"$ORCH" review ready >/dev/null
 assert_eq "records the flow as done once the PR is ready" "$("$ORCH" state get phase)" "done"
 assert_eq "the PR no longer a draft" "$(fake_pr_draft_of 7)" "no"
-assert_eq "and neither call ever reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
-state_fixture phase review
-restore_suite_env
-
-# --- gh adapter (real pr ready, subprocess gh) -------------------------------
-# The block above proved the seam through the in-memory fake; this is the
-# narrow counterpart proving the real half still works - ORCH_GH_ADAPTER left
-# unset, so orch.sh's own adapter_pr_ready runs and has to actually shell out
-# to `gh pr ready` rather than merely compile.
-echo
-echo "gh adapter (real pr ready, subprocess gh)"
-review_flow realready
-state_fixture pr 7
-log="$(mktemp)"
-out="$(GH_STUB_LOG="$log" "$ORCH" review ready 2>&1)"; st=$?
-assert_status "shells out for real" "$st" 0
-assert_eq "records the flow as done" "$("$ORCH" state get phase)" "done"
-assert_eq "the real adapter invoked gh pr ready, as a real subprocess" \
-  "$(grep -cx pr "$log")" "1"
+assert_eq "and neither call ever reached a real gh subprocess" "$(gh_calls)" "0"
 state_fixture phase review
 restore_suite_env
 
@@ -6664,12 +5896,12 @@ export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
 fake_github
 fake_pr 7 open topic main
 fake_check_run main
-log="$(mktemp)"
+: >"$GH_FIXTURE/env.log"
 fake_checks 7 all green
-out="$(GH_STUB_LOG="$log" "$ORCH" review ci 2>&1)"; st=$?
+out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "green checks let the loop finish" "$st" 0
 assert_first_line "and say so in one word" "$out" "green"
-assert_eq "the checks call never reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
+assert_eq "the checks call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 fake_checks 7 all failing
 out="$("$ORCH" review ci 2>&1)"; st=$?
@@ -6946,84 +6178,6 @@ assert_status "refuses to classify checks on a PR that does not exist yet" "$st"
 # is what would catch the guard degrading into an empty PR number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
 unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-restore_suite_env
-
-# --- gh adapter (real pr checks, subprocess gh) -------------------------------
-# The "review ci" section above proved ci_probe's decision logic through the
-# in-memory fake; this is the narrow counterpart proving the real half still
-# works - ORCH_GH_ADAPTER left unset, so orch.sh's own adapter_pr_checks runs
-# and has to actually shell out to `gh pr checks` with the right arguments.
-# Covers what a fake cannot prove on its own: that the required-scope call and
-# the all-checks call are two distinct real `gh pr checks` invocations (one
-# with --required, one without), and that the exit-8-for-pending path a real
-# gh can take is read the same way the exit-0-with-a-pending-bucket path is.
-echo
-echo "gh adapter (real pr checks, subprocess gh)"
-review_flow realchecks
-state_fixture pr 7
-export ORCH_CI_GRACE=0.2 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
-log="$(mktemp)"
-out="$(GH_STUB_LOG="$log" GH_STUB_REQUIRED=green GH_STUB_CHECKS=failing "$ORCH" review ci 2>&1)"; st=$?
-assert_status "shells out for real and finishes on the required probe" "$st" 0
-assert_first_line "reading green from the required-scope call" "$out" "green"
-# GH_STUB_LOG logs the subcommand group alone, so each count below carries
-# one more `pr` than there are checks calls: review ci's `gh pr view` for the
-# PR's head, made once before the loop starts.
-assert_eq "gh pr checks was invoked once, for the required scope only" \
-  "$(grep -cx pr "$log")" "2"
-
-# Grace of exactly zero means the very first `float_lt elapsed grace` reads
-# false, so the loop widens on the spot instead of ticking first - the one
-# grace value that pins the required call at exactly once before it does, so
-# the count below proves the two are genuinely separate real `gh` invocations
-# rather than however many required retries the grace window happened to fit.
-log="$(mktemp)"
-out="$(GH_STUB_LOG="$log" ORCH_CI_GRACE=0 GH_STUB_REQUIRED=none GH_STUB_CHECKS=green \
-  "$ORCH" review ci 2>&1)"; st=$?
-assert_status "and falls back to the all-checks call once the grace runs out" "$st" 0
-assert_first_line "reading green from the unfiltered call" "$out" "green"
-assert_eq "gh pr checks was invoked twice - once required, once for every check" \
-  "$(grep -cx pr "$log")" "3"
-
-# The real adapter's read of the PR's head reaches the same anchor: an
-# hour-old push widens on the first answer instead of waiting the grace.
-# pushed_head runs in a command substitution here, so its GH_REPO stays there.
-GH_STUB_PR_HEAD_OID="$(pushed_head topic 3600)"
-export GH_REPO=acme/widgets
-out="$(GH_STUB_PR_HEAD_OID="$GH_STUB_PR_HEAD_OID" ORCH_CI_GRACE=5 \
-  GH_STUB_REQUIRED=none GH_STUB_CHECKS=none timeout 4 "$ORCH" review ci 2>&1)"; st=$?
-assert_first_line "a real gh pr view anchors the grace to the push" "$out" "none"
-unset GH_STUB_PR_HEAD_OID
-
-# The real CI-evidence reads reach the same verdicts: gh api's 404 `Branch not
-# protected` reads as absent, so with nothing else present none comes at once
-# on a fresh push; a bare 404 `Not Found` keeps the grace.
-GH_STUB_PR_HEAD_OID="$(pushed_head topic)"
-reqn="$(mktemp)"; : >"$reqn"
-out="$(GH_STUB_PR_HEAD_OID="$GH_STUB_PR_HEAD_OID" ORCH_CI_GRACE=5 GH_STUB_CHECKED_REFS= \
-  GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=none \
-  timeout 4 "$ORCH" review ci 2>&1)"; st=$?
-assert_first_line "real gh api reads with no evidence of CI skip the grace" "$out" "none"
-assert_contains "and say no CI signals were found" "$out" "no CI signals found"
-reqn="$(mktemp)"; : >"$reqn"
-out="$(GH_STUB_PR_HEAD_OID="$GH_STUB_PR_HEAD_OID" ORCH_CI_GRACE=5 GH_STUB_CHECKED_REFS= \
-  GH_STUB_PROTECTION=notfound GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' \
-  GH_STUB_CHECKS=none "$ORCH" review ci 2>&1)"; st=$?
-assert_first_line "a real gh api 404 Not Found on protection keeps the grace" "$out" "green"
-reqn="$(mktemp)"; : >"$reqn"
-out="$(GH_STUB_PR_HEAD_OID="$GH_STUB_PR_HEAD_OID" ORCH_CI_GRACE=5 \
-  GH_STUB_REQUIRED_N="$reqn" GH_STUB_REQUIRED='none|green' GH_STUB_CHECKS=none \
-  "$ORCH" review ci 2>&1)"; st=$?
-assert_first_line "a real gh api check-run on the base tip keeps the grace" "$out" "green"
-unset GH_STUB_PR_HEAD_OID
-
-log="$(mktemp)"
-out="$(GH_STUB_LOG="$log" ORCH_CI_TIMEOUT=0.2 GH_STUB_REQUIRED=pending "$ORCH" review ci 2>&1)"; st=$?
-assert_status "a real gh's documented exit-8-for-pending stops the loop at the cap" "$st" 1
-assert_first_line "classified as unreachable, same as the fake's exit-8 path" "$out" "unreachable"
-assert_contains "saying the wait ran out" "$out" "still pending"
-unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-state_fixture pr null
 restore_suite_env
 
 # --- review rerun -------------------------------------------------------------
@@ -7524,7 +6678,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh review retire"
 # terminal state, and a full composition above it.
 #
 # cmd_redo_review's PR close goes through the store-backed fake (fake_github)
-# - a GH_STUB_LOG check right after the first successful redo proves it never
+# - a check of the fixture gh's log right after the first successful redo proves it never
 # spawns a real gh subprocess. The real operation is pinned in "gh adapter
 # contract".
 echo
@@ -7576,7 +6730,7 @@ state_fixture base_sha deadbeefcafe
 "$ORCH" state set flake_rerun_used true
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
-log="$(mktemp)"
+: >"$GH_FIXTURE/env.log"
 base_before="$("$ORCH" state get base)"
 writeln '# plan' >.orchestrator/handoff/01-plan.md
 writeln '# implement' >.orchestrator/handoff/03-implement.md
@@ -7586,7 +6740,7 @@ out="$("$ORCH" base set redo-base --flow 2>&1)"; st=$?
 assert_status "base set --flow refuses a branched flow at the review phase" "$st" 1
 assert_contains "naming redo review as the way back" "$out" \
   "flow redotest already has branch orch/21-redotest - its base can change again once orch.sh redo review retires it"
-out="$(GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
+out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
 assert_eq "keeps the flow's recorded base branch" "$("$ORCH" state get base)" "$base_before"
 assert_eq "prints the new redo count" "$out" "1"
@@ -7604,7 +6758,7 @@ assert_eq "and republishes it on origin" \
 assert_eq "closes the old PR" "$(fake_pr_state_of 30)" "CLOSED"
 assert_contains "with a comment naming the retired branch" \
   "$(fake_pr_comments_of 30)" "orch/21-redotest-redo-1"
-assert_eq "the pr close call never reached a real gh subprocess" "$(grep -cx pr "$log")" "0"
+assert_eq "the pr close call never reached a real gh subprocess" "$(gh_calls)" "0"
 assert_eq "moves the old loop's records aside" \
   "$([ -f .orchestrator/review/pre-redo-1/iteration-05.md ] && echo yes || echo no)" "yes"
 assert_eq "leaving the flat trail empty" \
@@ -7703,40 +6857,6 @@ assert_contains "the same phase-gate refusal as any other done flow" "$out" "flo
 assert_eq "leaving the ready PR open" "$(fake_pr_state_of 33)" "OPEN"
 restore_suite_env
 
-# --- gh adapter (real pr close, subprocess gh) -------------------------------
-# The "redo review" section above proved cmd_redo_review's PR close through
-# the in-memory fake; this is the narrow counterpart proving the real half
-# still works - ORCH_GH_ADAPTER left unset, so orch.sh's own adapter_pr_close
-# runs and has to actually shell out to `gh pr close` with the right PR
-# number and comment.
-echo
-echo "gh adapter (real pr close, subprocess gh)"
-healthy_repo
-bare="$(mktemp -d)/origin.git"
-git init -q --bare "$bare"
-bare_origin "$bare"
-git push -q origin HEAD:refs/heads/main
-"$ORCH" init redoclose >/dev/null
-state_fixture phase review
-"$ORCH" state set issue 21
-git checkout -q -b orch/21-redoclose
-git push -q -u origin orch/21-redoclose
-state_fixture branch orch/21-redoclose
-state_fixture pr 34
-state_fixture iteration 1
-"$ORCH" state set budget 1
-mkdir -p .orchestrator/review
-writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
-filed="$(mktemp)"
-log="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo review 2>&1)"; st=$?
-assert_status "shells out for real" "$st" 0
-assert_contains "the real adapter invoked gh pr close on the flow's PR" \
-  "$(cat "$filed")" "pr close 34"
-assert_eq "gh itself was invoked once for the pr close, as a real subprocess" \
-  "$(grep -cx pr "$log")" "1"
-restore_suite_env
-
 # --- redo review refuses a taken handoff destination ------------------------
 # Issue #304: the implement handoff retires into exactly the pre-redo-N/ that
 # pairs with review/pre-redo-N/, or redo stops naming it - never a suffixed
@@ -7818,7 +6938,7 @@ restore_suite_env
 
 # --- redo spec --------------------------------------------------------------
 # --new-issue's close goes through the store-backed fake (fake_github), the
-# closed issue read back from its store - GH_STUB_LOG stays empty, proving it
+# closed issue read back from its store - the fixture gh's log stays empty, proving it
 # never spawns a real gh subprocess. The real operation is pinned in "gh
 # adapter contract".
 echo
@@ -7835,13 +6955,14 @@ state_fixture redo_count 2
 writeln '# plan' >.orchestrator/handoff/01-plan.md
 writeln '# spec' >.orchestrator/handoff/02-spec.md
 writeln '# implement' >.orchestrator/handoff/03-implement.md
-filed="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" "$ORCH" redo spec 2>&1)"; st=$?
+fake_github
+fake_issue 40 open
+before="$(fake_snapshot)"
+out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "the default path steps back to spec" "$st" 0
 assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
 assert_eq "keeping the existing issue" "$("$ORCH" state get issue)" "40"
-assert_eq "and, with no breakdown to retire, writing nothing to GitHub" \
-  "$(grep -c '^issue \(close\|comment\|edit\)' "$filed")" "0"
+assert_eq "and, with no breakdown to retire, writing nothing to GitHub" "$(fake_snapshot)" "$before"
 retired="$(ls -d .orchestrator/handoff/pre-redo-spec-* 2>/dev/null)"
 assert_eq "retires the handoffs into one timestamped directory" \
   "$(printf '%s\n' "$retired" | grep -c '^\.orchestrator/handoff/pre-redo-spec-[0-9]\{8\}-[0-9]\{6\}$')" "1"
@@ -7861,10 +6982,10 @@ state_fixture phase implement
 # meet a taken destination, which retire_handoffs refuses (#304).
 rm -rf .orchestrator/handoff/pre-redo-spec-*
 writeln '# spec again' >.orchestrator/handoff/02-spec.md
-log="$(mktemp)"
+: >"$GH_FIXTURE/env.log"
 fake_github
 fake_issue 41 open
-out="$(GH_STUB_LOG="$log" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
+out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue also steps back to spec" "$st" 0
 assert_eq "with no implement handoff, retires the spec handoff alone" \
   "$(ls .orchestrator/handoff/pre-redo-spec-*/02-spec.md 2>/dev/null | grep -c .) $(ls .orchestrator/handoff/pre-redo-spec-*/03-implement.md 2>/dev/null | grep -c .)" "1 0"
@@ -7873,7 +6994,7 @@ assert_eq "clearing the old issue" "$("$ORCH" state get issue)" ""
 assert_eq "closes the old issue" "$(fake_state_of 41)" "CLOSED"
 assert_contains "saying why, in a comment on it" "$(fake_comments_of 41)" \
   "This issue was closed by an orchestrator redo because the spec itself needed to change."
-assert_eq "the close call never reached a real gh subprocess" "$(grep -cx issue "$log")" "0"
+assert_eq "the close call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 state_fixture phase implement
 "$ORCH" state set issue 42
@@ -8034,29 +7155,6 @@ assert_eq "without retiring the closed issue's tickets" \
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket retire is in the usage text" "$out" "ticket retire <parent>"
-restore_suite_env
-
-# --- gh adapter (real issue close, subprocess gh) ---------------------------
-# The rest of "redo spec" proved the seam through the in-memory fake; this is
-# the narrow counterpart proving the real half still works - ORCH_GH_ADAPTER
-# left unset, so the adapter function defined in orch.sh itself is the one
-# that runs, and it has to actually shell out to `gh issue close` with the
-# right arguments rather than merely compile.
-echo
-echo "gh adapter (real issue close, subprocess gh)"
-fresh_flow realclose
-state_fixture phase implement
-"$ORCH" state set issue 43
-filed="$(mktemp)"
-log="$(mktemp)"
-out="$(GH_STUB_FILED="$filed" GH_STUB_LOG="$log" "$ORCH" redo spec --new-issue 2>&1)"; st=$?
-assert_status "--new-issue shells out for real" "$st" 0
-assert_contains "the real adapter invoked gh issue close on the old issue" \
-  "$(cat "$filed")" "issue close 43"
-assert_contains "with the redo comment" \
-  "$(cat "$filed")" "This issue was closed by an orchestrator redo"
-assert_eq "gh itself was invoked once, as a real subprocess" \
-  "$(grep -cx issue "$log")" "1"
 restore_suite_env
 
 # --- spec-review begin (#224) ------------------------------------------------
