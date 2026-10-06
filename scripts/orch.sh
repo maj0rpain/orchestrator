@@ -281,7 +281,12 @@ base_set_flow() {
   fi
   is_branch_name "$b" || die "$b is not a valid branch name - nothing was set"
   require_on_origin "$b"
-  state_write base "$b"
+  # Not state_write: it would turn a branch named null, true, false or all
+  # digits into JSON null, a boolean or a number. A base is always a string,
+  # as init stores it.
+  local tmp; tmp="$(mktemp)"
+  jq --arg b "$b" --arg now "$(now)" '.base = $b | .updated = $now' "$STATE" >"$tmp"
+  mv "$tmp" "$STATE"
   note "$b (flow)"
 }
 

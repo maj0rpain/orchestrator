@@ -1499,6 +1499,13 @@ assert_status "base set --flow accepts the flag before the branch name" "$st" 0
 assert_eq "in the spec phase it prints the branch and its flow source" "$out" "uat (flow)"
 assert_eq "state get base reads the corrected base" "$(orch_gh_failing state get base)" "uat"
 assert_eq "and the unset checkout setting stays unset" "$(flow_setting)" "<unset>"
+for name in null 007; do
+  git push -q origin "HEAD:refs/heads/$name"
+  orch_gh_failing base set "$name" --flow >/dev/null
+  assert_eq "base set --flow stores a branch named $name literally" \
+    "$(orch_gh_failing state get base)" "$name"
+done
+orch_gh_failing base set uat --flow >/dev/null
 
 for args in "" "--flow" "uat main --flow" "uat --flow --flow" "uat --flaw"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
