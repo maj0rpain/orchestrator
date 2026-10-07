@@ -1,6 +1,6 @@
 ---
 name: orch-to-tickets
-description: Break a spec issue into tracer-bullet tickets, each declaring its blocking edges, and publish them to GitHub as sub-issues - or, for a breakdown of 0 or 1 tickets, collapse it into the issue itself. Use from orch-flow's spec phase, quick implementation, or a planning session's Blueprint route, or standalone when a user asks to break an issue into tickets, or runs /orchestrator:to-tickets <issue>.
+description: Break a spec issue into tracer-bullet tickets, each declaring its blocking edges, and publish them to GitHub as sub-issues - or, for a breakdown of 0 or 1 tickets, collapse it into the issue itself. Use from orch-flow's spec phase, quick implementation, or a planning session's Blueprint route, or standalone when a user asks to break an issue into tickets, or runs /orchestrator:to-tickets <issue>. Quick implementation runs it unattended: no quiz, its own draft accepted.
 ---
 
 # Orchestrator to-tickets
@@ -162,6 +162,27 @@ close or modify the parent issue.
 ### 6. Report
 
 The published ticket numbers in publishing order, or `collapsed`.
+
+## Unattended breakdown
+
+The mode a quick implementation takes, and only a quick implementation: a
+breakdown that asks the human nothing (ADR-0034). It is also what follows a
+retire in `orch-spec-review`'s **Unattended spec review**.
+
+Steps 1-3, 5 and 6 run as written. Step 4, the quiz, is replaced:
+
+- Check the draft yourself against step 3's rules: each ticket a vertical
+  slice, verifiable on its own and sized for one fresh context window, with
+  any prefactoring first, a wide refactor sequenced as expand-contract, and
+  each blocking edge naming only a ticket that genuinely gates it. Merge,
+  split or re-edge the draft until it holds.
+- Print the breakdown as step 4 presents it - each ticket's **Title**,
+  **Blocked by** and **What it delivers** - so a human watching can see it.
+- Ask nothing, and go straight to step 5: it publishes 2 or more tickets, or
+  collapses 0 or 1 into the parent.
+
+A failure in step 5 stops the breakdown as it does in the attended process,
+and the quick implementation that ran it stops with it.
 
 ## Ticket template
 

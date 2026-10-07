@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.14.0
+
+Quick implementation runs hands-off: it asks nothing between its linked issue
+and its PR. It always runs a spec review, in `orch-spec-review`'s new
+**Unattended spec review** mode, which prints its batch and applies every
+recommendation - decision items and the ticket follow-up included, retiring
+included - and opens its changelog comment by saying so. It then breaks the
+issue down with `orch-to-tickets`' new **Unattended breakdown**, which checks
+its own draft instead of quizzing. The PR body lists each decision item the
+review took under **Spec review decisions**. The planning session's closing
+question now says quick implementation is hands-off and for small changes.
+A human-run spec review, the flow's spec phase and the Blueprint route still
+ask. ADR-0034 records why (see issue #616).
+
 ## 3.13.5
 
 `CLAUDE.md` has a new `## Layout` section saying where the shell scripts

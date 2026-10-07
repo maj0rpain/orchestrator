@@ -814,17 +814,22 @@ echo "required headings (#285)"
 # One "<file>|<heading>" pair per line, file relative to the plugin root, in
 # the order the headings must appear within their file.
 required_headings='skills/orch-quick-implement/SKILL.md|## 1. Require a linked issue
-skills/orch-quick-implement/SKILL.md|## 2. Offer a spec review
+skills/orch-quick-implement/SKILL.md|## 2. Run an unattended spec review
 skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
 skills/orch-quick-implement/SKILL.md|## 6. Review
 skills/orch-quick-implement/SKILL.md|## 7. Open the PR
 skills/orch-review/SKILL.md|## Review pass
 skills/orch-review/SKILL.md|## Standalone review pass
 skills/orch-spec-review/SKILL.md|## Standalone spec review
+skills/orch-spec-review/SKILL.md|### Unattended spec review
+skills/orch-spec-review/SKILL.md|## Consolidation
 skills/orch-spec-review/SKILL.md|## Disposition
 skills/orch-spec-review/SKILL.md|## Applying the answer
 skills/orch-spec-review/SKILL.md|## Tickets follow the spec
-skills/orch-spec-review/SKILL.md|## The changelog'
+skills/orch-spec-review/SKILL.md|## The changelog
+skills/orch-to-tickets/SKILL.md|### 4. Quiz the user
+skills/orch-to-tickets/SKILL.md|## Unattended breakdown
+skills/orch-to-tickets/SKILL.md|## Ticket template'
 # scan_required_headings <plugin root> [pairs]: each listed heading missing
 # from its file, or found above the heading listed before it in that file.
 scan_required_headings() {
@@ -1189,6 +1194,40 @@ printf '# Q\n\n## 6. Review\n\nRun the `orch-review` skill'"'"'s **Review\npass*
 assert_empty "a review pass defined once and run by step 6 is not flagged" "$(scan_review_pass "$fixture")"
 check "the review pass is defined once in orch-review and quick implementation runs it" \
   "$(scan_review_pass "$PLUGIN_ROOT")"
+
+# --- unattended modes (#616) --------------------------------------------------
+echo
+echo "unattended modes (#616)"
+# Quick implementation runs hands-off through two unattended modes, each
+# defined once in its own skill: orch-spec-review's **Unattended spec review**
+# and orch-to-tickets' **Unattended breakdown**. Its steps 2 and 3 run those
+# modes rather than keeping their own copies, as step 6 runs the Review pass.
+# scan_unattended_modes <plugin root>: one line per step that does not refer
+# to its mode.
+scan_unattended_modes() {
+  local r="$1" quick="skills/orch-quick-implement/SKILL.md" body
+  body="$(md_section "$r/$quick" "## 2. Run an unattended spec review" | flat_text)"
+  { grep -qF '`orch-spec-review`' <<<"$body" && grep -qF '**Unattended spec review**' <<<"$body"; } \
+    || echo "$quick: step 2 does not refer to orch-spec-review's **Unattended spec review** mode"
+  body="$(md_section "$r/$quick" "## 3. Publish the ticket breakdown" | flat_text)"
+  { grep -qF '`orch-to-tickets`' <<<"$body" && grep -qF '**Unattended breakdown**' <<<"$body"; } \
+    || echo "$quick: step 3 does not refer to orch-to-tickets' **Unattended breakdown** mode"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-quick-implement"
+printf '# Q\n\n## 2. Run an unattended spec review\n\nRun a review.\n\n## 3. Publish the ticket breakdown\n\nRun `orch-to-tickets` in its quiz.\n\n## 4. Branch\n\nSee `orch-spec-review` **Unattended spec review** and **Unattended breakdown**.\n' \
+  >"$fixture/skills/orch-quick-implement/SKILL.md"
+out="$(scan_unattended_modes "$fixture")"
+flags "a step 2 that does not run orch-spec-review's unattended mode is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md: step 2 does not refer to orch-spec-review's **Unattended spec review** mode"
+flags "a step 3 that does not run orch-to-tickets' unattended mode is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md: step 3 does not refer to orch-to-tickets' **Unattended breakdown** mode"
+printf '# Q\n\n## 2. Run an unattended spec review\n\nRun `orch-spec-review`'"'"'s **Unattended\nspec review**.\n\n## 3. Publish the ticket breakdown\n\nRun `orch-to-tickets` in its **Unattended breakdown**.\n' \
+  >"$fixture/skills/orch-quick-implement/SKILL.md"
+assert_empty "steps 2 and 3 that run the unattended modes are not flagged" "$(scan_unattended_modes "$fixture")"
+check "quick implementation's steps 2 and 3 run the unattended modes" \
+  "$(scan_unattended_modes "$PLUGIN_ROOT")"
 
 # --- previously declined (#418) ------------------------------------------------
 echo

@@ -1,6 +1,6 @@
 ---
 name: orch-quick-implement
-description: Implement a small, already-understood change directly, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue, a published ticket breakdown, test-driven implementation, and a review pass before the PR opens.
+description: Implement a small, already-understood change directly and hands-off, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue, an unattended spec review, a published ticket breakdown, test-driven implementation, and a review pass before the PR opens.
 ---
 
 # Orchestrator quick implementation
@@ -53,40 +53,35 @@ Never proceed without one, and never decide silently whether to make one.
   with no issue behind it is exactly the unaccountable path this skill exists
   to avoid.
 
-## 2. Offer a spec review
+## 2. Run an unattended spec review
 
-Ask on every run, whether the linked issue was just published in step 1 or
-already existed - never skip the question because the issue looks reviewed
-already. Ask one `AskUserQuestion` (`ask_user` on Junie) with exactly two
-options:
+Run it on every run, whether the linked issue was just published in step 1 or
+already existed, and ask nothing: a quick implementation is hands-off, and
+the human's control here was the choice of route (ADR-0034). Invoke the
+`orch-spec-review` skill and follow its **Standalone spec review** entry in
+its **Unattended spec review** mode on the linked issue, through to its end.
+That mode is the one definition of what the review does unattended - the
+batch printed and applied as recommended, decision items and the ticket
+follow-up taking their recommended option, retiring included - and this step
+restates none of it. Fidelity does not run, and no plan file is written.
 
-- **Run a spec review (Recommended)** - review the linked issue before its
-  ticket breakdown.
-- **Skip** - go straight to the ticket breakdown.
+Remember the review's working directory - the one `spec-review begin`
+printed: step 7 reads the review's `changelog.md` there.
 
-**Run**: invoke the `orch-spec-review` skill and follow its **Standalone spec
-review** entry on the linked issue through to its end, unchanged - the same
-review a human gets on demand: `spec-review begin <issue>`,
-three lenses with Fidelity recorded as not run, one batch question, the
-accepted edits written back to the issue body, a ticket question when those
-edits touch an open ticket of an existing breakdown - editing the tickets, or
-retiring the breakdown and running `orch-to-tickets` itself - and the
-changelog posted as an issue comment. There is no quick-specific variant: Fidelity does not run, and
-no plan file is written. If the review stops - the guard refuses, or a fetch
-or write fails - quick implementation stops too: relay the review's message
-and do not go on to step 3. Note every host fallback the review takes, and
-list it under the PR body's **Host fallbacks** in step 7 as well as in the
-review's changelog comment. Failed lenses stay in the changelog only.
-
-**Skip**: record nothing anywhere, and continue at step 3.
+If the review stops - the guard refuses, or a fetch or write fails - quick
+implementation stops too: relay the review's message and do not go on to
+step 3. If it retired the breakdown and the new breakdown then failed,
+stop too; a rerun sees `ticket exists` exit 1 at step 3 and breaks the
+issue down again. Note every host fallback the review takes, and list it
+under the PR body's **Host fallbacks** in step 7 as well as in the review's
+changelog comment. Failed lenses stay in the changelog only.
 
 ## 3. Publish the ticket breakdown
 
 Unconditional, whether the linked issue was just published in step 1 or
-already existed, and whichever answer step 2 got - never gated by a human
-choice of its own, the same treatment the flow's spec phase gives this same
+already existed - never gated by a human choice of its own, the same treatment the flow's spec phase gives this same
 step. No spec-writing step exists on this path, so the breakdown is drawn
-directly off the linked issue as it stands after any spec review in step 2 -
+directly off the linked issue as it stands after step 2's spec review -
 it is the only spec this path has.
 
 First run `bash "$ORCH" ticket exists <linked issue>`:
@@ -98,11 +93,12 @@ First run `bash "$ORCH" ticket exists <linked issue>`:
   `sub-issues` means step 5 works the linked issue's ticket frontier, and
   `collapsed` means step 5 treats the breakdown as collapsed.
 - **Exit 1**: it has none. Invoke the `orch-to-tickets` skill on the linked
-  issue and follow it, through its own quiz until the user approves a
-  breakdown. It publishes 2 or more tickets as sub-issues of the linked
+  issue and follow its **Unattended breakdown**: it accepts its own draft
+  and asks nothing. It publishes 2 or more tickets as sub-issues of the linked
   issue, or collapses 0 or 1 into the linked issue under its fixed
   `## Ticket` heading, and reports which: the published numbers, or
-  `collapsed`. Step 5 follows that outcome.
+  `collapsed`. Step 5 follows that outcome. If publishing fails, stop
+  before step 4's branch and relay its message.
 - **Any other exit**: GitHub could not be read. Stop and say why.
 
 ## 4. Branch
@@ -171,7 +167,12 @@ is recorded about the check.
 Then open the PR with `bash "$ORCH" pr publish <issue> "<title>"
 <body-file>` - the same boundary `pr open` draws for a flow, kept out of
 skill prose. The body carries a **Review** heading listing every finding
-step 6 declined, with its location, claim and reason, or `None declined.` It
+step 6 declined, with its location, claim and reason, or `None declined.`,
+and a **Spec review decisions** heading listing every decision item step 2's
+unattended spec review took for the human: each `decision (<n>)` line of
+`changelog.md` in that review's working directory, or `None.` when it has
+none. If `changelog.md` is missing, stop before `pr publish` and say so -
+never write `None.` then, since the decisions taken are unknown. It
 ends with a **Host fallbacks** heading listing every fallback this run took -
 including any the spec review in step 2 took - or `None (<host>).` It
 pushes the branch and opens the PR against the base branch `branch off`

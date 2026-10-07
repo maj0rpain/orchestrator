@@ -1,6 +1,6 @@
 ---
 name: orch-spec-review
-description: Review a spec issue once - propose folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask a second question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state.
+description: Review a spec issue once - propose folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask a second question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state. A quick implementation runs the standalone review unattended, applying its own recommendations without asking.
 ---
 
 # Orchestrator spec review
@@ -14,7 +14,8 @@ into the body whatever the issue's comments say that the body does not - see
 review - then read the issue, body and comments, independently, as parallel
 sub-agents that see only files. Every consolidation item and every **finding**
 they report reaches the human as a proposed edit in one batch; only the edits
-the human accepts change the issue. When the issue already has a ticket
+the human accepts change the issue - in an **Unattended spec review**, the
+recommended ones. When the issue already has a ticket
 breakdown and the accepted edits touch an open ticket, a second question asks
 how the breakdown should follow - see **Tickets follow the spec**; the review
 writes the issue's tickets only to follow edits already accepted. The issue body stays the single truth the
@@ -22,9 +23,9 @@ implement phase reads; after a review, the comments are history.
 
 There is no budget and no second pass. In a flow's spec phase there is also
 no "review the spec?" question: the human's control is at the batch decision,
-where they may decline every edit. The question a quick implementation asks
-before its ticket breakdown belongs to quick implementation, not to the spec
-review.
+where they may decline every edit. A quick implementation asks no question
+at all: it takes the standalone entry's **Unattended spec review** mode, which
+applies its own recommendations - see that section.
 The independence comes from the sub-agents, the same way it does for the review
 loop - see `docs/adr/0001-review-loop-runs-in-a-single-session.md`.
 
@@ -117,6 +118,44 @@ the answer** below, with these differences:
   line. A standalone review has one changelog, not two. A quick
   implementation that runs the review in the same session also lists the
   host fallbacks it saw in its own PR body.
+
+### Unattended spec review
+
+The mode a quick implementation takes, and only a quick implementation: a
+standalone spec review that asks the human nothing (ADR-0034). It is the one
+definition of the mode - quick implementation's own steps never restate its
+rules. Everything in **Standalone spec review** above holds, with these
+differences only:
+
+- **Consolidation and the lenses** run unchanged: Consistency, Testability
+  and Implementability, with Fidelity not run.
+- **Disposition**: the batch is drafted, numbered and printed in the session
+  as usual, so a human watching can see what is applied and interrupt. Then
+  no question is asked and nothing waits: the batch is applied at once as
+  **Apply as recommended** - every proposed edit applied, every **recommend
+  decline** item skipped, and every decision item takes its recommended
+  option.
+- **Tickets follow the spec** runs as usual, its items printed, but takes its
+  recommended option without asking: **Apply as recommended**, or **Retire
+  and break down again** when that is the recommendation.
+- **Applying**: the standalone steps in **Applying the answer**, unchanged
+  except step 4: a retire is followed by `orch-to-tickets`' **Unattended
+  breakdown**, never its quiz.
+- **The changelog** opens, ahead of its Consolidation section, with exactly
+  this line:
+
+  ```
+  Unattended spec review, run from a quick implementation: applied as recommended.
+  ```
+
+  Each decision item taken records, under its lens or under Consolidation,
+  one line `decision (<n>): took <letter> - <option>, as recommended`, with
+  `<n>` the item's number in the batch. A quick implementation lists those
+  lines in its PR body. Declined items record **declined as recommended:
+  <reason>**, as in **The changelog**. An attended review's changelog has
+  no opening line and is unchanged.
+- **Failures** are unchanged: a guard refusal, a failed fetch or a failed
+  write stops the review, and the quick implementation that ran it with it.
 
 ## Consolidation
 
@@ -270,10 +309,12 @@ A standalone review applies through the stateless `issue` commands instead:
    Skip this step when nothing in `<dir>/spec.md` changed, as above.
 4. If the human chose **Retire and break down again**, run
    `bash "$ORCH" ticket retire <issue>` now, after the publish. Then invoke the
-   `orch-to-tickets` skill on the issue and follow it, through its own quiz
-   until the human approves a breakdown: it reads the published, edited body.
-   This holds for the standalone review a quick implementation runs too, whose
-   step 3 then sees `ticket exists` exit 0 and works the new breakdown.
+   `orch-to-tickets` skill on the issue: it reads the published, edited body.
+   An attended review follows it through its own quiz until the human
+   approves a breakdown. An **Unattended spec review** follows its
+   **Unattended breakdown** instead, never the quiz; the quick implementation
+   that ran it then sees `ticket exists` exit 0 at its step 3 and works the
+   new breakdown.
 5. Write the changelog to `<dir>/changelog.md` under a `## Spec review`
    heading, with Fidelity's not-run line, as in **The changelog**, and any
    **Host fallbacks** line, and
