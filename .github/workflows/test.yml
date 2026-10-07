@@ -11,9 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # docs_lint.sh checks the version bump only when VERSION_BASE holds
-      # main's version: on a PR to main without the no-version-bump label.
-      # A failed fetch or read fails the job rather than leaving it unset.
+      # Sets VERSION_BASE for docs_lint.sh's bump rule. A failed fetch or
+      # read fails the job rather than leaving it unset.
       - name: Read main's version
         if: >-
           github.event_name == 'pull_request' &&

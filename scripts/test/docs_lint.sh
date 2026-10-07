@@ -3,10 +3,11 @@
 # Docs linter: named structural rules over the plugin's skills, agents,
 # commands and docs.
 #
-# Each rule is a scan_* function that takes a plugin root and prints one line
-# per problem, "<file>: <problem>", and nothing when the root obeys it. Each
-# rule runs first against fixture plugin roots that break it, so a rule that
-# stops flagging anything fails here too, then once against the real plugin root.
+# Each rule is a scan_* function that takes a plugin root (and, for the bump
+# rule, main's version) and prints one line per problem, "<file>: <problem>",
+# and nothing when the root obeys it. Each rule runs first against fixture
+# plugin roots that break it, so a rule that stops flagging anything fails here
+# too, then once against the real plugin root.
 # The linter checks structure only: it never runs orch.sh and holds no flow
 # state.
 
@@ -1302,9 +1303,8 @@ check "every noun orch.sh routes is in the CLI conventions table or its Exceptio
 # --- version and CHANGELOG (CLAUDE.md Versioning) -----------------------------
 # Every PR to main bumps version in .claude-plugin/plugin.json and adds it as
 # the top CHANGELOG.md entry. The CHANGELOG rule always runs; the bump rule
-# runs against the real root only when VERSION_BASE holds main's version, which
-# .github/workflows/test.yml sets on a PR to main without the no-version-bump
-# label.
+# runs against the real root only when VERSION_BASE holds main's version;
+# .github/workflows/test.yml's "Read main's version" step says when it is set.
 echo
 echo "version and CHANGELOG (CLAUDE.md Versioning)"
 # plugin_version <plugin root>: the version field of its plugin.json, empty
@@ -1367,15 +1367,15 @@ check "CHANGELOG.md's top entry is the plugin.json version" "$(scan_changelog "$
 # strictly greater than <base version>, both compared as major.minor.patch
 # integers; a value on either side that is not major.minor.patch is named.
 scan_version_bump() {
-  local v base="$2" semver='^[0-9]+\.[0-9]+\.[0-9]+$' a b i bad=0
+  local v base="$2" semver='^[0-9]+\.[0-9]+\.[0-9]+$' a b i malformed=0
   v="$(plugin_version "$1")"
   if ! [[ "$v" =~ $semver ]]; then
-    echo ".claude-plugin/plugin.json: version '$v' is not major.minor.patch"; bad=1
+    echo ".claude-plugin/plugin.json: version '$v' is not major.minor.patch"; malformed=1
   fi
   if ! [[ "$base" =~ $semver ]]; then
-    echo "VERSION_BASE: main's version '$base' is not major.minor.patch"; bad=1
+    echo "VERSION_BASE: main's version '$base' is not major.minor.patch"; malformed=1
   fi
-  [ "$bad" -eq 0 ] || return 0
+  [ "$malformed" -eq 0 ] || return 0
   IFS=. read -ra a <<<"$v"
   IFS=. read -ra b <<<"$base"
   for i in 0 1 2; do
