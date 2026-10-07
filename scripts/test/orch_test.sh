@@ -20,6 +20,47 @@
 ORCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/orch.sh"
 GH_ADAPTER_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh_adapter_fake.sh"
 PLUGIN_ROOT="$(cd "$(dirname "$ORCH")/.." && pwd)"
+SUITE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+
+# The section filter. With ORCH_TEST_ONLY=<ERE> set, the suite runs only the
+# shared setup (from the `# >>> shared setup` line to the isolation section),
+# the isolation section, every `# ---` section from isolation on whose title -
+# the text after `# --- `, trailing dashes dropped - matches under grep -E, and
+# the summary (from the `# >>> summary` line). The text is extracted from this
+# file and eval'd in this shell, so the paths above are computed once, here,
+# and no file is written. A pattern that matches no section exits 1, printing
+# every section title, one per line.
+if [ -n "${ORCH_TEST_ONLY:-}" ]; then
+  # section_awk <mode> [keep]: list the section titles (mode "titles"), or
+  # print the text to run (mode "text"), keeping the sections whose 1-based
+  # positions appear in keep, a comma-wrapped list such as ",1,4,".
+  section_awk() {
+    awk -v mode="$1" -v keep="${2:-}" '
+      function title(s) { sub(/^# --- /, "", s); sub(/[ -]+$/, "", s); return s }
+      phase == 0 && $0 == "# >>> shared setup" { phase = 1; next }
+      phase == 0 { next }
+      $0 == "# >>> summary" { phase = 3 }
+      phase == 1 && /^# --- / && title($0) == "isolation" { phase = 2 }
+      phase == 2 && /^# --- / {
+        n++
+        on = index(keep, "," n ",") > 0
+        if (mode == "titles") print title($0)
+      }
+      mode == "text" && (phase == 1 || phase == 3 || (phase == 2 && on))
+    ' "$SUITE_SCRIPT"
+  }
+  only_titles="$(section_awk titles)"
+  only_keep=",1,$(printf '%s\n' "$only_titles" | grep -nE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
+  if [ "$only_keep" = ",1," ]; then
+    echo "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section; the sections are:" >&2
+    printf '%s\n' "$only_titles"
+    exit 1
+  fi
+  eval "$(section_awk text "$only_keep")"
+  exit $?
+fi
+
+# >>> shared setup
 PASS=0
 FAIL=0
 SKIP=0
@@ -53,7 +94,9 @@ restore_suite_env() {
   HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 }
 
-ok()   { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
+# ORCH_TEST_QUIET=1 hides the ok lines; the count, FAIL and skip lines,
+# section headers and the summary still print.
+ok()   { PASS=$((PASS + 1)); [ -n "${ORCH_TEST_QUIET:-}" ] || printf '  ok   %s\n' "$1"; }
 bad()  { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 skip() { printf '  skip %s\n     %s\n' "$1" "$2"; SKIP=$((SKIP + 1)); }
 
@@ -117,6 +160,10 @@ new_repo_with_origin() {
   git update-ref "refs/remotes/origin/$b" HEAD
   git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$b"
 }
+
+# exclude_count <line>: how many times <line> appears whole in the current
+# repo's exclude file.
+exclude_count() { grep -cxF "$1" "$(git rev-parse --git-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
 # flat_text [file]: the file, or stdin when given none, on one line with
@@ -243,6 +290,39 @@ review_flow() {
   complete_spec_handoff "$("$ORCH" handoff path implement)"
   complete_implement_handoff "$("$ORCH" handoff path review)"
   state_fixture phase review
+}
+
+# pushed_head <branch> [<seconds ago>]: pushes HEAD to <branch> on a bare
+# origin and prints its SHA; given an age, backdates the push's reflog entry.
+pushed_head() {
+  local bare sha
+  bare="$(mktemp -d)"
+  git init -q --bare "$bare"
+  bare_origin "$bare"
+  git update-ref -d "refs/remotes/origin/$1" 2>/dev/null || true
+  git push -q origin "HEAD:refs/heads/$1" 2>/dev/null
+  sha="$(git rev-parse HEAD)"
+  if [ -n "${2:-}" ]; then
+    git update-ref -d "refs/remotes/origin/$1"
+    GIT_COMMITTER_DATE="@$(( $(date +%s) - $2 )) +0000" \
+      git update-ref -m 'update by push' "refs/remotes/origin/$1" "$sha"
+  fi
+  printf '%s\n' "$sha"
+}
+
+# review_ci_flow <slug>: a review ci section's starting point - review_flow
+# <slug> with PR #7 recorded in state and open from topic onto main in the
+# store-backed fake (fake_github), the base tip's one check run as the CI
+# evidence that keeps the grace, and the CI knobs short: ORCH_CI_GRACE=0.3,
+# ORCH_CI_TIMEOUT=1, ORCH_CI_INTERVAL=0.05. A section that calls it ends with
+# restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL.
+review_ci_flow() {
+  review_flow "$1"
+  state_fixture pr 7
+  export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
+  fake_github
+  fake_pr 7 open topic main
+  fake_check_run main
 }
 
 # ticket_fixture: a ticket section's starting point - a healthy_repo with the
@@ -685,8 +765,6 @@ assert_eq "issue starts unset" "$("$ORCH" state get issue)" ""
 assert_contains "excludes .orchestrator/ without touching .gitignore" \
   "$(cat .git/info/exclude)" ".orchestrator/"
 assert_eq "leaves the working tree clean" "$(git status --porcelain)" ""
-# exclude_count <line>: how many times <line> appears whole in the exclude file.
-exclude_count() { grep -cxF "$1" "$(git rev-parse --git-dir)/info/exclude" || true; }
 assert_eq "excludes .orchestrator/ exactly once" "$(exclude_count .orchestrator/)" "1"
 assert_eq "excludes .scratch/ exactly once" "$(exclude_count .scratch/)" "1"
 
@@ -4507,6 +4585,7 @@ healthy_repo
 # gh subprocess. The real operations are pinned in "gh adapter contract".
 echo
 echo "issue fetch/update"
+healthy_repo
 fake_github
 fake_issue 23 open
 fake_issue_body 23 "Body of #23."
@@ -4776,6 +4855,7 @@ restore_suite_env
 # --- is_filed_severity ------------------------------------------------------
 
 echo "is_filed_severity"
+new_repo >/dev/null
 # Sourced rather than run: the helper is the one answer to "is this severity
 # filed", and sourcing orch.sh defines its functions without running main.
 filed_sev() { bash -c 'source "$1" && is_filed_severity "$2"' _ "$ORCH" "$1"; }
@@ -4977,6 +5057,7 @@ assert_eq "restore_suite_env undoes fake_github" \
 # what keeps the fake honest about the real ones.
 echo
 echo "gh adapter contract"
+new_repo >/dev/null
 gh_fixture
 export GH_REPO=acme/widgets
 sev_desc="Review finding filed at major severity"
@@ -6157,12 +6238,7 @@ restore_suite_env
 # their contract tests in "gh adapter contract".
 echo
 echo "review ci"
-review_flow reviewci
-state_fixture pr 7
-export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
-fake_github
-fake_pr 7 open topic main
-fake_check_run main
+review_ci_flow reviewci
 : >"$GH_FIXTURE/env.log"
 fake_checks 7 all green
 out="$("$ORCH" review ci 2>&1)"; st=$?
@@ -6265,6 +6341,7 @@ assert_status "checks nobody could read stop the loop" "$st" 1
 assert_first_line "rather than passing as a repo with no checks" "$out" "unreachable"
 assert_contains "saying what it could not read" "$out" "could not read"
 rm -rf "$ORCH_GH_FAKE_STORE/fail"
+restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 
 # --- the grace counts from the push (issue #475) ---
 # review ci runs when the loop ends, usually minutes after the fixer's last
@@ -6273,23 +6350,7 @@ rm -rf "$ORCH_GH_FAKE_STORE/fail"
 # remote-tracking ref that set it to the PR's head SHA. The anchor is real git
 # - a push to a local bare remote, its entry rewritten under a past committer
 # date - while the PR's head and branch come from the fake adapter.
-# pushed_head <branch> [<seconds ago>]: pushes HEAD to <branch> on a bare
-# origin and prints its SHA; given an age, backdates the push's reflog entry.
-pushed_head() {
-  local bare sha
-  bare="$(mktemp -d)"
-  git init -q --bare "$bare"
-  bare_origin "$bare"
-  git update-ref -d "refs/remotes/origin/$1" 2>/dev/null || true
-  git push -q origin "HEAD:refs/heads/$1" 2>/dev/null
-  sha="$(git rev-parse HEAD)"
-  if [ -n "${2:-}" ]; then
-    git update-ref -d "refs/remotes/origin/$1"
-    GIT_COMMITTER_DATE="@$(( $(date +%s) - $2 )) +0000" \
-      git update-ref -m 'update by push' "refs/remotes/origin/$1" "$sha"
-  fi
-  printf '%s\n' "$sha"
-}
+review_ci_flow gracepush
 head_sha="$(pushed_head topic 3600)"
 fake_pr_head 7 "$head_sha"
 
@@ -6333,6 +6394,7 @@ fake_checks 7 required none green
 fake_checks 7 all failing
 out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "a fresh push still waits the grace before widening" "$out" "green"
+restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 
 # --- the grace is skipped on no evidence of CI (issue #476) ---
 # Zero checks straight after a push is ambiguous only where the repo might have
@@ -6354,6 +6416,9 @@ no_ci() {
   out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
   assert_first_line "$2" "$out" "$1"
 }
+review_ci_flow nocievidence
+head_sha="$(pushed_head topic)"
+fake_pr_head 7 "$head_sha"
 ci_absent
 no_ci none "with no evidence of CI anywhere, none arrives without the grace"
 assert_status "and lets the loop finish" "$st" 0
@@ -6444,8 +6509,7 @@ assert_status "refuses to classify checks on a PR that does not exist yet" "$st"
 # `set -e` on the assignment rather than the exit itself. Asserting the message
 # is what would catch the guard degrading into an empty PR number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
-unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-restore_suite_env
+restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 
 # --- review rerun -------------------------------------------------------------
 # The flow's one flake rerun (#525): the failed jobs of the Actions run behind
@@ -7761,6 +7825,130 @@ assert_status "an unknown phase op is an error" "$st" 1
 assert_contains "naming the ops it wants" "$out" "advance|boundary"
 unset ORCHESTRATOR_HOST
 
+# --- the section filter (ORCH_TEST_ONLY, #612) ----------------------------------
+# The suite run as a child process under a filter, asserted on its stdout and
+# exit status. The child starts inside a git repo, so its isolation section
+# shows the harness holds under a filter too.
+echo
+echo "the section filter (ORCH_TEST_ONLY, #612)"
+new_repo >/dev/null
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+assert_status "a filter matching only isolation passes" "$st" 0
+assert_eq "runs the isolation section" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
+assert_eq "runs no other section" "$(printf '%s\n' "$out" | grep -cxE 'init|slug|doctor')" "0"
+assert_eq "counts only what ran in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
+  "6 passed, 0 failed"
+assert_contains "keeps the cwd isolation, started from a git repo" "$out" \
+  "ok   the suite starts outside any git work tree"
+assert_contains "keeps the HOME isolation" "$out" "ok   HOME is the suite's own HOME"
+
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^ticket (block|unblock)$' bash "$SUITE_SCRIPT" 2>/dev/null)"
+assert_eq "matches titles without their trailing dashes" \
+  "$(printf '%s\n' "$out" | grep -cxE 'ticket block|ticket unblock')" "2"
+assert_eq "runs isolation alongside the matched sections" \
+  "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
+assert_eq "skips the sections the pattern does not match" \
+  "$(printf '%s\n' "$out" | grep -cxE 'ticket close|ticket reset')" "0"
+
+out="$(ORCH_TEST_ONLY='^no such section$' bash "$SUITE_SCRIPT" 2>/dev/null)"; st=$?
+assert_status "a pattern matching no section exits 1" "$st" 1
+assert_eq "lists the sections from isolation on" "$(printf '%s\n' "$out" | sed -n 1p)" "isolation"
+assert_eq "lists a sub-section as a title of its own" \
+  "$(printf '%s\n' "$out" | grep -cxF 'doctor: host (#128)')" "1"
+assert_eq "lists titles without trailing dashes" "$(printf '%s\n' "$out" | grep -c -- '-$')" "0"
+assert_eq "lists no shared-setup header" \
+  "$(printf '%s\n' "$out" | grep -cE 'doctor harness|fixture gh')" "0"
+assert_eq "runs nothing" "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
+
+# --- quiet mode (ORCH_TEST_QUIET, #614) ----------------------------------------
+# A filtered, quiet child run of this suite, and one quiet run each of the
+# other two suites. Quiet mode hides the ok lines only: the counts, headers,
+# FAIL/skip lines with their detail, and the summary all stay. hooks_test.sh
+# and docs_lint.sh are judged on their ok lines alone, not on their status.
+echo
+echo "quiet mode (ORCH_TEST_QUIET, #614)"
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+assert_status "a quiet, filtered run passes" "$st" 0
+assert_eq "prints no ok line" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
+assert_eq "still prints the section header" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
+assert_eq "still counts every pass in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
+  "6 passed, 0 failed"
+# A copy of the scripts tree whose isolation section gains a failing and a
+# skipped check, so the FAIL and skip lines are seen kept under quiet mode.
+quiet_dir="$(mktemp -d)"
+cp -R "$PLUGIN_ROOT/scripts" "$quiet_dir/"
+awk '{ print } $0 == "echo \"isolation\"" {
+  print "bad \"a planted failure\" \"its detail line\""
+  print "skip \"a planted skip\" \"its reason line\"" }' "$SUITE_SCRIPT" \
+  >"$quiet_dir/scripts/test/orch_test.sh"
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' \
+  bash "$quiet_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+assert_status "a quiet run with a failure exits 1" "$st" 1
+assert_contains "keeps a FAIL line with its detail line" "$out" \
+  "$(printf '  FAIL a planted failure\n     its detail line')"
+assert_contains "keeps a skip line with its reason line" "$out" \
+  "$(printf '  skip a planted skip\n     its reason line')"
+assert_eq "summarises the hidden passes, the failure and the skip" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed, 1 skipped"
+assert_eq "still prints no ok line beside a failure" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
+rm -rf "$quiet_dir"
+for quiet_suite in hooks_test.sh docs_lint.sh; do
+  out="$(ORCH_TEST_QUIET=1 bash "$(dirname "$SUITE_SCRIPT")/$quiet_suite" 2>&1)"
+  assert_eq "$quiet_suite prints no ok line when quiet" \
+    "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
+  assert_contains "$quiet_suite still prints its summary when quiet" "$out" " passed, "
+done
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"
+assert_eq "without quiet mode, prints every ok line" \
+  "$(printf '%s\n' "$out" | grep -c '^  ok ')" "6"
+
+# --- all.sh, the single entry point (#615) ----------------------------------
+# A copy of all.sh in a temp directory beside three stub suites, never the
+# real ones: orch_test.sh's stub fails, the other two pass. Each stub logs
+# whether ORCH_TEST_ONLY and ORCH_TEST_QUIET reached it, and VERSION_BASE.
+echo
+echo "all.sh, the single entry point (#615)"
+all_dir="$(mktemp -d)"
+cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$all_dir/"
+for all_suite in orch_test.sh hooks_test.sh docs_lint.sh; do
+  {
+    echo '#!/usr/bin/env bash'
+    echo "echo \"$all_suite only=\${ORCH_TEST_ONLY-unset} quiet=\${ORCH_TEST_QUIET-unset} base=\${VERSION_BASE-unset}\" >>\"\$(dirname \"\$0\")/log\""
+    echo 'echo; echo "a section header"'
+    if [ "$all_suite" = orch_test.sh ]; then
+      echo "printf '  FAIL a stub failure\n     its detail line\n  FAIL another failure\n     its own detail\n'"
+      echo 'echo; echo "2 passed, 2 failed"; exit 1'
+    else
+      echo 'echo; echo "7 passed, 0 failed"'
+    fi
+  } >"$all_dir/$all_suite"
+done
+out="$(ORCH_TEST_ONLY='^isolation$' VERSION_BASE=9.9.9 bash "$all_dir/all.sh" 2>&1)"; st=$?
+assert_status "exits non-zero when a suite failed" "$st" 1
+assert_eq "runs every suite after the first one fails" "$(wc -l <"$all_dir/log" | tr -d ' ')" "3"
+assert_eq "runs the suites in order" "$(cut -d' ' -f1 "$all_dir/log" | tr '\n' ' ')" \
+  "orch_test.sh hooks_test.sh docs_lint.sh "
+assert_eq "unsets ORCH_TEST_ONLY for every suite" "$(grep -c 'only=unset' "$all_dir/log")" "3"
+assert_eq "sets ORCH_TEST_QUIET=1 for every suite" "$(grep -c 'quiet=1 ' "$all_dir/log")" "3"
+assert_eq "passes VERSION_BASE through to every suite" "$(grep -c 'base=9.9.9$' "$all_dir/log")" "3"
+assert_contains "prints a suite's FAIL lines with their detail lines" "$out" \
+  "$(printf '  FAIL a stub failure\n     its detail line\n  FAIL another failure\n     its own detail')"
+assert_eq "prints one summary line per suite" \
+  "$(printf '%s\n' "$out" | grep -E '^[a-z_]+\.sh: [0-9]+ passed')" \
+  "$(printf 'orch_test.sh: 2 passed, 2 failed\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed')"
+assert_eq "prints no section header" "$(printf '%s\n' "$out" | grep -c 'a section header')" "0"
+rm -f "$all_dir/log"
+sed -i.bak 's/; exit 1$//; s/2 failed/0 failed/; /FAIL/d' "$all_dir/orch_test.sh"
+out="$(VERSION_BASE='' bash "$all_dir/all.sh" 2>&1)"; st=$?
+assert_status "exits 0 when every suite passed" "$st" 0
+assert_eq "passes an empty VERSION_BASE through as set" "$(grep -c 'base=$' "$all_dir/log")" "3"
+rm -f "$all_dir/log"
+out="$(unset VERSION_BASE; bash "$all_dir/all.sh" 2>&1)"
+assert_eq "leaves an unset VERSION_BASE unset" "$(grep -c 'base=unset$' "$all_dir/log")" "3"
+assert_eq "prints no FAIL line when every suite passed" "$(printf '%s\n' "$out" | grep -c FAIL)" "0"
+rm -rf "$all_dir"
+
+# >>> summary
 echo
 if [ "$SKIP" -gt 0 ]; then
   echo "$PASS passed, $FAIL failed, $SKIP skipped"

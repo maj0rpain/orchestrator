@@ -24,4 +24,4 @@ jobs:
           base="$(git show origin/main:.claude-plugin/plugin.json | jq -er .version)"
           echo "VERSION_BASE=$base" >>"$GITHUB_ENV"
       - name: Verify
-        run: scripts/test/orch_test.sh && scripts/test/hooks_test.sh && scripts/test/docs_lint.sh
+        run: scripts/test/all.sh

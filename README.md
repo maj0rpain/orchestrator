@@ -299,8 +299,14 @@ a `/orchestrator:<cmd>` that has no `commands/<cmd>.md`, or when a command runs
 ```
 claude --plugin-dir /path/to/orchestrator     # load the working tree directly
 claude plugin validate .
-scripts/test/orch_test.sh && scripts/test/hooks_test.sh && scripts/test/docs_lint.sh
+scripts/test/all.sh                           # every suite; run once before committing
 ```
+
+While iterating, run only the section you are working on, in quiet mode:
+`ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`, where
+`<section>` is an extended regex matched against the `# ---` section titles. Run
+`scripts/test/all.sh` once before committing: it runs all three suites, carries
+on past a failing one, and prints each suite's FAIL lines and a summary line.
 
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the
