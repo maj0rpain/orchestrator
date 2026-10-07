@@ -2159,6 +2159,7 @@ out="$(triage 67 --override 2>&1)"; st=$?
 assert_status "a finding under the renamed needs-triage is refused" "$st" 1
 assert_contains "saying it is not yet triaged" "$out" "not yet triaged"
 assert_contains "naming the issue" "$out" "issue #67"
+assert_contains "pointing at finding triage" "$out" "/orchestrator:finding-triage"
 assert_eq "changing nothing" "$(fake_snapshot)" "$before"
 fake_issue 68 open "human go" review:major
 out="$(triage 68 2>&1)"; st=$?
