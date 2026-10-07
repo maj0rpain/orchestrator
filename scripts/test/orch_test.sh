@@ -159,6 +159,10 @@ new_repo_with_origin() {
   git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$b"
 }
 
+# exclude_count <line>: how many times <line> appears whole in the current
+# repo's exclude file.
+exclude_count() { grep -cxF "$1" "$(git rev-parse --git-dir)/info/exclude" || true; }
+
 writeln() { printf '%s\n' "$@"; }
 # flat_text [file]: the file, or stdin when given none, on one line with
 # every whitespace run collapsed to one space.
@@ -284,6 +288,39 @@ review_flow() {
   complete_spec_handoff "$("$ORCH" handoff path implement)"
   complete_implement_handoff "$("$ORCH" handoff path review)"
   state_fixture phase review
+}
+
+# pushed_head <branch> [<seconds ago>]: pushes HEAD to <branch> on a bare
+# origin and prints its SHA; given an age, backdates the push's reflog entry.
+pushed_head() {
+  local bare sha
+  bare="$(mktemp -d)"
+  git init -q --bare "$bare"
+  bare_origin "$bare"
+  git update-ref -d "refs/remotes/origin/$1" 2>/dev/null || true
+  git push -q origin "HEAD:refs/heads/$1" 2>/dev/null
+  sha="$(git rev-parse HEAD)"
+  if [ -n "${2:-}" ]; then
+    git update-ref -d "refs/remotes/origin/$1"
+    GIT_COMMITTER_DATE="@$(( $(date +%s) - $2 )) +0000" \
+      git update-ref -m 'update by push' "refs/remotes/origin/$1" "$sha"
+  fi
+  printf '%s\n' "$sha"
+}
+
+# review_ci_flow <slug>: a review ci section's starting point - review_flow
+# <slug> with PR #7 recorded in state and open from topic onto main in the
+# store-backed fake (fake_github), the base tip's one check run as the CI
+# evidence that keeps the grace, and the CI knobs short: ORCH_CI_GRACE=0.3,
+# ORCH_CI_TIMEOUT=1, ORCH_CI_INTERVAL=0.05. A section that calls it ends with
+# restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL.
+review_ci_flow() {
+  review_flow "$1"
+  state_fixture pr 7
+  export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
+  fake_github
+  fake_pr 7 open topic main
+  fake_check_run main
 }
 
 # ticket_fixture: a ticket section's starting point - a healthy_repo with the
@@ -726,8 +763,6 @@ assert_eq "issue starts unset" "$("$ORCH" state get issue)" ""
 assert_contains "excludes .orchestrator/ without touching .gitignore" \
   "$(cat .git/info/exclude)" ".orchestrator/"
 assert_eq "leaves the working tree clean" "$(git status --porcelain)" ""
-# exclude_count <line>: how many times <line> appears whole in the exclude file.
-exclude_count() { grep -cxF "$1" "$(git rev-parse --git-dir)/info/exclude" || true; }
 assert_eq "excludes .orchestrator/ exactly once" "$(exclude_count .orchestrator/)" "1"
 assert_eq "excludes .scratch/ exactly once" "$(exclude_count .scratch/)" "1"
 
@@ -4548,6 +4583,7 @@ healthy_repo
 # gh subprocess. The real operations are pinned in "gh adapter contract".
 echo
 echo "issue fetch/update"
+healthy_repo
 fake_github
 fake_issue 23 open
 fake_issue_body 23 "Body of #23."
@@ -4817,6 +4853,7 @@ restore_suite_env
 # --- is_filed_severity ------------------------------------------------------
 
 echo "is_filed_severity"
+new_repo >/dev/null
 # Sourced rather than run: the helper is the one answer to "is this severity
 # filed", and sourcing orch.sh defines its functions without running main.
 filed_sev() { bash -c 'source "$1" && is_filed_severity "$2"' _ "$ORCH" "$1"; }
@@ -5018,6 +5055,7 @@ assert_eq "restore_suite_env undoes fake_github" \
 # what keeps the fake honest about the real ones.
 echo
 echo "gh adapter contract"
+new_repo >/dev/null
 gh_fixture
 export GH_REPO=acme/widgets
 sev_desc="Review finding filed at major severity"
@@ -6198,12 +6236,7 @@ restore_suite_env
 # their contract tests in "gh adapter contract".
 echo
 echo "review ci"
-review_flow reviewci
-state_fixture pr 7
-export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
-fake_github
-fake_pr 7 open topic main
-fake_check_run main
+review_ci_flow reviewci
 : >"$GH_FIXTURE/env.log"
 fake_checks 7 all green
 out="$("$ORCH" review ci 2>&1)"; st=$?
@@ -6306,6 +6339,7 @@ assert_status "checks nobody could read stop the loop" "$st" 1
 assert_first_line "rather than passing as a repo with no checks" "$out" "unreachable"
 assert_contains "saying what it could not read" "$out" "could not read"
 rm -rf "$ORCH_GH_FAKE_STORE/fail"
+restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 
 # --- the grace counts from the push (issue #475) ---
 # review ci runs when the loop ends, usually minutes after the fixer's last
@@ -6314,23 +6348,7 @@ rm -rf "$ORCH_GH_FAKE_STORE/fail"
 # remote-tracking ref that set it to the PR's head SHA. The anchor is real git
 # - a push to a local bare remote, its entry rewritten under a past committer
 # date - while the PR's head and branch come from the fake adapter.
-# pushed_head <branch> [<seconds ago>]: pushes HEAD to <branch> on a bare
-# origin and prints its SHA; given an age, backdates the push's reflog entry.
-pushed_head() {
-  local bare sha
-  bare="$(mktemp -d)"
-  git init -q --bare "$bare"
-  bare_origin "$bare"
-  git update-ref -d "refs/remotes/origin/$1" 2>/dev/null || true
-  git push -q origin "HEAD:refs/heads/$1" 2>/dev/null
-  sha="$(git rev-parse HEAD)"
-  if [ -n "${2:-}" ]; then
-    git update-ref -d "refs/remotes/origin/$1"
-    GIT_COMMITTER_DATE="@$(( $(date +%s) - $2 )) +0000" \
-      git update-ref -m 'update by push' "refs/remotes/origin/$1" "$sha"
-  fi
-  printf '%s\n' "$sha"
-}
+review_ci_flow gracepush
 head_sha="$(pushed_head topic 3600)"
 fake_pr_head 7 "$head_sha"
 
@@ -6374,6 +6392,7 @@ fake_checks 7 required none green
 fake_checks 7 all failing
 out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "a fresh push still waits the grace before widening" "$out" "green"
+restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 
 # --- the grace is skipped on no evidence of CI (issue #476) ---
 # Zero checks straight after a push is ambiguous only where the repo might have
@@ -6395,6 +6414,9 @@ no_ci() {
   out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
   assert_first_line "$2" "$out" "$1"
 }
+review_ci_flow nocievidence
+head_sha="$(pushed_head topic)"
+fake_pr_head 7 "$head_sha"
 ci_absent
 no_ci none "with no evidence of CI anywhere, none arrives without the grace"
 assert_status "and lets the loop finish" "$st" 0
