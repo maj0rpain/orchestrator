@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # planning-allowlist.sh - the canonical definition of the planning allowlist
 # and of the planning records.
 #

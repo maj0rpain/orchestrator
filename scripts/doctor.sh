@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # doctor.sh - diagnostics for the orchestrator plugin, sourced by orch.sh and
 # by hook-grilling.sh.
 #
@@ -253,7 +254,7 @@ check_default_branch() {
 
 # The plugin root doctor runs from: the directory scripts/ sits in, which is
 # also where every skill resolves orch.sh and the capabilities reference from.
-D_PLUGIN="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+D_PLUGIN="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST_REF="docs/host-capabilities.md"
 
 # The one host detector. Prints "claude", "junie", or nothing when no signal
@@ -652,7 +653,7 @@ check_flow_branch() {
   # A done flow stays put until the next init archives it (ADR-0009), and its
   # branch being deleted after the merge is the routine end of a flow, not a
   # broken one - the same reading check_flow_issue gives its closed issue.
-  if [ "$(state_get phase)" = done ]; then
+  if [ "$(state_get phase)" = "done" ]; then
     d_ok "branch: $branch gone - expected after merge"; return 0
   fi
   d_fail "branch $branch no longer exists - the flow has nothing left to build on."
@@ -676,7 +677,7 @@ check_flow_upstream() {
   if [ "$upstream" = "origin/$branch" ]; then d_ok "upstream: $upstream"; return 0; fi
   # After the merge the remote branch is routinely deleted; a push remedy here
   # would recreate a branch somebody removed on purpose.
-  if [ "$phase" = done ]; then d_ok "upstream: none - expected after merge"; return 0; fi
+  if [ "$phase" = "done" ]; then d_ok "upstream: none - expected after merge"; return 0; fi
   d_warn "branch $branch is not on origin yet."
   d_remedy "git push -u origin $branch"
 }
@@ -699,7 +700,7 @@ check_flow_issue() {
     CLOSED)
       # pr open always writes `Closes #<issue>`, so a done flow's issue being
       # closed is the expected result of merging, not a broken flow.
-      if [ "$phase" = done ]; then
+      if [ "$phase" = "done" ]; then
         d_ok "issue #$issue closed"
       else
         d_fail "issue #$issue is closed."; d_remedy "gh issue reopen $issue"
@@ -830,7 +831,7 @@ check_flow_review_draft() {
   # A merged or closed PR cannot go back to draft, so only an open PR's flag
   # is a live signal - nothing left there to disagree with the flow's phase.
   [ "$pr_state" = OPEN ] || return 0
-  if [ "$phase" = done ] && [ "$is_draft" = true ]; then
+  if [ "$phase" = "done" ] && [ "$is_draft" = true ]; then
     d_fail "PR #$pr is still a draft but the flow phase is done - review ready did not take."
     d_remedy "gh pr ready $pr"
   elif [ "$phase" = review ] && [ "$is_draft" = false ]; then
@@ -938,7 +939,7 @@ cmd_doctor() {
   [ $# -le 1 ] || die "usage: orch.sh doctor [--env|--flow]"
   case "${1:-}" in
     "")     scope=both ;;
-    --env)  scope=env ;;
+    --env)  scope="env" ;;
     --flow) scope=flow ;;
     *)      die "unknown doctor flag: $1 (want --env or --flow)" ;;
   esac

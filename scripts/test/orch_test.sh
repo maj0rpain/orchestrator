@@ -564,7 +564,7 @@ fake_lag_after() {
 fake_body_read() {
   local n="$1" t
   shift
-  # shellcheck disable=SC2059
+  # shellcheck disable=SC2059 # the format string is the caller's first argument, by design
   t="$(printf "$@"; printf x)"
   t="${t%x}"
   printf '%s' "${t%$'\n'}" >"$ORCH_GH_FAKE_STORE/issues/$n/body"
@@ -1235,7 +1235,7 @@ assert_status "state get works with no repo to resolve" "$st" 0
 for args in "" "--name"; do
   err="$(mktemp)"
   label="repo show${args:+ $args}"
-  # shellcheck disable=SC2086
+  # shellcheck disable=SC2086 # an empty args is no argument at all, and "a b" is two
   out="$("$ORCH" repo show $args 2>"$err")"; st=$?
   assert_status "$label exits 1 with no repo" "$st" 1
   assert_eq "$label prints nothing on stdout with no repo" "$out" ""
@@ -1561,7 +1561,7 @@ assert_eq "from the default branch" "$(git rev-parse HEAD)" "$main_tip"
 orch_gh_failing base clear >/dev/null
 
 # A done flow, or none at all, is no active flow to correct.
-state_fixture phase done
+state_fixture phase "done"
 out="$(orch_gh_failing base set uat --flow 2>&1)"; st=$?
 assert_status "base set --flow refuses a done flow" "$st" 1
 assert_contains "as no active flow" "$out" "no active flow - nothing was set"
@@ -1776,7 +1776,7 @@ out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
 assert_status "a phase outside PHASES refuses it" "$st" 1
 assert_eq "pointing at doctor --flow" "$out" \
   "orch: the active flow holds issue #12 at phase 'bogus', which is not a flow phase - refusing to review it; run orch.sh doctor --flow"
-rp_flow done 12 '"quick/12-foo"'
+rp_flow "done" 12 '"quick/12-foo"'
 before="$(cksum <"$rp_state")"
 out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
 assert_status "a done flow holding the issue and branch is allowed" "$st" 0
@@ -2328,7 +2328,7 @@ echo
 echo "init archives a done flow"
 fresh_flow first
 complete_plan_handoff "$("$ORCH" handoff path spec)"
-state_fixture phase done
+state_fixture phase "done"
 out="$("$ORCH" init second)"; st=$?
 assert_status "starting over a done flow succeeds" "$st" 0
 archived="$(printf '%s\n' "$out" | sed -n '1p')"
@@ -2356,7 +2356,7 @@ assert_contains "same message, unchanged" "$out" "One flow at a time"
 
 fresh_flow willfail
 fake_github
-state_fixture phase done
+state_fixture phase "done"
 out="$("$ORCH" init nope --issue 99 2>&1)"; st=$?
 assert_status "a bad --issue adoption over a done flow refuses" "$st" 1
 assert_contains "names the issue number" "$out" "99"
@@ -2373,7 +2373,7 @@ healthy_repo
 fake_issue 7 open ready-for-agent
 fake_issue 42 open ready-for-agent
 "$ORCH" init willsucceed --issue 7 >/dev/null
-state_fixture phase done
+state_fixture phase "done"
 out="$("$ORCH" init second --issue 42)"; st=$?
 assert_status "a valid --issue adoption over a done flow succeeds" "$st" 0
 archived="$(printf '%s\n' "$out" | sed -n '1p')"
@@ -2530,7 +2530,7 @@ fake_local_default ""
 # real adapter runs here, over a fixture gh that logs every call it gets.
 savepath="$PATH"; gh_fixture; PATH="$savepath"
 out="$(cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
-  && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER= "$ORCH" doctor --env 2>&1)"; st=$?
+  && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "no resolvable repo fails doctor" "$st" 1
 assert_contains "names the missing repo as a FAIL" "$out" "FAIL  no GitHub repo to work on"
 assert_contains "gives the GH_REPO remedy" "$out" "GH_REPO=<owner>/<repo>"
@@ -2976,6 +2976,7 @@ mkdir -p "$h/.agents/skills/orch-flow"
 touch "$h/.agents/skills/orch-flow/SKILL.md"
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_contains "reports a skills-only copy with no orch.sh" "$out" "orch.sh missing"
+# shellcheck disable=SC2088 # the literal ~ path doctor prints, not a path to expand
 assert_contains "names the skills CLI copy" "$out" "~/.agents/skills: orch-flow"
 # The fix names only the detected host's install.
 assert_contains "names the full-plugin install for Claude Code" "$out" "/plugin install orchestrator@orchestrator"
@@ -3003,11 +3004,13 @@ rm -rf "$h/.junie/skills/orch-review"
 mkdir -p "$h/.claude/skills/orch-flow"
 touch "$h/.claude/skills/orch-flow/SKILL.md"
 out="$("$ORCH" doctor --env 2>&1)"
+# shellcheck disable=SC2088 # the literal ~ path doctor prints, not a path to expand
 assert_contains "names a stray copy in Claude Code's user skill store" "$out" "~/.claude/skills: orch-flow"
 # Stray copies in both stores: one warning per store, one remedy.
 mkdir -p "$h/.agents/skills/orch-review"
 touch "$h/.agents/skills/orch-review/SKILL.md"
 out="$("$ORCH" doctor --env 2>&1)"
+# shellcheck disable=SC2088 # the literal ~ path doctor prints, not a path to expand
 assert_contains "names the skills CLI store's copy too" "$out" "~/.agents/skills: orch-review"
 assert_eq "warns once per store that holds a copy" \
   "$(printf '%s\n' "$out" | grep -c 'orch.sh missing')" "2"
@@ -3021,6 +3024,7 @@ ln -s ../../.agents/skills/orch-review "$h/.claude/skills/orch-review"
 out="$("$ORCH" doctor --env 2>&1)"
 assert_eq "reports a copy reached by a link only once" \
   "$(printf '%s\n' "$out" | grep -c 'orch.sh missing')" "1"
+# shellcheck disable=SC2088 # the literal ~ path doctor prints, not a path to expand
 assert_contains "under the store that holds it" "$out" "~/.agents/skills: orch-review"
 rm -f "$h/.claude/skills/orch-review"
 rm -rf "$h/.agents/skills/orch-review"
@@ -3177,7 +3181,7 @@ assert_contains "still reports it open" "$out" "issue #11 open"
 # is closed as a matter of course - a done flow reporting that as broken was
 # doctor misreporting every successfully-finished flow.
 complete_implement_handoff "$("$ORCH" handoff path review)"
-state_fixture phase done
+state_fixture phase "done"
 fake_issue 11 closed
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a closed issue is healthy once the flow is done" "$st" 0
@@ -3428,7 +3432,7 @@ pinned_replies() {
 }
 pinned_replies fork/widgets
 for args in "issue fetch 5 $fetched" "issue update 5 $body" "ticket parent 50" "base show" "review rerun 7"; do
-  # shellcheck disable=SC2086
+  # shellcheck disable=SC2086 # each args string is a word list on purpose
   out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
   assert_status "$args runs in the fork" "$st" 0
 done
@@ -3449,7 +3453,7 @@ assert_contains "and that one is the gh guard's own" \
 git remote remove origin
 : >"$GH_FIXTURE/env.log"
 for args in "issue fetch 5 $fetched" "ticket parent 50"; do
-  # shellcheck disable=SC2086
+  # shellcheck disable=SC2086 # each args string is a word list on purpose
   out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
   assert_status "$args dies with no repo" "$st" 1
   assert_contains "$args names GH_REPO as the remedy" "$out" "GH_REPO=<owner>/<repo>"
@@ -3463,7 +3467,7 @@ assert_status "a local-only command is unaffected" "$st" 0
 git remote add origin git@ghe.example.com:fork/widgets.git
 pinned_replies ghe.example.com/fork/widgets
 for args in "issue fetch 5 $fetched" "ticket parent 50" "base show" "review rerun 7"; do
-  # shellcheck disable=SC2086
+  # shellcheck disable=SC2086 # each args string is a word list on purpose
   out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
   assert_status "$args runs on the repo's own host" "$st" 0
 done
@@ -5382,36 +5386,36 @@ out="$(contract adapter_pr_checks 65 all 2>&1)"; st=$?
 assert_status "pr checks: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "dial tcp: lookup api.github.com: no such host"
 
-prot=repos/{owner}/{repo}/branches/main/protection/required_status_checks
+prot="repos/{owner}/{repo}/branches/main/protection/required_status_checks"
 gh_reply 0 '{"strict":false,"contexts":["build","lint"],"checks":[{"context":"build","app_id":null}]}' '' api "$prot"
 out="$(contract adapter_branch_required_checks main 2>&1)"; st=$?
 assert_status "branch required checks: reads classic protection" "$st" 0
 assert_eq "each required context once, one per line" "$out" "$(writeln build lint)"
 gh_reply 1 '{"message":"Branch not protected","status":"404"}' 'gh: Branch not protected (HTTP 404)' \
-  api repos/{owner}/{repo}/branches/open/protection/required_status_checks
+  api "repos/{owner}/{repo}/branches/open/protection/required_status_checks"
 out="$(contract adapter_branch_required_checks open 2>&1)"; st=$?
 assert_status "branch required checks: GitHub's 404 for an unprotected branch succeeds" "$st" 0
 assert_eq "printing nothing at all" "$out" ""
 gh_reply 1 '{"message":"Not Found","status":"404"}' 'gh: Not Found (HTTP 404)' \
-  api repos/{owner}/{repo}/branches/hidden/protection/required_status_checks
+  api "repos/{owner}/{repo}/branches/hidden/protection/required_status_checks"
 out="$(contract adapter_branch_required_checks hidden 2>&1)"; st=$?
 assert_status "branch required checks: a bare 404 Not Found fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "gh: Not Found (HTTP 404)"
-gh_reply 0 '{"strict":true}' '' api repos/{owner}/{repo}/branches/loose/protection/required_status_checks
+gh_reply 0 '{"strict":true}' '' api "repos/{owner}/{repo}/branches/loose/protection/required_status_checks"
 out="$(contract adapter_branch_required_checks loose 2>&1)"; st=$?
 assert_status "branch required checks: protection requiring no checks succeeds" "$st" 0
 assert_eq "printing nothing at all" "$out" ""
 
 gh_reply 0 '[{"type":"deletion"},{"type":"required_status_checks","parameters":{}}]' '' \
-  api repos/{owner}/{repo}/rules/branches/main
+  api "repos/{owner}/{repo}/rules/branches/main"
 out="$(contract adapter_branch_rules main 2>&1)"; st=$?
 assert_status "branch rules: reads the rules on a branch" "$st" 0
 assert_eq "one rule type per line" "$out" "$(writeln deletion required_status_checks)"
-gh_reply 0 '[]' '' api repos/{owner}/{repo}/rules/branches/bare
+gh_reply 0 '[]' '' api "repos/{owner}/{repo}/rules/branches/bare"
 out="$(contract adapter_branch_rules bare 2>&1)"; st=$?
 assert_status "branch rules: a branch no ruleset touches succeeds" "$st" 0
 assert_eq "printing nothing at all" "$out" ""
-gh_reply 1 '' 'HTTP 502: Bad Gateway' api repos/{owner}/{repo}/rules/branches/down
+gh_reply 1 '' 'HTTP 502: Bad Gateway' api "repos/{owner}/{repo}/rules/branches/down"
 out="$(contract adapter_branch_rules down 2>&1)"; st=$?
 assert_status "branch rules: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
@@ -5432,13 +5436,13 @@ out="$(contract adapter_commit_has_check_runs dddd 2>&1)"; st=$?
 assert_status "commit has check runs: an answer jq cannot read fails it" "$st" 1
 
 gh_reply 0 '{"state":"success","total_count":1,"statuses":[{"context":"ci/legacy"}]}' '' \
-  api repos/{owner}/{repo}/commits/aaaa/status
+  api "repos/{owner}/{repo}/commits/aaaa/status"
 out="$(contract adapter_commit_has_statuses aaaa 2>&1)"; st=$?
 assert_status "commit has statuses: reads a commit's combined status" "$st" 0
 assert_eq "yes where it has any" "$out" "yes"
-gh_reply 0 '{"state":"pending","total_count":0,"statuses":[]}' '' api repos/{owner}/{repo}/commits/main/status
+gh_reply 0 '{"state":"pending","total_count":0,"statuses":[]}' '' api "repos/{owner}/{repo}/commits/main/status"
 assert_eq "commit has statuses: no where it has none" "$(contract adapter_commit_has_statuses main 2>&1)" "no"
-gh_reply 1 '' 'gh: Server Error (HTTP 502)' api repos/{owner}/{repo}/commits/cccc/status
+gh_reply 1 '' 'gh: Server Error (HTTP 502)' api "repos/{owner}/{repo}/commits/cccc/status"
 out="$(contract adapter_commit_has_statuses cccc 2>&1)"; st=$?
 assert_status "commit has statuses: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "gh: Server Error (HTTP 502)"
@@ -5457,7 +5461,7 @@ assert_eq "every CI operation was pinned to the resolved repo" \
 # The sub-issue and dependency operations. These run gh api, whose --jq the
 # operation owns, so each reply here is what that --jq printed. The writes
 # take GitHub's database id, which the operation reads itself.
-subs=repos/{owner}/{repo}/issues/50/sub_issues
+subs="repos/{owner}/{repo}/issues/50/sub_issues"
 subs_jq="$(bash -c 'source "$1"; printf "%s" "$SUB_ISSUES_JQ"' _ "$ORCH")"
 gh_reply 0 $'51\tOPEN\t0\n52\tCLOSED\t1\n' '' api --paginate "$subs" --jq "$subs_jq"
 out="$(contract adapter_sub_issues 50 2>&1)"; st=$?
@@ -5470,65 +5474,65 @@ assert_eq "one per line: number, OPEN or CLOSED, and its open blockers, as TSV" 
 assert_eq "its --jq reads GitHub's listing, a missing dependency summary as an empty blocker field" \
   "$(printf '%s' '[{"number":51,"state":"open","issue_dependencies_summary":{"blocked_by":0}},{"number":52,"state":"closed","issue_dependencies_summary":{"blocked_by":2}},{"number":53,"state":"open"}]' \
     | jq -r "$subs_jq")" "$(printf '51\tOPEN\t0\n52\tCLOSED\t2\n53\tOPEN\t')"
-gh_reply 0 '' '' api --paginate repos/{owner}/{repo}/issues/49/sub_issues --jq "$subs_jq"
+gh_reply 0 '' '' api --paginate "repos/{owner}/{repo}/issues/49/sub_issues" --jq "$subs_jq"
 out="$(contract adapter_sub_issues 49 2>&1)"; st=$?
 assert_status "sub-issues: a parent with none succeeds" "$st" 0
 assert_eq "printing nothing at all" "$out" ""
-gh_reply 1 '' 'HTTP 502: Bad Gateway' api --paginate repos/{owner}/{repo}/issues/48/sub_issues --jq "$subs_jq"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' api --paginate "repos/{owner}/{repo}/issues/48/sub_issues" --jq "$subs_jq"
 out="$(contract adapter_sub_issues 48 2>&1)"; st=$?
 assert_status "sub-issues: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
-gh_reply 0 $'51000\n' '' api repos/{owner}/{repo}/issues/51 --jq .id
+gh_reply 0 $'51000\n' '' api "repos/{owner}/{repo}/issues/51" --jq .id
 gh_reply 0 '{}' '' api --method POST "$subs" -F sub_issue_id=51000
 out="$(contract adapter_sub_issue_link 50 51 2>&1)"; st=$?
 assert_status "sub-issue link: links the child by its database id" "$st" 0
 assert_eq "printing nothing" "$out" ""
-gh_reply 0 $'53000\n' '' api repos/{owner}/{repo}/issues/53 --jq .id
+gh_reply 0 $'53000\n' '' api "repos/{owner}/{repo}/issues/53" --jq .id
 gh_reply 1 '' 'HTTP 422: Sub issue may only have one parent' api --method POST "$subs" -F sub_issue_id=53000
 out="$(contract adapter_sub_issue_link 50 53 2>&1)"; st=$?
 assert_status "sub-issue link: a refused link fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 422: Sub issue may only have one parent"
-gh_reply 1 '' 'HTTP 404: Not Found' api repos/{owner}/{repo}/issues/404 --jq .id
+gh_reply 1 '' 'HTTP 404: Not Found' api "repos/{owner}/{repo}/issues/404" --jq .id
 out="$(contract adapter_sub_issue_link 50 404 2>&1)"; st=$?
 assert_status "sub-issue link: a child gh cannot read fails it" "$st" 1
 assert_eq "passing gh's stderr through, with no link attempted" "$out" "HTTP 404: Not Found"
 
-gh_reply 0 '{}' '' api --method DELETE repos/{owner}/{repo}/issues/50/sub_issue -F sub_issue_id=51000
+gh_reply 0 '{}' '' api --method DELETE "repos/{owner}/{repo}/issues/50/sub_issue" -F sub_issue_id=51000
 out="$(contract adapter_sub_issue_unlink 50 51 2>&1)"; st=$?
 assert_status "sub-issue unlink: unlinks the child by its database id" "$st" 0
 assert_eq "printing nothing" "$out" ""
 gh_reply 1 '' 'HTTP 403: Resource not accessible by integration' \
-  api --method DELETE repos/{owner}/{repo}/issues/50/sub_issue -F sub_issue_id=53000
+  api --method DELETE "repos/{owner}/{repo}/issues/50/sub_issue" -F sub_issue_id=53000
 out="$(contract adapter_sub_issue_unlink 50 53 2>&1)"; st=$?
 assert_status "sub-issue unlink: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
 
 gh_reply 0 $'https://api.github.com/repos/acme/widgets/issues/50\n' '' \
-  api repos/{owner}/{repo}/issues/51 --jq '.parent_issue_url // empty'
+  api "repos/{owner}/{repo}/issues/51" --jq '.parent_issue_url // empty'
 out="$(contract adapter_issue_parent 51 2>&1)"; st=$?
 assert_status "issue parent: reads a sub-issue's parent" "$st" 0
 assert_eq "printing its number alone, off the parent's URL" "$out" "50"
-gh_reply 0 '' '' api repos/{owner}/{repo}/issues/50 --jq '.parent_issue_url // empty'
+gh_reply 0 '' '' api "repos/{owner}/{repo}/issues/50" --jq '.parent_issue_url // empty'
 out="$(contract adapter_issue_parent 50 2>&1)"; st=$?
 assert_status "issue parent: an issue with no parent succeeds" "$st" 0
 assert_eq "printing nothing at all" "$out" ""
 gh_reply 0 $'https://api.github.com/repos/acme/widgets/issues/\n' '' \
-  api repos/{owner}/{repo}/issues/52 --jq '.parent_issue_url // empty'
+  api "repos/{owner}/{repo}/issues/52" --jq '.parent_issue_url // empty'
 out="$(contract adapter_issue_parent 52 2>&1)"; st=$?
 assert_status "issue parent: a parent URL with no number fails it" "$st" 1
 assert_contains "saying what it could not read" "$out" "no issue number"
-gh_reply 1 '' 'HTTP 404: Not Found' api repos/{owner}/{repo}/issues/404 --jq '.parent_issue_url // empty'
+gh_reply 1 '' 'HTTP 404: Not Found' api "repos/{owner}/{repo}/issues/404" --jq '.parent_issue_url // empty'
 out="$(contract adapter_issue_parent 404 2>&1)"; st=$?
 assert_status "issue parent: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 404: Not Found"
 
-blocked=repos/{owner}/{repo}/issues/52/dependencies/blocked_by
+blocked="repos/{owner}/{repo}/issues/52/dependencies/blocked_by"
 gh_reply 0 $'53\n51\n' '' api --paginate "$blocked" --jq '.[].number'
 out="$(contract adapter_blockers 52 2>&1)"; st=$?
 assert_status "blockers: lists an issue's blocked-by edges" "$st" 0
 assert_eq "one blocker number per line, in GitHub's order" "$out" "$(writeln 53 51)"
-gh_reply 1 '' 'HTTP 502: Bad Gateway' api --paginate repos/{owner}/{repo}/issues/404/dependencies/blocked_by --jq '.[].number'
+gh_reply 1 '' 'HTTP 502: Bad Gateway' api --paginate "repos/{owner}/{repo}/issues/404/dependencies/blocked_by" --jq '.[].number'
 out="$(contract adapter_blockers 404 2>&1)"; st=$?
 assert_status "blockers: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
@@ -5614,12 +5618,12 @@ assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
 probe_list=(issue list --state all --limit 1 --json number --jq '.[0].number // empty')
 gh_reply 0 $'7\n' '' "${probe_list[@]}"
-gh_reply 0 '[]' '' api repos/{owner}/{repo}/issues/7/sub_issues
+gh_reply 0 '[]' '' api "repos/{owner}/{repo}/issues/7/sub_issues"
 out="$(contract adapter_sub_issues_supported 2>&1)"; st=$?
 assert_status "sub-issues supported: probes the sub-issues endpoint on an issue" "$st" 0
 assert_eq "yes where it answers" "$out" "yes"
 out="$(gh_fixture; gh_reply 0 $'8\n' '' "${probe_list[@]}"
-  gh_reply 1 '' 'HTTP 404: Not Found' api repos/{owner}/{repo}/issues/8/sub_issues
+  gh_reply 1 '' 'HTTP 404: Not Found' api "repos/{owner}/{repo}/issues/8/sub_issues"
   contract adapter_sub_issues_supported 2>/dev/null)"; st=$?
 assert_status "sub-issues supported: an endpoint that refuses succeeds" "$st" 0
 assert_eq "printing no" "$out" "no"
@@ -5662,7 +5666,6 @@ git push -q origin main
 git -C "$bare" symbolic-ref HEAD refs/heads/main
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
-scan_repo="$PWD"
 # Everything after the filing, made in a second clone and pushed: a fix on
 # app.sh's line 3, then an unrelated edit further down the same file, then
 # gone.sh deleted - and, under refs/pull/8/head alone, a PR head commit the
@@ -6051,7 +6054,6 @@ assert_contains "with the reason" "$out" "issue view refused"
 assert_eq "and leaves no file a lens could mistake for a body" \
   "$([ -e "$spec_body" ] && echo present || echo gone)" "gone"
 
-: >"$filed"
 : >"$GH_FIXTURE/env.log"
 fake_issue_body 14 "The old body."
 out="$("$ORCH" spec update "$tricky" 2>&1)"; st=$?
@@ -6061,7 +6063,6 @@ assert_eq "and no other" "$(fake_snapshot | grep '/issues/15/')" "$untouched_15"
 assert_eq "and prints nothing" "$out" ""
 assert_eq "the edit call never reached a real gh subprocess" "$(gh_calls)" "0"
 
-: >"$filed"
 before_store="$(fake_snapshot)"
 out="$("$ORCH" spec update /nonexistent/body.md 2>&1)"; st=$?
 assert_status "update refuses a file that does not exist" "$st" 1
@@ -6074,7 +6075,6 @@ assert_status "a gh that will not edit fails the update" "$st" 1
 assert_contains "with gh's reason" "$out" "issue edit refused"
 assert_contains "and the issue it was for" "$out" "issue #14"
 
-: >"$filed"
 : >"$GH_FIXTURE/env.log"
 out="$("$ORCH" spec comment "$tricky" 2>&1)"; st=$?
 assert_status "comment posts the file" "$st" 0
@@ -6083,7 +6083,6 @@ assert_eq "on the issue state records, with the file's contents as the comment" 
 assert_eq "and no other" "$(fake_snapshot | grep '/issues/15/')" "$untouched_15"
 assert_eq "the comment call never reached a real gh subprocess" "$(gh_calls)" "0"
 
-: >"$filed"
 before_store="$(fake_snapshot)"
 out="$("$ORCH" spec comment /nonexistent/body.md 2>&1)"; st=$?
 assert_status "comment refuses a file that does not exist" "$st" 1
@@ -6100,7 +6099,7 @@ assert_contains "and the issue it was for" "$out" "issue #14"
 # is finished work, so the flow-bound spec ops refuse it and point at the
 # stateless issue ops for whatever issue the caller actually meant.
 prior_phase="$("$ORCH" state get phase)"
-state_fixture phase done
+state_fixture phase "done"
 fake_github
 fake_issue 14 open
 fake_issue_body 14 "The flow's spec."
@@ -6137,7 +6136,7 @@ out="$("$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
 assert_status "spec comments writes the flow issue's comments" "$st" 0
 assert_eq "of the issue state records, each opened by its marker line" "$(cat "$spec_comments")" \
   "$(writeln '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'A follow-up.')"
-state_fixture phase done
+state_fixture phase "done"
 : >"$spec_comments"
 out="$("$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
 assert_status "spec comments refuses once the flow is done" "$st" 1
@@ -7001,7 +7000,7 @@ assert_contains "names the mismatch" "$out" \
   "PR #40 was marked ready on GitHub but the flow phase is still review"
 assert_contains "gives the command that inspects it" "$out" "gh pr view 40"
 
-state_fixture phase done
+state_fixture phase "done"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a ready PR once the flow is done is healthy" "$st" 0
 assert_contains "reports it matches phase" "$out" \
@@ -7399,6 +7398,7 @@ fake_github
 fake_issue 41 open
 out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "--new-issue also steps back to spec" "$st" 0
+# shellcheck disable=SC2010 # counts what the glob matched; ls prints nothing when it matches none
 assert_eq "with no implement handoff, retires the spec handoff alone" \
   "$(ls .orchestrator/handoff/pre-redo-spec-*/02-spec.md 2>/dev/null | grep -c .) $(ls .orchestrator/handoff/pre-redo-spec-*/03-implement.md 2>/dev/null | grep -c .)" "1 0"
 assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
@@ -7645,7 +7645,7 @@ assert_eq "printing 15's directory" "$out" "$top/.orchestrator/spec-review/15/"
 assert_eq "leaving 14's directory alone" "$(cat "$sr_dir/spec.md" 2>&1)" "keep"
 assert_eq "state.json unchanged by a pass" "$(cksum <"$sr_state")" "$before"
 
-sr_flow done 14; sr_seed
+sr_flow "done" 14; sr_seed
 before="$(cksum <"$sr_state")"
 out="$("$ORCH" spec-review begin 14 2>&1)"; st=$?
 assert_status "a done flow on 14 lets 14 through" "$st" 0
@@ -7794,7 +7794,7 @@ assert_status "refuses at review" "$st" 1
 assert_contains "pointing at review ready" "$out" "review ready"
 assert_eq "and leaves the phase at review" "$("$ORCH" state get phase)" "review"
 
-state_fixture phase done
+state_fixture phase "done"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at done" "$st" 1
 assert_eq "and leaves the phase at done" "$("$ORCH" state get phase)" "done"
@@ -7817,7 +7817,7 @@ assert_eq "on Junie names the Junie Next line" "$out" \
 out="$(ORCHESTRATOR_HOST=other "$ORCH" phase boundary 2>&1)"
 assert_eq "on an unknown host names the fresh-session Next line" "$out" \
   "$(printf 'Phase implement complete. Handoff written to %s.\n\n  Next: a fresh session, then /orchestrator:next (or orch-flow'"'"'s Next phase section)' "$hi2")"
-state_fixture phase done
+state_fixture phase "done"
 out="$("$ORCH" phase boundary 2>&1)"; st=$?
 assert_status "refuses once the flow is done" "$st" 1
 out="$("$ORCH" phase bogus 2>&1)"; st=$?

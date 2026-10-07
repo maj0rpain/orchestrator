@@ -1281,7 +1281,7 @@ scan_cli_nouns() {
   while IFS= read -r noun; do
     [ -n "$noun" ] || continue
     grep -qE -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" && continue
-    grep -qE -- "\`$noun[\` ]" <<<"$exceptions" && continue
+    grep -qE -- "\`${noun}[\` ]" <<<"$exceptions" && continue
     echo "$doc: routed noun $noun is in neither the Current nouns table nor Exceptions"
   done < <(routed_nouns "$r/$orch")
   return 0

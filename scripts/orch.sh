@@ -394,7 +394,7 @@ require_on_origin() {
 }
 
 # Whether a flow is active: state.json exists and its phase is not done.
-flow_active() { [ -f "$STATE" ] && [ "$(state_get phase)" != done ]; }
+flow_active() { [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; }
 
 # base set --flow: the explicit correction of the active flow's own base,
 # allowed only while the flow has no branch - before it first branches, or
@@ -982,10 +982,10 @@ adapter_issue_comment() {
 # adapter_issue_relabel <n> <add> <remove>: one edit adding and removing
 # labels, each list comma-separated and either one empty. Prints nothing.
 adapter_issue_relabel() {
-  local n="$1" args=() add=() remove=() l
+  local n="$1" args=() add=() removals=() l
   [ -z "$2" ] || IFS=, read -r -a add <<<"$2"
-  [ -z "$3" ] || IFS=, read -r -a remove <<<"$3"
-  for l in ${remove[@]+"${remove[@]}"}; do args+=(--remove-label "$l"); done
+  [ -z "$3" ] || IFS=, read -r -a removals <<<"$3"
+  for l in ${removals[@]+"${removals[@]}"}; do args+=(--remove-label "$l"); done
   for l in ${add[@]+"${add[@]}"}; do args+=(--add-label "$l"); done
   gh issue edit "$n" ${args[@]+"${args[@]}"} >/dev/null
 }
@@ -1313,7 +1313,7 @@ adapter_run_rerun() {
 }
 
 if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
-  # shellcheck disable=SC1090
+  # shellcheck disable=SC1090 # the adapter path is chosen at run time, by tests
   source "$ORCH_GH_ADAPTER"
 fi
 
@@ -1634,7 +1634,7 @@ cmd_review() {
       # phase left to retry it from.
       adapter_pr_ready "$pr" 2>/dev/null \
         || die "gh could not mark PR #$pr ready - the flow stays in review"
-      phase_write done
+      phase_write "done"
       note "$pr"
       ;;
     ci)
@@ -1846,7 +1846,7 @@ cmd_spec() {
   [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment|comments> <file>"
   local file="$1" issue
   require_issue issue
-  [ "$(state_get phase)" != done ] \
+  [ "$(state_get phase)" != "done" ] \
     || die "the flow on issue #$issue is done - spec $op acts only on an active flow's issue; for another issue use orch.sh issue $op <n> <file>"
   "cmd_issue_$op" "$issue" "$file"
 }
@@ -1873,7 +1873,7 @@ cmd_spec_review() {
     local phase held
     phase="$(state_get phase)"
     held="$(state_get issue)"
-    if [ "$phase" != done ] && [ "$held" = "$issue" ]; then
+    if [ "$phase" != "done" ] && [ "$held" = "$issue" ]; then
       case "$phase" in
         spec)
           die "the active flow holds issue #$issue at phase spec - the flow's own spec phase will review it; run $(flow_cmd next)" ;;
@@ -1920,7 +1920,7 @@ cmd_review_pass() {
     phase="$(state_get phase)"
     held="$(state_get issue)"
     held_branch="$(state_get branch)"
-    if [ "$phase" != done ] && { [ "$held" = "$issue" ] || [ "$held_branch" = "$branch" ]; }; then
+    if [ "$phase" != "done" ] && { [ "$held" = "$issue" ] || [ "$held_branch" = "$branch" ]; }; then
       case "$phase" in
         implement|review)
           die "the active flow holds issue #$held at phase $phase - this change belongs to that flow's review loop; run $(flow_cmd next)" ;;
