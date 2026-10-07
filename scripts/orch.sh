@@ -2633,17 +2633,33 @@ ticket_sub_issues() {
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
 }
 
+# The one parser of a comma list of issue numbers for every `ticket` command:
+# `ticket publish --blocked-by` and `ticket block`/`unblock --by`. Prints the
+# numbers one per line, sorted and de-duplicated. Dies naming <flag> and the
+# whole list on any entry that is not a plain issue number, an empty one
+# included (`1,,2`, `,5`, `5,`). An empty <list> is the caller's to handle.
+issue_number_list() {
+  local flag="$1" list="$2"
+  # Digits and commas only, with no comma leading, trailing or doubled - a
+  # per-entry loop over a command substitution would lose a trailing empty.
+  case "$list" in
+    ''|*[!0-9,]*|,*|*,|*,,*) die "$flag must be plain issue numbers, got: $list" ;;
+  esac
+  printf '%s\n' "$list" | tr ',' '\n' | sort -un
+}
+
 # True only once both links read back exactly as published: the parent's
 # sub-issue listing contains the child, and the child's blocked-by listing
-# is the same set of numbers requested, in any order. Read fresh every call,
-# never cached - the caller retries this on a mismatch, and a cached answer
-# would just repeat the same wrong verdict.
+# is the same set of numbers requested, in any order, both sides
+# de-duplicated. Read fresh every call, never cached - the caller retries
+# this on a mismatch, and a cached answer would just repeat the same wrong
+# verdict.
 ticket_links_verified() {
   local parent="$1" child="$2" want="$3" have_children have_blockers
   have_children="$(adapter_sub_issues "$parent")" || return 1
   printf '%s\n' "$have_children" | cut -f1 | grep -qxF "$child" || return 1
-  have_blockers="$(adapter_blockers "$child")" || return 1
-  [ "$(printf '%s\n' "$have_blockers" | sort -n)" = "$(printf '%s\n' "$want" | sort -n)" ]
+  have_blockers="$(ticket_blockers "$child" return)" || return 1
+  [ "$have_blockers" = "$(printf '%s\n' "$want" | sort -un)" ]
 }
 
 # Publishes a child issue, links it to <parent> as a native sub-issue, adds a
@@ -2653,31 +2669,30 @@ ticket_links_verified() {
 # ticket rather than falling back to a text-based `Blocked by:` convention,
 # since nothing downstream ever reads that fallback.
 cmd_ticket_publish() {
-  [ $# -ge 3 ] || die "usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
-  local parent="$1" title="$2" body_file="$3" blocked_by="" want="" b
+  local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
+  [ $# -ge 3 ] || die "$usage"
+  local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want="" b
   local ready child
   shift 3
+  # Every argument check runs here, before the first GitHub write. A second
+  # --blocked-by is refused, never allowed to replace the first.
   while [ $# -gt 0 ]; do
     case "$1" in
-      --blocked-by) blocked_by="$2"; shift 2 ;;
-      *) die "usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]" ;;
+      --blocked-by)
+        [ $# -ge 2 ] && [ -z "$have_blocked_by" ] || die "$usage"
+        blocked_by="$2"; have_blocked_by=1; shift 2 ;;
+      *) die "$usage" ;;
     esac
   done
   case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
+  # A wholly empty --blocked-by "" means no blockers. The list comes back
+  # de-duplicated: GitHub stores a blocking edge once however often it is
+  # requested, so a duplicate would leave the readback's set permanently
+  # smaller than $want and fail verification for a correct link.
   if [ -n "$blocked_by" ]; then
-    want="$(printf '%s\n' "$blocked_by" | tr ',' '\n')"
-    while IFS= read -r b; do
-      [ -z "$b" ] && continue
-      case "$b" in ''|*[!0-9]*) die "--blocked-by must be plain issue numbers, got: $blocked_by" ;; esac
-    done <<<"$want"
-    # Deduplicated before the write loop and the verify below: GitHub stores a
-    # blocking edge once no matter how many times it is requested, so a
-    # duplicate in --blocked-by would otherwise make the readback's set
-    # permanently smaller than $want and fail verification for a link that is
-    # actually correct.
-    want="$(printf '%s\n' "$want" | sort -un)"
+    want="$(issue_number_list --blocked-by "$blocked_by")" || exit 1
   fi
 
   ready="$(triage_label_for ready-for-agent)"
@@ -2689,7 +2704,6 @@ cmd_ticket_publish() {
 
   if [ -n "$want" ]; then
     while IFS= read -r b; do
-      [ -z "$b" ] && continue
       adapter_blocker_add "$child" "$b" \
         || die "gh could not add a blocking edge from ticket #$child on #$b"
     done <<<"$want"
@@ -2792,8 +2806,8 @@ cmd_ticket_exists() {
 TICKET_HEADING='## Ticket'
 
 # True when the body on stdin has a line that is exactly TICKET_HEADING outside
-# a code fence, CRLF ends allowed - the one test `ticket exists` and `ticket
-# retire` share, and the line `strip_ticket_sections` cuts from.
+# a code fence, CRLF ends allowed - the test `ticket exists` uses, and the line
+# `strip_ticket_sections` cuts from.
 has_ticket_heading() {
   awk -v heading="$TICKET_HEADING" '
     { l = $0; sub(/\r$/, "", l) }
@@ -2831,7 +2845,7 @@ strip_ticket_sections() {
 # and no section to cut, so a repeat writes nothing. Any GitHub failure dies.
 cmd_ticket_retire() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
-  local parent="$1" subs n state comments body stripped msg old_msg out note
+  local parent="$1" subs n state comments msg old_msg note
   subs="$(ticket_sub_issues "$parent")" || exit 1
   msg="This ticket was retired: its spec, #$parent, changed and will be broken down into tickets again."
   # The wording a retire posted before a spec review could retire too: a
@@ -2856,54 +2870,38 @@ cmd_ticket_retire() {
     adapter_sub_issue_unlink "$parent" "$n" \
       || die "gh could not unlink ticket #$n from #$parent"
   done <<<"$subs"
-  # Read into a file, never through $(...), which would drop the body's
-  # trailing newlines: the bytes outside the section go back unchanged, the
-  # same round trip `issue fetch` and `issue update` make.
+  # A body with no `## Ticket` line outside a code fence comes back
+  # unchanged, so it is not written.
+  issue_body_rewrite "$parent" "gh could not read issue #$parent's body" \
+    "gh could not remove the ## Ticket section from #$parent" strip_ticket_sections
+}
+
+# issue_body_rewrite <n> <read-msg> <write-msg> <filter> [<arg>...]: issue
+# <n>'s body through <filter> (stdin to stdout) and back. The body is read
+# into a file, never through $(...), which would drop its trailing newlines,
+# so the bytes the filter keeps go back unchanged - the same round trip
+# `issue fetch` and `issue update` make. A body with no final newline gets
+# none back; a result byte-identical to the body is not written. A failed
+# read dies with <read-msg>, a failed write with <write-msg>.
+issue_body_rewrite() {
+  local n="$1" read_msg="$2" write_msg="$3" body result out
+  shift 3
   body="$(mktemp)"
-  adapter_issue_body "$parent" >"$body" \
-    || { rm -f "$body"; die "gh could not read issue #$parent's body"; }
-  has_ticket_heading <"$body" || { rm -f "$body"; return 0; }
-  stripped="$(mktemp)"
-  strip_ticket_sections <"$body" >"$stripped"
+  adapter_issue_body "$n" >"$body" \
+    || { rm -f "$body"; die "$read_msg"; }
+  result="$(mktemp)"
+  "$@" <"$body" >"$result"
   # awk ends every line it prints with a newline; a body that had no final
   # newline gets none back.
   if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
-    out="$(cat "$stripped"; printf x)"; out="${out%x}"
-    printf '%s' "${out%$'\n'}" >"$stripped"
+    out="$(cat "$result"; printf x)"; out="${out%x}"
+    printf '%s' "${out%$'\n'}" >"$result"
   fi
-  # A `## Ticket` line only inside a code fence leaves nothing to cut: no write.
-  if cmp -s "$body" "$stripped"; then rm -f "$body" "$stripped"; return 0; fi
+  if cmp -s "$body" "$result"; then rm -f "$body" "$result"; return 0; fi
   rm -f "$body"
-  adapter_issue_body_edit "$parent" "$stripped" \
-    || { rm -f "$stripped"; die "gh could not remove the ## Ticket section from #$parent"; }
-  rm -f "$stripped"
-}
-
-# `ticket block` and `ticket unblock`'s arguments, checked before anything
-# touches GitHub: <n> and every --by entry plain issue numbers, --by
-# required and given once - a second --by would otherwise replace the
-# first. Prints the --by numbers one per line, sorted and de-duplicated, as
-# `ticket publish --blocked-by` does.
-ticket_edge_args() {
-  local verb="$1" usage n="" by="" have_by="" b
-  usage="usage: orch.sh ticket $verb <n> --by N,N,..."
-  shift
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --by) [ $# -ge 2 ] && [ -z "$have_by" ] || die "$usage"; by="$2"; have_by=1; shift 2 ;;
-      -*)   die "$usage" ;;
-      *)    [ -z "$n" ] || die "$usage"; n="$1"; shift ;;
-    esac
-  done
-  [ -n "$n" ] || die "$usage"
-  [ -n "$have_by" ] || die "$usage"
-  case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
-  [ -n "$by" ] || die "--by must be plain issue numbers, got nothing"
-  while IFS= read -r b; do
-    case "$b" in ''|*[!0-9]*) die "--by must be plain issue numbers, got: $by" ;; esac
-  done <<<"$(printf '%s\n' "$by" | tr ',' '\n')"
-  printf '%s\n' "$n"
-  printf '%s\n' "$by" | tr ',' '\n' | sort -un
+  adapter_issue_body_edit "$n" "$result" \
+    || { rm -f "$result"; die "$write_msg"; }
+  rm -f "$result"
 }
 
 # Dies, before any write, unless ticket <n> is open, is a sub-issue, and
@@ -2926,11 +2924,15 @@ ticket_edge_preconditions() {
 }
 
 # Ticket <n>'s blocker numbers, read fresh from its native blocked-by
-# listing, one per line, sorted. A gh failure dies naming the ticket.
+# listing, one per line, sorted and de-duplicated: edges are a set. A gh
+# failure dies naming the ticket; with `return`, it returns 1 and prints
+# nothing, so a caller that retries (publish's verify, ADR-0011) can.
 ticket_blockers() {
   local have
-  have="$(adapter_blockers "$1")" \
-    || die "gh could not read ticket #$1's blockers"
+  if ! have="$(adapter_blockers "$1")"; then
+    [ "${2:-}" = return ] && return 1
+    die "gh could not read ticket #$1's blockers"
+  fi
   if [ -n "$have" ]; then printf '%s\n' "$have" | sort -un; fi
 }
 
@@ -2981,64 +2983,70 @@ rewrite_blocked_by_section() {
   '
 }
 
-# Brings ticket <n>'s `## Blocked by` section in line with <blockers>, the
-# same file-based round trip `ticket retire` makes: read into a file, never
-# through $(...); a body with no final newline gets none back; no write when
-# the result is byte-identical. The write is not read back - ADR-0011 governs
+# Brings ticket <n>'s `## Blocked by` section in line with <blockers>
+# through issue_body_rewrite. The write is not read back - ADR-0011 governs
 # the edges, not the body.
 ticket_blocked_by_rewrite() {
-  local n="$1" blockers="$2" body rewritten out
-  body="$(mktemp)"
-  adapter_issue_body "$n" >"$body" \
-    || { rm -f "$body"; die "gh could not read ticket #$n's body"; }
-  rewritten="$(mktemp)"
-  rewrite_blocked_by_section "$blockers" <"$body" >"$rewritten"
-  if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
-    out="$(cat "$rewritten"; printf x)"; out="${out%x}"
-    printf '%s' "${out%$'\n'}" >"$rewritten"
-  fi
-  if cmp -s "$body" "$rewritten"; then rm -f "$body" "$rewritten"; return 0; fi
-  rm -f "$body"
-  adapter_issue_body_edit "$n" "$rewritten" \
-    || { rm -f "$rewritten"; die "gh could not rewrite ticket #$n's ## Blocked by section"; }
-  rm -f "$rewritten"
+  issue_body_rewrite "$1" "gh could not read ticket #$1's body" \
+    "gh could not rewrite ticket #$1's ## Blocked by section" \
+    rewrite_blocked_by_section "$2"
+}
+
+# `ticket block` and `ticket unblock`'s one driver: `ticket <verb> <n> --by
+# N,N,...`. The arguments are checked before anything touches GitHub: <n>
+# and every --by entry plain issue numbers, --by required and given once - a
+# second --by would otherwise replace the first - and the --by list sorted
+# and de-duplicated, as `ticket publish --blocked-by` does. Then the
+# preconditions, the current edges, one adapter write per edge that needs
+# it, verify-then-die (ADR-0011) against the wanted set, and the `## Blocked
+# by` rewrite. Only the verb varies: block skips edges already present, adds
+# the rest and wants the union; unblock skips edges already absent, removes
+# the rest and wants the difference. Either re-run is idempotent.
+ticket_edges_change() {
+  local verb="$1" usage n="" by="" have_by="" before want b present
+  usage="usage: orch.sh ticket $verb <n> --by N,N,..."
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --by) [ $# -ge 2 ] && [ -z "$have_by" ] || die "$usage"; by="$2"; have_by=1; shift 2 ;;
+      -*)   die "$usage" ;;
+      *)    [ -z "$n" ] || die "$usage"; n="$1"; shift ;;
+    esac
+  done
+  [ -n "$n" ] || die "$usage"
+  [ -n "$have_by" ] || die "$usage"
+  case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
+  [ -n "$by" ] || die "--by must be plain issue numbers, got nothing"
+  by="$(issue_number_list --by "$by")" || exit 1
+  ticket_edge_preconditions "$n" "$by"
+  before="$(ticket_blockers "$n")" || exit 1
+  while IFS= read -r b; do
+    present=""
+    if printf '%s\n' "$before" | grep -qxF "$b"; then present=1; fi
+    case "$verb" in
+      block)
+        [ -z "$present" ] || continue
+        adapter_blocker_add "$n" "$b" \
+          || die "gh could not add a blocking edge from ticket #$n on #$b" ;;
+      unblock)
+        [ -n "$present" ] || continue
+        adapter_blocker_remove "$n" "$b" \
+          || die "gh could not remove a blocking edge from ticket #$n on #$b" ;;
+    esac
+  done <<<"$by"
+  case "$verb" in
+    block)   want="$(printf '%s\n%s\n' "$before" "$by" | sed '/^$/d' | sort -un)" ;;
+    unblock) want="$(printf '%s\n' "$before" | grep -vxF -f <(printf '%s\n' "$by") || true)" ;;
+  esac
+  ticket_edges_verify "$n" "$want"
+  ticket_blocked_by_rewrite "$n" "$want"
 }
 
 # Adds a native blocking edge on <n> for every --by issue it lacks.
-cmd_ticket_block() {
-  local args n by before want b
-  args="$(ticket_edge_args block "$@")" || exit 1
-  n="$(printf '%s\n' "$args" | sed -n 1p)"
-  by="$(printf '%s\n' "$args" | sed 1d)"
-  ticket_edge_preconditions "$n" "$by"
-  before="$(ticket_blockers "$n")" || exit 1
-  while IFS= read -r b; do
-    if printf '%s\n' "$before" | grep -qxF "$b"; then continue; fi
-    adapter_blocker_add "$n" "$b" \
-      || die "gh could not add a blocking edge from ticket #$n on #$b"
-  done <<<"$by"
-  want="$(printf '%s\n%s\n' "$before" "$by" | sed '/^$/d' | sort -un)"
-  ticket_edges_verify "$n" "$want"
-  ticket_blocked_by_rewrite "$n" "$want"
-}
+cmd_ticket_block() { ticket_edges_change block "$@"; }
 
 # Removes the native blocking edge on <n> for every --by issue it has.
-cmd_ticket_unblock() {
-  local args n by before want b
-  args="$(ticket_edge_args unblock "$@")" || exit 1
-  n="$(printf '%s\n' "$args" | sed -n 1p)"
-  by="$(printf '%s\n' "$args" | sed 1d)"
-  ticket_edge_preconditions "$n" "$by"
-  before="$(ticket_blockers "$n")" || exit 1
-  while IFS= read -r b; do
-    if ! printf '%s\n' "$before" | grep -qxF "$b"; then continue; fi
-    adapter_blocker_remove "$n" "$b" \
-      || die "gh could not remove a blocking edge from ticket #$n on #$b"
-  done <<<"$by"
-  want="$(printf '%s\n' "$before" | grep -vxF -f <(printf '%s\n' "$by") || true)"
-  ticket_edges_verify "$n" "$want"
-  ticket_blocked_by_rewrite "$n" "$want"
-}
+cmd_ticket_unblock() { ticket_edges_change unblock "$@"; }
 
 cmd_ticket() {
   local op="${1:-}"

@@ -46,6 +46,10 @@
 #                     a countdown: while above zero, each call of that
 #                     operation succeeds despite fail/<operation> and counts it
 #                     down
+#   fail/<operation>.times
+#                     a countdown: each failing call counts it down, and the
+#                     call that reaches zero lifts fail/<operation> - a
+#                     transient failure that clears on its own
 #   lag/<operation>   a countdown: while above zero, each call of that
 #                     operation answers stale and counts it down
 #   lag/<operation>.after
@@ -109,6 +113,15 @@ fake_failing() {
       printf '%s\n' "$((n - 1))" >"$f.after"
       return 1
     fi
+  fi
+  if [ -f "$f.times" ]; then
+    n="$(cat "$f.times")"
+    if [ "${n:-0}" -le 1 ]; then
+      cat "$f" >&2
+      rm -f "$f" "$f.times"
+      return 0
+    fi
+    printf '%s\n' "$((n - 1))" >"$f.times"
   fi
   cat "$f" >&2
 }

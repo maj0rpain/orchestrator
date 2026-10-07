@@ -425,6 +425,14 @@ fake_fail_after() {
   printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.after"
 }
 
+# fake_fail_times <operation> <n> [stderr]: the next n calls of the operation
+# fail, then it succeeds again - a transient failure. stderr defaults to none.
+fake_fail_times() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/fail"
+  printf '%s' "${3-}" >"$ORCH_GH_FAKE_STORE/fail/$1"
+  printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.times"
+}
+
 # fake_unfail: every operation fake_fail named succeeds again.
 fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
 
@@ -3721,6 +3729,20 @@ out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by "abc,5" 2>&1)"; st
 assert_status "refuses a --blocked-by list with a non-numeric entry" "$st" 1
 assert_contains "naming the whole list" "$out" "abc,5"
 
+for list in "1,,2" ",5" "5,"; do
+  out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by "$list" 2>&1)"; st=$?
+  assert_status "refuses a --blocked-by list with an empty entry: $list" "$st" 1
+  assert_contains "naming the whole list" "$out" "--blocked-by must be plain issue numbers, got: $list"
+done
+
+out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100 --blocked-by "" 2>&1)"; st=$?
+assert_status "refuses a repeated --blocked-by, an empty one included" "$st" 1
+assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
+
+out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by 2>&1)"; st=$?
+assert_status "refuses a --blocked-by with no value" "$st" 1
+assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
+
 out="$("$ORCH" ticket publish 50 "Title" "$body" --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket publish"
@@ -3747,6 +3769,11 @@ out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100 2>&1)"; st=$?
 assert_status "a gh that refuses the blocking edge fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not add a blocking edge from ticket #104 on #100"
 fake_unfail
+
+out="$("$ORCH" ticket publish 50 "Unblocked" "$body" --blocked-by "" 2>&1)"; st=$?
+assert_status "an empty --blocked-by still publishes" "$st" 0
+assert_eq "printing the child's number" "$out" "105"
+assert_eq "with no blockers" "$(fake_blockers_of 105)" ""
 restore_suite_env
 
 # --- ticket publish verify-then-die ---------------------------------------
@@ -3779,6 +3806,19 @@ out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)
 assert_status "a blocking edge that never shows up dies rather than falling back" "$st" 1
 assert_contains "naming the ticket" "$out" "ticket #301"
 assert_contains "not a silent fallback" "$out" "did not verify"
+
+fake_fail_times adapter_blockers 1
+out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
+assert_status "a transient blocked-by read failure is retried, not died on" "$st" 0
+assert_eq "printing only the child's number, no stray stderr" "$out" "302"
+assert_eq "its edge is in place" "$(fake_blockers_of 302)" "$blocker"
+
+fake_fail adapter_blockers
+out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
+assert_status "a blocked-by read that fails twice dies" "$st" 1
+assert_contains "with the verify message" "$out" \
+  "ticket #303's sub-issue/blocked-by links did not verify - checked twice, both failed"
+assert_not_contains "never the block/unblock read message" "$out" "could not read ticket"
 restore_suite_env
 
 # --- ticket next -----------------------------------------------------------
@@ -4073,6 +4113,12 @@ assert_contains "naming it" "$out" "abc"
 out="$("$ORCH" ticket block "$bc" --by "$ba,x1" 2>&1)"; st=$?
 assert_status "refuses a --by list with a non-numeric entry" "$st" 1
 assert_contains "naming the list" "$out" "$ba,x1"
+out="$("$ORCH" ticket block "$bc" --by "$ba,,$ba" 2>&1)"; st=$?
+assert_status "refuses a --by list with an empty entry" "$st" 1
+assert_contains "naming the list" "$out" "--by must be plain issue numbers, got: $ba,,$ba"
+out="$("$ORCH" ticket block "$bc" --by "" 2>&1)"; st=$?
+assert_status "refuses an empty --by" "$st" 1
+assert_contains "saying it got nothing" "$out" "--by must be plain issue numbers, got nothing"
 out="$("$ORCH" ticket block "$bc" 2>&1)"; st=$?
 assert_status "refuses a missing --by" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket block"
@@ -4273,6 +4319,12 @@ assert_contains "naming it" "$out" "abc"
 out="$("$ORCH" ticket unblock "$uc" --by "$ua,x1" 2>&1)"; st=$?
 assert_status "refuses a --by list with a non-numeric entry" "$st" 1
 assert_contains "naming the list" "$out" "$ua,x1"
+out="$("$ORCH" ticket unblock "$uc" --by "$ua,,$ua" 2>&1)"; st=$?
+assert_status "refuses a --by list with an empty entry" "$st" 1
+assert_contains "naming the list" "$out" "--by must be plain issue numbers, got: $ua,,$ua"
+out="$("$ORCH" ticket unblock "$uc" --by "" 2>&1)"; st=$?
+assert_status "refuses an empty --by" "$st" 1
+assert_contains "saying it got nothing" "$out" "--by must be plain issue numbers, got nothing"
 out="$("$ORCH" ticket unblock "$uc" 2>&1)"; st=$?
 assert_status "refuses a missing --by" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket unblock"
@@ -7304,6 +7356,25 @@ fake_body_read 58 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.\n\n\n'
 "$ORCH" ticket retire 58 >/dev/null 2>&1
 assert_eq "trailing blank lines after the section are kept" \
   "$(fake_body_of 58 | od -c)" "$(printf 'Spec.\n\n## After\nTail.\n\n\n' | od -c)"
+fake_body_read 58 'Spec, no ticket heading.\n'
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket retire 58 2>&1)"; st=$?
+assert_status "a body with no ## Ticket heading: retire succeeds, writing nothing to GitHub" "$st" 0
+fake_unfail
+
+errf="$(mktemp)"
+fake_issue_body 58 "$(writeln 'Spec.' '' '## Ticket' 'Build.')"
+fake_fail adapter_issue_body
+out="$("$ORCH" ticket retire 58 2>"$errf")"; st=$?
+assert_status "a gh that cannot read the body fails ticket retire" "$st" 1
+assert_eq "naming the body read: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not read issue #58's body"
+fake_unfail
+fake_fail adapter_issue_body_edit
+out="$("$ORCH" ticket retire 58 2>"$errf")"; st=$?
+assert_status "a gh that cannot write the body fails ticket retire" "$st" 1
+assert_eq "naming the section cut: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not remove the ## Ticket section from #58"
+fake_unfail
+rm -f "$errf"
 
 rt5="$("$ORCH" ticket publish 55 "Five" "$tbody")"
 redo_spec_at 55
