@@ -79,10 +79,11 @@ flow skill is now `orchestrator:orch-flow`, and so on). See
                  +-------------------------------------+-------------------+
                  |                                     |                   |
        /orchestrator:start          orchestrator:orch-quick-implement   blueprint only
-       ->  01-plan.md               issue, orch-to-tickets publishes    orch-to-spec publishes
-                 |                  tickets, branch quick/<issue>-      the issue, spec review
-                 | /clear           <slug>, one subagent per ticket,    offered, orch-to-tickets
-                 |                  tdd, review pass, PR                publishes tickets, stop
+       ->  01-plan.md               issue, unattended spec review,      orch-to-spec publishes
+                 |                  orch-to-tickets publishes tickets,  the issue, spec review
+                 | /clear           branch quick/<issue>-<slug>, one    offered, orch-to-tickets
+                 |                  subagent per ticket, tdd, review    publishes tickets, stop
+                 |                  pass, PR
                  +-------------------------------------+
                                                        |
   spec session         orch-to-spec publishes the    <--+
@@ -215,7 +216,7 @@ skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: consolidation of the issue's comments, then four lenses in a flow (three standalone), one batch question, plus a ticket question when an existing breakdown is touched
 skills/orch-review/           the review loop: rubric, authority rules, terminal states; and the review pass, quick or standalone
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
-skills/orch-quick-implement/  the other route: issue, optional spec review, orch-to-tickets, tdd, review pass, PR - no flow
+skills/orch-quick-implement/  the other route: issue, unattended spec review, orch-to-tickets, tdd, review pass, PR - no flow
 skills/orch-interview/        the planning interview; hook-grilling.sh's message asks the closing question
 skills/orch-to-spec/          turns the conversation into a spec and publishes it as an issue
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue

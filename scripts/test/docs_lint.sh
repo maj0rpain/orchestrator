@@ -814,17 +814,22 @@ echo "required headings (#285)"
 # One "<file>|<heading>" pair per line, file relative to the plugin root, in
 # the order the headings must appear within their file.
 required_headings='skills/orch-quick-implement/SKILL.md|## 1. Require a linked issue
-skills/orch-quick-implement/SKILL.md|## 2. Offer a spec review
+skills/orch-quick-implement/SKILL.md|## 2. Run an unattended spec review
 skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
 skills/orch-quick-implement/SKILL.md|## 6. Review
 skills/orch-quick-implement/SKILL.md|## 7. Open the PR
 skills/orch-review/SKILL.md|## Review pass
 skills/orch-review/SKILL.md|## Standalone review pass
 skills/orch-spec-review/SKILL.md|## Standalone spec review
+skills/orch-spec-review/SKILL.md|### Unattended spec review
+skills/orch-spec-review/SKILL.md|## Consolidation
 skills/orch-spec-review/SKILL.md|## Disposition
 skills/orch-spec-review/SKILL.md|## Applying the answer
 skills/orch-spec-review/SKILL.md|## Tickets follow the spec
-skills/orch-spec-review/SKILL.md|## The changelog'
+skills/orch-spec-review/SKILL.md|## The changelog
+skills/orch-to-tickets/SKILL.md|### 4. Quiz the user
+skills/orch-to-tickets/SKILL.md|## Unattended breakdown
+skills/orch-to-tickets/SKILL.md|## Ticket template'
 # scan_required_headings <plugin root> [pairs]: each listed heading missing
 # from its file, or found above the heading listed before it in that file.
 scan_required_headings() {
@@ -1149,6 +1154,17 @@ spares "a filled row is not flagged" "$out" ':(1|2|3):'
 check "every host capability row has both hosts' cells filled" \
   "$(scan_capability_table "$PLUGIN_ROOT")"
 
+# quick_step_refers <plugin root> <step heading> <skill> <section> <noun>:
+# one line when that quick-implement step does not name `<skill>` and its
+# **<section>**.
+quick_step_refers() {
+  local quick="skills/orch-quick-implement/SKILL.md" body numbered="${2#\#\# }" owner="$3's"
+  [[ $3 == *s ]] && owner="$3'"
+  body="$(md_section "$1/$quick" "$2" | flat_text)"
+  { grep -qF "\`$3\`" <<<"$body" && grep -qF "**$4**" <<<"$body"; } \
+    || echo "$quick: step ${numbered%%.*} does not refer to $owner **$4** $5"
+}
+
 # --- review pass (#342) --------------------------------------------------------
 echo
 echo "review pass (#342)"
@@ -1157,16 +1173,14 @@ echo "review pass (#342)"
 # section rather than keeping its own copy.
 # scan_review_pass <plugin root>: one line per break of that rule.
 scan_review_pass() {
-  local r="$1" review="skills/orch-review/SKILL.md" quick="skills/orch-quick-implement/SKILL.md" body
+  local r="$1" review="skills/orch-review/SKILL.md" body
   if body="$(md_section "$r/$review" "## Review pass")"; then
     flat_text <<<"$body" | grep -qF 'review-pass begin' \
       || echo "$review: ## Review pass does not name review-pass begin"
   else
     echo "$review: no ## Review pass section"
   fi
-  body="$(md_section "$r/$quick" "## 6. Review" | flat_text)"
-  { grep -qF '`orch-review`' <<<"$body" && grep -qF '**Review pass**' <<<"$body"; } \
-    || echo "$quick: step 6 does not refer to orch-review's **Review pass** section"
+  quick_step_refers "$r" "## 6. Review" orch-review "Review pass" section
   return 0
 }
 fixture="$(new_fixture)"
@@ -1189,6 +1203,35 @@ printf '# Q\n\n## 6. Review\n\nRun the `orch-review` skill'"'"'s **Review\npass*
 assert_empty "a review pass defined once and run by step 6 is not flagged" "$(scan_review_pass "$fixture")"
 check "the review pass is defined once in orch-review and quick implementation runs it" \
   "$(scan_review_pass "$PLUGIN_ROOT")"
+
+# --- unattended modes (#616) --------------------------------------------------
+echo
+echo "unattended modes (#616)"
+# Quick implementation runs hands-off through two unattended modes, each
+# defined once in its own skill: orch-spec-review's **Unattended spec review**
+# and orch-to-tickets' **Unattended breakdown**. Its steps 2 and 3 run those
+# modes rather than keeping their own copies, as step 6 runs the Review pass.
+# scan_unattended_modes <plugin root>: one line per step that does not refer
+# to its mode.
+scan_unattended_modes() {
+  quick_step_refers "$1" "## 2. Run an unattended spec review" orch-spec-review "Unattended spec review" mode
+  quick_step_refers "$1" "## 3. Publish the ticket breakdown" orch-to-tickets "Unattended breakdown" mode
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-quick-implement"
+printf '# Q\n\n## 2. Run an unattended spec review\n\nRun a review.\n\n## 3. Publish the ticket breakdown\n\nRun `orch-to-tickets` in its quiz.\n\n## 4. Branch\n\nSee `orch-spec-review` **Unattended spec review** and **Unattended breakdown**.\n' \
+  >"$fixture/skills/orch-quick-implement/SKILL.md"
+out="$(scan_unattended_modes "$fixture")"
+flags "a step 2 that does not run orch-spec-review's unattended mode is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md: step 2 does not refer to orch-spec-review's **Unattended spec review** mode"
+flags "a step 3 that does not run orch-to-tickets' unattended mode is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md: step 3 does not refer to orch-to-tickets' **Unattended breakdown** mode"
+printf '# Q\n\n## 2. Run an unattended spec review\n\nRun `orch-spec-review`'"'"'s **Unattended\nspec review**.\n\n## 3. Publish the ticket breakdown\n\nRun `orch-to-tickets` in its **Unattended breakdown**.\n' \
+  >"$fixture/skills/orch-quick-implement/SKILL.md"
+assert_empty "steps 2 and 3 that run the unattended modes are not flagged" "$(scan_unattended_modes "$fixture")"
+check "quick implementation's steps 2 and 3 run the unattended modes" \
+  "$(scan_unattended_modes "$PLUGIN_ROOT")"
 
 # --- previously declined (#418) ------------------------------------------------
 echo

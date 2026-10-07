@@ -141,7 +141,7 @@ choice="${ask_step}
 
       1. Start the orchestrator flow - the full plan -> spec -> implement ->
          review pipeline, with its own handoff and review loop.
-      2. Quick implementation - skip the pipeline and implement this directly.
+      2. Quick implementation - hands-off, for small changes: implement this directly, with no further questions before the PR.
       3. Blueprint only - publish the spec and its ticket breakdown, then
          stop; implement later.
 

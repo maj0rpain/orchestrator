@@ -7683,11 +7683,11 @@ assert_status "refuses an op it does not have" "$st" 1
 assert_contains "naming the one it does" "$out" "want begin"
 assert_contains "help documents spec-review begin" "$("$ORCH" help)" "spec-review begin <n>"
 
-# --- quick implementation offers a spec review (#237) ------------------------
-# A quick implementation may run a standalone spec review before any flow
+# --- quick implementation runs an unattended spec review (#237) -------------
+# A quick implementation runs an unattended standalone spec review before any flow
 # exists, so spec-review begin needs no state.
 echo
-echo "quick implementation offers a spec review (#237)"
+echo "quick implementation runs an unattended spec review (#237)"
 new_repo >/dev/null
 top="$(git rev-parse --show-toplevel)"
 out="$("$ORCH" spec-review begin 21 2>&1)"; st=$?

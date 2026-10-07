@@ -118,11 +118,12 @@ the model. Skips the plan/spec/implement/review pipeline entirely: no phases,
 no handoff, no `.orchestrator/state.json`. Still produces its own branch and
 PR, and is still held to this project's standards for how a change gets made -
 test-driven, reviewed, then opened as a PR. Its review is a review pass, and
-it names what it declines in the PR. It
-offers a spec review of its linked issue before its ticket breakdown - the
-human's choice, asked on every run - and skips that breakdown when the linked
-issue is a blueprint, including when its spec review retired the blueprint's
-breakdown and broke the issue down again.
+it names what it declines in the PR. Meant for small changes, run hands-off:
+it takes an unattended spec review of its linked issue before its ticket
+breakdown, on every run, and accepts its own draft breakdown without asking.
+It skips that breakdown when the linked issue is a blueprint, including when
+its spec review retired the blueprint's breakdown and broke the issue down
+again.
 
 **Blueprint**:
 Everything a change needs before implementation, published and carried no
@@ -131,7 +132,8 @@ breakdown. Chosen once, by a human, at the close of a planning session, as
 the alternative to starting a flow or a quick implementation. A flow later
 adopts it, or a quick implementation links it; either way its ticket
 breakdown is already published and is not run again, unless a spec review
-changes the spec and the human retires that breakdown.
+changes the spec and retires that breakdown - by the human's choice, or by
+its own recommendation in an unattended spec review.
 _Avoid_: planning-only, parked spec, banked spec.
 
 **Blocking edge**:
@@ -144,7 +146,7 @@ The set of sub-issues published against a spec issue (a flow's, a quick
 implementation's linked issue, or a blueprint's) - each one a sub-issue of that
 parent, not a second issue the flow or quick implementation now holds, and
 may block, or be blocked by, other tickets in the same breakdown. When the
-approved breakdown resolves to 0 or 1 tickets, no sub-issue is published at
+approved breakdown - in a quick implementation, the drafted one - resolves to 0 or 1 tickets, no sub-issue is published at
 all: the drafted ticket's content, if there is one, is folded into the
 parent issue's own body instead, and the parent is worked directly as if it
 were the sole ticket - a breakdown of one, collapsed onto its own parent
@@ -167,26 +169,36 @@ implement phase and in quick implementation.
 One look at a spec issue, taken once. Usually a step of a flow's spec phase,
 after the issue exists - published by the spec phase or already adopted at
 init - and before its handoff is written. A human may also ask for one on
-demand, against any issue, and a quick implementation may take one before its
-ticket breakdown: either way a standalone spec review, which belongs to no
+demand, against any issue, and a quick implementation takes an unattended one
+before its ticket breakdown: either way a standalone spec review, which belongs to no
 flow and leaves no handoff. It first proposes folding into the body anything
 the issue's comments say that the body does not - a triage agent brief, a
 follow-up - so the body stays the one place the spec is written. Its lenses
 then read the spec, body and comments, independently - four in a flow, three
 in a standalone review; every finding they report, and every consolidation item, is
 put to a human with a proposed edit, and only the edits the human accepts
-change the spec. When the issue already has a ticket breakdown and the
+change the spec - in an unattended spec review, the recommended ones. When the issue already has a ticket breakdown and the
 accepted edits touch an open ticket, it then puts to the human how that
-breakdown should follow: edits to the tickets the change touches, or retiring
+breakdown should follow - an unattended spec review takes its own
+recommendation: edits to the tickets the change touches, or retiring
 the breakdown so the issue is broken down again. A spec review runs once - it is not a loop and has no budget;
 another look is another spec review.
+
+**Unattended spec review**:
+A standalone spec review that asks the human nothing: every recommended edit
+is applied, every decision item takes its recommended option, and a ticket
+breakdown the edits touch follows its recommended option, retiring included.
+The batch is still shown and the changelog still records it all. Only a quick
+implementation takes one.
+_Avoid_: auto spec review, silent spec review.
 
 **Consolidation item**:
 One proposed edit in a spec review that folds into the spec body what an
 issue comment says and the body does not - a triage agent brief, a
 follow-up. The review's own session drafts it, never a lens, and it reaches
 the human ahead of the lenses' findings, in the same batch, accepted or
-declined like any other proposed edit. Two comments that contradict each
+declined like any other proposed edit, or applied as recommended in an
+unattended spec review. Two comments that contradict each
 other become one decision item instead. A comment that opens with a
 `## Spec review` heading is the review's own history and never produces one.
 _Avoid_: fold (as a noun), proposed fold.
@@ -356,8 +368,8 @@ Only a finding about the change from the review phase carries a **severity**,
 which the review phase assigns; the reviewer itself reports findings unranked.
 A finding from a review pass carries none: the session that ran the pass
 fixes it or declines it. A finding about the spec carries no
-severity: a human accepts or declines the edit it proposes, and it is never
-filed.
+severity: a human accepts or declines the edit it proposes, or an unattended
+spec review applies it as recommended, and it is never filed.
 
 **Severity**:
 Which of three roles a finding plays - how wrong the change is, and so which
