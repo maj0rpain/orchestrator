@@ -2,6 +2,10 @@
 
 A Claude Code plugin. See [README.md](README.md) for layout and authoring reference.
 
+## Layout
+
+Shell scripts live in `scripts/` (`orch.sh`, `doctor.sh`, `hook-*.sh`, …); tests in `scripts/test/`. There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
+
 ## Agent skills
 
 ### Issue tracker

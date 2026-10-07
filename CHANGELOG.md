@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.13.5
+
+`CLAUDE.md` has a new `## Layout` section saying where the shell scripts
+(`scripts/`) and tests (`scripts/test/`) live, and that there is no top-level
+`tests/` and `hooks/` holds only `hooks.json`, so subagents stop guessing
+paths before reading the README (see issue #609).
+
 ## 3.13.4
 
 The repo has a written coding standard, `docs/agents/coding-standards.md`,
