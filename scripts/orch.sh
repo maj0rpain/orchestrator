@@ -472,6 +472,27 @@ cmd_base() {
   esac
 }
 
+# --- parallel ----------------------------------------------------------------
+# The clone's parallel cap: how many ticket subagents one frontier runs at once,
+# 1 meaning sequential. Read here alone, so the default lives in one place and
+# the skills never call git config; it is set with git config orchestrator.parallel.
+PARALLEL_DEFAULT=3
+cmd_parallel() {
+  local op="${1:-}" v
+  shift || true
+  case "$op" in
+    show)
+      [ $# -eq 0 ] || die "usage: orch.sh parallel show"
+      v="$(git config --get orchestrator.parallel 2>/dev/null || true)"
+      [ -n "$v" ] || v="$PARALLEL_DEFAULT"
+      [[ "$v" =~ ^[0-9]+$ ]] && [ "$((10#$v))" -gt 0 ] ||
+        die "orchestrator.parallel is $v - it must be a positive integer (git config orchestrator.parallel <n>)"
+      note "$((10#$v))"
+      ;;
+    *) die "unknown parallel op: ${op:-<none>} (want show)" ;;
+  esac
+}
+
 # Ignore every directory in EXCLUDED_DIRS - the flow directory and .scratch/ -
 # without touching a tracked .gitignore, so running the orchestrator in an
 # unfamiliar repo never dirties its working tree. A line already present is
@@ -3451,6 +3472,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               set, or default
   base clear                  remove the setting, falling back to the default
                               branch; succeeds when nothing was set
+  parallel show               print the parallel cap, how many ticket
+                              subagents a frontier runs at once: git config
+                              orchestrator.parallel, else 3; 1 is sequential.
+                              Dies naming the key and value when it is not a
+                              positive integer
   repo show [--name]          print the GitHub repo orch.sh works on and its
                               source: GH_REPO when set, else the checkout's
                               origin - never gh's default repo. --name prints
@@ -3730,6 +3756,7 @@ main() {
     doctor)        cmd_doctor "$@" ;;
     default-branch) default_branch ;;
     base)          cmd_base "$@" ;;
+    parallel)      cmd_parallel "$@" ;;
     repo)          cmd_repo "$@" ;;
     init)          cmd_init "$@" ;;
     slug)          cmd_slug "$@" ;;
