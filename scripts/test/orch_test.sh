@@ -7157,10 +7157,13 @@ writeln '# plan' >.orchestrator/handoff/01-plan.md
 writeln '# implement' >.orchestrator/handoff/03-implement.md
 plan_before="$(cat .orchestrator/handoff/01-plan.md)"
 git push -q origin HEAD:refs/heads/redo-base
-out="$("$ORCH" base set redo-base --flow 2>&1)"; st=$?
+out="$(ORCHESTRATOR_HOST=claude "$ORCH" base set redo-base --flow 2>&1)"; st=$?
 assert_status "base set --flow refuses a branched flow at the review phase" "$st" 1
-assert_contains "naming redo review as the way back" "$out" \
-  "flow redotest already has branch orch/21-redotest - its base can change again once orch.sh redo review retires it"
+assert_contains "naming redo as the way back on Claude Code" "$out" \
+  "flow redotest already has branch orch/21-redotest - its base can change again once /orchestrator:redo retires it"
+out="$(ORCHESTRATOR_HOST=junie "$ORCH" base set redo-base --flow 2>&1)"
+assert_contains "and with the orch-flow section on another host" "$out" \
+  "flow redotest already has branch orch/21-redotest - its base can change again once /orchestrator:redo (or orch-flow's Redo section) retires it"
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a genuinely terminal loop redoes" "$st" 0
 assert_eq "keeps the flow's recorded base branch" "$("$ORCH" state get base)" "$base_before"

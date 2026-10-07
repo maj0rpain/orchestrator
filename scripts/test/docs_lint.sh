@@ -1024,13 +1024,21 @@ echo "flow commands in script messages"
 # orch.sh's and doctor.sh's messages reach the model on every host, so they
 # name a flow command only through flow_cmd, which adds the orch-flow section
 # for a host with no plugin commands - and every section it names must exist.
+# Both forms of a literal flow command are caught: /orchestrator:<cmd> written
+# outside flow_cmd, and a remedy naming `orch.sh redo` or `orch.sh abort`,
+# which works on no host as a flow step. A `usage:` string names the CLI
+# itself, so it is spared, as are comments.
 # scan_flow_cmd <plugin root>: each script line naming a plugin command
-# outside flow_cmd, and each flow_cmd section orch-flow lacks.
+# outside flow_cmd, each line naming orch.sh redo or abort outside a usage:
+# string, and each flow_cmd section orch-flow lacks.
 scan_flow_cmd() {
   local r="$1" s
   (cd "$r" && grep -nE '/orchestrator:[a-z]' scripts/orch.sh scripts/doctor.sh 2>/dev/null) \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
     | sed -E 's/^([^:]+:[0-9]+):.*/\1: names a plugin command outside flow_cmd/'
+  (cd "$r" && grep -nE 'orch\.sh (redo|abort)' scripts/orch.sh scripts/doctor.sh 2>/dev/null) \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v 'usage:' \
+    | sed -E 's/^([^:]+:[0-9]+):.*/\1: names a flow command literally, not through flow_cmd/'
   # Not a section read: this range is a shell function body in orch.sh.
   awk '/^flow_cmd\(\)/,/^}/' "$r/scripts/orch.sh" 2>/dev/null \
     | grep -oE 'section="[^"]+"' | sed 's/section="//; s/"$//' \
@@ -1044,16 +1052,26 @@ fixture="$(new_fixture)"
 mkdir -p "$fixture/scripts" "$fixture/skills/orch-flow"
 printf '%s\n' 'flow_cmd() {' '  case "$1" in' '    start) section="Starting a flow" ;;' \
   '    next)  section="Next phase" ;;' '  esac' '  printf "/orchestrator:%s" "$1"' '}' \
-  '# /orchestrator:next in a comment is fine' 'die "run /orchestrator:abort"' >"$fixture/scripts/orch.sh"
-printf 'echo ok\n' >"$fixture/scripts/doctor.sh"
+  '# /orchestrator:next in a comment is fine' 'die "run /orchestrator:abort"' \
+  'die "run orch.sh redo review"' 'die "run orch.sh abort"' '  die "usage: orch.sh redo review"' \
+  '# orch.sh abort in a comment is fine' >"$fixture/scripts/orch.sh"
+printf '%s\n' 'echo ok' 'die "run orch.sh abort"' >"$fixture/scripts/doctor.sh"
 printf '# Flow\n\n## Starting a flow\n\n## Next steps\n' >"$fixture/skills/orch-flow/SKILL.md"
 out="$(scan_flow_cmd "$fixture")"
 flags "a script naming a plugin command outside flow_cmd is flagged" \
   "$out" "scripts/orch.sh:9: names a plugin command outside flow_cmd"
 flags "a flow_cmd section orch-flow lacks is flagged" \
   "$out" "skills/orch-flow/SKILL.md: has no section flow_cmd names: Next phase"
+flags "a die naming orch.sh redo is flagged" \
+  "$out" "scripts/orch.sh:10: names a flow command literally, not through flow_cmd"
+flags "a die naming orch.sh abort is flagged" \
+  "$out" "scripts/orch.sh:11: names a flow command literally, not through flow_cmd"
+flags "a die naming orch.sh abort in doctor.sh is flagged" \
+  "$out" "scripts/doctor.sh:2: names a flow command literally, not through flow_cmd"
 spares "a comment and an existing section are not flagged" \
   "$out" ':8:|Starting a flow'
+spares "a usage: line and a comment naming orch.sh redo or abort are not flagged" \
+  "$out" ':12:|:13:'
 check "the scripts name a plugin command only through flow_cmd, whose sections exist" \
   "$(scan_flow_cmd "$PLUGIN_ROOT")"
 

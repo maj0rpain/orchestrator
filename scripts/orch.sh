@@ -412,7 +412,7 @@ base_set_flow() {
   if [ -n "$branch" ]; then
     slug="$(state_get slug)"
     if [ "$(state_get phase)" = review ]; then
-      die "flow $slug already has branch $branch - its base can change again once orch.sh redo review retires it"
+      die "flow $slug already has branch $branch - its base can change again once $(flow_cmd redo) retires it"
     fi
     die "flow $slug already has branch $branch - its base can no longer change; abort to start again on another base"
   fi
