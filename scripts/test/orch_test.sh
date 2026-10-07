@@ -20,6 +20,47 @@
 ORCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/orch.sh"
 GH_ADAPTER_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh_adapter_fake.sh"
 PLUGIN_ROOT="$(cd "$(dirname "$ORCH")/.." && pwd)"
+SUITE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+
+# The section filter. With ORCH_TEST_ONLY=<ERE> set, the suite runs only the
+# shared setup (from the `# >>> shared setup` line to the isolation section),
+# the isolation section, every `# ---` section from isolation on whose title -
+# the text after `# --- `, trailing dashes dropped - matches under grep -E, and
+# the summary (from the `# >>> summary` line). The text is extracted from this
+# file and eval'd in this shell, so the paths above are computed once, here,
+# and no file is written. A pattern that matches no section exits 1, printing
+# every section title, one per line.
+if [ -n "${ORCH_TEST_ONLY:-}" ]; then
+  # section_awk <mode> [keep]: list the section titles (mode "titles"), or
+  # print the text to run (mode "text"), keeping the sections whose 1-based
+  # positions appear in keep, a comma-wrapped list such as ",1,4,".
+  section_awk() {
+    awk -v mode="$1" -v keep="${2:-}" '
+      function title(s) { sub(/^# --- /, "", s); sub(/[ -]+$/, "", s); return s }
+      phase == 0 && $0 == "# >>> shared setup" { phase = 1; next }
+      phase == 0 { next }
+      $0 == "# >>> summary" { phase = 3 }
+      phase == 1 && /^# --- / && title($0) == "isolation" { phase = 2 }
+      phase == 2 && /^# --- / {
+        n++
+        on = index(keep, "," n ",") > 0
+        if (mode == "titles") print title($0)
+      }
+      mode == "text" && (phase == 1 || phase == 3 || (phase == 2 && on))
+    ' "$SUITE_SCRIPT"
+  }
+  only_titles="$(section_awk titles)"
+  only_keep=",1,$(printf '%s\n' "$only_titles" | grep -nE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
+  if [ "$only_keep" = ",1," ]; then
+    echo "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section; the sections are:" >&2
+    printf '%s\n' "$only_titles"
+    exit 1
+  fi
+  eval "$(section_awk text "$only_keep")"
+  exit $?
+fi
+
+# >>> shared setup
 PASS=0
 FAIL=0
 SKIP=0
@@ -7761,6 +7802,42 @@ assert_status "an unknown phase op is an error" "$st" 1
 assert_contains "naming the ops it wants" "$out" "advance|boundary"
 unset ORCHESTRATOR_HOST
 
+# --- the section filter (ORCH_TEST_ONLY, #612) ----------------------------------
+# The suite run as a child process under a filter, asserted on its stdout and
+# exit status. The child starts inside a git repo, so its isolation section
+# shows the harness holds under a filter too.
+echo
+echo "the section filter (ORCH_TEST_ONLY, #612)"
+new_repo >/dev/null
+out="$(ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+assert_status "a filter matching only isolation passes" "$st" 0
+assert_eq "runs the isolation section" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
+assert_eq "runs no other section" "$(printf '%s\n' "$out" | grep -cxE 'init|slug|doctor')" "0"
+assert_eq "counts only what ran in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
+  "6 passed, 0 failed"
+assert_contains "keeps the cwd isolation, started from a git repo" "$out" \
+  "ok   the suite starts outside any git work tree"
+assert_contains "keeps the HOME isolation" "$out" "ok   HOME is the suite's own HOME"
+
+out="$(ORCH_TEST_ONLY='^ticket (block|unblock)$' bash "$SUITE_SCRIPT" 2>/dev/null)"
+assert_eq "matches titles without their trailing dashes" \
+  "$(printf '%s\n' "$out" | grep -cxE 'ticket block|ticket unblock')" "2"
+assert_eq "runs isolation alongside the matched sections" \
+  "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
+assert_eq "skips the sections the pattern does not match" \
+  "$(printf '%s\n' "$out" | grep -cxE 'ticket close|ticket reset')" "0"
+
+out="$(ORCH_TEST_ONLY='^no such section$' bash "$SUITE_SCRIPT" 2>/dev/null)"; st=$?
+assert_status "a pattern matching no section exits 1" "$st" 1
+assert_eq "lists the sections from isolation on" "$(printf '%s\n' "$out" | sed -n 1p)" "isolation"
+assert_eq "lists a sub-section as a title of its own" \
+  "$(printf '%s\n' "$out" | grep -cxF 'doctor: host (#128)')" "1"
+assert_eq "lists titles without trailing dashes" "$(printf '%s\n' "$out" | grep -c -- '-$')" "0"
+assert_eq "lists no shared-setup header" \
+  "$(printf '%s\n' "$out" | grep -cE 'doctor harness|fixture gh')" "0"
+assert_eq "runs nothing" "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
+
+# >>> summary
 echo
 if [ "$SKIP" -gt 0 ]; then
   echo "$PASS passed, $FAIL failed, $SKIP skipped"
