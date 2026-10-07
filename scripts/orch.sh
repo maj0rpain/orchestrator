@@ -2885,7 +2885,7 @@ strip_ticket_sections() {
 # and no section to cut, so a repeat writes nothing. Any GitHub failure dies.
 cmd_ticket_retire() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
-  local parent="$1" subs n state comments msg old_msg note
+  local parent="$1" subs n state comments msg old_msg comment_file
   subs="$(ticket_sub_issues "$parent")" || exit 1
   msg="This ticket was retired: its spec, #$parent, changed and will be broken down into tickets again."
   # The wording a retire posted before a spec review could retire too: a
@@ -2900,11 +2900,11 @@ cmd_ticket_retire() {
       comments="$(adapter_issue_comments "$n")" \
         || die "gh could not read ticket #$n's comments"
       if ! grep -qF -e "$msg" -e "$old_msg" <<<"$comments"; then
-        note="$(mktemp)"
-        printf '%s\n' "$msg" >"$note"
-        adapter_issue_comment "$n" "$note" \
-          || { rm -f "$note"; die "gh could not comment on ticket #$n"; }
-        rm -f "$note"
+        comment_file="$(mktemp)"
+        printf '%s\n' "$msg" >"$comment_file"
+        adapter_issue_comment "$n" "$comment_file" \
+          || { rm -f "$comment_file"; die "gh could not comment on ticket #$n"; }
+        rm -f "$comment_file"
       fi
     fi
     adapter_sub_issue_unlink "$parent" "$n" \
