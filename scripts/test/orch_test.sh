@@ -166,9 +166,9 @@ new_repo_with_origin() {
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
-# flat_text [file]: the file, or stdin when given none, on one line with
-# every whitespace run collapsed to one space.
-flat_text() { tr -s ' \t\n' '   ' <"${1:-/dev/stdin}"; }
+# flat_text: stdin on one line with every whitespace run collapsed to one
+# space.
+flat_text() { tr -s ' \t\n' '   '; }
 
 # state_fixture <key> <value>: arrange state.json directly, for the keys
 # `state set` refuses (phase, branch, pr, iteration, ...) - each owned by a
