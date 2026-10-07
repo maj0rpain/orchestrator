@@ -305,8 +305,10 @@ scripts/test/orch_test.sh && scripts/test/hooks_test.sh && scripts/test/docs_lin
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the
 default branch pinned to `version` in `plugin.json`, so changes reach it only
-after a push plus `/plugin marketplace update orchestrator`. Bump `version` when
-publishing a change worth pulling.
+after a push plus `/plugin marketplace update orchestrator`. Every PR to `main`
+bumps `version` and adds it as the top `CHANGELOG.md` entry, and CI enforces
+both; a pure CI or repo-hygiene PR skips the bump with the `no-version-bump`
+label.
 
 Found a bug or want to propose a change? Open a GitHub issue on this repo -
 label it `needs-triage` if it isn't already.

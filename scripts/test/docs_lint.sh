@@ -3,10 +3,11 @@
 # Docs linter: named structural rules over the plugin's skills, agents,
 # commands and docs.
 #
-# Each rule is a scan_* function that takes a plugin root and prints one line
-# per problem, "<file>: <problem>", and nothing when the root obeys it. Each
-# rule runs first against fixture plugin roots that break it, so a rule that
-# stops flagging anything fails here too, then once against the real plugin root.
+# Each rule is a scan_* function that takes a plugin root (and, for the bump
+# rule, main's version) and prints one line per problem, "<file>: <problem>",
+# and nothing when the root obeys it. Each rule runs first against fixture
+# plugin roots that break it, so a rule that stops flagging anything fails here
+# too, then once against the real plugin root.
 # The linter checks structure only: it never runs orch.sh and holds no flow
 # state.
 
@@ -1298,6 +1299,113 @@ spares "a noun in the table, or in Exceptions, is not" "$out" 'noun (base|redo|h
 spares "nor an option spelling, the catch-all, or an arm outside main" "$out" 'noun (-h|--help|\*|stray) '
 check "every noun orch.sh routes is in the CLI conventions table or its Exceptions" \
   "$(scan_cli_nouns "$PLUGIN_ROOT")"
+
+# --- version and CHANGELOG (CLAUDE.md Versioning) -----------------------------
+# Every PR to main bumps version in .claude-plugin/plugin.json and adds it as
+# the top CHANGELOG.md entry. The CHANGELOG rule always runs; the bump rule
+# runs against the real root only when VERSION_BASE holds main's version;
+# .github/workflows/test.yml's "Read main's version" step says when it is set.
+echo
+echo "version and CHANGELOG (CLAUDE.md Versioning)"
+# plugin_version <plugin root>: the version field of its plugin.json, empty
+# when there is none. The linter needs no jq: plugin.json keeps it on one line.
+plugin_version() {
+  sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    "$1/.claude-plugin/plugin.json" 2>/dev/null | head -n 1
+}
+# scan_changelog <plugin root>: the CHANGELOG's first ## heading is exactly
+# ## <version>, its section is non-empty, and no other ## <version> heading
+# for that version exists.
+scan_changelog() {
+  local r="$1" v top
+  v="$(plugin_version "$r")"
+  if [ -z "$v" ]; then echo ".claude-plugin/plugin.json: no version"; return 0; fi
+  if [ ! -f "$r/CHANGELOG.md" ]; then echo "CHANGELOG.md: missing, so it has no ## $v entry"; return 0; fi
+  top="$(grep -m 1 -E '^## ' "$r/CHANGELOG.md" | sed 's/[[:space:]]*$//')"
+  if [ "$top" != "## $v" ]; then
+    echo "CHANGELOG.md: top entry is '${top:-none}', not '## $v'"
+    return 0
+  fi
+  md_section "$r/CHANGELOG.md" "## $v" | grep -q '[^[:space:]]' ||
+    echo "CHANGELOG.md: the ## $v entry is empty"
+  [ "$(sed 's/[[:space:]]*$//' "$r/CHANGELOG.md" | grep -cxF -- "## $v")" -le 1 ] ||
+    echo "CHANGELOG.md: more than one ## $v entry"
+  return 0
+}
+# changelog_fixture <version> <CHANGELOG lines...>: a fixture root whose
+# plugin.json carries <version> (none when empty) and whose CHANGELOG.md is
+# the given lines.
+changelog_fixture() {
+  local f v="$1"; shift
+  f="$(new_fixture)"
+  mkdir -p "$f/.claude-plugin"
+  if [ -n "$v" ]; then printf '{\n  "name": "x",\n  "version": "%s"\n}\n' "$v" >"$f/.claude-plugin/plugin.json"
+  else printf '{\n  "name": "x"\n}\n' >"$f/.claude-plugin/plugin.json"; fi
+  printf '%s\n' "$@" >"$f/CHANGELOG.md"
+  echo "$f"
+}
+flags "a top CHANGELOG heading that is not the version is flagged" \
+  "$(scan_changelog "$(changelog_fixture 3.2.0 '# Changelog' '' '## 3.1.0' '' 'Old.')")" \
+  "CHANGELOG.md: top entry is '## 3.1.0', not '## 3.2.0'"
+flags "an empty top CHANGELOG entry is flagged" \
+  "$(scan_changelog "$(changelog_fixture 3.2.0 '# Changelog' '' '## 3.2.0' '' '## 3.1.0' '' 'Old.')")" \
+  "CHANGELOG.md: the ## 3.2.0 entry is empty"
+flags "a duplicate ## <version> heading is flagged" \
+  "$(scan_changelog "$(changelog_fixture 3.2.0 '# Changelog' '' '## 3.2.0' '' 'New.' '' '## 3.2.0' '' 'Again.')")" \
+  "CHANGELOG.md: more than one ## 3.2.0 entry"
+fixture="$(changelog_fixture 3.2.0 '## 3.2.0' '' 'New.')"
+rm "$fixture/CHANGELOG.md"
+flags "a missing CHANGELOG.md is flagged" "$(scan_changelog "$fixture")" "CHANGELOG.md: missing"
+flags "a plugin.json with no version is flagged" \
+  "$(scan_changelog "$(changelog_fixture '' '# Changelog' '' '## 3.2.0' '' 'New.')")" \
+  ".claude-plugin/plugin.json: no version"
+spares "a CHANGELOG topped by a non-empty entry for the version is not flagged" \
+  "$(scan_changelog "$(changelog_fixture 3.2.0 '# Changelog' '' '## 3.2.0' '' 'New.' '' '## 3.1.0' '' 'Old.')")" '.'
+check "CHANGELOG.md's top entry is the plugin.json version" "$(scan_changelog "$PLUGIN_ROOT")"
+
+# scan_version_bump <plugin root> <base version>: the root's version must be
+# strictly greater than <base version>, both compared as major.minor.patch
+# integers; a value on either side that is not major.minor.patch is named.
+scan_version_bump() {
+  local v base="$2" semver='^[0-9]+\.[0-9]+\.[0-9]+$' a b i malformed=0
+  v="$(plugin_version "$1")"
+  if ! [[ "$v" =~ $semver ]]; then
+    echo ".claude-plugin/plugin.json: version '$v' is not major.minor.patch"; malformed=1
+  fi
+  if ! [[ "$base" =~ $semver ]]; then
+    echo "VERSION_BASE: main's version '$base' is not major.minor.patch"; malformed=1
+  fi
+  [ "$malformed" -eq 0 ] || return 0
+  IFS=. read -ra a <<<"$v"
+  IFS=. read -ra b <<<"$base"
+  for i in 0 1 2; do
+    if ((10#${a[i]} > 10#${b[i]})); then return 0; fi
+    if ((10#${a[i]} < 10#${b[i]})); then break; fi
+  done
+  echo ".claude-plugin/plugin.json: version $v is not greater than main's $base"
+  return 0
+}
+bump_fixture() { changelog_fixture "$1" "## $1" '' 'New.'; }
+flags "an unchanged version is flagged" \
+  "$(scan_version_bump "$(bump_fixture 3.2.0)" 3.2.0)" "version 3.2.0 is not greater than main's 3.2.0"
+flags "a lower version is flagged" \
+  "$(scan_version_bump "$(bump_fixture 3.1.9)" 3.2.0)" "version 3.1.9 is not greater than main's 3.2.0"
+flags "a lower version that sorts higher as a string is flagged" \
+  "$(scan_version_bump "$(bump_fixture 3.9.0)" 3.10.0)" "version 3.9.0 is not greater than main's 3.10.0"
+flags "a version that is not major.minor.patch is flagged, naming it" \
+  "$(scan_version_bump "$(bump_fixture 3.2)" 3.1.0)" "version '3.2' is not major.minor.patch"
+flags "a base that is not major.minor.patch is flagged, naming it" \
+  "$(scan_version_bump "$(bump_fixture 3.2.0)" 3.1.0-rc1)" "main's version '3.1.0-rc1' is not major.minor.patch"
+spares "a minor bump that sorts lower as a string is not flagged" \
+  "$(scan_version_bump "$(bump_fixture 3.10.0)" 3.9.0)" '.'
+spares "an ordinary patch bump is not flagged" \
+  "$(scan_version_bump "$(bump_fixture 3.2.1)" 3.2.0)" '.'
+if [ -n "${VERSION_BASE+set}" ]; then
+  check "plugin.json's version is a step up from main's $VERSION_BASE" \
+    "$(scan_version_bump "$PLUGIN_ROOT" "$VERSION_BASE")"
+else
+  ok "plugin.json's version bump skipped (VERSION_BASE unset)"
+fi
 
 # --- summary -----------------------------------------------------------------
 echo

@@ -2,6 +2,7 @@ name: test
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
   push:
     branches: [main]
 
@@ -10,5 +11,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # Sets VERSION_BASE for docs_lint.sh's bump rule. A failed fetch or
+      # read fails the job rather than leaving it unset.
+      - name: Read main's version
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.base.ref == 'main' &&
+          !contains(github.event.pull_request.labels.*.name, 'no-version-bump')
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          base="$(git show origin/main:.claude-plugin/plugin.json | jq -er .version)"
+          echo "VERSION_BASE=$base" >>"$GITHUB_ENV"
       - name: Verify
         run: scripts/test/orch_test.sh && scripts/test/hooks_test.sh && scripts/test/docs_lint.sh
