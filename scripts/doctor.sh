@@ -581,7 +581,7 @@ check_git_exclude() {
   # exist. Not covered by d_run's abort warn either - a check runs as the left
   # operand of ||, which disables errexit for its whole body, so a failure here
   # would carry on with a wrong path rather than stop.
-  ex="$(git rev-parse --git-dir)/info/exclude"
+  ex="$(git rev-parse --git-common-dir)/info/exclude"
   for d in "${EXCLUDED_DIRS[@]}"; do
     grep -qxF "$d" "$ex" 2>/dev/null || missing+=("$d")
   done
@@ -593,7 +593,7 @@ check_git_exclude() {
   # arrived mid-flow in a repo that is not theirs. One warning for every missing
   # line, and a remedy that appends only those.
   d_warn "$(d_join "$(printf '%s\n' "${missing[@]}")") not git-excluded - flow state and planning drafts would show as untracked."
-  d_remedy "printf '%s\\n' $(printf "'%s' " "${missing[@]}")>>\"\$(git rev-parse --git-dir)/info/exclude\""
+  d_remedy "printf '%s\\n' $(printf "'%s' " "${missing[@]}")>>\"\$(git rev-parse --git-common-dir)/info/exclude\""
 }
 
 # The base branch every new flow and quick implementation will fork from and

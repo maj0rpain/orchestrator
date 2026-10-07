@@ -475,10 +475,11 @@ cmd_base() {
 # Ignore every directory in EXCLUDED_DIRS - the flow directory and .scratch/ -
 # without touching a tracked .gitignore, so running the orchestrator in an
 # unfamiliar repo never dirties its working tree. A line already present is
-# never written again.
+# never written again. The file is the clone's shared one (the common dir),
+# the only info/exclude git reads, so a linked worktree writes it too.
 exclude_orch_dirs() {
   local ex d
-  ex="$(git rev-parse --git-dir)/info/exclude"
+  ex="$(git rev-parse --git-common-dir)/info/exclude"
   mkdir -p "$(dirname "$ex")"
   for d in "${EXCLUDED_DIRS[@]}"; do
     grep -qxF "$d" "$ex" 2>/dev/null || printf '%s\n' "$d" >>"$ex"
@@ -3106,6 +3107,117 @@ cmd_ticket() {
   esac
 }
 
+# --- ticket-worktree ----------------------------------------------------------
+#
+# A ticket's own worktree on its own ticket branch, so ticket subagents of one
+# breakdown can build at once without sharing a working tree (ADR-0036). Each
+# lives under the current checkout's top level - inside the session's project
+# directory, so an implementer's edits draw no permission prompt - and is kept
+# out of git status by the clone's exclude file.
+
+readonly TICKET_WORKTREES="$ORCH/worktrees"
+
+# The ticket number <n> names, or die: digits only, not zero.
+ticket_worktree_number() {
+  case "$1" in
+    ''|*[!0-9]*|0*) die "not a ticket number: ${1:-<none>} (want a positive integer)" ;;
+  esac
+  printf '%s\n' "$1"
+}
+
+ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
+
+# Forks <current-branch>--t<n> from the current branch's tip, records the
+# forked-from branch on it, and checks it out at .orchestrator/worktrees/t<n>.
+# The exclude entry is written before the branch exists; anything failing
+# after that takes the worktree and the branch back out before dying.
+cmd_ticket_worktree_add() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket-worktree add <n>"
+  local n parent branch path
+  n="$(ticket_worktree_number "$1")"
+  parent="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  branch="$parent--t$n"
+  path="$(ticket_worktree_path "$n")"
+  [ ! -e "$path" ] || die "ticket worktree $path already exists"
+  if git rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
+    die "branch $branch already exists"
+  fi
+  exclude_orch_dirs
+  git branch -q "$branch" HEAD || die "could not create branch $branch"
+  if ! git worktree add -q "$path" "$branch" \
+     || ! git config "branch.$branch.orchestrator-ticket-parent" "$parent"; then
+    # A freshly added worktree holds nothing of anyone's, so no force is
+    # needed to take it back out; -D deletes the branch's config section too.
+    if [ -e "$path" ]; then git worktree remove "$path" 2>/dev/null || true; fi
+    git branch -q -D "$branch" 2>/dev/null || true
+    die "could not add ticket worktree $path - removed branch $branch again"
+  fi
+  note "$path"
+}
+
+# Prints <n> <path> for every ticket worktree under this checkout's
+# .orchestrator/worktrees/, and nothing else: another checkout's ticket
+# worktrees are that checkout's business.
+cmd_ticket_worktree_list() {
+  [ $# -eq 0 ] || die "usage: orch.sh ticket-worktree list"
+  local line path name
+  while IFS= read -r line; do
+    case "$line" in "worktree "*) ;; *) continue ;; esac
+    path="${line#worktree }"
+    [ "$(dirname "$path")" = "$TICKET_WORKTREES" ] || continue
+    name="$(basename "$path")"
+    case "$name" in t[1-9]*) ;; *) continue ;; esac
+    case "${name#t}" in *[!0-9]*) continue ;; esac
+    note "${name#t} $path"
+  done < <(git worktree list --porcelain)
+}
+
+# Removes ticket <n>'s worktree and deletes its branch, never with --force.
+# Both refusals - a dirty worktree, and without --unmerged a branch not merged
+# into its forked-from branch - run before anything is removed.
+cmd_ticket_worktree_remove() {
+  local n="" unmerged=0 path branch parent
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --unmerged) unmerged=1 ;;
+      -*) die "unknown flag: $1 (usage: orch.sh ticket-worktree remove <n> [--unmerged])" ;;
+      *) [ -z "$n" ] || die "usage: orch.sh ticket-worktree remove <n> [--unmerged]"; n="$1" ;;
+    esac
+    shift
+  done
+  n="$(ticket_worktree_number "$n")"
+  path="$(ticket_worktree_path "$n")"
+  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+    || die "no ticket worktree for ticket $n at $path"
+  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
+    || die "ticket worktree $path is not on a branch (detached HEAD)"
+  [ -z "$(git -C "$path" status --porcelain)" ] \
+    || die "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
+  if [ "$unmerged" = 0 ]; then
+    parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
+      || die "branch $branch records no forked-from branch - pass --unmerged to discard it"
+    git merge-base --is-ancestor "$branch" "$parent" 2>/dev/null \
+      || die "branch $branch is not merged into $parent - merge it first, or pass --unmerged to discard it"
+  fi
+  git worktree remove "$path" || die "could not remove ticket worktree $path"
+  if [ "$unmerged" = 1 ]; then
+    git branch -q -D "$branch" || die "could not delete branch $branch"
+  else
+    git branch -q -d "$branch" || die "could not delete branch $branch"
+  fi
+}
+
+cmd_ticket_worktree() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    add)    cmd_ticket_worktree_add "$@" ;;
+    list)   cmd_ticket_worktree_list "$@" ;;
+    remove) cmd_ticket_worktree_remove "$@" ;;
+    *) die "unknown ticket-worktree op: ${op:-<none>} (want add|list|remove)" ;;
+  esac
+}
+
 # --- redo ---------------------------------------------------------------
 
 # True when any of the named files exists under <dir>.
@@ -3504,6 +3616,27 @@ orch.sh - deterministic operations for the orchestrator flow
                               start immediately)` once none is left). A repeat
                               removes no edge; re-running a failed run
                               finishes it
+  ticket-worktree add <n>     fork <current-branch>--t<n> from the current
+                              branch's tip, record the forked-from branch on
+                              it (branch.<ticket-branch>.orchestrator-ticket-
+                              parent in local git config), check it out at
+                              .orchestrator/worktrees/t<n> under this
+                              checkout's top level, git-exclude .orchestrator/
+                              in the clone's shared info/exclude, and print
+                              the worktree's absolute path. Refuses when that
+                              worktree or branch already exists; a failure
+                              after the branch is made leaves nothing behind
+  ticket-worktree list        print <n> <path> for each ticket worktree under
+                              this checkout's .orchestrator/worktrees/ only;
+                              nothing, exit 0, when there are none
+  ticket-worktree remove <n> [--unmerged]
+                              remove ticket <n>'s worktree and delete its
+                              ticket branch with git branch -d, never with
+                              --force. Refuses a dirty worktree and, without
+                              --unmerged, a branch not merged into its
+                              forked-from branch, before removing anything;
+                              --unmerged deletes a clean worktree's unmerged
+                              branch
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
@@ -3607,6 +3740,7 @@ main() {
     issue)         cmd_issue "$@" ;;
     pr)            cmd_pr "$@" ;;
     ticket)        cmd_ticket "$@" ;;
+    ticket-worktree) cmd_ticket_worktree "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
     spec-review)   cmd_spec_review "$@" ;;
