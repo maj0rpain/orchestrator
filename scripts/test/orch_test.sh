@@ -3018,6 +3018,10 @@ assert_contains "names the fresh subagent Junie cannot use" \
 assert_eq "does not call the fresh subagent unverified on Junie" \
   "$(printf '%s\n' "$out" | grep -o 'unverified: .*' | grep -c 'Start a fresh subagent')" "0"
 assert_contains "names the forked subagent Junie cannot start" "$out" "Start a forked subagent"
+# Junie cannot start a background subagent, so it builds the frontier one
+# ticket at a time (ADR-0036): a gap, not Unverified.
+assert_contains "names the background subagent Junie cannot start" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Start a background subagent"
 # A human on Junie still starts a skill with /<name>; only the model lacks it.
 assert_contains "names only mid-step skill invocation as missing" "$out" "Invoke a skill from a step"
 assert_contains "points at the reference for the fallbacks" "$out" "docs/host-capabilities.md"
