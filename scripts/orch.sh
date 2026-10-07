@@ -51,6 +51,9 @@ die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
 # die for commands that reserve exit 1 for a meaningful "no" (pr comment: no
 # open PR; ticket exists: no breakdown), so their failures exit with status 2 instead.
 die2() { printf 'orch: %s\n' "$*" >&2; exit 2; }
+# warn: die's line on stderr, without the exit - for a refusal that returns its
+# own status, or a warning the command carries on past.
+warn() { printf 'orch: %s\n' "$*" >&2; }
 note() { printf '%s\n' "$*"; }
 now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # The one timestamp shape for .orchestrator/ directory names: compact, UTC, and
@@ -409,7 +412,7 @@ base_set_flow() {
   if [ -n "$branch" ]; then
     slug="$(state_get slug)"
     if [ "$(state_get phase)" = review ]; then
-      die "flow $slug already has branch $branch - its base can change again once orch.sh redo review retires it"
+      die "flow $slug already has branch $branch - its base can change again once $(flow_cmd redo) retires it"
     fi
     die "flow $slug already has branch $branch - its base can no longer change; abort to start again on another base"
   fi
@@ -1498,12 +1501,12 @@ review_rerun() {
   link="${link#*$'\t'}"
   case "$link" in
     */actions/runs/[0-9]*) ;;
-    *) printf 'orch: check %s on PR #%s is not a GitHub Actions run - nothing to rerun\n' "$name" "$pr" >&2
+    *) warn "check $name on PR #$pr is not a GitHub Actions run - nothing to rerun"
        return 1 ;;
   esac
   run="${link##*/actions/runs/}"   # N/job/M -> N
   run="${run%%/*}"
-  case "$run" in ''|*[!0-9]*) printf 'orch: check %s on PR #%s links no Actions run id - nothing to rerun\n' "$name" "$pr" >&2; return 1 ;; esac
+  case "$run" in ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; return 1 ;; esac
   adapter_run_rerun "$run" 2>/dev/null \
     || die2 "gh could not rerun the failed jobs of Actions run $run"
   note "$run"
@@ -2440,7 +2443,7 @@ cmd_issue_triage() {
   tmp="$(mktemp)"
   printf 'An orchestrator planning session triaged this issue to `%s`.\n' "$ready" >"$tmp"
   adapter_issue_comment "$issue" "$tmp" \
-    || printf 'orch: warning: issue #%s is labelled %s, but gh could not post the triage comment on it\n' "$issue" "$ready" >&2
+    || warn "warning: issue #$issue is labelled $ready, but gh could not post the triage comment on it"
   rm -f "$tmp"
 }
 
@@ -2882,7 +2885,7 @@ strip_ticket_sections() {
 # and no section to cut, so a repeat writes nothing. Any GitHub failure dies.
 cmd_ticket_retire() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
-  local parent="$1" subs n state comments msg old_msg note
+  local parent="$1" subs n state comments msg old_msg comment_file
   subs="$(ticket_sub_issues "$parent")" || exit 1
   msg="This ticket was retired: its spec, #$parent, changed and will be broken down into tickets again."
   # The wording a retire posted before a spec review could retire too: a
@@ -2897,11 +2900,11 @@ cmd_ticket_retire() {
       comments="$(adapter_issue_comments "$n")" \
         || die "gh could not read ticket #$n's comments"
       if ! grep -qF -e "$msg" -e "$old_msg" <<<"$comments"; then
-        note="$(mktemp)"
-        printf '%s\n' "$msg" >"$note"
-        adapter_issue_comment "$n" "$note" \
-          || { rm -f "$note"; die "gh could not comment on ticket #$n"; }
-        rm -f "$note"
+        comment_file="$(mktemp)"
+        printf '%s\n' "$msg" >"$comment_file"
+        adapter_issue_comment "$n" "$comment_file" \
+          || { rm -f "$comment_file"; die "gh could not comment on ticket #$n"; }
+        rm -f "$comment_file"
       fi
     fi
     adapter_sub_issue_unlink "$parent" "$n" \

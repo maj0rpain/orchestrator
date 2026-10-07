@@ -24,6 +24,11 @@ See `docs/agents/domain.md`.
 `orch.sh` subcommand grammar: noun before verb, e.g. `orch.sh branch retire <old> <new>`.
 See `docs/agents/cli-conventions.md`.
 
+### Coding standards
+
+Judgement calls on reuse, `orch: ` messages, local names and variable meaning.
+See `docs/agents/coding-standards.md`.
+
 ## Testing
 
 While iterating, run only the section you are working on:

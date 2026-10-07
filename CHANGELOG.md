@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.13.4
+
+The repo has a written coding standard, `docs/agents/coding-standards.md`,
+pointed to from `CLAUDE.md`'s new `## Coding standards` section. Every
+non-fatal `orch: ` message now goes through a new `warn` helper, and docs lint
+flags a script message that names `orch.sh redo` or `orch.sh abort` literally
+instead of through `flow_cmd`: the base-set refusal now names the host's redo
+command. `cmd_ticket_retire`'s local `note`, which shadowed the `note` helper,
+is renamed `comment_file` (see issue #608).
+
 ## 3.13.3
 
 `orch.sh review terminal` reads a review record's `## Terminal state` the way
