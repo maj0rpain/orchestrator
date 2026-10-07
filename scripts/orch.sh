@@ -2669,8 +2669,8 @@ ticket_links_verified() {
 # ticket rather than falling back to a text-based `Blocked by:` convention,
 # since nothing downstream ever reads that fallback.
 cmd_ticket_publish() {
-  [ $# -ge 3 ] || die "usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
   local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
+  [ $# -ge 3 ] || die "$usage"
   local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want="" b
   local ready child
   shift 3
@@ -2807,8 +2807,8 @@ cmd_ticket_exists() {
 TICKET_HEADING='## Ticket'
 
 # True when the body on stdin has a line that is exactly TICKET_HEADING outside
-# a code fence, CRLF ends allowed - the one test `ticket exists` and `ticket
-# retire` share, and the line `strip_ticket_sections` cuts from.
+# a code fence, CRLF ends allowed - the test `ticket exists` uses, and the line
+# `strip_ticket_sections` cuts from.
 has_ticket_heading() {
   awk -v heading="$TICKET_HEADING" '
     { l = $0; sub(/\r$/, "", l) }
