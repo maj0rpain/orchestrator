@@ -755,7 +755,7 @@ check_flow_review_terminal() {
     # /orchestrator:next will not rewrite it - only a human editing it will.
     malformed)
       d_fail "review loop's last iteration ($i) has a malformed terminal state - $detail"
-      d_remedy "rewrite the first line of $(cmd_review path "$i") as 'ready', or 'stop' followed by its reason" ;;
+      d_remedy "rewrite the first line of $(cmd_review path "$i") in the expected shape above" ;;
   esac
 }
 

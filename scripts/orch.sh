@@ -1527,7 +1527,7 @@ review_rerun() {
 # record or its section is missing or empty.
 review_terminal_state() {
   require_state
-  local i b path body first rest after sep
+  local i b path body first rest after s sep
   i="$(state_get iteration)"
   b="$(review_budget)"
   if [ "$i" -eq 0 ]; then note none; return 1; fi
@@ -1542,19 +1542,21 @@ review_terminal_state() {
   rest="$(printf '%s\n' "$body" | tail -n +2)"
   case "$first" in
     ready) note ready; return 0 ;;
-    stop) note stop; [ -z "$rest" ] || printf '%s\n' "$rest"; return 0 ;;
     stop*)
       after="$(trim "${first#stop}")"
-      for sep in - – — :; do
-        case "$after" in
-          "$sep"*)
-            after="$(trim "${after#"$sep"}")"
-            note stop
-            [ -z "$after" ] || printf '%s\n' "$after"
-            [ -z "$rest" ] || printf '%s\n' "$rest"
-            return 0 ;;
-        esac
-      done ;;
+      sep=
+      for s in - – — :; do
+        case "$after" in "$s"*) sep="$s"; break ;; esac
+      done
+      # Bare `stop`, or `stop` and a separator: anything else after the word
+      # (`stopped`, `stop CI failed`) falls through to malformed.
+      if [ -z "$after" ] || [ -n "$sep" ]; then
+        after="$(trim "${after#"$sep"}")"
+        note stop
+        [ -z "$after" ] || printf '%s\n' "$after"
+        [ -z "$rest" ] || printf '%s\n' "$rest"
+        return 0
+      fi ;;
   esac
   note malformed
   note "expected: first line 'ready', or 'stop' with its reason after a separator (-, –, —, :) or on the lines below"
@@ -3153,7 +3155,7 @@ cmd_redo_review() {
     interrupted)
       die "the review loop's last iteration ($i) has no recorded terminal state - the session looks interrupted, not stopped. Resume it with $(flow_cmd next); redo only runs once a loop actually ends." ;;
     malformed)
-      die "the review loop's last iteration ($i) has a malformed terminal state - rewrite the first line of $(cmd_review path "$i") as 'ready', or 'stop' followed by its reason; redo only runs once a loop actually ends.
+      die "the review loop's last iteration ($i) has a malformed terminal state - rewrite the first line of $(cmd_review path "$i") in the shape below; redo only runs once a loop actually ends.
 $(printf '%s\n' "$terminal" | tail -n +2)" ;;
     stop) ;;
     *) die "review_terminal_state answered something redo does not know: $word" ;;

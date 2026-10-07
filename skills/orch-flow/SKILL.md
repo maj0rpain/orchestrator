@@ -267,8 +267,8 @@ stop rather than doing anything destructive:
 - The last iteration has no recorded terminal state: the session looks
   interrupted, not stopped - offer `/orchestrator:next` to resume it.
 - The last iteration's terminal state is `malformed` - present, but its first
-  line is neither `ready` nor `stop`: tell the user to rewrite the record's
-  first line in the shape the message quotes, not to run `/orchestrator:next`.
+  line is not in the shape the message quotes: tell the user to rewrite the
+  record's first line in that shape, not to run `/orchestrator:next`.
 
 Once confirmed terminal, it runs without asking anything further - retiring
 and closing are not destructive: the old branch is renamed aside

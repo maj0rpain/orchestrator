@@ -6761,7 +6761,7 @@ out="$("$ORCH" review terminal 2>&1)"; st=$?
 assert_status "a whitespace-only section is not terminal" "$st" 1
 assert_first_line "and still classifies as interrupted" "$out" "interrupted"
 
-for line in 'Stop' '**stop**' 'ready - all green' 'done'; do
+for line in 'Stop' '**stop**' 'ready - all green' 'done' 'stopped' 'stop CI failed'; do
   writeln '## Terminal state' '' "$line" 'CI failed twice.' >.orchestrator/review/iteration-05.md
   out="$("$ORCH" review terminal 2>&1)"; st=$?
   assert_status "'$line' is not terminal" "$st" 1
