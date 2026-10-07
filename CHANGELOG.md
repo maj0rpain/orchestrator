@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.16.0
+
+The implement phase and quick implementation build a ticket breakdown's
+frontier in parallel: up to the clone's parallel cap of ready tickets at
+once (`orchestrator.parallel`, default 3, read with `orch.sh parallel
+show`), each ticket subagent in the background on its own ticket branch in
+its own ticket worktree under `.orchestrator/worktrees/`. New `orch.sh`
+commands `ticket-worktree add`, `list` and `remove` manage the worktrees, and
+`ticket merge` lands a finished ticket branch on the flow's branch by a
+rebase and a fast-forward before the ticket closes; a ticket whose merge
+conflicts is redone alone. The implementer takes an optional `Worktree:`
+prompt line. The combined branch is verified once after the frontier is
+exhausted, and that run fills the implement handoff's Verification section
+or a Verification heading in the quick implementation's PR body. A collapsed
+breakdown, a cap of 1, or a host without background subagents (Junie, a new
+**Start a background subagent** fallback) keeps the one-at-a-time loop.
+Leftover ticket worktrees stop the next run, fail `doctor --flow`, and make
+`archive` refuse. ADR-0036 records why, superseding ADR-0010 in part (see
+issue #618).
+
 ## 3.15.0
 
 Every fix of a defect is now a root-cause fix: it names the cause, searches
