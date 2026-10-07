@@ -24,6 +24,12 @@ See `docs/agents/domain.md`.
 `orch.sh` subcommand grammar: noun before verb, e.g. `orch.sh branch retire <old> <new>`.
 See `docs/agents/cli-conventions.md`.
 
+## Testing
+
+While iterating, run only the section you are working on:
+`ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`.
+Run `scripts/test/all.sh` once before committing.
+
 ## Versioning
 
 CI (`scripts/test/docs_lint.sh`) enforces that every PR to `main` bumps `version`

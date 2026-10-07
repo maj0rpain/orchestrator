@@ -7903,6 +7903,52 @@ out="$(ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1
 assert_eq "without quiet mode, prints every ok line" \
   "$(printf '%s\n' "$out" | grep -c '^  ok ')" "6"
 
+# --- all.sh, the single entry point (#615) ----------------------------------
+# A copy of all.sh in a temp directory beside three stub suites, never the
+# real ones: orch_test.sh's stub fails, the other two pass. Each stub logs
+# whether ORCH_TEST_ONLY and ORCH_TEST_QUIET reached it, and VERSION_BASE.
+echo
+echo "all.sh, the single entry point (#615)"
+all_dir="$(mktemp -d)"
+cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$all_dir/"
+for all_suite in orch_test.sh hooks_test.sh docs_lint.sh; do
+  {
+    echo '#!/usr/bin/env bash'
+    echo "echo \"$all_suite only=\${ORCH_TEST_ONLY-unset} quiet=\${ORCH_TEST_QUIET-unset} base=\${VERSION_BASE-unset}\" >>\"\$(dirname \"\$0\")/log\""
+    echo 'echo; echo "a section header"'
+    if [ "$all_suite" = orch_test.sh ]; then
+      echo "printf '  FAIL a stub failure\n     its detail line\n  FAIL another failure\n     its own detail\n'"
+      echo 'echo; echo "2 passed, 2 failed"; exit 1'
+    else
+      echo 'echo; echo "7 passed, 0 failed"'
+    fi
+  } >"$all_dir/$all_suite"
+done
+out="$(ORCH_TEST_ONLY='^isolation$' VERSION_BASE=9.9.9 bash "$all_dir/all.sh" 2>&1)"; st=$?
+assert_status "exits non-zero when a suite failed" "$st" 1
+assert_eq "runs every suite after the first one fails" "$(wc -l <"$all_dir/log" | tr -d ' ')" "3"
+assert_eq "runs the suites in order" "$(cut -d' ' -f1 "$all_dir/log" | tr '\n' ' ')" \
+  "orch_test.sh hooks_test.sh docs_lint.sh "
+assert_eq "unsets ORCH_TEST_ONLY for every suite" "$(grep -c 'only=unset' "$all_dir/log")" "3"
+assert_eq "sets ORCH_TEST_QUIET=1 for every suite" "$(grep -c 'quiet=1 ' "$all_dir/log")" "3"
+assert_eq "passes VERSION_BASE through to every suite" "$(grep -c 'base=9.9.9$' "$all_dir/log")" "3"
+assert_contains "prints a suite's FAIL lines with their detail lines" "$out" \
+  "$(printf '  FAIL a stub failure\n     its detail line\n  FAIL another failure\n     its own detail')"
+assert_eq "prints one summary line per suite" \
+  "$(printf '%s\n' "$out" | grep -E '^[a-z_]+\.sh: [0-9]+ passed')" \
+  "$(printf 'orch_test.sh: 2 passed, 2 failed\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed')"
+assert_eq "prints no section header" "$(printf '%s\n' "$out" | grep -c 'a section header')" "0"
+rm -f "$all_dir/log"
+sed -i.bak 's/; exit 1$//; s/2 failed/0 failed/; /FAIL/d' "$all_dir/orch_test.sh"
+out="$(VERSION_BASE='' bash "$all_dir/all.sh" 2>&1)"; st=$?
+assert_status "exits 0 when every suite passed" "$st" 0
+assert_eq "passes an empty VERSION_BASE through as set" "$(grep -c 'base=$' "$all_dir/log")" "3"
+rm -f "$all_dir/log"
+out="$(unset VERSION_BASE; bash "$all_dir/all.sh" 2>&1)"
+assert_eq "leaves an unset VERSION_BASE unset" "$(grep -c 'base=unset$' "$all_dir/log")" "3"
+assert_eq "prints no FAIL line when every suite passed" "$(printf '%s\n' "$out" | grep -c FAIL)" "0"
+rm -rf "$all_dir"
+
 # >>> summary
 echo
 if [ "$SKIP" -gt 0 ]; then
