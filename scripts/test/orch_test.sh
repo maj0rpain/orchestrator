@@ -2020,6 +2020,7 @@ before="$(fake_snapshot)"
 out="$(triage 45 2>&1)"; st=$?
 assert_status "a filed finding is refused" "$st" 1
 assert_contains "naming the issue" "$out" "issue #45"
+assert_contains "saying it is not yet triaged" "$out" "not yet triaged"
 assert_contains "pointing at finding triage" "$out" "/orchestrator:finding-triage"
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" issue triage 45 2>&1)"
 assert_contains "naming the finding-triage skill off Claude Code" "$out" "orch-finding-triage skill"
@@ -2030,8 +2031,52 @@ before="$(fake_snapshot)"
 out="$(triage 52 2>&1)"; st=$?
 assert_status "a finding under any review:<severity> label is refused" "$st" 1
 assert_contains "naming the issue" "$out" "issue #52"
+assert_contains "saying it is not yet triaged" "$out" "not yet triaged"
 assert_contains "pointing at finding triage" "$out" "/orchestrator:finding-triage"
 assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+
+# A finding carrying one of finding triage's own labels has been checked
+# against the default branch (ADR-0031), so it takes the ordinary path (#586).
+fake_issue 60 open review:major bug ready-for-human
+before="$(fake_snapshot)"
+out="$(triage 60 2>&1)"; st=$?
+assert_status "a ready-for-human finding without --override asks for a decision, exit 2" "$st" 2
+assert_eq "printing the label it found" "$out" "ready-for-human"
+assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+out="$(triage 60 --override 2>&1)"; st=$?
+assert_status "a ready-for-human finding with --override is triaged" "$st" 0
+assert_eq "keeping its severity and category beside ready-for-agent" \
+  "$(fake_labels_of 60)" "bug ready-for-agent review:major "
+assert_eq "with exactly one comment" "$(comment_count 60)" "1"
+
+fake_issue 61 open review:major wontfix
+before="$(fake_snapshot)"
+out="$(triage 61 2>&1)"; st=$?
+assert_status "a wontfix finding without --override asks for a decision, exit 2" "$st" 2
+assert_eq "printing the label it found" "$out" "wontfix"
+assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+
+fake_issue 62 open review:nit ready-for-agent
+before="$(fake_snapshot)"
+out="$(triage 62 2>&1)"; st=$?
+assert_status "a finding already ready-for-agent is a no-op" "$st" 0
+assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
+
+# Refused: labels that do not show finding triage ran on it, --override or not.
+for case in "63|review:major" "64|review:major needs-info" \
+            "65|review:major needs-triage|--override" "66|review:major|--override"; do
+  n="${case%%|*}"; rest="${case#*|}"; flag="${rest#*|}"; [ "$flag" != "$rest" ] || flag=""
+  # shellcheck disable=SC2086 # the labels split into separate arguments
+  fake_issue "$n" open ${rest%%|*}
+  before="$(fake_snapshot)"
+  # shellcheck disable=SC2086 # an empty flag is no argument at all
+  out="$(triage "$n" $flag 2>&1)"; st=$?
+  assert_status "a finding labelled '${rest%%|*}' ${flag:-without --override} is refused" "$st" 1
+  assert_contains "naming the issue" "$out" "issue #$n"
+  assert_contains "saying it is not yet triaged" "$out" "not yet triaged"
+  assert_contains "pointing at finding triage" "$out" "/orchestrator:finding-triage"
+  assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+done
 
 fake_issue 46 closed needs-triage
 before="$(fake_snapshot)"
@@ -2108,6 +2153,17 @@ before="$(fake_snapshot)"
 out="$(triage 55 2>&1)"; st=$?
 assert_status "a renamed ready-for-agent is a no-op" "$st" 0
 assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+fake_issue 67 open "triage me" review:major
+before="$(fake_snapshot)"
+out="$(triage 67 --override 2>&1)"; st=$?
+assert_status "a finding under the renamed needs-triage is refused" "$st" 1
+assert_contains "saying it is not yet triaged" "$out" "not yet triaged"
+assert_contains "naming the issue" "$out" "issue #67"
+assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+fake_issue 68 open "human go" review:major
+out="$(triage 68 2>&1)"; st=$?
+assert_status "a finding under the renamed ready-for-human asks for a decision" "$st" 2
+assert_eq "printing the repo's name for it" "$out" "human go"
 labels_doc docs/agents/triage-labels.md
 
 out="$(triage abc 2>&1)"; st=$?

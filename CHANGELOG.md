@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.13.2
+
+`orch.sh issue triage` no longer refuses a filed finding that finding triage
+has already moved: one carrying `ready-for-agent`, `ready-for-human` or
+`wontfix` takes the ordinary path, so a planning interview can move a
+`ready-for-human` finding to `ready-for-agent` with `--override`, keeping its
+`review:<severity>` and category labels. A finding in `needs-triage`, in
+`needs-info`, or with no triage-state label is still refused, whatever
+`--override` says, and the refusal now says it is not yet triaged and names
+finding triage (see issue #586).
+
 ## 3.13.0
 
 A planning interview about an open issue - the **Interviewed

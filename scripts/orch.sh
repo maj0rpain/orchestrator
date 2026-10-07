@@ -2365,13 +2365,23 @@ cmd_issue_triage() {
   labels="$(printf '%s\n' "$out" | tail -n +2)"
   [ "$(first_line "$out")" = OPEN ] \
     || die "issue #$issue is not open - only an open issue is triaged to '$ready'"
-  # A filed finding comes back into the pipeline through finding triage alone,
-  # which checks it against the default branch first (ADR-0031). Any
-  # review:<severity> label marks one, not only the severities filed today.
-  local finding
+  # A filed finding not yet triaged comes back into the pipeline through
+  # finding triage first, which checks it against the default branch
+  # (ADR-0031). Only the labels finding triage itself applies - ready-for-agent,
+  # ready-for-human, wontfix - show it ran; after that the finding is an
+  # ordinary issue, and the interview settles what ready-for-human waited on.
+  # The gate reads labels, not history, and --override does not bypass it. Any
+  # review:<severity> label marks a finding, not only the severities filed today.
+  local finding triaged=false
   finding="$(printf '%s\n' "$labels" | grep -m1 '^review:.')" || true
-  [ -z "$finding" ] \
-    || die "issue #$issue is a filed finding ($finding) - triage it with $(finding_triage_cmd)"
+  if [ -n "$finding" ]; then
+    for role in ready-for-agent ready-for-human wontfix; do
+      label="$(triage_label_for "$role")"
+      if printf '%s\n' "$labels" | grep -qxF -- "$label"; then triaged=true; fi
+    done
+    [ "$triaged" = true ] \
+      || die "issue #$issue is a filed finding ($finding) not yet triaged - triage it with $(finding_triage_cmd)"
+  fi
   # Already ready: nothing to move, and no comment to leave as noise.
   if printf '%s\n' "$labels" | grep -qxF -- "$ready"; then return 0; fi
   # A deliberate triage decision is the human's to reverse: exit 2 is no
@@ -3374,8 +3384,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               it already carries ready-for-agent (nothing
                               changed); exit 2, printing the label, on
                               wontfix or ready-for-human without --override;
-                              exit 1 on a closed issue, a filed finding (finding
-                              triage moves those) or a gh failure.
+                              exit 1 on a closed issue, a filed finding not yet
+                              triaged (finding triage moves those) or a gh
+                              failure.
                               A failed comment only warns
   pr open <title> <body-file> push and open a draft PR against the flow's base
                               branch - Closes its issue into the default
