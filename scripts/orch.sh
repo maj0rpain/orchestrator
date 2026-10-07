@@ -3205,6 +3205,19 @@ $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)
      Remove each with orch.sh ticket-worktree remove <n> first."
 }
 
+# Resolves ticket <n>'s worktree for a command that acts on an existing one:
+# dies unless <n> is a ticket number whose worktree exists and is on a branch.
+# It assigns to the caller's `n`, `path` and `branch`, which bash scopes
+# dynamically, and is called as a bare statement so `die` stops the caller.
+ticket_worktree_resolve() {
+  n="$(ticket_worktree_number "$1")"
+  path="$(ticket_worktree_path "$n")"
+  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+    || die "no ticket worktree for ticket $n at $path"
+  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
+    || die "ticket worktree $path is not on a branch (detached HEAD)"
+}
+
 # Removes ticket <n>'s worktree and deletes its branch, never with --force.
 # Both refusals - a dirty worktree, and without --unmerged a branch not merged
 # into its forked-from branch - run before anything is removed.
@@ -3218,12 +3231,7 @@ cmd_ticket_worktree_remove() {
     esac
     shift
   done
-  n="$(ticket_worktree_number "$n")"
-  path="$(ticket_worktree_path "$n")"
-  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
-    || die "no ticket worktree for ticket $n at $path"
-  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
-    || die "ticket worktree $path is not on a branch (detached HEAD)"
+  ticket_worktree_resolve "$n"
   [ -z "$(git -C "$path" status --porcelain)" ] \
     || die "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
   if [ "$unmerged" = 0 ]; then
@@ -3260,12 +3268,7 @@ branch_checkout() {
 cmd_ticket_merge() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
   local n path branch parent pwt
-  n="$(ticket_worktree_number "$1")"
-  path="$(ticket_worktree_path "$n")"
-  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
-    || die "no ticket worktree for ticket $n at $path"
-  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
-    || die "ticket worktree $path is not on a branch (detached HEAD)"
+  ticket_worktree_resolve "$1"
   parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
     || die "branch $branch records no forked-from branch"
   [ -z "$(git -C "$path" status --porcelain)" ] \
