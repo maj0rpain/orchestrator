@@ -7903,13 +7903,25 @@ assert_eq "without quiet mode, prints every ok line" \
   "$(printf '%s\n' "$out" | grep -c '^  ok ')" "6"
 
 # --- all.sh, the single entry point (#615) ----------------------------------
-# A copy of all.sh in a temp directory beside three stub suites, never the
-# real ones: orch_test.sh's stub fails, the other two pass. Each stub logs
-# whether ORCH_TEST_ONLY and ORCH_TEST_QUIET reached it, and VERSION_BASE.
+# A copy of all.sh in <tmp>/scripts/test/ beside three stub suites, never the
+# real ones, so <tmp> is the repo root: orch_test.sh's stub fails, the other
+# two pass. Each stub logs whether ORCH_TEST_ONLY and ORCH_TEST_QUIET reached
+# it, and VERSION_BASE. One planted shell file each in <tmp>/scripts/ and
+# <tmp>/scripts/test/ is there for the lint step to find. Every run sets or
+# unsets CI and runs on a PATH of only the tools all.sh and the stubs need,
+# plus a stub shellcheck when the case wants one - the real one never runs.
 echo
 echo "all.sh, the single entry point (#615)"
-all_dir="$(mktemp -d)"
+all_root="$(mktemp -d)"
+all_dir="$all_root/scripts/test"
+all_bin="$all_root/bin"
+mkdir -p "$all_dir" "$all_bin"
 cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$all_dir/"
+for all_tool in bash dirname awk tail; do
+  ln -s "$(command -v "$all_tool")" "$all_bin/$all_tool"
+done
+echo 'echo planted' >"$all_root/scripts/lint_me.sh"
+echo 'echo planted' >"$all_dir/lint_me.sh"
 for all_suite in orch_test.sh hooks_test.sh docs_lint.sh; do
   {
     echo '#!/usr/bin/env bash'
@@ -7923,7 +7935,25 @@ for all_suite in orch_test.sh hooks_test.sh docs_lint.sh; do
     fi
   } >"$all_dir/$all_suite"
 done
-out="$(ORCH_TEST_ONLY='^isolation$' VERSION_BASE=9.9.9 bash "$all_dir/all.sh" 2>&1)"; st=$?
+# all_sc_stub <exit> [<stdout line>...]: put a stub shellcheck on all.sh's
+# PATH that logs its arguments, prints the lines and exits <exit>.
+all_sc_stub() {
+  local code="$1" line
+  shift
+  {
+    echo '#!/usr/bin/env bash'
+    echo "echo \"\$*\" >>'$all_root/sc_args'"
+    for line in "$@"; do printf 'echo %q\n' "$line"; done
+    echo "exit $code"
+  } >"$all_bin/shellcheck"
+  chmod +x "$all_bin/shellcheck"
+}
+all_bash="$(command -v bash)"
+all_finding1='scripts/lint_me.sh:1:1: warning: a planted finding [SC2034]'
+all_finding2='scripts/test/lint_me.sh:2:5: error: another finding [SC2086]'
+
+all_sc_stub 0
+out="$(unset CI; ORCH_TEST_ONLY='^isolation$' VERSION_BASE=9.9.9 PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
 assert_status "exits non-zero when a suite failed" "$st" 1
 assert_eq "runs every suite after the first one fails" "$(wc -l <"$all_dir/log" | tr -d ' ')" "3"
 assert_eq "runs the suites in order" "$(cut -d' ' -f1 "$all_dir/log" | tr '\n' ' ')" \
@@ -7937,16 +7967,50 @@ assert_eq "prints one summary line per suite" \
   "$(printf '%s\n' "$out" | grep -E '^[a-z_]+\.sh: [0-9]+ passed')" \
   "$(printf 'orch_test.sh: 2 passed, 2 failed\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed')"
 assert_eq "prints no section header" "$(printf '%s\n' "$out" | grep -c 'a section header')" "0"
+assert_eq "still prints the shellcheck summary after a failing suite" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
+assert_eq "runs shellcheck at warning severity in gcc format on every shell file" \
+  "$(cat "$all_root/sc_args" 2>/dev/null)" \
+  "-S warning -f gcc scripts/lint_me.sh scripts/test/all.sh scripts/test/docs_lint.sh scripts/test/hooks_test.sh scripts/test/lint_me.sh scripts/test/orch_test.sh"
+
 rm -f "$all_dir/log"
 sed -i.bak 's/; exit 1$//; s/2 failed/0 failed/; /FAIL/d' "$all_dir/orch_test.sh"
-out="$(VERSION_BASE='' bash "$all_dir/all.sh" 2>&1)"; st=$?
-assert_status "exits 0 when every suite passed" "$st" 0
+rm -f "$all_dir/orch_test.sh.bak"
+out="$(unset CI; VERSION_BASE='' PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+assert_status "exits 0 when every suite passed and shellcheck is clean" "$st" 0
 assert_eq "passes an empty VERSION_BASE through as set" "$(grep -c 'base=$' "$all_dir/log")" "3"
+assert_eq "prints shellcheck: 0 findings when shellcheck is clean" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
+
 rm -f "$all_dir/log"
-out="$(unset VERSION_BASE; bash "$all_dir/all.sh" 2>&1)"
+all_sc_stub 1 "$all_finding1" "$all_finding2"
+out="$(unset CI VERSION_BASE; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
 assert_eq "leaves an unset VERSION_BASE unset" "$(grep -c 'base=unset$' "$all_dir/log")" "3"
 assert_eq "prints no FAIL line when every suite passed" "$(printf '%s\n' "$out" | grep -c FAIL)" "0"
-rm -rf "$all_dir"
+assert_status "exits non-zero on a shellcheck finding" "$st" 1
+assert_contains "prints each finding, then shellcheck: N findings" "$out" \
+  "$(printf '%s\n%s\nshellcheck: 2 findings' "$all_finding1" "$all_finding2")"
+assert_eq "a finding still lets every suite's summary print first" \
+  "$(printf '%s\n' "$out" | grep -E '^[a-z_]+\.sh: ')" \
+  "$(printf 'orch_test.sh: 2 passed, 0 failed\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed')"
+
+all_sc_stub 2
+sed -i.bak '/^exit 2$/i echo "a bad .shellcheckrc" >&2' "$all_bin/shellcheck"
+out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+assert_status "exits non-zero when shellcheck fails with no finding" "$st" 1
+assert_contains "prints shellcheck's output, then its exit status" "$out" \
+  "$(printf 'a bad .shellcheckrc\nshellcheck: failed (exit 2)')"
+
+rm -f "$all_bin/shellcheck" "$all_bin/shellcheck.bak"
+out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+assert_eq "says shellcheck was skipped when it is not installed" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: not installed - skipped"
+assert_status "a missing shellcheck does not fail the run outside CI" "$st" 0
+out="$(CI=true PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+assert_status "a missing shellcheck fails the run in CI" "$st" 1
+assert_eq "still says shellcheck was skipped in CI" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: not installed - skipped"
+rm -rf "$all_root"
 
 # >>> summary
 echo
