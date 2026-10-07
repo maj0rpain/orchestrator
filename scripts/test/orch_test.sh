@@ -621,7 +621,7 @@ fake_ci_reset() {
 fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; }
 
 # fake_reruns: the Actions run ids rerun, read back, space-separated, in order.
-fake_reruns() { tr '\n' ' ' <"$ORCH_GH_FAKE_STORE/reruns" 2>/dev/null | sed 's/ $//'; }
+fake_reruns() { tr '\n' ' ' 2>/dev/null <"$ORCH_GH_FAKE_STORE/reruns" | sed 's/ $//'; }
 
 # fake_label_names <name>...: the repo's labels are exactly the names given,
 # each with no colour or description - none given, the repo has no labels.
@@ -2204,8 +2204,10 @@ fake_fail adapter_issue_comment "HTTP 502: Bad Gateway"
 errf="$(mktemp)"
 triage 51 >/dev/null 2>"$errf"; st=$?
 assert_status "a failed comment after a verified relabel still exits 0" "$st" 0
-assert_contains "warning on stderr, naming the issue" "$(cat "$errf")" "issue #51"
+assert_eq "warning on stderr, naming the issue" "$(grep '^orch: ' "$errf")" \
+  "orch: warning: issue #51 is labelled ready-for-agent, but gh could not post the triage comment on it"
 assert_eq "the relabel standing" "$(fake_labels_of 51)" "ready-for-agent "
+rm -f "$errf"
 fake_unfail
 
 writeln '# Triage Labels' '' \
@@ -6535,8 +6537,16 @@ rm -f "$ORCH_GH_FAKE_STORE/reruns"
 fake_checks 7 all external
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a first failing check that is no Actions run has nothing to rerun" "$st" 1
-assert_contains "naming the check" "$out" "ext-ci"
+assert_eq "warning that the check is no Actions run" "$out" \
+  "orch: check ext-ci on PR #7 is not a GitHub Actions run - nothing to rerun"
 assert_eq "and reruns nothing, not even a later Actions run" "$(fake_reruns)" ""
+
+fake_checks 7 all badrunid
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a failing check linking no Actions run id has nothing to rerun" "$st" 1
+assert_eq "warning that the check links no run id" "$out" \
+  "orch: check build on PR #7 links no Actions run id - nothing to rerun"
+assert_eq "and reruns nothing" "$(fake_reruns)" ""
 
 fake_checks 7 all boom
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?

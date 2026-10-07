@@ -51,6 +51,9 @@ die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
 # die for commands that reserve exit 1 for a meaningful "no" (pr comment: no
 # open PR; ticket exists: no breakdown), so their failures exit with status 2 instead.
 die2() { printf 'orch: %s\n' "$*" >&2; exit 2; }
+# warn: die's line on stderr, without the exit - for a refusal that returns its
+# own status, or a warning the command carries on past.
+warn() { printf 'orch: %s\n' "$*" >&2; }
 note() { printf '%s\n' "$*"; }
 now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # The one timestamp shape for .orchestrator/ directory names: compact, UTC, and
@@ -1498,12 +1501,12 @@ review_rerun() {
   link="${link#*$'\t'}"
   case "$link" in
     */actions/runs/[0-9]*) ;;
-    *) printf 'orch: check %s on PR #%s is not a GitHub Actions run - nothing to rerun\n' "$name" "$pr" >&2
+    *) warn "check $name on PR #$pr is not a GitHub Actions run - nothing to rerun"
        return 1 ;;
   esac
   run="${link##*/actions/runs/}"   # N/job/M -> N
   run="${run%%/*}"
-  case "$run" in ''|*[!0-9]*) printf 'orch: check %s on PR #%s links no Actions run id - nothing to rerun\n' "$name" "$pr" >&2; return 1 ;; esac
+  case "$run" in ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; return 1 ;; esac
   adapter_run_rerun "$run" 2>/dev/null \
     || die2 "gh could not rerun the failed jobs of Actions run $run"
   note "$run"
@@ -2440,7 +2443,7 @@ cmd_issue_triage() {
   tmp="$(mktemp)"
   printf 'An orchestrator planning session triaged this issue to `%s`.\n' "$ready" >"$tmp"
   adapter_issue_comment "$issue" "$tmp" \
-    || printf 'orch: warning: issue #%s is labelled %s, but gh could not post the triage comment on it\n' "$issue" "$ready" >&2
+    || warn "warning: issue #$issue is labelled $ready, but gh could not post the triage comment on it"
   rm -f "$tmp"
 }
 

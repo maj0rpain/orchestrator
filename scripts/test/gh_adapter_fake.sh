@@ -680,6 +680,8 @@ fake_checks_answer() {
     # A failing check that is no Actions run - a commit status from an outside
     # CI - listed first, ahead of a failing Actions run.
     external) printf 'pass\tlint\t%s/1/job/1\nfail\text-ci\thttps://ci.example.com/build/9\nfail\tbuild\t%s/4242/job/77\n' "$runs" "$runs" ;;
+    # A failing check whose Actions link carries no numeric run id.
+    badrunid) printf 'fail\tbuild\t%s/12abc\n' "$runs" ;;
     pending)  printf 'pending\tbuild\t\n' ;;
     none)     ;;
     boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
