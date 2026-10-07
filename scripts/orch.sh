@@ -2651,9 +2651,9 @@ issue_number_list() {
 # True only once both links read back exactly as published: the parent's
 # sub-issue listing contains the child, and the child's blocked-by listing
 # is the same set of numbers requested, in any order, both sides
-# de-duplicated. Read fresh every call,
-# never cached - the caller retries this on a mismatch, and a cached answer
-# would just repeat the same wrong verdict.
+# de-duplicated. Read fresh every call, never cached - the caller retries
+# this on a mismatch, and a cached answer would just repeat the same wrong
+# verdict.
 ticket_links_verified() {
   local parent="$1" child="$2" want="$3" have_children have_blockers
   have_children="$(adapter_sub_issues "$parent")" || return 1
@@ -2704,7 +2704,6 @@ cmd_ticket_publish() {
 
   if [ -n "$want" ]; then
     while IFS= read -r b; do
-      [ -z "$b" ] && continue
       adapter_blocker_add "$child" "$b" \
         || die "gh could not add a blocking edge from ticket #$child on #$b"
     done <<<"$want"
