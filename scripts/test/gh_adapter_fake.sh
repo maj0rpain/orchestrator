@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # The in-process half of the ORCH_GH_ADAPTER seam.
 #
 # Sourced into orch.sh's own process via ORCH_GH_ADAPTER, this redefines the
@@ -314,6 +315,7 @@ adapter_issues_labelled() {
 # when no next number was set.
 fake_next_number() {
   local n
+  # shellcheck disable=SC2010 # the store names its files by issue number, so no name needs a glob-safe walk
   n="$(ls "$(fake_store)/issues" "$(fake_store)/prs" 2>/dev/null | grep -x '[0-9][0-9]*' | sort -n | tail -n 1)"
   printf '%s\n' "$(( ${n:-0} + 1 ))"
 }

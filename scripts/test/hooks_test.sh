@@ -29,7 +29,8 @@ REPO="$(mktemp -d)"
 git -C "$REPO" init -q
 mkdir -p "$REPO/docs/agents" "$REPO/docs/adr"
 
-export TMPDIR="$(mktemp -d)"
+TMPDIR="$(mktemp -d)"
+export TMPDIR
 
 skill_event() {
   jq -n --arg s "$1" --arg sid "$2" --arg cwd "$REPO" \
@@ -44,6 +45,7 @@ echo "hook tests"
 echo
 echo "hook-common"
 
+# shellcheck source=../hook-common.sh
 source "$COMMON"
 
 hook_read_skill_and_session < <(skill_event "mattpocock-skills:grilling" abc123)

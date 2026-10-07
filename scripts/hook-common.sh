@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # hook-common.sh - shared payload reading and output writing for the hooks.
 #
 # Every hook reads the same JSON payload from stdin and, when it decides or
@@ -22,6 +23,7 @@ hook_read_payload() {
   local project
   project="$(printf '%s' "$input" | jq -r '.project_path // ""')"
   cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
+  # shellcheck disable=SC2034 # host is read by the hook that sourced this file
   if [ -n "$project" ]; then host=junie; cwd="$project"; else host=claude; fi
   [ -n "$cwd" ] || cwd="$PWD"
 }
@@ -29,6 +31,7 @@ hook_read_payload() {
 # hook_read_payload, plus `skill`: the skill name out of a Skill tool call.
 hook_read_skill_and_session() {
   hook_read_payload
+  # shellcheck disable=SC2034 # skill is read by the hook that sourced this file
   skill="$(printf '%s' "$input" | jq -r '.tool_input.skill // ""')"
 }
 
