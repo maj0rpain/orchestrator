@@ -842,6 +842,19 @@ check_flow_review_draft() {
   fi
 }
 
+# A ticket worktree under this checkout is a run's leftover once its phase is
+# not running (ADR-0036): the next implement phase stops on it, and archive
+# refuses to move it. Silent when there is none - ticket-worktree list's own
+# scope, so another checkout's in-flight tickets never fail this flow.
+check_flow_ticket_worktrees() {
+  local n path
+  while read -r n path; do
+    [ -n "$n" ] || continue
+    d_fail "ticket worktree $path is left over - a ticket run did not finish."
+    d_remedy "orch.sh ticket-worktree remove $n"
+  done <<<"$(cmd_ticket_worktree_list)"
+}
+
 # Pure reuse: what makes a handoff valid lives in handoff_required and
 # section_body, and a second statement of it here is how the two answers drift.
 # Which handoffs are due is mechanical - phase names what runs *next*, so every
@@ -903,6 +916,9 @@ d_count() {
 d_run_flow() {
   if [ "$D_JQ" = ok ] && [ "$D_STATE" = ok ]; then
     d_run "$FLOW_CHECKS"
+    # Outside the registry: it reads git alone and prints nothing when clean,
+    # so a flow with no ticket worktree reports exactly what it did before.
+    check_flow_ticket_worktrees
     return 0
   fi
   # Neither path below reaches a check, so neither gets the header out of the

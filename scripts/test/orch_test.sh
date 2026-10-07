@@ -1199,6 +1199,31 @@ assert_contains "status reports no active flow afterwards" "$out" "No active flo
 out="$("$ORCH" init second 2>&1)"; st=$?
 assert_status "a new flow can start after archiving" "$st" 0
 
+# #622: moving a ticket worktree would break git's record of it, so archive
+# refuses while any is left under this checkout, naming each, and moves nothing.
+new_repo >/dev/null
+"$ORCH" init my-feature >/dev/null
+git checkout -q -b orch/1-my-feature
+top="$(git rev-parse --show-toplevel)"
+"$ORCH" ticket-worktree add 4 >/dev/null
+"$ORCH" ticket-worktree add 5 >/dev/null
+out="$("$ORCH" archive 2>&1)"; st=$?
+assert_status "archive refuses while a ticket worktree exists" "$st" 1
+assert_contains "naming the first" "$out" "$top/.orchestrator/worktrees/t4"
+assert_contains "naming the second" "$out" "$top/.orchestrator/worktrees/t5"
+assert_contains "with ticket-worktree remove as the remedy" "$out" "ticket-worktree remove"
+assert_eq "and moves nothing: the state stays" \
+  "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "present"
+assert_eq "no archive directory is made" \
+  "$([ -e .orchestrator/archive ] && echo present || echo absent)" "absent"
+assert_eq "the ticket worktrees stay where git recorded them" \
+  "$(git -C .orchestrator/worktrees/t4 rev-parse --show-toplevel)" "$top/.orchestrator/worktrees/t4"
+"$ORCH" ticket-worktree remove 4
+"$ORCH" ticket-worktree remove 5
+out="$("$ORCH" archive)"; st=$?
+assert_status "with the ticket worktrees removed, archive moves the flow as before" "$st" 0
+assert_eq "live state is cleared" "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+
 # --- repo show ----------------------------------------------------------------
 # The GitHub repo orch.sh works on (#520): GH_REPO when the caller set it, else
 # the checkout's origin - never gh's own default, which in a fork is upstream.
@@ -2385,6 +2410,22 @@ assert_eq "the archived state still carries the old slug" \
 assert_eq "the new flow's state reflects the new slug" "$("$ORCH" state get slug)" "second"
 assert_eq "the new flow starts at the spec phase, not done" "$("$ORCH" state get phase)" "spec"
 
+# #622: init's archive of a done flow refuses the same way archive does.
+fresh_flow first
+complete_plan_handoff "$("$ORCH" handoff path spec)"
+state_fixture phase "done"
+git checkout -q -b orch/1-first
+top="$(git rev-parse --show-toplevel)"
+"$ORCH" ticket-worktree add 6 >/dev/null
+out="$("$ORCH" init second 2>&1)"; st=$?
+assert_status "init over a done flow refuses while a ticket worktree exists" "$st" 1
+assert_contains "naming it" "$out" "$top/.orchestrator/worktrees/t6"
+assert_contains "with ticket-worktree remove as the remedy" "$out" "ticket-worktree remove"
+assert_eq "the done flow is left in place" "$("$ORCH" state get slug)" "first"
+assert_eq "nothing is archived" \
+  "$([ -e .orchestrator/archive ] && echo present || echo absent)" "absent"
+"$ORCH" ticket-worktree remove 6
+
 healthy_repo
 out="$("$ORCH" init nothing-to-archive)"
 assert_eq "with no prior flow, stdout is still just the slug" "$out" "nothing-to-archive"
@@ -3288,6 +3329,28 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an unreachable GitHub does not fail the flow scope" "$st" 0
 assert_contains "skips the PR check with its cause" "$out" "skipped: GitHub is not reachable"
 fake_online
+
+# #622: a ticket worktree left over by an interrupted run is a FAIL naming it,
+# with ticket-worktree remove as the remedy - but only this checkout's own.
+tw_top="$(git rev-parse --show-toplevel)"
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_not_contains "with no ticket worktree, doctor --flow says nothing of them" "$out" "ticket worktree"
+"$ORCH" ticket-worktree add 12 >/dev/null
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a leftover ticket worktree fails doctor --flow" "$st" 1
+assert_contains "reports it as a FAIL naming it" "$out" \
+  "FAIL  ticket worktree $tw_top/.orchestrator/worktrees/t12 is left over"
+assert_contains "with ticket-worktree remove <n> as the remedy" "$out" "orch.sh ticket-worktree remove 12"
+"$ORCH" ticket-worktree remove 12
+tw_linked="$(mktemp -d)/linked"
+git worktree add -q -b orch/9-other "$tw_linked"
+(cd "$tw_linked" && "$ORCH" ticket-worktree add 13 >/dev/null)
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "another checkout's ticket worktree does not fail doctor --flow" "$st" 0
+assert_not_contains "nor is it reported" "$out" "t13"
+(cd "$tw_linked" && "$ORCH" ticket-worktree remove 13)
+git worktree remove "$tw_linked"
+git branch -q -D orch/9-other
 
 # --flow never runs the tools group, so if it skipped every check it has and
 # still exited 0, /orchestrator:next would advance a flow nothing had checked.

@@ -626,7 +626,7 @@ cmd_init() {
   # re-runnable rather than archived for nothing.
   [ -z "$issue" ] || validate_adopted_issue "$issue"
   if [ -f "$STATE" ]; then
-    archive_note="$(cmd_archive)"
+    archive_note="$(cmd_archive)" || exit 1
   fi
   mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"
   exclude_orch_dirs
@@ -3194,6 +3194,17 @@ cmd_ticket_worktree_list() {
   done < <(git worktree list --porcelain)
 }
 
+# Dies, naming every ticket worktree under this checkout, when any is left:
+# moving .orchestrator/ wholesale would break git's record of each one.
+refuse_ticket_worktrees() {
+  local left
+  left="$(cmd_ticket_worktree_list)"
+  [ -n "$left" ] || return 0
+  die "ticket worktrees are left under this checkout - moving them would break git's record of them:
+$(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
+     Remove each with orch.sh ticket-worktree remove <n> first."
+}
+
 # Removes ticket <n>'s worktree and deletes its branch, never with --force.
 # Both refusals - a dirty worktree, and without --unmerged a branch not merged
 # into its forked-from branch - run before anything is removed.
@@ -3480,6 +3491,7 @@ cmd_status() {
 # the moment you just threw it away. The directory is git-excluded anyway.
 cmd_archive() {
   require_state
+  refuse_ticket_worktrees
   local slug ts dest entry
   slug="$(state_get slug)"
   ts="$(dir_stamp)"
@@ -3527,7 +3539,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               the bare [HOST/]OWNER/REPO alone, for gh -R.
                               Exits 1, naming GH_REPO, when neither resolves
   init <slug> [--issue N]     start a flow (refuses if one is active, unless
-                              it is done - a done flow is archived and the
+                              it is done - a done flow is archived, unless a
+                              ticket worktree is left, and the
                               new one starts over it, or if the working tree
                               has changes outside the planning allowlist);
                               --issue adopts an already-open,
@@ -3799,6 +3812,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               handoff/pre-redo-spec-<UTC timestamp>/
   status                      human-readable summary
   archive                     move the live flow into .orchestrator/archive/
+                              (refuses, naming each, while a ticket worktree
+                              is left under this checkout)
 USAGE
 }
 
