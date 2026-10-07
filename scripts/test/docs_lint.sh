@@ -1154,22 +1154,23 @@ spares "a filled row is not flagged" "$out" ':(1|2|3):'
 check "every host capability row has both hosts' cells filled" \
   "$(scan_capability_table "$PLUGIN_ROOT")"
 
+# quick_step_refers <plugin root> <step heading> <skill> <section> <noun>:
+# one line when that quick-implement step does not name `<skill>` and its
+# **<section>**.
+quick_step_refers() {
+  local quick="skills/orch-quick-implement/SKILL.md" body numbered="${2#\#\# }" owner="$3's"
+  [[ $3 == *s ]] && owner="$3'"
+  body="$(md_section "$1/$quick" "$2" | flat_text)"
+  { grep -qF "\`$3\`" <<<"$body" && grep -qF "**$4**" <<<"$body"; } \
+    || echo "$quick: step ${numbered%%.*} does not refer to $owner **$4** $5"
+}
+
 # --- review pass (#342) --------------------------------------------------------
 echo
 echo "review pass (#342)"
 # A review pass is defined once, in orch-review's ## Review pass section, which
 # starts with review-pass begin. Quick implementation's step 6 runs that
 # section rather than keeping its own copy.
-# quick_step_refers <plugin root> <step heading> <step label> <skill> <section> <noun>:
-# one line when that quick-implement step does not name `<skill>` and its
-# **<section>**.
-quick_step_refers() {
-  local quick="skills/orch-quick-implement/SKILL.md" body owner="$4's"
-  [[ $4 == *s ]] && owner="$4'"
-  body="$(md_section "$1/$quick" "$2" | flat_text)"
-  { grep -qF "\`$4\`" <<<"$body" && grep -qF "**$5**" <<<"$body"; } \
-    || echo "$quick: $3 does not refer to $owner **$5** $6"
-}
 # scan_review_pass <plugin root>: one line per break of that rule.
 scan_review_pass() {
   local r="$1" review="skills/orch-review/SKILL.md" body
@@ -1179,7 +1180,7 @@ scan_review_pass() {
   else
     echo "$review: no ## Review pass section"
   fi
-  quick_step_refers "$r" "## 6. Review" "step 6" orch-review "Review pass" section
+  quick_step_refers "$r" "## 6. Review" orch-review "Review pass" section
   return 0
 }
 fixture="$(new_fixture)"
@@ -1213,8 +1214,8 @@ echo "unattended modes (#616)"
 # scan_unattended_modes <plugin root>: one line per step that does not refer
 # to its mode.
 scan_unattended_modes() {
-  quick_step_refers "$1" "## 2. Run an unattended spec review" "step 2" orch-spec-review "Unattended spec review" mode
-  quick_step_refers "$1" "## 3. Publish the ticket breakdown" "step 3" orch-to-tickets "Unattended breakdown" mode
+  quick_step_refers "$1" "## 2. Run an unattended spec review" orch-spec-review "Unattended spec review" mode
+  quick_step_refers "$1" "## 3. Publish the ticket breakdown" orch-to-tickets "Unattended breakdown" mode
   return 0
 }
 fixture="$(new_fixture)"
