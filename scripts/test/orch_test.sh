@@ -4776,6 +4776,122 @@ assert_contains "the CLI conventions' noun table has a ticket-worktree row" \
   '`add`, `list`, `remove`'
 restore_suite_env
 
+# --- ticket merge (#621) -------------------------------------------------------
+# Lands a ticket branch on the branch it was forked from: rebase inside the
+# ticket worktree, then fast-forward the forked-from branch wherever it is
+# checked out. Checked through branches, tips and exit status.
+echo
+echo "ticket merge"
+# tm_commit <dir> <file> <content>: commit <content> to <file> in <dir>.
+tm_commit() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
+# tm_rebasing <dir>: "yes" when a rebase is in progress in <dir>'s checkout.
+tm_rebasing() {
+  local d
+  for d in rebase-merge rebase-apply; do
+    [ ! -e "$(git -C "$1" rev-parse --git-path "$d")" ] || { echo yes; return; }
+  done
+  echo no
+}
+
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+tm_commit "$wt" ticket.txt one
+tm_commit "$wt" ticket2.txt two
+tm_commit . other.txt landed-first
+flow_tip="$(git rev-parse orch/5-feature)"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge of a clean ticket succeeds" "$st" 0
+assert_eq "the forked-from branch now holds the ticket's commits" \
+  "$(git log --format=%s orch/5-feature -3 | tr '\n' '|')" "ticket2.txt: two|ticket.txt: one|other.txt: landed-first|"
+assert_eq "on top of its prior tip" "$(git rev-parse orch/5-feature~2)" "$flow_tip"
+assert_eq "with no merge commit" "$(git rev-list --merges orch/5-feature | wc -l | tr -d ' ')" "0"
+assert_eq "the forked-from branch's tip is the ticket branch's" \
+  "$(git rev-parse orch/5-feature)" "$(git rev-parse orch/5-feature--t7)"
+assert_eq "its checkout's working tree is updated too" "$(cat ticket2.txt)" "two"
+assert_eq "and left clean" "$(git status --porcelain)" ""
+out="$("$ORCH" ticket-worktree remove 7)"; st=$?
+assert_status "a merged ticket's worktree then removes without --unmerged" "$st" 0
+
+# Conflict: both sides change the same line.
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+tm_commit "$wt" feature.txt from-ticket
+tm_commit . feature.txt from-flow
+flow_tip="$(git rev-parse orch/5-feature)"
+ticket_tip="$(git rev-parse orch/5-feature--t7)"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge exits 3 on a rebase conflict" "$st" 3
+assert_contains "saying it conflicted" "$out" "conflict"
+assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "the ticket branch stays at its prior tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+assert_eq "no rebase is left in progress" "$(tm_rebasing "$wt")" "no"
+assert_eq "the ticket worktree is left clean" "$(git -C "$wt" status --porcelain)" ""
+assert_eq "and the flow's checkout too" "$(git status --porcelain)" ""
+
+# Refusals: each exits 1 and changes nothing.
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+tm_commit "$wt" ticket.txt one
+tm_commit . other.txt landed-first
+flow_tip="$(git rev-parse orch/5-feature)"
+ticket_tip="$(git rev-parse orch/5-feature--t7)"
+echo dirty >"$wt/README.md"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge refuses a dirty ticket worktree" "$st" 1
+assert_contains "naming it dirty" "$out" "dirty"
+assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+assert_eq "and the ticket worktree's change" "$(cat "$wt/README.md")" "dirty"
+git -C "$wt" checkout -q -- README.md
+
+echo dirty >README.md
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge refuses a dirty forked-from checkout" "$st" 1
+assert_contains "naming it dirty" "$out" "dirty"
+assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+assert_eq "and the checkout's change" "$(cat README.md)" "dirty"
+git checkout -q -- README.md
+
+git checkout -q --detach
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge refuses a forked-from branch checked out nowhere" "$st" 1
+assert_contains "naming the branch" "$out" "orch/5-feature"
+assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+git checkout -q orch/5-feature
+
+out="$("$ORCH" ticket merge 9 2>&1)"; st=$?
+assert_status "merge refuses a ticket with no ticket worktree" "$st" 1
+out="$("$ORCH" ticket merge 2>&1)"; st=$?
+assert_status "merge refuses a missing ticket number" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket merge <n>"
+
+# The forked-from branch checked out in a linked worktree (an ADR-0008 flow
+# checkout): the merge fast-forwards it there.
+tw_repo
+main_top="$(git rev-parse --show-toplevel)"
+linked="$(mktemp -d)/linked"
+git worktree add -q -b orch/6-other "$linked"
+cd "$linked" || exit 1
+wt="$("$ORCH" ticket-worktree add 4)"
+tm_commit "$wt" ticket.txt four
+tm_commit . other.txt landed-first
+out="$("$ORCH" ticket merge 4 2>&1)"; st=$?
+assert_status "merge succeeds when the forked-from branch is in a linked worktree" "$st" 0
+assert_eq "fast-forwarding it there" "$(git -C "$linked" rev-parse HEAD)" "$(git rev-parse orch/6-other--t4)"
+assert_eq "linearly" "$(git -C "$linked" log --format=%s -2 | tr '\n' '|')" "ticket.txt: four|other.txt: landed-first|"
+assert_eq "updating its working tree" "$(cat "$linked/ticket.txt")" "four"
+assert_eq "and leaving the main checkout's branch alone" \
+  "$(git -C "$main_top" branch --show-current)" "orch/5-feature"
+cd "$main_top" || exit 1
+
+out="$("$ORCH" help 2>&1)"
+assert_contains "ticket merge is in the usage text" "$out" "ticket merge <n>"
+assert_contains "the CLI conventions' noun table lists merge among ticket's verbs" \
+  "$(grep '^| `ticket` ' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`merge`'
+restore_suite_env
+
 # --- review begin -----------------------------------------------------------
 # The bound lives in bash precisely so a long session cannot re-remember five as
 # six, so what matters here is the refusal, not the counting. The budget is the

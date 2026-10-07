@@ -3124,7 +3124,8 @@ cmd_ticket() {
     retire)  cmd_ticket_retire "$@" ;;
     block)   cmd_ticket_block "$@" ;;
     unblock) cmd_ticket_unblock "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|block|unblock)" ;;
+    merge)   cmd_ticket_merge "$@" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|block|unblock|merge)" ;;
   esac
 }
 
@@ -3226,6 +3227,49 @@ cmd_ticket_worktree_remove() {
   else
     git branch -q -d "$branch" || die "could not delete branch $branch"
   fi
+}
+
+# The checkout that has <branch> checked out, or nothing: the first worktree
+# git lists on refs/heads/<branch>.
+branch_checkout() {
+  local line path=""
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) path="${line#worktree }" ;;
+      "branch refs/heads/$1") note "$path"; return 0 ;;
+    esac
+  done < <(git worktree list --porcelain)
+}
+
+# Lands ticket <n>'s branch on the branch it was forked from: rebases it onto
+# that branch's tip inside the ticket worktree, then fast-forwards that branch
+# in whichever checkout has it - so history stays linear. Every refusal (exit
+# 1) runs before anything moves; a rebase conflict is aborted and exits 3,
+# leaving both branches at their prior tips.
+cmd_ticket_merge() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
+  local n path branch parent pwt
+  n="$(ticket_worktree_number "$1")"
+  path="$(ticket_worktree_path "$n")"
+  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+    || die "no ticket worktree for ticket $n at $path"
+  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
+    || die "ticket worktree $path is not on a branch (detached HEAD)"
+  parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
+    || die "branch $branch records no forked-from branch"
+  [ -z "$(git -C "$path" status --porcelain)" ] \
+    || die "ticket worktree $path is dirty - commit or discard its changes first"
+  pwt="$(branch_checkout "$parent")"
+  [ -n "$pwt" ] || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
+  [ -z "$(git -C "$pwt" status --porcelain)" ] \
+    || die "$pwt, the checkout of $parent, is dirty - commit or discard its changes first"
+  if ! git -C "$path" rebase -q "$parent" >/dev/null 2>&1; then
+    git -C "$path" rebase --abort >/dev/null 2>&1 || true
+    warn "rebasing $branch onto $parent hit a conflict - aborted; both branches are as they were"
+    exit 3
+  fi
+  git -C "$pwt" merge -q --ff-only "$branch" \
+    || die "could not fast-forward $parent to $branch in $pwt"
 }
 
 cmd_ticket_worktree() {
@@ -3642,6 +3686,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               start immediately)` once none is left). A repeat
                               removes no edge; re-running a failed run
                               finishes it
+  ticket merge <n>            land ticket <n>'s branch on the branch it was
+                              forked from: rebase it onto that branch's tip
+                              inside its ticket worktree, then fast-forward
+                              that branch in whichever checkout has it - no
+                              merge commit. Exits 1, changing nothing, when
+                              the ticket worktree or that checkout is dirty,
+                              or the branch is checked out nowhere; on a
+                              rebase conflict aborts the rebase and exits 3,
+                              both branches at their prior tips
   ticket-worktree add <n>     fork <current-branch>--t<n> from the current
                               branch's tip, record the forked-from branch on
                               it (branch.<ticket-branch>.orchestrator-ticket-
