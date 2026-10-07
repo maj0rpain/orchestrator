@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.15.0
+
+Every fix of a defect is now a root-cause fix: it names the cause, searches
+for every site the cause acts at, and fixes them all. The implementer has a
+new **Root-cause fixes** section - triggered by a `bug` label, a spec's
+**Root cause** subsection, or a ticket that fixes a defect - and its fetch
+now reads labels and that subsection; the fix commit carries a `Root cause:`
+paragraph. The fixer's blocking fix is the smallest fix that removes the
+cause; a cause out of reach gets the symptom fix and is filed as a major,
+`root cause out of reach`. A bug spec gains a **Root cause** subsection, the
+interview settles the cause as a design decision, the Spec reviewer treats
+an unfixed listed site as missing, and the Standards reviewer has a new
+**Root-cause check**. Major and nit fixes are unchanged. ADR-0035 records
+why (see issue #659).
+
 ## 3.14.0
 
 Quick implementation runs hands-off: it asks nothing between its linked issue

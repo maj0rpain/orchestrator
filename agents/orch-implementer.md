@@ -39,14 +39,16 @@ to that prompt.
 1. **Fetch the ticket** before anything else, into a temporary file
    outside the repo (`mktemp`), pinned to the repo `orch.sh` resolves, never
    `gh`'s default repo: `repo="$(bash "<orch.sh>" repo show --name)" && gh
-   issue view <ticket> -R "$repo" --json title,body,comments > <file>`, then
-   read that file. When `repo show` fails, stop and return the report with
+   issue view <ticket> -R "$repo" --json title,body,comments,labels >
+   <file>`, then read that file. When `repo show` fails, stop and return the report with
    the failure as a deviation: an empty `-R` would fall back to the default.
    Piped, `--comments` drops the title and body. Then find its spec issue: `bash "<orch.sh>"
    ticket parent <ticket>` prints the parent of a sub-issue ticket, and empty
    output means the ticket is the spec issue itself. A failure is retried once, then
-   recorded as a deviation. Read the spec issue's **Testing Decisions** - the
-   seams already confirmed with the human.
+   recorded as a deviation. Fetch the spec issue the same way, labels
+   included, when it is not the ticket itself. Read its **Testing
+   Decisions** - the seams already confirmed with the human - and its
+   **Root cause** subsection, if it has one: see **Root-cause fixes**.
 2. **Build the ticket test-first**, per **Test-driven development** below,
    at those seams. A test that needs a seam the Testing
    Decisions do not name is a deviation: pick the most defensible seam,
@@ -122,6 +124,40 @@ external operation over one generic fetcher, so each mock returns one shape.
   per cycle.
 - **Refactoring is not part of the loop.** It belongs to the review loop,
   not to the red-green cycle.
+
+## Root-cause fixes
+
+This section applies when the ticket or its spec issue carries the `bug`
+label, when the spec has a **Root cause** subsection, or when you judge that
+the work fixes a defect: the ticket describes current behaviour as wrong and
+asks for it to be corrected. The fix is then a **root-cause fix**: it removes
+the defect's cause everywhere that cause acts, not only the reported
+instance.
+
+- **Name the cause.** Start from the spec's **Root cause** subsection when
+  it has one; otherwise find the cause yourself before writing the fix.
+- **Search for every site it acts at**: other copies of the logic, other
+  callers, other inputs it mishandles. Grep for them; do not stop at the
+  reported case.
+- **Fix them all**, each site a test can observe under the TDD rules above.
+  A feature's minimal implementation is "only enough code to pass"; a
+  defect fix's minimal implementation is the smallest one that removes the
+  cause.
+- **Record the cause in the fix commit.** Its body always carries a
+  `Root cause:` paragraph: the cause and the sites fixed; the cause and `no
+  other sites` when the search found none; or, when the cause is out of
+  reach, the cause and that it is left unfixed.
+- **Out of reach.** When removing the cause needs a change beyond the
+  ticket's reach - a choice between designs - make the symptom fix, and
+  record the cause as a deviation, saying it is left unfixed and why. You
+  run unattended: a cause's design is settled by a human in the interview or
+  the spec, never mid-build.
+- **Not identified.** When you cannot identify the cause at all, make the
+  fix the ticket asks for and record the deviation `root cause not
+  identified`.
+
+Either deviation is an ordinary one, on the report's `Deviation` line; the
+report's shape does not change.
 
 ## File-read discipline
 

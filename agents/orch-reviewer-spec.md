@@ -45,6 +45,10 @@ character away - describe it in the finding instead.
    - a requirement that looks implemented but where the implementation looks
      **wrong**.
 
+   A bug spec's **Root cause** subsection lists the cause and every site it
+   acts at: each listed site is a requirement, and one the diff leaves
+   unfixed is **missing**.
+
    Done when every requirement has been traced to the diff or reported, and
    every hunk traced to a requirement or reported.
 4. **Write the report** to the report path - see **The report**.
