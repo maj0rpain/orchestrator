@@ -136,7 +136,10 @@ external operation over one generic fetcher, so each mock returns one shape.
   the finding's reach - a choice between designs - make the symptom fix,
   which counts as fixing the blocking finding, and record the cause under
   **Waiting to be filed** as a major, the rule being `root cause out of
-  reach`, so the closer files it. It is never open blocking.
+  reach`, so the closer files it. It is never open blocking. The entry takes
+  the blocking finding's axis, file and line, with the cause as its claim,
+  and gets its own line under **Findings** in the same shape, saying it waits
+  to be filed: the closer files from those lines.
 
 **When no test can show it.**
 
