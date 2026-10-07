@@ -96,6 +96,14 @@ unsettled prerequisite, so only the questions downstream of it wait; ask the
 rest of the frontier now. The decisions are the user's: put each to them, and
 wait.
 
+When the plan fixes a bug, its **root cause** and every site that cause acts
+at - each copy of the logic, each caller, each input it mishandles - are a
+decision on the design tree, put to the user like any other and settled
+before closing. Find the cause and its sites yourself; the user settles which
+cause the fix removes, and how. The spec records them in its **Root cause**
+subsection, and the fix removes the cause at every site listed: a
+**root-cause fix**, not a symptom fix.
+
 The interview is done when the frontier is empty: every branch of the design
 tree visited, nothing left silently assumed. Do not act on the plan until the
 user confirms you have reached a shared understanding; then close as the

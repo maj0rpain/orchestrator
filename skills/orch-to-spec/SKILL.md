@@ -96,6 +96,11 @@ The implementation decisions made. This can include:
 - API contracts
 - specific interactions
 
+For a bug spec, add a **Root cause** subsection (`### Root cause`): the
+defect's cause, and every site it acts at - each copy of the logic, each
+caller, each input it mishandles. The fix removes the cause at all of them,
+and the Spec axis holds the change to that list.
+
 ## Testing Decisions
 
 The testing decisions made. Include:

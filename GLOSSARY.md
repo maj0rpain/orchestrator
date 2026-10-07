@@ -435,6 +435,10 @@ finding's axis - `bug` for Spec, `enhancement` for Standards - and finding
 triage keeps or flips it: a Standards finding that is a real defect becomes
 `bug`, a Spec finding that is a nice-to-have becomes `enhancement`.
 
+**Root-cause fix**:
+A fix that removes a defect's cause everywhere that cause acts - every copy of the logic, every call site, every input it mishandles - rather than only the reported instance. Its opposite, a **symptom fix**, makes the reported case pass while the cause stays live elsewhere.
+_Avoid_: foundational fix, proper fix
+
 ### Hosts
 
 **Host**:

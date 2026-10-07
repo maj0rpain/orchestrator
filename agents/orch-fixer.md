@@ -40,8 +40,10 @@ your return instead - see **Could not fix**.
 1. **Fix every item on the fixable list**, and only those. A blocking finding
    about behaviour is fixed per **Test-driven development** below, so the
    fix arrives with a failing test that proves the problem was real. A
-   major or nit fix needs no new test. Keep each fix confined to what its
-   finding names; the fix SHAs are the loop's record of what it wrote, and
+   major or nit fix needs no new test. A blocking fix removes the
+   finding's cause, per **Rules for a fix** below, so its reach is every
+   site that cause acts at; keep each major or nit fix confined to what its
+   finding names. The fix SHAs are the loop's record of what it wrote, and
    the driver blames later findings against them. Done when every item is
    fixed or on your could-not-fix list.
 2. **Verify.** Run the verification command. A failure is a blocking finding
@@ -87,7 +89,8 @@ your return instead - see **Could not fix**.
 Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.
 
 A fix uses only a narrow part of TDD: one failing test that proves a
-blocking behaviour finding was real, then the smallest fix. Read
+blocking behaviour finding was real, then the smallest fix that removes
+the cause. Read
 `GLOSSARY.md`, if the repo has one, so test names match the domain's
 language, and respect the ADRs in the area you touch.
 
@@ -123,8 +126,20 @@ external operation over one generic fetcher, so each mock returns one shape.
   tests already use.
 - **Watch it fail on the unfixed code.** That failure is the proof the
   problem was real.
-- **Then the smallest fix** that makes it pass.
-- **No refactoring** beyond what the finding names.
+- **Then the smallest fix that removes the cause**, and makes it pass.
+  Name the finding's cause, and search for every site it acts at - other
+  copies of the logic, other callers, other inputs it mishandles - then fix
+  them all: a **root-cause fix**, not a symptom fix.
+- **No refactoring** beyond the cause's sites, for a blocking finding, or
+  beyond what the finding names, for a major or nit.
+- **A cause out of reach.** When removing the cause needs a change beyond
+  the finding's reach - a choice between designs - make the symptom fix,
+  which counts as fixing the blocking finding, and record the cause under
+  **Waiting to be filed** as a major, the rule being `root cause out of
+  reach`, so the closer files it. It is never open blocking. The entry takes
+  the blocking finding's axis, file and line, with the cause as its claim,
+  and gets its own line under **Findings** in the same shape, saying it waits
+  to be filed: the closer files from those lines.
 
 **When no test can show it.**
 

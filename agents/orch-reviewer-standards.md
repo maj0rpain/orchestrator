@@ -39,8 +39,9 @@ one character away - describe it in the finding instead.
    `docs/agents/`, the guides those files link to, and files such as
    `CODING_STANDARDS.md` or `CONTRIBUTING.md`. Done when every such file is
    listed and read.
-3. **Review the diff** against every standard you found, and against the
-   **smell baseline** below. Read the surrounding file wherever a hunk alone
+3. **Review the diff** against every standard you found, against the
+   **smell baseline** below, and, for a hunk that fixes a defect, with the
+   **root-cause check** after it. Read the surrounding file wherever a hunk alone
    cannot tell you whether a rule is met. Done when every hunk has been checked
    against every rule.
 4. **Write the report** to the report path - see **The report**.
@@ -89,6 +90,17 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 - **Refused Bequest**: a subclass or implementer that ignores or overrides most
   of what it inherits. → drop the inheritance, use composition.
 
+## Root-cause check
+
+Kept apart from the smell baseline, which is a pinned upstream copy
+(ADR-0018). For any hunk that fixes a defect, name the cause it fixes and
+look for the same cause at sibling sites: other copies of the logic, other
+callers, other inputs it mishandles. A cause still live at such a site means
+the hunk may be a **symptom fix** rather than a **root-cause fix**. Report
+each such site as a finding with the source `root-cause check | possible
+symptom fix (judgement call)`, naming the site and the hunk whose cause it
+shares. The driver ranks it with its severity rubric, as a major.
+
 ## The report
 
 Write it in one Bash command (`cat > "<report path>" <<'EOF'`), in this shape:
@@ -105,8 +117,9 @@ Standards read: <every file from step 2, comma-separated>
 One bullet per finding. The file and line are at HEAD; the claim says what is
 wrong in one or two sentences and, where the remedy is not obvious, what the
 fix would be. The source is the documented rule it breaches, quoted briefly,
-or the baseline smell it resembles - a documented-standard breach can be hard,
-a smell is always a judgement call.
+the baseline smell it resembles, or the root-cause check's own source - a
+documented-standard breach can be hard, a smell or a possible symptom fix is
+always a judgement call.
 
 List findings in file order, unranked: severity is the driver's triage, and
 it reads every finding the same way whatever order you give. A change with
