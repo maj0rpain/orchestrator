@@ -21,6 +21,14 @@ has already moved: one carrying `ready-for-agent`, `ready-for-human` or
 `--override` says, and the refusal now says it is not yet triaged and names
 finding triage (see issue #586).
 
+## 3.13.1
+
+`orch.sh ticket publish --blocked-by` and `ticket block`/`unblock --by` refuse
+an issue-number list with an empty entry (`1,,2`, `,5`, `5,`) instead of
+skipping it, and a repeated `--blocked-by` is refused rather than replacing
+the first. Publish's blocked-by readback retries a transient read failure
+(see issues #585 and #594).
+
 ## 3.13.0
 
 A planning interview about an open issue - the **Interviewed

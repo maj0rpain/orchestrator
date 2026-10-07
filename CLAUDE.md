@@ -26,7 +26,8 @@ See `docs/agents/cli-conventions.md`.
 
 ## Versioning
 
-Every PR that merges to `main` must bump `version` in `.claude-plugin/plugin.json`.
+CI (`scripts/test/docs_lint.sh`) enforces that every PR to `main` bumps `version`
+in `.claude-plugin/plugin.json` and adds it as the top `CHANGELOG.md` entry, with
+the `no-version-bump` label for pure CI or repo-hygiene PRs.
 Use semver judgment: patch for fixes/docs, minor for new features, major for
-breaking changes. A PR with no user-visible or behavioral change (pure CI/repo
-hygiene) is the only exception.
+breaking changes.
