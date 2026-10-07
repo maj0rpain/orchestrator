@@ -3,6 +3,10 @@
 Superseded in part by ADR-0019: a ticket subagent now runs as the plugin's
 `orch-implementer` agent and follows `tdd` only, not `implement`.
 
+Superseded in part by ADR-0036: the frontier's ready tickets now run in
+parallel, each in its own ticket worktree; one branch, one PR, one review
+still holds.
+
 The implement phase and quick implementation both build a ticket breakdown by
 handing each ready ticket to a fresh subagent (`skills/orch-flow/SKILL.md`'s
 Phase: implement step 3, added in #86; `skills/orch-quick-implement/SKILL.md`'s
