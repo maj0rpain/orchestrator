@@ -15,7 +15,9 @@ PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PASS=0
 FAIL=0
 
-ok()  { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
+# ORCH_TEST_QUIET=1 hides the ok lines; the count, the FAIL lines,
+# section headers and the summary still print.
+ok()  { PASS=$((PASS + 1)); [ -n "${ORCH_TEST_QUIET:-}" ] || printf '  ok   %s\n' "$1"; }
 bad() { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
@@ -98,7 +100,7 @@ case "$out" in
   *) bad "spares fails on a matching finding, printing its line" "got: ${out:-nothing}" ;;
 esac
 assert_eq "spares passes when no finding matches" \
-  "$(spares "probe" "$findings" '^skills/c\.md:')" "  ok   probe"
+  "$(ORCH_TEST_QUIET='' spares "probe" "$findings" '^skills/c\.md:')" "  ok   probe"
 
 # --- skill names (ADR-0014) --------------------------------------------------
 # Every orchestrator skill carries the orch- prefix. An old unprefixed name

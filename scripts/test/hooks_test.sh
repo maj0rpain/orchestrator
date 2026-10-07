@@ -16,7 +16,9 @@ COMMON="$DIR/hook-common.sh"
 PASS=0
 FAIL=0
 
-ok()  { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
+# ORCH_TEST_QUIET=1 hides the ok lines; the count, the FAIL lines,
+# section headers and the summary still print.
+ok()  { PASS=$((PASS + 1)); [ -n "${ORCH_TEST_QUIET:-}" ] || printf '  ok   %s\n' "$1"; }
 bad() { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in: $2" ;; esac; }

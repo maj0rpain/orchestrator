@@ -94,7 +94,9 @@ restore_suite_env() {
   HOME="$SUITE_HOME"; PATH="$SUITE_PATH"
 }
 
-ok()   { printf '  ok   %s\n' "$1"; PASS=$((PASS + 1)); }
+# ORCH_TEST_QUIET=1 hides the ok lines; the count, FAIL and skip lines,
+# section headers and the summary still print.
+ok()   { PASS=$((PASS + 1)); [ -n "${ORCH_TEST_QUIET:-}" ] || printf '  ok   %s\n' "$1"; }
 bad()  { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 skip() { printf '  skip %s\n     %s\n' "$1" "$2"; SKIP=$((SKIP + 1)); }
 
@@ -7831,7 +7833,7 @@ unset ORCHESTRATOR_HOST
 echo
 echo "the section filter (ORCH_TEST_ONLY, #612)"
 new_repo >/dev/null
-out="$(ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
 assert_status "a filter matching only isolation passes" "$st" 0
 assert_eq "runs the isolation section" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
 assert_eq "runs no other section" "$(printf '%s\n' "$out" | grep -cxE 'init|slug|doctor')" "0"
@@ -7841,7 +7843,7 @@ assert_contains "keeps the cwd isolation, started from a git repo" "$out" \
   "ok   the suite starts outside any git work tree"
 assert_contains "keeps the HOME isolation" "$out" "ok   HOME is the suite's own HOME"
 
-out="$(ORCH_TEST_ONLY='^ticket (block|unblock)$' bash "$SUITE_SCRIPT" 2>/dev/null)"
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^ticket (block|unblock)$' bash "$SUITE_SCRIPT" 2>/dev/null)"
 assert_eq "matches titles without their trailing dashes" \
   "$(printf '%s\n' "$out" | grep -cxE 'ticket block|ticket unblock')" "2"
 assert_eq "runs isolation alongside the matched sections" \
@@ -7858,6 +7860,48 @@ assert_eq "lists titles without trailing dashes" "$(printf '%s\n' "$out" | grep 
 assert_eq "lists no shared-setup header" \
   "$(printf '%s\n' "$out" | grep -cE 'doctor harness|fixture gh')" "0"
 assert_eq "runs nothing" "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
+
+# --- quiet mode (ORCH_TEST_QUIET, #614) ----------------------------------------
+# A filtered, quiet child run of this suite, and one quiet run each of the
+# other two suites. Quiet mode hides the ok lines only: the counts, headers,
+# FAIL/skip lines with their detail, and the summary all stay. hooks_test.sh
+# and docs_lint.sh are judged on their ok lines alone, not on their status.
+echo
+echo "quiet mode (ORCH_TEST_QUIET, #614)"
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+assert_status "a quiet, filtered run passes" "$st" 0
+assert_eq "prints no ok line" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
+assert_eq "still prints the section header" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
+assert_eq "still counts every pass in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
+  "6 passed, 0 failed"
+# A copy of the scripts tree whose isolation section gains a failing and a
+# skipped check, so the FAIL and skip lines are seen kept under quiet mode.
+quiet_dir="$(mktemp -d)"
+cp -R "$PLUGIN_ROOT/scripts" "$quiet_dir/"
+awk '{ print } $0 == "echo \"isolation\"" {
+  print "bad \"a planted failure\" \"its detail line\""
+  print "skip \"a planted skip\" \"its reason line\"" }' "$SUITE_SCRIPT" \
+  >"$quiet_dir/scripts/test/orch_test.sh"
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' \
+  bash "$quiet_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+assert_status "a quiet run with a failure exits 1" "$st" 1
+assert_contains "keeps a FAIL line with its detail line" "$out" \
+  "$(printf '  FAIL a planted failure\n     its detail line')"
+assert_contains "keeps a skip line with its reason line" "$out" \
+  "$(printf '  skip a planted skip\n     its reason line')"
+assert_eq "summarises the hidden passes, the failure and the skip" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed, 1 skipped"
+assert_eq "still prints no ok line beside a failure" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
+rm -rf "$quiet_dir"
+for quiet_suite in hooks_test.sh docs_lint.sh; do
+  out="$(ORCH_TEST_QUIET=1 bash "$(dirname "$SUITE_SCRIPT")/$quiet_suite" 2>&1)"
+  assert_eq "$quiet_suite prints no ok line when quiet" \
+    "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
+  assert_contains "$quiet_suite still prints its summary when quiet" "$out" " passed, "
+done
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"
+assert_eq "without quiet mode, prints every ok line" \
+  "$(printf '%s\n' "$out" | grep -c '^  ok ')" "6"
 
 # >>> summary
 echo
