@@ -6509,8 +6509,7 @@ assert_status "refuses to classify checks on a PR that does not exist yet" "$st"
 # `set -e` on the assignment rather than the exit itself. Asserting the message
 # is what would catch the guard degrading into an empty PR number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
-unset ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-restore_suite_env
+restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 
 # --- review rerun -------------------------------------------------------------
 # The flow's one flake rerun (#525): the failed jobs of the Actions run behind
