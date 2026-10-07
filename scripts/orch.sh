@@ -60,6 +60,12 @@ dir_stamp() { date -u +%Y%m%d-%H%M%S; }
 # Several answers here are one line of prose followed by detail lines, and it is
 # always the first line that carries the verdict.
 first_line() { printf '%s\n' "$1" | sed -n 1p; }
+# The argument with leading and trailing whitespace removed.
+trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  printf '%s' "${s%"${s##*[![:space:]]}"}"
+}
 
 # The one normalisation a slug gets: lowercase, non-alphanumeric runs collapsed
 # to a single hyphen, trimmed, dying if nothing survives. `init` and `cmd_slug`
@@ -1508,13 +1514,20 @@ review_rerun() {
 # rather than each re-deriving which iteration counts as done. Checked with
 # the same section_body/required-heading pattern handoff_report already uses,
 # not a second implementation of it. Prints the classification word on the
-# first line, and for `stop`, the recorded reason on the lines after it.
-# Exit status is 0 for ready/stop, non-zero for none/pending/interrupted - a
-# single boolean a caller can act on without re-deriving which words count as
-# terminal.
+# first line, and for `stop`, the recorded reason on the lines after it; for
+# `malformed`, the one expected-shape line callers quote rather than copy.
+# Exit status is 0 for ready/stop, non-zero for none/pending/interrupted/
+# malformed - a single boolean a caller can act on without re-deriving which
+# words count as terminal.
+#
+# The section is read as markdown is written: blank lines under the heading
+# are skipped, the first line is trimmed, and `stop` may carry its reason on
+# the same line after a separator (-, –, —, :). Anything else in a non-empty
+# section is malformed, never silently interrupted - interrupted means the
+# record or its section is missing or empty.
 review_terminal_state() {
   require_state
-  local i b path first rest
+  local i b path body first rest after sep
   i="$(state_get iteration)"
   b="$(review_budget)"
   if [ "$i" -eq 0 ]; then note none; return 1; fi
@@ -1524,16 +1537,28 @@ review_terminal_state() {
     note interrupted
     return 1
   fi
-  first="$(section_body "$path" '## Terminal state' | sed -n '1p')"
-  rest="$(section_body "$path" '## Terminal state' | tail -n +2)"
+  body="$(section_body "$path" '## Terminal state' | awk 'started || NF { started = 1; print }')"
+  first="$(trim "$(printf '%s\n' "$body" | sed -n '1p')")"
+  rest="$(printf '%s\n' "$body" | tail -n +2)"
   case "$first" in
     ready) note ready; return 0 ;;
-    stop)
-      note stop
-      [ -z "$rest" ] || printf '%s\n' "$rest"
-      return 0 ;;
-    *) note interrupted; return 1 ;;
+    stop) note stop; [ -z "$rest" ] || printf '%s\n' "$rest"; return 0 ;;
+    stop*)
+      after="$(trim "${first#stop}")"
+      for sep in - – — :; do
+        case "$after" in
+          "$sep"*)
+            after="$(trim "${after#"$sep"}")"
+            note stop
+            [ -z "$after" ] || printf '%s\n' "$after"
+            [ -z "$rest" ] || printf '%s\n' "$rest"
+            return 0 ;;
+        esac
+      done ;;
   esac
+  note malformed
+  note "expected: first line 'ready', or 'stop' with its reason after a separator (-, –, —, :) or on the lines below"
+  return 1
 }
 
 cmd_review() {
@@ -3127,6 +3152,9 @@ cmd_redo_review() {
       die "the review loop hasn't reached its budget yet (iteration $i of budget $b) - that's what $(flow_cmd next) is for; redo is for after a loop ends." ;;
     interrupted)
       die "the review loop's last iteration ($i) has no recorded terminal state - the session looks interrupted, not stopped. Resume it with $(flow_cmd next); redo only runs once a loop actually ends." ;;
+    malformed)
+      die "the review loop's last iteration ($i) has a malformed terminal state - rewrite the first line of $(cmd_review path "$i") as 'ready', or 'stop' followed by its reason; redo only runs once a loop actually ends.
+$(printf '%s\n' "$terminal" | tail -n +2)" ;;
     stop) ;;
     *) die "review_terminal_state answered something redo does not know: $word" ;;
   esac
@@ -3488,8 +3516,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               run, 2 on any other failure
   review ready                mark the draft PR ready and set the phase to done
   review terminal             classify the last iteration: none, pending,
-                              interrupted, ready, or stop; exits non-zero on
-                              the first three
+                              interrupted, malformed, ready, or stop; exits
+                              non-zero on the first four
   review retire <n>           move every iteration-*.md into pre-redo-<n>/
   spec fetch <file>           write the spec issue's body to <file>
   spec update <file>          replace the spec issue's body with <file>

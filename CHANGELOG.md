@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.13.3
+
+`orch.sh review terminal` reads a review record's `## Terminal state` the way
+markdown is written: blank lines under the heading are skipped, the first line
+is trimmed, and `stop` may carry its reason on the same line after `-`, `–`,
+`—` or `:`. Any other non-empty section now classifies as `malformed`, printing
+the expected shape, instead of silently reading as `interrupted`. `redo review`
+refuses a malformed record and says to rewrite its first line, and
+`doctor --flow` FAILs on it with the same remedy (see issue #604).
+
 ## 3.13.2
 
 `orch.sh issue triage` no longer refuses a filed finding that finding triage

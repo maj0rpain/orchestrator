@@ -751,6 +751,11 @@ check_flow_review_terminal() {
       d_warn "review loop hasn't reached its budget yet (iteration $i of budget $b) - $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
     interrupted)
       d_warn "review loop's last iteration ($i of budget $b) has no recorded terminal state - the session looks interrupted, not stopped. $(flow_cmd next) will resume it; redo refuses until it reaches a terminal state." ;;
+    # A FAIL, not a warn: the record is there but unreadable, and
+    # /orchestrator:next will not rewrite it - only a human editing it will.
+    malformed)
+      d_fail "review loop's last iteration ($i) has a malformed terminal state - $detail"
+      d_remedy "rewrite the first line of $(cmd_review path "$i") as 'ready', or 'stop' followed by its reason" ;;
   esac
 }
 

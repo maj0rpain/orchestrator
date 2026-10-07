@@ -372,7 +372,10 @@ terminal state follows, in this order:
 3. **Start the closer** with that decision - see **The closer** - and wait
    for its issue numbers.
 4. **Write `## Terminal state`** into the final iteration's record: first
-   line `ready`, or `stop` followed by the reason.
+   line `ready`, or `stop` with its reason either on the same line after a
+   separator (`-`, `–`, `—`, `:`) or on the lines below. Blank lines under
+   the heading are skipped. Any other first line reads as `malformed`, and
+   redo refuses it.
 5. **Run the terminal action.**
 
 **Ready** - all four hold: the final iteration was clean, its record lists no

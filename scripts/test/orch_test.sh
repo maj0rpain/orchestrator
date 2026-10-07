@@ -6709,6 +6709,66 @@ assert_contains "and review path still names the missing record" \
   "$("$ORCH" review path)" "/review/iteration-05.md"
 rm .orchestrator/review/iteration-05-standards.md .orchestrator/review/iteration-05-spec.md
 
+# A record written as ordinary markdown reads the way it was meant (#604):
+# blank lines under the heading, whitespace around the first line, and a stop
+# with its reason on the same line all classify, never as interrupted.
+writeln '## Terminal state' '' 'stop' 'CI never ran on the reviewed head.' \
+  >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a blank line under the heading still reads stop" "$st" 0
+assert_first_line "classified as stop, not interrupted" "$out" "stop"
+assert_eq "with the reason intact below it" \
+  "$(printf '%s\n' "$out" | tail -n +2)" "CI never ran on the reviewed head."
+
+writeln '## Terminal state' '   ' '' 'ready' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "whitespace-only lines under the heading still read ready" "$st" 0
+assert_first_line "classified as ready" "$out" "ready"
+
+writeln '## Terminal state' '  ready  ' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "whitespace around ready is tolerated" "$st" 0
+assert_eq "and prints the bare word" "$out" "ready"
+
+writeln '## Terminal state' '  stop  ' 'CI failed twice.' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "whitespace around stop is tolerated" "$st" 0
+assert_eq "and prints stop and its reason" "$out" "$(printf 'stop\nCI failed twice.')"
+
+for line in 'stop - CI failed twice.' 'stop – CI failed twice.' 'stop — CI failed twice.' \
+  'stop: CI failed twice.' 'stop:CI failed twice.' 'stop-CI failed twice.' \
+  '  stop - CI failed twice.  '; do
+  writeln '## Terminal state' "$line" 'The flake rerun is spent.' \
+    >.orchestrator/review/iteration-05.md
+  out="$("$ORCH" review terminal 2>&1)"; st=$?
+  assert_status "'$line' on one line is stop" "$st" 0
+  assert_eq "'$line' prints its reason first, then the lines below" "$out" \
+    "$(printf 'stop\nCI failed twice.\nThe flake rerun is spent.')"
+done
+
+writeln '## Terminal state' 'stop -' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a separator with nothing after it is still stop" "$st" 0
+assert_eq "with an empty reason" "$out" "stop"
+
+writeln '## Terminal state' 'stop -' 'CI failed twice.' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a bare separator with a reason below is stop" "$st" 0
+assert_eq "reading the reason from below" "$out" "$(printf 'stop\nCI failed twice.')"
+
+writeln '## Terminal state' '   ' '	' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a whitespace-only section is not terminal" "$st" 1
+assert_first_line "and still classifies as interrupted" "$out" "interrupted"
+
+for line in 'Stop' '**stop**' 'ready - all green' 'done'; do
+  writeln '## Terminal state' '' "$line" 'CI failed twice.' >.orchestrator/review/iteration-05.md
+  out="$("$ORCH" review terminal 2>&1)"; st=$?
+  assert_status "'$line' is not terminal" "$st" 1
+  assert_first_line "'$line' classifies as malformed, not interrupted" "$out" "malformed"
+  assert_contains "'$line' prints the expected shape" "$out" "expected: first line"
+done
+
 out="$("$ORCH" review terminal extra 2>&1)"; st=$?
 assert_status "takes no arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh review terminal"
@@ -6760,6 +6820,14 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a stop record is healthy too" "$st" 0
 assert_contains "names the terminal state and its reason" \
   "$out" "review loop at a terminal state: stop (CI failed twice.)"
+
+writeln '## Terminal state' '**stop**' 'CI failed twice.' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a malformed record fails, since next will not fix it" "$st" 1
+assert_contains "with a FAIL line naming it malformed" "$out" "FAIL  review loop's last iteration (5) has a malformed terminal state"
+assert_contains "printing the expected shape" "$out" "expected: first line"
+assert_contains "and the rewrite remedy" "$out" "rewrite the first line of"
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
 
 # Report files change nothing doctor says about the loop either.
 writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05-standards.md
@@ -6992,6 +7060,18 @@ state_fixture iteration 5
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "refuses a budget-spent loop with no terminal record" "$st" 1
 assert_contains "reading as interrupted, distinct from pending" "$out" "looks interrupted, not stopped"
+
+# A malformed record is refused before anything moves, with the rewrite to do.
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'Stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md
+out="$("$ORCH" redo review 2>&1 >/dev/null)"; st=$?
+assert_status "refuses a malformed terminal record" "$st" 1
+assert_contains "saying to rewrite the record's first line" "$out" "rewrite the first line of"
+assert_contains "quoting the expected shape" "$out" "expected: first line"
+assert_eq "leaving the phase, branch, and redo count unchanged" \
+  "$("$ORCH" state get phase) $("$ORCH" state get branch) $("$ORCH" state get redo_count)" \
+  "review orch/21-redotest 0"
+rm .orchestrator/review/iteration-05.md
 
 state_fixture pr 30
 state_fixture base_sha deadbeefcafe
