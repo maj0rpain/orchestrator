@@ -1160,18 +1160,26 @@ echo "review pass (#342)"
 # A review pass is defined once, in orch-review's ## Review pass section, which
 # starts with review-pass begin. Quick implementation's step 6 runs that
 # section rather than keeping its own copy.
+# quick_step_refers <plugin root> <step heading> <step label> <skill> <section> <noun>:
+# one line when that quick-implement step does not name `<skill>` and its
+# **<section>**.
+quick_step_refers() {
+  local quick="skills/orch-quick-implement/SKILL.md" body owner="$4's"
+  [[ $4 == *s ]] && owner="$4'"
+  body="$(md_section "$1/$quick" "$2" | flat_text)"
+  { grep -qF "\`$4\`" <<<"$body" && grep -qF "**$5**" <<<"$body"; } \
+    || echo "$quick: $3 does not refer to $owner **$5** $6"
+}
 # scan_review_pass <plugin root>: one line per break of that rule.
 scan_review_pass() {
-  local r="$1" review="skills/orch-review/SKILL.md" quick="skills/orch-quick-implement/SKILL.md" body
+  local r="$1" review="skills/orch-review/SKILL.md" body
   if body="$(md_section "$r/$review" "## Review pass")"; then
     flat_text <<<"$body" | grep -qF 'review-pass begin' \
       || echo "$review: ## Review pass does not name review-pass begin"
   else
     echo "$review: no ## Review pass section"
   fi
-  body="$(md_section "$r/$quick" "## 6. Review" | flat_text)"
-  { grep -qF '`orch-review`' <<<"$body" && grep -qF '**Review pass**' <<<"$body"; } \
-    || echo "$quick: step 6 does not refer to orch-review's **Review pass** section"
+  quick_step_refers "$r" "## 6. Review" "step 6" orch-review "Review pass" section
   return 0
 }
 fixture="$(new_fixture)"
@@ -1205,13 +1213,8 @@ echo "unattended modes (#616)"
 # scan_unattended_modes <plugin root>: one line per step that does not refer
 # to its mode.
 scan_unattended_modes() {
-  local r="$1" quick="skills/orch-quick-implement/SKILL.md" body
-  body="$(md_section "$r/$quick" "## 2. Run an unattended spec review" | flat_text)"
-  { grep -qF '`orch-spec-review`' <<<"$body" && grep -qF '**Unattended spec review**' <<<"$body"; } \
-    || echo "$quick: step 2 does not refer to orch-spec-review's **Unattended spec review** mode"
-  body="$(md_section "$r/$quick" "## 3. Publish the ticket breakdown" | flat_text)"
-  { grep -qF '`orch-to-tickets`' <<<"$body" && grep -qF '**Unattended breakdown**' <<<"$body"; } \
-    || echo "$quick: step 3 does not refer to orch-to-tickets' **Unattended breakdown** mode"
+  quick_step_refers "$1" "## 2. Run an unattended spec review" "step 2" orch-spec-review "Unattended spec review" mode
+  quick_step_refers "$1" "## 3. Publish the ticket breakdown" "step 3" orch-to-tickets "Unattended breakdown" mode
   return 0
 }
 fixture="$(new_fixture)"
