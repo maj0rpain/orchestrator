@@ -535,10 +535,11 @@ check_base_branch() {
 # With no side checkout there is nothing to ask GitHub, so the gate - and a
 # skip with GitHub unreachable - only counts once one exists.
 check_side_checkouts_finished() {
-  local path paths=() found=() verdict branch rc
+  local path paths=() found=() verdict branch rc main_root
   mapfile -t paths < <(checkout_paths)
+  main_root="$(main_checkout)"
   for path in "${paths[@]}"; do
-    [ "$path" != "$(main_checkout)" ] && is_side_checkout "$path" && found+=("$path")
+    [ "$path" != "$main_root" ] && is_side_checkout "$path" && found+=("$path")
   done
   [ "${#found[@]}" -gt 0 ] || return 0
   d_gh_gate || return 0
@@ -547,8 +548,8 @@ check_side_checkouts_finished() {
     side_checkout_finished "$path" </dev/null || rc=$?
     case "$rc" in
       0)
-        d_warn "side checkout $(basename "$path") is finished - its PR is merged, and it is still standing at $path."
-        d_remedy "orch.sh side-checkout remove $(basename "$path")" ;;
+        d_warn "side checkout ${path##*/} is finished - its PR is merged, and it is still standing at $path."
+        d_remedy "orch.sh side-checkout remove ${path##*/}" ;;
       1) ;;
       *) d_warn "side checkout $(basename "$path") could not be checked: $verdict" ;;
     esac
@@ -678,7 +679,8 @@ check_flow_review_terminal() {
   b="$(review_budget)"
   terminal="$(review_terminal_state)" || true
   word="$(first_line "$terminal")"
-  detail="$(printf '%s\n' "$terminal" | tail -n +2)"
+  detail=""
+  case "$terminal" in *$'\n'*) detail="${terminal#*$'\n'}" ;; esac
   case "$word" in
     none)  d_ok "review loop: not started yet" ;;
     ready) d_ok "review loop at a terminal state: ready" ;;
@@ -734,7 +736,8 @@ check_flow_review_ci() {
   d_gh_gate || return 0
   res="$(ci_probe "$pr" required)"
   verdict="$(first_line "$res")"
-  detail="$(printf '%s\n' "$res" | tail -n +2)"
+  detail=""
+  case "$res" in *$'\n'*) detail="${res#*$'\n'}" ;; esac
   case "$verdict" in
     green)   d_ok "CI: required checks green" ;;
     none)    d_ok "CI: no required checks reported" ;;
@@ -764,7 +767,8 @@ check_flow_review_draft() {
   d_gh_gate || return 0
   out="$(adapter_pr_state_draft "$pr" 2>/dev/null)" || out=""
   pr_state="$(first_line "$out")"
-  is_draft="$(printf '%s\n' "$out" | sed -n 2p)"
+  is_draft=""
+  case "$out" in *$'\n'*) is_draft="${out#*$'\n'}"; is_draft="${is_draft%%$'\n'*}" ;; esac
   if [ -z "$pr_state" ]; then
     d_warn "PR #$pr draft state could not be read from GitHub."
     return 0

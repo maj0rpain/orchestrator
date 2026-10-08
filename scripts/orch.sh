@@ -124,7 +124,7 @@ now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 dir_stamp() { date -u +%Y%m%d-%H%M%S; }
 # Several answers here are one line of prose followed by detail lines, and it is
 # always the first line that carries the verdict.
-first_line() { printf '%s\n' "$1" | sed -n 1p; }
+first_line() { printf '%s\n' "${1%%$'\n'*}"; }
 # capture <out-var> <err-var> <command...>: runs the command, sets <out-var> to
 # its stdout (by command substitution, so trailing newlines go) and <err-var> to
 # its stderr byte for byte, and returns its status. The stderr goes through one
@@ -3796,9 +3796,16 @@ cmd_ticket_worktree() {
 readonly SIDE_CHECKOUT_MARKER="orchestrator-side-checkout"
 
 # The main checkout: the first worktree git lists.
-main_checkout() { git worktree list --porcelain | sed -n '1s/^worktree //p'; }
+main_checkout() {
+  local list
+  list="$(git worktree list --porcelain)" || return
+  list="${list%%$'\n'*}"
+  case "$list" in "worktree "*) printf '%s\n' "${list#worktree }" ;; esac
+}
 
-side_checkouts_dir() { printf '%s/%s/checkouts\n' "$(main_checkout)" "$ORCH_DIR_NAME"; }
+# side_checkouts_dir <main-root>: where the side checkouts of the main
+# checkout at <main-root> live.
+side_checkouts_dir() { printf '%s/%s/checkouts\n' "$1" "$ORCH_DIR_NAME"; }
 
 # Whether the worktree at <path> carries the ownership marker.
 is_side_checkout() {
@@ -3821,7 +3828,7 @@ cmd_side_checkout_add() {
   ( cmd_side_checkout_prune ) >&2 \
     || warn "the finished sweep failed - carrying on with add"
   cd "$main_root" || die "could not enter the main checkout $main_root"
-  path="$(side_checkouts_dir)/$slug"
+  path="$(side_checkouts_dir "$main_root")/$slug"
   [ ! -e "$path" ] || die "side checkout $path already exists"
   exclude_orch_dirs
   base="$(base_branch)"
@@ -3839,7 +3846,13 @@ cmd_side_checkout_add() {
 }
 
 # Every checkout's path, one per line, the main checkout first.
-checkout_paths() { git worktree list --porcelain | sed -n 's/^worktree //p'; }
+checkout_paths() {
+  local list line
+  list="$(git worktree list --porcelain)" || return
+  while IFS= read -r line; do
+    case "$line" in "worktree "*) printf '%s\n' "${line#worktree }" ;; esac
+  done <<<"$list"
+}
 
 # Whether the checkout at <path> holds a flow.
 checkout_has_flow() { [ -f "$1/$ORCH_DIR_NAME/state.json" ]; }
@@ -3866,7 +3879,7 @@ cmd_side_checkout_list() {
   local path
   while IFS= read -r path; do
     is_side_checkout "$path" || continue
-    note "$(basename "$path") $path $(checkout_holding "$path")"
+    note "${path##*/} $path $(checkout_holding "$path")"
   done < <(checkout_paths)
 }
 
@@ -3878,20 +3891,24 @@ cmd_side_checkout_list() {
 # branch is left in place.
 cmd_side_checkout_remove() {
   [ $# -eq 1 ] || die "usage: orch.sh side-checkout remove <slug>"
-  local slug path err here st
+  local slug path err here st main_root dirs
   here="$(pwd -P)"
   slug="$(normalize_slug "$1")"
-  path="$(side_checkouts_dir)/$slug"
-  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+  main_root="$(main_checkout)"
+  path="$(side_checkouts_dir "$main_root")/$slug"
+  # One rev-parse for both reads: the top level on the first line, the git
+  # folder that holds the marker (see is_side_checkout) on the second.
+  dirs="$(git -C "$path" rev-parse --show-toplevel --absolute-git-dir 2>/dev/null)" || dirs=""
+  [ "${dirs%%$'\n'*}" = "$path" ] \
     || die "no side checkout $slug at $path"
-  is_side_checkout "$path" \
+  [ -f "${dirs#*$'\n'}/$SIDE_CHECKOUT_MARKER" ] \
     || die "$path carries no side-checkout marker - it is not the plugin's to remove, so it is left alone"
   st="$(tree_status "$path")" || die "$st"
   [ -z "$st" ] \
     || die "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
   refuse_ticket_worktrees "$path"
   if checkout_has_flow "$path"; then archive_flow "$path"; fi
-  if ! err="$(git -C "$(main_checkout)" worktree remove "$path" 2>&1)"; then
+  if ! err="$(git -C "$main_root" worktree remove "$path" 2>&1)"; then
     die "could not remove side checkout $path: $(first_line "$err")"
   fi
   note "removed side checkout $path"
@@ -3940,7 +3957,11 @@ finished_flow() {
     verdict="PR #$pr is $(printf '%s' "$pr_state" | tr '[:upper:]' '[:lower:]')"; return 1
   fi
   github_read refs adapter_pr_refs "$pr" || return
-  merged_base="$(printf '%s\n' "$refs" | sed -n 3p)"
+  # The base branch is the third line, empty when there is none.
+  merged_base=""
+  case "$refs" in
+    *$'\n'*$'\n'*) merged_base="${refs#*$'\n'*$'\n'}"; merged_base="${merged_base%%$'\n'*}" ;;
+  esac
   [ "$merged_base" = "$base" ] || { verdict="PR #$pr merged into $merged_base, not $base"; return 1; }
 }
 
