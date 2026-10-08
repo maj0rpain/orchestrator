@@ -1331,6 +1331,42 @@ recorded="$("$ORCH" state get base)"
 assert_eq "init records origin/HEAD's branch as the base" "$recorded" "some-feature"
 restore_suite_env
 
+# --sha prints the default SHA: the full SHA of origin/<default> as it stands,
+# without fetching - the remote-tracking tip the last fetch set.
+new_repo >/dev/null
+git checkout -q -B main
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin main
+git fetch -q origin
+fake_github
+fake_default_branch $'main\n'
+fetched_tip="$(git rev-parse HEAD)"
+out="$("$ORCH" default-branch --sha 2>&1)"; st=$?
+assert_status "--sha succeeds" "$st" 0
+assert_eq "--sha prints the remote-tracking tip's full SHA" "$out" "$fetched_tip"
+moved="$(git -C "$bare" -c user.email=test@example.com -c user.name=Test commit-tree "main^{tree}" -p main -m "moved on")"
+git -C "$bare" update-ref refs/heads/main "$moved"
+assert_ne "the remote's tip has moved on" "$(git -C "$bare" rev-parse main)" "$fetched_tip"
+assert_eq "--sha does not fetch: a remote tip that moved since is not reported" \
+  "$("$ORCH" default-branch --sha 2>&1)" "$fetched_tip"
+assert_eq "and the remote-tracking ref is left where it was" "$(git rev-parse origin/main)" "$fetched_tip"
+assert_eq "plain default-branch still prints the name" "$("$ORCH" default-branch 2>&1)" "main"
+git update-ref -d refs/remotes/origin/main
+out="$("$ORCH" default-branch --sha 2>&1)"; st=$?
+assert_status "--sha fails when the remote-tracking ref is missing" "$st" 1
+assert_contains "naming the ref" "$out" "refs/remotes/origin/main"
+for arg in --name extra; do
+  out="$("$ORCH" default-branch "$arg" 2>&1)"; st=$?
+  assert_status "refuses any argument but --sha ($arg)" "$st" 1
+  assert_eq "with its usage ($arg)" "$out" "orch: usage: orch.sh default-branch [--sha]"
+done
+out="$("$ORCH" default-branch --sha extra 2>&1)"; st=$?
+assert_status "refuses an argument after --sha" "$st" 1
+assert_eq "with its usage" "$out" "orch: usage: orch.sh default-branch [--sha]"
+restore_suite_env
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and

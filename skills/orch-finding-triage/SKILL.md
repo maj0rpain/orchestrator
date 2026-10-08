@@ -84,9 +84,11 @@ It fetches `origin/<default>` and prints one tab-separated line per finding:
 If it dies, relay its reason and stop. If it prints nothing, tell the human
 there is no filed finding to triage and stop.
 
-Run `bash "$ORCH" default-branch` to name the default branch, and
-`git rev-parse origin/<default>` for the **default SHA** the rest of the
-triage is checked at.
+Run `bash "$ORCH" default-branch` to name the default branch, and then,
+after the scan, `bash "$ORCH" default-branch --sha` for the **default SHA**
+the rest of the triage is checked at. It reads `origin/<default>` without
+fetching, so it is the remote tip the scan's own fetch set, and it stays
+fixed for the whole triage.
 
 ## 2. Judge
 

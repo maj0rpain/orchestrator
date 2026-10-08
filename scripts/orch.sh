@@ -245,6 +245,21 @@ default_branch() {
   printf '%s\n' "$b"
 }
 
+# default-branch [--sha]: the default branch's name, or with --sha the default
+# SHA - the full SHA of refs/remotes/origin/<default> as it stands. --sha never
+# fetches: finding triage reads it right after its scan's fetch set that ref,
+# so it names the remote tip the scan used.
+cmd_default_branch() {
+  local usage="usage: orch.sh default-branch [--sha]" default ref sha
+  [ $# -eq 0 ] && { default_branch; return; }
+  [ $# -eq 1 ] && [ "$1" = --sha ] || die "$usage"
+  default="$(default_branch)"
+  ref="refs/remotes/origin/$default"
+  sha="$(git rev-parse --verify -q "$ref^{commit}")" \
+    || die "no $ref - fetch the default branch first"
+  printf '%s\n' "$sha"
+}
+
 # The repo orch.sh works on (#520): GH_REPO when the caller set it, else the
 # owner/name parsed from the checkout's origin remote - never gh's own default
 # repo, which in a fork is the upstream. repo_resolve sets REPO_NAME to
@@ -3543,8 +3558,9 @@ cmd_help() {
 orch.sh - deterministic operations for the orchestrator flow
 
   doctor [--env|--flow]       diagnose the machine, the repo, and the active flow
-  default-branch              resolve the repo's default branch, as GitHub
-                              reports it
+  default-branch [--sha]      resolve the repo's default branch, as GitHub
+                              reports it; --sha prints the default SHA instead,
+                              origin/<default>'s tip as it stands, unfetched
   base set <branch>           set this checkout's base branch - the branch
                               flows and quick implementations fork from and
                               open PRs against; refuses a branch origin does
@@ -3855,7 +3871,7 @@ main() {
   shift || true
   case "$cmd" in
     doctor)        cmd_doctor "$@" ;;
-    default-branch) default_branch ;;
+    default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
     parallel)      cmd_parallel "$@" ;;
     repo)          cmd_repo "$@" ;;
