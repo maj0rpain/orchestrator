@@ -4172,6 +4172,32 @@ out="$("$ORCH" doctor 2>&1)"; st=$?
 assert_status "bare doctor is safe to run with no flow" "$st" 0
 assert_contains "states there is no flow instead of failing" "$out" "ok    no active flow"
 assert_contains "bare doctor covers the environment too" "$out" "tools"
+assert_not_contains "with no ticket worktree, bare doctor with no flow says nothing of them" \
+  "$out" "ticket worktree"
+
+# #673: a quick implementation has no flow, so its leftover ticket worktree is
+# reported by bare doctor or nowhere - and only this checkout's own.
+nf_top="$(git rev-parse --show-toplevel)"
+"$ORCH" ticket-worktree add 12 >/dev/null
+nf_linked="$(mktemp -d)/linked"
+git worktree add -q -b nf-other "$nf_linked"
+(cd "$nf_linked" && "$ORCH" ticket-worktree add 13 >/dev/null)
+out="$("$ORCH" doctor 2>&1)"; st=$?
+assert_status "a leftover ticket worktree fails bare doctor with no flow" "$st" 1
+assert_contains "still states there is no flow" "$out" "ok    no active flow"
+assert_contains "reports the leftover as a FAIL naming it, with no flow" "$out" \
+  "FAIL  ticket worktree $nf_top/.orchestrator/worktrees/t12 is left over"
+assert_contains "with ticket-worktree remove <n> as the remedy, with no flow" "$out" \
+  "orch.sh ticket-worktree remove 12"
+assert_not_contains "another checkout's ticket worktree is not reported with no flow" "$out" "t13"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "--flow still refuses with no flow and a leftover" "$st" 1
+assert_contains "still says why it cannot answer" "$out" "no active flow"
+assert_not_contains "and runs no ticket-worktree check" "$out" "ticket worktree"
+(cd "$nf_linked" && "$ORCH" ticket-worktree remove 13)
+git worktree remove "$nf_linked"
+git branch -q -D nf-other
+"$ORCH" ticket-worktree remove 12
 
 "$ORCH" init flowtest >/dev/null
 complete_plan_handoff "$("$ORCH" handoff path spec)"
@@ -4210,6 +4236,21 @@ assert_eq "claims nothing it could not read" \
   "$(printf '%s\n' "$out" | grep -c '^ok    ')" "0"
 assert_eq "does not leak jq's parse error into the report" \
   "$(printf '%s\n' "$out" | grep -c 'parse error')" "0"
+assert_not_contains "with no ticket worktree, an invalid state.json says nothing of them" \
+  "$out" "ticket worktree"
+# #673: a broken state file must not hide a leftover ticket worktree - that
+# check reads git alone.
+iv_top="$(git rev-parse --show-toplevel)"
+"$ORCH" ticket-worktree add 12 >/dev/null
+for iv_args in "" "--flow"; do
+  out="$("$ORCH" doctor $iv_args 2>&1)"; st=$?
+  assert_status "doctor $iv_args with an invalid state.json fails on a leftover" "$st" 1
+  assert_contains "doctor $iv_args with an invalid state.json names the leftover" "$out" \
+    "FAIL  ticket worktree $iv_top/.orchestrator/worktrees/t12 is left over"
+  assert_contains "doctor $iv_args with an invalid state.json gives its remedy" "$out" \
+    "orch.sh ticket-worktree remove 12"
+done
+"$ORCH" ticket-worktree remove 12
 cp "$statebak" .orchestrator/state.json
 
 state_fixture phase nonsense
@@ -4428,6 +4469,26 @@ else
   # how you find out that happened.
   assert_contains "collapses every flow check into one line when jq is gone" \
     "$out" "10 flow checks skipped: jq is not installed"
+  assert_not_contains "with no ticket worktree, doctor without jq says nothing of them" \
+    "$out" "ticket worktree"
+fi
+
+# #673: the ticket-worktree check reads git alone, so a missing jq must not hide
+# a leftover - under --flow or bare doctor.
+if on_windows_bash; then
+  skip_no_jq "doctor without jq still fails on a leftover ticket worktree"
+else
+  nj_top="$(git rev-parse --show-toplevel)"
+  "$ORCH" ticket-worktree add 12 >/dev/null
+  for nj_args in "" "--flow"; do
+    out="$(PATH="$nojq_path" "$ORCH" doctor $nj_args 2>&1)"; st=$?
+    assert_status "doctor $nj_args without jq fails on a leftover" "$st" 1
+    assert_contains "doctor $nj_args without jq names the leftover" "$out" \
+      "FAIL  ticket worktree $nj_top/.orchestrator/worktrees/t12 is left over"
+    assert_contains "doctor $nj_args without jq gives its remedy" "$out" \
+      "orch.sh ticket-worktree remove 12"
+  done
+  "$ORCH" ticket-worktree remove 12
 fi
 restore_suite_env
 
