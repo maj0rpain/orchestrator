@@ -1117,6 +1117,20 @@ adapter_issue_state_labels() {
   gh issue view "$1" --json state,labels --jq '.state, (.labels[].name)'
 }
 
+# issue_state_labels_read <n> <state_var> <labels_var>: reads issue <n> once
+# through adapter_issue_state_labels and writes its state (the first line)
+# and its labels (the rest, possibly empty) into the two caller-named
+# variables. Non-zero, writing neither, when the read fails: the caller keeps
+# its own failure message. The one place the answer is split. Out-params
+# through `printf -v`, as require_field's, its locals prefixed so no caller's
+# variable name is shadowed.
+issue_state_labels_read() {
+  local __islr_out
+  __islr_out="$(adapter_issue_state_labels "$1")" || return 1
+  printf -v "$2" '%s' "$(first_line "$__islr_out")"
+  printf -v "$3" '%s' "$(printf '%s\n' "$__islr_out" | tail -n +2)"
+}
+
 # adapter_issue_title_labels <n>: the title on the first line, then one label
 # per line.
 adapter_issue_title_labels() {
@@ -2053,12 +2067,12 @@ cmd_issue() {
 cmd_issue_ready() {
   local usage="usage: orch.sh issue ready <n>"
   [ $# -eq 1 ] || die2 "$usage"
-  local issue="$1" ready out
+  local issue="$1" ready state labels
   case "$issue" in ''|*[!0-9]*) die2 "issue must be a plain issue number, got: $issue ($usage)" ;; esac
   ready="$(triage_label_for ready-for-agent)"
-  out="$(adapter_issue_state_labels "$issue")" \
+  issue_state_labels_read "$issue" state labels \
     || die2 "gh could not read issue #$issue"
-  labels_have "$(printf '%s\n' "$out" | tail -n +2)" "$ready"
+  labels_have "$labels" "$ready"
 }
 
 # --- spec -------------------------------------------------------------------
@@ -2307,10 +2321,8 @@ cmd_finding_triage_scan() {
   case "$issue$pr_filter" in *[!0-9]*) die "$usage" ;; esac
   triage="$(triage_label_for needs-triage)"
   if [ -n "$issue" ]; then
-    out="$(adapter_issue_state_labels "$issue")" \
+    issue_state_labels_read "$issue" state labels \
       || die "gh could not read issue #$issue"
-    state="$(first_line "$out")"
-    labels="$(printf '%s\n' "$out" | tail -n +2)"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
@@ -2349,7 +2361,7 @@ cmd_finding_triage_scan() {
 cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
-  local issue="${1:-}" outcome="${2:-}" category="" file="" labels triage stale_category tmp
+  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels triage stale_category tmp
   # The labels to remove, comma-separated, possibly none: close-fixed, where
   # that is the whole relabel, skips an empty one rather than send a bare edit.
   local remove=""
@@ -2375,9 +2387,8 @@ cmd_finding_triage_apply() {
   [ -n "$file" ] || die "$usage"
   [ -f "$file" ] || die "comment file not found: $file"
 
-  labels="$(adapter_issue_state_labels "$issue")" \
+  issue_state_labels_read "$issue" state labels \
     || die "gh could not read issue #$issue"
-  labels="$(printf '%s\n' "$labels" | tail -n +2)"
   triage="$(triage_label_for needs-triage)"
   # Remove only what the issue carries: gh refuses to remove a label the
   # repo does not have at all.
@@ -2596,9 +2607,8 @@ cmd_issue_publish() {
 # comma-separated <removed> labels. Read fresh every call, never cached - the
 # caller re-reads once on a mismatch, as issue publish's does.
 issue_triage_verified() {
-  local n="$1" ready="$2" out labels l removed=()
-  out="$(adapter_issue_state_labels "$n" 2>/dev/null)" || return 1
-  labels="$(printf '%s\n' "$out" | tail -n +2)"
+  local n="$1" ready="$2" state labels l removed=()
+  issue_state_labels_read "$n" state labels 2>/dev/null || return 1
   labels_have "$labels" "$ready" || return 1
   [ -z "$3" ] || IFS=, read -r -a removed <<<"$3"
   for l in ${removed[@]+"${removed[@]}"}; do
@@ -2613,7 +2623,7 @@ issue_triage_verified() {
 # read back (ADR-0011), and one comment names the label it now carries.
 cmd_issue_triage() {
   local usage="usage: orch.sh issue triage <n> [--override]"
-  local issue="" override=false ready out labels remove="" role label
+  local issue="" override=false ready state labels remove="" role label
   while [ $# -gt 0 ]; do
     case "$1" in
       --override) override=true ;;
@@ -2625,10 +2635,9 @@ cmd_issue_triage() {
   case "$issue" in ''|*[!0-9]*) die "$usage" ;; esac
   ready="$(triage_label_for ready-for-agent)"
 
-  out="$(adapter_issue_state_labels "$issue")" \
+  issue_state_labels_read "$issue" state labels \
     || die "gh could not read issue #$issue"
-  labels="$(printf '%s\n' "$out" | tail -n +2)"
-  [ "$(first_line "$out")" = OPEN ] \
+  [ "$state" = OPEN ] \
     || die "issue #$issue is not open - only an open issue is triaged to '$ready'"
   # A filed finding not yet triaged comes back into the pipeline through
   # finding triage first, which checks it against the default branch

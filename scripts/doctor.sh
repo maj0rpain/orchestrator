@@ -17,7 +17,7 @@
 #
 # Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
 # now, first_line, default_branch, base_setting, origin_has_branch,
-# require_state, labels_have,
+# require_state, labels_have, issue_state_labels_read,
 # ORCH_DIR_NAME, PHASES, LABEL_LIMIT, HANDOFF_DIR) and triage-labels.sh
 # (LABELS_DOC, TRIAGE_ROLES, triage_table_rows, triage_labels,
 # triage_label_for, triage_expected_labels) are defined. cmd_doctor is then
@@ -392,12 +392,10 @@ d_orch_remedy() {
 # maintainer's later triage housekeeping must not stop a flow already running
 # against the issue (docs/adr/0005).
 validate_adopted_issue() {
-  local issue="$1" label out state labels
+  local issue="$1" label state labels
   label="$(triage_label_for ready-for-agent)"
-  out="$(adapter_issue_state_labels "$issue" 2>/dev/null)" \
+  issue_state_labels_read "$issue" state labels 2>/dev/null \
     || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
-  state="$(first_line "$out")"
-  labels="$(printf '%s\n' "$out" | tail -n +2)"
   [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
   labels_have "$labels" "$label" \
     || die "issue #$issue is missing the '$label' triage label - adoption requires it."
@@ -615,12 +613,13 @@ check_flow_upstream() {
 # against one. The ready-for-agent label is deliberately not re-checked; it is
 # a one-time gate at adoption, not an ongoing flow invariant (docs/adr/0005).
 check_flow_issue() {
-  local issue issue_state phase
+  # issue_labels is the read's throwaway half: only the state is checked here.
+  # shellcheck disable=SC2034
+  local issue issue_state="" issue_labels phase
   issue="$(state_get issue)"
   if [ -z "$issue" ]; then d_ok "issue: not recorded yet"; return 0; fi
   d_gh_gate || return 0
-  issue_state="$(adapter_issue_state_labels "$issue" 2>/dev/null)" || issue_state=""
-  issue_state="$(first_line "$issue_state")"
+  issue_state_labels_read "$issue" issue_state issue_labels 2>/dev/null || issue_state=""
   phase="$(state_get phase)"
   case "$issue_state" in
     OPEN)   d_ok "issue #$issue open" ;;
