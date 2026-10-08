@@ -3700,7 +3700,7 @@ side_checkout_finished() {
 # worktree holding a flow is reported and left alone.
 cmd_side_checkout_prune() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout prune"
-  local here main_root path verdict branch rc unread="" failed=0
+  local here main_root path verdict branch rc unread=0 failed=0
   # archive_out is this entry's archive_flow output - its note, or its error -
   # cleared at the top of each entry so none outlives its own.
   local archive_out remove_err branch_err
@@ -3726,10 +3726,10 @@ cmd_side_checkout_prune() {
     case "$rc" in
       0) finished+=("$path"$'\t'"$branch") ;;
       1) note "skipped $path: $verdict" ;;
-      *) unread="$path: $verdict" ;;
+      *) warn "could not check $path: $verdict"; unread=$((unread + 1)) ;;
     esac
   done
-  [ -z "$unread" ] || die "could not check $unread - nothing was removed"
+  [ "$unread" -eq 0 ] || die "$unread checkout(s) could not be checked - nothing was removed"
   [ "${#finished[@]}" -gt 0 ] || { note "no finished side checkouts"; return 0; }
   local entry
   for entry in "${finished[@]}"; do

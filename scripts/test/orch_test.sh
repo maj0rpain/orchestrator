@@ -5448,6 +5448,12 @@ echo wip >"$dt/wip.txt"
 # A flow not at done.
 nd="$(orch_gh_failing side-checkout add nd)"
 (cd "$nd" && orch_gh_failing init nd-flow >/dev/null && state_fixture phase implement)
+# A finished side checkout whose PR was a true merge: its branch is an
+# ancestor of main.
+tm="$(orch_gh_failing side-checkout add tm)"
+sp_branch_off "$tm" quick/17-tm
+git merge -q --no-ff --no-edit quick/17-tm
+fake_pr 56 merged quick/17-tm main
 # A side checkout still on no branch.
 nb="$(orch_gh_failing side-checkout add nb)"
 # The main checkout's own finished flow.
@@ -5466,6 +5472,8 @@ fake_pr 46 merged orch/hand-flow main
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune fails when GitHub cannot be read" "$st" 1
 assert_contains "saying nothing was removed" "$out" "nothing was removed"
+assert_contains "reporting the first unreadable checkout with its reason" "$out" "could not check $fl: could not read GitHub"
+assert_contains "and the second, not only the last" "$out" "could not check $qk: could not read GitHub"
 assert_eq "the finished flow side checkout stays" "$(on_disk "$fl")" "present"
 assert_eq "the finished quick side checkout stays" "$(on_disk "$qk")" "present"
 assert_eq "its branch stays" "$(sp_branch quick/7-qk)" "kept"
@@ -5480,6 +5488,8 @@ assert_eq "its flow archived into the main checkout" "$(archived_count "$top" fl
 assert_eq "its squash-merged local branch is gone" "$(sp_branch orch/fl-flow)" "gone"
 assert_eq "the finished quick side checkout is gone" "$(on_disk "$qk")" "absent"
 assert_eq "its local branch is gone" "$(sp_branch quick/7-qk)" "gone"
+assert_eq "the true-merged side checkout is gone" "$(on_disk "$tm")" "absent"
+assert_eq "its merged local branch is gone" "$(sp_branch quick/17-tm)" "gone"
 assert_contains "the removals are reported" "$out" "removed side checkout $qk"
 assert_eq "an open PR's side checkout stays" "$(on_disk "$op")" "present"
 assert_contains "skipped with its reason" "$out" "skipped $op: no merged PR from quick/8-op into main"
