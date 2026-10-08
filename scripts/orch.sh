@@ -1395,17 +1395,21 @@ adapter_blocker_remove() {
 
 # adapter_sub_issues_supported: whether this GitHub answers the sub-issues
 # endpoint, asked of the repo's most recent issue: "yes" where it answers,
-# "no" where it refuses, nothing at all where the repo has no issue to ask it
-# of. Fails only where the issue listing itself fails.
+# "no" only where the endpoint answers HTTP 404, nothing at all where the repo
+# has no issue to ask it of. Every other failure - of the issue listing, or of
+# the endpoint with any other status (401, 403, 410, 5xx) or no connection -
+# fails it, passing gh's stderr through.
 adapter_sub_issues_supported() {
-  local n
+  local n err rc=0
   n="$(gh issue list --state all --limit 1 --json number --jq '.[0].number // empty')" || return
   [ -n "$n" ] || return 0
-  if gh api "repos/{owner}/{repo}/issues/$n/sub_issues" >/dev/null 2>&1; then
-    printf 'yes\n'
-  else
-    printf 'no\n'
-  fi
+  err="$(gh api "repos/{owner}/{repo}/issues/$n/sub_issues" 2>&1 >/dev/null)" || rc=$?
+  if [ "$rc" -eq 0 ]; then printf 'yes\n'; return 0; fi
+  case "$err" in
+    *"HTTP 404"*) printf 'no\n'; return 0 ;;
+  esac
+  [ -z "$err" ] || printf '%s\n' "$err" >&2
+  return "$rc"
 }
 
 # --- repo operations ---

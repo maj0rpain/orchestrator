@@ -3113,7 +3113,20 @@ fake_default_branch main
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "no issue to probe against does not block the flow" "$st" 0
 assert_contains "says the probe could not run rather than guessing" \
-  "$out" "sub-issues support could not be probed"
+  "$out" "warn  sub-issues support could not be probed - the repo has no issue to test it against."
+
+# A probe that fails (a 502, a 403, no connection) is neither "unsupported" nor
+# "no issue": the warn carries gh's own first line instead (#554).
+doctor_github
+fake_fail adapter_sub_issues_supported $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a failing sub-issues probe does not block the flow" "$st" 0
+assert_contains "warns with gh's first line" \
+  "$out" "warn  sub-issues support could not be probed: HTTP 502: Bad Gateway"
+assert_not_contains "and never as a repo with no issue" "$out" "no issue to test it against"
+assert_not_contains "nor as unsupported" "$out" "do not appear to be supported"
+assert_not_contains "nor past gh's first line" "$out" "second line"
+fake_unfail
 
 # Gated like every other GitHub-backed check: unreachable collapses into the
 # shared skip line rather than adding a check-specific one of its own.
@@ -6988,6 +7001,16 @@ out="$(gh_fixture; gh_reply 0 $'8\n' '' "${probe_list[@]}"
   contract adapter_sub_issues_supported 2>/dev/null)"; st=$?
 assert_status "sub-issues supported: an endpoint that refuses succeeds" "$st" 0
 assert_eq "printing no" "$out" "no"
+out="$(gh_fixture; gh_reply 0 $'8\n' '' "${probe_list[@]}"
+  gh_reply 1 '' 'HTTP 502: Bad Gateway' api "repos/{owner}/{repo}/issues/8/sub_issues"
+  contract adapter_sub_issues_supported 2>&1)"; st=$?
+assert_status "sub-issues supported: a 502 from the endpoint fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+out="$(gh_fixture; gh_reply 0 $'8\n' '' "${probe_list[@]}"
+  gh_reply 1 '' 'HTTP 403: Forbidden' api "repos/{owner}/{repo}/issues/8/sub_issues"
+  contract adapter_sub_issues_supported 2>&1)"; st=$?
+assert_status "sub-issues supported: a 403 from the endpoint fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 403: Forbidden"
 out="$(gh_fixture; gh_reply 0 '' '' "${probe_list[@]}"; contract adapter_sub_issues_supported 2>&1)"; st=$?
 assert_status "sub-issues supported: a repo with no issue succeeds" "$st" 0
 assert_eq "printing nothing at all" "$out" ""

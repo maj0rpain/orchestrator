@@ -559,10 +559,19 @@ check_labels_exist() {
 # that exists and read whether it answers or 404s. warn, never FAIL: the
 # real gate is ticket_publish's own verify-then-die, not this advisory probe
 # - a repo that fails it should be told at setup, not discover it mid-flow.
+# A probe that fails outright (a 5xx, a 403, no connection) is neither answer,
+# and says so in gh's own first line (#554).
 check_sub_issues() {
   d_gh_gate || return 0
-  local probe
-  probe="$(adapter_sub_issues_supported 2>/dev/null)" || probe=""
+  local probe err rc=0
+  err="$(mktemp)"
+  probe="$(adapter_sub_issues_supported 2>"$err")" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    d_warn "sub-issues support could not be probed: $(first_line "$(cat "$err")")"
+    rm -f "$err"
+    return 0
+  fi
+  rm -f "$err"
   if [ -z "$probe" ]; then
     d_warn "sub-issues support could not be probed - the repo has no issue to test it against."
     return 0
