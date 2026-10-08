@@ -5366,6 +5366,7 @@ out="$("$ORCH" review file major "Title" --axis style --body-file "$body" 2>&1)"
 assert_status "refuses an unknown axis" "$st" 1
 assert_contains "naming it" "$out" "style"
 assert_contains "and what it accepts" "$out" "spec or standards"
+assert_eq "in exactly these words" "$out" "orch: not a review axis: style (want spec or standards)"
 assert_eq "and files nothing" "$(fake_issues)" ""
 assert_eq "nor creates a label" "$(fake_labels)" ""
 
@@ -6354,6 +6355,10 @@ for outcome in close-fixed wontfix; do
 done
 out="$(apply 2 ready-for-agent --category feature --comment-file "$comment" 2>&1)"; st=$?
 assert_status "refuses a category that is neither bug nor enhancement" "$st" 1
+assert_eq "in exactly these words" "$out" "orch: unknown --category 'feature' - expected bug or enhancement"
+out="$(apply 2 ready-for-human --category "" --comment-file "$comment" 2>&1)"; st=$?
+assert_status "refuses an empty category" "$st" 1
+assert_eq "in its own words" "$out" "orch: ready-for-human needs --category <bug|enhancement>"
 out="$(apply 2 promote --comment-file "$comment" 2>&1)"; st=$?
 assert_status "refuses an unknown outcome" "$st" 1
 out="$(apply 2 close-fixed 2>&1)"; st=$?

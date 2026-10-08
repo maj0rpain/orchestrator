@@ -1370,6 +1370,29 @@ category_label_ensure() {
   esac
 }
 
+# category_for_axis <axis>: the category a finding filed on that review axis
+# starts in, whatever the axis's case. A Spec finding misses what was asked
+# for, so it is a bug; a Standards finding improves how it was built. Prints
+# nothing and fails for any other axis; the caller words its own error.
+category_for_axis() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    spec)      printf 'bug\n' ;;
+    standards) printf 'enhancement\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+# category_other <category>: the opposite category - the one a finding loses
+# when triage settles on <category>. Prints nothing and fails for anything but
+# bug or enhancement.
+category_other() {
+  case "$1" in
+    bug)         printf 'enhancement\n' ;;
+    enhancement) printf 'bug\n' ;;
+    *) return 1 ;;
+  esac
+}
+
 # Float comparison and addition, in awk, because the timings are overridable and
 # the tests turn them down to fractions of a second; bash arithmetic is integer
 # only and would read a grace of 0.3 as 0. A fractional `sleep` is a GNU/BSD
@@ -1628,14 +1651,9 @@ cmd_review() {
         nit)   colour=c5def5 ;;
         *) die "no label colour for filed severity: $severity" ;;
       esac
-      # The category follows the axis: a Spec finding misses what was asked
-      # for, so it is a bug; a Standards finding improves how it was built.
-      # Finding triage confirms or flips it later.
-      case "$(printf '%s' "$axis" | tr '[:upper:]' '[:lower:]')" in
-        spec)      category=bug ;;
-        standards) category=enhancement ;;
-        *) die "not a review axis: $axis (want spec or standards)" ;;
-      esac
+      # The category follows the axis; finding triage confirms or flips it later.
+      category="$(category_for_axis "$axis")" \
+        || die "not a review axis: $axis (want spec or standards)"
       [ -n "$title" ] || die "the title is empty"
       [ -f "$body" ] || die "body file not found: $body"
       severity_label_ensure "review:$severity" "$colour" "Review finding filed at $severity severity"
@@ -2152,12 +2170,9 @@ cmd_finding_triage_apply() {
     close-fixed|wontfix)
       [ -z "$category" ] || die "--category is for an outcome that stays open, not $outcome" ;;
     ready-for-agent|ready-for-human)
-      case "$category" in
-        bug) stale_category=enhancement ;;
-        enhancement) stale_category=bug ;;
-        '') die "$outcome needs --category <bug|enhancement>" ;;
-        *) die "unknown --category '$category' - expected bug or enhancement" ;;
-      esac ;;
+      [ -n "$category" ] || die "$outcome needs --category <bug|enhancement>"
+      stale_category="$(category_other "$category")" \
+        || die "unknown --category '$category' - expected bug or enhancement" ;;
     *) die "$usage" ;;
   esac
   [ -n "$file" ] || die "$usage"
