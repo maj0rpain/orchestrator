@@ -1033,8 +1033,7 @@ new_repo >/dev/null
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
 filter_n="$(count_lines '^  ok ' "$out")"
 assert_status "a filter matching only isolation passes" "$st" 0
-if [ "$filter_n" -gt 0 ]; then ok "the reference run prints an ok line"
-else bad "the reference run prints an ok line" "counted $filter_n"; fi
+assert_ne "the reference run prints an ok line" "$filter_n" 0
 assert_eq "runs the isolation section" "$(count_lines -x 'isolation' "$out")" "1"
 assert_eq "runs no other section" "$(count_lines -xE 'init|slug|doctor' "$out")" "0"
 assert_eq "counts only what ran in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
@@ -1090,8 +1089,7 @@ echo "quiet mode (ORCH_TEST_QUIET, #614)"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
 quiet_n="$(count_lines '^  ok ' "$out")"
 assert_status "the non-quiet reference run passes" "$st" 0
-if [ "$quiet_n" -gt 0 ]; then ok "the reference run prints an ok line"
-else bad "the reference run prints an ok line" "counted $quiet_n"; fi
+assert_ne "the reference run prints an ok line" "$quiet_n" 0
 assert_eq "without quiet mode, counts every printed ok line in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "$quiet_n passed, 0 failed"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
