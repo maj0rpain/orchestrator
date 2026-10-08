@@ -109,7 +109,8 @@ if [ "$host" = junie ]; then
   run_blueprint="On \"Blueprint
   only\", run the orch-to-spec skill - for issue #<n>, the interviewed issue, when there is one
   (its rewrite mode) - then orch-spec-review if the user wants a
-  review, then orch-to-tickets unless rewrite mode reported \`kept\`. This host has no Skill tool, so read each
+  review, then orch-to-tickets unless rewrite mode reported \`kept\`.
+  If orch-to-spec stops without reporting the issue number, run nothing after it. This host has no Skill tool, so read each
   skill's file and follow it verbatim:"
   flow_quick_files="
   $plugin_root/skills/orch-flow/SKILL.md,
@@ -129,7 +130,8 @@ else
   only\", call the Skill tool with \"orchestrator:orch-to-spec\", with args set to the interviewed issue's number when there is one
   (its rewrite mode), then with
   \"orchestrator:orch-spec-review\" (its standalone spec review) if the user
-  wants a review, then with \"orchestrator:orch-to-tickets\" unless rewrite mode reported \`kept\`, yourself. The
+  wants a review, then with \"orchestrator:orch-to-tickets\" unless rewrite mode reported \`kept\`, yourself.
+  If orch-to-spec stops without reporting the issue number, call nothing after it. The
   orchestrator's skills are model-invocable: call them, do not hand them to the
   user."
   flow_quick_files=""
@@ -230,7 +232,8 @@ ${run_next} Do not ask the user to type a command.${route_here}
   write the spec in rewrite mode on that issue, replacing #<n>'s body instead of publishing a new issue
   (orch-to-spec, handed #<n>). Only with no interviewed issue, publish the spec as a new issue
   (orch-to-spec). Either way, write any glossary or
-  ADR wording the planning decided into the issue body verbatim. Then
+  ADR wording the planning decided into the issue body verbatim.
+  If orch-to-spec stops without reporting the issue number, stop there: ask no spec review question and run no orch-to-tickets; report why it stopped. Otherwise
   ask the user whether to run a spec review on it - ask every time, never
   assume - and run the standalone orch-spec-review only on a yes. Then publish
   its ticket breakdown (orch-to-tickets) against that issue, unless rewrite mode reported the breakdown \`kept\`:

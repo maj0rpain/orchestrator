@@ -108,7 +108,8 @@ route and standalone alike.
    no ticket step.
 3. **On retire**, run `bash "$ORCH" ticket retire <n>` now, after the update,
    so it cuts any `## Ticket` section from the body just written. If it
-   fails, stop and say why.
+   fails, stop and say why, and run no ticket step: `orch-to-tickets` does
+   not run.
 4. **Read the label:** `bash "$ORCH" issue ready <n>`. Apply no triage label:
    the interviewed-issue step already put the label question.
    - Exit 0: nothing to say.

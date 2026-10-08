@@ -103,7 +103,11 @@ check_blueprint_rewrite() {
   assert_contains "runs no breakdown check of its own $where" "$ctx" "run no breakdown check of your own"
   assert_contains "stops when orch-to-tickets fails after a retire $where" "$ctx" \
     "If orch-to-tickets fails after rewrite mode retired a breakdown, stop and report that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>"
+  assert_contains "stops when orch-to-spec stops without an outcome $where" "$ctx" \
+    "If orch-to-spec stops without reporting the issue number, stop there: ask no spec review question and run no orch-to-tickets"
   if [ "$host" = claude ]; then
+    assert_contains "Skill-tool sequence stops when orch-to-spec stops $where" "$ctx" \
+      "If orch-to-spec stops without reporting the issue number, call nothing after it."
     assert_contains "hands the issue number as the Skill tool's args $where" "$ctx" \
       "call the Skill tool with \"orchestrator:orch-to-spec\", with args set to the interviewed issue's number when there is one"
     assert_contains "runs orch-to-tickets unless kept, by Skill tool, $where" "$ctx" \
@@ -113,6 +117,8 @@ check_blueprint_rewrite() {
       "run the orch-to-spec skill - for issue #<n>, the interviewed issue, when there is one"
     assert_contains "runs orch-to-tickets unless kept, by skill file, $where" "$ctx" \
       "then orch-to-tickets unless rewrite mode reported \`kept\`"
+    assert_contains "skill-file sequence stops when orch-to-spec stops $where" "$ctx" \
+      "If orch-to-spec stops without reporting the issue number, run nothing after it."
   fi
 }
 check_blueprint_rewrite "on Claude Code" "$ctx" claude
