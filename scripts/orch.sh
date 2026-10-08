@@ -1945,10 +1945,10 @@ review_rerun() {
   case "$run" in ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; return 1 ;; esac
   # rerun_out is the rerun's throwaway half: only its stderr is read.
   # shellcheck disable=SC2034
-  local rerun_out rerun_err
+  local rerun_out rerun_err rerun_line
   if ! capture rerun_out rerun_err adapter_run_rerun "$run"; then
-    gh_line="${rerun_err%%$'\n'*}"
-    die2 "gh could not rerun the failed jobs of Actions run $run: ${gh_line:-gh gave no reason}"
+    rerun_line="${rerun_err%%$'\n'*}"
+    die2 "gh could not rerun the failed jobs of Actions run $run: ${rerun_line:-gh gave no reason}"
   fi
   note "$run"
 }

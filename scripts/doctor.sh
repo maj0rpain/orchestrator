@@ -666,12 +666,12 @@ check_flow_issue() {
 }
 
 check_flow_pr() {
-  local pr pr_state err="" gh_line
+  local pr out pr_state err="" gh_line
   pr="$(state_get pr)"
   if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
   d_gh_gate || return 0
-  capture pr_state err adapter_pr_state_draft "$pr" || pr_state=""
-  pr_state="${pr_state%%$'\n'*}"
+  capture out err adapter_pr_state_draft "$pr" || out=""
+  pr_state="${out%%$'\n'*}"
   gh_line="${err%%$'\n'*}"
   case "$pr_state" in
     OPEN)   d_ok "PR #$pr open" ;;
