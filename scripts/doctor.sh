@@ -619,6 +619,9 @@ check_flow_issue() {
   issue="$(state_get issue)"
   if [ -z "$issue" ]; then d_ok "issue: not recorded yet"; return 0; fi
   d_gh_gate || return 0
+  # Only the state line is wanted, yet not from adapter_issue_state: that one
+  # answers PULL for a pull request's number, an answer doctor must not accept
+  # as the flow's issue state - this case knows OPEN and CLOSED only.
   issue_state_labels_read "$issue" issue_state issue_labels 2>/dev/null || issue_state=""
   phase="$(state_get phase)"
   case "$issue_state" in
