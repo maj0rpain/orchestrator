@@ -1444,10 +1444,11 @@ adapter_auth_status() {
 # protection requires, or every check on its head - one per line as TSV,
 # "<bucket><TAB><name><TAB><link>", in gh's order; an empty link for a check
 # that has none. Nothing at all on stdout where gh reports no checks, or no
-# required ones, with gh's line passed through on stderr. gh documents exit 8 for pending checks, still answering the JSON: that
-# is read like an exit 0, and where it leaves nothing readable, a single
-# pending check with no name or link is printed. Fails where gh answered with
-# something jq cannot read.
+# required ones, with gh's line passed through on stderr. gh documents exit
+# 8 for pending checks, still answering the JSON: that is read like an exit
+# 0, and where it leaves nothing readable, a single pending check with no
+# name or link is printed. Fails where gh answered with something jq cannot
+# read.
 adapter_pr_checks() {
   local args=("$1") err out tsv st=0
   [ "$2" != required ] || args+=(--required)
@@ -1734,7 +1735,7 @@ ci_probe() {
 # rerun - goes through die2. The repo is resolved here rather than left to the
 # guard, whose death exits 1 and would read as "nothing to rerun".
 review_rerun() {
-  local pr="${1:-}" out err said link="" run name=""
+  local pr="${1:-}" out err said rc=0 link="" run name=""
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
   repo_pin || die2 "$REPO_REMEDY"
@@ -1742,11 +1743,9 @@ review_rerun() {
   # reason, or the "no checks" answer naming the branch - is what the death
   # message carries. The file is gone before any die2.
   err="$(mktemp)"
-  out="$(adapter_pr_checks "$pr" all 2>"$err")" || {
-    said="$(first_line "$(cat "$err")")"; rm -f "$err"
-    die2 "gh could not read the checks of PR #$pr: $said"
-  }
+  out="$(adapter_pr_checks "$pr" all 2>"$err")" || rc=$?
   said="$(first_line "$(cat "$err")")"; rm -f "$err"
+  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $said"
   [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: $said"
   # Name and link on two lines, read one per read, so an empty name survives:
   # IFS=$'\t' read would collapse it, a tab being IFS whitespace. No failed
