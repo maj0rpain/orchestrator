@@ -1,6 +1,6 @@
 ---
 name: orch-quick-implement
-description: Implement a small, already-understood change directly and hands-off, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue, an unattended spec review, a published ticket breakdown, test-driven implementation, and a review pass before the PR opens.
+description: Implement a small, already-understood change directly and hands-off, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, runs /orchestrator:quick-implement [<issue>], or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue, an unattended spec review, a published ticket breakdown, test-driven implementation, and a review pass before the PR opens.
 ---
 
 # Orchestrator quick implementation
@@ -37,6 +37,9 @@ turns out missing, take the fallback it documents and list it under a **Host fal
 
 Never proceed without one, and never decide silently whether to make one.
 
+- An issue named in the arguments - `/orchestrator:quick-implement <issue>`,
+  its leading issue number, never a flag such as `--side` - is the linked
+  issue: use it, and publish none.
 - A linked issue already exists (named earlier in this conversation, or on an
   already-checked-out branch): use it.
 - Otherwise, publish one now with `bash "$ORCH" issue publish "<title>"

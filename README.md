@@ -133,6 +133,7 @@ dirties a repo's working tree.
 | `/orchestrator:spec-review <issue>` | Review any spec issue on demand, outside a flow: a standalone spec review. |
 | `/orchestrator:review <issue>` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Drops findings an earlier pass on the branch's open PR already declined, fixes what it agrees with, and posts what it declines - and what it dropped as previously declined - on that PR. |
 | `/orchestrator:interview` | Start a planning session: an interview that reaches a shared understanding, then asks how to carry it forward. |
+| `/orchestrator:quick-implement [<issue>] [--side]` | Start a quick implementation, the route with no flow: with an issue number, that issue is its linked issue; with none, it finds or publishes one. `--side` asks for a side checkout up front. |
 | `/orchestrator:to-spec [<issue>]` | Turn the current conversation into a spec, outside any flow: publish it as a new issue, or, given an issue number, rewrite that issue's body as the spec (rewrite mode). |
 | `/orchestrator:to-tickets <issue>` | Break an existing issue into tickets published as its sub-issues, or collapse it into the issue, outside any flow. |
 | `/orchestrator:finding-triage [<issue> \| --pr <n>]` | Finding triage: check the review loop's open filed findings against the default branch and move each out of `needs-triage`, one batch of proposed outcomes per source PR. |
@@ -224,7 +225,7 @@ catches any at flow start.
 ## Layout
 
 ```
-commands/                     start, next, status, doctor, redo, abort, release, spec-review, review, interview, to-spec, to-tickets, finding-triage
+commands/                     start, next, status, doctor, redo, abort, release, spec-review, review, interview, quick-implement, to-spec, to-tickets, finding-triage
 agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, and the implementer
 skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: consolidation of the issue's comments, then four lenses in a flow (three standalone), one batch question, plus a ticket question when an existing breakdown is touched
