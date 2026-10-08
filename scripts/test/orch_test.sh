@@ -5520,6 +5520,30 @@ assert_status "remove --unmerged discards a clean worktree's unmerged branch" "$
 assert_eq "removing the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
 assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 
+# Left mid-rebase - a ticket conflict's resolution that failed: --unmerged
+# aborts the rebase first, returning the ticket branch to its committed tip,
+# then removes the clean worktree with no force.
+wt="$("$ORCH" ticket-worktree add 7)"
+echo ticket >"$wt/feature.txt" && git -C "$wt" commit -qam "ticket edit"
+ticket_tip="$(git rev-parse orch/5-feature--t7)"
+echo parent >feature.txt && git commit -qam "parent edit"
+git -C "$wt" rebase -q orch/5-feature >/dev/null 2>&1
+echo leftover >"$wt/untracked.txt"
+out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
+assert_status "remove --unmerged of a mid-rebase worktree still refuses it dirty" "$st" 1
+assert_eq "having aborted its rebase first" \
+  "$([ -d "$(git -C "$wt" rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "none"
+assert_eq "returning the ticket branch to its committed tip" \
+  "$(git -C "$wt" rev-parse HEAD) $(git -C "$wt" branch --show-current)" "$ticket_tip orch/5-feature--t7"
+assert_eq "and removing nothing with force" "$([ -d "$wt" ] && echo present || echo absent)" "present"
+rm "$wt/untracked.txt"
+git -C "$wt" rebase -q orch/5-feature >/dev/null 2>&1
+out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
+assert_status "remove --unmerged of a clean mid-rebase worktree succeeds" "$st" 0
+assert_eq "removing the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
+assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
+git reset -q --hard HEAD~1
+
 # Merged into its forked-from branch, but not into the branch the invoking
 # checkout has checked out: merged is judged against the forked-from branch
 # alone, so remove succeeds rather than refusing after the worktree is gone.

@@ -66,6 +66,21 @@ driving session merges it back into the flow's branch; the steps below
 otherwise apply unchanged, with "the current branch" meaning your ticket
 branch.
 
+## Resumed to resolve a conflict
+
+After your report, the driving session may resume you with a message of
+exactly two lines, when your ticket branch conflicted as it was merged:
+
+```
+Rebase onto: <parent branch>
+Resolve: per the Resolving section of <path>/agents/orch-resolver.md
+```
+
+That message is not a new ticket: build nothing. In your ticket worktree,
+start `git rebase <parent branch>` yourself, then follow that file's
+**Resolving** section as written, with your ticket as the intent you hold,
+and return that file's four-line **Report** in place of this file's.
+
 ## Steps
 
 1. **Fetch the ticket** before anything else, into a temporary file

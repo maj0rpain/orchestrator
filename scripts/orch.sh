@@ -3670,9 +3670,12 @@ ticket_worktree_resolve() {
 
 # Removes ticket <n>'s worktree and deletes its branch, never with --force.
 # Both refusals - a dirty worktree, and without --unmerged a branch not merged
-# into its forked-from branch - run before anything is removed.
+# into its forked-from branch - run before anything is removed. With
+# --unmerged, a rebase left in progress there (a failed ticket-conflict
+# resolution) is aborted first, returning the ticket branch to its committed
+# tip, so the worktree is judged clean or dirty as that tip left it.
 cmd_ticket_worktree_remove() {
-  local n="" unmerged=0 path branch parent st
+  local n="" unmerged=0 path branch parent st gitdir
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -3681,6 +3684,14 @@ cmd_ticket_worktree_remove() {
     esac
     shift
   done
+  if [ "$unmerged" = 1 ]; then
+    path="$(ticket_worktree_path "$(ticket_worktree_number "$n")")"
+    gitdir="$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null)" || gitdir=""
+    if [ -n "$gitdir" ] && { [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]; }; then
+      git -C "$path" rebase --abort \
+        || die "could not abort the rebase in progress in ticket worktree $path"
+    fi
+  fi
   ticket_worktree_resolve "$n"
   st="$(tree_status "$path")" || die "$st"
   [ -z "$st" ] \
@@ -4536,8 +4547,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               dirty worktree and, without
                               --unmerged, a branch not merged into its
                               forked-from branch, before removing anything;
-                              --unmerged deletes a clean worktree's unmerged
-                              branch
+                              --unmerged first aborts a rebase in progress
+                              there, then deletes a clean worktree's
+                              unmerged branch
   side-checkout add <slug>    run side-checkout prune first (its report on
                               stderr; a failed sweep is reported and add
                               carries on), then fetch the base branch in

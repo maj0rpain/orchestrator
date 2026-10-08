@@ -173,12 +173,22 @@ step" never reads as one of this skill's numbered sections:
   flight report and are processed as normal, then quick implementation
   stops, before the review and the PR, naming every failure. A leftover
   worktree surfaces at the next entry check and in `doctor --flow`.
-- **e. On a merge conflict** (`ticket merge` exits 3): `bash "$ORCH"
-  ticket-worktree remove <n> --unmerged`, and queue the ticket to run
-  alone. When nothing is in flight, dispatch the queued ticket in a fresh
-  worktree (`ticket-worktree add`) from the updated tip, on its own, and
-  process its report as in loop step d before refilling. When the frontier
-  and queue are exhausted and nothing is in flight, go to loop step f.
+- **e. On a merge conflict** (`ticket merge` exits 3), resolve it, not
+  rebuild it (ADR-0038), by **A driver's ticket resolution** in
+  `agents/orch-resolver.md` (under the plugin root), the linked issue on
+  the resolver's `Spec issue:` line: resume the ticket's own implementer to
+  rebase and resolve in its ticket worktree; where it cannot be resumed,
+  start a fresh `orch-resolver` there; rerun `ticket merge <n>` and proceed
+  as loop step d does. A resolution's **Merge resolutions** go under the PR
+  body's **Merge resolutions** heading (section 7). Only a failed
+  resolution - its report says so or is malformed, it leaves the worktree
+  mid-rebase or dirty, or `ticket merge` exits 3 again - falls back to
+  `bash "$ORCH" ticket-worktree remove <n> --unmerged`, and queues the
+  ticket to run alone. When nothing is in flight, dispatch the queued
+  ticket in a fresh worktree (`ticket-worktree add`) from the updated tip,
+  on its own, and process its report as in loop step d before refilling.
+  When the frontier and queue are exhausted and nothing is in flight, go to
+  loop step f.
 - **f. Verify the combined branch**, on every path, sequential included:
   run, on the quick implementation's branch, the full-verification command
   the reports' `Verification` lines name, once - joined with ` && ` into one
@@ -247,7 +257,9 @@ none. If `changelog.md` is missing, stop before `pr publish` and say so -
 never write `None.` then, since the decisions taken are unknown. It
 carries a **Verification** heading with step 5's combined verification: the
 command it ran, then `pass` or `fail`, and a **Merge resolutions** heading
-with step 5's base sync's, or `None`. It
+with step 5's base sync's and one bullet per ticket conflict loop step e
+resolved, naming the ticket and holding its report's `Files`, `Dropped`
+and `Verification` lines, or `None` when there were neither. It
 ends with a **Host fallbacks** heading listing every fallback this run took -
 including any the spec review in step 2 took - or `None (<host>).` It
 pushes the branch and opens the PR against the base branch `branch off`

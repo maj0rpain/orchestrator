@@ -98,6 +98,59 @@ failed sync stops and where its **Merge resolutions** go.
    leave any merge in progress for the human to finish and rerun `orch.sh
    branch sync`, or to `git merge --abort`. Never abort it yourself.
 
+## A driver's ticket resolution
+
+This section is for the driver session too: the one statement of how a
+driver resolves a ticket conflict, when `bash "$ORCH" ticket merge <n>`
+exits 3 on the parallel path. `orch-flow`'s implement phase and
+`orch-quick-implement` each run it as their loop step e, and each says
+where its **Merge resolutions** go. `ticket merge` has already aborted its
+own rebase, so no rebase is in progress: whoever resolves starts it. The
+parent branch is the branch the ticket forked from - the build's branch,
+checked out in the driver's checkout.
+
+1. **Resume the ticket's implementer.** Resume ticket `<n>`'s own
+   `orch-implementer`, with its context intact - on Claude Code,
+   `SendMessage` to the finished agent - with exactly these two lines:
+
+   ```
+   Rebase onto: <parent branch>
+   Resolve: per the Resolving section of <plugin root>/agents/orch-resolver.md
+   ```
+
+   It starts the rebase in its ticket worktree itself, resolves, verifies
+   and commits, and returns the four lines of **Report** below.
+2. **Or start a fresh resolver.** Where the implementer cannot be resumed -
+   the host cannot resume a finished subagent, its context is gone, or the
+   resume fails - start a fresh `orch-resolver` per **Starting this agent**
+   above, its prompt:
+
+   ```
+   Checkout: <the ticket worktree's path>
+   Rebase onto: <parent branch>
+   Spec issue: #<the spec issue, or the linked issue> (its tickets are its sub-issues)
+   Base branch: <the base branch the build forks from>
+   ```
+
+   It starts the rebase itself.
+3. **Merge again.** Rerun `bash "$ORCH" ticket merge <n>`. On exit 0,
+   proceed as loop step d does: close the ticket, remove its worktree, and
+   refill. The ticket's **Merge resolutions** are the report's `Files`,
+   `Dropped` and `Verification` lines, under the ticket's number. A
+   `Verification` line reading `fail` is carried forward - recorded, never
+   stopped on - as loop step f's combined verification is. Exit 1 is loop
+   step d's exit 1.
+4. **A failed resolution** - its report is not the four lines of **Report**
+   below or its `Result` line is not `resolved`, it leaves the ticket
+   worktree mid-rebase (a `rebase-merge` or `rebase-apply` directory under
+   `git -C <worktree> rev-parse --absolute-git-dir`) or dirty (`git -C
+   <worktree> status --porcelain` prints anything), or step 3's `ticket
+   merge` exits 3 again - falls back to rebuilding the ticket alone: `bash
+   "$ORCH" ticket-worktree remove <n> --unmerged`, which aborts any rebase
+   left in progress first and removes nothing with force, and queue the
+   ticket to run alone. A failed resolution records no **Merge
+   resolutions**: the rebuild carries the ticket.
+
 ## Steps
 
 1. **Check where you are.** `git -C <checkout> rev-parse --show-toplevel`

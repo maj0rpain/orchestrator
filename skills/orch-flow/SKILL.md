@@ -244,8 +244,17 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      tickets still in flight report and are processed as normal, then the
      phase stops, naming every failure. A leftover worktree surfaces at the
      next entry check and in `doctor --flow`.
-   - **e. On a merge conflict** (`ticket merge` exits 3): `bash "$ORCH"
-     ticket-worktree remove <n> --unmerged`, and queue the ticket to run
+   - **e. On a merge conflict** (`ticket merge` exits 3), resolve it, not
+     rebuild it (ADR-0038), by **A driver's ticket resolution** in
+     `agents/orch-resolver.md` (under the plugin root), the spec issue on
+     the resolver's `Spec issue:` line: resume the ticket's own
+     implementer to rebase and resolve in its ticket worktree; where it
+     cannot be resumed, start a fresh `orch-resolver` there; rerun `ticket
+     merge <n>` and proceed as loop step d does. Keep a resolution's
+     **Merge resolutions** for step 6. Only a failed resolution - its
+     report says so or is malformed, it leaves the worktree mid-rebase or
+     dirty, or `ticket merge` exits 3 again - falls back to `bash "$ORCH"
+     ticket-worktree remove <n> --unmerged`, and queues the ticket to run
      alone. When nothing is in flight, dispatch the queued ticket in a
      fresh worktree (`ticket-worktree add`) from the updated tip, on its
      own, and process its report as in loop step d before refilling. When
@@ -297,8 +306,10 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      - in the shape the `orch-handoff` template gives. A `fail` stays here,
      never under **Deviations**: a failing verification is not a deviation.
    - **Merge resolutions**: step 4's, as **A driver's base sync** gives
-     them - the resolver's `Files`, `Dropped` and `Verification` lines, or
-     "None" when the sync merged cleanly.
+     them - the resolver's `Files`, `Dropped` and `Verification` lines -
+     and one bullet per ticket conflict loop step e resolved, naming the
+     ticket and holding its report's same three lines. "None" when the
+     sync merged cleanly and no ticket conflict was resolved.
    - **Base SHA**: `bash "$ORCH" state get base_sha`, read after step 4's
      sync moved it.
    Then validate it: `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path review)"`,

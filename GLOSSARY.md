@@ -189,7 +189,9 @@ is reported as unmet, and a changed source file no test exercises is reported
 as untested, both for the review loop's Spec axis to judge. Used in the
 implement phase and in quick implementation. When its frontier is built in
 parallel, it builds on a ticket branch in its own ticket worktree; otherwise
-on the one branch, one ticket at a time.
+on the one branch, one ticket at a time. When its ticket branch conflicts as
+it is merged, it is resumed to resolve the conflict itself, since it knows
+its ticket's intent.
 
 **Ticket branch**:
 The branch one ticket subagent builds a single ticket on, forked from its

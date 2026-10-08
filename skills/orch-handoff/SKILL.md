@@ -159,7 +159,9 @@ each as an ordinary finding.>
 ## Merge resolutions
 <what the implement phase's base sync resolved: the resolver's `Files`,
 `Dropped` and `Verification` lines - each conflicted file, each intent
-dropped and why - or "None" when the sync merged cleanly. Not required by
+dropped and why - and one bullet per ticket conflict resolved, naming the
+ticket and holding the same three lines, or "None" when the sync merged
+cleanly and no ticket conflict was resolved. Not required by
 `handoff validate`, so a handoff written before this section existed still
 validates.>
 
