@@ -9904,11 +9904,14 @@ rm -rf "$par_dir"
 # --- all.sh, the single entry point (#615) ----------------------------------
 # A copy of all.sh in <tmp>/scripts/test/ beside three stub suites, never the
 # real ones, so <tmp> is the repo root: orch_test.sh's stub fails, the other
-# two pass. Each stub logs whether ORCH_TEST_ONLY and ORCH_TEST_QUIET reached
-# it, and VERSION_BASE. One planted shell file each in <tmp>/scripts/ and
-# <tmp>/scripts/test/ is there for the lint step to find. Every run sets or
-# unsets CI and runs on a PATH of only the tools all.sh and the stubs need,
-# plus a stub shellcheck when the case wants one - the real one never runs.
+# two pass. Each stub logs whether ORCH_TEST_ONLY, ORCH_TEST_QUIET and
+# ORCH_TEST_JOBS reached it, and VERSION_BASE. Each stub, the stub shellcheck
+# too, drops a marker file named after itself in <tmp>/markers/ when it
+# starts, if that directory exists; only the overlap case creates it. One
+# planted shell file each in <tmp>/scripts/ and <tmp>/scripts/test/ is there
+# for the lint step to find. Every run sets or unsets CI and runs on a PATH of
+# only the tools all.sh and the stubs need, plus a stub shellcheck when the case
+# wants one - the real one never runs.
 echo
 echo "all.sh, the single entry point (#615)"
 all_root="$(mktemp -d)"
@@ -9916,7 +9919,7 @@ all_dir="$all_root/scripts/test"
 all_bin="$all_root/bin"
 mkdir -p "$all_dir" "$all_bin"
 cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$all_dir/"
-for all_tool in bash dirname awk tail; do
+for all_tool in bash dirname awk tail mktemp rm sleep; do
   ln -s "$(command -v "$all_tool")" "$all_bin/$all_tool"
 done
 echo 'echo planted' >"$all_root/scripts/lint_me.sh"
@@ -9924,7 +9927,8 @@ echo 'echo planted' >"$all_dir/lint_me.sh"
 for all_suite in orch_test.sh hooks_test.sh docs_lint.sh; do
   {
     echo '#!/usr/bin/env bash'
-    echo "echo \"$all_suite only=\${ORCH_TEST_ONLY-unset} quiet=\${ORCH_TEST_QUIET-unset} base=\${VERSION_BASE-unset}\" >>\"\$(dirname \"\$0\")/log\""
+    echo "echo \"$all_suite only=\${ORCH_TEST_ONLY-unset} quiet=\${ORCH_TEST_QUIET-unset} jobs=\${ORCH_TEST_JOBS-unset} base=\${VERSION_BASE-unset}\" >>\"\$(dirname \"\$0\")/log\""
+    echo "[ -d '$all_root/markers' ] && : >'$all_root/markers/$all_suite'"
     echo 'echo; echo "a section header"'
     if [ "$all_suite" = orch_test.sh ]; then
       echo "printf '  FAIL a stub failure\n     its detail line\n  FAIL another failure\n     its own detail\n'"
@@ -9942,10 +9946,16 @@ all_sc_stub() {
   {
     echo '#!/usr/bin/env bash'
     echo "echo \"\$*\" >>'$all_root/sc_args'"
+    echo "[ -d '$all_root/markers' ] && : >'$all_root/markers/shellcheck'"
     for line in "$@"; do printf 'echo %q\n' "$line"; done
     echo "exit $code"
   } >"$all_bin/shellcheck"
   chmod +x "$all_bin/shellcheck"
+}
+# all_print_order <output>: the names on all.sh's summary lines, in print
+# order, each followed by a space.
+all_print_order() {
+  printf '%s\n' "$1" | grep -E '^([a-z_]+\.sh|shellcheck): ' | cut -d: -f1 | tr '\n' ' '
 }
 all_bash="$(command -v bash)"
 all_finding1='scripts/lint_me.sh:1:1: warning: a planted finding [SC2034]'
@@ -9955,8 +9965,9 @@ all_sc_stub 0
 out="$(unset CI; ORCH_TEST_ONLY='^isolation$' VERSION_BASE=9.9.9 PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
 assert_status "exits non-zero when a suite failed" "$st" 1
 assert_eq "runs every suite after the first one fails" "$(wc -l <"$all_dir/log" | tr -d ' ')" "3"
-assert_eq "runs the suites in order" "$(cut -d' ' -f1 "$all_dir/log" | tr '\n' ' ')" \
-  "orch_test.sh hooks_test.sh docs_lint.sh "
+assert_eq "prints the suites' summaries in order, shellcheck's last" \
+  "$(all_print_order "$out")" \
+  "orch_test.sh hooks_test.sh docs_lint.sh shellcheck "
 assert_eq "unsets ORCH_TEST_ONLY for every suite" "$(grep -c 'only=unset' "$all_dir/log")" "3"
 assert_eq "sets ORCH_TEST_QUIET=1 for every suite" "$(grep -c 'quiet=1 ' "$all_dir/log")" "3"
 assert_eq "passes VERSION_BASE through to every suite" "$(grep -c 'base=9.9.9$' "$all_dir/log")" "3"
@@ -9999,6 +10010,72 @@ out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
 assert_status "exits non-zero when shellcheck fails with no finding" "$st" 1
 assert_contains "prints shellcheck's output, then its exit status" "$out" \
   "$(printf 'a bad .shellcheckrc\nshellcheck: failed (exit 2)')"
+
+# all_swap <suite> <line>...: replace <suite>'s shared stub, saved for
+# all_restore, by one that runs the lines first, then the shared stub's body.
+all_swap() {
+  local suite="$1" line
+  shift
+  cp "$all_dir/$suite" "$all_root/$suite.shared"
+  {
+    echo '#!/usr/bin/env bash'
+    for line in "$@"; do echo "$line"; done
+    tail -n +2 "$all_root/$suite.shared"
+  } >"$all_dir/$suite"
+}
+# all_restore <suite>: put <suite>'s shared stub back.
+all_restore() {
+  mv "$all_root/$1.shared" "$all_dir/$1"
+}
+all_order="orch_test.sh hooks_test.sh docs_lint.sh shellcheck "
+all_sc_stub 0
+
+all_swap orch_test.sh 'sleep 1'
+out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+all_restore orch_test.sh
+assert_status "a slow suite still lets the run pass" "$st" 0
+assert_eq "a slow orch_test.sh still prints first, shellcheck's summary last" \
+  "$(all_print_order "$out")" \
+  "$all_order"
+
+# The overlap: orch_test.sh's stub finishes only once the other two suites
+# and the stub shellcheck have all dropped their markers, so a sequential
+# all.sh, which starts nothing else until it finishes, fails after its 10s
+# wait.
+mkdir "$all_root/markers"
+all_swap orch_test.sh "all_wait=0" \
+  "until [ -e '$all_root/markers/hooks_test.sh' ] && [ -e '$all_root/markers/docs_lint.sh' ] && [ -e '$all_root/markers/shellcheck' ]; do" \
+  "  all_wait=\$((all_wait + 1))" \
+  "  if [ \"\$all_wait\" -gt 100 ]; then printf '  FAIL the others never started\\n'; echo; echo '0 passed, 1 failed'; exit 1; fi" \
+  "  sleep 0.1" \
+  "done"
+out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+all_restore orch_test.sh
+rm -rf "$all_root/markers"
+assert_status "runs every suite and shellcheck at the same time" "$st" 0
+assert_eq "prints no FAIL line when the suites overlap" "$(printf '%s\n' "$out" | grep -c FAIL)" "0"
+assert_eq "overlapping suites still print in order, shellcheck's summary last" \
+  "$(all_print_order "$out")" \
+  "$all_order"
+
+rm -f "$all_dir/log"
+out="$(unset CI; ORCH_TEST_JOBS=3 PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"
+assert_eq "passes ORCH_TEST_JOBS through to every suite" "$(grep -c 'jobs=3 ' "$all_dir/log")" "3"
+rm -f "$all_dir/log"
+out="$(unset CI ORCH_TEST_JOBS; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"
+assert_eq "leaves an unset ORCH_TEST_JOBS unset" "$(grep -c 'jobs=unset ' "$all_dir/log")" "3"
+
+all_swap hooks_test.sh 'echo "a stub stderr line" >&2'
+(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" >"$all_root/stdout" 2>"$all_root/stderr")
+all_restore hooks_test.sh
+assert_eq "passes a suite's stderr through to stderr" \
+  "$(grep -c 'a stub stderr line' "$all_root/stderr")" "1"
+assert_eq "keeps a suite's stderr off stdout" \
+  "$(grep -c 'a stub stderr line' "$all_root/stdout")" "0"
+
+mkdir "$all_root/tmpdir"
+(unset CI; TMPDIR="$all_root/tmpdir" PATH="$all_bin" "$all_bash" "$all_dir/all.sh" >/dev/null 2>&1)
+assert_eq "removes its temp files on exit" "$(ls -A "$all_root/tmpdir")" ""
 
 rm -f "$all_bin/shellcheck" "$all_bin/shellcheck.bak"
 out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
