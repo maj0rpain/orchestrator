@@ -1037,24 +1037,24 @@ rm -rf "$quiet_dir"
 # Each of the other two suites cut down to its own helpers, one planted check
 # and its own summary code: its lines before `# >>> checks`, a planted ok, then
 # its lines from its summary marker on.
-quiet_dir="$(mktemp -d)"
+cut_dir="$(mktemp -d)"
 for quiet_pair in hooks_test.sh:'# >>> summary' docs_lint.sh:'# --- summary'; do
   quiet_end="${quiet_pair#*:}"
   quiet_suite="${quiet_pair%%:*}"
   END_MARK="$quiet_end" awk '
     $0 == "# >>> checks" { print "ok \"a planted check\""; skip = 1; next }
     skip && index($0, ENVIRON["END_MARK"]) == 1 { skip = 0 }
-    !skip { print }' "$(dirname "$SUITE_SCRIPT")/$quiet_suite" >"$quiet_dir/$quiet_suite"
+    !skip { print }' "$(dirname "$SUITE_SCRIPT")/$quiet_suite" >"$cut_dir/$quiet_suite"
   assert_eq "$quiet_suite's cut-down copy holds the planted check" \
-    "$(grep -cx 'ok "a planted check"' "$quiet_dir/$quiet_suite")" "1"
+    "$(grep -cx 'ok "a planted check"' "$cut_dir/$quiet_suite")" "1"
   assert_eq "$quiet_suite's cut-down copy holds its summary" \
-    "$(grep -cxF 'echo "$PASS passed, $FAIL failed"' "$quiet_dir/$quiet_suite")" "1"
-  out="$(ORCH_TEST_QUIET=1 bash "$quiet_dir/$quiet_suite" 2>&1)"
+    "$(grep -cxF 'echo "$PASS passed, $FAIL failed"' "$cut_dir/$quiet_suite")" "1"
+  out="$(ORCH_TEST_QUIET=1 bash "$cut_dir/$quiet_suite" 2>&1)"
   assert_eq "$quiet_suite prints no ok line when quiet" \
     "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
   assert_contains "$quiet_suite still prints its summary when quiet" "$out" " passed, "
 done
-rm -rf "$quiet_dir"
+rm -rf "$cut_dir"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"
 assert_eq "without quiet mode, prints every ok line" \
   "$(printf '%s\n' "$out" | grep -c '^  ok ')" "6"
