@@ -5168,7 +5168,7 @@ assert_eq "each side checkout stays where git recorded it" \
   "$(git -C .orchestrator/checkouts/gamma rev-parse --show-toplevel)" "$top/.orchestrator/checkouts/gamma"
 assert_eq "with its flow untouched" "$(cd "$gamma" && orch_gh_failing state get slug)" "gamma-flow"
 orch_gh_failing init done-flow >/dev/null
-state_fixture phase done
+state_fixture phase "done"
 out="$(orch_gh_failing init next-flow)"; st=$?
 assert_status "init over a done flow succeeds beside side checkouts" "$st" 0
 archived="$(printf '%s\n' "$out" | sed -n 1p)"
