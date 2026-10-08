@@ -3184,8 +3184,8 @@ issue_body_rewrite() {
     || { rm -f "$body"; die "$read_msg"; }
   result="$(mktemp)"
   "$@" <"$body" >"$result"
-  # awk ends every line it prints with a newline; a body that had no final
-  # newline gets none back.
+  # A filter command may end its last line with a newline; a body that had
+  # no final newline gets none back.
   if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
     out="$(cat "$result"; printf x)"; out="${out%x}"
     printf '%s' "${out%$'\n'}" >"$result"
