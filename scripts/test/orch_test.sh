@@ -948,6 +948,13 @@ orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
 nojq_path=""
 on_windows_bash || nojq_path="$(gh_fixture && path_without_jq)"
 
+# The missing-repo wording, built the way orch.sh builds REPO_MISSING,
+# REPO_CAUSE and REPO_REMEDY - but spelled out here, never read from orch.sh,
+# so a wording change there that the suite does not mirror still fails a test.
+repo_missing="no GitHub repo to work on"
+repo_cause="$repo_missing: origin is missing or not a GitHub owner/name"
+repo_remedy="$repo_cause - set GH_REPO=<owner>/<repo>"
+
 # planted_copy: copies the scripts tree into a fresh temp directory, plants the
 # section lines read from stdin, each indented two spaces, then a blank line,
 # just before the copy's `# >>> summary` line in orch_test.sh, and prints the
@@ -1873,7 +1880,7 @@ for args in "" "--name" "--host"; do
   assert_status "$label exits 1 with no repo" "$st" 1
   assert_eq "$label prints nothing on stdout with no repo" "$out" ""
   assert_eq "$label dies with the repo remedy" "$(cat "$err")" \
-    "orch: no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
+    "orch: $repo_remedy"
   rm -f "$err"
 done
 git remote add origin https://example.invalid/notgithub
@@ -3689,12 +3696,12 @@ out="$(cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
   && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "no resolvable repo fails doctor" "$st" 1
 assert_contains "names the missing repo as a FAIL, with no remedy in it" "$out" \
-  "FAIL  no GitHub repo to work on: origin is missing or not a GitHub owner/name"
+  "FAIL  $repo_cause"
 assert_contains "gives the GH_REPO remedy" "$out" "export GH_REPO=<owner>/<repo>"
 assert_eq "gives the GH_REPO instruction exactly once" \
   "$(printf '%s\n' "$out" | grep -c 'GH_REPO=<owner>/<repo>')" "1"
 assert_eq "counts the later GitHub checks on the skip line, naming the bare cause" \
-  "$(printf '%s\n' "$out" | grep -cx 'warn  [0-9]* GitHub checks\{0,1\} skipped: no GitHub repo to work on')" "1"
+  "$(printf '%s\n' "$out" | grep -cx "warn  [0-9]* GitHub checks\\{0,1\\} skipped: $repo_missing")" "1"
 assert_contains "still reaches the summary line" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
 assert_eq "makes no gh call without a repo to pin it to" "$(cat "$GH_FIXTURE/env.log" 2>/dev/null | wc -l | tr -d ' ')" "0"
 unset GH_FIXTURE
@@ -7058,6 +7065,7 @@ assert_eq "and writes no file" "$([ -e "$issue_json" ] && echo present || echo g
 out="$("$ORCH" issue comments 27 "$issue_json" --json 2>&1)"; st=$?
 assert_status "--json is fetch's alone: comments refuses it" "$st" 1
 assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file>"
+assert_eq "and writes no file" "$([ -e "$issue_json" ] && echo present || echo gone)" "gone"
 assert_contains "help lists --json under issue fetch" "$("$ORCH" help)" "issue fetch <n> <file> [--json]"
 
 tricky="$(mktemp)"
@@ -7069,6 +7077,17 @@ assert_eq "the issue number given, not one from state, holds the file's contents
   "$(fake_body_of 23)" "$(cat "$tricky")"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 assert_eq "the edit call never reached a real gh subprocess" "$(gh_calls)" "0"
+
+out="$("$ORCH" issue update 23 "$tricky" --json 2>&1)"; st=$?
+assert_status "--json is fetch's alone: update refuses it" "$st" 1
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue update <n> <file>"
+assert_eq "and leaves the issue's body unchanged" "$(fake_body_of 23)" "$(cat "$tricky")"
+for args in "23" "23 $tricky extra"; do
+  # shellcheck disable=SC2086 # each case is split into its words on purpose
+  out="$("$ORCH" issue update $args 2>&1)"; st=$?
+  assert_status "update refuses the wrong argument count: $args" "$st" 1
+  assert_contains "with its own usage line" "$out" "usage: orch.sh issue update <n> <file>"
+done
 
 out="$("$ORCH" issue update 23 /nonexistent/body.md 2>&1)"; st=$?
 assert_status "update refuses a file that does not exist" "$st" 1
@@ -7105,6 +7124,17 @@ assert_contains "naming the issue" "$out" "issue #23"
 out="$("$ORCH" issue comment abc "$tricky" 2>&1)"; st=$?
 assert_status "comment refuses an issue number that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue comment <n> <file>"
+
+out="$("$ORCH" issue comment 23 "$tricky" --json 2>&1)"; st=$?
+assert_status "--json is fetch's alone: comment refuses it" "$st" 1
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue comment <n> <file>"
+assert_eq "and posts nothing" "$(fake_comments_of 23)" "$(cat "$tricky")"
+
+out="$("$ORCH" issue comment 23 "$tricky" extra 2>&1)"; st=$?
+assert_status "comment refuses an extra argument" "$st" 1
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue comment <n> <file>"
+assert_eq "and posts nothing" "$(fake_comments_of 23)" "$(cat "$tricky")"
 
 out="$("$ORCH" issue comment 23 2>&1)"; st=$?
 assert_status "comment refuses with no file" "$st" 1
@@ -7117,14 +7147,16 @@ assert_contains "listing comment among the ops it has" "$out" "comment"
 out="$("$ORCH" issue fetch abc "$issue_body" 2>&1)"; st=$?
 assert_status "fetch refuses an issue number that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
+assert_contains "with the fetch usage line" "$out" "usage: orch.sh issue fetch <n> <file> [--json]"
 
 out="$("$ORCH" issue update abc "$tricky" 2>&1)"; st=$?
 assert_status "update refuses the same" "$st" 1
 assert_contains "naming it" "$out" "abc"
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue update <n> <file>"
 
 out="$("$ORCH" issue fetch 23 2>&1)"; st=$?
 assert_status "fetch refuses with no file" "$st" 1
-assert_contains "with a usage line" "$out" "usage: orch.sh issue"
+assert_contains "with the fetch usage line" "$out" "usage: orch.sh issue fetch <n> <file> [--json]"
 
 out="$("$ORCH" issue bogus 23 "$tricky" 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
@@ -7170,7 +7202,7 @@ assert_eq "and leaves the file that was already there byte-identical" \
 out="$("$ORCH" issue comments abc "$issue_comments" 2>&1)"; st=$?
 assert_status "comments refuses an issue number that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
-assert_contains "with a usage line" "$out" "usage: orch.sh issue"
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file>"
 
 out="$("$ORCH" issue comments 23 2>&1)"; st=$?
 assert_status "comments refuses with no file" "$st" 1
@@ -9292,7 +9324,7 @@ git remote remove origin
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "no repo to work on is exit 2, not the guard's 1" "$st" 2
 assert_eq "dying with the repo remedy" "$out" \
-  "orch: no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
+  "orch: $repo_remedy"
 assert_contains "help documents review rerun" "$("$ORCH" help)" "review rerun <pr>"
 restore_suite_env
 
