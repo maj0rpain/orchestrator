@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.21.3
+
+orch.sh's `STATE_KEYS` table has one reader, `state_rows`, so every reader
+skips the same comment and blank lines (#840). `state_key` is renamed
+`state_key_field`, and a misspelt column now exits 2 with its own message
+rather than reading as an unknown key. `state_key_settable` is the one check
+of the owner column's `-`. `init` builds its seed from the rows, taking each
+arg row's value from one `case` that dies naming a key with no arm, so the
+table header's "adding a key is one row" now says what an arg row also
+needs. `base_sha` and `branch` are always written as JSON strings, so a value
+of only digits never becomes a number. The seed init writes and every
+`state set` message are unchanged.
+
 ## 3.21.2
 
 all.sh's shellcheck step runs one shellcheck process per shell file, all
