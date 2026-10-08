@@ -19,7 +19,9 @@
 #
 # ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs. VERSION_BASE
 # passes through untouched - set, empty or unset - for docs_lint.sh's version
-# bump rule, which CI's "Read main's version" step feeds.
+# bump rule, which CI's "Read main's version" step feeds. ORCH_TEST_JOBS
+# passes through too: orch_test.sh runs that many sections at once, by default
+# the core count, and ORCH_TEST_JOBS=1 runs them sequentially, in one shell.
 #
 # While iterating, run one section instead:
 #   ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh

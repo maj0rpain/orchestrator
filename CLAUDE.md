@@ -38,6 +38,10 @@ See `docs/agents/coding-standards.md`.
 While iterating, run only the section you are working on:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`.
 Run `scripts/test/all.sh` once before committing.
+orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
+the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
+section must pass on its own: a helper used by more than one section lives in its
+shared setup.
 
 ## Versioning
 
