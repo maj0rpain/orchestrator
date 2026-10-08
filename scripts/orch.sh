@@ -646,14 +646,16 @@ source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 # -uall lists untracked files individually, so a new directory is judged by
 # what is in it rather than by its name.
 dirty_outside_allowlist() {
-  local rec path want_src=0 status
+  local rec path want_src=0 status err
   # Captured first rather than read through a process substitution, whose
   # failure set -e never sees: a git status that cannot run must refuse, not
   # read as a clean tree. A file, not a variable, because the output is
-  # NUL-separated.
+  # NUL-separated. git's own error is kept so the refusal can name it.
   status="$(mktemp)"
-  git -C "$ROOT" status --porcelain=v1 -z -uall >"$status" \
-    || { rm -f "$status"; die "git status failed - cannot check the working tree"; }
+  if ! err="$(git -C "$ROOT" status --porcelain=v1 -z -uall 2>&1 >"$status")"; then
+    rm -f "$status"
+    die "git status failed - cannot check the working tree: $(first_line "$err")"
+  fi
   while IFS= read -r -d '' rec; do
     if [ "$want_src" -eq 1 ]; then
       path="$rec"; want_src=0

@@ -855,6 +855,27 @@ check_flow_ticket_worktrees() {
   done <<<"$(cmd_ticket_worktree_list)"
 }
 
+# Every phase commits and pushes its own work before it ends, so a change
+# outside the planning allowlist at a phase boundary is a bug in the phase that
+# left it - caught here, at the top of /orchestrator:next, while that phase's
+# context still exists. Pure reuse of init's check, so the two never disagree
+# about what counts. Silent on a clean tree. dirty_outside_allowlist dies when
+# git status cannot run; in its subshell that ends only the subshell, and its
+# message becomes this check's FAIL rather than the end of the report.
+check_flow_worktree_clean() {
+  local dirty err
+  err="$(mktemp)"
+  if ! dirty="$(dirty_outside_allowlist 2>"$err")"; then
+    d_fail "$(sed -n 's/^orch: //p' "$err" | sed -n 1p)"
+    rm -f "$err"
+    return 0
+  fi
+  rm -f "$err"
+  [ -n "$dirty" ] || return 0
+  d_fail "the working tree has changes outside the planning allowlist: $(d_join "$dirty")"
+  d_remedy "git status"
+}
+
 # Pure reuse: what makes a handoff valid lives in handoff_required and
 # section_body, and a second statement of it here is how the two answers drift.
 # Which handoffs are due is mechanical - phase names what runs *next*, so every
@@ -916,9 +937,11 @@ d_count() {
 d_run_flow() {
   if [ "$D_JQ" = ok ] && [ "$D_STATE" = ok ]; then
     d_run "$FLOW_CHECKS"
-    # Outside the registry: it reads git alone and prints nothing when clean,
-    # so a flow with no ticket worktree reports exactly what it did before.
+    # Outside the registry: each reads git alone and prints nothing when clean,
+    # so a flow with no ticket worktree and a clean working tree reports
+    # exactly what it did before.
     check_flow_ticket_worktrees
+    check_flow_worktree_clean
     return 0
   fi
   # Neither path below reaches a check, so neither gets the header out of the

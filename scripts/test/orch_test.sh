@@ -3461,6 +3461,41 @@ assert_not_contains "nor is it reported" "$out" "t13"
 git worktree remove "$tw_linked"
 git branch -q -D orch/9-other
 
+# #721: every phase commits its own work before ending, so a change outside the
+# planning allowlist at a phase boundary is a bug in the phase that left it -
+# caught by doctor --flow, at the top of every /orchestrator:next.
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a clean tree passes doctor --flow" "$st" 0
+assert_not_contains "a clean tree reports nothing about the working tree" "$out" "planning allowlist"
+mkdir -p lib
+printf 'x\n' >lib/left-behind.sh
+printf 'x\n' >stray.txt
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "changes outside the planning allowlist fail doctor --flow" "$st" 1
+assert_contains "the FAIL lists the paths outside the allowlist" "$out" \
+  "FAIL  the working tree has changes outside the planning allowlist: lib/left-behind.sh, stray.txt"
+rm -rf lib stray.txt
+mkdir -p docs/agents .scratch
+printf 'x\n' >docs/agents/notes.md
+printf 'x\n' >.scratch/plan.md
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "changes inside the planning allowlist pass doctor --flow" "$st" 0
+assert_not_contains "and are not reported" "$out" "planning allowlist"
+rm -rf docs/agents/notes.md .scratch
+# A git status that cannot run is a FAIL naming git's error, never the end of
+# the report: doctor is what you run when the world is already broken.
+idxbak="$(mktemp)"
+cp "$(git rev-parse --git-dir)/index" "$idxbak"
+printf 'garbage' >"$(git rev-parse --git-dir)/index"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+cp "$idxbak" "$(git rev-parse --git-dir)/index"
+assert_status "a failing git status fails doctor --flow" "$st" 1
+assert_contains "the FAIL names git's error" "$out" \
+  "FAIL  git status failed - cannot check the working tree: "
+assert_contains "and quotes it" "$out" "index file"
+assert_contains "the rest of doctor still runs" "$out" "phase: implement"
+assert_contains "and reaches its summary" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
+
 # --flow never runs the tools group, so if it skipped every check it has and
 # still exited 0, /orchestrator:next would advance a flow nothing had checked.
 if on_windows_bash; then
