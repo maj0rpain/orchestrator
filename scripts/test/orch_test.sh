@@ -7548,11 +7548,11 @@ for bad_args in "adapter_issue_relabel 14 --add --remove" "adapter_issue_relabel
            "adapter_issue_close 14 --reason --comment" "adapter_issue_close 14 --comment --reason"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
   err="$(faked $bad_args 2>&1 >/dev/null)"; st=$?
-  first="${bad_args#* * }"
+  opts="${bad_args#* * }"
   assert_status "the fake refuses '$bad_args'" "$st" 2
-  assert_eq "with its message on stderr" "$err" "fake gh: ${bad_args%% *}: ${first%% *} needs a value"
+  assert_eq "with its message on stderr" "$err" "fake gh: ${bad_args%% *}: ${opts%% *} needs a value"
 done
-unset bad_args first
+unset bad_args opts
 err="$(faked adapter_issue_relabel 14 --add --remove x 2>&1 >/dev/null)"; st=$?
 assert_status "the fake refuses '--add --remove x'" "$st" 2
 assert_eq "as --add missing its value, with no unknown option" "$err" \
@@ -7782,6 +7782,7 @@ done
 unset bad_args
 err="$(contract adapter_issue_relabel 25 --add --remove x 2>&1 >/dev/null)"; st=$?
 assert_status "issue relabel: '--add --remove x' is refused" "$st" 2
+assert_contains "naming the operation" "$err" "adapter_issue_relabel"
 assert_contains "as --add missing its value" "$err" "--add needs a value"
 assert_not_contains "not as an unknown option x" "$err" "unknown option"
 assert_eq "no refused relabel made a gh call" "$(gh_calls)" "$calls"
@@ -7824,6 +7825,7 @@ done
 unset bad_args
 err="$(contract adapter_issue_close 27 --reason --comment Redone. 2>&1 >/dev/null)"; st=$?
 assert_status "issue close: '--reason --comment Redone.' is refused" "$st" 2
+assert_contains "naming the operation" "$err" "adapter_issue_close"
 assert_contains "as --reason missing its value" "$err" "--reason needs a value"
 assert_not_contains "not as an unknown option Redone." "$err" "unknown option"
 assert_eq "no refused close made a gh call" "$(gh_calls)" "$calls"

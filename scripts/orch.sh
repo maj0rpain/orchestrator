@@ -1276,10 +1276,11 @@ review_budget() {
 # on stderr and returns 2. Called as
 # `option_value <operation> "<option-names>" "$@" || return` from an option loop.
 option_value() {
-  local value="${4:-}" name names
+  local value="${4:-}" refused="" name names
   read -r -a names <<<"$2"
-  for name in "${names[@]}"; do [ "$value" != "$name" ] || value=""; done
-  [ -z "$value" ] || return 0
+  [ -n "$value" ] || refused=1
+  for name in "${names[@]}"; do [ "$value" != "$name" ] || refused=1; done
+  [ -n "$refused" ] || return 0
   warn "$1: $3 needs a value"
   return 2
 }
@@ -1427,12 +1428,12 @@ adapter_issue_comment() {
 # adding and removing the labels named; with none named, no edit at all.
 # Prints nothing.
 adapter_issue_relabel() {
-  local n="$1" args=() adds=() removes=() l
+  local n="$1" args=() adds=() removes=() l options="--add --remove"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --add)    option_value adapter_issue_relabel "--add --remove" "$@" || return; adds+=("$2"); shift 2 ;;
-      --remove) option_value adapter_issue_relabel "--add --remove" "$@" || return; removes+=("$2"); shift 2 ;;
+      --add)    option_value adapter_issue_relabel "$options" "$@" || return; adds+=("$2"); shift 2 ;;
+      --remove) option_value adapter_issue_relabel "$options" "$@" || return; removes+=("$2"); shift 2 ;;
       *) unknown_option adapter_issue_relabel "$1"; return ;;
     esac
   done
@@ -1446,12 +1447,12 @@ adapter_issue_relabel() {
 # reason "completed" or "not planned" (absent, gh's default), posting the
 # comment on it where one is given. Prints nothing.
 adapter_issue_close() {
-  local n="$1" reason="" comment="" args=()
+  local n="$1" reason="" comment="" args=() options="--reason --comment"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --reason)  option_value adapter_issue_close "--reason --comment" "$@" || return; reason="$2"; shift 2 ;;
-      --comment) option_value adapter_issue_close "--reason --comment" "$@" || return; comment="$2"; shift 2 ;;
+      --reason)  option_value adapter_issue_close "$options" "$@" || return; reason="$2"; shift 2 ;;
+      --comment) option_value adapter_issue_close "$options" "$@" || return; comment="$2"; shift 2 ;;
       *) unknown_option adapter_issue_close "$1"; return ;;
     esac
   done

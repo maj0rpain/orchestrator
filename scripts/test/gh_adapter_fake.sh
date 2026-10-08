@@ -408,10 +408,11 @@ adapter_issue_comment() {
 # <option-names>, a space-separated list each compared whole; otherwise says so
 # on stderr and returns 2, as the real adapter's option_value does.
 fake_option_value() {
-  local value="${4:-}" name names
+  local value="${4:-}" refused="" name names
   read -r -a names <<<"$2"
-  for name in "${names[@]}"; do [ "$value" != "$name" ] || value=""; done
-  [ -z "$value" ] || return 0
+  [ -n "$value" ] || refused=1
+  for name in "${names[@]}"; do [ "$value" != "$name" ] || refused=1; done
+  [ -n "$refused" ] || return 0
   printf 'fake gh: %s: %s needs a value\n' "$1" "$3" >&2
   return 2
 }
@@ -426,12 +427,12 @@ fake_unknown_option() {
 # adapter_issue_relabel <n> [--add <label>]... [--remove <label>]...: the
 # labels named removed from, then added to, the stored labels, each once.
 adapter_issue_relabel() {
-  local n="$1" f l adds=() removes=()
+  local n="$1" f l adds=() removes=() options="--add --remove"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --add)    fake_option_value adapter_issue_relabel "--add --remove" "$@" || return; adds+=("$2"); shift 2 ;;
-      --remove) fake_option_value adapter_issue_relabel "--add --remove" "$@" || return; removes+=("$2"); shift 2 ;;
+      --add)    fake_option_value adapter_issue_relabel "$options" "$@" || return; adds+=("$2"); shift 2 ;;
+      --remove) fake_option_value adapter_issue_relabel "$options" "$@" || return; removes+=("$2"); shift 2 ;;
       *) fake_unknown_option adapter_issue_relabel "$1"; return ;;
     esac
   done
@@ -452,12 +453,12 @@ adapter_issue_relabel() {
 # CLOSED, its reason (completed where none is given, as GitHub defaults) in
 # reason, and the comment, where given, appended by fake-gh.
 adapter_issue_close() {
-  local n="$1" reason=completed comment="" d
+  local n="$1" reason=completed comment="" d options="--reason --comment"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --reason)  fake_option_value adapter_issue_close "--reason --comment" "$@" || return; reason="$2"; shift 2 ;;
-      --comment) fake_option_value adapter_issue_close "--reason --comment" "$@" || return; comment="$2"; shift 2 ;;
+      --reason)  fake_option_value adapter_issue_close "$options" "$@" || return; reason="$2"; shift 2 ;;
+      --comment) fake_option_value adapter_issue_close "$options" "$@" || return; comment="$2"; shift 2 ;;
       *) fake_unknown_option adapter_issue_close "$1"; return ;;
     esac
   done
