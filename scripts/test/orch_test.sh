@@ -4826,6 +4826,19 @@ assert_status "remove --unmerged discards a clean worktree's unmerged branch" "$
 assert_eq "removing the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
 assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 
+# Merged into its forked-from branch, but not into the branch the invoking
+# checkout has checked out: merged is judged against the forked-from branch
+# alone, so remove succeeds rather than refusing after the worktree is gone.
+wt="$("$ORCH" ticket-worktree add 7)"
+git -C "$wt" commit -q --allow-empty -m "ticket work"
+git merge -q --ff-only orch/5-feature--t7
+git checkout -q -b orch/5-elsewhere HEAD~1
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "remove of a ticket merged into its forked-from branch but not HEAD succeeds" "$st" 0
+assert_eq "removing the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
+assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
+git checkout -q orch/5-feature
+
 out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
 assert_status "remove refuses a ticket with no worktree" "$st" 1
 out="$("$ORCH" ticket-worktree remove 7 --bogus 2>&1)"; st=$?

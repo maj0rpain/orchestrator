@@ -3241,11 +3241,11 @@ cmd_ticket_worktree_remove() {
       || die "branch $branch is not merged into $parent - merge it first, or pass --unmerged to discard it"
   fi
   git worktree remove "$path" || die "could not remove ticket worktree $path"
-  if [ "$unmerged" = 1 ]; then
-    git branch -q -D "$branch" || die "could not delete branch $branch"
-  else
-    git branch -q -d "$branch" || die "could not delete branch $branch"
-  fi
+  # -D, not -d, either way: without --unmerged the merge-base check above
+  # already proved the branch merged into its forked-from branch, while -d
+  # would judge it against this checkout's HEAD (a ticket branch has no
+  # upstream) and could refuse after the worktree is gone.
+  git branch -q -D "$branch" || die "could not delete branch $branch"
 }
 
 # The checkout that has <branch> checked out, or nothing: the first worktree
@@ -3726,8 +3726,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               nothing, exit 0, when there are none
   ticket-worktree remove <n> [--unmerged]
                               remove ticket <n>'s worktree and delete its
-                              ticket branch with git branch -d, never with
-                              --force. Refuses a dirty worktree and, without
+                              ticket branch, never with --force. Refuses a
+                              dirty worktree and, without
                               --unmerged, a branch not merged into its
                               forked-from branch, before removing anything;
                               --unmerged deletes a clean worktree's unmerged
