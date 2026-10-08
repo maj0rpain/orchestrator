@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.20.3
+
+`scripts/test/all.sh` takes less wall time, with no change outside the test
+scripts (#777). all.sh starts orch_test.sh, hooks_test.sh, docs_lint.sh and
+shellcheck at once and prints their output afterwards in the same order as
+before. The section filter, quiet mode and parallel runner sections of
+orch_test.sh run their checks against planted sections and cut-down copies of
+the suites instead of real sections and full suite runs, and now come right
+after the `isolation` section, so a parallel run starts the slowest of them
+first. hooks_test.sh and docs_lint.sh gain the `# >>> checks` marker comments,
+and hooks_test.sh a `# >>> summary` marker, that quiet mode's cut-down copies
+use.
+
 ## 3.20.2
 
 Docs, glossary, skill prose and docs_lint fixes from consolidated review

@@ -26,6 +26,7 @@ assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in
 assert_not_contains() { case "$2" in *"$3"*) bad "$1" "found '$3' in: $2" ;; *) ok "$1" ;; esac; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
 
+# >>> checks
 REPO="$(mktemp -d)"
 git -C "$REPO" init -q
 mkdir -p "$REPO/docs/agents" "$REPO/docs/adr"
@@ -826,6 +827,7 @@ while IFS= read -r cmd; do
 done < <(jq -r '.. | objects | select(.type? == "command") | .command' "$ROOT/hooks/hooks.json")
 rm -rf "$PLUGIN_644"
 
+# >>> summary
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
