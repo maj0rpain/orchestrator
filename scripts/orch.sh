@@ -264,16 +264,18 @@ next_phase_cmd() {
 
 # Every flow state key, one row each, in the order init seeds them into
 # state.json: key|default|seed|owner. state_get, state set and init all read
-# it, so adding a key is one row. Lines starting with # are comments.
+# it, so adding a key is one row; an arg row also needs its value in cmd_init's
+# case, and init dies naming the key without it. state_rows is its one reader:
+# lines starting with # are comments, and blank lines are skipped.
 #
 # default: what state_get returns for a null or missing value. A flow started
 #   by an older release lacks keys a fresh one seeds; each reads back as its
 #   default. The default applies only to a null or missing value, never to a
 #   stored false (jq's `//` would treat false like null).
 # seed: the JSON literal init writes, or arg where init supplies the value at
-#   run time (cmd_init types each arg value).
-# owner: - for a key state set may write; otherwise the reason it refuses,
-#   printed as "state set refuses <key>: <owner>".
+#   run time; the value comes from cmd_init's case.
+# owner: - for a key state set may write (state_key_settable); otherwise the
+#   reason it refuses, printed as "state set refuses <key>: <owner>".
 STATE_KEYS='slug||arg|init seeds it
 # phase_write spec sets the phase straight after init seeds it.
 phase||null|use phase advance (review ready and redo also move it)
@@ -300,34 +302,57 @@ host_fallbacks|false|true|init seeds it
 created||arg|init seeds it
 updated||arg|every state change stamps it'
 
-# Prints column $2 (default, seed or owner) of state key $1's row. An unknown
-# key prints nothing and returns non-zero; the caller dies with its own message.
-state_key() {
+# Prints each data row of STATE_KEYS as key|default|seed|owner, in table
+# order: the only reader of $STATE_KEYS, so every other reader skips the same
+# comment and blank lines.
+state_rows() {
   local k d s o
   while IFS='|' read -r k d s o; do
-    case "$k" in '#'*) continue ;; esac
+    case "$k" in '#'*|'') continue ;; esac
+    printf '%s|%s|%s|%s\n' "$k" "$d" "$s" "$o"
+  done <<EOF
+$STATE_KEYS
+EOF
+}
+
+# Prints column $2 (default, seed or owner) of state key $1's row. An unknown
+# key prints nothing and returns 1; the caller dies with its own message. An
+# unknown column is a programming error, not caller input: it exits 2, never
+# 1, so it is never read as an unknown key, and its caller exits with that
+# status without a second message.
+state_key_field() {
+  local k d s o
+  case "$2" in
+    default|seed|owner) ;;
+    *) die2 "state_key_field has no column: $2" ;;
+  esac
+  while IFS='|' read -r k d s o; do
     [ "$k" = "$1" ] || continue
     case "$2" in
       default) printf '%s\n' "$d" ;;
       seed)    printf '%s\n' "$s" ;;
       owner)   printf '%s\n' "$o" ;;
-      *)       return 1 ;;
     esac
     return 0
   done <<EOF
-$STATE_KEYS
+$(state_rows)
 EOF
   return 1
+}
+
+# Succeeds when state set may write key $1: its owner column is -. The one
+# place an owner is compared against -; an unknown key is not settable.
+state_key_settable() {
+  [ "$(state_key_field "$1" owner)" = - ]
 }
 
 # Prints every state key, one per line, in table order.
 state_keys() {
   local k rest
   while IFS='|' read -r k rest; do
-    case "$k" in '#'*|'') continue ;; esac
     printf '%s\n' "$k"
   done <<EOF
-$STATE_KEYS
+$(state_rows)
 EOF
 }
 
@@ -339,8 +364,12 @@ state_get() { state_get_in "$STATE" "$1"; }
 # state_get against another checkout's state file <file>: the one read side
 # checkout list makes of a flow it does not run in.
 state_get_in() {
-  local default
-  default="$(state_key "$2" default)" || die "unknown state key: $2"
+  local default rc
+  default="$(state_key_field "$2" default)" || {
+    rc=$?
+    [ "$rc" -ne 1 ] || die "unknown state key: $2"
+    exit "$rc"
+  }
   jq -r --arg k "$2" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$1"
 }
 
@@ -903,21 +932,29 @@ cmd_init() {
   # re-runnable rather than archived for nothing.
   [ -z "$issue" ] || validate_adopted_issue "$issue"
   # The whole seed is built before a done flow is archived or anything is
-  # written, so a lookup that dies leaves the previous state untouched. The
-  # constant part comes from STATE_KEYS, a null placeholder for each arg row
-  # keeping the table's key order; the arg values merge over it, typed here.
+  # written, so a lookup that dies leaves the previous state untouched. It is
+  # built in one pass over STATE_KEYS, in table order: a constant row gives its
+  # seed literal, and an arg row the jq expression its case arm gives, typed
+  # here. An arg row with no arm dies naming the key rather than seed null.
   # For base, see the header of base_set_flow.
-  local k v fields="" seed
-  for k in $(state_keys); do
-    v="$(state_key "$k" seed)" || die "no seed for state key: $k"
-    [ "$v" != arg ] || v=null
+  local k s v fields="" seed
+  while IFS='|' read -r k _ s _; do
+    v="$s"
+    if [ "$s" = arg ]; then
+      case "$k" in
+        slug)    v='$slug' ;;
+        issue)   v='(if $issue == "" then null else ($issue | tonumber) end)' ;;
+        base)    v='$base' ;;
+        created|updated) v='$now' ;;
+        *) die "init has no value for arg state key: $k" ;;
+      esac
+    fi
     fields="${fields:+$fields,}\"$k\":$v"
-  done
+  done <<EOF
+$(state_rows)
+EOF
   seed="$(jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" --arg base "$(base_branch)" \
-    "{$fields}"' + {
-      slug: $slug, issue: (if $issue == "" then null else ($issue | tonumber) end),
-      base: $base, created: $now, updated: $now
-    }')" || die "could not build the state seed - nothing was written"
+    "{$fields}")" || die "could not build the state seed - nothing was written"
   # archive_flow, not cmd_archive: in a side checkout the old flow moves to the
   # main checkout's archive, but the worktree stays - the new flow lives here.
   if [ -f "$STATE" ]; then
@@ -952,15 +989,17 @@ cmd_state() {
       # Only the keys skill prose sets are public. Every other key has a
       # command that owns it, and that command's guard is the point: a phase
       # set here would skip the handoff phase advance validates.
-      local owner settable="" k
-      if ! owner="$(state_key "$1" owner)"; then
+      local owner settable="" k rc
+      owner="$(state_key_field "$1" owner)" || {
+        rc=$?
+        [ "$rc" -eq 1 ] || exit "$rc"
         for k in $(state_keys); do
-          [ "$(state_key "$k" owner)" = - ] || continue
+          state_key_settable "$k" || continue
           settable="${settable:+$settable, }$k"
         done
         die "state set refuses $1: settable keys are $settable"
-      fi
-      [ "$owner" = - ] || die "state set refuses $1: $owner"
+      }
+      state_key_settable "$1" || die "state set refuses $1: $owner"
       state_write "$1" "$2"
       ;;
     *) die "unknown state op: $op (want get|set)" ;;
@@ -2704,8 +2743,8 @@ cmd_branch_create() {
   checkout_new_branch "$name" "$base" \
     "point this flow at another base: orch.sh base set <branch> --flow"
   sha="$(git rev-parse HEAD)"
-  state_write branch "$name"
-  state_write base_sha "$sha"
+  state_write_string branch "$name"
+  state_write_string base_sha "$sha"
   record_branch_base "$name" "$base" "$sha"
   note "$name"
 }
@@ -2795,7 +2834,7 @@ cmd_branch_sync() {
     die "git could not merge origin/$base into $branch"
   fi
   git config "branch.$branch.orchestrator-base-sha" "$tip"
-  [ -z "$held" ] || state_write base_sha "$tip"
+  [ -z "$held" ] || state_write_string base_sha "$tip"
   # Its own upstream only: branch create and branch off fork from origin's
   # base, which git sets as the new branch's upstream until it is first pushed.
   if [ "$(git config --get "branch.$branch.merge" 2>/dev/null)" = "refs/heads/$branch" ]; then
@@ -4226,7 +4265,7 @@ $(printf '%s\n' "$terminal" | tail -n +2)" ;;
     # the rename already happened for real, so state.branch has to track it
     # now rather than keep naming a branch that no longer exists if pr
     # close dies and a retry has to find the real current name.
-    state_write branch "$new_branch"
+    state_write_string branch "$new_branch"
     state_write redo_count "$new_n"
   fi
 
