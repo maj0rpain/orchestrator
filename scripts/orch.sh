@@ -4075,11 +4075,12 @@ cmd_side_checkout_prune() {
   local archive_out remove_err branch_err
   local paths=() finished=()
   here="$(pwd -P)"
-  main_root="$(main_checkout)"
+  # checkout_paths lists the main checkout first.
+  mapfile -t paths < <(checkout_paths)
+  main_root="${paths[0]-}"
   # Every step works from the main checkout, so removing the checkout this
   # command ran in leaves the sweep somewhere to stand.
   cd "$main_root" || die "could not enter the main checkout $main_root"
-  mapfile -t paths < <(checkout_paths)
   for path in "${paths[@]}"; do
     rc=0; verdict=""; branch=""
     if [ "$path" = "$main_root" ]; then

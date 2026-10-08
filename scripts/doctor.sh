@@ -544,7 +544,8 @@ check_base_branch() {
 check_side_checkouts_finished() {
   local path paths=() found=() verdict branch rc main_root
   mapfile -t paths < <(checkout_paths)
-  main_root="$(main_checkout)"
+  # checkout_paths lists the main checkout first.
+  main_root="${paths[0]-}"
   for path in "${paths[@]}"; do
     [ "$path" != "$main_root" ] && is_side_checkout "$path" && found+=("$path")
   done
@@ -558,7 +559,7 @@ check_side_checkouts_finished() {
         d_warn "side checkout ${path##*/} is finished - its PR is merged, and it is still standing at $path."
         d_remedy "orch.sh side-checkout remove ${path##*/}" ;;
       1) ;;
-      *) d_warn "side checkout ${path##*/} could not be checked: $verdict" ;;
+      *) d_warn "side checkout $(basename "$path") could not be checked: $verdict" ;;
     esac
   done
   return 0
