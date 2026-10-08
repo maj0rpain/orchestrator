@@ -1,5 +1,37 @@
 # Changelog
 
+## 3.21.0
+
+Base sync, and merge conflicts resolved rather than rebuilt (#791, ADR-0038).
+New `orch.sh branch sync` brings the current plugin-made branch up to date
+with its base branch: it merges `origin`'s tip of the base into it - never a
+rebase, never the local base - records that tip as the base SHA in the
+branch's git config (and in flow state when this checkout's flow holds the
+branch), and pushes with a plain push when the branch has an upstream. It
+exits 3 on a conflict, leaving the merge in progress, and 1 on a refusal: a
+dirty tree, a failed fetch, a detached HEAD, a branch the plugin did not
+make, or a failed push. `branch create` now records a flow branch's base and
+base SHA in its git config too, so `branch sync` and `branch base-sha` find
+them after the flow is done or archived. A new `orch-resolver` agent
+finishes one in-progress merge or rebase by reading why each side changed,
+keeping both intents where it can, naming any intent it drops, running the
+repo's checks, and committing; it never aborts. The flow syncs at the end of
+the implement phase, before the PR opens; the review loop at the start of
+every iteration, reading the base SHA from state after each sync; and a
+quick implementation before its review pass. Every dropped intent is
+recorded under a **Merge resolutions** heading - in the implement handoff,
+the iteration's review record, or the PR body. A ticket branch that
+conflicts as it merges is no longer thrown away: its own implementer is
+resumed to rebase and resolve in its ticket worktree, or a fresh resolver
+does it, and only a failed resolution falls back to the rebuild alone;
+`ticket-worktree remove --unmerged` first aborts a rebase left in progress.
+New `/orchestrator:sync` (skill `orch-sync`) runs a base sync on demand on
+any plugin-made branch, posts the **Merge resolutions** as one PR comment,
+and then, unless an active flow holds the branch, asks whether to run a
+review pass. The glossary gains **Base sync** and **Resolver**, ADR-0038
+supersedes ADR-0036 in part, and the Junie snippet names the resolver and
+the orch-sync skill's agents.
+
 ## 3.20.2
 
 Docs, glossary, skill prose and docs_lint fixes from consolidated review
