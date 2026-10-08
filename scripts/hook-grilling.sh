@@ -107,8 +107,9 @@ if [ "$host" = junie ]; then
   run_flow_quick="On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
   \"Quick implementation\", the orch-quick-implement skill. "
   run_blueprint="On \"Blueprint
-  only\", run the orch-to-spec skill, then orch-spec-review if the user wants a
-  review, then orch-to-tickets. This host has no Skill tool, so read each
+  only\", run the orch-to-spec skill - for issue #<n>, the interviewed issue, when there is one
+  (its rewrite mode) - then orch-spec-review if the user wants a
+  review, then orch-to-tickets unless rewrite mode reported \`kept\`. This host has no Skill tool, so read each
   skill's file and follow it verbatim:"
   flow_quick_files="
   $plugin_root/skills/orch-flow/SKILL.md,
@@ -125,9 +126,10 @@ else
   \"orchestrator:orch-flow\" yourself. On \"Quick implementation\", call the Skill
   tool with \"orchestrator:orch-quick-implement\" yourself. "
   run_blueprint="On \"Blueprint
-  only\", call the Skill tool with \"orchestrator:orch-to-spec\", then with
+  only\", call the Skill tool with \"orchestrator:orch-to-spec\", with args set to the interviewed issue's number when there is one
+  (its rewrite mode), then with
   \"orchestrator:orch-spec-review\" (its standalone spec review) if the user
-  wants a review, then with \"orchestrator:orch-to-tickets\", yourself. The
+  wants a review, then with \"orchestrator:orch-to-tickets\" unless rewrite mode reported \`kept\`, yourself. The
   orchestrator's skills are model-invocable: call them, do not hand them to the
   user."
   flow_quick_files=""
@@ -217,16 +219,23 @@ choice="${ask_step}
       1. Start the orchestrator flow - the full plan -> spec -> implement ->
          review pipeline, with its own handoff and review loop.
       2. Quick implementation - hands-off, for small changes: implement this directly, with no further questions before the PR.
-      3. Blueprint only - publish the spec and its ticket breakdown, then
-         stop; implement later.
+      3. Blueprint only - write the spec (rewriting the interviewed issue, if
+         there is one) and its ticket breakdown, then stop; implement later.
 
 ${run_next} Do not ask the user to type a command.${route_here}
 
-- On \"Blueprint only\": publish the spec (orch-to-spec), with any glossary or
-  ADR wording the planning decided written into the issue body verbatim. Then
+- On \"Blueprint only\": when the interviewed-issue step settled an
+  interviewed issue - the one this planning was about, or the one the user named under \"It's a different issue\" -
+  whether the user moved it to its triage label or answered \"Skip\",
+  write the spec in rewrite mode on that issue, replacing #<n>'s body instead of publishing a new issue
+  (orch-to-spec, handed #<n>). Only with no interviewed issue, publish the spec as a new issue
+  (orch-to-spec). Either way, write any glossary or
+  ADR wording the planning decided into the issue body verbatim. Then
   ask the user whether to run a spec review on it - ask every time, never
   assume - and run the standalone orch-spec-review only on a yes. Then publish
-  its ticket breakdown (orch-to-tickets) against that issue. Then stop: do not
+  its ticket breakdown (orch-to-tickets) against that issue, unless rewrite mode reported the breakdown \`kept\`:
+  then skip that step. Rewrite mode reports the breakdown; run no breakdown check of your own.
+  If orch-to-tickets fails after rewrite mode retired a breakdown, stop and report that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>. Then stop: do not
   implement or edit source. Report the issue number and how to pick it up
   later: /orchestrator:start --issue <n>, or a quick implementation that names
   the issue."

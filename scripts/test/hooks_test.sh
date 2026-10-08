@@ -83,6 +83,39 @@ done
 assert_contains "Blueprint asks about a spec review every time" "$ctx" "every time"
 assert_contains "Blueprint says how to pick the issue up" "$ctx" "/orchestrator:start --issue"
 assert_contains "Blueprint puts glossary/ADR wording into the issue verbatim" "$ctx" "into the issue body verbatim"
+# Blueprint rewrites the interviewed issue (#707): rewrite mode on it whenever
+# one was settled - moved, skipped, or named under "It's a different issue" -
+# and a new issue only without one; the number is handed to orch-to-spec, and
+# orch-to-tickets runs unless rewrite mode reported the breakdown kept.
+# $1 where, $2 context, $3 host (claude|junie).
+check_blueprint_rewrite() {
+  local where="$1" ctx="$2" host="$3"
+  assert_contains "Blueprint rewrites the interviewed issue $where" "$ctx" \
+    "write the spec in rewrite mode on that issue, replacing #<n>'s body instead of publishing a new issue"
+  assert_contains "Blueprint publishes a new issue only without one $where" "$ctx" \
+    "Only with no interviewed issue, publish the spec as a new issue"
+  assert_contains "rewrite applies whether moved or skipped $where" "$ctx" \
+    "whether the user moved it to its triage label or answered \"Skip\""
+  assert_contains "rewrite applies to the issue named under a different issue $where" "$ctx" \
+    "or the one the user named under \"It's a different issue\""
+  assert_contains "skips orch-to-tickets when rewrite mode reports kept $where" "$ctx" \
+    "unless rewrite mode reported the breakdown \`kept\`"
+  assert_contains "runs no breakdown check of its own $where" "$ctx" "run no breakdown check of your own"
+  assert_contains "stops when orch-to-tickets fails after a retire $where" "$ctx" \
+    "If orch-to-tickets fails after rewrite mode retired a breakdown, stop and report that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>"
+  if [ "$host" = claude ]; then
+    assert_contains "hands the issue number as the Skill tool's args $where" "$ctx" \
+      "call the Skill tool with \"orchestrator:orch-to-spec\", with args set to the interviewed issue's number when there is one"
+    assert_contains "runs orch-to-tickets unless kept, by Skill tool, $where" "$ctx" \
+      "then with \"orchestrator:orch-to-tickets\" unless rewrite mode reported \`kept\`"
+  else
+    assert_contains "follows the skill for issue #<n> on Junie $where" "$ctx" \
+      "run the orch-to-spec skill - for issue #<n>, the interviewed issue, when there is one"
+    assert_contains "runs orch-to-tickets unless kept, by skill file, $where" "$ctx" \
+      "then orch-to-tickets unless rewrite mode reported \`kept\`"
+  fi
+}
+check_blueprint_rewrite "on Claude Code" "$ctx" claude
 assert_not_contains "no route tells the model to delete the marker" "$ctx" "marker"
 assert_contains "forbids offering to implement" "$out" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat" "$out" "whole map is done"
@@ -140,7 +173,8 @@ mkdir -p "$REPO/.orchestrator"
 separate_checkout="starting a flow or a quick implementation must be done from a separate checkout of the repo, opened in its own session there"
 # $1 where, $2 context, $3 the next/redo pointer text expected for the host.
 check_flow_variant() {
-  local where="$1" ctx="$2" next_redo="$3"
+  local where="$1" ctx="$2" next_redo="$3" host="${4:-claude}"
+  check_blueprint_rewrite "beside an active flow $where" "$ctx" "$host"
   assert_contains "states the next/redo branch $where" "$ctx" "$next_redo"
   assert_contains "the same-flow branch asks no route question $where" "$ctx" "ask no route question"
   assert_contains "states the separate-checkout sentence $where" "$ctx" "$separate_checkout"
@@ -161,8 +195,8 @@ check_flow_variant() {
 route_block='      1. Start the orchestrator flow - the full plan -> spec -> implement ->
          review pipeline, with its own handoff and review loop.
       2. Quick implementation - hands-off, for small changes: implement this directly, with no further questions before the PR.
-      3. Blueprint only - publish the spec and its ticket breakdown, then
-         stop; implement later.'
+      3. Blueprint only - write the spec (rewriting the interviewed issue, if
+         there is one) and its ticket breakdown, then stop; implement later.'
 cc_next_redo='/orchestrator:next or /orchestrator:redo'
 echo '{"slug":"x","phase":"spec","issue":42}' >"$REPO/.orchestrator/state.json"
 out="$(skill_event "grilling" s6 | "$GRILL")"
@@ -237,6 +271,7 @@ assert_contains "offers starting the flow on Junie" "$ctx" "Start the orchestrat
 assert_contains "offers quick implementation on Junie" "$ctx" "Quick implementation"
 assert_contains "offers Blueprint only on Junie" "$ctx" "Blueprint only"
 assert_eq "offers exactly three options on Junie" "$(count_closing_options "$out")" "3"
+check_blueprint_rewrite "on Junie" "$ctx" junie
 for s in orch-to-spec orch-spec-review orch-to-tickets; do
   assert_contains "points at $s's SKILL.md on Junie" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
 done
@@ -304,6 +339,7 @@ assert_contains "offers starting the flow at plan confirmation" "$ctx" "Start th
 assert_contains "offers quick implementation at plan confirmation" "$ctx" "Quick implementation"
 assert_eq "offers exactly three options at plan confirmation" "$(count_closing_options "$out")" "3"
 assert_contains "offers Blueprint only at plan confirmation" "$ctx" "Blueprint only"
+check_blueprint_rewrite "at Junie's plan confirmation" "$ctx" junie
 for s in orch-to-spec orch-spec-review orch-to-tickets; do
   assert_contains "points at $s's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
 done
@@ -326,7 +362,7 @@ ctx="$(prompt_event '$grilling' j3 | "$GRILL" | jq -r '.additionalContext')"
 assert_contains "sends the planning rules on Junie beside an active flow" "$ctx" "Do NOT offer to implement"
 assert_contains "names the active flow's issue and phase on Junie" "$ctx" \
   "the flow for #7 is active in this checkout, at phase review"
-check_flow_variant "on Junie" "$ctx" "$junie_next_redo"
+check_flow_variant "on Junie" "$ctx" "$junie_next_redo" junie
 assert_not_contains "names no plugin command on Junie" "$ctx" "/orchestrator:next"
 if [ -e "$TMPDIR/orchestrator-planning-j3" ]; then
   ok "writes the planning marker on Junie beside an active flow"
@@ -339,7 +375,7 @@ ctx="$(prompt_event "$confirm" jc1 | "$GRILL" | jq -r '.additionalContext')"
 assert_contains "asks before implementing at plan confirmation beside an active flow" "$ctx" "before you implement anything"
 assert_contains "names the active flow at plan confirmation" "$ctx" \
   "the flow for #7 is active in this checkout, at phase review"
-check_flow_variant "at Junie's plan confirmation" "$ctx" "$junie_next_redo"
+check_flow_variant "at Junie's plan confirmation" "$ctx" "$junie_next_redo" junie
 echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
 out="$(prompt_event '$grilling' j4 | "$GRILL")"
 assert_contains "still fires on Junie's \$grilling when the flow is done" "$out" "Do NOT offer to implement"
@@ -360,8 +396,8 @@ ORCH_PATH="$(cd "$DIR/.." && pwd)/scripts/orch.sh"
 route_block='      1. Start the orchestrator flow - the full plan -> spec -> implement ->
          review pipeline, with its own handoff and review loop.
       2. Quick implementation - hands-off, for small changes: implement this directly, with no further questions before the PR.
-      3. Blueprint only - publish the spec and its ticket breakdown, then
-         stop; implement later.'
+      3. Blueprint only - write the spec (rewriting the interviewed issue, if
+         there is one) and its ticket breakdown, then stop; implement later.'
 # True when $2 occurs in $1 before $3 does, both present.
 occurs_before() {
   case "$1" in *"$2"*) ;; *) return 1 ;; esac
