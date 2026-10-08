@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.20.4
+
+The test scripts no longer leave temp files behind (#807), with no change to
+the plugin's behaviour. orch_test.sh and hooks_test.sh each create one temp
+root, export it as `TMPDIR` and remove it on exit, also when interrupted with
+Ctrl-C or TERM; orch_test.sh's parallel runner waits for its killed sections
+before removing its root. all.sh runs its suites under a fresh, empty `TMPDIR`
+and fails the run with `all.sh: the suites left temp files behind` when
+anything is left there. The out-of-scope record that declined this cleanup is
+removed.
+
 ## 3.20.3
 
 `scripts/test/all.sh` takes less wall time, with no change outside the test
