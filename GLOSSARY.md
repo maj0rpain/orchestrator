@@ -101,6 +101,12 @@ branch's tip at the moment it branched. A quick implementation's base SHA
 means the same, recorded on its branch.
 _Avoid_: target branch, integration branch (as the general term).
 
+**Resolver**:
+The fresh agent that finishes one in-progress merge or rebase. It reads why
+each side changed before resolving a hunk, keeps both intents where it can,
+names any intent it drops, runs the repo's checks, and commits. It never
+aborts.
+
 **Release PR**:
 The PR that carries a base branch other than the default back into the
 default branch, closing every still-open issue whose work reached the base
