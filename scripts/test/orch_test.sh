@@ -930,16 +930,20 @@ assert_eq "sets flake_rerun_used" "$("$ORCH" state get flake_rerun_used)" "true"
 before="$("$ORCH" state get phase)"
 out="$("$ORCH" state set phase review 2>&1)"; st=$?
 assert_status "refuses to set phase" "$st" 1
-assert_contains "naming phase advance as its owner" "$out" "phase advance"
+assert_eq "naming phase advance as its owner, in full" "$out" \
+  "orch: state set refuses phase: use phase advance (review ready and redo also move it)"
 assert_eq "and leaves the phase as it was" "$("$ORCH" state get phase)" "$before"
-for pair in branch:"branch create" base_sha:"branch create" pr:"pr open" \
-            iteration:"review begin" redo_count:"redo review" slug:init \
-            base:init created:init host_fallbacks:init updated:"state change" \
-            bogus:"issue, budget, flake_rerun_used"; do
-  key="${pair%%:*}"; owner="${pair#*:}"
+# Each refusal is pinned as its whole line, so a change to any wording fails.
+for pair in "branch|branch create records it" "base_sha|branch create records it" \
+            "pr|pr open records it" "iteration|review begin counts it" \
+            "redo_count|redo review counts it" "slug|init seeds it" \
+            "base|init seeds it" "created|init seeds it" \
+            "host_fallbacks|init seeds it" "updated|every state change stamps it" \
+            "bogus|settable keys are issue, budget, flake_rerun_used"; do
+  key="${pair%%|*}"; owner="${pair#*|}"
   out="$("$ORCH" state set "$key" 1 2>&1)"; st=$?
   assert_status "refuses to set $key" "$st" 1
-  assert_contains "naming what owns $key" "$out" "$owner"
+  assert_eq "naming what owns $key, in full" "$out" "orch: state set refuses $key: $owner"
 done
 "$ORCH" state set issue 42
 assert_eq "coerces a numeric value to a number" "$("$ORCH" state get issue)" "42"
@@ -7180,6 +7184,35 @@ assert_contains "naming the key" "$out" "nonsense"
 complete_plan_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
+# The string keys read back empty when missing too. phase goes only now: the
+# doctor --flow check above would fail a state file lacking it.
+jq 'del(.slug, .phase, .issue, .base, .branch, .pr, .base_sha, .created, .updated)' \
+  .orchestrator/state.json >state.tmp && mv state.tmp .orchestrator/state.json
+for key in slug phase issue base branch pr base_sha created updated; do
+  out="$("$ORCH" state get "$key" 2>&1)"; st=$?
+  assert_status "an absent $key still reads" "$st" 0
+  assert_eq "an absent $key reads as empty" "$out" ""
+done
+restore_suite_env
+
+# --- state.json schema ------------------------------------------------------
+# What a fresh init writes, pinned: every key it seeds reads back through
+# state get, and the raw file holds exactly these keys, in this order, with
+# these seeds. A change to the state-key schema that alters state.json or loses
+# a key's default fails here.
+echo
+echo "state.json schema"
+fresh_flow schema
+for key in $(jq -r 'keys_unsorted[]' .orchestrator/state.json); do
+  "$ORCH" state get "$key" >/dev/null 2>&1; st=$?
+  assert_status "state get reads $key, which init writes" "$st" 0
+done
+assert_eq "slug, base, created and updated are non-empty strings" \
+  "$(jq -c '[.slug, .base, .created, .updated] | map(type == "string" and . != "")' .orchestrator/state.json)" \
+  "[true,true,true,true]"
+assert_eq "state.json holds the pinned keys, order and seeds" \
+  "$(jq -c '.slug = "S" | .base = "B" | .created = "C" | .updated = "U"' .orchestrator/state.json)" \
+  '{"slug":"S","phase":"spec","issue":null,"base":"B","branch":null,"pr":null,"base_sha":null,"budget":null,"iteration":0,"flake_rerun_used":false,"redo_count":0,"host_fallbacks":true,"created":"C","updated":"U"}'
 restore_suite_env
 
 # --- review terminal ----------------------------------------------------
