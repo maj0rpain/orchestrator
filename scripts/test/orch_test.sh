@@ -3345,11 +3345,13 @@ assert_eq "recording it" "$("$ORCH" state get issue)" "43"
 
 healthy_repo
 fake_issue 44 open ready-for-agent
-fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
 before_store="$(fake_snapshot)"
 out="$("$ORCH" init nope --issue 44 2>&1)"; st=$?
 assert_status "refuses to adopt an issue whose read fails" "$st" 1
-assert_contains "saying it could not be read" "$out" "issue #44 could not be read from GitHub"
+assert_contains "saying it could not be read, with gh's first line" "$out" \
+  "issue #44 could not be read from GitHub - check it exists and gh is authenticated: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past gh's first line" "$out" "second line"
 assert_eq "leaving no flow active" \
   "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
 assert_eq "and GitHub unchanged" "$(fake_snapshot)" "$before_store"
@@ -3542,10 +3544,22 @@ assert_contains "finding every one of them" "$out" "every triage label exists on
 # answer, not a "no", so it warns.
 healthy_repo
 doctor_github
-fake_fail adapter_labels
+fake_fail adapter_labels $'HTTP 403: Forbidden\nsecond line'
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "an unlistable label set does not block the flow" "$st" 0
-assert_contains "says the labels could not be listed" "$out" "could not be listed"
+assert_contains "says the labels could not be listed, with gh's first line" "$out" \
+  "warn  the repo's labels could not be listed: HTTP 403: Forbidden"
+assert_not_contains "and nothing past gh's first line" "$out" "second line"
+fake_unfail
+
+# The default-branch read is the one that tells doctor GitHub can see the repo:
+# when it fails, the FAIL carries gh's own first line.
+fake_fail adapter_repo_default_branch $'HTTP 404: Not Found\nsecond line'
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a repo GitHub will not show fails doctor" "$st" 1
+assert_contains "saying GitHub cannot see it, with gh's first line" "$out" \
+  "FAIL  GitHub cannot see acme/widgets - origin may point somewhere you cannot see: HTTP 404: Not Found"
+assert_not_contains "and nothing past gh's first line" "$out" "second line"
 
 # The repo the healthy_repo() call before the labels check built is still
 # clean here; only its failing label listing is undone.
@@ -3616,11 +3630,13 @@ savepath="$PATH"; gh_fixture; PATH="$savepath"
 out="$(cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
   && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "no resolvable repo fails doctor" "$st" 1
-repo_remedy="no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
-assert_contains "names the missing repo as a FAIL, in orch.sh's own remedy" "$out" "FAIL  $repo_remedy"
+assert_contains "names the missing repo as a FAIL, with no remedy in it" "$out" \
+  "FAIL  no GitHub repo to work on: origin is missing or not a GitHub owner/name"
 assert_contains "gives the GH_REPO remedy" "$out" "export GH_REPO=<owner>/<repo>"
-assert_contains "counts the later GitHub checks on the skip line, in the same words" \
-  "$out" "GitHub checks skipped: $repo_remedy"
+assert_eq "gives the GH_REPO instruction exactly once" \
+  "$(printf '%s\n' "$out" | grep -c 'GH_REPO=<owner>/<repo>')" "1"
+assert_eq "counts the later GitHub checks on the skip line, naming the bare cause" \
+  "$(printf '%s\n' "$out" | grep -cx 'warn  [0-9]* GitHub checks\{0,1\} skipped: no GitHub repo to work on')" "1"
 assert_contains "still reaches the summary line" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
 assert_eq "makes no gh call without a repo to pin it to" "$(cat "$GH_FIXTURE/env.log" 2>/dev/null | wc -l | tr -d ' ')" "0"
 unset GH_FIXTURE
@@ -3947,6 +3963,16 @@ assert_not_contains "nor as unsupported" "$out" "do not appear to be supported"
 assert_not_contains "nor past gh's first line" "$out" "second line"
 fake_unfail
 
+# A probe that fails with nothing on stderr says so, rather than ending in a
+# bare colon (#766).
+fake_fail_times adapter_sub_issues_supported 5
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a silently failing sub-issues probe does not block the flow" "$st" 0
+assert_contains "warns that gh gave no reason" \
+  "$out" "warn  sub-issues support could not be probed: gh gave no reason"
+assert_not_contains "never with a bare colon" "$out" "could not be probed: "$'\n'
+fake_unfail
+
 # Gated like every other GitHub-backed check: unreachable collapses into the
 # shared skip line rather than adding a check-specific one of its own.
 doctor_github
@@ -4264,10 +4290,12 @@ assert_status "fails when the recorded issue has been closed" "$st" 1
 assert_contains "names the closed issue" "$out" "issue #11 is closed"
 assert_contains "gives the command that reopens it" "$out" "gh issue reopen 11"
 
-fake_fail adapter_issue_state_labels
+fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the issue cannot be read from GitHub" "$st" 1
-assert_contains "names the unreadable issue" "$out" "issue #11 could not be read from GitHub"
+assert_contains "names the unreadable issue, with gh's first line" "$out" \
+  "FAIL  issue #11 could not be read from GitHub: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past gh's first line" "$out" "second line"
 assert_contains "gives the command that re-checks it" "$out" "gh issue view 11"
 
 # The ready-for-agent label is a one-time gate at adoption, not an ongoing flow
@@ -4342,6 +4370,13 @@ assert_contains "names the closed PR" "$out" "#7"
 fake_pr 7 merged orch/9-gone main
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a merged PR is not a failure" "$st" 0
+fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "fails when the PR cannot be read from GitHub" "$st" 1
+assert_contains "names the unreadable PR, with gh's first line" "$out" \
+  "FAIL  PR #7 could not be read from GitHub: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past gh's first line" "$out" "second line"
+fake_unfail
 
 fake_offline
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -9490,8 +9525,25 @@ assert_contains "gives the command that shows it" "$out" "gh pr checks 40"
 fake_checks 40 required boom
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an unreachable API warns rather than fails" "$st" 0
-assert_contains "reports it" "$out" "CI: could not be read from GitHub for PR #40"
-assert_contains "carrying the reason" "$out" "dial tcp"
+assert_contains "reports it, carrying the reason inline" "$out" \
+  "warn  CI: could not be read from GitHub for PR #40: dial tcp: lookup api.github.com: no such host"
+assert_eq "and the reason only once" "$(printf '%s\n' "$out" | grep -c 'dial tcp')" "1"
+
+fake_fail adapter_pr_checks $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a failing checks read warns rather than fails" "$st" 0
+assert_contains "carrying gh's first line inline" "$out" \
+  "warn  CI: could not be read from GitHub for PR #40: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
+assert_eq "and gh's line only once" "$(printf '%s\n' "$out" | grep -c 'HTTP 502')" "1"
+fake_unfail
+
+fake_fail_times adapter_pr_checks 5
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a silently failing checks read warns rather than fails" "$st" 0
+assert_contains "saying gh gave no reason" "$out" \
+  "warn  CI: could not be read from GitHub for PR #40: gh gave no reason"
+fake_unfail
 restore_suite_env
 
 # --- doctor: review draft check -------------------------------------------
@@ -9537,6 +9589,14 @@ assert_status "a merged PR has nothing left to disagree with" "$st" 0
 assert_eq "and says nothing about draft state" \
   "$(printf '%s\n' "$out" | grep -c 'draft state')" "0"
 state_fixture phase review
+
+fake_pr 40 open orch/doctordraft main
+fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "an unreadable draft state warns with gh's first line" "$out" \
+  "warn  PR #40 draft state could not be read from GitHub: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past gh's first line" "$out" "second line"
+fake_unfail
 restore_suite_env
 
 # --- review retire -------------------------------------------------------

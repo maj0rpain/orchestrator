@@ -66,6 +66,7 @@ d_join() {
 # problem underneath them.
 D_GH=""            # "ok", or the reason GitHub could not be asked
 D_REPO_SEEN=""     # "ok" when GitHub answered for the repo, or empty
+D_REPO_REASON=""   # gh's first line when that read failed, or empty
 D_REPO_BRANCH=""   # the default branch, as GitHub reports it, when valid
 D_JQ=""            # "ok", or empty when jq is missing
 D_STATE=""         # "ok" when state.json parses, or empty
@@ -89,7 +90,8 @@ d_skip_line() {
   local n="$1" noun="$2" cause="$3" word="checks"
   if [ "$n" -eq 0 ]; then return 0; fi
   if [ "$n" -eq 1 ]; then word="check"; fi
-  # No remedy: reconnecting to a network is not a command.
+  # No remedy: the cause is bare, and its remedy, where one exists, is
+  # given once by the check that found it.
   d_warn "$n $noun $word skipped: $cause"
 }
 
@@ -114,7 +116,7 @@ d_probe_gh() {
   if [ -n "$D_GH" ]; then return 0; fi
   if ! gh_installed; then D_GH="gh is not installed"; return 0; fi
   # The guard dies with no repo to pin its calls to; ask nothing instead.
-  if ! repo_resolve; then D_GH="$REPO_REMEDY"; return 0; fi
+  if ! repo_resolve; then D_GH="no GitHub repo to work on"; return 0; fi
   if out="$(adapter_auth_status 2>&1)"; then
     D_GH=ok
   else
@@ -127,7 +129,7 @@ d_probe_gh() {
 }
 
 d_probe() {
-  local scope="$1" view
+  local scope="$1" view err
   if command -v jq >/dev/null 2>&1; then D_JQ=ok; fi
   # A state file that does not parse invalidates every flow check at once.
   # Settled here so that d_run_flow can report it once, ahead of the list, and
@@ -144,9 +146,12 @@ d_probe() {
   # The same read default_branch makes, validated the same way (#485): an
   # answer that is no branch name - a tool manager's banner around it, or an
   # empty one - is GitHub not having said, never a name to report.
-  if [ "$D_GH" = ok ] && view="$(adapter_repo_default_branch "$REPO_NAME" 2>/dev/null)"; then
+  [ "$D_GH" = ok ] || return 0
+  if capture view err adapter_repo_default_branch "$REPO_NAME"; then
     D_REPO_SEEN=ok
     if is_branch_name "$view"; then D_REPO_BRANCH="$view"; fi
+  else
+    D_REPO_REASON="${err%%$'\n'*}"
   fi
 }
 
@@ -210,7 +215,7 @@ check_gh_auth() {
 check_gh_repo() {
   local default owner_name
   if ! repo_resolve; then
-    d_fail "$REPO_REMEDY"
+    d_fail "no GitHub repo to work on: origin is missing or not a GitHub owner/name"
     d_remedy "export GH_REPO=<owner>/<repo>"
     return 0
   fi
@@ -230,7 +235,7 @@ check_gh_repo() {
   fi
   d_gh_gate || return 0
   if [ -n "$D_REPO_SEEN" ]; then return 0; fi
-  d_fail "GitHub cannot see $REPO_NAME - origin may point somewhere you cannot see."
+  d_fail "GitHub cannot see $REPO_NAME - origin may point somewhere you cannot see: ${D_REPO_REASON:-gh gave no reason}"
   d_remedy "git remote set-url origin https://github.com/<owner>/<repo>.git"
 }
 
@@ -406,7 +411,7 @@ validate_adopted_issue() {
   local issue="$1" label state labels gh_line
   label="$(triage_label_for ready-for-agent)"
   issue_state_labels_read "$issue" state labels gh_line \
-    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
+    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated: ${gh_line:-gh gave no reason}"
   [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
   labels_have "$labels" "$label" \
     || die "issue #$issue is missing the '$label' triage label - adoption requires it."
@@ -431,15 +436,16 @@ check_labels_doc() {
 # whole orch-to-spec exchange has already been spent.
 check_labels_exist() {
   d_gh_gate || return 0
-  local want have missing="" l n
+  local want have err missing="" l n
   want="$(triage_expected_labels)" || want=""
   # Nothing to compare against, and check_labels_doc has already said so. One
   # problem earns one FAIL, never a second derived from the first.
   [ -n "$want" ] || return 0
-  if ! have="$(adapter_labels "$LABEL_LIMIT" 2>/dev/null)"; then
+  if ! capture have err adapter_labels "$LABEL_LIMIT"; then
     # One check, one cause, one warn: GitHub answered the auth probe and then
     # would not answer this, which is an absent answer rather than a "no".
-    d_warn "the repo's labels could not be listed."
+    err="${err%%$'\n'*}"
+    d_warn "the repo's labels could not be listed: ${err:-gh gave no reason}"
     return 0
   fi
   while IFS= read -r l; do
@@ -474,7 +480,8 @@ check_sub_issues() {
   d_gh_gate || return 0
   local probe err
   if ! capture probe err adapter_sub_issues_supported; then
-    d_warn "sub-issues support could not be probed: ${err%%$'\n'*}"
+    err="${err%%$'\n'*}"
+    d_warn "sub-issues support could not be probed: ${err:-gh gave no reason}"
     return 0
   fi
   if [ -z "$probe" ]; then
@@ -633,7 +640,7 @@ check_flow_upstream() {
 check_flow_issue() {
   # issue_labels is the read's throwaway half: only the state is checked here.
   # shellcheck disable=SC2034
-  local issue issue_state="" issue_labels gh_line phase
+  local issue issue_state="" issue_labels gh_line="" phase
   issue="$(state_get issue)"
   if [ -z "$issue" ]; then d_ok "issue: not recorded yet"; return 0; fi
   d_gh_gate || return 0
@@ -653,22 +660,25 @@ check_flow_issue() {
         d_fail "issue #$issue is closed."; d_remedy "gh issue reopen $issue"
       fi
       ;;
-    *)      d_fail "issue #$issue could not be read from GitHub."; d_remedy "gh issue view $issue" ;;
+    *)      d_fail "issue #$issue could not be read from GitHub: ${gh_line:-gh gave no reason}"
+            d_remedy "gh issue view $issue" ;;
   esac
 }
 
 check_flow_pr() {
-  local pr pr_state
+  local pr pr_state err=""
   pr="$(state_get pr)"
   if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
   d_gh_gate || return 0
-  pr_state="$(adapter_pr_state_draft "$pr" 2>/dev/null)" || pr_state=""
-  pr_state="$(first_line "$pr_state")"
+  capture pr_state err adapter_pr_state_draft "$pr" || pr_state=""
+  pr_state="${pr_state%%$'\n'*}"
+  err="${err%%$'\n'*}"
   case "$pr_state" in
     OPEN)   d_ok "PR #$pr open" ;;
     MERGED) d_ok "PR #$pr merged" ;;
     CLOSED) d_fail "PR #$pr is closed."; d_remedy "gh pr reopen $pr" ;;
-    *)      d_fail "PR #$pr could not be read from GitHub."; d_remedy "gh pr view $pr" ;;
+    *)      d_fail "PR #$pr could not be read from GitHub: ${err:-gh gave no reason}"
+            d_remedy "gh pr view $pr" ;;
   esac
 }
 
@@ -749,8 +759,11 @@ check_flow_review_ci() {
       ;;
     # ci_probe's only other word - a failing round trip. Not fixable from here,
     # so no remedy: reconnecting to a network, or GitHub answering, is not a
-    # command either.
-    *) d_warn "CI: could not be read from GitHub for PR #$pr." ;;
+    # command either. Its detail is gh's reason, carried in the warn rather
+    # than printed again below it.
+    *) detail="$(trim "$detail")"
+       d_warn "CI: could not be read from GitHub for PR #$pr: ${detail:-gh gave no reason}"
+       detail="" ;;
   esac
   [ -z "$detail" ] || note "$detail"
 }
@@ -760,16 +773,17 @@ check_flow_review_ci() {
 # so isDraft and phase disagreeing on GitHub's own PR is evidence that
 # operation only half landed, not a state a healthy flow reaches on its own.
 check_flow_review_draft() {
-  local phase pr out pr_state is_draft rest
+  local phase pr out err="" pr_state is_draft rest
   phase="$(state_get phase)"
   case "$phase" in review|done) ;; *) return 0 ;; esac
   pr="$(state_get pr)"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
-  out="$(adapter_pr_state_draft "$pr" 2>/dev/null)" || out=""
+  capture out err adapter_pr_state_draft "$pr" || out=""
   lines_split "$out" pr_state is_draft rest
   if [ -z "$pr_state" ]; then
-    d_warn "PR #$pr draft state could not be read from GitHub."
+    err="${err%%$'\n'*}"
+    d_warn "PR #$pr draft state could not be read from GitHub: ${err:-gh gave no reason}"
     return 0
   fi
   # A merged or closed PR cannot go back to draft, so only an open PR's flag
