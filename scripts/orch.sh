@@ -236,10 +236,14 @@ EOF
 # Every read of state.json goes through here, so what an absent key means is
 # decided in the STATE_KEYS table rather than at each call site. A key outside
 # the table dies: a misspelt read would otherwise look exactly like an unset one.
-state_get() {
+state_get() { state_get_in "$STATE" "$1"; }
+
+# state_get against another checkout's state file <file>: the one read side
+# checkout list makes of a flow it does not run in.
+state_get_in() {
   local default
-  default="$(state_key "$1" default)" || die "unknown state key: $1"
-  jq -r --arg k "$1" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$STATE"
+  default="$(state_key "$2" default)" || die "unknown state key: $2"
+  jq -r --arg k "$2" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$1"
 }
 
 # The one state-file write: sets key $1 to the JSON value $2 and stamps
@@ -3460,6 +3464,86 @@ cmd_ticket_worktree() {
   esac
 }
 
+# --- side-checkout ------------------------------------------------------------
+#
+# A side checkout: a worktree the plugin makes under the main checkout's
+# .orchestrator/checkouts/, so a second flow or a quick implementation runs
+# beside the work in this checkout, in a session of its own (ADR-0037). The
+# ownership marker in the worktree's own git folder - which git deletes with
+# the worktree - is what makes it one; a flow's state file is not, since a
+# hand-made worktree can hold a flow too.
+
+readonly SIDE_CHECKOUT_MARKER="orchestrator-side-checkout"
+
+# The main checkout: the first worktree git lists.
+main_checkout() { git worktree list --porcelain | sed -n '1s/^worktree //p'; }
+
+side_checkouts_dir() { printf '%s/%s/checkouts\n' "$(main_checkout)" "$ORCH_DIR_NAME"; }
+
+# Whether the worktree at <path> carries the ownership marker.
+is_side_checkout() {
+  local gd
+  gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" && [ -f "$gd/$SIDE_CHECKOUT_MARKER" ]
+}
+
+# Adds a worktree on no branch at origin/<base>, the base branch in effect,
+# freshly fetched: git refuses one branch in two worktrees, and the main
+# checkout usually holds the base. A failed fetch dies before any worktree
+# exists; a failed marker write takes the fresh worktree back out.
+cmd_side_checkout_add() {
+  [ $# -eq 1 ] || die "usage: orch.sh side-checkout add <slug>"
+  local slug path base gd
+  slug="$(normalize_slug "$1")"
+  path="$(side_checkouts_dir)/$slug"
+  [ ! -e "$path" ] || die "side checkout $path already exists"
+  exclude_orch_dirs
+  base="$(base_branch)"
+  git fetch --quiet origin "$base" 2>/dev/null \
+    || die "could not fetch base branch $base from origin - no side checkout was made"
+  git worktree add -q --detach "$path" "origin/$base" \
+    || die "could not add side checkout $path"
+  if ! gd="$(git -C "$path" rev-parse --absolute-git-dir)" \
+     || ! : >"$gd/$SIDE_CHECKOUT_MARKER" 2>/dev/null; then
+    # A freshly added worktree holds nothing of anyone's, so no force is needed.
+    git worktree remove "$path" 2>/dev/null || true
+    die "could not write the side-checkout marker - removed $path again"
+  fi
+  note "$path"
+}
+
+# Prints one line per side checkout - worktrees carrying the marker, and no
+# other: <slug> <path>, then its flow (flow <slug> <phase> #<issue>), else its
+# checked-out branch (branch <name>), else (no branch).
+cmd_side_checkout_list() {
+  [ $# -eq 0 ] || die "usage: orch.sh side-checkout list"
+  local line path state branch issue
+  while IFS= read -r line; do
+    case "$line" in "worktree "*) ;; *) continue ;; esac
+    path="${line#worktree }"
+    is_side_checkout "$path" || continue
+    state="$path/$ORCH_DIR_NAME/state.json"
+    if [ -f "$state" ]; then
+      issue="$(state_get_in "$state" issue)"
+      if [ -n "$issue" ]; then issue="#$issue"; else issue="(no issue)"; fi
+      note "$(basename "$path") $path flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue"
+    elif branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)"; then
+      note "$(basename "$path") $path branch $branch"
+    else
+      note "$(basename "$path") $path (no branch)"
+    fi
+  done < <(git worktree list --porcelain)
+}
+
+cmd_side_checkout() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    add)  cmd_side_checkout_add "$@" ;;
+    list) cmd_side_checkout_list "$@" ;;
+    *) die "unknown side-checkout op: ${op:-<none>} (want add|list)" ;;
+  esac
+}
+
 # --- redo ---------------------------------------------------------------
 
 # True when any of the named files exists under <dir>.
@@ -3665,7 +3749,8 @@ cmd_archive() {
   mkdir -p "$dest"
   for entry in "$ORCH"/*; do
     [ -e "$entry" ] || continue
-    if [ "$(basename "$entry")" = "archive" ]; then continue; fi
+    # Side checkouts are live worktrees, never part of the flow's files.
+    case "$(basename "$entry")" in archive|checkouts) continue ;; esac
     mv "$entry" "$dest/"
   done
   note "${dest#"$ROOT"/}"
@@ -3901,6 +3986,17 @@ orch.sh - deterministic operations for the orchestrator flow
                               forked-from branch, before removing anything;
                               --unmerged deletes a clean worktree's unmerged
                               branch
+  side-checkout add <slug>    fetch the base branch in effect, add a worktree
+                              on no branch at origin/<base> under the main
+                              checkout's .orchestrator/checkouts/<slug>, mark
+                              it as a side checkout, git-exclude .orchestrator/
+                              in the clone's shared info/exclude, and print its
+                              path. Refuses when that path already exists; a
+                              failed fetch or marker write leaves no worktree
+  side-checkout list          print <slug> <path> and then its flow
+                              (flow <slug> <phase> #<issue>), its branch
+                              (branch <name>), or (no branch), for each side
+                              checkout of the clone - marked worktrees only
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
@@ -3983,7 +4079,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               02-spec.md and any 03-implement.md move into
                               handoff/pre-redo-spec-<UTC timestamp>/
   status                      human-readable summary
-  archive                     move the live flow into .orchestrator/archive/
+  archive                     move the live flow into .orchestrator/archive/,
+                              leaving archive/ and checkouts/ in place
                               (refuses, naming each, while a ticket worktree
                               is left under this checkout)
 USAGE
@@ -4008,6 +4105,7 @@ main() {
     pr)            cmd_pr "$@" ;;
     ticket)        cmd_ticket "$@" ;;
     ticket-worktree) cmd_ticket_worktree "$@" ;;
+    side-checkout) cmd_side_checkout "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
     spec-review)   cmd_spec_review "$@" ;;

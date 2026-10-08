@@ -10,10 +10,21 @@ implementation details, no spec, no decisions. Decisions live in `docs/adr/`.
 **Flow**:
 One run of the pipeline, from an approved plan to a pull request. A flow is
 identified by its slug and holds exactly one issue, one branch, and one PR. One
-flow at a time per checkout - except a flow at phase `done`, which doesn't
-count against that limit: it no longer blocks a new one, which archives it
-automatically rather than requiring it be cleared by hand. Its alternative,
-for changes that don't need the pipeline, is a quick implementation.
+flow at a time per checkout - a second flow runs in a side checkout - except a
+flow at phase `done`, which doesn't count against that limit: it no longer
+blocks a new one, which archives it automatically rather than requiring it be
+cleared by hand. Its alternative, for changes that don't need the pipeline, is
+a quick implementation.
+
+**Side checkout**:
+A git worktree the plugin makes inside the repo, so a second flow or a quick
+implementation can run beside the work already in this checkout, in a session
+of its own. Offered when a flow is already mid-pipeline, or made when a human
+asks for one. It counts as a checkout in its own right, so it holds at most
+one flow. It is removed when its flow is archived with `archive` or
+`/orchestrator:abort`, by `/orchestrator:finish` once its work is finished, or
+by hand, and never with force.
+_Avoid_: sibling worktree, flow worktree, second checkout.
 
 **Base branch**:
 The branch a flow or quick implementation forks from and opens its PR

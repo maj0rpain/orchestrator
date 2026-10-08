@@ -5035,6 +5035,162 @@ assert_contains "the CLI conventions' noun table has a ticket-worktree row" \
   '`add`, `list`, `remove`'
 restore_suite_env
 
+# --- side-checkout (#722) ------------------------------------------------------
+# A side checkout: a worktree the plugin makes under the main checkout's
+# .orchestrator/checkouts/<slug>, on no branch at origin/<base>, carrying the
+# ownership marker in its own git folder. Checked through what git and the
+# file system show afterwards, against a real clone of a bare origin.
+echo
+echo "side-checkout"
+# sc_clone: a fresh clone of a bare origin holding main, cwd inside it, with no
+# exclude entries yet. Call it in the current shell: it cd's. sc_seed is the
+# repo the origin was pushed from, kept to move origin's main on.
+sc_clone() {
+  local clone
+  new_repo >/dev/null
+  sc_seed="$PWD"
+  sc_origin="$(mktemp -d)/origin.git"
+  git init -q --bare "$sc_origin"
+  git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
+  git -C "$sc_origin" symbolic-ref HEAD refs/heads/main
+  clone="$(mktemp -d)/clone"
+  git clone -q "$sc_origin" "$clone"
+  cd "$clone" || exit 1
+  git config user.email test@example.com
+  git config user.name Test
+  export GH_REPO=acme/widgets
+}
+# sc_marker <path>: whether the worktree at <path> carries the ownership marker.
+sc_marker() {
+  if [ -f "$(git -C "$1" rev-parse --absolute-git-dir)/orchestrator-side-checkout" ]; then
+    echo marked; else echo unmarked; fi
+}
+sc_present() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
+
+sc_clone
+top="$(git rev-parse --show-toplevel)"
+# origin's main moves on after the clone, so only a fetch lands add on its tip.
+git -C "$sc_seed" commit -q --allow-empty -m "main moves on"
+git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
+moved_tip="$(git -C "$sc_seed" rev-parse HEAD)"
+out="$(orch_gh_failing side-checkout add alpha)"; st=$?
+assert_status "add succeeds" "$st" 0
+assert_eq "add prints the side checkout's path" "$out" "$top/.orchestrator/checkouts/alpha"
+assert_eq "the side checkout is a worktree of its own" \
+  "$(git -C "$out" rev-parse --show-toplevel)" "$top/.orchestrator/checkouts/alpha"
+assert_eq "on no branch" "$(git -C "$out" branch --show-current)" ""
+assert_eq "at origin/<base>'s tip, freshly fetched" "$(git -C "$out" rev-parse HEAD)" "$moved_tip"
+assert_eq "carrying the ownership marker" "$(sc_marker "$out")" "marked"
+assert_eq "the marker is empty" \
+  "$(wc -c <"$(git -C "$out" rev-parse --absolute-git-dir)/orchestrator-side-checkout" | tr -d ' ')" "0"
+assert_eq "the main checkout stays on its branch" "$(git branch --show-current)" "main"
+assert_eq "in a fresh clone, git status in the main checkout shows nothing new" \
+  "$(git status --porcelain)" ""
+assert_eq "add excludes .orchestrator/" "$(exclude_count .orchestrator/)" "1"
+
+out="$(orch_gh_failing side-checkout add alpha 2>&1)"; st=$?
+assert_status "add refuses an existing path" "$st" 1
+assert_contains "naming it" "$out" "$top/.orchestrator/checkouts/alpha"
+mkdir -p .orchestrator/checkouts/stray
+out="$(orch_gh_failing side-checkout add stray 2>&1)"; st=$?
+assert_status "add refuses a path that exists without being a worktree" "$st" 1
+assert_eq "and makes no worktree there" "$(git worktree list | wc -l | tr -d ' ')" "2"
+rmdir .orchestrator/checkouts/stray
+
+# The base branch in effect, not the checkout's branch.
+git -C "$sc_seed" push -q "$sc_origin" HEAD~1:refs/heads/uat
+uat_tip="$(git -C "$sc_seed" rev-parse HEAD~1)"
+git config orchestrator.base uat
+out="$(orch_gh_failing side-checkout add on-uat)"
+assert_eq "add forks from the base branch in effect" "$(git -C "$out" rev-parse HEAD)" "$uat_tip"
+git worktree remove "$out"
+
+# A failed fetch dies before any worktree exists.
+git config orchestrator.base nosuch
+out="$(orch_gh_failing side-checkout add nofetch 2>&1)"; st=$?
+assert_status "add dies when the base branch cannot be fetched" "$st" 1
+assert_contains "naming the base branch" "$out" "nosuch"
+assert_eq "leaving no side checkout" "$(sc_present .orchestrator/checkouts/nofetch)" "absent"
+assert_eq "nor any worktree" "$(git worktree list | wc -l | tr -d ' ')" "2"
+git config --unset orchestrator.base
+
+# A failed marker write takes the fresh worktree back out: a post-checkout hook
+# makes the marker's name a directory, so no file can be written there.
+writeln '#!/bin/sh' 'mkdir "$(git rev-parse --absolute-git-dir)/orchestrator-side-checkout"' 'exit 0' \
+  >.git/hooks/post-checkout
+chmod +x .git/hooks/post-checkout
+out="$(orch_gh_failing side-checkout add nomarker 2>&1)"; st=$?
+assert_status "add dies when the marker cannot be written" "$st" 1
+assert_eq "leaving no side checkout" "$(sc_present .orchestrator/checkouts/nomarker)" "absent"
+assert_eq "nor any worktree" "$(git worktree list | wc -l | tr -d ' ')" "2"
+rm .git/hooks/post-checkout
+
+# list: marked worktrees only, each with its flow or its branch.
+out="$(orch_gh_failing side-checkout list)"; st=$?
+assert_status "list succeeds" "$st" 0
+assert_eq "a side checkout before a branch is made lists (no branch)" "$out" \
+  "alpha $top/.orchestrator/checkouts/alpha (no branch)"
+beta="$(orch_gh_failing side-checkout add beta)"
+git -C "$beta" checkout -q -b quick/3-beta
+gamma="$(orch_gh_failing side-checkout add gamma)"
+(cd "$gamma" && orch_gh_failing init gamma-flow >/dev/null && orch_gh_failing state set issue 12)
+delta="$(orch_gh_failing side-checkout add delta)"
+(cd "$delta" && orch_gh_failing init delta-flow >/dev/null)
+# Neither a hand-made worktree, even one holding a flow, nor a ticket worktree
+# is a side checkout.
+hand="$(mktemp -d)/hand"
+git worktree add -q -b hand "$hand"
+(cd "$hand" && orch_gh_failing init hand-flow >/dev/null)
+orch_gh_failing ticket-worktree add 4 >/dev/null
+# git lists linked worktrees in no fixed order, so the lines are sorted.
+out="$(orch_gh_failing side-checkout list | sort)"
+assert_eq "list prints each side checkout's flow, branch, or (no branch)" "$out" \
+  "$(writeln "alpha $top/.orchestrator/checkouts/alpha (no branch)" \
+             "beta $top/.orchestrator/checkouts/beta branch quick/3-beta" \
+             "delta $top/.orchestrator/checkouts/delta flow delta-flow spec (no issue)" \
+             "gamma $top/.orchestrator/checkouts/gamma flow gamma-flow spec #12")"
+assert_not_contains "never a hand-made worktree" "$out" "$hand"
+assert_not_contains "never a ticket worktree" "$out" "worktrees/t4"
+assert_eq "from a side checkout, list prints the same" "$(cd "$beta" && orch_gh_failing side-checkout list | sort)" "$out"
+assert_eq "add from a side checkout still nests under the main checkout" \
+  "$(cd "$beta" && orch_gh_failing side-checkout add epsilon)" "$top/.orchestrator/checkouts/epsilon"
+git worktree remove "$top/.orchestrator/checkouts/epsilon"
+orch_gh_failing ticket-worktree remove 4 --unmerged
+assert_eq "git status in the main checkout still shows nothing new" "$(git status --porcelain)" ""
+
+# archive and init over a done flow in the main checkout skip checkouts/.
+orch_gh_failing init main-flow >/dev/null
+dest="$(orch_gh_failing archive)"; st=$?
+assert_status "archive in the main checkout succeeds beside side checkouts" "$st" 0
+assert_eq "it moves no side checkout into the archive" "$(sc_present "$dest/checkouts")" "absent"
+assert_eq "checkouts/ stays in place" "$(sc_present .orchestrator/checkouts/alpha)" "present"
+assert_eq "each side checkout stays where git recorded it" \
+  "$(git -C .orchestrator/checkouts/gamma rev-parse --show-toplevel)" "$top/.orchestrator/checkouts/gamma"
+assert_eq "with its flow untouched" "$(cd "$gamma" && orch_gh_failing state get slug)" "gamma-flow"
+orch_gh_failing init done-flow >/dev/null
+state_fixture phase done
+out="$(orch_gh_failing init next-flow)"; st=$?
+assert_status "init over a done flow succeeds beside side checkouts" "$st" 0
+archived="$(printf '%s\n' "$out" | sed -n 1p)"
+assert_eq "it archives no side checkout" "$(sc_present "$archived/checkouts")" "absent"
+assert_eq "each side checkout stays where git recorded it" \
+  "$(git -C .orchestrator/checkouts/beta branch --show-current)" "quick/3-beta"
+assert_eq "and side-checkout list is unchanged" "$(orch_gh_failing side-checkout list | wc -l | tr -d ' ')" "4"
+
+out="$(orch_gh_failing side-checkout add 2>&1)"; st=$?
+assert_status "add refuses a missing slug" "$st" 1
+out="$(orch_gh_failing side-checkout list extra 2>&1)"; st=$?
+assert_status "list refuses arguments" "$st" 1
+out="$(orch_gh_failing side-checkout bogus 2>&1)"; st=$?
+assert_status "side-checkout bogus is an unknown op" "$st" 1
+assert_contains "listed alongside the ops that exist" "$out" "unknown side-checkout op"
+out="$(orch_gh_failing help 2>&1)"
+assert_contains "side-checkout add is in the usage text" "$out" "side-checkout add <slug>"
+assert_contains "side-checkout list is in the usage text" "$out" "side-checkout list"
+assert_contains "the CLI conventions' noun table has a side-checkout row" \
+  "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`add`, `list`'
+restore_suite_env
+
 # --- ticket merge (#621) -------------------------------------------------------
 # Lands a ticket branch on the branch it was forked from: rebase inside the
 # ticket worktree, then fast-forward the forked-from branch wherever it is
