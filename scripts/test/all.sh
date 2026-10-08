@@ -11,14 +11,20 @@
 # stderr is not captured: it passes straight through, and the suites' stderr
 # may interleave.
 #
-# Then shellcheck's summary. shellcheck runs from the repo root two levels up:
-# "shellcheck -S warning -f gcc scripts/*.sh scripts/test/*.sh", every tracked
-# shell file, with .shellcheckrc's source settings, its stderr folded into its
-# captured output. Its summary line has the same shape: each finding line,
-# then "shellcheck: N findings"; or "shellcheck: 0 findings" when clean; or, on
-# a non-zero exit with no finding line, shellcheck's output, then "shellcheck:
-# failed (exit N)". With no shellcheck on PATH it prints "shellcheck: not
-# installed - skipped", which fails the run only when CI is set.
+# Then shellcheck's summary. shellcheck runs from the repo root two levels up,
+# one process per tracked shell file matched by "scripts/*.sh
+# scripts/test/*.sh": "shellcheck -S warning -f gcc <file>", with
+# .shellcheckrc's source settings. Every process starts at once, alongside the
+# suites, with no throttle, so no single shellcheck run over every file is the
+# critical path - this deliberately reverses #777's one-process rule. Each
+# process's stdout and stderr go to its own captured buffer, and all.sh waits
+# on each one; the buffers are joined in glob order, and the status taken is
+# the highest exit among the processes. Its summary line has the same shape:
+# each finding line, then "shellcheck: N findings"; or "shellcheck: 0
+# findings" when clean; or, on a non-zero exit with no finding line, the
+# output of shellcheck, then "shellcheck: failed (exit N)". With no shellcheck
+# on PATH it prints "shellcheck: not installed - skipped", which fails the run
+# only when CI is set.
 #
 # The three suites run with TMPDIR set to a fresh, empty directory under that
 # temporary directory. Once they have finished, if anything is left in it -
@@ -56,17 +62,29 @@ done
 have_sc=0
 if command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
-  (cd "$dir/../.." && exec shellcheck -S warning -f gcc scripts/*.sh scripts/test/*.sh) \
-    >"$tmp/shellcheck" 2>&1 &
-  sc_pid=$!
+  root="$dir/../.."
+  sc_pids=()
+  for sc_file in "$root"/scripts/*.sh "$root"/scripts/test/*.sh; do
+    sc_rel="${sc_file#"$root/"}"
+    (cd "$root" && exec shellcheck -S warning -f gcc "$sc_rel") \
+      >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 &
+    sc_pids+=("$!")
+  done
 fi
 
 for suite_pid in "${pids[@]}"; do
   wait "$suite_pid" || failed=1
 done
 if [ "$have_sc" -eq 1 ]; then
-  wait "$sc_pid"
-  sc_status=$?
+  sc_status=0
+  sc_out=""
+  for sc_n in "${!sc_pids[@]}"; do
+    wait "${sc_pids[$sc_n]}"
+    sc_exit=$?
+    [ "$sc_exit" -gt "$sc_status" ] && sc_status=$sc_exit
+    sc_part="$(<"$tmp/shellcheck.$sc_n")"
+    [ -n "$sc_part" ] && sc_out+="${sc_out:+$'\n'}$sc_part"
+  done
 fi
 
 for suite in "${suites[@]}"; do
@@ -91,7 +109,6 @@ if [ "$have_sc" -eq 0 ]; then
   echo "shellcheck: not installed - skipped"
   [ -n "${CI:-}" ] && failed=1
 else
-  sc_out="$(<"$tmp/shellcheck")"
   sc_findings="$(printf '%s\n' "$sc_out" | awk '/^[^:]+:[0-9]+:[0-9]+: /')"
   if [ "$sc_status" -eq 0 ]; then
     echo "shellcheck: 0 findings"

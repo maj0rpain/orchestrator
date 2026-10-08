@@ -251,7 +251,15 @@ check_default_branch() {
 
 # The plugin root doctor runs from: the directory scripts/ sits in, which is
 # also where every skill resolves orch.sh and the capabilities reference from.
-D_PLUGIN="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Worked out from this file's own path by parameter expansion, as dirname would
+# print its directory, so it holds however doctor.sh is sourced.
+D_SOURCE="${BASH_SOURCE[0]}"
+case "$D_SOURCE" in
+  /*/*|[!/]*/*) D_SCRIPTS="${D_SOURCE%/*}" ;;
+  /*) D_SCRIPTS="/" ;;
+  *) D_SCRIPTS="." ;;
+esac
+D_PLUGIN="$(CDPATH='' cd -- "$D_SCRIPTS/.." && pwd)"
 HOST_REF="docs/host-capabilities.md"
 
 # The one host detector. Prints "claude", "junie", or nothing when no signal
@@ -464,10 +472,10 @@ check_labels_exist() {
 # and says so in gh's own first line (#554).
 check_sub_issues() {
   d_gh_gate || return 0
-  local probe err said rc=0
+  local probe err said_all said rc=0
   err="$(mktemp)"
   probe="$(adapter_sub_issues_supported 2>"$err")" || rc=$?
-  said="$(first_line "$(cat "$err")")"; rm -f "$err"
+  said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
   if [ "$rc" -ne 0 ]; then
     d_warn "sub-issues support could not be probed: $said"
     return 0
@@ -534,10 +542,12 @@ check_base_branch() {
 # With no side checkout there is nothing to ask GitHub, so the gate - and a
 # skip with GitHub unreachable - only counts once one exists.
 check_side_checkouts_finished() {
-  local path paths=() found=() verdict branch rc
+  local path paths=() found=() verdict branch rc main_root
   mapfile -t paths < <(checkout_paths)
+  # checkout_paths lists the main checkout first.
+  main_root="${paths[0]-}"
   for path in "${paths[@]}"; do
-    [ "$path" != "$(main_checkout)" ] && is_side_checkout "$path" && found+=("$path")
+    [ "$path" != "$main_root" ] && is_side_checkout "$path" && found+=("$path")
   done
   [ "${#found[@]}" -gt 0 ] || return 0
   d_gh_gate || return 0
@@ -546,8 +556,8 @@ check_side_checkouts_finished() {
     side_checkout_finished "$path" </dev/null || rc=$?
     case "$rc" in
       0)
-        d_warn "side checkout $(basename "$path") is finished - its PR is merged, and it is still standing at $path."
-        d_remedy "orch.sh side-checkout remove $(basename "$path")" ;;
+        d_warn "side checkout ${path##*/} is finished - its PR is merged, and it is still standing at $path."
+        d_remedy "orch.sh side-checkout remove ${path##*/}" ;;
       1) ;;
       *) d_warn "side checkout $(basename "$path") could not be checked: $verdict" ;;
     esac
@@ -676,8 +686,7 @@ check_flow_review_terminal() {
   i="$(state_get iteration)"
   b="$(review_budget)"
   terminal="$(review_terminal_state)" || true
-  word="$(first_line "$terminal")"
-  detail="$(printf '%s\n' "$terminal" | tail -n +2)"
+  lines_split "$terminal" word detail
   case "$word" in
     none)  d_ok "review loop: not started yet" ;;
     ready) d_ok "review loop at a terminal state: ready" ;;
@@ -732,8 +741,7 @@ check_flow_review_ci() {
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
   res="$(ci_probe "$pr" required)"
-  verdict="$(first_line "$res")"
-  detail="$(printf '%s\n' "$res" | tail -n +2)"
+  lines_split "$res" verdict detail
   case "$verdict" in
     green)   d_ok "CI: required checks green" ;;
     none)    d_ok "CI: no required checks reported" ;;
@@ -755,15 +763,14 @@ check_flow_review_ci() {
 # so isDraft and phase disagreeing on GitHub's own PR is evidence that
 # operation only half landed, not a state a healthy flow reaches on its own.
 check_flow_review_draft() {
-  local phase pr out pr_state is_draft
+  local phase pr out pr_state is_draft rest
   phase="$(state_get phase)"
   case "$phase" in review|done) ;; *) return 0 ;; esac
   pr="$(state_get pr)"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
   out="$(adapter_pr_state_draft "$pr" 2>/dev/null)" || out=""
-  pr_state="$(first_line "$out")"
-  is_draft="$(printf '%s\n' "$out" | sed -n 2p)"
+  lines_split "$out" pr_state is_draft rest
   if [ -z "$pr_state" ]; then
     d_warn "PR #$pr draft state could not be read from GitHub."
     return 0

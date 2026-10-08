@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.21.2
+
+all.sh's shellcheck step runs one shellcheck process per shell file, all
+started at once, instead of one process over every file, so shellcheck is no
+longer the critical path of the test run (#817). The processes' output is
+joined in glob order, and "failed (exit N)" reports the highest exit among
+them; the flags, `.shellcheckrc` and the four summary forms are unchanged.
+
+orch.sh and doctor.sh spawn fewer processes on their hot paths (#805).
+orch.sh and doctor.sh find their own directory by parameter expansion on
+`BASH_SOURCE` instead of `dirname` (#818). String splits and trims that ran
+through awk, sed, cut, tr, tail, cat, basename or dirname - in doctor's review
+and side-checkout checks, side-checkout add, list and remove, and orch.sh's
+ticket, init and review paths - now run in the shell, through three small
+splitters (`tsv_split`, `lines_split`, `newlines_strip`); side-checkout remove
+reads the top level and git folder in one `rev-parse`, and side-checkout add
+and remove and doctor's finished-side-checkout check ask git for the main
+checkout once. Behaviour is unchanged.
+
 ## 3.21.1
 
 The `review ci` grace tests no longer depend on machine speed (#806). The

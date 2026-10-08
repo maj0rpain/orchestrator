@@ -23,9 +23,19 @@ readonly ORCH_DIR_NAME=".orchestrator"
 # exclude_orch_dirs and doctor's exclude check read.
 readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 readonly PHASES="spec implement review done"
+# The directory this script sits in, which every sourced module lives in too.
+# Worked out by parameter expansion, as dirname would print it, so no call
+# spawns a process to find it: a bare name means the current directory.
+ORCH_SOURCE="${BASH_SOURCE[0]}"
+case "$ORCH_SOURCE" in
+  /*/*|[!/]*/*) ORCH_SCRIPTS="${ORCH_SOURCE%/*}" ;;
+  /*) ORCH_SCRIPTS="/" ;;
+  *) ORCH_SCRIPTS="." ;;
+esac
+readonly ORCH_SOURCE ORCH_SCRIPTS
 # The triage-label parser and LABELS_DOC, its one home; marked readonly here,
 # where orch.sh has always fixed it, since the module assigns it plainly.
-source "$(dirname "${BASH_SOURCE[0]}")/triage-labels.sh"
+source "$ORCH_SCRIPTS/triage-labels.sh"
 readonly LABELS_DOC
 readonly LABEL_LIMIT=1000
 # The most issues or PRs one list call asks gh for, where gh needs a bare
@@ -115,7 +125,7 @@ now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 dir_stamp() { date -u +%Y%m%d-%H%M%S; }
 # Several answers here are one line of prose followed by detail lines, and it is
 # always the first line that carries the verdict.
-first_line() { printf '%s\n' "$1" | sed -n 1p; }
+first_line() { printf '%s\n' "${1%%$'\n'*}"; }
 # capture <out-var> <err-var> <command...>: runs the command, sets <out-var> to
 # its stdout (by command substitution, so trailing newlines go) and <err-var> to
 # its stderr byte for byte, and returns its status. The stderr goes through one
@@ -137,6 +147,54 @@ trim() {
   local s="$1"
   s="${s#"${s%%[![:space:]]*}"}"
   printf '%s' "${s%"${s##*[![:space:]]}"}"
+}
+
+# The splitters below cut a string up by parameter expansion, so a hot path
+# spawns no awk, sed, cut or tail to do it. Each assigns to caller-named
+# variables through printf -v, as capture does, and is called in the current
+# shell, never inside $(...).
+#
+# tsv_split <line> <var>...: <line>'s tab-separated fields into the named
+# variables in turn, as awk -F '\t' reads them: an empty field stays empty,
+# a field past the last tab is empty, and fields past the last variable are
+# dropped.
+tsv_split() {
+  local _tsv_rest="$1"
+  shift
+  while [ $# -gt 0 ]; do
+    printf -v "$1" '%s' "${_tsv_rest%%$'\t'*}"
+    case "$_tsv_rest" in
+      *$'\t'*) _tsv_rest="${_tsv_rest#*$'\t'}" ;;
+      *) _tsv_rest="" ;;
+    esac
+    shift
+  done
+}
+
+# lines_split <text> <var>... <rest-var>: <text>'s first line into the first
+# variable, its next line into the next, and every line left into
+# <rest-var> - as `sed -n <N>p` and `tail -n +<N>` captured by $(...) read a
+# text with no trailing newline. A line past the end is empty.
+lines_split() {
+  local _ls_rest="$1"
+  shift
+  while [ $# -gt 1 ]; do
+    printf -v "$1" '%s' "${_ls_rest%%$'\n'*}"
+    case "$_ls_rest" in
+      *$'\n'*) _ls_rest="${_ls_rest#*$'\n'}" ;;
+      *) _ls_rest="" ;;
+    esac
+    shift
+  done
+  printf -v "$1" '%s' "$_ls_rest"
+}
+
+# newlines_strip <var>: drops every trailing newline from the named
+# variable's value, as $(...) drops them from a command's output.
+newlines_strip() {
+  local _ns_v="${!1}"
+  while [ "${_ns_v%$'\n'}" != "$_ns_v" ]; do _ns_v="${_ns_v%$'\n'}"; done
+  printf -v "$1" '%s' "$_ns_v"
 }
 
 # The one normalisation a slug gets: lowercase, non-alphanumeric runs collapsed
@@ -383,7 +441,8 @@ default_branch() {
     b="$(adapter_repo_default_branch "$REPO_NAME" 2>/dev/null)" || b=""
   fi
   if ! is_branch_name "$b"; then
-    b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')" || b=""
+    b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" || b=""
+    b="${b#origin/}"
   fi
   is_branch_name "$b" || b="main"
   printf '%s\n' "$b"
@@ -704,7 +763,7 @@ cmd_parallel() {
 exclude_orch_dirs() {
   local ex d
   ex="$(git rev-parse --git-common-dir)/info/exclude"
-  mkdir -p "$(dirname "$ex")"
+  mkdir -p "${ex%/*}"
   for d in "${EXCLUDED_DIRS[@]}"; do
     grep -qxF "$d" "$ex" 2>/dev/null || printf '%s\n' "$d" >>"$ex"
   done
@@ -715,12 +774,12 @@ exclude_orch_dirs() {
 # Sourced rather than inlined: a change to how checks register, gate, or count
 # then concentrates in doctor.sh instead of sharing file scope with the flow
 # commands below.
-source "$(dirname "${BASH_SOURCE[0]}")/doctor.sh"
+source "$ORCH_SCRIPTS/doctor.sh"
 
 # The one definition of the planning allowlist and the planning records,
 # shared with hook-guard.sh so the flow-start check and the edit guard can
 # never disagree about them.
-source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
+source "$ORCH_SCRIPTS/planning-allowlist.sh"
 
 # --- state ------------------------------------------------------------------
 
@@ -758,11 +817,12 @@ dirty_outside_allowlist() {
 # read as a clean tree, so instead it prints why, naming git's error, and
 # returns 1: callers refuse with that line, or report it.
 tree_status() {
-  local out err
+  local out err said_all said
   err="$(mktemp)"
   if ! out="$(git -C "$1" status --porcelain 2>"$err")"; then
-    printf 'git status failed - cannot check the working tree: %s\n' "$(first_line "$(cat "$err")")"
-    rm -f "$err"; return 1
+    said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
+    printf 'git status failed - cannot check the working tree: %s\n' "$said"
+    return 1
   fi
   rm -f "$err"
   printf '%s' "$out"
@@ -1244,8 +1304,7 @@ adapter_issue_state_labels() {
 issue_state_labels_read() {
   local __islr_out
   __islr_out="$(adapter_issue_state_labels "$1")" || return 1
-  printf -v "$2" '%s' "$(first_line "$__islr_out")"
-  printf -v "$3" '%s' "$(printf '%s\n' "$__islr_out" | tail -n +2)"
+  lines_split "$__islr_out" "$2" "$3"
 }
 
 # adapter_issue_title_labels <n>: the title on the first line, then one label
@@ -1815,20 +1874,29 @@ ci_ref_unchecked() {
 # backwards is what would make the loop declare a CI-having repo CI-less, or
 # mark a PR ready over checks nobody read.
 ci_probe() {
-  local pr="$1" scope="$2" out err failed name
+  local pr="$1" scope="$2" out err failed="" pending="" line bucket name
   if ! capture out err adapter_pr_checks "$pr" "$scope"; then
     note unreachable
-    note "      $(first_line "$err")"
+    note "      ${err%%$'\n'*}"
     return 0
   fi
   if [ -z "$out" ]; then note none; return 0; fi
-  failed="$(printf '%s\n' "$out" | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2 }')"
+  # One pass over the checks: each failed or cancelled one's name, and
+  # whether any is pending.
+  while IFS= read -r line; do
+    tsv_split "$line" bucket name
+    case "$bucket" in
+      fail|cancel) failed+="$name"$'\n' ;;
+      pending) pending=1 ;;
+    esac
+  done <<<"$out"
+  newlines_strip failed
   if [ -n "$failed" ]; then
     note failing
     while IFS= read -r name; do [ -z "$name" ] || note "      $name"; done <<<"$failed"
     return 0
   fi
-  if printf '%s\n' "$out" | cut -f1 | grep -qx pending; then note pending; return 0; fi
+  if [ -n "$pending" ]; then note pending; return 0; fi
   note green
 }
 
@@ -1843,7 +1911,7 @@ ci_probe() {
 # rerun - goes through die2. The repo is resolved here rather than left to the
 # guard, whose death exits 1 and would read as "nothing to rerun".
 review_rerun() {
-  local pr="${1:-}" out err said rc=0 link="" run name=""
+  local pr="${1:-}" out err said_all said rc=0 link="" run name="" line bucket
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
   repo_pin || die2 "$REPO_REMEDY"
@@ -1852,14 +1920,17 @@ review_rerun() {
   # message carries. The file is gone before any die2.
   err="$(mktemp)"
   out="$(adapter_pr_checks "$pr" all 2>"$err")" || rc=$?
-  said="$(first_line "$(cat "$err")")"; rm -f "$err"
+  said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
   [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $said"
   [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: ${said:-no checks reported}"
-  # Name and link on two lines, read one per read, so an empty name survives:
-  # IFS=$'\t' read would collapse it, a tab being IFS whitespace. No failed
-  # check leaves both empty.
-  { IFS= read -r name; IFS= read -r link; } < <(printf '%s\n' "$out" \
-    | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2; print $3; exit }') || true
+  # The first failed or cancelled check's name and link, split by tsv_split
+  # so an empty name survives: IFS=$'\t' read would collapse it, a tab being
+  # IFS whitespace. No failed check leaves both empty.
+  while IFS= read -r line; do
+    tsv_split "$line" bucket name link
+    case "$bucket" in fail|cancel) break ;; esac
+    name=""; link=""
+  done <<<"$out"
   [ -n "$link" ] || die2 "PR #$pr has no failed or cancelled check to rerun"
   case "$link" in
     */actions/runs/[0-9]*) ;;
@@ -1893,7 +1964,7 @@ review_rerun() {
 # of it, the same absence is pending.
 review_terminal_state() {
   require_state
-  local i b path body first rest after s sep
+  local i b path sec="" line started="" body="" first_raw first rest after s sep
   i="$(state_get iteration)"
   b="$(review_budget)"
   if [ "$i" -eq 0 ]; then note none; return 1; fi
@@ -1902,13 +1973,21 @@ review_terminal_state() {
   # Termination), so a recorded terminal state is read whatever the
   # iteration; only its absence depends on the budget - pending before it is
   # spent, interrupted once it is.
-  if [ ! -f "$path" ] || [ -z "$(section_body "$path" '## Terminal state' | tr -d '[:space:]')" ]; then
+  if [ -f "$path" ]; then sec="$(section_body "$path" '## Terminal state')" || true; fi
+  if [ ! -f "$path" ] || [ -z "${sec//[[:space:]]/}" ]; then
     if [ "$i" -lt "$b" ]; then note pending; else note interrupted; fi
     return 1
   fi
-  body="$(section_body "$path" '## Terminal state' | awk 'started || NF { started = 1; print }')"
-  first="$(trim "$(printf '%s\n' "$body" | sed -n '1p')")"
-  rest="$(printf '%s\n' "$body" | tail -n +2)"
+  # The section from its first line holding more than spaces and tabs on.
+  while IFS= read -r line; do
+    if [ -z "$started" ]; then
+      case "$line" in *[!$' \t']*) started=1 ;; *) continue ;; esac
+    fi
+    body+="$line"$'\n'
+  done <<<"$sec"
+  newlines_strip body
+  lines_split "$body" first_raw rest
+  first="$(trim "$first_raw")"
   case "$first" in
     ready) note ready; return 0 ;;
     stop*)
@@ -2021,10 +2100,7 @@ cmd_review() {
       # not say what its head is, or a head with no reflog entry, leaves it at zero,
       # and the grace counts from the call as it always did.
       if refs="$(adapter_pr_refs "$pr" 2>/dev/null)"; then
-        head_oid="$(printf '%s\n' "$refs" | sed -n 1p)"
-        head_ref="$(printf '%s\n' "$refs" | sed -n 2p)"
-        base_ref="$(printf '%s\n' "$refs" | sed -n 3p)"
-        commits="$(printf '%s\n' "$refs" | sed -n '4,$p')"
+        lines_split "$refs" head_oid head_ref base_ref commits
         pushed="$(ci_push_time "$head_oid" "$head_ref")"
         case "$pushed" in
           ''|*[!0-9]*) ;;
@@ -2046,13 +2122,13 @@ cmd_review() {
         # how an unrelated green check gets mistaken for a required one that
         # never arrived, and the PR marked ready over it.
         res="$(ci_probe "$pr" required)"
-        verdict="$(first_line "$res")"
+        verdict="${res%%$'\n'*}"
         if [ "$verdict" = none ]; then
           if [ "$no_ci" = 0 ] && float_lt "$(float_add "$push_age" "$elapsed")" "$ORCH_CI_GRACE"; then
             ci_tick; continue
           fi
           res="$(ci_probe "$pr" all)"
-          verdict="$(first_line "$res")"
+          verdict="${res%%$'\n'*}"
         fi
         case "$verdict" in
           green)       printf '%s\n' "$res"; return 0 ;;
@@ -3160,7 +3236,11 @@ issue_number_list() {
   case "$list" in
     ''|*[!0-9,]*|,*|*,|*,,*) die "$flag must be plain issue numbers, got: $list" ;;
   esac
-  printf '%s\n' "$list" | tr ',' '\n' | sort -un
+  # Split at the commas by IFS: the list is digits and commas only, so no
+  # entry globs and none is empty.
+  local IFS=,
+  # shellcheck disable=SC2086
+  printf '%s\n' $list | sort -un
 }
 
 # True only once both links read back exactly as published: the parent's
@@ -3170,9 +3250,12 @@ issue_number_list() {
 # this on a mismatch, and a cached answer would just repeat the same wrong
 # verdict.
 ticket_links_verified() {
-  local parent="$1" child="$2" want="$3" have_children have_blockers
+  local parent="$1" child="$2" want="$3" have_children have_blockers line linked=""
   have_children="$(adapter_sub_issues "$parent")" || return 1
-  printf '%s\n' "$have_children" | cut -f1 | grep -qxF "$child" || return 1
+  while IFS= read -r line; do
+    if [ "${line%%$'\t'*}" = "$child" ]; then linked=1; break; fi
+  done <<<"$have_children"
+  [ -n "$linked" ] || return 1
   have_blockers="$(ticket_blockers "$child" return)" || return 1
   [ "$have_blockers" = "$(printf '%s\n' "$want" | sort -un)" ]
 }
@@ -3235,9 +3318,12 @@ cmd_ticket_publish() {
 # published them.
 cmd_ticket_next() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket next <parent>"
-  local subs
+  local subs line n state blockers
   subs="$(ticket_sub_issues "$1")" || exit 1
-  printf '%s\n' "$subs" | awk -F '\t' '$2 == "OPEN" && $3 == 0 { print $1 }'
+  while IFS= read -r line; do
+    tsv_split "$line" n state blockers
+    if [ "$state" = OPEN ] && [ "$blockers" = 0 ]; then note "$n"; fi
+  done <<<"$subs"
 }
 
 # Every sub-issue of <parent>, open or closed, one "<n> open|closed" line
@@ -3262,15 +3348,13 @@ cmd_ticket_close() {
 # implement phase, whose frontier query would otherwise find nothing.
 cmd_ticket_reset() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reset <parent>"
-  local subs closed n
+  local subs line n state
   subs="$(ticket_sub_issues "$1")" || exit 1
-  closed="$(printf '%s\n' "$subs" | awk -F '\t' '$2 == "CLOSED" { print $1 }')"
-  if [ -n "$closed" ]; then
-    while IFS= read -r n; do
-      [ -z "$n" ] && continue
-      adapter_issue_reopen "$n" || die "gh could not reopen ticket #$n"
-    done <<<"$closed"
-  fi
+  while IFS= read -r line; do
+    tsv_split "$line" n state
+    [ "$state" = CLOSED ] && [ -n "$n" ] || continue
+    adapter_issue_reopen "$n" || die "gh could not reopen ticket #$n"
+  done <<<"$subs"
 }
 
 # Prints <n>'s parent issue number, or nothing (still exit 0) when <n> is
@@ -3545,7 +3629,7 @@ ticket_edges_change() {
   before="$(ticket_blockers "$n")" || exit 1
   while IFS= read -r b; do
     present=""
-    if printf '%s\n' "$before" | grep -qxF "$b"; then present=1; fi
+    case $'\n'"$before"$'\n' in *$'\n'"$b"$'\n'*) present=1 ;; esac
     [ "$present" != "$skip_present" ] || continue
     "$edge_op" "$n" "$b" \
       || die "gh could not $edge_word a blocking edge from ticket #$n on #$b"
@@ -3787,9 +3871,16 @@ cmd_ticket_worktree() {
 readonly SIDE_CHECKOUT_MARKER="orchestrator-side-checkout"
 
 # The main checkout: the first worktree git lists.
-main_checkout() { git worktree list --porcelain | sed -n '1s/^worktree //p'; }
+main_checkout() {
+  local list first
+  list="$(git worktree list --porcelain)" || return
+  first="${list%%$'\n'*}"
+  case "$first" in "worktree "*) printf '%s\n' "${first#worktree }" ;; esac
+}
 
-side_checkouts_dir() { printf '%s/%s/checkouts\n' "$(main_checkout)" "$ORCH_DIR_NAME"; }
+# side_checkouts_dir <main-root>: where the side checkouts of the main
+# checkout at <main-root> live.
+side_checkouts_dir() { printf '%s/%s/checkouts\n' "$1" "$ORCH_DIR_NAME"; }
 
 # Whether the worktree at <path> carries the ownership marker.
 is_side_checkout() {
@@ -3812,7 +3903,7 @@ cmd_side_checkout_add() {
   ( cmd_side_checkout_prune ) >&2 \
     || warn "the finished sweep failed - carrying on with add"
   cd "$main_root" || die "could not enter the main checkout $main_root"
-  path="$(side_checkouts_dir)/$slug"
+  path="$(side_checkouts_dir "$main_root")/$slug"
   [ ! -e "$path" ] || die "side checkout $path already exists"
   exclude_orch_dirs
   base="$(base_branch)"
@@ -3830,7 +3921,13 @@ cmd_side_checkout_add() {
 }
 
 # Every checkout's path, one per line, the main checkout first.
-checkout_paths() { git worktree list --porcelain | sed -n 's/^worktree //p'; }
+checkout_paths() {
+  local list line
+  list="$(git worktree list --porcelain)" || return
+  while IFS= read -r line; do
+    case "$line" in "worktree "*) printf '%s\n' "${line#worktree }" ;; esac
+  done <<<"$list"
+}
 
 # Whether the checkout at <path> holds a flow.
 checkout_has_flow() { [ -f "$1/$ORCH_DIR_NAME/state.json" ]; }
@@ -3857,7 +3954,7 @@ cmd_side_checkout_list() {
   local path
   while IFS= read -r path; do
     is_side_checkout "$path" || continue
-    note "$(basename "$path") $path $(checkout_holding "$path")"
+    note "${path##*/} $path $(checkout_holding "$path")"
   done < <(checkout_paths)
 }
 
@@ -3869,20 +3966,24 @@ cmd_side_checkout_list() {
 # branch is left in place.
 cmd_side_checkout_remove() {
   [ $# -eq 1 ] || die "usage: orch.sh side-checkout remove <slug>"
-  local slug path err here st
+  local slug path err here st main_root dirs
   here="$(pwd -P)"
   slug="$(normalize_slug "$1")"
-  path="$(side_checkouts_dir)/$slug"
-  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+  main_root="$(main_checkout)"
+  path="$(side_checkouts_dir "$main_root")/$slug"
+  # One rev-parse for both reads: the top level on the first line, the git
+  # folder that holds the marker (see is_side_checkout) on the second.
+  dirs="$(git -C "$path" rev-parse --show-toplevel --absolute-git-dir 2>/dev/null)" || dirs=""
+  [ "${dirs%%$'\n'*}" = "$path" ] \
     || die "no side checkout $slug at $path"
-  is_side_checkout "$path" \
+  [ -f "${dirs#*$'\n'}/$SIDE_CHECKOUT_MARKER" ] \
     || die "$path carries no side-checkout marker - it is not the plugin's to remove, so it is left alone"
   st="$(tree_status "$path")" || die "$st"
   [ -z "$st" ] \
     || die "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
   refuse_ticket_worktrees "$path"
   if checkout_has_flow "$path"; then archive_flow "$path"; fi
-  if ! err="$(git -C "$(main_checkout)" worktree remove "$path" 2>&1)"; then
+  if ! err="$(git -C "$main_root" worktree remove "$path" 2>&1)"; then
     die "could not remove side checkout $path: $(first_line "$err")"
   fi
   note "removed side checkout $path"
@@ -3902,11 +4003,12 @@ cmd_side_checkout_remove() {
 # assigned to the caller's <var>. On failure it sets `verdict` to the call's
 # first error line and returns 2.
 github_read() {
-  local into="$1" got err
+  local into="$1" got err said_all said
   shift
   err="$(mktemp)"
   if ! got="$("$@" 2>"$err")"; then
-    verdict="could not read GitHub: $(first_line "$(cat "$err")")"; rm -f "$err"; return 2
+    said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
+    verdict="could not read GitHub: $said"; return 2
   fi
   rm -f "$err"
   printf -v "$into" '%s' "$got"
@@ -3915,7 +4017,7 @@ github_read() {
 # finished_flow <state-file>: whether that flow is finished - at done, and its
 # recorded PR merged into its own base branch.
 finished_flow() {
-  local state="$1" phase pr base state_draft pr_state refs merged_base
+  local state="$1" phase pr base state_draft pr_state refs head_oid head_ref merged_base commits
   phase="$(state_get_in "$state" phase)"
   if [ "$phase" != "done" ]; then
     verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1
@@ -3931,7 +4033,8 @@ finished_flow() {
     verdict="PR #$pr is $(printf '%s' "$pr_state" | tr '[:upper:]' '[:lower:]')"; return 1
   fi
   github_read refs adapter_pr_refs "$pr" || return
-  merged_base="$(printf '%s\n' "$refs" | sed -n 3p)"
+  # The base branch is the third line, empty when there is none.
+  lines_split "$refs" head_oid head_ref merged_base commits
   [ "$merged_base" = "$base" ] || { verdict="PR #$pr merged into $merged_base, not $base"; return 1; }
 }
 
@@ -3972,11 +4075,12 @@ cmd_side_checkout_prune() {
   local archive_out remove_err branch_err
   local paths=() finished=()
   here="$(pwd -P)"
-  main_root="$(main_checkout)"
+  # checkout_paths lists the main checkout first.
+  mapfile -t paths < <(checkout_paths)
+  main_root="${paths[0]-}"
   # Every step works from the main checkout, so removing the checkout this
   # command ran in leaves the sweep somewhere to stand.
   cd "$main_root" || die "could not enter the main checkout $main_root"
-  mapfile -t paths < <(checkout_paths)
   for path in "${paths[@]}"; do
     rc=0; verdict=""; branch=""
     if [ "$path" = "$main_root" ]; then

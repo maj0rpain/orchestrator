@@ -10426,7 +10426,9 @@ for all_suite in orch_test.sh hooks_test.sh docs_lint.sh; do
   } >"$all_dir/$all_suite"
 done
 # all_sc_stub <exit> [<stdout line>...]: put a stub shellcheck on all.sh's
-# PATH that logs its arguments, prints the lines and exits <exit>.
+# PATH that logs its arguments and exits <exit>. A line that begins with
+# "<file>:" prints only on the call for that file, its last argument; any
+# other line prints on every call.
 all_sc_stub() {
   local code="$1" line
   shift
@@ -10434,7 +10436,13 @@ all_sc_stub() {
     echo '#!/usr/bin/env bash'
     echo "echo \"\$*\" >>'$all_root/sc_args'"
     echo "[ -d '$all_root/markers' ] && : >'$all_root/markers/shellcheck'"
-    for line in "$@"; do printf 'echo %q\n' "$line"; done
+    echo 'all_file="${!#}"'
+    for line in "$@"; do
+      case "$line" in
+        scripts/*.sh:*) printf '[ "$all_file" = %q ] && echo %q\n' "${line%%:*}" "$line" ;;
+        *) printf 'echo %q\n' "$line" ;;
+      esac
+    done
     echo "exit $code"
   } >"$all_bin/shellcheck"
   chmod +x "$all_bin/shellcheck"
@@ -10466,9 +10474,11 @@ assert_eq "prints one summary line per suite" \
 assert_eq "prints no section header" "$(printf '%s\n' "$out" | grep -c 'a section header')" "0"
 assert_eq "still prints the shellcheck summary after a failing suite" \
   "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
-assert_eq "runs shellcheck at warning severity in gcc format on every shell file" \
-  "$(cat "$all_root/sc_args" 2>/dev/null)" \
-  "-S warning -f gcc scripts/lint_me.sh scripts/test/all.sh scripts/test/docs_lint.sh scripts/test/hooks_test.sh scripts/test/lint_me.sh scripts/test/orch_test.sh"
+assert_eq "runs shellcheck at warning severity in gcc format once per shell file" \
+  "$(LC_ALL=C sort "$all_root/sc_args" 2>/dev/null)" \
+  "$(printf -- '-S warning -f gcc %s\n' scripts/lint_me.sh scripts/test/all.sh scripts/test/docs_lint.sh scripts/test/hooks_test.sh scripts/test/lint_me.sh scripts/test/orch_test.sh)"
+assert_eq "runs one shellcheck on each planted file" \
+  "$(grep -cxE -- '-S warning -f gcc scripts/(test/)?lint_me\.sh' "$all_root/sc_args")" "2"
 
 rm -f "$all_dir/log"
 sed -i.bak 's/; exit 1$//; s/2 failed/0 failed/; /FAIL/d' "$all_dir/orch_test.sh"
@@ -10490,6 +10500,26 @@ assert_contains "prints each finding, then shellcheck: N findings" "$out" \
 assert_eq "a finding still lets every suite's summary print first" \
   "$(printf '%s\n' "$out" | grep -E '^[a-z_]+\.sh: ')" \
   "$(printf 'orch_test.sh: 2 passed, 0 failed\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed')"
+
+# Each planted file's call prints its own finding; the first file's call is
+# the slowest and the second's exits highest, so the findings print in glob
+# order, not finishing order, and the exit reported is the highest.
+all_sc_stub 0
+sed -i.bak '/^exit 0$/i \
+case "$all_file" in\
+  scripts/lint_me.sh) sleep 0.5; echo "a slow first call" >\&2; exit 1 ;;\
+  scripts/test/lint_me.sh) echo "a failing second call" >\&2; exit 3 ;;\
+  scripts/test/docs_lint.sh) exit 2 ;;\
+esac' "$all_bin/shellcheck"
+out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+assert_status "exits non-zero when shellcheck calls fail with no finding" "$st" 1
+assert_contains "prints every call's output in glob order, then the highest exit" "$out" \
+  "$(printf 'a slow first call\na failing second call\nshellcheck: failed (exit 3)')"
+all_sc_stub 1 "$all_finding1" "$all_finding2"
+sed -i.bak '/^all_file=/a [ "$all_file" = scripts/lint_me.sh ] \&\& sleep 0.5' "$all_bin/shellcheck"
+out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"
+assert_contains "prints both planted files' findings in glob order" "$out" \
+  "$(printf '%s\n%s\nshellcheck: 2 findings' "$all_finding1" "$all_finding2")"
 
 all_sc_stub 2
 sed -i.bak '/^exit 2$/i echo "a bad .shellcheckrc" >&2' "$all_bin/shellcheck"
