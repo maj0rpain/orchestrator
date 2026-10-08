@@ -1237,14 +1237,15 @@ done
 # as a parallel runner's child does, passes that on through `set -m` too; there
 # perl restores SIGINT's default for the run, and without perl the check skips.
 root_launch=()
+root_int_skip=0
 if [ "$(trap -p INT)" = "trap -- '' SIGINT" ]; then
   if command -v perl >/dev/null 2>&1; then
     root_launch=(perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV or die "exec: $!"')
   else
-    root_launch=(skip)
+    root_int_skip=1
   fi
 fi
-if [ "${root_launch[0]:-}" = skip ]; then
+if [ "$root_int_skip" -eq 1 ]; then
   skip "a run sent INT exits 130 and leaves its TMPDIR empty" \
     "this shell started with SIGINT ignored, and perl is not installed to restore it"
 else
@@ -1276,8 +1277,8 @@ assert_eq "hooks_test.sh leaves its TMPDIR empty" "$(ls -A "$root_tmp")" ""
 root_fresh
 TMPDIR="$root_tmp" ORCH_TEST_QUIET=1 bash "$root_hooks" >/dev/null 2>&1 &
 root_pid=$!
-i=0
-while [ -z "$(ls -A "$root_tmp")" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+root_i=0
+while [ -z "$(ls -A "$root_tmp")" ] && [ "$root_i" -lt 100 ]; do sleep 0.05; root_i=$((root_i + 1)); done
 assert_eq "hooks_test.sh's TMPDIR gains an entry while it runs" \
   "$([ -n "$(ls -A "$root_tmp")" ] && echo yes)" "yes"
 kill -TERM "$root_pid" 2>/dev/null
