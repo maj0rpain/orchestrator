@@ -2925,6 +2925,18 @@ ticket_sub_issues() {
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
 }
 
+# flag_value_once <usage> <already-given> <argc>: the rule for a flag that
+# takes a value, shared by `ticket publish --blocked-by` and `ticket
+# block`/`unblock --by`. Prints nothing; dies with <usage> unless this is the
+# flag's first appearance (<already-given> empty) and a value follows it
+# (<argc>, the caller's "$#", at least 2). Call it directly, never inside
+# $(...), so its die exits orch.sh; the caller takes the raw value from its
+# own "$2", never through a command substitution, which would strip a
+# trailing newline that issue_number_list must still see and refuse.
+flag_value_once() {
+  [ "$3" -ge 2 ] && [ -z "$2" ] || die "$1"
+}
+
 # The one parser of a comma list of issue numbers for every `ticket` command:
 # `ticket publish --blocked-by` and `ticket block`/`unblock --by`. Prints the
 # numbers one per line, sorted and de-duplicated. Dies naming <flag> and the
@@ -2972,7 +2984,7 @@ cmd_ticket_publish() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --blocked-by)
-        [ $# -ge 2 ] && [ -z "$have_blocked_by" ] || die "$usage"
+        flag_value_once "$usage" "$have_blocked_by" "$#"
         blocked_by="$2"; have_blocked_by=1; shift 2 ;;
       *) die "$usage" ;;
     esac
@@ -3293,7 +3305,7 @@ ticket_edges_change() {
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --by) [ $# -ge 2 ] && [ -z "$have_by" ] || die "$usage"; by="$2"; have_by=1; shift 2 ;;
+      --by) flag_value_once "$usage" "$have_by" "$#"; by="$2"; have_by=1; shift 2 ;;
       -*)   die "$usage" ;;
       *)    [ -z "$n" ] || die "$usage"; n="$1"; shift ;;
     esac
