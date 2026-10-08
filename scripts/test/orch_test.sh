@@ -180,6 +180,12 @@ sc_clone() {
   export GH_REPO=acme/widgets
 }
 
+# on_disk <path>: present or absent, whether anything is at <path>.
+on_disk() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
+# archived_count <top> <slug>: how many archive directories for <slug> the main
+# checkout at <top> holds.
+archived_count() { find "$1/.orchestrator/archive" -maxdepth 1 -name "*-$2" 2>/dev/null | wc -l | tr -d ' '; }
+
 # exclude_count <line>: how many times <line> appears whole in the current
 # clone's shared exclude file, the one every checkout of it reads.
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
@@ -5066,7 +5072,6 @@ sc_marker() {
   if [ -f "$(git -C "$1" rev-parse --absolute-git-dir)/orchestrator-side-checkout" ]; then
     echo marked; else echo unmarked; fi
 }
-sc_present() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
 
 sc_clone
 top="$(git rev-parse --show-toplevel)"
@@ -5111,7 +5116,7 @@ git config orchestrator.base nosuch
 out="$(orch_gh_failing side-checkout add nofetch 2>&1)"; st=$?
 assert_status "add dies when the base branch cannot be fetched" "$st" 1
 assert_contains "naming the base branch" "$out" "nosuch"
-assert_eq "leaving no side checkout" "$(sc_present .orchestrator/checkouts/nofetch)" "absent"
+assert_eq "leaving no side checkout" "$(on_disk .orchestrator/checkouts/nofetch)" "absent"
 assert_eq "nor any worktree" "$(git worktree list | wc -l | tr -d ' ')" "2"
 git config --unset orchestrator.base
 
@@ -5122,7 +5127,7 @@ writeln '#!/bin/sh' 'mkdir "$(git rev-parse --absolute-git-dir)/orchestrator-sid
 chmod +x .git/hooks/post-checkout
 out="$(orch_gh_failing side-checkout add nomarker 2>&1)"; st=$?
 assert_status "add dies when the marker cannot be written" "$st" 1
-assert_eq "leaving no side checkout" "$(sc_present .orchestrator/checkouts/nomarker)" "absent"
+assert_eq "leaving no side checkout" "$(on_disk .orchestrator/checkouts/nomarker)" "absent"
 assert_eq "nor any worktree" "$(git worktree list | wc -l | tr -d ' ')" "2"
 rm .git/hooks/post-checkout
 
@@ -5163,8 +5168,8 @@ assert_eq "git status in the main checkout still shows nothing new" "$(git statu
 orch_gh_failing init main-flow >/dev/null
 dest="$(orch_gh_failing archive)"; st=$?
 assert_status "archive in the main checkout succeeds beside side checkouts" "$st" 0
-assert_eq "it moves no side checkout into the archive" "$(sc_present "$dest/checkouts")" "absent"
-assert_eq "checkouts/ stays in place" "$(sc_present .orchestrator/checkouts/alpha)" "present"
+assert_eq "it moves no side checkout into the archive" "$(on_disk "$dest/checkouts")" "absent"
+assert_eq "checkouts/ stays in place" "$(on_disk .orchestrator/checkouts/alpha)" "present"
 assert_eq "each side checkout stays where git recorded it" \
   "$(git -C .orchestrator/checkouts/gamma rev-parse --show-toplevel)" "$top/.orchestrator/checkouts/gamma"
 assert_eq "with its flow untouched" "$(cd "$gamma" && orch_gh_failing state get slug)" "gamma-flow"
@@ -5173,7 +5178,7 @@ state_fixture phase "done"
 out="$(orch_gh_failing init next-flow)"; st=$?
 assert_status "init over a done flow succeeds beside side checkouts" "$st" 0
 archived="$(printf '%s\n' "$out" | sed -n 1p)"
-assert_eq "it archives no side checkout" "$(sc_present "$archived/checkouts")" "absent"
+assert_eq "it archives no side checkout" "$(on_disk "$archived/checkouts")" "absent"
 assert_eq "each side checkout stays where git recorded it" \
   "$(git -C .orchestrator/checkouts/beta branch --show-current)" "quick/3-beta"
 assert_eq "and side-checkout list is unchanged" "$(orch_gh_failing side-checkout list | wc -l | tr -d ' ')" "4"
@@ -5272,10 +5277,6 @@ restore_suite_env
 # Checked through the archive and worktrees left on disk, and the output.
 echo
 echo "side-checkout archive and remove"
-sa_present() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
-# sa_archived <top> <slug>: how many archive directories for <slug> the main
-# checkout at <top> holds.
-sa_archived() { find "$1/.orchestrator/archive" -maxdepth 1 -name "*-$2" 2>/dev/null | wc -l | tr -d ' '; }
 
 sc_clone
 top="$(git rev-parse --show-toplevel)"
@@ -5287,11 +5288,11 @@ complete_plan_handoff "$(cd "$alpha" && orch_gh_failing handoff path spec)"
 out="$(cd "$alpha" && orch_gh_failing archive 2>&1)"; st=$?
 assert_status "archive in a clean side checkout succeeds" "$st" 0
 assert_eq "it leaves the archive in the main checkout's .orchestrator/archive/" \
-  "$(sa_archived "$top" alpha-flow)" "1"
+  "$(archived_count "$top" alpha-flow)" "1"
 assert_eq "with the flow's handoffs in it" \
-  "$(sa_present "$(find "$top/.orchestrator/archive" -maxdepth 1 -name '*-alpha-flow')/handoff/01-plan.md")" "present"
+  "$(on_disk "$(find "$top/.orchestrator/archive" -maxdepth 1 -name '*-alpha-flow')/handoff/01-plan.md")" "present"
 assert_contains "it prints the archive's full path" "$out" "$top/.orchestrator/archive/"
-assert_eq "the worktree is gone from disk" "$(sa_present "$alpha")" "absent"
+assert_eq "the worktree is gone from disk" "$(on_disk "$alpha")" "absent"
 assert_not_contains "and from git's list" "$(git worktree list)" "$alpha"
 assert_contains "it tells the human to close the session" "$out" "close this session"
 
@@ -5301,12 +5302,12 @@ beta="$(orch_gh_failing side-checkout add beta)"
 echo wip >"$beta/wip.txt"
 out="$(cd "$beta" && orch_gh_failing archive 2>&1)"; st=$?
 assert_status "archive in a dirty side checkout succeeds" "$st" 0
-assert_eq "it archives into the main checkout" "$(sa_archived "$top" beta-flow)" "1"
-assert_eq "and leaves the worktree in place" "$(sa_present "$beta/wip.txt")" "present"
+assert_eq "it archives into the main checkout" "$(archived_count "$top" beta-flow)" "1"
+assert_eq "and leaves the worktree in place" "$(on_disk "$beta/wip.txt")" "present"
 assert_contains "reporting why it was kept" "$out" "kept side checkout $beta"
 assert_contains "naming the remove command" "$out" "side-checkout remove beta"
 assert_not_contains "and never tells the human to close the session" "$out" "close this session"
-assert_eq "no flow is left in it" "$(sa_present "$beta/.orchestrator/state.json")" "absent"
+assert_eq "no flow is left in it" "$(on_disk "$beta/.orchestrator/state.json")" "absent"
 
 # init over a done flow in a side checkout archives to the main checkout and
 # keeps the worktree, where the new flow lives.
@@ -5314,9 +5315,9 @@ gamma="$(orch_gh_failing side-checkout add gamma)"
 (cd "$gamma" && orch_gh_failing init old-flow >/dev/null && state_fixture phase "done")
 out="$(cd "$gamma" && orch_gh_failing init new-flow 2>&1)"; st=$?
 assert_status "init over a done flow in a side checkout succeeds" "$st" 0
-assert_eq "it archives the old flow into the main checkout" "$(sa_archived "$top" old-flow)" "1"
+assert_eq "it archives the old flow into the main checkout" "$(archived_count "$top" old-flow)" "1"
 assert_eq "and nothing into the side checkout's own archive" \
-  "$(sa_present "$gamma/.orchestrator/archive")" "absent"
+  "$(on_disk "$gamma/.orchestrator/archive")" "absent"
 assert_eq "the worktree stays" "$(git -C "$gamma" rev-parse --show-toplevel)" "$gamma"
 assert_eq "holding the new flow" "$(cd "$gamma" && orch_gh_failing state get slug)" "new-flow"
 
@@ -5326,8 +5327,8 @@ git worktree add -q -b hand "$hand"
 (cd "$hand" && orch_gh_failing init hand-flow >/dev/null)
 out="$(cd "$hand" && orch_gh_failing archive 2>&1)"; st=$?
 assert_status "archive in a hand-made worktree succeeds" "$st" 0
-assert_eq "it archives in place" "$(sa_archived "$hand" hand-flow)" "1"
-assert_eq "not into the main checkout" "$(sa_archived "$top" hand-flow)" "0"
+assert_eq "it archives in place" "$(archived_count "$hand" hand-flow)" "1"
+assert_eq "not into the main checkout" "$(archived_count "$top" hand-flow)" "0"
 assert_eq "the worktree stays" "$(git -C "$hand" rev-parse --show-toplevel)" "$hand"
 assert_not_contains "with no removal reported" "$out" "side checkout"
 
@@ -5341,19 +5342,19 @@ git worktree add -q --detach "$unmarked"
 out="$(orch_gh_failing side-checkout remove unmarked 2>&1)"; st=$?
 assert_status "remove refuses a worktree without the marker" "$st" 1
 assert_contains "saying it is left alone" "$out" "left alone"
-assert_eq "its flow is not moved" "$(sa_present "$unmarked/.orchestrator/state.json")" "present"
-assert_eq "nor its worktree removed" "$(sa_present "$unmarked")" "present"
+assert_eq "its flow is not moved" "$(on_disk "$unmarked/.orchestrator/state.json")" "present"
+assert_eq "nor its worktree removed" "$(on_disk "$unmarked")" "present"
 (cd "$gamma" && git checkout -q -b quick/5-gamma)
 echo wip >"$gamma/wip.txt"
 out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
 assert_status "remove refuses untracked files" "$st" 1
 assert_contains "naming the side checkout" "$out" "$gamma"
-assert_eq "its flow is not moved" "$(sa_archived "$top" new-flow)" "0"
+assert_eq "its flow is not moved" "$(archived_count "$top" new-flow)" "0"
 rm "$gamma/wip.txt"
 echo changed >>"$gamma/$(git -C "$gamma" ls-files | head -1)"
 out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
 assert_status "remove refuses uncommitted changes" "$st" 1
-assert_eq "its flow is not moved" "$(sa_archived "$top" new-flow)" "0"
+assert_eq "its flow is not moved" "$(archived_count "$top" new-flow)" "0"
 git -C "$gamma" checkout -q -- .
 # A git status that cannot run is a refusal naming git's error, never a clean
 # tree.
@@ -5364,15 +5365,15 @@ out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
 mv "$gidx.bak" "$gidx"
 assert_status "remove refuses when git status cannot run" "$st" 1
 assert_contains "naming git's error" "$out" "git status failed - cannot check the working tree: "
-assert_eq "its flow is not moved" "$(sa_archived "$top" new-flow)" "0"
-assert_eq "nor its worktree removed" "$(sa_present "$gamma")" "present"
+assert_eq "its flow is not moved" "$(archived_count "$top" new-flow)" "0"
+assert_eq "nor its worktree removed" "$(on_disk "$gamma")" "present"
 
 # remove archives the flow into the main checkout, removes the worktree, and
 # keeps the branch.
 out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
 assert_status "remove succeeds on a clean side checkout" "$st" 0
-assert_eq "it archives the flow into the main checkout" "$(sa_archived "$top" new-flow)" "1"
-assert_eq "the worktree is gone" "$(sa_present "$gamma")" "absent"
+assert_eq "it archives the flow into the main checkout" "$(archived_count "$top" new-flow)" "1"
+assert_eq "the worktree is gone" "$(on_disk "$gamma")" "absent"
 assert_not_contains "and from git's list" "$(git worktree list)" "$gamma"
 assert_eq "the branch is kept" \
   "$(git rev-parse --verify --quiet refs/heads/quick/5-gamma >/dev/null && echo kept || echo gone)" "kept"
@@ -5382,7 +5383,7 @@ assert_not_contains "run from the main checkout, no close-the-session message" "
 delta="$(orch_gh_failing side-checkout add delta)"
 out="$(cd "$delta" && orch_gh_failing side-checkout remove delta 2>&1)"; st=$?
 assert_status "remove from inside the side checkout succeeds" "$st" 0
-assert_eq "the worktree is gone" "$(sa_present "$delta")" "absent"
+assert_eq "the worktree is gone" "$(on_disk "$delta")" "absent"
 assert_contains "and the session is told to close" "$out" "close this session"
 
 # A failing git worktree remove: the archive stands, and remove exits 1. A
@@ -5393,8 +5394,8 @@ git worktree lock "$eps"
 out="$(orch_gh_failing side-checkout remove eps 2>&1)"; st=$?
 assert_status "remove exits 1 when the worktree cannot be removed" "$st" 1
 assert_contains "reporting the failure" "$out" "could not remove side checkout $eps"
-assert_eq "the archive stands" "$(sa_archived "$top" eps-flow)" "1"
-assert_eq "the worktree stays" "$(sa_present "$eps")" "present"
+assert_eq "the archive stands" "$(archived_count "$top" eps-flow)" "1"
+assert_eq "the worktree stays" "$(on_disk "$eps")" "present"
 git worktree unlock "$eps"
 
 out="$(orch_gh_failing side-checkout remove 2>&1)"; st=$?
@@ -5410,9 +5411,7 @@ restore_suite_env
 # left on disk, and the report, against the store-backed GitHub fake.
 echo
 echo "side-checkout prune"
-sp_present() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
 sp_branch() { if git rev-parse --verify --quiet "refs/heads/$1" >/dev/null; then echo kept; else echo gone; fi; }
-sp_archived() { find "$1/.orchestrator/archive" -maxdepth 1 -name "*-$2" 2>/dev/null | wc -l | tr -d ' '; }
 # sp_branch_off <path> <branch>: puts the side checkout at <path> on a new
 # branch with one commit of its own, never merged into main locally - as a
 # squash merge on GitHub leaves it.
@@ -5467,37 +5466,37 @@ fake_pr 46 merged orch/hand-flow main
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune fails when GitHub cannot be read" "$st" 1
 assert_contains "saying nothing was removed" "$out" "nothing was removed"
-assert_eq "the finished flow side checkout stays" "$(sp_present "$fl")" "present"
-assert_eq "the finished quick side checkout stays" "$(sp_present "$qk")" "present"
+assert_eq "the finished flow side checkout stays" "$(on_disk "$fl")" "present"
+assert_eq "the finished quick side checkout stays" "$(on_disk "$qk")" "present"
 assert_eq "its branch stays" "$(sp_branch quick/7-qk)" "kept"
-assert_eq "the main checkout's flow is not archived" "$(sp_present "$top/.orchestrator/state.json")" "present"
+assert_eq "the main checkout's flow is not archived" "$(on_disk "$top/.orchestrator/state.json")" "present"
 fake_online
 
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds" "$st" 0
-assert_eq "the finished flow side checkout is gone" "$(sp_present "$fl")" "absent"
+assert_eq "the finished flow side checkout is gone" "$(on_disk "$fl")" "absent"
 assert_not_contains "and from git's list" "$(git worktree list)" "$fl"
-assert_eq "its flow archived into the main checkout" "$(sp_archived "$top" fl-flow)" "1"
+assert_eq "its flow archived into the main checkout" "$(archived_count "$top" fl-flow)" "1"
 assert_eq "its squash-merged local branch is gone" "$(sp_branch orch/fl-flow)" "gone"
-assert_eq "the finished quick side checkout is gone" "$(sp_present "$qk")" "absent"
+assert_eq "the finished quick side checkout is gone" "$(on_disk "$qk")" "absent"
 assert_eq "its local branch is gone" "$(sp_branch quick/7-qk)" "gone"
 assert_contains "the removals are reported" "$out" "removed side checkout $qk"
-assert_eq "an open PR's side checkout stays" "$(sp_present "$op")" "present"
+assert_eq "an open PR's side checkout stays" "$(on_disk "$op")" "present"
 assert_contains "skipped with its reason" "$out" "skipped $op: no merged PR from quick/8-op into main"
-assert_eq "a dirty side checkout stays" "$(sp_present "$dt/wip.txt")" "present"
+assert_eq "a dirty side checkout stays" "$(on_disk "$dt/wip.txt")" "present"
 assert_eq "with its branch" "$(sp_branch quick/9-dt)" "kept"
 assert_contains "skipped with its reason" "$out" "skipped $dt: uncommitted changes or untracked files"
-assert_eq "a flow not at done stays" "$(sp_present "$nd/.orchestrator/state.json")" "present"
+assert_eq "a flow not at done stays" "$(on_disk "$nd/.orchestrator/state.json")" "present"
 assert_contains "skipped with its reason" "$out" "skipped $nd: flow nd-flow is at implement, not done"
-assert_eq "a side checkout on no branch stays" "$(sp_present "$nb")" "present"
+assert_eq "a side checkout on no branch stays" "$(on_disk "$nb")" "present"
 assert_contains "skipped with its reason" "$out" "skipped $nb: no branch"
-assert_eq "the main checkout's finished flow is archived in place" "$(sp_archived "$top" main-flow)" "1"
-assert_eq "its state is gone" "$(sp_present "$top/.orchestrator/state.json")" "absent"
+assert_eq "the main checkout's finished flow is archived in place" "$(archived_count "$top" main-flow)" "1"
+assert_eq "its state is gone" "$(on_disk "$top/.orchestrator/state.json")" "absent"
 assert_eq "its branch is still checked out" "$(git branch --show-current)" "orch/main-flow"
 assert_contains "which is reported" "$out" "orch/main-flow is still checked out"
-assert_eq "the live side checkouts were not moved by that archive" "$(sp_present "$op")" "present"
-assert_eq "a hand-made worktree's flow is untouched" "$(sp_present "$hand/.orchestrator/state.json")" "present"
-assert_eq "and the worktree stays" "$(sp_present "$hand")" "present"
+assert_eq "the live side checkouts were not moved by that archive" "$(on_disk "$op")" "present"
+assert_eq "a hand-made worktree's flow is untouched" "$(on_disk "$hand/.orchestrator/state.json")" "present"
+assert_eq "and the worktree stays" "$(on_disk "$hand")" "present"
 assert_eq "with its branch" "$(sp_branch orch/hand-flow)" "kept"
 assert_contains "reported as left alone" "$out" "$hand: not a side checkout, left alone"
 
@@ -5517,10 +5516,10 @@ fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune exits 1 when a removal fails" "$st" 1
 assert_contains "reporting the failure" "$out" "could not remove side checkout $lk"
-assert_eq "the archive stands" "$(sp_archived "$top" lk-flow)" "1"
-assert_eq "the locked worktree stays" "$(sp_present "$lk")" "present"
+assert_eq "the archive stands" "$(archived_count "$top" lk-flow)" "1"
+assert_eq "the locked worktree stays" "$(on_disk "$lk")" "present"
 assert_eq "with its branch" "$(sp_branch orch/lk-flow)" "kept"
-assert_eq "the sweep moves on to the next" "$(sp_present "$q2")" "absent"
+assert_eq "the sweep moves on to the next" "$(on_disk "$q2")" "absent"
 git worktree unlock "$lk"
 
 # Each removal reports only its own archive: a flowless side checkout swept
@@ -5535,7 +5534,7 @@ fake_pr 52 merged quick/13-q5 main
 fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds over the main flow and a flowless side checkout" "$st" 0
-assert_eq "the flowless side checkout is gone" "$(sp_present "$q5")" "absent"
+assert_eq "the flowless side checkout is gone" "$(on_disk "$q5")" "absent"
 assert_eq "the main checkout's archive is reported once" \
   "$(printf '%s\n' "$out" | grep -c -- '-main-again$')" "1"
 
@@ -5554,7 +5553,7 @@ mv "$q6idx.bak" "$q6idx"
 assert_status "prune fails when a side checkout's git status cannot run" "$st" 1
 assert_contains "naming git's error" "$out" "git status failed - cannot check the working tree: "
 assert_contains "and that nothing was removed" "$out" "nothing was removed"
-assert_eq "the side checkout stays" "$(sp_present "$q6")" "present"
+assert_eq "the side checkout stays" "$(on_disk "$q6")" "present"
 assert_eq "with its branch" "$(sp_branch quick/14-q6)" "kept"
 orch_gh_failing side-checkout prune >/dev/null 2>&1
 
@@ -5575,9 +5574,9 @@ fake_pr 55 merged quick/16-rm2 main
 fake_online
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds after the base setting moved" "$st" 0
-assert_eq "a PR merged into the recorded base finishes its side checkout" "$(sp_present "$rb")" "absent"
+assert_eq "a PR merged into the recorded base finishes its side checkout" "$(on_disk "$rb")" "absent"
 assert_eq "a PR merged into the base in effect now, not the recorded one, does not" \
-  "$(sp_present "$rm2")" "present"
+  "$(on_disk "$rm2")" "present"
 assert_contains "skipped naming the recorded base" "$out" "skipped $rm2: no merged PR from quick/16-rm2 into uat"
 
 # side-checkout add runs the sweep first.
@@ -5587,7 +5586,7 @@ fake_pr 49 merged quick/11-q3 main
 out="$(orch_gh_failing side-checkout add after 2>/dev/null)"; st=$?
 assert_status "add succeeds after its sweep" "$st" 0
 assert_eq "printing only the new path on stdout" "$out" "$top/.orchestrator/checkouts/after"
-assert_eq "the sweep removed the finished side checkout" "$(sp_present "$q3")" "absent"
+assert_eq "the sweep removed the finished side checkout" "$(on_disk "$q3")" "absent"
 # ... and carries on when the sweep fails.
 q4="$(orch_gh_failing side-checkout add q4)"
 sp_branch_off "$q4" quick/12-q4
@@ -5596,8 +5595,8 @@ fake_offline
 out="$(orch_gh_failing side-checkout add after2 2>&1)"; st=$?
 assert_status "add carries on when its sweep fails" "$st" 0
 assert_contains "reporting the failed sweep" "$out" "the finished sweep failed"
-assert_eq "making the side checkout" "$(sp_present "$top/.orchestrator/checkouts/after2")" "present"
-assert_eq "and removing nothing" "$(sp_present "$q4")" "present"
+assert_eq "making the side checkout" "$(on_disk "$top/.orchestrator/checkouts/after2")" "present"
+assert_eq "and removing nothing" "$(on_disk "$q4")" "present"
 fake_online
 
 out="$(orch_gh_failing side-checkout prune extra 2>&1)"; st=$?

@@ -495,9 +495,12 @@ base_source() { if [ -n "$(base_setting)" ]; then echo set; else echo default; f
 
 # The active flow's own base branch, recorded by init. A flow started before
 # base was recorded has none, and always forked from the default branch.
-flow_base() {
+flow_base() { flow_base_in "$STATE"; }
+
+# flow_base against another checkout's state file <file>.
+flow_base_in() {
   local b
-  b="$(state_get base)"
+  b="$(state_get_in "$1" base)"
   if [ -n "$b" ]; then printf '%s\n' "$b"; else default_branch; fi
 }
 
@@ -3655,8 +3658,7 @@ finished_flow() {
   [ -n "$branch" ] || { verdict="no branch"; return 1; }
   pr="$(state_get_in "$state" pr)"
   [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
-  base="$(state_get_in "$state" base)"
-  [ -n "$base" ] || base="$(default_branch)"
+  base="$(flow_base_in "$state")"
   github_read state_draft adapter_pr_state_draft "$pr" || return
   pr_state="$(first_line "$state_draft")"
   if [ "$pr_state" != MERGED ]; then
