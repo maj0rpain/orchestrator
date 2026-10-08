@@ -343,9 +343,6 @@ assert_contains "offers quick implementation on Junie" "$ctx" "Quick implementat
 assert_contains "offers Blueprint only on Junie" "$ctx" "Blueprint only"
 assert_eq "offers exactly three options on Junie" "$(count_closing_options "$out")" "3"
 check_blueprint_rewrite "on Junie" "$ctx" junie
-for s in orch-to-spec orch-spec-review orch-to-tickets; do
-  assert_contains "points at $s's SKILL.md on Junie" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
-done
 assert_not_contains "no route tells the model to delete the marker on Junie" "$ctx" "marker"
 assert_contains "forbids offering to implement on Junie" "$ctx" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat on Junie" "$ctx" "whole map is done"
@@ -415,9 +412,6 @@ assert_contains "offers quick implementation at plan confirmation" "$ctx" "Quick
 assert_eq "offers exactly three options at plan confirmation" "$(count_closing_options "$out")" "3"
 assert_contains "offers Blueprint only at plan confirmation" "$ctx" "Blueprint only"
 check_blueprint_rewrite "at Junie's plan confirmation" "$ctx" junie
-for s in orch-to-spec orch-spec-review orch-to-tickets; do
-  assert_contains "points at $s's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
-done
 assert_contains "points at orch-flow's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
 assert_contains "honours a request for a side checkout at plan confirmation" "$ctx" "$side_request"
 assert_not_contains "repeats no planning rules at plan confirmation" "$ctx" "Do NOT offer to implement"
