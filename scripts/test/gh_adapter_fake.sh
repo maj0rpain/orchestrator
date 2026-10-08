@@ -91,6 +91,16 @@ fake_store() {
   printf '%s\n' "${ORCH_GH_FAKE_STORE:?the gh fake has no store - call fake_github}"
 }
 
+# fake_countdown <file>: true while the count the file holds is above zero,
+# counting it down by one; false where the file is absent or at zero.
+fake_countdown() {
+  local n
+  [ -f "$1" ] || return 1
+  n="$(cat "$1")"
+  [ "${n:-0}" -gt 0 ] || return 1
+  printf '%s\n' "$((n - 1))" >"$1"
+}
+
 # fake_failing <operation>: true when fake_fail named the operation, with its
 # stderr written, so an operation opens with `! fake_failing <op> || return 1`.
 fake_failing() {
@@ -110,13 +120,7 @@ fake_failing() {
   fi
   f="$s/fail/$1"
   [ -f "$f" ] || return 1
-  if [ -f "$f.after" ]; then
-    n="$(cat "$f.after")"
-    if [ "${n:-0}" -gt 0 ]; then
-      printf '%s\n' "$((n - 1))" >"$f.after"
-      return 1
-    fi
-  fi
+  ! fake_countdown "$f.after" || return 1
   if [ -f "$f.times" ]; then
     n="$(cat "$f.times")"
     if [ "${n:-0}" -le 1 ]; then
@@ -133,19 +137,11 @@ fake_failing() {
 # zero, counting it down by one, so an operation answers stale for exactly the
 # calls fake_lag asked for.
 fake_lagging() {
-  local f n
+  local f
   f="$(fake_store)/lag/$1" || return 1
   [ -f "$f" ] || return 1
-  if [ -f "$f.after" ]; then
-    n="$(cat "$f.after")"
-    if [ "${n:-0}" -gt 0 ]; then
-      printf '%s\n' "$((n - 1))" >"$f.after"
-      return 1
-    fi
-  fi
-  n="$(cat "$f")"
-  [ "${n:-0}" -gt 0 ] || return 1
-  printf '%s\n' "$((n - 1))" >"$f"
+  ! fake_countdown "$f.after" || return 1
+  fake_countdown "$f"
 }
 
 # fake_stale <operation>: the stale answer fake_lag gave the operation, or
