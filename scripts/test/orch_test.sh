@@ -147,8 +147,9 @@ new_repo() {
 }
 
 # bare_origin <path>: point origin at a local bare repo. A path names no GitHub
-# repo, so it names one through GH_REPO, as a caller would (#520); the stub
-# gh answers for acme/widgets. restore_suite_env unsets it again.
+# repo, so it names one through GH_REPO, as a caller would (#520); neither
+# the fixture gh nor the adapter fake checks the repo; the fixture logs
+# GH_REPO in env.log. restore_suite_env unsets it again.
 bare_origin() { git remote set-url origin "$1"; export GH_REPO=acme/widgets; }
 
 # new_repo_with_origin [branch]: new_repo, plus tracking refs for its origin:
