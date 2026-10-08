@@ -57,6 +57,10 @@ Never proceed without one, and never decide silently whether to make one.
   with no issue behind it is exactly the unaccountable path this skill exists
   to avoid.
 
+With `--side` in the arguments, or when the human asked in words for a side
+checkout, stop here once the issue is linked and go to **Starting in a side
+checkout** below: steps 2-7 run in the side checkout's own session.
+
 ## 2. Run an unattended spec review
 
 Run it on every run, whether the linked issue was just published in step 1 or
@@ -114,6 +118,14 @@ rather than re-derived here - then `bash "$ORCH" branch off "quick/<issue>-<slug
 a flow's own `branch create` does, but records no flow state - a quick
 implementation keeps none. It records that base branch on the branch itself,
 so the PR in step 7 targets it even if the setting changes meanwhile.
+
+`branch off` exits 3, and only then, when this checkout holds a flow
+mid-pipeline: a quick implementation must never move that flow's checkout off
+its branch. **On exit 3, and on no other failure**, offer the human a side
+checkout as a multiple-choice question: run this quick implementation in a
+side checkout, a git worktree of its own beside the flow, or stop. On a yes,
+go to **Starting in a side checkout** below. On a no, or on any other `branch
+off` failure, relay the refusal and stop.
 
 ## 5. Implement
 
@@ -235,3 +247,23 @@ issue closes when the release PR carries the work into the default branch
 body file carries no closing keyword of its own. Not a draft because the
 review pass in step 6 already happened, so there is no loop left to
 promote it - draft would leave it stuck with nothing watching it.
+
+## Starting in a side checkout
+
+Reached from step 1 (`--side`, or the human asking) or from step 4 (a yes to
+the offer on exit 3). It runs in this session, after step 1 has linked or
+published the issue, with any glossary or ADR wording in its body. The issue
+is the hand-off: no plan file is written.
+
+1. Get the slug from `bash "$ORCH" slug "<short description>"`.
+2. `bash "$ORCH" side-checkout add <slug>`. It first sweeps finished side
+   checkouts and reports them; a failed sweep is reported and `add` carries
+   on. Its last line of output is the side checkout's path. If `add` fails -
+   a side checkout with that slug already exists under `checkouts/`, or the
+   base branch cannot be fetched - relay its message and stop.
+3. Print the one command that opens a session in the side checkout - `cd
+   <path> && claude` on Claude Code, `cd <path> && junie` on Junie - and tell
+   the human to run `/orchestrator:quick-implement <issue>` there, with the
+   linked issue's number (on a host with no plugin commands, to ask for this
+   skill on issue `<issue>`). This session's work is done: that session runs
+   steps 1-7, finding the issue already linked.

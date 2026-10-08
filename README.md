@@ -123,7 +123,7 @@ dirties a repo's working tree.
 
 | Command | What it does |
 | --- | --- |
-| `/orchestrator:start [slug]` | Start a flow from an approved plan. Runs in the planning session. |
+| `/orchestrator:start [slug] [--issue N] [--side]` | Start a flow from an approved plan. Runs in the planning session. `--side` starts it in a side checkout up front; one is also offered when a flow is already mid-pipeline here. |
 | `/orchestrator:next` | Run the next phase. Run it in a fresh session. |
 | `/orchestrator:status` | Phase, issue, branch, PR, and the flow's health. |
 | `/orchestrator:doctor` | Diagnose the machine, the repo, and the active flow. |

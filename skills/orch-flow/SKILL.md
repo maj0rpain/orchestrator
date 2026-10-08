@@ -50,9 +50,11 @@ Reached when a planning session's plan is approved. Runs in the planning session
 which holds the only copy of the plan.
 
 1. Read the user's arguments, if any (on Claude Code, `/orchestrator:start`'s):
-   a slug, `--issue N`, both, or neither. Pull `--issue N` out first. Whatever
-   remains is the slug; use it as given. With none left, pick a slug from the
-   plan's subject, kebab-case. Confirm it in one line.
+   a slug, `--issue N`, `--side`, any of them, or none. Pull `--issue N` and
+   `--side` out first. Whatever remains is the slug; use it as given. With
+   none left, pick a slug from the plan's subject, kebab-case. Confirm it in
+   one line. With `--side`, or when the human asked in words for a side
+   checkout, skip steps 2-6 and go to **Starting in a side checkout** below.
 2. `bash "$ORCH" init <slug>`, or `bash "$ORCH" init <slug> --issue N` when the user (or
    step 1's `--issue N`) named an already-open,
    already-triaged issue to adopt as the flow's spec instead of publishing a
@@ -63,7 +65,12 @@ which holds the only copy of the plan.
    stash, or discard them yourself - they may be the planning edits the guard
    exists to catch.
    Starting over a `done` flow archives it automatically and reports where -
-   only a flow still mid-pipeline (`spec`/`implement`/`review`) refuses.
+   only a flow still mid-pipeline (`spec`/`implement`/`review`) refuses, and
+   it alone exits 3. **On exit 3, and on no other failure**, offer the human
+   a side checkout as a multiple-choice question: start this flow in a side
+   checkout, a git worktree of its own beside the flow already here, or
+   stop. On a yes, go to **Starting in a side checkout** below. On a no,
+   report the refusal and save the plan as for any other failure.
    **Whenever `init` fails, save the plan before stopping** - a failed
    precondition must never cost the user their plan. Write it, in the
    `01-plan.md` template from the `orch-handoff` skill, to
@@ -82,6 +89,35 @@ which holds the only copy of the plan.
    restart - the plan is already safe on disk either way.
 6. `bash "$ORCH" phase boundary`, and relay its output (see **Printing the
    boundary** below).
+
+### Starting in a side checkout
+
+Reached from step 1 (`--side`, or the human asking) or from step 2 (a yes to
+the offer on exit 3). Still in the planning session, which holds the plan.
+Every `orch.sh` command after the first runs inside the side checkout -
+`cd "<path>" && bash "$ORCH" ...` each time, since the working directory is
+what tells `orch.sh` which flow it means.
+
+1. `bash "$ORCH" side-checkout add <slug>`. It first sweeps finished side
+   checkouts and reports them; a failed sweep is reported and `add` carries
+   on. Its last line of output is the side checkout's path. If `add` fails -
+   the path already exists, or the base branch cannot be fetched - relay its
+   message, save the plan to `.scratch/orch-plan-<slug>.md` as step 2 does,
+   and stop.
+2. Inside the side checkout, `bash "$ORCH" init <slug>`, or
+   `bash "$ORCH" init <slug> --issue N` as in step 2 above. If it fails, save the plan to
+   `.scratch/orch-plan-<slug>.md` in this checkout as step 2 does, tell the
+   human the side checkout's path, and stop.
+3. Invoke the `orch-handoff` skill to write `01-plan.md` into the side
+   checkout's handoff folder: the path `bash "$ORCH" handoff path spec`
+   prints when run inside the side checkout. Validate it there with
+   `bash "$ORCH" handoff validate <that path>`, fixing and re-validating
+   until it passes.
+4. Print the one command that opens a session in the side checkout - `cd
+   <path> && claude` on Claude Code, `cd <path> && junie` on Junie - and tell
+   the human to run `/orchestrator:next` there (on a host with no plugin
+   commands, to ask for this skill's **Next phase**). This session's work is
+   done: the spec phase starts in that new session, like any other.
 
 ## Next phase
 
@@ -367,8 +403,8 @@ scratch.
 
 - **One phase per session.** The context you accumulated is exactly what the next
   phase must not inherit.
-- **One flow at a time.** `init` enforces it. For a second feature, use a second
-  checkout.
+- **One flow at a time.** `init` enforces it, per checkout. A second feature
+  runs in a side checkout (see **Starting in a side checkout**).
 - **Never merge.** The flow opens a draft PR and stops. Merging is the user's.
 - **Never edit `.orchestrator/state.json` by hand; the phase moves only through
   `phase advance`, `review ready`, and redo, and `issue`, `budget`, and
