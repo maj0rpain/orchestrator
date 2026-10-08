@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.20.0
+
+GitHub failures now reach the user in gh's own words (#663). Doctor's
+sub-issues probe warns `sub-issues support could not be probed: <gh's line>`
+on a 5xx, 401, 403 or connection error, keeping "unsupported" for a 404 only
+(#554), and `review rerun` on a PR with no checks dies with gh's own
+no-checks line (#555). New `orch.sh issue fetch <n> <file> --json` reads an
+issue's title, body, labels and comments as one trimmed JSON object, pinned to
+the resolved repo, and the briefs, skills and issue-tracker doc use it in
+place of their own recipe (#528). New `orch.sh repo show --host` (#535).
+`[HOST/]OWNER/REPO` parsing, the resolve-and-pin sequence, the "is gh
+installed" check and the repo remedy wording each have one home (#529, #530,
+#532, #537, #538).
+
 ## 3.19.0
 
 A second flow or a quick implementation can now run beside an active flow in
