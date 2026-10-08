@@ -95,7 +95,7 @@ spec review straight against it.
 _Avoid_: existing issue, pre-existing issue, given issue.
 
 **Interviewed issue**:
-An open issue a planning session was run about. When the human confirms the plan, the session offers to move it to the `ready-for-agent` triage label, since the interview settled what triage would have.
+An open issue a planning session was run about, or the open issue the human names in its place when the session closes. When the human confirms the plan, the session offers to move it to the `ready-for-agent` triage label, since the interview settled what triage would have. A blueprint drawn from that session rewrites this issue as its spec issue rather than publishing a new one.
 _Avoid_: planned issue, subject issue.
 
 **Planning allowlist**:
@@ -126,14 +126,7 @@ its spec review retired the blueprint's breakdown and broke the issue down
 again.
 
 **Blueprint**:
-Everything a change needs before implementation, published and carried no
-further: its spec issue, reviewed if the human chose to, and its ticket
-breakdown. Chosen once, by a human, at the close of a planning session, as
-the alternative to starting a flow or a quick implementation. A flow later
-adopts it, or a quick implementation links it; either way its ticket
-breakdown is already published and is not run again, unless a spec review
-changes the spec and retires that breakdown - by the human's choice, or by
-its own recommendation in an unattended spec review.
+Everything a change needs before implementation, carried no further: its spec issue - published new, or the interviewed issue rewritten, its earlier breakdown retired and broken down again if the human chooses - reviewed if the human chose to, and its ticket breakdown. Chosen once, by a human, at the close of a planning session, as the alternative to starting a flow or a quick implementation. A flow later adopts it, or a quick implementation links it; either way its ticket breakdown is already published and is not run again, unless a spec review changes the spec and retires that breakdown - by the human's choice, or by its own recommendation in an unattended spec review.
 _Avoid_: planning-only, parked spec, banked spec.
 
 **Blocking edge**:
