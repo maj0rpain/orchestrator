@@ -27,10 +27,12 @@
 # the parallel runner runs each one. So a helper used by more than one section
 # lives in the shared setup, never inside the section that first needed it.
 
-ORCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/orch.sh"
-GH_ADAPTER_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh_adapter_fake.sh"
+# The suite's own directory, walked to once; every path below builds on it.
+TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORCH="$(cd "$TEST_DIR/.." && pwd)/orch.sh"
+GH_ADAPTER_FAKE="$TEST_DIR/gh_adapter_fake.sh"
 PLUGIN_ROOT="$(cd "$(dirname "$ORCH")/.." && pwd)"
-SUITE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+SUITE_SCRIPT="$TEST_DIR/$(basename "${BASH_SOURCE[0]}")"
 
 # The temp root. Every invocation - the parallel runner, each of its children,
 # a sequential or filtered run - first creates one temp directory and exports
@@ -58,7 +60,8 @@ trap 'exit 130' INT TERM
 # the text after `# --- `, trailing dashes dropped - matches under grep -E, and
 # the summary (from the `# >>> summary` line). The text is extracted from this
 # file and eval'd, so no file is written. A pattern that matches no section
-# exits 1, printing every section title, one per line.
+# exits 1, printing the selectable section titles - those from isolation on -
+# one per line.
 #
 # The parallel runner. ORCH_TEST_JOBS sets how many sections run at once:
 # by default the core count (getconf _NPROCESSORS_ONLN, or 4 when that fails);
@@ -77,24 +80,40 @@ trap 'exit 130' INT TERM
 # failed. Buffers live in one temp directory under the temp root; an interrupt
 # also kills the running children and waits for them to exit.
 
-# section_awk <mode> [keep]: list the section titles (mode "titles"), or print
-# the text to run (mode "text"), keeping the sections whose 1-based positions
-# appear in keep, a comma-wrapped list such as ",1,4,". Position 1 is isolation.
-section_awk() {
-  awk -v mode="$1" -v keep="${2:-}" '
-    function title(s) { sub(/^# --- /, "", s); sub(/[ -]+$/, "", s); return s }
-    phase == 0 && $0 == "# >>> shared setup" { phase = 1; next }
-    phase == 0 { next }
-    $0 == "# >>> summary" { phase = 3 }
-    phase == 1 && /^# --- / && title($0) == "isolation" { phase = 2 }
-    phase == 2 && /^# --- / {
-      n++
-      on = index(keep, "," n ",") > 0
-      if (mode == "titles") print title($0)
-    }
-    mode == "text" && (phase == 1 || phase == 3 || (phase == 2 && on))
+# The walk section_titles and section_text share: phase 1 is the shared setup
+# (from the `# >>> shared setup` line), phase 2 the sections from isolation on,
+# each `# --- ` header numbering its section n, and phase 3 the summary (from
+# the `# >>> summary` line). title() drops a header's `# --- ` and trailing
+# dashes.
+section_walk_awk='
+  function title(s) { sub(/^# --- /, "", s); sub(/[ -]+$/, "", s); return s }
+  phase == 0 && $0 == "# >>> shared setup" { phase = 1; next }
+  phase == 0 { next }
+  $0 == "# >>> summary" { phase = 3 }
+  phase == 1 && /^# --- / && title($0) == "isolation" { phase = 2 }
+  phase == 2 && /^# --- / { n++ }
+'
+
+# section_titles: print the section titles from isolation on, one per line.
+# Position 1 is isolation.
+section_titles() {
+  awk "$section_walk_awk"'
+    phase == 2 && /^# --- / { print title($0) }
   ' "$SUITE_SCRIPT"
 }
+
+# section_text <keep>: print the text to eval - the shared setup, the summary,
+# and the sections whose 1-based positions appear in keep, a comma-wrapped list
+# such as ",1,4,".
+section_text() {
+  awk -v keep="$1" "$section_walk_awk"'
+    phase == 1 || phase == 3 || (phase == 2 && index(keep, "," n ",") > 0)
+  ' "$SUITE_SCRIPT"
+}
+
+# The kept set that holds isolation alone: it seeds a filter's kept set, so a
+# filter whose set is still this one matched no section.
+readonly only_isolation=",1,"
 
 # print_summary <pass> <fail> <skip>: the suite's closing lines, a blank line
 # then the counts, the skips only when there were any. The parallel runner and
@@ -120,7 +139,7 @@ if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   orch_child_section="$ORCH_TEST_CHILD_SECTION"
   orch_child_counts="$ORCH_TEST_CHILD_COUNTS"
   unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS
-  eval "$(section_awk text ",$orch_child_section,")"
+  eval "$(section_text ",$orch_child_section,")"
   exit $?
 fi
 
@@ -144,11 +163,11 @@ fi
 orch_jobs=$((10#$orch_jobs))
 
 if [ -n "${ORCH_TEST_ONLY:-}" ] || [ "$orch_jobs" -gt 1 ]; then
-  only_titles="$(section_awk titles)"
+  only_titles="$(section_titles)"
   if [ -n "${ORCH_TEST_ONLY:-}" ]; then
-    only_keep=",1,$(printf '%s\n' "$only_titles" | grep -nE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
-    if [ "$only_keep" = ",1," ]; then
-      echo "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section; the sections are:" >&2
+    only_keep="$only_isolation$(printf '%s\n' "$only_titles" | grep -nE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
+    if [ "$only_keep" = "$only_isolation" ]; then
+      echo "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section; the selectable sections are:" >&2
       printf '%s\n' "$only_titles"
       exit 1
     fi
@@ -156,7 +175,7 @@ if [ -n "${ORCH_TEST_ONLY:-}" ] || [ "$orch_jobs" -gt 1 ]; then
     only_keep=",$(printf '%s\n' "$only_titles" | awk '{ print NR }' | tr '\n' ',')"
   fi
   if [ "$orch_jobs" -eq 1 ]; then
-    eval "$(section_awk text "$only_keep")"
+    eval "$(section_text "$only_keep")"
     exit $?
   fi
 
@@ -995,12 +1014,17 @@ assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
 echo
 echo "the section filter (ORCH_TEST_ONLY, #612)"
 new_repo >/dev/null
+# The reference run: isolation alone, not quiet. Its ok lines give the
+# isolation section's pass count, so no assert below hard-codes it.
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+filter_n="$(printf '%s\n' "$out" | grep -c '^  ok ')"
 assert_status "a filter matching only isolation passes" "$st" 0
+if [ "$filter_n" -gt 0 ]; then ok "the reference run prints an ok line"
+else bad "the reference run prints an ok line" "counted $filter_n"; fi
 assert_eq "runs the isolation section" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
 assert_eq "runs no other section" "$(printf '%s\n' "$out" | grep -cxE 'init|slug|doctor')" "0"
 assert_eq "counts only what ran in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
-  "6 passed, 0 failed"
+  "$filter_n passed, 0 failed"
 assert_contains "keeps the cwd isolation, started from a git repo" "$out" \
   "ok   the suite starts outside any git work tree"
 assert_contains "keeps the HOME isolation" "$out" "ok   HOME is the suite's own HOME"
@@ -1026,8 +1050,12 @@ assert_eq "skips the sections the pattern does not match" \
   "$(printf '%s\n' "$out" | grep -cx 'planted gamma')" "0"
 rm -rf "$filter_dir"
 
-out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' bash "$SUITE_SCRIPT" 2>/dev/null)"; st=$?
+filter_err="$(mktemp)"
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' bash "$SUITE_SCRIPT" 2>"$filter_err")"; st=$?
 assert_status "a pattern matching no section exits 1" "$st" 1
+assert_eq "says on stderr that it lists the selectable sections" "$(cat "$filter_err")" \
+  "orch_test.sh: ORCH_TEST_ONLY='^no such section\$' matches no section; the selectable sections are:"
+rm -f "$filter_err"
 assert_eq "lists the sections from isolation on" "$(printf '%s\n' "$out" | sed -n 1p)" "isolation"
 assert_eq "lists a sub-section as a title of its own" \
   "$(printf '%s\n' "$out" | grep -cxF 'doctor: host (#128)')" "1"
@@ -1043,12 +1071,21 @@ assert_eq "runs nothing" "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
 # and docs_lint.sh are judged on their ok lines alone, not on their status.
 echo
 echo "quiet mode (ORCH_TEST_QUIET, #614)"
+# The reference run: isolation alone, not quiet. Its ok lines give the
+# isolation section's pass count, which the quiet runs' summaries must match.
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+quiet_n="$(printf '%s\n' "$out" | grep -c '^  ok ')"
+assert_status "the non-quiet reference run passes" "$st" 0
+if [ "$quiet_n" -gt 0 ]; then ok "the reference run prints an ok line"
+else bad "the reference run prints an ok line" "counted $quiet_n"; fi
+assert_eq "without quiet mode, counts every printed ok line in the summary" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "$quiet_n passed, 0 failed"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
 assert_status "a quiet, filtered run passes" "$st" 0
 assert_eq "prints no ok line" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
 assert_eq "still prints the section header" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
 assert_eq "still counts every pass in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
-  "6 passed, 0 failed"
+  "$quiet_n passed, 0 failed"
 # A copy of the scripts tree whose isolation section gains a failing and a
 # skipped check, so the FAIL and skip lines are seen kept under quiet mode.
 quiet_dir="$(mktemp -d)"
@@ -1065,7 +1102,7 @@ assert_contains "keeps a FAIL line with its detail line" "$out" \
 assert_contains "keeps a skip line with its reason line" "$out" \
   "$(printf '  skip a planted skip\n     its reason line')"
 assert_eq "summarises the hidden passes, the failure and the skip" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed, 1 skipped"
+  "$(printf '%s\n' "$out" | tail -n 1)" "$quiet_n passed, 1 failed, 1 skipped"
 assert_eq "still prints no ok line beside a failure" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
 rm -rf "$quiet_dir"
 # Each of the other two suites cut down to its own helpers, one planted check
@@ -1089,9 +1126,6 @@ for quiet_pair in hooks_test.sh:'# >>> summary' docs_lint.sh:'# --- summary'; do
   assert_contains "$quiet_suite still prints its summary when quiet" "$out" " passed, "
 done
 rm -rf "$cut_dir"
-out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"
-assert_eq "without quiet mode, prints every ok line" \
-  "$(printf '%s\n' "$out" | grep -c '^  ok ')" "6"
 
 # --- the parallel runner (ORCH_TEST_JOBS, #780) --------------------------------
 # A copy of the scripts tree with planted sections. Two passing ones run with
