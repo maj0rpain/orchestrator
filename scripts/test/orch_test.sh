@@ -10851,7 +10851,7 @@ for all_suite in orch_test.sh hooks_test.sh docs_lint.sh; do
     echo 'echo; echo "a section header"'
     if [ "$all_suite" = orch_test.sh ]; then
       echo "printf '  FAIL a stub failure\n     its detail line\n  FAIL another failure\n     its own detail\n'"
-      echo 'echo; echo "2 passed, 2 failed"; exit 1'
+      echo 'echo; echo "2 passed, 2 failed, 1 skipped"; exit 1'
     else
       echo 'echo; echo "7 passed, 0 failed"'
     fi
@@ -10918,7 +10918,7 @@ assert_contains "prints a suite's FAIL lines with their detail lines" "$out" \
   "$(printf '  FAIL a stub failure\n     its detail line\n  FAIL another failure\n     its own detail')"
 assert_eq "prints one summary line per suite" \
   "$(printf '%s\n' "$out" | grep -E '^[a-z_]+\.sh: [0-9]+ passed')" \
-  "$(printf 'orch_test.sh: 2 passed, 2 failed\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed')"
+  "$(printf 'orch_test.sh: 2 passed, 2 failed, 1 skipped\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed')"
 assert_eq "prints no section header" "$(printf '%s\n' "$out" | grep -c 'a section header')" "0"
 assert_eq "still prints the shellcheck summary after a failing suite" \
   "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
@@ -10947,7 +10947,7 @@ assert_contains "prints each finding, then shellcheck: N findings" "$out" \
   "$(printf '%s\n%s\nshellcheck: 2 findings' "$all_finding1" "$all_finding2")"
 assert_eq "a finding still lets every suite's summary print first" \
   "$(printf '%s\n' "$out" | grep -E '^[a-z_]+\.sh: ')" \
-  "$(printf 'orch_test.sh: 2 passed, 0 failed\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed')"
+  "$(printf 'orch_test.sh: 2 passed, 0 failed, 1 skipped\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed')"
 
 # Each planted file's call prints its own finding; the first file's call is
 # the slowest and the second's exits highest, so the findings print in glob
@@ -11053,6 +11053,23 @@ assert_status "a missing shellcheck fails the run in CI" "$st" 1
 assert_eq "still says shellcheck was skipped in CI" \
   "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: not installed - skipped"
 
+# A suite that dies before its summary (#626): orch_test.sh's stub fails
+# after a FAIL line and ends on a line that is no summary, hooks_test.sh's
+# prints nothing, and docs_lint.sh's passes on a stray last line. Last, so
+# the stubs are overwritten outright and never restored.
+printf '%s\n' '#!/usr/bin/env bash' \
+  "printf '  FAIL a dying failure\\n     its dying detail\\nsomething went wrong\\n'" \
+  'exit 3' >"$all_dir/orch_test.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 4' >"$all_dir/hooks_test.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "a stray last line"' >"$all_dir/docs_lint.sh"
+out="$(all_run 2>&1)"; st=$?
+assert_status "a suite that died before its summary fails the run" "$st" 1
+assert_contains "says a suite died before its summary, after its FAIL lines" "$out" \
+  "$(printf '  FAIL a dying failure\n     its dying detail\norch_test.sh: died before its summary (exit 3)')"
+assert_contains "says a suite that printed nothing died before its summary" "$out" \
+  "hooks_test.sh: died before its summary (exit 4)"
+assert_contains "keeps a passing suite's last line, whatever it is" "$out" \
+  "docs_lint.sh: a stray last line"
 rm -rf "$all_root"
 
 # >>> summary
