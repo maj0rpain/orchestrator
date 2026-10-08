@@ -817,11 +817,12 @@ dirty_outside_allowlist() {
 # read as a clean tree, so instead it prints why, naming git's error, and
 # returns 1: callers refuse with that line, or report it.
 tree_status() {
-  local out err
+  local out err said_all said
   err="$(mktemp)"
   if ! out="$(git -C "$1" status --porcelain 2>"$err")"; then
-    printf 'git status failed - cannot check the working tree: %s\n' "$(first_line "$(cat "$err")")"
-    rm -f "$err"; return 1
+    said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
+    printf 'git status failed - cannot check the working tree: %s\n' "$said"
+    return 1
   fi
   rm -f "$err"
   printf '%s' "$out"
@@ -1963,7 +1964,7 @@ review_rerun() {
 # of it, the same absence is pending.
 review_terminal_state() {
   require_state
-  local i b path sec="" line started="" body="" first rest after s sep
+  local i b path sec="" line started="" body="" first_raw first rest after s sep
   i="$(state_get iteration)"
   b="$(review_budget)"
   if [ "$i" -eq 0 ]; then note none; return 1; fi
@@ -1985,8 +1986,8 @@ review_terminal_state() {
     body+="$line"$'\n'
   done <<<"$sec"
   newlines_strip body
-  lines_split "$body" first rest
-  first="$(trim "$first")"
+  lines_split "$body" first_raw rest
+  first="$(trim "$first_raw")"
   case "$first" in
     ready) note ready; return 0 ;;
     stop*)
@@ -4002,11 +4003,12 @@ cmd_side_checkout_remove() {
 # assigned to the caller's <var>. On failure it sets `verdict` to the call's
 # first error line and returns 2.
 github_read() {
-  local into="$1" got err
+  local into="$1" got err said_all said
   shift
   err="$(mktemp)"
   if ! got="$("$@" 2>"$err")"; then
-    verdict="could not read GitHub: $(first_line "$(cat "$err")")"; rm -f "$err"; return 2
+    said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
+    verdict="could not read GitHub: $said"; return 2
   fi
   rm -f "$err"
   printf -v "$into" '%s' "$got"
