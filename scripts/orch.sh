@@ -2896,8 +2896,10 @@ cmd_pr() {
 # state.json, since quick implementation keeps none.
 
 # ticket_sub_issues <parent> [die|die2]: the parent's sub-issues as
-# adapter_sub_issues prints them - the one listing every ticket command reads
-# (#394). Dies, before asking GitHub, on a parent that is no plain number;
+# adapter_sub_issues prints them - the listing the ticket commands read (#394),
+# save ticket_links_verified, which calls adapter_sub_issues itself so a failed
+# read can be retried rather than died on. Dies, before asking GitHub, on a
+# parent that is no plain number;
 # dies through the second argument (default die) where GitHub cannot list
 # them.
 ticket_sub_issues() {
