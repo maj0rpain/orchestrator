@@ -13,9 +13,8 @@
 # passed, N failed, N skipped". A suite's stderr is not captured: it passes
 # straight through, and the suites' stderr may interleave.
 #
-# Then shellcheck's summary. shellcheck runs from the repo root two levels up,
-# one process per tracked shell file matched by "scripts/*.sh
-# scripts/test/*.sh": "shellcheck -S warning -f gcc <file>", with
+# Then shellcheck, from the repo root two levels up, at warning severity, one
+# process per shell file matched by scripts/*.sh and scripts/test/*.sh, with
 # .shellcheckrc's source settings. Every process starts at once, alongside the
 # suites, with no throttle, so no single shellcheck run over every file is the
 # critical path - this deliberately reverses #777's one-process rule. Each
@@ -42,9 +41,6 @@
 # bump rule, which CI's "Read main's version" step feeds. ORCH_TEST_JOBS
 # passes through too: orch_test.sh runs that many sections at once, by default
 # the core count, and ORCH_TEST_JOBS=1 runs them sequentially, in one shell.
-#
-# While iterating, run one section instead:
-#   ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh
 
 unset ORCH_TEST_ONLY
 export ORCH_TEST_QUIET=1

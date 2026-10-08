@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/orch.sh.
+# Tests for scripts/orch.sh and the test harness itself (the section filter, quiet mode, all.sh).
 #
 # orch.sh is where silent wrongness hides: `doctor` returning success on a
 # deleted branch, a missing triage label, or a handoff with an empty required
