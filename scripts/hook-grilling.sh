@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
-# Delivers the planning message once per session when planning starts with no
-# flow active. One script, two hosts; the tool that asks the closing question
+# Delivers the planning message once per session when planning starts. One script, two hosts; the tool that asks the closing question
 # and the sentence on how to run the next skill differ between them, and only
 # Junie asks the question again when a plan is confirmed.
 #
@@ -22,7 +21,10 @@
 # It injects context only. It cannot force compliance, which is why the real
 # durability lives in .orchestrator/state.json and, on Claude Code, the edit
 # guard; on Junie, orch.sh init's flow-start working-tree check (ADR-0025). Fires once
-# per session, and says nothing at all when a flow is already running.
+# per session. Beside a running flow it still sends the planning rules, with a
+# closing that names that flow and states two branches: about that flow, point
+# to its next or redo; about anything else, the interviewed-issue step and the
+# route question, where only Blueprint runs in this checkout (#640).
 
 set -euo pipefail
 
@@ -79,10 +81,14 @@ fi
 
 root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 
-# Mid-flow already: the user is resolving a wayfinder ticket or re-planning
-# inside an active flow, and does not need to be told how to start one. A done
-# flow is finished work, so planning beside it gets the full message.
-if hook_flow_active "$root"; then exit 0; fi
+# Beside an active flow (#640): the planning may be re-planning that flow, or a
+# different change planned in another terminal on the same checkout. The hook
+# cannot tell which - the skill's arguments are free text - so it sends the
+# planning rules with a closing that names the flow and states both branches,
+# and the model picks one. A done flow is finished work, so planning beside it
+# gets the ordinary message.
+flow_active=0
+if hook_flow_active "$root"; then flow_active=1; fi
 
 ROOT="$root"
 LABELS_DOC="docs/agents/triage-labels.md"
@@ -90,18 +96,24 @@ ready_label="$(triage_label_for ready-for-agent)"
 wontfix_label="$(triage_label_for wontfix)"
 human_label="$(triage_label_for ready-for-human)"
 
+# How to run each route, split so that beside an active flow (#640) the
+# question keeps only Blueprint's: the flow and quick-implementation routes
+# must not run in a checkout whose branch belongs to the running flow.
 if [ "$host" = junie ]; then
   ask_tool="the ask_user tool"
   ask_step="Call the ask_user tool with
   exactly three options:"
   plugin_root="$(hook_plugin_root)"
-  run_next="- On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
-  \"Quick implementation\", the orch-quick-implement skill; on \"Blueprint
-  only\", the orch-to-spec skill, then orch-spec-review if the user wants a
+  run_flow_quick="On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
+  \"Quick implementation\", the orch-quick-implement skill. "
+  run_blueprint="On \"Blueprint
+  only\", run the orch-to-spec skill, then orch-spec-review if the user wants a
   review, then orch-to-tickets. This host has no Skill tool, so read each
-  skill's file and follow it verbatim:
+  skill's file and follow it verbatim:"
+  flow_quick_files="
   $plugin_root/skills/orch-flow/SKILL.md,
-  $(hook_quick_skill_file),
+  $(hook_quick_skill_file),"
+  blueprint_files="
   $plugin_root/skills/orch-to-spec/SKILL.md,
   $plugin_root/skills/orch-spec-review/SKILL.md (its standalone spec review), or
   $plugin_root/skills/orch-to-tickets/SKILL.md."
@@ -109,15 +121,78 @@ else
   ask_tool="the AskUserQuestion tool"
   ask_step="Call the AskUserQuestion tool with
   exactly three options:"
-  run_next="- On \"Start the orchestrator flow\", call the Skill tool with
+  run_flow_quick="On \"Start the orchestrator flow\", call the Skill tool with
   \"orchestrator:orch-flow\" yourself. On \"Quick implementation\", call the Skill
-  tool with \"orchestrator:orch-quick-implement\" yourself. On \"Blueprint
+  tool with \"orchestrator:orch-quick-implement\" yourself. "
+  run_blueprint="On \"Blueprint
   only\", call the Skill tool with \"orchestrator:orch-to-spec\", then with
   \"orchestrator:orch-spec-review\" (its standalone spec review) if the user
   wants a review, then with \"orchestrator:orch-to-tickets\", yourself. The
   orchestrator's skills are model-invocable: call them, do not hand them to the
   user."
+  flow_quick_files=""
+  blueprint_files=""
 fi
+
+# The active flow, named by whatever state.json holds: its issue, else its
+# slug with "has no issue yet", else neither; plus its phase, where a null
+# phase is a flow init just started. Only state that cannot be read as a JSON
+# object leaves it unnamed, with no phase claimed.
+flow_branches=""
+route_here=""
+# The branches stand in place of the route question (#640): beside a flow, the
+# question's bullet opens by scoping itself to the second case.
+confirm_lead="Before you implement anything"
+close_lead="When you reach a shared understanding"
+if [ "$flow_active" = 1 ]; then
+  state="$root/.orchestrator/state.json"
+  flow_readable=0 flow_issue="" flow_slug="" flow_phase=""
+  if jq -e 'type == "object"' "$state" >/dev/null 2>&1; then
+    flow_readable=1
+    flow_issue="$(jq -r '.issue // "" | tostring' "$state")"
+    flow_slug="$(jq -r '.slug // "" | tostring' "$state")"
+    flow_phase="$(jq -r '.phase // "" | tostring' "$state")"
+  fi
+  if [ -n "$flow_phase" ]; then flow_at="at phase $flow_phase"; else flow_at="just started"; fi
+  if [ "$flow_readable" = 0 ]; then
+    flow_named="a flow is active in this checkout"
+    flow_subject="that flow's own work"
+  elif [ -n "$flow_issue" ]; then
+    flow_named="the flow for #$flow_issue is active in this checkout, $flow_at"
+    flow_subject="this flow's issue, #$flow_issue"
+  elif [ -n "$flow_slug" ]; then
+    flow_named="the flow $flow_slug is active in this checkout, $flow_at; it has no issue yet"
+    flow_subject="this flow's change"
+  else
+    flow_named="a flow with no issue or slug is active in this checkout, $flow_at"
+    flow_subject="this flow's change"
+  fi
+  if [ "$host" = junie ]; then
+    next_redo="the **Next phase** and **Redo** sections of $(hook_plugin_root)/skills/orch-flow/SKILL.md
+    (this host has no plugin commands: read that file and follow the section
+    the user picks)"
+  else
+    next_redo="/orchestrator:next or /orchestrator:redo"
+  fi
+  flow_branches="- Beside this planning session, ${flow_named}. At the close, decide
+  from this planning session's conversation which of two cases applies:
+  - If this planning was about ${flow_subject}: ask no route question and
+    skip the interviewed-issue step below, since that flow already holds the
+    work. The next step is that flow's: point the user to ${next_redo}.
+  - Otherwise: run the interviewed-issue step below unchanged, then the route
+    question below."
+  only_second="Only in the second case above (planning about anything else):"
+  confirm_lead="$only_second before you implement anything"
+  close_lead="$only_second when you reach a shared understanding"
+  route_here="
+  Blueprint only is the one route that runs in this checkout, whose branch
+  belongs to the running flow: starting a flow or a quick implementation must be done from a separate checkout of the repo, opened in its own session there.
+  On \"Start the orchestrator flow\" or \"Quick implementation\", run no skill
+  here: tell the user that, and stop."
+  # Beside a flow, only Blueprint's run instructions stand.
+  run_flow_quick="" flow_quick_files=""
+fi
+run_next="- ${run_flow_quick}${run_blueprint}${flow_quick_files}${blueprint_files}"
 
 # The interviewed issue (#571): an open issue the planning was about is
 # offered a move to ready-for-agent before the route question, so init
@@ -145,7 +220,7 @@ choice="${ask_step}
       3. Blueprint only - publish the spec and its ticket breakdown, then
          stop; implement later.
 
-${run_next} Do not ask the user to type a command.
+${run_next} Do not ask the user to type a command.${route_here}
 
 - On \"Blueprint only\": publish the spec (orch-to-spec), with any glossary or
   ADR wording the planning decided written into the issue body verbatim. Then
@@ -159,9 +234,10 @@ ${run_next} Do not ask the user to type a command.
 if [ "$plan_confirmed" = 1 ]; then
   hook_emit_context "$event" "The orchestrator plugin is installed in this repo, and the user just
 confirmed a plan from a planning session.
-
+${flow_branches:+
+$flow_branches}
 ${interviewed_step}
-- Before you implement anything, and without editing any file first, ask the
+- ${confirm_lead}, and without editing any file first, ask the
   user how to carry the plan out. ${choice}"
   exit 0
 fi
@@ -175,8 +251,9 @@ While this planning session is running:
 - Do NOT offer to implement, and do NOT write or edit code. Planning artifacts
   ($(planning_allowlist_text)) are fine; source files are not.
 - Glossary and ADR changes ($(planning_records_text)) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim.
-${interviewed_step}
-- When you reach a shared understanding, do not close with a scripted line and
+${flow_branches:+$flow_branches
+}${interviewed_step}
+- ${close_lead}, do not close with a scripted line and
   do not decide the next step yourself. ${choice}
 
 If this session runs under a wayfinder skill, \"approved\" means the
