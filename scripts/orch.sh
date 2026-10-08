@@ -1922,7 +1922,7 @@ review_rerun() {
   # message carries.
   capture out err adapter_pr_checks "$pr" all || rc=$?
   gh_line="${err%%$'\n'*}"
-  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $gh_line"
+  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: ${gh_line:-gh gave no reason}"
   [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: ${gh_line:-no checks reported}"
   # The first failed or cancelled check's name and link, split by tsv_split
   # so an empty name survives: IFS=$'\t' read would collapse it, a tab being
@@ -1941,8 +1941,10 @@ review_rerun() {
   run="${link##*/actions/runs/}"   # N/job/M -> N
   run="${run%%/*}"
   case "$run" in ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; return 1 ;; esac
-  adapter_run_rerun "$run" 2>/dev/null \
-    || die2 "gh could not rerun the failed jobs of Actions run $run"
+  if ! capture out err adapter_run_rerun "$run"; then
+    gh_line="${err%%$'\n'*}"
+    die2 "gh could not rerun the failed jobs of Actions run $run: ${gh_line:-gh gave no reason}"
+  fi
   note "$run"
 }
 
@@ -2862,16 +2864,22 @@ cmd_branch() {
   esac
 }
 
-# True only once the created issue reads back with the title it was given
-# and the ready-for-agent role's label among its labels. Read fresh every
-# call, never cached - the caller retries this on a mismatch, as
-# ticket_links_verified's caller does.
+# issue_publish_verified <line_var> <n> <title> <label>: 0 only once the
+# created issue reads back with the title it was given and the
+# ready-for-agent role's label among its labels; 1 on a mismatch; 2 when the
+# read fails, gh's first stderr line - empty when gh printed none - written
+# into <line_var>, so a failed read is never reported as a mismatch. Read
+# fresh every call, never cached - the caller retries this once on either
+# status, as ticket_links_verified's caller does. Locals prefixed so no
+# caller's variable name is shadowed.
 issue_publish_verified() {
-  local n="$1" title="$2" label="$3" out
-  out="$(adapter_issue_title_labels "$n" 2>/dev/null)" \
-    || return 1
-  [ "$(first_line "$out")" = "$title" ] || return 1
-  labels_verified "$(printf '%s\n' "$out" | tail -n +2)" "$label"
+  local __ipv_out __ipv_err
+  if ! capture __ipv_out __ipv_err adapter_issue_title_labels "$2"; then
+    printf -v "$1" '%s' "${__ipv_err%%$'\n'*}"
+    return 2
+  fi
+  [ "$(first_line "$__ipv_out")" = "$3" ] || return 1
+  labels_verified "$(printf '%s\n' "$__ipv_out" | tail -n +2)" "$4" || return 1
 }
 
 # The publishing boundary a spec and a quick implementation call instead of
@@ -2881,31 +2889,39 @@ issue_publish_verified() {
 # record into, so the title and body are its own and nothing here remembers
 # them. Verify-then-die like ticket publish: the issue is created under the
 # ready-for-agent role's label (an agent works it next), then its title and
-# labels are read back - one retry on a mismatch, a second failure dies
-# naming the issue, so a half-published spec never reaches the next step.
+# labels are read back - one retry on a mismatch or a failed read, a second
+# failure dies naming the issue, so a half-published spec never reaches the
+# next step.
 cmd_issue_publish() {
   [ $# -eq 2 ] || die "usage: orch.sh issue publish <title> <body-file>"
-  local title="$1" body_file="$2" ready n
+  local title="$1" body_file="$2" ready n gh_line="" st=0
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
   ready="$(triage_label_for ready-for-agent)"
   n="$(adapter_issue_create "$title" "$body_file" "$ready")" \
     || die "gh could not create the issue"
-  issue_publish_verified "$n" "$title" "$ready" \
-    || issue_publish_verified "$n" "$title" "$ready" \
+  # The second attempt's status decides the death: 2 a failed read, 1 a
+  # mismatch.
+  issue_publish_verified gh_line "$n" "$title" "$ready" \
+    || issue_publish_verified gh_line "$n" "$title" "$ready" \
+    || st=$?
+  [ "$st" -ne 2 ] || die "gh could not read issue #$n: ${gh_line:-gh gave no reason}"
+  [ "$st" -eq 0 ] \
     || die "issue #$n's title and '$ready' label did not verify - checked twice, both failed"
   note "$n"
 }
 
-# issue_triage_verified <n> <ready> [removed-label...]: true only once the
-# issue reads back carrying <ready> and none of the removed labels. Read fresh
-# every call, never cached - the caller re-reads once on a mismatch, as issue
-# publish's does.
+# issue_triage_verified <line_var> <n> <ready> [removed-label...]: 0 only
+# once the issue reads back carrying <ready> and none of the removed labels;
+# 1 on a mismatch; 2 when the read fails, gh's first stderr line - empty when
+# gh printed none - written into <line_var>. Read fresh every call, never
+# cached - the caller re-reads once on either status, as issue publish's
+# does. Locals prefixed so no caller's variable name is shadowed.
 issue_triage_verified() {
-  local n="$1" ready="$2" state labels gh_line
-  shift 2
-  issue_state_labels_read "$n" state labels gh_line || return 1
-  labels_verified "$labels" "$ready" "$@"
+  local __itv_line="$1" __itv_n="$2" __itv_ready="$3" __itv_state __itv_labels
+  shift 3
+  issue_state_labels_read "$__itv_n" __itv_state __itv_labels "$__itv_line" || return 2
+  labels_verified "$__itv_labels" "$__itv_ready" "$@" || return 1
 }
 
 # issue triage <n> [--override]: moves an open issue to the repo's
@@ -2971,8 +2987,14 @@ cmd_issue_triage() {
 
   adapter_issue_relabel "$issue" --add "$ready" ${remove_opts[@]+"${remove_opts[@]}"} \
     || die "gh could not relabel issue #$issue"
-  issue_triage_verified "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
-    || issue_triage_verified "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
+  # The second attempt's status decides the death: 2 a failed read, 1 a
+  # mismatch. Either way the relabel stands and no comment is posted.
+  local st=0
+  issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
+    || issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
+    || st=$?
+  [ "$st" -ne 2 ] || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+  [ "$st" -eq 0 ] \
     || die "issue #$issue's '$ready' label did not verify - checked twice, both failed"
 
   local tmp
@@ -4007,7 +4029,8 @@ github_read() {
   local into="$1" got err
   shift
   if ! capture got err "$@"; then
-    verdict="could not read GitHub: ${err%%$'\n'*}"; return 2
+    err="${err%%$'\n'*}"
+    verdict="could not read GitHub: ${err:-gh gave no reason}"; return 2
   fi
   printf -v "$into" '%s' "$got"
 }

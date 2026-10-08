@@ -2994,6 +2994,33 @@ fake_next_issue 13
 fake_lag adapter_issue_title_labels 2 "$(writeln "Widgets need a handle" bug ready-for-agent)"
 out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "extra labels beside ready-for-agent still verify" "$st" 0
+
+fake_next_issue 14
+fake_fail adapter_issue_title_labels "$(writeln "HTTP 502: Bad Gateway" "retry later")"
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a readback that fails twice dies" "$st" 1
+assert_contains "saying gh could not read the issue, with gh's first line" "$out" \
+  "orch: gh could not read issue #14: HTTP 502: Bad Gateway"
+assert_not_contains "and only its first line" "$out" "retry later"
+assert_not_contains "never calling a failed read a mismatch" "$out" "did not verify"
+assert_eq "with no number printed for a record to cite" \
+  "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
+fake_unfail
+
+fake_next_issue 15
+fake_fail_times adapter_issue_title_labels 1
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a readback that fails once, then answers, succeeds" "$st" 0
+assert_eq "printing the issue number" "$out" "15"
+fake_unfail
+
+fake_next_issue 16
+fake_fail_times adapter_issue_title_labels 9
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "a readback that fails silently twice dies" "$st" 1
+assert_contains "saying gh gave no reason" "$out" \
+  "orch: gh could not read issue #16: gh gave no reason"
+fake_unfail
 restore_suite_env
 
 # --- issue triage -------------------------------------------------------------
@@ -3128,7 +3155,8 @@ fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
 before="$(fake_snapshot)"
 out="$(triage 47 2>&1)"; st=$?
 assert_status "a failed read dies" "$st" 1
-assert_contains "naming the issue" "$out" "issue #47"
+assert_contains "naming the issue, with gh's line" "$out" \
+  "orch: gh could not read issue #47: HTTP 502: Bad Gateway"
 assert_eq "changing nothing" "$(fake_snapshot)" "$before"
 fake_unfail
 
@@ -3165,10 +3193,34 @@ fake_issue 56 open needs-triage
 fake_fail_after adapter_issue_state_labels 1 "HTTP 502: Bad Gateway"
 out="$(triage 56 2>&1)"; st=$?
 assert_status "a verify re-read that fails twice dies" "$st" 1
-assert_contains "saying the label did not verify, naming the issue" "$out" \
-  "issue #56's 'ready-for-agent' label did not verify - checked twice, both failed"
+assert_contains "saying gh could not read the issue, with gh's line" "$out" \
+  "orch: gh could not read issue #56: HTTP 502: Bad Gateway"
+assert_not_contains "never calling a failed read a mismatch" "$out" "did not verify"
 assert_eq "the relabel standing" "$(fake_labels_of 56)" "ready-for-agent "
 assert_eq "posting no comment" "$(comment_count 56)" "0"
+fake_unfail
+
+# A verify re-read that fails once, then reads back right, succeeds. The first
+# read answers; the next one fails silently, once.
+fake_issue 57 open needs-triage
+fake_fail_after adapter_issue_state_labels 1
+fake_fail_times adapter_issue_state_labels 1
+out="$(triage 57 2>&1)"; st=$?
+assert_status "a verify re-read that fails once, then answers, succeeds" "$st" 0
+assert_eq "the issue carrying ready-for-agent" "$(fake_labels_of 57)" "ready-for-agent "
+assert_eq "with exactly one comment" "$(comment_count 57)" "1"
+fake_unfail
+
+# Both verify re-reads fail silently: the death says gh gave no reason.
+fake_issue 58 open needs-triage
+fake_fail_after adapter_issue_state_labels 1
+fake_fail_times adapter_issue_state_labels 9
+out="$(triage 58 2>&1)"; st=$?
+assert_status "two silent verify re-read failures die" "$st" 1
+assert_contains "saying gh gave no reason" "$out" \
+  "orch: gh could not read issue #58: gh gave no reason"
+assert_eq "the issue keeping ready-for-agent" "$(fake_labels_of 58)" "ready-for-agent "
+assert_eq "posting no comment" "$(comment_count 58)" "0"
 fake_unfail
 
 fake_issue 51 open needs-triage
@@ -3269,7 +3321,8 @@ labels_doc docs/agents/triage-labels.md
 fake_fail adapter_issue_state_labels
 out="$(ready 70 2>&1)"; st=$?
 assert_status "a gh failure exits 2" "$st" 2
-assert_contains "with an orch: message naming the issue" "$out" "orch: gh could not read issue #70"
+assert_contains "with an orch: message naming the issue, with gh's line" "$out" \
+  "orch: gh could not read issue #70: fake gh: adapter_issue_state_labels failed"
 fake_unfail
 
 out="$(ready abc 2>&1)"; st=$?
@@ -6417,6 +6470,16 @@ assert_eq "its branch stays" "$(sp_branch quick/7-qk)" "kept"
 assert_eq "the main checkout's flow is not archived" "$(on_disk "$top/.orchestrator/state.json")" "present"
 fake_online
 
+# A GitHub read that fails with nothing on stderr: the reason says so, rather
+# than leaving the verdict ending in a bare colon.
+fake_fail_times adapter_pr_state_draft 9
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune fails when a read fails silently" "$st" 1
+assert_contains "the verdict ending gh gave no reason" "$out" \
+  "could not check $fl: could not read GitHub: gh gave no reason"
+assert_eq "the finished flow side checkout stays" "$(on_disk "$fl")" "present"
+fake_unfail
+
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds" "$st" 0
 assert_eq "the finished flow side checkout is gone" "$(on_disk "$fl")" "absent"
@@ -8300,7 +8363,7 @@ fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
 before_store="$(fake_snapshot)"
 out="$(scan 18 2>&1)"; st=$?
 assert_status "an explicit finding gh cannot read dies" "$st" 1
-assert_contains "naming the issue" "$out" "gh could not read issue #18"
+assert_contains "naming the issue, with gh's line" "$out" "gh could not read issue #18: HTTP 502: Bad Gateway"
 assert_eq "listing nothing" "$(printf '%s\n' "$out" | grep -c "$(printf '\t')")" "0"
 assert_eq "and changing nothing" "$(fake_snapshot)" "$before_store"
 fake_unfail
@@ -8449,7 +8512,7 @@ fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
 before_store="$(fake_snapshot)"
 out="$(apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
 assert_status "a failed read dies" "$st" 1
-assert_contains "naming the issue" "$out" "gh could not read issue #2"
+assert_contains "naming the issue, with gh's line" "$out" "gh could not read issue #2: HTTP 502: Bad Gateway"
 assert_eq "changing nothing" "$(fake_snapshot)" "$before_store"
 fake_unfail
 
@@ -9050,10 +9113,31 @@ assert_status "an empty list of checks is exit 2" "$st" 2
 assert_eq "saying no checks were reported when gh said nothing" "$out" \
   "orch: gh could not read the checks of PR #7: no checks reported"
 fake_checks 7 all failing
-fake_fail adapter_run_rerun
+fake_fail_times adapter_pr_checks 1
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a checks read that fails silently is exit 2" "$st" 2
+assert_eq "ending in gh gave no reason, never a bare colon" "$out" \
+  "orch: gh could not read the checks of PR #7: gh gave no reason"
+fake_unfail
+# The same silence from a read that succeeds is an answer, not a failure:
+# no checks at all, so the death keeps its no-checks wording.
+fake_checks 7 all empty
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a successful read with no checks is exit 2" "$st" 2
+assert_eq "still saying no checks reported, not gh gave no reason" "$out" \
+  "orch: gh could not read the checks of PR #7: no checks reported"
+fake_checks 7 all failing
+fake_fail adapter_run_rerun "$(writeln "HTTP 403: Resource not accessible by integration" "see https://docs.github.com")"
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a rerun gh refuses is exit 2" "$st" 2
-assert_contains "naming the run" "$out" "4242"
+assert_eq "naming the run, with gh's first line only" "$out" \
+  "orch: gh could not rerun the failed jobs of Actions run 4242: HTTP 403: Resource not accessible by integration"
+fake_unfail
+fake_fail_times adapter_run_rerun 1
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a rerun gh refuses silently is exit 2" "$st" 2
+assert_eq "ending in gh gave no reason" "$out" \
+  "orch: gh could not rerun the failed jobs of Actions run 4242: gh gave no reason"
 rm -rf "$ORCH_GH_FAKE_STORE/fail"
 out="$("$ORCH" review rerun 2>&1)"; st=$?
 assert_status "no PR is a usage error, exit 2" "$st" 2
