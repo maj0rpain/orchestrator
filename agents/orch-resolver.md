@@ -69,7 +69,8 @@ failed sync stops and where its **Merge resolutions** go.
    - **Exit 0**: synced, or nothing to merge. The **Merge resolutions** read
      `None`; the sync is done.
    - **Exit 1**: a refusal - a dirty tree, a failed fetch, a detached HEAD,
-     a branch the plugin did not make, or a failed push. A **failed sync**:
+     a merge already in progress, a branch that is its own base, a branch
+     the plugin did not make, or a failed push. A **failed sync**:
      go to step 4.
    - **Exit 3**: a conflict, the merge left in progress. Go to step 2.
 2. **Resolve.** Start a fresh `orch-resolver` per **Starting this agent**
@@ -157,7 +158,7 @@ checked out in the driver's checkout.
    must print the checkout's path. With `In progress:`, a merge
    (`git -C <checkout> rev-parse -q --verify MERGE_HEAD`) or a rebase (a
    `rebase-merge` or `rebase-apply` directory under `git -C <checkout>
-   rev-parse --git-dir`) must be in progress, as the prompt says. With
+   rev-parse --absolute-git-dir`) must be in progress, as the prompt says. With
    `Rebase onto:`, the working tree must be clean; start the rebase:
    `git -C <checkout> rebase <parent branch>`. A rebase that applies cleanly
    has nothing to resolve: go to step 3. On a mismatch, stop and return the

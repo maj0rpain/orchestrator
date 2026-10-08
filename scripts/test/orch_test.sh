@@ -5544,6 +5544,23 @@ assert_eq "removing the worktree" "$([ -e "$wt" ] && echo present || echo absent
 assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 git reset -q --hard HEAD~1
 
+# A leftover t<n> directory that is no worktree: git would resolve it to the
+# enclosing checkout, so --unmerged must not abort that checkout's rebase.
+git checkout -q -b orch/5-side
+echo side >feature.txt && git commit -qam "side edit"
+git checkout -q orch/5-feature
+echo main >feature.txt && git commit -qam "main edit"
+git rebase -q orch/5-side >/dev/null 2>&1
+mkdir -p .orchestrator/worktrees/t9
+out="$("$ORCH" ticket-worktree remove 9 --unmerged 2>&1)"; st=$?
+assert_status "remove --unmerged of a leftover non-worktree t<n> dir refuses" "$st" 1
+assert_eq "leaving the enclosing checkout's rebase in progress" \
+  "$([ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "rebasing"
+git rebase --abort
+rmdir .orchestrator/worktrees/t9
+git reset -q --hard HEAD~1
+git branch -q -D orch/5-side
+
 # Merged into its forked-from branch, but not into the branch the invoking
 # checkout has checked out: merged is judged against the forked-from branch
 # alone, so remove succeeds rather than refusing after the worktree is gone.

@@ -2603,6 +2603,13 @@ checkout_new_branch() {
   git checkout -q -b "$name" "origin/$base" 2>/dev/null || git checkout -q -b "$name" "$base"
 }
 
+# Records <base> and <sha> as branch <name>'s base and base SHA in its git
+# config, where branch sync and branch base-sha read them.
+record_branch_base() {
+  git config "branch.$1.orchestrator-base" "$2"
+  git config "branch.$1.orchestrator-base-sha" "$3"
+}
+
 # Besides state, it records the base and base SHA in the branch's git config,
 # as branch off does, so branch sync and branch base-sha still find them once
 # the flow is done or archived.
@@ -2619,8 +2626,7 @@ cmd_branch_create() {
   sha="$(git rev-parse HEAD)"
   state_write branch "$name"
   state_write base_sha "$sha"
-  git config "branch.$name.orchestrator-base" "$base"
-  git config "branch.$name.orchestrator-base-sha" "$sha"
+  record_branch_base "$name" "$base" "$sha"
   note "$name"
 }
 
@@ -2636,8 +2642,7 @@ cmd_branch_off() {
   local base
   base="$(base_branch)"
   checkout_new_branch "$1" "$base"
-  git config "branch.$1.orchestrator-base" "$base"
-  git config "branch.$1.orchestrator-base-sha" "$(git rev-parse HEAD)"
+  record_branch_base "$1" "$base" "$(git rev-parse HEAD)"
   note "$1"
 }
 
@@ -3686,7 +3691,12 @@ cmd_ticket_worktree_remove() {
   done
   if [ "$unmerged" = 1 ]; then
     path="$(ticket_worktree_path "$(ticket_worktree_number "$n")")"
-    gitdir="$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null)" || gitdir=""
+    # Only a worktree at $path itself: git would resolve a leftover t<n>
+    # directory to the enclosing checkout, whose rebase is not ours to abort.
+    gitdir=""
+    if [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ]; then
+      gitdir="$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null)" || gitdir=""
+    fi
     if [ -n "$gitdir" ] && { [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]; }; then
       git -C "$path" rebase --abort \
         || die "could not abort the rebase in progress in ticket worktree $path"
@@ -4396,8 +4406,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               checkout's flow holds it), and push when it
                               has an upstream. Exit 3 on a conflict, the
                               merge left in progress; exit 1 on a dirty
-                              tree, failed fetch, detached HEAD, or a branch
-                              the plugin did not make, nothing moved; exit
+                              tree, failed fetch, detached HEAD, a merge
+                              already in progress, a branch that is its own
+                              base, or a branch the plugin did not make,
+                              nothing moved; exit
                               1 on a failed push, the merge recorded - rerun
                               to push
   branch retire <old> <new>   rename <old> aside to <new>, republishing it on

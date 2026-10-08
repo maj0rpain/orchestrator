@@ -247,15 +247,10 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    - **e. On a merge conflict** (`ticket merge` exits 3), resolve it, not
      rebuild it (ADR-0038), by **A driver's ticket resolution** in
      `agents/orch-resolver.md` (under the plugin root), the spec issue on
-     the resolver's `Spec issue:` line: resume the ticket's own
-     implementer to rebase and resolve in its ticket worktree; where it
-     cannot be resumed, start a fresh `orch-resolver` there; rerun `ticket
-     merge <n>` and proceed as loop step d does. Keep a resolution's
-     **Merge resolutions** for step 6. Only a failed resolution - its
-     report says so or is malformed, it leaves the worktree mid-rebase or
-     dirty, or `ticket merge` exits 3 again - falls back to `bash "$ORCH"
-     ticket-worktree remove <n> --unmerged`, and queues the ticket to run
-     alone. When nothing is in flight, dispatch the queued ticket in a
+     the resolver's `Spec issue:` line. That section says how to resolve,
+     what counts as a failed resolution, and its fallback to rebuilding the
+     ticket alone. Keep a resolution's **Merge resolutions** for step 6.
+     When nothing is in flight, dispatch a ticket queued to run alone in a
      fresh worktree (`ticket-worktree add`) from the updated tip, on its
      own, and process its report as in loop step d before refilling. When
      the frontier and queue are exhausted and nothing is in flight, go to
