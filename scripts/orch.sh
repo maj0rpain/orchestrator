@@ -3029,15 +3029,7 @@ cmd_ticket_parent() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket parent <n>"
   local n="$1"
   case "$n" in ''|*[!0-9]*) die "not a plain issue number: $n" ;; esac
-  issue_parent "$n"
-}
-
-# The lookup behind `ticket parent`, shared with `ticket block` and
-# `ticket unblock`'s preconditions: <n>'s parent number, or nothing when it
-# has none. An optional <context> is appended to the failure message, so a
-# caller can name the ticket it was working on.
-issue_parent() {
-  adapter_issue_parent "$1" || die "gh could not read issue #$1's parent${2:+, $2}"
+  adapter_issue_parent "$n" || die "gh could not read issue #$n's parent"
 }
 
 # Whether <parent> already has a ticket breakdown, decided by structure
@@ -3179,10 +3171,11 @@ ticket_edge_preconditions() {
   state="$(adapter_issue_state "$n")" \
     || die "gh could not read ticket #$n"
   [ "$state" != CLOSED ] || die "ticket #$n is closed - its blocking edges can no longer change anything"
-  parent="$(issue_parent "$n")" || exit 1
+  parent="$(adapter_issue_parent "$n")" || die "gh could not read issue #$n's parent"
   [ -n "$parent" ] || die "#$n is not a sub-issue, so it is no ticket of a breakdown"
   while IFS= read -r b; do
-    bp="$(issue_parent "$b" "a blocker of ticket #$n")" || exit 1
+    bp="$(adapter_issue_parent "$b")" \
+      || die "gh could not read issue #$b's parent, a blocker of ticket #$n"
     [ "$bp" = "$parent" ] \
       || die "#$b is not a sub-issue of #$parent, ticket #$n's parent - edges never cross breakdowns"
   done <<<"$by"
