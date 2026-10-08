@@ -557,7 +557,7 @@ pushed_head() {
 # store-backed fake (fake_github), the base tip's one check run as the CI
 # evidence that keeps the grace, and the CI knobs short: ORCH_CI_GRACE=0.3,
 # ORCH_CI_TIMEOUT=1, ORCH_CI_INTERVAL=0.05. A section that calls it ends with
-# restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL.
+# its teardown, review_ci_restore.
 review_ci_flow() {
   review_flow "$1"
   state_fixture pr 7
@@ -565,6 +565,12 @@ review_ci_flow() {
   fake_github
   fake_pr 7 open topic main
   fake_check_run main
+}
+
+# review_ci_restore: review_ci_flow's teardown - restore_suite_env with the
+# CI knobs review_ci_flow set.
+review_ci_restore() {
+  restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 }
 
 # ticket_fixture: a ticket section's starting point - a healthy_repo with the
@@ -9168,7 +9174,7 @@ assert_status "checks nobody could read stop the loop" "$st" 1
 assert_first_line "rather than passing as a repo with no checks" "$out" "unreachable"
 assert_contains "saying what it could not read" "$out" "could not read"
 rm -rf "$ORCH_GH_FAKE_STORE/fail"
-restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
+review_ci_restore
 
 # --- the grace counts from the push (issue #475) ---
 # review ci runs when the loop ends, usually minutes after the fixer's last
@@ -9222,7 +9228,7 @@ fake_checks 7 required none green
 fake_checks 7 all failing
 out="$(ORCH_CI_GRACE=600 timeout 30 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "a push younger than the grace still waits it before widening" "$out" "green"
-restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
+review_ci_restore
 
 # --- the grace is skipped on no evidence of CI (issue #476) ---
 # Zero checks straight after a push is ambiguous only where the repo might have
@@ -9346,7 +9352,7 @@ assert_status "refuses to classify checks on a PR that does not exist yet" "$st"
 # `set -e` on the assignment rather than the exit itself. Asserting the message
 # is what would catch the guard degrading into an empty PR number.
 assert_contains "saying which phase was supposed to open it" "$out" "the implement phase opens it"
-restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
+review_ci_restore
 
 # --- review rerun -------------------------------------------------------------
 # The flow's one flake rerun (#525): the failed jobs of the Actions run behind
