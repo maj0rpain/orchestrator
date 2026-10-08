@@ -629,8 +629,11 @@ assert_empty "stands down for an unreadable state.json" \
 # off for the next planning session (#186, extending ADR-0009 to the hooks).
 echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
 out="$(edit_event "$REPO/CONTEXT.md" s1 | "$GUARD" | jq -r '.reason')"
-assert_contains "denies a record with the records reason when the flow is done" "$out" \
+assert_contains "denies a legacy-named record with the records reason when the flow is done" "$out" \
   "'CONTEXT.md' is a record of decisions"
+out="$(edit_event "$REPO/GLOSSARY.md" s1 | "$GUARD" | jq -r '.reason')"
+assert_contains "denies the glossary with the records reason when the flow is done" "$out" \
+  "'GLOSSARY.md' is a record of decisions"
 out="$(edit_event "$REPO/src/main.ts" s1 | "$GUARD" | jq -r '.reason')"
 assert_contains "denies source with the source reason when the flow is done" "$out" \
   "so 'src/main.ts' should not be edited yet"
