@@ -7127,15 +7127,12 @@ assert_status "comment refuses an issue number that is not a plain number" "$st"
 assert_contains "naming it" "$out" "abc"
 assert_contains "with its own usage line" "$out" "usage: orch.sh issue comment <n> <file>"
 
-out="$("$ORCH" issue comment 23 "$tricky" --json 2>&1)"; st=$?
-assert_status "--json is fetch's alone: comment refuses it" "$st" 1
-assert_contains "with its own usage line" "$out" "usage: orch.sh issue comment <n> <file>"
-assert_eq "and posts nothing" "$(fake_comments_of 23)" "$(cat "$tricky")"
-
-out="$("$ORCH" issue comment 23 "$tricky" extra 2>&1)"; st=$?
-assert_status "comment refuses an extra argument" "$st" 1
-assert_contains "with its own usage line" "$out" "usage: orch.sh issue comment <n> <file>"
-assert_eq "and posts nothing" "$(fake_comments_of 23)" "$(cat "$tricky")"
+for extra in --json extra; do
+  out="$("$ORCH" issue comment 23 "$tricky" "$extra" 2>&1)"; st=$?
+  assert_status "comment refuses a third argument (--json is fetch's alone): $extra" "$st" 1
+  assert_contains "with its own usage line" "$out" "usage: orch.sh issue comment <n> <file>"
+  assert_eq "and posts nothing" "$(fake_comments_of 23)" "$(cat "$tricky")"
+done
 
 out="$("$ORCH" issue comment 23 2>&1)"; st=$?
 assert_status "comment refuses with no file" "$st" 1
