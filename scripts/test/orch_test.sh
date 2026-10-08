@@ -4419,9 +4419,12 @@ assert_status "an issue with no parent still succeeds" "$st" 0
 assert_eq "printing nothing" "$out" ""
 
 fake_fail adapter_issue_parent
-out="$("$ORCH" ticket parent "$k" 2>&1)"; st=$?
+errf="$(mktemp)"
+out="$("$ORCH" ticket parent "$k" 2>"$errf")"; st=$?
 assert_status "a gh that cannot read the issue fails the command" "$st" 1
-assert_contains "naming what failed" "$out" "gh could not read issue #$k"
+assert_eq "naming what failed: exact stderr, no suffix" "$(tail -n 1 "$errf")" \
+  "orch: gh could not read issue #$k's parent"
+assert_eq "printing nothing on stdout" "$out" ""
 fake_unfail
 
 out="$("$ORCH" ticket parent abc 2>&1)"; st=$?
@@ -4630,10 +4633,18 @@ out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that cannot read the target fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not read ticket #$bf"
 fake_unfail
+errf="$(mktemp)"
+fake_fail adapter_issue_parent
+"$ORCH" ticket block "$bf" --by "$bb" >/dev/null 2>"$errf"; st=$?
+assert_status "a gh that cannot read the ticket's parent fails the command" "$st" 1
+assert_eq "naming the ticket: exact stderr, no suffix" "$(tail -n 1 "$errf")" \
+  "orch: gh could not read issue #$bf's parent"
+fake_unfail
 fake_fail_after adapter_issue_parent 1
-out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+"$ORCH" ticket block "$bf" --by "$bb" >/dev/null 2>"$errf"; st=$?
 assert_status "a gh that cannot read a blocker's parent fails the command" "$st" 1
-assert_contains "naming the ticket" "$out" "a blocker of ticket #$bf"
+assert_eq "naming the blocker and the ticket: exact stderr" "$(tail -n 1 "$errf")" \
+  "orch: gh could not read issue #$bb's parent, a blocker of ticket #$bf"
 fake_unfail
 assert_eq "none of the failures added the edge" "$(fake_blockers_of "$bf")" "$ba"
 
