@@ -141,6 +141,7 @@ flow_cmd() {
     next)  section="Next phase" ;;
     redo)  section="Redo" ;;
     abort) section="Abort" ;;
+    finish) section="Finish" ;;
     *) die "flow_cmd: unknown command: $1" ;;
   esac
   plugin_cmd "$1" "orch-flow's $section section"
@@ -1820,6 +1821,12 @@ cmd_review() {
         || die "gh could not mark PR #$pr ready - the flow stays in review"
       phase_write "done"
       note "$pr"
+      # stdout stays the PR number alone; the pointer goes to stderr. A side
+      # checkout outlives its PR, so the human is told how to clear it once
+      # the PR merges.
+      if is_side_checkout "$(pwd -P)"; then
+        warn "this is a side checkout - once PR #$pr merges, run $(flow_cmd finish) to archive its flow and remove it"
+      fi
       ;;
     ci)
       require_state
@@ -4290,7 +4297,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               the PR's first failed or cancelled check; prints
                               the run id. Exits 1 when that check is no Actions
                               run, 2 on any other failure
-  review ready                mark the draft PR ready and set the phase to done
+  review ready                mark the draft PR ready and set the phase to done,
+                              printing the PR number; in a side checkout, a
+                              pointer to the finish command on stderr
   review terminal             classify the last iteration: none, pending,
                               interrupted, malformed, ready, or stop; exits
                               non-zero on the first four

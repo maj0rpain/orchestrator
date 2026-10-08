@@ -5539,6 +5539,98 @@ assert_contains "the CLI conventions' noun table names prune" \
   "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`prune`'
 restore_suite_env
 
+# --- doctor --env: finished side checkouts (#727) -----------------------------
+# A finished side checkout left standing is a leftover, so doctor --env warns
+# on each one - never a FAIL - with the exact remove command, and says nothing
+# for one still in use. The finished test is the sweep's own; GitHub
+# unreachable skips the check into the GitHub skipped warn.
+echo
+echo "doctor --env finished side checkouts"
+sc_clone
+doctor_github
+mkdir -p docs/agents
+labels_doc docs/agents/triage-labels.md
+gh_fixture
+export CLAUDE_PLUGIN_ROOT="$PWD"
+HOME="$(mktemp -d)"; export HOME
+fake_offline
+dfin="$(orch_gh_failing side-checkout add dfin 2>/dev/null)"
+git -C "$dfin" checkout -q -b quick/20-dfin
+git -C "$dfin" commit -q --allow-empty -m "work on dfin"
+fake_pr 60 merged quick/20-dfin main
+dopen="$(orch_gh_failing side-checkout add dopen 2>/dev/null)"
+git -C "$dopen" checkout -q -b quick/21-dopen
+git -C "$dopen" commit -q --allow-empty -m "work on dopen"
+fake_pr 61 open quick/21-dopen main
+dflow="$(orch_gh_failing side-checkout add dflow 2>/dev/null)"
+(cd "$dflow" && orch_gh_failing init dflow-flow >/dev/null \
+  && git checkout -q -b orch/dflow-flow \
+  && state_fixture phase "done" && state_fixture branch orch/dflow-flow && state_fixture pr 62)
+fake_pr 62 merged orch/dflow-flow main
+dnd="$(orch_gh_failing side-checkout add dnd 2>/dev/null)"
+(cd "$dnd" && orch_gh_failing init dnd-flow >/dev/null && state_fixture phase implement)
+fake_online
+git remote set-url origin https://github.com/acme/widgets.git
+
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "doctor --env passes with finished side checkouts standing" "$st" 0
+assert_contains "warns on a finished quick side checkout" "$out" "warn  side checkout dfin is finished"
+assert_contains "naming the exact remove command" "$out" \
+  "$(printf '\n      orch.sh side-checkout remove dfin')"
+assert_contains "warns on a finished flow side checkout" "$out" "warn  side checkout dflow is finished"
+assert_contains "naming its remove command" "$out" "orch.sh side-checkout remove dflow"
+assert_not_contains "says nothing for an open PR's side checkout" "$out" "side checkout dopen"
+assert_not_contains "says nothing for a flow not at done" "$out" "side checkout dnd"
+assert_contains "and prints no FAIL" "$(printf '%s\n' "$out" | tail -1)" " 0 FAIL"
+out_in="$(cd "$dopen" && "$ORCH" doctor --env 2>&1)"
+assert_contains "warns the same from inside a side checkout" "$out_in" "orch.sh side-checkout remove dfin"
+
+fake_offline
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "doctor --env passes when GitHub is unreachable" "$st" 0
+assert_not_contains "printing no FAIL line" "$out" "FAIL  "
+assert_contains "and a FAIL count of zero" "$(printf '%s\n' "$out" | tail -1)" " 0 FAIL"
+assert_not_contains "and no finished warning it could not check" "$out" "is finished"
+assert_contains "counting the check in the GitHub skipped warn" "$out" "GitHub checks skipped: GitHub is not reachable"
+skip_n() { printf '%s\n' "$1" | sed -n 's/^warn  \([0-9]*\) GitHub checks\{0,1\} skipped.*/\1/p'; }
+with_n="$(skip_n "$out")"
+for p in "$dfin" "$dopen" "$dflow" "$dnd"; do git worktree remove --force "$p"; done
+without_n="$(skip_n "$("$ORCH" doctor --env 2>&1)")"
+assert_eq "as one more skipped check than with no side checkouts" "$with_n" "$((without_n + 1))"
+fake_online
+restore_suite_env
+
+# --- review ready's pointer to /orchestrator:finish (#727) ---------------------
+# review ready's stdout stays the PR number alone everywhere; in a side
+# checkout it points the human at /orchestrator:finish on stderr, for after the
+# PR merges.
+echo
+echo "review ready's finish pointer"
+sc_clone
+fake_github
+top="$(git rev-parse --show-toplevel)"
+fake_offline
+rr="$(orch_gh_failing side-checkout add rr 2>/dev/null)"
+fake_online
+(cd "$rr" && orch_gh_failing init rr-flow >/dev/null && state_fixture phase review && state_fixture pr 70)
+fake_pr 70 open orch/rr-flow main
+fake_pr_draft 70
+err_f="$(mktemp)"
+out="$(cd "$rr" && orch_gh_failing review ready 2>"$err_f")"; st=$?
+assert_status "review ready succeeds in a side checkout" "$st" 0
+assert_eq "printing only the PR number on stdout" "$out" "70"
+assert_contains "pointing at /orchestrator:finish on stderr" "$(cat "$err_f")" "/orchestrator:finish"
+
+orch_gh_failing init rr-main >/dev/null
+state_fixture phase review; state_fixture pr 71
+fake_pr 71 open orch/rr-main main
+fake_pr_draft 71
+out="$(orch_gh_failing review ready 2>"$err_f")"; st=$?
+assert_status "review ready succeeds in the main checkout" "$st" 0
+assert_eq "printing only the PR number on stdout there too" "$out" "71"
+assert_not_contains "with no /orchestrator:finish pointer" "$(cat "$err_f")" "/orchestrator:finish"
+restore_suite_env
+
 # --- ticket merge (#621) -------------------------------------------------------
 # Lands a ticket branch on the branch it was forked from: rebase inside the
 # ticket worktree, then fast-forward the forked-from branch wherever it is

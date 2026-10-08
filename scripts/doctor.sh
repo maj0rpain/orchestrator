@@ -619,11 +619,38 @@ check_base_branch() {
   esac
 }
 
+# A finished side checkout left standing is a leftover the sweep has not run
+# on: warn on each, with the command that removes it, and say nothing for one
+# still in use. The finished test is the sweep's own, side_checkout_finished.
+# With no side checkout there is nothing to ask GitHub, so the gate - and a
+# skip with GitHub unreachable - only counts once one exists.
+check_side_checkouts_finished() {
+  local path paths=() found=() verdict branch rc
+  mapfile -t paths < <(checkout_paths)
+  for path in "${paths[@]}"; do
+    [ "$path" != "$(main_checkout)" ] && is_side_checkout "$path" && found+=("$path")
+  done
+  [ "${#found[@]}" -gt 0 ] || return 0
+  d_gh_gate || return 0
+  for path in "${found[@]}"; do
+    rc=0; verdict=""; branch=""
+    side_checkout_finished "$path" </dev/null || rc=$?
+    case "$rc" in
+      0)
+        d_warn "side checkout $(basename "$path") is finished - its PR is merged, and it is still standing at $path."
+        d_remedy "orch.sh side-checkout remove $(basename "$path")" ;;
+      1) ;;
+      *) d_warn "side checkout $(basename "$path") could not be checked: $verdict" ;;
+    esac
+  done
+  return 0
+}
+
 ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch
+h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_side_checkouts_finished
 "
 
 # flow state -----------------------------------------------------------------
