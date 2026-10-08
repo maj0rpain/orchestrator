@@ -54,6 +54,19 @@ labels_have() {
   printf '%s\n' "$1" | grep -qxF -- "$2"
 }
 
+# labels_verified <labels> <want> [<absent-csv>]: whether the newline-separated
+# <labels> carry <want> and none of the comma-separated <absent-csv> labels.
+# A pure check: each read-back verifier does its own read and hands the labels
+# here, so publish and triage judge their labels the same way.
+labels_verified() {
+  local labels="$1" want="$2" l absent=()
+  labels_have "$labels" "$want" || return 1
+  [ -z "${3:-}" ] || IFS=, read -r -a absent <<<"$3"
+  for l in ${absent[@]+"${absent[@]}"}; do
+    ! labels_have "$labels" "$l" || return 1
+  done
+}
+
 # review_labels <labels>: each label in the newline-separated list that marks
 # a review finding - review: followed by at least one character. The one scan
 # the two checks below share.
@@ -2577,7 +2590,7 @@ issue_publish_verified() {
   out="$(adapter_issue_title_labels "$n" 2>/dev/null)" \
     || return 1
   [ "$(first_line "$out")" = "$title" ] || return 1
-  labels_have "$(printf '%s\n' "$out" | tail -n +2)" "$label"
+  labels_verified "$(printf '%s\n' "$out" | tail -n +2)" "$label"
 }
 
 # The publishing boundary a spec and a quick implementation call instead of
@@ -2607,13 +2620,9 @@ cmd_issue_publish() {
 # comma-separated <removed> labels. Read fresh every call, never cached - the
 # caller re-reads once on a mismatch, as issue publish's does.
 issue_triage_verified() {
-  local n="$1" ready="$2" state labels l removed=()
+  local n="$1" ready="$2" state labels
   issue_state_labels_read "$n" state labels 2>/dev/null || return 1
-  labels_have "$labels" "$ready" || return 1
-  [ -z "$3" ] || IFS=, read -r -a removed <<<"$3"
-  for l in ${removed[@]+"${removed[@]}"}; do
-    ! labels_have "$labels" "$l" || return 1
-  done
+  labels_verified "$labels" "$ready" "$3"
 }
 
 # issue triage <n> [--override]: moves an open issue to the repo's
