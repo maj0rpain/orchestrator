@@ -2617,12 +2617,12 @@ cmd_issue_publish() {
 }
 
 # True only once the issue reads back carrying <ready> and none of the
-# comma-separated <removed> labels. Read fresh every call, never cached - the
+# comma-separated <remove> labels. Read fresh every call, never cached - the
 # caller re-reads once on a mismatch, as issue publish's does.
 issue_triage_verified() {
-  local n="$1" ready="$2" state labels
+  local n="$1" ready="$2" remove="$3" state labels
   issue_state_labels_read "$n" state labels 2>/dev/null || return 1
-  labels_verified "$labels" "$ready" "$3"
+  labels_verified "$labels" "$ready" "$remove"
 }
 
 # issue triage <n> [--override]: moves an open issue to the repo's
