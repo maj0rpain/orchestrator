@@ -650,7 +650,6 @@ rm -rf "$REPO/.orchestrator"
 echo
 echo "hook-quick-implement"
 
-
 : >"$TMPDIR/orchestrator-grilling-s1"
 out="$(skill_event "orchestrator:orch-quick-implement" s1 | "$QUICK")"
 assert_empty "prints nothing" "$out"
