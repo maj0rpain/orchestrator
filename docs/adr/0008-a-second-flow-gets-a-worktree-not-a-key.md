@@ -58,3 +58,7 @@ The `review-spec` this ADR names is the spec review. Its command was renamed
 `/orchestrator:spec-review` in 2.0.0 (see issue #235), and its skill
 `orch-spec-review`. The decision is unchanged: the spec review still needs a
 human mid-phase.
+
+## Note: worktree offer not yet built
+
+`init` still refuses a second flow outright; the offer this ADR describes is tracked in #57. Until it lands, the planning message sent beside an active flow tells the human that a flow or a quick implementation must start from a separate checkout, and that Blueprint only runs in this one.

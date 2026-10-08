@@ -44,3 +44,7 @@ glossary or ADR wording is caught between plan and spec with no new required
 section. Quick implementation's spec review is standalone and runs no Fidelity
 lens, so there the rule rests on the planning session writing the wording into
 the linked issue.
+
+## Note: the grilling hook no longer stands down beside a flow
+
+Since #640 the grilling hook sends the planning message beside a flow at any phase other than `done`, as a variant naming that flow, instead of standing down. The edit guard still stands down as the second decision above says.

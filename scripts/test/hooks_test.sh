@@ -133,13 +133,66 @@ assert_contains "still fires without issue-tracker.md" "$out" "Do NOT offer to i
 assert_not_contains "no precondition warning without issue-tracker.md" "$out" "PRECONDITION"
 
 mkdir -p "$REPO/.orchestrator"
-echo '{"slug":"x","phase":"spec"}' >"$REPO/.orchestrator/state.json"
-assert_empty "stays silent when a flow is already active" "$(skill_event "grilling" s6 | "$GRILL")"
+# Planning beside an active flow (#640, #649) gets the planning rules, with a
+# closing that names the flow and states two branches: about that flow, point
+# to its next or redo; otherwise the interviewed-issue step and the route
+# question, where only Blueprint runs in this checkout.
+separate_checkout="starting a flow or a quick implementation must be done from a separate checkout of the repo, opened in its own session there"
+# $1 where, $2 context, $3 the next/redo pointer text expected for the host.
+check_flow_variant() {
+  local where="$1" ctx="$2" next_redo="$3"
+  assert_contains "states the next/redo branch $where" "$ctx" "$next_redo"
+  assert_contains "the same-flow branch asks no route question $where" "$ctx" "ask no route question"
+  assert_contains "states the separate-checkout sentence $where" "$ctx" "$separate_checkout"
+  assert_contains "keeps Blueprint only as the route that runs here $where" "$ctx" \
+    "Blueprint only is the one route that runs in this checkout"
+  assert_contains "keeps the interviewed-issue step $where" "$ctx" "With no interviewed issue, skip this step entirely"
+  assert_contains "keeps the route question $where" "$ctx" "$route_block"
+}
+route_block='      1. Start the orchestrator flow - the full plan -> spec -> implement ->
+         review pipeline, with its own handoff and review loop.
+      2. Quick implementation - hands-off, for small changes: implement this directly, with no further questions before the PR.
+      3. Blueprint only - publish the spec and its ticket breakdown, then
+         stop; implement later.'
+cc_next_redo='/orchestrator:next or /orchestrator:redo'
+echo '{"slug":"x","phase":"spec","issue":42}' >"$REPO/.orchestrator/state.json"
+ctx="$(skill_event "grilling" s6 | "$GRILL" | jq -r '.additionalContext')"
+assert_contains "sends the planning rules beside an active flow" "$ctx" "Do NOT offer to implement"
+assert_contains "names the active flow's issue and phase" "$ctx" "the flow for #42 is active in this checkout, at phase spec"
+assert_contains "the same-flow branch names the flow's issue" "$ctx" "about this flow's issue, #42"
+check_flow_variant "on Claude Code" "$ctx" "$cc_next_redo"
+assert_eq "offers exactly three options beside an active flow" \
+  "$(printf '%s\n' "$ctx" | grep -cE '^ +[0-9]+\. ')" "3"
+if [ -e "$TMPDIR/orchestrator-grilling-s6" ]; then
+  ok "writes the grilling marker beside an active flow"
+else
+  bad "writes the grilling marker beside an active flow" "no orchestrator-grilling-s6"
+fi
+assert_empty "stays silent on a second planning call beside an active flow" \
+  "$(skill_event "grilling" s6 | "$GRILL")"
+echo '{"slug":"my-change","phase":"implement","issue":null}' >"$REPO/.orchestrator/state.json"
+ctx="$(skill_event "grilling" s6b | "$GRILL" | jq -r '.additionalContext')"
+assert_contains "names an issueless flow by slug and phase" "$ctx" \
+  "the flow my-change is active in this checkout, at phase implement; it has no issue yet"
+assert_contains "the same-flow branch reads about this flow's change" "$ctx" "about this flow's change"
+check_flow_variant "for an issueless flow" "$ctx" "$cc_next_redo"
+echo '{"slug":"x","phase":null,"issue":null}' >"$REPO/.orchestrator/state.json"
+ctx="$(skill_event "grilling" s6c | "$GRILL" | jq -r '.additionalContext')"
+assert_contains "names a freshly started flow by slug as just started" "$ctx" \
+  "the flow x is active in this checkout, just started; it has no issue yet"
+echo 'not json' >"$REPO/.orchestrator/state.json"
+ctx="$(skill_event "grilling" s6d | "$GRILL" | jq -r '.additionalContext')"
+assert_contains "says a flow is active without naming it for unreadable state" "$ctx" \
+  "a flow is active in this checkout"
+assert_not_contains "names no flow issue for unreadable state" "$ctx" "the flow for #"
+assert_not_contains "names no phase for unreadable state" "$ctx" "at phase"
+check_flow_variant "for unreadable state" "$ctx" "$cc_next_redo"
 # A done flow is finished work, not a running one (ADR-0009): planning in its
 # checkout gets the full message, records rule included (#186).
 echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
 out="$(skill_event "grilling" s7 | "$GRILL")"
 assert_contains "still injects its context when the flow is done" "$out" "Do NOT offer to implement"
+assert_not_contains "a done flow gets the ordinary message, with no flow variant" "$out" "is active in this checkout"
 assert_contains "tells planning to write record wording into the plan" \
   "$(printf '%s' "$out" | jq -r '.additionalContext')" \
   "- Glossary and ADR changes (GLOSSARY.md, GLOSSARY-MAP.md, CONTEXT.md, CONTEXT-MAP.md, docs/adr/) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim."
@@ -254,14 +307,30 @@ assert_not_contains "no precondition warning on Junie without issue-tracker.md" 
   "$(prompt_event '$grilling' j2 | "$GRILL")" "PRECONDITION"
 
 mkdir -p "$REPO/.orchestrator"
-echo '{"slug":"x","phase":"spec"}' >"$REPO/.orchestrator/state.json"
-assert_empty "stays silent on Junie when a flow is already active" \
+echo '{"slug":"x","phase":"review","issue":7}' >"$REPO/.orchestrator/state.json"
+junie_next_redo="the **Next phase** and **Redo** sections of $(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
+ctx="$(prompt_event '$grilling' j3 | "$GRILL" | jq -r '.additionalContext')"
+assert_contains "sends the planning rules on Junie beside an active flow" "$ctx" "Do NOT offer to implement"
+assert_contains "names the active flow's issue and phase on Junie" "$ctx" \
+  "the flow for #7 is active in this checkout, at phase review"
+check_flow_variant "on Junie" "$ctx" "$junie_next_redo"
+assert_not_contains "names no plugin command on Junie" "$ctx" "/orchestrator:next"
+if [ -e "$TMPDIR/orchestrator-planning-j3" ]; then
+  ok "writes the planning marker on Junie beside an active flow"
+else
+  bad "writes the planning marker on Junie beside an active flow" "no orchestrator-planning-j3"
+fi
+assert_empty "stays silent on a second Junie planning prompt beside an active flow" \
   "$(prompt_event '$grilling' j3 | "$GRILL")"
-assert_empty "stays silent on plan confirmation when a flow is already active" \
-  "$(prompt_event "$confirm" jc1 | "$GRILL")"
+ctx="$(prompt_event "$confirm" jc1 | "$GRILL" | jq -r '.additionalContext')"
+assert_contains "asks before implementing at plan confirmation beside an active flow" "$ctx" "Before you implement"
+assert_contains "names the active flow at plan confirmation" "$ctx" \
+  "the flow for #7 is active in this checkout, at phase review"
+check_flow_variant "at Junie's plan confirmation" "$ctx" "$junie_next_redo"
 echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
-assert_contains "still fires on Junie's \$grilling when the flow is done" \
-  "$(prompt_event '$grilling' j4 | "$GRILL")" "Do NOT offer to implement"
+out="$(prompt_event '$grilling' j4 | "$GRILL")"
+assert_contains "still fires on Junie's \$grilling when the flow is done" "$out" "Do NOT offer to implement"
+assert_not_contains "a done flow gets the ordinary message on Junie" "$out" "is active in this checkout"
 assert_contains "still asks at plan confirmation when the flow is done" \
   "$(prompt_event "$confirm" jc1 | "$GRILL")" "Before you implement"
 rm -rf "$REPO/.orchestrator"

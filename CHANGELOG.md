@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.16.1
+
+The planning message reaches the session again in two cases where it was
+silenced (#640). A `SessionStart` hook on source `clear`
+(`hook-session-start.sh`) deletes the session's planning markers, so a
+planning run after `/clear` (Junie: `/new`) gets the message and the edit
+guard is no longer armed in the fresh context; compaction keeps them.
+Planning beside an active flow no longer gets silence: it gets the planning
+rules, with a closing that names that flow - its issue, or its slug with "has
+no issue yet", and its phase - and states two branches: about that flow,
+point to `/orchestrator:next` or `/orchestrator:redo` (on Junie, the orch-flow
+skill file's **Next phase** and **Redo** sections); otherwise the
+interviewed-issue step and the route question, where Blueprint only is the
+one route that runs in this checkout and a flow or a quick implementation
+must start from a separate checkout. Junie's plan-confirmation message
+carries the same two branches. ADR-0008 and ADR-0022 gain notes.
+
 ## 3.16.0
 
 The implement phase and quick implementation build a ticket breakdown's

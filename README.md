@@ -173,13 +173,22 @@ review depend on.
 
 A `PostToolUse` hook on `Skill(orch-interview)`, and on the mattpocock-skills
 entry points named above when they are installed, starts a planning session.
-It fires once per session, stays quiet when a flow is already running, and
-tells the model that once a shared understanding is reached, the next step
-is a human's call, not the model's: call `AskUserQuestion` with exactly three
+It fires once per session and tells the model that once a shared
+understanding is reached, the next step is a human's call, not the model's: call `AskUserQuestion` with exactly three
 options, start the flow (`orchestrator:orch-flow`), a quick implementation
 (`orchestrator:orch-quick-implement`), or a blueprint only (publish the spec,
 offer a spec review, publish the ticket breakdown, then stop), and do whichever
 the human picks.
+
+Beside a flow already running in the checkout (any phase but `done`), it still
+sends the planning rules, with a closing that names that flow - its issue, or
+its slug when it has none, and its phase - and states two branches for the
+model to pick from. Planning about that flow's own issue gets no route
+question, only a pointer to `/orchestrator:next` or `/orchestrator:redo`.
+Planning about anything else gets the interviewed-issue step and the route
+question, which says Blueprint only is the one route that runs in this
+checkout: a flow or a quick implementation must start from a separate
+checkout, opened in its own session there.
 
 `/clear` (and Junie's `/new`) resets the once-per-session marker: a
 `SessionStart` hook on source `clear`, `hook-session-start.sh`, deletes the
