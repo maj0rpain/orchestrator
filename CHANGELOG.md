@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.21.3
+## 3.21.4
 
 `ticket merge` exits 3 only on a real rebase conflict (#680). A rebase that
 fails any other way - a refusing hook, say - is aborted and exits 1, naming
@@ -16,6 +16,19 @@ say the leftover surfaces in `doctor`.
 The forked-from branch's config key and the clean-tree guard each have one
 home in orch.sh, and `ticket merge`'s locals say what they hold (#674, #678,
 #736, #737, #738, #739). No message changes.
+
+## 3.21.3
+
+Every message that reports a failed GitHub read now carries gh's own first
+line, or `gh gave no reason` when gh printed nothing, never a bare colon
+(#823). This covers doctor's adopted-issue, labels, flow issue, flow PR, PR
+draft-state, CI and default-branch reads, and orch.sh's review rerun, issue
+triage, issue ready, finding triage and side-checkout verdicts. issue publish
+and issue triage no longer report a failed read-back as "did not verify -
+checked twice": they die `gh could not read issue #<n>: <gh's line>`, keeping
+that wording for a real mismatch. Doctor states a missing GitHub repo once and
+gives the `export GH_REPO=<owner>/<repo>` remedy once. Every stderr capture
+goes through `capture`.
 
 ## 3.21.2
 
