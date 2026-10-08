@@ -23,9 +23,18 @@ readonly ORCH_DIR_NAME=".orchestrator"
 # exclude_orch_dirs and doctor's exclude check read.
 readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 readonly PHASES="spec implement review done"
+# The directory this script sits in, which every sourced module lives in too.
+# Worked out by parameter expansion, as dirname would print it, so no call
+# spawns a process to find it: a bare name means the current directory.
+ORCH_SCRIPTS="${BASH_SOURCE[0]}"
+case "$ORCH_SCRIPTS" in
+  */*) ORCH_SCRIPTS="${ORCH_SCRIPTS%/*}"; ORCH_SCRIPTS="${ORCH_SCRIPTS:-/}" ;;
+  *) ORCH_SCRIPTS="." ;;
+esac
+readonly ORCH_SCRIPTS
 # The triage-label parser and LABELS_DOC, its one home; marked readonly here,
 # where orch.sh has always fixed it, since the module assigns it plainly.
-source "$(dirname "${BASH_SOURCE[0]}")/triage-labels.sh"
+source "$ORCH_SCRIPTS/triage-labels.sh"
 readonly LABELS_DOC
 readonly LABEL_LIMIT=1000
 # The most issues or PRs one list call asks gh for, where gh needs a bare
@@ -715,12 +724,12 @@ exclude_orch_dirs() {
 # Sourced rather than inlined: a change to how checks register, gate, or count
 # then concentrates in doctor.sh instead of sharing file scope with the flow
 # commands below.
-source "$(dirname "${BASH_SOURCE[0]}")/doctor.sh"
+source "$ORCH_SCRIPTS/doctor.sh"
 
 # The one definition of the planning allowlist and the planning records,
 # shared with hook-guard.sh so the flow-start check and the edit guard can
 # never disagree about them.
-source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
+source "$ORCH_SCRIPTS/planning-allowlist.sh"
 
 # --- state ------------------------------------------------------------------
 

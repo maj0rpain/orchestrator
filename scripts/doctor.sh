@@ -251,7 +251,8 @@ check_default_branch() {
 
 # The plugin root doctor runs from: the directory scripts/ sits in, which is
 # also where every skill resolves orch.sh and the capabilities reference from.
-D_PLUGIN="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# ORCH_SCRIPTS is the scripts/ directory orch.sh, doctor.sh's one sourcer, sets.
+D_PLUGIN="$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)"
 HOST_REF="docs/host-capabilities.md"
 
 # The one host detector. Prints "claude", "junie", or nothing when no signal
