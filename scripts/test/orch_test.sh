@@ -377,6 +377,27 @@ fake_github() {
   export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" ORCH_GH_FAKE_STORE
 }
 
+# fake_comment_seed <comments-dir> <author> <created-at> <body>: the body, byte
+# for byte, appended as a comment by the fake's own fake_comment_append, so the
+# store's comment layout has one writer.
+fake_comment_seed() {
+  printf '%s' "$4" |
+    bash -c 'source "$1"; fake_comment_append "$2" "$3" "$4" /dev/stdin' \
+      _ "$GH_ADAPTER_FAKE" "$1" "$2" "$3"
+}
+
+# fake_comment_bodies <comments-dir>: the bodies of the directory's comments,
+# in order, one blank line between; nothing for none.
+fake_comment_bodies() {
+  local d="$1" k first=1
+  [ -d "$d" ] || return 0
+  for k in $(ls "$d" | sort -n); do
+    [ "$first" = 1 ] || printf '\n\n'
+    first=0
+    cat "$d/$k/body"
+  done
+}
+
 # fake_issue <n> <state> [labels...]: seeds issue #n afresh, open or closed,
 # carrying the labels named - no title, body or comments.
 fake_issue() {
@@ -397,16 +418,7 @@ fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; 
 
 # fake_comment <n> <author> <created-at> <body>: seeds a comment on issue #n,
 # after any it has.
-fake_comment() {
-  local d k
-  d="$ORCH_GH_FAKE_STORE/issues/$1/comments"
-  mkdir -p "$d"
-  k=$(( $(find "$d" -mindepth 1 -maxdepth 1 | wc -l) + 1 ))
-  mkdir "$d/$k"
-  printf '%s\n' "$2" >"$d/$k/author"
-  printf '%s\n' "$3" >"$d/$k/created"
-  printf '%s' "$4" >"$d/$k/body"
-}
+fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4"; }
 
 # fake_pull <n>: seeds #n as an open pull request, which gh's issue reads
 # answer for too.
@@ -423,15 +435,7 @@ fake_reason_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/reason" 2>/dev/null; }
 fake_title_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
 fake_body_of()   { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
 fake_labels_of() { sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
-fake_comments_of() {
-  local d="$ORCH_GH_FAKE_STORE/issues/$1/comments" k first=1
-  [ -d "$d" ] || return 0
-  for k in $(ls "$d" | sort -n); do
-    [ "$first" = 1 ] || printf '\n\n'
-    first=0
-    cat "$d/$k/body"
-  done
-}
+fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
 
 # fake_issues: every issue number the store holds, in order, space-separated.
 fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' ' '; }
@@ -459,16 +463,7 @@ fake_pr_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/body"; }
 
 # fake_pr_comment <n> <author> <created-at> <body>: seeds a comment on PR #n,
 # after any it has.
-fake_pr_comment() {
-  local d k
-  d="$ORCH_GH_FAKE_STORE/prs/$1/comments"
-  mkdir -p "$d"
-  k=$(( $(find "$d" -mindepth 1 -maxdepth 1 | wc -l) + 1 ))
-  mkdir "$d/$k"
-  printf '%s\n' "$2" >"$d/$k/author"
-  printf '%s\n' "$3" >"$d/$k/created"
-  printf '%s' "$4" >"$d/$k/body"
-}
+fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2" "$3" "$4"; }
 
 # fake_pr_draft <n>: seeds PR #n as a draft.
 fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
@@ -495,15 +490,7 @@ fake_pr_base_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/base" 2>/dev/null; }
 fake_pr_title_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/title" 2>/dev/null; }
 fake_pr_body_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/body" 2>/dev/null; }
 fake_pr_draft_of() { [ -f "$ORCH_GH_FAKE_STORE/prs/$1/draft" ] && echo yes || echo no; }
-fake_pr_comments_of() {
-  local d="$ORCH_GH_FAKE_STORE/prs/$1/comments" k first=1
-  [ -d "$d" ] || return 0
-  for k in $(ls "$d" | sort -n); do
-    [ "$first" = 1 ] || printf '\n\n'
-    first=0
-    cat "$d/$k/body"
-  done
-}
+fake_pr_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/prs/$1/comments"; }
 
 # fake_prs: every PR number the store holds, in order, space-separated.
 fake_prs() { ls "$ORCH_GH_FAKE_STORE/prs" 2>/dev/null | sort -n | tr '\n' ' '; }
