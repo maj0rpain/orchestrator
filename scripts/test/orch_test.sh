@@ -161,6 +161,25 @@ new_repo_with_origin() {
   git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$b"
 }
 
+# sc_clone: a fresh clone of a bare origin holding main, cwd inside it, with no
+# exclude entries yet. Call it in the current shell: it cd's. sc_seed is the
+# repo the origin was pushed from, kept to move origin's main on.
+sc_clone() {
+  local clone
+  new_repo >/dev/null
+  sc_seed="$PWD"
+  sc_origin="$(mktemp -d)/origin.git"
+  git init -q --bare "$sc_origin"
+  git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
+  git -C "$sc_origin" symbolic-ref HEAD refs/heads/main
+  clone="$(mktemp -d)/clone"
+  git clone -q "$sc_origin" "$clone"
+  cd "$clone" || exit 1
+  git config user.email test@example.com
+  git config user.name Test
+  export GH_REPO=acme/widgets
+}
+
 # exclude_count <line>: how many times <line> appears whole in the current
 # clone's shared exclude file, the one every checkout of it reads.
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
@@ -5042,24 +5061,6 @@ restore_suite_env
 # file system show afterwards, against a real clone of a bare origin.
 echo
 echo "side-checkout"
-# sc_clone: a fresh clone of a bare origin holding main, cwd inside it, with no
-# exclude entries yet. Call it in the current shell: it cd's. sc_seed is the
-# repo the origin was pushed from, kept to move origin's main on.
-sc_clone() {
-  local clone
-  new_repo >/dev/null
-  sc_seed="$PWD"
-  sc_origin="$(mktemp -d)/origin.git"
-  git init -q --bare "$sc_origin"
-  git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
-  git -C "$sc_origin" symbolic-ref HEAD refs/heads/main
-  clone="$(mktemp -d)/clone"
-  git clone -q "$sc_origin" "$clone"
-  cd "$clone" || exit 1
-  git config user.email test@example.com
-  git config user.name Test
-  export GH_REPO=acme/widgets
-}
 # sc_marker <path>: whether the worktree at <path> carries the ownership marker.
 sc_marker() {
   if [ -f "$(git -C "$1" rev-parse --absolute-git-dir)/orchestrator-side-checkout" ]; then
@@ -5189,6 +5190,80 @@ assert_contains "side-checkout add is in the usage text" "$out" "side-checkout a
 assert_contains "side-checkout list is in the usage text" "$out" "side-checkout list"
 assert_contains "the CLI conventions' noun table has a side-checkout row" \
   "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`add`, `list`'
+restore_suite_env
+
+# --- status lists every checkout (#725) ----------------------------------------
+# status keeps its full detail on this checkout's flow, then lists one line
+# for every other checkout holding a flow, and every side checkout without
+# one. Checked through status's output against real worktrees of a clone.
+echo
+echo "status lists every checkout"
+# st_others: the lines status prints under "other checkouts:", sorted - git
+# lists linked worktrees in no fixed order.
+st_others() { sed -n '/^other checkouts:$/,$p' | sed 1d | sort; }
+
+sc_clone
+top="$(git rev-parse --show-toplevel)"
+out="$(orch_gh_failing status)"
+assert_eq "with no flow and no other checkout, status prints only the no-flow line" \
+  "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "1"
+assert_contains "and that line is the no-flow line" "$out" "No active flow."
+orch_gh_failing init main-flow >/dev/null
+orch_gh_failing state set issue 7
+alone="$(orch_gh_failing status)"
+assert_not_contains "with no other checkout, status lists none" "$alone" "other checkouts"
+# Ticket worktrees hold no flow and carry no marker.
+orch_gh_failing ticket-worktree add 4 >/dev/null
+assert_eq "a ticket worktree never appears" "$(orch_gh_failing status)" "$alone"
+
+alpha="$(orch_gh_failing side-checkout add alpha)"
+beta="$(orch_gh_failing side-checkout add beta)"
+git -C "$beta" checkout -q -b quick/3-beta
+gamma="$(orch_gh_failing side-checkout add gamma)"
+(cd "$gamma" && orch_gh_failing init gamma-flow >/dev/null && orch_gh_failing state set issue 12)
+hand="$(mktemp -d)/hand"
+git worktree add -q -b hand "$hand"
+(cd "$hand" && orch_gh_failing init hand-flow >/dev/null)
+# A hand-made worktree with no flow is not the plugin's to list.
+bare_hand="$(mktemp -d)/bare-hand"
+git worktree add -q -b bare-hand "$bare_hand"
+
+out="$(orch_gh_failing status)"; st=$?
+assert_status "status in the main checkout succeeds" "$st" 0
+assert_eq "it keeps its full detail on this checkout's flow" \
+  "$(printf '%s\n' "$out" | sed '/^other checkouts:$/,$d')" "$alone"
+assert_eq "it lists each side checkout and each hand-made worktree holding a flow" \
+  "$(printf '%s\n' "$out" | st_others)" \
+  "$(writeln "  $alpha (no branch)" \
+             "  $beta branch quick/3-beta" \
+             "  $gamma flow gamma-flow spec #12" \
+             "  $hand flow hand-flow spec (no issue)" | sort)"
+assert_not_contains "never a hand-made worktree without a flow" "$out" "$bare_hand"
+assert_not_contains "never a ticket worktree" "$out" "worktrees/t4"
+
+out="$(cd "$gamma" && orch_gh_failing status)"
+assert_contains "status in a side checkout shows its own flow in full" "$out" "flow:      gamma-flow"
+assert_contains "with its own issue" "$out" "issue:     12"
+assert_eq "and lists the others, the main checkout's flow among them" \
+  "$(printf '%s\n' "$out" | st_others)" \
+  "$(writeln "  $top flow main-flow spec #7" \
+             "  $alpha (no branch)" \
+             "  $beta branch quick/3-beta" \
+             "  $hand flow hand-flow spec (no issue)" | sort)"
+
+orch_gh_failing ticket-worktree remove 4 --unmerged
+orch_gh_failing archive >/dev/null
+out="$(orch_gh_failing status)"
+assert_eq "with no flow here, status prints No active flow. first" \
+  "$(printf '%s\n' "$out" | sed -n 1p | cut -c1-15)" "No active flow."
+assert_eq "and still lists the others" "$(printf '%s\n' "$out" | st_others | wc -l | tr -d ' ')" "4"
+
+# A quick implementation in the main checkout keeps no state and carries no
+# marker, so it never appears.
+git checkout -q -b quick/9-main
+out="$(cd "$beta" && orch_gh_failing status)"
+assert_not_contains "a quick implementation in the main checkout never appears" "$out" "$top "
+assert_not_contains "nor its branch" "$out" "quick/9-main"
 restore_suite_env
 
 # --- ticket merge (#621) -------------------------------------------------------

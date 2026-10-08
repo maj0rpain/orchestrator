@@ -3511,27 +3511,36 @@ cmd_side_checkout_add() {
   note "$path"
 }
 
+# Every checkout's path, one per line, the main checkout first.
+checkout_paths() { git worktree list --porcelain | sed -n 's/^worktree //p'; }
+
+# Whether the checkout at <path> holds a flow.
+checkout_has_flow() { [ -f "$1/$ORCH_DIR_NAME/state.json" ]; }
+
+# What the checkout at <path> holds: its flow (flow <slug> <phase> #<issue>),
+# else its checked-out branch (branch <name>), else (no branch).
+checkout_holding() {
+  local state="$1/$ORCH_DIR_NAME/state.json" issue branch
+  if [ -f "$state" ]; then
+    issue="$(state_get_in "$state" issue)"
+    if [ -n "$issue" ]; then issue="#$issue"; else issue="(no issue)"; fi
+    note "flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue"
+  elif branch="$(git -C "$1" symbolic-ref --quiet --short HEAD)"; then
+    note "branch $branch"
+  else
+    note "(no branch)"
+  fi
+}
+
 # Prints one line per side checkout - worktrees carrying the marker, and no
-# other: <slug> <path>, then its flow (flow <slug> <phase> #<issue>), else its
-# checked-out branch (branch <name>), else (no branch).
+# other: <slug> <path>, then what it holds (see checkout_holding).
 cmd_side_checkout_list() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout list"
-  local line path state branch issue
-  while IFS= read -r line; do
-    case "$line" in "worktree "*) ;; *) continue ;; esac
-    path="${line#worktree }"
+  local path
+  while IFS= read -r path; do
     is_side_checkout "$path" || continue
-    state="$path/$ORCH_DIR_NAME/state.json"
-    if [ -f "$state" ]; then
-      issue="$(state_get_in "$state" issue)"
-      if [ -n "$issue" ]; then issue="#$issue"; else issue="(no issue)"; fi
-      note "$(basename "$path") $path flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue"
-    elif branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)"; then
-      note "$(basename "$path") $path branch $branch"
-    else
-      note "$(basename "$path") $path (no branch)"
-    fi
-  done < <(git worktree list --porcelain)
+    note "$(basename "$path") $path $(checkout_holding "$path")"
+  done < <(checkout_paths)
 }
 
 cmd_side_checkout() {
@@ -3707,8 +3716,32 @@ cmd_redo() {
 cmd_status() {
   if [ ! -f "$STATE" ]; then
     note "No active flow. Run $(flow_cmd start) from an approved plan."
-    return 0
+  else
+    status_flow
   fi
+  status_others
+}
+
+# Lists every other checkout holding a flow, and every side checkout without
+# one - the main checkout's flow included when run from a side checkout -
+# under a heading of its own. Ticket worktrees, a hand-made worktree with no
+# flow and a quick implementation in the main checkout hold no flow and carry
+# no marker, so they never appear; with nothing to list, nothing is printed.
+status_others() {
+  local path lines=""
+  while IFS= read -r path; do
+    [ "$path" != "$ROOT" ] || continue
+    checkout_has_flow "$path" || is_side_checkout "$path" || continue
+    lines+="  $path $(checkout_holding "$path")"$'\n'
+  done < <(checkout_paths)
+  [ -n "$lines" ] || return 0
+  note ""
+  note "other checkouts:"
+  printf '%s' "$lines"
+}
+
+# Full detail on the current checkout's flow.
+status_flow() {
   local slug phase issue branch pr iteration redo_count
   slug="$(state_get slug)";       phase="$(state_get phase)"
   issue="$(state_get issue)";     branch="$(state_get branch)"
@@ -4078,7 +4111,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               clears state.issue so orch-to-spec starts fresh;
                               02-spec.md and any 03-implement.md move into
                               handoff/pre-redo-spec-<UTC timestamp>/
-  status                      human-readable summary
+  status                      human-readable summary of this checkout's flow,
+                              then one line for every other checkout holding
+                              a flow and every side checkout
   archive                     move the live flow into .orchestrator/archive/,
                               leaving archive/ and checkouts/ in place
                               (refuses, naming each, while a ticket worktree
