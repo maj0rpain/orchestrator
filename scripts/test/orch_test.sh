@@ -6722,14 +6722,18 @@ gh_reply 8 '' '' pr checks 61 --json bucket,name,link
 out="$(contract adapter_pr_checks 61 all 2>&1)"; st=$?
 assert_status "pr checks: an exit 8 with nothing readable still succeeds" "$st" 0
 assert_eq "as one pending check with no name or link" "$out" "$(checks_tsv pending '' '')"
+checks_err="$(mktemp)"
 gh_reply 1 '' "no checks reported on the 'topic' branch" pr checks 62 --json bucket,name,link
-out="$(contract adapter_pr_checks 62 all 2>&1)"; st=$?
+out="$(contract adapter_pr_checks 62 all 2>"$checks_err")"; st=$?
 assert_status "pr checks: no checks reported succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
+assert_eq "printing nothing at all on stdout" "$out" ""
+assert_eq "passing gh's line through on stderr" "$(cat "$checks_err")" "no checks reported on the 'topic' branch"
 gh_reply 1 '' "no required checks reported on the 'topic' branch" pr checks 62 --required --json bucket,name,link
-out="$(contract adapter_pr_checks 62 required 2>&1)"; st=$?
+out="$(contract adapter_pr_checks 62 required 2>"$checks_err")"; st=$?
 assert_status "pr checks: no required checks reported succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
+assert_eq "printing nothing at all on stdout" "$out" ""
+assert_eq "passing gh's line through on stderr" "$(cat "$checks_err")" "no required checks reported on the 'topic' branch"
+rm -f "$checks_err"
 gh_reply 0 '[]' '' pr checks 63 --json bucket,name,link
 out="$(contract adapter_pr_checks 63 all 2>&1)"; st=$?
 assert_status "pr checks: an empty list succeeds" "$st" 0
@@ -7954,7 +7958,8 @@ assert_contains "saying there is nothing failed to rerun" "$out" "no failed or c
 fake_checks 7 all none
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "no checks at all is exit 2" "$st" 2
-assert_contains "saying gh reported no checks" "$out" "gh could not read the checks of PR #7: no checks reported"
+assert_eq "dying with gh's own no-checks line" "$out" \
+  "orch: gh could not read the checks of PR #7: no checks reported on the 'topic' branch"
 fake_checks 7 all failing
 fake_fail adapter_run_rerun
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?

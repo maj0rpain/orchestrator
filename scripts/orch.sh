@@ -1439,8 +1439,8 @@ adapter_auth_status() {
 # adapter_pr_checks <n> <required|all>: the PR's checks - the ones branch
 # protection requires, or every check on its head - one per line as TSV,
 # "<bucket><TAB><name><TAB><link>", in gh's order; an empty link for a check
-# that has none. Nothing at all where gh reports no checks, or no required
-# ones. gh documents exit 8 for pending checks, still answering the JSON: that
+# that has none. Nothing at all on stdout where gh reports no checks, or no
+# required ones, with gh's line passed through on stderr. gh documents exit 8 for pending checks, still answering the JSON: that
 # is read like an exit 0, and where it leaves nothing readable, a single
 # pending check with no name or link is printed. Fails where gh answered with
 # something jq cannot read.
@@ -1453,6 +1453,7 @@ adapter_pr_checks() {
     0|8) rm -f "$err" ;;
     *)
       if grep -q 'no checks reported\|no required checks' "$err"; then
+        cat "$err" >&2
         rm -f "$err"
         return 0
       fi
@@ -1729,17 +1730,26 @@ ci_probe() {
 # rerun - goes through die2. The repo is resolved here rather than left to the
 # guard, whose death exits 1 and would read as "nothing to rerun".
 review_rerun() {
-  local pr="${1:-}" out link run name
+  local pr="${1:-}" out err said link="" run name=""
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
   repo_pin || die2 "$REPO_REMEDY"
-  out="$(adapter_pr_checks "$pr" all 2>&1)" \
-    || die2 "gh could not read the checks of PR #$pr: $(first_line "$out")"
-  link="$(printf '%s\n' "$out" | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2 "\t" $3; exit }')"
-  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: no checks reported"
+  # gh's stderr is kept apart from the checks, so its line - a failure's
+  # reason, or the "no checks" answer naming the branch - is what the death
+  # message carries. The file is gone before any die2.
+  err="$(mktemp)"
+  out="$(adapter_pr_checks "$pr" all 2>"$err")" || {
+    said="$(first_line "$(cat "$err")")"; rm -f "$err"
+    die2 "gh could not read the checks of PR #$pr: $said"
+  }
+  said="$(first_line "$(cat "$err")")"; rm -f "$err"
+  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: $said"
+  # Name and link on two lines, read one per read, so an empty name survives:
+  # IFS=$'\t' read would collapse it, a tab being IFS whitespace. No failed
+  # check leaves both empty.
+  { IFS= read -r name; IFS= read -r link; } < <(printf '%s\n' "$out" \
+    | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2; print $3; exit }') || true
   [ -n "$link" ] || die2 "PR #$pr has no failed or cancelled check to rerun"
-  name="${link%%$'\t'*}"
-  link="${link#*$'\t'}"
   case "$link" in
     */actions/runs/[0-9]*) ;;
     *) warn "check $name on PR #$pr is not a GitHub Actions run - nothing to rerun"

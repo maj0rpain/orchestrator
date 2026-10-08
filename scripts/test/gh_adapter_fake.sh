@@ -721,7 +721,8 @@ fake_checks_answer() {
     # A failing check whose Actions link carries no numeric run id.
     badrunid) printf 'fail\tbuild\t%s/12abc\n' "$runs" ;;
     pending)  printf 'pending\tbuild\t\n' ;;
-    none)     ;;
+    # The fake records no head branch, so gh's no-checks line names a fixed one.
+    none)     fake_no_checks ;;
     boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
     # Without this arm a mistyped answer prints nothing and succeeds, which
     # ci_probe reads as a repo with no checks - a test that passes while
@@ -729,6 +730,10 @@ fake_checks_answer() {
     *)        echo "gh fake: no checks answer named '$1'" >&2; return 99 ;;
   esac
 }
+
+# fake_no_checks: gh's "no checks" answer - nothing on stdout, its line on
+# stderr, exit 0 - as adapter_pr_checks passes it on.
+fake_no_checks() { echo "no checks reported on the 'topic' branch" >&2; }
 
 # adapter_pr_checks <n> <required|all>: the next answer of the script
 # fake_checks seeded for the PR and scope - one per call, the last repeating
@@ -738,7 +743,7 @@ adapter_pr_checks() {
   ! fake_failing adapter_pr_checks || return 1
   d="$(fake_store)/checks/$1"
   f="$d/$2"
-  [ -f "$f" ] || return 0
+  [ -f "$f" ] || { fake_no_checks; return 0; }
   i=$(( $(cat "$f.n" 2>/dev/null || echo 0) + 1 ))
   printf '%s\n' "$i" >"$f.n"
   answer="$(sed -n "${i}p" "$f")"
