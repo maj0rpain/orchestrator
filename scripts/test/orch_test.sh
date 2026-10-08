@@ -100,17 +100,24 @@ if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   exit $?
 fi
 
+# True when $1 is digits only and its value is above zero, so `00` is no
+# positive integer either.
+is_positive_integer() {
+  case "$1" in '' | *[!0-9]*) return 1 ;; esac
+  [ "$((10#$1))" -gt 0 ]
+}
+
 if [ -n "${ORCH_TEST_JOBS+set}" ]; then
   orch_jobs="$ORCH_TEST_JOBS"
 else
   orch_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null)"
-  case "$orch_jobs" in '' | *[!0-9]* | 0) orch_jobs=4 ;; esac
+  is_positive_integer "$orch_jobs" || orch_jobs=4
 fi
-case "$orch_jobs" in
-  '' | *[!0-9]* | 0)
-    echo "orch_test.sh: ORCH_TEST_JOBS='$orch_jobs' is not a positive integer" >&2
-    exit 1 ;;
-esac
+if ! is_positive_integer "$orch_jobs"; then
+  echo "orch_test.sh: ORCH_TEST_JOBS='$orch_jobs' is not a positive integer" >&2
+  exit 1
+fi
+orch_jobs=$((10#$orch_jobs))
 
 if [ -n "${ORCH_TEST_ONLY:-}" ] || [ "$orch_jobs" -gt 1 ]; then
   only_titles="$(section_awk titles)"
@@ -9803,7 +9810,7 @@ assert_status "a pattern matching no section exits 1 in parallel too" "$st" 1
 assert_eq "lists the section titles" "$(printf '%s\n' "$out" | sed -n 1p)" "isolation"
 assert_eq "and runs nothing" "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
 
-for par_jobs in 0 -2 two ''; do
+for par_jobs in 0 00 000 -2 two ''; do
   out="$(ORCH_TEST_JOBS="$par_jobs" ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
   assert_status "ORCH_TEST_JOBS='$par_jobs' exits 1" "$st" 1
   assert_contains "ORCH_TEST_JOBS='$par_jobs' is named in the message" "$out" \
