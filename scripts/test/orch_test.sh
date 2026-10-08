@@ -930,16 +930,20 @@ assert_eq "sets flake_rerun_used" "$("$ORCH" state get flake_rerun_used)" "true"
 before="$("$ORCH" state get phase)"
 out="$("$ORCH" state set phase review 2>&1)"; st=$?
 assert_status "refuses to set phase" "$st" 1
-assert_contains "naming phase advance as its owner" "$out" "phase advance"
+assert_eq "naming phase advance as its owner, in full" "$out" \
+  "orch: state set refuses phase: use phase advance (review ready and redo also move it)"
 assert_eq "and leaves the phase as it was" "$("$ORCH" state get phase)" "$before"
-for pair in branch:"branch create" base_sha:"branch create" pr:"pr open" \
-            iteration:"review begin" redo_count:"redo review" slug:init \
-            base:init created:init host_fallbacks:init updated:"state change" \
-            bogus:"issue, budget, flake_rerun_used"; do
-  key="${pair%%:*}"; owner="${pair#*:}"
+# Each refusal is pinned as its whole line, so a change to any wording fails.
+for pair in "branch|branch create records it" "base_sha|branch create records it" \
+            "pr|pr open records it" "iteration|review begin counts it" \
+            "redo_count|redo review counts it" "slug|init seeds it" \
+            "base|init seeds it" "created|init seeds it" \
+            "host_fallbacks|init seeds it" "updated|every state change stamps it" \
+            "bogus|settable keys are issue, budget, flake_rerun_used"; do
+  key="${pair%%|*}"; owner="${pair#*|}"
   out="$("$ORCH" state set "$key" 1 2>&1)"; st=$?
   assert_status "refuses to set $key" "$st" 1
-  assert_contains "naming what owns $key" "$out" "$owner"
+  assert_eq "naming what owns $key, in full" "$out" "orch: state set refuses $key: $owner"
 done
 "$ORCH" state set issue 42
 assert_eq "coerces a numeric value to a number" "$("$ORCH" state get issue)" "42"
@@ -961,6 +965,14 @@ done
 "$ORCH" state set budget false
 assert_eq "reads a stored false back as false, not the key's default" \
   "$("$ORCH" state get budget)" "false"
+# Digits with a trailing newline are not all digits, so they are stored as a
+# string. jq's regex `$` used to match before the newline, and the set then
+# died on tonumber's error (#711).
+"$ORCH" state set budget $'12\n'; st=$?
+assert_status "accepts digits with a trailing newline" "$st" 0
+assert_eq "stores them as a JSON string" \
+  "$("$ORCH" state get | jq -r '.budget | type')" "string"
+assert_eq "and leaves the rest of state.json intact" "$("$ORCH" state get slug)" "state"
 
 # --- handoff path -----------------------------------------------------------
 echo
@@ -1547,26 +1559,28 @@ assert_eq "the flow's recorded base is untouched" "$(orch_gh_failing state get b
 
 # base set --flow: the explicit correction of the flow's own base, allowed only
 # while the flow has no branch. The checkout's setting is never its target.
-flow_setting() { git config --get orchestrator.base || echo "<unset>"; }
+checkout_setting() { git config --get orchestrator.base || echo "<unset>"; }
 orch_gh_failing base set uat >/dev/null
 out="$(orch_gh_failing base set main --flow 2>&1)"; st=$?
 assert_status "base set --flow accepts the flag after the branch name" "$st" 0
 assert_eq "and reports the flow's new base" "$out" "main (flow)"
 assert_eq "storing the default branch's own name literally" "$(orch_gh_failing state get base)" "main"
-assert_eq "leaving the checkout's base branch setting unchanged" "$(flow_setting)" "uat"
+assert_eq "leaving the checkout's base branch setting unchanged" "$(checkout_setting)" "uat"
 orch_gh_failing base clear >/dev/null
 out="$(orch_gh_failing base set --flow uat 2>&1)"; st=$?
 assert_status "base set --flow accepts the flag before the branch name" "$st" 0
 assert_eq "in the spec phase it prints the branch and its flow source" "$out" "uat (flow)"
 assert_eq "state get base reads the corrected base" "$(orch_gh_failing state get base)" "uat"
-assert_eq "and the unset checkout setting stays unset" "$(flow_setting)" "<unset>"
+assert_eq "and the unset checkout setting stays unset" "$(checkout_setting)" "<unset>"
 for name in null 007; do
   git push -q origin "HEAD:refs/heads/$name"
   orch_gh_failing base set "$name" --flow >/dev/null
   assert_eq "base set --flow stores a branch named $name literally" \
     "$(orch_gh_failing state get base)" "$name"
 done
+state_fixture updated "sentinel"
 orch_gh_failing base set uat --flow >/dev/null
+assert_ne "base set --flow stamps updated" "$(orch_gh_failing state get updated)" "sentinel"
 
 for args in "" "--flow" "uat main --flow" "uat --flow --flow" "uat --flaw"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
@@ -1674,7 +1688,7 @@ assert_contains "as no active flow" "$out" "no active flow - nothing was set"
 out="$(orch_gh_failing base set 'bad..name' --flow 2>&1)"
 assert_contains "no state.json plus an invalid name reports no active flow" "$out" \
   "no active flow - nothing was set"
-assert_eq "and never touches the checkout setting" "$(flow_setting)" "<unset>"
+assert_eq "and never touches the checkout setting" "$(checkout_setting)" "<unset>"
 assert_contains "orch.sh help lists base set --flow" "$(orch_gh_failing help)" "base set <branch> --flow"
 rm -rf "$(dirname "$bare")"
 
@@ -7180,6 +7194,35 @@ assert_contains "naming the key" "$out" "nonsense"
 complete_plan_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
+# The string keys read back empty when missing too. phase goes only now: the
+# doctor --flow check above would fail a state file lacking it.
+jq 'del(.slug, .phase, .issue, .base, .branch, .pr, .base_sha, .created, .updated)' \
+  .orchestrator/state.json >state.tmp && mv state.tmp .orchestrator/state.json
+for key in slug phase issue base branch pr base_sha created updated; do
+  out="$("$ORCH" state get "$key" 2>&1)"; st=$?
+  assert_status "an absent $key still reads" "$st" 0
+  assert_eq "an absent $key reads as empty" "$out" ""
+done
+restore_suite_env
+
+# --- state.json schema ------------------------------------------------------
+# What a fresh init writes, pinned: every key it seeds reads back through
+# state get, and the raw file holds exactly these keys, in this order, with
+# these seeds. A change to the state-key schema that alters state.json or loses
+# a key's default fails here.
+echo
+echo "state.json schema"
+fresh_flow schema
+for key in $(jq -r 'keys_unsorted[]' .orchestrator/state.json); do
+  "$ORCH" state get "$key" >/dev/null 2>&1; st=$?
+  assert_status "state get reads $key, which init writes" "$st" 0
+done
+assert_eq "slug, base, created and updated are non-empty strings" \
+  "$(jq -c '[.slug, .base, .created, .updated] | map(type == "string" and . != "")' .orchestrator/state.json)" \
+  "[true,true,true,true]"
+assert_eq "state.json holds the pinned keys, order and seeds" \
+  "$(jq -c '.slug = "S" | .base = "B" | .created = "C" | .updated = "U"' .orchestrator/state.json)" \
+  '{"slug":"S","phase":"spec","issue":null,"base":"B","branch":null,"pr":null,"base_sha":null,"budget":null,"iteration":0,"flake_rerun_used":false,"redo_count":0,"host_fallbacks":true,"created":"C","updated":"U"}'
 restore_suite_env
 
 # --- review terminal ----------------------------------------------------
@@ -7639,6 +7682,7 @@ out="$(ORCHESTRATOR_HOST=claude "$ORCH" base set redo-base --flow 2>&1)"; st=$?
 assert_status "base set --flow refuses a branched flow at the review phase" "$st" 1
 assert_contains "naming redo as the way back on Claude Code" "$out" \
   "flow redotest already has branch orch/21-redotest - its base can change again once /orchestrator:redo retires it"
+assert_eq "leaving the flow's base unchanged" "$("$ORCH" state get base)" "$base_before"
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" base set redo-base --flow 2>&1)"
 assert_contains "and with the orch-flow section on another host" "$out" \
   "flow redotest already has branch orch/21-redotest - its base can change again once /orchestrator:redo (or orch-flow's Redo section) retires it"

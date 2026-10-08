@@ -164,21 +164,92 @@ next_phase_cmd() {
   esac
 }
 
+# Every flow state key, one row each, in the order init seeds them into
+# state.json: key|default|seed|owner. state_get, state set and init all read
+# it, so adding a key is one row. Lines starting with # are comments.
+#
+# default: what state_get returns for a null or missing value. A flow started
+#   by an older release lacks keys a fresh one seeds; each reads back as its
+#   default. The default applies only to a null or missing value, never to a
+#   stored false (jq's `//` would treat false like null).
+# seed: the JSON literal init writes, or arg where init supplies the value at
+#   run time (cmd_init types each arg value).
+# owner: - for a key state set may write; otherwise the reason it refuses,
+#   printed as "state set refuses <key>: <owner>".
+STATE_KEYS='slug||arg|init seeds it
+# phase_write spec sets the phase straight after init seeds it.
+phase||null|use phase advance (review ready and redo also move it)
+# Seeded from --issue when given; state.json carries no field for whether it
+# was adopted or published - nothing downstream reads that distinction.
+issue||arg|-
+# When a flow base may change: see the header of base_set_flow.
+base||arg|init seeds it
+branch||null|branch create records it
+pr||null|pr open records it
+base_sha||null|branch create records it
+# Null until the review loop asks a human for one; review begin reads null as
+# the default.
+budget||null|-
+iteration|0|0|review begin counts it
+# Seeded here rather than at the review phase because its allowance belongs to
+# the flow: one per flow, spent or not, so that one refilled each iteration
+# could not become an infinite retry loop.
+flake_rerun_used|false|false|-
+redo_count|0|0|redo review counts it
+# Marks a flow whose handoffs must record Host fallbacks (see
+# host_fallbacks_required); an older flow without it reads false.
+host_fallbacks|false|true|init seeds it
+created||arg|init seeds it
+updated||arg|every state change stamps it'
+
+# Prints column $2 (default, seed or owner) of state key $1's row. An unknown
+# key prints nothing and returns non-zero; the caller dies with its own message.
+state_key() {
+  local k d s o
+  while IFS='|' read -r k d s o; do
+    case "$k" in '#'*) continue ;; esac
+    [ "$k" = "$1" ] || continue
+    case "$2" in
+      default) printf '%s\n' "$d" ;;
+      seed)    printf '%s\n' "$s" ;;
+      owner)   printf '%s\n' "$o" ;;
+      *)       return 1 ;;
+    esac
+    return 0
+  done <<EOF
+$STATE_KEYS
+EOF
+  return 1
+}
+
+# Prints every state key, one per line, in table order.
+state_keys() {
+  local k rest
+  while IFS='|' read -r k rest; do
+    case "$k" in '#'*|'') continue ;; esac
+    printf '%s\n' "$k"
+  done <<EOF
+$STATE_KEYS
+EOF
+}
+
 # Every read of state.json goes through here, so what an absent key means is
-# decided in one table rather than at each call site. A flow started by an
-# older release lacks keys a fresh one seeds; each reads back as its default.
-# The default applies only to a null or missing value, never to a stored false
-# (jq's `//` would treat false like null). A key outside the schema dies: a
-# misspelt read would otherwise look exactly like an unset one.
+# decided in the STATE_KEYS table rather than at each call site. A key outside
+# the table dies: a misspelt read would otherwise look exactly like an unset one.
 state_get() {
   local default
-  case "$1" in
-    iteration|redo_count)            default=0 ;;
-    host_fallbacks|flake_rerun_used) default=false ;;
-    slug|phase|issue|base|branch|pr|base_sha|budget|created|updated) default="" ;;
-    *) die "unknown state key: $1" ;;
-  esac
+  default="$(state_key "$1" default)" || die "unknown state key: $1"
   jq -r --arg k "$1" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$STATE"
+}
+
+# The one state-file write: sets key $1 to the JSON value $2 and stamps
+# updated. Private to the writers below; every write after init's seed goes
+# through here.
+state_put() {
+  local tmp; tmp="$(mktemp)"
+  jq --arg k "$1" --argjson v "$2" --arg now "$(now)" \
+    '.[$k] = $v | .updated = $now' "$STATE" >"$tmp"
+  mv "$tmp" "$STATE"
 }
 
 # The unrestricted writer behind every internal state change. "null" stores a
@@ -186,15 +257,19 @@ state_get() {
 # a key cleared, flagged or counted here reads back through state_get the way
 # init seeded it. Every other value is stored as a string.
 state_write() {
-  local tmp; tmp="$(mktemp)"
-  jq --arg k "$1" --arg v "$2" --arg now "$(now)" '
-    .[$k] = (if $v == "null" then null
-             elif $v == "true" then true
-             elif $v == "false" then false
-             elif ($v | test("^[0-9]+$")) then ($v | tonumber)
-             else $v end)
-    | .updated = $now' "$STATE" >"$tmp"
-  mv "$tmp" "$STATE"
+  case "$2" in
+    null|true|false) state_put "$1" "$2" ;;
+    *[!0-9]*|"") state_write_string "$1" "$2" ;;
+    *) state_put "$1" "$(jq -n --arg v "$2" '$v | tonumber')" ;;
+  esac
+}
+
+# Stores value $2 under key $1 as a JSON string, always. Not state_write: it
+# would turn a value of null, true, false or all digits into JSON null, a
+# boolean or a number - a branch can bear any of those names, and a base is
+# always a string, as init stores it.
+state_write_string() {
+  state_put "$1" "$(jq -n --arg v "$2" '$v')"
 }
 
 require_state() {
@@ -445,12 +520,14 @@ require_on_origin() {
 # Whether a flow is active: state.json exists and its phase is not done.
 flow_active() { [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; }
 
-# base set --flow: the explicit correction of the active flow's own base,
-# allowed only while the flow has no branch - before it first branches, or
-# after redo review retires that branch. The checks run in a fixed order and
-# the first that fails is reported; nothing is written unless all pass. The
-# name is stored literally, the default branch's own included: a flow's base
-# is pinned, unlike the checkout setting.
+# A flow's base is fixed when init seeds it: no redo and no change to the
+# checkout setting rewrites it, so its fork point and PR target cannot move
+# under it. base set --flow is the one exception: the explicit correction of
+# the active flow's own base, allowed only while the flow has no branch -
+# before it first branches, or after redo review retires that branch. The
+# checks run in a fixed order and the first that fails is reported; nothing is
+# written unless all pass. The name is stored literally, the default branch's
+# own included: a flow's base is pinned, unlike the checkout setting.
 base_set_flow() {
   local b="$1" branch slug
   flow_active || die "no active flow - nothing was set"
@@ -464,12 +541,7 @@ base_set_flow() {
   fi
   is_branch_name "$b" || die "$b is not a valid branch name - nothing was set"
   require_on_origin "$b"
-  # Not state_write: it would turn a branch named null, true, false or all
-  # digits into JSON null, a boolean or a number. A base is always a string,
-  # as init stores it.
-  local tmp; tmp="$(mktemp)"
-  jq --arg b "$b" --arg now "$(now)" '.base = $b | .updated = $now' "$STATE" >"$tmp"
-  mv "$tmp" "$STATE"
+  state_write_string base "$b"
   note "$b (flow)"
 }
 
@@ -671,28 +743,28 @@ cmd_init() {
   # before archiving a done flow means a bad --issue leaves it untouched and
   # re-runnable rather than archived for nothing.
   [ -z "$issue" ] || validate_adopted_issue "$issue"
+  # The whole seed is built before a done flow is archived or anything is
+  # written, so a lookup that dies leaves the previous state untouched. The
+  # constant part comes from STATE_KEYS, a null placeholder for each arg row
+  # keeping the table's key order; the arg values merge over it, typed here.
+  # For base, see the header of base_set_flow.
+  local k v fields="" seed
+  for k in $(state_keys); do
+    v="$(state_key "$k" seed)" || die "no seed for state key: $k"
+    [ "$v" != arg ] || v=null
+    fields="${fields:+$fields,}\"$k\":$v"
+  done
+  seed="$(jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" --arg base "$(base_branch)" \
+    "{$fields}"' + {
+      slug: $slug, issue: (if $issue == "" then null else ($issue | tonumber) end),
+      base: $base, created: $now, updated: $now
+    }')" || die "could not build the state seed - nothing was written"
   if [ -f "$STATE" ]; then
     archive_note="$(cmd_archive)" || exit 1
   fi
   mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"
   exclude_orch_dirs
-  # The budget is null until the review loop asks a human for one, and `review
-  # begin` reads null as the default. The flake rerun is seeded here rather than
-  # at the review phase because its allowance belongs to the flow: one per flow,
-  # spent or not, so that one refilled each iteration could not become an
-  # infinite retry loop. issue is seeded from --issue when given; state.json
-  # carries no field for whether it was adopted or published - nothing
-  # downstream reads that distinction. host_fallbacks marks a flow whose
-  # handoffs must record Host fallbacks (see host_fallbacks_required).
-  # base is fixed here: no redo and no change to the checkout setting rewrites
-  # it, so a flow's fork point and PR target cannot move under it. The explicit
-  # `base set --flow` correction does, but only while the flow has no branch:
-  # before it first branches, or after `redo review` retires that branch.
-  jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" --arg base "$(base_branch)" '{
-    slug: $slug, phase: null, issue: (if $issue == "" then null else ($issue | tonumber) end),
-    base: $base, branch: null, pr: null, base_sha: null, budget: null, iteration: 0,
-    flake_rerun_used: false, redo_count: 0, host_fallbacks: true, created: $now, updated: $now
-  }' >"$STATE"
+  printf '%s\n' "$seed" >"$STATE"
   phase_write spec
   [ -z "$archive_note" ] || note "$archive_note"
   note "$slug"
@@ -719,17 +791,15 @@ cmd_state() {
       # Only the keys skill prose sets are public. Every other key has a
       # command that owns it, and that command's guard is the point: a phase
       # set here would skip the handoff phase advance validates.
-      case "$1" in
-        issue|budget|flake_rerun_used) ;;
-        phase)          die "state set refuses phase: use phase advance (review ready and redo also move it)" ;;
-        branch|base_sha) die "state set refuses $1: branch create records it" ;;
-        pr)             die "state set refuses pr: pr open records it" ;;
-        iteration)      die "state set refuses iteration: review begin counts it" ;;
-        redo_count)     die "state set refuses redo_count: redo review counts it" ;;
-        slug|base|created|host_fallbacks) die "state set refuses $1: init seeds it" ;;
-        updated)        die "state set refuses updated: every state change stamps it" ;;
-        *)              die "state set refuses $1: settable keys are issue, budget, flake_rerun_used" ;;
-      esac
+      local owner settable="" k
+      if ! owner="$(state_key "$1" owner)"; then
+        for k in $(state_keys); do
+          [ "$(state_key "$k" owner)" = - ] || continue
+          settable="${settable:+$settable, }$k"
+        done
+        die "state set refuses $1: settable keys are $settable"
+      fi
+      [ "$owner" = - ] || die "state set refuses $1: $owner"
       state_write "$1" "$2"
       ;;
     *) die "unknown state op: $op (want get|set)" ;;

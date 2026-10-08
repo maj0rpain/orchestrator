@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.17.1
+
+Every flow state key is now defined once, in one `STATE_KEYS` table in
+`orch.sh` - its read-back default, its init seed and its owner - which
+`state get`, `state set` and `init` all read, so adding a key is one row
+(#305). `cmd_init`'s comment on `base` now points to `base_set_flow`'s header
+rather than restating its rule (#516). One behaviour change: `state set` now
+stores a value of digits followed by a newline as a string, like any other
+value that is not all digits, where it used to die on jq's `tonumber` error
+(#711).
+
 ## 3.17.0
 
 `orch.sh default-branch --sha` prints the default SHA - the full SHA of
