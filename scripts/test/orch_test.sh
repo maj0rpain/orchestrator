@@ -22,6 +22,10 @@
 # call into one FAIL naming it. A section that runs orch.sh against a repo with
 # a GitHub origin installs fake_github first, or uses orch_gh_failing where it
 # tests gh's own argv; the fixture gh, prepended later, still wins over it.
+#
+# Every `# ---` section passes when run on its own through ORCH_TEST_ONLY, as
+# the parallel runner runs each one. So a helper used by more than one section
+# lives in the shared setup, never inside the section that first needed it.
 
 ORCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/orch.sh"
 GH_ADAPTER_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh_adapter_fake.sh"
@@ -185,6 +189,20 @@ new_repo_with_origin() {
   local b="${1:-$(git branch --show-current)}"
   git update-ref "refs/remotes/origin/$b" HEAD
   git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$b"
+}
+
+# tw_repo: a fresh repo with a bare origin it has pushed to, on a feature
+# branch, cwd inside it. Used by the ticket-worktree and ticket merge
+# sections. Call it in the current shell: new_repo cd's.
+tw_repo() {
+  local bare
+  new_repo >/dev/null
+  bare="$(mktemp -d)/origin.git"
+  git init -q --bare "$bare"
+  bare_origin "$bare"
+  git push -q origin HEAD 2>/dev/null
+  git checkout -q -b orch/5-feature
+  echo work >feature.txt && git add feature.txt && git commit -qm feature
 }
 
 # sc_clone: a fresh clone of a bare origin holding main, cwd inside it, with no
@@ -5038,19 +5056,6 @@ assert_contains "listed alongside the ops that exist" "$out" "unknown ticket op"
 # branches, tips, worktrees, the exclude file - never orch.sh's internals.
 echo
 echo "ticket-worktree"
-# tw_repo: a fresh repo with a bare origin it has pushed to, on a feature
-# branch, cwd inside it. Call it in the current shell: new_repo cd's.
-tw_repo() {
-  local bare
-  new_repo >/dev/null
-  bare="$(mktemp -d)/origin.git"
-  git init -q --bare "$bare"
-  bare_origin "$bare"
-  git push -q origin HEAD 2>/dev/null
-  git checkout -q -b orch/5-feature
-  echo work >feature.txt && git add feature.txt && git commit -qm feature
-}
-
 tw_repo
 top="$(git rev-parse --show-toplevel)"
 tip="$(git rev-parse HEAD)"
