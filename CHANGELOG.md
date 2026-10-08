@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.21.8
+
+The planning message's Blueprint route now stops at any step that stops or
+fails: orch-to-spec, the standalone orch-spec-review, or orch-to-tickets.
+Before, the route stopped only when orch-to-spec reported no issue number
+(#732). The route's order and its one stop rule are stated once, in the
+shared Blueprint bullet; each host's run line only says how to run the three
+skills (#730). The planning hook sets `next_redo` in its one host switch
+(#696). orch-to-spec states rewrite mode's title-and-comment rule once, in
+**Rewrite the issue** step 2 (#731). `.out-of-scope/hook-state-path-helper.md`
+records the declined shared state.json helper (#694).
+
 ## 3.21.7
 
 `orch.sh issue fetch|update|comment|comments` share one dispatch arm, with
