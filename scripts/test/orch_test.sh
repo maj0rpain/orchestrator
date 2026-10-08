@@ -2793,6 +2793,8 @@ new_tip="$(bs_advance refused.txt refused)"
 echo dirty >README.md
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "refuses a dirty tree" "$st" 1
+assert_contains "saying the tree is dirty" "$out" \
+  "orch: the working tree is dirty - commit or discard its changes first; nothing was synced"
 assert_eq "moving no tip (dirty tree)" "$(git rev-parse HEAD)" "$before"
 assert_eq "and no base SHA (dirty tree)" "$(bs_sha)" "$sha_before"
 assert_eq "and leaving the change (dirty tree)" "$(cat README.md)" "dirty"
@@ -5925,7 +5927,8 @@ wt="$("$ORCH" ticket-worktree add 7)"
 echo dirty >"$wt/README.md"
 out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
 assert_status "remove refuses a dirty worktree" "$st" 1
-assert_contains "saying it is dirty" "$out" "dirty"
+assert_contains "saying it is dirty" "$out" \
+  "orch: ticket worktree $wt is dirty - commit or discard its changes first; it is never removed with force"
 assert_eq "leaving the worktree in place" "$([ -f "$wt/README.md" ] && cat "$wt/README.md")" "dirty"
 assert_eq "and the branch" \
   "$(git rev-parse --verify --quiet refs/heads/orch/5-feature--t7 >/dev/null && echo present)" "present"
@@ -5945,6 +5948,14 @@ ticket_tip="$(git rev-parse orch/5-feature--t7)"
 out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
 assert_status "remove refuses an unmerged branch" "$st" 1
 assert_contains "saying it is unmerged" "$out" "not merged"
+assert_eq "leaving the worktree in place" "$([ -d "$wt" ] && echo present || echo absent)" "present"
+assert_eq "and the branch at its tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+# No recorded forked-from branch: remove cannot judge the branch merged.
+git config --unset branch.orch/5-feature--t7.orchestrator-ticket-parent
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "remove refuses a branch that records no forked-from branch" "$st" 1
+assert_contains "saying so, with the --unmerged hint" "$out" \
+  "orch: branch orch/5-feature--t7 records no forked-from branch - pass --unmerged to discard it"
 assert_eq "leaving the worktree in place" "$([ -d "$wt" ] && echo present || echo absent)" "present"
 assert_eq "and the branch at its tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 out="$("$ORCH" ticket-worktree remove 7 --unmerged)"; st=$?
@@ -6317,6 +6328,8 @@ rm "$gamma/wip.txt"
 echo changed >>"$gamma/$(git -C "$gamma" ls-files | head -1)"
 out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
 assert_status "remove refuses uncommitted changes" "$st" 1
+assert_contains "saying so" "$out" \
+  "orch: side checkout $gamma has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
 assert_eq "its flow is not moved" "$(archived_count "$top" new-flow)" "0"
 git -C "$gamma" checkout -q -- .
 # A git status that cannot run is a refusal naming git's error, never a clean
@@ -6733,7 +6746,8 @@ ticket_tip="$(git rev-parse orch/5-feature--t7)"
 echo dirty >"$wt/README.md"
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
 assert_status "merge refuses a dirty ticket worktree" "$st" 1
-assert_contains "naming it dirty" "$out" "dirty"
+assert_contains "naming it dirty" "$out" \
+  "orch: ticket worktree $wt is dirty - commit or discard its changes first"
 assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
 assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 assert_eq "and the ticket worktree's change" "$(cat "$wt/README.md")" "dirty"
@@ -6742,7 +6756,8 @@ git -C "$wt" checkout -q -- README.md
 echo dirty >README.md
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
 assert_status "merge refuses a dirty forked-from checkout" "$st" 1
-assert_contains "naming it dirty" "$out" "dirty"
+assert_contains "naming it dirty" "$out" \
+  "orch: $(pwd -P), the checkout of orch/5-feature, is dirty - commit or discard its changes first"
 assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
 assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 assert_eq "and the checkout's change" "$(cat README.md)" "dirty"
@@ -6755,6 +6770,15 @@ assert_contains "naming the branch" "$out" "orch/5-feature"
 assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
 assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 git checkout -q orch/5-feature
+
+git config --unset branch.orch/5-feature--t7.orchestrator-ticket-parent
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge refuses a branch that records no forked-from branch" "$st" 1
+assert_contains "saying so" "$out" "orch: branch orch/5-feature--t7 records no forked-from branch"
+assert_not_contains "with no --unmerged hint" "$out" "--unmerged"
+assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+git config branch.orch/5-feature--t7.orchestrator-ticket-parent orch/5-feature
 
 out="$("$ORCH" ticket merge 9 2>&1)"; st=$?
 assert_status "merge refuses a ticket with no ticket worktree" "$st" 1
