@@ -5512,6 +5512,22 @@ assert_eq "with its branch" "$(sp_branch orch/lk-flow)" "kept"
 assert_eq "the sweep moves on to the next" "$(sp_present "$q2")" "absent"
 git worktree unlock "$lk"
 
+# Each removal reports only its own archive: a flowless side checkout swept
+# right after the main checkout's finished flow does not repeat that archive.
+fake_offline
+orch_gh_failing init main-again >/dev/null
+state_fixture phase "done"; state_fixture branch orch/main-flow; state_fixture pr 51
+fake_pr 51 merged orch/main-flow main
+q5="$(orch_gh_failing side-checkout add q5)"
+sp_branch_off "$q5" quick/13-q5
+fake_pr 52 merged quick/13-q5 main
+fake_online
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune succeeds over the main flow and a flowless side checkout" "$st" 0
+assert_eq "the flowless side checkout is gone" "$(sp_present "$q5")" "absent"
+assert_eq "the main checkout's archive is reported once" \
+  "$(printf '%s\n' "$out" | grep -c -- '-main-again$')" "1"
+
 # side-checkout add runs the sweep first.
 q3="$(orch_gh_failing side-checkout add q3)"
 sp_branch_off "$q3" quick/11-q3

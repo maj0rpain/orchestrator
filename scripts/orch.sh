@@ -3516,15 +3516,15 @@ is_side_checkout() {
 # exists; a failed marker write takes the fresh worktree back out.
 cmd_side_checkout_add() {
   [ $# -eq 1 ] || die "usage: orch.sh side-checkout add <slug>"
-  local slug path base gd main
+  local slug path base gd main_root
   slug="$(normalize_slug "$1")"
-  main="$(main_checkout)"
+  main_root="$(main_checkout)"
   # The sweep first, its report on stderr so stdout stays the path alone. A
   # failed sweep never stops add; it may have removed the checkout this ran
   # in, so add carries on from the main checkout.
   ( cmd_side_checkout_prune ) >&2 \
     || warn "the finished sweep failed - carrying on with add"
-  cd "$main" || die "could not enter the main checkout $main"
+  cd "$main_root" || die "could not enter the main checkout $main_root"
   path="$(side_checkouts_dir)/$slug"
   [ ! -e "$path" ] || die "side checkout $path already exists"
   exclude_orch_dirs
@@ -3609,10 +3609,24 @@ cmd_side_checkout_remove() {
 # scopes dynamically, and return 0 finished, 1 not finished - `verdict` the
 # reason - or 2 GitHub could not be read - `verdict` its error.
 
+# github_read <var> <adapter-call> [args...]: runs the adapter call, its output
+# assigned to the caller's <var>. On failure it sets `verdict` to the call's
+# first error line and returns 2.
+github_read() {
+  local into="$1" got err
+  shift
+  err="$(mktemp)"
+  if ! got="$("$@" 2>"$err")"; then
+    verdict="$(first_line "$(cat "$err")")"; rm -f "$err"; return 2
+  fi
+  rm -f "$err"
+  printf -v "$into" '%s' "$got"
+}
+
 # finished_flow <state-file>: whether that flow is finished - at done, and its
 # recorded PR merged into its own base branch.
 finished_flow() {
-  local state="$1" phase pr base answer err
+  local state="$1" phase pr base state_draft pr_state refs merged_base
   phase="$(state_get_in "$state" phase)"
   if [ "$phase" != "done" ]; then
     verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1
@@ -3623,27 +3637,21 @@ finished_flow() {
   [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
   base="$(state_get_in "$state" base)"
   [ -n "$base" ] || base="$(default_branch)"
-  err="$(mktemp)"
-  if ! answer="$(adapter_pr_state_draft "$pr" 2>"$err")"; then
-    verdict="$(first_line "$(cat "$err")")"; rm -f "$err"; return 2
+  github_read state_draft adapter_pr_state_draft "$pr" || return
+  pr_state="$(first_line "$state_draft")"
+  if [ "$pr_state" != MERGED ]; then
+    verdict="PR #$pr is $(printf '%s' "$pr_state" | tr '[:upper:]' '[:lower:]')"; return 1
   fi
-  answer="$(first_line "$answer")"
-  if [ "$answer" != MERGED ]; then
-    rm -f "$err"; verdict="PR #$pr is $(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')"; return 1
-  fi
-  if ! answer="$(adapter_pr_refs "$pr" 2>"$err")"; then
-    verdict="$(first_line "$(cat "$err")")"; rm -f "$err"; return 2
-  fi
-  rm -f "$err"
-  answer="$(printf '%s\n' "$answer" | sed -n 3p)"
-  [ "$answer" = "$base" ] || { verdict="PR #$pr merged into $answer, not $base"; return 1; }
+  github_read refs adapter_pr_refs "$pr" || return
+  merged_base="$(printf '%s\n' "$refs" | sed -n 3p)"
+  [ "$merged_base" = "$base" ] || { verdict="PR #$pr merged into $merged_base, not $base"; return 1; }
 }
 
 # side_checkout_finished <path>: whether the side checkout there is finished -
 # a clean tree, and either a finished flow, or no flow and a PR merged from
 # its checked-out branch into the base branch in effect.
 side_checkout_finished() {
-  local path="$1" base prs err
+  local path="$1" base prs
   if [ -n "$(git -C "$path" status --porcelain)" ]; then
     verdict="uncommitted changes or untracked files"; return 1
   fi
@@ -3653,11 +3661,7 @@ side_checkout_finished() {
   branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
     || { verdict="no branch"; return 1; }
   base="$(base_branch)"
-  err="$(mktemp)"
-  if ! prs="$(adapter_prs_merged "$branch" "$base" 2>"$err")"; then
-    verdict="$(first_line "$(cat "$err")")"; rm -f "$err"; return 2
-  fi
-  rm -f "$err"
+  github_read prs adapter_prs_merged "$branch" "$base" || return
   [ -n "$prs" ] || { verdict="no merged PR from $branch into $base"; return 1; }
 }
 
@@ -3671,17 +3675,20 @@ side_checkout_finished() {
 # worktree holding a flow is reported and left alone.
 cmd_side_checkout_prune() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout prune"
-  local here main path verdict branch rc unread="" failed=0 out
+  local here main_root path verdict branch rc unread="" failed=0
+  # archive_out is this entry's archive_flow output - its note, or its error -
+  # cleared at the top of each entry so none outlives its own.
+  local archive_out remove_err branch_err
   local paths=() finished=()
   here="$(pwd -P)"
-  main="$(main_checkout)"
+  main_root="$(main_checkout)"
   # Every step works from the main checkout, so removing the checkout this
   # command ran in leaves the sweep somewhere to stand.
-  cd "$main" || die "could not enter the main checkout $main"
+  cd "$main_root" || die "could not enter the main checkout $main_root"
   mapfile -t paths < <(checkout_paths)
   for path in "${paths[@]}"; do
     rc=0; verdict=""; branch=""
-    if [ "$path" = "$main" ]; then
+    if [ "$path" = "$main_root" ]; then
       checkout_has_flow "$path" || continue
       finished_flow "$path/$ORCH_DIR_NAME/state.json" </dev/null || rc=$?
     elif is_side_checkout "$path"; then
@@ -3702,31 +3709,30 @@ cmd_side_checkout_prune() {
   local entry
   for entry in "${finished[@]}"; do
     path="${entry%%$'\t'*}"; branch="${entry#*$'\t'}"
-    if [ "$path" = "$main" ]; then
-      if ! out="$(archive_flow "$path" 2>&1)"; then
-        warn "could not archive the main checkout's flow: $(first_line "$out")"; failed=1; continue
+    archive_out=""
+    if [ "$path" = "$main_root" ]; then
+      if ! archive_out="$(archive_flow "$path" 2>&1)"; then
+        warn "could not archive the main checkout's flow: $(first_line "$archive_out")"; failed=1; continue
       fi
-      note "$out"
-      note "archived the main checkout's flow in place - $(git -C "$main" branch --show-current || true) is still checked out"
+      note "$archive_out"
+      note "archived the main checkout's flow in place - $(git -C "$main_root" branch --show-current || true) is still checked out"
       continue
     fi
-    if checkout_has_flow "$path" && ! out="$(archive_flow "$path" 2>&1)"; then
-      warn "could not archive the flow in side checkout $path: $(first_line "$out") - left as it stands"
+    if checkout_has_flow "$path" && ! archive_out="$(archive_flow "$path" 2>&1)"; then
+      warn "could not archive the flow in side checkout $path: $(first_line "$archive_out") - left as it stands"
       failed=1; continue
     fi
-    [ -z "${out:-}" ] || note "$out"
-    out=""
-    if ! out="$(git -C "$main" worktree remove "$path" 2>&1)"; then
-      warn "could not remove side checkout $path: $(first_line "$out") - left as it stands"
-      failed=1; out=""; continue
+    [ -z "$archive_out" ] || note "$archive_out"
+    if ! remove_err="$(git -C "$main_root" worktree remove "$path" 2>&1)"; then
+      warn "could not remove side checkout $path: $(first_line "$remove_err") - left as it stands"
+      failed=1; continue
     fi
     note "removed side checkout $path"
     side_checkout_close_note "$path" "$here"
-    if ! out="$(git -C "$main" branch -D -q "$branch" 2>&1)"; then
-      warn "could not delete branch $branch: $(first_line "$out")"; failed=1; out=""; continue
+    if ! branch_err="$(git -C "$main_root" branch -D -q "$branch" 2>&1)"; then
+      warn "could not delete branch $branch: $(first_line "$branch_err")"; failed=1; continue
     fi
     note "deleted branch $branch"
-    out=""
   done
   [ "$failed" -eq 0 ] || exit 1
 }
