@@ -2029,6 +2029,14 @@ map_line() {
     END { if (!done) print L + off }'
 }
 
+# scan_line <file:lines> <result> <detail>: the scan's one line, in the
+# columns `finding-triage scan` prints. Local to finding_scan_one in effect: it
+# reads the issue and PR number, n and pr, from that call's locals, through
+# bash's dynamic scope, and prints - for an empty PR.
+scan_line() {
+  printf '%s\t%s\t%s\t%s\t%s\n' "$n" "${pr:--}" "$1" "$2" "$3"
+}
+
 # finding_scan_one <issue> <body> <default ref>: the scan's one line for one
 # finding.
 finding_scan_one() {
@@ -2036,12 +2044,12 @@ finding_scan_one() {
   pr="$(finding_pr "$body")"
   loc="$(finding_location "$body")"
   if [ -z "$loc" ]; then
-    printf '%s\t%s\t-\tunknown\tbody does not parse: no **Location:** line naming `<file>:<line>` at <SHA>\n' "$n" "${pr:--}"
+    scan_line - unknown 'body does not parse: no **Location:** line naming `<file>:<line>` at <SHA>'
     return
   fi
   IFS=$'\t' read -r file lines sha <<<"$loc"
   if [ -z "$pr" ]; then
-    printf '%s\t-\t%s:%s\tunknown\tbody does not parse: no **PR:** line ending in a pull request URL\n' "$n" "$file" "$lines"
+    scan_line "$file:$lines" unknown 'body does not parse: no **PR:** line ending in a pull request URL'
     return
   fi
   # A squash merge leaves the PR's head commit off every branch: the PR's own
@@ -2049,17 +2057,16 @@ finding_scan_one() {
   if ! resolved_sha="$(git rev-parse --verify -q "$sha^{commit}")"; then
     git fetch -q origin "refs/pull/$pr/head" >/dev/null 2>&1 || true
     if ! resolved_sha="$(git rev-parse --verify -q "$sha^{commit}")"; then
-      printf '%s\t%s\t%s:%s\tunknown\thead SHA %s is unreachable, even after fetching refs/pull/%s/head\n' \
-        "$n" "$pr" "$file" "$lines" "$sha" "$pr"
+      scan_line "$file:$lines" unknown "head SHA $sha is unreachable, even after fetching refs/pull/$pr/head"
       return
     fi
   fi
   if ! git cat-file -e "$ref:$file" 2>/dev/null; then
-    printf '%s\t%s\t%s:%s\tgone\t\n' "$n" "$pr" "$file" "$lines"
+    scan_line "$file:$lines" gone ""
     return
   fi
   if git diff --quiet "$resolved_sha" "$ref" -- "$file" 2>/dev/null; then
-    printf '%s\t%s\t%s:%s\tunchanged\t\n' "$n" "$pr" "$file" "$lines"
+    scan_line "$file:$lines" unchanged ""
     return
   fi
   start="${lines%%-*}"; end="${lines#*-}"
@@ -2071,8 +2078,7 @@ finding_scan_one() {
   # older commit would predate the filing.
   file_commit="$(git log -1 --format=%H "$ref" "^$resolved_sha" -- "$file" 2>/dev/null)" || true
   if [ -z "$file_commit" ]; then
-    printf '%s\t%s\t%s:%s\tunknown\tno commit on the default branch since %s touched %s - the difference is commits that never reached it\n' \
-      "$n" "$pr" "$file" "$lines" "$sha" "$file"
+    scan_line "$file:$lines" unknown "no commit on the default branch since $sha touched $file - the difference is commits that never reached it"
     return
   fi
   # The newest commit since the filing that touched the finding's lines. The
@@ -2083,7 +2089,7 @@ finding_scan_one() {
     # The lines were followed and nothing since the filing touched them: the
     # file changed only elsewhere.
     if [ -z "$detail" ]; then
-      printf '%s\t%s\t%s:%s\tunchanged\t\n' "$n" "$pr" "$file" "$lines"
+      scan_line "$file:$lines" unchanged ""
       return
     fi
   else
@@ -2091,7 +2097,7 @@ finding_scan_one() {
     # commit touching the file stands in.
     detail="$file_commit"
   fi
-  printf '%s\t%s\t%s:%s\tchanged\t%s\n' "$n" "$pr" "$file" "$lines" "$detail"
+  scan_line "$file:$lines" changed "$detail"
 }
 
 # finding-triage scan [<issue> | --pr <n>]: read-only. Sorts each open filed

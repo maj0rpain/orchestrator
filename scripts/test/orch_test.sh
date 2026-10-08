@@ -6153,6 +6153,15 @@ assert_eq "naming that PR" "$(field_of 7 2 "$out")" "8"
 assert_eq "an already triaged finding is not scanned" "$(line_of 8 "$out")" ""
 assert_eq "nor a closed one" "$(line_of 9 "$out")" ""
 assert_eq "nor an issue that is not a filed finding" "$(line_of 10 "$out")" ""
+# Every result path's exact line, pinned byte for byte.
+assert_eq "a changed finding's exact line" \
+  "$(line_of 2 "$out")" "$(printf '2\t7\tsrc/app.sh:3\tchanged\t%s' "$fix_sha")"
+assert_eq "a gone finding's exact line" \
+  "$(line_of 4 "$out")" "$(printf '4\t7\tsrc/gone.sh:1\tgone\t')"
+assert_eq "an unreachable head SHA's exact line" "$(line_of 5 "$out")" \
+  "$(printf '5\t7\tsrc/app.sh:3\tunknown\thead SHA 0123456789abcdef0123456789abcdef01234567 is unreachable, even after fetching refs/pull/7/head')"
+assert_eq "a body with no Location line: its exact line" "$(line_of 6 "$out")" \
+  "$(printf '6\t-\t-\tunknown\tbody does not parse: no **Location:** line naming `<file>:<line>` at <SHA>')"
 assert_eq "the findings come in issue order" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 "
 assert_ne "lists the major findings still in needs-triage" "$(line_of 5 "$out")" ""
 assert_ne "and the nit ones" "$(line_of 6 "$out")" ""
@@ -6202,6 +6211,8 @@ out="$(scan 11 2>&1)"; st=$?
 assert_status "scans a finding filed on a PR edit that never landed" "$st" 0
 assert_eq "it is unknown, not changed by a commit older than the filing" "$(field_of 11 4 "$out")" "unknown"
 assert_contains "saying no commit since the filing touched the file" "$(field_of 11 5 "$out")" "no commit"
+assert_eq "its exact line" "$(line_of 11 "$out")" \
+  "$(printf '11\t11\tsrc/other.sh:2\tunknown\tno commit on the default branch since %s touched src/other.sh - the difference is commits that never reached it' "$unmerged_sha")"
 fake_issue 11 closed
 
 # A finding whose lines the scan follows to the default branch, where later
@@ -6213,6 +6224,15 @@ assert_status "scans a finding whose file changed only elsewhere" "$st" 0
 assert_eq "its followed, untouched lines are unchanged, with empty detail" \
   "$(line_of 14 "$out")" "$(printf '14\t14\tsrc/app.sh:6\tunchanged\t')"
 fake_issue 14 closed
+
+# A body with its **Location:** line but no **PR:** line does not parse either.
+fake_issue 16 open review:nit needs-triage
+fake_issue_body 16 "$(writeln '## Finding' '' "**Location:** \`src/other.sh:2\` at $head_sha")"
+out="$(scan 16 2>&1)"; st=$?
+assert_status "scans a finding whose body names no PR" "$st" 0
+assert_eq "it is unknown, its exact line naming the missing PR line" "$(line_of 16 "$out")" \
+  "$(printf '16\t-\tsrc/other.sh:2\tunknown\tbody does not parse: no **PR:** line ending in a pull request URL')"
+fake_issue 16 closed
 
 # A finding whose file later gets hunks both before and after its line, with
 # far more diff after the matching hunk than a pipe buffer holds: the line
