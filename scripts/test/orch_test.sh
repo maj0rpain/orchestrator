@@ -16,6 +16,12 @@
 # if it cannot. A section run on its own that forgets to arrange its own repo
 # then fails against an empty directory instead of the caller's checkout. The
 # isolation section, the suite's first, asserts all of this.
+#
+# Nor does the suite reach the real gh. The shared setup puts a stub gh first
+# on PATH that logs each call and fails, and the summary turns every logged
+# call into one FAIL naming it. A section that runs orch.sh against a repo with
+# a GitHub origin installs fake_github first, or uses orch_gh_failing where it
+# tests gh's own argv; the fixture gh, prepended later, still wins over it.
 
 ORCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/orch.sh"
 GH_ADAPTER_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh_adapter_fake.sh"
@@ -81,6 +87,25 @@ SUITE_HOME="$(mktemp -d)" || {
   echo "orch_test.sh: cannot create a temp HOME" >&2; exit 1; }
 export HOME="$SUITE_HOME"
 unset CLAUDE_PLUGIN_ROOT XDG_CONFIG_HOME GIT_CONFIG_GLOBAL
+
+# The real-gh guard: a stub gh, first on PATH before SUITE_PATH is captured so
+# restore_suite_env keeps it, that appends its arguments to GH_GUARD_LOG, in
+# this setup's own temp directory, and exits 1. It is a guard, not a fake: it
+# answers nothing, so a section that reaches gh without fake_github or the
+# fixture gh (both of which win over it) fails, and the summary turns each
+# logged call into one FAIL naming it.
+GH_GUARD_DIR="$(mktemp -d)" && mkdir "$GH_GUARD_DIR/bin" &&
+  GH_GUARD_LOG="$GH_GUARD_DIR/calls.log" && : >"$GH_GUARD_LOG" || {
+  echo "orch_test.sh: cannot create the real-gh guard's log" >&2; exit 1; }
+cat >"$GH_GUARD_DIR/bin/gh" <<GH || exit 1
+#!/usr/bin/env bash
+printf 'gh %s\n' "\$*" | tr '\n' ' ' | sed 's/ \$//' >>"$GH_GUARD_LOG"
+echo >>"$GH_GUARD_LOG"
+echo "orch_test.sh: a section called the real gh: gh \$*" >&2
+exit 1
+GH
+chmod +x "$GH_GUARD_DIR/bin/gh" || exit 1
+PATH="$GH_GUARD_DIR/bin:$PATH"
 
 # The environment every section starts from. healthy_repo exports HOME and
 # CLAUDE_PLUGIN_ROOT and puts the fixture gh on PATH, so a section that calls
@@ -772,6 +797,7 @@ assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
 echo
 echo "init"
 new_repo >/dev/null
+fake_github
 out="$("$ORCH" init "My Feature!!")"
 assert_eq "normalises slug to kebab-case" "$out" "my-feature"
 assert_eq "state starts at the spec phase" "$("$ORCH" state get phase)" "spec"
@@ -800,11 +826,13 @@ assert_contains "printing the usage" "$out" "usage: orch.sh init"
 
 out="$("$ORCH" init other --issue x 2>&1)"; st=$?
 assert_status "a malformed --issue keeps its exit code" "$st" 1
+restore_suite_env
 
 # --- init git-excludes the plugin's directories once ---------------------------
 echo
 echo "init git-excludes the plugin's directories once"
 new_repo >/dev/null
+fake_github
 "$ORCH" init first >/dev/null
 rm -rf .orchestrator
 "$ORCH" init second >/dev/null
@@ -822,6 +850,7 @@ assert_eq "a .scratch/ line already present is not written again" "$(exclude_cou
 assert_eq "and .orchestrator/ is still added beside it" "$(exclude_count .orchestrator/)" "1"
 mkdir -p .scratch && echo plan >.scratch/plan.md
 assert_eq "an untracked .scratch/ stays out of git status" "$(git status --porcelain)" ""
+restore_suite_env
 
 # --- init refuses a dirty working tree ----------------------------------------
 # The git-based backstop from ADR-0013: a host with no mechanical trigger for
@@ -830,6 +859,7 @@ assert_eq "an untracked .scratch/ stays out of git status" "$(git status --porce
 echo
 echo "init refuses a dirty working tree"
 new_repo >/dev/null
+fake_github
 echo "code" >stray.sh
 out="$("$ORCH" init dirty 2>&1)"; st=$?
 assert_status "refuses an untracked file outside the allowlist" "$st" 1
@@ -924,6 +954,7 @@ mkdir -p sub
 out="$(cd sub && "$ORCH" init clean-enough 2>&1)"; st=$?
 assert_status "starts with only allowlisted changes, even from a subdirectory" "$st" 0
 assert_eq "records the flow" "$("$ORCH" state get slug)" "clean-enough"
+restore_suite_env
 
 # --- slug -------------------------------------------------------------------
 # The same normalisation init applies to its own slug argument, exposed as a
@@ -943,6 +974,7 @@ assert_status "refuses no argument at all" "$st" 1
 echo
 echo "state"
 new_repo >/dev/null
+fake_github
 "$ORCH" init state >/dev/null
 assert_eq "round-trips a string value" \
   "$("$ORCH" state set budget unbounded; "$ORCH" state get budget)" "unbounded"
@@ -998,11 +1030,13 @@ assert_status "accepts digits with a trailing newline" "$st" 0
 assert_eq "stores them as a JSON string" \
   "$("$ORCH" state get | jq -r '.budget | type')" "string"
 assert_eq "and leaves the rest of state.json intact" "$("$ORCH" state get slug)" "state"
+restore_suite_env
 
 # --- handoff path -----------------------------------------------------------
 echo
 echo "handoff path"
 new_repo >/dev/null
+fake_github
 "$ORCH" init handoff-path >/dev/null
 assert_contains "spec phase reads the plan handoff"      "$("$ORCH" handoff path spec)"      "01-plan.md"
 assert_contains "implement phase reads the spec handoff" "$("$ORCH" handoff path implement)" "02-spec.md"
@@ -1014,11 +1048,13 @@ assert_contains "review phase reads the implement handoff" "$("$ORCH" handoff pa
 out="$("$ORCH" handoff path bogus 2>/dev/null)"; st=$?
 assert_status "an unknown phase is an error, not a directory" "$st" 1
 assert_eq "and prints no path for a caller to use" "$out" ""
+restore_suite_env
 
 # --- handoff validate -------------------------------------------------------
 echo
 echo "handoff validate"
 new_repo >/dev/null
+fake_github
 "$ORCH" init handoff-validate >/dev/null
 h="$("$ORCH" handoff path spec)"
 complete_plan_handoff "$h"
@@ -1074,6 +1110,7 @@ out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
 assert_status "a pre-1.0.0 flow's handoff validates without Host fallbacks" "$st" 0
 printf '%s\n' "$st_saved" >.orchestrator/state.json
 complete_plan_handoff "$h"
+restore_suite_env
 
 # --- handoff section --------------------------------------------------------
 # The review loop's driver reads Rejected alternatives and Deviations through
@@ -1082,6 +1119,7 @@ complete_plan_handoff "$h"
 echo
 echo "handoff section"
 new_repo >/dev/null
+fake_github
 "$ORCH" init handoff-section >/dev/null
 h="$("$ORCH" handoff path spec)"
 complete_plan_handoff "$h"
@@ -1148,6 +1186,7 @@ assert_contains "orch.sh help lists handoff section" "$("$ORCH" help)" "handoff 
 out="$("$ORCH" handoff bogus 2>&1)"
 assert_contains "an unknown handoff op lists section" "$out" "want path|validate|section"
 rm -f "$hs" "$hi"
+restore_suite_env
 
 # --- ticket breakdown handoff ------------------------------------------------
 # The spec phase's last step publishes tickets as sub-issues of the spec
@@ -1156,6 +1195,7 @@ rm -f "$hs" "$hi"
 echo
 echo "ticket breakdown handoff"
 new_repo >/dev/null
+fake_github
 "$ORCH" init ticket-breakdown >/dev/null
 h2="$("$ORCH" handoff path implement)"
 writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
@@ -1186,6 +1226,7 @@ writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
         '## Host fallbacks' 'None (Claude Code).' >"$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "the collapsed-case sentinel validates like any other content" "$st" 0
+restore_suite_env
 
 # --- handoff templates -------------------------------------------------------
 # The templates in the orch-handoff skill are what every phase copies, so one
@@ -1221,6 +1262,7 @@ rm -rf "$tpl_repo"
 echo
 echo "archive"
 new_repo >/dev/null
+fake_github
 "$ORCH" init my-feature >/dev/null
 h="$("$ORCH" handoff path spec)"
 complete_plan_handoff "$h"
@@ -1260,6 +1302,7 @@ assert_eq "the ticket worktrees stay where git recorded them" \
 out="$("$ORCH" archive)"; st=$?
 assert_status "with the ticket worktrees removed, archive moves the flow as before" "$st" 0
 assert_eq "live state is cleared" "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+restore_suite_env
 
 # --- repo show ----------------------------------------------------------------
 # The GitHub repo orch.sh works on (#520): GH_REPO when the caller set it, else
@@ -8701,6 +8744,7 @@ restore_suite_env
 echo
 echo "review retire"
 new_repo >/dev/null
+fake_github
 "$ORCH" init retiretest >/dev/null
 
 out="$("$ORCH" review retire 1)"
@@ -8745,6 +8789,7 @@ assert_status "refuses a non-numeric redo count" "$st" 1
 out="$("$ORCH" review retire 2>&1)"; st=$?
 assert_status "refuses with no argument" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh review retire"
+restore_suite_env
 
 # --- redo review ----------------------------------------------------------
 # The full review -> implement transition: three distinct refusals below a
@@ -9402,6 +9447,7 @@ restore_suite_env
 echo
 echo "phase advance"
 new_repo >/dev/null
+fake_github
 "$ORCH" init advancing >/dev/null
 export ORCHESTRATOR_HOST=claude
 
@@ -9502,6 +9548,7 @@ out="$("$ORCH" phase bogus 2>&1)"; st=$?
 assert_status "an unknown phase op is an error" "$st" 1
 assert_contains "naming the ops it wants" "$out" "advance|boundary"
 unset ORCHESTRATOR_HOST
+restore_suite_env
 
 # --- the section filter (ORCH_TEST_ONLY, #612) ----------------------------------
 # The suite run as a child process under a filter, asserted on its stdout and
@@ -9579,6 +9626,30 @@ done
 out="$(ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"
 assert_eq "without quiet mode, prints every ok line" \
   "$(printf '%s\n' "$out" | grep -c '^  ok ')" "6"
+
+# --- the real-gh guard (#779) -------------------------------------------------
+# A copy of the scripts tree with a planted section that calls gh, run filtered
+# to that section: the shared setup's stub gh answers it, logs it, and the
+# summary turns the logged call into one FAIL naming it.
+echo
+echo "the real-gh guard (#779)"
+guard_dir="$(mktemp -d)"
+cp -R "$PLUGIN_ROOT/scripts" "$guard_dir/"
+awk '$0 == "# >>> summary" {
+  print "# --- a planted gh call"
+  print "echo; echo \"a planted gh call\""
+  print "gh repo view o/r --json defaultBranchRef >/dev/null 2>&1"
+  print "" }
+  { print }' "$SUITE_SCRIPT" >"$guard_dir/scripts/test/orch_test.sh"
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^a planted gh call$' \
+  bash "$guard_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+assert_status "a run whose section calls gh exits 1" "$st" 1
+assert_eq "reports exactly one FAIL" "$(printf '%s\n' "$out" | grep -c '^  FAIL ')" "1"
+assert_contains "whose detail names the call" "$out" \
+  "$(printf '  FAIL a section called the real gh\n     gh repo view o/r --json defaultBranchRef')"
+assert_eq "counts it in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
+  "6 passed, 1 failed"
+rm -rf "$guard_dir"
 
 # --- all.sh, the single entry point (#615) ----------------------------------
 # A copy of all.sh in <tmp>/scripts/test/ beside three stub suites, never the
@@ -9691,6 +9762,10 @@ assert_eq "still says shellcheck was skipped in CI" \
 rm -rf "$all_root"
 
 # >>> summary
+# Each call the real-gh guard logged is one FAIL naming it.
+while IFS= read -r gh_guard_call; do
+  bad "a section called the real gh" "$gh_guard_call"
+done <"$GH_GUARD_LOG"
 echo
 if [ "$SKIP" -gt 0 ]; then
   echo "$PASS passed, $FAIL failed, $SKIP skipped"
