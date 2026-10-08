@@ -219,9 +219,23 @@ fake_comment_append() {
   cat "$4" >"$d/$k/body"
 }
 
-# fake_comment_add <n> <author> <created-at> <body-file>: one comment appended
-# to issue #n.
-fake_comment_add() { fake_comment_append "$(fake_issue_dir "$1")/comments" "$2" "$3" "$4"; }
+# The author and timestamp of every comment the fake's own operations write.
+FAKE_COMMENT_AUTHOR=fake-gh
+FAKE_COMMENT_CREATED=2026-01-01T00:00:00Z
+
+# fake_comment_write <comments-dir> <body-file>: one comment appended by the
+# fake's own author and timestamp.
+fake_comment_write() { fake_comment_append "$1" "$FAKE_COMMENT_AUTHOR" "$FAKE_COMMENT_CREATED" "$2"; }
+
+# fake_close_comment <comments-dir> <text>: the text, byte for byte, appended
+# as a comment, as a close that carries one writes it.
+fake_close_comment() {
+  local c
+  c="$(mktemp)"
+  printf '%s' "$2" >"$c"
+  fake_comment_write "$1" "$c"
+  rm -f "$c"
+}
 
 # fake_comments_print <comments-dir>: the directory's comments in COMMENTS_JQ's
 # shape - each opened by its marker line, one blank line between, a newline
@@ -351,7 +365,7 @@ adapter_issue_body_edit() {
 adapter_issue_comment() {
   ! fake_failing adapter_issue_comment || return 1
   fake_issue_known "$1" || return 1
-  fake_comment_add "$1" fake-gh 2026-01-01T00:00:00Z "$2"
+  fake_comment_write "$(fake_issue_dir "$1")/comments" "$2"
 }
 
 # fake_option_value <operation> <option> [value...]: true where <option> is
@@ -399,7 +413,7 @@ adapter_issue_relabel() {
 # CLOSED, its reason (completed where none is given, as GitHub defaults) in
 # reason, and the comment, where given, appended by fake-gh.
 adapter_issue_close() {
-  local n="$1" reason=completed comment="" d c
+  local n="$1" reason=completed comment="" d
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -411,12 +425,7 @@ adapter_issue_close() {
   ! fake_failing adapter_issue_close || return 1
   fake_issue_known "$n" || return 1
   d="$(fake_issue_dir "$n")"
-  if [ -n "$comment" ]; then
-    c="$(mktemp)"
-    printf '%s' "$comment" >"$c"
-    fake_comment_add "$n" fake-gh 2026-01-01T00:00:00Z "$c"
-    rm -f "$c"
-  fi
+  [ -z "$comment" ] || fake_close_comment "$d/comments" "$comment"
   printf 'CLOSED\n' >"$d/state"
   printf '%s\n' "$reason" >"$d/reason"
 }
@@ -550,13 +559,9 @@ adapter_prs_merged_bodies() {
 # adapter_pr_close <n> <comment>: the stored PR CLOSED, the comment appended
 # by fake-gh.
 adapter_pr_close() {
-  local c
   ! fake_failing adapter_pr_close || return 1
   fake_pr_known "$1" || return 1
-  c="$(mktemp)"
-  printf '%s' "$2" >"$c"
-  fake_comment_append "$(fake_pr_dir "$1")/comments" fake-gh 2026-01-01T00:00:00Z "$c"
-  rm -f "$c"
+  fake_close_comment "$(fake_pr_dir "$1")/comments" "$2"
   printf 'CLOSED\n' >"$(fake_pr_dir "$1")/state"
 }
 
@@ -565,7 +570,7 @@ adapter_pr_close() {
 adapter_pr_comment() {
   ! fake_failing adapter_pr_comment || return 1
   fake_pr_known "$1" || return 1
-  fake_comment_append "$(fake_pr_dir "$1")/comments" fake-gh 2026-01-01T00:00:00Z "$2"
+  fake_comment_write "$(fake_pr_dir "$1")/comments" "$2"
 }
 
 # adapter_pr_body_edit <n> <file>: the file's contents as the stored body.
