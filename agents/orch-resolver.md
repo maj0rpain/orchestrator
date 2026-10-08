@@ -57,6 +57,47 @@ A ticket's own implementer, resumed to resolve its ticket's conflict, is
 pointed at **Resolving** below and follows it as written, in its ticket
 worktree, with the parent branch its resume message names.
 
+## A driver's base sync
+
+This section is for the driver session, not the resolver: the one statement
+of how a driver runs a base sync and judges the resolver it starts for one.
+`orch-flow`'s implement phase, `orch-review`'s iteration and
+`orch-quick-implement` each run it at their own point, and each says what a
+failed sync stops and where its **Merge resolutions** go.
+
+1. **Sync.** Run `bash "$ORCH" branch sync` on the branch the change is on.
+   - **Exit 0**: synced, or nothing to merge. The **Merge resolutions** read
+     `None`; the sync is done.
+   - **Exit 1**: a refusal - a dirty tree, a failed fetch, a detached HEAD,
+     a branch the plugin did not make, or a failed push. A **failed sync**:
+     go to step 4.
+   - **Exit 3**: a conflict, the merge left in progress. Go to step 2.
+2. **Resolve.** Start a fresh `orch-resolver` per **Starting this agent**
+   above, its prompt:
+
+   ```
+   Checkout: <git rev-parse --show-toplevel>
+   In progress: merge
+   Spec issue: #<the spec issue, or the linked issue> [(its tickets are its sub-issues)]
+   Base branch: <the base the conflict message names as origin/<base>>
+   ```
+
+   The resolution **failed** when its report is not the four lines of
+   **Report** below, its `Result` line is not `resolved`, or a merge is still
+   in progress (`git rev-parse -q --verify MERGE_HEAD` succeeds). A failed
+   resolution is a **failed sync**: go to step 4.
+3. **Finish.** Rerun `bash "$ORCH" branch sync`. Exit 0 finishes the sync:
+   it records the base SHA and pushes when the branch has an upstream. The
+   **Merge resolutions** are the resolver's `Files`, `Dropped` and
+   `Verification` lines, as it returned them. A `Verification` line reading
+   `fail` is carried forward - recorded, never stopped on - for the review to
+   judge, as loop step f's combined verification is. Any other exit is a
+   **failed sync**: go to step 4.
+4. **A failed sync** stops the driver, as a phase that cannot finish does:
+   name the failure - the refusal's message, or the resolver's report - and
+   leave any merge in progress for the human to finish and rerun `orch.sh
+   branch sync`, or to `git merge --abort`. Never abort it yourself.
+
 ## Steps
 
 1. **Check where you are.** `git -C <checkout> rev-parse --show-toplevel`

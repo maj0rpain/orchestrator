@@ -18,7 +18,11 @@ your return instead - see **Could not fix**.
 
 ## Your prompt
 
-- **PR**, **spec issue**, and **base SHA** - for the record's header.
+- **PR**, **spec issue**, and **base SHA** - for the record's header. The
+  base SHA is this iteration's, read after its base sync; diff from it.
+- **Merge resolutions** - what this iteration's base sync resolved: the
+  resolver's `Files`, `Dropped` and `Verification` lines, or `None` when the
+  sync merged cleanly. The record lists them as given.
 - **Fixable list** - each finding with its axis (Standards or Spec), severity
   (blocking, major, or nit), file, line, and claim.
 - **Triaged out** - every other finding of the iteration, each with its
@@ -198,6 +202,10 @@ Host fallbacks: <each fallback taken, or None>
 
 - <Axis>/<severity>: <claim> - <the rule that kept it out>
 
+## Merge resolutions
+
+<this iteration's base sync: the resolver's Files, Dropped and Verification lines, or None>
+
 ## PR body
 
 - <old claim> -> <new claim, or removed>
@@ -222,6 +230,12 @@ filed and the rule that kept it out, met again already filed (with the issue
 number), or open blocking. A reviewer whose report went missing twice is
 listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
+
+**Merge resolutions** holds the prompt's, as given: each file this
+iteration's base sync conflicted on, each intent the resolver dropped and
+why, and its verification - recorded, never fixed here unless a reviewer's
+finding on it reached the fixable list - or `None` when the sync merged
+cleanly.
 
 **PR body** is filled every iteration, from step 5: one line per statement
 the check corrected, `None` when it corrected nothing, `Not checked - no

@@ -58,14 +58,17 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 
    ```
    h="$(bash "$ORCH" handoff path review)"
-   bash "$ORCH" handoff section "$h" "PR"        # likewise "Spec issue", "Base SHA", "Verification"
+   bash "$ORCH" handoff section "$h" "PR"        # likewise "Spec issue", "Verification"
    ```
-2. Take four facts from those sections, and take them from nowhere else: the
-   **PR**, the **spec issue**, the **base SHA**, and the **verification
-   command** - the **Verification** section's first line, alone; any line
-   after it records a result, not part of the command. State holds the PR and the base SHA as well, and holds the same
-   values; one authority is what keeps every loop of a flow reviewing the
-   same change.
+2. Take three facts from those sections, and take them from nowhere else:
+   the **PR**, the **spec issue**, and the **verification command** - the
+   **Verification** section's first line, alone; any line after it records a
+   result, not part of the command. State holds the PR as well, and holds the
+   same value; one authority is what keeps every loop of a flow reviewing
+   the same change. The **base SHA** is the exception: every iteration's base
+   sync moves it, so each iteration reads it from state after its sync (step
+   2 of **The iteration**), never from the handoff, whose **Base SHA**
+   records only its value at the end of implement.
 3. Read `01-plan.md`'s **Rejected alternatives** and `03-implement.md`'s
    **Deviations**, the same way:
 
@@ -101,12 +104,32 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 1. `bash "$ORCH" review begin`. It prints the iteration number, or refuses with
    "budget of N iterations spent" - a refusal is the end of the loop, so go to
    **Termination**.
-2. Start both reviewers in parallel - see **The reviewers** - and wait for
-   both to return. **Every iteration reviews from the base SHA**, never from
-   the previous iteration's HEAD: each is an independent look at the whole
-   change, and the Spec axis cannot answer "is the spec implemented" from a
-   diff containing one fix.
-3. Read both report files, once each, and triage every finding in them, plus
+2. **Base sync.** Bring the PR's branch up to date with its base before
+   anyone looks at it, so the final clean iteration reviewed the code that
+   will merge. Follow **A driver's base sync** in `agents/orch-resolver.md`
+   under the plugin root (found as step 5 says), with the spec issue on the
+   resolver's `Spec issue:` line followed by `(its tickets are its
+   sub-issues)`. Then read this iteration's **base SHA**: `bash "$ORCH" state
+   get base_sha`, after the sync, for this iteration's reviewers and fixer.
+   Keep the sync's **Merge resolutions** - the resolver's `Files`, `Dropped`
+   and `Verification` lines, or `None` when it merged cleanly - for this
+   iteration's record and fixer. A resolver's `Verification` reading `fail`
+   is carried forward, never stopped on: the reviewers judge the merged code.
+
+   A **failed sync** is a bounded stop. Write this iteration's record to
+   `bash "$ORCH" review path` yourself, in the record's shape (step 5): no
+   **Findings** - `None - no review ran: the base sync failed` - and
+   `Verification` reading `not run - base sync failed`, **Merge resolutions**
+   naming the failure, the resolver's report if one returned, and any merge
+   left in progress. Leave that merge for the human, and go to
+   **Termination**: its terminal state is a bounded stop whose reason names
+   the unresolved merge, or the refusal.
+3. Start both reviewers in parallel - see **The reviewers** - and wait for
+   both to return. **Every iteration reviews from its base SHA**, the one
+   step 2 read, never from the previous iteration's HEAD: each is an
+   independent look at the whole change, and the Spec axis cannot answer "is
+   the spec implemented" from a diff containing one fix.
+4. Read both report files, once each, and triage every finding in them, plus
    any **open blocking** finding the previous iteration left - or, on a
    re-entry's first iteration, the previous loop's final record: it still
    stands whether or not a reviewer met it again. Apply the two
@@ -138,7 +161,7 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
      its title against the finding's claim.
 
    Done when every finding in both reports has exactly one disposition.
-4. Nothing to fix means no fixer - a **clean iteration**. An iteration
+5. Nothing to fix means no fixer - a **clean iteration**. An iteration
    that starts a fixer is never clean, even if the fixer fixes nothing.
    Write the record to `bash "$ORCH" review path` yourself, in the shape the fixer's brief
    gives, reading just that section - the brief's last, whose template holds
@@ -153,16 +176,17 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    above this skill's own directory.
 
    `Verification` reads `not run - nothing changed`, **Fixed this
-   iteration** and **Open blocking** read `None`, and **PR body** reads
-   `Not checked - no commit`. Then go to step 1.
-5. Otherwise start the **fixer** - see **The fixer** - and wait for it. Of the
+   iteration** and **Open blocking** read `None`, **Merge resolutions**
+   holds step 2's, or `None`, and **PR body** reads `Not checked - no
+   commit`. Then go to step 1.
+6. Otherwise start the **fixer** - see **The fixer** - and wait for it. Of the
    five or so lines it returns, keep two things for the rest of the loop:
    its commit SHA, for later iterations' loop-authored-lines check, and any
    blocking finding it could not fix, which is now **open blocking** and goes
    into the next iteration's triage. A major or nit it could not fix needs
    nothing from you: its record lists it as waiting to be filed, and the
    closer files it.
-6. Go to step 1. Nothing found ends the loop early; only the budget does. A
+7. Go to step 1. Nothing found ends the loop early; only the budget does. A
    **clean iteration** - nothing to fix, so no fixer - is the cheap case, and
    buying the extra looks is the point.
 
@@ -185,7 +209,7 @@ message. Each prompt carries five variables and nothing else - no spec body,
 no diff, no brief, no word about earlier iterations or fixes:
 
 ```
-Base SHA: <base SHA>
+Base SHA: <this iteration's base SHA>
 Spec issue: #<spec issue>
 Iteration: <NN>
 Report path: <report path>
@@ -217,7 +241,8 @@ do when the verification command stays red. Its prompt carries:
 ```
 PR: #<pr>
 Spec issue: #<spec issue>
-Base SHA: <base SHA>
+Base SHA: <this iteration's base SHA>
+Merge resolutions: <step 2's: the resolver's Files, Dropped and Verification lines, or None>
 Fixable list: <each finding: axis, severity, file:line, claim>
 Triaged out: <each other finding: axis, severity, file:line, claim, disposition>
 Fix SHAs: <this loop's earlier fix commits, or none>
@@ -293,7 +318,7 @@ may fix without asking anyone:
   Filed otherwise.
 
 A major or nit on **loop-authored lines** or found in
-the **final iteration** is filed, never fixed - see step 3 of **The
+the **final iteration** is filed, never fixed - see step 4 of **The
 iteration**.
 
 Major and nit are triage priorities on a filed finding, which is why they live
@@ -359,8 +384,9 @@ non-zero on the last two:
 
 ## Termination
 
-Reached when `review begin` refuses. The same close-out runs whichever
-terminal state follows, in this order:
+Reached when `review begin` refuses, or from a failed base sync (step 2 of
+**The iteration**). The same close-out runs whichever terminal state
+follows, in this order:
 
 1. **CI.** Wait on it, spending the flake rerun if it applies - see **CI**.
    Append a `## CI` section to the final iteration's record (`bash "$ORCH"
@@ -389,8 +415,9 @@ the finding where there is one. The final iteration was not clean: it started
 a fixer, whether for a blocking finding this review made or for open blocking
 carried in. Nothing has reviewed what it wrote, and marking a PR ready over
 that claims a verification that never happened. An open blocking finding or a missing look
-remains in the final record. Or CI: `failing` with the flake rerun spent or
-the failure not looking flaky, or `unreachable`. The terminal action is to
+remains in the final record. Or a base sync that failed, the reason naming
+the unresolved merge or the refusal. Or CI: `failing` with the flake rerun
+spent or the failure not looking flaky, or `unreachable`. The terminal action is to
 stop: **leave `phase` at `review` and the PR in draft**, and tell the human
 the reason and the closer's issue numbers. `done` means "this succeeded",
 never "this stopped". A human may re-enter the review phase from here; that
@@ -424,8 +451,9 @@ fallbacks go.
    pass's number. Each pass on a branch takes the next number, so a second
    pass never overwrites the first.
 2. **Base SHA.** Run `bash "$ORCH" branch base-sha`. That is the base
-   branch's tip that `branch off` recorded, or, on a branch made without it,
-   the merge-base with its base branch.
+   branch's tip that `branch off` recorded, or that its latest base sync
+   moved it to, or, on a branch made without it, the merge-base with its
+   base branch.
 3. **Start both reviewers** - `orch-reviewer-standards` and
    `orch-reviewer-spec` - at once, as fresh agents, never forks, both in one
    message (see **Starting an agent** for how to start one). Each prompt

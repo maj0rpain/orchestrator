@@ -186,7 +186,20 @@ step" never reads as one of this skill's numbered sections:
   go under a **Verification** heading in the PR body (section 7). A failure
   does not stop the run: the review pass and the PR carry it.
 
-Once loop step f has run, continue at **6. Review** below.
+Once loop step f has run, sync the branch with its base (**Base sync**
+below), then continue at **6. Review**.
+
+**Base sync**: bring the quick implementation's branch up to date with its
+base, so the review pass reviews the merged code. Follow **A driver's base
+sync** in `agents/orch-resolver.md` (under the plugin root), with the linked
+issue on the resolver's `Spec issue:` line, followed by `(its tickets are
+its sub-issues)` when step 3 published sub-issues. Its **Merge
+resolutions** - the resolver's `Files`, `Dropped` and `Verification`
+lines, or `None` when the sync merged cleanly - go under a **Merge
+resolutions** heading in the PR body (section 7). A failed sync stops quick
+implementation before the review and the PR, naming the failure; any merge
+left in progress stays for the human. A resolver's `Verification` reading
+`fail` does not stop it: the review pass and the PR carry it.
 
 **Dispatching a subagent**: start the plugin's `orch-implementer` agent
 exactly as the **Starting this agent** section of
@@ -233,7 +246,8 @@ unattended spec review took for the human: each `decision (<n>)` line of
 none. If `changelog.md` is missing, stop before `pr publish` and say so -
 never write `None.` then, since the decisions taken are unknown. It
 carries a **Verification** heading with step 5's combined verification: the
-command it ran, then `pass` or `fail`. It
+command it ran, then `pass` or `fail`, and a **Merge resolutions** heading
+with step 5's base sync's, or `None`. It
 ends with a **Host fallbacks** heading listing every fallback this run took -
 including any the spec review in step 2 took - or `None (<host>).` It
 pushes the branch and opens the PR against the base branch `branch off`

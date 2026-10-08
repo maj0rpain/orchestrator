@@ -256,7 +256,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      `Verification` lines name, once - joined with ` && ` into one line
      when they name different commands. Its command and `pass` or `fail`
      fill the implement handoff's **Verification** section (this phase's
-     step 5). A failure does not stop the phase: the review loop judges it.
+     step 6). A failure does not stop the phase: the review loop judges it.
 
    Once loop step f has run, continue at this phase's step 4.
 
@@ -269,14 +269,23 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    cannot start it natively takes `docs/host-capabilities.md`'s **Start a
    fresh subagent** fallback; record it under the handoff's **Host
    fallbacks**, along with any fallback that section says the agent takes.
-4. `bash "$ORCH" pr open "<title>" <body-file>`. The PR opens as a draft; marking it
+4. **Base sync.** Bring the flow's branch up to date with its base before
+   its PR opens, by **A driver's base sync** in
+   `agents/orch-resolver.md` (under the plugin root), the spec issue on the
+   resolver's `Spec issue:` line followed by `(its tickets are its
+   sub-issues)` unless the breakdown is collapsed. Keep its **Merge
+   resolutions** for step 6. A failed sync stops the phase before `pr open`,
+   leaving the state where it is: say what blocked it, per **Rules**. A
+   resolver's `Verification` reading `fail` does not stop it.
+5. `bash "$ORCH" pr open "<title>" <body-file>`. The PR opens as a draft; marking it
    ready is the review loop's success condition. The PR targets the flow's base
    branch. `pr open` itself writes the issue line ahead of the body -
    `Closes #<issue>` when the base branch is the default branch, `Refs
    #<issue>` otherwise - so the body file carries no closing keyword of its
    own.
-5. Invoke the `orch-handoff` skill for `03-implement.md`, assembling three
-   sections from the tickets' reports and step 3's combined verification:
+6. Invoke the `orch-handoff` skill for `03-implement.md`, assembling these
+   sections from the tickets' reports, step 3's combined verification and
+   step 4's base sync:
    - **Deviations**: one bullet per ticket whose `Deviation` line is not
      `None`, naming the ticket and holding all of its deviations. "None" only
      if not one ticket reported a deviation, never left blank.
@@ -287,9 +296,14 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      over the whole branch once the frontier was exhausted, not any ticket's
      - in the shape the `orch-handoff` template gives. A `fail` stays here,
      never under **Deviations**: a failing verification is not a deviation.
+   - **Merge resolutions**: step 4's, as **A driver's base sync** gives
+     them - the resolver's `Files`, `Dropped` and `Verification` lines, or
+     "None" when the sync merged cleanly.
+   - **Base SHA**: `bash "$ORCH" state get base_sha`, read after step 4's
+     sync moved it.
    Then validate it: `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path review)"`,
    fixing and re-validating until it passes.
-6. `bash "$ORCH" phase advance`. It validates `03-implement.md` again and checks
+7. `bash "$ORCH" phase advance`. It validates `03-implement.md` again and checks
    the branch, base SHA, and PR are recorded before recording the review phase;
    on a FAIL the phase stays at implement - fix what it names and run it again.
    Relay its output (see **Printing the boundary**).
