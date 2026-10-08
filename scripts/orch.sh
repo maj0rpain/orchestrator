@@ -2648,6 +2648,21 @@ cmd_issue_triage() {
     || die "gh could not read issue #$issue"
   [ "$state" = OPEN ] \
     || die "issue #$issue is not open - only an open issue is triaged to '$ready'"
+  # One walk over the triage roles the issue carries: whether ready-for-agent
+  # is among them, the held label - wontfix ahead of ready-for-human, which is
+  # not their order in TRIAGE_ROLES - and every other one, to remove.
+  local is_ready=false wontfix="" human="" held
+  for role in $TRIAGE_ROLES; do
+    label="$(triage_label_for "$role")"
+    labels_have "$labels" "$label" || continue
+    case "$role" in
+      ready-for-agent) is_ready=true; continue ;;
+      wontfix) wontfix="$label" ;;
+      ready-for-human) human="$label" ;;
+    esac
+    remove="${remove:+$remove,}$label"
+  done
+  held="${wontfix:-$human}"
   # A filed finding not yet triaged comes back into the pipeline through
   # finding triage first, which checks it against the default branch
   # (ADR-0031). Only the labels finding triage itself applies - ready-for-agent,
@@ -2655,36 +2670,20 @@ cmd_issue_triage() {
   # ordinary issue, and the interview settles what ready-for-human waited on.
   # The gate reads labels, not history, and --override does not bypass it. Any
   # review:<severity> label marks a finding, not only the severities filed today.
-  local finding triaged=false
+  local finding
   if has_review_label "$labels"; then
     finding="$(review_labels "$labels" | sed -n 1p)"
-    for role in ready-for-agent ready-for-human wontfix; do
-      label="$(triage_label_for "$role")"
-      if labels_have "$labels" "$label"; then triaged=true; fi
-    done
-    [ "$triaged" = true ] \
+    [ "$is_ready" = true ] || [ -n "$held" ] \
       || die "issue #$issue is a filed finding ($finding) not yet triaged - triage it with $(finding_triage_cmd)"
   fi
   # Already ready: nothing to move, and no comment to leave as noise.
-  if labels_have "$labels" "$ready"; then return 0; fi
+  if [ "$is_ready" = true ]; then return 0; fi
   # A deliberate triage decision is the human's to reverse: exit 2 is no
   # failure but a request for that decision, the label found on stdout.
-  if [ "$override" = false ]; then
-    for role in wontfix ready-for-human; do
-      label="$(triage_label_for "$role")"
-      if labels_have "$labels" "$label"; then
-        note "$label"
-        exit 2
-      fi
-    done
+  if [ "$override" = false ] && [ -n "$held" ]; then
+    note "$held"
+    exit 2
   fi
-  for role in $TRIAGE_ROLES; do
-    [ "$role" != ready-for-agent ] || continue
-    label="$(triage_label_for "$role")"
-    if labels_have "$labels" "$label"; then
-      remove="${remove:+$remove,}$label"
-    fi
-  done
 
   adapter_issue_relabel "$issue" "$ready" "$remove" \
     || die "gh could not relabel issue #$issue"

@@ -2300,6 +2300,14 @@ for held in wontfix ready-for-human; do
   assert_eq "with exactly one comment" "$(comment_count 44)" "1"
 done
 
+# Both held: wontfix wins over ready-for-human, whatever order they come in.
+fake_issue 57 open ready-for-human wontfix
+before="$(fake_snapshot)"
+out="$(triage 57 2>&1)"; st=$?
+assert_status "an issue holding both wontfix and ready-for-human asks for a decision, exit 2" "$st" 2
+assert_eq "printing wontfix" "$out" "wontfix"
+assert_eq "changing nothing" "$(fake_snapshot)" "$before"
+
 fake_issue 45 open needs-triage review:major
 before="$(fake_snapshot)"
 out="$(triage 45 2>&1)"; st=$?
