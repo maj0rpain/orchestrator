@@ -343,7 +343,13 @@ EOF
 # Succeeds when state set may write key $1: its owner column is -. The one
 # place an owner is compared against -; an unknown key is not settable.
 state_key_settable() {
-  [ "$(state_key_field "$1" owner)" = - ]
+  local owner rc
+  owner="$(state_key_field "$1" owner)" || {
+    rc=$?
+    [ "$rc" -eq 1 ] || exit "$rc"
+    return 1
+  }
+  [ "$owner" = - ]
 }
 
 # Prints every state key, one per line, in table order.
