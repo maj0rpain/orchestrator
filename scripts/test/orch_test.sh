@@ -1551,19 +1551,19 @@ assert_eq "the flow's recorded base is untouched" "$(orch_gh_failing state get b
 
 # base set --flow: the explicit correction of the flow's own base, allowed only
 # while the flow has no branch. The checkout's setting is never its target.
-flow_setting() { git config --get orchestrator.base || echo "<unset>"; }
+checkout_setting() { git config --get orchestrator.base || echo "<unset>"; }
 orch_gh_failing base set uat >/dev/null
 out="$(orch_gh_failing base set main --flow 2>&1)"; st=$?
 assert_status "base set --flow accepts the flag after the branch name" "$st" 0
 assert_eq "and reports the flow's new base" "$out" "main (flow)"
 assert_eq "storing the default branch's own name literally" "$(orch_gh_failing state get base)" "main"
-assert_eq "leaving the checkout's base branch setting unchanged" "$(flow_setting)" "uat"
+assert_eq "leaving the checkout's base branch setting unchanged" "$(checkout_setting)" "uat"
 orch_gh_failing base clear >/dev/null
 out="$(orch_gh_failing base set --flow uat 2>&1)"; st=$?
 assert_status "base set --flow accepts the flag before the branch name" "$st" 0
 assert_eq "in the spec phase it prints the branch and its flow source" "$out" "uat (flow)"
 assert_eq "state get base reads the corrected base" "$(orch_gh_failing state get base)" "uat"
-assert_eq "and the unset checkout setting stays unset" "$(flow_setting)" "<unset>"
+assert_eq "and the unset checkout setting stays unset" "$(checkout_setting)" "<unset>"
 for name in null 007; do
   git push -q origin "HEAD:refs/heads/$name"
   orch_gh_failing base set "$name" --flow >/dev/null
@@ -1680,7 +1680,7 @@ assert_contains "as no active flow" "$out" "no active flow - nothing was set"
 out="$(orch_gh_failing base set 'bad..name' --flow 2>&1)"
 assert_contains "no state.json plus an invalid name reports no active flow" "$out" \
   "no active flow - nothing was set"
-assert_eq "and never touches the checkout setting" "$(flow_setting)" "<unset>"
+assert_eq "and never touches the checkout setting" "$(checkout_setting)" "<unset>"
 assert_contains "orch.sh help lists base set --flow" "$(orch_gh_failing help)" "base set <branch> --flow"
 rm -rf "$(dirname "$bare")"
 
