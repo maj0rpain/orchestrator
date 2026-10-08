@@ -1457,11 +1457,7 @@ adapter_pr_checks() {
   case "$st" in
     0|8) rm -f "$err" ;;
     *)
-      if grep -q 'no checks reported\|no required checks' "$err"; then
-        cat "$err" >&2
-        rm -f "$err"
-        return 0
-      fi
+      ! grep -q 'no checks reported\|no required checks' "$err" || st=0
       cat "$err" >&2
       rm -f "$err"
       return "$st" ;;
