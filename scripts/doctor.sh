@@ -16,7 +16,7 @@
 # checks read lives in triage-labels.sh.
 #
 # Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
-# now, first_line, default_branch, base_setting, origin_has_branch,
+# now, first_line, capture, default_branch, base_setting, origin_has_branch,
 # require_state, labels_have, issue_state_labels_read,
 # ORCH_DIR_NAME, PHASES, LABEL_LIMIT, HANDOFF_DIR) and triage-labels.sh
 # (LABELS_DOC, TRIAGE_ROLES, triage_table_rows, triage_labels,
@@ -403,9 +403,9 @@ d_orch_remedy() {
 # maintainer's later triage housekeeping must not stop a flow already running
 # against the issue (docs/adr/0005).
 validate_adopted_issue() {
-  local issue="$1" label state labels
+  local issue="$1" label state labels gh_line
   label="$(triage_label_for ready-for-agent)"
-  issue_state_labels_read "$issue" state labels 2>/dev/null \
+  issue_state_labels_read "$issue" state labels gh_line \
     || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated."
   [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
   labels_have "$labels" "$label" \
@@ -472,12 +472,9 @@ check_labels_exist() {
 # and says so in gh's own first line (#554).
 check_sub_issues() {
   d_gh_gate || return 0
-  local probe err said_all said rc=0
-  err="$(mktemp)"
-  probe="$(adapter_sub_issues_supported 2>"$err")" || rc=$?
-  said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
-  if [ "$rc" -ne 0 ]; then
-    d_warn "sub-issues support could not be probed: $said"
+  local probe err
+  if ! capture probe err adapter_sub_issues_supported; then
+    d_warn "sub-issues support could not be probed: ${err%%$'\n'*}"
     return 0
   fi
   if [ -z "$probe" ]; then
@@ -636,14 +633,14 @@ check_flow_upstream() {
 check_flow_issue() {
   # issue_labels is the read's throwaway half: only the state is checked here.
   # shellcheck disable=SC2034
-  local issue issue_state="" issue_labels phase
+  local issue issue_state="" issue_labels gh_line phase
   issue="$(state_get issue)"
   if [ -z "$issue" ]; then d_ok "issue: not recorded yet"; return 0; fi
   d_gh_gate || return 0
   # Only the state line is wanted, yet not from adapter_issue_state: that one
   # answers PULL for a pull request's number, an answer doctor must not accept
   # as the flow's issue state - this case knows OPEN and CLOSED only.
-  issue_state_labels_read "$issue" issue_state issue_labels 2>/dev/null || issue_state=""
+  issue_state_labels_read "$issue" issue_state issue_labels gh_line || issue_state=""
   phase="$(state_get phase)"
   case "$issue_state" in
     OPEN)   d_ok "issue #$issue open" ;;
@@ -811,13 +808,10 @@ check_flow_ticket_worktrees() {
 # message becomes this check's FAIL rather than the end of the report.
 check_flow_worktree_clean() {
   local dirty err
-  err="$(mktemp)"
-  if ! dirty="$(dirty_outside_allowlist 2>"$err")"; then
-    d_fail "$(sed -n 's/^orch: //p' "$err" | sed -n 1p)"
-    rm -f "$err"
+  if ! capture dirty err dirty_outside_allowlist; then
+    d_fail "$(sed -n 's/^orch: //p' <<<"$err" | sed -n 1p)"
     return 0
   fi
-  rm -f "$err"
   [ -n "$dirty" ] || return 0
   d_fail "the working tree has changes outside the planning allowlist: $(d_join "$dirty")"
   d_remedy "git status"

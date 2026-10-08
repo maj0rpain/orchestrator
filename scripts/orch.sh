@@ -817,14 +817,11 @@ dirty_outside_allowlist() {
 # read as a clean tree, so instead it prints why, naming git's error, and
 # returns 1: callers refuse with that line, or report it.
 tree_status() {
-  local out err said_all said
-  err="$(mktemp)"
-  if ! out="$(git -C "$1" status --porcelain 2>"$err")"; then
-    said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
-    printf 'git status failed - cannot check the working tree: %s\n' "$said"
+  local out err
+  if ! capture out err git -C "$1" status --porcelain; then
+    printf 'git status failed - cannot check the working tree: %s\n' "${err%%$'\n'*}"
     return 1
   fi
-  rm -f "$err"
   printf '%s' "$out"
 }
 
@@ -1294,16 +1291,21 @@ adapter_issue_state_labels() {
   gh issue view "$1" --json state,labels --jq '.state, (.labels[].name)'
 }
 
-# issue_state_labels_read <n> <state_var> <labels_var>: reads issue <n> once
-# through adapter_issue_state_labels and writes its state (the first line)
-# and its labels (the rest, possibly empty) into the two caller-named
-# variables. Non-zero, writing neither, when the read fails: the caller keeps
-# its own failure message. The one place the answer is split. Out-params
-# through `printf -v`, as require_field's, its locals prefixed so no caller's
-# variable name is shadowed.
+# issue_state_labels_read <n> <state_var> <labels_var> <line_var>: reads issue
+# <n> once through adapter_issue_state_labels and writes its state (the first
+# line) and its labels (the rest, possibly empty) into the first two
+# caller-named variables. Non-zero when the read fails, writing neither, and
+# writing gh's first stderr line - empty when gh printed none - into
+# <line_var>: the caller keeps its own failure message. gh's stderr is
+# captured, never passed through. The one place the answer is split.
+# Out-params through `printf -v`, as require_field's, its locals prefixed so
+# no caller's variable name is shadowed.
 issue_state_labels_read() {
-  local __islr_out
-  __islr_out="$(adapter_issue_state_labels "$1")" || return 1
+  local __islr_out __islr_err
+  if ! capture __islr_out __islr_err adapter_issue_state_labels "$1"; then
+    printf -v "$4" '%s' "${__islr_err%%$'\n'*}"
+    return 1
+  fi
   lines_split "$__islr_out" "$2" "$3"
 }
 
@@ -1911,18 +1913,17 @@ ci_probe() {
 # rerun - goes through die2. The repo is resolved here rather than left to the
 # guard, whose death exits 1 and would read as "nothing to rerun".
 review_rerun() {
-  local pr="${1:-}" out err said_all said rc=0 link="" run name="" line bucket
+  local pr="${1:-}" out err gh_line rc=0 link="" run name="" line bucket
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
   repo_pin || die2 "$REPO_REMEDY"
   # gh's stderr is kept apart from the checks, so its line - a failure's
   # reason, or the "no checks" answer naming the branch - is what the death
-  # message carries. The file is gone before any die2.
-  err="$(mktemp)"
-  out="$(adapter_pr_checks "$pr" all 2>"$err")" || rc=$?
-  said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
-  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $said"
-  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: ${said:-no checks reported}"
+  # message carries.
+  capture out err adapter_pr_checks "$pr" all || rc=$?
+  gh_line="${err%%$'\n'*}"
+  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $gh_line"
+  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: ${gh_line:-no checks reported}"
   # The first failed or cancelled check's name and link, split by tsv_split
   # so an empty name survives: IFS=$'\t' read would collapse it, a tab being
   # IFS whitespace. No failed check leaves both empty.
@@ -2293,11 +2294,11 @@ cmd_issue() {
 cmd_issue_ready() {
   local usage="usage: orch.sh issue ready <n>"
   [ $# -eq 1 ] || die2 "$usage"
-  local issue="$1" ready state labels
+  local issue="$1" ready state labels gh_line
   case "$issue" in ''|*[!0-9]*) die2 "issue must be a plain issue number, got: $issue ($usage)" ;; esac
   ready="$(triage_label_for ready-for-agent)"
-  issue_state_labels_read "$issue" state labels \
-    || die2 "gh could not read issue #$issue"
+  issue_state_labels_read "$issue" state labels gh_line \
+    || die2 "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
   labels_have "$labels" "$ready"
 }
 
@@ -2537,7 +2538,7 @@ finding_scan_one() {
 # line apiece: <issue> <pr> <file>:<line> <result> <detail>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [<issue> | --pr <n>]"
-  local issue="" pr_filter="" triage sev nums="" n out state labels body default ref
+  local issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_line
   case $# in
     0) ;;
     1) issue="$1" ;;
@@ -2547,8 +2548,8 @@ cmd_finding_triage_scan() {
   case "$issue$pr_filter" in *[!0-9]*) die "$usage" ;; esac
   triage="$(triage_label_for needs-triage)"
   if [ -n "$issue" ]; then
-    issue_state_labels_read "$issue" state labels \
-      || die "gh could not read issue #$issue"
+    issue_state_labels_read "$issue" state labels gh_line \
+      || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
@@ -2587,7 +2588,7 @@ cmd_finding_triage_scan() {
 cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
-  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels triage stale_category tmp
+  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels triage stale_category tmp gh_line
   # The relabel's --remove options, possibly none: close-fixed, where they are
   # the whole relabel, then makes no edit at all.
   local remove_opts=()
@@ -2616,8 +2617,8 @@ cmd_finding_triage_apply() {
   # Only the labels are wanted: the state is the read's throwaway half, rather
   # than a third, near-identical label read added beside
   # adapter_issue_state_labels and adapter_issue_title_labels.
-  issue_state_labels_read "$issue" state labels \
-    || die "gh could not read issue #$issue"
+  issue_state_labels_read "$issue" state labels gh_line \
+    || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
   triage="$(triage_label_for needs-triage)"
   # Remove only what the issue carries: gh refuses to remove a label the
   # repo does not have at all.
@@ -2901,9 +2902,9 @@ cmd_issue_publish() {
 # every call, never cached - the caller re-reads once on a mismatch, as issue
 # publish's does.
 issue_triage_verified() {
-  local n="$1" ready="$2" state labels
+  local n="$1" ready="$2" state labels gh_line
   shift 2
-  issue_state_labels_read "$n" state labels 2>/dev/null || return 1
+  issue_state_labels_read "$n" state labels gh_line || return 1
   labels_verified "$labels" "$ready" "$@"
 }
 
@@ -2914,7 +2915,7 @@ issue_triage_verified() {
 # read back (ADR-0011), and one comment names the label it now carries.
 cmd_issue_triage() {
   local usage="usage: orch.sh issue triage <n> [--override]"
-  local issue="" override=false ready state labels role label removed=() remove_opts=()
+  local issue="" override=false ready state labels gh_line role label removed=() remove_opts=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --override) override=true ;;
@@ -2926,8 +2927,8 @@ cmd_issue_triage() {
   case "$issue" in ''|*[!0-9]*) die "$usage" ;; esac
   ready="$(triage_label_for ready-for-agent)"
 
-  issue_state_labels_read "$issue" state labels \
-    || die "gh could not read issue #$issue"
+  issue_state_labels_read "$issue" state labels gh_line \
+    || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
   [ "$state" = OPEN ] \
     || die "issue #$issue is not open - only an open issue is triaged to '$ready'"
   # One walk over the triage roles the issue carries: whether ready-for-agent
@@ -4003,14 +4004,11 @@ cmd_side_checkout_remove() {
 # assigned to the caller's <var>. On failure it sets `verdict` to the call's
 # first error line and returns 2.
 github_read() {
-  local into="$1" got err said_all said
+  local into="$1" got err
   shift
-  err="$(mktemp)"
-  if ! got="$("$@" 2>"$err")"; then
-    said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
-    verdict="could not read GitHub: $said"; return 2
+  if ! capture got err "$@"; then
+    verdict="could not read GitHub: ${err%%$'\n'*}"; return 2
   fi
-  rm -f "$err"
   printf -v "$into" '%s' "$got"
 }
 
