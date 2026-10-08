@@ -32,6 +32,26 @@ GH_ADAPTER_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh_adapter_fake.s
 PLUGIN_ROOT="$(cd "$(dirname "$ORCH")/.." && pwd)"
 SUITE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
+# The temp root. Every invocation - the parallel runner, each of its children,
+# a sequential or filtered run - first creates one temp directory and exports
+# TMPDIR as it, so every mktemp below, orch.sh's own included, lands inside it;
+# a child's root nests inside its runner's. The EXIT trap leaves the root
+# (whose subdirectories may be the cwd), makes it writable again, removes it,
+# and keeps the exit status. An INT or TERM exits 130 through that trap; the
+# parallel runner replaces this INT/TERM trap with its own.
+orch_root="$(mktemp -d)" || {
+  echo "orch_test.sh: cannot create the suite's temp root" >&2; exit 1; }
+export TMPDIR="$orch_root"
+orch_remove_root() {
+  local status=$?
+  cd / || :
+  chmod -R u+w "$orch_root" 2>/dev/null
+  rm -rf "$orch_root"
+  exit "$status"
+}
+trap orch_remove_root EXIT
+trap 'exit 130' INT TERM
+
 # The section filter. With ORCH_TEST_ONLY=<ERE> set, the suite runs only the
 # shared setup (from the `# >>> shared setup` line to the isolation section),
 # the isolation section, every `# ---` section from isolation on whose title -
@@ -54,8 +74,8 @@ SUITE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_S
 # the children, so the stdout is the stdout of a sequential run. stderr passes
 # straight through and may interleave. A child that reports no counts - it
 # exited mid-way - adds a FAIL naming its section. Exits 1 when any child
-# failed. Buffers live in one temp directory, removed on exit; an interrupt
-# also kills the running children.
+# failed. Buffers live in one temp directory under the temp root; an interrupt
+# also kills the running children and waits for them to exit.
 
 # section_awk <mode> [keep]: list the section titles (mode "titles"), or print
 # the text to run (mode "text"), keeping the sections whose 1-based positions
@@ -144,8 +164,15 @@ if [ -n "${ORCH_TEST_ONLY:-}" ] || [ "$orch_jobs" -gt 1 ]; then
     echo "orch_test.sh: cannot create a temp directory for the section buffers" >&2; exit 1; }
   orch_pids=()
   orch_sections=()
-  trap 'rm -rf "$orch_buf"' EXIT
-  trap 'kill "${orch_pids[@]}" 2>/dev/null; exit 130' INT TERM
+  # Kill the children, then wait for each to exit, so the root is removed
+  # only once no child can still write into it.
+  orch_stop_children() {
+    local pid
+    kill "${orch_pids[@]}" 2>/dev/null
+    for pid in "${orch_pids[@]}"; do wait "$pid"; done
+    exit 130
+  }
+  trap orch_stop_children INT TERM
   IFS=, read -r -a orch_sections <<<"${only_keep#,}"
   orch_total=${#orch_sections[@]}
   orch_started=0 orch_flushed=0 orch_pass=0 orch_fail=0 orch_skip=0 orch_failed=0
@@ -921,6 +948,22 @@ orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
 nojq_path=""
 on_windows_bash || nojq_path="$(gh_fixture && path_without_jq)"
 
+# planted_copy: copies the scripts tree into a fresh temp directory, plants the
+# section lines read from stdin, each indented two spaces, then a blank line,
+# just before the copy's `# >>> summary` line in orch_test.sh, and prints the
+# directory. The indent, which planted_copy strips, keeps a planted `# --- `
+# header from reading as a section of this file. The caller runs
+# <dir>/scripts/test/orch_test.sh and removes <dir> when done.
+planted_copy() {
+  local dir planted
+  planted="$(sed 's/^  //')"
+  dir="$(mktemp -d)" || return 1
+  cp -R "$PLUGIN_ROOT/scripts" "$dir/" || return 1
+  PLANTED="$planted" awk '$0 == "# >>> summary" { print ENVIRON["PLANTED"]; print "" }
+    { print }' "$SUITE_SCRIPT" >"$dir/scripts/test/orch_test.sh" || return 1
+  printf '%s\n' "$dir"
+}
+
 [ -n "$orch_child_counts" ] || echo "orch.sh tests"
 
 # --- isolation --------------------------------------------------------------
@@ -937,6 +980,334 @@ assert_eq "CLAUDE_PLUGIN_ROOT is unset" "${CLAUDE_PLUGIN_ROOT-unset}" "unset"
 assert_eq "no caller git config is reachable" \
   "${XDG_CONFIG_HOME-unset} ${GIT_CONFIG_GLOBAL-unset}" "unset unset"
 assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
+
+# --- the section filter (ORCH_TEST_ONLY, #612) ----------------------------------
+# The suite run as a child process under a filter, asserted on its stdout and
+# exit status. The child starts inside a git repo, so its isolation section
+# shows the harness holds under a filter too.
+echo
+echo "the section filter (ORCH_TEST_ONLY, #612)"
+new_repo >/dev/null
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+assert_status "a filter matching only isolation passes" "$st" 0
+assert_eq "runs the isolation section" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
+assert_eq "runs no other section" "$(printf '%s\n' "$out" | grep -cxE 'init|slug|doctor')" "0"
+assert_eq "counts only what ran in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
+  "6 passed, 0 failed"
+assert_contains "keeps the cwd isolation, started from a git repo" "$out" \
+  "ok   the suite starts outside any git work tree"
+assert_contains "keeps the HOME isolation" "$out" "ok   HOME is the suite's own HOME"
+
+# A copy of the scripts tree with three planted sections whose headers end in
+# trailing dashes like the real ones; the pattern matches two of them.
+filter_dir="$(planted_copy <<'PLANTED'
+  # --- planted alpha ------------------------------------------------------
+  echo; echo "planted alpha"; ok "alpha ran"
+  # --- planted beta -------------------------------------------------------
+  echo; echo "planted beta"; ok "beta ran"
+  # --- planted gamma ------------------------------------------------------
+  echo; echo "planted gamma"; ok "gamma ran"
+PLANTED
+)"
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted (alpha|beta)$' \
+  bash "$filter_dir/scripts/test/orch_test.sh" 2>/dev/null)"
+assert_eq "matches titles without their trailing dashes" \
+  "$(printf '%s\n' "$out" | grep -cxE 'planted alpha|planted beta')" "2"
+assert_eq "runs isolation alongside the matched sections" \
+  "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
+assert_eq "skips the sections the pattern does not match" \
+  "$(printf '%s\n' "$out" | grep -cx 'planted gamma')" "0"
+rm -rf "$filter_dir"
+
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' bash "$SUITE_SCRIPT" 2>/dev/null)"; st=$?
+assert_status "a pattern matching no section exits 1" "$st" 1
+assert_eq "lists the sections from isolation on" "$(printf '%s\n' "$out" | sed -n 1p)" "isolation"
+assert_eq "lists a sub-section as a title of its own" \
+  "$(printf '%s\n' "$out" | grep -cxF 'doctor: host (#128)')" "1"
+assert_eq "lists titles without trailing dashes" "$(printf '%s\n' "$out" | grep -c -- '-$')" "0"
+assert_eq "lists no shared-setup header" \
+  "$(printf '%s\n' "$out" | grep -cE 'doctor harness|fixture gh')" "0"
+assert_eq "runs nothing" "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
+
+# --- quiet mode (ORCH_TEST_QUIET, #614) ----------------------------------------
+# A filtered, quiet child run of this suite, and one quiet run each of the
+# other two suites. Quiet mode hides the ok lines only: the counts, headers,
+# FAIL/skip lines with their detail, and the summary all stay. hooks_test.sh
+# and docs_lint.sh are judged on their ok lines alone, not on their status.
+echo
+echo "quiet mode (ORCH_TEST_QUIET, #614)"
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+assert_status "a quiet, filtered run passes" "$st" 0
+assert_eq "prints no ok line" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
+assert_eq "still prints the section header" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
+assert_eq "still counts every pass in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
+  "6 passed, 0 failed"
+# A copy of the scripts tree whose isolation section gains a failing and a
+# skipped check, so the FAIL and skip lines are seen kept under quiet mode.
+quiet_dir="$(mktemp -d)"
+cp -R "$PLUGIN_ROOT/scripts" "$quiet_dir/"
+awk '{ print } $0 == "echo \"isolation\"" {
+  print "bad \"a planted failure\" \"its detail line\""
+  print "skip \"a planted skip\" \"its reason line\"" }' "$SUITE_SCRIPT" \
+  >"$quiet_dir/scripts/test/orch_test.sh"
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' \
+  bash "$quiet_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+assert_status "a quiet run with a failure exits 1" "$st" 1
+assert_contains "keeps a FAIL line with its detail line" "$out" \
+  "$(printf '  FAIL a planted failure\n     its detail line')"
+assert_contains "keeps a skip line with its reason line" "$out" \
+  "$(printf '  skip a planted skip\n     its reason line')"
+assert_eq "summarises the hidden passes, the failure and the skip" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed, 1 skipped"
+assert_eq "still prints no ok line beside a failure" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
+rm -rf "$quiet_dir"
+# Each of the other two suites cut down to its own helpers, one planted check
+# and its own summary code: its lines before `# >>> checks`, a planted ok, then
+# its lines from its summary marker on.
+cut_dir="$(mktemp -d)"
+for quiet_pair in hooks_test.sh:'# >>> summary' docs_lint.sh:'# --- summary'; do
+  quiet_end="${quiet_pair#*:}"
+  quiet_suite="${quiet_pair%%:*}"
+  END_MARK="$quiet_end" awk '
+    $0 == "# >>> checks" { print "ok \"a planted check\""; skip = 1; next }
+    skip && index($0, ENVIRON["END_MARK"]) == 1 { skip = 0 }
+    !skip { print }' "$(dirname "$SUITE_SCRIPT")/$quiet_suite" >"$cut_dir/$quiet_suite"
+  assert_eq "$quiet_suite's cut-down copy holds the planted check" \
+    "$(grep -cx 'ok "a planted check"' "$cut_dir/$quiet_suite")" "1"
+  assert_eq "$quiet_suite's cut-down copy holds its summary" \
+    "$(grep -cxF 'echo "$PASS passed, $FAIL failed"' "$cut_dir/$quiet_suite")" "1"
+  out="$(ORCH_TEST_QUIET=1 bash "$cut_dir/$quiet_suite" 2>&1)"
+  assert_eq "$quiet_suite prints no ok line when quiet" \
+    "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
+  assert_contains "$quiet_suite still prints its summary when quiet" "$out" " passed, "
+done
+rm -rf "$cut_dir"
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"
+assert_eq "without quiet mode, prints every ok line" \
+  "$(printf '%s\n' "$out" | grep -c '^  ok ')" "6"
+
+# --- the parallel runner (ORCH_TEST_JOBS, #780) --------------------------------
+# A copy of the scripts tree with planted sections. Two passing ones run with
+# ORCH_TEST_JOBS=2, compared with the same filter run sequentially; then the
+# others - one slow, one writing to stderr, one exiting mid-way, one failing -
+# run in parallel, asserted on their combined output.
+echo
+echo "the parallel runner (ORCH_TEST_JOBS, #780)"
+par_dir="$(planted_copy <<'PLANTED'
+  # --- paired alpha ---------------------------------------------------------
+  echo; echo "paired alpha"; ok "alpha ran"; ok "alpha ran again"
+  # --- paired beta ----------------------------------------------------------
+  echo; echo "paired beta"; ok "beta ran"
+  # --- planted slow
+  echo; echo "planted slow"; sleep 2; ok "slept"
+  # --- planted stderr
+  echo; echo "planted stderr"; echo "a planted stderr line" >&2; ok "wrote"
+  # --- planted exit
+  echo; echo "planted exit"; ok "before the exit"; exit 3
+  # --- planted failure
+  echo; echo "planted failure"; bad "a planted failure" "its detail line"
+PLANTED
+)"
+par_suite="$par_dir/scripts/test/orch_test.sh"
+par_only='^paired (alpha|beta)$'
+seq_out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=1 ORCH_TEST_ONLY="$par_only" bash "$par_suite" 2>/dev/null)"
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY="$par_only" bash "$par_suite" 2>/dev/null)"; st=$?
+assert_status "a parallel run whose sections pass exits 0" "$st" 0
+assert_eq "prints the section headers in file order" \
+  "$(printf '%s\n' "$out" | grep -xE 'isolation|paired alpha|paired beta' | tr '\n' ',')" \
+  "isolation,paired alpha,paired beta,"
+assert_eq "runs isolation exactly once" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
+assert_eq "prints the banner once" "$(printf '%s\n' "$out" | grep -cx 'orch.sh tests')" "1"
+assert_eq "ends with one summary summed across the sections" \
+  "$(printf '%s\n' "$out" | grep -cE '^[0-9]+ passed, [0-9]+ failed')" "1"
+assert_eq "whose summary is the last line, as a sequential run's" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "$(printf '%s\n' "$seq_out" | tail -n 1)"
+assert_eq "prints the stdout a sequential run prints" "$out" "$seq_out"
+
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=2 ORCH_TEST_ONLY="$par_only" bash "$par_suite" 2>&1)"; st=$?
+assert_status "a quiet parallel run passes" "$st" 0
+assert_eq "prints no ok line when quiet" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
+
+out="$(ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^no such section$' bash "$SUITE_SCRIPT" 2>/dev/null)"; st=$?
+assert_status "a pattern matching no section exits 1 in parallel too" "$st" 1
+assert_eq "lists the section titles" "$(printf '%s\n' "$out" | sed -n 1p)" "isolation"
+assert_eq "and runs nothing" "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
+
+for par_jobs in 0 00 000 -2 two ''; do
+  out="$(ORCH_TEST_JOBS="$par_jobs" ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
+  assert_status "ORCH_TEST_JOBS='$par_jobs' exits 1" "$st" 1
+  assert_contains "ORCH_TEST_JOBS='$par_jobs' is named in the message" "$out" \
+    "ORCH_TEST_JOBS='$par_jobs'"
+  assert_eq "ORCH_TEST_JOBS='$par_jobs' runs no section" \
+    "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
+done
+
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=4 ORCH_TEST_ONLY='^planted ' \
+  bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+assert_status "a parallel run with a failing section exits 1" "$st" 1
+assert_eq "prints a slow early section in file order" \
+  "$(printf '%s\n' "$out" | grep -xE 'isolation|planted [a-z]+' | tr '\n' ',')" \
+  "isolation,planted slow,planted stderr,planted exit,planted failure,"
+assert_contains "passes a section's stderr through" "$out" "a planted stderr line"
+assert_contains "reports a section that exits mid-way as a FAIL naming it" "$out" \
+  "  FAIL section 'planted exit' reported no counts"
+assert_contains "keeps a planted FAIL line with its detail line" "$out" \
+  "$(printf '  FAIL a planted failure\n     its detail line')"
+assert_eq "sums both failures into the summary" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "8 passed, 2 failed"
+# Each failing path alone, so neither passes on the strength of the other.
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted exit$' \
+  bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+assert_status "a parallel run whose only failing section exits mid-way exits 1" "$st" 1
+assert_contains "reports that section alone as a FAIL naming it" "$out" \
+  "  FAIL section 'planted exit' reported no counts"
+assert_eq "counts that one failure in the summary" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed"
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted failure$' \
+  bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+assert_status "a parallel run whose only failing section has a failing check exits 1" "$st" 1
+assert_contains "keeps that check's FAIL line with its detail line" "$out" \
+  "$(printf '  FAIL a planted failure\n     its detail line')"
+assert_eq "counts that one failure in the summary" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed"
+rm -rf "$par_dir"
+
+# --- the suite's temp root (#807) -----------------------------------------------
+# A cut-down suite - isolation plus one planted section that calls new_repo -
+# each run given its own fresh, empty TMPDIR, asserted empty once it exits:
+# passing, failing, and interrupted once its section is running. The marker
+# the waiting section writes lives outside that TMPDIR.
+echo
+echo "the suite's temp root (#807)"
+root_dir="$(planted_copy <<'PLANTED'
+  # --- planted repo
+  echo; echo "planted repo"; new_repo >/dev/null; ok "made a repo"
+  # --- planted failure
+  echo; echo "planted failure"; new_repo >/dev/null; bad "a planted failure" "its detail line"
+  # --- planted wait
+  echo; echo "planted wait"; new_repo >/dev/null; : >"$ROOT_TEST_MARKER"; sleep 30 & wait $!
+  ok "waited"
+PLANTED
+)"
+root_suite="$root_dir/scripts/test/orch_test.sh"
+root_tmp="$root_dir/tmp"
+root_marker="$root_dir/marker"
+# root_fresh: an empty TMPDIR for the next inner run, and no marker.
+root_fresh() { rm -rf "$root_tmp" "$root_marker"; mkdir "$root_tmp"; }
+# root_await_marker: polls up to 10s for the waiting section's marker.
+root_await_marker() {
+  local i=0
+  while [ ! -f "$root_marker" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -f "$root_marker" ]
+}
+
+for root_jobs in 2 1; do
+  root_fresh
+  TMPDIR="$root_tmp" ORCH_TEST_JOBS="$root_jobs" ORCH_TEST_ONLY='^planted repo$' \
+    bash "$root_suite" >/dev/null 2>&1; st=$?
+  assert_status "a passing run with ORCH_TEST_JOBS=$root_jobs exits 0" "$st" 0
+  assert_eq "a passing run with ORCH_TEST_JOBS=$root_jobs leaves its TMPDIR empty" \
+    "$(ls -A "$root_tmp")" ""
+
+  root_fresh
+  TMPDIR="$root_tmp" ORCH_TEST_JOBS="$root_jobs" ORCH_TEST_ONLY='^planted failure$' \
+    bash "$root_suite" >/dev/null 2>&1; st=$?
+  assert_status "a failing run with ORCH_TEST_JOBS=$root_jobs exits 1" "$st" 1
+  assert_eq "a failing run with ORCH_TEST_JOBS=$root_jobs leaves its TMPDIR empty" \
+    "$(ls -A "$root_tmp")" ""
+
+  root_fresh
+  TMPDIR="$root_tmp" ROOT_TEST_MARKER="$root_marker" ORCH_TEST_JOBS="$root_jobs" \
+    ORCH_TEST_ONLY='^planted wait$' bash "$root_suite" >/dev/null 2>&1 &
+  root_pid=$!
+  if root_await_marker; then
+    kill -TERM "$root_pid"
+  else
+    kill -KILL "$root_pid" 2>/dev/null
+  fi
+  wait "$root_pid"; st=$?
+  assert_status "a run with ORCH_TEST_JOBS=$root_jobs sent TERM exits 130" "$st" 130
+  assert_eq "a run with ORCH_TEST_JOBS=$root_jobs sent TERM leaves its TMPDIR empty" \
+    "$(ls -A "$root_tmp")" ""
+done
+
+# SIGINT reaches the run only with job control on - a non-interactive shell
+# starts a background job with SIGINT ignored - so the run is started from a
+# foreground `set -m` subshell. A shell that itself started with SIGINT ignored,
+# as a parallel runner's child does, passes that on through `set -m` too; there
+# perl restores SIGINT's default for the run, and without perl the check skips.
+root_launch=()
+root_int_skip=0
+if [ "$(trap -p INT)" = "trap -- '' SIGINT" ]; then
+  if command -v perl >/dev/null 2>&1; then
+    root_launch=(perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV or die "exec: $!"')
+  else
+    root_int_skip=1
+  fi
+fi
+if [ "$root_int_skip" -eq 1 ]; then
+  skip "a run sent INT exits 130 and leaves its TMPDIR empty" \
+    "this shell started with SIGINT ignored, and perl is not installed to restore it"
+else
+  root_fresh
+  st="$(
+    set -m
+    TMPDIR="$root_tmp" ROOT_TEST_MARKER="$root_marker" ORCH_TEST_JOBS=2 \
+      ORCH_TEST_ONLY='^planted wait$' "${root_launch[@]}" bash "$root_suite" >/dev/null 2>&1 &
+    root_pid=$!
+    if root_await_marker; then
+      kill -INT "$root_pid"
+    else
+      kill -KILL "$root_pid" 2>/dev/null
+    fi
+    wait "$root_pid"; echo "$?"
+  )"
+  assert_eq "a run sent INT exits 130" "$st" "130"
+  assert_eq "a run sent INT leaves its TMPDIR empty" "$(ls -A "$root_tmp")" ""
+fi
+
+# hooks_test.sh owns a temp root too: run whole, then sent TERM once its
+# TMPDIR has an entry.
+root_hooks="$(dirname "$SUITE_SCRIPT")/hooks_test.sh"
+root_fresh
+TMPDIR="$root_tmp" ORCH_TEST_QUIET=1 bash "$root_hooks" >/dev/null 2>&1; st=$?
+assert_status "hooks_test.sh exits 0" "$st" 0
+assert_eq "hooks_test.sh leaves its TMPDIR empty" "$(ls -A "$root_tmp")" ""
+
+root_fresh
+TMPDIR="$root_tmp" ORCH_TEST_QUIET=1 bash "$root_hooks" >/dev/null 2>&1 &
+root_pid=$!
+root_i=0
+while [ -z "$(ls -A "$root_tmp")" ] && [ "$root_i" -lt 100 ]; do sleep 0.05; root_i=$((root_i + 1)); done
+assert_eq "hooks_test.sh's TMPDIR gains an entry while it runs" \
+  "$([ -n "$(ls -A "$root_tmp")" ] && echo yes)" "yes"
+kill -TERM "$root_pid" 2>/dev/null
+wait "$root_pid"
+assert_eq "hooks_test.sh sent TERM leaves its TMPDIR empty" "$(ls -A "$root_tmp")" ""
+
+# all.sh checks every full run for leaks: a copy of it beside three stub
+# suites that pass, run with no shellcheck on its PATH, once with an
+# orch_test.sh stub that leaves a file in its TMPDIR.
+root_all="$root_dir/all"
+mkdir -p "$root_all/scripts/test" "$root_all/bin" "$root_all/tmp"
+cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$root_all/scripts/test/"
+for root_tool in bash dirname awk tail mktemp rm mkdir; do
+  ln -s "$(command -v "$root_tool")" "$root_all/bin/$root_tool"
+done
+for root_stub in orch_test.sh hooks_test.sh docs_lint.sh; do
+  printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$root_all/scripts/test/$root_stub"
+done
+out="$(unset CI; TMPDIR="$root_all/tmp" PATH="$root_all/bin" bash "$root_all/scripts/test/all.sh" 2>&1)"; st=$?
+assert_status "all.sh passes when its suites leave nothing behind" "$st" 0
+assert_eq "all.sh says nothing of leaks when its suites leave nothing behind" \
+  "$(printf '%s\n' "$out" | grep -c 'the suites left temp files behind')" "0"
+printf '#!/usr/bin/env bash\n: >"$TMPDIR/leaked"\necho; echo "1 passed, 0 failed"\n' \
+  >"$root_all/scripts/test/orch_test.sh"
+out="$(unset CI; TMPDIR="$root_all/tmp" PATH="$root_all/bin" bash "$root_all/scripts/test/all.sh" 2>&1)"; st=$?
+assert_status "all.sh fails a run whose suites leave a temp file behind" "$st" 1
+assert_contains "all.sh says the suites left temp files behind" "$out" \
+  "all.sh: the suites left temp files behind"
+rm -rf "$root_dir"
 
 # --- init -------------------------------------------------------------------
 echo
@@ -9985,97 +10356,18 @@ assert_contains "naming the ops it wants" "$out" "advance|boundary"
 unset ORCHESTRATOR_HOST
 restore_suite_env
 
-# --- the section filter (ORCH_TEST_ONLY, #612) ----------------------------------
-# The suite run as a child process under a filter, asserted on its stdout and
-# exit status. The child starts inside a git repo, so its isolation section
-# shows the harness holds under a filter too.
-echo
-echo "the section filter (ORCH_TEST_ONLY, #612)"
-new_repo >/dev/null
-out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
-assert_status "a filter matching only isolation passes" "$st" 0
-assert_eq "runs the isolation section" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
-assert_eq "runs no other section" "$(printf '%s\n' "$out" | grep -cxE 'init|slug|doctor')" "0"
-assert_eq "counts only what ran in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
-  "6 passed, 0 failed"
-assert_contains "keeps the cwd isolation, started from a git repo" "$out" \
-  "ok   the suite starts outside any git work tree"
-assert_contains "keeps the HOME isolation" "$out" "ok   HOME is the suite's own HOME"
-
-out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^ticket (block|unblock)$' bash "$SUITE_SCRIPT" 2>/dev/null)"
-assert_eq "matches titles without their trailing dashes" \
-  "$(printf '%s\n' "$out" | grep -cxE 'ticket block|ticket unblock')" "2"
-assert_eq "runs isolation alongside the matched sections" \
-  "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
-assert_eq "skips the sections the pattern does not match" \
-  "$(printf '%s\n' "$out" | grep -cxE 'ticket close|ticket reset')" "0"
-
-out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' bash "$SUITE_SCRIPT" 2>/dev/null)"; st=$?
-assert_status "a pattern matching no section exits 1" "$st" 1
-assert_eq "lists the sections from isolation on" "$(printf '%s\n' "$out" | sed -n 1p)" "isolation"
-assert_eq "lists a sub-section as a title of its own" \
-  "$(printf '%s\n' "$out" | grep -cxF 'doctor: host (#128)')" "1"
-assert_eq "lists titles without trailing dashes" "$(printf '%s\n' "$out" | grep -c -- '-$')" "0"
-assert_eq "lists no shared-setup header" \
-  "$(printf '%s\n' "$out" | grep -cE 'doctor harness|fixture gh')" "0"
-assert_eq "runs nothing" "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
-
-# --- quiet mode (ORCH_TEST_QUIET, #614) ----------------------------------------
-# A filtered, quiet child run of this suite, and one quiet run each of the
-# other two suites. Quiet mode hides the ok lines only: the counts, headers,
-# FAIL/skip lines with their detail, and the summary all stay. hooks_test.sh
-# and docs_lint.sh are judged on their ok lines alone, not on their status.
-echo
-echo "quiet mode (ORCH_TEST_QUIET, #614)"
-out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
-assert_status "a quiet, filtered run passes" "$st" 0
-assert_eq "prints no ok line" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
-assert_eq "still prints the section header" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
-assert_eq "still counts every pass in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
-  "6 passed, 0 failed"
-# A copy of the scripts tree whose isolation section gains a failing and a
-# skipped check, so the FAIL and skip lines are seen kept under quiet mode.
-quiet_dir="$(mktemp -d)"
-cp -R "$PLUGIN_ROOT/scripts" "$quiet_dir/"
-awk '{ print } $0 == "echo \"isolation\"" {
-  print "bad \"a planted failure\" \"its detail line\""
-  print "skip \"a planted skip\" \"its reason line\"" }' "$SUITE_SCRIPT" \
-  >"$quiet_dir/scripts/test/orch_test.sh"
-out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' \
-  bash "$quiet_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
-assert_status "a quiet run with a failure exits 1" "$st" 1
-assert_contains "keeps a FAIL line with its detail line" "$out" \
-  "$(printf '  FAIL a planted failure\n     its detail line')"
-assert_contains "keeps a skip line with its reason line" "$out" \
-  "$(printf '  skip a planted skip\n     its reason line')"
-assert_eq "summarises the hidden passes, the failure and the skip" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed, 1 skipped"
-assert_eq "still prints no ok line beside a failure" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
-rm -rf "$quiet_dir"
-for quiet_suite in hooks_test.sh docs_lint.sh; do
-  out="$(ORCH_TEST_QUIET=1 bash "$(dirname "$SUITE_SCRIPT")/$quiet_suite" 2>&1)"
-  assert_eq "$quiet_suite prints no ok line when quiet" \
-    "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
-  assert_contains "$quiet_suite still prints its summary when quiet" "$out" " passed, "
-done
-out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"
-assert_eq "without quiet mode, prints every ok line" \
-  "$(printf '%s\n' "$out" | grep -c '^  ok ')" "6"
-
 # --- the real-gh guard (#779) -------------------------------------------------
 # A copy of the scripts tree with a planted section that calls gh, run filtered
 # to that section: the shared setup's stub gh answers it, logs it, and the
 # summary turns the logged call into one FAIL naming it.
 echo
 echo "the real-gh guard (#779)"
-guard_dir="$(mktemp -d)"
-cp -R "$PLUGIN_ROOT/scripts" "$guard_dir/"
-awk '$0 == "# >>> summary" {
-  print "# --- a planted gh call"
-  print "echo; echo \"a planted gh call\""
-  print "gh repo view o/r --json defaultBranchRef >/dev/null 2>&1"
-  print "" }
-  { print }' "$SUITE_SCRIPT" >"$guard_dir/scripts/test/orch_test.sh"
+guard_dir="$(planted_copy <<'PLANTED'
+  # --- a planted gh call
+  echo; echo "a planted gh call"
+  gh repo view o/r --json defaultBranchRef >/dev/null 2>&1
+PLANTED
+)"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^a planted gh call$' \
   bash "$guard_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
 assert_status "a run whose section calls gh exits 1" "$st" 1
@@ -10086,97 +10378,17 @@ assert_eq "counts it in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
   "6 passed, 1 failed"
 rm -rf "$guard_dir"
 
-# --- the parallel runner (ORCH_TEST_JOBS, #780) --------------------------------
-# The suite run as a child process with ORCH_TEST_JOBS=2 over a small filter,
-# compared with the same filter run sequentially; then a copy of the scripts
-# tree with planted sections - one slow, one writing to stderr, one exiting
-# mid-way, one failing - run in parallel, asserted on its combined output.
-echo
-echo "the parallel runner (ORCH_TEST_JOBS, #780)"
-par_only='^ticket (block|unblock)$'
-seq_out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=1 ORCH_TEST_ONLY="$par_only" bash "$SUITE_SCRIPT" 2>/dev/null)"
-out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY="$par_only" bash "$SUITE_SCRIPT" 2>/dev/null)"; st=$?
-assert_status "a parallel run whose sections pass exits 0" "$st" 0
-assert_eq "prints the section headers in file order" \
-  "$(printf '%s\n' "$out" | grep -xE 'isolation|ticket block|ticket unblock' | tr '\n' ',')" \
-  "isolation,ticket block,ticket unblock,"
-assert_eq "runs isolation exactly once" "$(printf '%s\n' "$out" | grep -cx 'isolation')" "1"
-assert_eq "prints the banner once" "$(printf '%s\n' "$out" | grep -cx 'orch.sh tests')" "1"
-assert_eq "ends with one summary summed across the sections" \
-  "$(printf '%s\n' "$out" | grep -cE '^[0-9]+ passed, [0-9]+ failed')" "1"
-assert_eq "whose summary is the last line, as a sequential run's" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "$(printf '%s\n' "$seq_out" | tail -n 1)"
-assert_eq "prints the stdout a sequential run prints" "$out" "$seq_out"
-
-out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=2 ORCH_TEST_ONLY="$par_only" bash "$SUITE_SCRIPT" 2>&1)"; st=$?
-assert_status "a quiet parallel run passes" "$st" 0
-assert_eq "prints no ok line when quiet" "$(printf '%s\n' "$out" | grep -c '^  ok ')" "0"
-
-out="$(ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^no such section$' bash "$SUITE_SCRIPT" 2>/dev/null)"; st=$?
-assert_status "a pattern matching no section exits 1 in parallel too" "$st" 1
-assert_eq "lists the section titles" "$(printf '%s\n' "$out" | sed -n 1p)" "isolation"
-assert_eq "and runs nothing" "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
-
-for par_jobs in 0 00 000 -2 two ''; do
-  out="$(ORCH_TEST_JOBS="$par_jobs" ORCH_TEST_ONLY='^isolation$' bash "$SUITE_SCRIPT" 2>&1)"; st=$?
-  assert_status "ORCH_TEST_JOBS='$par_jobs' exits 1" "$st" 1
-  assert_contains "ORCH_TEST_JOBS='$par_jobs' is named in the message" "$out" \
-    "ORCH_TEST_JOBS='$par_jobs'"
-  assert_eq "ORCH_TEST_JOBS='$par_jobs' runs no section" \
-    "$(printf '%s\n' "$out" | grep -c 'passed')" "0"
-done
-
-par_dir="$(mktemp -d)"
-cp -R "$PLUGIN_ROOT/scripts" "$par_dir/"
-awk '$0 == "# >>> summary" {
-  print "# --- planted slow"
-  print "echo; echo \"planted slow\"; sleep 2; ok \"slept\""
-  print "# --- planted stderr"
-  print "echo; echo \"planted stderr\"; echo \"a planted stderr line\" >&2; ok \"wrote\""
-  print "# --- planted exit"
-  print "echo; echo \"planted exit\"; ok \"before the exit\"; exit 3"
-  print "# --- planted failure"
-  print "echo; echo \"planted failure\"; bad \"a planted failure\" \"its detail line\""
-  print "" }
-  { print }' "$SUITE_SCRIPT" >"$par_dir/scripts/test/orch_test.sh"
-out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=4 ORCH_TEST_ONLY='^planted ' \
-  bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
-assert_status "a parallel run with a failing section exits 1" "$st" 1
-assert_eq "prints a slow early section in file order" \
-  "$(printf '%s\n' "$out" | grep -xE 'isolation|planted [a-z]+' | tr '\n' ',')" \
-  "isolation,planted slow,planted stderr,planted exit,planted failure,"
-assert_contains "passes a section's stderr through" "$out" "a planted stderr line"
-assert_contains "reports a section that exits mid-way as a FAIL naming it" "$out" \
-  "  FAIL section 'planted exit' reported no counts"
-assert_contains "keeps a planted FAIL line with its detail line" "$out" \
-  "$(printf '  FAIL a planted failure\n     its detail line')"
-assert_eq "sums both failures into the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "8 passed, 2 failed"
-# Each failing path alone, so neither passes on the strength of the other.
-out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted exit$' \
-  bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
-assert_status "a parallel run whose only failing section exits mid-way exits 1" "$st" 1
-assert_contains "reports that section alone as a FAIL naming it" "$out" \
-  "  FAIL section 'planted exit' reported no counts"
-assert_eq "counts that one failure in the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed"
-out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted failure$' \
-  bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
-assert_status "a parallel run whose only failing section has a failing check exits 1" "$st" 1
-assert_contains "keeps that check's FAIL line with its detail line" "$out" \
-  "$(printf '  FAIL a planted failure\n     its detail line')"
-assert_eq "counts that one failure in the summary" \
-  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed"
-rm -rf "$par_dir"
-
 # --- all.sh, the single entry point (#615) ----------------------------------
 # A copy of all.sh in <tmp>/scripts/test/ beside three stub suites, never the
 # real ones, so <tmp> is the repo root: orch_test.sh's stub fails, the other
-# two pass. Each stub logs whether ORCH_TEST_ONLY and ORCH_TEST_QUIET reached
-# it, and VERSION_BASE. One planted shell file each in <tmp>/scripts/ and
-# <tmp>/scripts/test/ is there for the lint step to find. Every run sets or
-# unsets CI and runs on a PATH of only the tools all.sh and the stubs need,
-# plus a stub shellcheck when the case wants one - the real one never runs.
+# two pass. Each stub logs whether ORCH_TEST_ONLY, ORCH_TEST_QUIET and
+# ORCH_TEST_JOBS reached it, and VERSION_BASE. Each stub, the stub shellcheck
+# too, drops a marker file named after itself in <tmp>/markers/ when it
+# starts, if that directory exists; only the overlap case creates it. One
+# planted shell file each in <tmp>/scripts/ and <tmp>/scripts/test/ is there
+# for the lint step to find. Every run sets or unsets CI and runs on a PATH of
+# only the tools all.sh and the stubs need, plus a stub shellcheck when the case
+# wants one - the real one never runs.
 echo
 echo "all.sh, the single entry point (#615)"
 all_root="$(mktemp -d)"
@@ -10184,7 +10396,7 @@ all_dir="$all_root/scripts/test"
 all_bin="$all_root/bin"
 mkdir -p "$all_dir" "$all_bin"
 cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$all_dir/"
-for all_tool in bash dirname awk tail; do
+for all_tool in bash dirname awk tail mktemp rm mkdir sleep; do
   ln -s "$(command -v "$all_tool")" "$all_bin/$all_tool"
 done
 echo 'echo planted' >"$all_root/scripts/lint_me.sh"
@@ -10192,7 +10404,8 @@ echo 'echo planted' >"$all_dir/lint_me.sh"
 for all_suite in orch_test.sh hooks_test.sh docs_lint.sh; do
   {
     echo '#!/usr/bin/env bash'
-    echo "echo \"$all_suite only=\${ORCH_TEST_ONLY-unset} quiet=\${ORCH_TEST_QUIET-unset} base=\${VERSION_BASE-unset}\" >>\"\$(dirname \"\$0\")/log\""
+    echo "echo \"$all_suite only=\${ORCH_TEST_ONLY-unset} quiet=\${ORCH_TEST_QUIET-unset} jobs=\${ORCH_TEST_JOBS-unset} base=\${VERSION_BASE-unset}\" >>\"\$(dirname \"\$0\")/log\""
+    echo "[ -d '$all_root/markers' ] && : >'$all_root/markers/$all_suite'"
     echo 'echo; echo "a section header"'
     if [ "$all_suite" = orch_test.sh ]; then
       echo "printf '  FAIL a stub failure\n     its detail line\n  FAIL another failure\n     its own detail\n'"
@@ -10210,10 +10423,16 @@ all_sc_stub() {
   {
     echo '#!/usr/bin/env bash'
     echo "echo \"\$*\" >>'$all_root/sc_args'"
+    echo "[ -d '$all_root/markers' ] && : >'$all_root/markers/shellcheck'"
     for line in "$@"; do printf 'echo %q\n' "$line"; done
     echo "exit $code"
   } >"$all_bin/shellcheck"
   chmod +x "$all_bin/shellcheck"
+}
+# all_print_order <output>: the names on all.sh's summary lines, in print
+# order, each followed by a space.
+all_print_order() {
+  printf '%s\n' "$1" | grep -E '^([a-z_]+\.sh|shellcheck): ' | cut -d: -f1 | tr '\n' ' '
 }
 all_bash="$(command -v bash)"
 all_finding1='scripts/lint_me.sh:1:1: warning: a planted finding [SC2034]'
@@ -10223,8 +10442,9 @@ all_sc_stub 0
 out="$(unset CI; ORCH_TEST_ONLY='^isolation$' VERSION_BASE=9.9.9 PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
 assert_status "exits non-zero when a suite failed" "$st" 1
 assert_eq "runs every suite after the first one fails" "$(wc -l <"$all_dir/log" | tr -d ' ')" "3"
-assert_eq "runs the suites in order" "$(cut -d' ' -f1 "$all_dir/log" | tr '\n' ' ')" \
-  "orch_test.sh hooks_test.sh docs_lint.sh "
+assert_eq "prints the suites' summaries in order, shellcheck's last" \
+  "$(all_print_order "$out")" \
+  "orch_test.sh hooks_test.sh docs_lint.sh shellcheck "
 assert_eq "unsets ORCH_TEST_ONLY for every suite" "$(grep -c 'only=unset' "$all_dir/log")" "3"
 assert_eq "sets ORCH_TEST_QUIET=1 for every suite" "$(grep -c 'quiet=1 ' "$all_dir/log")" "3"
 assert_eq "passes VERSION_BASE through to every suite" "$(grep -c 'base=9.9.9$' "$all_dir/log")" "3"
@@ -10267,6 +10487,74 @@ out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
 assert_status "exits non-zero when shellcheck fails with no finding" "$st" 1
 assert_contains "prints shellcheck's output, then its exit status" "$out" \
   "$(printf 'a bad .shellcheckrc\nshellcheck: failed (exit 2)')"
+
+# all_swap <suite> <line>...: replace <suite>'s shared stub, saved for
+# all_restore, by one that runs the lines first, then the shared stub's body.
+all_swap() {
+  local suite="$1" line
+  shift
+  cp "$all_dir/$suite" "$all_root/$suite.shared"
+  {
+    echo '#!/usr/bin/env bash'
+    for line in "$@"; do echo "$line"; done
+    tail -n +2 "$all_root/$suite.shared"
+  } >"$all_dir/$suite"
+}
+# all_restore <suite>: put <suite>'s shared stub back.
+all_restore() {
+  mv "$all_root/$1.shared" "$all_dir/$1"
+}
+all_order="orch_test.sh hooks_test.sh docs_lint.sh shellcheck "
+all_sc_stub 0
+
+all_swap orch_test.sh 'sleep 1' 'echo; echo "a section header"' \
+  "printf '  FAIL a slow failure\\n     its detail line\\n'" \
+  'echo; echo "1 passed, 1 failed"; exit 1'
+out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+all_restore orch_test.sh
+assert_status "a slow failing suite still fails the run" "$st" 1
+assert_eq "a slow orch_test.sh's FAIL block and summary still print first, shellcheck's summary last" \
+  "$out" \
+  "$(printf '  FAIL a slow failure\n     its detail line\norch_test.sh: 1 passed, 1 failed\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed\nshellcheck: 0 findings')"
+
+# The overlap: orch_test.sh's stub finishes only once the other two suites
+# and the stub shellcheck have all dropped their markers, so a sequential
+# all.sh, which starts nothing else until it finishes, fails after its 10s
+# wait.
+mkdir "$all_root/markers"
+all_swap orch_test.sh "all_wait=0" \
+  "until [ -e '$all_root/markers/hooks_test.sh' ] && [ -e '$all_root/markers/docs_lint.sh' ] && [ -e '$all_root/markers/shellcheck' ]; do" \
+  "  all_wait=\$((all_wait + 1))" \
+  "  if [ \"\$all_wait\" -gt 100 ]; then printf '  FAIL the others never started\\n'; echo; echo '0 passed, 1 failed'; exit 1; fi" \
+  "  sleep 0.1" \
+  "done"
+out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+all_restore orch_test.sh
+rm -rf "$all_root/markers"
+assert_status "runs every suite and shellcheck at the same time" "$st" 0
+assert_eq "prints no FAIL line when the suites overlap" "$(printf '%s\n' "$out" | grep -c FAIL)" "0"
+assert_eq "overlapping suites still print in order, shellcheck's summary last" \
+  "$(all_print_order "$out")" \
+  "$all_order"
+
+rm -f "$all_dir/log"
+out="$(unset CI; ORCH_TEST_JOBS=3 PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"
+assert_eq "passes ORCH_TEST_JOBS through to every suite" "$(grep -c 'jobs=3 ' "$all_dir/log")" "3"
+rm -f "$all_dir/log"
+out="$(unset CI ORCH_TEST_JOBS; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"
+assert_eq "leaves an unset ORCH_TEST_JOBS unset" "$(grep -c 'jobs=unset ' "$all_dir/log")" "3"
+
+all_swap hooks_test.sh 'echo "a stub stderr line" >&2'
+(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" >"$all_root/stdout" 2>"$all_root/stderr")
+all_restore hooks_test.sh
+assert_eq "passes a suite's stderr through to stderr" \
+  "$(grep -c 'a stub stderr line' "$all_root/stderr")" "1"
+assert_eq "keeps a suite's stderr off stdout" \
+  "$(grep -c 'a stub stderr line' "$all_root/stdout")" "0"
+
+mkdir "$all_root/tmpdir"
+(unset CI; TMPDIR="$all_root/tmpdir" PATH="$all_bin" "$all_bash" "$all_dir/all.sh" >/dev/null 2>&1)
+assert_eq "removes its temp files on exit" "$(ls -A "$all_root/tmpdir")" ""
 
 rm -f "$all_bin/shellcheck" "$all_bin/shellcheck.bak"
 out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?

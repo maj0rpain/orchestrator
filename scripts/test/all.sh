@@ -1,21 +1,33 @@
 #!/usr/bin/env bash
 #
 # The whole test run, the one command to run before committing: orch_test.sh,
-# hooks_test.sh and docs_lint.sh, one after another, each in quiet mode. A
-# failing suite does not stop the next. Printed per suite: its FAIL lines with
-# their detail lines, then one summary line, "<suite>: <its last line>". A
-# suite's stderr passes straight through.
+# hooks_test.sh and docs_lint.sh, each in quiet mode, and shellcheck, all
+# started at once so they overlap. Each one's stdout is captured to a
+# temporary directory, removed on exit, and its exit status is taken from
+# waiting on it; once all four have finished, their output is printed in a fixed order, whichever finished
+# first. A failing suite does not stop the others. Printed per suite, in the
+# order orch_test.sh, hooks_test.sh, docs_lint.sh: its FAIL lines with their
+# detail lines, then one summary line, "<suite>: <its last line>". A suite's
+# stderr is not captured: it passes straight through, and the suites' stderr
+# may interleave.
 #
-# Then shellcheck, from the repo root two levels up:
+# Then shellcheck's summary. shellcheck runs from the repo root two levels up:
 # "shellcheck -S warning -f gcc scripts/*.sh scripts/test/*.sh", every tracked
-# shell file, with .shellcheckrc's source settings. Its summary line has the
-# same shape: each finding line, then "shellcheck: N findings"; or
-# "shellcheck: 0 findings" when clean; or, on a non-zero exit with no finding
-# line, shellcheck's output, then "shellcheck: failed (exit N)". With
-# no shellcheck on PATH it prints "shellcheck: not installed - skipped", which
-# fails the run only when CI is set.
+# shell file, with .shellcheckrc's source settings, its stderr folded into its
+# captured output. Its summary line has the same shape: each finding line,
+# then "shellcheck: N findings"; or "shellcheck: 0 findings" when clean; or, on
+# a non-zero exit with no finding line, shellcheck's output, then "shellcheck:
+# failed (exit N)". With no shellcheck on PATH it prints "shellcheck: not
+# installed - skipped", which fails the run only when CI is set.
 #
-# Exits 1 when any suite failed or shellcheck did not pass.
+# The three suites run with TMPDIR set to a fresh, empty directory under that
+# temporary directory. Once they have finished, if anything is left in it -
+# a suite that did not remove its temp files - all.sh prints "all.sh: the
+# suites left temp files behind" after the suites' summaries and before
+# the shellcheck summary, and the run fails.
+#
+# Exits 1 when any suite failed, a suite left temp files behind, or shellcheck
+# did not pass.
 #
 # ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs. VERSION_BASE
 # passes through untouched - set, empty or unset - for docs_lint.sh's version
@@ -29,9 +41,36 @@
 unset ORCH_TEST_ONLY
 export ORCH_TEST_QUIET=1
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+tmp="$(mktemp -d)" || exit 1
+trap 'rm -rf "$tmp"' EXIT
 failed=0
-for suite in orch_test.sh hooks_test.sh docs_lint.sh; do
-  out="$(bash "$dir/$suite")" || failed=1
+suites_tmp="$tmp/suites-tmp"
+mkdir "$suites_tmp" || exit 1
+
+suites=(orch_test.sh hooks_test.sh docs_lint.sh)
+pids=()
+for suite in "${suites[@]}"; do
+  TMPDIR="$suites_tmp" bash "$dir/$suite" >"$tmp/$suite" &
+  pids+=("$!")
+done
+have_sc=0
+if command -v shellcheck >/dev/null 2>&1; then
+  have_sc=1
+  (cd "$dir/../.." && exec shellcheck -S warning -f gcc scripts/*.sh scripts/test/*.sh) \
+    >"$tmp/shellcheck" 2>&1 &
+  sc_pid=$!
+fi
+
+for suite_pid in "${pids[@]}"; do
+  wait "$suite_pid" || failed=1
+done
+if [ "$have_sc" -eq 1 ]; then
+  wait "$sc_pid"
+  sc_status=$?
+fi
+
+for suite in "${suites[@]}"; do
+  out="$(<"$tmp/$suite")"
   printf '%s\n' "$out" | awk '
     in_fail && /^     / { print; next }
     { in_fail = 0 }
@@ -39,12 +78,20 @@ for suite in orch_test.sh hooks_test.sh docs_lint.sh; do
   echo "$suite: $(printf '%s\n' "$out" | tail -n 1)"
 done
 
-if ! command -v shellcheck >/dev/null 2>&1; then
+leftovers=("$suites_tmp"/* "$suites_tmp"/.[!.]* "$suites_tmp"/..?*)
+for leftover in "${leftovers[@]}"; do
+  if [ -e "$leftover" ] || [ -L "$leftover" ]; then
+    echo "all.sh: the suites left temp files behind"
+    failed=1
+    break
+  fi
+done
+
+if [ "$have_sc" -eq 0 ]; then
   echo "shellcheck: not installed - skipped"
   [ -n "${CI:-}" ] && failed=1
 else
-  sc_out="$(cd "$dir/../.." && shellcheck -S warning -f gcc scripts/*.sh scripts/test/*.sh 2>&1)"
-  sc_status=$?
+  sc_out="$(<"$tmp/shellcheck")"
   sc_findings="$(printf '%s\n' "$sc_out" | awk '/^[^:]+:[0-9]+:[0-9]+: /')"
   if [ "$sc_status" -eq 0 ]; then
     echo "shellcheck: 0 findings"

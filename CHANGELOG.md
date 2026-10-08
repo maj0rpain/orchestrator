@@ -33,6 +33,30 @@ review pass. The glossary gains **Base sync** and **Resolver**, ADR-0038
 supersedes ADR-0036 in part, and the Junie snippet names the resolver and
 the orch-sync skill's agents.
 
+## 3.20.4
+
+The test scripts no longer leave temp files behind (#807), with no change to
+the plugin's behaviour. orch_test.sh and hooks_test.sh each create one temp
+root, export it as `TMPDIR` and remove it on exit, also when interrupted with
+Ctrl-C or TERM; orch_test.sh's parallel runner waits for its killed sections
+before removing its root. all.sh runs its suites under a fresh, empty `TMPDIR`
+and fails the run with `all.sh: the suites left temp files behind` when
+anything is left there. The out-of-scope record that declined this cleanup is
+removed.
+
+## 3.20.3
+
+`scripts/test/all.sh` takes less wall time, with no change outside the test
+scripts (#777). all.sh starts orch_test.sh, hooks_test.sh, docs_lint.sh and
+shellcheck at once and prints their output afterwards in the same order as
+before. The section filter, quiet mode and parallel runner sections of
+orch_test.sh run their checks against planted sections and cut-down copies of
+the suites instead of real sections and full suite runs, and now come right
+after the `isolation` section, so a parallel run starts the slowest of them
+first. hooks_test.sh and docs_lint.sh gain the `# >>> checks` marker comments,
+and hooks_test.sh a `# >>> summary` marker, that quiet mode's cut-down copies
+use.
+
 ## 3.20.2
 
 Docs, glossary, skill prose and docs_lint fixes from consolidated review

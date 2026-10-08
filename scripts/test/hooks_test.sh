@@ -26,12 +26,28 @@ assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in
 assert_not_contains() { case "$2" in *"$3"*) bad "$1" "found '$3' in: $2" ;; *) ok "$1" ;; esac; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
 
+# The temp root, created before anything else: TMPDIR is exported as it, so
+# every mktemp below lands inside it, and the hooks' markers too. The EXIT trap
+# leaves the root, makes it writable again (a run killed while RO_TMP is mode
+# 500), removes it, and keeps the exit status. An INT or TERM exits 130 through
+# that trap.
+hooks_root="$(mktemp -d)" || {
+  echo "hooks_test.sh: cannot create the suite's temp root" >&2; exit 1; }
+export TMPDIR="$hooks_root"
+hooks_remove_root() {
+  local status=$?
+  cd / || :
+  chmod -R u+w "$hooks_root" 2>/dev/null
+  rm -rf "$hooks_root"
+  exit "$status"
+}
+trap hooks_remove_root EXIT
+trap 'exit 130' INT TERM
+
+# >>> checks
 REPO="$(mktemp -d)"
 git -C "$REPO" init -q
 mkdir -p "$REPO/docs/agents" "$REPO/docs/adr"
-
-TMPDIR="$(mktemp -d)"
-export TMPDIR
 
 skill_event() {
   jq -n --arg s "$1" --arg sid "$2" --arg cwd "$REPO" \
@@ -826,6 +842,7 @@ while IFS= read -r cmd; do
 done < <(jq -r '.. | objects | select(.type? == "command") | .command' "$ROOT/hooks/hooks.json")
 rm -rf "$PLUGIN_644"
 
+# >>> summary
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

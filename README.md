@@ -327,11 +327,11 @@ scripts/test/all.sh                           # every suite; run once before com
 While iterating, run only the section you are working on, in quiet mode:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`, where
 `<section>` is an extended regex matched against the `# ---` section titles. Run
-`scripts/test/all.sh` once before committing: it runs all three suites, carries
-on past a failing one, and prints each suite's FAIL lines and a summary line;
-then it runs shellcheck over every shell file and prints its findings and a
-`shellcheck: N findings` summary line, or `shellcheck: not installed - skipped`,
-which fails the run only in CI.
+`scripts/test/all.sh` once before committing: it starts all three suites and
+shellcheck over every shell file at once, so they overlap, carries on past a
+failing one, and once all have finished prints each suite's FAIL lines and a
+summary line, then shellcheck's findings and a `shellcheck: N findings` summary
+line, or `shellcheck: not installed - skipped`, which fails the run only in CI.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
