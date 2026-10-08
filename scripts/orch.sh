@@ -96,10 +96,20 @@ readonly STATE="$ORCH/state.json"
 readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
 
-# Names a flow command so any host can act on it. Plugin commands are
-# unverified on Junie (docs/host-capabilities.md), so off Claude Code each also
-# names the orch-flow section it routes to - the same fallback the skills
-# offer. On Claude Code the message stays as it was before 1.0.0 (#121 story 2).
+# plugin_cmd <command> <fallback>: names a plugin command so any host can act
+# on it. Plugin commands are unverified on Junie (docs/host-capabilities.md),
+# so off Claude Code it also names <fallback>, where the command routes - the
+# same fallback the skills offer. On Claude Code the name stands alone, as it
+# was before 1.0.0 (#121 story 2).
+plugin_cmd() {
+  if [ "$(host_detect)" = claude ]; then
+    printf "/orchestrator:%s" "$1"
+  else
+    printf "/orchestrator:%s (or %s)" "$1" "$2"
+  fi
+}
+
+# Names a flow command, its fallback the orch-flow section it routes to.
 flow_cmd() {
   local section
   case "$1" in
@@ -109,22 +119,13 @@ flow_cmd() {
     abort) section="Abort" ;;
     *) die "flow_cmd: unknown command: $1" ;;
   esac
-  if [ "$(host_detect)" = claude ]; then
-    printf "/orchestrator:%s" "$1"
-  else
-    printf "/orchestrator:%s (or orch-flow's %s section)" "$1" "$section"
-  fi
+  plugin_cmd "$1" "orch-flow's $section section"
 }
 
-# Names finding triage as flow_cmd names a flow command: off Claude Code,
-# where plugin commands are unverified, it also names the skill the command
-# runs, since finding triage is no orch-flow section.
+# Names finding triage, its fallback the skill the command runs, since finding
+# triage is no orch-flow section.
 finding_triage_cmd() {
-  if [ "$(host_detect)" = claude ]; then
-    printf "/orchestrator:%s" finding-triage
-  else
-    printf "/orchestrator:%s (or the orch-finding-triage skill)" finding-triage
-  fi
+  plugin_cmd finding-triage "the orch-finding-triage skill"
 }
 
 # Names how to start the next phase in a fresh session, in the host's own
