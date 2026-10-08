@@ -181,20 +181,35 @@ state_get() {
   jq -r --arg k "$1" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$STATE"
 }
 
+# The one state-file write: sets key $1 to the JSON value $2 and stamps
+# updated. Private to the writers below; nothing else rewrites state.json.
+state_put() {
+  local tmp; tmp="$(mktemp)"
+  jq --arg k "$1" --argjson v "$2" --arg now "$(now)" \
+    '.[$k] = $v | .updated = $now' "$STATE" >"$tmp"
+  mv "$tmp" "$STATE"
+}
+
 # The unrestricted writer behind every internal state change. "null" stores a
 # JSON null, "true" and "false" a boolean, and an all-digit value a number, so
 # a key cleared, flagged or counted here reads back through state_get the way
 # init seeded it. Every other value is stored as a string.
 state_write() {
-  local tmp; tmp="$(mktemp)"
-  jq --arg k "$1" --arg v "$2" --arg now "$(now)" '
-    .[$k] = (if $v == "null" then null
-             elif $v == "true" then true
-             elif $v == "false" then false
-             elif ($v | test("^[0-9]+$")) then ($v | tonumber)
-             else $v end)
-    | .updated = $now' "$STATE" >"$tmp"
-  mv "$tmp" "$STATE"
+  local json
+  case "$2" in
+    null|true|false) json="$2" ;;
+    *[!0-9]*|"") json="$(jq -n --arg v "$2" '$v')" ;;
+    *) json="$(jq -n --arg v "$2" '$v | tonumber')" ;;
+  esac
+  state_put "$1" "$json"
+}
+
+# Stores value $2 under key $1 as a JSON string, always. Not state_write: it
+# would turn a value of null, true, false or all digits into JSON null, a
+# boolean or a number - a branch can bear any of those names, and a base is
+# always a string, as init stores it.
+state_write_string() {
+  state_put "$1" "$(jq -n --arg v "$2" '$v')"
 }
 
 require_state() {
@@ -464,12 +479,7 @@ base_set_flow() {
   fi
   is_branch_name "$b" || die "$b is not a valid branch name - nothing was set"
   require_on_origin "$b"
-  # Not state_write: it would turn a branch named null, true, false or all
-  # digits into JSON null, a boolean or a number. A base is always a string,
-  # as init stores it.
-  local tmp; tmp="$(mktemp)"
-  jq --arg b "$b" --arg now "$(now)" '.base = $b | .updated = $now' "$STATE" >"$tmp"
-  mv "$tmp" "$STATE"
+  state_write_string base "$b"
   note "$b (flow)"
 }
 

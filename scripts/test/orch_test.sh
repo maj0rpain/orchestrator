@@ -1570,7 +1570,9 @@ for name in null 007; do
   assert_eq "base set --flow stores a branch named $name literally" \
     "$(orch_gh_failing state get base)" "$name"
 done
+state_fixture updated "sentinel"
 orch_gh_failing base set uat --flow >/dev/null
+assert_ne "base set --flow stamps updated" "$(orch_gh_failing state get updated)" "sentinel"
 
 for args in "" "--flow" "uat main --flow" "uat --flow --flow" "uat --flaw"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
