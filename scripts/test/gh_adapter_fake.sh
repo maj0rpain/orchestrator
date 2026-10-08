@@ -333,6 +333,18 @@ fake_next_number() {
   printf '%s\n' "$(( ${n:-0} + 1 ))"
 }
 
+# fake_take_number <next_issue|next_pr>: the number a new issue or PR takes -
+# the counter's, or fake_next_number's where it is unset - printed, and the
+# counter advanced past it.
+fake_take_number() {
+  local f n
+  f="$(fake_store)/$1" || return 1
+  n="$(cat "$f" 2>/dev/null)"
+  [ -n "$n" ] || n="$(fake_next_number)"
+  printf '%s\n' "$((n + 1))" >"$f"
+  printf '%s\n' "$n"
+}
+
 # adapter_issue_create <title> <body-file> [label...]: a new open issue in the
 # store, numbered as fake_next_issue set (default one past the highest issue
 # or PR number the store holds), its number printed.
@@ -340,9 +352,7 @@ adapter_issue_create() {
   local title="$1" body="$2" n d
   shift 2
   ! fake_failing adapter_issue_create || return 1
-  n="$(cat "$(fake_store)/next_issue" 2>/dev/null)"
-  [ -n "$n" ] || n="$(fake_next_number)"
-  printf '%s\n' "$((n + 1))" >"$(fake_store)/next_issue"
+  n="$(fake_take_number next_issue)" || return 1
   d="$(fake_issue_dir "$n")"
   mkdir -p "$d"
   printf 'OPEN\n' >"$d/state"
@@ -464,9 +474,7 @@ adapter_pr_create() {
     esac
   done
   ! fake_failing adapter_pr_create || return 1
-  n="$(cat "$(fake_store)/next_pr" 2>/dev/null)"
-  [ -n "$n" ] || n="$(fake_next_number)"
-  printf '%s\n' "$((n + 1))" >"$(fake_store)/next_pr"
+  n="$(fake_take_number next_pr)" || return 1
   d="$(fake_pr_dir "$n")"
   mkdir -p "$d"
   printf 'OPEN\n' >"$d/state"
