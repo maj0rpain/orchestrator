@@ -129,6 +129,7 @@ dirties a repo's working tree.
 | `/orchestrator:doctor` | Diagnose the machine, the repo, and the active flow. |
 | `/orchestrator:redo` | Step back one phase and re-run it. |
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
+| `/orchestrator:finish` | Clean up every finished side checkout: its PR merged on GitHub, its tree clean, any flow at `done`. Archives its flow into the main checkout, removes it, and deletes its local branch; archives the main checkout's finished flow in place. Removes nothing when GitHub cannot be read. |
 | `/orchestrator:release` | Open the release PR that carries the base branch into the default branch (see below). |
 | `/orchestrator:spec-review <issue>` | Review any spec issue on demand, outside a flow: a standalone spec review. |
 | `/orchestrator:review <issue>` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Drops findings an earlier pass on the branch's open PR already declined, fixes what it agrees with, and posts what it declines - and what it dropped as previously declined - on that PR. |
@@ -227,7 +228,7 @@ catches any at flow start.
 ## Layout
 
 ```
-commands/                     start, next, status, doctor, redo, abort, release, spec-review, review, interview, quick-implement, to-spec, to-tickets, finding-triage
+commands/                     start, next, status, doctor, redo, abort, finish, release, spec-review, review, interview, quick-implement, to-spec, to-tickets, finding-triage
 agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, and the implementer
 skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: consolidation of the issue's comments, then four lenses in a flow (three standalone), one batch question, plus a ticket question when an existing breakdown is touched

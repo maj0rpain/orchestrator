@@ -26,6 +26,12 @@ one flow. It is removed when its flow is archived with `archive` or
 by hand, and never with force.
 _Avoid_: sibling worktree, flow worktree, second checkout.
 
+**Finished**:
+A side checkout is finished when its branch's pull request has merged into its
+base branch, its working tree is clean, and it holds no flow or a flow at
+`done`. A flow is finished when it is at `done` and its pull request has
+merged. `/orchestrator:finish` cleans up only finished work.
+
 **Base branch**:
 The branch a flow or quick implementation forks from and opens its PR
 against. The repo's default branch unless a human has set another for the

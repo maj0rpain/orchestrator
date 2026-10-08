@@ -5391,6 +5391,154 @@ assert_status "remove refuses a missing slug" "$st" 1
 assert_contains "side-checkout remove is in the usage text" "$(orch_gh_failing help)" "side-checkout remove <slug>"
 restore_suite_env
 
+# --- side-checkout prune (#726) -----------------------------------------------
+# The finished sweep behind /orchestrator:finish: a side checkout whose PR
+# GitHub reports merged into its base, whose tree is clean, and whose flow -
+# if any - is at done, is archived into the main checkout, removed, and its
+# local branch deleted. Checked through the worktrees, branches and archives
+# left on disk, and the report, against the store-backed GitHub fake.
+echo
+echo "side-checkout prune"
+sp_present() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
+sp_branch() { if git rev-parse --verify --quiet "refs/heads/$1" >/dev/null; then echo kept; else echo gone; fi; }
+sp_archived() { find "$1/.orchestrator/archive" -maxdepth 1 -name "*-$2" 2>/dev/null | wc -l | tr -d ' '; }
+# sp_branch_off <path> <branch>: puts the side checkout at <path> on a new
+# branch with one commit of its own, never merged into main locally - as a
+# squash merge on GitHub leaves it.
+sp_branch_off() {
+  git -C "$1" checkout -q -b "$2"
+  git -C "$1" commit -q --allow-empty -m "work on $2"
+}
+
+sc_clone
+fake_github
+top="$(git rev-parse --show-toplevel)"
+# Offline while arranging, so each add's own sweep leaves the arrangement be.
+fake_offline
+
+# A finished flow side checkout, its PR squash-merged.
+fl="$(orch_gh_failing side-checkout add fl)"
+(cd "$fl" && orch_gh_failing init fl-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/fl-flow && state_fixture pr 41)
+sp_branch_off "$fl" orch/fl-flow
+fake_pr 41 merged orch/fl-flow main
+# A finished quick-implementation side checkout.
+qk="$(orch_gh_failing side-checkout add qk)"
+sp_branch_off "$qk" quick/7-qk
+fake_pr 42 merged quick/7-qk main
+# An open PR.
+op="$(orch_gh_failing side-checkout add op)"
+sp_branch_off "$op" quick/8-op
+fake_pr 43 open quick/8-op main
+# A dirty tree, its PR merged.
+dt="$(orch_gh_failing side-checkout add dt)"
+sp_branch_off "$dt" quick/9-dt
+fake_pr 44 merged quick/9-dt main
+echo wip >"$dt/wip.txt"
+# A flow not at done.
+nd="$(orch_gh_failing side-checkout add nd)"
+(cd "$nd" && orch_gh_failing init nd-flow >/dev/null && state_fixture phase implement)
+# A side checkout still on no branch.
+nb="$(orch_gh_failing side-checkout add nb)"
+# The main checkout's own finished flow.
+orch_gh_failing init main-flow >/dev/null
+git checkout -q -b orch/main-flow
+state_fixture phase "done"; state_fixture branch orch/main-flow; state_fixture pr 45
+fake_pr 45 merged orch/main-flow main
+# A hand-made worktree holding a finished flow.
+hand="$(mktemp -d)/hand"
+git worktree add -q -b orch/hand-flow "$hand" main
+(cd "$hand" && orch_gh_failing init hand-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/hand-flow && state_fixture pr 46)
+fake_pr 46 merged orch/hand-flow main
+
+# GitHub unreachable: nothing is removed.
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune fails when GitHub cannot be read" "$st" 1
+assert_contains "saying nothing was removed" "$out" "nothing was removed"
+assert_eq "the finished flow side checkout stays" "$(sp_present "$fl")" "present"
+assert_eq "the finished quick side checkout stays" "$(sp_present "$qk")" "present"
+assert_eq "its branch stays" "$(sp_branch quick/7-qk)" "kept"
+assert_eq "the main checkout's flow is not archived" "$(sp_present "$top/.orchestrator/state.json")" "present"
+fake_online
+
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune succeeds" "$st" 0
+assert_eq "the finished flow side checkout is gone" "$(sp_present "$fl")" "absent"
+assert_not_contains "and from git's list" "$(git worktree list)" "$fl"
+assert_eq "its flow archived into the main checkout" "$(sp_archived "$top" fl-flow)" "1"
+assert_eq "its squash-merged local branch is gone" "$(sp_branch orch/fl-flow)" "gone"
+assert_eq "the finished quick side checkout is gone" "$(sp_present "$qk")" "absent"
+assert_eq "its local branch is gone" "$(sp_branch quick/7-qk)" "gone"
+assert_contains "the removals are reported" "$out" "removed side checkout $qk"
+assert_eq "an open PR's side checkout stays" "$(sp_present "$op")" "present"
+assert_contains "skipped with its reason" "$out" "skipped $op: no merged PR from quick/8-op into main"
+assert_eq "a dirty side checkout stays" "$(sp_present "$dt/wip.txt")" "present"
+assert_eq "with its branch" "$(sp_branch quick/9-dt)" "kept"
+assert_contains "skipped with its reason" "$out" "skipped $dt: uncommitted changes or untracked files"
+assert_eq "a flow not at done stays" "$(sp_present "$nd/.orchestrator/state.json")" "present"
+assert_contains "skipped with its reason" "$out" "skipped $nd: flow nd-flow is at implement, not done"
+assert_eq "a side checkout on no branch stays" "$(sp_present "$nb")" "present"
+assert_contains "skipped with its reason" "$out" "skipped $nb: no branch"
+assert_eq "the main checkout's finished flow is archived in place" "$(sp_archived "$top" main-flow)" "1"
+assert_eq "its state is gone" "$(sp_present "$top/.orchestrator/state.json")" "absent"
+assert_eq "its branch is still checked out" "$(git branch --show-current)" "orch/main-flow"
+assert_contains "which is reported" "$out" "orch/main-flow is still checked out"
+assert_eq "the live side checkouts were not moved by that archive" "$(sp_present "$op")" "present"
+assert_eq "a hand-made worktree's flow is untouched" "$(sp_present "$hand/.orchestrator/state.json")" "present"
+assert_eq "and the worktree stays" "$(sp_present "$hand")" "present"
+assert_eq "with its branch" "$(sp_branch orch/hand-flow)" "kept"
+assert_contains "reported as left alone" "$out" "$hand: not a side checkout, left alone"
+
+# A failure after the archive is reported, that checkout stays, and the sweep
+# moves on. A locked worktree is one git refuses to remove without force.
+fake_offline
+lk="$(orch_gh_failing side-checkout add lk)"
+(cd "$lk" && orch_gh_failing init lk-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/lk-flow && state_fixture pr 47)
+sp_branch_off "$lk" orch/lk-flow
+fake_pr 47 merged orch/lk-flow main
+git worktree lock "$lk"
+q2="$(orch_gh_failing side-checkout add q2)"
+sp_branch_off "$q2" quick/10-q2
+fake_pr 48 merged quick/10-q2 main
+fake_online
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune exits 1 when a removal fails" "$st" 1
+assert_contains "reporting the failure" "$out" "could not remove side checkout $lk"
+assert_eq "the archive stands" "$(sp_archived "$top" lk-flow)" "1"
+assert_eq "the locked worktree stays" "$(sp_present "$lk")" "present"
+assert_eq "with its branch" "$(sp_branch orch/lk-flow)" "kept"
+assert_eq "the sweep moves on to the next" "$(sp_present "$q2")" "absent"
+git worktree unlock "$lk"
+
+# side-checkout add runs the sweep first.
+q3="$(orch_gh_failing side-checkout add q3)"
+sp_branch_off "$q3" quick/11-q3
+fake_pr 49 merged quick/11-q3 main
+out="$(orch_gh_failing side-checkout add after 2>/dev/null)"; st=$?
+assert_status "add succeeds after its sweep" "$st" 0
+assert_eq "printing only the new path on stdout" "$out" "$top/.orchestrator/checkouts/after"
+assert_eq "the sweep removed the finished side checkout" "$(sp_present "$q3")" "absent"
+# ... and carries on when the sweep fails.
+q4="$(orch_gh_failing side-checkout add q4)"
+sp_branch_off "$q4" quick/12-q4
+fake_pr 50 merged quick/12-q4 main
+fake_offline
+out="$(orch_gh_failing side-checkout add after2 2>&1)"; st=$?
+assert_status "add carries on when its sweep fails" "$st" 0
+assert_contains "reporting the failed sweep" "$out" "the finished sweep failed"
+assert_eq "making the side checkout" "$(sp_present "$top/.orchestrator/checkouts/after2")" "present"
+assert_eq "and removing nothing" "$(sp_present "$q4")" "present"
+fake_online
+
+out="$(orch_gh_failing side-checkout prune extra 2>&1)"; st=$?
+assert_status "prune takes no arguments" "$st" 1
+assert_contains "side-checkout prune is in the usage text" "$(orch_gh_failing help)" "side-checkout prune"
+assert_contains "the CLI conventions' noun table names prune" \
+  "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`prune`'
+restore_suite_env
+
 # --- ticket merge (#621) -------------------------------------------------------
 # Lands a ticket branch on the branch it was forked from: rebase inside the
 # ticket worktree, then fast-forward the forked-from branch wherever it is
@@ -6246,6 +6394,15 @@ assert_eq "nothing at all for none" "$out" ""
 gh_reply 1 '' 'HTTP 502: Bad Gateway' pr list --head down --state open --json number --jq '.[].number'
 out="$(contract adapter_prs_open down 2>&1)"; st=$?
 assert_status "prs open: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+
+gh_reply 0 $'61\n' '' pr list --head quick/12-foo --base main --state merged --json number --jq '.[].number'
+out="$(contract adapter_prs_merged quick/12-foo main 2>&1)"; st=$?
+assert_status "prs merged: lists the merged PRs from a branch into a base" "$st" 0
+assert_eq "one number per line" "$out" "61"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' pr list --head down --base main --state merged --json number --jq '.[].number'
+out="$(contract adapter_prs_merged down main 2>&1)"; st=$?
+assert_status "prs merged: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
 gh_reply 0 $'Refs #5\n\nImplements it.\nFixes #6\n' '' \

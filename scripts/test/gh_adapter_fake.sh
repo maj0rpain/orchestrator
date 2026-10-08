@@ -484,6 +484,19 @@ adapter_prs_open() {
   done | sort -rn
 }
 
+# adapter_prs_merged <head> <base>: the merged PRs in the store from the head
+# branch into the base, newest first.
+adapter_prs_merged() {
+  local d
+  ! fake_failing adapter_prs_merged || return 1
+  for d in "$(fake_store)"/prs/*/; do
+    [ -d "$d" ] || continue
+    [ "$(cat "$d/state")" = MERGED ] && [ "$(cat "$d/head")" = "$1" ] \
+      && [ "$(cat "$d/base")" = "$2" ] || continue
+    basename "$d"
+  done | sort -rn
+}
+
 # adapter_prs_merged_bodies <base>: the stored body of every merged PR into the
 # base, each followed by a newline, newest first.
 adapter_prs_merged_bodies() {

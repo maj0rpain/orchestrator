@@ -1,6 +1,6 @@
 ---
 name: orch-flow
-description: Drive the plan/spec/implement/review pipeline recorded in .orchestrator/state.json. Use when a planning session's plan has just been approved, when the user asks to start, advance, check, diagnose, redo, or abort a flow, or runs /orchestrator:start, /orchestrator:next, /orchestrator:status, /orchestrator:doctor, /orchestrator:redo, or /orchestrator:abort.
+description: Drive the plan/spec/implement/review pipeline recorded in .orchestrator/state.json. Use when a planning session's plan has just been approved, when the user asks to start, advance, check, diagnose, redo, abort, or finish a flow, or runs /orchestrator:start, /orchestrator:next, /orchestrator:status, /orchestrator:doctor, /orchestrator:redo, /orchestrator:abort, or /orchestrator:finish.
 ---
 
 # Orchestrator flow
@@ -401,6 +401,21 @@ scratch.
    session's working directory is gone, tell the user to close this session.
 3. Report what survives: the branch, the spec issue, and the PR are untouched, so
    list whichever exist and let the user clean up.
+
+## Finish
+
+Reached by `/orchestrator:finish`, or when the user asks to clean up finished
+side checkouts. It takes no arguments and asks nothing. Run
+`bash "$ORCH" side-checkout prune` and relay its report: each side checkout
+removed, each skipped with its reason, and any failure. A side checkout is
+finished when GitHub reports its branch's PR merged into its base branch, its
+working tree is clean, and any flow in it is at `done`. The sweep archives
+each one's flow into the main checkout, removes the worktree, never with
+force, and deletes its local branch. The main checkout's finished flow is
+archived in place, and its branch stays checked out. A worktree the human
+made is reported and left alone. When GitHub cannot be read, nothing is
+removed: say so. When the report says this session's working directory is
+gone, tell the user to close this session.
 
 ## Rules
 
