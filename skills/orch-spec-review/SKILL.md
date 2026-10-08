@@ -379,21 +379,17 @@ still listed. Otherwise number the ticket items - each naming its ticket
 and its replacement text, or for an edge change the one edge added or removed -
 and ask **one blocking question** with the
 `AskUserQuestion` tool, the list and the call in the same response, as for
-the spec batch. The options, each offered once:
+the spec batch. Its options are the spec batch's, under **Disposition**,
+each offered once and with the same rules, except:
 
-- **Apply as recommended** - every ticket edit applied except those marked
-  **recommend decline**.
-- **Apply all** - offered only when some item is marked **recommend
-  decline**: as recommended, plus those items too.
-- **Apply none**.
-- **Retire and break down again** - no ticket is edited; the breakdown is
-  retired after the body is published, and the issue broken down again.
-- **Other** - item numbers, e.g. `1, 3`, as in the spec batch; any item left
-  out is declined. The question text states this format.
-
-The option you recommend comes first and carries **(Recommended)**: **Retire
-and break down again** when you recommend a retire, otherwise **Apply as
-recommended**.
+- **Retire and break down again** is added: no ticket is edited; the
+  breakdown is retired after the body is published, and the issue broken
+  down again.
+- **Other** takes item numbers only, e.g. `1, 3`: a ticket item has no
+  option letter.
+- The option you recommend comes first and carries **(Recommended)**:
+  **Retire and break down again** when you recommend a retire, otherwise
+  **Apply as recommended**.
 
 **Applying.** Each accepted sub-issue edit replaces that ticket's body: write
 it to `<dir>/ticket-<n>.md`, then
