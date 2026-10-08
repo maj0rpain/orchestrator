@@ -257,13 +257,11 @@ state_put() {
 # a key cleared, flagged or counted here reads back through state_get the way
 # init seeded it. Every other value is stored as a string.
 state_write() {
-  local json
   case "$2" in
-    null|true|false) json="$2" ;;
-    *[!0-9]*|"") json="$(jq -n --arg v "$2" '$v')" ;;
-    *) json="$(jq -n --arg v "$2" '$v | tonumber')" ;;
+    null|true|false) state_put "$1" "$2" ;;
+    *[!0-9]*|"") state_write_string "$1" "$2" ;;
+    *) state_put "$1" "$(jq -n --arg v "$2" '$v | tonumber')" ;;
   esac
-  state_put "$1" "$json"
 }
 
 # Stores value $2 under key $1 as a JSON string, always. Not state_write: it
