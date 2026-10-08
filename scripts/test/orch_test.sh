@@ -5355,6 +5355,17 @@ out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
 assert_status "remove refuses uncommitted changes" "$st" 1
 assert_eq "its flow is not moved" "$(sa_archived "$top" new-flow)" "0"
 git -C "$gamma" checkout -q -- .
+# A git status that cannot run is a refusal naming git's error, never a clean
+# tree.
+gidx="$(git -C "$gamma" rev-parse --absolute-git-dir)/index"
+cp "$gidx" "$gidx.bak"
+printf 'garbage' >"$gidx"
+out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
+mv "$gidx.bak" "$gidx"
+assert_status "remove refuses when git status cannot run" "$st" 1
+assert_contains "naming git's error" "$out" "git status failed - cannot check the working tree: "
+assert_eq "its flow is not moved" "$(sa_archived "$top" new-flow)" "0"
+assert_eq "nor its worktree removed" "$(sa_present "$gamma")" "present"
 
 # remove archives the flow into the main checkout, removes the worktree, and
 # keeps the branch.
@@ -5527,6 +5538,47 @@ assert_status "prune succeeds over the main flow and a flowless side checkout" "
 assert_eq "the flowless side checkout is gone" "$(sp_present "$q5")" "absent"
 assert_eq "the main checkout's archive is reported once" \
   "$(printf '%s\n' "$out" | grep -c -- '-main-again$')" "1"
+
+# A side checkout whose git status cannot run is never called finished: prune
+# removes nothing, naming git's error.
+fake_offline
+q6="$(orch_gh_failing side-checkout add q6)"
+sp_branch_off "$q6" quick/14-q6
+fake_pr 53 merged quick/14-q6 main
+fake_online
+q6idx="$(git -C "$q6" rev-parse --absolute-git-dir)/index"
+cp "$q6idx" "$q6idx.bak"
+printf 'garbage' >"$q6idx"
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+mv "$q6idx.bak" "$q6idx"
+assert_status "prune fails when a side checkout's git status cannot run" "$st" 1
+assert_contains "naming git's error" "$out" "git status failed - cannot check the working tree: "
+assert_contains "and that nothing was removed" "$out" "nothing was removed"
+assert_eq "the side checkout stays" "$(sp_present "$q6")" "present"
+assert_eq "with its branch" "$(sp_branch quick/14-q6)" "kept"
+orch_gh_failing side-checkout prune >/dev/null 2>&1
+
+# A quick implementation is finished by a PR into the base branch off recorded
+# for it, not the base in effect now.
+git push -q origin main:refs/heads/uat
+fake_offline
+orch_gh_failing base set uat >/dev/null
+rb="$(orch_gh_failing side-checkout add rb)"
+(cd "$rb" && orch_gh_failing branch off quick/15-rb >/dev/null)
+git -C "$rb" commit -q --allow-empty -m "work on rb"
+rm2="$(orch_gh_failing side-checkout add rm2)"
+(cd "$rm2" && orch_gh_failing branch off quick/16-rm2 >/dev/null)
+git -C "$rm2" commit -q --allow-empty -m "work on rm2"
+orch_gh_failing base set main >/dev/null
+fake_pr 54 merged quick/15-rb uat
+fake_pr 55 merged quick/16-rm2 main
+fake_online
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune succeeds after the base setting moved" "$st" 0
+assert_eq "a PR merged into the recorded base finishes its side checkout" "$(sp_present "$rb")" "absent"
+assert_eq "a PR merged into the base in effect now, not the recorded one, does not" \
+  "$(sp_present "$rm2")" "present"
+assert_contains "skipped naming the recorded base" "$out" "skipped $rm2: no merged PR from quick/16-rm2 into uat"
 
 # side-checkout add runs the sweep first.
 q3="$(orch_gh_failing side-checkout add q3)"

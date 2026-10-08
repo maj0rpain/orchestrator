@@ -684,6 +684,21 @@ dirty_outside_allowlist() {
   rm -f "$status"
 }
 
+# tree_status <path>: prints git status --porcelain for the working tree at
+# <path> - empty when it is clean. A git status that cannot run must never
+# read as a clean tree, so instead it prints why, naming git's error, and
+# returns 1: callers refuse with that line, or report it.
+tree_status() {
+  local out err
+  err="$(mktemp)"
+  if ! out="$(git -C "$1" status --porcelain 2>"$err")"; then
+    printf 'git status failed - cannot check the working tree: %s\n' "$(first_line "$(cat "$err")")"
+    rm -f "$err"; return 1
+  fi
+  rm -f "$err"
+  printf '%s' "$out"
+}
+
 # The git-based backstop from ADR-0013. Where no host hook arms the edit
 # guard, planning can edit source unhindered; flow start is where that gets
 # caught, before any state exists. Runs against $ROOT, this working tree's own
@@ -3413,7 +3428,7 @@ ticket_worktree_resolve() {
 # Both refusals - a dirty worktree, and without --unmerged a branch not merged
 # into its forked-from branch - run before anything is removed.
 cmd_ticket_worktree_remove() {
-  local n="" unmerged=0 path branch parent
+  local n="" unmerged=0 path branch parent st
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -3423,7 +3438,8 @@ cmd_ticket_worktree_remove() {
     shift
   done
   ticket_worktree_resolve "$n"
-  [ -z "$(git -C "$path" status --porcelain)" ] \
+  st="$(tree_status "$path")" || die "$st"
+  [ -z "$st" ] \
     || die "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
   if [ "$unmerged" = 0 ]; then
     parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
@@ -3458,15 +3474,17 @@ branch_checkout() {
 # leaving both branches at their prior tips.
 cmd_ticket_merge() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
-  local n path branch parent pwt
+  local n path branch parent pwt st
   ticket_worktree_resolve "$1"
   parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
     || die "branch $branch records no forked-from branch"
-  [ -z "$(git -C "$path" status --porcelain)" ] \
+  st="$(tree_status "$path")" || die "$st"
+  [ -z "$st" ] \
     || die "ticket worktree $path is dirty - commit or discard its changes first"
   pwt="$(branch_checkout "$parent")"
   [ -n "$pwt" ] || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
-  [ -z "$(git -C "$pwt" status --porcelain)" ] \
+  st="$(tree_status "$pwt")" || die "$st"
+  [ -z "$st" ] \
     || die "$pwt, the checkout of $parent, is dirty - commit or discard its changes first"
   if ! git -C "$path" rebase -q "$parent" >/dev/null 2>&1; then
     git -C "$path" rebase --abort >/dev/null 2>&1 || true
@@ -3551,11 +3569,11 @@ checkout_has_flow() { [ -f "$1/$ORCH_DIR_NAME/state.json" ]; }
 # What the checkout at <path> holds: its flow (flow <slug> <phase> #<issue>),
 # else its checked-out branch (branch <name>), else (no branch).
 checkout_holding() {
-  local state="$1/$ORCH_DIR_NAME/state.json" issue branch
+  local state="$1/$ORCH_DIR_NAME/state.json" issue issue_label branch
   if [ -f "$state" ]; then
     issue="$(state_get_in "$state" issue)"
-    if [ -n "$issue" ]; then issue="#$issue"; else issue="(no issue)"; fi
-    note "flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue"
+    if [ -n "$issue" ]; then issue_label="#$issue"; else issue_label="(no issue)"; fi
+    note "flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue_label"
   elif branch="$(git -C "$1" symbolic-ref --quiet --short HEAD)"; then
     note "branch $branch"
   else
@@ -3582,7 +3600,7 @@ cmd_side_checkout_list() {
 # branch is left in place.
 cmd_side_checkout_remove() {
   [ $# -eq 1 ] || die "usage: orch.sh side-checkout remove <slug>"
-  local slug path err here
+  local slug path err here st
   here="$(pwd -P)"
   slug="$(normalize_slug "$1")"
   path="$(side_checkouts_dir)/$slug"
@@ -3590,7 +3608,8 @@ cmd_side_checkout_remove() {
     || die "no side checkout $slug at $path"
   is_side_checkout "$path" \
     || die "$path carries no side-checkout marker - it is not the plugin's to remove, so it is left alone"
-  [ -z "$(git -C "$path" status --porcelain)" ] \
+  st="$(tree_status "$path")" || die "$st"
+  [ -z "$st" ] \
     || die "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
   refuse_ticket_worktrees "$path"
   if checkout_has_flow "$path"; then archive_flow "$path"; fi
@@ -3607,7 +3626,8 @@ cmd_side_checkout_remove() {
 # rebase merge never makes the branch an ancestor of its base (ADR-0037). The
 # verdicts below assign to the caller's `verdict` and `branch`, which bash
 # scopes dynamically, and return 0 finished, 1 not finished - `verdict` the
-# reason - or 2 GitHub could not be read - `verdict` its error.
+# reason - or 2 the verdict could not be read, GitHub or the checkout's own
+# git status - `verdict` naming which, and its error.
 
 # github_read <var> <adapter-call> [args...]: runs the adapter call, its output
 # assigned to the caller's <var>. On failure it sets `verdict` to the call's
@@ -3617,7 +3637,7 @@ github_read() {
   shift
   err="$(mktemp)"
   if ! got="$("$@" 2>"$err")"; then
-    verdict="$(first_line "$(cat "$err")")"; rm -f "$err"; return 2
+    verdict="could not read GitHub: $(first_line "$(cat "$err")")"; rm -f "$err"; return 2
   fi
   rm -f "$err"
   printf -v "$into" '%s' "$got"
@@ -3649,10 +3669,13 @@ finished_flow() {
 
 # side_checkout_finished <path>: whether the side checkout there is finished -
 # a clean tree, and either a finished flow, or no flow and a PR merged from
-# its checked-out branch into the base branch in effect.
+# its checked-out branch into the base branch off recorded for it (see
+# recorded_base). A git status that cannot run returns 2, as an unreadable
+# GitHub does, so the sweep removes nothing on a tree it could not read.
 side_checkout_finished() {
-  local path="$1" base prs
-  if [ -n "$(git -C "$path" status --porcelain)" ]; then
+  local path="$1" base prs st
+  st="$(tree_status "$path")" || { verdict="$st"; return 2; }
+  if [ -n "$st" ]; then
     verdict="uncommitted changes or untracked files"; return 1
   fi
   if checkout_has_flow "$path"; then
@@ -3660,7 +3683,7 @@ side_checkout_finished() {
   fi
   branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
     || { verdict="no branch"; return 1; }
-  base="$(base_branch)"
+  base="$(recorded_base "$branch")"
   github_read prs adapter_prs_merged "$branch" "$base" || return
   [ -n "$prs" ] || { verdict="no merged PR from $branch into $base"; return 1; }
 }
@@ -3701,10 +3724,10 @@ cmd_side_checkout_prune() {
     case "$rc" in
       0) finished+=("$path"$'\t'"$branch") ;;
       1) note "skipped $path: $verdict" ;;
-      *) unread="$verdict" ;;
+      *) unread="$path: $verdict" ;;
     esac
   done
-  [ -z "$unread" ] || die "could not read GitHub: $unread - nothing was removed"
+  [ -z "$unread" ] || die "could not check $unread - nothing was removed"
   [ "${#finished[@]}" -gt 0 ] || { note "no finished side checkouts"; return 0; }
   local entry
   for entry in "${finished[@]}"; do
