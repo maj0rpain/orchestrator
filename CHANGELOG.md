@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.21.1
+
+all.sh's shellcheck step runs one shellcheck process per shell file, all
+started at once, instead of one process over every file, so shellcheck is no
+longer the critical path of the test run (#817). The processes' output is
+joined in glob order, and "failed (exit N)" reports the highest exit among
+them; the flags, `.shellcheckrc` and the four summary forms are unchanged.
+
 ## 3.21.0
 
 Base sync, and merge conflicts resolved rather than rebuilt (#791, ADR-0038).
