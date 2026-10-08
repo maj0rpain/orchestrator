@@ -2371,6 +2371,9 @@ cmd_finding_triage_apply() {
   [ -n "$file" ] || die "$usage"
   [ -f "$file" ] || die "comment file not found: $file"
 
+  # Only the labels are wanted: the state line is dropped here rather than a
+  # third, near-identical label read added beside adapter_issue_state_labels
+  # and adapter_issue_title_labels.
   labels="$(adapter_issue_state_labels "$issue")" \
     || die "gh could not read issue #$issue"
   labels="$(printf '%s\n' "$labels" | tail -n +2)"
