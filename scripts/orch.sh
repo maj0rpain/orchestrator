@@ -1057,14 +1057,19 @@ review_budget() {
 # --- gh adapter -------------------------------------------------------------
 #
 # The seam between this file's decision logic and the `gh` CLI. A caller like
-# severity_label_ensure below calls an adapter function, never `gh` itself, so
+# severity_label_ensure below calls an adapter operation, never `gh` itself, so
 # a test can replace one in-process function instead of faking a `gh` binary
-# on PATH. Label creation was the first primitive moved behind it, proving the
-# seam on the narrowest possible slice (issue #91, first of the #78
-# breakdown); the issue-resource primitives below (view/edit/comment/create/
-# close, issue #92) extend the same seam to cmd_spec, cmd_issue_publish,
-# cmd_review file, and cmd_redo_spec's issue close. Every GitHub call in this
-# file, and in doctor.sh, sourced into it, now goes through one (#280).
+# on PATH. Every GitHub call in this file, and in doctor.sh, sourced into it,
+# goes through one. History: begun with labels (#91), issues (#92); all since #280.
+#
+# The operations, in the order they are defined below:
+# - label: adapter_label_upsert, adapter_label_create, adapter_labels
+# - issue: adapter_issue_*, adapter_issues_labelled
+# - pr: adapter_pr_*, adapter_prs_*
+# - sub-issue and dependency: adapter_sub_issue*, adapter_issue_parent,
+#   adapter_blocker*
+# - repo: adapter_repo_*, adapter_auth_status
+# - ci: adapter_pr_checks, adapter_branch_*, adapter_commit_*, adapter_run_rerun
 #
 # ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as the ORCH_CI_*
 # ones above, but read differently: not a value substituted at load time, but
