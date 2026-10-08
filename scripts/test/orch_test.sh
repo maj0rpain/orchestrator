@@ -6626,6 +6626,21 @@ out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "a Verification section recording a failure and its ticket validates" "$st" 0
 assert_eq "its first line is still the bare command the review loop runs" \
   "$("$ORCH" handoff section "$h3" Verification | head -n 1)" "bash scripts/test/orch_test.sh"
+
+# Merge resolutions records what a base-sync resolver dropped (#791). The
+# template carries it, but a handoff written before it existed still
+# validates: the section is optional, never required.
+complete_implement_handoff "$h3"
+writeln '' '## Merge resolutions' 'scripts/orch.sh: dropped the base'"'"'s rename - the branch removed the caller.' >>"$h3"
+out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
+assert_status "an implement handoff carrying Merge resolutions validates" "$st" 0
+assert_eq "its Merge resolutions read back through handoff section" \
+  "$("$ORCH" handoff section "$h3" "Merge resolutions")" \
+  "scripts/orch.sh: dropped the base's rename - the branch removed the caller."
+complete_implement_handoff "$h3"
+out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
+assert_status "an old implement handoff without Merge resolutions still validates" "$st" 0
+assert_not_contains "and is not told the section is missing" "$out" "Merge resolutions"
 restore_suite_env
 
 # --- the multi-loop machinery is gone ---------------------------------------

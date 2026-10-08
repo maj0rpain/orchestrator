@@ -134,7 +134,9 @@ the body file passed to it should not add a closing keyword of its own.>
 <URL and number - the Spec axis diffs against it>
 
 ## Base SHA
-<from state.json; the fixed point the review loop diffs from>
+<from state.json, read after the implement phase's base sync: its value at
+the end of implement. The review loop reads its own from state each
+iteration, since every base sync moves it>
 
 ## Deviations
 <where the implementation knowingly departed from the spec, and why. "None" if
@@ -153,6 +155,13 @@ have the tests fresh; review would be guessing.>
 lines, and the source files they listed there as `untested:`, one bullet per
 ticket, or "None". Not covered by ADR-0002: the review loop's Spec axis judges
 each as an ordinary finding.>
+
+## Merge resolutions
+<what the implement phase's base sync resolved: the resolver's `Files`,
+`Dropped` and `Verification` lines - each conflicted file, each intent
+dropped and why - or "None" when the sync merged cleanly. Not required by
+`handoff validate`, so a handoff written before this section existed still
+validates.>
 
 ## Host fallbacks
 <per **Record every host fallback** above>
