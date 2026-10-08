@@ -4274,6 +4274,10 @@ out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by 2>&1)"; st=$?
 assert_status "refuses a --blocked-by with no value" "$st" 1
 assert_contains "with publish's usage line" "$out" "usage: orch.sh ticket publish"
 
+out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by $'5\n' 2>&1)"; st=$?
+assert_status "refuses a --blocked-by with a trailing newline" "$st" 1
+assert_contains "as not plain issue numbers" "$out" "--blocked-by must be plain issue numbers"
+
 out="$("$ORCH" ticket publish 50 "Title" "$body" --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket publish"
@@ -4663,6 +4667,15 @@ out="$("$ORCH" ticket block "$bc" --by "$ba" --by "$bb" 2>&1)"; st=$?
 assert_status "refuses a repeated --by" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket block"
 assert_eq "none of the refusals wrote an edge" "$(fake_blockers_of "$bc")" ""
+before_store="$(fake_snapshot)"
+out="$("$ORCH" ticket block "$bc" --by 2>&1)"; st=$?
+assert_status "refuses a --by with no value" "$st" 1
+assert_contains "with block's usage line" "$out" "usage: orch.sh ticket block"
+assert_eq "writing nothing to GitHub" "$(fake_snapshot)" "$before_store"
+out="$("$ORCH" ticket block "$bc" --by $'5\n' 2>&1)"; st=$?
+assert_status "refuses a --by with a trailing newline" "$st" 1
+assert_contains "as not plain issue numbers" "$out" "--by must be plain issue numbers"
+assert_eq "writing nothing to GitHub" "$(fake_snapshot)" "$before_store"
 
 be="$("$ORCH" ticket publish 96 "E" "$body")"
 bx="$("$ORCH" ticket publish 97 "Elsewhere" "$body")"
@@ -4895,6 +4908,11 @@ assert_status "refuses a --by issue under another parent" "$st" 1
 assert_contains "naming it" "$out" "#$ux is not a sub-issue of #96"
 assert_eq "the refusal removed no edge, not even the sibling one" \
   "$(fake_blockers_of "$uf")" "$ua $ub"
+before_store="$(fake_snapshot)"
+out="$("$ORCH" ticket unblock "$uf" --by 2>&1)"; st=$?
+assert_status "refuses a --by with no value" "$st" 1
+assert_contains "with unblock's usage line" "$out" "usage: orch.sh ticket unblock"
+assert_eq "writing nothing to GitHub, the target's edges kept" "$(fake_snapshot)" "$before_store"
 "$ORCH" ticket block "$uf" --by "$ue" >/dev/null 2>&1
 out="$("$ORCH" ticket unblock "$uf" --by "$ue" 2>&1)"; st=$?
 assert_status "accepts a closed blocker" "$st" 0

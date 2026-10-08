@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.20.1
+
+`orch.sh`'s ticket edge handling is restructured, with no change a user can
+observe. `ticket_edges_change` binds each verb's behaviour in one up-front
+`case` that dies on an unknown verb before anything reaches GitHub (#592,
+#601); publish's `--blocked-by` and block/unblock's `--by` share one
+"given once, with a value" rule, `flag_value_once` (#595); the one-caller
+`ticket_blocked_by_rewrite` is inlined (#596); and two comments now match
+their code (#598, #599). New tests pin `ticket block`/`unblock`'s refusal of
+a `--by` with no value and the refusal of a trailing-newline `--blocked-by`
+or `--by`.
+
 ## 3.20.0
 
 GitHub failures now reach the user in gh's own words (#663). Doctor's

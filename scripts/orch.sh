@@ -3067,11 +3067,24 @@ ticket_sub_issues() {
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
 }
 
+# flag_value_once <usage> <already-given> <argc>: the rule for a flag that
+# takes a value, shared by `ticket publish --blocked-by` and `ticket
+# block`/`unblock --by`. Prints nothing; dies with <usage> unless this is the
+# flag's first appearance (<already-given> empty) and a value follows it
+# (<argc>, the caller's "$#", at least 2). Call it directly, never inside
+# $(...), so its die exits orch.sh; the caller takes the raw value from its
+# own "$2", never through a command substitution, which would strip a
+# trailing newline that issue_number_list must still see and refuse.
+flag_value_once() {
+  [ "$3" -ge 2 ] && [ -z "$2" ] || die "$1"
+}
+
 # The one parser of a comma list of issue numbers for every `ticket` command:
 # `ticket publish --blocked-by` and `ticket block`/`unblock --by`. Prints the
 # numbers one per line, sorted and de-duplicated. Dies naming <flag> and the
 # whole list on any entry that is not a plain issue number, an empty one
-# included (`1,,2`, `,5`, `5,`). An empty <list> is the caller's to handle.
+# included (`1,,2`, `,5`, `5,`). An empty <list> dies too; a caller that
+# allows no list checks for it first.
 issue_number_list() {
   local flag="$1" list="$2"
   # Digits and commas only, with no comma leading, trailing or doubled - a
@@ -3113,7 +3126,7 @@ cmd_ticket_publish() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --blocked-by)
-        [ $# -ge 2 ] && [ -z "$have_blocked_by" ] || die "$usage"
+        flag_value_once "$usage" "$have_blocked_by" "$#"
         blocked_by="$2"; have_blocked_by=1; shift 2 ;;
       *) die "$usage" ;;
     esac
@@ -3317,8 +3330,8 @@ issue_body_rewrite() {
     || { rm -f "$body"; die "$read_msg"; }
   result="$(mktemp)"
   "$@" <"$body" >"$result"
-  # awk ends every line it prints with a newline; a body that had no final
-  # newline gets none back.
+  # A filter command may end its last line with a newline; a body that had
+  # no final newline gets none back.
   if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
     out="$(cat "$result"; printf x)"; out="${out%x}"
     printf '%s' "${out%$'\n'}" >"$result"
@@ -3410,13 +3423,16 @@ rewrite_blocked_by_section() {
   '
 }
 
-# Brings ticket <n>'s `## Blocked by` section in line with <blockers>
-# through issue_body_rewrite. The write is not read back - ADR-0011 governs
-# the edges, not the body.
-ticket_blocked_by_rewrite() {
-  issue_body_rewrite "$1" "gh could not read ticket #$1's body" \
-    "gh could not rewrite ticket #$1's ## Blocked by section" \
-    rewrite_blocked_by_section "$2"
+# blockers_union <before> <by>: the blocker set after `ticket block` - every
+# number in either list, one per line, sorted and de-duplicated.
+blockers_union() {
+  printf '%s\n%s\n' "$1" "$2" | sed '/^$/d' | sort -un
+}
+
+# blockers_difference <before> <by>: the blocker set after `ticket unblock` -
+# every number in <before> that is not in <by>, one per line.
+blockers_difference() {
+  printf '%s\n' "$1" | grep -vxF -f <(printf '%s\n' "$2") || true
 }
 
 # `ticket block` and `ticket unblock`'s one driver: `ticket <verb> <n> --by
@@ -3426,16 +3442,28 @@ ticket_blocked_by_rewrite() {
 # and de-duplicated, as `ticket publish --blocked-by` does. Then the
 # preconditions, the current edges, one adapter write per edge that needs
 # it, verify-then-die (ADR-0011) against the wanted set, and the `## Blocked
-# by` rewrite. Only the verb varies: block skips edges already present, adds
+# by` rewrite through issue_body_rewrite. The write is not read back -
+# ADR-0011 governs the edges, not the body. Only the verb varies, and the one
+# `case` up front binds all of it: block skips edges already present, adds
 # the rest and wants the union; unblock skips edges already absent, removes
 # the rest and wants the difference. Either re-run is idempotent.
 ticket_edges_change() {
   local verb="$1" usage n="" by="" have_by="" before want b present
+  local skip_present edge_op edge_word want_fn
+  case "$verb" in
+    block)
+      skip_present=1; edge_op=adapter_blocker_add; edge_word=add
+      want_fn=blockers_union ;;
+    unblock)
+      skip_present=""; edge_op=adapter_blocker_remove; edge_word=remove
+      want_fn=blockers_difference ;;
+    *) die "unknown ticket edge verb: ${verb:-<none>} (want block|unblock)" ;;
+  esac
   usage="usage: orch.sh ticket $verb <n> --by N,N,..."
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --by) [ $# -ge 2 ] && [ -z "$have_by" ] || die "$usage"; by="$2"; have_by=1; shift 2 ;;
+      --by) flag_value_once "$usage" "$have_by" "$#"; by="$2"; have_by=1; shift 2 ;;
       -*)   die "$usage" ;;
       *)    [ -z "$n" ] || die "$usage"; n="$1"; shift ;;
     esac
@@ -3450,23 +3478,15 @@ ticket_edges_change() {
   while IFS= read -r b; do
     present=""
     if printf '%s\n' "$before" | grep -qxF "$b"; then present=1; fi
-    case "$verb" in
-      block)
-        [ -z "$present" ] || continue
-        adapter_blocker_add "$n" "$b" \
-          || die "gh could not add a blocking edge from ticket #$n on #$b" ;;
-      unblock)
-        [ -n "$present" ] || continue
-        adapter_blocker_remove "$n" "$b" \
-          || die "gh could not remove a blocking edge from ticket #$n on #$b" ;;
-    esac
+    [ "$present" != "$skip_present" ] || continue
+    "$edge_op" "$n" "$b" \
+      || die "gh could not $edge_word a blocking edge from ticket #$n on #$b"
   done <<<"$by"
-  case "$verb" in
-    block)   want="$(printf '%s\n%s\n' "$before" "$by" | sed '/^$/d' | sort -un)" ;;
-    unblock) want="$(printf '%s\n' "$before" | grep -vxF -f <(printf '%s\n' "$by") || true)" ;;
-  esac
+  want="$("$want_fn" "$before" "$by")"
   ticket_edges_verify "$n" "$want"
-  ticket_blocked_by_rewrite "$n" "$want"
+  issue_body_rewrite "$n" "gh could not read ticket #$n's body" \
+    "gh could not rewrite ticket #$n's ## Blocked by section" \
+    rewrite_blocked_by_section "$want"
 }
 
 # Adds a native blocking edge on <n> for every --by issue it lacks.
