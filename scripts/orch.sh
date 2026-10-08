@@ -336,8 +336,8 @@ EOF
 # the table dies: a misspelt read would otherwise look exactly like an unset one.
 state_get() { state_get_in "$STATE" "$1"; }
 
-# state_get against another checkout's state file <file>: the one read side
-# checkout list makes of a flow it does not run in.
+# state_get against the state file <file>: reads <key> from any checkout's
+# state file, not only this one's.
 state_get_in() {
   local default
   default="$(state_key "$2" default)" || die "unknown state key: $2"
@@ -827,6 +827,16 @@ tree_status() {
     return 1
   fi
   printf '%s' "$out"
+}
+
+# require_clean_tree <path> <dirty message>: returns 0 when the working tree
+# at <path> is clean. Dies with tree_status's own line when git status cannot
+# run, and with <dirty message> when the tree is dirty. Called as a bare
+# statement so `die` stops the caller.
+require_clean_tree() {
+  local status
+  status="$(tree_status "$1")" || die "$status"
+  [ -z "$status" ] || die "$2"
 }
 
 # The git-based backstop from ADR-0013. Where no host hook arms the edit
@@ -2778,7 +2788,7 @@ cmd_branch_base_sha() {
 # nothing left to merge - retries the push, as it finishes a resolved conflict.
 cmd_branch_sync() {
   [ $# -eq 0 ] || die "usage: orch.sh branch sync"
-  local branch base held="" st tip remote
+  local branch base held="" tip remote
   branch="$(git symbolic-ref --quiet --short HEAD)" \
     || die "not on a branch (detached HEAD) - nothing was synced"
   if [ -f "$STATE" ] && [ "$(state_get branch)" = "$branch" ]; then
@@ -2792,8 +2802,7 @@ cmd_branch_sync() {
   if git rev-parse --quiet --verify MERGE_HEAD >/dev/null; then
     die "a merge is in progress on $branch - commit it (or git merge --abort), then rerun orch.sh branch sync"
   fi
-  st="$(tree_status "$ROOT")" || die "$st"
-  [ -z "$st" ] || die "the working tree is dirty - commit or discard its changes first; nothing was synced"
+  require_clean_tree "$ROOT" "the working tree is dirty - commit or discard its changes first; nothing was synced"
   git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
     || die "could not fetch $base from origin - nothing was synced"
   tip="$(git rev-parse "refs/remotes/origin/$base")"
@@ -3716,6 +3725,15 @@ ticket_worktree_number() {
 
 ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
 
+# forked_from_key <branch>: the git config key that records the branch ticket
+# branch <branch> was forked from - the one place code spells it out.
+forked_from_key() { printf 'branch.%s.orchestrator-ticket-parent\n' "$1"; }
+
+# forked_from_branch <branch>: prints the forked-from branch recorded on
+# ticket branch <branch>, or prints nothing and returns non-zero when none is
+# recorded.
+forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
+
 # Forks <current-branch>--t<n> from the current branch's tip, records the
 # forked-from branch on it, and checks it out at .orchestrator/worktrees/t<n>.
 # The exclude entry is written before the branch exists; anything failing
@@ -3734,7 +3752,7 @@ cmd_ticket_worktree_add() {
   exclude_orch_dirs
   git branch -q "$branch" HEAD || die "could not create branch $branch"
   if ! git worktree add -q "$path" "$branch" \
-     || ! git config "branch.$branch.orchestrator-ticket-parent" "$parent"; then
+     || ! git config "$(forked_from_key "$branch")" "$parent"; then
     # A freshly added worktree holds nothing of anyone's, so no force is
     # needed to take it back out; -D deletes the branch's config section too.
     if [ -e "$path" ]; then git worktree remove "$path" 2>/dev/null || true; fi
@@ -3766,14 +3784,14 @@ ticket_worktrees_under() {
   done < <(git worktree list --porcelain)
 }
 
-# Dies, naming every ticket worktree under the checkout at <root> (this one by
-# default), when any is left: moving .orchestrator/ wholesale would break git's
-# record of each one, and removing the checkout would delete them.
+# refuse_ticket_worktrees <root>: dies, naming every ticket worktree under the
+# checkout at <root>, when any is left: moving .orchestrator/ wholesale would
+# break git's record of each one, and removing the checkout would delete them.
 refuse_ticket_worktrees() {
   local left
-  left="$(ticket_worktrees_under "${1:-$ROOT}")"
+  left="$(ticket_worktrees_under "$1")"
   [ -n "$left" ] || return 0
-  die "ticket worktrees are left under ${1:-this checkout} - moving them would break git's record of them:
+  die "ticket worktrees are left under $1 - moving them would break git's record of them:
 $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
      Remove each with orch.sh ticket-worktree remove <n> first."
 }
@@ -3798,7 +3816,7 @@ ticket_worktree_resolve() {
 # resolution) is aborted first, returning the ticket branch to its committed
 # tip, so the worktree is judged clean or dirty as that tip left it.
 cmd_ticket_worktree_remove() {
-  local n="" unmerged=0 path branch parent st gitdir
+  local n="" unmerged=0 path branch parent
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -3811,21 +3829,17 @@ cmd_ticket_worktree_remove() {
     path="$(ticket_worktree_path "$(ticket_worktree_number "$n")")"
     # Only a worktree at $path itself: git would resolve a leftover t<n>
     # directory to the enclosing checkout, whose rebase is not ours to abort.
-    gitdir=""
-    if [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ]; then
-      gitdir="$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null)" || gitdir=""
-    fi
-    if [ -n "$gitdir" ] && { [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]; }; then
+    if [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+      && rebase_in_progress "$path"; then
       git -C "$path" rebase --abort \
         || die "could not abort the rebase in progress in ticket worktree $path"
     fi
   fi
   ticket_worktree_resolve "$n"
-  st="$(tree_status "$path")" || die "$st"
-  [ -z "$st" ] \
-    || die "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
+  require_clean_tree "$path" \
+    "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
   if [ "$unmerged" = 0 ]; then
-    parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
+    parent="$(forked_from_branch "$branch")" \
       || die "branch $branch records no forked-from branch - pass --unmerged to discard it"
     git merge-base --is-ancestor "$branch" "$parent" 2>/dev/null \
       || die "branch $branch is not merged into $parent - merge it first, or pass --unmerged to discard it"
@@ -3836,6 +3850,13 @@ cmd_ticket_worktree_remove() {
   # would judge it against this checkout's HEAD (a ticket branch has no
   # upstream) and could refuse after the worktree is gone.
   git branch -q -D "$branch" || die "could not delete branch $branch"
+}
+
+# Whether a rebase is in progress in the checkout at <path>.
+rebase_in_progress() {
+  local gitdir
+  gitdir="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]
 }
 
 # The checkout that has <branch> checked out, or nothing: the first worktree
@@ -3853,29 +3874,43 @@ branch_checkout() {
 # Lands ticket <n>'s branch on the branch it was forked from: rebases it onto
 # that branch's tip inside the ticket worktree, then fast-forwards that branch
 # in whichever checkout has it - so history stays linear. Every refusal (exit
-# 1) runs before anything moves; a rebase conflict is aborted and exits 3,
-# leaving both branches at their prior tips.
+# 1) runs before anything moves. Exit 3 means a rebase conflict only: it is
+# aborted, leaving both branches at their prior tips. A rebase that fails any
+# other way is aborted too and exits 1, naming git's first line; so does an
+# abort that fails, which leaves the ticket worktree mid-rebase.
 cmd_ticket_merge() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
-  local n path branch parent pwt st
+  local n path branch parent parent_checkout rebase_err unmerged said
+  # rebase_out is set by capture and only git's stderr is read.
+  # shellcheck disable=SC2034
+  local rebase_out
   ticket_worktree_resolve "$1"
-  parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
+  parent="$(forked_from_branch "$branch")" \
     || die "branch $branch records no forked-from branch"
-  st="$(tree_status "$path")" || die "$st"
-  [ -z "$st" ] \
-    || die "ticket worktree $path is dirty - commit or discard its changes first"
-  pwt="$(branch_checkout "$parent")"
-  [ -n "$pwt" ] || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
-  st="$(tree_status "$pwt")" || die "$st"
-  [ -z "$st" ] \
-    || die "$pwt, the checkout of $parent, is dirty - commit or discard its changes first"
-  if ! git -C "$path" rebase -q "$parent" >/dev/null 2>&1; then
-    git -C "$path" rebase --abort >/dev/null 2>&1 || true
-    warn "rebasing $branch onto $parent hit a conflict - aborted; both branches are as they were"
-    exit 3
+  require_clean_tree "$path" \
+    "ticket worktree $path is dirty - commit or discard its changes first"
+  parent_checkout="$(branch_checkout "$parent")"
+  [ -n "$parent_checkout" ] \
+    || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
+  require_clean_tree "$parent_checkout" \
+    "$parent_checkout, the checkout of $parent, is dirty - commit or discard its changes first"
+  if ! capture rebase_out rebase_err git -C "$path" rebase -q "$parent"; then
+    # A conflict is a rebase stopped with unmerged paths; anything else - a
+    # refusing hook, say - is a plain failure, named by git's first line.
+    unmerged="$(git -C "$path" diff --name-only --diff-filter=U 2>/dev/null)" || unmerged=""
+    if rebase_in_progress "$path"; then
+      git -C "$path" rebase --abort >/dev/null 2>&1 \
+        || die "could not abort the rebase in ticket worktree $path - it is left mid-rebase"
+    fi
+    if [ -n "$unmerged" ]; then
+      warn "rebasing $branch onto $parent hit a conflict - aborted; both branches are as they were"
+      exit 3
+    fi
+    said="$(first_line "$rebase_err")"
+    die "rebasing $branch onto $parent failed: ${said:-git gave no reason}"
   fi
-  git -C "$pwt" merge -q --ff-only "$branch" \
-    || die "could not fast-forward $parent to $branch in $pwt"
+  git -C "$parent_checkout" merge -q --ff-only "$branch" \
+    || die "could not fast-forward $parent to $branch in $parent_checkout"
 }
 
 cmd_ticket_worktree() {
@@ -3996,7 +4031,7 @@ cmd_side_checkout_list() {
 # branch is left in place.
 cmd_side_checkout_remove() {
   [ $# -eq 1 ] || die "usage: orch.sh side-checkout remove <slug>"
-  local slug path err here st main_root dirs
+  local slug path err here main_root dirs
   here="$(pwd -P)"
   slug="$(normalize_slug "$1")"
   main_root="$(main_checkout)"
@@ -4008,9 +4043,8 @@ cmd_side_checkout_remove() {
     || die "no side checkout $slug at $path"
   [ -f "${dirs#*$'\n'}/$SIDE_CHECKOUT_MARKER" ] \
     || die "$path carries no side-checkout marker - it is not the plugin's to remove, so it is left alone"
-  st="$(tree_status "$path")" || die "$st"
-  [ -z "$st" ] \
-    || die "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
+  require_clean_tree "$path" \
+    "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
   refuse_ticket_worktrees "$path"
   if checkout_has_flow "$path"; then archive_flow "$path"; fi
   if ! err="$(git -C "$main_root" worktree remove "$path" 2>&1)"; then
@@ -4675,11 +4709,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               the ticket worktree or that checkout is dirty,
                               or the branch is checked out nowhere; on a
                               rebase conflict aborts the rebase and exits 3,
-                              both branches at their prior tips
+                              both branches at their prior tips. A rebase
+                              that fails any other way is aborted and exits
+                              1, naming git's first line; an abort that fails
+                              exits 1, leaving the worktree mid-rebase
   ticket-worktree add <n>     fork <current-branch>--t<n> from the current
                               branch's tip, record the forked-from branch on
-                              it (branch.<ticket-branch>.orchestrator-ticket-
-                              parent in local git config), check it out at
+                              it in local git config, check it out at
                               .orchestrator/worktrees/t<n> under this
                               checkout's top level, git-exclude .orchestrator/
                               in the clone's shared info/exclude, and print

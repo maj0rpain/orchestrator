@@ -801,10 +801,11 @@ check_flow_review_draft() {
 }
 
 # A ticket worktree under this checkout is a run's leftover once its phase is
-# not running (ADR-0036): the next implement phase stops on it, and archive
-# refuses to move it. Silent when there is none - ticket-worktree list's own
-# scope, so another checkout's in-flight tickets never fail this flow.
-check_flow_ticket_worktrees() {
+# not running (ADR-0036): the next implement phase or quick implementation
+# stops on it, and archive refuses to move it. Silent when there is none -
+# ticket-worktree list's own scope, so another checkout's in-flight tickets
+# never fail this one.
+check_ticket_worktrees_left() {
   local n path
   while read -r n path; do
     [ -n "$n" ] || continue
@@ -892,10 +893,8 @@ d_count() {
 d_run_flow() {
   if [ "$D_JQ" = ok ] && [ "$D_STATE" = ok ]; then
     d_run "$FLOW_CHECKS"
-    # Outside the registry: each reads git alone and prints nothing when clean,
-    # so a flow with no ticket worktree and a clean working tree reports
-    # exactly what it did before.
-    check_flow_ticket_worktrees
+    # Outside the registry: it reads git alone and prints nothing when clean,
+    # so a flow with a clean working tree reports exactly what it did before.
     check_flow_worktree_clean
     return 0
   fi
@@ -957,6 +956,10 @@ cmd_doctor() {
     else
       d_run_flow
     fi
+    # On every path here - no flow, a broken state file, no jq - because it
+    # reads git alone (#673): a quick implementation has no flow, and its
+    # leftover is reported here or nowhere. Silent when there is none.
+    check_ticket_worktrees_left
   fi
 
   d_skip_report

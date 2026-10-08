@@ -2793,6 +2793,8 @@ new_tip="$(bs_advance refused.txt refused)"
 echo dirty >README.md
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "refuses a dirty tree" "$st" 1
+assert_contains "saying the tree is dirty" "$out" \
+  "orch: the working tree is dirty - commit or discard its changes first; nothing was synced"
 assert_eq "moving no tip (dirty tree)" "$(git rev-parse HEAD)" "$before"
 assert_eq "and no base SHA (dirty tree)" "$(bs_sha)" "$sha_before"
 assert_eq "and leaving the change (dirty tree)" "$(cat README.md)" "dirty"
@@ -4246,6 +4248,16 @@ restore_suite_env
 # else.
 healthy_repo
 doctor_github
+
+# assert_leftover_reported <label> <top> <status> <output>: a doctor run that
+# exited <status> printing <output> failed on ticket worktree 12, the leftover
+# each caller adds under checkout <top>, naming it and its remedy.
+assert_leftover_reported() {
+  assert_status "$1 fails on a leftover" "$3" 1
+  assert_contains "$1 names the leftover" "$4" \
+    "FAIL  ticket worktree $2/.orchestrator/worktrees/t12 is left over"
+  assert_contains "$1 gives its remedy" "$4" "orch.sh ticket-worktree remove 12"
+}
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "--flow refuses to answer when there is no flow" "$st" 1
 assert_contains "says why it cannot answer" "$out" "no active flow"
@@ -4254,6 +4266,28 @@ out="$("$ORCH" doctor 2>&1)"; st=$?
 assert_status "bare doctor is safe to run with no flow" "$st" 0
 assert_contains "states there is no flow instead of failing" "$out" "ok    no active flow"
 assert_contains "bare doctor covers the environment too" "$out" "tools"
+assert_not_contains "with no ticket worktree, bare doctor with no flow says nothing of them" \
+  "$out" "ticket worktree"
+
+# #673: a quick implementation has no flow, so its leftover ticket worktree is
+# reported by bare doctor or nowhere - and only this checkout's own.
+nf_top="$(git rev-parse --show-toplevel)"
+"$ORCH" ticket-worktree add 12 >/dev/null
+nf_linked="$(mktemp -d)/linked"
+git worktree add -q -b nf-other "$nf_linked"
+(cd "$nf_linked" && "$ORCH" ticket-worktree add 13 >/dev/null)
+out="$("$ORCH" doctor 2>&1)"; st=$?
+assert_leftover_reported "bare doctor with no flow" "$nf_top" "$st" "$out"
+assert_contains "still states there is no flow" "$out" "ok    no active flow"
+assert_not_contains "another checkout's ticket worktree is not reported with no flow" "$out" "t13"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "--flow still refuses with no flow and a leftover" "$st" 1
+assert_contains "still says why it cannot answer" "$out" "no active flow"
+assert_not_contains "and runs no ticket-worktree check" "$out" "ticket worktree"
+(cd "$nf_linked" && "$ORCH" ticket-worktree remove 13)
+git worktree remove "$nf_linked"
+git branch -q -D nf-other
+"$ORCH" ticket-worktree remove 12
 
 "$ORCH" init flowtest >/dev/null
 complete_plan_handoff "$("$ORCH" handoff path spec)"
@@ -4292,6 +4326,17 @@ assert_eq "claims nothing it could not read" \
   "$(printf '%s\n' "$out" | grep -c '^ok    ')" "0"
 assert_eq "does not leak jq's parse error into the report" \
   "$(printf '%s\n' "$out" | grep -c 'parse error')" "0"
+assert_not_contains "with no ticket worktree, an invalid state.json says nothing of them" \
+  "$out" "ticket worktree"
+# #673: a broken state file must not hide a leftover ticket worktree - that
+# check reads git alone.
+iv_top="$(git rev-parse --show-toplevel)"
+"$ORCH" ticket-worktree add 12 >/dev/null
+for iv_args in "" "--flow"; do
+  out="$("$ORCH" doctor $iv_args 2>&1)"; st=$?
+  assert_leftover_reported "doctor $iv_args with an invalid state.json" "$iv_top" "$st" "$out"
+done
+"$ORCH" ticket-worktree remove 12
 cp "$statebak" .orchestrator/state.json
 
 state_fixture phase nonsense
@@ -4519,6 +4564,22 @@ else
   # how you find out that happened.
   assert_contains "collapses every flow check into one line when jq is gone" \
     "$out" "10 flow checks skipped: jq is not installed"
+  assert_not_contains "with no ticket worktree, doctor without jq says nothing of them" \
+    "$out" "ticket worktree"
+fi
+
+# #673: the ticket-worktree check reads git alone, so a missing jq must not hide
+# a leftover - under --flow or bare doctor.
+if on_windows_bash; then
+  skip_no_jq "doctor without jq still fails on a leftover ticket worktree"
+else
+  nj_top="$(git rev-parse --show-toplevel)"
+  "$ORCH" ticket-worktree add 12 >/dev/null
+  for nj_args in "" "--flow"; do
+    out="$(PATH="$nojq_path" "$ORCH" doctor $nj_args 2>&1)"; st=$?
+    assert_leftover_reported "doctor $nj_args without jq" "$nj_top" "$st" "$out"
+  done
+  "$ORCH" ticket-worktree remove 12
 fi
 restore_suite_env
 
@@ -5955,7 +6016,8 @@ wt="$("$ORCH" ticket-worktree add 7)"
 echo dirty >"$wt/README.md"
 out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
 assert_status "remove refuses a dirty worktree" "$st" 1
-assert_contains "saying it is dirty" "$out" "dirty"
+assert_contains "saying it is dirty" "$out" \
+  "orch: ticket worktree $wt is dirty - commit or discard its changes first; it is never removed with force"
 assert_eq "leaving the worktree in place" "$([ -f "$wt/README.md" ] && cat "$wt/README.md")" "dirty"
 assert_eq "and the branch" \
   "$(git rev-parse --verify --quiet refs/heads/orch/5-feature--t7 >/dev/null && echo present)" "present"
@@ -5975,6 +6037,14 @@ ticket_tip="$(git rev-parse orch/5-feature--t7)"
 out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
 assert_status "remove refuses an unmerged branch" "$st" 1
 assert_contains "saying it is unmerged" "$out" "not merged"
+assert_eq "leaving the worktree in place" "$([ -d "$wt" ] && echo present || echo absent)" "present"
+assert_eq "and the branch at its tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+# No recorded forked-from branch: remove cannot judge the branch merged.
+git config --unset branch.orch/5-feature--t7.orchestrator-ticket-parent
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "remove refuses a branch that records no forked-from branch" "$st" 1
+assert_contains "saying so, with the --unmerged hint" "$out" \
+  "orch: branch orch/5-feature--t7 records no forked-from branch - pass --unmerged to discard it"
 assert_eq "leaving the worktree in place" "$([ -d "$wt" ] && echo present || echo absent)" "present"
 assert_eq "and the branch at its tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 out="$("$ORCH" ticket-worktree remove 7 --unmerged)"; st=$?
@@ -6347,6 +6417,8 @@ rm "$gamma/wip.txt"
 echo changed >>"$gamma/$(git -C "$gamma" ls-files | head -1)"
 out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
 assert_status "remove refuses uncommitted changes" "$st" 1
+assert_contains "saying so" "$out" \
+  "orch: side checkout $gamma has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
 assert_eq "its flow is not moved" "$(archived_count "$top" new-flow)" "0"
 git -C "$gamma" checkout -q -- .
 # A git status that cannot run is a refusal naming git's error, never a clean
@@ -6771,6 +6843,49 @@ assert_eq "no rebase is left in progress" "$(tm_rebasing "$wt")" "no"
 assert_eq "the ticket worktree is left clean" "$(git -C "$wt" status --porcelain)" ""
 assert_eq "and the flow's checkout too" "$(git status --porcelain)" ""
 
+# A rebase already in progress in the ticket worktree: refused before anything
+# moves, and the rebase is left for whoever started it.
+git -C "$wt" rebase -q orch/5-feature >/dev/null 2>&1
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge refuses a ticket worktree mid-rebase" "$st" 1
+assert_contains "naming it not on a branch" "$out" \
+  "orch: ticket worktree $wt is not on a branch (detached HEAD)"
+assert_eq "the rebase is still in progress" "$(tm_rebasing "$wt")" "yes"
+assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "the ticket branch stays at its prior tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+git -C "$wt" rebase --abort
+
+# A rebase that fails for a reason other than a conflict exits 1, naming
+# git's first line, never 3.
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+tm_commit "$wt" ticket.txt one
+tm_commit . other.txt landed-first
+flow_tip="$(git rev-parse orch/5-feature)"
+ticket_tip="$(git rev-parse orch/5-feature--t7)"
+hooks="$(mktemp -d)"
+printf '#!/bin/sh\necho "no rebasing today"\nexit 1\n' >"$hooks/pre-rebase"
+chmod +x "$hooks/pre-rebase"
+git config core.hooksPath "$hooks"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge exits 1 when a pre-rebase hook refuses" "$st" 1
+assert_contains "naming the hook's line" "$out" \
+  "orch: rebasing orch/5-feature--t7 onto orch/5-feature failed: no rebasing today"
+assert_not_contains "not calling it a conflict" "$out" "conflict"
+assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "the ticket branch stays at its prior tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+assert_eq "no rebase is left in progress" "$(tm_rebasing "$wt")" "no"
+
+printf '#!/bin/sh\nexit 1\n' >"$hooks/pre-rebase"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge exits 1 when a silent pre-rebase hook refuses" "$st" 1
+assert_contains "naming git's own line" "$out" \
+  "orch: rebasing orch/5-feature--t7 onto orch/5-feature failed: error: The pre-rebase hook refused to rebase."
+assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "the ticket branch stays at its prior tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+assert_eq "no rebase is left in progress" "$(tm_rebasing "$wt")" "no"
+git config --unset core.hooksPath
+
 # Refusals: each exits 1 and changes nothing.
 tw_repo
 wt="$("$ORCH" ticket-worktree add 7)"
@@ -6781,7 +6896,8 @@ ticket_tip="$(git rev-parse orch/5-feature--t7)"
 echo dirty >"$wt/README.md"
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
 assert_status "merge refuses a dirty ticket worktree" "$st" 1
-assert_contains "naming it dirty" "$out" "dirty"
+assert_contains "naming it dirty" "$out" \
+  "orch: ticket worktree $wt is dirty - commit or discard its changes first"
 assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
 assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 assert_eq "and the ticket worktree's change" "$(cat "$wt/README.md")" "dirty"
@@ -6790,7 +6906,8 @@ git -C "$wt" checkout -q -- README.md
 echo dirty >README.md
 out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
 assert_status "merge refuses a dirty forked-from checkout" "$st" 1
-assert_contains "naming it dirty" "$out" "dirty"
+assert_contains "naming it dirty" "$out" \
+  "orch: $(pwd -P), the checkout of orch/5-feature, is dirty - commit or discard its changes first"
 assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
 assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 assert_eq "and the checkout's change" "$(cat README.md)" "dirty"
@@ -6803,6 +6920,15 @@ assert_contains "naming the branch" "$out" "orch/5-feature"
 assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
 assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 git checkout -q orch/5-feature
+
+git config --unset branch.orch/5-feature--t7.orchestrator-ticket-parent
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge refuses a branch that records no forked-from branch" "$st" 1
+assert_contains "saying so" "$out" "orch: branch orch/5-feature--t7 records no forked-from branch"
+assert_not_contains "with no --unmerged hint" "$out" "--unmerged"
+assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+git config branch.orch/5-feature--t7.orchestrator-ticket-parent orch/5-feature
 
 out="$("$ORCH" ticket merge 9 2>&1)"; st=$?
 assert_status "merge refuses a ticket with no ticket worktree" "$st" 1
