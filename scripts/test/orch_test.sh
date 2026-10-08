@@ -76,6 +76,18 @@ section_awk() {
   ' "$SUITE_SCRIPT"
 }
 
+# print_summary <pass> <fail> <skip>: the suite's closing lines, a blank line
+# then the counts, the skips only when there were any. The parallel runner and
+# the summary section both print through it, so their stdout cannot drift apart.
+print_summary() {
+  echo
+  if [ "$3" -gt 0 ]; then
+    echo "$1 passed, $2 failed, $3 skipped"
+  else
+    echo "$1 passed, $2 failed"
+  fi
+}
+
 # A child of the parallel runner: run its one section, and hand the counts file
 # to the summary through a plain, unexported variable, so a suite this section
 # starts in turn is no child.
@@ -170,50 +182,8 @@ if [ -n "${ORCH_TEST_ONLY:-}" ] || [ "$orch_jobs" -gt 1 ]; then
     done
     [ "$orch_progress" -eq 1 ] || sleep 0.1
   done
-  echo
-  if [ "$orch_skip" -gt 0 ]; then
-    echo "$orch_pass passed, $orch_fail failed, $orch_skip skipped"
-  else
-    echo "$orch_pass passed, $orch_fail failed"
-  fi
+  print_summary "$orch_pass" "$orch_fail" "$orch_skip"
   exit "$orch_failed"
-fi
-
-# >>> shared setup` line to the isolation section),
-# the isolation section, every `# ---` section from isolation on whose title -
-# the text after `# --- `, trailing dashes dropped - matches under grep -E, and
-# the summary (from the `# >>> summary` line). The text is extracted from this
-# file and eval'd in this shell, so the paths above are computed once, here,
-# and no file is written. A pattern that matches no section exits 1, printing
-# every section title, one per line.
-if [ -n "${ORCH_TEST_ONLY:-}" ]; then
-  # section_awk <mode> [keep]: list the section titles (mode "titles"), or
-  # print the text to run (mode "text"), keeping the sections whose 1-based
-  # positions appear in keep, a comma-wrapped list such as ",1,4,".
-  section_awk() {
-    awk -v mode="$1" -v keep="${2:-}" '
-      function title(s) { sub(/^# --- /, "", s); sub(/[ -]+$/, "", s); return s }
-      phase == 0 && $0 == "# >>> shared setup" { phase = 1; next }
-      phase == 0 { next }
-      $0 == "# >>> summary" { phase = 3 }
-      phase == 1 && /^# --- / && title($0) == "isolation" { phase = 2 }
-      phase == 2 && /^# --- / {
-        n++
-        on = index(keep, "," n ",") > 0
-        if (mode == "titles") print title($0)
-      }
-      mode == "text" && (phase == 1 || phase == 3 || (phase == 2 && on))
-    ' "$SUITE_SCRIPT"
-  }
-  only_titles="$(section_awk titles)"
-  only_keep=",1,$(printf '%s\n' "$only_titles" | grep -nE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
-  if [ "$only_keep" = ",1," ]; then
-    echo "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section; the sections are:" >&2
-    printf '%s\n' "$only_titles"
-    exit 1
-  fi
-  eval "$(section_awk text "$only_keep")"
-  exit $?
 fi
 
 # >>> shared setup
@@ -9989,11 +9959,6 @@ done <"$GH_GUARD_LOG"
 if [ -n "$orch_child_counts" ]; then
   echo "$PASS $FAIL $SKIP" >"$orch_child_counts"
 else
-  echo
-  if [ "$SKIP" -gt 0 ]; then
-    echo "$PASS passed, $FAIL failed, $SKIP skipped"
-  else
-    echo "$PASS passed, $FAIL failed"
-  fi
+  print_summary "$PASS" "$FAIL" "$SKIP"
 fi
 [ "$FAIL" -eq 0 ]
