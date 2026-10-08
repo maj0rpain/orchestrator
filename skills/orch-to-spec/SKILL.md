@@ -8,7 +8,8 @@ description: Turn the current conversation into a spec - no interview, just synt
 Adapted from the `to-spec` skill in `mattpocock-skills` 1.2.3.
 
 Take the current conversation and what you know of the codebase, and turn it
-into a spec published as one GitHub issue. Do not interview the user: synthesize
+into a spec: published as one new GitHub issue, or, in rewrite mode, written
+over an existing issue's body. Do not interview the user: synthesize
 what is already known. The one exchange is the test-seams check in step 2, and
 in rewrite mode the retire-or-keep question when the issue already has a ticket
 breakdown.
@@ -82,8 +83,8 @@ turns out missing, take the fallback it documents and tell your caller which.
    with an ad hoc `gh` call, and add no other triage label. If it fails, stop
    and say why: a spec that is not verifiably published is not published.
 
-5. **Report** the published issue number. In rewrite mode, report as
-   **Rewrite the issue** says.
+5. **Report** the issue number: the published issue's in publish mode; in
+   rewrite mode, report as **Rewrite the issue** says.
 
 ## Rewrite the issue
 

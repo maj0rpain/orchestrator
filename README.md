@@ -133,7 +133,7 @@ dirties a repo's working tree.
 | `/orchestrator:spec-review <issue>` | Review any spec issue on demand, outside a flow: a standalone spec review. |
 | `/orchestrator:review <issue>` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Drops findings an earlier pass on the branch's open PR already declined, fixes what it agrees with, and posts what it declines - and what it dropped as previously declined - on that PR. |
 | `/orchestrator:interview` | Start a planning session: an interview that reaches a shared understanding, then asks how to carry it forward. |
-| `/orchestrator:to-spec` | Turn the current conversation into a spec and publish it as an issue, outside any flow. |
+| `/orchestrator:to-spec [<issue>]` | Turn the current conversation into a spec, outside any flow: publish it as a new issue, or, given an issue number, rewrite that issue's body as the spec (rewrite mode). |
 | `/orchestrator:to-tickets <issue>` | Break an existing issue into tickets published as its sub-issues, or collapse it into the issue, outside any flow. |
 | `/orchestrator:finding-triage [<issue> \| --pr <n>]` | Finding triage: check the review loop's open filed findings against the default branch and move each out of `needs-triage`, one batch of proposed outcomes per source PR. |
 
@@ -232,7 +232,7 @@ skills/orch-review/           the review loop: rubric, authority rules, terminal
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
 skills/orch-quick-implement/  the other route: issue, unattended spec review, orch-to-tickets, tdd, review pass, PR - no flow
 skills/orch-interview/        the planning interview; hook-grilling.sh's message asks the closing question
-skills/orch-to-spec/          turns the conversation into a spec and publishes it as an issue
+skills/orch-to-spec/          turns the conversation into a spec: publishes it as a new issue, or rewrites a given issue's body
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
 skills/orch-finding-triage/   finding triage: scan the filed findings against the default branch, one batch per source PR, apply
