@@ -106,6 +106,11 @@ d_skip_report() {
   d_skip_line "$D_JQ_SKIPPED" "flow"   "jq is not installed"
 }
 
+# gh_installed: whether a gh binary is on PATH. type -P, not command -v:
+# orch.sh's gh guard is a function, which command -v would report as present
+# with no gh installed.
+gh_installed() { type -P gh >/dev/null 2>&1; }
+
 # Ask GitHub at most once, and only when something actually needs it: `gh auth
 # status` doubles as the reachability probe. Telling "not authenticated" from
 # "could not connect" is the whole basis of the severity rule, and the only
@@ -113,9 +118,7 @@ d_skip_report() {
 d_probe_gh() {
   local out
   if [ -n "$D_GH" ]; then return 0; fi
-  # type -P, not command -v: orch.sh's gh guard is a function, which command -v
-  # would report as present with no gh installed.
-  if ! type -P gh >/dev/null 2>&1; then D_GH="gh is not installed"; return 0; fi
+  if ! gh_installed; then D_GH="gh is not installed"; return 0; fi
   # The guard dies with no repo to pin its calls to; ask nothing instead.
   if ! repo_resolve; then D_GH="no GitHub repo to work on"; return 0; fi
   if out="$(adapter_auth_status 2>&1)"; then
@@ -162,7 +165,7 @@ check_git() {
 }
 
 check_gh() {
-  if type -P gh >/dev/null 2>&1; then d_ok "gh present"; return 0; fi
+  if gh_installed; then d_ok "gh present"; return 0; fi
   d_fail "gh not found - the spec phase publishes the issue and the PR through it."
   d_remedy "brew install gh    # or your platform's package manager"
 }
@@ -221,7 +224,7 @@ check_gh_repo() {
   # set-default --view reads local git config, so it needs gh but no network.
   # It prints a bare owner/name even for a default off github.com, so it is
   # compared with REPO_NAME's owner/name, any host dropped.
-  if type -P gh >/dev/null 2>&1; then
+  if gh_installed; then
     default="$(adapter_repo_local_default 2>/dev/null)" || default=""
     default="$(first_line "$default")"
     owner_name="$(repo_owner_name "$REPO_NAME")"
