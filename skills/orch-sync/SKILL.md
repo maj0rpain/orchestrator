@@ -85,7 +85,7 @@ syncs and reviews the merged code.
 
 Otherwise - no flow here, a `done` flow, or a flow holding another branch -
 ask the human, as a multiple-choice question, whether to run a review pass
-against the issue the branch's name carries (`orch/<issue>-…` or
-`quick/<issue>-…`): run it now, or not. On a yes, invoke the `orch-review`
+against step 1's issue - the one the branch's name carries, or the one the
+human gave: run it now, or not. On a yes, invoke the `orch-review`
 skill and follow its **Standalone review pass** section with that issue -
 one pass, never a review loop. On a no, stop.

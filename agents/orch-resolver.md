@@ -138,7 +138,11 @@ checked out in the driver's checkout.
    ```
 
    It starts the rebase itself.
-3. **Merge again.** Rerun `bash "$ORCH" ticket merge <n>`. On exit 0,
+3. **Merge again.** First check the resolution: if any of step 4's failure
+   conditions holds - the report is malformed or not `resolved`, or the
+   ticket worktree is left mid-rebase or dirty - the resolution failed: go
+   to step 4 without merging. Otherwise rerun `bash "$ORCH" ticket merge
+   <n>`. On exit 0,
    proceed as loop step d does: close the ticket, remove its worktree, and
    refill. The ticket's **Merge resolutions** are the report's `Files`,
    `Dropped` and `Verification` lines, under the ticket's number. A

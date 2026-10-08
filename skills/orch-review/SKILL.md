@@ -186,7 +186,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    into the next iteration's triage. A major or nit it could not fix needs
    nothing from you: its record lists it as waiting to be filed, and the
    closer files it.
-7. Go to step 1. Nothing found ends the loop early; only the budget does. A
+7. Go to step 1. Nothing found ends the loop early; only the budget does,
+   or a failed base sync at step 2. A
    **clean iteration** - nothing to fix, so no fixer - is the cheap case, and
    buying the extra looks is the point.
 

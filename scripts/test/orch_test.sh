@@ -5535,12 +5535,12 @@ assert_eq "having aborted its rebase first" \
   "$([ -d "$(git -C "$wt" rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "none"
 assert_eq "returning the ticket branch to its committed tip" \
   "$(git -C "$wt" rev-parse HEAD) $(git -C "$wt" branch --show-current)" "$ticket_tip orch/5-feature--t7"
-assert_eq "and removing nothing with force" "$([ -d "$wt" ] && echo present || echo absent)" "present"
+assert_eq "and removing nothing with force" "$(on_disk "$wt")" "present"
 rm "$wt/untracked.txt"
 git -C "$wt" rebase -q orch/5-feature >/dev/null 2>&1
 out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
 assert_status "remove --unmerged of a clean mid-rebase worktree succeeds" "$st" 0
-assert_eq "removing the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
+assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
 assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 git reset -q --hard HEAD~1
 
