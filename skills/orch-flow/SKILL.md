@@ -395,7 +395,10 @@ scratch.
 ## Abort
 
 1. Confirm with the user.
-2. `bash "$ORCH" archive`.
+2. `bash "$ORCH" archive`. In a side checkout it moves the flow to the main
+   checkout's archive, then removes the worktree, never with force: a dirty
+   one is reported and kept. Relay what it prints, and when it says this
+   session's working directory is gone, tell the user to close this session.
 3. Report what survives: the branch, the spec issue, and the PR are untouched, so
    list whichever exist and let the user clean up.
 

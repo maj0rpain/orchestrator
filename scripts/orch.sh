@@ -773,8 +773,10 @@ cmd_init() {
       slug: $slug, issue: (if $issue == "" then null else ($issue | tonumber) end),
       base: $base, created: $now, updated: $now
     }')" || die "could not build the state seed - nothing was written"
+  # archive_flow, not cmd_archive: in a side checkout the old flow moves to the
+  # main checkout's archive, but the worktree stays - the new flow lives here.
   if [ -f "$STATE" ]; then
-    archive_note="$(cmd_archive)" || exit 1
+    archive_note="$(archive_flow "$ROOT")" || exit 1
   fi
   mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"
   exclude_orch_dirs
@@ -3349,11 +3351,16 @@ cmd_ticket_worktree_add() {
 # worktrees are that checkout's business.
 cmd_ticket_worktree_list() {
   [ $# -eq 0 ] || die "usage: orch.sh ticket-worktree list"
+  ticket_worktrees_under "$ROOT"
+}
+
+# Prints <n> <path> for every ticket worktree under the checkout at <root>.
+ticket_worktrees_under() {
   local line path name
   while IFS= read -r line; do
     case "$line" in "worktree "*) ;; *) continue ;; esac
     path="${line#worktree }"
-    [ "$(dirname "$path")" = "$TICKET_WORKTREES" ] || continue
+    [ "$(dirname "$path")" = "$1/$ORCH_DIR_NAME/worktrees" ] || continue
     name="$(basename "$path")"
     case "$name" in t[1-9]*) ;; *) continue ;; esac
     case "${name#t}" in *[!0-9]*) continue ;; esac
@@ -3361,13 +3368,14 @@ cmd_ticket_worktree_list() {
   done < <(git worktree list --porcelain)
 }
 
-# Dies, naming every ticket worktree under this checkout, when any is left:
-# moving .orchestrator/ wholesale would break git's record of each one.
+# Dies, naming every ticket worktree under the checkout at <root> (this one by
+# default), when any is left: moving .orchestrator/ wholesale would break git's
+# record of each one, and removing the checkout would delete them.
 refuse_ticket_worktrees() {
   local left
-  left="$(cmd_ticket_worktree_list)"
+  left="$(ticket_worktrees_under "${1:-$ROOT}")"
   [ -n "$left" ] || return 0
-  die "ticket worktrees are left under this checkout - moving them would break git's record of them:
+  die "ticket worktrees are left under ${1:-this checkout} - moving them would break git's record of them:
 $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
      Remove each with orch.sh ticket-worktree remove <n> first."
 }
@@ -3543,13 +3551,41 @@ cmd_side_checkout_list() {
   done < <(checkout_paths)
 }
 
+# Removes side checkout <slug> by hand, never with force. Every refusal - an
+# unknown slug, a worktree without the marker, uncommitted changes or
+# untracked files, a ticket worktree left inside it - runs before anything
+# moves. Then any flow is archived into the main checkout, and the worktree is
+# removed; if that still fails, the archive stands and remove exits 1. The
+# branch is left in place.
+cmd_side_checkout_remove() {
+  [ $# -eq 1 ] || die "usage: orch.sh side-checkout remove <slug>"
+  local slug path err here
+  here="$(pwd -P)"
+  slug="$(normalize_slug "$1")"
+  path="$(side_checkouts_dir)/$slug"
+  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+    || die "no side checkout $slug at $path"
+  is_side_checkout "$path" \
+    || die "$path carries no side-checkout marker - it is not the plugin's to remove, so it is left alone"
+  [ -z "$(git -C "$path" status --porcelain)" ] \
+    || die "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
+  refuse_ticket_worktrees "$path"
+  if checkout_has_flow "$path"; then archive_flow "$path"; fi
+  if ! err="$(git -C "$(main_checkout)" worktree remove "$path" 2>&1)"; then
+    die "could not remove side checkout $path: $(first_line "$err")"
+  fi
+  note "removed side checkout $path"
+  side_checkout_close_note "$path" "$here"
+}
+
 cmd_side_checkout() {
   local op="${1:-}"
   shift || true
   case "$op" in
-    add)  cmd_side_checkout_add "$@" ;;
-    list) cmd_side_checkout_list "$@" ;;
-    *) die "unknown side-checkout op: ${op:-<none>} (want add|list)" ;;
+    add)    cmd_side_checkout_add "$@" ;;
+    list)   cmd_side_checkout_list "$@" ;;
+    remove) cmd_side_checkout_remove "$@" ;;
+    *) die "unknown side-checkout op: ${op:-<none>} (want add|list|remove)" ;;
   esac
 }
 
@@ -3772,21 +3808,59 @@ status_flow() {
 
 # Archive rather than delete: the moment you want a handoff back is precisely
 # the moment you just threw it away. The directory is git-excluded anyway.
+# In a side checkout, git worktree remove would delete the archive with the
+# worktree - it deletes ignored files - so the flow moves to the main
+# checkout's archive first, and only then is the worktree removed (ADR-0037).
 cmd_archive() {
   require_state
-  refuse_ticket_worktrees
-  local slug ts dest entry
-  slug="$(state_get slug)"
-  ts="$(dir_stamp)"
-  dest="$ORCH/archive/$ts-$slug"
+  archive_flow "$ROOT"
+  if is_side_checkout "$ROOT"; then side_checkout_remove_after_archive "$ROOT"; fi
+}
+
+# Moves the flow in the checkout at <root> into an archive directory, and
+# prints that directory - relative to this checkout when inside it, else in
+# full. A side checkout's flow goes to the main checkout's archive; any other
+# checkout, a hand-made worktree included, archives in place.
+archive_flow() {
+  local root="$1" orch="$1/$ORCH_DIR_NAME" home slug dest entry
+  refuse_ticket_worktrees "$root"
+  home="$orch"
+  if is_side_checkout "$root"; then home="$(main_checkout)/$ORCH_DIR_NAME"; fi
+  slug="$(state_get_in "$orch/state.json" slug)"
+  dest="$home/archive/$(dir_stamp)-$slug"
   mkdir -p "$dest"
-  for entry in "$ORCH"/*; do
+  for entry in "$orch"/*; do
     [ -e "$entry" ] || continue
     # Side checkouts are live worktrees, never part of the flow's files.
     case "$(basename "$entry")" in archive|checkouts) continue ;; esac
     mv "$entry" "$dest/"
   done
   note "${dest#"$ROOT"/}"
+}
+
+# Removes the side checkout at <path> once its flow is archived, never with
+# force. A dirty worktree is reported and kept: the archive has still
+# succeeded. When this command ran inside the removed worktree, the session
+# working there is told to close.
+side_checkout_remove_after_archive() {
+  local path="$1" err here
+  # Read before the removal: once the worktree is gone, so is this directory.
+  here="$(pwd -P)"
+  if ! err="$(git -C "$(main_checkout)" worktree remove "$path" 2>&1)"; then
+    warn "kept side checkout $path - it was not removed: $(first_line "$err")
+     Commit or discard its changes, then run orch.sh side-checkout remove $(basename "$path")."
+    return 0
+  fi
+  note "removed side checkout $path"
+  side_checkout_close_note "$path" "$here"
+}
+
+# Tells the human to close the session when this command ran in <here>, inside
+# <path>, a worktree just removed: the session's working directory is gone.
+side_checkout_close_note() {
+  case "$2/" in
+    "$1"/*) note "This session's working directory was that side checkout, and it is gone - close this session." ;;
+  esac
 }
 
 cmd_help() {
@@ -4030,6 +4104,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               (flow <slug> <phase> #<issue>), its branch
                               (branch <name>), or (no branch), for each side
                               checkout of the clone - marked worktrees only
+  side-checkout remove <slug> remove side checkout <slug>, never with --force.
+                              Refuses an unknown slug, a worktree without the
+                              side-checkout marker, uncommitted changes or
+                              untracked files, and a ticket worktree inside it,
+                              before anything moves; then archives any flow
+                              into the main checkout's .orchestrator/archive/
+                              and removes the worktree, leaving its branch.
+                              Exits 1, the archive standing, when the removal
+                              still fails
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
@@ -4117,7 +4200,11 @@ orch.sh - deterministic operations for the orchestrator flow
   archive                     move the live flow into .orchestrator/archive/,
                               leaving archive/ and checkouts/ in place
                               (refuses, naming each, while a ticket worktree
-                              is left under this checkout)
+                              is left under this checkout). In a side
+                              checkout, the flow moves to the main checkout's
+                              .orchestrator/archive/ and the worktree is then
+                              removed, never with --force: a dirty one is
+                              reported and kept, the archive still made
 USAGE
 }
 

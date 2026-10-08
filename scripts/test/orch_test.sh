@@ -5266,6 +5266,131 @@ assert_not_contains "a quick implementation in the main checkout never appears" 
 assert_not_contains "nor its branch" "$out" "quick/9-main"
 restore_suite_env
 
+# --- side-checkout archive and remove (#724) -----------------------------------
+# git worktree remove deletes ignored files, .orchestrator/ included, so a side
+# checkout's flow is archived into the main checkout before its worktree goes.
+# Checked through the archive and worktrees left on disk, and the output.
+echo
+echo "side-checkout archive and remove"
+sa_present() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
+# sa_archived <top> <slug>: how many archive directories for <slug> the main
+# checkout at <top> holds.
+sa_archived() { find "$1/.orchestrator/archive" -maxdepth 1 -name "*-$2" 2>/dev/null | wc -l | tr -d ' '; }
+
+sc_clone
+top="$(git rev-parse --show-toplevel)"
+
+# archive in a clean side checkout, run from inside it.
+alpha="$(orch_gh_failing side-checkout add alpha)"
+(cd "$alpha" && orch_gh_failing init alpha-flow >/dev/null)
+complete_plan_handoff "$(cd "$alpha" && orch_gh_failing handoff path spec)"
+out="$(cd "$alpha" && orch_gh_failing archive 2>&1)"; st=$?
+assert_status "archive in a clean side checkout succeeds" "$st" 0
+assert_eq "it leaves the archive in the main checkout's .orchestrator/archive/" \
+  "$(sa_archived "$top" alpha-flow)" "1"
+assert_eq "with the flow's handoffs in it" \
+  "$(sa_present "$(find "$top/.orchestrator/archive" -maxdepth 1 -name '*-alpha-flow')/handoff/01-plan.md")" "present"
+assert_contains "it prints the archive's full path" "$out" "$top/.orchestrator/archive/"
+assert_eq "the worktree is gone from disk" "$(sa_present "$alpha")" "absent"
+assert_not_contains "and from git's list" "$(git worktree list)" "$alpha"
+assert_contains "it tells the human to close the session" "$out" "close this session"
+
+# archive in a dirty side checkout: the archive succeeds, the worktree stays.
+beta="$(orch_gh_failing side-checkout add beta)"
+(cd "$beta" && orch_gh_failing init beta-flow >/dev/null)
+echo wip >"$beta/wip.txt"
+out="$(cd "$beta" && orch_gh_failing archive 2>&1)"; st=$?
+assert_status "archive in a dirty side checkout succeeds" "$st" 0
+assert_eq "it archives into the main checkout" "$(sa_archived "$top" beta-flow)" "1"
+assert_eq "and leaves the worktree in place" "$(sa_present "$beta/wip.txt")" "present"
+assert_contains "reporting why it was kept" "$out" "kept side checkout $beta"
+assert_contains "naming the remove command" "$out" "side-checkout remove beta"
+assert_not_contains "and never tells the human to close the session" "$out" "close this session"
+assert_eq "no flow is left in it" "$(sa_present "$beta/.orchestrator/state.json")" "absent"
+
+# init over a done flow in a side checkout archives to the main checkout and
+# keeps the worktree, where the new flow lives.
+gamma="$(orch_gh_failing side-checkout add gamma)"
+(cd "$gamma" && orch_gh_failing init old-flow >/dev/null && state_fixture phase "done")
+out="$(cd "$gamma" && orch_gh_failing init new-flow 2>&1)"; st=$?
+assert_status "init over a done flow in a side checkout succeeds" "$st" 0
+assert_eq "it archives the old flow into the main checkout" "$(sa_archived "$top" old-flow)" "1"
+assert_eq "and nothing into the side checkout's own archive" \
+  "$(sa_present "$gamma/.orchestrator/archive")" "absent"
+assert_eq "the worktree stays" "$(git -C "$gamma" rev-parse --show-toplevel)" "$gamma"
+assert_eq "holding the new flow" "$(cd "$gamma" && orch_gh_failing state get slug)" "new-flow"
+
+# archive in a hand-made worktree archives in place and leaves it.
+hand="$(mktemp -d)/hand"
+git worktree add -q -b hand "$hand"
+(cd "$hand" && orch_gh_failing init hand-flow >/dev/null)
+out="$(cd "$hand" && orch_gh_failing archive 2>&1)"; st=$?
+assert_status "archive in a hand-made worktree succeeds" "$st" 0
+assert_eq "it archives in place" "$(sa_archived "$hand" hand-flow)" "1"
+assert_eq "not into the main checkout" "$(sa_archived "$top" hand-flow)" "0"
+assert_eq "the worktree stays" "$(git -C "$hand" rev-parse --show-toplevel)" "$hand"
+assert_not_contains "with no removal reported" "$out" "side checkout"
+
+# side-checkout remove: every refusal before anything moves.
+out="$(orch_gh_failing side-checkout remove nosuch 2>&1)"; st=$?
+assert_status "remove refuses an unknown slug" "$st" 1
+assert_contains "naming it" "$out" "no side checkout nosuch"
+unmarked="$top/.orchestrator/checkouts/unmarked"
+git worktree add -q --detach "$unmarked"
+(cd "$unmarked" && orch_gh_failing init unmarked-flow >/dev/null)
+out="$(orch_gh_failing side-checkout remove unmarked 2>&1)"; st=$?
+assert_status "remove refuses a worktree without the marker" "$st" 1
+assert_contains "saying it is left alone" "$out" "left alone"
+assert_eq "its flow is not moved" "$(sa_present "$unmarked/.orchestrator/state.json")" "present"
+assert_eq "nor its worktree removed" "$(sa_present "$unmarked")" "present"
+(cd "$gamma" && git checkout -q -b quick/5-gamma)
+echo wip >"$gamma/wip.txt"
+out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
+assert_status "remove refuses untracked files" "$st" 1
+assert_contains "naming the side checkout" "$out" "$gamma"
+assert_eq "its flow is not moved" "$(sa_archived "$top" new-flow)" "0"
+rm "$gamma/wip.txt"
+echo changed >>"$gamma/$(git -C "$gamma" ls-files | head -1)"
+out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
+assert_status "remove refuses uncommitted changes" "$st" 1
+assert_eq "its flow is not moved" "$(sa_archived "$top" new-flow)" "0"
+git -C "$gamma" checkout -q -- .
+
+# remove archives the flow into the main checkout, removes the worktree, and
+# keeps the branch.
+out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
+assert_status "remove succeeds on a clean side checkout" "$st" 0
+assert_eq "it archives the flow into the main checkout" "$(sa_archived "$top" new-flow)" "1"
+assert_eq "the worktree is gone" "$(sa_present "$gamma")" "absent"
+assert_not_contains "and from git's list" "$(git worktree list)" "$gamma"
+assert_eq "the branch is kept" \
+  "$(git rev-parse --verify --quiet refs/heads/quick/5-gamma >/dev/null && echo kept || echo gone)" "kept"
+assert_not_contains "run from the main checkout, no close-the-session message" "$out" "close this session"
+
+# remove of a side checkout holding no flow, run from inside it.
+delta="$(orch_gh_failing side-checkout add delta)"
+out="$(cd "$delta" && orch_gh_failing side-checkout remove delta 2>&1)"; st=$?
+assert_status "remove from inside the side checkout succeeds" "$st" 0
+assert_eq "the worktree is gone" "$(sa_present "$delta")" "absent"
+assert_contains "and the session is told to close" "$out" "close this session"
+
+# A failing git worktree remove: the archive stands, and remove exits 1. A
+# locked worktree is one git refuses to remove without force.
+eps="$(orch_gh_failing side-checkout add eps)"
+(cd "$eps" && orch_gh_failing init eps-flow >/dev/null)
+git worktree lock "$eps"
+out="$(orch_gh_failing side-checkout remove eps 2>&1)"; st=$?
+assert_status "remove exits 1 when the worktree cannot be removed" "$st" 1
+assert_contains "reporting the failure" "$out" "could not remove side checkout $eps"
+assert_eq "the archive stands" "$(sa_archived "$top" eps-flow)" "1"
+assert_eq "the worktree stays" "$(sa_present "$eps")" "present"
+git worktree unlock "$eps"
+
+out="$(orch_gh_failing side-checkout remove 2>&1)"; st=$?
+assert_status "remove refuses a missing slug" "$st" 1
+assert_contains "side-checkout remove is in the usage text" "$(orch_gh_failing help)" "side-checkout remove <slug>"
+restore_suite_env
+
 # --- ticket merge (#621) -------------------------------------------------------
 # Lands a ticket branch on the branch it was forked from: rebase inside the
 # ticket worktree, then fast-forward the forked-from branch wherever it is
