@@ -768,13 +768,23 @@ assert_eq "leaves the working tree clean" "$(git status --porcelain)" ""
 assert_eq "excludes .orchestrator/ exactly once" "$(exclude_count .orchestrator/)" "1"
 assert_eq "excludes .scratch/ exactly once" "$(exclude_count .scratch/)" "1"
 
+# #720: a flow mid-pipeline is refused with its own exit code, 3, so a skill
+# can tell "a flow is active" apart from every other init failure.
 out="$("$ORCH" init other 2>&1)"; st=$?
-assert_status "refuses a second concurrent flow" "$st" 1
+assert_status "refuses a second concurrent flow with exit 3" "$st" 3
 assert_contains "explains how to clear the active flow" "$out" "abort"
+assert_contains "with the message unchanged" "$out" "a flow is already active (slug: my-feature, phase: spec)."
 
 out="$("$ORCH" init other --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "names the flag it rejected" "$out" "--bogus"
+
+out="$("$ORCH" init 2>&1)"; st=$?
+assert_status "a missing slug keeps its usage exit code" "$st" 1
+assert_contains "printing the usage" "$out" "usage: orch.sh init"
+
+out="$("$ORCH" init other --issue x 2>&1)"; st=$?
+assert_status "a malformed --issue keeps its exit code" "$st" 1
 
 # --- init git-excludes the plugin's directories once ---------------------------
 echo
@@ -1416,6 +1426,30 @@ assert_contains "names the branch" "$out" "quick/9-widgets already exists"
 
 out="$(orch_gh_failing branch off 2>&1)"; st=$?
 assert_status "refuses with no name" "$st" 1
+
+# #720: a quick implementation must never move an active flow's checkout off
+# its branch, so branch off refuses beside a flow mid-pipeline exactly as init
+# does - same exit code 3, same message - and checks nothing out.
+for phase in spec implement review; do
+  new_repo_with_origin
+  orch_gh_failing init busy >/dev/null
+  state_fixture phase "$phase"
+  before="$(git branch --show-current)"
+  out="$(orch_gh_failing branch off quick/4-beside 2>&1)"; st=$?
+  assert_status "refuses beside a flow at $phase with exit 3" "$st" 3
+  assert_contains "with init's message ($phase)" "$out" "a flow is already active (slug: busy, phase: $phase)."
+  assert_contains "and init's remedy ($phase)" "$out" "One flow at a time"
+  assert_eq "checks nothing out ($phase)" "$(git branch --show-current)" "$before"
+  assert_eq "creates no branch ($phase)" \
+    "$(git rev-parse --verify --quiet refs/heads/quick/4-beside >/dev/null && echo made || echo none)" "none"
+done
+
+new_repo_with_origin
+orch_gh_failing init finished >/dev/null
+state_fixture phase "done"
+out="$(orch_gh_failing branch off quick/4-after)"; st=$?
+assert_status "a done flow does not block branch off" "$st" 0
+assert_eq "which checks the branch out as before" "$(git branch --show-current)" "quick/4-after"
 
 # --- base --------------------------------------------------------------------
 # The checkout-wide base branch setting and its one resolver. A typo here is
@@ -2538,9 +2572,15 @@ assert_eq "with no prior flow, stdout is still just the slug" "$out" "nothing-to
 fresh_flow stale
 state_fixture phase implement
 out="$("$ORCH" init other 2>&1)"; st=$?
-assert_status "an implement-phase flow still refuses, same as spec" "$st" 1
+assert_status "an implement-phase flow still refuses with exit 3, same as spec" "$st" 3
 assert_contains "names the phase" "$out" "phase: implement"
 assert_contains "same message, unchanged" "$out" "One flow at a time"
+
+state_fixture phase review
+out="$("$ORCH" init other 2>&1)"; st=$?
+assert_status "a review-phase flow refuses with exit 3 too" "$st" 3
+assert_contains "naming the review phase" "$out" "phase: review"
+assert_eq "the active flow is left in place" "$("$ORCH" state get slug)" "stale"
 
 fresh_flow willfail
 fake_github

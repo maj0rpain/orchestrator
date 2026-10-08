@@ -520,6 +520,17 @@ require_on_origin() {
 # Whether a flow is active: state.json exists and its phase is not done.
 flow_active() { [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; }
 
+# The refusal of a second flow beside one mid-pipeline, shared by init and
+# branch off (a quick implementation must never move an active flow's checkout
+# off its branch). It exits 3, a code no other failure of either uses, so a
+# skill can tell "a flow is active" apart from every other refusal.
+refuse_beside_active_flow() {
+  flow_active || return 0
+  warn "a flow is already active (slug: $(state_get slug), phase: $(state_get phase)).
+     One flow at a time - finish it, or run $(flow_cmd abort)."
+  exit 3
+}
+
 # A flow's base is fixed when init seeds it: no redo and no change to the
 # checkout setting rewrites it, so its fork point and PR target cannot move
 # under it. base set --flow is the one exception: the explicit correction of
@@ -734,10 +745,7 @@ cmd_init() {
   # so it is not "active" in any sense that matters. init archives it and
   # proceeds instead of refusing; every other phase still blocks a second flow.
   local archive_note=""
-  if flow_active; then
-    die "a flow is already active (slug: $(state_get slug), phase: $(state_get phase)).
-     One flow at a time - finish it, or run $(flow_cmd abort)."
-  fi
+  refuse_beside_active_flow
   require_clean_outside_allowlist
   # Adoption is validated before anything is written, mirroring how
   # branch create and pr open die on their own preconditions rather than
@@ -2407,6 +2415,7 @@ cmd_branch_create() {
 # flow's base_sha has, for its reviewers to diff from.
 cmd_branch_off() {
   [ $# -eq 1 ] || die "usage: orch.sh branch off <name>"
+  refuse_beside_active_flow
   local base
   base="$(base_branch)"
   checkout_new_branch "$1" "$base"
@@ -3696,8 +3705,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               origin - never gh's default repo. --name prints
                               the bare [HOST/]OWNER/REPO alone, for gh -R.
                               Exits 1, naming GH_REPO, when neither resolves
-  init <slug> [--issue N]     start a flow (refuses if one is active, unless
-                              it is done - a done flow is archived, unless a
+  init <slug> [--issue N]     start a flow (refuses with exit 3 if one is
+                              active, unless it is done - a done flow is archived, unless a
                               ticket worktree is left, and the
                               new one starts over it, or if the working tree
                               has changes outside the planning allowlist);
@@ -3739,7 +3748,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               config) and its tip at branching as the base
                               SHA (branch.<name>.orchestrator-base-sha), and
                               no state - for a quick implementation, which
-                              keeps none
+                              keeps none. Refuses with exit 3, as init does,
+                              while a flow is mid-pipeline
   branch base-sha             print the current branch's base SHA as branch
                               off recorded it; a branch without one falls
                               back to the merge-base with its recorded base
