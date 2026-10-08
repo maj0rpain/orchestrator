@@ -181,6 +181,11 @@ options, start the flow (`orchestrator:orch-flow`), a quick implementation
 offer a spec review, publish the ticket breakdown, then stop), and do whichever
 the human picks.
 
+`/clear` (and Junie's `/new`) resets the once-per-session marker: a
+`SessionStart` hook on source `clear`, `hook-session-start.sh`, deletes the
+session's planning markers, so the next planning run in the fresh context gets
+the message again and the edit guard is no longer armed. Compaction keeps them.
+
 Junie has no `PostToolUse` event, so the same hook also runs on
 `UserPromptSubmit` and fires there when the prompt names a grilling entry
 point (`/orch-interview`, `/orchestrator:interview`, `/grilling`, `$grill-me`,
@@ -224,7 +229,7 @@ skills/orch-release/          the release PR: model writes title and summary, pr
 skills/orch-finding-triage/   finding triage: scan the filed findings against the default branch, one batch per source PR, apply
 scripts/orch.sh               every deterministic operation (mechanism)
 scripts/doctor.sh             diagnostics plus triage-label/issue-adoption parsing, sourced by orch.sh and hook-grilling.sh
-scripts/hook-*.sh             the three hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie
+scripts/hook-*.sh             the four hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
 scripts/test/                 shell tests

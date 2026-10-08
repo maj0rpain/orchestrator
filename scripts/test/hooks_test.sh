@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for the three hook scripts.
+# Tests for the four hook scripts.
 #
 # The failure modes worth catching: the grilling hook firing on skills that
 # aren't planning, firing twice in one session, or staying silent when it should
@@ -12,6 +12,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GRILL="$DIR/hook-grilling.sh"
 GUARD="$DIR/hook-guard.sh"
 QUICK="$DIR/hook-quick-implement.sh"
+START="$DIR/hook-session-start.sh"
 COMMON="$DIR/hook-common.sh"
 PASS=0
 FAIL=0
@@ -536,6 +537,105 @@ rm -f "$TMPDIR/orchestrator-grilling-r1"
 
 assert_empty "hooks.json has no PreToolUse Read matcher" \
   "$(jq -r '.hooks.PreToolUse[]? | select(.matcher == "Read") | .matcher' "$DIR/../hooks/hooks.json")"
+
+echo
+echo "hook-session-start"
+
+# /clear on Claude Code, /new on Junie: SessionStart with source "clear" keeps
+# the session ID but wipes the context, so the session's planning markers go
+# with it. compact, startup and resume keep them.
+start_event() {
+  jq -n --arg src "$1" --arg sid "$2" --arg cwd "$REPO" \
+    '{hook_event_name:"SessionStart", session_id:$sid, cwd:$cwd, source:$src}'
+}
+markers_present() {
+  local n=0
+  [ -e "$TMPDIR/orchestrator-grilling-$1" ] && n=$((n + 1))
+  [ -e "$TMPDIR/orchestrator-planning-$1" ] && n=$((n + 1))
+  echo "$n"
+}
+
+: >"$TMPDIR/orchestrator-grilling-ss1"; : >"$TMPDIR/orchestrator-planning-ss1"
+out="$(start_event clear ss1 | "$START")"; st=$?
+assert_eq "clear exits 0" "$st" 0
+assert_empty "clear emits no context" "$out"
+assert_eq "clear removes the session's grilling and planning markers" "$(markers_present ss1)" 0
+
+for src in compact startup resume; do
+  : >"$TMPDIR/orchestrator-grilling-ss-$src"; : >"$TMPDIR/orchestrator-planning-ss-$src"
+  out="$(start_event "$src" "ss-$src" | "$START")"; st=$?
+  assert_eq "$src exits 0" "$st" 0
+  assert_empty "$src emits nothing" "$out"
+  assert_eq "$src leaves both markers in place" "$(markers_present "ss-$src")" 2
+  rm -f "$TMPDIR/orchestrator-grilling-ss-$src" "$TMPDIR/orchestrator-planning-ss-$src"
+done
+
+# With no session_id the marker path would end in "-": nothing may be removed.
+: >"$TMPDIR/orchestrator-grilling-"; : >"$TMPDIR/orchestrator-planning-"
+: >"$TMPDIR/orchestrator-grilling-ss2"; : >"$TMPDIR/orchestrator-planning-ss2"
+out="$(jq -n --arg cwd "$REPO" '{hook_event_name:"SessionStart", cwd:$cwd, source:"clear"}' | "$START")"; st=$?
+assert_eq "no session_id exits 0" "$st" 0
+assert_empty "no session_id exits silently" "$out"
+assert_eq "no session_id removes no marker" \
+  "$(( $(markers_present "") + $(markers_present ss2) ))" 4
+rm -f "$TMPDIR/orchestrator-grilling-" "$TMPDIR/orchestrator-planning-"
+
+out="$(start_event clear ss2 | "$START")"
+assert_eq "only the named session's markers are removed" "$(markers_present ss1)$(markers_present ss2)" "00"
+: >"$TMPDIR/orchestrator-grilling-ss3"; : >"$TMPDIR/orchestrator-planning-ss3"
+start_event clear ss4 | "$START" >/dev/null
+assert_eq "another session's markers stay in place" "$(markers_present ss3)" 2
+rm -f "$TMPDIR/orchestrator-grilling-ss3" "$TMPDIR/orchestrator-planning-ss3"
+
+out="$(start_event clear ss-none | "$START")"; st=$?
+assert_eq "clear with no marker present exits 0" "$st" 0
+assert_empty "clear with no marker present prints nothing" "$out"
+
+# A marker in a TMPDIR that cannot be written cannot be deleted: still exit 0.
+if [ "$(id -u)" -eq 0 ]; then
+  ok "a failed deletion still exits 0 (skipped as root)"
+else
+  RO_TMP="$(mktemp -d)"
+  : >"$RO_TMP/orchestrator-grilling-ro1"; : >"$RO_TMP/orchestrator-planning-ro1"
+  chmod 500 "$RO_TMP"
+  out="$(start_event clear ro1 | TMPDIR="$RO_TMP" "$START" 2>&1)"; st=$?
+  chmod 700 "$RO_TMP"
+  assert_eq "a failed deletion still exits 0" "$st" 0
+  assert_empty "a failed deletion prints nothing" "$out"
+  rm -rf "$RO_TMP"
+fi
+
+# After a clear, the same session gets the planning message again.
+skill_event "mattpocock-skills:grilling" ss5 | "$GRILL" >/dev/null
+assert_empty "a second planning call before clear is silent" \
+  "$(skill_event "mattpocock-skills:grilling" ss5 | "$GRILL")"
+start_event clear ss5 | "$START" >/dev/null
+assert_contains "after a clear, a planning skill call gets the planning message again" \
+  "$(skill_event "mattpocock-skills:grilling" ss5 | "$GRILL" | jq -r '.additionalContext')" \
+  "Do NOT offer to implement"
+
+# Junie: /new fires SessionStart with source clear.
+prompt_event '$grill-me probe' ss6 | "$GRILL" >/dev/null
+assert_empty "on Junie, the same planning prompt before clear is silent" \
+  "$(prompt_event '$grill-me probe' ss6 | "$GRILL")"
+jq -n --arg sid ss6 --arg cwd "$JUNIE_HOME" --arg pp "$REPO" \
+  '{hook_event_name:"SessionStart", session_id:$sid, cwd:$cwd, project_path:$pp, source:"clear"}' \
+  | "$START" >/dev/null
+assert_contains "on Junie, after SessionStart clear the planning message is sent again" \
+  "$(prompt_event '$grill-me probe' ss6 | "$GRILL" | jq -r '.additionalContext')" \
+  "Do NOT offer to implement"
+
+# End to end across the guard: planning arms it, clear disarms it.
+skill_event "mattpocock-skills:grilling" ss7 | "$GRILL" >/dev/null
+assert_eq "the planning hook arms the guard on a source file" \
+  "$(edit_event "$REPO/src/main.ts" ss7 | "$GUARD" | jq -r '.hookSpecificOutput.permissionDecision')" "deny"
+start_event clear ss7 | "$START" >/dev/null
+assert_empty "after SessionStart clear, the edit guard allows the source edit" \
+  "$(edit_event "$REPO/src/main.ts" ss7 | "$GUARD")"
+rm -f "$TMPDIR"/orchestrator-*-ss*
+
+assert_eq "hooks.json registers hook-session-start.sh under SessionStart with matcher clear" \
+  "$(jq -r '[.hooks.SessionStart[]? | select(.matcher == "clear") | .hooks[]?.command | select(test("hook-session-start\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
 
 echo
 echo "execute bit (docs/host-capabilities.md, \"Execute bit\")"
