@@ -4249,13 +4249,14 @@ restore_suite_env
 healthy_repo
 doctor_github
 
-# assert_leftover_reported <label> <top> <status>: doctor's run in $out failed
-# on this checkout's leftover ticket worktree 12, naming it and its remedy.
+# assert_leftover_reported <label> <top> <status> <output>: a doctor run that
+# exited <status> printing <output> failed on ticket worktree 12, the leftover
+# each caller adds under checkout <top>, naming it and its remedy.
 assert_leftover_reported() {
   assert_status "$1 fails on a leftover" "$3" 1
-  assert_contains "$1 names the leftover" "$out" \
+  assert_contains "$1 names the leftover" "$4" \
     "FAIL  ticket worktree $2/.orchestrator/worktrees/t12 is left over"
-  assert_contains "$1 gives its remedy" "$out" "orch.sh ticket-worktree remove 12"
+  assert_contains "$1 gives its remedy" "$4" "orch.sh ticket-worktree remove 12"
 }
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "--flow refuses to answer when there is no flow" "$st" 1
@@ -4276,7 +4277,7 @@ nf_linked="$(mktemp -d)/linked"
 git worktree add -q -b nf-other "$nf_linked"
 (cd "$nf_linked" && "$ORCH" ticket-worktree add 13 >/dev/null)
 out="$("$ORCH" doctor 2>&1)"; st=$?
-assert_leftover_reported "bare doctor with no flow" "$nf_top" "$st"
+assert_leftover_reported "bare doctor with no flow" "$nf_top" "$st" "$out"
 assert_contains "still states there is no flow" "$out" "ok    no active flow"
 assert_not_contains "another checkout's ticket worktree is not reported with no flow" "$out" "t13"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -4333,7 +4334,7 @@ iv_top="$(git rev-parse --show-toplevel)"
 "$ORCH" ticket-worktree add 12 >/dev/null
 for iv_args in "" "--flow"; do
   out="$("$ORCH" doctor $iv_args 2>&1)"; st=$?
-  assert_leftover_reported "doctor $iv_args with an invalid state.json" "$iv_top" "$st"
+  assert_leftover_reported "doctor $iv_args with an invalid state.json" "$iv_top" "$st" "$out"
 done
 "$ORCH" ticket-worktree remove 12
 cp "$statebak" .orchestrator/state.json
@@ -4576,7 +4577,7 @@ else
   "$ORCH" ticket-worktree add 12 >/dev/null
   for nj_args in "" "--flow"; do
     out="$(PATH="$nojq_path" "$ORCH" doctor $nj_args 2>&1)"; st=$?
-    assert_leftover_reported "doctor $nj_args without jq" "$nj_top" "$st"
+    assert_leftover_reported "doctor $nj_args without jq" "$nj_top" "$st" "$out"
   done
   "$ORCH" ticket-worktree remove 12
 fi

@@ -3880,9 +3880,10 @@ branch_checkout() {
 # abort that fails, which leaves the ticket worktree mid-rebase.
 cmd_ticket_merge() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
+  local n path branch parent parent_checkout rebase_err unmerged said
   # rebase_out is set by capture and only git's stderr is read.
   # shellcheck disable=SC2034
-  local n path branch parent parent_checkout rebase_out rebase_err unmerged said
+  local rebase_out
   ticket_worktree_resolve "$1"
   parent="$(forked_from_branch "$branch")" \
     || die "branch $branch records no forked-from branch"
@@ -4714,8 +4715,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               exits 1, leaving the worktree mid-rebase
   ticket-worktree add <n>     fork <current-branch>--t<n> from the current
                               branch's tip, record the forked-from branch on
-                              it (branch.<ticket-branch>.orchestrator-ticket-
-                              parent in local git config), check it out at
+                              it in local git config, check it out at
                               .orchestrator/worktrees/t<n> under this
                               checkout's top level, git-exclude .orchestrator/
                               in the clone's shared info/exclude, and print
