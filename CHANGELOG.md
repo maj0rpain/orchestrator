@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.21.3
+
+`ticket merge` exits 3 only on a real rebase conflict (#680). A rebase that
+fails any other way - a refusing hook, say - is aborted and exits 1, naming
+git's first line, so the session building the frontier stops instead of
+starting ticket resolution. A rebase abort that fails exits 1 and says the
+ticket worktree is left mid-rebase.
+
+`doctor` reports a leftover ticket worktree as a FAIL on every path - with no
+flow, an invalid `state.json`, or no `jq` - not only in an active flow (#673).
+Plain `doctor` now exits 1 on one. Quick implementation's skill and ADR-0036
+say the leftover surfaces in `doctor`.
+
+The forked-from branch's config key and the clean-tree guard each have one
+home in orch.sh, and `ticket merge`'s locals say what they hold (#674, #678,
+#736, #737, #738, #739). No message changes.
+
 ## 3.21.2
 
 all.sh's shellcheck step runs one shellcheck process per shell file, all
