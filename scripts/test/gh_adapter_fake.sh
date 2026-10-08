@@ -7,10 +7,12 @@
 # GitHub call.
 #
 # The fake is a file store (#280). Its operations, under the #280 operation
-# contract, parse no arguments: each keeps its state in the directory
-# ORCH_GH_FAKE_STORE names, so what one orch.sh process wrote is there for the
-# next one a test runs. orch_test.sh's fake_github creates the store, and its
-# fake_* helpers seed and read it back. Its layout:
+# contract, parse none of gh's flags, only each operation's own arguments - the
+# grammar the real ones take (#664), options parsed before fake_failing so a
+# bad call exits 2 even where a failure is seeded. Each keeps its state in the
+# directory ORCH_GH_FAKE_STORE names, so what one orch.sh process wrote is there
+# for the next one a test runs. orch_test.sh's fake_github creates the store,
+# and its fake_* helpers seed and read it back. Its layout:
 #
 #   labels           one label per line, "<name><TAB><colour><TAB><description>";
 #                    absent, the repo has no labels
@@ -89,8 +91,19 @@ fake_store() {
   printf '%s\n' "${ORCH_GH_FAKE_STORE:?the gh fake has no store - call fake_github}"
 }
 
+# fake_countdown <file>: true while the count the file holds is above zero,
+# counting it down by one; false where the file is absent or at zero.
+fake_countdown() {
+  local n
+  [ -f "$1" ] || return 1
+  n="$(cat "$1")"
+  [ "${n:-0}" -gt 0 ] || return 1
+  printf '%s\n' "$((n - 1))" >"$1"
+}
+
 # fake_failing <operation>: true when fake_fail named the operation, with its
-# stderr written, so an operation opens with `! fake_failing <op> || return 1`.
+# stderr written. An operation calls `! fake_failing <op> || return 1` once it
+# has parsed its own arguments, so a bad call exits 2 even with a failure seeded.
 fake_failing() {
   local f n s
   s="$(fake_store)" || return 1
@@ -108,13 +121,7 @@ fake_failing() {
   fi
   f="$s/fail/$1"
   [ -f "$f" ] || return 1
-  if [ -f "$f.after" ]; then
-    n="$(cat "$f.after")"
-    if [ "${n:-0}" -gt 0 ]; then
-      printf '%s\n' "$((n - 1))" >"$f.after"
-      return 1
-    fi
-  fi
+  ! fake_countdown "$f.after" || return 1
   if [ -f "$f.times" ]; then
     n="$(cat "$f.times")"
     if [ "${n:-0}" -le 1 ]; then
@@ -131,19 +138,11 @@ fake_failing() {
 # zero, counting it down by one, so an operation answers stale for exactly the
 # calls fake_lag asked for.
 fake_lagging() {
-  local f n
+  local f
   f="$(fake_store)/lag/$1" || return 1
   [ -f "$f" ] || return 1
-  if [ -f "$f.after" ]; then
-    n="$(cat "$f.after")"
-    if [ "${n:-0}" -gt 0 ]; then
-      printf '%s\n' "$((n - 1))" >"$f.after"
-      return 1
-    fi
-  fi
-  n="$(cat "$f")"
-  [ "${n:-0}" -gt 0 ] || return 1
-  printf '%s\n' "$((n - 1))" >"$f"
+  ! fake_countdown "$f.after" || return 1
+  fake_countdown "$f"
 }
 
 # fake_stale <operation>: the stale answer fake_lag gave the operation, or
@@ -221,9 +220,23 @@ fake_comment_append() {
   cat "$4" >"$d/$k/body"
 }
 
-# fake_comment_add <n> <author> <created-at> <body-file>: one comment appended
-# to issue #n.
-fake_comment_add() { fake_comment_append "$(fake_issue_dir "$1")/comments" "$2" "$3" "$4"; }
+# The author and timestamp of every comment the fake's own operations write.
+FAKE_COMMENT_AUTHOR=fake-gh
+FAKE_COMMENT_CREATED=2026-01-01T00:00:00Z
+
+# fake_comment_write <comments-dir> <body-file>: one comment appended by the
+# fake's own author and timestamp.
+fake_comment_write() { fake_comment_append "$1" "$FAKE_COMMENT_AUTHOR" "$FAKE_COMMENT_CREATED" "$2"; }
+
+# fake_close_comment <comments-dir> <text>: the text, byte for byte, appended
+# as a comment, as a close that carries one writes it.
+fake_close_comment() {
+  local c
+  c="$(mktemp)"
+  printf '%s' "$2" >"$c"
+  fake_comment_write "$1" "$c"
+  rm -f "$c"
+}
 
 # fake_comments_print <comments-dir>: the directory's comments in COMMENTS_JQ's
 # shape - each opened by its marker line, one blank line between, a newline
@@ -256,6 +269,30 @@ adapter_issue_comments() {
   ! fake_failing adapter_issue_comments || return 1
   fake_issue_known "$1" || return 1
   fake_comments_print "$(fake_issue_dir "$1")/comments"
+}
+
+# adapter_issue_json <n>: the stored issue as ISSUE_JSON_JQ's trimmed object -
+# its number, title, body byte for byte, label names, and each comment's
+# author, date and body.
+adapter_issue_json() {
+  ! fake_failing adapter_issue_json || return 1
+  fake_issue_known "$1" || return 1
+  local d k comments="[]" body
+  d="$(fake_issue_dir "$1")"
+  body="$d/body"
+  [ -f "$body" ] || body=/dev/null
+  if [ -d "$d/comments" ]; then
+    for k in $(ls "$d/comments" | sort -n); do
+      comments="$(jq -c --arg a "$(cat "$d/comments/$k/author")" \
+        --arg c "$(cat "$d/comments/$k/created")" --rawfile b "$d/comments/$k/body" \
+        '. + [{author: $a, createdAt: $c, body: $b}]' <<<"$comments")"
+    done
+  fi
+  jq -cn --argjson n "$1" --arg t "$(cat "$d/title" 2>/dev/null)" \
+    --rawfile b "$body" \
+    --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
+    --argjson c "$comments" \
+    '{number: $n, title: $t, body: $b, labels: $l, comments: $c}'
 }
 
 # adapter_issue_state_labels <n>: the stored state, then its labels. Lagging
@@ -321,6 +358,18 @@ fake_next_number() {
   printf '%s\n' "$(( ${n:-0} + 1 ))"
 }
 
+# fake_take_number <next_issue|next_pr>: the number a new issue or PR takes -
+# the counter's, or fake_next_number's where it is unset - printed, and the
+# counter advanced past it.
+fake_take_number() {
+  local f n
+  f="$(fake_store)/$1" || return 1
+  n="$(cat "$f" 2>/dev/null)"
+  [ -n "$n" ] || n="$(fake_next_number)"
+  printf '%s\n' "$((n + 1))" >"$f"
+  printf '%s\n' "$n"
+}
+
 # adapter_issue_create <title> <body-file> [label...]: a new open issue in the
 # store, numbered as fake_next_issue set (default one past the highest issue
 # or PR number the store holds), its number printed.
@@ -328,9 +377,7 @@ adapter_issue_create() {
   local title="$1" body="$2" n d
   shift 2
   ! fake_failing adapter_issue_create || return 1
-  n="$(cat "$(fake_store)/next_issue" 2>/dev/null)"
-  [ -n "$n" ] || n="$(fake_next_number)"
-  printf '%s\n' "$((n + 1))" >"$(fake_store)/next_issue"
+  n="$(fake_take_number next_issue)" || return 1
   d="$(fake_issue_dir "$n")"
   mkdir -p "$d"
   printf 'OPEN\n' >"$d/state"
@@ -353,42 +400,69 @@ adapter_issue_body_edit() {
 adapter_issue_comment() {
   ! fake_failing adapter_issue_comment || return 1
   fake_issue_known "$1" || return 1
-  fake_comment_add "$1" fake-gh 2026-01-01T00:00:00Z "$2"
+  fake_comment_write "$(fake_issue_dir "$1")/comments" "$2"
 }
 
-# adapter_issue_relabel <n> <add> <remove>: the comma-separated labels removed
-# from, then added to, the stored labels, each once.
+# fake_option_value <operation> <option> [value...]: true where <option> is
+# followed by a non-empty value; otherwise says so on stderr and returns 2, as
+# the real adapter's adapter_option_value does.
+fake_option_value() {
+  [ -z "${3:-}" ] || return 0
+  printf 'fake gh: %s: %s needs a value\n' "$1" "$2" >&2
+  return 2
+}
+
+# fake_unknown_option <operation> <argument>: refuses an argument the
+# operation does not take, on stderr, with status 2.
+fake_unknown_option() {
+  printf "fake gh: %s: unknown option '%s'\n" "$1" "$2" >&2
+  return 2
+}
+
+# adapter_issue_relabel <n> [--add <label>]... [--remove <label>]...: the
+# labels named removed from, then added to, the stored labels, each once.
 adapter_issue_relabel() {
-  local f l add=() remove=()
+  local n="$1" f l adds=() removes=()
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --add)    fake_option_value adapter_issue_relabel "$@" || return; adds+=("$2"); shift 2 ;;
+      --remove) fake_option_value adapter_issue_relabel "$@" || return; removes+=("$2"); shift 2 ;;
+      *) fake_unknown_option adapter_issue_relabel "$1"; return ;;
+    esac
+  done
+  # With nothing named, the real one makes no gh call, so nothing can fail.
+  [ ${#adds[@]} -gt 0 ] || [ ${#removes[@]} -gt 0 ] || return 0
   ! fake_failing adapter_issue_relabel || return 1
-  fake_issue_known "$1" || return 1
-  f="$(fake_issue_dir "$1")/labels"
-  [ -z "$2" ] || IFS=, read -r -a add <<<"$2"
-  [ -z "$3" ] || IFS=, read -r -a remove <<<"$3"
-  for l in ${remove[@]+"${remove[@]}"}; do
+  fake_issue_known "$n" || return 1
+  f="$(fake_issue_dir "$n")/labels"
+  for l in ${removes[@]+"${removes[@]}"}; do
     { grep -vxF -- "$l" "$f" || true; } >"$f.tmp"; mv "$f.tmp" "$f"
   done
-  for l in ${add[@]+"${add[@]}"}; do
+  for l in ${adds[@]+"${adds[@]}"}; do
     grep -qxF -- "$l" "$f" || printf '%s\n' "$l" >>"$f"
   done
 }
 
-# adapter_issue_close <n> [reason] [comment]: the stored issue CLOSED, its
-# reason (completed where none is given, as GitHub defaults) in reason, and
-# the comment, where given, appended by fake-gh.
+# adapter_issue_close <n> [--reason <r>] [--comment <c>]: the stored issue
+# CLOSED, its reason (completed where none is given, as GitHub defaults) in
+# reason, and the comment, where given, appended by fake-gh.
 adapter_issue_close() {
-  local d c
+  local n="$1" reason=completed comment="" d
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --reason)  fake_option_value adapter_issue_close "$@" || return; reason="$2"; shift 2 ;;
+      --comment) fake_option_value adapter_issue_close "$@" || return; comment="$2"; shift 2 ;;
+      *) fake_unknown_option adapter_issue_close "$1"; return ;;
+    esac
+  done
   ! fake_failing adapter_issue_close || return 1
-  fake_issue_known "$1" || return 1
-  d="$(fake_issue_dir "$1")"
-  if [ -n "${3:-}" ]; then
-    c="$(mktemp)"
-    printf '%s' "$3" >"$c"
-    fake_comment_add "$1" fake-gh 2026-01-01T00:00:00Z "$c"
-    rm -f "$c"
-  fi
+  fake_issue_known "$n" || return 1
+  d="$(fake_issue_dir "$n")"
+  [ -z "$comment" ] || fake_close_comment "$d/comments" "$comment"
   printf 'CLOSED\n' >"$d/state"
-  printf '%s\n' "${2:-completed}" >"$d/reason"
+  printf '%s\n' "$reason" >"$d/reason"
 }
 
 # adapter_issue_reopen <n>: the stored issue OPEN again.
@@ -411,24 +485,29 @@ fake_pr_known() {
   return 1
 }
 
-# adapter_pr_create <base> <head> <title> <body-file> [draft]: a new open PR in
-# the store, numbered as next_pr set (default one past the highest issue or PR
-# number the store holds, the two sharing GitHub's numbering), its number
-# printed.
+# adapter_pr_create <base> <head> <title> <body-file> [--draft]: a new open PR
+# in the store, numbered as next_pr set (default one past the highest issue or
+# PR number the store holds, the two sharing GitHub's numbering), a draft under
+# --draft, its number printed.
 adapter_pr_create() {
-  local n d
+  local base="$1" head="$2" title="$3" body="$4" draft=false n d
+  shift 4
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --draft) draft=true; shift ;;
+      *) fake_unknown_option adapter_pr_create "$1"; return ;;
+    esac
+  done
   ! fake_failing adapter_pr_create || return 1
-  n="$(cat "$(fake_store)/next_pr" 2>/dev/null)"
-  [ -n "$n" ] || n="$(fake_next_number)"
-  printf '%s\n' "$((n + 1))" >"$(fake_store)/next_pr"
+  n="$(fake_take_number next_pr)" || return 1
   d="$(fake_pr_dir "$n")"
   mkdir -p "$d"
   printf 'OPEN\n' >"$d/state"
-  printf '%s\n' "$1" >"$d/base"
-  printf '%s\n' "$2" >"$d/head"
-  printf '%s\n' "$3" >"$d/title"
-  cat "$4" >"$d/body"
-  [ "${5:-false}" != true ] || : >"$d/draft"
+  printf '%s\n' "$base" >"$d/base"
+  printf '%s\n' "$head" >"$d/head"
+  printf '%s\n' "$title" >"$d/title"
+  cat "$body" >"$d/body"
+  [ "$draft" != true ] || : >"$d/draft"
   printf '%s\n' "$n"
 }
 
@@ -513,13 +592,9 @@ adapter_prs_merged_bodies() {
 # adapter_pr_close <n> <comment>: the stored PR CLOSED, the comment appended
 # by fake-gh.
 adapter_pr_close() {
-  local c
   ! fake_failing adapter_pr_close || return 1
   fake_pr_known "$1" || return 1
-  c="$(mktemp)"
-  printf '%s' "$2" >"$c"
-  fake_comment_append "$(fake_pr_dir "$1")/comments" fake-gh 2026-01-01T00:00:00Z "$c"
-  rm -f "$c"
+  fake_close_comment "$(fake_pr_dir "$1")/comments" "$2"
   printf 'CLOSED\n' >"$(fake_pr_dir "$1")/state"
 }
 
@@ -528,7 +603,7 @@ adapter_pr_close() {
 adapter_pr_comment() {
   ! fake_failing adapter_pr_comment || return 1
   fake_pr_known "$1" || return 1
-  fake_comment_append "$(fake_pr_dir "$1")/comments" fake-gh 2026-01-01T00:00:00Z "$2"
+  fake_comment_write "$(fake_pr_dir "$1")/comments" "$2"
 }
 
 # adapter_pr_body_edit <n> <file>: the file's contents as the stored body.
@@ -697,7 +772,10 @@ fake_checks_answer() {
     # A failing check whose Actions link carries no numeric run id.
     badrunid) printf 'fail\tbuild\t%s/12abc\n' "$runs" ;;
     pending)  printf 'pending\tbuild\t\n' ;;
-    none)     ;;
+    # The fake records no head branch, so gh's no-checks line names a fixed one.
+    none)     fake_no_checks ;;
+    # gh's empty list, `[]`: nothing on stdout, nothing on stderr, exit 0.
+    empty)    ;;
     boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
     # Without this arm a mistyped answer prints nothing and succeeds, which
     # ci_probe reads as a repo with no checks - a test that passes while
@@ -705,6 +783,10 @@ fake_checks_answer() {
     *)        echo "gh fake: no checks answer named '$1'" >&2; return 99 ;;
   esac
 }
+
+# fake_no_checks: gh's "no checks" answer - nothing on stdout, its line on
+# stderr, exit 0 - as adapter_pr_checks passes it on.
+fake_no_checks() { echo "no checks reported on the 'topic' branch" >&2; }
 
 # adapter_pr_checks <n> <required|all>: the next answer of the script
 # fake_checks seeded for the PR and scope - one per call, the last repeating
@@ -714,7 +796,7 @@ adapter_pr_checks() {
   ! fake_failing adapter_pr_checks || return 1
   d="$(fake_store)/checks/$1"
   f="$d/$2"
-  [ -f "$f" ] || return 0
+  [ -f "$f" ] || { fake_no_checks; return 0; }
   i=$(( $(cat "$f.n" 2>/dev/null || echo 0) + 1 ))
   printf '%s\n' "$i" >"$f.n"
   answer="$(sed -n "${i}p" "$f")"

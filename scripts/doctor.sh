@@ -100,6 +100,11 @@ d_skip_report() {
   d_skip_line "$D_JQ_SKIPPED" "flow"   "jq is not installed"
 }
 
+# gh_installed: whether a gh binary is on PATH. type -P, not command -v:
+# orch.sh's gh guard is a function, which command -v would report as present
+# with no gh installed.
+gh_installed() { type -P gh >/dev/null 2>&1; }
+
 # Ask GitHub at most once, and only when something actually needs it: `gh auth
 # status` doubles as the reachability probe. Telling "not authenticated" from
 # "could not connect" is the whole basis of the severity rule, and the only
@@ -107,11 +112,9 @@ d_skip_report() {
 d_probe_gh() {
   local out
   if [ -n "$D_GH" ]; then return 0; fi
-  # type -P, not command -v: orch.sh's gh guard is a function, which command -v
-  # would report as present with no gh installed.
-  if ! type -P gh >/dev/null 2>&1; then D_GH="gh is not installed"; return 0; fi
+  if ! gh_installed; then D_GH="gh is not installed"; return 0; fi
   # The guard dies with no repo to pin its calls to; ask nothing instead.
-  if ! repo_resolve; then D_GH="no GitHub repo to work on"; return 0; fi
+  if ! repo_resolve; then D_GH="$REPO_REMEDY"; return 0; fi
   if out="$(adapter_auth_status 2>&1)"; then
     D_GH=ok
   else
@@ -156,7 +159,7 @@ check_git() {
 }
 
 check_gh() {
-  if type -P gh >/dev/null 2>&1; then d_ok "gh present"; return 0; fi
+  if gh_installed; then d_ok "gh present"; return 0; fi
   d_fail "gh not found - the spec phase publishes the issue and the PR through it."
   d_remedy "brew install gh    # or your platform's package manager"
 }
@@ -207,7 +210,7 @@ check_gh_auth() {
 check_gh_repo() {
   local default owner_name
   if ! repo_resolve; then
-    d_fail "no GitHub repo to work on - origin is missing or not a GitHub owner/name."
+    d_fail "$REPO_REMEDY"
     d_remedy "export GH_REPO=<owner>/<repo>"
     return 0
   fi
@@ -215,10 +218,10 @@ check_gh_repo() {
   # set-default --view reads local git config, so it needs gh but no network.
   # It prints a bare owner/name even for a default off github.com, so it is
   # compared with REPO_NAME's owner/name, any host dropped.
-  if type -P gh >/dev/null 2>&1; then
+  if gh_installed; then
     default="$(adapter_repo_local_default 2>/dev/null)" || default=""
     default="$(first_line "$default")"
-    owner_name="${REPO_NAME#"${REPO_NAME%/*/*}/"}"
+    owner_name="$(repo_owner_name "$REPO_NAME")"
     case "$default" in
       */*) if [ "$default" != "$owner_name" ]; then
              d_warn "gh's default repo is $default; the orchestrator uses $REPO_NAME"
@@ -457,10 +460,18 @@ check_labels_exist() {
 # that exists and read whether it answers or 404s. warn, never FAIL: the
 # real gate is ticket_publish's own verify-then-die, not this advisory probe
 # - a repo that fails it should be told at setup, not discover it mid-flow.
+# A probe that fails outright (a 5xx, a 403, no connection) is neither answer,
+# and says so in gh's own first line (#554).
 check_sub_issues() {
   d_gh_gate || return 0
-  local probe
-  probe="$(adapter_sub_issues_supported 2>/dev/null)" || probe=""
+  local probe err said rc=0
+  err="$(mktemp)"
+  probe="$(adapter_sub_issues_supported 2>"$err")" || rc=$?
+  said="$(first_line "$(cat "$err")")"; rm -f "$err"
+  if [ "$rc" -ne 0 ]; then
+    d_warn "sub-issues support could not be probed: $said"
+    return 0
+  fi
   if [ -z "$probe" ]; then
     d_warn "sub-issues support could not be probed - the repo has no issue to test it against."
     return 0
@@ -619,6 +630,9 @@ check_flow_issue() {
   issue="$(state_get issue)"
   if [ -z "$issue" ]; then d_ok "issue: not recorded yet"; return 0; fi
   d_gh_gate || return 0
+  # Only the state line is wanted, yet not from adapter_issue_state: that one
+  # answers PULL for a pull request's number, an answer doctor must not accept
+  # as the flow's issue state - this case knows OPEN and CLOSED only.
   issue_state_labels_read "$issue" issue_state issue_labels 2>/dev/null || issue_state=""
   phase="$(state_get phase)"
   case "$issue_state" in

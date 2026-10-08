@@ -147,8 +147,9 @@ new_repo() {
 }
 
 # bare_origin <path>: point origin at a local bare repo. A path names no GitHub
-# repo, so it names one through GH_REPO, as a caller would (#520); the stub
-# gh answers for acme/widgets. restore_suite_env unsets it again.
+# repo, so it names one through GH_REPO, as a caller would (#520); neither
+# the fixture gh nor the adapter fake checks the repo; the fixture logs
+# GH_REPO in env.log. restore_suite_env unsets it again.
 bare_origin() { git remote set-url origin "$1"; export GH_REPO=acme/widgets; }
 
 # new_repo_with_origin [branch]: new_repo, plus tracking refs for its origin:
@@ -376,6 +377,27 @@ fake_github() {
   export ORCH_GH_ADAPTER="$GH_ADAPTER_FAKE" ORCH_GH_FAKE_STORE
 }
 
+# fake_comment_seed <comments-dir> <author> <created-at> <body>: the body, byte
+# for byte, appended as a comment by the fake's own fake_comment_append, so the
+# store's comment layout has one writer.
+fake_comment_seed() {
+  printf '%s' "$4" |
+    bash -c 'source "$1"; fake_comment_append "$2" "$3" "$4" /dev/stdin' \
+      _ "$GH_ADAPTER_FAKE" "$1" "$2" "$3"
+}
+
+# fake_comment_bodies <comments-dir>: the bodies of the directory's comments,
+# in order, one blank line between; nothing for none.
+fake_comment_bodies() {
+  local d="$1" k first=1
+  [ -d "$d" ] || return 0
+  for k in $(ls "$d" | sort -n); do
+    [ "$first" = 1 ] || printf '\n\n'
+    first=0
+    cat "$d/$k/body"
+  done
+}
+
 # fake_issue <n> <state> [labels...]: seeds issue #n afresh, open or closed,
 # carrying the labels named - no title, body or comments.
 fake_issue() {
@@ -396,16 +418,7 @@ fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; 
 
 # fake_comment <n> <author> <created-at> <body>: seeds a comment on issue #n,
 # after any it has.
-fake_comment() {
-  local d k
-  d="$ORCH_GH_FAKE_STORE/issues/$1/comments"
-  mkdir -p "$d"
-  k=$(( $(find "$d" -mindepth 1 -maxdepth 1 | wc -l) + 1 ))
-  mkdir "$d/$k"
-  printf '%s\n' "$2" >"$d/$k/author"
-  printf '%s\n' "$3" >"$d/$k/created"
-  printf '%s' "$4" >"$d/$k/body"
-}
+fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4"; }
 
 # fake_pull <n>: seeds #n as an open pull request, which gh's issue reads
 # answer for too.
@@ -422,15 +435,7 @@ fake_reason_of() { cat "$ORCH_GH_FAKE_STORE/issues/$1/reason" 2>/dev/null; }
 fake_title_of()  { cat "$ORCH_GH_FAKE_STORE/issues/$1/title" 2>/dev/null; }
 fake_body_of()   { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
 fake_labels_of() { sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
-fake_comments_of() {
-  local d="$ORCH_GH_FAKE_STORE/issues/$1/comments" k first=1
-  [ -d "$d" ] || return 0
-  for k in $(ls "$d" | sort -n); do
-    [ "$first" = 1 ] || printf '\n\n'
-    first=0
-    cat "$d/$k/body"
-  done
-}
+fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
 
 # fake_issues: every issue number the store holds, in order, space-separated.
 fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' ' '; }
@@ -458,16 +463,7 @@ fake_pr_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/body"; }
 
 # fake_pr_comment <n> <author> <created-at> <body>: seeds a comment on PR #n,
 # after any it has.
-fake_pr_comment() {
-  local d k
-  d="$ORCH_GH_FAKE_STORE/prs/$1/comments"
-  mkdir -p "$d"
-  k=$(( $(find "$d" -mindepth 1 -maxdepth 1 | wc -l) + 1 ))
-  mkdir "$d/$k"
-  printf '%s\n' "$2" >"$d/$k/author"
-  printf '%s\n' "$3" >"$d/$k/created"
-  printf '%s' "$4" >"$d/$k/body"
-}
+fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2" "$3" "$4"; }
 
 # fake_pr_draft <n>: seeds PR #n as a draft.
 fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
@@ -494,15 +490,7 @@ fake_pr_base_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/base" 2>/dev/null; }
 fake_pr_title_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/title" 2>/dev/null; }
 fake_pr_body_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/body" 2>/dev/null; }
 fake_pr_draft_of() { [ -f "$ORCH_GH_FAKE_STORE/prs/$1/draft" ] && echo yes || echo no; }
-fake_pr_comments_of() {
-  local d="$ORCH_GH_FAKE_STORE/prs/$1/comments" k first=1
-  [ -d "$d" ] || return 0
-  for k in $(ls "$d" | sort -n); do
-    [ "$first" = 1 ] || printf '\n\n'
-    first=0
-    cat "$d/$k/body"
-  done
-}
+fake_pr_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/prs/$1/comments"; }
 
 # fake_prs: every PR number the store holds, in order, space-separated.
 fake_prs() { ls "$ORCH_GH_FAKE_STORE/prs" 2>/dev/null | sort -n | tr '\n' ' '; }
@@ -531,7 +519,9 @@ fake_fail_after() {
 }
 
 # fake_fail_times <operation> <n> [stderr]: the next n calls of the operation
-# fail, then it succeeds again - a transient failure. stderr defaults to none.
+# fail, then it succeeds again - a transient failure. It writes the fail file
+# itself rather than through fake_fail, so stderr defaults to empty, not to
+# fake_fail's message: a failure a retry absorbs leaves nothing a test reads.
 fake_fail_times() {
   mkdir -p "$ORCH_GH_FAKE_STORE/fail"
   printf '%s' "${3-}" >"$ORCH_GH_FAKE_STORE/fail/$1"
@@ -1298,20 +1288,33 @@ assert_eq "repo show --name prints GH_REPO bare" \
 assert_eq "repo show names origin as the source" "$("$ORCH" repo show)" "acme/widgets (origin)"
 out="$("$ORCH" repo show extra 2>&1)"; st=$?
 assert_status "repo show refuses a stray argument" "$st" 1
+assert_eq "naming both of its flags" "$out" "orch: usage: orch.sh repo show [--name|--host]"
+out="$("$ORCH" repo show --name --host 2>&1)"; st=$?
+assert_status "repo show refuses both flags at once" "$st" 1
+assert_eq "repo show --host prints github.com for an OWNER/REPO repo" \
+  "$("$ORCH" repo show --host)" "github.com"
+assert_eq "repo show --host prints the explicit host of a HOST/OWNER/REPO repo" \
+  "$(GH_REPO=ghe.example.com/fork/widgets "$ORCH" repo show --host)" "ghe.example.com"
+git remote set-url origin git@ghe.example.com:acme/widgets.git
+assert_eq "repo show --host reads the host from origin too" \
+  "$("$ORCH" repo show --host)" "ghe.example.com"
+git remote set-url origin https://github.com/acme/widgets.git
+assert_contains "help lists --host under repo show" "$("$ORCH" help)" "repo show [--name|--host]"
 
 # No GH_REPO and no usable origin: local commands still work, repo show fails.
 git remote remove origin
 "$ORCH" init norepo >/dev/null 2>&1
 out="$("$ORCH" state get phase 2>&1)"; st=$?
 assert_status "state get works with no repo to resolve" "$st" 0
-for args in "" "--name"; do
+for args in "" "--name" "--host"; do
   err="$(mktemp)"
   label="repo show${args:+ $args}"
   # shellcheck disable=SC2086 # an empty args is no argument at all, and "a b" is two
   out="$("$ORCH" repo show $args 2>"$err")"; st=$?
   assert_status "$label exits 1 with no repo" "$st" 1
   assert_eq "$label prints nothing on stdout with no repo" "$out" ""
-  assert_contains "$label names GH_REPO as the remedy" "$(cat "$err")" "GH_REPO=<owner>/<repo>"
+  assert_eq "$label dies with the repo remedy" "$(cat "$err")" \
+    "orch: no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
   rm -f "$err"
 done
 git remote add origin https://example.invalid/notgithub
@@ -2846,10 +2849,11 @@ savepath="$PATH"; gh_fixture; PATH="$savepath"
 out="$(cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
   && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "no resolvable repo fails doctor" "$st" 1
-assert_contains "names the missing repo as a FAIL" "$out" "FAIL  no GitHub repo to work on"
-assert_contains "gives the GH_REPO remedy" "$out" "GH_REPO=<owner>/<repo>"
-assert_contains "counts the later GitHub checks on the skip line" \
-  "$out" "GitHub checks skipped: no GitHub repo to work on"
+repo_remedy="no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
+assert_contains "names the missing repo as a FAIL, in orch.sh's own remedy" "$out" "FAIL  $repo_remedy"
+assert_contains "gives the GH_REPO remedy" "$out" "export GH_REPO=<owner>/<repo>"
+assert_contains "counts the later GitHub checks on the skip line, in the same words" \
+  "$out" "GitHub checks skipped: $repo_remedy"
 assert_contains "still reaches the summary line" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
 assert_eq "makes no gh call without a repo to pin it to" "$(cat "$GH_FIXTURE/env.log" 2>/dev/null | wc -l | tr -d ' ')" "0"
 unset GH_FIXTURE
@@ -3161,7 +3165,20 @@ fake_default_branch main
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "no issue to probe against does not block the flow" "$st" 0
 assert_contains "says the probe could not run rather than guessing" \
-  "$out" "sub-issues support could not be probed"
+  "$out" "warn  sub-issues support could not be probed - the repo has no issue to test it against."
+
+# A probe that fails (a 502, a 403, no connection) is neither "unsupported" nor
+# "no issue": the warn carries gh's own first line instead (#554).
+doctor_github
+fake_fail adapter_sub_issues_supported $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a failing sub-issues probe does not block the flow" "$st" 0
+assert_contains "warns with gh's first line" \
+  "$out" "warn  sub-issues support could not be probed: HTTP 502: Bad Gateway"
+assert_not_contains "and never as a repo with no issue" "$out" "no issue to test it against"
+assert_not_contains "nor as unsupported" "$out" "do not appear to be supported"
+assert_not_contains "nor past gh's first line" "$out" "second line"
+fake_unfail
 
 # Gated like every other GitHub-backed check: unreachable collapses into the
 # shared skip line rather than adding a check-specific one of its own.
@@ -4484,9 +4501,12 @@ assert_status "an issue with no parent still succeeds" "$st" 0
 assert_eq "printing nothing" "$out" ""
 
 fake_fail adapter_issue_parent
-out="$("$ORCH" ticket parent "$k" 2>&1)"; st=$?
+errf="$(mktemp)"
+out="$("$ORCH" ticket parent "$k" 2>"$errf")"; st=$?
 assert_status "a gh that cannot read the issue fails the command" "$st" 1
-assert_contains "naming what failed" "$out" "gh could not read issue #$k"
+assert_eq "naming what failed: exact stderr, no suffix" "$(tail -n 1 "$errf")" \
+  "orch: gh could not read issue #$k's parent"
+assert_eq "printing nothing on stdout" "$out" ""
 fake_unfail
 
 out="$("$ORCH" ticket parent abc 2>&1)"; st=$?
@@ -4704,10 +4724,18 @@ out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that cannot read the target fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not read ticket #$bf"
 fake_unfail
+errf="$(mktemp)"
+fake_fail adapter_issue_parent
+"$ORCH" ticket block "$bf" --by "$bb" >/dev/null 2>"$errf"; st=$?
+assert_status "a gh that cannot read the ticket's parent fails the command" "$st" 1
+assert_eq "naming the ticket: exact stderr, no suffix" "$(tail -n 1 "$errf")" \
+  "orch: gh could not read issue #$bf's parent"
+fake_unfail
 fake_fail_after adapter_issue_parent 1
-out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+"$ORCH" ticket block "$bf" --by "$bb" >/dev/null 2>"$errf"; st=$?
 assert_status "a gh that cannot read a blocker's parent fails the command" "$st" 1
-assert_contains "naming the ticket" "$out" "a blocker of ticket #$bf"
+assert_eq "naming the blocker and the ticket: exact stderr" "$(tail -n 1 "$errf")" \
+  "orch: gh could not read issue #$bb's parent, a blocker of ticket #$bf"
 fake_unfail
 assert_eq "none of the failures added the edge" "$(fake_blockers_of "$bf")" "$ba"
 
@@ -5946,6 +5974,62 @@ assert_contains "naming the issue" "$out" "issue #404"
 assert_eq "and leaves no file a caller could mistake for a body" \
   "$([ -e "$issue_body" ] && echo present || echo gone)" "gone"
 
+# issue fetch --json (#528): the issue's title, body, labels and comments in one
+# trimmed JSON object, so a fresh agent reads an issue with one call pinned to
+# the repo. Its jq is ISSUE_JSON_JQ, pinned in "gh adapter contract".
+fake_issue 27 open ready-for-agent bug
+fake_issue_title 27 "Widgets need a handle"
+fake_issue_body 27 "$(writeln '## What to build' '' 'A `$HOME` handle for #6.')"
+fake_comment 27 pat 2026-09-02T11:30:00Z "Also: \\ stays unescaped."
+issue_json="$(mktemp)"
+printf 'old contents\n' >"$issue_json"
+: >"$GH_FIXTURE/env.log"
+out="$("$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "fetch --json writes the issue as JSON, over an existing file" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+assert_eq "the trimmed shape: number, title, body, label names, and each comment's author, date and body" \
+  "$(jq -cS . "$issue_json" 2>&1)" \
+  "$(jq -cS . <<'JSON'
+{"number": 27, "title": "Widgets need a handle",
+ "body": "## What to build\n\nA `$HOME` handle for #6.",
+ "labels": ["ready-for-agent", "bug"],
+ "comments": [{"author": "pat", "createdAt": "2026-09-02T11:30:00Z", "body": "Also: \\ stays unescaped."}]}
+JSON
+)"
+assert_eq "the read never reached a real gh subprocess" "$(gh_calls)" "0"
+
+out="$("$ORCH" issue fetch 27 "$issue_body" 2>&1)"; st=$?
+assert_status "without --json, fetch still succeeds" "$st" 0
+assert_eq "writing the body alone, as before" "$(cat "$issue_body")" \
+  "$(writeln '## What to build' '' 'A `$HOME` handle for #6.')"
+
+printf 'old contents\n' >"$issue_json"
+fake_fail adapter_issue_json "HTTP 502: Bad Gateway"
+out="$("$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "a gh that will not answer fails fetch --json" "$st" 1
+assert_contains "naming the issue" "$out" "issue #27"
+assert_contains "with gh's reason" "$out" "HTTP 502: Bad Gateway"
+assert_eq "and leaves the file that was already there byte-identical" \
+  "$(od -c "$issue_json")" "$(printf 'old contents\n' | od -c)"
+rm -f "$issue_json"
+out="$("$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "a failed fetch --json into no file fails too" "$st" 1
+assert_eq "and leaves no file behind" \
+  "$([ -e "$issue_json" ] && echo present || echo gone)" "gone"
+fake_unfail
+
+for args in "27 --json $issue_json" "--json 27 $issue_json" "27 $issue_json --jsn" "27 $issue_json --json extra"; do
+  # shellcheck disable=SC2086 # each case is split into its words on purpose
+  out="$("$ORCH" issue fetch $args 2>&1)"; st=$?
+  assert_status "fetch refuses a misplaced or unknown flag: $args" "$st" 1
+  assert_contains "with the usage line" "$out" "usage: orch.sh issue fetch <n> <file> [--json]"
+done
+assert_eq "and writes no file" "$([ -e "$issue_json" ] && echo present || echo gone)" "gone"
+out="$("$ORCH" issue comments 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "--json is fetch's alone: comments refuses it" "$st" 1
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file>"
+assert_contains "help lists --json under issue fetch" "$("$ORCH" help)" "issue fetch <n> <file> [--json]"
+
 tricky="$(mktemp)"
 writeln '## Solution' '' 'Tracked in #6; see `$HOME` and '"'"'quoted'"'"' text.' >"$tricky"
 out="$("$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
@@ -6386,6 +6470,35 @@ lagging adapter_issue_body; assert_status "a lagged operation answers stale" "$?
 lagging adapter_issue_body; assert_status "for as many calls as fake_lag asked" "$?" 0
 lagging adapter_issue_body; assert_status "and current after them" "$?" 1
 lagging adapter_label_create; assert_status "an operation with no lag is current" "$?" 1
+# The fake takes the real adapter's argument grammar (#664): an unknown option,
+# or one missing its value, exits 2 with a message on stderr - parsed before
+# fake_failing, so even a seeded failure does not mask it. No converted caller
+# sends a bad option, so the fake is sourced alone and the operation called.
+faked() { bash -c 'source "$1"; shift; "$@"' _ "$GH_ADAPTER_FAKE" "$@"; }
+fake_issue 14 open
+fake_fail adapter_issue_relabel
+fake_fail adapter_issue_close
+fake_fail adapter_pr_create
+pbody="$(mktemp)"
+for bad_args in "adapter_issue_relabel 14 --label x" "adapter_issue_relabel 14 --add" \
+           "adapter_issue_relabel 14 --remove" "adapter_issue_relabel 14 x y" \
+           "adapter_issue_close 14 --why x" "adapter_issue_close 14 --reason" \
+           "adapter_issue_close 14 --comment" "adapter_issue_close 14 completed" \
+           "adapter_pr_create main x X $pbody --ready" "adapter_pr_create main x X $pbody true"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  err="$(faked $bad_args 2>&1 >/dev/null)"; st=$?
+  assert_status "the fake refuses '$bad_args'" "$st" 2
+  assert_contains "with a message on stderr" "$err" "${bad_args%% *}"
+done
+unset bad_args
+err="$(faked adapter_issue_relabel 14 --add "" 2>&1 >/dev/null)"; st=$?
+assert_status "the fake refuses an empty --add as missing its value" "$st" 2
+assert_contains "with a message on stderr" "$err" "--add needs a value"
+err="$(faked adapter_issue_close 14 --comment "" 2>&1 >/dev/null)"; st=$?
+assert_status "the fake refuses an empty --comment as missing its value" "$st" 2
+assert_contains "with a message on stderr" "$err" "--comment needs a value"
+rm -f "$pbody"
+assert_eq "and a refused close left the issue open" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/state")" "OPEN"
 restore_suite_env
 assert_eq "restore_suite_env undoes fake_github" \
   "${ORCH_GH_ADAPTER-unset} ${ORCH_GH_FAKE_STORE-unset}" "unset unset"
@@ -6466,6 +6579,28 @@ assert_eq "COMMENTS_JQ opens each comment with its author-and-date marker, one b
 assert_eq "and prints nothing at all for no comments" \
   "$(printf '%s' '{"comments":[]}' | jq -r "$comments_jq" | wc -c | tr -d ' ')" "0"
 
+issue_json_jq="$(bash -c 'source "$1"; printf "%s" "$ISSUE_JSON_JQ"' _ "$ORCH")"
+: >"$GH_FIXTURE/env.log"
+gh_reply 0 $'{"body":"B.","comments":[],"labels":["bug"],"number":23,"title":"T"}\n' '' \
+  issue view 23 --json number,title,body,labels,comments --jq "$issue_json_jq"
+out="$(contract adapter_issue_json 23 2>&1)"; st=$?
+assert_status "issue json: reads the issue through ISSUE_JSON_JQ" "$st" 0
+assert_eq "printing the object it formatted" "$out" '{"body":"B.","comments":[],"labels":["bug"],"number":23,"title":"T"}'
+assert_contains "pinned to the resolved repo" "$(cat "$GH_FIXTURE/env.log")" \
+  "GH_REPO=acme/widgets GH_HOST=<unset> issue view 23 --json number,title,body,labels,comments"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' \
+  issue view 404 --json number,title,body,labels,comments --jq "$issue_json_jq"
+out="$(contract adapter_issue_json 404 2>&1)"; st=$?
+assert_status "issue json: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+# ISSUE_JSON_JQ itself, run on gh-shaped JSON: every field gh adds beyond the
+# trimmed shape - a label's id and colour, a comment author's name and more -
+# is dropped.
+issue_gh_json='{"number":23,"title":"Widgets need a handle","body":"## Problem\n\nTracked in #6.","labels":[{"id":"LA_1","name":"bug","description":"Broken","color":"d73a4a"},{"id":"LA_2","name":"ready-for-agent","description":"","color":"0e8a16"}],"comments":[{"id":"IC_1","author":{"login":"pat","name":"Pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z","includesCreatedEdit":false,"isMinimized":false,"minimizedReason":"","reactionGroups":[],"url":"https://github.com/acme/widgets/issues/23#issuecomment-1","viewerDidAuthor":true}]}'
+assert_eq "ISSUE_JSON_JQ trims gh's answer to number, title, body, label names and comments" \
+  "$(printf '%s' "$issue_gh_json" | jq -cS "$issue_json_jq")" \
+  '{"body":"## Problem\n\nTracked in #6.","comments":[{"author":"pat","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}],"labels":["bug","ready-for-agent"],"number":23,"title":"Widgets need a handle"}'
+
 gh_reply 0 $'OPEN\nreview:nit\nneeds-triage\n' '' issue view 23 --json state,labels --jq '.state, (.labels[].name)'
 out="$(contract adapter_issue_state_labels 23 2>&1)"; st=$?
 assert_status "issue state and labels: reads both" "$st" 0
@@ -6526,23 +6661,57 @@ assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessibl
 
 gh_reply 0 'https://github.com/acme/widgets/issues/23' '' \
   issue edit 23 --remove-label "triage me" --remove-label bug --add-label afk --add-label enhancement
-out="$(contract adapter_issue_relabel 23 "afk,enhancement" "triage me,bug" 2>&1)"; st=$?
+out="$(contract adapter_issue_relabel 23 --add afk --remove "triage me" --add enhancement --remove bug 2>&1)"; st=$?
 assert_status "issue relabel: removes and adds in one edit" "$st" 0
 assert_eq "printing nothing" "$out" ""
 gh_reply 0 '' '' issue edit 24 --add-label wontfix
-out="$(contract adapter_issue_relabel 24 wontfix "" 2>&1)"; st=$?
+out="$(contract adapter_issue_relabel 24 --add wontfix 2>&1)"; st=$?
 assert_status "issue relabel: with nothing to remove, only adds" "$st" 0
+gh_reply 0 '' '' issue edit 25 --remove-label "triage me"
+out="$(contract adapter_issue_relabel 25 --remove "triage me" 2>&1)"; st=$?
+assert_status "issue relabel: with nothing to add, only removes" "$st" 0
+calls="$(gh_calls)"
+out="$(contract adapter_issue_relabel 25 2>&1)"; st=$?
+assert_status "issue relabel: with nothing to add or remove, succeeds" "$st" 0
+assert_eq "printing nothing" "$out" ""
+assert_eq "and making no gh call" "$(gh_calls)" "$calls"
+# The argument grammar (#664): an unknown option, or one missing its value,
+# exits 2 with a message on stderr before any gh call - a caller still on the
+# old positional grammar among them.
+for bad_args in "--label afk" "--add" "--remove" "afk triage" "--add afk --remove"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  err="$(contract adapter_issue_relabel 25 $bad_args 2>&1 >/dev/null)"; st=$?
+  assert_status "issue relabel: '$bad_args' is refused" "$st" 2
+  assert_contains "with a message on stderr" "$err" "adapter_issue_relabel"
+done
+unset bad_args
+err="$(contract adapter_issue_relabel 25 --add "" 2>&1 >/dev/null)"; st=$?
+assert_status "issue relabel: an empty --add is refused as missing its value" "$st" 2
+assert_contains "with a message on stderr" "$err" "--add needs a value"
+assert_eq "no refused relabel made a gh call" "$(gh_calls)" "$calls"
 
 gh_reply 0 'Closed issue #23' '' issue close 23 --reason completed
-out="$(contract adapter_issue_close 23 completed 2>&1)"; st=$?
+out="$(contract adapter_issue_close 23 --reason completed 2>&1)"; st=$?
 assert_status "issue close: closes with the reason given" "$st" 0
 assert_eq "printing nothing" "$out" ""
 gh_reply 0 '' '' issue close 24 --reason "not planned" --comment "Retired."
-out="$(contract adapter_issue_close 24 "not planned" "Retired." 2>&1)"; st=$?
+out="$(contract adapter_issue_close 24 --comment "Retired." --reason "not planned" 2>&1)"; st=$?
 assert_status "issue close: with a reason and a comment" "$st" 0
 gh_reply 0 '' '' issue close 25 --comment "Redone."
-out="$(contract adapter_issue_close 25 "" "Redone." 2>&1)"; st=$?
+out="$(contract adapter_issue_close 25 --comment "Redone." 2>&1)"; st=$?
 assert_status "issue close: with a comment and gh's default reason" "$st" 0
+calls="$(gh_calls)"
+for bad_args in "--why completed" "--reason" "--comment" "completed" "--reason completed --comment"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  err="$(contract adapter_issue_close 27 $bad_args 2>&1 >/dev/null)"; st=$?
+  assert_status "issue close: '$bad_args' is refused" "$st" 2
+  assert_contains "with a message on stderr" "$err" "adapter_issue_close"
+done
+unset bad_args
+err="$(contract adapter_issue_close 27 --reason "" --comment "Redone." 2>&1 >/dev/null)"; st=$?
+assert_status "issue close: an empty --reason is refused as missing its value" "$st" 2
+assert_contains "with a message on stderr" "$err" "--reason needs a value"
+assert_eq "no refused close made a gh call" "$(gh_calls)" "$calls"
 gh_reply 1 '' 'HTTP 502: Bad Gateway' issue close 26
 out="$(contract adapter_issue_close 26 2>&1)"; st=$?
 assert_status "issue close: a gh failure fails it" "$st" 1
@@ -6562,7 +6731,7 @@ assert_eq "every issue operation was pinned to the resolved repo" \
 # printed.
 gh_reply 0 $'https://github.com/acme/widgets/pull/31\n' '' \
   pr create --draft --base main --head orch/16-x --title "Add it" --body-file "$ibody"
-out="$(contract adapter_pr_create main orch/16-x "Add it" "$ibody" true 2>&1)"; st=$?
+out="$(contract adapter_pr_create main orch/16-x "Add it" "$ibody" --draft 2>&1)"; st=$?
 assert_status "pr create: opens a draft PR from head into base" "$st" 0
 assert_eq "printing its number alone" "$out" "31"
 gh_reply 0 $'https://github.com/acme/widgets/pull/32\n' '' \
@@ -6580,6 +6749,15 @@ gh_reply 1 '' 'a pull request for branch "dup" into branch "main" already exists
 out="$(contract adapter_pr_create main dup "Dup" "$ibody" 2>&1)"; st=$?
 assert_status "pr create: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" 'a pull request for branch "dup" into branch "main" already exists'
+calls="$(gh_calls)"
+for bad_args in "--ready" "true" "--draft --base"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  err="$(contract adapter_pr_create main bad "Bad" "$ibody" $bad_args 2>&1 >/dev/null)"; st=$?
+  assert_status "pr create: '$bad_args' is refused" "$st" 2
+  assert_contains "with a message on stderr" "$err" "adapter_pr_create"
+done
+unset bad_args
+assert_eq "no refused create made a gh call" "$(gh_calls)" "$calls"
 
 gh_reply 0 $'Closes #12\n\nAdds it.\n' '' pr view 57 --json body --jq .body
 out="$(contract adapter_pr_body 57 2>&1)"; st=$?
@@ -6710,14 +6888,18 @@ gh_reply 8 '' '' pr checks 61 --json bucket,name,link
 out="$(contract adapter_pr_checks 61 all 2>&1)"; st=$?
 assert_status "pr checks: an exit 8 with nothing readable still succeeds" "$st" 0
 assert_eq "as one pending check with no name or link" "$out" "$(checks_tsv pending '' '')"
+checks_err="$(mktemp)"
 gh_reply 1 '' "no checks reported on the 'topic' branch" pr checks 62 --json bucket,name,link
-out="$(contract adapter_pr_checks 62 all 2>&1)"; st=$?
+out="$(contract adapter_pr_checks 62 all 2>"$checks_err")"; st=$?
 assert_status "pr checks: no checks reported succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
+assert_eq "printing nothing at all on stdout" "$out" ""
+assert_eq "passing gh's line through on stderr" "$(cat "$checks_err")" "no checks reported on the 'topic' branch"
 gh_reply 1 '' "no required checks reported on the 'topic' branch" pr checks 62 --required --json bucket,name,link
-out="$(contract adapter_pr_checks 62 required 2>&1)"; st=$?
+out="$(contract adapter_pr_checks 62 required 2>"$checks_err")"; st=$?
 assert_status "pr checks: no required checks reported succeeds" "$st" 0
-assert_eq "printing nothing at all" "$out" ""
+assert_eq "printing nothing at all on stdout" "$out" ""
+assert_eq "passing gh's line through on stderr" "$(cat "$checks_err")" "no required checks reported on the 'topic' branch"
+rm -f "$checks_err"
 gh_reply 0 '[]' '' pr checks 63 --json bucket,name,link
 out="$(contract adapter_pr_checks 63 all 2>&1)"; st=$?
 assert_status "pr checks: an empty list succeeds" "$st" 0
@@ -6730,6 +6912,17 @@ gh_reply 1 '' 'dial tcp: lookup api.github.com: no such host' pr checks 65 --jso
 out="$(contract adapter_pr_checks 65 all 2>&1)"; st=$?
 assert_status "pr checks: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "dial tcp: lookup api.github.com: no such host"
+# ci_probe over the real adapter: a failed read is unreachable, its detail
+# the first line of gh's stderr alone, and none of that stderr leaks.
+gh_reply 1 '' $'dial tcp: lookup api.github.com: no such host\nsecond line' pr checks 66 --json bucket,name,link
+out="$(contract ci_probe 66 all 2>&1)"; st=$?
+assert_status "ci probe: a failed checks read is still an answer" "$st" 0
+assert_eq "unreachable, with the first line of gh's stderr and nothing else" "$out" \
+  "$(writeln unreachable "      dial tcp: lookup api.github.com: no such host")"
+gh_reply 1 '' "no checks reported on the 'topic' branch" pr checks 67 --json bucket,name,link
+out="$(contract ci_probe 67 all 2>&1)"; st=$?
+assert_status "ci probe: no checks reported is an answer" "$st" 0
+assert_eq "classified as none, gh's stderr swallowed" "$out" "none"
 
 prot="repos/{owner}/{repo}/branches/main/protection/required_status_checks"
 gh_reply 0 '{"strict":false,"contexts":["build","lint"],"checks":[{"context":"build","app_id":null}]}' '' api "$prot"
@@ -6740,6 +6933,16 @@ gh_reply 1 '{"message":"Branch not protected","status":"404"}' 'gh: Branch not p
   api "repos/{owner}/{repo}/branches/open/protection/required_status_checks"
 out="$(contract adapter_branch_required_checks open 2>&1)"; st=$?
 assert_status "branch required checks: GitHub's 404 for an unprotected branch succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+gh_reply 1 '' 'gh: Branch not protected (HTTP 404)' \
+  api "repos/{owner}/{repo}/branches/quiet/protection/required_status_checks"
+out="$(contract adapter_branch_required_checks quiet 2>&1)"; st=$?
+assert_status "branch required checks: the 404 named on stderr alone succeeds" "$st" 0
+assert_eq "printing nothing at all, gh's stderr swallowed" "$out" ""
+gh_reply 1 '{"message":"Branch not protected","status":"404"}' '' \
+  api "repos/{owner}/{repo}/branches/mute/protection/required_status_checks"
+out="$(contract adapter_branch_required_checks mute 2>&1)"; st=$?
+assert_status "branch required checks: the 404 named on stdout alone succeeds" "$st" 0
 assert_eq "printing nothing at all" "$out" ""
 gh_reply 1 '{"message":"Not Found","status":"404"}' 'gh: Not Found (HTTP 404)' \
   api "repos/{owner}/{repo}/branches/hidden/protection/required_status_checks"
@@ -6972,6 +7175,16 @@ out="$(gh_fixture; gh_reply 0 $'8\n' '' "${probe_list[@]}"
   contract adapter_sub_issues_supported 2>/dev/null)"; st=$?
 assert_status "sub-issues supported: an endpoint that refuses succeeds" "$st" 0
 assert_eq "printing no" "$out" "no"
+out="$(gh_fixture; gh_reply 0 $'8\n' '' "${probe_list[@]}"
+  gh_reply 1 '' 'HTTP 502: Bad Gateway' api "repos/{owner}/{repo}/issues/8/sub_issues"
+  contract adapter_sub_issues_supported 2>&1)"; st=$?
+assert_status "sub-issues supported: a 502 from the endpoint fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+out="$(gh_fixture; gh_reply 0 $'8\n' '' "${probe_list[@]}"
+  gh_reply 1 '' 'HTTP 403: Forbidden' api "repos/{owner}/{repo}/issues/8/sub_issues"
+  contract adapter_sub_issues_supported 2>&1)"; st=$?
+assert_status "sub-issues supported: a 403 from the endpoint fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 403: Forbidden"
 out="$(gh_fixture; gh_reply 0 '' '' "${probe_list[@]}"; contract adapter_sub_issues_supported 2>&1)"; st=$?
 assert_status "sub-issues supported: a repo with no issue succeeds" "$st" 0
 assert_eq "printing nothing at all" "$out" ""
@@ -7974,7 +8187,13 @@ assert_contains "saying there is nothing failed to rerun" "$out" "no failed or c
 fake_checks 7 all none
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "no checks at all is exit 2" "$st" 2
-assert_contains "saying gh reported no checks" "$out" "gh could not read the checks of PR #7: no checks reported"
+assert_eq "dying with gh's own no-checks line" "$out" \
+  "orch: gh could not read the checks of PR #7: no checks reported on the 'topic' branch"
+fake_checks 7 all empty
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "an empty list of checks is exit 2" "$st" 2
+assert_eq "saying no checks were reported when gh said nothing" "$out" \
+  "orch: gh could not read the checks of PR #7: no checks reported"
 fake_checks 7 all failing
 fake_fail adapter_run_rerun
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
@@ -7988,7 +8207,8 @@ assert_status "a PR that is not a number is a usage error, exit 2" "$st" 2
 git remote remove origin
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "no repo to work on is exit 2, not the guard's 1" "$st" 2
-assert_contains "naming the GH_REPO remedy" "$out" "GH_REPO=<owner>/<repo>"
+assert_eq "dying with the repo remedy" "$out" \
+  "orch: no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
 assert_contains "help documents review rerun" "$("$ORCH" help)" "review rerun <pr>"
 restore_suite_env
 

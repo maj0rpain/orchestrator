@@ -15,18 +15,19 @@ Your prompt carries five variables: the **base SHA**, the **spec issue**
 number, the **iteration**, the **report path**, and **orch.sh**, the path of
 the plugin's `orch.sh`. The spec issue is the Spec
 reviewer's material; you need it only to tell scope from standards, and
-reading it is optional. When you do, pin the read to the repo `orch.sh`
-resolves, never `gh`'s default repo: `repo="$(bash "<orch.sh>" repo show
---name)" && gh issue view <spec issue> -R "$repo"`, and skip it when `repo
-show` fails.
+reading it is optional. When you do, read it with `bash "<orch.sh>" issue
+fetch <spec issue> <file> --json`, into a temporary file outside the working
+tree (`mktemp`), pinned to the repo `orch.sh` resolves, and skip it when the
+fetch fails.
 
 ## Read-only
 
 Your one write is the report, written through Bash to the report path. Every
 other command you run reads: `git diff`, `git log`, `git show`, `git blame`,
-`gh issue view`, `cat`, `grep`. You leave the working tree, the index, the
-branch, the PR, and the issues exactly as you found them, even when a fix is
-one character away - describe it in the finding instead.
+`bash "<orch.sh>" issue fetch <n> <file> --json` (its file under `mktemp`,
+outside the working tree), `cat`, `grep`. You leave the working tree, the
+index, the branch, the PR, and the issues exactly as you found them, even
+when a fix is one character away - describe it in the finding instead.
 
 ## Steps
 
