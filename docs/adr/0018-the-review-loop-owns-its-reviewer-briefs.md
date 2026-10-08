@@ -6,8 +6,9 @@ longer use `code-review` either; only quick implementation's single pass does.
 Superseded in part by ADR-0021: quick implementation's single pass no
 longer uses `code-review` either.
 
-Amended by #520: the reviewer prompt carries a fifth line, `orch.sh: <path>`,
-so the reviewers can pin their `gh issue view` to the resolved repo.
+Amended by #520 and #663: the reviewer prompt carries a fifth line,
+`orch.sh: <path>`, so the reviewers read issues through `orch.sh issue fetch
+--json`, pinned to the resolved repo.
 
 Supersedes ADR-0001's premise that the reviewing is done by
 `mattpocock-skills:code-review`'s sub-agents, and ADR-0002's premise that

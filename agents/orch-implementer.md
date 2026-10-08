@@ -69,16 +69,15 @@ branch.
 ## Steps
 
 1. **Fetch the ticket** before anything else, into a temporary file
-   outside the repo (`mktemp`), pinned to the repo `orch.sh` resolves, never
-   `gh`'s default repo: `repo="$(bash "<orch.sh>" repo show --name)" && gh
-   issue view <ticket> -R "$repo" --json title,body,comments,labels >
-   <file>`, then read that file. When `repo show` fails, stop and return the report with
-   the failure as a deviation: an empty `-R` would fall back to the default.
-   Piped, `--comments` drops the title and body. Then find its spec issue: `bash "<orch.sh>"
+   outside the repo (`mktemp`): `bash "<orch.sh>" issue fetch <ticket>
+   <file> --json` writes its title, body, labels and comments as one JSON
+   object, read pinned to the repo `orch.sh` resolves. Then read that file.
+   When the fetch fails, stop and return the report with the failure as a
+   deviation. Then find its spec issue: `bash "<orch.sh>"
    ticket parent <ticket>` prints the parent of a sub-issue ticket, and empty
    output means the ticket is the spec issue itself. A failure is retried once, then
-   recorded as a deviation. Fetch the spec issue the same way, labels
-   included, when it is not the ticket itself. Read its **Testing
+   recorded as a deviation. Fetch the spec issue the same way, into its own
+   `mktemp` file, when it is not the ticket itself. Read its **Testing
    Decisions** - the seams already confirmed with the human - and its
    **Root cause** subsection, if it has one: see **Root-cause fixes**.
 2. **Build the ticket test-first**, per **Test-driven development** below,
