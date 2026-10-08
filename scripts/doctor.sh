@@ -120,7 +120,7 @@ d_probe_gh() {
   if [ -n "$D_GH" ]; then return 0; fi
   if ! gh_installed; then D_GH="gh is not installed"; return 0; fi
   # The guard dies with no repo to pin its calls to; ask nothing instead.
-  if ! repo_resolve; then D_GH="no GitHub repo to work on"; return 0; fi
+  if ! repo_resolve; then D_GH="$REPO_REMEDY"; return 0; fi
   if out="$(adapter_auth_status 2>&1)"; then
     D_GH=ok
   else
@@ -216,7 +216,7 @@ check_gh_auth() {
 check_gh_repo() {
   local default owner_name
   if ! repo_resolve; then
-    d_fail "no GitHub repo to work on - origin is missing or not a GitHub owner/name."
+    d_fail "$REPO_REMEDY"
     d_remedy "export GH_REPO=<owner>/<repo>"
     return 0
   fi

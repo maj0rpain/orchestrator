@@ -2798,10 +2798,11 @@ savepath="$PATH"; gh_fixture; PATH="$savepath"
 out="$(cd "$(mktemp -d)" && cp -R "$OLDPWD/." . && git remote remove origin \
   && PATH="$GH_FIXTURE/bin:$PATH" ORCH_GH_ADAPTER='' "$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "no resolvable repo fails doctor" "$st" 1
-assert_contains "names the missing repo as a FAIL" "$out" "FAIL  no GitHub repo to work on"
-assert_contains "gives the GH_REPO remedy" "$out" "GH_REPO=<owner>/<repo>"
-assert_contains "counts the later GitHub checks on the skip line" \
-  "$out" "GitHub checks skipped: no GitHub repo to work on"
+repo_remedy="no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
+assert_contains "names the missing repo as a FAIL, in orch.sh's own remedy" "$out" "FAIL  $repo_remedy"
+assert_contains "gives the GH_REPO remedy" "$out" "export GH_REPO=<owner>/<repo>"
+assert_contains "counts the later GitHub checks on the skip line, in the same words" \
+  "$out" "GitHub checks skipped: $repo_remedy"
 assert_contains "still reaches the summary line" "$(printf '%s\n' "$out" | tail -1)" " FAIL"
 assert_eq "makes no gh call without a repo to pin it to" "$(cat "$GH_FIXTURE/env.log" 2>/dev/null | wc -l | tr -d ' ')" "0"
 unset GH_FIXTURE
