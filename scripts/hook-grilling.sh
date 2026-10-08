@@ -24,7 +24,9 @@
 # per session. Beside a running flow it still sends the planning rules, with a
 # closing that names that flow and states two branches: about that flow, point
 # to its next or redo; about anything else, the interviewed-issue step and the
-# route question, where only Blueprint runs in this checkout (#640).
+# route question, where only Blueprint runs in this checkout and Start and
+# Quick implementation proceed in a side checkout (#640, #729). With no flow,
+# a human's request for a side checkout is honoured.
 
 set -euo pipefail
 
@@ -96,9 +98,10 @@ ready_label="$(triage_label_for ready-for-agent)"
 wontfix_label="$(triage_label_for wontfix)"
 human_label="$(triage_label_for ready-for-human)"
 
-# How to run each route, split so that beside an active flow (#640) the
-# question keeps only Blueprint's: the flow and quick-implementation routes
-# must not run in a checkout whose branch belongs to the running flow.
+# How to run each route, split so that beside an active flow (#640, #729) the
+# flow and quick-implementation routes run on their side-checkout route: they
+# must not run in a checkout whose branch belongs to the running flow. With no
+# active flow, a human's request for a side checkout is honoured instead.
 if [ "$host" = junie ]; then
   ask_tool="the ask_user tool"
   ask_step="Call the ask_user tool with
@@ -115,6 +118,12 @@ if [ "$host" = junie ]; then
   flow_quick_files="
   $plugin_root/skills/orch-flow/SKILL.md,
   $(hook_quick_skill_file),"
+  run_flow_quick_side="On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
+  \"Quick implementation\", the orch-quick-implement skill - each as asked for a side checkout, so it takes its **Starting in a side checkout** route. "
+  side_request="
+  If the user asks for a side checkout - a git worktree of its own, opened in
+  its own session - honour it: on \"Start the orchestrator flow\" or \"Quick
+  implementation\", follow that skill's **Starting in a side checkout** section."
   blueprint_files="
   $plugin_root/skills/orch-to-spec/SKILL.md,
   $plugin_root/skills/orch-spec-review/SKILL.md (its standalone spec review), or
@@ -134,6 +143,13 @@ else
   If orch-to-spec stops without reporting the issue number, call nothing after it. The
   orchestrator's skills are model-invocable: call them, do not hand them to the
   user."
+  run_flow_quick_side="On \"Start the orchestrator flow\",
+  call the Skill tool with \"orchestrator:orch-flow\" and args \"--side\" yourself.
+  On \"Quick implementation\",
+  call the Skill tool with \"orchestrator:orch-quick-implement\" and args \"--side\" yourself. "
+  side_request="
+  If the user asks for a side checkout - a git worktree of its own, opened in
+  its own session - honour it: pass args \"--side\" to whichever of those two skills runs."
   flow_quick_files=""
   blueprint_files=""
 fi
@@ -143,7 +159,7 @@ fi
 # phase is a flow init just started. Only state that cannot be read as a JSON
 # object leaves it unnamed, with no phase claimed.
 flow_branches=""
-route_here=""
+route_here="$side_request"
 # The branches stand in place of the route question (#640): beside a flow, the
 # question's bullet opens by scoping itself to the second case.
 confirm_lead="Before you implement anything"
@@ -190,11 +206,11 @@ if [ "$flow_active" = 1 ]; then
   close_lead="$only_second when you reach a shared understanding"
   route_here="
   Blueprint only is the one route that runs in this checkout, whose branch
-  belongs to the running flow: starting a flow or a quick implementation must be done from a separate checkout of the repo, opened in its own session there.
-  On \"Start the orchestrator flow\" or \"Quick implementation\", run no skill
-  here: tell the user that, and stop."
-  # Beside a flow, only Blueprint's run instructions stand.
-  run_flow_quick="" flow_quick_files=""
+  belongs to the running flow: \"Start the orchestrator flow\" and \"Quick implementation\" proceed in a side checkout,
+  a git worktree of their own opened in its own session, so run their skills
+  only on that route, as above - never in this checkout."
+  # Beside a flow, Start and Quick implementation take the side-checkout route.
+  run_flow_quick="$run_flow_quick_side"
 fi
 run_next="- ${run_flow_quick}${run_blueprint}${flow_quick_files}${blueprint_files}"
 

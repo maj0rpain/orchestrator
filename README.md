@@ -188,8 +188,10 @@ model to pick from. Planning about that flow's own issue gets no route
 question, only a pointer to `/orchestrator:next` or `/orchestrator:redo`.
 Planning about anything else gets the interviewed-issue step and the route
 question, which says Blueprint only is the one route that runs in this
-checkout: a flow or a quick implementation must start from a separate
-checkout, opened in its own session there.
+checkout: "Start the orchestrator flow" and "Quick implementation" proceed in
+a side checkout, a git worktree of their own opened in its own session. With
+no flow running, the message tells the model to honour a human's request for a
+side checkout.
 
 `/clear` (and Junie's `/new`) resets the once-per-session marker: a
 `SessionStart` hook on source `clear`, `hook-session-start.sh`, deletes the
