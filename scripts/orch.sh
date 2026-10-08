@@ -1981,8 +1981,24 @@ cmd_issue() {
       ;;
     publish) cmd_issue_publish "$@" ;;
     triage) cmd_issue_triage "$@" ;;
-    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|comments|publish|triage)" ;;
+    ready) cmd_issue_ready "$@" ;;
+    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|comments|publish|triage|ready)" ;;
   esac
+}
+
+# issue ready <n>: exit 0 when issue <n> carries the repo's ready-for-agent
+# label, 1 when it does not - so exit 1 is a meaningful "no", and a usage
+# error or a gh failure exits 2 (die2), as ticket exists does. The spec
+# skill's rewrite mode reads it to warn when a rewritten issue lacks the label.
+cmd_issue_ready() {
+  local usage="usage: orch.sh issue ready <n>"
+  [ $# -eq 1 ] || die2 "$usage"
+  local issue="$1" ready out
+  case "$issue" in ''|*[!0-9]*) die2 "issue must be a plain issue number, got: $issue ($usage)" ;; esac
+  ready="$(triage_label_for ready-for-agent)"
+  out="$(adapter_issue_state_labels "$issue")" \
+    || die2 "gh could not read issue #$issue"
+  printf '%s\n' "$out" | tail -n +2 | grep -qxF -- "$ready"
 }
 
 # --- spec -------------------------------------------------------------------
@@ -3756,6 +3772,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               triaged (finding triage moves those) or a gh
                               failure.
                               A failed comment only warns
+  issue ready <n>             exit 0 when issue <n> carries the repo's
+                              ready-for-agent label, 1 when it does not, 2 on
+                              a usage error or a gh failure - recording no
+                              state
   pr open <title> <body-file> push and open a draft PR against the flow's base
                               branch - Closes its issue into the default
                               branch, Refs it into any other

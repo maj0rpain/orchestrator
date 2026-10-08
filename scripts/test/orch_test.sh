@@ -2375,6 +2375,59 @@ assert_contains "the unknown-op message lists triage" "$out" "|triage"
 assert_contains "help documents issue triage" "$("$ORCH" help)" "issue triage <n> [--override]"
 restore_suite_env
 
+# --- issue ready --------------------------------------------------------------
+# The spec skill's rewrite-mode check (#705): does an issue carry the repo's
+# ready-for-agent label? Exit 0 yes, 1 no, 2 when GitHub could not be read.
+echo
+echo "issue ready"
+healthy_repo
+fake_github
+ready() { "$ORCH" issue ready "$@"; }
+
+fake_issue 70 open ready-for-agent bug
+ready 70 >/dev/null 2>&1; st=$?
+assert_status "an issue carrying ready-for-agent is ready" "$st" 0
+
+fake_issue 71 open needs-triage bug
+out="$(ready 71 2>&1)"; st=$?
+assert_status "an issue carrying neither label is not ready" "$st" 1
+assert_eq "and says nothing" "$out" ""
+
+fake_issue 72 open
+ready 72 >/dev/null 2>&1; st=$?
+assert_status "an unlabelled issue is not ready" "$st" 1
+
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `ready-for-agent`          | `agent go`           | AFK-ready   |' >docs/agents/triage-labels.md
+fake_issue 73 open "agent go"
+ready 73 >/dev/null 2>&1; st=$?
+assert_status "an issue carrying the repo's mapped name is ready" "$st" 0
+fake_issue 74 open needs-triage
+ready 74 >/dev/null 2>&1; st=$?
+assert_status "under a mapping, an issue carrying neither is not ready" "$st" 1
+labels_doc docs/agents/triage-labels.md
+
+fake_fail adapter_issue_state_labels
+out="$(ready 70 2>&1)"; st=$?
+assert_status "a gh failure exits 2" "$st" 2
+assert_contains "with an orch: message naming the issue" "$out" "orch: gh could not read issue #70"
+fake_unfail
+
+out="$(ready abc 2>&1)"; st=$?
+assert_status "a non-numeric issue is a usage error" "$st" 2
+assert_contains "with a usage line" "$out" "usage: orch.sh issue ready <n>"
+out="$(ready 2>&1)"; st=$?
+assert_status "no issue at all is a usage error" "$st" 2
+assert_contains "with a usage line" "$out" "usage: orch.sh issue ready <n>"
+out="$(ready 70 71 2>&1)"; st=$?
+assert_status "a second argument is a usage error" "$st" 2
+out="$("$ORCH" issue bogus 2>&1)"
+assert_contains "the unknown-op message lists ready" "$out" "|ready"
+assert_contains "help documents issue ready" "$("$ORCH" help)" "issue ready <n>"
+restore_suite_env
+
 # --- mp-skill ---------------------------------------------------------------
 # The plugin reads no upstream skill any more (ADR-0028), so the resolver is gone.
 echo
