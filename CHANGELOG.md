@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.21.7
+
+The hook tests check, create and remove the planning hooks' per-session
+markers through one helper each (#852). `assert_marker_present` and
+`assert_marker_absent` take a label, a marker kind (`grilling` or `planning`)
+and a session id, and replace the hand-written marker checks and
+`assert_marker_gone`/`assert_marker_kept` (#695). `make_markers` and
+`remove_markers` write and remove both of a session's markers (#697). Every
+test keeps its label, and the pass count is unchanged.
+
 ## 3.21.6
 
 The GitHub adapter's valued options refuse a following option name as their

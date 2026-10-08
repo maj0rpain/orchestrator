@@ -25,6 +25,9 @@ assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$
 assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in: $2" ;; esac; }
 assert_not_contains() { case "$2" in *"$3"*) bad "$1" "found '$3' in: $2" ;; *) ok "$1" ;; esac; }
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
+# <kind> is grilling or planning: the marker $TMPDIR/orchestrator-<kind>-<id>.
+assert_marker_present() { if [ -e "$TMPDIR/orchestrator-$2-$3" ]; then ok "$1"; else bad "$1" "no orchestrator-$2-$3"; fi; }
+assert_marker_absent()  { if [ -e "$TMPDIR/orchestrator-$2-$3" ]; then bad "$1" "orchestrator-$2-$3 exists"; else ok "$1"; fi; }
 
 # The temp root, created before anything else: TMPDIR is exported as it, so
 # every mktemp below lands inside it, and the hooks' markers too. The EXIT trap
@@ -249,11 +252,7 @@ assert_contains "names the active flow's issue and phase" "$ctx" "the flow for #
 assert_contains "the same-flow branch names the flow's issue" "$ctx" "about this flow's issue, #42"
 check_flow_variant "on Claude Code" "$ctx" "$cc_next_redo"
 assert_eq "offers exactly three options beside an active flow" "$(count_closing_options "$out")" "3"
-if [ -e "$TMPDIR/orchestrator-grilling-s6" ]; then
-  ok "writes the grilling marker beside an active flow"
-else
-  bad "writes the grilling marker beside an active flow" "no orchestrator-grilling-s6"
-fi
+assert_marker_present "writes the grilling marker beside an active flow" grilling s6
 assert_empty "stays silent on a second planning call beside an active flow" \
   "$(skill_event "grilling" s6 | "$GRILL")"
 echo '{"slug":"my-change","phase":"implement","issue":null}' >"$REPO/.orchestrator/state.json"
@@ -340,16 +339,8 @@ assert_empty "stays silent on the second grilling prompt in one Junie session" \
 # On Junie the guard does not arm (ADR-0025): the marker that keeps the
 # message to once per session is named so hook-guard.sh never reads it, and a
 # Junie-style Edit in the same session, with no project_path, is allowed.
-if [ -e "$TMPDIR/orchestrator-planning-j1" ]; then
-  ok "a Junie grilling prompt writes the planning marker"
-else
-  bad "a Junie grilling prompt writes the planning marker" "no orchestrator-planning-j1"
-fi
-if [ -e "$TMPDIR/orchestrator-grilling-j1" ]; then
-  bad "a Junie grilling prompt writes no guard marker" "orchestrator-grilling-j1 exists"
-else
-  ok "a Junie grilling prompt writes no guard marker"
-fi
+assert_marker_present "a Junie grilling prompt writes the planning marker" planning j1
+assert_marker_absent "a Junie grilling prompt writes no guard marker" grilling j1
 junie_same_session_edit="$(jq -n --arg f "$REPO/src/main.ts" \
   '{hook_event_name:"PreToolUse", tool_name:"Edit", session_id:"j1", tool_input:{file_path:$f}}')"
 assert_empty "a source edit after a Junie grilling prompt is allowed" \
@@ -412,11 +403,7 @@ assert_contains "names the active flow's issue and phase on Junie" "$ctx" \
   "the flow for #7 is active in this checkout, at phase review"
 check_flow_variant "on Junie" "$ctx" "$junie_next_redo" junie
 assert_not_contains "names no plugin command on Junie" "$ctx" "/orchestrator:next"
-if [ -e "$TMPDIR/orchestrator-planning-j3" ]; then
-  ok "writes the planning marker on Junie beside an active flow"
-else
-  bad "writes the planning marker on Junie beside an active flow" "no orchestrator-planning-j3"
-fi
+assert_marker_present "writes the planning marker on Junie beside an active flow" planning j3
 assert_empty "stays silent on a second Junie planning prompt beside an active flow" \
   "$(prompt_event '$grilling' j3 | "$GRILL")"
 ctx="$(prompt_event "$confirm" jc1 | "$GRILL" | jq -r '.additionalContext')"
@@ -519,11 +506,7 @@ assert_empty "exits silently on Claude Code's UserPromptSubmit" \
   "$(claude_prompt_event '/grilling' c1 | "$GRILL")"
 assert_empty "exits silently on plan confirmation on Claude Code" \
   "$(claude_prompt_event "$confirm" c1 | "$GRILL")"
-if [ -e "$TMPDIR/orchestrator-grilling-c1" ]; then
-  bad "arms no marker from Claude Code's UserPromptSubmit" "a marker was created"
-else
-  ok "arms no marker from Claude Code's UserPromptSubmit"
-fi
+assert_marker_absent "arms no marker from Claude Code's UserPromptSubmit" grilling c1
 rm -rf "$JUNIE_HOME"
 assert_contains "hooks.json runs the grilling hook on UserPromptSubmit" \
   "$(jq -r '.hooks.UserPromptSubmit[]?.hooks[]?.command' "$DIR/../hooks/hooks.json")" "hook-grilling.sh"
@@ -658,11 +641,7 @@ assert_contains "denies source with the source reason when the flow is done" "$o
 # whose flow is done, and the guard then denies a glossary edit.
 rm -f "$TMPDIR/orchestrator-grilling-e2e"
 skill_event "mattpocock-skills:grilling" e2e | "$GRILL" >/dev/null
-if [ -e "$TMPDIR/orchestrator-grilling-e2e" ]; then
-  ok "grilling arms the marker when the flow is done"
-else
-  bad "grilling arms the marker when the flow is done" "no marker"
-fi
+assert_marker_present "grilling arms the marker when the flow is done" grilling e2e
 out="$(edit_event "$REPO/GLOSSARY.md" e2e | "$GUARD" | jq -r '.reason')"
 assert_contains "the armed guard denies GLOSSARY.md with the records reason" "$out" \
   "'GLOSSARY.md' is a record of decisions, and planning does not change records in place."
@@ -671,21 +650,15 @@ rm -rf "$REPO/.orchestrator"
 echo
 echo "hook-quick-implement"
 
-assert_marker_gone() {
-  if [ -e "$TMPDIR/orchestrator-grilling-$2" ]; then bad "$1" "marker still present"; else ok "$1"; fi
-}
-assert_marker_kept() {
-  if [ -e "$TMPDIR/orchestrator-grilling-$2" ]; then ok "$1"; else bad "$1" "marker was deleted"; fi
-}
 
 : >"$TMPDIR/orchestrator-grilling-s1"
 out="$(skill_event "orchestrator:orch-quick-implement" s1 | "$QUICK")"
 assert_empty "prints nothing" "$out"
-assert_marker_gone "deletes the session's marker" s1
+assert_marker_absent "deletes the session's marker" grilling s1
 
 : >"$TMPDIR/orchestrator-grilling-s2"
 skill_event "mattpocock-skills:tdd" s2 | "$QUICK" >/dev/null
-assert_marker_kept "leaves another skill's marker alone" s2
+assert_marker_present "leaves another skill's marker alone" grilling s2
 
 skill_event "orchestrator:orch-quick-implement" s3 | "$QUICK" >/dev/null
 ok "does not fail when no marker exists for the session"
@@ -693,7 +666,7 @@ ok "does not fail when no marker exists for the session"
 # ADR-0014 renamed the skill; the old unprefixed name must not lift the guard.
 : >"$TMPDIR/orchestrator-grilling-s4"
 skill_event "orchestrator:quick-implement" s4 | "$QUICK" >/dev/null
-assert_marker_kept "ignores the old unprefixed quick-implement name" s4
+assert_marker_present "ignores the old unprefixed quick-implement name" grilling s4
 
 # The Read lift is gone (ADR-0025): the guard does not arm on Junie, so
 # nothing needs lifting there, and a Read of the installed SKILL.md is no
@@ -703,7 +676,7 @@ QUICK_SKILL="$(cd "$DIR/.." && pwd)/skills/orch-quick-implement/SKILL.md"
 jq -n --arg f "$QUICK_SKILL" \
   '{hook_event_name:"PreToolUse", tool_name:"Read", session_id:"r1", tool_input:{file_path:$f}}' \
   | "$QUICK" >/dev/null
-assert_marker_kept "a PreToolUse Read of the installed SKILL.md leaves the marker" r1
+assert_marker_present "a PreToolUse Read of the installed SKILL.md leaves the marker" grilling r1
 rm -f "$TMPDIR/orchestrator-grilling-r1"
 
 assert_empty "hooks.json has no PreToolUse Read matcher" \
@@ -725,38 +698,41 @@ markers_present() {
   [ -e "$TMPDIR/orchestrator-planning-$1" ] && n=$((n + 1))
   echo "$n"
 }
+# Write, or remove, both markers of session <id>.
+make_markers()   { : >"$TMPDIR/orchestrator-grilling-$1"; : >"$TMPDIR/orchestrator-planning-$1"; }
+remove_markers() { rm -f "$TMPDIR/orchestrator-grilling-$1" "$TMPDIR/orchestrator-planning-$1"; }
 
-: >"$TMPDIR/orchestrator-grilling-ss1"; : >"$TMPDIR/orchestrator-planning-ss1"
+make_markers ss1
 out="$(start_event clear ss1 | "$START")"; st=$?
 assert_eq "clear exits 0" "$st" 0
 assert_empty "clear emits no context" "$out"
 assert_eq "clear removes the session's grilling and planning markers" "$(markers_present ss1)" 0
 
 for src in compact startup resume; do
-  : >"$TMPDIR/orchestrator-grilling-ss-$src"; : >"$TMPDIR/orchestrator-planning-ss-$src"
+  make_markers "ss-$src"
   out="$(start_event "$src" "ss-$src" | "$START")"; st=$?
   assert_eq "$src exits 0" "$st" 0
   assert_empty "$src emits nothing" "$out"
   assert_eq "$src leaves both markers in place" "$(markers_present "ss-$src")" 2
-  rm -f "$TMPDIR/orchestrator-grilling-ss-$src" "$TMPDIR/orchestrator-planning-ss-$src"
+  remove_markers "ss-$src"
 done
 
 # With no session_id the marker path would end in "-": nothing may be removed.
-: >"$TMPDIR/orchestrator-grilling-"; : >"$TMPDIR/orchestrator-planning-"
-: >"$TMPDIR/orchestrator-grilling-ss2"; : >"$TMPDIR/orchestrator-planning-ss2"
+make_markers ""
+make_markers ss2
 out="$(jq -n --arg cwd "$REPO" '{hook_event_name:"SessionStart", cwd:$cwd, source:"clear"}' | "$START")"; st=$?
 assert_eq "no session_id exits 0" "$st" 0
 assert_empty "no session_id exits silently" "$out"
 assert_eq "no session_id removes no marker" \
   "$(( $(markers_present "") + $(markers_present ss2) ))" 4
-rm -f "$TMPDIR/orchestrator-grilling-" "$TMPDIR/orchestrator-planning-"
+remove_markers ""
 
 out="$(start_event clear ss2 | "$START")"
 assert_eq "only the named session's markers are removed" "$(markers_present ss1)$(markers_present ss2)" "00"
-: >"$TMPDIR/orchestrator-grilling-ss3"; : >"$TMPDIR/orchestrator-planning-ss3"
+make_markers ss3
 start_event clear ss4 | "$START" >/dev/null
 assert_eq "another session's markers stay in place" "$(markers_present ss3)" 2
-rm -f "$TMPDIR/orchestrator-grilling-ss3" "$TMPDIR/orchestrator-planning-ss3"
+remove_markers ss3
 
 out="$(start_event clear ss-none | "$START")"; st=$?
 assert_eq "clear with no marker present exits 0" "$st" 0
