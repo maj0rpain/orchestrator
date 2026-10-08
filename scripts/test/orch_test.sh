@@ -10857,12 +10857,18 @@ for all_suite in orch_test.sh hooks_test.sh docs_lint.sh; do
     fi
   } >"$all_dir/$all_suite"
 done
-# all_sc_stub <exit> [<stdout line>...]: put a stub shellcheck on all.sh's
-# PATH that logs its arguments and exits <exit>. A line that begins with
-# "<file>:" prints only on the call for that file, its last argument; any
-# other line prints on every call.
+# all_sc_stub [--stderr <line>] <exit> [<stdout line>...]: put a stub
+# for shellcheck on all.sh's PATH that logs its arguments and exits <exit>. A
+# line that begins with "<file>:" prints only on the call for that file, its
+# last argument; any other line prints on every call. With --stderr, every
+# call writes <line> to stderr before it exits.
 all_sc_stub() {
-  local code="$1" line
+  local err="" code line
+  if [ "$1" = --stderr ]; then
+    err="$2"
+    shift 2
+  fi
+  code="$1"
   shift
   {
     echo '#!/usr/bin/env bash'
@@ -10875,6 +10881,7 @@ all_sc_stub() {
         *) printf 'echo %q\n' "$line" ;;
       esac
     done
+    [ -n "$err" ] && printf 'echo %q >&2\n' "$err"
     echo "exit $code"
   } >"$all_bin/shellcheck"
   chmod +x "$all_bin/shellcheck"
@@ -10885,11 +10892,20 @@ all_print_order() {
   printf '%s\n' "$1" | grep -E '^([a-z_]+\.sh|shellcheck): ' | cut -d: -f1 | tr '\n' ' '
 }
 all_bash="$(command -v bash)"
+# all_run [VAR=value...]: run the copied all.sh on the stub PATH, with CI,
+# VERSION_BASE and ORCH_TEST_JOBS unset, then each given assignment applied.
+# Its stdout and stderr are left to the caller.
+all_run() {
+  (
+    unset CI VERSION_BASE ORCH_TEST_JOBS
+    env "$@" PATH="$all_bin" "$all_bash" "$all_dir/all.sh"
+  )
+}
 all_finding1='scripts/lint_me.sh:1:1: warning: a planted finding [SC2034]'
 all_finding2='scripts/test/lint_me.sh:2:5: error: another finding [SC2086]'
 
 all_sc_stub 0
-out="$(unset CI; ORCH_TEST_ONLY='^isolation$' VERSION_BASE=9.9.9 PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+out="$(all_run ORCH_TEST_ONLY='^isolation$' VERSION_BASE=9.9.9 2>&1)"; st=$?
 assert_status "exits non-zero when a suite failed" "$st" 1
 assert_eq "runs every suite after the first one fails" "$(wc -l <"$all_dir/log" | tr -d ' ')" "3"
 assert_eq "prints the suites' summaries in order, shellcheck's last" \
@@ -10915,7 +10931,7 @@ assert_eq "runs one shellcheck on each planted file" \
 rm -f "$all_dir/log"
 sed -i.bak 's/; exit 1$//; s/2 failed/0 failed/; /FAIL/d' "$all_dir/orch_test.sh"
 rm -f "$all_dir/orch_test.sh.bak"
-out="$(unset CI; VERSION_BASE='' PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+out="$(all_run VERSION_BASE= 2>&1)"; st=$?
 assert_status "exits 0 when every suite passed and shellcheck is clean" "$st" 0
 assert_eq "passes an empty VERSION_BASE through as set" "$(grep -c 'base=$' "$all_dir/log")" "3"
 assert_eq "prints shellcheck: 0 findings when shellcheck is clean" \
@@ -10923,7 +10939,7 @@ assert_eq "prints shellcheck: 0 findings when shellcheck is clean" \
 
 rm -f "$all_dir/log"
 all_sc_stub 1 "$all_finding1" "$all_finding2"
-out="$(unset CI VERSION_BASE; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+out="$(export VERSION_BASE=9.9.9; all_run 2>&1)"; st=$?
 assert_eq "leaves an unset VERSION_BASE unset" "$(grep -c 'base=unset$' "$all_dir/log")" "3"
 assert_eq "prints no FAIL line when every suite passed" "$(printf '%s\n' "$out" | grep -c FAIL)" "0"
 assert_status "exits non-zero on a shellcheck finding" "$st" 1
@@ -10943,19 +10959,18 @@ case "$all_file" in\
   scripts/test/lint_me.sh) echo "a failing second call" >\&2; exit 3 ;;\
   scripts/test/docs_lint.sh) exit 2 ;;\
 esac' "$all_bin/shellcheck"
-out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+out="$(all_run 2>&1)"; st=$?
 assert_status "exits non-zero when shellcheck calls fail with no finding" "$st" 1
 assert_contains "prints every call's output in glob order, then the highest exit" "$out" \
   "$(printf 'a slow first call\na failing second call\nshellcheck: failed (exit 3)')"
 all_sc_stub 1 "$all_finding1" "$all_finding2"
 sed -i.bak '/^all_file=/a [ "$all_file" = scripts/lint_me.sh ] \&\& sleep 0.5' "$all_bin/shellcheck"
-out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"
+out="$(all_run 2>&1)"
 assert_contains "prints both planted files' findings in glob order" "$out" \
   "$(printf '%s\n%s\nshellcheck: 2 findings' "$all_finding1" "$all_finding2")"
 
-all_sc_stub 2
-sed -i.bak '/^exit 2$/i echo "a bad .shellcheckrc" >&2' "$all_bin/shellcheck"
-out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+all_sc_stub --stderr "a bad .shellcheckrc" 2
+out="$(all_run 2>&1)"; st=$?
 assert_status "exits non-zero when shellcheck fails with no finding" "$st" 1
 assert_contains "prints shellcheck's output, then its exit status" "$out" \
   "$(printf 'a bad .shellcheckrc\nshellcheck: failed (exit 2)')"
@@ -10982,7 +10997,7 @@ all_sc_stub 0
 all_swap orch_test.sh 'sleep 1' 'echo; echo "a section header"' \
   "printf '  FAIL a slow failure\\n     its detail line\\n'" \
   'echo; echo "1 passed, 1 failed"; exit 1'
-out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+out="$(all_run 2>&1)"; st=$?
 all_restore orch_test.sh
 assert_status "a slow failing suite still fails the run" "$st" 1
 assert_eq "a slow orch_test.sh's FAIL block and summary still print first, shellcheck's summary last" \
@@ -11000,7 +11015,7 @@ all_swap orch_test.sh "all_wait=0" \
   "  if [ \"\$all_wait\" -gt 100 ]; then printf '  FAIL the others never started\\n'; echo; echo '0 passed, 1 failed'; exit 1; fi" \
   "  sleep 0.1" \
   "done"
-out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+out="$(all_run 2>&1)"; st=$?
 all_restore orch_test.sh
 rm -rf "$all_root/markers"
 assert_status "runs every suite and shellcheck at the same time" "$st" 0
@@ -11010,14 +11025,14 @@ assert_eq "overlapping suites still print in order, shellcheck's summary last" \
   "$all_order"
 
 rm -f "$all_dir/log"
-out="$(unset CI; ORCH_TEST_JOBS=3 PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"
+out="$(all_run ORCH_TEST_JOBS=3 2>&1)"
 assert_eq "passes ORCH_TEST_JOBS through to every suite" "$(grep -c 'jobs=3 ' "$all_dir/log")" "3"
 rm -f "$all_dir/log"
-out="$(unset CI ORCH_TEST_JOBS; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"
+out="$(all_run 2>&1)"
 assert_eq "leaves an unset ORCH_TEST_JOBS unset" "$(grep -c 'jobs=unset ' "$all_dir/log")" "3"
 
 all_swap hooks_test.sh 'echo "a stub stderr line" >&2'
-(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" >"$all_root/stdout" 2>"$all_root/stderr")
+all_run >"$all_root/stdout" 2>"$all_root/stderr"
 all_restore hooks_test.sh
 assert_eq "passes a suite's stderr through to stderr" \
   "$(grep -c 'a stub stderr line' "$all_root/stderr")" "1"
@@ -11025,18 +11040,19 @@ assert_eq "keeps a suite's stderr off stdout" \
   "$(grep -c 'a stub stderr line' "$all_root/stdout")" "0"
 
 mkdir "$all_root/tmpdir"
-(unset CI; TMPDIR="$all_root/tmpdir" PATH="$all_bin" "$all_bash" "$all_dir/all.sh" >/dev/null 2>&1)
+all_run TMPDIR="$all_root/tmpdir" >/dev/null 2>&1
 assert_eq "removes its temp files on exit" "$(ls -A "$all_root/tmpdir")" ""
 
 rm -f "$all_bin/shellcheck" "$all_bin/shellcheck.bak"
-out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+out="$(export CI=true; all_run 2>&1)"; st=$?
 assert_eq "says shellcheck was skipped when it is not installed" \
   "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: not installed - skipped"
 assert_status "a missing shellcheck does not fail the run outside CI" "$st" 0
-out="$(CI=true PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
+out="$(all_run CI=true 2>&1)"; st=$?
 assert_status "a missing shellcheck fails the run in CI" "$st" 1
 assert_eq "still says shellcheck was skipped in CI" \
   "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: not installed - skipped"
+
 rm -rf "$all_root"
 
 # >>> summary
