@@ -1282,9 +1282,14 @@ check "a standalone review pass drops earlier declines and the reviewer prompt s
   "$(scan_previously_declined "$PLUGIN_ROOT")"
 
 # --- closer's filed body lines -----------------------------------------------
-# Finding triage's scan parses a filed finding's body by its labelled lines, so
-# the closer, which writes that body, must name each one in its **Filing**
-# section: a line dropped there is a finding the scan reports as unknown.
+# The contract is the closer's body format, not orch.sh's parser. The closer
+# writes a filed finding's body as five labelled lines, and the finding-triage
+# skill's prose reads all five - orch.sh's scan parses only two of them - so
+# its **Filing** section must name each one: a line dropped there is a field
+# the skill cannot read back. Every line stays pinned, not only the ones the
+# scan parses. Under ADR-0027 this is a structural rule, not a phrase pin: the
+# labels are the field names of a body format, and checking that a section
+# names them is like checking for a required heading.
 echo
 echo "closer's filed body lines"
 closer_filing_lines='**Axis:**
@@ -1318,7 +1323,7 @@ flags "a missing Filing section is flagged" \
 printf '# C\n\n## Filing\n\n**Axis:** **Severity:** **Location:** **PR:** **Why not fixed in the loop:**\n' \
   >"$fixture/agents/orch-closer.md"
 assert_empty "a Filing section naming all five is not flagged" "$(scan_closer_filing "$fixture")"
-check "the closer's Filing section names every labelled line the scan parses" \
+check "the closer's Filing section names every labelled line the closer's body format carries" \
   "$(scan_closer_filing "$PLUGIN_ROOT")"
 
 # --- routed nouns are in the CLI conventions ----------------------------------
