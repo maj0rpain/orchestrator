@@ -532,7 +532,9 @@ fake_fail_after() {
 }
 
 # fake_fail_times <operation> <n> [stderr]: the next n calls of the operation
-# fail, then it succeeds again - a transient failure. stderr defaults to none.
+# fail, then it succeeds again - a transient failure. It writes the fail file
+# itself rather than through fake_fail, so stderr defaults to empty, not to
+# fake_fail's message: a failure a retry absorbs leaves nothing a test reads.
 fake_fail_times() {
   mkdir -p "$ORCH_GH_FAKE_STORE/fail"
   printf '%s' "${3-}" >"$ORCH_GH_FAKE_STORE/fail/$1"
