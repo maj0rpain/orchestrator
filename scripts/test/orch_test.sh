@@ -965,6 +965,14 @@ done
 "$ORCH" state set budget false
 assert_eq "reads a stored false back as false, not the key's default" \
   "$("$ORCH" state get budget)" "false"
+# Digits with a trailing newline are not all digits, so they are stored as a
+# string. jq's regex `$` used to match before the newline, and the set then
+# died on tonumber's error (#711).
+"$ORCH" state set budget $'12\n'; st=$?
+assert_status "accepts digits with a trailing newline" "$st" 0
+assert_eq "stores them as a JSON string" \
+  "$("$ORCH" state get | jq -r '.budget | type')" "string"
+assert_eq "and leaves the rest of state.json intact" "$("$ORCH" state get slug)" "state"
 
 # --- handoff path -----------------------------------------------------------
 echo
