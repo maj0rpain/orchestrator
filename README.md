@@ -133,6 +133,7 @@ dirties a repo's working tree.
 | `/orchestrator:release` | Open the release PR that carries the base branch into the default branch (see below). |
 | `/orchestrator:spec-review <issue>` | Review any spec issue on demand, outside a flow: a standalone spec review. |
 | `/orchestrator:review <issue>` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Drops findings an earlier pass on the branch's open PR already declined, fixes what it agrees with, and posts what it declines - and what it dropped as previously declined - on that PR. |
+| `/orchestrator:sync` | Run a **base sync** (see GLOSSARY.md) on demand, on any plugin-made branch, inside or outside a flow - a done flow's included: merge `origin`'s tip of its base branch in with `orch.sh branch sync`, never rebasing. A conflict is resolved by a fresh `orch-resolver`, its **Merge resolutions** posted as one PR comment; then, unless an active flow holds the branch, it asks whether to run a review pass against the branch's issue (from its name, or asked for when the name carries none). |
 | `/orchestrator:interview` | Start a planning session: an interview that reaches a shared understanding, then asks how to carry it forward. |
 | `/orchestrator:quick-implement [<issue>] [--side]` | Start a quick implementation, the route with no flow: with an issue number, that issue is its linked issue; with none, it finds or publishes one. `--side` asks for a side checkout up front. |
 | `/orchestrator:to-spec [<issue>]` | Turn the current conversation into a spec, outside any flow: publish it as a new issue, or, given an issue number, rewrite that issue's body as the spec (rewrite mode). |
@@ -151,6 +152,7 @@ instance a `uat` branch that gathers a multi-ticket project:
 | `orch.sh base set <branch> --flow` | Correct the active flow's own base branch instead, leaving the checkout setting alone. Only while the flow has no branch: before `branch create`, or after `redo review` retires it. Stores the name as given. Refuses an invalid branch name or one `origin` does not have. |
 | `orch.sh base show` | Print the base branch in effect and its source: `set`, or `default`. |
 | `orch.sh base clear` | Go back to the default branch. Succeeds when nothing was set. |
+| `orch.sh branch sync` | Bring the current plugin-made branch up to date with its base branch: merge `origin`'s tip of the base into it (never a rebase, never the local base), record that tip as its base SHA, and push with a plain push when the branch has an upstream. Exit 3 on a conflict, the merge left in progress for a resolver; exit 1 on a refusal. Rerunning it after the conflict is committed finishes the sync. |
 | `orch.sh pr release [--force] <title> <body-file>` | Open the **release PR** (see GLOSSARY.md): a non-draft PR from the base branch into the default branch. Its body starts with one `Closes #N` line per still-open issue that any PR merged into the base branch refers to (`Refs`, `Closes`, `Fixes` or `Resolves #N`, anywhere in the body). Refuses on the default branch, while a release PR is already open, and with nothing to close unless `--force`. Pushes nothing. |
 
 `/orchestrator:doctor` reports the base branch in effect, and FAILs when the
@@ -227,11 +229,12 @@ catches any at flow start.
 ## Layout
 
 ```
-commands/                     start, next, status, doctor, redo, abort, finish, release, spec-review, review, interview, quick-implement, to-spec, to-tickets, finding-triage
-agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, and the implementer
+commands/                     start, next, status, doctor, redo, abort, finish, release, spec-review, review, sync, interview, quick-implement, to-spec, to-tickets, finding-triage
+agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, the implementer, and the resolver of a merge conflict
 skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: consolidation of the issue's comments, then four lenses in a flow (three standalone), one batch question, plus a ticket question when an existing breakdown is touched
 skills/orch-review/           the review loop: rubric, authority rules, terminal states; and the review pass, quick or standalone
+skills/orch-sync/             a base sync on demand: branch sync, a resolver on a conflict, one PR comment, an offered review pass
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
 skills/orch-quick-implement/  the other route: issue, unattended spec review, orch-to-tickets, tdd, review pass, PR - no flow
 skills/orch-interview/        the planning interview; hook-grilling.sh's message asks the closing question
@@ -379,9 +382,13 @@ could not meet as unmet, and a source file it could not cover as untested. When 
 report is in hand, the driving session lands the ticket branch on the flow's
 branch with `orch.sh ticket merge` (a rebase and a fast-forward), closes the
 ticket, removes its worktree, and refills the free slots from the
-re-queried frontier. A ticket whose merge conflicts is redone alone once
-nothing else is in flight. When none remain, it runs the full verification
-once on the combined branch and opens the one draft PR for the whole flow.
+re-queried frontier. A ticket whose merge conflicts is resolved, not rebuilt:
+the driver resumes the ticket's own implementer to rebase and resolve it in
+its worktree (or starts a fresh `orch-resolver` there), and only if that
+resolution fails is the ticket redone alone once nothing else is in flight.
+When none remain, it runs the full verification once on the combined branch,
+runs a base sync to bring the flow's branch up to date with its base, and
+opens the one draft PR for the whole flow.
 A collapsed breakdown, a cap of 1, or a host that cannot start a background
 subagent builds one ticket at a time on the flow's branch, with no
 worktrees. Leftover ticket worktrees from an interrupted run stop the next

@@ -97,9 +97,23 @@ Neither a later change to the setting nor a redo moves it; a human can correct
 it explicitly only while the flow has no branch: before it first branches, or
 after `redo review` retires that branch. A quick implementation reads it when
 it branches. A flow's base SHA is the base
-branch's tip at the moment it branched. A quick implementation's base SHA
-means the same, recorded on its branch.
+branch's tip at the moment it branched, or at its latest base sync. A quick
+implementation's base SHA means the same, recorded on its branch.
 _Avoid_: target branch, integration branch (as the general term).
+
+**Base sync**:
+Bringing a flow's or quick implementation's branch up to date with its base
+branch: merging the remote base branch's tip into it, never rebasing, and
+moving its base SHA to that tip. A conflict is resolved by what each side
+meant, never by picking a side. It runs before the change is first reviewed,
+at the start of every review-loop iteration, and on demand.
+_Avoid_: rebase, update branch.
+
+**Resolver**:
+The fresh agent that finishes one in-progress merge or rebase. It reads why
+each side changed before resolving a hunk, keeps both intents where it can,
+names any intent it drops, runs the repo's checks, and commits. It never
+aborts.
 
 **Release PR**:
 The PR that carries a base branch other than the default back into the
@@ -175,7 +189,9 @@ is reported as unmet, and a changed source file no test exercises is reported
 as untested, both for the review loop's Spec axis to judge. Used in the
 implement phase and in quick implementation. When its frontier is built in
 parallel, it builds on a ticket branch in its own ticket worktree; otherwise
-on the one branch, one ticket at a time.
+on the one branch, one ticket at a time. When its ticket branch conflicts as
+it is merged, it is resumed to resolve the conflict itself, since it knows
+its ticket's intent.
 
 **Ticket branch**:
 The branch one ticket subagent builds a single ticket on, forked from its
@@ -290,11 +306,12 @@ nothing does not end it early, because every iteration is an independent look
 at the same change, and the value of the loop is in the number of looks.
 
 **Iteration**:
-One pass within a review loop: review the change, triage what came back, fix
-what the loop fixes, verify. Iterations are numbered from 1 and run on across a
-flow's loops; a flow that has run none sits at 0. A loop runs as many as its
-budget allows. A review pass labels its reviewer prompts with its own pass
-number, counted from `01` on each branch; it is not part of a loop.
+One pass within a review loop: sync the branch with its base, review the
+change, triage what came back, fix what the loop fixes, verify. Iterations are
+numbered from 1 and run on across a flow's loops; a flow that has run none
+sits at 0. A loop runs as many as its budget allows. A review pass labels its
+reviewer prompts with its own pass number, counted from `01` on each branch; it
+is not part of a loop.
 
 **Clean iteration**:
 An iteration whose triage left nothing to fix, so no fixer ran. An iteration
@@ -308,8 +325,9 @@ one - and no **missing look**, with CI green or absent. Anything else is a
 bounded stop.
 
 **Driver**:
-The session that runs a review loop. It starts the reviewers, the fixer and
-the closer, triages what the reviewers report, waits on CI, and decides the
+The session that runs a review loop. It syncs the branch with its base,
+starts the reviewers, the fixer, the closer and, on a conflict, a resolver,
+triages what the reviewers report, waits on CI, and decides the
 terminal state. It does not edit the change: every line the loop fixes is the
 fixer's, and filing is the closer's. The one exception is a host with no fresh
 subagent: there the driver takes the host-capabilities **Start a fresh
@@ -451,7 +469,7 @@ triage, which ranks one iteration's findings inside a review loop.
 The default branch's remote tip at the moment a finding triage starts: the
 commit every finding in that triage is checked at, and the one its comments
 cite. Not a base SHA, which is a base branch's tip at the moment a flow or
-quick implementation branched.
+quick implementation branched, or at its latest base sync.
 
 **Source PR**:
 The PR whose review loop filed a finding, named on the filed finding's

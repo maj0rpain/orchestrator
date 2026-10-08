@@ -1,5 +1,7 @@
 # Ticket subagents of one frontier run in parallel, each in its own worktree
 
+Superseded in part by ADR-0038: a conflicted ticket is now resolved by its own implementer, or a fresh resolver, and rebuilt alone only when that fails.
+
 Supersedes in part ADR-0010: its "one at a time" no longer holds; its "one issue, one branch, one PR, one review" still does.
 
 ADR-0010 rejected building the frontier's ready tickets at once because every ticket committed to the same working tree, and two subagents writing to one tree is a race. A git worktree per ticket removes that race. So the implement phase and quick implementation now build up to a per-clone cap of ready tickets at once (`orchestrator.parallel`, default 3), each ticket subagent on its own ticket branch in its own ticket worktree, started in the background. When one reports, `orch.sh ticket merge` rebases its branch onto the flow's branch and fast-forwards it, and only then is the ticket closed, so a dependent never forks before its blocker's work has landed. The review still sees one linear diff from one base SHA.

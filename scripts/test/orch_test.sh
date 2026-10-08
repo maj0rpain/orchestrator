@@ -1980,6 +1980,8 @@ restore_suite_env
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
 # `base_sha` for pr open and redo review to read back later via require_branch.
+# Like branch off, it also records the base and base SHA in the branch's git
+# config, so branch sync and branch base-sha find them once the flow is gone.
 echo
 echo "branch create"
 new_repo_with_origin
@@ -1991,6 +1993,10 @@ assert_eq "derives the branch name from slug and the recorded issue" "$out" "orc
 assert_eq "checks the new branch out" "$(git branch --show-current)" "orch/11-bcreate"
 assert_eq "records the branch in state" "$(orch_gh_failing state get branch)" "orch/11-bcreate"
 assert_eq "records the fork point as base_sha" "$(orch_gh_failing state get base_sha)" "$before_sha"
+assert_eq "records the flow's base in the branch's git config" \
+  "$(git config --get branch.orch/11-bcreate.orchestrator-base)" "$(orch_gh_failing state get base)"
+assert_eq "and the fork point as its base SHA there" \
+  "$(git config --get branch.orch/11-bcreate.orchestrator-base-sha)" "$before_sha"
 
 # --- branch off --------------------------------------------------------------
 # A quick implementation keeps no state, so this is the primitive it shares
@@ -2659,12 +2665,214 @@ out="$(orch_gh_failing branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 
+# --- branch sync (#792) --------------------------------------------------------
+# Merges origin's tip of the current plugin-made branch's base into it - never
+# rebasing, never the local base - moves its base SHA to that tip, and pushes
+# when the branch has an upstream. Exit 3 is a conflict left in progress; every
+# refusal is exit 1 with nothing moved. Checked through tips, merge parents,
+# git config, state.json and what reached the bare origin.
+echo
+echo "branch sync"
+# bs_advance <file> <content>: commit <content> to <file> on origin's main,
+# from the repo origin was pushed from; prints origin's new main tip.
+bs_advance() {
+  echo "$2" >"$sc_seed/$1"
+  git -C "$sc_seed" add "$1" && git -C "$sc_seed" commit -qm "main: $1"
+  git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
+  git -C "$sc_seed" rev-parse HEAD
+}
+# bs_sha: the current branch's base SHA as its git config records it.
+bs_sha() { git config --get "branch.$(git branch --show-current).orchestrator-base-sha"; }
+# bs_merging: "yes" when a merge is in progress in this checkout.
+bs_merging() { if git rev-parse -q --verify MERGE_HEAD >/dev/null; then echo yes; else echo no; fi; }
+# bs_origin_tip <branch>: origin's tip of <branch>, empty when it has none.
+bs_origin_tip() { git ls-remote "$sc_origin" "refs/heads/$1" | cut -f1; }
+
+sc_clone
+git -C "$sc_seed" checkout -q -b seed-main
+git -C "$sc_seed" reset -q --hard "$(git rev-parse origin/main)"
+orch_gh_failing init bsync >/dev/null
+orch_gh_failing state set issue 11
+orch_gh_failing branch create >/dev/null
+git commit -q --allow-empty -m "work on the branch"
+main_tip="$(git rev-parse origin/main)"
+before="$(git rev-parse HEAD)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "nothing to merge exits 0" "$st" 0
+assert_eq "and makes no commit" "$(git rev-parse HEAD)" "$before"
+assert_eq "recording origin's base tip as the base SHA in branch config" "$(bs_sha)" "$main_tip"
+assert_eq "and in state.json, since this checkout's flow holds the branch" \
+  "$(orch_gh_failing state get base_sha)" "$main_tip"
+
+# Clean merge, with the local base branch left behind origin's.
+local_main="$(git rev-parse main)"
+new_tip="$(bs_advance other.txt from-main)"
+before="$(git rev-parse HEAD)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a clean merge exits 0" "$st" 0
+assert_eq "with a merge commit whose first parent is the prior tip" "$(git rev-parse HEAD^1)" "$before"
+assert_eq "and whose second parent is origin's base tip" "$(git rev-parse HEAD^2)" "$new_tip"
+assert_eq "the local base branch stayed behind, unmerged" "$(git rev-parse main)" "$local_main"
+assert_eq "the branch's prior commits keep their SHAs" "$(git log --format=%s -1 "$before")" "work on the branch"
+assert_eq "base SHA moved to the merged tip in branch config" "$(bs_sha)" "$new_tip"
+assert_eq "and in state.json" "$(orch_gh_failing state get base_sha)" "$new_tip"
+assert_eq "branch base-sha prints the merged base tip" "$(orch_gh_failing branch base-sha)" "$new_tip"
+assert_eq "a branch with no upstream is not pushed" "$(bs_origin_tip orch/11-bsync)" ""
+
+# The base the flow records, never the branch config's or the setting's.
+git -C "$sc_seed" push -q "$sc_origin" "$new_tip:refs/heads/uat"
+git -C "$sc_seed" checkout -q -b seed-uat "$new_tip"
+echo uat >"$sc_seed/uat.txt"; git -C "$sc_seed" add uat.txt; git -C "$sc_seed" commit -qm uat
+git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/uat
+git -C "$sc_seed" checkout -q seed-main
+git config branch.orch/11-bsync.orchestrator-base uat
+git config orchestrator.base uat
+before="$(git rev-parse HEAD)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a held branch syncs with the flow's base" "$st" 0
+assert_eq "merging nothing from another base" "$(git rev-parse HEAD)" "$before"
+assert_eq "and recording the flow's base tip" "$(bs_sha)" "$new_tip"
+git config branch.orch/11-bsync.orchestrator-base main
+git config --unset orchestrator.base
+
+# With an upstream: pushed, plainly.
+git push -q -u origin orch/11-bsync 2>/dev/null
+new_tip="$(bs_advance more.txt more)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a branch with an upstream syncs" "$st" 0
+assert_eq "and the merge reaches origin" "$(bs_origin_tip orch/11-bsync)" "$(git rev-parse HEAD)"
+
+# Conflict: both sides change the same file.
+echo ours >clash.txt; git add clash.txt; git commit -qm "clash: ours"
+git push -q 2>/dev/null
+new_tip="$(bs_advance clash.txt theirs)"
+before="$(git rev-parse HEAD)"; sha_before="$(bs_sha)"; pushed="$(bs_origin_tip orch/11-bsync)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a conflict exits 3" "$st" 3
+assert_contains "saying it conflicted" "$out" "conflict"
+assert_eq "leaving the merge in progress" "$(bs_merging)" "yes"
+assert_eq "the branch tip unmoved" "$(git rev-parse HEAD)" "$before"
+assert_eq "the base SHA unmoved in branch config" "$(bs_sha)" "$sha_before"
+assert_eq "and in state.json" "$(orch_gh_failing state get base_sha)" "$sha_before"
+assert_eq "and origin unmoved" "$(bs_origin_tip orch/11-bsync)" "$pushed"
+
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a rerun before the merge is committed refuses" "$st" 1
+assert_eq "leaving the merge in progress" "$(bs_merging)" "yes"
+
+# The resolver commits; the rerun finishes the sync.
+echo both >clash.txt; git add clash.txt; git commit -q --no-edit
+resolved="$(git rev-parse HEAD)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a rerun after the resolution is committed exits 0" "$st" 0
+assert_eq "with nothing more to merge" "$(git rev-parse HEAD)" "$resolved"
+assert_eq "recording the base SHA" "$(bs_sha)" "$new_tip"
+assert_eq "and in state.json" "$(orch_gh_failing state get base_sha)" "$new_tip"
+assert_eq "and pushing the resolution" "$(bs_origin_tip orch/11-bsync)" "$resolved"
+
+# A failed push: the merge and base SHA stand; a rerun pushes.
+new_tip="$(bs_advance push.txt push)"
+pushed="$(bs_origin_tip orch/11-bsync)"
+git config remote.origin.pushurl "$(mktemp -d)/missing.git"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a failed push exits 1" "$st" 1
+assert_contains "saying the push failed" "$out" "push"
+assert_eq "with the merge commit made" "$(git rev-parse HEAD^2)" "$new_tip"
+assert_eq "and the base SHA recorded" "$(bs_sha)" "$new_tip"
+assert_eq "and origin unmoved" "$(bs_origin_tip orch/11-bsync)" "$pushed"
+git config --unset remote.origin.pushurl
+merged="$(git rev-parse HEAD)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a rerun with origin reachable exits 0" "$st" 0
+assert_eq "merging nothing more" "$(git rev-parse HEAD)" "$merged"
+assert_eq "and pushes" "$(bs_origin_tip orch/11-bsync)" "$merged"
+
+# Refusals: each exits 1 with nothing moved.
+before="$(git rev-parse HEAD)"; sha_before="$(bs_sha)"
+new_tip="$(bs_advance refused.txt refused)"
+echo dirty >README.md
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "refuses a dirty tree" "$st" 1
+assert_eq "moving no tip (dirty tree)" "$(git rev-parse HEAD)" "$before"
+assert_eq "and no base SHA (dirty tree)" "$(bs_sha)" "$sha_before"
+assert_eq "and leaving the change (dirty tree)" "$(cat README.md)" "dirty"
+git checkout -q -- README.md
+
+git checkout -q main
+git commit -q --allow-empty -m "local main only"
+git checkout -q orch/11-bsync
+git config remote.origin.url "$(mktemp -d)/missing.git"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "refuses a failed fetch" "$st" 1
+assert_contains "saying the fetch failed" "$out" "fetch"
+assert_eq "never merging the local base instead" "$(git rev-parse HEAD)" "$before"
+assert_eq "and moving no base SHA (failed fetch)" "$(bs_sha)" "$sha_before"
+git config remote.origin.url "$sc_origin"
+
+git checkout -q --detach
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "refuses a detached HEAD" "$st" 1
+assert_contains "saying so" "$out" "detached HEAD"
+assert_eq "moving nothing (detached HEAD)" "$(git rev-parse HEAD)" "$before"
+
+git checkout -q main
+before_main="$(git rev-parse HEAD)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "refuses the base branch itself" "$st" 1
+assert_contains "naming it no plugin-made branch" "$out" "main"
+assert_eq "moving nothing (base branch)" "$(git rev-parse HEAD)" "$before_main"
+
+git checkout -q -b feature/hand-made
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "refuses a branch with no recorded base" "$st" 1
+assert_eq "moving nothing (no recorded base)" "$(git rev-parse HEAD)" "$before_main"
+assert_eq "and recording no base SHA" "$(bs_sha)" ""
+git config orchestrator.base main
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "even with a base branch setting to fall back to" "$st" 1
+git config --unset orchestrator.base
+git checkout -q orch/11-bsync
+
+out="$(orch_gh_failing branch sync extra 2>&1)"; st=$?
+assert_status "refuses arguments" "$st" 1
+assert_contains "with the usage" "$out" "usage: orch.sh branch sync"
+
+# A done flow's branch, then an archived one's, still finds its base.
+state_fixture phase "done"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a done flow's branch syncs" "$st" 0
+assert_eq "merging origin's base tip (done flow)" "$(git rev-parse HEAD^2)" "$new_tip"
+assert_eq "recording it in state.json (done flow)" "$(orch_gh_failing state get base_sha)" "$new_tip"
+orch_gh_failing archive >/dev/null
+new_tip="$(bs_advance archived.txt archived)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "an archived flow's branch syncs through its branch config" "$st" 0
+assert_eq "merging origin's base tip (archived flow)" "$(git rev-parse HEAD^2)" "$new_tip"
+assert_eq "recording it in branch config (archived flow)" "$(bs_sha)" "$new_tip"
+
+# A quick/ branch, which keeps no flow state.
+git checkout -q main
+orch_gh_failing branch off quick/12-qsync >/dev/null
+git commit -q --allow-empty -m "quick work"
+new_tip="$(bs_advance quick.txt quick)"
+out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+assert_status "a quick/ branch syncs through its branch config" "$st" 0
+assert_eq "merging origin's base tip (quick)" "$(git rev-parse HEAD^2)" "$new_tip"
+assert_eq "recording it as the base SHA (quick)" "$(bs_sha)" "$new_tip"
+assert_eq "and branch base-sha prints it" "$(orch_gh_failing branch base-sha)" "$new_tip"
+assert_eq "writing no state" "$(on_disk .orchestrator/state.json)" "absent"
+
+assert_contains "help lists branch sync" "$("$ORCH" help)" "branch sync"
+cd "$SUITE_CWD" || exit 1
+rm -rf "$(dirname "$sc_origin")"
+restore_suite_env
+
 # --- branch: unknown op -------------------------------------------------------
 new_repo >/dev/null
 out="$(orch_gh_failing branch bogus 2>&1)"; st=$?
 assert_status "branch bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
-assert_contains "naming all four" "$out" "create|off|base-sha|retire"
+assert_contains "naming all five" "$out" "create|off|base-sha|sync|retire"
 
 # --- issue publish ------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
@@ -5683,6 +5891,47 @@ assert_status "remove --unmerged discards a clean worktree's unmerged branch" "$
 assert_eq "removing the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
 assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 
+# Left mid-rebase - a ticket conflict's resolution that failed: --unmerged
+# aborts the rebase first, returning the ticket branch to its committed tip,
+# then removes the clean worktree with no force.
+wt="$("$ORCH" ticket-worktree add 7)"
+echo ticket >"$wt/feature.txt" && git -C "$wt" commit -qam "ticket edit"
+ticket_tip="$(git rev-parse orch/5-feature--t7)"
+echo parent >feature.txt && git commit -qam "parent edit"
+git -C "$wt" rebase -q orch/5-feature >/dev/null 2>&1
+echo leftover >"$wt/untracked.txt"
+out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
+assert_status "remove --unmerged of a mid-rebase worktree still refuses it dirty" "$st" 1
+assert_eq "having aborted its rebase first" \
+  "$([ -d "$(git -C "$wt" rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "none"
+assert_eq "returning the ticket branch to its committed tip" \
+  "$(git -C "$wt" rev-parse HEAD) $(git -C "$wt" branch --show-current)" "$ticket_tip orch/5-feature--t7"
+assert_eq "and removing nothing with force" "$(on_disk "$wt")" "present"
+rm "$wt/untracked.txt"
+git -C "$wt" rebase -q orch/5-feature >/dev/null 2>&1
+out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
+assert_status "remove --unmerged of a clean mid-rebase worktree succeeds" "$st" 0
+assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
+assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
+git reset -q --hard HEAD~1
+
+# A leftover t<n> directory that is no worktree: git would resolve it to the
+# enclosing checkout, so --unmerged must not abort that checkout's rebase.
+git checkout -q -b orch/5-side
+echo side >feature.txt && git commit -qam "side edit"
+git checkout -q orch/5-feature
+echo main >feature.txt && git commit -qam "main edit"
+git rebase -q orch/5-side >/dev/null 2>&1
+mkdir -p .orchestrator/worktrees/t9
+out="$("$ORCH" ticket-worktree remove 9 --unmerged 2>&1)"; st=$?
+assert_status "remove --unmerged of a leftover non-worktree t<n> dir refuses" "$st" 1
+assert_eq "leaving the enclosing checkout's rebase in progress" \
+  "$([ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "rebasing"
+git rebase --abort
+rmdir .orchestrator/worktrees/t9
+git reset -q --hard HEAD~1
+git branch -q -D orch/5-side
+
 # Merged into its forked-from branch, but not into the branch the invoking
 # checkout has checked out: merged is judged against the forked-from branch
 # alone, so remove succeeds rather than refusing after the worktree is gone.
@@ -6789,6 +7038,21 @@ out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "a Verification section recording a failure and its ticket validates" "$st" 0
 assert_eq "its first line is still the bare command the review loop runs" \
   "$("$ORCH" handoff section "$h3" Verification | head -n 1)" "bash scripts/test/orch_test.sh"
+
+# Merge resolutions records what a base-sync resolver dropped (#791). The
+# template carries it, but a handoff written before it existed still
+# validates: the section is optional, never required.
+complete_implement_handoff "$h3"
+writeln '' '## Merge resolutions' 'scripts/orch.sh: dropped the base'"'"'s rename - the branch removed the caller.' >>"$h3"
+out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
+assert_status "an implement handoff carrying Merge resolutions validates" "$st" 0
+assert_eq "its Merge resolutions read back through handoff section" \
+  "$("$ORCH" handoff section "$h3" "Merge resolutions")" \
+  "scripts/orch.sh: dropped the base's rename - the branch removed the caller."
+complete_implement_handoff "$h3"
+out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
+assert_status "an old implement handoff without Merge resolutions still validates" "$st" 0
+assert_not_contains "and is not told the section is missing" "$out" "Merge resolutions"
 restore_suite_env
 
 # --- the multi-loop machinery is gone ---------------------------------------
@@ -8931,6 +9195,21 @@ out="$("$ORCH" review terminal 2>&1)"; st=$?
 assert_status "short of its budget is not terminal" "$st" 1
 assert_first_line "and classifies as pending" "$out" "pending"
 
+# A loop can stop before its budget - a failed base sync sends it straight to
+# Termination - and the record it leaves says so. A mid-budget record with a
+# terminal state classifies from it; one without stays pending.
+mkdir -p .orchestrator/review
+writeln '## Findings' 'None' >.orchestrator/review/iteration-03.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a mid-budget record with no Terminal state is not terminal" "$st" 1
+assert_first_line "and still classifies as pending" "$out" "pending"
+writeln '## Terminal state' 'stop - base sync failed.' >.orchestrator/review/iteration-03.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a stop recorded short of the budget is terminal" "$st" 0
+assert_eq "classified as stop with its reason, not pending" "$out" \
+  "$(printf 'stop\nbase sync failed.')"
+rm .orchestrator/review/iteration-03.md
+
 state_fixture iteration 5
 out="$("$ORCH" review terminal 2>&1)"; st=$?
 assert_status "at budget with no iteration record is not terminal" "$st" 1
@@ -9086,6 +9365,14 @@ assert_contains "names the iteration and budget" "$out" "iteration 2 of budget 5
 assert_contains "reads as pending, not interrupted" "$out" "hasn't reached its budget yet"
 assert_contains "points at next for resuming it" "$out" "/orchestrator:next (or orch-flow's Next phase section) will resume it"
 assert_contains "and says redo refuses until it is terminal" "$out" "redo refuses until it reaches a terminal state"
+
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop - base sync failed.' >.orchestrator/review/iteration-02.md
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a stop short of the budget is healthy" "$st" 0
+assert_contains "named a terminal state, not proceeding normally" \
+  "$out" "review loop at a terminal state: stop (base sync failed.)"
+rm .orchestrator/review/iteration-02.md
 
 state_fixture iteration 5
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -9307,7 +9594,7 @@ echo "redo review"
 healthy_repo
 fake_github
 fake_issue 21 open
-for n in 30 31 32 33; do fake_pr "$n" open orch/21-redotest main; done
+for n in 30 31 32 33 34; do fake_pr "$n" open orch/21-redotest main; done
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
 bare_origin "$bare"
@@ -9475,6 +9762,22 @@ assert_eq "leaves redo-3 as the actually-retired branch" \
   "$(git rev-parse --verify --quiet orch/21-redotest-redo-3 >/dev/null 2>&1 && echo present || echo gone)" "present"
 assert_eq "and clears branch, PR, and base SHA on the now-successful redo" \
   "$("$ORCH" state get branch)$("$ORCH" state get pr)$("$ORCH" state get base_sha)" ""
+
+# A loop that stopped short of its budget - a failed base sync goes straight
+# to Termination - has ended as surely as one that spent it, and redoes.
+state_fixture phase review
+"$ORCH" state set issue 21
+git checkout -q -b orch/21-redotest
+stub_pushed_branch orch/21-redotest
+state_fixture branch orch/21-redotest
+state_fixture pr 34
+state_fixture iteration 2
+"$ORCH" state set budget 5
+writeln '## Terminal state' 'stop - base sync failed.' >.orchestrator/review/iteration-02.md
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "a loop stopped short of its budget redoes" "$st" 0
+assert_eq "numbering on to redo-4" "$out" "4"
+assert_eq "closing its PR" "$(fake_pr_state_of 34)" "CLOSED"
 
 # A loop that ended by marking the PR ready has already moved the flow to
 # phase done, in the same operation that decided "ready" - there is no real

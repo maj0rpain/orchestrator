@@ -173,12 +173,17 @@ step" never reads as one of this skill's numbered sections:
   flight report and are processed as normal, then quick implementation
   stops, before the review and the PR, naming every failure. A leftover
   worktree surfaces at the next entry check and in `doctor --flow`.
-- **e. On a merge conflict** (`ticket merge` exits 3): `bash "$ORCH"
-  ticket-worktree remove <n> --unmerged`, and queue the ticket to run
-  alone. When nothing is in flight, dispatch the queued ticket in a fresh
-  worktree (`ticket-worktree add`) from the updated tip, on its own, and
-  process its report as in loop step d before refilling. When the frontier
-  and queue are exhausted and nothing is in flight, go to loop step f.
+- **e. On a merge conflict** (`ticket merge` exits 3), resolve it, not
+  rebuild it (ADR-0038), by **A driver's ticket resolution** in
+  `agents/orch-resolver.md` (under the plugin root), the linked issue on
+  the resolver's `Spec issue:` line. That section says how to resolve,
+  what counts as a failed resolution, and its fallback to rebuilding the
+  ticket alone. A resolution's **Merge resolutions** go under the PR
+  body's **Merge resolutions** heading (section 7). When nothing is in
+  flight, dispatch a ticket queued to run alone in a fresh worktree
+  (`ticket-worktree add`) from the updated tip, on its own, and process its
+  report as in loop step d before refilling. When the frontier and queue
+  are exhausted and nothing is in flight, go to loop step f.
 - **f. Verify the combined branch**, on every path, sequential included:
   run, on the quick implementation's branch, the full-verification command
   the reports' `Verification` lines name, once - joined with ` && ` into one
@@ -186,7 +191,19 @@ step" never reads as one of this skill's numbered sections:
   go under a **Verification** heading in the PR body (section 7). A failure
   does not stop the run: the review pass and the PR carry it.
 
-Once loop step f has run, continue at **6. Review** below.
+Once loop step f has run, sync the branch with its base (**Base sync**
+below), then continue at **6. Review**.
+
+**Base sync**: bring the quick implementation's branch up to date with its
+base, so the review pass reviews the merged code. Follow **A driver's base
+sync** in `agents/orch-resolver.md` (under the plugin root), with the linked
+issue as the resolver's issue. Its **Merge
+resolutions** - the resolver's `Files`, `Dropped` and `Verification`
+lines, or `None` when the sync merged cleanly - go under a **Merge
+resolutions** heading in the PR body (section 7). A failed sync stops quick
+implementation before the review and the PR, naming the failure; any merge
+left in progress stays for the human. A resolver's `Verification` reading
+`fail` does not stop it: the review pass and the PR carry it.
 
 **Dispatching a subagent**: start the plugin's `orch-implementer` agent
 exactly as the **Starting this agent** section of
@@ -233,7 +250,10 @@ unattended spec review took for the human: each `decision (<n>)` line of
 none. If `changelog.md` is missing, stop before `pr publish` and say so -
 never write `None.` then, since the decisions taken are unknown. It
 carries a **Verification** heading with step 5's combined verification: the
-command it ran, then `pass` or `fail`. It
+command it ran, then `pass` or `fail`, and a **Merge resolutions** heading
+with step 5's base sync's and one bullet per ticket conflict loop step e
+resolved, naming the ticket and holding its report's `Files`, `Dropped`
+and `Verification` lines, or `None` when there were neither. It
 ends with a **Host fallbacks** heading listing every fallback this run took -
 including any the spec review in step 2 took - or `None (<host>).` It
 pushes the branch and opens the PR against the base branch `branch off`
