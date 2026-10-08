@@ -14,6 +14,32 @@ place of their own recipe (#528). New `orch.sh repo show --host` (#535).
 installed" check and the repo remedy wording each have one home (#529, #530,
 #532, #537, #538).
 
+## 3.19.2
+
+The gh adapter and its test fake carry one copy of each step (#664). The
+adapter's relabel, close and PR create take named options in place of comma
+lists and placeholder positionals, one `url_number` parses both creates' URLs,
+and one `capture` holds the stderr temp-file scaffolding of the CI reads
+(`adapter_pr_checks`, `ci_api_read` and `ci_probe`). The fake's
+countdowns, comment author and timestamp, close-with-comment and next-number
+steps each have one helper, and `orch_test.sh` seeds and reads comments
+through one writer and one reader.
+
+## 3.19.1
+
+The triage-label parser moves out of `doctor.sh` into its own sourced module,
+`scripts/triage-labels.sh`, which needs only `ROOT`; `hook-grilling.sh`
+sources it instead of all of `doctor.sh`, and `LABELS_DOC` has one home
+(#575, #576). Around `orch.sh issue triage`, each repeated idiom gets one
+helper used at every site: `labels_have` for label membership (#578),
+`issue_state_labels_read` for an issue's state and labels split (#584), and
+`labels_verified` behind both read-back verifiers (#577), whose triage one
+now names its remove list (#583). `cmd_issue_triage` reads the triage roles in
+one pass, wontfix still winning over ready-for-human (#579), and the
+renamed-labels hook test calls one helper per case (#582). One behaviour
+change: every label-membership test is `--`-guarded, so a label beginning with
+`-` is matched instead of read by grep as an option.
+
 ## 3.19.0
 
 A second flow or a quick implementation can now run beside an active flow in
