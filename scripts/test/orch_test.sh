@@ -6259,6 +6259,22 @@ assert_eq "it is changed" "$(field_of 13 4 "$out")" "changed"
 assert_eq "naming the commit that touched the shifted line" "$(field_of 13 5 "$out")" "$shifted_fix_sha"
 fake_issue 13 closed
 
+# Each severity's list is cut off at the issue-list limit; a list that
+# reaches it may be missing findings past it, and the scan says so on stderr
+# while it carries on. Open in needs-triage here: two major findings (2, 5)
+# and five nit ones (1, 3, 4, 6, 7).
+err="$(mktemp)"
+out="$(ORCH_ISSUE_LIST_LIMIT=5 scan 2>"$err")"; st=$?
+assert_status "a list at the issue-list limit does not stop the scan" "$st" 0
+assert_contains "warns that the nit list reached the limit, naming the label and the limit" "$(cat "$err")" \
+  "orch: review:nit findings reached the issue-list limit of 5 - any past it are missing from this scan"
+assert_not_contains "but not the major list, below it" "$(cat "$err")" "review:major"
+assert_eq "and still prints its lines" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 "
+out="$(ORCH_ISSUE_LIST_LIMIT=6 scan 2>"$err")"; st=$?
+assert_status "scans with every list one below the limit" "$st" 0
+assert_not_contains "and gives no warning" "$(cat "$err")" "issue-list limit"
+rm -f "$err"
+
 # The triage label is the repo's name for the role, as review file files it.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \

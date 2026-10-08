@@ -25,6 +25,12 @@ readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 readonly PHASES="spec implement review done"
 readonly LABELS_DOC="docs/agents/triage-labels.md"
 readonly LABEL_LIMIT=1000
+# The most issues or PRs one list call asks gh for, where gh needs a bare
+# --limit: the labelled-issue list finding-triage scan reads, and the merged-PR
+# bodies pr release reads. A list that reaches it may be missing entries past
+# it. Overridable through the environment, like the ORCH_CI_* knobs below, so a
+# test can turn it down; it stays out of the documented command surface.
+readonly ISSUE_LIST_LIMIT="${ORCH_ISSUE_LIST_LIMIT:-1000}"
 # The severities a filed finding carries as review:<severity> - the ones
 # `review file` files. Blocking is always fixed in the loop, never filed.
 readonly FILED_SEVERITIES="major nit"
@@ -973,7 +979,7 @@ adapter_issue_state() {
 adapter_issues_labelled() {
   local args=() l
   for l in "$@"; do args+=(--label "$l"); done
-  gh issue list --state open ${args[@]+"${args[@]}"} --limit 1000 --json number --jq '.[].number'
+  gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
 }
 
 # adapter_issue_create <title> <body-file> [label...]: files the issue under
@@ -1092,7 +1098,7 @@ adapter_prs_open() {
 # branch, each followed by a newline - pr release reads its issue references
 # out of them (issue #139).
 adapter_prs_merged_bodies() {
-  gh pr list --base "$1" --state merged --limit 1000 --json body --jq '.[].body'
+  gh pr list --base "$1" --state merged --limit "$ISSUE_LIST_LIMIT" --json body --jq '.[].body'
 }
 
 # adapter_pr_close <n> <comment>: closes the PR, posting the comment on it.
@@ -2133,6 +2139,9 @@ cmd_finding_triage_scan() {
     for sev in $FILED_SEVERITIES; do
       out="$(adapter_issues_labelled "review:$sev" "$triage")" \
         || die "gh could not list the review:$sev findings"
+      if [ "$(printf '%s\n' $out | grep -c .)" -ge "$ISSUE_LIST_LIMIT" ]; then
+        warn "review:$sev findings reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this scan"
+      fi
       nums="$nums $out"
     done
   fi

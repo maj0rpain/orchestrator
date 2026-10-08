@@ -296,7 +296,8 @@ adapter_issue_state() {
 }
 
 # adapter_issues_labelled <label>...: the open issues in the store carrying
-# every label named, in number order.
+# every label named, in number order - the first ISSUE_LIST_LIMIT of them, as
+# gh's --limit cuts the list.
 adapter_issues_labelled() {
   local d n l keep
   ! fake_failing adapter_issues_labelled || return 1
@@ -307,7 +308,7 @@ adapter_issues_labelled() {
     keep=1
     for l in "$@"; do grep -qxF -- "$l" "$d/labels" 2>/dev/null || keep=0; done
     [ "$keep" = 1 ] && printf '%s\n' "$n"
-  done | sort -n
+  done | sort -n | head -n "$ISSUE_LIST_LIMIT"
 }
 
 # fake_next_number: one past the highest issue or PR number the store holds,
