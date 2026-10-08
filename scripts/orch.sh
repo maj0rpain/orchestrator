@@ -2603,17 +2603,24 @@ checkout_new_branch() {
   git checkout -q -b "$name" "origin/$base" 2>/dev/null || git checkout -q -b "$name" "$base"
 }
 
+# Besides state, it records the base and base SHA in the branch's git config,
+# as branch off does, so branch sync and branch base-sha still find them once
+# the flow is done or archived.
 cmd_branch_create() {
   require_state
   [ $# -eq 0 ] || die "usage: orch.sh branch create"
-  local slug issue name
+  local slug issue name base sha
   slug="$(state_get slug)"
   require_issue issue
   name="orch/${issue}-${slug}"
-  checkout_new_branch "$name" "$(flow_base)" \
+  base="$(flow_base)"
+  checkout_new_branch "$name" "$base" \
     "point this flow at another base: orch.sh base set <branch> --flow"
+  sha="$(git rev-parse HEAD)"
   state_write branch "$name"
-  state_write base_sha "$(git rev-parse HEAD)"
+  state_write base_sha "$sha"
+  git config "branch.$name.orchestrator-base" "$base"
+  git config "branch.$name.orchestrator-base-sha" "$sha"
   note "$name"
 }
 
@@ -2642,7 +2649,8 @@ recorded_base() {
   git config --get "branch.$1.orchestrator-base" 2>/dev/null || base_branch
 }
 
-# The current branch's base SHA, as branch off recorded it. A branch made
+# The current branch's base SHA, as branch off, branch create or branch sync
+# recorded it. A branch made
 # before that was recorded falls back to the merge-base with its recorded_base,
 # preferring origin's copy of it. Only a fallback: a base merged in mid-branch
 # moves the merge-base and silently shrinks the diff it bounds.
@@ -2663,6 +2671,56 @@ cmd_branch_base_sha() {
   git merge-base HEAD "$ref" || die "$branch shares no history with base branch $base"
 }
 
+# Brings the current plugin-made branch up to date with its base branch: merges
+# origin's tip of that base into it - never a rebase, never the local base -
+# moves its base SHA to that tip, and pushes when it has an upstream. A
+# plugin-made branch is the one this checkout's flow holds, whose base is the
+# flow's, or one whose git config records a base (branch off, branch create);
+# never the base branch in effect, which recorded_base falls back to. Exit 3 is
+# a conflict, the merge left in progress for a resolver, with nothing else
+# moved; every refusal is exit 1 with nothing moved. A failed push is the one
+# exit 1 after something moved: the merge and base SHA stand, and a rerun -
+# nothing left to merge - retries the push, as it finishes a resolved conflict.
+cmd_branch_sync() {
+  [ $# -eq 0 ] || die "usage: orch.sh branch sync"
+  local branch base held="" st tip remote
+  branch="$(git symbolic-ref --quiet --short HEAD)" \
+    || die "not on a branch (detached HEAD) - nothing was synced"
+  if [ -f "$STATE" ] && [ "$(state_get branch)" = "$branch" ]; then
+    held=1
+    base="$(flow_base)"
+  else
+    base="$(git config --get "branch.$branch.orchestrator-base" 2>/dev/null)" \
+      || die "$branch is not a branch the plugin made: no flow here holds it and it records no base - nothing was synced"
+  fi
+  [ "$branch" != "$base" ] || die "$branch is its own base branch - nothing was synced"
+  if git rev-parse --quiet --verify MERGE_HEAD >/dev/null; then
+    die "a merge is in progress on $branch - commit it (or git merge --abort), then rerun orch.sh branch sync"
+  fi
+  st="$(tree_status "$ROOT")" || die "$st"
+  [ -z "$st" ] || die "the working tree is dirty - commit or discard its changes first; nothing was synced"
+  git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
+    || die "could not fetch $base from origin - nothing was synced"
+  tip="$(git rev-parse "refs/remotes/origin/$base")"
+  if ! git merge --quiet --no-edit "origin/$base" >/dev/null 2>&1; then
+    if git rev-parse --quiet --verify MERGE_HEAD >/dev/null; then
+      warn "merging origin/$base into $branch hit a conflict - the merge is left in progress; resolve and commit it, then rerun orch.sh branch sync"
+      exit 3
+    fi
+    die "git could not merge origin/$base into $branch"
+  fi
+  git config "branch.$branch.orchestrator-base-sha" "$tip"
+  [ -z "$held" ] || state_write base_sha "$tip"
+  # Its own upstream only: branch create and branch off fork from origin's
+  # base, which git sets as the new branch's upstream until it is first pushed.
+  if [ "$(git config --get "branch.$branch.merge" 2>/dev/null)" = "refs/heads/$branch" ]; then
+    remote="$(git config --get "branch.$branch.remote" 2>/dev/null)" || remote=origin
+    git push --quiet "$remote" "refs/heads/$branch:refs/heads/$branch" 2>/dev/null \
+      || die "could not push $branch - the merge and base SHA are recorded; rerun orch.sh branch sync to push"
+  fi
+  note "$branch synced with origin/$base at $tip"
+}
+
 cmd_branch() {
   local op="${1:-}"
   shift || true
@@ -2670,6 +2728,7 @@ cmd_branch() {
     create) cmd_branch_create "$@" ;;
     off)    cmd_branch_off "$@" ;;
     base-sha) cmd_branch_base_sha "$@" ;;
+    sync)   cmd_branch_sync "$@" ;;
     retire)
       [ $# -eq 2 ] || die "usage: orch.sh branch retire <old> <new>"
       local old="$1" new="$2" upstream="" old_ok=1 new_ok=1
@@ -2713,7 +2772,7 @@ cmd_branch() {
       fi
       note "$new"
       ;;
-    *) die "unknown branch op: ${op:-<none>} (want create|off|base-sha|retire)" ;;
+    *) die "unknown branch op: ${op:-<none>} (want create|off|base-sha|sync|retire)" ;;
   esac
 }
 
@@ -4302,7 +4361,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               file, a missing heading, or a repeated heading
                               is an error
   branch create               create orch/<issue>-<slug> off the flow's base
-                              branch, recorded at init
+                              branch, recorded at init, recording that base
+                              and its tip as the base SHA in state and in
+                              the branch's git config, as branch off does
   branch off <name>           create and check out <name> off the base branch
                               in effect, recording that base on the branch
                               (branch.<name>.orchestrator-base in local git
@@ -4312,10 +4373,22 @@ orch.sh - deterministic operations for the orchestrator flow
                               keeps none. Refuses with exit 3, as init does,
                               while a flow is mid-pipeline
   branch base-sha             print the current branch's base SHA as branch
-                              off recorded it; a branch without one falls
+                              off, branch create or branch sync recorded it;
+                              a branch without one falls
                               back to the merge-base with its recorded base
                               branch (else the base branch in effect), on
                               origin if there, else local
+  branch sync                 merge origin's tip of the current plugin-made
+                              branch's base into it (never a rebase, never
+                              the local base), record that tip as its base
+                              SHA (branch config, and state when this
+                              checkout's flow holds it), and push when it
+                              has an upstream. Exit 3 on a conflict, the
+                              merge left in progress; exit 1 on a dirty
+                              tree, failed fetch, detached HEAD, or a branch
+                              the plugin did not make, nothing moved; exit
+                              1 on a failed push, the merge recorded - rerun
+                              to push
   branch retire <old> <new>   rename <old> aside to <new>, republishing it on
                               origin and deleting the old remote ref, without
                               force-pushing over anything
