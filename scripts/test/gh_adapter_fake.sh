@@ -723,6 +723,8 @@ fake_checks_answer() {
     pending)  printf 'pending\tbuild\t\n' ;;
     # The fake records no head branch, so gh's no-checks line names a fixed one.
     none)     fake_no_checks ;;
+    # gh's empty list, `[]`: nothing on stdout, nothing on stderr, exit 0.
+    empty)    ;;
     boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
     # Without this arm a mistyped answer prints nothing and succeeds, which
     # ci_probe reads as a repo with no checks - a test that passes while

@@ -7984,6 +7984,11 @@ out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "no checks at all is exit 2" "$st" 2
 assert_eq "dying with gh's own no-checks line" "$out" \
   "orch: gh could not read the checks of PR #7: no checks reported on the 'topic' branch"
+fake_checks 7 all empty
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "an empty list of checks is exit 2" "$st" 2
+assert_eq "saying no checks were reported when gh said nothing" "$out" \
+  "orch: gh could not read the checks of PR #7: no checks reported"
 fake_checks 7 all failing
 fake_fail adapter_run_rerun
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?

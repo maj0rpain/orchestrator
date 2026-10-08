@@ -1746,7 +1746,7 @@ review_rerun() {
   out="$(adapter_pr_checks "$pr" all 2>"$err")" || rc=$?
   said="$(first_line "$(cat "$err")")"; rm -f "$err"
   [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $said"
-  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: $said"
+  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: ${said:-no checks reported}"
   # Name and link on two lines, read one per read, so an empty name survives:
   # IFS=$'\t' read would collapse it, a tab being IFS whitespace. No failed
   # check leaves both empty.
