@@ -88,6 +88,10 @@ print_summary() {
   fi
 }
 
+# print_fail <title> <detail>: one FAIL line and its detail line. bad() and the
+# parallel runner both print through it, so their FAIL lines cannot drift apart.
+print_fail() { printf '  FAIL %s\n     %s\n' "$1" "$2"; }
+
 # A child of the parallel runner: run its one section, and hand the counts file
 # to the summary through a plain, unexported variable, so a suite this section
 # starts in turn is no child.
@@ -179,8 +183,8 @@ if [ -n "${ORCH_TEST_ONLY:-}" ] || [ "$orch_jobs" -gt 1 ]; then
           orch_skip=$((orch_skip + orch_s))
           [ "$orch_f" -eq 0 ] || orch_failed=1 ;;
         *)
-          printf "  FAIL section '%s' reported no counts\n     it exited %s before its summary\n" \
-            "$(printf '%s\n' "$only_titles" | sed -n "${orch_n}p")" "$orch_status"
+          print_fail "section '$(printf '%s\n' "$only_titles" | sed -n "${orch_n}p")' reported no counts" \
+            "it exited $orch_status before its summary"
           orch_fail=$((orch_fail + 1)); orch_failed=1 ;;
       esac
       [ "$orch_status" -eq 0 ] || orch_failed=1
@@ -249,7 +253,7 @@ restore_suite_env() {
 # ORCH_TEST_QUIET=1 hides the ok lines; the count, FAIL and skip lines,
 # section headers and the summary still print.
 ok()   { PASS=$((PASS + 1)); [ -n "${ORCH_TEST_QUIET:-}" ] || printf '  ok   %s\n' "$1"; }
-bad()  { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
+bad()  { print_fail "$1" "$2"; FAIL=$((FAIL + 1)); }
 skip() { printf '  skip %s\n     %s\n' "$1" "$2"; SKIP=$((SKIP + 1)); }
 
 # Git Bash / MSYS2 (and Cygwin) both set OSTYPE this way; used to skip fixtures
