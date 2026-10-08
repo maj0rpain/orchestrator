@@ -425,6 +425,34 @@ repo_resolve() {
   REPO_SOURCE=origin
 }
 
+# The one parser of a [HOST/]OWNER/REPO repo name, as repo_resolve sets
+# REPO_NAME. repo_host <name> prints its explicit host, or nothing for an
+# OWNER/REPO name, whose host is the implicit github.com; repo_owner_name
+# <name> prints its OWNER/REPO, any host dropped.
+repo_host() {
+  case "$1" in
+    */*/*) printf '%s\n' "${1%%/*}" ;;
+  esac
+}
+repo_owner_name() {
+  case "$1" in
+    */*/*) printf '%s\n' "${1#*/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+# repo_pin: pin every later gh call to the repo - when GH_REPO is unset, resolve
+# it and export it as GH_REPO, then pin its host (repo_pin_host). Returns 1,
+# exporting nothing, when nothing resolves, and never dies: each caller picks
+# its own exit, the gh guard's subshell signal or die, review rerun's die2.
+repo_pin() {
+  if [ -z "${GH_REPO:-}" ]; then
+    repo_resolve || return 1
+    export GH_REPO="$REPO_NAME"
+  fi
+  repo_pin_host
+}
+
 # repo_from_url <url>: [HOST/]OWNER/REPO from a clone URL in any of its three
 # forms - https://host/o/r, git@host:o/r, ssh://[user@]host[:port]/o/r - with
 # or without .git. github.com is left implicit, as gh -R expects; any other
@@ -474,14 +502,10 @@ repo_from_url() {
 # the main shell, whose USR1 trap dies with the remedy instead. Its last line is
 # the only call to the real gh binary in orch.sh and doctor.sh.
 gh() {
-  if [ -z "${GH_REPO:-}" ]; then
-    if ! repo_resolve; then
-      if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
-      die "$REPO_REMEDY"
-    fi
-    export GH_REPO="$REPO_NAME"
+  if ! repo_pin; then
+    if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
+    die "$REPO_REMEDY"
   fi
-  repo_pin_host
   command gh "$@"
 }
 
@@ -490,24 +514,27 @@ gh() {
 # GH_REPO also exports GH_HOST=HOST; an OWNER/REPO one, a github.com repo,
 # leaves GH_HOST as it is.
 repo_pin_host() {
-  case "$GH_REPO" in
-    */*/*) export GH_HOST="${GH_REPO%%/*}" ;;
-  esac
+  local host
+  host="$(repo_host "$GH_REPO")"
+  if [ -n "$host" ]; then export GH_HOST="$host"; fi
 }
 trap 'die "$REPO_REMEDY"' USR1
 
 cmd_repo() {
-  local op="${1:-}"
+  local op="${1:-}" host
   shift || true
   case "$op" in
     show)
       case "$*" in
-        "") ;;
-        --name) ;;
-        *) die "usage: orch.sh repo show [--name]" ;;
+        ""|--name|--host) ;;
+        *) die "usage: orch.sh repo show [--name|--host]" ;;
       esac
       repo_resolve || die "$REPO_REMEDY"
-      if [ "${1:-}" = --name ]; then note "$REPO_NAME"; else note "$REPO_NAME ($REPO_SOURCE)"; fi
+      case "${1:-}" in
+        --name) note "$REPO_NAME" ;;
+        --host) host="$(repo_host "$REPO_NAME")"; note "${host:-github.com}" ;;
+        *) note "$REPO_NAME ($REPO_SOURCE)" ;;
+      esac
       ;;
     *) die "unknown repo op: ${op:-<none>} (want show)" ;;
   esac
@@ -1178,6 +1205,12 @@ adapter_labels() {
 # #418) reads a PR's comments through this same --jq, so the two read alike.
 COMMENTS_JQ='[.comments[] | "<!-- comment @\(.author.login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n")'
 
+# The trimmed object `issue fetch --json` publishes (#528): the issue's number,
+# title and body, its label names, and each comment's author login, gh's
+# ISO-8601 timestamp and body - every other field gh answers with is dropped,
+# so the shape does not change with gh's version.
+ISSUE_JSON_JQ='{number, title, body, labels: [.labels[].name], comments: [.comments[] | {author: .author.login, createdAt, body}]}'
+
 # adapter_issue_body <n>: the issue's body as GitHub holds it, then a newline.
 adapter_issue_body() {
   gh issue view "$1" --json body --jq .body
@@ -1186,6 +1219,13 @@ adapter_issue_body() {
 # adapter_issue_comments <n>: the issue's comments in COMMENTS_JQ's shape.
 adapter_issue_comments() {
   gh issue view "$1" --json comments --jq "$COMMENTS_JQ"
+}
+
+# adapter_issue_json <n>: the issue as ISSUE_JSON_JQ's one JSON object - the
+# one operation that prints JSON rather than plain text, because that object
+# is the shape `issue fetch --json` publishes.
+adapter_issue_json() {
+  gh issue view "$1" --json number,title,body,labels,comments --jq "$ISSUE_JSON_JQ"
 }
 
 # adapter_issue_state_labels <n>: OPEN or CLOSED on the first line, then one
@@ -1476,17 +1516,21 @@ adapter_blocker_remove() {
 
 # adapter_sub_issues_supported: whether this GitHub answers the sub-issues
 # endpoint, asked of the repo's most recent issue: "yes" where it answers,
-# "no" where it refuses, nothing at all where the repo has no issue to ask it
-# of. Fails only where the issue listing itself fails.
+# "no" only where the endpoint answers HTTP 404, nothing at all where the repo
+# has no issue to ask it of. Every other failure - of the issue listing, or of
+# the endpoint with any other status (401, 403, 410, 5xx) or no connection -
+# fails it, passing gh's stderr through.
 adapter_sub_issues_supported() {
-  local n
+  local n err rc=0
   n="$(gh issue list --state all --limit 1 --json number --jq '.[0].number // empty')" || return
   [ -n "$n" ] || return 0
-  if gh api "repos/{owner}/{repo}/issues/$n/sub_issues" >/dev/null 2>&1; then
-    printf 'yes\n'
-  else
-    printf 'no\n'
-  fi
+  err="$(gh api "repos/{owner}/{repo}/issues/$n/sub_issues" 2>&1 >/dev/null)" || rc=$?
+  if [ "$rc" -eq 0 ]; then printf 'yes\n'; return 0; fi
+  case "$err" in
+    *"HTTP 404"*) printf 'no\n'; return 0 ;;
+  esac
+  [ -z "$err" ] || printf '%s\n' "$err" >&2
+  return "$rc"
 }
 
 # --- repo operations ---
@@ -1520,11 +1564,12 @@ adapter_auth_status() {
 # adapter_pr_checks <n> <required|all>: the PR's checks - the ones branch
 # protection requires, or every check on its head - one per line as TSV,
 # "<bucket><TAB><name><TAB><link>", in gh's order; an empty link for a check
-# that has none. Nothing at all where gh reports no checks, or no required
-# ones. gh documents exit 8 for pending checks, still answering the JSON: that
-# is read like an exit 0, and where it leaves nothing readable, a single
-# pending check with no name or link is printed. Fails where gh answered with
-# something jq cannot read.
+# that has none. Nothing at all on stdout where gh reports no checks, or no
+# required ones, with gh's line passed through on stderr. gh documents exit
+# 8 for pending checks, still answering the JSON: that is read like an exit
+# 0, and where it leaves nothing readable, a single pending check with no
+# name or link is printed. Fails where gh answered with something jq cannot
+# read.
 adapter_pr_checks() {
   local args=("$1") err out tsv st=0
   [ "$2" != required ] || args+=(--required)
@@ -1532,9 +1577,7 @@ adapter_pr_checks() {
   case "$st" in
     0|8) ;;
     *)
-      if grep -q 'no checks reported\|no required checks' <<<"$err"; then
-        return 0
-      fi
+      ! grep -q 'no checks reported\|no required checks' <<<"$err" || st=0
       printf '%s' "$err" >&2
       return "$st" ;;
   esac
@@ -1800,21 +1843,24 @@ ci_probe() {
 # rerun - goes through die2. The repo is resolved here rather than left to the
 # guard, whose death exits 1 and would read as "nothing to rerun".
 review_rerun() {
-  local pr="${1:-}" out link run name
+  local pr="${1:-}" out err said rc=0 link="" run name=""
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
-  if [ -z "${GH_REPO:-}" ]; then
-    repo_resolve || die2 "$REPO_REMEDY"
-    export GH_REPO="$REPO_NAME"
-  fi
-  repo_pin_host
-  out="$(adapter_pr_checks "$pr" all 2>&1)" \
-    || die2 "gh could not read the checks of PR #$pr: $(first_line "$out")"
-  link="$(printf '%s\n' "$out" | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2 "\t" $3; exit }')"
-  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: no checks reported"
+  repo_pin || die2 "$REPO_REMEDY"
+  # gh's stderr is kept apart from the checks, so its line - a failure's
+  # reason, or the "no checks" answer naming the branch - is what the death
+  # message carries. The file is gone before any die2.
+  err="$(mktemp)"
+  out="$(adapter_pr_checks "$pr" all 2>"$err")" || rc=$?
+  said="$(first_line "$(cat "$err")")"; rm -f "$err"
+  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $said"
+  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: ${said:-no checks reported}"
+  # Name and link on two lines, read one per read, so an empty name survives:
+  # IFS=$'\t' read would collapse it, a tab being IFS whitespace. No failed
+  # check leaves both empty.
+  { IFS= read -r name; IFS= read -r link; } < <(printf '%s\n' "$out" \
+    | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2; print $3; exit }') || true
   [ -n "$link" ] || die2 "PR #$pr has no failed or cancelled check to rerun"
-  name="${link%%$'\t'*}"
-  link="${link#*$'\t'}"
   case "$link" in
     */actions/runs/[0-9]*) ;;
     *) warn "check $name on PR #$pr is not a GitHub Actions run - nothing to rerun"
@@ -2099,8 +2145,14 @@ fetch_into() {
   mv "$tmp" "$file"
 }
 
+# With --json, the issue's title, body, labels and comments as ISSUE_JSON_JQ's
+# object, so a fresh agent reads the whole issue with one pinned call.
 cmd_issue_fetch() {
-  local issue="$1" file="$2"
+  local issue="$1" file="$2" json="${3:-}"
+  if [ -n "$json" ]; then
+    fetch_into "$file" "issue #$issue" adapter_issue_json "$issue"
+    return
+  fi
   fetch_into "$file" "the body of issue #$issue" \
     adapter_issue_body "$issue"
 }
@@ -2134,7 +2186,14 @@ cmd_issue() {
   local op="${1:-}"
   shift || true
   case "$op" in
-    fetch|update|comment|comments)
+    fetch)
+      # --json only as the third argument; any other shape is a usage error.
+      local usage="usage: orch.sh issue fetch <n> <file> [--json]"
+      [ $# -eq 2 ] || { [ $# -eq 3 ] && [ "$3" = --json ]; } || die "$usage"
+      case "$1" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $1 ($usage)" ;; esac
+      cmd_issue_fetch "$@"
+      ;;
+    update|comment|comments)
       [ $# -eq 2 ] || die "usage: orch.sh issue $op <n> <file>"
       local issue="$1" file="$2"
       case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue (usage: orch.sh issue $op <n> <file>)" ;; esac
@@ -4180,10 +4239,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               orchestrator.parallel, else 3; 1 is sequential.
                               Dies naming the key and value when it is not a
                               positive integer
-  repo show [--name]          print the GitHub repo orch.sh works on and its
+  repo show [--name|--host]   print the GitHub repo orch.sh works on and its
                               source: GH_REPO when set, else the checkout's
                               origin - never gh's default repo. --name prints
-                              the bare [HOST/]OWNER/REPO alone, for gh -R.
+                              the bare [HOST/]OWNER/REPO alone, for gh -R;
+                              --host its host alone, github.com for an
+                              OWNER/REPO repo, for gh api --hostname.
                               Exits 1, naming GH_REPO, when neither resolves
   init <slug> [--issue N]     start a flow (refuses with exit 3 if one is
                               active, unless it is done - a done flow is archived, unless a
@@ -4242,8 +4303,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               create a GitHub issue under ready-for-agent
                               and verify its title and label by reading them
                               back - recording no state; prints the number
-  issue fetch <n> <file>      write issue <n>'s body to <file>, recording no
-                              state
+  issue fetch <n> <file> [--json]
+                              write issue <n>'s body to <file>, recording no
+                              state; with --json, the issue as one JSON
+                              object {number, title, body, labels: [<name>],
+                              comments: [{author, createdAt, body}]}
   issue update <n> <file>     replace issue <n>'s body with <file>, recording
                               no state
   issue comment <n> <file>    post <file> as a comment on issue <n>,

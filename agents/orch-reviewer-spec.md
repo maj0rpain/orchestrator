@@ -29,13 +29,13 @@ character away - describe it in the finding instead.
    `git diff <base SHA>...HEAD` (three dots) must be non-empty. Note the
    commits with `git log <base SHA>..HEAD --oneline`. If either check fails,
    write a report saying which, and return.
-2. **Read the spec**, pinned to the repo `orch.sh` resolves, never `gh`'s
-   default repo: `repo="$(bash "<orch.sh>" repo show --name)" && gh issue
-   view <spec issue> -R "$repo"`. When `repo show` fails, write a report
-   saying so, and return: an empty `-R` would fall back to the default. The
-   issue body is the spec. Where it lists sub-issues, read those too, pinned
-   the same way (`gh issue view <n> -R "$repo"`): their acceptance criteria
-   are part of what was asked. Done when you can list every
+2. **Read the spec**: `bash "<orch.sh>" issue fetch <spec issue> <file>
+   --json`, into a temporary file outside the working tree (`mktemp`), writes
+   its title, body, labels and comments as one JSON object, read pinned to
+   the repo `orch.sh` resolves. Then read that file. When the fetch fails,
+   write a report saying so, and return. The issue body is the spec. Where
+   it lists sub-issues, read those too, the same way, each into its own
+   `mktemp` file: their acceptance criteria are part of what was asked. Done when you can list every
    requirement the spec states.
 3. **Review the diff** against that list. Read the surrounding file wherever a
    hunk alone cannot tell you whether a requirement is met. Look for three

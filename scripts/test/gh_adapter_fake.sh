@@ -271,6 +271,30 @@ adapter_issue_comments() {
   fake_comments_print "$(fake_issue_dir "$1")/comments"
 }
 
+# adapter_issue_json <n>: the stored issue as ISSUE_JSON_JQ's trimmed object -
+# its number, title, body byte for byte, label names, and each comment's
+# author, date and body.
+adapter_issue_json() {
+  ! fake_failing adapter_issue_json || return 1
+  fake_issue_known "$1" || return 1
+  local d k comments="[]" body
+  d="$(fake_issue_dir "$1")"
+  body="$d/body"
+  [ -f "$body" ] || body=/dev/null
+  if [ -d "$d/comments" ]; then
+    for k in $(ls "$d/comments" | sort -n); do
+      comments="$(jq -c --arg a "$(cat "$d/comments/$k/author")" \
+        --arg c "$(cat "$d/comments/$k/created")" --rawfile b "$d/comments/$k/body" \
+        '. + [{author: $a, createdAt: $c, body: $b}]' <<<"$comments")"
+    done
+  fi
+  jq -cn --argjson n "$1" --arg t "$(cat "$d/title" 2>/dev/null)" \
+    --rawfile b "$body" \
+    --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
+    --argjson c "$comments" \
+    '{number: $n, title: $t, body: $b, labels: $l, comments: $c}'
+}
+
 # adapter_issue_state_labels <n>: the stored state, then its labels. Lagging
 # (fake_lag), it answers the stale answer fake_lag was given, or nothing.
 adapter_issue_state_labels() {
@@ -748,7 +772,10 @@ fake_checks_answer() {
     # A failing check whose Actions link carries no numeric run id.
     badrunid) printf 'fail\tbuild\t%s/12abc\n' "$runs" ;;
     pending)  printf 'pending\tbuild\t\n' ;;
-    none)     ;;
+    # The fake records no head branch, so gh's no-checks line names a fixed one.
+    none)     fake_no_checks ;;
+    # gh's empty list, `[]`: nothing on stdout, nothing on stderr, exit 0.
+    empty)    ;;
     boom)     echo "dial tcp: lookup api.github.com: no such host" >&2; return 1 ;;
     # Without this arm a mistyped answer prints nothing and succeeds, which
     # ci_probe reads as a repo with no checks - a test that passes while
@@ -756,6 +783,10 @@ fake_checks_answer() {
     *)        echo "gh fake: no checks answer named '$1'" >&2; return 99 ;;
   esac
 }
+
+# fake_no_checks: gh's "no checks" answer - nothing on stdout, its line on
+# stderr, exit 0 - as adapter_pr_checks passes it on.
+fake_no_checks() { echo "no checks reported on the 'topic' branch" >&2; }
 
 # adapter_pr_checks <n> <required|all>: the next answer of the script
 # fake_checks seeded for the PR and scope - one per call, the last repeating
@@ -765,7 +796,7 @@ adapter_pr_checks() {
   ! fake_failing adapter_pr_checks || return 1
   d="$(fake_store)/checks/$1"
   f="$d/$2"
-  [ -f "$f" ] || return 0
+  [ -f "$f" ] || { fake_no_checks; return 0; }
   i=$(( $(cat "$f.n" 2>/dev/null || echo 0) + 1 ))
   printf '%s\n' "$i" >"$f.n"
   answer="$(sed -n "${i}p" "$f")"
