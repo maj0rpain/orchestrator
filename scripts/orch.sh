@@ -3276,15 +3276,6 @@ rewrite_blocked_by_section() {
   '
 }
 
-# Brings ticket <n>'s `## Blocked by` section in line with <blockers>
-# through issue_body_rewrite. The write is not read back - ADR-0011 governs
-# the edges, not the body.
-ticket_blocked_by_rewrite() {
-  issue_body_rewrite "$1" "gh could not read ticket #$1's body" \
-    "gh could not rewrite ticket #$1's ## Blocked by section" \
-    rewrite_blocked_by_section "$2"
-}
-
 # `ticket block` and `ticket unblock`'s one driver: `ticket <verb> <n> --by
 # N,N,...`. The arguments are checked before anything touches GitHub: <n>
 # and every --by entry plain issue numbers, --by required and given once - a
@@ -3292,7 +3283,8 @@ ticket_blocked_by_rewrite() {
 # and de-duplicated, as `ticket publish --blocked-by` does. Then the
 # preconditions, the current edges, one adapter write per edge that needs
 # it, verify-then-die (ADR-0011) against the wanted set, and the `## Blocked
-# by` rewrite. Only the verb varies: block skips edges already present, adds
+# by` rewrite through issue_body_rewrite. The write is not read back -
+# ADR-0011 governs the edges, not the body. Only the verb varies: block skips edges already present, adds
 # the rest and wants the union; unblock skips edges already absent, removes
 # the rest and wants the difference. Either re-run is idempotent.
 ticket_edges_change() {
@@ -3332,7 +3324,9 @@ ticket_edges_change() {
     unblock) want="$(printf '%s\n' "$before" | grep -vxF -f <(printf '%s\n' "$by") || true)" ;;
   esac
   ticket_edges_verify "$n" "$want"
-  ticket_blocked_by_rewrite "$n" "$want"
+  issue_body_rewrite "$n" "gh could not read ticket #$n's body" \
+    "gh could not rewrite ticket #$n's ## Blocked by section" \
+    rewrite_blocked_by_section "$want"
 }
 
 # Adds a native blocking edge on <n> for every --by issue it lacks.
