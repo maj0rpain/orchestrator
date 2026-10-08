@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.19.1
+
+The gh adapter and its test fake carry one copy of each step (#664). The
+adapter's relabel, close and PR create take named options in place of comma
+lists and placeholder positionals, one `url_number` parses both creates' URLs,
+and one `capture` holds the stderr temp-file scaffolding. The fake's
+countdowns, comment author and timestamp, close-with-comment and next-number
+steps each have one helper, and `orch_test.sh` seeds and reads comments
+through one writer and one reader.
+
 ## 3.19.0
 
 A second flow or a quick implementation can now run beside an active flow in
