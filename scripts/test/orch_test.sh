@@ -2204,6 +2204,14 @@ out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "publishes under a renamed ready-for-agent label" "$st" 0
 assert_eq "applying the repo's name for it, rather than the canonical one" "$(fake_labels_of "$out")" "agent go "
 
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `ready-for-agent`          | `-agent`             | AFK-ready   |' >docs/agents/triage-labels.md
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "verifies a ready-for-agent label beginning with '-'" "$st" 0
+assert_eq "applying it" "$(fake_labels_of "$out")" "-agent "
+
 rm docs/agents/triage-labels.md
 out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "publishes with no labels doc at all" "$st" 0
@@ -2561,6 +2569,16 @@ assert_contains "names the missing label" "$out" "ready-for-agent"
 # pinned in "gh adapter contract".
 
 healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `ready-for-agent`          | `-agent`             | AFK-ready   |' >docs/agents/triage-labels.md
+fake_issue 43 open -agent
+out="$("$ORCH" init dashed --issue 43 2>&1)"; st=$?
+assert_status "adopts an issue whose ready-for-agent label begins with '-'" "$st" 0
+assert_eq "recording it" "$("$ORCH" state get issue)" "43"
+
+healthy_repo
 out="$("$ORCH" init nope --issue 2>&1)"; st=$?
 assert_status "requires a value after --issue" "$st" 1
 
@@ -2731,6 +2749,17 @@ assert_status "a label with a space in it is one label, not two" "$st" 0
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "quotes a multi-word label in the remedy" "$out" 'gh label create "needs triage"'
+
+# A label beginning with '-' is a label, never a grep option.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning |' \
+        '| -------------------------- | -------------------- | ------- |' \
+        '| `needs-triage`             | `-triage`            | Look    |' \
+        '| `ready-for-agent`          | `-agent`             | Go      |' >docs/agents/triage-labels.md
+fake_label_names -triage -agent
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "passes when the repo has labels beginning with '-'" "$st" 0
+assert_contains "finding every one of them" "$out" "every triage label exists on the repo"
 
 # GitHub answered the auth probe and then would not answer this one: an absent
 # answer, not a "no", so it warns.
@@ -7171,6 +7200,16 @@ finding 15 "review:nit,triage me" "\`src/other.sh:2\` at $head_sha"
 out="$(scan 2>&1)"
 assert_eq "lists under the repo's own name for needs-triage, and only it" \
   "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "15 "
+# A needs-triage label beginning with '-' is a label, never a grep option.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `-triage`            | Evaluate it |' >docs/agents/triage-labels.md
+finding 17 "review:nit,-triage" "\`src/other.sh:2\` at $head_sha"
+out="$(scan 17 2>&1)"; st=$?
+assert_status "scans an explicit finding whose needs-triage label begins with '-'" "$st" 0
+assert_eq "listing it" "$(line_of 17 "$out")" "$(printf '17\t7\tsrc/other.sh:2\tunchanged\t')"
+fake_issue 17 closed
 rm docs/agents/triage-labels.md
 restore_suite_env
 

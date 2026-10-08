@@ -17,7 +17,7 @@
 #
 # Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
 # now, first_line, default_branch, base_setting, origin_has_branch,
-# require_state,
+# require_state, labels_have,
 # ORCH_DIR_NAME, PHASES, LABEL_LIMIT, HANDOFF_DIR) and triage-labels.sh
 # (LABELS_DOC, TRIAGE_ROLES, triage_table_rows, triage_labels,
 # triage_label_for, triage_expected_labels) are defined. cmd_doctor is then
@@ -399,7 +399,7 @@ validate_adopted_issue() {
   state="$(first_line "$out")"
   labels="$(printf '%s\n' "$out" | tail -n +2)"
   [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
-  printf '%s\n' "$labels" | grep -qxF "$label" \
+  labels_have "$labels" "$label" \
     || die "issue #$issue is missing the '$label' triage label - adoption requires it."
 }
 
@@ -435,7 +435,7 @@ check_labels_exist() {
   fi
   while IFS= read -r l; do
     if [ -z "$l" ]; then continue; fi
-    if ! printf '%s\n' "$have" | grep -qxF "$l"; then missing="$(d_append "$missing" "$l")"; fi
+    if ! labels_have "$have" "$l"; then missing="$(d_append "$missing" "$l")"; fi
   done <<<"$want"
   if [ -z "$missing" ]; then d_ok "every triage label exists on the repo"; return 0; fi
   # Found every one of them is a definitive answer whatever the page held, so
