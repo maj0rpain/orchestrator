@@ -3288,6 +3288,18 @@ rewrite_blocked_by_section() {
   '
 }
 
+# blockers_union <before> <by>: the blocker set after `ticket block` - every
+# number in either list, one per line, sorted and de-duplicated.
+blockers_union() {
+  printf '%s\n%s\n' "$1" "$2" | sed '/^$/d' | sort -un
+}
+
+# blockers_difference <before> <by>: the blocker set after `ticket unblock` -
+# every number in <before> that is not in <by>, one per line.
+blockers_difference() {
+  printf '%s\n' "$1" | grep -vxF -f <(printf '%s\n' "$2") || true
+}
+
 # `ticket block` and `ticket unblock`'s one driver: `ticket <verb> <n> --by
 # N,N,...`. The arguments are checked before anything touches GitHub: <n>
 # and every --by entry plain issue numbers, --by required and given once - a
@@ -3296,11 +3308,22 @@ rewrite_blocked_by_section() {
 # preconditions, the current edges, one adapter write per edge that needs
 # it, verify-then-die (ADR-0011) against the wanted set, and the `## Blocked
 # by` rewrite through issue_body_rewrite. The write is not read back -
-# ADR-0011 governs the edges, not the body. Only the verb varies: block skips edges already present, adds
+# ADR-0011 governs the edges, not the body. Only the verb varies, and the one
+# `case` up front binds all of it: block skips edges already present, adds
 # the rest and wants the union; unblock skips edges already absent, removes
 # the rest and wants the difference. Either re-run is idempotent.
 ticket_edges_change() {
   local verb="$1" usage n="" by="" have_by="" before want b present
+  local skip_present edge_op edge_word want_fn
+  case "$verb" in
+    block)
+      skip_present=1; edge_op=adapter_blocker_add; edge_word=add
+      want_fn=blockers_union ;;
+    unblock)
+      skip_present=""; edge_op=adapter_blocker_remove; edge_word=remove
+      want_fn=blockers_difference ;;
+    *) die "unknown ticket edge verb: ${verb:-<none>} (want block|unblock)" ;;
+  esac
   usage="usage: orch.sh ticket $verb <n> --by N,N,..."
   shift
   while [ $# -gt 0 ]; do
@@ -3320,21 +3343,11 @@ ticket_edges_change() {
   while IFS= read -r b; do
     present=""
     if printf '%s\n' "$before" | grep -qxF "$b"; then present=1; fi
-    case "$verb" in
-      block)
-        [ -z "$present" ] || continue
-        adapter_blocker_add "$n" "$b" \
-          || die "gh could not add a blocking edge from ticket #$n on #$b" ;;
-      unblock)
-        [ -n "$present" ] || continue
-        adapter_blocker_remove "$n" "$b" \
-          || die "gh could not remove a blocking edge from ticket #$n on #$b" ;;
-    esac
+    [ "$present" != "$skip_present" ] || continue
+    "$edge_op" "$n" "$b" \
+      || die "gh could not $edge_word a blocking edge from ticket #$n on #$b"
   done <<<"$by"
-  case "$verb" in
-    block)   want="$(printf '%s\n%s\n' "$before" "$by" | sed '/^$/d' | sort -un)" ;;
-    unblock) want="$(printf '%s\n' "$before" | grep -vxF -f <(printf '%s\n' "$by") || true)" ;;
-  esac
+  want="$("$want_fn" "$before" "$by")"
   ticket_edges_verify "$n" "$want"
   issue_body_rewrite "$n" "gh could not read ticket #$n's body" \
     "gh could not rewrite ticket #$n's ## Blocked by section" \
