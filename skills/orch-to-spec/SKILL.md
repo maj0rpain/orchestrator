@@ -27,9 +27,6 @@ being published as a new issue. With no leading issue number, the skill runs in
 Blueprint route hands over its interviewed issue this way, and
 `/orchestrator:to-spec <n>` reaches rewrite mode standalone.
 
-Rewrite mode keeps the issue's title always: it replaces the body only. It
-posts no comment preserving the old body; GitHub's edit history keeps it.
-
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
@@ -103,8 +100,8 @@ route and standalone alike.
    - Exit 2 (GitHub could not be read): stop and say why. Never read it as
      "no breakdown": that would publish a second one.
 2. **Replace the body:** `bash "$ORCH" issue update <n> <body-file>`. The
-   title is never changed, and no comment preserving the old body is posted.
-   If it fails, stop and say why. Never fall back to `issue publish`, and run
+   title is never changed, and no comment preserving the old body is posted:
+   GitHub's edit history keeps it. If it fails, stop and say why. Never fall back to `issue publish`, and run
    no ticket step.
 3. **On retire**, run `bash "$ORCH" ticket retire <n>` now, after the update,
    so it cuts any `## Ticket` section from the body just written. If it

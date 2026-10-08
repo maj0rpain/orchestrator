@@ -106,13 +106,14 @@ if [ "$host" = junie ]; then
   ask_step="Call the ask_user tool with
   exactly three options:"
   plugin_root="$(hook_plugin_root)"
+  next_redo="the **Next phase** and **Redo** sections of $plugin_root/skills/orch-flow/SKILL.md
+    (this host has no plugin commands: read that file and follow the section
+    the user picks)"
   run_flow_quick="On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
   \"Quick implementation\", the orch-quick-implement skill. "
   run_blueprint="On \"Blueprint
-  only\", run the orch-to-spec skill - for issue #<n>, the interviewed issue, when there is one
-  (its rewrite mode) - then orch-spec-review if the user wants a
-  review, then orch-to-tickets unless rewrite mode reported \`kept\`.
-  If orch-to-spec stops without reporting the issue number, run nothing after it. This host has no Skill tool, so read each
+  only\", run each step of the Blueprint route below as its skill - orch-to-spec for issue #<n>, the interviewed issue, when there is one
+  (its rewrite mode), orch-spec-review, and orch-to-tickets. This host has no Skill tool, so read each
   skill's file and follow it verbatim:"
   flow_quick_files="
   $plugin_root/skills/orch-flow/SKILL.md,
@@ -125,21 +126,21 @@ if [ "$host" = junie ]; then
   implementation\", follow that skill's **Starting in a side checkout** section."
   blueprint_files="
   $plugin_root/skills/orch-to-spec/SKILL.md,
-  $plugin_root/skills/orch-spec-review/SKILL.md (its standalone spec review), or
+  $plugin_root/skills/orch-spec-review/SKILL.md (its standalone spec review), and
   $plugin_root/skills/orch-to-tickets/SKILL.md."
 else
   ask_tool="the AskUserQuestion tool"
+  next_redo="/orchestrator:next or /orchestrator:redo"
   ask_step="Call the AskUserQuestion tool with
   exactly three options:"
   run_flow_quick="On \"Start the orchestrator flow\", call the Skill tool with
   \"orchestrator:orch-flow\" yourself. On \"Quick implementation\", call the Skill
   tool with \"orchestrator:orch-quick-implement\" yourself. "
   run_blueprint="On \"Blueprint
-  only\", call the Skill tool with \"orchestrator:orch-to-spec\", with args set to the interviewed issue's number when there is one
-  (its rewrite mode), then with
-  \"orchestrator:orch-spec-review\" (its standalone spec review) if the user
-  wants a review, then with \"orchestrator:orch-to-tickets\" unless rewrite mode reported \`kept\`, yourself.
-  If orch-to-spec stops without reporting the issue number, call nothing after it. The
+  only\", call the Skill tool yourself for each step of the Blueprint route below:
+  \"orchestrator:orch-to-spec\", with args set to the interviewed issue's number when there is one
+  (its rewrite mode), \"orchestrator:orch-spec-review\" (its standalone spec review),
+  and \"orchestrator:orch-to-tickets\". The
   orchestrator's skills are model-invocable: call them, do not hand them to the
   user."
   run_flow_quick_side="On \"Start the orchestrator flow\",
@@ -185,13 +186,6 @@ if [ "$flow_active" = 1 ]; then
   else
     flow_named="a flow with no issue or slug is active in this checkout, $flow_at"
     flow_subject="this flow's change"
-  fi
-  if [ "$host" = junie ]; then
-    next_redo="the **Next phase** and **Redo** sections of $(hook_plugin_root)/skills/orch-flow/SKILL.md
-    (this host has no plugin commands: read that file and follow the section
-    the user picks)"
-  else
-    next_redo="/orchestrator:next or /orchestrator:redo"
   fi
   flow_branches="- Beside this planning session, ${flow_named}. At the close, decide
   from this planning session's conversation which of two cases applies:
@@ -248,12 +242,13 @@ ${run_next} Do not ask the user to type a command.${route_here}
   (orch-to-spec, handed #<n>). Only with no interviewed issue, publish the spec as a new issue
   (orch-to-spec). Either way, write any glossary or
   ADR wording the planning decided into the issue body verbatim.
-  If orch-to-spec stops without reporting the issue number, stop there: ask no spec review question and run no orch-to-tickets; report why it stopped. Otherwise
+  The route's steps run in this order, and one rule covers every step: when a step stops or fails, stop there - run no later step, and report why it stopped.
+  orch-to-spec stops when it ends without reporting the issue number. Once it has reported the number,
   ask the user whether to run a spec review on it - ask every time, never
   assume - and run the standalone orch-spec-review only on a yes. Then publish
   its ticket breakdown (orch-to-tickets) against that issue, unless rewrite mode reported the breakdown \`kept\`:
   then skip that step. Rewrite mode reports the breakdown; run no breakdown check of your own.
-  If orch-to-tickets fails after rewrite mode retired a breakdown, stop and report that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>. Then stop: do not
+  If orch-to-tickets fails after rewrite mode retired a breakdown, the report also says that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>. Then stop: do not
   implement or edit source. Report the issue number and how to pick it up
   later: /orchestrator:start --issue <n>, or a quick implementation that names
   the issue."
