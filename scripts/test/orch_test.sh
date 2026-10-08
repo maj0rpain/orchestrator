@@ -6736,6 +6736,49 @@ assert_eq "no rebase is left in progress" "$(tm_rebasing "$wt")" "no"
 assert_eq "the ticket worktree is left clean" "$(git -C "$wt" status --porcelain)" ""
 assert_eq "and the flow's checkout too" "$(git status --porcelain)" ""
 
+# A rebase already in progress in the ticket worktree: refused before anything
+# moves, and the rebase is left for whoever started it.
+git -C "$wt" rebase -q orch/5-feature >/dev/null 2>&1
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge refuses a ticket worktree mid-rebase" "$st" 1
+assert_contains "naming it not on a branch" "$out" \
+  "orch: ticket worktree $wt is not on a branch (detached HEAD)"
+assert_eq "the rebase is still in progress" "$(tm_rebasing "$wt")" "yes"
+assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "the ticket branch stays at its prior tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+git -C "$wt" rebase --abort
+
+# A rebase that fails for a reason other than a conflict exits 1, naming
+# git's first line, never 3.
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+tm_commit "$wt" ticket.txt one
+tm_commit . other.txt landed-first
+flow_tip="$(git rev-parse orch/5-feature)"
+ticket_tip="$(git rev-parse orch/5-feature--t7)"
+hooks="$(mktemp -d)"
+printf '#!/bin/sh\necho "no rebasing today"\nexit 1\n' >"$hooks/pre-rebase"
+chmod +x "$hooks/pre-rebase"
+git config core.hooksPath "$hooks"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge exits 1 when a pre-rebase hook refuses" "$st" 1
+assert_contains "naming the hook's line" "$out" \
+  "orch: rebasing orch/5-feature--t7 onto orch/5-feature failed: no rebasing today"
+assert_not_contains "not calling it a conflict" "$out" "conflict"
+assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "the ticket branch stays at its prior tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+assert_eq "no rebase is left in progress" "$(tm_rebasing "$wt")" "no"
+
+printf '#!/bin/sh\nexit 1\n' >"$hooks/pre-rebase"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge exits 1 when a silent pre-rebase hook refuses" "$st" 1
+assert_contains "naming git's own line" "$out" \
+  "orch: rebasing orch/5-feature--t7 onto orch/5-feature failed: error: The pre-rebase hook refused to rebase."
+assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "the ticket branch stays at its prior tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+assert_eq "no rebase is left in progress" "$(tm_rebasing "$wt")" "no"
+git config --unset core.hooksPath
+
 # Refusals: each exits 1 and changes nothing.
 tw_repo
 wt="$("$ORCH" ticket-worktree add 7)"

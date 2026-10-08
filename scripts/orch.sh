@@ -3786,7 +3786,7 @@ ticket_worktree_resolve() {
 # resolution) is aborted first, returning the ticket branch to its committed
 # tip, so the worktree is judged clean or dirty as that tip left it.
 cmd_ticket_worktree_remove() {
-  local n="" unmerged=0 path branch parent gitdir
+  local n="" unmerged=0 path branch parent
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -3799,11 +3799,8 @@ cmd_ticket_worktree_remove() {
     path="$(ticket_worktree_path "$(ticket_worktree_number "$n")")"
     # Only a worktree at $path itself: git would resolve a leftover t<n>
     # directory to the enclosing checkout, whose rebase is not ours to abort.
-    gitdir=""
-    if [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ]; then
-      gitdir="$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null)" || gitdir=""
-    fi
-    if [ -n "$gitdir" ] && { [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]; }; then
+    if [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+      && rebase_in_progress "$path"; then
       git -C "$path" rebase --abort \
         || die "could not abort the rebase in progress in ticket worktree $path"
     fi
@@ -3825,6 +3822,13 @@ cmd_ticket_worktree_remove() {
   git branch -q -D "$branch" || die "could not delete branch $branch"
 }
 
+# Whether a rebase is in progress in the checkout at <path>.
+rebase_in_progress() {
+  local gitdir
+  gitdir="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]
+}
+
 # The checkout that has <branch> checked out, or nothing: the first worktree
 # git lists on refs/heads/<branch>.
 branch_checkout() {
@@ -3840,11 +3844,15 @@ branch_checkout() {
 # Lands ticket <n>'s branch on the branch it was forked from: rebases it onto
 # that branch's tip inside the ticket worktree, then fast-forwards that branch
 # in whichever checkout has it - so history stays linear. Every refusal (exit
-# 1) runs before anything moves; a rebase conflict is aborted and exits 3,
-# leaving both branches at their prior tips.
+# 1) runs before anything moves. Exit 3 means a rebase conflict only: it is
+# aborted, leaving both branches at their prior tips. A rebase that fails any
+# other way is aborted too and exits 1, naming git's first line; so does an
+# abort that fails, which leaves the ticket worktree mid-rebase.
 cmd_ticket_merge() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
-  local n path branch parent parent_checkout
+  # rebase_out is set by capture and only git's stderr is read.
+  # shellcheck disable=SC2034
+  local n path branch parent parent_checkout rebase_out rebase_err unmerged said
   ticket_worktree_resolve "$1"
   parent="$(forked_from_branch "$branch")" \
     || die "branch $branch records no forked-from branch"
@@ -3855,10 +3863,20 @@ cmd_ticket_merge() {
     || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
   require_clean_tree "$parent_checkout" \
     "$parent_checkout, the checkout of $parent, is dirty - commit or discard its changes first"
-  if ! git -C "$path" rebase -q "$parent" >/dev/null 2>&1; then
-    git -C "$path" rebase --abort >/dev/null 2>&1 || true
-    warn "rebasing $branch onto $parent hit a conflict - aborted; both branches are as they were"
-    exit 3
+  if ! capture rebase_out rebase_err git -C "$path" rebase -q "$parent"; then
+    # A conflict is a rebase stopped with unmerged paths; anything else - a
+    # refusing hook, say - is a plain failure, named by git's first line.
+    unmerged="$(git -C "$path" ls-files -u 2>/dev/null)" || unmerged=""
+    if rebase_in_progress "$path"; then
+      git -C "$path" rebase --abort >/dev/null 2>&1 \
+        || die "could not abort the rebase in ticket worktree $path - it is left mid-rebase"
+    fi
+    if [ -n "$unmerged" ]; then
+      warn "rebasing $branch onto $parent hit a conflict - aborted; both branches are as they were"
+      exit 3
+    fi
+    said="$(first_line "$rebase_err")"
+    die "rebasing $branch onto $parent failed: ${said:-git gave no reason}"
   fi
   git -C "$parent_checkout" merge -q --ff-only "$branch" \
     || die "could not fast-forward $parent to $branch in $parent_checkout"
