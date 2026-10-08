@@ -65,8 +65,8 @@ if command -v shellcheck >/dev/null 2>&1; then
   root="$dir/../.."
   sc_pids=()
   for sc_file in "$root"/scripts/*.sh "$root"/scripts/test/*.sh; do
-    sc_file="${sc_file#"$root/"}"
-    (cd "$root" && exec shellcheck -S warning -f gcc "$sc_file") \
+    sc_rel="${sc_file#"$root/"}"
+    (cd "$root" && exec shellcheck -S warning -f gcc "$sc_rel") \
       >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 &
     sc_pids+=("$!")
   done

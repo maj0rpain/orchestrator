@@ -26,12 +26,13 @@ readonly PHASES="spec implement review done"
 # The directory this script sits in, which every sourced module lives in too.
 # Worked out by parameter expansion, as dirname would print it, so no call
 # spawns a process to find it: a bare name means the current directory.
-ORCH_SCRIPTS="${BASH_SOURCE[0]}"
-case "$ORCH_SCRIPTS" in
-  */*) ORCH_SCRIPTS="${ORCH_SCRIPTS%/*}"; ORCH_SCRIPTS="${ORCH_SCRIPTS:-/}" ;;
+ORCH_SOURCE="${BASH_SOURCE[0]}"
+case "$ORCH_SOURCE" in
+  /*/*|[!/]*/*) ORCH_SCRIPTS="${ORCH_SOURCE%/*}" ;;
+  /*) ORCH_SCRIPTS="/" ;;
   *) ORCH_SCRIPTS="." ;;
 esac
-readonly ORCH_SCRIPTS
+readonly ORCH_SOURCE ORCH_SCRIPTS
 # The triage-label parser and LABELS_DOC, its one home; marked readonly here,
 # where orch.sh has always fixed it, since the module assigns it plainly.
 source "$ORCH_SCRIPTS/triage-labels.sh"
@@ -1909,7 +1910,7 @@ ci_probe() {
 # rerun - goes through die2. The repo is resolved here rather than left to the
 # guard, whose death exits 1 and would read as "nothing to rerun".
 review_rerun() {
-  local pr="${1:-}" out err said rc=0 link="" run name="" line bucket
+  local pr="${1:-}" out err said_all said rc=0 link="" run name="" line bucket
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
   repo_pin || die2 "$REPO_REMEDY"
@@ -1918,7 +1919,7 @@ review_rerun() {
   # message carries. The file is gone before any die2.
   err="$(mktemp)"
   out="$(adapter_pr_checks "$pr" all 2>"$err")" || rc=$?
-  said="$(<"$err")"; said="${said%%$'\n'*}"; rm -f "$err"
+  said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
   [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $said"
   [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: ${said:-no checks reported}"
   # The first failed or cancelled check's name and link, split by tsv_split
@@ -3870,10 +3871,10 @@ readonly SIDE_CHECKOUT_MARKER="orchestrator-side-checkout"
 
 # The main checkout: the first worktree git lists.
 main_checkout() {
-  local list
+  local list first
   list="$(git worktree list --porcelain)" || return
-  list="${list%%$'\n'*}"
-  case "$list" in "worktree "*) printf '%s\n' "${list#worktree }" ;; esac
+  first="${list%%$'\n'*}"
+  case "$first" in "worktree "*) printf '%s\n' "${first#worktree }" ;; esac
 }
 
 # side_checkouts_dir <main-root>: where the side checkouts of the main
@@ -4014,7 +4015,7 @@ github_read() {
 # finished_flow <state-file>: whether that flow is finished - at done, and its
 # recorded PR merged into its own base branch.
 finished_flow() {
-  local state="$1" phase pr base state_draft pr_state refs merged_base
+  local state="$1" phase pr base state_draft pr_state refs head_oid head_ref merged_base commits
   phase="$(state_get_in "$state" phase)"
   if [ "$phase" != "done" ]; then
     verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1
@@ -4031,10 +4032,7 @@ finished_flow() {
   fi
   github_read refs adapter_pr_refs "$pr" || return
   # The base branch is the third line, empty when there is none.
-  merged_base=""
-  case "$refs" in
-    *$'\n'*$'\n'*) merged_base="${refs#*$'\n'*$'\n'}"; merged_base="${merged_base%%$'\n'*}" ;;
-  esac
+  lines_split "$refs" head_oid head_ref merged_base commits
   [ "$merged_base" = "$base" ] || { verdict="PR #$pr merged into $merged_base, not $base"; return 1; }
 }
 
