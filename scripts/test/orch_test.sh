@@ -32,6 +32,26 @@ GH_ADAPTER_FAKE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gh_adapter_fake.s
 PLUGIN_ROOT="$(cd "$(dirname "$ORCH")/.." && pwd)"
 SUITE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
+# The temp root. Every invocation - the parallel runner, each of its children,
+# a sequential or filtered run - first creates one temp directory and exports
+# TMPDIR as it, so every mktemp below, orch.sh's own included, lands inside it;
+# a child's root nests inside its runner's. The EXIT trap leaves the root
+# (whose subdirectories may be the cwd), makes it writable again, removes it,
+# and keeps the exit status. An INT or TERM exits 130 through that trap; the
+# parallel runner replaces this INT/TERM trap with its own.
+orch_root="$(mktemp -d)" || {
+  echo "orch_test.sh: cannot create the suite's temp root" >&2; exit 1; }
+export TMPDIR="$orch_root"
+orch_remove_root() {
+  local status=$?
+  cd / || :
+  chmod -R u+w "$orch_root" 2>/dev/null
+  rm -rf "$orch_root"
+  exit "$status"
+}
+trap orch_remove_root EXIT
+trap 'exit 130' INT TERM
+
 # The section filter. With ORCH_TEST_ONLY=<ERE> set, the suite runs only the
 # shared setup (from the `# >>> shared setup` line to the isolation section),
 # the isolation section, every `# ---` section from isolation on whose title -
@@ -54,8 +74,8 @@ SUITE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_S
 # the children, so the stdout is the stdout of a sequential run. stderr passes
 # straight through and may interleave. A child that reports no counts - it
 # exited mid-way - adds a FAIL naming its section. Exits 1 when any child
-# failed. Buffers live in one temp directory, removed on exit; an interrupt
-# also kills the running children.
+# failed. Buffers live in one temp directory under the temp root; an interrupt
+# also kills the running children and waits for them to exit.
 
 # section_awk <mode> [keep]: list the section titles (mode "titles"), or print
 # the text to run (mode "text"), keeping the sections whose 1-based positions
@@ -144,8 +164,15 @@ if [ -n "${ORCH_TEST_ONLY:-}" ] || [ "$orch_jobs" -gt 1 ]; then
     echo "orch_test.sh: cannot create a temp directory for the section buffers" >&2; exit 1; }
   orch_pids=()
   orch_sections=()
-  trap 'rm -rf "$orch_buf"' EXIT
-  trap 'kill "${orch_pids[@]}" 2>/dev/null; exit 130' INT TERM
+  # Kill the children, then wait for each to exit, so the root is removed
+  # only once no child can still write into it.
+  orch_stop_children() {
+    local pid
+    kill "${orch_pids[@]}" 2>/dev/null
+    for pid in "${orch_pids[@]}"; do wait "$pid"; done
+    exit 130
+  }
+  trap orch_stop_children INT TERM
   IFS=, read -r -a orch_sections <<<"${only_keep#,}"
   orch_total=${#orch_sections[@]}
   orch_started=0 orch_flushed=0 orch_pass=0 orch_fail=0 orch_skip=0 orch_failed=0
@@ -1144,6 +1171,100 @@ assert_contains "keeps that check's FAIL line with its detail line" "$out" \
 assert_eq "counts that one failure in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed"
 rm -rf "$par_dir"
+
+# --- the suite's temp root (#807) -----------------------------------------------
+# A cut-down suite - isolation plus one planted section that calls new_repo -
+# each run given its own fresh, empty TMPDIR, asserted empty once it exits:
+# passing, failing, and interrupted once its section is running. The marker
+# the waiting section writes lives outside that TMPDIR.
+echo
+echo "the suite's temp root (#807)"
+root_dir="$(planted_copy <<'PLANTED'
+  # --- planted repo
+  echo; echo "planted repo"; new_repo >/dev/null; ok "made a repo"
+  # --- planted failure
+  echo; echo "planted failure"; new_repo >/dev/null; bad "a planted failure" "its detail line"
+  # --- planted wait
+  echo; echo "planted wait"; new_repo >/dev/null; : >"$ROOT_TEST_MARKER"; sleep 30 & wait $!
+  ok "waited"
+PLANTED
+)"
+root_suite="$root_dir/scripts/test/orch_test.sh"
+root_tmp="$root_dir/tmp"
+root_marker="$root_dir/marker"
+# root_fresh: an empty TMPDIR for the next inner run, and no marker.
+root_fresh() { rm -rf "$root_tmp" "$root_marker"; mkdir "$root_tmp"; }
+# root_await_marker: polls up to 10s for the waiting section's marker.
+root_await_marker() {
+  local i=0
+  while [ ! -f "$root_marker" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -f "$root_marker" ]
+}
+
+for root_jobs in 2 1; do
+  root_fresh
+  TMPDIR="$root_tmp" ORCH_TEST_JOBS="$root_jobs" ORCH_TEST_ONLY='^planted repo$' \
+    bash "$root_suite" >/dev/null 2>&1; st=$?
+  assert_status "a passing run with ORCH_TEST_JOBS=$root_jobs exits 0" "$st" 0
+  assert_eq "a passing run with ORCH_TEST_JOBS=$root_jobs leaves its TMPDIR empty" \
+    "$(ls -A "$root_tmp")" ""
+
+  root_fresh
+  TMPDIR="$root_tmp" ORCH_TEST_JOBS="$root_jobs" ORCH_TEST_ONLY='^planted failure$' \
+    bash "$root_suite" >/dev/null 2>&1; st=$?
+  assert_status "a failing run with ORCH_TEST_JOBS=$root_jobs exits 1" "$st" 1
+  assert_eq "a failing run with ORCH_TEST_JOBS=$root_jobs leaves its TMPDIR empty" \
+    "$(ls -A "$root_tmp")" ""
+
+  root_fresh
+  TMPDIR="$root_tmp" ROOT_TEST_MARKER="$root_marker" ORCH_TEST_JOBS="$root_jobs" \
+    ORCH_TEST_ONLY='^planted wait$' bash "$root_suite" >/dev/null 2>&1 &
+  root_pid=$!
+  if root_await_marker; then
+    kill -TERM "$root_pid"
+  else
+    kill -KILL "$root_pid" 2>/dev/null
+  fi
+  wait "$root_pid"; st=$?
+  assert_status "a run with ORCH_TEST_JOBS=$root_jobs sent TERM exits 130" "$st" 130
+  assert_eq "a run with ORCH_TEST_JOBS=$root_jobs sent TERM leaves its TMPDIR empty" \
+    "$(ls -A "$root_tmp")" ""
+done
+
+# SIGINT reaches the run only with job control on - a non-interactive shell
+# starts a background job with SIGINT ignored - so the run is started from a
+# foreground `set -m` subshell. A shell that itself started with SIGINT ignored,
+# as a parallel runner's child does, passes that on through `set -m` too; there
+# perl restores SIGINT's default for the run, and without perl the check skips.
+root_launch=()
+if [ "$(trap -p INT)" = "trap -- '' SIGINT" ]; then
+  if command -v perl >/dev/null 2>&1; then
+    root_launch=(perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV or die "exec: $!"')
+  else
+    root_launch=(skip)
+  fi
+fi
+if [ "${root_launch[0]:-}" = skip ]; then
+  skip "a run sent INT exits 130 and leaves its TMPDIR empty" \
+    "this shell started with SIGINT ignored, and perl is not installed to restore it"
+else
+  root_fresh
+  st="$(
+    set -m
+    TMPDIR="$root_tmp" ROOT_TEST_MARKER="$root_marker" ORCH_TEST_JOBS=2 \
+      ORCH_TEST_ONLY='^planted wait$' "${root_launch[@]}" bash "$root_suite" >/dev/null 2>&1 &
+    root_pid=$!
+    if root_await_marker; then
+      kill -INT "$root_pid"
+    else
+      kill -KILL "$root_pid" 2>/dev/null
+    fi
+    wait "$root_pid"; echo "$?"
+  )"
+  assert_eq "a run sent INT exits 130" "$st" "130"
+  assert_eq "a run sent INT leaves its TMPDIR empty" "$(ls -A "$root_tmp")" ""
+fi
+rm -rf "$root_dir"
 
 # --- init -------------------------------------------------------------------
 echo
