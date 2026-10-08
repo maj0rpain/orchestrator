@@ -3696,7 +3696,7 @@ ticket_worktree_number() {
 ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
 
 # forked_from_key <branch>: the git config key that records the branch ticket
-# branch <branch> was forked from - the one place it is spelled out.
+# branch <branch> was forked from - the one place code spells it out.
 forked_from_key() { printf 'branch.%s.orchestrator-ticket-parent\n' "$1"; }
 
 # forked_from_branch <branch>: prints the forked-from branch recorded on
@@ -3866,7 +3866,7 @@ cmd_ticket_merge() {
   if ! capture rebase_out rebase_err git -C "$path" rebase -q "$parent"; then
     # A conflict is a rebase stopped with unmerged paths; anything else - a
     # refusing hook, say - is a plain failure, named by git's first line.
-    unmerged="$(git -C "$path" ls-files -u 2>/dev/null)" || unmerged=""
+    unmerged="$(git -C "$path" diff --name-only --diff-filter=U 2>/dev/null)" || unmerged=""
     if rebase_in_progress "$path"; then
       git -C "$path" rebase --abort >/dev/null 2>&1 \
         || die "could not abort the rebase in ticket worktree $path - it is left mid-rebase"
@@ -4680,7 +4680,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               the ticket worktree or that checkout is dirty,
                               or the branch is checked out nowhere; on a
                               rebase conflict aborts the rebase and exits 3,
-                              both branches at their prior tips
+                              both branches at their prior tips. A rebase
+                              that fails any other way is aborted and exits
+                              1, naming git's first line; an abort that fails
+                              exits 1, leaving the worktree mid-rebase
   ticket-worktree add <n>     fork <current-branch>--t<n> from the current
                               branch's tip, record the forked-from branch on
                               it (branch.<ticket-branch>.orchestrator-ticket-

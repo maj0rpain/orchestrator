@@ -790,10 +790,11 @@ check_flow_review_draft() {
 }
 
 # A ticket worktree under this checkout is a run's leftover once its phase is
-# not running (ADR-0036): the next implement phase or quick implementation stops
-# on it, and archive refuses to move it. Silent when there is none - ticket-worktree list's own
-# scope, so another checkout's in-flight tickets never fail this one.
-check_flow_ticket_worktrees() {
+# not running (ADR-0036): the next implement phase or quick implementation
+# stops on it, and archive refuses to move it. Silent when there is none -
+# ticket-worktree list's own scope, so another checkout's in-flight tickets
+# never fail this one.
+check_ticket_worktrees_left() {
   local n path
   while read -r n path; do
     [ -n "$n" ] || continue
@@ -950,7 +951,7 @@ cmd_doctor() {
     # On every path here - no flow, a broken state file, no jq - because it
     # reads git alone (#673): a quick implementation has no flow, and its
     # leftover is reported here or nowhere. Silent when there is none.
-    check_flow_ticket_worktrees
+    check_ticket_worktrees_left
   fi
 
   d_skip_report
