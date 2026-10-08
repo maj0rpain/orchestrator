@@ -469,8 +469,10 @@ cmd_default_branch() {
 # [HOST/]OWNER/REPO and REPO_SOURCE to GH_REPO or origin, printing nothing; it
 # returns non-zero, with both empty, when nothing resolves. A caller that must
 # have a repo dies with REPO_REMEDY; doctor reports REPO_CAUSE, giving the
-# remedy on a line of its own.
-REPO_CAUSE="no GitHub repo to work on: origin is missing or not a GitHub owner/name"
+# remedy on a line of its own, and names the bare REPO_MISSING on its skipped
+# line.
+REPO_MISSING="no GitHub repo to work on"
+REPO_CAUSE="$REPO_MISSING: origin is missing or not a GitHub owner/name"
 REPO_REMEDY="$REPO_CAUSE - set GH_REPO=<owner>/<repo>"
 repo_resolve() {
   local url

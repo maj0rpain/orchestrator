@@ -116,7 +116,7 @@ d_probe_gh() {
   if [ -n "$D_GH" ]; then return 0; fi
   if ! gh_installed; then D_GH="gh is not installed"; return 0; fi
   # The guard dies with no repo to pin its calls to; ask nothing instead.
-  if ! repo_resolve; then D_GH="no GitHub repo to work on"; return 0; fi
+  if ! repo_resolve; then D_GH="$REPO_MISSING"; return 0; fi
   if out="$(adapter_auth_status 2>&1)"; then
     D_GH=ok
   else
