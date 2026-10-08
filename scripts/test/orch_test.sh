@@ -8827,16 +8827,13 @@ assert_first_line "the timeout counts from the call even when the push is old" "
 
 # A push younger than the grace still waits: nothing required yet, and the
 # green that arrives within the grace wins over the unfiltered failure. The
-# push is recorded as 60s old and the grace is 600s, far above it, so the
-# grace is unspent however long the suite took to reach this case; the green
-# arrives on the second probe, so the long grace costs no time, and `timeout`
-# turns a grace that never ends into a failed assertion, not a hang.
+# push's 60s age and the 600s grace are the #476 section's, explained there.
 head_sha="$(pushed_head topic 60)"
 fake_pr_head 7 "$head_sha"
 fake_checks 7 required none green
 fake_checks 7 all failing
 out="$(ORCH_CI_GRACE=600 timeout 30 "$ORCH" review ci 2>&1)"; st=$?
-assert_first_line "a fresh push still waits the grace before widening" "$out" "green"
+assert_first_line "a push younger than the grace still waits it before widening" "$out" "green"
 restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 
 # --- the grace is skipped on no evidence of CI (issue #476) ---
@@ -8873,12 +8870,17 @@ assert_contains "saying it found no CI signals" "$out" "no CI signals found"
 assert_contains "naming the signals it looked for" "$out" "no workflow files in the head"
 
 # The other path to none: the grace waited and ran out with nothing reported.
+# The head is a commit never pushed, so with no reflog entry the suite's short
+# grace counts from the call and is really waited, not spent by the aged push.
+unpushed_sha="$(git commit-tree "HEAD^{tree}" -p HEAD -m 'not pushed')"
+fake_pr_head 7 "$unpushed_sha"
 fake_ci_reset
 fake_check_run main
 out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "evidence of CI keeps the grace, and none still comes after it" "$out" "none"
 assert_contains "saying the grace ran out" "$out" "grace ran out"
 assert_eq "and not that no signals were found" "$(printf '%s\n' "$out" | grep -c 'no CI signals')" "0"
+fake_pr_head 7 "$head_sha"
 
 # The pre-check replaces only the wait: the unfiltered probe still runs, so a
 # check already reported on the head gives its verdict, not none.
