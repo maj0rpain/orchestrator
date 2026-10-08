@@ -25,6 +25,12 @@ readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 readonly PHASES="spec implement review done"
 readonly LABELS_DOC="docs/agents/triage-labels.md"
 readonly LABEL_LIMIT=1000
+# The most issues or PRs one list call asks gh for, where gh needs a bare
+# --limit: the labelled-issue list finding-triage scan reads, and the merged-PR
+# bodies pr release reads. A list that reaches it may be missing entries past
+# it. Overridable through the environment, like the ORCH_CI_* knobs below, so a
+# test can turn it down; it stays out of the documented command surface.
+readonly ISSUE_LIST_LIMIT="${ORCH_ISSUE_LIST_LIMIT:-1000}"
 # The severities a filed finding carries as review:<severity> - the ones
 # `review file` files. Blocking is always fixed in the loop, never filed.
 readonly FILED_SEVERITIES="major nit"
@@ -35,6 +41,30 @@ readonly FILED_SEVERITIES="major nit"
 is_filed_severity() {
   local s
   for s in $FILED_SEVERITIES; do [ "$1" != "$s" ] || return 0; done
+  return 1
+}
+
+# review_labels <labels>: each label in the newline-separated list that marks
+# a review finding - review: followed by at least one character. The one scan
+# the two checks below share.
+review_labels() {
+  printf '%s\n' "$1" | grep '^review:.' || true
+}
+
+# has_review_label <labels>: whether any label marks a review finding, at any
+# severity - filed today or not.
+has_review_label() {
+  [ -n "$(review_labels "$1")" ]
+}
+
+# has_filed_severity_label <labels>: whether some review label carries a
+# filed severity.
+has_filed_severity_label() {
+  local label
+  while IFS= read -r label; do
+    [ -n "$label" ] || continue
+    ! is_filed_severity "${label#review:}" || return 0
+  done <<<"$(review_labels "$1")"
   return 1
 }
 
@@ -90,10 +120,20 @@ readonly STATE="$ORCH/state.json"
 readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
 
-# Names a flow command so any host can act on it. Plugin commands are
-# unverified on Junie (docs/host-capabilities.md), so off Claude Code each also
-# names the orch-flow section it routes to - the same fallback the skills
-# offer. On Claude Code the message stays as it was before 1.0.0 (#121 story 2).
+# plugin_cmd <command> <fallback>: names a plugin command so any host can act
+# on it. Plugin commands are unverified on Junie (docs/host-capabilities.md),
+# so off Claude Code it also names <fallback>, where the command routes - the
+# same fallback the skills offer. On Claude Code the name stands alone, as it
+# was before 1.0.0 (#121 story 2).
+plugin_cmd() {
+  if [ "$(host_detect)" = claude ]; then
+    printf "/orchestrator:%s" "$1"
+  else
+    printf "/orchestrator:%s (or %s)" "$1" "$2"
+  fi
+}
+
+# Names a flow command, its fallback the orch-flow section it routes to.
 flow_cmd() {
   local section
   case "$1" in
@@ -103,22 +143,13 @@ flow_cmd() {
     abort) section="Abort" ;;
     *) die "flow_cmd: unknown command: $1" ;;
   esac
-  if [ "$(host_detect)" = claude ]; then
-    printf "/orchestrator:%s" "$1"
-  else
-    printf "/orchestrator:%s (or orch-flow's %s section)" "$1" "$section"
-  fi
+  plugin_cmd "$1" "orch-flow's $section section"
 }
 
-# Names finding triage as flow_cmd names a flow command: off Claude Code,
-# where plugin commands are unverified, it also names the skill the command
-# runs, since finding triage is no orch-flow section.
+# Names finding triage, its fallback the skill the command runs, since finding
+# triage is no orch-flow section.
 finding_triage_cmd() {
-  if [ "$(host_detect)" = claude ]; then
-    printf "/orchestrator:%s" finding-triage
-  else
-    printf "/orchestrator:%s (or the orch-finding-triage skill)" finding-triage
-  fi
+  plugin_cmd finding-triage "the orch-finding-triage skill"
 }
 
 # Names how to start the next phase in a fresh session, in the host's own
@@ -237,6 +268,21 @@ default_branch() {
   fi
   is_branch_name "$b" || b="main"
   printf '%s\n' "$b"
+}
+
+# default-branch [--sha]: the default branch's name, or with --sha the default
+# SHA - the full SHA of refs/remotes/origin/<default> as it stands. --sha never
+# fetches: finding triage reads it right after its scan's fetch set that ref,
+# so it names the remote tip the scan used.
+cmd_default_branch() {
+  local usage="usage: orch.sh default-branch [--sha]" default ref sha
+  [ $# -eq 0 ] && { default_branch; return; }
+  [ $# -eq 1 ] && [ "$1" = --sha ] || die "$usage"
+  default="$(default_branch)"
+  ref="refs/remotes/origin/$default"
+  sha="$(git rev-parse --verify -q "$ref^{commit}")" \
+    || die "no $ref - fetch the default branch first"
+  printf '%s\n' "$sha"
 }
 
 # The repo orch.sh works on (#520): GH_REPO when the caller set it, else the
@@ -973,7 +1019,7 @@ adapter_issue_state() {
 adapter_issues_labelled() {
   local args=() l
   for l in "$@"; do args+=(--label "$l"); done
-  gh issue list --state open ${args[@]+"${args[@]}"} --limit 1000 --json number --jq '.[].number'
+  gh issue list --state open ${args[@]+"${args[@]}"} --limit "$ISSUE_LIST_LIMIT" --json number --jq '.[].number'
 }
 
 # adapter_issue_create <title> <body-file> [label...]: files the issue under
@@ -1092,7 +1138,7 @@ adapter_prs_open() {
 # branch, each followed by a newline - pr release reads its issue references
 # out of them (issue #139).
 adapter_prs_merged_bodies() {
-  gh pr list --base "$1" --state merged --limit 1000 --json body --jq '.[].body'
+  gh pr list --base "$1" --state merged --limit "$ISSUE_LIST_LIMIT" --json body --jq '.[].body'
 }
 
 # adapter_pr_close <n> <comment>: closes the PR, posting the comment on it.
@@ -1370,6 +1416,29 @@ category_label_ensure() {
   esac
 }
 
+# category_for_axis <axis>: the category a finding filed on that review axis
+# starts in, whatever the axis's case. A Spec finding misses what was asked
+# for, so it is a bug; a Standards finding improves how it was built. Prints
+# nothing and fails for any other axis; the caller words its own error.
+category_for_axis() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    spec)      printf 'bug\n' ;;
+    standards) printf 'enhancement\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+# category_other <category>: the opposite category - the one a finding loses
+# when triage settles on <category>. Prints nothing and fails for anything but
+# bug or enhancement.
+category_other() {
+  case "$1" in
+    bug)         printf 'enhancement\n' ;;
+    enhancement) printf 'bug\n' ;;
+    *) return 1 ;;
+  esac
+}
+
 # Float comparison and addition, in awk, because the timings are overridable and
 # the tests turn them down to fractions of a second; bash arithmetic is integer
 # only and would read a grace of 0.3 as 0. A fractional `sleep` is a GNU/BSD
@@ -1628,14 +1697,9 @@ cmd_review() {
         nit)   colour=c5def5 ;;
         *) die "no label colour for filed severity: $severity" ;;
       esac
-      # The category follows the axis: a Spec finding misses what was asked
-      # for, so it is a bug; a Standards finding improves how it was built.
-      # Finding triage confirms or flips it later.
-      case "$(printf '%s' "$axis" | tr '[:upper:]' '[:lower:]')" in
-        spec)      category=bug ;;
-        standards) category=enhancement ;;
-        *) die "not a review axis: $axis (want spec or standards)" ;;
-      esac
+      # The category follows the axis; finding triage confirms or flips it later.
+      category="$(category_for_axis "$axis")" \
+        || die "not a review axis: $axis (want spec or standards)"
       [ -n "$title" ] || die "the title is empty"
       [ -f "$body" ] || die "body file not found: $body"
       severity_label_ensure "review:$severity" "$colour" "Review finding filed at $severity severity"
@@ -2011,6 +2075,14 @@ map_line() {
     END { if (!done) print L + off }'
 }
 
+# scan_line <file:lines> <result> <detail>: the scan's one line, in the
+# columns `finding-triage scan` prints. Local to finding_scan_one in effect: it
+# reads the issue and PR number, n and pr, from that call's locals, through
+# bash's dynamic scope, and prints - for an empty PR.
+scan_line() {
+  printf '%s\t%s\t%s\t%s\t%s\n' "$n" "${pr:--}" "$1" "$2" "$3"
+}
+
 # finding_scan_one <issue> <body> <default ref>: the scan's one line for one
 # finding.
 finding_scan_one() {
@@ -2018,12 +2090,12 @@ finding_scan_one() {
   pr="$(finding_pr "$body")"
   loc="$(finding_location "$body")"
   if [ -z "$loc" ]; then
-    printf '%s\t%s\t-\tunknown\tbody does not parse: no **Location:** line naming `<file>:<line>` at <SHA>\n' "$n" "${pr:--}"
+    scan_line - unknown 'body does not parse: no **Location:** line naming `<file>:<line>` at <SHA>'
     return
   fi
   IFS=$'\t' read -r file lines sha <<<"$loc"
   if [ -z "$pr" ]; then
-    printf '%s\t-\t%s:%s\tunknown\tbody does not parse: no **PR:** line ending in a pull request URL\n' "$n" "$file" "$lines"
+    scan_line "$file:$lines" unknown 'body does not parse: no **PR:** line ending in a pull request URL'
     return
   fi
   # A squash merge leaves the PR's head commit off every branch: the PR's own
@@ -2031,17 +2103,16 @@ finding_scan_one() {
   if ! resolved_sha="$(git rev-parse --verify -q "$sha^{commit}")"; then
     git fetch -q origin "refs/pull/$pr/head" >/dev/null 2>&1 || true
     if ! resolved_sha="$(git rev-parse --verify -q "$sha^{commit}")"; then
-      printf '%s\t%s\t%s:%s\tunknown\thead SHA %s is unreachable, even after fetching refs/pull/%s/head\n' \
-        "$n" "$pr" "$file" "$lines" "$sha" "$pr"
+      scan_line "$file:$lines" unknown "head SHA $sha is unreachable, even after fetching refs/pull/$pr/head"
       return
     fi
   fi
   if ! git cat-file -e "$ref:$file" 2>/dev/null; then
-    printf '%s\t%s\t%s:%s\tgone\t\n' "$n" "$pr" "$file" "$lines"
+    scan_line "$file:$lines" gone ""
     return
   fi
   if git diff --quiet "$resolved_sha" "$ref" -- "$file" 2>/dev/null; then
-    printf '%s\t%s\t%s:%s\tunchanged\t\n' "$n" "$pr" "$file" "$lines"
+    scan_line "$file:$lines" unchanged ""
     return
   fi
   start="${lines%%-*}"; end="${lines#*-}"
@@ -2053,8 +2124,7 @@ finding_scan_one() {
   # older commit would predate the filing.
   file_commit="$(git log -1 --format=%H "$ref" "^$resolved_sha" -- "$file" 2>/dev/null)" || true
   if [ -z "$file_commit" ]; then
-    printf '%s\t%s\t%s:%s\tunknown\tno commit on the default branch since %s touched %s - the difference is commits that never reached it\n' \
-      "$n" "$pr" "$file" "$lines" "$sha" "$file"
+    scan_line "$file:$lines" unknown "no commit on the default branch since $sha touched $file - the difference is commits that never reached it"
     return
   fi
   # The newest commit since the filing that touched the finding's lines. The
@@ -2065,7 +2135,7 @@ finding_scan_one() {
     # The lines were followed and nothing since the filing touched them: the
     # file changed only elsewhere.
     if [ -z "$detail" ]; then
-      printf '%s\t%s\t%s:%s\tunchanged\t\n' "$n" "$pr" "$file" "$lines"
+      scan_line "$file:$lines" unchanged ""
       return
     fi
   else
@@ -2073,7 +2143,7 @@ finding_scan_one() {
     # commit touching the file stands in.
     detail="$file_commit"
   fi
-  printf '%s\t%s\t%s:%s\tchanged\t%s\n' "$n" "$pr" "$file" "$lines" "$detail"
+  scan_line "$file:$lines" changed "$detail"
 }
 
 # finding-triage scan [<issue> | --pr <n>]: read-only. Sorts each open filed
@@ -2081,7 +2151,7 @@ finding_scan_one() {
 # line apiece: <issue> <pr> <file>:<line> <result> <detail>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [<issue> | --pr <n>]"
-  local issue="" pr_filter="" triage sev nums="" n out state labels label body default ref filed
+  local issue="" pr_filter="" triage sev nums="" n out state labels body default ref
   case $# in
     0) ;;
     1) issue="$1" ;;
@@ -2096,11 +2166,7 @@ cmd_finding_triage_scan() {
     state="$(first_line "$out")"
     labels="$(printf '%s\n' "$out" | tail -n +2)"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
-    filed=""
-    while IFS= read -r label; do
-      case "$label" in review:*) ! is_filed_severity "${label#review:}" || filed=1 ;; esac
-    done <<<"$labels"
-    [ -n "$filed" ] \
+    has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
     printf '%s\n' "$labels" | grep -qxF "$triage" \
       || die "issue #$issue is not in triage - it carries no '$triage' label"
@@ -2109,6 +2175,9 @@ cmd_finding_triage_scan() {
     for sev in $FILED_SEVERITIES; do
       out="$(adapter_issues_labelled "review:$sev" "$triage")" \
         || die "gh could not list the review:$sev findings"
+      if [ "$(printf '%s\n' $out | grep -c .)" -ge "$ISSUE_LIST_LIMIT" ]; then
+        warn "review:$sev findings reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this scan"
+      fi
       nums="$nums $out"
     done
   fi
@@ -2152,12 +2221,9 @@ cmd_finding_triage_apply() {
     close-fixed|wontfix)
       [ -z "$category" ] || die "--category is for an outcome that stays open, not $outcome" ;;
     ready-for-agent|ready-for-human)
-      case "$category" in
-        bug) stale_category=enhancement ;;
-        enhancement) stale_category=bug ;;
-        '') die "$outcome needs --category <bug|enhancement>" ;;
-        *) die "unknown --category '$category' - expected bug or enhancement" ;;
-      esac ;;
+      [ -n "$category" ] || die "$outcome needs --category <bug|enhancement>"
+      stale_category="$(category_other "$category")" \
+        || die "unknown --category '$category' - expected bug or enhancement" ;;
     *) die "$usage" ;;
   esac
   [ -n "$file" ] || die "$usage"
@@ -2425,8 +2491,8 @@ cmd_issue_triage() {
   # The gate reads labels, not history, and --override does not bypass it. Any
   # review:<severity> label marks a finding, not only the severities filed today.
   local finding triaged=false
-  finding="$(printf '%s\n' "$labels" | grep -m1 '^review:.')" || true
-  if [ -n "$finding" ]; then
+  if has_review_label "$labels"; then
+    finding="$(review_labels "$labels" | sed -n 1p)"
     for role in ready-for-agent ready-for-human wontfix; do
       label="$(triage_label_for "$role")"
       if printf '%s\n' "$labels" | grep -qxF -- "$label"; then triaged=true; fi
@@ -3513,8 +3579,9 @@ cmd_help() {
 orch.sh - deterministic operations for the orchestrator flow
 
   doctor [--env|--flow]       diagnose the machine, the repo, and the active flow
-  default-branch              resolve the repo's default branch, as GitHub
-                              reports it
+  default-branch [--sha]      resolve the repo's default branch, as GitHub
+                              reports it; --sha prints the default SHA instead,
+                              origin/<default>'s tip as it stands, unfetched
   base set <branch>           set this checkout's base branch - the branch
                               flows and quick implementations fork from and
                               open PRs against; refuses a branch origin does
@@ -3825,7 +3892,7 @@ main() {
   shift || true
   case "$cmd" in
     doctor)        cmd_doctor "$@" ;;
-    default-branch) default_branch ;;
+    default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
     parallel)      cmd_parallel "$@" ;;
     repo)          cmd_repo "$@" ;;

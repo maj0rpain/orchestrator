@@ -1331,6 +1331,42 @@ recorded="$("$ORCH" state get base)"
 assert_eq "init records origin/HEAD's branch as the base" "$recorded" "some-feature"
 restore_suite_env
 
+# --sha prints the default SHA: the full SHA of origin/<default> as it stands,
+# without fetching - the remote-tracking tip the last fetch set.
+new_repo >/dev/null
+git checkout -q -B main
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin main
+git fetch -q origin
+fake_github
+fake_default_branch $'main\n'
+fetched_tip="$(git rev-parse HEAD)"
+out="$("$ORCH" default-branch --sha 2>&1)"; st=$?
+assert_status "--sha succeeds" "$st" 0
+assert_eq "--sha prints the remote-tracking tip's full SHA" "$out" "$fetched_tip"
+moved="$(git -C "$bare" -c user.email=test@example.com -c user.name=Test commit-tree "main^{tree}" -p main -m "moved on")"
+git -C "$bare" update-ref refs/heads/main "$moved"
+assert_ne "the remote's tip has moved on" "$(git -C "$bare" rev-parse main)" "$fetched_tip"
+assert_eq "--sha does not fetch: a remote tip that moved since is not reported" \
+  "$("$ORCH" default-branch --sha 2>&1)" "$fetched_tip"
+assert_eq "and the remote-tracking ref is left where it was" "$(git rev-parse origin/main)" "$fetched_tip"
+assert_eq "plain default-branch still prints the name" "$("$ORCH" default-branch 2>&1)" "main"
+git update-ref -d refs/remotes/origin/main
+out="$("$ORCH" default-branch --sha 2>&1)"; st=$?
+assert_status "--sha fails when the remote-tracking ref is missing" "$st" 1
+assert_contains "naming the ref" "$out" "refs/remotes/origin/main"
+for arg in --name extra; do
+  out="$("$ORCH" default-branch "$arg" 2>&1)"; st=$?
+  assert_status "refuses any argument but --sha ($arg)" "$st" 1
+  assert_eq "with its usage ($arg)" "$out" "orch: usage: orch.sh default-branch [--sha]"
+done
+out="$("$ORCH" default-branch --sha extra 2>&1)"; st=$?
+assert_status "refuses an argument after --sha" "$st" 1
+assert_eq "with its usage" "$out" "orch: usage: orch.sh default-branch [--sha]"
+restore_suite_env
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
@@ -5366,6 +5402,7 @@ out="$("$ORCH" review file major "Title" --axis style --body-file "$body" 2>&1)"
 assert_status "refuses an unknown axis" "$st" 1
 assert_contains "naming it" "$out" "style"
 assert_contains "and what it accepts" "$out" "spec or standards"
+assert_eq "in exactly these words" "$out" "orch: not a review axis: style (want spec or standards)"
 assert_eq "and files nothing" "$(fake_issues)" ""
 assert_eq "nor creates a label" "$(fake_labels)" ""
 
@@ -6152,6 +6189,15 @@ assert_eq "naming that PR" "$(field_of 7 2 "$out")" "8"
 assert_eq "an already triaged finding is not scanned" "$(line_of 8 "$out")" ""
 assert_eq "nor a closed one" "$(line_of 9 "$out")" ""
 assert_eq "nor an issue that is not a filed finding" "$(line_of 10 "$out")" ""
+# Every result path's exact line, pinned byte for byte.
+assert_eq "a changed finding's exact line" \
+  "$(line_of 2 "$out")" "$(printf '2\t7\tsrc/app.sh:3\tchanged\t%s' "$fix_sha")"
+assert_eq "a gone finding's exact line" \
+  "$(line_of 4 "$out")" "$(printf '4\t7\tsrc/gone.sh:1\tgone\t')"
+assert_eq "an unreachable head SHA's exact line" "$(line_of 5 "$out")" \
+  "$(printf '5\t7\tsrc/app.sh:3\tunknown\thead SHA 0123456789abcdef0123456789abcdef01234567 is unreachable, even after fetching refs/pull/7/head')"
+assert_eq "a body with no Location line: its exact line" "$(line_of 6 "$out")" \
+  "$(printf '6\t-\t-\tunknown\tbody does not parse: no **Location:** line naming `<file>:<line>` at <SHA>')"
 assert_eq "the findings come in issue order" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 "
 assert_ne "lists the major findings still in needs-triage" "$(line_of 5 "$out")" ""
 assert_ne "and the nit ones" "$(line_of 6 "$out")" ""
@@ -6201,6 +6247,8 @@ out="$(scan 11 2>&1)"; st=$?
 assert_status "scans a finding filed on a PR edit that never landed" "$st" 0
 assert_eq "it is unknown, not changed by a commit older than the filing" "$(field_of 11 4 "$out")" "unknown"
 assert_contains "saying no commit since the filing touched the file" "$(field_of 11 5 "$out")" "no commit"
+assert_eq "its exact line" "$(line_of 11 "$out")" \
+  "$(printf '11\t11\tsrc/other.sh:2\tunknown\tno commit on the default branch since %s touched src/other.sh - the difference is commits that never reached it' "$unmerged_sha")"
 fake_issue 11 closed
 
 # A finding whose lines the scan follows to the default branch, where later
@@ -6212,6 +6260,15 @@ assert_status "scans a finding whose file changed only elsewhere" "$st" 0
 assert_eq "its followed, untouched lines are unchanged, with empty detail" \
   "$(line_of 14 "$out")" "$(printf '14\t14\tsrc/app.sh:6\tunchanged\t')"
 fake_issue 14 closed
+
+# A body with its **Location:** line but no **PR:** line does not parse either.
+fake_issue 16 open review:nit needs-triage
+fake_issue_body 16 "$(writeln '## Finding' '' "**Location:** \`src/other.sh:2\` at $head_sha")"
+out="$(scan 16 2>&1)"; st=$?
+assert_status "scans a finding whose body names no PR" "$st" 0
+assert_eq "it is unknown, its exact line naming the missing PR line" "$(line_of 16 "$out")" \
+  "$(printf '16\t-\tsrc/other.sh:2\tunknown\tbody does not parse: no **PR:** line ending in a pull request URL')"
+fake_issue 16 closed
 
 # A finding whose file later gets hunks both before and after its line, with
 # far more diff after the matching hunk than a pipe buffer holds: the line
@@ -6237,6 +6294,22 @@ assert_status "scans a finding whose file has a large diff after its line" "$st"
 assert_eq "it is changed" "$(field_of 13 4 "$out")" "changed"
 assert_eq "naming the commit that touched the shifted line" "$(field_of 13 5 "$out")" "$shifted_fix_sha"
 fake_issue 13 closed
+
+# Each severity's list is cut off at the issue-list limit; a list that
+# reaches it may be missing findings past it, and the scan says so on stderr
+# while it carries on. Open in needs-triage here: two major findings (2, 5)
+# and five nit ones (1, 3, 4, 6, 7).
+err="$(mktemp)"
+out="$(ORCH_ISSUE_LIST_LIMIT=5 scan 2>"$err")"; st=$?
+assert_status "a list at the issue-list limit does not stop the scan" "$st" 0
+assert_contains "warns that the nit list reached the limit, naming the label and the limit" "$(cat "$err")" \
+  "orch: review:nit findings reached the issue-list limit of 5 - any past it are missing from this scan"
+assert_not_contains "but not the major list, below it" "$(cat "$err")" "review:major"
+assert_eq "and still prints its lines" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 "
+out="$(ORCH_ISSUE_LIST_LIMIT=6 scan 2>"$err")"; st=$?
+assert_status "scans with every list one below the limit" "$st" 0
+assert_not_contains "and gives no warning" "$(cat "$err")" "issue-list limit"
+rm -f "$err"
 
 # The triage label is the repo's name for the role, as review file files it.
 writeln '# Triage Labels' '' \
@@ -6354,6 +6427,10 @@ for outcome in close-fixed wontfix; do
 done
 out="$(apply 2 ready-for-agent --category feature --comment-file "$comment" 2>&1)"; st=$?
 assert_status "refuses a category that is neither bug nor enhancement" "$st" 1
+assert_eq "in exactly these words" "$out" "orch: unknown --category 'feature' - expected bug or enhancement"
+out="$(apply 2 ready-for-human --category "" --comment-file "$comment" 2>&1)"; st=$?
+assert_status "refuses an empty category" "$st" 1
+assert_eq "in its own words" "$out" "orch: ready-for-human needs --category <bug|enhancement>"
 out="$(apply 2 promote --comment-file "$comment" 2>&1)"; st=$?
 assert_status "refuses an unknown outcome" "$st" 1
 out="$(apply 2 close-fixed 2>&1)"; st=$?

@@ -40,7 +40,8 @@ Two kinds of command don't take this shape, deliberately:
 - **Bare global commands** with no noun to act on: `doctor`, `init`, `slug`,
   `status`, `archive`, `help`, `default-branch`. Each is already
   the whole idea; splitting it into a fake noun+verb pair would just add
-  ceremony.
+  ceremony. `default-branch` takes one flag, `--sha`, which prints the
+  default SHA instead of the branch's name.
 - **`redo review` / `redo spec`**: verb-first on purpose. These act on the
   redo mechanism itself (step the flow back a phase), not on ops belonging to
   a `redo` noun the way `review`'s or `spec`'s subcommands act on ops

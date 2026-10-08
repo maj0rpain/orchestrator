@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.17.0
+
+`orch.sh default-branch --sha` prints the default SHA - the full SHA of
+`origin/<default>` as it stands, without fetching - and the finding-triage
+skill reads it after its scan instead of running `git rev-parse` itself
+(#442). `default-branch` now refuses any argument other than `--sha`.
+`finding-triage scan` warns on stderr when a severity's filed-finding list
+reaches the issue-list limit, `ISSUE_LIST_LIMIT` (1000), which `pr release`'s
+merged-PR list now shares (#437). The rest tidies finding triage without
+changing behaviour: the category helpers `category_for_axis` and
+`category_other` (#435), one emitter for the scan's line (#436), one
+`plugin_cmd` behind `flow_cmd` and `finding_triage_cmd` (#580), and one
+review-label scan under `has_review_label` and `has_filed_severity_label`
+(#581). The docs lint's closer-filing check now states its contract: the
+closer's body format, not orch.sh's parser (#441).
+
 ## 3.16.1
 
 The planning message reaches the session again in two cases where it was
