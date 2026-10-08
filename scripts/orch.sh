@@ -361,8 +361,8 @@ EOF
 # the table dies: a misspelt read would otherwise look exactly like an unset one.
 state_get() { state_get_in "$STATE" "$1"; }
 
-# state_get against another checkout's state file <file>: the one read side
-# checkout list makes of a flow it does not run in.
+# state_get against the state file <file>: reads <key> from any checkout's
+# state file, not only this one's.
 state_get_in() {
   local default rc
   default="$(state_key_field "$2" default)" || {
@@ -497,8 +497,12 @@ cmd_default_branch() {
 # repo, which in a fork is the upstream. repo_resolve sets REPO_NAME to
 # [HOST/]OWNER/REPO and REPO_SOURCE to GH_REPO or origin, printing nothing; it
 # returns non-zero, with both empty, when nothing resolves. A caller that must
-# have a repo dies with REPO_REMEDY; doctor reports it instead.
-REPO_REMEDY="no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
+# have a repo dies with REPO_REMEDY; doctor reports REPO_CAUSE, giving the
+# remedy on a line of its own, and names the bare REPO_MISSING on its skipped
+# line.
+REPO_MISSING="no GitHub repo to work on"
+REPO_CAUSE="$REPO_MISSING: origin is missing or not a GitHub owner/name"
+REPO_REMEDY="$REPO_CAUSE - set GH_REPO=<owner>/<repo>"
 repo_resolve() {
   local url
   REPO_NAME=""
@@ -846,15 +850,22 @@ dirty_outside_allowlist() {
 # read as a clean tree, so instead it prints why, naming git's error, and
 # returns 1: callers refuse with that line, or report it.
 tree_status() {
-  local out err said_all said
-  err="$(mktemp)"
-  if ! out="$(git -C "$1" status --porcelain 2>"$err")"; then
-    said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
-    printf 'git status failed - cannot check the working tree: %s\n' "$said"
+  local out err
+  if ! capture out err git -C "$1" status --porcelain; then
+    printf 'git status failed - cannot check the working tree: %s\n' "${err%%$'\n'*}"
     return 1
   fi
-  rm -f "$err"
   printf '%s' "$out"
+}
+
+# require_clean_tree <path> <dirty message>: returns 0 when the working tree
+# at <path> is clean. Dies with tree_status's own line when git status cannot
+# run, and with <dirty message> when the tree is dirty. Called as a bare
+# statement so `die` stops the caller.
+require_clean_tree() {
+  local status
+  status="$(tree_status "$1")" || die "$status"
+  [ -z "$status" ] || die "$2"
 }
 
 # The git-based backstop from ADR-0013. Where no host hook arms the edit
@@ -1333,16 +1344,21 @@ adapter_issue_state_labels() {
   gh issue view "$1" --json state,labels --jq '.state, (.labels[].name)'
 }
 
-# issue_state_labels_read <n> <state_var> <labels_var>: reads issue <n> once
-# through adapter_issue_state_labels and writes its state (the first line)
-# and its labels (the rest, possibly empty) into the two caller-named
-# variables. Non-zero, writing neither, when the read fails: the caller keeps
-# its own failure message. The one place the answer is split. Out-params
-# through `printf -v`, as require_field's, its locals prefixed so no caller's
-# variable name is shadowed.
+# issue_state_labels_read <n> <state_var> <labels_var> <line_var>: reads issue
+# <n> once through adapter_issue_state_labels and writes its state (the first
+# line) and its labels (the rest, possibly empty) into the first two
+# caller-named variables. Non-zero when the read fails, writing neither, and
+# writing gh's first stderr line - empty when gh printed none - into
+# <line_var>: the caller keeps its own failure message. gh's stderr is
+# captured, never passed through. The one place the answer is split.
+# Out-params through `printf -v`, as require_field's, its locals prefixed so
+# no caller's variable name is shadowed.
 issue_state_labels_read() {
-  local __islr_out
-  __islr_out="$(adapter_issue_state_labels "$1")" || return 1
+  local __islr_out __islr_err
+  if ! capture __islr_out __islr_err adapter_issue_state_labels "$1"; then
+    printf -v "$4" '%s' "${__islr_err%%$'\n'*}"
+    return 1
+  fi
   lines_split "$__islr_out" "$2" "$3"
 }
 
@@ -1950,18 +1966,17 @@ ci_probe() {
 # rerun - goes through die2. The repo is resolved here rather than left to the
 # guard, whose death exits 1 and would read as "nothing to rerun".
 review_rerun() {
-  local pr="${1:-}" out err said_all said rc=0 link="" run name="" line bucket
+  local pr="${1:-}" out err gh_line rc=0 link="" run name="" line bucket
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
   repo_pin || die2 "$REPO_REMEDY"
   # gh's stderr is kept apart from the checks, so its line - a failure's
   # reason, or the "no checks" answer naming the branch - is what the death
-  # message carries. The file is gone before any die2.
-  err="$(mktemp)"
-  out="$(adapter_pr_checks "$pr" all 2>"$err")" || rc=$?
-  said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
-  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $said"
-  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: ${said:-no checks reported}"
+  # message carries.
+  capture out err adapter_pr_checks "$pr" all || rc=$?
+  gh_line="${err%%$'\n'*}"
+  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: ${gh_line:-gh gave no reason}"
+  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: ${gh_line:-no checks reported}"
   # The first failed or cancelled check's name and link, split by tsv_split
   # so an empty name survives: IFS=$'\t' read would collapse it, a tab being
   # IFS whitespace. No failed check leaves both empty.
@@ -1979,8 +1994,13 @@ review_rerun() {
   run="${link##*/actions/runs/}"   # N/job/M -> N
   run="${run%%/*}"
   case "$run" in ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; return 1 ;; esac
-  adapter_run_rerun "$run" 2>/dev/null \
-    || die2 "gh could not rerun the failed jobs of Actions run $run"
+  # rerun_out is the rerun's throwaway half: only its stderr is read.
+  # shellcheck disable=SC2034
+  local rerun_out rerun_err rerun_line
+  if ! capture rerun_out rerun_err adapter_run_rerun "$run"; then
+    rerun_line="${rerun_err%%$'\n'*}"
+    die2 "gh could not rerun the failed jobs of Actions run $run: ${rerun_line:-gh gave no reason}"
+  fi
   note "$run"
 }
 
@@ -2332,11 +2352,11 @@ cmd_issue() {
 cmd_issue_ready() {
   local usage="usage: orch.sh issue ready <n>"
   [ $# -eq 1 ] || die2 "$usage"
-  local issue="$1" ready state labels
+  local issue="$1" ready state labels gh_line
   case "$issue" in ''|*[!0-9]*) die2 "issue must be a plain issue number, got: $issue ($usage)" ;; esac
   ready="$(triage_label_for ready-for-agent)"
-  issue_state_labels_read "$issue" state labels \
-    || die2 "gh could not read issue #$issue"
+  issue_state_labels_read "$issue" state labels gh_line \
+    || die2 "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
   labels_have "$labels" "$ready"
 }
 
@@ -2576,7 +2596,7 @@ finding_scan_one() {
 # line apiece: <issue> <pr> <file>:<line> <result> <detail>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [<issue> | --pr <n>]"
-  local issue="" pr_filter="" triage sev nums="" n out state labels body default ref
+  local issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_line
   case $# in
     0) ;;
     1) issue="$1" ;;
@@ -2586,8 +2606,8 @@ cmd_finding_triage_scan() {
   case "$issue$pr_filter" in *[!0-9]*) die "$usage" ;; esac
   triage="$(triage_label_for needs-triage)"
   if [ -n "$issue" ]; then
-    issue_state_labels_read "$issue" state labels \
-      || die "gh could not read issue #$issue"
+    issue_state_labels_read "$issue" state labels gh_line \
+      || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
@@ -2626,7 +2646,7 @@ cmd_finding_triage_scan() {
 cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
-  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels triage stale_category tmp
+  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels triage stale_category tmp gh_line
   # The relabel's --remove options, possibly none: close-fixed, where they are
   # the whole relabel, then makes no edit at all.
   local remove_opts=()
@@ -2655,8 +2675,8 @@ cmd_finding_triage_apply() {
   # Only the labels are wanted: the state is the read's throwaway half, rather
   # than a third, near-identical label read added beside
   # adapter_issue_state_labels and adapter_issue_title_labels.
-  issue_state_labels_read "$issue" state labels \
-    || die "gh could not read issue #$issue"
+  issue_state_labels_read "$issue" state labels gh_line \
+    || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
   triage="$(triage_label_for needs-triage)"
   # Remove only what the issue carries: gh refuses to remove a label the
   # repo does not have at all.
@@ -2807,7 +2827,7 @@ cmd_branch_base_sha() {
 # nothing left to merge - retries the push, as it finishes a resolved conflict.
 cmd_branch_sync() {
   [ $# -eq 0 ] || die "usage: orch.sh branch sync"
-  local branch base held="" st tip remote
+  local branch base held="" tip remote
   branch="$(git symbolic-ref --quiet --short HEAD)" \
     || die "not on a branch (detached HEAD) - nothing was synced"
   if [ -f "$STATE" ] && [ "$(state_get branch)" = "$branch" ]; then
@@ -2821,8 +2841,7 @@ cmd_branch_sync() {
   if git rev-parse --quiet --verify MERGE_HEAD >/dev/null; then
     die "a merge is in progress on $branch - commit it (or git merge --abort), then rerun orch.sh branch sync"
   fi
-  st="$(tree_status "$ROOT")" || die "$st"
-  [ -z "$st" ] || die "the working tree is dirty - commit or discard its changes first; nothing was synced"
+  require_clean_tree "$ROOT" "the working tree is dirty - commit or discard its changes first; nothing was synced"
   git fetch --quiet origin "+refs/heads/$base:refs/remotes/origin/$base" 2>/dev/null \
     || die "could not fetch $base from origin - nothing was synced"
   tip="$(git rev-parse "refs/remotes/origin/$base")"
@@ -2900,16 +2919,22 @@ cmd_branch() {
   esac
 }
 
-# True only once the created issue reads back with the title it was given
-# and the ready-for-agent role's label among its labels. Read fresh every
-# call, never cached - the caller retries this on a mismatch, as
-# ticket_links_verified's caller does.
+# issue_publish_verified <line_var> <n> <title> <label>: 0 only once the
+# created issue reads back with the title it was given and the
+# ready-for-agent role's label among its labels; 1 on a mismatch; 2 when the
+# read fails, gh's first stderr line - empty when gh printed none - written
+# into <line_var>, so a failed read is never reported as a mismatch. Read
+# fresh every call, never cached - the caller retries this once on either
+# status, as ticket_links_verified's caller does. Locals prefixed so no
+# caller's variable name is shadowed.
 issue_publish_verified() {
-  local n="$1" title="$2" label="$3" out
-  out="$(adapter_issue_title_labels "$n" 2>/dev/null)" \
-    || return 1
-  [ "$(first_line "$out")" = "$title" ] || return 1
-  labels_verified "$(printf '%s\n' "$out" | tail -n +2)" "$label"
+  local __ipv_out __ipv_err
+  if ! capture __ipv_out __ipv_err adapter_issue_title_labels "$2"; then
+    printf -v "$1" '%s' "${__ipv_err%%$'\n'*}"
+    return 2
+  fi
+  [ "$(first_line "$__ipv_out")" = "$3" ] || return 1
+  labels_verified "$(printf '%s\n' "$__ipv_out" | tail -n +2)" "$4" || return 1
 }
 
 # The publishing boundary a spec and a quick implementation call instead of
@@ -2919,31 +2944,39 @@ issue_publish_verified() {
 # record into, so the title and body are its own and nothing here remembers
 # them. Verify-then-die like ticket publish: the issue is created under the
 # ready-for-agent role's label (an agent works it next), then its title and
-# labels are read back - one retry on a mismatch, a second failure dies
-# naming the issue, so a half-published spec never reaches the next step.
+# labels are read back - one retry on a mismatch or a failed read, a second
+# failure dies naming the issue, so a half-published spec never reaches the
+# next step.
 cmd_issue_publish() {
   [ $# -eq 2 ] || die "usage: orch.sh issue publish <title> <body-file>"
-  local title="$1" body_file="$2" ready n
+  local title="$1" body_file="$2" ready n gh_line="" st=0
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
   ready="$(triage_label_for ready-for-agent)"
   n="$(adapter_issue_create "$title" "$body_file" "$ready")" \
     || die "gh could not create the issue"
-  issue_publish_verified "$n" "$title" "$ready" \
-    || issue_publish_verified "$n" "$title" "$ready" \
+  # The second attempt's status decides the death: 2 a failed read, 1 a
+  # mismatch.
+  issue_publish_verified gh_line "$n" "$title" "$ready" \
+    || issue_publish_verified gh_line "$n" "$title" "$ready" \
+    || st=$?
+  [ "$st" -ne 2 ] || die "gh could not read issue #$n: ${gh_line:-gh gave no reason}"
+  [ "$st" -eq 0 ] \
     || die "issue #$n's title and '$ready' label did not verify - checked twice, both failed"
   note "$n"
 }
 
-# issue_triage_verified <n> <ready> [removed-label...]: true only once the
-# issue reads back carrying <ready> and none of the removed labels. Read fresh
-# every call, never cached - the caller re-reads once on a mismatch, as issue
-# publish's does.
+# issue_triage_verified <line_var> <n> <ready> [removed-label...]: 0 only
+# once the issue reads back carrying <ready> and none of the removed labels;
+# 1 on a mismatch; 2 when the read fails, gh's first stderr line - empty when
+# gh printed none - written into <line_var>. Read fresh every call, never
+# cached - the caller re-reads once on either status, as issue publish's
+# does. Locals prefixed so no caller's variable name is shadowed.
 issue_triage_verified() {
-  local n="$1" ready="$2" state labels
-  shift 2
-  issue_state_labels_read "$n" state labels 2>/dev/null || return 1
-  labels_verified "$labels" "$ready" "$@"
+  local __itv_line="$1" __itv_n="$2" __itv_ready="$3" __itv_state __itv_labels
+  shift 3
+  issue_state_labels_read "$__itv_n" __itv_state __itv_labels "$__itv_line" || return 2
+  labels_verified "$__itv_labels" "$__itv_ready" "$@" || return 1
 }
 
 # issue triage <n> [--override]: moves an open issue to the repo's
@@ -2953,7 +2986,7 @@ issue_triage_verified() {
 # read back (ADR-0011), and one comment names the label it now carries.
 cmd_issue_triage() {
   local usage="usage: orch.sh issue triage <n> [--override]"
-  local issue="" override=false ready state labels role label removed=() remove_opts=()
+  local issue="" override=false ready state labels gh_line role label removed=() remove_opts=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --override) override=true ;;
@@ -2965,8 +2998,8 @@ cmd_issue_triage() {
   case "$issue" in ''|*[!0-9]*) die "$usage" ;; esac
   ready="$(triage_label_for ready-for-agent)"
 
-  issue_state_labels_read "$issue" state labels \
-    || die "gh could not read issue #$issue"
+  issue_state_labels_read "$issue" state labels gh_line \
+    || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
   [ "$state" = OPEN ] \
     || die "issue #$issue is not open - only an open issue is triaged to '$ready'"
   # One walk over the triage roles the issue carries: whether ready-for-agent
@@ -3009,8 +3042,14 @@ cmd_issue_triage() {
 
   adapter_issue_relabel "$issue" --add "$ready" ${remove_opts[@]+"${remove_opts[@]}"} \
     || die "gh could not relabel issue #$issue"
-  issue_triage_verified "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
-    || issue_triage_verified "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
+  # The second attempt's status decides the death: 2 a failed read, 1 a
+  # mismatch. Either way the relabel stands and no comment is posted.
+  local st=0
+  issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
+    || issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
+    || st=$?
+  [ "$st" -ne 2 ] || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+  [ "$st" -eq 0 ] \
     || die "issue #$issue's '$ready' label did not verify - checked twice, both failed"
 
   local tmp
@@ -3725,6 +3764,15 @@ ticket_worktree_number() {
 
 ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
 
+# forked_from_key <branch>: the git config key that records the branch ticket
+# branch <branch> was forked from - the one place code spells it out.
+forked_from_key() { printf 'branch.%s.orchestrator-ticket-parent\n' "$1"; }
+
+# forked_from_branch <branch>: prints the forked-from branch recorded on
+# ticket branch <branch>, or prints nothing and returns non-zero when none is
+# recorded.
+forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
+
 # Forks <current-branch>--t<n> from the current branch's tip, records the
 # forked-from branch on it, and checks it out at .orchestrator/worktrees/t<n>.
 # The exclude entry is written before the branch exists; anything failing
@@ -3743,7 +3791,7 @@ cmd_ticket_worktree_add() {
   exclude_orch_dirs
   git branch -q "$branch" HEAD || die "could not create branch $branch"
   if ! git worktree add -q "$path" "$branch" \
-     || ! git config "branch.$branch.orchestrator-ticket-parent" "$parent"; then
+     || ! git config "$(forked_from_key "$branch")" "$parent"; then
     # A freshly added worktree holds nothing of anyone's, so no force is
     # needed to take it back out; -D deletes the branch's config section too.
     if [ -e "$path" ]; then git worktree remove "$path" 2>/dev/null || true; fi
@@ -3775,14 +3823,14 @@ ticket_worktrees_under() {
   done < <(git worktree list --porcelain)
 }
 
-# Dies, naming every ticket worktree under the checkout at <root> (this one by
-# default), when any is left: moving .orchestrator/ wholesale would break git's
-# record of each one, and removing the checkout would delete them.
+# refuse_ticket_worktrees <root>: dies, naming every ticket worktree under the
+# checkout at <root>, when any is left: moving .orchestrator/ wholesale would
+# break git's record of each one, and removing the checkout would delete them.
 refuse_ticket_worktrees() {
   local left
-  left="$(ticket_worktrees_under "${1:-$ROOT}")"
+  left="$(ticket_worktrees_under "$1")"
   [ -n "$left" ] || return 0
-  die "ticket worktrees are left under ${1:-this checkout} - moving them would break git's record of them:
+  die "ticket worktrees are left under $1 - moving them would break git's record of them:
 $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
      Remove each with orch.sh ticket-worktree remove <n> first."
 }
@@ -3807,7 +3855,7 @@ ticket_worktree_resolve() {
 # resolution) is aborted first, returning the ticket branch to its committed
 # tip, so the worktree is judged clean or dirty as that tip left it.
 cmd_ticket_worktree_remove() {
-  local n="" unmerged=0 path branch parent st gitdir
+  local n="" unmerged=0 path branch parent
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -3820,21 +3868,17 @@ cmd_ticket_worktree_remove() {
     path="$(ticket_worktree_path "$(ticket_worktree_number "$n")")"
     # Only a worktree at $path itself: git would resolve a leftover t<n>
     # directory to the enclosing checkout, whose rebase is not ours to abort.
-    gitdir=""
-    if [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ]; then
-      gitdir="$(git -C "$path" rev-parse --absolute-git-dir 2>/dev/null)" || gitdir=""
-    fi
-    if [ -n "$gitdir" ] && { [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]; }; then
+    if [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+      && rebase_in_progress "$path"; then
       git -C "$path" rebase --abort \
         || die "could not abort the rebase in progress in ticket worktree $path"
     fi
   fi
   ticket_worktree_resolve "$n"
-  st="$(tree_status "$path")" || die "$st"
-  [ -z "$st" ] \
-    || die "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
+  require_clean_tree "$path" \
+    "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
   if [ "$unmerged" = 0 ]; then
-    parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
+    parent="$(forked_from_branch "$branch")" \
       || die "branch $branch records no forked-from branch - pass --unmerged to discard it"
     git merge-base --is-ancestor "$branch" "$parent" 2>/dev/null \
       || die "branch $branch is not merged into $parent - merge it first, or pass --unmerged to discard it"
@@ -3845,6 +3889,13 @@ cmd_ticket_worktree_remove() {
   # would judge it against this checkout's HEAD (a ticket branch has no
   # upstream) and could refuse after the worktree is gone.
   git branch -q -D "$branch" || die "could not delete branch $branch"
+}
+
+# Whether a rebase is in progress in the checkout at <path>.
+rebase_in_progress() {
+  local gitdir
+  gitdir="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]
 }
 
 # The checkout that has <branch> checked out, or nothing: the first worktree
@@ -3862,29 +3913,43 @@ branch_checkout() {
 # Lands ticket <n>'s branch on the branch it was forked from: rebases it onto
 # that branch's tip inside the ticket worktree, then fast-forwards that branch
 # in whichever checkout has it - so history stays linear. Every refusal (exit
-# 1) runs before anything moves; a rebase conflict is aborted and exits 3,
-# leaving both branches at their prior tips.
+# 1) runs before anything moves. Exit 3 means a rebase conflict only: it is
+# aborted, leaving both branches at their prior tips. A rebase that fails any
+# other way is aborted too and exits 1, naming git's first line; so does an
+# abort that fails, which leaves the ticket worktree mid-rebase.
 cmd_ticket_merge() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
-  local n path branch parent pwt st
+  local n path branch parent parent_checkout rebase_err unmerged said
+  # rebase_out is set by capture and only git's stderr is read.
+  # shellcheck disable=SC2034
+  local rebase_out
   ticket_worktree_resolve "$1"
-  parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
+  parent="$(forked_from_branch "$branch")" \
     || die "branch $branch records no forked-from branch"
-  st="$(tree_status "$path")" || die "$st"
-  [ -z "$st" ] \
-    || die "ticket worktree $path is dirty - commit or discard its changes first"
-  pwt="$(branch_checkout "$parent")"
-  [ -n "$pwt" ] || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
-  st="$(tree_status "$pwt")" || die "$st"
-  [ -z "$st" ] \
-    || die "$pwt, the checkout of $parent, is dirty - commit or discard its changes first"
-  if ! git -C "$path" rebase -q "$parent" >/dev/null 2>&1; then
-    git -C "$path" rebase --abort >/dev/null 2>&1 || true
-    warn "rebasing $branch onto $parent hit a conflict - aborted; both branches are as they were"
-    exit 3
+  require_clean_tree "$path" \
+    "ticket worktree $path is dirty - commit or discard its changes first"
+  parent_checkout="$(branch_checkout "$parent")"
+  [ -n "$parent_checkout" ] \
+    || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
+  require_clean_tree "$parent_checkout" \
+    "$parent_checkout, the checkout of $parent, is dirty - commit or discard its changes first"
+  if ! capture rebase_out rebase_err git -C "$path" rebase -q "$parent"; then
+    # A conflict is a rebase stopped with unmerged paths; anything else - a
+    # refusing hook, say - is a plain failure, named by git's first line.
+    unmerged="$(git -C "$path" diff --name-only --diff-filter=U 2>/dev/null)" || unmerged=""
+    if rebase_in_progress "$path"; then
+      git -C "$path" rebase --abort >/dev/null 2>&1 \
+        || die "could not abort the rebase in ticket worktree $path - it is left mid-rebase"
+    fi
+    if [ -n "$unmerged" ]; then
+      warn "rebasing $branch onto $parent hit a conflict - aborted; both branches are as they were"
+      exit 3
+    fi
+    said="$(first_line "$rebase_err")"
+    die "rebasing $branch onto $parent failed: ${said:-git gave no reason}"
   fi
-  git -C "$pwt" merge -q --ff-only "$branch" \
-    || die "could not fast-forward $parent to $branch in $pwt"
+  git -C "$parent_checkout" merge -q --ff-only "$branch" \
+    || die "could not fast-forward $parent to $branch in $parent_checkout"
 }
 
 cmd_ticket_worktree() {
@@ -4005,7 +4070,7 @@ cmd_side_checkout_list() {
 # branch is left in place.
 cmd_side_checkout_remove() {
   [ $# -eq 1 ] || die "usage: orch.sh side-checkout remove <slug>"
-  local slug path err here st main_root dirs
+  local slug path err here main_root dirs
   here="$(pwd -P)"
   slug="$(normalize_slug "$1")"
   main_root="$(main_checkout)"
@@ -4017,9 +4082,8 @@ cmd_side_checkout_remove() {
     || die "no side checkout $slug at $path"
   [ -f "${dirs#*$'\n'}/$SIDE_CHECKOUT_MARKER" ] \
     || die "$path carries no side-checkout marker - it is not the plugin's to remove, so it is left alone"
-  st="$(tree_status "$path")" || die "$st"
-  [ -z "$st" ] \
-    || die "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
+  require_clean_tree "$path" \
+    "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
   refuse_ticket_worktrees "$path"
   if checkout_has_flow "$path"; then archive_flow "$path"; fi
   if ! err="$(git -C "$main_root" worktree remove "$path" 2>&1)"; then
@@ -4042,14 +4106,12 @@ cmd_side_checkout_remove() {
 # assigned to the caller's <var>. On failure it sets `verdict` to the call's
 # first error line and returns 2.
 github_read() {
-  local into="$1" got err said_all said
+  local into="$1" got err gh_line
   shift
-  err="$(mktemp)"
-  if ! got="$("$@" 2>"$err")"; then
-    said_all="$(<"$err")"; said="${said_all%%$'\n'*}"; rm -f "$err"
-    verdict="could not read GitHub: $said"; return 2
+  if ! capture got err "$@"; then
+    gh_line="${err%%$'\n'*}"
+    verdict="could not read GitHub: ${gh_line:-gh gave no reason}"; return 2
   fi
-  rm -f "$err"
   printf -v "$into" '%s' "$got"
 }
 
@@ -4686,11 +4748,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               the ticket worktree or that checkout is dirty,
                               or the branch is checked out nowhere; on a
                               rebase conflict aborts the rebase and exits 3,
-                              both branches at their prior tips
+                              both branches at their prior tips. A rebase
+                              that fails any other way is aborted and exits
+                              1, naming git's first line; an abort that fails
+                              exits 1, leaving the worktree mid-rebase
   ticket-worktree add <n>     fork <current-branch>--t<n> from the current
                               branch's tip, record the forked-from branch on
-                              it (branch.<ticket-branch>.orchestrator-ticket-
-                              parent in local git config), check it out at
+                              it in local git config, check it out at
                               .orchestrator/worktrees/t<n> under this
                               checkout's top level, git-exclude .orchestrator/
                               in the clone's shared info/exclude, and print

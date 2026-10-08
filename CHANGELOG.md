@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.21.3
+## 3.21.5
 
 orch.sh's `STATE_KEYS` table has one reader, `state_rows`, so every reader
 skips the same comment and blank lines (#840). `state_key` is renamed
@@ -12,6 +12,36 @@ table header's "adding a key is one row" now says what an arg row also
 needs. `base_sha` and `branch` are always written as JSON strings, so a value
 of only digits never becomes a number. The seed init writes and every
 `state set` message are unchanged.
+
+## 3.21.4
+
+`ticket merge` exits 3 only on a real rebase conflict (#680). A rebase that
+fails any other way - a refusing hook, say - is aborted and exits 1, naming
+git's first line, so the session building the frontier stops instead of
+starting ticket resolution. A rebase abort that fails exits 1 and says the
+ticket worktree is left mid-rebase.
+
+`doctor` reports a leftover ticket worktree as a FAIL on every path - with no
+flow, an invalid `state.json`, or no `jq` - not only in an active flow (#673).
+Plain `doctor` now exits 1 on one. Quick implementation's skill and ADR-0036
+say the leftover surfaces in `doctor`.
+
+The forked-from branch's config key and the clean-tree guard each have one
+home in orch.sh, and `ticket merge`'s locals say what they hold (#674, #678,
+#736, #737, #738, #739). No message changes.
+
+## 3.21.3
+
+Every message that reports a failed GitHub read now carries gh's own first
+line, or `gh gave no reason` when gh printed nothing, never a bare colon
+(#823). This covers doctor's adopted-issue, labels, flow issue, flow PR, PR
+draft-state, CI and default-branch reads, and orch.sh's review rerun, issue
+triage, issue ready, finding triage and side-checkout verdicts. issue publish
+and issue triage no longer report a failed read-back as "did not verify -
+checked twice": they die `gh could not read issue #<n>: <gh's line>`, keeping
+that wording for a real mismatch. Doctor states a missing GitHub repo once and
+gives the `export GH_REPO=<owner>/<repo>` remedy once. Every stderr capture
+goes through `capture`.
 
 ## 3.21.2
 

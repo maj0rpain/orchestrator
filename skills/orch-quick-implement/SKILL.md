@@ -172,7 +172,7 @@ step" never reads as one of this skill's numbered sections:
   report that comes back malformed stops refilling: the tickets still in
   flight report and are processed as normal, then quick implementation
   stops, before the review and the PR, naming every failure. A leftover
-  worktree surfaces at the next entry check and in `doctor --flow`.
+  worktree surfaces at the next entry check and in `doctor`.
 - **e. On a merge conflict** (`ticket merge` exits 3), resolve it, not
   rebuild it (ADR-0038), by **A driver's ticket resolution** in
   `agents/orch-resolver.md` (under the plugin root), the linked issue on
