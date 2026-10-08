@@ -5880,6 +5880,62 @@ assert_contains "naming the issue" "$out" "issue #404"
 assert_eq "and leaves no file a caller could mistake for a body" \
   "$([ -e "$issue_body" ] && echo present || echo gone)" "gone"
 
+# issue fetch --json (#528): the issue's title, body, labels and comments in one
+# trimmed JSON object, so a fresh agent reads an issue with one call pinned to
+# the repo. Its jq is ISSUE_JSON_JQ, pinned in "gh adapter contract".
+fake_issue 27 open ready-for-agent bug
+fake_issue_title 27 "Widgets need a handle"
+fake_issue_body 27 "$(writeln '## What to build' '' 'A `$HOME` handle for #6.')"
+fake_comment 27 pat 2026-09-02T11:30:00Z "Also: \\ stays unescaped."
+issue_json="$(mktemp)"
+printf 'old contents\n' >"$issue_json"
+: >"$GH_FIXTURE/env.log"
+out="$("$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "fetch --json writes the issue as JSON, over an existing file" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+assert_eq "the trimmed shape: number, title, body, label names, and each comment's author, date and body" \
+  "$(jq -cS . "$issue_json" 2>&1)" \
+  "$(jq -cS . <<'JSON'
+{"number": 27, "title": "Widgets need a handle",
+ "body": "## What to build\n\nA `$HOME` handle for #6.",
+ "labels": ["ready-for-agent", "bug"],
+ "comments": [{"author": "pat", "createdAt": "2026-09-02T11:30:00Z", "body": "Also: \\ stays unescaped."}]}
+JSON
+)"
+assert_eq "the read never reached a real gh subprocess" "$(gh_calls)" "0"
+
+out="$("$ORCH" issue fetch 27 "$issue_body" 2>&1)"; st=$?
+assert_status "without --json, fetch still succeeds" "$st" 0
+assert_eq "writing the body alone, as before" "$(cat "$issue_body")" \
+  "$(writeln '## What to build' '' 'A `$HOME` handle for #6.')"
+
+printf 'old contents\n' >"$issue_json"
+fake_fail adapter_issue_json "HTTP 502: Bad Gateway"
+out="$("$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "a gh that will not answer fails fetch --json" "$st" 1
+assert_contains "naming the issue" "$out" "issue #27"
+assert_contains "with gh's reason" "$out" "HTTP 502: Bad Gateway"
+assert_eq "and leaves the file that was already there byte-identical" \
+  "$(od -c "$issue_json")" "$(printf 'old contents\n' | od -c)"
+rm -f "$issue_json"
+out="$("$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "a failed fetch --json into no file fails too" "$st" 1
+assert_eq "and leaves no file behind" \
+  "$([ -e "$issue_json" ] && echo present || echo gone)" "gone"
+fake_unfail
+
+for args in "27 --json $issue_json" "--json 27 $issue_json" "27 $issue_json --jsn" "27 $issue_json --json extra"; do
+  # shellcheck disable=SC2086 # each case is split into its words on purpose
+  out="$("$ORCH" issue fetch $args 2>&1)"; st=$?
+  assert_status "fetch refuses a misplaced or unknown flag: $args" "$st" 1
+  assert_contains "with the usage line" "$out" "usage: orch.sh issue fetch <n> <file> [--json]"
+done
+assert_eq "and writes no file" "$([ -e "$issue_json" ] && echo present || echo gone)" "gone"
+out="$("$ORCH" issue comments 27 "$issue_json" --json 2>&1)"; st=$?
+assert_status "--json is fetch's alone: comments refuses it" "$st" 1
+assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file>"
+assert_contains "help lists --json under issue fetch" "$("$ORCH" help)" "issue fetch <n> <file> [--json]"
+
 tricky="$(mktemp)"
 writeln '## Solution' '' 'Tracked in #6; see `$HOME` and '"'"'quoted'"'"' text.' >"$tricky"
 out="$("$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
@@ -6399,6 +6455,28 @@ assert_eq "COMMENTS_JQ opens each comment with its author-and-date marker, one b
     '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Also: the second line' '\\ stays unescaped.')"
 assert_eq "and prints nothing at all for no comments" \
   "$(printf '%s' '{"comments":[]}' | jq -r "$comments_jq" | wc -c | tr -d ' ')" "0"
+
+issue_json_jq="$(bash -c 'source "$1"; printf "%s" "$ISSUE_JSON_JQ"' _ "$ORCH")"
+: >"$GH_FIXTURE/env.log"
+gh_reply 0 $'{"body":"B.","comments":[],"labels":["bug"],"number":23,"title":"T"}\n' '' \
+  issue view 23 --json number,title,body,labels,comments --jq "$issue_json_jq"
+out="$(contract adapter_issue_json 23 2>&1)"; st=$?
+assert_status "issue json: reads the issue through ISSUE_JSON_JQ" "$st" 0
+assert_eq "printing the object it formatted" "$out" '{"body":"B.","comments":[],"labels":["bug"],"number":23,"title":"T"}'
+assert_contains "pinned to the resolved repo" "$(cat "$GH_FIXTURE/env.log")" \
+  "GH_REPO=acme/widgets GH_HOST=<unset> issue view 23 --json number,title,body,labels,comments"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' \
+  issue view 404 --json number,title,body,labels,comments --jq "$issue_json_jq"
+out="$(contract adapter_issue_json 404 2>&1)"; st=$?
+assert_status "issue json: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
+# ISSUE_JSON_JQ itself, run on gh-shaped JSON: every field gh adds beyond the
+# trimmed shape - a label's id and colour, a comment author's name and more -
+# is dropped.
+issue_gh_json='{"number":23,"title":"Widgets need a handle","body":"## Problem\n\nTracked in #6.","labels":[{"id":"LA_1","name":"bug","description":"Broken","color":"d73a4a"},{"id":"LA_2","name":"ready-for-agent","description":"","color":"0e8a16"}],"comments":[{"id":"IC_1","author":{"login":"pat","name":"Pat"},"authorAssociation":"OWNER","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z","includesCreatedEdit":false,"isMinimized":false,"minimizedReason":"","reactionGroups":[],"url":"https://github.com/acme/widgets/issues/23#issuecomment-1","viewerDidAuthor":true}]}'
+assert_eq "ISSUE_JSON_JQ trims gh's answer to number, title, body, label names and comments" \
+  "$(printf '%s' "$issue_gh_json" | jq -cS "$issue_json_jq")" \
+  '{"body":"## Problem\n\nTracked in #6.","comments":[{"author":"pat","body":"A follow-up.","createdAt":"2026-09-02T11:30:00Z"}],"labels":["bug","ready-for-agent"],"number":23,"title":"Widgets need a handle"}'
 
 gh_reply 0 $'OPEN\nreview:nit\nneeds-triage\n' '' issue view 23 --json state,labels --jq '.state, (.labels[].name)'
 out="$(contract adapter_issue_state_labels 23 2>&1)"; st=$?

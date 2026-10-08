@@ -258,6 +258,30 @@ adapter_issue_comments() {
   fake_comments_print "$(fake_issue_dir "$1")/comments"
 }
 
+# adapter_issue_json <n>: the stored issue as ISSUE_JSON_JQ's trimmed object -
+# its number, title, body byte for byte, label names, and each comment's
+# author, date and body.
+adapter_issue_json() {
+  ! fake_failing adapter_issue_json || return 1
+  fake_issue_known "$1" || return 1
+  local d k comments="[]" body
+  d="$(fake_issue_dir "$1")"
+  body="$d/body"
+  [ -f "$body" ] || body=/dev/null
+  if [ -d "$d/comments" ]; then
+    for k in $(ls "$d/comments" | sort -n); do
+      comments="$(jq -c --arg a "$(cat "$d/comments/$k/author")" \
+        --arg c "$(cat "$d/comments/$k/created")" --rawfile b "$d/comments/$k/body" \
+        '. + [{author: $a, createdAt: $c, body: $b}]' <<<"$comments")"
+    done
+  fi
+  jq -cn --argjson n "$1" --arg t "$(cat "$d/title" 2>/dev/null)" \
+    --rawfile b "$body" \
+    --argjson l "$(fake_issue_labels "$1" | jq -R . | jq -cs .)" \
+    --argjson c "$comments" \
+    '{number: $n, title: $t, body: $b, labels: $l, comments: $c}'
+}
+
 # adapter_issue_state_labels <n>: the stored state, then its labels. Lagging
 # (fake_lag), it answers the stale answer fake_lag was given, or nothing.
 adapter_issue_state_labels() {

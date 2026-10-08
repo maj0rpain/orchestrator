@@ -1118,6 +1118,12 @@ adapter_labels() {
 # #418) reads a PR's comments through this same --jq, so the two read alike.
 COMMENTS_JQ='[.comments[] | "<!-- comment @\(.author.login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n")'
 
+# The trimmed object `issue fetch --json` publishes (#528): the issue's number,
+# title and body, its label names, and each comment's author login, gh's
+# ISO-8601 timestamp and body - every other field gh answers with is dropped,
+# so the shape does not change with gh's version.
+ISSUE_JSON_JQ='{number, title, body, labels: [.labels[].name], comments: [.comments[] | {author: .author.login, createdAt, body}]}'
+
 # adapter_issue_body <n>: the issue's body as GitHub holds it, then a newline.
 adapter_issue_body() {
   gh issue view "$1" --json body --jq .body
@@ -1126,6 +1132,13 @@ adapter_issue_body() {
 # adapter_issue_comments <n>: the issue's comments in COMMENTS_JQ's shape.
 adapter_issue_comments() {
   gh issue view "$1" --json comments --jq "$COMMENTS_JQ"
+}
+
+# adapter_issue_json <n>: the issue as ISSUE_JSON_JQ's one JSON object - the
+# one operation that prints JSON rather than plain text, because that object
+# is the shape `issue fetch --json` publishes.
+adapter_issue_json() {
+  gh issue view "$1" --json number,title,body,labels,comments --jq "$ISSUE_JSON_JQ"
 }
 
 # adapter_issue_state_labels <n>: OPEN or CLOSED on the first line, then one
@@ -2011,8 +2024,14 @@ fetch_into() {
   mv "$tmp" "$file"
 }
 
+# With --json, the issue's title, body, labels and comments as ISSUE_JSON_JQ's
+# object, so a fresh agent reads the whole issue with one pinned call.
 cmd_issue_fetch() {
-  local issue="$1" file="$2"
+  local issue="$1" file="$2" json="${3:-}"
+  if [ -n "$json" ]; then
+    fetch_into "$file" "issue #$issue" adapter_issue_json "$issue"
+    return
+  fi
   fetch_into "$file" "the body of issue #$issue" \
     adapter_issue_body "$issue"
 }
@@ -2046,7 +2065,14 @@ cmd_issue() {
   local op="${1:-}"
   shift || true
   case "$op" in
-    fetch|update|comment|comments)
+    fetch)
+      # --json only as the third argument; any other shape is a usage error.
+      local usage="usage: orch.sh issue fetch <n> <file> [--json]"
+      [ $# -eq 2 ] || { [ $# -eq 3 ] && [ "$3" = --json ]; } || die "$usage"
+      case "$1" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $1 ($usage)" ;; esac
+      cmd_issue_fetch "$@"
+      ;;
+    update|comment|comments)
       [ $# -eq 2 ] || die "usage: orch.sh issue $op <n> <file>"
       local issue="$1" file="$2"
       case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue (usage: orch.sh issue $op <n> <file>)" ;; esac
@@ -4164,8 +4190,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               create a GitHub issue under ready-for-agent
                               and verify its title and label by reading them
                               back - recording no state; prints the number
-  issue fetch <n> <file>      write issue <n>'s body to <file>, recording no
-                              state
+  issue fetch <n> <file> [--json]
+                              write issue <n>'s body to <file>, recording no
+                              state; with --json, the issue as one JSON
+                              object {number, title, body, labels: [<name>],
+                              comments: [{author, createdAt, body}]}
   issue update <n> <file>     replace issue <n>'s body with <file>, recording
                               no state
   issue comment <n> <file>    post <file> as a comment on issue <n>,
