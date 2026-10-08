@@ -403,12 +403,16 @@ adapter_issue_comment() {
   fake_comment_write "$(fake_issue_dir "$1")/comments" "$2"
 }
 
-# fake_option_value <operation> <option> [value...]: true where <option> is
-# followed by a non-empty value; otherwise says so on stderr and returns 2, as
-# the real adapter's adapter_option_value does.
+# fake_option_value <operation> <option-names> <option> [value...]: true where
+# <option> is followed by a value that is neither empty nor one of
+# <option-names>, a space-separated list each compared whole; otherwise says so
+# on stderr and returns 2, as the real adapter's option_value does.
 fake_option_value() {
-  [ -z "${3:-}" ] || return 0
-  printf 'fake gh: %s: %s needs a value\n' "$1" "$2" >&2
+  local value="${4:-}" name names
+  read -r -a names <<<"$2"
+  for name in "${names[@]}"; do [ "$value" != "$name" ] || value=""; done
+  [ -z "$value" ] || return 0
+  printf 'fake gh: %s: %s needs a value\n' "$1" "$3" >&2
   return 2
 }
 
@@ -426,8 +430,8 @@ adapter_issue_relabel() {
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --add)    fake_option_value adapter_issue_relabel "$@" || return; adds+=("$2"); shift 2 ;;
-      --remove) fake_option_value adapter_issue_relabel "$@" || return; removes+=("$2"); shift 2 ;;
+      --add)    fake_option_value adapter_issue_relabel "--add --remove" "$@" || return; adds+=("$2"); shift 2 ;;
+      --remove) fake_option_value adapter_issue_relabel "--add --remove" "$@" || return; removes+=("$2"); shift 2 ;;
       *) fake_unknown_option adapter_issue_relabel "$1"; return ;;
     esac
   done
@@ -452,8 +456,8 @@ adapter_issue_close() {
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --reason)  fake_option_value adapter_issue_close "$@" || return; reason="$2"; shift 2 ;;
-      --comment) fake_option_value adapter_issue_close "$@" || return; comment="$2"; shift 2 ;;
+      --reason)  fake_option_value adapter_issue_close "--reason --comment" "$@" || return; reason="$2"; shift 2 ;;
+      --comment) fake_option_value adapter_issue_close "--reason --comment" "$@" || return; comment="$2"; shift 2 ;;
       *) fake_unknown_option adapter_issue_close "$1"; return ;;
     esac
   done

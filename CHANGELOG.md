@@ -2,6 +2,16 @@
 
 ## 3.21.6
 
+The GitHub adapter's valued options refuse a following option name as their
+value (#754). `adapter_issue_relabel <n> --add --remove` no longer adds a label
+named `--remove`: like `--remove --add`, and `adapter_issue_close`'s
+`--reason --comment` and `--comment --reason`, it exits 2 with
+`<operation>: <option> needs a value` and makes no gh call, and
+`--add --remove x` now names `--add` rather than blaming `x` as an unknown
+option. A value that only begins with `-` or `--` stays a value. The fake gh
+adapter refuses the same calls. The parsing helpers lose the `adapter_`
+operation prefix: `option_value` and `unknown_option` (#758).
+
 Behaviour-neutral tidy-ups of the label and triage helpers (#845).
 `issue_publish_verified` splits gh's answer through `lines_split`, as
 `issue_state_labels_read` does (#750). `cmd_issue_triage`'s label-holding

@@ -1267,19 +1267,26 @@ review_budget() {
 # An operation that takes options parses them before any gh call, and refuses an
 # unknown option, or one missing its value or given an empty one, with status 2
 # and a message on stderr - so a caller still on an older grammar fails loudly.
+# An option directly followed by another of the operation's options is missing
+# its value; a value that only begins with - or -- is still a value.
 
-# adapter_option_value <operation> <option> [value...]: true where <option> is
-# followed by a non-empty value; otherwise says so on stderr and returns 2.
-# Called as `adapter_option_value <operation> "$@" || return` from an option loop.
-adapter_option_value() {
-  [ -z "${3:-}" ] || return 0
-  warn "$1: $2 needs a value"
+# option_value <operation> <option-names> <option> [value...]: true where
+# <option> is followed by a value that is neither empty nor one of
+# <option-names>, a space-separated list each compared whole; otherwise says so
+# on stderr and returns 2. Called as
+# `option_value <operation> "<option-names>" "$@" || return` from an option loop.
+option_value() {
+  local value="${4:-}" name names
+  read -r -a names <<<"$2"
+  for name in "${names[@]}"; do [ "$value" != "$name" ] || value=""; done
+  [ -z "$value" ] || return 0
+  warn "$1: $3 needs a value"
   return 2
 }
 
-# adapter_unknown_option <operation> <argument>: refuses an argument the
+# unknown_option <operation> <argument>: refuses an argument the
 # operation does not take, on stderr, with status 2.
-adapter_unknown_option() {
+unknown_option() {
   warn "$1: unknown option '$2'"
   return 2
 }
@@ -1424,9 +1431,9 @@ adapter_issue_relabel() {
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --add)    adapter_option_value adapter_issue_relabel "$@" || return; adds+=("$2"); shift 2 ;;
-      --remove) adapter_option_value adapter_issue_relabel "$@" || return; removes+=("$2"); shift 2 ;;
-      *) adapter_unknown_option adapter_issue_relabel "$1"; return ;;
+      --add)    option_value adapter_issue_relabel "--add --remove" "$@" || return; adds+=("$2"); shift 2 ;;
+      --remove) option_value adapter_issue_relabel "--add --remove" "$@" || return; removes+=("$2"); shift 2 ;;
+      *) unknown_option adapter_issue_relabel "$1"; return ;;
     esac
   done
   [ ${#adds[@]} -gt 0 ] || [ ${#removes[@]} -gt 0 ] || return 0
@@ -1443,9 +1450,9 @@ adapter_issue_close() {
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --reason)  adapter_option_value adapter_issue_close "$@" || return; reason="$2"; shift 2 ;;
-      --comment) adapter_option_value adapter_issue_close "$@" || return; comment="$2"; shift 2 ;;
-      *) adapter_unknown_option adapter_issue_close "$1"; return ;;
+      --reason)  option_value adapter_issue_close "--reason --comment" "$@" || return; reason="$2"; shift 2 ;;
+      --comment) option_value adapter_issue_close "--reason --comment" "$@" || return; comment="$2"; shift 2 ;;
+      *) unknown_option adapter_issue_close "$1"; return ;;
     esac
   done
   [ -z "$reason" ] || args+=(--reason "$reason")
@@ -1469,7 +1476,7 @@ adapter_pr_create() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --draft) args+=(--draft); shift ;;
-      *) adapter_unknown_option adapter_pr_create "$1"; return ;;
+      *) unknown_option adapter_pr_create "$1"; return ;;
     esac
   done
   out="$(gh pr create ${args[@]+"${args[@]}"} --base "$base" --head "$head" --title "$title" --body-file "$body")" || return
