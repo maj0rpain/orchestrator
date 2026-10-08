@@ -7674,6 +7674,7 @@ out="$(ORCHESTRATOR_HOST=claude "$ORCH" base set redo-base --flow 2>&1)"; st=$?
 assert_status "base set --flow refuses a branched flow at the review phase" "$st" 1
 assert_contains "naming redo as the way back on Claude Code" "$out" \
   "flow redotest already has branch orch/21-redotest - its base can change again once /orchestrator:redo retires it"
+assert_eq "leaving the flow's base unchanged" "$("$ORCH" state get base)" "$base_before"
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" base set redo-base --flow 2>&1)"
 assert_contains "and with the orch-flow section on another host" "$out" \
   "flow redotest already has branch orch/21-redotest - its base can change again once /orchestrator:redo (or orch-flow's Redo section) retires it"
