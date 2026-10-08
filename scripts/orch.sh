@@ -2722,9 +2722,9 @@ cmd_issue_triage() {
     label="$(triage_label_for "$role")"
     if printf '%s\n' "$labels" | grep -qxF -- "$label"; then
       removed+=("$label")
-      remove_opts+=(--remove "$label")
     fi
   done
+  for label in ${removed[@]+"${removed[@]}"}; do remove_opts+=(--remove "$label"); done
 
   adapter_issue_relabel "$issue" --add "$ready" ${remove_opts[@]+"${remove_opts[@]}"} \
     || die "gh could not relabel issue #$issue"

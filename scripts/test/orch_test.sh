@@ -6318,16 +6318,17 @@ fake_fail adapter_issue_relabel
 fake_fail adapter_issue_close
 fake_fail adapter_pr_create
 pbody="$(mktemp)"
-for bad in "adapter_issue_relabel 14 --label x" "adapter_issue_relabel 14 --add" \
+for bad_args in "adapter_issue_relabel 14 --label x" "adapter_issue_relabel 14 --add" \
            "adapter_issue_relabel 14 --remove" "adapter_issue_relabel 14 x y" \
            "adapter_issue_close 14 --why x" "adapter_issue_close 14 --reason" \
            "adapter_issue_close 14 --comment" "adapter_issue_close 14 completed" \
            "adapter_pr_create main x X $pbody --ready" "adapter_pr_create main x X $pbody true"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
-  err="$(faked $bad 2>&1 >/dev/null)"; st=$?
-  assert_status "the fake refuses '$bad'" "$st" 2
-  assert_contains "with a message on stderr" "$err" "${bad%% *}"
+  err="$(faked $bad_args 2>&1 >/dev/null)"; st=$?
+  assert_status "the fake refuses '$bad_args'" "$st" 2
+  assert_contains "with a message on stderr" "$err" "${bad_args%% *}"
 done
+unset bad_args
 err="$(faked adapter_issue_relabel 14 --add "" 2>&1 >/dev/null)"; st=$?
 assert_status "the fake refuses an empty --add as missing its value" "$st" 2
 assert_contains "with a message on stderr" "$err" "--add needs a value"
@@ -6493,12 +6494,13 @@ assert_eq "and making no gh call" "$(gh_calls)" "$calls"
 # The argument grammar (#664): an unknown option, or one missing its value,
 # exits 2 with a message on stderr before any gh call - a caller still on the
 # old positional grammar among them.
-for bad in "--label afk" "--add" "--remove" "afk triage" "--add afk --remove"; do
+for bad_args in "--label afk" "--add" "--remove" "afk triage" "--add afk --remove"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
-  err="$(contract adapter_issue_relabel 25 $bad 2>&1 >/dev/null)"; st=$?
-  assert_status "issue relabel: '$bad' is refused" "$st" 2
+  err="$(contract adapter_issue_relabel 25 $bad_args 2>&1 >/dev/null)"; st=$?
+  assert_status "issue relabel: '$bad_args' is refused" "$st" 2
   assert_contains "with a message on stderr" "$err" "adapter_issue_relabel"
 done
+unset bad_args
 err="$(contract adapter_issue_relabel 25 --add "" 2>&1 >/dev/null)"; st=$?
 assert_status "issue relabel: an empty --add is refused as missing its value" "$st" 2
 assert_contains "with a message on stderr" "$err" "--add needs a value"
@@ -6515,12 +6517,13 @@ gh_reply 0 '' '' issue close 25 --comment "Redone."
 out="$(contract adapter_issue_close 25 --comment "Redone." 2>&1)"; st=$?
 assert_status "issue close: with a comment and gh's default reason" "$st" 0
 calls="$(gh_calls)"
-for bad in "--why completed" "--reason" "--comment" "completed" "--reason completed --comment"; do
+for bad_args in "--why completed" "--reason" "--comment" "completed" "--reason completed --comment"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
-  err="$(contract adapter_issue_close 27 $bad 2>&1 >/dev/null)"; st=$?
-  assert_status "issue close: '$bad' is refused" "$st" 2
+  err="$(contract adapter_issue_close 27 $bad_args 2>&1 >/dev/null)"; st=$?
+  assert_status "issue close: '$bad_args' is refused" "$st" 2
   assert_contains "with a message on stderr" "$err" "adapter_issue_close"
 done
+unset bad_args
 err="$(contract adapter_issue_close 27 --reason "" --comment "Redone." 2>&1 >/dev/null)"; st=$?
 assert_status "issue close: an empty --reason is refused as missing its value" "$st" 2
 assert_contains "with a message on stderr" "$err" "--reason needs a value"
@@ -6563,12 +6566,13 @@ out="$(contract adapter_pr_create main dup "Dup" "$ibody" 2>&1)"; st=$?
 assert_status "pr create: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" 'a pull request for branch "dup" into branch "main" already exists'
 calls="$(gh_calls)"
-for bad in "--ready" "true" "--draft --base"; do
+for bad_args in "--ready" "true" "--draft --base"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
-  err="$(contract adapter_pr_create main bad "Bad" "$ibody" $bad 2>&1 >/dev/null)"; st=$?
-  assert_status "pr create: '$bad' is refused" "$st" 2
+  err="$(contract adapter_pr_create main bad "Bad" "$ibody" $bad_args 2>&1 >/dev/null)"; st=$?
+  assert_status "pr create: '$bad_args' is refused" "$st" 2
   assert_contains "with a message on stderr" "$err" "adapter_pr_create"
 done
+unset bad_args
 assert_eq "no refused create made a gh call" "$(gh_calls)" "$calls"
 
 gh_reply 0 $'Closes #12\n\nAdds it.\n' '' pr view 57 --json body --jq .body
