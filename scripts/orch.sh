@@ -2302,8 +2302,8 @@ fetch_into() {
 # With --json, the issue's title, body, labels and comments as ISSUE_JSON_JQ's
 # object, so a fresh agent reads the whole issue with one pinned call.
 cmd_issue_fetch() {
-  local issue="$1" file="$2" json="${3:-}"
-  if [ -n "$json" ]; then
+  local issue="$1" file="$2" as_json="${3:-}"
+  if [ -n "$as_json" ]; then
     fetch_into "$file" "issue #$issue" adapter_issue_json "$issue"
     return
   fi
@@ -2340,18 +2340,15 @@ cmd_issue() {
   local op="${1:-}"
   shift || true
   case "$op" in
-    fetch)
-      # --json only as the third argument; any other shape is a usage error.
-      local usage="usage: orch.sh issue fetch <n> <file> [--json]"
-      [ $# -eq 2 ] || { [ $# -eq 3 ] && [ "$3" = --json ]; } || die "$usage"
+    fetch|update|comment|comments)
+      local usage="usage: orch.sh issue $op <n> <file>"
+      [ "$op" = fetch ] && usage="usage: orch.sh issue fetch <n> <file> [--json]"
+      # For fetch alone, --json only as the third argument; any other shape is
+      # a usage error.
+      [ $# -eq 2 ] || { [ "$op" = fetch ] && [ $# -eq 3 ] && [ "$3" = --json ]; } \
+        || die "$usage"
       case "$1" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $1 ($usage)" ;; esac
-      cmd_issue_fetch "$@"
-      ;;
-    update|comment|comments)
-      [ $# -eq 2 ] || die "usage: orch.sh issue $op <n> <file>"
-      local issue="$1" file="$2"
-      case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue (usage: orch.sh issue $op <n> <file>)" ;; esac
-      "cmd_issue_$op" "$issue" "$file"
+      "cmd_issue_$op" "$@"
       ;;
     publish) cmd_issue_publish "$@" ;;
     triage) cmd_issue_triage "$@" ;;

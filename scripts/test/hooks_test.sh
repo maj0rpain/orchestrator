@@ -24,6 +24,15 @@ bad() { printf '  FAIL %s\n     %s\n' "$1" "$2"; FAIL=$((FAIL + 1)); }
 assert_eq()       { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected '$3', got '$2'"; fi; }
 assert_contains() { case "$2" in *"$3"*) ok "$1" ;; *) bad "$1" "missing '$3' in: $2" ;; esac; }
 assert_not_contains() { case "$2" in *"$3"*) bad "$1" "found '$3' in: $2" ;; *) ok "$1" ;; esac; }
+# count_of TEXT NEEDLE: how many times the fixed string NEEDLE occurs in TEXT.
+count_of() {
+  local text="$1" needle="$2" n=0
+  while [ -n "$needle" ] && case "$text" in *"$needle"*) true ;; *) false ;; esac; do
+    text="${text#*"$needle"}"
+    n=$((n + 1))
+  done
+  printf '%s' "$n"
+}
 assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no output, got: $2"; fi; }
 # <kind> is grilling or planning: the marker $TMPDIR/orchestrator-<kind>-<id>.
 assert_marker_present() { if [ -e "$TMPDIR/orchestrator-$2-$3" ]; then ok "$1"; else bad "$1" "no orchestrator-$2-$3"; fi; }
@@ -126,24 +135,43 @@ check_blueprint_rewrite() {
   assert_contains "skips orch-to-tickets when rewrite mode reports kept $where" "$ctx" \
     "unless rewrite mode reported the breakdown \`kept\`"
   assert_contains "runs no breakdown check of its own $where" "$ctx" "run no breakdown check of your own"
-  assert_contains "stops when orch-to-tickets fails after a retire $where" "$ctx" \
-    "If orch-to-tickets fails after rewrite mode retired a breakdown, stop and report that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>"
-  assert_contains "stops when orch-to-spec stops without an outcome $where" "$ctx" \
-    "If orch-to-spec stops without reporting the issue number, stop there: ask no spec review question and run no orch-to-tickets"
+  assert_contains "one stop rule covers every step $where" "$ctx" \
+    "The route's steps run in this order, and one rule covers every step: when a step stops or fails, stop there - run no later step, and report why it stopped."
+  assert_contains "orch-to-spec stops without an issue number $where" "$ctx" \
+    "orch-to-spec stops when it ends without reporting the issue number."
+  assert_contains "reports a retire with no breakdown $where" "$ctx" \
+    "If orch-to-tickets fails after rewrite mode retired a breakdown, the report also says that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>"
+  assert_contains "runs the spec review only on a yes $where" "$ctx" \
+    "run the standalone orch-spec-review only on a yes"
+  assert_contains "asks about a spec review every time $where" "$ctx" "ask every time, never"
+  # One copy of the order and stop rules (#730), none per host.
+  assert_eq "states the kept skip once $where" \
+    "$(count_of "$ctx" "unless rewrite mode reported")" 1
+  assert_eq "states the stop rule once $where" \
+    "$(count_of "$ctx" "when a step stops or fails")" 1
+  local old
+  for old in "call nothing after it" "run nothing after it" \
+    "If orch-to-spec stops without reporting the issue number"; do
+    assert_not_contains "drops the old stop clause '$old' $where" "$ctx" "$old"
+  done
   if [ "$host" = claude ]; then
-    assert_contains "Skill-tool sequence stops when orch-to-spec stops $where" "$ctx" \
-      "If orch-to-spec stops without reporting the issue number, call nothing after it."
+    assert_contains "calls the Skill tool for each step $where" "$ctx" \
+      "call the Skill tool yourself for each step of the Blueprint route below:"
     assert_contains "hands the issue number as the Skill tool's args $where" "$ctx" \
-      "call the Skill tool with \"orchestrator:orch-to-spec\", with args set to the interviewed issue's number when there is one"
-    assert_contains "runs orch-to-tickets unless kept, by Skill tool, $where" "$ctx" \
-      "then with \"orchestrator:orch-to-tickets\" unless rewrite mode reported \`kept\`"
+      "\"orchestrator:orch-to-spec\", with args set to the interviewed issue's number when there is one"
+    assert_contains "names the standalone spec review by Skill tool $where" "$ctx" \
+      "\"orchestrator:orch-spec-review\" (its standalone spec review)"
+    assert_contains "names orch-to-tickets by Skill tool $where" "$ctx" \
+      "and \"orchestrator:orch-to-tickets\""
   else
-    assert_contains "follows the skill for issue #<n> on Junie $where" "$ctx" \
-      "run the orch-to-spec skill - for issue #<n>, the interviewed issue, when there is one"
-    assert_contains "runs orch-to-tickets unless kept, by skill file, $where" "$ctx" \
-      "then orch-to-tickets unless rewrite mode reported \`kept\`"
-    assert_contains "skill-file sequence stops when orch-to-spec stops $where" "$ctx" \
-      "If orch-to-spec stops without reporting the issue number, run nothing after it."
+    assert_contains "follows each step's skill, for issue #<n>, on Junie $where" "$ctx" \
+      "run each step of the Blueprint route below as its skill - orch-to-spec for issue #<n>, the interviewed issue, when there is one"
+    assert_contains "names the review and tickets skills on Junie $where" "$ctx" \
+      "orch-spec-review, and orch-to-tickets. This host has no Skill tool"
+    local s
+    for s in orch-to-spec orch-spec-review orch-to-tickets; do
+      assert_contains "lists $s's SKILL.md on Junie $where" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
+    done
   fi
 }
 check_blueprint_rewrite "on Claude Code" "$ctx" claude
@@ -314,9 +342,6 @@ assert_contains "offers quick implementation on Junie" "$ctx" "Quick implementat
 assert_contains "offers Blueprint only on Junie" "$ctx" "Blueprint only"
 assert_eq "offers exactly three options on Junie" "$(count_closing_options "$out")" "3"
 check_blueprint_rewrite "on Junie" "$ctx" junie
-for s in orch-to-spec orch-spec-review orch-to-tickets; do
-  assert_contains "points at $s's SKILL.md on Junie" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
-done
 assert_not_contains "no route tells the model to delete the marker on Junie" "$ctx" "marker"
 assert_contains "forbids offering to implement on Junie" "$ctx" "Do NOT offer to implement"
 assert_contains "carries the wayfinder caveat on Junie" "$ctx" "whole map is done"
@@ -378,9 +403,6 @@ assert_contains "offers quick implementation at plan confirmation" "$ctx" "Quick
 assert_eq "offers exactly three options at plan confirmation" "$(count_closing_options "$out")" "3"
 assert_contains "offers Blueprint only at plan confirmation" "$ctx" "Blueprint only"
 check_blueprint_rewrite "at Junie's plan confirmation" "$ctx" junie
-for s in orch-to-spec orch-spec-review orch-to-tickets; do
-  assert_contains "points at $s's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
-done
 assert_contains "points at orch-flow's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
 assert_contains "honours a request for a side checkout at plan confirmation" "$ctx" "$side_request"
 assert_not_contains "repeats no planning rules at plan confirmation" "$ctx" "Do NOT offer to implement"
