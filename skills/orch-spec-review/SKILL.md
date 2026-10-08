@@ -1,6 +1,6 @@
 ---
 name: orch-spec-review
-description: Review a spec issue once - propose folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask a second question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state. A quick implementation runs the standalone review unattended, applying its own recommendations without asking.
+description: Review a spec issue once - propose folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask the ticket question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state. A quick implementation runs the standalone review unattended, applying its own recommendations without asking.
 ---
 
 # Orchestrator spec review
@@ -16,7 +16,7 @@ sub-agents that see only files. Every consolidation item and every **finding**
 they report reaches the human as a proposed edit in one batch; only the edits
 the human accepts change the issue - in an **Unattended spec review**, the
 recommended ones. When the issue already has a ticket
-breakdown and the accepted edits touch an open ticket, a second question asks
+breakdown and the accepted edits touch an open ticket, the ticket question asks
 how the breakdown should follow - see **Tickets follow the spec**; the review
 writes the issue's tickets only to follow edits already accepted. The issue body stays the single truth the
 implement phase reads; after a review, the comments are history.
@@ -372,7 +372,7 @@ new agent: this is reconciliation, the same kind of work as
 - A drafted edit you believe is wrong is still presented, marked **recommend
   decline** with the reason.
 
-**The question.** If no open ticket is affected, ask nothing: the line is
+**The ticket question.** If no open ticket is affected, ask nothing: the line is
 **None - no ticket affected**, and each closed ticket the edits touch is
 still listed. Otherwise number the ticket items - each naming its ticket
 (`#<n>`, or the `## Ticket` section), what the accepted edits changed for it,

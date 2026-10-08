@@ -204,9 +204,9 @@ then read the spec, body and comments, independently - four in a flow, three
 in a standalone review; every finding they report, and every consolidation item, is
 put to a human with a proposed edit, and only the edits the human accepts
 change the spec - in an unattended spec review, the recommended ones. When the issue already has a ticket breakdown and the
-accepted edits touch an open ticket, it then puts to the human how that
-breakdown should follow - an unattended spec review takes its own
-recommendation: edits to the tickets the change touches, or retiring
+accepted edits touch an open ticket, it then raises the ticket question - how that
+breakdown should follow - which a human answers, and an unattended spec
+review answers with its own recommendation: edits to the tickets the change touches, or retiring
 the breakdown so the issue is broken down again. A spec review runs once - it is not a loop and has no budget;
 another look is another spec review.
 
