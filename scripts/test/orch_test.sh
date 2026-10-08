@@ -6662,6 +6662,17 @@ gh_reply 1 '' 'dial tcp: lookup api.github.com: no such host' pr checks 65 --jso
 out="$(contract adapter_pr_checks 65 all 2>&1)"; st=$?
 assert_status "pr checks: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "dial tcp: lookup api.github.com: no such host"
+# ci_probe over the real adapter: a failed read is unreachable, its detail
+# the first line of gh's stderr alone, and none of that stderr leaks.
+gh_reply 1 '' $'dial tcp: lookup api.github.com: no such host\nsecond line' pr checks 66 --json bucket,name,link
+out="$(contract ci_probe 66 all 2>&1)"; st=$?
+assert_status "ci probe: a failed checks read is still an answer" "$st" 0
+assert_eq "unreachable, with the first line of gh's stderr and nothing else" "$out" \
+  "$(writeln unreachable "      dial tcp: lookup api.github.com: no such host")"
+gh_reply 1 '' "no checks reported on the 'topic' branch" pr checks 67 --json bucket,name,link
+out="$(contract ci_probe 67 all 2>&1)"; st=$?
+assert_status "ci probe: no checks reported is an answer" "$st" 0
+assert_eq "classified as none, gh's stderr swallowed" "$out" "none"
 
 prot="repos/{owner}/{repo}/branches/main/protection/required_status_checks"
 gh_reply 0 '{"strict":false,"contexts":["build","lint"],"checks":[{"context":"build","app_id":null}]}' '' api "$prot"
@@ -6672,6 +6683,16 @@ gh_reply 1 '{"message":"Branch not protected","status":"404"}' 'gh: Branch not p
   api "repos/{owner}/{repo}/branches/open/protection/required_status_checks"
 out="$(contract adapter_branch_required_checks open 2>&1)"; st=$?
 assert_status "branch required checks: GitHub's 404 for an unprotected branch succeeds" "$st" 0
+assert_eq "printing nothing at all" "$out" ""
+gh_reply 1 '' 'gh: Branch not protected (HTTP 404)' \
+  api "repos/{owner}/{repo}/branches/quiet/protection/required_status_checks"
+out="$(contract adapter_branch_required_checks quiet 2>&1)"; st=$?
+assert_status "branch required checks: the 404 named on stderr alone succeeds" "$st" 0
+assert_eq "printing nothing at all, gh's stderr swallowed" "$out" ""
+gh_reply 1 '{"message":"Branch not protected","status":"404"}' '' \
+  api "repos/{owner}/{repo}/branches/mute/protection/required_status_checks"
+out="$(contract adapter_branch_required_checks mute 2>&1)"; st=$?
+assert_status "branch required checks: the 404 named on stdout alone succeeds" "$st" 0
 assert_eq "printing nothing at all" "$out" ""
 gh_reply 1 '{"message":"Not Found","status":"404"}' 'gh: Not Found (HTTP 404)' \
   api "repos/{owner}/{repo}/branches/hidden/protection/required_status_checks"
