@@ -67,6 +67,7 @@ spares() {
   if [ -z "$hits" ]; then ok "$1"; else bad "$1" "expected no finding matching '$3', got: $hits"; fi
 }
 
+# >>> checks
 FIXTURES="$(mktemp -d)"
 trap 'rm -rf "$FIXTURES"' EXIT
 # new_fixture: an empty fixture plugin root, removed on exit.
