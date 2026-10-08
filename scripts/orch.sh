@@ -243,7 +243,8 @@ state_get() {
 }
 
 # The one state-file write: sets key $1 to the JSON value $2 and stamps
-# updated. Private to the writers below; nothing else rewrites state.json.
+# updated. Private to the writers below; every write after init's seed goes
+# through here.
 state_put() {
   local tmp; tmp="$(mktemp)"
   jq --arg k "$1" --argjson v "$2" --arg now "$(now)" \
@@ -521,12 +522,14 @@ require_on_origin() {
 # Whether a flow is active: state.json exists and its phase is not done.
 flow_active() { [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; }
 
-# base set --flow: the explicit correction of the active flow's own base,
-# allowed only while the flow has no branch - before it first branches, or
-# after redo review retires that branch. The checks run in a fixed order and
-# the first that fails is reported; nothing is written unless all pass. The
-# name is stored literally, the default branch's own included: a flow's base
-# is pinned, unlike the checkout setting.
+# A flow's base is fixed when init seeds it: no redo and no change to the
+# checkout setting rewrites it, so its fork point and PR target cannot move
+# under it. base set --flow is the one exception: the explicit correction of
+# the active flow's own base, allowed only while the flow has no branch -
+# before it first branches, or after redo review retires that branch. The
+# checks run in a fixed order and the first that fails is reported; nothing is
+# written unless all pass. The name is stored literally, the default branch's
+# own included: a flow's base is pinned, unlike the checkout setting.
 base_set_flow() {
   local b="$1" branch slug
   flow_active || die "no active flow - nothing was set"
