@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.20.2
+
+Docs, glossary, skill prose and docs_lint fixes from consolidated review
+findings (#668). Coding standards rule 3 no longer claims a same-named local
+hides a bash function (#656). ADR-0030 gains a "Supersedes ADR-0004 in part"
+header (#371). orch-spec-review calls its ticket question by one name, which
+the glossary's Spec review entry now names (#393), and points the ticket
+question at the spec batch's options, stating only how it differs (#396).
+orch-flow's spec-phase Exit 0 paragraph no longer carries an exit-1 sentence
+(#395). orch-quick-implement step 7 points at orch-fixer step 5 for the
+PR-body check rule (#449). The README points at `PLANNING_RECORDS` instead
+of listing the records (#469), and the glossary gains a Repository and
+tooling group (#473). In docs_lint, the two old-name scans share one
+`scan_tracked_pattern` helper (#468), and `scan_flow_cmd` spares a `usage:`
+string quoted any way while now flagging one beside another literal flow
+command (#654). The done-flow edit-guard test covers `GLOSSARY.md` (#470).
+
 ## 3.20.1
 
 `orch.sh`'s ticket edge handling is restructured, with no change a user can
