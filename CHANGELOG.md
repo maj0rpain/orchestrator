@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.21.6
+## 3.21.7
 
 `orch.sh issue fetch|update|comment|comments` share one dispatch arm, with
 one argument-count guard and one plain-issue-number guard (#773); `--json` is
@@ -9,6 +9,25 @@ exit status is unchanged. `cmd_issue_fetch` names its `--json` local
 `as_json` (#770). The test suite defines the missing-repo wording once, in its
 shared setup, as its own literals (#774). A plain-number-guard helper is
 declined in `.out-of-scope/plain-number-guard-helper.md`.
+
+## 3.21.6
+
+The GitHub adapter's valued options refuse a following option name as their
+value (#754). `adapter_issue_relabel <n> --add --remove` no longer adds a label
+named `--remove`: like `--remove --add`, and `adapter_issue_close`'s
+`--reason --comment` and `--comment --reason`, it exits 2 with
+`<operation>: <option> needs a value` and makes no gh call, and
+`--add --remove x` now names `--add` rather than blaming `x` as an unknown
+option. A value that only begins with `-` or `--` stays a value. The fake gh
+adapter refuses the same calls. The parsing helpers lose the `adapter_`
+operation prefix: `option_value` and `unknown_option` (#758).
+
+Behaviour-neutral tidy-ups of the label and triage helpers (#845).
+`issue_publish_verified` splits gh's answer through `lines_split`, as
+`issue_state_labels_read` does (#750). `cmd_issue_triage`'s label-holding
+locals are named `wontfix_label` and `human_label`, as the planning hook
+names them (#747). doctor's flow issue check keeps one fallback for a failed
+read (#752).
 
 ## 3.21.5
 

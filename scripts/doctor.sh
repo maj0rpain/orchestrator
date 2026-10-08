@@ -647,7 +647,7 @@ check_flow_issue() {
   # Only the state line is wanted, yet not from adapter_issue_state: that one
   # answers PULL for a pull request's number, an answer doctor must not accept
   # as the flow's issue state - this case knows OPEN and CLOSED only.
-  issue_state_labels_read "$issue" issue_state issue_labels gh_line || issue_state=""
+  issue_state_labels_read "$issue" issue_state issue_labels gh_line || true
   phase="$(state_get phase)"
   case "$issue_state" in
     OPEN)   d_ok "issue #$issue open" ;;
