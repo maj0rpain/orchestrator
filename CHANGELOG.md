@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.18.0
+
+A blueprint drawn from a planning session about an open issue now rewrites
+that issue as its spec instead of publishing a duplicate (#704). The spec
+skill gains a rewrite mode, reached standalone as `/orchestrator:to-spec <n>`:
+it replaces issue `<n>`'s body, keeping its title, asks before the rewrite
+whether to retire or keep an existing ticket breakdown, and reports the
+breakdown `kept`, `retired` or `none` (#706). The planning hook's Blueprint
+instructions hand the interviewed issue's number to the spec skill - whether
+the human moved its label or answered Skip, and for the issue named under
+"It's a different issue" - publish a new issue only without one, and skip
+`orch-to-tickets` when the breakdown was kept (#707). New `orch.sh issue ready
+<n>` exits 0 when the issue carries the repo's `ready-for-agent` label, and
+rewrite mode warns when it does not (#705).
+
 ## 3.17.1
 
 Every flow state key is now defined once, in one `STATE_KEYS` table in

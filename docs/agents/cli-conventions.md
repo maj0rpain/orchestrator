@@ -13,7 +13,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `parallel` | `show`                                             |
 | `repo`    | `show`                                               |
 | `branch`  | `create`, `off`, `base-sha`, `retire`                |
-| `issue`   | `fetch`, `update`, `comment`, `comments`, `publish`, `triage` |
+| `issue`   | `fetch`, `update`, `comment`, `comments`, `publish`, `triage`, `ready` |
 | `pr`      | `open`, `publish`, `release`, `comment`, `comments`, `fetch`, `update` |
 | `review`  | `begin`, `path`, `file`, `ready`, `ci`, `rerun`, `terminal`, `retire` |
 | `review-pass` | `begin`                                          |
