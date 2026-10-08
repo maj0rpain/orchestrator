@@ -1084,6 +1084,38 @@ review_budget() {
 # flags, --jq and GitHub's database ids: each prints plain text in the shape
 # documented on it, and on a gh failure returns non-zero with gh's stderr
 # passed through.
+#
+# Their arguments (#664): required ones are positional, optional ones named
+# options after them, and a caller with nothing to pass leaves the option out.
+# An operation that takes options parses them before any gh call, and refuses an
+# unknown option, or one missing its value or given an empty one, with status 2
+# and a message on stderr - so a caller still on an older grammar fails loudly.
+
+# adapter_option_value <operation> <option> [value...]: true where <option> is
+# followed by a non-empty value; otherwise says so on stderr and returns 2.
+# Called as `adapter_option_value <operation> "$@" || return` from an option loop.
+adapter_option_value() {
+  [ -z "${3:-}" ] || return 0
+  warn "$1: $2 needs a value"
+  return 2
+}
+
+# adapter_unknown_option <operation> <argument>: refuses an argument the
+# operation does not take, on stderr, with status 2.
+adapter_unknown_option() {
+  warn "$1: unknown option '$2'"
+  return 2
+}
+
+# url_number <issues|pull> <gh-output>: the number in the last issue or PR URL
+# of what gh create printed - the URL alone on its line - or nothing, failing,
+# where it printed none. Each caller writes its own error.
+url_number() {
+  local n
+  n="$(printf '%s\n' "$2" | sed -n "s#^https\{0,1\}://.*/$1/\([0-9][0-9]*\)\$#\1#p" | tail -n 1)"
+  [ -n "$n" ] || return 1
+  printf '%s\n' "$n"
+}
 
 # adapter_label_upsert <name> <colour> <description>: creates the label, or
 # updates the one that exists, to that colour and description. Prints nothing.
@@ -1156,8 +1188,7 @@ adapter_issue_create() {
   shift 2
   for l in "$@"; do args+=(--label "$l"); done
   out="$(gh issue create --title "$title" --body-file "$body" ${args[@]+"${args[@]}"})" || return
-  n="$(printf '%s\n' "$out" | sed -n 's#^https\{0,1\}://.*/issues/\([0-9][0-9]*\)$#\1#p' | tail -n 1)"
-  if [ -z "$n" ]; then
+  if ! n="$(url_number issues "$out")"; then
     printf 'gh issue create printed no issue URL: %s\n' "$out" >&2
     return 1
   fi
@@ -1176,25 +1207,41 @@ adapter_issue_comment() {
   gh issue comment "$1" --body-file "$2" >/dev/null
 }
 
-# adapter_issue_relabel <n> <add> <remove>: one edit adding and removing
-# labels, each list comma-separated and either one empty. Prints nothing.
+# adapter_issue_relabel <n> [--add <label>]... [--remove <label>]...: one edit
+# adding and removing the labels named; with none named, no edit at all.
+# Prints nothing.
 adapter_issue_relabel() {
-  local n="$1" args=() add=() removals=() l
-  [ -z "$2" ] || IFS=, read -r -a add <<<"$2"
-  [ -z "$3" ] || IFS=, read -r -a removals <<<"$3"
-  for l in ${removals[@]+"${removals[@]}"}; do args+=(--remove-label "$l"); done
-  for l in ${add[@]+"${add[@]}"}; do args+=(--add-label "$l"); done
-  gh issue edit "$n" ${args[@]+"${args[@]}"} >/dev/null
+  local n="$1" args=() adds=() removes=() l
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --add)    adapter_option_value adapter_issue_relabel "$@" || return; adds+=("$2"); shift 2 ;;
+      --remove) adapter_option_value adapter_issue_relabel "$@" || return; removes+=("$2"); shift 2 ;;
+      *) adapter_unknown_option adapter_issue_relabel "$1"; return ;;
+    esac
+  done
+  [ ${#adds[@]} -gt 0 ] || [ ${#removes[@]} -gt 0 ] || return 0
+  for l in ${removes[@]+"${removes[@]}"}; do args+=(--remove-label "$l"); done
+  for l in ${adds[@]+"${adds[@]}"}; do args+=(--add-label "$l"); done
+  gh issue edit "$n" "${args[@]}" >/dev/null
 }
 
-# adapter_issue_close <n> [reason] [comment]: closes the issue, reason
-# "completed" or "not planned" (empty or absent, gh's default), posting the
+# adapter_issue_close <n> [--reason <r>] [--comment <c>]: closes the issue,
+# reason "completed" or "not planned" (absent, gh's default), posting the
 # comment on it where one is given. Prints nothing.
 adapter_issue_close() {
-  local args=()
-  [ -z "${2:-}" ] || args+=(--reason "$2")
-  [ -z "${3:-}" ] || args+=(--comment "$3")
-  gh issue close "$1" ${args[@]+"${args[@]}"} >/dev/null
+  local n="$1" reason="" comment="" args=()
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --reason)  adapter_option_value adapter_issue_close "$@" || return; reason="$2"; shift 2 ;;
+      --comment) adapter_option_value adapter_issue_close "$@" || return; comment="$2"; shift 2 ;;
+      *) adapter_unknown_option adapter_issue_close "$1"; return ;;
+    esac
+  done
+  [ -z "$reason" ] || args+=(--reason "$reason")
+  [ -z "$comment" ] || args+=(--comment "$comment")
+  gh issue close "$n" ${args[@]+"${args[@]}"} >/dev/null
 }
 
 # adapter_issue_reopen <n>: reopens the issue. Prints nothing.
@@ -1204,15 +1251,20 @@ adapter_issue_reopen() {
 
 # --- pr operations ---
 
-# adapter_pr_create <base> <head> <title> <body-file> [draft]: opens the PR
-# from head into base - a draft where draft is "true" - and prints its number
-# alone. Fails, printing nothing, where gh succeeded but printed no PR URL.
+# adapter_pr_create <base> <head> <title> <body-file> [--draft]: opens the PR
+# from head into base - a draft under --draft - and prints its number alone.
+# Fails, printing nothing, where gh succeeded but printed no PR URL.
 adapter_pr_create() {
-  local args=() out n
-  [ "${5:-false}" != true ] || args+=(--draft)
-  out="$(gh pr create ${args[@]+"${args[@]}"} --base "$1" --head "$2" --title "$3" --body-file "$4")" || return
-  n="$(printf '%s\n' "$out" | sed -n 's#^https\{0,1\}://.*/pull/\([0-9][0-9]*\)$#\1#p' | tail -n 1)"
-  if [ -z "$n" ]; then
+  local base="$1" head="$2" title="$3" body="$4" args=() out n
+  shift 4
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --draft) args+=(--draft); shift ;;
+      *) adapter_unknown_option adapter_pr_create "$1"; return ;;
+    esac
+  done
+  out="$(gh pr create ${args[@]+"${args[@]}"} --base "$base" --head "$head" --title "$title" --body-file "$body")" || return
+  if ! n="$(url_number pull "$out")"; then
     printf 'gh pr create printed no PR URL: %s\n' "$out" >&2
     return 1
   fi
@@ -2351,9 +2403,9 @@ cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
   local issue="${1:-}" outcome="${2:-}" category="" file="" labels triage stale_category tmp
-  # The labels to remove, comma-separated, possibly none: close-fixed, where
-  # that is the whole relabel, skips an empty one rather than send a bare edit.
-  local remove=""
+  # The relabel's --remove options, possibly none: close-fixed, where they are
+  # the whole relabel, then makes no edit at all.
+  local remove_opts=()
   [ $# -ge 2 ] || die "$usage"
   shift 2
   while [ $# -gt 0 ]; do
@@ -2385,7 +2437,7 @@ cmd_finding_triage_apply() {
   triage="$(triage_label_for needs-triage)"
   # Remove only what the issue carries: gh refuses to remove a label the
   # repo does not have at all.
-  if printf '%s\n' "$labels" | grep -qxF -- "$triage"; then remove="$triage"; fi
+  if printf '%s\n' "$labels" | grep -qxF -- "$triage"; then remove_opts+=(--remove "$triage"); fi
 
   tmp="$(mktemp)"
   { printf '%s\n\n' '> *This was generated by AI during triage.*'; cat "$file"; } >"$tmp"
@@ -2397,18 +2449,18 @@ cmd_finding_triage_apply() {
 
   case "$outcome" in
     close-fixed)
-      if [ -n "$remove" ]; then
-        adapter_issue_relabel "$issue" "" "$remove" || die "gh could not relabel issue #$issue"
-      fi
-      adapter_issue_close "$issue" completed || die "gh could not close issue #$issue" ;;
-    wontfix)
-      adapter_issue_relabel "$issue" "$(triage_label_for wontfix)" "$remove" \
+      adapter_issue_relabel "$issue" ${remove_opts[@]+"${remove_opts[@]}"} \
         || die "gh could not relabel issue #$issue"
-      adapter_issue_close "$issue" "not planned" || die "gh could not close issue #$issue" ;;
+      adapter_issue_close "$issue" --reason completed || die "gh could not close issue #$issue" ;;
+    wontfix)
+      adapter_issue_relabel "$issue" --add "$(triage_label_for wontfix)" ${remove_opts[@]+"${remove_opts[@]}"} \
+        || die "gh could not relabel issue #$issue"
+      adapter_issue_close "$issue" --reason "not planned" || die "gh could not close issue #$issue" ;;
     *)
       category_label_ensure "$category"
-      if printf '%s\n' "$labels" | grep -qxF -- "$stale_category"; then remove="${remove:+$remove,}$stale_category"; fi
-      adapter_issue_relabel "$issue" "$(triage_label_for "$outcome"),$category" "$remove" \
+      if printf '%s\n' "$labels" | grep -qxF -- "$stale_category"; then remove_opts+=(--remove "$stale_category"); fi
+      adapter_issue_relabel "$issue" --add "$(triage_label_for "$outcome")" --add "$category" \
+        ${remove_opts[@]+"${remove_opts[@]}"} \
         || die "gh could not relabel issue #$issue" ;;
   esac
 }
@@ -2596,16 +2648,17 @@ cmd_issue_publish() {
   note "$n"
 }
 
-# True only once the issue reads back carrying <ready> and none of the
-# comma-separated <removed> labels. Read fresh every call, never cached - the
-# caller re-reads once on a mismatch, as issue publish's does.
+# issue_triage_verified <n> <ready> [removed-label...]: true only once the
+# issue reads back carrying <ready> and none of the removed labels. Read fresh
+# every call, never cached - the caller re-reads once on a mismatch, as issue
+# publish's does.
 issue_triage_verified() {
-  local n="$1" ready="$2" out labels l removed=()
+  local n="$1" ready="$2" out labels l
+  shift 2
   out="$(adapter_issue_state_labels "$n" 2>/dev/null)" || return 1
   labels="$(printf '%s\n' "$out" | tail -n +2)"
   printf '%s\n' "$labels" | grep -qxF -- "$ready" || return 1
-  [ -z "$3" ] || IFS=, read -r -a removed <<<"$3"
-  for l in ${removed[@]+"${removed[@]}"}; do
+  for l in "$@"; do
     ! printf '%s\n' "$labels" | grep -qxF -- "$l" || return 1
   done
 }
@@ -2617,7 +2670,7 @@ issue_triage_verified() {
 # read back (ADR-0011), and one comment names the label it now carries.
 cmd_issue_triage() {
   local usage="usage: orch.sh issue triage <n> [--override]"
-  local issue="" override=false ready out labels remove="" role label
+  local issue="" override=false ready out labels role label removed=() remove_opts=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --override) override=true ;;
@@ -2668,14 +2721,15 @@ cmd_issue_triage() {
     [ "$role" != ready-for-agent ] || continue
     label="$(triage_label_for "$role")"
     if printf '%s\n' "$labels" | grep -qxF -- "$label"; then
-      remove="${remove:+$remove,}$label"
+      removed+=("$label")
+      remove_opts+=(--remove "$label")
     fi
   done
 
-  adapter_issue_relabel "$issue" "$ready" "$remove" \
+  adapter_issue_relabel "$issue" --add "$ready" ${remove_opts[@]+"${remove_opts[@]}"} \
     || die "gh could not relabel issue #$issue"
-  issue_triage_verified "$issue" "$ready" "$remove" \
-    || issue_triage_verified "$issue" "$ready" "$remove" \
+  issue_triage_verified "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
+    || issue_triage_verified "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
     || die "issue #$issue's '$ready' label did not verify - checked twice, both failed"
 
   local tmp
@@ -2694,7 +2748,7 @@ cmd_issue_triage() {
 # implementation's, not a draft, recording nothing) share it rather
 # than each hand-rolling the push/issue-line/gh-pr-create idiom.
 open_pr() {
-  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr keyword=Closes
+  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr keyword=Closes draft_opt=()
   git push -q -u origin "$branch"
   # GitHub only acts on a closing keyword when the PR merges into the default
   # branch, so a PR into any other base branch refers to its issue instead of
@@ -2702,7 +2756,8 @@ open_pr() {
   [ "$base" = "$(default_branch)" ] || keyword=Refs
   tmp="$(mktemp)"
   { printf '%s #%s\n\n' "$keyword" "$issue"; cat "$body_file"; } >"$tmp"
-  if ! pr="$(adapter_pr_create "$base" "$branch" "$title" "$tmp" "$draft")"; then
+  [ "$draft" != true ] || draft_opt=(--draft)
+  if ! pr="$(adapter_pr_create "$base" "$branch" "$title" "$tmp" ${draft_opt[@]+"${draft_opt[@]}"})"; then
     rm -f "$tmp"
     die "gh could not open the PR for branch $branch (issue #$issue)"
   fi
@@ -3127,7 +3182,7 @@ cmd_ticket_retire() {
   while IFS=$'\t' read -r n state _; do
     [ -z "$n" ] && continue
     if [ "$state" = OPEN ]; then
-      adapter_issue_close "$n" "not planned" "$msg" \
+      adapter_issue_close "$n" --reason "not planned" --comment "$msg" \
         || die "gh could not close ticket #$n"
     else
       comments="$(adapter_issue_comments "$n")" \
@@ -3914,7 +3969,7 @@ cmd_redo_spec() {
     local issue msg
     require_issue issue
     msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from orch-to-spec in this same flow.\n')"
-    adapter_issue_close "$issue" "" "$msg" || die "gh could not close issue #$issue"
+    adapter_issue_close "$issue" --comment "$msg" || die "gh could not close issue #$issue"
     state_write issue null
   else
     local kept

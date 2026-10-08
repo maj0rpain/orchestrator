@@ -6318,6 +6318,34 @@ lagging adapter_issue_body; assert_status "a lagged operation answers stale" "$?
 lagging adapter_issue_body; assert_status "for as many calls as fake_lag asked" "$?" 0
 lagging adapter_issue_body; assert_status "and current after them" "$?" 1
 lagging adapter_label_create; assert_status "an operation with no lag is current" "$?" 1
+# The fake takes the real adapter's argument grammar (#664): an unknown option,
+# or one missing its value, exits 2 with a message on stderr - parsed before
+# fake_failing, so even a seeded failure does not mask it. No converted caller
+# sends a bad option, so the fake is sourced alone and the operation called.
+faked() { bash -c 'source "$1"; shift; "$@"' _ "$GH_ADAPTER_FAKE" "$@"; }
+fake_issue 14 open
+fake_fail adapter_issue_relabel
+fake_fail adapter_issue_close
+fake_fail adapter_pr_create
+pbody="$(mktemp)"
+for bad in "adapter_issue_relabel 14 --label x" "adapter_issue_relabel 14 --add" \
+           "adapter_issue_relabel 14 --remove" "adapter_issue_relabel 14 x y" \
+           "adapter_issue_close 14 --why x" "adapter_issue_close 14 --reason" \
+           "adapter_issue_close 14 --comment" "adapter_issue_close 14 completed" \
+           "adapter_pr_create main x X $pbody --ready" "adapter_pr_create main x X $pbody true"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  err="$(faked $bad 2>&1 >/dev/null)"; st=$?
+  assert_status "the fake refuses '$bad'" "$st" 2
+  assert_contains "with a message on stderr" "$err" "${bad%% *}"
+done
+err="$(faked adapter_issue_relabel 14 --add "" 2>&1 >/dev/null)"; st=$?
+assert_status "the fake refuses an empty --add as missing its value" "$st" 2
+assert_contains "with a message on stderr" "$err" "--add needs a value"
+err="$(faked adapter_issue_close 14 --comment "" 2>&1 >/dev/null)"; st=$?
+assert_status "the fake refuses an empty --comment as missing its value" "$st" 2
+assert_contains "with a message on stderr" "$err" "--comment needs a value"
+rm -f "$pbody"
+assert_eq "and a refused close left the issue open" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/state")" "OPEN"
 restore_suite_env
 assert_eq "restore_suite_env undoes fake_github" \
   "${ORCH_GH_ADAPTER-unset} ${ORCH_GH_FAKE_STORE-unset}" "unset unset"
@@ -6458,23 +6486,55 @@ assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessibl
 
 gh_reply 0 'https://github.com/acme/widgets/issues/23' '' \
   issue edit 23 --remove-label "triage me" --remove-label bug --add-label afk --add-label enhancement
-out="$(contract adapter_issue_relabel 23 "afk,enhancement" "triage me,bug" 2>&1)"; st=$?
+out="$(contract adapter_issue_relabel 23 --add afk --remove "triage me" --add enhancement --remove bug 2>&1)"; st=$?
 assert_status "issue relabel: removes and adds in one edit" "$st" 0
 assert_eq "printing nothing" "$out" ""
 gh_reply 0 '' '' issue edit 24 --add-label wontfix
-out="$(contract adapter_issue_relabel 24 wontfix "" 2>&1)"; st=$?
+out="$(contract adapter_issue_relabel 24 --add wontfix 2>&1)"; st=$?
 assert_status "issue relabel: with nothing to remove, only adds" "$st" 0
+gh_reply 0 '' '' issue edit 25 --remove-label "triage me"
+out="$(contract adapter_issue_relabel 25 --remove "triage me" 2>&1)"; st=$?
+assert_status "issue relabel: with nothing to add, only removes" "$st" 0
+calls="$(gh_calls)"
+out="$(contract adapter_issue_relabel 25 2>&1)"; st=$?
+assert_status "issue relabel: with nothing to add or remove, succeeds" "$st" 0
+assert_eq "printing nothing" "$out" ""
+assert_eq "and making no gh call" "$(gh_calls)" "$calls"
+# The argument grammar (#664): an unknown option, or one missing its value,
+# exits 2 with a message on stderr before any gh call - a caller still on the
+# old positional grammar among them.
+for bad in "--label afk" "--add" "--remove" "afk triage" "--add afk --remove"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  err="$(contract adapter_issue_relabel 25 $bad 2>&1 >/dev/null)"; st=$?
+  assert_status "issue relabel: '$bad' is refused" "$st" 2
+  assert_contains "with a message on stderr" "$err" "adapter_issue_relabel"
+done
+err="$(contract adapter_issue_relabel 25 --add "" 2>&1 >/dev/null)"; st=$?
+assert_status "issue relabel: an empty --add is refused as missing its value" "$st" 2
+assert_contains "with a message on stderr" "$err" "--add needs a value"
+assert_eq "no refused relabel made a gh call" "$(gh_calls)" "$calls"
 
 gh_reply 0 'Closed issue #23' '' issue close 23 --reason completed
-out="$(contract adapter_issue_close 23 completed 2>&1)"; st=$?
+out="$(contract adapter_issue_close 23 --reason completed 2>&1)"; st=$?
 assert_status "issue close: closes with the reason given" "$st" 0
 assert_eq "printing nothing" "$out" ""
 gh_reply 0 '' '' issue close 24 --reason "not planned" --comment "Retired."
-out="$(contract adapter_issue_close 24 "not planned" "Retired." 2>&1)"; st=$?
+out="$(contract adapter_issue_close 24 --comment "Retired." --reason "not planned" 2>&1)"; st=$?
 assert_status "issue close: with a reason and a comment" "$st" 0
 gh_reply 0 '' '' issue close 25 --comment "Redone."
-out="$(contract adapter_issue_close 25 "" "Redone." 2>&1)"; st=$?
+out="$(contract adapter_issue_close 25 --comment "Redone." 2>&1)"; st=$?
 assert_status "issue close: with a comment and gh's default reason" "$st" 0
+calls="$(gh_calls)"
+for bad in "--why completed" "--reason" "--comment" "completed" "--reason completed --comment"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  err="$(contract adapter_issue_close 27 $bad 2>&1 >/dev/null)"; st=$?
+  assert_status "issue close: '$bad' is refused" "$st" 2
+  assert_contains "with a message on stderr" "$err" "adapter_issue_close"
+done
+err="$(contract adapter_issue_close 27 --reason "" --comment "Redone." 2>&1 >/dev/null)"; st=$?
+assert_status "issue close: an empty --reason is refused as missing its value" "$st" 2
+assert_contains "with a message on stderr" "$err" "--reason needs a value"
+assert_eq "no refused close made a gh call" "$(gh_calls)" "$calls"
 gh_reply 1 '' 'HTTP 502: Bad Gateway' issue close 26
 out="$(contract adapter_issue_close 26 2>&1)"; st=$?
 assert_status "issue close: a gh failure fails it" "$st" 1
@@ -6494,7 +6554,7 @@ assert_eq "every issue operation was pinned to the resolved repo" \
 # printed.
 gh_reply 0 $'https://github.com/acme/widgets/pull/31\n' '' \
   pr create --draft --base main --head orch/16-x --title "Add it" --body-file "$ibody"
-out="$(contract adapter_pr_create main orch/16-x "Add it" "$ibody" true 2>&1)"; st=$?
+out="$(contract adapter_pr_create main orch/16-x "Add it" "$ibody" --draft 2>&1)"; st=$?
 assert_status "pr create: opens a draft PR from head into base" "$st" 0
 assert_eq "printing its number alone" "$out" "31"
 gh_reply 0 $'https://github.com/acme/widgets/pull/32\n' '' \
@@ -6512,6 +6572,14 @@ gh_reply 1 '' 'a pull request for branch "dup" into branch "main" already exists
 out="$(contract adapter_pr_create main dup "Dup" "$ibody" 2>&1)"; st=$?
 assert_status "pr create: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" 'a pull request for branch "dup" into branch "main" already exists'
+calls="$(gh_calls)"
+for bad in "--ready" "true" "--draft --base"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  err="$(contract adapter_pr_create main bad "Bad" "$ibody" $bad 2>&1 >/dev/null)"; st=$?
+  assert_status "pr create: '$bad' is refused" "$st" 2
+  assert_contains "with a message on stderr" "$err" "adapter_pr_create"
+done
+assert_eq "no refused create made a gh call" "$(gh_calls)" "$calls"
 
 gh_reply 0 $'Closes #12\n\nAdds it.\n' '' pr view 57 --json body --jq .body
 out="$(contract adapter_pr_body 57 2>&1)"; st=$?

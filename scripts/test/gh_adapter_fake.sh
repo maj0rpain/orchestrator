@@ -7,10 +7,12 @@
 # GitHub call.
 #
 # The fake is a file store (#280). Its operations, under the #280 operation
-# contract, parse no arguments: each keeps its state in the directory
-# ORCH_GH_FAKE_STORE names, so what one orch.sh process wrote is there for the
-# next one a test runs. orch_test.sh's fake_github creates the store, and its
-# fake_* helpers seed and read it back. Its layout:
+# contract, parse none of gh's flags, only each operation's own arguments - the
+# grammar the real ones take (#664), options parsed before fake_failing so a
+# bad call exits 2 even where a failure is seeded. Each keeps its state in the
+# directory ORCH_GH_FAKE_STORE names, so what one orch.sh process wrote is there
+# for the next one a test runs. orch_test.sh's fake_github creates the store,
+# and its fake_* helpers seed and read it back. Its layout:
 #
 #   labels           one label per line, "<name><TAB><colour><TAB><description>";
 #                    absent, the repo has no labels
@@ -356,39 +358,71 @@ adapter_issue_comment() {
   fake_comment_add "$1" fake-gh 2026-01-01T00:00:00Z "$2"
 }
 
-# adapter_issue_relabel <n> <add> <remove>: the comma-separated labels removed
-# from, then added to, the stored labels, each once.
+# fake_option_value <operation> <option> [value...]: true where <option> is
+# followed by a non-empty value; otherwise says so on stderr and returns 2, as
+# the real adapter's adapter_option_value does.
+fake_option_value() {
+  [ -z "${3:-}" ] || return 0
+  printf 'fake gh: %s: %s needs a value\n' "$1" "$2" >&2
+  return 2
+}
+
+# fake_unknown_option <operation> <argument>: refuses an argument the
+# operation does not take, on stderr, with status 2.
+fake_unknown_option() {
+  printf "fake gh: %s: unknown option '%s'\n" "$1" "$2" >&2
+  return 2
+}
+
+# adapter_issue_relabel <n> [--add <label>]... [--remove <label>]...: the
+# labels named removed from, then added to, the stored labels, each once.
 adapter_issue_relabel() {
-  local f l add=() remove=()
+  local n="$1" f l adds=() removes=()
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --add)    fake_option_value adapter_issue_relabel "$@" || return; adds+=("$2"); shift 2 ;;
+      --remove) fake_option_value adapter_issue_relabel "$@" || return; removes+=("$2"); shift 2 ;;
+      *) fake_unknown_option adapter_issue_relabel "$1"; return ;;
+    esac
+  done
+  # With nothing named, the real one makes no gh call, so nothing can fail.
+  [ ${#adds[@]} -gt 0 ] || [ ${#removes[@]} -gt 0 ] || return 0
   ! fake_failing adapter_issue_relabel || return 1
-  fake_issue_known "$1" || return 1
-  f="$(fake_issue_dir "$1")/labels"
-  [ -z "$2" ] || IFS=, read -r -a add <<<"$2"
-  [ -z "$3" ] || IFS=, read -r -a remove <<<"$3"
-  for l in ${remove[@]+"${remove[@]}"}; do
+  fake_issue_known "$n" || return 1
+  f="$(fake_issue_dir "$n")/labels"
+  for l in ${removes[@]+"${removes[@]}"}; do
     { grep -vxF -- "$l" "$f" || true; } >"$f.tmp"; mv "$f.tmp" "$f"
   done
-  for l in ${add[@]+"${add[@]}"}; do
+  for l in ${adds[@]+"${adds[@]}"}; do
     grep -qxF -- "$l" "$f" || printf '%s\n' "$l" >>"$f"
   done
 }
 
-# adapter_issue_close <n> [reason] [comment]: the stored issue CLOSED, its
-# reason (completed where none is given, as GitHub defaults) in reason, and
-# the comment, where given, appended by fake-gh.
+# adapter_issue_close <n> [--reason <r>] [--comment <c>]: the stored issue
+# CLOSED, its reason (completed where none is given, as GitHub defaults) in
+# reason, and the comment, where given, appended by fake-gh.
 adapter_issue_close() {
-  local d c
+  local n="$1" reason=completed comment="" d c
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --reason)  fake_option_value adapter_issue_close "$@" || return; reason="$2"; shift 2 ;;
+      --comment) fake_option_value adapter_issue_close "$@" || return; comment="$2"; shift 2 ;;
+      *) fake_unknown_option adapter_issue_close "$1"; return ;;
+    esac
+  done
   ! fake_failing adapter_issue_close || return 1
-  fake_issue_known "$1" || return 1
-  d="$(fake_issue_dir "$1")"
-  if [ -n "${3:-}" ]; then
+  fake_issue_known "$n" || return 1
+  d="$(fake_issue_dir "$n")"
+  if [ -n "$comment" ]; then
     c="$(mktemp)"
-    printf '%s' "$3" >"$c"
-    fake_comment_add "$1" fake-gh 2026-01-01T00:00:00Z "$c"
+    printf '%s' "$comment" >"$c"
+    fake_comment_add "$n" fake-gh 2026-01-01T00:00:00Z "$c"
     rm -f "$c"
   fi
   printf 'CLOSED\n' >"$d/state"
-  printf '%s\n' "${2:-completed}" >"$d/reason"
+  printf '%s\n' "$reason" >"$d/reason"
 }
 
 # adapter_issue_reopen <n>: the stored issue OPEN again.
@@ -411,12 +445,19 @@ fake_pr_known() {
   return 1
 }
 
-# adapter_pr_create <base> <head> <title> <body-file> [draft]: a new open PR in
-# the store, numbered as next_pr set (default one past the highest issue or PR
-# number the store holds, the two sharing GitHub's numbering), its number
-# printed.
+# adapter_pr_create <base> <head> <title> <body-file> [--draft]: a new open PR
+# in the store, numbered as next_pr set (default one past the highest issue or
+# PR number the store holds, the two sharing GitHub's numbering), a draft under
+# --draft, its number printed.
 adapter_pr_create() {
-  local n d
+  local base="$1" head="$2" title="$3" body="$4" draft=false n d
+  shift 4
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --draft) draft=true; shift ;;
+      *) fake_unknown_option adapter_pr_create "$1"; return ;;
+    esac
+  done
   ! fake_failing adapter_pr_create || return 1
   n="$(cat "$(fake_store)/next_pr" 2>/dev/null)"
   [ -n "$n" ] || n="$(fake_next_number)"
@@ -424,11 +465,11 @@ adapter_pr_create() {
   d="$(fake_pr_dir "$n")"
   mkdir -p "$d"
   printf 'OPEN\n' >"$d/state"
-  printf '%s\n' "$1" >"$d/base"
-  printf '%s\n' "$2" >"$d/head"
-  printf '%s\n' "$3" >"$d/title"
-  cat "$4" >"$d/body"
-  [ "${5:-false}" != true ] || : >"$d/draft"
+  printf '%s\n' "$base" >"$d/base"
+  printf '%s\n' "$head" >"$d/head"
+  printf '%s\n' "$title" >"$d/title"
+  cat "$body" >"$d/body"
+  [ "$draft" != true ] || : >"$d/draft"
   printf '%s\n' "$n"
 }
 
