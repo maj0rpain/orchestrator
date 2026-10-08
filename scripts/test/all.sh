@@ -20,7 +20,14 @@
 # failed (exit N)". With no shellcheck on PATH it prints "shellcheck: not
 # installed - skipped", which fails the run only when CI is set.
 #
-# Exits 1 when any suite failed or shellcheck did not pass.
+# The three suites run with TMPDIR set to a fresh, empty directory under that
+# temporary directory. Once they have finished, if anything is left in it -
+# a suite that did not remove its temp files - all.sh prints "all.sh: the
+# suites left temp files behind" after the suites' summaries and before
+# the shellcheck summary, and the run fails.
+#
+# Exits 1 when any suite failed, a suite left temp files behind, or shellcheck
+# did not pass.
 #
 # ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs. VERSION_BASE
 # passes through untouched - set, empty or unset - for docs_lint.sh's version
@@ -37,11 +44,13 @@ dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 tmp="$(mktemp -d)" || exit 1
 trap 'rm -rf "$tmp"' EXIT
 failed=0
+suites_tmp="$tmp/suites-tmp"
+mkdir "$suites_tmp" || exit 1
 
 suites=(orch_test.sh hooks_test.sh docs_lint.sh)
 pids=()
 for suite in "${suites[@]}"; do
-  bash "$dir/$suite" >"$tmp/$suite" &
+  TMPDIR="$suites_tmp" bash "$dir/$suite" >"$tmp/$suite" &
   pids+=("$!")
 done
 have_sc=0
@@ -67,6 +76,15 @@ for suite in "${suites[@]}"; do
     { in_fail = 0 }
     /^  FAIL / { print; in_fail = 1 }'
   echo "$suite: $(printf '%s\n' "$out" | tail -n 1)"
+done
+
+leftovers=("$suites_tmp"/* "$suites_tmp"/.[!.]* "$suites_tmp"/..?*)
+for leftover in "${leftovers[@]}"; do
+  if [ -e "$leftover" ] || [ -L "$leftover" ]; then
+    echo "all.sh: the suites left temp files behind"
+    failed=1
+    break
+  fi
 done
 
 if [ "$have_sc" -eq 0 ]; then

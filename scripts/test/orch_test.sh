@@ -1283,6 +1283,29 @@ assert_eq "hooks_test.sh's TMPDIR gains an entry while it runs" \
 kill -TERM "$root_pid" 2>/dev/null
 wait "$root_pid"
 assert_eq "hooks_test.sh sent TERM leaves its TMPDIR empty" "$(ls -A "$root_tmp")" ""
+
+# all.sh checks every full run for leaks: a copy of it beside three stub
+# suites that pass, run with no shellcheck on its PATH, once with an
+# orch_test.sh stub that leaves a file in its TMPDIR.
+root_all="$root_dir/all"
+mkdir -p "$root_all/scripts/test" "$root_all/bin" "$root_all/tmp"
+cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$root_all/scripts/test/"
+for root_tool in bash dirname awk tail mktemp rm mkdir; do
+  ln -s "$(command -v "$root_tool")" "$root_all/bin/$root_tool"
+done
+for root_stub in orch_test.sh hooks_test.sh docs_lint.sh; do
+  printf '#!/usr/bin/env bash\necho; echo "1 passed, 0 failed"\n' >"$root_all/scripts/test/$root_stub"
+done
+out="$(unset CI; TMPDIR="$root_all/tmp" PATH="$root_all/bin" bash "$root_all/scripts/test/all.sh" 2>&1)"; st=$?
+assert_status "all.sh passes when its suites leave nothing behind" "$st" 0
+assert_eq "all.sh says nothing of leaks when its suites leave nothing behind" \
+  "$(printf '%s\n' "$out" | grep -c 'the suites left temp files behind')" "0"
+printf '#!/usr/bin/env bash\n: >"$TMPDIR/leaked"\necho; echo "1 passed, 0 failed"\n' \
+  >"$root_all/scripts/test/orch_test.sh"
+out="$(unset CI; TMPDIR="$root_all/tmp" PATH="$root_all/bin" bash "$root_all/scripts/test/all.sh" 2>&1)"; st=$?
+assert_status "all.sh fails a run whose suites leave a temp file behind" "$st" 1
+assert_contains "all.sh says the suites left temp files behind" "$out" \
+  "all.sh: the suites left temp files behind"
 rm -rf "$root_dir"
 
 # --- init -------------------------------------------------------------------
@@ -10069,7 +10092,7 @@ all_dir="$all_root/scripts/test"
 all_bin="$all_root/bin"
 mkdir -p "$all_dir" "$all_bin"
 cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$all_dir/"
-for all_tool in bash dirname awk tail mktemp rm sleep; do
+for all_tool in bash dirname awk tail mktemp rm mkdir sleep; do
   ln -s "$(command -v "$all_tool")" "$all_bin/$all_tool"
 done
 echo 'echo planted' >"$all_root/scripts/lint_me.sh"
