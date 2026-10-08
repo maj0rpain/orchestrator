@@ -171,7 +171,8 @@ mkdir -p "$REPO/.orchestrator"
 # to its next or redo; otherwise the interviewed-issue step and the route
 # question, where only Blueprint runs in this checkout.
 separate_checkout="starting a flow or a quick implementation must be done from a separate checkout of the repo, opened in its own session there"
-# $1 where, $2 context, $3 the next/redo pointer text expected for the host.
+# $1 where, $2 context, $3 the next/redo pointer text expected for the host,
+# $4 host (claude|junie), default claude.
 check_flow_variant() {
   local where="$1" ctx="$2" next_redo="$3" host="${4:-claude}"
   check_blueprint_rewrite "beside an active flow $where" "$ctx" "$host"

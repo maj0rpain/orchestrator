@@ -2426,6 +2426,8 @@ assert_status "a second argument is a usage error" "$st" 2
 out="$("$ORCH" issue bogus 2>&1)"
 assert_contains "the unknown-op message lists ready" "$out" "|ready"
 assert_contains "help documents issue ready" "$("$ORCH" help)" "issue ready <n>"
+assert_contains "the CLI conventions' noun table lists issue ready" \
+  "$(grep '^| `issue`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`ready`'
 restore_suite_env
 
 # --- mp-skill ---------------------------------------------------------------
