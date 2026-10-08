@@ -152,6 +152,11 @@ check_flow_variant() {
   # only in the second case, so the same-flow branch is not contradicted.
   assert_contains "asks the route question only in the second case $where" "$ctx" \
     "- Only in the second case above (planning about anything else): "
+  # Only Blueprint runs here (#640, story 6): the route question's run
+  # instructions never tell the model to start a quick implementation in this
+  # checkout, whose branch belongs to the running flow.
+  assert_not_contains "offers no quick implementation run in this checkout $where" "$ctx" \
+    "orch-quick-implement"
 }
 route_block='      1. Start the orchestrator flow - the full plan -> spec -> implement ->
          review pipeline, with its own handoff and review loop.
@@ -184,6 +189,10 @@ echo '{"slug":"x","phase":null,"issue":null}' >"$REPO/.orchestrator/state.json"
 ctx="$(skill_event "grilling" s6c | "$GRILL" | jq -r '.additionalContext')"
 assert_contains "names a freshly started flow by slug as just started" "$ctx" \
   "the flow x is active in this checkout, just started; it has no issue yet"
+echo '{"phase":"spec"}' >"$REPO/.orchestrator/state.json"
+ctx="$(skill_event "grilling" s6e | "$GRILL" | jq -r '.additionalContext')"
+assert_contains "states the phase of readable state with no issue or slug" "$ctx" \
+  "a flow with no issue or slug is active in this checkout, at phase spec"
 echo 'not json' >"$REPO/.orchestrator/state.json"
 ctx="$(skill_event "grilling" s6d | "$GRILL" | jq -r '.additionalContext')"
 assert_contains "says a flow is active without naming it for unreadable state" "$ctx" \

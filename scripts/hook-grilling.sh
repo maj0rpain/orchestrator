@@ -96,18 +96,24 @@ ready_label="$(triage_label_for ready-for-agent)"
 wontfix_label="$(triage_label_for wontfix)"
 human_label="$(triage_label_for ready-for-human)"
 
+# How to run each route, split so that beside an active flow (#640) the
+# question keeps only Blueprint's: the flow and quick-implementation routes
+# must not run in a checkout whose branch belongs to the running flow.
 if [ "$host" = junie ]; then
   ask_tool="the ask_user tool"
   ask_step="Call the ask_user tool with
   exactly three options:"
   plugin_root="$(hook_plugin_root)"
-  run_next="- On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
-  \"Quick implementation\", the orch-quick-implement skill; on \"Blueprint
-  only\", the orch-to-spec skill, then orch-spec-review if the user wants a
+  run_flow_quick="On \"Start the orchestrator flow\", run the orch-flow skill yourself; on
+  \"Quick implementation\", the orch-quick-implement skill. "
+  run_blueprint="On \"Blueprint
+  only\", run the orch-to-spec skill, then orch-spec-review if the user wants a
   review, then orch-to-tickets. This host has no Skill tool, so read each
-  skill's file and follow it verbatim:
+  skill's file and follow it verbatim:"
+  flow_quick_files="
   $plugin_root/skills/orch-flow/SKILL.md,
-  $(hook_quick_skill_file),
+  $(hook_quick_skill_file),"
+  blueprint_files="
   $plugin_root/skills/orch-to-spec/SKILL.md,
   $plugin_root/skills/orch-spec-review/SKILL.md (its standalone spec review), or
   $plugin_root/skills/orch-to-tickets/SKILL.md."
@@ -115,19 +121,23 @@ else
   ask_tool="the AskUserQuestion tool"
   ask_step="Call the AskUserQuestion tool with
   exactly three options:"
-  run_next="- On \"Start the orchestrator flow\", call the Skill tool with
+  run_flow_quick="On \"Start the orchestrator flow\", call the Skill tool with
   \"orchestrator:orch-flow\" yourself. On \"Quick implementation\", call the Skill
-  tool with \"orchestrator:orch-quick-implement\" yourself. On \"Blueprint
+  tool with \"orchestrator:orch-quick-implement\" yourself. "
+  run_blueprint="On \"Blueprint
   only\", call the Skill tool with \"orchestrator:orch-to-spec\", then with
   \"orchestrator:orch-spec-review\" (its standalone spec review) if the user
   wants a review, then with \"orchestrator:orch-to-tickets\", yourself. The
   orchestrator's skills are model-invocable: call them, do not hand them to the
   user."
+  flow_quick_files=""
+  blueprint_files=""
 fi
 
 # The active flow, named by whatever state.json holds: its issue, else its
-# slug with "has no issue yet"; a null phase is a flow init just started.
-# Only state that is not a JSON object leaves it unnamed.
+# slug with "has no issue yet", else neither; plus its phase, where a null
+# phase is a flow init just started. Only state that cannot be read as a JSON
+# object leaves it unnamed, with no phase claimed.
 flow_branches=""
 route_here=""
 # The branches stand in place of the route question (#640): beside a flow, the
@@ -136,22 +146,26 @@ confirm_lead="Before you implement anything"
 close_lead="When you reach a shared understanding"
 if [ "$flow_active" = 1 ]; then
   state="$root/.orchestrator/state.json"
-  flow_issue="" flow_slug="" flow_phase=""
+  flow_readable=0 flow_issue="" flow_slug="" flow_phase=""
   if jq -e 'type == "object"' "$state" >/dev/null 2>&1; then
+    flow_readable=1
     flow_issue="$(jq -r '.issue // "" | tostring' "$state")"
     flow_slug="$(jq -r '.slug // "" | tostring' "$state")"
     flow_phase="$(jq -r '.phase // "" | tostring' "$state")"
   fi
   if [ -n "$flow_phase" ]; then flow_at="at phase $flow_phase"; else flow_at="just started"; fi
-  if [ -n "$flow_issue" ]; then
+  if [ "$flow_readable" = 0 ]; then
+    flow_named="a flow is active in this checkout"
+    flow_subject="that flow's own work"
+  elif [ -n "$flow_issue" ]; then
     flow_named="the flow for #$flow_issue is active in this checkout, $flow_at"
     flow_subject="this flow's issue, #$flow_issue"
   elif [ -n "$flow_slug" ]; then
     flow_named="the flow $flow_slug is active in this checkout, $flow_at; it has no issue yet"
     flow_subject="this flow's change"
   else
-    flow_named="a flow is active in this checkout"
-    flow_subject="that flow's own work"
+    flow_named="a flow with no issue or slug is active in this checkout, $flow_at"
+    flow_subject="this flow's change"
   fi
   if [ "$host" = junie ]; then
     next_redo="the **Next phase** and **Redo** sections of $(hook_plugin_root)/skills/orch-flow/SKILL.md
@@ -172,8 +186,13 @@ if [ "$flow_active" = 1 ]; then
   close_lead="$only_second when you reach a shared understanding"
   route_here="
   Blueprint only is the one route that runs in this checkout, whose branch
-  belongs to the running flow: starting a flow or a quick implementation must be done from a separate checkout of the repo, opened in its own session there."
+  belongs to the running flow: starting a flow or a quick implementation must be done from a separate checkout of the repo, opened in its own session there.
+  On \"Start the orchestrator flow\" or \"Quick implementation\", run no skill
+  here: tell the user that, and stop."
+  # Beside a flow, only Blueprint's run instructions stand.
+  run_flow_quick="" flow_quick_files=""
 fi
+run_next="- ${run_flow_quick}${run_blueprint}${flow_quick_files}${blueprint_files}"
 
 # The interviewed issue (#571): an open issue the planning was about is
 # offered a move to ready-for-agent before the route question, so init
