@@ -1991,7 +1991,7 @@ review_rerun() {
   capture out err adapter_pr_checks "$pr" all || rc=$?
   gh_line="${err%%$'\n'*}"
   [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: ${gh_line:-gh gave no reason}"
-  [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: ${gh_line:-no checks reported}"
+  [ -n "$out" ] || die2 "PR #$pr has no checks to rerun: ${gh_line:-no checks reported}"
   # The first failed or cancelled check's name and link, split by tsv_split
   # so an empty name survives: IFS=$'\t' read would collapse it, a tab being
   # IFS whitespace. No failed check leaves both empty.
