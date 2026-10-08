@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.21.3
+
+Every message that reports a failed GitHub read now carries gh's own first
+line, or `gh gave no reason` when gh printed nothing, never a bare colon
+(#823). This covers doctor's adopted-issue, labels, flow issue, flow PR, PR
+draft-state, CI and default-branch reads, and orch.sh's review rerun, issue
+triage, issue ready, finding triage and side-checkout verdicts. issue publish
+and issue triage no longer report a failed read-back as "did not verify -
+checked twice": they die `gh could not read issue #<n>: <gh's line>`, keeping
+that wording for a real mismatch. Doctor states a missing GitHub repo once and
+gives the `export GH_REPO=<owner>/<repo>` remedy once. Every stderr capture
+goes through `capture`.
+
 ## 3.21.2
 
 all.sh's shellcheck step runs one shellcheck process per shell file, all
