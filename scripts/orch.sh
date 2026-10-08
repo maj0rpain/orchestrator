@@ -93,6 +93,22 @@ dir_stamp() { date -u +%Y%m%d-%H%M%S; }
 # Several answers here are one line of prose followed by detail lines, and it is
 # always the first line that carries the verdict.
 first_line() { printf '%s\n' "$1" | sed -n 1p; }
+# capture <out-var> <err-var> <command...>: runs the command, sets <out-var> to
+# its stdout (by command substitution, so trailing newlines go) and <err-var> to
+# its stderr byte for byte, and returns its status. The stderr goes through one
+# temp file capture owns. Call it in the current shell, never inside $(...):
+# it sets the caller's variables with printf -v. Its locals carry a _capture_
+# prefix, so they shadow no caller's variable, nested calls included.
+capture() {
+  local _capture_file _capture_out _capture_err _capture_st=0
+  _capture_file="$(mktemp)"
+  _capture_out="$("${@:3}" 2>"$_capture_file")" || _capture_st=$?
+  _capture_err="$(cat "$_capture_file"; printf x)"
+  rm -f "$_capture_file"
+  printf -v "$1" '%s' "$_capture_out"
+  printf -v "$2" '%s' "${_capture_err%x}"
+  return "$_capture_st"
+}
 # The argument with leading and trailing whitespace removed.
 trim() {
   local s="$1"
@@ -1407,17 +1423,14 @@ adapter_auth_status() {
 adapter_pr_checks() {
   local args=("$1") err out tsv st=0
   [ "$2" != required ] || args+=(--required)
-  err="$(mktemp)"
-  out="$(gh pr checks "${args[@]}" --json bucket,name,link 2>"$err")" || st=$?
+  capture out err gh pr checks "${args[@]}" --json bucket,name,link || st=$?
   case "$st" in
-    0|8) rm -f "$err" ;;
+    0|8) ;;
     *)
-      if grep -q 'no checks reported\|no required checks' "$err"; then
-        rm -f "$err"
+      if grep -q 'no checks reported\|no required checks' <<<"$err"; then
         return 0
       fi
-      cat "$err" >&2
-      rm -f "$err"
+      printf '%s' "$err" >&2
       return "$st" ;;
   esac
   if ! tsv="$(printf '%s' "$out" | jq -r '.[] | "\(.bucket)\t\(.name)\t\(.link // "")"' 2>/dev/null)"; then
@@ -1439,18 +1452,14 @@ adapter_pr_checks() {
 # CI-evidence operations below; not called from anywhere else.
 ci_api_read() {
   local err out res st=0
-  err="$(mktemp)"
-  out="$(gh api "$2" 2>"$err")" || st=$?
+  capture out err gh api "$2" || st=$?
   if [ "$st" != 0 ]; then
-    if [ -n "$1" ] && printf '%s\n' "$out" | cat - "$err" | grep -qF -- "$1"; then
-      rm -f "$err"
+    if [ -n "$1" ] && grep -qF -- "$1" <<<"$out"$'\n'"$err"; then
       return 0
     fi
-    cat "$err" >&2
-    rm -f "$err"
+    printf '%s' "$err" >&2
     return "$st"
   fi
-  rm -f "$err"
   if ! res="$(printf '%s' "$out" | jq -r "$3" 2>/dev/null)"; then
     printf 'gh api answered with something jq could not read\n' >&2
     return 1
@@ -1659,14 +1668,11 @@ ci_ref_unchecked() {
 # mark a PR ready over checks nobody read.
 ci_probe() {
   local pr="$1" scope="$2" out err failed name
-  err="$(mktemp)"
-  if ! out="$(adapter_pr_checks "$pr" "$scope" 2>"$err")"; then
+  if ! capture out err adapter_pr_checks "$pr" "$scope"; then
     note unreachable
-    note "      $(first_line "$(cat "$err")")"
-    rm -f "$err"
+    note "      $(first_line "$err")"
     return 0
   fi
-  rm -f "$err"
   if [ -z "$out" ]; then note none; return 0; fi
   failed="$(printf '%s\n' "$out" | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2 }')"
   if [ -n "$failed" ]; then
