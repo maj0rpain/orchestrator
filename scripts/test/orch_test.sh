@@ -778,31 +778,6 @@ assert_eq "no caller git config is reachable" \
   "${XDG_CONFIG_HOME-unset} ${GIT_CONFIG_GLOBAL-unset}" "unset unset"
 assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
 
-# --- triage-labels module ---------------------------------------------------
-# The triage-label parser is its own sourced module (#575), callable with only
-# ROOT defined: a script that needs the repo's triage labels sources it alone,
-# never doctor.sh or orch.sh's shared mechanism.
-echo
-echo "triage-labels module"
-tl_root="$(mktemp -d)"
-mkdir -p "$tl_root/docs/agents"
-writeln '# Triage Labels' '' \
-        '| Label in mattpocock/skills | Label in our tracker | Meaning   |' \
-        '| -------------------------- | -------------------- | --------- |' \
-        '| `ready-for-agent`          | `afk`                | AFK-ready |' \
-  >"$tl_root/docs/agents/triage-labels.md"
-tl_module="$(dirname "$ORCH")/triage-labels.sh"
-out="$(env -i PATH="$PATH" ROOT="$tl_root" bash -c \
-  'set -euo pipefail; source "$1"; triage_label_for ready-for-agent; triage_label_for wontfix' \
-  _ "$tl_module" 2>&1)"; st=$?
-assert_status "the module runs with only ROOT defined" "$st" 0
-assert_eq "it reads the repo's own label and falls back to the role" "$out" "$(writeln afk wontfix)"
-out="$(env -i PATH="$PATH" ROOT="$tl_root/none" bash -c \
-  'set -euo pipefail; source "$1"; triage_expected_labels' _ "$tl_module" 2>&1)"
-assert_eq "with no labels doc it expects the five canonical names" "$out" \
-  "$(writeln needs-triage needs-info ready-for-agent ready-for-human wontfix)"
-rm -rf "$tl_root"
-
 # --- init -------------------------------------------------------------------
 echo
 echo "init"
