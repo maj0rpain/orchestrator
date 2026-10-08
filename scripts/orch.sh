@@ -1064,12 +1064,23 @@ review_budget() {
 #
 # The operations, in the order they are defined below:
 # - label: adapter_label_upsert, adapter_label_create, adapter_labels
-# - issue: adapter_issue_*, adapter_issues_labelled
-# - pr: adapter_pr_*, adapter_prs_*
-# - sub-issue and dependency: adapter_sub_issue*, adapter_issue_parent,
-#   adapter_blocker*
-# - repo: adapter_repo_*, adapter_auth_status
-# - ci: adapter_pr_checks, adapter_branch_*, adapter_commit_*, adapter_run_rerun
+# - issue: adapter_issue_body, adapter_issue_comments,
+#   adapter_issue_state_labels, adapter_issue_title_labels,
+#   adapter_issue_state, adapter_issues_labelled, adapter_issue_create,
+#   adapter_issue_body_edit, adapter_issue_comment, adapter_issue_relabel,
+#   adapter_issue_close, adapter_issue_reopen
+# - pr: adapter_pr_create, adapter_pr_body, adapter_pr_comments,
+#   adapter_pr_refs, adapter_pr_ready, adapter_pr_state_draft,
+#   adapter_prs_open, adapter_prs_merged, adapter_prs_merged_bodies,
+#   adapter_pr_close, adapter_pr_comment, adapter_pr_body_edit
+# - sub-issue and dependency: adapter_sub_issues, adapter_sub_issue_link,
+#   adapter_sub_issue_unlink, adapter_issue_parent, adapter_blockers,
+#   adapter_blocker_add, adapter_blocker_remove, adapter_sub_issues_supported
+# - repo: adapter_repo_default_branch, adapter_repo_local_default,
+#   adapter_auth_status
+# - ci: adapter_pr_checks, adapter_branch_required_checks,
+#   adapter_branch_rules, adapter_commit_has_check_runs,
+#   adapter_commit_has_statuses, adapter_run_rerun
 #
 # ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as the ORCH_CI_*
 # ones above, but read differently: not a value substituted at load time, but
