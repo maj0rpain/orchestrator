@@ -33,9 +33,9 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 # For triage_label_for, so the closing step names this repo's own triage
-# labels. doctor.sh reads the labels doc at $ROOT/$LABELS_DOC, the path
-# orch.sh sets too.
-source "$(dirname "${BASH_SOURCE[0]}")/doctor.sh"
+# labels. The module reads the labels doc at $ROOT/$LABELS_DOC and needs
+# only ROOT, set below.
+source "$(dirname "${BASH_SOURCE[0]}")/triage-labels.sh"
 
 hook_read_skill_and_session
 
@@ -93,7 +93,6 @@ flow_active=0
 if hook_flow_active "$root"; then flow_active=1; fi
 
 ROOT="$root"
-LABELS_DOC="docs/agents/triage-labels.md"
 ready_label="$(triage_label_for ready-for-agent)"
 wontfix_label="$(triage_label_for wontfix)"
 human_label="$(triage_label_for ready-for-human)"

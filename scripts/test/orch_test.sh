@@ -2169,6 +2169,14 @@ out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "publishes under a renamed ready-for-agent label" "$st" 0
 assert_eq "applying the repo's name for it, rather than the canonical one" "$(fake_labels_of "$out")" "agent go "
 
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `ready-for-agent`          | `-agent`             | AFK-ready   |' >docs/agents/triage-labels.md
+out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
+assert_status "verifies a ready-for-agent label beginning with '-'" "$st" 0
+assert_eq "applying it" "$(fake_labels_of "$out")" "-agent "
+
 rm docs/agents/triage-labels.md
 out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "publishes with no labels doc at all" "$st" 0
@@ -2256,6 +2264,14 @@ for held in wontfix ready-for-human; do
   assert_eq "replaced by ready-for-agent" "$(fake_labels_of 44)" "ready-for-agent "
   assert_eq "with exactly one comment" "$(comment_count 44)" "1"
 done
+
+# Both held: wontfix wins over ready-for-human, whatever order they come in.
+fake_issue 57 open ready-for-human wontfix
+before="$(fake_snapshot)"
+out="$(triage 57 2>&1)"; st=$?
+assert_status "an issue holding both wontfix and ready-for-human asks for a decision, exit 2" "$st" 2
+assert_eq "printing wontfix" "$out" "wontfix"
+assert_eq "changing nothing" "$(fake_snapshot)" "$before"
 
 fake_issue 45 open needs-triage review:major
 before="$(fake_snapshot)"
@@ -2362,6 +2378,18 @@ out="$(triage 50 2>&1)"; st=$?
 assert_status "a readback stale twice dies" "$st" 1
 assert_contains "naming the issue" "$out" "issue #50"
 assert_eq "posting no comment" "$(comment_count 50)" "0"
+
+# The first read answers; both verify re-reads fail. The relabel has
+# already happened, so it stands, and no comment claims it verified.
+fake_issue 56 open needs-triage
+fake_fail_after adapter_issue_state_labels 1 "HTTP 502: Bad Gateway"
+out="$(triage 56 2>&1)"; st=$?
+assert_status "a verify re-read that fails twice dies" "$st" 1
+assert_contains "saying the label did not verify, naming the issue" "$out" \
+  "issue #56's 'ready-for-agent' label did not verify - checked twice, both failed"
+assert_eq "the relabel standing" "$(fake_labels_of 56)" "ready-for-agent "
+assert_eq "posting no comment" "$(comment_count 56)" "0"
+fake_unfail
 
 fake_issue 51 open needs-triage
 fake_fail adapter_issue_comment "HTTP 502: Bad Gateway"
@@ -2524,6 +2552,28 @@ assert_contains "names the missing label" "$out" "ready-for-agent"
 # validate_adopted_issue's state and labels come off the same issue, so one
 # read answers both: adapter_issue_state_labels, whose single gh call is
 # pinned in "gh adapter contract".
+
+healthy_repo
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `ready-for-agent`          | `-agent`             | AFK-ready   |' >docs/agents/triage-labels.md
+fake_issue 43 open -agent
+out="$("$ORCH" init dashed --issue 43 2>&1)"; st=$?
+assert_status "adopts an issue whose ready-for-agent label begins with '-'" "$st" 0
+assert_eq "recording it" "$("$ORCH" state get issue)" "43"
+
+healthy_repo
+fake_issue 44 open ready-for-agent
+fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
+before_store="$(fake_snapshot)"
+out="$("$ORCH" init nope --issue 44 2>&1)"; st=$?
+assert_status "refuses to adopt an issue whose read fails" "$st" 1
+assert_contains "saying it could not be read" "$out" "issue #44 could not be read from GitHub"
+assert_eq "leaving no flow active" \
+  "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+assert_eq "and GitHub unchanged" "$(fake_snapshot)" "$before_store"
+fake_unfail
 
 healthy_repo
 out="$("$ORCH" init nope --issue 2>&1)"; st=$?
@@ -2696,6 +2746,17 @@ assert_status "a label with a space in it is one label, not two" "$st" 0
 fake_label_names
 out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "quotes a multi-word label in the remedy" "$out" 'gh label create "needs triage"'
+
+# A label beginning with '-' is a label, never a grep option.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning |' \
+        '| -------------------------- | -------------------- | ------- |' \
+        '| `needs-triage`             | `-triage`            | Look    |' \
+        '| `ready-for-agent`          | `-agent`             | Go      |' >docs/agents/triage-labels.md
+fake_label_names -triage -agent
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "passes when the repo has labels beginning with '-'" "$st" 0
+assert_contains "finding every one of them" "$out" "every triage label exists on the repo"
 
 # GitHub answered the auth probe and then would not answer this one: an absent
 # answer, not a "no", so it warns.
@@ -7240,7 +7301,28 @@ finding 15 "review:nit,triage me" "\`src/other.sh:2\` at $head_sha"
 out="$(scan 2>&1)"
 assert_eq "lists under the repo's own name for needs-triage, and only it" \
   "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "15 "
+# A needs-triage label beginning with '-' is a label, never a grep option.
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `-triage`            | Evaluate it |' >docs/agents/triage-labels.md
+finding 17 "review:nit,-triage" "\`src/other.sh:2\` at $head_sha"
+out="$(scan 17 2>&1)"; st=$?
+assert_status "scans an explicit finding whose needs-triage label begins with '-'" "$st" 0
+assert_eq "listing it" "$(line_of 17 "$out")" "$(printf '17\t7\tsrc/other.sh:2\tunchanged\t')"
+fake_issue 17 closed
 rm docs/agents/triage-labels.md
+
+finding 18 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha"
+fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
+before_store="$(fake_snapshot)"
+out="$(scan 18 2>&1)"; st=$?
+assert_status "an explicit finding gh cannot read dies" "$st" 1
+assert_contains "naming the issue" "$out" "gh could not read issue #18"
+assert_eq "listing nothing" "$(printf '%s\n' "$out" | grep -c "$(printf '\t')")" "0"
+assert_eq "and changing nothing" "$(fake_snapshot)" "$before_store"
+fake_unfail
+fake_issue 18 closed
 restore_suite_env
 
 # --- finding-triage apply ------------------------------------------------------
@@ -7377,6 +7459,17 @@ for op in adapter_issue_state_labels adapter_issue_comment adapter_issue_relabel
   assert_contains "saying gh failed on the issue ($op)" "$out" "gh could not"
   assert_contains "with gh's reason ($op)" "$out" "HTTP 502: Bad Gateway"
 done
+
+# A failed read stops apply before it writes anything.
+fake_github
+triaged 2 "review:major,needs-triage,bug"
+fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
+before_store="$(fake_snapshot)"
+out="$(apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a failed read dies" "$st" 1
+assert_contains "naming the issue" "$out" "gh could not read issue #2"
+assert_eq "changing nothing" "$(fake_snapshot)" "$before_store"
+fake_unfail
 
 # Every state label is the repo's name for the role.
 writeln '# Triage Labels' '' \
