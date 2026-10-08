@@ -10040,13 +10040,15 @@ all_restore() {
 all_order="orch_test.sh hooks_test.sh docs_lint.sh shellcheck "
 all_sc_stub 0
 
-all_swap orch_test.sh 'sleep 1'
+all_swap orch_test.sh 'sleep 1' 'echo; echo "a section header"' \
+  "printf '  FAIL a slow failure\\n     its detail line\\n'" \
+  'echo; echo "1 passed, 1 failed"; exit 1'
 out="$(unset CI; PATH="$all_bin" "$all_bash" "$all_dir/all.sh" 2>&1)"; st=$?
 all_restore orch_test.sh
-assert_status "a slow suite still lets the run pass" "$st" 0
-assert_eq "a slow orch_test.sh still prints first, shellcheck's summary last" \
-  "$(all_print_order "$out")" \
-  "$all_order"
+assert_status "a slow failing suite still fails the run" "$st" 1
+assert_eq "a slow orch_test.sh's FAIL block and summary still print first, shellcheck's summary last" \
+  "$out" \
+  "$(printf '  FAIL a slow failure\n     its detail line\norch_test.sh: 1 passed, 1 failed\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed\nshellcheck: 0 findings')"
 
 # The overlap: orch_test.sh's stub finishes only once the other two suites
 # and the stub shellcheck have all dropped their markers, so a sequential
