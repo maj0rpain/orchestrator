@@ -162,8 +162,8 @@ new_repo_with_origin() {
 }
 
 # exclude_count <line>: how many times <line> appears whole in the current
-# repo's exclude file.
-exclude_count() { grep -cxF "$1" "$(git rev-parse --git-dir)/info/exclude" || true; }
+# clone's shared exclude file, the one every checkout of it reads.
+exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
 # flat_text: stdin on one line with every whitespace run collapsed to one
@@ -1798,8 +1798,8 @@ assert_eq "printing the absolute iteration-01 prefix, the slashed branch as nest
   "$out" "$rp_dir/iteration-01"
 assert_eq "creating the branch's directory" "$([ -d "$rp_dir" ] && echo yes || echo no)" "yes"
 assert_eq "records no state" "$([ -f "$top/.orchestrator/state.json" ] && echo yes || echo no)" "no"
-assert_contains "git-excludes .orchestrator/" "$(cat "$(git rev-parse --git-dir)/info/exclude")" ".orchestrator/"
-assert_contains "git-excludes .scratch/" "$(cat "$(git rev-parse --git-dir)/info/exclude")" ".scratch/"
+assert_contains "git-excludes .orchestrator/" "$(cat "$(git rev-parse --git-common-dir)/info/exclude")" ".orchestrator/"
+assert_contains "git-excludes .scratch/" "$(cat "$(git rev-parse --git-common-dir)/info/exclude")" ".scratch/"
 assert_eq "and leaves the working tree clean" "$(git status --porcelain)" ""
 echo first >"$rp_dir/iteration-01-spec.md"
 out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
@@ -4768,7 +4768,6 @@ assert_eq "and prints nothing" "$out" ""
 # level; each checkout lists only its own.
 tw_repo
 main_top="$(git rev-parse --show-toplevel)"
-common="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
 linked="$(mktemp -d)/linked"
 git worktree add -q -b orch/6-other "$linked"
 "$ORCH" ticket-worktree add 2 >/dev/null
@@ -4777,7 +4776,7 @@ out="$("$ORCH" ticket-worktree add 4)"; st=$?
 assert_status "add succeeds from a linked worktree" "$st" 0
 assert_eq "under the linked checkout's own top level" "$out" "$linked/.orchestrator/worktrees/t4"
 assert_eq "it writes the clone's shared info/exclude" \
-  "$(grep -cxF .orchestrator/ "$common/info/exclude")" "1"
+  "$(exclude_count .orchestrator/)" "1"
 assert_eq "and keeps the linked checkout's git status clean" "$(git status --porcelain)" ""
 assert_eq "the linked checkout lists only its own ticket worktree" \
   "$("$ORCH" ticket-worktree list)" "4 $linked/.orchestrator/worktrees/t4"
