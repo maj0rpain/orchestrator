@@ -2,10 +2,10 @@
 
 This project does not extract a helper for the one line that refuses an issue
 number that is not a plain number, even though many `scripts/orch.sh` command
-functions repeat it: `init --issue`, `issue fetch|update|comment|comments`,
-`issue ready`, `spec-review begin`, `review-pass begin`, `finding-triage scan`
-and `apply`, `issue triage`, `pr publish`, `ticket_sub_issues`, `ticket
-publish`, `ticket close`, `ticket parent` and `ticket_edges_change`.
+functions repeat it: `init --issue`, `issue ready`, `spec-review begin`,
+`review-pass begin`, `finding-triage scan` and `apply`, `issue triage`, `pr
+publish`, `ticket_sub_issues`, `ticket publish`, `ticket close`, `ticket
+parent` and `ticket_edges_change`.
 
 ## Why this is out of scope
 

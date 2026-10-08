@@ -7120,6 +7120,7 @@ out="$("$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
 assert_status "a gh that will not comment fails it" "$st" 1
 assert_contains "with gh's reason" "$out" "issue comment refused"
 assert_contains "naming the issue" "$out" "issue #23"
+fake_unfail
 
 out="$("$ORCH" issue comment abc "$tricky" 2>&1)"; st=$?
 assert_status "comment refuses an issue number that is not a plain number" "$st" 1
