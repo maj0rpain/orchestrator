@@ -9845,6 +9845,21 @@ assert_contains "keeps a planted FAIL line with its detail line" "$out" \
   "$(printf '  FAIL a planted failure\n     its detail line')"
 assert_eq "sums both failures into the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "8 passed, 2 failed"
+# Each failing path alone, so neither passes on the strength of the other.
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted exit$' \
+  bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+assert_status "a parallel run whose only failing section exits mid-way exits 1" "$st" 1
+assert_contains "reports that section alone as a FAIL naming it" "$out" \
+  "  FAIL section 'planted exit' reported no counts"
+assert_eq "counts that one failure in the summary" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed"
+out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted failure$' \
+  bash "$par_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
+assert_status "a parallel run whose only failing section has a failing check exits 1" "$st" 1
+assert_contains "keeps that check's FAIL line with its detail line" "$out" \
+  "$(printf '  FAIL a planted failure\n     its detail line')"
+assert_eq "counts that one failure in the summary" \
+  "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed"
 rm -rf "$par_dir"
 
 # --- all.sh, the single entry point (#615) ----------------------------------
