@@ -148,6 +148,54 @@ trim() {
   printf '%s' "${s%"${s##*[![:space:]]}"}"
 }
 
+# The splitters below cut a string up by parameter expansion, so a hot path
+# spawns no awk, sed, cut or tail to do it. Each assigns to caller-named
+# variables through printf -v, as capture does, and is called in the current
+# shell, never inside $(...).
+#
+# tsv_split <line> <var>...: <line>'s tab-separated fields into the named
+# variables in turn, as awk -F '\t' reads them: an empty field stays empty,
+# a field past the last tab is empty, and fields past the last variable are
+# dropped.
+tsv_split() {
+  local _tsv_rest="$1"
+  shift
+  while [ $# -gt 0 ]; do
+    printf -v "$1" '%s' "${_tsv_rest%%$'\t'*}"
+    case "$_tsv_rest" in
+      *$'\t'*) _tsv_rest="${_tsv_rest#*$'\t'}" ;;
+      *) _tsv_rest="" ;;
+    esac
+    shift
+  done
+}
+
+# lines_split <text> <var>... <rest-var>: <text>'s first line into the first
+# variable, its next line into the next, and every line left into
+# <rest-var> - as `sed -n <N>p` and `tail -n +<N>` captured by $(...) read a
+# text with no trailing newline. A line past the end is empty.
+lines_split() {
+  local _ls_rest="$1"
+  shift
+  while [ $# -gt 1 ]; do
+    printf -v "$1" '%s' "${_ls_rest%%$'\n'*}"
+    case "$_ls_rest" in
+      *$'\n'*) _ls_rest="${_ls_rest#*$'\n'}" ;;
+      *) _ls_rest="" ;;
+    esac
+    shift
+  done
+  printf -v "$1" '%s' "$_ls_rest"
+}
+
+# newlines_strip <var>: drops every trailing newline from the named
+# variable's value, as $(...) drops them from a command's output.
+newlines_strip() {
+  local _ns_v="${!1}"
+  while [ "${_ns_v%$'\n'}" != "$_ns_v" ]; do _ns_v="${_ns_v%$'\n'}"; done
+  printf -v "$1" '%s' "$_ns_v"
+}
+
 # The one normalisation a slug gets: lowercase, non-alphanumeric runs collapsed
 # to a single hyphen, trimmed, dying if nothing survives. `init` and `cmd_slug`
 # both call this rather than each carrying their own copy of the sed expression
@@ -392,7 +440,8 @@ default_branch() {
     b="$(adapter_repo_default_branch "$REPO_NAME" 2>/dev/null)" || b=""
   fi
   if ! is_branch_name "$b"; then
-    b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')" || b=""
+    b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" || b=""
+    b="${b#origin/}"
   fi
   is_branch_name "$b" || b="main"
   printf '%s\n' "$b"
@@ -713,7 +762,7 @@ cmd_parallel() {
 exclude_orch_dirs() {
   local ex d
   ex="$(git rev-parse --git-common-dir)/info/exclude"
-  mkdir -p "$(dirname "$ex")"
+  mkdir -p "${ex%/*}"
   for d in "${EXCLUDED_DIRS[@]}"; do
     grep -qxF "$d" "$ex" 2>/dev/null || printf '%s\n' "$d" >>"$ex"
   done
@@ -1253,8 +1302,7 @@ adapter_issue_state_labels() {
 issue_state_labels_read() {
   local __islr_out
   __islr_out="$(adapter_issue_state_labels "$1")" || return 1
-  printf -v "$2" '%s' "$(first_line "$__islr_out")"
-  printf -v "$3" '%s' "$(printf '%s\n' "$__islr_out" | tail -n +2)"
+  lines_split "$__islr_out" "$2" "$3"
 }
 
 # adapter_issue_title_labels <n>: the title on the first line, then one label
@@ -1824,20 +1872,29 @@ ci_ref_unchecked() {
 # backwards is what would make the loop declare a CI-having repo CI-less, or
 # mark a PR ready over checks nobody read.
 ci_probe() {
-  local pr="$1" scope="$2" out err failed name
+  local pr="$1" scope="$2" out err failed="" pending="" line bucket name
   if ! capture out err adapter_pr_checks "$pr" "$scope"; then
     note unreachable
-    note "      $(first_line "$err")"
+    note "      ${err%%$'\n'*}"
     return 0
   fi
   if [ -z "$out" ]; then note none; return 0; fi
-  failed="$(printf '%s\n' "$out" | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2 }')"
+  # One pass over the checks: each failed or cancelled one's name, and
+  # whether any is pending.
+  while IFS= read -r line; do
+    tsv_split "$line" bucket name
+    case "$bucket" in
+      fail|cancel) failed+="$name"$'\n' ;;
+      pending) pending=1 ;;
+    esac
+  done <<<"$out"
+  newlines_strip failed
   if [ -n "$failed" ]; then
     note failing
     while IFS= read -r name; do [ -z "$name" ] || note "      $name"; done <<<"$failed"
     return 0
   fi
-  if printf '%s\n' "$out" | cut -f1 | grep -qx pending; then note pending; return 0; fi
+  if [ -n "$pending" ]; then note pending; return 0; fi
   note green
 }
 
@@ -1852,7 +1909,7 @@ ci_probe() {
 # rerun - goes through die2. The repo is resolved here rather than left to the
 # guard, whose death exits 1 and would read as "nothing to rerun".
 review_rerun() {
-  local pr="${1:-}" out err said rc=0 link="" run name=""
+  local pr="${1:-}" out err said rc=0 link="" run name="" line bucket
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
   repo_pin || die2 "$REPO_REMEDY"
@@ -1861,14 +1918,17 @@ review_rerun() {
   # message carries. The file is gone before any die2.
   err="$(mktemp)"
   out="$(adapter_pr_checks "$pr" all 2>"$err")" || rc=$?
-  said="$(first_line "$(cat "$err")")"; rm -f "$err"
+  said="$(<"$err")"; said="${said%%$'\n'*}"; rm -f "$err"
   [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $said"
   [ -n "$out" ] || die2 "gh could not read the checks of PR #$pr: ${said:-no checks reported}"
-  # Name and link on two lines, read one per read, so an empty name survives:
-  # IFS=$'\t' read would collapse it, a tab being IFS whitespace. No failed
-  # check leaves both empty.
-  { IFS= read -r name; IFS= read -r link; } < <(printf '%s\n' "$out" \
-    | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2; print $3; exit }') || true
+  # The first failed or cancelled check's name and link, split by tsv_split
+  # so an empty name survives: IFS=$'\t' read would collapse it, a tab being
+  # IFS whitespace. No failed check leaves both empty.
+  while IFS= read -r line; do
+    tsv_split "$line" bucket name link
+    case "$bucket" in fail|cancel) break ;; esac
+    name=""; link=""
+  done <<<"$out"
   [ -n "$link" ] || die2 "PR #$pr has no failed or cancelled check to rerun"
   case "$link" in
     */actions/runs/[0-9]*) ;;
@@ -1902,7 +1962,7 @@ review_rerun() {
 # of it, the same absence is pending.
 review_terminal_state() {
   require_state
-  local i b path body first rest after s sep
+  local i b path sec="" line started="" body="" first rest after s sep
   i="$(state_get iteration)"
   b="$(review_budget)"
   if [ "$i" -eq 0 ]; then note none; return 1; fi
@@ -1911,13 +1971,21 @@ review_terminal_state() {
   # Termination), so a recorded terminal state is read whatever the
   # iteration; only its absence depends on the budget - pending before it is
   # spent, interrupted once it is.
-  if [ ! -f "$path" ] || [ -z "$(section_body "$path" '## Terminal state' | tr -d '[:space:]')" ]; then
+  if [ -f "$path" ]; then sec="$(section_body "$path" '## Terminal state')" || true; fi
+  if [ ! -f "$path" ] || [ -z "${sec//[[:space:]]/}" ]; then
     if [ "$i" -lt "$b" ]; then note pending; else note interrupted; fi
     return 1
   fi
-  body="$(section_body "$path" '## Terminal state' | awk 'started || NF { started = 1; print }')"
-  first="$(trim "$(printf '%s\n' "$body" | sed -n '1p')")"
-  rest="$(printf '%s\n' "$body" | tail -n +2)"
+  # The section from its first line holding more than spaces and tabs on.
+  while IFS= read -r line; do
+    if [ -z "$started" ]; then
+      case "$line" in *[!$' \t']*) started=1 ;; *) continue ;; esac
+    fi
+    body+="$line"$'\n'
+  done <<<"$sec"
+  newlines_strip body
+  lines_split "$body" first rest
+  first="$(trim "$first")"
   case "$first" in
     ready) note ready; return 0 ;;
     stop*)
@@ -2030,10 +2098,7 @@ cmd_review() {
       # not say what its head is, or a head with no reflog entry, leaves it at zero,
       # and the grace counts from the call as it always did.
       if refs="$(adapter_pr_refs "$pr" 2>/dev/null)"; then
-        head_oid="$(printf '%s\n' "$refs" | sed -n 1p)"
-        head_ref="$(printf '%s\n' "$refs" | sed -n 2p)"
-        base_ref="$(printf '%s\n' "$refs" | sed -n 3p)"
-        commits="$(printf '%s\n' "$refs" | sed -n '4,$p')"
+        lines_split "$refs" head_oid head_ref base_ref commits
         pushed="$(ci_push_time "$head_oid" "$head_ref")"
         case "$pushed" in
           ''|*[!0-9]*) ;;
@@ -2055,13 +2120,13 @@ cmd_review() {
         # how an unrelated green check gets mistaken for a required one that
         # never arrived, and the PR marked ready over it.
         res="$(ci_probe "$pr" required)"
-        verdict="$(first_line "$res")"
+        verdict="${res%%$'\n'*}"
         if [ "$verdict" = none ]; then
           if [ "$no_ci" = 0 ] && float_lt "$(float_add "$push_age" "$elapsed")" "$ORCH_CI_GRACE"; then
             ci_tick; continue
           fi
           res="$(ci_probe "$pr" all)"
-          verdict="$(first_line "$res")"
+          verdict="${res%%$'\n'*}"
         fi
         case "$verdict" in
           green)       printf '%s\n' "$res"; return 0 ;;
@@ -3169,7 +3234,11 @@ issue_number_list() {
   case "$list" in
     ''|*[!0-9,]*|,*|*,|*,,*) die "$flag must be plain issue numbers, got: $list" ;;
   esac
-  printf '%s\n' "$list" | tr ',' '\n' | sort -un
+  # Split at the commas by IFS: the list is digits and commas only, so no
+  # entry globs and none is empty.
+  local IFS=,
+  # shellcheck disable=SC2086
+  printf '%s\n' $list | sort -un
 }
 
 # True only once both links read back exactly as published: the parent's
@@ -3179,9 +3248,12 @@ issue_number_list() {
 # this on a mismatch, and a cached answer would just repeat the same wrong
 # verdict.
 ticket_links_verified() {
-  local parent="$1" child="$2" want="$3" have_children have_blockers
+  local parent="$1" child="$2" want="$3" have_children have_blockers line linked=""
   have_children="$(adapter_sub_issues "$parent")" || return 1
-  printf '%s\n' "$have_children" | cut -f1 | grep -qxF "$child" || return 1
+  while IFS= read -r line; do
+    if [ "${line%%$'\t'*}" = "$child" ]; then linked=1; break; fi
+  done <<<"$have_children"
+  [ -n "$linked" ] || return 1
   have_blockers="$(ticket_blockers "$child" return)" || return 1
   [ "$have_blockers" = "$(printf '%s\n' "$want" | sort -un)" ]
 }
@@ -3244,9 +3316,12 @@ cmd_ticket_publish() {
 # published them.
 cmd_ticket_next() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket next <parent>"
-  local subs
+  local subs line n state blockers
   subs="$(ticket_sub_issues "$1")" || exit 1
-  printf '%s\n' "$subs" | awk -F '\t' '$2 == "OPEN" && $3 == 0 { print $1 }'
+  while IFS= read -r line; do
+    tsv_split "$line" n state blockers
+    if [ "$state" = OPEN ] && [ "$blockers" = 0 ]; then note "$n"; fi
+  done <<<"$subs"
 }
 
 # Every sub-issue of <parent>, open or closed, one "<n> open|closed" line
@@ -3271,15 +3346,13 @@ cmd_ticket_close() {
 # implement phase, whose frontier query would otherwise find nothing.
 cmd_ticket_reset() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reset <parent>"
-  local subs closed n
+  local subs line n state
   subs="$(ticket_sub_issues "$1")" || exit 1
-  closed="$(printf '%s\n' "$subs" | awk -F '\t' '$2 == "CLOSED" { print $1 }')"
-  if [ -n "$closed" ]; then
-    while IFS= read -r n; do
-      [ -z "$n" ] && continue
-      adapter_issue_reopen "$n" || die "gh could not reopen ticket #$n"
-    done <<<"$closed"
-  fi
+  while IFS= read -r line; do
+    tsv_split "$line" n state
+    [ "$state" = CLOSED ] && [ -n "$n" ] || continue
+    adapter_issue_reopen "$n" || die "gh could not reopen ticket #$n"
+  done <<<"$subs"
 }
 
 # Prints <n>'s parent issue number, or nothing (still exit 0) when <n> is
@@ -3554,7 +3627,7 @@ ticket_edges_change() {
   before="$(ticket_blockers "$n")" || exit 1
   while IFS= read -r b; do
     present=""
-    if printf '%s\n' "$before" | grep -qxF "$b"; then present=1; fi
+    case $'\n'"$before"$'\n' in *$'\n'"$b"$'\n'*) present=1 ;; esac
     [ "$present" != "$skip_present" ] || continue
     "$edge_op" "$n" "$b" \
       || die "gh could not $edge_word a blocking edge from ticket #$n on #$b"
