@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.21.1
+## 3.21.2
 
 all.sh's shellcheck step runs one shellcheck process per shell file, all
 started at once, instead of one process over every file, so shellcheck is no
@@ -18,6 +18,20 @@ splitters (`tsv_split`, `lines_split`, `newlines_strip`); side-checkout remove
 reads the top level and git folder in one `rev-parse`, and side-checkout add
 and remove and doctor's finished-side-checkout check ask git for the main
 checkout once. Behaviour is unchanged.
+
+## 3.21.1
+
+The `review ci` grace tests no longer depend on machine speed (#806). The
+issue #476 section and the issue #475 fresh-push case pushed once and ran
+under a 5s grace, so on a busy machine the grace was spent before a case ran:
+every "grace waited" case read `none` and failed, and every "grace skipped"
+case passed whether the skip worked or not. Both now push with a push recorded
+as 60s old and run `review ci` under a 600s grace and a 30s `timeout`, so the
+outcome never depends on how long the suite took to reach a case, and the
+#476 section's comment no longer claims a fresh push per case. Root cause:
+the grace counts from the push's real reflog time, and the cases shared one
+push while their grace was shorter than the suite's own delay.
+`scripts/orch.sh` is unchanged.
 
 ## 3.21.0
 

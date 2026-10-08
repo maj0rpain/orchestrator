@@ -8825,23 +8825,28 @@ fake_checks 7 required pending green
 out="$(ORCH_CI_TIMEOUT=5 "$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "the timeout counts from the call even when the push is old" "$out" "green"
 
-# A fresh push still waits: nothing required yet, and the green that arrives
-# within the grace wins over the unfiltered failure.
-head_sha="$(pushed_head topic)"
+# A push younger than the grace still waits: nothing required yet, and the
+# green that arrives within the grace wins over the unfiltered failure. The
+# push's 60s age and the 600s grace are the #476 section's, explained there.
+head_sha="$(pushed_head topic 60)"
 fake_pr_head 7 "$head_sha"
 fake_checks 7 required none green
 fake_checks 7 all failing
-out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
-assert_first_line "a fresh push still waits the grace before widening" "$out" "green"
+out="$(ORCH_CI_GRACE=600 timeout 30 "$ORCH" review ci 2>&1)"; st=$?
+assert_first_line "a push younger than the grace still waits it before widening" "$out" "green"
 restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
 
 # --- the grace is skipped on no evidence of CI (issue #476) ---
 # Zero checks straight after a push is ambiguous only where the repo might have
 # CI. With no workflow in the head, nothing required on the base, and no check
 # or status on an earlier PR commit or the base tip, there is nothing to wait
-# for, and `none` arrives without the grace. Each case below uses a fresh push,
-# so the grace is unspent: `none`, then `green`, on the required probe tells the
-# two apart, green meaning the grace was waited and none that it was skipped.
+# for, and `none` arrives without the grace. The push is recorded as 60s old
+# and each case runs under a 600s grace, far above that age, so whether the
+# grace is waited never depends on how fast the machine reached the case:
+# `none`, then `green`, on the required probe tells the two apart, green
+# meaning the grace was waited and none that it was skipped. The green arrives
+# on the second probe, so the long grace costs no time, and `timeout` turns a
+# grace that never ends into a failed assertion, not a hang.
 # ci_absent: every CI signal absent, and the checks scripted that way - the
 # store each case below turns one signal back on in.
 ci_absent() {
@@ -8852,11 +8857,11 @@ ci_absent() {
 # no_ci <expected first line> <name>: one review ci call, on PR #7 as the store
 # holds it - by default, a single-commit PR whose head is head_sha.
 no_ci() {
-  out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?
+  out="$(ORCH_CI_GRACE=600 timeout 30 "$ORCH" review ci 2>&1)"; st=$?
   assert_first_line "$2" "$out" "$1"
 }
 review_ci_flow nocievidence
-head_sha="$(pushed_head topic)"
+head_sha="$(pushed_head topic 60)"
 fake_pr_head 7 "$head_sha"
 ci_absent
 no_ci none "with no evidence of CI anywhere, none arrives without the grace"
@@ -8865,12 +8870,17 @@ assert_contains "saying it found no CI signals" "$out" "no CI signals found"
 assert_contains "naming the signals it looked for" "$out" "no workflow files in the head"
 
 # The other path to none: the grace waited and ran out with nothing reported.
+# The head is a commit never pushed, so with no reflog entry the suite's short
+# grace counts from the call and is really waited, not spent by the aged push.
+unpushed_sha="$(git commit-tree "HEAD^{tree}" -p HEAD -m 'not pushed')"
+fake_pr_head 7 "$unpushed_sha"
 fake_ci_reset
 fake_check_run main
 out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_first_line "evidence of CI keeps the grace, and none still comes after it" "$out" "none"
 assert_contains "saying the grace ran out" "$out" "grace ran out"
 assert_eq "and not that no signals were found" "$(printf '%s\n' "$out" | grep -c 'no CI signals')" "0"
+fake_pr_head 7 "$head_sha"
 
 # The pre-check replaces only the wait: the unfiltered probe still runs, so a
 # check already reported on the head gives its verdict, not none.
@@ -8892,7 +8902,7 @@ no_ci green "a workflow file in the head's tree keeps the grace"
 # subdirectory, the workflow must still be seen, not read as absent.
 mkdir -p wf-subdir
 ci_absent
-out="$(cd wf-subdir && ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"
+out="$(cd wf-subdir && ORCH_CI_GRACE=600 timeout 30 "$ORCH" review ci 2>&1)"
 assert_first_line "and so does one seen from a subdirectory" "$out" "green"
 rmdir wf-subdir
 fake_pr_head 7 "$head_sha"
