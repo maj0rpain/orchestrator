@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.21.6
+
+Behaviour-neutral tidy-ups of the label and triage helpers (#845).
+`issue_publish_verified` splits gh's answer through `lines_split`, as
+`issue_state_labels_read` does (#750). `cmd_issue_triage`'s label-holding
+locals are named `wontfix_label` and `human_label`, as the planning hook
+names them (#747). doctor's flow issue check keeps one fallback for a failed
+read (#752).
+
 ## 3.21.5
 
 orch.sh's `STATE_KEYS` table has one reader, `state_rows`, so every reader
