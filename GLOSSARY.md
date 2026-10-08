@@ -161,7 +161,23 @@ belongs to the review loop, or to a review pass. It reports back
 structurally instead of blocking on a human; a criterion it cannot meet alone
 is reported as unmet, and a changed source file no test exercises is reported
 as untested, both for the review loop's Spec axis to judge. Used in the
-implement phase and in quick implementation.
+implement phase and in quick implementation. When its frontier is built in
+parallel, it builds on a ticket branch in its own ticket worktree; otherwise
+on the one branch, one ticket at a time.
+
+**Ticket branch**:
+The branch one ticket subagent builds a single ticket on, forked from its
+flow's or quick implementation's branch at the tip, and merged back into it
+before the ticket closes. It is local and short-lived, gone once merged, and
+is not the flow's one branch.
+
+**Ticket worktree**:
+The git worktree a ticket branch is checked out in, so ticket subagents of one
+breakdown can build at the same time without sharing a working tree.
+
+**Frontier**:
+The open tickets of a ticket breakdown with no open blocker - what `ticket
+next` prints. Several can be built at once, up to the clone's parallel cap.
 
 ### Spec review
 

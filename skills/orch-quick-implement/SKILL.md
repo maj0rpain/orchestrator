@@ -27,7 +27,8 @@ tell the human `orch.sh` is missing and to install the full orchestrator
 plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 `maj0rpain/orchestrator` as a Junie extension, which is unverified).
 
-Steps here name capabilities (invoke a skill, start a fresh subagent).
+Steps here name capabilities (invoke a skill, start a fresh subagent,
+start a background subagent).
 `docs/host-capabilities.md` under the plugin root maps each one to your host.
 Where your host's cell says **Fallback**, or **Unverified** and the capability
 turns out missing, take the fallback it documents and list it under a **Host fallbacks** heading in the PR body (step 7).
@@ -113,28 +114,74 @@ so the PR in step 7 targets it even if the setting changes meanwhile.
 
 ## 5. Implement
 
-If step 3's breakdown is collapsed (no sub-issue published): no `ticket
-next`/`ticket close` loop runs against the linked issue - dispatch exactly
-one subagent (below), for the linked issue itself as the ticket, then
-continue at step 6.
+Build the linked issue's ticket frontier with the driver loop below. If step
+3's breakdown is collapsed (no sub-issue published), no `ticket
+next`/`ticket close` loop runs against the linked issue: the sequential path
+dispatches exactly one subagent (below), for the linked issue itself as the
+ticket.
 
-Otherwise, work the linked issue's ticket frontier, one ticket at a time,
-never in parallel - every ticket commits to the same branch. Loop:
+**The driver loop** (ADR-0036). Its steps are lettered a-f, so that a "loop
+step" never reads as one of this skill's numbered sections:
 
-- `bash "$ORCH" ticket next <linked issue>`. Nothing ready means the frontier is
-  exhausted - stop looping and continue at step 6.
-- Dispatch a subagent (below) for the ticket.
-- Record the subagent's report, then `bash "$ORCH" ticket close <n>` - only now
-  that the report is back, never before - and go around again.
+- **a. Entry check.** `bash "$ORCH" ticket-worktree list`. If it prints
+  anything, stop and name each leftover ticket worktree: a dead run's
+  state, never built over. A human clears each with `bash "$ORCH"
+  ticket-worktree remove <n>`. This runs on every path, sequential
+  included.
+- **b. Pick the path.** Read the cap: `bash "$ORCH" parallel show`. Take the
+  **sequential path** when the breakdown is collapsed, the cap is 1, or the
+  host cannot start a background subagent (list that last one under the PR
+  body's **Host fallbacks**, per `docs/host-capabilities.md`'s **Start a
+  background subagent** row). It creates no ticket worktree, and every
+  ticket commits to the one branch, one at a time, never in parallel.
+  Collapsed, it dispatches the one subagent and goes to loop step f.
+  Otherwise it loops: `bash "$ORCH" ticket next <linked issue>` - nothing
+  ready means the frontier is exhausted, so go to loop step f - then
+  dispatch a subagent (below) for the ticket, with no `Worktree:` line;
+  record its report, then `bash "$ORCH" ticket close <n>` - only now that
+  the report is back, never before - and go around again. Any other case
+  takes the parallel path, loop steps c-e.
+- **c. Fill the free slots.** Keep an in-flight set of tickets in this
+  session. While fewer than the cap are in flight, take the next ticket
+  `bash "$ORCH" ticket next <linked issue>` prints that is neither in
+  flight nor queued to run alone: `bash "$ORCH" ticket-worktree add <n>`,
+  then dispatch a subagent (below) for it in the background, its prompt
+  carrying the `Worktree:` line with the path `ticket-worktree add`
+  printed. Stop filling when `ticket next` has nothing more.
+- **d. As each report returns**, record it, then `bash "$ORCH" ticket merge
+  <n>`, then `bash "$ORCH" ticket close <n>`, then `bash "$ORCH"
+  ticket-worktree remove <n>`, then refill (loop step c). A ticket is merged
+  and closed whatever its `Verification` or `Criteria` line says, and is
+  closed only after its merge succeeds. Any exit 1 from `ticket merge`,
+  `ticket close` or `ticket-worktree remove`, a dispatch that fails, or a
+  report that comes back malformed stops refilling: the tickets still in
+  flight report and are processed as normal, then quick implementation
+  stops, before the review and the PR, naming every failure. A leftover
+  worktree surfaces at the next entry check and in `doctor --flow`.
+- **e. On a merge conflict** (`ticket merge` exits 3): `bash "$ORCH"
+  ticket-worktree remove <n> --unmerged`, and queue the ticket to run
+  alone. When nothing is in flight, dispatch the queued ticket in a fresh
+  worktree (`ticket-worktree add`) from the updated tip, on its own, and
+  process its report as in loop step d before refilling. When the frontier
+  and queue are exhausted and nothing is in flight, go to loop step f.
+- **f. Verify the combined branch**, on every path, sequential included:
+  run, on the quick implementation's branch, the full-verification command
+  the reports' `Verification` lines name, once - joined with ` && ` into one
+  line when they name different commands. Its command and `pass` or `fail`
+  go under a **Verification** heading in the PR body (section 7). A failure
+  does not stop the run: the review pass and the PR carry it.
+
+Once loop step f has run, continue at **6. Review** below.
 
 **Dispatching a subagent**: start the plugin's `orch-implementer` agent
 exactly as the **Starting this agent** section of
 `agents/orch-implementer.md` (under the plugin root) says, for the ticket
 named above. On Claude Code it is the agent named
-`orch-implementer` under the `orchestrator:` plugin scope. A host that
-cannot start it natively takes `docs/host-capabilities.md`'s **Start a fresh
-subagent** fallback; list it under the PR body's **Host fallbacks**, along
-with any fallback that section says the agent takes.
+`orch-implementer` under the `orchestrator:` plugin scope, run in the
+background on the parallel path. A host that cannot start it natively takes
+`docs/host-capabilities.md`'s **Start a fresh subagent** fallback; list it
+under the PR body's **Host fallbacks**, along with any fallback that section
+says the agent takes.
 
 ## 6. Review
 
@@ -173,6 +220,8 @@ unattended spec review took for the human: each `decision (<n>)` line of
 `changelog.md` in that review's working directory, or `None.` when it has
 none. If `changelog.md` is missing, stop before `pr publish` and say so -
 never write `None.` then, since the decisions taken are unknown. It
+carries a **Verification** heading with step 5's combined verification: the
+command it ran, then `pass` or `fail`. It
 ends with a **Host fallbacks** heading listing every fallback this run took -
 including any the spec review in step 2 took - or `None (<host>).` It
 pushes the branch and opens the PR against the base branch `branch off`

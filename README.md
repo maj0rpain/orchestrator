@@ -109,8 +109,8 @@ For work that does not need the pipeline, a human can pick a quick
 implementation instead of starting a flow - see GLOSSARY.md's **Quick
 implementation** entry. It skips all four phases: no handoff, no
 `.orchestrator/state.json`, just a linked issue, `orch-to-tickets` publishing that
-issue's ticket breakdown, the same one-`orch-implementer`-per-ticket loop the
-implement phase uses (ending in `pr publish` instead of a draft `pr open`), a
+issue's ticket breakdown, the same one-`orch-implementer`-per-ticket driver
+loop the implement phase uses, building its frontier in parallel (ending in `pr publish` instead of a draft `pr open`), a
 review pass by the plugin's own reviewer agents, and a PR. A human can run
 another review pass of the same branch on demand, with
 `/orchestrator:review <issue>` - see GLOSSARY.md's **Review pass** entry.
@@ -345,18 +345,34 @@ When the issue already has a ticket breakdown and the accepted edits touch an
 open ticket, the review then asks a ticket question: edit the tickets the
 change touches, or retire the breakdown so the issue is broken down again.
 
-The implement phase works the spec issue's published ticket breakdown one
-ticket at a time: `ticket next` names the ready frontier, and each ready
-ticket goes to a fresh `orch-implementer` agent carrying only its number
-and the `orch.sh` path.
-The agent builds that one ticket test-first from its own adapted copy of `tdd`'s rules, on the flow's
-single branch, commits its own work, and checks its commits against the
+The implement phase works the spec issue's published ticket breakdown by its
+**frontier** (see GLOSSARY.md): `ticket next` names the ready tickets, and
+up to the clone's parallel cap of them are built at once (ADR-0036). Each
+ready ticket goes to a fresh `orch-implementer` agent, started in the
+background, carrying only its number, the `orch.sh` path and the path of its
+**ticket worktree**: `orch.sh ticket-worktree add` forks a ticket branch from
+the flow's branch tip and checks it out under `.orchestrator/worktrees/`.
+The agent builds that one ticket test-first from its own adapted copy of `tdd`'s rules, on its
+ticket branch, commits its own work, and checks its commits against the
 ticket's acceptance criteria, and that a test exercises every source file
 they changed. It cannot start sub-agents or ask the human anything: a call it
 cannot make alone comes back as a deviation in its report, a criterion it
-could not meet as unmet, and a source file it could not cover as untested. The driving session
-closes the ticket only once that report is in hand, then re-queries the
-frontier, until none remain and it opens the one draft PR for the whole flow.
+could not meet as unmet, and a source file it could not cover as untested. When a
+report is in hand, the driving session lands the ticket branch on the flow's
+branch with `orch.sh ticket merge` (a rebase and a fast-forward), closes the
+ticket, removes its worktree, and refills the free slots from the
+re-queried frontier. A ticket whose merge conflicts is redone alone once
+nothing else is in flight. When none remain, it runs the full verification
+once on the combined branch and opens the one draft PR for the whole flow.
+A collapsed breakdown, a cap of 1, or a host that cannot start a background
+subagent builds one ticket at a time on the flow's branch, with no
+worktrees. Leftover ticket worktrees from an interrupted run stop the next
+implement phase and fail `doctor --flow`; `orch.sh ticket-worktree list`
+shows them and `orch.sh ticket-worktree remove <n>` clears each.
+
+| Command | What it does |
+| --- | --- |
+| `orch.sh parallel show` | Print the parallel cap: the clone's local git config key `orchestrator.parallel` when set, 3 otherwise. 1 means one ticket at a time. Set it with `git config orchestrator.parallel <n>`: shared by every worktree, never committed. |
 
 The review phase is a bounded loop: a budget of iterations the human chooses
 at the start (five by default), a fresh review from the base SHA every one of

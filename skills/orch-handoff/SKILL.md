@@ -143,9 +143,10 @@ it did not. This is how review tells an agreed change from scope creep.>
 ## Verification
 <first line: the exact command that proves the change works, as you just ran
 it, and nothing else - the review loop runs this line every iteration and
-treats a failure as blocking. Then, on its own line, the result: `pass`, or
-`fail` and the ticket whose report returned it. You have the tests fresh;
-review would be guessing.>
+treats a failure as blocking. Then, on its own line, the result: `pass` or
+`fail`, naming no ticket - it is the combined verification, run once over the
+whole branch after the frontier was exhausted, and belongs to no ticket. You
+have the tests fresh; review would be guessing.>
 
 ## Unmet criteria
 <the acceptance criteria the ticket subagents reported unmet on their `Criteria`

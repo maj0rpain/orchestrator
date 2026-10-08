@@ -581,7 +581,7 @@ check_git_exclude() {
   # exist. Not covered by d_run's abort warn either - a check runs as the left
   # operand of ||, which disables errexit for its whole body, so a failure here
   # would carry on with a wrong path rather than stop.
-  ex="$(git rev-parse --git-dir)/info/exclude"
+  ex="$(git rev-parse --git-common-dir)/info/exclude"
   for d in "${EXCLUDED_DIRS[@]}"; do
     grep -qxF "$d" "$ex" 2>/dev/null || missing+=("$d")
   done
@@ -593,7 +593,7 @@ check_git_exclude() {
   # arrived mid-flow in a repo that is not theirs. One warning for every missing
   # line, and a remedy that appends only those.
   d_warn "$(d_join "$(printf '%s\n' "${missing[@]}")") not git-excluded - flow state and planning drafts would show as untracked."
-  d_remedy "printf '%s\\n' $(printf "'%s' " "${missing[@]}")>>\"\$(git rev-parse --git-dir)/info/exclude\""
+  d_remedy "printf '%s\\n' $(printf "'%s' " "${missing[@]}")>>\"\$(git rev-parse --git-common-dir)/info/exclude\""
 }
 
 # The base branch every new flow and quick implementation will fork from and
@@ -842,6 +842,19 @@ check_flow_review_draft() {
   fi
 }
 
+# A ticket worktree under this checkout is a run's leftover once its phase is
+# not running (ADR-0036): the next implement phase stops on it, and archive
+# refuses to move it. Silent when there is none - ticket-worktree list's own
+# scope, so another checkout's in-flight tickets never fail this flow.
+check_flow_ticket_worktrees() {
+  local n path
+  while read -r n path; do
+    [ -n "$n" ] || continue
+    d_fail "ticket worktree $path is left over - a ticket run did not finish."
+    d_remedy "orch.sh ticket-worktree remove $n"
+  done <<<"$(cmd_ticket_worktree_list)"
+}
+
 # Pure reuse: what makes a handoff valid lives in handoff_required and
 # section_body, and a second statement of it here is how the two answers drift.
 # Which handoffs are due is mechanical - phase names what runs *next*, so every
@@ -903,6 +916,9 @@ d_count() {
 d_run_flow() {
   if [ "$D_JQ" = ok ] && [ "$D_STATE" = ok ]; then
     d_run "$FLOW_CHECKS"
+    # Outside the registry: it reads git alone and prints nothing when clean,
+    # so a flow with no ticket worktree reports exactly what it did before.
+    check_flow_ticket_worktrees
     return 0
   fi
   # Neither path below reaches a check, so neither gets the header out of the

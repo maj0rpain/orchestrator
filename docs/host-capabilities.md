@@ -34,6 +34,7 @@ on exactly its own cells.
 | Invoke a skill from a step | The Skill tool, by scoped name (`orchestrator:orch-flow`). | No Skill tool, so the model cannot invoke one mid-step. A human still starts one with `/<name>`, or Junie picks one automatically. Naming a skill as `$<name>` in a prompt is unverified. **Fallback**. |
 | Ask a multiple-choice question | `AskUserQuestion`. | `ask_user`, which the plan agent and the main agent both have (#202). |
 | Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`. | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). It loads the plugin's `agents/` as custom agents (#200), but a capability filter at agent start usually hides them, and starting a hidden agent by name fails with `Unknown agent`. Both hosts read its `tools:` YAML list as the agent's allowlist, so an agent left visible starts with the tools it needs. **Fallback**. Take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file, and record the reason as the agent hidden by Junie's capability filter. JetBrains tracks the filter as JUNIE-5493: appending the plugin's `docs/junie/AGENTS.md` snippet to `~/.junie/AGENTS.md` keeps the agents visible, and the README's Junie paragraph gives the command and a per-prompt fallback. |
+| Start a background subagent | The Agent tool, run in the background, so several ticket subagents build at once and each report returns as it finishes. | No documented way to start a subagent in the background and keep working while it runs. **Fallback**. |
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. |
 | Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. Where commands do not load, `orch-spec-review` is invoked directly with the issue number. |
@@ -81,6 +82,14 @@ prompt, and where to record the fallback. Take the first tier that fits:
 
 Record the tier taken where the starting skill says, with the reason: which
 agent was not available, and why.
+
+### Start a background subagent
+
+Build the frontier one ticket at a time, on the one branch, with no ticket
+worktrees: the sequential path of the driver loop in `orch-flow`'s implement
+phase and `orch-quick-implement`'s implement step. The entry check for
+leftover ticket worktrees and the combined verification still run
+(ADR-0036).
 
 ### Start a forked subagent
 

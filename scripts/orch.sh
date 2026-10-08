@@ -472,13 +472,35 @@ cmd_base() {
   esac
 }
 
+# --- parallel ----------------------------------------------------------------
+# The clone's parallel cap: how many ticket subagents one frontier runs at once,
+# 1 meaning sequential. Read here alone, so the default lives in one place and
+# the skills never call git config; it is set with git config orchestrator.parallel.
+PARALLEL_DEFAULT=3
+cmd_parallel() {
+  local op="${1:-}" v
+  shift || true
+  case "$op" in
+    show)
+      [ $# -eq 0 ] || die "usage: orch.sh parallel show"
+      v="$(git config --get orchestrator.parallel 2>/dev/null || true)"
+      [ -n "$v" ] || v="$PARALLEL_DEFAULT"
+      [[ "$v" =~ ^[0-9]+$ ]] && [ "$((10#$v))" -gt 0 ] ||
+        die "orchestrator.parallel is $v - it must be a positive integer (git config orchestrator.parallel <n>)"
+      note "$((10#$v))"
+      ;;
+    *) die "unknown parallel op: ${op:-<none>} (want show)" ;;
+  esac
+}
+
 # Ignore every directory in EXCLUDED_DIRS - the flow directory and .scratch/ -
 # without touching a tracked .gitignore, so running the orchestrator in an
 # unfamiliar repo never dirties its working tree. A line already present is
-# never written again.
+# never written again. The file is the clone's shared one (the common dir),
+# the only info/exclude git reads, so a linked worktree writes it too.
 exclude_orch_dirs() {
   local ex d
-  ex="$(git rev-parse --git-dir)/info/exclude"
+  ex="$(git rev-parse --git-common-dir)/info/exclude"
   mkdir -p "$(dirname "$ex")"
   for d in "${EXCLUDED_DIRS[@]}"; do
     grep -qxF "$d" "$ex" 2>/dev/null || printf '%s\n' "$d" >>"$ex"
@@ -604,7 +626,7 @@ cmd_init() {
   # re-runnable rather than archived for nothing.
   [ -z "$issue" ] || validate_adopted_issue "$issue"
   if [ -f "$STATE" ]; then
-    archive_note="$(cmd_archive)"
+    archive_note="$(cmd_archive)" || exit 1
   fi
   mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"
   exclude_orch_dirs
@@ -3102,7 +3124,176 @@ cmd_ticket() {
     retire)  cmd_ticket_retire "$@" ;;
     block)   cmd_ticket_block "$@" ;;
     unblock) cmd_ticket_unblock "$@" ;;
-    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|block|unblock)" ;;
+    merge)   cmd_ticket_merge "$@" ;;
+    *) die "unknown ticket op: ${op:-<none>} (want publish|next|list|close|reset|parent|exists|retire|block|unblock|merge)" ;;
+  esac
+}
+
+# --- ticket-worktree ----------------------------------------------------------
+#
+# A ticket's own worktree on its own ticket branch, so ticket subagents of one
+# breakdown can build at once without sharing a working tree (ADR-0036). Each
+# lives under the current checkout's top level - inside the session's project
+# directory, so an implementer's edits draw no permission prompt - and is kept
+# out of git status by the clone's exclude file.
+
+readonly TICKET_WORKTREES="$ORCH/worktrees"
+
+# The ticket number <n> names, or die: digits only, not zero.
+ticket_worktree_number() {
+  case "$1" in
+    ''|*[!0-9]*|0*) die "not a ticket number: ${1:-<none>} (want a positive integer)" ;;
+  esac
+  printf '%s\n' "$1"
+}
+
+ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
+
+# Forks <current-branch>--t<n> from the current branch's tip, records the
+# forked-from branch on it, and checks it out at .orchestrator/worktrees/t<n>.
+# The exclude entry is written before the branch exists; anything failing
+# after that takes the worktree and the branch back out before dying.
+cmd_ticket_worktree_add() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket-worktree add <n>"
+  local n parent branch path
+  n="$(ticket_worktree_number "$1")"
+  parent="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  branch="$parent--t$n"
+  path="$(ticket_worktree_path "$n")"
+  [ ! -e "$path" ] || die "ticket worktree $path already exists"
+  if git rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
+    die "branch $branch already exists"
+  fi
+  exclude_orch_dirs
+  git branch -q "$branch" HEAD || die "could not create branch $branch"
+  if ! git worktree add -q "$path" "$branch" \
+     || ! git config "branch.$branch.orchestrator-ticket-parent" "$parent"; then
+    # A freshly added worktree holds nothing of anyone's, so no force is
+    # needed to take it back out; -D deletes the branch's config section too.
+    if [ -e "$path" ]; then git worktree remove "$path" 2>/dev/null || true; fi
+    git branch -q -D "$branch" 2>/dev/null || true
+    die "could not add ticket worktree $path - removed branch $branch again"
+  fi
+  note "$path"
+}
+
+# Prints <n> <path> for every ticket worktree under this checkout's
+# .orchestrator/worktrees/, and nothing else: another checkout's ticket
+# worktrees are that checkout's business.
+cmd_ticket_worktree_list() {
+  [ $# -eq 0 ] || die "usage: orch.sh ticket-worktree list"
+  local line path name
+  while IFS= read -r line; do
+    case "$line" in "worktree "*) ;; *) continue ;; esac
+    path="${line#worktree }"
+    [ "$(dirname "$path")" = "$TICKET_WORKTREES" ] || continue
+    name="$(basename "$path")"
+    case "$name" in t[1-9]*) ;; *) continue ;; esac
+    case "${name#t}" in *[!0-9]*) continue ;; esac
+    note "${name#t} $path"
+  done < <(git worktree list --porcelain)
+}
+
+# Dies, naming every ticket worktree under this checkout, when any is left:
+# moving .orchestrator/ wholesale would break git's record of each one.
+refuse_ticket_worktrees() {
+  local left
+  left="$(cmd_ticket_worktree_list)"
+  [ -n "$left" ] || return 0
+  die "ticket worktrees are left under this checkout - moving them would break git's record of them:
+$(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
+     Remove each with orch.sh ticket-worktree remove <n> first."
+}
+
+# Resolves ticket <n>'s worktree for a command that acts on an existing one:
+# dies unless <n> is a ticket number whose worktree exists and is on a branch.
+# It assigns to the caller's `n`, `path` and `branch`, which bash scopes
+# dynamically, and is called as a bare statement so `die` stops the caller.
+ticket_worktree_resolve() {
+  n="$(ticket_worktree_number "$1")"
+  path="$(ticket_worktree_path "$n")"
+  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+    || die "no ticket worktree for ticket $n at $path"
+  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
+    || die "ticket worktree $path is not on a branch (detached HEAD)"
+}
+
+# Removes ticket <n>'s worktree and deletes its branch, never with --force.
+# Both refusals - a dirty worktree, and without --unmerged a branch not merged
+# into its forked-from branch - run before anything is removed.
+cmd_ticket_worktree_remove() {
+  local n="" unmerged=0 path branch parent
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --unmerged) unmerged=1 ;;
+      -*) die "unknown flag: $1 (usage: orch.sh ticket-worktree remove <n> [--unmerged])" ;;
+      *) [ -z "$n" ] || die "usage: orch.sh ticket-worktree remove <n> [--unmerged]"; n="$1" ;;
+    esac
+    shift
+  done
+  ticket_worktree_resolve "$n"
+  [ -z "$(git -C "$path" status --porcelain)" ] \
+    || die "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
+  if [ "$unmerged" = 0 ]; then
+    parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
+      || die "branch $branch records no forked-from branch - pass --unmerged to discard it"
+    git merge-base --is-ancestor "$branch" "$parent" 2>/dev/null \
+      || die "branch $branch is not merged into $parent - merge it first, or pass --unmerged to discard it"
+  fi
+  git worktree remove "$path" || die "could not remove ticket worktree $path"
+  # -D, not -d, either way: without --unmerged the merge-base check above
+  # already proved the branch merged into its forked-from branch, while -d
+  # would judge it against this checkout's HEAD (a ticket branch has no
+  # upstream) and could refuse after the worktree is gone.
+  git branch -q -D "$branch" || die "could not delete branch $branch"
+}
+
+# The checkout that has <branch> checked out, or nothing: the first worktree
+# git lists on refs/heads/<branch>.
+branch_checkout() {
+  local line path=""
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) path="${line#worktree }" ;;
+      "branch refs/heads/$1") note "$path"; return 0 ;;
+    esac
+  done < <(git worktree list --porcelain)
+}
+
+# Lands ticket <n>'s branch on the branch it was forked from: rebases it onto
+# that branch's tip inside the ticket worktree, then fast-forwards that branch
+# in whichever checkout has it - so history stays linear. Every refusal (exit
+# 1) runs before anything moves; a rebase conflict is aborted and exits 3,
+# leaving both branches at their prior tips.
+cmd_ticket_merge() {
+  [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
+  local n path branch parent pwt
+  ticket_worktree_resolve "$1"
+  parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
+    || die "branch $branch records no forked-from branch"
+  [ -z "$(git -C "$path" status --porcelain)" ] \
+    || die "ticket worktree $path is dirty - commit or discard its changes first"
+  pwt="$(branch_checkout "$parent")"
+  [ -n "$pwt" ] || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
+  [ -z "$(git -C "$pwt" status --porcelain)" ] \
+    || die "$pwt, the checkout of $parent, is dirty - commit or discard its changes first"
+  if ! git -C "$path" rebase -q "$parent" >/dev/null 2>&1; then
+    git -C "$path" rebase --abort >/dev/null 2>&1 || true
+    warn "rebasing $branch onto $parent hit a conflict - aborted; both branches are as they were"
+    exit 3
+  fi
+  git -C "$pwt" merge -q --ff-only "$branch" \
+    || die "could not fast-forward $parent to $branch in $pwt"
+}
+
+cmd_ticket_worktree() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    add)    cmd_ticket_worktree_add "$@" ;;
+    list)   cmd_ticket_worktree_list "$@" ;;
+    remove) cmd_ticket_worktree_remove "$@" ;;
+    *) die "unknown ticket-worktree op: ${op:-<none>} (want add|list|remove)" ;;
   esac
 }
 
@@ -3303,6 +3494,7 @@ cmd_status() {
 # the moment you just threw it away. The directory is git-excluded anyway.
 cmd_archive() {
   require_state
+  refuse_ticket_worktrees
   local slug ts dest entry
   slug="$(state_get slug)"
   ts="$(dir_stamp)"
@@ -3339,13 +3531,19 @@ orch.sh - deterministic operations for the orchestrator flow
                               set, or default
   base clear                  remove the setting, falling back to the default
                               branch; succeeds when nothing was set
+  parallel show               print the parallel cap, how many ticket
+                              subagents a frontier runs at once: git config
+                              orchestrator.parallel, else 3; 1 is sequential.
+                              Dies naming the key and value when it is not a
+                              positive integer
   repo show [--name]          print the GitHub repo orch.sh works on and its
                               source: GH_REPO when set, else the checkout's
                               origin - never gh's default repo. --name prints
                               the bare [HOST/]OWNER/REPO alone, for gh -R.
                               Exits 1, naming GH_REPO, when neither resolves
   init <slug> [--issue N]     start a flow (refuses if one is active, unless
-                              it is done - a done flow is archived and the
+                              it is done - a done flow is archived, unless a
+                              ticket worktree is left, and the
                               new one starts over it, or if the working tree
                               has changes outside the planning allowlist);
                               --issue adopts an already-open,
@@ -3504,6 +3702,36 @@ orch.sh - deterministic operations for the orchestrator flow
                               start immediately)` once none is left). A repeat
                               removes no edge; re-running a failed run
                               finishes it
+  ticket merge <n>            land ticket <n>'s branch on the branch it was
+                              forked from: rebase it onto that branch's tip
+                              inside its ticket worktree, then fast-forward
+                              that branch in whichever checkout has it - no
+                              merge commit. Exits 1, changing nothing, when
+                              the ticket worktree or that checkout is dirty,
+                              or the branch is checked out nowhere; on a
+                              rebase conflict aborts the rebase and exits 3,
+                              both branches at their prior tips
+  ticket-worktree add <n>     fork <current-branch>--t<n> from the current
+                              branch's tip, record the forked-from branch on
+                              it (branch.<ticket-branch>.orchestrator-ticket-
+                              parent in local git config), check it out at
+                              .orchestrator/worktrees/t<n> under this
+                              checkout's top level, git-exclude .orchestrator/
+                              in the clone's shared info/exclude, and print
+                              the worktree's absolute path. Refuses when that
+                              worktree or branch already exists; a failure
+                              after the branch is made leaves nothing behind
+  ticket-worktree list        print <n> <path> for each ticket worktree under
+                              this checkout's .orchestrator/worktrees/ only;
+                              nothing, exit 0, when there are none
+  ticket-worktree remove <n> [--unmerged]
+                              remove ticket <n>'s worktree and delete its
+                              ticket branch, never with --force. Refuses a
+                              dirty worktree and, without
+                              --unmerged, a branch not merged into its
+                              forked-from branch, before removing anything;
+                              --unmerged deletes a clean worktree's unmerged
+                              branch
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
@@ -3587,6 +3815,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               handoff/pre-redo-spec-<UTC timestamp>/
   status                      human-readable summary
   archive                     move the live flow into .orchestrator/archive/
+                              (refuses, naming each, while a ticket worktree
+                              is left under this checkout)
 USAGE
 }
 
@@ -3597,6 +3827,7 @@ main() {
     doctor)        cmd_doctor "$@" ;;
     default-branch) default_branch ;;
     base)          cmd_base "$@" ;;
+    parallel)      cmd_parallel "$@" ;;
     repo)          cmd_repo "$@" ;;
     init)          cmd_init "$@" ;;
     slug)          cmd_slug "$@" ;;
@@ -3607,6 +3838,7 @@ main() {
     issue)         cmd_issue "$@" ;;
     pr)            cmd_pr "$@" ;;
     ticket)        cmd_ticket "$@" ;;
+    ticket-worktree) cmd_ticket_worktree "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
     spec-review)   cmd_spec_review "$@" ;;

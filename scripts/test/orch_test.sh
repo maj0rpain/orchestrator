@@ -162,8 +162,8 @@ new_repo_with_origin() {
 }
 
 # exclude_count <line>: how many times <line> appears whole in the current
-# repo's exclude file.
-exclude_count() { grep -cxF "$1" "$(git rev-parse --git-dir)/info/exclude" || true; }
+# clone's shared exclude file, the one every checkout of it reads.
+exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
 # flat_text: stdin on one line with every whitespace run collapsed to one
@@ -1199,6 +1199,31 @@ assert_contains "status reports no active flow afterwards" "$out" "No active flo
 out="$("$ORCH" init second 2>&1)"; st=$?
 assert_status "a new flow can start after archiving" "$st" 0
 
+# #622: moving a ticket worktree would break git's record of it, so archive
+# refuses while any is left under this checkout, naming each, and moves nothing.
+new_repo >/dev/null
+"$ORCH" init my-feature >/dev/null
+git checkout -q -b orch/1-my-feature
+top="$(git rev-parse --show-toplevel)"
+"$ORCH" ticket-worktree add 4 >/dev/null
+"$ORCH" ticket-worktree add 5 >/dev/null
+out="$("$ORCH" archive 2>&1)"; st=$?
+assert_status "archive refuses while a ticket worktree exists" "$st" 1
+assert_contains "naming the first" "$out" "$top/.orchestrator/worktrees/t4"
+assert_contains "naming the second" "$out" "$top/.orchestrator/worktrees/t5"
+assert_contains "with ticket-worktree remove as the remedy" "$out" "ticket-worktree remove"
+assert_eq "and moves nothing: the state stays" \
+  "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "present"
+assert_eq "no archive directory is made" \
+  "$([ -e .orchestrator/archive ] && echo present || echo absent)" "absent"
+assert_eq "the ticket worktrees stay where git recorded them" \
+  "$(git -C .orchestrator/worktrees/t4 rev-parse --show-toplevel)" "$top/.orchestrator/worktrees/t4"
+"$ORCH" ticket-worktree remove 4
+"$ORCH" ticket-worktree remove 5
+out="$("$ORCH" archive)"; st=$?
+assert_status "with the ticket worktrees removed, archive moves the flow as before" "$st" 0
+assert_eq "live state is cleared" "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+
 # --- repo show ----------------------------------------------------------------
 # The GitHub repo orch.sh works on (#520): GH_REPO when the caller set it, else
 # the checkout's origin - never gh's own default, which in a fork is upstream.
@@ -1404,6 +1429,46 @@ assert_status "refuses a missing verb" "$st" 1
 out="$(orch_gh_failing base set 2>&1)"; st=$?
 assert_status "set refuses with no branch" "$st" 1
 rm -rf "$(dirname "$bare")"
+
+# --- parallel show -------------------------------------------------------------
+# The clone's parallel cap: how many ticket subagents a frontier runs at once.
+# The default lives here alone, so the skills never read git config themselves.
+echo
+echo "parallel show"
+new_repo >/dev/null
+
+out="$("$ORCH" parallel show 2>&1)"; st=$?
+assert_status "parallel show succeeds with orchestrator.parallel unset" "$st" 0
+assert_eq "the cap is 3 when orchestrator.parallel is unset" "$out" "3"
+
+git config orchestrator.parallel 5
+out="$("$ORCH" parallel show 2>&1)"; st=$?
+assert_status "parallel show succeeds with a positive cap set" "$st" 0
+assert_eq "the cap is orchestrator.parallel's value when set" "$out" "5"
+git config orchestrator.parallel 1
+assert_eq "a cap of 1, sequential, is a valid setting" "$("$ORCH" parallel show 2>&1)" "1"
+
+for v in 0 -2 three 2x; do
+  git config --unset-all orchestrator.parallel; git config orchestrator.parallel "$v"
+  out="$("$ORCH" parallel show 2>&1)"; st=$?
+  assert_status "parallel show dies on orchestrator.parallel=$v" "$st" 1
+  assert_contains "naming the key" "$out" "orchestrator.parallel"
+  assert_contains "and the value $v" "$out" "$v"
+done
+git config --unset orchestrator.parallel
+
+out="$("$ORCH" parallel show extra 2>&1)"; st=$?
+assert_status "parallel show refuses an argument" "$st" 1
+assert_contains "with its usage line" "$out" "usage: orch.sh parallel show"
+out="$("$ORCH" parallel bogus 2>&1)"; st=$?
+assert_status "parallel bogus is an unknown op" "$st" 1
+assert_contains "listed alongside the ops that exist" "$out" "unknown parallel op"
+
+out="$("$ORCH" help 2>&1)"
+assert_contains "parallel show is in the usage text" "$out" "parallel show"
+assert_contains "beside base show" "$(printf '%s\n' "$out" | grep -A3 '^  base clear' | tr '\n' ' ')" "parallel show"
+assert_contains "the CLI conventions' noun table has a parallel row" \
+  "$(grep '^| `parallel`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`show`'
 
 # --- a flow's base branch -------------------------------------------------------
 # A flow fixes its base branch at init, so a later `base set` never moves the
@@ -1733,8 +1798,8 @@ assert_eq "printing the absolute iteration-01 prefix, the slashed branch as nest
   "$out" "$rp_dir/iteration-01"
 assert_eq "creating the branch's directory" "$([ -d "$rp_dir" ] && echo yes || echo no)" "yes"
 assert_eq "records no state" "$([ -f "$top/.orchestrator/state.json" ] && echo yes || echo no)" "no"
-assert_contains "git-excludes .orchestrator/" "$(cat "$(git rev-parse --git-dir)/info/exclude")" ".orchestrator/"
-assert_contains "git-excludes .scratch/" "$(cat "$(git rev-parse --git-dir)/info/exclude")" ".scratch/"
+assert_contains "git-excludes .orchestrator/" "$(cat "$(git rev-parse --git-common-dir)/info/exclude")" ".orchestrator/"
+assert_contains "git-excludes .scratch/" "$(cat "$(git rev-parse --git-common-dir)/info/exclude")" ".scratch/"
 assert_eq "and leaves the working tree clean" "$(git status --porcelain)" ""
 echo first >"$rp_dir/iteration-01-spec.md"
 out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
@@ -2345,6 +2410,22 @@ assert_eq "the archived state still carries the old slug" \
 assert_eq "the new flow's state reflects the new slug" "$("$ORCH" state get slug)" "second"
 assert_eq "the new flow starts at the spec phase, not done" "$("$ORCH" state get phase)" "spec"
 
+# #622: init's archive of a done flow refuses the same way archive does.
+fresh_flow first
+complete_plan_handoff "$("$ORCH" handoff path spec)"
+state_fixture phase "done"
+git checkout -q -b orch/1-first
+top="$(git rev-parse --show-toplevel)"
+"$ORCH" ticket-worktree add 6 >/dev/null
+out="$("$ORCH" init second 2>&1)"; st=$?
+assert_status "init over a done flow refuses while a ticket worktree exists" "$st" 1
+assert_contains "naming it" "$out" "$top/.orchestrator/worktrees/t6"
+assert_contains "with ticket-worktree remove as the remedy" "$out" "ticket-worktree remove"
+assert_eq "the done flow is left in place" "$("$ORCH" state get slug)" "first"
+assert_eq "nothing is archived" \
+  "$([ -e .orchestrator/archive ] && echo present || echo absent)" "absent"
+"$ORCH" ticket-worktree remove 6
+
 healthy_repo
 out="$("$ORCH" init nothing-to-archive)"
 assert_eq "with no prior flow, stdout is still just the slug" "$out" "nothing-to-archive"
@@ -2937,6 +3018,10 @@ assert_contains "names the fresh subagent Junie cannot use" \
 assert_eq "does not call the fresh subagent unverified on Junie" \
   "$(printf '%s\n' "$out" | grep -o 'unverified: .*' | grep -c 'Start a fresh subagent')" "0"
 assert_contains "names the forked subagent Junie cannot start" "$out" "Start a forked subagent"
+# Junie cannot start a background subagent, so it builds the frontier one
+# ticket at a time (ADR-0036): a gap, not Unverified.
+assert_contains "names the background subagent Junie cannot start" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Start a background subagent"
 # A human on Junie still starts a skill with /<name>; only the model lacks it.
 assert_contains "names only mid-step skill invocation as missing" "$out" "Invoke a skill from a step"
 assert_contains "points at the reference for the fallbacks" "$out" "docs/host-capabilities.md"
@@ -3248,6 +3333,28 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an unreachable GitHub does not fail the flow scope" "$st" 0
 assert_contains "skips the PR check with its cause" "$out" "skipped: GitHub is not reachable"
 fake_online
+
+# #622: a ticket worktree left over by an interrupted run is a FAIL naming it,
+# with ticket-worktree remove as the remedy - but only this checkout's own.
+tw_top="$(git rev-parse --show-toplevel)"
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_not_contains "with no ticket worktree, doctor --flow says nothing of them" "$out" "ticket worktree"
+"$ORCH" ticket-worktree add 12 >/dev/null
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a leftover ticket worktree fails doctor --flow" "$st" 1
+assert_contains "reports it as a FAIL naming it" "$out" \
+  "FAIL  ticket worktree $tw_top/.orchestrator/worktrees/t12 is left over"
+assert_contains "with ticket-worktree remove <n> as the remedy" "$out" "orch.sh ticket-worktree remove 12"
+"$ORCH" ticket-worktree remove 12
+tw_linked="$(mktemp -d)/linked"
+git worktree add -q -b orch/9-other "$tw_linked"
+(cd "$tw_linked" && "$ORCH" ticket-worktree add 13 >/dev/null)
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "another checkout's ticket worktree does not fail doctor --flow" "$st" 0
+assert_not_contains "nor is it reported" "$out" "t13"
+(cd "$tw_linked" && "$ORCH" ticket-worktree remove 13)
+git worktree remove "$tw_linked"
+git branch -q -D orch/9-other
 
 # --flow never runs the tools group, so if it skipped every check it has and
 # still exited 0, /orchestrator:next would advance a flow nothing had checked.
@@ -4569,6 +4676,300 @@ new_repo >/dev/null
 out="$("$ORCH" ticket bogus 2>&1)"; st=$?
 assert_status "ticket bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown ticket op"
+
+# --- ticket-worktree (#619) ----------------------------------------------------
+# A ticket's own worktree on its own ticket branch, under the checkout's
+# .orchestrator/worktrees/. Checked through what git shows afterwards -
+# branches, tips, worktrees, the exclude file - never orch.sh's internals.
+echo
+echo "ticket-worktree"
+# tw_repo: a fresh repo with a bare origin it has pushed to, on a feature
+# branch, cwd inside it. Call it in the current shell: new_repo cd's.
+tw_repo() {
+  local bare
+  new_repo >/dev/null
+  bare="$(mktemp -d)/origin.git"
+  git init -q --bare "$bare"
+  bare_origin "$bare"
+  git push -q origin HEAD 2>/dev/null
+  git checkout -q -b orch/5-feature
+  echo work >feature.txt && git add feature.txt && git commit -qm feature
+}
+
+tw_repo
+top="$(git rev-parse --show-toplevel)"
+tip="$(git rev-parse HEAD)"
+out="$("$ORCH" ticket-worktree add 7)"; st=$?
+assert_status "add succeeds" "$st" 0
+assert_eq "add prints the worktree's absolute path" "$out" "$top/.orchestrator/worktrees/t7"
+assert_eq "the worktree is a top level of its own" \
+  "$(git -C "$out" rev-parse --show-toplevel)" "$top/.orchestrator/worktrees/t7"
+assert_eq "it is checked out on <current-branch>--t<n>" \
+  "$(git -C "$out" branch --show-current)" "orch/5-feature--t7"
+assert_eq "the ticket branch forks from the current branch's tip" \
+  "$(git rev-parse orch/5-feature--t7)" "$tip"
+assert_eq "the forked-from branch is recorded on the ticket branch" \
+  "$(git config --get branch.orch/5-feature--t7.orchestrator-ticket-parent)" "orch/5-feature"
+assert_eq "the current checkout stays on its branch" "$(git branch --show-current)" "orch/5-feature"
+assert_eq "add excludes .orchestrator/" "$(exclude_count .orchestrator/)" "1"
+assert_eq "add excludes .scratch/" "$(exclude_count .scratch/)" "1"
+assert_eq "the ticket worktree stays out of git status" "$(git status --porcelain)" ""
+
+"$ORCH" ticket-worktree add 8 >/dev/null
+assert_eq "a second add writes .orchestrator/ no second time" "$(exclude_count .orchestrator/)" "1"
+assert_eq "a second add writes .scratch/ no second time" "$(exclude_count .scratch/)" "1"
+
+out="$("$ORCH" ticket-worktree list)"; st=$?
+assert_status "list succeeds" "$st" 0
+assert_eq "list prints <n> <path> for each ticket worktree" "$out" \
+  "$(printf '7 %s\n8 %s' "$top/.orchestrator/worktrees/t7" "$top/.orchestrator/worktrees/t8")"
+
+out="$("$ORCH" ticket-worktree add 7 2>&1)"; st=$?
+assert_status "add refuses an existing worktree" "$st" 1
+assert_contains "naming it" "$out" ".orchestrator/worktrees/t7"
+
+git worktree remove "$top/.orchestrator/worktrees/t8"
+out="$("$ORCH" ticket-worktree add 8 2>&1)"; st=$?
+assert_status "add refuses an existing ticket branch" "$st" 1
+assert_contains "naming the branch" "$out" "orch/5-feature--t8 already exists"
+assert_eq "and adds no worktree" "$([ -e .orchestrator/worktrees/t8 ] && echo present || echo absent)" "absent"
+git branch -q -D orch/5-feature--t8
+
+out="$("$ORCH" ticket-worktree add 0 2>&1)"; st=$?
+assert_status "add refuses a ticket number that is not a positive integer" "$st" 1
+out="$("$ORCH" ticket-worktree add 2>&1)"; st=$?
+assert_status "add refuses a missing ticket number" "$st" 1
+
+git checkout -q --detach
+out="$("$ORCH" ticket-worktree add 9 2>&1)"; st=$?
+assert_status "add refuses a detached HEAD" "$st" 1
+git checkout -q orch/5-feature
+
+# A failed git worktree add: .orchestrator/worktrees is a file, so no
+# worktree can be made under it.
+tw_repo
+mkdir -p .orchestrator && : >.orchestrator/worktrees
+out="$("$ORCH" ticket-worktree add 3 2>&1)"; st=$?
+assert_status "add dies when the worktree cannot be added" "$st" 1
+assert_eq "and leaves no ticket branch behind" \
+  "$(git branch --list 'orch/5-feature--t3')" ""
+assert_eq "nor its recorded parent" \
+  "$(git config --get branch.orch/5-feature--t3.orchestrator-ticket-parent)" ""
+assert_eq "nor any worktree" "$(git worktree list | wc -l | tr -d ' ')" "1"
+assert_eq "it still wrote the exclude entry first" "$(exclude_count .orchestrator/)" "1"
+
+tw_repo
+out="$("$ORCH" ticket-worktree list)"; st=$?
+assert_status "list with no ticket worktrees exits 0" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+
+# From a linked worktree: the exclude entry lands in the clone's shared
+# info/exclude, and the ticket worktree under the linked checkout's own top
+# level; each checkout lists only its own.
+tw_repo
+main_top="$(git rev-parse --show-toplevel)"
+linked="$(mktemp -d)/linked"
+git worktree add -q -b orch/6-other "$linked"
+"$ORCH" ticket-worktree add 2 >/dev/null
+cd "$linked" || exit 1
+out="$("$ORCH" ticket-worktree add 4)"; st=$?
+assert_status "add succeeds from a linked worktree" "$st" 0
+assert_eq "under the linked checkout's own top level" "$out" "$linked/.orchestrator/worktrees/t4"
+assert_eq "it writes the clone's shared info/exclude" \
+  "$(exclude_count .orchestrator/)" "1"
+assert_eq "and keeps the linked checkout's git status clean" "$(git status --porcelain)" ""
+assert_eq "the linked checkout lists only its own ticket worktree" \
+  "$("$ORCH" ticket-worktree list)" "4 $linked/.orchestrator/worktrees/t4"
+cd "$main_top" || exit 1
+assert_eq "the main checkout ignores the linked checkout's ticket worktree" \
+  "$("$ORCH" ticket-worktree list)" "2 $main_top/.orchestrator/worktrees/t2"
+
+# remove
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+out="$("$ORCH" ticket-worktree remove 7)"; st=$?
+assert_status "remove of a merged, clean ticket succeeds" "$st" 0
+assert_eq "it removes the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
+assert_eq "and git no longer records it" "$(git worktree list | wc -l | tr -d ' ')" "1"
+assert_eq "it deletes the ticket branch" "$(git branch --list 'orch/5-feature--t7')" ""
+assert_eq "remove then list prints nothing" "$("$ORCH" ticket-worktree list)" ""
+
+wt="$("$ORCH" ticket-worktree add 7)"
+echo dirty >"$wt/README.md"
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "remove refuses a dirty worktree" "$st" 1
+assert_contains "saying it is dirty" "$out" "dirty"
+assert_eq "leaving the worktree in place" "$([ -f "$wt/README.md" ] && cat "$wt/README.md")" "dirty"
+assert_eq "and the branch" \
+  "$(git rev-parse --verify --quiet refs/heads/orch/5-feature--t7 >/dev/null && echo present)" "present"
+out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
+assert_status "remove --unmerged still refuses a dirty worktree" "$st" 1
+assert_eq "leaving the worktree in place" "$([ -f "$wt/README.md" ] && cat "$wt/README.md")" "dirty"
+assert_eq "and the branch" \
+  "$(git rev-parse --verify --quiet refs/heads/orch/5-feature--t7 >/dev/null && echo present)" "present"
+git -C "$wt" checkout -q -- README.md
+echo new >"$wt/untracked.txt"
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "an untracked file counts as dirty" "$st" 1
+rm "$wt/untracked.txt"
+
+git -C "$wt" commit -q --allow-empty -m "ticket work"
+ticket_tip="$(git rev-parse orch/5-feature--t7)"
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "remove refuses an unmerged branch" "$st" 1
+assert_contains "saying it is unmerged" "$out" "not merged"
+assert_eq "leaving the worktree in place" "$([ -d "$wt" ] && echo present || echo absent)" "present"
+assert_eq "and the branch at its tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+out="$("$ORCH" ticket-worktree remove 7 --unmerged)"; st=$?
+assert_status "remove --unmerged discards a clean worktree's unmerged branch" "$st" 0
+assert_eq "removing the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
+assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
+
+# Merged into its forked-from branch, but not into the branch the invoking
+# checkout has checked out: merged is judged against the forked-from branch
+# alone, so remove succeeds rather than refusing after the worktree is gone.
+wt="$("$ORCH" ticket-worktree add 7)"
+git -C "$wt" commit -q --allow-empty -m "ticket work"
+git merge -q --ff-only orch/5-feature--t7
+git checkout -q -b orch/5-elsewhere HEAD~1
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "remove of a ticket merged into its forked-from branch but not HEAD succeeds" "$st" 0
+assert_eq "removing the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
+assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
+git checkout -q orch/5-feature
+
+out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
+assert_status "remove refuses a ticket with no worktree" "$st" 1
+out="$("$ORCH" ticket-worktree remove 7 --bogus 2>&1)"; st=$?
+assert_status "remove refuses an unknown flag" "$st" 1
+out="$("$ORCH" ticket-worktree bogus 2>&1)"; st=$?
+assert_status "ticket-worktree bogus is an unknown op" "$st" 1
+assert_contains "listed alongside the ops that exist" "$out" "unknown ticket-worktree op"
+
+out="$("$ORCH" help 2>&1)"
+assert_contains "ticket-worktree add is in the usage text" "$out" "ticket-worktree add <n>"
+assert_contains "ticket-worktree list is in the usage text" "$out" "ticket-worktree list"
+assert_contains "ticket-worktree remove is in the usage text" "$out" "ticket-worktree remove <n> [--unmerged]"
+assert_contains "the CLI conventions' noun table has a ticket-worktree row" \
+  "$(grep '^| `ticket-worktree`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" \
+  '`add`, `list`, `remove`'
+restore_suite_env
+
+# --- ticket merge (#621) -------------------------------------------------------
+# Lands a ticket branch on the branch it was forked from: rebase inside the
+# ticket worktree, then fast-forward the forked-from branch wherever it is
+# checked out. Checked through branches, tips and exit status.
+echo
+echo "ticket merge"
+# tm_commit <dir> <file> <content>: commit <content> to <file> in <dir>.
+tm_commit() { echo "$3" >"$1/$2" && git -C "$1" add "$2" && git -C "$1" commit -qm "$2: $3"; }
+# tm_rebasing <dir>: "yes" when a rebase is in progress in <dir>'s checkout.
+tm_rebasing() {
+  local d
+  for d in rebase-merge rebase-apply; do
+    [ ! -e "$(git -C "$1" rev-parse --git-path "$d")" ] || { echo yes; return; }
+  done
+  echo no
+}
+
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+tm_commit "$wt" ticket.txt one
+tm_commit "$wt" ticket2.txt two
+tm_commit . other.txt landed-first
+flow_tip="$(git rev-parse orch/5-feature)"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge of a clean ticket succeeds" "$st" 0
+assert_eq "the forked-from branch now holds the ticket's commits" \
+  "$(git log --format=%s orch/5-feature -3 | tr '\n' '|')" "ticket2.txt: two|ticket.txt: one|other.txt: landed-first|"
+assert_eq "on top of its prior tip" "$(git rev-parse orch/5-feature~2)" "$flow_tip"
+assert_eq "with no merge commit" "$(git rev-list --merges orch/5-feature | wc -l | tr -d ' ')" "0"
+assert_eq "the forked-from branch's tip is the ticket branch's" \
+  "$(git rev-parse orch/5-feature)" "$(git rev-parse orch/5-feature--t7)"
+assert_eq "its checkout's working tree is updated too" "$(cat ticket2.txt)" "two"
+assert_eq "and left clean" "$(git status --porcelain)" ""
+out="$("$ORCH" ticket-worktree remove 7)"; st=$?
+assert_status "a merged ticket's worktree then removes without --unmerged" "$st" 0
+
+# Conflict: both sides change the same line.
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+tm_commit "$wt" feature.txt from-ticket
+tm_commit . feature.txt from-flow
+flow_tip="$(git rev-parse orch/5-feature)"
+ticket_tip="$(git rev-parse orch/5-feature--t7)"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge exits 3 on a rebase conflict" "$st" 3
+assert_contains "saying it conflicted" "$out" "conflict"
+assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "the ticket branch stays at its prior tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+assert_eq "no rebase is left in progress" "$(tm_rebasing "$wt")" "no"
+assert_eq "the ticket worktree is left clean" "$(git -C "$wt" status --porcelain)" ""
+assert_eq "and the flow's checkout too" "$(git status --porcelain)" ""
+
+# Refusals: each exits 1 and changes nothing.
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+tm_commit "$wt" ticket.txt one
+tm_commit . other.txt landed-first
+flow_tip="$(git rev-parse orch/5-feature)"
+ticket_tip="$(git rev-parse orch/5-feature--t7)"
+echo dirty >"$wt/README.md"
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge refuses a dirty ticket worktree" "$st" 1
+assert_contains "naming it dirty" "$out" "dirty"
+assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+assert_eq "and the ticket worktree's change" "$(cat "$wt/README.md")" "dirty"
+git -C "$wt" checkout -q -- README.md
+
+echo dirty >README.md
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge refuses a dirty forked-from checkout" "$st" 1
+assert_contains "naming it dirty" "$out" "dirty"
+assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+assert_eq "and the checkout's change" "$(cat README.md)" "dirty"
+git checkout -q -- README.md
+
+git checkout -q --detach
+out="$("$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge refuses a forked-from branch checked out nowhere" "$st" 1
+assert_contains "naming the branch" "$out" "orch/5-feature"
+assert_eq "leaving the forked-from branch" "$(git rev-parse orch/5-feature)" "$flow_tip"
+assert_eq "and the ticket branch" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
+git checkout -q orch/5-feature
+
+out="$("$ORCH" ticket merge 9 2>&1)"; st=$?
+assert_status "merge refuses a ticket with no ticket worktree" "$st" 1
+out="$("$ORCH" ticket merge 2>&1)"; st=$?
+assert_status "merge refuses a missing ticket number" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh ticket merge <n>"
+
+# The forked-from branch checked out in a linked worktree (an ADR-0008 flow
+# checkout): the merge fast-forwards it there.
+tw_repo
+main_top="$(git rev-parse --show-toplevel)"
+linked="$(mktemp -d)/linked"
+git worktree add -q -b orch/6-other "$linked"
+cd "$linked" || exit 1
+wt="$("$ORCH" ticket-worktree add 4)"
+tm_commit "$wt" ticket.txt four
+tm_commit . other.txt landed-first
+out="$("$ORCH" ticket merge 4 2>&1)"; st=$?
+assert_status "merge succeeds when the forked-from branch is in a linked worktree" "$st" 0
+assert_eq "fast-forwarding it there" "$(git -C "$linked" rev-parse HEAD)" "$(git rev-parse orch/6-other--t4)"
+assert_eq "linearly" "$(git -C "$linked" log --format=%s -2 | tr '\n' '|')" "ticket.txt: four|other.txt: landed-first|"
+assert_eq "updating its working tree" "$(cat "$linked/ticket.txt")" "four"
+assert_eq "and leaving the main checkout's branch alone" \
+  "$(git -C "$main_top" branch --show-current)" "orch/5-feature"
+cd "$main_top" || exit 1
+
+out="$("$ORCH" help 2>&1)"
+assert_contains "ticket merge is in the usage text" "$out" "ticket merge <n>"
+assert_contains "the CLI conventions' noun table lists merge among ticket's verbs" \
+  "$(grep '^| `ticket` ' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`merge`'
+restore_suite_env
 
 # --- review begin -----------------------------------------------------------
 # The bound lives in bash precisely so a long session cannot re-remember five as
