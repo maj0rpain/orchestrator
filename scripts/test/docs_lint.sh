@@ -114,9 +114,11 @@ assert_eq "spares passes when no finding matches" \
 # was renamed interview in 3.0.0 (#373), so orch-plan, under any prefix, and
 # the command orchestrator:plan are old names too, each matched as a whole
 # token: .scratch/orch-plan-<slug>.md names a saved plan, not the skill.
+# /orchestrator:quick-implement is a live command too (#723), so only the
+# quick-implement skill's directory and name line remain old names.
 echo
 echo "skill names (ADR-0014)"
-old_names='orchestrator:(flow|handoff|review-spec|quick-implement|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$|(^|[^a-z-])(orch-plan|orchestrator:plan)([^a-z-]|$)'
+old_names='orchestrator:(flow|handoff|review-spec|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$|(^|[^a-z-])(orch-plan|orchestrator:plan)([^a-z-]|$)'
 # scan_old_names <plugin root>: each old skill or command name in a tracked
 # file outside history, and each old command file or skill directory.
 scan_old_names() {
@@ -161,6 +163,8 @@ printf 'See skills/orch-plan/SKILL.md.\n' >"$fixture/commands/p7.md"
 printf 'name: orch-plan\n' >"$fixture/commands/p8.md"
 printf 'Run `/orchestrator:interview`.\nCall `orchestrator:orch-interview`.\nskills/orch-interview/\n$orch-interview\n' >"$fixture/commands/interview.md"
 printf 'Save it to `.scratch/orch-plan-<slug>.md`.\n' >"$fixture/commands/scratch.md"
+printf 'Run `/orchestrator:quick-implement 12`.\nCall `orchestrator:orch-quick-implement`.\n' >"$fixture/commands/quick.md"
+printf 'See skills/quick-implement/SKILL.md.\n' >"$fixture/commands/q1.md"
 git -C "$fixture" add -A
 out="$(scan_old_names "$fixture")"
 flags "the old review-spec skill name is flagged" "$out" "commands/a.md:1: old skill or command name"
@@ -172,6 +176,9 @@ spares "the new spec-review names are not flagged" \
   "$out" '^(commands/new\.md|skills/)'
 spares "the live /orchestrator:review command is not flagged" \
   "$out" '^commands/review\.md'
+spares "the live /orchestrator:quick-implement command is not flagged" \
+  "$out" '^commands/quick\.md'
+flags "the old quick-implement skill directory is flagged" "$out" "commands/q1.md:1: old skill or command name"
 flags "the old review skill directory is flagged" "$out" "commands/f.md:1: old skill or command name"
 flags "the old review skill name line is flagged" "$out" "commands/g.md:1: old skill or command name"
 flags "the old orchestrator:orch-plan skill name is flagged" "$out" "commands/p1.md:1: old skill or command name"

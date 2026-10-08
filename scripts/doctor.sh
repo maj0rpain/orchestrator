@@ -619,11 +619,38 @@ check_base_branch() {
   esac
 }
 
+# A finished side checkout left standing is a leftover the sweep has not run
+# on: warn on each, with the command that removes it, and say nothing for one
+# still in use. The finished test is the sweep's own, side_checkout_finished.
+# With no side checkout there is nothing to ask GitHub, so the gate - and a
+# skip with GitHub unreachable - only counts once one exists.
+check_side_checkouts_finished() {
+  local path paths=() found=() verdict branch rc
+  mapfile -t paths < <(checkout_paths)
+  for path in "${paths[@]}"; do
+    [ "$path" != "$(main_checkout)" ] && is_side_checkout "$path" && found+=("$path")
+  done
+  [ "${#found[@]}" -gt 0 ] || return 0
+  d_gh_gate || return 0
+  for path in "${found[@]}"; do
+    rc=0; verdict=""; branch=""
+    side_checkout_finished "$path" </dev/null || rc=$?
+    case "$rc" in
+      0)
+        d_warn "side checkout $(basename "$path") is finished - its PR is merged, and it is still standing at $path."
+        d_remedy "orch.sh side-checkout remove $(basename "$path")" ;;
+      1) ;;
+      *) d_warn "side checkout $(basename "$path") could not be checked: $verdict" ;;
+    esac
+  done
+  return 0
+}
+
 ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch
+h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_side_checkouts_finished
 "
 
 # flow state -----------------------------------------------------------------
@@ -855,6 +882,27 @@ check_flow_ticket_worktrees() {
   done <<<"$(cmd_ticket_worktree_list)"
 }
 
+# Every phase commits and pushes its own work before it ends, so a change
+# outside the planning allowlist at a phase boundary is a bug in the phase that
+# left it - caught here, at the top of /orchestrator:next, while that phase's
+# context still exists. Pure reuse of init's check, so the two never disagree
+# about what counts. Silent on a clean tree. dirty_outside_allowlist dies when
+# git status cannot run; in its subshell that ends only the subshell, and its
+# message becomes this check's FAIL rather than the end of the report.
+check_flow_worktree_clean() {
+  local dirty err
+  err="$(mktemp)"
+  if ! dirty="$(dirty_outside_allowlist 2>"$err")"; then
+    d_fail "$(sed -n 's/^orch: //p' "$err" | sed -n 1p)"
+    rm -f "$err"
+    return 0
+  fi
+  rm -f "$err"
+  [ -n "$dirty" ] || return 0
+  d_fail "the working tree has changes outside the planning allowlist: $(d_join "$dirty")"
+  d_remedy "git status"
+}
+
 # Pure reuse: what makes a handoff valid lives in handoff_required and
 # section_body, and a second statement of it here is how the two answers drift.
 # Which handoffs are due is mechanical - phase names what runs *next*, so every
@@ -916,9 +964,11 @@ d_count() {
 d_run_flow() {
   if [ "$D_JQ" = ok ] && [ "$D_STATE" = ok ]; then
     d_run "$FLOW_CHECKS"
-    # Outside the registry: it reads git alone and prints nothing when clean,
-    # so a flow with no ticket worktree reports exactly what it did before.
+    # Outside the registry: each reads git alone and prints nothing when clean,
+    # so a flow with no ticket worktree and a clean working tree reports
+    # exactly what it did before.
     check_flow_ticket_worktrees
+    check_flow_worktree_clean
     return 0
   fi
   # Neither path below reaches a check, so neither gets the header out of the

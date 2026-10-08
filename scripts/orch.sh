@@ -141,6 +141,7 @@ flow_cmd() {
     next)  section="Next phase" ;;
     redo)  section="Redo" ;;
     abort) section="Abort" ;;
+    finish) section="Finish" ;;
     *) die "flow_cmd: unknown command: $1" ;;
   esac
   plugin_cmd "$1" "orch-flow's $section section"
@@ -236,10 +237,14 @@ EOF
 # Every read of state.json goes through here, so what an absent key means is
 # decided in the STATE_KEYS table rather than at each call site. A key outside
 # the table dies: a misspelt read would otherwise look exactly like an unset one.
-state_get() {
+state_get() { state_get_in "$STATE" "$1"; }
+
+# state_get against another checkout's state file <file>: the one read side
+# checkout list makes of a flow it does not run in.
+state_get_in() {
   local default
-  default="$(state_key "$1" default)" || die "unknown state key: $1"
-  jq -r --arg k "$1" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$STATE"
+  default="$(state_key "$2" default)" || die "unknown state key: $2"
+  jq -r --arg k "$2" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$1"
 }
 
 # The one state-file write: sets key $1 to the JSON value $2 and stamps
@@ -490,9 +495,12 @@ base_source() { if [ -n "$(base_setting)" ]; then echo set; else echo default; f
 
 # The active flow's own base branch, recorded by init. A flow started before
 # base was recorded has none, and always forked from the default branch.
-flow_base() {
+flow_base() { flow_base_in "$STATE"; }
+
+# flow_base against another checkout's state file <file>.
+flow_base_in() {
   local b
-  b="$(state_get base)"
+  b="$(state_get_in "$1" base)"
   if [ -n "$b" ]; then printf '%s\n' "$b"; else default_branch; fi
 }
 
@@ -519,6 +527,17 @@ require_on_origin() {
 
 # Whether a flow is active: state.json exists and its phase is not done.
 flow_active() { [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; }
+
+# The refusal of a second flow beside one mid-pipeline, shared by init and
+# branch off (a quick implementation must never move an active flow's checkout
+# off its branch). It exits 3, a code no other failure of either uses, so a
+# skill can tell "a flow is active" apart from every other refusal.
+refuse_beside_active_flow() {
+  flow_active || return 0
+  warn "a flow is already active (slug: $(state_get slug), phase: $(state_get phase)).
+     One flow at a time - finish it, or run $(flow_cmd abort)."
+  exit 3
+}
 
 # A flow's base is fixed when init seeds it: no redo and no change to the
 # checkout setting rewrites it, so its fork point and PR target cannot move
@@ -646,14 +665,16 @@ source "$(dirname "${BASH_SOURCE[0]}")/planning-allowlist.sh"
 # -uall lists untracked files individually, so a new directory is judged by
 # what is in it rather than by its name.
 dirty_outside_allowlist() {
-  local rec path want_src=0 status
+  local rec path want_src=0 status err
   # Captured first rather than read through a process substitution, whose
   # failure set -e never sees: a git status that cannot run must refuse, not
   # read as a clean tree. A file, not a variable, because the output is
-  # NUL-separated.
+  # NUL-separated. git's own error is kept so the refusal can name it.
   status="$(mktemp)"
-  git -C "$ROOT" status --porcelain=v1 -z -uall >"$status" \
-    || { rm -f "$status"; die "git status failed - cannot check the working tree"; }
+  if ! err="$(git -C "$ROOT" status --porcelain=v1 -z -uall 2>&1 >"$status")"; then
+    rm -f "$status"
+    die "git status failed - cannot check the working tree: $(first_line "$err")"
+  fi
   while IFS= read -r -d '' rec; do
     if [ "$want_src" -eq 1 ]; then
       path="$rec"; want_src=0
@@ -664,6 +685,21 @@ dirty_outside_allowlist() {
     planning_allowlisted "$path" || printf '%s\n' "$path"
   done <"$status"
   rm -f "$status"
+}
+
+# tree_status <path>: prints git status --porcelain for the working tree at
+# <path> - empty when it is clean. A git status that cannot run must never
+# read as a clean tree, so instead it prints why, naming git's error, and
+# returns 1: callers refuse with that line, or report it.
+tree_status() {
+  local out err
+  err="$(mktemp)"
+  if ! out="$(git -C "$1" status --porcelain 2>"$err")"; then
+    printf 'git status failed - cannot check the working tree: %s\n' "$(first_line "$(cat "$err")")"
+    rm -f "$err"; return 1
+  fi
+  rm -f "$err"
+  printf '%s' "$out"
 }
 
 # The git-based backstop from ADR-0013. Where no host hook arms the edit
@@ -732,10 +768,7 @@ cmd_init() {
   # so it is not "active" in any sense that matters. init archives it and
   # proceeds instead of refusing; every other phase still blocks a second flow.
   local archive_note=""
-  if flow_active; then
-    die "a flow is already active (slug: $(state_get slug), phase: $(state_get phase)).
-     One flow at a time - finish it, or run $(flow_cmd abort)."
-  fi
+  refuse_beside_active_flow
   require_clean_outside_allowlist
   # Adoption is validated before anything is written, mirroring how
   # branch create and pr open die on their own preconditions rather than
@@ -759,8 +792,10 @@ cmd_init() {
       slug: $slug, issue: (if $issue == "" then null else ($issue | tonumber) end),
       base: $base, created: $now, updated: $now
     }')" || die "could not build the state seed - nothing was written"
+  # archive_flow, not cmd_archive: in a side checkout the old flow moves to the
+  # main checkout's archive, but the worktree stays - the new flow lives here.
   if [ -f "$STATE" ]; then
-    archive_note="$(cmd_archive)" || exit 1
+    archive_note="$(archive_flow "$ROOT")" || exit 1
   fi
   mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"
   exclude_orch_dirs
@@ -1202,6 +1237,15 @@ adapter_prs_open() {
   local args=(--head "$1")
   [ -z "${2:-}" ] || args+=(--base "$2")
   gh pr list "${args[@]}" --state open --json number --jq '.[].number'
+}
+
+# adapter_prs_merged <head> <base>: the PRs from the head branch merged into
+# the base branch, one number per line, newest first - the finished sweep's
+# read for a quick implementation, which records no PR of its own. GitHub
+# reports a squash or rebase merge as merged too, which git ancestry never
+# would.
+adapter_prs_merged() {
+  gh pr list --head "$1" --base "$2" --state merged --json number --jq '.[].number'
 }
 
 # adapter_prs_merged_bodies <base>: the body of every PR merged into the base
@@ -1795,6 +1839,12 @@ cmd_review() {
         || die "gh could not mark PR #$pr ready - the flow stays in review"
       phase_write "done"
       note "$pr"
+      # stdout stays the PR number alone; the pointer goes to stderr. A side
+      # checkout outlives its PR, so the human is told how to clear it once
+      # the PR merges.
+      if is_side_checkout "$(pwd -P)"; then
+        warn "this is a side checkout - once PR #$pr merges, run $(flow_cmd finish) to archive its flow and remove it"
+      fi
       ;;
     ci)
       require_state
@@ -2405,6 +2455,7 @@ cmd_branch_create() {
 # flow's base_sha has, for its reviewers to diff from.
 cmd_branch_off() {
   [ $# -eq 1 ] || die "usage: orch.sh branch off <name>"
+  refuse_beside_active_flow
   local base
   base="$(base_branch)"
   checkout_new_branch "$1" "$base"
@@ -3334,11 +3385,16 @@ cmd_ticket_worktree_add() {
 # worktrees are that checkout's business.
 cmd_ticket_worktree_list() {
   [ $# -eq 0 ] || die "usage: orch.sh ticket-worktree list"
+  ticket_worktrees_under "$ROOT"
+}
+
+# Prints <n> <path> for every ticket worktree under the checkout at <root>.
+ticket_worktrees_under() {
   local line path name
   while IFS= read -r line; do
     case "$line" in "worktree "*) ;; *) continue ;; esac
     path="${line#worktree }"
-    [ "$(dirname "$path")" = "$TICKET_WORKTREES" ] || continue
+    [ "$(dirname "$path")" = "$1/$ORCH_DIR_NAME/worktrees" ] || continue
     name="$(basename "$path")"
     case "$name" in t[1-9]*) ;; *) continue ;; esac
     case "${name#t}" in *[!0-9]*) continue ;; esac
@@ -3346,13 +3402,14 @@ cmd_ticket_worktree_list() {
   done < <(git worktree list --porcelain)
 }
 
-# Dies, naming every ticket worktree under this checkout, when any is left:
-# moving .orchestrator/ wholesale would break git's record of each one.
+# Dies, naming every ticket worktree under the checkout at <root> (this one by
+# default), when any is left: moving .orchestrator/ wholesale would break git's
+# record of each one, and removing the checkout would delete them.
 refuse_ticket_worktrees() {
   local left
-  left="$(cmd_ticket_worktree_list)"
+  left="$(ticket_worktrees_under "${1:-$ROOT}")"
   [ -n "$left" ] || return 0
-  die "ticket worktrees are left under this checkout - moving them would break git's record of them:
+  die "ticket worktrees are left under ${1:-this checkout} - moving them would break git's record of them:
 $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
      Remove each with orch.sh ticket-worktree remove <n> first."
 }
@@ -3374,7 +3431,7 @@ ticket_worktree_resolve() {
 # Both refusals - a dirty worktree, and without --unmerged a branch not merged
 # into its forked-from branch - run before anything is removed.
 cmd_ticket_worktree_remove() {
-  local n="" unmerged=0 path branch parent
+  local n="" unmerged=0 path branch parent st
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -3384,7 +3441,8 @@ cmd_ticket_worktree_remove() {
     shift
   done
   ticket_worktree_resolve "$n"
-  [ -z "$(git -C "$path" status --porcelain)" ] \
+  st="$(tree_status "$path")" || die "$st"
+  [ -z "$st" ] \
     || die "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
   if [ "$unmerged" = 0 ]; then
     parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
@@ -3419,15 +3477,17 @@ branch_checkout() {
 # leaving both branches at their prior tips.
 cmd_ticket_merge() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket merge <n>"
-  local n path branch parent pwt
+  local n path branch parent pwt st
   ticket_worktree_resolve "$1"
   parent="$(git config --get "branch.$branch.orchestrator-ticket-parent" 2>/dev/null)" \
     || die "branch $branch records no forked-from branch"
-  [ -z "$(git -C "$path" status --porcelain)" ] \
+  st="$(tree_status "$path")" || die "$st"
+  [ -z "$st" ] \
     || die "ticket worktree $path is dirty - commit or discard its changes first"
   pwt="$(branch_checkout "$parent")"
   [ -n "$pwt" ] || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
-  [ -z "$(git -C "$pwt" status --porcelain)" ] \
+  st="$(tree_status "$pwt")" || die "$st"
+  [ -z "$st" ] \
     || die "$pwt, the checkout of $parent, is dirty - commit or discard its changes first"
   if ! git -C "$path" rebase -q "$parent" >/dev/null 2>&1; then
     git -C "$path" rebase --abort >/dev/null 2>&1 || true
@@ -3446,6 +3506,271 @@ cmd_ticket_worktree() {
     list)   cmd_ticket_worktree_list "$@" ;;
     remove) cmd_ticket_worktree_remove "$@" ;;
     *) die "unknown ticket-worktree op: ${op:-<none>} (want add|list|remove)" ;;
+  esac
+}
+
+# --- side-checkout ------------------------------------------------------------
+#
+# A side checkout: a worktree the plugin makes under the main checkout's
+# .orchestrator/checkouts/, so a second flow or a quick implementation runs
+# beside the work in this checkout, in a session of its own (ADR-0037). The
+# ownership marker in the worktree's own git folder - which git deletes with
+# the worktree - is what makes it one; a flow's state file is not, since a
+# hand-made worktree can hold a flow too.
+
+readonly SIDE_CHECKOUT_MARKER="orchestrator-side-checkout"
+
+# The main checkout: the first worktree git lists.
+main_checkout() { git worktree list --porcelain | sed -n '1s/^worktree //p'; }
+
+side_checkouts_dir() { printf '%s/%s/checkouts\n' "$(main_checkout)" "$ORCH_DIR_NAME"; }
+
+# Whether the worktree at <path> carries the ownership marker.
+is_side_checkout() {
+  local gd
+  gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" && [ -f "$gd/$SIDE_CHECKOUT_MARKER" ]
+}
+
+# Adds a worktree on no branch at origin/<base>, the base branch in effect,
+# freshly fetched: git refuses one branch in two worktrees, and the main
+# checkout usually holds the base. A failed fetch dies before any worktree
+# exists; a failed marker write takes the fresh worktree back out.
+cmd_side_checkout_add() {
+  [ $# -eq 1 ] || die "usage: orch.sh side-checkout add <slug>"
+  local slug path base gd main_root
+  slug="$(normalize_slug "$1")"
+  main_root="$(main_checkout)"
+  # The sweep first, its report on stderr so stdout stays the path alone. A
+  # failed sweep never stops add; it may have removed the checkout this ran
+  # in, so add carries on from the main checkout.
+  ( cmd_side_checkout_prune ) >&2 \
+    || warn "the finished sweep failed - carrying on with add"
+  cd "$main_root" || die "could not enter the main checkout $main_root"
+  path="$(side_checkouts_dir)/$slug"
+  [ ! -e "$path" ] || die "side checkout $path already exists"
+  exclude_orch_dirs
+  base="$(base_branch)"
+  git fetch --quiet origin "$base" 2>/dev/null \
+    || die "could not fetch base branch $base from origin - no side checkout was made"
+  git worktree add -q --detach "$path" "origin/$base" \
+    || die "could not add side checkout $path"
+  if ! gd="$(git -C "$path" rev-parse --absolute-git-dir)" \
+     || ! : >"$gd/$SIDE_CHECKOUT_MARKER" 2>/dev/null; then
+    # A freshly added worktree holds nothing of anyone's, so no force is needed.
+    git worktree remove "$path" 2>/dev/null || true
+    die "could not write the side-checkout marker - removed $path again"
+  fi
+  note "$path"
+}
+
+# Every checkout's path, one per line, the main checkout first.
+checkout_paths() { git worktree list --porcelain | sed -n 's/^worktree //p'; }
+
+# Whether the checkout at <path> holds a flow.
+checkout_has_flow() { [ -f "$1/$ORCH_DIR_NAME/state.json" ]; }
+
+# What the checkout at <path> holds: its flow (flow <slug> <phase> #<issue>),
+# else its checked-out branch (branch <name>), else (no branch).
+checkout_holding() {
+  local state="$1/$ORCH_DIR_NAME/state.json" issue issue_label branch
+  if [ -f "$state" ]; then
+    issue="$(state_get_in "$state" issue)"
+    if [ -n "$issue" ]; then issue_label="#$issue"; else issue_label="(no issue)"; fi
+    note "flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue_label"
+  elif branch="$(git -C "$1" symbolic-ref --quiet --short HEAD)"; then
+    note "branch $branch"
+  else
+    note "(no branch)"
+  fi
+}
+
+# Prints one line per side checkout - worktrees carrying the marker, and no
+# other: <slug> <path>, then what it holds (see checkout_holding).
+cmd_side_checkout_list() {
+  [ $# -eq 0 ] || die "usage: orch.sh side-checkout list"
+  local path
+  while IFS= read -r path; do
+    is_side_checkout "$path" || continue
+    note "$(basename "$path") $path $(checkout_holding "$path")"
+  done < <(checkout_paths)
+}
+
+# Removes side checkout <slug> by hand, never with force. Every refusal - an
+# unknown slug, a worktree without the marker, uncommitted changes or
+# untracked files, a ticket worktree left inside it - runs before anything
+# moves. Then any flow is archived into the main checkout, and the worktree is
+# removed; if that still fails, the archive stands and remove exits 1. The
+# branch is left in place.
+cmd_side_checkout_remove() {
+  [ $# -eq 1 ] || die "usage: orch.sh side-checkout remove <slug>"
+  local slug path err here st
+  here="$(pwd -P)"
+  slug="$(normalize_slug "$1")"
+  path="$(side_checkouts_dir)/$slug"
+  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+    || die "no side checkout $slug at $path"
+  is_side_checkout "$path" \
+    || die "$path carries no side-checkout marker - it is not the plugin's to remove, so it is left alone"
+  st="$(tree_status "$path")" || die "$st"
+  [ -z "$st" ] \
+    || die "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
+  refuse_ticket_worktrees "$path"
+  if checkout_has_flow "$path"; then archive_flow "$path"; fi
+  if ! err="$(git -C "$(main_checkout)" worktree remove "$path" 2>&1)"; then
+    die "could not remove side checkout $path: $(first_line "$err")"
+  fi
+  note "removed side checkout $path"
+  side_checkout_close_note "$path" "$here"
+}
+
+# --- the finished sweep ---
+#
+# Finished is read from GitHub's PR state, never git ancestry: a squash or
+# rebase merge never makes the branch an ancestor of its base (ADR-0037). The
+# verdicts below assign to the caller's `verdict` and `branch`, which bash
+# scopes dynamically, and return 0 finished, 1 not finished - `verdict` the
+# reason - or 2 the verdict could not be read, GitHub or the checkout's own
+# git status - `verdict` naming which, and its error.
+
+# github_read <var> <adapter-call> [args...]: runs the adapter call, its output
+# assigned to the caller's <var>. On failure it sets `verdict` to the call's
+# first error line and returns 2.
+github_read() {
+  local into="$1" got err
+  shift
+  err="$(mktemp)"
+  if ! got="$("$@" 2>"$err")"; then
+    verdict="could not read GitHub: $(first_line "$(cat "$err")")"; rm -f "$err"; return 2
+  fi
+  rm -f "$err"
+  printf -v "$into" '%s' "$got"
+}
+
+# finished_flow <state-file>: whether that flow is finished - at done, and its
+# recorded PR merged into its own base branch.
+finished_flow() {
+  local state="$1" phase pr base state_draft pr_state refs merged_base
+  phase="$(state_get_in "$state" phase)"
+  if [ "$phase" != "done" ]; then
+    verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1
+  fi
+  branch="$(state_get_in "$state" branch)"
+  [ -n "$branch" ] || { verdict="no branch"; return 1; }
+  pr="$(state_get_in "$state" pr)"
+  [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
+  base="$(flow_base_in "$state")"
+  github_read state_draft adapter_pr_state_draft "$pr" || return
+  pr_state="$(first_line "$state_draft")"
+  if [ "$pr_state" != MERGED ]; then
+    verdict="PR #$pr is $(printf '%s' "$pr_state" | tr '[:upper:]' '[:lower:]')"; return 1
+  fi
+  github_read refs adapter_pr_refs "$pr" || return
+  merged_base="$(printf '%s\n' "$refs" | sed -n 3p)"
+  [ "$merged_base" = "$base" ] || { verdict="PR #$pr merged into $merged_base, not $base"; return 1; }
+}
+
+# side_checkout_finished <path>: whether the side checkout there is finished -
+# a clean tree, and either a finished flow, or no flow and a PR merged from
+# its checked-out branch into the base branch off recorded for it (see
+# recorded_base). A git status that cannot run returns 2, as an unreadable
+# GitHub does, so the sweep removes nothing on a tree it could not read.
+side_checkout_finished() {
+  local path="$1" base prs st
+  st="$(tree_status "$path")" || { verdict="$st"; return 2; }
+  if [ -n "$st" ]; then
+    verdict="uncommitted changes or untracked files"; return 1
+  fi
+  if checkout_has_flow "$path"; then
+    finished_flow "$path/$ORCH_DIR_NAME/state.json"; return
+  fi
+  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
+    || { verdict="no branch"; return 1; }
+  base="$(recorded_base "$branch")"
+  github_read prs adapter_prs_merged "$branch" "$base" || return
+  [ -n "$prs" ] || { verdict="no merged PR from $branch into $base"; return 1; }
+}
+
+# The sweep behind /orchestrator:finish. Every verdict is read first, so a
+# GitHub that cannot be read removes nothing at all. Then each finished side
+# checkout, in git's order, has its flow archived into the main checkout, its
+# worktree removed - never with force - and its local branch deleted with -D,
+# which -d would refuse for a squash merge; a failure is reported, that
+# checkout left as it stands, and the sweep moves on. The main checkout's
+# finished flow is archived in place, its branch left checked out. A hand-made
+# worktree holding a flow is reported and left alone.
+cmd_side_checkout_prune() {
+  [ $# -eq 0 ] || die "usage: orch.sh side-checkout prune"
+  local here main_root path verdict branch rc unread=0 failed=0
+  # archive_out is this entry's archive_flow output - its note, or its error -
+  # cleared at the top of each entry so none outlives its own.
+  local archive_out remove_err branch_err
+  local paths=() finished=()
+  here="$(pwd -P)"
+  main_root="$(main_checkout)"
+  # Every step works from the main checkout, so removing the checkout this
+  # command ran in leaves the sweep somewhere to stand.
+  cd "$main_root" || die "could not enter the main checkout $main_root"
+  mapfile -t paths < <(checkout_paths)
+  for path in "${paths[@]}"; do
+    rc=0; verdict=""; branch=""
+    if [ "$path" = "$main_root" ]; then
+      checkout_has_flow "$path" || continue
+      finished_flow "$path/$ORCH_DIR_NAME/state.json" </dev/null || rc=$?
+    elif is_side_checkout "$path"; then
+      side_checkout_finished "$path" </dev/null || rc=$?
+    elif checkout_has_flow "$path"; then
+      note "$path: not a side checkout, left alone"; continue
+    else
+      continue
+    fi
+    case "$rc" in
+      0) finished+=("$path"$'\t'"$branch") ;;
+      1) note "skipped $path: $verdict" ;;
+      *) warn "could not check $path: $verdict"; unread=$((unread + 1)) ;;
+    esac
+  done
+  [ "$unread" -eq 0 ] || die "$unread checkout(s) could not be checked - nothing was removed"
+  [ "${#finished[@]}" -gt 0 ] || { note "no finished side checkouts"; return 0; }
+  local entry
+  for entry in "${finished[@]}"; do
+    path="${entry%%$'\t'*}"; branch="${entry#*$'\t'}"
+    archive_out=""
+    if [ "$path" = "$main_root" ]; then
+      if ! archive_out="$(archive_flow "$path" 2>&1)"; then
+        warn "could not archive the main checkout's flow: $(first_line "$archive_out")"; failed=1; continue
+      fi
+      note "$archive_out"
+      note "archived the main checkout's flow in place - $(git -C "$main_root" branch --show-current || true) is still checked out"
+      continue
+    fi
+    if checkout_has_flow "$path" && ! archive_out="$(archive_flow "$path" 2>&1)"; then
+      warn "could not archive the flow in side checkout $path: $(first_line "$archive_out") - left as it stands"
+      failed=1; continue
+    fi
+    [ -z "$archive_out" ] || note "$archive_out"
+    if ! remove_err="$(git -C "$main_root" worktree remove "$path" 2>&1)"; then
+      warn "could not remove side checkout $path: $(first_line "$remove_err") - left as it stands"
+      failed=1; continue
+    fi
+    note "removed side checkout $path"
+    side_checkout_close_note "$path" "$here"
+    if ! branch_err="$(git -C "$main_root" branch -D -q "$branch" 2>&1)"; then
+      warn "could not delete branch $branch: $(first_line "$branch_err")"; failed=1; continue
+    fi
+    note "deleted branch $branch"
+  done
+  [ "$failed" -eq 0 ] || exit 1
+}
+
+cmd_side_checkout() {
+  local op="${1:-}"
+  shift || true
+  case "$op" in
+    add)    cmd_side_checkout_add "$@" ;;
+    list)   cmd_side_checkout_list "$@" ;;
+    remove) cmd_side_checkout_remove "$@" ;;
+    prune)  cmd_side_checkout_prune "$@" ;;
+    *) die "unknown side-checkout op: ${op:-<none>} (want add|list|remove|prune)" ;;
   esac
 }
 
@@ -3612,8 +3937,32 @@ cmd_redo() {
 cmd_status() {
   if [ ! -f "$STATE" ]; then
     note "No active flow. Run $(flow_cmd start) from an approved plan."
-    return 0
+  else
+    status_flow
   fi
+  status_others
+}
+
+# Lists every other checkout holding a flow, and every side checkout without
+# one - the main checkout's flow included when run from a side checkout -
+# under a heading of its own. Ticket worktrees, a hand-made worktree with no
+# flow and a quick implementation in the main checkout hold no flow and carry
+# no marker, so they never appear; with nothing to list, nothing is printed.
+status_others() {
+  local path lines=""
+  while IFS= read -r path; do
+    [ "$path" != "$ROOT" ] || continue
+    checkout_has_flow "$path" || is_side_checkout "$path" || continue
+    lines+="  $path $(checkout_holding "$path")"$'\n'
+  done < <(checkout_paths)
+  [ -n "$lines" ] || return 0
+  note ""
+  note "other checkouts:"
+  printf '%s' "$lines"
+}
+
+# Full detail on the current checkout's flow.
+status_flow() {
   local slug phase issue branch pr iteration redo_count
   slug="$(state_get slug)";       phase="$(state_get phase)"
   issue="$(state_get issue)";     branch="$(state_get branch)"
@@ -3644,20 +3993,59 @@ cmd_status() {
 
 # Archive rather than delete: the moment you want a handoff back is precisely
 # the moment you just threw it away. The directory is git-excluded anyway.
+# In a side checkout, git worktree remove would delete the archive with the
+# worktree - it deletes ignored files - so the flow moves to the main
+# checkout's archive first, and only then is the worktree removed (ADR-0037).
 cmd_archive() {
   require_state
-  refuse_ticket_worktrees
-  local slug ts dest entry
-  slug="$(state_get slug)"
-  ts="$(dir_stamp)"
-  dest="$ORCH/archive/$ts-$slug"
+  archive_flow "$ROOT"
+  if is_side_checkout "$ROOT"; then side_checkout_remove_after_archive "$ROOT"; fi
+}
+
+# Moves the flow in the checkout at <root> into an archive directory, and
+# prints that directory - relative to this checkout when inside it, else in
+# full. A side checkout's flow goes to the main checkout's archive; any other
+# checkout, a hand-made worktree included, archives in place.
+archive_flow() {
+  local root="$1" orch="$1/$ORCH_DIR_NAME" home slug dest entry
+  refuse_ticket_worktrees "$root"
+  home="$orch"
+  if is_side_checkout "$root"; then home="$(main_checkout)/$ORCH_DIR_NAME"; fi
+  slug="$(state_get_in "$orch/state.json" slug)"
+  dest="$home/archive/$(dir_stamp)-$slug"
   mkdir -p "$dest"
-  for entry in "$ORCH"/*; do
+  for entry in "$orch"/*; do
     [ -e "$entry" ] || continue
-    if [ "$(basename "$entry")" = "archive" ]; then continue; fi
+    # Side checkouts are live worktrees, never part of the flow's files.
+    case "$(basename "$entry")" in archive|checkouts) continue ;; esac
     mv "$entry" "$dest/"
   done
   note "${dest#"$ROOT"/}"
+}
+
+# Removes the side checkout at <path> once its flow is archived, never with
+# force. A dirty worktree is reported and kept: the archive has still
+# succeeded. When this command ran inside the removed worktree, the session
+# working there is told to close.
+side_checkout_remove_after_archive() {
+  local path="$1" err here
+  # Read before the removal: once the worktree is gone, so is this directory.
+  here="$(pwd -P)"
+  if ! err="$(git -C "$(main_checkout)" worktree remove "$path" 2>&1)"; then
+    warn "kept side checkout $path - it was not removed: $(first_line "$err")
+     Commit or discard its changes, then run orch.sh side-checkout remove $(basename "$path")."
+    return 0
+  fi
+  note "removed side checkout $path"
+  side_checkout_close_note "$path" "$here"
+}
+
+# Tells the human to close the session when this command ran in <here>, inside
+# <path>, a worktree just removed: the session's working directory is gone.
+side_checkout_close_note() {
+  case "$2/" in
+    "$1"/*) note "This session's working directory was that side checkout, and it is gone - close this session." ;;
+  esac
 }
 
 cmd_help() {
@@ -3694,8 +4082,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               origin - never gh's default repo. --name prints
                               the bare [HOST/]OWNER/REPO alone, for gh -R.
                               Exits 1, naming GH_REPO, when neither resolves
-  init <slug> [--issue N]     start a flow (refuses if one is active, unless
-                              it is done - a done flow is archived, unless a
+  init <slug> [--issue N]     start a flow (refuses with exit 3 if one is
+                              active, unless it is done - a done flow is archived, unless a
                               ticket worktree is left, and the
                               new one starts over it, or if the working tree
                               has changes outside the planning allowlist);
@@ -3737,7 +4125,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               config) and its tip at branching as the base
                               SHA (branch.<name>.orchestrator-base-sha), and
                               no state - for a quick implementation, which
-                              keeps none
+                              keeps none. Refuses with exit 3, as init does,
+                              while a flow is mid-pipeline
   branch base-sha             print the current branch's base SHA as branch
                               off recorded it; a branch without one falls
                               back to the merge-base with its recorded base
@@ -3889,6 +4278,41 @@ orch.sh - deterministic operations for the orchestrator flow
                               forked-from branch, before removing anything;
                               --unmerged deletes a clean worktree's unmerged
                               branch
+  side-checkout add <slug>    run side-checkout prune first (its report on
+                              stderr; a failed sweep is reported and add
+                              carries on), then fetch the base branch in
+                              effect, add a worktree
+                              on no branch at origin/<base> under the main
+                              checkout's .orchestrator/checkouts/<slug>, mark
+                              it as a side checkout, git-exclude .orchestrator/
+                              in the clone's shared info/exclude, and print its
+                              path. Refuses when that path already exists; a
+                              failed fetch or marker write leaves no worktree
+  side-checkout list          print <slug> <path> and then its flow
+                              (flow <slug> <phase> #<issue>), its branch
+                              (branch <name>), or (no branch), for each side
+                              checkout of the clone - marked worktrees only
+  side-checkout remove <slug> remove side checkout <slug>, never with --force.
+                              Refuses an unknown slug, a worktree without the
+                              side-checkout marker, uncommitted changes or
+                              untracked files, and a ticket worktree inside it,
+                              before anything moves; then archives any flow
+                              into the main checkout's .orchestrator/archive/
+                              and removes the worktree, leaving its branch.
+                              Exits 1, the archive standing, when the removal
+                              still fails
+  side-checkout prune         the finished sweep:
+                              for each side checkout whose PR GitHub reports
+                              merged into its base, its tree clean and any
+                              flow at done, archive the flow into the main
+                              checkout, remove the worktree (never --force)
+                              and delete its branch with -D; archive the main
+                              checkout's finished flow in place, its branch
+                              left checked out. Reports every skip with its
+                              reason, and a hand-made worktree holding a flow
+                              as left alone. Removes nothing, exiting 1, when
+                              GitHub cannot be read; exits 1 after a failed
+                              step, which leaves that checkout as it stands
   review begin                claim the next iteration, refusing once the
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
@@ -3904,7 +4328,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               the PR's first failed or cancelled check; prints
                               the run id. Exits 1 when that check is no Actions
                               run, 2 on any other failure
-  review ready                mark the draft PR ready and set the phase to done
+  review ready                mark the draft PR ready and set the phase to done,
+                              printing the PR number; in a side checkout, a
+                              pointer to the finish command on stderr
   review terminal             classify the last iteration: none, pending,
                               interrupted, malformed, ready, or stop; exits
                               non-zero on the first four
@@ -3970,10 +4396,17 @@ orch.sh - deterministic operations for the orchestrator flow
                               clears state.issue so orch-to-spec starts fresh;
                               02-spec.md and any 03-implement.md move into
                               handoff/pre-redo-spec-<UTC timestamp>/
-  status                      human-readable summary
-  archive                     move the live flow into .orchestrator/archive/
+  status                      human-readable summary of this checkout's flow,
+                              then one line for every other checkout holding
+                              a flow and every side checkout
+  archive                     move the live flow into .orchestrator/archive/,
+                              leaving archive/ and checkouts/ in place
                               (refuses, naming each, while a ticket worktree
-                              is left under this checkout)
+                              is left under this checkout). In a side
+                              checkout, the flow moves to the main checkout's
+                              .orchestrator/archive/ and the worktree is then
+                              removed, never with --force: a dirty one is
+                              reported and kept, the archive still made
 USAGE
 }
 
@@ -3996,6 +4429,7 @@ main() {
     pr)            cmd_pr "$@" ;;
     ticket)        cmd_ticket "$@" ;;
     ticket-worktree) cmd_ticket_worktree "$@" ;;
+    side-checkout) cmd_side_checkout "$@" ;;
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
     spec-review)   cmd_spec_review "$@" ;;

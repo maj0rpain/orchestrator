@@ -26,3 +26,11 @@ anymore. `doctor --flow` no longer treats a `done` flow's now-closed issue
 
 `done` staying visible until the next flow needs the slot, with no new
 command to remember, won out over both.
+
+## Note: /orchestrator:finish
+
+ADR-0037 adds the `/orchestrator:finish` this ADR rejected, for side
+checkouts, where no next `init` comes. Its objection - forgetting it
+reproduces the problem - is answered by the sweep running at every
+`side-checkout add`. In the main checkout, `init` still archives a done flow
+itself.

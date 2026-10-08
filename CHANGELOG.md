@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.19.0
+
+A second flow or a quick implementation can now run beside an active flow in
+a **side checkout**: a git worktree the plugin makes under
+`.orchestrator/checkouts/<slug>`, marked as its own, with a session of its
+own (#57). `init` and `branch off` refuse beside a flow mid-pipeline with exit
+code 3 (#720), and the flow and quick-implementation skills offer a side
+checkout on that exit, or up front with `--side` or when asked in words
+(#728). The planning message routes Start and Quick implementation to a side
+checkout beside an active flow (#729). New `orch.sh side-checkout add`,
+`list`, `remove` and `prune` (#722, #724, #726). `archive` in a side checkout
+moves the flow into the main checkout's archive before removing the worktree,
+never with force (#724). New `/orchestrator:finish` sweeps every finished side
+checkout - its PR merged, its tree clean, any flow at `done` - and the same
+sweep runs at the start of every `side-checkout add` (#726). New
+`/orchestrator:quick-implement [<issue>] [--side]` (#723). `status` lists
+every other checkout (#725); `doctor --flow` fails on changes outside the
+planning allowlist (#721), and `doctor --env` warns about finished side
+checkouts, with `review ready` pointing to `/orchestrator:finish` (#727).
+
 ## 3.18.0
 
 A blueprint drawn from a planning session about an open issue now rewrites

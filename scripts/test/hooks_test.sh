@@ -74,6 +74,12 @@ assert_eq "offers exactly three options" "$(count_closing_options "$out")" "3"
 assert_contains "says exactly three options" "$out" "exactly three options"
 assert_contains "tells the model to invoke the flow skill itself" "$out" "orchestrator:orch-flow"
 assert_contains "tells the model to invoke the quick-implement skill itself" "$out" "orchestrator:orch-quick-implement"
+# With no active flow, a human's request for a side checkout is honoured
+# (#729): the skill runs on its side-checkout route.
+side_request='If the user asks for a side checkout'
+assert_contains "honours a request for a side checkout with no active flow" "$out" "$side_request"
+assert_contains "a requested side checkout passes --side on Claude Code" "$out" \
+  'pass args \"--side\" to whichever of those two skills runs'
 # Blueprint only publishes the spec, offers a review, publishes the tickets,
 # then stops; the run-next sentence names all three skills by their Claude name.
 ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
@@ -175,8 +181,9 @@ mkdir -p "$REPO/.orchestrator"
 # Planning beside an active flow (#640, #649) gets the planning rules, with a
 # closing that names the flow and states two branches: about that flow, point
 # to its next or redo; otherwise the interviewed-issue step and the route
-# question, where only Blueprint runs in this checkout.
-separate_checkout="starting a flow or a quick implementation must be done from a separate checkout of the repo, opened in its own session there"
+# question, where only Blueprint runs in this checkout and Start and Quick
+# implementation proceed in a side checkout (#729).
+side_route='"Start the orchestrator flow" and "Quick implementation" proceed in a side checkout'
 # $1 where, $2 context, $3 the next/redo pointer text expected for the host,
 # $4 host (claude|junie), default claude.
 check_flow_variant() {
@@ -184,7 +191,8 @@ check_flow_variant() {
   check_blueprint_rewrite "beside an active flow $where" "$ctx" "$host"
   assert_contains "states the next/redo branch $where" "$ctx" "$next_redo"
   assert_contains "the same-flow branch asks no route question $where" "$ctx" "ask no route question"
-  assert_contains "states the separate-checkout sentence $where" "$ctx" "$separate_checkout"
+  assert_contains "routes Start and Quick implementation to a side checkout $where" "$ctx" "$side_route"
+  assert_not_contains "no longer says separate checkout $where" "$ctx" "separate checkout"
   assert_contains "keeps Blueprint only as the route that runs here $where" "$ctx" \
     "Blueprint only is the one route that runs in this checkout"
   assert_contains "keeps the interviewed-issue step $where" "$ctx" "With no interviewed issue, skip this step entirely"
@@ -193,11 +201,23 @@ check_flow_variant() {
   # only in the second case, so the same-flow branch is not contradicted.
   assert_contains "asks the route question only in the second case $where" "$ctx" \
     "- Only in the second case above (planning about anything else): "
-  # Only Blueprint runs here (#640, story 6): the route question's run
-  # instructions never tell the model to start a quick implementation in this
+  # Only Blueprint runs here (#640, story 6): Start and Quick implementation
+  # run their skills only on the side-checkout route (#729), never in this
   # checkout, whose branch belongs to the running flow.
-  assert_not_contains "offers no quick implementation run in this checkout $where" "$ctx" \
-    "orch-quick-implement"
+  if [ "$host" = junie ]; then
+    assert_contains "runs both skills on their side-checkout route $where" "$ctx" \
+      "each as asked for a side checkout, so it takes its **Starting in a side checkout** route"
+    assert_contains "points at orch-quick-implement's SKILL.md $where" "$ctx" \
+      "$(cd "$DIR/.." && pwd)/skills/orch-quick-implement/SKILL.md"
+  else
+    assert_contains "runs the flow skill with --side $where" "$ctx" \
+      'call the Skill tool with "orchestrator:orch-flow" and args "--side" yourself'
+    assert_contains "runs the quick-implement skill with --side $where" "$ctx" \
+      'call the Skill tool with "orchestrator:orch-quick-implement" and args "--side" yourself'
+  fi
+  assert_not_contains "never runs a skill without the side route $where" "$ctx" \
+    "orch-quick-implement\" yourself"
+  assert_not_contains "repeats no side-checkout request clause beside a flow $where" "$ctx" "$side_request"
 }
 route_block='      1. Start the orchestrator flow - the full plan -> spec -> implement ->
          review pipeline, with its own handoff and review loop.
@@ -290,6 +310,10 @@ assert_contains "names every planning artifact on Junie" "$ctx" \
 assert_contains "points at orch-flow's SKILL.md in this install" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
 assert_contains "points at orch-quick-implement's SKILL.md in this install" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-quick-implement/SKILL.md"
 assert_contains "says Junie has no Skill tool" "$ctx" "no Skill tool"
+assert_contains "honours a request for a side checkout on Junie" "$ctx" "$side_request"
+assert_contains "a requested side checkout takes the skill's side route on Junie" "$ctx" \
+  "follow that skill's **Starting in a side checkout** section"
+assert_not_contains "routes nothing to a side checkout unasked on Junie" "$ctx" "$side_route"
 assert_not_contains "names no Claude tool as the step on Junie" "$ctx" "call the Skill tool"
 assert_not_contains "names no Claude-scoped skill on Junie" "$ctx" "orchestrator:orch-"
 assert_not_contains "names no Claude-scoped mattpocock skill on Junie" "$ctx" "mattpocock-skills:"
@@ -351,6 +375,7 @@ for s in orch-to-spec orch-spec-review orch-to-tickets; do
   assert_contains "points at $s's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
 done
 assert_contains "points at orch-flow's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
+assert_contains "honours a request for a side checkout at plan confirmation" "$ctx" "$side_request"
 assert_not_contains "repeats no planning rules at plan confirmation" "$ctx" "Do NOT offer to implement"
 assert_contains "asks again on a second plan confirmation" \
   "$(prompt_event "$confirm" jc1 | "$GRILL")" "Before you implement"
