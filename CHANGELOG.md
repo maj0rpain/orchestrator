@@ -9,8 +9,9 @@ rebase, never the local base - records that tip as the base SHA in the
 branch's git config (and in flow state when this checkout's flow holds the
 branch), and pushes with a plain push when the branch has an upstream. It
 exits 3 on a conflict, leaving the merge in progress, and 1 on a refusal: a
-dirty tree, a failed fetch, a detached HEAD, a branch the plugin did not
-make, or a failed push. `branch create` now records a flow branch's base and
+dirty tree, a failed fetch, a detached HEAD, a merge already in progress, a
+branch that is its own base, a branch the plugin did not make, or a failed
+push. `branch create` now records a flow branch's base and
 base SHA in its git config too, so `branch sync` and `branch base-sha` find
 them after the flow is done or archived. A new `orch-resolver` agent
 finishes one in-progress merge or rebase by reading why each side changed,
