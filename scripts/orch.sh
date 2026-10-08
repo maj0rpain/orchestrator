@@ -44,6 +44,30 @@ is_filed_severity() {
   return 1
 }
 
+# review_labels <labels>: each label in the newline-separated list that marks
+# a review finding - review: followed by at least one character. The one scan
+# the two checks below share.
+review_labels() {
+  printf '%s\n' "$1" | grep '^review:.' || true
+}
+
+# has_review_label <labels>: whether any label marks a review finding, at any
+# severity - filed today or not.
+has_review_label() {
+  [ -n "$(review_labels "$1")" ]
+}
+
+# has_filed_severity_label <labels>: whether some review label carries a
+# filed severity.
+has_filed_severity_label() {
+  local label
+  while IFS= read -r label; do
+    [ -n "$label" ] || continue
+    ! is_filed_severity "${label#review:}" || return 0
+  done <<<"$(review_labels "$1")"
+  return 1
+}
+
 # How long `review ci` waits, and how often it looks. Overridable through the
 # environment rather than through positional arguments: the 60-second grace is
 # what stops a repo whose checks have not registered yet being declared CI-less,
@@ -2127,7 +2151,7 @@ finding_scan_one() {
 # line apiece: <issue> <pr> <file>:<line> <result> <detail>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [<issue> | --pr <n>]"
-  local issue="" pr_filter="" triage sev nums="" n out state labels label body default ref filed
+  local issue="" pr_filter="" triage sev nums="" n out state labels body default ref
   case $# in
     0) ;;
     1) issue="$1" ;;
@@ -2142,11 +2166,7 @@ cmd_finding_triage_scan() {
     state="$(first_line "$out")"
     labels="$(printf '%s\n' "$out" | tail -n +2)"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
-    filed=""
-    while IFS= read -r label; do
-      case "$label" in review:*) ! is_filed_severity "${label#review:}" || filed=1 ;; esac
-    done <<<"$labels"
-    [ -n "$filed" ] \
+    has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
     printf '%s\n' "$labels" | grep -qxF "$triage" \
       || die "issue #$issue is not in triage - it carries no '$triage' label"
@@ -2471,8 +2491,8 @@ cmd_issue_triage() {
   # The gate reads labels, not history, and --override does not bypass it. Any
   # review:<severity> label marks a finding, not only the severities filed today.
   local finding triaged=false
-  finding="$(printf '%s\n' "$labels" | grep -m1 '^review:.')" || true
-  if [ -n "$finding" ]; then
+  if has_review_label "$labels"; then
+    finding="$(review_labels "$labels" | sed -n 1p)"
     for role in ready-for-agent ready-for-human wontfix; do
       label="$(triage_label_for "$role")"
       if printf '%s\n' "$labels" | grep -qxF -- "$label"; then triaged=true; fi
