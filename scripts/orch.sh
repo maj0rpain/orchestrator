@@ -1267,19 +1267,27 @@ review_budget() {
 # An operation that takes options parses them before any gh call, and refuses an
 # unknown option, or one missing its value or given an empty one, with status 2
 # and a message on stderr - so a caller still on an older grammar fails loudly.
+# An option directly followed by another of the operation's options is missing
+# its value; a value that only begins with - or -- is still a value.
 
-# adapter_option_value <operation> <option> [value...]: true where <option> is
-# followed by a non-empty value; otherwise says so on stderr and returns 2.
-# Called as `adapter_option_value <operation> "$@" || return` from an option loop.
-adapter_option_value() {
-  [ -z "${3:-}" ] || return 0
-  warn "$1: $2 needs a value"
+# option_value <operation> <option-names> <option> [value...]: true where
+# <option> is followed by a value that is neither empty nor one of
+# <option-names>, a space-separated list each compared whole; otherwise says so
+# on stderr and returns 2. Called as
+# `option_value <operation> "<option-names>" "$@" || return` from an option loop.
+option_value() {
+  local value="${4:-}" refused="" name names
+  read -r -a names <<<"$2"
+  [ -n "$value" ] || refused=1
+  for name in "${names[@]}"; do [ "$value" != "$name" ] || refused=1; done
+  [ -n "$refused" ] || return 0
+  warn "$1: $3 needs a value"
   return 2
 }
 
-# adapter_unknown_option <operation> <argument>: refuses an argument the
+# unknown_option <operation> <argument>: refuses an argument the
 # operation does not take, on stderr, with status 2.
-adapter_unknown_option() {
+unknown_option() {
   warn "$1: unknown option '$2'"
   return 2
 }
@@ -1356,7 +1364,8 @@ adapter_issue_state_labels() {
 # caller-named variables. Non-zero when the read fails, writing neither, and
 # writing gh's first stderr line - empty when gh printed none - into
 # <line_var>: the caller keeps its own failure message. gh's stderr is
-# captured, never passed through. The one place the answer is split.
+# captured, never passed through. The answer is split through
+# lines_split, as issue_publish_verified's is.
 # Out-params through `printf -v`, as require_field's, its locals prefixed so
 # no caller's variable name is shadowed.
 issue_state_labels_read() {
@@ -1419,13 +1428,13 @@ adapter_issue_comment() {
 # adding and removing the labels named; with none named, no edit at all.
 # Prints nothing.
 adapter_issue_relabel() {
-  local n="$1" args=() adds=() removes=() l
+  local n="$1" args=() adds=() removes=() l options="--add --remove"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --add)    adapter_option_value adapter_issue_relabel "$@" || return; adds+=("$2"); shift 2 ;;
-      --remove) adapter_option_value adapter_issue_relabel "$@" || return; removes+=("$2"); shift 2 ;;
-      *) adapter_unknown_option adapter_issue_relabel "$1"; return ;;
+      --add)    option_value adapter_issue_relabel "$options" "$@" || return; adds+=("$2"); shift 2 ;;
+      --remove) option_value adapter_issue_relabel "$options" "$@" || return; removes+=("$2"); shift 2 ;;
+      *) unknown_option adapter_issue_relabel "$1"; return ;;
     esac
   done
   [ ${#adds[@]} -gt 0 ] || [ ${#removes[@]} -gt 0 ] || return 0
@@ -1438,13 +1447,13 @@ adapter_issue_relabel() {
 # reason "completed" or "not planned" (absent, gh's default), posting the
 # comment on it where one is given. Prints nothing.
 adapter_issue_close() {
-  local n="$1" reason="" comment="" args=()
+  local n="$1" reason="" comment="" args=() options="--reason --comment"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --reason)  adapter_option_value adapter_issue_close "$@" || return; reason="$2"; shift 2 ;;
-      --comment) adapter_option_value adapter_issue_close "$@" || return; comment="$2"; shift 2 ;;
-      *) adapter_unknown_option adapter_issue_close "$1"; return ;;
+      --reason)  option_value adapter_issue_close "$options" "$@" || return; reason="$2"; shift 2 ;;
+      --comment) option_value adapter_issue_close "$options" "$@" || return; comment="$2"; shift 2 ;;
+      *) unknown_option adapter_issue_close "$1"; return ;;
     esac
   done
   [ -z "$reason" ] || args+=(--reason "$reason")
@@ -1468,7 +1477,7 @@ adapter_pr_create() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --draft) args+=(--draft); shift ;;
-      *) adapter_unknown_option adapter_pr_create "$1"; return ;;
+      *) unknown_option adapter_pr_create "$1"; return ;;
     esac
   done
   out="$(gh pr create ${args[@]+"${args[@]}"} --base "$base" --head "$head" --title "$title" --body-file "$body")" || return
@@ -2934,13 +2943,14 @@ cmd_branch() {
 # status, as ticket_links_verified's caller does. Locals prefixed so no
 # caller's variable name is shadowed.
 issue_publish_verified() {
-  local __ipv_out __ipv_err
+  local __ipv_out __ipv_err __ipv_title __ipv_labels
   if ! capture __ipv_out __ipv_err adapter_issue_title_labels "$2"; then
     printf -v "$1" '%s' "${__ipv_err%%$'\n'*}"
     return 2
   fi
-  [ "$(first_line "$__ipv_out")" = "$3" ] || return 1
-  labels_verified "$(printf '%s\n' "$__ipv_out" | tail -n +2)" "$4" || return 1
+  lines_split "$__ipv_out" __ipv_title __ipv_labels
+  [ "$__ipv_title" = "$3" ] || return 1
+  labels_verified "$__ipv_labels" "$4" || return 1
 }
 
 # The publishing boundary a spec and a quick implementation call instead of
@@ -3011,18 +3021,18 @@ cmd_issue_triage() {
   # One walk over the triage roles the issue carries: whether ready-for-agent
   # is among them, the held label - wontfix ahead of ready-for-human, which is
   # not their order in TRIAGE_ROLES - and every other one, to remove.
-  local is_ready=false wontfix="" human="" held
+  local is_ready=false wontfix_label="" human_label="" held
   for role in $TRIAGE_ROLES; do
     label="$(triage_label_for "$role")"
     labels_have "$labels" "$label" || continue
     case "$role" in
       ready-for-agent) is_ready=true; continue ;;
-      wontfix) wontfix="$label" ;;
-      ready-for-human) human="$label" ;;
+      wontfix) wontfix_label="$label" ;;
+      ready-for-human) human_label="$label" ;;
     esac
     removed+=("$label")
   done
-  held="${wontfix:-$human}"
+  held="${wontfix_label:-$human_label}"
   # A filed finding not yet triaged comes back into the pipeline through
   # finding triage first, which checks it against the default branch
   # (ADR-0031). Only the labels finding triage itself applies - ready-for-agent,

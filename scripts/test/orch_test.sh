@@ -7542,8 +7542,45 @@ assert_contains "with a message on stderr" "$err" "--add needs a value"
 err="$(faked adapter_issue_close 14 --comment "" 2>&1 >/dev/null)"; st=$?
 assert_status "the fake refuses an empty --comment as missing its value" "$st" 2
 assert_contains "with a message on stderr" "$err" "--comment needs a value"
+# An option directly followed by another of the operation's options is
+# missing its value, in either order.
+for bad_args in "adapter_issue_relabel 14 --add --remove" "adapter_issue_relabel 14 --remove --add" \
+           "adapter_issue_close 14 --reason --comment" "adapter_issue_close 14 --comment --reason"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  err="$(faked $bad_args 2>&1 >/dev/null)"; st=$?
+  opts="${bad_args#* * }"
+  assert_status "the fake refuses '$bad_args'" "$st" 2
+  assert_eq "with its message on stderr" "$err" "fake gh: ${bad_args%% *}: ${opts%% *} needs a value"
+done
+unset bad_args opts
+err="$(faked adapter_issue_relabel 14 --add --remove x 2>&1 >/dev/null)"; st=$?
+assert_status "the fake refuses '--add --remove x'" "$st" 2
+assert_eq "as --add missing its value, with no unknown option" "$err" \
+  "fake gh: adapter_issue_relabel: --add needs a value"
+err="$(faked adapter_issue_close 14 --reason --comment Redone. 2>&1 >/dev/null)"; st=$?
+assert_status "the fake refuses '--reason --comment Redone.'" "$st" 2
+assert_eq "as --reason missing its value, with no unknown option" "$err" \
+  "fake gh: adapter_issue_close: --reason needs a value"
 rm -f "$pbody"
 assert_eq "and a refused close left the issue open" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/state")" "OPEN"
+assert_eq "and a refused relabel left its labels unchanged" "$(cat "$ORCH_GH_FAKE_STORE/issues/14/labels")" ""
+# A value that only begins with - or -- is a value: the fake refuses by option
+# name, never by prefix. A fresh store, with no failure seeded.
+fake_github
+fake_issue 15 open bug
+faked adapter_issue_relabel 15 --add -wip; st=$?
+assert_status "the fake adds a label beginning with -" "$st" 0
+assert_contains "leaving it among the stored labels" "$(cat "$ORCH_GH_FAKE_STORE/issues/15/labels")" "-wip"
+fake_issue 16 open bug
+faked adapter_issue_relabel 16 --remove bug --add -wip; st=$?
+assert_status "and after an earlier option" "$st" 0
+assert_eq "leaving it among the stored labels" "$(cat "$ORCH_GH_FAKE_STORE/issues/16/labels")" "-wip"
+fake_issue 17 open
+faked adapter_issue_close 17 --comment "--x"; st=$?
+assert_status "the fake takes a comment beginning with --" "$st" 0
+fake_issue 18 open
+faked adapter_issue_close 18 --reason completed --comment "--x"; st=$?
+assert_status "and after an earlier option" "$st" 0
 restore_suite_env
 assert_eq "restore_suite_env undoes fake_github" \
   "${ORCH_GH_ADAPTER-unset} ${ORCH_GH_FAKE_STORE-unset}" "unset unset"
@@ -7733,7 +7770,29 @@ unset bad_args
 err="$(contract adapter_issue_relabel 25 --add "" 2>&1 >/dev/null)"; st=$?
 assert_status "issue relabel: an empty --add is refused as missing its value" "$st" 2
 assert_contains "with a message on stderr" "$err" "--add needs a value"
+# An option directly followed by another of the operation's options is
+# missing its value, in either order.
+for bad_args in "--add --remove" "--remove --add"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  err="$(contract adapter_issue_relabel 25 $bad_args 2>&1 >/dev/null)"; st=$?
+  assert_status "issue relabel: '$bad_args' is refused" "$st" 2
+  assert_contains "naming the operation" "$err" "adapter_issue_relabel"
+  assert_contains "and the option missing its value" "$err" "${bad_args%% *} needs a value"
+done
+unset bad_args
+err="$(contract adapter_issue_relabel 25 --add --remove x 2>&1 >/dev/null)"; st=$?
+assert_status "issue relabel: '--add --remove x' is refused" "$st" 2
+assert_contains "naming the operation" "$err" "adapter_issue_relabel"
+assert_contains "as --add missing its value" "$err" "--add needs a value"
+assert_not_contains "not as an unknown option x" "$err" "unknown option"
 assert_eq "no refused relabel made a gh call" "$(gh_calls)" "$calls"
+# A value that only begins with - is a value, first or after an earlier option.
+gh_reply 0 '' '' issue edit 26 --add-label -wip
+out="$(contract adapter_issue_relabel 26 --add -wip 2>&1)"; st=$?
+assert_status "issue relabel: a label beginning with - is added" "$st" 0
+gh_reply 0 '' '' issue edit 27 --remove-label bug --add-label -wip
+out="$(contract adapter_issue_relabel 27 --remove bug --add -wip 2>&1)"; st=$?
+assert_status "issue relabel: and after an earlier option" "$st" 0
 
 gh_reply 0 'Closed issue #23' '' issue close 23 --reason completed
 out="$(contract adapter_issue_close 23 --reason completed 2>&1)"; st=$?
@@ -7756,7 +7815,27 @@ unset bad_args
 err="$(contract adapter_issue_close 27 --reason "" --comment "Redone." 2>&1 >/dev/null)"; st=$?
 assert_status "issue close: an empty --reason is refused as missing its value" "$st" 2
 assert_contains "with a message on stderr" "$err" "--reason needs a value"
+for bad_args in "--reason --comment" "--comment --reason"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  err="$(contract adapter_issue_close 27 $bad_args 2>&1 >/dev/null)"; st=$?
+  assert_status "issue close: '$bad_args' is refused" "$st" 2
+  assert_contains "naming the operation" "$err" "adapter_issue_close"
+  assert_contains "and the option missing its value" "$err" "${bad_args%% *} needs a value"
+done
+unset bad_args
+err="$(contract adapter_issue_close 27 --reason --comment Redone. 2>&1 >/dev/null)"; st=$?
+assert_status "issue close: '--reason --comment Redone.' is refused" "$st" 2
+assert_contains "naming the operation" "$err" "adapter_issue_close"
+assert_contains "as --reason missing its value" "$err" "--reason needs a value"
+assert_not_contains "not as an unknown option Redone." "$err" "unknown option"
 assert_eq "no refused close made a gh call" "$(gh_calls)" "$calls"
+# A comment that only begins with -- is a value, first or after an earlier option.
+gh_reply 0 '' '' issue close 28 --comment "--x"
+out="$(contract adapter_issue_close 28 --comment "--x" 2>&1)"; st=$?
+assert_status "issue close: a comment beginning with -- is posted" "$st" 0
+gh_reply 0 '' '' issue close 29 --reason completed --comment "--x"
+out="$(contract adapter_issue_close 29 --reason completed --comment "--x" 2>&1)"; st=$?
+assert_status "issue close: and after an earlier option" "$st" 0
 gh_reply 1 '' 'HTTP 502: Bad Gateway' issue close 26
 out="$(contract adapter_issue_close 26 2>&1)"; st=$?
 assert_status "issue close: a gh failure fails it" "$st" 1
