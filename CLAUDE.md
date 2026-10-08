@@ -42,6 +42,7 @@ orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
 the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
 section must pass on its own: a helper used by more than one section lives in its
 shared setup.
+See README.md's Develop section.
 
 ## Versioning
 

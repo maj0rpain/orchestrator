@@ -7,13 +7,13 @@
 # waiting on it; once all four have finished, their output is printed in a fixed order, whichever finished
 # first. A failing suite does not stop the others. Printed per suite, in the
 # order orch_test.sh, hooks_test.sh, docs_lint.sh: its FAIL lines with their
-# detail lines, then one summary line, "<suite>: <its last line>". A suite's
-# stderr is not captured: it passes straight through, and the suites' stderr
-# may interleave.
+# detail lines, then one summary line, "<suite>: <its last line>", or
+# "<suite>: died before its summary (exit N)" when it exited non-zero and its
+# last line is not a summary line. A suite's stderr is not captured: it passes
+# straight through, and the suites' stderr may interleave.
 #
-# Then shellcheck's summary. shellcheck runs from the repo root two levels up,
-# one process per tracked shell file matched by "scripts/*.sh
-# scripts/test/*.sh": "shellcheck -S warning -f gcc <file>", with
+# Then shellcheck, from the repo root two levels up, at warning severity, one
+# process per shell file matched by scripts/*.sh and scripts/test/*.sh, with
 # .shellcheckrc's source settings. Every process starts at once, alongside the
 # suites, with no throttle, so no single shellcheck run over every file is the
 # critical path - this deliberately reverses #777's one-process rule. Each
@@ -40,9 +40,6 @@
 # bump rule, which CI's "Read main's version" step feeds. ORCH_TEST_JOBS
 # passes through too: orch_test.sh runs that many sections at once, by default
 # the core count, and ORCH_TEST_JOBS=1 runs them sequentially, in one shell.
-#
-# While iterating, run one section instead:
-#   ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh
 
 unset ORCH_TEST_ONLY
 export ORCH_TEST_QUIET=1
@@ -72,8 +69,12 @@ if command -v shellcheck >/dev/null 2>&1; then
   done
 fi
 
+suite_exits=()
 for suite_pid in "${pids[@]}"; do
-  wait "$suite_pid" || failed=1
+  wait "$suite_pid"
+  suite_exit=$?
+  suite_exits+=("$suite_exit")
+  [ "$suite_exit" -ne 0 ] && failed=1
 done
 if [ "$have_sc" -eq 1 ]; then
   sc_status=0
@@ -87,13 +88,21 @@ if [ "$have_sc" -eq 1 ]; then
   done
 fi
 
-for suite in "${suites[@]}"; do
+for suite_n in "${!suites[@]}"; do
+  suite="${suites[$suite_n]}"
   out="$(<"$tmp/$suite")"
   printf '%s\n' "$out" | awk '
     in_fail && /^     / { print; next }
     { in_fail = 0 }
     /^  FAIL / { print; in_fail = 1 }'
-  echo "$suite: $(printf '%s\n' "$out" | tail -n 1)"
+  last="$(printf '%s\n' "$out" | tail -n 1)"
+  status="${suite_exits[$suite_n]}"
+  if [ "$status" -ne 0 ] &&
+    ! [[ "$last" =~ ^[0-9]+\ passed,\ [0-9]+\ failed(,\ [0-9]+\ skipped)?$ ]]; then
+    echo "$suite: died before its summary (exit $status)"
+  else
+    echo "$suite: $last"
+  fi
 done
 
 leftovers=("$suites_tmp"/* "$suites_tmp"/.[!.]* "$suites_tmp"/..?*)

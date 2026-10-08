@@ -932,7 +932,7 @@ cmd_doctor() {
   [ $# -le 1 ] || die "usage: orch.sh doctor [--env|--flow]"
   case "${1:-}" in
     "")     scope=both ;;
-    --env)  scope="env" ;;
+    --env)  scope="env" ;; # quoted: a bare env reads as a command to shellcheck (SC2209)
     --flow) scope=flow ;;
     *)      die "unknown doctor flag: $1 (want --env or --flow)" ;;
   esac

@@ -333,6 +333,11 @@ failing one, and once all have finished prints each suite's FAIL lines and a
 summary line, then shellcheck's findings and a `shellcheck: N findings` summary
 line, or `shellcheck: not installed - skipped`, which fails the run only in CI.
 
+orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
+the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
+section must pass on its own: a helper used by more than one section lives in its
+shared setup.
+
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
 `-S warning` to match `all.sh`.

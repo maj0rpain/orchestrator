@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.21.10
+
+`all.sh` reports a suite that exited non-zero without a summary as its last
+line as `<suite>: died before its summary (exit N)` (#626). The section
+filter's no-match message says it lists the selectable sections (#627). The
+test harness gets one directory walk (`TEST_DIR`, #630), `section_titles` and
+`section_text` in place of `section_awk` (#633), a named isolation sentinel
+(#634), `count_lines` in the harness sections (#636), `review_ci_restore`
+(#631), `all_sc_stub --stderr` (#644) and `all_run` (#647). The section filter
+and quiet mode derive the isolation pass count from a reference run (#632).
+README's Develop section is the one full statement of the testing guidance
+(#628), and the `orch_test.sh`, `all.sh` and `doctor.sh` headers and comments
+say what is true (#635, #642, #646) (#698).
+
 ## 3.21.9
 
 The hook tests check, create and remove the planning hooks' per-session
