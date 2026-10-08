@@ -2929,7 +2929,8 @@ ticket_sub_issues() {
 # `ticket publish --blocked-by` and `ticket block`/`unblock --by`. Prints the
 # numbers one per line, sorted and de-duplicated. Dies naming <flag> and the
 # whole list on any entry that is not a plain issue number, an empty one
-# included (`1,,2`, `,5`, `5,`). An empty <list> is the caller's to handle.
+# included (`1,,2`, `,5`, `5,`). An empty <list> dies too; a caller that
+# allows no list checks for it first.
 issue_number_list() {
   local flag="$1" list="$2"
   # Digits and commas only, with no comma leading, trailing or doubled - a
