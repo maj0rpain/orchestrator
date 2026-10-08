@@ -215,7 +215,7 @@ check_gh_auth() {
 check_gh_repo() {
   local default owner_name
   if ! repo_resolve; then
-    d_fail "no GitHub repo to work on: origin is missing or not a GitHub owner/name"
+    d_fail "$REPO_CAUSE"
     d_remedy "export GH_REPO=<owner>/<repo>"
     return 0
   fi
@@ -436,7 +436,7 @@ check_labels_doc() {
 # whole orch-to-spec exchange has already been spent.
 check_labels_exist() {
   d_gh_gate || return 0
-  local want have err missing="" l n
+  local want have err gh_line missing="" l n
   want="$(triage_expected_labels)" || want=""
   # Nothing to compare against, and check_labels_doc has already said so. One
   # problem earns one FAIL, never a second derived from the first.
@@ -444,8 +444,8 @@ check_labels_exist() {
   if ! capture have err adapter_labels "$LABEL_LIMIT"; then
     # One check, one cause, one warn: GitHub answered the auth probe and then
     # would not answer this, which is an absent answer rather than a "no".
-    err="${err%%$'\n'*}"
-    d_warn "the repo's labels could not be listed: ${err:-gh gave no reason}"
+    gh_line="${err%%$'\n'*}"
+    d_warn "the repo's labels could not be listed: ${gh_line:-gh gave no reason}"
     return 0
   fi
   while IFS= read -r l; do
@@ -478,10 +478,10 @@ check_labels_exist() {
 # and says so in gh's own first line (#554).
 check_sub_issues() {
   d_gh_gate || return 0
-  local probe err
+  local probe err gh_line
   if ! capture probe err adapter_sub_issues_supported; then
-    err="${err%%$'\n'*}"
-    d_warn "sub-issues support could not be probed: ${err:-gh gave no reason}"
+    gh_line="${err%%$'\n'*}"
+    d_warn "sub-issues support could not be probed: ${gh_line:-gh gave no reason}"
     return 0
   fi
   if [ -z "$probe" ]; then
@@ -666,18 +666,18 @@ check_flow_issue() {
 }
 
 check_flow_pr() {
-  local pr pr_state err=""
+  local pr pr_state err="" gh_line
   pr="$(state_get pr)"
   if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
   d_gh_gate || return 0
   capture pr_state err adapter_pr_state_draft "$pr" || pr_state=""
   pr_state="${pr_state%%$'\n'*}"
-  err="${err%%$'\n'*}"
+  gh_line="${err%%$'\n'*}"
   case "$pr_state" in
     OPEN)   d_ok "PR #$pr open" ;;
     MERGED) d_ok "PR #$pr merged" ;;
     CLOSED) d_fail "PR #$pr is closed."; d_remedy "gh pr reopen $pr" ;;
-    *)      d_fail "PR #$pr could not be read from GitHub: ${err:-gh gave no reason}"
+    *)      d_fail "PR #$pr could not be read from GitHub: ${gh_line:-gh gave no reason}"
             d_remedy "gh pr view $pr" ;;
   esac
 }
@@ -741,7 +741,7 @@ check_flow_review_budget() {
 # business doing. required, not all: branch protection's required set is what
 # the loop itself waits on once one is named.
 check_flow_review_ci() {
-  local phase pr res verdict detail
+  local phase pr res verdict detail reason
   phase="$(state_get phase)"
   [ "$phase" = review ] || return 0
   pr="$(state_get pr)"
@@ -761,9 +761,9 @@ check_flow_review_ci() {
     # so no remedy: reconnecting to a network, or GitHub answering, is not a
     # command either. Its detail is gh's reason, carried in the warn rather
     # than printed again below it.
-    *) detail="$(trim "$detail")"
-       d_warn "CI: could not be read from GitHub for PR #$pr: ${detail:-gh gave no reason}"
-       detail="" ;;
+    *) reason="$(trim "$detail")"
+       d_warn "CI: could not be read from GitHub for PR #$pr: ${reason:-gh gave no reason}"
+       return 0 ;;
   esac
   [ -z "$detail" ] || note "$detail"
 }
@@ -773,7 +773,7 @@ check_flow_review_ci() {
 # so isDraft and phase disagreeing on GitHub's own PR is evidence that
 # operation only half landed, not a state a healthy flow reaches on its own.
 check_flow_review_draft() {
-  local phase pr out err="" pr_state is_draft rest
+  local phase pr out err="" gh_line pr_state is_draft rest
   phase="$(state_get phase)"
   case "$phase" in review|done) ;; *) return 0 ;; esac
   pr="$(state_get pr)"
@@ -782,8 +782,8 @@ check_flow_review_draft() {
   capture out err adapter_pr_state_draft "$pr" || out=""
   lines_split "$out" pr_state is_draft rest
   if [ -z "$pr_state" ]; then
-    err="${err%%$'\n'*}"
-    d_warn "PR #$pr draft state could not be read from GitHub: ${err:-gh gave no reason}"
+    gh_line="${err%%$'\n'*}"
+    d_warn "PR #$pr draft state could not be read from GitHub: ${gh_line:-gh gave no reason}"
     return 0
   fi
   # A merged or closed PR cannot go back to draft, so only an open PR's flag

@@ -468,8 +468,10 @@ cmd_default_branch() {
 # repo, which in a fork is the upstream. repo_resolve sets REPO_NAME to
 # [HOST/]OWNER/REPO and REPO_SOURCE to GH_REPO or origin, printing nothing; it
 # returns non-zero, with both empty, when nothing resolves. A caller that must
-# have a repo dies with REPO_REMEDY; doctor reports it instead.
-REPO_REMEDY="no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
+# have a repo dies with REPO_REMEDY; doctor reports REPO_CAUSE, giving the
+# remedy on a line of its own.
+REPO_CAUSE="no GitHub repo to work on: origin is missing or not a GitHub owner/name"
+REPO_REMEDY="$REPO_CAUSE - set GH_REPO=<owner>/<repo>"
 repo_resolve() {
   local url
   REPO_NAME=""
@@ -1941,8 +1943,11 @@ review_rerun() {
   run="${link##*/actions/runs/}"   # N/job/M -> N
   run="${run%%/*}"
   case "$run" in ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; return 1 ;; esac
-  if ! capture out err adapter_run_rerun "$run"; then
-    gh_line="${err%%$'\n'*}"
+  # rerun_out is the rerun's throwaway half: only its stderr is read.
+  # shellcheck disable=SC2034
+  local rerun_out rerun_err
+  if ! capture rerun_out rerun_err adapter_run_rerun "$run"; then
+    gh_line="${rerun_err%%$'\n'*}"
     die2 "gh could not rerun the failed jobs of Actions run $run: ${gh_line:-gh gave no reason}"
   fi
   note "$run"
@@ -4026,11 +4031,11 @@ cmd_side_checkout_remove() {
 # assigned to the caller's <var>. On failure it sets `verdict` to the call's
 # first error line and returns 2.
 github_read() {
-  local into="$1" got err
+  local into="$1" got err gh_line
   shift
   if ! capture got err "$@"; then
-    err="${err%%$'\n'*}"
-    verdict="could not read GitHub: ${err:-gh gave no reason}"; return 2
+    gh_line="${err%%$'\n'*}"
+    verdict="could not read GitHub: ${gh_line:-gh gave no reason}"; return 2
   fi
   printf -v "$into" '%s' "$got"
 }

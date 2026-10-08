@@ -3151,12 +3151,13 @@ assert_contains "naming the issue" "$out" "issue #46"
 assert_eq "changing nothing and posting no comment" "$(fake_snapshot)" "$before"
 
 fake_issue 47 open needs-triage
-fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
 before="$(fake_snapshot)"
 out="$(triage 47 2>&1)"; st=$?
 assert_status "a failed read dies" "$st" 1
 assert_contains "naming the issue, with gh's line" "$out" \
   "orch: gh could not read issue #47: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "changing nothing" "$(fake_snapshot)" "$before"
 fake_unfail
 
@@ -3190,11 +3191,12 @@ assert_eq "posting no comment" "$(comment_count 50)" "0"
 # The first read answers; both verify re-reads fail. The relabel has
 # already happened, so it stands, and no comment claims it verified.
 fake_issue 56 open needs-triage
-fake_fail_after adapter_issue_state_labels 1 "HTTP 502: Bad Gateway"
+fake_fail_after adapter_issue_state_labels 1 $'HTTP 502: Bad Gateway\nsecond line'
 out="$(triage 56 2>&1)"; st=$?
 assert_status "a verify re-read that fails twice dies" "$st" 1
 assert_contains "saying gh could not read the issue, with gh's line" "$out" \
   "orch: gh could not read issue #56: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
 assert_not_contains "never calling a failed read a mismatch" "$out" "did not verify"
 assert_eq "the relabel standing" "$(fake_labels_of 56)" "ready-for-agent "
 assert_eq "posting no comment" "$(comment_count 56)" "0"
@@ -3318,11 +3320,12 @@ ready 74 >/dev/null 2>&1; st=$?
 assert_status "under a mapping, an issue carrying neither is not ready" "$st" 1
 labels_doc docs/agents/triage-labels.md
 
-fake_fail adapter_issue_state_labels
+fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
 out="$(ready 70 2>&1)"; st=$?
 assert_status "a gh failure exits 2" "$st" 2
 assert_contains "with an orch: message naming the issue, with gh's line" "$out" \
-  "orch: gh could not read issue #70: fake gh: adapter_issue_state_labels failed"
+  "orch: gh could not read issue #70: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
 fake_unfail
 
 out="$(ready abc 2>&1)"; st=$?
@@ -6480,6 +6483,14 @@ assert_contains "the verdict ending gh gave no reason" "$out" \
 assert_eq "the finished flow side checkout stays" "$(on_disk "$fl")" "present"
 fake_unfail
 
+fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune fails when a read fails" "$st" 1
+assert_contains "the verdict carrying gh's first line" "$out" \
+  "could not check $fl: could not read GitHub: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
+fake_unfail
+
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds" "$st" 0
 assert_eq "the finished flow side checkout is gone" "$(on_disk "$fl")" "absent"
@@ -8359,11 +8370,12 @@ fake_issue 17 closed
 rm docs/agents/triage-labels.md
 
 finding 18 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha"
-fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
 before_store="$(fake_snapshot)"
 out="$(scan 18 2>&1)"; st=$?
 assert_status "an explicit finding gh cannot read dies" "$st" 1
 assert_contains "naming the issue, with gh's line" "$out" "gh could not read issue #18: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "listing nothing" "$(printf '%s\n' "$out" | grep -c "$(printf '\t')")" "0"
 assert_eq "and changing nothing" "$(fake_snapshot)" "$before_store"
 fake_unfail
@@ -8508,11 +8520,12 @@ done
 # A failed read stops apply before it writes anything.
 fake_github
 triaged 2 "review:major,needs-triage,bug"
-fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
 before_store="$(fake_snapshot)"
 out="$(apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
 assert_status "a failed read dies" "$st" 1
 assert_contains "naming the issue, with gh's line" "$out" "gh could not read issue #2: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "changing nothing" "$(fake_snapshot)" "$before_store"
 fake_unfail
 
@@ -9118,6 +9131,12 @@ out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a checks read that fails silently is exit 2" "$st" 2
 assert_eq "ending in gh gave no reason, never a bare colon" "$out" \
   "orch: gh could not read the checks of PR #7: gh gave no reason"
+fake_unfail
+fake_fail adapter_pr_checks $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" review rerun 7 2>&1)"; st=$?
+assert_status "a checks read that fails is exit 2" "$st" 2
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not read the checks of PR #7: HTTP 502: Bad Gateway"
 fake_unfail
 # The same silence from a read that succeeds is an answer, not a failure:
 # no checks at all, so the death keeps its no-checks wording.
