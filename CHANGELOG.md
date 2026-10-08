@@ -9,8 +9,9 @@ before. The section filter, quiet mode and parallel runner sections of
 orch_test.sh run their checks against planted sections and cut-down copies of
 the suites instead of real sections and full suite runs, and now come right
 after the `isolation` section, so a parallel run starts the slowest of them
-first. hooks_test.sh and docs_lint.sh gain the `# >>> checks` marker comments
-that quiet mode's cut-down copies use.
+first. hooks_test.sh and docs_lint.sh gain the `# >>> checks` marker comments,
+and hooks_test.sh a `# >>> summary` marker, that quiet mode's cut-down copies
+use.
 
 ## 3.20.2
 

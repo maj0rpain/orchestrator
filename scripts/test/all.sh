@@ -2,9 +2,9 @@
 #
 # The whole test run, the one command to run before committing: orch_test.sh,
 # hooks_test.sh and docs_lint.sh, each in quiet mode, and shellcheck, all
-# started at once so they overlap. Each one's stdout and exit status are
-# captured to a temporary directory, removed on exit; once all four have
-# finished, their output is printed in a fixed order, whichever finished
+# started at once so they overlap. Each one's stdout is captured to a
+# temporary directory, removed on exit, and its exit status is taken from
+# waiting on it; once all four have finished, their output is printed in a fixed order, whichever finished
 # first. A failing suite does not stop the others. Printed per suite, in the
 # order orch_test.sh, hooks_test.sh, docs_lint.sh: its FAIL lines with their
 # detail lines, then one summary line, "<suite>: <its last line>". A suite's

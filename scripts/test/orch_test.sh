@@ -921,6 +921,22 @@ orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
 nojq_path=""
 on_windows_bash || nojq_path="$(gh_fixture && path_without_jq)"
 
+# planted_copy: copies the scripts tree into a fresh temp directory, plants the
+# section lines read from stdin, each indented two spaces, then a blank line,
+# just before the copy's `# >>> summary` line in orch_test.sh, and prints the
+# directory. The indent, which planted_copy strips, keeps a planted `# --- `
+# header from reading as a section of this file. The caller runs
+# <dir>/scripts/test/orch_test.sh and removes <dir> when done.
+planted_copy() {
+  local dir planted
+  planted="$(sed 's/^  //')"
+  dir="$(mktemp -d)" || return 1
+  cp -R "$PLUGIN_ROOT/scripts" "$dir/" || return 1
+  PLANTED="$planted" awk '$0 == "# >>> summary" { print ENVIRON["PLANTED"]; print "" }
+    { print }' "$SUITE_SCRIPT" >"$dir/scripts/test/orch_test.sh" || return 1
+  printf '%s\n' "$dir"
+}
+
 [ -n "$orch_child_counts" ] || echo "orch.sh tests"
 
 # --- isolation --------------------------------------------------------------
@@ -957,17 +973,15 @@ assert_contains "keeps the HOME isolation" "$out" "ok   HOME is the suite's own 
 
 # A copy of the scripts tree with three planted sections whose headers end in
 # trailing dashes like the real ones; the pattern matches two of them.
-filter_dir="$(mktemp -d)"
-cp -R "$PLUGIN_ROOT/scripts" "$filter_dir/"
-awk '$0 == "# >>> summary" {
-  print "# --- planted alpha ------------------------------------------------------"
-  print "echo; echo \"planted alpha\"; ok \"alpha ran\""
-  print "# --- planted beta -------------------------------------------------------"
-  print "echo; echo \"planted beta\"; ok \"beta ran\""
-  print "# --- planted gamma ------------------------------------------------------"
-  print "echo; echo \"planted gamma\"; ok \"gamma ran\""
-  print "" }
-  { print }' "$SUITE_SCRIPT" >"$filter_dir/scripts/test/orch_test.sh"
+filter_dir="$(planted_copy <<'PLANTED'
+  # --- planted alpha ------------------------------------------------------
+  echo; echo "planted alpha"; ok "alpha ran"
+  # --- planted beta -------------------------------------------------------
+  echo; echo "planted beta"; ok "beta ran"
+  # --- planted gamma ------------------------------------------------------
+  echo; echo "planted gamma"; ok "gamma ran"
+PLANTED
+)"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET='' ORCH_TEST_ONLY='^planted (alpha|beta)$' \
   bash "$filter_dir/scripts/test/orch_test.sh" 2>/dev/null)"
 assert_eq "matches titles without their trailing dashes" \
@@ -1024,9 +1038,9 @@ rm -rf "$quiet_dir"
 # and its own summary code: its lines before `# >>> checks`, a planted ok, then
 # its lines from its summary marker on.
 quiet_dir="$(mktemp -d)"
-for quiet_suite in hooks_test.sh:'# >>> summary' docs_lint.sh:'# --- summary'; do
-  quiet_end="${quiet_suite#*:}"
-  quiet_suite="${quiet_suite%%:*}"
+for quiet_pair in hooks_test.sh:'# >>> summary' docs_lint.sh:'# --- summary'; do
+  quiet_end="${quiet_pair#*:}"
+  quiet_suite="${quiet_pair%%:*}"
   END_MARK="$quiet_end" awk '
     $0 == "# >>> checks" { print "ok \"a planted check\""; skip = 1; next }
     skip && index($0, ENVIRON["END_MARK"]) == 1 { skip = 0 }
@@ -1052,23 +1066,21 @@ assert_eq "without quiet mode, prints every ok line" \
 # run in parallel, asserted on their combined output.
 echo
 echo "the parallel runner (ORCH_TEST_JOBS, #780)"
-par_dir="$(mktemp -d)"
-cp -R "$PLUGIN_ROOT/scripts" "$par_dir/"
-awk '$0 == "# >>> summary" {
-  print "# --- paired alpha ---------------------------------------------------------"
-  print "echo; echo \"paired alpha\"; ok \"alpha ran\"; ok \"alpha ran again\""
-  print "# --- paired beta ----------------------------------------------------------"
-  print "echo; echo \"paired beta\"; ok \"beta ran\""
-  print "# --- planted slow"
-  print "echo; echo \"planted slow\"; sleep 2; ok \"slept\""
-  print "# --- planted stderr"
-  print "echo; echo \"planted stderr\"; echo \"a planted stderr line\" >&2; ok \"wrote\""
-  print "# --- planted exit"
-  print "echo; echo \"planted exit\"; ok \"before the exit\"; exit 3"
-  print "# --- planted failure"
-  print "echo; echo \"planted failure\"; bad \"a planted failure\" \"its detail line\""
-  print "" }
-  { print }' "$SUITE_SCRIPT" >"$par_dir/scripts/test/orch_test.sh"
+par_dir="$(planted_copy <<'PLANTED'
+  # --- paired alpha ---------------------------------------------------------
+  echo; echo "paired alpha"; ok "alpha ran"; ok "alpha ran again"
+  # --- paired beta ----------------------------------------------------------
+  echo; echo "paired beta"; ok "beta ran"
+  # --- planted slow
+  echo; echo "planted slow"; sleep 2; ok "slept"
+  # --- planted stderr
+  echo; echo "planted stderr"; echo "a planted stderr line" >&2; ok "wrote"
+  # --- planted exit
+  echo; echo "planted exit"; ok "before the exit"; exit 3
+  # --- planted failure
+  echo; echo "planted failure"; bad "a planted failure" "its detail line"
+PLANTED
+)"
 par_suite="$par_dir/scripts/test/orch_test.sh"
 par_only='^paired (alpha|beta)$'
 seq_out="$(ORCH_TEST_QUIET='' ORCH_TEST_JOBS=1 ORCH_TEST_ONLY="$par_only" bash "$par_suite" 2>/dev/null)"
@@ -9883,14 +9895,12 @@ restore_suite_env
 # summary turns the logged call into one FAIL naming it.
 echo
 echo "the real-gh guard (#779)"
-guard_dir="$(mktemp -d)"
-cp -R "$PLUGIN_ROOT/scripts" "$guard_dir/"
-awk '$0 == "# >>> summary" {
-  print "# --- a planted gh call"
-  print "echo; echo \"a planted gh call\""
-  print "gh repo view o/r --json defaultBranchRef >/dev/null 2>&1"
-  print "" }
-  { print }' "$SUITE_SCRIPT" >"$guard_dir/scripts/test/orch_test.sh"
+guard_dir="$(planted_copy <<'PLANTED'
+  # --- a planted gh call
+  echo; echo "a planted gh call"
+  gh repo view o/r --json defaultBranchRef >/dev/null 2>&1
+PLANTED
+)"
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^a planted gh call$' \
   bash "$guard_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
 assert_status "a run whose section calls gh exits 1" "$st" 1
