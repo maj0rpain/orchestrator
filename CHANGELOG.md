@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.19.1
+
+The triage-label parser moves out of `doctor.sh` into its own sourced module,
+`scripts/triage-labels.sh`, which needs only `ROOT`; `hook-grilling.sh`
+sources it instead of all of `doctor.sh`, and `LABELS_DOC` has one home
+(#575, #576). Around `orch.sh issue triage`, each repeated idiom gets one
+helper used at every site: `labels_have` for label membership (#578),
+`issue_state_labels_read` for an issue's state and labels split (#584), and
+`labels_verified` behind both read-back verifiers (#577), whose triage one
+now names its remove list (#583). `cmd_issue_triage` reads the triage roles in
+one pass, wontfix still winning over ready-for-human (#579), and the
+renamed-labels hook test calls one helper per case (#582). One behaviour
+change: every label-membership test is `--`-guarded, so a label beginning with
+`-` is matched instead of read by grep as an option.
+
 ## 3.19.0
 
 A second flow or a quick implementation can now run beside an active flow in

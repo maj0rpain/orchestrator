@@ -465,6 +465,15 @@ check_interviewed_step() {
     bad "puts the interviewed-issue step before the route question $where" "step not before route question"
   fi
 }
+# The step names a repo's renamed triage labels, never the canonical ones.
+check_renamed_labels() {
+  local where="$1" event="$2" arg="$3" session="$4" ctx
+  ctx="$("$event" "$arg" "$session" | "$GRILL" | jq -r '.additionalContext')"
+  assert_contains "names the repo's ready-for-agent label $where" "$ctx" "Move #<n> to \`agent-ready\`"
+  assert_contains "warns with the repo's ready-for-agent label $where" "$ctx" "until it carries \`agent-ready\`"
+  assert_contains "names the repo's wontfix and ready-for-human labels $where" "$ctx" "\`not-planned\` or \`human-only\`"
+  assert_not_contains "names no canonical ready-for-agent label $where" "$ctx" "ready-for-agent"
+}
 
 ctx="$(skill_event "mattpocock-skills:grilling" ii1 | "$GRILL" | jq -r '.additionalContext')"
 check_interviewed_step "on Claude Code" "$ctx" "the AskUserQuestion tool"
@@ -483,16 +492,9 @@ cat >"$REPO/docs/agents/triage-labels.md" <<'DOC'
 | ready-for-human | human-only    | x       |
 | wontfix         | not-planned   | x       |
 DOC
-for v in "skill_event mattpocock-skills:grilling ii3|on Claude Code" "prompt_event \$grilling ii4|on Junie" \
-         "prompt_event Implement_the_suggested_plan ii4|at Junie's plan confirmation"; do
-  call="${v%%|*}" where="${v#*|}"
-  set -- $call
-  ctx="$("$1" "${2//_/ }" "$3" | "$GRILL" | jq -r '.additionalContext')"
-  assert_contains "names the repo's ready-for-agent label $where" "$ctx" "Move #<n> to \`agent-ready\`"
-  assert_contains "warns with the repo's ready-for-agent label $where" "$ctx" "until it carries \`agent-ready\`"
-  assert_contains "names the repo's wontfix and ready-for-human labels $where" "$ctx" "\`not-planned\` or \`human-only\`"
-  assert_not_contains "names no canonical ready-for-agent label $where" "$ctx" "ready-for-agent"
-done
+check_renamed_labels "on Claude Code" skill_event "mattpocock-skills:grilling" ii3
+check_renamed_labels "on Junie" prompt_event '$grilling' ii4
+check_renamed_labels "at Junie's plan confirmation" prompt_event "$confirm" ii4
 rm -f "$REPO/docs/agents/triage-labels.md"
 
 # Claude Code also fires UserPromptSubmit, but its PostToolUse on Skill already
