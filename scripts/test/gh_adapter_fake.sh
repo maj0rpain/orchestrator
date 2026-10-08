@@ -102,7 +102,8 @@ fake_countdown() {
 }
 
 # fake_failing <operation>: true when fake_fail named the operation, with its
-# stderr written, so an operation opens with `! fake_failing <op> || return 1`.
+# stderr written. An operation calls `! fake_failing <op> || return 1` once it
+# has parsed its own arguments, so a bad call exits 2 even with a failure seeded.
 fake_failing() {
   local f n s
   s="$(fake_store)" || return 1

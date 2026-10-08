@@ -5,7 +5,8 @@
 The gh adapter and its test fake carry one copy of each step (#664). The
 adapter's relabel, close and PR create take named options in place of comma
 lists and placeholder positionals, one `url_number` parses both creates' URLs,
-and one `capture` holds the stderr temp-file scaffolding. The fake's
+and one `capture` holds the stderr temp-file scaffolding of the CI reads
+(`adapter_pr_checks`, `ci_api_read` and `ci_probe`). The fake's
 countdowns, comment author and timestamp, close-with-comment and next-number
 steps each have one helper, and `orch_test.sh` seeds and reads comments
 through one writer and one reader.
