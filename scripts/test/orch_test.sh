@@ -1264,6 +1264,25 @@ else
   assert_eq "a run sent INT exits 130" "$st" "130"
   assert_eq "a run sent INT leaves its TMPDIR empty" "$(ls -A "$root_tmp")" ""
 fi
+
+# hooks_test.sh owns a temp root too: run whole, then sent TERM once its
+# TMPDIR has an entry.
+root_hooks="$(dirname "$SUITE_SCRIPT")/hooks_test.sh"
+root_fresh
+TMPDIR="$root_tmp" ORCH_TEST_QUIET=1 bash "$root_hooks" >/dev/null 2>&1; st=$?
+assert_status "hooks_test.sh exits 0" "$st" 0
+assert_eq "hooks_test.sh leaves its TMPDIR empty" "$(ls -A "$root_tmp")" ""
+
+root_fresh
+TMPDIR="$root_tmp" ORCH_TEST_QUIET=1 bash "$root_hooks" >/dev/null 2>&1 &
+root_pid=$!
+i=0
+while [ -z "$(ls -A "$root_tmp")" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+assert_eq "hooks_test.sh's TMPDIR gains an entry while it runs" \
+  "$([ -n "$(ls -A "$root_tmp")" ] && echo yes)" "yes"
+kill -TERM "$root_pid" 2>/dev/null
+wait "$root_pid"
+assert_eq "hooks_test.sh sent TERM leaves its TMPDIR empty" "$(ls -A "$root_tmp")" ""
 rm -rf "$root_dir"
 
 # --- init -------------------------------------------------------------------
