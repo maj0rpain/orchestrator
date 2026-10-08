@@ -130,6 +130,10 @@ fi
 # Only state that is not a JSON object leaves it unnamed.
 flow_branches=""
 route_here=""
+# The branches stand in place of the route question (#640): beside a flow, the
+# question's bullet opens by scoping itself to the second case.
+confirm_lead="Before you implement anything"
+close_lead="When you reach a shared understanding"
 if [ "$flow_active" = 1 ]; then
   state="$root/.orchestrator/state.json"
   flow_issue="" flow_slug="" flow_phase=""
@@ -163,6 +167,9 @@ if [ "$flow_active" = 1 ]; then
     work. The next step is that flow's: point the user to ${next_redo}.
   - Otherwise: run the interviewed-issue step below unchanged, then the route
     question below."
+  only_second="Only in the second case above (planning about anything else):"
+  confirm_lead="$only_second before you implement anything"
+  close_lead="$only_second when you reach a shared understanding"
   route_here="
   Blueprint only is the one route that runs in this checkout, whose branch
   belongs to the running flow: starting a flow or a quick implementation must be done from a separate checkout of the repo, opened in its own session there."
@@ -211,7 +218,7 @@ confirmed a plan from a planning session.
 ${flow_branches:+
 $flow_branches}
 ${interviewed_step}
-- Before you implement anything, and without editing any file first, ask the
+- ${confirm_lead}, and without editing any file first, ask the
   user how to carry the plan out. ${choice}"
   exit 0
 fi
@@ -227,7 +234,7 @@ While this planning session is running:
 - Glossary and ADR changes ($(planning_records_text)) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim.
 ${flow_branches:+$flow_branches
 }${interviewed_step}
-- When you reach a shared understanding, do not close with a scripted line and
+- ${close_lead}, do not close with a scripted line and
   do not decide the next step yourself. ${choice}
 
 If this session runs under a wayfinder skill, \"approved\" means the

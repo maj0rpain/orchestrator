@@ -148,6 +148,10 @@ check_flow_variant() {
     "Blueprint only is the one route that runs in this checkout"
   assert_contains "keeps the interviewed-issue step $where" "$ctx" "With no interviewed issue, skip this step entirely"
   assert_contains "keeps the route question $where" "$ctx" "$route_block"
+  # The branches stand in place of the route question (#640): its bullet asks
+  # only in the second case, so the same-flow branch is not contradicted.
+  assert_contains "asks the route question only in the second case $where" "$ctx" \
+    "- Only in the second case above (planning about anything else): "
 }
 route_block='      1. Start the orchestrator flow - the full plan -> spec -> implement ->
          review pipeline, with its own handoff and review loop.
@@ -156,13 +160,13 @@ route_block='      1. Start the orchestrator flow - the full plan -> spec -> imp
          stop; implement later.'
 cc_next_redo='/orchestrator:next or /orchestrator:redo'
 echo '{"slug":"x","phase":"spec","issue":42}' >"$REPO/.orchestrator/state.json"
-ctx="$(skill_event "grilling" s6 | "$GRILL" | jq -r '.additionalContext')"
+out="$(skill_event "grilling" s6 | "$GRILL")"
+ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
 assert_contains "sends the planning rules beside an active flow" "$ctx" "Do NOT offer to implement"
 assert_contains "names the active flow's issue and phase" "$ctx" "the flow for #42 is active in this checkout, at phase spec"
 assert_contains "the same-flow branch names the flow's issue" "$ctx" "about this flow's issue, #42"
 check_flow_variant "on Claude Code" "$ctx" "$cc_next_redo"
-assert_eq "offers exactly three options beside an active flow" \
-  "$(printf '%s\n' "$ctx" | grep -cE '^ +[0-9]+\. ')" "3"
+assert_eq "offers exactly three options beside an active flow" "$(count_closing_options "$out")" "3"
 if [ -e "$TMPDIR/orchestrator-grilling-s6" ]; then
   ok "writes the grilling marker beside an active flow"
 else
@@ -323,7 +327,7 @@ fi
 assert_empty "stays silent on a second Junie planning prompt beside an active flow" \
   "$(prompt_event '$grilling' j3 | "$GRILL")"
 ctx="$(prompt_event "$confirm" jc1 | "$GRILL" | jq -r '.additionalContext')"
-assert_contains "asks before implementing at plan confirmation beside an active flow" "$ctx" "Before you implement"
+assert_contains "asks before implementing at plan confirmation beside an active flow" "$ctx" "before you implement anything"
 assert_contains "names the active flow at plan confirmation" "$ctx" \
   "the flow for #7 is active in this checkout, at phase review"
 check_flow_variant "at Junie's plan confirmation" "$ctx" "$junie_next_redo"
