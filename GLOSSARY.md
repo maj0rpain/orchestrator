@@ -32,43 +32,6 @@ base branch, its working tree is clean, and it holds no flow or a flow at
 `done`. A flow is finished when it is at `done` and its pull request has
 merged. `/orchestrator:finish` cleans up only finished work.
 
-**Base branch**:
-The branch a flow or quick implementation forks from and opens its PR
-against. The repo's default branch unless a human has set another for the
-checkout - an integration branch such as `uat`, or a long-running feature
-branch that several tickets feed. A flow fixes its base branch when it starts.
-Neither a later change to the setting nor a redo moves it; a human can correct
-it explicitly only while the flow has no branch: before it first branches, or
-after `redo review` retires that branch. A quick implementation reads it when
-it branches. A flow's base SHA is the base
-branch's tip at the moment it branched. A quick implementation's base SHA
-means the same, recorded on its branch.
-_Avoid_: target branch, integration branch (as the general term).
-
-**Repo**:
-The GitHub repo whose issues, PRs and checks the orchestrator reads and
-writes. The one the checkout's `origin` remote points at, unless the caller
-names another; never the one `gh` would pick by default. In a fork, that is
-the fork, not the upstream. Its default branch is the one **Base branch**
-falls back to.
-_Avoid_: upstream, gh's default repo (as the general term).
-
-**Release PR**:
-The PR that carries a base branch other than the default back into the
-default branch, closing every still-open issue whose work reached the base
-branch. Those issues stay open until it merges: a PR into a non-default base
-branch refers to its issue rather than closing it, because the work has not
-landed yet. Which issues it closes is read from what merged into the base
-branch, never remembered by a human.
-
-**Doctor**:
-A diagnostic surface a maintainer or agent can run at any time, via the
-`doctor` command, to check that the machine, the repo, and the active flow are
-sound. Organized into named scopes - `--env`, `--flow` - with bare `doctor`
-covering everything. Every check it runs reports through one of three states -
-`ok`, `warn`, or `FAIL` - and the overall report reflects the worst state seen
-without aborting partway through.
-
 **Phase**:
 One of the four stages a flow passes through: **plan**, **spec**, **implement**,
 **review**. Each phase runs in its own session with no memory of the previous
@@ -114,6 +77,45 @@ _Avoid_: existing issue, pre-existing issue, given issue.
 **Interviewed issue**:
 An open issue a planning session was run about, or the open issue the human names in its place when the session closes. When the human confirms the plan, the session offers to move it to the `ready-for-agent` triage label, since the interview settled what triage would have. A blueprint drawn from that session rewrites this issue as its spec issue rather than publishing a new one.
 _Avoid_: planned issue, subject issue.
+
+### Repository and tooling
+
+**Repo**:
+The GitHub repo whose issues, PRs and checks the orchestrator reads and
+writes. The one the checkout's `origin` remote points at, unless the caller
+names another; never the one `gh` would pick by default. In a fork, that is
+the fork, not the upstream. Its default branch is the one **Base branch**
+falls back to.
+_Avoid_: upstream, gh's default repo (as the general term).
+
+**Base branch**:
+The branch a flow or quick implementation forks from and opens its PR
+against. The repo's default branch unless a human has set another for the
+checkout - an integration branch such as `uat`, or a long-running feature
+branch that several tickets feed. A flow fixes its base branch when it starts.
+Neither a later change to the setting nor a redo moves it; a human can correct
+it explicitly only while the flow has no branch: before it first branches, or
+after `redo review` retires that branch. A quick implementation reads it when
+it branches. A flow's base SHA is the base
+branch's tip at the moment it branched. A quick implementation's base SHA
+means the same, recorded on its branch.
+_Avoid_: target branch, integration branch (as the general term).
+
+**Release PR**:
+The PR that carries a base branch other than the default back into the
+default branch, closing every still-open issue whose work reached the base
+branch. Those issues stay open until it merges: a PR into a non-default base
+branch refers to its issue rather than closing it, because the work has not
+landed yet. Which issues it closes is read from what merged into the base
+branch, never remembered by a human.
+
+**Doctor**:
+A diagnostic surface a maintainer or agent can run at any time, via the
+`doctor` command, to check that the machine, the repo, and the active flow are
+sound. Organized into named scopes - `--env`, `--flow` - with bare `doctor`
+covering everything. Every check it runs reports through one of three states -
+`ok`, `warn`, or `FAIL` - and the overall report reflects the worst state seen
+without aborting partway through.
 
 **Planning allowlist**:
 The files a planning session may legitimately change: agent docs, and
@@ -204,9 +206,9 @@ then read the spec, body and comments, independently - four in a flow, three
 in a standalone review; every finding they report, and every consolidation item, is
 put to a human with a proposed edit, and only the edits the human accepts
 change the spec - in an unattended spec review, the recommended ones. When the issue already has a ticket breakdown and the
-accepted edits touch an open ticket, it then puts to the human how that
-breakdown should follow - an unattended spec review takes its own
-recommendation: edits to the tickets the change touches, or retiring
+accepted edits touch an open ticket, it then raises the ticket question - how that
+breakdown should follow - which a human answers, and an unattended spec
+review answers with its own recommendation: edits to the tickets the change touches, or retiring
 the breakdown so the issue is broken down again. A spec review runs once - it is not a loop and has no budget;
 another look is another spec review.
 

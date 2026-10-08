@@ -119,14 +119,26 @@ assert_eq "spares passes when no finding matches" \
 echo
 echo "skill names (ADR-0014)"
 old_names='orchestrator:(flow|handoff|review-spec|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$|(^|[^a-z-])(orch-plan|orchestrator:plan)([^a-z-]|$)'
+# scan_tracked_pattern <root> <label> <pattern> [pathspec...]: each line of a
+# tracked file matching the extended regex <pattern>, as
+# "<file>:<line>: <label>: <text>", where <label> is plain words with no "/",
+# "\" or "&". The pathspecs, if any, narrow the files scanned; a
+# ':(exclude)<path>' pathspec drops one.
+scan_tracked_pattern() {
+  local r="$1" label="$2" pattern="$3"
+  shift 3
+  git -C "$r" ls-files -z -- "$@" \
+    | (cd "$r" && xargs -0 grep -nE "$pattern" 2>/dev/null) \
+    | sed -E "s/^([^:]*:[0-9]+):/\\1: $label: /"
+  return 0
+}
 # scan_old_names <plugin root>: each old skill or command name in a tracked
 # file outside history, and each old command file or skill directory.
 scan_old_names() {
   local r="$1"
-  git -C "$r" ls-files -z \
-    | grep -zvE '^(CHANGELOG\.md|docs/adr/|scripts/test/|\.out-of-scope/)' \
-    | (cd "$r" && xargs -0 grep -nE "$old_names" 2>/dev/null) \
-    | sed -E 's/^([^:]*:[0-9]+):/\1: old skill or command name: /'
+  scan_tracked_pattern "$r" "old skill or command name" "$old_names" \
+    ':(exclude)CHANGELOG.md' ':(exclude)docs/adr' \
+    ':(exclude)scripts/test' ':(exclude).out-of-scope'
   local p
   for p in commands/review-spec.md commands/plan.md; do
     [ -e "$r/$p" ] && echo "$p: old command file"
@@ -147,6 +159,10 @@ printf 'name: orch-review-spec\n' >"$fixture/commands/e.md"
 printf 'Run `/orchestrator:spec-review 12`.\nCall `orchestrator:orch-spec-review`.\nskills/orch-spec-review/\n' >"$fixture/commands/new.md"
 printf -- '---\nname: orch-spec-review\n---\n' >"$fixture/skills/orch-spec-review/SKILL.md"
 printf 'Renamed `orchestrator:review-spec`.\n' >"$fixture/docs/adr/0001-x.md"
+mkdir -p "$fixture/scripts/test" "$fixture/.out-of-scope"
+printf 'Renamed `orchestrator:review-spec`.\n' >"$fixture/CHANGELOG.md"
+printf '# Call `orchestrator:review-spec`.\n' >"$fixture/scripts/test/x_test.sh"
+printf 'Renamed `orchestrator:review-spec`.\n' >"$fixture/.out-of-scope/x.md"
 # /orchestrator:review is a live command again (#341), routed to orch-review's
 # Standalone review pass; the old review skill's directory and name stay old.
 printf 'Run `/orchestrator:review 12`.\nCall `orchestrator:review`.\n' >"$fixture/commands/review.md"
@@ -195,6 +211,12 @@ spares "the saved-plan scratch file is not flagged" \
   "$out" '^commands/scratch\.md'
 spares "history may name the old ones" \
   "$out" '^docs/adr/'
+spares "the changelog may name the old ones" \
+  "$out" '^CHANGELOG\.md'
+spares "tests may name the old ones" \
+  "$out" '^scripts/test/'
+spares "out-of-scope notes may name the old ones" \
+  "$out" '^\.out-of-scope/'
 mkdir -p "$fixture/skills/orch-review-spec"
 : >"$fixture/commands/review-spec.md"
 mkdir -p "$fixture/skills/orch-plan"
@@ -217,11 +239,8 @@ echo "glossary names (#461)"
 # scan_old_glossary_names <plugin root>: each CONTEXT.md or CONTEXT-MAP.md in
 # a tracked file under skills/ or agents/.
 scan_old_glossary_names() {
-  local r="$1"
-  git -C "$r" ls-files -z -- skills agents \
-    | (cd "$r" && xargs -0 grep -nE 'CONTEXT(-MAP)?\.md' 2>/dev/null) \
-    | sed -E 's/^([^:]*:[0-9]+):/\1: old glossary name: /'
-  return 0
+  scan_tracked_pattern "$1" "old glossary name" 'CONTEXT(-MAP)?\.md' \
+    skills agents
 }
 fixture="$(new_fixture)"
 git -C "$fixture" init -q
@@ -1044,15 +1063,16 @@ echo "flow commands in script messages"
 # names the CLI itself, so it is spared, as are comments; a line with `usage:`
 # elsewhere is not.
 # scan_flow_cmd <plugin root>: each script line naming a plugin command
-# outside flow_cmd, each line naming orch.sh redo or abort other than its own
-# usage: string, and each flow_cmd section orch-flow lacks.
+# outside flow_cmd, each line naming orch.sh redo or abort other than in its
+# own usage: string, quoted any way, and each flow_cmd section orch-flow lacks.
 scan_flow_cmd() {
   local r="$1" s
   (cd "$r" && grep -nE '/orchestrator:[a-z]' scripts/orch.sh scripts/doctor.sh 2>/dev/null) \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
     | sed -E 's/^([^:]+:[0-9]+):.*/\1: names a plugin command outside flow_cmd/'
   (cd "$r" && grep -nE 'orch\.sh (redo|abort)' scripts/orch.sh scripts/doctor.sh 2>/dev/null) \
-    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -vE '"usage: orch\.sh (redo|abort)' \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
+    | sed -E "s/usage: [\"']?orch\\.sh (redo|abort)//g" | grep -E 'orch\.sh (redo|abort)' \
     | sed -E 's/^([^:]+:[0-9]+):.*/\1: names a flow command literally, not through flow_cmd/'
   # Not a section read: this range is a shell function body in orch.sh.
   awk '/^flow_cmd\(\)/,/^}/' "$r/scripts/orch.sh" 2>/dev/null \
@@ -1070,6 +1090,9 @@ printf '%s\n' 'flow_cmd() {' '  case "$1" in' '    start) section="Starting a fl
   '# /orchestrator:next in a comment is fine' 'die "run /orchestrator:abort"' \
   'die "run orch.sh redo review"' 'die "run orch.sh abort"' '  die "usage: orch.sh redo review"' \
   '# orch.sh abort in a comment is fine' 'die "bad args (see usage: x); run orch.sh abort"' \
+  '  die "usage: orch.sh abort"' "  die 'usage: orch.sh redo review'" "  die 'usage: orch.sh abort'" \
+  '  echo usage: orch.sh redo review' '  echo usage: orch.sh abort' \
+  'die "usage: orch.sh redo review; run orch.sh abort"' \
   >"$fixture/scripts/orch.sh"
 printf '%s\n' 'echo ok' 'die "run orch.sh abort"' >"$fixture/scripts/doctor.sh"
 printf '# Flow\n\n## Starting a flow\n\n## Next steps\n' >"$fixture/skills/orch-flow/SKILL.md"
@@ -1090,6 +1113,18 @@ flags "a line with usage: elsewhere that names orch.sh abort is flagged" \
   "$out" "scripts/orch.sh:14: names a flow command literally, not through flow_cmd"
 spares "a usage: line and a comment naming orch.sh redo or abort are not flagged" \
   "$out" ':12:|:13:'
+spares "a double-quoted usage: string naming orch.sh abort is not flagged" \
+  "$out" ':15:'
+spares "a single-quoted usage: string naming orch.sh redo is not flagged" \
+  "$out" ':16:'
+spares "a single-quoted usage: string naming orch.sh abort is not flagged" \
+  "$out" ':17:'
+spares "an unquoted usage: string naming orch.sh redo is not flagged" \
+  "$out" ':18:'
+spares "an unquoted usage: string naming orch.sh abort is not flagged" \
+  "$out" ':19:'
+flags "a usage: string beside another literal flow command is flagged" \
+  "$out" "scripts/orch.sh:20: names a flow command literally, not through flow_cmd"
 check "the scripts name a plugin command only through flow_cmd, whose sections exist" \
   "$(scan_flow_cmd "$PLUGIN_ROOT")"
 

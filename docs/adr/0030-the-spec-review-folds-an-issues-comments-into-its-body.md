@@ -1,5 +1,7 @@
 # The spec review folds an issue's comments into its body
 
+Supersedes ADR-0004 in part: a failed comments fetch now stops the review too.
+
 The spec review used to read only the issue body. But spec content often
 arrives as a comment: triage posts its agent brief as one, and a human
 clarifies a spec in a follow-up. No lens saw those comments, and the

@@ -1,6 +1,6 @@
 ---
 name: orch-spec-review
-description: Review a spec issue once - propose folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask a second question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state. A quick implementation runs the standalone review unattended, applying its own recommendations without asking.
+description: Review a spec issue once - propose folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask the ticket question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state. A quick implementation runs the standalone review unattended, applying its own recommendations without asking.
 ---
 
 # Orchestrator spec review
@@ -16,7 +16,7 @@ sub-agents that see only files. Every consolidation item and every **finding**
 they report reaches the human as a proposed edit in one batch; only the edits
 the human accepts change the issue - in an **Unattended spec review**, the
 recommended ones. When the issue already has a ticket
-breakdown and the accepted edits touch an open ticket, a second question asks
+breakdown and the accepted edits touch an open ticket, the ticket question asks
 how the breakdown should follow - see **Tickets follow the spec**; the review
 writes the issue's tickets only to follow edits already accepted. The issue body stays the single truth the
 implement phase reads; after a review, the comments are history.
@@ -372,28 +372,24 @@ new agent: this is reconciliation, the same kind of work as
 - A drafted edit you believe is wrong is still presented, marked **recommend
   decline** with the reason.
 
-**The question.** If no open ticket is affected, ask nothing: the line is
+**The ticket question.** If no open ticket is affected, ask nothing: the line is
 **None - no ticket affected**, and each closed ticket the edits touch is
 still listed. Otherwise number the ticket items - each naming its ticket
 (`#<n>`, or the `## Ticket` section), what the accepted edits changed for it,
 and its replacement text, or for an edge change the one edge added or removed -
 and ask **one blocking question** with the
 `AskUserQuestion` tool, the list and the call in the same response, as for
-the spec batch. The options, each offered once:
+the spec batch. Its options are the spec batch's, under **Disposition**,
+each offered once and with the same rules, except:
 
-- **Apply as recommended** - every ticket edit applied except those marked
-  **recommend decline**.
-- **Apply all** - offered only when some item is marked **recommend
-  decline**: as recommended, plus those items too.
-- **Apply none**.
-- **Retire and break down again** - no ticket is edited; the breakdown is
-  retired after the body is published, and the issue broken down again.
-- **Other** - item numbers, e.g. `1, 3`, as in the spec batch; any item left
-  out is declined. The question text states this format.
-
-The option you recommend comes first and carries **(Recommended)**: **Retire
-and break down again** when you recommend a retire, otherwise **Apply as
-recommended**.
+- **Retire and break down again** is added: no ticket is edited; the
+  breakdown is retired after the body is published, and the issue broken
+  down again.
+- **Other** takes item numbers only, e.g. `1, 3`: a ticket item has no
+  option letter.
+- The option you recommend comes first and carries **(Recommended)**:
+  **Retire and break down again** when you recommend a retire, otherwise
+  **Apply as recommended**.
 
 **Applying.** Each accepted sub-issue edit replaces that ticket's body: write
 it to `<dir>/ticket-<n>.md`, then

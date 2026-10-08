@@ -157,9 +157,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    blueprint adopted at init; a default `redo spec` retires the breakdown
    first, so it never reaches this exit. Skip the breakdown and
    ask nothing: step 4's spec review may already have reconciled the
-   breakdown with the edits it applied. If that review retired the
-   breakdown instead, this step sees exit 1 and runs `orch-to-tickets` as
-   below. It printed one word, which settles step 6's **Ticket
+   breakdown with the edits it applied. `ticket exists` printed one word,
+   which settles step 6's **Ticket
    breakdown**: `sub-issues` means the spec issue number, and `collapsed`
    means `None: work directly against #<n>` naming the spec issue.
 
@@ -170,6 +169,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    heading, and reports which: the published numbers, or `collapsed`. This
    step is part of the phase, not an option in it, the same way the review
    above is not: no spec reaches the implement phase without its breakdown.
+   A step-4 review that retired the breakdown also lands here.
 
    **Any other exit** means GitHub could not be read: stop, leaving the state
    where it is, say what blocked, and offer `/orchestrator:abort`.

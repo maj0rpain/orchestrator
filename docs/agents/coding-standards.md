@@ -22,7 +22,7 @@ message and exit; `warn` prints it and returns, for a non-fatal message.
 
 A local variable never takes the name of a function defined at file level -
 for example `note`, `die`, `now` or `trim`. The shadowing reads as a call where
-there is none, and hides the helper from the rest of the function.
+there is none.
 
 ## 4. One meaning per variable
 
