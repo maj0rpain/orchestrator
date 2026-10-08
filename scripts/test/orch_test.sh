@@ -8824,6 +8824,21 @@ out="$("$ORCH" review terminal 2>&1)"; st=$?
 assert_status "short of its budget is not terminal" "$st" 1
 assert_first_line "and classifies as pending" "$out" "pending"
 
+# A loop can stop before its budget - a failed base sync sends it straight to
+# Termination - and the record it leaves says so. A mid-budget record with a
+# terminal state classifies from it; one without stays pending.
+mkdir -p .orchestrator/review
+writeln '## Findings' 'None' >.orchestrator/review/iteration-03.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a mid-budget record with no Terminal state is not terminal" "$st" 1
+assert_first_line "and still classifies as pending" "$out" "pending"
+writeln '## Terminal state' 'stop - base sync failed.' >.orchestrator/review/iteration-03.md
+out="$("$ORCH" review terminal 2>&1)"; st=$?
+assert_status "a stop recorded short of the budget is terminal" "$st" 0
+assert_eq "classified as stop with its reason, not pending" "$out" \
+  "$(printf 'stop\nbase sync failed.')"
+rm .orchestrator/review/iteration-03.md
+
 state_fixture iteration 5
 out="$("$ORCH" review terminal 2>&1)"; st=$?
 assert_status "at budget with no iteration record is not terminal" "$st" 1
@@ -8979,6 +8994,14 @@ assert_contains "names the iteration and budget" "$out" "iteration 2 of budget 5
 assert_contains "reads as pending, not interrupted" "$out" "hasn't reached its budget yet"
 assert_contains "points at next for resuming it" "$out" "/orchestrator:next (or orch-flow's Next phase section) will resume it"
 assert_contains "and says redo refuses until it is terminal" "$out" "redo refuses until it reaches a terminal state"
+
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop - base sync failed.' >.orchestrator/review/iteration-02.md
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a stop short of the budget is healthy" "$st" 0
+assert_contains "named a terminal state, not proceeding normally" \
+  "$out" "review loop at a terminal state: stop (base sync failed.)"
+rm .orchestrator/review/iteration-02.md
 
 state_fixture iteration 5
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -9200,7 +9223,7 @@ echo "redo review"
 healthy_repo
 fake_github
 fake_issue 21 open
-for n in 30 31 32 33; do fake_pr "$n" open orch/21-redotest main; done
+for n in 30 31 32 33 34; do fake_pr "$n" open orch/21-redotest main; done
 bare="$(mktemp -d)/origin.git"
 git init -q --bare "$bare"
 bare_origin "$bare"
@@ -9368,6 +9391,22 @@ assert_eq "leaves redo-3 as the actually-retired branch" \
   "$(git rev-parse --verify --quiet orch/21-redotest-redo-3 >/dev/null 2>&1 && echo present || echo gone)" "present"
 assert_eq "and clears branch, PR, and base SHA on the now-successful redo" \
   "$("$ORCH" state get branch)$("$ORCH" state get pr)$("$ORCH" state get base_sha)" ""
+
+# A loop that stopped short of its budget - a failed base sync goes straight
+# to Termination - has ended as surely as one that spent it, and redoes.
+state_fixture phase review
+"$ORCH" state set issue 21
+git checkout -q -b orch/21-redotest
+stub_pushed_branch orch/21-redotest
+state_fixture branch orch/21-redotest
+state_fixture pr 34
+state_fixture iteration 2
+"$ORCH" state set budget 5
+writeln '## Terminal state' 'stop - base sync failed.' >.orchestrator/review/iteration-02.md
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "a loop stopped short of its budget redoes" "$st" 0
+assert_eq "numbering on to redo-4" "$out" "4"
+assert_eq "closing its PR" "$(fake_pr_state_of 34)" "CLOSED"
 
 # A loop that ended by marking the PR ready has already moved the flow to
 # phase done, in the same operation that decided "ready" - there is no real

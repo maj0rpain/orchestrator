@@ -275,9 +275,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    fallbacks**, along with any fallback that section says the agent takes.
 4. **Base sync.** Bring the flow's branch up to date with its base before
    its PR opens, by **A driver's base sync** in
-   `agents/orch-resolver.md` (under the plugin root), the spec issue on the
-   resolver's `Spec issue:` line followed by `(its tickets are its
-   sub-issues)` unless the breakdown is collapsed. Keep its **Merge
+   `agents/orch-resolver.md` (under the plugin root), with the spec issue
+   as the resolver's issue. Keep its **Merge
    resolutions** for step 6. A failed sync stops the phase before `pr open`,
    leaving the state where it is: say what blocked it, per **Rules**. A
    resolver's `Verification` reading `fail` does not stop it.

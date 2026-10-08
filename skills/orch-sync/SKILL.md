@@ -42,12 +42,10 @@ other, the base branch included.
 ## 1. Sync
 
 Follow **A driver's base sync** in `agents/orch-resolver.md` (under the
-plugin root), steps 1 to 4, on the current branch. Its resolver's `Spec
-issue:` line names the issue the branch's name carries - the number after
-`orch/` or `quick/` in `orch/<issue>-…` or `quick/<issue>-…` - followed by
-`(its tickets are its sub-issues)` when `bash "$ORCH" ticket exists <issue>`
-prints `sub-issues`. On a branch whose name carries no issue, the line names
-the issue the human gives: ask for one and wait.
+plugin root), steps 1 to 4, on the current branch. The resolver's issue is
+the one the branch's name carries - the number after `orch/` or `quick/` in
+`orch/<issue>-…` or `quick/<issue>-…`. On a branch whose name carries no
+issue, it is the issue the human gives: ask for one and wait.
 
 - **Exit 0 on the first `branch sync`** - a clean merge, or nothing to
   merge: tell the human which, and stop. Nothing more happens: no comment,

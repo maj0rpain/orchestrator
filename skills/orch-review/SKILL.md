@@ -107,10 +107,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 2. **Base sync.** Bring the PR's branch up to date with its base before
    anyone looks at it, so the final clean iteration reviewed the code that
    will merge. Follow **A driver's base sync** in `agents/orch-resolver.md`
-   under the plugin root (found as step 5 says), with the spec issue on the
-   resolver's `Spec issue:` line followed by `(its tickets are its
-   sub-issues)` unless the breakdown is collapsed - that is, when
-   `bash "$ORCH" ticket exists <spec issue>` prints `sub-issues`. Then read
+   under the plugin root (found as step 5 says), with the spec issue as the
+   resolver's issue. Then read
    this iteration's **base SHA**: `bash "$ORCH" state get base_sha`, after the
    sync, for this iteration's reviewers and fixer.
    Keep the sync's **Merge resolutions** - the resolver's `Files`, `Dropped`

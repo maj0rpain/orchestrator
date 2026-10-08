@@ -1889,17 +1889,21 @@ review_rerun() {
 # are skipped, the first line is trimmed, and `stop` may carry its reason on
 # the same line after a separator (-, –, —, :). Anything else in a non-empty
 # section is malformed, never silently interrupted - interrupted means the
-# record or its section is missing or empty.
+# record or its section is missing or empty once the budget is spent; short
+# of it, the same absence is pending.
 review_terminal_state() {
   require_state
   local i b path body first rest after s sep
   i="$(state_get iteration)"
   b="$(review_budget)"
   if [ "$i" -eq 0 ]; then note none; return 1; fi
-  if [ "$i" -lt "$b" ]; then note pending; return 1; fi
   path="$(cmd_review path "$i")"
+  # A loop can stop short of its budget (a failed base sync goes straight to
+  # Termination), so a recorded terminal state is read whatever the
+  # iteration; only its absence depends on the budget - pending before it is
+  # spent, interrupted once it is.
   if [ ! -f "$path" ] || [ -z "$(section_body "$path" '## Terminal state' | tr -d '[:space:]')" ]; then
-    note interrupted
+    if [ "$i" -lt "$b" ]; then note pending; else note interrupted; fi
     return 1
   fi
   body="$(section_body "$path" '## Terminal state' | awk 'started || NF { started = 1; print }')"

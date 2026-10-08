@@ -197,8 +197,7 @@ below), then continue at **6. Review**.
 **Base sync**: bring the quick implementation's branch up to date with its
 base, so the review pass reviews the merged code. Follow **A driver's base
 sync** in `agents/orch-resolver.md` (under the plugin root), with the linked
-issue on the resolver's `Spec issue:` line, followed by `(its tickets are
-its sub-issues)` when step 3 published sub-issues. Its **Merge
+issue as the resolver's issue. Its **Merge
 resolutions** - the resolver's `Files`, `Dropped` and `Verification`
 lines, or `None` when the sync merged cleanly - go under a **Merge
 resolutions** heading in the PR body (section 7). A failed sync stops quick

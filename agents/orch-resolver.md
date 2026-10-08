@@ -43,8 +43,9 @@ Base branch: <name>
   ```
 
 - **Spec issue** - the issue whose work the checkout's branch carries.
-  Inside a flow, add `(its tickets are its sub-issues)` after the number:
-  they are primary sources too.
+  Add `(its tickets are its sub-issues)` after the number when
+  `bash "$ORCH" ticket exists <issue>` prints `sub-issues`: they are
+  primary sources too.
 - **Base branch** - the branch the flow or quick implementation forks from;
   its commits and PRs are the other side of a base sync.
 
@@ -79,9 +80,12 @@ failed sync stops and where its **Merge resolutions** go.
    ```
    Checkout: <git rev-parse --show-toplevel>
    In progress: merge
-   Spec issue: #<the spec issue, or the linked issue> [(its tickets are its sub-issues)]
+   Spec issue: #<issue> [(its tickets are its sub-issues)]
    Base branch: <the base the conflict message names as origin/<base>>
    ```
+
+   `<issue>` is the issue the caller names, its suffix added or left off
+   as **Spec issue** above says.
 
    The resolution **failed** when its report is not the four lines of
    **Report** below, its `Result` line is not `resolved`, or a merge is still
