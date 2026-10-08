@@ -224,7 +224,7 @@ check_gh_repo() {
   if type -P gh >/dev/null 2>&1; then
     default="$(adapter_repo_local_default 2>/dev/null)" || default=""
     default="$(first_line "$default")"
-    owner_name="${REPO_NAME#"${REPO_NAME%/*/*}/"}"
+    owner_name="$(repo_owner_name "$REPO_NAME")"
     case "$default" in
       */*) if [ "$default" != "$owner_name" ]; then
              d_warn "gh's default repo is $default; the orchestrator uses $REPO_NAME"

@@ -386,6 +386,34 @@ repo_resolve() {
   REPO_SOURCE=origin
 }
 
+# The one parser of a [HOST/]OWNER/REPO repo name, as repo_resolve sets
+# REPO_NAME. repo_host <name> prints its explicit host, or nothing for an
+# OWNER/REPO name, whose host is the implicit github.com; repo_owner_name
+# <name> prints its OWNER/REPO, any host dropped.
+repo_host() {
+  case "$1" in
+    */*/*) printf '%s\n' "${1%%/*}" ;;
+  esac
+}
+repo_owner_name() {
+  case "$1" in
+    */*/*) printf '%s\n' "${1#*/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+# repo_pin: pin every later gh call to the repo - when GH_REPO is unset, resolve
+# it and export it as GH_REPO, then pin its host (repo_pin_host). Returns 1,
+# exporting nothing, when nothing resolves, and never dies: each caller picks
+# its own exit, the gh guard's subshell signal or die, review rerun's die2.
+repo_pin() {
+  if [ -z "${GH_REPO:-}" ]; then
+    repo_resolve || return 1
+    export GH_REPO="$REPO_NAME"
+  fi
+  repo_pin_host
+}
+
 # repo_from_url <url>: [HOST/]OWNER/REPO from a clone URL in any of its three
 # forms - https://host/o/r, git@host:o/r, ssh://[user@]host[:port]/o/r - with
 # or without .git. github.com is left implicit, as gh -R expects; any other
@@ -435,14 +463,10 @@ repo_from_url() {
 # the main shell, whose USR1 trap dies with the remedy instead. Its last line is
 # the only call to the real gh binary in orch.sh and doctor.sh.
 gh() {
-  if [ -z "${GH_REPO:-}" ]; then
-    if ! repo_resolve; then
-      if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
-      die "$REPO_REMEDY"
-    fi
-    export GH_REPO="$REPO_NAME"
+  if ! repo_pin; then
+    if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
+    die "$REPO_REMEDY"
   fi
-  repo_pin_host
   command gh "$@"
 }
 
@@ -451,24 +475,27 @@ gh() {
 # GH_REPO also exports GH_HOST=HOST; an OWNER/REPO one, a github.com repo,
 # leaves GH_HOST as it is.
 repo_pin_host() {
-  case "$GH_REPO" in
-    */*/*) export GH_HOST="${GH_REPO%%/*}" ;;
-  esac
+  local host
+  host="$(repo_host "$GH_REPO")"
+  if [ -n "$host" ]; then export GH_HOST="$host"; fi
 }
 trap 'die "$REPO_REMEDY"' USR1
 
 cmd_repo() {
-  local op="${1:-}"
+  local op="${1:-}" host
   shift || true
   case "$op" in
     show)
       case "$*" in
-        "") ;;
-        --name) ;;
-        *) die "usage: orch.sh repo show [--name]" ;;
+        ""|--name|--host) ;;
+        *) die "usage: orch.sh repo show [--name|--host]" ;;
       esac
       repo_resolve || die "$REPO_REMEDY"
-      if [ "${1:-}" = --name ]; then note "$REPO_NAME"; else note "$REPO_NAME ($REPO_SOURCE)"; fi
+      case "${1:-}" in
+        --name) note "$REPO_NAME" ;;
+        --host) host="$(repo_host "$REPO_NAME")"; note "${host:-github.com}" ;;
+        *) note "$REPO_NAME ($REPO_SOURCE)" ;;
+      esac
       ;;
     *) die "unknown repo op: ${op:-<none>} (want show)" ;;
   esac
@@ -1692,11 +1719,7 @@ review_rerun() {
   local pr="${1:-}" out link run name
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
-  if [ -z "${GH_REPO:-}" ]; then
-    repo_resolve || die2 "$REPO_REMEDY"
-    export GH_REPO="$REPO_NAME"
-  fi
-  repo_pin_host
+  repo_pin || die2 "$REPO_REMEDY"
   out="$(adapter_pr_checks "$pr" all 2>&1)" \
     || die2 "gh could not read the checks of PR #$pr: $(first_line "$out")"
   link="$(printf '%s\n' "$out" | awk -F '\t' '$1 == "fail" || $1 == "cancel" { print $2 "\t" $3; exit }')"
@@ -4077,10 +4100,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               orchestrator.parallel, else 3; 1 is sequential.
                               Dies naming the key and value when it is not a
                               positive integer
-  repo show [--name]          print the GitHub repo orch.sh works on and its
+  repo show [--name|--host]   print the GitHub repo orch.sh works on and its
                               source: GH_REPO when set, else the checkout's
                               origin - never gh's default repo. --name prints
-                              the bare [HOST/]OWNER/REPO alone, for gh -R.
+                              the bare [HOST/]OWNER/REPO alone, for gh -R;
+                              --host its host alone, github.com for an
+                              OWNER/REPO repo, for gh api --hostname.
                               Exits 1, naming GH_REPO, when neither resolves
   init <slug> [--issue N]     start a flow (refuses with exit 3 if one is
                               active, unless it is done - a done flow is archived, unless a

@@ -1298,20 +1298,33 @@ assert_eq "repo show --name prints GH_REPO bare" \
 assert_eq "repo show names origin as the source" "$("$ORCH" repo show)" "acme/widgets (origin)"
 out="$("$ORCH" repo show extra 2>&1)"; st=$?
 assert_status "repo show refuses a stray argument" "$st" 1
+assert_eq "naming both of its flags" "$out" "orch: usage: orch.sh repo show [--name|--host]"
+out="$("$ORCH" repo show --name --host 2>&1)"; st=$?
+assert_status "repo show refuses both flags at once" "$st" 1
+assert_eq "repo show --host prints github.com for an OWNER/REPO repo" \
+  "$("$ORCH" repo show --host)" "github.com"
+assert_eq "repo show --host prints the explicit host of a HOST/OWNER/REPO repo" \
+  "$(GH_REPO=ghe.example.com/fork/widgets "$ORCH" repo show --host)" "ghe.example.com"
+git remote set-url origin git@ghe.example.com:acme/widgets.git
+assert_eq "repo show --host reads the host from origin too" \
+  "$("$ORCH" repo show --host)" "ghe.example.com"
+git remote set-url origin https://github.com/acme/widgets.git
+assert_contains "help lists --host under repo show" "$("$ORCH" help)" "repo show [--name|--host]"
 
 # No GH_REPO and no usable origin: local commands still work, repo show fails.
 git remote remove origin
 "$ORCH" init norepo >/dev/null 2>&1
 out="$("$ORCH" state get phase 2>&1)"; st=$?
 assert_status "state get works with no repo to resolve" "$st" 0
-for args in "" "--name"; do
+for args in "" "--name" "--host"; do
   err="$(mktemp)"
   label="repo show${args:+ $args}"
   # shellcheck disable=SC2086 # an empty args is no argument at all, and "a b" is two
   out="$("$ORCH" repo show $args 2>"$err")"; st=$?
   assert_status "$label exits 1 with no repo" "$st" 1
   assert_eq "$label prints nothing on stdout with no repo" "$out" ""
-  assert_contains "$label names GH_REPO as the remedy" "$(cat "$err")" "GH_REPO=<owner>/<repo>"
+  assert_eq "$label dies with the repo remedy" "$(cat "$err")" \
+    "orch: no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
   rm -f "$err"
 done
 git remote add origin https://example.invalid/notgithub
@@ -7877,7 +7890,8 @@ assert_status "a PR that is not a number is a usage error, exit 2" "$st" 2
 git remote remove origin
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "no repo to work on is exit 2, not the guard's 1" "$st" 2
-assert_contains "naming the GH_REPO remedy" "$out" "GH_REPO=<owner>/<repo>"
+assert_eq "dying with the repo remedy" "$out" \
+  "orch: no GitHub repo to work on: origin is missing or not a GitHub owner/name - set GH_REPO=<owner>/<repo>"
 assert_contains "help documents review rerun" "$("$ORCH" help)" "review rerun <pr>"
 restore_suite_env
 
