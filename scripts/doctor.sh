@@ -1,6 +1,5 @@
 # shellcheck shell=bash
-# doctor.sh - diagnostics for the orchestrator plugin, sourced by orch.sh and
-# by hook-grilling.sh.
+# doctor.sh - diagnostics for the orchestrator plugin, sourced by orch.sh only.
 #
 # One diagnostic replacing the two health checks that came before it. Scopes
 # are named for the content they cover, never for the caller that asks -
@@ -11,23 +10,18 @@
 # exit status comes from the FAIL counter alone. doctor is the thing you run
 # when the world is already broken, so no single check may abort the report.
 #
-# Also home to triage_table_rows/triage_labels/triage_label_for/
-# validate_adopted_issue: reading the triage-labels doc and validating an
-# adopted issue is the same "parse this repo's config and report what's wrong
-# with it" shape as a check, and init and review file are the two other
-# places that shape is needed - so it lives here rather than forking a second
-# copy of the label-table parser.
+# Also home to validate_adopted_issue: validating an adopted issue is the same
+# "parse this repo's config and report what's wrong with it" shape as a
+# check, and init needs that shape too. The triage-label parser it and the
+# checks read lives in triage-labels.sh.
 #
 # Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
 # now, first_line, default_branch, base_setting, origin_has_branch,
 # require_state,
-# ORCH_DIR_NAME, PHASES, LABELS_DOC, LABEL_LIMIT, HANDOFF_DIR) is defined.
-# cmd_doctor is then dispatched from main() exactly like any other command.
-#
-# Also sourced by hook-grilling.sh, which defines only ROOT and LABELS_DOC.
-# The triage-label parser (triage_table_rows/triage_labels/triage_label_for)
-# is the part safe to call with just those two set; everything else here
-# needs orch.sh's shared mechanism.
+# ORCH_DIR_NAME, PHASES, LABEL_LIMIT, HANDOFF_DIR) and triage-labels.sh
+# (LABELS_DOC, TRIAGE_ROLES, triage_table_rows, triage_labels,
+# triage_label_for, triage_expected_labels) are defined. cmd_doctor is then
+# dispatched from main() exactly like any other command.
 
 D_OK=0
 D_WARN=0
@@ -391,88 +385,6 @@ d_orch_remedy() {
 
 # repo config ----------------------------------------------------------------
 
-# The one place that knows how to read a row out of the triage-label table:
-# where it starts and ends, which rows belong to it, and how to clean a cell
-# once split out. Emits "role<TAB>name" for every valid data row - the left
-# column (the canonical triage role name) and the right column (this repo's
-# local label for it) - so triage_labels and triage_label_for always agree on
-# what the table contains, including correctly ignoring any other table
-# elsewhere in the doc (#39).
-triage_table_rows() {
-  [ -f "$ROOT/$LABELS_DOC" ] || return 0
-  awk -F'|' '
-    # One cleanup for any cell pulled out of a split row: restore pipes
-    # masked below, strip backticks, trim the pad markdown tables pad cells
-    # with - shared so l and r can never drift into cleaning a cell two
-    # different ways.
-    function clean(s) {
-      gsub(/\001/, "|", s)
-      gsub(/`/, "", s)
-      sub(/^[[:space:]]+/, "", s)
-      sub(/[[:space:]]+$/, "", s)
-      return s
-    }
-    # A table ends where the pipes stop. Without this, cols still holds the
-    # previous table width when the next table begins - a header row arrives a
-    # line before the separator that would correct it - so a narrower second
-    # table anywhere in the doc leaks its heading out as a label name.
-    !/^[[:space:]]*\|/ { cols = 0 }
-    /^[[:space:]]*\|/ {
-      # `\|` is the markdown escape for a literal pipe, never a column
-      # separator. Mask it before the field split and restore it after, or an
-      # escaped cell shifts every column after it for that row (#5).
-      line = $0
-      gsub(/\\\|/, "\001", line)
-      $0 = line
-      l = clean($2)
-      r = clean($3)
-      # The separator row settles the width for the whole table, and only it
-      # can. Every separator cell holds a dash run, so an empty field at the
-      # end of that row is unambiguously the one a trailing pipe leaves behind
-      # - whereas on a data row an empty last field is equally well an empty
-      # last cell, and guessing there costs a real label. Markdown lets a row
-      # drop its trailing pipe; the leading one the match already requires.
-      if (r ~ /^:?-+:?$/) {
-        last = $NF
-        sub(/^[[:space:]]+/, "", last)
-        sub(/[[:space:]]+$/, "", last)
-        cols = NF - 1
-        if (last == "") cols--
-        next
-      }
-      # cols stays 0 until the separator row, which drops the header with it.
-      # Under three columns this is a table of some other shape, where $3 is
-      # whichever column happens to sit last and its Meaning text would be read
-      # out as a label name and demanded of the repo. A diagnostic may fail to
-      # parse a doc; it may not invent an answer from one.
-      if (cols < 3) next
-      print l "\t" r
-    }' "$ROOT/$LABELS_DOC"
-}
-
-# Parsed, never hardcoded. That file documents its right-hand column as editable,
-# so a hardcoded list of the five canonical names would make doctor confidently
-# wrong in exactly the repos that customised themselves - the worst thing a
-# diagnostic can be. A thin filter over triage_table_rows: every row's local
-# label name, skipping rows that left it blank.
-triage_labels() {
-  triage_table_rows | awk -F'\t' '$2 != "" { print $2 }'
-}
-
-# The local name for one of the five triage roles - the right-hand column of
-# the row whose left-hand column names it. A repo that customised its
-# vocabulary customised this, and filing under the canonical name there would
-# create a second label the repo's triage never reads. The role name itself is
-# the answer where the doc is missing or does not list it. Also a thin filter
-# over triage_table_rows, so it shares triage_labels' table-boundary and
-# column-count guard rather than risking a second table elsewhere in the doc.
-triage_label_for() {
-  local role="$1" name=""
-  name="$(triage_table_rows | awk -F'\t' -v role="$role" '
-    $1 == role && $2 != "" { print $2; exit }')"
-  printf '%s\n' "${name:-$role}"
-}
-
 # `init --issue N`'s one-time gate: the issue must exist, be open, and carry
 # this repo's local name for the ready-for-agent role - resolved through
 # triage_label_for, never the literal string, so a repo that renamed its
@@ -489,18 +401,6 @@ validate_adopted_issue() {
   [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
   printf '%s\n' "$labels" | grep -qxF "$label" \
     || die "issue #$issue is missing the '$label' triage label - adoption requires it."
-}
-
-# The five canonical triage roles, each also the label name a repo with no
-# labels doc uses (ADR-0028: setup is optional).
-TRIAGE_ROLES="needs-triage needs-info ready-for-agent ready-for-human wontfix"
-
-# The label names this repo is expected to carry, one per line: the doc's when
-# it is present, the canonical names when it is not. A present doc that parses
-# to nothing yields nothing - check_labels_doc reports that one.
-triage_expected_labels() {
-  if [ -f "$ROOT/$LABELS_DOC" ]; then triage_labels; return 0; fi
-  printf '%s\n' $TRIAGE_ROLES
 }
 
 # Absent is fine: the canonical names apply. Present but unreadable is a FAIL,

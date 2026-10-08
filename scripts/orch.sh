@@ -23,7 +23,10 @@ readonly ORCH_DIR_NAME=".orchestrator"
 # exclude_orch_dirs and doctor's exclude check read.
 readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 readonly PHASES="spec implement review done"
-readonly LABELS_DOC="docs/agents/triage-labels.md"
+# The triage-label parser and LABELS_DOC, its one home; marked readonly here,
+# where orch.sh has always fixed it, since the module assigns it plainly.
+source "$(dirname "${BASH_SOURCE[0]}")/triage-labels.sh"
+readonly LABELS_DOC
 readonly LABEL_LIMIT=1000
 # The most issues or PRs one list call asks gh for, where gh needs a bare
 # --limit: the labelled-issue list finding-triage scan reads, and the merged-PR
