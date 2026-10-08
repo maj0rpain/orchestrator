@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.21.11
+
+`orch.sh review rerun` on a PR whose checks read succeeds with no checks dies
+saying the PR has no checks to rerun, no longer that gh could not read its
+checks; a failed read keeps its own message (#764).
+
 ## 3.21.10
 
 `all.sh` reports a suite that exited non-zero without a summary as its last

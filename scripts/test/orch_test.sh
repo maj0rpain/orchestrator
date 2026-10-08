@@ -9399,13 +9399,13 @@ assert_contains "saying there is nothing failed to rerun" "$out" "no failed or c
 fake_checks 7 all none
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "no checks at all is exit 2" "$st" 2
-assert_eq "dying with gh's own no-checks line" "$out" \
-  "orch: gh could not read the checks of PR #7: no checks reported on the 'topic' branch"
+assert_eq "saying there are no checks to rerun, with gh's own line" "$out" \
+  "orch: PR #7 has no checks to rerun: no checks reported on the 'topic' branch"
 fake_checks 7 all empty
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "an empty list of checks is exit 2" "$st" 2
 assert_eq "saying no checks were reported when gh said nothing" "$out" \
-  "orch: gh could not read the checks of PR #7: no checks reported"
+  "orch: PR #7 has no checks to rerun: no checks reported"
 fake_checks 7 all failing
 fake_fail_times adapter_pr_checks 1
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
@@ -9420,12 +9420,12 @@ assert_eq "carrying only gh's first line" "$out" \
   "orch: gh could not read the checks of PR #7: HTTP 502: Bad Gateway"
 fake_unfail
 # The same silence from a read that succeeds is an answer, not a failure:
-# no checks at all, so the death keeps its no-checks wording.
+# no checks at all, so the death is the no-checks one, not the failed read's.
 fake_checks 7 all empty
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
 assert_status "a successful read with no checks is exit 2" "$st" 2
-assert_eq "still saying no checks reported, not gh gave no reason" "$out" \
-  "orch: gh could not read the checks of PR #7: no checks reported"
+assert_eq "dying with no checks to rerun, not a failed read" "$out" \
+  "orch: PR #7 has no checks to rerun: no checks reported"
 fake_checks 7 all failing
 fake_fail adapter_run_rerun "$(writeln "HTTP 403: Resource not accessible by integration" "see https://docs.github.com")"
 out="$("$ORCH" review rerun 7 2>&1)"; st=$?
