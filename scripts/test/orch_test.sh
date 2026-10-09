@@ -9159,6 +9159,106 @@ done
 unset m
 fake_unfail
 
+# A member failure stops the bundle part-way: it dies naming the bundle and
+# the members left open, with the --into command that resumes, and that
+# command finishes the job - no second bundle, never an edit to the bundle,
+# and exactly one `Bundled into #B` comment on every member.
+# partial <name> <B> <wants> <left> [adapter]: a new bundle #B of members 31,
+# 32 and 33 dies with <wants>, leaving <left> (space-separated) open; the
+# fake's failure is seeded by the caller, and <adapter> stands in for the
+# fake where given.
+partial() {
+  local name="$1" b="$2" wants="$3" left="$4" adapter="${5:-$GH_ADAPTER_FAKE}" m
+  for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
+  fake_next_issue "$b"
+  out="$(ORCH_GH_ADAPTER="$adapter" new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
+  fake_unfail
+  assert_status "$name dies" "$st" 1
+  assert_contains "$name: saying what failed" "$out" "$wants"
+  assert_contains "$name: naming the bundle and the members left open" "$out" \
+    "bundle #$b: "
+  assert_contains "$name: listing the members left open" "$out" "members left open: #${left// / #};"
+  assert_contains "$name: with the --into command that resumes" "$out" \
+    "resume with: orch.sh finding-triage bundle --into $b $left"
+  for m in $left; do
+    assert_eq "$name: member #$m left open" "$(fake_state_of "$m")" "OPEN"
+  done
+  resumed "$name" "$b" "$left"
+}
+# resumed <name> <B> <members>: --into <B> <members> finishes the bundle,
+# leaving B as it was and creating no other issue.
+resumed() {
+  local name="$1" b="$2" m before_b before_issues
+  # shellcheck disable=SC2086 # the members are a word list on purpose
+  set -- $3
+  before_b="$(fake_title_of "$b")|$(fake_body_of "$b")|$(fake_labels_of "$b")|$(fake_comments_of "$b")"
+  before_issues="$(fake_issues)"
+  out="$(bundle --into "$b" "$@" 2>&1)"; st=$?
+  assert_status "$name: --into finishes the job" "$st" 0
+  assert_eq "$name: creating no second bundle" "$(fake_issues)" "$before_issues"
+  assert_eq "$name: and never editing the bundle" \
+    "$(fake_title_of "$b")|$(fake_body_of "$b")|$(fake_labels_of "$b")|$(fake_comments_of "$b")" "$before_b"
+  for m in 31 32 33; do
+    assert_eq "$name: member #$m commented exactly once" "$(fake_comments_of "$m")" \
+      "$(writeln "$disclaimer" '' "Bundled into #$b")"
+    assert_eq "$name: member #$m closed as a duplicate of the bundle" \
+      "$(fake_state_of "$m") $(fake_reason_of "$m") $(fake_duplicate_of "$m")" "CLOSED duplicate $b"
+  done
+}
+fake_fail_after adapter_issue_comment 1 "HTTP 502: Bad Gateway"
+partial "a failed comment" 40 "gh could not comment on member #32" "32 33"
+fake_fail_after adapter_issue_close 1 "unknown flag: --duplicate-of"
+partial "a failed close" 41 \
+  "gh could not close member #32 as a duplicate - --duplicate-of needs gh 2.102 or newer" "32 33"
+fake_fail adapter_issue_comments "HTTP 502: Bad Gateway"
+partial "a failed comments read" 42 "gh could not read member #31's comments" "31 32 33"
+# A failed state read-back dies the same way; the member may in truth be
+# closed, so it is not resumed here.
+for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
+fake_next_issue 43
+fake_fail_after adapter_issue_state 2 "HTTP 502: Bad Gateway"
+out="$(new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
+fake_unfail
+assert_status "a failed state read-back dies" "$st" 1
+assert_contains "naming the bundle, the member and the --into command" "$out" \
+  "bundle #43: gh could not read member #33's state back - members left open: #33; resume with: orch.sh finding-triage bundle --into 43 33"
+unset m
+noop_close_adapter="$(mktemp)"
+writeln "source $(printf %q "$GH_ADAPTER_FAKE")" 'adapter_issue_close() { :; }' >"$noop_close_adapter"
+partial "a close that reports success but reads back open" 44 \
+  "member #31 did not read back as closed" "31 32 33" "$noop_close_adapter"
+rm -f "$noop_close_adapter"
+
+# --into checks its members as the new form does - one is enough - and B
+# itself, before any write.
+# into_refused <name> <wants> <B> <member>...: --into refused, its output
+# naming <wants>, with the store as it was.
+into_refused() {
+  local name="$1" wants="$2"
+  shift 2
+  before_store="$(fake_snapshot)"
+  out="$(bundle --into "$@" 2>&1)"; st=$?
+  assert_status "--into refuses $name" "$st" 1
+  assert_contains "saying so ($name)" "$out" "$wants"
+  assert_eq "writing nothing ($name)" "$(fake_snapshot)" "$before_store"
+}
+member 34 "review:major,ready-for-agent,bug"
+member 35 "review:nit,needs-triage"
+fake_issue 45 closed finding-bundle ready-for-agent bug
+into_refused "a closed bundle" "bundle #45 is not open" 45 34
+fake_issue 46 open ready-for-agent bug
+into_refused "an issue without finding-bundle" "issue #46 carries no 'finding-bundle' label" 46 34
+fake_issue 47 open finding-bundle ready-for-agent bug
+into_refused "a member already closed" "issue #31 is not open" 47 34 31
+into_refused "a needs-triage member" "issue #35 carries 'needs-triage'" 47 34 35
+into_refused "a member named twice" "issue #34 is named twice" 47 34 34
+fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
+into_refused "a bundle gh cannot read" "gh could not read issue #47: HTTP 502: Bad Gateway" 47 34
+fake_unfail
+out="$(bundle --into 47 34 2>&1)"; st=$?
+assert_status "--into takes a single member" "$st" 0
+assert_eq "closing it into the bundle" "$(fake_state_of 34) $(fake_duplicate_of 34)" "CLOSED 47"
+
 # Every state label is the repo's name for the role, checked and applied.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \

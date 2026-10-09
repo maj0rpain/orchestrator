@@ -2839,8 +2839,11 @@ bundle_member_check() {
 # disclaimer and closes it as a duplicate of the bundle, keeping its labels,
 # reading its state back. Every member is checked before any write. The
 # state and category may be stricter than the members', never looser.
-# --into <B> <member>... is the resume form: parsed here, refused until it
-# lands.
+# --into <B> <member>... is the resume form: it checks the members the same
+# way (one is enough) and that B is an open issue labelled finding-bundle,
+# then only comments, closes and reads back - it never edits B. Any member
+# failure dies naming the bundle and the members left open, with the --into
+# command that resumes.
 cmd_finding_triage_bundle() {
   local usage="usage: orch.sh finding-triage bundle --title <t> --body-file <f> --state <ready-for-agent|ready-for-human> --category <bug|enhancement> <member>...
        orch.sh finding-triage bundle --into <B> <member>..."
@@ -2863,7 +2866,19 @@ cmd_finding_triage_bundle() {
   if [ -n "$into" ]; then
     case "$into" in *[!0-9]*) die "$usage" ;; esac
     ! $have_title && [ -z "$file$state$category" ] || die "$usage"
-    die "finding-triage bundle --into is not implemented yet"
+    local b_state b_labels b_line
+    issue_state_labels_read "$into" b_state b_labels b_line \
+      || die "gh could not read issue #$into: ${b_line:-gh gave no reason}"
+    [ "$b_state" = OPEN ] || die "bundle #$into is not open - --into resumes an open bundle only"
+    labels_have "$b_labels" finding-bundle \
+      || die "issue #$into carries no 'finding-bundle' label - --into resumes a bundle only"
+    for m in "${members[@]}"; do
+      case "$seen" in *" $m "*) die "issue #$m is named twice" ;; esac
+      seen="$seen$m "
+      bundle_member_check "$m" labels
+    done
+    bundle_members_close "$into" "${members[@]}"
+    return
   fi
   $have_title && [ -n "$title" ] && [ -n "$file" ] && [ -n "$state" ] && [ -n "$category" ] || die "$usage"
   case "$state" in ready-for-agent|ready-for-human) ;; *) die "$usage" ;; esac
@@ -2890,19 +2905,41 @@ cmd_finding_triage_bundle() {
   b="$(adapter_issue_create "$title" "$file" finding-bundle "$(triage_label_for "$state")" "$category")" \
     || die "gh could not create the bundle issue - no member was touched"
   printf '%s\n' "$b"
+  bundle_members_close "$b" "${members[@]}"
+}
 
-  local comment
+# bundle_members_close <B> <member>...: closes each member into bundle #B, in
+# order - reads its comments and, unless one already holds `Bundled into #B`,
+# posts that under the AI disclaimer; closes it as a duplicate of B; reads its
+# state back as CLOSED. The first member that fails dies naming the bundle,
+# what failed, the members left open - that one and every one after it - and
+# the --into command that resumes.
+bundle_members_close() {
+  local b="$1" comment m i=0 comments state why left
+  shift
+  local members=("$@")
   comment="$(mktemp)"
   printf 'Bundled into #%s\n' "$b" >"$comment"
   for m in "${members[@]}"; do
-    if ! triage_comment_post "$m" "$comment"; then
-      rm -f "$comment"
-      die "gh could not comment on member #$m of bundle #$b"
+    why=""
+    if ! comments="$(adapter_issue_comments "$m" 2>/dev/null)"; then
+      why="gh could not read member #$m's comments"
+    elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
+      && ! triage_comment_post "$m" "$comment"; then
+      why="gh could not comment on member #$m"
+    elif ! adapter_issue_close "$m" --duplicate-of "$b"; then
+      why="gh could not close member #$m as a duplicate - --duplicate-of needs gh 2.102 or newer"
+    elif ! state="$(adapter_issue_state "$m" 2>/dev/null)"; then
+      why="gh could not read member #$m's state back"
+    elif [ "$state" != CLOSED ]; then
+      why="member #$m did not read back as closed"
     fi
-    adapter_issue_close "$m" --duplicate-of "$b" \
-      || { rm -f "$comment"; die "gh could not close member #$m as a duplicate of bundle #$b - --duplicate-of needs gh 2.102 or newer"; }
-    [ "$(adapter_issue_state "$m" 2>/dev/null)" = CLOSED ] \
-      || { rm -f "$comment"; die "member #$m of bundle #$b did not read back as closed"; }
+    if [ -n "$why" ]; then
+      rm -f "$comment"
+      left="${members[*]:$i}"
+      die "bundle #$b: $why - members left open: #${left// / #}; resume with: orch.sh finding-triage bundle --into $b $left"
+    fi
+    i=$((i + 1))
   done
   rm -f "$comment"
 }
@@ -5106,8 +5143,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               needs-info and wontfix; at least 2 for a new
                               bundle. --state may not be ready-for-agent with
                               a ready-for-human member, nor --category
-                              enhancement with a bug member. --into <B>: close
-                              the members into the existing bundle B
+                              enhancement with a bug member. A member failure
+                              dies naming the members left open and the
+                              --into command that resumes. --into <B>: close
+                              the members (one is enough) into the open
+                              finding-bundle issue B, never editing it, nor
+                              commenting a member twice
   redo review                 retire the branch and PR, reopen the spec
                               issue's closed tickets, reset the loop, retire
                               03-implement.md into handoff/pre-redo-<n>/, and
