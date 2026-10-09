@@ -729,16 +729,22 @@ fake_labels() { sort "$ORCH_GH_FAKE_STORE/labels" 2>/dev/null || true; }
 
 # fake_fail <operation> [stderr]: every later call of the named adapter
 # operation fails, non-zero, with stderr (default "fake gh: <operation>
-# failed") as gh's own error.
+# failed") as gh's own error. An explicit empty stderr seeds a failure that
+# prints nothing.
 fake_fail() {
   mkdir -p "$ORCH_GH_FAKE_STORE/fail"
-  printf '%s\n' "${2:-fake gh: $1 failed}" >"$ORCH_GH_FAKE_STORE/fail/$1"
+  if [ -n "${2-x}" ]; then
+    printf '%s\n' "${2-fake gh: $1 failed}" >"$ORCH_GH_FAKE_STORE/fail/$1"
+  else
+    : >"$ORCH_GH_FAKE_STORE/fail/$1"
+  fi
 }
 
 # fake_fail_after <operation> <n> [stderr]: fake_fail, but the next n calls of
-# the operation still succeed - a run of writes that dies part-way.
+# the operation still succeed - a run of writes that dies part-way. The stderr
+# passes through to fake_fail as given, omitted or empty.
 fake_fail_after() {
-  fake_fail "$1" "${3:-}"
+  fake_fail "$1" "${@:3}"
   printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.after"
 }
 
@@ -3064,12 +3070,20 @@ out="$("$ORCH" issue publish "Title" 2>&1)"; st=$?
 assert_status "refuses with no body file" "$st" 1
 assert_eq "filing nothing for any of them" "$(fake_issues)" ""
 
-fake_fail adapter_issue_create "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_create $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" issue publish "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
-assert_contains "passing gh's reason through" "$out" "HTTP 502: Bad Gateway"
+assert_contains "passing gh's first line through, in the death (#846)" "$out" \
+  "orch: gh could not create the issue: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
+fake_unfail
+fake_fail_times adapter_issue_create 9
+out="$("$ORCH" issue publish "Title" "$body" 2>&1)"; st=$?
+assert_status "a create that fails silently fails it too" "$st" 1
+assert_contains "saying gh gave no reason" "$out" "orch: gh could not create the issue: gh gave no reason"
+fake_unfail
 restore_suite_env
 
 # --- issue publish verify-then-die -------------------------------------------
@@ -3314,10 +3328,12 @@ assert_eq "changing nothing" "$(fake_snapshot)" "$before"
 fake_unfail
 
 fake_issue 48 open needs-triage
-fake_fail adapter_issue_relabel "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_relabel $'HTTP 502: Bad Gateway\nsecond line'
 out="$(triage 48 2>&1)"; st=$?
 assert_status "a failed relabel dies" "$st" 1
-assert_contains "naming the issue" "$out" "issue #48"
+assert_contains "naming the issue, with gh's first line (#846)" "$out" \
+  "orch: gh could not relabel issue #48: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "posting no comment" "$(comment_count 48)" "0"
 fake_unfail
 
@@ -3378,13 +3394,24 @@ assert_eq "posting no comment" "$(comment_count 58)" "0"
 fake_unfail
 
 fake_issue 51 open needs-triage
-fake_fail adapter_issue_comment "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_comment $'HTTP 502: Bad Gateway\nsecond line'
 errf="$(mktemp)"
 triage 51 >/dev/null 2>"$errf"; st=$?
 assert_status "a failed comment after a verified relabel still exits 0" "$st" 0
-assert_eq "warning on stderr, naming the issue" "$(grep '^orch: ' "$errf")" \
-  "orch: warning: issue #51 is labelled ready-for-agent, but gh could not post the triage comment on it"
+assert_eq "warning on stderr, naming the issue, with gh's first line alone (#846)" "$(cat "$errf")" \
+  "orch: warning: issue #51 is labelled ready-for-agent, but gh could not post the triage comment on it: HTTP 502: Bad Gateway"
 assert_eq "the relabel standing" "$(fake_labels_of 51)" "ready-for-agent "
+assert_eq "posting no comment" "$(comment_count 51)" "0"
+fake_unfail
+
+fake_issue 59 open needs-triage
+fake_fail_times adapter_issue_comment 9
+triage 59 >/dev/null 2>"$errf"; st=$?
+assert_status "a comment that fails silently still exits 0" "$st" 0
+assert_eq "warning that gh gave no reason" "$(cat "$errf")" \
+  "orch: warning: issue #59 is labelled ready-for-agent, but gh could not post the triage comment on it: gh gave no reason"
+assert_eq "the label applied" "$(fake_labels_of 59)" "ready-for-agent "
+assert_eq "and no comment posted" "$(comment_count 59)" "0"
 rm -f "$errf"
 fake_unfail
 
@@ -4790,6 +4817,13 @@ assert_contains "passing gh's reason through" "$out" "already exists"
 assert_contains "naming the branch it would have opened from" "$out" "orch/16-propen"
 assert_contains "and the issue it would have closed" "$out" "#16"
 assert_eq "opening nothing" "$(fake_prs)" "23 "
+# gh's reason rides on orch's own line, first line only (#846).
+fake_fail adapter_pr_create $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
+assert_status "a failed open still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not open the PR for branch orch/16-propen (issue #16): HTTP 502: Bad Gateway"
+fake_unfail
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 # require_branch's die message is the other half of require_field's coverage
@@ -4911,10 +4945,11 @@ assert_contains "and that one is the gh guard's own" \
 
 # No usable repo: the first command that reaches GitHub dies naming GH_REPO,
 # in the parent shell (issue fetch) or in a command substitution (ticket
-# parent) alike.
+# parent) alike - and behind capture_err's stderr capture too (ticket parent,
+# ticket close), whose own capture must not swallow the remedy (#846).
 git remote remove origin
 : >"$GH_FIXTURE/env.log"
-for args in "issue fetch 5 $fetched" "ticket parent 50"; do
+for args in "issue fetch 5 $fetched" "ticket parent 50" "ticket close 50"; do
   # shellcheck disable=SC2086 # each args string is a word list on purpose
   out="$(env -u ORCH_GH_ADAPTER "$ORCH" $args 2>&1)"; st=$?
   assert_status "$args dies with no repo" "$st" 1
@@ -4980,11 +5015,22 @@ out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses while a release PR is already open" "$st" 1
 assert_contains "printing that PR's number" "$out" "#57"
 assert_eq "and opens no second one" "$(fake_prs)" "55 56 57 "
+fake_fail adapter_prs_open $'HTTP 502: Bad Gateway\nsecond line'
+out="$(release "Release" "$body" 2>&1)"; st=$?
+assert_status "a failed open-PR list exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not list the open PRs from uat into main: HTTP 502: Bad Gateway"
+fake_unfail
 fake_pr 57 closed uat main
 fake_fail adapter_prs_merged_bodies "HTTP 502: Bad Gateway"
 out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "with the release PR closed, only open PRs from uat into main counted" "$st" 1
 assert_contains "it goes on to read the merged PRs" "$out" "gh could not list the PRs merged into uat"
+fake_fail adapter_prs_merged_bodies $'HTTP 502: Bad Gateway\nsecond line'
+out="$(release "Release" "$body" 2>&1)"; st=$?
+assert_status "a failed merged-PR list exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not list the PRs merged into uat: HTTP 502: Bad Gateway"
 rm -rf "$ORCH_GH_FAKE_STORE/prs" "$ORCH_GH_FAKE_STORE/fail"
 
 # Every reference the merged PRs make is to an issue that is already closed.
@@ -5037,6 +5083,20 @@ fake_fail adapter_pr_create
 out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "naming both branches" "$out" "from uat into main"
+fake_fail adapter_pr_create $'HTTP 502: Bad Gateway\nsecond line'
+out="$(release "Release" "$body" 2>&1)"; st=$?
+assert_status "a failed release-PR open exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not open the release PR from uat into main: HTTP 502: Bad Gateway"
+fake_unfail
+# The state read for each issue on a Closes line: #5 is the first referenced.
+fake_fail adapter_issue_state $'HTTP 502: Bad Gateway\nsecond line'
+out="$(release "Release" "$body" 2>&1)"; st=$?
+assert_status "a failed Closes-line state read exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not read the state of issue #5: HTTP 502: Bad Gateway"
+assert_eq "opening no PR" "$(fake_prs)" "62 63 64 65 71 "
+fake_unfail
 
 out="$(release "Release" 2>&1)"; st=$?
 assert_status "refuses a missing body file argument" "$st" 1
@@ -5121,15 +5181,36 @@ assert_eq "missing file: empty stdout" "$out" ""
 fake_fail adapter_prs_open
 out="$(prc "$body" 2>"$errf")"; st=$?
 assert_status "unreadable PR list: exit 2" "$st" 2
-assert_eq "unreadable PR list: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not list the open PRs from quick/12-foo"
+assert_eq "unreadable PR list: exact stderr" "$(cat "$errf")" "orch: gh could not list the open PRs from quick/12-foo: fake gh: adapter_prs_open failed"
 assert_eq "unreadable PR list: empty stdout" "$out" ""
 rm -rf "$ORCH_GH_FAKE_STORE/fail"
 
 fake_fail adapter_pr_comment
 out="$(prc "$body" 2>"$errf")"; st=$?
 assert_status "failed post: exit 2" "$st" 2
-assert_eq "failed post: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not comment on PR #57"
+assert_eq "failed post: exact stderr" "$(cat "$errf")" "orch: gh could not comment on PR #57: fake gh: adapter_pr_comment failed"
 assert_eq "failed post: empty stdout" "$out" ""
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
+
+# gh's reason rides on orch's own line, first line only (#846).
+fake_fail adapter_prs_open $'HTTP 502: Bad Gateway\nsecond line'
+out="$(prc "$body" 2>"$errf")"; st=$?
+assert_status "unreadable PR list with a reason: exit 2" "$st" 2
+assert_eq "carrying only gh's first line" "$(cat "$errf")" \
+  "orch: gh could not list the open PRs from quick/12-foo: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_pr_comment $'HTTP 502: Bad Gateway\nsecond line'
+out="$(prc "$body" 2>"$errf")"; st=$?
+assert_status "failed post with a reason: exit 2" "$st" 2
+assert_eq "carrying only gh's first line" "$(cat "$errf")" \
+  "orch: gh could not comment on PR #57: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail_times adapter_pr_comment 9
+out="$(prc "$body" 2>"$errf")"; st=$?
+assert_status "a silent failed post: exit 2" "$st" 2
+assert_eq "ending in gh gave no reason" "$(cat "$errf")" \
+  "orch: gh could not comment on PR #57: gh gave no reason"
+fake_unfail
 rm -f "$errf"
 assert_eq "no failed call posted anything" "$(fake_pr_comments_of 57)" "$(cat "$body")"
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
@@ -5213,10 +5294,29 @@ fake_fail adapter_pr_body_edit
 err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
 assert_status "a failed edit fails" "$st" 1
 assert_contains "naming the PR" "$err" "#57"
-fake_fail adapter_pr_body
+# gh's reason rides on orch's own line, first line only (#846).
+fake_fail adapter_pr_body_edit $'HTTP 502: Bad Gateway\nsecond line'
+err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
+assert_status "a failed body write still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$err" \
+  "orch: gh could not replace the body of PR #57: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_pr_body $'HTTP 502: Bad Gateway\nsecond line'
+err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
+assert_status "a failed body read in pr update exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$err" \
+  "orch: gh could not read the body of PR #57: HTTP 502: Bad Gateway"
+fake_fail_times adapter_pr_body 9
+err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
+assert_status "a silent failed body read exits 1" "$st" 1
+assert_eq "ending in gh gave no reason" "$err" \
+  "orch: gh could not read the body of PR #57: gh gave no reason"
+fake_unfail
+fake_fail adapter_pr_body $'HTTP 502: Bad Gateway\nsecond line'
 err="$(prb fetch "$out_file" 2>&1 >/dev/null)"; st=$?
 assert_status "a failed read fails" "$st" 1
-assert_contains "naming the PR" "$err" "#57"
+assert_eq "naming the PR, with gh's first line alone (#846)" "$err" \
+  "orch: gh could not read the body of PR #57: HTTP 502: Bad Gateway"
 assert_eq "leaving the body as it was" "$(fake_pr_body_of 57)" "$(writeln 'Closes #12')"
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
@@ -5267,11 +5367,18 @@ assert_status "an unreadable PR list exits 2" "$st" 2
 assert_eq "and writes nothing" "$(cat "$pr_comments")" "known content"
 rm -rf "$ORCH_GH_FAKE_STORE/fail"
 
-fake_fail adapter_pr_comments
+fake_fail adapter_pr_comments $'HTTP 502: Bad Gateway\nsecond line'
 err="$(prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
 assert_status "unreadable comments exit 2" "$st" 2
-assert_contains "naming the PR" "$err" "PR #57"
+assert_eq "naming the PR, with gh's first line alone (#846)" "$err" \
+  "orch: gh could not read the comments of PR #57: HTTP 502: Bad Gateway"
 assert_eq "leaving the file that was already there unchanged" "$(cat "$pr_comments")" "known content"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_fail_times adapter_pr_comments 9
+err="$(prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
+assert_status "comments that fail silently exit 2 too" "$st" 2
+assert_eq "saying gh gave no reason" "$err" \
+  "orch: gh could not read the comments of PR #57: gh gave no reason"
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 err="$(prcs 2>&1 >/dev/null)"; st=$?
@@ -5379,6 +5486,26 @@ out="$("$ORCH" ticket publish 50 "Unblocked" "$body" --blocked-by "" 2>&1)"; st=
 assert_status "an empty --blocked-by still publishes" "$st" 0
 assert_eq "printing the child's number" "$out" "105"
 assert_eq "with no blockers" "$(fake_blockers_of 105)" ""
+
+# gh's reason rides on orch's own line, first line only (#846).
+fake_fail adapter_issue_create $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a failed ticket create still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not create the ticket: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_sub_issue_link $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a failed sub-issue link still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not link ticket #106 as a sub-issue of #50: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_blocker_add $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket publish 50 "Title" "$body" --blocked-by 100 2>&1)"; st=$?
+assert_status "a failed blocking-edge write still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not add a blocking edge from ticket #107 on #100: HTTP 502: Bad Gateway"
+fake_unfail
 restore_suite_env
 
 # --- ticket publish verify-then-die ---------------------------------------
@@ -5421,9 +5548,53 @@ assert_eq "its edge is in place" "$(fake_blockers_of 302)" "$blocker"
 fake_fail adapter_blockers
 out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
 assert_status "a blocked-by read that fails twice dies" "$st" 1
+assert_contains "with the links message" "$out" "gh could not read ticket #303's links: fake gh: adapter_blockers failed"
+assert_not_contains "never calling a failed read a mismatch" "$out" "did not verify"
+fake_unfail
+
+# #843: a failed read-back is no mismatch. Each read path dies with gh's own
+# first line, and only the second attempt decides which death it is.
+fake_fail_after adapter_sub_issues 0 $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a sub-issues read-back that fails twice dies" "$st" 1
+assert_contains "with gh's first line" "$out" "gh could not read ticket #304's links: HTTP 502: Bad Gateway"
+assert_not_contains "and only its first line" "$out" "second line"
+assert_not_contains "never calling a failed read a mismatch" "$out" "did not verify"
+fake_unfail
+
+fake_fail_after adapter_blockers 0 $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
+assert_status "a blockers read-back that fails twice dies" "$st" 1
+assert_contains "with gh's first line" "$out" "gh could not read ticket #305's links: HTTP 502: Bad Gateway"
+assert_not_contains "and only its first line" "$out" "second line"
+assert_not_contains "never calling a failed read a mismatch" "$out" "did not verify"
+fake_unfail
+
+fake_fail_after adapter_sub_issues 0 ''
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a silent read-back failure dies" "$st" 1
+assert_contains "ending in gh gave no reason" "$out" "gh could not read ticket #306's links: gh gave no reason"
+fake_unfail
+
+fake_fail_times adapter_sub_issues 1 'HTTP 502: Bad Gateway'
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a transient sub-issues read failure then a good read succeeds" "$st" 0
+assert_eq "printing only the child's number" "$out" "307"
+
+fake_fail_times adapter_sub_issues 1 'HTTP 502: Bad Gateway'
+fake_lag adapter_sub_issues 1
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a failed read then a mismatch dies" "$st" 1
 assert_contains "with the verify message" "$out" \
-  "ticket #303's sub-issue/blocked-by links did not verify - checked twice, both failed"
-assert_not_contains "never the block/unblock read message" "$out" "could not read ticket"
+  "ticket #308's sub-issue/blocked-by links did not verify - checked twice, both failed"
+fake_unfail
+
+fake_lag adapter_sub_issues 1
+fake_fail_after adapter_sub_issues 1 'HTTP 502: Bad Gateway'
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a mismatch then a failed read dies" "$st" 1
+assert_contains "with the links message" "$out" "gh could not read ticket #309's links: HTTP 502: Bad Gateway"
+assert_not_contains "not the verify message" "$out" "did not verify"
 restore_suite_env
 
 # --- ticket next -----------------------------------------------------------
@@ -5489,6 +5660,13 @@ fake_fail adapter_sub_issues
 out="$("$ORCH" ticket list 90 2>&1)"; st=$?
 assert_status "a gh that cannot list sub-issues fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not list sub-issues of #90"
+# gh's reason rides on orch's own line, first line only (#846).
+fake_fail adapter_sub_issues $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket list 90 2>&1)"; st=$?
+assert_status "a failed sub-issue list still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not list sub-issues of #90: HTTP 502: Bad Gateway"
+fake_unfail
 restore_suite_env
 
 # --- ticket close ------------------------------------------------------------
@@ -5512,6 +5690,13 @@ fake_fail adapter_issue_close
 out="$("$ORCH" ticket close "$n" 2>&1)"; st=$?
 assert_status "a gh that will not close the ticket fails" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not close ticket"
+# gh's reason rides on orch's own line, first line only (#846).
+fake_fail adapter_issue_close $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket close "$n" 2>&1)"; st=$?
+assert_status "a failed close still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not close ticket #$n: HTTP 502: Bad Gateway"
+fake_unfail
 restore_suite_env
 
 # --- ticket reset ------------------------------------------------------------
@@ -5544,6 +5729,12 @@ fake_fail adapter_issue_reopen
 out="$("$ORCH" ticket reset 90 2>&1)"; st=$?
 assert_status "a gh that will not reopen a ticket fails the command" "$st" 1
 assert_contains "naming what failed" "$out" "gh could not reopen ticket #$x"
+# gh's reason rides on orch's own line, first line only (#846).
+fake_fail adapter_issue_reopen $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket reset 90 2>&1)"; st=$?
+assert_status "a failed reopen still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not reopen ticket #$x: HTTP 502: Bad Gateway"
 fake_unfail
 
 fake_fail adapter_sub_issues
@@ -5574,10 +5765,19 @@ fake_fail adapter_issue_parent
 errf="$(mktemp)"
 out="$("$ORCH" ticket parent "$k" 2>"$errf")"; st=$?
 assert_status "a gh that cannot read the issue fails the command" "$st" 1
-assert_eq "naming what failed: exact stderr, no suffix" "$(tail -n 1 "$errf")" \
-  "orch: gh could not read issue #$k's parent"
+assert_eq "naming what failed: exact stderr, gh's reason after it" "$(cat "$errf")" \
+  "orch: gh could not read issue #$k's parent: fake gh: adapter_issue_parent failed"
 assert_eq "printing nothing on stdout" "$out" ""
 fake_unfail
+# gh's reason rides on orch's own line, first line only (#846).
+fake_fail adapter_issue_parent $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket parent "$k" 2>"$errf")"; st=$?
+assert_status "a failed parent read still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$(cat "$errf")" \
+  "orch: gh could not read issue #$k's parent: HTTP 502: Bad Gateway"
+assert_eq "still printing nothing on stdout" "$out" ""
+fake_unfail
+rm -f "$errf"
 
 out="$("$ORCH" ticket parent abc 2>&1)"; st=$?
 assert_status "refuses a ticket that is not a plain number" "$st" 1
@@ -5661,15 +5861,35 @@ errf="$(mktemp)"
 fake_fail adapter_sub_issues
 out="$("$ORCH" ticket exists 98 2>"$errf")"; st=$?
 assert_status "unlistable sub-issues: exit 2" "$st" 2
-assert_eq "unlistable sub-issues: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not list sub-issues of #98"
+assert_eq "unlistable sub-issues: exact stderr" "$(cat "$errf")" "orch: gh could not list sub-issues of #98: fake gh: adapter_sub_issues failed"
 assert_eq "unlistable sub-issues: empty stdout" "$out" ""
 fake_unfail
 
 fake_fail adapter_issue_body
 out="$("$ORCH" ticket exists 98 2>"$errf")"; st=$?
 assert_status "unreadable body: exit 2" "$st" 2
-assert_eq "unreadable body: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not read issue #98's body"
+assert_eq "unreadable body: exact stderr" "$(cat "$errf")" "orch: gh could not read issue #98's body: fake gh: adapter_issue_body failed"
 assert_eq "unreadable body: empty stdout" "$out" ""
+fake_unfail
+
+# gh's reason rides on orch's own line, first line only (#846).
+fake_fail adapter_sub_issues $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket exists 98 2>"$errf")"; st=$?
+assert_status "a failed sub-issue list with a reason: exit 2" "$st" 2
+assert_eq "carrying only gh's first line" "$(cat "$errf")" \
+  "orch: gh could not list sub-issues of #98: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_issue_body $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket exists 98 2>"$errf")"; st=$?
+assert_status "a failed body read with a reason: exit 2" "$st" 2
+assert_eq "carrying only gh's first line" "$(cat "$errf")" \
+  "orch: gh could not read issue #98's body: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail_times adapter_issue_body 9
+out="$("$ORCH" ticket exists 98 2>"$errf")"; st=$?
+assert_status "a silent failed body read: exit 2" "$st" 2
+assert_eq "ending in gh gave no reason" "$(cat "$errf")" \
+  "orch: gh could not read issue #98's body: gh gave no reason"
 fake_unfail
 rm -f "$errf"
 
@@ -5794,10 +6014,12 @@ assert_status "a gh that refuses the edge write fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not add a blocking edge from ticket #$bf on #$bb"
 assert_contains "with gh's reason" "$out" "HTTP 422"
 fake_unfail
-fake_fail adapter_blockers
+fake_fail adapter_blockers $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that cannot read the blockers fails the command" "$st" 1
-assert_contains "naming the ticket" "$out" "gh could not read ticket #$bf's blockers"
+assert_contains "naming the ticket, with gh's first line" "$out" \
+  "gh could not read ticket #$bf's blockers: HTTP 502: Bad Gateway"
+assert_not_contains "and only its first line" "$out" "second line"
 fake_unfail
 fake_fail adapter_issue_state
 out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
@@ -5808,14 +6030,39 @@ errf="$(mktemp)"
 fake_fail adapter_issue_parent
 "$ORCH" ticket block "$bf" --by "$bb" >/dev/null 2>"$errf"; st=$?
 assert_status "a gh that cannot read the ticket's parent fails the command" "$st" 1
-assert_eq "naming the ticket: exact stderr, no suffix" "$(tail -n 1 "$errf")" \
-  "orch: gh could not read issue #$bf's parent"
+assert_eq "naming the ticket: exact stderr, gh's reason after it" "$(cat "$errf")" \
+  "orch: gh could not read issue #$bf's parent: fake gh: adapter_issue_parent failed"
 fake_unfail
 fake_fail_after adapter_issue_parent 1
 "$ORCH" ticket block "$bf" --by "$bb" >/dev/null 2>"$errf"; st=$?
 assert_status "a gh that cannot read a blocker's parent fails the command" "$st" 1
-assert_eq "naming the blocker and the ticket: exact stderr" "$(tail -n 1 "$errf")" \
-  "orch: gh could not read issue #$bb's parent, a blocker of ticket #$bf"
+assert_eq "naming the blocker and the ticket: exact stderr" "$(cat "$errf")" \
+  "orch: gh could not read issue #$bb's parent, a blocker of ticket #$bf: fake gh: adapter_issue_parent failed"
+fake_unfail
+# gh's reason rides on orch's own line, first line only (#846).
+fake_fail adapter_issue_state $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+assert_status "a failed state read still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not read ticket #$bf: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_issue_parent $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+assert_status "a failed ticket parent read still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not read issue #$bf's parent: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail_after adapter_issue_parent 1 $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+assert_status "a failed blocker parent read still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not read issue #$bb's parent, a blocker of ticket #$bf: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_blocker_add $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
+assert_status "a failed edge add still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not add a blocking edge from ticket #$bf on #$bb: HTTP 502: Bad Gateway"
 fake_unfail
 assert_eq "none of the failures added the edge" "$(fake_blockers_of "$bf")" "$ba"
 
@@ -5893,6 +6140,34 @@ fake_unfail
 out="$("$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
 assert_status "re-running after the body failures succeeds" "$st" 0
 assert_eq "finishing the body" "$(fake_body_of "$bh")" "$(printf 'Intro\n\n## Blocked by\n\n- #%s' "$ba")"
+
+# The ## Blocked by rewrite carries gh's reason on its read and its write, and
+# a failed read or write leaves no temp file (#846).
+fake_body_read "$bh" 'Intro\n'
+rw_tmp="$(mktemp -d)"
+fake_fail adapter_issue_body $'HTTP 502: Bad Gateway\nsecond line'
+out="$(TMPDIR="$rw_tmp" "$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
+assert_status "a failed ## Blocked by read still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not read ticket #$bh's body: HTTP 502: Bad Gateway"
+assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
+fake_unfail
+fake_fail_times adapter_issue_body 9
+out="$(TMPDIR="$rw_tmp" "$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
+assert_status "a silent failed ## Blocked by read exits 1" "$st" 1
+assert_eq "ending in gh gave no reason" "$out" \
+  "orch: gh could not read ticket #$bh's body: gh gave no reason"
+assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
+fake_unfail
+fake_fail adapter_issue_body_edit $'HTTP 502: Bad Gateway\nsecond line'
+out="$(TMPDIR="$rw_tmp" "$ORCH" ticket block "$bh" --by "$ba" 2>&1)"; st=$?
+assert_status "a failed ## Blocked by write still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not rewrite ticket #$bh's ## Blocked by section: HTTP 502: Bad Gateway"
+assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
+assert_eq "and the body untouched" "$(fake_body_of "$bh")" "Intro"
+fake_unfail
+rm -rf "$rw_tmp"
 
 bi="$("$ORCH" ticket publish 96 "I" "$body")"
 fake_fail_after adapter_blocker_add 1
@@ -6014,6 +6289,13 @@ fake_fail adapter_blocker_remove
 out="$("$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
 assert_status "a gh that refuses the edge removal fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not remove a blocking edge from ticket #$ug on #$ua"
+fake_unfail
+# gh's reason rides on orch's own line, first line only (#846).
+fake_fail adapter_blocker_remove $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
+assert_status "a failed edge removal still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not remove a blocking edge from ticket #$ug on #$ua: HTTP 502: Bad Gateway"
 fake_unfail
 fake_fail adapter_blockers
 out="$("$ORCH" ticket unblock "$ug" --by "$ua" 2>&1)"; st=$?
@@ -7231,6 +7513,37 @@ assert_contains "naming the issue" "$out" "issue #404"
 assert_eq "and leaves no file a caller could mistake for a body" \
   "$([ -e "$issue_body" ] && echo present || echo gone)" "gone"
 
+# fetch_into streams gh's stdout to the file, so what gh printed - the body
+# and the one newline gh's --jq adds - round-trips byte for byte, and its
+# death carries gh's first line (#846). A read that prints nothing writes
+# nothing: issue comments' empty file, below.
+fidir="$(mktemp -d)"
+fake_issue_body 23 $'Body of #23.\n\n'
+"$ORCH" issue fetch 23 "$fidir/body.md"; st=$?
+assert_status "fetch of a body ending in newlines succeeds" "$st" 0
+assert_eq "keeping every trailing newline" "$(od -c <"$fidir/body.md")" "$(printf 'Body of #23.\n\n\n' | od -c)"
+fake_issue_body 23 "Body of #23."
+"$ORCH" issue fetch 23 "$fidir/body.md"
+assert_eq "and adding none of its own to a body that has none" "$(od -c <"$fidir/body.md")" "$(printf 'Body of #23.\n' | od -c)"
+fake_fail adapter_issue_body $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" issue fetch 23 "$fidir/body.md" 2>&1)"; st=$?
+assert_status "a failed body read fails the fetch" "$st" 1
+assert_eq "naming the body, with gh's first line alone" "$out" \
+  "orch: gh could not read the body of issue #23: HTTP 502: Bad Gateway"
+assert_eq "leaving the target untouched" "$(od -c <"$fidir/body.md")" "$(printf 'Body of #23.\n' | od -c)"
+assert_eq "and no temp file beside it" "$(ls "$fidir")" "body.md"
+fake_unfail
+fake_fail_times adapter_issue_body 9
+out="$("$ORCH" issue fetch 23 "$fidir/body.md" 2>&1)"; st=$?
+assert_status "a silent failed body read fails the fetch" "$st" 1
+assert_eq "saying gh gave no reason" "$out" \
+  "orch: gh could not read the body of issue #23: gh gave no reason"
+assert_eq "leaving the target untouched too" "$(od -c <"$fidir/body.md")" "$(printf 'Body of #23.\n' | od -c)"
+assert_eq "and no temp file" "$(ls "$fidir")" "body.md"
+fake_unfail
+rm -rf "$fidir"
+unset fidir
+
 # issue fetch --json (#528): the issue's title, body, labels and comments in one
 # trimmed JSON object, so a fresh agent reads an issue with one call pinned to
 # the repo. Its jq is ISSUE_JSON_JQ, pinned in "gh adapter contract".
@@ -7261,11 +7574,11 @@ assert_eq "writing the body alone, as before" "$(cat "$issue_body")" \
   "$(writeln '## What to build' '' 'A `$HOME` handle for #6.')"
 
 printf 'old contents\n' >"$issue_json"
-fake_fail adapter_issue_json "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_json $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
 assert_status "a gh that will not answer fails fetch --json" "$st" 1
-assert_contains "naming the issue" "$out" "issue #27"
-assert_contains "with gh's reason" "$out" "HTTP 502: Bad Gateway"
+assert_eq "naming the issue, with gh's first line alone (#846)" "$out" \
+  "orch: gh could not read issue #27: HTTP 502: Bad Gateway"
 assert_eq "and leaves the file that was already there byte-identical" \
   "$(od -c "$issue_json")" "$(printf 'old contents\n' | od -c)"
 rm -f "$issue_json"
@@ -7313,11 +7626,12 @@ out="$("$ORCH" issue update 23 /nonexistent/body.md 2>&1)"; st=$?
 assert_status "update refuses a file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
 
-fake_fail adapter_issue_body_edit "HTTP 403: Resource not accessible by integration"
+fake_fail adapter_issue_body_edit $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
 assert_status "a gh that will not edit fails the update" "$st" 1
-assert_contains "with gh's reason" "$out" "HTTP 403"
-assert_contains "naming the issue" "$out" "issue #23"
+assert_eq "naming the issue, with gh's first line alone (#846)" "$out" \
+  "orch: gh could not replace the body of issue #23: HTTP 502: Bad Gateway"
+fake_unfail
 
 # issue comment is the stateless counterpart to spec comment, the way issue
 # fetch/update are to spec fetch/update: a standalone spec review posts its
@@ -7335,11 +7649,11 @@ assert_status "comment refuses a file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
 assert_eq "and posts nothing" "$(fake_comments_of 23)" "$(cat "$tricky")"
 
-fake_fail adapter_issue_comment "fake gh: issue comment refused"
+fake_fail adapter_issue_comment $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
 assert_status "a gh that will not comment fails it" "$st" 1
-assert_contains "with gh's reason" "$out" "issue comment refused"
-assert_contains "naming the issue" "$out" "issue #23"
+assert_eq "naming the issue, with gh's first line alone (#846)" "$out" \
+  "orch: gh could not comment on issue #23: HTTP 502: Bad Gateway"
 fake_unfail
 
 out="$("$ORCH" issue comment abc "$tricky" 2>&1)"; st=$?
@@ -7410,10 +7724,11 @@ assert_status "an issue with no comments still succeeds" "$st" 0
 assert_eq "leaving an empty file" "$(wc -c <"$issue_comments" | tr -d ' ')" "0"
 
 printf 'known content\n' >"$issue_comments"
-fake_fail adapter_issue_comments "fake gh: issue view refused"
+fake_fail adapter_issue_comments $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" issue comments 24 "$issue_comments" 2>&1)"; st=$?
 assert_status "a gh that will not answer fails the comments fetch" "$st" 1
-assert_contains "naming the issue" "$out" "issue #24"
+assert_eq "naming the issue, with gh's first line alone (#846)" "$out" \
+  "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway"
 assert_eq "and leaves the file that was already there byte-identical" \
   "$(od -c "$issue_comments")" "$(printf 'known content\n' | od -c)"
 
@@ -7582,6 +7897,38 @@ filed_sev nit; assert_status "accepts nit" "$?" 0
 filed_sev blocking; assert_status "refuses blocking - it is always fixed, never filed" "$?" 1
 filed_sev ""; assert_status "refuses an empty severity" "$?" 1
 
+# --- gh_reason and capture_err (#846) -------------------------------------------
+
+echo
+echo "gh_reason and capture_err"
+new_repo >/dev/null
+# Sourced rather than run, as is_filed_severity is: both are helpers every gh
+# death goes through, and sourcing orch.sh defines them without running main.
+reason() { bash -c 'source "$1" && gh_reason "$2"' _ "$ORCH" "$1"; }
+assert_eq "gh_reason gives only the first line of gh's stderr" \
+  "$(reason $'HTTP 502: Bad Gateway\nsecond line\n')" "HTTP 502: Bad Gateway"
+assert_eq "and says gh gave no reason when stderr is empty" "$(reason "")" "gh gave no reason"
+assert_eq "or when its first line is" "$(reason $'\n')" "gh gave no reason"
+# capture_err leaves stdout to the caller's redirect, so a body streamed to a
+# file keeps its trailing newlines byte for byte.
+cefile="$(mktemp)"
+out="$(bash -c 'source "$1"
+  emit() { printf "body\n\n"; printf "HTTP 502: Bad Gateway\nsecond line\n" >&2; return 3; }
+  st=0; capture_err e emit >"$2" || st=$?
+  printf "%s|%s." "$st" "$e"' _ "$ORCH" "$cefile")"
+assert_eq "capture_err returns the command's status and sets the error variable to its stderr" \
+  "$out" "3|HTTP 502: Bad Gateway
+second line
+."
+assert_eq "and leaves stdout to the caller's redirect, trailing newlines kept" \
+  "$(od -c <"$cefile")" "$(printf 'body\n\n' | od -c)"
+out="$(bash -c 'source "$1"
+  quiet() { printf "x"; }
+  e=stale; capture_err e quiet >/dev/null; printf "%s|%s" "$?" "$e"' _ "$ORCH")"
+assert_eq "a command that succeeds silently returns 0 and leaves the variable empty" "$out" "0|"
+rm -f "$cefile"
+unset cefile
+
 # --- review file ------------------------------------------------------------
 
 # Filing is mechanism: which labels, what title, which body, and the number
@@ -7706,19 +8053,20 @@ assert_eq "nor creates a label" "$(fake_labels)" ""
 out="$("$ORCH" review file major "Title" --axis spec "$body" 2>&1)"; st=$?
 assert_status "insists on --body-file rather than guessing a positional" "$st" 1
 
-fake_fail adapter_issue_create "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_create $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
-assert_contains "passing gh's reason through" "$out" "HTTP 502: Bad Gateway"
+assert_eq "passing gh's first line through, in the death alone (#846)" "$out" \
+  "orch: gh could not create the issue: HTTP 502: Bad Gateway"
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
 fake_github
-fake_fail adapter_label_upsert "HTTP 403: Resource not accessible by integration"
+fake_fail adapter_label_upsert $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the label fails it too" "$st" 1
-assert_contains "passing gh's reason through" "$out" "HTTP 403: Resource not accessible by integration"
-assert_contains "and naming the label" "$out" "gh could not create label review:major"
+assert_eq "naming the label, with gh's first line alone (#846)" "$out" \
+  "orch: gh could not create label review:major: HTTP 502: Bad Gateway"
 assert_eq "filing no issue" "$(fake_issues)" ""
 
 # The triage label is the repo's vocabulary, read from the doc the spec phase
@@ -7837,6 +8185,22 @@ faked adapter_issue_close 19 --duplicate-of 30; st=$?
 assert_status "the fake closes an issue as a duplicate" "$st" 0
 assert_eq "CLOSED, its reason duplicate" "$(fake_state_of 19) $(fake_reason_of 19)" "CLOSED duplicate"
 assert_eq "naming the issue it duplicates" "$(fake_duplicate_of 19)" "30"
+# fake_fail_after seeds a failure after n good calls: with an explicit empty
+# stderr a silent one (#846), and with the third argument omitted fake_fail's
+# message.
+fake_issue 20 open
+fake_fail_after adapter_issue_state_labels 1 ''
+faked adapter_issue_state_labels 20 >/dev/null 2>&1; st=$?
+assert_status "fake_fail_after lets the first n calls succeed" "$st" 0
+err="$(faked adapter_issue_state_labels 20 2>&1 >/dev/null)"; st=$?
+assert_status "then the operation fails" "$st" 1
+assert_eq "silently, given an explicit empty stderr" "$err" ""
+fake_unfail
+fake_fail_after adapter_issue_state_labels 0
+err="$(faked adapter_issue_state_labels 20 2>&1 >/dev/null)"; st=$?
+assert_status "fake_fail_after with no stderr fails too" "$st" 1
+assert_eq "with fake_fail's message" "$err" "fake gh: adapter_issue_state_labels failed"
+fake_unfail
 restore_suite_env
 assert_eq "restore_suite_env undoes fake_github" \
   "${ORCH_GH_ADAPTER-unset} ${ORCH_GH_FAKE_STORE-unset}" "unset unset"
@@ -8780,6 +9144,13 @@ out="$(scan --all 2>&1)"; st=$?
 assert_status "a listed finding gh cannot read dies" "$st" 1
 assert_contains "naming the issue, with gh's line" "$out" "gh could not read issue #1: HTTP 502: Bad Gateway"
 fake_unfail
+fake_fail adapter_issues_labelled $'HTTP 502: Bad Gateway\nsecond line'
+out="$(scan 2>&1)"; st=$?
+assert_status "a findings list gh cannot read dies" "$st" 1
+assert_contains "naming the list, with gh's line" "$out" \
+  "orch: gh could not list the review:major findings: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
+fake_unfail
 
 out="$(scan --all --pr 21 2>&1)"; st=$?
 assert_status "--all narrows to one source PR" "$st" 0
@@ -9050,16 +9421,27 @@ assert_status "a category label the repo has already does not stop apply" "$st" 
 assert_eq "the labels are still applied" "$(fake_labels_of 2)" "bug ready-for-agent review:major "
 assert_contains "and the repo's own is left as it is" "$(fake_labels)" "bug${tab}123456${tab}The repo's own bug"
 
-# Any other failed gh call does, with the reason.
-for op in adapter_issue_state_labels adapter_issue_comment adapter_issue_relabel adapter_issue_close; do
+# Any other failed gh call does, with gh's first line right after what failed.
+for case in "adapter_issue_comment|wontfix|comment on" "adapter_issue_relabel|wontfix|relabel" \
+            "adapter_issue_close|wontfix|close" "adapter_issue_relabel|close-fixed|relabel" \
+            "adapter_issue_close|close-fixed|close" "adapter_issue_relabel|ready-for-agent|relabel"; do
+  IFS='|' read -r op outcome verb <<<"$case"
+  category_args=()
+  [ "$outcome" != ready-for-agent ] || category_args=(--category bug)
   fake_github
   triaged 2 "review:major,needs-triage,bug"
-  fake_fail "$op" "HTTP 502: Bad Gateway"
-  out="$(apply 2 wontfix --comment-file "$comment" 2>&1)"; st=$?
-  assert_status "dies when gh fails ($op)" "$st" 1
-  assert_contains "saying gh failed on the issue ($op)" "$out" "gh could not"
-  assert_contains "with gh's reason ($op)" "$out" "HTTP 502: Bad Gateway"
+  fake_fail "$op" $'HTTP 502: Bad Gateway\nsecond line'
+  out="$(apply 2 "$outcome" ${category_args[@]+"${category_args[@]}"} --comment-file "$comment" 2>&1)"; st=$?
+  assert_status "dies when gh fails ($op, $outcome)" "$st" 1
+  assert_eq "saying what failed, with gh's line ($op, $outcome)" "$out" \
+    "orch: gh could not $verb issue #2: HTTP 502: Bad Gateway"
 done
+fake_github
+triaged 2 "review:major,needs-triage,bug"
+fake_fail_times adapter_issue_relabel 9
+out="$(apply 2 wontfix --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a silent relabel failure dies" "$st" 1
+assert_eq "saying gh gave no reason" "$out" "orch: gh could not relabel issue #2: gh gave no reason"
 
 # A failed read stops apply before it writes anything.
 fake_github
@@ -9134,7 +9516,7 @@ triaged 7 "review:minor,ready-for-agent,bug"
 fake_fail adapter_issue_relabel "HTTP 502: Bad Gateway"
 out="$(traced_apply 7 ready-for-human --category bug --comment-file "$comment" 2>&1)"; st=$?
 assert_status "a failed relabel of a triaged finding dies" "$st" 1
-assert_contains "saying so" "$out" "gh could not relabel issue #7"
+assert_contains "saying so" "$out" "gh could not relabel issue #7: HTTP 502: Bad Gateway"
 assert_eq "after the comment is posted" "$(fake_comments_of 7)" \
   "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
 assert_eq "and before the labels change" "$(fake_labels_of 7)" "bug ready-for-agent review:minor "
@@ -9320,15 +9702,22 @@ fake_unfail
 # A failed bundle create touches no member.
 member 17 "review:major,ready-for-agent,bug"
 member 18 "review:nit,ready-for-agent,enhancement"
-fake_fail adapter_issue_create "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_create $'HTTP 502: Bad Gateway\nsecond line'
 out="$(new_bundle ready-for-agent bug 17 18 2>&1)"; st=$?
 assert_status "a failed bundle create dies" "$st" 1
-assert_contains "saying no member was touched" "$out" "gh could not create the bundle issue - no member was touched"
+assert_eq "with gh's line, saying no member was touched" "$out" \
+  "orch: gh could not create the bundle issue: HTTP 502: Bad Gateway - no member was touched"
 for m in 17 18; do
   assert_eq "member #$m left open" "$(fake_state_of "$m")" "OPEN"
   assert_eq "and uncommented (#$m)" "$(fake_comments_of "$m")" ""
 done
 unset m
+fake_unfail
+fake_fail_times adapter_issue_create 9
+out="$(new_bundle ready-for-agent bug 17 18 2>&1)"; st=$?
+assert_status "a silent bundle create failure dies" "$st" 1
+assert_eq "saying gh gave no reason" "$out" \
+  "orch: gh could not create the bundle issue: gh gave no reason - no member was touched"
 fake_unfail
 
 # A member failure stops the bundle part-way: it dies naming the bundle and
@@ -9347,6 +9736,7 @@ partial() {
   fake_unfail
   assert_status "$name dies" "$st" 1
   assert_contains "$name: saying what failed" "$out" "$wants"
+  assert_not_contains "$name: with gh's first line only" "$out" "second line"
   assert_contains "$name: naming the bundle and the members left open" "$out" \
     "bundle #$b: "
   assert_contains "$name: listing the members left open" "$out" "members left open: #${left// / #};"
@@ -9377,23 +9767,29 @@ resumed() {
       "$(fake_state_of "$m") $(fake_reason_of "$m") $(fake_duplicate_of "$m")" "CLOSED duplicate $b"
   done
 }
-fake_fail_after adapter_issue_comment 1 "HTTP 502: Bad Gateway"
-partial "a failed comment" 40 "gh could not comment on member #32" "32 33"
-fake_fail_after adapter_issue_close 1 "unknown flag: --duplicate-of"
+fake_fail_after adapter_issue_comment 1 $'HTTP 502: Bad Gateway\nsecond line'
+partial "a failed comment" 40 \
+  "orch: bundle #40: gh could not comment on member #32: HTTP 502: Bad Gateway - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 40 32 33" "32 33"
+fake_fail_after adapter_issue_close 1 $'HTTP 502: Bad Gateway\nsecond line'
 partial "a failed close" 41 \
-  "gh could not close member #32 as a duplicate - --duplicate-of needs gh 2.102 or newer" "32 33"
-fake_fail adapter_issue_comments "HTTP 502: Bad Gateway"
-partial "a failed comments read" 42 "gh could not read member #31's comments" "31 32 33"
+  "orch: bundle #41: gh could not close member #32 as a duplicate: HTTP 502: Bad Gateway - --duplicate-of needs gh 2.102 or newer - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 41 32 33" "32 33"
+fake_fail adapter_issue_comments $'HTTP 502: Bad Gateway\nsecond line'
+partial "a failed comments read" 42 \
+  "orch: bundle #42: gh could not read member #31's comments: HTTP 502: Bad Gateway - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 42 31 32 33" "31 32 33"
+fake_fail_after adapter_issue_comment 1 ""
+partial "a silent failed comment" 48 \
+  "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33"
 # A failed state read-back dies the same way; the member may in truth be
 # closed, so it is not resumed here.
 for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
 fake_next_issue 43
-fake_fail_after adapter_issue_state 2 "HTTP 502: Bad Gateway"
+fake_fail_after adapter_issue_state 2 $'HTTP 502: Bad Gateway\nsecond line'
 out="$(new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
 fake_unfail
 assert_status "a failed state read-back dies" "$st" 1
-assert_contains "naming the bundle, the member and the --into command" "$out" \
-  "bundle #43: gh could not read member #33's state back - members left open: #33; resume with: orch.sh finding-triage bundle --into 43 33"
+assert_contains "naming the bundle, the member, gh's line and the --into command" "$out" \
+  "orch: bundle #43: gh could not read member #33's state back: HTTP 502: Bad Gateway - members left open: #33; resume with: orch.sh finding-triage bundle --into 43 33"
+assert_not_contains "with gh's first line only" "$out" "second line"
 unset m
 noop_close_adapter="$(mktemp)"
 writeln "source $(printf %q "$GH_ADAPTER_FAKE")" 'adapter_issue_close() { :; }' >"$noop_close_adapter"
@@ -9667,12 +10063,22 @@ fake_github
 fake_pr 7 open orch/1-reviewready main
 fake_pr_draft 7
 : >"$GH_FIXTURE/env.log"
-fake_fail adapter_pr_ready
+fake_fail adapter_pr_ready $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" review ready 2>&1)"; st=$?
 assert_status "fails when GitHub will not mark the PR ready" "$st" 1
+assert_eq "saying why, with gh's first line alone (#846)" "$out" \
+  "orch: gh could not mark PR #7 ready: HTTP 502: Bad Gateway - the flow stays in review"
 assert_eq "and leaves the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "review"
 assert_eq "with the PR still a draft" "$(fake_pr_draft_of 7)" "yes"
+rm -rf "$ORCH_GH_FAKE_STORE/fail"
+fake_fail_times adapter_pr_ready 9
+out="$("$ORCH" review ready 2>&1)"; st=$?
+assert_status "fails when gh fails silently too" "$st" 1
+assert_eq "saying gh gave no reason" "$out" \
+  "orch: gh could not mark PR #7 ready: gh gave no reason - the flow stays in review"
+assert_eq "the phase still review" "$("$ORCH" state get phase)" "review"
+assert_eq "and the PR still a draft" "$(fake_pr_draft_of 7)" "yes"
 rm -rf "$ORCH_GH_FAKE_STORE/fail"
 "$ORCH" review ready >/dev/null
 assert_eq "records the flow as done once the PR is ready" "$("$ORCH" state get phase)" "done"
@@ -10809,11 +11215,13 @@ state_fixture pr 32
 state_fixture iteration 1
 "$ORCH" state set budget 1
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
-fake_fail adapter_pr_close
+fake_fail adapter_pr_close $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a gh that will not close the PR fails the redo" "$st" 1
 assert_eq "leaving the PR open" "$(fake_pr_state_of 32)" "OPEN"
-assert_contains "naming the reason" "$out" "gh could not close PR #32"
+assert_contains "naming the reason, with gh's first line (#846)" "$out" \
+  "orch: gh could not close PR #32: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "leaving the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "review"
 assert_eq "still renames the branch aside since retire runs before the pr close" \
@@ -11020,10 +11428,12 @@ assert_eq "the close call never reached a real gh subprocess" "$(gh_calls)" "0"
 state_fixture phase implement
 "$ORCH" state set issue 42
 fake_issue 42 open
-fake_fail adapter_issue_close "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_close $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "a gh that will not close the issue fails --new-issue" "$st" 1
-assert_contains "passing gh's reason through" "$out" "HTTP 502: Bad Gateway"
+assert_contains "passing gh's first line through, in the death (#846)" "$out" \
+  "orch: gh could not close issue #42: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "leaving the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "implement"
 
@@ -11177,14 +11587,84 @@ fake_issue_body 58 "$(writeln 'Spec.' '' '## Ticket' 'Build.')"
 fake_fail adapter_issue_body
 out="$("$ORCH" ticket retire 58 2>"$errf")"; st=$?
 assert_status "a gh that cannot read the body fails ticket retire" "$st" 1
-assert_eq "naming the body read: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not read issue #58's body"
+assert_eq "naming the body read: exact stderr" "$(cat "$errf")" "orch: gh could not read issue #58's body: fake gh: adapter_issue_body failed"
 fake_unfail
 fake_fail adapter_issue_body_edit
 out="$("$ORCH" ticket retire 58 2>"$errf")"; st=$?
 assert_status "a gh that cannot write the body fails ticket retire" "$st" 1
-assert_eq "naming the section cut: exact stderr" "$(tail -n 1 "$errf")" "orch: gh could not remove the ## Ticket section from #58"
+assert_eq "naming the section cut: exact stderr" "$(cat "$errf")" "orch: gh could not remove the ## Ticket section from #58: fake gh: adapter_issue_body_edit failed"
 fake_unfail
 rm -f "$errf"
+
+# gh's reason rides on orch's own line, first line only, at every retire
+# death (#846); the ## Ticket cut's read and write leave no temp file.
+rw_tmp="$(mktemp -d)"
+fake_fail adapter_issue_body $'HTTP 502: Bad Gateway\nsecond line'
+out="$(TMPDIR="$rw_tmp" "$ORCH" ticket retire 58 2>&1)"; st=$?
+assert_status "a failed ## Ticket read still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not read issue #58's body: HTTP 502: Bad Gateway"
+assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
+fake_unfail
+fake_fail adapter_issue_body_edit $'HTTP 502: Bad Gateway\nsecond line'
+out="$(TMPDIR="$rw_tmp" "$ORCH" ticket retire 58 2>&1)"; st=$?
+assert_status "a failed ## Ticket write still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not remove the ## Ticket section from #58: HTTP 502: Bad Gateway"
+assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
+fake_unfail
+fake_fail_times adapter_issue_body_edit 9
+out="$(TMPDIR="$rw_tmp" "$ORCH" ticket retire 58 2>&1)"; st=$?
+assert_status "a silent failed ## Ticket write exits 1" "$st" 1
+assert_eq "ending in gh gave no reason" "$out" \
+  "orch: gh could not remove the ## Ticket section from #58: gh gave no reason"
+assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
+fake_unfail
+rm -rf "$rw_tmp"
+
+# A body gh reads back with no final newline gets none back from the cut.
+bare_adapter="$(mktemp)"
+writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
+        'adapter_issue_body() {' \
+        '  ! fake_failing adapter_issue_body || return 1' \
+        '  fake_issue_known "$1" || return 1' \
+        '  cat "$(fake_issue_dir "$1")/body"' \
+        '}' >"$bare_adapter"
+fake_body_read 58 'Spec.\n\n## Ticket\nBuild.\n\n## After\nTail.\n'
+ORCH_GH_ADAPTER="$bare_adapter" "$ORCH" ticket retire 58 >/dev/null 2>&1; st=$?
+assert_status "a body read with no final newline: retire succeeds" "$st" 0
+assert_eq "the cut body gets no final newline back" \
+  "$(fake_body_of 58 | od -c)" "$(printf 'Spec.\n\n## After\nTail.' | od -c)"
+rm -f "$bare_adapter"
+
+for p in 59 60; do fake_issue "$p" open; done
+rt6="$("$ORCH" ticket publish 59 "Six" "$tbody")"
+"$ORCH" ticket close "$rt6" >/dev/null
+fake_fail adapter_issue_comments $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket retire 59 2>&1)"; st=$?
+assert_status "a failed comments read still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not read ticket #$rt6's comments: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_issue_comment $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket retire 59 2>&1)"; st=$?
+assert_status "a failed retirement comment still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not comment on ticket #$rt6: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_sub_issue_unlink $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket retire 59 2>&1)"; st=$?
+assert_status "a failed unlink still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not unlink ticket #$rt6 from #59: HTTP 502: Bad Gateway"
+fake_unfail
+rt7="$("$ORCH" ticket publish 60 "Seven" "$tbody")"
+fake_fail adapter_issue_close $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket retire 60 2>&1)"; st=$?
+assert_status "a failed close still exits 1" "$st" 1
+assert_eq "carrying only gh's first line" "$out" \
+  "orch: gh could not close ticket #$rt7: HTTP 502: Bad Gateway"
+fake_unfail
 
 rt5="$("$ORCH" ticket publish 55 "Five" "$tbody")"
 redo_spec_at 55

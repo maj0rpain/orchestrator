@@ -131,21 +131,46 @@ dir_stamp() { date -u +%Y%m%d-%H%M%S; }
 # Several answers here are one line of prose followed by detail lines, and it is
 # always the first line that carries the verdict.
 first_line() { printf '%s\n' "${1%%$'\n'*}"; }
-# capture <out-var> <err-var> <command...>: runs the command, sets <out-var> to
-# its stdout (by command substitution, so trailing newlines go) and <err-var> to
-# its stderr byte for byte, and returns its status. The stderr goes through one
-# temp file capture owns. Call it in the current shell, never inside $(...):
-# it sets the caller's variables with printf -v. Its locals carry a _capture_
-# prefix, so they shadow no caller's variable, nested calls included.
+# capture_err <err-var> <command...>: runs the command, sets <err-var> to its
+# stderr byte for byte, and returns its status. It leaves stdout alone, to the
+# caller's own redirect: a body streamed to a file through
+# `capture_err err adapter_issue_body "$n" >"$body"` keeps its trailing
+# newlines, which capture's command substitution would strip. The stderr goes
+# through one temp file capture_err owns. Call it in the current shell, never
+# inside $(...): it sets the caller's variable with printf -v. Its locals carry
+# a _capture_err_ prefix, so they shadow no caller's variable. The command runs
+# in a subshell: the gh guard's no-repo death then signals the main shell,
+# whose USR1 trap dies with the remedy on the real stderr, rather than dying
+# here with its message redirected into the capture.
+capture_err() {
+  local _capture_err_file _capture_err_text _capture_err_st=0
+  _capture_err_file="$(mktemp)"
+  ( "${@:2}" ) 2>"$_capture_err_file" || _capture_err_st=$?
+  _capture_err_text="$(cat "$_capture_err_file"; printf x)"
+  rm -f "$_capture_err_file"
+  printf -v "$1" '%s' "${_capture_err_text%x}"
+  return "$_capture_err_st"
+}
+# capture <out-var> <err-var> <command...>: capture_err with the stdout taken
+# too - sets <out-var> to the command's stdout (read back by command
+# substitution, so trailing newlines go), <err-var> to its stderr byte for
+# byte, and returns its status. Same rules as capture_err: current shell only,
+# and _capture_-prefixed locals, nested calls included.
 capture() {
-  local _capture_file _capture_out _capture_err _capture_st=0
+  local _capture_file _capture_st=0
   _capture_file="$(mktemp)"
-  _capture_out="$("${@:3}" 2>"$_capture_file")" || _capture_st=$?
-  _capture_err="$(cat "$_capture_file"; printf x)"
+  capture_err "$2" "${@:3}" >"$_capture_file" || _capture_st=$?
+  printf -v "$1" '%s' "$(cat "$_capture_file")"
   rm -f "$_capture_file"
-  printf -v "$1" '%s' "$_capture_out"
-  printf -v "$2" '%s' "${_capture_err%x}"
   return "$_capture_st"
+}
+# gh_reason <stderr>: the reason a failed gh call gives - the first line of
+# its captured stderr, or "gh gave no reason" when that line is empty, so a
+# death message never ends in a bare colon. It only produces the reason; each
+# site keeps its own die, die2, warn or why.
+gh_reason() {
+  local line="${1%%$'\n'*}"
+  printf '%s\n' "${line:-gh gave no reason}"
 }
 # The argument with leading and trailing whitespace removed.
 trim() {
@@ -935,7 +960,7 @@ validate_adopted_issue() {
   local issue="$1" label state labels gh_line
   label="$(triage_label_for ready-for-agent)"
   issue_state_labels_read "$issue" state labels gh_line \
-    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated: ${gh_line:-gh gave no reason}"
+    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated: $(gh_reason "$gh_line")"
   [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
   labels_have "$labels" "$label" \
     || die "issue #$issue is missing the '$label' triage label - adoption requires it."
@@ -1857,7 +1882,9 @@ fi
 # label that exists rather than failing on it, and filing works on a repo that
 # has never seen the label and on one that has, with no listing step in between.
 severity_label_ensure() {
-  adapter_label_upsert "$1" "$2" "$3" || die "gh could not create label $1"
+  local err
+  capture_err err adapter_label_upsert "$1" "$2" "$3" \
+    || die "gh could not create label $1: $(gh_reason "$err")"
 }
 
 # The triage label is the repo's, not ours: created only where it is missing,
@@ -2054,7 +2081,7 @@ review_rerun() {
   # message carries.
   capture out err adapter_pr_checks "$pr" all || rc=$?
   gh_line="${err%%$'\n'*}"
-  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: ${gh_line:-gh gave no reason}"
+  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $(gh_reason "$err")"
   [ -n "$out" ] || die2 "PR #$pr has no checks to rerun: ${gh_line:-no checks reported}"
   # The first failed or cancelled check's name and link, split by tsv_split
   # so an empty name survives: IFS=$'\t' read would collapse it, a tab being
@@ -2075,11 +2102,9 @@ review_rerun() {
   case "$run" in ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; return 1 ;; esac
   # rerun_out is the rerun's throwaway half: only its stderr is read.
   # shellcheck disable=SC2034
-  local rerun_out rerun_err rerun_line
-  if ! capture rerun_out rerun_err adapter_run_rerun "$run"; then
-    rerun_line="${rerun_err%%$'\n'*}"
-    die2 "gh could not rerun the failed jobs of Actions run $run: ${rerun_line:-gh gave no reason}"
-  fi
+  local rerun_out rerun_err
+  capture rerun_out rerun_err adapter_run_rerun "$run" \
+    || die2 "gh could not rerun the failed jobs of Actions run $run: $(gh_reason "$rerun_err")"
   note "$run"
 }
 
@@ -2181,7 +2206,7 @@ cmd_review() {
       require_state
       local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards> --body-file <file>"
       [ $# -eq 6 ] && [ "$3" = --axis ] && [ "$5" = --body-file ] || die "$usage"
-      local severity="$1" title="$2" axis="$4" body="$6" colour category triage n
+      local severity="$1" title="$2" axis="$4" body="$6" colour category triage n err
       is_filed_severity "$severity" \
         || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
       case "$severity" in
@@ -2200,21 +2225,21 @@ cmd_review() {
       category_label_ensure "$category"
       # The title carries no severity prefix: the label holds it, where triage
       # can change it, and the title reads as an issue.
-      n="$(adapter_issue_create "$title" "$body" "review:$severity" "$triage" "$category")" \
-        || die "gh could not create the issue"
+      capture n err adapter_issue_create "$title" "$body" "review:$severity" "$triage" "$category" \
+        || die "gh could not create the issue: $(gh_reason "$err")"
       # Prints the number alone: the record cites a number, and the caller
       # would otherwise be parsing a URL out of prose every time.
       note "$n"
       ;;
     ready)
       require_state
-      local pr
+      local pr err
       require_pr pr
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.
-      adapter_pr_ready "$pr" 2>/dev/null \
-        || die "gh could not mark PR #$pr ready - the flow stays in review"
+      capture_err err adapter_pr_ready "$pr" \
+        || die "gh could not mark PR #$pr ready: $(gh_reason "$err") - the flow stays in review"
       phase_write "done"
       note "$pr"
       # stdout stays the PR number alone; the pointer goes to stderr. A side
@@ -2350,15 +2375,17 @@ cmd_review() {
 # Runs a gh read into <file>, written beside the target and moved into place
 # only once gh has answered: a failed fetch that left a partial file behind is
 # a body a caller would mistake for the actual content. <what> names the read
-# in the error.
+# in the error, beside gh's own first line. stdout streams straight to the
+# temp file through capture_err, never through capture's $(...), so the body
+# keeps its trailing newlines byte for byte.
 fetch_into() {
-  local file="$1" what="$2" tmp
+  local file="$1" what="$2" tmp err
   shift 2
   mkdir -p "$(dirname "$file")"
   tmp="$(mktemp "$file.XXXXXX")"
-  if ! "$@" >"$tmp"; then
+  if ! capture_err err "$@" >"$tmp"; then
     rm -f "$tmp"
-    die "gh could not read $what"
+    die "gh could not read $what: $(gh_reason "$err")"
   fi
   mv "$tmp" "$file"
 }
@@ -2384,20 +2411,20 @@ cmd_issue_comments() {
 }
 
 cmd_issue_update() {
-  local issue="$1" file="$2"
+  local issue="$1" file="$2" err
   [ -f "$file" ] || die "body file not found: $file"
   # --body-file, never --body: an issue body carries tables, fences, and
   # `#nn` references, and a heredoc through a shell is where those get
   # mangled.
-  adapter_issue_body_edit "$issue" "$file" \
-    || die "gh could not replace the body of issue #$issue"
+  capture_err err adapter_issue_body_edit "$issue" "$file" \
+    || die "gh could not replace the body of issue #$issue: $(gh_reason "$err")"
 }
 
 cmd_issue_comment() {
-  local issue="$1" file="$2"
+  local issue="$1" file="$2" err
   [ -f "$file" ] || die "body file not found: $file"
-  adapter_issue_comment "$issue" "$file" \
-    || die "gh could not comment on issue #$issue"
+  capture_err err adapter_issue_comment "$issue" "$file" \
+    || die "gh could not comment on issue #$issue: $(gh_reason "$err")"
 }
 
 cmd_issue() {
@@ -2432,7 +2459,7 @@ cmd_issue_ready() {
   case "$issue" in ''|*[!0-9]*) die2 "issue must be a plain issue number, got: $issue ($usage)" ;; esac
   ready="$(triage_label_for ready-for-agent)"
   issue_state_labels_read "$issue" state labels gh_line \
-    || die2 "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+    || die2 "gh could not read issue #$issue: $(gh_reason "$gh_line")"
   labels_have "$labels" "$ready"
 }
 
@@ -2686,7 +2713,7 @@ finding_scan_one() {
 # <pr> <file>:<line> <result> <detail> <triage state>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]"
-  local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_line
+  local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_line err
   local args=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -2707,7 +2734,7 @@ cmd_finding_triage_scan() {
   # one here, where it is checked, a listed one in the loop below.
   if [ -n "$issue" ]; then
     issue_state_labels_body_read "$issue" state labels body gh_line \
-      || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+      || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
@@ -2716,9 +2743,9 @@ cmd_finding_triage_scan() {
     nums="$issue"
   else
     for sev in $FILED_SEVERITIES; do
-      if $all; then out="$(adapter_issues_labelled "review:$sev")"
-      else out="$(adapter_issues_labelled "review:$sev" "$triage")"; fi \
-        || die "gh could not list the review:$sev findings"
+      if $all; then capture out err adapter_issues_labelled "review:$sev"
+      else capture out err adapter_issues_labelled "review:$sev" "$triage"; fi \
+        || die "gh could not list the review:$sev findings: $(gh_reason "$err")"
       if [ "$(printf '%s\n' $out | grep -c .)" -ge "$ISSUE_LIST_LIMIT" ]; then
         warn "review:$sev findings reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this scan"
       fi
@@ -2732,7 +2759,7 @@ cmd_finding_triage_scan() {
   for n in $(printf '%s\n' $nums | sort -nu); do
     if [ -z "$issue" ]; then
       issue_state_labels_body_read "$n" state labels body gh_line \
-        || die "gh could not read issue #$n: ${gh_line:-gh gave no reason}"
+        || die "gh could not read issue #$n: $(gh_reason "$gh_line")"
     fi
     if [ -n "$pr_filter" ] && [ "$(finding_pr "$body")" != "$pr_filter" ]; then continue; fi
     finding_scan_one "$n" "$body" "$ref" "$(triage_state "$labels")"
@@ -2763,7 +2790,7 @@ triage_comment_post() {
 cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
-  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels role label stale_category gh_line
+  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels role label stale_category gh_line err
   # The relabel's --remove options, possibly none: close-fixed, where they are
   # the whole relabel, then makes no edit at all.
   local remove_opts=()
@@ -2793,7 +2820,7 @@ cmd_finding_triage_apply() {
   # than a third, near-identical label read added beside
   # adapter_issue_state_labels and adapter_issue_title_labels.
   issue_state_labels_read "$issue" state labels gh_line \
-    || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+    || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
   # Every triage-role label the issue carries but the outcome does not set
   # goes, so an already-triaged finding ends in the one state the outcome
   # sets. Remove only what the issue carries: gh refuses to remove a label the
@@ -2804,23 +2831,27 @@ cmd_finding_triage_apply() {
     if labels_have "$labels" "$label"; then remove_opts+=(--remove "$label"); fi
   done
 
-  triage_comment_post "$issue" "$file" || die "gh could not comment on issue #$issue"
+  capture_err err triage_comment_post "$issue" "$file" \
+    || die "gh could not comment on issue #$issue: $(gh_reason "$err")"
 
   case "$outcome" in
     close-fixed)
-      adapter_issue_relabel "$issue" ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue"
-      adapter_issue_close "$issue" --reason completed || die "gh could not close issue #$issue" ;;
+      capture_err err adapter_issue_relabel "$issue" ${remove_opts[@]+"${remove_opts[@]}"} \
+        || die "gh could not relabel issue #$issue: $(gh_reason "$err")"
+      capture_err err adapter_issue_close "$issue" --reason completed \
+        || die "gh could not close issue #$issue: $(gh_reason "$err")" ;;
     wontfix)
-      adapter_issue_relabel "$issue" --add "$(triage_label_for wontfix)" ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue"
-      adapter_issue_close "$issue" --reason "not planned" || die "gh could not close issue #$issue" ;;
+      capture_err err adapter_issue_relabel "$issue" --add "$(triage_label_for wontfix)" \
+        ${remove_opts[@]+"${remove_opts[@]}"} \
+        || die "gh could not relabel issue #$issue: $(gh_reason "$err")"
+      capture_err err adapter_issue_close "$issue" --reason "not planned" \
+        || die "gh could not close issue #$issue: $(gh_reason "$err")" ;;
     *)
       category_label_ensure "$category"
       if labels_have "$labels" "$stale_category"; then remove_opts+=(--remove "$stale_category"); fi
-      adapter_issue_relabel "$issue" --add "$(triage_label_for "$outcome")" --add "$category" \
+      capture_err err adapter_issue_relabel "$issue" --add "$(triage_label_for "$outcome")" --add "$category" \
         ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue" ;;
+        || die "gh could not relabel issue #$issue: $(gh_reason "$err")" ;;
   esac
 }
 
@@ -2833,7 +2864,7 @@ cmd_finding_triage_apply() {
 bundle_member_check() {
   local __bmc_state __bmc_labels __bmc_line __bmc_role __bmc_label __bmc_ready=""
   issue_state_labels_read "$1" __bmc_state __bmc_labels __bmc_line \
-    || die "gh could not read issue #$1: ${__bmc_line:-gh gave no reason}"
+    || die "gh could not read issue #$1: $(gh_reason "$__bmc_line")"
   [ "$__bmc_state" = OPEN ] || die "issue #$1 is not open - a bundle takes open filed findings only"
   has_filed_severity_label "$__bmc_labels" \
     || die "issue #$1 is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
@@ -2870,7 +2901,7 @@ bundle_member_check() {
 cmd_finding_triage_bundle() {
   local usage="usage: orch.sh finding-triage bundle --title <t> --body-file <f> --state <ready-for-agent|ready-for-human> --category <bug|enhancement> <member>...
        orch.sh finding-triage bundle --into <B> <member>..."
-  local title="" file="" state="" category="" into="" have_title=false m labels human_label b
+  local title="" file="" state="" category="" into="" have_title=false m labels human_label b err
   local members=() seen=" "
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -2891,7 +2922,7 @@ cmd_finding_triage_bundle() {
     ! $have_title && [ -z "$file$state$category" ] || die "$usage"
     local b_state b_labels b_line
     issue_state_labels_read "$into" b_state b_labels b_line \
-      || die "gh could not read issue #$into: ${b_line:-gh gave no reason}"
+      || die "gh could not read issue #$into: $(gh_reason "$b_line")"
     [ "$b_state" = OPEN ] || die "bundle #$into is not open - --into resumes an open bundle only"
     labels_have "$b_labels" "$BUNDLE_LABEL" \
       || die "issue #$into carries no '$BUNDLE_LABEL' label - --into resumes a bundle only"
@@ -2925,8 +2956,8 @@ cmd_finding_triage_bundle() {
   # label then fails the issue create.
   adapter_label_create "$BUNDLE_LABEL" c5def5 "Several filed findings worked as one" 2>/dev/null || true
   category_label_ensure "$category"
-  b="$(adapter_issue_create "$title" "$file" "$BUNDLE_LABEL" "$(triage_label_for "$state")" "$category")" \
-    || die "gh could not create the bundle issue - no member was touched"
+  capture b err adapter_issue_create "$title" "$file" "$BUNDLE_LABEL" "$(triage_label_for "$state")" "$category" \
+    || die "gh could not create the bundle issue: $(gh_reason "$err") - no member was touched"
   printf '%s\n' "$b"
   bundle_members_close "$b" "${members[@]}"
 }
@@ -2938,22 +2969,22 @@ cmd_finding_triage_bundle() {
 # what failed, the members left open - that one and every one after it - and
 # the --into command that resumes.
 bundle_members_close() {
-  local b="$1" comment_file m i=0 comments state why left
+  local b="$1" comment_file m i=0 comments state why left err
   shift
   local members=("$@")
   comment_file="$(mktemp)"
   printf 'Bundled into #%s\n' "$b" >"$comment_file"
   for m in "${members[@]}"; do
     why=""
-    if ! comments="$(adapter_issue_comments "$m" 2>/dev/null)"; then
-      why="gh could not read member #$m's comments"
+    if ! capture comments err adapter_issue_comments "$m"; then
+      why="gh could not read member #$m's comments: $(gh_reason "$err")"
     elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
-      && ! triage_comment_post "$m" "$comment_file"; then
-      why="gh could not comment on member #$m"
-    elif ! adapter_issue_close "$m" --duplicate-of "$b"; then
-      why="gh could not close member #$m as a duplicate - --duplicate-of needs gh 2.102 or newer"
-    elif ! state="$(adapter_issue_state "$m" 2>/dev/null)"; then
-      why="gh could not read member #$m's state back"
+      && ! capture_err err triage_comment_post "$m" "$comment_file"; then
+      why="gh could not comment on member #$m: $(gh_reason "$err")"
+    elif ! capture_err err adapter_issue_close "$m" --duplicate-of "$b"; then
+      why="gh could not close member #$m as a duplicate: $(gh_reason "$err") - --duplicate-of needs gh 2.102 or newer"
+    elif ! capture state err adapter_issue_state "$m"; then
+      why="gh could not read member #$m's state back: $(gh_reason "$err")"
     elif [ "$state" != CLOSED ]; then
       why="member #$m did not read back as closed"
     fi
@@ -3210,18 +3241,18 @@ issue_publish_verified() {
 # next step.
 cmd_issue_publish() {
   [ $# -eq 2 ] || die "usage: orch.sh issue publish <title> <body-file>"
-  local title="$1" body_file="$2" ready n gh_line="" st=0
+  local title="$1" body_file="$2" ready n err gh_line="" st=0
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
   ready="$(triage_label_for ready-for-agent)"
-  n="$(adapter_issue_create "$title" "$body_file" "$ready")" \
-    || die "gh could not create the issue"
+  capture n err adapter_issue_create "$title" "$body_file" "$ready" \
+    || die "gh could not create the issue: $(gh_reason "$err")"
   # The second attempt's status decides the death: 2 a failed read, 1 a
   # mismatch.
   issue_publish_verified gh_line "$n" "$title" "$ready" \
     || issue_publish_verified gh_line "$n" "$title" "$ready" \
     || st=$?
-  [ "$st" -ne 2 ] || die "gh could not read issue #$n: ${gh_line:-gh gave no reason}"
+  [ "$st" -ne 2 ] || die "gh could not read issue #$n: $(gh_reason "$gh_line")"
   [ "$st" -eq 0 ] \
     || die "issue #$n's title and '$ready' label did not verify - checked twice, both failed"
   note "$n"
@@ -3260,7 +3291,7 @@ cmd_issue_triage() {
   ready="$(triage_label_for ready-for-agent)"
 
   issue_state_labels_read "$issue" state labels gh_line \
-    || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+    || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
   [ "$state" = OPEN ] \
     || die "issue #$issue is not open - only an open issue is triaged to '$ready'"
   # One walk over the triage roles the issue carries: whether ready-for-agent
@@ -3301,23 +3332,23 @@ cmd_issue_triage() {
   fi
   for label in ${removed[@]+"${removed[@]}"}; do remove_opts+=(--remove "$label"); done
 
-  adapter_issue_relabel "$issue" --add "$ready" ${remove_opts[@]+"${remove_opts[@]}"} \
-    || die "gh could not relabel issue #$issue"
+  local st=0 err
+  capture_err err adapter_issue_relabel "$issue" --add "$ready" ${remove_opts[@]+"${remove_opts[@]}"} \
+    || die "gh could not relabel issue #$issue: $(gh_reason "$err")"
   # The second attempt's status decides the death: 2 a failed read, 1 a
   # mismatch. Either way the relabel stands and no comment is posted.
-  local st=0
   issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
     || issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
     || st=$?
-  [ "$st" -ne 2 ] || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+  [ "$st" -ne 2 ] || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
   [ "$st" -eq 0 ] \
     || die "issue #$issue's '$ready' label did not verify - checked twice, both failed"
 
   local tmp
   tmp="$(mktemp)"
   printf 'An orchestrator planning session triaged this issue to `%s`.\n' "$ready" >"$tmp"
-  adapter_issue_comment "$issue" "$tmp" \
-    || warn "warning: issue #$issue is labelled $ready, but gh could not post the triage comment on it"
+  capture_err err adapter_issue_comment "$issue" "$tmp" \
+    || warn "warning: issue #$issue is labelled $ready, but gh could not post the triage comment on it: $(gh_reason "$err")"
   rm -f "$tmp"
 }
 
@@ -3329,7 +3360,7 @@ cmd_issue_triage() {
 # implementation's, not a draft, recording nothing) share it rather
 # than each hand-rolling the push/issue-line/gh-pr-create idiom.
 open_pr() {
-  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr keyword=Closes draft_opt=()
+  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr err keyword=Closes draft_opt=()
   git push -q -u origin "$branch"
   # GitHub only acts on a closing keyword when the PR merges into the default
   # branch, so a PR into any other base branch refers to its issue instead of
@@ -3338,9 +3369,9 @@ open_pr() {
   tmp="$(mktemp)"
   { printf '%s #%s\n\n' "$keyword" "$issue"; cat "$body_file"; } >"$tmp"
   [ "$draft" != true ] || draft_opt=(--draft)
-  if ! pr="$(adapter_pr_create "$base" "$branch" "$title" "$tmp" ${draft_opt[@]+"${draft_opt[@]}"})"; then
+  if ! capture pr err adapter_pr_create "$base" "$branch" "$title" "$tmp" ${draft_opt[@]+"${draft_opt[@]}"}; then
     rm -f "$tmp"
-    die "gh could not open the PR for branch $branch (issue #$issue)"
+    die "gh could not open the PR for branch $branch (issue #$issue): $(gh_reason "$err")"
   fi
   rm -f "$tmp"
   printf '%s\n' "$pr"
@@ -3391,9 +3422,9 @@ cmd_pr_release() {
   default="$(default_branch)"
   [ "$base" != "$default" ] ||
     die "the base branch is the default branch ($default) - there is nothing to release; set another with base set"
-  local open
-  open="$(adapter_prs_open "$base" "$default")" ||
-    die "gh could not list the open PRs from $base into $default"
+  local open err
+  capture open err adapter_prs_open "$base" "$default" ||
+    die "gh could not list the open PRs from $base into $default: $(gh_reason "$err")"
   [ -z "$open" ] || die "a release PR from $base into $default is already open: #$(first_line "$open")"
   # Read from the merged PRs' bodies rather than GitHub's closing-issue links:
   # GitHub only links closing keywords on PRs into the default branch, and a
@@ -3401,16 +3432,16 @@ cmd_pr_release() {
   # any case and anywhere in the body - not every closing form GitHub knows,
   # so prose such as "a quick fix #12" is never mistaken for a reference.
   local bodies refs n state issues="" tmp pr
-  bodies="$(adapter_prs_merged_bodies "$base")" ||
-    die "gh could not list the PRs merged into $base"
+  capture bodies err adapter_prs_merged_bodies "$base" ||
+    die "gh could not list the PRs merged into $base: $(gh_reason "$err")"
   refs="$(printf '%s\n' "$bodies" |
     grep -ioE '(^|[^[:alnum:]_])(refs|closes|fixes|resolves):?[[:space:]]+#[0-9]+' |
     grep -oE '[0-9]+$' | sort -nu)" || true
   # gh issue view answers for a PR number too, so a reference to a PR reads
   # as PULL and is dropped - only still-open issues get a Closes line.
   for n in $refs; do
-    state="$(adapter_issue_state "$n")" ||
-      die "gh could not read the state of issue #$n"
+    capture state err adapter_issue_state "$n" ||
+      die "gh could not read the state of issue #$n: $(gh_reason "$err")"
     [ "$state" != OPEN ] || issues="$issues $n"
   done
   [ -n "$issues" ] || [ "$force" = true ] ||
@@ -3422,9 +3453,9 @@ cmd_pr_release() {
     cat "$body_file"
   } >"$tmp"
   # Not a draft: nothing after this would ever mark it ready.
-  if ! pr="$(adapter_pr_create "$default" "$base" "$title" "$tmp")"; then
+  if ! capture pr err adapter_pr_create "$default" "$base" "$title" "$tmp"; then
     rm -f "$tmp"
-    die "gh could not open the release PR from $base into $default"
+    die "gh could not open the release PR from $base into $default: $(gh_reason "$err")"
   fi
   rm -f "$tmp"
   note "$pr"
@@ -3441,11 +3472,11 @@ cmd_pr_release() {
 # exits 2, never 1.
 cmd_pr_comment() {
   [ $# -eq 1 ] || die2 "usage: orch.sh pr comment <file>"
-  local file="$1" pr
+  local file="$1" pr err
   [ -f "$file" ] || die2 "body file not found: $file"
   pr="$(current_open_pr)" || return $?
-  adapter_pr_comment "$pr" "$file" \
-    || die2 "gh could not comment on PR #$pr"
+  capture_err err adapter_pr_comment "$pr" "$file" \
+    || die2 "gh could not comment on PR #$pr: $(gh_reason "$err")"
   printf '%s\n' "$pr"
 }
 
@@ -3456,11 +3487,11 @@ cmd_pr_comment() {
 # so a caller in a subshell can tell "no PR" apart from an error and map each
 # to its own exit code.
 current_open_pr() {
-  local branch open
+  local branch open err
   branch="$(git symbolic-ref --quiet --short HEAD)" \
     || die2 "not on a branch (detached HEAD)"
-  open="$(adapter_prs_open "$branch")" \
-    || die2 "gh could not list the open PRs from $branch"
+  capture open err adapter_prs_open "$branch" \
+    || die2 "gh could not list the open PRs from $branch: $(gh_reason "$err")"
   [ -n "$open" ] || return 1
   first_line "$open"
 }
@@ -3500,18 +3531,18 @@ cmd_pr_comments() {
 # exactly that line is refused and the body left as it was.
 cmd_pr_update() {
   [ $# -eq 1 ] || die "usage: orch.sh pr update <file>"
-  local file="$1" pr current line
+  local file="$1" pr current line err
   [ -f "$file" ] || die "body file not found: $file"
   pr="$(required_open_pr)" || exit 1
-  current="$(adapter_pr_body "$pr")" \
-    || die "gh could not read the body of PR #$pr"
+  capture current err adapter_pr_body "$pr" \
+    || die "gh could not read the body of PR #$pr: $(gh_reason "$err")"
   line="$(printf '%s\n' "$current" | sed -n '1{s/\r$//;p;}')"
   printf '%s\n' "$line" | grep -qE '^(Closes|Refs) #[0-9]+$' \
     || die "PR #$pr's body does not open with a Closes/Refs #<issue> line, so there is no issue line to keep - refusing to replace it"
   [ "$(sed -n '1{s/\r$//;p;}' "$file")" = "$line" ] \
     || die "$file must open with PR #$pr's issue line, '$line' - refusing to replace the body"
-  adapter_pr_body_edit "$pr" "$file" \
-    || die "gh could not replace the body of PR #$pr"
+  capture_err err adapter_pr_body_edit "$pr" "$file" \
+    || die "gh could not replace the body of PR #$pr: $(gh_reason "$err")"
 }
 
 cmd_pr() {
@@ -3544,9 +3575,10 @@ cmd_pr() {
 # second argument (default die): a parent that is no plain number, refused
 # before asking GitHub, and a GitHub that cannot list them.
 ticket_sub_issues() {
-  local parent="$1" fail="${2:-die}" subs
+  local parent="$1" fail="${2:-die}" subs err
   case "$parent" in ''|*[!0-9]*) "$fail" "parent must be a plain issue number, got: $parent" ;; esac
-  subs="$(adapter_sub_issues "$parent")" || "$fail" "gh could not list sub-issues of #$parent"
+  capture subs err adapter_sub_issues "$parent" \
+    || "$fail" "gh could not list sub-issues of #$parent: $(gh_reason "$err")"
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
 }
 
@@ -3582,34 +3614,44 @@ issue_number_list() {
   printf '%s\n' $list | sort -un
 }
 
-# True only once both links read back exactly as published: the parent's
-# sub-issue listing contains the child, and the child's blocked-by listing
-# is the same set of numbers requested, in any order, both sides
-# de-duplicated. Read fresh every call, never cached - the caller retries
-# this on a mismatch, and a cached answer would just repeat the same wrong
-# verdict.
+# ticket_links_verified <line_var> <parent> <child> <want>: 0 only once both
+# links read back exactly as published: the parent's sub-issue listing
+# contains the child, and the child's blocked-by listing is the same set of
+# numbers requested, in any order, both sides de-duplicated. 1 on a mismatch;
+# 2 when either read fails, gh's first stderr line - empty when gh printed
+# none - written into <line_var>, so a failed read is never reported as a
+# mismatch (#843). Read fresh every call, never cached - the caller retries
+# this once on either status, and a cached answer would just repeat the same
+# verdict. Locals prefixed so no caller's variable name is shadowed.
 ticket_links_verified() {
-  local parent="$1" child="$2" want="$3" have_children have_blockers line linked=""
-  have_children="$(adapter_sub_issues "$parent")" || return 1
-  while IFS= read -r line; do
-    if [ "${line%%$'\t'*}" = "$child" ]; then linked=1; break; fi
-  done <<<"$have_children"
-  [ -n "$linked" ] || return 1
-  have_blockers="$(ticket_blockers "$child" return)" || return 1
-  [ "$have_blockers" = "$(printf '%s\n' "$want" | sort -un)" ]
+  local __tlv_out __tlv_blockers __tlv_err __tlv_line __tlv_linked=""
+  if ! capture __tlv_out __tlv_err adapter_sub_issues "$2"; then
+    printf -v "$1" '%s' "${__tlv_err%%$'\n'*}"
+    return 2
+  fi
+  while IFS= read -r __tlv_line; do
+    if [ "${__tlv_line%%$'\t'*}" = "$3" ]; then __tlv_linked=1; break; fi
+  done <<<"$__tlv_out"
+  [ -n "$__tlv_linked" ] || return 1
+  if ! capture __tlv_blockers __tlv_err adapter_blockers "$3"; then
+    printf -v "$1" '%s' "${__tlv_err%%$'\n'*}"
+    return 2
+  fi
+  if [ -n "$__tlv_blockers" ]; then __tlv_blockers="$(printf '%s\n' "$__tlv_blockers" | sort -un)"; fi
+  [ "$__tlv_blockers" = "$(printf '%s\n' "$4" | sort -un)" ]
 }
 
 # Publishes a child issue, links it to <parent> as a native sub-issue, adds a
 # native blocking edge for every --blocked-by argument, and applies this
 # repo's ready-for-agent label - then verifies every link it just wrote by
-# reading it back. One retry on a mismatch; a second failure dies naming the
+# reading it back. One retry on a mismatch or a failed read; a second failure dies naming the
 # ticket rather than falling back to a text-based `Blocked by:` convention,
 # since nothing downstream ever reads that fallback.
 cmd_ticket_publish() {
   local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
   [ $# -ge 3 ] || die "$usage"
   local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want="" b
-  local ready child
+  local ready child gh_line="" st=0 err
   shift 3
   # Every argument check runs here, before the first GitHub write. A second
   # --blocked-by is refused, never allowed to replace the first.
@@ -3633,21 +3675,26 @@ cmd_ticket_publish() {
   fi
 
   ready="$(triage_label_for ready-for-agent)"
-  child="$(adapter_issue_create "$title" "$body_file" "$ready")" \
-    || die "gh could not create the ticket"
+  capture child err adapter_issue_create "$title" "$body_file" "$ready" \
+    || die "gh could not create the ticket: $(gh_reason "$err")"
 
-  adapter_sub_issue_link "$parent" "$child" \
-    || die "gh could not link ticket #$child as a sub-issue of #$parent"
+  capture_err err adapter_sub_issue_link "$parent" "$child" \
+    || die "gh could not link ticket #$child as a sub-issue of #$parent: $(gh_reason "$err")"
 
   if [ -n "$want" ]; then
     while IFS= read -r b; do
-      adapter_blocker_add "$child" "$b" \
-        || die "gh could not add a blocking edge from ticket #$child on #$b"
+      capture_err err adapter_blocker_add "$child" "$b" \
+        || die "gh could not add a blocking edge from ticket #$child on #$b: $(gh_reason "$err")"
     done <<<"$want"
   fi
 
-  ticket_links_verified "$parent" "$child" "$want" \
-    || ticket_links_verified "$parent" "$child" "$want" \
+  # Either status gets the one retry, and the second attempt decides the
+  # death: a failed read dies with gh's reason, a mismatch as unverified.
+  ticket_links_verified gh_line "$parent" "$child" "$want" \
+    || ticket_links_verified gh_line "$parent" "$child" "$want" \
+    || st=$?
+  [ "$st" -ne 2 ] || die "gh could not read ticket #$child's links: $(gh_reason "$gh_line")"
+  [ "$st" -eq 0 ] \
     || die "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed"
 
   note "$child"
@@ -3677,9 +3724,9 @@ cmd_ticket_list() {
 
 cmd_ticket_close() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket close <n>"
-  local n="$1"
+  local n="$1" err
   case "$n" in ''|*[!0-9]*) die "not a plain issue number: $n" ;; esac
-  adapter_issue_close "$n" || die "gh could not close ticket #$n"
+  capture_err err adapter_issue_close "$n" || die "gh could not close ticket #$n: $(gh_reason "$err")"
 }
 
 # Reopens every sub-issue of <parent> that is currently closed, and only
@@ -3687,12 +3734,13 @@ cmd_ticket_close() {
 # implement phase, whose frontier query would otherwise find nothing.
 cmd_ticket_reset() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reset <parent>"
-  local subs line n state
+  local subs line n state err
   subs="$(ticket_sub_issues "$1")" || exit 1
   while IFS= read -r line; do
     tsv_split "$line" n state
     [ "$state" = CLOSED ] && [ -n "$n" ] || continue
-    adapter_issue_reopen "$n" || die "gh could not reopen ticket #$n"
+    capture_err err adapter_issue_reopen "$n" \
+      || die "gh could not reopen ticket #$n: $(gh_reason "$err")"
   done <<<"$subs"
 }
 
@@ -3700,9 +3748,10 @@ cmd_ticket_reset() {
 # not a sub-issue. Every gh failure is a real one (see adapter_issue_parent).
 cmd_ticket_parent() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket parent <n>"
-  local n="$1"
+  local n="$1" err
   case "$n" in ''|*[!0-9]*) die "not a plain issue number: $n" ;; esac
-  adapter_issue_parent "$n" || die "gh could not read issue #$n's parent"
+  capture_err err adapter_issue_parent "$n" \
+    || die "gh could not read issue #$n's parent: $(gh_reason "$err")"
 }
 
 # Whether <parent> already has a ticket breakdown, decided by structure
@@ -3717,14 +3766,14 @@ cmd_ticket_parent() {
 # a caller reading 1 as "no breakdown" would publish a second one.
 cmd_ticket_exists() {
   [ $# -eq 1 ] || die2 "usage: orch.sh ticket exists <parent>"
-  local parent="$1" subs body
+  local parent="$1" subs body err
   subs="$(ticket_sub_issues "$parent" die2)" || exit "$?"
   if [ -n "$subs" ]; then
     printf 'sub-issues\n'
     return 0
   fi
-  body="$(adapter_issue_body "$parent")" \
-    || die2 "gh could not read issue #$parent's body"
+  capture body err adapter_issue_body "$parent" \
+    || die2 "gh could not read issue #$parent's body: $(gh_reason "$err")"
   if printf '%s\n' "$body" | has_ticket_heading; then
     printf 'collapsed\n'
     return 0
@@ -3775,7 +3824,7 @@ strip_ticket_sections() {
 # and no section to cut, so a repeat writes nothing. Any GitHub failure dies.
 cmd_ticket_retire() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket retire <parent>"
-  local parent="$1" subs n state comments msg old_msg comment_file
+  local parent="$1" subs n state comments msg old_msg comment_file err
   subs="$(ticket_sub_issues "$parent")" || exit 1
   msg="This ticket was retired: its spec, #$parent, changed and will be broken down into tickets again."
   # The wording a retire posted before a spec review could retire too: a
@@ -3784,21 +3833,21 @@ cmd_ticket_retire() {
   while IFS=$'\t' read -r n state _; do
     [ -z "$n" ] && continue
     if [ "$state" = OPEN ]; then
-      adapter_issue_close "$n" --reason "not planned" --comment "$msg" \
-        || die "gh could not close ticket #$n"
+      capture_err err adapter_issue_close "$n" --reason "not planned" --comment "$msg" \
+        || die "gh could not close ticket #$n: $(gh_reason "$err")"
     else
-      comments="$(adapter_issue_comments "$n")" \
-        || die "gh could not read ticket #$n's comments"
+      capture comments err adapter_issue_comments "$n" \
+        || die "gh could not read ticket #$n's comments: $(gh_reason "$err")"
       if ! grep -qF -e "$msg" -e "$old_msg" <<<"$comments"; then
         comment_file="$(mktemp)"
         printf '%s\n' "$msg" >"$comment_file"
-        adapter_issue_comment "$n" "$comment_file" \
-          || { rm -f "$comment_file"; die "gh could not comment on ticket #$n"; }
+        capture_err err adapter_issue_comment "$n" "$comment_file" \
+          || { rm -f "$comment_file"; die "gh could not comment on ticket #$n: $(gh_reason "$err")"; }
         rm -f "$comment_file"
       fi
     fi
-    adapter_sub_issue_unlink "$parent" "$n" \
-      || die "gh could not unlink ticket #$n from #$parent"
+    capture_err err adapter_sub_issue_unlink "$parent" "$n" \
+      || die "gh could not unlink ticket #$n from #$parent: $(gh_reason "$err")"
   done <<<"$subs"
   # A body with no `## Ticket` line outside a code fence comes back
   # unchanged, so it is not written.
@@ -3812,13 +3861,15 @@ cmd_ticket_retire() {
 # so the bytes the filter keeps go back unchanged - the same round trip
 # `issue fetch` and `issue update` make. A body with no final newline gets
 # none back; a result byte-identical to the body is not written. A failed
-# read dies with <read-msg>, a failed write with <write-msg>.
+# read dies with <read-msg>, a failed write with <write-msg>, each followed by
+# gh's reason; capture_err takes the stderr while the body still streams to
+# its file, and neither death leaves a temp file.
 issue_body_rewrite() {
-  local n="$1" read_msg="$2" write_msg="$3" body result out
+  local n="$1" read_msg="$2" write_msg="$3" body result out err
   shift 3
   body="$(mktemp)"
-  adapter_issue_body "$n" >"$body" \
-    || { rm -f "$body"; die "$read_msg"; }
+  capture_err err adapter_issue_body "$n" >"$body" \
+    || { rm -f "$body"; die "$read_msg: $(gh_reason "$err")"; }
   result="$(mktemp)"
   "$@" <"$body" >"$result"
   # A filter command may end its last line with a newline; a body that had
@@ -3829,8 +3880,8 @@ issue_body_rewrite() {
   fi
   if cmp -s "$body" "$result"; then rm -f "$body" "$result"; return 0; fi
   rm -f "$body"
-  adapter_issue_body_edit "$n" "$result" \
-    || { rm -f "$result"; die "$write_msg"; }
+  capture_err err adapter_issue_body_edit "$n" "$result" \
+    || { rm -f "$result"; die "$write_msg: $(gh_reason "$err")"; }
   rm -f "$result"
 }
 
@@ -3840,15 +3891,16 @@ issue_body_rewrite() {
 # state is the issue noun's own read (#496); a pull request's number passes it
 # and is refused as no sub-issue.
 ticket_edge_preconditions() {
-  local n="$1" by="$2" state parent b bp
-  state="$(adapter_issue_state "$n")" \
-    || die "gh could not read ticket #$n"
+  local n="$1" by="$2" state parent b bp err
+  capture state err adapter_issue_state "$n" \
+    || die "gh could not read ticket #$n: $(gh_reason "$err")"
   [ "$state" != CLOSED ] || die "ticket #$n is closed - its blocking edges can no longer change anything"
-  parent="$(adapter_issue_parent "$n")" || die "gh could not read issue #$n's parent"
+  capture parent err adapter_issue_parent "$n" \
+    || die "gh could not read issue #$n's parent: $(gh_reason "$err")"
   [ -n "$parent" ] || die "#$n is not a sub-issue, so it is no ticket of a breakdown"
   while IFS= read -r b; do
-    bp="$(adapter_issue_parent "$b")" \
-      || die "gh could not read issue #$b's parent, a blocker of ticket #$n"
+    capture bp err adapter_issue_parent "$b" \
+      || die "gh could not read issue #$b's parent, a blocker of ticket #$n: $(gh_reason "$err")"
     [ "$bp" = "$parent" ] \
       || die "#$b is not a sub-issue of #$parent, ticket #$n's parent - edges never cross breakdowns"
   done <<<"$by"
@@ -3856,14 +3908,11 @@ ticket_edge_preconditions() {
 
 # Ticket <n>'s blocker numbers, read fresh from its native blocked-by
 # listing, one per line, sorted and de-duplicated: edges are a set. A gh
-# failure dies naming the ticket; with `return`, it returns 1 and prints
-# nothing, so a caller that retries (publish's verify, ADR-0011) can.
+# failure dies naming the ticket, with gh's reason.
 ticket_blockers() {
-  local have
-  if ! have="$(adapter_blockers "$1")"; then
-    [ "${2:-}" = return ] && return 1
-    die "gh could not read ticket #$1's blockers"
-  fi
+  local have err
+  capture have err adapter_blockers "$1" \
+    || die "gh could not read ticket #$1's blockers: $(gh_reason "$err")"
   if [ -n "$have" ]; then printf '%s\n' "$have" | sort -un; fi
 }
 
@@ -3939,7 +3988,7 @@ blockers_difference() {
 # the rest and wants the union; unblock skips edges already absent, removes
 # the rest and wants the difference. Either re-run is idempotent.
 ticket_edges_change() {
-  local verb="$1" usage n="" by="" have_by="" before want b present
+  local verb="$1" usage n="" by="" have_by="" before want b present err
   local skip_present edge_op edge_word want_fn
   case "$verb" in
     block)
@@ -3970,8 +4019,8 @@ ticket_edges_change() {
     present=""
     case $'\n'"$before"$'\n' in *$'\n'"$b"$'\n'*) present=1 ;; esac
     [ "$present" != "$skip_present" ] || continue
-    "$edge_op" "$n" "$b" \
-      || die "gh could not $edge_word a blocking edge from ticket #$n on #$b"
+    capture_err err "$edge_op" "$n" "$b" \
+      || die "gh could not $edge_word a blocking edge from ticket #$n on #$b: $(gh_reason "$err")"
   done <<<"$by"
   want="$("$want_fn" "$before" "$by")"
   ticket_edges_verify "$n" "$want"
@@ -4410,12 +4459,9 @@ cmd_side_checkout_remove() {
 # assigned to the caller's <var>. On failure it sets `verdict` to the call's
 # first error line and returns 2.
 github_read() {
-  local into="$1" got err gh_line
+  local into="$1" got err
   shift
-  if ! capture got err "$@"; then
-    gh_line="${err%%$'\n'*}"
-    verdict="could not read GitHub: ${gh_line:-gh gave no reason}"; return 2
-  fi
+  capture got err "$@" || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   printf -v "$into" '%s' "$got"
 }
 
@@ -4587,7 +4633,7 @@ retire_handoffs() {
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
-  local phase i b word slug issue branch pr redo_count new_n new_branch msg
+  local phase i b word slug issue branch pr redo_count new_n new_branch msg err
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
   i="$(state_get iteration)"
@@ -4637,7 +4683,7 @@ $(printf '%s\n' "$terminal" | tail -n +2)" ;;
   fi
 
   msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
-  adapter_pr_close "$pr" "$msg" || die "gh could not close PR #$pr"
+  capture_err err adapter_pr_close "$pr" "$msg" || die "gh could not close PR #$pr: $(gh_reason "$err")"
 
   # The prior implement phase closed every ticket it finished, so the redone
   # implement phase's frontier query (ticket next) would otherwise find
@@ -4678,10 +4724,11 @@ cmd_redo_spec() {
   esac
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
   if [ "$new_issue" -eq 1 ]; then
-    local issue msg
+    local issue msg err
     require_issue issue
     msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from orch-to-spec in this same flow.\n')"
-    adapter_issue_close "$issue" --comment "$msg" || die "gh could not close issue #$issue"
+    capture_err err adapter_issue_close "$issue" --comment "$msg" \
+      || die "gh could not close issue #$issue: $(gh_reason "$err")"
     state_write issue null
   else
     local kept
