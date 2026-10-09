@@ -131,31 +131,17 @@ dir_stamp() { date -u +%Y%m%d-%H%M%S; }
 # Several answers here are one line of prose followed by detail lines, and it is
 # always the first line that carries the verdict.
 first_line() { printf '%s\n' "${1%%$'\n'*}"; }
-# capture <out-var> <err-var> <command...>: runs the command, sets <out-var> to
-# its stdout (by command substitution, so trailing newlines go) and <err-var> to
-# its stderr byte for byte, and returns its status. The stderr goes through one
-# temp file capture owns. Call it in the current shell, never inside $(...):
-# it sets the caller's variables with printf -v. Its locals carry a _capture_
-# prefix, so they shadow no caller's variable, nested calls included.
-capture() {
-  local _capture_file _capture_out _capture_err _capture_st=0
-  _capture_file="$(mktemp)"
-  _capture_out="$("${@:3}" 2>"$_capture_file")" || _capture_st=$?
-  _capture_err="$(cat "$_capture_file"; printf x)"
-  rm -f "$_capture_file"
-  printf -v "$1" '%s' "$_capture_out"
-  printf -v "$2" '%s' "${_capture_err%x}"
-  return "$_capture_st"
-}
 # capture_err <err-var> <command...>: runs the command, sets <err-var> to its
-# stderr byte for byte, and returns its status. Unlike capture it leaves stdout
-# alone, to the caller's own redirect: a body streamed to a file through
+# stderr byte for byte, and returns its status. It leaves stdout alone, to the
+# caller's own redirect: a body streamed to a file through
 # `capture_err err adapter_issue_body "$n" >"$body"` keeps its trailing
-# newlines, which capture's command substitution would strip. Same rules as
-# capture: current shell only, and _capture_err_-prefixed locals. The command
-# runs in a subshell, as capture's does: the gh guard's no-repo death then
-# signals the main shell, whose USR1 trap dies with the remedy on the real
-# stderr, rather than dying here with its message redirected into the capture.
+# newlines, which capture's command substitution would strip. The stderr goes
+# through one temp file capture_err owns. Call it in the current shell, never
+# inside $(...): it sets the caller's variable with printf -v. Its locals carry
+# a _capture_err_ prefix, so they shadow no caller's variable. The command runs
+# in a subshell: the gh guard's no-repo death then signals the main shell,
+# whose USR1 trap dies with the remedy on the real stderr, rather than dying
+# here with its message redirected into the capture.
 capture_err() {
   local _capture_err_file _capture_err_text _capture_err_st=0
   _capture_err_file="$(mktemp)"
@@ -164,6 +150,19 @@ capture_err() {
   rm -f "$_capture_err_file"
   printf -v "$1" '%s' "${_capture_err_text%x}"
   return "$_capture_err_st"
+}
+# capture <out-var> <err-var> <command...>: capture_err with the stdout taken
+# too - sets <out-var> to the command's stdout (read back by command
+# substitution, so trailing newlines go), <err-var> to its stderr byte for
+# byte, and returns its status. Same rules as capture_err: current shell only,
+# and _capture_-prefixed locals, nested calls included.
+capture() {
+  local _capture_file _capture_st=0
+  _capture_file="$(mktemp)"
+  capture_err "$2" "${@:3}" >"$_capture_file" || _capture_st=$?
+  printf -v "$1" '%s' "$(cat "$_capture_file")"
+  rm -f "$_capture_file"
+  return "$_capture_st"
 }
 # gh_reason <stderr>: the reason a failed gh call gives - the first line of
 # its captured stderr, or "gh gave no reason" when that line is empty, so a
@@ -2714,7 +2713,7 @@ finding_scan_one() {
 # <pr> <file>:<line> <result> <detail> <triage state>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]"
-  local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_line
+  local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_line err
   local args=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -2744,9 +2743,9 @@ cmd_finding_triage_scan() {
     nums="$issue"
   else
     for sev in $FILED_SEVERITIES; do
-      if $all; then capture out gh_line adapter_issues_labelled "review:$sev"
-      else capture out gh_line adapter_issues_labelled "review:$sev" "$triage"; fi \
-        || die "gh could not list the review:$sev findings: $(gh_reason "$gh_line")"
+      if $all; then capture out err adapter_issues_labelled "review:$sev"
+      else capture out err adapter_issues_labelled "review:$sev" "$triage"; fi \
+        || die "gh could not list the review:$sev findings: $(gh_reason "$err")"
       if [ "$(printf '%s\n' $out | grep -c .)" -ge "$ISSUE_LIST_LIMIT" ]; then
         warn "review:$sev findings reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this scan"
       fi
@@ -2791,7 +2790,7 @@ triage_comment_post() {
 cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
-  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels role label stale_category gh_line
+  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels role label stale_category gh_line err
   # The relabel's --remove options, possibly none: close-fixed, where they are
   # the whole relabel, then makes no edit at all.
   local remove_opts=()
@@ -2832,27 +2831,27 @@ cmd_finding_triage_apply() {
     if labels_have "$labels" "$label"; then remove_opts+=(--remove "$label"); fi
   done
 
-  capture_err gh_line triage_comment_post "$issue" "$file" \
-    || die "gh could not comment on issue #$issue: $(gh_reason "$gh_line")"
+  capture_err err triage_comment_post "$issue" "$file" \
+    || die "gh could not comment on issue #$issue: $(gh_reason "$err")"
 
   case "$outcome" in
     close-fixed)
-      capture_err gh_line adapter_issue_relabel "$issue" ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue: $(gh_reason "$gh_line")"
-      capture_err gh_line adapter_issue_close "$issue" --reason completed \
-        || die "gh could not close issue #$issue: $(gh_reason "$gh_line")" ;;
+      capture_err err adapter_issue_relabel "$issue" ${remove_opts[@]+"${remove_opts[@]}"} \
+        || die "gh could not relabel issue #$issue: $(gh_reason "$err")"
+      capture_err err adapter_issue_close "$issue" --reason completed \
+        || die "gh could not close issue #$issue: $(gh_reason "$err")" ;;
     wontfix)
-      capture_err gh_line adapter_issue_relabel "$issue" --add "$(triage_label_for wontfix)" \
+      capture_err err adapter_issue_relabel "$issue" --add "$(triage_label_for wontfix)" \
         ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue: $(gh_reason "$gh_line")"
-      capture_err gh_line adapter_issue_close "$issue" --reason "not planned" \
-        || die "gh could not close issue #$issue: $(gh_reason "$gh_line")" ;;
+        || die "gh could not relabel issue #$issue: $(gh_reason "$err")"
+      capture_err err adapter_issue_close "$issue" --reason "not planned" \
+        || die "gh could not close issue #$issue: $(gh_reason "$err")" ;;
     *)
       category_label_ensure "$category"
       if labels_have "$labels" "$stale_category"; then remove_opts+=(--remove "$stale_category"); fi
-      capture_err gh_line adapter_issue_relabel "$issue" --add "$(triage_label_for "$outcome")" --add "$category" \
+      capture_err err adapter_issue_relabel "$issue" --add "$(triage_label_for "$outcome")" --add "$category" \
         ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue: $(gh_reason "$gh_line")" ;;
+        || die "gh could not relabel issue #$issue: $(gh_reason "$err")" ;;
   esac
 }
 
@@ -2902,7 +2901,7 @@ bundle_member_check() {
 cmd_finding_triage_bundle() {
   local usage="usage: orch.sh finding-triage bundle --title <t> --body-file <f> --state <ready-for-agent|ready-for-human> --category <bug|enhancement> <member>...
        orch.sh finding-triage bundle --into <B> <member>..."
-  local title="" file="" state="" category="" into="" have_title=false m labels human_label b b_line
+  local title="" file="" state="" category="" into="" have_title=false m labels human_label b err
   local members=() seen=" "
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -2921,7 +2920,7 @@ cmd_finding_triage_bundle() {
   if [ -n "$into" ]; then
     case "$into" in *[!0-9]*) die "$usage" ;; esac
     ! $have_title && [ -z "$file$state$category" ] || die "$usage"
-    local b_state b_labels
+    local b_state b_labels b_line
     issue_state_labels_read "$into" b_state b_labels b_line \
       || die "gh could not read issue #$into: $(gh_reason "$b_line")"
     [ "$b_state" = OPEN ] || die "bundle #$into is not open - --into resumes an open bundle only"
@@ -2957,8 +2956,8 @@ cmd_finding_triage_bundle() {
   # label then fails the issue create.
   adapter_label_create "$BUNDLE_LABEL" c5def5 "Several filed findings worked as one" 2>/dev/null || true
   category_label_ensure "$category"
-  capture b b_line adapter_issue_create "$title" "$file" "$BUNDLE_LABEL" "$(triage_label_for "$state")" "$category" \
-    || die "gh could not create the bundle issue: $(gh_reason "$b_line") - no member was touched"
+  capture b err adapter_issue_create "$title" "$file" "$BUNDLE_LABEL" "$(triage_label_for "$state")" "$category" \
+    || die "gh could not create the bundle issue: $(gh_reason "$err") - no member was touched"
   printf '%s\n' "$b"
   bundle_members_close "$b" "${members[@]}"
 }
@@ -3625,7 +3624,7 @@ issue_number_list() {
 # this once on either status, and a cached answer would just repeat the same
 # verdict. Locals prefixed so no caller's variable name is shadowed.
 ticket_links_verified() {
-  local __tlv_out __tlv_err __tlv_line __tlv_linked=""
+  local __tlv_out __tlv_blockers __tlv_err __tlv_line __tlv_linked=""
   if ! capture __tlv_out __tlv_err adapter_sub_issues "$2"; then
     printf -v "$1" '%s' "${__tlv_err%%$'\n'*}"
     return 2
@@ -3634,12 +3633,12 @@ ticket_links_verified() {
     if [ "${__tlv_line%%$'\t'*}" = "$3" ]; then __tlv_linked=1; break; fi
   done <<<"$__tlv_out"
   [ -n "$__tlv_linked" ] || return 1
-  if ! capture __tlv_out __tlv_err adapter_blockers "$3"; then
+  if ! capture __tlv_blockers __tlv_err adapter_blockers "$3"; then
     printf -v "$1" '%s' "${__tlv_err%%$'\n'*}"
     return 2
   fi
-  if [ -n "$__tlv_out" ]; then __tlv_out="$(printf '%s\n' "$__tlv_out" | sort -un)"; fi
-  [ "$__tlv_out" = "$(printf '%s\n' "$4" | sort -un)" ]
+  if [ -n "$__tlv_blockers" ]; then __tlv_blockers="$(printf '%s\n' "$__tlv_blockers" | sort -un)"; fi
+  [ "$__tlv_blockers" = "$(printf '%s\n' "$4" | sort -un)" ]
 }
 
 # Publishes a child issue, links it to <parent> as a native sub-issue, adds a

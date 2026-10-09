@@ -729,23 +729,22 @@ fake_labels() { sort "$ORCH_GH_FAKE_STORE/labels" 2>/dev/null || true; }
 
 # fake_fail <operation> [stderr]: every later call of the named adapter
 # operation fails, non-zero, with stderr (default "fake gh: <operation>
-# failed") as gh's own error.
+# failed") as gh's own error. An explicit empty stderr seeds a failure that
+# prints nothing.
 fake_fail() {
   mkdir -p "$ORCH_GH_FAKE_STORE/fail"
-  printf '%s\n' "${2:-fake gh: $1 failed}" >"$ORCH_GH_FAKE_STORE/fail/$1"
+  if [ -n "${2-x}" ]; then
+    printf '%s\n' "${2-fake gh: $1 failed}" >"$ORCH_GH_FAKE_STORE/fail/$1"
+  else
+    : >"$ORCH_GH_FAKE_STORE/fail/$1"
+  fi
 }
 
 # fake_fail_after <operation> <n> [stderr]: fake_fail, but the next n calls of
-# the operation still succeed - a run of writes that dies part-way. An omitted
-# stderr keeps fake_fail's message; an explicit empty one seeds a failure that
-# prints nothing, as fake_fail_times does.
+# the operation still succeed - a run of writes that dies part-way. The stderr
+# passes through to fake_fail as given, omitted or empty.
 fake_fail_after() {
-  if [ $# -ge 3 ] && [ -z "$3" ]; then
-    mkdir -p "$ORCH_GH_FAKE_STORE/fail"
-    : >"$ORCH_GH_FAKE_STORE/fail/$1"
-  else
-    fake_fail "$1" "${3:-}"
-  fi
+  fake_fail "$1" "${@:3}"
   printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.after"
 }
 
