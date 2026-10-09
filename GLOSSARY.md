@@ -72,8 +72,9 @@ breakdown so the redone spec is broken down again.
 **Adopted issue**:
 An issue given to a flow at init, instead of one the spec phase publishes.
 Checked once, at init, for existing, open, and carrying the `ready-for-agent`
-triage label; the spec phase then skips writing a spec entirely and runs the
-spec review straight against it.
+triage label; the spec phase then rewrites its body from the plan when the
+human chooses, by `orch-to-spec`'s rewrite mode, and runs the spec review
+against it.
 _Avoid_: existing issue, pre-existing issue, given issue.
 
 **Interviewed issue**:
@@ -161,7 +162,7 @@ its spec review retired the blueprint's breakdown and broke the issue down
 again.
 
 **Blueprint**:
-Everything a change needs before implementation, carried no further: its spec issue - published new, or the interviewed issue rewritten, its earlier breakdown retired and broken down again if the human chooses - reviewed if the human chose to, and its ticket breakdown. Chosen once, by a human, at the close of a planning session, as the alternative to starting a flow or a quick implementation. A flow later adopts it, or a quick implementation links it; either way its ticket breakdown is already published and is not run again, unless a spec review changes the spec and retires that breakdown - by the human's choice, or by its own recommendation in an unattended spec review.
+Everything a change needs before implementation, carried no further: its spec issue - published new, or the interviewed issue rewritten, its earlier breakdown retired and broken down again if the human chooses - reviewed if the human chose to, and its ticket breakdown. Chosen once, by a human, at the close of a planning session, as the alternative to starting a flow or a quick implementation. A flow later adopts it, or a quick implementation links it; either way its ticket breakdown is already published and is not run again, unless a spec review changes the spec and retires that breakdown - by the human's choice, or by its own recommendation in an unattended spec review - or the human has a flow's spec phase rewrite it from the plan and retire that breakdown.
 _Avoid_: planning-only, parked spec, banked spec.
 
 **Blocking edge**:
