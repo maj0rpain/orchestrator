@@ -73,8 +73,13 @@ exactly two lines, when your ticket branch conflicted as it was merged:
 
 ```
 Rebase onto: <parent branch>
-Resolve: per the Resolving section of <path>/agents/orch-resolver.md
+Resolve: per the Resolving section of agents/orch-resolver.md
 ```
+
+This section is the one statement of that message: the driver sends it as
+written here, with `<parent branch>` filled in. `agents/orch-resolver.md` is
+under the plugin root: two directories above the `orch.sh` your prompt
+named.
 
 That message is not a new ticket: build nothing. In your ticket worktree,
 start `git rebase <parent branch>` yourself, then follow that file's

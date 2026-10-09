@@ -312,11 +312,9 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      over the whole branch once the frontier was exhausted, not any ticket's
      - in the shape the `orch-handoff` template gives. A `fail` stays here,
      never under **Deviations**: a failing verification is not a deviation.
-   - **Merge resolutions**: step 4's, as **A driver's base sync** gives
-     them - the resolver's `Files`, `Dropped` and `Verification` lines -
-     and one bullet per ticket conflict loop step e resolved, naming the
-     ticket and holding its report's same three lines. "None" when the
-     sync merged cleanly and no ticket conflict was resolved.
+   - **Merge resolutions**: step 4's base sync's and loop step e's ticket
+     resolutions, per **Merge resolutions** in `agents/orch-resolver.md`
+     (under the plugin root).
    - **Base SHA**: `bash "$ORCH" state get base_sha`, read after step 4's
      sync moved it.
    Then validate it: `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path review)"`,

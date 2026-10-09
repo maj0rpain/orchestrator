@@ -59,10 +59,9 @@ issue, it is the issue the human gives: ask for one and wait.
 ## 2. Record the Merge resolutions
 
 Write one comment to a temporary file outside the repo (`mktemp`): a
-**Merge resolutions** heading, then the resolver's `Files`, `Dropped` and
-`Verification` lines as it returned them - each conflicted file, and each
-intent dropped with the side that meant it and why. Post it with
-`bash "$ORCH" pr comment <file>`:
+**Merge resolutions** heading, then the sync's **Merge resolutions**, per
+**Merge resolutions** in `agents/orch-resolver.md` (under the plugin root).
+Post it with `bash "$ORCH" pr comment <file>`:
 
 - **Exit 0**: posted. Tell the human the PR number it printed.
 - **Exit 1**: the branch has no open PR. Put the **Merge resolutions** in

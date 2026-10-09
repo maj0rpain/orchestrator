@@ -67,8 +67,8 @@ of how a driver runs a base sync and judges the resolver it starts for one.
 failed sync stops and where its **Merge resolutions** go.
 
 1. **Sync.** Run `bash "$ORCH" branch sync` on the branch the change is on.
-   - **Exit 0**: synced, or nothing to merge. The **Merge resolutions** read
-     `None`; the sync is done.
+   - **Exit 0**: synced, or nothing to merge. Nothing was resolved; the
+     sync is done.
    - **Exit 1**: a refusal - a dirty tree, a failed fetch, a detached HEAD,
      a merge already in progress, a branch that is its own base, a branch
      the plugin did not make, or a failed push. A **failed sync**:
@@ -87,17 +87,12 @@ failed sync stops and where its **Merge resolutions** go.
    `<issue>` is the issue the caller names, its suffix added or left off
    as **Spec issue** above says.
 
-   The resolution **failed** when its report is not the four lines of
-   **Report** below, its `Result` line is not `resolved`, or a merge is still
-   in progress (`git rev-parse -q --verify MERGE_HEAD` succeeds). A failed
-   resolution is a **failed sync**: go to step 4.
-3. **Finish.** Rerun `bash "$ORCH" branch sync`. Exit 0 finishes the sync:
-   it records the base SHA and pushes when the branch has an upstream. The
-   **Merge resolutions** are the resolver's `Files`, `Dropped` and
-   `Verification` lines, as it returned them. A `Verification` line reading
-   `fail` is carried forward - recorded, never stopped on - for the review to
-   judge, as loop step f's combined verification is. Any other exit is a
+   If the resolution **failed**, as **Report** below defines it, that is a
    **failed sync**: go to step 4.
+3. **Finish.** Rerun `bash "$ORCH" branch sync`. Exit 0 finishes the sync:
+   it records the base SHA and pushes when the branch has an upstream.
+   Record the resolver's report per **Merge resolutions** below. Any other
+   exit is a **failed sync**: go to step 4.
 4. **A failed sync** stops the driver, as a phase that cannot finish does:
    name the failure - the refusal's message, or the resolver's report - and
    leave any merge in progress for the human to finish and rerun `orch.sh
@@ -116,12 +111,9 @@ checked out in the driver's checkout.
 
 1. **Resume the ticket's implementer.** Resume ticket `<n>`'s own
    `orch-implementer`, with its context intact - on Claude Code,
-   `SendMessage` to the finished agent - with exactly these two lines:
-
-   ```
-   Rebase onto: <parent branch>
-   Resolve: per the Resolving section of <plugin root>/agents/orch-resolver.md
-   ```
+   `SendMessage` to the finished agent - with exactly the two-line message
+   that **Resumed to resolve a conflict** in `agents/orch-implementer.md`,
+   beside this file, gives, its `<parent branch>` filled in.
 
    It starts the rebase in its ticket worktree itself, resolves, verifies
    and commits, and returns the four lines of **Report** below.
@@ -138,27 +130,40 @@ checked out in the driver's checkout.
    ```
 
    It starts the rebase itself.
-3. **Merge again.** First check the resolution: if any of step 4's failure
-   conditions holds - the report is malformed or not `resolved`, or the
-   ticket worktree is left mid-rebase or dirty - the resolution failed: go
-   to step 4 without merging. Otherwise rerun `bash "$ORCH" ticket merge
-   <n>`. On exit 0,
-   proceed as loop step d does: close the ticket, remove its worktree, and
-   refill. The ticket's **Merge resolutions** are the report's `Files`,
-   `Dropped` and `Verification` lines, under the ticket's number. A
-   `Verification` line reading `fail` is carried forward - recorded, never
-   stopped on - as loop step f's combined verification is. Exit 1 is loop
-   step d's exit 1.
-4. **A failed resolution** - its report is not the four lines of **Report**
-   below or its `Result` line is not `resolved`, it leaves the ticket
-   worktree mid-rebase (a `rebase-merge` or `rebase-apply` directory under
-   `git -C <worktree> rev-parse --absolute-git-dir`) or dirty (`git -C
-   <worktree> status --porcelain` prints anything), or step 3's `ticket
-   merge` exits 3 again - falls back to rebuilding the ticket alone: `bash
-   "$ORCH" ticket-worktree remove <n> --unmerged`, which aborts any rebase
-   left in progress first and removes nothing with force, and queue the
-   ticket to run alone. A failed resolution records no **Merge
-   resolutions**: the rebuild carries the ticket.
+3. **Merge again.** First check the resolution: if it failed, as **Report**
+   below defines it, go to step 4 without merging. Otherwise rerun
+   `bash "$ORCH" ticket merge <n>`. On exit 0, proceed as loop step d
+   does: close the ticket, remove its worktree, and refill. Record the
+   report per **Merge resolutions** below, under the ticket's number.
+   Exit 1 is loop step d's exit 1.
+4. **A failed resolution** - one that failed as **Report** below defines
+   it, or one whose step 3 `ticket merge` exits 3 again - falls back to
+   rebuilding the ticket alone: `bash "$ORCH" ticket-worktree remove <n>
+   --unmerged`, which aborts any rebase left in progress first and removes
+   nothing with force, and queue the ticket to run alone.
+
+## Merge resolutions
+
+This section is for the driver session too: the one statement of what a
+driver records of its base sync and ticket resolutions, under a **Merge
+resolutions** heading. Each caller says only where the record goes.
+
+- A base sync resolved by a resolver gives the resolver's `Files`,
+  `Dropped` and `Verification` lines, as it returned them.
+- Each resolved ticket conflict adds one bullet naming the ticket and
+  holding its report's same three lines.
+- With neither - the base sync exited 0 on its first `branch sync`, and no
+  ticket conflict was resolved - the record is `None`.
+- A `Verification` line reading `fail` is recorded and carried forward,
+  never stopped on, for the review to judge, as loop step f's combined
+  verification is.
+- A failed resolution adds no resolution to the record. A failed sync
+  stops the driver (**A driver's base sync** step 4), and a caller that
+  still writes a record then says what it holds there, as `orch-review`'s
+  failed-sync record does. A failed ticket resolution adds no bullet - its
+  rebuild carries the ticket (**A driver's ticket resolution** step 4) -
+  and the record keeps the base sync's lines and every other resolved
+  ticket's bullet.
 
 ## Steps
 
@@ -239,6 +244,19 @@ Verification: <command> pass|fail
 - `Verification`: the checks command you ran and its result after your
   fixes.
 
-The driver judges the resolution by this report and the checkout alone. A
-report not in this shape, or a merge or rebase still in progress after you
-return, is a failed resolution.
+The driver judges a resolution - the resolver's, or a resumed
+implementer's - by this report and the checkout or ticket worktree it
+resolved in alone. The resolution **failed** when any of these
+holds:
+
+- the report is not these four lines, or its `Result` line is not
+  `resolved`;
+- a merge is still in progress there (`git -C <checkout> rev-parse -q
+  --verify MERGE_HEAD` succeeds), or a rebase is (a `rebase-merge` or
+  `rebase-apply` directory under `git -C <checkout> rev-parse
+  --absolute-git-dir`);
+- the tree is dirty (`git -C <checkout> status --porcelain` prints
+  anything).
+
+**A driver's base sync** and **A driver's ticket resolution** both judge a
+resolution by this test.

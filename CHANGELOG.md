@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.2.3
+
+The resolver's contract is stated once, in `agents/orch-resolver.md`, and
+every caller points to it (#854). A new **Merge resolutions** section defines
+what a driver records of its base sync and ticket resolutions; the flow's
+handoff, the quick implementation's PR body, the sync's PR comment, the review
+record and the fixer's prompt now only say where the record goes. **Report**
+defines a failed resolution once, and both driver sections judge by it. The
+ticket-resolution resume message lives only in `agents/orch-implementer.md`,
+with no plugin-root placeholder.
+
 ## 4.2.2
 
 `orch.sh doctor` builds the plugin root it reports from out of orch.sh's
