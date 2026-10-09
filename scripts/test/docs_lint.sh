@@ -715,6 +715,49 @@ spares "the scan accepts a bare skill name and the generic scoped form" "$out" '
 check "no skill or agent names a skill by its Claude-scoped name" \
   "$(scan_claude_scoped_names "$PLUGIN_ROOT")"
 
+# scan_ask_tool_names <plugin root>: one line per sentence of a skill or agent
+# that names Claude Code's ask tool without Junie's. A sentence that copies one
+# host's tool from docs/host-capabilities.md's "Ask a multiple-choice question"
+# row copies the other host's tool too (ADR-0027). Each file is read as one
+# line and split into sentences at ". ", so a name wrapped across lines still
+# counts; docs/ is not scanned, since parts of it are Claude-only on purpose.
+scan_ask_tool_names() {
+  local r="$1" f
+  for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
+    [ -f "$f" ] || continue
+    flat_text "$f" | awk -v file="${f#"$r"/}" '{
+      n = split($0, s, /\. /)
+      for (i = 1; i <= n; i++)
+        if (index(s[i], "AskUserQuestion") && !index(s[i], "ask_user"))
+          print file ": names AskUserQuestion without ask_user"
+    }'
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-a" "$fixture/skills/orch-b" "$fixture/skills/orch-c" \
+  "$fixture/skills/orch-d" "$fixture/agents"
+printf 'Ask the human with the `AskUserQuestion` tool. Then carry on.\n' \
+  >"$fixture/skills/orch-a/SKILL.md"
+printf 'Ask one question\n(`AskUserQuestion` on both Claude Code and Junie). Ask once.\n' \
+  >"$fixture/skills/orch-b/SKILL.md"
+printf 'Ask with `AskUserQuestion`. Junie has `ask_user`.\n' >"$fixture/skills/orch-c/SKILL.md"
+printf 'Ask with the host'"'"'s ask tool (`AskUserQuestion` on Claude Code,\n`ask_user` on Junie). Then carry on.\n' \
+  >"$fixture/skills/orch-d/SKILL.md"
+printf 'Ask the human with `AskUserQuestion`.\n' >"$fixture/agents/orch-z.md"
+out="$(scan_ask_tool_names "$fixture")"
+flags "the scan flags a skill sentence naming AskUserQuestion alone" \
+  "$out" "skills/orch-a/SKILL.md: names AskUserQuestion without ask_user"
+flags "the scan flags AskUserQuestion said to exist on both hosts" \
+  "$out" "skills/orch-b/SKILL.md: names AskUserQuestion without ask_user"
+flags "the scan flags ask_user only in the next sentence" \
+  "$out" "skills/orch-c/SKILL.md: names AskUserQuestion without ask_user"
+flags "the scan flags an agent sentence naming AskUserQuestion alone" \
+  "$out" "agents/orch-z.md: names AskUserQuestion without ask_user"
+spares "the scan accepts both hosts' ask tools wrapped across lines" "$out" '^skills/orch-d/'
+check "every skill or agent sentence naming AskUserQuestion also names ask_user" \
+  "$(scan_ask_tool_names "$PLUGIN_ROOT")"
+
 # scan_offered_commands <plugin root>: each plugin command a skill or agent
 # offers that has no commands/<cmd>.md. That file is the route
 # scan_command_routes checks reaches a skill section.

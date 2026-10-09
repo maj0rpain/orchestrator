@@ -125,7 +125,9 @@ path through a `<plugin root>/` placeholder.
 
 Skills and the agent briefs under `agents/` describe capabilities ("invoke a
 skill", "start a fresh subagent", "ask a multiple-choice question"), may name
-the Claude Code tool inline as an example, and point at
+the Claude Code tool inline as an example, alongside the Junie tool for the
+same capability; `docs_lint.sh` fails when a skill or agent names
+`AskUserQuestion` in a sentence that does not also name `ask_user`. They point at
 [docs/host-capabilities.md](docs/host-capabilities.md), which maps each
 capability to each host and documents the fallback where a host lacks one. A
 phase records every fallback it took in its handoff's **Host fallbacks**

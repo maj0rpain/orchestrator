@@ -88,7 +88,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    finding in the last of them still stands: it goes into this loop's first
    triage.
 5. Ask the budget. **The question blocks** - ask it as a question
-   (`AskUserQuestion` on both Claude Code and Junie). Ask once, before the
+   with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
+   on Junie). Ask once, before the
    first iteration, and never again mid-loop:
    - First loop: "How many review iterations?" Default 5. Any integer ≥ 1;
      there is no upper cap.
