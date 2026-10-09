@@ -1,17 +1,20 @@
 ---
 name: orch-finding-triage
-description: Triage the review loop's filed findings - the open review:<severity> issues still labelled needs-triage - against the current default branch, putting one numbered batch of proposed outcomes per source PR to the human (close as completed when already fixed, ready-for-agent, ready-for-human, or wontfix, each with its bug/enhancement category kept or flipped), and applying the answered batch. Use when the human asks to triage filed findings or review:* issues, or runs /orchestrator:finding-triage [<issue> | --pr <n>]. Not for any other issue - upstream triage keeps those.
+description: Triage the review loop's filed findings - the open review:<severity> issues still labelled needs-triage, or with --all (a re-check) every open one whatever its triage label - against the current default branch, putting one numbered batch of proposed outcomes per source PR to the human (close as completed when already fixed, ready-for-agent, ready-for-human, or wontfix, each with its bug/enhancement category kept or flipped; an already-triaged finding in a re-check is proposed only close as completed or leave as is), and applying the answered batch. Use when the human asks to triage or re-check filed findings or review:* issues, or runs /orchestrator:finding-triage [--all] [<issue> | --pr <n>]. Not for any other issue - upstream triage keeps those.
 ---
 
 # Orchestrator finding triage
 
 **Finding triage** (see `GLOSSARY.md`) checks open **filed findings** against
-the current default branch and moves each out of `needs-triage`: closed as
-completed when the code it names has since been fixed, otherwise to
-`ready-for-agent`, `ready-for-human`, or `wontfix`. It takes only the issues
-the closer files - those labelled `review:<severity>` and `needs-triage` - and
-nothing else; upstream `triage` keeps every other issue. Why the plugin owns
-this step is recorded in
+the current default branch and settles each: closed as completed when the code
+it names has since been fixed, otherwise to `ready-for-agent`,
+`ready-for-human`, or `wontfix`. It takes only the issues the closer files -
+those labelled `review:<severity>` and `needs-triage` - and nothing else;
+upstream `triage` keeps every other issue. A **re-check** (`--all`, see
+`GLOSSARY.md`) also takes the open `review:<severity>` issues already out of
+`needs-triage`: each is closed as completed when it no longer holds, and
+otherwise left as labelled unless the human names another outcome. Why the
+plugin owns this step is recorded in
 `docs/adr/0031-the-plugin-triages-its-own-filed-findings.md`.
 
 What this skill never does:
@@ -59,17 +62,24 @@ maps it to each host.
 
 The caller's arguments narrow the scan: nothing (every open filed finding
 still in `needs-triage`), one issue number, or `--pr <n>` (the findings filed
-from PR `<n>`). Run, with that narrowing:
+from PR `<n>`). A leading `--all` makes the triage a **re-check**: it drops
+the `needs-triage` filter, so the scan takes every open filed finding whatever
+its triage label - all of them, PR `<n>`'s, or the one issue, which then need
+not be in `needs-triage`. Without `--all`, a named issue must still be in
+`needs-triage`. Run, with that mode and narrowing:
 
 ```
-bash "$ORCH" finding-triage scan [<issue> | --pr <n>]
+bash "$ORCH" finding-triage scan [--all] [<issue> | --pr <n>]
 ```
 
 It fetches `origin/<default>` and prints one tab-separated line per finding:
 
 ```
-<issue>	<pr>	<file>:<line>	<result>	<detail>
+<issue>	<pr>	<file>:<line>	<result>	<detail>	<state>
 ```
+
+No field is ever empty: an empty `<pr>` or `<detail>` prints `-`.
+`<result>` and `<detail>` are:
 
 - `unchanged` - the finding's lines have no change since the filed SHA, even
   if the file changed elsewhere. That says nothing about the rest of the
@@ -81,6 +91,12 @@ It fetches `origin/<default>` and prints one tab-separated line per finding:
 - `unknown` - `<detail>` says why: an unreachable SHA, a body that does not
   parse, or a file that differs only by commits that never reached the
   default branch.
+
+`<state>` is the finding's current triage state: every triage-role label the
+issue carries - `needs-triage`, `needs-info`, `ready-for-agent`,
+`ready-for-human`, `wontfix`, each by the repo's label for the role -
+comma-joined in that order, or `-` when it carries none. It decides a
+re-check's proposals in step 3.
 
 If it dies, relay its reason and stop. If it prints nothing, tell the human
 there is no filed finding to triage and stop.
@@ -138,8 +154,22 @@ with a one-line reason:
   options the filed body names.
 - **wontfix** - proposed only with a reason. The human can always choose it.
 
-Each still-open outcome also states its category, `bug` or `enhancement`:
-keep it, or flip it with a one-line reason - a Standards finding that is a
+**In a re-check** a batch may mix states. A finding whose `<state>` includes
+`needs-triage` gets the proposals above. Every other finding counts as
+already triaged - `needs-info`, `wontfix` on an open issue, and `-` (no
+triage label) included - and is proposed one of only two outcomes:
+
+- **Close as completed** - the finding no longer holds, named as above.
+- **Leave as is** - it still holds, or the read could not settle it. Its
+  state and category labels stay exactly as they are; name the reason in one
+  line.
+
+The human can still give an already-triaged finding any other outcome or
+category through the batch's **Other** answer below. Every finding is still
+read in full per step 2 (ADR-0039), whatever its state.
+
+Each still-open outcome other than Leave as is also states its category, `bug`
+or `enhancement`: keep it, or flip it with a one-line reason - a Standards finding that is a
 real defect becomes `bug`, a Spec finding that is a nice-to-have becomes
 `enhancement`. The category in place is the one the closer's rule sets from
 the body's `**Axis:**` line - `bug` for Spec, `enhancement` for Standards -
@@ -155,7 +185,10 @@ response:
 - **Other** - the exceptions by number, each with the outcome (and, for an
   open one, the category) it should take instead, e.g.
   `2 wontfix: out of scope; 4 ready-for-human`. Any finding not named takes
-  its proposal. The question text states this format.
+  its proposal. The question text states this format. In a re-check, an
+  already-triaged finding can be named with any outcome - `ready-for-agent`,
+  `ready-for-human` or `wontfix`, with a category - and one proposed for
+  closing can be named `leave as is`.
 
 Nothing is written before the answer. Presenting the batch is not the end of
 the step; the answer is. A wrong proposal costs nothing until then.
@@ -163,7 +196,8 @@ the step; the answer is. A wrong proposal costs nothing until then.
 ## 4. Apply the answered batch
 
 Once a batch is answered, apply each finding in it with one call, writing its
-comment to a temp file outside the repo first. `apply` prepends the
+comment to a temp file outside the repo first - except a finding left as is,
+which writes nothing: no `apply`, no comment, no label change. `apply` prepends the
 AI-generated disclaimer itself; do not write it.
 
 ```
@@ -182,11 +216,12 @@ The comment, by outcome:
   it could not settle. A flipped category gives its reason.
 - **wontfix**: gives the reason.
 
-If an `apply` dies, relay its reason, stop applying, and report what was and
-was not applied.
+If an `apply` dies, relay its reason, stop applying - in a re-check as in any
+other batch - and report what was and was not applied.
 
 ## 5. Report
 
 Per PR, list each finding's issue number and the outcome applied (with its
-category, for an open one), and any finding left untouched with why. Nothing
+category, for an open one), each finding left as is in a re-check, and any
+finding left untouched with why. Nothing
 else changed: no flow state, branch, or record file.

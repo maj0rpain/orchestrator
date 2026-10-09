@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.22.0
+
+Finding triage gains a re-check: `/orchestrator:finding-triage --all
+[<issue> | --pr <n>]` runs over `orch.sh finding-triage scan --all`, which
+takes every open filed finding whatever its triage label, and every scan line
+gains a sixth column, the finding's triage state. A finding already out of
+`needs-triage` is proposed only close as completed or leave as is, and leave
+as is writes nothing. `finding-triage apply` removes every other triage state
+label the issue carries, so a re-triaged or closed finding keeps no stale
+`ready-for-*` label (#858).
+
 ## 3.21.12
 
 Finding triage reads every filed finding, `unchanged` included: an

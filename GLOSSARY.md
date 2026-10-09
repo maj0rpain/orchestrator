@@ -457,13 +457,22 @@ Findings the loop demoted on a human's earlier decision are reported, never
 filed.
 
 **Finding triage**:
-Checking open filed findings against the current default branch and moving
-each out of `needs-triage`: closed as completed when the code it names has
-since been fixed, otherwise to `ready-for-agent`, `ready-for-human`, or
-`wontfix`, with its category kept or flipped. A finding whose fix needs a
-decision goes to a human, never to an agent. The findings are checked at the
-default SHA and put to the human one batch per source PR. Not the driver's
-triage, which ranks one iteration's findings inside a review loop.
+Checking open filed findings against the current default branch and settling
+each: closed as completed when the code it names has since been fixed,
+otherwise to `ready-for-agent`, `ready-for-human`, or `wontfix`, with its
+category kept or flipped - or, in a re-check, a finding already triaged left
+as labelled. A finding whose fix needs a decision goes to a human, never to an
+agent. The findings are checked at the default SHA and put to the human one
+batch per source PR. It takes the findings still in `needs-triage`, or, as a
+**re-check**, the open filed findings whatever their triage label. Not the
+driver's triage, which ranks one iteration's findings inside a review loop.
+
+**Re-check**:
+A finding triage that also takes open filed findings already out of
+`needs-triage` - every one, one source PR's, or one issue. One still in
+`needs-triage` is triaged as usual; one already triaged is closed as completed
+when it no longer holds, and otherwise left as labelled unless the human names
+another outcome.
 
 **Default SHA**:
 The default branch's remote tip at the moment a finding triage starts: the
