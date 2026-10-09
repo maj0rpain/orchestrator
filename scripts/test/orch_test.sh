@@ -5660,13 +5660,23 @@ assert_eq "unreadable body: empty stdout" "$out" ""
 fake_unfail
 rm -f "$errf"
 
+# Bad input exits 2, never the meaningful "no breakdown" 1. The sub-issue
+# read is armed to fail, so no `gh could not` text proves the refusal came
+# before any GitHub read.
+fake_fail adapter_sub_issues
 out="$("$ORCH" ticket exists abc 2>&1)"; st=$?
-assert_status "refuses a parent that is not a plain number" "$st" 1
+assert_status "refuses a parent that is not a plain number" "$st" 2
 assert_contains "naming it" "$out" "abc"
+assert_not_contains "before any GitHub read" "$out" "gh could not"
+fake_unfail
 
 out="$("$ORCH" ticket exists 2>&1)"; st=$?
-assert_status "refuses with no parent" "$st" 1
+assert_status "refuses with no parent" "$st" 2
 assert_contains "with a usage line" "$out" "usage: orch.sh ticket exists"
+
+out="$("$ORCH" ticket exists 1 2 2>&1)"; st=$?
+assert_status "refuses with two parents" "$st" 2
+assert_contains "two parents: with a usage line" "$out" "usage: orch.sh ticket exists"
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket exists is in the usage text" "$out" "ticket exists <parent>"

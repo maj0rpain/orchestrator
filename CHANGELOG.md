@@ -1,11 +1,20 @@
 # Changelog
 
-## 4.2.1
+## 4.2.2
 
 `orch.sh doctor` builds the plugin root it reports from out of orch.sh's
 `ORCH_SCRIPTS`, rather than doctor.sh resolving its own path a second time
 (#827). Its output is unchanged; the doctor test of the `ok    orch.sh:` line
 now asserts the full line, plugin root included.
+
+## 4.2.1
+
+`orch.sh ticket exists` no longer sends bad input to its meaningful "no
+breakdown" exit 1 (#733): a wrong argument count, or a parent that is not a
+plain number, now exits 2, so a caller cannot read a usage error as "no
+breakdown" and publish a second one. The parent check is refused before any
+GitHub read; every other ticket command sharing it keeps exit 1. The `help`
+text and the comments on these exit codes say so.
 
 ## 4.2.0
 
