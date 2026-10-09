@@ -43,12 +43,12 @@ when a fix is one character away - describe it in the finding instead.
    further code-writing guides. Which pointers name such documents is your
    judgement; process docs, such as an issue-tracker or triage-label guide,
    are not standards. Check each target exists with a file-pattern search
-   (Claude Code's Glob) before reading it, and skip one that does not -
-   never `cat` or `ls` a path that may be missing. Only when no root agent
-   file exists, or none points to a code-writing document, fall back to
-   `CODING_STANDARDS.md` and `CONTRIBUTING.md` at the root: search for each
-   the same way and read only those that exist. Agent files in subdirectories are not read. Done when every such
-   file is listed and read.
+   before reading it, and skip one that does not - never `cat` or `ls` a
+   path that may be missing. Only when no root agent file exists, or none
+   points to a code-writing document, fall back to `CODING_STANDARDS.md`
+   and `CONTRIBUTING.md` at the root: search for each the same way and read
+   only those that exist. Agent files in subdirectories are not read. Done
+   when every such file is listed and read.
 3. **Review the diff** against every standard you found, against the
    **smell baseline** below, and, for a hunk that fixes a defect, with the
    **root-cause check** after it. Read the surrounding file wherever a hunk alone
