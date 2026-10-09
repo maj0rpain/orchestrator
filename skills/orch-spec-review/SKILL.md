@@ -295,8 +295,8 @@ decision item carries its recommended option.
 Number the items, consolidation items included, in one sequence. Present the
 list - each item's finding (or, for a consolidation item, its comment), lens
 or **Consolidation**, and proposed edit or decision - and ask **one blocking
-question** with the `AskUserQuestion` tool (it exists on both Claude Code and
-Junie), the list and the call in the same response. The review never ends its
+question** with the host's ask tool (`AskUserQuestion` on Claude Code,
+`ask_user` on Junie), the list and the call in the same response. The review never ends its
 turn on the list: presenting it is not the end of the step, the answer is. No
 edit is applied and no changelog is posted before the answer arrives. The
 options:
@@ -434,8 +434,8 @@ new agent: this is reconciliation, the same kind of work as
 still listed. Otherwise number the ticket items - each naming its ticket
 (`#<n>`, or the `## Ticket` section), what the accepted edits changed for it,
 and its replacement text, or for an edge change the one edge added or removed -
-and ask **one blocking question** with the
-`AskUserQuestion` tool, the list and the call in the same response, as for
+and ask **one blocking question** with the host's ask tool
+(`AskUserQuestion` on Claude Code, `ask_user` on Junie), the list and the call in the same response, as for
 the spec batch. Its options are the spec batch's, under **Disposition**,
 each offered once and with the same rules, except:
 

@@ -8,8 +8,9 @@ session. Terms in bold are defined in [GLOSSARY.md](../GLOSSARY.md).
 
 A planning session - `orch-interview`, or one of the
 [`mattpocock-skills`](https://github.com/mattpocock/skills) grilling entry
-points - ends, once a shared understanding is reached, on one
-`AskUserQuestion`: flow, quick implementation, or blueprint only.
+points - ends, once a shared understanding is reached, on one question
+(`AskUserQuestion` on Claude Code, `ask_user` on Junie): flow, quick
+implementation, or blueprint only.
 
 - **Flow.** `/orchestrator:start` writes `01-plan.md`; then `/clear`.
   - The spec session: `orch-to-spec` publishes the issue (or it was already
