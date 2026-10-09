@@ -121,7 +121,7 @@ assert_eq "spares passes when no finding matches" \
 # orchestrator:doctor are old names too, each matched as a whole token.
 echo
 echo "skill names (ADR-0014)"
-old_names='orchestrator:(flow|handoff|review-spec|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$|(^|[^a-z-])(orch-plan|orchestrator:(plan|review|status|doctor))([^a-z-]|$)'
+old_names='orchestrator:(flow|handoff|review-spec|orch-review-spec|review|status|doctor)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$|(^|[^a-z-])(orch-plan|orchestrator:plan)([^a-z-]|$)'
 # scan_tracked_pattern <root> <label> <pattern> [pathspec...]: each line of a
 # tracked file matching the extended regex <pattern>, as
 # "<file>:<line>: <label>: <text>", where <label> is plain words with no "/",
@@ -272,11 +272,12 @@ vim voice web-setup workflow-authoring workflows'
 # scan_builtin_command_names <plugin root>: each commands/<name>.md whose
 # <name> is a Claude Code built-in command.
 scan_builtin_command_names() {
-  local r="$1" f name
+  local r="$1" f name names
+  names="$(tr -s ' \n' '\n\n' <<<"$claude_code_builtins")"
   for f in "$r"/commands/*.md; do
     [ -f "$f" ] || continue
     name="$(basename "$f" .md)"
-    grep -qxF -- "$name" <<<"$(tr -s ' \n' '\n\n' <<<"$claude_code_builtins")" \
+    grep -qxF -- "$name" <<<"$names" \
       && echo "commands/$name.md: command named after a host built-in"
   done
   return 0
