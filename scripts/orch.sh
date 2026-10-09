@@ -4076,14 +4076,48 @@ is_side_checkout() {
   gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" && [ -f "$gd/$SIDE_CHECKOUT_MARKER" ]
 }
 
+# side_checkout_issue <path>: prints the issue the side checkout at <path>
+# records in its marker; returns 1 when it is no side checkout, or its marker
+# holds no plain issue number.
+side_checkout_issue() {
+  local gd issue
+  gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  [ -f "$gd/$SIDE_CHECKOUT_MARKER" ] || return 1
+  issue="$(cat "$gd/$SIDE_CHECKOUT_MARKER" 2>/dev/null)" || return 1
+  case "$issue" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$issue"
+}
+
+# side_checkout_mark <marker> <issue>: writes the ownership marker, holding
+# <issue> when one is given and empty otherwise.
+side_checkout_mark() {
+  if [ -n "$2" ]; then printf '%s\n' "$2" >"$1"; else : >"$1"; fi
+}
+
 # Adds a worktree on no branch at origin/<base>, the base branch in effect,
 # freshly fetched: git refuses one branch in two worktrees, and the main
-# checkout usually holds the base. A failed fetch dies before any worktree
-# exists; a failed marker write takes the fresh worktree back out.
+# checkout usually holds the base. --issue N is written into the marker, so a
+# session opened there picks up the quick implementation's issue. A bad
+# --issue or a failed fetch dies before any worktree exists; a failed marker
+# write takes the fresh worktree back out.
 cmd_side_checkout_add() {
-  [ $# -eq 1 ] || die "usage: orch.sh side-checkout add <slug>"
-  local slug path base gd main_root
-  slug="$(normalize_slug "$1")"
+  local usage="usage: orch.sh side-checkout add <slug> [--issue N]"
+  local slug="${1:-}" issue="" path base gd main_root
+  [ -n "$slug" ] || die "$usage"
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --issue)
+        issue="${2:-}"
+        [ -n "$issue" ] || die "$usage"
+        case "$issue" in
+          *[!0-9]*) die "--issue wants a plain issue number, got: $issue" ;;
+        esac
+        shift 2 ;;
+      *) die "unknown side-checkout add flag: $1 (want --issue)" ;;
+    esac
+  done
+  slug="$(normalize_slug "$slug")"
   main_root="$(main_checkout)"
   # The sweep first, its report on stderr so stdout stays the path alone. A
   # failed sweep never stops add; it may have removed the checkout this ran
@@ -4100,7 +4134,7 @@ cmd_side_checkout_add() {
   git worktree add -q --detach "$path" "origin/$base" \
     || die "could not add side checkout $path"
   if ! gd="$(git -C "$path" rev-parse --absolute-git-dir)" \
-     || ! : >"$gd/$SIDE_CHECKOUT_MARKER" 2>/dev/null; then
+     || ! side_checkout_mark "$gd/$SIDE_CHECKOUT_MARKER" "$issue" 2>/dev/null; then
     # A freshly added worktree holds nothing of anyone's, so no force is needed.
     git worktree remove "$path" 2>/dev/null || true
     die "could not write the side-checkout marker - removed $path again"
@@ -4139,11 +4173,21 @@ checkout_holding() {
 # other: <slug> <path>, then what it holds (see checkout_holding).
 cmd_side_checkout_list() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout list"
-  local path
+  local path issue quick
   while IFS= read -r path; do
     is_side_checkout "$path" || continue
-    note "${path##*/} $path $(checkout_holding "$path")"
+    quick=""
+    if issue="$(side_checkout_issue "$path")"; then quick=" quick #$issue"; fi
+    note "${path##*/} $path $(checkout_holding "$path")$quick"
   done < <(checkout_paths)
+}
+
+# Prints the issue the current side checkout records (see side-checkout add
+# --issue); exits 1 in a checkout that is no side checkout or records none.
+cmd_side_checkout_issue() {
+  [ $# -eq 0 ] || die "usage: orch.sh side-checkout issue"
+  side_checkout_issue "$(pwd -P)" \
+    || die "this checkout is no side checkout recording an issue"
 }
 
 # Removes side checkout <slug> by hand, never with force. Every refusal - an
@@ -4325,7 +4369,8 @@ cmd_side_checkout() {
     list)   cmd_side_checkout_list "$@" ;;
     remove) cmd_side_checkout_remove "$@" ;;
     prune)  cmd_side_checkout_prune "$@" ;;
-    *) die "unknown side-checkout op: ${op:-<none>} (want add|list|remove|prune)" ;;
+    issue)  cmd_side_checkout_issue "$@" ;;
+    *) die "unknown side-checkout op: ${op:-<none>} (want add|list|remove|prune|issue)" ;;
   esac
 }
 
@@ -4857,7 +4902,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               --unmerged first aborts a rebase in progress
                               there, then deletes a clean worktree's
                               unmerged branch
-  side-checkout add <slug>    run side-checkout prune first (its report on
+  side-checkout add <slug> [--issue N]
+                              run side-checkout prune first (its report on
                               stderr; a failed sweep is reported and add
                               carries on), then fetch the base branch in
                               effect, add a worktree
@@ -4865,12 +4911,21 @@ orch.sh - deterministic operations for the orchestrator flow
                               checkout's .orchestrator/checkouts/<slug>, mark
                               it as a side checkout, git-exclude .orchestrator/
                               in the clone's shared info/exclude, and print its
-                              path. Refuses when that path already exists; a
-                              failed fetch or marker write leaves no worktree
+                              path. --issue N records N, a quick
+                              implementation's issue, in the marker; without
+                              it the marker is empty. Refuses a missing or
+                              non-numeric --issue before the sweep, and a path
+                              that already exists; a failed fetch or marker
+                              write leaves no worktree
   side-checkout list          print <slug> <path> and then its flow
                               (flow <slug> <phase> #<issue>), its branch
                               (branch <name>), or (no branch), for each side
-                              checkout of the clone - marked worktrees only
+                              checkout of the clone - marked worktrees only -
+                              followed by quick #<N> when it records an issue
+  side-checkout issue         print the issue this side checkout records
+                              (side-checkout add --issue); exits 1 in a
+                              checkout that is no side checkout, or records
+                              no plain issue number
   side-checkout remove <slug> remove side checkout <slug>, never with --force.
                               Refuses an unknown slug, a worktree without the
                               side-checkout marker, uncommitted changes or

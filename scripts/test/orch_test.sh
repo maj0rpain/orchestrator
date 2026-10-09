@@ -6299,6 +6299,60 @@ assert_eq "each side checkout stays where git recorded it" \
   "$(git -C .orchestrator/checkouts/beta branch --show-current)" "quick/3-beta"
 assert_eq "and side-checkout list is unchanged" "$(orch_gh_failing side-checkout list | wc -l | tr -d ' ')" "4"
 
+# A side checkout made for a quick implementation records its issue (#875).
+qi="$(orch_gh_failing side-checkout add quick-one --issue 123)"; st=$?
+assert_status "add --issue succeeds" "$st" 0
+assert_eq "add --issue prints the side checkout's path" "$qi" "$top/.orchestrator/checkouts/quick-one"
+out="$(cd "$qi" && orch_gh_failing side-checkout issue)"; st=$?
+assert_status "side-checkout issue succeeds in a side checkout made with --issue" "$st" 0
+assert_eq "printing the recorded issue" "$out" "123"
+mkdir -p "$qi/sub"
+assert_eq "from a folder inside it too" "$(cd "$qi/sub" && orch_gh_failing side-checkout issue)" "123"
+rmdir "$qi/sub"
+assert_contains "list appends quick #N before a branch exists" \
+  "$(orch_gh_failing side-checkout list)" "quick-one $qi (no branch) quick #123"
+git -C "$qi" checkout -q -b quick/123-quick-one
+assert_contains "and after a branch is checked out" \
+  "$(orch_gh_failing side-checkout list)" "quick-one $qi branch quick/123-quick-one quick #123"
+out="$(cd "$top/.orchestrator/checkouts/alpha" && orch_gh_failing side-checkout issue 2>&1)"; st=$?
+assert_status "side-checkout issue exits 1 in a side checkout made without --issue" "$st" 1
+assert_not_contains "and list appends nothing for it" \
+  "$(orch_gh_failing side-checkout list | grep '^alpha ')" "quick #"
+out="$(orch_gh_failing side-checkout issue 2>&1)"; st=$?
+assert_status "side-checkout issue exits 1 in the main checkout" "$st" 1
+printf 'abc\n' >"$(git -C "$qi" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+out="$(cd "$qi" && orch_gh_failing side-checkout issue 2>&1)"; st=$?
+assert_status "side-checkout issue exits 1 when the marker is not a plain number" "$st" 1
+assert_not_contains "and list appends nothing for it" \
+  "$(orch_gh_failing side-checkout list | grep '^quick-one ')" "quick #"
+out="$(cd "$qi" && orch_gh_failing side-checkout issue extra 2>&1)"; st=$?
+assert_status "side-checkout issue refuses arguments" "$st" 1
+git worktree remove "$qi"
+git branch -q -D quick/123-quick-one
+
+worktrees_before="$(git worktree list | wc -l | tr -d ' ')"
+for bad in "" "12a" "#5"; do
+  if [ -z "$bad" ]; then out="$(orch_gh_failing side-checkout add badissue --issue 2>&1)"; st=$?
+  else out="$(orch_gh_failing side-checkout add badissue --issue "$bad" 2>&1)"; st=$?; fi
+  assert_status "add refuses --issue '$bad'" "$st" 1
+  assert_eq "leaving no side checkout" "$(on_disk .orchestrator/checkouts/badissue)" "absent"
+  assert_eq "nor any worktree" "$(git worktree list | wc -l | tr -d ' ')" "$worktrees_before"
+done
+assert_contains "naming what it wants" \
+  "$(orch_gh_failing side-checkout add badissue --issue 12a 2>&1)" "--issue wants a plain issue number, got: 12a"
+out="$(orch_gh_failing side-checkout add badissue --bogus 2>&1)"; st=$?
+assert_status "add refuses an unknown flag" "$st" 1
+
+# A failed write of the issue takes the fresh worktree back out.
+writeln '#!/bin/sh' 'mkdir "$(git rev-parse --absolute-git-dir)/orchestrator-side-checkout"' 'exit 0' \
+  >.git/hooks/post-checkout
+chmod +x .git/hooks/post-checkout
+out="$(orch_gh_failing side-checkout add noissue --issue 7 2>&1)"; st=$?
+assert_status "add --issue dies when the issue cannot be written" "$st" 1
+assert_eq "leaving no side checkout" "$(on_disk .orchestrator/checkouts/noissue)" "absent"
+assert_eq "nor any worktree" "$(git worktree list | wc -l | tr -d ' ')" "$worktrees_before"
+rm .git/hooks/post-checkout
+
 out="$(orch_gh_failing side-checkout add 2>&1)"; st=$?
 assert_status "add refuses a missing slug" "$st" 1
 out="$(orch_gh_failing side-checkout list extra 2>&1)"; st=$?
@@ -6309,8 +6363,16 @@ assert_contains "listed alongside the ops that exist" "$out" "unknown side-check
 out="$(orch_gh_failing help 2>&1)"
 assert_contains "side-checkout add is in the usage text" "$out" "side-checkout add <slug>"
 assert_contains "side-checkout list is in the usage text" "$out" "side-checkout list"
+assert_contains "side-checkout add --issue is in the usage text" "$out" "side-checkout add <slug> [--issue N]"
+assert_contains "side-checkout issue is in the usage text" "$out" "side-checkout issue"
 assert_contains "the CLI conventions' noun table has a side-checkout row" \
   "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`add`, `list`'
+assert_contains "naming the issue verb" \
+  "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`issue`'
+assert_eq "README names side-checkout add --issue" \
+  "$(grep -c 'side-checkout add <slug> --issue' "$PLUGIN_ROOT/README.md" | tr -d ' ')" "1"
+assert_eq "README names side-checkout issue" \
+  "$(grep -c 'orch.sh side-checkout issue' "$PLUGIN_ROOT/README.md" | tr -d ' ')" "1"
 restore_suite_env
 
 # --- status lists every checkout (#725) ----------------------------------------

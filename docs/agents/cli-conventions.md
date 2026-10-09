@@ -22,7 +22,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `finding-triage` | `scan`, `apply`                               |
 | `ticket`  | `publish`, `next`, `list`, `close`, `reset`, `parent`, `exists`, `retire`, `block`, `unblock`, `merge` |
 | `ticket-worktree` | `add`, `list`, `remove`                     |
-| `side-checkout` | `add`, `list`, `remove`, `prune`              |
+| `side-checkout` | `add`, `list`, `remove`, `prune`, `issue`     |
 | `state`   | `get`, `set`                                         |
 | `handoff` | `path`, `validate`, `section`                        |
 | `phase`   | `advance`, `boundary`                                |
