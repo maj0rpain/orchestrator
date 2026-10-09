@@ -35,11 +35,20 @@ when a fix is one character away - describe it in the finding instead.
    `git diff <base SHA>...HEAD` (three dots) must be non-empty. Note the
    commits with `git log <base SHA>..HEAD --oneline`. If either check fails,
    write a report saying which, and return.
-2. **Find the standards.** Anything in the repo that documents how code should
-   be written: `CLAUDE.md` or `AGENTS.md` at the root, everything under
-   `docs/agents/`, the guides those files link to, and files such as
-   `CODING_STANDARDS.md` or `CONTRIBUTING.md`. Done when every such file is
-   listed and read.
+2. **Find the standards**: the documents in the repo about how code should
+   be written. Read the root agent files, `CLAUDE.md` and `AGENTS.md`,
+   whichever exist - both when both do. Then follow their pointers to
+   documents about writing code, such as a coding-standards guide, CLI
+   conventions or `CONTRIBUTING.md`, and those documents' own links to
+   further code-writing guides. Which pointers name such documents is your
+   judgement; process docs, such as an issue-tracker or triage-label guide,
+   are not standards. Check each target exists with a file-pattern search
+   before reading it, and skip one that does not - never `cat` or `ls` a
+   path that may be missing. Only when no root agent file exists, or none
+   points to a code-writing document, fall back to `CODING_STANDARDS.md`
+   and `CONTRIBUTING.md` at the root: search for each the same way and read
+   only those that exist. Agent files in subdirectories are not read. Done
+   when every such file is listed and read.
 3. **Review the diff** against every standard you found, against the
    **smell baseline** below, and, for a hunk that fixes a defect, with the
    **root-cause check** after it. Read the surrounding file wherever a hunk alone
