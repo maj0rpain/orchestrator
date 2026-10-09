@@ -21,7 +21,9 @@ A git worktree the plugin makes inside the repo, so a second flow or a quick
 implementation can run beside the work already in this checkout, in a session
 of its own. Offered when a flow is already mid-pipeline, or made when a human
 asks for one. It counts as a checkout in its own right, so it holds at most
-one flow. It is removed when its flow is archived with `archive` or
+one flow. One made for a quick implementation records that implementation's
+issue, so a session opened in it picks the issue up without being told. It is
+removed when its flow is archived with `archive` or
 `/orchestrator:abort`, by `/orchestrator:finish` once its work is finished, or
 by hand, and never with force.
 _Avoid_: sibling worktree, flow worktree, second checkout.
