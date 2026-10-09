@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.1.0
+
+A standalone review pass (`/orchestrator:review-pass <issue>`) now leaves out
+the Standards reviewer's smell-baseline findings by default, and reports how
+many it left out under a new **Smells** heading in its PR comment (#419). In
+PR 138's retro every pass listed 7 to 9 minor smells; fixing them added new
+diff for the next pass to pick at, so the passes never converged.
+`/orchestrator:review-pass <issue> --smells` keeps them, as before. Spec
+findings, documented-standard breaches and root-cause checks are kept either
+way, and a quick implementation's review pass is unchanged.
+`scripts/test/docs_lint.sh` checks that the skill and the command name
+`--smells`.
+
 ## 4.0.0
 
 Breaking: three commands shared their bare name with a Claude Code built-in,

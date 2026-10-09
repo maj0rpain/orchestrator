@@ -1398,6 +1398,38 @@ assert_empty "a pass that reads earlier declines and keeps the prompt is not fla
 check "a standalone review pass drops earlier declines and the reviewer prompt stays five variables" \
   "$(scan_previously_declined "$PLUGIN_ROOT")"
 
+# --- standalone pass smells (#419) ---------------------------------------------
+echo
+echo "standalone pass smells (#419)"
+# A standalone review pass leaves out the Standards reviewer's smell-baseline
+# findings unless the human passes --smells. Under ADR-0027 a flag name is a
+# token, as review-pass begin is: the skill's ## Standalone review pass section
+# names --smells, and the command's argument-hint offers it.
+# scan_standalone_smells <plugin root>: one line per place that drops the flag.
+scan_standalone_smells() {
+  local r="$1" review="skills/orch-review/SKILL.md" cmd="commands/review-pass.md"
+  md_section "$r/$review" "## Standalone review pass" | grep -qF -- '--smells' \
+    || echo "$review: ## Standalone review pass does not name --smells"
+  grep -E '^argument-hint:' "$r/$cmd" 2>/dev/null | grep -qF -- '--smells' \
+    || echo "$cmd: argument-hint does not name --smells"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-review" "$fixture/commands"
+printf '# R\n\n## Standalone review pass\n\nRun the pass.\n\n## Other\n\n--smells\n' \
+  >"$fixture/skills/orch-review/SKILL.md"
+printf -- '---\nargument-hint: "<issue>"\n---\n\nPass --smells along.\n' >"$fixture/commands/review-pass.md"
+out="$(scan_standalone_smells "$fixture")"
+flags "a Standalone review pass section that never names --smells is flagged" \
+  "$out" "skills/orch-review/SKILL.md: ## Standalone review pass does not name --smells"
+flags "a review-pass argument-hint without --smells is flagged" \
+  "$out" "commands/review-pass.md: argument-hint does not name --smells"
+printf '# R\n\n## Standalone review pass\n\nWith `--smells`, keep them.\n' >"$fixture/skills/orch-review/SKILL.md"
+printf -- '---\nargument-hint: "<issue> [--smells]"\n---\n' >"$fixture/commands/review-pass.md"
+assert_empty "a standalone pass and argument-hint naming --smells are not flagged" \
+  "$(scan_standalone_smells "$fixture")"
+check "a standalone review pass takes --smells, and review-pass offers it" \
+  "$(scan_standalone_smells "$PLUGIN_ROOT")"
 # --- closer's filed body lines -----------------------------------------------
 # The contract is the closer's body format, not orch.sh's parser. The closer
 # writes a filed finding's body as five labelled lines, and the finding-triage

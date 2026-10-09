@@ -1,6 +1,6 @@
 ---
 description: Review the current branch against an issue on demand, outside a flow - a standalone review pass.
-argument-hint: "<issue>"
+argument-hint: "<issue> [--smells]"
 ---
 
 Call the Skill tool with `orchestrator:orch-review` and follow its
