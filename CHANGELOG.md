@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.23.0
+
+Finding triage gains a bundle mode: `/orchestrator:finding-triage --bundle`
+groups the open filed findings already triaged to `ready-for-agent` or
+`ready-for-human` by code area into **bundles**, one batch across source PRs.
+A new verb, `orch.sh finding-triage bundle`, creates each bundle - an ordinary
+issue labelled `finding-bundle` with a triage state and category and no
+`review:` label, whose body restates every member - and comments each member
+`Bundled into #B` and closes it as a duplicate of the bundle, keeping its
+labels; `--into <B>` resumes a partly failed bundle. Closing as a duplicate
+needs gh 2.102 or newer (#866, ADR-0040).
+
 ## 3.22.0
 
 Finding triage gains a re-check: `/orchestrator:finding-triage --all
