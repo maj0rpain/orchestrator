@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.2.6
+
+The standards reviewer finds the standards through the root agent files'
+pointers (#930): it reads the root `CLAUDE.md` and `AGENTS.md`, whichever
+exist, and follows their pointers to code-writing documents, checking each
+target exists with Glob before reading it. It no longer reads every file
+under `docs/agents/`, and falls back to `CODING_STANDARDS.md` and
+`CONTRIBUTING.md`, Glob-checked, only when no root agent file points to a
+code-writing document.
+
 ## 4.2.5
 
 Skills that ask the human a question name both hosts' ask tools,
