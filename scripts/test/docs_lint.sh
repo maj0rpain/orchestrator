@@ -110,16 +110,18 @@ assert_eq "spares passes when no finding matches" \
 # name the old ones; scripts/test/ feeds old names in deliberately as negative
 # cases. The spec review's command and skill were renamed spec-review in 2.0.0
 # (#235), so the review-spec names, command included, are old names too.
-# /orchestrator:review is a live command again (#341), so only the review
-# skill's directory and name line remain old names. The planning entry point
+# The old review skill's directory and name line remain old names. The planning entry point
 # was renamed interview in 3.0.0 (#373), so orch-plan, under any prefix, and
 # the command orchestrator:plan are old names too, each matched as a whole
 # token: .scratch/orch-plan-<slug>.md names a saved plan, not the skill.
 # /orchestrator:quick-implement is a live command too (#723), so only the
-# quick-implement skill's directory and name line remain old names.
+# quick-implement skill's directory and name line remain old names. The
+# commands review, status and doctor were renamed review-pass, flow-status and
+# health in 4.0.0 (#374), so orchestrator:review, orchestrator:status and
+# orchestrator:doctor are old names too, each matched as a whole token.
 echo
 echo "skill names (ADR-0014)"
-old_names='orchestrator:(flow|handoff|review-spec|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$|(^|[^a-z-])(orch-plan|orchestrator:plan)([^a-z-]|$)'
+old_names='orchestrator:(flow|handoff|review-spec|orch-review-spec)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$|(^|[^a-z-])(orch-plan|orchestrator:(plan|review|status|doctor))([^a-z-]|$)'
 # scan_tracked_pattern <root> <label> <pattern> [pathspec...]: each line of a
 # tracked file matching the extended regex <pattern>, as
 # "<file>:<line>: <label>: <text>", where <label> is plain words with no "/",
@@ -141,7 +143,8 @@ scan_old_names() {
     ':(exclude)CHANGELOG.md' ':(exclude)docs/adr' \
     ':(exclude)scripts/test' ':(exclude).out-of-scope'
   local p
-  for p in commands/review-spec.md commands/plan.md; do
+  for p in commands/review-spec.md commands/plan.md commands/review.md \
+    commands/status.md commands/doctor.md; do
     [ -e "$r/$p" ] && echo "$p: old command file"
   done
   for p in skills/orch-review-spec skills/orch-plan; do
@@ -164,9 +167,7 @@ mkdir -p "$fixture/scripts/test" "$fixture/.out-of-scope"
 printf 'Renamed `orchestrator:review-spec`.\n' >"$fixture/CHANGELOG.md"
 printf '# Call `orchestrator:review-spec`.\n' >"$fixture/scripts/test/x_test.sh"
 printf 'Renamed `orchestrator:review-spec`.\n' >"$fixture/.out-of-scope/x.md"
-# /orchestrator:review is a live command again (#341), routed to orch-review's
-# Standalone review pass; the old review skill's directory and name stay old.
-printf 'Run `/orchestrator:review 12`.\nCall `orchestrator:review`.\n' >"$fixture/commands/review.md"
+# The old review skill's directory and name stay old.
 printf 'See skills/review/SKILL.md.\n' >"$fixture/commands/f.md"
 printf 'name: review\n' >"$fixture/commands/g.md"
 # The planning entry point was renamed interview (#373).
@@ -182,6 +183,11 @@ printf 'Run `/orchestrator:interview`.\nCall `orchestrator:orch-interview`.\nski
 printf 'Save it to `.scratch/orch-plan-<slug>.md`.\n' >"$fixture/commands/scratch.md"
 printf 'Run `/orchestrator:quick-implement 12`.\nCall `orchestrator:orch-quick-implement`.\n' >"$fixture/commands/quick.md"
 printf 'See skills/quick-implement/SKILL.md.\n' >"$fixture/commands/q1.md"
+# review, status and doctor were renamed review-pass, flow-status, health (#374).
+printf 'Run `/orchestrator:review 12`.\n' >"$fixture/commands/r1.md"
+printf 'Run `/orchestrator:status`.\n' >"$fixture/commands/r2.md"
+printf 'Run `/orchestrator:doctor`.\n' >"$fixture/commands/r3.md"
+printf 'Run `/orchestrator:review-pass 12`.\nRun `/orchestrator:flow-status`.\nRun `/orchestrator:health`.\nCall `orchestrator:orch-review`.\n' >"$fixture/commands/renamed.md"
 git -C "$fixture" add -A
 out="$(scan_old_names "$fixture")"
 flags "the old review-spec skill name is flagged" "$out" "commands/a.md:1: old skill or command name"
@@ -191,8 +197,6 @@ flags "the old orch-review-spec skill directory is flagged" "$out" "commands/d.m
 flags "the old orch-review-spec skill name line is flagged" "$out" "commands/e.md:1: old skill or command name"
 spares "the new spec-review names are not flagged" \
   "$out" '^(commands/new\.md|skills/)'
-spares "the live /orchestrator:review command is not flagged" \
-  "$out" '^commands/review\.md'
 spares "the live /orchestrator:quick-implement command is not flagged" \
   "$out" '^commands/quick\.md'
 flags "the old quick-implement skill directory is flagged" "$out" "commands/q1.md:1: old skill or command name"
@@ -206,6 +210,11 @@ flags "a bare orch-plan mention is flagged" "$out" "commands/p5.md:1: old skill 
 flags "the old /orchestrator:plan command is flagged" "$out" "commands/p6.md:1: old skill or command name"
 flags "the old orch-plan skill directory is flagged" "$out" "commands/p7.md:1: old skill or command name"
 flags "the old orch-plan skill name line is flagged" "$out" "commands/p8.md:1: old skill or command name"
+flags "the old /orchestrator:review command is flagged" "$out" "commands/r1.md:1: old skill or command name"
+flags "the old /orchestrator:status command is flagged" "$out" "commands/r2.md:1: old skill or command name"
+flags "the old /orchestrator:doctor command is flagged" "$out" "commands/r3.md:1: old skill or command name"
+spares "the new review-pass, flow-status and health names and orch-review are not flagged" \
+  "$out" '^commands/renamed\.md'
 spares "the new interview names are not flagged" \
   "$out" '^commands/interview\.md'
 spares "the saved-plan scratch file is not flagged" \
@@ -222,12 +231,65 @@ mkdir -p "$fixture/skills/orch-review-spec"
 : >"$fixture/commands/review-spec.md"
 mkdir -p "$fixture/skills/orch-plan"
 : >"$fixture/commands/plan.md"
+: >"$fixture/commands/review.md"
+: >"$fixture/commands/status.md"
+: >"$fixture/commands/doctor.md"
 out="$(scan_old_names "$fixture")"
 flags "an old review-spec command file is flagged" "$out" "commands/review-spec.md: old command file"
 flags "an old orch-review-spec skill directory is flagged" "$out" "skills/orch-review-spec/: old skill directory"
 flags "an old plan command file is flagged" "$out" "commands/plan.md: old command file"
 flags "an old orch-plan skill directory is flagged" "$out" "skills/orch-plan/: old skill directory"
+flags "an old review command file is flagged" "$out" "commands/review.md: old command file"
+flags "an old status command file is flagged" "$out" "commands/status.md: old command file"
+flags "an old doctor command file is flagged" "$out" "commands/doctor.md: old command file"
 check "no old orchestrator skill or command name outside history" "$(scan_old_names "$PLUGIN_ROOT")"
+
+# A plugin command must not share its bare name with a host built-in command
+# (CONTRIBUTING.md's Command names, #374): both appear in the typeahead when
+# the user types the bare name. Claude Code's built-in commands, bundled skills
+# and their aliases, from https://code.claude.com/docs/en/commands (fetched
+# 2026-10-09); refresh this list from there. No Junie list until Junie is shown
+# to load plugin commands (docs/host-capabilities.md, Run a plugin command).
+echo
+echo "command names against host built-ins (#374)"
+claude_code_builtins='add-dir advisor agents allowed-tools android app artifact-capabilities
+artifact-diagramming artifacts auto-mode-setup autocompact autofix-pr
+background batch bg branch btw bug cd checkpoint checkup chrome claude-api
+claude-in-chrome clear code-review color compact config context continue copy
+cost dataviz debug deep-research design design-login design-sync desktop diff
+doctor effort exit export fast feedback fewer-permission-prompts focus fork
+goal heapdump help hooks ide import init insights install-github-app
+install-slack-app ios keybindings list-agents login logout loop mcp memory
+mobile model new output-style passes permissions plan plugin plugin-authoring
+powerup pr-comments privacy-settings proactive quit radio rate-limit-options
+rc recap release-notes reload-plugins reload-skills remote-control remote-env
+rename reset resume review rewind routines run run-skill-generator sandbox
+schedule scroll-speed security-review settings setup-bedrock setup-vertex
+share simplify skill-doctor skills slides stats status statusline stickers
+stop subtask tasks team-onboarding teleport terminal-setup theme tui
+ultraplan ultrareview undo update-config upgrade usage usage-credits verify
+vim voice web-setup workflow-authoring workflows'
+# scan_builtin_command_names <plugin root>: each commands/<name>.md whose
+# <name> is a Claude Code built-in command.
+scan_builtin_command_names() {
+  local r="$1" f name
+  for f in "$r"/commands/*.md; do
+    [ -f "$f" ] || continue
+    name="$(basename "$f" .md)"
+    grep -qxF -- "$name" <<<"$(tr -s ' \n' '\n\n' <<<"$claude_code_builtins")" \
+      && echo "commands/$name.md: command named after a host built-in"
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/commands"
+: >"$fixture/commands/clear.md"
+: >"$fixture/commands/interview.md"
+out="$(scan_builtin_command_names "$fixture")"
+flags "a command named after a Claude Code built-in is flagged" \
+  "$out" "commands/clear.md: command named after a host built-in"
+spares "a command with a name of its own is not flagged" "$out" '^commands/interview\.md'
+check "no command is named after a host built-in" "$(scan_builtin_command_names "$PLUGIN_ROOT")"
 
 # The glossary was renamed upstream: CONTEXT.md became GLOSSARY.md, and
 # CONTEXT-MAP.md became GLOSSARY-MAP.md (#461). Like the old skill names, an

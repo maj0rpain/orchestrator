@@ -4441,7 +4441,7 @@ assert_eq "--flow leaves the environment alone" \
 assert_eq "stays quiet about an upstream before the implement phase" \
   "$(printf '%s\n' "$out" | grep -c 'upstream')" "0"
 
-# /orchestrator:next and /orchestrator:status both run this scope every time, and
+# /orchestrator:next and /orchestrator:flow-status both run this scope every time, and
 # a flow with no PR recorded has nothing to ask GitHub about.
 # GitHub unreachable shows it: one question would put a skip line in the report.
 fake_offline

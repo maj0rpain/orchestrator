@@ -1,6 +1,6 @@
 ---
 name: orch-review
-description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing every blocking finding plus the majors and mechanical nits that need no decision, filing the rest as issues at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop. Also holds the review pass, one look by the same two reviewers with no loop around it: run by orch-quick-implement before its PR opens, and standalone, outside any flow, when a human asks for a review of the current branch against a given issue or runs /orchestrator:review <issue>.
+description: Run one review loop over an orchestrator flow's draft PR - a human-chosen budget of iterations, each a fresh review from the base SHA, fixing every blocking finding plus the majors and mechanical nits that need no decision, filing the rest as issues at the end, and either marking the PR ready or stopping with the reason recorded. Use from orch-flow's review phase, and when re-entering a flow that is already sitting at that phase after a bounded stop. Also holds the review pass, one look by the same two reviewers with no loop around it: run by orch-quick-implement before its PR opens, and standalone, outside any flow, when a human asks for a review of the current branch against a given issue or runs /orchestrator:review-pass <issue>.
 ---
 
 # Orchestrator review loop
@@ -489,7 +489,7 @@ prompt above. Record each fallback where the caller puts host fallbacks.
 
 ## Standalone review pass
 
-A human may ask for a review pass on demand - `/orchestrator:review <issue>`,
+A human may ask for a review pass on demand - `/orchestrator:review-pass <issue>`,
 or in plain words - after a quick implementation, say, or on any branch. It
 reviews the branch they are on, from its base SHA, with the given issue as the
 spec. It is **Review pass** above with the differences below, never a review

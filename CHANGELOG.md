@@ -1,5 +1,23 @@
 # Changelog
 
+## 4.0.0
+
+Breaking: three commands shared their bare name with a Claude Code built-in,
+so both showed in the typeahead, and are renamed (#374). The old command files
+are removed, with no shim. `orch.sh`'s `review`, `status` and `doctor`
+subcommands, and `scripts/doctor.sh`, keep their names.
+
+| Old | New |
+| --- | --- |
+| `/orchestrator:review <issue>` | `/orchestrator:review-pass <issue>` |
+| `/orchestrator:status` | `/orchestrator:flow-status` |
+| `/orchestrator:doctor` | `/orchestrator:health` |
+
+`scripts/test/docs_lint.sh` now fails when a `commands/<name>.md` is named
+after a Claude Code built-in command, against a hand-kept list refreshed from
+`https://code.claude.com/docs/en/commands`, and its old-name check flags the
+three old command names and files.
+
 ## 3.25.2
 
 `orch.sh` no longer calls back into `doctor.sh`: Host detection lives in one

@@ -1,6 +1,6 @@
 ---
 name: orch-flow
-description: Drive the plan/spec/implement/review pipeline recorded in .orchestrator/state.json. Use when a planning session's plan has just been approved, when the user asks to start, advance, check, diagnose, redo, abort, or finish a flow, or runs /orchestrator:start, /orchestrator:next, /orchestrator:status, /orchestrator:doctor, /orchestrator:redo, /orchestrator:abort, or /orchestrator:finish.
+description: Drive the plan/spec/implement/review pipeline recorded in .orchestrator/state.json. Use when a planning session's plan has just been approved, when the user asks to start, advance, check, diagnose, redo, abort, or finish a flow, or runs /orchestrator:start, /orchestrator:next, /orchestrator:flow-status, /orchestrator:health, /orchestrator:redo, /orchestrator:abort, or /orchestrator:finish.
 ---
 
 # Orchestrator flow
@@ -350,14 +350,14 @@ Say nothing after it. Do not start the next phase, and do not offer to.
 
 ## Status
 
-Reached by `/orchestrator:status`, or when the user asks where the flow
+Reached by `/orchestrator:flow-status`, or when the user asks where the flow
 stands. Run `bash "$ORCH" status` and `bash "$ORCH" doctor --flow`, and report both
 outputs. Read-only: do not start, advance, or repair a flow from here. If
 `doctor` reports a problem, say what it found and stop.
 
 ## Doctor
 
-Reached by `/orchestrator:doctor`, or when the user asks to diagnose the
+Reached by `/orchestrator:health`, or when the user asks to diagnose the
 machine, the repo, or the flow. Run `bash "$ORCH" doctor` and report its output.
 Read-only: `doctor` prints the command that fixes each problem, and running
 those is the user's call. A `FAIL` exits non-zero and would block the flow; a

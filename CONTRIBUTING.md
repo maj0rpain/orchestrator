@@ -142,4 +142,5 @@ a `/orchestrator:<cmd>` that has no `commands/<cmd>.md`, or when a command runs
 
 A command must not share its bare name with a host built-in command (for
 example Claude Code's `/plan`, `/review`, `/status` or `/doctor`), because the
-typeahead lists both.
+typeahead lists both. `scripts/test/docs_lint.sh` enforces this against its
+list of Claude Code built-ins.
