@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.3.2
+
+`orch.sh` run outside every git repository now names the cwd and the remedy:
+`orch: not inside a git repository (<cwd>) - run orch.sh from inside the repo's
+checkout`, where before it named only the reason (#931). It still exits 1.
+
 ## 4.3.1
 
 The standards reviewer finds the standards through the root agent files'
