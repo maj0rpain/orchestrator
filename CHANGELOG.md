@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.25.0
+
+A side checkout made for a quick implementation records its issue:
+`orch.sh side-checkout add <slug> --issue N` writes it, `side-checkout issue`
+reads it back, and `side-checkout list` shows it as `quick #N`. A bare
+`/orchestrator:quick-implement` in that side checkout links the recorded issue
+without publishing a new one; an issue named in the arguments still wins, with
+a one-line note when the two differ. Both side routes now open the new session
+with the command already typed on Claude Code: `cd <path> && claude
+"/orchestrator:quick-implement <issue>"` and `cd <path> && claude
+"/orchestrator:next"` (#874).
+
 ## 3.24.0
 
 A spec review runs a round count of rounds (ADR-0041). Each round is a whole

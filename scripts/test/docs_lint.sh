@@ -1417,6 +1417,65 @@ spares "nor an option spelling, the catch-all, or an arm outside main" "$out" 'n
 check "every noun orch.sh routes is in the CLI conventions table or its Exceptions" \
   "$(scan_cli_nouns "$PLUGIN_ROOT")"
 
+# --- a side checkout's recorded issue (#874) ----------------------------------
+echo
+echo "a side checkout's recorded issue (#874)"
+# A side checkout made for a quick implementation records its issue, and a
+# session opened in it picks the issue up: quick implementation's step 1 reads
+# side-checkout issue, both skills' side routes open the new session with the
+# command already typed, and quick implementation's passes --issue.
+side_checkout_sentence='One made for a quick implementation records that implementation'"'"'s issue, so a session opened in it picks the issue up without being told.'
+# glossary_entry <file> <term>: the entry's lines, from **<term>**: up to the
+# next blank line, on one line.
+glossary_entry() {
+  T="**$2**:" awk 'index($0, ENVIRON["T"]) == 1 { inb = 1 } inb && /^[[:space:]]*$/ { exit } inb' "$1" | flat_text
+}
+# scan_side_checkout_issue <plugin root>: one line per break of that rule.
+scan_side_checkout_issue() {
+  local r="$1" quick="skills/orch-quick-implement/SKILL.md" flow="skills/orch-flow/SKILL.md" body
+  body="$(md_section "$r/$quick" "## 1. Require a linked issue" | flat_text)"
+  grep -qF 'side-checkout issue' <<<"$body" \
+    || echo "$quick: step 1 does not name side-checkout issue"
+  body="$(md_section "$r/$quick" "## Starting in a side checkout" | flat_text)"
+  grep -qF 'claude "/orchestrator:quick-implement <issue>"' <<<"$body" \
+    || echo "$quick: ## Starting in a side checkout does not prefill claude \"/orchestrator:quick-implement <issue>\""
+  grep -qF -- '--issue' <<<"$body" \
+    || echo "$quick: ## Starting in a side checkout does not pass --issue"
+  body="$(md_section "$r/$flow" "### Starting in a side checkout" | flat_text)"
+  grep -qF 'claude "/orchestrator:next"' <<<"$body" \
+    || echo "$flow: ### Starting in a side checkout does not prefill claude \"/orchestrator:next\""
+  glossary_entry "$r/GLOSSARY.md" "Side checkout" | grep -qF -- "$side_checkout_sentence" \
+    || echo "GLOSSARY.md: the **Side checkout** entry does not carry the recorded-issue sentence"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-quick-implement" "$fixture/skills/orch-flow"
+printf '# Q\n\n## 1. Require a linked issue\n\nUse the argument.\n\n## Starting in a side checkout\n\nRun `side-checkout add <slug>`, then `cd <path> && claude`.\n\n## Other\n\nRun `side-checkout issue`, --issue, claude "/orchestrator:quick-implement <issue>".\n' \
+  >"$fixture/skills/orch-quick-implement/SKILL.md"
+printf '# F\n\n### Starting in a side checkout\n\nRun `cd <path> && claude`.\n\n## Next phase\n\nclaude "/orchestrator:next"\n' \
+  >"$fixture/skills/orch-flow/SKILL.md"
+printf '**Side checkout**:\nA worktree.\n\n**Other**:\n%s\n' "$side_checkout_sentence" >"$fixture/GLOSSARY.md"
+out="$(scan_side_checkout_issue "$fixture")"
+flags "a step 1 that does not read side-checkout issue is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md: step 1 does not name side-checkout issue"
+flags "a quick side route that does not prefill the command is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md: ## Starting in a side checkout does not prefill"
+flags "a quick side route that does not pass --issue is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md: ## Starting in a side checkout does not pass --issue"
+flags "a flow side route that does not prefill the command is flagged" \
+  "$out" "skills/orch-flow/SKILL.md: ### Starting in a side checkout does not prefill"
+flags "a Side checkout entry without the sentence is flagged" \
+  "$out" "GLOSSARY.md: the **Side checkout** entry does not carry the recorded-issue sentence"
+printf '# Q\n\n## 1. Require a linked issue\n\nThen `bash "$ORCH" side-checkout\nissue`.\n\n## Starting in a side checkout\n\n`side-checkout add <slug> --issue <issue>`, then `cd <path> && claude\n"/orchestrator:quick-implement <issue>"`.\n' \
+  >"$fixture/skills/orch-quick-implement/SKILL.md"
+printf '# F\n\n### Starting in a side checkout\n\nRun `cd <path> && claude "/orchestrator:next"`.\n' \
+  >"$fixture/skills/orch-flow/SKILL.md"
+printf '**Side checkout**:\nA worktree. One made for a quick implementation records that\nimplementation'"'"'s issue, so a session opened in it picks the issue up without\nbeing told.\n\n**Other**:\nOther.\n' >"$fixture/GLOSSARY.md"
+assert_empty "skills and a glossary that carry the recorded issue are not flagged" \
+  "$(scan_side_checkout_issue "$fixture")"
+check "a side checkout's recorded issue is read by step 1, prefilled, and in the glossary" \
+  "$(scan_side_checkout_issue "$PLUGIN_ROOT")"
+
 # --- version and CHANGELOG (CLAUDE.md Versioning) -----------------------------
 # Every PR to main bumps version in .claude-plugin/plugin.json and adds it as
 # the top CHANGELOG.md entry. The CHANGELOG rule always runs; the bump rule

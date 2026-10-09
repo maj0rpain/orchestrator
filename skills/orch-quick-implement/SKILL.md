@@ -36,24 +36,35 @@ turns out missing, take the fallback it documents and list it under a **Host fal
 ## 1. Require a linked issue
 
 Never proceed without one, and never decide silently whether to make one.
+Resolve it in this order, taking the first that holds:
 
-- An issue named in the arguments - `/orchestrator:quick-implement <issue>`,
-  its leading issue number, never a flag such as `--side` - is the linked
-  issue: use it, and publish none.
-- A linked issue already exists (named earlier in this conversation, or on an
-  already-checked-out branch): use it.
-- Otherwise, publish one now with `bash "$ORCH" issue publish "<title>"
-  <body-file>`, from the shared understanding just reached. It applies the
-  `ready-for-agent` triage role's label and reads the title and label back
-  before it reports success - never an ad hoc `gh` call.
-- Either way, a glossary or ADR change (`GLOSSARY.md`, `GLOSSARY-MAP.md`,
+1. An issue named in the arguments - `/orchestrator:quick-implement <issue>`,
+   its leading issue number, never a flag such as `--side` - is the linked
+   issue: use it, and publish none.
+2. Otherwise, the side checkout's recorded issue: `bash "$ORCH" side-checkout
+   issue` prints it and exits 0 when this checkout is a side checkout made
+   for a quick implementation. Use it, and publish none. Any other exit means
+   there is none: go on.
+3. Otherwise, a linked issue already named earlier in this conversation, or
+   on an already-checked-out branch: use it.
+4. Otherwise, publish one now with `bash "$ORCH" issue publish "<title>"
+   <body-file>`, from the shared understanding just reached. It applies the
+   `ready-for-agent` triage role's label and reads the title and label back
+   before it reports success - never an ad hoc `gh` call.
+
+When an issue is named in the arguments, still run `side-checkout issue`:
+if it records a different issue, the argument wins, and your reply to the
+human carries a one-line note naming both - the argument's issue used, the
+recorded one set aside. No file or PR body carries that note.
+
+- Whichever issue is linked, a glossary or ADR change (`GLOSSARY.md`, `GLOSSARY-MAP.md`,
   `docs/adr/`) the planning session decided goes into the linked issue's body
   word for word - the new or replaced text, naming the file and entry - never
   into those files during planning. It lands with the change it describes
   (ADR-0022). The standalone spec review in step 2 runs no Fidelity lens, so
   nothing else checks the wording survived.
-- If neither holds - no linked issue, and `issue publish` fails - stop and
-  say why. A quick implementation
+- If none of the four yields an issue - `issue publish` fails too - stop
+  and say why. A quick implementation
   with no issue behind it is exactly the unaccountable path this skill exists
   to avoid.
 
@@ -274,14 +285,18 @@ published the issue, with any glossary or ADR wording in its body. The issue
 is the hand-off: no plan file is written.
 
 1. Get the slug from `bash "$ORCH" slug "<short description>"`.
-2. `bash "$ORCH" side-checkout add <slug>`. It first sweeps finished side
+2. `bash "$ORCH" side-checkout add <slug> --issue <issue>`, with the linked
+   issue's number: the side checkout records it, so the session opened there
+   picks it up (step 1). It first sweeps finished side
    checkouts and reports them; a failed sweep is reported and `add` carries
    on. Its last line of output is the side checkout's path. If `add` fails -
    a side checkout with that slug already exists under `checkouts/`, or the
    base branch cannot be fetched - relay its message and stop.
-3. Print the one command that opens a session in the side checkout - `cd
-   <path> && claude` on Claude Code, `cd <path> && junie` on Junie - and tell
-   the human to run `/orchestrator:quick-implement <issue>` there, with the
-   linked issue's number (on a host with no plugin commands, to ask for this
-   skill on issue `<issue>`). This session's work is done: that session runs
-   steps 1-7, finding the issue already linked.
+3. Print the one command that opens a session in the side checkout. On
+   Claude Code it is `cd <path> && claude "/orchestrator:quick-implement
+   <issue>"`, with the linked issue's number: the session opens with the
+   command already typed. On Junie it is `cd <path> && junie`: tell the human
+   to run `/orchestrator:quick-implement` there, no number needed, since the
+   side checkout records the issue (on a host with no plugin commands, to ask
+   for this skill). This session's work is done: that session runs steps
+   1-7, finding the issue already linked.

@@ -114,8 +114,9 @@ what tells `orch.sh` which flow it means.
    `bash "$ORCH" handoff validate <that path>`, fixing and re-validating
    until it passes.
 4. Print the one command that opens a session in the side checkout - `cd
-   <path> && claude` on Claude Code, `cd <path> && junie` on Junie - and tell
-   the human to run `/orchestrator:next` there (on a host with no plugin
+   <path> && claude "/orchestrator:next"` on Claude Code, which opens it with
+   the command already typed, `cd <path> && junie` on Junie, telling the human
+   to run `/orchestrator:next` there (on a host with no plugin
    commands, to ask for this skill's **Next phase**). This session's work is
    done: the spec phase starts in that new session, like any other.
 
