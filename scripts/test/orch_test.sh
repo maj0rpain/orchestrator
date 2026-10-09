@@ -1797,6 +1797,19 @@ writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
         '## Host fallbacks' 'None (Claude Code).' >"$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "the collapsed-case sentinel validates like any other content" "$st" 0
+
+# A spec review of several rounds (#871) puts each round's changelog under a
+# `### Round <k> of <n>` subheading, with no `## ` line inside the section,
+# since validate reads a section up to the next `## ` line.
+writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
+        '## Spec review changelog' \
+        '### Round 1 of 3' '#### Consolidation' 'None' '#### Tickets' 'None - no ticket breakdown' '' \
+        '### Round 2 of 3' '#### Consolidation' 'None' '#### Tickets' 'None - no ticket breakdown' '' \
+        '### Round 3 of 3' '#### Consolidation' 'None' '#### Tickets' 'None - no ticket breakdown' '' \
+        '## Ticket breakdown' '#1.' '' \
+        '## Host fallbacks' 'None (Claude Code).' >"$h2"
+out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
+assert_status "a Spec review changelog of several ### Round subheadings validates" "$st" 0
 restore_suite_env
 
 # --- handoff templates -------------------------------------------------------

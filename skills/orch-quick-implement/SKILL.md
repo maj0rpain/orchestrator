@@ -72,6 +72,7 @@ That mode is the one definition of what the review does unattended - the
 batch printed and applied as recommended, decision items and the ticket
 follow-up taking their recommended option, retiring included - and this step
 restates none of it. Fidelity does not run, and no plan file is written.
+It runs exactly one round, and no round-count question is asked.
 
 Remember the review's working directory - the one `spec-review begin`
 printed: step 7 reads the review's `changelog.md` there.

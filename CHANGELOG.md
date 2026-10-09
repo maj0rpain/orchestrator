@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.24.0
+
+A spec review runs a round count of rounds (ADR-0041). Each round is a whole
+review - consolidation, the lenses, one batch question, the accepted edits
+applied, the ticket question, and one `## Spec review` comment headed
+`Round <k> of <n>` - over the body the previous round published, and the
+review runs its whole count. A flow's spec phase asks "How many spec review
+rounds?" (3 recommended) before the first round;
+`/orchestrator:spec-review <issue> --rounds <n>` runs n rounds, and 1 without
+the option; a quick implementation's unattended review runs 1. `02-spec.md`'s
+**Spec review changelog** holds each round under a `### Round <k> of <n>`
+subheading (#872). The planning hook's Blueprint route asks the same round
+count, every time (3 recommended, 0 skips the review), and hands it to the
+standalone review as `--rounds <count>` (#873).
+
 ## 3.23.0
 
 Finding triage gains a bundle mode: `/orchestrator:finding-triage --bundle`

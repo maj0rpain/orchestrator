@@ -143,13 +143,24 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    with the user - that exchange is the point, so do not skip it - and
    reports the issue it published.
 3. Record the published issue: `bash "$ORCH" state set issue <number>`.
-4. Invoke the `orch-spec-review` skill and follow it. It owns
-   the review - four lenses, one batch question, the body rewritten with what
-   the human accepts, and, when the accepted edits touch an open ticket of an
-   existing breakdown, a ticket question that edits those tickets or retires
-   the breakdown - and returns the changelog. This step is part of the
-   phase, not an option in it: no spec reaches the implement phase unreviewed,
-   and the human's control is at the batch, where they may decline every edit.
+4. Ask the round count. **The question blocks** - ask it as one question
+   with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
+   on Junie), before the first
+   round: "How many spec review rounds?" Default 3. Any integer >= 1; there
+   is no upper cap. Options: **3 (Recommended)**, **1**, **5**, and **Other**
+   for any other number. It is asked every time this step runs - on
+   `redo spec` and for an adopted issue too - and nothing is written to
+   `state.json`: the count lives in this session only.
+
+   Then invoke the `orch-spec-review` skill and follow it for that many
+   rounds. It owns the review - each round four lenses, one batch question,
+   the body rewritten with what the human accepts, and, when the accepted
+   edits touch an open ticket of an existing breakdown, a ticket question
+   that edits those tickets or retires the breakdown - and returns every
+   round's changelog, in round order. This step is part of the phase, not an
+   option in it: no spec reaches the implement phase unreviewed, and the
+   human's control is at each round's batch, where they may decline every
+   edit.
 5. Run `bash "$ORCH" ticket exists <spec issue>` first, with the spec issue
    from `bash "$ORCH" state get issue`.
 
@@ -173,8 +184,9 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 
    **Any other exit** means GitHub could not be read: stop, leaving the state
    where it is, say what blocked, and offer `/orchestrator:abort`.
-6. Invoke the `orch-handoff` skill for `02-spec.md`, with the changelog the review
-   returned as its **Spec review changelog**, and its **Ticket breakdown** as
+6. Invoke the `orch-handoff` skill for `02-spec.md`, with every round's
+   changelog the review returned as its **Spec review changelog**, laid out
+   as that template says, and its **Ticket breakdown** as
    either the spec issue number (published or found as sub-issues) or
    `None: work directly against #<n>` naming the spec issue (collapsed, per
    step 5); validate it with `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path implement)"`,

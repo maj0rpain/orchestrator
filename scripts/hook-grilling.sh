@@ -115,6 +115,7 @@ if [ "$host" = junie ]; then
   only\", run each step of the Blueprint route below as its skill - orch-to-spec for issue #<n>, the interviewed issue, when there is one
   (its rewrite mode), orch-spec-review, and orch-to-tickets. This host has no Skill tool, so read each
   skill's file and follow it verbatim:"
+  run_review_rounds="follow orch-spec-review for issue #<n> with --rounds <count>"
   flow_quick_files="
   $plugin_root/skills/orch-flow/SKILL.md,
   $(hook_quick_skill_file),"
@@ -143,6 +144,7 @@ else
   and \"orchestrator:orch-to-tickets\". The
   orchestrator's skills are model-invocable: call them, do not hand them to the
   user."
+  run_review_rounds="call the Skill tool with \"orchestrator:orch-spec-review\" with args \"<n> --rounds <count>\""
   run_flow_quick_side="On \"Start the orchestrator flow\",
   call the Skill tool with \"orchestrator:orch-flow\" and args \"--side\" yourself.
   On \"Quick implementation\",
@@ -244,8 +246,11 @@ ${run_next} Do not ask the user to type a command.${route_here}
   ADR wording the planning decided into the issue body verbatim.
   The route's steps run in this order, and one rule covers every step: when a step stops or fails, stop there - run no later step, and report why it stopped.
   orch-to-spec stops when it ends without reporting the issue number. Once it has reported the number,
-  ask the user whether to run a spec review on it - ask every time, never
-  assume - and run the standalone orch-spec-review only on a yes. Then publish
+  ask the user how many spec review rounds to run on it, as one blocking question with ${ask_tool},
+  with the options 3 (Recommended), 1, 5, and Other for any other whole number from 0 up,
+  where 0 skips the review; ask every time, never assume.
+  On a count of 1 or more, run the standalone orch-spec-review for that many
+  rounds: ${run_review_rounds}. Then publish
   its ticket breakdown (orch-to-tickets) against that issue, unless rewrite mode reported the breakdown \`kept\`:
   then skip that step. Rewrite mode reports the breakdown; run no breakdown check of your own.
   If orch-to-tickets fails after rewrite mode retired a breakdown, the report also says that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>. Then stop: do not
