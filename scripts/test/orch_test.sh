@@ -7764,6 +7764,18 @@ out="$(contract adapter_issue_state_labels 23 2>&1)"; st=$?
 assert_status "issue state and labels: reads both" "$st" 0
 assert_eq "the state first, then one label per line" "$out" "$(writeln OPEN review:nit needs-triage)"
 
+gh_reply 0 $'OPEN\n2\nreview:nit\nready-for-agent\n## Finding\n\n**PR:** x\n' '' \
+  issue view 23 --json state,labels,body --jq '.state, (.labels | length), (.labels[].name), .body'
+out="$(contract adapter_issue_state_labels_body 23 2>&1)"; st=$?
+assert_status "issue state, labels and body: reads all three in one call" "$st" 0
+assert_eq "the state, the label count, one label per line, then the body" "$out" \
+  "$(writeln OPEN 2 review:nit ready-for-agent '## Finding' '' '**PR:** x')"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' \
+  issue view 404 --json state,labels,body --jq '.state, (.labels | length), (.labels[].name), .body'
+out="$(contract adapter_issue_state_labels_body 404 2>&1)"; st=$?
+assert_status "issue state, labels and body: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through (state, labels and body)" "$out" "HTTP 502: Bad Gateway"
+
 gh_reply 0 $'Widgets need a handle\nready-for-agent\n' '' \
   issue view 23 --json title,labels --jq '.title, (.labels[].name)'
 out="$(contract adapter_issue_title_labels 23 2>&1)"; st=$?
@@ -8487,17 +8499,19 @@ before_tree="$(git status --porcelain)"
 before_store="$(fake_snapshot)"
 out="$(scan 2>&1)"; st=$?
 assert_status "scans the open filed findings" "$st" 0
-assert_eq "one tab-separated line of five fields per finding" \
-  "$(printf '%s\n' "$out" | awk -F'\t' 'NF != 5' | wc -l | tr -d ' ')" "0"
-assert_eq "an unchanged file's finding: issue, PR, location, result, empty detail" \
-  "$(line_of 1 "$out")" "$(printf '1\t7\tsrc/other.sh:2\tunchanged\t')"
+assert_eq "one tab-separated line of six fields per finding" \
+  "$(printf '%s\n' "$out" | awk -F'\t' 'NF != 6' | wc -l | tr -d ' ')" "0"
+assert_eq "and no field is ever empty" \
+  "$(printf '%s\n' "$out" | awk -F'\t' '{ for (i = 1; i <= NF; i++) if ($i == "") e++ } END { print e + 0 }')" "0"
+assert_eq "an unchanged file's finding: issue, PR, location, result, - for no detail, triage state" \
+  "$(line_of 1 "$out")" "$(printf '1\t7\tsrc/other.sh:2\tunchanged\t-\tneeds-triage')"
 assert_eq "a finding whose lines a later commit fixed is changed" "$(field_of 2 4 "$out")" "changed"
 assert_eq "naming that commit's full SHA, not the newer one elsewhere in the file" \
   "$(field_of 2 5 "$out")" "$fix_sha"
 assert_eq "a line range the file no longer reaches is changed too" "$(field_of 3 4 "$out")" "changed"
 assert_eq "naming the newest commit touching the file" "$(field_of 3 5 "$out")" "$reword_sha"
 assert_eq "a deleted file's finding is gone" "$(field_of 4 4 "$out")" "gone"
-assert_eq "with no detail" "$(field_of 4 5 "$out")" ""
+assert_eq "with - for no detail" "$(field_of 4 5 "$out")" "-"
 assert_eq "an unreachable head SHA is unknown" "$(field_of 5 4 "$out")" "unknown"
 assert_contains "saying the SHA was unreachable" "$(field_of 5 5 "$out")" "unreachable"
 assert_eq "a body without the labelled lines is unknown" "$(field_of 6 4 "$out")" "unknown"
@@ -8509,13 +8523,13 @@ assert_eq "nor a closed one" "$(line_of 9 "$out")" ""
 assert_eq "nor an issue that is not a filed finding" "$(line_of 10 "$out")" ""
 # Every result path's exact line, pinned byte for byte.
 assert_eq "a changed finding's exact line" \
-  "$(line_of 2 "$out")" "$(printf '2\t7\tsrc/app.sh:3\tchanged\t%s' "$fix_sha")"
+  "$(line_of 2 "$out")" "$(printf '2\t7\tsrc/app.sh:3\tchanged\t%s\tneeds-triage' "$fix_sha")"
 assert_eq "a gone finding's exact line" \
-  "$(line_of 4 "$out")" "$(printf '4\t7\tsrc/gone.sh:1\tgone\t')"
+  "$(line_of 4 "$out")" "$(printf '4\t7\tsrc/gone.sh:1\tgone\t-\tneeds-triage')"
 assert_eq "an unreachable head SHA's exact line" "$(line_of 5 "$out")" \
-  "$(printf '5\t7\tsrc/app.sh:3\tunknown\thead SHA 0123456789abcdef0123456789abcdef01234567 is unreachable, even after fetching refs/pull/7/head')"
+  "$(printf '5\t7\tsrc/app.sh:3\tunknown\thead SHA 0123456789abcdef0123456789abcdef01234567 is unreachable, even after fetching refs/pull/7/head\tneeds-triage')"
 assert_eq "a body with no Location line: its exact line" "$(line_of 6 "$out")" \
-  "$(printf '6\t-\t-\tunknown\tbody does not parse: no **Location:** line naming `<file>:<line>` at <SHA>')"
+  "$(printf '6\t-\t-\tunknown\tbody does not parse: no **Location:** line naming `<file>:<line>` at <SHA>\tneeds-triage')"
 assert_eq "the findings come in issue order" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 "
 assert_ne "lists the major findings still in needs-triage" "$(line_of 5 "$out")" ""
 assert_ne "and the nit ones" "$(line_of 6 "$out")" ""
@@ -8544,6 +8558,71 @@ assert_contains "naming the missing severity label" "$out" "review:"
 out="$(scan 2 --pr 8 2>&1)"; st=$?
 assert_status "takes an issue or a PR, not both" "$st" 1
 
+# --all, the re-check: every open filed finding whatever its triage label.
+# The sixth column names the triage-role labels each carries, in role order.
+finding 20 "review:nit" "\`src/other.sh:2\` at $head_sha"
+finding 21 "review:major,ready-for-human,bug,needs-info" "\`src/other.sh:2\` at $head_sha" 21
+finding 22 "review:nit,wontfix" "\`src/gone.sh:1\` at $head_sha"
+finding 23 "review:nit,ready-for-agent,needs-triage" "\`src/other.sh:2\` at $head_sha" 21
+out="$(scan --all 2>&1)"; st=$?
+assert_status "scans every open filed finding" "$st" 0
+assert_eq "whatever its triage label, closed ones and non-findings still left out" \
+  "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 8 20 21 22 23 "
+assert_eq "one tab-separated line of six fields per finding (--all)" \
+  "$(printf '%s\n' "$out" | awk -F'\t' 'NF != 6' | wc -l | tr -d ' ')" "0"
+assert_eq "an untriaged-by-label finding's state is -" \
+  "$(line_of 20 "$out")" "$(printf '20\t7\tsrc/other.sh:2\tunchanged\t-\t-')"
+assert_eq "a triaged finding's state is its label" "$(field_of 8 6 "$out")" "ready-for-agent"
+assert_eq "several are comma-joined in role order, not label order" \
+  "$(field_of 21 6 "$out")" "needs-info,ready-for-human"
+assert_eq "needs-triage leads the roles" "$(field_of 23 6 "$out")" "needs-triage,ready-for-agent"
+assert_eq "an open wontfix finding is listed, its state wontfix" \
+  "$(line_of 22 "$out")" "$(printf '22\t7\tsrc/gone.sh:1\tgone\t-\twontfix')"
+out="$(scan 2>&1)"
+assert_eq "without --all, only the findings in needs-triage" \
+  "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 23 "
+assert_eq "each with its state too" "$(field_of 23 6 "$out")" "needs-triage,ready-for-agent"
+# Each finding is read once, body and labels together: neither the body-only
+# nor the state-and-labels read is called.
+fake_fail adapter_issue_body "body read alone"
+fake_fail adapter_issue_state_labels "state and labels read alone"
+out="$(scan --all 2>&1)"; st=$?
+assert_status "reads each finding through one call for body and labels" "$st" 0
+assert_eq "listing them all" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "1 2 3 4 5 6 7 8 20 21 22 23 "
+out="$(scan --all 8 2>&1)"; st=$?
+assert_status "an explicit finding is read through that one call too" "$st" 0
+fake_unfail
+fake_fail adapter_issue_state_labels_body $'HTTP 502: Bad Gateway\nsecond line'
+out="$(scan --all 2>&1)"; st=$?
+assert_status "a listed finding gh cannot read dies" "$st" 1
+assert_contains "naming the issue, with gh's line" "$out" "gh could not read issue #1: HTTP 502: Bad Gateway"
+fake_unfail
+
+out="$(scan --all --pr 21 2>&1)"; st=$?
+assert_status "--all narrows to one source PR" "$st" 0
+assert_eq "listing that PR's findings whatever their label" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "21 23 "
+out="$(scan --pr 21 2>&1)"
+assert_eq "while without --all only its findings in needs-triage" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "23 "
+out="$(scan --all 8 2>&1)"; st=$?
+assert_status "--all accepts an explicit finding already triaged" "$st" 0
+assert_eq "scanning only it" "$(line_of 8 "$out")" "$(printf '8\t7\tsrc/other.sh:2\tunchanged\t-\tready-for-agent')"
+assert_eq "and nothing else" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "8 "
+out="$(scan 8 --all 2>&1)"; st=$?
+assert_status "--all may follow the issue" "$st" 0
+out="$(scan --all 9 2>&1)"; st=$?
+assert_status "--all still refuses a closed finding" "$st" 1
+assert_contains "saying so (--all)" "$out" "not open"
+out="$(scan --all 10 2>&1)"; st=$?
+assert_status "--all still refuses an issue that is not a filed finding" "$st" 1
+assert_contains "naming the missing severity label (--all)" "$out" "review:"
+for args in "--all 8 --pr 21" "--all --all" "--all --pr" "--all x"; do
+  # shellcheck disable=SC2086 # each args string is split on purpose
+  out="$(scan $args 2>&1)"; st=$?
+  assert_status "refuses scan $args" "$st" 1
+  assert_contains "with the usage (scan $args)" "$out" "usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]"
+done
+for n in 20 21 22 23; do fake_issue "$n" closed; done
+
 # A blocking finding is fixed in the loop, never filed: an explicit issue
 # labelled review:blocking is not a filed finding.
 finding 12 "review:blocking,needs-triage" "\`src/other.sh:2\` at $head_sha"
@@ -8566,7 +8645,7 @@ assert_status "scans a finding filed on a PR edit that never landed" "$st" 0
 assert_eq "it is unknown, not changed by a commit older than the filing" "$(field_of 11 4 "$out")" "unknown"
 assert_contains "saying no commit since the filing touched the file" "$(field_of 11 5 "$out")" "no commit"
 assert_eq "its exact line" "$(line_of 11 "$out")" \
-  "$(printf '11\t11\tsrc/other.sh:2\tunknown\tno commit on the default branch since %s touched src/other.sh - the difference is commits that never reached it' "$unmerged_sha")"
+  "$(printf '11\t11\tsrc/other.sh:2\tunknown\tno commit on the default branch since %s touched src/other.sh - the difference is commits that never reached it\tneeds-triage' "$unmerged_sha")"
 fake_issue 11 closed
 
 # A finding whose lines the scan follows to the default branch, where later
@@ -8575,8 +8654,8 @@ fake_issue 11 closed
 finding 14 "review:nit,needs-triage" "\`src/app.sh:6\` at $head_sha" 14
 out="$(scan 14 2>&1)"; st=$?
 assert_status "scans a finding whose file changed only elsewhere" "$st" 0
-assert_eq "its followed, untouched lines are unchanged, with empty detail" \
-  "$(line_of 14 "$out")" "$(printf '14\t14\tsrc/app.sh:6\tunchanged\t')"
+assert_eq "its followed, untouched lines are unchanged, with - for no detail" \
+  "$(line_of 14 "$out")" "$(printf '14\t14\tsrc/app.sh:6\tunchanged\t-\tneeds-triage')"
 fake_issue 14 closed
 
 # A body with its **Location:** line but no **PR:** line does not parse either.
@@ -8585,7 +8664,7 @@ fake_issue_body 16 "$(writeln '## Finding' '' "**Location:** \`src/other.sh:2\` 
 out="$(scan 16 2>&1)"; st=$?
 assert_status "scans a finding whose body names no PR" "$st" 0
 assert_eq "it is unknown, its exact line naming the missing PR line" "$(line_of 16 "$out")" \
-  "$(printf '16\t-\tsrc/other.sh:2\tunknown\tbody does not parse: no **PR:** line ending in a pull request URL')"
+  "$(printf '16\t-\tsrc/other.sh:2\tunknown\tbody does not parse: no **PR:** line ending in a pull request URL\tneeds-triage')"
 fake_issue 16 closed
 
 # A finding whose file later gets hunks both before and after its line, with
@@ -8638,6 +8717,7 @@ finding 15 "review:nit,triage me" "\`src/other.sh:2\` at $head_sha"
 out="$(scan 2>&1)"
 assert_eq "lists under the repo's own name for needs-triage, and only it" \
   "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "15 "
+assert_eq "its state the repo's label for the role" "$(field_of 15 6 "$out")" "triage me"
 # A needs-triage label beginning with '-' is a label, never a grep option.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
@@ -8646,12 +8726,12 @@ writeln '# Triage Labels' '' \
 finding 17 "review:nit,-triage" "\`src/other.sh:2\` at $head_sha"
 out="$(scan 17 2>&1)"; st=$?
 assert_status "scans an explicit finding whose needs-triage label begins with '-'" "$st" 0
-assert_eq "listing it" "$(line_of 17 "$out")" "$(printf '17\t7\tsrc/other.sh:2\tunchanged\t')"
+assert_eq "listing it, its state the repo's label" "$(line_of 17 "$out")" "$(printf '17\t7\tsrc/other.sh:2\tunchanged\t-\t-triage')"
 fake_issue 17 closed
 rm docs/agents/triage-labels.md
 
 finding 18 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha"
-fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_state_labels_body $'HTTP 502: Bad Gateway\nsecond line'
 before_store="$(fake_snapshot)"
 out="$(scan 18 2>&1)"; st=$?
 assert_status "an explicit finding gh cannot read dies" "$st" 1
@@ -8809,6 +8889,74 @@ assert_contains "naming the issue, with gh's line" "$out" "gh could not read iss
 assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "changing nothing" "$(fake_snapshot)" "$before_store"
 fake_unfail
+
+# An already-triaged finding is settled cleanly: whatever the outcome, every
+# other triage-role label it carries goes, and none it lacks is named - gh
+# refuses to remove a label the repo does not have. The removes are read off a
+# relabel that records them, at the gh boundary, before the fake applies it.
+relabel_log="$(mktemp)"
+traced_adapter="$(mktemp)"
+writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
+        'eval "fake_relabel_applied() $(declare -f adapter_issue_relabel | tail -n +2)"' \
+        'adapter_issue_relabel() {' \
+        '  local a prev=""' \
+        '  for a in "$@"; do [ "$prev" != --remove ] || printf "%s\n" "$a" >>"$RELABEL_LOG"; prev="$a"; done' \
+        '  fake_relabel_applied "$@"' \
+        '}' >"$traced_adapter"
+traced_apply() {
+  : >"$relabel_log"
+  RELABEL_LOG="$relabel_log" ORCH_GH_ADAPTER="$traced_adapter" orch_gh_failing finding-triage apply "$@"
+}
+removed_labels() { sort "$relabel_log" | tr '\n' ' '; }
+for outcome in close-fixed wontfix ready-for-agent ready-for-human; do
+  case "$outcome" in
+    close-fixed|wontfix) category_args=() ;;
+    *) category_args=(--category bug) ;;
+  esac
+  # Every other triage role at once, with the outcome's own among them.
+  triaged 6 "review:major,needs-triage,needs-info,ready-for-agent,ready-for-human,wontfix,bug"
+  out="$(traced_apply 6 "$outcome" ${category_args[@]+"${category_args[@]}"} --comment-file "$comment" 2>&1)"; st=$?
+  assert_status "settles a finding carrying every triage role ($outcome)" "$st" 0
+  case "$outcome" in
+    close-fixed) left="bug review:major " ;;
+    wontfix) left="bug review:major wontfix " ;;
+    *) left="bug $outcome review:major " ;;
+  esac
+  assert_eq "leaving only the state $outcome sets" "$(fake_labels_of 6)" "$left"
+  # One other role apiece: ready-for-agent, or ready-for-human for ready-for-agent.
+  other=ready-for-agent
+  [ "$outcome" != ready-for-agent ] || other=ready-for-human
+  triaged 7 "review:minor,$other,bug"
+  out="$(traced_apply 7 "$outcome" ${category_args[@]+"${category_args[@]}"} --comment-file "$comment" 2>&1)"; st=$?
+  assert_status "settles a finding already triaged to $other ($outcome)" "$st" 0
+  assert_eq "removing only the label it carries ($outcome)" "$(removed_labels)" "$other "
+  case "$outcome" in
+    close-fixed) left="bug review:minor " ;;
+    wontfix) left="bug review:minor wontfix " ;;
+    *) left="bug $outcome review:minor " ;;
+  esac
+  assert_eq "out of $other ($outcome)" "$(fake_labels_of 7)" "$left"
+done
+# A finding still in needs-triage names needs-triage alone.
+triaged 8 "review:major,needs-triage,bug"
+out="$(traced_apply 8 wontfix --comment-file "$comment" 2>&1)"; st=$?
+assert_eq "a finding in needs-triage removes needs-triage alone" "$(removed_labels)" "needs-triage "
+# A finding already carrying the outcome's label keeps it.
+triaged 9 "review:major,ready-for-agent,bug"
+out="$(traced_apply 9 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
+assert_eq "re-applying a finding's own state removes nothing" "$(removed_labels)" ""
+assert_eq "and keeps that state" "$(fake_labels_of 9)" "bug ready-for-agent review:major "
+# A failed relabel of a triaged finding still dies, after the comment.
+triaged 7 "review:minor,ready-for-agent,bug"
+fake_fail adapter_issue_relabel "HTTP 502: Bad Gateway"
+out="$(traced_apply 7 ready-for-human --category bug --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a failed relabel of a triaged finding dies" "$st" 1
+assert_contains "saying so" "$out" "gh could not relabel issue #7"
+assert_eq "after the comment is posted" "$(fake_comments_of 7)" \
+  "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
+assert_eq "and before the labels change" "$(fake_labels_of 7)" "bug ready-for-agent review:minor "
+fake_unfail
+rm -f "$relabel_log" "$traced_adapter"
 
 # Every state label is the repo's name for the role.
 writeln '# Triage Labels' '' \
@@ -9536,7 +9684,9 @@ assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 assert_contains "and filing" "$("$ORCH" help)" "review file"
 assert_contains "with the finding's axis" "$("$ORCH" help)" "review file <major|nit> <title> --axis <spec|standards> --body-file <file>"
-assert_contains "and finding triage's scan" "$("$ORCH" help)" "finding-triage scan [<issue> | --pr <n>]"
+assert_contains "and finding triage's scan" "$("$ORCH" help)" "finding-triage scan [--all] [<issue> | --pr <n>]"
+assert_contains "with --all's re-check" "$("$ORCH" help)" "--all: every open review:<severity> finding"
+assert_contains "and the triage-state column" "$("$ORCH" help)" "TAB <detail> TAB <state>"
 assert_contains "and its apply, in both forms" "$("$ORCH" help)" "finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>"
 assert_contains "the open one with its category" "$("$ORCH" help)" "--category <bug|enhancement> --comment-file <file>"
 assert_contains "and the terminal-state classifier" "$("$ORCH" help)" "review terminal"
