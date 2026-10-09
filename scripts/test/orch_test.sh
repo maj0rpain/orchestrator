@@ -6384,10 +6384,10 @@ assert_contains "the CLI conventions' noun table has a side-checkout row" \
   "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`add`, `list`'
 assert_contains "naming the issue verb" \
   "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`issue`'
-assert_eq "README names side-checkout add --issue" \
-  "$(grep -c 'side-checkout add <slug> --issue' "$PLUGIN_ROOT/README.md" | tr -d ' ')" "1"
-assert_eq "README names side-checkout issue" \
-  "$(grep -c 'orch.sh side-checkout issue' "$PLUGIN_ROOT/README.md" | tr -d ' ')" "1"
+assert_eq "docs/how-it-works.md names side-checkout add --issue" \
+  "$(grep -c 'side-checkout add <slug> --issue' "$PLUGIN_ROOT/docs/how-it-works.md" | tr -d ' ')" "1"
+assert_eq "docs/how-it-works.md names side-checkout issue" \
+  "$(grep -c 'orch.sh side-checkout issue' "$PLUGIN_ROOT/docs/how-it-works.md" | tr -d ' ')" "1"
 restore_suite_env
 
 # --- status lists every checkout (#725) ----------------------------------------

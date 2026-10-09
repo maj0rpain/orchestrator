@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.25.1
+
+`README.md` is rewritten for a first-time visitor: what the plugin is and why
+separate sessions matter, requirements, install, a quick start, the three
+routes (flow, quick implementation, blueprint) with a Mermaid diagram, and a
+commands table with one-line descriptions. The detail moves, with no fact
+lost, to `docs/how-it-works.md` (the phases, every command in full, the base
+branch, the parallel cap, hosts and activation), `CONTRIBUTING.md` (develop,
+layout, resolving `orch.sh`, naming host capabilities, command names, reporting
+a bug) and `docs/junie/README.md` (the Junie CLI setup). The "Upgrading from
+0.x" note is dropped: this changelog's 1.0.0 entry carries the rename list.
+`docs_lint.sh` scans the new files, and every pointer to a moved section
+follows it (#891).
+
 ## 3.25.0
 
 A side checkout made for a quick implementation records its issue:
