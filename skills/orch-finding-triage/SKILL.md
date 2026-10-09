@@ -120,7 +120,10 @@ fixed for the whole triage.
 For every finding, read its filed body with
 `bash "$ORCH" issue fetch <issue> <file>` (a temp file outside the repo): its
 `**Axis:**`, `**Severity:**`, `**Location:**`, `**PR:**` and `**Why not fixed
-in the loop:**` lines, the claim, and any options it names.
+in the loop:**` lines, the `**Spec question:**` line where the body has one,
+the claim, and any options it names. A finding with a `**Spec question:**`
+line is a **spec question**: a behaviour decision the spec left open, so it
+needs a decision.
 
 Then read every finding's code on the default branch at the default SHA -
 `git show <default SHA>:<file>`, never by checking anything out - and judge
@@ -159,7 +162,9 @@ with a one-line reason:
 - **ready-for-agent** - it still holds, and its filed "Why not fixed" reason
   does not call for a decision.
 - **ready-for-human** - it still holds, and its fix needs a decision. List the
-  options the filed body names.
+  options the filed body names. A spec question that still holds is always
+  proposed here, never `ready-for-agent`, and its proposal quotes the body's
+  `**Spec question:**` line.
 - **wontfix** - proposed only with a reason. The human can always choose it.
 
 **In a re-check** a batch may mix states. A finding whose `<state>` includes

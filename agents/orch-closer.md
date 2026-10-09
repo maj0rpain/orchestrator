@@ -29,7 +29,9 @@ loop's outcome either: the terminal state in your prompt is final, and
   record at or below it belongs to an earlier loop, which you leave alone.
 - **CI result** - the final record's `## CI` section, as the driver wrote it.
 - **Host fallbacks** the loop took, or `None (<host>).`
-- **Terminal state** - `ready`, or `stop` with its reason.
+- **Terminal state** - `ready`, or `stop` with its reason. A stop for spec
+  questions reads `stop - spec question: <file>:<line> <title>`, one per
+  question: none has an issue number yet.
 - **What happens next.**
 - **orch.sh** - the path of the plugin's `orch.sh`.
 
@@ -55,8 +57,13 @@ loop's outcome either: the terminal state in your prompt is final, and
 4. **File the rest** - see **Filing**.
 5. **Write the Filed list** into the final record - see **Filing**.
 6. **Post the PR comment** - see **The PR comment**.
-7. **Return** the filed issue numbers, one line, then one line naming the
-   met-again findings' issue numbers, if any.
+7. **Return** the filed issue numbers, one line; then the spec questions
+   this loop filed, one line,
+   `Spec questions: #<n> <file>:<line> <title>; ...`, or `Spec questions:
+   none` - one you could not file reads `<file>:<line> <title> (not filed)`
+   in place of `#<n> ...`; then one line naming the met-again findings'
+   issue numbers, if any. The driver names the spec questions in its
+   `## Terminal state` from that line, never by matching records itself.
 
 ## Filing
 
@@ -85,12 +92,18 @@ The body carries, in this order:
 5. a link to the PR: `**PR:** <url>`;
 6. one line on why it was not fixed in the loop,
    `**Why not fixed in the loop:** <reason>`, naming the rule that kept it
-   out: its fix needs a decision (list the options), would change behaviour,
-   the nit is not mechanical, it sits on loop-authored lines, it was found in
-   the final iteration, or the fixer could not fix it (with its reason).
+   out: its fix needs a decision (list the options), it is a spec question
+   (list the options), the nit is not mechanical, it sits on loop-authored
+   lines, it was found in the final iteration, or the fixer could not fix it
+   (with its reason);
+7. on a spec question only - a finding whose rule is `spec question` - the
+   behaviour the spec leaves open, phrased as a question:
+   `**Spec question:** <question>`, e.g. `**Spec question:** Should the
+   high-water mark depend on the archive step?`.
 
-Items 2 to 6 are labelled lines, written exactly as shown: finding triage
-parses them, and a body without them is one it cannot place.
+Items 2 to 7 are labelled lines, written exactly as shown: finding triage
+parses them, and a body without them is one it cannot place. A spec question
+is labelled and triaged as any other filed major: it stays in `needs-triage`.
 
 `.orchestrator/` is git-excluded and eventually archived, so the body is the
 record, not a link to one.
@@ -125,7 +138,9 @@ The PR is the only durable surface another human ever sees. Carry:
 - the iterations run;
 - what was fixed - blocking, majors, and nits - with severity and commit SHAs;
 - any open blocking finding and any missing look, from the records;
-- the issues filed, with number, severity, and title;
+- the issues filed, with number, severity, and title, the spec questions
+  among them listed apart under their own **Spec questions** heading - each
+  holds the PR in draft until a human rules on it;
 - the findings met again already filed, with their issue numbers, so the
   human can triage them;
 - every covered deviation, and every rejected-alternative proposal with the

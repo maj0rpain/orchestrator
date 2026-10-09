@@ -135,10 +135,21 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    stands whether or not a reviewer met it again. Apply the two
    demotions under **Authority** first, then the **Severity** rubric, then
    give each finding one disposition:
-   - **Fix** - every blocking finding, every major that needs no decision and
-     changes no behaviour, and every mechanical nit, except where a rule below
-     keeps it out.
+   - **Fix** - every blocking finding, every major that needs no decision,
+     and every mechanical nit, except where a rule below keeps it out.
    - **File** - every other major and nit, with the rule that kept it out:
+     - **Spec question.** A major whose fix needs a decision about *what the
+       change does* - its behaviour - that the spec, plan and deviations
+       leave unsettled: silent, ambiguous, or self-contradictory on it. It is
+       filed with the rule `spec question`, and holds the PR out of **Ready**
+       (see **Termination**). A finding that the change contradicts what the
+       spec clearly asks for is blocking, not a spec question; a decision
+       about structure only - which of two refactorings, which name - is an
+       ordinary major that needs a decision, filed without blocking. Only a
+       major can be one: a nit questioning behaviour was mis-ranked, and is a
+       major. Classify by the finding's content, never by when or where it
+       was found: one in the final iteration or on loop-authored lines still
+       takes the rule `spec question`, and still blocks.
      - **Loop-authored lines.** A major or nit on lines this loop's own fix
        commits wrote is filed, never fixed - fixes drawing findings drawing
        fixes is what never converges. Tell them apart with `git blame` on the
@@ -185,7 +196,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    blocking finding it could not fix, which is now **open blocking** and goes
    into the next iteration's triage. A major or nit it could not fix needs
    nothing from you: its record lists it as waiting to be filed, and the
-   closer files it.
+   closer files it - a major listed with the rule `spec question` still holds
+   the PR out of **Ready**.
 7. Go to step 1. Nothing found ends the loop early; only the budget does,
    or a failed base sync at step 2. A
    **clean iteration** - nothing to fix, so no fixer - is the cheap case, and
@@ -275,7 +287,7 @@ Final record: <bash "$ORCH" review path>
 Loop boundary: <the iteration read in Before the first iteration, step 4>
 CI result: <the final record's ## CI section>
 Host fallbacks: <every fallback the loop took, per docs/host-capabilities.md, or None (<host>).>
-Terminal state: <ready, or stop and its reason>
+Terminal state: <ready, or stop and its reason; spec questions as stop - spec question: <file>:<line> <title>, one per question>
 What happens next: <the PR marked ready and the flow done, or the flow left at review for a human to re-enter>
 orch.sh: <the path ORCH holds>
 ```
@@ -307,11 +319,14 @@ may fix without asking anyone:
 - **major** - the change works but carries real cost: a documented standard
   breached, a smell with teeth, scope nobody asked for. Fixed, unless the fix
   needs a choice between alternatives the plan, spec, and deviations did not
-  settle, or would change behaviour - a major means the change works, so a fix
-  that changes behaviour was never a major fix. Those are filed, the options
-  in the body. A PR is marked ready with filed majors open against it - the
+  settle. Those are filed, the options in the body. A fix that changes
+  behaviour the spec settles makes the finding blocking; one whose behaviour
+  the spec leaves unsettled makes it a **spec question** (step 4 of **The
+  iteration**). A PR is marked ready with filed majors open against it - the
   issue carries the reasoning, and triage decides against the whole codebase
-  whether it is worth fixing at all.
+  whether it is worth fixing at all - unless one is a spec question this loop
+  filed: that holds the PR out of **Ready** until a human rules on it. See
+  `docs/adr/0042-a-spec-question-the-review-loop-files-holds-the-pr-in-draft.md`.
 - **nit** - taste and judgement. Fixed only when **mechanical**: exactly one
   correct fix, confined to the lines it names, no behaviour change, no wording
   or taste to choose - a typo, an unused import, a comment naming the wrong
@@ -320,7 +335,8 @@ may fix without asking anyone:
 
 A major or nit on **loop-authored lines** or found in
 the **final iteration** is filed, never fixed - see step 4 of **The
-iteration**.
+iteration** - though a spec question found there still holds the PR out of
+**Ready**.
 
 Major and nit are triage priorities on a filed finding, which is why they live
 in the issue's label rather than its title: the label can change.
@@ -397,17 +413,28 @@ follows, in this order:
    flake rerun was spent.
 2. **Decide the terminal state** - **Ready** or **Bounded stop**, below.
 3. **Start the closer** with that decision - see **The closer** - and wait
-   for its issue numbers.
+   for its issue numbers. A stop for spec questions has no issue numbers
+   yet: its `Terminal state:` input names each question as `stop - spec
+   question: <file>:<line> <title>`, one per question. The closer's return
+   carries a `Spec questions:` line naming each with the number it got.
 4. **Write `## Terminal state`** into the final iteration's record: first
    line `ready`, or `stop` with its reason either on the same line after a
    separator (`-`, `–`, `—`, `:`) or on the lines below. Blank lines under
    the heading are skipped. Any other first line reads as `malformed`, and
-   redo refuses it.
+   redo refuses it. A stop for spec questions names each from the closer's
+   `Spec questions:` line, with its number:
+   `stop - spec question #<n>: <file>:<line> <title>`; one the closer could
+   not file reads `stop - spec question: <file>:<line> <title> (not filed)`,
+   and still blocks.
 5. **Run the terminal action.**
 
-**Ready** - all four hold: the final iteration was clean, its record lists no
-**open blocking** finding and no **missing look**, and CI said `green` or
-`none`. The terminal action is `bash "$ORCH" review ready`, which marks the
+**Ready** - all five hold: the final iteration was clean, its record lists no
+**open blocking** finding and no **missing look**, CI said `green` or
+`none`, and no record of this loop - numbered above the **loop boundary** -
+lists a spec question waiting to be filed. A spec question a previous loop
+filed and triage marks **met again** does not count: the human re-entering
+review after that stop is the ruling, so only spec questions this loop newly
+files block. The terminal action is `bash "$ORCH" review ready`, which marks the
 PR ready and records the flow `done` as one operation. No question is asked
 first: a loop that ends well ends without parking on a prompt.
 
@@ -416,7 +443,9 @@ the finding where there is one. The final iteration was not clean: it started
 a fixer, whether for a blocking finding this review made or for open blocking
 carried in. Nothing has reviewed what it wrote, and marking a PR ready over
 that claims a verification that never happened. An open blocking finding or a missing look
-remains in the final record. Or a base sync that failed, the reason naming
+remains in the final record. Or this loop filed a spec question, a
+behaviour decision the spec left open: the reason names each, so a human
+rules on it before the PR goes ready. Or a base sync that failed, the reason naming
 the unresolved merge or the refusal. Or CI: `failing` with the flake rerun
 spent or the failure not looking flaky, or `unreachable`. The terminal action is to
 stop: **leave `phase` at `review` and the PR in draft**, and tell the human

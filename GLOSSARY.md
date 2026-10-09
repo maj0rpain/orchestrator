@@ -332,7 +332,7 @@ blocking**.
 
 A loop finishes **Ready** only on a clean final iteration that leaves no open
 blocking finding - one found in this iteration or carried in from an earlier
-one - and no **missing look**, with CI green or absent. Anything else is a
+one - and no **missing look**, and files no spec question, with CI green or absent. Anything else is a
 bounded stop.
 
 **Driver**:
@@ -403,8 +403,8 @@ stop.
 The terminal state of a loop that ended without the change being ready - because
 its final iteration was not clean (it started a fixer, whose work nothing has
 reviewed), left a blocking
-finding its fixer could not fix, or lacked one of its two looks, or because CI
-could not be called green. A stop is not a failed change and not a successful one.
+finding its fixer could not fix, lacked one of its two looks, or filed a spec
+question, or because CI could not be called green. A stop is not a failed change and not a successful one.
 
 **Flake rerun**:
 The one permitted re-run of a failing CI check on the theory that it failed for
@@ -439,13 +439,14 @@ findings the loop may fix without asking anyone:
   when the fixer cannot, left open, holding the change out of ready.
 - **Major** - the change works but carries real cost: a documented standard
   breached, a smell with teeth, scope nobody asked for. Fixed by the loop
-  unless the fix needs a decision, changes behaviour, or would touch the
-  loop's own fixes; filed otherwise.
+  unless the fix needs a decision or would touch the loop's own fixes; filed
+  otherwise. A major that is a spec question is filed and holds the PR out of ready.
 - **Nit** - taste and judgement calls. Fixed by the loop only when it is a
   mechanical nit; filed otherwise.
 
 A final iteration fixes only what is blocking: a major or nit found there is
-filed, so a working change is never held in draft by a style finding.
+filed, so a working change is never held in draft by a style finding - though a
+spec question found there still holds it.
 
 **Mechanical nit**:
 A nit with exactly one correct fix, confined to the lines it names, changing
@@ -453,9 +454,12 @@ no behaviour and leaving no wording or taste to choose - a typo, an unused
 import, a comment naming the wrong function, a broken link. Rewording prose is
 never mechanical, however small.
 
+**Spec question**:
+A major whose fix needs a decision about what the change does that the spec, plan and deviations leave unsettled - silent, ambiguous, or self-contradictory on it. A finding that the change contradicts what the spec clearly asks for is blocking, not a spec question. A spec question a review loop files holds the PR out of ready, so a human rules on it before the PR is marked ready; one a later loop meets again does not.
+
 **Filed finding**:
 A major or nit the loop did not fix, turned into an issue when a loop
-terminates - because its fix needed a decision, would have changed behaviour,
+terminates - because its fix needed a decision, was a spec question,
 was not mechanical, landed on loop-authored lines, was found in a final
 iteration, or the fixer could not fix it. It carries the reviewer's finding
 and the loop's reasoning about it, including which of those kept it out of the
@@ -465,6 +469,7 @@ line, so a later loop's triage matches a finding it meets again on file, line,
 and claim. A filed finding enters **finding triage** against the whole codebase rather
 than against one diff: a later loop that meets it again leaves it alone, and
 tells the human it did.
+A filed finding that is a spec question also holds the PR out of ready until a human re-enters review.
 Findings the loop demoted on a human's earlier decision are reported, never
 filed.
 
