@@ -47,6 +47,9 @@ readonly ISSUE_LIST_LIMIT="${ORCH_ISSUE_LIST_LIMIT:-1000}"
 # The severities a filed finding carries as review:<severity> - the ones
 # `review file` files. Blocking is always fixed in the loop, never filed.
 readonly FILED_SEVERITIES="major nit"
+# The plugin's own label on a bundle issue - one ordinary issue that several
+# filed findings are closed into as duplicates (finding-triage bundle).
+readonly BUNDLE_LABEL="finding-bundle"
 
 # Whether <sev> is a filed severity: the one membership check over
 # FILED_SEVERITIES, so adding a severity edits the constant and its label
@@ -2870,8 +2873,8 @@ cmd_finding_triage_bundle() {
     issue_state_labels_read "$into" b_state b_labels b_line \
       || die "gh could not read issue #$into: ${b_line:-gh gave no reason}"
     [ "$b_state" = OPEN ] || die "bundle #$into is not open - --into resumes an open bundle only"
-    labels_have "$b_labels" finding-bundle \
-      || die "issue #$into carries no 'finding-bundle' label - --into resumes a bundle only"
+    labels_have "$b_labels" "$BUNDLE_LABEL" \
+      || die "issue #$into carries no '$BUNDLE_LABEL' label - --into resumes a bundle only"
     for m in "${members[@]}"; do
       case "$seen" in *" $m "*) die "issue #$m is named twice" ;; esac
       seen="$seen$m "
@@ -2900,9 +2903,9 @@ cmd_finding_triage_bundle() {
   # The finding-bundle label is the plugin's, but created only where missing,
   # as the triage labels are: a failed create is forgiven, and a truly missing
   # label then fails the issue create.
-  adapter_label_create finding-bundle c5def5 "Several filed findings worked as one" 2>/dev/null || true
+  adapter_label_create "$BUNDLE_LABEL" c5def5 "Several filed findings worked as one" 2>/dev/null || true
   category_label_ensure "$category"
-  b="$(adapter_issue_create "$title" "$file" finding-bundle "$(triage_label_for "$state")" "$category")" \
+  b="$(adapter_issue_create "$title" "$file" "$BUNDLE_LABEL" "$(triage_label_for "$state")" "$category")" \
     || die "gh could not create the bundle issue - no member was touched"
   printf '%s\n' "$b"
   bundle_members_close "$b" "${members[@]}"
@@ -2915,17 +2918,17 @@ cmd_finding_triage_bundle() {
 # what failed, the members left open - that one and every one after it - and
 # the --into command that resumes.
 bundle_members_close() {
-  local b="$1" comment m i=0 comments state why left
+  local b="$1" comment_file m i=0 comments state why left
   shift
   local members=("$@")
-  comment="$(mktemp)"
-  printf 'Bundled into #%s\n' "$b" >"$comment"
+  comment_file="$(mktemp)"
+  printf 'Bundled into #%s\n' "$b" >"$comment_file"
   for m in "${members[@]}"; do
     why=""
     if ! comments="$(adapter_issue_comments "$m" 2>/dev/null)"; then
       why="gh could not read member #$m's comments"
     elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
-      && ! triage_comment_post "$m" "$comment"; then
+      && ! triage_comment_post "$m" "$comment_file"; then
       why="gh could not comment on member #$m"
     elif ! adapter_issue_close "$m" --duplicate-of "$b"; then
       why="gh could not close member #$m as a duplicate - --duplicate-of needs gh 2.102 or newer"
@@ -2935,13 +2938,13 @@ bundle_members_close() {
       why="member #$m did not read back as closed"
     fi
     if [ -n "$why" ]; then
-      rm -f "$comment"
+      rm -f "$comment_file"
       left="${members[*]:$i}"
       die "bundle #$b: $why - members left open: #${left// / #}; resume with: orch.sh finding-triage bundle --into $b $left"
     fi
     i=$((i + 1))
   done
-  rm -f "$comment"
+  rm -f "$comment_file"
 }
 
 cmd_finding_triage() {

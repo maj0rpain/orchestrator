@@ -269,8 +269,9 @@ label read this mode uses:
   `ready-for-agent,ready-for-human`: not a candidate. Report it with its
   state.
 
-If the scan dies, relay its reason and stop. With fewer than two candidates,
-there is nothing to bundle: report the sorted lines and stop. Then name the
+If the scan dies, relay its reason and stop. With no candidate, there is
+nothing to judge: report the sorted lines and stop. A lone candidate is still
+judged, since it may be proposed close as completed. Then name the
 default branch and the **default SHA** exactly as step 1 does.
 
 ### B2. Judge
@@ -303,6 +304,8 @@ one numbered batch:
 - **Closes**, numbered after the groups: each candidate proposed close as
   completed, with its one-line reason.
 - **Left as is**: the candidates in no group, unnumbered.
+
+With no group and no close to propose, there is nothing to ask: go to B5.
 
 Ask **one blocking question** with the multiple-choice question capability,
 the batch and the call in the same response:
