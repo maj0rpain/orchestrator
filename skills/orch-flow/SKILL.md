@@ -184,8 +184,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    **Any other exit** means GitHub could not be read: stop, leaving the state
    where it is, say what blocked, and offer `/orchestrator:abort`.
 6. Invoke the `orch-handoff` skill for `02-spec.md`, with every round's
-   changelog the review returned as its **Spec review changelog**, each
-   under its `### Round <k> of <n>` subheading, in round order, and its **Ticket breakdown** as
+   changelog the review returned as its **Spec review changelog**, laid out
+   as that template says, and its **Ticket breakdown** as
    either the spec issue number (published or found as sub-issues) or
    `None: work directly against #<n>` naming the spec issue (collapsed, per
    step 5); validate it with `bash "$ORCH" handoff validate "$(bash "$ORCH" handoff path implement)"`,
