@@ -11916,6 +11916,17 @@ assert_contains "naming the ops it wants" "$out" "advance|boundary"
 unset ORCHESTRATOR_HOST
 restore_suite_env
 
+# --- outside a checkout (#931) ---------------------------------------------------
+# Run from the suite's own non-repo cwd: the death names the cwd and the
+# remedy. It comes before dispatch, so any subcommand reaches it.
+echo
+echo "outside a checkout (#931)"
+cd "$SUITE_CWD" || exit 1
+err="$(bash "$ORCH" issue fetch 931 out.md 2>&1 >/dev/null)"; st=$?
+assert_status "orch.sh outside a git repository exits 1" "$st" 1
+assert_eq "naming the cwd and the remedy" "$err" \
+  "orch: not inside a git repository ($PWD) - run orch.sh from inside the repo's checkout"
+
 # --- the real-gh guard (#779) -------------------------------------------------
 # A copy of the scripts tree with a planted section that calls gh, run filtered
 # to that section: the shared setup's stub gh answers it, logs it, and the

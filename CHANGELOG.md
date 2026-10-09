@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.2.6
+
+`orch.sh` run outside every git repository now names the cwd and the remedy:
+`orch: not inside a git repository (<cwd>) - run orch.sh from inside the repo's
+checkout`, where before it named only the reason (#931). It still exits 1.
+
 ## 4.2.5
 
 Skills that ask the human a question name both hosts' ask tools,

@@ -240,7 +240,7 @@ normalize_slug() {
   printf '%s\n' "$slug"
 }
 
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository ($PWD) - run orch.sh from inside the repo's checkout"
 readonly ROOT
 readonly ORCH="$ROOT/$ORCH_DIR_NAME"
 readonly STATE="$ORCH/state.json"
