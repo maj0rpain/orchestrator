@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.2.5
+
+Skills that ask the human a question name both hosts' ask tools,
+`AskUserQuestion` on Claude Code and `ask_user` on Junie: `orch-review` and
+`orch-spec-review` said `AskUserQuestion` exists on Junie, and
+`docs/how-it-works.md` named it alone (#928). `docs_lint.sh` now fails any
+skill or agent sentence that names `AskUserQuestion` without `ask_user`, and
+CONTRIBUTING.md's **Naming host capabilities** says so.
+
 ## 4.2.4
 
 Every `gh could not ...` death in `orch.sh`, reads and writes, now carries
