@@ -312,10 +312,11 @@ the batch and the call in the same response:
 
 - **Accept as proposed (Recommended)** - every group is created and every
   close applied as proposed.
-- **Other** - the changes, by number: move a finding to another group, drop
-  it from a group, split or merge groups, change a close to left as is, or
-  make a group's state or category stricter (`ready-for-human`, `bug`). Any
-  group or close not named takes its proposal. The question text states
+- **Other** - the changes, by number or issue: move a finding to another
+  group, drop it from a group, split or merge groups, change any
+  candidate's outcome - to a group member, close as completed, or left as
+  is - or make a group's state or category stricter (`ready-for-human`,
+  `bug`). Any candidate, group or close not named takes its proposal. The question text states
   this. A group left with fewer than two members after the answer is not
   created; its member is left as is.
 
