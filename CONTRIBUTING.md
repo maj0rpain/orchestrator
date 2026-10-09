@@ -62,6 +62,7 @@ skills/orch-finding-triage/   finding triage: scan the filed findings against th
 scripts/orch.sh               every deterministic operation (mechanism)
 scripts/doctor.sh             diagnostics plus issue-adoption validation, sourced by orch.sh
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
+scripts/host.sh               the one host detector, host_detect, sourced by orch.sh and hook-common.sh
 scripts/hook-*.sh             the four hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh

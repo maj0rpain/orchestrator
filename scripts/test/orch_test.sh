@@ -1364,6 +1364,46 @@ assert_contains "all.sh says the suites left temp files behind" "$out" \
   "all.sh: the suites left temp files behind"
 rm -rf "$root_dir"
 
+# --- host detection (host.sh, #281) -------------------------------------------
+echo
+echo "host detection (host.sh, #281)"
+# host.sh is sourced alone, in a fresh shell with every host signal unset, so
+# it is shown to need nothing from orch.sh. host_on runs host_detect there,
+# after the given VAR=value assignments, with the remaining arguments.
+HOST_SH="$(dirname "$ORCH")/host.sh"
+host_on() {
+  local assigns=()
+  while [ $# -gt 0 ] && [[ "$1" == *=* ]]; do assigns+=("$1"); shift; done
+  [ "${1:-}" = -- ] && shift
+  env -u ORCHESTRATOR_HOST -u CLAUDECODE -u JUNIE_EXTENSION_ROOT -u JUNIE_SHIM_PATH \
+    -u CLAUDE_PLUGIN_ROOT "${assigns[@]}" \
+    bash -c 'source "$1" && shift && host_detect "$@"' host_on "$HOST_SH" "$@"
+}
+assert_eq "payload mode: a non-empty project_path is junie" \
+  "$(host_on -- '{"project_path":"/r"}')" "junie"
+assert_eq "payload mode: no project_path is claude" "$(host_on -- '{}')" "claude"
+assert_eq "payload mode: an empty project_path is claude" \
+  "$(host_on -- '{"project_path":""}')" "claude"
+assert_eq "payload mode: a null project_path is claude" \
+  "$(host_on -- '{"project_path":null}')" "claude"
+assert_eq "payload mode: an empty payload is claude" "$(host_on -- '')" "claude"
+assert_eq "payload mode: a payload that is not JSON is claude" \
+  "$(host_on -- 'not json' 2>/dev/null)" "claude"
+assert_eq "payload mode ignores ORCHESTRATOR_HOST=claude" \
+  "$(host_on ORCHESTRATOR_HOST=claude -- '{"project_path":"/r"}')" "junie"
+assert_eq "payload mode ignores ORCHESTRATOR_HOST=junie" \
+  "$(host_on ORCHESTRATOR_HOST=junie -- '{}')" "claude"
+assert_eq "environment mode: no signal prints nothing" "$(host_on)" ""
+assert_eq "environment mode: ORCHESTRATOR_HOST names the host" \
+  "$(host_on ORCHESTRATOR_HOST=junie)" "junie"
+assert_eq "environment mode: JUNIE_SHIM_PATH is junie" \
+  "$(host_on JUNIE_SHIM_PATH=/x)" "junie"
+assert_eq "environment mode: CLAUDECODE=1 is claude" "$(host_on CLAUDECODE=1)" "claude"
+assert_eq "environment mode: JUNIE_SHIM_PATH outranks CLAUDECODE=1" \
+  "$(host_on JUNIE_SHIM_PATH=/x CLAUDECODE=1)" "junie"
+assert_eq "doctor.sh no longer defines host_detect" \
+  "$(grep -c '^host_detect()' "$(dirname "$ORCH")/doctor.sh")" "0"
+
 # --- init -------------------------------------------------------------------
 echo
 echo "init"

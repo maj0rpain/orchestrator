@@ -37,6 +37,8 @@ readonly ORCH_SOURCE ORCH_SCRIPTS
 # where orch.sh has always fixed it, since the module assigns it plainly.
 source "$ORCH_SCRIPTS/triage-labels.sh"
 readonly LABELS_DOC
+# The one host detector, host_detect, shared with the hooks (#281).
+source "$ORCH_SCRIPTS/host.sh"
 readonly LABEL_LIMIT=1000
 # The most issues or PRs one list call asks gh for, where gh needs a bare
 # --limit: the labelled-issue list finding-triage scan reads, and the merged-PR
