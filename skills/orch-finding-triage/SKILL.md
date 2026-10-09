@@ -101,7 +101,13 @@ in the loop:**` lines, the claim, and any options it names.
 Then read every finding's code on the default branch at the default SHA -
 `git show <default SHA>:<file>`, never by checking anything out - and judge
 whether the finding still holds. The scan's result only directs the read; it
-is never proof that a finding still holds:
+is never proof that a finding still holds. Whatever the result, a fix can land
+away from the filed lines - another copy, a caller, a new helper - so also
+check every other location the body names, and read the commits since the
+**filed SHA**, the SHA after the last "at" on the body's `**Location:**` line
+(`git log <filed SHA>..<default SHA>`). A finding the read cannot settle is
+proposed as still open, its comment saying what the read could not settle.
+What each result adds:
 
 - `changed`: read the touching commit (`git show <detail>`) and the code at
   the location now.
@@ -110,12 +116,8 @@ is never proof that a finding still holds:
   judge it there; if it is truly gone, the finding no longer holds.
 - `unknown`: judge from the body's claim against today's code, and name the
   scan's reason in the proposal.
-- `unchanged`: judge the body's claim against the code at the location, then
-  check every other location the body names, and read the commits since the
-  filed SHA (`git log <filed SHA>..<default SHA>`) for a fix that landed
-  elsewhere - another copy, a caller, a new helper. A finding the read cannot
-  settle is proposed as still open, its comment saying what the read could
-  not settle.
+- `unchanged`: nothing beyond the read above - the filed lines are as they
+  were, so any fix landed elsewhere.
 
 For a finding that still holds, find its current location on the default
 branch - `file:line at <default SHA>` - for the comment in step 4.
@@ -126,11 +128,10 @@ Group the findings by their source PR, one batch per PR, PRs in ascending
 order. Within a batch, number the findings and give each one proposed outcome
 with a one-line reason:
 
-- **Close as completed** - the finding no longer holds. Name the commit the
-  scan reported for `changed`, or the fixing commit the read found for
-  `unchanged`. With none (`gone`, `unknown`, or an `unchanged` finding whose
-  fixing commit the read did not find), name the default SHA at which the
-  finding was found not to hold, and why.
+- **Close as completed** - the finding no longer holds. Name the fixing
+  commit the read found - for `changed`, often the commit the scan reported,
+  but never assumed to be it. With none found, name the default SHA at which
+  the finding was found not to hold, and why.
 - **ready-for-agent** - it still holds, and its filed "Why not fixed" reason
   does not call for a decision.
 - **ready-for-human** - it still holds, and its fix needs a decision. List the
