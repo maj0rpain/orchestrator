@@ -20,7 +20,10 @@
 #   issues/<n>/labels one label per line
 #   issues/<n>/title  the title; absent, an empty one
 #   issues/<n>/body   the body, byte for byte; absent, an empty one
-#   issues/<n>/reason a closed issue's reason: completed or not planned
+#   issues/<n>/reason a closed issue's reason: completed, not planned or
+#                     duplicate
+#   issues/<n>/duplicate_of
+#                     the issue a duplicate close named; absent, none
 #   issues/<n>/pull   present, #n is a pull request, not an issue
 #   issues/<n>/comments/<k>/{author,created,body}
 #                     the issue's k-th comment
@@ -359,7 +362,8 @@ adapter_issues_labelled() {
     [ ! -f "$d/pull" ] && [ "$(cat "$d/state")" = OPEN ] || continue
     keep=1
     for l in "$@"; do grep -qxF -- "$l" "$d/labels" 2>/dev/null || keep=0; done
-    [ "$keep" = 1 ] && printf '%s\n' "$n"
+    [ "$keep" = 1 ] || continue
+    printf '%s\n' "$n"
   done | sort -n | head -n "$ISSUE_LIST_LIMIT"
 }
 
@@ -464,16 +468,19 @@ adapter_issue_relabel() {
   done
 }
 
-# adapter_issue_close <n> [--reason <r>] [--comment <c>]: the stored issue
-# CLOSED, its reason (completed where none is given, as GitHub defaults) in
-# reason, and the comment, where given, appended by fake-gh.
+# adapter_issue_close <n> [--reason <r>] [--comment <c>] [--duplicate-of <B>]:
+# the stored issue CLOSED, its reason (completed where none is given, as
+# GitHub defaults; duplicate with --duplicate-of) in reason, the target of a
+# duplicate close in duplicate_of, and the comment, where given, appended by
+# fake-gh.
 adapter_issue_close() {
-  local n="$1" reason=completed comment="" d options="--reason --comment"
+  local n="$1" reason=completed comment="" duplicate_of="" d options="--reason --comment --duplicate-of"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
-      --reason)  fake_option_value adapter_issue_close "$options" "$@" || return; reason="$2"; shift 2 ;;
-      --comment) fake_option_value adapter_issue_close "$options" "$@" || return; comment="$2"; shift 2 ;;
+      --reason)       fake_option_value adapter_issue_close "$options" "$@" || return; reason="$2"; shift 2 ;;
+      --comment)      fake_option_value adapter_issue_close "$options" "$@" || return; comment="$2"; shift 2 ;;
+      --duplicate-of) fake_option_value adapter_issue_close "$options" "$@" || return; duplicate_of="$2"; shift 2 ;;
       *) fake_unknown_option adapter_issue_close "$1"; return ;;
     esac
   done
@@ -482,7 +489,12 @@ adapter_issue_close() {
   d="$(fake_issue_dir "$n")"
   [ -z "$comment" ] || fake_close_comment "$d/comments" "$comment"
   printf 'CLOSED\n' >"$d/state"
-  printf '%s\n' "$reason" >"$d/reason"
+  if [ -n "$duplicate_of" ]; then
+    printf 'duplicate\n' >"$d/reason"
+    printf '%s\n' "$duplicate_of" >"$d/duplicate_of"
+  else
+    printf '%s\n' "$reason" >"$d/reason"
+  fi
 }
 
 # adapter_issue_reopen <n>: the stored issue OPEN again.
@@ -490,7 +502,7 @@ adapter_issue_reopen() {
   ! fake_failing adapter_issue_reopen || return 1
   fake_issue_known "$1" || return 1
   printf 'OPEN\n' >"$(fake_issue_dir "$1")/state"
-  rm -f "$(fake_issue_dir "$1")/reason"
+  rm -f "$(fake_issue_dir "$1")/reason" "$(fake_issue_dir "$1")/duplicate_of"
 }
 
 # --- pr operations, on the store ------------------------------------------------
