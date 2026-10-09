@@ -5,7 +5,8 @@
 # Reads this repo's triage-labels doc: the table mapping each canonical
 # triage role to the repo's local label name. Needs only ROOT defined, so any
 # script that needs the repo's triage labels can source it alone, without
-# doctor.sh or orch.sh's shared mechanism (#575).
+# orch.sh's shared mechanism (#575). Its readers are orch.sh's init
+# (validate_adopted_issue), doctor.sh's checks and hook-grilling.sh.
 #
 # LABELS_DOC is assigned plainly here, its one home: orch.sh sources this
 # module and marks it readonly right after, and doctor.sh, sourced after

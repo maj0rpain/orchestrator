@@ -10,10 +10,9 @@
 # exit status comes from the FAIL counter alone. doctor is the thing you run
 # when the world is already broken, so no single check may abort the report.
 #
-# Also home to validate_adopted_issue: validating an adopted issue is the same
-# "parse this repo's config and report what's wrong with it" shape as a
-# check, and init needs that shape too. The triage-label parser it and the
-# checks read lives in triage-labels.sh.
+# Nothing here is called back from orch.sh but cmd_doctor: init's adopted-issue
+# check, validate_adopted_issue, lives in orch.sh, and the triage-label parser
+# the checks read lives in triage-labels.sh.
 #
 # Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
 # now, first_line, capture, default_branch, base_setting, origin_has_branch,
@@ -381,22 +380,6 @@ d_orch_remedy() {
 }
 
 # repo config ----------------------------------------------------------------
-
-# `init --issue N`'s one-time gate: the issue must exist, be open, and carry
-# this repo's local name for the ready-for-agent role - resolved through
-# triage_label_for, never the literal string, so a repo that renamed its
-# labels still gets a correct check. Checked once, here, and never again: a
-# maintainer's later triage housekeeping must not stop a flow already running
-# against the issue (docs/adr/0005).
-validate_adopted_issue() {
-  local issue="$1" label state labels gh_line
-  label="$(triage_label_for ready-for-agent)"
-  issue_state_labels_read "$issue" state labels gh_line \
-    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated: ${gh_line:-gh gave no reason}"
-  [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
-  labels_have "$labels" "$label" \
-    || die "issue #$issue is missing the '$label' triage label - adoption requires it."
-}
 
 # Absent is fine: the canonical names apply. Present but unreadable is a FAIL,
 # because a doc that exists was meant to say something.
