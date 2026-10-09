@@ -78,9 +78,10 @@ the round count, in order:
   changelog**.
 - **A failure in any round stops the whole review**, exactly as it stops a
   one-round review: no later round runs, and the rounds already run stay
-  published, each with its own changelog comment. When an earlier round of
-  this review had retired the breakdown, the stop message also says the
-  issue has no ticket breakdown and needs `/orchestrator:to-tickets <issue>`.
+  published, each with its own changelog comment. When any round of this
+  review had already run `ticket retire` - the failing round included - the
+  stop message also says the issue has no ticket breakdown and needs
+  `/orchestrator:to-tickets <issue>`.
 - **Tickets follow the spec** is not another round: within a round, no lens
   runs again.
 

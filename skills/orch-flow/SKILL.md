@@ -144,7 +144,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    reports the issue it published.
 3. Record the published issue: `bash "$ORCH" state set issue <number>`.
 4. Ask the round count. **The question blocks** - ask it as one question
-   with `AskUserQuestion` (on both Claude Code and Junie), before the first
+   with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
+   on Junie), before the first
    round: "How many spec review rounds?" Default 3. Any integer >= 1; there
    is no upper cap. Options: **3 (Recommended)**, **1**, **5**, and **Other**
    for any other number. It is asked every time this step runs - on
