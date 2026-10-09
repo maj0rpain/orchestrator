@@ -1430,6 +1430,7 @@ assert_empty "a standalone pass and argument-hint naming --smells are not flagge
   "$(scan_standalone_smells "$fixture")"
 check "a standalone review pass takes --smells, and review-pass offers it" \
   "$(scan_standalone_smells "$PLUGIN_ROOT")"
+
 # --- closer's filed body lines -----------------------------------------------
 # The contract is the closer's body format, not orch.sh's parser. The closer
 # writes a filed finding's body as five labelled lines, and the finding-triage

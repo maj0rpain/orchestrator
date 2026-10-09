@@ -94,7 +94,7 @@ Each flow phase runs in its own fresh session. The step-by-step detail is in
 | `/orchestrator:to-spec [<issue>]` | Turn the conversation into a spec issue, outside a flow. |
 | `/orchestrator:to-tickets <issue>` | Break an issue into tickets, outside a flow. |
 | `/orchestrator:spec-review <issue> [--rounds <n>]` | Review a spec issue on demand. |
-| `/orchestrator:review-pass <issue>` | Run a review pass of the current branch on demand. |
+| `/orchestrator:review-pass <issue> [--smells]` | Run a review pass of the current branch on demand. |
 | `/orchestrator:sync` | Merge the base branch into the current plugin-made branch. |
 | `/orchestrator:release` | Open the release PR from the base branch into the default branch. |
 | `/orchestrator:finding-triage [--all] [<issue> \| --pr <n>] \| --bundle` | Triage the review loop's filed findings, or bundle them. |
