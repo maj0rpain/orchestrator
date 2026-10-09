@@ -1231,8 +1231,8 @@ review_budget() {
 # The operations, in the order they are defined below:
 # - label: adapter_label_upsert, adapter_label_create, adapter_labels
 # - issue: adapter_issue_body, adapter_issue_comments,
-#   adapter_issue_state_labels, adapter_issue_title_labels,
-#   adapter_issue_state, adapter_issues_labelled, adapter_issue_create,
+#   adapter_issue_state_labels, adapter_issue_state_labels_body,
+#   adapter_issue_title_labels, adapter_issue_state, adapter_issues_labelled, adapter_issue_create,
 #   adapter_issue_body_edit, adapter_issue_comment, adapter_issue_relabel,
 #   adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_body, adapter_pr_comments,
@@ -1375,6 +1375,43 @@ issue_state_labels_read() {
     return 1
   fi
   lines_split "$__islr_out" "$2" "$3"
+}
+
+# adapter_issue_state_labels_body <n>: OPEN or CLOSED on the first line, the
+# label count on the second, then one label per line, then the body as GitHub
+# holds it and a newline - the count marks where the labels end and the body
+# begins.
+adapter_issue_state_labels_body() {
+  gh issue view "$1" --json state,labels,body --jq '.state, (.labels | length), (.labels[].name), .body'
+}
+
+# issue_state_labels_body_read <n> <state_var> <labels_var> <body_var>
+# <line_var>: reads issue <n> once through adapter_issue_state_labels_body and
+# writes its state, its labels (one per line, possibly none) and its body into
+# the first three caller-named variables. Non-zero when the read fails or its
+# answer does not parse, writing none of them, and writing gh's first stderr
+# line - empty when gh printed none - into <line_var>, as
+# issue_state_labels_read does.
+issue_state_labels_body_read() {
+  local __islbr_out __islbr_err __islbr_state __islbr_count __islbr_labels="" __islbr_i
+  if ! capture __islbr_out __islbr_err adapter_issue_state_labels_body "$1"; then
+    printf -v "$5" '%s' "${__islbr_err%%$'\n'*}"
+    return 1
+  fi
+  lines_split "$__islbr_out" __islbr_state __islbr_count __islbr_out
+  case "$__islbr_count" in
+    ''|*[!0-9]*) printf -v "$5" '%s' "gh answered no label count"; return 1 ;;
+  esac
+  for (( __islbr_i = 0; __islbr_i < __islbr_count; __islbr_i++ )); do
+    __islbr_labels="$__islbr_labels${__islbr_out%%$'\n'*}"$'\n'
+    case "$__islbr_out" in
+      *$'\n'*) __islbr_out="${__islbr_out#*$'\n'}" ;;
+      *) __islbr_out="" ;;
+    esac
+  done
+  printf -v "$2" '%s' "$__islbr_state"
+  printf -v "$3" '%s' "${__islbr_labels%$'\n'}"
+  printf -v "$4" '%s' "$__islbr_out"
 }
 
 # adapter_issue_title_labels <n>: the title on the first line, then one label
@@ -2534,16 +2571,29 @@ map_line() {
 
 # scan_line <file:lines> <result> <detail>: the scan's one line, in the
 # columns `finding-triage scan` prints. Local to finding_scan_one in effect: it
-# reads the issue and PR number, n and pr, from that call's locals, through
-# bash's dynamic scope, and prints - for an empty PR.
+# reads the issue and PR number and the triage state, n, pr and state, from
+# that call's locals, through bash's dynamic scope, and prints - for an empty
+# PR or detail.
 scan_line() {
-  printf '%s\t%s\t%s\t%s\t%s\n' "$n" "${pr:--}" "$1" "$2" "$3"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$n" "${pr:--}" "$1" "$2" "${3:--}" "$state"
 }
 
-# finding_scan_one <issue> <body> <default ref>: the scan's one line for one
-# finding.
+# triage_state <labels>: the triage-role labels among the newline-separated
+# <labels>, each by the repo's label for its role, comma-joined in
+# TRIAGE_ROLES order - or - for none.
+triage_state() {
+  local role label out=""
+  for role in $TRIAGE_ROLES; do
+    label="$(triage_label_for "$role")"
+    labels_have "$1" "$label" && out="${out:+$out,}$label"
+  done
+  printf '%s\n' "${out:--}"
+}
+
+# finding_scan_one <issue> <body> <default ref> <triage state>: the scan's one
+# line for one finding.
 finding_scan_one() {
-  local n="$1" body="$2" ref="$3" loc pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out
+  local n="$1" body="$2" ref="$3" state="$4" loc pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out
   pr="$(finding_pr "$body")"
   loc="$(finding_location "$body")"
   if [ -z "$loc" ]; then
@@ -2603,32 +2653,44 @@ finding_scan_one() {
   scan_line "$file:$lines" changed "$detail"
 }
 
-# finding-triage scan [<issue> | --pr <n>]: read-only. Sorts each open filed
-# finding still in needs-triage against origin/<default>, one tab-separated
-# line apiece: <issue> <pr> <file>:<line> <result> <detail>.
+# finding-triage scan [--all] [<issue> | --pr <n>]: read-only. Sorts each open
+# filed finding still in needs-triage - or, with --all, whatever its triage
+# label - against origin/<default>, one tab-separated line apiece: <issue>
+# <pr> <file>:<line> <result> <detail> <triage state>.
 cmd_finding_triage_scan() {
-  local usage="usage: orch.sh finding-triage scan [<issue> | --pr <n>]"
-  local issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_line
-  case $# in
+  local usage="usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]"
+  local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_line
+  local args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --all) ! $all || die "$usage"; all=true ;;
+      --pr) [ -z "$pr_filter" ] && [ -n "${2:-}" ] || die "$usage"; pr_filter="$2"; shift ;;
+      *) args+=("$1") ;;
+    esac
+    shift
+  done
+  case "${#args[@]}" in
     0) ;;
-    1) issue="$1" ;;
-    2) [ "$1" = --pr ] && [ -n "$2" ] || die "$usage"; pr_filter="$2" ;;
+    1) [ -z "$pr_filter" ] && [ -n "${args[0]}" ] || die "$usage"; issue="${args[0]}" ;;
     *) die "$usage" ;;
   esac
   case "$issue$pr_filter" in *[!0-9]*) die "$usage" ;; esac
   triage="$(triage_label_for needs-triage)"
+  # Each finding is read once, state, labels and body together: an explicit
+  # one here, where it is checked, a listed one in the loop below.
   if [ -n "$issue" ]; then
-    issue_state_labels_read "$issue" state labels gh_line \
+    issue_state_labels_body_read "$issue" state labels body gh_line \
       || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
-    labels_have "$labels" "$triage" \
+    $all || labels_have "$labels" "$triage" \
       || die "issue #$issue is not in triage - it carries no '$triage' label"
     nums="$issue"
   else
     for sev in $FILED_SEVERITIES; do
-      out="$(adapter_issues_labelled "review:$sev" "$triage")" \
+      if $all; then out="$(adapter_issues_labelled "review:$sev")"
+      else out="$(adapter_issues_labelled "review:$sev" "$triage")"; fi \
         || die "gh could not list the review:$sev findings"
       if [ "$(printf '%s\n' $out | grep -c .)" -ge "$ISSUE_LIST_LIMIT" ]; then
         warn "review:$sev findings reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this scan"
@@ -2641,9 +2703,12 @@ cmd_finding_triage_scan() {
   git fetch -q origin "+refs/heads/$default:$ref" >/dev/null 2>&1 \
     || die "could not fetch origin/$default"
   for n in $(printf '%s\n' $nums | sort -nu); do
-    body="$(adapter_issue_body "$n")" || die "gh could not read issue #$n"
+    if [ -z "$issue" ]; then
+      issue_state_labels_body_read "$n" state labels body gh_line \
+        || die "gh could not read issue #$n: ${gh_line:-gh gave no reason}"
+    fi
     if [ -n "$pr_filter" ] && [ "$(finding_pr "$body")" != "$pr_filter" ]; then continue; fi
-    finding_scan_one "$n" "$body" "$ref"
+    finding_scan_one "$n" "$body" "$ref" "$(triage_state "$labels")"
   done
 }
 
@@ -4874,17 +4939,24 @@ orch.sh - deterministic operations for the orchestrator flow
                               branch name used whole, git-excluding
                               .orchestrator/. Never wipes; reads state.json
                               only to compare, and never writes it
-  finding-triage scan [<issue> | --pr <n>]
+  finding-triage scan [--all] [<issue> | --pr <n>]
                               read-only: fetch origin/<default> and sort each
                               open review:<severity> finding still in the
                               repo's needs-triage - or the one <issue>, or
                               those whose **PR:** is <n> - one line apiece:
                               <issue> TAB <pr> TAB <file>:<line> TAB <result>
-                              TAB <detail>; result unchanged, changed (detail:
-                              the newest touching commit's full SHA), gone, or
-                              unknown (detail: why), fetching
+                              TAB <detail> TAB <state>; result unchanged,
+                              changed (detail: the newest touching commit's
+                              full SHA), gone, or unknown (detail: why), an
+                              empty pr or detail printed -, fetching
                               refs/pull/<pr>/head before calling a SHA
-                              unreachable
+                              unreachable; state: the triage-role labels the
+                              issue carries, comma-joined in role order
+                              (needs-triage, needs-info, ready-for-agent,
+                              ready-for-human, wontfix), or - for none.
+                              --all: every open review:<severity> finding
+                              whatever its triage label - the re-check - and
+                              an explicit <issue> need not be in needs-triage
   finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
   finding-triage apply <issue> <ready-for-agent|ready-for-human>
                        --category <bug|enhancement> --comment-file <file>
