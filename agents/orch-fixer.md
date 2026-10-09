@@ -162,13 +162,14 @@ never a reason to stop or to ask. Record it and carry on:
 
 - a **major** or **nit** goes in the record as waiting to be filed, the rule
   being that the fixer could not fix it, with your reason;
-- a **major** whose reason it could not be fixed is a decision about what the
-  change does - its behaviour - that the spec, plan and deviations leave
-  unsettled (silent, ambiguous, or self-contradictory on it) goes under
-  **Waiting to be filed** with the rule `spec question` instead, and that
-  reason. Only a major: a nit questioning behaviour was mis-ranked, and a
-  blocking finding stays open blocking. A spec question this loop files
-  holds the PR out of ready, so the loop ends in a bounded stop naming it;
+- a **major** you could not fix because its fix needs a decision about what
+  the change does - its behaviour - that the spec, plan and deviations leave
+  unsettled (silent, ambiguous, or self-contradictory on it) is a **spec
+  question**: it goes under **Waiting to be filed** with the rule `spec
+  question` instead, and that reason. A nit that needs such a decision keeps
+  the rule that you could not fix it, and a blocking finding stays open
+  blocking. A spec question this loop files holds the PR out of ready, so the
+  loop ends in a bounded stop naming it;
 - a **blocking** finding, including a failing verification command, goes in
   the record as **open blocking**, with your reason. It is never filed; the
   next iteration's triage treats it as still standing, and the loop cannot end

@@ -439,8 +439,8 @@ findings the loop may fix without asking anyone:
   when the fixer cannot, left open, holding the change out of ready.
 - **Major** - the change works but carries real cost: a documented standard
   breached, a smell with teeth, scope nobody asked for. Fixed by the loop
-  unless the fix needs a decision, changes behaviour, or would touch the
-  loop's own fixes; filed otherwise. A major that is a spec question is filed and holds the PR out of ready.
+  unless the fix needs a decision or would touch the loop's own fixes; filed
+  otherwise. A major that is a spec question is filed and holds the PR out of ready.
 - **Nit** - taste and judgement calls. Fixed by the loop only when it is a
   mechanical nit; filed otherwise.
 
