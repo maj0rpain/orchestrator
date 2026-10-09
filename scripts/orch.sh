@@ -2737,9 +2737,9 @@ cmd_finding_triage_scan() {
     nums="$issue"
   else
     for sev in $FILED_SEVERITIES; do
-      if $all; then out="$(adapter_issues_labelled "review:$sev")"
-      else out="$(adapter_issues_labelled "review:$sev" "$triage")"; fi \
-        || die "gh could not list the review:$sev findings"
+      if $all; then capture out gh_line adapter_issues_labelled "review:$sev"
+      else capture out gh_line adapter_issues_labelled "review:$sev" "$triage"; fi \
+        || die "gh could not list the review:$sev findings: $(gh_reason "$gh_line")"
       if [ "$(printf '%s\n' $out | grep -c .)" -ge "$ISSUE_LIST_LIMIT" ]; then
         warn "review:$sev findings reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this scan"
       fi
@@ -2825,23 +2825,27 @@ cmd_finding_triage_apply() {
     if labels_have "$labels" "$label"; then remove_opts+=(--remove "$label"); fi
   done
 
-  triage_comment_post "$issue" "$file" || die "gh could not comment on issue #$issue"
+  capture_err gh_line triage_comment_post "$issue" "$file" \
+    || die "gh could not comment on issue #$issue: $(gh_reason "$gh_line")"
 
   case "$outcome" in
     close-fixed)
-      adapter_issue_relabel "$issue" ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue"
-      adapter_issue_close "$issue" --reason completed || die "gh could not close issue #$issue" ;;
+      capture_err gh_line adapter_issue_relabel "$issue" ${remove_opts[@]+"${remove_opts[@]}"} \
+        || die "gh could not relabel issue #$issue: $(gh_reason "$gh_line")"
+      capture_err gh_line adapter_issue_close "$issue" --reason completed \
+        || die "gh could not close issue #$issue: $(gh_reason "$gh_line")" ;;
     wontfix)
-      adapter_issue_relabel "$issue" --add "$(triage_label_for wontfix)" ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue"
-      adapter_issue_close "$issue" --reason "not planned" || die "gh could not close issue #$issue" ;;
+      capture_err gh_line adapter_issue_relabel "$issue" --add "$(triage_label_for wontfix)" \
+        ${remove_opts[@]+"${remove_opts[@]}"} \
+        || die "gh could not relabel issue #$issue: $(gh_reason "$gh_line")"
+      capture_err gh_line adapter_issue_close "$issue" --reason "not planned" \
+        || die "gh could not close issue #$issue: $(gh_reason "$gh_line")" ;;
     *)
       category_label_ensure "$category"
       if labels_have "$labels" "$stale_category"; then remove_opts+=(--remove "$stale_category"); fi
-      adapter_issue_relabel "$issue" --add "$(triage_label_for "$outcome")" --add "$category" \
+      capture_err gh_line adapter_issue_relabel "$issue" --add "$(triage_label_for "$outcome")" --add "$category" \
         ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue" ;;
+        || die "gh could not relabel issue #$issue: $(gh_reason "$gh_line")" ;;
   esac
 }
 
@@ -2891,7 +2895,7 @@ bundle_member_check() {
 cmd_finding_triage_bundle() {
   local usage="usage: orch.sh finding-triage bundle --title <t> --body-file <f> --state <ready-for-agent|ready-for-human> --category <bug|enhancement> <member>...
        orch.sh finding-triage bundle --into <B> <member>..."
-  local title="" file="" state="" category="" into="" have_title=false m labels human_label b
+  local title="" file="" state="" category="" into="" have_title=false m labels human_label b b_line
   local members=() seen=" "
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -2910,7 +2914,7 @@ cmd_finding_triage_bundle() {
   if [ -n "$into" ]; then
     case "$into" in *[!0-9]*) die "$usage" ;; esac
     ! $have_title && [ -z "$file$state$category" ] || die "$usage"
-    local b_state b_labels b_line
+    local b_state b_labels
     issue_state_labels_read "$into" b_state b_labels b_line \
       || die "gh could not read issue #$into: $(gh_reason "$b_line")"
     [ "$b_state" = OPEN ] || die "bundle #$into is not open - --into resumes an open bundle only"
@@ -2946,8 +2950,8 @@ cmd_finding_triage_bundle() {
   # label then fails the issue create.
   adapter_label_create "$BUNDLE_LABEL" c5def5 "Several filed findings worked as one" 2>/dev/null || true
   category_label_ensure "$category"
-  b="$(adapter_issue_create "$title" "$file" "$BUNDLE_LABEL" "$(triage_label_for "$state")" "$category")" \
-    || die "gh could not create the bundle issue - no member was touched"
+  capture b b_line adapter_issue_create "$title" "$file" "$BUNDLE_LABEL" "$(triage_label_for "$state")" "$category" \
+    || die "gh could not create the bundle issue: $(gh_reason "$b_line") - no member was touched"
   printf '%s\n' "$b"
   bundle_members_close "$b" "${members[@]}"
 }
@@ -2959,22 +2963,22 @@ cmd_finding_triage_bundle() {
 # what failed, the members left open - that one and every one after it - and
 # the --into command that resumes.
 bundle_members_close() {
-  local b="$1" comment_file m i=0 comments state why left
+  local b="$1" comment_file m i=0 comments state why left err
   shift
   local members=("$@")
   comment_file="$(mktemp)"
   printf 'Bundled into #%s\n' "$b" >"$comment_file"
   for m in "${members[@]}"; do
     why=""
-    if ! comments="$(adapter_issue_comments "$m" 2>/dev/null)"; then
-      why="gh could not read member #$m's comments"
+    if ! capture comments err adapter_issue_comments "$m"; then
+      why="gh could not read member #$m's comments: $(gh_reason "$err")"
     elif ! grep -qE "Bundled into #$b([^0-9]|\$)" <<<"$comments" \
-      && ! triage_comment_post "$m" "$comment_file"; then
-      why="gh could not comment on member #$m"
-    elif ! adapter_issue_close "$m" --duplicate-of "$b"; then
-      why="gh could not close member #$m as a duplicate - --duplicate-of needs gh 2.102 or newer"
-    elif ! state="$(adapter_issue_state "$m" 2>/dev/null)"; then
-      why="gh could not read member #$m's state back"
+      && ! capture_err err triage_comment_post "$m" "$comment_file"; then
+      why="gh could not comment on member #$m: $(gh_reason "$err")"
+    elif ! capture_err err adapter_issue_close "$m" --duplicate-of "$b"; then
+      why="gh could not close member #$m as a duplicate: $(gh_reason "$err") - --duplicate-of needs gh 2.102 or newer"
+    elif ! capture state err adapter_issue_state "$m"; then
+      why="gh could not read member #$m's state back: $(gh_reason "$err")"
     elif [ "$state" != CLOSED ]; then
       why="member #$m did not read back as closed"
     fi

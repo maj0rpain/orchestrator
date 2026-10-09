@@ -8906,6 +8906,13 @@ out="$(scan --all 2>&1)"; st=$?
 assert_status "a listed finding gh cannot read dies" "$st" 1
 assert_contains "naming the issue, with gh's line" "$out" "gh could not read issue #1: HTTP 502: Bad Gateway"
 fake_unfail
+fake_fail adapter_issues_labelled $'HTTP 502: Bad Gateway\nsecond line'
+out="$(scan 2>&1)"; st=$?
+assert_status "a findings list gh cannot read dies" "$st" 1
+assert_contains "naming the list, with gh's line" "$out" \
+  "orch: gh could not list the review:major findings: HTTP 502: Bad Gateway"
+assert_not_contains "and nothing past it" "$out" "second line"
+fake_unfail
 
 out="$(scan --all --pr 21 2>&1)"; st=$?
 assert_status "--all narrows to one source PR" "$st" 0
@@ -9176,16 +9183,27 @@ assert_status "a category label the repo has already does not stop apply" "$st" 
 assert_eq "the labels are still applied" "$(fake_labels_of 2)" "bug ready-for-agent review:major "
 assert_contains "and the repo's own is left as it is" "$(fake_labels)" "bug${tab}123456${tab}The repo's own bug"
 
-# Any other failed gh call does, with the reason.
-for op in adapter_issue_state_labels adapter_issue_comment adapter_issue_relabel adapter_issue_close; do
+# Any other failed gh call does, with gh's first line right after what failed.
+for case in "adapter_issue_comment|wontfix|comment on" "adapter_issue_relabel|wontfix|relabel" \
+            "adapter_issue_close|wontfix|close" "adapter_issue_relabel|close-fixed|relabel" \
+            "adapter_issue_close|close-fixed|close" "adapter_issue_relabel|ready-for-agent|relabel"; do
+  IFS='|' read -r op outcome verb <<<"$case"
+  category_args=()
+  [ "$outcome" != ready-for-agent ] || category_args=(--category bug)
   fake_github
   triaged 2 "review:major,needs-triage,bug"
-  fake_fail "$op" "HTTP 502: Bad Gateway"
-  out="$(apply 2 wontfix --comment-file "$comment" 2>&1)"; st=$?
-  assert_status "dies when gh fails ($op)" "$st" 1
-  assert_contains "saying gh failed on the issue ($op)" "$out" "gh could not"
-  assert_contains "with gh's reason ($op)" "$out" "HTTP 502: Bad Gateway"
+  fake_fail "$op" $'HTTP 502: Bad Gateway\nsecond line'
+  out="$(apply 2 "$outcome" ${category_args[@]+"${category_args[@]}"} --comment-file "$comment" 2>&1)"; st=$?
+  assert_status "dies when gh fails ($op, $outcome)" "$st" 1
+  assert_eq "saying what failed, with gh's line ($op, $outcome)" "$out" \
+    "orch: gh could not $verb issue #2: HTTP 502: Bad Gateway"
 done
+fake_github
+triaged 2 "review:major,needs-triage,bug"
+fake_fail_times adapter_issue_relabel 9
+out="$(apply 2 wontfix --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a silent relabel failure dies" "$st" 1
+assert_eq "saying gh gave no reason" "$out" "orch: gh could not relabel issue #2: gh gave no reason"
 
 # A failed read stops apply before it writes anything.
 fake_github
@@ -9260,7 +9278,7 @@ triaged 7 "review:minor,ready-for-agent,bug"
 fake_fail adapter_issue_relabel "HTTP 502: Bad Gateway"
 out="$(traced_apply 7 ready-for-human --category bug --comment-file "$comment" 2>&1)"; st=$?
 assert_status "a failed relabel of a triaged finding dies" "$st" 1
-assert_contains "saying so" "$out" "gh could not relabel issue #7"
+assert_contains "saying so" "$out" "gh could not relabel issue #7: HTTP 502: Bad Gateway"
 assert_eq "after the comment is posted" "$(fake_comments_of 7)" \
   "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
 assert_eq "and before the labels change" "$(fake_labels_of 7)" "bug ready-for-agent review:minor "
@@ -9446,15 +9464,22 @@ fake_unfail
 # A failed bundle create touches no member.
 member 17 "review:major,ready-for-agent,bug"
 member 18 "review:nit,ready-for-agent,enhancement"
-fake_fail adapter_issue_create "HTTP 502: Bad Gateway"
+fake_fail adapter_issue_create $'HTTP 502: Bad Gateway\nsecond line'
 out="$(new_bundle ready-for-agent bug 17 18 2>&1)"; st=$?
 assert_status "a failed bundle create dies" "$st" 1
-assert_contains "saying no member was touched" "$out" "gh could not create the bundle issue - no member was touched"
+assert_eq "with gh's line, saying no member was touched" "$out" \
+  "orch: gh could not create the bundle issue: HTTP 502: Bad Gateway - no member was touched"
 for m in 17 18; do
   assert_eq "member #$m left open" "$(fake_state_of "$m")" "OPEN"
   assert_eq "and uncommented (#$m)" "$(fake_comments_of "$m")" ""
 done
 unset m
+fake_unfail
+fake_fail_times adapter_issue_create 9
+out="$(new_bundle ready-for-agent bug 17 18 2>&1)"; st=$?
+assert_status "a silent bundle create failure dies" "$st" 1
+assert_eq "saying gh gave no reason" "$out" \
+  "orch: gh could not create the bundle issue: gh gave no reason - no member was touched"
 fake_unfail
 
 # A member failure stops the bundle part-way: it dies naming the bundle and
@@ -9473,6 +9498,7 @@ partial() {
   fake_unfail
   assert_status "$name dies" "$st" 1
   assert_contains "$name: saying what failed" "$out" "$wants"
+  assert_not_contains "$name: with gh's first line only" "$out" "second line"
   assert_contains "$name: naming the bundle and the members left open" "$out" \
     "bundle #$b: "
   assert_contains "$name: listing the members left open" "$out" "members left open: #${left// / #};"
@@ -9503,23 +9529,29 @@ resumed() {
       "$(fake_state_of "$m") $(fake_reason_of "$m") $(fake_duplicate_of "$m")" "CLOSED duplicate $b"
   done
 }
-fake_fail_after adapter_issue_comment 1 "HTTP 502: Bad Gateway"
-partial "a failed comment" 40 "gh could not comment on member #32" "32 33"
-fake_fail_after adapter_issue_close 1 "unknown flag: --duplicate-of"
+fake_fail_after adapter_issue_comment 1 $'HTTP 502: Bad Gateway\nsecond line'
+partial "a failed comment" 40 \
+  "orch: bundle #40: gh could not comment on member #32: HTTP 502: Bad Gateway - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 40 32 33" "32 33"
+fake_fail_after adapter_issue_close 1 $'HTTP 502: Bad Gateway\nsecond line'
 partial "a failed close" 41 \
-  "gh could not close member #32 as a duplicate - --duplicate-of needs gh 2.102 or newer" "32 33"
-fake_fail adapter_issue_comments "HTTP 502: Bad Gateway"
-partial "a failed comments read" 42 "gh could not read member #31's comments" "31 32 33"
+  "orch: bundle #41: gh could not close member #32 as a duplicate: HTTP 502: Bad Gateway - --duplicate-of needs gh 2.102 or newer - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 41 32 33" "32 33"
+fake_fail adapter_issue_comments $'HTTP 502: Bad Gateway\nsecond line'
+partial "a failed comments read" 42 \
+  "orch: bundle #42: gh could not read member #31's comments: HTTP 502: Bad Gateway - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 42 31 32 33" "31 32 33"
+fake_fail_after adapter_issue_comment 1 ""
+partial "a silent failed comment" 48 \
+  "orch: bundle #48: gh could not comment on member #32: gh gave no reason - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 48 32 33" "32 33"
 # A failed state read-back dies the same way; the member may in truth be
 # closed, so it is not resumed here.
 for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
 fake_next_issue 43
-fake_fail_after adapter_issue_state 2 "HTTP 502: Bad Gateway"
+fake_fail_after adapter_issue_state 2 $'HTTP 502: Bad Gateway\nsecond line'
 out="$(new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
 fake_unfail
 assert_status "a failed state read-back dies" "$st" 1
-assert_contains "naming the bundle, the member and the --into command" "$out" \
-  "bundle #43: gh could not read member #33's state back - members left open: #33; resume with: orch.sh finding-triage bundle --into 43 33"
+assert_contains "naming the bundle, the member, gh's line and the --into command" "$out" \
+  "orch: bundle #43: gh could not read member #33's state back: HTTP 502: Bad Gateway - members left open: #33; resume with: orch.sh finding-triage bundle --into 43 33"
+assert_not_contains "with gh's first line only" "$out" "second line"
 unset m
 noop_close_adapter="$(mktemp)"
 writeln "source $(printf %q "$GH_ADAPTER_FAKE")" 'adapter_issue_close() { :; }' >"$noop_close_adapter"
