@@ -5499,9 +5499,53 @@ assert_eq "its edge is in place" "$(fake_blockers_of 302)" "$blocker"
 fake_fail adapter_blockers
 out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
 assert_status "a blocked-by read that fails twice dies" "$st" 1
+assert_contains "with the links message" "$out" "gh could not read ticket #303's links: fake gh: adapter_blockers failed"
+assert_not_contains "never calling a failed read a mismatch" "$out" "did not verify"
+fake_unfail
+
+# #843: a failed read-back is no mismatch. Each read path dies with gh's own
+# first line, and only the second attempt decides which death it is.
+fake_fail_after adapter_sub_issues 0 $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a sub-issues read-back that fails twice dies" "$st" 1
+assert_contains "with gh's first line" "$out" "gh could not read ticket #304's links: HTTP 502: Bad Gateway"
+assert_not_contains "and only its first line" "$out" "second line"
+assert_not_contains "never calling a failed read a mismatch" "$out" "did not verify"
+fake_unfail
+
+fake_fail_after adapter_blockers 0 $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" ticket publish 50 "Blocked" "$body" --blocked-by "$blocker" 2>&1)"; st=$?
+assert_status "a blockers read-back that fails twice dies" "$st" 1
+assert_contains "with gh's first line" "$out" "gh could not read ticket #305's links: HTTP 502: Bad Gateway"
+assert_not_contains "and only its first line" "$out" "second line"
+assert_not_contains "never calling a failed read a mismatch" "$out" "did not verify"
+fake_unfail
+
+fake_fail_after adapter_sub_issues 0 ''
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a silent read-back failure dies" "$st" 1
+assert_contains "ending in gh gave no reason" "$out" "gh could not read ticket #306's links: gh gave no reason"
+fake_unfail
+
+fake_fail_times adapter_sub_issues 1 'HTTP 502: Bad Gateway'
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a transient sub-issues read failure then a good read succeeds" "$st" 0
+assert_eq "printing only the child's number" "$out" "307"
+
+fake_fail_times adapter_sub_issues 1 'HTTP 502: Bad Gateway'
+fake_lag adapter_sub_issues 1
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a failed read then a mismatch dies" "$st" 1
 assert_contains "with the verify message" "$out" \
-  "ticket #303's sub-issue/blocked-by links did not verify - checked twice, both failed"
-assert_not_contains "never the block/unblock read message" "$out" "could not read ticket"
+  "ticket #308's sub-issue/blocked-by links did not verify - checked twice, both failed"
+fake_unfail
+
+fake_lag adapter_sub_issues 1
+fake_fail_after adapter_sub_issues 1 'HTTP 502: Bad Gateway'
+out="$("$ORCH" ticket publish 50 "Title" "$body" 2>&1)"; st=$?
+assert_status "a mismatch then a failed read dies" "$st" 1
+assert_contains "with the links message" "$out" "gh could not read ticket #309's links: HTTP 502: Bad Gateway"
+assert_not_contains "not the verify message" "$out" "did not verify"
 restore_suite_env
 
 # --- ticket next -----------------------------------------------------------
@@ -5872,10 +5916,12 @@ assert_status "a gh that refuses the edge write fails the command" "$st" 1
 assert_contains "naming the ticket" "$out" "gh could not add a blocking edge from ticket #$bf on #$bb"
 assert_contains "with gh's reason" "$out" "HTTP 422"
 fake_unfail
-fake_fail adapter_blockers
+fake_fail adapter_blockers $'HTTP 502: Bad Gateway\nsecond line'
 out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?
 assert_status "a gh that cannot read the blockers fails the command" "$st" 1
-assert_contains "naming the ticket" "$out" "gh could not read ticket #$bf's blockers"
+assert_contains "naming the ticket, with gh's first line" "$out" \
+  "gh could not read ticket #$bf's blockers: HTTP 502: Bad Gateway"
+assert_not_contains "and only its first line" "$out" "second line"
 fake_unfail
 fake_fail adapter_issue_state
 out="$("$ORCH" ticket block "$bf" --by "$bb" 2>&1)"; st=$?

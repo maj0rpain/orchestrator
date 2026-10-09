@@ -3607,34 +3607,44 @@ issue_number_list() {
   printf '%s\n' $list | sort -un
 }
 
-# True only once both links read back exactly as published: the parent's
-# sub-issue listing contains the child, and the child's blocked-by listing
-# is the same set of numbers requested, in any order, both sides
-# de-duplicated. Read fresh every call, never cached - the caller retries
-# this on a mismatch, and a cached answer would just repeat the same wrong
-# verdict.
+# ticket_links_verified <line_var> <parent> <child> <want>: 0 only once both
+# links read back exactly as published: the parent's sub-issue listing
+# contains the child, and the child's blocked-by listing is the same set of
+# numbers requested, in any order, both sides de-duplicated. 1 on a mismatch;
+# 2 when either read fails, gh's first stderr line - empty when gh printed
+# none - written into <line_var>, so a failed read is never reported as a
+# mismatch (#843). Read fresh every call, never cached - the caller retries
+# this once on either status, and a cached answer would just repeat the same
+# verdict. Locals prefixed so no caller's variable name is shadowed.
 ticket_links_verified() {
-  local parent="$1" child="$2" want="$3" have_children have_blockers line linked=""
-  have_children="$(adapter_sub_issues "$parent")" || return 1
-  while IFS= read -r line; do
-    if [ "${line%%$'\t'*}" = "$child" ]; then linked=1; break; fi
-  done <<<"$have_children"
-  [ -n "$linked" ] || return 1
-  have_blockers="$(ticket_blockers "$child" return)" || return 1
-  [ "$have_blockers" = "$(printf '%s\n' "$want" | sort -un)" ]
+  local __tlv_out __tlv_err __tlv_line __tlv_linked=""
+  if ! capture __tlv_out __tlv_err adapter_sub_issues "$2"; then
+    printf -v "$1" '%s' "${__tlv_err%%$'\n'*}"
+    return 2
+  fi
+  while IFS= read -r __tlv_line; do
+    if [ "${__tlv_line%%$'\t'*}" = "$3" ]; then __tlv_linked=1; break; fi
+  done <<<"$__tlv_out"
+  [ -n "$__tlv_linked" ] || return 1
+  if ! capture __tlv_out __tlv_err adapter_blockers "$3"; then
+    printf -v "$1" '%s' "${__tlv_err%%$'\n'*}"
+    return 2
+  fi
+  if [ -n "$__tlv_out" ]; then __tlv_out="$(printf '%s\n' "$__tlv_out" | sort -un)"; fi
+  [ "$__tlv_out" = "$(printf '%s\n' "$4" | sort -un)" ]
 }
 
 # Publishes a child issue, links it to <parent> as a native sub-issue, adds a
 # native blocking edge for every --blocked-by argument, and applies this
 # repo's ready-for-agent label - then verifies every link it just wrote by
-# reading it back. One retry on a mismatch; a second failure dies naming the
+# reading it back. One retry on a mismatch or a failed read; a second failure dies naming the
 # ticket rather than falling back to a text-based `Blocked by:` convention,
 # since nothing downstream ever reads that fallback.
 cmd_ticket_publish() {
   local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
   [ $# -ge 3 ] || die "$usage"
   local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want="" b
-  local ready child
+  local ready child gh_line="" st=0
   shift 3
   # Every argument check runs here, before the first GitHub write. A second
   # --blocked-by is refused, never allowed to replace the first.
@@ -3671,8 +3681,13 @@ cmd_ticket_publish() {
     done <<<"$want"
   fi
 
-  ticket_links_verified "$parent" "$child" "$want" \
-    || ticket_links_verified "$parent" "$child" "$want" \
+  # Either status gets the one retry, and the second attempt decides the
+  # death: a failed read dies with gh's reason, a mismatch as unverified.
+  ticket_links_verified gh_line "$parent" "$child" "$want" \
+    || ticket_links_verified gh_line "$parent" "$child" "$want" \
+    || st=$?
+  [ "$st" -ne 2 ] || die "gh could not read ticket #$child's links: $(gh_reason "$gh_line")"
+  [ "$st" -eq 0 ] \
     || die "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed"
 
   note "$child"
@@ -3881,14 +3896,11 @@ ticket_edge_preconditions() {
 
 # Ticket <n>'s blocker numbers, read fresh from its native blocked-by
 # listing, one per line, sorted and de-duplicated: edges are a set. A gh
-# failure dies naming the ticket; with `return`, it returns 1 and prints
-# nothing, so a caller that retries (publish's verify, ADR-0011) can.
+# failure dies naming the ticket, with gh's reason.
 ticket_blockers() {
-  local have
-  if ! have="$(adapter_blockers "$1")"; then
-    [ "${2:-}" = return ] && return 1
-    die "gh could not read ticket #$1's blockers"
-  fi
+  local have err
+  capture have err adapter_blockers "$1" \
+    || die "gh could not read ticket #$1's blockers: $(gh_reason "$err")"
   if [ -n "$have" ]; then printf '%s\n' "$have" | sort -un; fi
 }
 
