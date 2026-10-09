@@ -1393,25 +1393,25 @@ adapter_issue_state_labels_body() {
 # line - empty when gh printed none - into <line_var>, as
 # issue_state_labels_read does.
 issue_state_labels_body_read() {
-  local __islbr_out __islbr_err __islbr_state __islbr_count __islbr_labels="" __islbr_i
+  local __islbr_out __islbr_err __islbr_state __islbr_count __islbr_labels="" __islbr_body __islbr_i
   if ! capture __islbr_out __islbr_err adapter_issue_state_labels_body "$1"; then
     printf -v "$5" '%s' "${__islbr_err%%$'\n'*}"
     return 1
   fi
-  lines_split "$__islbr_out" __islbr_state __islbr_count __islbr_out
+  lines_split "$__islbr_out" __islbr_state __islbr_count __islbr_body
   case "$__islbr_count" in
     ''|*[!0-9]*) printf -v "$5" '%s' "gh answered no label count"; return 1 ;;
   esac
   for (( __islbr_i = 0; __islbr_i < __islbr_count; __islbr_i++ )); do
-    __islbr_labels="$__islbr_labels${__islbr_out%%$'\n'*}"$'\n'
-    case "$__islbr_out" in
-      *$'\n'*) __islbr_out="${__islbr_out#*$'\n'}" ;;
-      *) __islbr_out="" ;;
+    __islbr_labels="$__islbr_labels${__islbr_body%%$'\n'*}"$'\n'
+    case "$__islbr_body" in
+      *$'\n'*) __islbr_body="${__islbr_body#*$'\n'}" ;;
+      *) __islbr_body="" ;;
     esac
   done
   printf -v "$2" '%s' "$__islbr_state"
   printf -v "$3" '%s' "${__islbr_labels%$'\n'}"
-  printf -v "$4" '%s' "$__islbr_out"
+  printf -v "$4" '%s' "$__islbr_body"
 }
 
 # adapter_issue_title_labels <n>: the title on the first line, then one label
@@ -2571,11 +2571,11 @@ map_line() {
 
 # scan_line <file:lines> <result> <detail>: the scan's one line, in the
 # columns `finding-triage scan` prints. Local to finding_scan_one in effect: it
-# reads the issue and PR number and the triage state, n, pr and state, from
+# reads the issue and PR number and the triage state, n, pr and roles, from
 # that call's locals, through bash's dynamic scope, and prints - for an empty
 # PR or detail.
 scan_line() {
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$n" "${pr:--}" "$1" "$2" "${3:--}" "$state"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$n" "${pr:--}" "$1" "$2" "${3:--}" "$roles"
 }
 
 # triage_state <labels>: the triage-role labels among the newline-separated
@@ -2593,7 +2593,7 @@ triage_state() {
 # finding_scan_one <issue> <body> <default ref> <triage state>: the scan's one
 # line for one finding.
 finding_scan_one() {
-  local n="$1" body="$2" ref="$3" state="$4" loc pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out
+  local n="$1" body="$2" ref="$3" roles="$4" loc pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out
   pr="$(finding_pr "$body")"
   loc="$(finding_location "$body")"
   if [ -z "$loc" ]; then
@@ -4961,9 +4961,10 @@ orch.sh - deterministic operations for the orchestrator flow
   finding-triage apply <issue> <ready-for-agent|ready-for-human>
                        --category <bug|enhancement> --comment-file <file>
                               finding triage's one write: post <file> under
-                              the AI disclaimer, take the issue out of the
-                              repo's needs-triage, then close it as completed
-                              (close-fixed) or as not planned labelled wontfix,
+                              the AI disclaimer, remove every other
+                              triage-role label it carries, then close it as
+                              completed (close-fixed) or as not planned
+                              labelled wontfix,
                               or label it with that state, keeping
                               review:<severity> and leaving exactly the one
                               category - created only where missing, never
