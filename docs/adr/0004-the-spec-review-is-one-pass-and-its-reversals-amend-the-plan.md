@@ -4,6 +4,8 @@ Superseded in part by ADR-0030: a failed comments fetch now stops the review too
 
 Superseded in part by ADR-0034: a quick implementation's spec review is unattended, and its ticket follow-up takes its own recommendation, retiring included.
 
+Superseded in part by ADR-0040: a spec review runs a human-chosen number of rounds, not one pass.
+
 A spec review runs once, in the spec phase, after the issue exists - published
 by `to-spec` or already adopted at init - and before `02-spec.md` is written.
 Four lenses read the issue as fresh sub-agents and report findings; every

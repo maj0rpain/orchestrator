@@ -96,10 +96,13 @@ until review.>
 <the test seams agreed with the user, and why these and not lower ones>
 
 ## Spec review changelog
-<the list orch-spec-review returned, per lens: applied edits one line
-each, declined findings verbatim with the human's reason or "declined as
-recommended: <reason>", "None" for a lens that found nothing, "not run -
-<reason>" for one that failed>
+<every round's changelog orch-spec-review returned, in round order, each
+under a `### Round <k> of <n>` subheading, its own `## Spec review` heading
+dropped and any heading inside it at `####` or deeper - no line here starts
+with `## `. Each round, per lens: applied edits one line each, declined
+findings verbatim with the human's reason or "declined as recommended:
+<reason>", "None" for a lens that found nothing, "not run - <reason>" for one
+that failed>
 
 ## Ticket breakdown
 <usually the parent issue number only - the tickets themselves are its

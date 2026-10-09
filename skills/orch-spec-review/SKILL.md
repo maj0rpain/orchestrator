@@ -1,11 +1,11 @@
 ---
 name: orch-spec-review
-description: Review a spec issue once - propose folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask the ticket question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue>: three lenses, no plan handoff, and nothing written to flow state. A quick implementation runs the standalone review unattended, applying its own recommendations without asking.
+description: Review a spec issue in one or more rounds - each round proposes folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask the ticket question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again; each round reads the body the previous round published, and the review runs its whole round count. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue> [--rounds <n>]: three lenses, no plan handoff, and nothing written to flow state. A quick implementation runs the standalone review unattended, applying its own recommendations without asking, in exactly one round.
 ---
 
 # Orchestrator spec review
 
-One look at the spec, taken once. In a flow it comes after the issue exists -
+One review of the spec, in one or more rounds. In a flow it comes after the issue exists -
 published by the spec phase or already adopted at init - and before the handoff is
 written; a standalone review takes it on a given issue, outside any flow, and
 writes no handoff. First, the session running the review proposes folding
@@ -21,24 +21,25 @@ how the breakdown should follow - see **Tickets follow the spec**; the review
 writes the issue's tickets only to follow edits already accepted. The issue body stays the single truth the
 implement phase reads; after a review, the comments are history.
 
-There is no budget and no second pass. In a flow's spec phase there is also
-no "review the spec?" question: the human's control is at the batch decision,
-where they may decline every edit. A quick implementation asks no question
-at all: it takes the standalone entry's **Unattended spec review** mode, which
-applies its own recommendations - see that section.
+A review runs a **round count** of **rounds** (ADR-0040) - see **Rounds**. In
+a flow's spec phase there is no "review the spec?" question, only the round
+count: the human's control is at each round's batch decision, where they may
+decline every edit. A quick implementation asks no question at all: it takes
+the standalone entry's **Unattended spec review** mode, which applies its own
+recommendations in exactly one round - see that section.
 The independence comes from the sub-agents, the same way it does for the review
 loop - see `docs/adr/0001-review-loop-runs-in-a-single-session.md`.
 
 There are two entries, and everything from **Consolidation** through **The
-changelog** is shared between them:
+changelog** is shared between them, run once per round:
 
 - **Inputs** - the spec-phase entry, from `orch-flow`'s spec phase. It works
   on the active flow's issue.
 - **Standalone spec review** - a human asks for a review of a given issue,
-  with `/orchestrator:spec-review <issue>` or in plain words, outside any
-  flow. It belongs to no flow, leaves no handoff, and runs three lenses:
-  Fidelity needs a plan and has none. Another look is another standalone
-  review.
+  with `/orchestrator:spec-review <issue> [--rounds <n>]` or in plain words,
+  outside any flow. It belongs to no flow, leaves no handoff, and runs three
+  lenses: Fidelity needs a plan and has none. A review started after it ends
+  is a new standalone review, with its own round count.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -54,6 +55,39 @@ If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
 plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 `maj0rpain/orchestrator` as a Junie extension, which is unverified).
+
+## Rounds
+
+One **round** is everything from **Consolidation** through **The changelog**:
+Consolidation, the lenses, one batch question, the accepted edits applied,
+**Tickets follow the spec** when they touch an open ticket, and one
+`## Spec review` changelog comment. The review runs rounds 1 to `<n>`, `<n>`
+the round count, in order:
+
+- **Each round reads the body the previous round published.** Each round
+  takes a fresh working directory and fetches the body and comments again:
+  the spec-phase entry runs **Inputs** again with a fresh `spec fetch`
+  directory, and the standalone entry re-runs its steps from
+  `spec-review begin <issue>`, which empties the directory. Nothing is lost:
+  the previous round has already published.
+- **The whole count runs.** A round that finds nothing, or whose edits are
+  all declined, does not end the review early: the next round still runs, up
+  to round `<n>`.
+- **Each round's changelog** opens with the `## Spec review` heading, and its
+  next line is `Round <k> of <n>`, `<k>` the round's number - see **The
+  changelog**.
+- **A failure in any round stops the whole review**, exactly as it stops a
+  one-round review: no later round runs, and the rounds already run stay
+  published, each with its own changelog comment. When an earlier round of
+  this review had retired the breakdown, the stop message also says the
+  issue has no ticket breakdown and needs `/orchestrator:to-tickets <issue>`.
+- **Tickets follow the spec** is not another round: within a round, no lens
+  runs again.
+
+The round count lives in the session only: nothing writes it to
+`state.json`, and `orch.sh` has no key for it. In a flow, `orch-flow`'s spec
+phase asks for it before round 1. A standalone review takes it from
+`--rounds`, 1 without it. An **Unattended spec review** always runs 1.
 
 ## Inputs
 
@@ -82,6 +116,16 @@ that needs something gets a file path.
 The issue number comes from the human: the command's argument, or the issue
 they named. With no number, ask for one and wait. Never take it from
 `state.json` or the active flow.
+
+The round count comes from `--rounds <n>` in the arguments - the command's
+arguments, or the Skill tool's args when a session calls this skill directly,
+e.g. `<issue> --rounds 3`; both are read the same way. Without `--rounds`, the
+review runs 1 round. `<n>` must be an integer >= 1: on any other value, or a
+`--rounds` with no value, stop before `spec-review begin` with a message
+naming the value and that `--rounds` takes an integer >= 1. Nothing is
+fetched or published. This session checks the value, never `orch.sh`.
+
+Steps 1 to 4 below run at the start of every round, as **Rounds** says.
 
 1. **Begin**, before fetching: `bash "$ORCH" spec-review begin <issue>`. It
    prints the working directory, `<dir>` from here on, emptied for this run.
@@ -127,6 +171,8 @@ definition of the mode - quick implementation's own steps never restate its
 rules. Everything in **Standalone spec review** above holds, with these
 differences only:
 
+- **Rounds**: it always runs exactly **1** round, and asks no round-count
+  question; a `--rounds` value is never passed to it.
 - **Consolidation and the lenses** run unchanged: Consistency, Testability
   and Implementability, with Fidelity not run.
 - **Disposition**: the batch is drafted, numbered and printed in the session
@@ -141,8 +187,8 @@ differences only:
 - **Applying**: the standalone steps in **Applying the answer**, unchanged
   except step 4: a retire is followed by `orch-to-tickets`' **Unattended
   breakdown**, never its quiz.
-- **The changelog** opens, ahead of its Consolidation section, with exactly
-  this line:
+- **The changelog** opens, after its `Round 1 of 1` line and ahead of its
+  Consolidation section, with exactly this line:
 
   ```
   Unattended spec review, run from a quick implementation: applied as recommended.
@@ -283,10 +329,12 @@ prompts.
 4. If the human chose **Retire and break down again**, run
    `bash "$ORCH" ticket retire <issue>` now, after the publish, so it cuts any
    `## Ticket` section from the body just published. Breaking the issue down
-   again is left to `orch-flow`'s spec phase step 5, which then sees
-   `ticket exists` exit 1.
+   again is left to `orch-flow`'s spec phase step 5, after the last round,
+   which then sees `ticket exists` exit 1. A later round sees the same exit 1
+   and records **None - no ticket breakdown**.
 5. Write the changelog - see below - to `<dir>/changelog.md` under a
-   `## Spec review` heading and `bash "$ORCH" spec comment <dir>/changelog.md`. The
+   `## Spec review` heading and its `Round <k> of <n>` line, and
+   `bash "$ORCH" spec comment <dir>/changelog.md`. The
    comment is history, visible on the issue; the body is the truth.
 6. A declined `contradicts the plan` item: the changelog records **spec
    departs from the plan: <the human's reason>**, and the matching entry in the
@@ -296,9 +344,14 @@ prompts.
    recommended: <reason>**, and the amendment cites the same reason. The review loop demotes findings that
    propose a rejected alternative, and without the amendment it would later
    demote a code reviewer for proposing the spec's own choice.
-7. Return the changelog to the flow skill: it goes verbatim into
-   `02-spec.md`'s **Spec review changelog**, its **Tickets** section included,
-   so the implement phase carries the disposition without a network call.
+7. After the last round, return every round's changelog to the flow skill,
+   in round order: they go into `02-spec.md`'s **Spec review changelog**,
+   each under a `### Round <k> of <n>` subheading, with its **Tickets**
+   section included, so the implement phase carries the disposition without
+   a network call. In the handoff each round drops its own `## Spec review`
+   heading and `Round <k> of <n>` line, and its section headings sit at
+   `####` or deeper: no line of the section starts with `## `, because
+   `handoff validate` reads a section up to the next `## ` line.
 
 A standalone review applies through the stateless `issue` commands instead:
 
@@ -308,15 +361,17 @@ A standalone review applies through the stateless `issue` commands instead:
 3. Publish the body once: `bash "$ORCH" issue update <issue> <dir>/spec.md`.
    Skip this step when nothing in `<dir>/spec.md` changed, as above.
 4. If the human chose **Retire and break down again**, run
-   `bash "$ORCH" ticket retire <issue>` now, after the publish. Then invoke the
-   `orch-to-tickets` skill on the issue: it reads the published, edited body.
-   An attended review follows it through its own quiz until the human
-   approves a breakdown. An **Unattended spec review** follows its
-   **Unattended breakdown** instead, never the quiz; the quick implementation
-   that ran it then sees `ticket exists` exit 0 at its step 3 and works the
-   new breakdown.
+   `bash "$ORCH" ticket retire <issue>` now, after this round's publish. Later
+   rounds then see `ticket exists` exit 1 and record **None - no ticket
+   breakdown**. After the **final** round - never before it, so a later round
+   cannot make a fresh breakdown stale - invoke the `orch-to-tickets` skill on
+   the issue: it reads the published, edited body. An attended review follows
+   it through its own quiz until the human approves a breakdown. An
+   **Unattended spec review** follows its **Unattended breakdown** instead,
+   never the quiz; the quick implementation that ran it then sees
+   `ticket exists` exit 0 at its step 3 and works the new breakdown.
 5. Write the changelog to `<dir>/changelog.md` under a `## Spec review`
-   heading, with Fidelity's not-run line, as in **The changelog**, and any
+   heading and its `Round <k> of <n>` line, with Fidelity's not-run line, as in **The changelog**, and any
    **Host fallbacks** line, and
    `bash "$ORCH" issue comment <issue> <dir>/changelog.md`. The comment is
    posted on Apply none too.
@@ -334,8 +389,9 @@ A spec review on an issue that already has a ticket breakdown - a blueprint a
 flow adopted or a quick implementation linked, or any issue reviewed
 standalone - would otherwise leave tickets drawn from the old body, and the
 implement phase would build them. This step brings the breakdown in line with
-the edits just accepted, before the body is published. It is not a second
-pass: no lens runs and the spec is not reviewed again (ADR-0004). Both
+the edits just accepted, before the body is published. It is not another
+round: within a round, no lens runs again and the spec is not reviewed again
+(ADR-0004, ADR-0040). Both
 entries share it. `<issue>` is the issue under review: in a flow,
 the number `bash "$ORCH" state get issue` prints.
 
@@ -408,6 +464,13 @@ stops the review the way a failed fetch does. A failed `ticket block` or
 Nothing calls `gh issue` directly.
 
 ## The changelog
+
+Each round writes one changelog. It opens with the `## Spec review` heading,
+and its next line is exactly `Round <k> of <n>`, `<k>` the round's number and
+`<n>` the round count - `Round 1 of 1` for a one-round review. The heading
+keeps **Consolidation**'s skip rule matching every earlier round's comment.
+In an **Unattended spec review**, the `Round` line comes before the fixed
+opening line.
 
 A **Consolidation** section comes first, ahead of the lens headings:
 

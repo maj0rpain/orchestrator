@@ -210,7 +210,7 @@ next` prints. Several can be built at once, up to the clone's parallel cap.
 ### Spec review
 
 **Spec review**:
-One look at a spec issue, taken once. Usually a step of a flow's spec phase,
+One review of a spec issue, in one or more rounds. Usually a step of a flow's spec phase,
 after the issue exists - published by the spec phase or already adopted at
 init - and before its handoff is written. A human may also ask for one on
 demand, against any issue, and a quick implementation takes an unattended one
@@ -225,15 +225,22 @@ change the spec - in an unattended spec review, the recommended ones. When the i
 accepted edits touch an open ticket, it then raises the ticket question - how that
 breakdown should follow - which a human answers, and an unattended spec
 review answers with its own recommendation: edits to the tickets the change touches, or retiring
-the breakdown so the issue is broken down again. A spec review runs once - it is not a loop and has no budget;
-another look is another spec review.
+the breakdown so the issue is broken down again. A spec review runs its whole round count, each round reading the body the previous one published. It is not a loop - no severity, nothing filed - and a review started after it ends is a new spec review, with its own round count.
+
+**Round**:
+One look within a spec review: consolidation, the lenses, one batch of proposed edits put to the human, the accepted edits applied, the ticket question when they touch an open ticket, and one changelog comment. Each round reads the body as the previous round published it.
+_Avoid_: pass, iteration (the review loop's).
+
+**Round count**:
+The number of rounds a spec review runs. A flow's spec phase asks the human for it when the review starts, and a blueprint asks it in the planning hook's closing message, before the review; both recommend 3, and a blueprint may answer 0 to skip the review. A spec review run on demand runs 1 unless given another. An unattended spec review always runs 1. A spec review runs its whole round count: a round that finds nothing does not end it early.
+_Avoid_: budget (the review loop's).
 
 **Unattended spec review**:
 A standalone spec review that asks the human nothing: every recommended edit
 is applied, every decision item takes its recommended option, and a ticket
 breakdown the edits touch follows its recommended option, retiring included.
 The batch is still shown and the changelog still records it all. Only a quick
-implementation takes one.
+implementation takes one. It runs one round.
 _Avoid_: auto spec review, silent spec review.
 
 **Consolidation item**:
