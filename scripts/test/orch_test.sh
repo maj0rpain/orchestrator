@@ -966,6 +966,19 @@ contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH"
 GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
 orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
 
+# sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the
+# finished sweep first and reports it on stderr, so that stderr is held back:
+# discarded when add succeeds, printed when it fails. The new path passes
+# through on stdout, and add's exit status is returned.
+sc_add() {
+  local err st
+  err="$(mktemp)"
+  orch_gh_failing side-checkout add "$@" 2>"$err"; st=$?
+  [ "$st" -eq 0 ] || cat "$err" >&2
+  rm -f "$err"
+  return "$st"
+}
+
 # path_without_jq() builds its restricted PATH from whatever's really on PATH,
 # not from repo state, so the one built here serves every no-jq assertion
 # (in doctor and in doctor --flow) instead of symlinking the same ~20 tools
@@ -6290,7 +6303,7 @@ top="$(git rev-parse --show-toplevel)"
 git -C "$sc_seed" commit -q --allow-empty -m "main moves on"
 git -C "$sc_seed" push -q "$sc_origin" HEAD:refs/heads/main
 moved_tip="$(git -C "$sc_seed" rev-parse HEAD)"
-out="$(orch_gh_failing side-checkout add alpha)"; st=$?
+out="$(orch_gh_failing side-checkout add alpha 2>/dev/null)"; st=$?
 assert_status "add succeeds" "$st" 0
 assert_eq "add prints the side checkout's path" "$out" "$top/.orchestrator/checkouts/alpha"
 assert_eq "the side checkout is a worktree of its own" \
@@ -6313,12 +6326,16 @@ out="$(orch_gh_failing side-checkout add stray 2>&1)"; st=$?
 assert_status "add refuses a path that exists without being a worktree" "$st" 1
 assert_eq "and makes no worktree there" "$(git worktree list | wc -l | tr -d ' ')" "2"
 rmdir .orchestrator/checkouts/stray
+# The fixture helper keeps a failing add's error on stderr, and its status.
+err="$(sc_add alpha 2>&1 >/dev/null)"; st=$?
+assert_status "sc_add returns a failing add's status" "$st" 1
+assert_contains "and prints add's error on stderr" "$err" "$top/.orchestrator/checkouts/alpha"
 
 # The base branch in effect, not the checkout's branch.
 git -C "$sc_seed" push -q "$sc_origin" HEAD~1:refs/heads/uat
 uat_tip="$(git -C "$sc_seed" rev-parse HEAD~1)"
 git config orchestrator.base uat
-out="$(orch_gh_failing side-checkout add on-uat)"
+out="$(orch_gh_failing side-checkout add on-uat 2>/dev/null)"
 assert_eq "add forks from the base branch in effect" "$(git -C "$out" rev-parse HEAD)" "$uat_tip"
 git worktree remove "$out"
 
@@ -6347,11 +6364,11 @@ out="$(orch_gh_failing side-checkout list)"; st=$?
 assert_status "list succeeds" "$st" 0
 assert_eq "a side checkout before a branch is made lists (no branch)" "$out" \
   "alpha $top/.orchestrator/checkouts/alpha (no branch)"
-beta="$(orch_gh_failing side-checkout add beta)"
+beta="$(sc_add beta)"
 git -C "$beta" checkout -q -b quick/3-beta
-gamma="$(orch_gh_failing side-checkout add gamma)"
+gamma="$(sc_add gamma)"
 (cd "$gamma" && orch_gh_failing init gamma-flow >/dev/null && orch_gh_failing state set issue 12)
-delta="$(orch_gh_failing side-checkout add delta)"
+delta="$(sc_add delta)"
 (cd "$delta" && orch_gh_failing init delta-flow >/dev/null)
 # Neither a hand-made worktree, even one holding a flow, nor a ticket worktree
 # is a side checkout.
@@ -6370,7 +6387,7 @@ assert_not_contains "never a hand-made worktree" "$out" "$hand"
 assert_not_contains "never a ticket worktree" "$out" "worktrees/t4"
 assert_eq "from a side checkout, list prints the same" "$(cd "$beta" && orch_gh_failing side-checkout list | sort)" "$out"
 assert_eq "add from a side checkout still nests under the main checkout" \
-  "$(cd "$beta" && orch_gh_failing side-checkout add epsilon)" "$top/.orchestrator/checkouts/epsilon"
+  "$(cd "$beta" && orch_gh_failing side-checkout add epsilon 2>/dev/null)" "$top/.orchestrator/checkouts/epsilon"
 git worktree remove "$top/.orchestrator/checkouts/epsilon"
 orch_gh_failing ticket-worktree remove 4 --unmerged
 assert_eq "git status in the main checkout still shows nothing new" "$(git status --porcelain)" ""
@@ -6395,7 +6412,7 @@ assert_eq "each side checkout stays where git recorded it" \
 assert_eq "and side-checkout list is unchanged" "$(orch_gh_failing side-checkout list | wc -l | tr -d ' ')" "4"
 
 # A side checkout made for a quick implementation records its issue (#874).
-qi="$(orch_gh_failing side-checkout add quick-one --issue 123)"; st=$?
+qi="$(orch_gh_failing side-checkout add quick-one --issue 123 2>/dev/null)"; st=$?
 assert_status "add --issue succeeds" "$st" 0
 assert_eq "add --issue prints the side checkout's path" "$qi" "$top/.orchestrator/checkouts/quick-one"
 out="$(cd "$qi" && orch_gh_failing side-checkout issue)"; st=$?
@@ -6494,10 +6511,10 @@ assert_not_contains "with no other checkout, status lists none" "$alone" "other 
 orch_gh_failing ticket-worktree add 4 >/dev/null
 assert_eq "a ticket worktree never appears" "$(orch_gh_failing status)" "$alone"
 
-alpha="$(orch_gh_failing side-checkout add alpha)"
-beta="$(orch_gh_failing side-checkout add beta)"
+alpha="$(sc_add alpha)"
+beta="$(sc_add beta)"
 git -C "$beta" checkout -q -b quick/3-beta
-gamma="$(orch_gh_failing side-checkout add gamma)"
+gamma="$(sc_add gamma)"
 (cd "$gamma" && orch_gh_failing init gamma-flow >/dev/null && orch_gh_failing state set issue 12)
 hand="$(mktemp -d)/hand"
 git worktree add -q -b hand "$hand"
@@ -6555,7 +6572,7 @@ sc_clone
 top="$(git rev-parse --show-toplevel)"
 
 # archive in a clean side checkout, run from inside it.
-alpha="$(orch_gh_failing side-checkout add alpha)"
+alpha="$(sc_add alpha)"
 (cd "$alpha" && orch_gh_failing init alpha-flow >/dev/null)
 complete_plan_handoff "$(cd "$alpha" && orch_gh_failing handoff path spec)"
 out="$(cd "$alpha" && orch_gh_failing archive 2>&1)"; st=$?
@@ -6570,7 +6587,7 @@ assert_not_contains "and from git's list" "$(git worktree list)" "$alpha"
 assert_contains "it tells the human to close the session" "$out" "close this session"
 
 # archive in a dirty side checkout: the archive succeeds, the worktree stays.
-beta="$(orch_gh_failing side-checkout add beta)"
+beta="$(sc_add beta)"
 (cd "$beta" && orch_gh_failing init beta-flow >/dev/null)
 echo wip >"$beta/wip.txt"
 out="$(cd "$beta" && orch_gh_failing archive 2>&1)"; st=$?
@@ -6584,7 +6601,7 @@ assert_eq "no flow is left in it" "$(on_disk "$beta/.orchestrator/state.json")" 
 
 # init over a done flow in a side checkout archives to the main checkout and
 # keeps the worktree, where the new flow lives.
-gamma="$(orch_gh_failing side-checkout add gamma)"
+gamma="$(sc_add gamma)"
 (cd "$gamma" && orch_gh_failing init old-flow >/dev/null && state_fixture phase "done")
 out="$(cd "$gamma" && orch_gh_failing init new-flow 2>&1)"; st=$?
 assert_status "init over a done flow in a side checkout succeeds" "$st" 0
@@ -6655,7 +6672,7 @@ assert_eq "the branch is kept" \
 assert_not_contains "run from the main checkout, no close-the-session message" "$out" "close this session"
 
 # remove of a side checkout holding no flow, run from inside it.
-delta="$(orch_gh_failing side-checkout add delta)"
+delta="$(sc_add delta)"
 out="$(cd "$delta" && orch_gh_failing side-checkout remove delta 2>&1)"; st=$?
 assert_status "remove from inside the side checkout succeeds" "$st" 0
 assert_eq "the worktree is gone" "$(on_disk "$delta")" "absent"
@@ -6663,7 +6680,7 @@ assert_contains "and the session is told to close" "$out" "close this session"
 
 # A failing git worktree remove: the archive stands, and remove exits 1. A
 # locked worktree is one git refuses to remove without force.
-eps="$(orch_gh_failing side-checkout add eps)"
+eps="$(sc_add eps)"
 (cd "$eps" && orch_gh_failing init eps-flow >/dev/null)
 git worktree lock "$eps"
 out="$(orch_gh_failing side-checkout remove eps 2>&1)"; st=$?
@@ -6702,35 +6719,35 @@ top="$(git rev-parse --show-toplevel)"
 fake_offline
 
 # A finished flow side checkout, its PR squash-merged.
-fl="$(orch_gh_failing side-checkout add fl)"
+fl="$(sc_add fl)"
 (cd "$fl" && orch_gh_failing init fl-flow >/dev/null \
   && state_fixture phase "done" && state_fixture branch orch/fl-flow && state_fixture pr 41)
 sp_branch_off "$fl" orch/fl-flow
 fake_pr 41 merged orch/fl-flow main
 # A finished quick-implementation side checkout.
-qk="$(orch_gh_failing side-checkout add qk)"
+qk="$(sc_add qk)"
 sp_branch_off "$qk" quick/7-qk
 fake_pr 42 merged quick/7-qk main
 # An open PR.
-op="$(orch_gh_failing side-checkout add op)"
+op="$(sc_add op)"
 sp_branch_off "$op" quick/8-op
 fake_pr 43 open quick/8-op main
 # A dirty tree, its PR merged.
-dt="$(orch_gh_failing side-checkout add dt)"
+dt="$(sc_add dt)"
 sp_branch_off "$dt" quick/9-dt
 fake_pr 44 merged quick/9-dt main
 echo wip >"$dt/wip.txt"
 # A flow not at done.
-nd="$(orch_gh_failing side-checkout add nd)"
+nd="$(sc_add nd)"
 (cd "$nd" && orch_gh_failing init nd-flow >/dev/null && state_fixture phase implement)
 # A finished side checkout whose PR was a true merge: its branch is an
 # ancestor of main.
-tm="$(orch_gh_failing side-checkout add tm)"
+tm="$(sc_add tm)"
 sp_branch_off "$tm" quick/17-tm
 git merge -q --no-ff --no-edit quick/17-tm
 fake_pr 56 merged quick/17-tm main
 # A side checkout still on no branch.
-nb="$(orch_gh_failing side-checkout add nb)"
+nb="$(sc_add nb)"
 # The main checkout's own finished flow.
 orch_gh_failing init main-flow >/dev/null
 git checkout -q -b orch/main-flow
@@ -6806,13 +6823,13 @@ assert_contains "reported as left alone" "$out" "$hand: not a side checkout, lef
 # A failure after the archive is reported, that checkout stays, and the sweep
 # moves on. A locked worktree is one git refuses to remove without force.
 fake_offline
-lk="$(orch_gh_failing side-checkout add lk)"
+lk="$(sc_add lk)"
 (cd "$lk" && orch_gh_failing init lk-flow >/dev/null \
   && state_fixture phase "done" && state_fixture branch orch/lk-flow && state_fixture pr 47)
 sp_branch_off "$lk" orch/lk-flow
 fake_pr 47 merged orch/lk-flow main
 git worktree lock "$lk"
-q2="$(orch_gh_failing side-checkout add q2)"
+q2="$(sc_add q2)"
 sp_branch_off "$q2" quick/10-q2
 fake_pr 48 merged quick/10-q2 main
 fake_online
@@ -6831,7 +6848,7 @@ fake_offline
 orch_gh_failing init main-again >/dev/null
 state_fixture phase "done"; state_fixture branch orch/main-flow; state_fixture pr 51
 fake_pr 51 merged orch/main-flow main
-q5="$(orch_gh_failing side-checkout add q5)"
+q5="$(sc_add q5)"
 sp_branch_off "$q5" quick/13-q5
 fake_pr 52 merged quick/13-q5 main
 fake_online
@@ -6844,7 +6861,7 @@ assert_eq "the main checkout's archive is reported once" \
 # A side checkout whose git status cannot run is never called finished: prune
 # removes nothing, naming git's error.
 fake_offline
-q6="$(orch_gh_failing side-checkout add q6)"
+q6="$(sc_add q6)"
 sp_branch_off "$q6" quick/14-q6
 fake_pr 53 merged quick/14-q6 main
 fake_online
@@ -6865,10 +6882,10 @@ orch_gh_failing side-checkout prune >/dev/null 2>&1
 git push -q origin main:refs/heads/uat
 fake_offline
 orch_gh_failing base set uat >/dev/null
-rb="$(orch_gh_failing side-checkout add rb)"
+rb="$(sc_add rb)"
 (cd "$rb" && orch_gh_failing branch off quick/15-rb >/dev/null)
 git -C "$rb" commit -q --allow-empty -m "work on rb"
-rm2="$(orch_gh_failing side-checkout add rm2)"
+rm2="$(sc_add rm2)"
 (cd "$rm2" && orch_gh_failing branch off quick/16-rm2 >/dev/null)
 git -C "$rm2" commit -q --allow-empty -m "work on rm2"
 orch_gh_failing base set main >/dev/null
@@ -6883,7 +6900,7 @@ assert_eq "a PR merged into the base in effect now, not the recorded one, does n
 assert_contains "skipped naming the recorded base" "$out" "skipped $rm2: no merged PR from quick/16-rm2 into uat"
 
 # side-checkout add runs the sweep first.
-q3="$(orch_gh_failing side-checkout add q3)"
+q3="$(sc_add q3)"
 sp_branch_off "$q3" quick/11-q3
 fake_pr 49 merged quick/11-q3 main
 out="$(orch_gh_failing side-checkout add after 2>/dev/null)"; st=$?
@@ -6891,7 +6908,7 @@ assert_status "add succeeds after its sweep" "$st" 0
 assert_eq "printing only the new path on stdout" "$out" "$top/.orchestrator/checkouts/after"
 assert_eq "the sweep removed the finished side checkout" "$(on_disk "$q3")" "absent"
 # ... and carries on when the sweep fails.
-q4="$(orch_gh_failing side-checkout add q4)"
+q4="$(sc_add q4)"
 sp_branch_off "$q4" quick/12-q4
 fake_pr 50 merged quick/12-q4 main
 fake_offline
@@ -6924,20 +6941,20 @@ gh_fixture
 export CLAUDE_PLUGIN_ROOT="$PWD"
 HOME="$(mktemp -d)"; export HOME
 fake_offline
-dfin="$(orch_gh_failing side-checkout add dfin 2>/dev/null)"
+dfin="$(sc_add dfin)"
 git -C "$dfin" checkout -q -b quick/20-dfin
 git -C "$dfin" commit -q --allow-empty -m "work on dfin"
 fake_pr 60 merged quick/20-dfin main
-dopen="$(orch_gh_failing side-checkout add dopen 2>/dev/null)"
+dopen="$(sc_add dopen)"
 git -C "$dopen" checkout -q -b quick/21-dopen
 git -C "$dopen" commit -q --allow-empty -m "work on dopen"
 fake_pr 61 open quick/21-dopen main
-dflow="$(orch_gh_failing side-checkout add dflow 2>/dev/null)"
+dflow="$(sc_add dflow)"
 (cd "$dflow" && orch_gh_failing init dflow-flow >/dev/null \
   && git checkout -q -b orch/dflow-flow \
   && state_fixture phase "done" && state_fixture branch orch/dflow-flow && state_fixture pr 62)
 fake_pr 62 merged orch/dflow-flow main
-dnd="$(orch_gh_failing side-checkout add dnd 2>/dev/null)"
+dnd="$(sc_add dnd)"
 (cd "$dnd" && orch_gh_failing init dnd-flow >/dev/null && state_fixture phase implement)
 fake_online
 git remote set-url origin https://github.com/acme/widgets.git
@@ -6980,7 +6997,7 @@ sc_clone
 fake_github
 top="$(git rev-parse --show-toplevel)"
 fake_offline
-rr="$(orch_gh_failing side-checkout add rr 2>/dev/null)"
+rr="$(sc_add rr)"
 fake_online
 (cd "$rr" && orch_gh_failing init rr-flow >/dev/null && state_fixture phase review && state_fixture pr 70)
 fake_pr 70 open orch/rr-flow main
