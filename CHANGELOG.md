@@ -11,7 +11,9 @@ rounds?" (3 recommended) before the first round;
 `/orchestrator:spec-review <issue> --rounds <n>` runs n rounds, and 1 without
 the option; a quick implementation's unattended review runs 1. `02-spec.md`'s
 **Spec review changelog** holds each round under a `### Round <k> of <n>`
-subheading (#872).
+subheading (#872). The planning hook's Blueprint route asks the same round
+count, every time (3 recommended, 0 skips the review), and hands it to the
+standalone review as `--rounds <count>` (#873).
 
 ## 3.22.0
 

@@ -141,9 +141,16 @@ check_blueprint_rewrite() {
     "orch-to-spec stops when it ends without reporting the issue number."
   assert_contains "reports a retire with no breakdown $where" "$ctx" \
     "If orch-to-tickets fails after rewrite mode retired a breakdown, the report also says that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>"
-  assert_contains "runs the spec review only on a yes $where" "$ctx" \
-    "run the standalone orch-spec-review only on a yes"
-  assert_contains "asks about a spec review every time $where" "$ctx" "ask every time, never"
+  # The spec review question asks a round count (#873), not yes/no.
+  assert_contains "asks how many spec review rounds $where" "$ctx" \
+    "ask the user how many spec review rounds to run on it"
+  assert_contains "recommends 3 rounds $where" "$ctx" "recommend 3"
+  assert_contains "0 rounds skips the review $where" "$ctx" "0 skips the review"
+  assert_contains "asks the round count every time $where" "$ctx" "ask every time, never assume"
+  local yesno
+  for yesno in "only on a yes" "whether to run a spec review"; do
+    assert_not_contains "drops the yes/no question '$yesno' $where" "$ctx" "$yesno"
+  done
   # One copy of the order and stop rules (#730), none per host.
   assert_eq "states the kept skip once $where" \
     "$(count_of "$ctx" "unless rewrite mode reported")" 1
@@ -163,11 +170,15 @@ check_blueprint_rewrite() {
       "\"orchestrator:orch-spec-review\" (its standalone spec review)"
     assert_contains "names orch-to-tickets by Skill tool $where" "$ctx" \
       "and \"orchestrator:orch-to-tickets\""
+    assert_contains "hands the round count as Skill args $where" "$ctx" \
+      "with args \"<n> --rounds <count>\""
   else
     assert_contains "follows each step's skill, for issue #<n>, on Junie $where" "$ctx" \
       "run each step of the Blueprint route below as its skill - orch-to-spec for issue #<n>, the interviewed issue, when there is one"
     assert_contains "names the review and tickets skills on Junie $where" "$ctx" \
       "orch-spec-review, and orch-to-tickets. This host has no Skill tool"
+    assert_contains "hands the round count on Junie $where" "$ctx" \
+      "follow orch-spec-review for issue #<n> with --rounds <count>"
     local s
     for s in orch-to-spec orch-spec-review orch-to-tickets; do
       assert_contains "lists $s's SKILL.md on Junie $where" "$ctx" "$(cd "$DIR/.." && pwd)/skills/$s/SKILL.md"
