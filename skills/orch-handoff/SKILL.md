@@ -160,13 +160,10 @@ ticket, or "None". Not covered by ADR-0002: the review loop's Spec axis judges
 each as an ordinary finding.>
 
 ## Merge resolutions
-<what the implement phase's base sync resolved: the resolver's `Files`,
-`Dropped` and `Verification` lines - each conflicted file, each intent
-dropped and why - and one bullet per ticket conflict resolved, naming the
-ticket and holding the same three lines, or "None" when the sync merged
-cleanly and no ticket conflict was resolved. Not required by
-`handoff validate`, so a handoff written before this section existed still
-validates.>
+<what the implement phase's base sync and ticket resolutions resolved, per
+**Merge resolutions** in `agents/orch-resolver.md` (under the plugin root).
+Not required by `handoff validate`, so a handoff written before this section
+existed still validates.>
 
 ## Host fallbacks
 <per **Record every host fallback** above>
