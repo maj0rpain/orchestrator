@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.2.3
+## 4.2.4
 
 Every `gh could not ...` death in `orch.sh`, reads and writes, now carries
 gh's own first line - `<message>: <gh's first line>`, or `<message>: gh gave
@@ -11,6 +11,17 @@ warning. `ticket publish` no longer reports a failed link read-back as "links
 did not verify": it dies `gh could not read ticket #<n>'s links: <reason>`
 (#843). Two helpers carry the one shape: `gh_reason`, and `capture_err`,
 which keeps a body streamed to a file byte-exact.
+
+## 4.2.3
+
+The resolver's contract is stated once, in `agents/orch-resolver.md`, and
+every caller points to it (#854). A new **Merge resolutions** section defines
+what a driver records of its base sync and ticket resolutions; the flow's
+handoff, the quick implementation's PR body, the sync's PR comment, the review
+record and the fixer's prompt now only say where the record goes. **Report**
+defines a failed resolution once, and both driver sections judge by it. The
+ticket-resolution resume message lives only in `agents/orch-implementer.md`,
+with no plugin-root placeholder.
 
 ## 4.2.2
 

@@ -111,10 +111,10 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    resolver's issue. Then read
    this iteration's **base SHA**: `bash "$ORCH" state get base_sha`, after the
    sync, for this iteration's reviewers and fixer.
-   Keep the sync's **Merge resolutions** - the resolver's `Files`, `Dropped`
-   and `Verification` lines, or `None` when it merged cleanly - for this
-   iteration's record and fixer. A resolver's `Verification` reading `fail`
-   is carried forward, never stopped on: the reviewers judge the merged code.
+   Keep the sync's **Merge resolutions**, per **Merge resolutions** in the
+   same file, for this iteration's record and fixer. A resolver's
+   `Verification` reading `fail` does not stop the iteration: the reviewers
+   judge the merged code.
 
    A **failed sync** is a bounded stop. Write this iteration's record to
    `bash "$ORCH" review path` yourself, in the record's shape (step 5): no
@@ -188,7 +188,7 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 
    `Verification` reads `not run - nothing changed`, **Fixed this
    iteration** and **Open blocking** read `None`, **Merge resolutions**
-   holds step 2's, or `None`, and **PR body** reads `Not checked - no
+   holds step 2's, and **PR body** reads `Not checked - no
    commit`. Then go to step 1.
 6. Otherwise start the **fixer** - see **The fixer** - and wait for it. Of the
    five or so lines it returns, keep two things for the rest of the loop:
@@ -255,7 +255,7 @@ do when the verification command stays red. Its prompt carries:
 PR: #<pr>
 Spec issue: #<spec issue>
 Base SHA: <this iteration's base SHA>
-Merge resolutions: <step 2's: the resolver's Files, Dropped and Verification lines, or None>
+Merge resolutions: <step 2's, per Merge resolutions in agents/orch-resolver.md>
 Fixable list: <each finding: axis, severity, file:line, claim>
 Triaged out: <each other finding: axis, severity, file:line, claim, disposition>
 Fix SHAs: <this loop's earlier fix commits, or none>

@@ -209,9 +209,7 @@ below), then continue at **6. Review**.
 **Base sync**: bring the quick implementation's branch up to date with its
 base, so the review pass reviews the merged code. Follow **A driver's base
 sync** in `agents/orch-resolver.md` (under the plugin root), with the linked
-issue as the resolver's issue. Its **Merge
-resolutions** - the resolver's `Files`, `Dropped` and `Verification`
-lines, or `None` when the sync merged cleanly - go under a **Merge
+issue as the resolver's issue. Its **Merge resolutions** go under a **Merge
 resolutions** heading in the PR body (section 7). A failed sync stops quick
 implementation before the review and the PR, naming the failure; any merge
 left in progress stays for the human. A resolver's `Verification` reading
@@ -263,9 +261,9 @@ none. If `changelog.md` is missing, stop before `pr publish` and say so -
 never write `None.` then, since the decisions taken are unknown. It
 carries a **Verification** heading with step 5's combined verification: the
 command it ran, then `pass` or `fail`, and a **Merge resolutions** heading
-with step 5's base sync's and one bullet per ticket conflict loop step e
-resolved, naming the ticket and holding its report's `Files`, `Dropped`
-and `Verification` lines, or `None` when there were neither. It
+with step 5's base sync's and loop step e's ticket resolutions, per
+**Merge resolutions** in `agents/orch-resolver.md` (under the plugin
+root). It
 ends with a **Host fallbacks** heading listing every fallback this run took -
 including any the spec review in step 2 took - or `None (<host>).` It
 pushes the branch and opens the PR against the base branch `branch off`
