@@ -232,9 +232,9 @@ check "no old orchestrator skill or command name outside history" "$(scan_old_na
 # The glossary was renamed upstream: CONTEXT.md became GLOSSARY.md, and
 # CONTEXT-MAP.md became GLOSSARY-MAP.md (#461). Like the old skill names, an
 # old glossary name in a skill or agent points a model at a file that no
-# longer exists. Only skills/ and agents/ are scanned: README, the Junie
-# snippet and planning-allowlist.sh still list the legacy names, which the
-# planning guard keeps protecting.
+# longer exists. Only skills/ and agents/ are scanned: the Junie snippet
+# docs/junie/AGENTS.md and planning-allowlist.sh still list the legacy names,
+# which the planning guard keeps protecting.
 echo
 echo "glossary names (#461)"
 # scan_old_glossary_names <plugin root>: each CONTEXT.md or CONTEXT-MAP.md in
@@ -286,8 +286,8 @@ check "every skill directory carries the orch- prefix and declares its name" "$(
 # --- orch.sh resolution (#123) ------------------------------------------------
 # Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
 # other hosts, so skill and command text must pair it with the
-# relative fallback. The one documented form (README, "Resolving orch.sh") is
-# the ORCH= line, the Junie step, and the fallback sentence; any other mention
+# relative fallback. The one documented form (CONTRIBUTING.md, "Resolving
+# orch.sh") is the ORCH= line, the Junie step, and the fallback sentence; any other mention
 # of the variable, or a file that runs orch.sh without them, is a regression.
 # hooks/hooks.json is deliberately out of scope: both hosts expand it there.
 echo
@@ -408,7 +408,8 @@ check "every skill and command resolves orch.sh the one documented way" \
 scan_orch_bash() {
   local r="$1" f
   for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md \
-           "$r"/README.md "$r"/docs/host-capabilities.md; do
+           "$r"/README.md "$r"/CONTRIBUTING.md "$r"/docs/how-it-works.md \
+           "$r"/docs/junie/README.md "$r"/docs/host-capabilities.md; do
     [ -f "$f" ] || continue
     sed 's/bash "\$ORCH"//g' "$f" | grep -nE '\$\{?ORCH\b' \
       | sed -E "s|^([0-9]+):|${f#"$r"/}:\\1: runs orch.sh without bash: |"
@@ -418,9 +419,16 @@ fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-x" "$fixture/docs"
 printf 'Run `bash "$ORCH" status`.\nRun `"$ORCH" doctor`.\n' >"$fixture/skills/orch-x/SKILL.md"
 printf 'Run `${ORCH} status`.\n' >"$fixture/README.md"
+printf 'Run `${ORCH} status`.\n' >"$fixture/CONTRIBUTING.md"
+printf 'Then `${ORCH} doctor`.\n' >"$fixture/docs/how-it-works.md"
+mkdir -p "$fixture/docs/junie"
+printf 'Run `${ORCH} status`.\n' >"$fixture/docs/junie/README.md"
 out="$(scan_orch_bash "$fixture")"
 flags "the scan flags a quoted \$ORCH run without bash" "$out" "skills/orch-x/SKILL.md:2: runs orch.sh without bash"
 flags "the scan flags \${ORCH} run without bash" "$out" "README.md:1: runs orch.sh without bash"
+flags "the scan flags \${ORCH} without bash in CONTRIBUTING.md" "$out" "CONTRIBUTING.md:1: runs orch.sh without bash"
+flags "the scan flags \${ORCH} without bash in docs/how-it-works.md" "$out" "docs/how-it-works.md:1: runs orch.sh without bash"
+flags "the scan flags \${ORCH} without bash in docs/junie/README.md" "$out" "docs/junie/README.md:1: runs orch.sh without bash"
 spares "the scan accepts bash \"\$ORCH\"" "$out" 'SKILL.md:1:'
 check "every skill and doc runs orch.sh through bash" "$(scan_orch_bash "$PLUGIN_ROOT")"
 
@@ -904,7 +912,7 @@ echo "orch- names resolve (#285)"
 # neither a skill nor an agent, with its file and line.
 scan_orch_names() {
   local r="$1" hit file line name
-  (cd "$r" && grep -rnoE '`orch-[a-z0-9-]+`' skills agents commands docs README.md 2>/dev/null) \
+  (cd "$r" && grep -rnoE '`orch-[a-z0-9-]+`' skills agents commands docs README.md CONTRIBUTING.md 2>/dev/null) \
     | while IFS= read -r hit; do
         file="${hit%%:*}"; hit="${hit#*:}"
         line="${hit%%:*}"; name="${hit#*:}"; name="${name//\`/}"
@@ -921,6 +929,7 @@ printf -- '---\nname: orch-helper\n---\nInvoke `orch-real`.\n' >"$fixture/agents
 printf 'Invoke `orch-phantom`.\n' >"$fixture/commands/c.md"
 printf 'See `orch-lost`.\n' >"$fixture/docs/x/d.md"
 printf 'Use `orch-missing`.\n' >"$fixture/README.md"
+printf 'Use `orch-absent`.\n' >"$fixture/CONTRIBUTING.md"
 printf 'Renamed `orch-retired`.\n' >"$fixture/docs/adr/0001-x.md"
 out="$(scan_orch_names "$fixture")"
 flags "an orch- name in a skill that resolves to nothing is flagged" \
@@ -931,6 +940,8 @@ flags "an orch- name in docs that resolves to nothing is flagged" \
   "$out" "docs/x/d.md:1: names no skill or agent: orch-lost"
 flags "an orch- name in the README that resolves to nothing is flagged" \
   "$out" "README.md:1: names no skill or agent: orch-missing"
+flags "an orch- name in CONTRIBUTING.md that resolves to nothing is flagged" \
+  "$out" "CONTRIBUTING.md:1: names no skill or agent: orch-absent"
 spares "orch- names of a skill or an agent are not flagged" \
   "$out" 'orch-(real|helper)$'
 spares "ADRs may name an orch- name that no longer resolves" \
