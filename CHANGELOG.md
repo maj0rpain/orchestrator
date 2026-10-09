@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.25.2
+
+`orch.sh` no longer calls back into `doctor.sh`: Host detection lives in one
+module, `scripts/host.sh`, whose `host_detect` both `orch.sh` and the hooks
+read, and `validate_adopted_issue`, the check `init --issue` runs, moves from
+`doctor.sh` into `orch.sh`. A structural check in `orch_test.sh` now holds the
+one-way dependency: `orch.sh` calls nothing `doctor.sh` defines but
+`cmd_doctor`. Nothing user-visible changes (#281).
+
 ## 3.25.1
 
 `README.md` is rewritten for a first-time visitor: what the plugin is and why

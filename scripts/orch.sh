@@ -37,6 +37,8 @@ readonly ORCH_SOURCE ORCH_SCRIPTS
 # where orch.sh has always fixed it, since the module assigns it plainly.
 source "$ORCH_SCRIPTS/triage-labels.sh"
 readonly LABELS_DOC
+# The one host detector, host_detect, shared with the hooks (#281).
+source "$ORCH_SCRIPTS/host.sh"
 readonly LABEL_LIMIT=1000
 # The most issues or PRs one list call asks gh for, where gh needs a bare
 # --limit: the labelled-issue list finding-triage scan reads, and the merged-PR
@@ -815,7 +817,9 @@ exclude_orch_dirs() {
 #
 # Sourced rather than inlined: a change to how checks register, gate, or count
 # then concentrates in doctor.sh instead of sharing file scope with the flow
-# commands below.
+# commands below. The dependency runs one way: doctor.sh calls into this file
+# and the modules it sources, and this file calls nothing doctor.sh defines but
+# cmd_doctor, from main() (orch_test.sh holds this).
 source "$ORCH_SCRIPTS/doctor.sh"
 
 # The one definition of the planning allowlist and the planning records,
@@ -919,6 +923,22 @@ $(planning_record_redirect | fold -s -w 75 | sed 's/ *$//; s/^/     /')"
 $outside_block
      Discard or stash the planning records; commit, stash, or discard the other
      changes, then run init again."
+}
+
+# `init --issue N`'s one-time gate: the issue must exist, be open, and carry
+# this repo's local name for the ready-for-agent role - resolved through
+# triage_label_for, never the literal string, so a repo that renamed its
+# labels still gets a correct check. Checked once, here, and never again: a
+# maintainer's later triage housekeeping must not stop a flow already running
+# against the issue (docs/adr/0005).
+validate_adopted_issue() {
+  local issue="$1" label state labels gh_line
+  label="$(triage_label_for ready-for-agent)"
+  issue_state_labels_read "$issue" state labels gh_line \
+    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated: ${gh_line:-gh gave no reason}"
+  [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
+  labels_have "$labels" "$label" \
+    || die "issue #$issue is missing the '$label' triage label - adoption requires it."
 }
 
 cmd_init() {

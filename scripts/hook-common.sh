@@ -8,14 +8,18 @@
 # decision and context from top-level fields where Claude Code reads
 # hookSpecificOutput. Sourced by each hook, not executed on its own.
 
+# The one host detector, shared with orch.sh (#281).
+source "$(dirname "${BASH_SOURCE[0]}")/host.sh"
+
 # Reads the raw hook JSON from stdin and sets `input`, `session`, `cwd`, and
 # `host` in the caller's shell. A missing session_id leaves `session` empty,
 # which means "not guarded": no planning marker can be keyed to it. `cwd`
 # prefers Junie's project_path, because Junie's own cwd is ~/.junie, not the
 # repo (#202); this also moves where hook_tool_path resolves a relative path
 # on Junie. A payload with neither falls back to the process working directory.
-# `host` is junie when the payload carries project_path, which Claude Code's
-# never does, else claude. `input` is left set so a caller can extract further
+# `host` comes from host.sh's host_detect in payload mode: junie when the
+# payload carries a non-empty project_path, which Claude Code's never does,
+# else claude. `input` is left set so a caller can extract further
 # fields without reading stdin a second time.
 hook_read_payload() {
   input="$(cat)"
@@ -24,7 +28,8 @@ hook_read_payload() {
   project="$(printf '%s' "$input" | jq -r '.project_path // ""')"
   cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
   # shellcheck disable=SC2034 # host is read by the hook that sourced this file
-  if [ -n "$project" ]; then host=junie; cwd="$project"; else host=claude; fi
+  host="$(host_detect "$input")"
+  [ -z "$project" ] || cwd="$project"
   [ -n "$cwd" ] || cwd="$PWD"
 }
 

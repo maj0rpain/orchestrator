@@ -1364,6 +1364,75 @@ assert_contains "all.sh says the suites left temp files behind" "$out" \
   "all.sh: the suites left temp files behind"
 rm -rf "$root_dir"
 
+# --- host detection (host.sh, #281) -------------------------------------------
+echo
+echo "host detection (host.sh, #281)"
+# host.sh is sourced alone, in a fresh shell with every host signal unset, so
+# it is shown to need nothing from orch.sh. host_on runs host_detect there,
+# after the given VAR=value assignments, with the remaining arguments.
+HOST_SH="$(dirname "$ORCH")/host.sh"
+host_on() {
+  local assigns=()
+  while [ $# -gt 0 ] && [[ "$1" == *=* ]]; do assigns+=("$1"); shift; done
+  [ "${1:-}" = -- ] && shift
+  env -u ORCHESTRATOR_HOST -u CLAUDECODE -u JUNIE_EXTENSION_ROOT -u JUNIE_SHIM_PATH \
+    -u CLAUDE_PLUGIN_ROOT "${assigns[@]}" \
+    bash -c 'source "$1" && shift && host_detect "$@"' host_on "$HOST_SH" "$@"
+}
+assert_eq "payload mode: a non-empty project_path is junie" \
+  "$(host_on -- '{"project_path":"/r"}')" "junie"
+assert_eq "payload mode: no project_path is claude" "$(host_on -- '{}')" "claude"
+assert_eq "payload mode: an empty project_path is claude" \
+  "$(host_on -- '{"project_path":""}')" "claude"
+assert_eq "payload mode: a null project_path is claude" \
+  "$(host_on -- '{"project_path":null}')" "claude"
+assert_eq "payload mode: an empty payload is claude" "$(host_on -- '')" "claude"
+assert_eq "payload mode: a payload that is not JSON is claude" \
+  "$(host_on -- 'not json' 2>/dev/null)" "claude"
+assert_eq "payload mode ignores ORCHESTRATOR_HOST=claude" \
+  "$(host_on ORCHESTRATOR_HOST=claude -- '{"project_path":"/r"}')" "junie"
+assert_eq "payload mode ignores ORCHESTRATOR_HOST=junie" \
+  "$(host_on ORCHESTRATOR_HOST=junie -- '{}')" "claude"
+assert_eq "environment mode: no signal prints nothing" "$(host_on)" ""
+assert_eq "environment mode: ORCHESTRATOR_HOST names the host" \
+  "$(host_on ORCHESTRATOR_HOST=junie)" "junie"
+assert_eq "environment mode: JUNIE_SHIM_PATH is junie" \
+  "$(host_on JUNIE_SHIM_PATH=/x)" "junie"
+assert_eq "environment mode: CLAUDECODE=1 is claude" "$(host_on CLAUDECODE=1)" "claude"
+assert_eq "environment mode: JUNIE_SHIM_PATH outranks CLAUDECODE=1" \
+  "$(host_on JUNIE_SHIM_PATH=/x CLAUDECODE=1)" "junie"
+assert_eq "doctor.sh no longer defines host_detect" \
+  "$(grep -c '^host_detect()' "$(dirname "$ORCH")/doctor.sh")" "0"
+
+# --- doctor.sh is a one-way dependency (#281) ----------------------------------
+echo
+echo "doctor.sh is a one-way dependency (#281)"
+# doctor.sh calls into orch.sh, never the other way round: no non-comment line
+# of orch.sh names, as a whole word, a function doctor.sh defines - except
+# cmd_doctor, which main() dispatches. doctor_callbacks prints each such name
+# found in <orch> for the functions defined in <doctor>.
+doctor_callbacks() {
+  local orch_file="$1" doctor_file="$2" code name
+  code="$(grep -v '^[[:space:]]*#' "$orch_file")"
+  grep -oE '^[A-Za-z_][A-Za-z0-9_]*\(\)' "$doctor_file" | sed 's/()$//' \
+    | while IFS= read -r name; do
+        [ "$name" = cmd_doctor ] && continue
+        if printf '%s\n' "$code" | grep -qw -- "$name"; then printf '%s\n' "$name"; fi
+      done
+}
+dep_dir="$(mktemp -d)"
+printf '%s\n' 'check_x() {' '  :' '}' 'cmd_doctor() { check_x; }' >"$dep_dir/doctor.sh"
+printf '%s\n' '# check_x is named in a comment only' '  # check_x again' \
+  'run() { cmd_doctor; check_xy; }' >"$dep_dir/clean.sh"
+printf '%s\n' 'run() { check_x; }' >"$dep_dir/calls.sh"
+assert_eq "a comment, cmd_doctor or a longer word is no call back into doctor.sh" \
+  "$(doctor_callbacks "$dep_dir/clean.sh" "$dep_dir/doctor.sh")" ""
+assert_eq "a doctor.sh function called from orch.sh is caught" \
+  "$(doctor_callbacks "$dep_dir/calls.sh" "$dep_dir/doctor.sh")" "check_x"
+rm -rf "$dep_dir"
+assert_eq "orch.sh calls no doctor.sh function but cmd_doctor" \
+  "$(doctor_callbacks "$ORCH" "$(dirname "$ORCH")/doctor.sh" | tr '\n' ' ')" ""
+
 # --- init -------------------------------------------------------------------
 echo
 echo "init"
