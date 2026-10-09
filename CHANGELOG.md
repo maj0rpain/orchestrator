@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.2.2
+
+`orch.sh doctor` builds the plugin root it reports from out of orch.sh's
+`ORCH_SCRIPTS`, rather than doctor.sh resolving its own path a second time
+(#827). Its output is unchanged; the doctor test of the `ok    orch.sh:` line
+now asserts the full line, plugin root included.
+
 ## 4.2.1
 
 `orch.sh ticket exists` no longer sends bad input to its meaningful "no

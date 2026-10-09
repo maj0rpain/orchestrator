@@ -4293,7 +4293,8 @@ assert_contains "and how to name it" "$out" "export ORCHESTRATOR_HOST="
 # path every skill resolves orch.sh by leads nowhere. doctor runs from an
 # orch.sh, so what it can see is such a copy sitting in a user skill store.
 out="$("$ORCH" doctor --env 2>&1)"
-assert_contains "reports the orch.sh it runs from" "$out" "ok    orch.sh:"
+assert_contains "reports the orch.sh it runs from" "$out" \
+  "ok    orch.sh: ${PLUGIN_ROOT/#$HOME/\~}/scripts/orch.sh"
 h="$HOME"
 mkdir -p "$h/.agents/skills/orch-flow"
 touch "$h/.agents/skills/orch-flow/SKILL.md"
