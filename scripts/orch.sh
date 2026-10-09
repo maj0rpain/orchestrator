@@ -310,7 +310,8 @@ STATE_KEYS='slug||arg|init seeds it
 # phase_write spec sets the phase straight after init seeds it.
 phase||null|use phase advance (review ready and redo also move it)
 # Seeded from --issue when given; state.json carries no field for whether it
-# was adopted or published - nothing downstream reads that distinction.
+# was adopted or published - nothing downstream needs that distinction
+# recorded (ADR-0005).
 issue||arg|-
 # When a flow base may change: see the header of base_set_flow.
 base||arg|init seeds it

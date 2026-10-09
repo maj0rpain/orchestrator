@@ -152,8 +152,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    - **0b. Ask the rewrite question.** Read the body first with
      `bash "$ORCH" issue fetch <n> <file>` (a `mktemp` file outside the repo),
      and compare it with `01-plan.md` (`bash "$ORCH" handoff path spec`). Then
-     ask one blocking question with the host's ask tool, before step 4's
-     round count: "Rewrite #<n> from the plan before review, or review it as it stands?"
+     ask one blocking question with the host's ask tool (`AskUserQuestion`
+     on Claude Code, `ask_user` on Junie), before step 4's round count: "Rewrite #<n> from the plan before review, or review it as it stands?"
      Options: **Rewrite** and **As it stands**, the recommended one marked
      (Recommended): **Rewrite** when the plan changed the issue's scope or
      substance; **As it stands** for a blueprint (the body is already a
