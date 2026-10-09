@@ -57,14 +57,14 @@ if it records a different issue, the argument wins, and your reply to the
 human carries a one-line note naming both - the argument's issue used, the
 recorded one set aside. No file or PR body carries that note.
 
-- Either way, a glossary or ADR change (`GLOSSARY.md`, `GLOSSARY-MAP.md`,
+- Whichever issue is linked, a glossary or ADR change (`GLOSSARY.md`, `GLOSSARY-MAP.md`,
   `docs/adr/`) the planning session decided goes into the linked issue's body
   word for word - the new or replaced text, naming the file and entry - never
   into those files during planning. It lands with the change it describes
   (ADR-0022). The standalone spec review in step 2 runs no Fidelity lens, so
   nothing else checks the wording survived.
-- If neither holds - no linked issue, and `issue publish` fails - stop and
-  say why. A quick implementation
+- If none of the four yields an issue - `issue publish` fails too - stop
+  and say why. A quick implementation
   with no issue behind it is exactly the unaccountable path this skill exists
   to avoid.
 

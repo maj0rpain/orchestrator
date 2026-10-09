@@ -4070,28 +4070,26 @@ main_checkout() {
 # checkout at <main-root> live.
 side_checkouts_dir() { printf '%s/%s/checkouts\n' "$1" "$ORCH_DIR_NAME"; }
 
-# Whether the worktree at <path> carries the ownership marker.
-is_side_checkout() {
+# side_checkout_marker <path>: prints the ownership marker's path for the
+# worktree at <path>; returns 1 when it carries none.
+side_checkout_marker() {
   local gd
-  gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" && [ -f "$gd/$SIDE_CHECKOUT_MARKER" ]
+  gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" \
+    && [ -f "$gd/$SIDE_CHECKOUT_MARKER" ] && printf '%s\n' "$gd/$SIDE_CHECKOUT_MARKER"
 }
+
+# Whether the worktree at <path> carries the ownership marker.
+is_side_checkout() { side_checkout_marker "$1" >/dev/null; }
 
 # side_checkout_issue <path>: prints the issue the side checkout at <path>
 # records in its marker; returns 1 when it is no side checkout, or its marker
 # holds no plain issue number.
 side_checkout_issue() {
-  local gd issue
-  gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
-  [ -f "$gd/$SIDE_CHECKOUT_MARKER" ] || return 1
-  issue="$(cat "$gd/$SIDE_CHECKOUT_MARKER" 2>/dev/null)" || return 1
+  local marker issue
+  marker="$(side_checkout_marker "$1")" || return 1
+  issue="$(cat "$marker" 2>/dev/null)" || return 1
   case "$issue" in ''|*[!0-9]*) return 1 ;; esac
   printf '%s\n' "$issue"
-}
-
-# side_checkout_mark <marker> <issue>: writes the ownership marker, holding
-# <issue> when one is given and empty otherwise.
-side_checkout_mark() {
-  if [ -n "$2" ]; then printf '%s\n' "$2" >"$1"; else : >"$1"; fi
 }
 
 # Adds a worktree on no branch at origin/<base>, the base branch in effect,
@@ -4134,7 +4132,7 @@ cmd_side_checkout_add() {
   git worktree add -q --detach "$path" "origin/$base" \
     || die "could not add side checkout $path"
   if ! gd="$(git -C "$path" rev-parse --absolute-git-dir)" \
-     || ! side_checkout_mark "$gd/$SIDE_CHECKOUT_MARKER" "$issue" 2>/dev/null; then
+     || ! printf '%s' "${issue:+$issue$'\n'}" 2>/dev/null >"$gd/$SIDE_CHECKOUT_MARKER"; then
     # A freshly added worktree holds nothing of anyone's, so no force is needed.
     git worktree remove "$path" 2>/dev/null || true
     die "could not write the side-checkout marker - removed $path again"
@@ -4183,9 +4181,10 @@ cmd_side_checkout_list() {
 }
 
 # Prints the issue the current side checkout records (see side-checkout add
-# --issue); exits 1 in a checkout that is no side checkout or records none.
+# --issue); exits 1 in a checkout that is no side checkout or records none,
+# and 2 on a usage error, so a caller never reads one as the other.
 cmd_side_checkout_issue() {
-  [ $# -eq 0 ] || die "usage: orch.sh side-checkout issue"
+  [ $# -eq 0 ] || die2 "usage: orch.sh side-checkout issue"
   side_checkout_issue "$(pwd -P)" \
     || die "this checkout is no side checkout recording an issue"
 }
@@ -4925,7 +4924,7 @@ orch.sh - deterministic operations for the orchestrator flow
   side-checkout issue         print the issue this side checkout records
                               (side-checkout add --issue); exits 1 in a
                               checkout that is no side checkout, or records
-                              no plain issue number
+                              no plain issue number, and 2 on a usage error
   side-checkout remove <slug> remove side checkout <slug>, never with --force.
                               Refuses an unknown slug, a worktree without the
                               side-checkout marker, uncommitted changes or

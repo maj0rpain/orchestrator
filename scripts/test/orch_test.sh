@@ -6299,7 +6299,7 @@ assert_eq "each side checkout stays where git recorded it" \
   "$(git -C .orchestrator/checkouts/beta branch --show-current)" "quick/3-beta"
 assert_eq "and side-checkout list is unchanged" "$(orch_gh_failing side-checkout list | wc -l | tr -d ' ')" "4"
 
-# A side checkout made for a quick implementation records its issue (#875).
+# A side checkout made for a quick implementation records its issue (#874).
 qi="$(orch_gh_failing side-checkout add quick-one --issue 123)"; st=$?
 assert_status "add --issue succeeds" "$st" 0
 assert_eq "add --issue prints the side checkout's path" "$qi" "$top/.orchestrator/checkouts/quick-one"
@@ -6326,7 +6326,7 @@ assert_status "side-checkout issue exits 1 when the marker is not a plain number
 assert_not_contains "and list appends nothing for it" \
   "$(orch_gh_failing side-checkout list | grep '^quick-one ')" "quick #"
 out="$(cd "$qi" && orch_gh_failing side-checkout issue extra 2>&1)"; st=$?
-assert_status "side-checkout issue refuses arguments" "$st" 1
+assert_status "side-checkout issue refuses arguments with exit 2, never a 'none'" "$st" 2
 git worktree remove "$qi"
 git branch -q -D quick/123-quick-one
 
