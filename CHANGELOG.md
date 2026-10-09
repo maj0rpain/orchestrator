@@ -1,5 +1,21 @@
 # Changelog
 
+## 4.2.0
+
+A spec question a review loop files now holds the PR in draft (#422,
+ADR-0042). A spec question is a major whose fix needs a decision about what
+the change does that the spec, plan and deviations leave unsettled. The
+driver's triage and the fixer file it with the rule `spec question`; the loop
+still runs its whole budget, then ends in a bounded stop naming each one
+(`stop - spec question #<n>: <file>:<line> <title>`), so a human rules on it
+before the PR goes ready. One a previous loop filed, met again on re-entry,
+does not block. The closer's filed body gains a `**Spec question:**` line, its
+PR comment lists spec questions under their own heading, and its return a
+`Spec questions:` line; finding triage sends a spec question to a human,
+quoting the question. The separate "would change behaviour" filing rule folds
+into spec question. `scripts/test/docs_lint.sh` pins `**Spec question:**` in
+the closer's **Filing** section.
+
 ## 4.1.0
 
 A standalone review pass (`/orchestrator:review-pass <issue>`) now leaves out

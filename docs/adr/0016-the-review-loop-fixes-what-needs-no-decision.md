@@ -3,6 +3,8 @@
 Supersedes ADR-0003 in part: its full budget and its case for repeated
 independent looks stand; its "blocking only" rule does not.
 
+Superseded in part by ADR-0042: a spec question the loop files holds the PR out of ready, and the "would change behaviour" filing rule is folded into it.
+
 A review loop fixes every blocking finding, as before. It now also fixes a
 major unless the fix needs a choice between alternatives the plan, spec, and
 deviations did not settle, or would change behaviour - a major means the

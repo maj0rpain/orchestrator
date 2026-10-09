@@ -1433,8 +1433,9 @@ check "a standalone review pass takes --smells, and review-pass offers it" \
 
 # --- closer's filed body lines -----------------------------------------------
 # The contract is the closer's body format, not orch.sh's parser. The closer
-# writes a filed finding's body as five labelled lines, and the finding-triage
-# skill's prose reads all five - orch.sh's scan parses only two of them - so
+# writes a filed finding's body as six labelled lines - **Spec question:** only
+# on a spec question - and the finding-triage skill's prose reads all six -
+# orch.sh's scan parses only two of them - so
 # its **Filing** section must name each one: a line dropped there is a field
 # the skill cannot read back. Every line stays pinned, not only the ones the
 # scan parses. Under ADR-0027 this is a structural rule, not a phrase pin: the
@@ -1446,7 +1447,8 @@ closer_filing_lines='**Axis:**
 **Severity:**
 **Location:**
 **PR:**
-**Why not fixed in the loop:**'
+**Why not fixed in the loop:**
+**Spec question:**'
 # scan_closer_filing <plugin root>: each labelled body line the closer's
 # ## Filing section does not name, or the section itself when it is missing.
 scan_closer_filing() {
@@ -1462,17 +1464,21 @@ scan_closer_filing() {
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/agents"
-printf '# C\n\n## Filing\n\n**Axis:** **Severity:** **Location:** **Why not fixed in the loop:**\n\n## Other\n\n**PR:**\n' \
+printf '# C\n\n## Filing\n\n**Axis:** **Severity:** **Location:** **Why not fixed in the loop:** **Spec question:**\n\n## Other\n\n**PR:**\n' \
   >"$fixture/agents/orch-closer.md"
 flags "a Filing section that drops a labelled line is flagged" \
   "$(scan_closer_filing "$fixture")" "agents/orch-closer.md: ## Filing does not name **PR:**"
-spares "and the lines it names are not" "$(scan_closer_filing "$fixture")" 'name \*\*(Axis|Severity|Location|Why)'
+spares "and the lines it names are not" "$(scan_closer_filing "$fixture")" 'name \*\*(Axis|Severity|Location|Why|Spec)'
+printf '# C\n\n## Filing\n\n**Axis:** **Severity:** **Location:** **PR:** **Why not fixed in the loop:**\n' \
+  >"$fixture/agents/orch-closer.md"
+flags "a Filing section that drops **Spec question:** is flagged" \
+  "$(scan_closer_filing "$fixture")" "agents/orch-closer.md: ## Filing does not name **Spec question:**"
 printf '# C\n\n## Other\n' >"$fixture/agents/orch-closer.md"
 flags "a missing Filing section is flagged" \
   "$(scan_closer_filing "$fixture")" "agents/orch-closer.md: no ## Filing section"
-printf '# C\n\n## Filing\n\n**Axis:** **Severity:** **Location:** **PR:** **Why not fixed in the loop:**\n' \
+printf '# C\n\n## Filing\n\n**Axis:** **Severity:** **Location:** **PR:** **Why not fixed in the loop:** **Spec question:**\n' \
   >"$fixture/agents/orch-closer.md"
-assert_empty "a Filing section naming all five is not flagged" "$(scan_closer_filing "$fixture")"
+assert_empty "a Filing section naming all six is not flagged" "$(scan_closer_filing "$fixture")"
 check "the closer's Filing section names every labelled line the closer's body format carries" \
   "$(scan_closer_filing "$PLUGIN_ROOT")"
 
