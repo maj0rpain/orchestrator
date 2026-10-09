@@ -8810,6 +8810,74 @@ assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "changing nothing" "$(fake_snapshot)" "$before_store"
 fake_unfail
 
+# An already-triaged finding is settled cleanly: whatever the outcome, every
+# other triage-role label it carries goes, and none it lacks is named - gh
+# refuses to remove a label the repo does not have. The removes are read off a
+# relabel that records them, at the gh boundary, before the fake applies it.
+relabel_log="$(mktemp)"
+traced_adapter="$(mktemp)"
+writeln "source $(printf %q "$GH_ADAPTER_FAKE")" \
+        'eval "fake_relabel_applied() $(declare -f adapter_issue_relabel | tail -n +2)"' \
+        'adapter_issue_relabel() {' \
+        '  local a prev=""' \
+        '  for a in "$@"; do [ "$prev" != --remove ] || printf "%s\n" "$a" >>"$RELABEL_LOG"; prev="$a"; done' \
+        '  fake_relabel_applied "$@"' \
+        '}' >"$traced_adapter"
+traced_apply() {
+  : >"$relabel_log"
+  RELABEL_LOG="$relabel_log" ORCH_GH_ADAPTER="$traced_adapter" orch_gh_failing finding-triage apply "$@"
+}
+removed_labels() { sort "$relabel_log" | tr '\n' ' '; }
+for outcome in close-fixed wontfix ready-for-agent ready-for-human; do
+  case "$outcome" in
+    close-fixed|wontfix) category_args=() ;;
+    *) category_args=(--category bug) ;;
+  esac
+  # Every other triage role at once, with the outcome's own among them.
+  triaged 6 "review:major,needs-triage,needs-info,ready-for-agent,ready-for-human,wontfix,bug"
+  out="$(traced_apply 6 "$outcome" ${category_args[@]+"${category_args[@]}"} --comment-file "$comment" 2>&1)"; st=$?
+  assert_status "settles a finding carrying every triage role ($outcome)" "$st" 0
+  case "$outcome" in
+    close-fixed) left="bug review:major " ;;
+    wontfix) left="bug review:major wontfix " ;;
+    *) left="bug $outcome review:major " ;;
+  esac
+  assert_eq "leaving only the state $outcome sets" "$(fake_labels_of 6)" "$left"
+  # One other role apiece: ready-for-agent, or ready-for-human for ready-for-agent.
+  other=ready-for-agent
+  [ "$outcome" != ready-for-agent ] || other=ready-for-human
+  triaged 7 "review:minor,$other,bug"
+  out="$(traced_apply 7 "$outcome" ${category_args[@]+"${category_args[@]}"} --comment-file "$comment" 2>&1)"; st=$?
+  assert_status "settles a finding already triaged to $other ($outcome)" "$st" 0
+  assert_eq "removing only the label it carries ($outcome)" "$(removed_labels)" "$other "
+  case "$outcome" in
+    close-fixed) left="bug review:minor " ;;
+    wontfix) left="bug review:minor wontfix " ;;
+    *) left="bug $outcome review:minor " ;;
+  esac
+  assert_eq "out of $other ($outcome)" "$(fake_labels_of 7)" "$left"
+done
+# A finding still in needs-triage names needs-triage alone.
+triaged 8 "review:major,needs-triage,bug"
+out="$(traced_apply 8 wontfix --comment-file "$comment" 2>&1)"; st=$?
+assert_eq "a finding in needs-triage removes needs-triage alone" "$(removed_labels)" "needs-triage "
+# A finding already carrying the outcome's label keeps it.
+triaged 9 "review:major,ready-for-agent,bug"
+out="$(traced_apply 9 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
+assert_eq "re-applying a finding's own state removes nothing" "$(removed_labels)" ""
+assert_eq "and keeps that state" "$(fake_labels_of 9)" "bug ready-for-agent review:major "
+# A failed relabel of a triaged finding still dies, after the comment.
+triaged 7 "review:minor,ready-for-agent,bug"
+fake_fail adapter_issue_relabel "HTTP 502: Bad Gateway"
+out="$(traced_apply 7 ready-for-human --category bug --comment-file "$comment" 2>&1)"; st=$?
+assert_status "a failed relabel of a triaged finding dies" "$st" 1
+assert_contains "saying so" "$out" "gh could not relabel issue #7"
+assert_eq "after the comment is posted" "$(fake_comments_of 7)" \
+  "$(writeln "$disclaimer" '' 'Fixed by abc1234 on main.')"
+assert_eq "and before the labels change" "$(fake_labels_of 7)" "bug ready-for-agent review:minor "
+fake_unfail
+rm -f "$relabel_log" "$traced_adapter"
+
 # Every state label is the repo's name for the role.
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
