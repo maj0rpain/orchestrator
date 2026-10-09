@@ -46,7 +46,7 @@ label.
 ## Layout
 
 ```
-commands/                     start, next, status, doctor, redo, abort, finish, release, spec-review, review, sync, interview, quick-implement, to-spec, to-tickets, finding-triage
+commands/                     start, next, flow-status, health, redo, abort, finish, release, spec-review, review-pass, sync, interview, quick-implement, to-spec, to-tickets, finding-triage
 agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, the implementer, and the resolver of a merge conflict
 skills/orch-flow/             the state machine (judgment)
 skills/orch-spec-review/      the spec review: consolidation of the issue's comments, then four lenses in a flow (three standalone), one batch question, plus a ticket question when an existing breakdown is touched
@@ -142,4 +142,5 @@ a `/orchestrator:<cmd>` that has no `commands/<cmd>.md`, or when a command runs
 
 A command must not share its bare name with a host built-in command (for
 example Claude Code's `/plan`, `/review`, `/status` or `/doctor`), because the
-typeahead lists both.
+typeahead lists both. `scripts/test/docs_lint.sh` enforces this against its
+list of Claude Code built-ins.

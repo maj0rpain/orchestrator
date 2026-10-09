@@ -36,7 +36,7 @@ one-`orch-implementer`-per-ticket driver loop the implement phase uses,
 building its frontier in parallel (ending in `pr publish` instead of a draft
 `pr open`), a review pass by the plugin's own reviewer agents, and a PR. A
 human can run another review pass of the same branch on demand, with
-`/orchestrator:review <issue>` - see GLOSSARY.md's **Review pass** entry.
+`/orchestrator:review-pass <issue>` - see GLOSSARY.md's **Review pass** entry.
 
 The plugin carries everything it runs: `orch-to-spec` writes the spec,
 `orch-to-tickets` breaks it into tickets, each ticket subagent builds its
@@ -144,7 +144,7 @@ each as its duplicate.
 
 ### Doctor
 
-`/orchestrator:doctor` covers the machine, the repo, and the active flow,
+`/orchestrator:health` covers the machine, the repo, and the active flow,
 including the review loop's iteration count against its budget, the PR's CI
 status, and its draft state against the flow's phase. It also FAILs on
 changes in the working tree outside the planning allowlist: every phase
@@ -157,14 +157,14 @@ that left them.
 | --- | --- |
 | `/orchestrator:start [slug] [--issue N] [--side]` | Start a flow from an approved plan. Runs in the planning session. `--side` starts it in a side checkout up front; one is also offered when a flow is already mid-pipeline here. |
 | `/orchestrator:next` | Run the next phase. Run it in a fresh session. |
-| `/orchestrator:status` | Phase, issue, branch, PR, and the flow's health. |
-| `/orchestrator:doctor` | Diagnose the machine, the repo, and the active flow. |
+| `/orchestrator:flow-status` | Phase, issue, branch, PR, and the flow's health. |
+| `/orchestrator:health` | Diagnose the machine, the repo, and the active flow. |
 | `/orchestrator:redo` | Step back one phase and re-run it. |
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
 | `/orchestrator:finish` | Clean up every finished side checkout: its PR merged on GitHub, its tree clean, any flow at `done`. Archives its flow into the main checkout, removes it, and deletes its local branch; archives the main checkout's finished flow in place. Removes nothing when GitHub cannot be read. |
 | `/orchestrator:release` | Open the release PR that carries the base branch into the default branch (see [Base branch](#base-branch)). |
 | `/orchestrator:spec-review <issue> [--rounds <n>]` | Review any spec issue on demand, outside a flow: a standalone spec review, of 1 round unless `--rounds` gives another count. |
-| `/orchestrator:review <issue>` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Drops findings an earlier pass on the branch's open PR already declined, fixes what it agrees with, and posts what it declines - and what it dropped as previously declined - on that PR. |
+| `/orchestrator:review-pass <issue>` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Drops findings an earlier pass on the branch's open PR already declined, fixes what it agrees with, and posts what it declines - and what it dropped as previously declined - on that PR. |
 | `/orchestrator:sync` | Run a **base sync** on demand, on any plugin-made branch, inside or outside a flow - a done flow's included: merge `origin`'s tip of its base branch in with `orch.sh branch sync`, never rebasing. A conflict is resolved by a fresh `orch-resolver`, its **Merge resolutions** posted as one PR comment; then, unless an active flow holds the branch, it asks whether to run a review pass against the branch's issue (from its name, or asked for when the name carries none). |
 | `/orchestrator:interview` | Start a planning session: an interview that reaches a shared understanding, then asks how to carry it forward. |
 | `/orchestrator:quick-implement [<issue>] [--side]` | Start a quick implementation, the route with no flow: with an issue number, that issue is its linked issue; with none, it finds or publishes one. `--side` asks for a side checkout up front. |
@@ -187,7 +187,7 @@ branch that gathers a multi-ticket project:
 | `orch.sh branch sync` | Bring the current plugin-made branch up to date with its base branch: merge `origin`'s tip of the base into it (never a rebase, never the local base), record that tip as its base SHA, and push with a plain push when the branch has an upstream. Exit 3 on a conflict, the merge left in progress for a resolver; exit 1 on a refusal. Rerunning it after the conflict is committed finishes the sync. |
 | `orch.sh pr release [--force] <title> <body-file>` | Open the **release PR**: a non-draft PR from the base branch into the default branch. Its body starts with one `Closes #N` line per still-open issue that any PR merged into the base branch refers to (`Refs`, `Closes`, `Fixes` or `Resolves #N`, anywhere in the body). Refuses on the default branch, while a release PR is already open, and with nothing to close unless `--force`. Pushes nothing. |
 
-`/orchestrator:doctor` reports the base branch in effect, and FAILs when the
+`/orchestrator:health` reports the base branch in effect, and FAILs when the
 one you set is gone from `origin`.
 
 A PR into a base branch other than the default says `Refs #N` rather than

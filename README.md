@@ -20,7 +20,7 @@ exchanges that `orch-to-spec` (test seams) and the spec review depend on.
 - No per-repo setup: issues are labelled with the five canonical triage label
   names (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`,
   `wontfix`), or with the names a `docs/agents/triage-labels.md` table maps
-  them to, when the repo has one. `/orchestrator:doctor` reports all of this
+  them to, when the repo has one. `/orchestrator:health` reports all of this
   at any time, including any of those labels the repo is missing.
 
 ## Install
@@ -85,8 +85,8 @@ Each flow phase runs in its own fresh session. The step-by-step detail is in
 | `/orchestrator:interview` | Start a planning session that ends on the route question. |
 | `/orchestrator:start [slug] [--issue N] [--side]` | Start a flow from an approved plan. |
 | `/orchestrator:next` | Run the flow's next phase, in a fresh session. |
-| `/orchestrator:status` | Phase, issue, branch, PR, and the flow's health. |
-| `/orchestrator:doctor` | Diagnose the machine, the repo, and the active flow. |
+| `/orchestrator:flow-status` | Phase, issue, branch, PR, and the flow's health. |
+| `/orchestrator:health` | Diagnose the machine, the repo, and the active flow. |
 | `/orchestrator:redo` | Step back one phase and re-run it. |
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
 | `/orchestrator:finish` | Clean up finished side checkouts and flows. |
@@ -94,7 +94,7 @@ Each flow phase runs in its own fresh session. The step-by-step detail is in
 | `/orchestrator:to-spec [<issue>]` | Turn the conversation into a spec issue, outside a flow. |
 | `/orchestrator:to-tickets <issue>` | Break an issue into tickets, outside a flow. |
 | `/orchestrator:spec-review <issue> [--rounds <n>]` | Review a spec issue on demand. |
-| `/orchestrator:review <issue>` | Run a review pass of the current branch on demand. |
+| `/orchestrator:review-pass <issue>` | Run a review pass of the current branch on demand. |
 | `/orchestrator:sync` | Merge the base branch into the current plugin-made branch. |
 | `/orchestrator:release` | Open the release PR from the base branch into the default branch. |
 | `/orchestrator:finding-triage [--all] [<issue> \| --pr <n>] \| --bundle` | Triage the review loop's filed findings, or bundle them. |
