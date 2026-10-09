@@ -1632,6 +1632,59 @@ assert_empty "skills and a glossary that carry the recorded issue are not flagge
 check "a side checkout's recorded issue is read by step 1, prefilled, and in the glossary" \
   "$(scan_side_checkout_issue "$PLUGIN_ROOT")"
 
+# --- adopted issue rewrite (#929) ----------------------------------------------
+echo
+echo "adopted issue rewrite (#929)"
+# The spec phase's step 0 no longer skips straight to the review for a flow
+# whose issue is set: it checks for a pre-redo-spec- handoff folder, and
+# without one asks whether to rewrite the issue from the plan. The glossary's
+# **Adopted issue** entry says so, not that the spec phase skips writing a spec.
+adopted_old_sentence='Checked once, at init, for existing, open, and carrying the `ready-for-agent` triage label; the spec phase then skips writing a spec entirely and runs the spec review straight against it.'
+adopted_new_sentence='Checked once, at init, for existing, open, and carrying the `ready-for-agent` triage label; the spec phase then rewrites its body from the plan when the human chooses, by `orch-to-spec`'"'"'s rewrite mode, and runs the spec review against it.'
+adopted_question='Rewrite #<n> from the plan before review, or review it as it stands?'
+# scan_adopted_rewrite <plugin root>: one line per break of that rule.
+scan_adopted_rewrite() {
+  local r="$1" flow="skills/orch-flow/SKILL.md" step0 entry
+  step0="$(md_section "$r/$flow" "### Phase: spec" | awk '/^1\. / { exit } /^0\. / { inb = 1 } inb' | flat_text)"
+  grep -qF 'pre-redo-spec-' <<<"$step0" \
+    || echo "$flow: **Phase: spec** step 0 does not name the pre-redo-spec- redo check"
+  grep -qF -- "$adopted_question" <<<"$step0" \
+    || echo "$flow: **Phase: spec** step 0 does not ask the rewrite question"
+  entry="$(glossary_entry "$r/GLOSSARY.md" "Adopted issue")"
+  grep -qF -- "$adopted_new_sentence" <<<"$entry" \
+    || echo "GLOSSARY.md: the **Adopted issue** entry does not carry the rewrite sentence"
+  if grep -qF -- "$adopted_old_sentence" <<<"$entry"; then
+    echo "GLOSSARY.md: the **Adopted issue** entry still says the spec phase skips writing a spec"
+  fi
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-flow"
+printf '%s\n' '# F' '' '### Phase: spec' '' '0. Check `state get issue`. Non-empty means the flow adopted an issue' \
+  '   at init - skip straight to step 4 below.' '1. Read the plan. `pre-redo-spec-` and' \
+  "   \"$adopted_question\"" '' '### Phase: implement' >"$fixture/skills/orch-flow/SKILL.md"
+printf '**Adopted issue**:\nAn issue given to a flow at init.\n%s\n\n**Other**:\n%s\n' \
+  "$adopted_old_sentence" "$adopted_new_sentence" >"$fixture/GLOSSARY.md"
+out="$(scan_adopted_rewrite "$fixture")"
+flags "an old step 0 with no redo check is flagged" \
+  "$out" "skills/orch-flow/SKILL.md: **Phase: spec** step 0 does not name the pre-redo-spec- redo check"
+flags "an old step 0 with no rewrite question is flagged" \
+  "$out" "skills/orch-flow/SKILL.md: **Phase: spec** step 0 does not ask the rewrite question"
+flags "an Adopted issue entry without the new sentence is flagged" \
+  "$out" "GLOSSARY.md: the **Adopted issue** entry does not carry the rewrite sentence"
+flags "an Adopted issue entry with the old sentence is flagged" \
+  "$out" "GLOSSARY.md: the **Adopted issue** entry still says the spec phase skips writing a spec"
+printf '%s\n' '# F' '' '### Phase: spec' '' '0. Check `state get issue`.' \
+  '   - **0a.** If a `.orchestrator/handoff/pre-redo-spec-*` folder exists, go on.' \
+  '   - **0b.** Ask: "Rewrite #<n> from the plan before' '     review, or review it as it stands?"' \
+  '1. Read the plan.' >"$fixture/skills/orch-flow/SKILL.md"
+printf '**Adopted issue**:\nAn issue given to a flow at init.\n%s\n\n**Other**:\nOther.\n' \
+  "$adopted_new_sentence" >"$fixture/GLOSSARY.md"
+assert_empty "a step 0 with the redo check and question, and the new entry, are not flagged" \
+  "$(scan_adopted_rewrite "$fixture")"
+check "the spec phase's step 0 offers to rewrite an adopted issue, and the glossary agrees" \
+  "$(scan_adopted_rewrite "$PLUGIN_ROOT")"
+
 # --- version and CHANGELOG (CLAUDE.md Versioning) -----------------------------
 # Every PR to main bumps version in .claude-plugin/plugin.json and adds it as
 # the top CHANGELOG.md entry. The CHANGELOG rule always runs; the bump rule

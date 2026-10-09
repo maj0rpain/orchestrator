@@ -24,8 +24,9 @@ Read your arguments first. A leading issue number - `704` or `#704` - selects
 **rewrite mode** on that issue: the spec replaces that issue's body instead of
 being published as a new issue. With no leading issue number, the skill runs in
 **publish mode**: it publishes a new issue, as below. A planning session's
-Blueprint route hands over its interviewed issue this way, and
-`/orchestrator:to-spec <n>` reaches rewrite mode standalone.
+Blueprint route hands over its interviewed issue this way, `orch-flow`'s
+spec phase hands over an adopted issue the human chose to rewrite from the
+plan, and `/orchestrator:to-spec <n>` reaches rewrite mode standalone.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -86,7 +87,7 @@ turns out missing, take the fallback it documents and tell your caller which.
 ## Rewrite the issue
 
 Rewrite mode's publish step, on issue `<n>`. Every step runs in the Blueprint
-route and standalone alike.
+route, the flow's spec phase and standalone alike.
 
 1. **Check for a breakdown, before the body is replaced:**
    `bash "$ORCH" ticket exists <n>`.

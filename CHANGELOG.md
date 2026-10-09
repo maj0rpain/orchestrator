@@ -1,10 +1,32 @@
 # Changelog
 
-## 4.2.6
+## 4.3.2
 
 `orch.sh` run outside every git repository now names the cwd and the remedy:
 `orch: not inside a git repository (<cwd>) - run orch.sh from inside the repo's
 checkout`, where before it named only the reason (#931). It still exits 1.
+
+## 4.3.1
+
+The standards reviewer finds the standards through the root agent files'
+pointers (#930): it reads the root `CLAUDE.md` and `AGENTS.md`, whichever
+exist, and follows their pointers to code-writing documents, checking each
+target exists with a file-pattern search before reading it. It no longer reads every file
+under `docs/agents/`, and falls back to `CODING_STANDARDS.md` and
+`CONTRIBUTING.md`, checked the same way, only when no root agent file points to a
+code-writing document.
+
+## 4.3.0
+
+A flow's spec phase no longer reviews an adopted issue's original body as it
+stands: step 0 now asks, before the round count, whether to rewrite the issue
+from the plan with `orch-to-spec`'s rewrite mode or review it as it stands,
+recommending a rewrite when the plan changed the issue's scope or substance
+(#929). After a `redo spec`, whose `pre-redo-spec-*` handoff folder it finds,
+it asks nothing and goes straight to the review, so reviewed edits are never
+undone. `GLOSSARY.md`'s **Adopted issue** and **Blueprint** entries, ADR-0005's
+reasoning and `docs/how-it-works.md` say so, and `docs_lint.sh` guards step 0
+and the glossary sentence.
 
 ## 4.2.5
 

@@ -310,7 +310,8 @@ STATE_KEYS='slug||arg|init seeds it
 # phase_write spec sets the phase straight after init seeds it.
 phase||null|use phase advance (review ready and redo also move it)
 # Seeded from --issue when given; state.json carries no field for whether it
-# was adopted or published - nothing downstream reads that distinction.
+# was adopted or published - nothing downstream needs that distinction
+# recorded (ADR-0005).
 issue||arg|-
 # When a flow base may change: see the header of base_set_flow.
 base||arg|init seeds it
@@ -4705,8 +4706,9 @@ $(printf '%s\n' "$terminal" | tail -n +2)" ;;
 }
 
 # The full `implement -> spec` transition. Defaults to keeping the existing
-# spec issue and re-reviewing it - the same path an adopted issue already
-# takes through the spec phase's step 0 - and retires that issue's ticket
+# spec issue and re-reviewing it - through the spec phase's step 0, whose
+# redo check reads the pre-redo-spec-* folder this leaves behind and so
+# skips the rewrite question an adopted issue gets - and retires that issue's ticket
 # breakdown (`ticket retire`, issue #334) so the redone spec is broken down
 # again. The retire runs first: a GitHub failure there dies with the phase
 # still `implement` and the handoffs in place, so a re-run resumes. Only
