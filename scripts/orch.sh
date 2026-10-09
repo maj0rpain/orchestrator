@@ -3436,8 +3436,9 @@ cmd_pr_release() {
 # branch has no open PR, and 2 for everything else - GitHub unreadable, a
 # failed post, a usage error, a missing file, a detached HEAD. The exit-2
 # cases go through die2, since die exits 1 and a caller reading 1 would take
-# a failure for "no PR". Only the GitHub-unreadable rule is shared with ticket
-# exists: a GitHub that cannot be read exits 2, never 1.
+# a failure for "no PR". The GitHub-unreadable and usage-error rules are
+# shared with ticket exists: a GitHub that cannot be read, or a usage error,
+# exits 2, never 1.
 cmd_pr_comment() {
   [ $# -eq 1 ] || die2 "usage: orch.sh pr comment <file>"
   local file="$1" pr
@@ -3539,13 +3540,12 @@ cmd_pr() {
 # ticket_sub_issues <parent> [die|die2]: the parent's sub-issues as
 # adapter_sub_issues prints them - the listing the ticket commands read (#394),
 # save ticket_links_verified, which calls adapter_sub_issues itself so a failed
-# read can be retried rather than died on. Dies, before asking GitHub, on a
-# parent that is no plain number;
-# dies through the second argument (default die) where GitHub cannot list
-# them.
+# read can be retried rather than died on. Both failures die through the
+# second argument (default die): a parent that is no plain number, refused
+# before asking GitHub, and a GitHub that cannot list them.
 ticket_sub_issues() {
   local parent="$1" fail="${2:-die}" subs
-  case "$parent" in ''|*[!0-9]*) die "parent must be a plain issue number, got: $parent" ;; esac
+  case "$parent" in ''|*[!0-9]*) "$fail" "parent must be a plain issue number, got: $parent" ;; esac
   subs="$(adapter_sub_issues "$parent")" || "$fail" "gh could not list sub-issues of #$parent"
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
 }
@@ -3712,11 +3712,11 @@ cmd_ticket_parent() {
 # 0-1-ticket collapse appends under; exit 1 and no output when neither.
 # Sub-issues win when both hold.
 # A body edited on the web arrives with CRLF line ends, so a trailing CR
-# does not stop the heading's line from matching. A GitHub it cannot read
-# exits 2, never 1: a caller reading 1 as "no breakdown" would publish a
-# second one.
+# does not stop the heading's line from matching. A GitHub it cannot read, a
+# usage error, or a parent that is not a plain number exits 2 (die2), never 1:
+# a caller reading 1 as "no breakdown" would publish a second one.
 cmd_ticket_exists() {
-  [ $# -eq 1 ] || die "usage: orch.sh ticket exists <parent>"
+  [ $# -eq 1 ] || die2 "usage: orch.sh ticket exists <parent>"
   local parent="$1" subs body
   subs="$(ticket_sub_issues "$parent" die2)" || exit "$?"
   if [ -n "$subs" ]; then
@@ -5023,7 +5023,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               or closed) or collapsed (none, but its body has
                               a line that is exactly `## Ticket` outside a
                               code fence); exits 1 printing nothing when
-                              neither, 2 when GitHub cannot be read
+                              neither, 2 when GitHub cannot be read, on a
+                              usage error, or when <parent> is not a plain
+                              number
   ticket retire <parent>      retire <parent>'s ticket breakdown: close each
                               open sub-issue as not planned, comment on every
                               one, unlink it, and cut every `## Ticket`
