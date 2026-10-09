@@ -152,11 +152,14 @@ capture() {
 # alone, to the caller's own redirect: a body streamed to a file through
 # `capture_err err adapter_issue_body "$n" >"$body"` keeps its trailing
 # newlines, which capture's command substitution would strip. Same rules as
-# capture: current shell only, and _capture_err_-prefixed locals.
+# capture: current shell only, and _capture_err_-prefixed locals. The command
+# runs in a subshell, as capture's does: the gh guard's no-repo death then
+# signals the main shell, whose USR1 trap dies with the remedy on the real
+# stderr, rather than dying here with its message redirected into the capture.
 capture_err() {
   local _capture_err_file _capture_err_text _capture_err_st=0
   _capture_err_file="$(mktemp)"
-  "${@:2}" 2>"$_capture_err_file" || _capture_err_st=$?
+  ( "${@:2}" ) 2>"$_capture_err_file" || _capture_err_st=$?
   _capture_err_text="$(cat "$_capture_err_file"; printf x)"
   rm -f "$_capture_err_file"
   printf -v "$1" '%s' "${_capture_err_text%x}"
@@ -1880,7 +1883,9 @@ fi
 # label that exists rather than failing on it, and filing works on a repo that
 # has never seen the label and on one that has, with no listing step in between.
 severity_label_ensure() {
-  adapter_label_upsert "$1" "$2" "$3" || die "gh could not create label $1"
+  local err
+  capture_err err adapter_label_upsert "$1" "$2" "$3" \
+    || die "gh could not create label $1: $(gh_reason "$err")"
 }
 
 # The triage label is the repo's, not ours: created only where it is missing,
@@ -2202,7 +2207,7 @@ cmd_review() {
       require_state
       local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards> --body-file <file>"
       [ $# -eq 6 ] && [ "$3" = --axis ] && [ "$5" = --body-file ] || die "$usage"
-      local severity="$1" title="$2" axis="$4" body="$6" colour category triage n
+      local severity="$1" title="$2" axis="$4" body="$6" colour category triage n err
       is_filed_severity "$severity" \
         || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
       case "$severity" in
@@ -2221,21 +2226,21 @@ cmd_review() {
       category_label_ensure "$category"
       # The title carries no severity prefix: the label holds it, where triage
       # can change it, and the title reads as an issue.
-      n="$(adapter_issue_create "$title" "$body" "review:$severity" "$triage" "$category")" \
-        || die "gh could not create the issue"
+      capture n err adapter_issue_create "$title" "$body" "review:$severity" "$triage" "$category" \
+        || die "gh could not create the issue: $(gh_reason "$err")"
       # Prints the number alone: the record cites a number, and the caller
       # would otherwise be parsing a URL out of prose every time.
       note "$n"
       ;;
     ready)
       require_state
-      local pr
+      local pr err
       require_pr pr
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.
-      adapter_pr_ready "$pr" 2>/dev/null \
-        || die "gh could not mark PR #$pr ready - the flow stays in review"
+      capture_err err adapter_pr_ready "$pr" \
+        || die "gh could not mark PR #$pr ready: $(gh_reason "$err") - the flow stays in review"
       phase_write "done"
       note "$pr"
       # stdout stays the PR number alone; the pointer goes to stderr. A side
@@ -2371,15 +2376,17 @@ cmd_review() {
 # Runs a gh read into <file>, written beside the target and moved into place
 # only once gh has answered: a failed fetch that left a partial file behind is
 # a body a caller would mistake for the actual content. <what> names the read
-# in the error.
+# in the error, beside gh's own first line. stdout streams straight to the
+# temp file through capture_err, never through capture's $(...), so the body
+# keeps its trailing newlines byte for byte.
 fetch_into() {
-  local file="$1" what="$2" tmp
+  local file="$1" what="$2" tmp err
   shift 2
   mkdir -p "$(dirname "$file")"
   tmp="$(mktemp "$file.XXXXXX")"
-  if ! "$@" >"$tmp"; then
+  if ! capture_err err "$@" >"$tmp"; then
     rm -f "$tmp"
-    die "gh could not read $what"
+    die "gh could not read $what: $(gh_reason "$err")"
   fi
   mv "$tmp" "$file"
 }
@@ -2405,20 +2412,20 @@ cmd_issue_comments() {
 }
 
 cmd_issue_update() {
-  local issue="$1" file="$2"
+  local issue="$1" file="$2" err
   [ -f "$file" ] || die "body file not found: $file"
   # --body-file, never --body: an issue body carries tables, fences, and
   # `#nn` references, and a heredoc through a shell is where those get
   # mangled.
-  adapter_issue_body_edit "$issue" "$file" \
-    || die "gh could not replace the body of issue #$issue"
+  capture_err err adapter_issue_body_edit "$issue" "$file" \
+    || die "gh could not replace the body of issue #$issue: $(gh_reason "$err")"
 }
 
 cmd_issue_comment() {
-  local issue="$1" file="$2"
+  local issue="$1" file="$2" err
   [ -f "$file" ] || die "body file not found: $file"
-  adapter_issue_comment "$issue" "$file" \
-    || die "gh could not comment on issue #$issue"
+  capture_err err adapter_issue_comment "$issue" "$file" \
+    || die "gh could not comment on issue #$issue: $(gh_reason "$err")"
 }
 
 cmd_issue() {
@@ -3235,12 +3242,12 @@ issue_publish_verified() {
 # next step.
 cmd_issue_publish() {
   [ $# -eq 2 ] || die "usage: orch.sh issue publish <title> <body-file>"
-  local title="$1" body_file="$2" ready n gh_line="" st=0
+  local title="$1" body_file="$2" ready n err gh_line="" st=0
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
   ready="$(triage_label_for ready-for-agent)"
-  n="$(adapter_issue_create "$title" "$body_file" "$ready")" \
-    || die "gh could not create the issue"
+  capture n err adapter_issue_create "$title" "$body_file" "$ready" \
+    || die "gh could not create the issue: $(gh_reason "$err")"
   # The second attempt's status decides the death: 2 a failed read, 1 a
   # mismatch.
   issue_publish_verified gh_line "$n" "$title" "$ready" \
@@ -3326,11 +3333,11 @@ cmd_issue_triage() {
   fi
   for label in ${removed[@]+"${removed[@]}"}; do remove_opts+=(--remove "$label"); done
 
-  adapter_issue_relabel "$issue" --add "$ready" ${remove_opts[@]+"${remove_opts[@]}"} \
-    || die "gh could not relabel issue #$issue"
+  local st=0 err
+  capture_err err adapter_issue_relabel "$issue" --add "$ready" ${remove_opts[@]+"${remove_opts[@]}"} \
+    || die "gh could not relabel issue #$issue: $(gh_reason "$err")"
   # The second attempt's status decides the death: 2 a failed read, 1 a
   # mismatch. Either way the relabel stands and no comment is posted.
-  local st=0
   issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
     || issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
     || st=$?
@@ -3341,8 +3348,8 @@ cmd_issue_triage() {
   local tmp
   tmp="$(mktemp)"
   printf 'An orchestrator planning session triaged this issue to `%s`.\n' "$ready" >"$tmp"
-  adapter_issue_comment "$issue" "$tmp" \
-    || warn "warning: issue #$issue is labelled $ready, but gh could not post the triage comment on it"
+  capture_err err adapter_issue_comment "$issue" "$tmp" \
+    || warn "warning: issue #$issue is labelled $ready, but gh could not post the triage comment on it: $(gh_reason "$err")"
   rm -f "$tmp"
 }
 
@@ -4621,7 +4628,7 @@ retire_handoffs() {
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
-  local phase i b word slug issue branch pr redo_count new_n new_branch msg
+  local phase i b word slug issue branch pr redo_count new_n new_branch msg err
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
   i="$(state_get iteration)"
@@ -4671,7 +4678,7 @@ $(printf '%s\n' "$terminal" | tail -n +2)" ;;
   fi
 
   msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
-  adapter_pr_close "$pr" "$msg" || die "gh could not close PR #$pr"
+  capture_err err adapter_pr_close "$pr" "$msg" || die "gh could not close PR #$pr: $(gh_reason "$err")"
 
   # The prior implement phase closed every ticket it finished, so the redone
   # implement phase's frontier query (ticket next) would otherwise find
@@ -4712,10 +4719,11 @@ cmd_redo_spec() {
   esac
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
   if [ "$new_issue" -eq 1 ]; then
-    local issue msg
+    local issue msg err
     require_issue issue
     msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from orch-to-spec in this same flow.\n')"
-    adapter_issue_close "$issue" --comment "$msg" || die "gh could not close issue #$issue"
+    capture_err err adapter_issue_close "$issue" --comment "$msg" \
+      || die "gh could not close issue #$issue: $(gh_reason "$err")"
     state_write issue null
   else
     local kept
