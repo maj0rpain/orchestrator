@@ -72,7 +72,8 @@ It fetches `origin/<default>` and prints one tab-separated line per finding:
 ```
 
 - `unchanged` - the finding's lines have no change since the filed SHA, even
-  if the file changed elsewhere. The finding still holds; it needs no read.
+  if the file changed elsewhere. That says nothing about the rest of the
+  code: a fix can land at another site and leave these lines as they were.
 - `changed` - `<detail>` is the full SHA of the newest commit touching the
   finding's lines, or touching its file when the line range can't be followed
   (it starts past the file's end).
@@ -97,9 +98,16 @@ For every finding, read its filed body with
 `**Axis:**`, `**Severity:**`, `**Location:**`, `**PR:**` and `**Why not fixed
 in the loop:**` lines, the claim, and any options it names.
 
-For each `changed`, `gone` or `unknown` result, read the code on the default
-branch at the finding's location - `git show origin/<default>:<file>`, never
-by checking anything out - and judge whether the finding still holds:
+Then read every finding's code on the default branch at the default SHA -
+`git show <default SHA>:<file>`, never by checking anything out - and judge
+whether the finding still holds. The scan's result only directs the read; it
+is never proof that a finding still holds. Whatever the result, a fix can land
+away from the filed lines - another copy, a caller, a new helper - so also
+check every other location the body names, and read the commits since the
+**filed SHA**, the SHA after the last "at" on the body's `**Location:**` line
+(`git log <filed SHA>..<default SHA>`). A finding the read cannot settle is
+proposed as still open, its comment saying what the read could not settle.
+What each result adds:
 
 - `changed`: read the touching commit (`git show <detail>`) and the code at
   the location now.
@@ -108,8 +116,8 @@ by checking anything out - and judge whether the finding still holds:
   judge it there; if it is truly gone, the finding no longer holds.
 - `unknown`: judge from the body's claim against today's code, and name the
   scan's reason in the proposal.
-
-An `unchanged` result still holds without a read.
+- `unchanged`: nothing beyond the read above - the filed lines are as they
+  were, so any fix landed elsewhere.
 
 For a finding that still holds, find its current location on the default
 branch - `file:line at <default SHA>` - for the comment in step 4.
@@ -120,8 +128,9 @@ Group the findings by their source PR, one batch per PR, PRs in ascending
 order. Within a batch, number the findings and give each one proposed outcome
 with a one-line reason:
 
-- **Close as completed** - the finding no longer holds. Name the commit the
-  scan reported. With none (`gone`, `unknown`), name the default SHA at which
+- **Close as completed** - the finding no longer holds. Name the fixing
+  commit the read found - for `changed`, often the commit the scan reported,
+  but never assumed to be it. With none found, name the default SHA at which
   the finding was found not to hold, and why.
 - **ready-for-agent** - it still holds, and its filed "Why not fixed" reason
   does not call for a decision.
@@ -169,7 +178,8 @@ The comment, by outcome:
 - **ready-for-agent** / **ready-for-human**: re-anchors the location to
   `file:line at <default SHA>`, says the finding was checked against the
   default branch, and gives the reason for its state; a `ready-for-human`
-  comment lists the options. A flipped category gives its reason.
+  comment lists the options. A finding the read could not settle says what
+  it could not settle. A flipped category gives its reason.
 - **wontfix**: gives the reason.
 
 If an `apply` dies, relay its reason, stop applying, and report what was and

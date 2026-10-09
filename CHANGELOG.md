@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.21.12
+
+Finding triage reads every filed finding, `unchanged` included: an
+`unchanged` scan result says only that the filed lines are untouched, never
+that the finding still holds, so a fix that landed at another site is found
+and closed as completed (#857, ADR-0039).
+
 ## 3.21.11
 
 `orch.sh review rerun` on a PR whose checks read succeeds with no checks dies
