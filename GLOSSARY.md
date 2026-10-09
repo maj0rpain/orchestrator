@@ -212,7 +212,7 @@ next` prints. Several can be built at once, up to the clone's parallel cap.
 ### Spec review
 
 **Spec review**:
-One look at a spec issue, taken once. Usually a step of a flow's spec phase,
+One review of a spec issue, in one or more rounds. Usually a step of a flow's spec phase,
 after the issue exists - published by the spec phase or already adopted at
 init - and before its handoff is written. A human may also ask for one on
 demand, against any issue, and a quick implementation takes an unattended one
@@ -227,15 +227,22 @@ change the spec - in an unattended spec review, the recommended ones. When the i
 accepted edits touch an open ticket, it then raises the ticket question - how that
 breakdown should follow - which a human answers, and an unattended spec
 review answers with its own recommendation: edits to the tickets the change touches, or retiring
-the breakdown so the issue is broken down again. A spec review runs once - it is not a loop and has no budget;
-another look is another spec review.
+the breakdown so the issue is broken down again. A spec review runs its whole round count, each round reading the body the previous one published. It is not a loop - no severity, nothing filed - and a review started after it ends is a new spec review, with its own round count.
+
+**Round**:
+One look within a spec review: consolidation, the lenses, one batch of proposed edits put to the human, the accepted edits applied, the ticket question when they touch an open ticket, and one changelog comment. Each round reads the body as the previous round published it.
+_Avoid_: pass, iteration (the review loop's).
+
+**Round count**:
+The number of rounds a spec review runs. A flow's spec phase asks the human for it when the review starts, and a blueprint asks it in the planning hook's closing message, before the review; both recommend 3, and a blueprint may answer 0 to skip the review. A spec review run on demand runs 1 unless given another. An unattended spec review always runs 1. A spec review runs its whole round count: a round that finds nothing does not end it early.
+_Avoid_: budget (the review loop's).
 
 **Unattended spec review**:
 A standalone spec review that asks the human nothing: every recommended edit
 is applied, every decision item takes its recommended option, and a ticket
 breakdown the edits touch follows its recommended option, retiring included.
 The batch is still shown and the changelog still records it all. Only a quick
-implementation takes one.
+implementation takes one. It runs one round.
 _Avoid_: auto spec review, silent spec review.
 
 **Consolidation item**:
@@ -467,7 +474,7 @@ as labelled. A finding whose fix needs a decision goes to a human, never to an
 agent. The findings are checked at the default SHA and put to the human one
 batch per source PR. It takes the findings still in `needs-triage`, or, as a
 **re-check**, the open filed findings whatever their triage label. Not the
-driver's triage, which ranks one iteration's findings inside a review loop.
+driver's triage, which ranks one iteration's findings inside a review loop. With `--bundle`, it instead takes only the open findings already triaged to `ready-for-agent` or `ready-for-human`, puts them to the human in one batch across source PRs, and groups them by code area into bundles.
 
 **Re-check**:
 A finding triage that also takes open filed findings already out of
@@ -475,6 +482,13 @@ A finding triage that also takes open filed findings already out of
 `needs-triage` is triaged as usual; one already triaged is closed as completed
 when it no longer holds, and otherwise left as labelled unless the human names
 another outcome.
+
+**Bundle**:
+One issue that carries several filed findings from one code area, so they are worked on together. Its body restates each member - its claim, location at the default SHA, and any options - so it reads alone. Each member is closed as a duplicate of it. A bundle is not a filed finding: it carries no `review:` label, and finding triage never takes it.
+_Avoid_: consolidated issue (a consolidation item is a spec review's)
+
+**Member**:
+A filed finding carried by a bundle, closed as its duplicate.
 
 **Default SHA**:
 The default branch's remote tip at the moment a finding triage starts: the
@@ -487,10 +501,10 @@ The PR whose review loop filed a finding, named on the filed finding's
 `**PR:**` line.
 
 **Category**:
-A filed finding's `bug` or `enhancement` label. The closer sets it from the
+A filed finding's or a bundle's `bug` or `enhancement` label. The closer sets it from the
 finding's axis - `bug` for Spec, `enhancement` for Standards - and finding
 triage keeps or flips it: a Standards finding that is a real defect becomes
-`bug`, a Spec finding that is a nice-to-have becomes `enhancement`.
+`bug`, a Spec finding that is a nice-to-have becomes `enhancement`. A bundle's is `bug` whenever any member's is.
 
 **Root-cause fix**:
 A fix that removes a defect's cause everywhere that cause acts - every copy of the logic, every call site, every input it mishandles - rather than only the reported instance. Its opposite, a **symptom fix**, makes the reported case pass while the cause stays live elsewhere.

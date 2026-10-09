@@ -131,14 +131,14 @@ dirties a repo's working tree.
 | `/orchestrator:abort` | Archive the flow to `.orchestrator/archive/`. |
 | `/orchestrator:finish` | Clean up every finished side checkout: its PR merged on GitHub, its tree clean, any flow at `done`. Archives its flow into the main checkout, removes it, and deletes its local branch; archives the main checkout's finished flow in place. Removes nothing when GitHub cannot be read. |
 | `/orchestrator:release` | Open the release PR that carries the base branch into the default branch (see below). |
-| `/orchestrator:spec-review <issue>` | Review any spec issue on demand, outside a flow: a standalone spec review. |
+| `/orchestrator:spec-review <issue> [--rounds <n>]` | Review any spec issue on demand, outside a flow: a standalone spec review, of 1 round unless `--rounds` gives another count. |
 | `/orchestrator:review <issue>` | Review the current branch against an issue on demand, outside a flow: a standalone review pass. Drops findings an earlier pass on the branch's open PR already declined, fixes what it agrees with, and posts what it declines - and what it dropped as previously declined - on that PR. |
 | `/orchestrator:sync` | Run a **base sync** (see GLOSSARY.md) on demand, on any plugin-made branch, inside or outside a flow - a done flow's included: merge `origin`'s tip of its base branch in with `orch.sh branch sync`, never rebasing. A conflict is resolved by a fresh `orch-resolver`, its **Merge resolutions** posted as one PR comment; then, unless an active flow holds the branch, it asks whether to run a review pass against the branch's issue (from its name, or asked for when the name carries none). |
 | `/orchestrator:interview` | Start a planning session: an interview that reaches a shared understanding, then asks how to carry it forward. |
 | `/orchestrator:quick-implement [<issue>] [--side]` | Start a quick implementation, the route with no flow: with an issue number, that issue is its linked issue; with none, it finds or publishes one. `--side` asks for a side checkout up front. |
 | `/orchestrator:to-spec [<issue>]` | Turn the current conversation into a spec, outside any flow: publish it as a new issue, or, given an issue number, rewrite that issue's body as the spec (rewrite mode). |
 | `/orchestrator:to-tickets <issue>` | Break an existing issue into tickets published as its sub-issues, or collapse it into the issue, outside any flow. |
-| `/orchestrator:finding-triage [--all] [<issue> \| --pr <n>]` | Finding triage: check the review loop's open filed findings against the default branch and move each out of `needs-triage`, one batch of proposed outcomes per source PR. `--all` is a re-check: it also takes findings already triaged, proposing each only close as completed or leave as is. |
+| `/orchestrator:finding-triage [--all] [<issue> \| --pr <n>] \| --bundle` | Finding triage: check the review loop's open filed findings against the default branch and move each out of `needs-triage`, one batch of proposed outcomes per source PR. `--all` is a re-check: it also takes findings already triaged, proposing each only close as completed or leave as is. `--bundle` groups the open findings already triaged to `ready-for-agent` or `ready-for-human` by code area into bundle issues, one batch across source PRs, through `orch.sh finding-triage bundle --title <t> --body-file <f> --state <ready-for-agent\|ready-for-human> --category <bug\|enhancement> <member>...`: each bundle is labelled `finding-bundle` and restates its members, and each member is closed as a duplicate of it (`orch.sh finding-triage bundle --into <B> <member>...` resumes a partly failed bundle). |
 
 ### Base branch
 
@@ -249,7 +249,7 @@ skills/orch-interview/        the planning interview; hook-grilling.sh's message
 skills/orch-to-spec/          turns the conversation into a spec: publishes it as a new issue, or rewrites a given issue's body
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
-skills/orch-finding-triage/   finding triage: scan the filed findings against the default branch, one batch per source PR, apply
+skills/orch-finding-triage/   finding triage: scan the filed findings against the default branch, one batch per source PR, apply; --bundle groups them into bundles
 scripts/orch.sh               every deterministic operation (mechanism)
 scripts/doctor.sh             diagnostics plus issue-adoption validation, sourced by orch.sh
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
@@ -429,7 +429,7 @@ hasn't looked at it yet), and a category - `bug` for a Spec-axis finding,
 loop's reasoning in the body. A filed finding returns to the pipeline
 through **finding triage** (`/orchestrator:finding-triage`), which checks it
 against the default branch and closes it as completed, or moves it to
-`ready-for-agent`, `ready-for-human`, or `wontfix`. CI is waited on once per loop with a single flake rerun per flow.
+`ready-for-agent`, `ready-for-human`, or `wontfix`; with `--bundle`, it groups the already-triaged findings of one code area into a **bundle** issue and closes each as its duplicate. CI is waited on once per loop with a single flake rerun per flow.
 It ends one of two ways: by marking the draft PR ready, or by a **bounded
 stop** - the loop giving up before the PR is ready and recording why, rather
 than looping forever - and it comments on the PR either way. After a bounded

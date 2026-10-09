@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.23.0
+## 3.25.0
 
 A side checkout made for a quick implementation records its issue:
 `orch.sh side-checkout add <slug> --issue N` writes it, `side-checkout issue`
@@ -11,6 +11,33 @@ a one-line note when the two differ. Both side routes now open the new session
 with the command already typed on Claude Code: `cd <path> && claude
 "/orchestrator:quick-implement <issue>"` and `cd <path> && claude
 "/orchestrator:next"` (#874).
+
+## 3.24.0
+
+A spec review runs a round count of rounds (ADR-0041). Each round is a whole
+review - consolidation, the lenses, one batch question, the accepted edits
+applied, the ticket question, and one `## Spec review` comment headed
+`Round <k> of <n>` - over the body the previous round published, and the
+review runs its whole count. A flow's spec phase asks "How many spec review
+rounds?" (3 recommended) before the first round;
+`/orchestrator:spec-review <issue> --rounds <n>` runs n rounds, and 1 without
+the option; a quick implementation's unattended review runs 1. `02-spec.md`'s
+**Spec review changelog** holds each round under a `### Round <k> of <n>`
+subheading (#872). The planning hook's Blueprint route asks the same round
+count, every time (3 recommended, 0 skips the review), and hands it to the
+standalone review as `--rounds <count>` (#873).
+
+## 3.23.0
+
+Finding triage gains a bundle mode: `/orchestrator:finding-triage --bundle`
+groups the open filed findings already triaged to `ready-for-agent` or
+`ready-for-human` by code area into **bundles**, one batch across source PRs.
+A new verb, `orch.sh finding-triage bundle`, creates each bundle - an ordinary
+issue labelled `finding-bundle` with a triage state and category and no
+`review:` label, whose body restates every member - and comments each member
+`Bundled into #B` and closes it as a duplicate of the bundle, keeping its
+labels; `--into <B>` resumes a partly failed bundle. Closing as a duplicate
+needs gh 2.102 or newer (#866, ADR-0040).
 
 ## 3.22.0
 
