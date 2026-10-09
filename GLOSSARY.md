@@ -472,7 +472,7 @@ as labelled. A finding whose fix needs a decision goes to a human, never to an
 agent. The findings are checked at the default SHA and put to the human one
 batch per source PR. It takes the findings still in `needs-triage`, or, as a
 **re-check**, the open filed findings whatever their triage label. Not the
-driver's triage, which ranks one iteration's findings inside a review loop.
+driver's triage, which ranks one iteration's findings inside a review loop. With `--bundle`, it instead takes only the open findings already triaged to `ready-for-agent` or `ready-for-human`, puts them to the human in one batch across source PRs, and groups them by code area into bundles.
 
 **Re-check**:
 A finding triage that also takes open filed findings already out of
@@ -480,6 +480,13 @@ A finding triage that also takes open filed findings already out of
 `needs-triage` is triaged as usual; one already triaged is closed as completed
 when it no longer holds, and otherwise left as labelled unless the human names
 another outcome.
+
+**Bundle**:
+One issue that carries several filed findings from one code area, so they are worked on together. Its body restates each member - its claim, location at the default SHA, and any options - so it reads alone. Each member is closed as a duplicate of it. A bundle is not a filed finding: it carries no `review:` label, and finding triage never takes it.
+_Avoid_: consolidated issue (a consolidation item is a spec review's)
+
+**Member**:
+A filed finding carried by a bundle, closed as its duplicate.
 
 **Default SHA**:
 The default branch's remote tip at the moment a finding triage starts: the
@@ -492,10 +499,10 @@ The PR whose review loop filed a finding, named on the filed finding's
 `**PR:**` line.
 
 **Category**:
-A filed finding's `bug` or `enhancement` label. The closer sets it from the
+A filed finding's or a bundle's `bug` or `enhancement` label. The closer sets it from the
 finding's axis - `bug` for Spec, `enhancement` for Standards - and finding
 triage keeps or flips it: a Standards finding that is a real defect becomes
-`bug`, a Spec finding that is a nice-to-have becomes `enhancement`.
+`bug`, a Spec finding that is a nice-to-have becomes `enhancement`. A bundle's is `bug` whenever any member's is.
 
 **Root-cause fix**:
 A fix that removes a defect's cause everywhere that cause acts - every copy of the logic, every call site, every input it mishandles - rather than only the reported instance. Its opposite, a **symptom fix**, makes the reported case pass while the cause stays live elsewhere.

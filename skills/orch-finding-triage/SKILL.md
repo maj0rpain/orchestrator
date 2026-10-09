@@ -1,6 +1,6 @@
 ---
 name: orch-finding-triage
-description: Triage the review loop's filed findings - the open review:<severity> issues still labelled needs-triage, or with --all (a re-check) every open one whatever its triage label - against the current default branch, putting one numbered batch of proposed outcomes per source PR to the human (close as completed when already fixed, ready-for-agent, ready-for-human, or wontfix, each with its bug/enhancement category kept or flipped; an already-triaged finding in a re-check is proposed only close as completed or leave as is), and applying the answered batch. Use when the human asks to triage or re-check filed findings or review:* issues, or runs /orchestrator:finding-triage [--all] [<issue> | --pr <n>]. Not for any other issue - upstream triage keeps those.
+description: Triage the review loop's filed findings - the open review:<severity> issues still labelled needs-triage, or with --all (a re-check) every open one whatever its triage label - against the current default branch, putting one numbered batch of proposed outcomes per source PR to the human (close as completed when already fixed, ready-for-agent, ready-for-human, or wontfix, each with its bug/enhancement category kept or flipped; an already-triaged finding in a re-check is proposed only close as completed or leave as is), and applying the answered batch; with --bundle, grouping the open findings already triaged to ready-for-agent or ready-for-human by code area into bundle issues, one batch across source PRs, each member closed as a duplicate of its bundle. Use when the human asks to triage, re-check or bundle filed findings or review:* issues, or runs /orchestrator:finding-triage [--all] [<issue> | --pr <n>] or /orchestrator:finding-triage --bundle. Not for any other issue - upstream triage keeps those.
 ---
 
 # Orchestrator finding triage
@@ -13,15 +13,20 @@ those labelled `review:<severity>` and `needs-triage` - and nothing else;
 upstream `triage` keeps every other issue. A **re-check** (`--all`, see
 `GLOSSARY.md`) also takes the open `review:<severity>` issues already out of
 `needs-triage`: each is closed as completed when it no longer holds, and
-otherwise left as labelled unless the human names another outcome. Why the
-plugin owns this step is recorded in
-`docs/adr/0031-the-plugin-triages-its-own-filed-findings.md`.
+otherwise left as labelled unless the human names another outcome. With
+`--bundle` it instead groups the open findings already triaged to
+`ready-for-agent` or `ready-for-human` by code area into **bundles** (see
+`GLOSSARY.md`) - see **Bundle mode** below. Why the plugin owns this step is
+recorded in `docs/adr/0031-the-plugin-triages-its-own-filed-findings.md`, and
+why a bundle's members close as its duplicates in
+`docs/adr/0040-bundled-findings-close-as-duplicates-of-their-bundle.md`.
 
 What this skill never does:
 
 - **No direct `gh`.** `orch.sh finding-triage scan` lists and sorts the
   findings, `orch.sh issue fetch` reads a body, and `orch.sh finding-triage
-  apply` is the one write. Never call `gh` yourself.
+  apply` and, in bundle mode, `orch.sh finding-triage bundle` are the only
+  writes. Never call `gh` yourself.
 - **No grilling.** A finding whose fix needs a decision goes to the human as
   `ready-for-human`, with the options its body names; you do not decide it
   here, and you write no agent brief beyond the triage comment.
@@ -59,6 +64,9 @@ multiple-choice question. `docs/host-capabilities.md` under the plugin root
 maps it to each host.
 
 ## 1. Scan
+
+With `--bundle` among the arguments, skip steps 1-5 and follow **Bundle
+mode** below instead.
 
 The caller's arguments narrow the scan: nothing (every open filed finding
 still in `needs-triage`), one issue number, or `--pr <n>` (the findings filed
@@ -225,3 +233,131 @@ Per PR, list each finding's issue number and the outcome applied (with its
 category, for an open one), each finding left as is in a re-check, and any
 finding left untouched with why. Nothing
 else changed: no flow state, branch, or record file.
+
+## Bundle mode
+
+`/orchestrator:finding-triage --bundle` groups the open filed findings already
+triaged to `ready-for-agent` or `ready-for-human` by code area into
+**bundles**: one ordinary issue per group, labelled `finding-bundle`, whose
+body restates every **member** so it reads alone. Each member is commented
+`Bundled into #<bundle>` and closed as a duplicate of the bundle, keeping its
+labels. A bundle run is not a re-check: it closes a candidate that no longer
+holds as completed, but never re-triages one.
+
+`--bundle` takes no other argument. If the caller's arguments also carry an
+`<issue>`, `--pr <n>` or `--all`, refuse: tell the human `--bundle` groups
+across source PRs and takes no narrowing, that a finding is dropped from a
+bundle through the batch's **Other** answer, and stop.
+
+### B1. Candidates
+
+Run:
+
+```
+bash "$ORCH" finding-triage scan --all
+```
+
+and sort its lines (step 1's format) by their `<state>` column - the only
+label read this mode uses:
+
+- exactly `ready-for-agent` or `ready-for-human` (the repo's label for each
+  role): a **candidate**.
+- any value containing `needs-triage`: not a candidate. Report it, with a
+  pointer to run `/orchestrator:finding-triage` on it first.
+- exactly `needs-info` or exactly `wontfix`: dropped silently.
+- any other value - `-`, or a combination such as
+  `ready-for-agent,ready-for-human`: not a candidate. Report it with its
+  state.
+
+If the scan dies, relay its reason and stop. With no candidate, there is
+nothing to judge: report the sorted lines and stop. A lone candidate is still
+judged, since it may be proposed close as completed. Then name the
+default branch and the **default SHA** exactly as step 1 does.
+
+### B2. Judge
+
+Judge every candidate exactly as step 2 does (ADR-0039): read its filed body
+with `issue fetch`, read its code at the default SHA, check every other
+location it names and the commits since its filed SHA. The scan line only
+directs the read. A candidate that no longer holds is proposed **close as
+completed**, named as step 3 names one; it is never bundled. For one that
+still holds, note its current location, `file:line at <default SHA>`, its
+severity and axis, its claim, any options it names, and its category label
+(`bug` or `enhancement`).
+
+### B3. Propose one batch
+
+Group the candidates that still hold by code area - one file or module, or
+one concern spread across files. A group has at least two members; a
+candidate that fits no group is left as is, never forced into one. Present
+one numbered batch:
+
+- **Groups**, numbered, each with:
+  - its title: the area and the member count, e.g. `Split helpers:
+    first_line / lines_split leftovers (4 findings)` - no `Bundle:` prefix,
+    the label does the marking;
+  - a one-line reason the members belong together;
+  - its triage state: `ready-for-human` if any member is, else
+    `ready-for-agent`;
+  - its category: `bug` if any member is, else `enhancement`;
+  - its members, by issue number and title.
+- **Closes**, numbered after the groups: each candidate proposed close as
+  completed, with its one-line reason.
+- **Left as is**: the candidates in no group, unnumbered.
+
+With no group and no close to propose, there is nothing to ask: go to B5.
+
+Ask **one blocking question** with the multiple-choice question capability,
+the batch and the call in the same response:
+
+- **Accept as proposed (Recommended)** - every group is created and every
+  close applied as proposed.
+- **Other** - the changes, by number or issue: move a finding to another
+  group, drop it from a group, split or merge groups, change any
+  candidate's outcome - to a group member, close as completed, or left as
+  is - or make a group's state or category stricter (`ready-for-human`,
+  `bug`). Any candidate, group or close not named takes its proposal. The question text states
+  this. A group left with fewer than two members after the answer is not
+  created; its member is left as is.
+
+Nothing is written before the answer.
+
+### B4. Apply
+
+Apply the accepted closes first, each with step 4's call and comment:
+
+```
+bash "$ORCH" finding-triage apply <issue> close-fixed --comment-file <file>
+```
+
+Then the accepted groups, in batch order. For each, write its body to a temp
+file outside the repo, then run:
+
+```
+bash "$ORCH" finding-triage bundle --title <title> --body-file <file> --state <ready-for-agent|ready-for-human> --category <bug|enhancement> <member>...
+```
+
+It creates the bundle, prints its number, and comments and closes each member
+as its duplicate. Do not write the AI disclaimer: the verb adds it to each
+member comment.
+
+The bundle body carries one section per member, in member order, headed
+`#<n> - <title>`, each with:
+
+- the member's severity and axis;
+- its claim;
+- its location, re-anchored to `file:line at <default SHA>`;
+- any options it names.
+
+The body is self-contained: nothing in it requires opening a member.
+
+On any die - an `apply` or a `bundle` - relay its reason and stop applying.
+Report what was applied, what was not, and, when the error names one, the
+`finding-triage bundle --into <bundle> <member>...` command that resumes the
+failed bundle without creating a second.
+
+### B5. Report
+
+List each close applied, each bundle created with its number, title and
+members, each candidate left as is, and each scan line reported in B1 as not
+a candidate. Nothing else changed: no flow state, branch, or record file.

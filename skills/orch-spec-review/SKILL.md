@@ -21,7 +21,7 @@ how the breakdown should follow - see **Tickets follow the spec**; the review
 writes the issue's tickets only to follow edits already accepted. The issue body stays the single truth the
 implement phase reads; after a review, the comments are history.
 
-A review runs a **round count** of **rounds** (ADR-0040) - see **Rounds**. In
+A review runs a **round count** of **rounds** (ADR-0041) - see **Rounds**. In
 a flow's spec phase there is no "review the spec?" question, only the round
 count: the human's control is at each round's batch decision, where they may
 decline every edit. A quick implementation asks no question at all: it takes
@@ -392,7 +392,7 @@ standalone - would otherwise leave tickets drawn from the old body, and the
 implement phase would build them. This step brings the breakdown in line with
 the edits just accepted, before the body is published. It is not another
 round: within a round, no lens runs again and the spec is not reviewed again
-(ADR-0004, ADR-0040). Both
+(ADR-0004, ADR-0041). Both
 entries share it. `<issue>` is the issue under review: in a flow,
 the number `bash "$ORCH" state get issue` prints.
 

@@ -1,8 +1,8 @@
 # Changelog
 
-## 3.23.0
+## 3.24.0
 
-A spec review runs a round count of rounds (ADR-0040). Each round is a whole
+A spec review runs a round count of rounds (ADR-0041). Each round is a whole
 review - consolidation, the lenses, one batch question, the accepted edits
 applied, the ticket question, and one `## Spec review` comment headed
 `Round <k> of <n>` - over the body the previous round published, and the
@@ -14,6 +14,18 @@ the option; a quick implementation's unattended review runs 1. `02-spec.md`'s
 subheading (#872). The planning hook's Blueprint route asks the same round
 count, every time (3 recommended, 0 skips the review), and hands it to the
 standalone review as `--rounds <count>` (#873).
+
+## 3.23.0
+
+Finding triage gains a bundle mode: `/orchestrator:finding-triage --bundle`
+groups the open filed findings already triaged to `ready-for-agent` or
+`ready-for-human` by code area into **bundles**, one batch across source PRs.
+A new verb, `orch.sh finding-triage bundle`, creates each bundle - an ordinary
+issue labelled `finding-bundle` with a triage state and category and no
+`review:` label, whose body restates every member - and comments each member
+`Bundled into #B` and closes it as a duplicate of the bundle, keeping its
+labels; `--into <B>` resumes a partly failed bundle. Closing as a duplicate
+needs gh 2.102 or newer (#866, ADR-0040).
 
 ## 3.22.0
 
