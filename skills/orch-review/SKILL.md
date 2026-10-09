@@ -496,9 +496,18 @@ spec. It is **Review pass** above with the differences below, never a review
 loop: no budget, and nothing filed. See
 `docs/adr/0029-a-review-on-demand-is-a-review-pass-not-a-loop.md`.
 
-The issue number comes from the human: the command's argument, or the issue
-they named. With no number, ask for one and wait. Never take it from
-`state.json` or the active flow.
+The issue number comes from the human: the command's one numeric argument, or
+the issue they named. With no number, ask for one and wait. Never take it from
+`state.json` or the active flow. `--smells` may come before or after the
+number, and keeps the Standards reviewer's smell-baseline findings (step 2).
+Any other argument starting `--` stops the pass before `review-pass begin`:
+say so, naming the argument.
+
+By default a standalone pass leaves out the smell-baseline findings: in PR
+138's retro every pass listed 7 to 9 minor smells, fixing them added new diff
+for the next pass to pick at, and the passes never converged. A quick
+implementation's pass, **Review pass** above, keeps them: it is one look, and
+the only Standards look the change gets before its PR (ADR-0021).
 
 1. **Run the pass**: **Review pass** steps 1 to 4, with the human's issue.
    When step 1 dies because an active flow holds this issue or this branch,
@@ -526,21 +535,38 @@ they named. With no number, ask for one and wait. Never take it from
    older decline line with no claim matches on file plus reason. The
    reviewers hear nothing of this: their prompts stay **Review pass** step
    3's five variables.
+
+   Then, unless the human passed `--smells`, drop every smell-baseline
+   finding still kept, and count them: that count is step 5's hidden
+   smells. A **smell-baseline finding** is a Standards-report finding whose
+   Source reads `possible <smell> (judgement call)`, with `<smell>` one of
+   the twelve in `agents/orch-reviewer-standards.md`'s **Smell baseline**.
+   A Source beginning `root-cause check`, or naming no baseline smell, is
+   never one; nor is any Spec-report finding. A smell that matched an earlier
+   decline is already under **Previously declined** and is not counted.
+   Hidden smells are neither fixed nor declined. The reviewers are unchanged:
+   the Standards reviewer still reports smells.
 3. **Fix and decline**: **Review pass** steps 5 and 6, on the findings
    step 2 kept. The pass's declines and host fallbacks go to step 5 below.
 4. **Commit and push.** The fixes are one commit, as the pass says. When the
    branch has an upstream (`git rev-parse --abbrev-ref @{upstream}`
    succeeds), push it, so an open PR shows the fixes. With no fixes there is
    nothing to commit or push.
-5. **Report.** Write `<prefix>-comment.md` with three headings, **Review** -
+5. **Report.** Write `<prefix>-comment.md` with four headings, **Review** -
    the declines, or `None declined.` - **Previously declined** - each
-   finding step 2 dropped, as its `file:line` and claim, or `None.` - and
-   **Host fallbacks** - each fallback taken, or `None (<host>).` Then run
+   finding step 2 dropped as an earlier decline, as its `file:line` and
+   claim, or `None.` - **Host fallbacks** - each fallback taken, or `None
+   (<host>).` - and **Smells**, exactly one line: `<N> hidden - rerun with
+   --smells to see them.` when step 2 hid N >= 1, `None hidden.` when it hid
+   none, or `Included (--smells).` with `--smells`. **Smells** is its own
+   heading, never a line under **Review**, so a later pass's step 2 reads
+   no smell as a decline. Then run
    `bash "$ORCH" pr comment <prefix>-comment.md`:
    - exit 0: the comment is posted; tell the human, with the PR number it
      printed;
    - exit 1: the branch has no open PR; report the declines, the previously
-     declined findings and host fallbacks in the session instead;
+     declined findings, host fallbacks and the **Smells** line in the
+     session instead;
    - exit 2: GitHub could not be read, or the post failed; stop and say so,
      relaying its reason. Never report this as nothing declined.
 

@@ -301,11 +301,13 @@ around it: no budget, no severity, nothing filed. The session that starts it
 fixes the findings it agrees with and records each one it declines, with its
 reason. A quick implementation takes one before its PR opens. A human may also
 ask for one on demand, against an issue and the branch they are on - after a
-quick implementation, say - which is a standalone review pass. Another look is
-another review pass. A standalone review pass drops any finding an earlier
-review pass on the same PR already declined, and lists it as previously
-declined. A branch or issue an active flow holds belongs to that flow, never
-to a review pass.
+quick implementation, say - which is a standalone review pass. A standalone
+review pass leaves out the Standards reviewer's smell-baseline findings unless
+the human asks for them, and reports only how many it left out; a quick
+implementation's review pass keeps them. Another look is another review pass. A
+standalone review pass drops any finding an earlier review pass on the same PR
+already declined, and lists it as previously declined. A branch or issue an
+active flow holds belongs to that flow, never to a review pass.
 _Avoid_: single pass, quick review
 
 **Budget**:
@@ -422,7 +424,8 @@ review pass, or about the spec, from a spec review.
 Only a finding about the change from the review phase carries a **severity**,
 which the review phase assigns; the reviewer itself reports findings unranked.
 A finding from a review pass carries none: the session that ran the pass
-fixes it or declines it. A finding about the spec carries no
+fixes it or declines it, unless a standalone review pass left it out as a
+smell-baseline finding. A finding about the spec carries no
 severity: a human accepts or declines the edit it proposes, or an unattended
 spec review applies it as recommended, and it is never filed.
 
