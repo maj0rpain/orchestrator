@@ -4705,8 +4705,9 @@ $(printf '%s\n' "$terminal" | tail -n +2)" ;;
 }
 
 # The full `implement -> spec` transition. Defaults to keeping the existing
-# spec issue and re-reviewing it - the same path an adopted issue already
-# takes through the spec phase's step 0 - and retires that issue's ticket
+# spec issue and re-reviewing it - through the spec phase's step 0, whose
+# redo check reads the pre-redo-spec-* folder this leaves behind and so
+# skips the rewrite question an adopted issue gets - and retires that issue's ticket
 # breakdown (`ticket retire`, issue #334) so the redone spec is broken down
 # again. The retire runs first: a GitHub failure there dies with the phase
 # still `implement` and the handoffs in place, so a re-run resumes. Only

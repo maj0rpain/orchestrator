@@ -12,8 +12,9 @@ points - ends, once a shared understanding is reached, on one
 `AskUserQuestion`: flow, quick implementation, or blueprint only.
 
 - **Flow.** `/orchestrator:start` writes `01-plan.md`; then `/clear`.
-  - The spec session: `orch-to-spec` publishes the issue (or it was already
-    adopted at init), the spec review runs, and `orch-to-tickets` publishes
+  - The spec session: `orch-to-spec` publishes the issue (or, for one
+    adopted at init, rewrites it from the plan if the human chooses), the
+    spec review runs, and `orch-to-tickets` publishes
     the tickets; it writes `02-spec.md`. Then `/clear`.
   - The implement session: branch `orch/<issue>-<slug>`, one subagent per
     ticket, `ticket next`/`close`, a draft PR; it writes `03-implement.md`.
@@ -57,9 +58,15 @@ All four phases run.
 
 The spec phase works against the flow's issue, however it arrived -
 published by `orch-to-spec` in this phase, or already adopted at init,
-carrying the required `ready-for-agent` triage label, in which case
-`orch-to-spec` is skipped entirely. Either way, it first proposes folding into
-the issue body whatever the issue's comments say that the body does not, then
+carrying the required `ready-for-agent` triage label. For an adopted issue,
+the phase first asks the human whether to rewrite its body from the plan -
+by `orch-to-spec`'s rewrite mode - or review it as it stands, recommending
+one: a rewrite when the plan changed the issue's scope or substance, as it
+stands for a blueprint or a body that already reflects the plan. After a
+`redo spec`, whose `pre-redo-spec-*` handoff folder it finds, it asks nothing:
+the body then carries reviewed edits newer than the plan. Either way, the
+review first proposes folding into the issue body whatever the issue's
+comments say that the body does not, then
 reviews the issue, body and comments, through four independent lenses -
 Fidelity to the plan, Consistency with itself and the glossary, Testability at
 the agreed seams, Implementability from the spec alone - each a read-only

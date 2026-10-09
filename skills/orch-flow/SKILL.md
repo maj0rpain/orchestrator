@@ -133,11 +133,44 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 
 ### Phase: spec
 
-0. Check `bash "$ORCH" state get issue`. Non-empty means the flow adopted an issue
-   at init - skip straight to step 4 below; steps 1-3 do not run, because the
-   issue already exists and is already recorded. Empty means no `--issue` was
-   given - run the phase from step 1, exactly as it does for every flow that
-   has no adopted issue.
+0. Check `bash "$ORCH" state get issue`. Empty means no `--issue` was given -
+   run the phase from step 1, exactly as it does for every flow that has no
+   adopted issue. Non-empty means the issue already exists and is already
+   recorded, so steps 1-3 do not run; instead run 0a-0d below. Three cases
+   reach them: an issue adopted after an interview about it, whose body
+   predates the plan; a blueprint adopted at init, whose body is already a
+   spec; and a default `redo spec`, whose body carries the edits the previous
+   spec review accepted, newer than `01-plan.md`. Because nothing records an
+   issue's origin (`docs/adr/0005-an-adopted-issues-origin-is-not-recorded.md`),
+   a spec phase resumed after its own step 3, or after a rewrite, reaches them
+   too.
+   - **0a. Redo check.** If any `.orchestrator/handoff/pre-redo-spec-*` folder
+     exists, ask nothing and go to step 4. `redo spec` leaves that folder for
+     either kind of redo and nothing removes it for the rest of the flow, so
+     it means a `redo spec` ran in this flow: the issue body is newer than
+     `01-plan.md`, and a rewrite would silently undo reviewed work.
+   - **0b. Ask the rewrite question.** Read the body first with
+     `bash "$ORCH" issue fetch <n> <file>` (a `mktemp` file outside the repo),
+     and compare it with `01-plan.md` (`bash "$ORCH" handoff path spec`). Then
+     ask one blocking question with the host's ask tool, before step 4's
+     round count: "Rewrite #<n> from the plan before review, or review it as it stands?"
+     Options: **Rewrite** and **As it stands**, the recommended one marked
+     (Recommended): **Rewrite** when the plan changed the issue's scope or
+     substance; **As it stands** for a blueprint (the body is already a
+     spec), an issue the interview only confirmed, or a body that already
+     reflects the plan, as on a resumed spec phase.
+   - **0c. On Rewrite**, invoke the `orch-to-spec` skill in rewrite mode on
+     the issue (args `<n>`), from `01-plan.md` - its **Rejected alternatives**
+     section is load-bearing, as in step 1 - and follow it. Its test-seams
+     check and its retire-or-keep breakdown question come with it,
+     unchanged; step 5 then reads what it left (`retired` leaves no
+     breakdown, so the issue is broken down again; `kept` skips it). If it
+     stops without reporting the issue number, stop the phase: leave the
+     state as it is (the phase stays `spec`), say what blocked, and leave
+     whatever it already published - a replaced body, a retired breakdown -
+     in place; a re-run of the phase reaches 0b again. Otherwise go to
+     step 4.
+   - **0d. On As it stands**, go to step 4.
 1. Read `bash "$ORCH" handoff path spec`. The **Rejected alternatives** section is
    load-bearing: do not re-propose anything it rules out.
 2. Invoke the `orch-to-spec` skill and follow it. It will check test seams
@@ -166,7 +199,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    from `bash "$ORCH" state get issue`.
 
    **Exit 0** means the issue already has a ticket breakdown - as for a
-   blueprint adopted at init; a default `redo spec` retires the breakdown
+   blueprint adopted at init, or one a step-0c rewrite kept; a default `redo spec` retires the breakdown
    first, so it never reaches this exit. Skip the breakdown and
    ask nothing: step 4's spec review may already have reconciled the
    breakdown with the edits it applied. `ticket exists` printed one word,
@@ -181,7 +214,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    heading, and reports which: the published numbers, or `collapsed`. This
    step is part of the phase, not an option in it, the same way the review
    above is not: no spec reaches the implement phase without its breakdown.
-   A step-4 review that retired the breakdown also lands here.
+   A step-0c rewrite or a step-4 review that retired the breakdown also
+   lands here.
 
    **Any other exit** means GitHub could not be read: stop, leaving the state
    where it is, say what blocked, and offer `/orchestrator:abort`.
@@ -411,7 +445,8 @@ default keeps the issue and retires its ticket breakdown - each sub-issue
 closed as not planned if still open, commented on and unlinked, or the
 collapsed `## Ticket` section cut from the body - then changes `state.phase`
 to `spec`, so the spec phase's step 5 breaks the redone spec down again; the
-existing "adopted issue" path through the spec phase's step 0 does the rest.
+spec phase's step 0 does the rest: the `pre-redo-spec-*` folder below makes
+it skip the rewrite question and go straight to the spec review.
 If GitHub fails while retiring, it dies with the phase still `implement`, and
 a re-run resumes. Either way the
 stale `02-spec.md` handoff, and `03-implement.md` if one exists, move into

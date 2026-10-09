@@ -17,10 +17,13 @@ running against an issue, the spec review is that issue's judgement now, not
 triage's.
 
 Tracking provenance would let some later check treat adopted issues
-differently, but nothing downstream reads that distinction: the spec phase's
-only fork on origin is whether to run `to-spec` at all, decided once, by
-reading whether `state.issue` is already set at the phase's start. A field
-recorded for a distinction nothing reads is state carried for nothing.
+differently, but nothing downstream needs that distinction recorded: the
+spec phase forks on whether `state.issue` is already set at the phase's
+start - unset runs `to-spec`; set asks the human whether to rewrite the
+issue from the plan, unless a `pre-redo-spec-*` handoff folder shows a
+`redo spec` already ran - and both readings come from what is already on
+disk. A field recorded for a distinction nothing needs is state carried for
+nothing.
 
 ## Consequences
 

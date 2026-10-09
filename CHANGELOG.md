@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.3.0
+
+A flow's spec phase no longer reviews an adopted issue's original body as it
+stands: step 0 now asks, before the round count, whether to rewrite the issue
+from the plan with `orch-to-spec`'s rewrite mode or review it as it stands,
+recommending a rewrite when the plan changed the issue's scope or substance
+(#929). After a `redo spec`, whose `pre-redo-spec-*` handoff folder it finds,
+it asks nothing and goes straight to the review, so reviewed edits are never
+undone. `GLOSSARY.md`'s **Adopted issue** and **Blueprint** entries, ADR-0005's
+reasoning and `docs/how-it-works.md` say so, and `docs_lint.sh` guards step 0
+and the glossary sentence.
+
 ## 4.2.4
 
 Every `gh could not ...` death in `orch.sh`, reads and writes, now carries
