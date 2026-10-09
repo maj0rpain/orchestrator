@@ -9055,43 +9055,43 @@ assert_contains "naming it" "$out" "/nonexistent/body.md"
 assert_eq "no argument error wrote anything" "$(fake_snapshot)" "$before_store"
 
 # Each member is checked before any write; a refusal names the member and why.
-# refused <name> <wants> <state> <category> <member>...: the new form refused,
-# its output naming <wants>, with the store as it was.
+# refused <name> <wants> <command>...: <command> (new_bundle ... or bundle
+# --into ...) refused, its output naming <wants>, with the store as it was.
 refused() {
   local name="$1" wants="$2"
   shift 2
   before_store="$(fake_snapshot)"
-  out="$(new_bundle "$@" 2>&1)"; st=$?
+  out="$("$@" 2>&1)"; st=$?
   assert_status "refuses $name" "$st" 1
   assert_contains "saying so ($name)" "$out" "$wants"
   assert_eq "writing nothing ($name)" "$(fake_snapshot)" "$before_store"
 }
 member 11 "review:major,ready-for-agent,bug"
 member 13 "review:nit,ready-for-agent,bug" closed
-refused "a closed member" "issue #13 is not open" ready-for-agent bug 11 13
+refused "a closed member" "issue #13 is not open" new_bundle ready-for-agent bug 11 13
 member 13 "review:minor,ready-for-agent,bug"
-refused "a member with no filed-severity review label" "issue #13 is not a filed finding" ready-for-agent bug 11 13
+refused "a member with no filed-severity review label" "issue #13 is not a filed finding" new_bundle ready-for-agent bug 11 13
 member 13 "ready-for-agent,bug"
-refused "a member with no review label" "issue #13 is not a filed finding" ready-for-agent bug 11 13
+refused "a member with no review label" "issue #13 is not a filed finding" new_bundle ready-for-agent bug 11 13
 member 13 "review:nit,needs-triage,bug"
-refused "a needs-triage member" "issue #13 carries 'needs-triage'" ready-for-agent bug 11 13
+refused "a needs-triage member" "issue #13 carries 'needs-triage'" new_bundle ready-for-agent bug 11 13
 member 13 "review:nit,needs-info,ready-for-agent,bug"
-refused "a needs-info member" "issue #13 carries 'needs-info'" ready-for-agent bug 11 13
+refused "a needs-info member" "issue #13 carries 'needs-info'" new_bundle ready-for-agent bug 11 13
 member 13 "review:nit,wontfix,ready-for-agent,bug"
-refused "a wontfix member" "issue #13 carries 'wontfix'" ready-for-agent bug 11 13
+refused "a wontfix member" "issue #13 carries 'wontfix'" new_bundle ready-for-agent bug 11 13
 member 13 "review:nit,bug"
-refused "a member with no triage label" "issue #13 carries neither 'ready-for-agent' nor 'ready-for-human'" ready-for-agent bug 11 13
+refused "a member with no triage label" "issue #13 carries neither 'ready-for-agent' nor 'ready-for-human'" new_bundle ready-for-agent bug 11 13
 member 13 "review:nit,ready-for-agent,ready-for-human,bug"
-refused "a member in both ready states" "issue #13 carries both 'ready-for-agent' and 'ready-for-human'" ready-for-human bug 11 13
-refused "a new bundle of one member" "a new bundle needs at least 2 members" ready-for-agent bug 11
-refused "a member named twice" "issue #11 is named twice" ready-for-agent bug 11 11
+refused "a member in both ready states" "issue #13 carries both 'ready-for-agent' and 'ready-for-human'" new_bundle ready-for-human bug 11 13
+refused "a new bundle of one member" "a new bundle needs at least 2 members" new_bundle ready-for-agent bug 11
+refused "a member named twice" "issue #11 is named twice" new_bundle ready-for-agent bug 11 11
 member 13 "review:nit,ready-for-human,enhancement"
 refused "ready-for-agent with a ready-for-human member" \
-  "--state ready-for-agent, but issue #13 carries 'ready-for-human'" ready-for-agent bug 11 13
+  "--state ready-for-agent, but issue #13 carries 'ready-for-human'" new_bundle ready-for-agent bug 11 13
 refused "enhancement with a bug member" \
-  "--category enhancement, but issue #11 carries 'bug'" ready-for-human enhancement 11 13
+  "--category enhancement, but issue #11 carries 'bug'" new_bundle ready-for-human enhancement 11 13
 fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
-refused "a member gh cannot read" "gh could not read issue #11: HTTP 502: Bad Gateway" ready-for-human bug 11 13
+refused "a member gh cannot read" "gh could not read issue #11: HTTP 502: Bad Gateway" new_bundle ready-for-human bug 11 13
 fake_unfail
 
 # Before bundling, scan --all lists the members.
@@ -9231,29 +9231,18 @@ rm -f "$noop_close_adapter"
 
 # --into checks its members as the new form does - one is enough - and B
 # itself, before any write.
-# into_refused <name> <wants> <B> <member>...: --into refused, its output
-# naming <wants>, with the store as it was.
-into_refused() {
-  local name="$1" wants="$2"
-  shift 2
-  before_store="$(fake_snapshot)"
-  out="$(bundle --into "$@" 2>&1)"; st=$?
-  assert_status "--into refuses $name" "$st" 1
-  assert_contains "saying so ($name)" "$out" "$wants"
-  assert_eq "writing nothing ($name)" "$(fake_snapshot)" "$before_store"
-}
 member 34 "review:major,ready-for-agent,bug"
 member 35 "review:nit,needs-triage"
 fake_issue 45 closed finding-bundle ready-for-agent bug
-into_refused "a closed bundle" "bundle #45 is not open" 45 34
+refused "--into: a closed bundle" "bundle #45 is not open" bundle --into 45 34
 fake_issue 46 open ready-for-agent bug
-into_refused "an issue without finding-bundle" "issue #46 carries no 'finding-bundle' label" 46 34
+refused "--into: an issue without finding-bundle" "issue #46 carries no 'finding-bundle' label" bundle --into 46 34
 fake_issue 47 open finding-bundle ready-for-agent bug
-into_refused "a member already closed" "issue #31 is not open" 47 34 31
-into_refused "a needs-triage member" "issue #35 carries 'needs-triage'" 47 34 35
-into_refused "a member named twice" "issue #34 is named twice" 47 34 34
+refused "--into: a member already closed" "issue #31 is not open" bundle --into 47 34 31
+refused "--into: a needs-triage member" "issue #35 carries 'needs-triage'" bundle --into 47 34 35
+refused "--into: a member named twice" "issue #34 is named twice" bundle --into 47 34 34
 fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
-into_refused "a bundle gh cannot read" "gh could not read issue #47: HTTP 502: Bad Gateway" 47 34
+refused "--into: a bundle gh cannot read" "gh could not read issue #47: HTTP 502: Bad Gateway" bundle --into 47 34
 fake_unfail
 out="$(bundle --into 47 34 2>&1)"; st=$?
 assert_status "--into takes a single member" "$st" 0
@@ -9268,7 +9257,7 @@ writeln '# Triage Labels' '' \
         '| `ready-for-human`          | `hitl`               | Human it    |' >docs/agents/triage-labels.md
 member 17 "review:major,afk,bug"
 member 18 "review:nit,triage me,enhancement"
-refused "a member in the repo's own needs-triage" "issue #18 carries 'triage me'" ready-for-agent bug 17 18
+refused "a member in the repo's own needs-triage" "issue #18 carries 'triage me'" new_bundle ready-for-agent bug 17 18
 member 18 "review:nit,hitl,enhancement"
 fake_next_issue 22
 out="$(new_bundle ready-for-human bug 17 18 2>&1)"; st=$?
