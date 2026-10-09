@@ -3350,7 +3350,7 @@ cmd_issue_triage() {
 # implementation's, not a draft, recording nothing) share it rather
 # than each hand-rolling the push/issue-line/gh-pr-create idiom.
 open_pr() {
-  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr keyword=Closes draft_opt=()
+  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr err keyword=Closes draft_opt=()
   git push -q -u origin "$branch"
   # GitHub only acts on a closing keyword when the PR merges into the default
   # branch, so a PR into any other base branch refers to its issue instead of
@@ -3359,9 +3359,9 @@ open_pr() {
   tmp="$(mktemp)"
   { printf '%s #%s\n\n' "$keyword" "$issue"; cat "$body_file"; } >"$tmp"
   [ "$draft" != true ] || draft_opt=(--draft)
-  if ! pr="$(adapter_pr_create "$base" "$branch" "$title" "$tmp" ${draft_opt[@]+"${draft_opt[@]}"})"; then
+  if ! capture pr err adapter_pr_create "$base" "$branch" "$title" "$tmp" ${draft_opt[@]+"${draft_opt[@]}"}; then
     rm -f "$tmp"
-    die "gh could not open the PR for branch $branch (issue #$issue)"
+    die "gh could not open the PR for branch $branch (issue #$issue): $(gh_reason "$err")"
   fi
   rm -f "$tmp"
   printf '%s\n' "$pr"
@@ -3412,9 +3412,9 @@ cmd_pr_release() {
   default="$(default_branch)"
   [ "$base" != "$default" ] ||
     die "the base branch is the default branch ($default) - there is nothing to release; set another with base set"
-  local open
-  open="$(adapter_prs_open "$base" "$default")" ||
-    die "gh could not list the open PRs from $base into $default"
+  local open err
+  capture open err adapter_prs_open "$base" "$default" ||
+    die "gh could not list the open PRs from $base into $default: $(gh_reason "$err")"
   [ -z "$open" ] || die "a release PR from $base into $default is already open: #$(first_line "$open")"
   # Read from the merged PRs' bodies rather than GitHub's closing-issue links:
   # GitHub only links closing keywords on PRs into the default branch, and a
@@ -3422,16 +3422,16 @@ cmd_pr_release() {
   # any case and anywhere in the body - not every closing form GitHub knows,
   # so prose such as "a quick fix #12" is never mistaken for a reference.
   local bodies refs n state issues="" tmp pr
-  bodies="$(adapter_prs_merged_bodies "$base")" ||
-    die "gh could not list the PRs merged into $base"
+  capture bodies err adapter_prs_merged_bodies "$base" ||
+    die "gh could not list the PRs merged into $base: $(gh_reason "$err")"
   refs="$(printf '%s\n' "$bodies" |
     grep -ioE '(^|[^[:alnum:]_])(refs|closes|fixes|resolves):?[[:space:]]+#[0-9]+' |
     grep -oE '[0-9]+$' | sort -nu)" || true
   # gh issue view answers for a PR number too, so a reference to a PR reads
   # as PULL and is dropped - only still-open issues get a Closes line.
   for n in $refs; do
-    state="$(adapter_issue_state "$n")" ||
-      die "gh could not read the state of issue #$n"
+    capture state err adapter_issue_state "$n" ||
+      die "gh could not read the state of issue #$n: $(gh_reason "$err")"
     [ "$state" != OPEN ] || issues="$issues $n"
   done
   [ -n "$issues" ] || [ "$force" = true ] ||
@@ -3443,9 +3443,9 @@ cmd_pr_release() {
     cat "$body_file"
   } >"$tmp"
   # Not a draft: nothing after this would ever mark it ready.
-  if ! pr="$(adapter_pr_create "$default" "$base" "$title" "$tmp")"; then
+  if ! capture pr err adapter_pr_create "$default" "$base" "$title" "$tmp"; then
     rm -f "$tmp"
-    die "gh could not open the release PR from $base into $default"
+    die "gh could not open the release PR from $base into $default: $(gh_reason "$err")"
   fi
   rm -f "$tmp"
   note "$pr"
@@ -3462,11 +3462,11 @@ cmd_pr_release() {
 # exits 2, never 1.
 cmd_pr_comment() {
   [ $# -eq 1 ] || die2 "usage: orch.sh pr comment <file>"
-  local file="$1" pr
+  local file="$1" pr err
   [ -f "$file" ] || die2 "body file not found: $file"
   pr="$(current_open_pr)" || return $?
-  adapter_pr_comment "$pr" "$file" \
-    || die2 "gh could not comment on PR #$pr"
+  capture_err err adapter_pr_comment "$pr" "$file" \
+    || die2 "gh could not comment on PR #$pr: $(gh_reason "$err")"
   printf '%s\n' "$pr"
 }
 
@@ -3477,11 +3477,11 @@ cmd_pr_comment() {
 # so a caller in a subshell can tell "no PR" apart from an error and map each
 # to its own exit code.
 current_open_pr() {
-  local branch open
+  local branch open err
   branch="$(git symbolic-ref --quiet --short HEAD)" \
     || die2 "not on a branch (detached HEAD)"
-  open="$(adapter_prs_open "$branch")" \
-    || die2 "gh could not list the open PRs from $branch"
+  capture open err adapter_prs_open "$branch" \
+    || die2 "gh could not list the open PRs from $branch: $(gh_reason "$err")"
   [ -n "$open" ] || return 1
   first_line "$open"
 }
@@ -3521,18 +3521,18 @@ cmd_pr_comments() {
 # exactly that line is refused and the body left as it was.
 cmd_pr_update() {
   [ $# -eq 1 ] || die "usage: orch.sh pr update <file>"
-  local file="$1" pr current line
+  local file="$1" pr current line err
   [ -f "$file" ] || die "body file not found: $file"
   pr="$(required_open_pr)" || exit 1
-  current="$(adapter_pr_body "$pr")" \
-    || die "gh could not read the body of PR #$pr"
+  capture current err adapter_pr_body "$pr" \
+    || die "gh could not read the body of PR #$pr: $(gh_reason "$err")"
   line="$(printf '%s\n' "$current" | sed -n '1{s/\r$//;p;}')"
   printf '%s\n' "$line" | grep -qE '^(Closes|Refs) #[0-9]+$' \
     || die "PR #$pr's body does not open with a Closes/Refs #<issue> line, so there is no issue line to keep - refusing to replace it"
   [ "$(sed -n '1{s/\r$//;p;}' "$file")" = "$line" ] \
     || die "$file must open with PR #$pr's issue line, '$line' - refusing to replace the body"
-  adapter_pr_body_edit "$pr" "$file" \
-    || die "gh could not replace the body of PR #$pr"
+  capture_err err adapter_pr_body_edit "$pr" "$file" \
+    || die "gh could not replace the body of PR #$pr: $(gh_reason "$err")"
 }
 
 cmd_pr() {
