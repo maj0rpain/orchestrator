@@ -14,8 +14,8 @@
 # check, validate_adopted_issue, lives in orch.sh, and the triage-label parser
 # the checks read lives in triage-labels.sh.
 #
-# Sourced into orch.sh after its shared mechanism (ROOT, STATE, die, note,
-# now, first_line, capture, default_branch, base_setting, origin_has_branch,
+# Sourced into orch.sh after its shared mechanism (ORCH_SCRIPTS, ROOT, STATE,
+# die, note, now, first_line, capture, default_branch, base_setting, origin_has_branch,
 # require_state, labels_have, issue_state_labels_read,
 # ORCH_DIR_NAME, PHASES, LABEL_LIMIT, HANDOFF_DIR), triage-labels.sh
 # (LABELS_DOC, TRIAGE_ROLES, triage_table_rows, triage_labels,
@@ -254,17 +254,10 @@ check_default_branch() {
 
 # plugin environment ---------------------------------------------------------
 
-# The plugin root doctor runs from: the directory scripts/ sits in, which is
-# also where every skill resolves orch.sh and the capabilities reference from.
-# Worked out from this file's own path by parameter expansion, as dirname would
-# print its directory, so it holds however doctor.sh is sourced.
-D_SOURCE="${BASH_SOURCE[0]}"
-case "$D_SOURCE" in
-  /*/*|[!/]*/*) D_SCRIPTS="${D_SOURCE%/*}" ;;
-  /*) D_SCRIPTS="/" ;;
-  *) D_SCRIPTS="." ;;
-esac
-D_PLUGIN="$(CDPATH='' cd -- "$D_SCRIPTS/.." && pwd)"
+# The plugin root doctor runs from: the directory above orch.sh's ORCH_SCRIPTS,
+# which is also where every skill resolves orch.sh and the capabilities
+# reference from.
+D_PLUGIN="$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)"
 HOST_REF="docs/host-capabilities.md"
 
 # The host's column header in the capabilities reference.
