@@ -736,9 +736,16 @@ fake_fail() {
 }
 
 # fake_fail_after <operation> <n> [stderr]: fake_fail, but the next n calls of
-# the operation still succeed - a run of writes that dies part-way.
+# the operation still succeed - a run of writes that dies part-way. An omitted
+# stderr keeps fake_fail's message; an explicit empty one seeds a failure that
+# prints nothing, as fake_fail_times does.
 fake_fail_after() {
-  fake_fail "$1" "${3:-}"
+  if [ $# -ge 3 ] && [ -z "$3" ]; then
+    mkdir -p "$ORCH_GH_FAKE_STORE/fail"
+    : >"$ORCH_GH_FAKE_STORE/fail/$1"
+  else
+    fake_fail "$1" "${3:-}"
+  fi
   printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/fail/$1.after"
 }
 
@@ -7582,6 +7589,38 @@ filed_sev nit; assert_status "accepts nit" "$?" 0
 filed_sev blocking; assert_status "refuses blocking - it is always fixed, never filed" "$?" 1
 filed_sev ""; assert_status "refuses an empty severity" "$?" 1
 
+# --- gh_reason and capture_err (#846) -------------------------------------------
+
+echo
+echo "gh_reason and capture_err"
+new_repo >/dev/null
+# Sourced rather than run, as is_filed_severity is: both are helpers every gh
+# death goes through, and sourcing orch.sh defines them without running main.
+reason() { bash -c 'source "$1" && gh_reason "$2"' _ "$ORCH" "$1"; }
+assert_eq "gh_reason gives only the first line of gh's stderr" \
+  "$(reason $'HTTP 502: Bad Gateway\nsecond line\n')" "HTTP 502: Bad Gateway"
+assert_eq "and says gh gave no reason when stderr is empty" "$(reason "")" "gh gave no reason"
+assert_eq "or when its first line is" "$(reason $'\n')" "gh gave no reason"
+# capture_err leaves stdout to the caller's redirect, so a body streamed to a
+# file keeps its trailing newlines byte for byte.
+cefile="$(mktemp)"
+out="$(bash -c 'source "$1"
+  emit() { printf "body\n\n"; printf "HTTP 502: Bad Gateway\nsecond line\n" >&2; return 3; }
+  st=0; capture_err e emit >"$2" || st=$?
+  printf "%s|%s." "$st" "$e"' _ "$ORCH" "$cefile")"
+assert_eq "capture_err returns the command's status and sets the error variable to its stderr" \
+  "$out" "3|HTTP 502: Bad Gateway
+second line
+."
+assert_eq "and leaves stdout to the caller's redirect, trailing newlines kept" \
+  "$(od -c <"$cefile")" "$(printf 'body\n\n' | od -c)"
+out="$(bash -c 'source "$1"
+  quiet() { printf "x"; }
+  e=stale; capture_err e quiet >/dev/null; printf "%s|%s" "$?" "$e"' _ "$ORCH")"
+assert_eq "a command that succeeds silently returns 0 and leaves the variable empty" "$out" "0|"
+rm -f "$cefile"
+unset cefile
+
 # --- review file ------------------------------------------------------------
 
 # Filing is mechanism: which labels, what title, which body, and the number
@@ -7837,6 +7876,22 @@ faked adapter_issue_close 19 --duplicate-of 30; st=$?
 assert_status "the fake closes an issue as a duplicate" "$st" 0
 assert_eq "CLOSED, its reason duplicate" "$(fake_state_of 19) $(fake_reason_of 19)" "CLOSED duplicate"
 assert_eq "naming the issue it duplicates" "$(fake_duplicate_of 19)" "30"
+# fake_fail_after seeds a failure after n good calls: with an explicit empty
+# stderr a silent one (#846), and with the third argument omitted fake_fail's
+# message.
+fake_issue 20 open
+fake_fail_after adapter_issue_state_labels 1 ''
+faked adapter_issue_state_labels 20 >/dev/null 2>&1; st=$?
+assert_status "fake_fail_after lets the first n calls succeed" "$st" 0
+err="$(faked adapter_issue_state_labels 20 2>&1 >/dev/null)"; st=$?
+assert_status "then the operation fails" "$st" 1
+assert_eq "silently, given an explicit empty stderr" "$err" ""
+fake_unfail
+fake_fail_after adapter_issue_state_labels 0
+err="$(faked adapter_issue_state_labels 20 2>&1 >/dev/null)"; st=$?
+assert_status "fake_fail_after with no stderr fails too" "$st" 1
+assert_eq "with fake_fail's message" "$err" "fake gh: adapter_issue_state_labels failed"
+fake_unfail
 restore_suite_env
 assert_eq "restore_suite_env undoes fake_github" \
   "${ORCH_GH_ADAPTER-unset} ${ORCH_GH_FAKE_STORE-unset}" "unset unset"

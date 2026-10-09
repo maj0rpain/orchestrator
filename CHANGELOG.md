@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.2.3
+
+Every `gh could not ...` death in `orch.sh`, reads and writes, now carries
+gh's own first line - `<message>: <gh's first line>`, or `<message>: gh gave
+no reason` when gh printed nothing - where before most printed gh's line apart
+from the message it explains, or dropped it to /dev/null (#846). This
+includes `review ready`, the bundle member reads, and the triage-comment
+warning. `ticket publish` no longer reports a failed link read-back as "links
+did not verify": it dies `gh could not read ticket #<n>'s links: <reason>`
+(#843). Two helpers carry the one shape: `gh_reason`, and `capture_err`,
+which keeps a body streamed to a file byte-exact.
+
 ## 4.2.2
 
 `orch.sh doctor` builds the plugin root it reports from out of orch.sh's

@@ -147,6 +147,29 @@ capture() {
   printf -v "$2" '%s' "${_capture_err%x}"
   return "$_capture_st"
 }
+# capture_err <err-var> <command...>: runs the command, sets <err-var> to its
+# stderr byte for byte, and returns its status. Unlike capture it leaves stdout
+# alone, to the caller's own redirect: a body streamed to a file through
+# `capture_err err adapter_issue_body "$n" >"$body"` keeps its trailing
+# newlines, which capture's command substitution would strip. Same rules as
+# capture: current shell only, and _capture_err_-prefixed locals.
+capture_err() {
+  local _capture_err_file _capture_err_text _capture_err_st=0
+  _capture_err_file="$(mktemp)"
+  "${@:2}" 2>"$_capture_err_file" || _capture_err_st=$?
+  _capture_err_text="$(cat "$_capture_err_file"; printf x)"
+  rm -f "$_capture_err_file"
+  printf -v "$1" '%s' "${_capture_err_text%x}"
+  return "$_capture_err_st"
+}
+# gh_reason <stderr>: the reason a failed gh call gives - the first line of
+# its captured stderr, or "gh gave no reason" when that line is empty, so a
+# death message never ends in a bare colon. It only produces the reason; each
+# site keeps its own die, die2, warn or why.
+gh_reason() {
+  local line="${1%%$'\n'*}"
+  printf '%s\n' "${line:-gh gave no reason}"
+}
 # The argument with leading and trailing whitespace removed.
 trim() {
   local s="$1"
@@ -935,7 +958,7 @@ validate_adopted_issue() {
   local issue="$1" label state labels gh_line
   label="$(triage_label_for ready-for-agent)"
   issue_state_labels_read "$issue" state labels gh_line \
-    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated: ${gh_line:-gh gave no reason}"
+    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated: $(gh_reason "$gh_line")"
   [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
   labels_have "$labels" "$label" \
     || die "issue #$issue is missing the '$label' triage label - adoption requires it."
@@ -2054,7 +2077,7 @@ review_rerun() {
   # message carries.
   capture out err adapter_pr_checks "$pr" all || rc=$?
   gh_line="${err%%$'\n'*}"
-  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: ${gh_line:-gh gave no reason}"
+  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $(gh_reason "$err")"
   [ -n "$out" ] || die2 "PR #$pr has no checks to rerun: ${gh_line:-no checks reported}"
   # The first failed or cancelled check's name and link, split by tsv_split
   # so an empty name survives: IFS=$'\t' read would collapse it, a tab being
@@ -2075,11 +2098,9 @@ review_rerun() {
   case "$run" in ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; return 1 ;; esac
   # rerun_out is the rerun's throwaway half: only its stderr is read.
   # shellcheck disable=SC2034
-  local rerun_out rerun_err rerun_line
-  if ! capture rerun_out rerun_err adapter_run_rerun "$run"; then
-    rerun_line="${rerun_err%%$'\n'*}"
-    die2 "gh could not rerun the failed jobs of Actions run $run: ${rerun_line:-gh gave no reason}"
-  fi
+  local rerun_out rerun_err
+  capture rerun_out rerun_err adapter_run_rerun "$run" \
+    || die2 "gh could not rerun the failed jobs of Actions run $run: $(gh_reason "$rerun_err")"
   note "$run"
 }
 
@@ -2432,7 +2453,7 @@ cmd_issue_ready() {
   case "$issue" in ''|*[!0-9]*) die2 "issue must be a plain issue number, got: $issue ($usage)" ;; esac
   ready="$(triage_label_for ready-for-agent)"
   issue_state_labels_read "$issue" state labels gh_line \
-    || die2 "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+    || die2 "gh could not read issue #$issue: $(gh_reason "$gh_line")"
   labels_have "$labels" "$ready"
 }
 
@@ -2707,7 +2728,7 @@ cmd_finding_triage_scan() {
   # one here, where it is checked, a listed one in the loop below.
   if [ -n "$issue" ]; then
     issue_state_labels_body_read "$issue" state labels body gh_line \
-      || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+      || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
@@ -2732,7 +2753,7 @@ cmd_finding_triage_scan() {
   for n in $(printf '%s\n' $nums | sort -nu); do
     if [ -z "$issue" ]; then
       issue_state_labels_body_read "$n" state labels body gh_line \
-        || die "gh could not read issue #$n: ${gh_line:-gh gave no reason}"
+        || die "gh could not read issue #$n: $(gh_reason "$gh_line")"
     fi
     if [ -n "$pr_filter" ] && [ "$(finding_pr "$body")" != "$pr_filter" ]; then continue; fi
     finding_scan_one "$n" "$body" "$ref" "$(triage_state "$labels")"
@@ -2793,7 +2814,7 @@ cmd_finding_triage_apply() {
   # than a third, near-identical label read added beside
   # adapter_issue_state_labels and adapter_issue_title_labels.
   issue_state_labels_read "$issue" state labels gh_line \
-    || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+    || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
   # Every triage-role label the issue carries but the outcome does not set
   # goes, so an already-triaged finding ends in the one state the outcome
   # sets. Remove only what the issue carries: gh refuses to remove a label the
@@ -2833,7 +2854,7 @@ cmd_finding_triage_apply() {
 bundle_member_check() {
   local __bmc_state __bmc_labels __bmc_line __bmc_role __bmc_label __bmc_ready=""
   issue_state_labels_read "$1" __bmc_state __bmc_labels __bmc_line \
-    || die "gh could not read issue #$1: ${__bmc_line:-gh gave no reason}"
+    || die "gh could not read issue #$1: $(gh_reason "$__bmc_line")"
   [ "$__bmc_state" = OPEN ] || die "issue #$1 is not open - a bundle takes open filed findings only"
   has_filed_severity_label "$__bmc_labels" \
     || die "issue #$1 is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
@@ -2891,7 +2912,7 @@ cmd_finding_triage_bundle() {
     ! $have_title && [ -z "$file$state$category" ] || die "$usage"
     local b_state b_labels b_line
     issue_state_labels_read "$into" b_state b_labels b_line \
-      || die "gh could not read issue #$into: ${b_line:-gh gave no reason}"
+      || die "gh could not read issue #$into: $(gh_reason "$b_line")"
     [ "$b_state" = OPEN ] || die "bundle #$into is not open - --into resumes an open bundle only"
     labels_have "$b_labels" "$BUNDLE_LABEL" \
       || die "issue #$into carries no '$BUNDLE_LABEL' label - --into resumes a bundle only"
@@ -3221,7 +3242,7 @@ cmd_issue_publish() {
   issue_publish_verified gh_line "$n" "$title" "$ready" \
     || issue_publish_verified gh_line "$n" "$title" "$ready" \
     || st=$?
-  [ "$st" -ne 2 ] || die "gh could not read issue #$n: ${gh_line:-gh gave no reason}"
+  [ "$st" -ne 2 ] || die "gh could not read issue #$n: $(gh_reason "$gh_line")"
   [ "$st" -eq 0 ] \
     || die "issue #$n's title and '$ready' label did not verify - checked twice, both failed"
   note "$n"
@@ -3260,7 +3281,7 @@ cmd_issue_triage() {
   ready="$(triage_label_for ready-for-agent)"
 
   issue_state_labels_read "$issue" state labels gh_line \
-    || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+    || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
   [ "$state" = OPEN ] \
     || die "issue #$issue is not open - only an open issue is triaged to '$ready'"
   # One walk over the triage roles the issue carries: whether ready-for-agent
@@ -3309,7 +3330,7 @@ cmd_issue_triage() {
   issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
     || issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
     || st=$?
-  [ "$st" -ne 2 ] || die "gh could not read issue #$issue: ${gh_line:-gh gave no reason}"
+  [ "$st" -ne 2 ] || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
   [ "$st" -eq 0 ] \
     || die "issue #$issue's '$ready' label did not verify - checked twice, both failed"
 
@@ -4410,12 +4431,9 @@ cmd_side_checkout_remove() {
 # assigned to the caller's <var>. On failure it sets `verdict` to the call's
 # first error line and returns 2.
 github_read() {
-  local into="$1" got err gh_line
+  local into="$1" got err
   shift
-  if ! capture got err "$@"; then
-    gh_line="${err%%$'\n'*}"
-    verdict="could not read GitHub: ${gh_line:-gh gave no reason}"; return 2
-  fi
+  capture got err "$@" || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   printf -v "$into" '%s' "$got"
 }
 
