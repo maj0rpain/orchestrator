@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.6.0
+
+New `orch.sh issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>` verb: closes an issue as completed or as a duplicate, the file's contents its closing comment, in one gh call pinned to the repo (#985).
+
+The planning close gains a done-close: when a planning interview finds its issue's work already done, the session offers to close the issue as done (completed, or as a duplicate of the issue that did the work) through `orch.sh issue close`, in place of the `ready-for-agent` move and the route question, on Claude Code and Junie (#985).
+
 ## 4.5.13
 
 `orch-sync` now corrects the PR body against the diff after a resolved merge,
