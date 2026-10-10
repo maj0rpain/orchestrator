@@ -46,8 +46,9 @@ orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
 the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
 section must pass on its own. So a helper is placed by the files that use it: one
 used by more than one file lives in `scripts/test/orch/setup.sh`; one used by
-only one file lives in that file's preamble, before its first `# ---` line; a
-helper never moves into a section.
+only one file lives in that file's preamble, before its first `# ---` line; one
+already defined inside a section stays there; a helper never moves into a
+section.
 See CONTRIBUTING.md's Develop section.
 
 ## Versioning

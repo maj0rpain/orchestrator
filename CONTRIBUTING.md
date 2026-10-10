@@ -41,7 +41,8 @@ the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so ever
 section must pass on its own. A helper is placed by the files that use it: one
 used by more than one file lives in `setup.sh`'s shared setup; one used by only
 one file lives in that file's preamble, whether one section or several use it;
-a helper never moves into a section.
+one already defined inside a section stays there; a helper never moves into a
+section.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
