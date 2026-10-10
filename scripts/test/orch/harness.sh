@@ -515,13 +515,13 @@ rm -rf "$guard_dir"
 # A copy of all.sh in <tmp>/scripts/test/ beside three stub suites, never the
 # real ones, so <tmp> is the repo root: orch_test.sh's stub fails, the other
 # two pass. Each stub logs whether ORCH_TEST_ONLY, ORCH_TEST_QUIET and
-# ORCH_TEST_JOBS reached it, and VERSION_BASE. Each stub, the stub shellcheck
-# too, drops a marker file named after itself in <tmp>/markers/ when it
-# starts, if that directory exists; only the overlap case creates it. One
-# planted shell file each in <tmp>/scripts/, <tmp>/scripts/test/ and
-# <tmp>/scripts/test/orch/ is there for the lint step to find. Every run sets or unsets CI and runs on a PATH of
-# only the tools all.sh and the stubs need, plus a stub shellcheck when the case
-# wants one - the real one never runs.
+# ORCH_TEST_JOBS reached it, and VERSION_BASE. Only the overlap case's own
+# stubs, swapped in for that case alone, drop marker files; the shared stubs
+# and the stub shellcheck of every other case never do. One planted shell file
+# each in <tmp>/scripts/, <tmp>/scripts/test/ and <tmp>/scripts/test/orch/ is
+# there for the lint step to find. Every run sets or unsets CI and runs on a
+# PATH of only the tools all.sh and the stubs need, plus a stub shellcheck
+# when the case wants one - the real one never runs.
 echo
 echo "all.sh, the single entry point (#615)"
 all_root="$(mktemp -d)"
@@ -539,7 +539,6 @@ for all_suite in orch_test.sh hooks_test.sh docs_lint.sh; do
   {
     echo '#!/usr/bin/env bash'
     echo "echo \"$all_suite only=\${ORCH_TEST_ONLY-unset} quiet=\${ORCH_TEST_QUIET-unset} jobs=\${ORCH_TEST_JOBS-unset} base=\${VERSION_BASE-unset}\" >>\"\$(dirname \"\$0\")/log\""
-    echo "[ -d '$all_root/markers' ] && : >'$all_root/markers/$all_suite'"
     echo 'echo; echo "a section header"'
     if [ "$all_suite" = orch_test.sh ]; then
       echo "printf '  FAIL a stub failure\n     its detail line\n  FAIL another failure\n     its own detail\n'"
@@ -565,7 +564,6 @@ all_sc_stub() {
   {
     echo '#!/usr/bin/env bash'
     echo "echo \"\$*\" >>'$all_root/sc_args'"
-    echo "[ -d '$all_root/markers' ] && : >'$all_root/markers/shellcheck'"
     echo 'all_file="${!#}"'
     for line in "$@"; do
       case "$line" in
@@ -595,14 +593,14 @@ all_run() {
 }
 all_finding1='scripts/lint_me.sh:1:1: warning: a planted finding [SC2034]'
 all_finding2='scripts/test/lint_me.sh:2:5: error: another finding [SC2086]'
+all_order="orch_test.sh hooks_test.sh docs_lint.sh shellcheck "
 
 all_sc_stub 0
 out="$(all_run ORCH_TEST_ONLY='^isolation$' VERSION_BASE=9.9.9 2>&1)"; st=$?
 assert_status "exits non-zero when a suite failed" "$st" 1
 assert_eq "runs every suite after the first one fails" "$(wc -l <"$all_dir/log" | tr -d ' ')" "3"
 assert_eq "prints the suites' summaries in order, shellcheck's last" \
-  "$(all_print_order "$out")" \
-  "orch_test.sh hooks_test.sh docs_lint.sh shellcheck "
+  "$(all_print_order "$out")" "$all_order"
 assert_eq "unsets ORCH_TEST_ONLY for every suite" "$(grep -c 'only=unset' "$all_dir/log")" "3"
 assert_eq "sets ORCH_TEST_QUIET=1 for every suite" "$(grep -c 'quiet=1 ' "$all_dir/log")" "3"
 assert_eq "passes VERSION_BASE through to every suite" "$(grep -c 'base=9.9.9$' "$all_dir/log")" "3"
@@ -693,7 +691,6 @@ all_swap() {
 all_restore() {
   mv "$all_root/$1.shared" "$all_dir/$1"
 }
-all_order="orch_test.sh hooks_test.sh docs_lint.sh shellcheck "
 all_sc_stub 0
 
 all_swap orch_test.sh 'sleep 1' 'echo; echo "a section header"' \
@@ -706,11 +703,17 @@ assert_eq "a slow orch_test.sh's FAIL block and summary still print first, shell
   "$out" \
   "$(printf '  FAIL a slow failure\n     its detail line\norch_test.sh: 1 passed, 1 failed\nhooks_test.sh: 7 passed, 0 failed\ndocs_lint.sh: 7 passed, 0 failed\nshellcheck: 0 findings')"
 
-# The overlap: orch_test.sh's stub finishes only once the other two suites
-# and the stub shellcheck have all dropped their markers, so a sequential
-# all.sh, which starts nothing else until it finishes, fails after its 10s
-# wait.
+# The overlap: hooks_test.sh, docs_lint.sh and the stub shellcheck are
+# swapped for ones that drop a marker file named after themselves in
+# <tmp>/markers/ when they start, and orch_test.sh's stub finishes only once
+# all three markers are there, so a sequential all.sh, which starts nothing
+# else until it finishes, fails after its 10s wait. The shared stubs and a
+# clean stub shellcheck are put back after.
 mkdir "$all_root/markers"
+all_swap hooks_test.sh ": >'$all_root/markers/hooks_test.sh'"
+all_swap docs_lint.sh ": >'$all_root/markers/docs_lint.sh'"
+all_sc_stub 0
+sed -i.bak "1a : >'$all_root/markers/shellcheck'" "$all_bin/shellcheck"
 all_swap orch_test.sh "all_wait=0" \
   "until [ -e '$all_root/markers/hooks_test.sh' ] && [ -e '$all_root/markers/docs_lint.sh' ] && [ -e '$all_root/markers/shellcheck' ]; do" \
   "  all_wait=\$((all_wait + 1))" \
@@ -719,12 +722,17 @@ all_swap orch_test.sh "all_wait=0" \
   "done"
 out="$(all_run 2>&1)"; st=$?
 all_restore orch_test.sh
+all_restore hooks_test.sh
+all_restore docs_lint.sh
 rm -rf "$all_root/markers"
 assert_status "runs every suite and shellcheck at the same time" "$st" 0
 assert_eq "prints no FAIL line when the suites overlap" "$(count_lines FAIL "$out")" "0"
 assert_eq "overlapping suites still print in order, shellcheck's summary last" \
-  "$(all_print_order "$out")" \
-  "$all_order"
+  "$(all_print_order "$out")" "$all_order"
+all_sc_stub 0
+assert_eq "leaves no marker drop in the shared stubs or the stub shellcheck" \
+  "$(cat "$all_dir/orch_test.sh" "$all_dir/hooks_test.sh" "$all_dir/docs_lint.sh" \
+    "$all_bin/shellcheck" | grep -c markers)" "0"
 
 rm -f "$all_dir/log"
 out="$(all_run ORCH_TEST_JOBS=3 2>&1)"
