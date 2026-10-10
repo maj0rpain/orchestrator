@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.7.1
+
+The planning session's interviewed-issue step now checks the issue's triage labels before asking: no label question when it already carries `ready-for-agent`, one override question naming `wontfix` or `ready-for-human`, and a warning with the reason when the check fails. Backed by a new read-only `orch.sh issue triage <n> --check` (#989).
+
 ## 4.7.0
 
 New `orch.sh glossary` noun: `terms` lists the root `GLOSSARY.md`'s term names, `show <term>...` prints the named entries (an avoided alias resolves to its term), and `match <file>...` prints every entry the files mention - each exactly as written, so a reader loads only the entries it needs (#988).
