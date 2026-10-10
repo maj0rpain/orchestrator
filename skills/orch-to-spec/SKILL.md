@@ -90,7 +90,9 @@ turns out missing, take the fallback it documents and tell your caller which.
 ## Rewrite the issue
 
 Rewrite mode's publish step, on issue `<n>`. Every step runs in the Blueprint
-route, the flow's spec phase and standalone alike.
+route, the flow's spec phase and standalone alike, and in a quick
+implementation's **Unattended rewrite**, with the differences that section
+names.
 
 1. **Check for a breakdown, before the body is replaced:**
    `bash "$ORCH" ticket exists <n>`.
@@ -120,9 +122,10 @@ route, the flow's spec phase and standalone alike.
    - Exit 2: warn that the label could not be checked, and carry on: the
      rewrite has already landed.
 5. **Report** the issue number and its breakdown outcome - `kept`,
-   `retired`, or `none` - so a caller runs `orch-to-tickets` on the issue
-   unless the outcome is `kept`. Standalone, on `retired`, also report that
-   the issue needs `/orchestrator:to-tickets <n>`.
+   `retired`, or `none`, or in **Unattended rewrite** one of that section's
+   **Report** outcomes - so a caller runs `orch-to-tickets` on the issue
+   unless the breakdown was kept, in any form of `kept`. Standalone, on
+   `retired`, also report that the issue needs `/orchestrator:to-tickets <n>`.
 
 ## Unattended rewrite
 
