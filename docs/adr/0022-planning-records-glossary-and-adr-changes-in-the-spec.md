@@ -42,8 +42,9 @@ orchestrator, and redirected into the plan, by design. The Fidelity lens
 already reports a plan decision the spec dropped or altered, so a dropped
 glossary or ADR wording is caught between plan and spec with no new required
 section. Quick implementation's spec review is standalone and runs no Fidelity
-lens, so there the rule rests on the planning session writing the wording into
-the linked issue.
+lens, so there the rule rests on the wording reaching the linked issue's body:
+written when quick implementation publishes the issue, or by its unattended
+rewrite of an interviewed issue.
 
 ## Note: the grilling hook no longer stands down beside a flow
 
