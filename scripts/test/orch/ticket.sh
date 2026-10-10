@@ -1,3 +1,10 @@
+# shellcheck shell=bash
+# The guard below is never true - (( 0 )) is a keyword no variable or function
+# can redefine - so the line never runs; it points shellcheck at setup.sh's
+# definitions, which orch_test.sh evals before this file's sections.
+# shellcheck source=setup.sh
+(( 0 )) && source setup.sh
+
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature files a ticket and writes its
 # sub-issue link and blocked-by edges, so no skill prose ever calls `gh api`

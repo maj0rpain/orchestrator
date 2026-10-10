@@ -1,3 +1,10 @@
+# shellcheck shell=bash
+# The guard below is never true - (( 0 )) is a keyword no variable or function
+# can redefine - so the line never runs; it points shellcheck at setup.sh's
+# definitions, which orch_test.sh evals before this file's sections.
+# shellcheck source=setup.sh
+(( 0 )) && source setup.sh
+
 # --- spec-review begin (#224) ------------------------------------------------
 # A standalone spec review's guard and working-directory reset have one right
 # answer each, so they live here: refuse an issue an active flow holds, and

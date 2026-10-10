@@ -10,7 +10,10 @@
 # new file, which the runner picks up with no edit here. A noun file holds
 # only `# ---` sections, optionally preceded by its preamble: the text before
 # its first `# ---` line, eval'd before that file's sections whenever one of
-# them runs.
+# them runs. Every preamble opens with the same shellcheck lines - the shell
+# directive and a never-true `(( 0 )) && source setup.sh` behind a
+# `source=setup.sh` directive - so all.sh's shellcheck follows setup.sh's
+# definitions; a new noun file copies them.
 #
 # orch.sh is where silent wrongness hides: `doctor` returning success on a
 # deleted branch, a missing triage label, or a handoff with an empty required

@@ -1,3 +1,10 @@
+# shellcheck shell=bash
+# The guard below is never true - (( 0 )) is a keyword no variable or function
+# can redefine - so the line never runs; it points shellcheck at setup.sh's
+# definitions, which orch_test.sh evals before this file's sections.
+# shellcheck source=setup.sh
+(( 0 )) && source setup.sh
+
 # --- state ------------------------------------------------------------------
 echo
 echo "state"
@@ -75,7 +82,7 @@ assert_eq "review begin still claims an iteration" "$("$ORCH" review begin)" "1"
 assert_contains "records land flat under review/" "$("$ORCH" review path)" "/review/iteration-01.md"
 assert_contains "and review reads the implement handoff as it always did" \
   "$("$ORCH" handoff path review)" "03-implement.md"
-for i in 2 3 4 5; do "$ORCH" review begin >/dev/null; done
+for _ in 2 3 4 5; do "$ORCH" review begin >/dev/null; done
 out="$("$ORCH" review begin 2>&1)"; st=$?
 assert_status "and it runs the default budget" "$st" 1
 assert_contains "of five" "$out" "budget of 5 iterations"

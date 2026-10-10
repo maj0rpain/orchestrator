@@ -1,3 +1,10 @@
+# shellcheck shell=bash
+# The guard below is never true - (( 0 )) is a keyword no variable or function
+# can redefine - so the line never runs; it points shellcheck at setup.sh's
+# definitions, which orch_test.sh evals before this file's sections.
+# shellcheck source=setup.sh
+(( 0 )) && source setup.sh
+
 # --- every gh call pinned to the repo (#520) -----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
 # ORCH_GH_ADAPTER unset so the real adapter operations run, against the fixture

@@ -1,3 +1,10 @@
+# shellcheck shell=bash
+# The guard below is never true - (( 0 )) is a keyword no variable or function
+# can redefine - so the line never runs; it points shellcheck at setup.sh's
+# definitions, which orch_test.sh evals before this file's sections.
+# shellcheck source=setup.sh
+(( 0 )) && source setup.sh
+
 # --- review ready's pointer to /orchestrator:finish (#727) ---------------------
 # review ready's stdout stays the PR number alone everywhere; in a side
 # checkout it points the human at /orchestrator:finish on stderr, for after the
@@ -6,7 +13,6 @@ echo
 echo "review ready's finish pointer"
 sc_clone
 fake_github
-top="$(git rev-parse --show-toplevel)"
 fake_offline
 rr="$(sc_add rr)"
 fake_online

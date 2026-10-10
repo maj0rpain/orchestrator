@@ -1,3 +1,5 @@
+# shellcheck shell=bash
+# shellcheck disable=SC2034 # its assignments are read by the section files, linted apart
 # The orch.sh suite's shared setup and summary, which scripts/test/orch_test.sh
 # reads and evals; never run on its own. The shared setup runs from the
 # `# >>> shared setup` line to the `# >>> summary` line, before any section; the
@@ -784,6 +786,7 @@ planted_copy() {
   printf '%s\n' "$dir"
 }
 
+# shellcheck disable=SC2154 # set by orch_test.sh, the runner that evals this file
 [ -n "$orch_child_counts" ] || echo "orch.sh tests"
 
 # >>> summary
@@ -792,6 +795,7 @@ while IFS= read -r gh_guard_call; do
   bad "a section called the real gh" "$gh_guard_call"
 done <"$GH_GUARD_LOG"
 # A child of the parallel runner hands its counts on instead of printing them.
+# shellcheck disable=SC2154 # set by orch_test.sh, the runner that evals this file
 if [ -n "$orch_child_counts" ]; then
   echo "$PASS $FAIL $SKIP" >"$orch_child_counts"
 else

@@ -1,3 +1,10 @@
+# shellcheck shell=bash
+# The guard below is never true - (( 0 )) is a keyword no variable or function
+# can redefine - so the line never runs; it points shellcheck at setup.sh's
+# definitions, which orch_test.sh evals before this file's sections.
+# shellcheck source=setup.sh
+(( 0 )) && source setup.sh
+
 # --- parallel show -------------------------------------------------------------
 # The clone's parallel cap: how many ticket subagents a frontier runs at once.
 # The default lives here alone, so the skills never read git config themselves.

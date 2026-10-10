@@ -45,7 +45,10 @@ a helper never moves into a section.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
-`-S warning` to match `all.sh`.
+`-S warning` to match `all.sh`. Each section file under `scripts/test/orch/`
+opens with a shellcheck shell directive and a never-run `source setup.sh` line
+behind a `source=setup.sh` directive, so shellcheck reads setup.sh's
+definitions; a new section file copies those lines.
 
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the
