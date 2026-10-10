@@ -1,5 +1,7 @@
 # A spec question the review loop files holds the PR in draft
 
+Superseded in part by ADR-0043: outside the review loop, a spec question has no "only a major" clause; a review pass judges it by content alone.
+
 Supersedes ADR-0003 and ADR-0016 in part: their rule that a filed major never holds the PR out of ready no longer covers spec questions; their budget, fix rules, and filing stand.
 
 In a Junie retro, a fixer met a finding that was really a question the spec never settled: whether a high-water mark should depend on the archive step. Under ADR-0003 and ADR-0016 it was left unfixed and filed, and the PR was marked ready anyway. The human then had to rule on it after the fact: the high-water mark should not depend on the archive step at all.

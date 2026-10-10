@@ -1,5 +1,7 @@
 # A review on demand is a review pass, not a loop
 
+Superseded in part by ADR-0043: a review pass gains a third outcome beside fix and decline - a spec question, put to a human - and a standalone review pass may turn a PR into a draft or mark one ready.
+
 Supersedes in part ADR-0021: a quick implementation's reviewer prompts no longer carry iteration `01` or a report path from `quick path`; both come from `review-pass begin`.
 
 A human can now ask for a review of the branch they are on, against a given issue, outside any flow - after a quick implementation, say. That review is a **review pass**: the one pass quick implementation took before its PR opened, moved into the `orch-review` skill as its one definition, which quick implementation now calls. The session that runs it fixes what it agrees with, files nothing, and records what it declines: a quick implementation in its PR body, a standalone review pass in a PR comment, or in the session when there is no PR.

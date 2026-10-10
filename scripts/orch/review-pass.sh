@@ -26,21 +26,17 @@ cmd_review_pass() {
   branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
   [ "$branch" != "$(recorded_base "$branch")" ] \
     || die "$branch is the base branch - a review pass reviews a branch's change against it; check out the change's branch"
-  if [ -f "$STATE" ]; then
-    local phase held held_branch
-    phase="$(state_get phase)"
+  local phase held
+  if phase="$(flow_holding_phase "$branch" "$issue")"; then
     held="$(state_get issue)"
-    held_branch="$(state_get branch)"
-    if [ "$phase" != "done" ] && { [ "$held" = "$issue" ] || [ "$held_branch" = "$branch" ]; }; then
-      case "$phase" in
-        implement|review)
-          die "the active flow holds issue #$held at phase $phase - this change belongs to that flow's review loop; run $(flow_cmd next)" ;;
-        spec)
-          die "the active flow holds issue #$held at phase spec - its change has not been built yet; run $(flow_cmd next)" ;;
-        *)
-          die "the active flow holds issue #$held at phase '$phase', which is not a flow phase - refusing to review it; run orch.sh doctor --flow" ;;
-      esac
-    fi
+    case "$phase" in
+      implement|review)
+        die "the active flow holds issue #$held at phase $phase - this change belongs to that flow's review loop; run $(flow_cmd next)" ;;
+      spec)
+        die "the active flow holds issue #$held at phase spec - its change has not been built yet; run $(flow_cmd next)" ;;
+      *)
+        die "the active flow holds issue #$held at phase '$phase', which is not a flow phase - refusing to review it; run orch.sh doctor --flow" ;;
+    esac
   fi
   exclude_orch_dirs
   local dir="$ORCH/review-pass/$branch" f n max=0

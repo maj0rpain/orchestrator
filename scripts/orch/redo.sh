@@ -40,13 +40,13 @@ retire_handoffs() {
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
-  local phase i b word slug issue branch pr redo_count new_n new_branch msg err
+  local phase i b word detail slug issue branch pr redo_count new_n new_branch msg err
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
   i="$(state_get iteration)"
   b="$(review_budget)"
   local terminal; terminal="$(review_terminal_state)" || true
-  word="$(first_line "$terminal")"
+  lines_split "$terminal" word detail
   case "$word" in
     none)
       die "no review loop has run yet - nothing to redo back from; run $(flow_cmd next) to start one." ;;
@@ -56,7 +56,7 @@ cmd_redo_review() {
       die "the review loop's last iteration ($i) has no recorded terminal state - the session looks interrupted, not stopped. Resume it with $(flow_cmd next); redo only runs once a loop actually ends." ;;
     malformed)
       die "the review loop's last iteration ($i) has a malformed terminal state - rewrite the first line of $(cmd_review path "$i") in the shape below; redo only runs once a loop actually ends.
-$(printf '%s\n' "$terminal" | tail -n +2)" ;;
+$detail" ;;
     stop) ;;
     *) die "review_terminal_state answered something redo does not know: $word" ;;
   esac
