@@ -22,7 +22,14 @@ cmd_glossary() {
     show)
       [ $# -ge 1 ] || die2 "usage: orch.sh glossary show <term>..."
       [ -f "$glossary" ] || die2 "no GLOSSARY.md at $ROOT"
-      glossary_run show "$glossary" "$@" ;;
+      local missing st=0 term
+      missing="$(mktemp)"
+      GLOSSARY_MISSING="$missing" glossary_run show "$glossary" "$@" || st=$?
+      while IFS= read -r term; do
+        warn "no glossary entry for '$term'"
+      done < "$missing"
+      rm -f "$missing"
+      return "$st" ;;
     match)
       [ $# -ge 1 ] || die2 "usage: orch.sh glossary match <file>..."
       local file
@@ -40,7 +47,8 @@ cmd_glossary() {
 # in BEGIN, so an empty glossary or text file needs no special case. An
 # entry's _Avoid_: line lists its aliases, split at commas outside
 # parentheses, a trailing period dropped; an alias ends at its first (, and
-# one with a parenthetical note is scoped.
+# one with a parenthetical note is scoped. show writes each term with no entry
+# to the file GLOSSARY_MISSING names, one per line, for cmd_glossary to warn.
 glossary_run() {
   awk '
     function blank(s) { return s ~ /^[[:space:]]*$/ }
@@ -120,7 +128,7 @@ glossary_run() {
         status = 0
         for (a = 1; a <= nargs; a++) {
           i = find(arg[a])
-          if (!i) { print "orch: no glossary entry for \047" arg[a] "\047" > "/dev/stderr"; status = 1; continue }
+          if (!i) { print arg[a] > ENVIRON["GLOSSARY_MISSING"]; status = 1; continue }
           if (!(i in shown)) { shown[i] = 1; emit(i) }
         }
         exit status

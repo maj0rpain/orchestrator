@@ -134,8 +134,10 @@ Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.
 
 TDD is the red-green loop. These rules make it produce tests worth keeping,
 and every one applies on every cycle. So test names match the domain's
-language, run `bash "<orch.sh>" glossary match <file>` on the ticket file you
-fetched in step 1 - it prints the glossary entries the ticket mentions, and
+language, run `bash "<orch.sh>" glossary match <file>` on the ticket's body
+alone, fetched into its own `mktemp` file with `bash "<orch.sh>" issue fetch
+<ticket> <file>`, no `--json`: step 1's JSON file escapes the body's newlines,
+so a term starting a line would not match. It prints the glossary entries the ticket mentions, and
 nothing when the repo has no `GLOSSARY.md` - and `bash "<orch.sh>" glossary
 show <term>...` for any further term the work runs into. Respect the ADRs in
 the area you touch.
