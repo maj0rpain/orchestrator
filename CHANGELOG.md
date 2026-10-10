@@ -1,5 +1,19 @@
 # Changelog
 
+## 4.5.4
+
+Spec review rules each have one owning site (#899, bundling findings #882,
+#883, #884, #885, #887, #888 and #889). The one-round rule of an unattended
+spec review is stated only in its mode's **Rounds** bullet and the glossary's
+**Unattended spec review** entry; the changelog's heading and `Round <k> of
+<n>` line only in **The changelog**; a retire's effect on later rounds once in
+**Rounds**; and the `02-spec.md` changelog layout, with its reason, only in
+`orch-handoff`'s template. Both round-count questions - the flow's spec phase
+and the planning hook's Blueprint message - now state their lower bound as
+deliberate and ask an invalid Other again, naming the range. The hook's
+review-rounds Skill-tool call reads `and args "<n> --rounds <count>"`, like
+its siblings.
+
 ## 4.5.3
 
 `orch.sh finding-triage bundle --category` with a value other than `bug` or
