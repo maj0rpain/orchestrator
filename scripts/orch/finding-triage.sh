@@ -375,30 +375,31 @@ cmd_finding_triage_bundle() {
     [ "$b_state" = OPEN ] || die "bundle #$into is not open - --into resumes an open bundle only"
     labels_have "$b_labels" "$BUNDLE_LABEL" \
       || die "issue #$into carries no '$BUNDLE_LABEL' label - --into resumes a bundle only"
-    for m in "${members[@]}"; do
-      case "$seen" in *" $m "*) die "issue #$m is named twice" ;; esac
-      seen="$seen$m "
-      bundle_member_check "$m" labels
-    done
-    bundle_members_close "$into" "${members[@]}"
-    return
+  else
+    $have_title && [ -n "$title" ] && [ -n "$file" ] && [ -n "$state" ] && [ -n "$category" ] || die "$usage"
+    case "$state" in ready-for-agent|ready-for-human) ;; *) die "$usage" ;; esac
+    category_other "$category" >/dev/null || die "unknown --category '$category' - expected bug or enhancement"
+    [ -f "$file" ] || die "body file not found: $file"
+    [ ${#members[@]} -ge 2 ] || die "a new bundle needs at least 2 members - got #${members[0]} alone"
+    human_label="$(triage_label_for ready-for-human)"
   fi
-  $have_title && [ -n "$title" ] && [ -n "$file" ] && [ -n "$state" ] && [ -n "$category" ] || die "$usage"
-  case "$state" in ready-for-agent|ready-for-human) ;; *) die "$usage" ;; esac
-  case "$category" in bug|enhancement) ;; *) die "$usage" ;; esac
-  [ -f "$file" ] || die "body file not found: $file"
 
-  [ ${#members[@]} -ge 2 ] || die "a new bundle needs at least 2 members - got #${members[0]} alone"
-  human_label="$(triage_label_for ready-for-human)"
   for m in "${members[@]}"; do
     case "$seen" in *" $m "*) die "issue #$m is named twice" ;; esac
     seen="$seen$m "
     bundle_member_check "$m" labels
-    [ "$state" != ready-for-agent ] || ! labels_have "$labels" "$human_label" \
-      || die "--state ready-for-agent, but issue #$m carries '$human_label' - a bundle is ready-for-human whenever any member is"
-    [ "$category" != enhancement ] || ! labels_have "$labels" bug \
-      || die "--category enhancement, but issue #$m carries 'bug' - a bundle is a bug whenever any member is"
+    if [ -z "$into" ]; then
+      [ "$state" != ready-for-agent ] || ! labels_have "$labels" "$human_label" \
+        || die "--state ready-for-agent, but issue #$m carries '$human_label' - a bundle is ready-for-human whenever any member is"
+      [ "$category" != enhancement ] || ! labels_have "$labels" bug \
+        || die "--category enhancement, but issue #$m carries 'bug' - a bundle is a bug whenever any member is"
+    fi
   done
+
+  if [ -n "$into" ]; then
+    bundle_members_close "$into" "${members[@]}"
+    return
+  fi
 
   # The finding-bundle label is the plugin's, but created only where missing,
   # as the triage labels are: a failed create is forgiven, and a truly missing
