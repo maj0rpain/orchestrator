@@ -54,10 +54,10 @@ $outside_block
 # maintainer's later triage housekeeping must not stop a flow already running
 # against the issue (docs/adr/0005).
 validate_adopted_issue() {
-  local issue="$1" label state labels gh_line
+  local issue="$1" label state labels gh_err
   label="$(triage_label_for ready-for-agent)"
-  issue_state_labels_read "$issue" state labels gh_line \
-    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated: $(gh_reason "$gh_line")"
+  issue_state_labels_read "$issue" state labels gh_err \
+    || die "issue #$issue could not be read from GitHub - check it exists and gh is authenticated: $(gh_reason "$gh_err")"
   [ "$state" = OPEN ] || die "issue #$issue is not open - adoption requires an open issue."
   labels_have "$labels" "$label" \
     || die "issue #$issue is missing the '$label' triage label - adoption requires it."

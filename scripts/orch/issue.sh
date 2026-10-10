@@ -105,18 +105,18 @@ cmd_issue() {
 cmd_issue_ready() {
   local usage="usage: orch.sh issue ready <n>"
   [ $# -eq 1 ] || die2 "$usage"
-  local issue="$1" ready state labels gh_line
+  local issue="$1" ready state labels gh_err
   case "$issue" in ''|*[!0-9]*) die2 "issue must be a plain issue number, got: $issue ($usage)" ;; esac
   ready="$(triage_label_for ready-for-agent)"
-  issue_state_labels_read "$issue" state labels gh_line \
-    || die2 "gh could not read issue #$issue: $(gh_reason "$gh_line")"
+  issue_state_labels_read "$issue" state labels gh_err \
+    || die2 "gh could not read issue #$issue: $(gh_reason "$gh_err")"
   labels_have "$labels" "$ready"
 }
 
-# issue_publish_verified <line_var> <n> <title> <label>: 0 only once the
+# issue_publish_verified <err_var> <n> <title> <label>: 0 only once the
 # created issue reads back with the title it was given and the
 # ready-for-agent role's label among its labels; 1 on a mismatch; 2 when the
-# read fails, gh's stderr written into <line_var>, so a failed read is never
+# read fails, gh's stderr written into <err_var>, so a failed read is never
 # reported as a mismatch. Read fresh every call, never cached - the caller
 # retries this once on either status, as ticket_links_verified's caller does.
 # Locals prefixed so no caller's variable name is shadowed.
@@ -143,7 +143,7 @@ issue_publish_verified() {
 # next step.
 cmd_issue_publish() {
   [ $# -eq 2 ] || die "usage: orch.sh issue publish <title> <body-file>"
-  local title="$1" body_file="$2" ready n err gh_line="" st=0
+  local title="$1" body_file="$2" ready n err gh_err="" st=0
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
   ready="$(triage_label_for ready-for-agent)"
@@ -151,25 +151,25 @@ cmd_issue_publish() {
     || die "gh could not create the issue: $(gh_reason "$err")"
   # The second attempt's status decides the death: 2 a failed read, 1 a
   # mismatch.
-  issue_publish_verified gh_line "$n" "$title" "$ready" \
-    || issue_publish_verified gh_line "$n" "$title" "$ready" \
+  issue_publish_verified gh_err "$n" "$title" "$ready" \
+    || issue_publish_verified gh_err "$n" "$title" "$ready" \
     || st=$?
-  [ "$st" -ne 2 ] || die "gh could not read issue #$n: $(gh_reason "$gh_line")"
+  [ "$st" -ne 2 ] || die "gh could not read issue #$n: $(gh_reason "$gh_err")"
   [ "$st" -eq 0 ] \
     || die "issue #$n's title and '$ready' label did not verify - checked twice, both failed"
   note "$n"
 }
 
-# issue_triage_verified <line_var> <n> <ready> [removed-label...]: 0 only
+# issue_triage_verified <err_var> <n> <ready> [removed-label...]: 0 only
 # once the issue reads back carrying <ready> and none of the removed labels;
 # 1 on a mismatch; 2 when the read fails, gh's stderr written into
-# <line_var>. Read fresh every call, never
-# cached - the caller re-reads once on either status, as issue publish's
-# does. Locals prefixed so no caller's variable name is shadowed.
+# <err_var>. Read fresh every call, never cached - the caller re-reads once
+# on either status, as issue publish's does. Locals prefixed so no caller's
+# variable name is shadowed.
 issue_triage_verified() {
-  local __itv_line="$1" __itv_n="$2" __itv_ready="$3" __itv_state __itv_labels
+  local __itv_err="$1" __itv_n="$2" __itv_ready="$3" __itv_state __itv_labels
   shift 3
-  issue_state_labels_read "$__itv_n" __itv_state __itv_labels "$__itv_line" || return 2
+  issue_state_labels_read "$__itv_n" __itv_state __itv_labels "$__itv_err" || return 2
   labels_verified "$__itv_labels" "$__itv_ready" "$@" || return 1
 }
 
@@ -180,7 +180,7 @@ issue_triage_verified() {
 # read back (ADR-0011), and one comment names the label it now carries.
 cmd_issue_triage() {
   local usage="usage: orch.sh issue triage <n> [--override]"
-  local issue="" override=false ready state labels gh_line role label removed=() remove_opts=()
+  local issue="" override=false ready state labels gh_err role label removed=() remove_opts=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --override) override=true ;;
@@ -192,8 +192,8 @@ cmd_issue_triage() {
   case "$issue" in ''|*[!0-9]*) die "$usage" ;; esac
   ready="$(triage_label_for ready-for-agent)"
 
-  issue_state_labels_read "$issue" state labels gh_line \
-    || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
+  issue_state_labels_read "$issue" state labels gh_err \
+    || die "gh could not read issue #$issue: $(gh_reason "$gh_err")"
   [ "$state" = OPEN ] \
     || die "issue #$issue is not open - only an open issue is triaged to '$ready'"
   # One walk over the triage roles the issue carries: whether ready-for-agent
@@ -239,10 +239,10 @@ cmd_issue_triage() {
     || die "gh could not relabel issue #$issue: $(gh_reason "$err")"
   # The second attempt's status decides the death: 2 a failed read, 1 a
   # mismatch. Either way the relabel stands and no comment is posted.
-  issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
-    || issue_triage_verified gh_line "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
+  issue_triage_verified gh_err "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
+    || issue_triage_verified gh_err "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
     || st=$?
-  [ "$st" -ne 2 ] || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
+  [ "$st" -ne 2 ] || die "gh could not read issue #$issue: $(gh_reason "$gh_err")"
   [ "$st" -eq 0 ] \
     || die "issue #$issue's '$ready' label did not verify - checked twice, both failed"
 
