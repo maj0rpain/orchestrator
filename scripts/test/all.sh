@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #
 # The whole test run, the one command to run before committing: orch_test.sh,
-# hooks_test.sh and docs_lint.sh, each in quiet mode, and shellcheck, all
-# started at once so they overlap. Each one's stdout is captured to a
-# temporary directory, removed on exit, and its exit status is taken from
-# waiting on it; once every one has finished, their output is printed in a
-# fixed order, no matter which finished first. A failing suite does not stop
-# the others. Printed per suite, in the order orch_test.sh, hooks_test.sh,
-# docs_lint.sh: its FAIL lines with their detail lines, then one summary line,
-# "<suite>: <its last line>", or "<suite>: died before its summary (exit N)"
-# when it exited non-zero and its last line is not a summary line. A suite's
-# stderr is not captured: it passes straight through, and the suites' stderr
-# may interleave.
+# hooks_test.sh, docs_lint.sh and version_bump_test.sh, each in quiet mode,
+# and shellcheck, all started at once so they overlap. Each one's stdout is
+# captured to a temporary directory, removed on exit, and its exit status is
+# taken from waiting on it; once every one has finished, their output is
+# printed in a fixed order, no matter which finished first. A failing suite
+# does not stop the others. Printed per suite, in the order orch_test.sh,
+# hooks_test.sh, docs_lint.sh, version_bump_test.sh: its FAIL lines with their
+# detail lines, then one summary line, "<suite>: <its last line>", or
+# "<suite>: died before its summary (exit N)" when it exited non-zero and its
+# last line is not a summary line. A suite's stderr is not captured: it passes
+# straight through, and the suites' stderr may interleave.
 #
 # Then shellcheck, from the repo root two levels up, at warning severity, one
 # process per shell file matched by scripts/*.sh scripts/orch/*.sh
@@ -29,7 +29,7 @@
 # on PATH it prints "shellcheck: not installed - skipped", which fails the run
 # only when CI is set.
 #
-# The three suites run with TMPDIR set to a fresh, empty directory under that
+# The four suites run with TMPDIR set to a fresh, empty directory under that
 # temporary directory. Once they have finished, if anything is left in it -
 # a suite that did not remove its temp files - all.sh prints "all.sh: the
 # suites left temp files behind" after the suites' summaries and before
@@ -38,9 +38,10 @@
 # Exits 1 when any suite failed, a suite left temp files behind, or shellcheck
 # did not pass.
 #
-# ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs. VERSION_BASE
-# passes through untouched - set, empty or unset - for docs_lint.sh's version
-# bump rule, which CI's "Read main's version" step feeds. ORCH_TEST_JOBS
+# ORCH_TEST_ONLY is unset, so every section of orch_test.sh runs.
+# CHANGELOG_BASE and NO_VERSION_BUMP pass through untouched - set, empty or
+# unset - for docs_lint.sh's changelog fragment rule, which CI's "Read main's
+# commit" step feeds. ORCH_TEST_JOBS
 # passes through too: orch_test.sh runs that many sections at once, by default
 # the core count, and ORCH_TEST_JOBS=1 runs them sequentially, in one shell.
 
@@ -53,7 +54,7 @@ failed=0
 suites_tmp="$tmp/suites-tmp"
 mkdir "$suites_tmp" || exit 1
 
-suites=(orch_test.sh hooks_test.sh docs_lint.sh)
+suites=(orch_test.sh hooks_test.sh docs_lint.sh version_bump_test.sh)
 pids=()
 for suite in "${suites[@]}"; do
   TMPDIR="$suites_tmp" bash "$dir/$suite" >"$tmp/$suite" &
