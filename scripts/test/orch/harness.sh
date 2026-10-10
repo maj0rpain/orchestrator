@@ -13,25 +13,35 @@ count_lines() {
   printf '%s\n' "$text" | grep -c "${@:1:$#-2}" "$pattern"
 }
 
+# plant_file <dir> <name>: writes the lines read from stdin to <dir>/<name>,
+# each line's two-space indent stripped, and returns non-zero when the write
+# fails. A caller indents a planted file's lines two spaces, so a planted
+# `# --- ` header does not read as a section of the file that plants it.
+plant_file() {
+  sed 's/^  //' >"$1/$2"
+}
+
 # planted_copy: copies the scripts tree into a fresh temp directory, writes the
-# section lines read from stdin, each indented two spaces, as a new noun file,
-# scripts/test/orch/zz-planted.sh, in the copy, and prints the directory. The
-# name sorts after every noun file under LC_ALL=C, so the planted sections
-# come last in the walk. The indent, which planted_copy strips, keeps a planted
-# `# --- ` header from reading as a section of the file that plants it. The
-# caller runs <dir>/scripts/test/orch_test.sh and removes <dir> when done.
+# section lines read from stdin, indented as plant_file reads them, as a new
+# noun file, scripts/test/orch/zz-planted.sh, in the copy, and prints the
+# directory. The name sorts after every noun file under LC_ALL=C, so the
+# planted sections come last in the walk. The caller runs
+# <dir>/scripts/test/orch_test.sh and removes <dir> when done.
 planted_copy() {
   local dir
   dir="$(mktemp -d)" || return 1
   cp -R "$PLUGIN_ROOT/scripts" "$dir/" || return 1
-  sed 's/^  //' >"$dir/scripts/test/orch/zz-planted.sh" || return 1
+  plant_file "$dir/scripts/test/orch" zz-planted.sh || return 1
   printf '%s\n' "$dir"
 }
 
-# files_marks <output>: the section headers and preamble lines in it, in order,
-# comma-separated.
+# files_marks <output>: the isolation header and the planted marks in it - the
+# section-files self-test's planted section headers and preamble lines - in
+# order, comma-separated. Every planted mark of that section starts with
+# `planted `, so a planted file's marks match by that convention, with no list
+# of files to keep in step.
 files_marks() {
-  printf '%s\n' "$1" | grep -xE 'isolation|(underscore|preamble [a-c]|planted new) [a-z ]+' | tr '\n' ','
+  printf '%s\n' "$1" | grep -xE 'isolation|planted [a-z ]+' | tr '\n' ','
 }
 
 # --- isolation --------------------------------------------------------------
@@ -273,37 +283,37 @@ files_suite="$files_dir/scripts/test/orch_test.sh"
 awk '/^# --- / { n++ } n <= 1' "$files_orch/harness.sh" >"$files_dir/harness.sh"
 find "$files_orch" -name '*.sh' ! -name setup.sh ! -name zz-planted.sh -exec rm -f {} +
 mv "$files_dir/harness.sh" "$files_orch/harness.sh"
-sed 's/^  //' >"$files_orch/_planted.sh" <<'PLANTED'
-  # --- underscore planted
-  echo; echo "underscore planted"; ok "the underscore file ran"
+plant_file "$files_orch" _planted.sh <<'PLANTED'
+  # --- planted underscore
+  echo; echo "planted underscore"; ok "the underscore file ran"
 PLANTED
-sed 's/^  //' >"$files_orch/a-planted.sh" <<'PLANTED'
-  # --- a planted
-  echo; echo "a planted"; ok "the a file ran"
+plant_file "$files_orch" a-planted.sh <<'PLANTED'
+  # --- planted a
+  echo; echo "planted a"; ok "the a file ran"
 PLANTED
-sed 's/^  //' >"$files_orch/pre-a.sh" <<'PLANTED'
+plant_file "$files_orch" pre-a.sh <<'PLANTED'
   # The preamble of pre-a.sh, and the helper only its sections use.
-  echo "preamble a ran"
+  echo "planted preamble a ran"
   pre_a_helper() { echo "helper a"; }
-  # --- preamble a one
-  echo; echo "preamble a one"; assert_eq "the preamble's helper is defined" "$(pre_a_helper)" "helper a"
-  # --- preamble a two
-  echo; echo "preamble a two"; ok "a two ran"
+  # --- planted preamble a one
+  echo; echo "planted preamble a one"; assert_eq "the preamble's helper is defined" "$(pre_a_helper)" "helper a"
+  # --- planted preamble a two
+  echo; echo "planted preamble a two"; ok "a two ran"
 PLANTED
-sed 's/^  //' >"$files_orch/pre-b.sh" <<'PLANTED'
-  echo "preamble b ran"
-  # --- preamble b one
-  echo; echo "preamble b one"; ok "b one ran"
+plant_file "$files_orch" pre-b.sh <<'PLANTED'
+  echo "planted preamble b ran"
+  # --- planted preamble b one
+  echo; echo "planted preamble b one"; ok "b one ran"
 PLANTED
-sed 's/^  //' >"$files_orch/pre-c.sh" <<'PLANTED'
+plant_file "$files_orch" pre-c.sh <<'PLANTED'
   # A preamble with no section after it.
-  echo "preamble c ran"
+  echo "planted preamble c ran"
 PLANTED
 
 out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='' bash "$files_suite" 2>&1)"; st=$?
 assert_status "an unfiltered sequential run of new noun files passes" "$st" 0
 assert_eq "runs every new file's sections, each preamble once before them" "$(files_marks "$out")" \
-  "isolation,underscore planted,preamble a ran,preamble a one,preamble a two,preamble b ran,preamble b one,planted new file,"
+  "isolation,planted underscore,planted a,planted preamble a ran,planted preamble a one,planted preamble a two,planted preamble b ran,planted preamble b one,planted new file,"
 out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='' bash "$files_suite" 2>&1)"; st=$?
 assert_status "an unfiltered parallel run of new noun files passes" "$st" 0
 assert_eq "runs a new file's section in parallel too" "$(count_lines -x 'planted new file' "$out")" "1"
@@ -312,24 +322,24 @@ out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^planted new file$' ba
 assert_status "a filter selecting a section of a new file passes" "$st" 0
 assert_eq "runs it beside isolation alone" "$(files_marks "$out")" "isolation,planted new file,"
 
-out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^preamble a' bash "$files_suite" 2>&1)"; st=$?
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^planted preamble a' bash "$files_suite" 2>&1)"; st=$?
 assert_status "a filtered run of a file's two sections passes" "$st" 0
 assert_eq "a filtered run evals the file's preamble once, and no other file's" \
-  "$(files_marks "$out")" "isolation,preamble a ran,preamble a one,preamble a two,"
-out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^preamble b one$' bash "$files_suite" 2>&1)"
+  "$(files_marks "$out")" "isolation,planted preamble a ran,planted preamble a one,planted preamble a two,"
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^planted preamble b one$' bash "$files_suite" 2>&1)"
 assert_eq "a filtered run of another file's section evals only that file's preamble" \
-  "$(files_marks "$out")" "isolation,preamble b ran,preamble b one,"
+  "$(files_marks "$out")" "isolation,planted preamble b ran,planted preamble b one,"
 
-out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^preamble (a one|b one)$' \
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^planted preamble (a one|b one)$' \
   bash "$files_suite" 2>&1)"; st=$?
 assert_status "a parallel run of sections behind preambles passes" "$st" 0
 assert_eq "each parallel child evals its own file's preamble alone" "$(files_marks "$out")" \
-  "isolation,preamble a ran,preamble a one,preamble b ran,preamble b one,"
+  "isolation,planted preamble a ran,planted preamble a one,planted preamble b ran,planted preamble b one,"
 
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' bash "$files_suite" 2>/dev/null)"
 assert_eq "lists the titles in walk order: harness.sh, then the files in LC_ALL=C order" \
   "$(printf '%s\n' "$out" | tr '\n' ',')" \
-  "isolation,underscore planted,a planted,preamble a one,preamble a two,preamble b one,planted new file,"
+  "isolation,planted underscore,planted a,planted preamble a one,planted preamble a two,planted preamble b one,planted new file,"
 # The dictionary locale: the first of these whose sort puts a before _p, so the
 # check below runs wherever such a collation exists, listed by locale -a or not.
 files_locale=""
@@ -342,7 +352,7 @@ if [ -n "$files_locale" ]; then
   out="$(LC_ALL="$files_locale" ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' \
     bash "$files_suite" 2>/dev/null)"
   assert_eq "keeps LC_ALL=C order under a dictionary locale" \
-    "$(printf '%s\n' "$out" | sed -n 2,3p | tr '\n' ',')" "underscore planted,a planted,"
+    "$(printf '%s\n' "$out" | sed -n 2,3p | tr '\n' ',')" "planted underscore,planted a,"
 else
   skip "keeps LC_ALL=C order under a dictionary locale" "no locale here sorts a before _p"
 fi
