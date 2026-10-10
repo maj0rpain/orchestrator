@@ -8,7 +8,8 @@ taken with the inline `${x%%$'\n'*}` expansion. `redo review` splits the
 review loop's terminal answer with `lines_split`, as doctor does. Positions a
 `lines_split` caller fills but never reads carry a `_` prefix. `ticket list`
 reads the sub-issue TSV with `while read` and `tsv_split`, and it and
-`finished_flow` lowercase GitHub's states with a `case` instead of awk or tr.
+`finished_flow` lowercase GitHub's states through one `case`, the new
+`state_word` helper, instead of awk or tr.
 Every command's output and exit status are unchanged.
 
 ## 4.4.1
