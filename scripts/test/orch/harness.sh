@@ -5,6 +5,29 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# count_lines [<grep flag>...] <pattern> <text>: prints how many lines of
+# <text> match <pattern>. Every argument before the last two goes to grep
+# as-is.
+count_lines() {
+  local pattern="${*: -2:1}" text="${!#}"
+  printf '%s\n' "$text" | grep -c "${@:1:$#-2}" "$pattern"
+}
+
+# planted_copy: copies the scripts tree into a fresh temp directory, writes the
+# section lines read from stdin, each indented two spaces, as a new noun file,
+# scripts/test/orch/zz-planted.sh, in the copy, and prints the directory. The
+# name sorts after every noun file under LC_ALL=C, so the planted sections
+# come last in the walk. The indent, which planted_copy strips, keeps a planted
+# `# --- ` header from reading as a section of the file that plants it. The
+# caller runs <dir>/scripts/test/orch_test.sh and removes <dir> when done.
+planted_copy() {
+  local dir
+  dir="$(mktemp -d)" || return 1
+  cp -R "$PLUGIN_ROOT/scripts" "$dir/" || return 1
+  sed 's/^  //' >"$dir/scripts/test/orch/zz-planted.sh" || return 1
+  printf '%s\n' "$dir"
+}
+
 # --- isolation --------------------------------------------------------------
 echo
 echo "isolation"
