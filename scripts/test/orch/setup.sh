@@ -385,7 +385,7 @@ fake_fail() {
 # The seeded two-line gh stderr whose first line a death must carry.
 GH_502=$'HTTP 502: Bad Gateway\nsecond line'
 
-# assert_gh_dies <label> <op> <seed> <status> <message> <command...>: gh fails at <op>, and the command (2>&1, into out and st) dies with <status> and exactly <message>.
+# assert_gh_dies <label> <op> <seed> <status> <message> <command...>: gh fails at <op>, and the command (2>&1, into out and st) exits <status> printing exactly <message>.
 assert_gh_dies() {
   local label="$1" op="$2" seed="$3" status="$4" message="$5"
   shift 5
