@@ -637,7 +637,6 @@ for args in "" \
   "--title T --body-file $bundle_body --category bug 11 12" \
   "--title T --body-file $bundle_body --state ready-for-agent 11 12" \
   "--title T --body-file $bundle_body --state needs-info --category bug 11 12" \
-  "--title T --body-file $bundle_body --state ready-for-agent --category feature 11 12" \
   "--title T --body-file $bundle_body --state ready-for-agent --category bug 11 x12" \
   "--title T --body-file $bundle_body --state ready-for-agent --category bug" \
   "--title T --body-file $bundle_body --state ready-for-agent --category bug --frobnicate 11 12" \
@@ -654,6 +653,14 @@ unset args
 out="$(bundle --title T --body-file /nonexistent/body.md --state ready-for-agent --category bug 11 12 2>&1)"; st=$?
 assert_status "refuses a body file that is not there" "$st" 1
 assert_contains "naming it" "$out" "/nonexistent/body.md"
+# A category that is neither bug nor enhancement dies as apply's does - and
+# before the body file is checked.
+out="$(bundle --title T --body-file "$bundle_body" --state ready-for-agent --category feature 11 12 2>&1)"; st=$?
+assert_status "refuses a category that is neither bug nor enhancement" "$st" 1
+assert_eq "in apply's words" "$out" "orch: unknown --category 'feature' - expected bug or enhancement"
+out="$(bundle --title T --body-file /nonexistent/body.md --state ready-for-agent --category feature 11 12 2>&1)"; st=$?
+assert_status "refuses a bad category with a missing body file" "$st" 1
+assert_eq "naming the category first" "$out" "orch: unknown --category 'feature' - expected bug or enhancement"
 assert_eq "no argument error wrote anything" "$(fake_snapshot)" "$before_store"
 
 # Each member is checked before any write; a refusal names the member and why.
@@ -692,6 +699,15 @@ refused "ready-for-agent with a ready-for-human member" \
   "--state ready-for-agent, but issue #13 carries 'ready-for-human'" new_bundle ready-for-agent bug 11 13
 refused "enhancement with a bug member" \
   "--category enhancement, but issue #11 carries 'bug'" new_bundle ready-for-human enhancement 11 13
+# A member with two faults is refused for the one checked first: the member
+# check before the state, the state before the category.
+member 13 "review:nit,needs-triage,ready-for-human,bug"
+refused "a needs-triage, ready-for-human member under ready-for-agent" \
+  "issue #13 carries 'needs-triage'" new_bundle ready-for-agent bug 11 13
+member 13 "review:nit,ready-for-human,bug"
+refused "a ready-for-human, bug member under ready-for-agent enhancement" \
+  "--state ready-for-agent, but issue #13 carries 'ready-for-human'" new_bundle ready-for-agent enhancement 13 11
+member 13 "review:nit,ready-for-human,enhancement"
 fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
 refused "a member gh cannot read" "gh could not read issue #11: HTTP 502: Bad Gateway" new_bundle ready-for-human bug 11 13
 fake_unfail
@@ -863,6 +879,11 @@ fake_unfail
 out="$(bundle --into 47 34 2>&1)"; st=$?
 assert_status "--into takes a single member" "$st" 0
 assert_eq "closing it into the bundle" "$(fake_state_of 34) $(fake_duplicate_of 34)" "CLOSED 47"
+# --into checks no member's state or category against the bundle's.
+member 36 "review:nit,ready-for-human,enhancement"
+out="$(bundle --into 47 36 2>&1)"; st=$?
+assert_status "--into takes a ready-for-human, enhancement member" "$st" 0
+assert_eq "closing it into the bundle too" "$(fake_state_of 36) $(fake_duplicate_of 36)" "CLOSED 47"
 
 # Every state label is the repo's name for the role, checked and applied.
 writeln '# Triage Labels' '' \

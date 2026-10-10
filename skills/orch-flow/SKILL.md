@@ -182,7 +182,9 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    on Junie), before the first
    round: "How many spec review rounds?" Default 3. Any integer >= 1; there
    is no upper cap. Options: **3 (Recommended)**, **1**, **5**, and **Other**
-   for any other number. It is asked every time this step runs - on
+   for any other number. 0 is not offered, deliberately: a flow's spec is
+   always reviewed. An Other that is not a whole number of 1 or more is asked
+   again, naming the range. It is asked every time this step runs - on
    `redo spec` and for an adopted issue too - and nothing is written to
    `state.json`: the count lives in this session only.
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.5.1
+## 4.5.5
 
 The driver loop has one home (#901, #675): its loop steps a-f and its
 **Dispatching a subagent** paragraph move out of `orch-flow`'s implement phase
@@ -14,6 +14,53 @@ widens **Driver** to a driver loop's session and adds **Driver loop**; the
 duplication out-of-scope record says where its keep-every-copy rule stops.
 The docs lint gains two checks: every `docs/` file a skill or agent names
 exists, and the loop's step labels appear only in `docs/driver-loop.md`.
+
+## 4.5.4
+
+Spec review rules each have one owning site (#899, bundling findings #882,
+#883, #884, #885, #887, #888 and #889). The one-round rule of an unattended
+spec review is stated only in its mode's **Rounds** bullet and the glossary's
+**Unattended spec review** entry; the changelog's heading and `Round <k> of
+<n>` line only in **The changelog**; a retire's effect on later rounds once in
+**Rounds**; and the `02-spec.md` changelog layout, with its reason, only in
+`orch-handoff`'s template. Both round-count questions - the flow's spec phase
+and the planning hook's Blueprint message - now state their lower bound as
+deliberate and ask an invalid Other again, naming the range. The hook's
+review-rounds Skill-tool call reads `and args "<n> --rounds <count>"`, like
+its siblings.
+
+## 4.5.3
+
+`orch.sh finding-triage bundle --category` with a value other than `bug` or
+`enhancement` now dies with `unknown --category '<c>' - expected bug or
+enhancement`, as `finding-triage apply` does, in place of the bare usage
+(#898). The bundle verb checks its members in one loop for both the new and
+the `--into` forms; every other refusal, and the order they fire in, is
+unchanged.
+
+## 4.5.2
+
+The side-checkout and worktree git helpers read each fact from git once per
+call and keep each rule in one helper (#897). The marker's presence is tested
+only by `side_checkout_marked`; `main_checkout` and `ticket_worktrees_under`
+read their paths from `checkout_paths`, the one reader of the paths alone from
+`git worktree list`; and `archive_flow` takes its archive root from its caller,
+through the new `archive_root` for callers that do not already hold it. So the
+#805 claim - the main checkout asked for once - now holds when `side-checkout
+remove` archives a flow, and `archive` decides once whether it runs in a side
+checkout. Every command's output, refusals and exit codes are unchanged.
+
+## 4.5.1
+
+`orch.sh`'s modules split strings into lines one way per job (#829, #832,
+#833, #834). The `first_line` helper is gone: every first line of a string is
+taken with the inline `${x%%$'\n'*}` expansion. `redo review` splits the
+review loop's terminal answer with `lines_split`, as doctor does. Positions a
+`lines_split` caller fills but never reads carry a `_` prefix. `ticket list`
+reads the sub-issue TSV with `while read` and `tsv_split`, and it and
+`finished_flow` lowercase GitHub's states through one `case`, the new
+`state_word` helper, instead of awk or tr.
+Every command's output and exit status are unchanged.
 
 ## 4.5.0
 

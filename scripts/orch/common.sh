@@ -42,9 +42,6 @@ now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # colon-free so the path is valid on Windows too. now() stays ISO-8601: it is a
 # field value, never a path segment.
 dir_stamp() { date -u +%Y%m%d-%H%M%S; }
-# Several answers here are one line of prose followed by detail lines, and it is
-# always the first line that carries the verdict.
-first_line() { printf '%s\n' "${1%%$'\n'*}"; }
 # capture_err <err-var> <command...>: runs the command, sets <err-var> to its
 # stderr byte for byte, and returns its status. It leaves stdout alone, to the
 # caller's own redirect: a body streamed to a file through
@@ -131,6 +128,18 @@ lines_split() {
     shift
   done
   printf -v "$1" '%s' "$_ls_rest"
+}
+
+# state_word <var> <state>: GitHub's uppercase issue or PR <state> into <var>
+# as the lowercase word a message prints - bash 3.2 has no lowercase
+# expansion. Any other value is passed through unchanged.
+state_word() {
+  case "$2" in
+    OPEN) printf -v "$1" '%s' open ;;
+    CLOSED) printf -v "$1" '%s' closed ;;
+    MERGED) printf -v "$1" '%s' merged ;;
+    *) printf -v "$1" '%s' "$2" ;;
+  esac
 }
 
 # newlines_strip <var>: drops every trailing newline from the named
@@ -566,7 +575,7 @@ dirty_outside_allowlist() {
   status="$(mktemp)"
   if ! err="$(git -C "$ROOT" status --porcelain=v1 -z -uall 2>&1 >"$status")"; then
     rm -f "$status"
-    die "git status failed - cannot check the working tree: $(first_line "$err")"
+    die "git status failed - cannot check the working tree: ${err%%$'\n'*}"
   fi
   while IFS= read -r -d '' rec; do
     if [ "$want_src" -eq 1 ]; then
@@ -854,16 +863,14 @@ forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
 
 # Prints <n> <path> for every ticket worktree under the checkout at <root>.
 ticket_worktrees_under() {
-  local line path name
-  while IFS= read -r line; do
-    case "$line" in "worktree "*) ;; *) continue ;; esac
-    path="${line#worktree }"
+  local path name
+  while IFS= read -r path; do
     [ "$(dirname "$path")" = "$1/$ORCH_DIR_NAME/worktrees" ] || continue
     name="$(basename "$path")"
     case "$name" in t[1-9]*) ;; *) continue ;; esac
     case "${name#t}" in *[!0-9]*) continue ;; esac
     note "${name#t} $path"
-  done < <(git worktree list --porcelain)
+  done < <(checkout_paths)
 }
 
 # refuse_ticket_worktrees <root>: dies, naming every ticket worktree under the
@@ -898,26 +905,32 @@ rebase_in_progress() {
   [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]
 }
 
-# The main checkout: the first worktree git lists.
+# The main checkout: the first path checkout_paths prints. Fails, printing
+# nothing, when checkout_paths fails or prints nothing.
 main_checkout() {
-  local list first
-  list="$(git worktree list --porcelain)" || return
-  first="${list%%$'\n'*}"
-  case "$first" in "worktree "*) printf '%s\n' "${first#worktree }" ;; esac
+  local paths
+  paths="$(checkout_paths)" && [ -n "$paths" ] || return 1
+  printf '%s\n' "${paths%%$'\n'*}"
 }
+
+# side_checkout_marked <git-dir>: whether the git folder <git-dir> holds the
+# ownership marker - the one place the marker's presence is tested.
+side_checkout_marked() { [ -f "$1/$SIDE_CHECKOUT_MARKER" ]; }
 
 # side_checkout_marker <path>: prints the ownership marker's path for the
 # worktree at <path>; returns 1 when it carries none.
 side_checkout_marker() {
   local gd
   gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" \
-    && [ -f "$gd/$SIDE_CHECKOUT_MARKER" ] && printf '%s\n' "$gd/$SIDE_CHECKOUT_MARKER"
+    && side_checkout_marked "$gd" && printf '%s\n' "$gd/$SIDE_CHECKOUT_MARKER"
 }
 
 # Whether the worktree at <path> carries the ownership marker.
 is_side_checkout() { side_checkout_marker "$1" >/dev/null; }
 
-# Every checkout's path, one per line, the main checkout first.
+# Every checkout's path, one per line, the main checkout first: the one reader
+# of the paths alone from git worktree list (branch_checkout, which needs the
+# `branch ` lines too, keeps its own).
 checkout_paths() {
   local list line
   list="$(git worktree list --porcelain)" || return
@@ -966,10 +979,7 @@ github_read() {
 # finished_flow <state-file>: whether that flow is finished - at done, and its
 # recorded PR merged into its own base branch.
 finished_flow() {
-  # head_oid, head_ref and commits are lines_split's throwaway positions: only
-  # merged_base is read.
-  # shellcheck disable=SC2034
-  local state="$1" phase pr base state_draft pr_state refs head_oid head_ref merged_base commits
+  local state="$1" phase pr base state_draft pr_state shown_state refs _head_oid _head_ref merged_base _commits
   phase="$(state_get_in "$state" phase)"
   if [ "$phase" != "done" ]; then
     verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1
@@ -980,13 +990,14 @@ finished_flow() {
   [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
   base="$(flow_base_in "$state")"
   github_read state_draft adapter_pr_state_draft "$pr" || return
-  pr_state="$(first_line "$state_draft")"
+  pr_state="${state_draft%%$'\n'*}"
   if [ "$pr_state" != MERGED ]; then
-    verdict="PR #$pr is $(printf '%s' "$pr_state" | tr '[:upper:]' '[:lower:]')"; return 1
+    state_word shown_state "$pr_state"
+    verdict="PR #$pr is $shown_state"; return 1
   fi
   github_read refs adapter_pr_refs "$pr" || return
   # The base branch is the third line, empty when there is none.
-  lines_split "$refs" head_oid head_ref merged_base commits
+  lines_split "$refs" _head_oid _head_ref merged_base _commits
   [ "$merged_base" = "$base" ] || { verdict="PR #$pr merged into $merged_base, not $base"; return 1; }
 }
 
@@ -1014,15 +1025,24 @@ side_checkout_finished() {
   [ -n "$prs" ] || { verdict="no merged PR from $branch into $base"; return 1; }
 }
 
-# Moves the flow in the checkout at <root> into an archive directory, and
-# prints that directory - relative to this checkout when inside it, else in
-# full. A side checkout's flow goes to the main checkout's archive; any other
-# checkout, a hand-made worktree included, archives in place.
+# archive_root <root>: prints the checkout whose .orchestrator/archive/
+# receives the flow in the checkout at <root> - the one computation of the
+# rule. A side checkout's flow goes to the main checkout's archive; any other
+# checkout, a hand-made worktree included, archives in place. Fails when <root>
+# is a side checkout and the main checkout cannot be read.
+archive_root() {
+  if is_side_checkout "$1"; then main_checkout; else printf '%s\n' "$1"; fi
+}
+
+# archive_flow <root> <archive-root>: moves the flow in the checkout at <root>
+# into a directory under <archive-root>'s .orchestrator/archive/, and prints
+# that directory - relative to this checkout when inside it, else in full.
+# <archive-root> is the caller's: a side checkout's flow goes to the main
+# checkout's archive; any other checkout, a hand-made worktree included,
+# archives in place (see archive_root).
 archive_flow() {
-  local root="$1" orch="$1/$ORCH_DIR_NAME" home slug dest entry
+  local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" slug dest entry
   refuse_ticket_worktrees "$root"
-  home="$orch"
-  if is_side_checkout "$root"; then home="$(main_checkout)/$ORCH_DIR_NAME"; fi
   slug="$(state_get_in "$orch/state.json" slug)"
   dest="$home/archive/$(dir_stamp)-$slug"
   mkdir -p "$dest"

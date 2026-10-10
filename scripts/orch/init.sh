@@ -84,7 +84,7 @@ cmd_init() {
   # A "done" flow already succeeded - its handoffs are read by no later phase,
   # so it is not "active" in any sense that matters. init archives it and
   # proceeds instead of refusing; every other phase still blocks a second flow.
-  local archive_note=""
+  local archive_note="" archive_home
   refuse_beside_active_flow
   require_clean_outside_allowlist
   # Adoption is validated before anything is written, mirroring how
@@ -120,7 +120,9 @@ EOF
   # archive_flow, not cmd_archive: in a side checkout the old flow moves to the
   # main checkout's archive, but the worktree stays - the new flow lives here.
   if [ -f "$STATE" ]; then
-    archive_note="$(archive_flow "$ROOT")" || exit 1
+    archive_home="$(archive_root "$ROOT")" \
+      || die "could not read the main checkout - nothing was archived or written"
+    archive_note="$(archive_flow "$ROOT" "$archive_home")" || exit 1
   fi
   mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"
   exclude_orch_dirs

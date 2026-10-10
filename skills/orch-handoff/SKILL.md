@@ -99,7 +99,8 @@ until review.>
 <every round's changelog orch-spec-review returned, in round order, each
 under a `### Round <k> of <n>` subheading, its own `## Spec review` heading
 and `Round <k> of <n>` line dropped and any heading inside it at `####` or deeper - no line here starts
-with `## `. Each round, per lens: applied edits one line each, declined
+with `## `, because `handoff validate` reads a section up to the next `## `
+line. Each round, per lens: applied edits one line each, declined
 findings verbatim with the human's reason or "declined as recommended:
 <reason>", "None" for a lens that found nothing, "not run - <reason>" for one
 that failed>

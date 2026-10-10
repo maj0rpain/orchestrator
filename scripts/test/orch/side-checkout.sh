@@ -359,6 +359,15 @@ assert_status "remove refuses a worktree without the marker" "$st" 1
 assert_contains "saying it is left alone" "$out" "left alone"
 assert_eq "its flow is not moved" "$(on_disk "$unmarked/.orchestrator/state.json")" "present"
 assert_eq "nor its worktree removed" "$(on_disk "$unmarked")" "present"
+# A side checkout made by add whose marker is then deleted: remove and list
+# read the marker through the same rule, so both see it as no side checkout.
+unmade="$(sc_add unmade)"
+rm "$(git -C "$unmade" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+out="$(orch_gh_failing side-checkout remove unmade 2>&1)"; st=$?
+assert_status "remove refuses a side checkout whose marker was deleted" "$st" 1
+assert_contains "saying it carries no marker" "$out" "carries no side-checkout marker"
+assert_eq "its worktree is not removed" "$(on_disk "$unmade")" "present"
+assert_not_contains "and list leaves it out" "$(orch_gh_failing side-checkout list)" "$unmade"
 (cd "$gamma" && git checkout -q -b quick/5-gamma)
 echo wip >"$gamma/wip.txt"
 out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
@@ -473,6 +482,18 @@ git merge -q --no-ff --no-edit quick/17-tm
 fake_pr 56 merged quick/17-tm main
 # A side checkout still on no branch.
 nb="$(sc_add nb)"
+# Flows at done whose recorded PR is still open, and closed unmerged: their
+# verdict names the PR's state in lowercase.
+po="$(sc_add po)"
+(cd "$po" && orch_gh_failing init po-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/po-flow && state_fixture pr 61)
+sp_branch_off "$po" orch/po-flow
+fake_pr 61 open orch/po-flow main
+pc="$(sc_add pc)"
+(cd "$pc" && orch_gh_failing init pc-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/pc-flow && state_fixture pr 62)
+sp_branch_off "$pc" orch/pc-flow
+fake_pr 62 closed orch/pc-flow main
 # The main checkout's own finished flow.
 orch_gh_failing init main-flow >/dev/null
 git checkout -q -b orch/main-flow
@@ -535,6 +556,8 @@ assert_eq "a flow not at done stays" "$(on_disk "$nd/.orchestrator/state.json")"
 assert_contains "skipped with its reason" "$out" "skipped $nd: flow nd-flow is at implement, not done"
 assert_eq "a side checkout on no branch stays" "$(on_disk "$nb")" "present"
 assert_contains "skipped with its reason" "$out" "skipped $nb: no branch"
+assert_contains "a done flow whose PR is open is skipped as open" "$out" "skipped $po: PR #61 is open"
+assert_contains "and one whose PR is closed as closed" "$out" "skipped $pc: PR #62 is closed"
 assert_eq "the main checkout's finished flow is archived in place" "$(archived_count "$top" main-flow)" "1"
 assert_eq "its state is gone" "$(on_disk "$top/.orchestrator/state.json")" "absent"
 assert_eq "its branch is still checked out" "$(git branch --show-current)" "orch/main-flow"
