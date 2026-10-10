@@ -38,11 +38,8 @@ first `# ---` line, run before that file's sections whenever one of them runs.
 
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
 the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
-section must pass on its own. A helper is placed by the files that use it: one
-used by more than one file lives in `setup.sh`'s shared setup; one used by only
-one file lives in that file's preamble, whether one section or several use it;
-one already defined inside a section stays there; a helper never moves into a
-section.
+section must pass on its own. Helper placement is checked by harness.sh's
+placement section; its failure message states the rule.
 
 orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
 noun's code, named as that noun's test file is, and `scripts/orch/common.sh`
@@ -129,6 +126,8 @@ scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, .
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run
+docs/adr/                     the architecture decision records
+docs/agents/                  this repo's agent-skill configuration: issue tracker, triage labels, domain docs, CLI conventions, coding standards
 docs/junie/README.md          Junie CLI setup: the AGENTS.md snippet and the per-prompt fallback
 docs/junie/AGENTS.md          Junie snippet: standing planning and finding-the-plugin sections (where orch.sh is, what to do when an orch-* skill or agent is hidden), and each skill's custom agents (JUNIE-5493 workaround)
 hooks/hooks.json              hook wiring

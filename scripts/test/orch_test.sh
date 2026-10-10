@@ -36,7 +36,7 @@
 # a GitHub origin installs fake_github first, or uses orch_gh_failing where it
 # tests gh's own argv; the fixture gh, prepended later, still wins over it.
 #
-# Every section must pass on its own, as the parallel runner runs each one; where a helper lives is CONTRIBUTING.md's Develop section.
+# Every section must pass on its own, as the parallel runner runs each one; where a helper lives is checked by harness.sh's placement section, whose failure message states the rule.
 
 # The suite's own directory, walked to once; every path below builds on it.
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

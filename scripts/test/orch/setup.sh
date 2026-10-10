@@ -526,10 +526,6 @@ gh_calls() {
   if [ -f "$GH_FIXTURE/env.log" ]; then wc -l <"$GH_FIXTURE/env.log" | tr -d ' '; else echo 0; fi
 }
 
-# contract <operation> [args...]: runs one real adapter operation, orch.sh
-# sourced with ORCH_GH_ADAPTER unset, against whatever gh is on PATH.
-contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
-
 # orch.sh run with a PATH gh that fails - a fixture gh given no reply - for a
 # repo whose origin GitHub cannot answer for (a local bare repo): default-branch
 # settles on origin/HEAD, so a test using it pins that rather than leaving it to
