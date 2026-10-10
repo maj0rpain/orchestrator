@@ -36,12 +36,7 @@
 # a GitHub origin installs fake_github first, or uses orch_gh_failing where it
 # tests gh's own argv; the fixture gh, prepended later, still wins over it.
 #
-# Every `# ---` section passes when run on its own through ORCH_TEST_ONLY, as
-# the parallel runner runs each one. So a helper is placed by the files that
-# use it: one used by more than one file lives in setup.sh's shared setup; one
-# used by only one file lives in that file's preamble, whether one section or
-# several use it; one already defined inside a section stays there. A helper
-# never moves into a section.
+# Every section must pass on its own, as the parallel runner runs each one; where a helper lives is CONTRIBUTING.md's Develop section.
 
 # The suite's own directory, walked to once; every path below builds on it.
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
