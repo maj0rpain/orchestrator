@@ -594,6 +594,15 @@ out="$(contract adapter_pr_ready 58 2>&1)"; st=$?
 assert_status "pr ready: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" "HTTP 403: Resource not accessible by integration"
 
+gh_reply 0 '✓ Pull request acme/widgets#57 is converted to "draft"' '' pr ready 57 --undo
+out="$(contract adapter_pr_draft 57 2>&1)"; st=$?
+assert_status "pr draft: turns the PR into a draft" "$st" 0
+assert_eq "printing nothing" "$out" ""
+gh_reply 1 '' 'HTTP 422: Draft pull requests are not supported in this repository.' pr ready 58 --undo
+out="$(contract adapter_pr_draft 58 2>&1)"; st=$?
+assert_status "pr draft: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 422: Draft pull requests are not supported in this repository."
+
 gh_reply 0 $'OPEN\ntrue\n' '' pr view 57 --json state,isDraft --jq '.state, .isDraft'
 out="$(contract adapter_pr_state_draft 57 2>&1)"; st=$?
 assert_status "pr state draft: reads the PR's state and draft flag" "$st" 0

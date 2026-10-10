@@ -471,8 +471,8 @@ pass**). Nothing else in this skill applies to a pass. The loop's
 rule that the driver never edits does not apply either, because a review pass
 has no driver: the session that runs it fixes what it agrees with itself.
 
-The caller names the spec issue and says where the declines and host
-fallbacks go.
+The caller names the spec issue and says where the declines, spec questions
+and host fallbacks go.
 
 1. **Begin.** Run `bash "$ORCH" review-pass begin <issue>`. If it dies,
    relay its message and stop. It refuses a detached HEAD, the base branch,
@@ -505,13 +505,30 @@ fallbacks go.
    and tell the human which axis failed. A pass never claims an axis nobody
    looked along.
 5. **Fix.** Read both reports, and fix, yourself, every finding you agree
-   with. Use no fixer agent, no closer, no severity, no budget, and file
-   nothing. Commit the fixes as one commit.
+   with that is not a spec question (step 7). Use no fixer agent, no closer,
+   no severity, no budget, and file nothing. Commit the fixes as one commit.
 6. **Declines.** Record each finding you decline, one line each:
    `` `file:line` - <claim> - <reason> `` - its `file:line`, or `-` when the
    report gave `-` for its location; the finding's claim, in a few words;
    and your reason for declining it. If you declined none, the record says
-   `None declined.` The caller says where this record goes.
+   `None declined.` The caller says where this record goes. A spec question
+   is never declined.
+7. **Spec questions.** A finding is a **spec question**, the third outcome
+   beside fix and decline, when its fix needs a decision about *what the
+   change does* - its behaviour - that the spec, plan and deviations leave
+   unsettled: silent, ambiguous, or self-contradictory on it. This is the
+   review loop's test (step 4 of **The iteration**) without its "only a
+   major" clause: a pass has no severity, so judge it by the finding's
+   content alone. A finding that the change contradicts what the spec
+   clearly asks for is not one: fix it. A decision about structure only -
+   which of two refactorings, which name - is not one either: fix or
+   decline it as any other finding. Never fix a spec question by picking a
+   behaviour, and never decline one: hand it to the caller. Record each, one
+   line each: `` `file:line` - <the open behaviour, phrased as a question> ``,
+   with `-` in place of `file:line` when the report gave `-` for its
+   location. The caller says where this record goes, and what happens to
+   the PR. See
+   `docs/adr/0043-a-spec-question-met-in-a-review-pass-reaches-a-human-before-the-pr-is-ready.md`.
 
 A host that cannot start the reviewers natively takes
 `docs/host-capabilities.md`'s **Start a fresh subagent** fallback, with the
@@ -542,8 +559,8 @@ the only Standards look the change gets before its PR (ADR-0021).
 1. **Run the pass**: **Review pass** steps 1 to 4, with the human's issue.
    When step 1 dies because an active flow holds this issue or this branch,
    its message names the command to run instead.
-2. **Earlier declines.** Before fixing anything, read what earlier review
-   passes on the branch's PR declined. Run
+2. **Earlier declines and questions.** Before fixing anything, read what
+   earlier review passes on the branch's PR declined and asked. Run
    `bash "$ORCH" pr comments <prefix>-comments.md`:
    - exit 0: the PR's comments are in the file (an empty file when there
      are none). Also run `bash "$ORCH" pr fetch <prefix>-body.md` for the
@@ -566,6 +583,21 @@ the only Standards look the change gets before its PR (ADR-0021).
    reviewers hear nothing of this: their prompts stay **Review pass** step
    3's five variables.
 
+   Also read every **Spec questions** heading in the PR body and comments:
+   its lines are the PR's **earlier spec questions**. They are never matched
+   as earlier declines - only lines under **Review** are - and `None.`
+   contributes none. An earlier spec question is **ruled** when a **Spec
+   rulings** heading in any PR comment lists it, or when a `Spec ruling:`
+   comment on the spec issue already answers it. Keep the earlier spec
+   questions not yet ruled for step 3, beside the pass's own. With no open
+   PR there are none.
+
+   Whether or not there is a PR, read the spec issue's comments with
+   `bash "$ORCH" issue comments <issue> <prefix>-issue-comments.md`; if it
+   fails, stop and say so, relaying its reason. Its `Spec ruling:` comments
+   are the rulings already recorded - by an earlier pass, or by this one
+   before a commit or push failed (step 4).
+
    Then, unless the human passed `--smells`, drop every smell-baseline
    finding still kept, and count them: that count is step 5's hidden
    smells. A **smell-baseline finding** is a Standards-report finding whose
@@ -576,27 +608,67 @@ the only Standards look the change gets before its PR (ADR-0021).
    decline is already under **Previously declined** and is not counted.
    Hidden smells are neither fixed nor declined. The reviewers are unchanged:
    the Standards reviewer still reports smells.
-3. **Fix and decline**: **Review pass** steps 5 and 6, on the findings
-   step 2 kept. The pass's declines and host fallbacks go to step 5 below.
+3. **Fix, decline and ask**: **Review pass** steps 5 to 7, on the
+   findings step 2 kept, with three differences.
+   - **Ask first.** Before fixing anything, put the spec questions - the
+     pass's own (**Review pass** step 7) and the earlier ones step 2 kept -
+     to the human as one batch, each with a recommended answer and its
+     reason, and wait. A question a `Spec ruling:` comment on the spec issue
+     already answers (step 2) is not asked: that comment rules it, and the
+     change is fixed per it below. A question the human leaves without an
+     answer stays **unruled**.
+   - **Post each ruling.** For each question the human ruled, post one
+     comment on the spec issue, `Spec ruling: <question> - <answer>`, with
+     `bash "$ORCH" issue comment <issue> <file>`. When a post fails, stop the
+     pass before the commit, naming the ruling not recorded and relaying
+     its reason: that question stays unruled, and nothing is committed.
+   - **Fix per the rulings.** Then fix the change per each ruling, recorded
+     ones from step 2 included, beside the other fixes: every fix, ruled
+     ones included, lands in step 4's one commit.
+
+   The pass's declines, rulings, unruled questions and host fallbacks go to
+   step 5 below.
 4. **Commit and push.** The fixes are one commit, as the pass says. When the
    branch has an upstream (`git rev-parse --abbrev-ref @{upstream}`
    succeeds), push it, so an open PR shows the fixes. With no fixes there is
-   nothing to commit or push.
-5. **Report.** Write `<prefix>-comment.md` with four headings, **Review** -
+   nothing to commit or push. When the commit or push fails after step 3
+   posted rulings, stop and say the fix did not land: the rulings stay on
+   the spec issue, and a rerun finds them there (step 2) and does not ask
+   them again.
+5. **Report.** Write `<prefix>-comment.md` with six headings, **Review** -
    the declines, or `None declined.` - **Previously declined** - each
    finding step 2 dropped as an earlier decline, as its `file:line` and
-   claim, or `None.` - **Host fallbacks** - each fallback taken, or `None
-   (<host>).` - and **Smells**, exactly one line: `<N> hidden - rerun with
-   --smells to see them.` when step 2 hid N >= 1, `None hidden.` when it hid
-   none, or `Included (--smells).` with `--smells`. **Smells** is its own
-   heading, never a line under **Review**, so a later pass's step 2 reads
-   no smell as a decline. Then run
+   claim, or `None.` - **Spec rulings** - each ruling step 3 posted, as
+   `<question> - <answer>`, or `None.` - **Spec questions** - each question
+   left unruled, as **Review pass** step 7 records it, or `None.` - **Host
+   fallbacks** - each fallback taken, or `None (<host>).` - and **Smells**,
+   exactly one line: `<N> hidden - rerun with --smells to see them.` when
+   step 2 hid N >= 1, `None hidden.` when it hid none, or `Included
+   (--smells).` with `--smells`. **Smells** is its own heading, never a line
+   under **Review**, so a later pass's step 2 reads no smell as a decline.
+
+   Then, when the branch has an open PR (step 2's `pr comments` exited 0),
+   set its state before posting:
+   - **Unruled questions.** When at least one question is left unruled, run
+     `bash "$ORCH" pr draft`. It does nothing to a PR already a draft. On
+     failure, relay its reason, say the PR stayed ready, and name the open
+     questions in the session.
+   - **Marking ready.** When the PR's body or comments carry at least one
+     spec question under a **Spec questions** heading, every one of those
+     is ruled - in this pass, or as step 2 found - and none of this pass's
+     own is left unruled, run `bash "$ORCH" pr ready`. A draft held for any
+     other reason, with no spec question in its body or comments, is never
+     marked ready. On failure, relay its reason and say the PR stays a
+     draft.
+
+   Either way, then post the report: run
    `bash "$ORCH" pr comment <prefix>-comment.md`:
    - exit 0: the comment is posted; tell the human, with the PR number it
      printed;
    - exit 1: the branch has no open PR; report the declines, the previously
-     declined findings, host fallbacks and the **Smells** line in the
-     session instead;
+     declined findings, the spec rulings, the unruled spec questions, host
+     fallbacks and the **Smells** line in the session instead. The questions
+     were still asked, and the rulings are on the spec issue;
    - exit 2: GitHub could not be read, or the post failed; stop and say so,
      relaying its reason. Never report this as nothing declined.
 
