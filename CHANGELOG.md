@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.4.2
+## 4.5.1
 
 `orch.sh`'s modules split strings into lines one way per job (#829, #832,
 #833, #834). The `first_line` helper is gone: every first line of a string is
@@ -11,6 +11,25 @@ reads the sub-issue TSV with `while read` and `tsv_split`, and it and
 `finished_flow` lowercase GitHub's states through one `case`, the new
 `state_word` helper, instead of awk or tr.
 Every command's output and exit status are unchanged.
+
+## 4.5.0
+
+A spec question met in a review pass now reaches a human before the PR is
+ready (#908, ADR-0043). `orch-review`'s **Review pass** gains a third outcome
+beside fix and decline: a finding whose fix needs a behaviour decision the
+spec, plan and deviations leave unsettled, judged by content alone, is never
+fixed by picking a behaviour and never declined. A quick implementation lists
+its pass's spec questions under an always-present **Spec questions** heading
+and, with one or more, opens its PR as a draft. A standalone review pass's
+step 3 becomes **Fix, decline and ask**: it puts its questions, and the PR's
+earlier unruled ones, to the human as one batch with recommended answers,
+posts each ruling on the spec issue as `Spec ruling: <question> - <answer>`,
+and fixes per the rulings in its one commit. Its comment gains **Spec
+rulings** and **Spec questions** headings; it turns the PR into a draft while
+a question is unruled, and marks it ready once every one is ruled. `orch.sh`
+gains `pr publish --draft`, `pr draft` and `pr ready` for this (#967), and
+`GLOSSARY.md` updates **Spec question**, **Review pass**, **Quick
+implementation** and **Finding**.
 
 ## 4.4.1
 

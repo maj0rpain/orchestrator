@@ -41,9 +41,10 @@ gh() {
 #   adapter_issue_body_edit, adapter_issue_comment, adapter_issue_relabel,
 #   adapter_issue_close, adapter_issue_reopen
 # - pr: adapter_pr_create, adapter_pr_body, adapter_pr_comments,
-#   adapter_pr_refs, adapter_pr_ready, adapter_pr_state_draft,
-#   adapter_prs_open, adapter_prs_merged, adapter_prs_merged_bodies,
-#   adapter_pr_close, adapter_pr_comment, adapter_pr_body_edit
+#   adapter_pr_refs, adapter_pr_ready, adapter_pr_draft,
+#   adapter_pr_state_draft, adapter_prs_open, adapter_prs_merged,
+#   adapter_prs_merged_bodies, adapter_pr_close, adapter_pr_comment,
+#   adapter_pr_body_edit
 # - sub-issue and dependency: adapter_sub_issues, adapter_sub_issue_link,
 #   adapter_sub_issue_unlink, adapter_issue_parent, adapter_blockers,
 #   adapter_blocker_add, adapter_blocker_remove, adapter_sub_issues_supported
@@ -359,6 +360,12 @@ adapter_pr_refs() {
 # adapter_pr_ready <n>: marks the draft PR ready for review. Prints nothing.
 adapter_pr_ready() {
   gh pr ready "$1" >/dev/null
+}
+
+# adapter_pr_draft <n>: turns the ready PR back into a draft (issue #967).
+# Prints nothing.
+adapter_pr_draft() {
+  gh pr ready "$1" --undo >/dev/null
 }
 
 # adapter_pr_state_draft <n>: the PR's state - OPEN, CLOSED or MERGED - on the

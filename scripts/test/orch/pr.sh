@@ -153,7 +153,185 @@ out="$("$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "naming the branch it would have opened from" "$out" "quick/16-widgets"
 assert_contains "and the issue it would have closed" "$out" "#16"
+
+# --draft (#967): a quick implementation whose review pass met a spec question
+# opens its PR as a draft, so a human rules on it before it goes ready.
+fake_fail adapter_pr_create $'HTTP 422: Draft pull requests are not supported in this repository.\nsecond line'
+out="$("$ORCH" pr publish 16 "Title" "$body" --draft 2>&1)"; st=$?
+assert_status "--draft: a gh that will not open the draft fails it" "$st" 1
+assert_eq "--draft: relaying gh's reason" "$out" \
+  "orch: gh could not open the PR for branch quick/16-widgets (issue #16): HTTP 422: Draft pull requests are not supported in this repository."
+assert_eq "--draft: opening nothing" "$(fake_prs)" "23 "
+fake_unfail
+fake_next_pr 24
+out="$("$ORCH" pr publish 16 "Title" "$body" --draft 2>&1)"; st=$?
+assert_status "--draft: opens the PR" "$st" 0
+assert_eq "--draft: prints the PR number" "$out" "24"
+assert_eq "--draft: as a draft" "$(fake_pr_draft_of 24)" "yes"
+assert_first_line "--draft: its body still opens with the closing keyword" \
+  "$(fake_pr_body_of 24)" "Closes #16"
+
+out="$("$ORCH" pr publish 16 "Title" "$body" --ready 2>&1)"; st=$?
+assert_status "an unknown option is refused" "$st" 1
+assert_contains "naming it" "$out" "unknown option: --ready"
+assert_eq "opening nothing" "$(fake_prs)" "23 24 "
+
+help="$("$ORCH" help)"
+assert_contains "help documents --draft" "$help" "pr publish <issue> <title> <body-file> [--draft]"
 restore_suite_env
+
+# --- pr draft (#967) ------------------------------------------------------------
+# Turns the current branch's open PR into a draft, for a standalone review pass
+# that leaves a spec question unruled. Stateless, with pr comment's exit codes.
+echo
+echo "pr draft (#967)"
+new_repo >/dev/null
+git checkout -q -b quick/12-foo
+fake_github
+fake_pr 50 open quick/99-other main
+fake_pr 51 closed quick/12-foo main
+fake_pr 52 merged quick/12-foo main
+errf="$(mktemp)"
+
+out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+assert_status "no open PR exits 1" "$st" 1
+assert_eq "printing nothing" "$out" ""
+assert_eq "turning no closed or merged PR into a draft" \
+  "$(fake_pr_draft_of 51)$(fake_pr_draft_of 52)" "nono"
+
+fake_pr 57 open quick/12-foo main
+out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+assert_status "turns the branch's open PR into a draft" "$st" 0
+assert_eq "saying so" "$out" "PR #57 is now a draft"
+assert_eq "the PR is a draft" "$(fake_pr_draft_of 57)" "yes"
+assert_eq "the other branch's PR untouched" "$(fake_pr_draft_of 50)" "no"
+
+out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+assert_status "a PR already a draft exits 0" "$st" 0
+assert_eq "saying so" "$out" "PR #57 is already a draft"
+assert_eq "and stays a draft" "$(fake_pr_draft_of 57)" "yes"
+
+rm -f "$ORCH_GH_FAKE_STORE/prs/57/draft"
+fake_fail adapter_pr_draft $'HTTP 422: Draft pull requests are not supported in this repository.\nsecond line'
+out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+assert_status "a failed conversion exits 2" "$st" 2
+assert_eq "relaying gh's reason" "$(cat "$errf")" \
+  "orch: gh could not turn PR #57 into a draft: HTTP 422: Draft pull requests are not supported in this repository."
+assert_eq "leaving the PR ready" "$(fake_pr_draft_of 57)" "no"
+fake_unfail
+fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+assert_status "an unreadable PR exits 2" "$st" 2
+assert_eq "relaying gh's reason" "$(cat "$errf")" \
+  "orch: gh could not read PR #57: HTTP 502: Bad Gateway"
+fake_unfail
+fake_fail adapter_prs_open $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+assert_status "an unreadable PR list exits 2" "$st" 2
+fake_unfail
+
+state_file="$(git rev-parse --show-toplevel)/.orchestrator/state.json"
+mkdir -p "$(dirname "$state_file")"
+for p in spec implement review; do
+  printf '{"slug":"x","phase":"%s","issue":30,"branch":"quick/12-foo"}\n' "$p" >"$state_file"
+  out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+  assert_status "a branch an active flow holds at $p is refused" "$st" 2
+  assert_eq "with the flow-held message at $p" "$(cat "$errf")" \
+    "orch: the active flow holds quick/12-foo at phase $p - its PR changes state only through the review loop"
+  assert_eq "leaving the PR ready at $p" "$(fake_pr_draft_of 57)" "no"
+done
+printf '{"slug":"x","phase":"done","issue":30,"branch":"quick/12-foo"}\n' >"$state_file"
+out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+assert_status "a done flow on the branch lets it through" "$st" 0
+printf '{"slug":"x","phase":"review","issue":12,"branch":"orch/12-x"}\n' >"$state_file"
+rm -f "$ORCH_GH_FAKE_STORE/prs/57/draft"
+out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+assert_status "an active flow on another branch lets it through" "$st" 0
+rm -f "$state_file"
+
+out="$("$ORCH" pr draft extra 2>"$errf")"; st=$?
+assert_status "an argument exits 2" "$st" 2
+assert_eq "with its usage" "$(cat "$errf")" "orch: usage: orch.sh pr draft"
+git checkout -q --detach
+out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+assert_status "a detached HEAD exits 2" "$st" 2
+assert_eq "saying so" "$(cat "$errf")" "orch: not on a branch (detached HEAD)"
+rm -f "$errf"
+unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
+
+help="$("$ORCH" help)"
+assert_contains "help documents pr draft" "$help" "pr draft "
+
+# --- pr ready (#967) ------------------------------------------------------------
+# Marks the current branch's open PR ready, for a standalone review pass once
+# every spec question holding it in draft is ruled. Stateless, with pr
+# comment's exit codes.
+echo
+echo "pr ready (#967)"
+new_repo >/dev/null
+git checkout -q -b quick/12-foo
+fake_github
+fake_pr 50 open quick/99-other main
+fake_pr_draft 50
+fake_pr 51 closed quick/12-foo main
+fake_pr_draft 51
+fake_pr 52 merged quick/12-foo main
+fake_pr_draft 52
+errf="$(mktemp)"
+
+out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+assert_status "no open PR exits 1" "$st" 1
+assert_eq "printing nothing" "$out" ""
+assert_eq "marking no closed or merged PR ready" \
+  "$(fake_pr_draft_of 51)$(fake_pr_draft_of 52)" "yesyes"
+
+fake_pr 57 open quick/12-foo main
+fake_pr_draft 57
+out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+assert_status "marks the branch's open draft PR ready" "$st" 0
+assert_eq "saying so" "$out" "PR #57 is now ready"
+assert_eq "the PR is no longer a draft" "$(fake_pr_draft_of 57)" "no"
+assert_eq "the other branch's PR untouched" "$(fake_pr_draft_of 50)" "yes"
+
+out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+assert_status "a PR already ready exits 0" "$st" 0
+assert_eq "saying so" "$out" "PR #57 is already ready"
+
+fake_pr_draft 57
+fake_fail adapter_pr_ready $'HTTP 403: Resource not accessible by integration\nsecond line'
+out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+assert_status "a failed promotion exits 2" "$st" 2
+assert_eq "relaying gh's reason" "$(cat "$errf")" \
+  "orch: gh could not mark PR #57 ready: HTTP 403: Resource not accessible by integration"
+assert_eq "leaving the PR a draft" "$(fake_pr_draft_of 57)" "yes"
+fake_unfail
+fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
+out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+assert_status "an unreadable PR exits 2" "$st" 2
+assert_eq "relaying gh's reason" "$(cat "$errf")" \
+  "orch: gh could not read PR #57: HTTP 502: Bad Gateway"
+fake_unfail
+
+state_file="$(git rev-parse --show-toplevel)/.orchestrator/state.json"
+mkdir -p "$(dirname "$state_file")"
+for p in spec implement review; do
+  printf '{"slug":"x","phase":"%s","issue":30,"branch":"quick/12-foo"}\n' "$p" >"$state_file"
+  out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+  assert_status "a branch an active flow holds at $p is refused" "$st" 2
+  assert_eq "with the flow-held message at $p" "$(cat "$errf")" \
+    "orch: the active flow holds quick/12-foo at phase $p - its PR changes state only through the review loop"
+  assert_eq "leaving the PR a draft at $p" "$(fake_pr_draft_of 57)" "yes"
+done
+rm -f "$state_file"
+
+out="$("$ORCH" pr ready extra 2>"$errf")"; st=$?
+assert_status "an argument exits 2" "$st" 2
+assert_eq "with its usage" "$(cat "$errf")" "orch: usage: orch.sh pr ready"
+rm -f "$errf"
+unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
+
+help="$("$ORCH" help)"
+assert_contains "help documents pr ready" "$help" "pr ready "
 
 # --- pr: unknown op -----------------------------------------------------------
 new_repo >/dev/null
