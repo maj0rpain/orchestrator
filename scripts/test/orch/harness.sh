@@ -218,6 +218,98 @@ assert_eq "counts that one failure in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed"
 rm -rf "$par_dir"
 
+# --- the section files (#932) ---------------------------------------------------
+# A copy of the scripts tree cut down to isolation - harness.sh keeps only its
+# first section, and no other noun file is left - then given new noun files:
+# zz-planted.sh, _planted.sh, two files with a preamble and one with nothing
+# but a preamble. Each preamble prints a line, so the output shows when and
+# how often it is eval'd.
+echo
+echo "the section files (#932)"
+files_dir="$(planted_copy <<'PLANTED'
+  # --- planted new file
+  echo; echo "planted new file"; ok "the new file ran"
+PLANTED
+)"
+files_orch="$files_dir/scripts/test/orch"
+files_suite="$files_dir/scripts/test/orch_test.sh"
+awk '/^# --- / { n++ } n <= 1' "$files_orch/harness.sh" >"$files_dir/harness.sh"
+find "$files_orch" -name '*.sh' ! -name setup.sh ! -name zz-planted.sh -exec rm -f {} +
+mv "$files_dir/harness.sh" "$files_orch/harness.sh"
+sed 's/^  //' >"$files_orch/_planted.sh" <<'PLANTED'
+  # --- underscore planted
+  echo; echo "underscore planted"; ok "the underscore file ran"
+PLANTED
+sed 's/^  //' >"$files_orch/pre-a.sh" <<'PLANTED'
+  # The preamble of pre-a.sh, and the helper only its sections use.
+  echo "preamble a ran"
+  pre_a_helper() { echo "helper a"; }
+  # --- preamble a one
+  echo; echo "preamble a one"; assert_eq "the preamble's helper is defined" "$(pre_a_helper)" "helper a"
+  # --- preamble a two
+  echo; echo "preamble a two"; ok "a two ran"
+PLANTED
+sed 's/^  //' >"$files_orch/pre-b.sh" <<'PLANTED'
+  echo "preamble b ran"
+  # --- preamble b one
+  echo; echo "preamble b one"; ok "b one ran"
+PLANTED
+sed 's/^  //' >"$files_orch/pre-c.sh" <<'PLANTED'
+  # A preamble with no section after it.
+  echo "preamble c ran"
+PLANTED
+# files_marks <output>: the section headers and preamble lines in it, in order,
+# comma-separated.
+files_marks() {
+  printf '%s\n' "$1" | grep -xE 'isolation|(underscore|preamble [a-c]|planted new) [a-z ]+' | tr '\n' ','
+}
+
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='' bash "$files_suite" 2>&1)"; st=$?
+assert_status "an unfiltered sequential run of new noun files passes" "$st" 0
+assert_eq "runs every new file's sections, each preamble once before them" "$(files_marks "$out")" \
+  "isolation,underscore planted,preamble a ran,preamble a one,preamble a two,preamble b ran,preamble b one,planted new file,"
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='' bash "$files_suite" 2>&1)"; st=$?
+assert_status "an unfiltered parallel run of new noun files passes" "$st" 0
+assert_eq "runs a new file's section in parallel too" "$(count_lines -x 'planted new file' "$out")" "1"
+
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^planted new file$' bash "$files_suite" 2>&1)"; st=$?
+assert_status "a filter selecting a section of a new file passes" "$st" 0
+assert_eq "runs it beside isolation alone" "$(files_marks "$out")" "isolation,planted new file,"
+
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^preamble a' bash "$files_suite" 2>&1)"; st=$?
+assert_status "a filtered run of a file's two sections passes" "$st" 0
+assert_eq "a filtered run evals the file's preamble once, and no other file's" \
+  "$(files_marks "$out")" "isolation,preamble a ran,preamble a one,preamble a two,"
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^preamble b one$' bash "$files_suite" 2>&1)"
+assert_eq "a filtered run of another file's section evals only that file's preamble" \
+  "$(files_marks "$out")" "isolation,preamble b ran,preamble b one,"
+
+out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=2 ORCH_TEST_ONLY='^preamble (a one|b one)$' \
+  bash "$files_suite" 2>&1)"; st=$?
+assert_status "a parallel run of sections behind preambles passes" "$st" 0
+assert_eq "each parallel child evals its own file's preamble alone" "$(files_marks "$out")" \
+  "isolation,preamble a ran,preamble a one,preamble b ran,preamble b one,"
+
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' bash "$files_suite" 2>/dev/null)"
+assert_eq "lists the titles in walk order: harness.sh, then the files in LC_ALL=C order" \
+  "$(printf '%s\n' "$out" | tr '\n' ',')" \
+  "isolation,underscore planted,preamble a one,preamble a two,preamble b one,planted new file,"
+files_locale="$(locale -a 2>/dev/null | grep -ixE 'en_US\.utf-?8' | head -n 1)"
+if [ -n "$files_locale" ]; then
+  out="$(LC_ALL="$files_locale" ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' \
+    bash "$files_suite" 2>/dev/null)"
+  assert_eq "keeps LC_ALL=C order under a dictionary locale" \
+    "$(printf '%s\n' "$out" | sed -n 2p)" "underscore planted"
+else
+  skip "keeps LC_ALL=C order under a dictionary locale" "locale -a lists no en_US.UTF-8"
+fi
+rm -rf "$files_dir"
+
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' bash "$SUITE_SCRIPT" 2>/dev/null)"
+assert_ne "the suite lists its section titles" "$(count_lines '' "$out")" "0"
+assert_eq "no title appears twice across the walk" \
+  "$(printf '%s\n' "$out" | LC_ALL=C sort | uniq -d)" ""
+
 # --- the suite's temp root (#807) -----------------------------------------------
 # A cut-down suite - isolation plus one planted section that calls new_repo -
 # each run given its own fresh, empty TMPDIR, asserted empty once it exits:
