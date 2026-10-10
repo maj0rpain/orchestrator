@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.5.7
+
+Rewrite mode's breakdown outcome is now one exact word - `none`, `kept` or `retired` - with Unattended rewrite reporting a separate edited-ticket count on `kept`, so callers compare the word instead of matching a `kept` prefix. Quick implementation's Issue rewrite line reads as before.
+
 ## 4.5.6
 
 `orch.sh side-checkout remove` runs the ticket-worktree refusal once (#974,

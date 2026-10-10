@@ -121,11 +121,13 @@ names.
      for it when `docs/agents/triage-labels.md` maps one).
    - Exit 2: warn that the label could not be checked, and carry on: the
      rewrite has already landed.
-5. **Report** the issue number and its breakdown outcome - `kept`,
-   `retired`, or `none`, or in **Unattended rewrite** one of that section's
-   **Report** outcomes - so a caller runs `orch-to-tickets` on the issue
-   unless the breakdown was kept, in any form of `kept`. Standalone, on
-   `retired`, also report that the issue needs `/orchestrator:to-tickets <n>`.
+5. **Report** the issue number and its breakdown outcome, one outcome word:
+   exactly `none`, `kept` or `retired`, and nothing else. This step is the
+   one definition of the outcome words. In **Unattended rewrite**, on
+   `kept`, also report that section's edited-ticket count. A caller compares
+   the word exactly, and runs `orch-to-tickets` on the issue unless the word
+   is `kept`. Standalone, on `retired`, also report that the issue needs
+   `/orchestrator:to-tickets <n>`.
 
 ## Unattended rewrite
 
@@ -174,9 +176,9 @@ mode runs as written, stop-on-failure included, with these differences only:
   A failed `ticket retire` at step 3 leaves the body rewritten with its
   breakdown in place: the stop message names `bash "$ORCH" ticket retire <n>`
   as the repair before rerunning.
-- **Report** (step 5): the breakdown outcome is one of `none`, `kept`,
-  `kept, <k> tickets edited` or `retired`, with `<k>` the number of tickets
-  whose body or blocking edges changed. With none changed, it is `kept`.
+- **Report** (step 5): the breakdown outcome is one of step 5's outcome
+  words. On `kept`, also report a separate edited-ticket count `<k>`: the
+  number of tickets whose body or blocking edges changed, which may be 0.
 
 ## Spec template
 
