@@ -123,7 +123,7 @@ squash_deleting_commit() {
 # last existed in, and its deleting commit is the oldest since C to touch the
 # file.
 deleting_commit() {
-  local old="$1" ref="$2" file="$3" ranges="$4" ref_sha range blame_out last_seen last deleter deleters="" off_branch=false
+  local old="$1" ref="$2" file="$3" ranges="$4" ref_sha range blame_out last_seen last since_last deleter deleters="" commit off_branch=false
   ref_sha="$(git rev-parse --verify -q "$ref^{commit}")" || return 0
   for range in $ranges; do
     blame_out="$(git blame --reverse --porcelain -L "$range" "$old..$ref" -- "$file" 2>/dev/null)" || return 0
@@ -132,8 +132,8 @@ deleting_commit() {
     for last in $last_seen; do
       [ "$last" != "$ref_sha" ] || return 0
       if ! git merge-base --is-ancestor "$last" "$ref" 2>/dev/null; then off_branch=true; continue; fi
-      deleter="$(git log --reverse --format=%H "$ref" "^$last" -- "$file" 2>/dev/null)" || return 0
-      deleter="${deleter%%$'\n'*}"
+      since_last="$(git log --reverse --format=%H "$ref" "^$last" -- "$file" 2>/dev/null)" || return 0
+      deleter="${since_last%%$'\n'*}"
       [ -n "$deleter" ] || return 0
       deleters="$deleters $deleter"
     done
@@ -143,8 +143,8 @@ deleting_commit() {
     [ -n "$deleter" ] || return 0
     deleters="$deleters $deleter"
   fi
-  for deleter in $(git log --format=%H "$ref" "^$old" -- "$file" 2>/dev/null); do
-    case " $deleters " in *" $deleter "*) printf '%s\n' "$deleter"; return 0 ;; esac
+  for commit in $(git log --format=%H "$ref" "^$old" -- "$file" 2>/dev/null); do
+    case " $deleters " in *" $commit "*) printf '%s\n' "$commit"; return 0 ;; esac
   done
 }
 

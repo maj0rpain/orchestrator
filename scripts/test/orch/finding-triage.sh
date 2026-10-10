@@ -5,6 +5,14 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# del_commit <file> <sed script> <message>: commits the edit to src/<file> in
+# the scan section's second clone, $work, printing its SHA.
+del_commit() {
+  sed -i "$2" "$work/src/$1"
+  git -C "$work" commit -qam "$3"
+  git -C "$work" rev-parse HEAD
+}
+
 # --- finding-triage scan -------------------------------------------------------
 # The scan sorts each open filed finding still in needs-triage against the
 # default branch: whether the code its **Location:** names, at the PR's head
@@ -303,12 +311,6 @@ for f in whole end start middle later two replaced squashed; do seq_lines "$f" 3
 git -C "$work" add src
 git -C "$work" commit -qm "the code the deletions are filed against"
 filed_sha="$(git -C "$work" rev-parse HEAD)"
-# del_commit <file> <sed script> <message>: commits the edit, printing its SHA.
-del_commit() {
-  sed -i "$2" "$work/src/$1"
-  git -C "$work" commit -qam "$3"
-  git -C "$work" rev-parse HEAD
-}
 whole_sha="$(del_commit del_whole.sh '8,12d' "delete the whole range")"
 end_sha="$(del_commit del_end.sh '18,25d' "delete the range's end")"
 start_sha="$(del_commit del_start.sh '5,12d' "delete the range's start")"
