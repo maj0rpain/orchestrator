@@ -172,6 +172,24 @@ orch.sh - deterministic operations for the orchestrator flow
                               `## <heading>`, blank lines trimmed; a missing
                               file, a missing heading, or a repeated heading
                               is an error
+  glossary terms              print every term name in the root GLOSSARY.md,
+                              one per line, in glossary order
+  glossary show <term>...     print the named entries exactly as written, in
+                              the order asked, each once. A term matches its
+                              name, case ignored, else an avoided alias
+                              (scoped ones included), with # alias of <Term>
+                              on stderr. Exits 1 naming each term with no
+                              entry, every found entry still printed
+  glossary match <file>...    print every entry whose term or unscoped avoided
+                              alias the files mention - case ignored, from a
+                              word boundary, any ending, any whitespace run
+                              for a space - in glossary order, each once.
+                              Exits 2 on a missing or unreadable file.
+                              show and match put one blank line between
+                              entries; an entry runs from its **<Term>**:
+                              line to the next one, the next # line or EOF.
+                              With no root GLOSSARY.md, terms and match print
+                              nothing; show exits 2
   branch create               create orch/<issue>-<slug> off the flow's base
                               branch, recorded at init, recording that base
                               and its tip as the base SHA in state and in

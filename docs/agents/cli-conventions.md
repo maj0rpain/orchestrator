@@ -25,6 +25,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `side-checkout` | `add`, `list`, `remove`, `prune`, `issue`     |
 | `state`   | `get`, `set`                                         |
 | `handoff` | `path`, `validate`, `section`                        |
+| `glossary` | `terms`, `show`, `match`                           |
 | `phase`   | `advance`, `boundary`                                |
 
 A compound noun such as `spec-review`, `review-pass` or `finding-triage` is

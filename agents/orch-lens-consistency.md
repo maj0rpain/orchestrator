@@ -21,7 +21,9 @@ issue exactly as you found them.
 Report where the spec disagrees with itself - user stories against
 Implementation Decisions against Out of Scope - and where it uses a term
 differently from the glossary or contradicts a recorded decision in the
-ADRs. Quote both sides of every disagreement.
+ADRs. Quote both sides of every disagreement. The glossary file holds only
+the entries whose terms or avoided aliases the spec mentions, so a term the
+spec uses as domain language with no entry there is itself worth reporting.
 
 The spec is the body and its comments together. A comment may amend or
 extend the body, and the body will absorb it: a gap a comment fills is not a

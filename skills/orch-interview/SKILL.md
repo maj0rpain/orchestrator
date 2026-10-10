@@ -111,10 +111,12 @@ planning hook's message says.
 
 ## Domain language
 
-Sharpen the project's domain model as you plan. Read `GLOSSARY.md` (or, with a
-`GLOSSARY-MAP.md` at the root, the context it points to for the area you are
-touching) and the ADRs under `docs/adr/` before the first round, then keep
-these habits on every round:
+Sharpen the project's domain model as you plan. Before the first round, list
+the glossary's term names with `bash "$ORCH" glossary terms`, and fetch the
+entries for the terms in play with `bash "$ORCH" glossary show <term>...` -
+again on any round that brings a further term in. With a `GLOSSARY-MAP.md` at
+the root, read each glossary the map points to instead. Read the ADRs under
+`docs/adr/` before the first round too, then keep these habits on every round:
 
 - **Challenge against the glossary.** When the user uses a term that conflicts
   with the glossary, call it out at once: "The glossary defines 'cancellation'
