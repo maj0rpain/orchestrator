@@ -11,17 +11,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Sets VERSION_BASE for docs_lint.sh's bump rule. A failed fetch or
-      # read fails the job rather than leaving it unset.
-      - name: Read main's version
+        with:
+          # Full history, so docs_lint.sh's fragment rule finds the merge-base
+          # with main.
+          fetch-depth: 0
+      # Sets CHANGELOG_BASE, main's commit, for docs_lint.sh's changelog
+      # fragment rule on every PR to main, and NO_VERSION_BUMP=1 when the PR
+      # carries the no-version-bump label, which waives only its one-fragment
+      # part. A failed fetch or read fails the job rather than leaving it unset.
+      - name: Read main's commit
         if: >-
           github.event_name == 'pull_request' &&
-          github.event.pull_request.base.ref == 'main' &&
-          !contains(github.event.pull_request.labels.*.name, 'no-version-bump')
+          github.event.pull_request.base.ref == 'main'
+        env:
+          NO_BUMP_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'no-version-bump') }}
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
-          base="$(git show origin/main:.claude-plugin/plugin.json | jq -er .version)"
-          echo "VERSION_BASE=$base" >>"$GITHUB_ENV"
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          base="$(git rev-parse --verify origin/main)"
+          echo "CHANGELOG_BASE=$base" >>"$GITHUB_ENV"
+          if [ "$NO_BUMP_LABEL" = true ]; then
+            echo "NO_VERSION_BUMP=1" >>"$GITHUB_ENV"
+          fi
       - name: Verify
         run: scripts/test/all.sh

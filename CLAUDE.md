@@ -53,8 +53,14 @@ See CONTRIBUTING.md's Develop section.
 
 ## Versioning
 
-CI (`scripts/test/docs_lint.sh`) enforces that every PR to `main` bumps `version`
-in `.claude-plugin/plugin.json` and adds it as the top `CHANGELOG.md` entry, with
-the `no-version-bump` label for pure CI or repo-hygiene PRs.
-Use semver judgment: patch for fixes/docs, minor for new features, major for
-breaking changes.
+Every PR to `main` adds one changelog fragment, `changelog.d/<issue>.md`, and
+never bumps `version` in `.claude-plugin/plugin.json` or adds a `## ` heading to
+`CHANGELOG.md` by hand. The fragment's first line is exactly `bump: patch`,
+`bump: minor` or `bump: major`, and the rest, after a blank line, is its
+CHANGELOG prose. Use semver judgment: patch for fixes/docs, minor for new
+features, major for breaking changes. On merge, the version-bump Action runs
+`scripts/version-bump.sh`, which bumps the version and writes the CHANGELOG
+entry from the fragments. CI (`scripts/test/docs_lint.sh`) enforces the rule;
+a pure CI or repo-hygiene PR carries the `no-version-bump` label and adds no
+fragment.
+See CONTRIBUTING.md's Develop section.

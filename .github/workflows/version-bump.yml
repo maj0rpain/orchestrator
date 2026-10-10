@@ -1,0 +1,51 @@
+name: version-bump
+
+# On every push to main, gathers the changelog fragments under changelog.d/
+# into one version bump with scripts/version-bump.sh, which holds every
+# versioning decision, and pushes it as a "Release <version>" commit. A push
+# made with the default GITHUB_TOKEN triggers no workflow, so this never
+# loops. No git tag.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+# One run at a time, and a queued run never cancels the running one.
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      # The script exiting 1 (a malformed fragment, version line or CHANGELOG)
+      # fails the job with nothing committed or pushed; the fragments stay on
+      # main for the next run, after the fault is fixed.
+      - name: Bump
+        id: bump
+        run: |
+          set -euo pipefail
+          version="$(scripts/version-bump.sh)"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+      # A rejected push only means another merge landed meanwhile, and that
+      # merge queued its own run, which takes these fragments: exit 0.
+      - name: Commit and push
+        if: steps.bump.outputs.version != ''
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -q -m "Release $VERSION"
+          if ! git push origin HEAD:main; then
+            echo "Push rejected: a newer merge's run takes the fragments."
+          fi
