@@ -126,6 +126,8 @@ scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, .
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run
+docs/adr/                     the architecture decision records
+docs/agents/                  this repo's agent-skill configuration: issue tracker, triage labels, domain docs, CLI conventions, coding standards
 docs/junie/README.md          Junie CLI setup: the AGENTS.md snippet and the per-prompt fallback
 docs/junie/AGENTS.md          Junie snippet: standing planning and finding-the-plugin sections (where orch.sh is, what to do when an orch-* skill or agent is hidden), and each skill's custom agents (JUNIE-5493 workaround)
 hooks/hooks.json              hook wiring

@@ -1859,6 +1859,74 @@ flags "a loop step label missing from the doc is flagged" \
 spares "a skill that only points at the doc is not flagged" "$out" '^skills/orch-b/'
 check "the driver loop lives once, in docs/driver-loop.md" "$(scan_driver_loop "$PLUGIN_ROOT")"
 
+# --- docs/ in the Layout map (#1008) -------------------------------------------
+echo
+echo "docs/ in the Layout map (#1008)"
+# Every doc under docs/ has a line in CONTRIBUTING.md's Layout map, the code
+# block of its ## Layout section, whose lines each start with the path they
+# describe. A docs/*.md is listed when a line starts with its path. A
+# docs/<dir>/ is listed when a line starts with docs/<dir>/ itself, or when
+# every file under it is listed; no directory is exempt.
+# layout_paths <plugin root>: the first word of each line of the Layout map's
+# code block.
+layout_paths() {
+  md_section "$1/CONTRIBUTING.md" "## Layout" 2>/dev/null \
+    | awk '/^```/ { if (inb) exit; inb = 1; next } inb && NF { print $1 }'
+}
+# scan_layout_map <plugin root>: each docs/*.md and docs/<dir>/ the Layout map
+# does not list, as "CONTRIBUTING.md: the Layout map does not list <path>",
+# a partly listed directory followed by its unlisted files.
+scan_layout_map() {
+  local r="$1" paths path dir files missing
+  [ -d "$r/docs" ] || return 0
+  paths="$(layout_paths "$r")"
+  for path in "$r"/docs/*.md; do
+    [ -f "$path" ] || continue
+    path="${path#"$r"/}"
+    grep -qxF -- "$path" <<<"$paths" || echo "CONTRIBUTING.md: the Layout map does not list $path"
+  done
+  for dir in "$r"/docs/*/; do
+    [ -d "$dir" ] || continue
+    dir="${dir#"$r"/}"
+    grep -qxF -- "$dir" <<<"$paths" && continue
+    files="$(cd "$r" && find "$dir" -type f | sort)"
+    missing="$(grep -vxF -- "$paths" <<<"$files" | tr '\n' ' ')"
+    missing="${missing% }"
+    if [ "$missing" = "$(tr '\n' ' ' <<<"$files" | sed 's/ $//')" ]; then
+      echo "CONTRIBUTING.md: the Layout map does not list $dir"
+    elif [ -n "$missing" ]; then
+      echo "CONTRIBUTING.md: the Layout map does not list $dir (unlisted: $missing)"
+    fi
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs/unlisted" "$fixture/docs/partly" "$fixture/docs/whole" "$fixture/docs/bydir"
+: >"$fixture/docs/listed.md"
+: >"$fixture/docs/gone.md"
+: >"$fixture/docs/unlisted/a.md"
+: >"$fixture/docs/partly/a.md"
+: >"$fixture/docs/partly/b.md"
+: >"$fixture/docs/whole/a.md"
+: >"$fixture/docs/whole/b.md"
+: >"$fixture/docs/bydir/a.md"
+printf '%s\n' '# C' '' '## Layout' '' '```' \
+  'docs/listed.md      a doc' 'docs/partly/a.md    one of two' \
+  'docs/whole/a.md     one' 'docs/whole/b.md     two' 'docs/bydir/         a dir' '```' '' \
+  'Prose naming docs/gone.md outside the block.' '' '## Next' '' '```' 'docs/unlisted/' '```' \
+  >"$fixture/CONTRIBUTING.md"
+out="$(scan_layout_map "$fixture")"
+flags "an unlisted docs/*.md is flagged" \
+  "$out" "CONTRIBUTING.md: the Layout map does not list docs/gone.md"
+flags "an unlisted docs/<dir>/ is flagged" \
+  "$out" "CONTRIBUTING.md: the Layout map does not list docs/unlisted/"
+flags "a partly listed docs/<dir>/ is flagged, naming its unlisted file" \
+  "$out" "CONTRIBUTING.md: the Layout map does not list docs/partly/ (unlisted: docs/partly/b.md)"
+spares "a listed docs/*.md is not flagged" "$out" 'docs/listed\.md'
+spares "a directory listed through all its files is not flagged" "$out" 'docs/whole/'
+spares "a directory listed as docs/<dir>/ is not flagged" "$out" 'docs/bydir/'
+check "every doc under docs/ is in CONTRIBUTING.md's Layout map" "$(scan_layout_map "$PLUGIN_ROOT")"
+
 # --- version and CHANGELOG (CLAUDE.md Versioning) -----------------------------
 # Every PR to main adds one changelog fragment, changelog.d/<issue>.md, and
 # never bumps the version by hand: the version-bump Action does, on merge. The
