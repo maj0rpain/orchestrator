@@ -8,9 +8,7 @@
 # --- state ------------------------------------------------------------------
 echo
 echo "state"
-new_repo >/dev/null
-fake_github
-"$ORCH" init state >/dev/null
+fake_flow state
 assert_eq "round-trips a string value" \
   "$("$ORCH" state set budget unbounded; "$ORCH" state get budget)" "unbounded"
 "$ORCH" state set budget 3
