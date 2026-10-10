@@ -1534,12 +1534,15 @@ assert_empty "a Filing section naming all six is not flagged" "$(scan_closer_fil
 check "the closer's Filing section names every labelled line the closer's body format carries" \
   "$(scan_closer_filing "$PLUGIN_ROOT")"
 
-# --- routed nouns are in the CLI conventions ----------------------------------
+# --- routed nouns and their verbs are in the CLI conventions -------------------
 # docs/agents/cli-conventions.md maps orch.sh's grammar: every noun the
 # dispatcher in main() routes is either a row of its Current nouns table or is
-# named in its Exceptions section, so a new noun cannot ship unmapped.
+# named in its Exceptions section, so a new noun cannot ship unmapped. A table
+# noun's verbs match its row both ways, a verb Exceptions names as
+# `<noun> <verb>` aside; redo's verbs are each named so in Exceptions; a bare
+# global command has no verbs to check.
 echo
-echo "routed nouns are in the CLI conventions"
+echo "routed nouns and their verbs are in the CLI conventions"
 # routed_nouns <orch.sh>: one line per command main()'s case statement routes,
 # its option spellings (-h, --help) and the catch-all left out.
 routed_nouns() {
@@ -1552,17 +1555,64 @@ routed_nouns() {
       for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
     }' "$1"
 }
+# noun_verbs <module> <noun>: one line per verb the noun dispatches - each name
+# on a top-level arm of the first case in the module's cmd_<noun> (- mapped to
+# _), its option spellings, the catch-all and nested cases' arms left out.
+noun_verbs() {
+  [ -f "$1" ] || return 0
+  F="cmd_${2//-/_}" awk '
+    BEGIN { fn = ENVIRON["F"] }
+    index($0, fn "()") == 1 { inf = 1; next }
+    !inf { next }
+    /^\}/ { exit }
+    /^[[:space:]]*#/ { next }
+    {
+      if (depth == 1 && match($0, /^[[:space:]]+[a-z-][a-z|-]*\)/)) {
+        arm = substr($0, RSTART, RLENGTH - 1); gsub(/[[:space:]]/, "", arm)
+        n = split(arm, names, "|")
+        for (i = 1; i <= n; i++) if (names[i] !~ /^-/) print names[i]
+      }
+      t = $0; opens = gsub(/(^|[;[:space:]])case[[:space:]]/, "", t)
+      t = $0; closes = gsub(/(^|[;[:space:]])esac([;[:space:])]|$)/, "", t)
+      if (opens) started = 1
+      depth += opens - closes
+      if (started && depth <= 0) exit
+    }' "$1"
+}
 # scan_cli_nouns <plugin root>: each routed noun in neither the table nor the
-# Exceptions section.
+# Exceptions section, and each verb out of step with its noun's row or
+# Exceptions.
 scan_cli_nouns() {
   local r="$1" orch="scripts/orch.sh" doc="docs/agents/cli-conventions.md" table exceptions noun
+  local row module verbs verb
   table="$(md_section "$r/$doc" "## Current nouns" | grep -E '^[[:space:]]*\|')"
   exceptions="$(md_section "$r/$doc" "## Exceptions")"
   while IFS= read -r noun; do
     [ -n "$noun" ] || continue
-    grep -qE -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" && continue
-    grep -qE -- "\`${noun}[\` ]" <<<"$exceptions" && continue
-    echo "$doc: routed noun $noun is in neither the Current nouns table nor Exceptions"
+    module="scripts/orch/$noun.sh"
+    verbs="$(noun_verbs "$r/$module" "$noun")"
+    row="$(grep -E -- "^[[:space:]]*\|[[:space:]]*\`$noun\`" <<<"$table" | head -n 1)"
+    if [ -z "$row" ]; then
+      if ! grep -qE -- "\`${noun}[\` ]" <<<"$exceptions"; then
+        echo "$doc: routed noun $noun is in neither the Current nouns table nor Exceptions"
+        continue
+      fi
+      # A bare global command: no verbs to check.
+      grep -qF -- "\`$noun\`" <<<"$exceptions" && continue
+    fi
+    # The row's verbs: the backticked names in its second cell.
+    row="$(awk -F'|' '{ print $3 }' <<<"$row" | grep -oE '`[^`]+`' | tr -d '`')"
+    while IFS= read -r verb; do
+      [ -n "$verb" ] || continue
+      grep -qxF -- "$verb" <<<"$row" && continue
+      grep -qF -- "\`$noun $verb\`" <<<"$exceptions" && continue
+      echo "$doc: $noun verb $verb is dispatched but in neither its Current nouns row nor Exceptions"
+    done <<<"$verbs"
+    while IFS= read -r verb; do
+      [ -n "$verb" ] || continue
+      grep -qxF -- "$verb" <<<"$verbs" && continue
+      echo "$doc: $noun verb $verb is in its Current nouns row but $module no longer dispatches it"
+    done <<<"$row"
   done < <(routed_nouns "$r/$orch")
   return 0
 }
@@ -1579,7 +1629,39 @@ flags "a routed noun in neither the table nor Exceptions is flagged" \
   "$out" "docs/agents/cli-conventions.md: routed noun widget is in neither"
 spares "a noun in the table, or in Exceptions, is not" "$out" 'noun (base|redo|help) '
 spares "nor an option spelling, the catch-all, or an arm outside main" "$out" 'noun (-h|--help|\*|stray) '
-check "every noun orch.sh routes is in the CLI conventions table or its Exceptions" \
+# The verbs fixture: base dispatches an unlisted verb and no longer dispatches
+# a row verb, redo dispatches a verb Exceptions does not name, and the rest is
+# spared.
+fixture="$(new_fixture)"
+mkdir -p "$fixture/scripts/orch" "$fixture/docs/agents"
+printf '%s\n' 'main() {' '  case "$cmd" in' '    base) cmd_base "$@" ;;' '    redo) cmd_redo "$@" ;;' \
+  '    doctor) cmd_doctor "$@" ;;' '    widget-thing) cmd_widget_thing "$@" ;;' '    *) die nope ;;' '  esac' '}' \
+  >"$fixture/scripts/orch.sh"
+printf '%s\n' 'cmd_base() {' '  case "$1" in' '    set)' '      case "$2" in' '        major)' '          x=1 ;;' \
+  '        green)' '          x=2 ;;' '      esac' '      ;;' '    show|-x|--long) echo ;;' '    extra) echo ;;' \
+  '    *) die "unknown base op" ;;' '  esac' '  case "$1" in' '    later) echo ;;' '  esac' '}' >"$fixture/scripts/orch/base.sh"
+printf '%s\n' 'cmd_redo() {' '  case "$1" in' '    review) cmd_redo_review ;;' '    spec) cmd_redo_spec ;;' \
+  '    zap) cmd_redo_zap ;;' '    *) die nope ;;' '  esac' '}' >"$fixture/scripts/orch/redo.sh"
+printf '%s\n' 'cmd_doctor() {' '  case "$1" in' '    --flow) echo ;;' '    check) echo ;;' '  esac' '}' \
+  >"$fixture/scripts/orch/doctor.sh"
+printf '%s\n' 'cmd_widget_thing() {' '  case "$1" in' '    go|stop) echo ;;' '  esac' '}' \
+  >"$fixture/scripts/orch/widget-thing.sh"
+printf '%s\n' '# CLI' '' '## Current nouns' '' '| Noun | Verbs |' '| --- | --- |' \
+  '| `base` | `set`, `show`, `clear` |' '| `widget-thing` | `go`, `stop` |' '' '## Exceptions' '' \
+  '- `doctor`, and `redo review` / `redo spec`.' >"$fixture/docs/agents/cli-conventions.md"
+out="$(scan_cli_nouns "$fixture")"
+flags "a dispatched verb in neither its row nor Exceptions is flagged" \
+  "$out" "docs/agents/cli-conventions.md: base verb extra is dispatched but in neither"
+flags "a redo verb not named redo <verb> in Exceptions is flagged" \
+  "$out" "docs/agents/cli-conventions.md: redo verb zap is dispatched but in neither"
+flags "a row verb its module no longer dispatches is flagged" \
+  "$out" "docs/agents/cli-conventions.md: base verb clear is in its Current nouns row but"
+spares "nested-case arms, option spellings, the catch-all and a later case are not verbs" \
+  "$out" 'verb (major|green|-x|--long|\*|later) '
+spares "a row verb, a redo <verb> in Exceptions, and a hyphenated noun's verbs are spared" \
+  "$out" '(base verb (set|show) |redo verb (review|spec) |widget-thing verb )'
+spares "a bare global command in Exceptions has no verbs to check" "$out" '(doctor|routed noun) '
+check "every noun orch.sh routes, and every verb it dispatches, is in the CLI conventions table or its Exceptions" \
   "$(scan_cli_nouns "$PLUGIN_ROOT")"
 
 # --- a side checkout's recorded issue (#874) ----------------------------------
