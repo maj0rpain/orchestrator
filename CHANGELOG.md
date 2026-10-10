@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.3.3
+
+`orch_test.sh`'s parallel runner names its variables for what they hold
+(#893): one child's counts are `orch_child_pass`/`orch_child_fail`/`orch_child_skip`,
+a section's position `orch_pos`, the section list and kept set `orch_titles` and
+`orch_kept`, the isolation seed `orch_kept_isolation`, and the exit flag
+`orch_any_failed`. No behaviour changes.
+
 ## 4.3.2
 
 `orch.sh` run outside every git repository now names the cwd and the remedy:

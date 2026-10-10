@@ -1792,7 +1792,7 @@ else
   ok "plugin.json's version bump skipped (VERSION_BASE unset)"
 fi
 
-# --- summary -----------------------------------------------------------------
+# >>> summary
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
