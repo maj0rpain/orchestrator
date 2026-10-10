@@ -98,6 +98,7 @@ scripts/test/orch/harness.sh  the harness's own sections: isolation, the section
 scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, ...): its sections, after an optional preamble
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
+docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run
 docs/junie/README.md          Junie CLI setup: the AGENTS.md snippet and the per-prompt fallback
 docs/junie/AGENTS.md          Junie snippet: standing planning and finding-the-plugin sections (where orch.sh is, what to do when an orch-* skill or agent is hidden), and each skill's custom agents (JUNIE-5493 workaround)
 hooks/hooks.json              hook wiring
