@@ -1,6 +1,6 @@
 ---
 name: orch-to-spec
-description: Turn the current conversation into a spec - no interview, just synthesis of what has already been discussed, after one check of the test seams with the user - and either publish it as a new GitHub issue labelled for an agent, or, given a leading issue number (rewrite mode), rewrite that issue's body as the spec. Use from orch-flow's spec phase, from a planning session's Blueprint route, or standalone when a user asks to write up or publish a spec, or runs /orchestrator:to-spec or /orchestrator:to-spec <n>.
+description: Turn the current conversation into a spec - no interview, just synthesis of what has already been discussed, after one check of the test seams with the user - and either publish it as a new GitHub issue labelled for an agent, or, given a leading issue number (rewrite mode), rewrite that issue's body as the spec. A quick implementation reaches rewrite mode in its Unattended rewrite form, which asks nothing. Use from orch-flow's spec phase, from a planning session's Blueprint route, from quick implementation's step 1, or standalone when a user asks to write up or publish a spec, or runs /orchestrator:to-spec or /orchestrator:to-spec <n>.
 ---
 
 # Orchestrator to-spec
@@ -12,7 +12,7 @@ into a spec: published as one new GitHub issue, or, in rewrite mode, written
 over an existing issue's body. Do not interview the user: synthesize
 what is already known. The one exchange is the test-seams check in step 2, and
 in rewrite mode the retire-or-keep question when the issue already has a ticket
-breakdown.
+breakdown. **Unattended rewrite** has neither.
 
 This skill reads and writes no flow state. Inside a flow, the caller
 (`orch-flow`'s spec phase) records the published issue; standalone, nothing is
@@ -26,7 +26,10 @@ being published as a new issue. With no leading issue number, the skill runs in
 **publish mode**: it publishes a new issue, as below. A planning session's
 Blueprint route hands over its interviewed issue this way, `orch-flow`'s
 spec phase hands over an adopted issue the human chose to rewrite from the
-plan, and `/orchestrator:to-spec <n>` reaches rewrite mode standalone.
+plan, and `/orchestrator:to-spec <n>` reaches rewrite mode standalone. All
+three take it attended, as written. A quick implementation reaches rewrite mode
+on its linked issue in its **Unattended rewrite** form below, which asks
+nothing; only a quick implementation takes that form.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
@@ -120,6 +123,57 @@ route, the flow's spec phase and standalone alike.
    `retired`, or `none` - so a caller runs `orch-to-tickets` on the issue
    unless the outcome is `kept`. Standalone, on `retired`, also report that
    the issue needs `/orchestrator:to-tickets <n>`.
+
+## Unattended rewrite
+
+The mode a quick implementation takes, and only a quick implementation:
+rewrite mode asking the human nothing (ADR-0034). It is the one definition of
+the mode - quick implementation's own steps never restate its rules. Rewrite
+mode runs as written, stop-on-failure included, with these differences only:
+
+- **The test-seams check** (Process step 2): sketch the seams as that step
+  says and print the sketch, so a human watching can see it. Ask nothing, and
+  go on to step 3.
+- **The retire-or-keep question** (**Rewrite the issue** step 1, exit 0) is
+  not asked. It is replaced by the judgement `orch-spec-review`'s **Tickets
+  follow the spec** makes, by that section's **Drafting** and **Applying**
+  rules, which this mode restates neither of. Where those rules depend on a
+  spec review's state, this mode's own stand-ins hold:
+  - "as fetched": the body fetched in Process step 1;
+  - "as edited", and `<dir>/spec.md`: the rewritten body file;
+  - "the accepted edits": the whole change from the fetched body to the
+    rewritten body;
+  - `<dir>`: this mode's own scratch location outside the repo's tracked
+    tree.
+
+  Print the drafted items, numbered as the ticket question would number
+  them, then ask nothing and take the recommended option:
+  - **Keep and apply**: that section's **Apply as recommended**, with every
+    item marked **recommend decline** skipped and printed with its reason.
+    A `## Ticket` section is carried into the new body with its edits, in
+    place of step 1's verbatim copy.
+  - **Retire**: only when the rewrite adds, removes or reorders slices, the
+    one case that section's **Drafting** recommends a retire for. It runs at
+    step 3 as written.
+
+  No changelog is written. What it would record - each ticket edited, each
+  edge changed, each closed ticket noted - is printed in the session instead.
+- **Order**: ticket edits and edge changes are applied before step 2's
+  `issue update`. An edit to a collapsed `## Ticket` section goes into the
+  body file and lands with that update. A retire runs at step 3, after it.
+- **On failure**: a failed `issue update` - of a ticket or of the issue -
+  `ticket block` or `ticket unblock` stops the rewrite, as a failed write
+  stops rewrite mode, and the quick implementation stops at its step 1 with
+  it. A failure before the body update leaves the body unrewritten: ticket
+  edits already applied stay, and a rerun judges the rewrite again against
+  the tickets as they then stand. The stop message says that only a rerun in
+  this same conversation, which holds the interview, can rewrite the issue.
+  A failed `ticket retire` at step 3 leaves the body rewritten with its
+  breakdown in place: the stop message names `bash "$ORCH" ticket retire <n>`
+  as the repair before rerunning.
+- **Report** (step 5): the breakdown outcome is one of `none`, `kept`,
+  `kept, <k> tickets edited` or `retired`, with `<k>` the number of tickets
+  whose body or blocking edges changed. With none changed, it is `kept`.
 
 ## Spec template
 

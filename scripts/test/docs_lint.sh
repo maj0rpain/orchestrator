@@ -970,6 +970,8 @@ skills/orch-spec-review/SKILL.md|## Disposition
 skills/orch-spec-review/SKILL.md|## Applying the answer
 skills/orch-spec-review/SKILL.md|## Tickets follow the spec
 skills/orch-spec-review/SKILL.md|## The changelog
+skills/orch-to-spec/SKILL.md|## Rewrite the issue
+skills/orch-to-spec/SKILL.md|## Unattended rewrite
 skills/orch-to-tickets/SKILL.md|### 4. Quiz the user
 skills/orch-to-tickets/SKILL.md|## Unattended breakdown
 skills/orch-to-tickets/SKILL.md|## Ticket template'
