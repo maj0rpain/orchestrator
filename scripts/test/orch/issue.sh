@@ -21,6 +21,33 @@ close_refused() {
   assert_eq "closing nothing ($what)" "$(fake_state_of 83)" "OPEN"
 }
 
+# triage_check <n>: run issue triage --check on issue <n>.
+triage_check() { "$ORCH" issue triage "$1" --check; }
+
+# check_says <name> <n> <expected>: --check on issue <n> prints <expected>,
+# exits 0, and writes nothing to the fake.
+check_says() {
+  local before out st
+  before="$(fake_snapshot)"
+  out="$(triage_check "$2" 2>&1)"; st=$?
+  assert_status "$1, exit 0" "$st" 0
+  assert_eq "printing '$3'" "$out" "$3"
+  assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
+}
+# check_dies <name> <n> <reason>: --check on issue <n> exits 1 with <reason>
+# on stderr, nothing on stdout, and writes nothing to the fake.
+check_dies() {
+  local before out err st errf
+  errf="$(mktemp)"
+  before="$(fake_snapshot)"
+  out="$(triage_check "$2" 2>"$errf")"; st=$?
+  err="$(cat "$errf")"; rm -f "$errf"
+  assert_status "$1, exit 1" "$st" 1
+  assert_contains "giving its reason on stderr" "$err" "$3"
+  assert_eq "printing nothing on stdout" "$out" ""
+  assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
+}
+
 # --- issue publish ------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
 # `gh issue create` in skill prose - stateless like branch off, since a quick
@@ -454,32 +481,6 @@ echo
 echo "issue triage --check"
 healthy_repo
 fake_github
-check() { "$ORCH" issue triage "$1" --check; }
-
-# check_says <name> <n> <expected>: --check on issue <n> prints <expected>,
-# exits 0, and writes nothing to the fake.
-check_says() {
-  local before out st
-  before="$(fake_snapshot)"
-  out="$(check "$2" 2>&1)"; st=$?
-  assert_status "$1, exit 0" "$st" 0
-  assert_eq "printing '$3'" "$out" "$3"
-  assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
-}
-# check_dies <name> <n> <reason>: --check on issue <n> exits 1 with <reason>
-# on stderr, nothing on stdout, and writes nothing to the fake.
-check_dies() {
-  local before out err st errf
-  errf="$(mktemp)"
-  before="$(fake_snapshot)"
-  out="$(check "$2" 2>"$errf")"; st=$?
-  err="$(cat "$errf")"; rm -f "$errf"
-  assert_status "$1, exit 1" "$st" 1
-  assert_contains "giving its reason on stderr" "$err" "$3"
-  assert_eq "printing nothing on stdout" "$out" ""
-  assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
-}
-
 fake_issue 70 open ready-for-agent bug
 check_says "an issue carrying ready-for-agent is ready" 70 ready
 fake_issue 71 open needs-triage bug
@@ -518,24 +519,24 @@ assert_status "in either order" "$st" 1
 assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
 
 # One shared walk (story 9): on each label set, --check and the plain write agree.
-for case in "82|ready-for-agent" "83|wontfix" "84|ready-for-human" \
+for labelled in "82|ready-for-agent" "83|wontfix" "84|ready-for-human" \
             "85|ready-for-human wontfix" "86|ready-for-agent ready-for-human" \
             "87|needs-triage" "88|needs-info bug"; do
-  n="${case%%|*}"
+  n="${labelled%%|*}"
   # shellcheck disable=SC2086 # the labels split into separate arguments
-  fake_issue "$n" open ${case#*|}
-  said="$(check "$n" 2>/dev/null)"
+  fake_issue "$n" open ${labelled#*|}
+  said="$(triage_check "$n" 2>/dev/null)"
   before="$(fake_snapshot)"
   out="$("$ORCH" issue triage "$n" 2>/dev/null)"; st=$?
   case "$said" in
     ready)
-      assert_status "parity '${case#*|}': ready, and the write exits 0" "$st" 0
+      assert_status "parity '${labelled#*|}': ready, and the write exits 0" "$st" 0
       assert_eq "relabelling nothing" "$(fake_snapshot)" "$before" ;;
     movable)
-      assert_status "parity '${case#*|}': movable, and the write exits 0" "$st" 0
+      assert_status "parity '${labelled#*|}': movable, and the write exits 0" "$st" 0
       assert_contains "relabelling it to ready-for-agent" "$(fake_labels_of "$n")" "ready-for-agent" ;;
     *)
-      assert_status "parity '${case#*|}': '$said', and the write exits 2" "$st" 2
+      assert_status "parity '${labelled#*|}': '$said', and the write exits 2" "$st" 2
       assert_eq "printing the same label" "$out" "$said"
       assert_eq "relabelling nothing" "$(fake_snapshot)" "$before" ;;
   esac
