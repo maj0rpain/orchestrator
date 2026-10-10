@@ -551,6 +551,61 @@ check_interviewed_step "on Junie" "$ctx" "the ask_user tool"
 ctx="$(prompt_event "$confirm" ii2 | "$GRILL" | jq -r '.additionalContext')"
 check_interviewed_step "at Junie's plan confirmation" "$ctx" "the ask_user tool"
 
+# The done-close (#985): when the planning finds the interviewed issue's work
+# already done, the close offers to close it as done through orch.sh issue
+# close, in place of the ready-for-agent move and the route question.
+check_done_close() {
+  local where="$1" ctx="$2" tool="$3"
+  assert_contains "asks the done-close question with the host's tool $where" "$ctx" \
+    "ask one blocking question with $tool that names the commit, PR or issue that did the work"
+  assert_contains "offers the duplicate close $where" "$ctx" "\"Close #<n> as done (duplicate of #<m>)\""
+  assert_contains "offers the completed close $where" "$ctx" "\"Close #<n> as done (completed)\""
+  assert_contains "offers leaving the issue open $where" "$ctx" "\"Leave #<n> open\""
+  assert_contains "runs orch.sh issue close via the resolved path $where" "$ctx" \
+    "bash \"$ORCH_PATH\" issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>"
+  assert_contains "writes the comment outside the tracked tree $where" "$ctx" \
+    "to a file outside the tracked tree"
+  assert_contains "skips the ready-for-agent move and the route question $where" "$ctx" \
+    "skip the interviewed-issue step's move to \`ready-for-agent\` and the route question"
+  assert_contains "leave open stops $where" "$ctx" "On \"Leave #<n> open\", stop"
+  assert_contains "free text resumes the rounds $where" "$ctx" \
+    "A free-text answer that the work is not done sends the interview back into rounds"
+  assert_contains "a failed close reports and stops $where" "$ctx" \
+    "If the close fails, report its orch: message and stop; the issue stays open"
+  assert_contains "no interviewed issue reports and stops $where" "$ctx" \
+    "With no interviewed issue and the plan's work already done, ask no question: report what did the work and stop"
+  assert_not_contains "carries no raw gh issue call $where" "$ctx" "gh issue"
+}
+ctx="$(skill_event "mattpocock-skills:grilling" dc1 | "$GRILL" | jq -r '.additionalContext')"
+check_done_close "on Claude Code" "$ctx" "the AskUserQuestion tool"
+assert_eq "keeps three numbered lines with the done-close on Claude Code" \
+  "$(printf '%s\n' "$ctx" | grep -cE '^ *[0-9]+\. ')" "3"
+ctx="$(prompt_event '$grilling' dc2 | "$GRILL" | jq -r '.additionalContext')"
+check_done_close "on Junie" "$ctx" "the ask_user tool"
+assert_eq "keeps three numbered lines with the done-close on Junie" \
+  "$(printf '%s\n' "$ctx" | grep -cE '^ *[0-9]+\. ')" "3"
+ctx="$(prompt_event "$confirm" dc2 | "$GRILL" | jq -r '.additionalContext')"
+check_done_close "at Junie's plan confirmation" "$ctx" "the ask_user tool"
+assert_eq "keeps three numbered lines with the done-close at Junie's plan confirmation" \
+  "$(printf '%s\n' "$ctx" | grep -cE '^ *[0-9]+\. ')" "3"
+mkdir -p "$REPO/.orchestrator"
+echo '{"slug":"x","phase":"spec","issue":42}' >"$REPO/.orchestrator/state.json"
+ctx="$(skill_event "mattpocock-skills:grilling" dc3 | "$GRILL" | jq -r '.additionalContext')"
+check_done_close "beside an active flow on Claude Code" "$ctx" "the AskUserQuestion tool"
+assert_contains "the done-close applies in the second case on Claude Code" "$ctx" \
+  "- Only in the second case above (planning about anything else): at the close, if the planning settles that the interviewed issue's work"
+assert_contains "the same-flow branch skips the done-close on Claude Code" "$ctx" \
+  "skip the interviewed-issue step and the done-close below"
+ctx="$(prompt_event '$grilling' dc4 | "$GRILL" | jq -r '.additionalContext')"
+check_done_close "beside an active flow on Junie" "$ctx" "the ask_user tool"
+assert_contains "the done-close applies in the second case on Junie" "$ctx" \
+  "- Only in the second case above (planning about anything else): at the close, if the planning settles that the interviewed issue's work"
+ctx="$(prompt_event "$confirm" dc4 | "$GRILL" | jq -r '.additionalContext')"
+check_done_close "beside an active flow at Junie's plan confirmation" "$ctx" "the ask_user tool"
+assert_contains "the done-close applies in the second case at Junie's plan confirmation" "$ctx" \
+  "- Only in the second case above (planning about anything else): at the close, if the planning settles that the interviewed issue's work"
+rm -rf "$REPO/.orchestrator"
+
 # A repo that renamed its triage labels gets its own names in the step.
 cat >"$REPO/docs/agents/triage-labels.md" <<'DOC'
 | Role            | Ours          | Meaning |
