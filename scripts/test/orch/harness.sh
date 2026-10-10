@@ -1,3 +1,10 @@
+# shellcheck shell=bash
+# The guard below is never true - (( 0 )) is a keyword no variable or function
+# can redefine - so the line never runs; it points shellcheck at setup.sh's
+# definitions, which orch_test.sh evals before this file's sections.
+# shellcheck source=setup.sh
+(( 0 )) && source setup.sh
+
 # --- isolation --------------------------------------------------------------
 echo
 echo "isolation"
@@ -476,8 +483,8 @@ rm -rf "$guard_dir"
 # ORCH_TEST_JOBS reached it, and VERSION_BASE. Each stub, the stub shellcheck
 # too, drops a marker file named after itself in <tmp>/markers/ when it
 # starts, if that directory exists; only the overlap case creates it. One
-# planted shell file each in <tmp>/scripts/ and <tmp>/scripts/test/ is there
-# for the lint step to find. Every run sets or unsets CI and runs on a PATH of
+# planted shell file each in <tmp>/scripts/, <tmp>/scripts/test/ and
+# <tmp>/scripts/test/orch/ is there for the lint step to find. Every run sets or unsets CI and runs on a PATH of
 # only the tools all.sh and the stubs need, plus a stub shellcheck when the case
 # wants one - the real one never runs.
 echo
@@ -485,13 +492,14 @@ echo "all.sh, the single entry point (#615)"
 all_root="$(mktemp -d)"
 all_dir="$all_root/scripts/test"
 all_bin="$all_root/bin"
-mkdir -p "$all_dir" "$all_bin"
+mkdir -p "$all_dir/orch" "$all_bin"
 cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$all_dir/"
 for all_tool in bash dirname awk tail mktemp rm mkdir sleep; do
   ln -s "$(command -v "$all_tool")" "$all_bin/$all_tool"
 done
 echo 'echo planted' >"$all_root/scripts/lint_me.sh"
 echo 'echo planted' >"$all_dir/lint_me.sh"
+echo 'echo planted' >"$all_dir/orch/lint_me.sh"
 for all_suite in orch_test.sh hooks_test.sh docs_lint.sh; do
   {
     echo '#!/usr/bin/env bash'
@@ -573,9 +581,19 @@ assert_eq "still prints the shellcheck summary after a failing suite" \
   "$(printf '%s\n' "$out" | tail -n 1)" "shellcheck: 0 findings"
 assert_eq "runs shellcheck at warning severity in gcc format once per shell file" \
   "$(LC_ALL=C sort "$all_root/sc_args" 2>/dev/null)" \
-  "$(printf -- '-S warning -f gcc %s\n' scripts/lint_me.sh scripts/test/all.sh scripts/test/docs_lint.sh scripts/test/hooks_test.sh scripts/test/lint_me.sh scripts/test/orch_test.sh)"
+  "$(printf -- '-S warning -f gcc %s\n' scripts/lint_me.sh scripts/test/all.sh scripts/test/docs_lint.sh scripts/test/hooks_test.sh scripts/test/lint_me.sh scripts/test/orch/lint_me.sh scripts/test/orch_test.sh)"
 assert_eq "runs one shellcheck on each planted file" \
-  "$(grep -cxE -- '-S warning -f gcc scripts/(test/)?lint_me\.sh' "$all_root/sc_args")" "2"
+  "$(grep -cxE -- '-S warning -f gcc scripts/(test/(orch/)?)?lint_me\.sh' "$all_root/sc_args")" "3"
+
+# Without scripts/test/orch/, its glob matches nothing and is dropped, never
+# handed to shellcheck as the literal pattern.
+rm -f "$all_dir/log" "$all_root/sc_args"
+mv "$all_dir/orch" "$all_root/orch.away"
+all_run >/dev/null 2>&1
+assert_eq "lints no literal scripts/test/orch/*.sh when that directory is missing" \
+  "$(grep -cF 'scripts/test/orch/*.sh' "$all_root/sc_args")" "0"
+assert_eq "and still lints every other shell file" "$(wc -l <"$all_root/sc_args" | tr -d ' ')" "6"
+mv "$all_root/orch.away" "$all_dir/orch"
 
 rm -f "$all_dir/log"
 sed -i.bak 's/; exit 1$//; s/2 failed/0 failed/; /FAIL/d' "$all_dir/orch_test.sh"

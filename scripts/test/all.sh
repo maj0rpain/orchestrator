@@ -13,8 +13,9 @@
 # straight through, and the suites' stderr may interleave.
 #
 # Then shellcheck, from the repo root two levels up, at warning severity, one
-# process per shell file matched by scripts/*.sh and scripts/test/*.sh, with
-# .shellcheckrc's source settings. Every process starts at once, alongside the
+# process per shell file matched by scripts/*.sh scripts/test/*.sh
+# scripts/test/orch/*.sh, with .shellcheckrc's source settings. A glob that
+# matches nothing is dropped, never passed to shellcheck as the literal pattern. Every process starts at once, alongside the
 # suites, with no throttle, so no single shellcheck run over every file is the
 # critical path - this deliberately reverses #777's one-process rule. Each
 # process's stdout and stderr go to its own captured buffer, and all.sh waits
@@ -61,7 +62,10 @@ if command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
   root="$dir/../.."
   sc_pids=()
-  for sc_file in "$root"/scripts/*.sh "$root"/scripts/test/*.sh; do
+  shopt -s nullglob
+  sc_files=("$root"/scripts/*.sh "$root"/scripts/test/*.sh "$root"/scripts/test/orch/*.sh)
+  shopt -u nullglob
+  for sc_file in "${sc_files[@]}"; do
     sc_rel="${sc_file#"$root/"}"
     (cd "$root" && exec shellcheck -S warning -f gcc "$sc_rel") \
       >"$tmp/shellcheck.${#sc_pids[@]}" 2>&1 &
