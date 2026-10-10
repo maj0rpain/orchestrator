@@ -269,45 +269,6 @@ review_flow() {
   state_fixture phase review
 }
 
-# pushed_head <branch> [<seconds ago>]: pushes HEAD to <branch> on a bare
-# origin and prints its SHA; given an age, backdates the push's reflog entry.
-pushed_head() {
-  local bare sha
-  bare="$(mktemp -d)"
-  git init -q --bare "$bare"
-  bare_origin "$bare"
-  git update-ref -d "refs/remotes/origin/$1" 2>/dev/null || true
-  git push -q origin "HEAD:refs/heads/$1" 2>/dev/null
-  sha="$(git rev-parse HEAD)"
-  if [ -n "${2:-}" ]; then
-    git update-ref -d "refs/remotes/origin/$1"
-    GIT_COMMITTER_DATE="@$(( $(date +%s) - $2 )) +0000" \
-      git update-ref -m 'update by push' "refs/remotes/origin/$1" "$sha"
-  fi
-  printf '%s\n' "$sha"
-}
-
-# review_ci_flow <slug>: a review ci section's starting point - review_flow
-# <slug> with PR #7 recorded in state and open from topic onto main in the
-# store-backed fake (fake_github), the base tip's one check run as the CI
-# evidence that keeps the grace, and the CI knobs short: ORCH_CI_GRACE=0.3,
-# ORCH_CI_TIMEOUT=1, ORCH_CI_INTERVAL=0.05. A section that calls it ends with
-# its teardown, review_ci_restore.
-review_ci_flow() {
-  review_flow "$1"
-  state_fixture pr 7
-  export ORCH_CI_GRACE=0.3 ORCH_CI_TIMEOUT=1 ORCH_CI_INTERVAL=0.05
-  fake_github
-  fake_pr 7 open topic main
-  fake_check_run main
-}
-
-# review_ci_restore: review_ci_flow's teardown - restore_suite_env with the
-# CI knobs review_ci_flow set.
-review_ci_restore() {
-  restore_suite_env ORCH_CI_GRACE ORCH_CI_TIMEOUT ORCH_CI_INTERVAL
-}
-
 # ticket_fixture: a ticket section's starting point - a healthy_repo with the
 # store-backed fake GitHub (fake_github), no issue in it yet. Leaves the global
 # body (a ticket body file reading "Build the thing.") set, and whatever
@@ -426,16 +387,6 @@ fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2"
 
 # fake_pr_draft <n>: seeds PR #n as a draft.
 fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
-
-# fake_pr_head <n> <sha> [commit...]: seeds PR #n's head SHA and its commits,
-# oldest first - given none, the head alone.
-fake_pr_head() {
-  local d="$ORCH_GH_FAKE_STORE/prs/$1"
-  printf '%s\n' "$2" >"$d/head_oid"
-  shift 2
-  rm -f "$d/commits"
-  [ $# -eq 0 ] || printf '%s\n' "$@" >"$d/commits"
-}
 
 # fake_next_pr <n>: the number the next PR opened takes.
 fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }
@@ -564,44 +515,9 @@ fake_checks() {
   rm -f "$d/$scope.n"
 }
 
-# fake_required_checks <branch> <context>...: classic branch protection on the
-# branch, requiring the checks named.
-fake_required_checks() {
-  local b="$1"
-  shift
-  mkdir -p "$ORCH_GH_FAKE_STORE/protection"
-  printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/protection/$b"
-}
-
-# fake_rules <branch> <type>...: the rules the repo's rulesets apply to the
-# branch, by type.
-fake_rules() {
-  local b="$1"
-  shift
-  mkdir -p "$ORCH_GH_FAKE_STORE/rules"
-  printf '%s\n' "$@" >"$ORCH_GH_FAKE_STORE/rules/$b"
-}
-
-# fake_check_run <ref> / fake_status <ref>: the ref - a SHA, or a branch name
-# for its tip - has a check run, or a commit status. fake_unreadable_ref <ref>:
-# both reads of the ref fail.
-fake_check_run() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/check_runs"; }
-fake_status() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/statuses"; }
-fake_unreadable_ref() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/unreadable_refs"; }
-
-# fake_ci_reset: no checks scripted, nothing required, no rules, and no ref
-# with a check run or status - every CI signal absent.
-fake_ci_reset() {
-  rm -rf "$ORCH_GH_FAKE_STORE/checks" "$ORCH_GH_FAKE_STORE/protection" "$ORCH_GH_FAKE_STORE/rules" \
-    "$ORCH_GH_FAKE_STORE/check_runs" "$ORCH_GH_FAKE_STORE/statuses" "$ORCH_GH_FAKE_STORE/unreadable_refs"
-}
-
 # fake_default_branch <answer>: seeds gh's answer to the repo's default branch,
 # byte for byte, so a test can seed a polluted or empty one.
 fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; }
-
-# fake_reruns: the Actions run ids rerun, read back, space-separated, in order.
-fake_reruns() { tr '\n' ' ' 2>/dev/null <"$ORCH_GH_FAKE_STORE/reruns" | sed 's/ $//'; }
 
 # fake_offline: every operation fails with a connection error, as with GitHub
 # unreachable. fake_online undoes it, and doctor.sh's fake_noauth too.
