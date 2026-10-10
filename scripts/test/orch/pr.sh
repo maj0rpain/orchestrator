@@ -5,6 +5,24 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# fake_pull <n>: seeds #n as an open pull request, which gh's issue reads
+# answer for too.
+fake_pull() { fake_issue "$1" open; : >"$ORCH_GH_FAKE_STORE/issues/$1/pull"; }
+
+# fake_pr_body <n> <text>: seeds PR #n's body, byte for byte.
+fake_pr_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/body"; }
+
+# fake_pr_comment <n> <author> <created-at> <body>: seeds a comment on PR #n,
+# after any it has.
+fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2" "$3" "$4"; }
+
+# fake_prs: every PR number the store holds, in order, space-separated.
+fake_prs() { ls "$ORCH_GH_FAKE_STORE/prs" 2>/dev/null | sort -n | tr '\n' ' '; }
+
+# PR #n read back from the store: its head branch and its title.
+fake_pr_head_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/head" 2>/dev/null; }
+fake_pr_title_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/title" 2>/dev/null; }
+
 # --- pr open -----------------------------------------------------------------
 # PR #15 merged without closing #14 because the agent's body opened with a verb
 # GitHub does not read as a closer. pr open owns the keyword instead, so no

@@ -5,6 +5,22 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# ticket_fixture: a ticket section's starting point - a healthy_repo with the
+# store-backed fake GitHub (fake_github), no issue in it yet. Leaves the global
+# body (a ticket body file reading "Build the thing.") set, and whatever
+# healthy_repo and fake_github export. A section that calls it ends with
+# restore_suite_env.
+ticket_fixture() {
+  healthy_repo
+  fake_github
+  body="$(mktemp)"
+  writeln 'Build the thing.' >"$body"
+}
+
+# fake_blockers_of <n>: #n's blockers read back from the store, sorted by
+# number, space-separated - nothing for none.
+fake_blockers_of() { sort -n "$ORCH_GH_FAKE_STORE/blocked_by/$1" 2>/dev/null | paste -sd ' ' -; }
+
 # --- ticket publish -----------------------------------------------------
 # The one place the ticket-breakdown feature files a ticket and writes its
 # sub-issue link and blocked-by edges, so no skill prose ever calls `gh api`

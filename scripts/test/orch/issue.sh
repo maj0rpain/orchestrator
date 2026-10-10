@@ -5,6 +5,9 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# fake_issue_title <n> <title>: seeds issue #n's title.
+fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
+
 # --- issue publish ------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
 # `gh issue create` in skill prose - stateless like branch off, since a quick

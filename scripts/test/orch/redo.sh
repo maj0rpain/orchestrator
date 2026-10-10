@@ -5,6 +5,24 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# Marks $1 as pushed to origin without a real push - it only has to make
+# "$1@{upstream}" resolve, so that cmd_branch retire's own push/delete (the
+# real git I/O the redo review assertions actually check) has something to
+# run against. The genuine push/checkout cycle for a redo's
+# rename-and-republish is proven once by "redo review"'s first iteration
+# and, at the lower branch-retire level, by "branch retire"'s own
+# to-retire/to-retire-redo-1 assertions - later redo iterations only need the
+# upstream to look real, not a second full round trip to the same bare repo.
+stub_pushed_branch() {
+  local branch="$1"
+  git update-ref "refs/remotes/origin/$branch" "$(git rev-parse "$branch")"
+  git branch -q --set-upstream-to="origin/$branch" "$branch"
+}
+
+# fake_pr_state_of <n>: PR #n's state read back from the store - OPEN, CLOSED
+# or MERGED.
+fake_pr_state_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/state" 2>/dev/null; }
+
 # --- redo review ----------------------------------------------------------
 # The full review -> implement transition: three distinct refusals below a
 # terminal state, and a full composition above it.

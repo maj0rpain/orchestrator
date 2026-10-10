@@ -154,10 +154,6 @@ sc_clone() {
 
 # on_disk <path>: present or absent, whether anything is at <path>.
 on_disk() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
-# archived_count <top> <slug>: how many archive directories for <slug> the main
-# checkout at <top> holds.
-archived_count() { find "$1/.orchestrator/archive" -maxdepth 1 -name "*-$2" 2>/dev/null | wc -l | tr -d ' '; }
-
 # exclude_count <line>: how many times <line> appears whole in the current
 # clone's shared exclude file, the one every checkout of it reads.
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
@@ -237,20 +233,6 @@ healthy_repo() {
   export HOME
 }
 
-# Marks $1 as pushed to origin without a real push - it only has to make
-# "$1@{upstream}" resolve, so that cmd_branch retire's own push/delete (the
-# real git I/O the redo review assertions actually check) has something to
-# run against. The genuine push/checkout cycle for a redo's
-# rename-and-republish is proven once by "redo review"'s first iteration
-# and, at the lower branch-retire level, by "branch retire"'s own
-# to-retire/to-retire-redo-1 assertions - later redo iterations only need the
-# upstream to look real, not a second full round trip to the same bare repo.
-stub_pushed_branch() {
-  local branch="$1"
-  git update-ref "refs/remotes/origin/$branch" "$(git rev-parse "$branch")"
-  git branch -q --set-upstream-to="origin/$branch" "$branch"
-}
-
 
 # fresh_flow <slug>: a section's own starting point - a healthy_repo with a
 # flow named <slug> just started in it, at the spec phase, cwd inside it. A
@@ -267,18 +249,6 @@ review_flow() {
   complete_spec_handoff "$("$ORCH" handoff path implement)"
   complete_implement_handoff "$("$ORCH" handoff path review)"
   state_fixture phase review
-}
-
-# ticket_fixture: a ticket section's starting point - a healthy_repo with the
-# store-backed fake GitHub (fake_github), no issue in it yet. Leaves the global
-# body (a ticket body file reading "Build the thing.") set, and whatever
-# healthy_repo and fake_github export. A section that calls it ends with
-# restore_suite_env.
-ticket_fixture() {
-  healthy_repo
-  fake_github
-  body="$(mktemp)"
-  writeln 'Build the thing.' >"$body"
 }
 
 # --- the store-backed gh fake (#280) ------------------------------------------
@@ -331,16 +301,9 @@ fake_issue() {
 # fake_issue_body <n> <text>: seeds issue #n's body, byte for byte.
 fake_issue_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/body"; }
 
-# fake_issue_title <n> <title>: seeds issue #n's title.
-fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
-
 # fake_comment <n> <author> <created-at> <body>: seeds a comment on issue #n,
 # after any it has.
 fake_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/issues/$1/comments" "$2" "$3" "$4"; }
-
-# fake_pull <n>: seeds #n as an open pull request, which gh's issue reads
-# answer for too.
-fake_pull() { fake_issue "$1" open; : >"$ORCH_GH_FAKE_STORE/issues/$1/pull"; }
 
 # fake_next_issue <n>: the number the next issue created takes.
 fake_next_issue() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_issue"; }
@@ -378,32 +341,19 @@ fake_pr() {
   printf '%s\n' "$4" >"$d/base"
 }
 
-# fake_pr_body <n> <text>: seeds PR #n's body, byte for byte.
-fake_pr_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/body"; }
-
-# fake_pr_comment <n> <author> <created-at> <body>: seeds a comment on PR #n,
-# after any it has.
-fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2" "$3" "$4"; }
-
 # fake_pr_draft <n>: seeds PR #n as a draft.
 fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
 
 # fake_next_pr <n>: the number the next PR opened takes.
 fake_next_pr() { printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/next_pr"; }
 
-# PR #n read back from the store: its state (OPEN, CLOSED or MERGED), head and
-# base branches, title, body, whether it is a draft (yes or no), and the bodies
-# of its comments, in order, one blank line between.
-fake_pr_state_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/state" 2>/dev/null; }
-fake_pr_head_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/head" 2>/dev/null; }
+# PR #n read back from the store: its base branch, body, whether it is a draft
+# (yes or no), and the bodies of its comments, in order, one blank line
+# between.
 fake_pr_base_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/base" 2>/dev/null; }
-fake_pr_title_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/title" 2>/dev/null; }
 fake_pr_body_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/body" 2>/dev/null; }
 fake_pr_draft_of() { [ -f "$ORCH_GH_FAKE_STORE/prs/$1/draft" ] && echo yes || echo no; }
 fake_pr_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/prs/$1/comments"; }
-
-# fake_prs: every PR number the store holds, in order, space-separated.
-fake_prs() { ls "$ORCH_GH_FAKE_STORE/prs" 2>/dev/null | sort -n | tr '\n' ' '; }
 
 # fake_label <name> <colour> <description>: seeds a label the repo already
 # has. An unseeded store has no labels.
@@ -464,10 +414,9 @@ fake_blocker() {
   printf '%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/blocked_by/$n"
 }
 
-# The edges read back from the store: a parent's sub-issues in link order, and
-# #n's blockers sorted by number - each space-separated, nothing for none.
+# fake_sub_issues_of <parent>: the parent's sub-issues read back from the
+# store, in link order, space-separated - nothing for none.
 fake_sub_issues_of() { paste -sd ' ' "$ORCH_GH_FAKE_STORE/subs/$1" 2>/dev/null || true; }
-fake_blockers_of() { sort -n "$ORCH_GH_FAKE_STORE/blocked_by/$1" 2>/dev/null | paste -sd ' ' -; }
 
 # fake_lag <operation> <n> [stale]: the next n calls of the named operation
 # answer stale, as GitHub does for a moment after a write; the call after them
@@ -561,18 +510,6 @@ exit 127
 GH
   chmod +x "$GH_FIXTURE/bin/gh"
   PATH="$GH_FIXTURE/bin:$PATH"
-}
-
-# gh_reply <exit> <stdout> <stderr> <argv...>: the canned reply the fixture gh
-# answers to exactly that argv.
-gh_reply() {
-  local r
-  r="$(mktemp -d "$GH_FIXTURE/replies/XXXXXX")"
-  printf '%s' "$1" >"$r/exit"
-  printf '%s' "$2" >"$r/stdout"
-  printf '%s' "$3" >"$r/stderr"
-  shift 3
-  printf '%s\0' "$@" >"$r/argv"
 }
 
 # gh_calls: how many calls the fixture gh on PATH has answered or refused - 0

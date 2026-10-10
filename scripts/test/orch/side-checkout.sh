@@ -5,6 +5,10 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# archived_count <top> <slug>: how many archive directories for <slug> the main
+# checkout at <top> holds.
+archived_count() { find "$1/.orchestrator/archive" -maxdepth 1 -name "*-$2" 2>/dev/null | wc -l | tr -d ' '; }
+
 # --- side-checkout (#722) ------------------------------------------------------
 # A side checkout: a worktree the plugin makes under the main checkout's
 # .orchestrator/checkouts/<slug>, on no branch at origin/<base>, carrying the

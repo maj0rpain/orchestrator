@@ -5,6 +5,18 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# gh_reply <exit> <stdout> <stderr> <argv...>: the canned reply the fixture gh
+# answers to exactly that argv.
+gh_reply() {
+  local r
+  r="$(mktemp -d "$GH_FIXTURE/replies/XXXXXX")"
+  printf '%s' "$1" >"$r/exit"
+  printf '%s' "$2" >"$r/stdout"
+  printf '%s' "$3" >"$r/stderr"
+  shift 3
+  printf '%s\0' "$@" >"$r/argv"
+}
+
 # --- every gh call pinned to the repo (#520) -----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
 # ORCH_GH_ADAPTER unset so the real adapter operations run, against the fixture
