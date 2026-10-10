@@ -225,18 +225,23 @@ issue_triage_verified() {
 # one write to GitHub (#571). One relabel adds ready-for-agent and removes
 # whichever other triage-role labels the issue carries, then the labels are
 # read back (ADR-0011), and one comment names the label it now carries.
+# With --check it writes nothing: the same read and role walk, then one line
+# on stdout - ready, the held label, or movable - for the planning hook's
+# interviewed-issue step to ask its question from (#989).
 cmd_issue_triage() {
-  local usage="usage: orch.sh issue triage <n> [--override]"
-  local issue="" override=false ready state labels gh_err role label removed=() remove_opts=()
+  local usage="usage: orch.sh issue triage <n> [--override | --check]"
+  local issue="" override=false check=false ready state labels gh_err role label removed=() remove_opts=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --override) override=true ;;
+      --check) check=true ;;
       -*) die "$usage" ;;
       *) [ -z "$issue" ] || die "$usage"; issue="$1" ;;
     esac
     shift
   done
   case "$issue" in ''|*[!0-9]*) die "$usage" ;; esac
+  [ "$check" = false ] || [ "$override" = false ] || die "$usage"
   ready="$(triage_label_for ready-for-agent)"
 
   issue_state_labels_read "$issue" state labels gh_err \
@@ -270,6 +275,14 @@ cmd_issue_triage() {
     finding="$(review_labels "$labels" | sed -n 1p)"
     [ "$is_ready" = true ] || [ -n "$held" ] \
       || die "issue #$issue is a filed finding ($finding) not yet triaged - triage it with $(finding_triage_cmd)"
+  fi
+  # --check stops here, before any write, saying what the write would do.
+  if [ "$check" = true ]; then
+    if [ "$is_ready" = true ]; then note ready
+    elif [ -n "$held" ]; then note "$held"
+    else note movable
+    fi
+    return 0
   fi
   # Already ready: nothing to move, and no comment to leave as noise.
   if [ "$is_ready" = true ]; then return 0; fi

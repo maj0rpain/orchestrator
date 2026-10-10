@@ -235,6 +235,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               triaged (finding triage moves those) or a gh
                               failure.
                               A failed comment only warns
+  issue triage <n> --check    the same read and walk, writing nothing: print
+                              ready (it carries ready-for-agent), the held
+                              label (wontfix ahead of ready-for-human), or
+                              movable, exit 0; exit 1 where the write would
+                              die. Not with --override
   issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>
                               close issue <n> as completed, or as a duplicate
                               of <m> (gh 2.102 or newer), with <file> as its
