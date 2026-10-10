@@ -4,13 +4,14 @@
 # hooks_test.sh and docs_lint.sh, each in quiet mode, and shellcheck, all
 # started at once so they overlap. Each one's stdout is captured to a
 # temporary directory, removed on exit, and its exit status is taken from
-# waiting on it; once all four have finished, their output is printed in a fixed order, whichever finished
-# first. A failing suite does not stop the others. Printed per suite, in the
-# order orch_test.sh, hooks_test.sh, docs_lint.sh: its FAIL lines with their
-# detail lines, then one summary line, "<suite>: <its last line>", or
-# "<suite>: died before its summary (exit N)" when it exited non-zero and its
-# last line is not a summary line. A suite's stderr is not captured: it passes
-# straight through, and the suites' stderr may interleave.
+# waiting on it; once every one has finished, their output is printed in a
+# fixed order, no matter which finished first. A failing suite does not stop
+# the others. Printed per suite, in the order orch_test.sh, hooks_test.sh,
+# docs_lint.sh: its FAIL lines with their detail lines, then one summary line,
+# "<suite>: <its last line>", or "<suite>: died before its summary (exit N)"
+# when it exited non-zero and its last line is not a summary line. A suite's
+# stderr is not captured: it passes straight through, and the suites' stderr
+# may interleave.
 #
 # Then shellcheck, from the repo root two levels up, at warning severity, one
 # process per shell file matched by scripts/*.sh scripts/test/*.sh
