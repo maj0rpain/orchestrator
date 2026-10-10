@@ -23,11 +23,8 @@ depends on them.
 - **the stop**: what stops when loop step d's failures stop refilling.
 - **after loop step f**: where the run goes next.
 
-The caller also says whether the breakdown is **collapsed**: no sub-issue
-published, so no `ticket next`/`ticket close` loop runs against **the issue**,
-and the sequential path dispatches exactly one subagent, for **the issue**
-itself as the ticket. An empty frontier there means nothing was ever split
-out, not "already done."
+The caller also says whether the breakdown is **collapsed**, and what that
+means for its run; loop step b takes it as a fact.
 
 ## The loop
 

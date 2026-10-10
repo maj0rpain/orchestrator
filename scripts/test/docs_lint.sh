@@ -1698,16 +1698,20 @@ echo "docs/ paths resolve (#901)"
 # A skill or agent that names a docs/<path>.md under the plugin root points a
 # model at that file, so the file must exist. Directory references (docs/adr/)
 # and placeholders (docs/adr/<file>.md) name no one file and are not checked.
+# skill_agent_md_grep <plugin root> <grep args...>: grep run over every .md file
+# under the root's skills/ and agents/, each hit as "<file>:<line>:<match>".
+skill_agent_md_grep() {
+  local r="$1"; shift
+  (cd "$r" && find skills agents -name '*.md' -type f 2>/dev/null | sort | xargs -r grep "$@")
+}
 # scan_docs_paths <plugin root>: each docs/<path>.md a file under skills/ or
 # agents/ names that does not exist, as "<file>:<line>: names missing <path>".
 scan_docs_paths() {
-  local r="$1" hit file line path
+  local r="$1" file line match path
   [ -d "$r/skills" ] || [ -d "$r/agents" ] || return 0
-  (cd "$r" && find skills agents -name '*.md' -type f 2>/dev/null | sort \
-    | xargs -r grep -noE '(^|[^A-Za-z0-9_./-])docs/[A-Za-z0-9_./<>*-]*\.md') \
-    | while IFS= read -r hit; do
-      file="${hit%%:*}"; hit="${hit#*:}"
-      line="${hit%%:*}"; path="docs/${hit#*docs/}"
+  skill_agent_md_grep "$r" -noE '(^|[^A-Za-z0-9_./-])docs/[A-Za-z0-9_./<>*-]*\.md' \
+    | while IFS=: read -r file line match; do
+      path="docs/${match#*docs/}"
       case "$path" in *'<'* | *'*'*) continue ;; esac
       [ -e "$r/$path" ] || echo "$file:$line: names missing $path"
     done
@@ -1746,8 +1750,7 @@ scan_driver_loop() {
   local r="$1" doc="docs/driver-loop.md" label
   for label in "${loop_labels[@]}"; do
     grep -qF -- "$label" "$r/$doc" 2>/dev/null || echo "$doc: missing loop step label $label"
-    (cd "$r" && find skills agents -name '*.md' -type f 2>/dev/null | sort \
-      | xargs -r grep -nF -- "$label") | sed -E 's/^([^:]*:[0-9]+):.*/\1: driver loop step label outside '"${doc//\//\\/}"'/'
+    skill_agent_md_grep "$r" -nF -- "$label" | sed -E 's/^([^:]*:[0-9]+):.*/\1: driver loop step label outside '"${doc//\//\\/}"'/'
   done
   return 0
 }
