@@ -154,7 +154,9 @@ the model. Skips the plan/spec/implement/review pipeline entirely: no phases,
 no handoff, no `.orchestrator/state.json`. Still produces its own branch and
 PR, and is still held to this project's standards for how a change gets made -
 test-driven, reviewed, then opened as a PR. Its review is a review pass, and
-it names what it declines in the PR. Meant for small changes, run hands-off:
+it names what it declines in the PR. A spec question its review pass meets
+opens the PR as a draft, naming the question, rather than being settled
+unattended. Meant for small changes, run hands-off:
 it takes an unattended spec review of its linked issue before its ticket
 breakdown, on every run. Before that review, it rewrites the linked issue from
 the plan when the issue is the interviewed issue of the planning session in
@@ -304,7 +306,11 @@ accepted change for more looks, Redo disowns it.
 One look at a change by the two reviewers a review loop starts, with no loop
 around it: no budget, no severity, nothing filed. The session that starts it
 fixes the findings it agrees with and records each one it declines, with its
-reason. A quick implementation takes one before its PR opens. A human may also
+reason. A spec question it meets is neither fixed nor declined but put to a
+human: in the session by a standalone review pass, whose rulings are recorded
+on the spec issue, or, in a quick implementation, by opening the PR as a draft
+that names it. A standalone review pass marks ready a PR held in draft for spec
+questions once every one is ruled. A quick implementation takes one before its PR opens. A human may also
 ask for one on demand, against an issue and the branch they are on - after a
 quick implementation, say - which is a standalone review pass. A standalone
 review pass leaves out the Standards reviewer's smell-baseline findings unless
@@ -429,7 +435,8 @@ review pass, or about the spec, from a spec review.
 Only a finding about the change from the review phase carries a **severity**,
 which the review phase assigns; the reviewer itself reports findings unranked.
 A finding from a review pass carries none: the session that ran the pass
-fixes it or declines it, unless a standalone review pass left it out as a
+fixes it, declines it, or, when it is a spec question, puts it to a human,
+unless a standalone review pass left it out as a
 smell-baseline finding. A finding about the spec carries no
 severity: a human accepts or declines the edit it proposes, or an unattended
 spec review applies it as recommended, and it is never filed.
@@ -460,7 +467,7 @@ import, a comment naming the wrong function, a broken link. Rewording prose is
 never mechanical, however small.
 
 **Spec question**:
-A major whose fix needs a decision about what the change does that the spec, plan and deviations leave unsettled - silent, ambiguous, or self-contradictory on it. A finding that the change contradicts what the spec clearly asks for is blocking, not a spec question. A spec question a review loop files holds the PR out of ready, so a human rules on it before the PR is marked ready; one a later loop meets again does not.
+A finding whose fix needs a decision about what the change does that the spec, plan and deviations leave unsettled - silent, ambiguous, or self-contradictory on it. A finding that the change contradicts what the spec clearly asks for is blocking in a review loop, and fixed in a review pass, not a spec question; a decision about structure only - which of two refactorings, which name - is not one either. In a review loop only a major can be one; a review pass judges it by content alone, with no severity. A spec question a review loop files holds the PR out of ready, so a human rules on it before the PR is marked ready; one a later loop meets again does not. One a review pass meets is neither fixed nor declined: a standalone review pass puts it to the human, and one left unruled - or met in a quick implementation - holds the PR in draft.
 
 **Filed finding**:
 A major or nit the loop did not fix, turned into an issue when a loop

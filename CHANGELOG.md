@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.4.2
+## 4.5.4
 
 Spec review rules each have one owning site (#899, bundling findings #882,
 #883, #884, #885, #887, #888 and #889). The one-round rule of an unattended
@@ -13,6 +13,58 @@ and the planning hook's Blueprint message - now state their lower bound as
 deliberate and ask an invalid Other again, naming the range. The hook's
 review-rounds Skill-tool call reads `and args "<n> --rounds <count>"`, like
 its siblings.
+
+## 4.5.3
+
+`orch.sh finding-triage bundle --category` with a value other than `bug` or
+`enhancement` now dies with `unknown --category '<c>' - expected bug or
+enhancement`, as `finding-triage apply` does, in place of the bare usage
+(#898). The bundle verb checks its members in one loop for both the new and
+the `--into` forms; every other refusal, and the order they fire in, is
+unchanged.
+
+## 4.5.2
+
+The side-checkout and worktree git helpers read each fact from git once per
+call and keep each rule in one helper (#897). The marker's presence is tested
+only by `side_checkout_marked`; `main_checkout` and `ticket_worktrees_under`
+read their paths from `checkout_paths`, the one reader of the paths alone from
+`git worktree list`; and `archive_flow` takes its archive root from its caller,
+through the new `archive_root` for callers that do not already hold it. So the
+#805 claim - the main checkout asked for once - now holds when `side-checkout
+remove` archives a flow, and `archive` decides once whether it runs in a side
+checkout. Every command's output, refusals and exit codes are unchanged.
+
+## 4.5.1
+
+`orch.sh`'s modules split strings into lines one way per job (#829, #832,
+#833, #834). The `first_line` helper is gone: every first line of a string is
+taken with the inline `${x%%$'\n'*}` expansion. `redo review` splits the
+review loop's terminal answer with `lines_split`, as doctor does. Positions a
+`lines_split` caller fills but never reads carry a `_` prefix. `ticket list`
+reads the sub-issue TSV with `while read` and `tsv_split`, and it and
+`finished_flow` lowercase GitHub's states through one `case`, the new
+`state_word` helper, instead of awk or tr.
+Every command's output and exit status are unchanged.
+
+## 4.5.0
+
+A spec question met in a review pass now reaches a human before the PR is
+ready (#908, ADR-0043). `orch-review`'s **Review pass** gains a third outcome
+beside fix and decline: a finding whose fix needs a behaviour decision the
+spec, plan and deviations leave unsettled, judged by content alone, is never
+fixed by picking a behaviour and never declined. A quick implementation lists
+its pass's spec questions under an always-present **Spec questions** heading
+and, with one or more, opens its PR as a draft. A standalone review pass's
+step 3 becomes **Fix, decline and ask**: it puts its questions, and the PR's
+earlier unruled ones, to the human as one batch with recommended answers,
+posts each ruling on the spec issue as `Spec ruling: <question> - <answer>`,
+and fixes per the rulings in its one commit. Its comment gains **Spec
+rulings** and **Spec questions** headings; it turns the PR into a draft while
+a question is unruled, and marks it ready once every one is ruled. `orch.sh`
+gains `pr publish --draft`, `pr draft` and `pr ready` for this (#967), and
+`GLOSSARY.md` updates **Spec question**, **Review pass**, **Quick
+implementation** and **Finding**.
 
 ## 4.4.1
 

@@ -582,6 +582,13 @@ adapter_pr_ready() {
   rm -f "$(fake_pr_dir "$1")/draft"
 }
 
+# adapter_pr_draft <n>: the stored PR a draft.
+adapter_pr_draft() {
+  ! fake_failing adapter_pr_draft || return 1
+  fake_pr_known "$1" || return 1
+  : >"$(fake_pr_dir "$1")/draft"
+}
+
 # adapter_prs_open <head> [base]: the open PRs in the store from the head
 # branch, into the base where one is named, newest first.
 adapter_prs_open() {

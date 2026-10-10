@@ -266,8 +266,11 @@ If the pass stops, stop before opening the PR. This skill promises a review
 before the PR, so it never opens one with an axis unreviewed.
 
 The pass's declines go under a **Review** heading in the PR body (step 7),
-with `None declined.` when there are none. Any host fallback it takes goes
-under the PR body's **Host fallbacks**.
+with `None declined.` when there are none. Its spec questions go under a
+**Spec questions** heading in the PR body: this run is unattended, so it
+never settles one by picking a behaviour, and never declines one - the PR
+opens as a draft instead (step 7). Any host fallback it takes goes under the
+PR body's **Host fallbacks**.
 
 ## 7. Open the PR
 
@@ -303,17 +306,28 @@ carries a **Verification** heading with step 5's combined verification: the
 command it ran, then `pass` or `fail`, and a **Merge resolutions** heading
 with step 5's base sync's and loop step e's ticket resolutions, per
 **Merge resolutions** in `agents/orch-resolver.md` (under the plugin
-root). It
+root). It carries a **Spec questions** heading, always present and separate
+from **Review**: each spec question step 6's pass recorded, one line each as
+the pass records it, or `None.` when it recorded none. It
 ends with a **Host fallbacks** heading listing every fallback this run took -
 including any the spec review in step 2 took - or `None (<host>).` It
 pushes the branch and opens the PR against the base branch `branch off`
-recorded, not as a draft. The body starts with `Closes #<issue>` when that
+recorded. With one or more spec questions, append `--draft`:
+`bash "$ORCH" pr publish <issue> "<title>" <body-file> --draft` opens the
+PR as a draft. Without any, it opens without the flag, not a draft. A failed `pr
+publish`, with `--draft` or without, stops this skill, relaying its reason;
+one with `--draft` is never retried without it. The body starts with `Closes #<issue>` when that
 base branch is the default branch, and `Refs #<issue>` otherwise - the
 issue closes when the release PR carries the work into the default branch
 (the `orch-release` skill). Either way `pr publish` writes that line, so the
-body file carries no closing keyword of its own. Not a draft because the
-review pass in step 6 already happened, so there is no loop left to
-promote it - draft would leave it stuck with nothing watching it.
+body file carries no closing keyword of its own. Without a spec question it
+is not a draft, because the review pass in step 6 already happened, so there
+is no loop left to promote it - a draft would leave it stuck with nothing
+watching it. With one, the draft waits on a human's ruling, not on a loop:
+the human resumes with a standalone review pass (`/orchestrator:review-pass
+<issue>`), which asks the questions and marks the PR ready once every one is
+ruled. See
+`docs/adr/0043-a-spec-question-met-in-a-review-pass-reaches-a-human-before-the-pr-is-ready.md`.
 
 ## Starting in a side checkout
 
