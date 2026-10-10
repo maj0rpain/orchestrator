@@ -104,8 +104,13 @@ phase asks for it before round 1. A standalone review takes it from
    a failed body fetch does: the lenses would otherwise review half the spec.
 3. Resolve the other files the lenses read, and record the paths:
    - the plan handoff: `bash "$ORCH" handoff path spec` (always `01-plan.md`);
-   - the glossary and decisions: `GLOSSARY.md` and `docs/adr/` at the repo
-     root, where they exist;
+   - the glossary: when `GLOSSARY.md` exists at the repo root, write the
+     entries the spec mentions with `bash "$ORCH" glossary match
+     <dir>/spec.md <dir>/comments.md > <dir>/glossary.md`, and record
+     `<dir>/glossary.md`. With no root `GLOSSARY.md`, record no glossary
+     path. A failed `glossary match` stops the phase exactly as a failed
+     body fetch does;
+   - the decisions: `docs/adr/` at the repo root, where it exists;
    - the repo root, for the codebase.
 
 Nothing from this session's conversation reaches a lens: not the plan as you
@@ -140,9 +145,11 @@ Steps 1 to 4 below run at the start of every round, as **Rounds** says.
 3. **Fetch the comments**: `bash "$ORCH" issue comments <issue>
    <dir>/comments.md`. A failure stops the review, as a failed body fetch
    does.
-4. Resolve the glossary and decisions (`GLOSSARY.md` and `docs/adr/` at the
-   repo root, where they exist) and the repo root, as the spec-phase entry
-   does. There is no plan handoff.
+4. Resolve the glossary, the decisions and the repo root, as the spec-phase
+   entry does: when the root `GLOSSARY.md` exists, write `bash "$ORCH"
+   glossary match <dir>/spec.md <dir>/comments.md > <dir>/glossary.md` and
+   record that path, else record no glossary path; a failed `glossary match`
+   stops the review, as a failed body fetch does. There is no plan handoff.
 
 The standalone entry never calls `spec fetch`, `spec comments`, `spec update`,
 `spec comment`, or `handoff path`, never reads under `.orchestrator/handoff/`,
