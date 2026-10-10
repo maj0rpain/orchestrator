@@ -161,7 +161,7 @@ section_text() {
 
 # The kept set that holds isolation alone: it seeds a filter's kept set, so a
 # filter whose set is still this one matched no section.
-readonly only_isolation=",1,"
+readonly orch_kept_isolation=",1,"
 
 # print_summary <pass> <fail> <skip>: the suite's closing lines, a blank line
 # then the counts, the skips only when there were any. The parallel runner and
@@ -213,19 +213,19 @@ orch_jobs=$((10#$orch_jobs))
 
 # Every run, sequential or parallel, filtered or not, evals the text the walk
 # extracts for its kept set: no section runs from this file itself.
-only_titles="$(section_titles)"
+orch_titles="$(section_titles)"
 if [ -n "${ORCH_TEST_ONLY:-}" ]; then
-  only_keep="$only_isolation$(printf '%s\n' "$only_titles" | grep -nE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
-  if [ "$only_keep" = "$only_isolation" ]; then
+  orch_kept="$orch_kept_isolation$(printf '%s\n' "$orch_titles" | grep -nE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
+  if [ "$orch_kept" = "$orch_kept_isolation" ]; then
     echo "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section; the selectable sections are:" >&2
-    printf '%s\n' "$only_titles"
+    printf '%s\n' "$orch_titles"
     exit 1
   fi
 else
-  only_keep=",$(printf '%s\n' "$only_titles" | awk '{ print NR }' | tr '\n' ',')"
+  orch_kept=",$(printf '%s\n' "$orch_titles" | awk '{ print NR }' | tr '\n' ',')"
 fi
 if [ "$orch_jobs" -eq 1 ]; then
-  eval "$(section_text "$only_keep")"
+  eval "$(section_text "$orch_kept")"
   exit $?
 fi
 
@@ -242,9 +242,9 @@ orch_stop_children() {
   exit 130
 }
 trap orch_stop_children INT TERM
-IFS=, read -r -a orch_sections <<<"${only_keep#,}"
+IFS=, read -r -a orch_sections <<<"${orch_kept#,}"
 orch_total=${#orch_sections[@]}
-orch_started=0 orch_flushed=0 orch_pass=0 orch_fail=0 orch_skip=0 orch_failed=0
+orch_started=0 orch_flushed=0 orch_pass=0 orch_fail=0 orch_skip=0 orch_any_failed=0
 echo "orch.sh tests"
 while [ "$orch_flushed" -lt "$orch_total" ]; do
   # Start children while a slot is free: a slot is held by every child
@@ -256,9 +256,9 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
     orch_i=$((orch_i + 1))
   done
   while [ "$orch_started" -lt "$orch_total" ] && [ "$orch_running" -lt "$orch_jobs" ]; do
-    orch_n="${orch_sections[$orch_started]}"
-    ORCH_TEST_CHILD_SECTION="$orch_n" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_n.counts" \
-      ORCH_TEST_JOBS=1 bash "$SUITE_SCRIPT" >"$orch_buf/$orch_n.out" &
+    orch_pos="${orch_sections[$orch_started]}"
+    ORCH_TEST_CHILD_SECTION="$orch_pos" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_pos.counts" \
+      ORCH_TEST_JOBS=1 bash "$SUITE_SCRIPT" >"$orch_buf/$orch_pos.out" &
     orch_pids[orch_started]=$!
     orch_started=$((orch_started + 1))
     orch_running=$((orch_running + 1))
@@ -268,26 +268,26 @@ while [ "$orch_flushed" -lt "$orch_total" ]; do
   while [ "$orch_flushed" -lt "$orch_started" ] &&
     ! kill -0 "${orch_pids[$orch_flushed]}" 2>/dev/null; do
     wait "${orch_pids[$orch_flushed]}"; orch_status=$?
-    orch_n="${orch_sections[$orch_flushed]}"
-    cat "$orch_buf/$orch_n.out"
+    orch_pos="${orch_sections[$orch_flushed]}"
+    cat "$orch_buf/$orch_pos.out"
     orch_counts=""
-    [ -f "$orch_buf/$orch_n.counts" ] && orch_counts="$(cat "$orch_buf/$orch_n.counts")"
+    [ -f "$orch_buf/$orch_pos.counts" ] && orch_counts="$(cat "$orch_buf/$orch_pos.counts")"
     case "$orch_counts" in
       [0-9]*' '[0-9]*' '[0-9]*)
-        read -r orch_p orch_f orch_s <<<"$orch_counts"
-        orch_pass=$((orch_pass + orch_p)); orch_fail=$((orch_fail + orch_f))
-        orch_skip=$((orch_skip + orch_s))
-        [ "$orch_f" -eq 0 ] || orch_failed=1 ;;
+        read -r orch_child_pass orch_child_fail orch_child_skip <<<"$orch_counts"
+        orch_pass=$((orch_pass + orch_child_pass)); orch_fail=$((orch_fail + orch_child_fail))
+        orch_skip=$((orch_skip + orch_child_skip))
+        [ "$orch_child_fail" -eq 0 ] || orch_any_failed=1 ;;
       *)
-        print_fail "section '$(printf '%s\n' "$only_titles" | sed -n "${orch_n}p")' reported no counts" \
+        print_fail "section '$(printf '%s\n' "$orch_titles" | sed -n "${orch_pos}p")' reported no counts" \
           "it exited $orch_status before its summary"
-        orch_fail=$((orch_fail + 1)); orch_failed=1 ;;
+        orch_fail=$((orch_fail + 1)); orch_any_failed=1 ;;
     esac
-    [ "$orch_status" -eq 0 ] || orch_failed=1
+    [ "$orch_status" -eq 0 ] || orch_any_failed=1
     orch_flushed=$((orch_flushed + 1))
     orch_progress=1
   done
   [ "$orch_progress" -eq 1 ] || sleep 0.1
 done
 print_summary "$orch_pass" "$orch_fail" "$orch_skip"
-exit "$orch_failed"
+exit "$orch_any_failed"
