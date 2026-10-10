@@ -89,17 +89,17 @@ Otherwise, review the issue as it stands, with no rewrite, and remember why
 for step 7. These are the no-rewrite cases:
 
 - there was no interview in this conversation;
-- the issue is a side checkout's recorded issue (option 2), whose session has
-  no interview;
+- the issue is a side checkout's recorded issue, whose session has no
+  interview;
 - the issue was published fresh in option 4, so it is already written from
   the plan;
 - the body already reflects the plan - a blueprint its own route just
   rewrote, say, or an issue the interview only confirmed.
 
 With `--side` in the arguments, or when the human asked in words for a side
-checkout, stop here once the issue is linked, and any rewrite is done, and
-print the rewrite's outcome or the reason there was none, then go to **Starting in a side
-checkout** below: steps 2-7 run in the side checkout's own session.
+checkout, stop here once the issue is linked, and any rewrite is done, then
+go to **Starting in a side checkout** below: steps 2-7 run in the side
+checkout's own session.
 
 ## 2. Run an unattended spec review
 
@@ -321,7 +321,10 @@ promote it - draft would leave it stuck with nothing watching it.
 Reached from step 1 (`--side`, or the human asking) or from step 4 (a yes to
 the offer on exit 3). It runs in this session, after step 1 has linked or
 published the issue, with any glossary or ADR wording in its body. The issue
-is the hand-off: no plan file is written.
+is the hand-off: no plan file is written. Before the hand-off, on either
+route, print step 1's rewrite outcome - the rewrite and its breakdown
+outcome, or the reason there was none - since the side checkout's session
+records only that any rewrite ran here.
 
 1. Get the slug from `bash "$ORCH" slug "<short description>"`.
 2. `bash "$ORCH" side-checkout add <slug> --issue <issue>`, with the linked
