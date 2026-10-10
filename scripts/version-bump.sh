@@ -18,7 +18,8 @@
 PLUGIN_JSON=.claude-plugin/plugin.json
 CHANGELOG=CHANGELOG.md
 
-shopt -s nullglob
+# dotglob too, so a stray dotfile under changelog.d/ is refused, not skipped.
+shopt -s nullglob dotglob
 fragments=(changelog.d/*)
 [ "${#fragments[@]}" -eq 0 ] && exit 0
 

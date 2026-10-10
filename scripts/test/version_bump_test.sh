@@ -192,6 +192,10 @@ c="$(checkout 4.5.6)"
 fragment "$c" 11.md 'bump: patch' '' 'A good one.'
 fragment "$c" 12.txt 'bump: patch' '' 'Misnamed.'
 refused "a fragment without the .md suffix" "$c" "changelog.d/12.txt"
+c="$(checkout 4.5.6)"
+fragment "$c" 11.md 'bump: patch' '' 'A good one.'
+fragment "$c" .notes.md 'bump: patch' '' 'Hidden.'
+refused "a dotfile under changelog.d/" "$c" "changelog.d/.notes.md"
 
 c="$(checkout 4.5.6)"
 fragment "$c" 11.md 'bump: patch' '' 'A good one.'
