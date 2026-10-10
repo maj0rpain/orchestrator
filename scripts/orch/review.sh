@@ -153,7 +153,7 @@ ci_ref_unchecked() {
 # rerun - goes through die2. The repo is resolved here rather than left to the
 # guard, whose death exits 1 and would read as "nothing to rerun".
 review_rerun() {
-  local pr="${1:-}" out err gh_line rc=0 link="" run name="" line bucket
+  local pr="${1:-}" out err rc=0 link="" run name="" line bucket no_checks
   [ $# -eq 1 ] || die2 "usage: orch.sh review rerun <pr>"
   case "$pr" in ''|*[!0-9]*) die2 "not a PR number: $pr" ;; esac
   repo_pin || die2 "$REPO_REMEDY"
@@ -161,9 +161,12 @@ review_rerun() {
   # reason, or the "no checks" answer naming the branch - is what the death
   # message carries.
   capture out err adapter_pr_checks "$pr" all || rc=$?
-  gh_line="${err%%$'\n'*}"
   [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $(gh_reason "$err")"
-  [ -n "$out" ] || die2 "PR #$pr has no checks to rerun: ${gh_line:-no checks reported}"
+  # gh's "no checks" answer, not a failure reason, so not gh_reason's to cut.
+  if [ -z "$out" ]; then
+    no_checks="${err%%$'\n'*}"
+    die2 "PR #$pr has no checks to rerun: ${no_checks:-no checks reported}"
+  fi
   # The first failed or cancelled check's name and link, split by tsv_split
   # so an empty name survives: IFS=$'\t' read would collapse it, a tab being
   # IFS whitespace. No failed check leaves both empty.

@@ -247,7 +247,7 @@ finding_scan_one() {
 # <pr> <file>:<line> <result> <detail> <triage state>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]"
-  local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_line err
+  local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_err err
   local args=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -267,8 +267,8 @@ cmd_finding_triage_scan() {
   # Each finding is read once, state, labels and body together: an explicit
   # one here, where it is checked, a listed one in the loop below.
   if [ -n "$issue" ]; then
-    issue_state_labels_body_read "$issue" state labels body gh_line \
-      || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
+    issue_state_labels_body_read "$issue" state labels body gh_err \
+      || die "gh could not read issue #$issue: $(gh_reason "$gh_err")"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
@@ -292,8 +292,8 @@ cmd_finding_triage_scan() {
     || die "could not fetch origin/$default"
   for n in $(printf '%s\n' $nums | sort -nu); do
     if [ -z "$issue" ]; then
-      issue_state_labels_body_read "$n" state labels body gh_line \
-        || die "gh could not read issue #$n: $(gh_reason "$gh_line")"
+      issue_state_labels_body_read "$n" state labels body gh_err \
+        || die "gh could not read issue #$n: $(gh_reason "$gh_err")"
     fi
     if [ -n "$pr_filter" ] && [ "$(finding_pr "$body")" != "$pr_filter" ]; then continue; fi
     finding_scan_one "$n" "$body" "$ref" "$(triage_state "$labels")"
@@ -324,7 +324,7 @@ triage_comment_post() {
 cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
-  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels role label stale_category gh_line err
+  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels role label stale_category gh_err err
   # The relabel's --remove options, possibly none: close-fixed, where they are
   # the whole relabel, then makes no edit at all.
   local remove_opts=()
@@ -353,8 +353,8 @@ cmd_finding_triage_apply() {
   # Only the labels are wanted: the state is the read's throwaway half, rather
   # than a third, near-identical label read added beside
   # adapter_issue_state_labels and adapter_issue_title_labels.
-  issue_state_labels_read "$issue" state labels gh_line \
-    || die "gh could not read issue #$issue: $(gh_reason "$gh_line")"
+  issue_state_labels_read "$issue" state labels gh_err \
+    || die "gh could not read issue #$issue: $(gh_reason "$gh_err")"
   # Every triage-role label the issue carries but the outcome does not set
   # goes, so an already-triaged finding ends in the one state the outcome
   # sets. Remove only what the issue carries: gh refuses to remove a label the
@@ -396,9 +396,9 @@ cmd_finding_triage_apply() {
 # Writes its labels into the caller-named variable, for the caller's own
 # checks.
 bundle_member_check() {
-  local __bmc_state __bmc_labels __bmc_line __bmc_role __bmc_label __bmc_ready=""
-  issue_state_labels_read "$1" __bmc_state __bmc_labels __bmc_line \
-    || die "gh could not read issue #$1: $(gh_reason "$__bmc_line")"
+  local __bmc_state __bmc_labels __bmc_err __bmc_role __bmc_label __bmc_ready=""
+  issue_state_labels_read "$1" __bmc_state __bmc_labels __bmc_err \
+    || die "gh could not read issue #$1: $(gh_reason "$__bmc_err")"
   [ "$__bmc_state" = OPEN ] || die "issue #$1 is not open - a bundle takes open filed findings only"
   has_filed_severity_label "$__bmc_labels" \
     || die "issue #$1 is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
@@ -454,9 +454,9 @@ cmd_finding_triage_bundle() {
   if [ -n "$into" ]; then
     case "$into" in *[!0-9]*) die "$usage" ;; esac
     ! $have_title && [ -z "$file$state$category" ] || die "$usage"
-    local b_state b_labels b_line
-    issue_state_labels_read "$into" b_state b_labels b_line \
-      || die "gh could not read issue #$into: $(gh_reason "$b_line")"
+    local b_state b_labels b_err
+    issue_state_labels_read "$into" b_state b_labels b_err \
+      || die "gh could not read issue #$into: $(gh_reason "$b_err")"
     [ "$b_state" = OPEN ] || die "bundle #$into is not open - --into resumes an open bundle only"
     labels_have "$b_labels" "$BUNDLE_LABEL" \
       || die "issue #$into carries no '$BUNDLE_LABEL' label - --into resumes a bundle only"
