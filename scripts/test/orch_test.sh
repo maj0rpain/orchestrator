@@ -22,11 +22,11 @@
 # fixed it has been cleared. Each runs
 # against a throwaway git repo in $TMPDIR.
 #
-# What keeps the suite off a real flow is the harness below, not section
-# order: before any section runs it cd's into a fresh `mktemp -d` directory
-# that is no git repo, points HOME (and SUITE_HOME, which sections restore)
-# at a fresh temp directory, and unsets CLAUDE_PLUGIN_ROOT - exiting non-zero
-# if it cannot. A section run on its own that forgets to arrange its own repo
+# What keeps the suite off a real flow is setup.sh's shared setup, not
+# section order: before any section runs it cd's into a fresh `mktemp -d`
+# directory that is no git repo, points HOME (and SUITE_HOME, which sections
+# restore) at a fresh temp directory, and unsets CLAUDE_PLUGIN_ROOT - exiting
+# non-zero if it cannot. A section run on its own that forgets to arrange its own repo
 # then fails against an empty directory instead of the caller's checkout. The
 # isolation section, the suite's first, asserts all of this.
 #
