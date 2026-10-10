@@ -135,7 +135,8 @@ assert_contains "Blueprint asks about a spec review every time" "$ctx" "every ti
 assert_contains "Blueprint says how to pick the issue up" "$ctx" "/orchestrator:start --issue"
 assert_contains "Blueprint puts glossary/ADR wording into the issue verbatim" "$ctx" "into the issue body verbatim"
 # Blueprint rewrites the interviewed issue (#707): rewrite mode on it whenever
-# one was settled - moved, skipped, or named under "It's a different issue" -
+# one was settled - moved, already ready, skipped, the check failed, or named
+# under "It's a different issue" -
 # and a new issue only without one; the number is handed to orch-to-spec, and
 # orch-to-tickets runs unless rewrite mode reported the breakdown kept.
 # $1 where, $2 context, $3 host (claude|junie).
@@ -145,7 +146,9 @@ check_blueprint_rewrite() {
     "write the spec in rewrite mode on that issue, replacing #<n>'s body instead of publishing a new issue"
   assert_contains "Blueprint publishes a new issue only without one $where" "$ctx" \
     "Only with no interviewed issue, publish the spec as a new issue"
-  assert_contains "rewrite applies whether moved or skipped $where" "$ctx" \
+  assert_contains "rewrite applies whatever happened to its label $where" "$ctx" \
+    "whatever happened to its label - moved, already ready, skipped, or the check failed -"
+  assert_not_contains "rewrite no longer hinges on a move or skip $where" "$ctx" \
     "whether the user moved it to its triage label or answered \"Skip\""
   assert_contains "rewrite applies to the issue named under a different issue $where" "$ctx" \
     "or the one the user named under \"It's a different issue\""
@@ -513,6 +516,36 @@ check_interviewed_step() {
     "With no interviewed issue, skip this step entirely"
   assert_contains "asks the move question with the host's tool $where" "$ctx" \
     "ask one blocking question with $tool"
+  assert_contains "runs the check through the resolved path $where" "$ctx" \
+    "bash \"$ORCH_PATH\" issue triage <n> --check
+  through that path - never a raw gh call - and follow what it prints:"
+  if occurs_before "$ctx" "issue triage <n> --check" "ask one blocking question with $tool"; then
+    ok "runs the check before any question $where"
+  else
+    bad "runs the check before any question $where" "check not before the first question"
+  fi
+  assert_contains "the done-close replaces the step with no check $where" "$ctx" \
+    "When the done-close below applies, it replaces this step: run no check and ask no label question."
+  assert_contains "ready asks no label question $where" "$ctx" \
+    "- \`ready\`: ask no label question. Name #<n> as the interviewed issue in one sentence and go straight to the route question."
+  assert_contains "a held label asks one override question $where" "$ctx" \
+    "- \`wontfix\` or \`ready-for-human\`, a held label: ask one blocking question with $tool, naming that label:
+    \"#<n> carries \`<label>\`. Override it and move #<n> to \`ready-for-agent\`?\", with the options
+    \"Override and move\", \"Skip\", or \"It's a different issue\"."
+  assert_contains "override and move runs --override $where" "$ctx" \
+    "On \"Override and move\", run
+    bash \"$ORCH_PATH\" issue triage <n> --override
+    through that path."
+  assert_contains "a failed override reports, warns and continues $where" "$ctx" \
+    "If that fails, report its orch: message, warn the user that init --issue will refuse #<n> until it carries \`ready-for-agent\`, and continue to the route question."
+  assert_contains "movable asks today's question $where" "$ctx" \
+    "- \`movable\`: ask one blocking question with $tool, naming its number:
+    \"Move #<n> to \`ready-for-agent\`\", \"Skip\", or \"It's a different issue\"."
+  assert_contains "a failed check warns with its reason and continues $where" "$ctx" \
+    "- If the check itself fails, ask no label question: warn the user, relaying the check's orch: reason, that init --issue will refuse #<n> until it carries \`ready-for-agent\`, and continue to the route question."
+  assert_contains "a different issue is checked the same way $where" "$ctx" \
+    "On \"It's a different issue\", the user names it:
+  run the check on that issue instead and follow the same branches for it."
   assert_contains "the question names the issue number $where" "$ctx" "Move #<n> to \`ready-for-agent\`"
   assert_contains "offers skip $where" "$ctx" "\"Skip\""
   assert_contains "offers a different issue $where" "$ctx" "\"It's a different issue\""
@@ -539,17 +572,35 @@ check_renamed_labels() {
   local where="$1" event="$2" arg="$3" session="$4" ctx
   ctx="$("$event" "$arg" "$session" | "$GRILL" | jq -r '.additionalContext')"
   assert_contains "names the repo's ready-for-agent label $where" "$ctx" "Move #<n> to \`agent-ready\`"
+  assert_contains "the override question names the repo's ready-for-agent label $where" "$ctx" \
+    "Override it and move #<n> to \`agent-ready\`?"
+  assert_contains "the held-label branch names the repo's labels $where" "$ctx" \
+    "- \`not-planned\` or \`human-only\`, a held label:"
   assert_contains "warns with the repo's ready-for-agent label $where" "$ctx" "until it carries \`agent-ready\`"
   assert_contains "names the repo's wontfix and ready-for-human labels $where" "$ctx" "\`not-planned\` or \`human-only\`"
   assert_not_contains "names no canonical ready-for-agent label $where" "$ctx" "ready-for-agent"
 }
 
+# The step's text alone: its first line up to the next top-level bullet.
+interviewed_text() {
+  printf '%s\n' "$1" | awk '
+    /^- At the close, if this planning was about an open issue/ { on = 1; print; next }
+    on && /^- / { exit }
+    on { print }'
+}
 ctx="$(skill_event "mattpocock-skills:grilling" ii1 | "$GRILL" | jq -r '.additionalContext')"
 check_interviewed_step "on Claude Code" "$ctx" "the AskUserQuestion tool"
+claude_step="$(interviewed_text "$ctx")"
 ctx="$(prompt_event '$grilling' ii2 | "$GRILL" | jq -r '.additionalContext')"
 check_interviewed_step "on Junie" "$ctx" "the ask_user tool"
+junie_step="$(interviewed_text "$ctx")"
 ctx="$(prompt_event "$confirm" ii2 | "$GRILL" | jq -r '.additionalContext')"
 check_interviewed_step "at Junie's plan confirmation" "$ctx" "the ask_user tool"
+assert_contains "extracts the step's text through its last line" "$claude_step" \
+  "run the check on that issue instead and follow the same branches for it."
+assert_eq "the Claude Code and Junie steps differ only in the asking tool" \
+  "${claude_step//the AskUserQuestion tool/the ask_user tool}" "$junie_step"
+assert_eq "Junie's two messages carry the same step" "$(interviewed_text "$ctx")" "$junie_step"
 
 # The done-close (#985): when the planning finds the interviewed issue's work
 # already done, the close offers to close it as done through orch.sh issue
