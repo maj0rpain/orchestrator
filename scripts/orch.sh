@@ -80,6 +80,8 @@ readonly ORCH="$ROOT/$ORCH_DIR_NAME"
 readonly STATE="$ORCH/state.json"
 readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
+# Read only by common.sh, but derived from ROOT, which is set after common.sh
+# is sourced, so it stays here with the rest of the ROOT block.
 readonly TICKET_WORKTREES="$ORCH/worktrees"
 
 # The noun modules, after the ROOT block, whose constants they read. doctor.sh
