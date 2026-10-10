@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.5.3
+
+`orch.sh finding-triage bundle --category` with a value other than `bug` or
+`enhancement` now dies with `unknown --category '<c>' - expected bug or
+enhancement`, as `finding-triage apply` does, in place of the bare usage
+(#898). The bundle verb checks its members in one loop for both the new and
+the `--into` forms; every other refusal, and the order they fire in, is
+unchanged.
+
 ## 4.5.2
 
 The side-checkout and worktree git helpers read each fact from git once per
