@@ -94,6 +94,7 @@ source "$ORCH_SCRIPTS/orch/doctor.sh"
 source "$ORCH_SCRIPTS/orch/finding-triage.sh"
 source "$ORCH_SCRIPTS/orch/gh.sh"
 source "$ORCH_SCRIPTS/orch/global.sh"
+source "$ORCH_SCRIPTS/orch/glossary.sh"
 source "$ORCH_SCRIPTS/orch/handoff.sh"
 source "$ORCH_SCRIPTS/orch/init.sh"
 source "$ORCH_SCRIPTS/orch/issue.sh"
@@ -139,6 +140,7 @@ main() {
     review)        cmd_review "$@" ;;
     spec)          cmd_spec "$@" ;;
     spec-review)   cmd_spec_review "$@" ;;
+    glossary)      cmd_glossary "$@" ;;
     review-pass)   cmd_review_pass "$@" ;;
     finding-triage) cmd_finding_triage "$@" ;;
     redo)          cmd_redo "$@" ;;
