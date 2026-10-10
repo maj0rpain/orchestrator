@@ -99,6 +99,25 @@ assert_contains "offers Blueprint only as an option" "$out" "Blueprint only"
 # numbered option lines, not only that each option is present.
 count_closing_options() { printf '%s' "$1" | jq -r '.additionalContext' | grep -cE '^ +[0-9]+\. '; }
 assert_eq "offers exactly three options" "$(count_closing_options "$out")" "3"
+# The route options keep the hook's order unless one is recommended, and a
+# recommendation is labelled with a scope reason (#983). Matched by exact
+# rule substrings: the Blueprint rounds question has its own "(Recommended)".
+# Every line opening with a number and a period is an option line, so the
+# rule text adds none.
+check_route_rules() {
+  local where="$1" ctx="$2"
+  local order='Keep the route options in the order above unless you recommend one'
+  assert_contains "keeps the route options' order unless recommending $where" "$ctx" "$order"
+  assert_contains "labels a recommended route with a scope reason $where" "$ctx" \
+    'append " (Recommended)" to its label, and give that scope-based reason in one clause in its description'
+  assert_contains "recommends at most one route option $where" "$ctx" 'At most one route option carries "(Recommended)"'
+  assert_contains "labels a moved route option recommended $where" "$ctx" \
+    'a route option moved out of the order above always carries it'
+  assert_eq "states the order rule once $where" "$(count_of "$ctx" "$order")" "1"
+  assert_eq "numbers only the three option lines $where" \
+    "$(printf '%s' "$ctx" | grep -cE '^ *[0-9]+\. ')" "3"
+}
+check_route_rules "on Claude Code" "$(printf '%s' "$out" | jq -r '.additionalContext')"
 assert_contains "says exactly three options" "$out" "exactly three options"
 assert_contains "tells the model to invoke the flow skill itself" "$out" "orchestrator:orch-flow"
 assert_contains "tells the model to invoke the quick-implement skill itself" "$out" "orchestrator:orch-quick-implement"
@@ -304,6 +323,7 @@ assert_contains "names the active flow's issue and phase" "$ctx" "the flow for #
 assert_contains "the same-flow branch names the flow's issue" "$ctx" "about this flow's issue, #42"
 check_flow_variant "on Claude Code" "$ctx" "$cc_next_redo"
 assert_eq "offers exactly three options beside an active flow" "$(count_closing_options "$out")" "3"
+check_route_rules "beside an active flow" "$ctx"
 assert_marker_present "writes the grilling marker beside an active flow" grilling s6
 assert_empty "stays silent on a second planning call beside an active flow" \
   "$(skill_event "grilling" s6 | "$GRILL")"
@@ -365,6 +385,7 @@ assert_contains "offers starting the flow on Junie" "$ctx" "Start the orchestrat
 assert_contains "offers quick implementation on Junie" "$ctx" "Quick implementation"
 assert_contains "offers Blueprint only on Junie" "$ctx" "Blueprint only"
 assert_eq "offers exactly three options on Junie" "$(count_closing_options "$out")" "3"
+check_route_rules "on Junie" "$ctx"
 check_blueprint_rewrite "on Junie" "$ctx" junie
 assert_not_contains "no route tells the model to delete the marker on Junie" "$ctx" "marker"
 assert_contains "forbids offering to implement on Junie" "$ctx" "Do NOT offer to implement"
@@ -425,6 +446,7 @@ assert_contains "asks the closing question at plan confirmation" "$ctx" "Call th
 assert_contains "offers starting the flow at plan confirmation" "$ctx" "Start the orchestrator flow"
 assert_contains "offers quick implementation at plan confirmation" "$ctx" "Quick implementation"
 assert_eq "offers exactly three options at plan confirmation" "$(count_closing_options "$out")" "3"
+check_route_rules "at Junie's plan confirmation" "$ctx"
 assert_contains "offers Blueprint only at plan confirmation" "$ctx" "Blueprint only"
 check_blueprint_rewrite "at Junie's plan confirmation" "$ctx" junie
 assert_contains "points at orch-flow's SKILL.md at plan confirmation" "$ctx" "$(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
