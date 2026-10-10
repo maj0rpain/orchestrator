@@ -3,7 +3,7 @@
 The procedure that builds a ticket breakdown, one frontier after another, with
 one `orch-implementer` per ticket (ADR-0036). A flow's implement phase and a
 quick implementation both run it: each skill's session is the loop's driver,
-reads this doc, and binds its slots below to its own run before step a.
+reads this doc, and binds its slots below to its own run before loop step a.
 Commands run through the caller's `$ORCH`.
 
 ## Slots

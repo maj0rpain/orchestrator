@@ -1698,18 +1698,20 @@ echo "docs/ paths resolve (#901)"
 # A skill or agent that names a docs/<path>.md under the plugin root points a
 # model at that file, so the file must exist. Directory references (docs/adr/)
 # and placeholders (docs/adr/<file>.md) name no one file and are not checked.
+# A path under the plugin root's variable or placeholder (${CLAUDE_PLUGIN_ROOT}/docs/,
+# <plugin root>/docs/) is checked; one under any other directory is not ours.
 # skill_agent_md_grep <plugin root> <grep args...>: grep run over every .md file
 # under the root's skills/ and agents/, each hit as "<file>:<line>:<match>".
 skill_agent_md_grep() {
   local r="$1"; shift
-  (cd "$r" && find skills agents -name '*.md' -type f 2>/dev/null | sort | xargs -r grep "$@")
+  (cd "$r" && find skills agents -name '*.md' -type f 2>/dev/null | sort | xargs -r grep -H "$@")
 }
 # scan_docs_paths <plugin root>: each docs/<path>.md a file under skills/ or
 # agents/ names that does not exist, as "<file>:<line>: names missing <path>".
 scan_docs_paths() {
   local r="$1" file line match path
   [ -d "$r/skills" ] || [ -d "$r/agents" ] || return 0
-  skill_agent_md_grep "$r" -noE '(^|[^A-Za-z0-9_./-])docs/[A-Za-z0-9_./<>*-]*\.md' \
+  skill_agent_md_grep "$r" -noE '(^|[^A-Za-z0-9_./-]|[}>]/)docs/[A-Za-z0-9_./<>*-]*\.md' \
     | while IFS=: read -r file line match; do
       path="docs/${match#*docs/}"
       case "$path" in *'<'* | *'*'*) continue ;; esac
@@ -1722,7 +1724,8 @@ mkdir -p "$fixture/skills/orch-a" "$fixture/agents" "$fixture/docs/adr"
 : >"$fixture/docs/here.md"
 : >"$fixture/docs/adr/0001-x.md"
 printf 'See `docs/gone.md`.\n' >"$fixture/skills/orch-a/SKILL.md"
-printf 'Read docs/adr/0002-gone.md.\n' >"$fixture/agents/a.md"
+printf '%s\n' 'Read docs/adr/0002-gone.md.' 'Read ${CLAUDE_PLUGIN_ROOT}/docs/rooted-gone.md.' \
+  'Read `<plugin root>/docs/placeholder-gone.md`.' >"$fixture/agents/a.md"
 printf '%s\n' 'See `docs/here.md` and docs/adr/0001-x.md.' 'ADRs live in `docs/adr/`.' \
   'Write `docs/adr/<file>.md`.' 'Not ours: some/docs/gone.md.' >"$fixture/agents/b.md"
 out="$(scan_docs_paths "$fixture")"
@@ -1730,6 +1733,10 @@ flags "a skill naming a missing docs/ file is flagged" \
   "$out" "skills/orch-a/SKILL.md:1: names missing docs/gone.md"
 flags "an agent naming a missing nested docs/ file is flagged" \
   "$out" "agents/a.md:1: names missing docs/adr/0002-gone.md"
+flags "a docs/ file under the plugin root's variable is flagged" \
+  "$out" "agents/a.md:2: names missing docs/rooted-gone.md"
+flags "a docs/ file under a plugin root placeholder is flagged" \
+  "$out" "agents/a.md:3: names missing docs/placeholder-gone.md"
 spares "existing docs/ files are not flagged" "$out" 'docs/(here|adr/0001-x)\.md'
 spares "a docs/ directory reference is not flagged" "$out" 'docs/adr/$'
 spares "a docs/ placeholder path is not flagged" "$out" '<file>'
