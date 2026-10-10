@@ -78,7 +78,7 @@ against it.
 _Avoid_: existing issue, pre-existing issue, given issue.
 
 **Interviewed issue**:
-An open issue a planning session was run about, or the open issue the human names in its place when the session closes. When the human confirms the plan, the session offers to move it to the `ready-for-agent` triage label, since the interview settled what triage would have. A blueprint drawn from that session rewrites this issue as its spec issue rather than publishing a new one; a quick implementation started from it rewrites it from the plan when the plan changed its scope or substance.
+An open issue a planning session was run about, or the open issue the human names in its place when the session closes. When the human confirms the plan, the session offers to move it to the `ready-for-agent` triage label, since the interview settled what triage would have. A blueprint drawn from that session rewrites this issue as its spec issue rather than publishing a new one; a quick implementation started from it may rewrite it from the plan, as **Quick implementation** says.
 _Avoid_: planned issue, subject issue.
 
 ### Repository and tooling
