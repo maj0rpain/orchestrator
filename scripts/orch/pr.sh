@@ -147,18 +147,38 @@ cmd_pr_comment() {
 # state only through the review loop (review ready and its Ready conditions).
 cmd_pr_draft() {
   [ $# -eq 0 ] || die2 "usage: orch.sh pr draft"
-  pr_set_draft true
+  local out pr is_draft err
+  out="$(open_pr_draft_flag)" || exit $?
+  lines_split "$out" pr is_draft
+  if [ "$is_draft" = true ]; then
+    note "PR #$pr is already a draft"
+    return 0
+  fi
+  capture_err err adapter_pr_draft "$pr" \
+    || die2 "gh could not turn PR #$pr into a draft: $(gh_reason "$err")"
+  note "PR #$pr is now a draft"
 }
 
 cmd_pr_ready() {
   [ $# -eq 0 ] || die2 "usage: orch.sh pr ready"
-  pr_set_draft false
+  local out pr is_draft err
+  out="$(open_pr_draft_flag)" || exit $?
+  lines_split "$out" pr is_draft
+  if [ "$is_draft" != true ]; then
+    note "PR #$pr is already ready"
+    return 0
+  fi
+  capture_err err adapter_pr_ready "$pr" \
+    || die2 "gh could not mark PR #$pr ready: $(gh_reason "$err")"
+  note "PR #$pr is now ready"
 }
 
-# pr_set_draft <true|false>: pr draft's and pr ready's shared body - the
-# current branch's open PR brought to that draft state.
-pr_set_draft() {
-  local want="$1" branch phase pr state_draft is_draft err
+# pr draft's and pr ready's shared front: refuses a branch an active flow
+# holds, then prints the current branch's open PR number and its draft flag
+# (true or false), one per line. Returns 1, printing nothing, when the branch
+# has no open PR, as current_open_pr does.
+open_pr_draft_flag() {
+  local branch phase pr state_draft is_draft rest err
   branch="$(git symbolic-ref --quiet --short HEAD)" \
     || die2 "not on a branch (detached HEAD)"
   if phase="$(flow_holding_phase "$branch")"; then
@@ -167,21 +187,9 @@ pr_set_draft() {
   pr="$(current_open_pr)" || return $?
   capture state_draft err adapter_pr_state_draft "$pr" \
     || die2 "gh could not read PR #$pr: $(gh_reason "$err")"
-  is_draft="$(printf '%s\n' "$state_draft" | sed -n 2p)"
+  lines_split "$state_draft" _ is_draft rest
   [ "$is_draft" = true ] || is_draft=false
-  if [ "$is_draft" = "$want" ]; then
-    if [ "$want" = true ]; then note "PR #$pr is already a draft"; else note "PR #$pr is already ready"; fi
-    return 0
-  fi
-  if [ "$want" = true ]; then
-    capture_err err adapter_pr_draft "$pr" \
-      || die2 "gh could not turn PR #$pr into a draft: $(gh_reason "$err")"
-    note "PR #$pr is now a draft"
-  else
-    capture_err err adapter_pr_ready "$pr" \
-      || die2 "gh could not mark PR #$pr ready: $(gh_reason "$err")"
-    note "PR #$pr is now ready"
-  fi
+  printf '%s\n%s\n' "$pr" "$is_draft"
 }
 
 # The current branch's open PR number, for pr comment, pr comments, pr fetch

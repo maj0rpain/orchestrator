@@ -230,24 +230,24 @@ out="$("$ORCH" pr draft 2>"$errf")"; st=$?
 assert_status "an unreadable PR list exits 2" "$st" 2
 fake_unfail
 
-pd_state="$(git rev-parse --show-toplevel)/.orchestrator/state.json"
-mkdir -p "$(dirname "$pd_state")"
+state_file="$(git rev-parse --show-toplevel)/.orchestrator/state.json"
+mkdir -p "$(dirname "$state_file")"
 for p in spec implement review; do
-  printf '{"slug":"x","phase":"%s","issue":30,"branch":"quick/12-foo"}\n' "$p" >"$pd_state"
+  printf '{"slug":"x","phase":"%s","issue":30,"branch":"quick/12-foo"}\n' "$p" >"$state_file"
   out="$("$ORCH" pr draft 2>"$errf")"; st=$?
   assert_status "a branch an active flow holds at $p is refused" "$st" 2
   assert_eq "with the flow-held message at $p" "$(cat "$errf")" \
     "orch: the active flow holds quick/12-foo at phase $p - its PR changes state only through the review loop"
   assert_eq "leaving the PR ready at $p" "$(fake_pr_draft_of 57)" "no"
 done
-printf '{"slug":"x","phase":"done","issue":30,"branch":"quick/12-foo"}\n' >"$pd_state"
+printf '{"slug":"x","phase":"done","issue":30,"branch":"quick/12-foo"}\n' >"$state_file"
 out="$("$ORCH" pr draft 2>"$errf")"; st=$?
 assert_status "a done flow on the branch lets it through" "$st" 0
-printf '{"slug":"x","phase":"review","issue":12,"branch":"orch/12-x"}\n' >"$pd_state"
+printf '{"slug":"x","phase":"review","issue":12,"branch":"orch/12-x"}\n' >"$state_file"
 rm -f "$ORCH_GH_FAKE_STORE/prs/57/draft"
 out="$("$ORCH" pr draft 2>"$errf")"; st=$?
 assert_status "an active flow on another branch lets it through" "$st" 0
-rm -f "$pd_state"
+rm -f "$state_file"
 
 out="$("$ORCH" pr draft extra 2>"$errf")"; st=$?
 assert_status "an argument exits 2" "$st" 2
@@ -312,17 +312,17 @@ assert_eq "relaying gh's reason" "$(cat "$errf")" \
   "orch: gh could not read PR #57: HTTP 502: Bad Gateway"
 fake_unfail
 
-pr_state="$(git rev-parse --show-toplevel)/.orchestrator/state.json"
-mkdir -p "$(dirname "$pr_state")"
+state_file="$(git rev-parse --show-toplevel)/.orchestrator/state.json"
+mkdir -p "$(dirname "$state_file")"
 for p in spec implement review; do
-  printf '{"slug":"x","phase":"%s","issue":30,"branch":"quick/12-foo"}\n' "$p" >"$pr_state"
+  printf '{"slug":"x","phase":"%s","issue":30,"branch":"quick/12-foo"}\n' "$p" >"$state_file"
   out="$("$ORCH" pr ready 2>"$errf")"; st=$?
   assert_status "a branch an active flow holds at $p is refused" "$st" 2
   assert_eq "with the flow-held message at $p" "$(cat "$errf")" \
     "orch: the active flow holds quick/12-foo at phase $p - its PR changes state only through the review loop"
   assert_eq "leaving the PR a draft at $p" "$(fake_pr_draft_of 57)" "yes"
 done
-rm -f "$pr_state"
+rm -f "$state_file"
 
 out="$("$ORCH" pr ready extra 2>"$errf")"; st=$?
 assert_status "an argument exits 2" "$st" 2
