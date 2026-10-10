@@ -1,5 +1,5 @@
 ---
-description: Start a quick implementation - issue (rewritten from the plan, unattended, when it is the interviewed issue and the plan changed it), unattended spec review, tickets, test-driven build, review pass, PR - for a named issue; with none named, for a side checkout's recorded issue, else the change just planned.
+description: Start a quick implementation - issue (possibly rewritten from the plan, unattended), unattended spec review, tickets, test-driven build, review pass, PR - for a named issue; with none named, for a side checkout's recorded issue, else the change just planned.
 argument-hint: "[<issue>] [--side]"
 ---
 
