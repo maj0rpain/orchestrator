@@ -490,6 +490,80 @@ assert_contains "the CLI conventions' noun table lists issue ready" \
   "$(grep '^| `issue`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`ready`'
 restore_suite_env
 
+# --- issue close --------------------------------------------------------------
+# The planning close's done-close (#985): one gh call closes an issue as
+# completed or as a duplicate, the file's contents as its closing comment -
+# bad input refused before any gh call, nothing read back, labels untouched.
+echo
+echo "issue close"
+healthy_repo
+fake_github
+close_comment="$(mktemp)"
+printf 'Done by #854: all three findings fixed.' >"$close_comment"
+
+fake_issue 80 open ready-for-agent bug
+out="$("$ORCH" issue close 80 --completed --comment-file "$close_comment" 2>&1)"; st=$?
+assert_status "--completed closes the issue" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+assert_eq "as completed" "$(fake_state_of 80) $(fake_reason_of 80)" "CLOSED completed"
+assert_eq "with the file's contents as its only comment, as given" \
+  "$(fake_comments_of 80)" "Done by #854: all three findings fixed."
+assert_eq "leaving its labels unchanged" "$(fake_labels_of 80)" "bug ready-for-agent "
+
+fake_issue 81 open
+fake_issue 82 open
+out="$("$ORCH" issue close 81 --duplicate-of 82 --comment-file "$close_comment" 2>&1)"; st=$?
+assert_status "--duplicate-of closes the issue" "$st" 0
+assert_eq "as a duplicate of the other" \
+  "$(fake_state_of 81) $(fake_reason_of 81) $(fake_duplicate_of 81)" "CLOSED duplicate 82"
+assert_eq "with the comment" "$(fake_comments_of 81)" "Done by #854: all three findings fixed."
+assert_eq "and the other issue untouched" "$(fake_state_of 82)" "OPEN"
+
+empty_comment="$(mktemp)"
+fake_issue 83 open
+refused() {
+  local what="$1" want="$2"
+  shift 2
+  out="$("$ORCH" issue close "$@" 2>&1)"; st=$?
+  assert_status "refuses $what" "$st" 1
+  assert_contains "with an orch: message ($what)" "$out" "orch: "
+  assert_contains "saying why ($what)" "$out" "$want"
+  assert_eq "closing nothing ($what)" "$(fake_state_of 83)" "OPEN"
+}
+refused "a non-numeric issue" "plain issue number" 8x3 --completed --comment-file "$close_comment"
+refused "no issue at all" "usage: orch.sh issue close" --completed --comment-file "$close_comment"
+refused "a non-numeric duplicate target" "plain issue number" 83 --duplicate-of '#82' --comment-file "$close_comment"
+refused "a duplicate of itself" "duplicate of itself" 83 --duplicate-of 83 --comment-file "$close_comment"
+refused "neither --completed nor --duplicate-of" "--completed or --duplicate-of" 83 --comment-file "$close_comment"
+refused "both --completed and --duplicate-of" "--completed or --duplicate-of" 83 --completed --duplicate-of 82 --comment-file "$close_comment"
+refused "a missing --comment-file" "--comment-file" 83 --completed
+refused "a comment file that does not exist" "comment file not found" 83 --completed --comment-file /nonexistent/comment.md
+refused "an empty comment file" "comment file is empty" 83 --completed --comment-file "$empty_comment"
+refused "an unknown option" "usage: orch.sh issue close" 83 --completed --reason x --comment-file "$close_comment"
+refused "a missing --duplicate-of value" "usage: orch.sh issue close" 83 --comment-file "$close_comment" --duplicate-of
+refused "a missing --comment-file value" "usage: orch.sh issue close" 83 --completed --comment-file
+refused "a second issue" "usage: orch.sh issue close" 83 84 --completed --comment-file "$close_comment"
+
+# gh's reason rides on orch's own line, first line only (#846).
+assert_gh_dies "a failed completed close exits 1" adapter_issue_close "$GH_502" 1 \
+  "orch: gh could not close issue #83: HTTP 502: Bad Gateway" \
+  "$ORCH" issue close 83 --completed --comment-file "$close_comment"
+assert_gh_dies "a failed duplicate close names the gh it needs" adapter_issue_close "$GH_502" 1 \
+  "orch: gh could not close issue #83: HTTP 502: Bad Gateway - --duplicate-of needs gh 2.102 or newer" \
+  "$ORCH" issue close 83 --duplicate-of 82 --comment-file "$close_comment"
+assert_eq "a failed close leaves it open" "$(fake_state_of 83)" "OPEN"
+assert_eq "with no comment behind" "$(fake_comments_of 83)" ""
+
+out="$("$ORCH" issue bogus 2>&1)"
+assert_contains "the unknown-op message lists close" "$out" "|close"
+assert_contains "help documents issue close" "$("$ORCH" help)" \
+  "issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>"
+assert_contains "the CLI conventions' noun table lists issue close" \
+  "$(grep '^| `issue`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`close`'
+rm -f "$close_comment" "$empty_comment"
+unset -f refused
+restore_suite_env
+
 # --- issue fetch/update -------------------------------------------------------
 # The stateless issue body read/write pair - the same contract
 # issue publish/pr publish/ticket publish already offer, extended to a plain
