@@ -81,9 +81,10 @@ and ask nothing (ADR-0034):
 The rewrite is the `orch-to-spec` skill's rewrite mode on the linked issue,
 in its **Unattended rewrite** form, followed through to its end. That mode is
 the one definition of what the rewrite does unattended, and this step
-restates none of it. Remember the breakdown outcome it reports for step 7's
-**Issue rewrite** line. If it stops, quick implementation stops too: relay
-its message, and make no side checkout and go on to no step 2.
+restates none of it. Remember the breakdown outcome word it reports, and on
+`kept` its edited-ticket count, for step 7's **Issue rewrite** line. If it
+stops, quick implementation stops too: relay its message, and make no side
+checkout and go on to no step 2.
 
 Otherwise, review the issue as it stands, with no rewrite, and remember why
 for step 7. These are the no-rewrite cases:
@@ -238,9 +239,12 @@ none. If `changelog.md` is missing, stop before `pr publish` and say so -
 never write `None.` then, since the decisions taken are unknown. It
 carries an **Issue rewrite** heading, always present and separate from
 **Spec review decisions**, holding one line that says what this run did
-in step 1: `Rewrote #<n> from the plan (breakdown: <outcome>)`, with `<outcome>`
-the breakdown outcome the rewrite reported, as defined in `orch-to-spec`'s
-**Unattended rewrite** Report, or `As it
+in step 1: `Rewrote #<n> from the plan (breakdown: <word>)`, with `<word>`
+the outcome word the rewrite reported, as defined in `orch-to-spec`'s
+**Rewrite the issue** step 5 - except when the word is `kept` and the
+edited-ticket count is above 0, when it is `Rewrote #<n> from the plan
+(breakdown: kept, <k> tickets edited)`, with `<k>` the count. A `kept` with
+no count reported reads as a count of 0. Or the line is `As it
 stands: <reason>`, such as `As it stands: no interview in this
 conversation` or `As it stands: the interview only confirmed the issue`.
 In a side checkout's session the line is `As it stands: a side checkout's
@@ -279,8 +283,9 @@ Reached from step 1 (`--side`, or the human asking) or from step 4 (a yes to
 the offer on exit 3). It runs in this session, after step 1 has linked or
 published the issue, with any glossary or ADR wording in its body. The issue
 is the hand-off: no plan file is written. Before the hand-off, on either
-route, print step 1's rewrite outcome - the rewrite and its breakdown
-outcome, or the reason there was none - since the side checkout's session
+route, print step 1's rewrite outcome - the rewrite with its outcome word
+and, on `kept`, its edited-ticket count, as step 7's **Issue rewrite** line
+reads, or the reason there was none - since the side checkout's session
 records only that any rewrite ran here.
 
 1. Get the slug from `bash "$ORCH" slug "<short description>"`.
