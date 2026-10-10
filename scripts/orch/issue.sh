@@ -23,8 +23,6 @@ has_review_label() {
   [ -n "$(review_labels "$1")" ]
 }
 
-# --- issue --------------------------------------------------------------
-#
 # The four stateless issue ops - fetch, comments, update and comment - on an
 # issue given just its number: the same contract issue publish/pr
 # publish/ticket publish already offer, extended to a plain issue. spec.sh's

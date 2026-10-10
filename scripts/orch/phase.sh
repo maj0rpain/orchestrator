@@ -18,8 +18,6 @@ next_phase_cmd() {
 # advance needs the base SHA the review diffs against before leaving implement.
 require_base_sha() { require_field "$1" base_sha "no base SHA recorded in state - branch create records it"; }
 
-# --- phases -----------------------------------------------------------------
-
 # The block that ends every phase, for the handoff the phase now recorded
 # reads: the next phase needs a fresh session this one cannot start, so the
 # block names it in the host's own words, through next_phase_cmd.

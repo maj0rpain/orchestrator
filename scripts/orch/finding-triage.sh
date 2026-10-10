@@ -29,8 +29,6 @@ category_other() {
   esac
 }
 
-# --- finding-triage ---------------------------------------------------------
-
 # finding_location <body>: "<file>\t<line>\t<sha>" from a filed body's
 # **Location:** line - the first backticked <file>:<line> on it, the line
 # alone or a range, and the SHA after its last "at" - or nothing when the

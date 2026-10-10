@@ -59,3 +59,8 @@ A new noun gets its own module, `scripts/orch/<noun>.sh`, named as its test
 file `scripts/test/orch/<noun>.sh` is; a case in `orch.sh`'s `main`; and a
 line in `orch.sh`'s source list. A new verb on an existing noun goes in that
 noun's module.
+
+A new bare global command goes in `scripts/orch/global.sh`, with its tests in
+`scripts/test/orch/global.sh`, unless it is big enough to earn its own module
+and test file, as `init` and `doctor` have, or its job belongs to an existing
+noun, as `default-branch` belongs to `repo`, when it goes in that noun's module.

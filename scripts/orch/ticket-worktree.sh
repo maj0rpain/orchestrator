@@ -3,8 +3,6 @@
 # Its tests: scripts/test/orch/ticket-worktree.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# --- ticket-worktree ----------------------------------------------------------
-#
 # A ticket's own worktree on its own ticket branch, so ticket subagents of one
 # breakdown can build at once without sharing a working tree (ADR-0036). Each
 # lives under the current checkout's top level - inside the session's project

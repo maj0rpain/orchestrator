@@ -4,8 +4,6 @@
 # Its tests: scripts/test/orch/side-checkout.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# --- side-checkout ------------------------------------------------------------
-#
 # A side checkout: a worktree the plugin makes under the main checkout's
 # .orchestrator/checkouts/, so a second flow or a quick implementation runs
 # beside the work in this checkout, in a session of its own (ADR-0037). The
