@@ -43,9 +43,7 @@ restore_suite_env
 # --- init git-excludes the plugin's directories once ---------------------------
 echo
 echo "init git-excludes the plugin's directories once"
-new_repo >/dev/null
-fake_github
-"$ORCH" init first >/dev/null
+fake_flow first
 rm -rf .orchestrator
 "$ORCH" init second >/dev/null
 assert_eq "a second init leaves .orchestrator/ excluded once" "$(exclude_count .orchestrator/)" "1"

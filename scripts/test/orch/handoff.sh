@@ -8,9 +8,7 @@
 # --- handoff path -----------------------------------------------------------
 echo
 echo "handoff path"
-new_repo >/dev/null
-fake_github
-"$ORCH" init handoff-path >/dev/null
+fake_flow handoff-path
 assert_contains "spec phase reads the plan handoff"      "$("$ORCH" handoff path spec)"      "01-plan.md"
 assert_contains "implement phase reads the spec handoff" "$("$ORCH" handoff path implement)" "02-spec.md"
 assert_contains "review phase reads the implement handoff" "$("$ORCH" handoff path review)"  "03-implement.md"
@@ -26,9 +24,7 @@ restore_suite_env
 # --- handoff validate -------------------------------------------------------
 echo
 echo "handoff validate"
-new_repo >/dev/null
-fake_github
-"$ORCH" init handoff-validate >/dev/null
+fake_flow handoff-validate
 h="$("$ORCH" handoff path spec)"
 complete_plan_handoff "$h"
 out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
@@ -91,9 +87,7 @@ restore_suite_env
 # section's body and nothing of its neighbours.
 echo
 echo "handoff section"
-new_repo >/dev/null
-fake_github
-"$ORCH" init handoff-section >/dev/null
+fake_flow handoff-section
 h="$("$ORCH" handoff path spec)"
 complete_plan_handoff "$h"
 out="$("$ORCH" handoff section "$h" "Rejected alternatives" 2>&1)"; st=$?
@@ -167,9 +161,7 @@ restore_suite_env
 # anything less sends implement's `ticket next` query against nothing.
 echo
 echo "ticket breakdown handoff"
-new_repo >/dev/null
-fake_github
-"$ORCH" init ticket-breakdown >/dev/null
+fake_flow ticket-breakdown
 h2="$("$ORCH" handoff path implement)"
 writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
         '## Spec review changelog' 'Not reviewed.' >"$h2"

@@ -240,6 +240,12 @@ healthy_repo() {
 # review_flow for the review phase.
 fresh_flow() { healthy_repo; "$ORCH" init "$1" >/dev/null; }
 
+# fake_flow <slug>: a section's starting point on the store-backed GitHub fake
+# - a bare new_repo, fake_github, and a flow named <slug> just started in it,
+# cwd inside it. Unlike fresh_flow it brings no healthy_repo environment; the
+# section still ends with its own restore_suite_env.
+fake_flow() { new_repo >/dev/null; fake_github; "$ORCH" init "$1" >/dev/null; }
+
 # review_flow <slug>: fresh_flow, then on to the review phase - leaves a flow
 # named <slug> at the review phase with the plan, spec and implement handoffs
 # complete, cwd inside it, and whatever healthy_repo exports.

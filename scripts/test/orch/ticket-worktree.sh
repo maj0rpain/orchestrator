@@ -5,6 +5,12 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# rebasing [dir]: prints rebasing when a rebase is in progress in dir (default:
+# the current directory), none otherwise.
+rebasing() {
+  [ -d "$(git -C "${1:-.}" rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none
+}
+
 # --- ticket-worktree (#619) ----------------------------------------------------
 # A ticket's own worktree on its own ticket branch, under the checkout's
 # .orchestrator/worktrees/. Checked through what git shows afterwards -
@@ -161,7 +167,7 @@ echo leftover >"$wt/untracked.txt"
 out="$("$ORCH" ticket-worktree remove 7 --unmerged 2>&1)"; st=$?
 assert_status "remove --unmerged of a mid-rebase worktree still refuses it dirty" "$st" 1
 assert_eq "having aborted its rebase first" \
-  "$([ -d "$(git -C "$wt" rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "none"
+  "$(rebasing "$wt")" "none"
 assert_eq "returning the ticket branch to its committed tip" \
   "$(git -C "$wt" rev-parse HEAD) $(git -C "$wt" branch --show-current)" "$ticket_tip orch/5-feature--t7"
 assert_eq "and removing nothing with force" "$(on_disk "$wt")" "present"
@@ -184,7 +190,7 @@ mkdir -p .orchestrator/worktrees/t9
 out="$("$ORCH" ticket-worktree remove 9 --unmerged 2>&1)"; st=$?
 assert_status "remove --unmerged of a leftover non-worktree t<n> dir refuses" "$st" 1
 assert_eq "leaving the enclosing checkout's rebase in progress" \
-  "$([ -d "$(git rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none)" "rebasing"
+  "$(rebasing)" "rebasing"
 git rebase --abort
 rmdir .orchestrator/worktrees/t9
 git reset -q --hard HEAD~1
