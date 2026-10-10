@@ -62,15 +62,14 @@ issue_number_list() {
 # links read back exactly as published: the parent's sub-issue listing
 # contains the child, and the child's blocked-by listing is the same set of
 # numbers requested, in any order, both sides de-duplicated. 1 on a mismatch;
-# 2 when either read fails, gh's first stderr line - empty when gh printed
-# none - written into <line_var>, so a failed read is never reported as a
-# mismatch (#843). Read fresh every call, never cached - the caller retries
+# 2 when either read fails, gh's stderr written into <line_var>, so a failed
+# read is never reported as a mismatch (#843). Read fresh every call, never cached - the caller retries
 # this once on either status, and a cached answer would just repeat the same
 # verdict. Locals prefixed so no caller's variable name is shadowed.
 ticket_links_verified() {
   local __tlv_out __tlv_blockers __tlv_err __tlv_line __tlv_linked=""
   if ! capture __tlv_out __tlv_err adapter_sub_issues "$2"; then
-    printf -v "$1" '%s' "${__tlv_err%%$'\n'*}"
+    printf -v "$1" '%s' "$__tlv_err"
     return 2
   fi
   while IFS= read -r __tlv_line; do
@@ -78,7 +77,7 @@ ticket_links_verified() {
   done <<<"$__tlv_out"
   [ -n "$__tlv_linked" ] || return 1
   if ! capture __tlv_blockers __tlv_err adapter_blockers "$3"; then
-    printf -v "$1" '%s' "${__tlv_err%%$'\n'*}"
+    printf -v "$1" '%s' "$__tlv_err"
     return 2
   fi
   if [ -n "$__tlv_blockers" ]; then __tlv_blockers="$(printf '%s\n' "$__tlv_blockers" | sort -un)"; fi

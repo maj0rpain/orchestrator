@@ -723,6 +723,13 @@ out="$(contract ci_probe 66 all 2>&1)"; st=$?
 assert_status "ci probe: a failed checks read is still an answer" "$st" 0
 assert_eq "unreachable, with the first line of gh's stderr and nothing else" "$out" \
   "$(writeln unreachable "      dial tcp: lookup api.github.com: no such host")"
+# A read that fails with nothing on stderr names that, never a blank detail
+# line (#925).
+gh_reply 1 '' '' pr checks 68 --json bucket,name,link
+out="$(contract ci_probe 68 all 2>&1)"; st=$?
+assert_status "ci probe: a silently failed checks read is still an answer" "$st" 0
+assert_eq "unreachable, its detail saying gh gave no reason" "$out" \
+  "$(writeln unreachable "      gh gave no reason")"
 gh_reply 1 '' "no checks reported on the 'topic' branch" pr checks 67 --json bucket,name,link
 out="$(contract ci_probe 67 all 2>&1)"; st=$?
 assert_status "ci probe: no checks reported is an answer" "$st" 0

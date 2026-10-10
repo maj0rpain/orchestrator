@@ -728,7 +728,7 @@ ci_probe() {
   local pr="$1" scope="$2" out err failed="" pending="" line bucket name
   if ! capture out err adapter_pr_checks "$pr" "$scope"; then
     note unreachable
-    note "      ${err%%$'\n'*}"
+    note "      $(gh_reason "$err")"
     return 0
   fi
   if [ -z "$out" ]; then note none; return 0; fi

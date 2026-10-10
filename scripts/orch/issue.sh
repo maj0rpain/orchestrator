@@ -116,15 +116,14 @@ cmd_issue_ready() {
 # issue_publish_verified <line_var> <n> <title> <label>: 0 only once the
 # created issue reads back with the title it was given and the
 # ready-for-agent role's label among its labels; 1 on a mismatch; 2 when the
-# read fails, gh's first stderr line - empty when gh printed none - written
-# into <line_var>, so a failed read is never reported as a mismatch. Read
-# fresh every call, never cached - the caller retries this once on either
-# status, as ticket_links_verified's caller does. Locals prefixed so no
-# caller's variable name is shadowed.
+# read fails, gh's stderr written into <line_var>, so a failed read is never
+# reported as a mismatch. Read fresh every call, never cached - the caller
+# retries this once on either status, as ticket_links_verified's caller does.
+# Locals prefixed so no caller's variable name is shadowed.
 issue_publish_verified() {
   local __ipv_out __ipv_err __ipv_title __ipv_labels
   if ! capture __ipv_out __ipv_err adapter_issue_title_labels "$2"; then
-    printf -v "$1" '%s' "${__ipv_err%%$'\n'*}"
+    printf -v "$1" '%s' "$__ipv_err"
     return 2
   fi
   lines_split "$__ipv_out" __ipv_title __ipv_labels
@@ -163,8 +162,8 @@ cmd_issue_publish() {
 
 # issue_triage_verified <line_var> <n> <ready> [removed-label...]: 0 only
 # once the issue reads back carrying <ready> and none of the removed labels;
-# 1 on a mismatch; 2 when the read fails, gh's first stderr line - empty when
-# gh printed none - written into <line_var>. Read fresh every call, never
+# 1 on a mismatch; 2 when the read fails, gh's stderr written into
+# <line_var>. Read fresh every call, never
 # cached - the caller re-reads once on either status, as issue publish's
 # does. Locals prefixed so no caller's variable name is shadowed.
 issue_triage_verified() {
