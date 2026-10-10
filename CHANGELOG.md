@@ -1,5 +1,20 @@
 # Changelog
 
+## 4.5.1
+
+The driver loop has one home (#901, #675): its loop steps a-f and its
+**Dispatching a subagent** paragraph move out of `orch-flow`'s implement phase
+and `orch-quick-implement`'s implement step into `docs/driver-loop.md`,
+written in terms of six named slots - the issue, the branch, the record, the
+judge, the stop, and after loop step f - that each skill binds to its own run.
+`docs/host-capabilities.md`'s **Start a background subagent** fallback points
+there. `orch-quick-implement`'s step 1 now says the side checkout's session
+runs steps 1-7, matching **Starting in a side checkout** (#741). `GLOSSARY.md`
+widens **Driver** to a driver loop's session and adds **Driver loop**; the
+duplication out-of-scope record says where its keep-every-copy rule stops.
+The docs lint gains two checks: every `docs/` file a skill or agent names
+exists, and the loop's step labels appear only in `docs/driver-loop.md`.
+
 ## 4.5.0
 
 A spec question met in a review pass now reaches a human before the PR is

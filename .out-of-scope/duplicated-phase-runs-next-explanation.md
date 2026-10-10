@@ -41,6 +41,25 @@ single owner with pointers from everywhere else would leave each reader one
 file short of what it needs. Drift is caught by the review loop's Standards
 axis when the copies disagree, not by removing the copies.
 
+## Where the rule stops
+
+Keeping every copy holds for an explanation or a consequence a reader needs
+in place: a fresh subagent or a standalone stub that sees only its own file,
+or a skill's own consequence of a shared contract, as #339 keeps. It does not
+hold for a whole procedure a driver session runs and can read from a shared
+doc it already cites, as both driver skills cite **A driver's base sync** in
+the resolver's brief. Such a procedure takes one copy and pointers to it.
+
+The driver loop is the instance (#675): its loop steps a-f and its
+**Dispatching a subagent** paragraph were written out in both `orch-flow`'s
+implement phase and `orch-quick-implement`'s implement step, and now live
+once, in `docs/driver-loop.md`, with each skill binding the doc's slots to
+its own run. A Standards finding that a skill lacks its own copy of the loop
+is not a missing copy, and a copy put back is a duplicate.
+
+This sits beside the "self-contained" reasoning above and the #339 entry
+below; neither changes.
+
 ## Prior requests
 
 - #65: "The phase-runs-next tense rule is duplicated near-verbatim across three files" — filed by the review loop as a Standards-axis nit against PR #56
@@ -51,3 +70,4 @@ axis when the copies disagree, not by removing the copies.
 - #211: "Opening paragraph and reporting rules are duplicated word for word across the four lens agents" (review-loop Standards nit against PR #209)
 - #339: "The ticket exists exit contract is written twice, in orch-flow and orch-quick-implement" (review-loop Standards nit against PR #332). The two copies agree on the exit codes but not on what exit 0's word settles: the flow's step 6 **Ticket breakdown**, or quick implementation's step 5 frontier. Each caller's reader needs its own consequence in place; the exit codes themselves are stated once, in `cmd_ticket_exists`'s header comment.
 - #370: "The comments paragraph is pasted into all four spec-review lens briefs" (review-loop Standards nit against PR #363). Each lens is a fresh subagent that sees only its own brief and the files it is given, so each brief says in place that the spec is the body and its comments together.
+- #675: "The driver loop is written twice, in orch-flow and orch-quick-implement" (review-loop Standards finding). Not kept: a whole procedure a driver session runs moved to `docs/driver-loop.md` - see **Where the rule stops**.

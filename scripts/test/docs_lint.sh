@@ -1692,6 +1692,79 @@ assert_empty "a step 0 with the redo check and question, and the new entry, are 
 check "the spec phase's step 0 offers to rewrite an adopted issue, and the glossary agrees" \
   "$(scan_adopted_rewrite "$PLUGIN_ROOT")"
 
+# --- docs/ paths resolve (#901) -----------------------------------------------
+echo
+echo "docs/ paths resolve (#901)"
+# A skill or agent that names a docs/<path>.md under the plugin root points a
+# model at that file, so the file must exist. Directory references (docs/adr/)
+# and placeholders (docs/adr/<file>.md) name no one file and are not checked.
+# scan_docs_paths <plugin root>: each docs/<path>.md a file under skills/ or
+# agents/ names that does not exist, as "<file>:<line>: names missing <path>".
+scan_docs_paths() {
+  local r="$1" hit file line path
+  [ -d "$r/skills" ] || [ -d "$r/agents" ] || return 0
+  (cd "$r" && find skills agents -name '*.md' -type f 2>/dev/null | sort \
+    | xargs -r grep -noE '(^|[^A-Za-z0-9_./-])docs/[A-Za-z0-9_./<>*-]*\.md') \
+    | while IFS= read -r hit; do
+      file="${hit%%:*}"; hit="${hit#*:}"
+      line="${hit%%:*}"; path="docs/${hit#*docs/}"
+      case "$path" in *'<'* | *'*'*) continue ;; esac
+      [ -e "$r/$path" ] || echo "$file:$line: names missing $path"
+    done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-a" "$fixture/agents" "$fixture/docs/adr"
+: >"$fixture/docs/here.md"
+: >"$fixture/docs/adr/0001-x.md"
+printf 'See `docs/gone.md`.\n' >"$fixture/skills/orch-a/SKILL.md"
+printf 'Read docs/adr/0002-gone.md.\n' >"$fixture/agents/a.md"
+printf '%s\n' 'See `docs/here.md` and docs/adr/0001-x.md.' 'ADRs live in `docs/adr/`.' \
+  'Write `docs/adr/<file>.md`.' 'Not ours: some/docs/gone.md.' >"$fixture/agents/b.md"
+out="$(scan_docs_paths "$fixture")"
+flags "a skill naming a missing docs/ file is flagged" \
+  "$out" "skills/orch-a/SKILL.md:1: names missing docs/gone.md"
+flags "an agent naming a missing nested docs/ file is flagged" \
+  "$out" "agents/a.md:1: names missing docs/adr/0002-gone.md"
+spares "existing docs/ files are not flagged" "$out" 'docs/(here|adr/0001-x)\.md'
+spares "a docs/ directory reference is not flagged" "$out" 'docs/adr/$'
+spares "a docs/ placeholder path is not flagged" "$out" '<file>'
+spares "a path that only ends in docs/ is not flagged" "$out" '^agents/b\.md'
+check "every docs/ file a skill or agent names exists" "$(scan_docs_paths "$PLUGIN_ROOT")"
+
+# --- one driver loop (#901) ----------------------------------------------------
+echo
+echo "one driver loop (#901)"
+# The driver loop's steps a-f live once, in docs/driver-loop.md under the plugin
+# root, and the skills that run it point there. A loop step label in a skill or
+# agent is a copy of the loop surviving outside the doc.
+loop_labels=('**a. Entry check.**' '**b. Pick the path.**' '**c. Fill the free slots.**'
+  '**d. As each report returns**' '**e. On a merge conflict**' '**f. Verify the combined branch**')
+# scan_driver_loop <plugin root>: each loop step label missing from
+# docs/driver-loop.md, and each one in a file under skills/ or agents/.
+scan_driver_loop() {
+  local r="$1" doc="docs/driver-loop.md" label
+  for label in "${loop_labels[@]}"; do
+    grep -qF -- "$label" "$r/$doc" 2>/dev/null || echo "$doc: missing loop step label $label"
+    (cd "$r" && find skills agents -name '*.md' -type f 2>/dev/null | sort \
+      | xargs -r grep -nF -- "$label") | sed -E 's/^([^:]*:[0-9]+):.*/\1: driver loop step label outside '"${doc//\//\\/}"'/'
+  done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-a" "$fixture/skills/orch-b" "$fixture/docs"
+printf '%s\n' '# Doc' '' '- **a. Entry check.** List.' '- **b. Pick the path.** Read.' >"$fixture/docs/driver-loop.md"
+printf '%s\n' '# A' '' '- **c. Fill the free slots.** Keep.' >"$fixture/skills/orch-a/SKILL.md"
+printf '%s\n' '# B' '' 'Run the driver loop in `docs/driver-loop.md`: loop step a, the entry check.' \
+  >"$fixture/skills/orch-b/SKILL.md"
+out="$(scan_driver_loop "$fixture")"
+flags "a skill carrying a loop step label is flagged" \
+  "$out" "skills/orch-a/SKILL.md:3: driver loop step label outside docs/driver-loop.md"
+flags "a loop step label missing from the doc is flagged" \
+  "$out" "docs/driver-loop.md: missing loop step label **f. Verify the combined branch**"
+spares "a skill that only points at the doc is not flagged" "$out" '^skills/orch-b/'
+check "the driver loop lives once, in docs/driver-loop.md" "$(scan_driver_loop "$PLUGIN_ROOT")"
+
 # --- version and CHANGELOG (CLAUDE.md Versioning) -----------------------------
 # Every PR to main bumps version in .claude-plugin/plugin.json and adds it as
 # the top CHANGELOG.md entry. The CHANGELOG rule always runs; the bump rule

@@ -216,6 +216,13 @@ breakdown can build at the same time without sharing a working tree.
 The open tickets of a ticket breakdown with no open blocker - what `ticket
 next` prints. Several can be built at once, up to the clone's parallel cap.
 
+**Driver loop**:
+The procedure that builds a ticket breakdown, one frontier after another: one
+ticket subagent per ticket, in parallel up to the clone's parallel cap or one
+at a time, each ticket merged and closed as its report returns, then one
+verification of the combined branch. The implement phase and a quick
+implementation both run it.
+
 ### Spec review
 
 **Spec review**:
@@ -347,14 +354,17 @@ one - and no **missing look**, and files no spec question, with CI green or abse
 bounded stop.
 
 **Driver**:
-The session that runs a review loop. It syncs the branch with its base,
-starts the reviewers, the fixer, the closer and, on a conflict, a resolver,
-triages what the reviewers report, waits on CI, and decides the
-terminal state. It does not edit the change: every line the loop fixes is the
-fixer's, and filing is the closer's. The one exception is a host with no fresh
-subagent: there the driver takes the host-capabilities **Start a fresh
-subagent** fallback, does the fixer's and the closer's work in its own
-session, and records that as a host fallback.
+The session that runs a driver loop or a review loop, starting the fresh
+agents that do the work and keeping the run's record. A review loop's driver
+syncs the branch with its base, starts the reviewers, the fixer, the closer
+and, on a conflict, a resolver, triages what the reviewers report, waits on
+CI, and decides the terminal state. It does not edit the change: every line
+the loop fixes is the fixer's, and filing is the closer's. The one exception
+is a host with no fresh subagent: there the review loop's driver takes the
+host-capabilities **Start a fresh subagent** fallback, does the fixer's and
+the closer's work in its own session, and records that as a host fallback. A
+driver loop's driver starts one ticket subagent per ticket and merges and
+closes each ticket as its report returns.
 
 **Reviewer**:
 A fresh agent a review loop's driver starts for one axis - Standards or Spec -
