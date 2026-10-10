@@ -24,8 +24,7 @@ implementation, or blueprint only.
     ending ready, or on a bounded stop. After a bounded stop, `/clear` and a
     fresh review session may run again.
 - **Quick implementation** (`orchestrator:orch-quick-implement`): an issue,
-  rewritten from the plan unattended when it is the interviewed issue and the
-  plan changed it, an unattended spec review, `orch-to-tickets` publishing tickets, branch
+  possibly rewritten from the plan unattended, an unattended spec review, `orch-to-tickets` publishing tickets, branch
   `quick/<issue>-<slug>`, one subagent per ticket building test-first, a
   review pass, and a PR.
 - **Blueprint only**: `orch-to-spec` publishes the issue, a spec review is
@@ -33,9 +32,8 @@ implementation, or blueprint only.
 
 A quick implementation is for work that does not need the pipeline - see
 GLOSSARY.md's **Quick implementation** entry. It skips all four phases: no
-handoff, no `.orchestrator/state.json`, just a linked issue - rewritten by
-`orch-to-spec`'s **Unattended rewrite** when it is the interviewed issue and
-the plan changed its scope or substance - `orch-to-tickets`
+handoff, no `.orchestrator/state.json`, just a linked issue - possibly rewritten
+by `orch-to-spec`'s **Unattended rewrite** - `orch-to-tickets`
 publishing that issue's ticket breakdown, the same
 one-`orch-implementer`-per-ticket driver loop the implement phase uses,
 building its frontier in parallel (ending in `pr publish` instead of a draft

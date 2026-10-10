@@ -104,7 +104,7 @@ skills/orch-spec-review/      the spec review: consolidation of the issue's comm
 skills/orch-review/           the review loop: rubric, authority rules, terminal states; and the review pass, quick or standalone
 skills/orch-sync/             a base sync on demand: branch sync, a resolver on a conflict, one PR comment, an offered review pass
 skills/orch-handoff/          handoff templates, model-invocable unlike the upstream one
-skills/orch-quick-implement/  the other route: issue (rewritten from the plan when it is the interviewed issue and the plan changed it), unattended spec review, orch-to-tickets, tdd, review pass, PR - no flow
+skills/orch-quick-implement/  the other route: issue (possibly rewritten from the plan by orch-to-spec's Unattended rewrite), unattended spec review, orch-to-tickets, tdd, review pass, PR - no flow
 skills/orch-interview/        the planning interview; hook-grilling.sh's message asks the closing question
 skills/orch-to-spec/          turns the conversation into a spec: publishes it as a new issue, or rewrites a given issue's body - attended, or in the Unattended rewrite form a quick implementation takes
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
