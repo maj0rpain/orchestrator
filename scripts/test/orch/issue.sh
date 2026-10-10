@@ -46,7 +46,7 @@ out="$("$ORCH" issue publish "Title" 2>&1)"; st=$?
 assert_status "refuses with no body file" "$st" 1
 assert_eq "filing nothing for any of them" "$(fake_issues)" ""
 
-fake_fail adapter_issue_create $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_create "$GH_502"
 out="$("$ORCH" issue publish "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not create the issue fails the command" "$st" 1
 assert_contains "passing gh's first line through, in the death (#846)" "$out" \
@@ -55,7 +55,7 @@ assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 fake_unfail
-fake_fail_times adapter_issue_create 9
+fake_fail adapter_issue_create ''
 out="$("$ORCH" issue publish "Title" "$body" 2>&1)"; st=$?
 assert_status "a create that fails silently fails it too" "$st" 1
 assert_contains "saying gh gave no reason" "$out" "orch: gh could not create the issue: gh gave no reason"
@@ -157,7 +157,7 @@ assert_eq "printing the issue number" "$out" "15"
 fake_unfail
 
 fake_next_issue 16
-fake_fail_times adapter_issue_title_labels 9
+fake_fail adapter_issue_title_labels ''
 out="$(publish "Widgets need a handle" "$body" 2>&1)"; st=$?
 assert_status "a readback that fails silently twice dies" "$st" 1
 assert_contains "saying gh gave no reason" "$out" \
@@ -293,7 +293,7 @@ assert_contains "naming the issue" "$out" "issue #46"
 assert_eq "changing nothing and posting no comment" "$(fake_snapshot)" "$before"
 
 fake_issue 47 open needs-triage
-fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_state_labels "$GH_502"
 before="$(fake_snapshot)"
 out="$(triage 47 2>&1)"; st=$?
 assert_status "a failed read dies" "$st" 1
@@ -304,7 +304,7 @@ assert_eq "changing nothing" "$(fake_snapshot)" "$before"
 fake_unfail
 
 fake_issue 48 open needs-triage
-fake_fail adapter_issue_relabel $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_relabel "$GH_502"
 out="$(triage 48 2>&1)"; st=$?
 assert_status "a failed relabel dies" "$st" 1
 assert_contains "naming the issue, with gh's first line (#846)" "$out" \
@@ -335,7 +335,7 @@ assert_eq "posting no comment" "$(comment_count 50)" "0"
 # The first read answers; both verify re-reads fail. The relabel has
 # already happened, so it stands, and no comment claims it verified.
 fake_issue 56 open needs-triage
-fake_fail_after adapter_issue_state_labels 1 $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail_after adapter_issue_state_labels 1 "$GH_502"
 out="$(triage 56 2>&1)"; st=$?
 assert_status "a verify re-read that fails twice dies" "$st" 1
 assert_contains "saying gh could not read the issue, with gh's line" "$out" \
@@ -360,7 +360,7 @@ fake_unfail
 # Both verify re-reads fail silently: the death says gh gave no reason.
 fake_issue 58 open needs-triage
 fake_fail_after adapter_issue_state_labels 1
-fake_fail_times adapter_issue_state_labels 9
+fake_fail adapter_issue_state_labels ''
 out="$(triage 58 2>&1)"; st=$?
 assert_status "two silent verify re-read failures die" "$st" 1
 assert_contains "saying gh gave no reason" "$out" \
@@ -370,26 +370,18 @@ assert_eq "posting no comment" "$(comment_count 58)" "0"
 fake_unfail
 
 fake_issue 51 open needs-triage
-fake_fail adapter_issue_comment $'HTTP 502: Bad Gateway\nsecond line'
-errf="$(mktemp)"
-triage 51 >/dev/null 2>"$errf"; st=$?
-assert_status "a failed comment after a verified relabel still exits 0" "$st" 0
-assert_eq "warning on stderr, naming the issue, with gh's first line alone (#846)" "$(cat "$errf")" \
-  "orch: warning: issue #51 is labelled ready-for-agent, but gh could not post the triage comment on it: HTTP 502: Bad Gateway"
+assert_gh_dies "a failed comment after a verified relabel still exits 0" adapter_issue_comment "$GH_502" 0 \
+  "orch: warning: issue #51 is labelled ready-for-agent, but gh could not post the triage comment on it: HTTP 502: Bad Gateway" \
+  triage 51
 assert_eq "the relabel standing" "$(fake_labels_of 51)" "ready-for-agent "
 assert_eq "posting no comment" "$(comment_count 51)" "0"
-fake_unfail
 
 fake_issue 59 open needs-triage
-fake_fail_times adapter_issue_comment 9
-triage 59 >/dev/null 2>"$errf"; st=$?
-assert_status "a comment that fails silently still exits 0" "$st" 0
-assert_eq "warning that gh gave no reason" "$(cat "$errf")" \
-  "orch: warning: issue #59 is labelled ready-for-agent, but gh could not post the triage comment on it: gh gave no reason"
+assert_gh_dies "a comment that fails silently still exits 0" adapter_issue_comment '' 0 \
+  "orch: warning: issue #59 is labelled ready-for-agent, but gh could not post the triage comment on it: gh gave no reason" \
+  triage 59
 assert_eq "the label applied" "$(fake_labels_of 59)" "ready-for-agent "
 assert_eq "and no comment posted" "$(comment_count 59)" "0"
-rm -f "$errf"
-fake_unfail
 
 writeln '# Triage Labels' '' \
         '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
@@ -475,7 +467,7 @@ ready 74 >/dev/null 2>&1; st=$?
 assert_status "under a mapping, an issue carrying neither is not ready" "$st" 1
 labels_doc docs/agents/triage-labels.md
 
-fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_state_labels "$GH_502"
 out="$(ready 70 2>&1)"; st=$?
 assert_status "a gh failure exits 2" "$st" 2
 assert_contains "with an orch: message naming the issue, with gh's line" "$out" \
@@ -545,22 +537,16 @@ assert_eq "keeping every trailing newline" "$(od -c <"$fidir/body.md")" "$(print
 fake_issue_body 23 "Body of #23."
 "$ORCH" issue fetch 23 "$fidir/body.md"
 assert_eq "and adding none of its own to a body that has none" "$(od -c <"$fidir/body.md")" "$(printf 'Body of #23.\n' | od -c)"
-fake_fail adapter_issue_body $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" issue fetch 23 "$fidir/body.md" 2>&1)"; st=$?
-assert_status "a failed body read fails the fetch" "$st" 1
-assert_eq "naming the body, with gh's first line alone" "$out" \
-  "orch: gh could not read the body of issue #23: HTTP 502: Bad Gateway"
+assert_gh_dies "a failed body read fails the fetch" adapter_issue_body "$GH_502" 1 \
+  "orch: gh could not read the body of issue #23: HTTP 502: Bad Gateway" \
+  "$ORCH" issue fetch 23 "$fidir/body.md"
 assert_eq "leaving the target untouched" "$(od -c <"$fidir/body.md")" "$(printf 'Body of #23.\n' | od -c)"
 assert_eq "and no temp file beside it" "$(ls "$fidir")" "body.md"
-fake_unfail
-fake_fail_times adapter_issue_body 9
-out="$("$ORCH" issue fetch 23 "$fidir/body.md" 2>&1)"; st=$?
-assert_status "a silent failed body read fails the fetch" "$st" 1
-assert_eq "saying gh gave no reason" "$out" \
-  "orch: gh could not read the body of issue #23: gh gave no reason"
+assert_gh_dies "a silent failed body read fails the fetch" adapter_issue_body '' 1 \
+  "orch: gh could not read the body of issue #23: gh gave no reason" \
+  "$ORCH" issue fetch 23 "$fidir/body.md"
 assert_eq "leaving the target untouched too" "$(od -c <"$fidir/body.md")" "$(printf 'Body of #23.\n' | od -c)"
 assert_eq "and no temp file" "$(ls "$fidir")" "body.md"
-fake_unfail
 rm -rf "$fidir"
 unset fidir
 
@@ -594,7 +580,7 @@ assert_eq "writing the body alone, as before" "$(cat "$issue_body")" \
   "$(writeln '## What to build' '' 'A `$HOME` handle for #6.')"
 
 printf 'old contents\n' >"$issue_json"
-fake_fail adapter_issue_json $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_json "$GH_502"
 out="$("$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
 assert_status "a gh that will not answer fails fetch --json" "$st" 1
 assert_eq "naming the issue, with gh's first line alone (#846)" "$out" \
@@ -646,12 +632,9 @@ out="$("$ORCH" issue update 23 /nonexistent/body.md 2>&1)"; st=$?
 assert_status "update refuses a file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
 
-fake_fail adapter_issue_body_edit $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" issue update 23 "$tricky" 2>&1)"; st=$?
-assert_status "a gh that will not edit fails the update" "$st" 1
-assert_eq "naming the issue, with gh's first line alone (#846)" "$out" \
-  "orch: gh could not replace the body of issue #23: HTTP 502: Bad Gateway"
-fake_unfail
+assert_gh_dies "a gh that will not edit fails the update" adapter_issue_body_edit "$GH_502" 1 \
+  "orch: gh could not replace the body of issue #23: HTTP 502: Bad Gateway" \
+  "$ORCH" issue update 23 "$tricky"
 
 # issue comment is the stateless counterpart to spec comment, the way issue
 # fetch/update are to spec fetch/update: a standalone spec review posts its
@@ -669,12 +652,9 @@ assert_status "comment refuses a file that does not exist" "$st" 1
 assert_contains "naming the file" "$out" "/nonexistent/body.md"
 assert_eq "and posts nothing" "$(fake_comments_of 23)" "$(cat "$tricky")"
 
-fake_fail adapter_issue_comment $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" issue comment 23 "$tricky" 2>&1)"; st=$?
-assert_status "a gh that will not comment fails it" "$st" 1
-assert_eq "naming the issue, with gh's first line alone (#846)" "$out" \
-  "orch: gh could not comment on issue #23: HTTP 502: Bad Gateway"
-fake_unfail
+assert_gh_dies "a gh that will not comment fails it" adapter_issue_comment "$GH_502" 1 \
+  "orch: gh could not comment on issue #23: HTTP 502: Bad Gateway" \
+  "$ORCH" issue comment 23 "$tricky"
 
 out="$("$ORCH" issue comment abc "$tricky" 2>&1)"; st=$?
 assert_status "comment refuses an issue number that is not a plain number" "$st" 1
@@ -744,11 +724,9 @@ assert_status "an issue with no comments still succeeds" "$st" 0
 assert_eq "leaving an empty file" "$(wc -c <"$issue_comments" | tr -d ' ')" "0"
 
 printf 'known content\n' >"$issue_comments"
-fake_fail adapter_issue_comments $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" issue comments 24 "$issue_comments" 2>&1)"; st=$?
-assert_status "a gh that will not answer fails the comments fetch" "$st" 1
-assert_eq "naming the issue, with gh's first line alone (#846)" "$out" \
-  "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway"
+assert_gh_dies "a gh that will not answer fails the comments fetch" adapter_issue_comments "$GH_502" 1 \
+  "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway" \
+  "$ORCH" issue comments 24 "$issue_comments"
 assert_eq "and leaves the file that was already there byte-identical" \
   "$(od -c "$issue_comments")" "$(printf 'known content\n' | od -c)"
 

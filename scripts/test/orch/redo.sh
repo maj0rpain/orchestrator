@@ -171,7 +171,7 @@ state_fixture pr 32
 state_fixture iteration 1
 "$ORCH" state set budget 1
 writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
-fake_fail adapter_pr_close $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_pr_close "$GH_502"
 out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "a gh that will not close the PR fails the redo" "$st" 1
 assert_eq "leaving the PR open" "$(fake_pr_state_of 32)" "OPEN"
@@ -384,7 +384,7 @@ assert_eq "the close call never reached a real gh subprocess" "$(gh_calls)" "0"
 state_fixture phase implement
 "$ORCH" state set issue 42
 fake_issue 42 open
-fake_fail adapter_issue_close $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_close "$GH_502"
 out="$("$ORCH" redo spec --new-issue 2>&1)"; st=$?
 assert_status "a gh that will not close the issue fails --new-issue" "$st" 1
 assert_contains "passing gh's first line through, in the death (#846)" "$out" \
@@ -555,27 +555,18 @@ rm -f "$errf"
 # gh's reason rides on orch's own line, first line only, at every retire
 # death (#846); the ## Ticket cut's read and write leave no temp file.
 rw_tmp="$(mktemp -d)"
-fake_fail adapter_issue_body $'HTTP 502: Bad Gateway\nsecond line'
-out="$(TMPDIR="$rw_tmp" "$ORCH" ticket retire 58 2>&1)"; st=$?
-assert_status "a failed ## Ticket read still exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not read issue #58's body: HTTP 502: Bad Gateway"
+assert_gh_dies "a failed ## Ticket read still exits 1" adapter_issue_body "$GH_502" 1 \
+  "orch: gh could not read issue #58's body: HTTP 502: Bad Gateway" \
+  env TMPDIR="$rw_tmp" "$ORCH" ticket retire 58
 assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
-fake_unfail
-fake_fail adapter_issue_body_edit $'HTTP 502: Bad Gateway\nsecond line'
-out="$(TMPDIR="$rw_tmp" "$ORCH" ticket retire 58 2>&1)"; st=$?
-assert_status "a failed ## Ticket write still exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not remove the ## Ticket section from #58: HTTP 502: Bad Gateway"
+assert_gh_dies "a failed ## Ticket write still exits 1" adapter_issue_body_edit "$GH_502" 1 \
+  "orch: gh could not remove the ## Ticket section from #58: HTTP 502: Bad Gateway" \
+  env TMPDIR="$rw_tmp" "$ORCH" ticket retire 58
 assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
-fake_unfail
-fake_fail_times adapter_issue_body_edit 9
-out="$(TMPDIR="$rw_tmp" "$ORCH" ticket retire 58 2>&1)"; st=$?
-assert_status "a silent failed ## Ticket write exits 1" "$st" 1
-assert_eq "ending in gh gave no reason" "$out" \
-  "orch: gh could not remove the ## Ticket section from #58: gh gave no reason"
+assert_gh_dies "a silent failed ## Ticket write exits 1" adapter_issue_body_edit '' 1 \
+  "orch: gh could not remove the ## Ticket section from #58: gh gave no reason" \
+  env TMPDIR="$rw_tmp" "$ORCH" ticket retire 58
 assert_eq "leaving no temp file" "$(ls -A "$rw_tmp")" ""
-fake_unfail
 rm -rf "$rw_tmp"
 
 # A body gh reads back with no final newline gets none back from the cut.
@@ -596,31 +587,19 @@ rm -f "$bare_adapter"
 for p in 59 60; do fake_issue "$p" open; done
 rt6="$("$ORCH" ticket publish 59 "Six" "$tbody")"
 "$ORCH" ticket close "$rt6" >/dev/null
-fake_fail adapter_issue_comments $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" ticket retire 59 2>&1)"; st=$?
-assert_status "a failed comments read still exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not read ticket #$rt6's comments: HTTP 502: Bad Gateway"
-fake_unfail
-fake_fail adapter_issue_comment $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" ticket retire 59 2>&1)"; st=$?
-assert_status "a failed retirement comment still exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not comment on ticket #$rt6: HTTP 502: Bad Gateway"
-fake_unfail
-fake_fail adapter_sub_issue_unlink $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" ticket retire 59 2>&1)"; st=$?
-assert_status "a failed unlink still exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not unlink ticket #$rt6 from #59: HTTP 502: Bad Gateway"
-fake_unfail
+assert_gh_dies "a failed comments read still exits 1" adapter_issue_comments "$GH_502" 1 \
+  "orch: gh could not read ticket #$rt6's comments: HTTP 502: Bad Gateway" \
+  "$ORCH" ticket retire 59
+assert_gh_dies "a failed retirement comment still exits 1" adapter_issue_comment "$GH_502" 1 \
+  "orch: gh could not comment on ticket #$rt6: HTTP 502: Bad Gateway" \
+  "$ORCH" ticket retire 59
+assert_gh_dies "a failed unlink still exits 1" adapter_sub_issue_unlink "$GH_502" 1 \
+  "orch: gh could not unlink ticket #$rt6 from #59: HTTP 502: Bad Gateway" \
+  "$ORCH" ticket retire 59
 rt7="$("$ORCH" ticket publish 60 "Seven" "$tbody")"
-fake_fail adapter_issue_close $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" ticket retire 60 2>&1)"; st=$?
-assert_status "a failed close still exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not close ticket #$rt7: HTTP 502: Bad Gateway"
-fake_unfail
+assert_gh_dies "a failed close still exits 1" adapter_issue_close "$GH_502" 1 \
+  "orch: gh could not close ticket #$rt7: HTTP 502: Bad Gateway" \
+  "$ORCH" ticket retire 60
 
 rt5="$("$ORCH" ticket publish 55 "Five" "$tbody")"
 redo_spec_at 55
