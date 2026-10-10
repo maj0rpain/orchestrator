@@ -77,19 +77,23 @@ status_flow() {
 # checkout's archive first, and only then is the worktree removed (ADR-0037).
 cmd_archive() {
   require_state
-  archive_flow "$ROOT"
-  if is_side_checkout "$ROOT"; then side_checkout_remove_after_archive "$ROOT"; fi
+  local home
+  home="$(archive_root "$ROOT")" || die "could not read the main checkout - nothing was archived"
+  archive_flow "$ROOT" "$home"
+  # Only a side checkout archives anywhere but in place.
+  if [ "$home" != "$ROOT" ]; then side_checkout_remove_after_archive "$ROOT" "$home"; fi
 }
 
-# Removes the side checkout at <path> once its flow is archived, never with
-# force. A dirty worktree is reported and kept: the archive has still
+# side_checkout_remove_after_archive <path> <main-root>: removes the side
+# checkout at <path>, through the main checkout at <main-root>, once its flow
+# is archived, never with force. A dirty worktree is reported and kept: the archive has still
 # succeeded. When this command ran inside the removed worktree, the session
 # working there is told to close.
 side_checkout_remove_after_archive() {
-  local path="$1" err here
+  local path="$1" main_root="$2" err here
   # Read before the removal: once the worktree is gone, so is this directory.
   here="$(pwd -P)"
-  if ! err="$(git -C "$(main_checkout)" worktree remove "$path" 2>&1)"; then
+  if ! err="$(git -C "$main_root" worktree remove "$path" 2>&1)"; then
     warn "kept side checkout $path - it was not removed: $(first_line "$err")
      Commit or discard its changes, then run orch.sh side-checkout remove $(basename "$path")."
     return 0
