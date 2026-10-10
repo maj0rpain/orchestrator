@@ -96,14 +96,14 @@ assert_contains "offers starting the flow as an option" "$out" "Start the orches
 assert_contains "offers quick implementation as an option" "$out" "Quick implementation"
 assert_contains "offers Blueprint only as an option" "$out" "Blueprint only"
 # The closing question offers exactly three options (#237, #330): count its
-# numbered option lines, not only that each option is present.
-count_closing_options() { printf '%s' "$1" | jq -r '.additionalContext' | grep -cE '^ +[0-9]+\. '; }
+# numbered option lines, not only that each option is present. Every line
+# opening with a number and a period counts, indented or not, so no other line
+# of the message may open that way (#983).
+count_closing_options() { printf '%s' "$1" | jq -r '.additionalContext' | grep -cE '^ *[0-9]+\. '; }
 assert_eq "offers exactly three options" "$(count_closing_options "$out")" "3"
 # The route options keep the hook's order unless one is recommended, and a
 # recommendation is labelled with a scope reason (#983). Matched by exact
 # rule substrings: the Blueprint rounds question has its own "(Recommended)".
-# Every line opening with a number and a period is an option line, so the
-# rule text adds none.
 check_route_rules() {
   local where="$1" ctx="$2"
   local order='Keep the route options in the order above unless you recommend one'
@@ -114,8 +114,6 @@ check_route_rules() {
   assert_contains "labels a moved route option recommended $where" "$ctx" \
     'a route option moved out of the order above always carries it'
   assert_eq "states the order rule once $where" "$(count_of "$ctx" "$order")" "1"
-  assert_eq "numbers only the three option lines $where" \
-    "$(printf '%s' "$ctx" | grep -cE '^ *[0-9]+\. ')" "3"
 }
 check_route_rules "on Claude Code" "$(printf '%s' "$out" | jq -r '.additionalContext')"
 assert_contains "says exactly three options" "$out" "exactly three options"
