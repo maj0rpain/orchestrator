@@ -144,7 +144,7 @@ else
   and \"orchestrator:orch-to-tickets\". The
   orchestrator's skills are model-invocable: call them, do not hand them to the
   user."
-  run_review_rounds="call the Skill tool with \"orchestrator:orch-spec-review\" with args \"<n> --rounds <count>\""
+  run_review_rounds="call the Skill tool with \"orchestrator:orch-spec-review\" and args \"<n> --rounds <count>\""
   run_flow_quick_side="On \"Start the orchestrator flow\",
   call the Skill tool with \"orchestrator:orch-flow\" and args \"--side\" yourself.
   On \"Quick implementation\",
@@ -248,7 +248,9 @@ ${run_next} Do not ask the user to type a command.${route_here}
   orch-to-spec stops when it ends without reporting the issue number. Once it has reported the number,
   ask the user how many spec review rounds to run on it, as one blocking question with ${ask_tool},
   with the options 3 (Recommended), 1, 5, and Other for any other whole number from 0 up,
-  where 0 skips the review; ask every time, never assume.
+  where 0 skips the review. 0 is the deliberate lower bound.
+  An Other that is not a whole number from 0 up is asked again, naming the range;
+  ask every time, never assume.
   On a count of 1 or more, run the standalone orch-spec-review for that many
   rounds: ${run_review_rounds}. Then publish
   its ticket breakdown (orch-to-tickets) against that issue, unless rewrite mode reported the breakdown \`kept\`:

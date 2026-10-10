@@ -153,6 +153,10 @@ check_blueprint_rewrite() {
     "as one blocking question with ${ask_tool}"
   assert_contains "0 rounds skips the review $where" "$ctx" "0 skips the review"
   assert_contains "asks the round count every time $where" "$ctx" "ask every time, never assume"
+  # The lower bound is deliberate, and an invalid Other is asked again (#887).
+  assert_contains "names 0 the deliberate lower bound $where" "$ctx" "0 is the deliberate lower bound."
+  assert_contains "asks an invalid Other again $where" "$ctx" \
+    "An Other that is not a whole number from 0 up is asked again, naming the range"
   local yesno
   for yesno in "only on a yes" "whether to run a spec review"; do
     assert_not_contains "drops the yes/no question '$yesno' $where" "$ctx" "$yesno"
@@ -176,7 +180,10 @@ check_blueprint_rewrite() {
       "\"orchestrator:orch-spec-review\" (its standalone spec review)"
     assert_contains "names orch-to-tickets by Skill tool $where" "$ctx" \
       "and \"orchestrator:orch-to-tickets\""
+    # Worded like its "and args" siblings (#889).
     assert_contains "hands the round count as Skill args $where" "$ctx" \
+      "call the Skill tool with \"orchestrator:orch-spec-review\" and args \"<n> --rounds <count>\""
+    assert_not_contains "drops the old 'with args' round count form $where" "$ctx" \
       "with args \"<n> --rounds <count>\""
   else
     assert_contains "follows each step's skill, for issue #<n>, on Junie $where" "$ctx" \
