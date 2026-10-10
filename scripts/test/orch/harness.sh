@@ -28,6 +28,12 @@ planted_copy() {
   printf '%s\n' "$dir"
 }
 
+# files_marks <output>: the section headers and preamble lines in it, in order,
+# comma-separated.
+files_marks() {
+  printf '%s\n' "$1" | grep -xE 'isolation|(underscore|preamble [a-c]|planted new) [a-z ]+' | tr '\n' ','
+}
+
 # --- isolation --------------------------------------------------------------
 echo
 echo "isolation"
@@ -288,11 +294,6 @@ sed 's/^  //' >"$files_orch/pre-c.sh" <<'PLANTED'
   # A preamble with no section after it.
   echo "preamble c ran"
 PLANTED
-# files_marks <output>: the section headers and preamble lines in it, in order,
-# comma-separated.
-files_marks() {
-  printf '%s\n' "$1" | grep -xE 'isolation|(underscore|preamble [a-c]|planted new) [a-z ]+' | tr '\n' ','
-}
 
 out="$(ORCH_TEST_QUIET=1 ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='' bash "$files_suite" 2>&1)"; st=$?
 assert_status "an unfiltered sequential run of new noun files passes" "$st" 0
