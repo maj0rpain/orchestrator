@@ -103,7 +103,8 @@ failed sync stops and where its **Merge resolutions** go.
 This section is for the driver session too: the one statement of how a
 driver resolves a ticket conflict, when `bash "$ORCH" ticket merge <n>`
 exits 3 on the parallel path. `orch-flow`'s implement phase and
-`orch-quick-implement` each run it as their loop step e, and each says
+`orch-quick-implement` each run it as loop step e of the driver loop in
+`docs/driver-loop.md`, and each binds that doc's **the record** slot to say
 where its **Merge resolutions** go. `ticket merge` has already aborted its
 own rebase, so no rebase is in progress: whoever resolves starts it. The
 parent branch is the branch the ticket forked from - the build's branch,

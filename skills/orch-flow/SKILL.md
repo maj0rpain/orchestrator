@@ -241,87 +241,28 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    When it dies because the flow's base does not exist on origin, offer the
    maintainer the repair rather than an abort: `bash "$ORCH" base set <branch> --flow`
    points the flow at another base, then rerun `branch create`.
-3. Build the ticket frontier with the driver loop below, whose ticket is
-   named by the handoff's **Ticket breakdown** section, written by the spec
-   phase's step 5:
+3. Build the ticket frontier with the driver loop in `docs/driver-loop.md`
+   (under the plugin root): loop steps a-f and its **Dispatching a
+   subagent**, bound here as:
 
+   - **the issue**: the spec issue;
+   - **the branch**: the flow's branch;
+   - **the record**: the implement handoff - its **Host fallbacks**, and
+     step 6's **Merge resolutions** and **Verification**;
+   - **the judge**: the review loop;
+   - **the stop**: the phase stops, naming every failure;
+   - **after loop step f**: this phase's step 4.
+
+   Whether the breakdown is collapsed comes from the handoff's **Ticket
+   breakdown** section, written by the spec phase's step 5.
    **`None: work directly against #<n>`** means that breakdown collapsed to
    0 or 1 tickets and published no sub-issue - `<n>` names the spec issue
    itself. No `ticket next`/`ticket close` loop runs against it: an empty
    frontier there means nothing was ever split out, not "already done."
    The breakdown is collapsed: the sequential path dispatches exactly one
-   subagent (below), for ticket `<n>`.
-
-   **Any other content** names the spec issue as a parent whose GitHub
-   sub-issues carry the real tickets, and the loop works its frontier.
-
-   **The driver loop** (ADR-0036). Its steps are lettered a-f, so that a
-   "loop step" never reads as one of this phase's numbered steps:
-
-   - **a. Entry check.** `bash "$ORCH" ticket-worktree list`. If it prints
-     anything, stop and name each leftover ticket worktree: a dead run's
-     state, never built over. A human clears each with `bash "$ORCH"
-     ticket-worktree remove <n>`. This runs on every path, sequential
-     included.
-   - **b. Pick the path.** Read the cap: `bash "$ORCH" parallel show`. Take
-     the **sequential path** when the breakdown is collapsed, the cap is 1,
-     or the host cannot start a background subagent (record that last one
-     under the handoff's **Host fallbacks**, per `docs/host-capabilities.md`'s
-     **Start a background subagent** row). It creates no ticket worktree,
-     and every ticket commits to the flow's one branch, one at a time,
-     never in parallel. Collapsed, it dispatches the one subagent and goes
-     to loop step f. Otherwise it loops: `bash "$ORCH" ticket next <spec
-     issue>` - nothing ready means the frontier is exhausted, so go to loop
-     step f - then dispatch a subagent (below) for the ticket, with no
-     `Worktree:` line; record its report, then `bash "$ORCH" ticket close
-     <n>` - only now that the report is back, never before - and go around
-     again. Any other case takes the parallel path, loop steps c-e.
-   - **c. Fill the free slots.** Keep an in-flight set of tickets in this
-     session. While fewer than the cap are in flight, take the next ticket
-     `bash "$ORCH" ticket next <spec issue>` prints that is neither in
-     flight nor queued to run alone: `bash "$ORCH" ticket-worktree add
-     <n>`, then dispatch a subagent (below) for it in the background, its
-     prompt carrying the `Worktree:` line with the path `ticket-worktree
-     add` printed. Stop filling when `ticket next` has nothing more.
-   - **d. As each report returns**, record it, then `bash "$ORCH" ticket
-     merge <n>`, then `bash "$ORCH" ticket close <n>`, then `bash "$ORCH"
-     ticket-worktree remove <n>`, then refill (loop step c). A ticket is
-     merged and closed whatever its `Verification` or `Criteria` line says,
-     and is closed only after its merge succeeds. Any exit 1 from `ticket
-     merge`, `ticket close` or `ticket-worktree remove`, a dispatch that
-     fails, or a report that comes back malformed stops refilling: the
-     tickets still in flight report and are processed as normal, then the
-     phase stops, naming every failure. A leftover worktree surfaces at the
-     next entry check and in `doctor --flow`.
-   - **e. On a merge conflict** (`ticket merge` exits 3), resolve it, not
-     rebuild it (ADR-0038), by **A driver's ticket resolution** in
-     `agents/orch-resolver.md` (under the plugin root), the spec issue on
-     the resolver's `Spec issue:` line. That section says how to resolve,
-     what counts as a failed resolution, and its fallback to rebuilding the
-     ticket alone. Keep a resolution's **Merge resolutions** for step 6.
-     When nothing is in flight, dispatch a ticket queued to run alone in a
-     fresh worktree (`ticket-worktree add`) from the updated tip, on its
-     own, and process its report as in loop step d before refilling. When
-     the frontier and queue are exhausted and nothing is in flight, go to
-     loop step f.
-   - **f. Verify the combined branch**, on every path, sequential included:
-     run, on the flow's branch, the full-verification command the reports'
-     `Verification` lines name, once - joined with ` && ` into one line
-     when they name different commands. Its command and `pass` or `fail`
-     fill the implement handoff's **Verification** section (this phase's
-     step 6). A failure does not stop the phase: the review loop judges it.
-
-   Once loop step f has run, continue at this phase's step 4.
-
-   **Dispatching a subagent**: start the plugin's `orch-implementer` agent
-   exactly as the **Starting this agent** section of
-   `agents/orch-implementer.md` (under the plugin root) says, for the ticket
-   named above. On Claude Code it is the agent named
-   `orch-implementer` under the `orchestrator:` plugin scope, run in the
-   background on the parallel path. A host that
-   cannot start it natively takes `docs/host-capabilities.md`'s **Start a
-   fresh subagent** fallback; record it under the handoff's **Host
-   fallbacks**, along with any fallback that section says the agent takes.
+   subagent, for ticket `<n>`. **Any other content** names the spec issue
+   as a parent whose GitHub sub-issues carry the real tickets, and the loop
+   works its frontier.
 4. **Base sync.** Bring the flow's branch up to date with its base before
    its PR opens, by **A driver's base sync** in
    `agents/orch-resolver.md` (under the plugin root), with the spec issue

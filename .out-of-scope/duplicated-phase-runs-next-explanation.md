@@ -41,6 +41,25 @@ single owner with pointers from everywhere else would leave each reader one
 file short of what it needs. Drift is caught by the review loop's Standards
 axis when the copies disagree, not by removing the copies.
 
+## Where the rule stops
+
+Keeping every copy holds for an explanation or a consequence a reader needs
+in place: a fresh subagent or a standalone stub that sees only its own file,
+or a skill's own consequence of a shared contract, as #339 keeps. It does not
+hold for a whole procedure a driver session runs and can read from a shared
+doc it already cites, as both driver skills cite **A driver's base sync** in
+the resolver's brief. Such a procedure takes one copy and pointers to it.
+
+The driver loop is the instance (#675): its loop steps a-f and its
+**Dispatching a subagent** paragraph were written out in both `orch-flow`'s
+implement phase and `orch-quick-implement`'s implement step, and now live
+once, in `docs/driver-loop.md`, with each skill binding the doc's slots to
+its own run. A Standards finding that a skill lacks its own copy of the loop
+is not a missing copy, and a copy put back is a duplicate.
+
+This sits beside the "self-contained" reasoning above and the #339 entry
+below; neither changes.
+
 ## Prior requests
 
 - #65: "The phase-runs-next tense rule is duplicated near-verbatim across three files" — filed by the review loop as a Standards-axis nit against PR #56

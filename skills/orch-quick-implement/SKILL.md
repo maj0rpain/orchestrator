@@ -98,8 +98,8 @@ for step 7. These are the no-rewrite cases:
 
 With `--side` in the arguments, or when the human asked in words for a side
 checkout, stop here once the issue is linked, and any rewrite is done, then
-go to **Starting in a side checkout** below: steps 2-7 run in the side
-checkout's own session.
+go to **Starting in a side checkout** below: the side checkout's own session
+runs steps 1-7, its step 1 finding the issue already linked.
 
 ## 2. Run an unattended spec review
 
@@ -171,70 +171,24 @@ off` failure, relay the refusal and stop.
 
 ## 5. Implement
 
-Build the linked issue's ticket frontier with the driver loop below. If step
-3's breakdown is collapsed (no sub-issue published), no `ticket
-next`/`ticket close` loop runs against the linked issue: the sequential path
-dispatches exactly one subagent (below), for the linked issue itself as the
-ticket.
+Build the linked issue's ticket frontier with the driver loop in
+`docs/driver-loop.md` (under the plugin root): loop steps a-f and its
+**Dispatching a subagent**, bound here as:
 
-**The driver loop** (ADR-0036). Its steps are lettered a-f, so that a "loop
-step" never reads as one of this skill's numbered sections:
+- **the issue**: the linked issue;
+- **the branch**: the quick implementation's branch;
+- **the record**: the PR body's **Host fallbacks**, **Merge resolutions** and
+  **Verification** headings (step 7);
+- **the judge**: the review pass and the PR;
+- **the stop**: quick implementation stops, before the review and the PR,
+  naming every failure;
+- **after loop step f**: **Base sync** below, then **6. Review**.
 
-- **a. Entry check.** `bash "$ORCH" ticket-worktree list`. If it prints
-  anything, stop and name each leftover ticket worktree: a dead run's
-  state, never built over. A human clears each with `bash "$ORCH"
-  ticket-worktree remove <n>`. This runs on every path, sequential
-  included.
-- **b. Pick the path.** Read the cap: `bash "$ORCH" parallel show`. Take the
-  **sequential path** when the breakdown is collapsed, the cap is 1, or the
-  host cannot start a background subagent (list that last one under the PR
-  body's **Host fallbacks**, per `docs/host-capabilities.md`'s **Start a
-  background subagent** row). It creates no ticket worktree, and every
-  ticket commits to the one branch, one at a time, never in parallel.
-  Collapsed, it dispatches the one subagent and goes to loop step f.
-  Otherwise it loops: `bash "$ORCH" ticket next <linked issue>` - nothing
-  ready means the frontier is exhausted, so go to loop step f - then
-  dispatch a subagent (below) for the ticket, with no `Worktree:` line;
-  record its report, then `bash "$ORCH" ticket close <n>` - only now that
-  the report is back, never before - and go around again. Any other case
-  takes the parallel path, loop steps c-e.
-- **c. Fill the free slots.** Keep an in-flight set of tickets in this
-  session. While fewer than the cap are in flight, take the next ticket
-  `bash "$ORCH" ticket next <linked issue>` prints that is neither in
-  flight nor queued to run alone: `bash "$ORCH" ticket-worktree add <n>`,
-  then dispatch a subagent (below) for it in the background, its prompt
-  carrying the `Worktree:` line with the path `ticket-worktree add`
-  printed. Stop filling when `ticket next` has nothing more.
-- **d. As each report returns**, record it, then `bash "$ORCH" ticket merge
-  <n>`, then `bash "$ORCH" ticket close <n>`, then `bash "$ORCH"
-  ticket-worktree remove <n>`, then refill (loop step c). A ticket is merged
-  and closed whatever its `Verification` or `Criteria` line says, and is
-  closed only after its merge succeeds. Any exit 1 from `ticket merge`,
-  `ticket close` or `ticket-worktree remove`, a dispatch that fails, or a
-  report that comes back malformed stops refilling: the tickets still in
-  flight report and are processed as normal, then quick implementation
-  stops, before the review and the PR, naming every failure. A leftover
-  worktree surfaces at the next entry check and in `doctor`.
-- **e. On a merge conflict** (`ticket merge` exits 3), resolve it, not
-  rebuild it (ADR-0038), by **A driver's ticket resolution** in
-  `agents/orch-resolver.md` (under the plugin root), the linked issue on
-  the resolver's `Spec issue:` line. That section says how to resolve,
-  what counts as a failed resolution, and its fallback to rebuilding the
-  ticket alone. A resolution's **Merge resolutions** go under the PR
-  body's **Merge resolutions** heading (section 7). When nothing is in
-  flight, dispatch a ticket queued to run alone in a fresh worktree
-  (`ticket-worktree add`) from the updated tip, on its own, and process its
-  report as in loop step d before refilling. When the frontier and queue
-  are exhausted and nothing is in flight, go to loop step f.
-- **f. Verify the combined branch**, on every path, sequential included:
-  run, on the quick implementation's branch, the full-verification command
-  the reports' `Verification` lines name, once - joined with ` && ` into one
-  line when they name different commands. Its command and `pass` or `fail`
-  go under a **Verification** heading in the PR body (section 7). A failure
-  does not stop the run: the review pass and the PR carry it.
-
-Once loop step f has run, sync the branch with its base (**Base sync**
-below), then continue at **6. Review**.
+The breakdown is collapsed when step 3 found or made no sub-issue - `ticket
+exists` printed `collapsed`, or `orch-to-tickets` reported `collapsed`: no
+`ticket next`/`ticket close` loop runs against the linked issue, and the
+sequential path dispatches exactly one subagent, for the linked issue itself
+as the ticket.
 
 **Base sync**: bring the quick implementation's branch up to date with its
 base, so the review pass reviews the merged code. Follow **A driver's base
@@ -244,16 +198,6 @@ resolutions** heading in the PR body (section 7). A failed sync stops quick
 implementation before the review and the PR, naming the failure; any merge
 left in progress stays for the human. A resolver's `Verification` reading
 `fail` does not stop it: the review pass and the PR carry it.
-
-**Dispatching a subagent**: start the plugin's `orch-implementer` agent
-exactly as the **Starting this agent** section of
-`agents/orch-implementer.md` (under the plugin root) says, for the ticket
-named above. On Claude Code it is the agent named
-`orch-implementer` under the `orchestrator:` plugin scope, run in the
-background on the parallel path. A host that cannot start it natively takes
-`docs/host-capabilities.md`'s **Start a fresh subagent** fallback; list it
-under the PR body's **Host fallbacks**, along with any fallback that section
-says the agent takes.
 
 ## 6. Review
 

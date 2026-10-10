@@ -87,8 +87,9 @@ agent was not available, and why.
 ### Start a background subagent
 
 Build the frontier one ticket at a time, on the one branch, with no ticket
-worktrees: the sequential path of the driver loop in `orch-flow`'s implement
-phase and `orch-quick-implement`'s implement step. The entry check for
+worktrees: the sequential path of the driver loop in `docs/driver-loop.md`,
+which `orch-flow`'s implement phase and `orch-quick-implement`'s implement
+step both run. The entry check for
 leftover ticket worktrees and the combined verification still run
 (ADR-0036).
 
