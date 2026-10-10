@@ -5,6 +5,74 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# Git Bash / MSYS2 (and Cygwin) both set OSTYPE this way; used to skip fixtures
+# that are known not to work in that environment rather than report a false FAIL.
+on_windows_bash() {
+  case "$OSTYPE" in msys*|cygwin*) return 0 ;; *) return 1 ;; esac
+}
+skip_no_jq() { skip "$1" "path_without_jq doesn't work on Windows/Git Bash - see its definition"; }
+
+# A PATH with everything orch.sh reaches for except jq. Reporting "jq is
+# missing" is the one thing doctor has to do without jq, so the only honest way
+# to test it is to actually take jq away.
+#
+# Known gap: this doesn't work on Windows/Git Bash (MSYS) or Cygwin. `printf`
+# has no external binary to `ln -sf` there (it's builtin-only), and MSYS's
+# path translation between the trimmed Unix-style PATH and the Windows-side
+# resolution needed to launch orch.sh breaks down under it - the invocation
+# exits 127 with empty output before orch.sh's own logic ever runs. Callers
+# guard with on_windows_bash and skip rather than report a false FAIL - see
+# issue #68.
+path_without_jq() {
+  local d t p
+  d="$(mktemp -d)"
+  for t in env bash git gh awk sed grep tr cat sort tail head date mktemp mv rm mkdir chmod basename dirname printf; do
+    if p="$(command -v "$t" 2>/dev/null)"; then ln -sf "$p" "$d/$t"; fi
+  done
+  printf '%s\n' "$d"
+}
+
+# fake_label_names <name>...: the repo's labels are exactly the names given,
+# each with no colour or description - none given, the repo has no labels.
+fake_label_names() {
+  : >"$ORCH_GH_FAKE_STORE/labels"
+  [ $# -eq 0 ] || printf '%s\t\t\n' "$@" >"$ORCH_GH_FAKE_STORE/labels"
+}
+
+# fake_local_default <owner/name>: gh's own local default repo for the
+# checkout; given an empty one, none is set.
+fake_local_default() {
+  if [ -n "$1" ]; then printf '%s\n' "$1" >"$ORCH_GH_FAKE_STORE/local_default"
+  else rm -f "$ORCH_GH_FAKE_STORE/local_default"; fi
+}
+
+# fake_no_sub_issues: the sub-issues endpoint refuses every issue, as on a
+# GitHub that does not support them.
+fake_no_sub_issues() { : >"$ORCH_GH_FAKE_STORE/no_sub_issues"; }
+
+# fake_noauth: gh is not authenticated - the auth status fails saying so,
+# every other operation as unauthorised. setup.sh's fake_online undoes it.
+fake_noauth()  { : >"$ORCH_GH_FAKE_STORE/noauth"; }
+
+# doctor_github: fake_github, seeded as the GitHub a healthy repo has for
+# doctor - the default labels doc's two labels, default branch main, and one
+# open issue for the sub-issues probe to ask about.
+doctor_github() {
+  fake_github
+  fake_label_names needs-triage ready-for-agent
+  fake_default_branch main
+  fake_issue 1 open
+}
+
+# path_without_jq() builds its restricted PATH from whatever's really on PATH,
+# not from repo state, so the one built here serves every no-jq assertion
+# (in doctor and in doctor --flow) instead of symlinking the same ~20 tools
+# afresh at each call site. Its gh is a fixture gh, made in the subshell so
+# the suite's own PATH is left alone. Empty on Windows/Git Bash, where callers
+# skip.
+nojq_path=""
+on_windows_bash || nojq_path="$(gh_fixture && path_without_jq)"
+
 # --- host detection (host.sh, #281) -------------------------------------------
 echo
 echo "host detection (host.sh, #281)"
