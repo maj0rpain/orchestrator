@@ -148,14 +148,12 @@ assert_eq "still prints no ok line beside a failure" "$(count_lines '^  ok ' "$o
 rm -rf "$quiet_dir"
 # Each of the other two suites cut down to its own helpers, one planted check
 # and its own summary code: its lines before `# >>> checks`, a planted ok, then
-# its lines from its summary marker on.
+# its lines from its `# >>> summary` line on.
 cut_dir="$(mktemp -d)"
-for quiet_pair in hooks_test.sh:'# >>> summary' docs_lint.sh:'# --- summary'; do
-  quiet_end="${quiet_pair#*:}"
-  quiet_suite="${quiet_pair%%:*}"
-  END_MARK="$quiet_end" awk '
+for quiet_suite in hooks_test.sh docs_lint.sh; do
+  awk '
     $0 == "# >>> checks" { print "ok \"a planted check\""; skip = 1; next }
-    skip && index($0, ENVIRON["END_MARK"]) == 1 { skip = 0 }
+    skip && $0 == "# >>> summary" { skip = 0 }
     !skip { print }' "$(dirname "$SUITE_SCRIPT")/$quiet_suite" >"$cut_dir/$quiet_suite"
   assert_eq "$quiet_suite's cut-down copy holds the planted check" \
     "$(grep -cx 'ok "a planted check"' "$cut_dir/$quiet_suite")" "1"
