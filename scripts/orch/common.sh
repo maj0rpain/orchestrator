@@ -903,8 +903,9 @@ side_checkout_marker() {
 # Whether the worktree at <path> carries the ownership marker.
 is_side_checkout() { side_checkout_marker "$1" >/dev/null; }
 
-# Every checkout's path, one per line, the main checkout first: the one parser
-# of git worktree list's `worktree ` lines.
+# Every checkout's path, one per line, the main checkout first: the one reader
+# of the paths alone from git worktree list (branch_checkout, which needs the
+# `branch ` lines too, keeps its own).
 checkout_paths() {
   local list line
   list="$(git worktree list --porcelain)" || return

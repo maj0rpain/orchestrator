@@ -77,17 +77,17 @@ status_flow() {
 # checkout's archive first, and only then is the worktree removed (ADR-0037).
 cmd_archive() {
   require_state
-  local home
-  home="$(archive_root "$ROOT")" || die "could not read the main checkout - nothing was archived"
-  archive_flow "$ROOT" "$home"
+  local archive_home
+  archive_home="$(archive_root "$ROOT")" || die "could not read the main checkout - nothing was archived"
+  archive_flow "$ROOT" "$archive_home"
   # Only a side checkout archives anywhere but in place.
-  if [ "$home" != "$ROOT" ]; then side_checkout_remove_after_archive "$ROOT" "$home"; fi
+  if [ "$archive_home" != "$ROOT" ]; then side_checkout_remove_after_archive "$ROOT" "$archive_home"; fi
 }
 
 # side_checkout_remove_after_archive <path> <main-root>: removes the side
 # checkout at <path>, through the main checkout at <main-root>, once its flow
-# is archived, never with force. A dirty worktree is reported and kept: the archive has still
-# succeeded. When this command ran inside the removed worktree, the session
+# is archived, never with force. A dirty worktree is reported and kept: the
+# archive has still succeeded. When this command ran inside the removed worktree, the session
 # working there is told to close.
 side_checkout_remove_after_archive() {
   local path="$1" main_root="$2" err here
