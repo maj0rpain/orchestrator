@@ -403,23 +403,6 @@ fake_fail_times() {
 # fake_unfail: every operation fake_fail named succeeds again.
 fake_unfail() { rm -rf "$ORCH_GH_FAKE_STORE/fail"; }
 
-# fake_sub_issue <parent> <child>...: seeds each child as a sub-issue of the
-# parent, after any it has.
-fake_sub_issue() {
-  local p="$1"
-  shift
-  mkdir -p "$ORCH_GH_FAKE_STORE/subs"
-  printf '%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/subs/$p"
-}
-
-# fake_blocker <n> <blocker>...: seeds #n as blocked by each blocker.
-fake_blocker() {
-  local n="$1"
-  shift
-  mkdir -p "$ORCH_GH_FAKE_STORE/blocked_by"
-  printf '%s\n' "$@" >>"$ORCH_GH_FAKE_STORE/blocked_by/$n"
-}
-
 # fake_sub_issues_of <parent>: the parent's sub-issues read back from the
 # store, in link order, space-separated - nothing for none.
 fake_sub_issues_of() { paste -sd ' ' "$ORCH_GH_FAKE_STORE/subs/$1" 2>/dev/null || true; }
