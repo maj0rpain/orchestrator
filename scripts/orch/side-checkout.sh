@@ -120,8 +120,13 @@ cmd_side_checkout_remove() {
     || die "$path carries no side-checkout marker - it is not the plugin's to remove, so it is left alone"
   require_clean_tree "$path" \
     "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
-  refuse_ticket_worktrees "$path"
-  if checkout_has_flow "$path"; then archive_flow "$path" "$main_root"; fi
+  # archive_flow refuses ticket worktrees itself before anything moves, so
+  # the refusal runs here only when there is no flow to archive.
+  if checkout_has_flow "$path"; then
+    archive_flow "$path" "$main_root"
+  else
+    refuse_ticket_worktrees "$path"
+  fi
   if ! err="$(git -C "$main_root" worktree remove "$path" 2>&1)"; then
     die "could not remove side checkout $path: ${err%%$'\n'*}"
   fi

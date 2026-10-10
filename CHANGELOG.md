@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.5.6
+
+`orch.sh side-checkout remove` runs the ticket-worktree refusal once (#974,
+deferred from #897): through `archive_flow` when the side checkout holds a
+flow, and directly when it holds none, so git is no longer asked for the
+worktree list twice. Behaviour is unchanged; `remove`'s refusal and `prune`'s
+report of a flow a ticket worktree keeps from being archived gain tests.
+
 ## 4.5.5
 
 The driver loop has one home (#901, #675): its loop steps a-f and its
