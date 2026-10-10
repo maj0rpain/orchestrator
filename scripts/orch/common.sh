@@ -511,6 +511,22 @@ origin_has_branch() {
 # Whether a flow is active: state.json exists and its phase is not done.
 flow_active() { [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; }
 
+# flow_holding_phase <branch> [issue]: prints the phase of the active flow
+# (phase not done) when it holds the branch, or the issue where one is given,
+# and fails printing nothing otherwise. A branch or issue an active flow holds
+# belongs to it (ADR-0029), so review-pass begin and pr draft/ready refuse it,
+# each with its own message. Reads state.json only when one exists.
+flow_holding_phase() {
+  local branch="$1" issue="${2:-}" phase
+  [ -f "$STATE" ] || return 1
+  phase="$(state_get phase)"
+  [ "$phase" != "done" ] || return 1
+  [ "$(state_get branch)" = "$branch" ] \
+    || { [ -n "$issue" ] && [ "$(state_get issue)" = "$issue" ]; } \
+    || return 1
+  printf '%s\n' "$phase"
+}
+
 # The refusal of a second flow beside one mid-pipeline, shared by init and
 # branch off (a quick implementation must never move an active flow's checkout
 # off its branch). It exits 3, a code no other failure of either uses, so a

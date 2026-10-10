@@ -239,14 +239,15 @@ orch.sh - deterministic operations for the orchestrator flow
   pr open <title> <body-file> push and open a draft PR against the flow's base
                               branch - Closes its issue into the default
                               branch, Refs it into any other
-  pr publish <issue> <title> <body-file>
+  pr publish <issue> <title> <body-file> [--draft]
                               push the current branch and open a non-draft PR
                               against the base branch branch off recorded for
                               it (else the base branch in effect) - Closes
                               <issue> into the default branch, Refs it into any
                               other - recording no state; prints the PR number
                               - for a quick implementation whose review pass
-                              already ran
+                              already ran. --draft opens it as a draft, for a
+                              pass that met a spec question
   pr release [--force] <title> <body-file>
                               open the release PR: a non-draft PR from the
                               base branch in effect into the default branch,
@@ -270,6 +271,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               file. Exits 1 writing nothing when the branch
                               has no open PR, 2 when GitHub cannot be read
                               or the call is wrong
+  pr draft                    turn the current branch's open PR into a draft,
+                              recording no state. Exits 0 when done or the PR
+                              is already a draft (saying so), 1 when the branch
+                              has no open PR, 2 when GitHub cannot be read or
+                              the call fails (relaying gh's reason), the call
+                              is wrong, or an active flow holds the branch
+  pr ready                    mark the current branch's open PR ready, as pr
+                              draft does: 0 also when it is already ready
   pr fetch <file>             write the current branch's open PR body to
                               <file>, recording no state
   pr update <file>            replace the current branch's open PR body with
