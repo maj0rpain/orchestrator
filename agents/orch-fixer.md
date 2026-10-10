@@ -169,7 +169,9 @@ follows it, and so does every other step that changes `git diff <base
 SHA>..HEAD` while the PR is open: `orch-sync` after a resolved conflict, a
 clean review-loop iteration whose base sync resolved one, and a standalone
 review pass after its fix commit. Each runs it unattended, and records what
-it corrected rather than asking whether to.
+it corrected rather than asking whether to. Quick implementation's step 7
+checks its local body file by step 2 and the done rule before the PR opens, with no
+`pr fetch` or `pr update`.
 
 1. **Fetch.** Read the body into a temporary file outside the repo
    (`mktemp`) with `bash "<orch.sh>" pr fetch <file>`. Fetch it afresh each

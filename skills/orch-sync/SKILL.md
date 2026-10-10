@@ -68,7 +68,10 @@ to a temporary file outside the repo (`mktemp`):
   `agents/orch-fixer.md` (under the plugin root), unattended, against the
   base SHA `bash "$ORCH" branch base-sha` prints after the sync. Keep its
   outcome value for the comment.
-- **Exit 1**: the branch has no open PR. Skip the check.
+- **Exit 1**: the branch has no open PR. Skip the check, write and post
+  no comment, and put the **Merge resolutions** in your report to the
+  human instead, saying the PR body check was skipped - there is no PR.
+  Step 2 ends here.
 - **Exit 2**: GitHub could not be read. The check does not run; its
   outcome is `Not updated - <reason>`, `<reason>` being the `orch.sh`
   message.
@@ -84,9 +87,8 @@ then a **PR body** heading holding the check's outcome value. Post it with
 
 - **Exit 0**: posted. Tell the human the PR number it printed, and the PR
   body lines the check corrected, if any.
-- **Exit 1**: the branch has no open PR. Put the **Merge resolutions** in
-  your report to the human instead, and say the PR body check was skipped
-  - there is no PR.
+- **Exit 1**: the PR closed since the probe. Put the **Merge resolutions**
+  and the **PR body** outcome in your report to the human instead.
 - **Any other exit**: report the failure with its message, and the **Merge
   resolutions** and the **PR body** outcome with it, since the corrections
   may already have reached GitHub. The sync still stands: it is merged,
