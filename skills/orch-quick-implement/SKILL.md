@@ -1,6 +1,6 @@
 ---
 name: orch-quick-implement
-description: Implement a small, already-understood change directly and hands-off, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, runs /orchestrator:quick-implement [<issue>], or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue - rewritten from the plan, unattended, when it is the interviewed issue and the plan changed it - an unattended spec review, a published ticket breakdown, test-driven implementation, and a review pass before the PR opens.
+description: Implement a small, already-understood change directly and hands-off, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, runs /orchestrator:quick-implement [<issue>], or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue - possibly rewritten from the plan, unattended - an unattended spec review, a published ticket breakdown, test-driven implementation, and a review pass before the PR opens.
 ---
 
 # Orchestrator quick implementation
@@ -139,8 +139,7 @@ First run `bash "$ORCH" ticket exists <linked issue>`:
   Skip the breakdown and ask nothing: step 1's rewrite may already have
   reconciled the breakdown with the rewritten body, and step 2's spec review
   with the edits it applied, or the review retired it and broke the issue
-  down again. A rewrite that retired the breakdown leaves none, so this
-  check exits 1. It printed one word for step 5:
+  down again. It printed one word for step 5:
   `sub-issues` means step 5 works the linked issue's ticket frontier, and
   `collapsed` means step 5 treats the breakdown as collapsed.
 - **Exit 1**: it has none. Invoke the `orch-to-tickets` skill on the linked
