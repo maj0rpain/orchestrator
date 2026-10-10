@@ -44,6 +44,18 @@ files_marks() {
   printf '%s\n' "$1" | grep -xE 'isolation|planted [a-z ]+' | tr '\n' ','
 }
 
+# The placement rule, as helper_placement's message states it.
+HELPER_PLACEMENT_RULE="The rule: a helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
+
+# placement_copy: a copy of the real scripts/test/orch/ in a fresh temp
+# directory; prints the copy's path.
+placement_copy() {
+  local dir
+  dir="$(mktemp -d)" || return 1
+  cp -R "$PLUGIN_ROOT/scripts/test/orch" "$dir/" || return 1
+  printf '%s\n' "$dir/orch"
+}
+
 # helper_placement <dir>: checks where every helper of the suite's files in
 # <dir> (scripts/test/orch/) is defined against the files that call it, and
 # prints one line per misplaced helper, sorted, naming it, its file, its
@@ -52,7 +64,8 @@ files_marks() {
 # `# ---` lines headings only - and of each other file's preamble; one defined
 # inside a section is not. A call is a name in command position: at a line's
 # start or after `;`, `&&`, `||`, `|`, `&`, `$(`, a backtick, `(`, `{`, `!`, or
-# one of then, do, else, elif, if, while, until. Comments, quoted strings and
+# one of then, do, else, elif, if, while, until; a case-arm pattern at a line's
+# start (`name)`, `a|name)`) is none. Comments, quoted strings and
 # quoted heredocs are dropped first, but `$(...)` and backticks inside double
 # quotes and unquoted heredocs are still read; a call inside a helper's own
 # body is not counted for it. setup.sh's helper fails with no caller, or with
@@ -60,7 +73,7 @@ files_marks() {
 # calls it.
 helper_placement() {
   local out
-  out="$(awk -v rule="The rule: a helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section." '
+  out="$(awk -v rule="$HELPER_PLACEMENT_RULE" '
     function push(m) { sp++; st[sp] = m; depth[sp] = 0 }
     # sanitize(line): the line with its comment dropped, every quoted string
     # or ${...} turned into a q and a closing backtick into a space, keeping
@@ -141,7 +154,9 @@ helper_placement() {
         fn = name; opened = 0; fdepth = 0
         if (file == setup || !insec) defined[name] = file
       }
-      t = s; gsub(/[;&|({!`]/, "\n", t); nseg = split(t, seg, "\n")
+      # a case-arm pattern opening the line is no call; the command after it is
+      t = s; if (match(t, /^[ \t]*[A-Za-z0-9_.*|-]+\)/)) t = substr(t, RLENGTH + 1)
+      gsub(/[;&|({!`]/, "\n", t); nseg = split(t, seg, "\n")
       for (k = 1; k <= nseg; k++) {
         w = seg[k]
         sub(/^[ \t]+/, "", w)
@@ -941,7 +956,6 @@ rm -rf "$all_root"
 # whose plantings all keep it.
 echo
 echo "helper placement (#1006)"
-placement_rule="The rule: a helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
 out="$(helper_placement "$PLUGIN_ROOT/scripts/test/orch")"; st=$?
 if [ "$st" -eq 0 ] && [ -z "$out" ]; then
   ok "every helper of the real tree is placed by the rule"
@@ -949,21 +963,12 @@ else
   bad "every helper of the real tree is placed by the rule" "$out"
 fi
 
-# placement_copy: a copy of the real scripts/test/orch/ in a fresh temp
-# directory; prints the copy's path.
-placement_copy() {
-  local dir
-  dir="$(mktemp -d)" || return 1
-  cp -R "$PLUGIN_ROOT/scripts/test/orch" "$dir/" || return 1
-  printf '%s\n' "$dir/orch"
-}
-
 placement_dir="$(placement_copy)"
 printf '%s\n' 'planted_uncalled() { :; }' >>"$placement_dir/setup.sh"
 out="$(helper_placement "$placement_dir")"; st=$?
 assert_status "a shared helper with no caller fails" "$st" 1
 assert_eq "naming it, its file, no caller and the rule" "$out" \
-  "planted_uncalled is defined in setup.sh and called by no file. $placement_rule"
+  "planted_uncalled is defined in setup.sh and called by no file. $HELPER_PLACEMENT_RULE"
 rm -rf "${placement_dir%/orch}"
 
 placement_dir="$(placement_copy)"
@@ -976,7 +981,7 @@ PLANTED
 out="$(helper_placement "$placement_dir")"; st=$?
 assert_status "a shared helper called from one section file fails" "$st" 1
 assert_eq "naming it, its file, its one caller and the rule" "$out" \
-  "planted_single is defined in setup.sh and called by zz-one.sh. $placement_rule"
+  "planted_single is defined in setup.sh and called by zz-one.sh. $HELPER_PLACEMENT_RULE"
 rm -rf "${placement_dir%/orch}"
 
 placement_dir="$(placement_copy)"
@@ -992,7 +997,7 @@ PLANTED
 out="$(helper_placement "$placement_dir")"; st=$?
 assert_status "a preamble helper called from another file fails" "$st" 1
 assert_eq "naming it, its file, its callers and the rule" "$out" \
-  "planted_pre is defined in zz-pre.sh and called by zz-other.sh, zz-pre.sh. $placement_rule"
+  "planted_pre is defined in zz-pre.sh and called by zz-other.sh, zz-pre.sh. $HELPER_PLACEMENT_RULE"
 rm -rf "${placement_dir%/orch}"
 
 placement_dir="$(placement_copy)"
@@ -1000,7 +1005,23 @@ printf '%s\n' 'planted_self() {' '  planted_self' '}' >>"$placement_dir/setup.sh
 out="$(helper_placement "$placement_dir")"; st=$?
 assert_status "a shared helper called only by itself fails" "$st" 1
 assert_eq "its own body is no caller" "$out" \
-  "planted_self is defined in setup.sh and called by no file. $placement_rule"
+  "planted_self is defined in setup.sh and called by no file. $HELPER_PLACEMENT_RULE"
+rm -rf "${placement_dir%/orch}"
+
+placement_dir="$(placement_copy)"
+printf '%s\n' 'planted_arm() { :; }' 'planted_alt() { :; }' >>"$placement_dir/setup.sh"
+plant_file "$placement_dir" zz-arm.sh <<'PLANTED'
+  # --- planted arm
+  case "$1" in
+    planted_arm) : ;;
+    x|planted_alt) : ;;
+  esac
+PLANTED
+out="$(helper_placement "$placement_dir")"; st=$?
+assert_status "a shared helper named only as a case-arm pattern fails" "$st" 1
+assert_eq "a pattern is no call" "$out" \
+  "planted_alt is defined in setup.sh and called by no file. $HELPER_PLACEMENT_RULE
+planted_arm is defined in setup.sh and called by no file. $HELPER_PLACEMENT_RULE"
 rm -rf "${placement_dir%/orch}"
 
 placement_dir="$(placement_copy)"
