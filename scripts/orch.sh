@@ -85,7 +85,7 @@ readonly TICKET_WORKTREES="$ORCH/worktrees"
 # The noun modules, after the ROOT block, whose constants they read. doctor.sh
 # is one of them, with one rule more: the dependency runs one way, doctor.sh
 # calling into this file and the other modules, which call nothing doctor.sh
-# defines but cmd_doctor, from main() (orch_test.sh holds this).
+# defines but cmd_doctor, from main() (scripts/test/orch/doctor.sh holds this).
 source "$ORCH_SCRIPTS/orch/base.sh"
 source "$ORCH_SCRIPTS/orch/branch.sh"
 source "$ORCH_SCRIPTS/orch/doctor.sh"
