@@ -215,22 +215,38 @@ run_next="- ${run_flow_quick}${run_blueprint}${flow_quick_files}${blueprint_file
 
 # The interviewed issue (#571): an open issue the planning was about is
 # offered a move to ready-for-agent before the route question, so init
-# --issue can adopt it. Its lines are bullets, never numbered: the route
-# question's three options are the only numbered lines in the message.
+# --issue can adopt it. The step reads the issue's triage state first, through
+# issue triage --check (#989), so it asks nothing of an issue already ready
+# and one question of an issue with a held label. Its lines are bullets, never
+# numbered: the route question's three options are the only numbered lines in
+# the message.
+orch_cmd="bash \"$(hook_plugin_root)/scripts/orch.sh\""
+refuse_warning="init --issue will refuse #<n> until it carries \`${ready_label}\`"
 interviewed_step="- At the close, if this planning was about an open issue - named in the
   interview's arguments or its conversation - that is the interviewed issue,
   and this step comes before the route question below.
   With no interviewed issue, skip this step entirely.
-  When the done-close below applies, it replaces this step's question.
-  Otherwise ask one blocking question with ${ask_tool}, naming its number:
-  \"Move #<n> to \`${ready_label}\`\", \"Skip\", or \"It's a different issue\"
-  (the user names it, and you use that one).
-  On \"Skip\", go straight to the route question. On a move, run
-  bash \"$(hook_plugin_root)/scripts/orch.sh\" issue triage <n>
-  through that path - never a raw gh call. If it exits 2, the issue carries
-  \`${wontfix_label}\` or \`${human_label}\` and it printed which: ask the user
-  whether to override that label; on a yes, rerun it with --override;
-  on a no, skip the relabel. On any other failure, warn the user that init --issue will refuse #<n> until it carries \`${ready_label}\`, and continue to the route question."
+  When the done-close below applies, it replaces this step: run no check and ask no label question.
+  Otherwise, before asking anything, run
+  ${orch_cmd} issue triage <n> --check
+  through that path - never a raw gh call - and follow what it prints:
+  - \`ready\`: ask no label question. Name #<n> as the interviewed issue in one sentence and go straight to the route question.
+  - \`${wontfix_label}\` or \`${human_label}\`, a held label: ask one blocking question with ${ask_tool}, naming that label:
+    \"#<n> carries \`<label>\`. Override it and move #<n> to \`${ready_label}\`?\", with the options
+    \"Override and move\", \"Skip\", or \"It's a different issue\". On \"Override and move\", run
+    ${orch_cmd} issue triage <n> --override
+    through that path. If that fails, report its orch: message, warn the user that ${refuse_warning}, and continue to the route question.
+  - \`movable\`: ask one blocking question with ${ask_tool}, naming its number:
+    \"Move #<n> to \`${ready_label}\`\", \"Skip\", or \"It's a different issue\".
+    On a move, run
+    ${orch_cmd} issue triage <n>
+    through that path. If it exits 2, the issue carries
+    \`${wontfix_label}\` or \`${human_label}\` and it printed which: ask the user
+    whether to override that label; on a yes, rerun it with --override;
+    on a no, skip the relabel. On any other failure, warn the user that ${refuse_warning}, and continue to the route question.
+  - If the check itself fails, ask no label question: warn the user, relaying the check's orch: reason, that ${refuse_warning}, and continue to the route question.
+  On \"Skip\", go straight to the route question. On \"It's a different issue\", the user names it:
+  run the check on that issue instead and follow the same branches for it."
 
 # The done-close (#985): an interviewed issue whose work the planning finds
 # already done is offered a close as done, through orch.sh issue close, in
@@ -243,7 +259,7 @@ done_step="- ${done_lead}, if the planning settles that the interviewed issue's 
   did the work, else \"Close #<n> as done (completed)\"; and \"Leave #<n> open\".
   On the close, write the closing comment, naming what did the work, to a file outside the tracked tree
   (mktemp), then run
-  bash \"$(hook_plugin_root)/scripts/orch.sh\" issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>
+  ${orch_cmd} issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>
   through that path - never a raw gh call - and report the outcome.
   If the close fails, report its orch: message and stop; the issue stays open.
   On \"Leave #<n> open\", stop.
@@ -266,7 +282,7 @@ ${run_next} Do not ask the user to type a command.${route_here}
 
 - On \"Blueprint only\": when the interviewed-issue step settled an
   interviewed issue - the one this planning was about, or the one the user named under \"It's a different issue\" -
-  whether the user moved it to its triage label or answered \"Skip\",
+  whatever happened to its label - moved, already ready, skipped, or the check failed -
   write the spec in rewrite mode on that issue, replacing #<n>'s body instead of publishing a new issue
   (orch-to-spec, handed #<n>). Only with no interviewed issue, publish the spec as a new issue
   (orch-to-spec). Either way, write any glossary or

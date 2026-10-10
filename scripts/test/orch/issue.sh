@@ -21,6 +21,33 @@ close_refused() {
   assert_eq "closing nothing ($what)" "$(fake_state_of 83)" "OPEN"
 }
 
+# triage_check <n>: run issue triage --check on issue <n>.
+triage_check() { "$ORCH" issue triage "$1" --check; }
+
+# check_says <name> <n> <expected>: --check on issue <n> prints <expected>,
+# exits 0, and writes nothing to the fake.
+check_says() {
+  local before out st
+  before="$(fake_snapshot)"
+  out="$(triage_check "$2" 2>&1)"; st=$?
+  assert_status "$1, exit 0" "$st" 0
+  assert_eq "printing '$3'" "$out" "$3"
+  assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
+}
+# check_dies <name> <n> <reason>: --check on issue <n> exits 1 with <reason>
+# on stderr, nothing on stdout, and writes nothing to the fake.
+check_dies() {
+  local before out err st errf
+  errf="$(mktemp)"
+  before="$(fake_snapshot)"
+  out="$(triage_check "$2" 2>"$errf")"; st=$?
+  err="$(cat "$errf")"; rm -f "$errf"
+  assert_status "$1, exit 1" "$st" 1
+  assert_contains "giving its reason on stderr" "$err" "$3"
+  assert_eq "printing nothing on stdout" "$out" ""
+  assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
+}
+
 # --- issue publish ------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
 # `gh issue create` in skill prose - stateless like branch off, since a quick
@@ -444,6 +471,96 @@ assert_status "no issue at all is a usage error" "$st" 1
 out="$("$ORCH" issue bogus 2>&1)"
 assert_contains "the unknown-op message lists triage" "$out" "|triage"
 assert_contains "help documents issue triage" "$("$ORCH" help)" "issue triage <n> [--override]"
+assert_contains "help documents issue triage --check" "$("$ORCH" help)" "issue triage <n> --check"
+restore_suite_env
+
+# --- issue triage --check -----------------------------------------------------
+# The read-only mode the planning hook's interviewed-issue step runs before it
+# asks anything (#989): the write path's read and role walk, and no write.
+echo
+echo "issue triage --check"
+healthy_repo
+fake_github
+fake_issue 70 open ready-for-agent bug
+check_says "an issue carrying ready-for-agent is ready" 70 ready
+fake_issue 71 open needs-triage bug
+check_says "a needs-triage issue is movable" 71 movable
+fake_issue 72 open
+check_says "an unlabelled issue is movable" 72 movable
+fake_issue 73 open wontfix
+check_says "a wontfix issue prints wontfix" 73 wontfix
+fake_issue 74 open ready-for-human
+check_says "a ready-for-human issue prints ready-for-human" 74 ready-for-human
+fake_issue 75 open ready-for-human wontfix
+check_says "an issue holding both wontfix and ready-for-human prints wontfix" 75 wontfix
+fake_issue 76 open ready-for-agent wontfix
+check_says "ready-for-agent beside a held label is ready" 76 ready
+fake_issue 77 open review:major bug ready-for-human
+check_says "a finding finding triage has labelled takes the ordinary walk" 77 ready-for-human
+
+fake_issue 78 closed needs-triage
+check_dies "a closed issue dies" 78 "orch: issue #78 is not open"
+fake_issue 79 open needs-triage review:major
+check_dies "a filed finding not yet triaged dies" 79 \
+  "orch: issue #79 is a filed finding (review:major) not yet triaged"
+fake_issue 80 open needs-triage
+fake_fail adapter_issue_state_labels "$GH_502"
+check_dies "a failed read dies" 80 "orch: gh could not read issue #80: HTTP 502: Bad Gateway"
+fake_unfail
+
+fake_issue 81 open needs-triage
+before="$(fake_snapshot)"
+out="$("$ORCH" issue triage 81 --check --override 2>&1)"; st=$?
+assert_status "--check with --override is a usage error, exit 1" "$st" 1
+assert_contains "with a usage line" "$out" "usage: orch.sh issue triage"
+assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
+out="$("$ORCH" issue triage 81 --override --check 2>&1)"; st=$?
+assert_status "in either order" "$st" 1
+assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
+
+# One shared walk (story 9): on each label set, --check and the plain write agree.
+for labelled in "82|ready-for-agent" "83|wontfix" "84|ready-for-human" \
+            "85|ready-for-human wontfix" "86|ready-for-agent ready-for-human" \
+            "87|needs-triage" "88|needs-info bug"; do
+  n="${labelled%%|*}"
+  # shellcheck disable=SC2086 # the labels split into separate arguments
+  fake_issue "$n" open ${labelled#*|}
+  said="$(triage_check "$n" 2>/dev/null)"
+  before="$(fake_snapshot)"
+  out="$("$ORCH" issue triage "$n" 2>/dev/null)"; st=$?
+  case "$said" in
+    ready)
+      assert_status "parity '${labelled#*|}': ready, and the write exits 0" "$st" 0
+      assert_eq "relabelling nothing" "$(fake_snapshot)" "$before" ;;
+    movable)
+      assert_status "parity '${labelled#*|}': movable, and the write exits 0" "$st" 0
+      assert_contains "relabelling it to ready-for-agent" "$(fake_labels_of "$n")" "ready-for-agent" ;;
+    *)
+      assert_status "parity '${labelled#*|}': '$said', and the write exits 2" "$st" 2
+      assert_eq "printing the same label" "$out" "$said"
+      assert_eq "relabelling nothing" "$(fake_snapshot)" "$before" ;;
+  esac
+done
+
+writeln '# Triage Labels' '' \
+        '| Label in mattpocock/skills | Label in our tracker | Meaning     |' \
+        '| -------------------------- | -------------------- | ----------- |' \
+        '| `needs-triage`             | `triage me`          | Evaluate it |' \
+        '| `needs-info`               | `more info`          | Waiting     |' \
+        '| `ready-for-agent`          | `agent go`           | AFK-ready   |' \
+        '| `ready-for-human`          | `human go`           | Needs human |' \
+        '| `wontfix`                  | `nope`               | Not doing   |' >docs/agents/triage-labels.md
+fake_issue 89 open "agent go"
+check_says "a renamed ready-for-agent is ready" 89 ready
+fake_issue 90 open "human go" nope
+check_says "renamed held labels print the repo's wontfix" 90 nope
+fake_issue 91 open "human go"
+check_says "a renamed ready-for-human prints its name" 91 "human go"
+fake_issue 92 open "triage me" ready-for-agent
+check_says "the upstream name is no label of the repo's: movable" 92 movable
+fake_issue 93 open "triage me" review:major
+check_dies "a finding under the renamed needs-triage dies" 93 "not yet triaged"
+labels_doc docs/agents/triage-labels.md
 restore_suite_env
 
 # --- issue ready --------------------------------------------------------------
