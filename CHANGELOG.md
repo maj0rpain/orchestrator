@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.5.13
+
+`orch-sync` now corrects the PR body against the diff after a resolved merge,
+recording the corrected lines under a **PR body** heading in its comment
+instead of asking. The fixer's PR-body check is one section of its brief,
+**Checking the PR body**, which a clean review-loop iteration whose base sync
+resolved a conflict and a standalone review pass after its fix commit also
+follow.
+
 ## 4.5.12
 
 The planning session's closing route question now keeps its three options in their given order unless the agent recommends one, and a recommended route is listed first, labelled "(Recommended)" and given a one-clause scope reason, on both Claude Code and Junie (#983).
