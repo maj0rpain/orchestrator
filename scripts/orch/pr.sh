@@ -83,7 +83,7 @@ cmd_pr_release() {
   local open err
   capture open err adapter_prs_open "$base" "$default" ||
     die "gh could not list the open PRs from $base into $default: $(gh_reason "$err")"
-  [ -z "$open" ] || die "a release PR from $base into $default is already open: #$(first_line "$open")"
+  [ -z "$open" ] || die "a release PR from $base into $default is already open: #${open%%$'\n'*}"
   # Read from the merged PRs' bodies rather than GitHub's closing-issue links:
   # GitHub only links closing keywords on PRs into the default branch, and a
   # Refs line never links at all. Refs, Closes, Fixes and Resolves count, in
@@ -178,7 +178,7 @@ cmd_pr_ready() {
 # (true or false), one per line. Returns 1, printing nothing, when the branch
 # has no open PR, as current_open_pr does.
 open_pr_draft_flag() {
-  local branch phase pr state_draft is_draft rest err
+  local branch phase pr state_draft _pr_state is_draft _rest err
   branch="$(git symbolic-ref --quiet --short HEAD)" \
     || die2 "not on a branch (detached HEAD)"
   if phase="$(flow_holding_phase "$branch")"; then
@@ -187,7 +187,7 @@ open_pr_draft_flag() {
   pr="$(current_open_pr)" || return $?
   capture state_draft err adapter_pr_state_draft "$pr" \
     || die2 "gh could not read PR #$pr: $(gh_reason "$err")"
-  lines_split "$state_draft" _ is_draft rest
+  lines_split "$state_draft" _pr_state is_draft _rest
   [ "$is_draft" = true ] || is_draft=false
   printf '%s\n%s\n' "$pr" "$is_draft"
 }
@@ -205,7 +205,7 @@ current_open_pr() {
   capture open err adapter_prs_open "$branch" \
     || die2 "gh could not list the open PRs from $branch: $(gh_reason "$err")"
   [ -n "$open" ] || return 1
-  first_line "$open"
+  printf '%s\n' "${open%%$'\n'*}"
 }
 
 # The PR pr fetch and pr update work on. Unlike pr comment, no open PR is an

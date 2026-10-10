@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.5.1
+
+`orch.sh`'s modules split strings into lines one way per job (#829, #832,
+#833, #834). The `first_line` helper is gone: every first line of a string is
+taken with the inline `${x%%$'\n'*}` expansion. `redo review` splits the
+review loop's terminal answer with `lines_split`, as doctor does. Positions a
+`lines_split` caller fills but never reads carry a `_` prefix. `ticket list`
+reads the sub-issue TSV with `while read` and `tsv_split`, and it and
+`finished_flow` lowercase GitHub's states through one `case`, the new
+`state_word` helper, instead of awk or tr.
+Every command's output and exit status are unchanged.
+
 ## 4.5.0
 
 A spec question met in a review pass now reaches a human before the PR is

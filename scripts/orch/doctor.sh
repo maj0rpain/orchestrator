@@ -17,7 +17,7 @@
 #
 # Sourced into orch.sh, from its orch/ directory, after its shared mechanism
 # (ORCH_SCRIPTS, ROOT, STATE, ORCH_DIR_NAME, PHASES, HANDOFF_DIR), common.sh
-# (die, note, now, first_line, capture, default_branch, base_setting,
+# (die, note, now, capture, default_branch, base_setting,
 # origin_has_branch, require_state, labels_have, and the like), triage-labels.sh
 # (LABELS_DOC, TRIAGE_ROLES, triage_table_rows, triage_labels,
 # triage_label_for, triage_expected_labels) and host.sh (host_detect) are
@@ -240,7 +240,7 @@ check_gh_repo() {
   # compared with REPO_NAME's owner/name, any host dropped.
   if gh_installed; then
     default="$(adapter_repo_local_default 2>/dev/null)" || default=""
-    default="$(first_line "$default")"
+    default="${default%%$'\n'*}"
     owner_name="$(repo_owner_name "$REPO_NAME")"
     case "$default" in
       */*) if [ "$default" != "$owner_name" ]; then
@@ -669,7 +669,7 @@ check_flow_review_terminal() {
   case "$word" in
     none)  d_ok "review loop: not started yet" ;;
     ready) d_ok "review loop at a terminal state: ready" ;;
-    stop)  d_ok "review loop at a terminal state: stop ($(first_line "$detail"))" ;;
+    stop)  d_ok "review loop at a terminal state: stop (${detail%%$'\n'*})" ;;
     # Both warn rather than FAIL: /orchestrator:next resumes either one, and a
     # FAIL here would block the one command that can move a mid-flight loop
     # forward. The two read as distinct situations, not one "interrupted"
@@ -745,14 +745,14 @@ check_flow_review_ci() {
 # so isDraft and phase disagreeing on GitHub's own PR is evidence that
 # operation only half landed, not a state a healthy flow reaches on its own.
 check_flow_review_draft() {
-  local phase pr out err="" gh_line pr_state is_draft rest
+  local phase pr out err="" gh_line pr_state is_draft _rest
   phase="$(state_get phase)"
   case "$phase" in review|done) ;; *) return 0 ;; esac
   pr="$(state_get pr)"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
   capture out err adapter_pr_state_draft "$pr" || out=""
-  lines_split "$out" pr_state is_draft rest
+  lines_split "$out" pr_state is_draft _rest
   if [ -z "$pr_state" ]; then
     gh_line="${err%%$'\n'*}"
     d_warn "PR #$pr draft state could not be read from GitHub: ${gh_line:-gh gave no reason}"
