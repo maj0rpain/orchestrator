@@ -43,7 +43,9 @@
 # The suite's own directory, walked to once; every path below builds on it.
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORCH="$(cd "$TEST_DIR/.." && pwd)/orch.sh"
+# shellcheck disable=SC2034 # read by the sections, eval'd from scripts/test/orch/
 GH_ADAPTER_FAKE="$TEST_DIR/gh_adapter_fake.sh"
+# shellcheck disable=SC2034 # read by the sections, eval'd from scripts/test/orch/
 PLUGIN_ROOT="$(cd "$(dirname "$ORCH")/.." && pwd)"
 SUITE_SCRIPT="$TEST_DIR/$(basename "${BASH_SOURCE[0]}")"
 SECTION_DIR="$TEST_DIR/orch"
@@ -180,6 +182,7 @@ print_fail() { printf '  FAIL %s\n     %s\n' "$1" "$2"; }
 orch_child_counts=""
 if [ -n "${ORCH_TEST_CHILD_SECTION:-}" ]; then
   orch_child_section="$ORCH_TEST_CHILD_SECTION"
+  # shellcheck disable=SC2034 # read by the summary, eval'd from setup.sh
   orch_child_counts="$ORCH_TEST_CHILD_COUNTS"
   unset ORCH_TEST_CHILD_SECTION ORCH_TEST_CHILD_COUNTS
   eval "$(section_text ",$orch_child_section,")"
@@ -205,84 +208,83 @@ if ! is_positive_integer "$orch_jobs"; then
 fi
 orch_jobs=$((10#$orch_jobs))
 
-if [ -n "${ORCH_TEST_ONLY:-}" ] || [ "$orch_jobs" -gt 1 ]; then
-  only_titles="$(section_titles)"
-  if [ -n "${ORCH_TEST_ONLY:-}" ]; then
-    only_keep="$only_isolation$(printf '%s\n' "$only_titles" | grep -nE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
-    if [ "$only_keep" = "$only_isolation" ]; then
-      echo "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section; the selectable sections are:" >&2
-      printf '%s\n' "$only_titles"
-      exit 1
-    fi
-  else
-    only_keep=",$(printf '%s\n' "$only_titles" | awk '{ print NR }' | tr '\n' ',')"
+# Every run, sequential or parallel, filtered or not, evals the text the walk
+# extracts for its kept set: no section runs from this file itself.
+only_titles="$(section_titles)"
+if [ -n "${ORCH_TEST_ONLY:-}" ]; then
+  only_keep="$only_isolation$(printf '%s\n' "$only_titles" | grep -nE -- "$ORCH_TEST_ONLY" | cut -d: -f1 | tr '\n' ',')"
+  if [ "$only_keep" = "$only_isolation" ]; then
+    echo "orch_test.sh: ORCH_TEST_ONLY='$ORCH_TEST_ONLY' matches no section; the selectable sections are:" >&2
+    printf '%s\n' "$only_titles"
+    exit 1
   fi
-  if [ "$orch_jobs" -eq 1 ]; then
-    eval "$(section_text "$only_keep")"
-    exit $?
-  fi
-
-  orch_buf="$(mktemp -d)" || {
-    echo "orch_test.sh: cannot create a temp directory for the section buffers" >&2; exit 1; }
-  orch_pids=()
-  orch_sections=()
-  # Kill the children, then wait for each to exit, so the root is removed
-  # only once no child can still write into it.
-  orch_stop_children() {
-    local pid
-    kill "${orch_pids[@]}" 2>/dev/null
-    for pid in "${orch_pids[@]}"; do wait "$pid"; done
-    exit 130
-  }
-  trap orch_stop_children INT TERM
-  IFS=, read -r -a orch_sections <<<"${only_keep#,}"
-  orch_total=${#orch_sections[@]}
-  orch_started=0 orch_flushed=0 orch_pass=0 orch_fail=0 orch_skip=0 orch_failed=0
-  echo "orch.sh tests"
-  while [ "$orch_flushed" -lt "$orch_total" ]; do
-    # Start children while a slot is free: a slot is held by every child
-    # started and still alive.
-    orch_running=0
-    orch_i=$orch_flushed
-    while [ "$orch_i" -lt "$orch_started" ]; do
-      kill -0 "${orch_pids[$orch_i]}" 2>/dev/null && orch_running=$((orch_running + 1))
-      orch_i=$((orch_i + 1))
-    done
-    while [ "$orch_started" -lt "$orch_total" ] && [ "$orch_running" -lt "$orch_jobs" ]; do
-      orch_n="${orch_sections[$orch_started]}"
-      ORCH_TEST_CHILD_SECTION="$orch_n" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_n.counts" \
-        ORCH_TEST_JOBS=1 bash "$SUITE_SCRIPT" >"$orch_buf/$orch_n.out" &
-      orch_pids[orch_started]=$!
-      orch_started=$((orch_started + 1))
-      orch_running=$((orch_running + 1))
-    done
-    # Print every finished child next in file order.
-    orch_progress=0
-    while [ "$orch_flushed" -lt "$orch_started" ] &&
-      ! kill -0 "${orch_pids[$orch_flushed]}" 2>/dev/null; do
-      wait "${orch_pids[$orch_flushed]}"; orch_status=$?
-      orch_n="${orch_sections[$orch_flushed]}"
-      cat "$orch_buf/$orch_n.out"
-      orch_counts=""
-      [ -f "$orch_buf/$orch_n.counts" ] && orch_counts="$(cat "$orch_buf/$orch_n.counts")"
-      case "$orch_counts" in
-        [0-9]*' '[0-9]*' '[0-9]*)
-          read -r orch_p orch_f orch_s <<<"$orch_counts"
-          orch_pass=$((orch_pass + orch_p)); orch_fail=$((orch_fail + orch_f))
-          orch_skip=$((orch_skip + orch_s))
-          [ "$orch_f" -eq 0 ] || orch_failed=1 ;;
-        *)
-          print_fail "section '$(printf '%s\n' "$only_titles" | sed -n "${orch_n}p")' reported no counts" \
-            "it exited $orch_status before its summary"
-          orch_fail=$((orch_fail + 1)); orch_failed=1 ;;
-      esac
-      [ "$orch_status" -eq 0 ] || orch_failed=1
-      orch_flushed=$((orch_flushed + 1))
-      orch_progress=1
-    done
-    [ "$orch_progress" -eq 1 ] || sleep 0.1
-  done
-  print_summary "$orch_pass" "$orch_fail" "$orch_skip"
-  exit "$orch_failed"
+else
+  only_keep=",$(printf '%s\n' "$only_titles" | awk '{ print NR }' | tr '\n' ',')"
+fi
+if [ "$orch_jobs" -eq 1 ]; then
+  eval "$(section_text "$only_keep")"
+  exit $?
 fi
 
+orch_buf="$(mktemp -d)" || {
+  echo "orch_test.sh: cannot create a temp directory for the section buffers" >&2; exit 1; }
+orch_pids=()
+orch_sections=()
+# Kill the children, then wait for each to exit, so the root is removed
+# only once no child can still write into it.
+orch_stop_children() {
+  local pid
+  kill "${orch_pids[@]}" 2>/dev/null
+  for pid in "${orch_pids[@]}"; do wait "$pid"; done
+  exit 130
+}
+trap orch_stop_children INT TERM
+IFS=, read -r -a orch_sections <<<"${only_keep#,}"
+orch_total=${#orch_sections[@]}
+orch_started=0 orch_flushed=0 orch_pass=0 orch_fail=0 orch_skip=0 orch_failed=0
+echo "orch.sh tests"
+while [ "$orch_flushed" -lt "$orch_total" ]; do
+  # Start children while a slot is free: a slot is held by every child
+  # started and still alive.
+  orch_running=0
+  orch_i=$orch_flushed
+  while [ "$orch_i" -lt "$orch_started" ]; do
+    kill -0 "${orch_pids[$orch_i]}" 2>/dev/null && orch_running=$((orch_running + 1))
+    orch_i=$((orch_i + 1))
+  done
+  while [ "$orch_started" -lt "$orch_total" ] && [ "$orch_running" -lt "$orch_jobs" ]; do
+    orch_n="${orch_sections[$orch_started]}"
+    ORCH_TEST_CHILD_SECTION="$orch_n" ORCH_TEST_CHILD_COUNTS="$orch_buf/$orch_n.counts" \
+      ORCH_TEST_JOBS=1 bash "$SUITE_SCRIPT" >"$orch_buf/$orch_n.out" &
+    orch_pids[orch_started]=$!
+    orch_started=$((orch_started + 1))
+    orch_running=$((orch_running + 1))
+  done
+  # Print every finished child next in file order.
+  orch_progress=0
+  while [ "$orch_flushed" -lt "$orch_started" ] &&
+    ! kill -0 "${orch_pids[$orch_flushed]}" 2>/dev/null; do
+    wait "${orch_pids[$orch_flushed]}"; orch_status=$?
+    orch_n="${orch_sections[$orch_flushed]}"
+    cat "$orch_buf/$orch_n.out"
+    orch_counts=""
+    [ -f "$orch_buf/$orch_n.counts" ] && orch_counts="$(cat "$orch_buf/$orch_n.counts")"
+    case "$orch_counts" in
+      [0-9]*' '[0-9]*' '[0-9]*)
+        read -r orch_p orch_f orch_s <<<"$orch_counts"
+        orch_pass=$((orch_pass + orch_p)); orch_fail=$((orch_fail + orch_f))
+        orch_skip=$((orch_skip + orch_s))
+        [ "$orch_f" -eq 0 ] || orch_failed=1 ;;
+      *)
+        print_fail "section '$(printf '%s\n' "$only_titles" | sed -n "${orch_n}p")' reported no counts" \
+          "it exited $orch_status before its summary"
+        orch_fail=$((orch_fail + 1)); orch_failed=1 ;;
+    esac
+    [ "$orch_status" -eq 0 ] || orch_failed=1
+    orch_flushed=$((orch_flushed + 1))
+    orch_progress=1
+  done
+  [ "$orch_progress" -eq 1 ] || sleep 0.1
+done
+print_summary "$orch_pass" "$orch_fail" "$orch_skip"
+exit "$orch_failed"
