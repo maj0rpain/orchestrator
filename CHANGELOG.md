@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.5.12
+
+The planning session's closing route question now keeps its three options in their given order unless the agent recommends one, and a recommended route is listed first, labelled "(Recommended)" and given a one-clause scope reason, on both Claude Code and Junie (#983).
+
 ## 4.5.11
 
 Remove the monolith's leftover section banners from the modules under `scripts/orch/`, call slug, status, archive and help bare global commands in `global.sh`'s header, and write down where a new bare global command's code and tests go, in cli-conventions and CONTRIBUTING's layout table (#982).
