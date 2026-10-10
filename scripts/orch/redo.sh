@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# redo.sh - orch.sh's redo command: redo review and redo spec.
+# Its tests: scripts/test/orch/redo.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # --- redo ---------------------------------------------------------------
 

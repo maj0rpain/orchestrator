@@ -1,4 +1,10 @@
 # shellcheck shell=bash
+# common.sh - the helpers more than one orch.sh module uses, or orch.sh and
+# one module: die, warn, note, capture, the state readers and writers, the
+# repo and base-branch resolvers, and the like. A helper only one module uses
+# lives in that module instead, and the gh adapter layer lives whole in gh.sh.
+# Sourced by orch.sh ahead of the ROOT block, which dies through die when run
+# outside a git repository, and ahead of every noun module.
 
 # Whether <sev> is a filed severity: the one membership check over
 # FILED_SEVERITIES, so adding a severity edits the constant and its label
@@ -396,7 +402,8 @@ repo_resolve() {
 # The one parser of a [HOST/]OWNER/REPO repo name, as repo_resolve sets
 # REPO_NAME. repo_host <name> prints its explicit host, or nothing for an
 # OWNER/REPO name, whose host is the implicit github.com; repo_owner_name
-# <name> prints its OWNER/REPO, any host dropped.
+# <name>, in doctor.sh, its one caller, prints its OWNER/REPO, any host
+# dropped.
 repo_host() {
   case "$1" in
     */*/*) printf '%s\n' "${1%%/*}" ;;

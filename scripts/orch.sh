@@ -2,10 +2,19 @@
 #
 # orch.sh - deterministic operations for the orchestrator plugin.
 #
-# Everything in this file has exactly one right answer: reading and writing
+# Everything orch.sh does has exactly one right answer: reading and writing
 # state, validating handoffs, resolving the default branch, archiving. Prose
 # instructions re-derive these slightly differently every session, so they live
 # here instead. Judgment lives in the flow skill; mechanism lives here.
+#
+# This file is the one entry point, and a thin one: path resolution, the
+# constants more than one module reads, the top-level statements whose order
+# matters, the source list and main's dispatch. Each noun's code lives in its
+# own module, scripts/orch/<noun>.sh, named as its tests in
+# scripts/test/orch/<noun>.sh are; the helpers more than one module uses live
+# in scripts/orch/common.sh. Every module is sourced eagerly, from the explicit
+# list below, so a missing one fails at startup naming the file. A new noun
+# gets its own module, a case in main and a line in that list.
 #
 # Usage: orch.sh <command> [args]   (run `orch.sh help` for the list)
 
@@ -36,8 +45,8 @@ readonly ORCH_SOURCE ORCH_SCRIPTS
 # The most issues or PRs one list call asks gh for, where gh needs a bare
 # --limit: the labelled-issue list finding-triage scan reads, and the merged-PR
 # bodies pr release reads. A list that reaches it may be missing entries past
-# it. Overridable through the environment, like the ORCH_CI_* knobs below, so a
-# test can turn it down; it stays out of the documented command surface.
+# it. Overridable through the environment, like review.sh's ORCH_CI_* knobs,
+# so a test can turn it down; it stays out of the documented command surface.
 readonly ISSUE_LIST_LIMIT="${ORCH_ISSUE_LIST_LIMIT:-1000}"
 # The severities a filed finding carries as review:<severity> - the ones
 # `review file` files. Blocking is always fixed in the loop, never filed.
@@ -61,6 +70,8 @@ source "$ORCH_SCRIPTS/triage-labels.sh"
 readonly LABELS_DOC
 # The one host detector, host_detect, shared with the hooks (#281).
 source "$ORCH_SCRIPTS/host.sh"
+# The shared helpers, die among them, ahead of the ROOT block, which dies
+# through die outside a git repository.
 source "$ORCH_SCRIPTS/orch/common.sh"
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository ($PWD) - run orch.sh from inside the repo's checkout"
@@ -71,16 +82,13 @@ readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
 readonly TICKET_WORKTREES="$ORCH/worktrees"
 
-# --- doctor -----------------------------------------------------------------
-#
-# Sourced rather than inlined: a change to how checks register, gate, or count
-# then concentrates in doctor.sh instead of sharing file scope with the flow
-# commands below. The dependency runs one way: doctor.sh calls into this file
-# and the modules it sources, and this file calls nothing doctor.sh defines but
-# cmd_doctor, from main() (orch_test.sh holds this).
-source "$ORCH_SCRIPTS/orch/doctor.sh"
+# The noun modules, after the ROOT block, whose constants they read. doctor.sh
+# is one of them, with one rule more: the dependency runs one way, doctor.sh
+# calling into this file and the other modules, which call nothing doctor.sh
+# defines but cmd_doctor, from main() (orch_test.sh holds this).
 source "$ORCH_SCRIPTS/orch/base.sh"
 source "$ORCH_SCRIPTS/orch/branch.sh"
+source "$ORCH_SCRIPTS/orch/doctor.sh"
 source "$ORCH_SCRIPTS/orch/finding-triage.sh"
 source "$ORCH_SCRIPTS/orch/gh.sh"
 source "$ORCH_SCRIPTS/orch/global.sh"

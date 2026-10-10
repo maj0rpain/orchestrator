@@ -1,8 +1,14 @@
 # shellcheck shell=bash
+# gh.sh - the gh adapter layer (ADR-0033): gh(), the guard every GitHub call
+# goes through, every adapter_* operation and the JQ constants they read.
+# It stays whole, whoever calls each operation, and ends with the
+# ORCH_GH_ADAPTER hook, so a test adapter overrides the real operations.
+# Its tests: scripts/test/orch/gh.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
-# The guard every GitHub call in this file - and in doctor.sh, sourced into it
-# - goes through by name (#520): `gh` itself, defined ahead of doctor.sh and the
-# ORCH_GH_ADAPTER seam so both pick it up. On first use it resolves the repo
+# The guard every GitHub call in orch.sh and its modules goes through by name
+# (#520): `gh` itself, defined ahead of the ORCH_GH_ADAPTER seam so a test
+# adapter picks it up. On first use it resolves the repo
 # and exports it as GH_REPO for the rest of the run - with GH_HOST beside it for
 # a host other than github.com - so every later call - `gh api`'s
 # {owner}/{repo} placeholders and host included - is pinned to it, never to
@@ -10,7 +16,7 @@
 # naming GH_REPO. Inside a command substitution `die` would end only that
 # subshell, and its message could land in a 2>/dev/null, so there it signals
 # the main shell, whose USR1 trap dies with the remedy instead. Its last line is
-# the only call to the real gh binary in orch.sh and doctor.sh.
+# the only call to the real gh binary in orch.sh and its modules.
 gh() {
   if ! repo_pin; then
     if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then kill -USR1 "$$"; exit 1; fi
@@ -21,11 +27,11 @@ gh() {
 
 # --- gh adapter -------------------------------------------------------------
 #
-# The seam between this file's decision logic and the `gh` CLI. A caller like
-# severity_label_ensure below calls an adapter operation, never `gh` itself, so
-# a test can replace one in-process function instead of faking a `gh` binary
-# on PATH. Every GitHub call in this file, and in doctor.sh, sourced into it,
-# goes through one. History: begun with labels (#91), issues (#92); all since #280.
+# The seam between orch.sh's decision logic and the `gh` CLI. A caller like
+# review.sh's severity_label_ensure calls an adapter operation, never `gh`
+# itself, so a test can replace one in-process function instead of faking a
+# `gh` binary on PATH. Every GitHub call in orch.sh and its modules goes
+# through one. History: begun with labels (#91), issues (#92); all since #280.
 #
 # The operations, in the order they are defined below:
 # - label: adapter_label_upsert, adapter_label_create, adapter_labels
@@ -47,8 +53,8 @@ gh() {
 #   adapter_branch_rules, adapter_commit_has_check_runs,
 #   adapter_commit_has_statuses, adapter_run_rerun
 #
-# ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as the ORCH_CI_*
-# ones above, but read differently: not a value substituted at load time, but
+# ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as review.sh's
+# ORCH_CI_* ones, but read differently: not a value substituted at load time, but
 # a file sourced immediately after the real adapter functions are defined:
 # anything it redefines overrides the corresponding real function for the
 # rest of the process, and anything it leaves alone keeps shelling out to the

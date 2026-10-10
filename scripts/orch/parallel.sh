@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# parallel.sh - orch.sh's parallel command: the clone's parallel cap.
+# Its tests: scripts/test/orch/parallel.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # --- parallel ----------------------------------------------------------------
 # The clone's parallel cap: how many ticket subagents one frontier runs at once,

@@ -1,4 +1,8 @@
 # shellcheck shell=bash
+# issue.sh - orch.sh's issue command: the stateless issue ops, publish, triage
+# and ready.
+# Its tests: scripts/test/orch/issue.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # labels_verified <labels> <want> [absent-label...]: whether the
 # newline-separated <labels> carry <want> and none of the absent labels.
@@ -23,8 +27,8 @@ has_review_label() {
 #
 # The four stateless issue ops - fetch, comments, update and comment - on an
 # issue given just its number: the same contract issue publish/pr
-# publish/ticket publish already offer, extended to a plain issue. cmd_spec's
-# fetch/comments/update/comment ops below are thin wrappers over all four,
+# publish/ticket publish already offer, extended to a plain issue. spec.sh's
+# fetch/comments/update/comment ops are thin wrappers over all four,
 # resolving the issue number from state, so flow's stateful spec access and
 # quick implementation's stateless issue access share one tested code path
 # instead of two independently-maintained copies. comment is stateless
@@ -35,7 +39,6 @@ has_review_label() {
 # primitive - fold-in choreography like fetch-then-append-then-write for
 # merging ticket content into a parent belongs in the calling skill's prose,
 # not here.
-
 
 # With --json, the issue's title, body, labels and comments as ISSUE_JSON_JQ's
 # object, so a fresh agent reads the whole issue with one pinned call.

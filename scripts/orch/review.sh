@@ -1,4 +1,8 @@
 # shellcheck shell=bash
+# review.sh - orch.sh's review command, with its command-level CI logic
+# (review ci, review rerun) and the labels review file creates.
+# Its tests: scripts/test/orch/review.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # How long `review ci` waits, and how often it looks. Overridable through the
 # environment rather than through positional arguments: the 60-second grace is
@@ -10,7 +14,6 @@ ORCH_CI_TIMEOUT="${ORCH_CI_TIMEOUT:-900}"
 ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
 
 # --- review -----------------------------------------------------------------
-
 
 # The severity label a filed finding carries, so triage can filter on it. It is
 # this plugin's own, so overwriting it is safe: adapter_label_upsert updates a

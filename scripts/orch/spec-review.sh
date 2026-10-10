@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# spec-review.sh - orch.sh's spec-review command: a standalone spec review's start.
+# Its tests: scripts/test/orch/spec-review.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # --- spec-review ------------------------------------------------------------
 

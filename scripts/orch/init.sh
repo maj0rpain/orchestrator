@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# init.sh - orch.sh's init command, which starts a flow.
+# Its tests: scripts/test/orch/init.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # The git-based backstop from ADR-0013. Where no host hook arms the edit
 # guard, planning can edit source unhindered; flow start is where that gets

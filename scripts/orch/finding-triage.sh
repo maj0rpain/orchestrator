@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# finding-triage.sh - orch.sh's finding-triage command: scan, apply and bundle.
+# Its tests: scripts/test/orch/finding-triage.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # The plugin's own label on a bundle issue - one ordinary issue that several
 # filed findings are closed into as duplicates (finding-triage bundle).

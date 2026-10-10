@@ -1,4 +1,8 @@
 # shellcheck shell=bash
+# ticket.sh - orch.sh's ticket command: a breakdown's sub-issues and their
+# blocked-by edges, and ticket merge.
+# Its tests: scripts/test/orch/ticket.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # --- ticket -------------------------------------------------------------
 #

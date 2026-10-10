@@ -1,7 +1,9 @@
 # shellcheck shell=bash
+# handoff.sh - orch.sh's handoff command: handoff path, validate and section.
+# Its tests: scripts/test/orch/handoff.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # --- handoffs ---------------------------------------------------------------
-
 
 cmd_handoff() {
   local op="${1:-}"

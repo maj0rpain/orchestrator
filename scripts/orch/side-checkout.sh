@@ -1,4 +1,8 @@
 # shellcheck shell=bash
+# side-checkout.sh - orch.sh's side-checkout command, the finished sweep
+# (side-checkout prune) included.
+# Its tests: scripts/test/orch/side-checkout.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # --- side-checkout ------------------------------------------------------------
 #
@@ -8,7 +12,6 @@
 # ownership marker in the worktree's own git folder - which git deletes with
 # the worktree - is what makes it one; a flow's state file is not, since a
 # hand-made worktree can hold a flow too.
-
 
 # side_checkouts_dir <main-root>: where the side checkouts of the main
 # checkout at <main-root> live.

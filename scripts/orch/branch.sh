@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# branch.sh - orch.sh's branch command: create, off, base-sha, sync and retire.
+# Its tests: scripts/test/orch/branch.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # --- git / github -----------------------------------------------------------
 

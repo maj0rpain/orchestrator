@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# base.sh - orch.sh's base command: the checkout's base branch setting and a flow's own base.
+# Its tests: scripts/test/orch/base.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 base_source() { if [ -n "$(base_setting)" ]; then echo set; else echo default; fi; }
 

@@ -1,4 +1,8 @@
 # shellcheck shell=bash
+# pr.sh - orch.sh's pr command: open, publish, release, comment and the
+# stateless PR reads and writes.
+# Its tests: scripts/test/orch/pr.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # Pushing a branch and opening a PR against it has exactly one right answer -
 # push, then prefix the body with the issue line - Closes into the default

@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# repo.sh - orch.sh's repo and default-branch commands.
+# Its tests: scripts/test/orch/repo.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # default-branch [--sha]: the default branch's name, or with --sha the default
 # SHA - the full SHA of refs/remotes/origin/<default> as it stands. --sha never

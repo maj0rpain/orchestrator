@@ -10,20 +10,27 @@
 # exit status comes from the FAIL counter alone. doctor is the thing you run
 # when the world is already broken, so no single check may abort the report.
 #
-# Nothing here is called back from orch.sh but cmd_doctor: init's adopted-issue
-# check, validate_adopted_issue, lives in orch.sh, and the triage-label parser
-# the checks read lives in triage-labels.sh.
+# Nothing here is called back from orch.sh or its other modules but
+# cmd_doctor: init's adopted-issue check, validate_adopted_issue, lives in
+# init.sh, and the triage-label parser the checks read lives in
+# triage-labels.sh.
 #
-# Sourced into orch.sh after its shared mechanism (ORCH_SCRIPTS, ROOT, STATE,
-# die, note, now, first_line, capture, default_branch, base_setting, origin_has_branch,
-# require_state, labels_have, issue_state_labels_read,
-# ORCH_DIR_NAME, PHASES, LABEL_LIMIT, HANDOFF_DIR), triage-labels.sh
+# Sourced into orch.sh, from its orch/ directory, after its shared mechanism
+# (ORCH_SCRIPTS, ROOT, STATE, ORCH_DIR_NAME, PHASES, HANDOFF_DIR), common.sh
+# (die, note, now, first_line, capture, default_branch, base_setting,
+# origin_has_branch, require_state, labels_have, and the like), triage-labels.sh
 # (LABELS_DOC, TRIAGE_ROLES, triage_table_rows, triage_labels,
 # triage_label_for, triage_expected_labels) and host.sh (host_detect) are
-# defined. cmd_doctor is then
-# dispatched from main() exactly like any other command.
+# defined; the gh adapter operations it calls, issue_state_labels_read among
+# them, live in gh.sh. cmd_doctor is then dispatched from main() exactly like
+# any other command.
 
+# The most labels the labels-exist check asks gh to list.
 readonly LABEL_LIMIT=1000
+
+# repo_owner_name <name>: the OWNER/REPO of a [HOST/]OWNER/REPO repo name, as
+# repo_resolve sets REPO_NAME, any host dropped - repo_host's twin, in
+# common.sh.
 repo_owner_name() {
   case "$1" in
     */*/*) printf '%s\n' "${1#*/}" ;;

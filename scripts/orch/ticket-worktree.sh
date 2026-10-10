@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# ticket-worktree.sh - orch.sh's ticket-worktree command: add, list and remove.
+# Its tests: scripts/test/orch/ticket-worktree.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # --- ticket-worktree ----------------------------------------------------------
 #
@@ -7,7 +10,6 @@
 # lives under the current checkout's top level - inside the session's project
 # directory, so an implementer's edits draw no permission prompt - and is kept
 # out of git status by the clone's exclude file.
-
 
 # Forks <current-branch>--t<n> from the current branch's tip, records the
 # forked-from branch on it, and checks it out at .orchestrator/worktrees/t<n>.

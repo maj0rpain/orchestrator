@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# phase.sh - orch.sh's phase command: phase advance and the phase boundary.
+# Its tests: scripts/test/orch/phase.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # Names how to start the next phase in a fresh session, in the host's own
 # words: the boundary block's Next line. Junie's fresh-session wording is its

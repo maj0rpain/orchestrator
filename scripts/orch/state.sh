@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# state.sh - orch.sh's state command: state get and state set.
+# Its tests: scripts/test/orch/state.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # Succeeds when state set may write key $1: its owner column is -. The one
 # place an owner is compared against -; an unknown key is not settable.
@@ -23,7 +26,6 @@ EOF
 }
 
 # --- state ------------------------------------------------------------------
-
 
 cmd_state() {
   local op="${1:-get}"

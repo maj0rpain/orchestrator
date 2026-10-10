@@ -1,4 +1,7 @@
 # shellcheck shell=bash
+# review-pass.sh - orch.sh's review-pass command: a review pass's start.
+# Its tests: scripts/test/orch/review-pass.sh.
+# Sourced by orch.sh, after common.sh and the ROOT block.
 
 # --- review-pass ------------------------------------------------------------
 
