@@ -219,9 +219,9 @@ PR body's **Host fallbacks**.
 ## 7. Open the PR
 
 Commit, and draft the body file described below. Then, before `pr publish`,
-check the body file against what the branch actually changed, by the rule in
-step 5 of `agents/orch-fixer.md` (under the plugin root): what to correct, how,
-and when the check is done. The diff is `git diff <base SHA>..HEAD`, with the
+check the body file against what the branch actually changed, by
+**Checking the PR body** in `agents/orch-fixer.md` (under the plugin root):
+what to correct, how, and when the check is done. The diff is `git diff <base SHA>..HEAD`, with the
 base SHA from `bash "$ORCH" branch base-sha`. Only this differs: the check
 reads and corrects the local body file, before `pr publish`, so there is no
 `pr fetch` and no `pr update` - no live PR is edited - and nothing is

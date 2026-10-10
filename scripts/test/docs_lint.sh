@@ -954,7 +954,9 @@ echo "required headings (#285)"
 # nothing below heading level.
 # One "<file>|<heading>" pair per line, file relative to the plugin root, in
 # the order the headings must appear within their file.
-required_headings='agents/orch-implementer.md|## Root-cause fixes
+required_headings='agents/orch-fixer.md|## Checking the PR body
+agents/orch-fixer.md|## The record
+agents/orch-implementer.md|## Root-cause fixes
 agents/orch-reviewer-standards.md|## Root-cause check
 skills/orch-quick-implement/SKILL.md|## 1. Require a linked issue
 skills/orch-quick-implement/SKILL.md|## 2. Run an unattended spec review
