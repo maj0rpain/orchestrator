@@ -45,7 +45,7 @@ go in the file for the noun it touches (a new noun gets a new file).
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
 the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
 section must pass on its own.
-Test helpers have placement rules; read CONTRIBUTING.md's Develop section before adding or moving one.
+Helper placement is checked by harness.sh's placement section; its failure message states the rule.
 See CONTRIBUTING.md's Develop section.
 
 ## Versioning

@@ -38,11 +38,8 @@ first `# ---` line, run before that file's sections whenever one of them runs.
 
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
 the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
-section must pass on its own. A helper is placed by the files that use it: one
-used by more than one file lives in `setup.sh`'s shared setup; one used by only
-one file lives in that file's preamble, whether one section or several use it;
-one already defined inside a section stays there; a helper never moves into a
-section.
+section must pass on its own. Helper placement is checked by harness.sh's
+placement section; its failure message states the rule.
 
 orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
 noun's code, named as that noun's test file is, and `scripts/orch/common.sh`

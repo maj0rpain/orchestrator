@@ -17,6 +17,10 @@ gh_reply() {
   printf '%s\0' "$@" >"$r/argv"
 }
 
+# contract <operation> [args...]: runs one real adapter operation, orch.sh
+# sourced with ORCH_GH_ADAPTER unset, against whatever gh is on PATH.
+contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
+
 # --- every gh call pinned to the repo (#520) -----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
 # ORCH_GH_ADAPTER unset so the real adapter operations run, against the fixture

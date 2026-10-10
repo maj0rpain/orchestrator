@@ -44,6 +44,140 @@ files_marks() {
   printf '%s\n' "$1" | grep -xE 'isolation|planted [a-z ]+' | tr '\n' ','
 }
 
+# helper_placement <dir>: checks where every helper of the suite's files in
+# <dir> (scripts/test/orch/) is defined against the files that call it, and
+# prints one line per misplaced helper, sorted, naming it, its file, its
+# callers and the rule; returns 1 when it printed any. The helpers checked
+# are those defined at the top level of setup.sh - the whole of it, its
+# `# ---` lines headings only - and of each other file's preamble; one defined
+# inside a section is not. A call is a name in command position: at a line's
+# start or after `;`, `&&`, `||`, `|`, `&`, `$(`, a backtick, `(`, `{`, `!`, or
+# one of then, do, else, elif, if, while, until. Comments, quoted strings and
+# quoted heredocs are dropped first, but `$(...)` and backticks inside double
+# quotes and unquoted heredocs are still read; a call inside a helper's own
+# body is not counted for it. setup.sh's helper fails with no caller, or with
+# one calling file that is not setup.sh; a preamble's, when another file
+# calls it.
+helper_placement() {
+  local out
+  out="$(awk -v rule="The rule: a helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section." '
+    function push(m) { sp++; st[sp] = m; depth[sp] = 0 }
+    # sanitize(line): the line with its comment dropped, every quoted string
+    # or ${...} turned into a q and a closing backtick into a space, keeping
+    # the code of the substitutions inside double quotes. The quoting state,
+    # a stack in st[1..sp] over the code st[0], carries from line to line.
+    function sanitize(line,   out, i, n, c, c2, m, prev, w, j) {
+      out = ""; n = length(line); prev = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(line, i, 1); c2 = substr(line, i, 2); m = st[sp]
+        if (m == "S") { if (c == "\047") { sp--; out = out "q" } }
+        else if (m == "E") { if (c == "\\") i++; else if (c == "\047") { sp--; out = out "q" } }
+        else if (m == "D" || m == "H" || m == "P") {
+          if (c == "\\") i++
+          else if (c2 == "$(") { push("C"); out = out "$("; i++ }
+          else if (c2 == "${") { push("P"); i++ }
+          else if (c == "`") { push("B"); out = out "`" }
+          else if (m == "D" && c == "\"") { sp--; out = out "q" }
+          else if (m == "P" && c == "\"") push("D")
+          else if (m == "P" && c == "\047" && st[sp - 1] != "D") push("S")
+          else if (m == "P" && c == "{") depth[sp]++
+          else if (m == "P" && c == "}") { if (depth[sp]) depth[sp]--; else { sp--; if (st[sp] != "D" && st[sp] != "H") out = out "q" } }
+        }
+        else {
+          # code: the bottom N, a $(...) C, or a backtick B
+          if (c == "\\") { if (i == n) cont = 1; else out = out "qq"; i++ }
+          else if (c == "#" && (prev == "" || prev ~ /[ \t;&|()]/)) break
+          else if (c2 == "$\047") { push("E"); i++ }
+          else if (c == "\047") push("S")
+          else if (c == "\"") push("D")
+          else if (c2 == "$(") { push("C"); out = out "$("; i++ }
+          else if (c2 == "${") { push("P"); i++ }
+          else if (c == "`") { if (m == "B") { sp--; out = out " " } else { push("B"); out = out "`" } }
+          else if (m == "C" && c == "(") { depth[sp]++; out = out c }
+          else if (m == "C" && c == ")") { if (depth[sp]) depth[sp]--; else sp--; out = out c }
+          else if (substr(line, i, 3) == "<<<") { out = out "<<<"; i += 2 }
+          else if (c2 == "<<") {
+            # a heredoc: its delimiter, and whether it is quoted
+            j = i + 2; w = substr(line, j); hstrip[nh + 1] = 0
+            if (substr(w, 1, 1) == "-") { hstrip[nh + 1] = 1; w = substr(w, 2); j++ }
+            match(w, /^[ \t]*/); j += RLENGTH; w = substr(w, RLENGTH + 1)
+            if (match(w, /^(\047[^\047]*\047|"[^"]*"|\\[A-Za-z0-9_]+|[A-Za-z0-9_]+)/)) {
+              nh++; hword[nh] = substr(w, 1, RLENGTH); hquoted[nh] = 1
+              if (hword[nh] ~ /^[\047"]/) hword[nh] = substr(hword[nh], 2, RLENGTH - 2)
+              else if (hword[nh] ~ /^\\/) hword[nh] = substr(hword[nh], 2)
+              else hquoted[nh] = 0
+              i = j + RLENGTH - 1
+            } else i++
+            out = out "q"
+          }
+          else out = out c
+        }
+        prev = c
+      }
+      return out
+    }
+    function count(s, re,   t) { t = s; return gsub(re, "", t) }
+    FNR == 1 {
+      file = FILENAME; sub(/.*\//, "", file)
+      files[file] = 1; sp = 0; st[0] = "N"; nh = 0; hcur = 0; insec = 0; cont = 0; fn = ""; fdepth = 0
+    }
+    {
+      line = $0
+      if (hcur) {
+        # inside a heredoc body
+        t = line; if (hstrip[hcur]) sub(/^\t+/, "", t)
+        if (t == hword[hcur]) { hcur = hcur < nh ? hcur + 1 : 0; if (!hcur) nh = 0; next }
+        if (hquoted[hcur]) next
+        top = 0; base = sp; push("H"); s = sanitize(line); sp = base
+      } else {
+        if (sp == 0 && file != setup && line ~ /^# --- /) insec = 1
+        lead = cont ? "q " : ""; cont = 0
+        top = sp == 0 && fdepth == 0
+        s = lead sanitize(line)
+        if (nh && !hcur) hcur = 1
+      }
+      if (top && fn == "" && match(s, /^[ \t]*(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)/)) {
+        name = substr(s, 1, RLENGTH); sub(/^[ \t]*(function[ \t]+)?/, "", name); sub(/[ \t]*\(\)$/, "", name)
+        fn = name; opened = 0; fdepth = 0
+        if (file == setup || !insec) defined[name] = file
+      }
+      t = s; gsub(/[;&|({!`]/, "\n", t); nseg = split(t, seg, "\n")
+      for (k = 1; k <= nseg; k++) {
+        w = seg[k]
+        sub(/^[ \t]+/, "", w)
+        while (match(w, /^(then|do|else|elif|if|while|until)([ \t]+|$)/)) w = substr(w, RLENGTH + 1)
+        if (match(w, /^[A-Za-z_][A-Za-z0-9_]*/)) {
+          name = substr(w, 1, RLENGTH); rest = substr(w, RLENGTH + 1)
+          if ((rest == "" || rest ~ /^[ \t)}<>]/) && name != fn) calls[name, file] = 1
+        }
+      }
+      if (fn != "") {
+        fdepth += count(s, "{") - count(s, "}")
+        if (count(s, "{")) opened = 1
+        if (opened && fdepth <= 0) { fn = ""; fdepth = 0 }
+      }
+    }
+    END {
+      for (name in defined) {
+        own = defined[name]; n = 0; other = 0
+        for (f in files) if ((name, f) in calls) {
+          # insert f into by[1..n], kept in order
+          for (j = ++n; j > 1 && by[j - 1] > f; j--) by[j] = by[j - 1]
+          by[j] = f; if (f != own) other = 1
+        }
+        callers = ""
+        for (j = 1; j <= n; j++) callers = callers (j > 1 ? ", " : "") by[j]
+        if (own == setup) bad = n == 0 || (n == 1 && callers != setup)
+        else bad = other
+        if (bad) printf "%s is defined in %s and called by %s. %s\n", name, own, n ? callers : "no file", rule
+      }
+    }
+  ' setup=setup.sh "$1"/*.sh)" || return 2
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out" | LC_ALL=C sort
+  return 1
+}
+
 # --- isolation --------------------------------------------------------------
 echo
 echo "isolation"
@@ -800,3 +934,98 @@ assert_contains "says a suite that printed nothing died before its summary" "$ou
 assert_contains "keeps a passing suite's last line, whatever it is" "$out" \
   "docs_lint.sh: a stray last line"
 rm -rf "$all_root"
+
+# --- helper placement (#1006) -------------------------------------------------
+# helper_placement over the real scripts/test/orch/, then over copies of it,
+# each with planted helpers: four placements that break the rule, and one copy
+# whose plantings all keep it.
+echo
+echo "helper placement (#1006)"
+placement_rule="The rule: a helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
+out="$(helper_placement "$PLUGIN_ROOT/scripts/test/orch")"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "every helper of the real tree is placed by the rule"
+else
+  bad "every helper of the real tree is placed by the rule" "$out"
+fi
+
+# placement_copy: a copy of the real scripts/test/orch/ in a fresh temp
+# directory; prints the copy's path.
+placement_copy() {
+  local dir
+  dir="$(mktemp -d)" || return 1
+  cp -R "$PLUGIN_ROOT/scripts/test/orch" "$dir/" || return 1
+  printf '%s\n' "$dir/orch"
+}
+
+placement_dir="$(placement_copy)"
+printf '%s\n' 'planted_uncalled() { :; }' >>"$placement_dir/setup.sh"
+out="$(helper_placement "$placement_dir")"; st=$?
+assert_status "a shared helper with no caller fails" "$st" 1
+assert_eq "naming it, its file, no caller and the rule" "$out" \
+  "planted_uncalled is defined in setup.sh and called by no file. $placement_rule"
+rm -rf "${placement_dir%/orch}"
+
+placement_dir="$(placement_copy)"
+printf '%s\n' 'planted_single() { :; }' >>"$placement_dir/setup.sh"
+plant_file "$placement_dir" zz-one.sh <<'PLANTED'
+  # --- planted one
+  planted_single
+  planted_single
+PLANTED
+out="$(helper_placement "$placement_dir")"; st=$?
+assert_status "a shared helper called from one section file fails" "$st" 1
+assert_eq "naming it, its file, its one caller and the rule" "$out" \
+  "planted_single is defined in setup.sh and called by zz-one.sh. $placement_rule"
+rm -rf "${placement_dir%/orch}"
+
+placement_dir="$(placement_copy)"
+plant_file "$placement_dir" zz-pre.sh <<'PLANTED'
+  planted_pre() { :; }
+  # --- planted pre
+  planted_pre
+PLANTED
+plant_file "$placement_dir" zz-other.sh <<'PLANTED'
+  # --- planted other
+  if planted_pre; then :; fi
+PLANTED
+out="$(helper_placement "$placement_dir")"; st=$?
+assert_status "a preamble helper called from another file fails" "$st" 1
+assert_eq "naming it, its file, its callers and the rule" "$out" \
+  "planted_pre is defined in zz-pre.sh and called by zz-other.sh, zz-pre.sh. $placement_rule"
+rm -rf "${placement_dir%/orch}"
+
+placement_dir="$(placement_copy)"
+printf '%s\n' 'planted_self() {' '  planted_self' '}' >>"$placement_dir/setup.sh"
+out="$(helper_placement "$placement_dir")"; st=$?
+assert_status "a shared helper called only by itself fails" "$st" 1
+assert_eq "its own body is no caller" "$out" \
+  "planted_self is defined in setup.sh and called by no file. $placement_rule"
+rm -rf "${placement_dir%/orch}"
+
+placement_dir="$(placement_copy)"
+printf '%s\n' 'planted_block() { :; }' 'planted_user() { planted_block; }' \
+  'planted_sub() { :; }' 'planted_tick() { :; }' 'planted_and() { :; }' \
+  'planted_pipe() { :; }' >>"$placement_dir/setup.sh"
+plant_file "$placement_dir" zz-a.sh <<'PLANTED'
+  # The helper only zz-a.sh's sections use.
+  planted_named() { :; }
+  # --- planted a
+  planted_user; planted_named; planted_in_section
+  a_sub="$(planted_sub 1)"; a_tick=`planted_tick`
+  true && planted_and; echo | planted_pipe
+PLANTED
+plant_file "$placement_dir" zz-b.sh <<'PLANTED'
+  # --- planted b
+  planted_in_section() { :; }
+  planted_user
+  # planted_named in a comment, and in strings:
+  echo "planted_named"; echo 'x; planted_named'; echo "a
+  planted_named"
+  echo "$a_sub $(planted_sub 2)" `planted_tick`
+  false || true && planted_and; echo |planted_pipe
+PLANTED
+out="$(helper_placement "$placement_dir")"; st=$?
+assert_status "helpers placed by the rule pass" "$st" 0
+assert_eq "and print nothing" "$out" ""
+rm -rf "${placement_dir%/orch}"
