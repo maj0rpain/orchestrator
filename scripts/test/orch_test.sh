@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for scripts/orch.sh and the test harness itself (the section filter, quiet mode, all.sh).
+# The runner for the orch.sh suite, whose tests live in scripts/test/orch/.
 #
 # This file is the suite's runner and its one entry point; it holds no test.
 # The tests live under scripts/test/orch/: every `# ---` section in the file
@@ -89,15 +89,15 @@ trap 'exit 130' INT TERM
 # ORCH_TEST_ONLY matches) runs as its own child: this script re-invoked with
 # ORCH_TEST_JOBS=1 and an internal variable naming the section's position, so
 # the child runs the shared setup, its file's preamble, that one section and
-# the summary - and
-# isolation runs once, in its own child. A child prints neither the banner nor
-# the summary block; it writes its counts to a file instead. This shell prints
-# the banner, each child's stdout in walk order, then one summary summed over
-# the children, so the stdout is the stdout of a sequential run. stderr passes
-# straight through and may interleave. A child that reports no counts - it
-# exited mid-way - adds a FAIL naming its section. Exits 1 when any child
-# failed. Buffers live in one temp directory under the temp root; an interrupt
-# also kills the running children and waits for them to exit.
+# the summary - and isolation runs once, in its own child. A child prints
+# neither the banner nor the summary block; it writes its counts to a file
+# instead. This shell prints the banner, each child's stdout in walk order,
+# then one summary summed over the children, so the stdout is the stdout of a
+# sequential run. stderr passes straight through and may interleave. A child
+# that reports no counts - it exited mid-way - adds a FAIL naming its section.
+# Exits 1 when any child failed. Buffers live in one temp directory under the
+# temp root; an interrupt also kills the running children and waits for them
+# to exit.
 
 # section_files: the noun files the walk reads, one per line - harness.sh,
 # then every other scripts/test/orch/*.sh but setup.sh, in LC_ALL=C order

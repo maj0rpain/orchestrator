@@ -14,11 +14,11 @@ SKIP=0
 # a Claude Code or Junie session. Each test names its host.
 unset ORCHESTRATOR_HOST CLAUDECODE JUNIE_EXTENSION_ROOT JUNIE_SHIM_PATH
 
-# ORCH, GH_ADAPTER_FAKE and PLUGIN_ROOT derive from this script's location, so
-# they are computed before the cd below. CALLER_HOME keeps the HOME the suite
-# started with, only for the isolation section to check HOME differs from it.
-# XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL go too: git would otherwise still read
-# the caller's global config through them.
+# ORCH, GH_ADAPTER_FAKE and PLUGIN_ROOT are set by scripts/test/orch_test.sh,
+# the runner, from its own location, before the cd below. CALLER_HOME keeps
+# the HOME the suite started with, only for the isolation section to check
+# HOME differs from it. XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL go too: git
+# would otherwise still read the caller's global config through them.
 CALLER_HOME="$HOME"
 SUITE_CWD="$(mktemp -d)" && cd "$SUITE_CWD" || {
   echo "orch_test.sh: cannot cd into a fresh temp directory" >&2; exit 1; }

@@ -257,9 +257,10 @@ rm -rf "$par_dir"
 # --- the section files (#932) ---------------------------------------------------
 # A copy of the scripts tree cut down to isolation - harness.sh keeps only its
 # first section, and no other noun file is left - then given new noun files:
-# zz-planted.sh, _planted.sh, two files with a preamble and one with nothing
-# but a preamble. Each preamble prints a line, so the output shows when and
-# how often it is eval'd.
+# zz-planted.sh, _planted.sh, a-planted.sh, two files with a preamble and one
+# with nothing but a preamble. Each preamble prints a line, so the output shows
+# when and how often it is eval'd. _planted.sh sorts before a-planted.sh under
+# LC_ALL=C but after it under a dictionary collation, which ignores the `_`.
 echo
 echo "the section files (#932)"
 files_dir="$(planted_copy <<'PLANTED'
@@ -275,6 +276,10 @@ mv "$files_dir/harness.sh" "$files_orch/harness.sh"
 sed 's/^  //' >"$files_orch/_planted.sh" <<'PLANTED'
   # --- underscore planted
   echo; echo "underscore planted"; ok "the underscore file ran"
+PLANTED
+sed 's/^  //' >"$files_orch/a-planted.sh" <<'PLANTED'
+  # --- a planted
+  echo; echo "a planted"; ok "the a file ran"
 PLANTED
 sed 's/^  //' >"$files_orch/pre-a.sh" <<'PLANTED'
   # The preamble of pre-a.sh, and the helper only its sections use.
@@ -324,15 +329,22 @@ assert_eq "each parallel child evals its own file's preamble alone" "$(files_mar
 out="$(ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' bash "$files_suite" 2>/dev/null)"
 assert_eq "lists the titles in walk order: harness.sh, then the files in LC_ALL=C order" \
   "$(printf '%s\n' "$out" | tr '\n' ',')" \
-  "isolation,underscore planted,preamble a one,preamble a two,preamble b one,planted new file,"
-files_locale="$(locale -a 2>/dev/null | grep -ixE 'en_US\.utf-?8' | head -n 1)"
+  "isolation,underscore planted,a planted,preamble a one,preamble a two,preamble b one,planted new file,"
+# The dictionary locale: the first of these whose sort puts a before _p, so the
+# check below runs wherever such a collation exists, listed by locale -a or not.
+files_locale=""
+for files_try in en_US.UTF-8 en_US.utf8; do
+  if [ "$(printf '_p\na\n' | LC_ALL="$files_try" sort 2>/dev/null | head -n 1)" = a ]; then
+    files_locale="$files_try"; break
+  fi
+done
 if [ -n "$files_locale" ]; then
   out="$(LC_ALL="$files_locale" ORCH_TEST_JOBS=1 ORCH_TEST_ONLY='^no such section$' \
     bash "$files_suite" 2>/dev/null)"
   assert_eq "keeps LC_ALL=C order under a dictionary locale" \
-    "$(printf '%s\n' "$out" | sed -n 2p)" "underscore planted"
+    "$(printf '%s\n' "$out" | sed -n 2,3p | tr '\n' ',')" "underscore planted,a planted,"
 else
-  skip "keeps LC_ALL=C order under a dictionary locale" "locale -a lists no en_US.UTF-8"
+  skip "keeps LC_ALL=C order under a dictionary locale" "no locale here sorts a before _p"
 fi
 rm -rf "$files_dir"
 
