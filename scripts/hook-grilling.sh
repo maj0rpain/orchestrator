@@ -235,6 +235,10 @@ choice="${ask_step}
       3. Blueprint only - write the spec (rewriting the interviewed issue, if
          there is one) and its ticket breakdown, then stop; implement later.
 
+Keep the route options in the order above unless you recommend one.
+To recommend a route from the scope of the work (Quick implementation for a one-site fix, say), list it first, append \" (Recommended)\" to its label, and give that scope-based reason in one clause in its description, or in the question text where options have no description.
+At most one route option carries \"(Recommended)\", and a route option moved out of the order above always carries it.
+
 ${run_next} Do not ask the user to type a command.${route_here}
 
 - On \"Blueprint only\": when the interviewed-issue step settled an
