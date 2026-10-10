@@ -940,9 +940,7 @@ restore_suite_env
 # The archive test's directory-move assertions are the direct template.
 echo
 echo "review retire"
-new_repo >/dev/null
-fake_github
-"$ORCH" init retiretest >/dev/null
+fake_flow retiretest
 
 out="$("$ORCH" review retire 1)"
 assert_contains "a no-op with nothing to move still prints the destination" \

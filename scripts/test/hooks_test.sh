@@ -147,13 +147,10 @@ check_blueprint_rewrite() {
   # The flow's options (#871), plus 0 to skip.
   assert_contains "offers the flow's round options $where" "$ctx" \
     "the options 3 (Recommended), 1, 5, and Other"
-  if [ "$host" = claude ]; then
-    assert_contains "asks the round count as one blocking question $where" "$ctx" \
-      "as one blocking question with the AskUserQuestion tool"
-  else
-    assert_contains "asks the round count as one blocking question $where" "$ctx" \
-      "as one blocking question with the ask_user tool"
-  fi
+  local ask_tool="the ask_user tool"
+  [ "$host" = claude ] && ask_tool="the AskUserQuestion tool"
+  assert_contains "asks the round count as one blocking question $where" "$ctx" \
+    "as one blocking question with ${ask_tool}"
   assert_contains "0 rounds skips the review $where" "$ctx" "0 skips the review"
   assert_contains "asks the round count every time $where" "$ctx" "ask every time, never assume"
   local yesno
