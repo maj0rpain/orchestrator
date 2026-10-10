@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.5.9
+
+The quick-implementation docs now state the Unattended rewrite's condition only in `orch-quick-implement` step 1 and GLOSSARY.md's **Quick implementation** entry; the summary surfaces (skill and command descriptions, CONTRIBUTING.md, README.md, `docs/how-it-works.md`) say only that the issue is possibly rewritten from the plan, and point there.
+
 ## 4.5.8
 
 `orch.sh finding-triage scan` reports `changed`, never `unchanged`, for a finding whose filed lines were deleted since the filing, naming the commit that deleted them; the finding-triage skill looks for where such code moved, as it does for `gone` (#977).

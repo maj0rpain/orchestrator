@@ -28,8 +28,7 @@ Blueprint route hands over its interviewed issue this way, `orch-flow`'s
 spec phase hands over an adopted issue the human chose to rewrite from the
 plan, and `/orchestrator:to-spec <n>` reaches rewrite mode standalone. All
 three take it attended, as written. A quick implementation reaches rewrite mode
-on its linked issue in its **Unattended rewrite** form below, which asks
-nothing; only a quick implementation takes that form.
+in its **Unattended rewrite** form below.
 
 ```
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"

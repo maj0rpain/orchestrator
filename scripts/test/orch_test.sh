@@ -104,21 +104,22 @@ section_files() {
 }
 
 # The walk section_titles and section_text share, over setup.sh, the noun
-# files, then setup.sh again. Phase 1 is setup.sh's shared setup (from its
-# `# >>> shared setup` line to its `# >>> summary` line), read the first time;
-# phase 3 its summary (from its `# >>> summary` line), read the second time. In
-# a noun file, phase 4 is its preamble, the text before its first `# --- ` line,
-# and phase 2 its sections, each `# --- ` header numbering its section n across
-# the whole walk, so isolation, harness.sh's first, is 1. title() drops a
-# header's `# --- ` and trailing dashes.
+# files, then setup.sh again. Each line is in one phase. "setup" is setup.sh's
+# shared setup (from its `# >>> shared setup` line to its `# >>> summary` line),
+# read the first time; "summary" its summary (from its `# >>> summary` line),
+# read the second time; "skip" the rest of setup.sh. In a noun file, "preamble"
+# is the text before its first `# --- ` line, and "sections" the rest, each
+# `# --- ` header numbering its section n across the whole walk, so isolation,
+# harness.sh's first, is 1. title() drops a header's `# --- ` and trailing
+# dashes.
 section_walk_awk='
   function title(s) { sub(/^# --- /, "", s); sub(/[ -]+$/, "", s); return s }
   BEGIN { setup = ENVIRON["ORCH_SETUP_FILE"] }
-  FNR == 1 { phase = 0; pre = ""; shown = 0; if (FILENAME == setup) setups++; else phase = 4 }
-  FILENAME == setup && $0 == "# >>> shared setup" { if (setups == 1) phase = 1; next }
-  FILENAME == setup && $0 == "# >>> summary" { phase = setups == 1 ? 0 : 3 }
-  phase == 4 && /^# --- / { phase = 2 }
-  phase == 2 && /^# --- / { n++ }
+  FNR == 1 { phase = "skip"; pre = ""; shown = 0; if (FILENAME == setup) setups++; else phase = "preamble" }
+  FILENAME == setup && $0 == "# >>> shared setup" { if (setups == 1) phase = "setup"; next }
+  FILENAME == setup && $0 == "# >>> summary" { phase = setups == 1 ? "skip" : "summary" }
+  phase == "preamble" && /^# --- / { phase = "sections" }
+  phase == "sections" && /^# --- / { n++ }
 '
 
 # section_walk <awk program> [awk options]: run the walk with the program
@@ -135,7 +136,7 @@ section_walk() {
 # Position 1 is isolation.
 section_titles() {
   section_walk '
-    phase == 2 && /^# --- / { print title($0) }
+    phase == "sections" && /^# --- / { print title($0) }
   '
 }
 
@@ -145,12 +146,12 @@ section_titles() {
 # A file none of whose sections is kept contributes nothing.
 section_text() {
   section_walk '
-    phase == 4 { pre = pre $0 "\n"; next }
-    phase == 2 && /^# --- / {
+    phase == "preamble" { pre = pre $0 "\n"; next }
+    phase == "sections" && /^# --- / {
       kept = index(keep, "," n ",") > 0
       if (kept && !shown) { printf "%s", pre; shown = 1 }
     }
-    phase == 1 || phase == 3 || (phase == 2 && kept)
+    phase == "setup" || phase == "summary" || (phase == "sections" && kept)
   ' -v keep="$1"
 }
 
