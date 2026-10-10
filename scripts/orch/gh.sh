@@ -164,20 +164,19 @@ adapter_issue_state_labels() {
   gh issue view "$1" --json state,labels --jq '.state, (.labels[].name)'
 }
 
-# issue_state_labels_read <n> <state_var> <labels_var> <line_var>: reads issue
+# issue_state_labels_read <n> <state_var> <labels_var> <err_var>: reads issue
 # <n> once through adapter_issue_state_labels and writes its state (the first
 # line) and its labels (the rest, possibly empty) into the first two
 # caller-named variables. Non-zero when the read fails, writing neither, and
-# writing gh's first stderr line - empty when gh printed none - into
-# <line_var>: the caller keeps its own failure message. gh's stderr is
-# captured, never passed through. The answer is split through
-# lines_split, as issue_publish_verified's is.
+# writing gh's stderr into <err_var>: the caller keeps its own failure
+# message. gh's stderr is captured, never passed through. The answer is split
+# through lines_split, as issue_publish_verified's is.
 # Out-params through `printf -v`, as require_field's, its locals prefixed so
 # no caller's variable name is shadowed.
 issue_state_labels_read() {
   local __islr_out __islr_err
   if ! capture __islr_out __islr_err adapter_issue_state_labels "$1"; then
-    printf -v "$4" '%s' "${__islr_err%%$'\n'*}"
+    printf -v "$4" '%s' "$__islr_err"
     return 1
   fi
   lines_split "$__islr_out" "$2" "$3"
@@ -192,16 +191,15 @@ adapter_issue_state_labels_body() {
 }
 
 # issue_state_labels_body_read <n> <state_var> <labels_var> <body_var>
-# <line_var>: reads issue <n> once through adapter_issue_state_labels_body and
+# <err_var>: reads issue <n> once through adapter_issue_state_labels_body and
 # writes its state, its labels (one per line, possibly none) and its body into
 # the first three caller-named variables. Non-zero when the read fails or its
-# answer does not parse, writing none of them, and writing gh's first stderr
-# line - empty when gh printed none - into <line_var>, as
-# issue_state_labels_read does.
+# answer does not parse, writing none of them, and writing gh's stderr into
+# <err_var>, as issue_state_labels_read does.
 issue_state_labels_body_read() {
   local __islbr_out __islbr_err __islbr_state __islbr_count __islbr_labels="" __islbr_body __islbr_i
   if ! capture __islbr_out __islbr_err adapter_issue_state_labels_body "$1"; then
-    printf -v "$5" '%s' "${__islbr_err%%$'\n'*}"
+    printf -v "$5" '%s' "$__islbr_err"
     return 1
   fi
   lines_split "$__islbr_out" __islbr_state __islbr_count __islbr_body

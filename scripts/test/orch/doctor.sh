@@ -236,6 +236,11 @@ assert_contains "says the labels could not be listed, with gh's first line" "$ou
   "warn  the repo's labels could not be listed: HTTP 403: Forbidden"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
 fake_unfail
+fake_fail_times adapter_labels 5
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "a silently failing label listing says gh gave no reason" "$out" \
+  "warn  the repo's labels could not be listed: gh gave no reason"
+fake_unfail
 
 # The default-branch read is the one that tells doctor GitHub can see the repo:
 # when it fails, the FAIL carries gh's own first line.
@@ -245,6 +250,10 @@ assert_status "a repo GitHub will not show fails doctor" "$st" 1
 assert_contains "saying GitHub cannot see it, with gh's first line" "$out" \
   "FAIL  GitHub cannot see acme/widgets - origin may point somewhere you cannot see: HTTP 404: Not Found"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
+fake_fail_times adapter_repo_default_branch 5
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "a repo read failing silently says gh gave no reason" "$out" \
+  "FAIL  GitHub cannot see acme/widgets - origin may point somewhere you cannot see: gh gave no reason"
 
 # The repo the healthy_repo() call before the labels check built is still
 # clean here; only its failing label listing is undone.
@@ -638,7 +647,7 @@ assert_contains "says the probe could not run rather than guessing" \
 # A probe that fails (a 502, a 403, no connection) is neither "unsupported" nor
 # "no issue": the warn carries gh's own first line instead (#554).
 doctor_github
-fake_fail adapter_sub_issues_supported $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_sub_issues_supported "$GH_502"
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a failing sub-issues probe does not block the flow" "$st" 0
 assert_contains "warns with gh's first line" \
@@ -1019,13 +1028,18 @@ assert_status "fails when the recorded issue has been closed" "$st" 1
 assert_contains "names the closed issue" "$out" "issue #11 is closed"
 assert_contains "gives the command that reopens it" "$out" "gh issue reopen 11"
 
-fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_state_labels "$GH_502"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the issue cannot be read from GitHub" "$st" 1
 assert_contains "names the unreadable issue, with gh's first line" "$out" \
   "FAIL  issue #11 could not be read from GitHub: HTTP 502: Bad Gateway"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
 assert_contains "gives the command that re-checks it" "$out" "gh issue view 11"
+fake_unfail
+fake_fail_times adapter_issue_state_labels 5
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "an issue read failing silently says gh gave no reason" "$out" \
+  "FAIL  issue #11 could not be read from GitHub: gh gave no reason"
 
 # The ready-for-agent label is a one-time gate at adoption, not an ongoing flow
 # invariant (docs/adr/0005) - a maintainer's later triage housekeeping must not
@@ -1099,12 +1113,17 @@ assert_contains "names the closed PR" "$out" "#7"
 fake_pr 7 merged orch/9-gone main
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a merged PR is not a failure" "$st" 0
-fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_pr_state_draft "$GH_502"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the PR cannot be read from GitHub" "$st" 1
 assert_contains "names the unreadable PR, with gh's first line" "$out" \
   "FAIL  PR #7 could not be read from GitHub: HTTP 502: Bad Gateway"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
+fake_unfail
+fake_fail_times adapter_pr_state_draft 5
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "a PR read failing silently says gh gave no reason" "$out" \
+  "FAIL  PR #7 could not be read from GitHub: gh gave no reason"
 fake_unfail
 
 fake_offline
@@ -1453,7 +1472,7 @@ assert_contains "reports it, carrying the reason inline" "$out" \
   "warn  CI: could not be read from GitHub for PR #40: dial tcp: lookup api.github.com: no such host"
 assert_eq "and the reason only once" "$(printf '%s\n' "$out" | grep -c 'dial tcp')" "1"
 
-fake_fail adapter_pr_checks $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_pr_checks "$GH_502"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a failing checks read warns rather than fails" "$st" 0
 assert_contains "carrying gh's first line inline" "$out" \
@@ -1515,11 +1534,16 @@ assert_eq "and says nothing about draft state" \
 state_fixture phase review
 
 fake_pr 40 open orch/doctordraft main
-fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_pr_state_draft "$GH_502"
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "an unreadable draft state warns with gh's first line" "$out" \
   "warn  PR #40 draft state could not be read from GitHub: HTTP 502: Bad Gateway"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
+fake_unfail
+fake_fail_times adapter_pr_state_draft 5
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "a draft state read failing silently says gh gave no reason" "$out" \
+  "warn  PR #40 draft state could not be read from GitHub: gh gave no reason"
 fake_unfail
 restore_suite_env
 

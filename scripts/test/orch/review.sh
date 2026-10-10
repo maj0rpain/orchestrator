@@ -310,20 +310,16 @@ assert_eq "nor creates a label" "$(fake_labels)" ""
 out="$("$ORCH" review file major "Title" --axis spec "$body" 2>&1)"; st=$?
 assert_status "insists on --body-file rather than guessing a positional" "$st" 1
 
-fake_fail adapter_issue_create $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
-assert_status "a gh that will not create the issue fails the command" "$st" 1
-assert_eq "passing gh's first line through, in the death alone (#846)" "$out" \
-  "orch: gh could not create the issue: HTTP 502: Bad Gateway"
+assert_gh_dies "a gh that will not create the issue fails the command" adapter_issue_create "$GH_502" 1 \
+  "orch: gh could not create the issue: HTTP 502: Bad Gateway" \
+  "$ORCH" review file major "Title" --axis spec --body-file "$body"
 assert_eq "with no number printed for a record to cite" \
   "$(printf '%s\n' "$out" | grep -cx '[0-9][0-9]*')" "0"
 
 fake_github
-fake_fail adapter_label_upsert $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" review file major "Title" --axis spec --body-file "$body" 2>&1)"; st=$?
-assert_status "a gh that will not create the label fails it too" "$st" 1
-assert_eq "naming the label, with gh's first line alone (#846)" "$out" \
-  "orch: gh could not create label review:major: HTTP 502: Bad Gateway"
+assert_gh_dies "a gh that will not create the label fails it too" adapter_label_upsert "$GH_502" 1 \
+  "orch: gh could not create label review:major: HTTP 502: Bad Gateway" \
+  "$ORCH" review file major "Title" --axis spec --body-file "$body"
 assert_eq "filing no issue" "$(fake_issues)" ""
 
 # The triage label is the repo's vocabulary, read from the doc the spec phase
@@ -360,23 +356,17 @@ fake_github
 fake_pr 7 open orch/1-reviewready main
 fake_pr_draft 7
 : >"$GH_FIXTURE/env.log"
-fake_fail adapter_pr_ready $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" review ready 2>&1)"; st=$?
-assert_status "fails when GitHub will not mark the PR ready" "$st" 1
-assert_eq "saying why, with gh's first line alone (#846)" "$out" \
-  "orch: gh could not mark PR #7 ready: HTTP 502: Bad Gateway - the flow stays in review"
+assert_gh_dies "fails when GitHub will not mark the PR ready" adapter_pr_ready "$GH_502" 1 \
+  "orch: gh could not mark PR #7 ready: HTTP 502: Bad Gateway - the flow stays in review" \
+  "$ORCH" review ready
 assert_eq "and leaves the phase where it was rather than half-finishing" \
   "$("$ORCH" state get phase)" "review"
 assert_eq "with the PR still a draft" "$(fake_pr_draft_of 7)" "yes"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
-fake_fail_times adapter_pr_ready 9
-out="$("$ORCH" review ready 2>&1)"; st=$?
-assert_status "fails when gh fails silently too" "$st" 1
-assert_eq "saying gh gave no reason" "$out" \
-  "orch: gh could not mark PR #7 ready: gh gave no reason - the flow stays in review"
+assert_gh_dies "fails when gh fails silently too" adapter_pr_ready '' 1 \
+  "orch: gh could not mark PR #7 ready: gh gave no reason - the flow stays in review" \
+  "$ORCH" review ready
 assert_eq "the phase still review" "$("$ORCH" state get phase)" "review"
 assert_eq "and the PR still a draft" "$(fake_pr_draft_of 7)" "yes"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
 "$ORCH" review ready >/dev/null
 assert_eq "records the flow as done once the PR is ready" "$("$ORCH" state get phase)" "done"
 assert_eq "the PR no longer a draft" "$(fake_pr_draft_of 7)" "no"
@@ -740,12 +730,9 @@ assert_status "a checks read that fails silently is exit 2" "$st" 2
 assert_eq "ending in gh gave no reason, never a bare colon" "$out" \
   "orch: gh could not read the checks of PR #7: gh gave no reason"
 fake_unfail
-fake_fail adapter_pr_checks $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" review rerun 7 2>&1)"; st=$?
-assert_status "a checks read that fails is exit 2" "$st" 2
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not read the checks of PR #7: HTTP 502: Bad Gateway"
-fake_unfail
+assert_gh_dies "a checks read that fails is exit 2" adapter_pr_checks "$GH_502" 2 \
+  "orch: gh could not read the checks of PR #7: HTTP 502: Bad Gateway" \
+  "$ORCH" review rerun 7
 # The same silence from a read that succeeds is an answer, not a failure:
 # no checks at all, so the death is the no-checks one, not the failed read's.
 fake_checks 7 all empty
