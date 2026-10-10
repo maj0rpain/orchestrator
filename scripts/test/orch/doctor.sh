@@ -236,6 +236,11 @@ assert_contains "says the labels could not be listed, with gh's first line" "$ou
   "warn  the repo's labels could not be listed: HTTP 403: Forbidden"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
 fake_unfail
+fake_fail_times adapter_labels 5
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "a silently failing label listing says gh gave no reason" "$out" \
+  "warn  the repo's labels could not be listed: gh gave no reason"
+fake_unfail
 
 # The default-branch read is the one that tells doctor GitHub can see the repo:
 # when it fails, the FAIL carries gh's own first line.
@@ -245,6 +250,10 @@ assert_status "a repo GitHub will not show fails doctor" "$st" 1
 assert_contains "saying GitHub cannot see it, with gh's first line" "$out" \
   "FAIL  GitHub cannot see acme/widgets - origin may point somewhere you cannot see: HTTP 404: Not Found"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
+fake_fail_times adapter_repo_default_branch 5
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "a repo read failing silently says gh gave no reason" "$out" \
+  "FAIL  GitHub cannot see acme/widgets - origin may point somewhere you cannot see: gh gave no reason"
 
 # The repo the healthy_repo() call before the labels check built is still
 # clean here; only its failing label listing is undone.
@@ -1026,6 +1035,11 @@ assert_contains "names the unreadable issue, with gh's first line" "$out" \
   "FAIL  issue #11 could not be read from GitHub: HTTP 502: Bad Gateway"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
 assert_contains "gives the command that re-checks it" "$out" "gh issue view 11"
+fake_unfail
+fake_fail_times adapter_issue_state_labels 5
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "an issue read failing silently says gh gave no reason" "$out" \
+  "FAIL  issue #11 could not be read from GitHub: gh gave no reason"
 
 # The ready-for-agent label is a one-time gate at adoption, not an ongoing flow
 # invariant (docs/adr/0005) - a maintainer's later triage housekeeping must not
@@ -1105,6 +1119,11 @@ assert_status "fails when the PR cannot be read from GitHub" "$st" 1
 assert_contains "names the unreadable PR, with gh's first line" "$out" \
   "FAIL  PR #7 could not be read from GitHub: HTTP 502: Bad Gateway"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
+fake_unfail
+fake_fail_times adapter_pr_state_draft 5
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "a PR read failing silently says gh gave no reason" "$out" \
+  "FAIL  PR #7 could not be read from GitHub: gh gave no reason"
 fake_unfail
 
 fake_offline
@@ -1520,6 +1539,11 @@ out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "an unreadable draft state warns with gh's first line" "$out" \
   "warn  PR #40 draft state could not be read from GitHub: HTTP 502: Bad Gateway"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
+fake_unfail
+fake_fail_times adapter_pr_state_draft 5
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "a draft state read failing silently says gh gave no reason" "$out" \
+  "warn  PR #40 draft state could not be read from GitHub: gh gave no reason"
 fake_unfail
 restore_suite_env
 
