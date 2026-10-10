@@ -188,9 +188,26 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    above this skill's own directory.
 
    `Verification` reads `not run - nothing changed`, **Fixed this
-   iteration** and **Open blocking** read `None`, **Merge resolutions**
-   holds step 2's, and **PR body** reads `Not checked - no
-   commit`. Then go to step 1.
+   iteration** and **Open blocking** read `None`, and **Merge resolutions**
+   holds step 2's. **PR body** depends on that base sync:
+   - **Merge resolutions** is not `None` - step 2 resolved a conflict, so
+     the diff from the base SHA changed while the PR was open: before
+     writing the record, run **Checking the PR body** yourself, against
+     this iteration's base SHA, reading just that section:
+
+     ```
+     sed -n '/^## Checking the PR body$/,/^## /p' "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"
+     ```
+
+     (its last line is the next section's heading). **PR body** holds the
+     check's outcome value, a `Not updated - <reason>` with its unlanded
+     corrections included. A `Not updated` is never a finding and does not
+     hold the PR out of **Ready**, exactly as a fixer's does not: the record
+     shows it.
+   - **Merge resolutions** is `None`: **PR body** reads `Not checked - no
+     commit`.
+
+   Then go to step 1.
 6. Otherwise start the **fixer** - see **The fixer** - and wait for it. Of the
    five or so lines it returns, keep two things for the rest of the loop:
    its commit SHA, for later iterations' loop-authored-lines check, and any
@@ -635,7 +652,14 @@ the only Standards look the change gets before its PR (ADR-0021).
    posted rulings, stop and say the fix did not land: the rulings stay on
    the spec issue, and a rerun finds them there (step 2) and does not ask
    them again.
-5. **Report.** Write `<prefix>-comment.md` with six headings, **Review** -
+
+   After the commit and push, when the branch has an open PR (step 2's
+   `pr comments` exited 0), run **Checking the PR body** in
+   `agents/orch-fixer.md` (under the plugin root), against the base SHA
+   **Review pass** step 2 read, fetching the body afresh: step 2's copy
+   predates the commit. Its outcome goes to step 5's **PR body**. With no
+   fixes there is no commit, and no check.
+5. **Report.** Write `<prefix>-comment.md` with seven headings, **Review** -
    the declines, or `None declined.` - **Previously declined** - each
    finding step 2 dropped as an earlier decline, as its `file:line` and
    claim, or `None.` - **Spec rulings** - each ruling step 3 posted, as
@@ -644,8 +668,11 @@ the only Standards look the change gets before its PR (ADR-0021).
    fallbacks** - each fallback taken, or `None (<host>).` - and **Smells**,
    exactly one line: `<N> hidden - rerun with --smells to see them.` when
    step 2 hid N >= 1, `None hidden.` when it hid none, or `Included
-   (--smells).` with `--smells`. **Smells** is its own heading, never a line
-   under **Review**, so a later pass's step 2 reads no smell as a decline.
+   (--smells).` with `--smells` - and **PR body** - step 4's check's
+   outcome value, `Not checked - no commit` when the pass made no commit,
+   or `Not checked - no open PR` when it committed on a branch with no open
+   PR. **Smells** is its own heading, never a line under **Review**, so a
+   later pass's step 2 reads no smell as a decline.
 
    Then, when the branch has an open PR (step 2's `pr comments` exited 0),
    set its state before posting:
@@ -667,7 +694,8 @@ the only Standards look the change gets before its PR (ADR-0021).
      printed;
    - exit 1: the branch has no open PR; report the declines, the previously
      declined findings, the spec rulings, the unruled spec questions, host
-     fallbacks and the **Smells** line in the session instead. The questions
+     fallbacks, the **Smells** line and the **PR body** outcome in the
+     session instead. The questions
      were still asked, and the rulings are on the spec issue;
    - exit 2: GitHub could not be read, or the post failed; stop and say so,
      relaying its reason. Never report this as nothing declined.
