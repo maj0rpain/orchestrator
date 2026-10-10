@@ -126,16 +126,17 @@ assert_eq "prints no ok line" "$(count_lines '^  ok ' "$out")" "0"
 assert_eq "still prints the section header" "$(count_lines -x 'isolation' "$out")" "1"
 assert_eq "still counts every pass in the summary" "$(printf '%s\n' "$out" | tail -n 1)" \
   "$quiet_n passed, 0 failed"
-# A copy of the scripts tree whose isolation section gains a failing and a
-# skipped check, so the FAIL and skip lines are seen kept under quiet mode.
-quiet_dir="$(mktemp -d)"
-cp -R "$PLUGIN_ROOT/scripts" "$quiet_dir/"
-awk '{ print } $0 == "echo \"isolation\"" {
-  print "bad \"a planted failure\" \"its detail line\""
-  print "skip \"a planted skip\" \"its reason line\"" }' "$quiet_dir/scripts/test/orch/harness.sh" \
-  >"$quiet_dir/harness.sh"
-mv "$quiet_dir/harness.sh" "$quiet_dir/scripts/test/orch/harness.sh"
-out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^isolation$' \
+# A copy of the scripts tree with a planted section holding a failing and a
+# skipped check, run alongside isolation, so the FAIL and skip lines are seen
+# kept under quiet mode.
+quiet_dir="$(planted_copy <<'PLANTED'
+  # --- planted quiet failure
+  echo; echo "planted quiet failure"
+  bad "a planted failure" "its detail line"
+  skip "a planted skip" "its reason line"
+PLANTED
+)"
+out="$(ORCH_TEST_JOBS=1 ORCH_TEST_QUIET=1 ORCH_TEST_ONLY='^planted quiet failure$' \
   bash "$quiet_dir/scripts/test/orch_test.sh" 2>&1)"; st=$?
 assert_status "a quiet run with a failure exits 1" "$st" 1
 assert_contains "keeps a FAIL line with its detail line" "$out" \
