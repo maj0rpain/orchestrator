@@ -72,6 +72,82 @@ map_line() {
     END { if (!done) print L + off }'
 }
 
+# deleted_ranges <old sha> <new ref> <file> <start> <end>: the parts of lines
+# <start>-<end> of <file> at <old sha> that the zero-context diff to <new ref>
+# deletes outright - inside a hunk whose new count is 0 - one "<from>,<to>"
+# per part, or nothing. A line a hunk replaces is not deleted by this rule.
+deleted_ranges() {
+  { git diff -U0 "$1" "$2" -- "$3" 2>/dev/null || true; } | awk -v S="$4" -v E="$5" '
+    /^@@ / {
+      split($2, o, ","); split($3, n, ",")
+      a = substr(o[1], 2) + 0; b = (2 in o) ? o[2] + 0 : 1
+      d = (2 in n) ? n[2] + 0 : 1
+      if (a > E) exit
+      if (b > 0 && d == 0) {
+        lo = (a > S) ? a : S; hi = (a + b - 1 < E) ? a + b - 1 : E
+        if (lo <= hi) print lo "," hi
+      }
+    }'
+}
+
+# range_lines <ranges>: each line number the newline-separated "<from>,<to>"
+# ranges cover, one per line.
+range_lines() {
+  local range
+  for range in $1; do seq "${range%,*}" "${range#*,}"; done
+}
+
+# squash_deleting_commit <old sha> <ref> <file> <ranges>: the commit on
+# <ref>'s first-parent line that deleted the newest of the <ranges> - lines of
+# <file> at <old sha>, a commit off <ref>, deleted by <ref> - or nothing. Off
+# the default branch, the lines reached it through a squash commit, so the
+# deleting commit is the newest one since which every line stays deleted:
+# walking back, the one after the first commit that still holds one of them.
+squash_deleting_commit() {
+  local old="$1" ref="$2" file="$3" ranges="$4" commits commit start end held after=""
+  start="$(range_lines "$ranges" | head -n 1)"
+  end="$(range_lines "$ranges" | tail -n 1)"
+  commits="$(git log --first-parent --format=%H "$ref" "^$old" -- "$file" 2>/dev/null)" || return 0
+  for commit in $commits; do
+    held="$(comm -23 <(range_lines "$ranges" | sort) \
+      <(range_lines "$(deleted_ranges "$old" "$commit" "$file" "$start" "$end")" | sort))"
+    if [ -n "$held" ]; then printf '%s\n' "$after"; return 0; fi
+    after="$commit"
+  done
+}
+
+# deleting_commit <old sha> <ref> <file> <ranges>: the commit that deleted
+# the <ranges>, lines of <file> at <old sha> that <ref> no longer has - the
+# newest such commit when they were deleted by several - or nothing when the
+# exact lookup fails. A reverse blame names, for each line, the commit C it
+# last existed in, and its deleting commit is the oldest since C to touch the
+# file.
+deleting_commit() {
+  local old="$1" ref="$2" file="$3" ranges="$4" ref_sha range blame_out last_seen last deleter deleters="" off_branch=false
+  ref_sha="$(git rev-parse --verify -q "$ref^{commit}")" || return 0
+  for range in $ranges; do
+    blame_out="$(git blame --reverse --porcelain -L "$range" "$old..$ref" -- "$file" 2>/dev/null)" || return 0
+    last_seen="$(printf '%s\n' "$blame_out" | grep -E '^[0-9a-f]{40} [0-9]' | cut -d' ' -f1 | sort -u)" || true
+    [ -n "$last_seen" ] || return 0
+    for last in $last_seen; do
+      [ "$last" != "$ref_sha" ] || return 0
+      if ! git merge-base --is-ancestor "$last" "$ref" 2>/dev/null; then off_branch=true; continue; fi
+      deleter="$(git log --reverse --format=%H "$ref" "^$last" -- "$file" 2>/dev/null)" || return 0
+      deleter="${deleter%%$'\n'*}"
+      [ -n "$deleter" ] || return 0
+      deleters="$deleters $deleter"
+    done
+  done
+  if $off_branch; then
+    deleter="$(squash_deleting_commit "$old" "$ref" "$file" "$ranges")"
+    [ -n "$deleter" ] || return 0
+    deleters="$deleters $deleter"
+  fi
+  for deleter in $(git log --format=%H "$ref" "^$old" -- "$file" 2>/dev/null); do
+    case " $deleters " in *" $deleter "*) printf '%s\n' "$deleter"; return 0 ;; esac
+  done
+}
+
 # scan_line <file:lines> <result> <detail>: the scan's one line, in the
 # columns `finding-triage scan` prints. Local to finding_scan_one in effect: it
 # reads the issue and PR number and the triage state, n, pr and roles, from
@@ -96,7 +172,7 @@ triage_state() {
 # finding_scan_one <issue> <body> <default ref> <triage state>: the scan's one
 # line for one finding.
 finding_scan_one() {
-  local n="$1" body="$2" ref="$3" roles="$4" loc pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out
+  local n="$1" body="$2" ref="$3" roles="$4" loc pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out deleted
   pr="$(finding_pr "$body")"
   loc="$(finding_location "$body")"
   if [ -z "$loc" ]; then
@@ -135,6 +211,15 @@ finding_scan_one() {
   file_commit="$(git log -1 --format=%H "$ref" "^$resolved_sha" -- "$file" 2>/dev/null)" || true
   if [ -z "$file_commit" ]; then
     scan_line "$file:$lines" unknown "no commit on the default branch since $sha touched $file - the difference is commits that never reached it"
+    return
+  fi
+  # Filed lines deleted outright are changed, whatever the lines around them
+  # say: named by the commit that deleted them, or, when that lookup fails,
+  # by the newest commit touching the file.
+  deleted="$(deleted_ranges "$resolved_sha" "$ref" "$file" "$start" "$end")"
+  if [ -n "$deleted" ]; then
+    detail="$(deleting_commit "$resolved_sha" "$ref" "$file" "$deleted")"
+    scan_line "$file:$lines" changed "${detail:-$file_commit}"
     return
   fi
   # The newest commit since the filing that touched the finding's lines. The

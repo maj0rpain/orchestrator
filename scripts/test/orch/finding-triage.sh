@@ -294,6 +294,78 @@ assert_eq "it is changed" "$(field_of 13 4 "$out")" "changed"
 assert_eq "naming the commit that touched the shifted line" "$(field_of 13 5 "$out")" "$shifted_fix_sha"
 fake_issue 13 closed
 
+# Findings whose filed lines the default branch later deleted outright: never
+# unchanged, whatever lines survive around them, and named by the commit that
+# deleted them. One file per case, all filed at one commit, each deleted by
+# its own commit after it.
+git -C "$work" checkout -q main
+for f in whole end start middle later two replaced squashed; do seq_lines "$f" 30 >"$work/src/del_$f.sh"; done
+git -C "$work" add src
+git -C "$work" commit -qm "the code the deletions are filed against"
+filed_sha="$(git -C "$work" rev-parse HEAD)"
+# del_commit <file> <sed script> <message>: commits the edit, printing its SHA.
+del_commit() {
+  sed -i "$2" "$work/src/$1"
+  git -C "$work" commit -qam "$3"
+  git -C "$work" rev-parse HEAD
+}
+whole_sha="$(del_commit del_whole.sh '8,12d' "delete the whole range")"
+end_sha="$(del_commit del_end.sh '18,25d' "delete the range's end")"
+start_sha="$(del_commit del_start.sh '5,12d' "delete the range's start")"
+middle_sha="$(del_commit del_middle.sh '14,16d' "delete the range's middle")"
+later_del_sha="$(del_commit del_later.sh '8,12d' "delete before a later edit")"
+del_commit del_later.sh 's/^later line 1$/later line 1, reworded/' "a later, unrelated edit" >/dev/null
+del_commit del_two.sh '18,20d' "delete the range's end first" >/dev/null
+two_sha="$(del_commit del_two.sh '10,12d' "then delete its start")"
+replaced_sha="$(del_commit del_replaced.sh '9,11c\replaced line' "replace three lines with one")"
+# A PR head off the default branch, as a squash merge leaves it: it inserts a
+# line on top of del_squashed.sh, the squash commit lands the same edit on
+# main, a later commit deletes the filed line, and a last one edits another.
+git -C "$work" checkout -q -b pr37 "$filed_sha"
+sed -i '1i squashed pr line' "$work/src/del_squashed.sh"
+git -C "$work" commit -qam "the PR's own edit"
+squash_head_sha="$(git -C "$work" rev-parse HEAD)"
+git -C "$work" push -q origin HEAD:refs/pull/37/head
+git -C "$work" checkout -q main
+del_commit del_squashed.sh '1i squashed pr line' "the PR, squash-merged" >/dev/null
+squashed_sha="$(del_commit del_squashed.sh '9,13d' "delete the squash-merged lines")"
+del_commit del_squashed.sh 's/^squashed line 30$/squashed line 30, reworded/' "a later edit to the squashed file" >/dev/null
+git -C "$work" push -q origin main
+finding 30 "review:nit,needs-triage" "\`src/del_whole.sh:10\` at $filed_sha" 30
+finding 31 "review:nit,needs-triage" "\`src/del_end.sh:10-20\` at $filed_sha" 31
+finding 32 "review:nit,needs-triage" "\`src/del_start.sh:10-20\` at $filed_sha" 32
+finding 33 "review:nit,needs-triage" "\`src/del_middle.sh:10-20\` at $filed_sha" 33
+finding 34 "review:nit,needs-triage" "\`src/del_later.sh:10\` at $filed_sha" 34
+finding 35 "review:nit,needs-triage" "\`src/del_two.sh:10-20\` at $filed_sha" 35
+finding 36 "review:nit,needs-triage" "\`src/del_replaced.sh:10\` at $filed_sha" 36
+finding 37 "review:nit,needs-triage" "\`src/del_squashed.sh:11\` at $squash_head_sha" 37
+out="$(scan --pr 30 2>&1)"; st=$?
+assert_status "scans a finding whose lines were deleted" "$st" 0
+assert_eq "a whole deleted range is changed, naming the deleting commit" \
+  "$(line_of 30 "$out")" "$(printf '30\t30\tsrc/del_whole.sh:10\tchanged\t%s\tneeds-triage' "$whole_sha")"
+out="$(scan --pr 31 2>&1)"
+assert_eq "a range whose end was deleted is changed, naming the deleting commit" \
+  "$(line_of 31 "$out")" "$(printf '31\t31\tsrc/del_end.sh:10-20\tchanged\t%s\tneeds-triage' "$end_sha")"
+out="$(scan --pr 32 2>&1)"
+assert_eq "a range whose start was deleted is changed, naming the deleting commit" \
+  "$(line_of 32 "$out")" "$(printf '32\t32\tsrc/del_start.sh:10-20\tchanged\t%s\tneeds-triage' "$start_sha")"
+out="$(scan --pr 33 2>&1)"
+assert_eq "a range whose middle was deleted is changed, naming the deleting commit" \
+  "$(line_of 33 "$out")" "$(printf '33\t33\tsrc/del_middle.sh:10-20\tchanged\t%s\tneeds-triage' "$middle_sha")"
+out="$(scan --pr 34 2>&1)"
+assert_eq "a later, unrelated edit to the file does not displace the deleting commit" \
+  "$(line_of 34 "$out")" "$(printf '34\t34\tsrc/del_later.sh:10\tchanged\t%s\tneeds-triage' "$later_del_sha")"
+out="$(scan --pr 35 2>&1)"
+assert_eq "lines deleted across two commits name the later one" \
+  "$(line_of 35 "$out")" "$(printf '35\t35\tsrc/del_two.sh:10-20\tchanged\t%s\tneeds-triage' "$two_sha")"
+out="$(scan --pr 36 2>&1)"
+assert_eq "a line replaced, not deleted, is changed, naming the replacing commit" \
+  "$(line_of 36 "$out")" "$(printf '36\t36\tsrc/del_replaced.sh:10\tchanged\t%s\tneeds-triage' "$replaced_sha")"
+out="$(scan --pr 37 2>&1)"
+assert_eq "a finding filed at a squash-merged PR head names the deleting commit, not the squash" \
+  "$(line_of 37 "$out")" "$(printf '37\t37\tsrc/del_squashed.sh:11\tchanged\t%s\tneeds-triage' "$squashed_sha")"
+for n in 30 31 32 33 34 35 36 37; do fake_issue "$n" closed; done
+
 # Each severity's list is cut off at the issue-list limit; a list that
 # reaches it may be missing findings past it, and the scan says so on stderr
 # while it carries on. Open in needs-triage here: two major findings (2, 5)

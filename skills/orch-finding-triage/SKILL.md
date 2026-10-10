@@ -94,7 +94,8 @@ No field is ever empty: an empty `<pr>` or `<detail>` prints `-`.
   code: a fix can land at another site and leave these lines as they were.
 - `changed` - `<detail>` is the full SHA of the newest commit touching the
   finding's lines, or touching its file when the line range can't be followed
-  (it starts past the file's end).
+  (it starts past the file's end). It also covers lines deleted since the
+  filing: `<detail>` is then the commit that deleted them.
 - `gone` - the file no longer exists on the default branch.
 - `unknown` - `<detail>` says why: an unreachable SHA, a body that does not
   parse, or a file that differs only by commits that never reached the
@@ -137,7 +138,11 @@ proposed as still open, its comment saying what the read could not settle.
 What each result adds:
 
 - `changed`: read the touching commit (`git show <detail>`) and the code at
-  the location now.
+  the location now. Check, from `git show <detail>`, whether the touching
+  commit deleted the filed lines - the scan line alone does not tell a
+  deletion from a modification. When it did, the `gone` rule applies:
+  deletion is never proof of a fix, so look for where the code moved and
+  judge it there.
 - `gone`: deletion is never proof of a fix. Look for where the code moved
   (`git log --diff-filter=D --follow`, or a search on the default branch) and
   judge it there; if it is truly gone, the finding no longer holds.
