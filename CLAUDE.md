@@ -56,7 +56,7 @@ See CONTRIBUTING.md's Develop section.
 Every PR to `main` adds one changelog fragment, `changelog.d/<issue>.md`, and
 never bumps `version` in `.claude-plugin/plugin.json` or adds a `## ` heading to
 `CHANGELOG.md` by hand. The fragment's first line is exactly `bump: patch`,
-`bump: minor` or `bump: major`, and the rest, after a blank line, is its
+`bump: minor` or `bump: major`, and the rest, after any blank lines, is its
 CHANGELOG prose. Use semver judgment: patch for fixes/docs, minor for new
 features, major for breaking changes. On merge, the version-bump Action runs
 `scripts/version-bump.sh`, which bumps the version and writes the CHANGELOG

@@ -1887,8 +1887,8 @@ scan_changelog_fragments() {
     [ -n "$heading" ] &&
       echo "CHANGELOG.md: $heading added; the version-bump Action adds the entry on merge"
   done < <(LC_ALL=C comm -13 \
-    <(git -C "$r" show "$mb:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort -u) \
-    <(git -C "$r" show "HEAD:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort -u))
+    <(git -C "$r" show "$mb:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort) \
+    <(git -C "$r" show "HEAD:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort))
   return 0
 }
 # fragment_fixture: a fixture git repo whose main branch holds plugin.json at
@@ -1909,6 +1909,10 @@ fragment_commit() {
   git -C "$1" add -A
   git -C "$1" -c user.name=lint -c user.email=lint@example.com -c commit.gpgsign=false \
     commit -q -m change
+}
+# fixture_sed <file> <sed expression>: edits <file> in place, portably.
+fixture_sed() {
+  sed -i.bak "$2" "$1" && rm "$1.bak"
 }
 # fragment_add <fixture> <name> <lines...>: writes changelog.d/<name>, one
 # line per argument, and commits it.
@@ -1945,20 +1949,22 @@ fragment_add "$fixture" fix-12.md 'bump: patch' '' 'A fix.'
 flags "a misnamed fragment is flagged, naming it" \
   "$(scan_changelog_fragments "$fixture" main)" "changelog.d/fix-12.md: not named <issue>.md"
 fixture="$(fragment_fixture)"
-sed -i.bak 's/4\.5\.6/4.5.7/' "$fixture/.claude-plugin/plugin.json"
-rm "$fixture/.claude-plugin/plugin.json.bak"
+fixture_sed "$fixture/.claude-plugin/plugin.json" 's/4\.5\.6/4.5.7/'
 fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
 flags "a changed plugin.json version is flagged" \
   "$(scan_changelog_fragments "$fixture" main)" ".claude-plugin/plugin.json: version changed from 4.5.6 to 4.5.7"
 fixture="$(fragment_fixture)"
-sed -i.bak 's/^## 4\.5\.6$/## 4.5.7\n\nNew.\n\n## 4.5.6/' "$fixture/CHANGELOG.md"
-rm "$fixture/CHANGELOG.md.bak"
+fixture_sed "$fixture/CHANGELOG.md" 's/^## 4\.5\.6$/## 4.5.7\n\nNew.\n\n## 4.5.6/'
 fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
 flags "an added ## CHANGELOG heading is flagged" \
   "$(scan_changelog_fragments "$fixture" main)" "CHANGELOG.md: ## 4.5.7 added"
 fixture="$(fragment_fixture)"
-sed -i.bak 's/^Older\.$/Older, reworded./' "$fixture/CHANGELOG.md"
-rm "$fixture/CHANGELOG.md.bak"
+printf '\n## 4.5.5\n\nAgain.\n' >>"$fixture/CHANGELOG.md"
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+flags "a second copy of an existing ## CHANGELOG heading is flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" "CHANGELOG.md: ## 4.5.5 added"
+fixture="$(fragment_fixture)"
+fixture_sed "$fixture/CHANGELOG.md" 's/^Older\.$/Older, reworded./'
 fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
 spares "an edit to an older CHANGELOG entry is not flagged" \
   "$(scan_changelog_fragments "$fixture" main)" '.'
@@ -1978,8 +1984,7 @@ fragment_commit "$fixture"
 spares "with NO_VERSION_BUMP, a PR with no fragment is not flagged" \
   "$(scan_changelog_fragments "$fixture" main 1)" '.'
 fixture="$(fragment_fixture)"
-sed -i.bak 's/4\.5\.6/4.5.7/' "$fixture/.claude-plugin/plugin.json"
-rm "$fixture/.claude-plugin/plugin.json.bak"
+fixture_sed "$fixture/.claude-plugin/plugin.json" 's/4\.5\.6/4.5.7/'
 fragment_commit "$fixture"
 flags "with NO_VERSION_BUMP, a changed plugin.json version is still flagged" \
   "$(scan_changelog_fragments "$fixture" main 1)" ".claude-plugin/plugin.json: version changed from 4.5.6 to 4.5.7"

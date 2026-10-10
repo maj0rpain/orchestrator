@@ -40,7 +40,7 @@ done
 mapfile -t names < <(for f in "${fragments[@]}"; do printf '%s\n' "${f#changelog.d/}"; done |
   LC_ALL=C sort -n)
 
-rank=0
+max_level=0
 for name in "${names[@]}"; do
   f="changelog.d/$name"
   case "$(head -n 1 "$f")" in
@@ -49,7 +49,7 @@ for name in "${names[@]}"; do
     "bump: major") level=3 ;;
     *) refuse "$f" "its first line is not 'bump: patch', 'bump: minor' or 'bump: major'" ;;
   esac
-  [ "$level" -gt "$rank" ] && rank=$level
+  [ "$level" -gt "$max_level" ] && max_level=$level
   # The prose: every line after the first, leading and trailing blank lines
   # dropped.
   tail -n +2 "$f" | awk '
@@ -71,7 +71,7 @@ old="$major.$minor.$patch"
 [ -f "$CHANGELOG" ] || refuse "$CHANGELOG" "missing"
 grep -q '^## ' "$CHANGELOG" || refuse "$CHANGELOG" "it has no ## heading to insert the entry above"
 
-case "$rank" in
+case "$max_level" in
   3) new="$((10#$major + 1)).0.0" ;;
   2) new="$((10#$major)).$((10#$minor + 1)).0" ;;
   1) new="$((10#$major)).$((10#$minor)).$((10#$patch + 1))" ;;

@@ -34,8 +34,9 @@ jobs:
           set -euo pipefail
           version="$(scripts/version-bump.sh)"
           echo "version=$version" >>"$GITHUB_OUTPUT"
-      # A rejected push only means another merge landed meanwhile, and that
-      # merge queued its own run, which takes these fragments: exit 0.
+      # A push rejected because another merge landed meanwhile exits 0: that
+      # merge queued its own run, which takes these fragments. Any other
+      # failed push (main has not moved) fails the job.
       - name: Commit and push
         if: steps.bump.outputs.version != ''
         env:
@@ -47,5 +48,10 @@ jobs:
           git add -A
           git commit -q -m "Release $VERSION"
           if ! git push origin HEAD:main; then
+            git fetch --quiet origin main
+            if [ "$(git rev-parse origin/main)" = "$(git rev-parse HEAD~1)" ]; then
+              echo "Push failed and main has not moved." >&2
+              exit 1
+            fi
             echo "Push rejected: a newer merge's run takes the fragments."
           fi
