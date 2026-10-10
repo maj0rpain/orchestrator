@@ -62,25 +62,13 @@ your return instead - see **Could not fix**.
    by path. A fixer that fixed nothing makes no commit.
 4. **Push**, only if step 3 made a commit. `git push`. CI is the driver's
    to wait on, at termination.
-5. **Check the PR body against the diff**, only if step 3 made a commit.
-   With no commit the diff did not change, so skip this step: the record's
-   **PR body** reads `Not checked - no commit`. Otherwise read the body into
-   a temporary file outside the repo (`mktemp`) with `bash "<orch.sh>" pr
-   fetch <file>`, and check it against `git diff <base SHA>..HEAD`.
-   Correct, in that file, every statement the diff no longer supports - a
-   helper added or removed, a claimed reason, a file list - by rewording or
-   removing it, and leave alone any statement the diff cannot settle either
-   way. Keep the first line, the `Closes #<issue>` or
-   `Refs #<issue>` line, as it is. If you changed anything, write it back
-   with `bash "<orch.sh>" pr update <file>`. This adds no commit: a body
-   edit is a GitHub edit, and corrects what the PR claims rather than
-   reporting on the loop, so the closer still posts the loop's one PR
-   comment. If `pr fetch` or `pr update` fails, the step ends there: do not
-   retry, and do not count the failure as a finding - the loop goes on, and
-   the record's **PR body** says so (see **The record**). Otherwise done
-   when every helper, function, file and stated reason the body names has
-   been checked against that diff, and each is supported by it or has been
-   reworded or removed.
+5. **Check the PR body against the diff**, only if step 3 made a commit,
+   per **Checking the PR body** below. With no commit the diff did not
+   change, so skip this step: the record's **PR body** reads `Not checked -
+   no commit`. The check adds no commit: a body edit is a GitHub edit, and
+   corrects what the PR claims rather than reporting on the loop, so the
+   closer still posts the loop's one PR comment. A failed check is not a
+   finding: the loop goes on, and the record's **PR body** says so.
 6. **Write the record** to the record path - see **The record**.
 7. **Return** about five lines: what was fixed, the commit SHA (or `no
    commit`), each could-not-fix finding with its severity and why, and, if
@@ -174,6 +162,52 @@ never a reason to stop or to ask. Record it and carry on:
   next iteration's triage treats it as still standing, and the loop cannot end
   ready while one remains in the final record.
 
+## Checking the PR body
+
+This section is the one statement of the PR-body check. The fixer's step 5
+follows it, and so does every other step that changes `git diff <base
+SHA>..HEAD` while the PR is open: `orch-sync` after a resolved conflict, a
+clean review-loop iteration whose base sync resolved one, and a standalone
+review pass after its fix commit. Each runs it unattended, and records what
+it corrected rather than asking whether to.
+
+1. **Fetch.** Read the body into a temporary file outside the repo
+   (`mktemp`) with `bash "<orch.sh>" pr fetch <file>`. Fetch it afresh each
+   time: a copy read before the latest commit or merge may be stale.
+2. **Check** it against `git diff <base SHA>..HEAD`. Correct, in that file,
+   every statement the diff no longer supports - a helper added or removed,
+   a claimed reason, a file list, a version - by rewording or removing it,
+   and leave alone any statement the diff cannot settle either way. Keep
+   the first line, the `Closes #<issue>` or `Refs #<issue>` line, as it is.
+3. **Write back**, only if you changed anything, with `bash "<orch.sh>" pr
+   update <file>`. With nothing changed, make no GitHub edit.
+
+Done when every helper, function, file, version and stated reason the body
+names has been checked against that diff, and each is supported by it or
+has been reworded or removed.
+
+**Failure.** `pr fetch` exits 1 on every failure, no open PR included, so
+the check never tells the two apart; a site that skips the check on a branch
+with no open PR learns that first from `pr comments`, which exits 1 only
+then. A failed `pr fetch` or `pr update` ends the check there: do not retry,
+and report the `orch.sh` message as the reason. It is never counted as a
+finding, and never undoes a sync or a commit.
+
+**Outcome.** Every site records the check's outcome under its **PR body**
+heading as one of:
+
+- one line per statement corrected: `<old claim> -> <new claim, or
+  removed>`;
+- `None`, when it corrected nothing;
+- `Not updated - <reason>`, `<reason>` being the `orch.sh` message, when
+  `pr fetch` or `pr update` failed. After a failed `pr update`, that line is
+  followed by one line per correction that did not land (`<old claim> ->
+  <new claim, or removed>`); after a failed `pr fetch`, no correction was
+  attempted, so the line stands alone.
+
+Never list a correction as made unless it reached GitHub. A site adds only
+its own `Not checked - <why>` value, for when the check did not run.
+
 ## The record
 
 The record is the iteration's durable account: humans read it after the fact,
@@ -242,14 +276,9 @@ what later iterations of this loop blame against.
 recorded, never fixed here unless a reviewer's finding on it reached the
 fixable list.
 
-**PR body** is filled every iteration, from step 5: one line per statement
-the check corrected, `None` when it corrected nothing, `Not checked - no
-commit` when there was no commit to check against, or `Not updated -
-<reason>` when `pr fetch` or `pr update` failed, `<reason>` being the
-`orch.sh` message. After a failed `pr update`, that line is followed by one
-line per correction that did not land (`<old claim> -> <new claim, or
-removed>`); after a failed `pr fetch`, no correction was attempted, so the
-line stands alone. Never list a correction as made unless it reached GitHub.
+**PR body** is filled every iteration, from step 5: the outcome of
+**Checking the PR body**, or `Not checked - no commit` when there was no
+commit to check against.
 
 The last three sections are written at termination, and only there - leave
 `## CI`, `## Filed`, and `## Terminal state` out of your record. The driver

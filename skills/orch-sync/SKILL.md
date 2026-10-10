@@ -1,6 +1,6 @@
 ---
 name: orch-sync
-description: Run a base sync on demand - bring the current plugin-made branch (a flow's orch/ branch, including a done flow's, or a quick/ branch) up to date with its base branch by merging origin's tip of the base, inside or outside a flow. Starts a resolver on a conflict, records its Merge resolutions as one PR comment, and offers a review pass unless an active flow holds the branch. Use when a human runs /orchestrator:sync, or asks to catch a branch or PR up with its base.
+description: Run a base sync on demand - bring the current plugin-made branch (a flow's orch/ branch, including a done flow's, or a quick/ branch) up to date with its base branch by merging origin's tip of the base, inside or outside a flow. Starts a resolver on a conflict, corrects the PR body against the diff after a resolved conflict, records its Merge resolutions and the body corrections as one PR comment, and offers a review pass unless an active flow holds the branch. Use when a human runs /orchestrator:sync, or asks to catch a branch or PR up with its base.
 ---
 
 # Orchestrator base sync, on demand
@@ -48,27 +48,49 @@ the one the branch's name carries - the number after `orch/` or `quick/` in
 issue, it is the issue the human gives: ask for one and wait.
 
 - **Exit 0 on the first `branch sync`** - a clean merge, or nothing to
-  merge: tell the human which, and stop. Nothing more happens: no comment,
-  no review pass.
+  merge: tell the human which, and stop. Nothing more happens: no PR body
+  check, no comment, no review pass. Neither rewrites the branch's own
+  lines, so the PR body stands as it is.
 - **A failed sync** - a refusal, a failed resolution, or a rerun that does
   not exit 0: relay the failure and stop, as that section's step 4 says,
   leaving any merge in progress for the human. Never abort it.
 - **A conflict resolved** - the rerun exited 0: the sync stands. Go to
   step 2.
 
-## 2. Record the Merge resolutions
+## 2. Check the PR body and record the Merge resolutions
 
-Write one comment to a temporary file outside the repo (`mktemp`): a
+The resolved merge may have removed or rewritten code the PR body
+describes, so correct the body before recording the merge. First learn
+whether the branch has an open PR: run `bash "$ORCH" pr comments <file>`,
+to a temporary file outside the repo (`mktemp`):
+
+- **Exit 0**: there is an open PR. Run **Checking the PR body** in
+  `agents/orch-fixer.md` (under the plugin root), unattended, against the
+  base SHA `bash "$ORCH" branch base-sha` prints after the sync. Keep its
+  outcome value for the comment.
+- **Exit 1**: the branch has no open PR. Skip the check.
+- **Exit 2**: GitHub could not be read. The check does not run; its
+  outcome is `Not updated - <reason>`, `<reason>` being the `orch.sh`
+  message.
+
+Never ask the human whether to correct the body: the check makes its
+corrections and records them.
+
+Then write one comment to a temporary file outside the repo (`mktemp`): a
 **Merge resolutions** heading, then the sync's **Merge resolutions**, per
-**Merge resolutions** in `agents/orch-resolver.md` (under the plugin root).
-Post it with `bash "$ORCH" pr comment <file>`:
+**Merge resolutions** in `agents/orch-resolver.md` (under the plugin root),
+then a **PR body** heading holding the check's outcome value. Post it with
+`bash "$ORCH" pr comment <file>`:
 
-- **Exit 0**: posted. Tell the human the PR number it printed.
+- **Exit 0**: posted. Tell the human the PR number it printed, and the PR
+  body lines the check corrected, if any.
 - **Exit 1**: the branch has no open PR. Put the **Merge resolutions** in
-  your report to the human instead.
+  your report to the human instead, and say the PR body check was skipped
+  - there is no PR.
 - **Any other exit**: report the failure with its message, and the **Merge
-  resolutions** with it. The sync still stands: it is merged, recorded and
-  pushed, and nothing is undone.
+  resolutions** and the **PR body** outcome with it, since the corrections
+  may already have reached GitHub. The sync still stands: it is merged,
+  recorded and pushed, and nothing is undone.
 
 A resolver `Verification` line reading `fail` is reported too, never acted on
 here: a review pass judges it.

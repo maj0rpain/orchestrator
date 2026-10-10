@@ -359,7 +359,10 @@ agents that do the work and keeping the run's record. A review loop's driver
 syncs the branch with its base, starts the reviewers, the fixer, the closer
 and, on a conflict, a resolver, triages what the reviewers report, waits on
 CI, and decides the terminal state. It does not edit the change: every line
-the loop fixes is the fixer's, and filing is the closer's. The one exception
+the loop fixes is the fixer's, and filing is the closer's. In a clean
+iteration whose base sync resolved a conflict, it corrects the PR body itself
+(**Checking the PR body** in the fixer's brief): the body is what the PR
+claims, not the change. The one exception
 is a host with no fresh subagent: there the review loop's driver takes the
 host-capabilities **Start a fresh subagent** fallback, does the fixer's and
 the closer's work in its own session, and records that as a host fallback. A
