@@ -638,7 +638,7 @@ assert_contains "says the probe could not run rather than guessing" \
 # A probe that fails (a 502, a 403, no connection) is neither "unsupported" nor
 # "no issue": the warn carries gh's own first line instead (#554).
 doctor_github
-fake_fail adapter_sub_issues_supported $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_sub_issues_supported "$GH_502"
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a failing sub-issues probe does not block the flow" "$st" 0
 assert_contains "warns with gh's first line" \
@@ -1019,7 +1019,7 @@ assert_status "fails when the recorded issue has been closed" "$st" 1
 assert_contains "names the closed issue" "$out" "issue #11 is closed"
 assert_contains "gives the command that reopens it" "$out" "gh issue reopen 11"
 
-fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_state_labels "$GH_502"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the issue cannot be read from GitHub" "$st" 1
 assert_contains "names the unreadable issue, with gh's first line" "$out" \
@@ -1099,7 +1099,7 @@ assert_contains "names the closed PR" "$out" "#7"
 fake_pr 7 merged orch/9-gone main
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a merged PR is not a failure" "$st" 0
-fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_pr_state_draft "$GH_502"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when the PR cannot be read from GitHub" "$st" 1
 assert_contains "names the unreadable PR, with gh's first line" "$out" \
@@ -1453,7 +1453,7 @@ assert_contains "reports it, carrying the reason inline" "$out" \
   "warn  CI: could not be read from GitHub for PR #40: dial tcp: lookup api.github.com: no such host"
 assert_eq "and the reason only once" "$(printf '%s\n' "$out" | grep -c 'dial tcp')" "1"
 
-fake_fail adapter_pr_checks $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_pr_checks "$GH_502"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a failing checks read warns rather than fails" "$st" 0
 assert_contains "carrying gh's first line inline" "$out" \
@@ -1515,7 +1515,7 @@ assert_eq "and says nothing about draft state" \
 state_fixture phase review
 
 fake_pr 40 open orch/doctordraft main
-fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_pr_state_draft "$GH_502"
 out="$("$ORCH" doctor --flow 2>&1)"
 assert_contains "an unreadable draft state warns with gh's first line" "$out" \
   "warn  PR #40 draft state could not be read from GitHub: HTTP 502: Bad Gateway"

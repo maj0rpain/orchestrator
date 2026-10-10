@@ -187,12 +187,12 @@ assert_eq "listing them all" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "
 out="$(scan --all 8 2>&1)"; st=$?
 assert_status "an explicit finding is read through that one call too" "$st" 0
 fake_unfail
-fake_fail adapter_issue_state_labels_body $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_state_labels_body "$GH_502"
 out="$(scan --all 2>&1)"; st=$?
 assert_status "a listed finding gh cannot read dies" "$st" 1
 assert_contains "naming the issue, with gh's line" "$out" "gh could not read issue #1: HTTP 502: Bad Gateway"
 fake_unfail
-fake_fail adapter_issues_labelled $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issues_labelled "$GH_502"
 out="$(scan 2>&1)"; st=$?
 assert_status "a findings list gh cannot read dies" "$st" 1
 assert_contains "naming the list, with gh's line" "$out" \
@@ -333,7 +333,7 @@ fake_issue 17 closed
 rm docs/agents/triage-labels.md
 
 finding 18 "review:nit,needs-triage" "\`src/other.sh:2\` at $head_sha"
-fake_fail adapter_issue_state_labels_body $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_state_labels_body "$GH_502"
 before_store="$(fake_snapshot)"
 out="$(scan 18 2>&1)"; st=$?
 assert_status "an explicit finding gh cannot read dies" "$st" 1
@@ -478,23 +478,20 @@ for case in "adapter_issue_comment|wontfix|comment on" "adapter_issue_relabel|wo
   [ "$outcome" != ready-for-agent ] || category_args=(--category bug)
   fake_github
   triaged 2 "review:major,needs-triage,bug"
-  fake_fail "$op" $'HTTP 502: Bad Gateway\nsecond line'
-  out="$(apply 2 "$outcome" ${category_args[@]+"${category_args[@]}"} --comment-file "$comment" 2>&1)"; st=$?
-  assert_status "dies when gh fails ($op, $outcome)" "$st" 1
-  assert_eq "saying what failed, with gh's line ($op, $outcome)" "$out" \
-    "orch: gh could not $verb issue #2: HTTP 502: Bad Gateway"
+  assert_gh_dies "dies when gh fails ($op, $outcome)" "$op" "$GH_502" 1 \
+    "orch: gh could not $verb issue #2: HTTP 502: Bad Gateway" \
+    apply 2 "$outcome" ${category_args[@]+"${category_args[@]}"} --comment-file "$comment"
 done
 fake_github
 triaged 2 "review:major,needs-triage,bug"
-fake_fail_times adapter_issue_relabel 9
-out="$(apply 2 wontfix --comment-file "$comment" 2>&1)"; st=$?
-assert_status "a silent relabel failure dies" "$st" 1
-assert_eq "saying gh gave no reason" "$out" "orch: gh could not relabel issue #2: gh gave no reason"
+assert_gh_dies "a silent relabel failure dies" adapter_issue_relabel '' 1 \
+  "orch: gh could not relabel issue #2: gh gave no reason" \
+  apply 2 wontfix --comment-file "$comment"
 
 # A failed read stops apply before it writes anything.
 fake_github
 triaged 2 "review:major,needs-triage,bug"
-fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_state_labels "$GH_502"
 before_store="$(fake_snapshot)"
 out="$(apply 2 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
 assert_status "a failed read dies" "$st" 1
@@ -766,23 +763,17 @@ fake_unfail
 # A failed bundle create touches no member.
 member 17 "review:major,ready-for-agent,bug"
 member 18 "review:nit,ready-for-agent,enhancement"
-fake_fail adapter_issue_create $'HTTP 502: Bad Gateway\nsecond line'
-out="$(new_bundle ready-for-agent bug 17 18 2>&1)"; st=$?
-assert_status "a failed bundle create dies" "$st" 1
-assert_eq "with gh's line, saying no member was touched" "$out" \
-  "orch: gh could not create the bundle issue: HTTP 502: Bad Gateway - no member was touched"
+assert_gh_dies "a failed bundle create dies" adapter_issue_create "$GH_502" 1 \
+  "orch: gh could not create the bundle issue: HTTP 502: Bad Gateway - no member was touched" \
+  new_bundle ready-for-agent bug 17 18
 for m in 17 18; do
   assert_eq "member #$m left open" "$(fake_state_of "$m")" "OPEN"
   assert_eq "and uncommented (#$m)" "$(fake_comments_of "$m")" ""
 done
 unset m
-fake_unfail
-fake_fail_times adapter_issue_create 9
-out="$(new_bundle ready-for-agent bug 17 18 2>&1)"; st=$?
-assert_status "a silent bundle create failure dies" "$st" 1
-assert_eq "saying gh gave no reason" "$out" \
-  "orch: gh could not create the bundle issue: gh gave no reason - no member was touched"
-fake_unfail
+assert_gh_dies "a silent bundle create failure dies" adapter_issue_create '' 1 \
+  "orch: gh could not create the bundle issue: gh gave no reason - no member was touched" \
+  new_bundle ready-for-agent bug 17 18
 
 # A member failure stops the bundle part-way: it dies naming the bundle and
 # the members left open, with the --into command that resumes, and that
@@ -831,13 +822,13 @@ resumed() {
       "$(fake_state_of "$m") $(fake_reason_of "$m") $(fake_duplicate_of "$m")" "CLOSED duplicate $b"
   done
 }
-fake_fail_after adapter_issue_comment 1 $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail_after adapter_issue_comment 1 "$GH_502"
 partial "a failed comment" 40 \
   "orch: bundle #40: gh could not comment on member #32: HTTP 502: Bad Gateway - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 40 32 33" "32 33"
-fake_fail_after adapter_issue_close 1 $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail_after adapter_issue_close 1 "$GH_502"
 partial "a failed close" 41 \
   "orch: bundle #41: gh could not close member #32 as a duplicate: HTTP 502: Bad Gateway - --duplicate-of needs gh 2.102 or newer - members left open: #32 #33; resume with: orch.sh finding-triage bundle --into 41 32 33" "32 33"
-fake_fail adapter_issue_comments $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_comments "$GH_502"
 partial "a failed comments read" 42 \
   "orch: bundle #42: gh could not read member #31's comments: HTTP 502: Bad Gateway - members left open: #31 #32 #33; resume with: orch.sh finding-triage bundle --into 42 31 32 33" "31 32 33"
 fake_fail_after adapter_issue_comment 1 ""
@@ -847,7 +838,7 @@ partial "a silent failed comment" 48 \
 # closed, so it is not resumed here.
 for m in 31 32 33; do member "$m" "review:major,ready-for-agent,bug"; done
 fake_next_issue 43
-fake_fail_after adapter_issue_state 2 $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail_after adapter_issue_state 2 "$GH_502"
 out="$(new_bundle ready-for-agent bug 31 32 33 2>&1)"; st=$?
 fake_unfail
 assert_status "a failed state read-back dies" "$st" 1

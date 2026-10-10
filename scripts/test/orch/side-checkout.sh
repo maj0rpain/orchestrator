@@ -552,7 +552,7 @@ fake_online
 
 # A GitHub read that fails with nothing on stderr: the reason says so, rather
 # than leaving the verdict ending in a bare colon.
-fake_fail_times adapter_pr_state_draft 9
+fake_fail adapter_pr_state_draft ''
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune fails when a read fails silently" "$st" 1
 assert_contains "the verdict ending gh gave no reason" "$out" \
@@ -560,7 +560,7 @@ assert_contains "the verdict ending gh gave no reason" "$out" \
 assert_eq "the finished flow side checkout stays" "$(on_disk "$fl")" "present"
 fake_unfail
 
-fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_pr_state_draft "$GH_502"
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune fails when a read fails" "$st" 1
 assert_contains "the verdict carrying gh's first line" "$out" \

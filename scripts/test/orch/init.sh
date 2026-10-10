@@ -215,7 +215,7 @@ assert_eq "recording it" "$("$ORCH" state get issue)" "43"
 
 healthy_repo
 fake_issue 44 open ready-for-agent
-fake_fail adapter_issue_state_labels $'HTTP 502: Bad Gateway\nsecond line'
+fake_fail adapter_issue_state_labels "$GH_502"
 before_store="$(fake_snapshot)"
 out="$("$ORCH" init nope --issue 44 2>&1)"; st=$?
 assert_status "refuses to adopt an issue whose read fails" "$st" 1

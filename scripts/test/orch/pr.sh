@@ -80,12 +80,9 @@ assert_contains "naming the branch it would have opened from" "$out" "orch/16-pr
 assert_contains "and the issue it would have closed" "$out" "#16"
 assert_eq "opening nothing" "$(fake_prs)" "23 "
 # gh's reason rides on orch's own line, first line only (#846).
-fake_fail adapter_pr_create $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
-assert_status "a failed open still exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not open the PR for branch orch/16-propen (issue #16): HTTP 502: Bad Gateway"
-fake_unfail
+assert_gh_dies "a failed open still exits 1" adapter_pr_create "$GH_502" 1 \
+  "orch: gh could not open the PR for branch orch/16-propen (issue #16): HTTP 502: Bad Gateway" \
+  "$ORCH" pr open "Title" "$body"
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 # require_branch's die message is the other half of require_field's coverage
@@ -219,13 +216,10 @@ assert_eq "relaying gh's reason" "$(cat "$errf")" \
   "orch: gh could not turn PR #57 into a draft: HTTP 422: Draft pull requests are not supported in this repository."
 assert_eq "leaving the PR ready" "$(fake_pr_draft_of 57)" "no"
 fake_unfail
-fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" pr draft 2>"$errf")"; st=$?
-assert_status "an unreadable PR exits 2" "$st" 2
-assert_eq "relaying gh's reason" "$(cat "$errf")" \
-  "orch: gh could not read PR #57: HTTP 502: Bad Gateway"
-fake_unfail
-fake_fail adapter_prs_open $'HTTP 502: Bad Gateway\nsecond line'
+assert_gh_dies "an unreadable PR exits 2" adapter_pr_state_draft "$GH_502" 2 \
+  "orch: gh could not read PR #57: HTTP 502: Bad Gateway" \
+  "$ORCH" pr draft
+fake_fail adapter_prs_open "$GH_502"
 out="$("$ORCH" pr draft 2>"$errf")"; st=$?
 assert_status "an unreadable PR list exits 2" "$st" 2
 fake_unfail
@@ -305,12 +299,9 @@ assert_eq "relaying gh's reason" "$(cat "$errf")" \
   "orch: gh could not mark PR #57 ready: HTTP 403: Resource not accessible by integration"
 assert_eq "leaving the PR a draft" "$(fake_pr_draft_of 57)" "yes"
 fake_unfail
-fake_fail adapter_pr_state_draft $'HTTP 502: Bad Gateway\nsecond line'
-out="$("$ORCH" pr ready 2>"$errf")"; st=$?
-assert_status "an unreadable PR exits 2" "$st" 2
-assert_eq "relaying gh's reason" "$(cat "$errf")" \
-  "orch: gh could not read PR #57: HTTP 502: Bad Gateway"
-fake_unfail
+assert_gh_dies "an unreadable PR exits 2" adapter_pr_state_draft "$GH_502" 2 \
+  "orch: gh could not read PR #57: HTTP 502: Bad Gateway" \
+  "$ORCH" pr ready
 
 state_file="$(git rev-parse --show-toplevel)/.orchestrator/state.json"
 mkdir -p "$(dirname "$state_file")"
@@ -381,23 +372,18 @@ out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses while a release PR is already open" "$st" 1
 assert_contains "printing that PR's number" "$out" "#57"
 assert_eq "and opens no second one" "$(fake_prs)" "55 56 57 "
-fake_fail adapter_prs_open $'HTTP 502: Bad Gateway\nsecond line'
-out="$(release "Release" "$body" 2>&1)"; st=$?
-assert_status "a failed open-PR list exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not list the open PRs from uat into main: HTTP 502: Bad Gateway"
-fake_unfail
+assert_gh_dies "a failed open-PR list exits 1" adapter_prs_open "$GH_502" 1 \
+  "orch: gh could not list the open PRs from uat into main: HTTP 502: Bad Gateway" \
+  release "Release" "$body"
 fake_pr 57 closed uat main
 fake_fail adapter_prs_merged_bodies "HTTP 502: Bad Gateway"
 out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "with the release PR closed, only open PRs from uat into main counted" "$st" 1
 assert_contains "it goes on to read the merged PRs" "$out" "gh could not list the PRs merged into uat"
-fake_fail adapter_prs_merged_bodies $'HTTP 502: Bad Gateway\nsecond line'
-out="$(release "Release" "$body" 2>&1)"; st=$?
-assert_status "a failed merged-PR list exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not list the PRs merged into uat: HTTP 502: Bad Gateway"
-rm -rf "$ORCH_GH_FAKE_STORE/prs" "$ORCH_GH_FAKE_STORE/fail"
+assert_gh_dies "a failed merged-PR list exits 1" adapter_prs_merged_bodies "$GH_502" 1 \
+  "orch: gh could not list the PRs merged into uat: HTTP 502: Bad Gateway" \
+  release "Release" "$body"
+rm -rf "$ORCH_GH_FAKE_STORE/prs"
 
 # Every reference the merged PRs make is to an issue that is already closed.
 # A PR merged into another base refers to an open issue, and does not count.
@@ -449,20 +435,14 @@ fake_fail adapter_pr_create
 out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
 assert_contains "naming both branches" "$out" "from uat into main"
-fake_fail adapter_pr_create $'HTTP 502: Bad Gateway\nsecond line'
-out="$(release "Release" "$body" 2>&1)"; st=$?
-assert_status "a failed release-PR open exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not open the release PR from uat into main: HTTP 502: Bad Gateway"
-fake_unfail
+assert_gh_dies "a failed release-PR open exits 1" adapter_pr_create "$GH_502" 1 \
+  "orch: gh could not open the release PR from uat into main: HTTP 502: Bad Gateway" \
+  release "Release" "$body"
 # The state read for each issue on a Closes line: #5 is the first referenced.
-fake_fail adapter_issue_state $'HTTP 502: Bad Gateway\nsecond line'
-out="$(release "Release" "$body" 2>&1)"; st=$?
-assert_status "a failed Closes-line state read exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$out" \
-  "orch: gh could not read the state of issue #5: HTTP 502: Bad Gateway"
+assert_gh_dies "a failed Closes-line state read exits 1" adapter_issue_state "$GH_502" 1 \
+  "orch: gh could not read the state of issue #5: HTTP 502: Bad Gateway" \
+  release "Release" "$body"
 assert_eq "opening no PR" "$(fake_prs)" "62 63 64 65 71 "
-fake_unfail
 
 out="$(release "Release" 2>&1)"; st=$?
 assert_status "refuses a missing body file argument" "$st" 1
@@ -559,24 +539,15 @@ assert_eq "failed post: empty stdout" "$out" ""
 rm -rf "$ORCH_GH_FAKE_STORE/fail"
 
 # gh's reason rides on orch's own line, first line only (#846).
-fake_fail adapter_prs_open $'HTTP 502: Bad Gateway\nsecond line'
-out="$(prc "$body" 2>"$errf")"; st=$?
-assert_status "unreadable PR list with a reason: exit 2" "$st" 2
-assert_eq "carrying only gh's first line" "$(cat "$errf")" \
-  "orch: gh could not list the open PRs from quick/12-foo: HTTP 502: Bad Gateway"
-fake_unfail
-fake_fail adapter_pr_comment $'HTTP 502: Bad Gateway\nsecond line'
-out="$(prc "$body" 2>"$errf")"; st=$?
-assert_status "failed post with a reason: exit 2" "$st" 2
-assert_eq "carrying only gh's first line" "$(cat "$errf")" \
-  "orch: gh could not comment on PR #57: HTTP 502: Bad Gateway"
-fake_unfail
-fake_fail_times adapter_pr_comment 9
-out="$(prc "$body" 2>"$errf")"; st=$?
-assert_status "a silent failed post: exit 2" "$st" 2
-assert_eq "ending in gh gave no reason" "$(cat "$errf")" \
-  "orch: gh could not comment on PR #57: gh gave no reason"
-fake_unfail
+assert_gh_dies "unreadable PR list with a reason: exit 2" adapter_prs_open "$GH_502" 2 \
+  "orch: gh could not list the open PRs from quick/12-foo: HTTP 502: Bad Gateway" \
+  prc "$body"
+assert_gh_dies "failed post with a reason: exit 2" adapter_pr_comment "$GH_502" 2 \
+  "orch: gh could not comment on PR #57: HTTP 502: Bad Gateway" \
+  prc "$body"
+assert_gh_dies "a silent failed post: exit 2" adapter_pr_comment '' 2 \
+  "orch: gh could not comment on PR #57: gh gave no reason" \
+  prc "$body"
 rm -f "$errf"
 assert_eq "no failed call posted anything" "$(fake_pr_comments_of 57)" "$(cat "$body")"
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
@@ -661,28 +632,18 @@ err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
 assert_status "a failed edit fails" "$st" 1
 assert_contains "naming the PR" "$err" "#57"
 # gh's reason rides on orch's own line, first line only (#846).
-fake_fail adapter_pr_body_edit $'HTTP 502: Bad Gateway\nsecond line'
-err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
-assert_status "a failed body write still exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$err" \
-  "orch: gh could not replace the body of PR #57: HTTP 502: Bad Gateway"
-fake_unfail
-fake_fail adapter_pr_body $'HTTP 502: Bad Gateway\nsecond line'
-err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
-assert_status "a failed body read in pr update exits 1" "$st" 1
-assert_eq "carrying only gh's first line" "$err" \
-  "orch: gh could not read the body of PR #57: HTTP 502: Bad Gateway"
-fake_fail_times adapter_pr_body 9
-err="$(prb update "$newbody" 2>&1 >/dev/null)"; st=$?
-assert_status "a silent failed body read exits 1" "$st" 1
-assert_eq "ending in gh gave no reason" "$err" \
-  "orch: gh could not read the body of PR #57: gh gave no reason"
-fake_unfail
-fake_fail adapter_pr_body $'HTTP 502: Bad Gateway\nsecond line'
-err="$(prb fetch "$out_file" 2>&1 >/dev/null)"; st=$?
-assert_status "a failed read fails" "$st" 1
-assert_eq "naming the PR, with gh's first line alone (#846)" "$err" \
-  "orch: gh could not read the body of PR #57: HTTP 502: Bad Gateway"
+assert_gh_dies "a failed body write still exits 1" adapter_pr_body_edit "$GH_502" 1 \
+  "orch: gh could not replace the body of PR #57: HTTP 502: Bad Gateway" \
+  prb update "$newbody"
+assert_gh_dies "a failed body read in pr update exits 1" adapter_pr_body "$GH_502" 1 \
+  "orch: gh could not read the body of PR #57: HTTP 502: Bad Gateway" \
+  prb update "$newbody"
+assert_gh_dies "a silent failed body read exits 1" adapter_pr_body '' 1 \
+  "orch: gh could not read the body of PR #57: gh gave no reason" \
+  prb update "$newbody"
+assert_gh_dies "a failed read fails" adapter_pr_body "$GH_502" 1 \
+  "orch: gh could not read the body of PR #57: HTTP 502: Bad Gateway" \
+  prb fetch "$out_file"
 assert_eq "leaving the body as it was" "$(fake_pr_body_of 57)" "$(writeln 'Closes #12')"
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
@@ -733,18 +694,13 @@ assert_status "an unreadable PR list exits 2" "$st" 2
 assert_eq "and writes nothing" "$(cat "$pr_comments")" "known content"
 rm -rf "$ORCH_GH_FAKE_STORE/fail"
 
-fake_fail adapter_pr_comments $'HTTP 502: Bad Gateway\nsecond line'
-err="$(prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
-assert_status "unreadable comments exit 2" "$st" 2
-assert_eq "naming the PR, with gh's first line alone (#846)" "$err" \
-  "orch: gh could not read the comments of PR #57: HTTP 502: Bad Gateway"
+assert_gh_dies "unreadable comments exit 2" adapter_pr_comments "$GH_502" 2 \
+  "orch: gh could not read the comments of PR #57: HTTP 502: Bad Gateway" \
+  prcs "$pr_comments"
 assert_eq "leaving the file that was already there unchanged" "$(cat "$pr_comments")" "known content"
-rm -rf "$ORCH_GH_FAKE_STORE/fail"
-fake_fail_times adapter_pr_comments 9
-err="$(prcs "$pr_comments" 2>&1 >/dev/null)"; st=$?
-assert_status "comments that fail silently exit 2 too" "$st" 2
-assert_eq "saying gh gave no reason" "$err" \
-  "orch: gh could not read the comments of PR #57: gh gave no reason"
+assert_gh_dies "comments that fail silently exit 2 too" adapter_pr_comments '' 2 \
+  "orch: gh could not read the comments of PR #57: gh gave no reason" \
+  prcs "$pr_comments"
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 err="$(prcs 2>&1 >/dev/null)"; st=$?
