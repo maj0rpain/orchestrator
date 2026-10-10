@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# issue.sh - orch.sh's issue command: the stateless issue ops, publish, triage
-# and ready.
+# issue.sh - orch.sh's issue command: the stateless issue ops, publish, triage,
+# ready and close.
 # Its tests: scripts/test/orch/issue.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -92,8 +92,57 @@ cmd_issue() {
     publish) cmd_issue_publish "$@" ;;
     triage) cmd_issue_triage "$@" ;;
     ready) cmd_issue_ready "$@" ;;
-    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|comments|publish|triage|ready)" ;;
+    close) cmd_issue_close "$@" ;;
+    *) die "unknown issue op: ${op:-<none>} (want fetch|update|comment|comments|publish|triage|ready|close)" ;;
   esac
+}
+
+# issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>:
+# the planning close's done-close (#985) - closes issue <n> as completed, or
+# as a duplicate of <m>, the file's contents its closing comment. One gh call,
+# the comment riding on the close, so a failed close never leaves a comment on
+# a still-open issue, as redo's close does. Bad input dies before any gh call.
+# Like ticket close it reads nothing back, and like issue comment it posts the
+# comment as given and leaves the labels alone.
+cmd_issue_close() {
+  local usage="usage: orch.sh issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>"
+  local issue="" completed=false dup="" dup_given=false file="" file_given=false err
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --completed) completed=true; shift ;;
+      --duplicate-of)
+        [ $# -ge 2 ] || die "$1 needs a value ($usage)"
+        dup="$2"; dup_given=true; shift 2 ;;
+      --comment-file)
+        [ $# -ge 2 ] || die "$1 needs a value ($usage)"
+        file="$2"; file_given=true; shift 2 ;;
+      -*) die "unknown option: $1 ($usage)" ;;
+      *) [ -z "$issue" ] || die "$usage"; issue="$1"; shift ;;
+    esac
+  done
+  [ -n "$issue" ] || die "$usage"
+  case "$issue" in *[!0-9]*) die "issue must be a plain issue number, got: $issue ($usage)" ;; esac
+  [ "$completed" = true ] && [ "$dup_given" = true ] \
+    && die "give one of --completed or --duplicate-of, not both ($usage)"
+  [ "$completed" = true ] || [ "$dup_given" = true ] \
+    || die "give one of --completed or --duplicate-of ($usage)"
+  if [ "$dup_given" = true ]; then
+    case "$dup" in ''|*[!0-9]*) die "--duplicate-of must be a plain issue number, got: $dup ($usage)" ;; esac
+    [ "$dup" != "$issue" ] || die "issue #$issue cannot be a duplicate of itself"
+  fi
+  [ "$file_given" = true ] || die "--comment-file is required ($usage)"
+  [ -f "$file" ] || die "comment file not found: $file"
+  [ -s "$file" ] || die "comment file is empty: $file"
+
+  local comment
+  comment="$(cat "$file")"
+  if [ "$dup_given" = true ]; then
+    capture_err err adapter_issue_close "$issue" --duplicate-of "$dup" --comment "$comment" \
+      || die "gh could not close issue #$issue: $(gh_reason "$err") - --duplicate-of needs gh 2.102 or newer"
+  else
+    capture_err err adapter_issue_close "$issue" --reason completed --comment "$comment" \
+      || die "gh could not close issue #$issue: $(gh_reason "$err")"
+  fi
 }
 
 # issue ready <n>: exit 0 when issue <n> carries the repo's ready-for-agent

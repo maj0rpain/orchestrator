@@ -26,7 +26,9 @@
 # to its next or redo; about anything else, the interviewed-issue step and the
 # route question, where only Blueprint runs in this checkout and Start and
 # Quick implementation proceed in a side checkout (#640, #729). With no flow,
-# a human's request for a side checkout is honoured.
+# a human's request for a side checkout is honoured. When the planning finds
+# the interviewed issue's work already done, the done-close (#985) stands in
+# for the ready-for-agent move and the route question.
 
 set -euo pipefail
 
@@ -166,6 +168,7 @@ route_here="$side_request"
 # question's bullet opens by scoping itself to the second case.
 confirm_lead="Before you implement anything"
 close_lead="When you reach a shared understanding"
+done_lead="At the close"
 if [ "$flow_active" = 1 ]; then
   state="$root/.orchestrator/state.json"
   flow_readable=0 flow_issue="" flow_slug="" flow_phase=""
@@ -192,13 +195,14 @@ if [ "$flow_active" = 1 ]; then
   flow_branches="- Beside this planning session, ${flow_named}. At the close, decide
   from this planning session's conversation which of two cases applies:
   - If this planning was about ${flow_subject}: ask no route question and
-    skip the interviewed-issue step below, since that flow already holds the
+    skip the interviewed-issue step and the done-close below, since that flow already holds the
     work. The next step is that flow's: point the user to ${next_redo}.
-  - Otherwise: run the interviewed-issue step below unchanged, then the route
-    question below."
+  - Otherwise: run the interviewed-issue step and the done-close below
+    unchanged, then the route question below unless the done-close applies."
   only_second="Only in the second case above (planning about anything else):"
   confirm_lead="$only_second before you implement anything"
   close_lead="$only_second when you reach a shared understanding"
+  done_lead="$only_second at the close"
   route_here="
   Blueprint only is the one route that runs in this checkout, whose branch
   belongs to the running flow: \"Start the orchestrator flow\" and \"Quick implementation\" proceed in a side checkout,
@@ -217,6 +221,7 @@ interviewed_step="- At the close, if this planning was about an open issue - nam
   interview's arguments or its conversation - that is the interviewed issue,
   and this step comes before the route question below.
   With no interviewed issue, skip this step entirely.
+  When the done-close below applies, it replaces this step's question.
   Otherwise ask one blocking question with ${ask_tool}, naming its number:
   \"Move #<n> to \`${ready_label}\`\", \"Skip\", or \"It's a different issue\"
   (the user names it, and you use that one).
@@ -226,6 +231,24 @@ interviewed_step="- At the close, if this planning was about an open issue - nam
   \`${wontfix_label}\` or \`${human_label}\` and it printed which: ask the user
   whether to override that label; on a yes, rerun it with --override;
   on a no, skip the relabel. On any other failure, warn the user that init --issue will refuse #<n> until it carries \`${ready_label}\`, and continue to the route question."
+
+# The done-close (#985): an interviewed issue whose work the planning finds
+# already done is offered a close as done, through orch.sh issue close, in
+# place of the ready-for-agent move and the route question. Its options are
+# not numbered, so the route options stay the only numbered lines.
+done_step="- ${done_lead}, if the planning settles that the interviewed issue's work
+  is already done - a commit, PR or issue already did it - skip the interviewed-issue step's move to \`${ready_label}\` and the route question.
+  Instead ask one blocking question with ${ask_tool} that names the commit, PR or issue that did the work,
+  with two options: \"Close #<n> as done (duplicate of #<m>)\" when another issue, #<m>,
+  did the work, else \"Close #<n> as done (completed)\"; and \"Leave #<n> open\".
+  On the close, write the closing comment, naming what did the work, to a file outside the tracked tree
+  (mktemp), then run
+  bash \"$(hook_plugin_root)/scripts/orch.sh\" issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>
+  through that path - never a raw gh call - and report the outcome.
+  If the close fails, report its orch: message and stop; the issue stays open.
+  On \"Leave #<n> open\", stop.
+  A free-text answer that the work is not done sends the interview back into rounds.
+  With no interviewed issue and the plan's work already done, ask no question: report what did the work and stop."
 
 choice="${ask_step}
 
@@ -270,6 +293,7 @@ confirmed a plan from a planning session.
 ${flow_branches:+
 $flow_branches}
 ${interviewed_step}
+${done_step}
 - ${confirm_lead}, and without editing any file first, ask the
   user how to carry the plan out. ${choice}"
   exit 0
@@ -286,6 +310,7 @@ While this planning session is running:
 - Glossary and ADR changes ($(planning_records_text)) are records: never edit them. Write the exact wording you intend into the plan, so the spec carries it verbatim.
 ${flow_branches:+$flow_branches
 }${interviewed_step}
+${done_step}
 - ${close_lead}, do not close with a scripted line and
   do not decide the next step yourself. ${choice}
 
