@@ -178,7 +178,7 @@ cmd_pr_ready() {
 # (true or false), one per line. Returns 1, printing nothing, when the branch
 # has no open PR, as current_open_pr does.
 open_pr_draft_flag() {
-  local branch phase pr state_draft is_draft rest err
+  local branch phase pr state_draft _pr_state is_draft _rest err
   branch="$(git symbolic-ref --quiet --short HEAD)" \
     || die2 "not on a branch (detached HEAD)"
   if phase="$(flow_holding_phase "$branch")"; then
@@ -187,7 +187,7 @@ open_pr_draft_flag() {
   pr="$(current_open_pr)" || return $?
   capture state_draft err adapter_pr_state_draft "$pr" \
     || die2 "gh could not read PR #$pr: $(gh_reason "$err")"
-  lines_split "$state_draft" _ is_draft rest
+  lines_split "$state_draft" _pr_state is_draft _rest
   [ "$is_draft" = true ] || is_draft=false
   printf '%s\n%s\n' "$pr" "$is_draft"
 }
