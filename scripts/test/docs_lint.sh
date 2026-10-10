@@ -1182,20 +1182,21 @@ echo "flow commands in script messages"
 # which works on no host as a flow step. A `usage:` string for redo or abort
 # names the CLI itself, so it is spared, as are comments; a line with `usage:`
 # elsewhere is not.
-# scan_flow_cmd <plugin root>: each script line naming a plugin command
-# outside flow_cmd, each line naming orch.sh redo or abort other than in its
-# own usage: string, quoted any way, and each flow_cmd section orch-flow lacks.
+# scan_flow_cmd <plugin root>: each line of orch.sh or of a module in its
+# orch/ directory naming a plugin command outside flow_cmd, each such line
+# naming orch.sh redo or abort other than in its own usage: string, quoted any
+# way, and each flow_cmd section orch-flow lacks.
 scan_flow_cmd() {
   local r="$1" s
-  (cd "$r" && grep -nE '/orchestrator:[a-z]' scripts/orch.sh scripts/doctor.sh 2>/dev/null) \
+  (cd "$r" && grep -nE '/orchestrator:[a-z]' scripts/orch.sh scripts/orch/*.sh 2>/dev/null) \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
     | sed -E 's/^([^:]+:[0-9]+):.*/\1: names a plugin command outside flow_cmd/'
-  (cd "$r" && grep -nE 'orch\.sh (redo|abort)' scripts/orch.sh scripts/doctor.sh 2>/dev/null) \
+  (cd "$r" && grep -nE 'orch\.sh (redo|abort)' scripts/orch.sh scripts/orch/*.sh 2>/dev/null) \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
     | sed -E "s/usage: [\"']?orch\\.sh (redo|abort)//g" | grep -E 'orch\.sh (redo|abort)' \
     | sed -E 's/^([^:]+:[0-9]+):.*/\1: names a flow command literally, not through flow_cmd/'
-  # Not a section read: this range is a shell function body in orch.sh.
-  awk '/^flow_cmd\(\)/,/^}/' "$r/scripts/orch.sh" 2>/dev/null \
+  # Not a section read: this range is a shell function body in orch.sh or a module.
+  (cd "$r" && awk '/^flow_cmd\(\)/,/^}/' scripts/orch.sh scripts/orch/*.sh 2>/dev/null) \
     | grep -oE 'section="[^"]+"' | sed 's/section="//; s/"$//' \
     | while IFS= read -r s; do
         grep -qxF "## $s" "$r/skills/orch-flow/SKILL.md" 2>/dev/null ||
@@ -1204,7 +1205,7 @@ scan_flow_cmd() {
   return 0
 }
 fixture="$(new_fixture)"
-mkdir -p "$fixture/scripts" "$fixture/skills/orch-flow"
+mkdir -p "$fixture/scripts/orch" "$fixture/skills/orch-flow"
 printf '%s\n' 'flow_cmd() {' '  case "$1" in' '    start) section="Starting a flow" ;;' \
   '    next)  section="Next phase" ;;' '  esac' '  printf "/orchestrator:%s" "$1"' '}' \
   '# /orchestrator:next in a comment is fine' 'die "run /orchestrator:abort"' \
@@ -1214,7 +1215,7 @@ printf '%s\n' 'flow_cmd() {' '  case "$1" in' '    start) section="Starting a fl
   '  echo usage: orch.sh redo review' '  echo usage: orch.sh abort' \
   'die "usage: orch.sh redo review; run orch.sh abort"' \
   >"$fixture/scripts/orch.sh"
-printf '%s\n' 'echo ok' 'die "run orch.sh abort"' >"$fixture/scripts/doctor.sh"
+printf '%s\n' 'echo ok' 'die "run orch.sh abort"' >"$fixture/scripts/orch/doctor.sh"
 printf '# Flow\n\n## Starting a flow\n\n## Next steps\n' >"$fixture/skills/orch-flow/SKILL.md"
 out="$(scan_flow_cmd "$fixture")"
 flags "a script naming a plugin command outside flow_cmd is flagged" \
@@ -1225,8 +1226,8 @@ flags "a die naming orch.sh redo is flagged" \
   "$out" "scripts/orch.sh:10: names a flow command literally, not through flow_cmd"
 flags "a die naming orch.sh abort is flagged" \
   "$out" "scripts/orch.sh:11: names a flow command literally, not through flow_cmd"
-flags "a die naming orch.sh abort in doctor.sh is flagged" \
-  "$out" "scripts/doctor.sh:2: names a flow command literally, not through flow_cmd"
+flags "a die naming orch.sh abort in a module is flagged" \
+  "$out" "scripts/orch/doctor.sh:2: names a flow command literally, not through flow_cmd"
 spares "a comment and an existing section are not flagged" \
   "$out" ':8:|Starting a flow'
 flags "a line with usage: elsewhere that names orch.sh abort is flagged" \

@@ -54,3 +54,8 @@ A new subcommand that operates on an existing or new noun follows
 `<noun> <verb> [args...]`. Reach for a flat, hyphenated verb only if it falls
 into one of the two exceptions above - it's the shape the CLI used to use
 across the board, and issue #60 retired it everywhere else.
+
+A new noun gets its own module, `scripts/orch/<noun>.sh`, named as its test
+file `scripts/test/orch/<noun>.sh` is; a case in `orch.sh`'s `main`; and a
+line in `orch.sh`'s source list. A new verb on an existing noun goes in that
+noun's module.

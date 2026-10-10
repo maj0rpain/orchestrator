@@ -4,7 +4,7 @@ A Claude Code plugin. See [CONTRIBUTING.md](CONTRIBUTING.md) for layout and auth
 
 ## Layout
 
-Shell scripts live in `scripts/` (`orch.sh`, `doctor.sh`, `hook-*.sh`, …); tests in `scripts/test/`, with the orch.sh suite's sections in `scripts/test/orch/` (one `<noun>.sh` per orch.sh noun, plus `setup.sh` and `harness.sh`). There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
+Shell scripts live in `scripts/` (`orch.sh`, `hook-*.sh`, …). `orch.sh` is a thin entry point: each noun's code lives in `scripts/orch/<noun>.sh` (`doctor.sh` among them), and the helpers more than one module uses in `scripts/orch/common.sh`. Tests live in `scripts/test/`, with the orch.sh suite's sections in `scripts/test/orch/` (one `<noun>.sh` per orch.sh noun, named as its module is, plus `setup.sh` and `harness.sh`). There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
 
 ## Agent skills
 

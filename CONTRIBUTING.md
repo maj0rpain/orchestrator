@@ -44,6 +44,13 @@ one file lives in that file's preamble, whether one section or several use it;
 one already defined inside a section stays there; a helper never moves into a
 section.
 
+orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
+noun's code, named as that noun's test file is, and `scripts/orch/common.sh`
+the helpers more than one module (or orch.sh itself) uses; a helper only one
+module uses lives in that module. The gh adapter layer stays whole in `gh.sh`,
+whoever calls it. orch.sh sources every module eagerly from an explicit list,
+so a new noun gets its own module, a case in `main` and a line in that list.
+
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
 `-S warning` to match `all.sh`. Each section file under `scripts/test/orch/`
@@ -75,8 +82,11 @@ skills/orch-to-spec/          turns the conversation into a spec: publishes it a
 skills/orch-to-tickets/       breaks an issue into tickets published as sub-issues, or collapses 0-1 into the issue
 skills/orch-release/          the release PR: model writes title and summary, pr release writes Closes lines
 skills/orch-finding-triage/   finding triage: scan the filed findings against the default branch, one batch per source PR, apply; --bundle groups them into bundles
-scripts/orch.sh               every deterministic operation (mechanism)
-scripts/doctor.sh             diagnostics: the d_* reporting and check_* functions, sourced by orch.sh
+scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main
+scripts/orch/<noun>.sh        one module per orch.sh noun (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
+scripts/orch/common.sh        the helpers more than one module uses (die, capture, the state readers, ...)
+scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), every adapter_* operation, the ORCH_GH_ADAPTER hook
+scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functions, the doctor noun's module
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
 scripts/host.sh               the one host detector, host_detect, sourced by orch.sh and hook-common.sh
 scripts/hook-*.sh             the four hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie

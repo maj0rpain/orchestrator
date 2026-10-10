@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.4.1
+
+`orch.sh` is split by noun (#937): it stays the one entry point at
+`scripts/orch.sh`, now holding path resolution, the shared constants, the
+module list and `main`, and sources every noun's code eagerly from
+`scripts/orch/<noun>.sh`, named as its test file under `scripts/test/orch/`
+is. The helpers more than one module uses live in `scripts/orch/common.sh`,
+the gh adapter layer whole in `scripts/orch/gh.sh`, and `doctor.sh` moves to
+`scripts/orch/doctor.sh`. Every command, its output and its exit status are
+unchanged. The all-tests runner's shellcheck, doctor's one-way dependency
+check, the `command gh` count and the docs lint's flow-command scan cover
+every module.
+
 ## 4.4.0
 
 A quick implementation reached from an interview about an existing issue now

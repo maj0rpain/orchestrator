@@ -55,10 +55,10 @@ assert_contains "gh repo view got the fork as its positional argument" \
   "$(cat "$GH_FIXTURE/env.log")" "GH_REPO=fork/widgets GH_HOST=<unset> repo view fork/widgets "
 assert_eq "every gh call carried the fork, and a github.com repo leaves GH_HOST unset" \
   "$(grep -cv '^GH_REPO=fork/widgets GH_HOST=<unset> ' "$GH_FIXTURE/env.log")" "0"
-assert_eq "command gh appears in orch.sh and doctor.sh only inside the guard" \
-  "$(cat "$ORCH" "$(dirname "$ORCH")/doctor.sh" | grep -c '\bcommand gh\b')" "1"
+assert_eq "command gh appears in orch.sh and its modules only inside the guard" \
+  "$(cat "$ORCH" "$(dirname "$ORCH")"/orch/*.sh | grep -c '\bcommand gh\b')" "1"
 assert_contains "and that one is the gh guard's own" \
-  "$(sed -n '/^gh() {$/,/^}$/p' "$ORCH")" 'command gh "$@"'
+  "$(sed -n '/^gh() {$/,/^}$/p' "$(dirname "$ORCH")/orch/gh.sh")" 'command gh "$@"'
 
 # No usable repo: the first command that reaches GitHub dies naming GH_REPO,
 # in the parent shell (issue fetch) or in a command substitution (ticket

@@ -14,12 +14,12 @@
 # may interleave.
 #
 # Then shellcheck, from the repo root two levels up, at warning severity, one
-# process per shell file matched by scripts/*.sh scripts/test/*.sh
-# scripts/test/orch/*.sh, with .shellcheckrc's source settings. A glob that
-# matches nothing is dropped, never passed to shellcheck as the literal
-# pattern. Every process starts at once, alongside the suites, with no
-# throttle, so no single shellcheck run over every file is the critical
-# path - this deliberately reverses #777's one-process rule. Each
+# process per shell file matched by scripts/*.sh scripts/orch/*.sh
+# scripts/test/*.sh scripts/test/orch/*.sh, with .shellcheckrc's source
+# settings. A glob that matches nothing is dropped, never passed to shellcheck
+# as the literal pattern. Every process starts at once, alongside the suites,
+# with no throttle, so no single shellcheck run over every file is the
+# critical path - this deliberately reverses #777's one-process rule. Each
 # process's stdout and stderr go to its own captured buffer, and all.sh waits
 # on each one; the buffers are joined in glob order, and the status taken is
 # the highest exit among the processes. Its summary line has the same shape:
@@ -65,7 +65,8 @@ if command -v shellcheck >/dev/null 2>&1; then
   root="$dir/../.."
   sc_pids=()
   shopt -s nullglob
-  sc_files=("$root"/scripts/*.sh "$root"/scripts/test/*.sh "$root"/scripts/test/orch/*.sh)
+  sc_files=("$root"/scripts/*.sh "$root"/scripts/orch/*.sh "$root"/scripts/test/*.sh
+    "$root"/scripts/test/orch/*.sh)
   shopt -u nullglob
   for sc_file in "${sc_files[@]}"; do
     sc_rel="${sc_file#"$root/"}"
