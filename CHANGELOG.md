@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.5.2
+
+The side-checkout and worktree git helpers read each fact from git once per
+call and keep each rule in one helper (#897). The marker's presence is tested
+only by `side_checkout_marked`; `main_checkout` and `ticket_worktrees_under`
+read their paths from `checkout_paths`, the one reader of the paths alone from
+`git worktree list`; and `archive_flow` takes its archive root from its caller,
+through the new `archive_root` for callers that do not already hold it. So the
+#805 claim - the main checkout asked for once - now holds when `side-checkout
+remove` archives a flow, and `archive` decides once whether it runs in a side
+checkout. Every command's output, refusals and exit codes are unchanged.
+
 ## 4.5.1
 
 `orch.sh`'s modules split strings into lines one way per job (#829, #832,

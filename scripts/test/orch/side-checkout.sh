@@ -359,6 +359,15 @@ assert_status "remove refuses a worktree without the marker" "$st" 1
 assert_contains "saying it is left alone" "$out" "left alone"
 assert_eq "its flow is not moved" "$(on_disk "$unmarked/.orchestrator/state.json")" "present"
 assert_eq "nor its worktree removed" "$(on_disk "$unmarked")" "present"
+# A side checkout made by add whose marker is then deleted: remove and list
+# read the marker through the same rule, so both see it as no side checkout.
+unmade="$(sc_add unmade)"
+rm "$(git -C "$unmade" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+out="$(orch_gh_failing side-checkout remove unmade 2>&1)"; st=$?
+assert_status "remove refuses a side checkout whose marker was deleted" "$st" 1
+assert_contains "saying it carries no marker" "$out" "carries no side-checkout marker"
+assert_eq "its worktree is not removed" "$(on_disk "$unmade")" "present"
+assert_not_contains "and list leaves it out" "$(orch_gh_failing side-checkout list)" "$unmade"
 (cd "$gamma" && git checkout -q -b quick/5-gamma)
 echo wip >"$gamma/wip.txt"
 out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?

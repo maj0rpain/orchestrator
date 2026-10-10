@@ -863,16 +863,14 @@ forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
 
 # Prints <n> <path> for every ticket worktree under the checkout at <root>.
 ticket_worktrees_under() {
-  local line path name
-  while IFS= read -r line; do
-    case "$line" in "worktree "*) ;; *) continue ;; esac
-    path="${line#worktree }"
+  local path name
+  while IFS= read -r path; do
     [ "$(dirname "$path")" = "$1/$ORCH_DIR_NAME/worktrees" ] || continue
     name="$(basename "$path")"
     case "$name" in t[1-9]*) ;; *) continue ;; esac
     case "${name#t}" in *[!0-9]*) continue ;; esac
     note "${name#t} $path"
-  done < <(git worktree list --porcelain)
+  done < <(checkout_paths)
 }
 
 # refuse_ticket_worktrees <root>: dies, naming every ticket worktree under the
@@ -907,26 +905,32 @@ rebase_in_progress() {
   [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]
 }
 
-# The main checkout: the first worktree git lists.
+# The main checkout: the first path checkout_paths prints. Fails, printing
+# nothing, when checkout_paths fails or prints nothing.
 main_checkout() {
-  local list first
-  list="$(git worktree list --porcelain)" || return
-  first="${list%%$'\n'*}"
-  case "$first" in "worktree "*) printf '%s\n' "${first#worktree }" ;; esac
+  local paths
+  paths="$(checkout_paths)" && [ -n "$paths" ] || return 1
+  printf '%s\n' "${paths%%$'\n'*}"
 }
+
+# side_checkout_marked <git-dir>: whether the git folder <git-dir> holds the
+# ownership marker - the one place the marker's presence is tested.
+side_checkout_marked() { [ -f "$1/$SIDE_CHECKOUT_MARKER" ]; }
 
 # side_checkout_marker <path>: prints the ownership marker's path for the
 # worktree at <path>; returns 1 when it carries none.
 side_checkout_marker() {
   local gd
   gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" \
-    && [ -f "$gd/$SIDE_CHECKOUT_MARKER" ] && printf '%s\n' "$gd/$SIDE_CHECKOUT_MARKER"
+    && side_checkout_marked "$gd" && printf '%s\n' "$gd/$SIDE_CHECKOUT_MARKER"
 }
 
 # Whether the worktree at <path> carries the ownership marker.
 is_side_checkout() { side_checkout_marker "$1" >/dev/null; }
 
-# Every checkout's path, one per line, the main checkout first.
+# Every checkout's path, one per line, the main checkout first: the one reader
+# of the paths alone from git worktree list (branch_checkout, which needs the
+# `branch ` lines too, keeps its own).
 checkout_paths() {
   local list line
   list="$(git worktree list --porcelain)" || return
@@ -1021,15 +1025,24 @@ side_checkout_finished() {
   [ -n "$prs" ] || { verdict="no merged PR from $branch into $base"; return 1; }
 }
 
-# Moves the flow in the checkout at <root> into an archive directory, and
-# prints that directory - relative to this checkout when inside it, else in
-# full. A side checkout's flow goes to the main checkout's archive; any other
-# checkout, a hand-made worktree included, archives in place.
+# archive_root <root>: prints the checkout whose .orchestrator/archive/
+# receives the flow in the checkout at <root> - the one computation of the
+# rule. A side checkout's flow goes to the main checkout's archive; any other
+# checkout, a hand-made worktree included, archives in place. Fails when <root>
+# is a side checkout and the main checkout cannot be read.
+archive_root() {
+  if is_side_checkout "$1"; then main_checkout; else printf '%s\n' "$1"; fi
+}
+
+# archive_flow <root> <archive-root>: moves the flow in the checkout at <root>
+# into a directory under <archive-root>'s .orchestrator/archive/, and prints
+# that directory - relative to this checkout when inside it, else in full.
+# <archive-root> is the caller's: a side checkout's flow goes to the main
+# checkout's archive; any other checkout, a hand-made worktree included,
+# archives in place (see archive_root).
 archive_flow() {
-  local root="$1" orch="$1/$ORCH_DIR_NAME" home slug dest entry
+  local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" slug dest entry
   refuse_ticket_worktrees "$root"
-  home="$orch"
-  if is_side_checkout "$root"; then home="$(main_checkout)/$ORCH_DIR_NAME"; fi
   slug="$(state_get_in "$orch/state.json" slug)"
   dest="$home/archive/$(dir_stamp)-$slug"
   mkdir -p "$dest"

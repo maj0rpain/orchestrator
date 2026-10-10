@@ -112,16 +112,16 @@ cmd_side_checkout_remove() {
   main_root="$(main_checkout)"
   path="$(side_checkouts_dir "$main_root")/$slug"
   # One rev-parse for both reads: the top level on the first line, the git
-  # folder that holds the marker (see is_side_checkout) on the second.
+  # folder that holds the marker (see side_checkout_marked) on the second.
   dirs="$(git -C "$path" rev-parse --show-toplevel --absolute-git-dir 2>/dev/null)" || dirs=""
   [ "${dirs%%$'\n'*}" = "$path" ] \
     || die "no side checkout $slug at $path"
-  [ -f "${dirs#*$'\n'}/$SIDE_CHECKOUT_MARKER" ] \
+  side_checkout_marked "${dirs#*$'\n'}" \
     || die "$path carries no side-checkout marker - it is not the plugin's to remove, so it is left alone"
   require_clean_tree "$path" \
     "side checkout $path has uncommitted changes or untracked files - commit or discard them first; it is never removed with force"
   refuse_ticket_worktrees "$path"
-  if checkout_has_flow "$path"; then archive_flow "$path"; fi
+  if checkout_has_flow "$path"; then archive_flow "$path" "$main_root"; fi
   if ! err="$(git -C "$main_root" worktree remove "$path" 2>&1)"; then
     die "could not remove side checkout $path: ${err%%$'\n'*}"
   fi
@@ -176,14 +176,14 @@ cmd_side_checkout_prune() {
     path="${entry%%$'\t'*}"; branch="${entry#*$'\t'}"
     archive_out=""
     if [ "$path" = "$main_root" ]; then
-      if ! archive_out="$(archive_flow "$path" 2>&1)"; then
+      if ! archive_out="$(archive_flow "$path" "$main_root" 2>&1)"; then
         warn "could not archive the main checkout's flow: ${archive_out%%$'\n'*}"; failed=1; continue
       fi
       note "$archive_out"
       note "archived the main checkout's flow in place - $(git -C "$main_root" branch --show-current || true) is still checked out"
       continue
     fi
-    if checkout_has_flow "$path" && ! archive_out="$(archive_flow "$path" 2>&1)"; then
+    if checkout_has_flow "$path" && ! archive_out="$(archive_flow "$path" "$main_root" 2>&1)"; then
       warn "could not archive the flow in side checkout $path: ${archive_out%%$'\n'*} - left as it stands"
       failed=1; continue
     fi
