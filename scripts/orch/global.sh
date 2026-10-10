@@ -90,7 +90,7 @@ side_checkout_remove_after_archive() {
   # Read before the removal: once the worktree is gone, so is this directory.
   here="$(pwd -P)"
   if ! err="$(git -C "$(main_checkout)" worktree remove "$path" 2>&1)"; then
-    warn "kept side checkout $path - it was not removed: $(first_line "$err")
+    warn "kept side checkout $path - it was not removed: ${err%%$'\n'*}
      Commit or discard its changes, then run orch.sh side-checkout remove $(basename "$path")."
     return 0
   fi
