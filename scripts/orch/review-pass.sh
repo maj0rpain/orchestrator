@@ -3,8 +3,6 @@
 # Its tests: scripts/test/orch/review-pass.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# --- review-pass ------------------------------------------------------------
-
 # A review pass's start, for a quick implementation's step 6 and a standalone
 # review pass alike: the guard and the numbered report prefix each have one
 # right answer, so they live here rather than in skill prose. Needs no flow

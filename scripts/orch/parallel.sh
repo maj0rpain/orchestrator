@@ -3,7 +3,6 @@
 # Its tests: scripts/test/orch/parallel.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# --- parallel ----------------------------------------------------------------
 # The clone's parallel cap: how many ticket subagents one frontier runs at once,
 # 1 meaning sequential. Read here alone, so the default lives in one place and
 # the skills never call git config; it is set with git config orchestrator.parallel.

@@ -3,8 +3,6 @@
 # Its tests: scripts/test/orch/redo.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# --- redo ---------------------------------------------------------------
-
 # True when any of the named files exists under <dir>.
 any_exist_under() {
   local dir="$1" f

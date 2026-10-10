@@ -3,8 +3,6 @@
 # Its tests: scripts/test/orch/spec-review.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# --- spec-review ------------------------------------------------------------
-
 # A standalone spec review's start: the guard and the working-directory reset
 # each have one right answer, so they live here rather than in skill prose.
 # It reads state.json only when one exists, never through require_state - it

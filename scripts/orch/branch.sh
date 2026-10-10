@@ -3,8 +3,6 @@
 # Its tests: scripts/test/orch/branch.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# --- git / github -----------------------------------------------------------
-
 # Forking a named branch off a base branch has exactly one right answer -
 # fetch it, then check it out, falling back to the local ref if origin was
 # unreachable - so both branch create (a flow's own naming and state) and

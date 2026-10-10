@@ -3,8 +3,6 @@
 # Its tests: scripts/test/orch/spec.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# --- spec -------------------------------------------------------------------
-
 # The spec review's one hand on GitHub. The body is the truth the implement
 # phase reads, so the four ways it is read and written go through here, where
 # they are tested, rather than through a `gh issue edit` in skill prose.

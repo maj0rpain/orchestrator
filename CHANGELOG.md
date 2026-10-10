@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.5.11
+
+Remove the monolith's leftover section banners from the modules under `scripts/orch/`, call slug, status, archive and help bare global commands in `global.sh`'s header, and write down where a new bare global command's code and tests go, in cli-conventions and CONTRIBUTING's layout table (#982).
+
 ## 4.5.10
 
 `gh_reason` is now the one place a failed gh call's stderr is cut to a reason: the read helpers hand back gh's whole stderr, and doctor and `review rerun` no longer cut it by hand. The CI probe's unreachable verdict now says "gh gave no reason" when gh fails silently, instead of a blank detail line; every other message reads as before.
