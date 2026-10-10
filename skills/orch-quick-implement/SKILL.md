@@ -292,8 +292,9 @@ none. If `changelog.md` is missing, stop before `pr publish` and say so -
 never write `None.` then, since the decisions taken are unknown. It
 carries an **Issue rewrite** heading, always present and separate from
 **Spec review decisions**, holding one line that says what this run did
-in step 1: `Rewrote #<n> from the plan (breakdown: none|kept|kept, <k>
-tickets edited|retired)`, with the outcome the rewrite reported, or `As it
+in step 1: `Rewrote #<n> from the plan (breakdown: <outcome>)`, with `<outcome>`
+the breakdown outcome the rewrite reported, as defined in `orch-to-spec`'s
+**Unattended rewrite** Report, or `As it
 stands: <reason>`, such as `As it stands: no interview in this
 conversation` or `As it stands: the interview only confirmed the issue`.
 In a side checkout's session the line is `As it stands: a side checkout's
