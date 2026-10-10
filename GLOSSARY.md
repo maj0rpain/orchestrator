@@ -78,7 +78,7 @@ against it.
 _Avoid_: existing issue, pre-existing issue, given issue.
 
 **Interviewed issue**:
-An open issue a planning session was run about, or the open issue the human names in its place when the session closes. When the human confirms the plan, the session offers to move it to the `ready-for-agent` triage label, since the interview settled what triage would have. A blueprint drawn from that session rewrites this issue as its spec issue rather than publishing a new one.
+An open issue a planning session was run about, or the open issue the human names in its place when the session closes. When the human confirms the plan, the session offers to move it to the `ready-for-agent` triage label, since the interview settled what triage would have. A blueprint drawn from that session rewrites this issue as its spec issue rather than publishing a new one; a quick implementation started from it rewrites it from the plan when the plan changed its scope or substance.
 _Avoid_: planned issue, subject issue.
 
 ### Repository and tooling
@@ -156,13 +156,17 @@ PR, and is still held to this project's standards for how a change gets made -
 test-driven, reviewed, then opened as a PR. Its review is a review pass, and
 it names what it declines in the PR. Meant for small changes, run hands-off:
 it takes an unattended spec review of its linked issue before its ticket
-breakdown, on every run, and accepts its own draft breakdown without asking.
-It skips that breakdown when the linked issue is a blueprint, including when
-its spec review retired the blueprint's breakdown and broke the issue down
-again.
+breakdown, on every run. Before that review, it rewrites the linked issue from
+the plan when the issue is the interviewed issue of the planning session in
+the same conversation and the plan changed its scope or substance, judged
+without asking; otherwise it reviews the issue as it stands. It accepts its
+own draft breakdown without asking. It skips that breakdown when the linked
+issue is a blueprint, including when its spec review retired the blueprint's
+breakdown and broke the issue down again, but not when its rewrite retired
+that breakdown.
 
 **Blueprint**:
-Everything a change needs before implementation, carried no further: its spec issue - published new, or the interviewed issue rewritten, its earlier breakdown retired and broken down again if the human chooses - reviewed if the human chose to, and its ticket breakdown. Chosen once, by a human, at the close of a planning session, as the alternative to starting a flow or a quick implementation. A flow later adopts it, or a quick implementation links it; either way its ticket breakdown is already published and is not run again, unless a spec review changes the spec and retires that breakdown - by the human's choice, or by its own recommendation in an unattended spec review - or the human has a flow's spec phase rewrite it from the plan and retire that breakdown.
+Everything a change needs before implementation, carried no further: its spec issue - published new, or the interviewed issue rewritten, its earlier breakdown retired and broken down again if the human chooses - reviewed if the human chose to, and its ticket breakdown. Chosen once, by a human, at the close of a planning session, as the alternative to starting a flow or a quick implementation. A flow later adopts it, or a quick implementation links it; either way its ticket breakdown is already published and is not run again, unless a spec review changes the spec and retires that breakdown - by the human's choice, or by its own recommendation in an unattended spec review - or the human has a flow's spec phase rewrite it from the plan and retire that breakdown, or a quick implementation's rewrite from the plan retires it.
 _Avoid_: planning-only, parked spec, banked spec.
 
 **Blocking edge**:

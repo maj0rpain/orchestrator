@@ -59,8 +59,9 @@ breakdown test-first, one fresh subagent per ticket, and opens a draft PR; the
 review phase runs a bounded review loop that ends with the PR ready, or on a
 bounded stop that says why.
 
-**Quick implementation.** The route with no phases: a linked issue, an
-unattended spec review, its ticket breakdown, the same test-first build, a
+**Quick implementation.** The route with no phases: a linked issue -
+rewritten from the plan, unattended, when you interviewed it and the plan
+changed it - an unattended spec review, its ticket breakdown, the same test-first build, a
 review pass by the plugin's own reviewer agents, and a PR - in one session.
 
 **Blueprint.** The closing question's "Blueprint only" option: the spec issue

@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.4.0
+
+A quick implementation reached from an interview about an existing issue now
+rewrites that issue from the plan before its spec review, unattended, when the
+plan changed the issue's scope or substance (#938). Step 1 ends with
+`orch-to-spec`'s new **Unattended rewrite**, before any side checkout, and
+names each case where the issue is reviewed as it stands instead. The PR body
+gains an always-present **Issue rewrite** heading saying which happened, and
+`docs_lint.sh` checks that step 1 refers to the mode.
+
 ## 4.3.3
 
 `orch_test.sh`'s parallel runner names its variables for what they hold

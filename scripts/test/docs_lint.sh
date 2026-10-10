@@ -970,6 +970,8 @@ skills/orch-spec-review/SKILL.md|## Disposition
 skills/orch-spec-review/SKILL.md|## Applying the answer
 skills/orch-spec-review/SKILL.md|## Tickets follow the spec
 skills/orch-spec-review/SKILL.md|## The changelog
+skills/orch-to-spec/SKILL.md|## Rewrite the issue
+skills/orch-to-spec/SKILL.md|## Unattended rewrite
 skills/orch-to-tickets/SKILL.md|### 4. Quiz the user
 skills/orch-to-tickets/SKILL.md|## Unattended breakdown
 skills/orch-to-tickets/SKILL.md|## Ticket template'
@@ -1369,30 +1371,34 @@ check "the review pass is defined once in orch-review and quick implementation r
 # --- unattended modes (#616) --------------------------------------------------
 echo
 echo "unattended modes (#616)"
-# Quick implementation runs hands-off through two unattended modes, each
-# defined once in its own skill: orch-spec-review's **Unattended spec review**
-# and orch-to-tickets' **Unattended breakdown**. Its steps 2 and 3 run those
-# modes rather than keeping their own copies, as step 6 runs the Review pass.
+# Quick implementation runs hands-off through three unattended modes, each
+# defined once in its own skill: orch-to-spec's **Unattended rewrite**,
+# orch-spec-review's **Unattended spec review** and orch-to-tickets'
+# **Unattended breakdown**. Its steps 1, 2 and 3 run those modes rather than
+# keeping their own copies, as step 6 runs the Review pass.
 # scan_unattended_modes <plugin root>: one line per step that does not refer
 # to its mode.
 scan_unattended_modes() {
+  quick_step_refers "$1" "## 1. Require a linked issue" orch-to-spec "Unattended rewrite" mode
   quick_step_refers "$1" "## 2. Run an unattended spec review" orch-spec-review "Unattended spec review" mode
   quick_step_refers "$1" "## 3. Publish the ticket breakdown" orch-to-tickets "Unattended breakdown" mode
   return 0
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-quick-implement"
-printf '# Q\n\n## 2. Run an unattended spec review\n\nRun a review.\n\n## 3. Publish the ticket breakdown\n\nRun `orch-to-tickets` in its quiz.\n\n## 4. Branch\n\nSee `orch-spec-review` **Unattended spec review** and **Unattended breakdown**.\n' \
+printf '# Q\n\n## 1. Require a linked issue\n\nLink the issue.\n\n## 2. Run an unattended spec review\n\nRun a review.\n\n## 3. Publish the ticket breakdown\n\nRun `orch-to-tickets` in its quiz.\n\n## 4. Branch\n\nSee `orch-spec-review` **Unattended spec review** and **Unattended breakdown**, and `orch-to-spec` **Unattended rewrite**.\n' \
   >"$fixture/skills/orch-quick-implement/SKILL.md"
 out="$(scan_unattended_modes "$fixture")"
+flags "a step 1 that does not run orch-to-spec's unattended mode is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md: step 1 does not refer to orch-to-spec's **Unattended rewrite** mode"
 flags "a step 2 that does not run orch-spec-review's unattended mode is flagged" \
   "$out" "skills/orch-quick-implement/SKILL.md: step 2 does not refer to orch-spec-review's **Unattended spec review** mode"
 flags "a step 3 that does not run orch-to-tickets' unattended mode is flagged" \
   "$out" "skills/orch-quick-implement/SKILL.md: step 3 does not refer to orch-to-tickets' **Unattended breakdown** mode"
-printf '# Q\n\n## 2. Run an unattended spec review\n\nRun `orch-spec-review`'"'"'s **Unattended\nspec review**.\n\n## 3. Publish the ticket breakdown\n\nRun `orch-to-tickets` in its **Unattended breakdown**.\n' \
+printf '# Q\n\n## 1. Require a linked issue\n\nEnd with `orch-to-spec`'"'"'s **Unattended\nrewrite**.\n\n## 2. Run an unattended spec review\n\nRun `orch-spec-review`'"'"'s **Unattended\nspec review**.\n\n## 3. Publish the ticket breakdown\n\nRun `orch-to-tickets` in its **Unattended breakdown**.\n' \
   >"$fixture/skills/orch-quick-implement/SKILL.md"
-assert_empty "steps 2 and 3 that run the unattended modes are not flagged" "$(scan_unattended_modes "$fixture")"
-check "quick implementation's steps 2 and 3 run the unattended modes" \
+assert_empty "steps 1, 2 and 3 that run the unattended modes are not flagged" "$(scan_unattended_modes "$fixture")"
+check "quick implementation's steps 1, 2 and 3 run the unattended modes" \
   "$(scan_unattended_modes "$PLUGIN_ROOT")"
 
 # --- previously declined (#418) ------------------------------------------------

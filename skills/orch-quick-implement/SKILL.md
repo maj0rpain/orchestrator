@@ -1,6 +1,6 @@
 ---
 name: orch-quick-implement
-description: Implement a small, already-understood change directly and hands-off, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, runs /orchestrator:quick-implement [<issue>], or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue, an unattended spec review, a published ticket breakdown, test-driven implementation, and a review pass before the PR opens.
+description: Implement a small, already-understood change directly and hands-off, skipping the plan/spec/implement/review pipeline. Reached when a human picks "quick implementation" at hook-grilling.sh's closing question, runs /orchestrator:quick-implement [<issue>], or is invoked directly for work that plainly does not need the full flow. Still requires a linked issue - rewritten from the plan, unattended, when it is the interviewed issue and the plan changed it - an unattended spec review, a published ticket breakdown, test-driven implementation, and a review pass before the PR opens.
 ---
 
 # Orchestrator quick implementation
@@ -68,9 +68,38 @@ recorded one set aside. No file or PR body carries that note.
   with no issue behind it is exactly the unaccountable path this skill exists
   to avoid.
 
+Once the issue is linked, rewrite it from the plan when both of these hold,
+and ask nothing (ADR-0034):
+
+- (a) the linked issue is this conversation's **interviewed issue** - the
+  open issue the planning session was about, or the one the human named in
+  its place at the close - however it was linked, arguments included; and
+- (b) comparing its body with the plan shows the plan changed its scope or
+  substance, glossary or ADR wording the planning decided included. Judge
+  this yourself, unattended.
+
+The rewrite is the `orch-to-spec` skill's rewrite mode on the linked issue,
+in its **Unattended rewrite** form, followed through to its end. That mode is
+the one definition of what the rewrite does unattended, and this step
+restates none of it. Remember the breakdown outcome it reports for step 7's
+**Issue rewrite** line. If it stops, quick implementation stops too: relay
+its message, and make no side checkout and go on to no step 2.
+
+Otherwise, review the issue as it stands, with no rewrite, and remember why
+for step 7. These are the no-rewrite cases:
+
+- there was no interview in this conversation;
+- the issue is a side checkout's recorded issue, whose session has no
+  interview;
+- the issue was published fresh in option 4, so it is already written from
+  the plan;
+- the body already reflects the plan - a blueprint its own route just
+  rewrote, say, or an issue the interview only confirmed.
+
 With `--side` in the arguments, or when the human asked in words for a side
-checkout, stop here once the issue is linked and go to **Starting in a side
-checkout** below: steps 2-7 run in the side checkout's own session.
+checkout, stop here once the issue is linked, and any rewrite is done, then
+go to **Starting in a side checkout** below: steps 2-7 run in the side
+checkout's own session.
 
 ## 2. Run an unattended spec review
 
@@ -107,9 +136,11 @@ it is the only spec this path has.
 First run `bash "$ORCH" ticket exists <linked issue>`:
 
 - **Exit 0**: the linked issue already has a breakdown - a blueprint, say.
-  Skip the breakdown and ask nothing: step 2's spec review may already have
-  reconciled the breakdown with the edits it applied, or retired it and
-  broken the issue down again. It printed one word for step 5:
+  Skip the breakdown and ask nothing: step 1's rewrite may already have
+  reconciled the breakdown with the rewritten body, and step 2's spec review
+  with the edits it applied, or the review retired it and broke the issue
+  down again. A rewrite that retired the breakdown leaves none, so this
+  check exits 1. It printed one word for step 5:
   `sub-issues` means step 5 works the linked issue's ticket frontier, and
   `collapsed` means step 5 treats the breakdown as collapsed.
 - **Exit 1**: it has none. Invoke the `orch-to-tickets` skill on the linked
@@ -259,6 +290,16 @@ unattended spec review took for the human: each `decision (<n>)` line of
 `changelog.md` in that review's working directory, or `None.` when it has
 none. If `changelog.md` is missing, stop before `pr publish` and say so -
 never write `None.` then, since the decisions taken are unknown. It
+carries an **Issue rewrite** heading, always present and separate from
+**Spec review decisions**, holding one line that says what this run did
+in step 1: `Rewrote #<n> from the plan (breakdown: <outcome>)`, with `<outcome>`
+the breakdown outcome the rewrite reported, as defined in `orch-to-spec`'s
+**Unattended rewrite** Report, or `As it
+stands: <reason>`, such as `As it stands: no interview in this
+conversation` or `As it stands: the interview only confirmed the issue`.
+In a side checkout's session the line is `As it stands: a side checkout's
+recorded issue; any rewrite ran in the session that made the side
+checkout`. It
 carries a **Verification** heading with step 5's combined verification: the
 command it ran, then `pass` or `fail`, and a **Merge resolutions** heading
 with step 5's base sync's and loop step e's ticket resolutions, per
@@ -280,7 +321,10 @@ promote it - draft would leave it stuck with nothing watching it.
 Reached from step 1 (`--side`, or the human asking) or from step 4 (a yes to
 the offer on exit 3). It runs in this session, after step 1 has linked or
 published the issue, with any glossary or ADR wording in its body. The issue
-is the hand-off: no plan file is written.
+is the hand-off: no plan file is written. Before the hand-off, on either
+route, print step 1's rewrite outcome - the rewrite and its breakdown
+outcome, or the reason there was none - since the side checkout's session
+records only that any rewrite ran here.
 
 1. Get the slug from `bash "$ORCH" slug "<short description>"`.
 2. `bash "$ORCH" side-checkout add <slug> --issue <issue>`, with the linked
