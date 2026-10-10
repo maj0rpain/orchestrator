@@ -133,9 +133,12 @@ and return that file's four-line **Report** in place of this file's.
 Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.
 
 TDD is the red-green loop. These rules make it produce tests worth keeping,
-and every one applies on every cycle. Read `GLOSSARY.md`, if the repo has one,
-so test names match the domain's language, and respect the ADRs in the area
-you touch.
+and every one applies on every cycle. So test names match the domain's
+language, run `bash "<orch.sh>" glossary match <file>` on the ticket file you
+fetched in step 1 - it prints the glossary entries the ticket mentions, and
+nothing when the repo has no `GLOSSARY.md` - and `bash "<orch.sh>" glossary
+show <term>...` for any further term the work runs into. Respect the ADRs in
+the area you touch.
 
 **What a good test is.** A test verifies behaviour through a public
 interface, never through implementation details. The code behind it can

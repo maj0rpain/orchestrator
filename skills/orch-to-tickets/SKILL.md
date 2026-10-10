@@ -55,8 +55,9 @@ read that file.
 
 If you have not already explored the codebase, do so to understand the current
 state of the code. Ticket titles and descriptions use the project's glossary
-vocabulary (`GLOSSARY.md`, when there is one), and respect the ADRs in the area
-you are touching.
+vocabulary - list its term names with `bash "$ORCH" glossary terms` and read
+the entries you need with `bash "$ORCH" glossary show <term>...` - and respect
+the ADRs in the area you are touching.
 
 Look for opportunities to prefactor the code to make the implementation
 easier: make the change easy, then make the easy change.
