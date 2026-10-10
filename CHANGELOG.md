@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.5.8
+
+`orch.sh finding-triage scan` reports `changed`, never `unchanged`, for a finding whose filed lines were deleted since the filing, naming the commit that deleted them; the finding-triage skill looks for where such code moved, as it does for `gone` (#977).
+
 ## 4.5.7
 
 Rewrite mode's breakdown outcome is now one exact word - `none`, `kept` or `retired` - with Unattended rewrite reporting a separate edited-ticket count on `kept`, so callers compare the word instead of matching a `kept` prefix. Quick implementation's Issue rewrite line reads as before.
