@@ -23,6 +23,14 @@
 # defined. cmd_doctor is then
 # dispatched from main() exactly like any other command.
 
+readonly LABEL_LIMIT=1000
+repo_owner_name() {
+  case "$1" in
+    */*/*) printf '%s\n' "${1#*/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
 D_OK=0
 D_WARN=0
 D_FAIL=0

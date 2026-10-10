@@ -111,18 +111,23 @@ assert_eq "environment mode: CLAUDECODE=1 is claude" "$(host_on CLAUDECODE=1)" "
 assert_eq "environment mode: JUNIE_SHIM_PATH outranks CLAUDECODE=1" \
   "$(host_on JUNIE_SHIM_PATH=/x CLAUDECODE=1)" "junie"
 assert_eq "doctor.sh no longer defines host_detect" \
-  "$(grep -c '^host_detect()' "$(dirname "$ORCH")/doctor.sh")" "0"
+  "$(grep -c '^host_detect()' "$(dirname "$ORCH")/orch/doctor.sh")" "0"
 
 # --- doctor.sh is a one-way dependency (#281) ----------------------------------
 echo
 echo "doctor.sh is a one-way dependency (#281)"
 # doctor.sh calls into orch.sh, never the other way round: no non-comment line
-# of orch.sh names, as a whole word, a function doctor.sh defines - except
-# cmd_doctor, which main() dispatches. doctor_callbacks prints each such name
-# found in <orch> for the functions defined in <doctor>.
+# of orch.sh or of any module beside doctor.sh in its orch/ directory names, as
+# a whole word, a function doctor.sh defines - except cmd_doctor, which main()
+# dispatches. doctor_callbacks <scripts-dir> prints each such name found, for
+# the functions defined in <scripts-dir>/orch/doctor.sh. host.sh,
+# triage-labels.sh and planning-allowlist.sh are outside it: the hooks share
+# them, and they call nothing in doctor.sh.
 doctor_callbacks() {
-  local orch_file="$1" doctor_file="$2" code name
-  code="$(grep -v '^[[:space:]]*#' "$orch_file")"
+  local doctor_file="$1/orch/doctor.sh" code name f
+  code="$(for f in "$1/orch.sh" "$1"/orch/*.sh; do
+    [ "$f" = "$doctor_file" ] || grep -v '^[[:space:]]*#' "$f"
+  done)"
   grep -oE '^[A-Za-z_][A-Za-z0-9_]*\(\)' "$doctor_file" | sed 's/()$//' \
     | while IFS= read -r name; do
         [ "$name" = cmd_doctor ] && continue
@@ -130,17 +135,19 @@ doctor_callbacks() {
       done
 }
 dep_dir="$(mktemp -d)"
-printf '%s\n' 'check_x() {' '  :' '}' 'cmd_doctor() { check_x; }' >"$dep_dir/doctor.sh"
+mkdir "$dep_dir/orch"
+printf '%s\n' 'check_x() {' '  :' '}' 'cmd_doctor() { check_x; }' >"$dep_dir/orch/doctor.sh"
+printf '%s\n' 'main() { cmd_doctor; }' >"$dep_dir/orch.sh"
 printf '%s\n' '# check_x is named in a comment only' '  # check_x again' \
-  'run() { cmd_doctor; check_xy; }' >"$dep_dir/clean.sh"
-printf '%s\n' 'run() { check_x; }' >"$dep_dir/calls.sh"
+  'run() { cmd_doctor; check_xy; }' >"$dep_dir/orch/clean.sh"
 assert_eq "a comment, cmd_doctor or a longer word is no call back into doctor.sh" \
-  "$(doctor_callbacks "$dep_dir/clean.sh" "$dep_dir/doctor.sh")" ""
-assert_eq "a doctor.sh function called from orch.sh is caught" \
-  "$(doctor_callbacks "$dep_dir/calls.sh" "$dep_dir/doctor.sh")" "check_x"
+  "$(doctor_callbacks "$dep_dir")" ""
+printf '%s\n' 'run() { check_x; }' >"$dep_dir/orch/calls.sh"
+assert_eq "a doctor.sh function called from a module is caught" \
+  "$(doctor_callbacks "$dep_dir")" "check_x"
 rm -rf "$dep_dir"
-assert_eq "orch.sh calls no doctor.sh function but cmd_doctor" \
-  "$(doctor_callbacks "$ORCH" "$(dirname "$ORCH")/doctor.sh" | tr '\n' ' ')" ""
+assert_eq "orch.sh and its modules call no doctor.sh function but cmd_doctor" \
+  "$(doctor_callbacks "$(dirname "$ORCH")" | tr '\n' ' ')" ""
 
 # --- doctor -----------------------------------------------------------------
 # The two commands doctor replaces both returned success on the failures that
