@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # pr.sh - orch.sh's pr command: open, publish, release, comment and the
-# stateless PR reads and writes.
+# stateless PR reads and writes, draft and ready among them.
 # Its tests: scripts/test/orch/pr.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -48,15 +48,21 @@ cmd_pr_open() {
 # `gh issue create` rather than leaving it to skill prose. Stateless like
 # branch off and issue publish: the caller has no flow to record into, and no
 # draft to promote later, since a quick implementation's review pass already
-# ran before this is called.
+# ran before this is called - unless that pass met a spec question (#967):
+# --draft then opens it as a draft, held until a human rules on the question.
 cmd_pr_publish() {
-  [ $# -eq 3 ] || die "usage: orch.sh pr publish <issue> <title> <body-file>"
+  local usage="usage: orch.sh pr publish <issue> <title> <body-file> [--draft]" draft=false
+  [ $# -eq 3 ] || [ $# -eq 4 ] || die "$usage"
+  if [ $# -eq 4 ]; then
+    [ "$4" = --draft ] || die "unknown option: $4 - $usage"
+    draft=true
+  fi
   local issue="$1" title="$2" body_file="$3" branch base pr
   [ -f "$body_file" ] || die "body file not found: $body_file"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
   base="$(recorded_base "$branch")"
-  pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" false)"
+  pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" "$draft")"
   note "$pr"
 }
 
@@ -77,7 +83,7 @@ cmd_pr_release() {
   local open err
   capture open err adapter_prs_open "$base" "$default" ||
     die "gh could not list the open PRs from $base into $default: $(gh_reason "$err")"
-  [ -z "$open" ] || die "a release PR from $base into $default is already open: #$(first_line "$open")"
+  [ -z "$open" ] || die "a release PR from $base into $default is already open: #${open%%$'\n'*}"
   # Read from the merged PRs' bodies rather than GitHub's closing-issue links:
   # GitHub only links closing keywords on PRs into the default branch, and a
   # Refs line never links at all. Refs, Closes, Fixes and Resolves count, in
@@ -132,6 +138,60 @@ cmd_pr_comment() {
   printf '%s\n' "$pr"
 }
 
+# pr draft and pr ready (#967): the current branch's open PR turned into a
+# draft, or marked ready, for a standalone review pass whose spec questions
+# hold the PR or no longer do. Stateless, with pr comment's exit codes: 0 done,
+# a PR already in that state included, saying so - so the caller reads no draft
+# state; 1 only when the branch has no open PR; 2 for everything else, a
+# refusal included. A branch an active flow holds is refused: its PR changes
+# state only through the review loop (review ready and its Ready conditions).
+cmd_pr_draft() {
+  [ $# -eq 0 ] || die2 "usage: orch.sh pr draft"
+  local out pr is_draft err
+  out="$(open_pr_draft_flag)" || exit $?
+  lines_split "$out" pr is_draft
+  if [ "$is_draft" = true ]; then
+    note "PR #$pr is already a draft"
+    return 0
+  fi
+  capture_err err adapter_pr_draft "$pr" \
+    || die2 "gh could not turn PR #$pr into a draft: $(gh_reason "$err")"
+  note "PR #$pr is now a draft"
+}
+
+cmd_pr_ready() {
+  [ $# -eq 0 ] || die2 "usage: orch.sh pr ready"
+  local out pr is_draft err
+  out="$(open_pr_draft_flag)" || exit $?
+  lines_split "$out" pr is_draft
+  if [ "$is_draft" != true ]; then
+    note "PR #$pr is already ready"
+    return 0
+  fi
+  capture_err err adapter_pr_ready "$pr" \
+    || die2 "gh could not mark PR #$pr ready: $(gh_reason "$err")"
+  note "PR #$pr is now ready"
+}
+
+# pr draft's and pr ready's shared front: refuses a branch an active flow
+# holds, then prints the current branch's open PR number and its draft flag
+# (true or false), one per line. Returns 1, printing nothing, when the branch
+# has no open PR, as current_open_pr does.
+open_pr_draft_flag() {
+  local branch phase pr state_draft _pr_state is_draft _rest err
+  branch="$(git symbolic-ref --quiet --short HEAD)" \
+    || die2 "not on a branch (detached HEAD)"
+  if phase="$(flow_holding_phase "$branch")"; then
+    die2 "the active flow holds $branch at phase $phase - its PR changes state only through the review loop"
+  fi
+  pr="$(current_open_pr)" || return $?
+  capture state_draft err adapter_pr_state_draft "$pr" \
+    || die2 "gh could not read PR #$pr: $(gh_reason "$err")"
+  lines_split "$state_draft" _pr_state is_draft _rest
+  [ "$is_draft" = true ] || is_draft=false
+  printf '%s\n%s\n' "$pr" "$is_draft"
+}
+
 # The current branch's open PR number, for pr comment, pr comments, pr fetch
 # and pr update.
 # Returns 1, printing nothing, when the branch has no open PR; every other
@@ -145,7 +205,7 @@ current_open_pr() {
   capture open err adapter_prs_open "$branch" \
     || die2 "gh could not list the open PRs from $branch: $(gh_reason "$err")"
   [ -n "$open" ] || return 1
-  first_line "$open"
+  printf '%s\n' "${open%%$'\n'*}"
 }
 
 # The PR pr fetch and pr update work on. Unlike pr comment, no open PR is an
@@ -208,6 +268,8 @@ cmd_pr() {
     comments) cmd_pr_comments "$@" ;;
     fetch)   cmd_pr_fetch "$@" ;;
     update)  cmd_pr_update "$@" ;;
-    *) die "unknown pr op: ${op:-<none>} (want open|publish|release|comment|comments|fetch|update)" ;;
+    draft)   cmd_pr_draft "$@" ;;
+    ready)   cmd_pr_ready "$@" ;;
+    *) die "unknown pr op: ${op:-<none>} (want open|publish|release|comment|comments|fetch|update|draft|ready)" ;;
   esac
 }

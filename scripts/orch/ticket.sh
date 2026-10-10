@@ -161,9 +161,14 @@ cmd_ticket_next() {
 # tickets its accepted edits touch without calling a sub-issue endpoint.
 cmd_ticket_list() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket list <parent>"
-  local subs
+  local subs line n state shown_state
   subs="$(ticket_sub_issues "$1")" || exit 1
-  printf '%s\n' "$subs" | awk -F '\t' 'NF { print $1, tolower($2) }'
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    tsv_split "$line" n state
+    state_word shown_state "$state"
+    printf '%s %s\n' "$n" "$shown_state"
+  done <<<"$subs"
 }
 
 cmd_ticket_close() {
@@ -545,7 +550,7 @@ cmd_ticket_merge() {
       warn "rebasing $branch onto $parent hit a conflict - aborted; both branches are as they were"
       exit 3
     fi
-    said="$(first_line "$rebase_err")"
+    said="${rebase_err%%$'\n'*}"
     die "rebasing $branch onto $parent failed: ${said:-git gave no reason}"
   fi
   git -C "$parent_checkout" merge -q --ff-only "$branch" \

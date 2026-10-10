@@ -42,9 +42,6 @@ now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # colon-free so the path is valid on Windows too. now() stays ISO-8601: it is a
 # field value, never a path segment.
 dir_stamp() { date -u +%Y%m%d-%H%M%S; }
-# Several answers here are one line of prose followed by detail lines, and it is
-# always the first line that carries the verdict.
-first_line() { printf '%s\n' "${1%%$'\n'*}"; }
 # capture_err <err-var> <command...>: runs the command, sets <err-var> to its
 # stderr byte for byte, and returns its status. It leaves stdout alone, to the
 # caller's own redirect: a body streamed to a file through
@@ -131,6 +128,18 @@ lines_split() {
     shift
   done
   printf -v "$1" '%s' "$_ls_rest"
+}
+
+# state_word <var> <state>: GitHub's uppercase issue or PR <state> into <var>
+# as the lowercase word a message prints - bash 3.2 has no lowercase
+# expansion. Any other value is passed through unchanged.
+state_word() {
+  case "$2" in
+    OPEN) printf -v "$1" '%s' open ;;
+    CLOSED) printf -v "$1" '%s' closed ;;
+    MERGED) printf -v "$1" '%s' merged ;;
+    *) printf -v "$1" '%s' "$2" ;;
+  esac
 }
 
 # newlines_strip <var>: drops every trailing newline from the named
@@ -511,6 +520,22 @@ origin_has_branch() {
 # Whether a flow is active: state.json exists and its phase is not done.
 flow_active() { [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; }
 
+# flow_holding_phase <branch> [issue]: prints the phase of the active flow
+# (phase not done) when it holds the branch, or the issue where one is given,
+# and fails printing nothing otherwise. A branch or issue an active flow holds
+# belongs to it (ADR-0029), so review-pass begin and pr draft/ready refuse it,
+# each with its own message. Reads state.json only when one exists.
+flow_holding_phase() {
+  local branch="$1" issue="${2:-}" phase
+  [ -f "$STATE" ] || return 1
+  phase="$(state_get phase)"
+  [ "$phase" != "done" ] || return 1
+  [ "$(state_get branch)" = "$branch" ] \
+    || { [ -n "$issue" ] && [ "$(state_get issue)" = "$issue" ]; } \
+    || return 1
+  printf '%s\n' "$phase"
+}
+
 # The refusal of a second flow beside one mid-pipeline, shared by init and
 # branch off (a quick implementation must never move an active flow's checkout
 # off its branch). It exits 3, a code no other failure of either uses, so a
@@ -550,7 +575,7 @@ dirty_outside_allowlist() {
   status="$(mktemp)"
   if ! err="$(git -C "$ROOT" status --porcelain=v1 -z -uall 2>&1 >"$status")"; then
     rm -f "$status"
-    die "git status failed - cannot check the working tree: $(first_line "$err")"
+    die "git status failed - cannot check the working tree: ${err%%$'\n'*}"
   fi
   while IFS= read -r -d '' rec; do
     if [ "$want_src" -eq 1 ]; then
@@ -885,7 +910,7 @@ rebase_in_progress() {
 main_checkout() {
   local paths
   paths="$(checkout_paths)" && [ -n "$paths" ] || return 1
-  first_line "$paths"
+  printf '%s\n' "${paths%%$'\n'*}"
 }
 
 # side_checkout_marked <git-dir>: whether the git folder <git-dir> holds the
@@ -954,10 +979,7 @@ github_read() {
 # finished_flow <state-file>: whether that flow is finished - at done, and its
 # recorded PR merged into its own base branch.
 finished_flow() {
-  # head_oid, head_ref and commits are lines_split's throwaway positions: only
-  # merged_base is read.
-  # shellcheck disable=SC2034
-  local state="$1" phase pr base state_draft pr_state refs head_oid head_ref merged_base commits
+  local state="$1" phase pr base state_draft pr_state shown_state refs _head_oid _head_ref merged_base _commits
   phase="$(state_get_in "$state" phase)"
   if [ "$phase" != "done" ]; then
     verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1
@@ -968,13 +990,14 @@ finished_flow() {
   [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
   base="$(flow_base_in "$state")"
   github_read state_draft adapter_pr_state_draft "$pr" || return
-  pr_state="$(first_line "$state_draft")"
+  pr_state="${state_draft%%$'\n'*}"
   if [ "$pr_state" != MERGED ]; then
-    verdict="PR #$pr is $(printf '%s' "$pr_state" | tr '[:upper:]' '[:lower:]')"; return 1
+    state_word shown_state "$pr_state"
+    verdict="PR #$pr is $shown_state"; return 1
   fi
   github_read refs adapter_pr_refs "$pr" || return
   # The base branch is the third line, empty when there is none.
-  lines_split "$refs" head_oid head_ref merged_base commits
+  lines_split "$refs" _head_oid _head_ref merged_base _commits
   [ "$merged_base" = "$base" ] || { verdict="PR #$pr merged into $merged_base, not $base"; return 1; }
 }
 

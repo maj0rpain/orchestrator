@@ -482,6 +482,18 @@ git merge -q --no-ff --no-edit quick/17-tm
 fake_pr 56 merged quick/17-tm main
 # A side checkout still on no branch.
 nb="$(sc_add nb)"
+# Flows at done whose recorded PR is still open, and closed unmerged: their
+# verdict names the PR's state in lowercase.
+po="$(sc_add po)"
+(cd "$po" && orch_gh_failing init po-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/po-flow && state_fixture pr 61)
+sp_branch_off "$po" orch/po-flow
+fake_pr 61 open orch/po-flow main
+pc="$(sc_add pc)"
+(cd "$pc" && orch_gh_failing init pc-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/pc-flow && state_fixture pr 62)
+sp_branch_off "$pc" orch/pc-flow
+fake_pr 62 closed orch/pc-flow main
 # The main checkout's own finished flow.
 orch_gh_failing init main-flow >/dev/null
 git checkout -q -b orch/main-flow
@@ -544,6 +556,8 @@ assert_eq "a flow not at done stays" "$(on_disk "$nd/.orchestrator/state.json")"
 assert_contains "skipped with its reason" "$out" "skipped $nd: flow nd-flow is at implement, not done"
 assert_eq "a side checkout on no branch stays" "$(on_disk "$nb")" "present"
 assert_contains "skipped with its reason" "$out" "skipped $nb: no branch"
+assert_contains "a done flow whose PR is open is skipped as open" "$out" "skipped $po: PR #61 is open"
+assert_contains "and one whose PR is closed as closed" "$out" "skipped $pc: PR #62 is closed"
 assert_eq "the main checkout's finished flow is archived in place" "$(archived_count "$top" main-flow)" "1"
 assert_eq "its state is gone" "$(on_disk "$top/.orchestrator/state.json")" "absent"
 assert_eq "its branch is still checked out" "$(git branch --show-current)" "orch/main-flow"
