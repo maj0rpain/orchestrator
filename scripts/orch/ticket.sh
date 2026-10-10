@@ -161,16 +161,13 @@ cmd_ticket_next() {
 # tickets its accepted edits touch without calling a sub-issue endpoint.
 cmd_ticket_list() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket list <parent>"
-  local subs line n state
+  local subs line n state shown_state
   subs="$(ticket_sub_issues "$1")" || exit 1
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     tsv_split "$line" n state
-    case "$state" in
-      OPEN) state=open ;;
-      CLOSED) state=closed ;;
-    esac
-    printf '%s %s\n' "$n" "$state"
+    state_word shown_state "$state"
+    printf '%s %s\n' "$n" "$shown_state"
   done <<<"$subs"
 }
 

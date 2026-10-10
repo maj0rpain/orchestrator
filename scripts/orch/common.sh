@@ -130,6 +130,18 @@ lines_split() {
   printf -v "$1" '%s' "$_ls_rest"
 }
 
+# state_word <var> <state>: GitHub's uppercase issue or PR <state> into <var>
+# as the lowercase word a message prints - bash 3.2 has no lowercase
+# expansion. Any other value is passed through unchanged.
+state_word() {
+  case "$2" in
+    OPEN) printf -v "$1" '%s' open ;;
+    CLOSED) printf -v "$1" '%s' closed ;;
+    MERGED) printf -v "$1" '%s' merged ;;
+    *) printf -v "$1" '%s' "$2" ;;
+  esac
+}
+
 # newlines_strip <var>: drops every trailing newline from the named
 # variable's value, as $(...) drops them from a command's output.
 newlines_strip() {
@@ -947,8 +959,7 @@ github_read() {
 # finished_flow <state-file>: whether that flow is finished - at done, and its
 # recorded PR merged into its own base branch.
 finished_flow() {
-  # shellcheck disable=SC2034
-  local state="$1" phase pr base state_draft pr_state refs _head_oid _head_ref merged_base _commits
+  local state="$1" phase pr base state_draft pr_state shown_state refs _head_oid _head_ref merged_base _commits
   phase="$(state_get_in "$state" phase)"
   if [ "$phase" != "done" ]; then
     verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1
@@ -961,11 +972,8 @@ finished_flow() {
   github_read state_draft adapter_pr_state_draft "$pr" || return
   pr_state="${state_draft%%$'\n'*}"
   if [ "$pr_state" != MERGED ]; then
-    case "$pr_state" in
-      OPEN) pr_state=open ;;
-      CLOSED) pr_state=closed ;;
-    esac
-    verdict="PR #$pr is $pr_state"; return 1
+    state_word shown_state "$pr_state"
+    verdict="PR #$pr is $shown_state"; return 1
   fi
   github_read refs adapter_pr_refs "$pr" || return
   # The base branch is the third line, empty when there is none.
