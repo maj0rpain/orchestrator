@@ -21,7 +21,7 @@ While iterating, run only the section you are working on, in quiet mode:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`, where
 `<section>` is an extended regex matched against the `# ---` section titles,
 e.g. `ORCH_TEST_ONLY='^branch create$'` or `ORCH_TEST_ONLY='^ticket'`. Run
-`scripts/test/all.sh` once before committing: it starts all three suites and
+`scripts/test/all.sh` once before committing: it starts all four suites and
 shellcheck over every shell file at once, so they overlap, carries on past a
 failing one, and once all have finished prints each suite's FAIL lines and a
 summary line, then shellcheck's findings and a `shellcheck: N findings` summary
@@ -61,10 +61,38 @@ definitions; a new section file copies those lines.
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the
 default branch pinned to `version` in `plugin.json`, so changes reach it only
-after a push plus `/plugin marketplace update orchestrator`. Every PR to `main`
-bumps `version` and adds it as the top `CHANGELOG.md` entry, and CI enforces
-both; a pure CI or repo-hygiene PR skips the bump with the `no-version-bump`
-label.
+after a push plus `/plugin marketplace update orchestrator`.
+
+Every PR to `main` adds one **changelog fragment** and never bumps the version
+by hand. The fragment is `changelog.d/<issue>.md`, `<issue>` all digits (a PR
+closing several issues names it for one of them). Its first line is exactly
+`bump: patch`, `bump: minor` or `bump: major` - semver judgement: patch for
+fixes and docs, minor for new features, major for breaking changes - and the
+rest, after any blank lines, is the CHANGELOG prose for the change, non-empty:
+
+```
+bump: minor
+
+`orch.sh widget frob` frobs the widget (#123): ...
+```
+
+Two PRs never touch the same fragment, so PRs open at the same time never
+conflict on `plugin.json` or `CHANGELOG.md`. On every push to `main`, the
+version-bump Action (`.github/workflows/version-bump.yml`) runs
+`scripts/version-bump.sh`, which gathers every fragment on `main` into one
+version bump: `version` raised by the highest level among them, one `## <new
+version>` entry on top of `CHANGELOG.md` carrying their prose in issue-number
+order, the fragments deleted. The Action commits that as `Release <version>`
+and pushes it; a push that loses a race with another merge leaves the
+fragments to that merge's run. Run `scripts/version-bump.sh` from a scratch
+copy of the checkout to see how a fragment renders: it edits the files in
+place and does not commit. `scripts/test/version_bump_test.sh` tests it.
+
+CI (`docs_lint.sh`) enforces the rule: a PR to `main` adds exactly one
+well-formed fragment, and never changes `version`, adds a `## ` heading to
+`CHANGELOG.md`, or modifies or deletes an existing fragment. A pure CI or
+repo-hygiene PR carries the `no-version-bump` label, which waives the fragment
+and ships no version bump; the other rules still hold.
 
 ## Layout
 
@@ -92,7 +120,8 @@ scripts/host.sh               the one host detector, host_detect, sourced by orc
 scripts/hook-*.sh             the four hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
-scripts/test/                 shell tests: orch_test.sh (the orch.sh suite's runner), hooks_test.sh, docs_lint.sh, all.sh
+scripts/version-bump.sh       the version-bump Action's script: changelog fragments into one version bump (Develop)
+scripts/test/                 shell tests: orch_test.sh (the orch.sh suite's runner), hooks_test.sh, docs_lint.sh, version_bump_test.sh, all.sh
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
 scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
 scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, ...): its sections, after an optional preamble

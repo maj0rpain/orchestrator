@@ -3,8 +3,8 @@
 # Docs linter: named structural rules over the plugin's skills, agents,
 # commands and docs.
 #
-# Each rule is a scan_* function that takes a plugin root (and, for the bump
-# rule, main's version) and prints one line per problem, "<file>: <problem>",
+# Each rule is a scan_* function that takes a plugin root (and, for the
+# fragment rule, main's commit) and prints one line per problem, "<file>: <problem>",
 # and nothing when the root obeys it. Each rule runs first against fixture
 # plugin roots that break it, so a rule that stops flagging anything fails here
 # too, then once against the real plugin root.
@@ -1776,18 +1776,21 @@ spares "a skill that only points at the doc is not flagged" "$out" '^skills/orch
 check "the driver loop lives once, in docs/driver-loop.md" "$(scan_driver_loop "$PLUGIN_ROOT")"
 
 # --- version and CHANGELOG (CLAUDE.md Versioning) -----------------------------
-# Every PR to main bumps version in .claude-plugin/plugin.json and adds it as
-# the top CHANGELOG.md entry. The CHANGELOG rule always runs; the bump rule
-# runs against the real root only when VERSION_BASE holds main's version;
-# .github/workflows/test.yml's "Read main's version" step says when it is set.
+# Every PR to main adds one changelog fragment, changelog.d/<issue>.md, and
+# never bumps the version by hand: the version-bump Action does, on merge. The
+# CHANGELOG rule always runs; the fragment rule runs against the real root only
+# when CHANGELOG_BASE holds main's commit, and waives its one-fragment part when
+# NO_VERSION_BUMP is set; .github/workflows/test.yml's "Read main's commit"
+# step sets both.
 echo
 echo "version and CHANGELOG (CLAUDE.md Versioning)"
-# plugin_version <plugin root>: the version field of its plugin.json, empty
-# when there is none. The linter needs no jq: plugin.json keeps it on one line.
-plugin_version() {
-  sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-    "$1/.claude-plugin/plugin.json" 2>/dev/null | head -n 1
+# version_field: the version field of the plugin.json on stdin, empty when
+# there is none. The linter needs no jq: plugin.json keeps it on one line.
+version_field() {
+  sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
 }
+# plugin_version <plugin root>: the version field of its plugin.json.
+plugin_version() { version_field <"$1/.claude-plugin/plugin.json" 2>/dev/null; }
 # scan_changelog <plugin root>: the CHANGELOG's first ## heading is exactly
 # ## <version>, its section is non-empty, and no other ## <version> heading
 # for that version exists.
@@ -1838,48 +1841,160 @@ spares "a CHANGELOG topped by a non-empty entry for the version is not flagged" 
   "$(scan_changelog "$(changelog_fixture 3.2.0 '# Changelog' '' '## 3.2.0' '' 'New.' '' '## 3.1.0' '' 'Old.')")" '.'
 check "CHANGELOG.md's top entry is the plugin.json version" "$(scan_changelog "$PLUGIN_ROOT")"
 
-# scan_version_bump <plugin root> <base version>: the root's version must be
-# strictly greater than <base version>, both compared as major.minor.patch
-# integers; a value on either side that is not major.minor.patch is named.
-scan_version_bump() {
-  local v base="$2" semver='^[0-9]+\.[0-9]+\.[0-9]+$' a b i malformed=0
-  v="$(plugin_version "$1")"
-  if ! [[ "$v" =~ $semver ]]; then
-    echo ".claude-plugin/plugin.json: version '$v' is not major.minor.patch"; malformed=1
+# scan_changelog_fragments <plugin root> <base commit> [<no bump>]: the
+# root's HEAD, against its merge-base with <base commit>. Unless <no bump> is
+# non-empty, it adds exactly one file under changelog.d/, named <digits>.md
+# and well-formed as scripts/version-bump.sh reads it. Always: plugin.json's
+# version is unchanged, CHANGELOG.md gains no ## heading, and no fragment the
+# merge-base holds is modified or deleted.
+scan_changelog_fragments() {
+  local r="$1" base="$2" no_bump="${3:-}" mb status path added=() old new heading frag
+  if ! mb="$(git -C "$r" merge-base "$base" HEAD 2>/dev/null)"; then
+    echo "CHANGELOG_BASE: no merge-base with HEAD for '$base'"; return 0
   fi
-  if ! [[ "$base" =~ $semver ]]; then
-    echo "VERSION_BASE: main's version '$base' is not major.minor.patch"; malformed=1
+  while IFS=$'\t' read -r status path; do
+    case "$status" in
+      A) added+=("$path") ;;
+      M) echo "$path: an existing fragment is modified" ;;
+      D) echo "$path: an existing fragment is deleted" ;;
+      *) echo "$path: an existing fragment is changed ($status)" ;;
+    esac
+  done < <(git -C "$r" diff --no-renames --name-status "$mb" HEAD -- changelog.d/)
+  if [ -z "$no_bump" ]; then
+    if [ "${#added[@]}" -eq 0 ]; then
+      echo "changelog.d/: no changelog fragment added; add one, changelog.d/<issue>.md"
+    elif [ "${#added[@]}" -gt 1 ]; then
+      echo "changelog.d/: ${#added[@]} changelog fragments added, not one: ${added[*]}"
+    elif ! [[ "${added[0]}" =~ ^changelog\.d/[0-9]+\.md$ ]]; then
+      echo "${added[0]}: not named <issue>.md, <issue> all digits"
+    else
+      # Well-formed as the version-bump script reads it: the script itself,
+      # run on a scratch checkout holding only this fragment.
+      frag="$(new_fixture)"
+      mkdir -p "$frag/.claude-plugin" "$frag/changelog.d"
+      printf '{\n  "version": "0.0.0"\n}\n' >"$frag/.claude-plugin/plugin.json"
+      printf '%s\n' '## 0.0.0' '' 'Scratch.' >"$frag/CHANGELOG.md"
+      git -C "$r" show "HEAD:${added[0]}" >"$frag/${added[0]}"
+      (cd "$frag" && bash "$PLUGIN_ROOT/scripts/version-bump.sh" 2>&1 >/dev/null) |
+        sed 's/^version-bump: //'
+    fi
   fi
-  [ "$malformed" -eq 0 ] || return 0
-  IFS=. read -ra a <<<"$v"
-  IFS=. read -ra b <<<"$base"
-  for i in 0 1 2; do
-    if ((10#${a[i]} > 10#${b[i]})); then return 0; fi
-    if ((10#${a[i]} < 10#${b[i]})); then break; fi
-  done
-  echo ".claude-plugin/plugin.json: version $v is not greater than main's $base"
+  old="$(git -C "$r" show "$mb:.claude-plugin/plugin.json" 2>/dev/null | version_field)"
+  new="$(git -C "$r" show "HEAD:.claude-plugin/plugin.json" 2>/dev/null | version_field)"
+  [ "$old" = "$new" ] ||
+    echo ".claude-plugin/plugin.json: version changed from $old to $new; the version-bump Action bumps it on merge"
+  while IFS= read -r heading; do
+    [ -n "$heading" ] &&
+      echo "CHANGELOG.md: $heading added; the version-bump Action adds the entry on merge"
+  done < <(LC_ALL=C comm -13 \
+    <(git -C "$r" show "$mb:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort) \
+    <(git -C "$r" show "HEAD:CHANGELOG.md" 2>/dev/null | grep -E '^## ' | LC_ALL=C sort))
   return 0
 }
-bump_fixture() { changelog_fixture "$1" "## $1" '' 'New.'; }
-flags "an unchanged version is flagged" \
-  "$(scan_version_bump "$(bump_fixture 3.2.0)" 3.2.0)" "version 3.2.0 is not greater than main's 3.2.0"
-flags "a lower version is flagged" \
-  "$(scan_version_bump "$(bump_fixture 3.1.9)" 3.2.0)" "version 3.1.9 is not greater than main's 3.2.0"
-flags "a lower version that sorts higher as a string is flagged" \
-  "$(scan_version_bump "$(bump_fixture 3.9.0)" 3.10.0)" "version 3.9.0 is not greater than main's 3.10.0"
-flags "a version that is not major.minor.patch is flagged, naming it" \
-  "$(scan_version_bump "$(bump_fixture 3.2)" 3.1.0)" "version '3.2' is not major.minor.patch"
-flags "a base that is not major.minor.patch is flagged, naming it" \
-  "$(scan_version_bump "$(bump_fixture 3.2.0)" 3.1.0-rc1)" "main's version '3.1.0-rc1' is not major.minor.patch"
-spares "a minor bump that sorts lower as a string is not flagged" \
-  "$(scan_version_bump "$(bump_fixture 3.10.0)" 3.9.0)" '.'
-spares "an ordinary patch bump is not flagged" \
-  "$(scan_version_bump "$(bump_fixture 3.2.1)" 3.2.0)" '.'
-if [ -n "${VERSION_BASE+set}" ]; then
-  check "plugin.json's version is a step up from main's $VERSION_BASE" \
-    "$(scan_version_bump "$PLUGIN_ROOT" "$VERSION_BASE")"
+# fragment_fixture: a fixture git repo whose main branch holds plugin.json at
+# 4.5.6, a CHANGELOG topped by ## 4.5.6, and one fragment not yet bumped,
+# changelog.d/7.md; checked out on a pr branch made from main.
+fragment_fixture() {
+  local f
+  f="$(changelog_fixture 4.5.6 '# Changelog' '' '## 4.5.6' '' 'Old.' '' '## 4.5.5' '' 'Older.')"
+  mkdir "$f/changelog.d"
+  printf '%s\n' 'bump: patch' '' 'Merged, not yet bumped.' >"$f/changelog.d/7.md"
+  git -C "$f" init -q -b main
+  fragment_commit "$f"
+  git -C "$f" checkout -q -b pr
+  echo "$f"
+}
+# fragment_commit <fixture>: commits every change in it.
+fragment_commit() {
+  git -C "$1" add -A
+  git -C "$1" -c user.name=lint -c user.email=lint@example.com -c commit.gpgsign=false \
+    commit -q -m change
+}
+# fixture_sed <file> <sed expression>: edits <file> in place, portably.
+fixture_sed() {
+  sed -i.bak "$2" "$1" && rm "$1.bak"
+}
+# fragment_add <fixture> <name> <lines...>: writes changelog.d/<name>, one
+# line per argument, and commits it.
+fragment_add() {
+  local f="$1" name="$2"
+  shift 2
+  printf '%s\n' "$@" >"$f/changelog.d/$name"
+  fragment_commit "$f"
+}
+fixture="$(fragment_fixture)"
+fragment_add "$fixture" 12.md 'bump: minor' '' 'A new feature.'
+spares "one well-formed new fragment is not flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" '.'
+fixture="$(fragment_fixture)"
+printf 'More.\n' >>"$fixture/CHANGELOG.md"
+fragment_commit "$fixture"
+flags "a PR with no new fragment is flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" "changelog.d/: no changelog fragment added"
+fixture="$(fragment_fixture)"
+fragment_add "$fixture" 12.md 'bump: minor' '' 'A new feature.'
+fragment_add "$fixture" 13.md 'bump: patch' '' 'A fix.'
+flags "a PR adding two fragments is flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" "changelog.d/: 2 changelog fragments added"
+fixture="$(fragment_fixture)"
+fragment_add "$fixture" 12.md 'bump: big' '' 'A new feature.'
+flags "a fragment with an unknown bump level is flagged, naming it" \
+  "$(scan_changelog_fragments "$fixture" main)" "changelog.d/12.md: its first line is not"
+fixture="$(fragment_fixture)"
+fragment_add "$fixture" 12.md 'bump: patch'
+flags "a fragment with no prose is flagged, naming it" \
+  "$(scan_changelog_fragments "$fixture" main)" "changelog.d/12.md: it has no prose"
+fixture="$(fragment_fixture)"
+fragment_add "$fixture" fix-12.md 'bump: patch' '' 'A fix.'
+flags "a misnamed fragment is flagged, naming it" \
+  "$(scan_changelog_fragments "$fixture" main)" "changelog.d/fix-12.md: not named <issue>.md"
+fixture="$(fragment_fixture)"
+fixture_sed "$fixture/.claude-plugin/plugin.json" 's/4\.5\.6/4.5.7/'
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+flags "a changed plugin.json version is flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" ".claude-plugin/plugin.json: version changed from 4.5.6 to 4.5.7"
+fixture="$(fragment_fixture)"
+fixture_sed "$fixture/CHANGELOG.md" 's/^## 4\.5\.6$/## 4.5.7\n\nNew.\n\n## 4.5.6/'
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+flags "an added ## CHANGELOG heading is flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" "CHANGELOG.md: ## 4.5.7 added"
+fixture="$(fragment_fixture)"
+printf '\n## 4.5.5\n\nAgain.\n' >>"$fixture/CHANGELOG.md"
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+flags "a second copy of an existing ## CHANGELOG heading is flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" "CHANGELOG.md: ## 4.5.5 added"
+fixture="$(fragment_fixture)"
+fixture_sed "$fixture/CHANGELOG.md" 's/^Older\.$/Older, reworded./'
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+spares "an edit to an older CHANGELOG entry is not flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" '.'
+fixture="$(fragment_fixture)"
+printf 'Reworded.\n' >>"$fixture/changelog.d/7.md"
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+flags "an existing fragment modified is flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" "changelog.d/7.md: an existing fragment is modified"
+fixture="$(fragment_fixture)"
+rm "$fixture/changelog.d/7.md"
+fragment_add "$fixture" 12.md 'bump: patch' '' 'A fix.'
+flags "an existing fragment deleted is flagged" \
+  "$(scan_changelog_fragments "$fixture" main)" "changelog.d/7.md: an existing fragment is deleted"
+fixture="$(fragment_fixture)"
+printf 'More.\n' >>"$fixture/CHANGELOG.md"
+fragment_commit "$fixture"
+spares "with NO_VERSION_BUMP, a PR with no fragment is not flagged" \
+  "$(scan_changelog_fragments "$fixture" main 1)" '.'
+fixture="$(fragment_fixture)"
+fixture_sed "$fixture/.claude-plugin/plugin.json" 's/4\.5\.6/4.5.7/'
+fragment_commit "$fixture"
+flags "with NO_VERSION_BUMP, a changed plugin.json version is still flagged" \
+  "$(scan_changelog_fragments "$fixture" main 1)" ".claude-plugin/plugin.json: version changed from 4.5.6 to 4.5.7"
+flags "a base with no merge-base is flagged, naming it" \
+  "$(scan_changelog_fragments "$fixture" no-such-ref)" "CHANGELOG_BASE: no merge-base with HEAD for 'no-such-ref'"
+if [ -n "${CHANGELOG_BASE+set}" ]; then
+  check "the PR adds one changelog fragment and bumps nothing by hand" \
+    "$(scan_changelog_fragments "$PLUGIN_ROOT" "$CHANGELOG_BASE" "${NO_VERSION_BUMP:-}")"
 else
-  ok "plugin.json's version bump skipped (VERSION_BASE unset)"
+  ok "the changelog fragment rule skipped (CHANGELOG_BASE unset)"
 fi
 
 # >>> summary
