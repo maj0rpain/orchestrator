@@ -596,6 +596,8 @@ assert_contains "the done-close applies in the second case on Claude Code" "$ctx
   "- Only in the second case above (planning about anything else): at the close, if the planning settles that the interviewed issue's work"
 assert_contains "the same-flow branch skips the done-close on Claude Code" "$ctx" \
   "skip the interviewed-issue step and the done-close below"
+assert_contains "the second case skips the route question when the done-close applies" "$ctx" \
+  "then the route question below unless the done-close applies"
 ctx="$(prompt_event '$grilling' dc4 | "$GRILL" | jq -r '.additionalContext')"
 check_done_close "beside an active flow on Junie" "$ctx" "the ask_user tool"
 assert_contains "the done-close applies in the second case on Junie" "$ctx" \

@@ -110,10 +110,12 @@ cmd_issue_close() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --completed) completed=true; shift ;;
-      --duplicate-of|--comment-file)
+      --duplicate-of)
         [ $# -ge 2 ] || die "$1 needs a value ($usage)"
-        if [ "$1" = --duplicate-of ]; then dup="$2"; dup_given=true; else file="$2"; file_given=true; fi
-        shift 2 ;;
+        dup="$2"; dup_given=true; shift 2 ;;
+      --comment-file)
+        [ $# -ge 2 ] || die "$1 needs a value ($usage)"
+        file="$2"; file_given=true; shift 2 ;;
       -*) die "unknown option: $1 ($usage)" ;;
       *) [ -z "$issue" ] || die "$usage"; issue="$1"; shift ;;
     esac

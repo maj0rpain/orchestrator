@@ -8,6 +8,19 @@
 # fake_issue_title <n> <title>: seeds issue #n's title.
 fake_issue_title() { printf '%s\n' "$2" >"$ORCH_GH_FAKE_STORE/issues/$1/title"; }
 
+# close_refused <what> <want> <args...>: runs `issue close <args...>` and
+# asserts it exits 1 with an orch: message containing <want>, leaving the
+# fake's issue #83 open.
+close_refused() {
+  local what="$1" want="$2" out st
+  shift 2
+  out="$("$ORCH" issue close "$@" 2>&1)"; st=$?
+  assert_status "refuses $what" "$st" 1
+  assert_contains "with an orch: message ($what)" "$out" "orch: "
+  assert_contains "saying why ($what)" "$out" "$want"
+  assert_eq "closing nothing ($what)" "$(fake_state_of 83)" "OPEN"
+}
+
 # --- issue publish ------------------------------------------------------------
 # The publishing boundary a quick implementation calls instead of hardcoding
 # `gh issue create` in skill prose - stateless like branch off, since a quick
@@ -521,28 +534,19 @@ assert_eq "and the other issue untouched" "$(fake_state_of 82)" "OPEN"
 
 empty_comment="$(mktemp)"
 fake_issue 83 open
-refused() {
-  local what="$1" want="$2"
-  shift 2
-  out="$("$ORCH" issue close "$@" 2>&1)"; st=$?
-  assert_status "refuses $what" "$st" 1
-  assert_contains "with an orch: message ($what)" "$out" "orch: "
-  assert_contains "saying why ($what)" "$out" "$want"
-  assert_eq "closing nothing ($what)" "$(fake_state_of 83)" "OPEN"
-}
-refused "a non-numeric issue" "plain issue number" 8x3 --completed --comment-file "$close_comment"
-refused "no issue at all" "usage: orch.sh issue close" --completed --comment-file "$close_comment"
-refused "a non-numeric duplicate target" "plain issue number" 83 --duplicate-of '#82' --comment-file "$close_comment"
-refused "a duplicate of itself" "duplicate of itself" 83 --duplicate-of 83 --comment-file "$close_comment"
-refused "neither --completed nor --duplicate-of" "--completed or --duplicate-of" 83 --comment-file "$close_comment"
-refused "both --completed and --duplicate-of" "--completed or --duplicate-of" 83 --completed --duplicate-of 82 --comment-file "$close_comment"
-refused "a missing --comment-file" "--comment-file" 83 --completed
-refused "a comment file that does not exist" "comment file not found" 83 --completed --comment-file /nonexistent/comment.md
-refused "an empty comment file" "comment file is empty" 83 --completed --comment-file "$empty_comment"
-refused "an unknown option" "usage: orch.sh issue close" 83 --completed --reason x --comment-file "$close_comment"
-refused "a missing --duplicate-of value" "usage: orch.sh issue close" 83 --comment-file "$close_comment" --duplicate-of
-refused "a missing --comment-file value" "usage: orch.sh issue close" 83 --completed --comment-file
-refused "a second issue" "usage: orch.sh issue close" 83 84 --completed --comment-file "$close_comment"
+close_refused "a non-numeric issue" "plain issue number" 8x3 --completed --comment-file "$close_comment"
+close_refused "no issue at all" "usage: orch.sh issue close" --completed --comment-file "$close_comment"
+close_refused "a non-numeric duplicate target" "plain issue number" 83 --duplicate-of '#82' --comment-file "$close_comment"
+close_refused "a duplicate of itself" "duplicate of itself" 83 --duplicate-of 83 --comment-file "$close_comment"
+close_refused "neither --completed nor --duplicate-of" "--completed or --duplicate-of" 83 --comment-file "$close_comment"
+close_refused "both --completed and --duplicate-of" "--completed or --duplicate-of" 83 --completed --duplicate-of 82 --comment-file "$close_comment"
+close_refused "a missing --comment-file" "--comment-file" 83 --completed
+close_refused "a comment file that does not exist" "comment file not found" 83 --completed --comment-file /nonexistent/comment.md
+close_refused "an empty comment file" "comment file is empty" 83 --completed --comment-file "$empty_comment"
+close_refused "an unknown option" "usage: orch.sh issue close" 83 --completed --reason x --comment-file "$close_comment"
+close_refused "a missing --duplicate-of value" "usage: orch.sh issue close" 83 --comment-file "$close_comment" --duplicate-of
+close_refused "a missing --comment-file value" "usage: orch.sh issue close" 83 --completed --comment-file
+close_refused "a second issue" "usage: orch.sh issue close" 83 84 --completed --comment-file "$close_comment"
 
 # gh's reason rides on orch's own line, first line only (#846).
 assert_gh_dies "a failed completed close exits 1" adapter_issue_close "$GH_502" 1 \
@@ -561,7 +565,6 @@ assert_contains "help documents issue close" "$("$ORCH" help)" \
 assert_contains "the CLI conventions' noun table lists issue close" \
   "$(grep '^| `issue`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`close`'
 rm -f "$close_comment" "$empty_comment"
-unset -f refused
 restore_suite_env
 
 # --- issue fetch/update -------------------------------------------------------

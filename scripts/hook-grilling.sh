@@ -198,7 +198,7 @@ if [ "$flow_active" = 1 ]; then
     skip the interviewed-issue step and the done-close below, since that flow already holds the
     work. The next step is that flow's: point the user to ${next_redo}.
   - Otherwise: run the interviewed-issue step and the done-close below
-    unchanged, then the route question below."
+    unchanged, then the route question below unless the done-close applies."
   only_second="Only in the second case above (planning about anything else):"
   confirm_lead="$only_second before you implement anything"
   close_lead="$only_second when you reach a shared understanding"
