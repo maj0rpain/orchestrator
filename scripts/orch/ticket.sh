@@ -4,8 +4,6 @@
 # Its tests: scripts/test/orch/ticket.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# --- ticket -------------------------------------------------------------
-#
 # GitHub's native sub-issues and issue dependencies, in one place, so no skill
 # or agent prose ever calls `gh api` on these endpoints directly. Every read
 # and write goes through the adapter's sub-issue and dependency operations.

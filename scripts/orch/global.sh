@@ -1,7 +1,8 @@
 # shellcheck shell=bash
-# global.sh - orch.sh's nouns with no module of their own: slug, status,
-# archive and help. Its tests: scripts/test/orch/global.sh, save status's,
-# which live in scripts/test/orch/side-checkout.sh; help has none of its own.
+# global.sh - orch.sh's bare global commands with no module of their own:
+# slug, status, archive and help. Its tests: scripts/test/orch/global.sh, save
+# status's, which live in scripts/test/orch/side-checkout.sh; help has none of
+# its own.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
 cmd_slug() {
@@ -10,8 +11,6 @@ cmd_slug() {
   slug="$(normalize_slug "$raw")"
   note "$slug"
 }
-
-# --- lifecycle --------------------------------------------------------------
 
 cmd_status() {
   if [ ! -f "$STATE" ]; then

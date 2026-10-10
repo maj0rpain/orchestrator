@@ -13,8 +13,6 @@ ORCH_CI_GRACE="${ORCH_CI_GRACE:-60}"
 ORCH_CI_TIMEOUT="${ORCH_CI_TIMEOUT:-900}"
 ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
 
-# --- review -----------------------------------------------------------------
-
 # The severity label a filed finding carries, so triage can filter on it. It is
 # this plugin's own, so overwriting it is safe: adapter_label_upsert updates a
 # label that exists rather than failing on it, and filing works on a repo that
