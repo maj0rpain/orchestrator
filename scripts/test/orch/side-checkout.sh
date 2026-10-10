@@ -393,6 +393,38 @@ assert_status "remove refuses when git status cannot run" "$st" 1
 assert_contains "naming git's error" "$out" "git status failed - cannot check the working tree: "
 assert_eq "its flow is not moved" "$(archived_count "$top" new-flow)" "0"
 assert_eq "nor its worktree removed" "$(on_disk "$gamma")" "present"
+# #974: a ticket worktree left under a side checkout holding a flow is refused
+# once, through the archive, before anything moves.
+(cd "$gamma" && orch_gh_failing ticket-worktree add 6 >/dev/null)
+out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
+assert_status "remove refuses a ticket worktree under a side checkout holding a flow" "$st" 1
+assert_contains "naming it" "$out" "$gamma/.orchestrator/worktrees/t6"
+assert_contains "with ticket-worktree remove as the remedy" "$out" "orch.sh ticket-worktree remove 6"
+assert_eq "its flow is not archived" "$(archived_count "$top" new-flow)" "0"
+assert_eq "its flow stays in place" "$(on_disk "$gamma/.orchestrator/state.json")" "present"
+assert_eq "nor its worktree removed" "$(on_disk "$gamma")" "present"
+assert_eq "its branch is kept" \
+  "$(git rev-parse --verify --quiet refs/heads/quick/5-gamma >/dev/null && echo kept || echo gone)" "kept"
+assert_eq "the ticket worktree stays where git recorded it" \
+  "$(git -C "$gamma/.orchestrator/worktrees/t6" rev-parse --show-toplevel)" "$gamma/.orchestrator/worktrees/t6"
+(cd "$gamma" && orch_gh_failing ticket-worktree remove 6 >/dev/null)
+# And under a side checkout holding no flow, the same refusal.
+zeta="$(sc_add zeta)"
+git -C "$zeta" checkout -q -b quick/6-zeta
+(cd "$zeta" && orch_gh_failing ticket-worktree add 7 >/dev/null)
+archives_before="$(ls "$top/.orchestrator/archive" 2>/dev/null | wc -l)"
+out="$(orch_gh_failing side-checkout remove zeta 2>&1)"; st=$?
+assert_status "remove refuses a ticket worktree under a side checkout holding no flow" "$st" 1
+assert_contains "naming it" "$out" "$zeta/.orchestrator/worktrees/t7"
+assert_contains "with ticket-worktree remove as the remedy" "$out" "orch.sh ticket-worktree remove 7"
+assert_eq "nothing is archived" "$(ls "$top/.orchestrator/archive" 2>/dev/null | wc -l)" "$archives_before"
+assert_eq "its worktree is not removed" "$(on_disk "$zeta")" "present"
+assert_eq "its branch is kept" \
+  "$(git rev-parse --verify --quiet refs/heads/quick/6-zeta >/dev/null && echo kept || echo gone)" "kept"
+assert_eq "the ticket worktree stays where git recorded it" \
+  "$(git -C "$zeta/.orchestrator/worktrees/t7" rev-parse --show-toplevel)" "$zeta/.orchestrator/worktrees/t7"
+(cd "$zeta" && orch_gh_failing ticket-worktree remove 7 >/dev/null)
+orch_gh_failing side-checkout remove zeta >/dev/null 2>&1
 
 # remove archives the flow into the main checkout, removes the worktree, and
 # keeps the branch.
@@ -589,6 +621,27 @@ assert_eq "the locked worktree stays" "$(on_disk "$lk")" "present"
 assert_eq "with its branch" "$(sp_branch orch/lk-flow)" "kept"
 assert_eq "the sweep moves on to the next" "$(on_disk "$q2")" "absent"
 git worktree unlock "$lk"
+
+# #974: a finished side checkout holding a flow with a ticket worktree under
+# it cannot have its flow archived: it is reported and kept with its branch.
+fake_offline
+tw="$(sc_add tw)"
+(cd "$tw" && orch_gh_failing init tw-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/tw-flow && state_fixture pr 49)
+sp_branch_off "$tw" orch/tw-flow
+fake_pr 49 merged orch/tw-flow main
+(cd "$tw" && orch_gh_failing ticket-worktree add 8 >/dev/null)
+fake_online
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune exits 1 when a ticket worktree blocks an archive" "$st" 1
+assert_contains "reporting the side checkout as not archived" "$out" \
+  "could not archive the flow in side checkout $tw: "
+assert_contains "and left as it stands" "$out" "- left as it stands"
+assert_eq "its flow is not archived" "$(archived_count "$top" tw-flow)" "0"
+assert_eq "the side checkout stays" "$(on_disk "$tw/.orchestrator/state.json")" "present"
+assert_eq "with its branch" "$(sp_branch orch/tw-flow)" "kept"
+(cd "$tw" && orch_gh_failing ticket-worktree remove 8 >/dev/null)
+orch_gh_failing side-checkout prune >/dev/null 2>&1
 
 # Each removal reports only its own archive: a flowless side checkout swept
 # right after the main checkout's finished flow does not repeat that archive.
