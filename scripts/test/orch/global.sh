@@ -22,9 +22,7 @@ assert_status "refuses no argument at all" "$st" 1
 # --- archive ----------------------------------------------------------------
 echo
 echo "archive"
-new_repo >/dev/null
-fake_github
-"$ORCH" init my-feature >/dev/null
+fake_flow my-feature
 h="$("$ORCH" handoff path spec)"
 complete_plan_handoff "$h"
 dest="$("$ORCH" archive)"

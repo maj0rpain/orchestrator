@@ -11,9 +11,7 @@
 # the prose cannot skip it.
 echo
 echo "phase advance"
-new_repo >/dev/null
-fake_github
-"$ORCH" init advancing >/dev/null
+fake_flow advancing
 export ORCHESTRATOR_HOST=claude
 
 out="$("$ORCH" phase advance 2>&1)"; st=$?

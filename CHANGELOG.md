@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.3.3
+## 4.3.4
 
 `orch.sh` is split by noun (#937): it stays the one entry point at
 `scripts/orch.sh`, now holding path resolution, the shared constants, the
@@ -12,6 +12,14 @@ the gh adapter layer whole in `scripts/orch/gh.sh`, and `doctor.sh` moves to
 unchanged. The all-tests runner's shellcheck, doctor's one-way dependency
 check, the `command gh` count and the docs lint's flow-command scan cover
 every module.
+
+## 4.3.3
+
+`orch_test.sh`'s parallel runner names its variables for what they hold
+(#893): one child's counts are `orch_child_pass`/`orch_child_fail`/`orch_child_skip`,
+a section's position `orch_pos`, the section list and kept set `orch_titles` and
+`orch_kept`, the isolation seed `orch_kept_isolation`, and the exit flag
+`orch_any_failed`. No behaviour changes.
 
 ## 4.3.2
 
