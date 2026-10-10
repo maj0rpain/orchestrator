@@ -19,17 +19,29 @@ scripts/test/all.sh                           # every suite; run once before com
 
 While iterating, run only the section you are working on, in quiet mode:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`, where
-`<section>` is an extended regex matched against the `# ---` section titles. Run
+`<section>` is an extended regex matched against the `# ---` section titles,
+e.g. `ORCH_TEST_ONLY='^branch create$'` or `ORCH_TEST_ONLY='^ticket'`. Run
 `scripts/test/all.sh` once before committing: it starts all three suites and
 shellcheck over every shell file at once, so they overlap, carries on past a
 failing one, and once all have finished prints each suite's FAIL lines and a
 summary line, then shellcheck's findings and a `shellcheck: N findings` summary
 line, or `shellcheck: not installed - skipped`, which fails the run only in CI.
 
+orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
+under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
+(`branch.sh`, `ticket.sh`, `review-pass.sh`, ...), `harness.sh` the harness's
+own (the section filter, quiet mode, all.sh), and `setup.sh` the shared setup
+and the summary. A ticket's tests go in the file for the noun it touches; a new
+noun gets a new file, which the runner picks up with no edit. A noun file holds
+only `# ---` sections, optionally preceded by a preamble: the text before its
+first `# ---` line, run before that file's sections whenever one of them runs.
+
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
 the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
-section must pass on its own: a helper used by more than one section lives in its
-shared setup.
+section must pass on its own. A helper is placed by the files that use it: one
+used by more than one file lives in `setup.sh`'s shared setup; one used by only
+one file lives in that file's preamble, whether one section or several use it;
+a helper never moves into a section.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
@@ -66,7 +78,10 @@ scripts/host.sh               the one host detector, host_detect, sourced by orc
 scripts/hook-*.sh             the four hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
-scripts/test/                 shell tests
+scripts/test/                 shell tests: orch_test.sh (the orch.sh suite's runner), hooks_test.sh, docs_lint.sh, all.sh
+scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
+scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
+scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, ...): its sections, after an optional preamble
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/junie/README.md          Junie CLI setup: the AGENTS.md snippet and the per-prompt fallback

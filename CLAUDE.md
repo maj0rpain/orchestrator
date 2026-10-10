@@ -4,7 +4,7 @@ A Claude Code plugin. See [CONTRIBUTING.md](CONTRIBUTING.md) for layout and auth
 
 ## Layout
 
-Shell scripts live in `scripts/` (`orch.sh`, `doctor.sh`, `hook-*.sh`, …); tests in `scripts/test/`. There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
+Shell scripts live in `scripts/` (`orch.sh`, `doctor.sh`, `hook-*.sh`, …); tests in `scripts/test/`, with the orch.sh suite's sections in `scripts/test/orch/` (one `<noun>.sh` per orch.sh noun, plus `setup.sh` and `harness.sh`). There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
 
 ## Agent skills
 
@@ -36,12 +36,18 @@ See `docs/agents/coding-standards.md`.
 ## Testing
 
 While iterating, run only the section you are working on:
-`ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`.
+`ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`,
+e.g. `ORCH_TEST_ONLY='^branch create$'`.
 Run `scripts/test/all.sh` once before committing.
+orch_test.sh is only the runner: its `# ---` sections live in
+`scripts/test/orch/<noun>.sh`, one file per orch.sh noun, and a ticket's tests
+go in the file for the noun it touches (a new noun gets a new file).
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
 the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
-section must pass on its own: a helper used by more than one section lives in its
-shared setup.
+section must pass on its own. So a helper is placed by the files that use it: one
+used by more than one file lives in `scripts/test/orch/setup.sh`; one used by
+only one file lives in that file's preamble, before its first `# ---` line; a
+helper never moves into a section.
 See CONTRIBUTING.md's Develop section.
 
 ## Versioning
