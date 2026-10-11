@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.7.2
+
+orch.sh no longer misreads a label or a CI signal now and then under load: a value piped into a quiet `grep` under `pipefail` could take SIGPIPE and read a match as absent, so `finding-triage apply` could leave a stale triage label, `finding-triage bundle` refuse a valid member, and `review ci` skip the grace on a repo with CI. Each such check now passes its value to `grep` as a herestring, and docs lint now refuses that pattern (#987).
+
 ## 4.7.1
 
 The planning session's interviewed-issue step now checks the issue's triage labels before asking: no label question when it already carries `ready-for-agent`, one override question naming `wontfix` or `ready-for-human`, and a warning with the reason when the check fails. Backed by a new read-only `orch.sh issue triage <n> --check` (#989).
