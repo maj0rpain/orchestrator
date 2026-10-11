@@ -117,11 +117,11 @@ category_label_ensure() {
 # paragraph. The labelled lines are the closer's, byte for byte, so a body
 # filed before rendering existed parses as one rendered now does.
 finding_body_render() {
-  local axis
+  local axis display_axis
   axis="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
-  axis="$(printf '%s' "${axis:0:1}" | tr '[:lower:]' '[:upper:]')${axis:1}"
+  display_axis="$(printf '%s' "${axis:0:1}" | tr '[:lower:]' '[:upper:]')${axis:1}"
   printf '%s\n\n' "$(cat "$1")" \
-    "**Axis:** $axis" \
+    "**Axis:** $display_axis" \
     "**Severity:** $3 - $4" \
     "**Location:** \`$5:$6\` at $7" \
     "**PR:** $8" \
