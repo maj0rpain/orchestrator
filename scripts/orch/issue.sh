@@ -168,12 +168,11 @@ cmd_issue_ready() {
 # retries this once on either status, as ticket_links_verified's caller does.
 # Locals prefixed so no caller's variable name is shadowed.
 issue_publish_verified() {
-  local __ipv_out __ipv_err __ipv_title __ipv_labels
-  if ! capture __ipv_out __ipv_err adapter_issue_title_labels "$2"; then
+  local __ipv_err __ipv_title __ipv_labels
+  if ! issue_title_labels_read "$2" __ipv_title __ipv_labels __ipv_err; then
     printf -v "$1" '%s' "$__ipv_err"
     return 2
   fi
-  lines_split "$__ipv_out" __ipv_title __ipv_labels
   [ "$__ipv_title" = "$3" ] || return 1
   labels_verified "$__ipv_labels" "$4" || return 1
 }

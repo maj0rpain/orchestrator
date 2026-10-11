@@ -638,12 +638,11 @@ check_flow_issue() {
 }
 
 check_flow_pr() {
-  local pr out pr_state err=""
+  local pr pr_state="" _is_draft err=""
   pr="$(state_get pr)"
   if [ -z "$pr" ]; then d_ok "PR: not opened yet"; return 0; fi
   d_gh_gate || return 0
-  capture out err adapter_pr_state_draft "$pr" || out=""
-  pr_state="${out%%$'\n'*}"
+  pr_state_draft_read "$pr" pr_state _is_draft err || pr_state=""
   case "$pr_state" in
     OPEN)   d_ok "PR #$pr open" ;;
     MERGED) d_ok "PR #$pr merged" ;;
@@ -744,14 +743,13 @@ check_flow_review_ci() {
 # so isDraft and phase disagreeing on GitHub's own PR is evidence that
 # operation only half landed, not a state a healthy flow reaches on its own.
 check_flow_review_draft() {
-  local phase pr out err="" pr_state is_draft _rest
+  local phase pr err="" pr_state="" is_draft=""
   phase="$(state_get phase)"
   case "$phase" in review|done) ;; *) return 0 ;; esac
   pr="$(state_get pr)"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
-  capture out err adapter_pr_state_draft "$pr" || out=""
-  lines_split "$out" pr_state is_draft _rest
+  pr_state_draft_read "$pr" pr_state is_draft err || pr_state=""
   if [ -z "$pr_state" ]; then
     d_warn "PR #$pr draft state could not be read from GitHub: $(gh_reason "$err")"
     return 0

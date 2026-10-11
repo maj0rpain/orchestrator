@@ -382,7 +382,7 @@ cmd_review() {
       ;;
     ci)
       require_state
-      local pr started slept=0 elapsed=0 res verdict refs head_oid head_ref base_ref pushed push_age=0
+      local pr started slept=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
       local commits="" no_ci=0
       require_ci_knobs
       require_pr pr
@@ -393,8 +393,7 @@ cmd_review() {
       # `push_age` is how long before this call the push landed; a PR that will
       # not say what its head is, or a head with no reflog entry, leaves it at zero,
       # and the grace counts from the call as it always did.
-      if refs="$(adapter_pr_refs "$pr" 2>/dev/null)"; then
-        lines_split "$refs" head_oid head_ref base_ref commits
+      if pr_refs_read "$pr" head_oid head_ref base_ref commits refs_err; then
         pushed="$(ci_push_time "$head_oid" "$head_ref")"
         case "$pushed" in
           ''|*[!0-9]*) ;;
