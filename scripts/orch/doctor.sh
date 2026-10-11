@@ -802,17 +802,13 @@ check_flow_worktree_clean() {
 
 # Pure reuse: what makes a handoff valid lives in handoff_required and
 # section_body, and a second statement of it here is how the two answers drift.
-# Which handoffs are due is mechanical - phase names what runs *next*, so every
-# earlier phase has already written one.
+# Which handoffs are due is the phase table's handoffs_due - phase names what
+# runs *next*, so every earlier phase has already written one.
 check_flow_handoffs() {
   local phase files f path problems line
   phase="$(state_get phase)"
-  case "$phase" in
-    spec)        files="01-plan.md" ;;
-    implement)   files="01-plan.md 02-spec.md" ;;
-    review|done) files="01-plan.md 02-spec.md 03-implement.md" ;;
-    *) return 0 ;;
-  esac
+  # A phase the table does not hold is due nothing, so the check skips it.
+  files="$(handoffs_due "$phase")"
   for f in $files; do
     path="$HANDOFF_DIR/$f"
     if [ ! -f "$path" ]; then
