@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.7.8
+
+The Checkout module: one walk over every checkout, `checkouts`, which `status`, `side-checkout list` and `prune`, `ticket-worktree`, `ticket merge` and doctor now read. A worktree at a ticket-worktree path that carries a hand-copied side-checkout marker now counts as a ticket worktree, not a side checkout.
+
+The current branch is read in one place, `checkout_branch` and `current_branch_or_die`. Doctor's flow checks declare the phases they apply to as data, and the exclude-file membership test is written once, in `orch_dirs_unexcluded`.
+
 ## 4.7.7
 
 The flow's phases, the handoff each one writes and reads, and each handoff's
