@@ -30,8 +30,9 @@ line, or `shellcheck: not installed - skipped`, which fails the run only in CI.
 orch_test.sh is the suite's runner and holds no test. Its `# ---` sections live
 under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
 (`branch.sh`, `ticket.sh`, `review-pass.sh`, ...), `harness.sh` the harness's
-own (the section filter, quiet mode, all.sh), and `setup.sh` the shared setup
-and the summary. A ticket's tests go in the file for the noun it touches; a new
+own (the section filter, quiet mode, all.sh), `common.sh` the bottom-layer
+check on `scripts/orch/common.sh`, and `setup.sh` the shared setup and the
+summary. A ticket's tests go in the file for the noun it touches; a new
 noun gets a new file, which the runner picks up with no edit. A noun file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
@@ -42,11 +43,14 @@ section must pass on its own. Helper placement is checked by harness.sh's
 placement section; its failure message states the rule.
 
 orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
-noun's code, named as that noun's test file is, and `scripts/orch/common.sh`
-the helpers more than one module (or orch.sh itself) uses; a helper only one
-module uses lives in that module. The gh adapter layer stays whole in `gh.sh`,
-whoever calls it. orch.sh sources every module eagerly from an explicit list,
-so a new noun gets its own module, a case in `main` and a line in that list.
+noun's code, named as that noun's test file is, and a helper lives in the
+module of the concept it serves, whichever modules call it.
+`scripts/orch/common.sh` holds only the primitives no concept owns (die, warn,
+note, capture and the like) and calls nothing a noun module defines; its test
+section checks this. The Filed finding helpers stay there until #1026 gives
+them a module. The gh adapter layer stays whole in `gh.sh`, whoever calls it.
+orch.sh sources every module eagerly from an explicit list, so a new noun gets
+its own module, a case in `main` and a line in that list.
 
 shellcheck is needed for `all.sh`'s lint step. `.shellcheckrc` holds its source
 settings; severity is a command-line option only, so a manual run needs
@@ -110,7 +114,7 @@ skills/orch-finding-triage/   finding triage: scan the filed findings against th
 scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main
 scripts/orch/<noun>.sh        one module per orch.sh noun (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
-scripts/orch/common.sh        the helpers more than one module uses (die, capture, the state readers, ...)
+scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), every adapter_* operation, the ORCH_GH_ADAPTER hook
 scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functions, the doctor noun's module
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
@@ -122,6 +126,7 @@ scripts/version-bump.sh       the version-bump Action's script: changelog fragme
 scripts/test/                 shell tests: orch_test.sh (the orch.sh suite's runner), hooks_test.sh, docs_lint.sh, version_bump_test.sh, all.sh
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
 scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
+scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh
 scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, ...): its sections, after an optional preamble
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks

@@ -13,6 +13,121 @@ ORCH_CI_GRACE="${ORCH_CI_GRACE:-60}"
 ORCH_CI_TIMEOUT="${ORCH_CI_TIMEOUT:-900}"
 ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
 
+# The bound belongs here rather than in the skill's prose: a session that has
+# spent four iterations arguing with itself is exactly the one that would
+# re-remember five as six. The number itself is the human's, read from state;
+# this is only what it reads as when nobody has set one - a flow started before
+# the key existed, or a value nothing can count.
+readonly DEFAULT_BUDGET=5
+
+review_budget() {
+  local b
+  b="$(state_get budget)"
+  case "$b" in ''|*[!0-9]*) b="$DEFAULT_BUDGET" ;; esac
+  printf '%s\n' "$b"
+}
+
+# One look at the PR's checks, classified. Prints the classification on the first
+# line and any detail on the lines after it, indented like doctor's remedies.
+#
+# adapter_pr_checks answers nothing at all for a repo with no checks, and fails
+# for an API that would not answer or an answer it could not read - so the two
+# meanings an empty read could carry stay apart. Getting that distinction
+# backwards is what would make the loop declare a CI-having repo CI-less, or
+# mark a PR ready over checks nobody read.
+ci_probe() {
+  local pr="$1" scope="$2" out err failed="" pending="" line bucket name
+  if ! capture out err adapter_pr_checks "$pr" "$scope"; then
+    note unreachable
+    note "      $(gh_reason "$err")"
+    return 0
+  fi
+  if [ -z "$out" ]; then note none; return 0; fi
+  # One pass over the checks: each failed or cancelled one's name, and
+  # whether any is pending.
+  while IFS= read -r line; do
+    tsv_split "$line" bucket name
+    case "$bucket" in
+      fail|cancel) failed+="$name"$'\n' ;;
+      pending) pending=1 ;;
+    esac
+  done <<<"$out"
+  newlines_strip failed
+  if [ -n "$failed" ]; then
+    note failing
+    while IFS= read -r name; do [ -z "$name" ] || note "      $name"; done <<<"$failed"
+    return 0
+  fi
+  if [ -n "$pending" ]; then note pending; return 0; fi
+  note green
+}
+
+# Classifies the review loop's last iteration against its budget - the one
+# answer `review terminal` and doctor's `check_flow_review_terminal` both read,
+# rather than each re-deriving which iteration counts as done. Checked with
+# the same section_body/required-heading pattern handoff_report already uses,
+# not a second implementation of it. Prints the classification word on the
+# first line, and for `stop`, the recorded reason on the lines after it; for
+# `malformed`, the one expected-shape line callers quote rather than copy.
+# Exit status is 0 for ready/stop, non-zero for none/pending/interrupted/
+# malformed - a single boolean a caller can act on without re-deriving which
+# words count as terminal.
+#
+# The section is read as markdown is written: blank lines under the heading
+# are skipped, the first line is trimmed, and `stop` may carry its reason on
+# the same line after a separator (-, –, —, :). Anything else in a non-empty
+# section is malformed, never silently interrupted - interrupted means the
+# record or its section is missing or empty once the budget is spent; short
+# of it, the same absence is pending.
+review_terminal_state() {
+  require_state
+  local i b path sec="" line started="" body="" first_raw first rest after s sep
+  i="$(state_get iteration)"
+  b="$(review_budget)"
+  if [ "$i" -eq 0 ]; then note none; return 1; fi
+  path="$(cmd_review path "$i")"
+  # A loop can stop short of its budget (a failed base sync goes straight to
+  # Termination), so a recorded terminal state is read whatever the
+  # iteration; only its absence depends on the budget - pending before it is
+  # spent, interrupted once it is.
+  if [ -f "$path" ]; then sec="$(section_body "$path" '## Terminal state')" || true; fi
+  if [ ! -f "$path" ] || [ -z "${sec//[[:space:]]/}" ]; then
+    if [ "$i" -lt "$b" ]; then note pending; else note interrupted; fi
+    return 1
+  fi
+  # The section from its first line holding more than spaces and tabs on.
+  while IFS= read -r line; do
+    if [ -z "$started" ]; then
+      case "$line" in *[!$' \t']*) started=1 ;; *) continue ;; esac
+    fi
+    body+="$line"$'\n'
+  done <<<"$sec"
+  newlines_strip body
+  lines_split "$body" first_raw rest
+  first="$(trim "$first_raw")"
+  case "$first" in
+    ready) note ready; return 0 ;;
+    stop*)
+      after="$(trim "${first#stop}")"
+      sep=
+      for s in - – — :; do
+        case "$after" in "$s"*) sep="$s"; break ;; esac
+      done
+      # Bare `stop`, or `stop` and a separator: anything else after the word
+      # (`stopped`, `stop CI failed`) falls through to malformed.
+      if [ -z "$after" ] || [ -n "$sep" ]; then
+        after="$(trim "${after#"$sep"}")"
+        note stop
+        [ -z "$after" ] || printf '%s\n' "$after"
+        [ -z "$rest" ] || printf '%s\n' "$rest"
+        return 0
+      fi ;;
+  esac
+  note malformed
+  note "expected: first line 'ready', or 'stop' with its reason after a separator (-, –, —, :) or on the lines below"
+  return 1
+}
+
 # The severity label a filed finding carries, so triage can filter on it. It is
 # this plugin's own, so overwriting it is safe: adapter_label_upsert updates a
 # label that exists rather than failing on it, and filing works on a repo that

@@ -9,6 +9,69 @@
 # directory, so an implementer's edits draw no permission prompt - and is kept
 # out of git status by the clone's exclude file.
 
+# The ticket number <n> names, or die: digits only, not zero.
+ticket_worktree_number() {
+  case "$1" in
+    ''|*[!0-9]*|0*) die "not a ticket number: ${1:-<none>} (want a positive integer)" ;;
+  esac
+  printf '%s\n' "$1"
+}
+
+ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
+
+# forked_from_key <branch>: the git config key that records the branch ticket
+# branch <branch> was forked from - the one place code spells it out.
+forked_from_key() { printf 'branch.%s.orchestrator-ticket-parent\n' "$1"; }
+
+# forked_from_branch <branch>: prints the forked-from branch recorded on
+# ticket branch <branch>, or prints nothing and returns non-zero when none is
+# recorded.
+forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
+
+# Prints <n> <path> for every ticket worktree under the checkout at <root>.
+ticket_worktrees_under() {
+  local path name
+  while IFS= read -r path; do
+    [ "$(dirname "$path")" = "$1/$ORCH_DIR_NAME/worktrees" ] || continue
+    name="$(basename "$path")"
+    case "$name" in t[1-9]*) ;; *) continue ;; esac
+    case "${name#t}" in *[!0-9]*) continue ;; esac
+    note "${name#t} $path"
+  done < <(checkout_paths)
+}
+
+# refuse_ticket_worktrees <root>: dies, naming every ticket worktree under the
+# checkout at <root>, when any is left: moving .orchestrator/ wholesale would
+# break git's record of each one, and removing the checkout would delete them.
+refuse_ticket_worktrees() {
+  local left
+  left="$(ticket_worktrees_under "$1")"
+  [ -n "$left" ] || return 0
+  die "ticket worktrees are left under $1 - moving them would break git's record of them:
+$(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")
+     Remove each with orch.sh ticket-worktree remove <n> first."
+}
+
+# Resolves ticket <n>'s worktree for a command that acts on an existing one:
+# dies unless <n> is a ticket number whose worktree exists and is on a branch.
+# It assigns to the caller's `n`, `path` and `branch`, which bash scopes
+# dynamically, and is called as a bare statement so `die` stops the caller.
+ticket_worktree_resolve() {
+  n="$(ticket_worktree_number "$1")"
+  path="$(ticket_worktree_path "$n")"
+  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+    || die "no ticket worktree for ticket $n at $path"
+  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
+    || die "ticket worktree $path is not on a branch (detached HEAD)"
+}
+
+# Whether a rebase is in progress in the checkout at <path>.
+rebase_in_progress() {
+  local gitdir
+  gitdir="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]
+}
+
 # Forks <current-branch>--t<n> from the current branch's tip, records the
 # forked-from branch on it, and checks it out at .orchestrator/worktrees/t<n>.
 # The exclude entry is written before the branch exists; anything failing
