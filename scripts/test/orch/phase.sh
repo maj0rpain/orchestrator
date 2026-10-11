@@ -84,7 +84,17 @@ assert_eq "and leaves the phase at review" "$("$ORCH" state get phase)" "review"
 state_fixture phase "done"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at done" "$st" 1
+assert_contains "saying the flow is done" "$out" \
+  "orch: the flow is done - there is no phase to advance to"
 assert_eq "and leaves the phase at done" "$("$ORCH" state get phase)" "done"
+
+state_fixture phase bogus
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "refuses at a phase outside the table" "$st" 1
+assert_contains "naming the phase and doctor --flow" "$out" \
+  "orch: not a flow phase: 'bogus' - run orch.sh doctor --flow"
+assert_eq "and leaves the phase as it was" "$("$ORCH" state get phase)" "bogus"
+state_fixture phase "done"
 
 out="$("$ORCH" phase advance extra 2>&1)"; st=$?
 assert_status "advance takes no arguments" "$st" 1
@@ -107,6 +117,13 @@ assert_eq "on an unknown host names the fresh-session Next line" "$out" \
 state_fixture phase "done"
 out="$("$ORCH" phase boundary 2>&1)"; st=$?
 assert_status "refuses once the flow is done" "$st" 1
+assert_contains "saying there is no boundary at done" "$out" \
+  "orch: no phase boundary at phase: done - the flow is not between phases"
+state_fixture phase bogus
+out="$("$ORCH" phase boundary 2>&1)"; st=$?
+assert_status "refuses at a phase outside the table" "$st" 1
+assert_contains "saying there is no boundary at that phase" "$out" \
+  "orch: no phase boundary at phase: bogus - the flow is not between phases"
 out="$("$ORCH" phase bogus 2>&1)"; st=$?
 assert_status "an unknown phase op is an error" "$st" 1
 assert_contains "naming the ops it wants" "$out" "advance|boundary"
