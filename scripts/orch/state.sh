@@ -116,9 +116,8 @@ flow_active() { flow_state_active "$STATE"; }
 # each with its own message. Reads state.json only when one exists.
 flow_holding_phase() {
   local branch="$1" issue="${2:-}" phase
-  [ -f "$STATE" ] || return 1
+  flow_active || return 1
   phase="$(state_get phase)"
-  [ "$phase" != "done" ] || return 1
   [ "$(state_get branch)" = "$branch" ] \
     || { [ -n "$issue" ] && [ "$(state_get issue)" = "$issue" ]; } \
     || return 1
