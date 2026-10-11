@@ -17,10 +17,11 @@
 # second argument (default die): a parent that is no plain number, refused
 # before asking GitHub, and a GitHub that cannot list them.
 ticket_sub_issues() {
-  local parent="$1" fail="${2:-die}" subs err
+  local parent="$1" fail="${2:-die}" subs exit_opt=()
   case "$parent" in ''|*[!0-9]*) "$fail" "parent must be a plain issue number, got: $parent" ;; esac
-  capture subs err adapter_sub_issues "$parent" \
-    || "$fail" "gh could not list sub-issues of #$parent: $(gh_reason "$err")"
+  [ "$fail" != die2 ] || exit_opt=(--exit 2)
+  gh_or_die ${exit_opt[@]+"${exit_opt[@]}"} --out subs "list sub-issues of #$parent" \
+    adapter_sub_issues "$parent"
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
 }
 
@@ -93,7 +94,7 @@ cmd_ticket_publish() {
   local usage="usage: orch.sh ticket publish <parent> <title> <body-file> [--blocked-by N,N,...]"
   [ $# -ge 3 ] || die "$usage"
   local parent="$1" title="$2" body_file="$3" blocked_by="" have_blocked_by="" want="" b
-  local ready child gh_err="" st=0 err
+  local ready child gh_err="" st=0
   shift 3
   # Every argument check runs here, before the first GitHub write. A second
   # --blocked-by is refused, never allowed to replace the first.
@@ -117,16 +118,16 @@ cmd_ticket_publish() {
   fi
 
   ready="$(triage_label_for ready-for-agent)"
-  capture child err adapter_issue_create "$title" "$body_file" "$ready" \
-    || die "gh could not create the ticket: $(gh_reason "$err")"
+  gh_or_die --out child "create the ticket" \
+    adapter_issue_create "$title" "$body_file" "$ready"
 
-  capture_err err adapter_sub_issue_link "$parent" "$child" \
-    || die "gh could not link ticket #$child as a sub-issue of #$parent: $(gh_reason "$err")"
+  gh_or_die "link ticket #$child as a sub-issue of #$parent" \
+    adapter_sub_issue_link "$parent" "$child"
 
   if [ -n "$want" ]; then
     while IFS= read -r b; do
-      capture_err err adapter_blocker_add "$child" "$b" \
-        || die "gh could not add a blocking edge from ticket #$child on #$b: $(gh_reason "$err")"
+      gh_or_die "add a blocking edge from ticket #$child on #$b" \
+        adapter_blocker_add "$child" "$b"
     done <<<"$want"
   fi
 
@@ -135,7 +136,7 @@ cmd_ticket_publish() {
   ticket_links_verified gh_err "$parent" "$child" "$want" \
     || ticket_links_verified gh_err "$parent" "$child" "$want" \
     || st=$?
-  [ "$st" -ne 2 ] || die "gh could not read ticket #$child's links: $(gh_reason "$gh_err")"
+  [ "$st" -ne 2 ] || gh_die "read ticket #$child's links" "$gh_err"
   [ "$st" -eq 0 ] \
     || die "ticket #$child's sub-issue/blocked-by links did not verify - checked twice, both failed"
 
@@ -171,9 +172,9 @@ cmd_ticket_list() {
 
 cmd_ticket_close() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket close <n>"
-  local n="$1" err
+  local n="$1"
   case "$n" in ''|*[!0-9]*) die "not a plain issue number: $n" ;; esac
-  capture_err err adapter_issue_close "$n" || die "gh could not close ticket #$n: $(gh_reason "$err")"
+  gh_or_die "close ticket #$n" adapter_issue_close "$n"
 }
 
 # Reopens every sub-issue of <parent> that is currently closed, and only
@@ -181,13 +182,12 @@ cmd_ticket_close() {
 # implement phase, whose frontier query would otherwise find nothing.
 cmd_ticket_reset() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket reset <parent>"
-  local subs line n state err
+  local subs line n state
   subs="$(ticket_sub_issues "$1")" || exit 1
   while IFS= read -r line; do
     tsv_split "$line" n state
     [ "$state" = CLOSED ] && [ -n "$n" ] || continue
-    capture_err err adapter_issue_reopen "$n" \
-      || die "gh could not reopen ticket #$n: $(gh_reason "$err")"
+    gh_or_die "reopen ticket #$n" adapter_issue_reopen "$n"
   done <<<"$subs"
 }
 
@@ -195,10 +195,9 @@ cmd_ticket_reset() {
 # not a sub-issue. Every gh failure is a real one (see adapter_issue_parent).
 cmd_ticket_parent() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket parent <n>"
-  local n="$1" err
+  local n="$1"
   case "$n" in ''|*[!0-9]*) die "not a plain issue number: $n" ;; esac
-  capture_err err adapter_issue_parent "$n" \
-    || die "gh could not read issue #$n's parent: $(gh_reason "$err")"
+  gh_or_die "read issue #$n's parent" adapter_issue_parent "$n"
 }
 
 # Whether <parent> already has a ticket breakdown, decided by structure
@@ -213,14 +212,14 @@ cmd_ticket_parent() {
 # a caller reading 1 as "no breakdown" would publish a second one.
 cmd_ticket_exists() {
   [ $# -eq 1 ] || die2 "usage: orch.sh ticket exists <parent>"
-  local parent="$1" subs body err
+  local parent="$1" subs body
   subs="$(ticket_sub_issues "$parent" die2)" || exit "$?"
   if [ -n "$subs" ]; then
     printf 'sub-issues\n'
     return 0
   fi
-  capture body err adapter_issue_body "$parent" \
-    || die2 "gh could not read issue #$parent's body: $(gh_reason "$err")"
+  gh_or_die --exit 2 --out body "read issue #$parent's body" \
+    adapter_issue_body "$parent"
   if printf '%s\n' "$body" | has_ticket_heading; then
     printf 'collapsed\n'
     return 0
@@ -280,43 +279,43 @@ cmd_ticket_retire() {
   while IFS=$'\t' read -r n state _; do
     [ -z "$n" ] && continue
     if [ "$state" = OPEN ]; then
-      capture_err err adapter_issue_close "$n" --reason "not planned" --comment "$msg" \
-        || die "gh could not close ticket #$n: $(gh_reason "$err")"
+      gh_or_die "close ticket #$n" \
+        adapter_issue_close "$n" --reason "not planned" --comment "$msg"
     else
-      capture comments err adapter_issue_comments "$n" \
-        || die "gh could not read ticket #$n's comments: $(gh_reason "$err")"
+      gh_or_die --out comments "read ticket #$n's comments" \
+        adapter_issue_comments "$n"
       if ! grep -qF -e "$msg" -e "$old_msg" <<<"$comments"; then
         comment_file="$(mktemp)"
         printf '%s\n' "$msg" >"$comment_file"
         capture_err err adapter_issue_comment "$n" "$comment_file" \
-          || { rm -f "$comment_file"; die "gh could not comment on ticket #$n: $(gh_reason "$err")"; }
+          || { rm -f "$comment_file"; gh_die "comment on ticket #$n" "$err"; }
         rm -f "$comment_file"
       fi
     fi
-    capture_err err adapter_sub_issue_unlink "$parent" "$n" \
-      || die "gh could not unlink ticket #$n from #$parent: $(gh_reason "$err")"
+    gh_or_die "unlink ticket #$n from #$parent" \
+      adapter_sub_issue_unlink "$parent" "$n"
   done <<<"$subs"
   # A body with no `## Ticket` line outside a code fence comes back
   # unchanged, so it is not written.
-  issue_body_rewrite "$parent" "gh could not read issue #$parent's body" \
-    "gh could not remove the ## Ticket section from #$parent" strip_ticket_sections
+  issue_body_rewrite "$parent" "read issue #$parent's body" \
+    "remove the ## Ticket section from #$parent" strip_ticket_sections
 }
 
-# issue_body_rewrite <n> <read-msg> <write-msg> <filter> [<arg>...]: issue
+# issue_body_rewrite <n> <read-what> <write-what> <filter> [<arg>...]: issue
 # <n>'s body through <filter> (stdin to stdout) and back. The body is read
 # into a file, never through $(...), which would drop its trailing newlines,
 # so the bytes the filter keeps go back unchanged - the same round trip
 # `issue fetch` and `issue update` make. A body with no final newline gets
 # none back; a result byte-identical to the body is not written. A failed
-# read dies with <read-msg>, a failed write with <write-msg>, each followed by
-# gh's reason; capture_err takes the stderr while the body still streams to
+# read dies through gh_die with <read-what>, a failed write with <write-what>;
+# capture_err takes the stderr while the body still streams to
 # its file, and neither death leaves a temp file.
 issue_body_rewrite() {
-  local n="$1" read_msg="$2" write_msg="$3" body result out err
+  local n="$1" read_what="$2" write_what="$3" body result out err
   shift 3
   body="$(mktemp)"
   capture_err err adapter_issue_body "$n" >"$body" \
-    || { rm -f "$body"; die "$read_msg: $(gh_reason "$err")"; }
+    || { rm -f "$body"; gh_die "$read_what" "$err"; }
   result="$(mktemp)"
   "$@" <"$body" >"$result"
   # A filter command may end its last line with a newline; a body that had
@@ -328,7 +327,7 @@ issue_body_rewrite() {
   if cmp -s "$body" "$result"; then rm -f "$body" "$result"; return 0; fi
   rm -f "$body"
   capture_err err adapter_issue_body_edit "$n" "$result" \
-    || { rm -f "$result"; die "$write_msg: $(gh_reason "$err")"; }
+    || { rm -f "$result"; gh_die "$write_what" "$err"; }
   rm -f "$result"
 }
 
@@ -338,16 +337,14 @@ issue_body_rewrite() {
 # state is the issue noun's own read (#496); a pull request's number passes it
 # and is refused as no sub-issue.
 ticket_edge_preconditions() {
-  local n="$1" by="$2" state parent b bp err
-  capture state err adapter_issue_state "$n" \
-    || die "gh could not read ticket #$n: $(gh_reason "$err")"
+  local n="$1" by="$2" state parent b bp
+  gh_or_die --out state "read ticket #$n" adapter_issue_state "$n"
   [ "$state" != CLOSED ] || die "ticket #$n is closed - its blocking edges can no longer change anything"
-  capture parent err adapter_issue_parent "$n" \
-    || die "gh could not read issue #$n's parent: $(gh_reason "$err")"
+  gh_or_die --out parent "read issue #$n's parent" adapter_issue_parent "$n"
   [ -n "$parent" ] || die "#$n is not a sub-issue, so it is no ticket of a breakdown"
   while IFS= read -r b; do
-    capture bp err adapter_issue_parent "$b" \
-      || die "gh could not read issue #$b's parent, a blocker of ticket #$n: $(gh_reason "$err")"
+    gh_or_die --out bp "read issue #$b's parent, a blocker of ticket #$n" \
+      adapter_issue_parent "$b"
     [ "$bp" = "$parent" ] \
       || die "#$b is not a sub-issue of #$parent, ticket #$n's parent - edges never cross breakdowns"
   done <<<"$by"
@@ -357,9 +354,8 @@ ticket_edge_preconditions() {
 # listing, one per line, sorted and de-duplicated: edges are a set. A gh
 # failure dies naming the ticket, with gh's reason.
 ticket_blockers() {
-  local have err
-  capture have err adapter_blockers "$1" \
-    || die "gh could not read ticket #$1's blockers: $(gh_reason "$err")"
+  local have
+  gh_or_die --out have "read ticket #$1's blockers" adapter_blockers "$1"
   if [ -n "$have" ]; then printf '%s\n' "$have" | sort -un; fi
 }
 
@@ -435,7 +431,7 @@ blockers_difference() {
 # the rest and wants the union; unblock skips edges already absent, removes
 # the rest and wants the difference. Either re-run is idempotent.
 ticket_edges_change() {
-  local verb="$1" usage n="" by="" have_by="" before want b present err
+  local verb="$1" usage n="" by="" have_by="" before want b present
   local skip_present edge_op edge_word want_fn
   case "$verb" in
     block)
@@ -466,13 +462,13 @@ ticket_edges_change() {
     present=""
     case $'\n'"$before"$'\n' in *$'\n'"$b"$'\n'*) present=1 ;; esac
     [ "$present" != "$skip_present" ] || continue
-    capture_err err "$edge_op" "$n" "$b" \
-      || die "gh could not $edge_word a blocking edge from ticket #$n on #$b: $(gh_reason "$err")"
+    gh_or_die "$edge_word a blocking edge from ticket #$n on #$b" \
+      "$edge_op" "$n" "$b"
   done <<<"$by"
   want="$("$want_fn" "$before" "$by")"
   ticket_edges_verify "$n" "$want"
-  issue_body_rewrite "$n" "gh could not read ticket #$n's body" \
-    "gh could not rewrite ticket #$n's ## Blocked by section" \
+  issue_body_rewrite "$n" "read ticket #$n's body" \
+    "rewrite ticket #$n's ## Blocked by section" \
     rewrite_blocked_by_section "$want"
 }
 
