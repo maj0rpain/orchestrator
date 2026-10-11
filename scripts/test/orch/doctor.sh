@@ -1570,6 +1570,45 @@ assert_contains "a draft state read failing silently says gh gave no reason" "$o
 fake_unfail
 restore_suite_env
 
+# --- doctor: phase-listed flow checks -----------------------------------------
+# A FLOW_CHECKS entry may list the phases it applies to (`name:phase,phase`),
+# and d_run_flow runs it only in those; an entry with no list runs in every
+# phase, and an unknown phase matches no list. Each phase-listed check is set up
+# here to have something to say, so its silence elsewhere is the filter's.
+echo
+echo "doctor: phase-listed flow checks"
+review_flow doctorphases
+doctor_github
+state_fixture pr 40
+fake_pr 40 open orch/doctorphases main
+fake_pr_draft 40
+fake_checks 40 required green
+state_fixture branch "$(git branch --show-current)"
+# phase_reports <phase>: the checks a doctor --flow run at <phase> reported,
+# one name per line, among the five phase-listed checks and check_flow_pr.
+phase_reports() {
+  local out
+  state_fixture phase "$1"
+  out="$("$ORCH" doctor --flow 2>&1)"
+  if printf '%s\n' "$out" | grep -qE 'upstream: |is not on origin yet'; then echo upstream; fi
+  if printf '%s\n' "$out" | grep -qE "review loop: not started|review loop at a terminal|review loop hasn't|review loop's last"; then echo terminal; fi
+  if printf '%s\n' "$out" | grep -qF 'review loop iteration ('; then echo budget; fi
+  if printf '%s\n' "$out" | grep -qF 'CI: '; then echo ci; fi
+  if printf '%s\n' "$out" | grep -qE 'draft state|still a draft'; then echo draft; fi
+  if printf '%s\n' "$out" | grep -qF 'PR #40 open'; then echo pr; fi
+}
+assert_eq "at spec only the unlisted check reports" \
+  "$(phase_reports spec | tr '\n' ' ')" "pr "
+assert_eq "at implement the upstream check joins it" \
+  "$(phase_reports implement | tr '\n' ' ')" "upstream pr "
+assert_eq "at review every phase-listed check reports" \
+  "$(phase_reports review | tr '\n' ' ')" "upstream terminal budget ci draft pr "
+assert_eq "at done the upstream and draft checks report" \
+  "$(phase_reports "done" | tr '\n' ' ')" "upstream draft pr "
+assert_eq "at an invalid phase no phase-listed check reports" \
+  "$(phase_reports bogus | tr '\n' ' ')" "pr "
+restore_suite_env
+
 # --- doctor: base branch check -----------------------------------------------
 # A set base branch that has vanished from origin is the one stale setting that
 # would send the next flow's fork and PR at nothing, so it FAILs; origin being

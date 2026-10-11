@@ -89,12 +89,14 @@ readonly REVIEW_DIR="$ORCH/review"
 # common.sh is sourced, so it stays here with the rest of the ROOT block.
 readonly TICKET_WORKTREES="$ORCH/worktrees"
 
-# The noun modules, after the ROOT block, whose constants they read. doctor.sh
+# The noun modules, after the ROOT block, whose constants they read, with the
+# one concept module that has no noun of its own, checkout.sh. doctor.sh
 # is one of them, with one rule more: the dependency runs one way, doctor.sh
 # calling into this file and the other modules, which call nothing doctor.sh
 # defines but cmd_doctor, from main() (scripts/test/orch/doctor.sh holds this).
 source "$ORCH_SCRIPTS/orch/base.sh"
 source "$ORCH_SCRIPTS/orch/branch.sh"
+source "$ORCH_SCRIPTS/orch/checkout.sh"
 source "$ORCH_SCRIPTS/orch/doctor.sh"
 source "$ORCH_SCRIPTS/orch/finding-triage.sh"
 source "$ORCH_SCRIPTS/orch/gh.sh"

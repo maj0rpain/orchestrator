@@ -42,3 +42,20 @@ assert_eq "a gh.sh-only function or common.sh's own is no call into a noun modul
 rm -rf "$layer_dir"
 assert_eq "common.sh calls no function a noun module defines" \
   "$(common_upcalls "$(dirname "$ORCH")" | tr '\n' ' ')" ""
+
+# --- orch_dirs_unexcluded -----------------------------------------------------
+# The one membership test of the clone's info/exclude: exclude_orch_dirs appends
+# what it prints and doctor's check_git_exclude reports it.
+echo
+echo "orch_dirs_unexcluded"
+new_repo >/dev/null
+ude_ex="$(git rev-parse --git-common-dir)/info/exclude"
+rm -f "$ude_ex"
+assert_eq "a missing exclude file lacks every entry" \
+  "$(sourced_orch orch_dirs_unexcluded | tr '\n' ' ')" ".orchestrator/ .scratch/ "
+printf '%s\n' '# comment' '.scratch/' >"$ude_ex"
+assert_eq "only the missing entries print when some are present" \
+  "$(sourced_orch orch_dirs_unexcluded | tr '\n' ' ')" ".orchestrator/ "
+printf '%s\n' '.orchestrator/' >>"$ude_ex"
+assert_eq "nothing prints when every entry is present" \
+  "$(sourced_orch orch_dirs_unexcluded)" ""

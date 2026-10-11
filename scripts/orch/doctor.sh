@@ -468,16 +468,16 @@ check_sub_issues() {
 }
 
 check_git_exclude() {
-  local ex d missing=()
-  # Unguarded, and unreachable: the script died at load time if this were not a
-  # git repo, so a check for one could only ever report a world that cannot
-  # exist. Not covered by d_run's abort warn either - a check runs as the left
-  # operand of ||, which disables errexit for its whole body, so a failure here
-  # would carry on with a wrong path rather than stop.
-  ex="$(git rev-parse --git-common-dir)/info/exclude"
-  for d in "${EXCLUDED_DIRS[@]}"; do
-    grep -qxF "$d" "$ex" 2>/dev/null || missing+=("$d")
-  done
+  local missing=() d
+  # orch_dirs_unexcluded's git rev-parse is unguarded, and unreachable: the
+  # script died at load time if this were not a git repo, so a check for one
+  # could only ever report a world that cannot exist. Not covered by d_run's
+  # abort warn either - a check runs as the left operand of ||, which disables
+  # errexit for its whole body, so a failure here would carry on with a wrong
+  # path rather than stop.
+  while IFS= read -r d; do
+    if [ -n "$d" ]; then missing+=("$d"); fi
+  done <<<"$(orch_dirs_unexcluded)"
   if [ "${#missing[@]}" -eq 0 ]; then
     d_ok "$(d_join "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")") git-excluded"
     return 0
@@ -518,13 +518,10 @@ check_base_branch() {
 # With no side checkout there is nothing to ask GitHub, so the gate - and a
 # skip with GitHub unreachable - only counts once one exists.
 check_side_checkouts_finished() {
-  local path paths=() found=() verdict branch rc main_root
-  mapfile -t paths < <(checkout_paths)
-  # checkout_paths lists the main checkout first.
-  main_root="${paths[0]-}"
-  for path in "${paths[@]}"; do
-    [ "$path" != "$main_root" ] && is_side_checkout "$path" && found+=("$path")
-  done
+  local kind _flow _branch path found=() verdict branch rc
+  while read -r kind _flow _branch path; do
+    if [ "$kind" = side ]; then found+=("$path"); fi
+  done < <(checkouts)
   [ "${#found[@]}" -gt 0 ] || return 0
   d_gh_gate || return 0
   for path in "${found[@]}"; do
@@ -582,13 +579,12 @@ check_flow_branch() {
   d_remedy "$(flow_cmd abort)"
 }
 
-# Only from the phase that pushes onwards: before implement, not having pushed
-# is correct, and a warning about correct state is how people learn to skim past
-# the word.
+# Only from the phase that pushes onwards (its FLOW_CHECKS phase list): before
+# implement, not having pushed is correct, and a warning about correct state is
+# how people learn to skim past the word.
 check_flow_upstream() {
   local phase branch
   phase="$(state_get phase)"
-  case "$phase" in implement|review|done) ;; *) return 0 ;; esac
   branch="$(state_get branch)"
   [ -n "$branch" ] || return 0
   # origin/<branch> specifically, not just any upstream: branch create forks off
@@ -654,12 +650,10 @@ check_flow_pr() {
 
 # Proactive surface for the same classification `redo review` refuses on -
 # a human sees "this loop looks interrupted" before wondering why redo
-# won't run. Phase-gated like check_flow_upstream: outside review, there is
-# no loop to classify and nothing to say about one.
+# won't run. Listed for review alone, like check_flow_upstream's phases:
+# outside review, there is no loop to classify and nothing to say about one.
 check_flow_review_terminal() {
-  local phase i b terminal word detail
-  phase="$(state_get phase)"
-  [ "$phase" = review ] || return 0
+  local i b terminal word detail
   i="$(state_get iteration)"
   b="$(review_budget)"
   terminal="$(review_terminal_state)" || true
@@ -690,9 +684,7 @@ check_flow_review_terminal() {
 # meant to be unreachable - an iteration count past it is not a loop still
 # running, it is state.json in a shape nothing produced on a healthy run.
 check_flow_review_budget() {
-  local phase i b
-  phase="$(state_get phase)"
-  [ "$phase" = review ] || return 0
+  local i b
   i="$(state_get iteration)"
   b="$(review_budget)"
   if [ "$i" -gt "$b" ]; then
@@ -711,9 +703,7 @@ check_flow_review_budget() {
 # business doing. required, not all: branch protection's required set is what
 # the loop itself waits on once one is named.
 check_flow_review_ci() {
-  local phase pr res verdict detail reason
-  phase="$(state_get phase)"
-  [ "$phase" = review ] || return 0
+  local pr res verdict detail reason
   pr="$(state_get pr)"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
@@ -745,7 +735,6 @@ check_flow_review_ci() {
 check_flow_review_draft() {
   local phase pr err="" pr_state="" is_draft=""
   phase="$(state_get phase)"
-  case "$phase" in review|done) ;; *) return 0 ;; esac
   pr="$(state_get pr)"
   [ -n "$pr" ] || return 0
   d_gh_gate || return 0
@@ -823,8 +812,11 @@ check_flow_handoffs() {
   done
 }
 
+# An entry may list the phases it applies to, as `name:phase,phase`; one with
+# no list runs in every phase. d_run_flow does the filtering, so d_run never
+# sees a suffix.
 FLOW_CHECKS="
-h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream check_flow_pr check_flow_review_terminal check_flow_review_budget check_flow_review_ci check_flow_review_draft check_flow_handoffs
+h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream:implement,review,done check_flow_pr check_flow_review_terminal:review check_flow_review_budget:review check_flow_review_ci:review check_flow_review_draft:review,done check_flow_handoffs
 "
 
 # A registry's entries, one per line. Splitting a whitespace-separated list is
@@ -853,10 +845,25 @@ d_count() {
   printf '%s\n' "$n"
 }
 
-# The gate the flow checks used to carry one at a time, hoisted to the list.
+# A registry's entries that apply at <phase>, each with its `:phases` suffix
+# stripped: an entry with no list always, a listed one only when its list names
+# <phase>. Printed space-separated, the shape d_run reads.
+d_entries_at() {
+  local phase="$2" e
+  while IFS= read -r e; do
+    case "$e" in
+      "") ;;
+      *:*) case ",${e#*:}," in *",$phase,"*) printf '%s ' "${e%%:*}" ;; esac ;;
+      *) printf '%s ' "$e" ;;
+    esac
+  done <<<"$(d_entries "$1")"
+}
+
+# The gate the flow checks used to carry one at a time, hoisted to the list -
+# and their phase guards with it, read from FLOW_CHECKS' phase lists.
 d_run_flow() {
   if [ "$D_JQ" = ok ] && [ "$D_STATE" = ok ]; then
-    d_run "$FLOW_CHECKS"
+    d_run "$(d_entries_at "$FLOW_CHECKS" "$(state_get phase)")"
     # Outside the registry: it reads git alone and prints nothing when clean,
     # so a flow with a clean working tree reports exactly what it did before.
     check_flow_worktree_clean

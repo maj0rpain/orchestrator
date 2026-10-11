@@ -194,11 +194,22 @@ finding_triage_cmd() {
 # never written again. The file is the clone's shared one (the common dir),
 # the only info/exclude git reads, so a linked worktree writes it too.
 exclude_orch_dirs() {
+  local ex missing
+  ex="$(git rev-parse --git-common-dir)/info/exclude"
+  missing="$(orch_dirs_unexcluded)"
+  mkdir -p "${ex%/*}"
+  if [ -n "$missing" ]; then printf '%s\n' "$missing" >>"$ex"; fi
+}
+
+# Prints, one per line, each EXCLUDED_DIRS entry the clone's shared
+# info/exclude lacks - every entry when the file is missing. The one place the
+# membership test is written: exclude_orch_dirs appends exactly this, and
+# doctor's check_git_exclude reports exactly this.
+orch_dirs_unexcluded() {
   local ex d
   ex="$(git rev-parse --git-common-dir)/info/exclude"
-  mkdir -p "${ex%/*}"
   for d in "${EXCLUDED_DIRS[@]}"; do
-    grep -qxF "$d" "$ex" 2>/dev/null || printf '%s\n' "$d" >>"$ex"
+    grep -qxF "$d" "$ex" 2>/dev/null || printf '%s\n' "$d"
   done
 }
 # Prints, one per line, every path with tracked modifications or untracked

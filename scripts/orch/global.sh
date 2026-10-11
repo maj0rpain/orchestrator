@@ -27,12 +27,12 @@ cmd_status() {
 # flow and a quick implementation in the main checkout hold no flow and carry
 # no marker, so they never appear; with nothing to list, nothing is printed.
 status_others() {
-  local path lines=""
-  while IFS= read -r path; do
+  local kind flow _branch path lines=""
+  while read -r kind flow _branch path; do
     [ "$path" != "$ROOT" ] || continue
-    checkout_has_flow "$path" || is_side_checkout "$path" || continue
+    [ "$flow" = 1 ] || [ "$kind" = side ] || continue
     lines+="  $path $(checkout_holding "$path")"$'\n'
-  done < <(checkout_paths)
+  done < <(checkouts)
   [ -n "$lines" ] || return 0
   note ""
   note "other checkouts:"

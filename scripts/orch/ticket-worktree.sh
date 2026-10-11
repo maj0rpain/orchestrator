@@ -30,14 +30,12 @@ forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
 
 # Prints <n> <path> for every ticket worktree under the checkout at <root>.
 ticket_worktrees_under() {
-  local path name
-  while IFS= read -r path; do
-    [ "$(dirname "$path")" = "$1/$ORCH_DIR_NAME/worktrees" ] || continue
-    name="$(basename "$path")"
-    case "$name" in t[1-9]*) ;; *) continue ;; esac
-    case "${name#t}" in *[!0-9]*) continue ;; esac
+  local kind _flow _branch path name
+  while read -r kind _flow _branch path; do
+    [ "$kind" = ticket ] && [ "${path%/*}" = "$1/$ORCH_DIR_NAME/worktrees" ] || continue
+    name="${path##*/}"
     note "${name#t} $path"
-  done < <(checkout_paths)
+  done < <(checkouts)
 }
 
 # refuse_ticket_worktrees <root>: dies, naming every ticket worktree under the
@@ -61,7 +59,7 @@ ticket_worktree_resolve() {
   path="$(ticket_worktree_path "$n")"
   [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
     || die "no ticket worktree for ticket $n at $path"
-  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
+  branch="$(checkout_branch "$path")" \
     || die "ticket worktree $path is not on a branch (detached HEAD)"
 }
 
@@ -80,7 +78,8 @@ cmd_ticket_worktree_add() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket-worktree add <n>"
   local n parent branch path
   n="$(ticket_worktree_number "$1")"
-  parent="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  current_branch_or_die
+  parent="$branch"
   branch="$parent--t$n"
   path="$(ticket_worktree_path "$n")"
   [ ! -e "$path" ] || die "ticket worktree $path already exists"
