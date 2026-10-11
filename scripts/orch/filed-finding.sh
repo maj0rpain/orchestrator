@@ -151,7 +151,7 @@ finding_body_trim() {
 # line is missing or does not parse is left empty. Never dies, never prints:
 # each caller decides which fields it requires.
 finding_body_parse() {
-  local __fbp_line __fbp_rest __fbp_v __fbp_k
+  local __fbp_line __fbp_rest __fbp_v __fbp_loc_file __fbp_loc_line
   local __fbp_axis="" __fbp_severity="" __fbp_reason="" __fbp_file="" __fbp_lineno="" \
     __fbp_sha="" __fbp_pr="" __fbp_pr_number="" __fbp_why="" __fbp_question=""
   local __fbp_seen_axis="" __fbp_seen_sev="" __fbp_seen_loc="" __fbp_seen_pr="" \
@@ -182,14 +182,14 @@ finding_body_parse() {
         [ -z "$__fbp_seen_loc" ] || continue
         __fbp_seen_loc=1
         [[ $__fbp_line =~ $__fbp_loc_re ]] || continue
-        __fbp_k="${BASH_REMATCH[1]}"; __fbp_v="${BASH_REMATCH[2]}"
+        __fbp_loc_file="${BASH_REMATCH[1]}"; __fbp_loc_line="${BASH_REMATCH[2]}"
         __fbp_rest="$__fbp_line" __fbp_sha=""
         while [[ $__fbp_rest =~ $__fbp_at_re ]]; do
           __fbp_sha="${BASH_REMATCH[1]}"
           __fbp_rest="${__fbp_rest#*"${BASH_REMATCH[0]}"}"
         done
         [ -n "$__fbp_sha" ] || continue
-        __fbp_file="$__fbp_k" __fbp_lineno="$__fbp_v"
+        __fbp_file="$__fbp_loc_file" __fbp_lineno="$__fbp_loc_line"
         ;;
       '**Why not fixed in the loop:**'*)
         [ -z "$__fbp_seen_why" ] || continue

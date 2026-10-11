@@ -257,10 +257,10 @@ assert_contains "the severity line naming the nit" "$(fake_body_of "$out")" "**S
 
 # The category is the axis's: a Spec finding is a defect against what was
 # asked for, a Standards finding an improvement on how it was built.
-spec_parts=("${parts[@]}")
-spec_parts[1]=spec
+axis_parts=("${parts[@]}")
+axis_parts[1]=spec
 fake_github
-out="$("$ORCH" review file major "Misses a criterion" "${spec_parts[@]}" 2>&1)"; st=$?
+out="$("$ORCH" review file major "Misses a criterion" "${axis_parts[@]}" 2>&1)"; st=$?
 assert_status "files a Spec finding" "$st" 0
 assert_eq "labelled bug, and not enhancement" "$(fake_labels_of "$out")" "bug needs-triage review:major "
 assert_contains "creating bug with GitHub's default colour and description" \
@@ -268,13 +268,13 @@ assert_contains "creating bug with GitHub's default colour and description" \
 assert_not_contains "and no enhancement label" "$(fake_labels)" "enhancement${tab}"
 
 fake_github
-spec_parts[1]=Standards
-out="$("$ORCH" review file nit "Rename it" "${spec_parts[@]}" 2>&1)"; st=$?
+axis_parts[1]=Standards
+out="$("$ORCH" review file nit "Rename it" "${axis_parts[@]}" 2>&1)"; st=$?
 assert_status "files a Standards finding, whatever the axis's case" "$st" 0
 assert_eq "labelled enhancement, and not bug" "$(fake_labels_of "$out")" "enhancement needs-triage review:nit "
 assert_contains "creating enhancement with GitHub's default colour and description" \
   "$(fake_labels)" "enhancement${tab}a2eeef${tab}New feature or request"
-spec_parts[1]=spec
+axis_parts[1]=spec
 
 # A category label that cannot be created - most often because the repo has
 # it already - does not stop the filing, and the repo's own is left as it is.
@@ -282,7 +282,7 @@ fake_github
 fake_label bug 123456 "The repo's own bug"
 fake_label enhancement 654321 "The repo's own enhancement"
 fake_next_issue 23
-out="$("$ORCH" review file major "Misses a criterion" "${spec_parts[@]}" 2>&1)"; st=$?
+out="$("$ORCH" review file major "Misses a criterion" "${axis_parts[@]}" 2>&1)"; st=$?
 assert_status "a category label the repo has already does not stop filing" "$st" 0
 assert_eq "the number is still printed" "$out" "23"
 assert_contains "and the issue still carries the label" "$(fake_labels_of 23)" "bug "
@@ -294,7 +294,7 @@ assert_contains "nor over its own enhancement label" "$(fake_labels)" \
 fake_github
 fake_fail adapter_label_create "HTTP 502: Bad Gateway"
 fake_next_issue 24
-out="$("$ORCH" review file major "Misses a criterion" "${spec_parts[@]}" 2>&1)"; st=$?
+out="$("$ORCH" review file major "Misses a criterion" "${axis_parts[@]}" 2>&1)"; st=$?
 assert_status "nor does one gh fails to create for another reason" "$st" 0
 assert_eq "the number alone printed, gh's error kept out of it" "$out" "24"
 fake_unfail
