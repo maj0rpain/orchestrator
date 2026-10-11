@@ -76,14 +76,6 @@ capture() {
   rm -f "$_capture_file"
   return "$_capture_st"
 }
-# gh_reason <stderr>: the reason a failed gh call gives - the first line of
-# its captured stderr, or "gh gave no reason" when that line is empty, so a
-# death message never ends in a bare colon. It only produces the reason; each
-# site keeps its own die, die2, warn or why.
-gh_reason() {
-  local line="${1%%$'\n'*}"
-  printf '%s\n' "${line:-gh gave no reason}"
-}
 # The argument with leading and trailing whitespace removed.
 trim() {
   local s="$1"

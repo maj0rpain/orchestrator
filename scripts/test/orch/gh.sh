@@ -127,6 +127,140 @@ assert_eq "a command that succeeds silently returns 0 and leaves the variable em
 rm -f "$cefile"
 unset cefile
 
+# --- gh failure verb and readers (#1022) ----------------------------------------
+# gh_die builds the one "gh could not <what>: <reason>" death, gh_or_die runs an
+# operation and dies through it, and the readers split a multi-field answer into
+# caller-named variables. Sourced, as gh_reason is, against the fake.
+echo
+echo "gh failure verb and readers"
+new_repo >/dev/null
+fake_github
+# in_orch <script> [args...]: runs the script in a shell that sourced orch.sh,
+# the args as its $1...
+in_orch() { local s="$1"; shift; bash -c 'source "$1"; shift; '"$s" _ "$ORCH" "$@"; }
+
+out="$(in_orch 'gh_die "read issue #5" "$1"' "$GH_502" 2>&1)"; st=$?
+assert_status "gh_die dies with status 1" "$st" 1
+assert_eq "naming what gh could not do and only gh's first line" "$out" \
+  "orch: gh could not read issue #5: HTTP 502: Bad Gateway"
+out="$(in_orch 'gh_die --exit 2 --hint "no member was touched" "read issue #5" ""' 2>&1)"; st=$?
+assert_status "gh_die --exit 2 dies with status 2" "$st" 2
+assert_eq "and --hint follows the reason" "$out" \
+  "orch: gh could not read issue #5: gh gave no reason - no member was touched"
+
+fake_issue 5 open
+fake_issue_body 5 $'Body.\n\n'
+fake_fail adapter_issue_body "$GH_502"
+out="$(in_orch 'gh_or_die "read issue #5" adapter_issue_body 5; echo carried on' 2>&1)"; st=$?
+assert_status "gh_or_die dies with status 1 on a failed operation" "$st" 1
+assert_eq "with gh_die's message" "$out" "orch: gh could not read issue #5: HTTP 502: Bad Gateway"
+out="$(in_orch 'gh_or_die --exit 2 "read issue #5" adapter_issue_body 5' 2>&1)"; st=$?
+assert_status "gh_or_die --exit 2 dies with status 2" "$st" 2
+out="$(in_orch 'gh_or_die --hint "the flow stays in review" "read issue #5" adapter_issue_body 5' 2>&1)"; st=$?
+assert_eq "gh_or_die passes --hint on" "$out" \
+  "orch: gh could not read issue #5: HTTP 502: Bad Gateway - the flow stays in review"
+
+# --file on a failure: no partial, created or temp file, an existing target
+# unchanged.
+vdir="$(mktemp -d)"
+in_orch 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/new" 2>/dev/null; st=$?
+assert_status "gh_or_die --file dies on a failed read" "$st" 1
+assert_eq "leaving no file behind, temp or target" "$(ls -A "$vdir")" ""
+printf 'old\n' >"$vdir/kept"
+in_orch 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/kept" 2>/dev/null
+assert_eq "and an existing target unchanged, with nothing beside it" \
+  "$(cat "$vdir/kept")|$(ls -A "$vdir")" "old|kept"
+fake_unfail
+
+out="$(in_orch 'gh_or_die --out out "read issue #5" adapter_issue_body 5; printf "%s|" "$out"')"; st=$?
+assert_status "gh_or_die --out succeeds on a good read" "$st" 0
+assert_eq "assigning the operation's stdout to the caller's variable" "$out" "Body.|"
+out="$(in_orch 'gh_or_die --out err "read issue #5" adapter_issue_body 5; printf "%s|" "$err"')"
+assert_eq "even one named as an unprefixed local of the verb would be" "$out" "Body.|"
+in_orch 'gh_or_die "read issue #5" adapter_issue_body 5 >"$1"' "$vdir/bare"
+assert_eq "a bare gh_or_die leaves stdout to the caller's redirect, byte for byte" \
+  "$(od -c <"$vdir/bare")" "$(printf 'Body.\n\n\n' | od -c)"
+in_orch 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/fetched"; st=$?
+assert_status "gh_or_die --file succeeds on a good read" "$st" 0
+assert_eq "keeping trailing newlines byte for byte" \
+  "$(od -c <"$vdir/fetched")" "$(printf 'Body.\n\n\n' | od -c)"
+in_orch 'gh_or_die --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/a/b/fetched"
+assert_eq "and fetches into a directory that does not exist yet" \
+  "$(cat "$vdir/a/b/fetched")" "Body."
+assert_eq "leaving no temp file there" "$(ls -A "$vdir/a/b")" "fetched"
+
+out="$(in_orch 'gh_or_die --exit 2 --out v --file "$1" "read issue #5" adapter_issue_body 5' "$vdir/both" 2>&1)"; st=$?
+assert_status "gh_or_die refuses --out with --file, status 1 whatever --exit says" "$st" 1
+assert_contains "naming them" "$out" "--out"
+assert_contains "both" "$out" "--file"
+out="$(in_orch 'gh_or_die --exit 2 --bogus "read issue #5" adapter_issue_body 5' 2>&1)"; st=$?
+assert_status "gh_or_die refuses an unknown option with status 1" "$st" 1
+assert_contains "naming it" "$out" "--bogus"
+rm -rf "$vdir"
+unset vdir
+
+# The readers: every output written on success, none on a failure, which fills
+# the error variable and prints nothing to stderr. The caller's variables are
+# named as an unprefixed reader's locals would be.
+rerr="$(mktemp)"
+fake_pr 7 open topic main
+fake_pr_draft 7
+out="$(in_orch 'pr_state_draft_read 7 state draft err; printf "%s|%s" "$state" "$draft"')"
+assert_eq "pr_state_draft_read writes the state and the draft flag" "$out" "OPEN|true"
+fake_pr 8 merged topic main
+out="$(in_orch 'pr_state_draft_read 8 state draft err; printf "%s|%s" "$state" "$draft"')"
+assert_eq "a PR that is no draft reads false" "$out" "MERGED|false"
+fake_fail adapter_pr_state_draft "$GH_502"
+out="$(in_orch 'state=x draft=x; st=0; pr_state_draft_read 7 state draft err || st=$?
+  printf "%s|%s|%s|%s" "$st" "$state" "$draft" "$err"' 2>"$rerr")"
+assert_eq "a failed read writes neither and fills the error variable" "$out" \
+  "1|x|x|$GH_502"
+assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
+
+printf 'abc123\n' >"$ORCH_GH_FAKE_STORE/prs/8/head_oid"
+printf 'c1\nc2\n' >"$ORCH_GH_FAKE_STORE/prs/8/commits"
+out="$(in_orch 'pr_refs_read 8 oid ref base commits err; printf "%s|%s|%s|%s" "$oid" "$ref" "$base" "$commits"')"
+assert_eq "pr_refs_read writes the head SHA, head branch, base and commits" "$out" \
+  "abc123|topic|main|c1
+c2"
+fake_fail adapter_pr_refs "$GH_502"
+out="$(in_orch 'oid=x ref=x base=x commits=x; st=0; pr_refs_read 8 oid ref base commits err || st=$?
+  printf "%s|%s|%s|%s|%s|%s" "$st" "$oid" "$ref" "$base" "$commits" "$err"' 2>"$rerr")"
+assert_eq "a failed refs read writes none and fills the error variable" "$out" \
+  "1|x|x|x|x|$GH_502"
+assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
+
+fake_issue 9 open bug enhancement
+printf 'A title\n' >"$ORCH_GH_FAKE_STORE/issues/9/title"
+out="$(in_orch 'issue_title_labels_read 9 title labels err; printf "%s|%s" "$title" "$labels"')"
+assert_eq "issue_title_labels_read writes the title and the labels" "$out" "A title|bug
+enhancement"
+fake_fail adapter_issue_title_labels "$GH_502"
+out="$(in_orch 'title=x labels=x; st=0; issue_title_labels_read 9 title labels err || st=$?
+  printf "%s|%s|%s|%s" "$st" "$title" "$labels" "$err"' 2>"$rerr")"
+assert_eq "a failed title read writes neither and fills the error variable" "$out" \
+  "1|x|x|$GH_502"
+assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
+rm -f "$rerr"
+unset rerr
+fake_unfail
+restore_suite_env
+
+# No repo: the gh guard's remedy still reaches the real stderr through
+# gh_or_die's capture, as through capture_err's - the real adapter, against
+# the fixture gh, since the fake never reaches the guard.
+new_repo >/dev/null
+unset GH_REPO GH_HOST
+gh_fixture
+git remote remove origin 2>/dev/null || true
+out="$(env -u ORCH_GH_ADAPTER bash -c 'source "$1"; gh_or_die --out v "read issue #5" adapter_issue_body 5' \
+  _ "$ORCH" 2>&1)"; st=$?
+assert_status "gh_or_die dies with no repo" "$st" 1
+assert_contains "naming GH_REPO as the remedy" "$out" "GH_REPO=<owner>/<repo>"
+assert_eq "and nothing reached gh" "$(cat "$GH_FIXTURE/env.log" 2>/dev/null)" ""
+restore_suite_env GH_HOST GH_FIXTURE
+unset -f in_orch
+
 # --- gh fake (#280) --------------------------------------------------------------
 # The store-backed fake's own helpers: the store fake_github makes, the seeds
 # that land in it in the layout documented at the top of gh_adapter_fake.sh,
