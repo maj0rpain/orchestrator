@@ -253,7 +253,7 @@ cmd_side_checkout_remove() {
 # worktree holding a flow is reported and left alone.
 cmd_side_checkout_prune() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout prune"
-  local here main_root path entry verdict branch rc unread=0 failed=0
+  local here main_root path line entry verdict branch rc unread=0 failed=0
   # archive_out is this entry's archive_flow output - its note, or its error -
   # cleared at the top of each entry so none outlives its own.
   local archive_out remove_err branch_err
@@ -266,8 +266,8 @@ cmd_side_checkout_prune() {
   # Every step works from the main checkout, so removing the checkout this
   # command ran in leaves the sweep somewhere to stand.
   cd "$main_root" || die "could not enter the main checkout $main_root"
-  for entry in "${walk[@]}"; do
-    read -r kind flow _branch path <<<"$entry"
+  for line in "${walk[@]}"; do
+    read -r kind flow _branch path <<<"$line"
     rc=0; verdict=""; branch=""
     case "$kind" in
       main)
@@ -295,7 +295,7 @@ cmd_side_checkout_prune() {
         warn "could not archive the main checkout's flow: ${archive_out%%$'\n'*}"; failed=1; continue
       fi
       note "$archive_out"
-      note "archived the main checkout's flow in place - $(git -C "$main_root" branch --show-current || true) is still checked out"
+      note "archived the main checkout's flow in place - $(checkout_branch "$main_root" || true) is still checked out"
       continue
     fi
     if checkout_has_flow "$path" && ! archive_out="$(archive_flow "$path" "$main_root" 2>&1)"; then
