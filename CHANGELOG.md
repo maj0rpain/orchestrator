@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.7.5
+
+The gh adapter module gains one failure contract: `gh_die` builds the "gh could not <what>: <reason>" death in one place, `gh_or_die` runs an adapter operation and dies through it, and `pr_state_draft_read`, `pr_refs_read` and `issue_title_labels_read` read multi-field answers into named variables. `gh_reason` moves into the gh module (#1022).
+
+The pr, issue, review, redo, init and ticket commands, and finding triage, now die on a gh failure through that contract, and pr, issue, review, doctor and side-checkout read the multi-field answers through those readers; side-checkout's `github_read` is gone. Messages and exit codes are unchanged but one: `init --issue` failing to read the issue now says `gh could not read issue #N: <reason> - check it exists and gh is authenticated`.
+
 ## 4.7.4
 
 orch.sh's helpers now live in the module of the concept they serve: the Flow state readers and writers in `state.sh`, and the Handoff, Review loop, Ticket worktree, Side checkout, Repo and Base branch helpers in their own noun modules. `common.sh` keeps only the primitives no concept owns (and the Filed finding helpers, until #1026), and a new test section checks that it calls nothing a noun module defines. A pure move: every command behaves as before (#1021).
