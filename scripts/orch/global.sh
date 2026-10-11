@@ -156,16 +156,18 @@ orch.sh - deterministic operations for the orchestrator flow
                               phase moves only through phase advance,
                               review ready, and redo
   phase advance               leave the current phase: validate the handoff
-                              it writes for the next one (02-spec.md from
-                              spec, 03-implement.md from implement) and the
-                              state the next one needs (issue; branch,
-                              base_sha, pr), then record the next phase and
-                              print the boundary. On a FAIL the phase stays.
-                              Refuses at review (use review ready) and done
+                              it writes for the next one (the spec handoff
+                              from spec, the implement handoff from
+                              implement; orch.sh handoff path <next phase>
+                              prints its file) and the state the next one
+                              needs (issue; branch, base_sha, pr), then record
+                              the next phase and print the boundary. On a
+                              FAIL the phase stays. Refuses at review (use
+                              review ready) and done
   phase boundary              print the block that ends a phase - the
                               handoff the current phase reads, and the
                               host's Next line
-  handoff path <phase>        print the handoff path for a phase
+  handoff path <phase>        print the path of the handoff a phase reads
   handoff validate <file>     check required sections exist and are non-empty
   handoff section <file> <heading>
                               print the body of the section headed
@@ -545,16 +547,18 @@ orch.sh - deterministic operations for the orchestrator flow
                               commenting a member twice
   redo review                 retire the branch and PR, reopen the spec
                               issue's closed tickets, reset the loop, retire
-                              03-implement.md into handoff/pre-redo-<n>/, and
-                              step the flow back to implement - refuses unless
-                              the review loop has reached a terminal state
+                              the implement handoff (orch.sh handoff path
+                              review) into handoff/pre-redo-<n>/, and step the
+                              flow back to implement - refuses unless the
+                              review loop has reached a terminal state
   redo spec [--new-issue]     step the flow back to spec, keeping the existing
                               issue by default and retiring its ticket
                               breakdown (ticket retire) so the redone spec is
                               broken down again; --new-issue closes it and
                               clears state.issue so orch-to-spec starts fresh;
-                              02-spec.md and any 03-implement.md move into
-                              handoff/pre-redo-spec-<UTC timestamp>/
+                              the spec handoff and any implement handoff
+                              (orch.sh handoff path implement, and review)
+                              move into handoff/pre-redo-spec-<UTC timestamp>/
   status                      human-readable summary of this checkout's flow,
                               then one line for every other checkout holding
                               a flow and every side checkout

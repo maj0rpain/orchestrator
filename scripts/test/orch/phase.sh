@@ -112,3 +112,27 @@ assert_status "an unknown phase op is an error" "$st" 1
 assert_contains "naming the ops it wants" "$out" "advance|boundary"
 unset ORCHESTRATOR_HOST
 restore_suite_env
+
+# --- phase advance and redo help name handoffs by role (#1066) ---------------
+# The help names each handoff by its role and points at handoff path for the
+# file, so renaming a handoff file never leaves the help stale.
+echo
+echo "help names handoffs by role"
+new_repo >/dev/null
+help="$("$ORCH" help 2>&1)"
+# help_entry <command>: the help entry for <command> - its first line and the
+# indented continuation lines under it.
+help_entry() {
+  printf '%s\n' "$help" | awk -v cmd="  $1" '
+    found && /^                              / { print; next }
+    found { exit }
+    index($0, cmd) == 1 { found = 1; print }'
+}
+for entry in "phase advance" "redo review" "redo spec"; do
+  text="$(help_entry "$entry")"
+  assert_ne "help has a $entry entry" "$text" ""
+  assert_eq "the $entry entry names no handoff file" \
+    "$(printf '%s\n' "$text" | grep -oE '[0-9]{2}-[a-z-]+\.md')" ""
+  assert_contains "the $entry entry points at handoff path" \
+    "$(printf '%s\n' "$text" | tr -s ' \n' '  ')" "orch.sh handoff path"
+done
