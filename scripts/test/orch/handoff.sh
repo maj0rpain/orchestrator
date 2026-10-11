@@ -73,6 +73,8 @@ for p in spec implement review; do
 done
 # A flow started before 1.0.0 has no host_fallbacks in state.json and wrote
 # its handoffs without the section; upgrading mid-flow must not fail them.
+# Raw jq, not state_fixture: deleting keys simulates an older release, and the
+# Flow state module has no delete operation - one only tests would use.
 st_saved="$(cat .orchestrator/state.json)"
 jq 'del(.host_fallbacks)' <<<"$st_saved" >.orchestrator/state.json
 out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
@@ -222,7 +224,11 @@ echo "handoff templates"
 HANDOFF_SKILL="$PLUGIN_ROOT/skills/orch-handoff/SKILL.md"
 tpl_repo="$(new_repo)"
 mkdir -p "$tpl_repo/.orchestrator"
-printf '{"host_fallbacks": true}\n' >"$tpl_repo/.orchestrator/state.json"
+# Seeded empty, then written through the Flow state module's writer, so the
+# fixture holds only what orch.sh would write.
+printf '{}\n' >"$tpl_repo/.orchestrator/state.json"
+flow_state_write "$(flow_state_file "$tpl_repo")" host_fallbacks true \
+  || bad "the handoff templates' state fixture is written" "flow_state_write failed"
 for tpl in 01-plan.md 02-spec.md 03-implement.md; do
   # The markdown fence under the template's `### \`<file>\`` heading.
   awk -v f="$tpl" '

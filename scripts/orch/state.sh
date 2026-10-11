@@ -3,59 +3,10 @@
 # Its tests: scripts/test/orch/state.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# Every flow state key, one row each, in the order init seeds them into
-# state.json: key|default|seed|owner. state_get, state set and init all read
-# it, so adding a key is one row; an arg row also needs its value in cmd_init's
-# case, and init dies naming the key without it. state_rows is its one reader:
-# lines starting with # are comments, and blank lines are skipped.
-#
-# default: what state_get returns for a null or missing value. A flow started
-#   by an older release lacks keys a fresh one seeds; each reads back as its
-#   default. The default applies only to a null or missing value, never to a
-#   stored false (jq's `//` would treat false like null).
-# seed: the JSON literal init writes, or arg where init supplies the value at
-#   run time; the value comes from cmd_init's case.
-# owner: - for a key state set may write (state_key_settable); otherwise the
-#   reason it refuses, printed as "state set refuses <key>: <owner>".
-STATE_KEYS='slug||arg|init seeds it
-# phase_write spec sets the phase straight after init seeds it.
-phase||null|use phase advance (review ready and redo also move it)
-# Seeded from --issue when given; state.json carries no field for whether it
-# was adopted or published - nothing downstream needs that distinction
-# recorded (ADR-0005).
-issue||arg|-
-# When a flow base may change: see the header of base_set_flow.
-base||arg|init seeds it
-branch||null|branch create records it
-pr||null|pr open records it
-base_sha||null|branch create records it
-# Null until the review loop asks a human for one; review begin reads null as
-# the default.
-budget||null|-
-iteration|0|0|review begin counts it
-# Seeded here rather than at the review phase because its allowance belongs to
-# the flow: one per flow, spent or not, so that one refilled each iteration
-# could not become an infinite retry loop.
-flake_rerun_used|false|false|-
-redo_count|0|0|redo review counts it
-# Marks a flow whose handoffs must record Host fallbacks (see
-# host_fallbacks_required); an older flow without it reads false.
-host_fallbacks|false|true|init seeds it
-created||arg|init seeds it
-updated||arg|every state change stamps it'
-
-# Prints each data row of STATE_KEYS as key|default|seed|owner, in table
-# order: the only reader of $STATE_KEYS, so every other reader skips the same
-# comment and blank lines.
-state_rows() {
-  local k d s o
-  while IFS='|' read -r k d s o; do
-    case "$k" in '#'*|'') continue ;; esac
-    printf '%s|%s|%s|%s\n' "$k" "$d" "$s" "$o"
-  done <<EOF
-$STATE_KEYS
-EOF
-}
+# The state format - STATE_KEYS, state_rows, now and the flow_state_
+# functions - lives in scripts/flow-state.sh, the Flow state module orch.sh
+# sources before this file. The functions below wrap it with their $STATE-bound
+# names and orch.sh's die messages.
 
 # Prints column $2 (default, seed or owner) of state key $1's row. An unknown
 # key prints nothing and returns 1; the caller dies with its own message. An
@@ -63,23 +14,12 @@ EOF
 # 1, so it is never read as an unknown key, and its caller exits with that
 # status without a second message.
 state_key_field() {
-  local k d s o
-  case "$2" in
-    default|seed|owner) ;;
-    *) die2 "state_key_field has no column: $2" ;;
-  esac
-  while IFS='|' read -r k d s o; do
-    [ "$k" = "$1" ] || continue
-    case "$2" in
-      default) printf '%s\n' "$d" ;;
-      seed)    printf '%s\n' "$s" ;;
-      owner)   printf '%s\n' "$o" ;;
-    esac
-    return 0
-  done <<EOF
-$(state_rows)
-EOF
-  return 1
+  local rc
+  flow_state_key_field "$1" "$2" || {
+    rc=$?
+    [ "$rc" -ne 2 ] || die2 "state_key_field has no column: $2"
+    return "$rc"
+  }
 }
 
 # Every read of state.json goes through here, so what an absent key means is
@@ -88,46 +28,26 @@ EOF
 state_get() { state_get_in "$STATE" "$1"; }
 
 # state_get against the state file <file>: reads <key> from any checkout's
-# state file, not only this one's.
+# state file, not only this one's. The key is validated first, so the read's
+# status is jq's own, never a lookup's.
 state_get_in() {
-  local default rc
-  default="$(state_key_field "$2" default)" || {
+  local rc
+  state_key_field "$2" default >/dev/null || {
     rc=$?
     [ "$rc" -ne 1 ] || die "unknown state key: $2"
     exit "$rc"
   }
-  jq -r --arg k "$2" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$1"
+  flow_state_get "$1" "$2"
 }
 
-# The one state-file write: sets key $1 to the JSON value $2 and stamps
-# updated. Private to the writers below; every write after init's seed goes
-# through here.
-state_put() {
-  local tmp; tmp="$(mktemp)"
-  jq --arg k "$1" --argjson v "$2" --arg now "$(now)" \
-    '.[$k] = $v | .updated = $now' "$STATE" >"$tmp"
-  mv "$tmp" "$STATE"
-}
+# The unrestricted writer behind every internal state change, over
+# flow_state_write's coercion on $STATE. A failed write stops orch.sh through
+# set -e with jq's status.
+state_write() { flow_state_write "$STATE" "$1" "$2"; }
 
-# The unrestricted writer behind every internal state change. "null" stores a
-# JSON null, "true" and "false" a boolean, and an all-digit value a number, so
-# a key cleared, flagged or counted here reads back through state_get the way
-# init seeded it. Every other value is stored as a string.
-state_write() {
-  case "$2" in
-    null|true|false) state_put "$1" "$2" ;;
-    *[!0-9]*|"") state_write_string "$1" "$2" ;;
-    *) state_put "$1" "$(jq -n --arg v "$2" '$v | tonumber')" ;;
-  esac
-}
-
-# Stores value $2 under key $1 as a JSON string, always. Not state_write: it
-# would turn a value of null, true, false or all digits into JSON null, a
-# boolean or a number - a branch can bear any of those names, and a base is
-# always a string, as init stores it.
-state_write_string() {
-  state_put "$1" "$(jq -n --arg v "$2" '$v')"
-}
+# Stores value $2 under key $1 as a JSON string, always, over
+# flow_state_write_string on $STATE.
+state_write_string() { flow_state_write_string "$STATE" "$1" "$2"; }
 
 require_state() {
   [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
@@ -187,7 +107,7 @@ flow_base_in() {
 }
 
 # Whether a flow is active: state.json exists and its phase is not done.
-flow_active() { [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; }
+flow_active() { flow_state_active "$STATE"; }
 
 # flow_holding_phase <branch> [issue]: prints the phase of the active flow
 # (phase not done) when it holds the branch, or the issue where one is given,
@@ -196,9 +116,8 @@ flow_active() { [ -f "$STATE" ] && [ "$(state_get phase)" != "done" ]; }
 # each with its own message. Reads state.json only when one exists.
 flow_holding_phase() {
   local branch="$1" issue="${2:-}" phase
-  [ -f "$STATE" ] || return 1
+  flow_active || return 1
   phase="$(state_get phase)"
-  [ "$phase" != "done" ] || return 1
   [ "$(state_get branch)" = "$branch" ] \
     || { [ -n "$issue" ] && [ "$(state_get issue)" = "$issue" ]; } \
     || return 1

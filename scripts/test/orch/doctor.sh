@@ -973,6 +973,7 @@ fake_online
 
 # One unparseable file is one problem. Four checks each reading it again would
 # print jq's parse error mid-report and then four ok lines that are not true.
+# The invalid JSON is written raw: no writer can produce it.
 statebak="$(mktemp)"
 cp .orchestrator/state.json "$statebak"
 printf '%s' '{not json' >.orchestrator/state.json

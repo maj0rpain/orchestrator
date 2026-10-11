@@ -27,11 +27,6 @@ set -euo pipefail
 # Where mise is absent this does nothing.
 export MISE_QUIET=1
 
-readonly ORCH_DIR_NAME=".orchestrator"
-# The directories the plugin writes to and keeps out of git status: its flow
-# state, and .scratch/, where planning drafts land. The one list both
-# exclude_orch_dirs and doctor's exclude check read.
-readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 readonly PHASES="spec implement review done"
 # The directory this script sits in, which every sourced module lives in too.
 # Worked out by parameter expansion, as dirname would print it, so no call
@@ -43,6 +38,15 @@ case "$ORCH_SOURCE" in
   *) ORCH_SCRIPTS="." ;;
 esac
 readonly ORCH_SOURCE ORCH_SCRIPTS
+# The Flow state module: the state format, ORCH_DIR_NAME and now, shared with
+# the hooks. Marked readonly here, where orch.sh has always fixed it, since the
+# module assigns it plainly.
+source "$ORCH_SCRIPTS/flow-state.sh"
+readonly ORCH_DIR_NAME
+# The directories the plugin writes to and keeps out of git status: its flow
+# state, and .scratch/, where planning drafts land. The one list both
+# exclude_orch_dirs and doctor's exclude check read.
+readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 # The most issues or PRs one list call asks gh for, where gh needs a bare
 # --limit: the labelled-issue list finding-triage scan reads, and the merged-PR
 # bodies pr release reads. A list that reaches it may be missing entries past
@@ -78,7 +82,8 @@ source "$ORCH_SCRIPTS/orch/common.sh"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository ($PWD) - run orch.sh from inside the repo's checkout"
 readonly ROOT
 readonly ORCH="$ROOT/$ORCH_DIR_NAME"
-readonly STATE="$ORCH/state.json"
+STATE="$(flow_state_file "$ROOT")"
+readonly STATE
 readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
 # Read only by ticket-worktree.sh, but derived from ROOT, which is set after

@@ -32,7 +32,7 @@ root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 
 # A flow is already running: the guard's job is done and the phases police
 # themselves from here. A done flow is not running, so it keeps the guard armed.
-if hook_flow_active "$root"; then exit 0; fi
+if flow_state_active "$(flow_state_file "$root")"; then exit 0; fi
 
 rel="${file#"$root"/}"
 if planning_allowlisted "$rel"; then exit 0; fi

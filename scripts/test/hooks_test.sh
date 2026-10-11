@@ -77,6 +77,38 @@ echo "hook-common"
 # shellcheck source=../hook-common.sh
 source "$COMMON"
 
+# write_flow_state <key> <value>...: writes $REPO's state file as orch.sh
+# would, applying the Flow state module's writer (sourced through hook-common)
+# to {} once per key and value. The hooks tests' well-formed states (slug,
+# phase and issue present) come from here; partial and invalid ones stay raw,
+# to prove the hooks tolerate anything on disk. A failed write fails its case.
+write_flow_state() {
+  local file
+  file="$(flow_state_file "$REPO")"
+  mkdir -p "${file%/*}"
+  echo '{}' >"$file"
+  while [ "$#" -gt 1 ]; do
+    if ! flow_state_write "$file" "$1" "$2"; then
+      bad "writes the flow state $1=$2" "flow_state_write failed on $file"
+      return 1
+    fi
+    shift 2
+  done
+}
+
+# run_tolerant <name> <hook>: runs <hook> on the payload on stdin and sets
+# hook_out to its stdout, asserting it exits 0 with empty stderr - what a hook
+# must do whatever state.json holds. Feed it with < <(...), not a pipe, so
+# hook_out and the counts survive.
+run_tolerant() {
+  local errf rc=0
+  errf="$(mktemp)"
+  hook_out="$("$2" 2>"$errf")" || rc=$?
+  assert_eq "$1 exits 0" "$rc" "0"
+  assert_empty "$1 writes nothing to stderr" "$(cat "$errf")"
+  rm -f "$errf"
+}
+
 hook_read_skill_and_session < <(skill_event "mattpocock-skills:grilling" abc123)
 assert_eq "extracts skill from tool_input.skill" "$skill" "mattpocock-skills:grilling"
 assert_eq "extracts session_id" "$session" "abc123"
@@ -316,7 +348,7 @@ route_block='      1. Start the orchestrator flow - the full plan -> spec -> imp
       3. Blueprint only - write the spec (rewriting the interviewed issue, if
          there is one) and its ticket breakdown, then stop; implement later.'
 cc_next_redo='/orchestrator:next or /orchestrator:redo'
-echo '{"slug":"x","phase":"spec","issue":42}' >"$REPO/.orchestrator/state.json"
+write_flow_state slug x phase spec issue 42
 out="$(skill_event "grilling" s6 | "$GRILL")"
 ctx="$(printf '%s' "$out" | jq -r '.additionalContext')"
 assert_contains "sends the planning rules beside an active flow" "$ctx" "Do NOT offer to implement"
@@ -328,22 +360,24 @@ check_route_rules "beside an active flow" "$ctx"
 assert_marker_present "writes the grilling marker beside an active flow" grilling s6
 assert_empty "stays silent on a second planning call beside an active flow" \
   "$(skill_event "grilling" s6 | "$GRILL")"
-echo '{"slug":"my-change","phase":"implement","issue":null}' >"$REPO/.orchestrator/state.json"
+write_flow_state slug my-change phase implement issue null
 ctx="$(skill_event "grilling" s6b | "$GRILL" | jq -r '.additionalContext')"
 assert_contains "names an issueless flow by slug and phase" "$ctx" \
   "the flow my-change is active in this checkout, at phase implement; it has no issue yet"
 assert_contains "the same-flow branch reads about this flow's change" "$ctx" "about this flow's change"
 check_flow_variant "for an issueless flow" "$ctx" "$cc_next_redo"
-echo '{"slug":"x","phase":null,"issue":null}' >"$REPO/.orchestrator/state.json"
+write_flow_state slug x phase null issue null
 ctx="$(skill_event "grilling" s6c | "$GRILL" | jq -r '.additionalContext')"
 assert_contains "names a freshly started flow by slug as just started" "$ctx" \
   "the flow x is active in this checkout, just started; it has no issue yet"
 echo '{"phase":"spec"}' >"$REPO/.orchestrator/state.json"
-ctx="$(skill_event "grilling" s6e | "$GRILL" | jq -r '.additionalContext')"
+run_tolerant "the grilling hook on state with only a phase" "$GRILL" < <(skill_event "grilling" s6e)
+ctx="$(printf '%s' "$hook_out" | jq -r '.additionalContext')"
 assert_contains "states the phase of readable state with no issue or slug" "$ctx" \
   "a flow with no issue or slug is active in this checkout, at phase spec"
 echo 'not json' >"$REPO/.orchestrator/state.json"
-ctx="$(skill_event "grilling" s6d | "$GRILL" | jq -r '.additionalContext')"
+run_tolerant "the grilling hook on unreadable state" "$GRILL" < <(skill_event "grilling" s6d)
+ctx="$(printf '%s' "$hook_out" | jq -r '.additionalContext')"
 assert_contains "says a flow is active without naming it for unreadable state" "$ctx" \
   "a flow is active in this checkout"
 assert_not_contains "names no flow issue for unreadable state" "$ctx" "the flow for #"
@@ -352,7 +386,8 @@ check_flow_variant "for unreadable state" "$ctx" "$cc_next_redo"
 # A done flow is finished work, not a running one (ADR-0009): planning in its
 # checkout gets the full message, records rule included (#186).
 echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
-out="$(skill_event "grilling" s7 | "$GRILL")"
+run_tolerant "the grilling hook on a done flow" "$GRILL" < <(skill_event "grilling" s7)
+out="$hook_out"
 assert_contains "still injects its context when the flow is done" "$out" "Do NOT offer to implement"
 assert_not_contains "a done flow gets the ordinary message, with no flow variant" "$out" "is active in this checkout"
 assert_contains "tells planning to write record wording into the plan" \
@@ -464,7 +499,7 @@ assert_not_contains "no precondition warning on Junie without issue-tracker.md" 
   "$(prompt_event '$grilling' j2 | "$GRILL")" "PRECONDITION"
 
 mkdir -p "$REPO/.orchestrator"
-echo '{"slug":"x","phase":"review","issue":7}' >"$REPO/.orchestrator/state.json"
+write_flow_state slug x phase review issue 7
 junie_next_redo="the **Next phase** and **Redo** sections of $(cd "$DIR/.." && pwd)/skills/orch-flow/SKILL.md"
 ctx="$(prompt_event '$grilling' j3 | "$GRILL" | jq -r '.additionalContext')"
 assert_contains "sends the planning rules on Junie beside an active flow" "$ctx" "Do NOT offer to implement"
@@ -481,7 +516,8 @@ assert_contains "names the active flow at plan confirmation" "$ctx" \
   "the flow for #7 is active in this checkout, at phase review"
 check_flow_variant "at Junie's plan confirmation" "$ctx" "$junie_next_redo" junie
 echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
-out="$(prompt_event '$grilling' j4 | "$GRILL")"
+run_tolerant "the grilling hook on Junie on a done flow" "$GRILL" < <(prompt_event '$grilling' j4)
+out="$hook_out"
 assert_contains "still fires on Junie's \$grilling when the flow is done" "$out" "Do NOT offer to implement"
 assert_not_contains "a done flow gets the ordinary message on Junie" "$out" "is active in this checkout"
 assert_contains "still asks at plan confirmation when the flow is done" \
@@ -640,7 +676,7 @@ check_done_close "at Junie's plan confirmation" "$ctx" "the ask_user tool"
 assert_eq "keeps three numbered lines with the done-close at Junie's plan confirmation" \
   "$(printf '%s\n' "$ctx" | grep -cE '^ *[0-9]+\. ')" "3"
 mkdir -p "$REPO/.orchestrator"
-echo '{"slug":"x","phase":"spec","issue":42}' >"$REPO/.orchestrator/state.json"
+write_flow_state slug x phase spec issue 42
 ctx="$(skill_event "mattpocock-skills:grilling" dc3 | "$GRILL" | jq -r '.additionalContext')"
 check_done_close "beside an active flow on Claude Code" "$ctx" "the AskUserQuestion tool"
 assert_contains "the done-close applies in the second case on Claude Code" "$ctx" \
@@ -790,18 +826,19 @@ assert_empty "ignores files outside the repo" "$(edit_event "/etc/hosts" s1 | "$
 
 mkdir -p "$REPO/.orchestrator"
 echo '{"slug":"x","phase":"implement"}' >"$REPO/.orchestrator/state.json"
-assert_empty "stops guarding once a flow is running" \
-  "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
+run_tolerant "the edit guard on state with no issue" "$GUARD" < <(edit_event "$REPO/src/main.ts" s1)
+assert_empty "stops guarding once a flow is running" "$hook_out"
 echo '{"slug":"x"}' >"$REPO/.orchestrator/state.json"
-assert_empty "stands down for a state.json with no phase" \
-  "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
+run_tolerant "the edit guard on state with no phase" "$GUARD" < <(edit_event "$REPO/src/main.ts" s1)
+assert_empty "stands down for a state.json with no phase" "$hook_out"
 echo 'not json' >"$REPO/.orchestrator/state.json"
-assert_empty "stands down for an unreadable state.json" \
-  "$(edit_event "$REPO/src/main.ts" s1 | "$GUARD")"
+run_tolerant "the edit guard on unreadable state" "$GUARD" < <(edit_event "$REPO/src/main.ts" s1)
+assert_empty "stands down for an unreadable state.json" "$hook_out"
 # A done flow is no flow: its lingering state.json must not switch the guard
 # off for the next planning session (#186, extending ADR-0009 to the hooks).
 echo '{"slug":"x","phase":"done"}' >"$REPO/.orchestrator/state.json"
-out="$(edit_event "$REPO/CONTEXT.md" s1 | "$GUARD" | jq -r '.reason')"
+run_tolerant "the edit guard on a done flow" "$GUARD" < <(edit_event "$REPO/CONTEXT.md" s1)
+out="$(printf '%s' "$hook_out" | jq -r '.reason')"
 assert_contains "denies a legacy-named record with the records reason when the flow is done" "$out" \
   "'CONTEXT.md' is a record of decisions"
 out="$(edit_event "$REPO/GLOSSARY.md" s1 | "$GUARD" | jq -r '.reason')"

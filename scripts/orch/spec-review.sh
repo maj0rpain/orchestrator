@@ -19,11 +19,11 @@ cmd_spec_review() {
   [ $# -eq 1 ] || die "usage: orch.sh spec-review begin <n>"
   local issue="$1"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
-  if [ -f "$STATE" ]; then
+  if flow_active; then
     local phase held
     phase="$(state_get phase)"
     held="$(state_get issue)"
-    if [ "$phase" != "done" ] && [ "$held" = "$issue" ]; then
+    if [ "$held" = "$issue" ]; then
       case "$phase" in
         spec)
           die "the active flow holds issue #$issue at phase spec - the flow's own spec phase will review it; run $(flow_cmd next)" ;;

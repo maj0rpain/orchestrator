@@ -16,6 +16,12 @@ blocks a new one, which archives it automatically rather than requiring it be
 cleared by hand. Its alternative, for changes that don't need the pipeline, is
 a quick implementation.
 
+**Flow state**:
+What a checkout records about its flow, in `.orchestrator/state.json`: the
+flow's slug, issue, base branch, branch, PR and phase, and the review
+loop's counters. A checkout holds at most one. A flow whose state is at
+phase `done` no longer counts as active.
+
 **Side checkout**:
 A git worktree the plugin makes inside the repo, so a second flow or a quick
 implementation can run beside the work already in this checkout, in a session
