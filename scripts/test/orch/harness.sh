@@ -47,13 +47,14 @@ files_marks() {
 # The placement rule, as helper_placement's message states it.
 HELPER_PLACEMENT_RULE="The rule: a helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
 
-# placement_copy: a copy of the real scripts/test/orch/ in a fresh temp
-# directory; prints the copy's path.
-placement_copy() {
+# tree_copy <subtree>: a copy of the real <subtree> of the plugin (a path
+# under PLUGIN_ROOT, e.g. scripts/test/orch) in a fresh temp directory; prints
+# the copy's path, which ends in the subtree's last component.
+tree_copy() {
   local dir
   dir="$(mktemp -d)" || return 1
-  cp -R "$PLUGIN_ROOT/scripts/test/orch" "$dir/" || return 1
-  printf '%s\n' "$dir/orch"
+  cp -R "$PLUGIN_ROOT/$1" "$dir/" || return 1
+  printf '%s\n' "$dir/${1##*/}"
 }
 
 # helper_placement <dir>: checks where every helper of the suite's files in
@@ -193,17 +194,11 @@ helper_placement() {
   return 1
 }
 
-# The gh op placement rule, as gh_op_placement's message states it.
-GH_OP_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, names a multi-field gh op (adapter_issue_state_labels, adapter_issue_state_labels_body, adapter_issue_title_labels, adapter_pr_state_draft, adapter_pr_refs); every other script reads one through its reader, which decodes its fields."
+# The five multi-field gh ops gh_op_placement looks for, space-separated.
+GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs"
 
-# gh_op_copy: a copy of the real scripts/ in a fresh temp directory; prints the
-# directory holding it.
-gh_op_copy() {
-  local dir
-  dir="$(mktemp -d)" || return 1
-  cp -R "$PLUGIN_ROOT/scripts" "$dir/" || return 1
-  printf '%s\n' "$dir"
-}
+# The gh op placement rule, as gh_op_placement's message states it.
+GH_OP_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, names a multi-field gh op (${GH_MULTI_FIELD_OPS// /, }); every other script reads one through its reader, which decodes its fields."
 
 # gh_op_placement <dir>: checks every shell script under <dir> (a scripts/
 # tree) outside the gh module, orch/gh.sh, and test/ for a name of one of the
@@ -216,10 +211,8 @@ gh_op_copy() {
 gh_op_placement() {
   local out
   out="$(cd "$1" && find . -name '*.sh' ! -path ./orch/gh.sh ! -path './test/*' \
-    -exec awk -v rule="$GH_OP_PLACEMENT_RULE" '
-    BEGIN {
-      nop = split("adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs", ops, " ")
-    }
+    -exec awk -v rule="$GH_OP_PLACEMENT_RULE" -v opnames="$GH_MULTI_FIELD_OPS" '
+    BEGIN { nop = split(opnames, ops, " ") }
     # code(line): the line with its comment dropped; quotes are tracked within
     # the line only.
     function code(line,   i, n, c, q, prev) {
@@ -1024,7 +1017,7 @@ else
   bad "every helper of the real tree is placed by the rule" "$out"
 fi
 
-placement_dir="$(placement_copy)"
+placement_dir="$(tree_copy scripts/test/orch)"
 printf '%s\n' 'planted_uncalled() { :; }' >>"$placement_dir/setup.sh"
 out="$(helper_placement "$placement_dir")"; st=$?
 assert_status "a shared helper with no caller fails" "$st" 1
@@ -1032,7 +1025,7 @@ assert_eq "naming it, its file, no caller and the rule" "$out" \
   "planted_uncalled is defined in setup.sh and called by no file. $HELPER_PLACEMENT_RULE"
 rm -rf "${placement_dir%/orch}"
 
-placement_dir="$(placement_copy)"
+placement_dir="$(tree_copy scripts/test/orch)"
 printf '%s\n' 'planted_single() { :; }' >>"$placement_dir/setup.sh"
 plant_file "$placement_dir" zz-one.sh <<'PLANTED'
   # --- planted one
@@ -1045,7 +1038,7 @@ assert_eq "naming it, its file, its one caller and the rule" "$out" \
   "planted_single is defined in setup.sh and called by zz-one.sh. $HELPER_PLACEMENT_RULE"
 rm -rf "${placement_dir%/orch}"
 
-placement_dir="$(placement_copy)"
+placement_dir="$(tree_copy scripts/test/orch)"
 plant_file "$placement_dir" zz-pre.sh <<'PLANTED'
   planted_pre() { :; }
   # --- planted pre
@@ -1061,7 +1054,7 @@ assert_eq "naming it, its file, its callers and the rule" "$out" \
   "planted_pre is defined in zz-pre.sh and called by zz-other.sh, zz-pre.sh. $HELPER_PLACEMENT_RULE"
 rm -rf "${placement_dir%/orch}"
 
-placement_dir="$(placement_copy)"
+placement_dir="$(tree_copy scripts/test/orch)"
 printf '%s\n' 'planted_self() {' '  planted_self' '}' >>"$placement_dir/setup.sh"
 out="$(helper_placement "$placement_dir")"; st=$?
 assert_status "a shared helper called only by itself fails" "$st" 1
@@ -1069,7 +1062,7 @@ assert_eq "its own body is no caller" "$out" \
   "planted_self is defined in setup.sh and called by no file. $HELPER_PLACEMENT_RULE"
 rm -rf "${placement_dir%/orch}"
 
-placement_dir="$(placement_copy)"
+placement_dir="$(tree_copy scripts/test/orch)"
 printf '%s\n' 'planted_arm() { :; }' 'planted_alt() { :; }' >>"$placement_dir/setup.sh"
 plant_file "$placement_dir" zz-arm.sh <<'PLANTED'
   # --- planted arm
@@ -1085,7 +1078,7 @@ assert_eq "a pattern is no call" "$out" \
 planted_arm is defined in setup.sh and called by no file. $HELPER_PLACEMENT_RULE"
 rm -rf "${placement_dir%/orch}"
 
-placement_dir="$(placement_copy)"
+placement_dir="$(tree_copy scripts/test/orch)"
 printf '%s\n' 'planted_block() { :; }' 'planted_user() { planted_block; }' \
   'planted_sub() { :; }' 'planted_tick() { :; }' 'planted_and() { :; }' \
   'planted_pipe() { :; }' >>"$placement_dir/setup.sh"
@@ -1125,48 +1118,48 @@ else
   bad "no script of the real tree names a multi-field gh op outside the gh module" "$out"
 fi
 
-gh_op_dir="$(gh_op_copy)"
-plant_file "$gh_op_dir/scripts/orch" zz-command.sh <<'PLANTED'
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir/orch" zz-command.sh <<'PLANTED'
   planted_read() {
     adapter_pr_refs "$1"
   }
 PLANTED
-out="$(gh_op_placement "$gh_op_dir/scripts")"; st=$?
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "an op as a command word fails" "$st" 1
 assert_eq "naming the file, the op and the rule" "$out" \
   "scripts/orch/zz-command.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE"
-rm -rf "$gh_op_dir"
+rm -rf "${gh_op_dir%/scripts}"
 
-gh_op_dir="$(gh_op_copy)"
-plant_file "$gh_op_dir/scripts/orch" zz-capture.sh <<'PLANTED'
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir/orch" zz-capture.sh <<'PLANTED'
   if ! capture out err adapter_issue_state_labels_body "$n"; then :; fi
 PLANTED
-out="$(gh_op_placement "$gh_op_dir/scripts")"; st=$?
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "an op as an argument to capture fails" "$st" 1
 assert_eq "naming the file and the op" "$out" \
   "scripts/orch/zz-capture.sh names adapter_issue_state_labels_body. $GH_OP_PLACEMENT_RULE"
-rm -rf "$gh_op_dir"
+rm -rf "${gh_op_dir%/scripts}"
 
-gh_op_dir="$(gh_op_copy)"
-plant_file "$gh_op_dir/scripts" zz-die.sh <<'PLANTED'
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir" zz-die.sh <<'PLANTED'
   gh_or_die --out state "could not read #$n" adapter_pr_state_draft "$n"
 PLANTED
-out="$(gh_op_placement "$gh_op_dir/scripts")"; st=$?
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "an op as an argument to gh_or_die fails" "$st" 1
 assert_eq "naming the file and the op" "$out" \
   "scripts/zz-die.sh names adapter_pr_state_draft. $GH_OP_PLACEMENT_RULE"
-rm -rf "$gh_op_dir"
+rm -rf "${gh_op_dir%/scripts}"
 
-gh_op_dir="$(gh_op_copy)"
-plant_file "$gh_op_dir/scripts/orch" zz-keep.sh <<'PLANTED'
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir/orch" zz-keep.sh <<'PLANTED'
   # adapter_issue_title_labels in a comment, as issue_title_labels_read reads it
   x=1  # and adapter_pr_refs after code
   planted_adapter_pr_refs() { my_adapter_issue_title_labels_x; }
   adapter_pr_state_draft_read n st dr err
 PLANTED
 printf '%s\n' 'planted_gh() { adapter_issue_title_labels "$1"; }' \
-  >>"$gh_op_dir/scripts/orch/gh.sh"
-out="$(gh_op_placement "$gh_op_dir/scripts")"; st=$?
+  >>"$gh_op_dir/orch/gh.sh"
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "comments, longer names and the gh module pass" "$st" 0
 assert_eq "and print nothing" "$out" ""
-rm -rf "$gh_op_dir"
+rm -rf "${gh_op_dir%/scripts}"

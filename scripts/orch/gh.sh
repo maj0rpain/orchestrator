@@ -71,30 +71,28 @@ gh_die() {
 # gh_or_die [--exit 2] [--hint <text>] [--out <var> | --file <path>] <what>
 # <op> [args...]: runs the operation through capture/capture_err - so in their
 # subshell, and the gh guard's no-repo death still reaches the real stderr -
-# and on failure dies through gh_die with the same --exit and --hint.
+# and on failure dies through gh_die with the same --exit and --hint, passed
+# on as given: gh_die alone checks them.
 # --out <var> assigns the operation's stdout to the caller's variable (trailing
 # newlines gone, as capture reads it). --file <path> streams it into a temp
 # file beside the target, creating the target's directory, and moves it into
 # place only on success, byte for byte: a failure removes the temp file and
 # leaves an existing target untouched. With neither, stdout is left to the
-# caller's own redirect. --out with --file, or an unknown option, dies naming
-# it, with status 1 whatever --exit says. Call it in the current shell, never
+# caller's own redirect. --out with --file, an --out or --file with no value,
+# or an unknown option, dies naming it, with status 1 whatever --exit says. Call it in the current shell, never
 # inside $(...); its locals are prefixed so no caller's variable is shadowed.
 gh_or_die() {
-  local _gh_or_die_exit="" _gh_or_die_hint="" _gh_or_die_out="" _gh_or_die_file=""
+  local _gh_or_die_die=() _gh_or_die_out="" _gh_or_die_file=""
   local _gh_or_die_text _gh_or_die_err _gh_or_die_tmp _gh_or_die_st=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --exit)
-        [ "${2-}" = 2 ] || die "gh_or_die: --exit takes 2, not '${2-}'"
-        _gh_or_die_exit=2; shift 2 ;;
-      --hint|--out|--file)
+      --exit|--hint)
+        # gh_die's own options: collected as given, for gh_die to check.
+        _gh_or_die_die+=("$1" "${2-}")
+        [ $# -ge 2 ] && shift 2 || shift ;;
+      --out|--file)
         [ -n "${2-}" ] || die "gh_or_die: $1 needs a value"
-        case "$1" in
-          --hint) _gh_or_die_hint="$2" ;;
-          --out) _gh_or_die_out="$2" ;;
-          --file) _gh_or_die_file="$2" ;;
-        esac
+        if [ "$1" = --out ]; then _gh_or_die_out="$2"; else _gh_or_die_file="$2"; fi
         shift 2 ;;
       -*) die "gh_or_die: unknown option $1" ;;
       *) break ;;
@@ -120,10 +118,7 @@ gh_or_die() {
     capture_err _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
   fi
   [ "$_gh_or_die_st" -ne 0 ] || return 0
-  if [ "$_gh_or_die_exit" = 2 ]; then
-    gh_die --exit 2 --hint "$_gh_or_die_hint" "$1" "$_gh_or_die_err"
-  fi
-  gh_die --hint "$_gh_or_die_hint" "$1" "$_gh_or_die_err"
+  gh_die ${_gh_or_die_die[@]+"${_gh_or_die_die[@]}"} "$1" "$_gh_or_die_err"
 }
 
 # --- gh adapter -------------------------------------------------------------
