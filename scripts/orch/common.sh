@@ -38,10 +38,9 @@ die2() { printf 'orch: %s\n' "$*" >&2; exit 2; }
 # own status, or a warning the command carries on past.
 warn() { printf 'orch: %s\n' "$*" >&2; }
 note() { printf '%s\n' "$*"; }
-now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 # The one timestamp shape for .orchestrator/ directory names: compact, UTC, and
-# colon-free so the path is valid on Windows too. now() stays ISO-8601: it is a
-# field value, never a path segment.
+# colon-free so the path is valid on Windows too. now(), in flow-state.sh, stays
+# ISO-8601: it is a field value, never a path segment.
 dir_stamp() { date -u +%Y%m%d-%H%M%S; }
 # capture_err <err-var> <command...>: runs the command, sets <err-var> to its
 # stderr byte for byte, and returns its status. It leaves stdout alone, to the

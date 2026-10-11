@@ -157,3 +157,100 @@ assert_eq "state.json holds the pinned keys, order and seeds" \
   "$(jq -c '.slug = "S" | .base = "B" | .created = "C" | .updated = "U"' .orchestrator/state.json)" \
   '{"slug":"S","phase":"spec","issue":null,"base":"B","branch":null,"pr":null,"base_sha":null,"budget":null,"iteration":0,"flake_rerun_used":false,"redo_count":0,"host_fallbacks":true,"created":"C","updated":"U"}'
 restore_suite_env
+
+# --- state set on a corrupt state.json --------------------------------------
+# A write jq cannot apply stops orch.sh and leaves the file as it found it,
+# with no temp file left beside it. The invalid JSON is written raw: no writer
+# can produce it.
+echo
+echo "state set on a corrupt state.json"
+fresh_flow corrupt
+printf 'not json\n' >.orchestrator/state.json
+before_ls="$(ls -A .orchestrator)"
+"$ORCH" state set budget 3 >/dev/null 2>&1; st=$?
+assert_ne "state set on an unparseable state.json exits non-zero" "$st" 0
+assert_eq "and leaves it byte-identical" "$(cat .orchestrator/state.json)" "not json"
+assert_eq "with nothing new beside it" "$(ls -A .orchestrator)" "$before_ls"
+restore_suite_env
+
+# --- the Flow state module, sourced alone -----------------------------------
+# flow-state.sh is sourced by the hooks, which have no die, no ROOT and no
+# STATE: each case runs it alone in a clean bash -c under set -u, outside any
+# git repo, so a reference to any of them on a path exercised here fails.
+echo
+echo "the Flow state module, sourced alone"
+fs_module="${ORCH%/*}/flow-state.sh"
+fs_dir="$(mktemp -d)"
+# fs_run <code>: runs <code> with the module sourced, in fs_dir, in a clean
+# environment; prints its stdout and stderr together and then its status as
+# the last line.
+fs_run() {
+  ( cd "$fs_dir" && env -i PATH="$SUITE_PATH" HOME="$SUITE_HOME" FS_MODULE="$fs_module" \
+      bash --noprofile --norc -c 'set -u; source "$FS_MODULE"; '"$1"' ; echo "status $?"' 2>&1 )
+}
+assert_eq "it runs outside any git repo" \
+  "$(fs_run 'git rev-parse --show-toplevel >/dev/null 2>&1')" "status 128"
+assert_eq "with no die, ROOT or STATE" \
+  "$(fs_run 'type die >/dev/null 2>&1 || [ -n "${ROOT+x}${STATE+x}" ]')" "status 1"
+assert_eq "flow_state_file prints the state file under a root" \
+  "$(fs_run 'flow_state_file /r')" "/r/.orchestrator/state.json
+status 0"
+printf '{"slug":"s"}' >"$fs_dir/object.json"
+printf 'not json' >"$fs_dir/invalid.json"
+printf '[1]' >"$fs_dir/array.json"
+for pair in object:0 absent:1 invalid:1 array:1; do
+  assert_eq "flow_state_readable answers ${pair#*:} for a ${pair%%:*} file, printing nothing" \
+    "$(fs_run "flow_state_readable ${pair%%:*}.json")" "status ${pair#*:}"
+done
+printf '{"slug":"s","iteration":null,"budget":null,"host_fallbacks":false}' >"$fs_dir/read.json"
+for pair in slug:s iteration:0 redo_count:0 budget: flake_rerun_used:false host_fallbacks:false; do
+  assert_eq "flow_state_get reads ${pair%%:*} as '${pair#*:}'" \
+    "$(fs_run "flow_state_get read.json ${pair%%:*}")" "${pair#*:}
+status 0"
+done
+assert_eq "flow_state_get returns 1 for a key outside the table, printing nothing" \
+  "$(fs_run 'flow_state_get read.json bogus')" "status 1"
+assert_eq "flow_state_key_field returns 2 for an unknown column, printing nothing" \
+  "$(fs_run 'flow_state_key_field slug bogus')" "status 2"
+assert_eq "flow_state_key_field returns 1 for an unknown key, printing nothing" \
+  "$(fs_run 'flow_state_key_field bogus default')" "status 1"
+assert_eq "flow_state_key_field prints a key's column" \
+  "$(fs_run 'flow_state_key_field iteration default')" "0
+status 0"
+assert_ne "flow_state_get on an unparseable file returns non-zero" \
+  "$(fs_run 'flow_state_get invalid.json slug >/dev/null 2>&1' | tail -n 1)" "status 0"
+printf '{"slug":"s"}' >"$fs_dir/write.json"
+for pair in null:null true:boolean false:boolean 42:number abc:string 4a:string ':string'; do
+  assert_eq "flow_state_write stores '${pair%%:*}' as a JSON ${pair#*:}" \
+    "$(fs_run "flow_state_write write.json budget '${pair%%:*}' && jq -r '.budget | type' write.json")" \
+    "${pair#*:}
+status 0"
+done
+for v in null true 42 abc; do
+  assert_eq "flow_state_write_string stores '$v' as a JSON string" \
+    "$(fs_run "flow_state_write_string write.json budget '$v' && jq -c '.budget' write.json")" \
+    "\"$v\"
+status 0"
+done
+assert_eq "a write leaves the other keys as they were" "$(jq -r .slug "$fs_dir/write.json")" "s"
+assert_contains "a write stamps updated with a UTC timestamp" \
+  "$(fs_run 'flow_state_write write.json budget 1 && jq -r .updated write.json' | sed -n 1p)" "Z"
+assert_eq "a write of updated itself sticks" \
+  "$(fs_run 'flow_state_write write.json updated SENTINEL && flow_state_get write.json updated')" \
+  "SENTINEL
+status 0"
+before_ls="$(ls -A "$fs_dir")"
+assert_ne "a write to an unparseable file returns non-zero" \
+  "$(fs_run 'flow_state_write invalid.json budget 1 2>/dev/null' | tail -n 1)" "status 0"
+assert_eq "and leaves the file untouched" "$(cat "$fs_dir/invalid.json")" "not json"
+assert_eq "with nothing new in its directory" "$(ls -A "$fs_dir")" "$before_ls"
+assert_ne "a write to an absent file returns non-zero" \
+  "$(fs_run 'flow_state_write absent.json budget 1 2>/dev/null' | tail -n 1)" "status 0"
+assert_eq "and creates nothing" "$(ls -A "$fs_dir")" "$before_ls"
+printf '{"phase":"done"}' >"$fs_dir/done.json"
+printf '{"phase":"review"}' >"$fs_dir/review.json"
+for pair in absent:1 done:1 review:0 invalid:0; do
+  assert_eq "flow_state_active answers ${pair#*:} for a ${pair%%:*} file, printing nothing" \
+    "$(fs_run "flow_state_active ${pair%%:*}.json")" "status ${pair#*:}"
+done
+restore_suite_env
