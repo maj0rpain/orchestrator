@@ -380,6 +380,8 @@ cmd_review() {
       ;;
     ci)
       require_state
+      # refs_err is pr_refs_read's error output, which ci ignores.
+      # shellcheck disable=SC2034
       local pr started slept=0 elapsed=0 res verdict refs_err head_oid head_ref base_ref pushed push_age=0
       local commits="" no_ci=0
       require_ci_knobs
