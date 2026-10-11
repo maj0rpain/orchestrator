@@ -4,7 +4,7 @@ A Claude Code plugin. See [CONTRIBUTING.md](CONTRIBUTING.md) for layout and auth
 
 ## Layout
 
-Shell scripts live in `scripts/` (`orch.sh`, `hook-*.sh`, …). `orch.sh` is a thin entry point: each noun's code lives in `scripts/orch/<noun>.sh` (`doctor.sh` among them), a concept module with no noun, `checkout.sh`, among them too, each helper in the module of the concept it serves, and only the primitives no concept owns in `scripts/orch/common.sh`. Tests live in `scripts/test/`, with the orch.sh suite's sections in `scripts/test/orch/` (one `<noun>.sh` per orch.sh noun, named as its module is, and `checkout.sh` for the concept module of that name, plus `common.sh`, `setup.sh` and `harness.sh`). There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
+Shell scripts live in `scripts/` (`orch.sh`, `hook-*.sh`, …). `orch.sh` is a thin entry point: each noun's code lives in `scripts/orch/<noun>.sh` (`doctor.sh` among them), the concept modules with no noun, `checkout.sh` and `filed-finding.sh`, among them too, each helper in the module of the concept it serves, and only the primitives no concept owns in `scripts/orch/common.sh`. Tests live in `scripts/test/`, with the orch.sh suite's sections in `scripts/test/orch/` (one `<noun>.sh` per orch.sh noun, named as its module is, and `checkout.sh` and `filed-finding.sh` for the concept modules of those names, plus `common.sh`, `setup.sh` and `harness.sh`). There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
 
 ## Agent skills
 
@@ -42,7 +42,8 @@ Run `scripts/test/all.sh` once before committing.
 orch_test.sh is only the runner: its `# ---` sections live in
 `scripts/test/orch/<noun>.sh`, one file per orch.sh noun, and a ticket's tests
 go in the file for the noun it touches (a new noun gets a new file; a concept
-module with no noun, `checkout.sh`, gets a section file named as it is).
+module with no noun, `checkout.sh` or `filed-finding.sh`, gets a section file
+named as it is).
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
 the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
 section must pass on its own.

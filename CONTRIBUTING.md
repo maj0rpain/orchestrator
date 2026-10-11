@@ -49,10 +49,10 @@ noun's code, named as that noun's test file is, and a helper lives in the
 module of the concept it serves, whichever modules call it.
 `scripts/orch/common.sh` holds only the primitives no concept owns (die, warn,
 note, capture and the like) and calls nothing a noun module defines; its test
-section checks this. The Filed finding helpers stay there until #1026 gives
-them a module. The gh adapter layer stays whole in `gh.sh`, whoever calls it.
-A concept module with no noun, `checkout.sh` (the Checkout module: the walk
-over every checkout), lives among the modules too.
+section checks this. The gh adapter layer stays whole in `gh.sh`, whoever
+calls it. The concept modules with no noun, `checkout.sh` (the Checkout module:
+the walk over every checkout) and `filed-finding.sh` (the Filed finding module:
+a filed finding's severities and labels), live among the modules too.
 orch.sh sources every module eagerly from an explicit list, so a new noun gets
 its own module, a case in `main` and a line in that list.
 

@@ -128,35 +128,6 @@ review_terminal_state() {
   return 1
 }
 
-# The severity label a filed finding carries, so triage can filter on it. It is
-# this plugin's own, so overwriting it is safe: adapter_label_upsert updates a
-# label that exists rather than failing on it, and filing works on a repo that
-# has never seen the label and on one that has, with no listing step in between.
-severity_label_ensure() {
-  gh_or_die "create label $1" adapter_label_upsert "$1" "$2" "$3"
-}
-
-# The triage label is the repo's, not ours: created only where it is missing,
-# and never rewritten, because a maintainer's colour and description on it are
-# theirs to keep. A create that fails because the label exists is the common
-# case and is ignored; one that fails for any other reason surfaces two lines
-# later, when `gh issue create` cannot apply the label.
-triage_label_ensure() {
-  adapter_label_create "$1" e4e669 "Not yet triaged" 2>/dev/null || true
-}
-
-# category_for_axis <axis>: the category a finding filed on that review axis
-# starts in, whatever the axis's case. A Spec finding misses what was asked
-# for, so it is a bug; a Standards finding improves how it was built. Prints
-# nothing and fails for any other axis; the caller words its own error.
-category_for_axis() {
-  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
-    spec)      printf 'bug\n' ;;
-    standards) printf 'enhancement\n' ;;
-    *) return 1 ;;
-  esac
-}
-
 # Float comparison and addition, in awk, because the timings are overridable and
 # the tests turn them down to fractions of a second; bash arithmetic is integer
 # only and would read a grace of 0.3 as 0. A fractional `sleep` is a GNU/BSD
@@ -332,20 +303,16 @@ cmd_review() {
       require_state
       local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards> --body-file <file>"
       [ $# -eq 6 ] && [ "$3" = --axis ] && [ "$5" = --body-file ] || die "$usage"
-      local severity="$1" title="$2" axis="$4" body="$6" colour category triage n
+      local severity="$1" title="$2" axis="$4" body="$6" colour desc category triage n
       is_filed_severity "$severity" \
         || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
-      case "$severity" in
-        major) colour=d93f0b ;;
-        nit)   colour=c5def5 ;;
-        *) die "no label colour for filed severity: $severity" ;;
-      esac
+      filed_severity_label "$severity" colour desc
       # The category follows the axis; finding triage confirms or flips it later.
       category="$(category_for_axis "$axis")" \
         || die "not a review axis: $axis (want spec or standards)"
       [ -n "$title" ] || die "the title is empty"
       [ -f "$body" ] || die "body file not found: $body"
-      severity_label_ensure "review:$severity" "$colour" "Review finding filed at $severity severity"
+      severity_label_ensure "review:$severity" "$colour" "$desc"
       triage="$(triage_label_for needs-triage)"
       triage_label_ensure "$triage"
       category_label_ensure "$category"

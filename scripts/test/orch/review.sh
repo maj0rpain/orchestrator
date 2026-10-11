@@ -174,18 +174,6 @@ assert_status "review loop-next is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown review op"
 restore_suite_env
 
-# --- is_filed_severity ------------------------------------------------------
-
-echo "is_filed_severity"
-new_repo >/dev/null
-# Sourced rather than run: the helper is the one answer to "is this severity
-# filed", and sourcing orch.sh defines its functions without running main.
-filed_sev() { bash -c 'source "$1" && is_filed_severity "$2"' _ "$ORCH" "$1"; }
-filed_sev major; assert_status "accepts major" "$?" 0
-filed_sev nit; assert_status "accepts nit" "$?" 0
-filed_sev blocking; assert_status "refuses blocking - it is always fixed, never filed" "$?" 1
-filed_sev ""; assert_status "refuses an empty severity" "$?" 1
-
 # --- review file ------------------------------------------------------------
 
 # Filing is mechanism: which labels, what title, which body, and the number

@@ -7,28 +7,6 @@
 # filed findings are closed into as duplicates (finding-triage bundle).
 readonly BUNDLE_LABEL="finding-bundle"
 
-# has_filed_severity_label <labels>: whether some review label carries a
-# filed severity.
-has_filed_severity_label() {
-  local label
-  while IFS= read -r label; do
-    [ -n "$label" ] || continue
-    ! is_filed_severity "${label#review:}" || return 0
-  done <<<"$(review_labels "$1")"
-  return 1
-}
-
-# category_other <category>: the opposite category - the one a finding loses
-# when triage settles on <category>. Prints nothing and fails for anything but
-# bug or enhancement.
-category_other() {
-  case "$1" in
-    bug)         printf 'enhancement\n' ;;
-    enhancement) printf 'bug\n' ;;
-    *) return 1 ;;
-  esac
-}
-
 # finding_location <body>: "<file>\t<line>\t<sha>" from a filed body's
 # **Location:** line - the first backticked <file>:<line> on it, the line
 # alone or a range, and the SHA after its last "at" - or nothing when the
