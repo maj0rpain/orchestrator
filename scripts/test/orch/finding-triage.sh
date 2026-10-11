@@ -13,6 +13,19 @@ del_commit() {
   git -C "$work" rev-parse HEAD
 }
 
+# squash_pr_head <pr> <file> <line>: a PR head off $filed_sha, pushed as PR
+# <pr>, that inserts <line> on top of src/<file>, then the squash commit that
+# lands the same edit on main; prints the PR head's SHA, left on main.
+squash_pr_head() {
+  git -C "$work" checkout -q -b "pr$1" "$filed_sha"
+  sed -i "1i $3" "$work/src/$2"
+  git -C "$work" commit -qam "the PR's own edit"
+  git -C "$work" rev-parse HEAD
+  git -C "$work" push -q origin "HEAD:refs/pull/$1/head"
+  git -C "$work" checkout -q main
+  del_commit "$2" "1i $3" "the PR, squash-merged" >/dev/null
+}
+
 # --- finding-triage scan -------------------------------------------------------
 # The scan sorts each open filed finding still in needs-triage against the
 # default branch: whether the code its **Location:** names, at the PR's head
@@ -323,25 +336,13 @@ replaced_sha="$(del_commit del_replaced.sh '9,11c\replaced line' "replace three 
 # A PR head off the default branch, as a squash merge leaves it: it inserts a
 # line on top of del_squashed.sh, the squash commit lands the same edit on
 # main, a later commit deletes the filed line, and a last one edits another.
-git -C "$work" checkout -q -b pr37 "$filed_sha"
-sed -i '1i squashed pr line' "$work/src/del_squashed.sh"
-git -C "$work" commit -qam "the PR's own edit"
-squash_head_sha="$(git -C "$work" rev-parse HEAD)"
-git -C "$work" push -q origin HEAD:refs/pull/37/head
-git -C "$work" checkout -q main
-del_commit del_squashed.sh '1i squashed pr line' "the PR, squash-merged" >/dev/null
+squash_head_sha="$(squash_pr_head 37 del_squashed.sh 'squashed pr line')"
 squashed_sha="$(del_commit del_squashed.sh '9,13d' "delete the squash-merged lines")"
 del_commit del_squashed.sh 's/^squashed line 30$/squashed line 30, reworded/' "a later edit to the squashed file" >/dev/null
 # The same for del_split.sh, whose filed lines one later commit deletes in
 # two hunks with a kept line between them: their deleted ranges are two, and
 # the first is read off the first range's start (#1019).
-git -C "$work" checkout -q -b pr38 "$filed_sha"
-sed -i '1i split pr line' "$work/src/del_split.sh"
-git -C "$work" commit -qam "the PR's own edit"
-split_head_sha="$(git -C "$work" rev-parse HEAD)"
-git -C "$work" push -q origin HEAD:refs/pull/38/head
-git -C "$work" checkout -q main
-del_commit del_split.sh '1i split pr line' "the PR, squash-merged" >/dev/null
+split_head_sha="$(squash_pr_head 38 del_split.sh 'split pr line')"
 split_sha="$(del_commit del_split.sh '9,10d;12,13d' "delete the squash-merged lines in two hunks")"
 git -C "$work" push -q origin main
 finding 30 "review:nit,needs-triage" "\`src/del_whole.sh:10\` at $filed_sha" 30
