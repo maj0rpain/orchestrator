@@ -212,6 +212,8 @@ assert_eq "and creates no branch" \
   "$(git rev-parse --verify --quiet orch/8-flowbase >/dev/null && echo made || echo none)" "none"
 
 # A flow started before base was recorded forked from the default branch.
+# Raw jq, not state_fixture: deleting keys simulates an older release, and the
+# Flow state module has no delete operation - one only tests would use.
 legacy="$(mktemp)"
 jq 'del(.base)' .orchestrator/state.json >"$legacy"
 mv "$legacy" .orchestrator/state.json

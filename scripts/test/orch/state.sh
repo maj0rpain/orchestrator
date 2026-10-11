@@ -72,6 +72,8 @@ restore_suite_env
 echo
 echo "a flow started before the budget shipped"
 fresh_flow legacy
+# Raw jq, not state_fixture: deleting keys simulates an older release, and the
+# Flow state module has no delete operation - one only tests would use.
 legacy="$(mktemp)"
 jq 'del(.budget, .loop, .flake_rerun_used)' .orchestrator/state.json >"$legacy"
 mv "$legacy" .orchestrator/state.json
@@ -114,6 +116,8 @@ restore_suite_env
 echo
 echo "state get defaults"
 fresh_flow sparse
+# Raw jq, not state_fixture: deleting keys simulates an older release, and the
+# Flow state module has no delete operation - one only tests would use.
 jq 'del(.iteration, .redo_count, .host_fallbacks, .flake_rerun_used, .budget)' \
   .orchestrator/state.json >state.tmp && mv state.tmp .orchestrator/state.json
 assert_eq "an absent iteration reads as 0" "$("$ORCH" state get iteration)" "0"
@@ -128,7 +132,8 @@ complete_plan_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
 # The string keys read back empty when missing too. phase goes only now: the
-# doctor --flow check above would fail a state file lacking it.
+# doctor --flow check above would fail a state file lacking it. Raw jq, as
+# above: the module has no delete operation.
 jq 'del(.slug, .phase, .issue, .base, .branch, .pr, .base_sha, .created, .updated)' \
   .orchestrator/state.json >state.tmp && mv state.tmp .orchestrator/state.json
 for key in slug phase issue base branch pr base_sha created updated; do
@@ -171,6 +176,12 @@ before_ls="$(ls -A .orchestrator)"
 assert_ne "state set on an unparseable state.json exits non-zero" "$st" 0
 assert_eq "and leaves it byte-identical" "$(cat .orchestrator/state.json)" "not json"
 assert_eq "with nothing new beside it" "$(ls -A .orchestrator)" "$before_ls"
+# A fixture arranging state on such a file fails too, so a failed arrangement
+# fails its test rather than leaving a state the test did not ask for.
+state_fixture budget 3 2>/dev/null; st=$?
+assert_ne "state_fixture on an unparseable state.json returns non-zero" "$st" 0
+assert_eq "and leaves it untouched" "$(cat .orchestrator/state.json)" "not json"
+assert_eq "with nothing new beside it, after the fixture" "$(ls -A .orchestrator)" "$before_ls"
 restore_suite_env
 
 # --- the Flow state module, sourced alone -----------------------------------

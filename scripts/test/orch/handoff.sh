@@ -73,6 +73,8 @@ for p in spec implement review; do
 done
 # A flow started before 1.0.0 has no host_fallbacks in state.json and wrote
 # its handoffs without the section; upgrading mid-flow must not fail them.
+# Raw jq, not state_fixture: deleting keys simulates an older release, and the
+# Flow state module has no delete operation - one only tests would use.
 st_saved="$(cat .orchestrator/state.json)"
 jq 'del(.host_fallbacks)' <<<"$st_saved" >.orchestrator/state.json
 out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?

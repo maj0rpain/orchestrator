@@ -163,21 +163,20 @@ writeln() { printf '%s\n' "$@"; }
 # space.
 flat_text() { tr -s ' \t\n' '   '; }
 
+# The Flow state module, sourced so state_fixture writes through orch.sh's own
+# writer: a fixture can then never store a value orch.sh would not write.
+# shellcheck source=../../flow-state.sh
+source "${ORCH%/*}/flow-state.sh" || {
+  echo "orch_test.sh: cannot source the Flow state module" >&2; exit 1; }
+
 # state_fixture <key> <value>: arrange state.json directly, for the keys
 # `state set` refuses (phase, branch, pr, iteration, ...) - each owned by a
-# command whose guard a test's setup has to step around. It stores values the
-# way orch.sh's own writer does: "null" as null, "true" and "false" as a
-# boolean, all digits as a number, anything else as a string.
+# command whose guard a test's setup has to step around. It writes through the
+# Flow state module's coercing writer, flow_state_write, on the checkout's
+# state file, and returns its status: a failed write leaves the file untouched
+# and fails the arrangement.
 state_fixture() {
-  local f tmp
-  f="$(git rev-parse --show-toplevel)/.orchestrator/state.json"
-  tmp="$(mktemp)"
-  jq --arg k "$1" --arg v "$2" '
-    .[$k] = (if $v == "null" then null
-             elif $v == "true" then true
-             elif $v == "false" then false
-             elif ($v | test("^[0-9]+$")) then ($v | tonumber)
-             else $v end)' "$f" >"$tmp" && mv "$tmp" "$f"
+  flow_state_write "$(flow_state_file "$(git rev-parse --show-toplevel)")" "$1" "$2"
 }
 
 complete_plan_handoff() {
