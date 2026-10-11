@@ -21,6 +21,108 @@ assert_status "an unknown phase is an error, not a directory" "$st" 1
 assert_eq "and prints no path for a caller to use" "$out" ""
 restore_suite_env
 
+# --- phase table ------------------------------------------------------------
+# The Handoff module's one ordered table of phases, the handoff each consumes,
+# that handoff's writer and its required sections, read through the helpers a
+# subshell that sourced orch.sh reaches. Each answer is pinned as a literal,
+# today's values, so a table edit that changes one shows here.
+echo
+echo "phase table"
+fake_flow phase-table
+# sourced_orch <function> [args...]: the function's output, called in a shell
+# that sourced orch.sh, with its status.
+sourced_orch() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
+
+assert_eq "PHASES is the table's phases in order" \
+  "$(bash -c 'source "$1"; printf "%s\n" "$PHASES"' _ "$ORCH")" "spec implement review done"
+out="$(bash -c 'source "$1"; PHASES=x' _ "$ORCH" 2>&1)"; st=$?
+assert_status "and is readonly" "$st" 1
+
+for pair in "spec|01-plan.md" \
+            "implement|$(writeln 01-plan.md 02-spec.md)" \
+            "review|$(writeln 01-plan.md 02-spec.md 03-implement.md)" \
+            "done|$(writeln 01-plan.md 02-spec.md 03-implement.md)"; do
+  p="${pair%%|*}"
+  out="$(sourced_orch handoffs_due "$p")"; st=$?
+  assert_eq "handoffs_due $p prints the handoffs due by it" "$out" "${pair#*|}"
+  assert_status "handoffs_due $p succeeds" "$st" 0
+done
+out="$(sourced_orch handoffs_due bogus)"; st=$?
+assert_eq "handoffs_due prints nothing for a phase outside the table" "$out" ""
+assert_status "and succeeds" "$st" 0
+
+out="$(sourced_orch handoffs_after spec)"
+assert_eq "handoffs_after spec prints the spec and implement handoffs" "$out" \
+  "$(writeln 02-spec.md 03-implement.md)"
+out="$(sourced_orch handoffs_after implement)"
+assert_eq "handoffs_after implement prints the implement handoff alone" "$out" "03-implement.md"
+for p in review done bogus; do
+  out="$(sourced_orch handoffs_after "$p")"; st=$?
+  assert_eq "handoffs_after $p prints nothing" "$out" ""
+  assert_status "handoffs_after $p succeeds" "$st" 0
+done
+
+for pair in spec:implement implement:review review:done; do
+  out="$(sourced_orch phase_next "${pair%%:*}")"; st=$?
+  assert_eq "phase_next ${pair%%:*} prints ${pair#*:}" "$out" "${pair#*:}"
+  assert_status "phase_next ${pair%%:*} succeeds" "$st" 0
+done
+for pair in spec:plan implement:spec review:implement; do
+  out="$(sourced_orch phase_writer "${pair%%:*}")"; st=$?
+  assert_eq "phase_writer ${pair%%:*} prints ${pair#*:}" "$out" "${pair#*:}"
+  assert_status "phase_writer ${pair%%:*} succeeds" "$st" 0
+done
+for fn in phase_next phase_writer; do
+  for p in done bogus; do
+    out="$(sourced_orch "$fn" "$p")"; st=$?
+    assert_eq "$fn $p prints nothing" "$out" ""
+    assert_ne "$fn $p fails" "$st" 0
+  done
+done
+
+# handoff_required, Host fallbacks left off by a pre-1.0.0 state, so only the
+# table's own headings show, in today's order.
+st_saved="$(cat .orchestrator/state.json)"
+jq 'del(.host_fallbacks)' <<<"$st_saved" >.orchestrator/state.json
+assert_eq "handoff_required 01-plan.md prints its headings in order" \
+  "$(sourced_orch handoff_required 01-plan.md)" \
+  "$(writeln '## Decisions' '## Rejected alternatives' '## Constraints' '## Open assumptions')"
+assert_eq "handoff_required 02-spec.md prints its headings in order" \
+  "$(sourced_orch handoff_required 02-spec.md)" \
+  "$(writeln '## Spec issue' '## Seams' '## Spec review changelog' '## Ticket breakdown')"
+assert_eq "handoff_required 03-implement.md prints its headings in order" \
+  "$(sourced_orch handoff_required 03-implement.md)" \
+  "$(writeln '## PR' '## Spec issue' '## Base SHA' '## Deviations' '## Verification')"
+printf '%s\n' "$st_saved" >.orchestrator/state.json
+assert_eq "and appends Host fallbacks when the state requires it" \
+  "$(sourced_orch handoff_required 02-spec.md | tail -n 1)" "## Host fallbacks"
+for name in - bogus.md ''; do
+  out="$(sourced_orch handoff_required "$name" 2>&1)"; st=$?
+  assert_status "handoff_required '$name' fails" "$st" 1
+  assert_eq "naming the unknown file" "$out" "orch: unknown handoff file: $name"
+done
+writeln '## Decisions' 'Use X.' >./-
+out="$("$ORCH" handoff validate - 2>&1)"; st=$?
+rm -f ./-
+assert_status "handoff validate - fails" "$st" 1
+assert_contains "as an unknown handoff file, the done row matching no name" "$out" "unknown handoff file: -"
+out="$("$ORCH" handoff path done 2>&1)"; st=$?
+assert_status "handoff path done fails" "$st" 1
+assert_eq "with no handoff defined for done" "$out" "orch: no handoff defined for phase: done"
+
+# The one writer of state.phase accepts exactly the table's phases.
+for p in implement review done spec; do
+  out="$(sourced_orch phase_write "$p" 2>&1)"; st=$?
+  assert_status "the state writer accepts $p" "$st" 0
+  assert_eq "and writes it" "$("$ORCH" state get phase)" "$p"
+done
+out="$(sourced_orch phase_write plan 2>&1)"; st=$?
+assert_status "the state writer refuses a phase outside the table" "$st" 1
+assert_eq "with today's message" "$out" \
+  "orch: not a flow phase: plan (want one of: spec implement review done)"
+assert_eq "leaving the recorded phase unchanged" "$("$ORCH" state get phase)" "spec"
+restore_suite_env
+
 # --- handoff validate -------------------------------------------------------
 echo
 echo "handoff validate"
