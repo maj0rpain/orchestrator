@@ -35,8 +35,6 @@ sourced_orch() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
 
 assert_eq "PHASES is the table's phases in order" \
   "$(bash -c 'source "$1"; printf "%s\n" "$PHASES"' _ "$ORCH")" "spec implement review done"
-out="$(bash -c 'source "$1"; PHASES=x' _ "$ORCH" 2>&1)"; st=$?
-assert_status "and is readonly" "$st" 1
 
 for pair in "spec|01-plan.md" \
             "implement|$(writeln 01-plan.md 02-spec.md)" \

@@ -67,30 +67,28 @@ phase_next() {
   return 1
 }
 
-# phase_writer <phase>: the phase that wrote the handoff <phase> consumes.
-# Nothing, and non-zero, at done or for a phase the table does not hold.
-phase_writer() {
-  local phase writer
-  while IFS='|' read -r phase _ writer _; do
-    if [ "$phase" = "$1" ] && [ -n "$writer" ]; then
-      printf '%s\n' "$writer"
+# phase_cell <column> <phase>: <phase>'s cell in <column> of the table,
+# counting the phase as column 0. Nothing, and non-zero, when the cell is empty
+# or the table does not hold <phase>.
+phase_cell() {
+  local -a cells
+  while IFS='|' read -r -a cells; do
+    if [ "${cells[0]-}" = "$2" ] && [ -n "${cells[$1]-}" ]; then
+      printf '%s\n' "${cells[$1]}"
       return 0
     fi
   done <<<"$PHASE_TABLE"
   return 1
 }
 
+# phase_writer <phase>: the phase that wrote the handoff <phase> consumes.
+# Nothing, and non-zero, at done or for a phase the table does not hold.
+phase_writer() { phase_cell 2 "$1"; }
+
 # Every review loop, however many the flow has run, reads the implement
 # handoff, so the four facts a loop runs on have exactly one authority.
 handoff_file_for() {
-  local phase handoff
-  while IFS='|' read -r phase handoff _; do
-    if [ "$phase" = "$1" ] && [ -n "$handoff" ]; then
-      printf '%s\n' "$handoff"
-      return 0
-    fi
-  done <<<"$PHASE_TABLE"
-  die "no handoff defined for phase: $1"
+  phase_cell 1 "$1" || die "no handoff defined for phase: $1"
 }
 
 # A handoff missing a required section means the next phase runs blind, so the
