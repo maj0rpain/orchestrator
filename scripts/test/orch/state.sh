@@ -88,9 +88,9 @@ assert_status "and it runs the default budget" "$st" 1
 assert_contains "of five" "$out" "budget of 5 iterations"
 
 state_fixture phase review
-complete_plan_handoff "$("$ORCH" handoff path spec)"
-complete_spec_handoff "$("$ORCH" handoff path implement)"
-complete_implement_handoff "$("$ORCH" handoff path review)"
+complete_handoff "$("$ORCH" handoff path spec)"
+complete_handoff "$("$ORCH" handoff path implement)"
+complete_handoff "$("$ORCH" handoff path review)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor does not strand it either" "$st" 0
 assert_contains "status reads its budget as the default" "$("$ORCH" status)" "iteration 5 of 5"
@@ -128,7 +128,7 @@ assert_eq "an absent budget reads as empty" "$("$ORCH" state get budget)" ""
 out="$("$ORCH" state get nonsense 2>&1)"; st=$?
 assert_status "a key outside the schema is refused" "$st" 1
 assert_contains "naming the key" "$out" "nonsense"
-complete_plan_handoff "$("$ORCH" handoff path spec)"
+complete_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
 # The string keys read back empty when missing too. phase goes only now: the

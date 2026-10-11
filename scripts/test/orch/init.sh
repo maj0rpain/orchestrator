@@ -250,7 +250,7 @@ restore_suite_env
 echo
 echo "init archives a done flow"
 fresh_flow first
-complete_plan_handoff "$("$ORCH" handoff path spec)"
+complete_handoff "$("$ORCH" handoff path spec)"
 state_fixture phase "done"
 out="$("$ORCH" init second)"; st=$?
 assert_status "starting over a done flow succeeds" "$st" 0
@@ -268,7 +268,7 @@ assert_eq "the new flow starts at the spec phase, not done" "$("$ORCH" state get
 
 # #622: init's archive of a done flow refuses the same way archive does.
 fresh_flow first
-complete_plan_handoff "$("$ORCH" handoff path spec)"
+complete_handoff "$("$ORCH" handoff path spec)"
 state_fixture phase "done"
 git checkout -q -b orch/1-first
 top="$(git rev-parse --show-toplevel)"

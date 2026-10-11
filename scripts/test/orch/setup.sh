@@ -179,29 +179,20 @@ state_fixture() {
   flow_state_write "$(flow_state_file "$(git rev-parse --show-toplevel)")" "$1" "$2"
 }
 
-complete_plan_handoff() {
-  writeln '## Decisions' 'Use X.' '' \
-          '## Rejected alternatives' 'Y, because Z.' '' \
-          '## Constraints' 'Must run offline.' '' \
-          '## Open assumptions' 'Assumes W.' '' \
-          '## Host fallbacks' 'None (Claude Code).' >"$1"
-}
-
-complete_spec_handoff() {
-  writeln '## Spec issue' '#1.' '' \
-          '## Seams' 'The CLI.' '' \
-          '## Spec review changelog' 'Not reviewed.' '' \
-          '## Ticket breakdown' '#1.' '' \
-          '## Host fallbacks' 'None (Claude Code).' >"$1"
-}
-
-complete_implement_handoff() {
-  writeln '## PR' '#3.' '' \
-          '## Spec issue' '#1.' '' \
-          '## Base SHA' 'abc1234.' '' \
-          '## Deviations' 'None.' '' \
-          '## Verification' 'scripts/test/orch_test.sh' '' \
-          '## Host fallbacks' 'None (Claude Code).' >"$1"
+# complete_handoff <file>: a complete handoff at <file>, holding every section
+# the Handoff module's phase table requires for its name - read through
+# handoff_required in a shell that sourced orch.sh, so the fixture cannot drift
+# from the validator - each with a placeholder body, plus Host fallbacks
+# whatever the state says. When handoff_required fails, on a name the table
+# does not hold, it fails and writes no file.
+complete_handoff() {
+  local headings heading
+  # shellcheck disable=SC2016 # $1 expands in the inner shell
+  headings="$(bash -c 'source "$1"; handoff_required "$2"' _ "$ORCH" "$(basename "$1")")" || return 1
+  grep -qxF '## Host fallbacks' <<<"$headings" || headings="$headings"$'\n''## Host fallbacks'
+  while IFS= read -r heading; do
+    writeln "$heading" "Placeholder for ${heading#\#\# }." ''
+  done <<<"$headings" >"$1"
 }
 
 # --- doctor harness ---------------------------------------------------------
@@ -250,9 +241,9 @@ fake_flow() { new_repo >/dev/null; fake_github; "$ORCH" init "$1" >/dev/null; }
 # complete, cwd inside it, and whatever healthy_repo exports.
 review_flow() {
   fresh_flow "$1"
-  complete_plan_handoff "$("$ORCH" handoff path spec)"
-  complete_spec_handoff "$("$ORCH" handoff path implement)"
-  complete_implement_handoff "$("$ORCH" handoff path review)"
+  complete_handoff "$("$ORCH" handoff path spec)"
+  complete_handoff "$("$ORCH" handoff path implement)"
+  complete_handoff "$("$ORCH" handoff path review)"
   state_fixture phase review
 }
 

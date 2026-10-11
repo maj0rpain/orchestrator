@@ -31,7 +31,7 @@ assert_status "refuses at spec with an invalid spec handoff" "$st" 1
 assert_contains "prints the FAIL lines" "$out" "FAIL  empty section: ## Seams"
 assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
-complete_spec_handoff "$hs2"
+complete_handoff "$hs2"
 "$ORCH" state set issue null
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at spec with no issue recorded" "$st" 1
@@ -52,7 +52,7 @@ assert_contains "names the missing handoff" "$out" "03-implement.md"
 assert_eq "leaves the phase at implement" "$("$ORCH" state get phase)" "implement"
 
 hi2="$("$ORCH" handoff path review)"
-complete_implement_handoff "$hi2"
+complete_handoff "$hi2"
 for field in branch base_sha pr; do
   state_fixture branch orch/7-advancing
   state_fixture base_sha abc1234
