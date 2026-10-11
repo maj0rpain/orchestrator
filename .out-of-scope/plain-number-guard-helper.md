@@ -25,9 +25,8 @@ The PR, iteration, redo and ticket-number guards check a different kind of
 number and are not part of this list.
 
 This fits the file's transaction-script style (see
-`command-function-decomposition.md`) and the same reasoning as
-`current-branch-helper.md`: a command function shows its whole precondition
-check in place.
+`command-function-decomposition.md`): a command function shows its whole
+precondition check in place.
 
 Reconsider if the guard grows beyond one line, for example into a remedy hint
 shared by every caller. Keeping many multi-line copies in step would then cost
