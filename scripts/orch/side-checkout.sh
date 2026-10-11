@@ -140,7 +140,7 @@ archive_root() {
 archive_flow() {
   local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" slug dest entry
   refuse_ticket_worktrees "$root"
-  slug="$(state_get_in "$orch/state.json" slug)"
+  slug="$(state_get_in "$(flow_state_file "$root")" slug)"
   dest="$home/archive/$(dir_stamp)-$slug"
   mkdir -p "$dest"
   for entry in "$orch"/*; do
