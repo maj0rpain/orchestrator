@@ -10,6 +10,9 @@
 
 # The one host detector, shared with orch.sh (#281).
 source "$(dirname "${BASH_SOURCE[0]}")/host.sh"
+# The one owner of the flow state format, shared with orch.sh (#1023): the
+# hooks read state.json and decide whether a flow is active through it alone.
+source "$(dirname "${BASH_SOURCE[0]}")/flow-state.sh"
 
 # Reads the raw hook JSON from stdin and sets `input`, `session`, `cwd`, and
 # `host` in the caller's shell. A missing session_id leaves `session` empty,
@@ -116,14 +119,4 @@ hook_emit_context() {
     },
     additionalContext: $c
   }'
-}
-
-# True when the repo at $1 has a flow running. A state.json at phase exactly
-# "done" is finished work waiting for the next init to archive it (ADR-0009),
-# so it counts as no flow and planning keeps its protections (#186). Any other
-# state.json - unreadable, or with no phase - still counts as a running flow.
-hook_flow_active() {
-  local state="$1/.orchestrator/state.json"
-  [ -f "$state" ] || return 1
-  [ "$(jq -r '.phase // ""' "$state" 2>/dev/null)" != "done" ]
 }

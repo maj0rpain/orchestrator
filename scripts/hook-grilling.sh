@@ -92,7 +92,7 @@ root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 # and the model picks one. A done flow is finished work, so planning beside it
 # gets the ordinary message.
 flow_active=0
-if hook_flow_active "$root"; then flow_active=1; fi
+if flow_state_active "$(flow_state_file "$root")"; then flow_active=1; fi
 
 ROOT="$root"
 ready_label="$(triage_label_for ready-for-agent)"
@@ -170,13 +170,13 @@ confirm_lead="Before you implement anything"
 close_lead="When you reach a shared understanding"
 done_lead="At the close"
 if [ "$flow_active" = 1 ]; then
-  state="$root/.orchestrator/state.json"
+  state="$(flow_state_file "$root")"
   flow_readable=0 flow_issue="" flow_slug="" flow_phase=""
-  if jq -e 'type == "object"' "$state" >/dev/null 2>&1; then
+  if flow_state_readable "$state"; then
     flow_readable=1
-    flow_issue="$(jq -r '.issue // "" | tostring' "$state")"
-    flow_slug="$(jq -r '.slug // "" | tostring' "$state")"
-    flow_phase="$(jq -r '.phase // "" | tostring' "$state")"
+    flow_issue="$(flow_state_get "$state" issue)"
+    flow_slug="$(flow_state_get "$state" slug)"
+    flow_phase="$(flow_state_get "$state" phase)"
   fi
   if [ -n "$flow_phase" ]; then flow_at="at phase $flow_phase"; else flow_at="just started"; fi
   if [ "$flow_readable" = 0 ]; then
