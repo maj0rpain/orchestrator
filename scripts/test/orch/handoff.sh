@@ -341,7 +341,7 @@ flow_state_write "$(flow_state_file "$tpl_repo")" host_fallbacks true \
   || bad "the handoff templates' state fixture is written" "flow_state_write failed"
 # The file list is the phase table's, so a new phase's template is checked too.
 # orch.sh is sourced inside the fixture repo, since it resolves one as it loads.
-tpls="$(cd "$tpl_repo" && bash -c 'source "$1"; handoffs_due done' _ "$ORCH")"
+tpls="$(cd "$tpl_repo" && sourced_orch handoffs_due "done")"
 assert_eq "the phase table names the templates to check" "$tpls" \
   "$(writeln 01-plan.md 02-spec.md 03-implement.md)"
 for tpl in $tpls; do

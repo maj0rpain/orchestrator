@@ -198,8 +198,7 @@ state_fixture() {
 # does not hold, it fails and writes no file.
 complete_handoff() {
   local headings heading
-  # shellcheck disable=SC2016 # $1 expands in the inner shell
-  headings="$(bash -c 'source "$1"; handoff_required "$2"' _ "$ORCH" "$(basename "$1")")" || return 1
+  headings="$(sourced_orch handoff_required "$(basename "$1")")" || return 1
   grep -qxF '## Host fallbacks' <<<"$headings" || headings="$headings"$'\n''## Host fallbacks'
   while IFS= read -r heading; do
     writeln "$heading" "Placeholder for ${heading#\#\# }." ''
