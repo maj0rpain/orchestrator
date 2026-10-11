@@ -129,15 +129,6 @@ finding_body_render() {
   [ -z "${10:-}" ] || printf '%s\n\n' "**Spec question:** ${10}"
 }
 
-# finding_body_trim <var> <text>: <text> with whitespace stripped from both
-# ends, written into <var>.
-finding_body_trim() {
-  local __fbt="$2"
-  __fbt="${__fbt#"${__fbt%%[![:space:]]*}"}"
-  __fbt="${__fbt%"${__fbt##*[![:space:]]}"}"
-  printf -v "$1" '%s' "$__fbt"
-}
-
 # finding_body_parse <body> <prefix>: reads every labelled line of a filed
 # finding's body into <prefix>_<field> - axis (lowercased), severity, reason,
 # file, line (N or N-M), sha, pr (the URL), pr_number, why and question. Each
@@ -163,17 +154,17 @@ finding_body_parse() {
       '**Axis:**'*)
         [ -z "$__fbp_seen_axis" ] || continue
         __fbp_seen_axis=1
-        finding_body_trim __fbp_v "${__fbp_line#'**Axis:**'}"
+        trim_split "${__fbp_line#'**Axis:**'}" __fbp_v
         __fbp_axis="$(printf '%s' "$__fbp_v" | tr '[:upper:]' '[:lower:]')"
         ;;
       '**Severity:**'*)
         [ -z "$__fbp_seen_sev" ] || continue
         __fbp_seen_sev=1
-        finding_body_trim __fbp_v "${__fbp_line#'**Severity:**'}"
+        trim_split "${__fbp_line#'**Severity:**'}" __fbp_v
         case "$__fbp_v" in
           *' - '*)
-            finding_body_trim __fbp_severity "${__fbp_v%%' - '*}"
-            finding_body_trim __fbp_reason "${__fbp_v#*' - '}"
+            trim_split "${__fbp_v%%' - '*}" __fbp_severity
+            trim_split "${__fbp_v#*' - '}" __fbp_reason
             ;;
           *) __fbp_severity="$__fbp_v" ;;
         esac
@@ -194,12 +185,12 @@ finding_body_parse() {
       '**Why not fixed in the loop:**'*)
         [ -z "$__fbp_seen_why" ] || continue
         __fbp_seen_why=1
-        finding_body_trim __fbp_why "${__fbp_line#'**Why not fixed in the loop:**'}"
+        trim_split "${__fbp_line#'**Why not fixed in the loop:**'}" __fbp_why
         ;;
       '**Spec question:**'*)
         [ -z "$__fbp_seen_q" ] || continue
         __fbp_seen_q=1
-        finding_body_trim __fbp_question "${__fbp_line#'**Spec question:**'}"
+        trim_split "${__fbp_line#'**Spec question:**'}" __fbp_question
         ;;
     esac
     # PR is read apart from the case above: a **PR:** line that does not end
@@ -207,7 +198,7 @@ finding_body_parse() {
     if [ -z "$__fbp_seen_pr" ] && [[ $__fbp_line == '**PR:**'* ]] && [[ $__fbp_line =~ $__fbp_pr_re ]]; then
       __fbp_seen_pr=1
       __fbp_pr_number="${BASH_REMATCH[1]}"
-      finding_body_trim __fbp_pr "${__fbp_line#'**PR:**'}"
+      trim_split "${__fbp_line#'**PR:**'}" __fbp_pr
     fi
   done <<<"$1"
   printf -v "$2_axis" '%s' "$__fbp_axis"

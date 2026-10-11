@@ -60,11 +60,12 @@ capture() {
   rm -f "$_capture_file"
   return "$_capture_st"
 }
-# The argument with leading and trailing whitespace removed.
+# The argument with leading and trailing whitespace removed, as trim_split
+# writes it.
 trim() {
-  local s="$1"
-  s="${s#"${s%%[![:space:]]*}"}"
-  printf '%s' "${s%"${s##*[![:space:]]}"}"
+  local _trim_s
+  trim_split "$1" _trim_s
+  printf '%s' "$_trim_s"
 }
 
 # The splitters below cut a string up by parameter expansion, so a hot path
@@ -72,6 +73,14 @@ trim() {
 # variables through printf -v, as capture does, and is called in the current
 # shell, never inside $(...).
 #
+# trim_split <text> <var>: <text> with leading and trailing whitespace
+# removed, into <var>.
+trim_split() {
+  local _trim_split_s="$1"
+  _trim_split_s="${_trim_split_s#"${_trim_split_s%%[![:space:]]*}"}"
+  printf -v "$2" '%s' "${_trim_split_s%"${_trim_split_s##*[![:space:]]}"}"
+}
+
 # tsv_split <line> <var>...: <line>'s tab-separated fields into the named
 # variables in turn, as awk -F '\t' reads them: an empty field stays empty,
 # a field past the last tab is empty, and fields past the last variable are
