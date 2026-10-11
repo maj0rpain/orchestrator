@@ -621,6 +621,29 @@ ci_absent; fake_rules main required_status_checks
 no_ci green "required checks from a ruleset keep the grace"
 ci_absent; fake_rules main deletion
 no_ci none "a ruleset that requires no checks is not evidence of CI"
+# Signals longer than a pipe holds (#987), each with its match first: a check
+# that pipes the listing into a quiet grep sees the match while the writer
+# still blocks on later lines, takes SIGPIPE and, under pipefail, reads the
+# signal as absent - no CI - on every run.
+big_rules=(required_status_checks)
+for i in $(seq -w 1 10000); do big_rules+=("filler_rule_type_$i"); done
+ci_absent; fake_rules main "${big_rules[@]}"
+no_ci green "a ruleset requiring checks keeps the grace, among about 200 KiB of other rules"
+wf_index="$(mktemp -u)"
+GIT_INDEX_FILE="$wf_index" git read-tree HEAD
+wf_blob="$(printf 'on: push\n' | git hash-object -w --stdin)"
+{
+  printf '100644 %s\t.github/workflows/a.yml\n' "$wf_blob"
+  for i in $(seq -w 1 10000); do
+    printf '100644 %s\t.github/workflows/b-filler-entry-%s.txt\n' "$wf_blob" "$i"
+  done
+} | GIT_INDEX_FILE="$wf_index" git update-index --index-info
+big_wf_sha="$(git commit-tree "$(GIT_INDEX_FILE="$wf_index" git write-tree)" -p HEAD -m 'add CI among many')"
+rm -f "$wf_index"
+fake_pr_head 7 "$big_wf_sha"
+ci_absent
+no_ci green "a workflow file listed first keeps the grace, among about 200 KiB of other entries"
+fake_pr_head 7 "$head_sha"
 earlier=2222222222222222222222222222222222222222
 fake_pr_head 7 "$head_sha" "$earlier" "$head_sha"
 ci_absent; fake_check_run "$earlier"
