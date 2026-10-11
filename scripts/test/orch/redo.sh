@@ -611,3 +611,19 @@ assert_eq "without retiring the closed issue's tickets" \
 out="$("$ORCH" help 2>&1)"
 assert_contains "ticket retire is in the usage text" "$out" "ticket retire <parent>"
 restore_suite_env
+
+# --- redo help names handoffs by role (#1066) -------------------------------
+# The help names each handoff by its role and points at handoff path for the
+# file, so renaming a handoff file never leaves the help stale.
+echo
+echo "redo help names handoffs by role"
+new_repo >/dev/null
+for entry in "redo review" "redo spec"; do
+  text="$(help_entry "$entry")"
+  assert_ne "help has a $entry entry" "$text" ""
+  assert_eq "the $entry entry names no handoff file" \
+    "$(printf '%s\n' "$text" | grep -oE '[0-9]{2}-[a-z-]+\.md')" ""
+  assert_contains "the $entry entry points at handoff path" \
+    "$(printf '%s\n' "$text" | flat_text)" "orch.sh handoff path"
+done
+restore_suite_env

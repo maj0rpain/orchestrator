@@ -143,6 +143,24 @@ for key in slug phase issue base branch pr base_sha created updated; do
 done
 restore_suite_env
 
+# --- the state writer accepts exactly the table's phases --------------------
+# phase_write, the one writer of state.phase, accepts the phase table's phases
+# and refuses any other, leaving the recorded phase as it was.
+echo
+echo "state phase writer"
+fake_flow phase-writer
+for p in implement review "done" spec; do
+  out="$(sourced_orch phase_write "$p" 2>&1)"; st=$?
+  assert_status "the state writer accepts $p" "$st" 0
+  assert_eq "and writes it" "$("$ORCH" state get phase)" "$p"
+done
+out="$(sourced_orch phase_write plan 2>&1)"; st=$?
+assert_status "the state writer refuses a phase outside the table" "$st" 1
+assert_eq "with today's message" "$out" \
+  "orch: not a flow phase: plan (want one of: spec implement review done)"
+assert_eq "leaving the recorded phase unchanged" "$("$ORCH" state get phase)" "spec"
+restore_suite_env
+
 # --- state.json schema ------------------------------------------------------
 # What a fresh init writes, pinned: every key it seeds reads back through
 # state get, and the raw file holds exactly these keys, in this order, with

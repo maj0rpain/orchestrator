@@ -29,9 +29,6 @@ restore_suite_env
 echo
 echo "phase table"
 fake_flow phase-table
-# sourced_orch <function> [args...]: the function's output, called in a shell
-# that sourced orch.sh, with its status.
-sourced_orch() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
 
 assert_eq "PHASES is the table's phases in order" \
   "$(bash -c 'source "$1"; printf "%s\n" "$PHASES"' _ "$ORCH")" "spec implement review done"
@@ -107,18 +104,6 @@ assert_contains "as an unknown handoff file, the done row matching no name" "$ou
 out="$("$ORCH" handoff path "done" 2>&1)"; st=$?
 assert_status "handoff path done fails" "$st" 1
 assert_eq "with no handoff defined for done" "$out" "orch: no handoff defined for phase: done"
-
-# The one writer of state.phase accepts exactly the table's phases.
-for p in implement review "done" spec; do
-  out="$(sourced_orch phase_write "$p" 2>&1)"; st=$?
-  assert_status "the state writer accepts $p" "$st" 0
-  assert_eq "and writes it" "$("$ORCH" state get phase)" "$p"
-done
-out="$(sourced_orch phase_write plan 2>&1)"; st=$?
-assert_status "the state writer refuses a phase outside the table" "$st" 1
-assert_eq "with today's message" "$out" \
-  "orch: not a flow phase: plan (want one of: spec implement review done)"
-assert_eq "leaving the recorded phase unchanged" "$("$ORCH" state get phase)" "spec"
 
 # complete_handoff, the suite's one handoff fixture, writes what the table
 # requires: each file it writes validates, with Host fallbacks required or not.

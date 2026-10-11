@@ -162,6 +162,17 @@ writeln() { printf '%s\n' "$@"; }
 # flat_text: stdin on one line with every whitespace run collapsed to one
 # space.
 flat_text() { tr -s ' \t\n' '   '; }
+# sourced_orch <function> [args...]: the function's output, called in a shell
+# that sourced orch.sh, with its status.
+sourced_orch() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
+# help_entry <command>: orch.sh help's entry for <command> - its first line
+# and the indented continuation lines under it.
+help_entry() {
+  "$ORCH" help 2>&1 | awk -v cmd="  $1" '
+    found && /^                              / { print; next }
+    found { exit }
+    index($0, cmd) == 1 { found = 1; print }'
+}
 
 # The Flow state module, sourced so state_fixture writes through orch.sh's own
 # writer: a fixture can then never store a value orch.sh would not write.

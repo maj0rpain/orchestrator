@@ -167,7 +167,7 @@ orch.sh - deterministic operations for the orchestrator flow
   phase boundary              print the block that ends a phase - the
                               handoff the current phase reads, and the
                               host's Next line
-  handoff path <phase>        print the path of the handoff a phase reads
+  handoff path <phase>        print the handoff path for a phase
   handoff validate <file>     check required sections exist and are non-empty
   handoff section <file> <heading>
                               print the body of the section headed
