@@ -589,6 +589,9 @@ assert_contains "a failed merged-PR list removes nothing" "$out" "nothing was re
 assert_eq "the finished quick side checkout stays" "$(on_disk "$qk")" "present"
 fake_unfail
 
+# A tag named as the main checkout's branch makes git's short branch name
+# ambiguous; the report still names the branch as git branch --show-current does.
+git tag orch/main-flow
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds" "$st" 0
 assert_eq "the finished flow side checkout is gone" "$(on_disk "$fl")" "absent"
@@ -614,7 +617,7 @@ assert_contains "and one whose PR is closed as closed" "$out" "skipped $pc: PR #
 assert_eq "the main checkout's finished flow is archived in place" "$(archived_count "$top" main-flow)" "1"
 assert_eq "its state is gone" "$(on_disk "$top/.orchestrator/state.json")" "absent"
 assert_eq "its branch is still checked out" "$(git branch --show-current)" "orch/main-flow"
-assert_contains "which is reported" "$out" "orch/main-flow is still checked out"
+assert_contains "which is reported by its full branch name" "$out" "in place - orch/main-flow is still checked out"
 assert_eq "the live side checkouts were not moved by that archive" "$(on_disk "$op")" "present"
 assert_eq "a hand-made worktree's flow is untouched" "$(on_disk "$hand/.orchestrator/state.json")" "present"
 assert_eq "and the worktree stays" "$(on_disk "$hand")" "present"
