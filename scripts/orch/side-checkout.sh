@@ -11,14 +11,6 @@
 # the worktree - is what makes it one; a flow's state file is not, since a
 # hand-made worktree can hold a flow too.
 
-# The main checkout: the first path checkout_paths prints. Fails, printing
-# nothing, when checkout_paths fails or prints nothing.
-main_checkout() {
-  local paths
-  paths="$(checkout_paths)" && [ -n "$paths" ] || return 1
-  printf '%s\n' "${paths%%$'\n'*}"
-}
-
 # side_checkout_marked <git-dir>: whether the git folder <git-dir> holds the
 # ownership marker - the one place the marker's presence is tested.
 side_checkout_marked() { [ -f "$1/$SIDE_CHECKOUT_MARKER" ]; }
@@ -33,36 +25,6 @@ side_checkout_marker() {
 
 # Whether the worktree at <path> carries the ownership marker.
 is_side_checkout() { side_checkout_marker "$1" >/dev/null; }
-
-# Every checkout's path, one per line, the main checkout first: the one reader
-# of the paths alone from git worktree list (branch_checkout, which needs the
-# `branch ` lines too, keeps its own).
-checkout_paths() {
-  local list line
-  list="$(git worktree list --porcelain)" || return
-  while IFS= read -r line; do
-    case "$line" in "worktree "*) printf '%s\n' "${line#worktree }" ;; esac
-  done <<<"$list"
-}
-
-# Whether the checkout at <path> holds a flow.
-checkout_has_flow() { [ -f "$(flow_state_file "$1")" ]; }
-
-# What the checkout at <path> holds: its flow (flow <slug> <phase> #<issue>),
-# else its checked-out branch (branch <name>), else (no branch).
-checkout_holding() {
-  local state issue issue_label branch
-  state="$(flow_state_file "$1")"
-  if [ -f "$state" ]; then
-    issue="$(state_get_in "$state" issue)"
-    if [ -n "$issue" ]; then issue_label="#$issue"; else issue_label="(no issue)"; fi
-    note "flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue_label"
-  elif branch="$(git -C "$1" symbolic-ref --quiet --short HEAD)"; then
-    note "branch $branch"
-  else
-    note "(no branch)"
-  fi
-}
 
 # --- the finished sweep ---
 #
@@ -227,13 +189,13 @@ cmd_side_checkout_add() {
 # other: <slug> <path>, then what it holds (see checkout_holding).
 cmd_side_checkout_list() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout list"
-  local path issue quick
-  while IFS= read -r path; do
-    is_side_checkout "$path" || continue
+  local kind _flow _branch path issue quick
+  while read -r kind _flow _branch path; do
+    [ "$kind" = side ] || continue
     quick=""
     if issue="$(side_checkout_issue "$path")"; then quick=" quick #$issue"; fi
     note "${path##*/} $path $(checkout_holding "$path")$quick"
-  done < <(checkout_paths)
+  done < <(checkouts)
 }
 
 # Prints the issue the current side checkout records (see side-checkout add
@@ -291,30 +253,32 @@ cmd_side_checkout_remove() {
 # worktree holding a flow is reported and left alone.
 cmd_side_checkout_prune() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout prune"
-  local here main_root path verdict branch rc unread=0 failed=0
+  local here main_root path entry verdict branch rc unread=0 failed=0
   # archive_out is this entry's archive_flow output - its note, or its error -
   # cleared at the top of each entry so none outlives its own.
   local archive_out remove_err branch_err
-  local paths=() finished=()
+  local kind flow _branch walk=() finished=()
   here="$(pwd -P)"
-  # checkout_paths lists the main checkout first.
-  mapfile -t paths < <(checkout_paths)
-  main_root="${paths[0]-}"
+  # The walk lists the main checkout first.
+  mapfile -t walk < <(checkouts)
+  main_root=""
+  [ "${#walk[@]}" -eq 0 ] || read -r _ _ _ main_root <<<"${walk[0]}"
   # Every step works from the main checkout, so removing the checkout this
   # command ran in leaves the sweep somewhere to stand.
   cd "$main_root" || die "could not enter the main checkout $main_root"
-  for path in "${paths[@]}"; do
+  for entry in "${walk[@]}"; do
+    read -r kind flow _branch path <<<"$entry"
     rc=0; verdict=""; branch=""
-    if [ "$path" = "$main_root" ]; then
-      checkout_has_flow "$path" || continue
-      finished_flow "$(flow_state_file "$path")" </dev/null || rc=$?
-    elif is_side_checkout "$path"; then
-      side_checkout_finished "$path" </dev/null || rc=$?
-    elif checkout_has_flow "$path"; then
-      note "$path: not a side checkout, left alone"; continue
-    else
-      continue
-    fi
+    case "$kind" in
+      main)
+        [ "$flow" = 1 ] || continue
+        finished_flow "$(flow_state_file "$path")" </dev/null || rc=$? ;;
+      side)
+        side_checkout_finished "$path" </dev/null || rc=$? ;;
+      *)
+        [ "$flow" = 1 ] || continue
+        note "$path: not a side checkout, left alone"; continue ;;
+    esac
     case "$rc" in
       0) finished+=("$path"$'\t'"$branch") ;;
       1) note "skipped $path: $verdict" ;;
@@ -323,7 +287,6 @@ cmd_side_checkout_prune() {
   done
   [ "$unread" -eq 0 ] || die "$unread checkout(s) could not be checked - nothing was removed"
   [ "${#finished[@]}" -gt 0 ] || { note "no finished side checkouts"; return 0; }
-  local entry
   for entry in "${finished[@]}"; do
     path="${entry%%$'\t'*}"; branch="${entry#*$'\t'}"
     archive_out=""

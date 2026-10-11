@@ -22,6 +22,12 @@ flow's slug, issue, base branch, branch, PR and phase, and the review
 loop's counters. A checkout holds at most one. A flow whose state is at
 phase `done` no longer counts as active.
 
+**Checkout**:
+A working tree of the repo: the main checkout (the clone itself), a side
+checkout, a ticket worktree, or a hand-made worktree (one the human made
+with `git worktree add`). Each holds at most one flow.
+_Avoid_: worktree, when the main checkout is meant too.
+
 **Side checkout**:
 A git worktree the plugin makes inside the repo, so a second flow or a quick
 implementation can run beside the work already in this checkout, in a session

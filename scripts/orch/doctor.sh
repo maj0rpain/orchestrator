@@ -518,13 +518,10 @@ check_base_branch() {
 # With no side checkout there is nothing to ask GitHub, so the gate - and a
 # skip with GitHub unreachable - only counts once one exists.
 check_side_checkouts_finished() {
-  local path paths=() found=() verdict branch rc main_root
-  mapfile -t paths < <(checkout_paths)
-  # checkout_paths lists the main checkout first.
-  main_root="${paths[0]-}"
-  for path in "${paths[@]}"; do
-    [ "$path" != "$main_root" ] && is_side_checkout "$path" && found+=("$path")
-  done
+  local kind _flow _branch path found=() verdict branch rc
+  while read -r kind _flow _branch path; do
+    if [ "$kind" = side ]; then found+=("$path"); fi
+  done < <(checkouts)
   [ "${#found[@]}" -gt 0 ] || return 0
   d_gh_gate || return 0
   for path in "${found[@]}"; do

@@ -497,16 +497,13 @@ cmd_ticket() {
   esac
 }
 
-# The checkout that has <branch> checked out, or nothing: the first worktree
-# git lists on refs/heads/<branch>.
+# The checkout that has <branch> checked out, or nothing: the first checkout
+# the walk lists on <branch>, a worktree whose directory is gone included.
 branch_checkout() {
-  local line path=""
-  while IFS= read -r line; do
-    case "$line" in
-      "worktree "*) path="${line#worktree }" ;;
-      "branch refs/heads/$1") note "$path"; return 0 ;;
-    esac
-  done < <(git worktree list --porcelain)
+  local _kind _flow branch path
+  while read -r _kind _flow branch path; do
+    if [ "$branch" = "$1" ]; then note "$path"; return 0; fi
+  done < <(checkouts)
 }
 
 # Lands ticket <n>'s branch on the branch it was forked from: rebases it onto
