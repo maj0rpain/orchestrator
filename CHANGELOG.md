@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.7.3
+
+finding-triage and the gh fake no longer pipe into `head` under `pipefail`, where a writer with more than a pipe holds left to send took SIGPIPE: the squash-deleted check reads its first deleted line without a pipe, the commit lookup takes its first SHA with a herestring `grep -m1`, and the fake's label and issue listings cut at their limits with `awk`. docs-lint's #987 rule, now `scan_early_exit_pipe`, also refuses any pipe into `head` in the plugin's scripts (#1019).
+
 ## 4.7.2
 
 orch.sh no longer misreads a label or a CI signal now and then under load: a value piped into a quiet `grep` under `pipefail` could take SIGPIPE and read a match as absent, so `finding-triage apply` could leave a stale triage label, `finding-triage bundle` refuse a valid member, and `review ci` skip the grace on a repo with CI. Each such check now passes its value to `grep` as a herestring, and docs lint now refuses that pattern (#987).
