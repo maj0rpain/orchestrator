@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.7.4
+
+orch.sh's helpers now live in the module of the concept they serve: the Flow state readers and writers in `state.sh`, and the Handoff, Review loop, Ticket worktree, Side checkout, Repo and Base branch helpers in their own noun modules. `common.sh` keeps only the primitives no concept owns (and the Filed finding helpers, until #1026), and a new test section checks that it calls nothing a noun module defines. A pure move: every command behaves as before (#1021).
+
 ## 4.7.3
 
 finding-triage and the gh fake no longer pipe into `head` under `pipefail`, where a writer with more than a pipe holds left to send took SIGPIPE: the squash-deleted check reads its first deleted line without a pipe, the commit lookup takes its first SHA with a herestring `grep -m1`, and the fake's label and issue listings cut at their limits with `awk`. docs-lint's #987 rule, now `scan_early_exit_pipe`, also refuses any pipe into `head` in the plugin's scripts (#1019).
