@@ -103,7 +103,9 @@ range_lines() {
 # walking back, the one after the first commit that still holds one of them.
 squash_deleting_commit() {
   local old="$1" ref="$2" file="$3" ranges="$4" commits commit start end held after=""
-  start="$(range_lines "$ranges" | head -n 1)"
+  # The first range's start, read without a pipe: head would leave
+  # range_lines' seq to SIGPIPE under pipefail on a large deletion (#1019).
+  start="${ranges%%$'\n'*}"; start="${start%%,*}"
   end="$(range_lines "$ranges" | tail -n 1)"
   commits="$(git log --first-parent --format=%H "$ref" "^$old" -- "$file" 2>/dev/null)" || return 0
   for commit in $commits; do
@@ -221,10 +223,11 @@ finding_scan_one() {
     return
   fi
   # The newest commit since the filing that touched the finding's lines. The
-  # output is captured whole before filtering: piping it into grep -m1 could
-  # SIGPIPE git and pass for a failure under pipefail.
+  # output is captured whole before filtering and given to grep -m1 as a
+  # herestring: piping it into grep -m1 or head could SIGPIPE the writer and
+  # pass for a failure under pipefail.
   if log_out="$(git log -1 --format=%H -L "$new_start,$new_end:$file" "$ref" "^$resolved_sha" 2>/dev/null)"; then
-    detail="$(printf '%s\n' "$log_out" | grep -Ex '[0-9a-f]{40}' | head -n 1)" || true
+    detail="$(grep -m1 -Ex '[0-9a-f]{40}' <<<"$log_out")" || true
     # The lines were followed and nothing since the filing touched them: the
     # file changed only elsewhere.
     if [ -z "$detail" ]; then

@@ -1251,28 +1251,32 @@ flags "a usage: string beside another literal flow command is flagged" \
 check "the scripts name a plugin command only through flow_cmd, whose sections exist" \
   "$(scan_flow_cmd "$PLUGIN_ROOT")"
 
-# --- no pipe into a quiet grep (#987) ----------------------------------------
+# --- no pipe into a quiet grep or head (#987, #1019) -------------------------
 echo
-echo "no pipe into a quiet grep (#987)"
+echo "no pipe into a quiet grep or head (#987, #1019)"
 # orch.sh runs under `set -euo pipefail`, and its modules and the gh fake it
 # sources inherit it. In `printf '%s\n' "$v" | grep -q y`, grep exits as soon
 # as it matches; a writer still writing later lines is killed by SIGPIPE and
 # exits 141, and pipefail turns that into a false "no" although grep matched.
-# It needs load to land, so it shows as a rare flake (#987). The safe form
-# passes the value as a herestring, `grep -q y <<<"$v"`, written in full before
-# grep runs. Every .sh under scripts/ is scanned, whether or not it sets
+# It needs load to land, so it shows as a rare flake (#987). head exits the
+# same way once it has its lines, and a writer with more than a pipe holds
+# left to send fails on every run (#1019). The safe form passes the value as a
+# herestring, `grep -q y <<<"$v"`, written in full before grep runs, and cuts
+# lines with a reader of all its input, `awk -v n=1 'NR<=n'`. Every .sh under scripts/ is scanned, whether or not it sets
 # pipefail, except scripts/test/, whose runners run outside orch.sh; the gh
 # fake is scanned, since orch.sh sources it. A pipe is a single |, never ||.
 # The quiet flags are -q or -m in any short-flag bundle or as a word, --quiet,
 # --silent and --max-count, anywhere among that grep's words up to the next |,
-# ;, && or ||. A line is judged whole: a trailing comment is not stripped,
+# ;, && or ||. head is flagged whatever its flags, when it is the first word
+# after the pipe, ending at whitespace, ), ;, &, | or the line's end, so
+# `| header` is not. There are no exemptions. A line is judged whole: a trailing comment is not stripped,
 # since # sits inside quoted patterns, and words are not parsed for quoting,
 # so an option-shaped word inside a pattern counts too. Comment lines are
-# spared.
-# scan_quiet_grep_pipe <plugin root>: "<file>:<line>: <text>" for each line of
-# a scanned script that pipes into a quiet grep, <text> with leading
-# whitespace trimmed.
-scan_quiet_grep_pipe() {
+# spared. A pipe continued onto the next line with \ goes unseen.
+# scan_early_exit_pipe <plugin root>: "<file>:<line>: <text>" for each line of
+# a scanned script that pipes into a quiet grep or into head, <text> with
+# leading whitespace trimmed.
+scan_early_exit_pipe() {
   local f
   while IFS= read -r f; do
     case "$f" in scripts/test/gh_adapter_fake.sh) ;; scripts/test/*) continue ;; esac
@@ -1290,6 +1294,7 @@ scan_quiet_grep_pipe() {
           if ((k = index(g, SUBSEP)) && k < cut) cut = k
           m = split(substr(g, 1, cut - 1), w, /[[:space:]]+/)
           j = 1; while (j <= m && w[j] == "") j++
+          if (j <= m && w[j] ~ /^head([);&|]|$)/) { print ENVIRON["F"] ":" FNR ": " t; next }
           if (j > m || w[j] != "grep") continue
           for (j++; j <= m; j++) {
             o = w[j]; sub(/^["\047]+/, "", o)
@@ -1317,12 +1322,20 @@ printf '%s\n' '#!/usr/bin/env bash' \
   'echo "$x" | grep --max-count 1 y' \
   >"$fixture/scripts/orch/flagged.sh"
 printf '%s\n' 'fake_label_exists() { cut -f1 "$s" | grep -qxF "$1"; }' \
+  '  cut -f1 "$f" | head -n "$1"' \
   >"$fixture/scripts/test/gh_adapter_fake.sh"
+printf '%s\n' '#!/usr/bin/env bash' \
+  'range_lines "$r" | head -n 1' \
+  'echo "$x" | head -1' \
+  'echo "$x" | head' \
+  'x="$(cmd | head)"' \
+  >"$fixture/scripts/orch/head.sh"
+printf '%s\n' 'echo "$x" | header' >"$fixture/scripts/orch/header.sh"
 printf '%s\n' 'grep -q y <<<"$x"' >"$fixture/scripts/orch/herestring.sh"
 printf '%s\n' 'false || grep -q y f' >"$fixture/scripts/orch/oror.sh"
 printf '%s\n' '  # never write printf "%s" "$x" | grep -q y' >"$fixture/scripts/orch/comment.sh"
-printf '%s\n' 'echo "$x" | grep -q y' >"$fixture/scripts/test/runner.sh"
-out="$(scan_quiet_grep_pipe "$fixture")"
+printf '%s\n' 'echo "$x" | grep -q y' 'echo "$x" | head -n 1' >"$fixture/scripts/test/runner.sh"
+out="$(scan_early_exit_pipe "$fixture")"
 flags "a pipe into grep -q is flagged" "$out" 'scripts/orch/flagged.sh:2: printf "%s\n" "$x" | grep -q y'
 flags "a pipe into grep -qxF is flagged, its leading whitespace trimmed" \
   "$out" 'scripts/orch/flagged.sh:3: printf "%s\n" "$x" | grep -qxF y'
@@ -1338,11 +1351,18 @@ flags "a pipe into grep --max-count 1 is flagged" \
   "$out" 'scripts/orch/flagged.sh:11: echo "$x" | grep --max-count 1 y'
 flags "a pipe into a quiet grep in the gh fake is flagged" \
   "$out" 'scripts/test/gh_adapter_fake.sh:1: fake_label_exists() { cut -f1 "$s" | grep -qxF "$1"; }'
+flags "a pipe into head -n 1 is flagged" "$out" 'scripts/orch/head.sh:2: range_lines "$r" | head -n 1'
+flags "a pipe into head -1 is flagged" "$out" 'scripts/orch/head.sh:3: echo "$x" | head -1'
+flags "a pipe into a bare head is flagged" "$out" 'scripts/orch/head.sh:4: echo "$x" | head'
+flags "a pipe into head closing a substitution is flagged" "$out" 'scripts/orch/head.sh:5: x="$(cmd | head)"'
+flags "a pipe into head in the gh fake is flagged" \
+  "$out" 'scripts/test/gh_adapter_fake.sh:2: cut -f1 "$f" | head -n "$1"'
+spares "a pipe into a word starting with head is not flagged" "$out" '^scripts/orch/header\.sh:'
 spares "a herestring into grep -q is not flagged" "$out" '^scripts/orch/herestring\.sh:'
 spares "grep -q after || is not flagged" "$out" '^scripts/orch/oror\.sh:'
 spares "a comment mentioning | grep -q is not flagged" "$out" '^scripts/orch/comment\.sh:'
-spares "a pipe into grep -q elsewhere under scripts/test/ is not flagged" "$out" '^scripts/test/runner\.sh:'
-check "no plugin script pipes into a quiet grep" "$(scan_quiet_grep_pipe "$PLUGIN_ROOT")"
+spares "a pipe into grep -q or head elsewhere under scripts/test/ is not flagged" "$out" '^scripts/test/runner\.sh:'
+check "no plugin script pipes into a quiet grep or head" "$(scan_early_exit_pipe "$PLUGIN_ROOT")"
 
 # --- Junie planning snippet (ADR-0025) ----------------------------------------
 echo

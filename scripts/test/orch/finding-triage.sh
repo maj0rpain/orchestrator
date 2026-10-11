@@ -307,7 +307,7 @@ fake_issue 13 closed
 # deleted them. One file per case, all filed at one commit, each deleted by
 # its own commit after it.
 git -C "$work" checkout -q main
-for f in whole end start middle later two replaced squashed; do seq_lines "$f" 30 >"$work/src/del_$f.sh"; done
+for f in whole end start middle later two replaced squashed split; do seq_lines "$f" 30 >"$work/src/del_$f.sh"; done
 git -C "$work" add src
 git -C "$work" commit -qm "the code the deletions are filed against"
 filed_sha="$(git -C "$work" rev-parse HEAD)"
@@ -332,6 +332,17 @@ git -C "$work" checkout -q main
 del_commit del_squashed.sh '1i squashed pr line' "the PR, squash-merged" >/dev/null
 squashed_sha="$(del_commit del_squashed.sh '9,13d' "delete the squash-merged lines")"
 del_commit del_squashed.sh 's/^squashed line 30$/squashed line 30, reworded/' "a later edit to the squashed file" >/dev/null
+# The same for del_split.sh, whose filed lines one later commit deletes in
+# two hunks with a kept line between them: their deleted ranges are two, and
+# the first is read off the first range's start (#1019).
+git -C "$work" checkout -q -b pr38 "$filed_sha"
+sed -i '1i split pr line' "$work/src/del_split.sh"
+git -C "$work" commit -qam "the PR's own edit"
+split_head_sha="$(git -C "$work" rev-parse HEAD)"
+git -C "$work" push -q origin HEAD:refs/pull/38/head
+git -C "$work" checkout -q main
+del_commit del_split.sh '1i split pr line' "the PR, squash-merged" >/dev/null
+split_sha="$(del_commit del_split.sh '9,10d;12,13d' "delete the squash-merged lines in two hunks")"
 git -C "$work" push -q origin main
 finding 30 "review:nit,needs-triage" "\`src/del_whole.sh:10\` at $filed_sha" 30
 finding 31 "review:nit,needs-triage" "\`src/del_end.sh:10-20\` at $filed_sha" 31
@@ -341,6 +352,7 @@ finding 34 "review:nit,needs-triage" "\`src/del_later.sh:10\` at $filed_sha" 34
 finding 35 "review:nit,needs-triage" "\`src/del_two.sh:10-20\` at $filed_sha" 35
 finding 36 "review:nit,needs-triage" "\`src/del_replaced.sh:10\` at $filed_sha" 36
 finding 37 "review:nit,needs-triage" "\`src/del_squashed.sh:11\` at $squash_head_sha" 37
+finding 38 "review:nit,needs-triage" "\`src/del_split.sh:9-13\` at $split_head_sha" 38
 out="$(scan --pr 30 2>&1)"; st=$?
 assert_status "scans a finding whose lines were deleted" "$st" 0
 assert_eq "a whole deleted range is changed, naming the deleting commit" \
@@ -366,7 +378,10 @@ assert_eq "a line replaced, not deleted, is changed, naming the replacing commit
 out="$(scan --pr 37 2>&1)"
 assert_eq "a finding filed at a squash-merged PR head names the deleting commit, not the squash" \
   "$(line_of 37 "$out")" "$(printf '37\t37\tsrc/del_squashed.sh:11\tchanged\t%s\tneeds-triage' "$squashed_sha")"
-for n in 30 31 32 33 34 35 36 37; do fake_issue "$n" closed; done
+out="$(scan --pr 38 2>&1)"
+assert_eq "a squash-merged finding deleted in two hunks names the deleting commit" \
+  "$(line_of 38 "$out")" "$(printf '38\t38\tsrc/del_split.sh:9-13\tchanged\t%s\tneeds-triage' "$split_sha")"
+for n in 30 31 32 33 34 35 36 37 38; do fake_issue "$n" closed; done
 
 # Each severity's list is cut off at the issue-list limit; a list that
 # reaches it may be missing findings past it, and the scan says so on stderr
