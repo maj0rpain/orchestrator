@@ -246,9 +246,7 @@ cmd_finding_triage_scan() {
   # Each finding is read once, state, labels and body together: an explicit
   # one here, where it is checked, a listed one in the loop below.
   if [ -n "$issue" ]; then
-    issue_state_labels_body_read "$issue" state labels body gh_err \
-      || gh_die "read issue #$issue" "$gh_err"
-    [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
+    open_issue_read "$issue" "issue #$issue is not open - finding triage takes open filed findings only" labels body
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
     $all || labels_have "$labels" "$triage" \
@@ -376,10 +374,8 @@ cmd_finding_triage_apply() {
 # Writes its labels into the caller-named variable, for the caller's own
 # checks.
 bundle_member_check() {
-  local __bmc_state __bmc_labels __bmc_err __bmc_role __bmc_label __bmc_ready=""
-  issue_state_labels_read "$1" __bmc_state __bmc_labels __bmc_err \
-    || gh_die "read issue #$1" "$__bmc_err"
-  [ "$__bmc_state" = OPEN ] || die "issue #$1 is not open - a bundle takes open filed findings only"
+  local __bmc_labels __bmc_role __bmc_label __bmc_ready=""
+  open_issue_read "$1" "issue #$1 is not open - a bundle takes open filed findings only" __bmc_labels
   has_filed_severity_label "$__bmc_labels" \
     || die "issue #$1 is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
   for __bmc_role in needs-triage needs-info wontfix; do
@@ -434,10 +430,8 @@ cmd_finding_triage_bundle() {
   if [ -n "$into" ]; then
     case "$into" in *[!0-9]*) die "$usage" ;; esac
     ! $have_title && [ -z "$file$state$category" ] || die "$usage"
-    local b_state b_labels b_err
-    issue_state_labels_read "$into" b_state b_labels b_err \
-      || gh_die "read issue #$into" "$b_err"
-    [ "$b_state" = OPEN ] || die "bundle #$into is not open - --into resumes an open bundle only"
+    local b_labels
+    open_issue_read "$into" "bundle #$into is not open - --into resumes an open bundle only" b_labels
     labels_have "$b_labels" "$BUNDLE_LABEL" \
       || die "issue #$into carries no '$BUNDLE_LABEL' label - --into resumes a bundle only"
   else

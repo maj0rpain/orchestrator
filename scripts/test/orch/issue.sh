@@ -329,7 +329,8 @@ fake_issue 46 closed needs-triage
 before="$(fake_snapshot)"
 out="$(triage 46 2>&1)"; st=$?
 assert_status "a closed issue is refused" "$st" 1
-assert_contains "naming the issue" "$out" "issue #46"
+assert_eq "with the whole not-open line" \
+  "$(has_line "$out" "orch: issue #46 is not open - only an open issue is triaged to 'ready-for-agent'")" yes
 assert_eq "changing nothing and posting no comment" "$(fake_snapshot)" "$before"
 
 fake_issue 47 open needs-triage
@@ -337,8 +338,8 @@ fake_fail adapter_issue_state_labels "$GH_502"
 before="$(fake_snapshot)"
 out="$(triage 47 2>&1)"; st=$?
 assert_status "a failed read dies" "$st" 1
-assert_contains "naming the issue, with gh's line" "$out" \
-  "orch: gh could not read issue #47: HTTP 502: Bad Gateway"
+assert_eq "naming the issue, the whole line with gh's line" \
+  "$(has_line "$out" "orch: gh could not read issue #47: HTTP 502: Bad Gateway")" yes
 assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "changing nothing" "$(fake_snapshot)" "$before"
 fake_unfail

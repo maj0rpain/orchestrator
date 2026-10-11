@@ -191,7 +191,8 @@ healthy_repo
 fake_issue 7 closed ready-for-agent
 out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
 assert_status "refuses to adopt a closed issue" "$st" 1
-assert_contains "says the issue is not open" "$out" "not open"
+assert_eq "with the whole not-open line, its full stop included" \
+  "$(has_line "$out" "orch: issue #7 is not open - adoption requires an open issue.")" yes
 
 healthy_repo
 fake_issue 7 open needs-triage
@@ -219,8 +220,8 @@ fake_fail adapter_issue_state_labels "$GH_502"
 before_store="$(fake_snapshot)"
 out="$("$ORCH" init nope --issue 44 2>&1)"; st=$?
 assert_status "refuses to adopt an issue whose read fails" "$st" 1
-assert_contains "saying it could not be read, with gh's first line" "$out" \
-  "gh could not read issue #44: HTTP 502: Bad Gateway - check it exists and gh is authenticated"
+assert_eq "saying it could not be read, the whole line with gh's first line and the hint" \
+  "$(has_line "$out" "orch: gh could not read issue #44: HTTP 502: Bad Gateway - check it exists and gh is authenticated")" yes
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
 assert_eq "leaving no flow active" \
   "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"

@@ -164,7 +164,8 @@ assert_status "scans one explicit finding" "$st" 0
 assert_eq "and only it" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "2 "
 out="$(scan 9 2>&1)"; st=$?
 assert_status "refuses an explicit finding that is closed" "$st" 1
-assert_contains "saying so" "$out" "not open"
+assert_eq "with the whole not-open line" \
+  "$(has_line "$out" "orch: issue #9 is not open - finding triage takes open filed findings only")" yes
 out="$(scan 8 2>&1)"; st=$?
 assert_status "refuses one already triaged" "$st" 1
 assert_contains "naming the missing triage label" "$out" "needs-triage"
@@ -234,7 +235,8 @@ out="$(scan 8 --all 2>&1)"; st=$?
 assert_status "--all may follow the issue" "$st" 0
 out="$(scan --all 9 2>&1)"; st=$?
 assert_status "--all still refuses a closed finding" "$st" 1
-assert_contains "saying so (--all)" "$out" "not open"
+assert_eq "with the whole not-open line (--all)" \
+  "$(has_line "$out" "orch: issue #9 is not open - finding triage takes open filed findings only")" yes
 out="$(scan --all 10 2>&1)"; st=$?
 assert_status "--all still refuses an issue that is not a filed finding" "$st" 1
 assert_contains "naming the missing severity label (--all)" "$out" "review:"
@@ -427,7 +429,8 @@ fake_fail adapter_issue_state_labels_body "$GH_502"
 before_store="$(fake_snapshot)"
 out="$(scan 18 2>&1)"; st=$?
 assert_status "an explicit finding gh cannot read dies" "$st" 1
-assert_contains "naming the issue, with gh's line" "$out" "gh could not read issue #18: HTTP 502: Bad Gateway"
+assert_eq "naming the issue, the whole line with gh's line" \
+  "$(has_line "$out" "orch: gh could not read issue #18: HTTP 502: Bad Gateway")" yes
 assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "listing nothing" "$(printf '%s\n' "$out" | grep -c "$(printf '\t')")" "0"
 assert_eq "and changing nothing" "$(fake_snapshot)" "$before_store"
@@ -782,6 +785,8 @@ refused() {
 member 11 "review:major,ready-for-agent,bug"
 member 13 "review:nit,ready-for-agent,bug" closed
 refused "a closed member" "issue #13 is not open" new_bundle ready-for-agent bug 11 13
+assert_eq "with the whole not-open line (a closed member)" \
+  "$(has_line "$out" "orch: issue #13 is not open - a bundle takes open filed findings only")" yes
 member 13 "review:minor,ready-for-agent,bug"
 refused "a member with no filed-severity review label" "issue #13 is not a filed finding" new_bundle ready-for-agent bug 11 13
 member 13 "ready-for-agent,bug"
@@ -814,6 +819,8 @@ refused "a ready-for-human, bug member under ready-for-agent enhancement" \
 member 13 "review:nit,ready-for-human,enhancement"
 fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
 refused "a member gh cannot read" "gh could not read issue #11: HTTP 502: Bad Gateway" new_bundle ready-for-human bug 11 13
+assert_eq "the whole read-failure line (a member gh cannot read)" \
+  "$(has_line "$out" "orch: gh could not read issue #11: HTTP 502: Bad Gateway")" yes
 fake_unfail
 
 # Before bundling, scan --all lists the members.
@@ -965,6 +972,8 @@ member 34 "review:major,ready-for-agent,bug"
 member 35 "review:nit,needs-triage"
 fake_issue 45 closed finding-bundle ready-for-agent bug
 refused "--into: a closed bundle" "bundle #45 is not open" bundle --into 45 34
+assert_eq "with the whole not-open line (--into: a closed bundle)" \
+  "$(has_line "$out" "orch: bundle #45 is not open - --into resumes an open bundle only")" yes
 fake_issue 46 open ready-for-agent bug
 refused "--into: an issue without finding-bundle" "issue #46 carries no 'finding-bundle' label" bundle --into 46 34
 fake_issue 47 open finding-bundle ready-for-agent bug
@@ -973,6 +982,8 @@ refused "--into: a needs-triage member" "issue #35 carries 'needs-triage'" bundl
 refused "--into: a member named twice" "issue #34 is named twice" bundle --into 47 34 34
 fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
 refused "--into: a bundle gh cannot read" "gh could not read issue #47: HTTP 502: Bad Gateway" bundle --into 47 34
+assert_eq "the whole read-failure line (--into: a bundle gh cannot read)" \
+  "$(has_line "$out" "orch: gh could not read issue #47: HTTP 502: Bad Gateway")" yes
 fake_unfail
 out="$(bundle --into 47 34 2>&1)"; st=$?
 assert_status "--into takes a single member" "$st" 0
