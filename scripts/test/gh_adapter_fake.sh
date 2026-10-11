@@ -189,12 +189,14 @@ adapter_label_create() {
 }
 
 # adapter_labels <limit>: the stored label names, the first <limit> of them.
+# The cut reads every name: head would exit at <limit> and SIGPIPE cut under
+# pipefail (#1019).
 adapter_labels() {
   local f
   ! fake_failing adapter_labels || return 1
   f="$(fake_store)/labels"
   [ -f "$f" ] || return 0
-  cut -f1 "$f" | head -n "$1"
+  cut -f1 "$f" | awk -v n="$1" 'NR<=n'
 }
 
 # --- issue operations, on the store ---------------------------------------------
@@ -352,7 +354,8 @@ adapter_issue_state() {
 
 # adapter_issues_labelled <label>...: the open issues in the store carrying
 # every label named, in number order - the first ISSUE_LIST_LIMIT of them, as
-# gh's --limit cuts the list.
+# gh's --limit cuts the list, with awk, which reads all of sort's output, so
+# sort never takes SIGPIPE under pipefail as it would from head (#1019).
 adapter_issues_labelled() {
   local d n l keep
   ! fake_failing adapter_issues_labelled || return 1
@@ -364,7 +367,7 @@ adapter_issues_labelled() {
     for l in "$@"; do grep -qxF -- "$l" "$d/labels" 2>/dev/null || keep=0; done
     [ "$keep" = 1 ] || continue
     printf '%s\n' "$n"
-  done | sort -n | head -n "$ISSUE_LIST_LIMIT"
+  done | sort -n | awk -v n="$ISSUE_LIST_LIMIT" 'NR<=n'
 }
 
 # fake_next_number: one past the highest issue or PR number the store holds,

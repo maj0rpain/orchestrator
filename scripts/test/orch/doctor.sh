@@ -225,6 +225,28 @@ out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "passes when the repo has labels beginning with '-'" "$st" 0
 assert_contains "finding every one of them" "$out" "every triage label exists on the repo"
 
+# A label list whose names past the limit are more than a pipe holds (#1019):
+# 5,000 names of 45 bytes past doctor's limit of 1,000. A listing that pipes
+# them into head takes SIGPIPE once head has its lines and, under pipefail,
+# fails - on every run - and doctor warns the labels could not be listed.
+healthy_repo
+doctor_github
+filler_labels=()
+for i in $(seq -w 1 6000); do filler_labels+=("filler-label-with-a-long-enough-name-pad-$i"); done
+fake_label_names needs-triage ready-for-agent "${filler_labels[@]}"
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a label list of over 200 KiB past the limit does not block the flow" "$st" 0
+assert_not_contains "and is listed" "$out" "the repo's labels could not be listed"
+assert_contains "finding every triage label among the first 1000" "$out" \
+  "every triage label exists on the repo"
+# The same list with a triage label past the limit: the cut is kept.
+fake_label_names needs-triage "${filler_labels[@]}" ready-for-agent
+out="$("$ORCH" doctor --env 2>&1)"
+assert_not_contains "a triage label past the limit is still listed" "$out" \
+  "the repo's labels could not be listed"
+assert_contains "and cannot be confirmed, by name" "$out" \
+  "warn  the repo has more than 1000 labels - cannot confirm: ready-for-agent"
+
 # GitHub answered the auth probe and then would not answer this one: an absent
 # answer, not a "no", so it warns.
 healthy_repo
