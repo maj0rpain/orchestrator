@@ -88,9 +88,8 @@ readonly TICKET_WORKTREES="$ORCH/worktrees"
 
 # The noun modules, after the ROOT block, whose constants they read, with the
 # concept modules that have no noun of their own, checkout.sh and
-# filed-finding.sh, each in its alphabetical place, ahead of every module that
-# calls it. doctor.sh
-# is one of the noun modules, with one rule more: the dependency runs one way, doctor.sh
+# filed-finding.sh, all sourced in alphabetical order. doctor.sh is one of the
+# noun modules, with one rule more: the dependency runs one way, doctor.sh
 # calling into this file and the other modules, which call nothing doctor.sh
 # defines but cmd_doctor, from main() (scripts/test/orch/doctor.sh holds this).
 source "$ORCH_SCRIPTS/orch/base.sh"

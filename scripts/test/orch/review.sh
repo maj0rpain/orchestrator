@@ -304,8 +304,8 @@ fake_unfail
 fake_github
 usage="orch: usage: orch.sh review file <major|nit> <title> --axis <spec|standards> --finding-file <f> --severity-reason <r> --location <file>:<line> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
 before="$(fake_snapshot)"
-# each case is one argument list after the severity and title, its flags
-# separated by newlines so a value may hold a space
+# each case is one line, label|drop|add: parts less the flag named by drop and
+# its value, then add, word-split on spaces, so no value in add may hold one
 while IFS='|' read -r label drop add; do
   args=()
   i=0
