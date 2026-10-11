@@ -56,7 +56,7 @@ assert_eq "handoffs_after spec prints the spec and implement handoffs" "$out" \
   "$(writeln 02-spec.md 03-implement.md)"
 out="$(sourced_orch handoffs_after implement)"
 assert_eq "handoffs_after implement prints the implement handoff alone" "$out" "03-implement.md"
-for p in review done bogus; do
+for p in review "done" bogus; do
   out="$(sourced_orch handoffs_after "$p")"; st=$?
   assert_eq "handoffs_after $p prints nothing" "$out" ""
   assert_status "handoffs_after $p succeeds" "$st" 0
@@ -73,7 +73,7 @@ for pair in spec:plan implement:spec review:implement; do
   assert_status "phase_writer ${pair%%:*} succeeds" "$st" 0
 done
 for fn in phase_next phase_writer; do
-  for p in done bogus; do
+  for p in "done" bogus; do
     out="$(sourced_orch "$fn" "$p")"; st=$?
     assert_eq "$fn $p prints nothing" "$out" ""
     assert_ne "$fn $p fails" "$st" 0
@@ -106,12 +106,12 @@ out="$("$ORCH" handoff validate - 2>&1)"; st=$?
 rm -f ./-
 assert_status "handoff validate - fails" "$st" 1
 assert_contains "as an unknown handoff file, the done row matching no name" "$out" "unknown handoff file: -"
-out="$("$ORCH" handoff path done 2>&1)"; st=$?
+out="$("$ORCH" handoff path "done" 2>&1)"; st=$?
 assert_status "handoff path done fails" "$st" 1
 assert_eq "with no handoff defined for done" "$out" "orch: no handoff defined for phase: done"
 
 # The one writer of state.phase accepts exactly the table's phases.
-for p in implement review done spec; do
+for p in implement review "done" spec; do
   out="$(sourced_orch phase_write "$p" 2>&1)"; st=$?
   assert_status "the state writer accepts $p" "$st" 0
   assert_eq "and writes it" "$("$ORCH" state get phase)" "$p"
