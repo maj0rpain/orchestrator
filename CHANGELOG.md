@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.7.7
+
+The flow's phases, the handoff each one writes and reads, and each handoff's
+required sections are now stated once, in one table that orch.sh derives its
+phase and handoff logic from. This is an internal refactor: no command, exit
+code or `orch:` message changes. The only user-visible change is in `orch.sh
+help`, whose `phase advance`, `redo review` and `redo spec` entries now name
+each handoff by its role - the spec handoff, the implement handoff - and point
+at `orch.sh handoff path <phase>` for its file, rather than naming the file.
+
 ## 4.7.6
 
 The flow state format - its keys, their defaults, reading, the coercing write
