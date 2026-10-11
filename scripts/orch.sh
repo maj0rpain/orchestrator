@@ -11,8 +11,9 @@
 # constants more than one module reads, the top-level statements whose order
 # matters, the source list and main's dispatch. Each noun's code lives in its
 # own module, scripts/orch/<noun>.sh, named as its tests in
-# scripts/test/orch/<noun>.sh are; the helpers more than one module uses live
-# in scripts/orch/common.sh. Every module is sourced eagerly, from the explicit
+# scripts/test/orch/<noun>.sh are; each helper lives in the module of the
+# concept it serves, and scripts/orch/common.sh holds only the primitives no
+# concept owns. Every module is sourced eagerly, from the explicit
 # list below, so a missing one fails at startup naming the file. A new noun
 # gets its own module, a case in main and a line in that list.
 #
@@ -80,8 +81,8 @@ readonly ORCH="$ROOT/$ORCH_DIR_NAME"
 readonly STATE="$ORCH/state.json"
 readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
-# Read only by common.sh, but derived from ROOT, which is set after common.sh
-# is sourced, so it stays here with the rest of the ROOT block.
+# Read only by ticket-worktree.sh, but derived from ROOT, which is set after
+# common.sh is sourced, so it stays here with the rest of the ROOT block.
 readonly TICKET_WORKTREES="$ORCH/worktrees"
 
 # The noun modules, after the ROOT block, whose constants they read. doctor.sh

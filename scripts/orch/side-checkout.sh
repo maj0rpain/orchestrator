@@ -11,6 +11,164 @@
 # the worktree - is what makes it one; a flow's state file is not, since a
 # hand-made worktree can hold a flow too.
 
+# The main checkout: the first path checkout_paths prints. Fails, printing
+# nothing, when checkout_paths fails or prints nothing.
+main_checkout() {
+  local paths
+  paths="$(checkout_paths)" && [ -n "$paths" ] || return 1
+  printf '%s\n' "${paths%%$'\n'*}"
+}
+
+# side_checkout_marked <git-dir>: whether the git folder <git-dir> holds the
+# ownership marker - the one place the marker's presence is tested.
+side_checkout_marked() { [ -f "$1/$SIDE_CHECKOUT_MARKER" ]; }
+
+# side_checkout_marker <path>: prints the ownership marker's path for the
+# worktree at <path>; returns 1 when it carries none.
+side_checkout_marker() {
+  local gd
+  gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" \
+    && side_checkout_marked "$gd" && printf '%s\n' "$gd/$SIDE_CHECKOUT_MARKER"
+}
+
+# Whether the worktree at <path> carries the ownership marker.
+is_side_checkout() { side_checkout_marker "$1" >/dev/null; }
+
+# Every checkout's path, one per line, the main checkout first: the one reader
+# of the paths alone from git worktree list (branch_checkout, which needs the
+# `branch ` lines too, keeps its own).
+checkout_paths() {
+  local list line
+  list="$(git worktree list --porcelain)" || return
+  while IFS= read -r line; do
+    case "$line" in "worktree "*) printf '%s\n' "${line#worktree }" ;; esac
+  done <<<"$list"
+}
+
+# Whether the checkout at <path> holds a flow.
+checkout_has_flow() { [ -f "$1/$ORCH_DIR_NAME/state.json" ]; }
+
+# What the checkout at <path> holds: its flow (flow <slug> <phase> #<issue>),
+# else its checked-out branch (branch <name>), else (no branch).
+checkout_holding() {
+  local state="$1/$ORCH_DIR_NAME/state.json" issue issue_label branch
+  if [ -f "$state" ]; then
+    issue="$(state_get_in "$state" issue)"
+    if [ -n "$issue" ]; then issue_label="#$issue"; else issue_label="(no issue)"; fi
+    note "flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue_label"
+  elif branch="$(git -C "$1" symbolic-ref --quiet --short HEAD)"; then
+    note "branch $branch"
+  else
+    note "(no branch)"
+  fi
+}
+
+# --- the finished sweep ---
+#
+# Finished is read from GitHub's PR state, never git ancestry: a squash or
+# rebase merge never makes the branch an ancestor of its base (ADR-0037). The
+# verdicts below assign to the caller's `verdict` and `branch`, which bash
+# scopes dynamically, and return 0 finished, 1 not finished - `verdict` the
+# reason - or 2 the verdict could not be read, GitHub or the checkout's own
+# git status - `verdict` naming which, and its error.
+
+# github_read <var> <adapter-call> [args...]: runs the adapter call, its output
+# assigned to the caller's <var>. On failure it sets `verdict` to the call's
+# first error line and returns 2.
+github_read() {
+  local into="$1" got err
+  shift
+  capture got err "$@" || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
+  printf -v "$into" '%s' "$got"
+}
+
+# finished_flow <state-file>: whether that flow is finished - at done, and its
+# recorded PR merged into its own base branch.
+finished_flow() {
+  local state="$1" phase pr base state_draft pr_state shown_state refs _head_oid _head_ref merged_base _commits
+  phase="$(state_get_in "$state" phase)"
+  if [ "$phase" != "done" ]; then
+    verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1
+  fi
+  branch="$(state_get_in "$state" branch)"
+  [ -n "$branch" ] || { verdict="no branch"; return 1; }
+  pr="$(state_get_in "$state" pr)"
+  [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
+  base="$(flow_base_in "$state")"
+  github_read state_draft adapter_pr_state_draft "$pr" || return
+  pr_state="${state_draft%%$'\n'*}"
+  if [ "$pr_state" != MERGED ]; then
+    state_word shown_state "$pr_state"
+    verdict="PR #$pr is $shown_state"; return 1
+  fi
+  github_read refs adapter_pr_refs "$pr" || return
+  # The base branch is the third line, empty when there is none.
+  lines_split "$refs" _head_oid _head_ref merged_base _commits
+  [ "$merged_base" = "$base" ] || { verdict="PR #$pr merged into $merged_base, not $base"; return 1; }
+}
+
+# side_checkout_finished <path>: whether the side checkout there is finished -
+# a clean tree, and either a finished flow, or no flow and a PR merged from
+# its checked-out branch into the base branch off recorded for it (see
+# recorded_base). A git status that cannot run returns 2, as an unreadable
+# GitHub does, so the sweep removes nothing on a tree it could not read.
+# verdict is read by its callers, side-checkout prune, below, and
+# doctor.sh.
+# shellcheck disable=SC2034
+side_checkout_finished() {
+  local path="$1" base prs st
+  st="$(tree_status "$path")" || { verdict="$st"; return 2; }
+  if [ -n "$st" ]; then
+    verdict="uncommitted changes or untracked files"; return 1
+  fi
+  if checkout_has_flow "$path"; then
+    finished_flow "$path/$ORCH_DIR_NAME/state.json"; return
+  fi
+  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
+    || { verdict="no branch"; return 1; }
+  base="$(recorded_base "$branch")"
+  github_read prs adapter_prs_merged "$branch" "$base" || return
+  [ -n "$prs" ] || { verdict="no merged PR from $branch into $base"; return 1; }
+}
+
+# archive_root <root>: prints the checkout whose .orchestrator/archive/
+# receives the flow in the checkout at <root> - the one computation of the
+# rule. A side checkout's flow goes to the main checkout's archive; any other
+# checkout, a hand-made worktree included, archives in place. Fails when <root>
+# is a side checkout and the main checkout cannot be read.
+archive_root() {
+  if is_side_checkout "$1"; then main_checkout; else printf '%s\n' "$1"; fi
+}
+
+# archive_flow <root> <archive-root>: moves the flow in the checkout at <root>
+# into a directory under <archive-root>'s .orchestrator/archive/, and prints
+# that directory - relative to this checkout when inside it, else in full.
+# <archive-root> is the caller's: a side checkout's flow goes to the main
+# checkout's archive; any other checkout, a hand-made worktree included,
+# archives in place (see archive_root).
+archive_flow() {
+  local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" slug dest entry
+  refuse_ticket_worktrees "$root"
+  slug="$(state_get_in "$orch/state.json" slug)"
+  dest="$home/archive/$(dir_stamp)-$slug"
+  mkdir -p "$dest"
+  for entry in "$orch"/*; do
+    [ -e "$entry" ] || continue
+    # Side checkouts are live worktrees, never part of the flow's files.
+    case "$(basename "$entry")" in archive|checkouts) continue ;; esac
+    mv "$entry" "$dest/"
+  done
+  note "${dest#"$ROOT"/}"
+}
+
+# Tells the human to close the session when this command ran in <here>, inside
+# <path>, a worktree just removed: the session's working directory is gone.
+side_checkout_close_note() {
+  case "$2/" in
+    "$1"/*) note "This session's working directory was that side checkout, and it is gone - close this session." ;;
+  esac
+}
+
 # side_checkouts_dir <main-root>: where the side checkouts of the main
 # checkout at <main-root> live.
 side_checkouts_dir() { printf '%s/%s/checkouts\n' "$1" "$ORCH_DIR_NAME"; }

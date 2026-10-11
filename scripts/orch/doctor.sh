@@ -17,20 +17,22 @@
 #
 # Sourced into orch.sh, from its orch/ directory, after its shared mechanism
 # (ORCH_SCRIPTS, ROOT, STATE, ORCH_DIR_NAME, PHASES, HANDOFF_DIR), common.sh
-# (die, note, now, capture, default_branch, base_setting,
-# origin_has_branch, require_state, labels_have, and the like), triage-labels.sh
+# (die, note, now, capture, labels_have, and the like), triage-labels.sh
 # (LABELS_DOC, TRIAGE_ROLES, triage_table_rows, triage_labels,
 # triage_label_for, triage_expected_labels) and host.sh (host_detect) are
 # defined; the gh adapter operations it calls, issue_state_labels_read among
-# them, live in gh.sh. cmd_doctor is then dispatched from main() exactly like
-# any other command.
+# them, live in gh.sh. The helpers it calls from noun modules
+# (default_branch, base_setting and origin_has_branch from base.sh,
+# require_state from state.sh) are defined by the time cmd_doctor runs,
+# because every module is sourced before main dispatches. cmd_doctor is then
+# dispatched from main() exactly like any other command.
 
 # The most labels the labels-exist check asks gh to list.
 readonly LABEL_LIMIT=1000
 
 # repo_owner_name <name>: the OWNER/REPO of a [HOST/]OWNER/REPO repo name, as
 # repo_resolve sets REPO_NAME, any host dropped - repo_host's twin, in
-# common.sh.
+# repo.sh.
 repo_owner_name() {
   case "$1" in
     */*/*) printf '%s\n' "${1#*/}" ;;
