@@ -46,12 +46,13 @@ checkout_paths() {
 }
 
 # Whether the checkout at <path> holds a flow.
-checkout_has_flow() { [ -f "$1/$ORCH_DIR_NAME/state.json" ]; }
+checkout_has_flow() { [ -f "$(flow_state_file "$1")" ]; }
 
 # What the checkout at <path> holds: its flow (flow <slug> <phase> #<issue>),
 # else its checked-out branch (branch <name>), else (no branch).
 checkout_holding() {
-  local state="$1/$ORCH_DIR_NAME/state.json" issue issue_label branch
+  local state issue issue_label branch
+  state="$(flow_state_file "$1")"
   if [ -f "$state" ]; then
     issue="$(state_get_in "$state" issue)"
     if [ -n "$issue" ]; then issue_label="#$issue"; else issue_label="(no issue)"; fi
@@ -111,7 +112,7 @@ side_checkout_finished() {
     verdict="uncommitted changes or untracked files"; return 1
   fi
   if checkout_has_flow "$path"; then
-    finished_flow "$path/$ORCH_DIR_NAME/state.json"; return
+    finished_flow "$(flow_state_file "$path")"; return
   fi
   branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
     || { verdict="no branch"; return 1; }
@@ -306,7 +307,7 @@ cmd_side_checkout_prune() {
     rc=0; verdict=""; branch=""
     if [ "$path" = "$main_root" ]; then
       checkout_has_flow "$path" || continue
-      finished_flow "$path/$ORCH_DIR_NAME/state.json" </dev/null || rc=$?
+      finished_flow "$(flow_state_file "$path")" </dev/null || rc=$?
     elif is_side_checkout "$path"; then
       side_checkout_finished "$path" </dev/null || rc=$?
     elif checkout_has_flow "$path"; then

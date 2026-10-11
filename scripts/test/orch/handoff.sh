@@ -224,7 +224,11 @@ echo "handoff templates"
 HANDOFF_SKILL="$PLUGIN_ROOT/skills/orch-handoff/SKILL.md"
 tpl_repo="$(new_repo)"
 mkdir -p "$tpl_repo/.orchestrator"
-printf '{"host_fallbacks": true}\n' >"$tpl_repo/.orchestrator/state.json"
+# Seeded empty, then written through the Flow state module's writer, so the
+# fixture holds only what orch.sh would write.
+printf '{}\n' >"$tpl_repo/.orchestrator/state.json"
+flow_state_write "$(flow_state_file "$tpl_repo")" host_fallbacks true \
+  || bad "the handoff templates' state fixture is written" "flow_state_write failed"
 for tpl in 01-plan.md 02-spec.md 03-implement.md; do
   # The markdown fence under the template's `### \`<file>\`` heading.
   awk -v f="$tpl" '

@@ -82,7 +82,8 @@ source "$ORCH_SCRIPTS/orch/common.sh"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository ($PWD) - run orch.sh from inside the repo's checkout"
 readonly ROOT
 readonly ORCH="$ROOT/$ORCH_DIR_NAME"
-readonly STATE="$ORCH/state.json"
+STATE="$(flow_state_file "$ROOT")"
+readonly STATE
 readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
 # Read only by ticket-worktree.sh, but derived from ROOT, which is set after

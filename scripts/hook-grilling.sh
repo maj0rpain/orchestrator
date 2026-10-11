@@ -92,7 +92,8 @@ root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)" || exit 0
 # and the model picks one. A done flow is finished work, so planning beside it
 # gets the ordinary message.
 flow_active=0
-if flow_state_active "$(flow_state_file "$root")"; then flow_active=1; fi
+state="$(flow_state_file "$root")"
+if flow_state_active "$state"; then flow_active=1; fi
 
 ROOT="$root"
 ready_label="$(triage_label_for ready-for-agent)"
@@ -170,7 +171,6 @@ confirm_lead="Before you implement anything"
 close_lead="When you reach a shared understanding"
 done_lead="At the close"
 if [ "$flow_active" = 1 ]; then
-  state="$(flow_state_file "$root")"
   flow_readable=0 flow_issue="" flow_slug="" flow_phase=""
   if flow_state_readable "$state"; then
     flow_readable=1
