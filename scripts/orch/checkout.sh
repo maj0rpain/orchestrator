@@ -88,7 +88,7 @@ checkout_holding() {
 
 # checkout_branch [<path>]: prints the branch checked out in the checkout at
 # <path> (default: the current directory); returns 1 on a detached HEAD. The
-# one place the current branch is read.
+# one place `git symbolic-ref --quiet --short HEAD` is spelled.
 checkout_branch() { git -C "${1:-.}" symbolic-ref --quiet --short HEAD; }
 
 # current_branch_or_die [die|die2] [<suffix>]: assigns the current branch to
