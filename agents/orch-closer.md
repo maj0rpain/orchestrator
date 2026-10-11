@@ -70,40 +70,48 @@ loop's outcome either: the terminal state in your prompt is final, and
 Each finding is filed with:
 
 ```
-bash "<orch.sh>" review file <major|nit> "<title>" --axis <spec|standards> --body-file <file>
+bash "<orch.sh>" review file <major|nit> "<title>" --axis <spec|standards> \
+  --finding-file <file> --severity-reason "<reason>" --location <file>:<line> \
+  --sha <head SHA> --pr <url> --why "<reason>" [--spec-question "<question>"]
 ```
 
-`--axis` is the finding's axis, the same one its body's `**Axis:**` line
-names. It creates the `review:<severity>` label if the repo lacks it, resolves
-the repo's own name for `needs-triage` from `docs/agents/triage-labels.md`,
-labels the finding by category - `bug` for the Spec axis, `enhancement` for
-the Standards axis - opens the issue with all three, and prints the number.
-The title is the finding's one-line claim with no prefix - the severity lives
-in the label. Nothing calls `gh issue create` or `gh label create` directly.
+It creates the `review:<severity>` label if the repo lacks it, resolves the
+repo's own name for `needs-triage` from `docs/agents/triage-labels.md`, labels
+the finding by category - `bug` for the Spec axis, `enhancement` for the
+Standards axis - opens the issue with all three, and prints the number. The
+title is the finding's one-line claim with no prefix - the severity lives in
+the label. Nothing calls `gh issue create` or `gh label create` directly.
 
-The body carries, in this order:
+`review file` renders the body from its parts and checks it: it refuses,
+before any label or issue is written, a body that does not parse back to the
+parts it was given. Write no labelled line yourself. The parts, in the body's
+order:
 
-1. the reviewer's finding, verbatim;
-2. the axis, on its own line: `**Axis:** <Spec|Standards>`;
-3. the severity, and the one-line reason it was assigned:
-   `**Severity:** <major|nit> - <reason>`;
-4. the file and line, at the PR's head SHA:
+1. `--finding-file`: a file holding the reviewer's finding, verbatim. It must
+   not quote a labelled line at the start of a line;
+2. `--axis`: the finding's axis, from which `review file` renders
+   `**Axis:** <Spec|Standards>`;
+3. `--severity-reason`: the one-line reason the severity was assigned, from
+   which, with the severity, it renders `**Severity:** <major|nit> - <reason>`;
+4. `--location` and `--sha`: the file and line - `<file>:<line>` or
+   `<file>:<start>-<end>` - at the PR's head SHA, from which it renders
    ``**Location:** `<file>:<line>` at <head SHA>``;
-5. a link to the PR: `**PR:** <url>`;
-6. one line on why it was not fixed in the loop,
-   `**Why not fixed in the loop:** <reason>`, naming the rule that kept it
-   out: its fix needs a decision (list the options), it is a spec question
-   (list the options), the nit is not mechanical, it sits on loop-authored
-   lines, it was found in the final iteration, or the fixer could not fix it
-   (with its reason);
-7. on a spec question only - a finding whose rule is `spec question` - the
-   behaviour the spec leaves open, phrased as a question:
-   `**Spec question:** <question>`, e.g. `**Spec question:** Should the
-   high-water mark depend on the archive step?`.
+5. `--pr`: the PR's URL, from which it renders `**PR:** <url>`;
+6. `--why`: one line on why it was not fixed in the loop, from which it
+   renders `**Why not fixed in the loop:** <reason>`. It names the rule that
+   kept the finding out: its fix needs a decision (list the options), it is a
+   spec question (list the options), the nit is not mechanical, it sits on
+   loop-authored lines, it was found in the final iteration, or the fixer
+   could not fix it (with its reason);
+7. `--spec-question`, on a spec question only - a finding whose rule is `spec
+   question` - and never otherwise: the behaviour the spec leaves open,
+   phrased as a question, from which it renders `**Spec question:**
+   <question>`, e.g. `**Spec question:** Should the high-water mark depend on
+   the archive step?`.
 
-Items 2 to 7 are labelled lines, written exactly as shown: finding triage
-parses them, and a body without them is one it cannot place. A spec question
-is labelled and triaged as any other filed major: it stays in `needs-triage`.
+Every value is one line. Finding triage parses the labelled lines, and a body
+without them is one it cannot place. A spec question is labelled and triaged
+as any other filed major: it stays in `needs-triage`.
 
 `.orchestrator/` is git-excluded and eventually archived, so the body is the
 record, not a link to one.

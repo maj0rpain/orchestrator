@@ -376,7 +376,9 @@ assert_contains "and updates once it has been" "$("$ORCH" status)" "redo:      2
 assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin"
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 assert_contains "and filing" "$("$ORCH" help)" "review file"
-assert_contains "with the finding's axis" "$("$ORCH" help)" "review file <major|nit> <title> --axis <spec|standards> --body-file <file>"
+assert_contains "with the finding's parts as flags" "$("$ORCH" help | flat_text)" \
+  "review file <major|nit> <title> --axis <spec|standards> --finding-file <f> --severity-reason <r> --location <file>:<line> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
+assert_not_contains "and no --body-file" "$("$ORCH" help | grep -A3 'review file')" "--body-file"
 assert_contains "and finding triage's scan" "$("$ORCH" help)" "finding-triage scan [--all] [<issue> | --pr <n>]"
 assert_contains "with --all's re-check" "$("$ORCH" help)" "--all: every open review:<severity> finding"
 assert_contains "and the triage-state column" "$("$ORCH" help)" "TAB <detail> TAB <state>"

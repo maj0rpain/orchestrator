@@ -1597,15 +1597,15 @@ check "a standalone review pass takes --smells, and review-pass offers it" \
   "$(scan_standalone_smells "$PLUGIN_ROOT")"
 
 # --- closer's filed body lines -----------------------------------------------
-# The contract is the closer's body format, not orch.sh's parser. The closer
-# writes a filed finding's body as six labelled lines - **Spec question:** only
-# on a spec question - and the finding-triage skill's prose reads all six -
-# orch.sh's scan parses only two of them - so
-# its **Filing** section must name each one: a line dropped there is a field
-# the skill cannot read back. Every line stays pinned, not only the ones the
-# scan parses. Under ADR-0027 this is a structural rule, not a phrase pin: the
-# labels are the field names of a body format, and checking that a section
-# names them is like checking for a required heading.
+# The six labels - **Spec question:** only on a spec question - are the field
+# names of a filed finding's body format, which `review file` renders from its
+# flags and the finding-triage skill's prose reads. The closer's **Filing**
+# section names each one as the line `review file` renders from its flag, so a
+# label dropped there is a field that skill's reader cannot find described.
+# Every label stays pinned, not only the ones orch.sh's scan parses. Under
+# ADR-0027 this is a structural rule, not a phrase pin: the labels are the
+# field names of a body format, and checking that a section names them is like
+# checking for a required heading.
 echo
 echo "closer's filed body lines"
 closer_filing_lines='**Axis:**

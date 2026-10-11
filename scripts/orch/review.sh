@@ -271,6 +271,95 @@ review_rerun() {
   note "$run"
 }
 
+# review_file <sev> <title> <flag> <value> ...: files a finding as a GitHub
+# issue, its body rendered from its parts by the Filed finding module. Every
+# check - the flags, the severity, the axis, the title, the finding file, the
+# location, and the round trip of the rendered body through the parser - comes
+# before any label or issue write, so a malformed finding never reaches GitHub
+# rather than surfacing weeks later as "body does not parse" in triage.
+review_file() {
+  local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards> --finding-file <f> --severity-reason <r> --location <file>:<line> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
+  [ $# -ge 2 ] || die "$usage"
+  local severity="$1" title="$2" flag value
+  local axis="" finding="" reason="" location="" sha="" pr="" why="" question=""
+  local seen=" "
+  shift 2
+  while [ $# -gt 0 ]; do
+    flag="$1"
+    case "$flag" in
+      --axis|--finding-file|--severity-reason|--location|--sha|--pr|--why|--spec-question) ;;
+      *) die "$usage" ;;
+    esac
+    [ $# -ge 2 ] || die "$usage"
+    case "$seen" in *" $flag "*) die "$usage" ;; esac
+    seen+="$flag "
+    value="$(trim "$2")"
+    [ -n "$value" ] || die "$usage"
+    case "$flag" in
+      --axis)            axis="$value" ;;
+      --finding-file)    finding="$value" ;;
+      --severity-reason) reason="$value" ;;
+      --location)        location="$value" ;;
+      --sha)             sha="$value" ;;
+      --pr)              pr="$value" ;;
+      --why)             why="$value" ;;
+      --spec-question)   question="$value" ;;
+    esac
+    shift 2
+  done
+  for flag in --axis --finding-file --severity-reason --location --sha --pr --why; do
+    case "$seen" in *" $flag "*) ;; *) die "$usage" ;; esac
+  done
+
+  local colour desc category triage n file line body
+  is_filed_severity "$severity" \
+    || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
+  filed_severity_label "$severity" colour desc
+  # The category follows the axis; finding triage confirms or flips it later.
+  category="$(category_for_axis "$axis")" \
+    || die "not a review axis: $axis (want spec or standards)"
+  [ -n "$title" ] || die "the title is empty"
+  [ -f "$finding" ] || die "finding file not found: $finding"
+  [ -n "$(tr -d '[:space:]' <"$finding")" ] || die "finding file is empty: $finding"
+  # Split at the last colon: the line is the part after it, N or N-M.
+  file="${location%:*}" line="${location##*:}"
+  [[ $location == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
+    || die "not a location: $location (want <file>:<line> or <file>:<start>-<end>)"
+
+  # The round trip. The temp file is removed on every exit - a refusal or a
+  # gh failure dies, so a trap, not a closing rm, is what removes it.
+  body="$(mktemp)" || die "could not create a temp file for the issue body"
+  # shellcheck disable=SC2064 # expanded now: $body is local, gone by exit
+  trap "rm -f $(printf '%q' "$body")" EXIT
+  finding_body_render "$finding" "$axis" "$severity" "$reason" "$file" "$line" \
+    "$sha" "$pr" "$why" "$question" >"$body"
+  # shellcheck disable=SC2034 # finding_body_parse writes them; read by name below
+  local got_axis got_severity got_reason got_file got_line got_sha got_pr got_pr_number got_why got_question
+  finding_body_parse "$(cat "$body")" got
+  local field given ref
+  for field in axis severity reason file line sha pr why question; do
+    case "$field" in
+      axis) given="$(printf '%s' "$axis" | tr '[:upper:]' '[:lower:]')" ;;
+      *)    given="${!field}" ;;
+    esac
+    ref="got_$field"
+    [ "$given" = "${!ref}" ] \
+      || die "the rendered body does not parse back: $field (given '$given', parsed '${!ref}')"
+  done
+
+  severity_label_ensure "review:$severity" "$colour" "$desc"
+  triage="$(triage_label_for needs-triage)"
+  triage_label_ensure "$triage"
+  category_label_ensure "$category"
+  # The title carries no severity prefix: the label holds it, where triage
+  # can change it, and the title reads as an issue.
+  gh_or_die --out n "create the issue" \
+    adapter_issue_create "$title" "$body" "review:$severity" "$triage" "$category"
+  # Prints the number alone: the record cites a number, and the caller
+  # would otherwise be parsing a URL out of prose every time.
+  note "$n"
+}
+
 cmd_review() {
   local op="${1:-}"
   shift || true
@@ -301,28 +390,7 @@ cmd_review() {
       ;;
     file)
       require_state
-      local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards> --body-file <file>"
-      [ $# -eq 6 ] && [ "$3" = --axis ] && [ "$5" = --body-file ] || die "$usage"
-      local severity="$1" title="$2" axis="$4" body="$6" colour desc category triage n
-      is_filed_severity "$severity" \
-        || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
-      filed_severity_label "$severity" colour desc
-      # The category follows the axis; finding triage confirms or flips it later.
-      category="$(category_for_axis "$axis")" \
-        || die "not a review axis: $axis (want spec or standards)"
-      [ -n "$title" ] || die "the title is empty"
-      [ -f "$body" ] || die "body file not found: $body"
-      severity_label_ensure "review:$severity" "$colour" "$desc"
-      triage="$(triage_label_for needs-triage)"
-      triage_label_ensure "$triage"
-      category_label_ensure "$category"
-      # The title carries no severity prefix: the label holds it, where triage
-      # can change it, and the title reads as an issue.
-      gh_or_die --out n "create the issue" \
-        adapter_issue_create "$title" "$body" "review:$severity" "$triage" "$category"
-      # Prints the number alone: the record cites a number, and the caller
-      # would otherwise be parsing a URL out of prose every time.
-      note "$n"
+      review_file "$@"
       ;;
     ready)
       require_state
