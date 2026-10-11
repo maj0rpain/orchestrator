@@ -72,20 +72,10 @@ checkout_holding() {
 # reason - or 2 the verdict could not be read, GitHub or the checkout's own
 # git status - `verdict` naming which, and its error.
 
-# github_read <var> <adapter-call> [args...]: runs the adapter call, its output
-# assigned to the caller's <var>. On failure it sets `verdict` to the call's
-# first error line and returns 2.
-github_read() {
-  local into="$1" got err
-  shift
-  capture got err "$@" || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
-  printf -v "$into" '%s' "$got"
-}
-
 # finished_flow <state-file>: whether that flow is finished - at done, and its
 # recorded PR merged into its own base branch.
 finished_flow() {
-  local state="$1" phase pr base state_draft pr_state shown_state refs _head_oid _head_ref merged_base _commits
+  local state="$1" phase pr base pr_state _is_draft shown_state _head_oid _head_ref merged_base _commits err
   phase="$(state_get_in "$state" phase)"
   if [ "$phase" != "done" ]; then
     verdict="flow $(state_get_in "$state" slug) is at $phase, not done"; return 1
@@ -95,15 +85,14 @@ finished_flow() {
   pr="$(state_get_in "$state" pr)"
   [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
   base="$(flow_base_in "$state")"
-  github_read state_draft adapter_pr_state_draft "$pr" || return
-  pr_state="${state_draft%%$'\n'*}"
+  pr_state_draft_read "$pr" pr_state _is_draft err \
+    || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   if [ "$pr_state" != MERGED ]; then
     state_word shown_state "$pr_state"
     verdict="PR #$pr is $shown_state"; return 1
   fi
-  github_read refs adapter_pr_refs "$pr" || return
-  # The base branch is the third line, empty when there is none.
-  lines_split "$refs" _head_oid _head_ref merged_base _commits
+  pr_refs_read "$pr" _head_oid _head_ref merged_base _commits err \
+    || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   [ "$merged_base" = "$base" ] || { verdict="PR #$pr merged into $merged_base, not $base"; return 1; }
 }
 
@@ -116,7 +105,7 @@ finished_flow() {
 # doctor.sh.
 # shellcheck disable=SC2034
 side_checkout_finished() {
-  local path="$1" base prs st
+  local path="$1" base prs st err
   st="$(tree_status "$path")" || { verdict="$st"; return 2; }
   if [ -n "$st" ]; then
     verdict="uncommitted changes or untracked files"; return 1
@@ -127,7 +116,8 @@ side_checkout_finished() {
   branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
     || { verdict="no branch"; return 1; }
   base="$(recorded_base "$branch")"
-  github_read prs adapter_prs_merged "$branch" "$base" || return
+  capture prs err adapter_prs_merged "$branch" "$base" \
+    || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   [ -n "$prs" ] || { verdict="no merged PR from $branch into $base"; return 1; }
 }
 

@@ -38,7 +38,7 @@ retire_handoffs() {
 cmd_redo_review() {
   [ $# -eq 0 ] || die "usage: orch.sh redo review"
   require_state
-  local phase i b word detail slug issue branch pr redo_count new_n new_branch msg err
+  local phase i b word detail slug issue branch pr redo_count new_n new_branch msg
   phase="$(state_get phase)"
   [ "$phase" = review ] || die "flow is not at the review phase - nothing to redo back from"
   i="$(state_get iteration)"
@@ -88,7 +88,7 @@ $detail" ;;
   fi
 
   msg="$(printf 'This PR was closed by an orchestrator redo.\n\nThe retired branch is now `%s`.\nA new PR will follow once the redone implement phase reaches pr open again.\n' "$new_branch")"
-  capture_err err adapter_pr_close "$pr" "$msg" || die "gh could not close PR #$pr: $(gh_reason "$err")"
+  gh_or_die "close PR #$pr" adapter_pr_close "$pr" "$msg"
 
   # The prior implement phase closed every ticket it finished, so the redone
   # implement phase's frontier query (ticket next) would otherwise find
@@ -130,11 +130,10 @@ cmd_redo_spec() {
   esac
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
   if [ "$new_issue" -eq 1 ]; then
-    local issue msg err
+    local issue msg
     require_issue issue
     msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from orch-to-spec in this same flow.\n')"
-    capture_err err adapter_issue_close "$issue" --comment "$msg" \
-      || die "gh could not close issue #$issue: $(gh_reason "$err")"
+    gh_or_die "close issue #$issue" adapter_issue_close "$issue" --comment "$msg"
     state_write issue null
   else
     local kept

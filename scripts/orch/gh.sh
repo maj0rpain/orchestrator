@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 # gh.sh - the gh adapter layer (ADR-0033): gh(), the guard every GitHub call
-# goes through, every adapter_* operation and the JQ constants they read.
+# goes through, the failure contract its callers die by (gh_reason, gh_die,
+# gh_or_die), every adapter_* operation, the out-variable readers over the
+# multi-field ones, and the JQ constants they read.
 # It stays whole, whoever calls each operation, and ends with the
 # ORCH_GH_ADAPTER hook, so a test adapter overrides the real operations.
 # Its tests: scripts/test/orch/gh.sh.
@@ -23,6 +25,102 @@ gh() {
     die "$REPO_REMEDY"
   fi
   command gh "$@"
+}
+
+# --- gh failure contract (#1022) ----------------------------------------------
+#
+# How a caller reacts to a failed adapter operation. gh_reason cuts gh's stderr
+# to a reason; gh_die is the one place the dying message is built; gh_or_die
+# runs an operation and dies through gh_die when it fails. A site that reacts
+# another way - a warning, a doctor line, a verdict - calls gh_reason itself.
+
+# gh_reason <stderr>: the reason a failed gh call gives - the first line of
+# its captured stderr, or "gh gave no reason" when that line is empty, so a
+# death message never ends in a bare colon. It only produces the reason; each
+# site keeps its own die, die2, warn or why.
+gh_reason() {
+  local line="${1%%$'\n'*}"
+  printf '%s\n' "${line:-gh gave no reason}"
+}
+
+# gh_die [--exit 2] [--hint <text>] <what> <stderr>: dies with
+# "gh could not <what>: <gh_reason of stderr>", then " - <hint>" when a hint is
+# given - through die, or through die2 under --exit 2. A bad option dies with
+# status 1, naming it.
+gh_die() {
+  local code=1 hint=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --exit)
+        [ "${2-}" = 2 ] || die "gh_die: --exit takes 2, not '${2-}'"
+        code=2; shift 2 ;;
+      --hint)
+        [ $# -ge 2 ] || die "gh_die: --hint needs a value"
+        hint="$2"; shift 2 ;;
+      -*) die "gh_die: unknown option $1" ;;
+      *) break ;;
+    esac
+  done
+  local msg
+  msg="gh could not $1: $(gh_reason "${2-}")"
+  [ -z "$hint" ] || msg="$msg - $hint"
+  [ "$code" != 2 ] || die2 "$msg"
+  die "$msg"
+}
+
+# gh_or_die [--exit 2] [--hint <text>] [--out <var> | --file <path>] <what>
+# <op> [args...]: runs the operation through capture/capture_err - so in their
+# subshell, and the gh guard's no-repo death still reaches the real stderr -
+# and on failure dies through gh_die with the same --exit and --hint, passed
+# on as given: gh_die alone checks them.
+# --out <var> assigns the operation's stdout to the caller's variable (trailing
+# newlines gone, as capture reads it). --file <path> streams it into a temp
+# file beside the target, creating the target's directory, and moves it into
+# place only on success, byte for byte: a failure removes the temp file and
+# leaves an existing target untouched. With neither, stdout is left to the
+# caller's own redirect. --out with --file, an --out or --file with no value,
+# or an unknown option, dies naming it, with status 1 whatever --exit says.
+# Inside $(...), --out cannot set a variable outside the subshell, and a
+# death ends only the subshell, so the caller must pass its status on. Its
+# locals are prefixed so no caller's variable is shadowed.
+gh_or_die() {
+  local _gh_or_die_die=() _gh_or_die_out="" _gh_or_die_file=""
+  local _gh_or_die_text _gh_or_die_err _gh_or_die_tmp _gh_or_die_st=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --exit|--hint)
+        # gh_die's own options: collected as given, for gh_die to check.
+        _gh_or_die_die+=("$1" "${2-}")
+        [ $# -ge 2 ] && shift 2 || shift ;;
+      --out|--file)
+        [ -n "${2-}" ] || die "gh_or_die: $1 needs a value"
+        if [ "$1" = --out ]; then _gh_or_die_out="$2"; else _gh_or_die_file="$2"; fi
+        shift 2 ;;
+      -*) die "gh_or_die: unknown option $1" ;;
+      *) break ;;
+    esac
+  done
+  if [ -n "$_gh_or_die_out" ] && [ -n "$_gh_or_die_file" ]; then
+    die "gh_or_die: --out and --file cannot be given together"
+  fi
+  [ $# -ge 2 ] || die "gh_or_die: needs <what> and an operation"
+  if [ -n "$_gh_or_die_out" ]; then
+    capture _gh_or_die_text _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
+    [ "$_gh_or_die_st" -ne 0 ] || printf -v "$_gh_or_die_out" '%s' "$_gh_or_die_text"
+  elif [ -n "$_gh_or_die_file" ]; then
+    mkdir -p "$(dirname "$_gh_or_die_file")"
+    _gh_or_die_tmp="$(mktemp "$_gh_or_die_file.XXXXXX")"
+    if capture_err _gh_or_die_err "${@:2}" >"$_gh_or_die_tmp"; then
+      mv "$_gh_or_die_tmp" "$_gh_or_die_file"
+    else
+      _gh_or_die_st=$?
+      rm -f "$_gh_or_die_tmp"
+    fi
+  else
+    capture_err _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
+  fi
+  [ "$_gh_or_die_st" -ne 0 ] || return 0
+  gh_die ${_gh_or_die_die[@]+"${_gh_or_die_die[@]}"} "$1" "$_gh_or_die_err"
 }
 
 # --- gh adapter -------------------------------------------------------------
@@ -224,6 +322,20 @@ adapter_issue_title_labels() {
   gh issue view "$1" --json title,labels --jq '.title, (.labels[].name)'
 }
 
+# issue_title_labels_read <n> <title_var> <labels_var> <err_var>: reads issue
+# <n> once through adapter_issue_title_labels and writes its title and its
+# labels (one per line, possibly none) into the first two caller-named
+# variables, on issue_state_labels_read's contract: non-zero on a failed read,
+# writing neither, gh's stderr captured into <err_var>, never passed through.
+issue_title_labels_read() {
+  local __itlr_out __itlr_err
+  if ! capture __itlr_out __itlr_err adapter_issue_title_labels "$1"; then
+    printf -v "$4" '%s' "$__itlr_err"
+    return 1
+  fi
+  lines_split "$__itlr_out" "$2" "$3"
+}
+
 # adapter_issue_state <n>: OPEN or CLOSED - or PULL where <n> is a pull
 # request's number, which gh issue view answers for too.
 adapter_issue_state() {
@@ -355,6 +467,20 @@ adapter_pr_refs() {
     --jq '(.headRefOid // ""), (.headRefName // ""), (.baseRefName // ""), ((.commits // [])[].oid)'
 }
 
+# pr_refs_read <n> <head_oid_var> <head_ref_var> <base_var> <commits_var>
+# <err_var>: reads PR <n> once through adapter_pr_refs and writes its head SHA,
+# head branch, base branch (each empty where GitHub leaves it unset) and its
+# commits (one SHA per line, oldest first) into the first four caller-named
+# variables, on issue_state_labels_read's contract.
+pr_refs_read() {
+  local __prr_out __prr_err
+  if ! capture __prr_out __prr_err adapter_pr_refs "$1"; then
+    printf -v "$6" '%s' "$__prr_err"
+    return 1
+  fi
+  lines_split "$__prr_out" "$2" "$3" "$4" "$5"
+}
+
 # adapter_pr_ready <n>: marks the draft PR ready for review. Prints nothing.
 adapter_pr_ready() {
   gh pr ready "$1" >/dev/null
@@ -370,6 +496,22 @@ adapter_pr_draft() {
 # first line, then true or false, whether it is a draft.
 adapter_pr_state_draft() {
   gh pr view "$1" --json state,isDraft --jq '.state, .isDraft'
+}
+
+# pr_state_draft_read <n> <state_var> <draft_var> <err_var>: reads PR <n> once
+# through adapter_pr_state_draft and writes its state (OPEN, CLOSED or MERGED)
+# and its draft flag, normalised to true or false, into the first two
+# caller-named variables, on issue_state_labels_read's contract.
+pr_state_draft_read() {
+  local __psdr_out __psdr_err __psdr_state __psdr_draft __psdr_rest
+  if ! capture __psdr_out __psdr_err adapter_pr_state_draft "$1"; then
+    printf -v "$4" '%s' "$__psdr_err"
+    return 1
+  fi
+  lines_split "$__psdr_out" __psdr_state __psdr_draft __psdr_rest
+  [ "$__psdr_draft" = true ] || __psdr_draft=false
+  printf -v "$2" '%s' "$__psdr_state"
+  printf -v "$3" '%s' "$__psdr_draft"
 }
 
 # adapter_prs_open <head> [base]: the open PRs from the head branch - into the

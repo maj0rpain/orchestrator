@@ -248,7 +248,7 @@ finding_scan_one() {
 # <pr> <file>:<line> <result> <detail> <triage state>.
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]"
-  local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_err err
+  local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_err
   local args=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -269,7 +269,7 @@ cmd_finding_triage_scan() {
   # one here, where it is checked, a listed one in the loop below.
   if [ -n "$issue" ]; then
     issue_state_labels_body_read "$issue" state labels body gh_err \
-      || die "gh could not read issue #$issue: $(gh_reason "$gh_err")"
+      || gh_die "read issue #$issue" "$gh_err"
     [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
@@ -278,9 +278,13 @@ cmd_finding_triage_scan() {
     nums="$issue"
   else
     for sev in $FILED_SEVERITIES; do
-      if $all; then capture out err adapter_issues_labelled "review:$sev"
-      else capture out err adapter_issues_labelled "review:$sev" "$triage"; fi \
-        || die "gh could not list the review:$sev findings: $(gh_reason "$err")"
+      if $all; then
+        gh_or_die --out out "list the review:$sev findings" \
+          adapter_issues_labelled "review:$sev"
+      else
+        gh_or_die --out out "list the review:$sev findings" \
+          adapter_issues_labelled "review:$sev" "$triage"
+      fi
       if [ "$(printf '%s\n' $out | grep -c .)" -ge "$ISSUE_LIST_LIMIT" ]; then
         warn "review:$sev findings reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this scan"
       fi
@@ -294,7 +298,7 @@ cmd_finding_triage_scan() {
   for n in $(printf '%s\n' $nums | sort -nu); do
     if [ -z "$issue" ]; then
       issue_state_labels_body_read "$n" state labels body gh_err \
-        || die "gh could not read issue #$n: $(gh_reason "$gh_err")"
+        || gh_die "read issue #$n" "$gh_err"
     fi
     if [ -n "$pr_filter" ] && [ "$(finding_pr "$body")" != "$pr_filter" ]; then continue; fi
     finding_scan_one "$n" "$body" "$ref" "$(triage_state "$labels")"
@@ -325,7 +329,7 @@ triage_comment_post() {
 cmd_finding_triage_apply() {
   local usage="usage: orch.sh finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>
        orch.sh finding-triage apply <issue> <ready-for-agent|ready-for-human> --category <bug|enhancement> --comment-file <file>"
-  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels role label stale_category gh_err err
+  local issue="${1:-}" outcome="${2:-}" category="" file="" state labels role label stale_category gh_err
   # The relabel's --remove options, possibly none: close-fixed, where they are
   # the whole relabel, then makes no edit at all.
   local remove_opts=()
@@ -355,7 +359,7 @@ cmd_finding_triage_apply() {
   # than a third, near-identical label read added beside
   # adapter_issue_state_labels and adapter_issue_title_labels.
   issue_state_labels_read "$issue" state labels gh_err \
-    || die "gh could not read issue #$issue: $(gh_reason "$gh_err")"
+    || gh_die "read issue #$issue" "$gh_err"
   # Every triage-role label the issue carries but the outcome does not set
   # goes, so an already-triaged finding ends in the one state the outcome
   # sets. Remove only what the issue carries: gh refuses to remove a label the
@@ -366,27 +370,24 @@ cmd_finding_triage_apply() {
     if labels_have "$labels" "$label"; then remove_opts+=(--remove "$label"); fi
   done
 
-  capture_err err triage_comment_post "$issue" "$file" \
-    || die "gh could not comment on issue #$issue: $(gh_reason "$err")"
+  gh_or_die "comment on issue #$issue" triage_comment_post "$issue" "$file"
 
   case "$outcome" in
     close-fixed)
-      capture_err err adapter_issue_relabel "$issue" ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue: $(gh_reason "$err")"
-      capture_err err adapter_issue_close "$issue" --reason completed \
-        || die "gh could not close issue #$issue: $(gh_reason "$err")" ;;
+      gh_or_die "relabel issue #$issue" \
+        adapter_issue_relabel "$issue" ${remove_opts[@]+"${remove_opts[@]}"}
+      gh_or_die "close issue #$issue" adapter_issue_close "$issue" --reason completed ;;
     wontfix)
-      capture_err err adapter_issue_relabel "$issue" --add "$(triage_label_for wontfix)" \
-        ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue: $(gh_reason "$err")"
-      capture_err err adapter_issue_close "$issue" --reason "not planned" \
-        || die "gh could not close issue #$issue: $(gh_reason "$err")" ;;
+      gh_or_die "relabel issue #$issue" \
+        adapter_issue_relabel "$issue" --add "$(triage_label_for wontfix)" \
+        ${remove_opts[@]+"${remove_opts[@]}"}
+      gh_or_die "close issue #$issue" adapter_issue_close "$issue" --reason "not planned" ;;
     *)
       category_label_ensure "$category"
       if labels_have "$labels" "$stale_category"; then remove_opts+=(--remove "$stale_category"); fi
-      capture_err err adapter_issue_relabel "$issue" --add "$(triage_label_for "$outcome")" --add "$category" \
-        ${remove_opts[@]+"${remove_opts[@]}"} \
-        || die "gh could not relabel issue #$issue: $(gh_reason "$err")" ;;
+      gh_or_die "relabel issue #$issue" \
+        adapter_issue_relabel "$issue" --add "$(triage_label_for "$outcome")" --add "$category" \
+        ${remove_opts[@]+"${remove_opts[@]}"} ;;
   esac
 }
 
@@ -399,7 +400,7 @@ cmd_finding_triage_apply() {
 bundle_member_check() {
   local __bmc_state __bmc_labels __bmc_err __bmc_role __bmc_label __bmc_ready=""
   issue_state_labels_read "$1" __bmc_state __bmc_labels __bmc_err \
-    || die "gh could not read issue #$1: $(gh_reason "$__bmc_err")"
+    || gh_die "read issue #$1" "$__bmc_err"
   [ "$__bmc_state" = OPEN ] || die "issue #$1 is not open - a bundle takes open filed findings only"
   has_filed_severity_label "$__bmc_labels" \
     || die "issue #$1 is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
@@ -436,7 +437,7 @@ bundle_member_check() {
 cmd_finding_triage_bundle() {
   local usage="usage: orch.sh finding-triage bundle --title <t> --body-file <f> --state <ready-for-agent|ready-for-human> --category <bug|enhancement> <member>...
        orch.sh finding-triage bundle --into <B> <member>..."
-  local title="" file="" state="" category="" into="" have_title=false m labels human_label b err
+  local title="" file="" state="" category="" into="" have_title=false m labels human_label b
   local members=() seen=" "
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -457,7 +458,7 @@ cmd_finding_triage_bundle() {
     ! $have_title && [ -z "$file$state$category" ] || die "$usage"
     local b_state b_labels b_err
     issue_state_labels_read "$into" b_state b_labels b_err \
-      || die "gh could not read issue #$into: $(gh_reason "$b_err")"
+      || gh_die "read issue #$into" "$b_err"
     [ "$b_state" = OPEN ] || die "bundle #$into is not open - --into resumes an open bundle only"
     labels_have "$b_labels" "$BUNDLE_LABEL" \
       || die "issue #$into carries no '$BUNDLE_LABEL' label - --into resumes a bundle only"
@@ -492,8 +493,8 @@ cmd_finding_triage_bundle() {
   # label then fails the issue create.
   adapter_label_create "$BUNDLE_LABEL" c5def5 "Several filed findings worked as one" 2>/dev/null || true
   category_label_ensure "$category"
-  capture b err adapter_issue_create "$title" "$file" "$BUNDLE_LABEL" "$(triage_label_for "$state")" "$category" \
-    || die "gh could not create the bundle issue: $(gh_reason "$err") - no member was touched"
+  gh_or_die --hint "no member was touched" --out b "create the bundle issue" \
+    adapter_issue_create "$title" "$file" "$BUNDLE_LABEL" "$(triage_label_for "$state")" "$category"
   printf '%s\n' "$b"
   bundle_members_close "$b" "${members[@]}"
 }

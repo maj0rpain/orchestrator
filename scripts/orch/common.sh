@@ -76,14 +76,6 @@ capture() {
   rm -f "$_capture_file"
   return "$_capture_st"
 }
-# gh_reason <stderr>: the reason a failed gh call gives - the first line of
-# its captured stderr, or "gh gave no reason" when that line is empty, so a
-# death message never ends in a bare colon. It only produces the reason; each
-# site keeps its own die, die2, warn or why.
-gh_reason() {
-  local line="${1%%$'\n'*}"
-  printf '%s\n' "${line:-gh gave no reason}"
-}
 # The argument with leading and trailing whitespace removed.
 trim() {
   local s="$1"
@@ -271,22 +263,4 @@ category_label_ensure() {
     bug)         adapter_label_create bug d73a4a "Something isn't working" 2>/dev/null || true ;;
     enhancement) adapter_label_create enhancement a2eeef "New feature or request" 2>/dev/null || true ;;
   esac
-}
-
-# Runs a gh read into <file>, written beside the target and moved into place
-# only once gh has answered: a failed fetch that left a partial file behind is
-# a body a caller would mistake for the actual content. <what> names the read
-# in the error, beside gh's own first line. stdout streams straight to the
-# temp file through capture_err, never through capture's $(...), so the body
-# keeps its trailing newlines byte for byte.
-fetch_into() {
-  local file="$1" what="$2" tmp err
-  shift 2
-  mkdir -p "$(dirname "$file")"
-  tmp="$(mktemp "$file.XXXXXX")"
-  if ! capture_err err "$@" >"$tmp"; then
-    rm -f "$tmp"
-    die "gh could not read $what: $(gh_reason "$err")"
-  fi
-  mv "$tmp" "$file"
 }

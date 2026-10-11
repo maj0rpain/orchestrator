@@ -566,6 +566,27 @@ assert_status "prune fails when a read fails" "$st" 1
 assert_contains "the verdict carrying gh's first line" "$out" \
   "could not check $fl: could not read GitHub: HTTP 502: Bad Gateway"
 assert_not_contains "and nothing past it" "$out" "second line"
+assert_contains "a failed state/draft read removes nothing" "$out" "nothing was removed"
+fake_unfail
+
+# The finished-flow check's second read, the PR's refs: the same verdict.
+fake_fail adapter_pr_refs "$GH_502"
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune fails when the refs read fails" "$st" 1
+assert_contains "the refs verdict carrying gh's first line" "$out" \
+  "could not check $fl: could not read GitHub: HTTP 502: Bad Gateway"
+assert_contains "a failed refs read removes nothing" "$out" "nothing was removed"
+assert_eq "the finished flow side checkout stays" "$(on_disk "$fl")" "present"
+fake_unfail
+
+# A side checkout with no flow reads the merged-PR list instead: the same verdict.
+fake_fail adapter_prs_merged "$GH_502"
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "prune fails when the merged-PR list fails" "$st" 1
+assert_contains "the merged-PR list verdict carrying gh's first line" "$out" \
+  "could not check $qk: could not read GitHub: HTTP 502: Bad Gateway"
+assert_contains "a failed merged-PR list removes nothing" "$out" "nothing was removed"
+assert_eq "the finished quick side checkout stays" "$(on_disk "$qk")" "present"
 fake_unfail
 
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?

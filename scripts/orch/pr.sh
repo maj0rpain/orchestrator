@@ -23,7 +23,7 @@ open_pr() {
   [ "$draft" != true ] || draft_opt=(--draft)
   if ! capture pr err adapter_pr_create "$base" "$branch" "$title" "$tmp" ${draft_opt[@]+"${draft_opt[@]}"}; then
     rm -f "$tmp"
-    die "gh could not open the PR for branch $branch (issue #$issue): $(gh_reason "$err")"
+    gh_die "open the PR for branch $branch (issue #$issue)" "$err"
   fi
   rm -f "$tmp"
   printf '%s\n' "$pr"
@@ -80,26 +80,25 @@ cmd_pr_release() {
   default="$(default_branch)"
   [ "$base" != "$default" ] ||
     die "the base branch is the default branch ($default) - there is nothing to release; set another with base set"
-  local open err
-  capture open err adapter_prs_open "$base" "$default" ||
-    die "gh could not list the open PRs from $base into $default: $(gh_reason "$err")"
+  local open
+  gh_or_die --out open "list the open PRs from $base into $default" \
+    adapter_prs_open "$base" "$default"
   [ -z "$open" ] || die "a release PR from $base into $default is already open: #${open%%$'\n'*}"
   # Read from the merged PRs' bodies rather than GitHub's closing-issue links:
   # GitHub only links closing keywords on PRs into the default branch, and a
   # Refs line never links at all. Refs, Closes, Fixes and Resolves count, in
   # any case and anywhere in the body - not every closing form GitHub knows,
   # so prose such as "a quick fix #12" is never mistaken for a reference.
-  local bodies refs n state issues="" tmp pr
-  capture bodies err adapter_prs_merged_bodies "$base" ||
-    die "gh could not list the PRs merged into $base: $(gh_reason "$err")"
+  local bodies refs n state issues="" tmp pr err
+  gh_or_die --out bodies "list the PRs merged into $base" \
+    adapter_prs_merged_bodies "$base"
   refs="$(printf '%s\n' "$bodies" |
     grep -ioE '(^|[^[:alnum:]_])(refs|closes|fixes|resolves):?[[:space:]]+#[0-9]+' |
     grep -oE '[0-9]+$' | sort -nu)" || true
   # gh issue view answers for a PR number too, so a reference to a PR reads
   # as PULL and is dropped - only still-open issues get a Closes line.
   for n in $refs; do
-    capture state err adapter_issue_state "$n" ||
-      die "gh could not read the state of issue #$n: $(gh_reason "$err")"
+    gh_or_die --out state "read the state of issue #$n" adapter_issue_state "$n"
     [ "$state" != OPEN ] || issues="$issues $n"
   done
   [ -n "$issues" ] || [ "$force" = true ] ||
@@ -113,7 +112,7 @@ cmd_pr_release() {
   # Not a draft: nothing after this would ever mark it ready.
   if ! capture pr err adapter_pr_create "$default" "$base" "$title" "$tmp"; then
     rm -f "$tmp"
-    die "gh could not open the release PR from $base into $default: $(gh_reason "$err")"
+    gh_die "open the release PR from $base into $default" "$err"
   fi
   rm -f "$tmp"
   note "$pr"
@@ -130,11 +129,10 @@ cmd_pr_release() {
 # exits 2, never 1.
 cmd_pr_comment() {
   [ $# -eq 1 ] || die2 "usage: orch.sh pr comment <file>"
-  local file="$1" pr err
+  local file="$1" pr
   [ -f "$file" ] || die2 "body file not found: $file"
   pr="$(current_open_pr)" || return $?
-  capture_err err adapter_pr_comment "$pr" "$file" \
-    || die2 "gh could not comment on PR #$pr: $(gh_reason "$err")"
+  gh_or_die --exit 2 "comment on PR #$pr" adapter_pr_comment "$pr" "$file"
   printf '%s\n' "$pr"
 }
 
@@ -147,29 +145,27 @@ cmd_pr_comment() {
 # state only through the review loop (review ready and its Ready conditions).
 cmd_pr_draft() {
   [ $# -eq 0 ] || die2 "usage: orch.sh pr draft"
-  local out pr is_draft err
+  local out pr is_draft
   out="$(open_pr_draft_flag)" || exit $?
   lines_split "$out" pr is_draft
   if [ "$is_draft" = true ]; then
     note "PR #$pr is already a draft"
     return 0
   fi
-  capture_err err adapter_pr_draft "$pr" \
-    || die2 "gh could not turn PR #$pr into a draft: $(gh_reason "$err")"
+  gh_or_die --exit 2 "turn PR #$pr into a draft" adapter_pr_draft "$pr"
   note "PR #$pr is now a draft"
 }
 
 cmd_pr_ready() {
   [ $# -eq 0 ] || die2 "usage: orch.sh pr ready"
-  local out pr is_draft err
+  local out pr is_draft
   out="$(open_pr_draft_flag)" || exit $?
   lines_split "$out" pr is_draft
   if [ "$is_draft" != true ]; then
     note "PR #$pr is already ready"
     return 0
   fi
-  capture_err err adapter_pr_ready "$pr" \
-    || die2 "gh could not mark PR #$pr ready: $(gh_reason "$err")"
+  gh_or_die --exit 2 "mark PR #$pr ready" adapter_pr_ready "$pr"
   note "PR #$pr is now ready"
 }
 
@@ -178,17 +174,15 @@ cmd_pr_ready() {
 # (true or false), one per line. Returns 1, printing nothing, when the branch
 # has no open PR, as current_open_pr does.
 open_pr_draft_flag() {
-  local branch phase pr state_draft _pr_state is_draft _rest err
+  local branch phase pr _pr_state is_draft err
   branch="$(git symbolic-ref --quiet --short HEAD)" \
     || die2 "not on a branch (detached HEAD)"
   if phase="$(flow_holding_phase "$branch")"; then
     die2 "the active flow holds $branch at phase $phase - its PR changes state only through the review loop"
   fi
   pr="$(current_open_pr)" || return $?
-  capture state_draft err adapter_pr_state_draft "$pr" \
-    || die2 "gh could not read PR #$pr: $(gh_reason "$err")"
-  lines_split "$state_draft" _pr_state is_draft _rest
-  [ "$is_draft" = true ] || is_draft=false
+  pr_state_draft_read "$pr" _pr_state is_draft err \
+    || gh_die --exit 2 "read PR #$pr" "$err"
   printf '%s\n%s\n' "$pr" "$is_draft"
 }
 
@@ -199,11 +193,11 @@ open_pr_draft_flag() {
 # so a caller in a subshell can tell "no PR" apart from an error and map each
 # to its own exit code.
 current_open_pr() {
-  local branch open err
+  local branch open
   branch="$(git symbolic-ref --quiet --short HEAD)" \
     || die2 "not on a branch (detached HEAD)"
-  capture open err adapter_prs_open "$branch" \
-    || die2 "gh could not list the open PRs from $branch: $(gh_reason "$err")"
+  gh_or_die --exit 2 --out open "list the open PRs from $branch" \
+    adapter_prs_open "$branch"
   [ -n "$open" ] || return 1
   printf '%s\n' "${open%%$'\n'*}"
 }
@@ -221,8 +215,7 @@ cmd_pr_fetch() {
   [ $# -eq 1 ] || die "usage: orch.sh pr fetch <file>"
   local file="$1" pr
   pr="$(required_open_pr)" || exit 1
-  fetch_into "$file" "the body of PR #$pr" \
-    adapter_pr_body "$pr"
+  gh_or_die --file "$file" "read the body of PR #$pr" adapter_pr_body "$pr"
 }
 
 # The PR counterpart of issue comments (issue #418), so a standalone review
@@ -233,8 +226,8 @@ cmd_pr_comments() {
   [ $# -eq 1 ] || die2 "usage: orch.sh pr comments <file>"
   local file="$1" pr
   pr="$(current_open_pr)" || return $?
-  ( fetch_into "$file" "the comments of PR #$pr" \
-      adapter_pr_comments "$pr" ) || exit 2
+  gh_or_die --exit 2 --file "$file" "read the comments of PR #$pr" \
+    adapter_pr_comments "$pr"
 }
 
 # The PR counterpart of issue update, with one guard issue update has no need
@@ -243,18 +236,16 @@ cmd_pr_comments() {
 # exactly that line is refused and the body left as it was.
 cmd_pr_update() {
   [ $# -eq 1 ] || die "usage: orch.sh pr update <file>"
-  local file="$1" pr current line err
+  local file="$1" pr current line
   [ -f "$file" ] || die "body file not found: $file"
   pr="$(required_open_pr)" || exit 1
-  capture current err adapter_pr_body "$pr" \
-    || die "gh could not read the body of PR #$pr: $(gh_reason "$err")"
+  gh_or_die --out current "read the body of PR #$pr" adapter_pr_body "$pr"
   line="$(printf '%s\n' "$current" | sed -n '1{s/\r$//;p;}')"
   grep -qE '^(Closes|Refs) #[0-9]+$' <<<"$line" \
     || die "PR #$pr's body does not open with a Closes/Refs #<issue> line, so there is no issue line to keep - refusing to replace it"
   [ "$(sed -n '1{s/\r$//;p;}' "$file")" = "$line" ] \
     || die "$file must open with PR #$pr's issue line, '$line' - refusing to replace the body"
-  capture_err err adapter_pr_body_edit "$pr" "$file" \
-    || die "gh could not replace the body of PR #$pr: $(gh_reason "$err")"
+  gh_or_die "replace the body of PR #$pr" adapter_pr_body_edit "$pr" "$file"
 }
 
 cmd_pr() {

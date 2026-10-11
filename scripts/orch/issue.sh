@@ -43,10 +43,10 @@ has_review_label() {
 cmd_issue_fetch() {
   local issue="$1" file="$2" as_json="${3:-}"
   if [ -n "$as_json" ]; then
-    fetch_into "$file" "issue #$issue" adapter_issue_json "$issue"
+    gh_or_die --file "$file" "read issue #$issue" adapter_issue_json "$issue"
     return
   fi
-  fetch_into "$file" "the body of issue #$issue" \
+  gh_or_die --file "$file" "read the body of issue #$issue" \
     adapter_issue_body "$issue"
 }
 
@@ -54,25 +54,24 @@ cmd_issue_fetch() {
 # the comments beside the body. No comments is an empty file, not an error.
 cmd_issue_comments() {
   local issue="$1" file="$2"
-  fetch_into "$file" "the comments of issue #$issue" \
+  gh_or_die --file "$file" "read the comments of issue #$issue" \
     adapter_issue_comments "$issue"
 }
 
 cmd_issue_update() {
-  local issue="$1" file="$2" err
+  local issue="$1" file="$2"
   [ -f "$file" ] || die "body file not found: $file"
   # --body-file, never --body: an issue body carries tables, fences, and
   # `#nn` references, and a heredoc through a shell is where those get
   # mangled.
-  capture_err err adapter_issue_body_edit "$issue" "$file" \
-    || die "gh could not replace the body of issue #$issue: $(gh_reason "$err")"
+  gh_or_die "replace the body of issue #$issue" \
+    adapter_issue_body_edit "$issue" "$file"
 }
 
 cmd_issue_comment() {
-  local issue="$1" file="$2" err
+  local issue="$1" file="$2"
   [ -f "$file" ] || die "body file not found: $file"
-  capture_err err adapter_issue_comment "$issue" "$file" \
-    || die "gh could not comment on issue #$issue: $(gh_reason "$err")"
+  gh_or_die "comment on issue #$issue" adapter_issue_comment "$issue" "$file"
 }
 
 cmd_issue() {
@@ -106,7 +105,7 @@ cmd_issue() {
 # comment as given and leaves the labels alone.
 cmd_issue_close() {
   local usage="usage: orch.sh issue close <n> (--completed | --duplicate-of <m>) --comment-file <file>"
-  local issue="" completed=false dup="" dup_given=false file="" file_given=false err
+  local issue="" completed=false dup="" dup_given=false file="" file_given=false
   while [ $# -gt 0 ]; do
     case "$1" in
       --completed) completed=true; shift ;;
@@ -137,11 +136,11 @@ cmd_issue_close() {
   local comment
   comment="$(cat "$file")"
   if [ "$dup_given" = true ]; then
-    capture_err err adapter_issue_close "$issue" --duplicate-of "$dup" --comment "$comment" \
-      || die "gh could not close issue #$issue: $(gh_reason "$err") - --duplicate-of needs gh 2.102 or newer"
+    gh_or_die --hint "--duplicate-of needs gh 2.102 or newer" "close issue #$issue" \
+      adapter_issue_close "$issue" --duplicate-of "$dup" --comment "$comment"
   else
-    capture_err err adapter_issue_close "$issue" --reason completed --comment "$comment" \
-      || die "gh could not close issue #$issue: $(gh_reason "$err")"
+    gh_or_die "close issue #$issue" \
+      adapter_issue_close "$issue" --reason completed --comment "$comment"
   fi
 }
 
@@ -156,7 +155,7 @@ cmd_issue_ready() {
   case "$issue" in ''|*[!0-9]*) die2 "issue must be a plain issue number, got: $issue ($usage)" ;; esac
   ready="$(triage_label_for ready-for-agent)"
   issue_state_labels_read "$issue" state labels gh_err \
-    || die2 "gh could not read issue #$issue: $(gh_reason "$gh_err")"
+    || gh_die --exit 2 "read issue #$issue" "$gh_err"
   labels_have "$labels" "$ready"
 }
 
@@ -168,12 +167,11 @@ cmd_issue_ready() {
 # retries this once on either status, as ticket_links_verified's caller does.
 # Locals prefixed so no caller's variable name is shadowed.
 issue_publish_verified() {
-  local __ipv_out __ipv_err __ipv_title __ipv_labels
-  if ! capture __ipv_out __ipv_err adapter_issue_title_labels "$2"; then
+  local __ipv_err __ipv_title __ipv_labels
+  if ! issue_title_labels_read "$2" __ipv_title __ipv_labels __ipv_err; then
     printf -v "$1" '%s' "$__ipv_err"
     return 2
   fi
-  lines_split "$__ipv_out" __ipv_title __ipv_labels
   [ "$__ipv_title" = "$3" ] || return 1
   labels_verified "$__ipv_labels" "$4" || return 1
 }
@@ -190,18 +188,18 @@ issue_publish_verified() {
 # next step.
 cmd_issue_publish() {
   [ $# -eq 2 ] || die "usage: orch.sh issue publish <title> <body-file>"
-  local title="$1" body_file="$2" ready n err gh_err="" st=0
+  local title="$1" body_file="$2" ready n gh_err="" st=0
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
   ready="$(triage_label_for ready-for-agent)"
-  capture n err adapter_issue_create "$title" "$body_file" "$ready" \
-    || die "gh could not create the issue: $(gh_reason "$err")"
+  gh_or_die --out n "create the issue" \
+    adapter_issue_create "$title" "$body_file" "$ready"
   # The second attempt's status decides the death: 2 a failed read, 1 a
   # mismatch.
   issue_publish_verified gh_err "$n" "$title" "$ready" \
     || issue_publish_verified gh_err "$n" "$title" "$ready" \
     || st=$?
-  [ "$st" -ne 2 ] || die "gh could not read issue #$n: $(gh_reason "$gh_err")"
+  [ "$st" -ne 2 ] || gh_die "read issue #$n" "$gh_err"
   [ "$st" -eq 0 ] \
     || die "issue #$n's title and '$ready' label did not verify - checked twice, both failed"
   note "$n"
@@ -245,7 +243,7 @@ cmd_issue_triage() {
   ready="$(triage_label_for ready-for-agent)"
 
   issue_state_labels_read "$issue" state labels gh_err \
-    || die "gh could not read issue #$issue: $(gh_reason "$gh_err")"
+    || gh_die "read issue #$issue" "$gh_err"
   [ "$state" = OPEN ] \
     || die "issue #$issue is not open - only an open issue is triaged to '$ready'"
   # One walk over the triage roles the issue carries: whether ready-for-agent
@@ -295,14 +293,14 @@ cmd_issue_triage() {
   for label in ${removed[@]+"${removed[@]}"}; do remove_opts+=(--remove "$label"); done
 
   local st=0 err
-  capture_err err adapter_issue_relabel "$issue" --add "$ready" ${remove_opts[@]+"${remove_opts[@]}"} \
-    || die "gh could not relabel issue #$issue: $(gh_reason "$err")"
+  gh_or_die "relabel issue #$issue" \
+    adapter_issue_relabel "$issue" --add "$ready" ${remove_opts[@]+"${remove_opts[@]}"}
   # The second attempt's status decides the death: 2 a failed read, 1 a
   # mismatch. Either way the relabel stands and no comment is posted.
   issue_triage_verified gh_err "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
     || issue_triage_verified gh_err "$issue" "$ready" ${removed[@]+"${removed[@]}"} \
     || st=$?
-  [ "$st" -ne 2 ] || die "gh could not read issue #$issue: $(gh_reason "$gh_err")"
+  [ "$st" -ne 2 ] || gh_die "read issue #$issue" "$gh_err"
   [ "$st" -eq 0 ] \
     || die "issue #$issue's '$ready' label did not verify - checked twice, both failed"
 
