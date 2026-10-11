@@ -157,7 +157,7 @@ fake_stale() {
 fake_label_exists() {
   local f
   f="$(fake_store)/labels"
-  [ -f "$f" ] && cut -f1 "$f" | grep -qxF -- "$1"
+  [ -f "$f" ] && grep -qxF -- "$1" <<<"$(cut -f1 "$f")"
 }
 
 fake_label_put() {

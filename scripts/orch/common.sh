@@ -19,7 +19,7 @@ is_filed_severity() {
 # <labels>, matched whole-line and literally. The one label-membership test:
 # `--` keeps a label beginning with `-` a label, never a grep option.
 labels_have() {
-  printf '%s\n' "$1" | grep -qxF -- "$2"
+  grep -qxF -- "$2" <<<"$1"
 }
 
 # review_labels <labels>: each label in the newline-separated list that marks

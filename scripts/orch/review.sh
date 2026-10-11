@@ -118,13 +118,13 @@ no_ci_evidence() {
   # --full-tree: the pathspec is otherwise read from the current directory,
   # and from a subdirectory an empty listing would read as no workflows.
   out="$(git ls-tree --full-tree --name-only "$head" -- .github/workflows/ 2>/dev/null)" || return 1
-  if printf '%s\n' "$out" | grep -Eq '\.ya?ml$'; then return 1; fi
+  if grep -Eq '\.ya?ml$' <<<"$out"; then return 1; fi
   # 2. Required checks, from classic protection or a ruleset. A read that
   # fails is an answer nobody has.
   out="$(adapter_branch_required_checks "$base" 2>/dev/null)" || return 1
   [ -z "$out" ] || return 1
   out="$(adapter_branch_rules "$base" 2>/dev/null)" || return 1
-  if printf '%s\n' "$out" | grep -qx required_status_checks; then return 1; fi
+  if grep -qx required_status_checks <<<"$out"; then return 1; fi
   # 4, then 3: the base tip is one ref, the PR's earlier commits may be many.
   ci_ref_unchecked "$base" || return 1
   while IFS= read -r sha; do

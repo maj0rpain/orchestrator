@@ -249,7 +249,7 @@ cmd_pr_update() {
   capture current err adapter_pr_body "$pr" \
     || die "gh could not read the body of PR #$pr: $(gh_reason "$err")"
   line="$(printf '%s\n' "$current" | sed -n '1{s/\r$//;p;}')"
-  printf '%s\n' "$line" | grep -qE '^(Closes|Refs) #[0-9]+$' \
+  grep -qE '^(Closes|Refs) #[0-9]+$' <<<"$line" \
     || die "PR #$pr's body does not open with a Closes/Refs #<issue> line, so there is no issue line to keep - refusing to replace it"
   [ "$(sed -n '1{s/\r$//;p;}' "$file")" = "$line" ] \
     || die "$file must open with PR #$pr's issue line, '$line' - refusing to replace the body"
