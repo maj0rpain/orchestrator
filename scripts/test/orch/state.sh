@@ -88,9 +88,9 @@ assert_status "and it runs the default budget" "$st" 1
 assert_contains "of five" "$out" "budget of 5 iterations"
 
 state_fixture phase review
-complete_plan_handoff "$("$ORCH" handoff path spec)"
-complete_spec_handoff "$("$ORCH" handoff path implement)"
-complete_implement_handoff "$("$ORCH" handoff path review)"
+complete_handoff "$("$ORCH" handoff path spec)"
+complete_handoff "$("$ORCH" handoff path implement)"
+complete_handoff "$("$ORCH" handoff path review)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor does not strand it either" "$st" 0
 assert_contains "status reads its budget as the default" "$("$ORCH" status)" "iteration 5 of 5"
@@ -128,7 +128,7 @@ assert_eq "an absent budget reads as empty" "$("$ORCH" state get budget)" ""
 out="$("$ORCH" state get nonsense 2>&1)"; st=$?
 assert_status "a key outside the schema is refused" "$st" 1
 assert_contains "naming the key" "$out" "nonsense"
-complete_plan_handoff "$("$ORCH" handoff path spec)"
+complete_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
 # The string keys read back empty when missing too. phase goes only now: the
@@ -141,6 +141,24 @@ for key in slug phase issue base branch pr base_sha created updated; do
   assert_status "an absent $key still reads" "$st" 0
   assert_eq "an absent $key reads as empty" "$out" ""
 done
+restore_suite_env
+
+# --- the state writer accepts exactly the table's phases --------------------
+# phase_write, the one writer of state.phase, accepts the phase table's phases
+# and refuses any other, leaving the recorded phase as it was.
+echo
+echo "state phase writer"
+fake_flow phase-writer
+for p in implement review "done" spec; do
+  out="$(sourced_orch phase_write "$p" 2>&1)"; st=$?
+  assert_status "the state writer accepts $p" "$st" 0
+  assert_eq "and writes it" "$("$ORCH" state get phase)" "$p"
+done
+out="$(sourced_orch phase_write plan 2>&1)"; st=$?
+assert_status "the state writer refuses a phase outside the table" "$st" 1
+assert_eq "with today's message" "$out" \
+  "orch: not a flow phase: plan (want one of: spec implement review done)"
+assert_eq "leaving the recorded phase unchanged" "$("$ORCH" state get phase)" "spec"
 restore_suite_env
 
 # --- state.json schema ------------------------------------------------------

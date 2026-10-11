@@ -949,7 +949,7 @@ git branch -q -D nf-other
 "$ORCH" ticket-worktree remove 12
 
 "$ORCH" init flowtest >/dev/null
-complete_plan_handoff "$("$ORCH" handoff path spec)"
+complete_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a fresh flow is healthy" "$st" 0
 assert_contains "reports the phase" "$out" "phase: spec"
@@ -1012,7 +1012,7 @@ assert_contains "names the missing branch" "$out" "orch/9-gone"
 
 git checkout -q -b orch/9-gone
 state_fixture phase implement
-complete_spec_handoff "$("$ORCH" handoff path implement)"
+complete_handoff "$("$ORCH" handoff path implement)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "an unpushed branch warns rather than blocking the implement phase" "$st" 0
 assert_contains "gives the command that pushes it" "$out" "git push -u origin orch/9-gone"
@@ -1034,7 +1034,7 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when a completed phase's handoff has an empty section" "$st" 1
 assert_contains "names the handoff" "$out" "02-spec.md"
 assert_contains "reports it as empty, not missing" "$out" "empty section"
-complete_spec_handoff "$("$ORCH" handoff path implement)"
+complete_handoff "$("$ORCH" handoff path implement)"
 
 # check_flow_issue runs unconditionally on state.issue, whichever path put it
 # there - adopted at init or published by orch-to-spec - and mirrors check_flow_pr's
@@ -1076,7 +1076,7 @@ assert_contains "still reports it open" "$out" "issue #11 open"
 # issue #13: pr open always writes `Closes #<issue>`, so a merged flow's issue
 # is closed as a matter of course - a done flow reporting that as broken was
 # doctor misreporting every successfully-finished flow.
-complete_implement_handoff "$("$ORCH" handoff path review)"
+complete_handoff "$("$ORCH" handoff path review)"
 state_fixture phase "done"
 fake_issue 11 closed
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -1354,15 +1354,15 @@ echo
 echo "doctor: review terminal check"
 fresh_flow doctorterm
 doctor_github
-complete_plan_handoff "$("$ORCH" handoff path spec)"
-complete_spec_handoff "$("$ORCH" handoff path implement)"
+complete_handoff "$("$ORCH" handoff path spec)"
+complete_handoff "$("$ORCH" handoff path implement)"
 state_fixture phase implement
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "implement phase still passes" "$st" 0
 assert_eq "and says nothing about a review loop" \
   "$(printf '%s\n' "$out" | grep -c 'review loop')" "0"
 
-complete_implement_handoff "$("$ORCH" handoff path review)"
+complete_handoff "$("$ORCH" handoff path review)"
 state_fixture phase review
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "no loop yet is healthy" "$st" 0

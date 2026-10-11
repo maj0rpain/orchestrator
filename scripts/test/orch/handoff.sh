@@ -21,12 +21,115 @@ assert_status "an unknown phase is an error, not a directory" "$st" 1
 assert_eq "and prints no path for a caller to use" "$out" ""
 restore_suite_env
 
+# --- phase table ------------------------------------------------------------
+# The Handoff module's one ordered table of phases, the handoff each consumes,
+# that handoff's writer and its required sections, read through the helpers a
+# subshell that sourced orch.sh reaches. Each answer is pinned as a literal,
+# today's values, so a table edit that changes one shows here.
+echo
+echo "phase table"
+fake_flow phase-table
+
+assert_eq "PHASES is the table's phases in order" \
+  "$(bash -c 'source "$1"; printf "%s\n" "$PHASES"' _ "$ORCH")" "spec implement review done"
+
+for pair in "spec|01-plan.md" \
+            "implement|$(writeln 01-plan.md 02-spec.md)" \
+            "review|$(writeln 01-plan.md 02-spec.md 03-implement.md)" \
+            "done|$(writeln 01-plan.md 02-spec.md 03-implement.md)"; do
+  p="${pair%%|*}"
+  out="$(sourced_orch handoffs_due "$p")"; st=$?
+  assert_eq "handoffs_due $p prints the handoffs due by it" "$out" "${pair#*|}"
+  assert_status "handoffs_due $p succeeds" "$st" 0
+done
+out="$(sourced_orch handoffs_due bogus)"; st=$?
+assert_eq "handoffs_due prints nothing for a phase outside the table" "$out" ""
+assert_status "and succeeds" "$st" 0
+
+out="$(sourced_orch handoffs_after spec)"
+assert_eq "handoffs_after spec prints the spec and implement handoffs" "$out" \
+  "$(writeln 02-spec.md 03-implement.md)"
+out="$(sourced_orch handoffs_after implement)"
+assert_eq "handoffs_after implement prints the implement handoff alone" "$out" "03-implement.md"
+for p in review "done" bogus; do
+  out="$(sourced_orch handoffs_after "$p")"; st=$?
+  assert_eq "handoffs_after $p prints nothing" "$out" ""
+  assert_status "handoffs_after $p succeeds" "$st" 0
+done
+
+for pair in spec:implement implement:review review:done; do
+  out="$(sourced_orch phase_next "${pair%%:*}")"; st=$?
+  assert_eq "phase_next ${pair%%:*} prints ${pair#*:}" "$out" "${pair#*:}"
+  assert_status "phase_next ${pair%%:*} succeeds" "$st" 0
+done
+for pair in spec:plan implement:spec review:implement; do
+  out="$(sourced_orch phase_writer "${pair%%:*}")"; st=$?
+  assert_eq "phase_writer ${pair%%:*} prints ${pair#*:}" "$out" "${pair#*:}"
+  assert_status "phase_writer ${pair%%:*} succeeds" "$st" 0
+done
+for fn in phase_next phase_writer; do
+  for p in "done" bogus; do
+    out="$(sourced_orch "$fn" "$p")"; st=$?
+    assert_eq "$fn $p prints nothing" "$out" ""
+    assert_ne "$fn $p fails" "$st" 0
+  done
+done
+
+# handoff_required, Host fallbacks left off by a pre-1.0.0 state, so only the
+# table's own headings show, in today's order.
+st_saved="$(cat .orchestrator/state.json)"
+jq 'del(.host_fallbacks)' <<<"$st_saved" >.orchestrator/state.json
+assert_eq "handoff_required 01-plan.md prints its headings in order" \
+  "$(sourced_orch handoff_required 01-plan.md)" \
+  "$(writeln '## Decisions' '## Rejected alternatives' '## Constraints' '## Open assumptions')"
+assert_eq "handoff_required 02-spec.md prints its headings in order" \
+  "$(sourced_orch handoff_required 02-spec.md)" \
+  "$(writeln '## Spec issue' '## Seams' '## Spec review changelog' '## Ticket breakdown')"
+assert_eq "handoff_required 03-implement.md prints its headings in order" \
+  "$(sourced_orch handoff_required 03-implement.md)" \
+  "$(writeln '## PR' '## Spec issue' '## Base SHA' '## Deviations' '## Verification')"
+printf '%s\n' "$st_saved" >.orchestrator/state.json
+assert_eq "and appends Host fallbacks when the state requires it" \
+  "$(sourced_orch handoff_required 02-spec.md | tail -n 1)" "## Host fallbacks"
+for name in - bogus.md ''; do
+  out="$(sourced_orch handoff_required "$name" 2>&1)"; st=$?
+  assert_status "handoff_required '$name' fails" "$st" 1
+  assert_eq "naming the unknown file" "$out" "orch: unknown handoff file: $name"
+done
+writeln '## Decisions' 'Use X.' >./-
+out="$("$ORCH" handoff validate - 2>&1)"; st=$?
+rm -f ./-
+assert_status "handoff validate - fails" "$st" 1
+assert_contains "as an unknown handoff file, the done row matching no name" "$out" "unknown handoff file: -"
+out="$("$ORCH" handoff path "done" 2>&1)"; st=$?
+assert_status "handoff path done fails" "$st" 1
+assert_eq "with no handoff defined for done" "$out" "orch: no handoff defined for phase: done"
+
+# complete_handoff, the suite's one handoff fixture, writes what the table
+# requires: each file it writes validates, with Host fallbacks required or not.
+for p in spec implement review; do
+  hf="$("$ORCH" handoff path "$p")"
+  complete_handoff "$hf"
+  out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
+  assert_status "complete_handoff writes a valid $(basename "$hf")" "$st" 0
+  assert_contains "with Host fallbacks" "$(cat "$hf")" "## Host fallbacks"
+done
+jq 'del(.host_fallbacks)' <<<"$st_saved" >.orchestrator/state.json
+complete_handoff "$hf"
+assert_contains "and with Host fallbacks when the state does not require it" \
+  "$(cat "$hf")" "## Host fallbacks"
+printf '%s\n' "$st_saved" >.orchestrator/state.json
+complete_handoff "$(dirname "$hf")/bogus.md" 2>/dev/null; st=$?
+assert_ne "complete_handoff fails on a file the table does not hold" "$st" 0
+assert_eq "and writes no file" "$(on_disk "$(dirname "$hf")/bogus.md")" "absent"
+restore_suite_env
+
 # --- handoff validate -------------------------------------------------------
 echo
 echo "handoff validate"
 fake_flow handoff-validate
 h="$("$ORCH" handoff path spec)"
-complete_plan_handoff "$h"
+complete_handoff "$h"
 out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
 assert_status "passes a complete handoff" "$st" 0
 
@@ -37,7 +140,7 @@ assert_contains "names the missing section" "$out" "Rejected alternatives"
 
 # The high-value case: the section the spec writer is most likely to leave as a
 # bare heading, which would let already-killed alternatives get re-proposed.
-complete_plan_handoff "$h"
+complete_handoff "$h"
 writeln '## Decisions' 'Use X.' '' '## Rejected alternatives' '' \
         '## Constraints' 'None.' '' '## Open assumptions' 'None.' >"$h"
 out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
@@ -61,12 +164,15 @@ assert_eq "reports it as a FAIL line on stdout" "$out" "FAIL  handoff not found:
 # is not.
 for p in spec implement review; do
   hf="$("$ORCH" handoff path "$p")"
+  # Each complete but for Host fallbacks, written literally.
   case "$p" in
-    spec) complete_plan_handoff "$hf" ;;
-    implement) complete_spec_handoff "$hf" ;;
-    review) complete_implement_handoff "$hf" ;;
+    spec) writeln '## Decisions' 'Use X.' '' '## Rejected alternatives' 'Y, because Z.' '' \
+                  '## Constraints' 'Must run offline.' '' '## Open assumptions' 'Assumes W.' >"$hf" ;;
+    implement) writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
+                       '## Spec review changelog' 'Not reviewed.' '' '## Ticket breakdown' '#1.' >"$hf" ;;
+    review) writeln '## PR' '#3.' '' '## Spec issue' '#1.' '' '## Base SHA' 'abc1234.' '' \
+                    '## Deviations' 'None.' '' '## Verification' 'scripts/test/orch_test.sh' >"$hf" ;;
   esac
-  grep -v '^## Host fallbacks$' "$hf" | grep -v '^None (Claude Code)\.$' >"$hf.tmp" && mv "$hf.tmp" "$hf"
   out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
   assert_status "$(basename "$hf") without Host fallbacks is incomplete" "$st" 1
   assert_contains "$(basename "$hf") names the missing Host fallbacks" "$out" "Host fallbacks"
@@ -80,7 +186,7 @@ jq 'del(.host_fallbacks)' <<<"$st_saved" >.orchestrator/state.json
 out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
 assert_status "a pre-1.0.0 flow's handoff validates without Host fallbacks" "$st" 0
 printf '%s\n' "$st_saved" >.orchestrator/state.json
-complete_plan_handoff "$h"
+complete_handoff "$h"
 restore_suite_env
 
 # --- handoff section --------------------------------------------------------
@@ -91,13 +197,17 @@ echo
 echo "handoff section"
 fake_flow handoff-section
 h="$("$ORCH" handoff path spec)"
-complete_plan_handoff "$h"
+writeln '## Decisions' 'Use X.' '' '## Rejected alternatives' 'Y, because Z.' '' \
+        '## Constraints' 'Must run offline.' '' '## Open assumptions' 'Assumes W.' '' \
+        '## Host fallbacks' 'None (Claude Code).' >"$h"
 out="$("$ORCH" handoff section "$h" "Rejected alternatives" 2>&1)"; st=$?
 assert_status "prints a named section" "$st" 0
 assert_eq "prints only that section's body" "$out" "Y, because Z."
 
 hi="$("$ORCH" handoff path review)"
-complete_implement_handoff "$hi"
+writeln '## PR' '#3.' '' '## Spec issue' '#1.' '' '## Base SHA' 'abc1234.' '' \
+        '## Deviations' 'None.' '' '## Verification' 'scripts/test/orch_test.sh' '' \
+        '## Host fallbacks' 'None (Claude Code).' >"$hi"
 assert_eq "reads Deviations out of an implement handoff" \
   "$("$ORCH" handoff section "$hi" Deviations)" "None."
 
@@ -119,7 +229,7 @@ cp "$hs" "$h"
 out="$("$ORCH" handoff validate "$h" 2>&1)"
 assert_contains "handoff validate reports that same section as empty" \
   "$out" "empty section: ## Rejected alternatives"
-complete_plan_handoff "$h"
+complete_handoff "$h"
 
 out="$("$ORCH" handoff section "$h" "Open questions" 2>&1)"; st=$?
 assert_status "a missing heading is an error" "$st" 1
@@ -178,7 +288,7 @@ out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "a bare Ticket breakdown heading is no better than none" "$st" 1
 assert_contains "reported as empty, not missing" "$out" "empty section"
 
-complete_spec_handoff "$h2"
+complete_handoff "$h2"
 out="$("$ORCH" handoff validate "$h2" 2>&1)"; st=$?
 assert_status "passes once the parent issue is recorded" "$st" 0
 
@@ -229,7 +339,12 @@ mkdir -p "$tpl_repo/.orchestrator"
 printf '{}\n' >"$tpl_repo/.orchestrator/state.json"
 flow_state_write "$(flow_state_file "$tpl_repo")" host_fallbacks true \
   || bad "the handoff templates' state fixture is written" "flow_state_write failed"
-for tpl in 01-plan.md 02-spec.md 03-implement.md; do
+# The file list is the phase table's, so a new phase's template is checked too.
+# orch.sh is sourced inside the fixture repo, since it resolves one as it loads.
+tpls="$(cd "$tpl_repo" && sourced_orch handoffs_due "done")"
+assert_eq "the phase table names the templates to check" "$tpls" \
+  "$(writeln 01-plan.md 02-spec.md 03-implement.md)"
+for tpl in $tpls; do
   # The markdown fence under the template's `### \`<file>\`` heading.
   awk -v f="$tpl" '
     index($0, "### `" f "`") == 1 { under = 1; next }
@@ -261,7 +376,7 @@ out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "a bare Verification heading is no better than none" "$st" 1
 assert_contains "reported as empty, not missing" "$out" "empty section"
 
-complete_implement_handoff "$h3"
+complete_handoff "$h3"
 out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "passes once the command is recorded" "$st" 0
 
@@ -279,14 +394,14 @@ assert_eq "its first line is still the bare command the review loop runs" \
 # Merge resolutions records what a base-sync resolver dropped (#791). The
 # template carries it, but a handoff written before it existed still
 # validates: the section is optional, never required.
-complete_implement_handoff "$h3"
+complete_handoff "$h3"
 writeln '' '## Merge resolutions' 'scripts/orch.sh: dropped the base'"'"'s rename - the branch removed the caller.' >>"$h3"
 out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "an implement handoff carrying Merge resolutions validates" "$st" 0
 assert_eq "its Merge resolutions read back through handoff section" \
   "$("$ORCH" handoff section "$h3" "Merge resolutions")" \
   "scripts/orch.sh: dropped the base's rename - the branch removed the caller."
-complete_implement_handoff "$h3"
+complete_handoff "$h3"
 out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "an old implement handoff without Merge resolutions still validates" "$st" 0
 assert_not_contains "and is not told the section is missing" "$out" "Merge resolutions"

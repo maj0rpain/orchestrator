@@ -27,7 +27,6 @@ set -euo pipefail
 # Where mise is absent this does nothing.
 export MISE_QUIET=1
 
-readonly PHASES="spec implement review done"
 # The directory this script sits in, which every sourced module lives in too.
 # Worked out by parameter expansion, as dirname would print it, so no call
 # spawns a process to find it: a bare name means the current directory.
@@ -117,6 +116,11 @@ source "$ORCH_SCRIPTS/orch/spec-review.sh"
 source "$ORCH_SCRIPTS/orch/state.sh"
 source "$ORCH_SCRIPTS/orch/ticket.sh"
 source "$ORCH_SCRIPTS/orch/ticket-worktree.sh"
+# The flow's phases, space-separated in flow order: read inside functions only
+# (the state writer, doctor's state-phase check), never while a module is
+# sourced, so it is set here, from the Handoff module's phase table.
+PHASES="$(phase_list)"
+readonly PHASES
 
 # The one definition of the planning allowlist and the planning records,
 # shared with hook-guard.sh so the flow-start check and the edit guard can

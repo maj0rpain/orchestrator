@@ -20,15 +20,13 @@ require_base_sha() { require_field "$1" base_sha "no base SHA recorded in state 
 
 # The block that ends every phase, for the handoff the phase now recorded
 # reads: the next phase needs a fresh session this one cannot start, so the
-# block names it in the host's own words, through next_phase_cmd.
+# block names it in the host's own words, through next_phase_cmd. The finished
+# phase is the writer of the handoff <phase> consumes, read from the phase
+# table; done and a phase outside it have none, so no boundary.
 print_boundary() {
   local phase="$1" done_name file next
-  case "$phase" in
-    spec)      done_name=plan ;;
-    implement) done_name=spec ;;
-    review)    done_name=implement ;;
-    *) die "no phase boundary at phase: $phase - the flow is not between phases" ;;
-  esac
+  done_name="$(phase_writer "$phase")" ||
+    die "no phase boundary at phase: $phase - the flow is not between phases"
   file="$(handoff_file_for "$phase")"
   next="$(next_phase_cmd)"
   printf 'Phase %s complete. Handoff written to %s/%s.\n\n  Next: %s\n' \
@@ -44,13 +42,14 @@ cmd_phase() {
       require_state
       local phase next file _unused
       phase="$(state_get phase)"
+      # The guards run in this order; past them, the next phase is the phase
+      # table's, and phase_next fails only on a phase outside the table.
       case "$phase" in
-        spec)      next=implement ;;
-        implement) next=review ;;
-        review)    die "the review phase ends through review ready, once the PR is ready - phase advance does not leave it" ;;
-        done)      die "the flow is done - there is no phase to advance to" ;;
-        *)         die "not a flow phase: '$phase' - run orch.sh doctor --flow" ;;
+        review) die "the review phase ends through review ready, once the PR is ready - phase advance does not leave it" ;;
+        done)   die "the flow is done - there is no phase to advance to" ;;
       esac
+      next="$(phase_next "$phase")" ||
+        die "not a flow phase: '$phase' - run orch.sh doctor --flow"
       # The handoff this phase writes is the one the next phase reads. It is
       # checked before the state fields so a missing handoff - the likelier
       # gap - is the one reported.

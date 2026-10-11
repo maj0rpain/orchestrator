@@ -3,27 +3,112 @@
 # Its tests: scripts/test/orch/handoff.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
+# The phase table: the one statement of the flow's phases, in flow order, and
+# of what each one consumes. One row per recorded state phase, its cells split
+# by `|`: the phase, the handoff it consumes, the writer (the phase that wrote
+# that handoff - an explicit column, never parsed out of the file name; plan is
+# a writer only, never a state phase), and that handoff's required sections,
+# split by `;`. done consumes nothing, so its cells are stored empty, and every
+# lookup by handoff file skips a row whose handoff is empty. A plain string,
+# read line by line: no associative or parallel arrays, so bash 3.2 runs it.
+# Every other statement of the phases derives from it, through the helpers
+# below.
+readonly PHASE_TABLE='spec|01-plan.md|plan|Decisions;Rejected alternatives;Constraints;Open assumptions
+implement|02-spec.md|spec|Spec issue;Seams;Spec review changelog;Ticket breakdown
+review|03-implement.md|implement|PR;Spec issue;Base SHA;Deviations;Verification
+done|||'
+
+# The table's phases, space-separated, in flow order - what orch.sh sets
+# PHASES from.
+phase_list() {
+  local phase list=""
+  while IFS='|' read -r phase _; do
+    list="${list:+$list }$phase"
+  done <<<"$PHASE_TABLE"
+  printf '%s\n' "$list"
+}
+
+# handoffs_due <phase>: the handoffs consumed by every row up to and including
+# <phase>, one per line - every handoff a flow at <phase> has written. A phase
+# the table does not hold prints nothing.
+handoffs_due() {
+  local phase handoff due=""
+  while IFS='|' read -r phase handoff _; do
+    [ -z "$handoff" ] || due="$due$handoff"$'\n'
+    if [ "$phase" = "$1" ]; then
+      printf '%s' "$due"
+      return 0
+    fi
+  done <<<"$PHASE_TABLE"
+}
+
+# handoffs_after <phase>: the handoffs consumed by every row after <phase>, one
+# per line - the ones a step back to <phase> makes stale. Nothing after the
+# last handoff's row, or for a phase the table does not hold.
+handoffs_after() {
+  local phase handoff found=0
+  while IFS='|' read -r phase handoff _; do
+    if [ "$found" = 1 ] && [ -n "$handoff" ]; then printf '%s\n' "$handoff"; fi
+    [ "$phase" != "$1" ] || found=1
+  done <<<"$PHASE_TABLE"
+}
+
+# phase_next <phase>: the phase after <phase>. Nothing, and non-zero, at the
+# last row or for a phase the table does not hold.
+phase_next() {
+  local phase found=0
+  while IFS='|' read -r phase _; do
+    if [ "$found" = 1 ]; then
+      printf '%s\n' "$phase"
+      return 0
+    fi
+    [ "$phase" != "$1" ] || found=1
+  done <<<"$PHASE_TABLE"
+  return 1
+}
+
+# phase_cell <column> <phase>: <phase>'s cell in <column> of the table,
+# counting the phase as column 0. Nothing, and non-zero, when the cell is empty
+# or the table does not hold <phase>.
+phase_cell() {
+  local -a cells
+  while IFS='|' read -r -a cells; do
+    if [ "${cells[0]-}" = "$2" ] && [ -n "${cells[$1]-}" ]; then
+      printf '%s\n' "${cells[$1]}"
+      return 0
+    fi
+  done <<<"$PHASE_TABLE"
+  return 1
+}
+
+# phase_writer <phase>: the phase that wrote the handoff <phase> consumes.
+# Nothing, and non-zero, at done or for a phase the table does not hold.
+phase_writer() { phase_cell 2 "$1"; }
+
 # Every review loop, however many the flow has run, reads the implement
 # handoff, so the four facts a loop runs on have exactly one authority.
 handoff_file_for() {
-  case "$1" in
-    spec)      printf '01-plan.md\n' ;;
-    implement) printf '02-spec.md\n' ;;
-    review)    printf '03-implement.md\n' ;;
-    *) die "no handoff defined for phase: $1" ;;
-  esac
+  phase_cell 1 "$1" || die "no handoff defined for phase: $1"
 }
 
 # A handoff missing a required section means the next phase runs blind, so the
 # boundary is where it must fail - the context to fix it still exists there.
 handoff_required() {
-  case "$1" in
-    01-plan.md)      printf '%s\n' '## Decisions' '## Rejected alternatives' '## Constraints' '## Open assumptions' ;;
-    02-spec.md)      printf '%s\n' '## Spec issue' '## Seams' '## Spec review changelog' '## Ticket breakdown' ;;
-    03-implement.md) printf '%s\n' '## PR' '## Spec issue' '## Base SHA' '## Deviations' '## Verification' ;;
-    *) die "unknown handoff file: $1" ;;
-  esac
-  if host_fallbacks_required; then printf '%s\n' '## Host fallbacks'; fi
+  local handoff sections
+  while IFS='|' read -r _ handoff _ sections; do
+    if [ -n "$handoff" ] && [ "$handoff" = "$1" ]; then
+      while [ -n "$sections" ]; do
+        printf '## %s\n' "${sections%%;*}"
+        case "$sections" in
+          *";"*) sections="${sections#*;}" ;;
+          *) sections="" ;;
+        esac
+      done
+      if host_fallbacks_required; then printf '%s\n' '## Host fallbacks'; fi
+      return 0
+    fi
+  done <<<"$PHASE_TABLE"
+  die "unknown handoff file: $1"
 }
 
 # A flow started before 1.0.0 wrote its handoffs without Host fallbacks, and

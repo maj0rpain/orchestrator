@@ -31,7 +31,7 @@ assert_status "refuses at spec with an invalid spec handoff" "$st" 1
 assert_contains "prints the FAIL lines" "$out" "FAIL  empty section: ## Seams"
 assert_eq "and leaves the phase at spec" "$("$ORCH" state get phase)" "spec"
 
-complete_spec_handoff "$hs2"
+complete_handoff "$hs2"
 "$ORCH" state set issue null
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at spec with no issue recorded" "$st" 1
@@ -52,7 +52,7 @@ assert_contains "names the missing handoff" "$out" "03-implement.md"
 assert_eq "leaves the phase at implement" "$("$ORCH" state get phase)" "implement"
 
 hi2="$("$ORCH" handoff path review)"
-complete_implement_handoff "$hi2"
+complete_handoff "$hi2"
 for field in branch base_sha pr; do
   state_fixture branch orch/7-advancing
   state_fixture base_sha abc1234
@@ -84,7 +84,17 @@ assert_eq "and leaves the phase at review" "$("$ORCH" state get phase)" "review"
 state_fixture phase "done"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "refuses at done" "$st" 1
+assert_contains "saying the flow is done" "$out" \
+  "orch: the flow is done - there is no phase to advance to"
 assert_eq "and leaves the phase at done" "$("$ORCH" state get phase)" "done"
+
+state_fixture phase bogus
+out="$("$ORCH" phase advance 2>&1)"; st=$?
+assert_status "refuses at a phase outside the table" "$st" 1
+assert_contains "naming the phase and doctor --flow" "$out" \
+  "orch: not a flow phase: 'bogus' - run orch.sh doctor --flow"
+assert_eq "and leaves the phase as it was" "$("$ORCH" state get phase)" "bogus"
+state_fixture phase "done"
 
 out="$("$ORCH" phase advance extra 2>&1)"; st=$?
 assert_status "advance takes no arguments" "$st" 1
@@ -107,8 +117,29 @@ assert_eq "on an unknown host names the fresh-session Next line" "$out" \
 state_fixture phase "done"
 out="$("$ORCH" phase boundary 2>&1)"; st=$?
 assert_status "refuses once the flow is done" "$st" 1
+assert_contains "saying there is no boundary at done" "$out" \
+  "orch: no phase boundary at phase: done - the flow is not between phases"
+state_fixture phase bogus
+out="$("$ORCH" phase boundary 2>&1)"; st=$?
+assert_status "refuses at a phase outside the table" "$st" 1
+assert_contains "saying there is no boundary at that phase" "$out" \
+  "orch: no phase boundary at phase: bogus - the flow is not between phases"
 out="$("$ORCH" phase bogus 2>&1)"; st=$?
 assert_status "an unknown phase op is an error" "$st" 1
 assert_contains "naming the ops it wants" "$out" "advance|boundary"
 unset ORCHESTRATOR_HOST
+restore_suite_env
+
+# --- phase advance help names handoffs by role (#1066) ----------------------
+# The help names each handoff by its role and points at handoff path for the
+# file, so renaming a handoff file never leaves the help stale.
+echo
+echo "phase advance help names handoffs by role"
+new_repo >/dev/null
+text="$(help_entry "phase advance")"
+assert_ne "help has a phase advance entry" "$text" ""
+assert_eq "the phase advance entry names no handoff file" \
+  "$(printf '%s\n' "$text" | grep -oE '[0-9]{2}-[a-z-]+\.md')" ""
+assert_contains "the phase advance entry points at handoff path" \
+  "$(printf '%s\n' "$text" | flat_text)" "orch.sh handoff path"
 restore_suite_env

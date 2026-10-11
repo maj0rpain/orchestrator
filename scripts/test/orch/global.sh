@@ -24,7 +24,7 @@ echo
 echo "archive"
 fake_flow my-feature
 h="$("$ORCH" handoff path spec)"
-complete_plan_handoff "$h"
+complete_handoff "$h"
 dest="$("$ORCH" archive)"
 assert_contains "archive path carries the slug" "$dest" "my-feature"
 assert_eq "archive names its directory <YYYYMMDD-HHMMSS>-<slug>" \

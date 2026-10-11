@@ -98,8 +98,9 @@ $detail" ;;
   cmd_review retire "$new_n" >/dev/null
   # The implement handoff described the attempt just retired; left in place,
   # phase advance would let the redone implement phase leave on it (#279).
-  # Same N as the review records beside it. 01-plan.md is never touched.
-  retire_handoffs "$HANDOFF_DIR/pre-redo-$new_n" 03-implement.md
+  # Same N as the review records beside it. The plan handoff is never touched.
+  # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
+  retire_handoffs "$HANDOFF_DIR/pre-redo-$new_n" $(handoffs_after implement)
 
   state_write branch null
   state_write pr null
@@ -146,7 +147,8 @@ cmd_redo_spec() {
   # the retired branch, so the directory is told apart by a UTC timestamp.
   local dest
   dest="$HANDOFF_DIR/pre-redo-spec-$(dir_stamp)"
-  retire_handoffs "$dest" 02-spec.md 03-implement.md
+  # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
+  retire_handoffs "$dest" $(handoffs_after spec)
   phase_write spec
 }
 

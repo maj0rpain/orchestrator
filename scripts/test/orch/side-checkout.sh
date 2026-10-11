@@ -299,7 +299,7 @@ top="$(git rev-parse --show-toplevel)"
 # archive in a clean side checkout, run from inside it.
 alpha="$(sc_add alpha)"
 (cd "$alpha" && orch_gh_failing init alpha-flow >/dev/null)
-complete_plan_handoff "$(cd "$alpha" && orch_gh_failing handoff path spec)"
+complete_handoff "$(cd "$alpha" && orch_gh_failing handoff path spec)"
 out="$(cd "$alpha" && orch_gh_failing archive 2>&1)"; st=$?
 assert_status "archive in a clean side checkout succeeds" "$st" 0
 assert_eq "it leaves the archive in the main checkout's .orchestrator/archive/" \

@@ -162,6 +162,17 @@ writeln() { printf '%s\n' "$@"; }
 # flat_text: stdin on one line with every whitespace run collapsed to one
 # space.
 flat_text() { tr -s ' \t\n' '   '; }
+# sourced_orch <function> [args...]: the function's output, called in a shell
+# that sourced orch.sh, with its status.
+sourced_orch() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
+# help_entry <command>: orch.sh help's entry for <command> - its first line
+# and the indented continuation lines under it.
+help_entry() {
+  "$ORCH" help 2>&1 | awk -v cmd="  $1" '
+    found && /^                              / { print; next }
+    found { exit }
+    index($0, cmd) == 1 { found = 1; print }'
+}
 
 # The Flow state module, sourced so state_fixture writes through orch.sh's own
 # writer: a fixture can then never store a value orch.sh would not write.
@@ -179,29 +190,19 @@ state_fixture() {
   flow_state_write "$(flow_state_file "$(git rev-parse --show-toplevel)")" "$1" "$2"
 }
 
-complete_plan_handoff() {
-  writeln '## Decisions' 'Use X.' '' \
-          '## Rejected alternatives' 'Y, because Z.' '' \
-          '## Constraints' 'Must run offline.' '' \
-          '## Open assumptions' 'Assumes W.' '' \
-          '## Host fallbacks' 'None (Claude Code).' >"$1"
-}
-
-complete_spec_handoff() {
-  writeln '## Spec issue' '#1.' '' \
-          '## Seams' 'The CLI.' '' \
-          '## Spec review changelog' 'Not reviewed.' '' \
-          '## Ticket breakdown' '#1.' '' \
-          '## Host fallbacks' 'None (Claude Code).' >"$1"
-}
-
-complete_implement_handoff() {
-  writeln '## PR' '#3.' '' \
-          '## Spec issue' '#1.' '' \
-          '## Base SHA' 'abc1234.' '' \
-          '## Deviations' 'None.' '' \
-          '## Verification' 'scripts/test/orch_test.sh' '' \
-          '## Host fallbacks' 'None (Claude Code).' >"$1"
+# complete_handoff <file>: a complete handoff at <file>, holding every section
+# the Handoff module's phase table requires for its name - read through
+# handoff_required in a shell that sourced orch.sh, so the fixture cannot drift
+# from the validator - each with a placeholder body, plus Host fallbacks
+# whatever the state says. When handoff_required fails, on a name the table
+# does not hold, it fails and writes no file.
+complete_handoff() {
+  local headings heading
+  headings="$(sourced_orch handoff_required "$(basename "$1")")" || return 1
+  grep -qxF '## Host fallbacks' <<<"$headings" || headings="$headings"$'\n''## Host fallbacks'
+  while IFS= read -r heading; do
+    writeln "$heading" "Placeholder for ${heading#\#\# }." ''
+  done <<<"$headings" >"$1"
 }
 
 # --- doctor harness ---------------------------------------------------------
@@ -250,9 +251,9 @@ fake_flow() { new_repo >/dev/null; fake_github; "$ORCH" init "$1" >/dev/null; }
 # complete, cwd inside it, and whatever healthy_repo exports.
 review_flow() {
   fresh_flow "$1"
-  complete_plan_handoff "$("$ORCH" handoff path spec)"
-  complete_spec_handoff "$("$ORCH" handoff path implement)"
-  complete_implement_handoff "$("$ORCH" handoff path review)"
+  complete_handoff "$("$ORCH" handoff path spec)"
+  complete_handoff "$("$ORCH" handoff path implement)"
+  complete_handoff "$("$ORCH" handoff path review)"
   state_fixture phase review
 }
 
