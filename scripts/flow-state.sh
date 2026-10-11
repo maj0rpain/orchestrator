@@ -171,5 +171,5 @@ flow_state_write_string() {
 # file, or one with no phase - is a running flow.
 flow_state_active() {
   [ -f "$1" ] || return 1
-  [ "$(jq -r '.phase // ""' "$1" 2>/dev/null)" != "done" ]
+  [ "$(flow_state_get "$1" phase 2>/dev/null)" != "done" ]
 }
