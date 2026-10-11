@@ -1251,6 +1251,99 @@ flags "a usage: string beside another literal flow command is flagged" \
 check "the scripts name a plugin command only through flow_cmd, whose sections exist" \
   "$(scan_flow_cmd "$PLUGIN_ROOT")"
 
+# --- no pipe into a quiet grep (#987) ----------------------------------------
+echo
+echo "no pipe into a quiet grep (#987)"
+# orch.sh runs under `set -euo pipefail`, and its modules and the gh fake it
+# sources inherit it. In `printf '%s\n' "$v" | grep -q y`, grep exits as soon
+# as it matches; a writer still writing later lines is killed by SIGPIPE and
+# exits 141, and pipefail turns that into a false "no" although grep matched.
+# It needs load to land, so it shows as a rare flake (#987). The safe form
+# passes the value as a herestring, `grep -q y <<<"$v"`, written in full before
+# grep runs. Every .sh under scripts/ is scanned, whether or not it sets
+# pipefail, except scripts/test/, whose runners run outside orch.sh; the gh
+# fake is scanned, since orch.sh sources it. A pipe is a single |, never ||.
+# The quiet flags are -q or -m in any short-flag bundle or as a word, --quiet,
+# --silent and --max-count, anywhere among that grep's words up to the next |,
+# ;, && or ||. A line is judged whole: a trailing comment is not stripped,
+# since # sits inside quoted patterns, and words are not parsed for quoting,
+# so an option-shaped word inside a pattern counts too. Comment lines are
+# spared.
+# scan_quiet_grep_pipe <plugin root>: "<file>:<line>: <text>" for each line of
+# a scanned script that pipes into a quiet grep, <text> with leading
+# whitespace trimmed.
+scan_quiet_grep_pipe() {
+  local f
+  while IFS= read -r f; do
+    case "$f" in scripts/test/gh_adapter_fake.sh) ;; scripts/test/*) continue ;; esac
+    F="$f" awk '
+      { t = $0; sub(/^[[:space:]]+/, "", t) }
+      t ~ /^#/ { next }
+      {
+        s = t; gsub(/\|\|/, SUBSEP, s)
+        n = split(s, seg, "|")
+        for (i = 2; i <= n; i++) {
+          g = seg[i]
+          cut = length(g) + 1
+          if ((k = index(g, ";")) && k < cut) cut = k
+          if ((k = index(g, "&&")) && k < cut) cut = k
+          if ((k = index(g, SUBSEP)) && k < cut) cut = k
+          m = split(substr(g, 1, cut - 1), w, /[[:space:]]+/)
+          j = 1; while (j <= m && w[j] == "") j++
+          if (j > m || w[j] != "grep") continue
+          for (j++; j <= m; j++) {
+            o = w[j]; sub(/^["\047]+/, "", o)
+            if (o ~ /^-[A-Za-z0-9]*[qm]/ || o ~ /^--(quiet|silent)$/ || o ~ /^--max-count(=|$)/) {
+              print ENVIRON["F"] ":" FNR ": " t; next
+            }
+          }
+        }
+      }' "$1/$f"
+  done < <(cd "$1" && find scripts -name '*.sh' 2>/dev/null | sort)
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/scripts/orch" "$fixture/scripts/test"
+printf '%s\n' '#!/usr/bin/env bash' \
+  'printf "%s\n" "$x" | grep -q y' \
+  '  printf "%s\n" "$x" | grep -qxF y' \
+  'echo "$x" | grep -Eq "a|b"' \
+  'echo "$x" | grep -E -q y' \
+  'echo "$x" | grep -m1 y' \
+  'echo "$x" | grep -m 1 y' \
+  'echo "$x" | grep --quiet y' \
+  'echo "$x" | grep --silent y' \
+  'echo "$x" | grep --max-count=1 y' \
+  'echo "$x" | grep --max-count 1 y' \
+  >"$fixture/scripts/orch/flagged.sh"
+printf '%s\n' 'fake_label_exists() { cut -f1 "$s" | grep -qxF "$1"; }' \
+  >"$fixture/scripts/test/gh_adapter_fake.sh"
+printf '%s\n' 'grep -q y <<<"$x"' >"$fixture/scripts/orch/herestring.sh"
+printf '%s\n' 'false || grep -q y f' >"$fixture/scripts/orch/oror.sh"
+printf '%s\n' '  # never write printf "%s" "$x" | grep -q y' >"$fixture/scripts/orch/comment.sh"
+printf '%s\n' 'echo "$x" | grep -q y' >"$fixture/scripts/test/runner.sh"
+out="$(scan_quiet_grep_pipe "$fixture")"
+flags "a pipe into grep -q is flagged" "$out" 'scripts/orch/flagged.sh:2: printf "%s\n" "$x" | grep -q y'
+flags "a pipe into grep -qxF is flagged, its leading whitespace trimmed" \
+  "$out" 'scripts/orch/flagged.sh:3: printf "%s\n" "$x" | grep -qxF y'
+flags "a pipe into grep -Eq is flagged" "$out" 'scripts/orch/flagged.sh:4: echo "$x" | grep -Eq "a|b"'
+flags "a pipe into grep -E -q is flagged" "$out" 'scripts/orch/flagged.sh:5: echo "$x" | grep -E -q y'
+flags "a pipe into grep -m1 is flagged" "$out" 'scripts/orch/flagged.sh:6: echo "$x" | grep -m1 y'
+flags "a pipe into grep -m 1 is flagged" "$out" 'scripts/orch/flagged.sh:7: echo "$x" | grep -m 1 y'
+flags "a pipe into grep --quiet is flagged" "$out" 'scripts/orch/flagged.sh:8: echo "$x" | grep --quiet y'
+flags "a pipe into grep --silent is flagged" "$out" 'scripts/orch/flagged.sh:9: echo "$x" | grep --silent y'
+flags "a pipe into grep --max-count=1 is flagged" \
+  "$out" 'scripts/orch/flagged.sh:10: echo "$x" | grep --max-count=1 y'
+flags "a pipe into grep --max-count 1 is flagged" \
+  "$out" 'scripts/orch/flagged.sh:11: echo "$x" | grep --max-count 1 y'
+flags "a pipe into a quiet grep in the gh fake is flagged" \
+  "$out" 'scripts/test/gh_adapter_fake.sh:1: fake_label_exists() { cut -f1 "$s" | grep -qxF "$1"; }'
+spares "a herestring into grep -q is not flagged" "$out" '^scripts/orch/herestring\.sh:'
+spares "grep -q after || is not flagged" "$out" '^scripts/orch/oror\.sh:'
+spares "a comment mentioning | grep -q is not flagged" "$out" '^scripts/orch/comment\.sh:'
+spares "a pipe into grep -q elsewhere under scripts/test/ is not flagged" "$out" '^scripts/test/runner\.sh:'
+check "no plugin script pipes into a quiet grep" "$(scan_quiet_grep_pipe "$PLUGIN_ROOT")"
+
 # --- Junie planning snippet (ADR-0025) ----------------------------------------
 echo
 echo "Junie planning snippet (ADR-0025)"
