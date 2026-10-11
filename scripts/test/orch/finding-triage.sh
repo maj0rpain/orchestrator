@@ -292,6 +292,32 @@ assert_eq "it is unknown, its exact line naming the missing PR line" "$(line_of 
   "$(printf '16\t-\tsrc/other.sh:2\tunknown\tbody does not parse: no **PR:** line ending in a pull request URL\tneeds-triage')"
 fake_issue 16 closed
 
+# A body the Filed finding module rendered scans as one in the closer's
+# hand-written format does, and so does a legacy body with no Axis or Why line.
+text="$(mktemp)"
+printf '> The reviewer said this.\n\n' >"$text"
+# shellcheck disable=SC2016 # expanded by the inner bash
+fake_issue_body_rendered() {
+  fake_issue_body "$1" "$(bash -c 'source "$1"; shift; finding_body_render "$@"' _ "$ORCH" "$text" \
+    standards nit 'a reason.' src/other.sh 2 "$head_sha" https://github.com/acme/widgets/pull/19 'found in the final iteration.')"
+}
+fake_issue 19 open review:nit needs-triage
+fake_issue_body_rendered 19
+out="$(scan 19 2>&1)"; st=$?
+assert_status "scans a rendered body" "$st" 0
+assert_eq "its exact line, as a hand-written body's" "$(line_of 19 "$out")" \
+  "$(printf '19\t19\tsrc/other.sh:2\tunchanged\t-\tneeds-triage')"
+fake_issue 19 closed
+rm -f "$text"
+fake_issue 20 open review:nit needs-triage
+fake_issue_body 20 "$(writeln '## Finding' '' '**Severity:** nit - a reason.' '' \
+  "**Location:** \`src/other.sh:2\` at $head_sha" '' '**PR:** https://github.com/acme/widgets/pull/20')"
+out="$(scan 20 2>&1)"; st=$?
+assert_status "scans a legacy body with no Axis or Why line" "$st" 0
+assert_eq "its exact line, as a full body's" "$(line_of 20 "$out")" \
+  "$(printf '20\t20\tsrc/other.sh:2\tunchanged\t-\tneeds-triage')"
+fake_issue 20 closed
+
 # A finding whose file later gets hunks both before and after its line, with
 # far more diff after the matching hunk than a pipe buffer holds: the line
 # mapping stops reading the diff early, and the scan must still finish. Lines

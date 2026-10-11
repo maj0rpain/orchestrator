@@ -1,8 +1,9 @@
 # shellcheck shell=bash
 # filed-finding.sh - the Filed finding module: a concept module with no orch.sh
 # noun of its own, holding what a filed finding is - its severities, each
-# severity's label colour and description, and its label rules - that review
-# file, finding triage and issue triage read. Its tests:
+# severity's label colour and description, its label rules, and its issue
+# body, rendered from its parts and parsed back - that review file, finding
+# triage and issue triage read. Its tests:
 # scripts/test/orch/filed-finding.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -107,4 +108,116 @@ category_label_ensure() {
     bug)         adapter_label_create bug d73a4a "Something isn't working" 2>/dev/null || true ;;
     enhancement) adapter_label_create enhancement a2eeef "New feature or request" 2>/dev/null || true ;;
   esac
+}
+
+# finding_body_render <finding-file> <axis> <severity> <reason> <file> <line>
+# <sha> <pr-url> <why> [<question>]: prints a filed finding's issue body - the
+# finding text, its trailing newlines stripped, a blank line, then each
+# labelled line followed by a blank line, so GitHub shows each as its own
+# paragraph. The labelled lines are the closer's, byte for byte, so a body
+# filed before rendering existed parses as one rendered now does.
+finding_body_render() {
+  local axis
+  axis="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+  axis="$(printf '%s' "${axis:0:1}" | tr '[:lower:]' '[:upper:]')${axis:1}"
+  printf '%s\n\n' "$(cat "$1")" \
+    "**Axis:** $axis" \
+    "**Severity:** $3 - $4" \
+    "**Location:** \`$5:$6\` at $7" \
+    "**PR:** $8" \
+    "**Why not fixed in the loop:** $9"
+  [ -z "${10:-}" ] || printf '%s\n\n' "**Spec question:** ${10}"
+}
+
+# finding_body_trim <var> <text>: <text> with whitespace stripped from both
+# ends, written into <var>.
+finding_body_trim() {
+  local __fbt="$2"
+  __fbt="${__fbt#"${__fbt%%[![:space:]]*}"}"
+  __fbt="${__fbt%"${__fbt##*[![:space:]]}"}"
+  printf -v "$1" '%s' "$__fbt"
+}
+
+# finding_body_parse <body> <prefix>: reads every labelled line of a filed
+# finding's body into <prefix>_<field> - axis (lowercased), severity, reason,
+# file, line (N or N-M), sha, pr (the URL), pr_number, why and question. Each
+# comes from the first line that carries it, as finding triage always read
+# them: Location from the first line starting with its label, with no
+# fallback when that one does not parse - the first backticked <file>:<line>,
+# the file free of backticks and colons, and the hex run of the line's last
+# " at <hex>"; PR from the first line ending in a URL whose last segment after
+# /pull/ is a number; the rest from the first line starting with their label,
+# as the rest of it, trimmed. Severity splits at the first " - ". A field whose
+# line is missing or does not parse is left empty. Never dies, never prints:
+# each caller decides which fields it requires.
+finding_body_parse() {
+  local __fbp_line __fbp_rest __fbp_v __fbp_k
+  local __fbp_axis="" __fbp_severity="" __fbp_reason="" __fbp_file="" __fbp_lineno="" \
+    __fbp_sha="" __fbp_pr="" __fbp_pr_number="" __fbp_why="" __fbp_question=""
+  local __fbp_seen_axis="" __fbp_seen_sev="" __fbp_seen_loc="" __fbp_seen_pr="" \
+    __fbp_seen_why="" __fbp_seen_q=""
+  local __fbp_loc_re='`([^`:]+):([0-9]+(-[0-9]+)?)`' __fbp_at_re=' at ([0-9a-fA-F]+)'
+  local __fbp_pr_re='/pull/([0-9]+)/*[[:space:]]*$'
+  while IFS= read -r __fbp_line; do
+    case "$__fbp_line" in
+      '**Axis:**'*)
+        [ -z "$__fbp_seen_axis" ] || continue
+        __fbp_seen_axis=1
+        finding_body_trim __fbp_v "${__fbp_line#'**Axis:**'}"
+        __fbp_axis="$(printf '%s' "$__fbp_v" | tr '[:upper:]' '[:lower:]')"
+        ;;
+      '**Severity:**'*)
+        [ -z "$__fbp_seen_sev" ] || continue
+        __fbp_seen_sev=1
+        finding_body_trim __fbp_v "${__fbp_line#'**Severity:**'}"
+        case "$__fbp_v" in
+          *' - '*)
+            finding_body_trim __fbp_severity "${__fbp_v%%' - '*}"
+            finding_body_trim __fbp_reason "${__fbp_v#*' - '}"
+            ;;
+          *) __fbp_severity="$__fbp_v" ;;
+        esac
+        ;;
+      '**Location:**'*)
+        [ -z "$__fbp_seen_loc" ] || continue
+        __fbp_seen_loc=1
+        [[ $__fbp_line =~ $__fbp_loc_re ]] || continue
+        __fbp_k="${BASH_REMATCH[1]}"; __fbp_v="${BASH_REMATCH[2]}"
+        __fbp_rest="$__fbp_line" __fbp_sha=""
+        while [[ $__fbp_rest =~ $__fbp_at_re ]]; do
+          __fbp_sha="${BASH_REMATCH[1]}"
+          __fbp_rest="${__fbp_rest#*"${BASH_REMATCH[0]}"}"
+        done
+        [ -n "$__fbp_sha" ] || continue
+        __fbp_file="$__fbp_k" __fbp_lineno="$__fbp_v"
+        ;;
+      '**Why not fixed in the loop:**'*)
+        [ -z "$__fbp_seen_why" ] || continue
+        __fbp_seen_why=1
+        finding_body_trim __fbp_why "${__fbp_line#'**Why not fixed in the loop:**'}"
+        ;;
+      '**Spec question:**'*)
+        [ -z "$__fbp_seen_q" ] || continue
+        __fbp_seen_q=1
+        finding_body_trim __fbp_question "${__fbp_line#'**Spec question:**'}"
+        ;;
+    esac
+    # PR is read apart from the case above: a **PR:** line that does not end
+    # in a pull request URL is skipped, and a later one may still match.
+    if [ -z "$__fbp_seen_pr" ] && [[ $__fbp_line == '**PR:**'* ]] && [[ $__fbp_line =~ $__fbp_pr_re ]]; then
+      __fbp_seen_pr=1
+      __fbp_pr_number="${BASH_REMATCH[1]}"
+      finding_body_trim __fbp_pr "${__fbp_line#'**PR:**'}"
+    fi
+  done <<<"$1"
+  printf -v "$2_axis" '%s' "$__fbp_axis"
+  printf -v "$2_severity" '%s' "$__fbp_severity"
+  printf -v "$2_reason" '%s' "$__fbp_reason"
+  printf -v "$2_file" '%s' "$__fbp_file"
+  printf -v "$2_line" '%s' "$__fbp_lineno"
+  printf -v "$2_sha" '%s' "$__fbp_sha"
+  printf -v "$2_pr" '%s' "$__fbp_pr"
+  printf -v "$2_pr_number" '%s' "$__fbp_pr_number"
+  printf -v "$2_why" '%s' "$__fbp_why"
+  printf -v "$2_question" '%s' "$__fbp_question"
 }
