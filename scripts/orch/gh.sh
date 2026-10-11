@@ -79,8 +79,10 @@ gh_die() {
 # place only on success, byte for byte: a failure removes the temp file and
 # leaves an existing target untouched. With neither, stdout is left to the
 # caller's own redirect. --out with --file, an --out or --file with no value,
-# or an unknown option, dies naming it, with status 1 whatever --exit says. Call it in the current shell, never
-# inside $(...); its locals are prefixed so no caller's variable is shadowed.
+# or an unknown option, dies naming it, with status 1 whatever --exit says.
+# Inside $(...), --out cannot set a variable outside the subshell, and a
+# death ends only the subshell, so the caller must pass its status on. Its
+# locals are prefixed so no caller's variable is shadowed.
 gh_or_die() {
   local _gh_or_die_die=() _gh_or_die_out="" _gh_or_die_file=""
   local _gh_or_die_text _gh_or_die_err _gh_or_die_tmp _gh_or_die_st=0
@@ -326,14 +328,12 @@ adapter_issue_title_labels() {
 # variables, on issue_state_labels_read's contract: non-zero on a failed read,
 # writing neither, gh's stderr captured into <err_var>, never passed through.
 issue_title_labels_read() {
-  local __itlr_out __itlr_err __itlr_title __itlr_labels
+  local __itlr_out __itlr_err
   if ! capture __itlr_out __itlr_err adapter_issue_title_labels "$1"; then
     printf -v "$4" '%s' "$__itlr_err"
     return 1
   fi
-  lines_split "$__itlr_out" __itlr_title __itlr_labels
-  printf -v "$2" '%s' "$__itlr_title"
-  printf -v "$3" '%s' "$__itlr_labels"
+  lines_split "$__itlr_out" "$2" "$3"
 }
 
 # adapter_issue_state <n>: OPEN or CLOSED - or PULL where <n> is a pull
@@ -473,16 +473,12 @@ adapter_pr_refs() {
 # commits (one SHA per line, oldest first) into the first four caller-named
 # variables, on issue_state_labels_read's contract.
 pr_refs_read() {
-  local __prr_out __prr_err __prr_oid __prr_ref __prr_base __prr_commits
+  local __prr_out __prr_err
   if ! capture __prr_out __prr_err adapter_pr_refs "$1"; then
     printf -v "$6" '%s' "$__prr_err"
     return 1
   fi
-  lines_split "$__prr_out" __prr_oid __prr_ref __prr_base __prr_commits
-  printf -v "$2" '%s' "$__prr_oid"
-  printf -v "$3" '%s' "$__prr_ref"
-  printf -v "$4" '%s' "$__prr_base"
-  printf -v "$5" '%s' "$__prr_commits"
+  lines_split "$__prr_out" "$2" "$3" "$4" "$5"
 }
 
 # adapter_pr_ready <n>: marks the draft PR ready for review. Prints nothing.

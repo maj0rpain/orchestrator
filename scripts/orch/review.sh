@@ -295,12 +295,8 @@ review_rerun() {
   run="${link##*/actions/runs/}"   # N/job/M -> N
   run="${run%%/*}"
   case "$run" in ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; return 1 ;; esac
-  # rerun_out only keeps adapter_run_rerun's stdout off the command's stdout;
-  # gh_or_die reads its stderr for the death on failure.
-  # shellcheck disable=SC2034
-  local rerun_out
-  gh_or_die --exit 2 --out rerun_out "rerun the failed jobs of Actions run $run" \
-    adapter_run_rerun "$run"
+  gh_or_die --exit 2 "rerun the failed jobs of Actions run $run" \
+    adapter_run_rerun "$run" >/dev/null
   note "$run"
 }
 
