@@ -13,6 +13,14 @@ count_lines() {
   printf '%s\n' "$text" | grep -c "${@:1:$#-2}" "$pattern"
 }
 
+# plant_file <dir> <name>: writes the lines read from stdin to <dir>/<name>,
+# each line's two-space indent stripped, and returns non-zero when the write
+# fails. A caller indents a planted file's lines two spaces, so a planted
+# `# --- ` header does not read as a section of the file that plants it.
+plant_file() {
+  sed 's/^  //' >"$1/$2"
+}
+
 # planted_copy: copies the scripts tree into a fresh temp directory, writes the
 # section lines read from stdin, indented as plant_file reads them, as a new
 # noun file, scripts/test/orch/zz-planted.sh, in the copy, and prints the
@@ -38,6 +46,16 @@ files_marks() {
 
 # The placement rule, as helper_placement's message states it.
 HELPER_PLACEMENT_RULE="The rule: a helper used by more than one file, or only by setup.sh's own code, lives in setup.sh; one used by only one file lives in that file's preamble; one already defined inside a section stays there; a helper never moves into a section."
+
+# tree_copy <subtree>: a copy of the real <subtree> of the plugin (a path
+# under PLUGIN_ROOT, e.g. scripts/test/orch) in a fresh temp directory; prints
+# the copy's path, which ends in the subtree's last component.
+tree_copy() {
+  local dir
+  dir="$(mktemp -d)" || return 1
+  cp -R "$PLUGIN_ROOT/$1" "$dir/" || return 1
+  printf '%s\n' "$dir/${1##*/}"
+}
 
 # helper_placement <dir>: checks where every helper of the suite's files in
 # <dir> (scripts/test/orch/) is defined against the files that call it, and
@@ -173,6 +191,59 @@ helper_placement() {
   ' setup=setup.sh "$1"/*.sh)" || return 2
   [ -z "$out" ] && return 0
   printf '%s\n' "$out" | LC_ALL=C sort
+  return 1
+}
+
+# The five multi-field gh ops gh_op_placement looks for, space-separated.
+GH_MULTI_FIELD_OPS="adapter_issue_state_labels adapter_issue_state_labels_body adapter_issue_title_labels adapter_pr_state_draft adapter_pr_refs"
+
+# The gh op placement rule, as gh_op_placement's message states it.
+GH_OP_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, names a multi-field gh op (${GH_MULTI_FIELD_OPS// /, }); every other script reads one through its reader, which decodes its fields."
+
+# gh_op_placement <dir>: checks every shell script under <dir> (a scripts/
+# tree) outside the gh module, orch/gh.sh, and test/ for a name of one of the
+# five multi-field gh ops, and prints one line per file and op, sorted, naming
+# the file (as scripts/<path>), the op and the rule; returns 1 when it printed
+# any. An op counts as a whole word anywhere in code - a command word, or an
+# argument to capture, gh_or_die or any other runner; a comment is dropped
+# first (a # at a line's start or after a blank or one of ;&|() outside
+# quotes), and a name inside a longer name is no match.
+gh_op_placement() {
+  local out
+  out="$(cd "$1" && find . -name '*.sh' ! -path ./orch/gh.sh ! -path './test/*' \
+    -exec awk -v rule="$GH_OP_PLACEMENT_RULE" -v opnames="$GH_MULTI_FIELD_OPS" '
+    BEGIN { nop = split(opnames, ops, " ") }
+    # code(line): the line with its comment dropped; quotes are tracked within
+    # the line only.
+    function code(line,   i, n, c, q, prev) {
+      n = length(line); q = ""; prev = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(line, i, 1)
+        if (q == "\047") { if (c == "\047") q = "" }
+        else if (q == "\"") { if (c == "\\") i++; else if (c == "\"") q = "" }
+        else if (c == "\\") i++
+        else if (c == "\047" || c == "\"") q = c
+        else if (c == "#" && (prev == "" || prev ~ /[ \t;&|()]/)) return substr(line, 1, i - 1)
+        prev = c
+      }
+      return line
+    }
+    {
+      s = code($0); file = FILENAME; sub(/^\.\//, "scripts/", file)
+      for (k = 1; k <= nop; k++) {
+        t = s
+        while (match(t, ops[k])) {
+          before = substr(t, RSTART - 1, 1); after = substr(t, RSTART + RLENGTH, 1)
+          if (before !~ /[A-Za-z0-9_]/ && after !~ /[A-Za-z0-9_]/) {
+            printf "%s names %s. %s\n", file, ops[k], rule; break
+          }
+          t = substr(t, RSTART + 1)
+        }
+      }
+    }
+  ' {} +)" || return 2
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out" | LC_ALL=C sort -u
   return 1
 }
 
@@ -1033,3 +1104,62 @@ out="$(helper_placement "$placement_dir")"; st=$?
 assert_status "helpers placed by the rule pass" "$st" 0
 assert_eq "and print nothing" "$out" ""
 rm -rf "${placement_dir%/orch}"
+
+# --- gh op placement (#1037) --------------------------------------------------
+# gh_op_placement over the real scripts/, then over copies of it, each with a
+# planted file naming a multi-field gh op: three that break the rule, and three
+# that keep it.
+echo
+echo "gh op placement (#1037)"
+out="$(gh_op_placement "$PLUGIN_ROOT/scripts")"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "no script of the real tree names a multi-field gh op outside the gh module"
+else
+  bad "no script of the real tree names a multi-field gh op outside the gh module" "$out"
+fi
+
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir/orch" zz-command.sh <<'PLANTED'
+  planted_read() {
+    adapter_pr_refs "$1"
+  }
+PLANTED
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
+assert_status "an op as a command word fails" "$st" 1
+assert_eq "naming the file, the op and the rule" "$out" \
+  "scripts/orch/zz-command.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE"
+rm -rf "${gh_op_dir%/scripts}"
+
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir/orch" zz-capture.sh <<'PLANTED'
+  if ! capture out err adapter_issue_state_labels_body "$n"; then :; fi
+PLANTED
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
+assert_status "an op as an argument to capture fails" "$st" 1
+assert_eq "naming the file and the op" "$out" \
+  "scripts/orch/zz-capture.sh names adapter_issue_state_labels_body. $GH_OP_PLACEMENT_RULE"
+rm -rf "${gh_op_dir%/scripts}"
+
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir" zz-die.sh <<'PLANTED'
+  gh_or_die --out state "could not read #$n" adapter_pr_state_draft "$n"
+PLANTED
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
+assert_status "an op as an argument to gh_or_die fails" "$st" 1
+assert_eq "naming the file and the op" "$out" \
+  "scripts/zz-die.sh names adapter_pr_state_draft. $GH_OP_PLACEMENT_RULE"
+rm -rf "${gh_op_dir%/scripts}"
+
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir/orch" zz-keep.sh <<'PLANTED'
+  # adapter_issue_title_labels in a comment, as issue_title_labels_read reads it
+  x=1  # and adapter_pr_refs after code
+  planted_adapter_pr_refs() { my_adapter_issue_title_labels_x; }
+  adapter_pr_state_draft_read n st dr err
+PLANTED
+printf '%s\n' 'planted_gh() { adapter_issue_title_labels "$1"; }' \
+  >>"$gh_op_dir/orch/gh.sh"
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
+assert_status "comments, longer names and the gh module pass" "$st" 0
+assert_eq "and print nothing" "$out" ""
+rm -rf "${gh_op_dir%/scripts}"

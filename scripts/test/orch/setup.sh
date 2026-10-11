@@ -546,24 +546,6 @@ sc_add() {
   return "$st"
 }
 
-# plant_file <dir> <name>: writes the lines read from stdin to <dir>/<name>,
-# each line's two-space indent stripped, and returns non-zero when the write
-# fails. A caller indents a planted file's lines two spaces, so a planted
-# `# --- ` header does not read as a section of the file that plants it.
-plant_file() {
-  sed 's/^  //' >"$1/$2"
-}
-
-# tree_copy <subtree>: a copy of the real <subtree> of the plugin (a path
-# under PLUGIN_ROOT, e.g. scripts/test/orch) in a fresh temp directory; prints
-# the copy's path, which ends in the subtree's last component.
-tree_copy() {
-  local dir
-  dir="$(mktemp -d)" || return 1
-  cp -R "$PLUGIN_ROOT/$1" "$dir/" || return 1
-  printf '%s\n' "$dir/${1##*/}"
-}
-
 # The missing-repo wording, built the way orch.sh builds REPO_MISSING,
 # REPO_CAUSE and REPO_REMEDY - but spelled out here, never read from orch.sh,
 # so a wording change there that the suite does not mirror still fails a test.
