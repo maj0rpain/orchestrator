@@ -264,21 +264,3 @@ category_label_ensure() {
     enhancement) adapter_label_create enhancement a2eeef "New feature or request" 2>/dev/null || true ;;
   esac
 }
-
-# Runs a gh read into <file>, written beside the target and moved into place
-# only once gh has answered: a failed fetch that left a partial file behind is
-# a body a caller would mistake for the actual content. <what> names the read
-# in the error, beside gh's own first line. stdout streams straight to the
-# temp file through capture_err, never through capture's $(...), so the body
-# keeps its trailing newlines byte for byte.
-fetch_into() {
-  local file="$1" what="$2" tmp err
-  shift 2
-  mkdir -p "$(dirname "$file")"
-  tmp="$(mktemp "$file.XXXXXX")"
-  if ! capture_err err "$@" >"$tmp"; then
-    rm -f "$tmp"
-    die "gh could not read $what: $(gh_reason "$err")"
-  fi
-  mv "$tmp" "$file"
-}

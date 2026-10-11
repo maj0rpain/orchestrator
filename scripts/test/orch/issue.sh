@@ -719,7 +719,7 @@ assert_contains "naming the issue" "$out" "issue #404"
 assert_eq "and leaves no file a caller could mistake for a body" \
   "$([ -e "$issue_body" ] && echo present || echo gone)" "gone"
 
-# fetch_into streams gh's stdout to the file, so what gh printed - the body
+# issue fetch streams gh's stdout to the file, so what gh printed - the body
 # and the one newline gh's --jq adds - round-trips byte for byte, and its
 # death carries gh's first line (#846). A read that prints nothing writes
 # nothing: issue comments' empty file, below.

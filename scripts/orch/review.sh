@@ -133,9 +133,7 @@ review_terminal_state() {
 # label that exists rather than failing on it, and filing works on a repo that
 # has never seen the label and on one that has, with no listing step in between.
 severity_label_ensure() {
-  local err
-  capture_err err adapter_label_upsert "$1" "$2" "$3" \
-    || die "gh could not create label $1: $(gh_reason "$err")"
+  gh_or_die "create label $1" adapter_label_upsert "$1" "$2" "$3"
 }
 
 # The triage label is the repo's, not ours: created only where it is missing,
@@ -274,7 +272,7 @@ review_rerun() {
   # reason, or the "no checks" answer naming the branch - is what the death
   # message carries.
   capture out err adapter_pr_checks "$pr" all || rc=$?
-  [ "$rc" -eq 0 ] || die2 "gh could not read the checks of PR #$pr: $(gh_reason "$err")"
+  [ "$rc" -eq 0 ] || gh_die --exit 2 "read the checks of PR #$pr" "$err"
   # gh's "no checks" answer, not a failure reason, so not gh_reason's to cut.
   if [ -z "$out" ]; then
     no_checks="${err%%$'\n'*}"
@@ -299,9 +297,9 @@ review_rerun() {
   case "$run" in ''|*[!0-9]*) warn "check $name on PR #$pr links no Actions run id - nothing to rerun"; return 1 ;; esac
   # rerun_out is the rerun's throwaway half: only its stderr is read.
   # shellcheck disable=SC2034
-  local rerun_out rerun_err
-  capture rerun_out rerun_err adapter_run_rerun "$run" \
-    || die2 "gh could not rerun the failed jobs of Actions run $run: $(gh_reason "$rerun_err")"
+  local rerun_out
+  gh_or_die --exit 2 --out rerun_out "rerun the failed jobs of Actions run $run" \
+    adapter_run_rerun "$run"
   note "$run"
 }
 
@@ -337,7 +335,7 @@ cmd_review() {
       require_state
       local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards> --body-file <file>"
       [ $# -eq 6 ] && [ "$3" = --axis ] && [ "$5" = --body-file ] || die "$usage"
-      local severity="$1" title="$2" axis="$4" body="$6" colour category triage n err
+      local severity="$1" title="$2" axis="$4" body="$6" colour category triage n
       is_filed_severity "$severity" \
         || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
       case "$severity" in
@@ -356,21 +354,21 @@ cmd_review() {
       category_label_ensure "$category"
       # The title carries no severity prefix: the label holds it, where triage
       # can change it, and the title reads as an issue.
-      capture n err adapter_issue_create "$title" "$body" "review:$severity" "$triage" "$category" \
-        || die "gh could not create the issue: $(gh_reason "$err")"
+      gh_or_die --out n "create the issue" \
+        adapter_issue_create "$title" "$body" "review:$severity" "$triage" "$category"
       # Prints the number alone: the record cites a number, and the caller
       # would otherwise be parsing a URL out of prose every time.
       note "$n"
       ;;
     ready)
       require_state
-      local pr err
+      local pr
       require_pr pr
       # GitHub first, state second. Recording `done` over a PR still sitting in
       # draft would claim a success nobody can see, and the flow would have no
       # phase left to retry it from.
-      capture_err err adapter_pr_ready "$pr" \
-        || die "gh could not mark PR #$pr ready: $(gh_reason "$err") - the flow stays in review"
+      gh_or_die --hint "the flow stays in review" "mark PR #$pr ready" \
+        adapter_pr_ready "$pr"
       phase_write "done"
       note "$pr"
       # stdout stays the PR number alone; the pointer goes to stderr. A side

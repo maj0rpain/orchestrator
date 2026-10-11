@@ -220,7 +220,7 @@ before_store="$(fake_snapshot)"
 out="$("$ORCH" init nope --issue 44 2>&1)"; st=$?
 assert_status "refuses to adopt an issue whose read fails" "$st" 1
 assert_contains "saying it could not be read, with gh's first line" "$out" \
-  "issue #44 could not be read from GitHub - check it exists and gh is authenticated: HTTP 502: Bad Gateway"
+  "gh could not read issue #44: HTTP 502: Bad Gateway - check it exists and gh is authenticated"
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
 assert_eq "leaving no flow active" \
   "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
