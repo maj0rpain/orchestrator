@@ -512,7 +512,7 @@ assert_eq "with the one asked for" "$(fake_labels_of 4)" "bug ready-for-agent re
 # pipefail, reads a label the finding carries as absent - on every run.
 filler_labels=()
 for i in $(seq -w 1 11000); do filler_labels+=("filler-label-$i"); done
-fake_issue 6 open needs-info needs-triage "${filler_labels[@]}"
+fake_issue 6 open needs-info needs-triage review:major "${filler_labels[@]}"
 fake_issue_body 6 '**Axis:** Spec'
 out="$(apply 6 ready-for-agent --category bug --comment-file "$comment" 2>&1)"; st=$?
 assert_status "sends a finding with about 200 KiB of labels to an agent" "$st" 0
