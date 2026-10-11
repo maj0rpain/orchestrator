@@ -59,7 +59,7 @@ ticket_worktree_resolve() {
   path="$(ticket_worktree_path "$n")"
   [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
     || die "no ticket worktree for ticket $n at $path"
-  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
+  branch="$(checkout_branch "$path")" \
     || die "ticket worktree $path is not on a branch (detached HEAD)"
 }
 
@@ -78,7 +78,8 @@ cmd_ticket_worktree_add() {
   [ $# -eq 1 ] || die "usage: orch.sh ticket-worktree add <n>"
   local n parent branch path
   n="$(ticket_worktree_number "$1")"
-  parent="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  current_branch_or_die
+  parent="$branch"
   branch="$parent--t$n"
   path="$(ticket_worktree_path "$n")"
   [ ! -e "$path" ] || die "ticket worktree $path already exists"

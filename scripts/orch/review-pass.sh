@@ -21,7 +21,7 @@ cmd_review_pass() {
   [ $# -eq 1 ] || die "usage: orch.sh review-pass begin <issue>"
   local issue="$1" branch
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
-  branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  current_branch_or_die
   [ "$branch" != "$(recorded_base "$branch")" ] \
     || die "$branch is the base branch - a review pass reviews a branch's change against it; check out the change's branch"
   local phase held

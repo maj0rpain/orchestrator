@@ -79,9 +79,25 @@ checkout_holding() {
     issue="$(state_get_in "$state" issue)"
     if [ -n "$issue" ]; then issue_label="#$issue"; else issue_label="(no issue)"; fi
     note "flow $(state_get_in "$state" slug) $(state_get_in "$state" phase) $issue_label"
-  elif branch="$(git -C "$1" symbolic-ref --quiet --short HEAD)"; then
+  elif branch="$(checkout_branch "$1")"; then
     note "branch $branch"
   else
     note "(no branch)"
   fi
+}
+
+# checkout_branch [<path>]: prints the branch checked out in the checkout at
+# <path> (default: the current directory); returns 1 on a detached HEAD. The
+# one place the current branch is read.
+checkout_branch() { git -C "${1:-.}" symbolic-ref --quiet --short HEAD; }
+
+# current_branch_or_die [die|die2] [<suffix>]: assigns the current branch to
+# the caller's `branch`, which bash scopes dynamically, or dies through the
+# dier (die, unless the first argument is literally die or die2) with
+# "not on a branch (detached HEAD)" and <suffix>. Called as a bare statement,
+# so the die stops the caller.
+current_branch_or_die() {
+  local dier=die
+  case "${1-}" in die|die2) dier="$1"; shift ;; esac
+  branch="$(checkout_branch)" || "$dier" "not on a branch (detached HEAD)${1-}"
 }

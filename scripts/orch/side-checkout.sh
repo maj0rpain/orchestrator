@@ -76,7 +76,7 @@ side_checkout_finished() {
   if checkout_has_flow "$path"; then
     finished_flow "$(flow_state_file "$path")"; return
   fi
-  branch="$(git -C "$path" symbolic-ref --quiet --short HEAD)" \
+  branch="$(checkout_branch "$path")" \
     || { verdict="no branch"; return 1; }
   base="$(recorded_base "$branch")"
   capture prs err adapter_prs_merged "$branch" "$base" \

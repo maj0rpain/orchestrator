@@ -93,3 +93,41 @@ outside="$(fresh_dir)"
 out="$(bash -c 'source "$1"; cd "$2" && checkouts' _ "$ORCH" "$outside" 2>/dev/null)"; st=$?
 assert_ne "checkouts outside a repo fails" "$st" 0
 assert_eq "and prints nothing" "$out" ""
+
+# --- checkout current branch (#1079) -------------------------------------------
+# The Checkout module's one current-branch read: checkout_branch prints the
+# branch checked out, and current_branch_or_die assigns it to the caller's
+# branch or dies with the one detached-HEAD message.
+echo
+echo "checkout current branch"
+sc_clone
+top="$(pwd -P)"
+git checkout -q -b orch/2-feature
+detached="$(fresh_dir)/detached"
+git worktree add -q --detach "$detached"
+
+assert_eq "checkout_branch prints the current branch" \
+  "$(sourced_orch checkout_branch)" "orch/2-feature"
+assert_eq "checkout_branch <path> prints the branch checked out there" \
+  "$(cd "$detached" && sourced_orch checkout_branch "$top")" "orch/2-feature"
+out="$(sourced_orch checkout_branch "$detached")"; st=$?
+assert_status "checkout_branch on a detached HEAD returns 1" "$st" 1
+assert_eq "and prints nothing" "$out" ""
+
+# current_branch_or_die run as a bare statement, then $branch printed.
+cbod() { bash -c 'source "$1"; shift; current_branch_or_die "$@"; printf "%s\n" "$branch"' _ "$ORCH" "$@"; }
+out="$(cbod 2>&1)"; st=$?
+assert_status "current_branch_or_die on a branch returns 0" "$st" 0
+assert_eq "and sets the caller's branch" "$out" "orch/2-feature"
+out="$(cd "$detached" && cbod 2>&1)"; st=$?
+assert_status "current_branch_or_die on a detached HEAD exits 1" "$st" 1
+assert_eq "with the bare message" "$out" "orch: not on a branch (detached HEAD)"
+out="$(cd "$detached" && cbod die2 2>&1)"; st=$?
+assert_status "current_branch_or_die die2 exits 2" "$st" 2
+assert_eq "with the bare message" "$out" "orch: not on a branch (detached HEAD)"
+out="$(cd "$detached" && cbod die ' - nothing was synced' 2>&1)"; st=$?
+assert_status "current_branch_or_die die <suffix> exits 1" "$st" 1
+assert_eq "with the suffix appended" "$out" "orch: not on a branch (detached HEAD) - nothing was synced"
+out="$(cd "$detached" && cbod ' - x' 2>&1)"; st=$?
+assert_status "a lone suffix argument exits 1" "$st" 1
+assert_eq "and is taken as the suffix" "$out" "orch: not on a branch (detached HEAD) - x"

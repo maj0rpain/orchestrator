@@ -76,7 +76,7 @@ cmd_branch_off() {
 cmd_branch_base_sha() {
   [ $# -eq 0 ] || die "usage: orch.sh branch base-sha"
   local branch sha base ref
-  branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  current_branch_or_die
   sha="$(git config --get "branch.$branch.orchestrator-base-sha" 2>/dev/null)" || sha=""
   if [ -n "$sha" ]; then note "$sha"; return; fi
   base="$(recorded_base "$branch")"
@@ -103,8 +103,7 @@ cmd_branch_base_sha() {
 cmd_branch_sync() {
   [ $# -eq 0 ] || die "usage: orch.sh branch sync"
   local branch base held="" tip remote
-  branch="$(git symbolic-ref --quiet --short HEAD)" \
-    || die "not on a branch (detached HEAD) - nothing was synced"
+  current_branch_or_die ' - nothing was synced'
   if [ -f "$STATE" ] && [ "$(state_get branch)" = "$branch" ]; then
     held=1
     base="$(flow_base)"

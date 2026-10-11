@@ -60,7 +60,7 @@ cmd_pr_publish() {
   local issue="$1" title="$2" body_file="$3" branch base pr
   [ -f "$body_file" ] || die "body file not found: $body_file"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
-  branch="$(git symbolic-ref --quiet --short HEAD)" || die "not on a branch (detached HEAD)"
+  current_branch_or_die
   base="$(recorded_base "$branch")"
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" "$draft")"
   note "$pr"
@@ -175,8 +175,7 @@ cmd_pr_ready() {
 # has no open PR, as current_open_pr does.
 open_pr_draft_flag() {
   local branch phase pr _pr_state is_draft err
-  branch="$(git symbolic-ref --quiet --short HEAD)" \
-    || die2 "not on a branch (detached HEAD)"
+  current_branch_or_die die2
   if phase="$(flow_holding_phase "$branch")"; then
     die2 "the active flow holds $branch at phase $phase - its PR changes state only through the review loop"
   fi
@@ -194,8 +193,7 @@ open_pr_draft_flag() {
 # to its own exit code.
 current_open_pr() {
   local branch open
-  branch="$(git symbolic-ref --quiet --short HEAD)" \
-    || die2 "not on a branch (detached HEAD)"
+  current_branch_or_die die2
   gh_or_die --exit 2 --out open "list the open PRs from $branch" \
     adapter_prs_open "$branch"
   [ -n "$open" ] || return 1
@@ -207,7 +205,7 @@ current_open_pr() {
 # maps every failure to exit 1.
 required_open_pr() {
   current_open_pr \
-    || die "no open PR for branch $(git symbolic-ref --quiet --short HEAD)"
+    || die "no open PR for branch $(checkout_branch)"
 }
 
 # The PR counterpart of issue fetch.
