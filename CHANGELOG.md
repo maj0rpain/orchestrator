@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.7.6
+
+The flow state format - its keys, their defaults, reading, the coercing write
+and the active-flow check - now lives in one module, `scripts/flow-state.sh`,
+which orch.sh runs on. No `orch:` message, exit code or command changes; the
+one visible difference is that orch.sh no longer echoes jq's parse error when
+it checks whether a flow is active against a corrupt `.orchestrator/state.json`.
+
 ## 4.7.5
 
 The gh adapter module gains one failure contract: `gh_die` builds the "gh could not <what>: <reason>" death in one place, `gh_or_die` runs an adapter operation and dies through it, and `pr_state_draft_read`, `pr_refs_read` and `issue_title_labels_read` read multi-field answers into named variables. `gh_reason` moves into the gh module (#1022).
