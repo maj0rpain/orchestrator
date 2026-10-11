@@ -33,7 +33,8 @@ under `scripts/test/orch/`: `<noun>.sh` holds the sections for one orch.sh noun
 own (the section filter, quiet mode, all.sh), `common.sh` the bottom-layer
 check on `scripts/orch/common.sh`, and `setup.sh` the shared setup and the
 summary. A concept module with no noun gets a section file named as the module
-is, beside the per-noun files: `checkout.sh` for `scripts/orch/checkout.sh`. A
+is, beside the per-noun files: `checkout.sh` for `scripts/orch/checkout.sh`,
+`filed-finding.sh` for `scripts/orch/filed-finding.sh`. A
 ticket's tests go in the file for the noun it touches; a new
 noun gets a new file, which the runner picks up with no edit. A noun file holds
 only `# ---` sections, optionally preceded by a preamble: the text before its
@@ -49,10 +50,11 @@ noun's code, named as that noun's test file is, and a helper lives in the
 module of the concept it serves, whichever modules call it.
 `scripts/orch/common.sh` holds only the primitives no concept owns (die, warn,
 note, capture and the like) and calls nothing a noun module defines; its test
-section checks this. The Filed finding helpers stay there until #1026 gives
-them a module. The gh adapter layer stays whole in `gh.sh`, whoever calls it.
-A concept module with no noun, `checkout.sh` (the Checkout module: the walk
-over every checkout), lives among the modules too.
+section checks this. The gh adapter layer stays whole in `gh.sh`, whoever
+calls it. The concept modules with no noun, `checkout.sh` (the Checkout module:
+the walk over every checkout) and `filed-finding.sh` (the Filed finding module:
+a filed finding's severities and labels, and rendering and parsing its issue
+body), live among the modules too.
 orch.sh sources every module eagerly from an explicit list, so a new noun gets
 its own module, a case in `main` and a line in that list.
 
@@ -118,6 +120,7 @@ skills/orch-finding-triage/   finding triage: scan the filed findings against th
 scripts/orch.sh               the entry point for every deterministic operation (mechanism): path resolution, shared constants, the module list, main
 scripts/orch/<noun>.sh        one module per orch.sh noun (branch.sh, ticket.sh, ...), sourced by orch.sh, named as its test file
 scripts/orch/checkout.sh      the Checkout module, a concept module with no noun: checkouts, the one walk over every checkout
+scripts/orch/filed-finding.sh the Filed finding module, a concept module with no noun: a filed finding's severities and labels, rendering and parsing its issue body
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), every adapter_* operation, the ORCH_GH_ADAPTER hook
@@ -135,6 +138,7 @@ scripts/test/orch/harness.sh  the harness's own sections: isolation, the section
 scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh
 scripts/test/orch/<noun>.sh   one file per orch.sh noun (branch.sh, ticket.sh, ...): its sections, after an optional preamble
 scripts/test/orch/checkout.sh the Checkout module's sections, named as the module is
+scripts/test/orch/filed-finding.sh the Filed finding module's sections, named as the module is
 docs/how-it-works.md          the phases, every command in full, the base branch, hosts, and activation
 docs/host-capabilities.md     how each host provides each capability a skill names, and the fallbacks
 docs/driver-loop.md           the driver loop (loop steps a-f, its slots, dispatching a subagent) the implement phase and a quick implementation both run

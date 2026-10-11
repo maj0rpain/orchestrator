@@ -7,52 +7,6 @@
 # filed findings are closed into as duplicates (finding-triage bundle).
 readonly BUNDLE_LABEL="finding-bundle"
 
-# has_filed_severity_label <labels>: whether some review label carries a
-# filed severity.
-has_filed_severity_label() {
-  local label
-  while IFS= read -r label; do
-    [ -n "$label" ] || continue
-    ! is_filed_severity "${label#review:}" || return 0
-  done <<<"$(review_labels "$1")"
-  return 1
-}
-
-# category_other <category>: the opposite category - the one a finding loses
-# when triage settles on <category>. Prints nothing and fails for anything but
-# bug or enhancement.
-category_other() {
-  case "$1" in
-    bug)         printf 'enhancement\n' ;;
-    enhancement) printf 'bug\n' ;;
-    *) return 1 ;;
-  esac
-}
-
-# finding_location <body>: "<file>\t<line>\t<sha>" from a filed body's
-# **Location:** line - the first backticked <file>:<line> on it, the line
-# alone or a range, and the SHA after its last "at" - or nothing when the
-# line is missing or does not parse.
-finding_location() {
-  printf '%s\n' "$1" | awk '
-    /^\*\*Location:\*\*/ {
-      if (!match($0, /`[^`:]+:[0-9]+(-[0-9]+)?`/)) exit
-      loc = substr($0, RSTART + 1, RLENGTH - 2)
-      rest = $0; sha = ""
-      while (match(rest, / at [0-9a-fA-F]+/)) { sha = substr(rest, RSTART + 4, RLENGTH - 4); rest = substr(rest, RSTART + RLENGTH) }
-      if (sha == "") exit
-      i = match(loc, /:[0-9]+(-[0-9]+)?$/)
-      printf "%s\t%s\t%s\n", substr(loc, 1, i - 1), substr(loc, i + 1), sha
-      exit
-    }'
-}
-
-# finding_pr <body>: the PR number - the trailing number of the **PR:** line's
-# URL - or nothing.
-finding_pr() {
-  printf '%s\n' "$1" | sed -n 's|^\*\*PR:\*\*.*/pull/\([0-9][0-9]*\)/*[[:space:]]*$|\1|p' | sed -n 1p
-}
-
 # map_line <old sha> <new ref> <file> <line>: where <line> of <file> at <old
 # sha> sits at <new ref>, read off the zero-context diff between them. A line
 # inside a changed hunk maps to that hunk's start. The awk exits as soon as it
@@ -172,14 +126,15 @@ triage_state() {
 # finding_scan_one <issue> <body> <default ref> <triage state>: the scan's one
 # line for one finding.
 finding_scan_one() {
-  local n="$1" body="$2" ref="$3" roles="$4" loc pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out deleted
-  pr="$(finding_pr "$body")"
-  loc="$(finding_location "$body")"
-  if [ -z "$loc" ]; then
+  local n="$1" body="$2" ref="$3" roles="$4" pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out deleted
+  # shellcheck disable=SC2034 # finding_body_parse writes every field; the scan reads four
+  local f_axis f_severity f_reason f_file f_line f_sha f_pr f_pr_number f_why f_question
+  finding_body_parse "$body" f
+  pr="$f_pr_number" file="$f_file" lines="$f_line" sha="$f_sha"
+  if [ -z "$file" ]; then
     scan_line - unknown 'body does not parse: no **Location:** line naming `<file>:<line>` at <SHA>'
     return
   fi
-  IFS=$'\t' read -r file lines sha <<<"$loc"
   if [ -z "$pr" ]; then
     scan_line "$file:$lines" unknown 'body does not parse: no **PR:** line ending in a pull request URL'
     return
@@ -249,6 +204,8 @@ finding_scan_one() {
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]"
   local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_err
+  # shellcheck disable=SC2034 # finding_body_parse writes every field; the scan reads only the PR number
+  local f_axis f_severity f_reason f_file f_line f_sha f_pr f_pr_number f_why f_question
   local args=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -268,9 +225,7 @@ cmd_finding_triage_scan() {
   # Each finding is read once, state, labels and body together: an explicit
   # one here, where it is checked, a listed one in the loop below.
   if [ -n "$issue" ]; then
-    issue_state_labels_body_read "$issue" state labels body gh_err \
-      || gh_die "read issue #$issue" "$gh_err"
-    [ "$state" = OPEN ] || die "issue #$issue is not open - finding triage takes open filed findings only"
+    open_issue_read "$issue" "issue #$issue is not open - finding triage takes open filed findings only" labels body
     has_filed_severity_label "$labels" \
       || die "issue #$issue is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
     $all || labels_have "$labels" "$triage" \
@@ -300,7 +255,10 @@ cmd_finding_triage_scan() {
       issue_state_labels_body_read "$n" state labels body gh_err \
         || gh_die "read issue #$n" "$gh_err"
     fi
-    if [ -n "$pr_filter" ] && [ "$(finding_pr "$body")" != "$pr_filter" ]; then continue; fi
+    if [ -n "$pr_filter" ]; then
+      finding_body_parse "$body" f
+      [ "$f_pr_number" = "$pr_filter" ] || continue
+    fi
     finding_scan_one "$n" "$body" "$ref" "$(triage_state "$labels")"
   done
 }
@@ -398,10 +356,8 @@ cmd_finding_triage_apply() {
 # Writes its labels into the caller-named variable, for the caller's own
 # checks.
 bundle_member_check() {
-  local __bmc_state __bmc_labels __bmc_err __bmc_role __bmc_label __bmc_ready=""
-  issue_state_labels_read "$1" __bmc_state __bmc_labels __bmc_err \
-    || gh_die "read issue #$1" "$__bmc_err"
-  [ "$__bmc_state" = OPEN ] || die "issue #$1 is not open - a bundle takes open filed findings only"
+  local __bmc_labels __bmc_role __bmc_label __bmc_ready=""
+  open_issue_read "$1" "issue #$1 is not open - a bundle takes open filed findings only" __bmc_labels
   has_filed_severity_label "$__bmc_labels" \
     || die "issue #$1 is not a filed finding - it carries no review:<severity> label for a filed severity (review:${FILED_SEVERITIES// / or review:})"
   for __bmc_role in needs-triage needs-info wontfix; do
@@ -456,10 +412,8 @@ cmd_finding_triage_bundle() {
   if [ -n "$into" ]; then
     case "$into" in *[!0-9]*) die "$usage" ;; esac
     ! $have_title && [ -z "$file$state$category" ] || die "$usage"
-    local b_state b_labels b_err
-    issue_state_labels_read "$into" b_state b_labels b_err \
-      || gh_die "read issue #$into" "$b_err"
-    [ "$b_state" = OPEN ] || die "bundle #$into is not open - --into resumes an open bundle only"
+    local b_labels
+    open_issue_read "$into" "bundle #$into is not open - --into resumes an open bundle only" b_labels
     labels_have "$b_labels" "$BUNDLE_LABEL" \
       || die "issue #$into carries no '$BUNDLE_LABEL' label - --into resumes a bundle only"
   else

@@ -164,7 +164,8 @@ assert_status "scans one explicit finding" "$st" 0
 assert_eq "and only it" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "2 "
 out="$(scan 9 2>&1)"; st=$?
 assert_status "refuses an explicit finding that is closed" "$st" 1
-assert_contains "saying so" "$out" "not open"
+assert_eq "with the whole not-open line" \
+  "$(has_line "$out" "orch: issue #9 is not open - finding triage takes open filed findings only")" yes
 out="$(scan 8 2>&1)"; st=$?
 assert_status "refuses one already triaged" "$st" 1
 assert_contains "naming the missing triage label" "$out" "needs-triage"
@@ -234,7 +235,8 @@ out="$(scan 8 --all 2>&1)"; st=$?
 assert_status "--all may follow the issue" "$st" 0
 out="$(scan --all 9 2>&1)"; st=$?
 assert_status "--all still refuses a closed finding" "$st" 1
-assert_contains "saying so (--all)" "$out" "not open"
+assert_eq "with the whole not-open line (--all)" \
+  "$(has_line "$out" "orch: issue #9 is not open - finding triage takes open filed findings only")" yes
 out="$(scan --all 10 2>&1)"; st=$?
 assert_status "--all still refuses an issue that is not a filed finding" "$st" 1
 assert_contains "naming the missing severity label (--all)" "$out" "review:"
@@ -289,6 +291,32 @@ assert_status "scans a finding whose body names no PR" "$st" 0
 assert_eq "it is unknown, its exact line naming the missing PR line" "$(line_of 16 "$out")" \
   "$(printf '16\t-\tsrc/other.sh:2\tunknown\tbody does not parse: no **PR:** line ending in a pull request URL\tneeds-triage')"
 fake_issue 16 closed
+
+# A body the Filed finding module rendered scans as one in the closer's
+# hand-written format does, and so does a legacy body with no Axis or Why line.
+text="$(mktemp)"
+printf '> The reviewer said this.\n\n' >"$text"
+# shellcheck disable=SC2016 # expanded by the inner bash
+fake_issue_body_rendered() {
+  fake_issue_body "$1" "$(bash -c 'source "$1"; shift; finding_body_render "$@"' _ "$ORCH" "$text" \
+    standards nit 'a reason.' src/other.sh 2 "$head_sha" https://github.com/acme/widgets/pull/19 'found in the final iteration.')"
+}
+fake_issue 19 open review:nit needs-triage
+fake_issue_body_rendered 19
+out="$(scan 19 2>&1)"; st=$?
+assert_status "scans a rendered body" "$st" 0
+assert_eq "its exact line, as a hand-written body's" "$(line_of 19 "$out")" \
+  "$(printf '19\t19\tsrc/other.sh:2\tunchanged\t-\tneeds-triage')"
+fake_issue 19 closed
+rm -f "$text"
+fake_issue 20 open review:nit needs-triage
+fake_issue_body 20 "$(writeln '## Finding' '' '**Severity:** nit - a reason.' '' \
+  "**Location:** \`src/other.sh:2\` at $head_sha" '' '**PR:** https://github.com/acme/widgets/pull/20')"
+out="$(scan 20 2>&1)"; st=$?
+assert_status "scans a legacy body with no Axis or Why line" "$st" 0
+assert_eq "its exact line, as a full body's" "$(line_of 20 "$out")" \
+  "$(printf '20\t20\tsrc/other.sh:2\tunchanged\t-\tneeds-triage')"
+fake_issue 20 closed
 
 # A finding whose file later gets hunks both before and after its line, with
 # far more diff after the matching hunk than a pipe buffer holds: the line
@@ -427,7 +455,8 @@ fake_fail adapter_issue_state_labels_body "$GH_502"
 before_store="$(fake_snapshot)"
 out="$(scan 18 2>&1)"; st=$?
 assert_status "an explicit finding gh cannot read dies" "$st" 1
-assert_contains "naming the issue, with gh's line" "$out" "gh could not read issue #18: HTTP 502: Bad Gateway"
+assert_eq "naming the issue, the whole line with gh's line" \
+  "$(has_line "$out" "orch: gh could not read issue #18: HTTP 502: Bad Gateway")" yes
 assert_not_contains "and nothing past it" "$out" "second line"
 assert_eq "listing nothing" "$(printf '%s\n' "$out" | grep -c "$(printf '\t')")" "0"
 assert_eq "and changing nothing" "$(fake_snapshot)" "$before_store"
@@ -782,6 +811,8 @@ refused() {
 member 11 "review:major,ready-for-agent,bug"
 member 13 "review:nit,ready-for-agent,bug" closed
 refused "a closed member" "issue #13 is not open" new_bundle ready-for-agent bug 11 13
+assert_eq "with the whole not-open line (a closed member)" \
+  "$(has_line "$out" "orch: issue #13 is not open - a bundle takes open filed findings only")" yes
 member 13 "review:minor,ready-for-agent,bug"
 refused "a member with no filed-severity review label" "issue #13 is not a filed finding" new_bundle ready-for-agent bug 11 13
 member 13 "ready-for-agent,bug"
@@ -814,6 +845,8 @@ refused "a ready-for-human, bug member under ready-for-agent enhancement" \
 member 13 "review:nit,ready-for-human,enhancement"
 fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
 refused "a member gh cannot read" "gh could not read issue #11: HTTP 502: Bad Gateway" new_bundle ready-for-human bug 11 13
+assert_eq "the whole read-failure line (a member gh cannot read)" \
+  "$(has_line "$out" "orch: gh could not read issue #11: HTTP 502: Bad Gateway")" yes
 fake_unfail
 
 # Before bundling, scan --all lists the members.
@@ -965,6 +998,8 @@ member 34 "review:major,ready-for-agent,bug"
 member 35 "review:nit,needs-triage"
 fake_issue 45 closed finding-bundle ready-for-agent bug
 refused "--into: a closed bundle" "bundle #45 is not open" bundle --into 45 34
+assert_eq "with the whole not-open line (--into: a closed bundle)" \
+  "$(has_line "$out" "orch: bundle #45 is not open - --into resumes an open bundle only")" yes
 fake_issue 46 open ready-for-agent bug
 refused "--into: an issue without finding-bundle" "issue #46 carries no 'finding-bundle' label" bundle --into 46 34
 fake_issue 47 open finding-bundle ready-for-agent bug
@@ -973,6 +1008,8 @@ refused "--into: a needs-triage member" "issue #35 carries 'needs-triage'" bundl
 refused "--into: a member named twice" "issue #34 is named twice" bundle --into 47 34 34
 fake_fail adapter_issue_state_labels "HTTP 502: Bad Gateway"
 refused "--into: a bundle gh cannot read" "gh could not read issue #47: HTTP 502: Bad Gateway" bundle --into 47 34
+assert_eq "the whole read-failure line (--into: a bundle gh cannot read)" \
+  "$(has_line "$out" "orch: gh could not read issue #47: HTTP 502: Bad Gateway")" yes
 fake_unfail
 out="$(bundle --into 47 34 2>&1)"; st=$?
 assert_status "--into takes a single member" "$st" 0

@@ -2,32 +2,17 @@
 # common.sh - the primitives no concept owns: die, warn, note, capture, the
 # text and working-tree helpers and the like. A helper lives in the module of
 # the concept it serves, whichever modules call it, and common.sh calls nothing
-# a noun module defines; its test section checks this. The Filed finding
-# helpers stay here until #1026 gives them a module. Sourced by orch.sh ahead
+# a noun module defines; its test section checks this. A concept with no noun
+# has a module of its own too: the Checkout module (checkout.sh) and the Filed
+# finding module (filed-finding.sh). Sourced by orch.sh ahead
 # of the ROOT block, which dies through die when run outside a git repository,
 # and ahead of every noun module.
-
-# Whether <sev> is a filed severity: the one membership check over
-# FILED_SEVERITIES, so adding a severity edits the constant and its label
-# colour in `review file`, not every membership check.
-is_filed_severity() {
-  local s
-  for s in $FILED_SEVERITIES; do [ "$1" != "$s" ] || return 0; done
-  return 1
-}
 
 # labels_have <labels> <label>: whether <label> is one of the newline-separated
 # <labels>, matched whole-line and literally. The one label-membership test:
 # `--` keeps a label beginning with `-` a label, never a grep option.
 labels_have() {
   grep -qxF -- "$2" <<<"$1"
-}
-
-# review_labels <labels>: each label in the newline-separated list that marks
-# a review finding - review: followed by at least one character. The one scan
-# the two checks below share.
-review_labels() {
-  printf '%s\n' "$1" | grep '^review:.' || true
 }
 
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
@@ -75,11 +60,12 @@ capture() {
   rm -f "$_capture_file"
   return "$_capture_st"
 }
-# The argument with leading and trailing whitespace removed.
+# The argument with leading and trailing whitespace removed, as trim_split
+# writes it.
 trim() {
-  local s="$1"
-  s="${s#"${s%%[![:space:]]*}"}"
-  printf '%s' "${s%"${s##*[![:space:]]}"}"
+  local _trim_s
+  trim_split "$1" _trim_s
+  printf '%s' "$_trim_s"
 }
 
 # The splitters below cut a string up by parameter expansion, so a hot path
@@ -87,6 +73,14 @@ trim() {
 # variables through printf -v, as capture does, and is called in the current
 # shell, never inside $(...).
 #
+# trim_split <text> <var>: <text> with leading and trailing whitespace
+# removed, into <var>.
+trim_split() {
+  local _trim_split_s="$1"
+  _trim_split_s="${_trim_split_s#"${_trim_split_s%%[![:space:]]*}"}"
+  printf -v "$2" '%s' "${_trim_split_s%"${_trim_split_s##*[![:space:]]}"}"
+}
+
 # tsv_split <line> <var>...: <line>'s tab-separated fields into the named
 # variables in turn, as awk -F '\t' reads them: an empty field stays empty,
 # a field past the last tab is empty, and fields past the last variable are
@@ -262,15 +256,4 @@ require_clean_tree() {
   local status
   status="$(tree_status "$1")" || die "$status"
   [ -z "$status" ] || die "$2"
-}
-
-# The category label - bug or enhancement - is the repo's too, like the triage
-# label: created only where missing, never overwritten, with GitHub's own
-# default colour and description, and a failed create ignored for the same
-# reason.
-category_label_ensure() {
-  case "$1" in
-    bug)         adapter_label_create bug d73a4a "Something isn't working" 2>/dev/null || true ;;
-    enhancement) adapter_label_create enhancement a2eeef "New feature or request" 2>/dev/null || true ;;
-  esac
 }

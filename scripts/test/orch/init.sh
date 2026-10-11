@@ -191,7 +191,8 @@ healthy_repo
 fake_issue 7 closed ready-for-agent
 out="$("$ORCH" init nope --issue 7 2>&1)"; st=$?
 assert_status "refuses to adopt a closed issue" "$st" 1
-assert_contains "says the issue is not open" "$out" "not open"
+assert_eq "with the whole not-open line, its full stop included" \
+  "$(has_line "$out" "orch: issue #7 is not open - adoption requires an open issue.")" yes
 
 healthy_repo
 fake_issue 7 open needs-triage
@@ -219,8 +220,8 @@ fake_fail adapter_issue_state_labels "$GH_502"
 before_store="$(fake_snapshot)"
 out="$("$ORCH" init nope --issue 44 2>&1)"; st=$?
 assert_status "refuses to adopt an issue whose read fails" "$st" 1
-assert_contains "saying it could not be read, with gh's first line" "$out" \
-  "gh could not read issue #44: HTTP 502: Bad Gateway - check it exists and gh is authenticated"
+assert_eq "saying it could not be read, the whole line with gh's first line and the hint" \
+  "$(has_line "$out" "orch: gh could not read issue #44: HTTP 502: Bad Gateway - check it exists and gh is authenticated")" yes
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
 assert_eq "leaving no flow active" \
   "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
@@ -375,7 +376,9 @@ assert_contains "and updates once it has been" "$("$ORCH" status)" "redo:      2
 assert_contains "help documents the review verb" "$("$ORCH" help)" "review begin"
 assert_contains "and the CI classifier's outcomes" "$("$ORCH" help)" "review ci"
 assert_contains "and filing" "$("$ORCH" help)" "review file"
-assert_contains "with the finding's axis" "$("$ORCH" help)" "review file <major|nit> <title> --axis <spec|standards> --body-file <file>"
+assert_contains "with the finding's parts as flags" "$("$ORCH" help | flat_text)" \
+  "review file <major|nit> <title> --axis <spec|standards> --finding-file <f> --severity-reason <r> --location <file>:<line> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
+assert_not_contains "and no --body-file" "$("$ORCH" help | grep -A3 'review file')" "--body-file"
 assert_contains "and finding triage's scan" "$("$ORCH" help)" "finding-triage scan [--all] [<issue> | --pr <n>]"
 assert_contains "with --all's re-check" "$("$ORCH" help)" "--all: every open review:<severity> finding"
 assert_contains "and the triage-state column" "$("$ORCH" help)" "TAB <detail> TAB <state>"

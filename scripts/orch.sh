@@ -52,9 +52,6 @@ readonly EXCLUDED_DIRS=("$ORCH_DIR_NAME/" ".scratch/")
 # it. Overridable through the environment, like review.sh's ORCH_CI_* knobs,
 # so a test can turn it down; it stays out of the documented command surface.
 readonly ISSUE_LIST_LIMIT="${ORCH_ISSUE_LIST_LIMIT:-1000}"
-# The severities a filed finding carries as review:<severity> - the ones
-# `review file` files. Blocking is always fixed in the loop, never filed.
-readonly FILED_SEVERITIES="major nit"
 
 # The repo orch.sh works on (#520): GH_REPO when the caller set it, else the
 # owner/name parsed from the checkout's origin remote - never gh's own default
@@ -90,14 +87,16 @@ readonly REVIEW_DIR="$ORCH/review"
 readonly TICKET_WORKTREES="$ORCH/worktrees"
 
 # The noun modules, after the ROOT block, whose constants they read, with the
-# one concept module that has no noun of its own, checkout.sh. doctor.sh
-# is one of them, with one rule more: the dependency runs one way, doctor.sh
+# concept modules that have no noun of their own, checkout.sh and
+# filed-finding.sh, all sourced in alphabetical order. doctor.sh is one of the
+# noun modules, with one rule more: the dependency runs one way, doctor.sh
 # calling into this file and the other modules, which call nothing doctor.sh
 # defines but cmd_doctor, from main() (scripts/test/orch/doctor.sh holds this).
 source "$ORCH_SCRIPTS/orch/base.sh"
 source "$ORCH_SCRIPTS/orch/branch.sh"
 source "$ORCH_SCRIPTS/orch/checkout.sh"
 source "$ORCH_SCRIPTS/orch/doctor.sh"
+source "$ORCH_SCRIPTS/orch/filed-finding.sh"
 source "$ORCH_SCRIPTS/orch/finding-triage.sh"
 source "$ORCH_SCRIPTS/orch/gh.sh"
 source "$ORCH_SCRIPTS/orch/global.sh"
