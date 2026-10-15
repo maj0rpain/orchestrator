@@ -42,9 +42,9 @@ capture_err() {
   local _capture_err_file _capture_err_text _capture_err_st=0
   _capture_err_file="$(mktemp)"
   ( "${@:2}" ) 2>"$_capture_err_file" || _capture_err_st=$?
-  _capture_err_text="$(cat "$_capture_err_file"; printf x)"
+  file_read _capture_err_text "$_capture_err_file" || _capture_err_text=""
   rm -f "$_capture_err_file"
-  printf -v "$1" '%s' "${_capture_err_text%x}"
+  printf -v "$1" '%s' "$_capture_err_text"
   return "$_capture_err_st"
 }
 # capture <out-var> <err-var> <command...>: capture_err with the stdout taken

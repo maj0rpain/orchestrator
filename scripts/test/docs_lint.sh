@@ -904,7 +904,9 @@ echo "spec-review lenses run as plugin agents (#177)"
 # scan_lens_briefs <plugin root>: print one line per brief out of place. The
 # briefs' one copy is each lens agent's `## Brief` section, so the check is on
 # structure, never on the briefs' wording: every lens agent has a non-empty
-# `## Brief`, and orch-spec-review has no `**<Lens> brief.**` heading.
+# `## Brief`, and orch-spec-review has no `**<Lens> brief.**` heading. Each
+# lens agent also has Write in its tools: list and a `## The findings file`
+# section, the file it writes its findings to.
 lenses="fidelity consistency testability implementability"
 scan_lens_briefs() {
   local r="$1" lens a heading brief
@@ -916,6 +918,12 @@ scan_lens_briefs() {
       elif ! grep -q '[^[:space:]]' <<<"$brief"; then
         echo "${a#"$r"/}: has an empty ## Brief section"
       fi
+      # A lens writes its findings to one file (#1115), so it needs Write and
+      # a brief section saying which file.
+      grep -m1 '^tools:' "$a" | tr -d '[] ' | tr ',' '\n' | grep -qx 'tools:Write\|Write' ||
+        echo "${a#"$r"/}: has no Write in its tools: list"
+      md_section "$a" "## The findings file" >/dev/null ||
+        echo "${a#"$r"/}: has no ## The findings file section"
     fi
     heading="**${lens^} brief.**"
     grep -qF "$heading" "$r/skills/orch-spec-review/SKILL.md" 2>/dev/null &&
@@ -929,8 +937,10 @@ printf -- '---\nname: orch-lens-fidelity\n---\n\n## Brief\n\n## Reporting rules\
   >"$fixture/agents/orch-lens-fidelity.md"
 printf -- '---\nname: orch-lens-consistency\n---\n\n# Consistency lens\n\nReport.\n' \
   >"$fixture/agents/orch-lens-consistency.md"
-printf -- '---\nname: orch-lens-testability\n---\n\n## Brief\n\nReport seams.\n\n## Reporting rules\n' \
+printf -- '---\nname: orch-lens-testability\ntools: [Read, Write]\n---\n\n## Brief\n\nReport seams.\n\n## Reporting rules\n\n## The findings file\n\nWrite it.\n' \
   >"$fixture/agents/orch-lens-testability.md"
+printf -- '---\nname: orch-lens-implementability\ntools: [Read, Grep]\n---\n\n## Brief\n\nReport gaps.\n' \
+  >"$fixture/agents/orch-lens-implementability.md"
 printf 'Run the lenses.\n\n**Consistency brief.** Placeholder.\n' \
   >"$fixture/skills/orch-spec-review/SKILL.md"
 out="$(scan_lens_briefs "$fixture")"
@@ -940,6 +950,10 @@ flags "the scan flags a lens agent with no ## Brief heading" \
   "$out" "agents/orch-lens-consistency.md: has no ## Brief section"
 spares "the scan accepts a brief with content" \
   "$out" 'orch-lens-testability'
+flags "the scan flags a lens agent with no Write tool" \
+  "$out" "agents/orch-lens-implementability.md: has no Write in its tools: list"
+flags "the scan flags a lens agent with no findings-file section" \
+  "$out" "agents/orch-lens-implementability.md: has no ## The findings file section"
 flags "the scan flags a brief heading back in orch-spec-review" \
   "$out" "skills/orch-spec-review/SKILL.md: carries the **Consistency brief.** heading"
 check "each lens agent owns a non-empty brief and the skill carries none" \

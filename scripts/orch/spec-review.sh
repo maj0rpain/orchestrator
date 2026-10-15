@@ -100,15 +100,16 @@ spec_review_one_line() {
   printf '%s' "$out"
 }
 
-# spec_review_text_store <target> <text>: a finished anchor, replace or quote
-# block stored where it belongs - the current option's, the current item's, or
-# the last comment's. Reads batch_parse's cur and opt.
+# spec_review_text_store <target> <text> <item> <option>: a finished anchor,
+# replace or quote block stored where it belongs - option <option>'s when it is
+# 0 or more, else item <item>'s; a quote goes to the last comment.
 spec_review_text_store() {
+  local item="$3" option="$4"
   case "$1" in
     anchor)
-      if [ "$opt" -ge 0 ]; then SR_OP_ANCHOR[opt]="$2"; else SR_IT_ANCHOR[cur]="$2"; fi ;;
+      if [ "$option" -ge 0 ]; then SR_OP_ANCHOR[option]="$2"; else SR_IT_ANCHOR[item]="$2"; fi ;;
     replace)
-      if [ "$opt" -ge 0 ]; then SR_OP_REPLACE[opt]="$2"; else SR_IT_REPLACE[cur]="$2"; fi ;;
+      if [ "$option" -ge 0 ]; then SR_OP_REPLACE[option]="$2"; else SR_IT_REPLACE[item]="$2"; fi ;;
     quote) SR_CM_QUOTE[${#SR_CM_QUOTE[@]}]="$2" ;;
   esac
 }
@@ -192,18 +193,18 @@ spec_review_batch_parse() {
         [ "$kw" = replace ] && [ -z "$args" ] \
           || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line"
         [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the anchor is empty"
-        spec_review_text_store anchor "$buf"
+        spec_review_text_store anchor "$buf" "$cur" "$opt"
         mode=replace; buf=""; bufn=0; block_line="$lineno"
         continue ;;
       replace)
         [ "$kw" = end ] && [ -z "$args" ] \
           || spec_review_batch_die "$lineno" "expected @@ end to end the replacement begun on line $block_line"
-        spec_review_text_store replace "$buf"
+        spec_review_text_store replace "$buf" "$cur" "$opt"
         mode=item; buf=""; bufn=0
         continue ;;
       quote)
         [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the quote is empty"
-        spec_review_text_store quote "$buf"
+        spec_review_text_store quote "$buf" "$cur" "$opt"
         mode=item; buf=""; bufn=0 ;;
     esac
     [ -z "$quote_wanted" ] || [ "$kw" = quote ] \
@@ -313,7 +314,7 @@ spec_review_batch_parse() {
     anchor|replace) spec_review_batch_die "$block_line" "the @@ $mode block is never ended" ;;
     quote)
       [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the quote is empty"
-      spec_review_text_store quote "$buf" ;;
+      spec_review_text_store quote "$buf" "$cur" "$opt" ;;
   esac
   [ -z "$quote_wanted" ] || spec_review_batch_die "$lineno" "@@ comment must be followed by @@ quote"
   [ "$cur" -lt 0 ] || spec_review_item_check "$cur"
@@ -375,7 +376,7 @@ spec_review_finding_text() {
 # lens that did not run or past its file's count of findings, and on an item
 # in a lens's group when that lens did not run.
 spec_review_findings_check() {
-  local j l count i
+  local j l count lf it
   for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
     l="$(array_index SR_LENS_NAME "${SR_FD_LENS[$j]}")"
     spec_review_lens_known "${SR_FD_LENS[$j]}" \
@@ -383,17 +384,17 @@ spec_review_findings_check() {
     [ "${SR_LENS_STATE[$l]}" = ran ] \
       || spec_review_batch_die "${SR_FD_LINE[$j]}" "cites lens ${SR_FD_LENS[$j]}, which did not run"
     count=0
-    for i in ${SR_LF_LENS[@]+"${!SR_LF_LENS[@]}"}; do
-      [ "${SR_LF_LENS[$i]}" != "${SR_FD_LENS[$j]}" ] || count=$((count + 1))
+    for lf in ${SR_LF_LENS[@]+"${!SR_LF_LENS[@]}"}; do
+      [ "${SR_LF_LENS[$lf]}" != "${SR_FD_LENS[$j]}" ] || count=$((count + 1))
     done
     [ "${SR_FD_K[$j]}" -le "$count" ] \
       || spec_review_batch_die "${SR_FD_LINE[$j]}" "cites finding ${SR_FD_K[$j]} of lens ${SR_FD_LENS[$j]}, but lens-${SR_FD_LENS[$j]}.md holds $count"
   done
-  for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
-    spec_review_lens_known "${SR_IT_GROUP[$i]}" || continue
-    l="$(array_index SR_LENS_NAME "${SR_IT_GROUP[$i]}")"
+  for it in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
+    spec_review_lens_known "${SR_IT_GROUP[$it]}" || continue
+    l="$(array_index SR_LENS_NAME "${SR_IT_GROUP[$it]}")"
     [ "${SR_LENS_STATE[$l]}" = ran ] \
-      || spec_review_batch_die "${SR_IT_LINE[$i]}" "item ${SR_IT_N[$i]} is in group ${SR_IT_GROUP[$i]}, which did not run"
+      || spec_review_batch_die "${SR_IT_LINE[$it]}" "item ${SR_IT_N[$it]} is in group ${SR_IT_GROUP[$it]}, which did not run"
   done
 }
 
@@ -918,6 +919,13 @@ spec_review_landed() {
   printf '%s' "${out:-nothing}"
 }
 
+# spec_review_err_line <err>: a captured error's first line, its `orch: `
+# prefix dropped, for quoting inside a die message of our own.
+spec_review_err_line() {
+  local err="${1#orch: }"
+  printf '%s' "${err%%$'\n'*}"
+}
+
 # spec_review_write <dir> <what> <command...>: one GitHub write, appended to
 # <dir>/applied.log once it lands. A failure dies naming <what> and every
 # write already landed; nothing is rolled back and changelog.md stays.
@@ -925,8 +933,7 @@ spec_review_write() {
   local dir="$1" what="$2" err
   shift 2
   if ! capture_err err "$@" >/dev/null; then
-    err="${err#orch: }"
-    die "could not write $what: ${err%%$'\n'*} - already landed: $(spec_review_landed "$dir"); $dir/changelog.md is kept, and the review stops here"
+    die "could not write $what: $(spec_review_err_line "$err") - already landed: $(spec_review_landed "$dir"); $dir/changelog.md is kept, and the review stops here"
   fi
   printf '%s\n' "$what" >>"$dir/applied.log" \
     || die "$what landed, but $dir/applied.log could not record it"
@@ -1076,8 +1083,7 @@ spec_review_apply() {
       0) ;;
       1) tickets="None - no ticket breakdown" ;;
       *)
-        err="${err#orch: }"
-        die "ticket exists #$issue exited $st: ${err%%$'\n'*} - nothing written" ;;
+        die "ticket exists #$issue exited $st: $(spec_review_err_line "$err") - nothing written" ;;
     esac
   fi
   if [ -n "$changed" ] && [ "$st" -eq 0 ]; then
