@@ -97,7 +97,9 @@ until review.>
 
 ## Spec review changelog
 <every round's changelog orch-spec-review returned, in round order, each
-under a `### Round <k> of <n>` subheading, its own `## Spec review` heading
+copied from `changelog.md` in that round's working directory, where
+`spec-review apply` left it, and placed under a `### Round <k> of <n>`
+subheading, its own `## Spec review` heading
 and `Round <k> of <n>` line dropped and any heading inside it at `####` or deeper - no line here starts
 with `## `, because `handoff validate` reads a section up to the next `## `
 line. Each round, per lens: applied edits one line each, declined

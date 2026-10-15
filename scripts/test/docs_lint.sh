@@ -898,7 +898,7 @@ check "the host fallback and the implementer's report are each stated once" \
 # --- spec-review lenses run as plugin agents (#177) ---------------------------
 echo
 echo "spec-review lenses run as plugin agents (#177)"
-# Each lens owns its brief as a read-only plugin agent, the way the review
+# Each lens owns its brief as a plugin agent, the way the review
 # loop's reviewers own theirs (ADR-0018), so orch-spec-review carries only the
 # lens-to-agent table, and the host fallback runs a lens from its agent file.
 # scan_lens_briefs <plugin root>: print one line per brief out of place. The
@@ -966,12 +966,12 @@ skills/orch-quick-implement/SKILL.md|## 7. Open the PR
 skills/orch-review/SKILL.md|## Review pass
 skills/orch-review/SKILL.md|## Standalone review pass
 skills/orch-spec-review/SKILL.md|## Standalone spec review
-skills/orch-spec-review/SKILL.md|### Unattended spec review
 skills/orch-spec-review/SKILL.md|## Consolidation
 skills/orch-spec-review/SKILL.md|## Disposition
 skills/orch-spec-review/SKILL.md|## Applying the answer
-skills/orch-spec-review/SKILL.md|## Tickets follow the spec
 skills/orch-spec-review/SKILL.md|## The changelog
+skills/orch-spec-review/tickets-follow-the-spec.md|# Tickets follow the spec
+skills/orch-spec-review/unattended-spec-review.md|# Unattended spec review
 skills/orch-to-spec/SKILL.md|## Rewrite the issue
 skills/orch-to-spec/SKILL.md|## Unattended rewrite
 skills/orch-to-tickets/SKILL.md|### 4. Quiz the user

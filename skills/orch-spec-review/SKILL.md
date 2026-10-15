@@ -17,8 +17,9 @@ they report reaches the human as a proposed edit in one batch; only the edits
 the human accepts change the issue - in an **Unattended spec review**, the
 recommended ones. When the issue already has a ticket
 breakdown and the accepted edits touch an open ticket, the ticket question asks
-how the breakdown should follow - see **Tickets follow the spec**; the review
-writes the issue's tickets only to follow edits already accepted. The issue body stays the single truth the
+how the breakdown should follow - see **Tickets follow the spec**, in
+`tickets-follow-the-spec.md`; the review writes the issue's tickets only to
+follow edits already accepted. The issue body stays the single truth the
 implement phase reads; after a review, the comments are history.
 
 A review runs a **round count** of **rounds** (ADR-0041) - see **Rounds**. In
@@ -26,7 +27,7 @@ a flow's spec phase there is no "review the spec?" question, only the round
 count: the human's control is at each round's batch decision, where they may
 decline every edit. A quick implementation asks no question at all: it takes
 the standalone entry's **Unattended spec review** mode, which applies its own
-recommendations - see that section.
+recommendations - see `unattended-spec-review.md`.
 The independence comes from the sub-agents, the same way it does for the review
 loop - see `docs/adr/0001-review-loop-runs-in-a-single-session.md`.
 
@@ -59,9 +60,10 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 ## Rounds
 
 One **round** is everything from **Consolidation** through **The changelog**:
-Consolidation, the lenses, one batch question, the accepted edits applied,
-**Tickets follow the spec** when they touch an open ticket, and one
-`## Spec review` changelog comment. The review runs rounds 1 to `<n>`, `<n>`
+Consolidation, the lenses, one batch question, and one `spec-review apply`
+run that applies the accepted edits and posts one `## Spec review` changelog
+comment - two runs when **Tickets follow the spec** pauses it for the ticket
+question. The review runs rounds 1 to `<n>`, `<n>`
 the round count, in order:
 
 - **Each round reads the body the previous round published.** Each round
@@ -159,57 +161,25 @@ Then run **Consolidation**, **The lenses**, **Disposition**, and **Applying
 the answer** below, with these differences:
 
 - **Lenses**: start Consistency, Testability, and Implementability only.
-  Fidelity is never started. It appears in the batch and the changelog with
-  Fidelity's not-run line, as in **The changelog**. That is not a failure,
-  so the retry rule does not apply to it.
+  Fidelity is never started. `batch.md` records it as
+  `@@ lens fidelity standalone`, and the batch and the changelog show
+  Fidelity's not-run line. That is not a failure, so the retry rule does not
+  apply to it.
 - **Disposition**: unchanged. There are no `contradicts the plan` items,
   because Fidelity does not run.
-- **Applying**: see the standalone steps in **Applying the answer**.
+- **Applying**: `apply` takes `--issue <issue>` - see **Applying the
+  answer**.
 - **Host fallbacks and lens failures**: among the review's own records, they
   are recorded in the changelog comment only, under a **Host fallbacks**
-  line. A standalone review has one changelog, not two. A quick
+  line that `apply --host-fallbacks <file>` writes. A standalone review has one changelog, not two. A quick
   implementation that runs the review in the same session also lists the
   host fallbacks it saw in its own PR body.
 
-### Unattended spec review
 
-The mode a quick implementation takes, and only a quick implementation: a
-standalone spec review that asks the human nothing (ADR-0034). It is the one
-definition of the mode - quick implementation's own steps never restate its
-rules. Everything in **Standalone spec review** above holds, with these
-differences only:
-
-- **Rounds**: it always runs exactly **1** round, and asks no round-count
-  question; a `--rounds` value is never passed to it.
-- **Consolidation and the lenses** run unchanged: Consistency, Testability
-  and Implementability, with Fidelity not run.
-- **Disposition**: the batch is drafted, numbered and printed in the session
-  as usual, so a human watching can see what is applied and interrupt. Then
-  no question is asked and nothing waits: the batch is applied at once as
-  **Apply as recommended** - every proposed edit applied, every **recommend
-  decline** item skipped, and every decision item takes its recommended
-  option.
-- **Tickets follow the spec** runs as usual, its items printed, but takes its
-  recommended option without asking: **Apply as recommended**, or **Retire
-  and break down again** when that is the recommendation.
-- **Applying**: the standalone steps in **Applying the answer**, unchanged
-  except step 4: a retire is followed by `orch-to-tickets`' **Unattended
-  breakdown**, never its quiz.
-- **The changelog** opens, after its `Round 1 of 1` line and ahead of its
-  Consolidation section, with exactly this line:
-
-  ```
-  Unattended spec review, run from a quick implementation: applied as recommended.
-  ```
-
-  Each decision item taken records, under its lens or under Consolidation,
-  one line `decision (<n>): took <letter> - <option>, as recommended`, with
-  `<n>` the item's number in the batch. A quick implementation lists those
-  lines in its PR body. Declined items record **declined as recommended:
-  <reason>**, as in **The changelog**. An attended review's changelog has
-  no opening line and is unchanged.
-- **Failures** are unchanged: a guard refusal, a failed fetch or a failed
-  write stops the review, and the quick implementation that ran it with it.
+A quick implementation runs this entry in its **Unattended spec review**
+mode, which asks the human nothing. In that run, and only then, read
+`unattended-spec-review.md` in this skill's directory: it is the mode's one
+definition.
 
 ## Consolidation
 
@@ -230,25 +200,28 @@ items**:
   **Disposition**.
 
 Each item names its comment by the author and date on the comment's
-`<!-- comment @<login> <createdAt> -->` marker line. No comment, or none that
-adds anything: no items, and the changelog's Consolidation line says **None**.
+`<!-- comment @<login> <createdAt> -->` marker line, and carries the
+comment's spec-bearing part, so a decline can be recorded word for word. No
+comment, or none that adds anything: no items.
 
 ## The lenses
 
 Each lens is one of the plugin's agents, which owns its brief and the
-reporting rules and may only read. Start them all at once (a
-standalone review starts fewer - see **Standalone spec review**) as fresh
+reporting rules and may write only its findings file. Start them all at once
+(a standalone review starts fewer - see **Standalone spec review**) as fresh
 subagents - never forks, which inherit this context. On Claude Code that is
 the Agent tool with `subagent_type` set to the lens's agent name under the
 `orchestrator:` plugin scope. Each prompt carries only the paths its row
-names, and each lens returns its findings as its reply.
+names, the last of them its findings file, `<dir>/lens-<name>.md`. Each lens
+writes its numbered findings there and replies with only that path and a
+count.
 
 | Lens | Agent | Paths |
 |---|---|---|
-| Fidelity | `orch-lens-fidelity` | spec body, comments file, plan handoff |
-| Consistency | `orch-lens-consistency` | spec body, comments file, glossary, ADR directory |
-| Testability | `orch-lens-testability` | spec body, comments file, repo root |
-| Implementability | `orch-lens-implementability` | spec body, comments file, repo root |
+| Fidelity | `orch-lens-fidelity` | spec body, comments file, plan handoff, `<dir>/lens-fidelity.md` |
+| Consistency | `orch-lens-consistency` | spec body, comments file, glossary, ADR directory, `<dir>/lens-consistency.md` |
+| Testability | `orch-lens-testability` | spec body, comments file, repo root, `<dir>/lens-testability.md` |
+| Implementability | `orch-lens-implementability` | spec body, comments file, repo root, `<dir>/lens-implementability.md` |
 
 On a host that cannot start the plugin's agents natively, take the
 "Start a fresh subagent" fallback in `docs/host-capabilities.md` under the
@@ -257,14 +230,13 @@ plugin root, as its brief, and record it in `02-spec.md` under **Host
 fallbacks** (a standalone review records it elsewhere - see **Standalone
 spec review**).
 
-A lens that errors or returns nothing usable is spawned once more with the
-same prompt. A second failure makes it **not run - <reason>**: it appears that
-way in the batch and in both changelogs (a standalone review differs here -
-see **Standalone spec review**), and the review continues on the
-lenses that answered. Three lenses and a recorded gap is a spec review; a
-silent gap is not.
+A lens that errors, returns nothing usable, or writes no readable findings
+file is spawned once more with the same prompt. A second failure makes it
+**not run - <reason>**: it appears that way in the batch and in the
+changelog, and the review continues on the lenses that answered. Three
+lenses and a recorded gap is a spec review; a silent gap is not.
 
-Keep the findings under a heading per lens. They are never merged, ranked, or
+Read each lens's findings from its file. They are never merged, ranked, or
 deduplicated across lenses: the separation is what the lenses exist for.
 
 ## Disposition
@@ -286,7 +258,7 @@ consolidation items included:
   even of `contradicts the plan` items: the human sees the body as it will
   read before seeing what the lenses make of it. They are their own group,
   never merged into a lens.
-- A lens finding about a contradiction a consolidation item already resolves
+- A lens finding about a contradiction an earlier item already resolves
   stays under its lens and names that item's number instead of proposing a
   second edit.
 - A Fidelity finding labelled `contradicts the plan` goes next, under that
@@ -297,14 +269,16 @@ Each item carries a recommendation: a proposed edit is recommended for
 applying unless it is marked **recommend decline** with its reason, and a
 decision item carries its recommended option.
 
-Number the items, consolidation items included, in one sequence. Present the
-list - each item's finding (or, for a consolidation item, its comment), lens
-or **Consolidation**, and proposed edit or decision - and ask **one blocking
-question** with the host's ask tool (`AskUserQuestion` on Claude Code,
-`ask_user` on Junie), the list and the call in the same response. The review never ends its
-turn on the list: presenting it is not the end of the step, the answer is. No
-edit is applied and no changelog is posted before the answer arrives. The
-options:
+Number the items, consolidation items included, in one sequence, and write
+the batch once, to `<dir>/batch.md` - see **The batch file**. Then present
+the whole batch in chat - each item's finding (or, for a consolidation item,
+its comment), lens or **Consolidation**, and its proposed edit or decision,
+every replacement in full, so the human reads each edit's wording before
+answering - and ask **one blocking question** with the host's ask tool
+(`AskUserQuestion` on Claude Code, `ask_user` on Junie), the list and the
+call in the same response. The review never ends its turn on the list:
+presenting it is not the end of the step, the answer is. No edit is applied
+and no changelog is posted before the answer arrives. The options:
 
 - **Apply as recommended (Recommended)** - every proposed edit applied, every
   decision item takes its recommended option, every **recommend decline** item
@@ -320,198 +294,117 @@ options:
 The spec batch is asked once; a long spec is one longer question, not twenty
 prompts.
 
+### The batch file
+
+Marker lines; a line starting `@@ ` is reserved, and no body line starts that
+way. The `@@ lens` lines come first, one per lens in the table, then one block
+per item, in the batch's order:
+
+```
+@@ lens <name> ran                        a lens that answered
+@@ lens <name> not-run <reason>           a lens that failed twice
+@@ lens fidelity standalone               Fidelity in a standalone review
+@@ item <n> <group> apply                 a proposed edit, recommended
+@@ item <n> <group> decline <reason>      a proposed edit marked recommend decline
+@@ item <n> <group> decision <letter>     a decision item, <letter> recommended
+@@ item <n> <group> resolved              a finding an earlier item resolves
+@@ summary <one line>                     the changelog's line when the item is applied
+@@ finding <lens> <k>                     repeatable: the lens findings the item resolves
+@@ comment @<login> <createdAt>           a consolidation item's comment, repeatable,
+@@ quote                                    each followed by the comment's spec-bearing part
+@@ resolved-by <m>                        the earlier item; a resolved item has no anchor
+@@ option <letter> <label>                a decision item's option, with its own summary,
+                                            anchor and replacement
+@@ anchor                                 exact text already in the body, matching once
+@@ replace                                its replacement
+@@ end
+```
+
+`<group>` is `consolidation`, a lens name, or `contradicts-the-plan`. An
+insertion is an anchor plus a replacement that repeats it. Every item with
+an anchor, and every option, has its one `@@ summary`. A `@@ finding` cites
+the `<k>`-th finding in `<dir>/lens-<lens>.md`, which `apply` copies into the
+changelog, so the batch file never quotes a lens.
+
 ## Applying the answer
 
-1. Apply the accepted edits to `<dir>/spec.md`, the working copy. Keep a copy
-   of the body as fetched: **Tickets follow the spec** reads both.
-2. Run **Tickets follow the spec** below: draft, ask, and apply the accepted
-   ticket edits. Sub-issue edits go through `issue update`; an edit to a
-   collapsed `## Ticket` section goes into `<dir>/spec.md`.
-3. Publish the body once: `bash "$ORCH" spec update <dir>/spec.md`. The body
-   is rewritten in place; the implement phase reads one body and reconciles
-   nothing. Skip this step when nothing in `<dir>/spec.md` changed - on Apply
-   none, say: an update that writes the body it just read is a no-op edit on
-   the issue's history, and the comment in step 5 still records the decision.
-4. If the human chose **Retire and break down again**, run
-   `bash "$ORCH" ticket retire <issue>` now, after the publish, so it cuts any
-   `## Ticket` section from the body just published. Breaking the issue down
-   again is left to `orch-flow`'s spec phase step 5, after the last round,
-   which then sees `ticket exists` exit 1.
-5. Write the changelog, as **The changelog** says, to `<dir>/changelog.md`,
-   and `bash "$ORCH" spec comment <dir>/changelog.md`. The
-   comment is history, visible on the issue; the body is the truth.
-6. A declined `contradicts the plan` item: the changelog records **spec
-   departs from the plan: <the human's reason>**, and the matching entry in the
-   plan handoff's **Rejected alternatives** is amended to say it was reversed
-   in the spec review and why. Declining it through **Apply as recommended** is
-   allowed: the changelog records **spec departs from the plan: declined as
-   recommended: <reason>**, and the amendment cites the same reason. The review loop demotes findings that
-   propose a rejected alternative, and without the amendment it would later
-   demote a code reviewer for proposing the spec's own choice.
-7. After the last round, return every round's changelog to the flow skill,
-   in round order, each with its **Tickets** section, so the implement phase
-   carries the disposition without a network call. Its layout in
-   `02-spec.md` is the **Spec review changelog** section of `orch-handoff`'s
-   `02-spec.md` template.
+One call applies the answer, run with the human's answer as given:
+`recommended` for **Apply as recommended**, `all`, `none`, or the Other list
+such as `"1B, 2, 3, 5"`. `--round <k>/<n>` names the round. The human's
+reasons for declined items go in a file, one `<n>: <reason>` line each,
+passed as `--reasons <file>`.
 
-A standalone review applies through the stateless `issue` commands instead:
+```
+bash "$ORCH" spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
+```
 
-1. Apply the accepted edits to `<dir>/spec.md`, the working copy, keeping a
-   copy of the body as fetched, as above.
-2. Run **Tickets follow the spec**, as above.
-3. Publish the body once: `bash "$ORCH" issue update <issue> <dir>/spec.md`.
-   Skip this step when nothing in `<dir>/spec.md` changed, as above.
-4. If the human chose **Retire and break down again**, run
-   `bash "$ORCH" ticket retire <issue>` now, after this round's publish. After
-   the **final** round - never before it, so a later round
-   cannot make a fresh breakdown stale - invoke the `orch-to-tickets` skill on
-   the issue: it reads the published, edited body. An attended review follows
-   it through its own quiz until the human approves a breakdown. An
-   **Unattended spec review** follows its **Unattended breakdown** instead,
-   never the quiz; the quick implementation that ran it then sees
-   `ticket exists` exit 0 at its step 3 and works the new breakdown.
-5. Write the changelog, as **The changelog** says, to `<dir>/changelog.md`,
-   with any **Host fallbacks** line, and
-   `bash "$ORCH" issue comment <issue> <dir>/changelog.md`. The comment is
-   posted on Apply none too.
+`apply` applies the accepted items to `<dir>/spec.md`, follows the tickets,
+publishes the body only when it changed, runs any retire after that
+publish, and writes the round's changelog to `<dir>/changelog.md` and posts
+it, on Apply none too - see **The changelog**. In a flow it reads the issue
+from state and publishes through the `spec` commands. Nothing calls
+`gh issue` directly.
 
-It never writes `state.json`, `.orchestrator/handoff/`, `02-spec.md`, or a
-plan's **Rejected alternatives**, and returns nothing to a flow skill.
+How it exits:
 
-Nothing calls `gh issue edit` or `gh issue comment` directly: `orch.sh`'s
-`spec`, `issue` and `ticket` commands are the one place body writes, comments
-and retirements happen, and the one place they are tested.
+- **0**: the round is published.
+- **3**: the ticket pause. An accepted edit changed the body and the issue
+  has a ticket breakdown; `apply` printed its kind and wrote nothing to
+  GitHub. Read `tickets-follow-the-spec.md` in this skill's directory now,
+  and follow it: it drafts `<dir>/tickets.md`, asks the ticket question,
+  and runs `apply` again with `--tickets <answer>`.
+- **Any other exit, refused**: the `orch:` message names the item, line or
+  answer at fault, and nothing was written to GitHub. Fix `batch.md`,
+  `tickets.md` or the reasons file and run the same `apply` again; an
+  answer `apply` cannot read is asked again.
+- **Any other exit, a failed write**: the message names the write that
+  failed and every write that already landed, and says the review stops
+  here. Stop the review, as **Rounds** says; `apply` refuses to run again
+  in that directory.
 
-## Tickets follow the spec
+After `apply` exits 0, in a flow only: a declined `contradicts the plan`
+item, recorded in the changelog as **spec departs from the plan: <reason>**,
+has its matching entry in the plan handoff's **Rejected alternatives**
+amended to say it was reversed in the spec review and why - citing the
+human's reason, or the recommendation's when it was declined through
+**Apply as recommended**. The review loop demotes findings that propose a
+rejected alternative, and without the amendment it would later demote a
+code reviewer for proposing the spec's own choice.
 
-A spec review on an issue that already has a ticket breakdown - a blueprint a
-flow adopted or a quick implementation linked, or any issue reviewed
-standalone - would otherwise leave tickets drawn from the old body, and the
-implement phase would build them. This step brings the breakdown in line with
-the edits just accepted, before the body is published. It is not another
-round: within a round, no lens runs again and the spec is not reviewed again
-(ADR-0004, ADR-0041). Both
-entries share it. `<issue>` is the issue under review: in a flow,
-the number `bash "$ORCH" state get issue` prints.
+After the last round, in a flow, return every round's changelog to the flow
+skill, in round order, as the path of each round's `<dir>/changelog.md`, so
+the implement phase carries the disposition without a network call. Its
+layout in `02-spec.md` is the **Spec review changelog** section of
+`orch-handoff`'s `02-spec.md` template. When a round retired the breakdown,
+breaking the issue down again is left to `orch-flow`'s spec phase step 5,
+which then sees `ticket exists` exit 1.
 
-**When it runs.** Only when both hold:
-
-- at least one accepted edit was applied to `<dir>/spec.md`;
-- `bash "$ORCH" ticket exists <issue>` exits 0, printing `sub-issues` or
-  `collapsed`.
-
-With no edit applied, `ticket exists` is not run, and the changelog's
-**Tickets** line is **Not checked - no edit applied**. Exit 1 means no
-breakdown: the line is **None - no ticket breakdown**. Any other exit stops
-the review the way a failed fetch does: say what blocked, publish nothing,
-and in a flow leave state where it is.
-
-**Drafting.** The session running the review drafts - never a lens, never a
-new agent: this is reconciliation, the same kind of work as
-**Consolidation**.
-
-- Read the body as fetched and as edited, plus each ticket's body.
-- `sub-issues`: `bash "$ORCH" ticket list <issue>` prints each ticket as
-  `<n> open` or `<n> closed`; fetch each with
-  `bash "$ORCH" issue fetch <n> <dir>/ticket-<n>.md`. `collapsed`: the ticket
-  is the body's `## Ticket` section.
-- Draft concrete replacement text only for **open** tickets the accepted
-  edits touch. A closed ticket is never edited and nothing reopens it: note
-  what changed for it, for the changelog.
-- An edit that changes only which open tickets block which is applied with
-  `ticket block`/`ticket unblock` and rewrites no other part of the body.
-  Adding, removing or re-ordering slices still recommends **Retire and break
-  down again**. "Open tickets" names the ticket whose edges change: its
-  blocker may be open or closed. Each edge change - one edge added or
-  removed - is its own numbered item in the ticket question below.
-- A drafted edit you believe is wrong is still presented, marked **recommend
-  decline** with the reason.
-
-**The ticket question.** If no open ticket is affected, ask nothing: the line is
-**None - no ticket affected**, and each closed ticket the edits touch is
-still listed. Otherwise number the ticket items - each naming its ticket
-(`#<n>`, or the `## Ticket` section), what the accepted edits changed for it,
-and its replacement text, or for an edge change the one edge added or removed -
-and ask **one blocking question** with the host's ask tool
-(`AskUserQuestion` on Claude Code, `ask_user` on Junie), the list and the call in the same response, as for
-the spec batch. Its options are the spec batch's, under **Disposition**,
-each offered once and with the same rules, except:
-
-- **Retire and break down again** is added: no ticket is edited; the
-  breakdown is retired after the body is published, and the issue broken
-  down again.
-- **Other** takes item numbers only, e.g. `1, 3`: a ticket item has no
-  option letter.
-- The option you recommend comes first and carries **(Recommended)**:
-  **Retire and break down again** when you recommend a retire, otherwise
-  **Apply as recommended**.
-
-**Applying.** Each accepted sub-issue edit replaces that ticket's body: write
-it to `<dir>/ticket-<n>.md`, then
-`bash "$ORCH" issue update <n> <dir>/ticket-<n>.md`. An accepted edit to a
-collapsed `## Ticket` section goes into `<dir>/spec.md`, published with the
-review's one body update. Each accepted edge change runs
-`bash "$ORCH" ticket block <n> --by <blocker>` to add the edge, or
-`bash "$ORCH" ticket unblock <n> --by <blocker>` to remove it; the command
-rewrites `<n>`'s `## Blocked by` section itself. When one ticket gets both a
-text edit and an edge change, the text edit is applied first, its
-`## Blocked by` section left as fetched, then `ticket block`/`unblock` runs and
-rewrites that section. A retire edits no ticket here: it runs at
-**Applying the answer**'s step 4, after the publish. A failed `issue update`
-stops the review the way a failed fetch does. A failed `ticket block` or
-`ticket unblock` stops the review the way a failed `issue update` does.
-Nothing calls `gh issue` directly.
+A standalone review adds `--issue <issue>`, and with host fallbacks to
+record, `--host-fallbacks <file>` holding them. `apply` then uses the
+stateless `issue` commands and never reads `state.json`. When a round
+retired the breakdown, invoke the `orch-to-tickets` skill on the issue after
+the **final** round - never before it, so a later round cannot make a fresh
+breakdown stale: it reads the published, edited body, and an attended review
+follows it through its own quiz until the human approves a breakdown. A
+standalone review never writes `state.json`, `.orchestrator/handoff/`,
+`02-spec.md`, or a plan's **Rejected alternatives**, and returns nothing to
+a flow skill.
 
 ## The changelog
 
-Each round writes one changelog. It opens with the `## Spec review` heading,
-and its next line is exactly `Round <k> of <n>`, `<k>` the round's number and
-`<n>` the round count - `Round 1 of 1` for a one-round review. The heading
-keeps every earlier round's comment out of `comments.md`: `orch.sh` leaves
-out a comment whose body opens with it.
-In an **Unattended spec review**, the `Round` line comes before the fixed
-opening line.
+`apply` writes it, from `batch.md`, the lens files, `tickets.md`, the
+answers and the reasons: the session never types it. It opens with the
+`## Spec review` heading and the `Round <k> of <n>` line, then a
+Consolidation section, one section per lens in the table's order, and a
+Tickets section: applied items one line each, declined findings and
+comments word for word with the human's reason or **declined as
+recommended: <reason>**, an undecided decision item's sides then **left
+undecided**, **None** for a group with no items, **not run - <reason>** for
+a lens that failed twice, and Fidelity's standalone not-run line. Silence is
+never ambiguous: Consolidation, every lens, and Tickets have a line. The
+heading keeps every earlier round's comment out of `comments.md`: `orch.sh`
+leaves out a comment whose body opens with it.
 
-A **Consolidation** section comes first, ahead of the lens headings:
-
-- an applied item: one line naming the comment folded in, by its author and
-  date;
-- a declined item: the comment's spec-bearing part **verbatim**, then the
-  human's reason, or **declined as recommended: <reason>** as below;
-- a decision item left out of an Other answer: both comments' spec-bearing
-  parts **verbatim**, then **left undecided**;
-- no item proposed: **None**.
-
-Then the lenses, organised per lens, in the table's order, one heading each:
-
-- an applied edit: one line naming what changed, not restating the body;
-- a declined finding: the reviewer's finding **verbatim**, then the human's
-  reason - a decision visible nowhere else is fully recorded, the same
-  asymmetry the review loop applies to demoted findings. A finding declined
-  because the human chose **Apply as recommended** records **declined as
-  recommended: <the recommendation's reason>** instead of a human's reason;
-- a decision item left out of an Other answer: each of its findings
-  **verbatim**, then **left undecided**;
-- a lens that found nothing: **None**;
-- a lens that failed twice: **not run - <reason>**;
-- in a standalone review, Fidelity: **not run - standalone review, no plan
-  to check against**.
-
-Then a **Tickets** section, after the lens headings, one line per outcome:
-
-- an applied ticket edit: one line naming the ticket and what changed;
-- an applied edge change: one line per changed edge, e.g. **#12 now blocked
-  by #10** or **#12 no longer blocked by #11**;
-- a declined ticket edit: the proposed change **verbatim**, then the human's
-  reason, or **declined as recommended: <reason>**;
-- a retire: **retired, to be broken down again**;
-- a closed ticket the edits touch: **closed, built against the earlier spec:
-  <what changed>**;
-- otherwise exactly one of **None - no ticket breakdown**, **None - no ticket
-  affected**, or **Not checked - no edit applied**.
-
-The **Tickets** line is written even when **Tickets follow the spec** does
-not run.
-
-Silence is never ambiguous: Consolidation, every lens, and Tickets have a
-line.
+The comment is history, visible on the issue; the body is the truth.
+`<dir>/changelog.md` stays in the round's working directory after it is
+posted.

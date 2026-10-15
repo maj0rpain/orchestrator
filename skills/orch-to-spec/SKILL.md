@@ -141,9 +141,12 @@ mode runs as written, stop-on-failure included, with these differences only:
   go on to step 3.
 - **The retire-or-keep question** (**Rewrite the issue** step 1, exit 0) is
   not asked. It is replaced by the judgement `orch-spec-review`'s **Tickets
-  follow the spec** makes, by that section's **Drafting** and **Applying**
-  rules, which this mode restates neither of. Where those rules depend on a
-  spec review's state, this mode's own stand-ins hold:
+  follow the spec** makes, by the **Drafting** and **Applying** rules of
+  `tickets-follow-the-spec.md` in that skill's directory, which this mode
+  restates neither of; this mode makes those writes itself, with the
+  commands **Applying** names, never through `spec-review apply`, and writes
+  no `tickets.md`. Where those rules depend on a spec review's state, this
+  mode's own stand-ins hold:
   - "as fetched": the body fetched in Process step 1;
   - "as edited", and `<dir>/spec.md`: the rewritten body file;
   - "the accepted edits": the whole change from the fetched body to the
