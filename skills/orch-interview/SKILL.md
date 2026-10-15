@@ -114,7 +114,7 @@ planning hook's message says.
 Sharpen the project's domain model as you plan. Before the first round, list
 the glossary's term names with `bash "$ORCH" glossary terms`, and fetch the
 entries for the terms in play with `bash "$ORCH" glossary show <term>...` -
-again on any round that brings a further term in. With a `GLOSSARY-MAP.md` at
+again on any round that brings a further term in. A failed glossary command is reported with its `orch:` message, and the step carries on without glossary entries, never reading `GLOSSARY.md` whole in their place. With a `GLOSSARY-MAP.md` at
 the root, read each glossary the map points to instead. Read the ADRs under
 `docs/adr/` before the first round too, then keep these habits on every round:
 

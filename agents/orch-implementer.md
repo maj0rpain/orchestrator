@@ -139,7 +139,7 @@ alone, fetched into its own `mktemp` file with `bash "<orch.sh>" issue fetch
 <ticket> <file>`, no `--json`: step 1's JSON file escapes the body's newlines,
 so a term starting a line would not match. It prints the glossary entries the ticket mentions, and
 nothing when the repo has no `GLOSSARY.md` - and `bash "<orch.sh>" glossary
-show <term>...` for any further term the work runs into. Respect the ADRs in
+show <term>...` for any further term the work runs into. A failed glossary command is reported with its `orch:` message, and the step carries on without glossary entries, never reading `GLOSSARY.md` whole in their place. Respect the ADRs in
 the area you touch.
 
 **What a good test is.** A test verifies behaviour through a public

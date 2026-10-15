@@ -58,7 +58,7 @@ turns out missing, take the fallback it documents and tell your caller which.
    tracked tree. If it fails, stop and say why. Use the vocabulary of the project's glossary
    throughout the spec - list its term names with `bash "$ORCH" glossary
    terms` and read the entries you need with `bash "$ORCH" glossary show
-   <term>...` - and respect the ADRs in the area you are touching.
+   <term>...` - and respect the ADRs in the area you are touching. A failed glossary command is reported with its `orch:` message, and the step carries on without glossary entries, never reading `GLOSSARY.md` whole in their place.
 
 2. **Check the test seams.** Sketch the seams at which the feature will be
    tested. Prefer existing seams to new ones, and the highest seam possible.
