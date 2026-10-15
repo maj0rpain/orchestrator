@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.8.0
+
+A spec review hands its mechanical steps to `orch.sh` (#1115, ADR-0044). The session writes each round's batch once, to `batch.md`, with an exact anchor and replacement per edit, still prints it in full in chat, and passes the human's answer to the new `orch.sh spec-review apply <dir> <answer> --round <k>/<n>`. `apply` applies the accepted items, publishes the body only when it changed, writes and posts the round's changelog, and refuses the whole batch, writing nothing, when any accepted anchor does not match exactly once. With a ticket breakdown and an applied edit it pauses with exit 3 for the ticket question, and its rerun with `--tickets <answer>` edits the tickets from `tickets.md`, changes their edges, or retires the breakdown. `--issue`, `--unattended`, `--reasons`, `--ticket-reasons` and `--host-fallbacks` cover the standalone, unattended and decline records.
+
+Each spec-review lens now writes its numbered findings to its own `lens-<name>.md` in the round's working directory and replies with only that path and a count; the batch file cites findings by lens and number (#1115).
+
+`issue comments` and `spec comments` leave out every comment that opens with `## Spec review`, so no round reads an earlier round's changelog (#1115).
+
+`orch-spec-review` is shorter: its unattended mode and its ticket step move to `unattended-spec-review.md` and `tickets-follow-the-spec.md` beside the skill, read only when they apply, and `orch-flow`'s spec phase and the `02-spec.md` template copy each round's changelog from its `changelog.md` (#1115).
+
 ## 4.7.9
 
 A filed finding's severities and label rules now live in one module, `filed-finding.sh`, with each filed severity's label colour and description in one table. The move itself changes no behaviour; `review file`'s new grammar is below (#1026).
