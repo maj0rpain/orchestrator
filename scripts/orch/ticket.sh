@@ -372,7 +372,8 @@ ticket_edges_verify() {
 }
 
 # The heading of a ticket body's section listing its blockers - kept in line
-# with the native edges for human readers; no command reads it.
+# with the native edges for human readers, and read by `spec-review apply`'s
+# block/unblock precheck through blocked_by_section_numbers.
 BLOCKED_BY_HEADING='## Blocked by'
 
 # The body on stdin with its first `## Blocked by` section outside a code
