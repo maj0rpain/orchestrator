@@ -1,5 +1,7 @@
 # The spec review folds an issue's comments into its body
 
+Superseded in part by ADR-0044: orch.sh now leaves the review's own changelog comments out of the comments file.
+
 Supersedes ADR-0004 in part: a failed comments fetch now stops the review too.
 
 The spec review used to read only the issue body. But spec content often

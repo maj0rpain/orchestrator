@@ -231,7 +231,12 @@ adapter_labels() {
 # naming its author and gh's ISO-8601 timestamp, one blank line between
 # comments and bodies unescaped; nothing at all for none. pr comments (issue
 # #418) reads a PR's comments through this same --jq, so the two read alike.
-COMMENTS_JQ='[.comments[] | "<!-- comment @\(.author.login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n")'
+# COMMENTS_RENDER_JQ is that shape, defined once: render_comments(login) turns
+# an array of comments into the joined text, login reading each comment's
+# author, so every comments read - issue comments' filtered one among them
+# (#1116) - renders through the same definition.
+COMMENTS_RENDER_JQ='def render_comments(login): [.[] | "<!-- comment @\(login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n");'
+COMMENTS_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author.login)'
 
 # The trimmed object `issue fetch --json` publishes (#528): the issue's number,
 # title and body, its label names, and each comment's author login, gh's

@@ -108,7 +108,8 @@ Run it on every run, whether the linked issue was just published in step 1 or
 already existed, and ask nothing: a quick implementation is hands-off, and
 the human's control here was the choice of route (ADR-0034). Invoke the
 `orch-spec-review` skill and follow its **Standalone spec review** entry in
-its **Unattended spec review** mode on the linked issue, through to its end.
+its **Unattended spec review** mode, defined in that skill's
+`unattended-spec-review.md`, on the linked issue, through to its end.
 That mode is the one definition of what the review does unattended - the
 batch printed and applied as recommended, decision items and the ticket
 follow-up taking their recommended option, retiring included - and this step

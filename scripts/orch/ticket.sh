@@ -321,7 +321,7 @@ issue_body_rewrite() {
   # A filter command may end its last line with a newline; a body that had
   # no final newline gets none back.
   if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
-    out="$(cat "$result"; printf x)"; out="${out%x}"
+    file_read out "$result"
     printf '%s' "${out%$'\n'}" >"$result"
   fi
   if cmp -s "$body" "$result"; then rm -f "$body" "$result"; return 0; fi
@@ -372,7 +372,8 @@ ticket_edges_verify() {
 }
 
 # The heading of a ticket body's section listing its blockers - kept in line
-# with the native edges for human readers; no command reads it.
+# with the native edges for human readers, and read by `spec-review apply`'s
+# block/unblock precheck through blocked_by_section_numbers.
 BLOCKED_BY_HEADING='## Blocked by'
 
 # The body on stdin with its first `## Blocked by` section outside a code
@@ -403,6 +404,20 @@ rewrite_blocked_by_section() {
         section(lastcr "\n")
       }
     }
+  '
+}
+
+# The blocker numbers the first `## Blocked by` section outside a code fence
+# lists in the body on stdin, one per line - its `- #<n>` lines, the section
+# bounded as rewrite_blocked_by_section bounds it. A body with no section, or
+# one reading `None (can start immediately)`, lists none.
+blocked_by_section_numbers() {
+  awk -v heading="$BLOCKED_BY_HEADING" '
+    { l = $0; sub(/\r$/, "", l) }
+    in_section && !fence && l ~ /^##?([ \t]|$)/ { in_section = 0 }
+    !done && !fence && l == heading { in_section = 1; done = 1; next }
+    l ~ /^(```|~~~)/ { fence = !fence }
+    in_section && match(l, /^- #[0-9]+/) { print substr(l, 4, RLENGTH - 3) }
   '
 }
 

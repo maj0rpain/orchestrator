@@ -166,7 +166,8 @@ The published ticket numbers in publishing order, or `collapsed`.
 
 The mode a quick implementation takes, and only a quick implementation: a
 breakdown that asks the human nothing (ADR-0034). It is also what follows a
-retire in `orch-spec-review`'s **Unattended spec review**.
+retire in `orch-spec-review`'s **Unattended spec review**, defined in that
+skill's `unattended-spec-review.md`.
 
 Steps 1-3, 5 and 6 run as written. Step 4, the quiz, is replaced:
 

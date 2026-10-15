@@ -140,13 +140,24 @@ state_fixture phase "$prior_phase"
 spec_comments="$(mktemp)"
 fake_github
 fake_issue 14 open
+fake_comment 14 pat 2026-09-02T11:00:00Z "$(writeln '## Spec review' 'Round 1 of 1')"
 fake_comment 14 pat 2026-09-02T11:30:00Z "A follow-up."
+fake_comment 14 sam 2026-09-02T11:40:00Z "$(writeln 'A note that quotes' '## Spec review' 'lower down.')"
 fake_issue 15 open
 fake_comment 15 pat 2026-09-02T11:31:00Z "Not the flow's issue."
 out="$("$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
 assert_status "spec comments writes the flow issue's comments" "$st" 0
-assert_eq "of the issue state records, each opened by its marker line" "$(cat "$spec_comments")" \
-  "$(writeln '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'A follow-up.')"
+assert_eq "of the issue state records, each opened by its marker line, leaving out exactly the comments that open with ## Spec review (#1116)" \
+  "$(cat "$spec_comments")" "$(writeln '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'A follow-up.' '' \
+    '<!-- comment @sam 2026-09-02T11:40:00Z -->' 'A note that quotes' '## Spec review' 'lower down.')"
+fake_github
+fake_issue 14 open
+fake_comment 14 pat 2026-09-02T11:00:00Z "$(writeln '## Spec review' 'Round 1 of 2')"
+fake_comment 14 pat 2026-09-02T12:00:00Z "$(writeln '## Spec review' 'Round 2 of 2')"
+printf 'known content\n' >"$spec_comments"
+out="$("$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
+assert_status "spec comments succeeds on a spec with only review changelogs" "$st" 0
+assert_eq "leaving an empty file" "$(wc -c <"$spec_comments" | tr -d ' ')" "0"
 state_fixture phase "done"
 : >"$spec_comments"
 out="$("$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
