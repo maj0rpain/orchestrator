@@ -116,6 +116,27 @@ lines_split() {
   printf -v "$1" '%s' "$_ls_rest"
 }
 
+# file_read <var> <file>: <file>'s bytes into <var>, exactly - its trailing
+# newlines kept, which $(cat) alone drops. Fails, <var> untouched, when the
+# file cannot be read.
+file_read() {
+  local _file_read_s
+  _file_read_s="$(cat "$2" && printf x)" || return 1
+  printf -v "$1" '%s' "${_file_read_s%x}"
+}
+
+# array_index <array-name> <value>: the index of the first element of the
+# named indexed array equal to <value>, or nothing when none is.
+array_index() {
+  local _array_index_keys _array_index_i _array_index_ref
+  eval "_array_index_keys=(\${$1[@]+\"\${!$1[@]}\"})"
+  for _array_index_i in ${_array_index_keys[@]+"${_array_index_keys[@]}"}; do
+    _array_index_ref="$1[$_array_index_i]"
+    [ "${!_array_index_ref}" != "$2" ] || { printf '%s' "$_array_index_i"; return 0; }
+  done
+  return 0
+}
+
 # state_word <var> <state>: GitHub's uppercase issue or PR <state> into <var>
 # as the lowercase word a message prints - bash 3.2 has no lowercase
 # expansion. Any other value is passed through unchanged.

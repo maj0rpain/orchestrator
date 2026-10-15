@@ -76,25 +76,6 @@ spec_review_lens_known() {
   case " $SPEC_REVIEW_LENSES " in *" $1 "*) [ -n "$1" ] ;; *) return 1 ;; esac
 }
 
-# spec_review_lens_index <name>: the index of <name>'s `@@ lens` line in
-# SR_LENS_NAME, or nothing.
-spec_review_lens_index() {
-  local i
-  for i in ${SR_LENS_NAME[@]+"${!SR_LENS_NAME[@]}"}; do
-    [ "${SR_LENS_NAME[$i]}" != "$1" ] || { printf '%s' "$i"; return 0; }
-  done
-  return 0
-}
-
-# spec_review_item_index <n>: the index of item <n> in SR_IT_N, or nothing.
-spec_review_item_index() {
-  local i
-  for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
-    [ "${SR_IT_N[$i]}" != "$1" ] || { printf '%s' "$i"; return 0; }
-  done
-  return 0
-}
-
 # spec_review_option_index <item-index> <letter>: the index in SR_OP_ITEM of
 # that item's option <letter>, or nothing.
 spec_review_option_index() {
@@ -178,7 +159,8 @@ spec_review_batch_die() { die "batch.md line $1: $2"; }
 # citations' ranges are checked later, against the lens files.
 spec_review_batch_parse() {
   local file="$1" line lineno=0 mode=top rest kw args cur=-1 opt=-1
-  local buf="" bufn=0 block_line=0 quote_wanted="" n group rec arg name state extra j
+  local buf="" bufn=0 block_line=0 quote_wanted="" n group rec arg lens state reason
+  local fd_lens fd_k login created letter label extra j
   SR_LENS_NAME=(); SR_LENS_STATE=(); SR_LENS_REASON=()
   SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_LINE=()
   SR_IT_SUMMARY=(); SR_IT_ANCHOR=(); SR_IT_REPLACE=(); SR_IT_RESOLVED=()
@@ -231,27 +213,27 @@ spec_review_batch_parse() {
     case "$kw" in
       lens)
         [ "$cur" -lt 0 ] || spec_review_batch_die "$lineno" "the @@ lens lines come first, before any item"
-        read -r name state extra <<<"$args"
-        spec_review_lens_known "$name" \
-          || spec_review_batch_die "$lineno" "unknown lens '$name' (want one of: $SPEC_REVIEW_LENSES)"
-        [ -z "$(spec_review_lens_index "$name")" ] \
-          || spec_review_batch_die "$lineno" "a second @@ lens line for $name"
+        read -r lens state reason <<<"$args"
+        spec_review_lens_known "$lens" \
+          || spec_review_batch_die "$lineno" "unknown lens '$lens' (want one of: $SPEC_REVIEW_LENSES)"
+        [ -z "$(array_index SR_LENS_NAME "$lens")" ] \
+          || spec_review_batch_die "$lineno" "a second @@ lens line for $lens"
         case "$state" in
           ran|standalone)
-            [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ lens $name $state takes nothing after it"
-            [ "$state" = ran ] || [ "$name" = fidelity ] \
+            [ -z "$reason" ] || spec_review_batch_die "$lineno" "@@ lens $lens $state takes nothing after it"
+            [ "$state" = ran ] || [ "$lens" = fidelity ] \
               || spec_review_batch_die "$lineno" "only fidelity can be standalone" ;;
           not-run)
-            [ -n "$extra" ] || spec_review_batch_die "$lineno" "@@ lens $name not-run needs a reason" ;;
-          *) spec_review_batch_die "$lineno" "@@ lens $name wants ran, not-run <reason> or standalone" ;;
+            [ -n "$reason" ] || spec_review_batch_die "$lineno" "@@ lens $lens not-run needs a reason" ;;
+          *) spec_review_batch_die "$lineno" "@@ lens $lens wants ran, not-run <reason> or standalone" ;;
         esac
         j="${#SR_LENS_NAME[@]}"
-        SR_LENS_NAME[j]="$name"; SR_LENS_STATE[j]="$state"; SR_LENS_REASON[j]="$extra" ;;
+        SR_LENS_NAME[j]="$lens"; SR_LENS_STATE[j]="$state"; SR_LENS_REASON[j]="$reason" ;;
       item)
         [ "$cur" -lt 0 ] || spec_review_item_check "$cur"
         read -r n group rec arg <<<"$args"
         case "$n" in ''|*[!0-9]*|0*) spec_review_batch_die "$lineno" "item number must be a positive number, got '$n'" ;; esac
-        [ -z "$(spec_review_item_index "$n")" ] || spec_review_batch_die "$lineno" "a second item $n"
+        [ -z "$(array_index SR_IT_N "$n")" ] || spec_review_batch_die "$lineno" "a second item $n"
         case "$group" in
           consolidation|contradicts-the-plan) ;;
           *) spec_review_lens_known "$group" \
@@ -282,15 +264,15 @@ spec_review_batch_parse() {
           SR_IT_SUMMARY[cur]="$args"
         fi ;;
       finding)
-        read -r name n extra <<<"$args"
-        [ -n "$name" ] && [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ finding wants <lens> <k>"
-        case "$n" in ''|*[!0-9]*|0*) spec_review_batch_die "$lineno" "@@ finding wants <lens> <k>, k a positive number" ;; esac
+        read -r fd_lens fd_k extra <<<"$args"
+        [ -n "$fd_lens" ] && [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ finding wants <lens> <k>"
+        case "$fd_k" in ''|*[!0-9]*|0*) spec_review_batch_die "$lineno" "@@ finding wants <lens> <k>, k a positive number" ;; esac
         j="${#SR_FD_ITEM[@]}"
-        SR_FD_ITEM[j]="$cur"; SR_FD_LENS[j]="$name"; SR_FD_K[j]="$n"; SR_FD_LINE[j]="$lineno" ;;
+        SR_FD_ITEM[j]="$cur"; SR_FD_LENS[j]="$fd_lens"; SR_FD_K[j]="$fd_k"; SR_FD_LINE[j]="$lineno" ;;
       comment)
-        read -r name n extra <<<"$args"
-        case "$name" in @?*) ;; *) spec_review_batch_die "$lineno" "@@ comment wants @<login> <createdAt>" ;; esac
-        [ -n "$n" ] && [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ comment wants @<login> <createdAt>"
+        read -r login created extra <<<"$args"
+        case "$login" in @?*) ;; *) spec_review_batch_die "$lineno" "@@ comment wants @<login> <createdAt>" ;; esac
+        [ -n "$created" ] && [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ comment wants @<login> <createdAt>"
         SR_CM_ITEM[${#SR_CM_ITEM[@]}]="$cur"
         quote_wanted=1 ;;
       quote)
@@ -300,19 +282,19 @@ spec_review_batch_parse() {
       resolved-by)
         [ "${SR_IT_REC[$cur]}" = resolved ] || spec_review_batch_die "$lineno" "@@ resolved-by belongs to a resolved item"
         [ -z "${SR_IT_RESOLVED[$cur]+x}" ] || spec_review_batch_die "$lineno" "a second @@ resolved-by"
-        j="$(spec_review_item_index "$args")"
+        j="$(array_index SR_IT_N "$args")"
         [ -n "$args" ] && [ -n "$j" ] && [ "$j" -lt "$cur" ] \
           || spec_review_batch_die "$lineno" "@@ resolved-by names '$args', which is no earlier item"
         SR_IT_RESOLVED[cur]="$args" ;;
       option)
         [ "${SR_IT_REC[$cur]}" = decision ] || spec_review_batch_die "$lineno" "@@ option belongs to a decision item"
-        read -r name extra <<<"$args"
-        case "$name" in [A-Z]) ;; *) spec_review_batch_die "$lineno" "@@ option wants <letter> <label>, the letter A to Z" ;; esac
-        [ -n "$extra" ] || spec_review_batch_die "$lineno" "@@ option $name needs a label"
-        [ -z "$(spec_review_option_index "$cur" "$name")" ] \
-          || spec_review_batch_die "$lineno" "a second option $name"
+        read -r letter label <<<"$args"
+        case "$letter" in [A-Z]) ;; *) spec_review_batch_die "$lineno" "@@ option wants <letter> <label>, the letter A to Z" ;; esac
+        [ -n "$label" ] || spec_review_batch_die "$lineno" "@@ option $letter needs a label"
+        [ -z "$(spec_review_option_index "$cur" "$letter")" ] \
+          || spec_review_batch_die "$lineno" "a second option $letter"
         opt="${#SR_OP_ITEM[@]}"
-        SR_OP_ITEM[opt]="$cur"; SR_OP_LETTER[opt]="$name"; SR_OP_LABEL[opt]="$extra"; SR_OP_LINE[opt]="$lineno" ;;
+        SR_OP_ITEM[opt]="$cur"; SR_OP_LETTER[opt]="$letter"; SR_OP_LABEL[opt]="$label"; SR_OP_LINE[opt]="$lineno" ;;
       anchor)
         [ -z "$args" ] || spec_review_batch_die "$lineno" "@@ anchor takes nothing after it; the anchor is the lines below it"
         case "${SR_IT_REC[$cur]}" in
@@ -335,9 +317,9 @@ spec_review_batch_parse() {
   esac
   [ -z "$quote_wanted" ] || spec_review_batch_die "$lineno" "@@ comment must be followed by @@ quote"
   [ "$cur" -lt 0 ] || spec_review_item_check "$cur"
-  for name in $SPEC_REVIEW_LENSES; do
-    [ -n "$(spec_review_lens_index "$name")" ] \
-      || die "batch.md: no @@ lens line for $name - every lens in the table has one"
+  for lens in $SPEC_REVIEW_LENSES; do
+    [ -n "$(array_index SR_LENS_NAME "$lens")" ] \
+      || die "batch.md: no @@ lens line for $lens - every lens in the table has one"
   done
 }
 
@@ -395,7 +377,7 @@ spec_review_finding_text() {
 spec_review_findings_check() {
   local j l count i
   for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
-    l="$(spec_review_lens_index "${SR_FD_LENS[$j]}")"
+    l="$(array_index SR_LENS_NAME "${SR_FD_LENS[$j]}")"
     spec_review_lens_known "${SR_FD_LENS[$j]}" \
       || spec_review_batch_die "${SR_FD_LINE[$j]}" "unknown lens '${SR_FD_LENS[$j]}'"
     [ "${SR_LENS_STATE[$l]}" = ran ] \
@@ -409,7 +391,7 @@ spec_review_findings_check() {
   done
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     spec_review_lens_known "${SR_IT_GROUP[$i]}" || continue
-    l="$(spec_review_lens_index "${SR_IT_GROUP[$i]}")"
+    l="$(array_index SR_LENS_NAME "${SR_IT_GROUP[$i]}")"
     [ "${SR_LENS_STATE[$l]}" = ran ] \
       || spec_review_batch_die "${SR_IT_LINE[$i]}" "item ${SR_IT_N[$i]} is in group ${SR_IT_GROUP[$i]}, which did not run"
   done
@@ -436,7 +418,7 @@ spec_review_answer() {
         case "$n" in ''|*[!0-9]*) die "the answer '$answer' is not recommended, all, none or a list such as 1B, 2, 3 - '$tok' is no item" ;; esac
         case "$letter" in ''|[A-Za-z]) ;; *) die "the answer '$answer' is not recommended, all, none or a list such as 1B, 2, 3 - '$tok' is no item" ;; esac
         letter="$(printf '%s' "$letter" | tr '[:lower:]' '[:upper:]')"
-        i="$(spec_review_item_index "$n")"
+        i="$(array_index SR_IT_N "$n")"
         [ -n "$i" ] || die "the answer names item $n, which batch.md does not have"
         case "$named" in *" $n "*) die "the answer names item $n twice" ;; esac
         named="$named$n "
@@ -471,25 +453,33 @@ spec_review_answer() {
   done
 }
 
-# spec_review_reasons <file>: the human's decline reasons, one `<n>: <reason>`
-# line per item, into SR_REASON. Blank lines are skipped; a malformed line, or
-# one naming an unknown item, one not declined, or one named twice, dies.
+# spec_review_reasons <flag> <file> <numbers> <dispositions> <reasons> <noun>
+# <source> <answer>: the human's decline reasons from <file>, given as <flag>
+# (no reasons when it is empty), one `<n>: <reason>` line per item, into the array
+# named <reasons> - emptied first - at the index of <n> in the array named
+# <numbers>. Blank lines are skipped; a malformed line, or one naming an item
+# <source> does not have, one whose entry in the array named <dispositions>
+# is not declined by <answer>, or one named twice, dies, calling the item a
+# <noun>.
 spec_review_reasons() {
-  local f="$1" line lineno=0 n reason i
-  SR_REASON=()
+  local flag="$1" f="$2" numbers="$3" disps="$4" reasons="$5" noun="$6" source="$7" answer_name="$8"
+  local line lineno=0 n reason i ref
+  eval "$reasons=()"
   [ -n "$f" ] || return 0
-  [ -f "$f" ] || die "--reasons file not found: $f"
+  [ -f "$f" ] || die "$flag file not found: $f"
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
     line="${line%$'\r'}"
     [ -n "$(trim "$line")" ] || continue
-    spec_review_reason_split --reasons "$lineno" "$line" n reason
-    i="$(spec_review_item_index "$n")"
-    [ -n "$i" ] || die "--reasons line $lineno names item $n, which batch.md does not have"
-    [ "${SR_DISP[$i]}" = declined ] \
-      || die "--reasons line $lineno names item $n, which the answer does not decline"
-    [ -z "${SR_REASON[$i]+x}" ] || die "--reasons line $lineno names item $n a second time"
-    SR_REASON[i]="$reason"
+    spec_review_reason_split "$flag" "$lineno" "$line" n reason
+    i="$(array_index "$numbers" "$n")"
+    [ -n "$i" ] || die "$flag line $lineno names $noun $n, which $source does not have"
+    ref="${disps}[$i]"
+    [ "${!ref:-}" = declined ] \
+      || die "$flag line $lineno names $noun $n, which $answer_name does not decline"
+    ref="${reasons}[$i]"
+    [ -z "${!ref+x}" ] || die "$flag line $lineno names $noun $n a second time"
+    printf -v "${reasons}[$i]" '%s' "$reason"
   done <"$f"
 }
 
@@ -566,6 +556,17 @@ spec_review_quotes() {
   printf '%s' "$out"
 }
 
+# spec_review_decline_reason <has-reason> <reason> <as-recommended>
+# <recommended-reason>: a declined item's changelog reason - the human's
+# <reason> when <has-reason> is set, else, when <as-recommended> is, the
+# recommendation's own reason, else plain "declined".
+spec_review_decline_reason() {
+  if [ -n "$1" ]; then printf '%s' "$2"
+  elif [ -n "$3" ]; then printf 'declined as recommended: %s' "$4"
+  else printf 'declined'
+  fi
+}
+
 # spec_review_item_line <index> <unattended>: item <index>'s changelog line.
 spec_review_item_line() {
   local i="$1" n="${SR_IT_N[$1]}" j reason
@@ -579,10 +580,8 @@ spec_review_item_line() {
         printf -- '- (%s) decision: took %s - %s\n' "$n" "${SR_TAKEN[$i]}" "${SR_OP_LABEL[$j]}"
       fi ;;
     declined)
-      if [ -n "${SR_REASON[$i]+x}" ]; then reason="${SR_REASON[$i]}"
-      elif [ -n "${SR_ASREC[$i]:-}" ]; then reason="declined as recommended: ${SR_IT_ARG[$i]}"
-      else reason="declined"
-      fi
+      reason="$(spec_review_decline_reason "${SR_REASON[$i]+x}" "${SR_REASON[$i]:-}" \
+        "${SR_ASREC[$i]:-}" "${SR_IT_ARG[$i]}")"
       [ "${SR_IT_GROUP[$i]}" != contradicts-the-plan ] || reason="spec departs from the plan: $reason"
       printf -- '- (%s) %s - %s\n' "$n" "$(spec_review_quotes "$i")" "$reason" ;;
     undecided) printf -- '- (%s) %s - left undecided\n' "$n" "$(spec_review_quotes "$i")" ;;
@@ -601,7 +600,7 @@ spec_review_changelog() {
   for section in consolidation $SPEC_REVIEW_LENSES; do
     printf '\n### %s\n' "$(spec_review_title "$section")"
     if [ "$section" != consolidation ]; then
-      l="$(spec_review_lens_index "$section")"
+      l="$(array_index SR_LENS_NAME "$section")"
       case "${SR_LENS_STATE[$l]}" in
         not-run) printf 'not run - %s\n' "${SR_LENS_REASON[$l]}"; continue ;;
         standalone) printf 'not run - standalone review, no plan to check against\n'; continue ;;
@@ -632,16 +631,6 @@ spec_review_changelog() {
 # spec_review_tickets_die <line> <message>: a malformed tickets.md, refused
 # naming the line.
 spec_review_tickets_die() { die "tickets.md line $1: $2"; }
-
-# spec_review_ticket_item_index <n>: the index of ticket item <n> in ST_N, or
-# nothing.
-spec_review_ticket_item_index() {
-  local i
-  for i in ${ST_N[@]+"${!ST_N[@]}"}; do
-    [ "${ST_N[$i]}" != "$1" ] || { printf '%s' "$i"; return 0; }
-  done
-  return 0
-}
 
 # spec_review_ticket_item_check <index>: dies, naming the item's header line,
 # unless a text item carries its summary and its anchor/replace block.
@@ -719,7 +708,7 @@ spec_review_tickets_parse() {
         [ "$cur" -lt 0 ] || spec_review_ticket_item_check "$cur"
         read -r n kind tail <<<"$args"
         case "$n" in ''|*[!0-9]*|0*) spec_review_tickets_die "$lineno" "item number must be a positive number, got '$n'" ;; esac
-        [ -z "$(spec_review_ticket_item_index "$n")" ] || spec_review_tickets_die "$lineno" "a second item $n"
+        [ -z "$(array_index ST_N "$n")" ] || spec_review_tickets_die "$lineno" "a second item $n"
         t=""; b=""
         case "$kind" in
           ticket) read -r t rec arg <<<"$tail" ;;
@@ -794,7 +783,7 @@ spec_review_tickets_answer() {
         tok="${rest%%,*}"; rest="${rest#*,}"
         trim_split "$tok" tok
         case "$tok" in ''|*[!0-9]*) die "the --tickets answer '$answer' is not recommended, all, none, retire or a list such as 1, 3 - '$tok' is no ticket item" ;; esac
-        i="$(spec_review_ticket_item_index "$tok")"
+        i="$(array_index ST_N "$tok")"
         [ -n "$i" ] || die "the --tickets answer names ticket item $tok, which tickets.md does not have"
         case "$named" in *" $tok "*) die "the --tickets answer names ticket item $tok twice" ;; esac
         named="$named$tok "
@@ -813,48 +802,18 @@ spec_review_tickets_answer() {
   done
 }
 
-# spec_review_ticket_reasons <file>: --reasons for ticket items, into
-# ST_REASON.
-spec_review_ticket_reasons() {
-  local f="$1" line lineno=0 n reason i
-  ST_REASON=()
-  [ -n "$f" ] || return 0
-  [ -f "$f" ] || die "--ticket-reasons file not found: $f"
-  while IFS= read -r line || [ -n "$line" ]; do
-    lineno=$((lineno + 1))
-    line="${line%$'\r'}"
-    [ -n "$(trim "$line")" ] || continue
-    spec_review_reason_split --ticket-reasons "$lineno" "$line" n reason
-    i="$(spec_review_ticket_item_index "$n")"
-    [ -n "$i" ] || die "--ticket-reasons line $lineno names ticket item $n, which tickets.md does not have"
-    [ "${ST_DISP[$i]:-}" = declined ] \
-      || die "--ticket-reasons line $lineno names ticket item $n, which the --tickets answer does not decline"
-    [ -z "${ST_REASON[$i]+x}" ] || die "--ticket-reasons line $lineno names ticket item $n a second time"
-    ST_REASON[i]="$reason"
-  done <"$f"
-}
-
-# spec_review_ticket_index <t>: the index of ticket #<t> in TK_T, or nothing.
-spec_review_ticket_index() {
-  local j
-  for j in ${TK_T[@]+"${!TK_T[@]}"}; do
-    [ "${TK_T[$j]}" != "$1" ] || { printf '%s' "$j"; return 0; }
-  done
-  return 0
-}
-
 # spec_review_ticket_load <dir> <t> <what>: ticket #<t>'s fetched copy into
 # TK_FETCHED and TK_TEXT, once. Dies, naming <what>, when the session wrote
 # no ticket-<t>.md.
 spec_review_ticket_load() {
   local j copy
-  [ -z "$(spec_review_ticket_index "$2")" ] || return 0
+  [ -z "$(array_index TK_T "$2")" ] || return 0
   [ -f "$1/ticket-$2.md" ] \
     || die "$3: ticket-$2.md not found in $1 - fetch each ticket a ticket item names into it"
-  copy="$(cat "$1/ticket-$2.fetched.md"; printf x)" \
+  file_read copy "$1/ticket-$2.fetched.md" \
     || die "could not read $1/ticket-$2.fetched.md - nothing written"
   j="${#TK_T[@]}"
-  TK_T[j]="$2"; TK_FETCHED[j]="${copy%x}"; TK_TEXT[j]="${copy%x}"
+  TK_T[j]="$2"; TK_FETCHED[j]="$copy"; TK_TEXT[j]="$copy"
 }
 
 # spec_review_tickets_follow <body-var> <dir> <kind> <issue>: every accepted
@@ -864,7 +823,7 @@ spec_review_ticket_load() {
 # checked against the breakdown and the fetched tickets' `## Blocked by`
 # sections. Dies, before any write, on the first that fails.
 spec_review_tickets_follow() {
-  local body_var="$1" dir="$2" kind="$3" issue="$4" i j what post subs="" listed have
+  local body_var="$1" dir="$2" kind="$3" issue="$4" i j t what post subs="" listed have
   [ -z "$ST_RETIRE" ] || return 0
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
     case "${ST_KIND[$i]}" in
@@ -881,7 +840,7 @@ spec_review_tickets_follow() {
       ticket)
         spec_review_ticket_load "$dir" "${ST_T[$i]}" "$what"
         [ "${ST_DISP[$i]}" = applied ] || continue
-        j="$(spec_review_ticket_index "${ST_T[$i]}")"
+        j="$(array_index TK_T "${ST_T[$i]}")"
         spec_review_edit "TK_TEXT[$j]" "${TK_FETCHED[$j]}" "$what (#${ST_T[$i]})" \
           "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" ;;
       section)
@@ -891,15 +850,15 @@ spec_review_tickets_follow() {
         spec_review_edit "$body_var" "$post" "$what (## Ticket)" \
           "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" ;;
       block|unblock)
-        for j in "${ST_T[$i]}" "${ST_B[$i]}"; do
+        for t in "${ST_T[$i]}" "${ST_B[$i]}"; do
           case $'\n'"$subs"$'\n' in
-            *$'\n'"$j"$'\n'*) ;;
-            *) die "$what: #$j is not a ticket of #$issue's breakdown - nothing written" ;;
+            *$'\n'"$t"$'\n'*) ;;
+            *) die "$what: #$t is not a ticket of #$issue's breakdown - nothing written" ;;
           esac
         done
         [ "${ST_DISP[$i]}" = applied ] || continue
         spec_review_ticket_load "$dir" "${ST_T[$i]}" "$what"
-        j="$(spec_review_ticket_index "${ST_T[$i]}")"
+        j="$(array_index TK_T "${ST_T[$i]}")"
         have=""
         case $'\n'"$(printf '%s\n' "${TK_FETCHED[$j]}" | blocked_by_section_numbers)"$'\n' in
           *$'\n'"${ST_B[$i]}"$'\n'*) have=1 ;;
@@ -930,10 +889,8 @@ spec_review_tickets_lines() {
         esac
         continue
       fi
-      if [ -n "${ST_REASON[$i]+x}" ]; then reason="${ST_REASON[$i]}"
-      elif [ -n "${ST_ASREC[$i]:-}" ]; then reason="declined as recommended: ${ST_ARG[$i]}"
-      else reason="declined"
-      fi
+      reason="$(spec_review_decline_reason "${ST_REASON[$i]+x}" "${ST_REASON[$i]:-}" \
+        "${ST_ASREC[$i]:-}" "${ST_ARG[$i]}")"
       case "${ST_KIND[$i]}" in
         ticket|section) out="$out- ($n) \"$(spec_review_one_line "${ST_REPLACE[$i]}")\" - $reason"$'\n' ;;
         *) out="$out- ($n) \"${ST_KIND[$i]} #${ST_T[$i]} by #${ST_B[$i]}\" - $reason"$'\n' ;;
@@ -973,6 +930,13 @@ spec_review_write() {
   fi
   printf '%s\n' "$what" >>"$dir/applied.log" \
     || die "$what landed, but $dir/applied.log could not record it"
+}
+
+# spec_review_local_write <file> <text>: <text> written to <file>, exactly,
+# before any GitHub write - so a failure dies saying none was made.
+spec_review_local_write() {
+  { printf '%s' "$2" >"$1"; } 2>/dev/null \
+    || die "could not write $1 - nothing written to GitHub"
 }
 
 # spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
@@ -1076,15 +1040,17 @@ spec_review_apply() {
   spec_review_batch_parse "$dir/batch.md"
   SR_LF_LENS=(); SR_LF_K=(); SR_LF_TEXT=()
   for lens in $SPEC_REVIEW_LENSES; do
-    j="$(spec_review_lens_index "$lens")"
+    j="$(array_index SR_LENS_NAME "$lens")"
     [ "${SR_LENS_STATE[$j]}" != ran ] || spec_review_lens_parse "$dir" "$lens"
   done
   spec_review_findings_check
   spec_review_answer "$answer"
-  spec_review_reasons "$reasons"
+  spec_review_reasons --reasons "$reasons" SR_IT_N SR_DISP SR_REASON \
+    item batch.md "the answer"
 
   # Every accepted anchor, checked against the fetched copy and applied to it.
-  fetched="$(cat "$dir/spec.fetched.md"; printf x)"; fetched="${fetched%x}"
+  file_read fetched "$dir/spec.fetched.md" \
+    || die "could not read $dir/spec.fetched.md - nothing written"
   text="$fetched"
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     case "${SR_DISP[$i]}" in
@@ -1117,8 +1083,7 @@ spec_review_apply() {
   if [ -n "$changed" ] && [ "$st" -eq 0 ]; then
     if [ -z "$ticket_answer" ]; then
       # The pause: the session drafts the ticket items and runs apply again.
-      { printf '%s' "$text" >"$dir/spec.md"; } 2>/dev/null \
-        || die "could not write $dir/spec.md - nothing written to GitHub"
+      spec_review_local_write "$dir/spec.md" "$text"
       note "$kind"
       exit 3
     fi
@@ -1126,21 +1091,19 @@ spec_review_apply() {
       || die "tickets.md not found in $dir - --tickets answers the ticket items it holds"
     spec_review_tickets_parse "$dir/tickets.md"
     spec_review_tickets_answer "$ticket_answer"
-    spec_review_ticket_reasons "$ticket_reasons"
+    spec_review_reasons --ticket-reasons "$ticket_reasons" ST_N ST_DISP ST_REASON \
+      "ticket item" tickets.md "the --tickets answer"
     spec_review_tickets_follow text "$dir" "$kind" "$issue"
     tickets="$(spec_review_tickets_lines)"
   fi
-  { printf '%s' "$text" >"$dir/spec.md"; } 2>/dev/null \
-    || die "could not write $dir/spec.md - nothing written to GitHub"
+  spec_review_local_write "$dir/spec.md" "$text"
   for j in ${TK_T[@]+"${!TK_T[@]}"}; do
-    { printf '%s' "${TK_TEXT[$j]}" >"$dir/ticket-${TK_T[$j]}.md"; } 2>/dev/null \
-      || die "could not write $dir/ticket-${TK_T[$j]}.md - nothing written to GitHub"
+    spec_review_local_write "$dir/ticket-${TK_T[$j]}.md" "${TK_TEXT[$j]}"
   done
 
   local log
   log="$(spec_review_changelog "$round" "$unattended" "$tickets" "$hosts")"
-  { printf '%s\n' "$log" >"$dir/changelog.md"; } 2>/dev/null \
-    || die "could not write $dir/changelog.md - nothing written to GitHub"
+  spec_review_local_write "$dir/changelog.md" "$log"$'\n'
 
   # Flow mode writes through the spec command, whose guards hold; the
   # standalone entry through the stateless issue commands.

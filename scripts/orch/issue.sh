@@ -74,13 +74,12 @@ cmd_issue_fetch() {
 
 # The comments `issue comments` writes (#1116): every comment but the spec
 # review's own changelogs - those whose body's first line is the
-# `## Spec review` heading - each in COMMENTS_JQ's shape, joined as it joins
-# them; nothing at all when none is left. It reads ISSUE_JSON_JQ's object,
-# whose author is already the login.
-ISSUE_COMMENTS_KEPT_JQ='[.comments[]
-  | select((.body | split("\n")[0] | rtrimstr("\r")) | test("^## Spec review[ \t]*$") | not)
-  | "<!-- comment @\(.author) \(.createdAt) -->\n\(.body)"]
-  | select(length > 0) | join("\n\n")'
+# `## Spec review` heading - rendered through COMMENTS_RENDER_JQ, as
+# COMMENTS_JQ renders them; nothing at all when none is left. It reads
+# ISSUE_JSON_JQ's object, whose author is already the login.
+ISSUE_COMMENTS_KEPT_JQ="$COMMENTS_RENDER_JQ"' [.comments[]
+  | select((.body | split("\n")[0] | rtrimstr("\r")) | test("^## Spec review[ \t]*$") | not)]
+  | render_comments(.author)'
 
 # issue_comments_kept <n>: issue <n>'s comments as ISSUE_COMMENTS_KEPT_JQ
 # prints them, filtered here rather than in the adapter, from the issue's

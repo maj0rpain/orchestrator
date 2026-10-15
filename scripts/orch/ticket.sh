@@ -321,7 +321,7 @@ issue_body_rewrite() {
   # A filter command may end its last line with a newline; a body that had
   # no final newline gets none back.
   if [ -s "$body" ] && [ -n "$(tail -c 1 "$body")" ]; then
-    out="$(cat "$result"; printf x)"; out="${out%x}"
+    file_read out "$result"
     printf '%s' "${out%$'\n'}" >"$result"
   fi
   if cmp -s "$body" "$result"; then rm -f "$body" "$result"; return 0; fi
