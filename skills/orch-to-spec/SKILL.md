@@ -55,10 +55,13 @@ turns out missing, take the fallback it documents and tell your caller which.
 1. **Explore** the repo to understand the current state of the code, if you
    have not already. In rewrite mode, also read the issue's current body:
    `bash "$ORCH" issue fetch <n> <file>`, into a file outside the repo's
-   tracked tree. If it fails, stop and say why. Use the vocabulary of the project's glossary
-   throughout the spec - list its term names with `bash "$ORCH" glossary
-   terms` and read the entries you need with `bash "$ORCH" glossary show
-   <term>...` - and respect the ADRs in the area you are touching. A failed glossary command is reported with its `orch:` message, and the step carries on without glossary entries, never reading `GLOSSARY.md` whole in their place.
+   tracked tree. If it fails, stop and say why. Use the vocabulary of the
+   project's glossary throughout the spec - list its term names with
+   `bash "$ORCH" glossary terms` and read the entries you need with
+   `bash "$ORCH" glossary show <term>...` - and respect the ADRs in the area
+   you are touching. A failed glossary command is reported with its `orch:` message,
+   and the step carries on without glossary entries, never reading
+   `GLOSSARY.md` whole in their place.
 
 2. **Check the test seams.** Sketch the seams at which the feature will be
    tested. Prefer existing seams to new ones, and the highest seam possible.

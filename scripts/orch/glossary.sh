@@ -125,8 +125,7 @@ glossary_run() {
         if (l ~ /^([-*] )?\*\*[^*]+\*\*:([[:space:]].*)?$/) {
           close_entry()
           n++; inentry = 1
-          t = l; sub(/^([-*] )?\*\*/, "", t); sub(/\*\*:.*$/, "", t)
-          term[n] = t
+          term[n] = l; sub(/^([-*] )?\*\*/, "", term[n]); sub(/\*\*:.*$/, "", term[n])
           len[n] = 1; line[n, 1] = l; na[n] = 0
           continue
         }

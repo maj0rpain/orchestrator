@@ -57,7 +57,9 @@ If you have not already explored the codebase, do so to understand the current
 state of the code. Ticket titles and descriptions use the project's glossary
 vocabulary - list its term names with `bash "$ORCH" glossary terms` and read
 the entries you need with `bash "$ORCH" glossary show <term>...` - and respect
-the ADRs in the area you are touching. A failed glossary command is reported with its `orch:` message, and the step carries on without glossary entries, never reading `GLOSSARY.md` whole in their place.
+the ADRs in the area you are touching. A failed glossary command is reported
+with its `orch:` message, and the step carries on without glossary entries,
+never reading `GLOSSARY.md` whole in their place.
 
 Look for opportunities to prefactor the code to make the implementation
 easier: make the change easy, then make the easy change.

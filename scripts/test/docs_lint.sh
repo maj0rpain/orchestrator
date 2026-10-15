@@ -1803,10 +1803,11 @@ echo "a side checkout's recorded issue (#874)"
 # side-checkout issue, both skills' side routes open the new session with the
 # command already typed, and quick implementation's passes --issue.
 side_checkout_sentence='One made for a quick implementation records that implementation'"'"'s issue, so a session opened in it picks the issue up without being told.'
-# glossary_entry <file> <term>: the entry's lines, from **<term>**: up to the
-# next blank line, on one line.
+# glossary_entry <file> <term>: the entry's lines, on one line, read by
+# glossary.sh's own parser so the entry grammar is never re-derived here.
 glossary_entry() {
-  T="**$2**:" awk 'index($0, ENVIRON["T"]) == 1 { inb = 1 } inb && /^[[:space:]]*$/ { exit } inb' "$1" | flat_text
+  (source "$PLUGIN_ROOT/scripts/orch/glossary.sh" &&
+    GLOSSARY_MISSING=/dev/null glossary_run show "$1" "$2" 2>/dev/null) | flat_text
 }
 # scan_side_checkout_issue <plugin root>: one line per break of that rule.
 scan_side_checkout_issue() {
