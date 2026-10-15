@@ -406,6 +406,20 @@ rewrite_blocked_by_section() {
   '
 }
 
+# The blocker numbers the first `## Blocked by` section outside a code fence
+# lists in the body on stdin, one per line - its `- #<n>` lines, the section
+# bounded as rewrite_blocked_by_section bounds it. A body with no section, or
+# one reading `None (can start immediately)`, lists none.
+blocked_by_section_numbers() {
+  awk -v heading="$BLOCKED_BY_HEADING" '
+    { l = $0; sub(/\r$/, "", l) }
+    in_section && !fence && l ~ /^##?([ \t]|$)/ { in_section = 0 }
+    !done && !fence && l == heading { in_section = 1; done = 1; next }
+    l ~ /^(```|~~~)/ { fence = !fence }
+    in_section && match(l, /^- #[0-9]+/) { print substr(l, 4, RLENGTH - 3) }
+  '
+}
+
 # blockers_union <before> <by>: the blocker set after `ticket block` - every
 # number in either list, one per line, sorted and de-duplicated.
 blockers_union() {

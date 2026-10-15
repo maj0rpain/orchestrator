@@ -511,4 +511,333 @@ chmod 644 "$top/.orchestrator/state.json"
 out="$("$ORCH" spec-review apply "$d" recommended --issue 14 2>&1)"; st=$?
 assert_status "--round is required" "$st" 1
 assert_contains "help documents spec-review apply" "$("$ORCH" help)" "spec-review apply <dir> <answer>"
+rm -rf "$top/.orchestrator"
+
+# The ticket step (#1118): after the pause, the session fetches the tickets
+# and writes tickets.md, and apply --tickets follows them in the same call
+# that publishes the body - ticket text edits, then edges, then the body, then
+# any retire, then the comment.
+srt_t20='## What to build
+
+Build alpha.
+
+## Blocked by
+
+None (can start immediately)
+'
+srt_t21='## What to build
+
+Build gamma.
+
+## Blocked by
+
+- #20
+'
+# srt_dir: sra_dir's round directory, with #14 broken down into open tickets
+# #20 and #21 (#21 blocked by #20) and closed #22, and tickets.md drafted;
+# prints its path. The ticket files are srt_fetch's, as the session fetches
+# them after the pause.
+srt_dir() {
+  local d
+  d="$(sra_dir)"
+  fake_issue 20 open; fake_issue_body 20 "$srt_t20"
+  fake_issue 21 open; fake_issue_body 21 "$srt_t21"
+  fake_issue 22 closed
+  rm -rf "$ORCH_GH_FAKE_STORE/subs" "$ORCH_GH_FAKE_STORE/blocked_by"
+  mkdir -p "$ORCH_GH_FAKE_STORE/subs" "$ORCH_GH_FAKE_STORE/blocked_by"
+  printf '20\n21\n22\n' >"$ORCH_GH_FAKE_STORE/subs/14"
+  printf '20\n' >"$ORCH_GH_FAKE_STORE/blocked_by/21"
+  cat >"$d/tickets.md" <<'TICKETS'
+@@ recommend apply
+@@ item 1 ticket 20 apply
+@@ summary #20 builds alpha prime
+@@ anchor
+Build alpha.
+@@ replace
+Build alpha prime.
+@@ end
+
+@@ item 2 unblock 21 by 20 apply
+@@ item 3 block 20 by 21 apply
+@@ item 4 ticket 21 decline gamma is unchanged
+@@ summary #21 builds gamma twice
+@@ anchor
+Build gamma.
+@@ replace
+Build gamma twice.
+@@ end
+@@ item 5 block 21 by 20 decline already there
+@@ closed 22 the gamma API
+TICKETS
+  printf '%s\n' "$d"
+}
+# srt_fetch <dir>: the tickets' bodies fetched into ticket-<n>.md.
+srt_fetch() { printf '%s' "$srt_t20" >"$1/ticket-20.md"; printf '%s' "$srt_t21" >"$1/ticket-21.md"; }
+# srt_files <dir>: spec.md, the ticket files and changelog.md, for a refusal
+# to leave as they were.
+srt_files() { cat "$1/spec.md" "$1/ticket-20.md" "$1/ticket-21.md" "$1/changelog.md" 2>/dev/null; }
+# srt_refused <label> <dir> <want> <answer> [flags...]: sra_refused, the
+# ticket files unchanged too.
+srt_refused() {
+  local before
+  before="$(srt_files "$2")"
+  sra_refused "$@"
+  assert_eq "$1: the ticket files unchanged" "$(srt_files "$2")" "$before"
+}
+
+# The pause, then the --tickets rerun.
+d="$(srt_dir)"
+sra "$d" recommended
+assert_status "the first run pauses for the ticket question" "$st" 3
+srt_fetch "$d"
+sra "$d" recommended --tickets recommended
+assert_status "the --tickets rerun applies" "$st" 0
+assert_eq "ticket-20.fetched.md is taken on the rerun" "$(cat "$d/ticket-20.fetched.md")" "$(printf '%s' "$srt_t20")"
+assert_eq "ticket-20.md carries its text edit" "$(cat "$d/ticket-20.md")" '## What to build
+
+Build alpha prime.
+
+## Blocked by
+
+None (can start immediately)'
+assert_eq "a text edit then an edge on #20: both land, in that order" "$(fake_body_of 20)" '## What to build
+
+Build alpha prime.
+
+## Blocked by
+
+- #21'
+assert_eq "#21 unblocked, its declined text edit not made" "$(fake_body_of 21)" '## What to build
+
+Build gamma.
+
+## Blocked by
+
+None (can start immediately)'
+assert_eq "the edges as recommended: #20 blocked by #21" "$(cat "$ORCH_GH_FAKE_STORE/blocked_by/20")" 21
+assert_eq "and #21 by nothing" "$(cat "$ORCH_GH_FAKE_STORE/blocked_by/21")" ""
+assert_eq "the body published is spec.md" "$(fake_body_of 14)" "$sra_clean"
+srt_tickets='### Tickets
+- (1) #20 builds alpha prime
+- (2) #21 no longer blocked by #20
+- (3) #20 now blocked by #21
+- (4) "Build gamma twice." - declined as recommended: gamma is unchanged
+- (5) "block #21 by #20" - declined as recommended: already there
+- #22 closed, built against the earlier spec: the gamma API'
+assert_contains "the Tickets section, line for line" "$(cat "$d/changelog.md")" $'\n\n'"$srt_tickets"
+assert_eq "it ends the changelog" "$(tail -n 7 "$d/changelog.md")" "$srt_tickets"
+assert_eq "posted" "$(fake_comments_of 14)" "$(cat "$d/changelog.md")"
+assert_eq "the writes in order: ticket text, edges, body, comment" "$(cat "$d/applied.log")" "ticket #20's body
+unblock #21 by #20
+block #20 by #21
+the body of issue #14
+the changelog comment on issue #14"
+srt_after="$(cat "$d/spec.md" "$d/ticket-20.md" "$d/ticket-21.md" "$d/changelog.md"; fake_body_of 14; fake_body_of 20; fake_body_of 21)"
+
+# A clean run, --tickets given from the start, gives the same result.
+d="$(srt_dir)"
+srt_fetch "$d"
+sra "$d" recommended --tickets recommended
+assert_status "a clean --tickets run applies" "$st" 0
+assert_eq "the --tickets rerun after a pause gives the same result as a clean run" \
+  "$(cat "$d/spec.md" "$d/ticket-20.md" "$d/ticket-21.md" "$d/changelog.md"; fake_body_of 14; fake_body_of 20; fake_body_of 21)" "$srt_after"
+
+# An Other list: a text edit on #21 before its unblock; a declined edge's
+# reason from --ticket-reasons.
+d="$(srt_dir)"
+srt_fetch "$d"
+printf '5: the edge stays\n' >"$d/treasons"
+sra "$d" recommended --tickets "1, 2, 4" --ticket-reasons "$d/treasons"
+assert_status "an Other ticket list applies" "$st" 0
+assert_eq "#21's text edit, then its unblock" "$(fake_body_of 21)" '## What to build
+
+Build gamma twice.
+
+## Blocked by
+
+None (can start immediately)'
+assert_eq "#20 not blocked: item 3 left out" "$(cat "$ORCH_GH_FAKE_STORE/blocked_by/20" 2>/dev/null)" ""
+sra_cl="$(cat "$d/changelog.md")"
+assert_eq "an applied ticket text edit by its summary" "$(has_line "$sra_cl" "- (4) #21 builds gamma twice")" yes
+assert_eq "an edge left out, declined" "$(has_line "$sra_cl" '- (3) "block #20 by #21" - declined')" yes
+assert_eq "a declined edge with the human's reason" "$(has_line "$sra_cl" '- (5) "block #21 by #20" - the edge stays')" yes
+assert_eq "ticket writes in item order, text before edge" "$(head -n 3 "$d/applied.log")" "ticket #20's body
+ticket #21's body
+unblock #21 by #20"
+
+# --tickets none: no ticket write, the body still published.
+d="$(srt_dir)"
+srt_fetch "$d"
+printf '1: alpha is fine\n' >"$d/treasons"
+sra "$d" recommended --tickets none --ticket-reasons "$d/treasons"
+assert_status "--tickets none applies" "$st" 0
+assert_eq "no ticket written" "$(fake_body_of 20)" "$(printf '%s' "$srt_t20")"
+assert_eq "a declined text edit quotes its replacement, then the reason" \
+  "$(has_line "$(cat "$d/changelog.md")" '- (1) "Build alpha prime." - alpha is fine')" yes
+assert_eq "only the body and the comment written" "$(cat "$d/applied.log")" "the body of issue #14
+the changelog comment on issue #14"
+
+# --tickets retire, and recommended with @@ recommend retire: the retire runs
+# after the publish, and no ticket is edited.
+for srt_how in retire recommended; do
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  [ "$srt_how" = retire ] || sed -i 's/^@@ recommend apply$/@@ recommend retire/' "$d/tickets.md"
+  sra "$d" recommended --tickets "$srt_how"
+  assert_status "$srt_how: retires" "$st" 0
+  assert_eq "$srt_how: the breakdown unlinked" "$(fake_sub_issues_of 14)" ""
+  assert_eq "$srt_how: #20 closed as not planned" "$(fake_state_of 20) $(fake_reason_of 20)" "CLOSED not planned"
+  assert_contains "$srt_how: its text not edited" "$(fake_body_of 20)" "Build alpha."
+  assert_eq "$srt_how: the retire after the publish" "$(cat "$d/applied.log")" "the body of issue #14
+the retire of #14's ticket breakdown
+the changelog comment on issue #14"
+  assert_eq "$srt_how: the Tickets section" "$(tail -n 3 "$d/changelog.md")" '### Tickets
+- retired, to be broken down again
+- #22 closed, built against the earlier spec: the gamma API'
+done
+
+# @@ none-affected.
+d="$(srt_dir)"
+printf '@@ none-affected\n' >"$d/tickets.md"
+sra "$d" recommended --tickets recommended
+assert_status "@@ none-affected applies" "$st" 0
+assert_eq "recorded so" "$(tail -n 2 "$d/changelog.md")" '### Tickets
+None - no ticket affected'
+assert_eq "no ticket written" "$(fake_body_of 20)" "$(printf '%s' "$srt_t20")"
+
+# --unattended pauses like any run and takes only --tickets recommended.
+d="$(srt_dir)"
+sra "$d" recommended --unattended
+assert_status "--unattended pauses too" "$st" 3
+srt_fetch "$d"
+srt_refused "--unattended with --tickets all" "$d" "--unattended takes only --tickets recommended" recommended --unattended --tickets all
+sra "$d" recommended --unattended --tickets recommended
+assert_status "--unattended with --tickets recommended applies" "$st" 0
+assert_eq "following the tickets" "$(cat "$ORCH_GH_FAKE_STORE/blocked_by/20")" 21
+
+# Refusals before any write.
+d="$(srt_dir)"
+sra "$d" recommended
+mv "$d/tickets.md" "$d/tickets.keep"
+srt_refused "no tickets.md" "$d" "tickets.md not found" recommended --tickets recommended
+cp "$d/tickets.keep" "$d/tickets.md"
+srt_refused "a ticket item with no ticket file" "$d" "ticket item 1: ticket-20.md not found" recommended --tickets recommended
+srt_fetch "$d"
+assert_eq "ticket-20.fetched.md not yet taken by a run that found no file" "$(on_disk "$d/ticket-20.fetched.md")" absent
+sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
+srt_refused "a ticket anchor matching nothing" "$d" "ticket item 1 (#20): its anchor matches no text" recommended --tickets recommended
+assert_eq "the refused run took ticket-20.fetched.md" "$(cat "$d/ticket-20.fetched.md")" "$(printf '%s' "$srt_t20")"
+sed -i 's/^Nowhere\.$/##/' "$d/tickets.md"
+srt_refused "a ticket anchor matching twice" "$d" "ticket item 1 (#20): its anchor matches more than one place" recommended --tickets recommended
+cp "$d/tickets.keep" "$d/tickets.md"
+printf '@@ bogus\n' >>"$d/tickets.md"
+srt_refused "a malformed tickets.md" "$d" "tickets.md line 21: unknown line '@@ bogus'" recommended --tickets recommended
+printf '@@ item 1 ticket 20 apply\n' >"$d/tickets.md"
+srt_refused "tickets.md with no @@ recommend" "$d" "tickets.md line 1: @@ recommend comes first" recommended --tickets recommended
+printf '@@ recommend apply\n@@ item 1 ticket 20 apply\n@@ anchor\nx\n@@ replace\ny\n@@ end\n' >"$d/tickets.md"
+srt_refused "a ticket text item with no summary" "$d" "tickets.md line 2: item 1 has no @@ summary" recommended --tickets recommended
+printf '@@ recommend apply\n@@ item 1 block 20 21 apply\n' >"$d/tickets.md"
+srt_refused "a malformed edge item" "$d" "tickets.md line 2" recommended --tickets recommended
+printf '@@ none-affected\n@@ closed 22 x\n' >"$d/tickets.md"
+srt_refused "@@ none-affected with company" "$d" "tickets.md line 2" recommended --tickets recommended
+cp "$d/tickets.keep" "$d/tickets.md"
+srt_refused "an Other ticket list naming an unknown item" "$d" "ticket item 9" recommended --tickets "1, 9"
+srt_refused "a malformed --tickets answer" "$d" "--tickets" recommended --tickets "1B"
+printf 'one: why\n' >"$d/treasons"
+srt_refused "a malformed --ticket-reasons line" "$d" "--ticket-reasons line 1" recommended --tickets none --ticket-reasons "$d/treasons"
+printf '1: why\n' >"$d/treasons"
+srt_refused "a ticket reason for an accepted item" "$d" "does not decline" recommended --tickets recommended --ticket-reasons "$d/treasons"
+printf '9: why\n' >"$d/treasons"
+srt_refused "a ticket reason for an unknown item" "$d" "item 9" recommended --tickets none --ticket-reasons "$d/treasons"
+srt_refused "a block for an edge already present" "$d" "ticket item 5: #21 is already blocked by #20" recommended --tickets all
+sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' "$d/tickets.md"
+srt_refused "an unblock for an edge not present" "$d" "ticket item 2: #20 is not blocked by #21" recommended --tickets recommended
+cp "$d/tickets.keep" "$d/tickets.md"
+sed -i 's/^@@ item 5 block 21 by 20 /@@ item 5 block 99 by 20 /' "$d/tickets.md"
+srt_refused "an edge item whose ticket is not in the breakdown" "$d" "ticket item 5: #99 is not a ticket of #14's breakdown" recommended --tickets recommended
+cp "$d/tickets.keep" "$d/tickets.md"
+sra "$d" recommended --tickets recommended
+assert_status "the corrected rerun applies" "$st" 0
+assert_eq "giving the same result as a clean run" \
+  "$(cat "$d/spec.md" "$d/ticket-20.md" "$d/ticket-21.md" "$d/changelog.md"; fake_body_of 14; fake_body_of 20; fake_body_of 21)" "$srt_after"
+
+# A collapsed breakdown: its ## Ticket edit anchored on the body the batch
+# items left, and published with the body.
+srt_collapsed() {
+  local d
+  d="$(sra_dir)"
+  rm -rf "$ORCH_GH_FAKE_STORE/subs"
+  printf '%s\n## Ticket\n\nBuild the spec.\n' "$sra_body" >"$d/spec.md"
+  fake_issue_body 14 "$(cat "$d/spec.md")"$'\n'
+  printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary The ticket builds alpha prime first\n@@ anchor\nBuild the spec.\n@@ replace\nBuild the spec, alpha prime first.\n@@ end\n' >"$d/tickets.md"
+  printf '%s\n' "$d"
+}
+d="$(srt_collapsed)"
+sra "$d" recommended --tickets recommended
+assert_status "a collapsed ## Ticket edit applies" "$st" 0
+assert_eq "published with the body" "$(fake_body_of 14)" "$sra_clean"'
+
+## Ticket
+
+Build the spec, alpha prime first.'
+assert_eq "one body write" "$(cat "$d/applied.log")" "the body of issue #14
+the changelog comment on issue #14"
+assert_eq "recorded" "$(tail -n 1 "$d/changelog.md")" "- (1) The ticket builds alpha prime first"
+d="$(srt_collapsed)"
+sed -i 's/^Build the spec\.$/Alpha line./' "$d/tickets.md"
+srt_refused "a ## Ticket anchor on text the batch items replaced" "$d" "ticket item 1 (## Ticket): its anchor matches no text" recommended --tickets recommended
+d="$(srt_dir)"
+srt_fetch "$d"
+printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nAlpha line.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
+srt_refused "a ## Ticket item on a sub-issue breakdown" "$d" "ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues" recommended --tickets recommended
+
+# A failed ticket write stops apply, naming the writes already landed, in
+# both modes.
+srt_fail() {
+  local mode="$1" how="$2" op="$3" n="$4"
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  rm -f "$top/.orchestrator/state.json"
+  if [ "$mode" = flow ]; then
+    "$ORCH" init srt >/dev/null 2>&1; "$ORCH" state set issue 14 >/dev/null
+  fi
+  if [ "$n" = 0 ]; then fake_fail "$op"; else fake_fail_after "$op" "$n"; fi
+  if [ "$mode" = flow ]; then
+    out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 --tickets "$how" 2>&1)"; st=$?
+  else
+    sra "$d" recommended --tickets "$how"
+  fi
+  fake_unfail
+  assert_status "$mode: a failed $op stops apply" "$st" 1
+  assert_eq "$mode: changelog.md stays after a failed $op" "$(on_disk "$d/changelog.md")" present
+}
+for sra_mode in issue flow; do
+  srt_fail "$sra_mode" recommended adapter_issue_body_edit 0
+  assert_contains "$sra_mode: a ticket update failure named" "$out" "could not write ticket #20's body"
+  assert_contains "$sra_mode: nothing landed" "$out" "already landed: nothing"
+  srt_fail "$sra_mode" recommended adapter_blocker_remove 0
+  assert_contains "$sra_mode: an unblock failure named" "$out" "could not write unblock #21 by #20"
+  assert_contains "$sra_mode: the text edit landed" "$out" "already landed: ticket #20's body;"
+  srt_fail "$sra_mode" recommended adapter_blocker_add 0
+  assert_contains "$sra_mode: a block failure named" "$out" "could not write block #20 by #21"
+  assert_contains "$sra_mode: the text edit and the unblock landed" "$out" "already landed: ticket #20's body; unblock #21 by #20;"
+  # The ticket update, then the two edges' ## Blocked by rewrites, then the body.
+  srt_fail "$sra_mode" recommended adapter_issue_body_edit 3
+  assert_contains "$sra_mode: a body failure named" "$out" "could not write the body of issue #14"
+  assert_contains "$sra_mode: the ticket writes landed" "$out" "already landed: ticket #20's body; unblock #21 by #20; block #20 by #21;"
+  srt_fail "$sra_mode" retire adapter_issue_close 0
+  assert_contains "$sra_mode: a retire failure named" "$out" "could not write the retire of #14's ticket breakdown"
+  assert_contains "$sra_mode: the body landed before it" "$out" "already landed: the body of issue #14;"
+  srt_fail "$sra_mode" recommended adapter_issue_comment 0
+  assert_contains "$sra_mode: a comment failure named" "$out" "could not write the changelog comment on issue #14"
+  assert_contains "$sra_mode: every other write landed" "$out" "already landed: ticket #20's body; unblock #21 by #20; block #20 by #21; the body of issue #14;"
+done
+rm -rf "$top/.orchestrator"
+d="$(srt_dir)"
+srt_fetch "$d"
+fake_fail adapter_blocker_add
+sra "$d" recommended --unattended --tickets recommended
+fake_unfail
+assert_status "an unattended ticket write failure stops apply" "$st" 1
+assert_contains "naming the landed writes" "$out" "already landed: ticket #20's body; unblock #21 by #20;"
 restore_suite_env

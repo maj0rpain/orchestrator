@@ -488,6 +488,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               path. Reads state.json only to compare, and
                               never writes it
   spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
+                    [--tickets <answer> [--ticket-reasons <file>]]
                     [--issue <n>] [--unattended] [--host-fallbacks <file>]
                               apply a spec review round's answer - recommended,
                               all, none, or an Other list such as 1B, 2, 3 -
@@ -502,7 +503,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               option, or a bad --reasons line refuses it all.
                               With an applied edit and a ticket breakdown it
                               pauses before any GitHub write, printing the
-                              breakdown kind, exit 3. The issue is state's,
+                              breakdown kind, exit 3; the rerun's --tickets -
+                              recommended, all, none, retire, or a list such
+                              as 1, 3 - answers <dir>/tickets.md's items, each
+                              ticket text edit applied to ticket-<n>.fetched.md
+                              (copied from ticket-<n>.md on the first run that
+                              finds it) or to the body's ## Ticket section.
+                              Writes: ticket text edits, then ticket
+                              block/unblock, then the body, then any ticket
+                              retire, then the comment. The issue is state's,
                               through spec update/comment, or --issue's,
                               through issue update/comment, never reading
                               state.json. Each GitHub write lands in

@@ -483,12 +483,7 @@ spec_review_reasons() {
     lineno=$((lineno + 1))
     line="${line%$'\r'}"
     [ -n "$(trim "$line")" ] || continue
-    n="${line%%:*}"
-    reason="${line#*:}"
-    trim_split "$reason" reason
-    case "$n" in ''|*[!0-9]*) die "--reasons line $lineno: want <n>: <reason>, got '$line'" ;; esac
-    [ "$n:" != "$line" ] && [ -n "$reason" ] && [ "${line#"$n": }" != "$line" ] \
-      || die "--reasons line $lineno: want <n>: <reason>, got '$line'"
+    spec_review_reason_split --reasons "$lineno" "$line" n reason
     i="$(spec_review_item_index "$n")"
     [ -n "$i" ] || die "--reasons line $lineno names item $n, which batch.md does not have"
     [ "${SR_DISP[$i]}" = declined ] \
@@ -496,6 +491,19 @@ spec_review_reasons() {
     [ -z "${SR_REASON[$i]+x}" ] || die "--reasons line $lineno names item $n a second time"
     SR_REASON[i]="$reason"
   done <"$f"
+}
+
+# spec_review_reason_split <flag> <lineno> <line> <n-var> <reason-var>: one
+# `<n>: <reason>` line of a reasons file split into its item number and its
+# reason, or a death naming <flag>'s line.
+spec_review_reason_split() {
+  local __srr_n="${3%%:*}" __srr_reason="${3#*:}"
+  trim_split "$__srr_reason" __srr_reason
+  case "$__srr_n" in ''|*[!0-9]*) die "$1 line $2: want <n>: <reason>, got '$3'" ;; esac
+  [ "$__srr_n:" != "$3" ] && [ -n "$__srr_reason" ] && [ "${3#"$__srr_n": }" != "$3" ] \
+    || die "$1 line $2: want <n>: <reason>, got '$3'"
+  printf -v "$4" '%s' "$__srr_n"
+  printf -v "$5" '%s' "$__srr_reason"
 }
 
 # spec_review_occurrences <text> <needle>: 0, 1 or 2 - how often <needle>
@@ -613,6 +621,334 @@ spec_review_changelog() {
   [ -z "$4" ] || printf '\n**Host fallbacks:** %s\n' "$4"
 }
 
+# --- spec-review apply --tickets (#1118) ---------------------------------------
+#
+# The ticket step: on the rerun after the pause, <dir>/tickets.md holds the
+# ticket items the session drafted - text edits against ticket-<t>.md or the
+# collapsed body's `## Ticket` section, and blocked-by edges - and the
+# ticket answer decides which apply. Like the batch, every check runs before
+# the first write, and every edit applies to a fetched copy.
+
+# spec_review_tickets_die <line> <message>: a malformed tickets.md, refused
+# naming the line.
+spec_review_tickets_die() { die "tickets.md line $1: $2"; }
+
+# spec_review_ticket_item_index <n>: the index of ticket item <n> in ST_N, or
+# nothing.
+spec_review_ticket_item_index() {
+  local i
+  for i in ${ST_N[@]+"${!ST_N[@]}"}; do
+    [ "${ST_N[$i]}" != "$1" ] || { printf '%s' "$i"; return 0; }
+  done
+  return 0
+}
+
+# spec_review_ticket_item_check <index>: dies, naming the item's header line,
+# unless a text item carries its summary and its anchor/replace block.
+spec_review_ticket_item_check() {
+  case "${ST_KIND[$1]}" in
+    ticket|section)
+      [ -n "${ST_SUMMARY[$1]+x}" ] \
+        || spec_review_tickets_die "${ST_LINE[$1]}" "item ${ST_N[$1]} has no @@ summary"
+      [ -n "${ST_REPLACE[$1]+x}" ] \
+        || spec_review_tickets_die "${ST_LINE[$1]}" "item ${ST_N[$1]} has no @@ anchor/@@ replace/@@ end block" ;;
+  esac
+}
+
+# spec_review_tickets_parse <file>: reads tickets.md into the ST_ arrays -
+# its `@@ recommend` line, then one entry per item and per `@@ closed` line,
+# or the lone `@@ none-affected` - dying on the first malformed line, named
+# by its number.
+spec_review_tickets_parse() {
+  local file="$1" line lineno=0 mode=top rest kw args cur=-1 seen=""
+  local buf="" bufn=0 block_line=0 n kind tail t by b rec arg what
+  ST_RECOMMEND=""; ST_NONE=""
+  ST_N=(); ST_KIND=(); ST_T=(); ST_B=(); ST_REC=(); ST_ARG=(); ST_LINE=()
+  ST_SUMMARY=(); ST_ANCHOR=(); ST_REPLACE=(); ST_CL_T=(); ST_CL_WHAT=()
+  while IFS= read -r line || [ -n "$line" ]; do
+    lineno=$((lineno + 1))
+    case "$line" in
+      '@@ '*|'@@'|$'@@\r') ;;
+      *)
+        if [ "$mode" = anchor ] || [ "$mode" = replace ]; then
+          if [ "$bufn" -eq 0 ]; then buf="$line"; else buf="$buf"$'\n'"$line"; fi
+          bufn=$((bufn + 1))
+          continue
+        fi
+        [ -n "$(trim "$line")" ] || continue
+        spec_review_tickets_die "$lineno" "text outside an @@ anchor or @@ replace block" ;;
+    esac
+    line="${line%$'\r'}"
+    rest="${line#@@}"; rest="${rest# }"
+    kw="${rest%% *}"; args=""
+    [ "$kw" = "$rest" ] || args="${rest#* }"
+    case "$mode" in
+      anchor)
+        [ "$kw" = replace ] && [ -z "$args" ] \
+          || spec_review_tickets_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line"
+        [ -n "$(trim "$buf")" ] || spec_review_tickets_die "$block_line" "the anchor is empty"
+        ST_ANCHOR[cur]="$buf"
+        mode=replace; buf=""; bufn=0; block_line="$lineno"
+        continue ;;
+      replace)
+        [ "$kw" = end ] && [ -z "$args" ] \
+          || spec_review_tickets_die "$lineno" "expected @@ end to end the replacement begun on line $block_line"
+        ST_REPLACE[cur]="$buf"
+        mode=top; buf=""; bufn=0
+        continue ;;
+    esac
+    [ -z "$ST_NONE" ] || spec_review_tickets_die "$lineno" "@@ none-affected stands alone in its file"
+    case "$kw" in
+      recommend|none-affected)
+        [ -z "$seen" ] || spec_review_tickets_die "$lineno" "@@ $kw comes first, and only once" ;;
+      *)
+        [ -n "$ST_RECOMMEND" ] \
+          || spec_review_tickets_die "$lineno" "@@ recommend comes first: @@ recommend apply or @@ recommend retire" ;;
+    esac
+    seen=1
+    case "$kw" in
+      recommend)
+        case "$args" in
+          apply|retire) ST_RECOMMEND="$args" ;;
+          *) spec_review_tickets_die "$lineno" "@@ recommend wants apply or retire, got '$args'" ;;
+        esac ;;
+      none-affected)
+        [ -z "$args" ] || spec_review_tickets_die "$lineno" "@@ none-affected takes nothing after it"
+        ST_NONE=1 ;;
+      item)
+        [ "$cur" -lt 0 ] || spec_review_ticket_item_check "$cur"
+        read -r n kind tail <<<"$args"
+        case "$n" in ''|*[!0-9]*|0*) spec_review_tickets_die "$lineno" "item number must be a positive number, got '$n'" ;; esac
+        [ -z "$(spec_review_ticket_item_index "$n")" ] || spec_review_tickets_die "$lineno" "a second item $n"
+        t=""; b=""
+        case "$kind" in
+          ticket) read -r t rec arg <<<"$tail" ;;
+          section) read -r rec arg <<<"$tail" ;;
+          block|unblock)
+            read -r t by b rec arg <<<"$tail"
+            [ "$by" = by ] || spec_review_tickets_die "$lineno" "@@ item $n $kind wants <t> by <b>"
+            case "$b" in ''|*[!0-9]*) spec_review_tickets_die "$lineno" "@@ item $n $kind wants <t> by <b>, each a plain issue number" ;; esac
+            [ "$t" != "$b" ] || spec_review_tickets_die "$lineno" "@@ item $n: a ticket never blocks itself" ;;
+          *) spec_review_tickets_die "$lineno" "item $n wants ticket <t>, section, block <t> by <b> or unblock <t> by <b>" ;;
+        esac
+        if [ "$kind" != section ]; then
+          case "$t" in ''|*[!0-9]*) spec_review_tickets_die "$lineno" "@@ item $n $kind wants a plain issue number, got '$t'" ;; esac
+        fi
+        case "$rec" in
+          apply) [ -z "$arg" ] || spec_review_tickets_die "$lineno" "@@ item $n ... apply takes nothing after it" ;;
+          decline) [ -n "$arg" ] || spec_review_tickets_die "$lineno" "@@ item $n ... decline needs a reason" ;;
+          *) spec_review_tickets_die "$lineno" "item $n's recommendation must be apply or decline <reason>" ;;
+        esac
+        cur="${#ST_N[@]}"
+        ST_N[cur]="$n"; ST_KIND[cur]="$kind"; ST_T[cur]="$t"; ST_B[cur]="$b"
+        ST_REC[cur]="$rec"; ST_ARG[cur]="$arg"; ST_LINE[cur]="$lineno" ;;
+      summary|anchor)
+        [ "$cur" -ge 0 ] || spec_review_tickets_die "$lineno" "@@ $kw outside an item"
+        case "${ST_KIND[$cur]}" in
+          ticket|section) ;;
+          *) spec_review_tickets_die "$lineno" "an edge item carries no @@ $kw" ;;
+        esac
+        if [ "$kw" = summary ]; then
+          [ -n "$args" ] || spec_review_tickets_die "$lineno" "@@ summary needs its line"
+          [ -z "${ST_SUMMARY[$cur]+x}" ] || spec_review_tickets_die "$lineno" "a second @@ summary for this item"
+          ST_SUMMARY[cur]="$args"
+        else
+          [ -z "$args" ] || spec_review_tickets_die "$lineno" "@@ anchor takes nothing after it; the anchor is the lines below it"
+          [ -z "${ST_ANCHOR[$cur]+x}" ] || spec_review_tickets_die "$lineno" "a second @@ anchor for this item"
+          mode=anchor; buf=""; bufn=0; block_line="$lineno"
+        fi ;;
+      closed)
+        [ "$cur" -lt 0 ] || spec_review_ticket_item_check "$cur"
+        cur=-1
+        read -r t what <<<"$args"
+        case "$t" in ''|*[!0-9]*) spec_review_tickets_die "$lineno" "@@ closed wants <t> <what changed>, t a plain issue number" ;; esac
+        [ -n "$what" ] || spec_review_tickets_die "$lineno" "@@ closed $t needs what changed"
+        ST_CL_T[${#ST_CL_T[@]}]="$t"; ST_CL_WHAT[${#ST_CL_WHAT[@]}]="$what" ;;
+      replace|end) spec_review_tickets_die "$lineno" "@@ $kw with no @@ anchor open" ;;
+      *) spec_review_tickets_die "$lineno" "unknown line '@@ $kw'" ;;
+    esac
+  done <"$file"
+  case "$mode" in
+    anchor|replace) spec_review_tickets_die "$block_line" "the @@ $mode block is never ended" ;;
+  esac
+  [ "$cur" -lt 0 ] || spec_review_ticket_item_check "$cur"
+  [ -n "$seen" ] || die "tickets.md is empty - it holds @@ recommend and the ticket items, or @@ none-affected"
+}
+
+# spec_review_tickets_answer <answer>: each ticket item's disposition into
+# ST_DISP (applied or declined) and ST_ASREC, or ST_RETIRE, from the ticket
+# question's answer: recommended (following @@ recommend), all, none, retire,
+# or an Other list such as `1, 3`. Dies, before any write, on an unknown item
+# or one named twice.
+spec_review_tickets_answer() {
+  local answer="$1" rest tok i named=" "
+  ST_DISP=(); ST_ASREC=(); ST_RETIRE=""
+  case "$answer" in
+    retire) ST_RETIRE=1; return 0 ;;
+    recommended)
+      [ "$ST_RECOMMEND" != retire ] || { ST_RETIRE=1; return 0; } ;;
+    all|none) ;;
+    *)
+      rest="$answer,"
+      while [ -n "$rest" ]; do
+        tok="${rest%%,*}"; rest="${rest#*,}"
+        trim_split "$tok" tok
+        case "$tok" in ''|*[!0-9]*) die "the --tickets answer '$answer' is not recommended, all, none, retire or a list such as 1, 3 - '$tok' is no ticket item" ;; esac
+        i="$(spec_review_ticket_item_index "$tok")"
+        [ -n "$i" ] || die "the --tickets answer names ticket item $tok, which tickets.md does not have"
+        case "$named" in *" $tok "*) die "the --tickets answer names ticket item $tok twice" ;; esac
+        named="$named$tok "
+        ST_DISP[i]=applied
+        [ "${ST_REC[$i]}" != apply ] || ST_ASREC[i]=1
+      done ;;
+  esac
+  for i in ${ST_N[@]+"${!ST_N[@]}"}; do
+    [ -z "${ST_DISP[$i]+x}" ] || continue
+    case "$answer:${ST_REC[$i]}" in
+      recommended:apply|all:apply) ST_DISP[i]=applied; ST_ASREC[i]=1 ;;
+      all:decline) ST_DISP[i]=applied ;;
+      *:decline) ST_DISP[i]=declined; ST_ASREC[i]=1 ;;
+      *) ST_DISP[i]=declined ;;
+    esac
+  done
+}
+
+# spec_review_ticket_reasons <file>: --reasons for ticket items, into
+# ST_REASON.
+spec_review_ticket_reasons() {
+  local f="$1" line lineno=0 n reason i
+  ST_REASON=()
+  [ -n "$f" ] || return 0
+  [ -f "$f" ] || die "--ticket-reasons file not found: $f"
+  while IFS= read -r line || [ -n "$line" ]; do
+    lineno=$((lineno + 1))
+    line="${line%$'\r'}"
+    [ -n "$(trim "$line")" ] || continue
+    spec_review_reason_split --ticket-reasons "$lineno" "$line" n reason
+    i="$(spec_review_ticket_item_index "$n")"
+    [ -n "$i" ] || die "--ticket-reasons line $lineno names ticket item $n, which tickets.md does not have"
+    [ "${ST_DISP[$i]:-}" = declined ] \
+      || die "--ticket-reasons line $lineno names ticket item $n, which the --tickets answer does not decline"
+    [ -z "${ST_REASON[$i]+x}" ] || die "--ticket-reasons line $lineno names ticket item $n a second time"
+    ST_REASON[i]="$reason"
+  done <"$f"
+}
+
+# spec_review_ticket_index <t>: the index of ticket #<t> in TK_T, or nothing.
+spec_review_ticket_index() {
+  local j
+  for j in ${TK_T[@]+"${!TK_T[@]}"}; do
+    [ "${TK_T[$j]}" != "$1" ] || { printf '%s' "$j"; return 0; }
+  done
+  return 0
+}
+
+# spec_review_ticket_load <dir> <t> <what>: ticket #<t>'s fetched copy into
+# TK_FETCHED and TK_TEXT, once. Dies, naming <what>, when the session wrote
+# no ticket-<t>.md.
+spec_review_ticket_load() {
+  local j copy
+  [ -z "$(spec_review_ticket_index "$2")" ] || return 0
+  [ -f "$1/ticket-$2.md" ] \
+    || die "$3: ticket-$2.md not found in $1 - fetch each ticket a ticket item names into it"
+  copy="$(cat "$1/ticket-$2.fetched.md"; printf x)" \
+    || die "could not read $1/ticket-$2.fetched.md - nothing written"
+  j="${#TK_T[@]}"
+  TK_T[j]="$2"; TK_FETCHED[j]="${copy%x}"; TK_TEXT[j]="${copy%x}"
+}
+
+# spec_review_tickets_follow <body-var> <dir> <kind> <issue>: every accepted
+# ticket item checked and applied in memory - a text edit to its ticket's
+# fetched copy in TK_TEXT, a `## Ticket` edit to the body in <body-var>,
+# anchored on the body as the batch items left it - and every edge item
+# checked against the breakdown and the fetched tickets' `## Blocked by`
+# sections. Dies, before any write, on the first that fails.
+spec_review_tickets_follow() {
+  local body_var="$1" dir="$2" kind="$3" issue="$4" i j what post subs="" listed have
+  [ -z "$ST_RETIRE" ] || return 0
+  for i in ${ST_N[@]+"${!ST_N[@]}"}; do
+    case "${ST_KIND[$i]}" in
+      block|unblock)
+        listed="$(ticket_sub_issues "$issue")" || exit 1
+        subs="$(printf '%s\n' "$listed" | cut -f1)"
+        break ;;
+    esac
+  done
+  post="${!body_var}"
+  for i in ${ST_N[@]+"${!ST_N[@]}"}; do
+    what="ticket item ${ST_N[$i]}"
+    case "${ST_KIND[$i]}" in
+      ticket)
+        spec_review_ticket_load "$dir" "${ST_T[$i]}" "$what"
+        [ "${ST_DISP[$i]}" = applied ] || continue
+        j="$(spec_review_ticket_index "${ST_T[$i]}")"
+        spec_review_edit "TK_TEXT[$j]" "${TK_FETCHED[$j]}" "$what (#${ST_T[$i]})" \
+          "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" ;;
+      section)
+        [ "$kind" = collapsed ] \
+          || die "$what: a ## Ticket item, but #$issue's breakdown is $kind - nothing written"
+        [ "${ST_DISP[$i]}" = applied ] || continue
+        spec_review_edit "$body_var" "$post" "$what (## Ticket)" \
+          "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" ;;
+      block|unblock)
+        for j in "${ST_T[$i]}" "${ST_B[$i]}"; do
+          case $'\n'"$subs"$'\n' in
+            *$'\n'"$j"$'\n'*) ;;
+            *) die "$what: #$j is not a ticket of #$issue's breakdown - nothing written" ;;
+          esac
+        done
+        [ "${ST_DISP[$i]}" = applied ] || continue
+        spec_review_ticket_load "$dir" "${ST_T[$i]}" "$what"
+        j="$(spec_review_ticket_index "${ST_T[$i]}")"
+        have=""
+        case $'\n'"$(printf '%s\n' "${TK_FETCHED[$j]}" | blocked_by_section_numbers)"$'\n' in
+          *$'\n'"${ST_B[$i]}"$'\n'*) have=1 ;;
+        esac
+        if [ "${ST_KIND[$i]}" = block ]; then
+          [ -z "$have" ] \
+            || die "$what: #${ST_T[$i]} is already blocked by #${ST_B[$i]} - nothing written"
+        else
+          [ -n "$have" ] \
+            || die "$what: #${ST_T[$i]} is not blocked by #${ST_B[$i]} - nothing written"
+        fi ;;
+    esac
+  done
+}
+
+# spec_review_tickets_lines: the changelog's Tickets lines, from tickets.md,
+# the ticket answer and the reasons.
+spec_review_tickets_lines() {
+  local i n reason out=""
+  if [ -z "$ST_RETIRE" ]; then
+    for i in ${ST_N[@]+"${!ST_N[@]}"}; do
+      n="${ST_N[$i]}"
+      if [ "${ST_DISP[$i]}" = applied ]; then
+        case "${ST_KIND[$i]}" in
+          ticket|section) out="$out- ($n) ${ST_SUMMARY[$i]}"$'\n' ;;
+          block) out="$out- ($n) #${ST_T[$i]} now blocked by #${ST_B[$i]}"$'\n' ;;
+          unblock) out="$out- ($n) #${ST_T[$i]} no longer blocked by #${ST_B[$i]}"$'\n' ;;
+        esac
+        continue
+      fi
+      if [ -n "${ST_REASON[$i]+x}" ]; then reason="${ST_REASON[$i]}"
+      elif [ -n "${ST_ASREC[$i]:-}" ]; then reason="declined as recommended: ${ST_ARG[$i]}"
+      else reason="declined"
+      fi
+      case "${ST_KIND[$i]}" in
+        ticket|section) out="$out- ($n) \"$(spec_review_one_line "${ST_REPLACE[$i]}")\" - $reason"$'\n' ;;
+        *) out="$out- ($n) \"${ST_KIND[$i]} #${ST_T[$i]} by #${ST_B[$i]}\" - $reason"$'\n' ;;
+      esac
+    done
+  else
+    out="- retired, to be broken down again"$'\n'
+  fi
+  for i in ${ST_CL_T[@]+"${!ST_CL_T[@]}"}; do
+    out="$out- #${ST_CL_T[$i]} closed, built against the earlier spec: ${ST_CL_WHAT[$i]}"$'\n'
+  done
+  printf '%s' "${out%$'\n'}"
+  [ -n "$out" ] || printf 'None - no ticket affected'
+}
+
 # spec_review_landed <dir>: the writes <dir>/applied.log records, joined for
 # a message, or "nothing" when none landed.
 spec_review_landed() {
@@ -640,23 +976,28 @@ spec_review_write() {
 }
 
 # spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
-# [--issue <n>] [--unattended] [--host-fallbacks <file>]: the round's
-# answer applied, the body published when it changed, and the changelog
-# written to <dir>/changelog.md and posted. Every check runs before the first
-# write. With an accepted edit and a ticket breakdown it pauses, exit 3,
-# before any GitHub write, printing the breakdown kind.
+# [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended]
+# [--host-fallbacks <file>]: the round's answer applied, the tickets
+# followed, the body published when it changed, any retire run, and the
+# changelog written to <dir>/changelog.md and posted. Every check runs before
+# the first write. With an accepted edit and a ticket breakdown but no
+# --tickets it pauses, exit 3, before any GitHub write, printing the
+# breakdown kind.
 spec_review_apply() {
-  local usage="usage: orch.sh spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>] [--issue <n>] [--unattended] [--host-fallbacks <file>]"
+  local usage="usage: orch.sh spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>] [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended] [--host-fallbacks <file>]"
   local dir="" answer="" have_answer="" round="" reasons="" issue="" unattended=false hosts_file="" hosts=""
+  local ticket_answer="" ticket_reasons=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --round|--reasons|--issue|--host-fallbacks)
+      --round|--reasons|--issue|--host-fallbacks|--tickets|--ticket-reasons)
         [ $# -ge 2 ] && [ -n "$2" ] || die "$1 needs a value ($usage)"
         case "$1" in
           --round) round="$2" ;;
           --reasons) reasons="$2" ;;
           --issue) issue="$2" ;;
           --host-fallbacks) hosts_file="$2" ;;
+          --tickets) ticket_answer="$2" ;;
+          --ticket-reasons) ticket_reasons="$2" ;;
         esac
         shift 2 ;;
       --unattended) unattended=true; shift ;;
@@ -680,10 +1021,19 @@ spec_review_apply() {
   if [ -n "$issue" ]; then
     case "$issue" in *[!0-9]*) die "--issue must be a plain issue number, got: $issue" ;; esac
   fi
+  case "$ticket_answer" in
+    ''|recommended|all|none|retire) ;;
+    *[!0-9,\ ]*)
+      die "--tickets wants recommended, all, none, retire or a list such as 1, 3, got: $ticket_answer" ;;
+  esac
+  [ -z "$ticket_reasons" ] || [ -n "$ticket_answer" ] \
+    || die "--ticket-reasons goes with --tickets: it holds the ticket answer's decline reasons"
   if [ "$unattended" = true ]; then
     [ -n "$issue" ] || die "--unattended needs --issue: an unattended spec review is a standalone one"
     [ "$answer" = recommended ] \
       || die "--unattended takes only the answer recommended, got: $answer"
+    [ -z "$ticket_answer" ] || [ "$ticket_answer" = recommended ] \
+      || die "--unattended takes only --tickets recommended, got: $ticket_answer"
   fi
   [ -d "$dir" ] || die "no such directory: $dir"
   dir="${dir%/}"
@@ -711,6 +1061,16 @@ spec_review_apply() {
     cp "$dir/spec.md" "$dir/spec.fetched.md" 2>/dev/null \
       || die "could not copy spec.md to $dir/spec.fetched.md - nothing written"
   fi
+  # Each ticket file's fetched copy, taken by the first run that finds the
+  # file - the --tickets rerun, as the session fetches tickets after the pause.
+  local tf tn
+  for tf in "$dir"/ticket-*.md; do
+    tn="${tf##*/ticket-}"; tn="${tn%.md}"
+    case "$tn" in ''|*[!0-9]*) continue ;; esac
+    [ -e "$dir/ticket-$tn.fetched.md" ] \
+      || cp "$tf" "$dir/ticket-$tn.fetched.md" 2>/dev/null \
+      || die "could not copy ticket-$tn.md to $dir/ticket-$tn.fetched.md - nothing written"
+  done
 
   local lens i j fetched text
   spec_review_batch_parse "$dir/batch.md"
@@ -740,6 +1100,7 @@ spec_review_apply() {
 
   # The ticket step's entry: only an applied edit can leave a ticket behind.
   local tickets kind err st=0 changed=""
+  ST_N=(); ST_RETIRE=""; TK_T=(); TK_FETCHED=(); TK_TEXT=()
   [ "$text" = "$fetched" ] || changed=1
   if [ -z "$changed" ]; then
     tickets="Not checked - no edit applied"
@@ -753,13 +1114,28 @@ spec_review_apply() {
         die "ticket exists #$issue exited $st: ${err%%$'\n'*} - nothing written" ;;
     esac
   fi
+  if [ -n "$changed" ] && [ "$st" -eq 0 ]; then
+    if [ -z "$ticket_answer" ]; then
+      # The pause: the session drafts the ticket items and runs apply again.
+      { printf '%s' "$text" >"$dir/spec.md"; } 2>/dev/null \
+        || die "could not write $dir/spec.md - nothing written to GitHub"
+      note "$kind"
+      exit 3
+    fi
+    [ -f "$dir/tickets.md" ] \
+      || die "tickets.md not found in $dir - --tickets answers the ticket items it holds"
+    spec_review_tickets_parse "$dir/tickets.md"
+    spec_review_tickets_answer "$ticket_answer"
+    spec_review_ticket_reasons "$ticket_reasons"
+    spec_review_tickets_follow text "$dir" "$kind" "$issue"
+    tickets="$(spec_review_tickets_lines)"
+  fi
   { printf '%s' "$text" >"$dir/spec.md"; } 2>/dev/null \
     || die "could not write $dir/spec.md - nothing written to GitHub"
-  if [ -n "$changed" ] && [ "$st" -eq 0 ]; then
-    # The pause: the session drafts the ticket items and runs apply again.
-    note "$kind"
-    exit 3
-  fi
+  for j in ${TK_T[@]+"${!TK_T[@]}"}; do
+    { printf '%s' "${TK_TEXT[$j]}" >"$dir/ticket-${TK_T[$j]}.md"; } 2>/dev/null \
+      || die "could not write $dir/ticket-${TK_T[$j]}.md - nothing written to GitHub"
+  done
 
   local log
   log="$(spec_review_changelog "$round" "$unattended" "$tickets" "$hosts")"
@@ -770,8 +1146,29 @@ spec_review_apply() {
   # standalone entry through the stateless issue commands.
   local update=(cmd_issue update "$issue") comment=(cmd_issue comment "$issue")
   [ -z "$flow" ] || { update=(cmd_spec update); comment=(cmd_spec comment); }
+  # Ticket text edits, then edges, then the body, then the retire: a ticket's
+  # text edit before its edge, whose ## Blocked by rewrite reads the edited
+  # body back; a collapsed ## Ticket edit inside the body; a retire after it.
+  local done_t=" "
+  for i in ${ST_N[@]+"${!ST_N[@]}"}; do
+    [ "${ST_KIND[$i]}" = ticket ] && [ "${ST_DISP[$i]:-}" = applied ] || continue
+    case "$done_t" in *" ${ST_T[$i]} "*) continue ;; esac
+    done_t="$done_t${ST_T[$i]} "
+    spec_review_write "$dir" "ticket #${ST_T[$i]}'s body" \
+      cmd_issue update "${ST_T[$i]}" "$dir/ticket-${ST_T[$i]}.md"
+  done
+  for i in ${ST_N[@]+"${!ST_N[@]}"}; do
+    case "${ST_KIND[$i]}:${ST_DISP[$i]:-}" in
+      block:applied|unblock:applied)
+        spec_review_write "$dir" "${ST_KIND[$i]} #${ST_T[$i]} by #${ST_B[$i]}" \
+          "cmd_ticket_${ST_KIND[$i]}" "${ST_T[$i]}" --by "${ST_B[$i]}" ;;
+    esac
+  done
   if [ -n "$changed" ]; then
     spec_review_write "$dir" "the body of issue #$issue" "${update[@]}" "$dir/spec.md"
+  fi
+  if [ -n "$ST_RETIRE" ]; then
+    spec_review_write "$dir" "the retire of #$issue's ticket breakdown" cmd_ticket_retire "$issue"
   fi
   spec_review_write "$dir" "the changelog comment on issue #$issue" "${comment[@]}" "$dir/changelog.md"
 }
