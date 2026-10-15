@@ -72,12 +72,30 @@ cmd_issue_fetch() {
     adapter_issue_body "$issue"
 }
 
-# Every comment on the issue, in COMMENTS_JQ's shape - so the spec review reads
-# the comments beside the body. No comments is an empty file, not an error.
+# The comments `issue comments` writes (#1116): every comment but the spec
+# review's own changelogs - those whose body's first line is the
+# `## Spec review` heading - each in COMMENTS_JQ's shape, joined as it joins
+# them; nothing at all when none is left. It reads ISSUE_JSON_JQ's object,
+# whose author is already the login.
+ISSUE_COMMENTS_KEPT_JQ='[.comments[]
+  | select((.body | split("\n")[0] | rtrimstr("\r")) | test("^## Spec review[ \t]*$") | not)
+  | "<!-- comment @\(.author) \(.createdAt) -->\n\(.body)"]
+  | select(length > 0) | join("\n\n")'
+
+# issue_comments_kept <n>: issue <n>'s comments as ISSUE_COMMENTS_KEPT_JQ
+# prints them, filtered here rather than in the adapter, from the issue's
+# structured read - never by splitting the joined text.
+issue_comments_kept() {
+  adapter_issue_json "$1" | jq -r "$ISSUE_COMMENTS_KEPT_JQ"
+}
+
+# Every comment on the issue but the spec review's own changelogs, in
+# COMMENTS_JQ's shape - so the spec review reads the comments beside the body
+# without its earlier rounds. No comments is an empty file, not an error.
 cmd_issue_comments() {
   local issue="$1" file="$2"
   gh_or_die --file "$file" "read the comments of issue #$issue" \
-    adapter_issue_comments "$issue"
+    issue_comments_kept "$issue"
 }
 
 cmd_issue_update() {

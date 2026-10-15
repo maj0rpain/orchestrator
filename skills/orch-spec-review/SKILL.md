@@ -219,9 +219,7 @@ findings, the session running the review (never a lens) reads
 `<dir>/comments.md` against `<dir>/spec.md` and drafts the **consolidation
 items**:
 
-- Skip any comment whose body opens with a `## Spec review` heading: that is
-  this review's own history, never folded back into the spec.
-- For every other comment, draft one item - concrete replacement or insertion
+- For every comment, draft one item - concrete replacement or insertion
   text for the body - if and only if the comment says something the body does
   not already say. Judge the content, not the author. A comment the body
   already reflects produces no item, so a re-run on the same issue proposes
@@ -469,7 +467,8 @@ Nothing calls `gh issue` directly.
 Each round writes one changelog. It opens with the `## Spec review` heading,
 and its next line is exactly `Round <k> of <n>`, `<k>` the round's number and
 `<n>` the round count - `Round 1 of 1` for a one-round review. The heading
-keeps **Consolidation**'s skip rule matching every earlier round's comment.
+keeps every earlier round's comment out of `comments.md`: `orch.sh` leaves
+out a comment whose body opens with it.
 In an **Unattended spec review**, the `Round` line comes before the fixed
 opening line.
 

@@ -242,7 +242,9 @@ orch.sh - deterministic operations for the orchestrator flow
   issue comments <n> <file>   write every comment on issue <n> to <file>, in
                               order, each opened by a line
                               <!-- comment @<login> <createdAt> --> - recording
-                              no state; no comments is an empty file
+                              no state; a comment whose body opens with the
+                              ## Spec review heading is left out; no comments
+                              is an empty file
   issue triage <n> [--override]
                               move open issue <n> to ready-for-agent, removing
                               its other triage labels, verify by reading the

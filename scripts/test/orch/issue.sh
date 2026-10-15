@@ -918,8 +918,30 @@ out="$("$ORCH" issue comments 25 "$issue_comments" 2>&1)"; st=$?
 assert_status "an issue with no comments still succeeds" "$st" 0
 assert_eq "leaving an empty file" "$(wc -c <"$issue_comments" | tr -d ' ')" "0"
 
+# The spec review's own changelogs (#1116): a comment whose body opens with a
+# `## Spec review` heading is left out; one that only mentions it lower down
+# is kept, its shape unchanged.
+fake_issue 960 open
+fake_comment 960 pat 2026-09-03T09:00:00Z "$(writeln '## Spec review' 'Round 1 of 1' '' 'Nothing changed.')"
+fake_comment 960 triage-bot 2026-09-03T10:00:00Z "$(writeln 'A follow-up that quotes' '## Spec review' 'lower down.')"
+fake_comment 960 pat 2026-09-03T11:00:00Z "$(writeln '## Spec review' 'Round 1 of 2')"
+fake_comment 960 sam 2026-09-03T12:00:00Z "$(writeln '## Spec reviewer notes' 'Not a changelog.')"
+out="$("$ORCH" issue comments 960 "$issue_comments" 2>&1)"; st=$?
+assert_status "comments succeeds on an issue with review changelogs" "$st" 0
+assert_eq "leaving out exactly the comments that open with ## Spec review" \
+  "$(cat "$issue_comments")" "$(writeln '<!-- comment @triage-bot 2026-09-03T10:00:00Z -->' \
+    'A follow-up that quotes' '## Spec review' 'lower down.' '' \
+    '<!-- comment @sam 2026-09-03T12:00:00Z -->' '## Spec reviewer notes' 'Not a changelog.')"
+
+fake_issue 961 open
+fake_comment 961 pat 2026-09-03T09:00:00Z "$(writeln '## Spec review' 'Round 1 of 2')"
+fake_comment 961 pat 2026-09-03T10:00:00Z "$(writeln '## Spec review' 'Round 2 of 2')"
+out="$("$ORCH" issue comments 961 "$issue_comments" 2>&1)"; st=$?
+assert_status "an issue with only review changelogs still succeeds" "$st" 0
+assert_eq "leaving an empty file" "$(wc -c <"$issue_comments" | tr -d ' ')" "0"
+
 printf 'known content\n' >"$issue_comments"
-assert_gh_dies "a gh that will not answer fails the comments fetch" adapter_issue_comments "$GH_502" 1 \
+assert_gh_dies "a gh that will not answer fails the comments fetch" adapter_issue_json "$GH_502" 1 \
   "orch: gh could not read the comments of issue #24: HTTP 502: Bad Gateway" \
   "$ORCH" issue comments 24 "$issue_comments"
 assert_eq "and leaves the file that was already there byte-identical" \

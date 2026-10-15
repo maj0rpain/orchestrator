@@ -140,13 +140,14 @@ state_fixture phase "$prior_phase"
 spec_comments="$(mktemp)"
 fake_github
 fake_issue 14 open
+fake_comment 14 pat 2026-09-02T11:00:00Z "$(writeln '## Spec review' 'Round 1 of 1')"
 fake_comment 14 pat 2026-09-02T11:30:00Z "A follow-up."
 fake_issue 15 open
 fake_comment 15 pat 2026-09-02T11:31:00Z "Not the flow's issue."
 out="$("$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
 assert_status "spec comments writes the flow issue's comments" "$st" 0
-assert_eq "of the issue state records, each opened by its marker line" "$(cat "$spec_comments")" \
-  "$(writeln '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'A follow-up.')"
+assert_eq "of the issue state records, each opened by its marker line, its ## Spec review changelog left out (#1116)" \
+  "$(cat "$spec_comments")" "$(writeln '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'A follow-up.')"
 state_fixture phase "done"
 : >"$spec_comments"
 out="$("$ORCH" spec comments "$spec_comments" 2>&1)"; st=$?
