@@ -487,6 +487,27 @@ orch.sh - deterministic operations for the orchestrator flow
                               .orchestrator/spec-review/<n>/ and print its
                               path. Reads state.json only to compare, and
                               never writes it
+  spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
+                    [--issue <n>] [--unattended] [--host-fallbacks <file>]
+                              apply a spec review round's answer - recommended,
+                              all, none, or an Other list such as 1B, 2, 3 -
+                              to <dir>/batch.md's items: each accepted edit
+                              by exact anchor on <dir>/spec.fetched.md (copied
+                              from spec.md on the first run) into spec.md,
+                              then the body published when it changed and
+                              <dir>/changelog.md written and posted. Every
+                              check runs before the first write: a malformed
+                              batch or lens-<name>.md file, an anchor matching
+                              no text or more than once, an unknown item or
+                              option, or a bad --reasons line refuses it all.
+                              With an applied edit and a ticket breakdown it
+                              pauses before any GitHub write, printing the
+                              breakdown kind, exit 3. The issue is state's,
+                              through spec update/comment, or --issue's,
+                              through issue update/comment, never reading
+                              state.json. Each GitHub write lands in
+                              <dir>/applied.log; a failed one dies naming those
+                              landed, and a non-empty applied.log is refused
   review-pass begin <issue>   start a review pass of the current branch
                               against issue <issue>: refuse on a detached
                               HEAD, on the base branch, and while an active
