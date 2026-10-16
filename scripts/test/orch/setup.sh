@@ -114,6 +114,17 @@ new_repo() {
 # GH_REPO in env.log. restore_suite_env unsets it again.
 bare_origin() { git remote set-url origin "$1"; export GH_REPO=acme/widgets; }
 
+# upstream_of <branch>: none when <branch> has no upstream - no
+# branch.<branch>.merge, no branch.<branch>.remote, and no <branch>@{upstream} -
+# else what it has, so a failing assertion names it.
+upstream_of() {
+  local merge remote up
+  merge="$(git config --get "branch.$1.merge")"
+  remote="$(git config --get "branch.$1.remote")"
+  up="$(git rev-parse --abbrev-ref --verify --quiet "$1@{upstream}" 2>/dev/null)"
+  if [ -z "$merge$remote$up" ]; then echo none; else echo "remote=$remote merge=$merge upstream=$up"; fi
+}
+
 # new_repo_with_origin [branch]: new_repo, plus tracking refs for its origin:
 # origin/<branch> (default: the checked-out branch) set to HEAD, and
 # origin/HEAD pointing at it. Call it in the current shell, never inside $(...): new_repo cd's.
