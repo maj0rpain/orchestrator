@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.8.1
+
+`orch.sh glossary` now reads bulleted (`- **Term**: definition`, `* **Term**: definition`) and inline (`**Term**: definition`) GLOSSARY.md entries, with an indented `_Avoid_:` line giving a bullet entry its aliases. A root GLOSSARY.md that gives no entries now makes `glossary terms`, `show` and `match` exit 2 instead of reading as "no terms", and the skills and agents that run them report a failed glossary command and carry on without its entries.
+
 ## 4.8.0
 
 A spec review hands its mechanical steps to `orch.sh` (#1115, ADR-0044). The session writes each round's batch once, to `batch.md`, with an exact anchor and replacement per edit, still prints it in full in chat, and passes the human's answer to the new `orch.sh spec-review apply <dir> <answer> --round <k>/<n>`. `apply` applies the accepted items, publishes the body only when it changed, writes and posts the round's changelog, and refuses the whole batch, writing nothing, when any accepted anchor does not match exactly once. With a ticket breakdown and an applied edit it pauses with exit 3 for the ticket question, and its rerun with `--tickets <answer>` edits the tickets from `tickets.md`, changes their edges, or retires the breakdown. `--issue`, `--unattended`, `--reasons`, `--ticket-reasons` and `--host-fallbacks` cover the standalone, unattended and decline records.
