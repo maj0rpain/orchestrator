@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.11.1
+
+The interview skill now reads the interviewed issue with `orch.sh issue fetch <n> <file> --json` and never with `gh issue view`, whose `--comments` output drops the issue body when piped; a failed fetch stops the interview with its `orch:` message.
+
 ## 4.11.0
 
 The review pass, quick or standalone, now lives in its own skill, `orch-review-pass`, so a quick implementation's driver and `/orchestrator:review-pass` no longer load the review loop's text with it. `orch-review` holds the review loop only, and `/orchestrator:review-pass`, quick implementation's review step and `/orchestrator:sync`'s offered pass all invoke `orch-review-pass`. The pass's behaviour is unchanged. On Junie, replace the orchestrator snippet in `~/.junie/AGENTS.md` with the updated `docs/junie/AGENTS.md` to pick up the new skill's custom-agent dependency sentence.
