@@ -1471,12 +1471,12 @@ echo "review pass (#342)"
 # section rather than keeping its own copy.
 # scan_review_pass <plugin root>: one line per break of that rule.
 scan_review_pass() {
-  local r="$1" review="skills/orch-review-pass/SKILL.md" body
-  if body="$(md_section "$r/$review" "## Review pass")"; then
+  local r="$1" pass="skills/orch-review-pass/SKILL.md" body
+  if body="$(md_section "$r/$pass" "## Review pass")"; then
     flat_text <<<"$body" | grep -qF 'review-pass begin' \
-      || echo "$review: ## Review pass does not name review-pass begin"
+      || echo "$pass: ## Review pass does not name review-pass begin"
   else
-    echo "$review: no ## Review pass section"
+    echo "$pass: no ## Review pass section"
   fi
   quick_step_refers "$r" "## 6. Review" orch-review-pass "Review pass" section
   return 0
@@ -1544,17 +1544,17 @@ echo "previously declined (#418)"
 # about earlier passes.
 # scan_previously_declined <plugin root>: one line per break of that rule.
 scan_previously_declined() {
-  local r="$1" review="skills/orch-review-pass/SKILL.md" body prompt
-  body="$(md_section "$r/$review" "## Standalone review pass" | flat_text)"
+  local r="$1" pass="skills/orch-review-pass/SKILL.md" body prompt
+  body="$(md_section "$r/$pass" "## Standalone review pass" | flat_text)"
   grep -qF 'pr comments' <<<"$body" \
-    || echo "$review: ## Standalone review pass does not name pr comments"
+    || echo "$pass: ## Standalone review pass does not name pr comments"
   grep -qF '**Previously declined**' <<<"$body" \
-    || echo "$review: ## Standalone review pass does not name **Previously declined**"
-  prompt="$(md_section "$r/$review" "## Review pass" \
+    || echo "$pass: ## Standalone review pass does not name **Previously declined**"
+  prompt="$(md_section "$r/$pass" "## Review pass" \
     | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//')"
   [ "$prompt" = "$(printf '%s\n' 'Base SHA: <base SHA>' 'Spec issue: #<issue>' 'Iteration: <NN>' \
     'Report path: <prefix>-<standards|spec>.md' 'orch.sh: <the path ORCH holds>')" ] \
-    || echo "$review: ## Review pass step 3's reviewer prompt is not the five variables"
+    || echo "$pass: ## Review pass step 3's reviewer prompt is not the five variables"
   return 0
 }
 fixture="$(new_fixture)"
@@ -1590,9 +1590,9 @@ echo "standalone pass smells (#419)"
 # names --smells, and the command's argument-hint offers it.
 # scan_standalone_smells <plugin root>: one line per place that drops the flag.
 scan_standalone_smells() {
-  local r="$1" review="skills/orch-review-pass/SKILL.md" cmd="commands/review-pass.md"
-  md_section "$r/$review" "## Standalone review pass" | grep -qF -- '--smells' \
-    || echo "$review: ## Standalone review pass does not name --smells"
+  local r="$1" pass="skills/orch-review-pass/SKILL.md" cmd="commands/review-pass.md"
+  md_section "$r/$pass" "## Standalone review pass" | grep -qF -- '--smells' \
+    || echo "$pass: ## Standalone review pass does not name --smells"
   grep -E '^argument-hint:' "$r/$cmd" 2>/dev/null | grep -qF -- '--smells' \
     || echo "$cmd: argument-hint does not name --smells"
   return 0
