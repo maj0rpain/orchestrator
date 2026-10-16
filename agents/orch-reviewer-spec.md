@@ -49,8 +49,15 @@ character away - describe it in the finding instead.
    acts at: each listed site is a requirement, and one the diff leaves
    unfixed is **missing**.
 
+   Before reporting a hunk as scope creep, check whether the repo's coding
+   standards require it. Find them as the Standards reviewer does: follow
+   `CLAUDE.md` or `AGENTS.md` pointers to the code-writing documents they name.
+   A hunk a standard requires traces to that standard, and is not scope creep -
+   for example, moving an existing caller onto a helper the change introduces.
+
    Done when every requirement has been traced to the diff or reported, and
-   every hunk traced to a requirement or reported.
+   every hunk traced to a requirement or to a standard that requires it, or
+   reported.
 4. **Write the report** to the report path - see **The report**.
 5. **Return one line**: `<report path>: <N> findings`.
 

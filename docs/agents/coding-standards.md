@@ -13,6 +13,10 @@ argument or callback to serve callers that react differently, or would replace
 a single line with a single call. `.out-of-scope/` records extractions already
 weighed and declined.
 
+A change that introduces a helper moves onto it every existing site in the repo
+that shares both the helper's shape and the reaction to its result. That move
+is part of the change, not scope beyond it.
+
 ## 2. Route every `orch: ` message through `die`, `die2` or `warn`
 
 Never write a hand-rolled `printf 'orch: ...' >&2`. `die` and `die2` print the
