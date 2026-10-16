@@ -1769,7 +1769,7 @@ scan_review_loop_sheds_pass() {
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-review"
 printf '%s\n' '---' 'name: orch-review' 'description: The loop, and /orchestrator:review-pass <issue>.' '---' '' \
-  '## Review pass' '' 'See **Standalone' 'review pass**.' '' '## Standalone review pass' '' 'More.' \
+  '## Review pass' '' 'See **Standalone' 'review pass** and **Review' 'pass**.' '' '## Standalone review pass' '' 'More.' \
   >"$fixture/skills/orch-review/SKILL.md"
 out="$(scan_review_loop_sheds_pass "$fixture")"
 flags "a Review pass section left in orch-review is flagged" \
@@ -1778,6 +1778,8 @@ flags "a Standalone review pass section left in orch-review is flagged" \
   "$out" "skills/orch-review/SKILL.md: holds a ## Standalone review pass section"
 flags "a **Standalone review pass** reference left in orch-review is flagged" \
   "$out" "skills/orch-review/SKILL.md: names **Standalone review pass**"
+flags "a **Review pass** reference left in orch-review is flagged" \
+  "$out" "skills/orch-review/SKILL.md: names **Review pass**"
 flags "an orch-review description with no pointer to orch-review-pass is flagged" \
   "$out" "skills/orch-review/SKILL.md: description does not name orch-review-pass"
 flags "an orch-review description that still claims the command is flagged" \
