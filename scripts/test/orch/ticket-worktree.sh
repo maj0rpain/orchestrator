@@ -225,3 +225,17 @@ assert_contains "the CLI conventions' noun table has a ticket-worktree row" \
   "$(grep '^| `ticket-worktree`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" \
   '`add`, `list`, `remove`'
 restore_suite_env
+
+# --- a ticket branch has no upstream (#1152) -----------------------------------
+# Under branch.autoSetupMerge=inherit, a branch made from HEAD would take the
+# parent branch's upstream; the ticket branch is local and short-lived, so it
+# takes none.
+echo
+echo "a ticket branch has no upstream (#1152)"
+tw_repo
+git push -q -u origin orch/5-feature
+git config branch.autoSetupMerge inherit
+"$ORCH" ticket-worktree add 4 >/dev/null; st=$?
+assert_status "add succeeds under autoSetupMerge=inherit" "$st" 0
+assert_eq "the ticket branch has no upstream" "$(upstream_of orch/5-feature--t4)" "none"
+restore_suite_env
