@@ -202,10 +202,11 @@ left in progress stays for the human. A resolver's `Verification` reading
 
 ## 6. Review
 
-Run a review pass: invoke the `orch-review` skill and follow its **Review
-pass** section only, with the linked issue as its spec issue. It is one pass,
-never that skill's multi-iteration loop. The loop's budget, severity triage and
-filed findings are exactly what a quick implementation chooses to skip.
+Run a review pass: invoke the `orch-review-pass` skill and follow its
+**Review pass** section only, with the linked issue as its spec issue. It is
+one pass, never a multi-iteration review loop. The loop's budget, severity
+triage and filed findings are exactly what a quick implementation chooses to
+skip.
 
 If the pass stops, stop before opening the PR. This skill promises a review
 before the PR, so it never opens one with an axis unreviewed.

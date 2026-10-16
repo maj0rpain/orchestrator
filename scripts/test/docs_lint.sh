@@ -187,7 +187,7 @@ printf 'See skills/quick-implement/SKILL.md.\n' >"$fixture/commands/q1.md"
 printf 'Run `/orchestrator:review 12`.\n' >"$fixture/commands/r1.md"
 printf 'Run `/orchestrator:status`.\n' >"$fixture/commands/r2.md"
 printf 'Run `/orchestrator:doctor`.\n' >"$fixture/commands/r3.md"
-printf 'Run `/orchestrator:review-pass 12`.\nRun `/orchestrator:flow-status`.\nRun `/orchestrator:health`.\nCall `orchestrator:orch-review`.\n' >"$fixture/commands/renamed.md"
+printf 'Run `/orchestrator:review-pass 12`.\nRun `/orchestrator:flow-status`.\nRun `/orchestrator:health`.\nCall `orchestrator:orch-review`.\nCall `orchestrator:orch-review-pass`.\nSee skills/orch-review-pass/SKILL.md.\nname: orch-review-pass\n' >"$fixture/commands/renamed.md"
 git -C "$fixture" add -A
 out="$(scan_old_names "$fixture")"
 flags "the old review-spec skill name is flagged" "$out" "commands/a.md:1: old skill or command name"
@@ -213,7 +213,7 @@ flags "the old orch-plan skill name line is flagged" "$out" "commands/p8.md:1: o
 flags "the old /orchestrator:review command is flagged" "$out" "commands/r1.md:1: old skill or command name"
 flags "the old /orchestrator:status command is flagged" "$out" "commands/r2.md:1: old skill or command name"
 flags "the old /orchestrator:doctor command is flagged" "$out" "commands/r3.md:1: old skill or command name"
-spares "the new review-pass, flow-status and health names and orch-review are not flagged" \
+spares "the new review-pass, flow-status and health names, orch-review and orch-review-pass are not flagged" \
   "$out" '^commands/renamed\.md'
 spares "the new interview names are not flagged" \
   "$out" '^commands/interview\.md'
@@ -977,8 +977,8 @@ skills/orch-quick-implement/SKILL.md|## 2. Run an unattended spec review
 skills/orch-quick-implement/SKILL.md|## 3. Publish the ticket breakdown
 skills/orch-quick-implement/SKILL.md|## 6. Review
 skills/orch-quick-implement/SKILL.md|## 7. Open the PR
-skills/orch-review/SKILL.md|## Review pass
-skills/orch-review/SKILL.md|## Standalone review pass
+skills/orch-review-pass/SKILL.md|## Review pass
+skills/orch-review-pass/SKILL.md|## Standalone review pass
 skills/orch-spec-review/SKILL.md|## Standalone spec review
 skills/orch-spec-review/SKILL.md|## Consolidation
 skills/orch-spec-review/SKILL.md|## Disposition
@@ -1450,10 +1450,10 @@ check "every host capability row has both hosts' cells filled" \
 
 # quick_step_refers <plugin root> <step heading> <skill> <section> <noun>:
 # one line when that quick-implement step does not name `<skill>` and its
-# **<section>**.
+# **<section>**. A name ending in one s (orch-to-tickets) takes a bare apostrophe.
 quick_step_refers() {
   local quick="skills/orch-quick-implement/SKILL.md" body numbered="${2#\#\# }" owner="$3's"
-  [[ $3 == *s ]] && owner="$3'"
+  [[ $3 == *s && $3 != *ss ]] && owner="$3'"
   body="$(md_section "$1/$quick" "$2" | flat_text)"
   { grep -qF "\`$3\`" <<<"$body" && grep -qF "**$4**" <<<"$body"; } \
     || echo "$quick: step ${numbered%%.*} does not refer to $owner **$4** $5"
@@ -1462,40 +1462,40 @@ quick_step_refers() {
 # --- review pass (#342) --------------------------------------------------------
 echo
 echo "review pass (#342)"
-# A review pass is defined once, in orch-review's ## Review pass section, which
+# A review pass is defined once, in orch-review-pass's ## Review pass section, which
 # starts with review-pass begin. Quick implementation's step 6 runs that
 # section rather than keeping its own copy.
 # scan_review_pass <plugin root>: one line per break of that rule.
 scan_review_pass() {
-  local r="$1" review="skills/orch-review/SKILL.md" body
+  local r="$1" review="skills/orch-review-pass/SKILL.md" body
   if body="$(md_section "$r/$review" "## Review pass")"; then
     flat_text <<<"$body" | grep -qF 'review-pass begin' \
       || echo "$review: ## Review pass does not name review-pass begin"
   else
     echo "$review: no ## Review pass section"
   fi
-  quick_step_refers "$r" "## 6. Review" orch-review "Review pass" section
+  quick_step_refers "$r" "## 6. Review" orch-review-pass "Review pass" section
   return 0
 }
 fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-review" "$fixture/skills/orch-quick-implement"
+mkdir -p "$fixture/skills/orch-review-pass" "$fixture/skills/orch-quick-implement"
 printf '# R\n\n## Review pass\n\nStart the reviewers.\n\n## Other\n\nrun review-pass begin\n' \
-  >"$fixture/skills/orch-review/SKILL.md"
-printf '# Q\n\n## 6. Review\n\nStart the reviewers.\n\n## 7. Open the PR\n\nSee `orch-review` **Review pass**.\n' \
+  >"$fixture/skills/orch-review-pass/SKILL.md"
+printf '# Q\n\n## 6. Review\n\nStart the reviewers.\n\n## 7. Open the PR\n\nSee `orch-review-pass` **Review pass**.\n' \
   >"$fixture/skills/orch-quick-implement/SKILL.md"
 out="$(scan_review_pass "$fixture")"
 flags "a Review pass section that skips review-pass begin is flagged" \
-  "$out" "skills/orch-review/SKILL.md: ## Review pass does not name review-pass begin"
-flags "a step 6 that does not run orch-review's Review pass is flagged" \
-  "$out" "skills/orch-quick-implement/SKILL.md: step 6 does not refer to orch-review's **Review pass** section"
-printf '# R\n\n## Other\n' >"$fixture/skills/orch-review/SKILL.md"
+  "$out" "skills/orch-review-pass/SKILL.md: ## Review pass does not name review-pass begin"
+flags "a step 6 that does not run orch-review-pass's Review pass is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md: step 6 does not refer to orch-review-pass's **Review pass** section"
+printf '# R\n\n## Other\n' >"$fixture/skills/orch-review-pass/SKILL.md"
 flags "a missing Review pass section is flagged" \
-  "$(scan_review_pass "$fixture")" "skills/orch-review/SKILL.md: no ## Review pass section"
-printf '# R\n\n## Review pass\n\nRun `orch.sh review-pass begin <issue>`.\n' >"$fixture/skills/orch-review/SKILL.md"
-printf '# Q\n\n## 6. Review\n\nRun the `orch-review` skill'"'"'s **Review\npass** section.\n' \
+  "$(scan_review_pass "$fixture")" "skills/orch-review-pass/SKILL.md: no ## Review pass section"
+printf '# R\n\n## Review pass\n\nRun `orch.sh review-pass begin <issue>`.\n' >"$fixture/skills/orch-review-pass/SKILL.md"
+printf '# Q\n\n## 6. Review\n\nRun the `orch-review-pass` skill'"'"'s **Review\npass** section.\n' \
   >"$fixture/skills/orch-quick-implement/SKILL.md"
 assert_empty "a review pass defined once and run by step 6 is not flagged" "$(scan_review_pass "$fixture")"
-check "the review pass is defined once in orch-review and quick implementation runs it" \
+check "the review pass is defined once in orch-review-pass and quick implementation runs it" \
   "$(scan_review_pass "$PLUGIN_ROOT")"
 
 # --- unattended modes (#616) --------------------------------------------------
@@ -1540,7 +1540,7 @@ echo "previously declined (#418)"
 # about earlier passes.
 # scan_previously_declined <plugin root>: one line per break of that rule.
 scan_previously_declined() {
-  local r="$1" review="skills/orch-review/SKILL.md" body prompt
+  local r="$1" review="skills/orch-review-pass/SKILL.md" body prompt
   body="$(md_section "$r/$review" "## Standalone review pass" | flat_text)"
   grep -qF 'pr comments' <<<"$body" \
     || echo "$review: ## Standalone review pass does not name pr comments"
@@ -1554,24 +1554,24 @@ scan_previously_declined() {
   return 0
 }
 fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-review"
+mkdir -p "$fixture/skills/orch-review-pass"
 printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base SHA: <base SHA>' \
   '   Spec issue: #<issue>' '   Earlier declines: <list>' '   Iteration: <NN>' \
   '   Report path: <prefix>-<standards|spec>.md' '   orch.sh: <the path ORCH holds>' '   ```' '' \
   '## Standalone review pass' '' 'Post it.' \
-  >"$fixture/skills/orch-review/SKILL.md"
+  >"$fixture/skills/orch-review-pass/SKILL.md"
 out="$(scan_previously_declined "$fixture")"
 flags "a standalone pass that never reads pr comments is flagged" \
-  "$out" "skills/orch-review/SKILL.md: ## Standalone review pass does not name pr comments"
+  "$out" "skills/orch-review-pass/SKILL.md: ## Standalone review pass does not name pr comments"
 flags "a standalone pass with no Previously declined is flagged" \
-  "$out" "skills/orch-review/SKILL.md: ## Standalone review pass does not name **Previously declined**"
+  "$out" "skills/orch-review-pass/SKILL.md: ## Standalone review pass does not name **Previously declined**"
 flags "a reviewer prompt carrying earlier declines is flagged" \
-  "$out" "skills/orch-review/SKILL.md: ## Review pass step 3's reviewer prompt is not the five variables"
+  "$out" "skills/orch-review-pass/SKILL.md: ## Review pass step 3's reviewer prompt is not the five variables"
 printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base SHA: <base SHA>' \
   '   Spec issue: #<issue>' '   Iteration: <NN>' '   Report path: <prefix>-<standards|spec>.md' \
   '   orch.sh: <the path ORCH holds>' '   ```' '' \
   '## Standalone review pass' '' 'Run `orch.sh pr comments <file>`; list **Previously' 'declined**.' \
-  >"$fixture/skills/orch-review/SKILL.md"
+  >"$fixture/skills/orch-review-pass/SKILL.md"
 assert_empty "a pass that reads earlier declines and keeps the prompt is not flagged" \
   "$(scan_previously_declined "$fixture")"
 check "a standalone review pass drops earlier declines and the reviewer prompt stays five variables" \
@@ -1586,7 +1586,7 @@ echo "standalone pass smells (#419)"
 # names --smells, and the command's argument-hint offers it.
 # scan_standalone_smells <plugin root>: one line per place that drops the flag.
 scan_standalone_smells() {
-  local r="$1" review="skills/orch-review/SKILL.md" cmd="commands/review-pass.md"
+  local r="$1" review="skills/orch-review-pass/SKILL.md" cmd="commands/review-pass.md"
   md_section "$r/$review" "## Standalone review pass" | grep -qF -- '--smells' \
     || echo "$review: ## Standalone review pass does not name --smells"
   grep -E '^argument-hint:' "$r/$cmd" 2>/dev/null | grep -qF -- '--smells' \
@@ -1594,21 +1594,224 @@ scan_standalone_smells() {
   return 0
 }
 fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-review" "$fixture/commands"
+mkdir -p "$fixture/skills/orch-review-pass" "$fixture/commands"
 printf '# R\n\n## Standalone review pass\n\nRun the pass.\n\n## Other\n\n--smells\n' \
-  >"$fixture/skills/orch-review/SKILL.md"
+  >"$fixture/skills/orch-review-pass/SKILL.md"
 printf -- '---\nargument-hint: "<issue>"\n---\n\nPass --smells along.\n' >"$fixture/commands/review-pass.md"
 out="$(scan_standalone_smells "$fixture")"
 flags "a Standalone review pass section that never names --smells is flagged" \
-  "$out" "skills/orch-review/SKILL.md: ## Standalone review pass does not name --smells"
+  "$out" "skills/orch-review-pass/SKILL.md: ## Standalone review pass does not name --smells"
 flags "a review-pass argument-hint without --smells is flagged" \
   "$out" "commands/review-pass.md: argument-hint does not name --smells"
-printf '# R\n\n## Standalone review pass\n\nWith `--smells`, keep them.\n' >"$fixture/skills/orch-review/SKILL.md"
+printf '# R\n\n## Standalone review pass\n\nWith `--smells`, keep them.\n' >"$fixture/skills/orch-review-pass/SKILL.md"
 printf -- '---\nargument-hint: "<issue> [--smells]"\n---\n' >"$fixture/commands/review-pass.md"
 assert_empty "a standalone pass and argument-hint naming --smells are not flagged" \
   "$(scan_standalone_smells "$fixture")"
 check "a standalone review pass takes --smells, and review-pass offers it" \
   "$(scan_standalone_smells "$PLUGIN_ROOT")"
+
+# --- review pass skill (#1138) -------------------------------------------------
+echo
+echo "review pass skill (#1138)"
+# The review pass lives in its own skill, orch-review-pass, so a pass loads
+# none of orch-review's loop text. That holds only while the pass's skill
+# refers into no loop section, every caller invokes orch-review-pass, and
+# orch-review keeps no copy of the pass.
+# The loop-only names: orch-review's loop sections, plus Met again, the loop's
+# triage outcome. A pass's skill names one when a bold span is the name, or
+# begins with the name and a colon.
+review_loop_only='Before the first iteration
+The iteration
+The reviewers
+The fixer
+The closer
+Starting an agent
+Severity
+Authority
+CI
+Termination
+Met again'
+# names_orch_review: stdin names the orch-review skill as a whole token -
+# orch-review or orchestrator:orch-review, never orch-review-pass or
+# orch-reviewer-spec.
+names_orch_review() { grep -qE '(^|[^a-z0-9-])orch-review([^a-z0-9-]|$)'; }
+# skill_description <file>: the description line of the file's frontmatter.
+skill_description() {
+  awk 'NR == 1 && $0 == "---" { inb = 1; next } inb && $0 == "---" { exit }
+    inb && /^description:/ { print }' "$1" 2>/dev/null
+}
+# scan_review_pass_self_contained <plugin root>: one line per reference from
+# orch-review-pass into orch-review, and per missing reviewer-start or
+# description token.
+scan_review_pass_self_contained() {
+  local r="$1" pass="skills/orch-review-pass/SKILL.md" text name desc
+  text="$(flat_text "$r/$pass" 2>/dev/null)"
+  while IFS= read -r name; do
+    grep -oE '\*\*[^*]+\*\*' <<<"$text" | sed 's/^\*\*//; s/\*\*$//' \
+      | grep -qxE -e "$name" -e "$name:.*" \
+      && echo "$pass: names orch-review's loop-only **$name**"
+  done <<<"$review_loop_only"
+  names_orch_review <"$r/$pass" 2>/dev/null && echo "$pass: names the orch-review skill"
+  grep -qF '`docs/host-capabilities.md`' <<<"$text" && grep -qF '**Start a fresh subagent**' <<<"$text" \
+    || echo "$pass: does not name docs/host-capabilities.md's **Start a fresh subagent**"
+  grep -qF 'subagent_type' <<<"$text" || echo "$pass: does not name subagent_type"
+  desc="$(skill_description "$r/$pass")"
+  grep -qF '/orchestrator:review-pass' <<<"$desc" \
+    || echo "$pass: description does not name /orchestrator:review-pass"
+  grep -qF 'orch-quick-implement' <<<"$desc" \
+    || echo "$pass: description does not name orch-quick-implement"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-review-pass"
+printf '%s\n' '---' 'name: orch-review-pass' 'description: One look.' '---' '' \
+  'See **The iteration** and **Authority: what the loop refuses to act on**,' \
+  'judged as **Met' 'again** does, with **Severity**.' 'Start them as `orch-review` says.' \
+  >"$fixture/skills/orch-review-pass/SKILL.md"
+out="$(scan_review_pass_self_contained "$fixture")"
+flags "a pass naming The iteration is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: names orch-review's loop-only **The iteration**"
+flags "a pass naming a loop section by its full heading is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: names orch-review's loop-only **Authority**"
+flags "a pass naming Met again across a line break is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: names orch-review's loop-only **Met again**"
+flags "a pass naming Severity in bold is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: names orch-review's loop-only **Severity**"
+flags "a pass naming the orch-review skill in plain prose is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: names the orch-review skill"
+flags "a pass that does not say how to start a reviewer is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: does not name docs/host-capabilities.md's **Start a fresh subagent**"
+flags "a pass that does not name subagent_type is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: does not name subagent_type"
+flags "a pass description without /orchestrator:review-pass is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: description does not name /orchestrator:review-pass"
+flags "a pass description without orch-quick-implement is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: description does not name orch-quick-implement"
+printf '%s\n' '---' 'name: orch-review-pass' \
+  'description: One look, from orch-quick-implement or /orchestrator:review-pass <issue>.' '---' '' \
+  '## Review pass' '' 'A pass has no severity, and no closer. Start `orch-reviewer-spec` and' \
+  '`orch-reviewer-standards` with `subagent_type`, or `docs/host-capabilities.md`'"'"'s' \
+  '**Start a fresh' 'subagent**. Follow **Review pass** and `orchestrator:orch-review-pass`.' \
+  >"$fixture/skills/orch-review-pass/SKILL.md"
+assert_empty "a self-contained pass is not flagged" "$(scan_review_pass_self_contained "$fixture")"
+check "orch-review-pass refers into no orch-review section and says how to start a reviewer" \
+  "$(scan_review_pass_self_contained "$PLUGIN_ROOT")"
+
+# scan_review_pass_callers <plugin root>: one line per caller of the pass that
+# does not name orch-review-pass and the section it follows, or names
+# orch-review. Quick implementation's step 6 is named by scan_review_pass.
+scan_review_pass_callers() {
+  local r="$1" cmd="commands/review-pass.md" quick="skills/orch-quick-implement/SKILL.md"
+  local sync="skills/orch-sync/SKILL.md" body
+  body="$(flat_text "$r/$cmd" 2>/dev/null)"
+  { grep -qF 'orch-review-pass' <<<"$body" && grep -qF '**Standalone review pass**' <<<"$body"; } \
+    || echo "$cmd: does not name orch-review-pass's **Standalone review pass**"
+  names_orch_review <<<"$body" && echo "$cmd: names the orch-review skill"
+  body="$(md_section "$r/$quick" "## 6. Review" | flat_text)"
+  names_orch_review <<<"$body" && echo "$quick: step 6 names the orch-review skill"
+  body="$(md_section "$r/$sync" "## 3. Offer a review pass" | flat_text)"
+  { grep -qF 'orch-review-pass' <<<"$body" && grep -qF '**Standalone review pass**' <<<"$body"; } \
+    || echo "$sync: step 3 does not name orch-review-pass's **Standalone review pass**"
+  names_orch_review <<<"$body" && echo "$sync: step 3 names the orch-review skill"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/commands" "$fixture/skills/orch-quick-implement" "$fixture/skills/orch-sync"
+printf 'Call `orchestrator:orch-review` and follow its **Standalone review pass**.\n' \
+  >"$fixture/commands/review-pass.md"
+printf '# Q\n\n## 6. Review\n\nInvoke `orch-review` and `orch-review-pass`'"'"'s **Review pass**.\n' \
+  >"$fixture/skills/orch-quick-implement/SKILL.md"
+printf '# S\n\n## 3. Offer a review pass\n\nInvoke `orch-review`'"'"'s **Review pass**.\n\n## 4. Other\n\n`orch-review-pass` **Standalone review pass**\n' \
+  >"$fixture/skills/orch-sync/SKILL.md"
+out="$(scan_review_pass_callers "$fixture")"
+flags "a review-pass command that never names orch-review-pass is flagged" \
+  "$out" "commands/review-pass.md: does not name orch-review-pass's **Standalone review pass**"
+flags "a review-pass command that calls orch-review is flagged" \
+  "$out" "commands/review-pass.md: names the orch-review skill"
+flags "a quick step 6 that names orch-review is flagged" \
+  "$out" "skills/orch-quick-implement/SKILL.md: step 6 names the orch-review skill"
+flags "a sync offer that does not follow orch-review-pass is flagged" \
+  "$out" "skills/orch-sync/SKILL.md: step 3 does not name orch-review-pass's **Standalone review pass**"
+flags "a sync offer that invokes orch-review is flagged" \
+  "$out" "skills/orch-sync/SKILL.md: step 3 names the orch-review skill"
+printf 'Call `orchestrator:orch-review-pass` and follow its **Standalone\nreview pass**.\n' \
+  >"$fixture/commands/review-pass.md"
+printf '# Q\n\n## 6. Review\n\nInvoke `orch-review-pass`'"'"'s **Review pass**.\n' \
+  >"$fixture/skills/orch-quick-implement/SKILL.md"
+printf '# S\n\n## 3. Offer a review pass\n\nInvoke `orch-review-pass`'"'"'s **Standalone review pass**.\n' \
+  >"$fixture/skills/orch-sync/SKILL.md"
+assert_empty "callers that invoke orch-review-pass are not flagged" "$(scan_review_pass_callers "$fixture")"
+check "every caller of the review pass invokes orch-review-pass, never orch-review" \
+  "$(scan_review_pass_callers "$PLUGIN_ROOT")"
+
+# scan_review_loop_sheds_pass <plugin root>: one line per copy of the pass
+# left in orch-review, or per missing pointer to orch-review-pass.
+scan_review_loop_sheds_pass() {
+  local r="$1" review="skills/orch-review/SKILL.md" text desc heading
+  text="$(flat_text "$r/$review" 2>/dev/null)"
+  for heading in "Review pass" "Standalone review pass"; do
+    grep -qxE "## ${heading}[[:space:]]*" "$r/$review" 2>/dev/null \
+      && echo "$review: holds a ## $heading section"
+    grep -qF "**$heading**" <<<"$text" && echo "$review: names **$heading**"
+  done
+  desc="$(skill_description "$r/$review")"
+  grep -qF 'orch-review-pass' <<<"$desc" || echo "$review: description does not name orch-review-pass"
+  grep -qF '/orchestrator:review-pass' <<<"$desc" && echo "$review: description names /orchestrator:review-pass"
+  awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' \
+    "$r/$review" 2>/dev/null | grep -qF 'orch-review-pass' \
+    || echo "$review: body does not name orch-review-pass"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-review"
+printf '%s\n' '---' 'name: orch-review' 'description: The loop, and /orchestrator:review-pass <issue>.' '---' '' \
+  '## Review pass' '' 'See **Standalone' 'review pass**.' '' '## Standalone review pass' '' 'More.' \
+  >"$fixture/skills/orch-review/SKILL.md"
+out="$(scan_review_loop_sheds_pass "$fixture")"
+flags "a Review pass section left in orch-review is flagged" \
+  "$out" "skills/orch-review/SKILL.md: holds a ## Review pass section"
+flags "a Standalone review pass section left in orch-review is flagged" \
+  "$out" "skills/orch-review/SKILL.md: holds a ## Standalone review pass section"
+flags "a **Standalone review pass** reference left in orch-review is flagged" \
+  "$out" "skills/orch-review/SKILL.md: names **Standalone review pass**"
+flags "an orch-review description with no pointer to orch-review-pass is flagged" \
+  "$out" "skills/orch-review/SKILL.md: description does not name orch-review-pass"
+flags "an orch-review description that still claims the command is flagged" \
+  "$out" "skills/orch-review/SKILL.md: description names /orchestrator:review-pass"
+flags "an orch-review body with no pointer to orch-review-pass is flagged" \
+  "$out" "skills/orch-review/SKILL.md: body does not name orch-review-pass"
+printf '%s\n' '---' 'name: orch-review' 'description: The loop. The review pass is orch-review-pass.' '---' '' \
+  '# Loop' '' 'A review pass lives in the `orch-review-pass` skill.' \
+  >"$fixture/skills/orch-review/SKILL.md"
+assert_empty "an orch-review that points to orch-review-pass is not flagged" \
+  "$(scan_review_loop_sheds_pass "$fixture")"
+check "orch-review holds the loop only and points to orch-review-pass" \
+  "$(scan_review_loop_sheds_pass "$PLUGIN_ROOT")"
+
+# scan_junie_review_pass <plugin root>: one line when Junie's custom-agent
+# block has no orch-review-pass dependency sentence naming both reviewers.
+scan_junie_review_pass() {
+  local r="$1" doc="docs/junie/AGENTS.md" line
+  line="$(md_section "$r/$doc" "## orchestrator plugin: custom agents" 2>/dev/null \
+    | grep -E '^The orch-review-pass skill depends on')"
+  { grep -qF 'orch-reviewer-spec' <<<"$line" && grep -qF 'orch-reviewer-standards' <<<"$line"; } \
+    || echo "$doc: no orch-review-pass dependency sentence naming both reviewers"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs/junie"
+printf '%s\n' '## orchestrator plugin: custom agents' '' \
+  'The orch-review-pass skill depends on the orch-reviewer-spec custom agent.' \
+  >"$fixture/docs/junie/AGENTS.md"
+flags "an orch-review-pass sentence missing a reviewer is flagged" \
+  "$(scan_junie_review_pass "$fixture")" "docs/junie/AGENTS.md: no orch-review-pass dependency sentence naming both reviewers"
+printf '%s\n' '## orchestrator plugin: custom agents' '' \
+  'The orch-review-pass skill depends on the orch-reviewer-spec and orch-reviewer-standards custom agents.' \
+  >"$fixture/docs/junie/AGENTS.md"
+assert_empty "an orch-review-pass sentence naming both reviewers is not flagged" \
+  "$(scan_junie_review_pass "$fixture")"
+check "Junie's custom-agent block names orch-review-pass's reviewers" \
+  "$(scan_junie_review_pass "$PLUGIN_ROOT")"
 
 # --- closer's filed body lines -----------------------------------------------
 # The six labels - **Spec question:** only on a spec question - are the field
