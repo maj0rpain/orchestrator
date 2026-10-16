@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.11.0
+
+The review pass, quick or standalone, now lives in its own skill, `orch-review-pass`, so a quick implementation's driver and `/orchestrator:review-pass` no longer load the review loop's text with it. `orch-review` holds the review loop only, and `/orchestrator:review-pass`, quick implementation's review step and `/orchestrator:sync`'s offered pass all invoke `orch-review-pass`. The pass's behaviour is unchanged. On Junie, replace the orchestrator snippet in `~/.junie/AGENTS.md` with the updated `docs/junie/AGENTS.md` to pick up the new skill's custom-agent dependency sentence.
+
 ## 4.10.0
 
 The Implementability lens of a spec review now carries a code map across rounds and reads only the code the spec and the map name, so later rounds no longer re-explore the codebase from scratch. `orch.sh spec-review begin <n> --carry-map` keeps `map-implementability.md` through the wipe of the working directory on standalone rounds 2 and later, and a flow's spec phase copies the previous round's map into each fresh round directory.
