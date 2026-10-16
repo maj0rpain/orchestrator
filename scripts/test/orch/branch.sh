@@ -211,6 +211,51 @@ assert_contains "with the usage" "$out" "usage: orch.sh branch base-sha"
 assert_contains "help documents branch base-sha" "$("$ORCH" help)" "branch base-sha"
 rm -rf "$(dirname "$bare")"
 
+# --- plugin-made branches have no upstream (#1152) ---------------------------
+# git's branch.autoSetupMerge would give a branch forked from origin/<base> (or,
+# set to always, from the local base) that base as its upstream until its first
+# push. The plugin records the base itself, so it passes --no-track instead.
+echo
+echo "plugin-made branches have no upstream (#1152)"
+new_repo_with_origin
+orch_gh_failing branch off quick/1-fresh >/dev/null
+assert_eq "branch off leaves the new branch no upstream" "$(upstream_of quick/1-fresh)" "none"
+
+new_repo_with_origin
+orch_gh_failing init nouser >/dev/null
+orch_gh_failing state set issue 12
+orch_gh_failing branch create >/dev/null
+assert_eq "branch create leaves the new branch no upstream" "$(upstream_of orch/12-nouser)" "none"
+
+# The local fallback: origin cannot be asked and has no remote-tracking ref,
+# so the branch forks from the local base, which autoSetupMerge=always tracks.
+new_repo >/dev/null
+git remote set-url origin "$(mktemp -d)/missing.git"
+git config branch.autoSetupMerge always
+git config orchestrator.base "$(git branch --show-current)"
+out="$(orch_gh_failing branch off quick/2-local 2>&1)"; st=$?
+assert_status "branch off falls back to the local base with origin unreachable" "$st" 0
+assert_eq "and leaves no upstream under autoSetupMerge=always" "$(upstream_of quick/2-local)" "none"
+
+# retire reads the upstream to decide whether to push: a never-pushed branch
+# made by branch off has none, so it is renamed locally only.
+new_repo >/dev/null
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin HEAD:refs/heads/main
+git fetch -q origin
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+orch_gh_failing branch off quick/3-unpushed >/dev/null
+out="$(orch_gh_failing branch retire quick/3-unpushed quick/3-unpushed-redo-1 2>&1)"; st=$?
+assert_status "branch retire renames a never-pushed branch" "$st" 0
+assert_eq "locally" "$(git branch --show-current)" "quick/3-unpushed-redo-1"
+assert_eq "and pushes no new name to origin" \
+  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/quick/3-unpushed-redo-1 >/dev/null && echo present || echo gone)" "gone"
+assert_eq "nor the old one" \
+  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/quick/3-unpushed >/dev/null && echo present || echo gone)" "gone"
+rm -rf "$(dirname "$bare")"
+
 # --- branch retire ------------------------------------------------------------
 # The rename-aside a redo uses instead of deleting or force-pushing over a
 # discarded attempt's commits. The push/delete-remote-ref assertions reuse the
