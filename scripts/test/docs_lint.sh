@@ -1621,12 +1621,20 @@ echo "review pass skill (#1138)"
 # none of orch-review's loop text. That holds only while the pass's skill
 # refers into no loop section, every caller invokes orch-review-pass, and
 # orch-review keeps no copy of the pass.
-# The loop-only names: orch-review's ## headings, each cut at its colon, plus
+# The loop-only names, the spec's closed list: orch-review's loop sections, plus
 # Met again, the loop's triage outcome. A pass's skill names one when a bold
 # span is the name, or begins with the name and a colon.
-review_loop_only="$(sed -n 's/^## //p' "$PLUGIN_ROOT/skills/orch-review/SKILL.md" \
-  | sed 's/:.*//; s/[[:space:]]*$//')
-Met again"
+review_loop_only='Before the first iteration
+The iteration
+The reviewers
+The fixer
+The closer
+Starting an agent
+Severity
+Authority
+CI
+Termination
+Met again'
 # names_orch_review: stdin names the orch-review skill as a whole token -
 # orch-review or orchestrator:orch-review, never orch-review-pass or
 # orch-reviewer-spec.
@@ -1648,7 +1656,7 @@ scan_review_pass_self_contained() {
       && echo "$pass: names orch-review's loop-only **$name**"
   done <<<"$review_loop_only"
   names_orch_review <"$r/$pass" 2>/dev/null && echo "$pass: names the orch-review skill"
-  grep -qF '`docs/host-capabilities.md`' <<<"$text" && grep -qF '**Start a fresh subagent**' <<<"$text" \
+  names_skill_section "$text" '`docs/host-capabilities.md`' "Start a fresh subagent" \
     || echo "$pass: does not name docs/host-capabilities.md's **Start a fresh subagent**"
   grep -qF 'subagent_type' <<<"$text" || echo "$pass: does not name subagent_type"
   desc="$(skill_description "$r/$pass")"
