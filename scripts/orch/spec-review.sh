@@ -200,7 +200,7 @@ spec_review_batch_parse() {
     case "$mode" in
       anchor)
         [ "$kw" = replace ] && [ -z "$args" ] \
-          || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line"
+          || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'"
         [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the anchor is empty"
         spec_review_text_store anchor "$buf" "$cur" "$opt" "$block_line"
         mode=replace; buf=""; bufn=0; block_line="$lineno"
@@ -609,7 +609,7 @@ spec_review_validate() {
 # line each, then exit 1. A clean batch prints a one-line summary.
 spec_review_check() {
   [ $# -eq 1 ] || die "usage: orch.sh spec-review check <dir>"
-  local dir="${1%/}" body p i j anchors=0
+  local dir="${1%/}" body p i anchors=0
   [ -d "$dir" ] || die "no such directory: $dir"
   [ -f "$dir/batch.md" ] || die "batch.md not found in $dir"
   body=spec.fetched.md
@@ -623,7 +623,7 @@ spec_review_check() {
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     case "${SR_IT_REC[$i]}" in apply|decline) anchors=$((anchors + 1)) ;; esac
   done
-  for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do anchors=$((anchors + 1)); done
+  anchors=$((anchors + ${#SR_OP_ITEM[@]}))
   note "batch.md passes: ${#SR_IT_N[@]} items, $anchors anchors, each matching once in $body, and the all answer applies cleanly"
 }
 
