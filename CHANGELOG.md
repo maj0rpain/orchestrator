@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.9.0
+
+Add `orch.sh spec-review check <dir>`: a round's batch validated before the batch question - grammar, lens files, citations, every anchor, and a dry run of the `all` answer - with nothing written. `spec-review apply`'s anchor refusals now name the anchor's `batch.md` line.
+
+The `orch-spec-review` skill now runs `spec-review check` on every batch before showing it, in every mode, and its batch-file section gains a worked example of each item kind.
+
 ## 4.8.3
 
 Branches made by `branch off`, `branch create` and `ticket-worktree add` no longer track their base branch, or their parent branch, as upstream until their first push, so a plain `git pull` no longer merges the base into them; `branch retire` on such a never-pushed branch renames it locally only.
