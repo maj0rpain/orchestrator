@@ -40,16 +40,19 @@ turns out missing, take the fallback it documents and tell your caller which.
 ### 1. Gather context
 
 The parent is the issue number you were given (a caller's spec issue, or the
-argument to `/orchestrator:to-tickets`). Fetch it and read its full body and
-comments, written to a temporary file outside the repo (`mktemp`), as one
-JSON object read pinned to the repo `orch.sh` resolves:
+argument to `/orchestrator:to-tickets`). Fetch its body as plain multi-line
+text and its comments, each into its own temporary file outside the repo
+(`mktemp`), read pinned to the repo `orch.sh` resolves:
 
 ```bash
-bash "$ORCH" issue fetch <parent> <file> --json
+bash "$ORCH" issue fetch <parent> <body-file>
+bash "$ORCH" issue comments <parent> <comments-file>
 ```
 
-When the fetch fails, stop and tell the human what it printed. Otherwise
-read that file.
+When either fetch fails, stop and tell the human what it printed. Otherwise
+open both files with the Read tool, never `cat`, so a large spec is read
+once, in full; an empty comments file means no comments. The body is the
+spec; where a comment disagrees with it, the body wins.
 
 ### 2. Explore the codebase (optional)
 

@@ -29,13 +29,17 @@ character away - describe it in the finding instead.
    `git diff <base SHA>...HEAD` (three dots) must be non-empty. Note the
    commits with `git log <base SHA>..HEAD --oneline`. If either check fails,
    write a report saying which, and return.
-2. **Read the spec**: `bash "<orch.sh>" issue fetch <spec issue> <file>
-   --json`, into a temporary file outside the working tree (`mktemp`), writes
-   its title, body, labels and comments as one JSON object, read pinned to
-   the repo `orch.sh` resolves. Then read that file. When the fetch fails,
-   write a report saying so, and return. The issue body is the spec. Where
-   it lists sub-issues, read those too, the same way, each into its own
-   `mktemp` file: their acceptance criteria are part of what was asked. Done when you can list every
+2. **Read the spec**: `bash "<orch.sh>" issue fetch <spec issue> <file>`
+   writes its body as plain multi-line text, and `bash "<orch.sh>" issue
+   comments <spec issue> <file>` its comments, each into its own temporary
+   file outside the working tree (`mktemp`), read pinned to the repo
+   `orch.sh` resolves. Open both files with the Read tool, never `cat`, so a
+   large spec is read once, in full. When either fetch fails, write a report
+   saying so, and return; an empty comments file means no comments. The
+   issue body is the spec; its comments are context, and where one disagrees
+   with the body, the body wins. Where it lists sub-issues, read those too,
+   the same way, each into its own `mktemp` files: their acceptance criteria
+   are part of what was asked. Done when you can list every
    requirement the spec states.
 3. **Review the diff** against that list. Read the surrounding file wherever a
    hunk alone cannot tell you whether a requirement is met. Look for three

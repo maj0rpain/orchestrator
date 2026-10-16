@@ -116,7 +116,8 @@ Steps 1 to 4 below run at the start of every round, as **Rounds** says.
    If it dies, stop and relay its message - when an active flow holds this
    issue, the message names the command to run instead. This is the review's
    only read of `state.json`, and it goes through `orch.sh`.
-2. **Fetch**: `bash "$ORCH" issue fetch <issue> <dir>/spec.md`. A failure
+2. **Fetch**: `bash "$ORCH" issue fetch <issue> <dir>/spec.md`, opened
+   with the Read tool wherever this session reads it, never `cat`. A failure
    stops the review: say what blocked it. There is no flow to abort,
    so do not offer `/orchestrator:abort`. The directory is left for
    inspection and wiped by the next run.

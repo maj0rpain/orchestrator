@@ -745,6 +745,24 @@ assert_eq "and no temp file" "$(ls "$fidir")" "body.md"
 rm -rf "$fidir"
 unset fidir
 
+# The plain body is what agents read, with Read (#1143): a large spec arrives
+# as the many lines it is, never one escaped line that Read would cut off at
+# about 2000 characters.
+large_body="$(for i in $(seq 1 60); do
+  printf '%s\n' "- Line $i of the spec: a \`\$HOME\` quote, a \\ backslash and \"quotes\"."
+done)"
+fake_issue_body 23 "$large_body"
+"$ORCH" issue fetch 23 "$issue_body"; st=$?
+assert_status "fetch of a body over 2000 characters succeeds" "$st" 0
+assert_eq "the body really is over 2000 characters" \
+  "$([ "$(wc -c <"$issue_body")" -gt 2000 ] && echo yes || echo no)" "yes"
+assert_eq "written on its own 60 lines" "$(wc -l <"$issue_body" | tr -d ' ')" "60"
+assert_eq "verbatim, with no JSON escaping" "$(cat "$issue_body")" "$large_body"
+assert_eq "its 42nd line kept whole" "$(sed -n 42p "$issue_body")" \
+  '- Line 42 of the spec: a `$HOME` quote, a \ backslash and "quotes".'
+unset large_body
+fake_issue_body 23 "Body of #23."
+
 # issue fetch --json (#528): the issue's title, body, labels and comments in one
 # trimmed JSON object, so a fresh agent reads an issue with one call pinned to
 # the repo. Its jq is ISSUE_JSON_JQ, pinned in "gh adapter contract".
@@ -910,6 +928,8 @@ assert_eq "each comment in order, opened by its author-and-date marker, one blan
   "$(cat "$issue_comments")" "$(writeln '<!-- comment @triage-bot 2026-09-01T10:00:00Z -->' \
     '## Agent brief' '' 'Do the `$HOME` thing in #6.' '' \
     '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Also: the second line' '\\ stays unescaped.')"
+assert_eq "as multi-line text, one file line per comment line, nothing escaped onto one line" \
+  "$(wc -l <"$issue_comments" | tr -d ' ')" "8"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 assert_eq "the view call never reached a real gh subprocess" "$(gh_calls)" "0"
 

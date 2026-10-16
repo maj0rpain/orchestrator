@@ -7,7 +7,7 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 Resolve the repo first, and pin every `gh` call to it with `-R`, never to `gh`'s default repo: `repo="$(bash "<orch.sh>" repo show --name)"`. When `repo show` fails, stop: an empty `-R` would fall back to the default. Every recipe in this file assumes `$repo` is set this way.
 
 - **Create an issue**: `gh issue create -R "$repo" --title "..." --body "..."`. Use a heredoc for multi-line bodies.
-- **Read an issue**: `bash "<orch.sh>" issue fetch <number> <file> --json`, into a temporary file outside the repo (`mktemp`), then read that file: one JSON object, `{number, title, body, labels: ["<name>", …], comments: [{author: "<login>", createdAt, body}, …]}`, read pinned to the repo `orch.sh` resolves.
+- **Read an issue**: `bash "<orch.sh>" issue fetch <number> <file>` writes its body as plain multi-line text, and `bash "<orch.sh>" issue comments <number> <file>` its comments, each into its own temporary file outside the repo (`mktemp`), read pinned to the repo `orch.sh` resolves. Open both files with the Read tool, never `cat`; an empty comments file means no comments. `issue fetch <number> <file> --json`, one JSON object `{number, title, body, labels: ["<name>", …], comments: [{author: "<login>", createdAt, body}, …]}`, is the machine form, for scripts: it puts the whole issue on one line, which `cat` overflows and Read cuts off, so agents never read it.
 - **List issues**: `gh issue list -R "$repo" --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
 - **Comment on an issue**: `gh issue comment <number> -R "$repo" --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> -R "$repo" --add-label "..."` / `--remove-label "..."`
@@ -33,7 +33,7 @@ Create a GitHub issue.
 
 ## When a skill says "fetch the relevant ticket"
 
-Run `bash "<orch.sh>" issue fetch <number> <file> --json`, into a temporary file outside the repo (`mktemp`), then read that file.
+Read it as **Read an issue** above says: `bash "<orch.sh>" issue fetch <number> <file>` for its plain body and `bash "<orch.sh>" issue comments <number> <file>` for its comments, each into its own `mktemp` file outside the repo, both opened with the Read tool, never `cat`.
 
 ## Wayfinding operations
 

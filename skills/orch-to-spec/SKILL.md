@@ -55,7 +55,7 @@ turns out missing, take the fallback it documents and tell your caller which.
 1. **Explore** the repo to understand the current state of the code, if you
    have not already. In rewrite mode, also read the issue's current body:
    `bash "$ORCH" issue fetch <n> <file>`, into a file outside the repo's
-   tracked tree. If it fails, stop and say why. Use the vocabulary of the
+   tracked tree, opened with the Read tool, never `cat`. If it fails, stop and say why. Use the vocabulary of the
    project's glossary throughout the spec - list its term names with
    `bash "$ORCH" glossary terms` and read the entries you need with
    `bash "$ORCH" glossary show <term>...` - and respect the ADRs in the area
