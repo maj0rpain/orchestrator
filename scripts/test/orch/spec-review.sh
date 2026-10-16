@@ -351,6 +351,29 @@ d="$(sra_dir)"
 sed -i '/^@@ lens consistency/d' "$d/batch.md"
 sra_refused "a lens with no @@ lens line" "$d" "no @@ lens line for consistency" recommended
 
+# The parser's refusals say why the line is wrong (#1149).
+sra_resolved_takes='a resolved item takes no @@ anchor, @@ replace or @@ end'
+d="$(sra_dir)"
+printf '@@ end\n' >>"$d/batch.md"
+sra_refused "a resolved item carrying @@ end" "$d" "batch.md line 58: $sra_resolved_takes" recommended
+d="$(sra_dir)"
+printf '@@ replace\nx\n@@ end\n' >>"$d/batch.md"
+sra_refused "a resolved item carrying @@ replace" "$d" "batch.md line 58: $sra_resolved_takes" recommended
+d="$(sra_dir)"
+sed -i '21,25d' "$d/batch.md"
+sra_refused "a decline item with no block" "$d" \
+  "batch.md line 18: item 2 has no @@ anchor/@@ replace/@@ end block - a decline item still carries the edit it declines" recommended
+d="$(sra_dir)"
+sed -i '48,53d' "$d/batch.md"
+sra "$d" recommended
+assert_status "an apply item with no block: refused" "$st" 1
+assert_eq "an apply item with no block keeps its message" "$out" \
+  "orch: batch.md line 45: item 4 has no @@ anchor/@@ replace/@@ end block"
+d="$(sra_dir)"
+sed -i '16d' "$d/batch.md"
+sra_refused "a replacement left open at the next @@ item" "$d" \
+  "batch.md line 17: expected @@ end to end the replacement begun on line 14, got '@@ item 2 contradicts-the-plan decline the plan chose this'" recommended
+
 # Lens files and citations.
 d="$(sra_dir)"
 sed -i 's/^@@ finding testability 3$/@@ finding testability 4/' "$d/batch.md"

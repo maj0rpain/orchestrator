@@ -117,7 +117,7 @@ spec_review_text_store() {
 # spec_review_item_check <index>: dies, naming the item's header line, unless
 # the item carries what its recommendation needs.
 spec_review_item_check() {
-  local i="$1" line="${SR_IT_LINE[$1]}" n="${SR_IT_N[$1]}" j opts=0 has_find="" has_comment=""
+  local i="$1" line="${SR_IT_LINE[$1]}" n="${SR_IT_N[$1]}" j opts=0 has_find="" has_comment="" why=""
   for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
     [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
     opts=$((opts + 1))
@@ -135,7 +135,8 @@ spec_review_item_check() {
   case "${SR_IT_REC[$i]}" in
     apply|decline)
       [ -n "${SR_IT_SUMMARY[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ summary"
-      [ -n "${SR_IT_REPLACE[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ anchor/@@ replace/@@ end block" ;;
+      [ "${SR_IT_REC[$i]}" != decline ] || why=" - a decline item still carries the edit it declines"
+      [ -n "${SR_IT_REPLACE[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ anchor/@@ replace/@@ end block$why" ;;
     decision)
       [ "$opts" -ge 2 ] || spec_review_batch_die "$line" "decision item $n needs at least two @@ option blocks"
       [ -n "$(spec_review_option_index "$i" "${SR_IT_ARG[$i]}")" ] \
@@ -198,7 +199,7 @@ spec_review_batch_parse() {
         continue ;;
       replace)
         [ "$kw" = end ] && [ -z "$args" ] \
-          || spec_review_batch_die "$lineno" "expected @@ end to end the replacement begun on line $block_line"
+          || spec_review_batch_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'"
         spec_review_text_store replace "$buf" "$cur" "$opt"
         mode=item; buf=""; bufn=0
         continue ;;
@@ -306,7 +307,10 @@ spec_review_batch_parse() {
           *) [ -z "${SR_IT_ANCHOR[$cur]+x}" ] || spec_review_batch_die "$lineno" "a second @@ anchor for this item" ;;
         esac
         mode=anchor; buf=""; bufn=0; block_line="$lineno" ;;
-      replace|end) spec_review_batch_die "$lineno" "@@ $kw with no @@ anchor open" ;;
+      replace|end)
+        [ "${SR_IT_REC[$cur]}" != resolved ] \
+          || spec_review_batch_die "$lineno" "a resolved item takes no @@ anchor, @@ replace or @@ end"
+        spec_review_batch_die "$lineno" "@@ $kw with no @@ anchor open" ;;
       *) spec_review_batch_die "$lineno" "unknown line '@@ $kw'" ;;
     esac
   done <"$file"
