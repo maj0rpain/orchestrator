@@ -88,18 +88,23 @@ and return that file's four-line **Report** in place of this file's.
 
 ## Steps
 
-1. **Fetch the ticket** before anything else, into a temporary file
+1. **Fetch the ticket** before anything else, once, into a temporary file
    outside the repo (`mktemp`): `bash "<orch.sh>" issue fetch <ticket>
-   <file> --json` writes its title, body, labels and comments as one JSON
-   object, read pinned to the repo `orch.sh` resolves. Then read that file.
-   When the fetch fails, stop and return the report with the failure as a
-   deviation. Then find its spec issue: `bash "<orch.sh>"
+   <file>` writes its body as plain multi-line text, read pinned to the repo
+   `orch.sh` resolves. Then `bash "<orch.sh>" issue comments <ticket>
+   <file>` writes its comments, into a second `mktemp` file; an empty file
+   means no comments. Open both files with the Read tool, never `cat`. The
+   body is the ticket; where a comment disagrees with it, the body wins.
+   When either fetch fails, stop and return the report with the failure as
+   a deviation. Then find its spec issue: `bash "<orch.sh>"
    ticket parent <ticket>` prints the parent of a sub-issue ticket, and empty
    output means the ticket is the spec issue itself. A failure is retried once, then
-   recorded as a deviation. Fetch the spec issue the same way, into its own
-   `mktemp` file, when it is not the ticket itself. Read its **Testing
-   Decisions** - the seams already confirmed with the human - and its
-   **Root cause** subsection, if it has one: see **Root-cause fixes**.
+   recorded as a deviation. When the spec issue is not the ticket itself,
+   fetch its body alone the same way, into its own `mktemp` file, and open it
+   with Read, once and in full; its comments are not read. Read its
+   **Implementation Decisions**, its **Testing Decisions** - the seams
+   already confirmed with the human - and its **Root cause** subsection, if
+   it has one: see **Root-cause fixes**.
 2. **Build the ticket test-first**, per **Test-driven development** below,
    at those seams. A test that needs a seam the Testing
    Decisions do not name is a deviation: pick the most defensible seam,
@@ -134,10 +139,8 @@ Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.
 
 TDD is the red-green loop. These rules make it produce tests worth keeping,
 and every one applies on every cycle. So test names match the domain's
-language, run `bash "<orch.sh>" glossary match <file>` on the ticket's body
-alone, fetched into its own `mktemp` file with `bash "<orch.sh>" issue fetch
-<ticket> <file>`, no `--json`: step 1's JSON file escapes the body's newlines,
-so a term starting a line would not match. It prints the glossary entries the
+language, run `bash "<orch.sh>" glossary match <file>` on step 1's ticket
+body file, fetching nothing again. It prints the glossary entries the
 ticket mentions, and nothing when the repo has no `GLOSSARY.md` - and
 `bash "<orch.sh>" glossary show <term>...` for any further term the work runs
 into.
@@ -187,8 +190,8 @@ external operation over one generic fetcher, so each mock returns one shape.
 
 ## Root-cause fixes
 
-This section applies when the ticket or its spec issue carries the `bug`
-label, when the spec has a **Root cause** subsection, or when you judge that
+This section applies when the spec has a **Root cause** subsection, or when
+you judge that
 the work fixes a defect: the ticket describes current behaviour as wrong and
 asks for it to be corrected. The fix is then a **root-cause fix**: it removes
 the defect's cause everywhere that cause acts, not only the reported

@@ -15,17 +15,21 @@ Your prompt carries five variables: the **base SHA**, the **spec issue**
 number, the **iteration**, the **report path**, and **orch.sh**, the path of
 the plugin's `orch.sh`. The spec issue is the Spec
 reviewer's material; you need it only to tell scope from standards, and
-reading it is optional. When you do, read it with `bash "<orch.sh>" issue
-fetch <spec issue> <file> --json`, into a temporary file outside the working
-tree (`mktemp`), pinned to the repo `orch.sh` resolves, and skip it when the
-fetch fails.
+reading it is optional. When you do, fetch its body as plain text with
+`bash "<orch.sh>" issue fetch <spec issue> <file>`, and its comments with
+`bash "<orch.sh>" issue comments <spec issue> <file>`, each into its own
+temporary file outside the working tree (`mktemp`), pinned to the repo
+`orch.sh` resolves. Open each file with the Read tool, never `cat`: a large
+spec is then read once, in full. Skip the spec when either fetch fails; an
+empty comments file means no comments, not a failure.
 
 ## Read-only
 
 Your one write is the report, written through Bash to the report path. Every
 other command you run reads: `git diff`, `git log`, `git show`, `git blame`,
-`bash "<orch.sh>" issue fetch <n> <file> --json` (its file under `mktemp`,
-outside the working tree), `cat`, `grep`. You leave the working tree, the
+`bash "<orch.sh>" issue fetch <n> <file>` and `bash "<orch.sh>" issue
+comments <n> <file>` (their files under `mktemp`, outside the working tree),
+`cat`, `grep`. You leave the working tree, the
 index, the branch, the PR, and the issues exactly as you found them, even
 when a fix is one character away - describe it in the finding instead.
 

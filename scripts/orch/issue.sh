@@ -60,8 +60,10 @@ open_issue_read() {
 # merging ticket content into a parent belongs in the calling skill's prose,
 # not here.
 
-# With --json, the issue's title, body, labels and comments as ISSUE_JSON_JQ's
-# object, so a fresh agent reads the whole issue with one pinned call.
+# The issue's body as plain multi-line text: what agents read, with the Read
+# tool, beside `issue comments` (#1143). With --json, the issue's title, body,
+# labels and comments as ISSUE_JSON_JQ's object - the machine form, for
+# scripts: compact JSON puts the whole issue on one line, which Read cuts off.
 cmd_issue_fetch() {
   local issue="$1" file="$2" as_json="${3:-}"
   if [ -n "$as_json" ]; then

@@ -113,10 +113,12 @@ planning hook's message says.
 
 When the interview is about an issue, read it as soon as it is named - before
 the first round when the arguments name it, else before the next round once
-the conversation names it: `bash "$ORCH" issue fetch <n> <file> --json` into a
-`mktemp` file outside the repo, then read that file: title, body, labels and
-comments in one JSON object. Never read it with `gh issue view`. If the fetch
-fails, report its `orch:` message and stop before the next round.
+the conversation names it: `bash "$ORCH" issue fetch <n> <file>` writes its
+body as plain multi-line text, and `bash "$ORCH" issue comments <n> <file>` its
+comments, each into its own `mktemp` file outside the repo. Open both files
+with the Read tool, never `cat`, so a large issue is read once, in full; an
+empty comments file means no comments. Never read it with `gh issue view`. If
+either fetch fails, report its `orch:` message and stop before the next round.
 
 Sharpen the project's domain model as you plan. Before the first round, list
 the glossary's term names with `bash "$ORCH" glossary terms`, and fetch the

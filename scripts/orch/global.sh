@@ -236,9 +236,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               back - recording no state; prints the number
   issue fetch <n> <file> [--json]
                               write issue <n>'s body to <file>, recording no
-                              state; with --json, the issue as one JSON
-                              object {number, title, body, labels: [<name>],
-                              comments: [{author, createdAt, body}]}
+                              state; with --json, for scripts, the issue as
+                              one JSON object {number, title, body, labels:
+                              [<name>], comments: [{author, createdAt, body}]}
   issue update <n> <file>     replace issue <n>'s body with <file>, recording
                               no state
   issue comment <n> <file>    post <file> as a comment on issue <n>,
