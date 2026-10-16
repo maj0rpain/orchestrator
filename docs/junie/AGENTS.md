@@ -47,6 +47,8 @@ The orch-quick-implement skill depends on the orch-implementer, orch-reviewer-sp
 
 The orch-review skill depends on the orch-reviewer-spec, orch-reviewer-standards, orch-fixer, orch-closer, and orch-resolver custom agents. Whenever the orch-review skill is used, those five custom agents are required too.
 
+The orch-review-pass skill depends on the orch-reviewer-spec and orch-reviewer-standards custom agents. Whenever the orch-review-pass skill is used, those two custom agents are required too.
+
 The orch-sync skill depends on the orch-resolver, orch-reviewer-spec, and orch-reviewer-standards custom agents. Whenever the orch-sync skill is used, those three custom agents are required too.
 
 The orch-spec-review skill depends on the orch-lens-fidelity, orch-lens-consistency, orch-lens-testability, and orch-lens-implementability custom agents. Whenever the orch-spec-review skill is used, those four custom agents are required too.
