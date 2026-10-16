@@ -87,7 +87,7 @@ cmd_ticket_worktree_add() {
     die "branch $branch already exists"
   fi
   exclude_orch_dirs
-  git branch -q "$branch" HEAD || die "could not create branch $branch"
+  git branch -q --no-track "$branch" HEAD || die "could not create branch $branch"
   if ! git worktree add -q "$path" "$branch" \
      || ! git config "$(forked_from_key "$branch")" "$parent"; then
     # A freshly added worktree holds nothing of anyone's, so no force is

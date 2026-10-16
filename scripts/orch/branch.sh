@@ -22,7 +22,11 @@ checkout_new_branch() {
     origin_has_branch "$base" || st=$?
     [ "$st" -ne 2 ] || die "base branch $base does not exist on origin - push it, or $remedy"
   fi
-  git checkout -q -b "$name" "origin/$base" 2>/dev/null || git checkout -q -b "$name" "$base"
+  # --no-track: the base is recorded in the branch's own config, so the
+  # upstream branch.autoSetupMerge would set is never wanted; pr publish sets
+  # the real one on the first push.
+  git checkout -q --no-track -b "$name" "origin/$base" 2>/dev/null \
+    || git checkout -q --no-track -b "$name" "$base"
 }
 
 # Records <base> and <sha> as branch <name>'s base and base SHA in its git
@@ -128,8 +132,8 @@ cmd_branch_sync() {
   fi
   git config "branch.$branch.orchestrator-base-sha" "$tip"
   [ -z "$held" ] || state_write_string base_sha "$tip"
-  # Its own upstream only: branch create and branch off fork from origin's
-  # base, which git sets as the new branch's upstream until it is first pushed.
+  # Its own upstream only: a branch made before branch create and branch off
+  # passed --no-track (#1152) may still track its base until its first push.
   if [ "$(git config --get "branch.$branch.merge" 2>/dev/null)" = "refs/heads/$branch" ]; then
     remote="$(git config --get "branch.$branch.remote" 2>/dev/null)" || remote=origin
     git push --quiet "$remote" "refs/heads/$branch:refs/heads/$branch" 2>/dev/null \

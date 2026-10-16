@@ -587,9 +587,9 @@ check_flow_upstream() {
   phase="$(state_get phase)"
   branch="$(state_get branch)"
   [ -n "$branch" ] || return 0
-  # origin/<branch> specifically, not just any upstream: branch create forks off
-  # origin/<default>, which leaves that as the upstream until the first push. An
-  # ok there would report a branch nobody can see as pushed.
+  # origin/<branch> specifically, not just any upstream: a branch made before
+  # branch create passed --no-track (#1152) may still track its base until its
+  # first push. An ok there would report a branch nobody can see as pushed.
   local upstream=""
   upstream="$(git rev-parse --abbrev-ref --verify --quiet "$branch@{upstream}" 2>/dev/null)" || upstream=""
   if [ "$upstream" = "origin/$branch" ]; then d_ok "upstream: $upstream"; return 0; fi
