@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.11.2
+
+`orch-spec-review` keeps its flow-only text - the spec-phase **Inputs**, the Fidelity lens, the `contradicts the plan` group, the **Rejected alternatives** amendment and the changelog return to `orch-flow` - in `spec-phase.md` beside the skill, read only by `orch-flow`'s spec phase, so a standalone or unattended spec review loads less of it (#1147).
+
 ## 4.11.1
 
 The interview skill now reads the interviewed issue with `orch.sh issue fetch <n> <file> --json` and never with `gh issue view`, whose `--comments` output drops the issue body when piped; a failed fetch stops the interview with its `orch:` message.
