@@ -984,6 +984,8 @@ skills/orch-spec-review/SKILL.md|## Consolidation
 skills/orch-spec-review/SKILL.md|## Disposition
 skills/orch-spec-review/SKILL.md|## Applying the answer
 skills/orch-spec-review/SKILL.md|## The changelog
+skills/orch-spec-review/spec-phase.md|# Spec phase
+skills/orch-spec-review/spec-phase.md|## Inputs
 skills/orch-spec-review/tickets-follow-the-spec.md|# Tickets follow the spec
 skills/orch-spec-review/unattended-spec-review.md|# Unattended spec review
 skills/orch-to-spec/SKILL.md|## Rewrite the issue
@@ -1534,6 +1536,49 @@ printf '# Q\n\n## 1. Require a linked issue\n\nEnd with `orch-to-spec`'"'"'s **U
 assert_empty "steps 1, 2 and 3 that run the unattended modes are not flagged" "$(scan_unattended_modes "$fixture")"
 check "quick implementation's steps 1, 2 and 3 run the unattended modes" \
   "$(scan_unattended_modes "$PLUGIN_ROOT")"
+
+# --- spec review reference files (#1147) ---------------------------------------
+echo
+echo "spec review reference files (#1147)"
+# orch-spec-review's main file holds the shared core and the standalone entry;
+# what only one path needs sits in a reference file beside it, read only on
+# that path. The main file names each reference file, and orch-flow's spec
+# phase, which alone needs spec-phase.md, names it in its step 4, where it
+# invokes the review.
+# scan_spec_review_refs <plugin root>: one line per pointer missing.
+scan_spec_review_refs() {
+  local r="$1" flow="skills/orch-flow/SKILL.md" main="skills/orch-spec-review/SKILL.md" ref step
+  for ref in spec-phase.md unattended-spec-review.md tickets-follow-the-spec.md; do
+    grep -qF -- "$ref" "$r/$main" 2>/dev/null || echo "$main: does not name $ref"
+  done
+  step="$(md_section "$r/$flow" "### Phase: spec" 2>/dev/null \
+    | awk '/^[0-9]+\. / { inb = ($0 ~ /^4\. /) } inb' | flat_text)"
+  grep -qF 'spec-phase.md' <<<"$step" \
+    || echo "$flow: spec phase step 4 does not name orch-spec-review's spec-phase.md"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-flow" "$fixture/skills/orch-spec-review"
+printf '# F\n\n### Phase: spec\n\n4. Invoke `orch-spec-review`.\n5. Then read spec-phase.md.\n' \
+  >"$fixture/skills/orch-flow/SKILL.md"
+printf '# S\n\nRead unattended-spec-review.md.\n' >"$fixture/skills/orch-spec-review/SKILL.md"
+out="$(scan_spec_review_refs "$fixture")"
+flags "a spec phase step 4 that does not name spec-phase.md is flagged" \
+  "$out" "skills/orch-flow/SKILL.md: spec phase step 4 does not name orch-spec-review's spec-phase.md"
+flags "a main skill file that does not name spec-phase.md is flagged" \
+  "$out" "skills/orch-spec-review/SKILL.md: does not name spec-phase.md"
+flags "a main skill file that does not name tickets-follow-the-spec.md is flagged" \
+  "$out" "skills/orch-spec-review/SKILL.md: does not name tickets-follow-the-spec.md"
+spares "a reference file the main skill file names is not flagged" \
+  "$out" 'does not name unattended-spec-review\.md'
+printf '# F\n\n### Phase: spec\n\n4. Ask the round count.\n\n   Then invoke `orch-spec-review`, reading its\n   spec-phase.md.\n5. Break it down.\n' \
+  >"$fixture/skills/orch-flow/SKILL.md"
+printf '# S\n\nA flow reads spec-phase.md; unattended-spec-review.md;\ntickets-follow-the-spec.md.\n' \
+  >"$fixture/skills/orch-spec-review/SKILL.md"
+assert_empty "a step 4 and a main file that name their reference files are not flagged" \
+  "$(scan_spec_review_refs "$fixture")"
+check "orch-flow's spec phase and orch-spec-review name the review's reference files" \
+  "$(scan_spec_review_refs "$PLUGIN_ROOT")"
 
 # --- previously declined (#418) ------------------------------------------------
 echo

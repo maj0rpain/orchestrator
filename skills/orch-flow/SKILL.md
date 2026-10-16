@@ -189,7 +189,9 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    `state.json`: the count lives in this session only.
 
    Then invoke the `orch-spec-review` skill and follow it for that many
-   rounds. It owns the review - each round four lenses, one batch question,
+   rounds, its spec-phase entry: read `spec-phase.md` in that skill's
+   directory alongside its main file. It owns the review - each round four
+   lenses, one batch question,
    the body rewritten with what the human accepts, and, when the accepted
    edits touch an open ticket of an existing breakdown, a ticket question
    that edits those tickets or retires the breakdown - and returns every
