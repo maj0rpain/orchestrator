@@ -200,7 +200,7 @@ spec_review_batch_parse() {
     case "$mode" in
       anchor)
         [ "$kw" = replace ] && [ -z "$args" ] \
-          || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'"
+          || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line"
         [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the anchor is empty"
         spec_review_text_store anchor "$buf" "$cur" "$opt" "$block_line"
         mode=replace; buf=""; bufn=0; block_line="$lineno"

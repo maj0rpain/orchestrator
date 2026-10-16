@@ -373,6 +373,12 @@ d="$(sra_dir)"
 sed -i '16d' "$d/batch.md"
 sra_refused "a replacement left open at the next @@ item" "$d" \
   "batch.md line 17: expected @@ end to end the replacement begun on line 14, got '@@ item 2 contradicts-the-plan decline the plan chose this'" recommended
+d="$(sra_dir)"
+sed -i '14d' "$d/batch.md"
+sra "$d" recommended
+assert_status "an anchor left open: refused" "$st" 1
+assert_eq "an anchor left open keeps its message" "$out" \
+  "orch: batch.md line 15: expected @@ replace to end the anchor begun on line 12"
 
 # Lens files and citations.
 d="$(sra_dir)"
