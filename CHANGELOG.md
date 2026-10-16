@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.11.3
+
+Agents read an issue as its plain body plus `issue comments`, opened with the Read tool, never through `issue fetch --json`: a large spec is read once, in full, with nothing cut off. `issue fetch --json` stays, as the machine form for scripts.
+
 ## 4.11.2
 
 `orch-spec-review` keeps its flow-only text - the spec-phase **Inputs**, the Fidelity lens, the `contradicts the plan` group, the **Rejected alternatives** amendment and the changelog return to `orch-flow` - in `spec-phase.md` beside the skill, read only by `orch-flow`'s spec phase, so a standalone or unattended spec review loads less of it (#1147).
