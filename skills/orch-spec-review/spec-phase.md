@@ -33,23 +33,18 @@ directory: each round reads the body the previous round published.
    a failed body fetch does: the lenses would otherwise review half the spec.
 3. Resolve the other files the lenses read, and record the paths:
    - the plan handoff: `bash "$ORCH" handoff path spec` (always `01-plan.md`);
-   - the glossary: when `GLOSSARY.md` exists at the repo root, write the
-     entries the spec mentions with `bash "$ORCH" glossary match
-     <dir>/spec.md <dir>/comments.md > <dir>/glossary.md`, and record
-     `<dir>/glossary.md`. With no root `GLOSSARY.md`, record no glossary
-     path. A failed `glossary match` stops the phase exactly as a failed
-     body fetch does;
-   - the decisions: `docs/adr/` at the repo root, where it exists;
-   - the repo root, for the codebase.
+   - the glossary, the decisions and the repo root, as the main file's
+     **Standalone spec review** step 4 resolves them. A failed `glossary
+     match` stops the phase exactly as a failed body fetch does.
 4. On rounds 2 and later, copy the previous round's
    `map-implementability.md` into `<dir>` if that file exists - the previous
    round's directory is still on disk. This is how the code map carries
    over in a flow. When it does not exist, copy nothing and say nothing.
    Round 1 copies nothing.
 
-Nothing from this session's conversation reaches a lens: not the plan as you
-remember it, not `orch-to-spec`'s reasoning, not the seams as agreed in chat. A lens
-that needs something gets a file path.
+The main file's rule that nothing from this session's conversation reaches a
+lens holds here too: not the plan as you remember it, not `orch-to-spec`'s
+reasoning, not the seams as agreed in chat.
 
 ## The Fidelity lens
 
