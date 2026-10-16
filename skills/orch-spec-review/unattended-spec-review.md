@@ -13,8 +13,9 @@ differences only:
   question; a `--rounds` value is never passed to it.
 - **Consolidation and the lenses** run unchanged: Consistency, Testability
   and Implementability, with Fidelity not run.
-- **Disposition**: `batch.md` is written, and the batch printed in the
-  session in full as usual, so a human watching can see what is applied and
+- **Disposition**: `batch.md` is written and checked with `spec-review
+  check` until it passes, as in an attended review, and the batch printed in
+  the session in full as usual, so a human watching can see what is applied and
   interrupt. Then no question is asked and nothing waits: the batch is
   applied at once as **Apply as recommended** - every proposed edit applied,
   every **recommend decline** item skipped, and every decision item takes
