@@ -188,10 +188,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               for a space - in glossary order, each once.
                               Exits 2 on a missing or unreadable file.
                               show and match put one blank line between
-                              entries; an entry runs from its **<Term>**:
-                              line to the next one, the next # line or EOF.
+                              entries. An entry starts at a **<Term>**: line,
+                              optionally after a - or * bullet, alone or with
+                              its definition after it, and runs to the next
+                              entry start, the next # line or EOF; an
+                              indented _Avoid_: line gives it aliases.
                               With no root GLOSSARY.md, terms and match print
-                              nothing; show exits 2
+                              nothing; show exits 2. A root GLOSSARY.md with
+                              no entries is an error: all three exit 2
   branch create               create orch/<issue>-<slug> off the flow's base
                               branch, recorded at init, recording that base
                               and its tip as the base SHA in state and in

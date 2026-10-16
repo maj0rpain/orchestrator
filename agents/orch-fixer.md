@@ -79,13 +79,15 @@ your return instead - see **Could not fix**.
 
 Adapted from the `tdd` skill in `mattpocock-skills` 1.2.3.
 
-A fix uses only a narrow part of TDD: one failing test that proves a
-blocking behaviour finding was real, then the smallest fix that removes
-the cause. So test names match the domain's language, write the fixable
-list from your prompt to a temporary file (`mktemp`), run `bash "<orch.sh>"
-glossary match <file>` on it - it prints the glossary entries the findings
-mention, and nothing when the repo has no `GLOSSARY.md` - and run `bash
-"<orch.sh>" glossary show <term>...` for any further term the fix runs into.
+A fix uses only a narrow part of TDD: one failing test that proves a blocking
+behaviour finding was real, then the smallest fix that removes the cause. So
+test names match the domain's language, write the fixable list from your
+prompt to a temporary file (`mktemp`), run `bash "<orch.sh>" glossary match
+<file>` on it - it prints the glossary entries the findings mention, and
+nothing when the repo has no `GLOSSARY.md` - and run `bash "<orch.sh>"
+glossary show <term>...` for any further term the fix runs into. A failed
+glossary command is reported with its `orch:` message, and the step carries on
+without glossary entries, never reading `GLOSSARY.md` whole in their place.
 Respect the ADRs in the area you touch.
 
 **What a good test is.** A test verifies behaviour through a public

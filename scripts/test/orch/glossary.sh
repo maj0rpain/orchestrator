@@ -170,6 +170,89 @@ assert_status "match with no file is an error" "$st" 2
 assert_contains "with its usage line" "$out" "usage: orch.sh glossary match <file>..."
 rm -f "$text" "$other"
 
+# --- glossary shapes ----------------------------------------------------------
+# An entry starts at a **<Term>**: line, optionally after a "- " or "* " bullet,
+# with nothing after it or the definition on the same line; the entry's lines
+# are printed exactly as written. Numbered lists and unbolded terms are no
+# entries, and an indented _Avoid_: line still gives its entry aliases.
+echo
+echo "glossary shapes"
+new_repo >/dev/null
+writeln '# Glossary' '' \
+        '- **Member**: A filed finding carried by a bundle.' \
+        '- **Bundle**: One filed finding standing for several.' \
+        '  _Avoid_: group, cluster (of findings).' \
+        '- **Sweep**: One pass over the open findings.' \
+        '  It runs on demand,' '  and on a schedule.' '' \
+        '# Other' '' '' \
+        '**Inline**: A definition on the start line.' \
+        '* **Starred**: A definition after a star bullet.' \
+        '1. **Numbered**: never an entry.' \
+        'Plain: never an entry.' '' '' >GLOSSARY.md
+out="$("$ORCH" glossary terms 2>&1)"; st=$?
+assert_status "terms over bulleted entries succeeds" "$st" 0
+assert_eq "listing every term in order, numbered and unbolded lines left out" "$out" \
+  "$(writeln Member Bundle Sweep Inline Starred)"
+assert_eq "show prints a one-line bullet entry as written" \
+  "$("$ORCH" glossary show member 2>/dev/null)" '- **Member**: A filed finding carried by a bundle.'
+bundle_entry="$(writeln '- **Bundle**: One filed finding standing for several.' \
+                        '  _Avoid_: group, cluster (of findings).')"
+assert_eq "a bullet entry runs to the next bullet entry" \
+  "$("$ORCH" glossary show Bundle 2>/dev/null)" "$bundle_entry"
+out="$("$ORCH" glossary show Sweep 2>/dev/null; echo x)"
+assert_eq "and its continuation lines to a heading, trailing blank lines trimmed" "$out" \
+  "$(writeln '- **Sweep**: One pass over the open findings.' '  It runs on demand,' \
+             '  and on a schedule.' x)"
+assert_eq "an inline entry with no bullet is read" \
+  "$("$ORCH" glossary show Inline 2>/dev/null)" '**Inline**: A definition on the start line.'
+assert_eq "as is a star bullet entry, the numbered and unbolded lines its own" \
+  "$("$ORCH" glossary show Starred 2>/dev/null)" \
+  "$(writeln '* **Starred**: A definition after a star bullet.' \
+             '1. **Numbered**: never an entry.' 'Plain: never an entry.')"
+err="$(mktemp)"
+out="$("$ORCH" glossary show group 2>"$err")"; st=$?
+assert_status "an indented avoided alias resolves" "$st" 0
+assert_eq "to its bullet entry" "$out" "$bundle_entry"
+assert_eq "saying whose alias it is" "$(cat "$err")" "# alias of Bundle"
+rm -f "$err"
+text="$(mktemp)"
+writeln 'Each member of a group.' >"$text"
+assert_eq "match finds bullet entries by term and by unscoped indented alias" \
+  "$("$ORCH" glossary match "$text" 2>&1)" \
+  '- **Member**: A filed finding carried by a bundle.'$'\n\n'"$bundle_entry"
+rm -f "$text"
+
+# --- glossary unreadable ------------------------------------------------------
+# A root GLOSSARY.md that gives no entries - prose only, or zero bytes - is an
+# error for every op, so no caller reads it as "no terms"; argument checks
+# still come first.
+echo
+echo "glossary unreadable"
+new_repo >/dev/null
+none_msg='orch: GLOSSARY.md has no entries orch.sh can read (an entry starts at a **Term**: line, optionally bulleted)'
+text="$(mktemp)"
+writeln 'A member of a flow.' >"$text"
+for kind in prose empty; do
+  if [ "$kind" = prose ]; then
+    writeln '# Glossary' '' 'Terms used here.' '' '## Flow' '' 'Term: not bold.' >GLOSSARY.md
+  else
+    : >GLOSSARY.md
+  fi
+  out="$("$ORCH" glossary terms 2>&1)"; st=$?
+  assert_status "terms on a $kind glossary is an error" "$st" 2
+  assert_eq "saying it has no entries" "$out" "$none_msg"
+  out="$("$ORCH" glossary show Flow 2>&1)"; st=$?
+  assert_status "show on a $kind glossary is an error" "$st" 2
+  assert_eq "saying it has no entries" "$out" "$none_msg"
+  out="$("$ORCH" glossary match "$text" 2>&1)"; st=$?
+  assert_status "match on a $kind glossary is an error" "$st" 2
+  assert_eq "saying it has no entries" "$out" "$none_msg"
+  out="$("$ORCH" glossary match "$PWD/nonesuch.md" 2>&1)"; st=$?
+  assert_status "a missing file still wins on a $kind glossary" "$st" 2
+  assert_eq "naming the file" "$out" "orch: no such file '$PWD/nonesuch.md'"
+done
+rm -f "$text"
+
 # --- glossary help ------------------------------------------------------------
 # The noun is discoverable like every other: in orch.sh help, and in the CLI
 # conventions' noun table (whose row docs_lint.sh's routed-nouns check holds).
@@ -180,3 +263,5 @@ out="$("$ORCH" help 2>&1)"
 assert_contains "help lists glossary terms" "$out" "glossary terms"
 assert_contains "and glossary show" "$out" "glossary show <term>..."
 assert_contains "and glossary match" "$out" "glossary match <file>..."
+assert_contains "describing the bulleted entry grammar" "$out" "optionally after a - or * bullet"
+assert_contains "and the error on a glossary with no entries" "$out" "no entries is an error"

@@ -6,10 +6,14 @@
 
 # A reader needs only the entries for the terms in front of it, not the whole
 # glossary, so the entry grammar lives here, tested, rather than re-derived in
-# each skill. An entry starts at a line that is exactly **<Term>**: and runs up
-# to the next such line, the next line starting with #, or end of file, its
-# trailing blank lines trimmed. Every op reads GLOSSARY.md at the repo root
-# only; exit 2 is an error, so show keeps exit 1 for "no entry for a term".
+# each skill. An entry starts at a **<Term>**: line, optionally after a "- "
+# or "* " bullet, with nothing after it or the definition on the same line;
+# numbered lists and an unbolded Term: are no entries. It runs up to the next
+# entry start, the next line starting with #, or end of file, its trailing
+# blank lines trimmed. Every op reads GLOSSARY.md at the repo root only; one
+# that gives no entries is an error, never "no terms", so no caller mistakes
+# an unreadable glossary for an empty one. Exit 2 is an error, so show keeps
+# exit 1 for "no entry for a term".
 cmd_glossary() {
   local op="${1:-}"
   shift || true
@@ -18,7 +22,7 @@ cmd_glossary() {
     terms)
       [ $# -eq 0 ] || die2 "usage: orch.sh glossary terms"
       [ -f "$glossary" ] || return 0
-      glossary_run terms "$glossary" ;;
+      glossary_run terms "$glossary" || glossary_status $? ;;
     show)
       [ $# -ge 1 ] || die2 "usage: orch.sh glossary show <term>..."
       [ -f "$glossary" ] || die2 "no GLOSSARY.md at $ROOT"
@@ -29,7 +33,7 @@ cmd_glossary() {
         warn "no glossary entry for '$term'"
       done < "$missing"
       rm -f "$missing"
-      return "$st" ;;
+      glossary_status "$st" ;;
     match)
       [ $# -ge 1 ] || die2 "usage: orch.sh glossary match <file>..."
       local file
@@ -37,9 +41,17 @@ cmd_glossary() {
         [ -f "$file" ] && [ -r "$file" ] || die2 "no such file '$file'"
       done
       [ -f "$glossary" ] || return 0
-      glossary_run match "$glossary" "$@" ;;
+      glossary_run match "$glossary" "$@" || glossary_status $? ;;
     *) die2 "unknown glossary op: ${op:-<none>} (want terms|show|match)" ;;
   esac
+}
+
+# glossary_status <status>: return glossary_run's <status>, dying on its 3,
+# the glossary that gave no entries.
+glossary_status() {
+  [ "$1" -ne 3 ] ||
+    die2 "GLOSSARY.md has no entries orch.sh can read (an entry starts at a **Term**: line, optionally bulleted)"
+  return "$1"
 }
 
 # glossary_run <mode> <glossary> [<arg>...]: the one awk pass that parses the
@@ -49,6 +61,7 @@ cmd_glossary() {
 # parentheses, a trailing period dropped; an alias ends at its first (, and
 # one with a parenthetical note is scoped. show writes each term with no entry
 # to the file GLOSSARY_MISSING names, one per line, for cmd_glossary to warn.
+# A glossary with no entries exits 3, answering nothing.
 glossary_run() {
   awk '
     function blank(s) { return s ~ /^[[:space:]]*$/ }
@@ -62,7 +75,7 @@ glossary_run() {
       na[n]++; alias[n, na[n]] = piece; ascoped[n, na[n]] = scoped
     }
     function read_aliases(s,   i, c, depth, piece) {
-      s = trim(substr(s, 9)); sub(/\.$/, "", s)
+      s = trim(substr(trim(s), 9)); sub(/\.$/, "", s)
       depth = 0; piece = ""
       for (i = 1; i <= length(s); i++) {
         c = substr(s, i, 1)
@@ -109,20 +122,21 @@ glossary_run() {
       ARGC = 1
       n = 0; inentry = 0
       while ((getline l < gfile) > 0) {
-        if (l ~ /^\*\*[^*]+\*\*:$/) {
+        if (l ~ /^([-*] )?\*\*[^*]+\*\*:([[:space:]].*)?$/) {
           close_entry()
           n++; inentry = 1
-          term[n] = substr(l, 3, length(l) - 5)
+          term[n] = l; sub(/^([-*] )?\*\*/, "", term[n]); sub(/\*\*:.*$/, "", term[n])
           len[n] = 1; line[n, 1] = l; na[n] = 0
           continue
         }
         if (l ~ /^#/) { close_entry(); inentry = 0; continue }
         if (!inentry) continue
         len[n]++; line[n, len[n]] = l
-        if (l ~ /^_Avoid_:/) read_aliases(l)
+        if (l ~ /^[[:space:]]*_Avoid_:/) read_aliases(l)
       }
       close(gfile)
       close_entry()
+      if (!n) exit 3
       if (mode == "terms") for (i = 1; i <= n; i++) print term[i]
       if (mode == "show") {
         status = 0
