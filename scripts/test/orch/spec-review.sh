@@ -79,13 +79,81 @@ for args in "" "abc" "14x" "../14" "14 15"; do
   assert_eq "and deletes nothing for '$args'" "$(cat "$sr_dir/spec.md" 2>&1)" "keep"
 done
 out="$("$ORCH" spec-review begin 2>&1)"
-assert_contains "a missing number gets the usage" "$out" "usage: orch.sh spec-review begin <n>"
+assert_contains "a missing number gets the usage" "$out" "usage: orch.sh spec-review begin <n> [--carry-map]"
 out="$("$ORCH" spec-review begin abc 2>&1)"
 assert_contains "a non-numeric number is named" "$out" "plain issue number"
 out="$("$ORCH" spec-review wipe 14 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
 assert_contains "naming the one it does" "$out" "want begin"
-assert_contains "help documents spec-review begin" "$("$ORCH" help)" "spec-review begin <n>"
+assert_contains "help documents spec-review begin" "$("$ORCH" help)" "spec-review begin <n> [--carry-map]"
+
+# --- spec-review begin --carry-map (#1141) -----------------------------------
+# Rounds 2 and later of a standalone review keep the Implementability lens's
+# code map through the wipe; every other file still goes.
+echo
+echo "spec-review begin --carry-map (#1141)"
+new_repo >/dev/null
+top="$(git rev-parse --show-toplevel)"
+sr_dir="$top/.orchestrator/spec-review/14"
+sr_state="$top/.orchestrator/state.json"
+# cm_seed: a round directory holding a map and the round's other files.
+cm_seed() {
+  rm -rf "$sr_dir"
+  mkdir -p "$sr_dir/sub"
+  printf 'scripts/orch/x.sh:12 x_fn - the spec changes it\n' >"$sr_dir/map-implementability.md"
+  echo stale >"$sr_dir/spec.md"
+  echo stale >"$sr_dir/lens-implementability.md"
+  echo stale >"$sr_dir/sub/changelog.md"
+}
+cm_seed
+out="$("$ORCH" spec-review begin 14 --carry-map 2>&1)"; st=$?
+assert_status "--carry-map with a map proceeds" "$st" 0
+assert_eq "printing the working directory" "$out" "$sr_dir/"
+assert_eq "keeping only the map" "$(ls -A "$sr_dir" 2>&1)" "map-implementability.md"
+assert_eq "with its content" "$(cat "$sr_dir/map-implementability.md" 2>&1)" \
+  "scripts/orch/x.sh:12 x_fn - the spec changes it"
+
+cm_seed
+out="$("$ORCH" spec-review begin 14 2>&1)"; st=$?
+assert_status "no flag proceeds" "$st" 0
+assert_eq "and wipes everything, the map included" "$(ls -A "$sr_dir" 2>&1)" ""
+
+cm_seed
+rm -f "$sr_dir/map-implementability.md"
+out="$("$ORCH" spec-review begin 14 --carry-map 2>&1)"; st=$?
+assert_status "--carry-map with no map exits 0" "$st" 0
+assert_eq "leaving an empty directory" "$(ls -A "$sr_dir" 2>&1)" ""
+
+out="$("$ORCH" spec-review begin 16 --carry-map 2>&1)"; st=$?
+assert_status "--carry-map on a directory never there exits 0" "$st" 0
+assert_eq "creating it empty" "$(ls -A "$top/.orchestrator/spec-review/16" 2>&1)" ""
+
+for args in "14 --carry" "--carry-map 14" "14 --carry-map --carry-map" "14 --carry-map 15"; do
+  cm_seed
+  before="$(cd "$sr_dir" && find . -type f | LC_ALL=C sort | xargs cksum)"
+  # shellcheck disable=SC2086 # word splitting is the point: each word is an arg
+  out="$("$ORCH" spec-review begin $args 2>&1)"; st=$?
+  assert_status "refuses begin '$args'" "$st" 1
+  assert_eq "with the usage for '$args'" "$out" "orch: usage: orch.sh spec-review begin <n> [--carry-map]"
+  assert_eq "deleting nothing for '$args'" "$(cd "$sr_dir" && find . -type f | LC_ALL=C sort | xargs cksum)" "$before"
+done
+
+cm_seed
+out="$("$ORCH" spec-review begin abc --carry-map 2>&1)"; st=$?
+assert_status "a non-numeric issue with --carry-map is refused" "$st" 1
+assert_contains "as without the flag" "$out" "plain issue number"
+assert_eq "deleting nothing" "$(cat "$sr_dir/spec.md" 2>&1)" "stale"
+
+for p in spec implement review; do
+  printf '{"slug":"x","phase":"%s","issue":14,"branch":null}\n' "$p" >"$sr_state"
+  cm_seed
+  plain="$("$ORCH" spec-review begin 14 2>&1)"
+  out="$("$ORCH" spec-review begin 14 --carry-map 2>&1)"; st=$?
+  assert_status "an active flow on 14 at $p refuses --carry-map" "$st" 1
+  assert_eq "exactly as without the flag at $p" "$out" "$plain"
+  assert_eq "deleting nothing at $p" "$(cat "$sr_dir/spec.md" 2>&1)" "stale"
+done
+rm -f "$sr_state"
 
 # --- quick implementation runs an unattended spec review (#237) -------------
 # A quick implementation runs an unattended standalone spec review before any flow
@@ -980,6 +1048,18 @@ assert_eq "with a one-line summary" "$out" \
 assert_eq "and nothing on stderr" "$err" ""
 assert_eq "the directory byte-identical" "$(src_snapshot "$d")" "$before"
 assert_eq "no spec.fetched.md created" "$(on_disk "$d/spec.fetched.md")" absent
+
+# The Implementability lens's code map sits outside the lens-<name>.md
+# namespace, so check never parses it (#1141).
+d="$(src_dir)"
+printf '@@ item 9 bogus\n@@ finding nowhere 7\n@@ lens implementability ran\n' >"$d/map-implementability.md"
+before="$(src_snapshot "$d")"
+src "$d"
+assert_status "a map full of @@ lines passes" "$st" 0
+assert_eq "with the same summary" "$out" \
+  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
+assert_eq "and nothing on stderr with a map" "$err" ""
+assert_eq "the directory, map included, byte-identical" "$(src_snapshot "$d")" "$before"
 
 # No flow state read, no GitHub touched.
 mkdir -p "$top/.orchestrator"

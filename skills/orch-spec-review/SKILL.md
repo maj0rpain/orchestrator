@@ -72,6 +72,12 @@ the round count, in order:
   directory, and the standalone entry re-runs its steps from
   `spec-review begin <issue>`, which empties the directory. Nothing is lost:
   the previous round has already published.
+- **Only the code map carries over.** The Implementability lens's code map,
+  `map-implementability.md`, is the one file a round hands the next: the
+  spec-phase entry copies it into the fresh directory (**Inputs**, step 4),
+  and the standalone entry keeps it with `--carry-map` (step 1). Findings
+  never carry over: each round stays an independent look. Round 1 never
+  inherits a map.
 - **The whole count runs.** A round that finds nothing, or whose edits are
   all declined, does not end the review early: the next round still runs, up
   to round `<n>`.
@@ -114,6 +120,10 @@ phase asks for it before round 1. A standalone review takes it from
      body fetch does;
    - the decisions: `docs/adr/` at the repo root, where it exists;
    - the repo root, for the codebase.
+4. On rounds 2 and later, copy the previous round's
+   `map-implementability.md` into `<dir>` if that file exists - the previous
+   round's directory is still on disk. When it does not exist, copy nothing
+   and say nothing. Round 1 copies nothing.
 
 Nothing from this session's conversation reaches a lens: not the plan as you
 remember it, not `orch-to-spec`'s reasoning, not the seams as agreed in chat. A lens
@@ -135,8 +145,11 @@ fetched or published. This session checks the value, never `orch.sh`.
 
 Steps 1 to 4 below run at the start of every round, as **Rounds** says.
 
-1. **Begin**, before fetching: `bash "$ORCH" spec-review begin <issue>`. It
-   prints the working directory, `<dir>` from here on, emptied for this run.
+1. **Begin**, before fetching: `bash "$ORCH" spec-review begin <issue>` on
+   round 1, and `bash "$ORCH" spec-review begin <issue> --carry-map` on
+   rounds 2 and later. It prints the working directory, `<dir>` from here on,
+   emptied for this run - except, with `--carry-map`, for the previous
+   round's `map-implementability.md`, kept when it exists.
    If it dies, stop and relay its message - when an active flow holds this
    issue, the message names the command to run instead. This is the review's
    only read of `state.json`, and it goes through `orch.sh`.
@@ -207,7 +220,8 @@ comment, or none that adds anything: no items.
 ## The lenses
 
 Each lens is one of the plugin's agents, which owns its brief and the
-reporting rules and may write only its findings file. Start them all at once
+reporting rules and may write only its findings file - and the
+Implementability lens its code map too. Start them all at once
 (a standalone review starts fewer - see **Standalone spec review**) as fresh
 subagents - never forks, which inherit this context. On Claude Code that is
 the Agent tool with `subagent_type` set to the lens's agent name under the
@@ -221,7 +235,7 @@ count.
 | Fidelity | `orch-lens-fidelity` | spec body, comments file, plan handoff, `<dir>/lens-fidelity.md` |
 | Consistency | `orch-lens-consistency` | spec body, comments file, glossary, ADR directory, `<dir>/lens-consistency.md` |
 | Testability | `orch-lens-testability` | spec body, comments file, repo root, `<dir>/lens-testability.md` |
-| Implementability | `orch-lens-implementability` | spec body, comments file, repo root, `<dir>/lens-implementability.md` |
+| Implementability | `orch-lens-implementability` | spec body, comments file, repo root, `<dir>/map-implementability.md`, `<dir>/lens-implementability.md` |
 
 On a host that cannot start the plugin's agents natively, take the
 "Start a fresh subagent" fallback in `docs/host-capabilities.md` under the

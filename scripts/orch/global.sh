@@ -484,13 +484,16 @@ orch.sh - deterministic operations for the orchestrator flow
                               all four act on the active flow's issue,
                               refusing once the flow is done; for any other
                               issue use issue <op> <n> <file>
-  spec-review begin <n>       start a standalone spec review of issue <n>:
+  spec-review begin <n> [--carry-map]
+                              start a standalone spec review of issue <n>:
                               refuse while an active flow holds <n> - at spec
                               (pointing at next) or at implement or review
                               (pointing at redo) - and otherwise empty
                               .orchestrator/spec-review/<n>/ and print its
-                              path. Reads state.json only to compare, and
-                              never writes it
+                              path. --carry-map, on rounds 2 and later, keeps
+                              its map-implementability.md through the wipe.
+                              Reads state.json only to compare, and never
+                              writes it
   spec-review check <dir>     validate a round's <dir>/batch.md before the
                               batch question: its grammar, the lens files and
                               their citations, every anchor (each item's and
