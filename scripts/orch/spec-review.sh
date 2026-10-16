@@ -24,8 +24,17 @@ cmd_spec_review() {
   esac
 }
 
+# --carry-map, given on rounds 2 and later, keeps the Implementability lens's
+# code map through the wipe (#1141): every other entry is deleted in place, so
+# the map is never moved and there is no restore step to fail.
 spec_review_begin() {
-  [ $# -eq 1 ] || die "usage: orch.sh spec-review begin <n>"
+  local usage="usage: orch.sh spec-review begin <n> [--carry-map]"
+  local carry=0
+  case "$#" in
+    1) ;;
+    2) [ "$2" = --carry-map ] || die "$usage"; carry=1 ;;
+    *) die "$usage" ;;
+  esac
   local issue="$1"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   if flow_active; then
@@ -46,7 +55,11 @@ spec_review_begin() {
   # Built from the validated number alone, so the wipe stays inside
   # spec-review/.
   local dir="$ORCH/spec-review/$issue"
-  rm -rf "$dir"
+  if [ "$carry" = 1 ] && [ -d "$dir" ]; then
+    find "$dir" -mindepth 1 -maxdepth 1 ! -name map-implementability.md -exec rm -rf {} +
+  else
+    rm -rf "$dir"
+  fi
   mkdir -p "$dir"
   printf '%s/\n' "$dir"
 }
