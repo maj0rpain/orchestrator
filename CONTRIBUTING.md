@@ -107,7 +107,7 @@ and ships no version bump; the other rules still hold.
 commands/                     start, next, flow-status, health, redo, abort, finish, release, spec-review, review-pass, sync, interview, quick-implement, to-spec, to-tickets, finding-triage
 agents/                       the fresh agents: two reviewers (the review loop's and the review pass's), the review loop's fixer and closer, the spec review's four lenses, the implementer, and the resolver of a merge conflict
 skills/orch-flow/             the state machine (judgment)
-skills/orch-spec-review/      the spec review: consolidation of the issue's comments, then four lenses in a flow (three standalone), one batch question applied by `orch.sh spec-review apply`, plus a ticket question when an existing breakdown is touched; the unattended mode and the ticket step sit in reference files beside SKILL.md
+skills/orch-spec-review/      the spec review: consolidation of the issue's comments, then four lenses in a flow (three standalone), one batch question applied by `orch.sh spec-review apply`, plus a ticket question when an existing breakdown is touched; the spec-phase entry with its flow-only steps (`spec-phase.md`), the unattended mode and the ticket step sit in reference files beside SKILL.md
 skills/orch-review/           the review loop only: rubric, authority rules, terminal states
 skills/orch-review-pass/      the review pass, quick or standalone: one look by the two reviewers, no loop
 skills/orch-sync/             a base sync on demand: branch sync, a resolver on a conflict, one PR comment, an offered review pass

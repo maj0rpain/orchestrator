@@ -1,18 +1,15 @@
 ---
 name: orch-spec-review
-description: Review a spec issue in one or more rounds - each round proposes folding into its body what its comments say that the body does not, then read body and comments through four independent lenses - Fidelity to the plan, Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask the ticket question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again; each round reads the body the previous round published, and the review runs its whole round count. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue> [--rounds <n>]: three lenses, no plan handoff, and nothing written to flow state. A quick implementation runs the standalone review unattended, applying its own recommendations without asking.
+description: Review a spec issue in one or more rounds - each round proposes folding into its body what its comments say that the body does not, then read body and comments through its lenses, each independent - Consistency with itself and the glossary, Testability at the agreed seams, Implementability from the issue alone, and in a flow Fidelity to the plan - put every finding to the human as one batch of proposed edits, and rewrite the issue body with the edits they accept; when those edits touch an open ticket of an existing ticket breakdown, ask the ticket question - edit the tickets the change touches, or retire the breakdown so the issue is broken down again; each round reads the body the previous round published, and the review runs its whole round count. Use from orch-flow's spec phase, after the issue exists - published by the spec phase or already adopted at init - and before 02-spec.md is written. Also use standalone, outside any flow, when a human asks for a spec review of a given issue or runs /orchestrator:spec-review <issue> [--rounds <n>]: three lenses, no plan handoff, and nothing written to flow state. A quick implementation runs the standalone review unattended, applying its own recommendations without asking.
 ---
 
 # Orchestrator spec review
 
-One review of the spec, in one or more rounds. In a flow it comes after the issue exists -
-published by the spec phase or already adopted at init - and before the handoff is
-written; a standalone review takes it on a given issue, outside any flow, and
-writes no handoff. First, the session running the review proposes folding
-into the body whatever the issue's comments say that the body does not - see
-**Consolidation**. The **lenses** - four in a flow, three in a standalone
-review - then read the issue, body and comments, independently, as parallel
-sub-agents that see only files. Every consolidation item and every **finding**
+One review of the spec, in one or more rounds. First, the session running
+the review proposes folding into the body whatever the issue's comments say
+that the body does not - see **Consolidation**. The **lenses** then read the
+issue, body and comments, independently, as parallel sub-agents that see only
+files. Every consolidation item and every **finding**
 they report reaches the human as a proposed edit in one batch; only the edits
 the human accepts change the issue - in an **Unattended spec review**, the
 recommended ones. When the issue already has a ticket
@@ -22,10 +19,8 @@ how the breakdown should follow - see **Tickets follow the spec**, in
 follow edits already accepted. The issue body stays the single truth the
 implement phase reads; after a review, the comments are history.
 
-A review runs a **round count** of **rounds** (ADR-0041) - see **Rounds**. In
-a flow's spec phase there is no "review the spec?" question, only the round
-count: the human's control is at each round's batch decision, where they may
-decline every edit. A quick implementation asks no question at all: it takes
+A review runs a **round count** of **rounds** (ADR-0041) - see **Rounds**. A
+quick implementation asks no question at all: it takes
 the standalone entry's **Unattended spec review** mode, which applies its own
 recommendations - see `unattended-spec-review.md`.
 The independence comes from the sub-agents, the same way it does for the review
@@ -34,8 +29,10 @@ loop - see `docs/adr/0001-review-loop-runs-in-a-single-session.md`.
 There are two entries, and everything from **Consolidation** through **The
 changelog** is shared between them, run once per round:
 
-- **Inputs** - the spec-phase entry, from `orch-flow`'s spec phase. It works
-  on the active flow's issue.
+- **Spec phase** - the spec-phase entry, from `orch-flow`'s spec phase, on
+  the active flow's issue. A flow's spec phase reads `spec-phase.md` in this
+  skill's directory, and only then: it holds the entry's **Inputs** and
+  everything only a flow adds to the shared steps.
 - **Standalone spec review** - a human asks for a review of a given issue,
   with `/orchestrator:spec-review <issue> [--rounds <n>]` or in plain words,
   outside any flow. It belongs to no flow, leaves no handoff, and runs three
@@ -68,15 +65,12 @@ the round count, in order:
 
 - **Each round reads the body the previous round published.** Each round
   takes a fresh working directory and fetches the body and comments again:
-  the spec-phase entry runs **Inputs** again with a fresh `spec fetch`
-  directory, and the standalone entry re-runs its steps from
-  `spec-review begin <issue>`, which empties the directory but for the code
-  map it keeps on rounds 2 and later. Nothing is lost:
-  the previous round has already published.
+  the standalone entry re-runs its steps from `spec-review begin <issue>`,
+  which empties the directory but for the code map it keeps on rounds 2 and
+  later. Nothing is lost: the previous round has already published.
 - **Only the code map carries over.** The Implementability lens's code map,
   `map-implementability.md`, is the one file a round hands the next: the
-  spec-phase entry copies it into the fresh directory (**Inputs**, step 4),
-  and the standalone entry keeps it with `--carry-map` (step 1). Findings
+  standalone entry keeps it with `--carry-map` (step 1). Findings
   never carry over: each round stays an independent look. Round 1 never
   inherits a map.
 - **The whole count runs.** A round that finds nothing, or whose edits are
@@ -95,40 +89,8 @@ the round count, in order:
   runs again.
 
 The round count lives in the session only: nothing writes it to
-`state.json`, and `orch.sh` has no key for it. In a flow, `orch-flow`'s spec
-phase asks for it before round 1. A standalone review takes it from
-`--rounds`, 1 without it.
-
-## Inputs
-
-1. Fetch the body: `bash "$ORCH" spec fetch <dir>/spec.md`, with `<dir>` a fresh
-   directory under `.orchestrator/` - `spec fetch` creates it. It reads the
-   issue number from state. A failure stops the phase: state stays where it
-   is, say what blocked, offer `/orchestrator:abort` (on a host with
-   no plugin commands, `orch-flow`'s **Abort** section). A review with no
-   body to review is never claimed as done.
-2. Fetch the comments: `bash "$ORCH" spec comments <dir>/comments.md`, in the
-   same directory. It reads the issue number from state, and writes an empty
-   file when the issue has no comments. A failure stops the phase exactly as
-   a failed body fetch does: the lenses would otherwise review half the spec.
-3. Resolve the other files the lenses read, and record the paths:
-   - the plan handoff: `bash "$ORCH" handoff path spec` (always `01-plan.md`);
-   - the glossary: when `GLOSSARY.md` exists at the repo root, write the
-     entries the spec mentions with `bash "$ORCH" glossary match
-     <dir>/spec.md <dir>/comments.md > <dir>/glossary.md`, and record
-     `<dir>/glossary.md`. With no root `GLOSSARY.md`, record no glossary
-     path. A failed `glossary match` stops the phase exactly as a failed
-     body fetch does;
-   - the decisions: `docs/adr/` at the repo root, where it exists;
-   - the repo root, for the codebase.
-4. On rounds 2 and later, copy the previous round's
-   `map-implementability.md` into `<dir>` if that file exists - the previous
-   round's directory is still on disk. When it does not exist, copy nothing
-   and say nothing. Round 1 copies nothing.
-
-Nothing from this session's conversation reaches a lens: not the plan as you
-remember it, not `orch-to-spec`'s reasoning, not the seams as agreed in chat. A lens
-that needs something gets a file path.
+`state.json`, and `orch.sh` has no key for it. A standalone review takes it
+from `--rounds`, 1 without it.
 
 ## Standalone spec review
 
@@ -161,11 +123,16 @@ Steps 1 to 4 below run at the start of every round, as **Rounds** says.
 3. **Fetch the comments**: `bash "$ORCH" issue comments <issue>
    <dir>/comments.md`. A failure stops the review, as a failed body fetch
    does.
-4. Resolve the glossary, the decisions and the repo root, as the spec-phase
-   entry does: when the root `GLOSSARY.md` exists, write `bash "$ORCH"
-   glossary match <dir>/spec.md <dir>/comments.md > <dir>/glossary.md` and
-   record that path, else record no glossary path; a failed `glossary match`
-   stops the review, as a failed body fetch does. There is no plan handoff.
+4. Resolve the other files the lenses read, and record the paths:
+   - the glossary: when the root `GLOSSARY.md` exists, write `bash "$ORCH"
+     glossary match <dir>/spec.md <dir>/comments.md > <dir>/glossary.md` and
+     record that path, else record no glossary path; a failed `glossary
+     match` stops the review, as a failed body fetch does;
+   - the decisions: `docs/adr/` at the repo root, where it exists;
+   - the repo root, for the codebase.
+
+   There is no plan handoff. Nothing from this session's conversation
+   reaches a lens: a lens that needs something gets a file path.
 
 The standalone entry never calls `spec fetch`, `spec comments`, `spec update`,
 `spec comment`, or `handoff path`, never reads under `.orchestrator/handoff/`,
@@ -174,13 +141,11 @@ and never calls `gh issue` directly.
 Then run **Consolidation**, **The lenses**, **Disposition**, and **Applying
 the answer** below, with these differences:
 
-- **Lenses**: start Consistency, Testability, and Implementability only.
-  Fidelity is never started. `batch.md` records it as
-  `@@ lens fidelity standalone`, and the batch and the changelog show
-  Fidelity's not-run line. That is not a failure, so the retry rule does not
-  apply to it.
-- **Disposition**: unchanged. There are no `contradicts the plan` items,
-  because Fidelity does not run.
+- **Lenses**: start the three in the table: Consistency, Testability, and
+  Implementability. Fidelity, which needs a plan, is never started.
+  `batch.md` records it as `@@ lens fidelity standalone`, and the batch and
+  the changelog show Fidelity's not-run line. That is not a failure, so the
+  retry rule does not apply to it.
 - **Applying**: `apply` takes `--issue <issue>` - see **Applying the
   answer**.
 - **Host fallbacks and lens failures**: among the review's own records, they
@@ -222,8 +187,7 @@ comment, or none that adds anything: no items.
 
 Each lens is one of the plugin's agents, which owns its brief and the
 reporting rules and may write only its findings file - and the
-Implementability lens its code map too. Start them all at once
-(a standalone review starts fewer - see **Standalone spec review**) as fresh
+Implementability lens its code map too. Start them all at once as fresh
 subagents - never forks, which inherit this context. On Claude Code that is
 the Agent tool with `subagent_type` set to the lens's agent name under the
 `orchestrator:` plugin scope. Each prompt carries only the paths its row
@@ -233,7 +197,6 @@ count.
 
 | Lens | Agent | Paths |
 |---|---|---|
-| Fidelity | `orch-lens-fidelity` | spec body, comments file, plan handoff, `<dir>/lens-fidelity.md` |
 | Consistency | `orch-lens-consistency` | spec body, comments file, glossary, ADR directory, `<dir>/lens-consistency.md` |
 | Testability | `orch-lens-testability` | spec body, comments file, repo root, `<dir>/lens-testability.md` |
 | Implementability | `orch-lens-implementability` | spec body, comments file, repo root, `<dir>/map-implementability.md`, `<dir>/lens-implementability.md` |
@@ -241,9 +204,8 @@ count.
 On a host that cannot start the plugin's agents natively, take the
 "Start a fresh subagent" fallback in `docs/host-capabilities.md` under the
 plugin root, with each lens's agent file, `agents/<agent>.md` under the
-plugin root, as its brief, and record it in `02-spec.md` under **Host
-fallbacks** (a standalone review records it elsewhere - see **Standalone
-spec review**).
+plugin root, as its brief, and record it under **Host fallbacks** - see
+**Standalone spec review**.
 
 A lens that errors, returns nothing usable, or writes no readable findings
 file is spawned once more with the same prompt. A second failure makes it
@@ -262,23 +224,20 @@ consolidation items included:
 
 - One edit that satisfies several findings is proposed once, naming every
   finding it resolves.
-- Two findings that cannot both hold - a Fidelity "the plan decided X" against
-  an Implementability "the codebase cannot do X" - become a **decision** item:
+- Two findings that cannot both hold - a Consistency "the glossary defines X
+  as Y" against an Implementability "the codebase does X as Z" - become a **decision** item:
   both findings side by side, the consequence of each option, and your
   recommendation. The human makes the planning call.
 - A finding you believe is wrong is still presented, marked **recommend
   decline** with the reason. You have no recorded human decision to demote on,
   so nothing is dropped silently.
-- Consolidation items go **first**, under a **Consolidation** heading, ahead
-  even of `contradicts the plan` items: the human sees the body as it will
+- Consolidation items go **first**, under a **Consolidation** heading: the
+  human sees the body as it will
   read before seeing what the lenses make of it. They are their own group,
   never merged into a lens.
 - A lens finding about a contradiction an earlier item already resolves
   stays under its lens and names that item's number instead of proposing a
   second edit.
-- A Fidelity finding labelled `contradicts the plan` goes next, under that
-  label: the human sees a reversal of their own earlier decision before any
-  other finding.
 
 Each item carries a recommendation: a proposed edit is recommended for
 applying unless it is marked **recommend decline** with its reason, and a
@@ -327,7 +286,7 @@ prompts.
 ### The batch file
 
 Marker lines; a line starting `@@ ` is reserved, and no body line starts that
-way. The `@@ lens` lines come first, one per lens in the table, then one block
+way. The `@@ lens` lines come first, one per lens, Fidelity included, then one block
 per item, in the batch's order:
 
 ```
@@ -351,7 +310,7 @@ per item, in the batch's order:
 @@ end
 ```
 
-`<group>` is `consolidation`, a lens name, or `contradicts-the-plan`. An
+`<group>` is `consolidation` or a lens name. An
 insertion is an anchor plus a replacement that repeats it. Every item with
 an anchor, and every option, has its one `@@ summary`. A `@@ finding` cites
 the `<k>`-th finding in `<dir>/lens-<lens>.md`, which `apply` copies into the
@@ -472,9 +431,8 @@ bash "$ORCH" spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
 `apply` applies the accepted items to `<dir>/spec.md`, follows the tickets,
 publishes the body only when it changed, runs any retire after that
 publish, and writes the round's changelog to `<dir>/changelog.md` and posts
-it, on Apply none too - see **The changelog**. In a flow it reads the issue
-from state and publishes through the `spec` commands. Nothing calls
-`gh issue` directly.
+it, on Apply none too - see **The changelog**. Nothing calls `gh issue`
+directly.
 
 How it exits:
 
@@ -493,23 +451,6 @@ How it exits:
   here. Stop the review, as **Rounds** says; `apply` refuses to run again
   in that directory.
 
-After `apply` exits 0, in a flow only: a declined `contradicts the plan`
-item, recorded in the changelog as **spec departs from the plan: <reason>**,
-has its matching entry in the plan handoff's **Rejected alternatives**
-amended to say it was reversed in the spec review and why - citing the
-human's reason, or the recommendation's when it was declined through
-**Apply as recommended**. The review loop demotes findings that propose a
-rejected alternative, and without the amendment it would later demote a
-code reviewer for proposing the spec's own choice.
-
-After the last round, in a flow, return every round's changelog to the flow
-skill, in round order, as the path of each round's `<dir>/changelog.md`, so
-the implement phase carries the disposition without a network call. Its
-layout in `02-spec.md` is the **Spec review changelog** section of
-`orch-handoff`'s `02-spec.md` template. When a round retired the breakdown,
-breaking the issue down again is left to `orch-flow`'s spec phase step 5,
-which then sees `ticket exists` exit 1.
-
 A standalone review adds `--issue <issue>`, and with host fallbacks to
 record, `--host-fallbacks <file>` holding them. `apply` then uses the
 stateless `issue` commands and never reads `state.json`. When a round
@@ -526,7 +467,7 @@ a flow skill.
 `apply` writes it, from `batch.md`, the lens files, `tickets.md`, the
 answers and the reasons: the session never types it. It opens with the
 `## Spec review` heading and the `Round <k> of <n>` line, then a
-Consolidation section, one section per lens in the table's order, and a
+Consolidation section, one section per lens - Fidelity first - and a
 Tickets section: applied items one line each, declined findings and
 comments word for word with the human's reason or **declined as
 recommended: <reason>**, an undecided decision item's sides then **left
