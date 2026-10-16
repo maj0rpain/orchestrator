@@ -1448,6 +1448,10 @@ spares "a filled row is not flagged" "$out" ':(1|2|3):'
 check "every host capability row has both hosts' cells filled" \
   "$(scan_capability_table "$PLUGIN_ROOT")"
 
+# names_skill_section <text> <skill> <section>: the text names <skill>, as
+# given, and its **<section>** in bold.
+names_skill_section() { grep -qF -- "$2" <<<"$1" && grep -qF -- "**$3**" <<<"$1"; }
+
 # quick_step_refers <plugin root> <step heading> <skill> <section> <noun>:
 # one line when that quick-implement step does not name `<skill>` and its
 # **<section>**. A name ending in one s (orch-to-tickets) takes a bare apostrophe.
@@ -1455,7 +1459,7 @@ quick_step_refers() {
   local quick="skills/orch-quick-implement/SKILL.md" body numbered="${2#\#\# }" owner="$3's"
   [[ $3 == *s && $3 != *ss ]] && owner="$3'"
   body="$(md_section "$1/$quick" "$2" | flat_text)"
-  { grep -qF "\`$3\`" <<<"$body" && grep -qF "**$4**" <<<"$body"; } \
+  names_skill_section "$body" "\`$3\`" "$4" \
     || echo "$quick: step ${numbered%%.*} does not refer to $owner **$4** $5"
 }
 
@@ -1617,20 +1621,12 @@ echo "review pass skill (#1138)"
 # none of orch-review's loop text. That holds only while the pass's skill
 # refers into no loop section, every caller invokes orch-review-pass, and
 # orch-review keeps no copy of the pass.
-# The loop-only names: orch-review's loop sections, plus Met again, the loop's
-# triage outcome. A pass's skill names one when a bold span is the name, or
-# begins with the name and a colon.
-review_loop_only='Before the first iteration
-The iteration
-The reviewers
-The fixer
-The closer
-Starting an agent
-Severity
-Authority
-CI
-Termination
-Met again'
+# The loop-only names: orch-review's ## headings, each cut at its colon, plus
+# Met again, the loop's triage outcome. A pass's skill names one when a bold
+# span is the name, or begins with the name and a colon.
+review_loop_only="$(sed -n 's/^## //p' "$PLUGIN_ROOT/skills/orch-review/SKILL.md" \
+  | sed 's/:.*//; s/[[:space:]]*$//')
+Met again"
 # names_orch_review: stdin names the orch-review skill as a whole token -
 # orch-review or orchestrator:orch-review, never orch-review-pass or
 # orch-reviewer-spec.
@@ -1702,17 +1698,17 @@ check "orch-review-pass refers into no orch-review section and says how to start
 # orch-review. Quick implementation's step 6 is named by scan_review_pass.
 scan_review_pass_callers() {
   local r="$1" cmd="commands/review-pass.md" quick="skills/orch-quick-implement/SKILL.md"
-  local sync="skills/orch-sync/SKILL.md" body
-  body="$(flat_text "$r/$cmd" 2>/dev/null)"
-  { grep -qF 'orch-review-pass' <<<"$body" && grep -qF '**Standalone review pass**' <<<"$body"; } \
+  local sync="skills/orch-sync/SKILL.md" cmd_text step6_text offer_text
+  cmd_text="$(flat_text "$r/$cmd" 2>/dev/null)"
+  names_skill_section "$cmd_text" orch-review-pass "Standalone review pass" \
     || echo "$cmd: does not name orch-review-pass's **Standalone review pass**"
-  names_orch_review <<<"$body" && echo "$cmd: names the orch-review skill"
-  body="$(md_section "$r/$quick" "## 6. Review" | flat_text)"
-  names_orch_review <<<"$body" && echo "$quick: step 6 names the orch-review skill"
-  body="$(md_section "$r/$sync" "## 3. Offer a review pass" | flat_text)"
-  { grep -qF 'orch-review-pass' <<<"$body" && grep -qF '**Standalone review pass**' <<<"$body"; } \
+  names_orch_review <<<"$cmd_text" && echo "$cmd: names the orch-review skill"
+  step6_text="$(md_section "$r/$quick" "## 6. Review" | flat_text)"
+  names_orch_review <<<"$step6_text" && echo "$quick: step 6 names the orch-review skill"
+  offer_text="$(md_section "$r/$sync" "## 3. Offer a review pass" | flat_text)"
+  names_skill_section "$offer_text" orch-review-pass "Standalone review pass" \
     || echo "$sync: step 3 does not name orch-review-pass's **Standalone review pass**"
-  names_orch_review <<<"$body" && echo "$sync: step 3 names the orch-review skill"
+  names_orch_review <<<"$offer_text" && echo "$sync: step 3 names the orch-review skill"
   return 0
 }
 fixture="$(new_fixture)"
