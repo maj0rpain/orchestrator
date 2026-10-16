@@ -491,6 +491,17 @@ orch.sh - deterministic operations for the orchestrator flow
                               .orchestrator/spec-review/<n>/ and print its
                               path. Reads state.json only to compare, and
                               never writes it
+  spec-review check <dir>     validate a round's <dir>/batch.md before the
+                              batch question: its grammar, the lens files and
+                              their citations, every anchor (each item's and
+                              each decision option's) matching exactly once,
+                              and a dry run of the all answer, against
+                              <dir>/spec.fetched.md, else <dir>/spec.md.
+                              Writes nothing, touches no GitHub, reads no
+                              flow state. Exit 1 with one orch: line per
+                              error, each naming its batch.md line - the first
+                              grammar error only, every anchor problem; exit
+                              0 with a one-line summary
   spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
                     [--tickets <answer> [--ticket-reasons <file>]]
                     [--issue <n>] [--unattended] [--host-fallbacks <file>]
