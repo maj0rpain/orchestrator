@@ -351,6 +351,35 @@ d="$(sra_dir)"
 sed -i '/^@@ lens consistency/d' "$d/batch.md"
 sra_refused "a lens with no @@ lens line" "$d" "no @@ lens line for consistency" recommended
 
+# The parser's refusals say why the line is wrong (#1149).
+sra_resolved_takes='a resolved item takes no @@ anchor, @@ replace or @@ end'
+d="$(sra_dir)"
+printf '@@ end\n' >>"$d/batch.md"
+sra_refused "a resolved item carrying @@ end" "$d" "batch.md line 58: $sra_resolved_takes" recommended
+d="$(sra_dir)"
+printf '@@ replace\nx\n@@ end\n' >>"$d/batch.md"
+sra_refused "a resolved item carrying @@ replace" "$d" "batch.md line 58: $sra_resolved_takes" recommended
+d="$(sra_dir)"
+sed -i '21,25d' "$d/batch.md"
+sra_refused "a decline item with no block" "$d" \
+  "batch.md line 18: item 2 has no @@ anchor/@@ replace/@@ end block - a decline item still carries the edit it declines" recommended
+d="$(sra_dir)"
+sed -i '48,53d' "$d/batch.md"
+sra "$d" recommended
+assert_status "an apply item with no block: refused" "$st" 1
+assert_eq "an apply item with no block keeps its message" "$out" \
+  "orch: batch.md line 45: item 4 has no @@ anchor/@@ replace/@@ end block"
+d="$(sra_dir)"
+sed -i '16d' "$d/batch.md"
+sra_refused "a replacement left open at the next @@ item" "$d" \
+  "batch.md line 17: expected @@ end to end the replacement begun on line 14, got '@@ item 2 contradicts-the-plan decline the plan chose this'" recommended
+d="$(sra_dir)"
+sed -i '14d' "$d/batch.md"
+sra "$d" recommended
+assert_status "an anchor left open: refused" "$st" 1
+assert_eq "an anchor left open keeps its message" "$out" \
+  "orch: batch.md line 15: expected @@ replace to end the anchor begun on line 12"
+
 # Lens files and citations.
 d="$(sra_dir)"
 sed -i 's/^@@ finding testability 3$/@@ finding testability 4/' "$d/batch.md"
@@ -840,4 +869,219 @@ sra "$d" recommended --unattended --tickets recommended
 fake_unfail
 assert_status "an unattended ticket write failure stops apply" "$st" 1
 assert_contains "naming the landed writes" "$out" "already landed: ticket #20's body; unblock #21 by #20;"
+restore_suite_env
+
+# --- spec-review check (#1137) -------------------------------------------------
+# A round's batch validated before the batch question: everything apply checks
+# that does not depend on the answer - grammar, lens files, citations, every
+# anchor on its own and in the all answer's dry run - with nothing written.
+echo
+echo "spec-review check (#1137)"
+new_repo >/dev/null
+fake_github
+top="$(git rev-parse --show-toplevel)"
+src_body='# Spec
+
+Alpha line.
+Beta line.
+Gamma line.
+Delta line.
+Twice.
+Twice.
+'
+# src_dir: a fresh round directory holding the fixture spec, batch and lens
+# files, with issue #14 reset to the fixture body; prints its path. The batch's
+# @@ anchor lines: item 1 on 9, item 2 on 18, item 3's options A and B on 28
+# and 35.
+src_dir() {
+  local d
+  d="$(mktemp -d)"
+  printf '%s' "$src_body" >"$d/spec.md"
+  cat >"$d/batch.md" <<'BATCH'
+@@ lens fidelity ran
+@@ lens consistency ran
+@@ lens testability ran
+@@ lens implementability not-run timed out
+
+@@ item 1 fidelity apply
+@@ finding fidelity 1
+@@ summary Alpha primed
+@@ anchor
+Alpha line.
+@@ replace
+Alpha prime line.
+@@ end
+
+@@ item 2 consistency decline the plan chose this
+@@ finding consistency 1
+@@ summary Beta reversed
+@@ anchor
+Beta line.
+@@ replace
+Beta reversed.
+@@ end
+
+@@ item 3 testability decision A
+@@ finding testability 1
+@@ option A Keep gamma
+@@ summary Gamma kept
+@@ anchor
+Gamma line.
+@@ replace
+Gamma line (kept).
+@@ end
+@@ option B Drop gamma
+@@ summary Gamma dropped
+@@ anchor
+Gamma line.
+@@ replace
+Gamma dropped.
+@@ end
+
+@@ item 4 testability resolved
+@@ finding testability 2
+@@ resolved-by 3
+BATCH
+  printf '@@ finding 1\nAlpha is stale.\n' >"$d/lens-fidelity.md"
+  printf '@@ finding 1\nBeta contradicts the plan.\n' >"$d/lens-consistency.md"
+  printf '@@ finding 1\nGamma is untestable.\n@@ finding 2\nGamma again.\n' >"$d/lens-testability.md"
+  fake_issue 14 open
+  fake_issue_body 14 "$src_body"
+  printf '%s\n' "$d"
+}
+# src <dir>: check on <dir>, its stdout, stderr and status into out, err and st.
+src_err="$(mktemp)"
+src() {
+  out="$("$ORCH" spec-review check "$1" 2>"$src_err")"; st=$?
+  err="$(cat "$src_err")"
+}
+# src_snapshot <dir>: every file in <dir> with its checksum, for a
+# byte-identical comparison.
+src_snapshot() { (cd "$1" && find . -type f | LC_ALL=C sort | xargs cksum); }
+# src_refused <label> <dir> <stderr>: check exits 1 with exactly <stderr>,
+# nothing on stdout, and <dir> unchanged.
+src_refused() {
+  local before
+  before="$(src_snapshot "$2")"
+  src "$2"
+  assert_status "$1: refused" "$st" 1
+  assert_eq "$1: exactly these errors" "$err" "$3"
+  assert_eq "$1: nothing on stdout" "$out" ""
+  assert_eq "$1: the directory unchanged" "$(src_snapshot "$2")" "$before"
+}
+
+# A clean batch: exit 0, one summary line, nothing written.
+d="$(src_dir)"
+before="$(src_snapshot "$d")"
+src "$d"
+assert_status "a clean batch passes" "$st" 0
+assert_eq "with a one-line summary" "$out" \
+  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
+assert_eq "and nothing on stderr" "$err" ""
+assert_eq "the directory byte-identical" "$(src_snapshot "$d")" "$before"
+assert_eq "no spec.fetched.md created" "$(on_disk "$d/spec.fetched.md")" absent
+
+# No flow state read, no GitHub touched.
+mkdir -p "$top/.orchestrator"
+printf '{not json' >"$top/.orchestrator/state.json"
+fake_offline
+src "$d"
+assert_status "a malformed state.json and an unreachable GitHub do not matter" "$st" 0
+fake_online
+rm -rf "$top/.orchestrator"
+
+# The body read is spec.fetched.md when it exists.
+d="$(src_dir)"
+sed 's/^Alpha line\.$/Alpha prime line./' <<<"$src_body" >"$d/spec.md"
+printf '%s' "$src_body" >"$d/spec.fetched.md"
+src "$d"
+assert_status "an edited spec.md passes against the spec.fetched.md it came from" "$st" 0
+assert_contains "naming spec.fetched.md" "$out" "each matching once in spec.fetched.md"
+printf '%s' "$src_body" >"$d/spec.md"
+sed 's/^Alpha line\.$/Alpha moved./' <<<"$src_body" >"$d/spec.fetched.md"
+src_refused "an anchor spec.md has but spec.fetched.md lacks" "$d" \
+  "orch: batch.md line 9: item 1: its anchor matches no text in the body"
+
+# Anchors: each problem once, every one in one run, each naming its line.
+d="$(src_dir)"
+sed -i '10s/.*/Twice./' "$d/batch.md"
+src_refused "an anchor matching twice, reported once" "$d" \
+  "orch: batch.md line 9: item 1: its anchor matches more than one place in the body"
+d="$(src_dir)"
+sed -i '10a Beta line.' "$d/batch.md"
+src_refused "two overlapping edits, caught by the all dry run" "$d" \
+  "orch: batch.md line 19: item 2: its anchor no longer matches exactly once after the earlier items' edits"
+d="$(src_dir)"
+sed -i '36s/.*/Nowhere either./' "$d/batch.md"
+src_refused "a decision option's anchor matching nothing" "$d" \
+  "orch: batch.md line 35: item 3 option B: its anchor matches no text in the body"
+d="$(src_dir)"
+sed -i '10s/.*/Nowhere./; 19s/.*/Twice./; 36s/.*/Nowhere either./' "$d/batch.md"
+src_refused "several bad anchors" "$d" \
+  "orch: batch.md line 9: item 1: its anchor matches no text in the body
+orch: batch.md line 18: item 2: its anchor matches more than one place in the body
+orch: batch.md line 35: item 3 option B: its anchor matches no text in the body"
+
+# Grammar: the first error only.
+d="$(src_dir)"
+sed -i '7s/.*/@@ bogus/; 16s/.*/@@ bogus/' "$d/batch.md"
+src_refused "two grammar errors" "$d" "orch: batch.md line 7: unknown line '@@ bogus'"
+
+# Lens files and citations.
+d="$(src_dir)"
+sed -i '42s/.*/@@ finding testability 3/' "$d/batch.md"
+src_refused "a citation past its lens file's count" "$d" \
+  "orch: batch.md line 42: cites finding 3 of lens testability, but lens-testability.md holds 2"
+d="$(src_dir)"
+printf 'preamble\n@@ finding 1\nx\n' >"$d/lens-consistency.md"
+src_refused "a malformed lens file" "$d" \
+  "orch: lens-consistency.md line 1: text before the first @@ finding"
+
+# Errors with no batch line.
+d="$(src_dir)"
+rm "$d/batch.md"
+src_refused "no batch.md" "$d" "orch: batch.md not found in $d"
+d="$(src_dir)"
+sed -i '2d' "$d/batch.md"
+src_refused "a missing @@ lens line" "$d" \
+  "orch: batch.md: no @@ lens line for consistency - every lens in the table has one"
+
+# A batch check passes applies with all.
+d="$(src_dir)"
+src "$d"
+assert_status "check passes the batch" "$st" 0
+out="$("$ORCH" spec-review apply "$d" all --round 1/1 --issue 14 2>&1)"; st=$?
+assert_status "which apply then takes with all" "$st" 0
+assert_eq "every edit landing" "$(cat "$d/spec.md")" '# Spec
+
+Alpha prime line.
+Beta reversed.
+Gamma line (kept).
+Delta line.
+Twice.
+Twice.'
+
+# apply checks only the anchors its answer accepts, naming the batch line.
+src_bad2() { d="$(src_dir)"; sed -i '19s/.*/Nowhere./' "$d/batch.md"; }
+src_bad2
+out="$("$ORCH" spec-review apply "$d" none --round 1/1 --issue 14 2>&1)"; st=$?
+assert_status "apply none passes over an unapplied item's bad anchor" "$st" 0
+src_bad2
+out="$("$ORCH" spec-review apply "$d" "1, 3A" --round 1/1 --issue 14 2>&1)"; st=$?
+assert_status "apply with a list leaving the item out passes too" "$st" 0
+assert_contains "applying the items it names" "$(cat "$d/spec.md")" "Alpha prime line."
+src_bad2
+src "$d"
+assert_eq "check names the bad anchor's line" "$err" \
+  "orch: batch.md line 18: item 2: its anchor matches no text in the body"
+out="$("$ORCH" spec-review apply "$d" all --round 1/1 --issue 14 2>&1)"; st=$?
+assert_status "apply all refuses it" "$st" 1
+assert_eq "naming the same batch line" "$out" \
+  "orch: batch.md line 18: item 2: its anchor matches no text in the body - nothing applied, nothing written"
+
+# Discoverability.
+out="$("$ORCH" spec-review wipe 2>&1)"
+assert_contains "the unknown-op message lists check" "$out" "want begin|check|apply"
+assert_contains "help documents spec-review check" "$("$ORCH" help)" "spec-review check <dir>"
+rm -f "$src_err"
 restore_suite_env
