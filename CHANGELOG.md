@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.10.0
+
+The Implementability lens of a spec review now carries a code map across rounds and reads only the code the spec and the map name, so later rounds no longer re-explore the codebase from scratch. `orch.sh spec-review begin <n> --carry-map` keeps `map-implementability.md` through the wipe of the working directory on standalone rounds 2 and later, and a flow's spec phase copies the previous round's map into each fresh round directory.
+
 ## 4.9.0
 
 Add `orch.sh spec-review check <dir>`: a round's batch validated before the batch question - grammar, lens files, citations, every anchor, and a dry run of the `all` answer - with nothing written. `spec-review apply`'s anchor refusals now name the anchor's `batch.md` line.
