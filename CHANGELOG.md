@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.8.3
+
+Branches made by `branch off`, `branch create` and `ticket-worktree add` no longer track their base branch, or their parent branch, as upstream until their first push, so a plain `git pull` no longer merges the base into them; `branch retire` on such a never-pushed branch renames it locally only.
+
 ## 4.8.2
 
 The coding standards now say that a change introducing a helper moves every existing qualifying site onto it, as part of the change, and the Spec reviewer checks the repo's coding standards before reporting a hunk as scope creep.
