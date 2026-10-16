@@ -70,7 +70,8 @@ the round count, in order:
   takes a fresh working directory and fetches the body and comments again:
   the spec-phase entry runs **Inputs** again with a fresh `spec fetch`
   directory, and the standalone entry re-runs its steps from
-  `spec-review begin <issue>`, which empties the directory. Nothing is lost:
+  `spec-review begin <issue>`, which empties the directory but for the code
+  map it keeps on rounds 2 and later. Nothing is lost:
   the previous round has already published.
 - **Only the code map carries over.** The Implementability lens's code map,
   `map-implementability.md`, is the one file a round hands the next: the

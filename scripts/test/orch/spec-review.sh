@@ -105,6 +105,7 @@ cm_seed() {
   echo stale >"$sr_dir/lens-implementability.md"
   echo stale >"$sr_dir/sub/changelog.md"
 }
+cm_snapshot() { (cd "$sr_dir" && find . -type f | LC_ALL=C sort | xargs cksum); }
 cm_seed
 out="$("$ORCH" spec-review begin 14 --carry-map 2>&1)"; st=$?
 assert_status "--carry-map with a map proceeds" "$st" 0
@@ -130,12 +131,12 @@ assert_eq "creating it empty" "$(ls -A "$top/.orchestrator/spec-review/16" 2>&1)
 
 for args in "14 --carry" "--carry-map 14" "14 --carry-map --carry-map" "14 --carry-map 15"; do
   cm_seed
-  before="$(cd "$sr_dir" && find . -type f | LC_ALL=C sort | xargs cksum)"
+  before="$(cm_snapshot)"
   # shellcheck disable=SC2086 # word splitting is the point: each word is an arg
   out="$("$ORCH" spec-review begin $args 2>&1)"; st=$?
   assert_status "refuses begin '$args'" "$st" 1
   assert_eq "with the usage for '$args'" "$out" "orch: usage: orch.sh spec-review begin <n> [--carry-map]"
-  assert_eq "deleting nothing for '$args'" "$(cd "$sr_dir" && find . -type f | LC_ALL=C sort | xargs cksum)" "$before"
+  assert_eq "deleting nothing for '$args'" "$(cm_snapshot)" "$before"
 done
 
 cm_seed
