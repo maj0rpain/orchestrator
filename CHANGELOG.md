@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.8.2
+
+The coding standards now say that a change introducing a helper moves every existing qualifying site onto it, as part of the change, and the Spec reviewer checks the repo's coding standards before reporting a hunk as scope creep.
+
 ## 4.8.1
 
 `orch.sh glossary` now reads bulleted (`- **Term**: definition`, `* **Term**: definition`) and inline (`**Term**: definition`) GLOSSARY.md entries, with an indented `_Avoid_:` line giving a bullet entry its aliases. A root GLOSSARY.md that gives no entries now makes `glossary terms`, `show` and `match` exit 2 instead of reading as "no terms", and the skills and agents that run them report a failed glossary command and carry on without its entries.
