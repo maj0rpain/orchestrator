@@ -101,6 +101,37 @@ well-formed fragment, and never changes `version`, adds a `## ` heading to
 repo-hygiene PR carries the `no-version-bump` label, which waives the fragment
 and ships no version bump; the other rules still hold.
 
+### Test helpers
+
+`scripts/dev/helpers.sh` is the helper index, read from the code so it cannot
+drift: run it rather than grepping for a helper. Bare, it lists every function
+of orch.sh's modules (`scripts/orch/*.sh`) under a `# <path>` header per
+module, each with the first line of the comment above it, or `-` where there
+is none; `cmd_*` entry points are left out. `--tests` lists the shared test
+setup (`scripts/test/orch/setup.sh`) and the gh adapter fake
+(`scripts/test/gh_adapter_fake.sh`) instead - their fixtures, fakes and
+assertions. A `<file>` argument lists that one bash file alone, e.g.
+`scripts/dev/helpers.sh scripts/orch/base.sh`. harness.sh's helper index
+section checks it against what bash itself defines.
+
+The fixtures to reach for first:
+
+- `fake_flow <slug>`: a section's usual starting point - a fresh repo, the
+  GitHub fake, and a flow named `<slug>` just started in it.
+- `fake_github`: a fresh, empty store-backed GitHub fake that every orch.sh
+  the test runs talks to in place of gh.
+- `fake_issue <n> <state> [labels...]`: seeds issue #n in that fake, open or
+  closed, with its labels.
+- `state_fixture <key> <value>`: arranges state.json directly, for the keys
+  `state set` refuses (phase, branch, pr, iteration, ...).
+
+To debug, run one section under `bash -x`. The suite selects whole `# ---`
+sections, not single cases, and in parallel mode each section re-runs in a
+child bash that does not inherit `-x`, so run it sequentially:
+`ORCH_TEST_ONLY='^<section>$' ORCH_TEST_JOBS=1 bash -x scripts/test/orch_test.sh`.
+
+`orch.sh`, its modules and the test suite target bash 4.0+: `mapfile`, `declare -A` and `printf -v` are fine. `scripts/flow-state.sh` and the `hook-*.sh` scripts stay bash 3.2-compatible (no namerefs, no `mapfile`, no `declare -A`), because they run under macOS's `/bin/bash`.
+
 ## Layout
 
 ```
@@ -133,6 +164,7 @@ scripts/hook-*.sh             the four hooks; hook-grilling.sh also runs on User
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
 scripts/version-bump.sh       the version-bump Action's script: changelog fragments into one version bump (Develop)
+scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
 scripts/test/                 shell tests: orch_test.sh (the orch.sh suite's runner), hooks_test.sh, docs_lint.sh, version_bump_test.sh, all.sh
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
 scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
