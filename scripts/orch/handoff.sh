@@ -123,14 +123,20 @@ section_body() {
   awk -v h="$2" '$0 == h { inside = 1; next } /^## / { inside = 0 } inside { print }' "$1"
 }
 
-# section_entries <file> <heading>: the entries under <heading> in <file>, one
-# per line - each top-level `- ` bullet joined with its indented continuation
-# lines by single spaces, its leading `- ` stripped, and each non-blank line
-# at the margin that is no bullet as an entry of its own. An entry reading
-# None, None. or None declined. is a source saying it has nothing, and is
-# dropped. The known-items builders copy these, and do no matching.
+# section_entries <file> <heading>: the entries under <heading> in <file>, as
+# text_entries splits them. The known-items builders copy these, and do no
+# matching.
 section_entries() {
-  section_body "$1" "$2" | awk '
+  section_body "$1" "$2" | text_entries
+}
+
+# text_entries: the entries of the text on stdin, one per line - each
+# top-level `- ` bullet joined with its indented continuation lines by single
+# spaces, its leading `- ` stripped, and each non-blank line at the margin that
+# is no bullet as an entry of its own. An entry reading None, None. or None
+# declined. is a source saying it has nothing, and is dropped.
+text_entries() {
+  awk '
     function flush() {
       if (entry != "" && entry !~ /^None( declined)?\.?$/) print entry
       entry = ""; bullet = 0

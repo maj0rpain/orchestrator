@@ -1585,8 +1585,9 @@ echo
 echo "previously declined (#418)"
 # A standalone review pass reads earlier passes' declines through pr comments
 # and lists what it dropped as **Previously declined** - while the reviewers
-# stay fresh: Review pass step 3's prompt stays the five variables, no word
-# about earlier passes.
+# hear of earlier passes only through the known-items file: Review pass step
+# 3's prompt is the six variables, `Known items: <prefix>-known.md` last, and
+# carries no earlier items inline (ADR-0045).
 # scan_previously_declined <plugin root>: one line per break of that rule.
 scan_previously_declined() {
   local r="$1" pass="skills/orch-review-pass/SKILL.md" body prompt
@@ -1598,15 +1599,17 @@ scan_previously_declined() {
   prompt="$(md_section "$r/$pass" "## Review pass" \
     | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//')"
   [ "$prompt" = "$(printf '%s\n' 'Base SHA: <base SHA>' 'Spec issue: #<issue>' 'Iteration: <NN>' \
-    'Report path: <prefix>-<standards|spec>.md' 'orch.sh: <the path ORCH holds>')" ] \
-    || echo "$pass: ## Review pass step 3's reviewer prompt is not the five variables"
+    'Report path: <prefix>-<standards|spec>.md' 'orch.sh: <the path ORCH holds>' \
+    'Known items: <prefix>-known.md')" ] \
+    || echo "$pass: ## Review pass step 3's reviewer prompt is not the six variables"
   return 0
 }
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-review-pass"
 printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base SHA: <base SHA>' \
   '   Spec issue: #<issue>' '   Earlier declines: <list>' '   Iteration: <NN>' \
-  '   Report path: <prefix>-<standards|spec>.md' '   orch.sh: <the path ORCH holds>' '   ```' '' \
+  '   Report path: <prefix>-<standards|spec>.md' '   orch.sh: <the path ORCH holds>' \
+  '   Known items: <prefix>-known.md' '   ```' '' \
   '## Standalone review pass' '' 'Post it.' \
   >"$fixture/skills/orch-review-pass/SKILL.md"
 out="$(scan_previously_declined "$fixture")"
@@ -1614,16 +1617,25 @@ flags "a standalone pass that never reads pr comments is flagged" \
   "$out" "skills/orch-review-pass/SKILL.md: ## Standalone review pass does not name pr comments"
 flags "a standalone pass with no Previously declined is flagged" \
   "$out" "skills/orch-review-pass/SKILL.md: ## Standalone review pass does not name **Previously declined**"
-flags "a reviewer prompt carrying earlier declines is flagged" \
-  "$out" "skills/orch-review-pass/SKILL.md: ## Review pass step 3's reviewer prompt is not the five variables"
+flags "a reviewer prompt carrying earlier declines inline is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: ## Review pass step 3's reviewer prompt is not the six variables"
 printf '%s\n' '# R' '' '## Review pass' '' '3. Start them:' '' '   ```' '   Base SHA: <base SHA>' \
   '   Spec issue: #<issue>' '   Iteration: <NN>' '   Report path: <prefix>-<standards|spec>.md' \
   '   orch.sh: <the path ORCH holds>' '   ```' '' \
   '## Standalone review pass' '' 'Run `orch.sh pr comments <file>`; list **Previously' 'declined**.' \
   >"$fixture/skills/orch-review-pass/SKILL.md"
-assert_empty "a pass that reads earlier declines and keeps the prompt is not flagged" \
+flags "the old five-variable prompt is flagged" \
+  "$(scan_previously_declined "$fixture")" \
+  "skills/orch-review-pass/SKILL.md: ## Review pass step 3's reviewer prompt is not the six variables"
+printf '%s\n' '# R' '' '## Review pass' '' '3. Run `orch.sh review-pass known-items <issue> <prefix>-known.md`, then start them:' \
+  '' '   ```' '   Base SHA: <base SHA>' \
+  '   Spec issue: #<issue>' '   Iteration: <NN>' '   Report path: <prefix>-<standards|spec>.md' \
+  '   orch.sh: <the path ORCH holds>' '   Known items: <prefix>-known.md' '   ```' '' \
+  '## Standalone review pass' '' 'Run `orch.sh pr comments <file>`; list **Previously' 'declined**.' \
+  >"$fixture/skills/orch-review-pass/SKILL.md"
+assert_empty "a pass that reads earlier declines and passes the six variables is not flagged" \
   "$(scan_previously_declined "$fixture")"
-check "a standalone review pass drops earlier declines and the reviewer prompt stays five variables" \
+check "a standalone review pass drops earlier declines and the reviewer prompt is the six variables" \
   "$(scan_previously_declined "$PLUGIN_ROOT")"
 
 # --- standalone pass smells (#419) ---------------------------------------------

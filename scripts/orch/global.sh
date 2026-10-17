@@ -554,6 +554,19 @@ orch.sh - deterministic operations for the orchestrator flow
                               branch name used whole, git-excluding
                               .orchestrator/. Never wipes; reads state.json
                               only to compare, and never writes it
+  review-pass known-items <issue> <path> [--deviations <file>]
+                              write the pass's known-items file to <path>,
+                              overwriting it: ## Deviations from the PR body,
+                              or the --deviations file in its place, then
+                              ## Known items - the declines under Review in
+                              the PR body and in each comment with both Review
+                              and Host fallbacks, and the Spec rulings lines
+                              of the PR's comments and the issue's
+                              "Spec ruling:" comments, each tagged with its
+                              source; an empty heading reads None. With no
+                              open PR, only the rulings and --deviations are
+                              read. Refused, writing nothing, on a missing
+                              --deviations file or an unreadable GitHub
   finding-triage scan [--all] [<issue> | --pr <n>]
                               read-only: fetch origin/<default> and sort each
                               open review:<severity> finding still in the

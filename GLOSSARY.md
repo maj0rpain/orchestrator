@@ -337,7 +337,8 @@ the human asks for them, and reports only how many it left out; a quick
 implementation's review pass keeps them. Another look is another review pass. A
 standalone review pass drops any finding an earlier review pass on the same PR
 already declined, and lists it as previously declined. A branch or issue an
-active flow holds belongs to that flow, never to a review pass.
+active flow holds belongs to that flow, never to a review pass. Its reviewers
+are told the pass's known items, and drop the findings those already carry.
 _Avoid_: single pass, quick review
 
 **Budget**:

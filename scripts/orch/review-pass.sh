@@ -11,13 +11,20 @@
 # require_state, and never writes it: a branch or issue an active flow holds
 # belongs to that flow (ADR-0029). Never wipes - each pass takes the next
 # number, so a second pass on a branch never overwrites the first.
+#
+# review-pass known-items builds the pass's known-items file, also with no
+# flow state: see review_pass_known_items.
 cmd_review_pass() {
   local op="${1:-}"
   shift || true
   case "$op" in
-    begin) ;;
-    *) die "unknown review-pass op: ${op:-<none>} (want begin)" ;;
+    begin) review_pass_begin "$@" ;;
+    known-items) review_pass_known_items "$@" ;;
+    *) die "unknown review-pass op: ${op:-<none>} (want begin|known-items)" ;;
   esac
+}
+
+review_pass_begin() {
   [ $# -eq 1 ] || die "usage: orch.sh review-pass begin <issue>"
   local issue="$1" branch
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
@@ -46,4 +53,112 @@ cmd_review_pass() {
     [ "$((10#$n))" -le "$max" ] || max="$((10#$n))"
   done
   printf '%s/iteration-%02d\n' "$dir" "$((max + 1))"
+}
+
+# A review pass's earlier pass, as standalone step 2 recognises one: a text
+# carrying both a Review and a Host fallbacks heading.
+REVIEW_PASS_HEADINGS=('## Review' '## Host fallbacks')
+
+# The entries of an issue's Spec ruling comments, one per line, from the
+# issue's structured read: each comment whose body begins `Spec ruling:`, the
+# prefix stripped and its lines trimmed and joined by single spaces.
+SPEC_RULING_ENTRIES_JQ='.comments[].body | gsub("\r"; "") | select(startswith("Spec ruling:"))
+  | ltrimstr("Spec ruling:") | split("\n") | map(gsub("^\\s+|\\s+$"; ""))
+  | map(select(length > 0)) | join(" ")'
+
+# comments_split <file> <dir>: splits <file>, comments in COMMENTS_JQ's shape,
+# into one file per comment under <dir>, numbered from 1 in order, each holding
+# the comment's body alone. A comment opens at its marker line.
+comments_split() {
+  awk -v d="$2" '
+    /^<!-- comment @[^ ]* [^ ]* -->$/ { if (out != "") close(out); out = d "/" (++k); printf "" >out; next }
+    out != "" { print >out }' "$1"
+}
+
+# has_headings <file> <heading>...: true when <file> has every <heading> as a
+# line of its own.
+has_headings() {
+  local file="$1" h
+  shift
+  for h in "$@"; do grep -qxF -- "$h" "$file" || return 1; done
+}
+
+# review_pass_known_items <issue> <path> [--deviations <file>]: writes the
+# pass's known-items file to <path>, overwriting it - `## Deviations`, the
+# PR body's Deviations or the --deviations file's entries in their place,
+# then `## Known items`: the declines under Review in the PR body and in each
+# PR comment that is an earlier pass's (REVIEW_PASS_HEADINGS), tagged
+# declined, then the Spec rulings lines of every PR comment and each spec
+# issue comment whose body begins `Spec ruling:` - that prefix stripped and
+# the comment joined into one entry - tagged spec ruling. With no open PR,
+# only the issue's rulings and the --deviations file are read. A heading with
+# no entry reads None. Every refusal comes before the write, and the file is
+# built aside and moved into place, so a refused run leaves <path> as it was.
+review_pass_known_items() {
+  local usage="usage: orch.sh review-pass known-items <issue> <path> [--deviations <file>]"
+  [ $# -ge 2 ] || die "$usage"
+  local issue="$1" path="$2" devfile="" pr st
+  shift 2
+  case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --deviations)
+        [ -n "${2-}" ] || die "--deviations needs a file - $usage"
+        devfile="$2"; shift 2 ;;
+      *) die "unknown argument: $1 - $usage" ;;
+    esac
+  done
+  if [ -n "$devfile" ]; then
+    [ -f "$devfile" ] || die "deviations file not found: $devfile"
+    [ -r "$devfile" ] || die "deviations file not readable: $devfile"
+  fi
+
+  local work tmp
+  work="$(mktemp -d)" || die "could not create a temp directory"
+  tmp="$(mktemp "$path.XXXXXX")" || { rm -rf "$work"; die "could not create a temp file beside $path"; }
+  # shellcheck disable=SC2064 # expanded now: both are local, gone by exit
+  trap "rm -rf $(printf '%q' "$work") $(printf '%q' "$tmp")" EXIT
+
+  local k entry comment issue_json issue_rulings deviations="" declined="" rulings=""
+  # A subshell's die has already said why; 1 alone means no open PR.
+  pr="$(current_open_pr)" && st=0 || st=$?
+  [ "$st" -le 1 ] || exit 1
+  if [ "$st" -eq 0 ]; then
+    gh_or_die --file "$work/body.raw" "read the body of PR #$pr" adapter_pr_body "$pr"
+    gh_or_die --file "$work/comments.raw" "read the comments of PR #$pr" adapter_pr_comments "$pr"
+    tr -d '\r' <"$work/body.raw" >"$work/body"
+    tr -d '\r' <"$work/comments.raw" >"$work/comments"
+    mkdir "$work/c"
+    comments_split "$work/comments" "$work/c"
+    [ -n "$devfile" ] || while IFS= read -r entry; do deviations+="- $entry"$'\n'; done \
+      < <(section_entries "$work/body" '## Deviations')
+    while IFS= read -r entry; do declined+="- $entry - declined"$'\n'; done \
+      < <(section_entries "$work/body" '## Review')
+    for ((k = 1; ; k++)); do
+      comment="$work/c/$k"
+      [ -f "$comment" ] || break
+      if has_headings "$comment" "${REVIEW_PASS_HEADINGS[@]}"; then
+        while IFS= read -r entry; do declined+="- $entry - declined"$'\n'; done \
+          < <(section_entries "$comment" '## Review')
+      fi
+      while IFS= read -r entry; do rulings+="- $entry - spec ruling"$'\n'; done \
+        < <(section_entries "$comment" '## Spec rulings')
+    done
+  fi
+  if [ -n "$devfile" ]; then
+    while IFS= read -r entry; do deviations+="- $entry"$'\n'; done \
+      < <(tr -d '\r' <"$devfile" | text_entries)
+  fi
+  gh_or_die --out issue_json "read the comments of issue #$issue" adapter_issue_json "$issue"
+  issue_rulings="$(jq -r "$SPEC_RULING_ENTRIES_JQ" <<<"$issue_json")" \
+    || die "could not read the comments of issue #$issue"
+  while IFS= read -r entry; do
+    [ -z "$entry" ] || rulings+="- $entry - spec ruling"$'\n'
+  done <<<"$issue_rulings"
+  [ -n "$deviations" ] || deviations=$'None.\n'
+  local known="$declined$rulings"
+  [ -n "$known" ] || known=$'None.\n'
+  printf '## Deviations\n%s## Known items\n%s' "$deviations" "$known" >"$tmp" \
+    || die "could not write the known items"
+  mv "$tmp" "$path" || die "could not write the known items to $path"
 }
