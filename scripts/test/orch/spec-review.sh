@@ -79,69 +79,82 @@ for args in "" "abc" "14x" "../14" "14 15"; do
   assert_eq "and deletes nothing for '$args'" "$(cat "$sr_dir/spec.md" 2>&1)" "keep"
 done
 out="$("$ORCH" spec-review begin 2>&1)"
-assert_contains "a missing number gets the usage" "$out" "usage: orch.sh spec-review begin <n> [--carry-map]"
+assert_contains "a missing number gets the usage" "$out" "usage: orch.sh spec-review begin <n> [--carry]"
 out="$("$ORCH" spec-review begin abc 2>&1)"
 assert_contains "a non-numeric number is named" "$out" "plain issue number"
 out="$("$ORCH" spec-review wipe 14 2>&1)"; st=$?
 assert_status "refuses an op it does not have" "$st" 1
 assert_contains "naming the one it does" "$out" "want begin"
-assert_contains "help documents spec-review begin" "$("$ORCH" help)" "spec-review begin <n> [--carry-map]"
+assert_contains "help documents spec-review begin" "$("$ORCH" help)" "spec-review begin <n> [--carry]"
 
-# --- spec-review begin --carry-map (#1141) -----------------------------------
+# --- spec-review begin --carry (#1141, #1185) --------------------------------
 # Rounds 2 and later of a standalone review keep the Implementability lens's
-# code map through the wipe; every other file still goes.
+# code map and the settled file through the wipe; every other file still goes.
 echo
-echo "spec-review begin --carry-map (#1141)"
+echo "spec-review begin --carry (#1141, #1185)"
 new_repo >/dev/null
 top="$(git rev-parse --show-toplevel)"
 sr_dir="$top/.orchestrator/spec-review/14"
 sr_state="$top/.orchestrator/state.json"
-# cm_seed: a round directory holding a map and the round's other files.
+# cm_seed: a round directory holding a map, a settled file and the round's
+# other files.
 cm_seed() {
   rm -rf "$sr_dir"
   mkdir -p "$sr_dir/sub"
   printf 'scripts/orch/x.sh:12 x_fn - the spec changes it\n' >"$sr_dir/map-implementability.md"
+  printf '## Spec review\nRound 1 of 2\n' >"$sr_dir/settled.md"
   echo stale >"$sr_dir/spec.md"
   echo stale >"$sr_dir/lens-implementability.md"
   echo stale >"$sr_dir/sub/changelog.md"
 }
 cm_snapshot() { (cd "$sr_dir" && find . -type f | LC_ALL=C sort | xargs cksum); }
 cm_seed
-out="$("$ORCH" spec-review begin 14 --carry-map 2>&1)"; st=$?
-assert_status "--carry-map with a map proceeds" "$st" 0
+out="$("$ORCH" spec-review begin 14 --carry 2>&1)"; st=$?
+assert_status "--carry with a map and a settled file proceeds" "$st" 0
 assert_eq "printing the working directory" "$out" "$sr_dir/"
-assert_eq "keeping only the map" "$(ls -A "$sr_dir" 2>&1)" "map-implementability.md"
-assert_eq "with its content" "$(cat "$sr_dir/map-implementability.md" 2>&1)" \
+assert_eq "keeping only the map and the settled file" "$(ls -A "$sr_dir" | LC_ALL=C sort 2>&1)" \
+  "map-implementability.md
+settled.md"
+assert_eq "the map with its content" "$(cat "$sr_dir/map-implementability.md" 2>&1)" \
   "scripts/orch/x.sh:12 x_fn - the spec changes it"
+assert_eq "the settled file with its content" "$(cat "$sr_dir/settled.md" 2>&1)" \
+  "## Spec review
+Round 1 of 2"
 
 cm_seed
 out="$("$ORCH" spec-review begin 14 2>&1)"; st=$?
 assert_status "no flag proceeds" "$st" 0
-assert_eq "and wipes everything, the map included" "$(ls -A "$sr_dir" 2>&1)" ""
+assert_eq "and wipes everything, the map and the settled file included" "$(ls -A "$sr_dir" 2>&1)" ""
 
 cm_seed
 rm -f "$sr_dir/map-implementability.md"
-out="$("$ORCH" spec-review begin 14 --carry-map 2>&1)"; st=$?
-assert_status "--carry-map with no map exits 0" "$st" 0
+out="$("$ORCH" spec-review begin 14 --carry 2>&1)"; st=$?
+assert_status "--carry with no map exits 0" "$st" 0
+assert_eq "keeping the settled file alone" "$(ls -A "$sr_dir" 2>&1)" "settled.md"
+
+cm_seed
+rm -f "$sr_dir/map-implementability.md" "$sr_dir/settled.md"
+out="$("$ORCH" spec-review begin 14 --carry 2>&1)"; st=$?
+assert_status "--carry with neither exits 0" "$st" 0
 assert_eq "leaving an empty directory" "$(ls -A "$sr_dir" 2>&1)" ""
 
-out="$("$ORCH" spec-review begin 16 --carry-map 2>&1)"; st=$?
-assert_status "--carry-map on a directory never there exits 0" "$st" 0
+out="$("$ORCH" spec-review begin 16 --carry 2>&1)"; st=$?
+assert_status "--carry on a directory never there exits 0" "$st" 0
 assert_eq "creating it empty" "$(ls -A "$top/.orchestrator/spec-review/16" 2>&1)" ""
 
-for args in "14 --carry" "--carry-map 14" "14 --carry-map --carry-map" "14 --carry-map 15"; do
+for args in "14 --carry-map" "--carry 14" "14 --carry --carry" "14 --carry 15"; do
   cm_seed
   before="$(cm_snapshot)"
   # shellcheck disable=SC2086 # word splitting is the point: each word is an arg
   out="$("$ORCH" spec-review begin $args 2>&1)"; st=$?
   assert_status "refuses begin '$args'" "$st" 1
-  assert_eq "with the usage for '$args'" "$out" "orch: usage: orch.sh spec-review begin <n> [--carry-map]"
+  assert_eq "with the usage for '$args'" "$out" "orch: usage: orch.sh spec-review begin <n> [--carry]"
   assert_eq "deleting nothing for '$args'" "$(cm_snapshot)" "$before"
 done
 
 cm_seed
-out="$("$ORCH" spec-review begin abc --carry-map 2>&1)"; st=$?
-assert_status "a non-numeric issue with --carry-map is refused" "$st" 1
+out="$("$ORCH" spec-review begin abc --carry 2>&1)"; st=$?
+assert_status "a non-numeric issue with --carry is refused" "$st" 1
 assert_contains "as without the flag" "$out" "plain issue number"
 assert_eq "deleting nothing" "$(cat "$sr_dir/spec.md" 2>&1)" "stale"
 
@@ -149,8 +162,8 @@ for p in spec implement review; do
   printf '{"slug":"x","phase":"%s","issue":14,"branch":null}\n' "$p" >"$sr_state"
   cm_seed
   plain="$("$ORCH" spec-review begin 14 2>&1)"
-  out="$("$ORCH" spec-review begin 14 --carry-map 2>&1)"; st=$?
-  assert_status "an active flow on 14 at $p refuses --carry-map" "$st" 1
+  out="$("$ORCH" spec-review begin 14 --carry 2>&1)"; st=$?
+  assert_status "an active flow on 14 at $p refuses --carry" "$st" 1
   assert_eq "exactly as without the flag at $p" "$out" "$plain"
   assert_eq "deleting nothing at $p" "$(cat "$sr_dir/spec.md" 2>&1)" "stale"
 done
@@ -258,12 +271,12 @@ BATCH
   fake_issue_body 14 "$sra_body"
   printf '%s\n' "$d"
 }
-# sra <dir> <answer> [flags...]: apply on issue #14, standalone, round 1 of 2,
-# its output and status into out and st.
+# sra <dir> <answer> [flags...]: apply on issue #14, standalone, round
+# $sra_rnd (1/2 when unset), its output and status into out and st.
 sra() {
   local d="$1" a="$2"
   shift 2
-  out="$("$ORCH" spec-review apply "$d" "$a" --round 1/2 --issue 14 "$@" 2>&1)"; st=$?
+  out="$("$ORCH" spec-review apply "$d" "$a" --round "${sra_rnd:-1/2}" --issue 14 "$@" 2>&1)"; st=$?
 }
 # sra_refused <label> <dir> <want-in-message> <answer> [flags...]: apply is
 # refused, naming <want>, with nothing written: spec.md and changelog.md as
@@ -328,6 +341,61 @@ sra_clean="$(cat "$d/spec.md")"
 
 # A rerun once a write landed is refused, naming the writes.
 sra_refused "a non-empty applied.log" "$d" "the body of issue #14; the changelog comment on issue #14" recommended
+
+# The settled file (#1185): each round's changelog appended, exactly as
+# changelog.md holds it.
+sra_cmp() { cmp -s "$1" "$2" && echo same || echo differs; }
+d="$(sra_dir)"
+sra "$d" recommended
+assert_eq "a round with a declined, an applied and a decided item writes settled.md as changelog.md" \
+  "$(sra_cmp "$d/settled.md" "$d/changelog.md")" same
+
+# A second round, carried with begin --carry, appends after the first.
+sr_dir="$top/.orchestrator/spec-review/14"
+# sra_round <k/n>: copy a fresh fixture into the review's directory and apply
+# it as recommended, as round <k/n>.
+sra_round() {
+  local src
+  src="$(sra_dir)"
+  cp "$src"/* "$sr_dir/"
+  sra_rnd="$1" sra "$sr_dir" recommended
+}
+sra_tmp="$(mktemp -d)"
+"$ORCH" spec-review begin 14 >/dev/null
+sra_round 1/2
+assert_status "round 1 in the review's directory applies" "$st" 0
+cp "$sr_dir/changelog.md" "$sra_tmp/round1.md"
+"$ORCH" spec-review begin 14 --carry >/dev/null
+sra_round 2/2
+assert_status "round 2 in the carried directory applies" "$st" 0
+cat "$sra_tmp/round1.md" "$sr_dir/changelog.md" >"$sra_tmp/both.md"
+assert_eq "settled.md holds round 1's changelog, then round 2's" \
+  "$(sra_cmp "$sr_dir/settled.md" "$sra_tmp/both.md")" same
+assert_contains "round 2's changelog is its own" "$(cat "$sr_dir/changelog.md")" "Round 2 of 2"
+rm -rf "$top/.orchestrator" "$sra_tmp"
+
+# A first GitHub write that fails leaves settled.md as it was; the rerun
+# appends once.
+d="$(sra_dir)"
+printf 'earlier round\n' >"$d/settled.md"
+fake_fail adapter_issue_body_edit
+sra "$d" recommended
+fake_unfail
+assert_status "a failed first write stops apply" "$st" 1
+assert_eq "leaving settled.md unchanged" "$(cat "$d/settled.md")" "earlier round"
+sra "$d" recommended
+assert_status "the rerun applies" "$st" 0
+{ printf 'earlier round\n'; cat "$d/changelog.md"; } >"$d/want-settled"
+assert_eq "appending the changelog once" "$(sra_cmp "$d/settled.md" "$d/want-settled")" same
+
+# A settled.md that cannot be appended to dies once every write has landed.
+d="$(sra_dir)"
+mkdir "$d/settled.md"
+sra "$d" recommended
+assert_status "a failed append stops apply" "$st" 1
+assert_contains "naming settled.md" "$out" "$d/settled.md"
+assert_contains "and that every GitHub write landed" "$out" "every GitHub write landed"
+assert_contains "the comment among them" "$(fake_comments_of 14)" "Round 1 of 2"
 
 # Apply all: the recommend-decline item too.
 d="$(sra_dir)"
@@ -507,6 +575,7 @@ not run - timed out twice
 None - no ticket breakdown
 
 **Host fallbacks:** AskUserQuestion fell back to a plain question'
+assert_eq "--unattended writes settled.md too" "$(sra_cmp "$d/settled.md" "$d/changelog.md")" same
 
 # The ticket step's entry: a breakdown pauses before any GitHub write.
 d="$(sra_dir)"
@@ -519,6 +588,7 @@ assert_eq "printing the breakdown kind" "$out" "sub-issues"
 assert_eq "no GitHub write" "$(fake_snapshot)" "$snap"
 assert_eq "spec.md edited" "$(cat "$d/spec.md")" "$sra_clean"
 assert_eq "no changelog.md" "$(on_disk "$d/changelog.md")" absent
+assert_eq "and no settled.md" "$(on_disk "$d/settled.md")" absent
 sra "$d" recommended
 assert_status "a rerun pauses again" "$st" 3
 rm "$ORCH_GH_FAKE_STORE/subs/14"
