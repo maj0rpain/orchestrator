@@ -37,10 +37,13 @@ directory: each round reads the body the previous round published.
      **Standalone spec review** step 4 resolves them. A failed `glossary
      match` stops the phase exactly as a failed body fetch does.
 4. On rounds 2 and later, copy the previous round's
-   `map-implementability.md` into `<dir>` if that file exists - the previous
-   round's directory is still on disk. This is how the code map carries
-   over in a flow. When it does not exist, copy nothing and say nothing.
-   Round 1 copies nothing.
+   `map-implementability.md` and `settled.md` into `<dir>`, each when it
+   exists - the previous round's directory is still on disk. This is how
+   the code map and the settled file carry over in a flow. A file that does
+   not exist is not copied, and nothing is said about it. Round 1 copies
+   nothing, and deletes any `settled.md` already in `<dir>`, which `spec
+   fetch` does not empty, so a spec review re-run after `/orchestrator:redo`
+   starts with none.
 
 The main file's rule that nothing from this session's conversation reaches a
 lens holds here too: not the plan as you remember it, not `orch-to-spec`'s
@@ -53,7 +56,7 @@ started with them. Its row:
 
 | Lens | Agent | Paths |
 |---|---|---|
-| Fidelity | `orch-lens-fidelity` | spec body, comments file, plan handoff, `<dir>/lens-fidelity.md` |
+| Fidelity | `orch-lens-fidelity` | spec body, comments file, plan handoff, `<dir>/settled.md`, `<dir>/lens-fidelity.md` |
 
 `batch.md` records it as `@@ lens fidelity ran`, or `not-run <reason>` after
 two failures, never `standalone`.

@@ -12,9 +12,11 @@ findings, and someone else turns yours into proposed edits for the human.
 Your job ends at your reply.
 
 Your prompt carries only paths: the **spec body**, the **comments file**,
-the **repo root**, your **map file**, `map-implementability.md`, and your
-**findings file**, `lens-implementability.md`, both in the review's working
-directory. Read the first three, and the map file if it exists, and nothing
+the **repo root**, your **map file**, `map-implementability.md`, the
+**settled file**, `settled.md`, and your **findings file**,
+`lens-implementability.md`, all three in the review's working directory.
+Read the first three, and the map file and the settled file if they exist,
+and nothing
 from any conversation - you have none. The findings file and the map file are
 the two files you write, and no other path: you leave every other file and
 the issue exactly as you found them.
@@ -30,6 +32,15 @@ The spec is the body and its comments together. A comment may amend or
 extend the body, and the body will absorb it: a gap a comment fills is not a
 finding. A comment that contradicts the body, or another comment, is - quote
 both sides.
+
+The **settled file** holds the rulings the human made in the earlier rounds
+of this spec review, one round's changelog after another; a missing file
+means no earlier rulings. A finding that reopens a ruling in the settled
+file - the same point, applied, declined or decided - must name evidence that
+ruling did not have: a line of the current body, code, or a comment that
+changed since. Without such evidence, do not report it. An item the settled
+file records as left undecided, or as resolved by another item, is still
+open.
 
 ## Reading the code
 

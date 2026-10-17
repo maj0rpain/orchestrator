@@ -68,11 +68,12 @@ the round count, in order:
   the standalone entry re-runs its steps from `spec-review begin <issue>`,
   which empties the directory but for the code map and the settled file it
   keeps on rounds 2 and later. Nothing is lost: the previous round has already published.
-- **Only the code map carries over.** The Implementability lens's code map,
-  `map-implementability.md`, is the one file a round hands the next: the
-  standalone entry keeps it with `--carry` (step 1). Findings
-  never carry over: each round stays an independent look. Round 1 never
-  inherits a map.
+- **The code map and the settled file carry over.** The Implementability
+  lens's code map, `map-implementability.md`, and the settled file,
+  `settled.md`, are the files a round hands the next: the standalone entry
+  keeps both with `--carry` (step 1). Findings still never carry over: each
+  round stays an independent look, and only the human's rulings reach the
+  next. Round 1 never inherits a map or a settled file.
 - **The whole count runs.** A round that finds nothing, or whose edits are
   all declined, does not end the review early: the next round still runs, up
   to round `<n>`.
@@ -198,9 +199,9 @@ count.
 
 | Lens | Agent | Paths |
 |---|---|---|
-| Consistency | `orch-lens-consistency` | spec body, comments file, glossary, ADR directory, `<dir>/lens-consistency.md` |
-| Testability | `orch-lens-testability` | spec body, comments file, repo root, `<dir>/lens-testability.md` |
-| Implementability | `orch-lens-implementability` | spec body, comments file, repo root, `<dir>/map-implementability.md`, `<dir>/lens-implementability.md` |
+| Consistency | `orch-lens-consistency` | spec body, comments file, glossary, ADR directory, `<dir>/settled.md`, `<dir>/lens-consistency.md` |
+| Testability | `orch-lens-testability` | spec body, comments file, repo root, `<dir>/settled.md`, `<dir>/lens-testability.md` |
+| Implementability | `orch-lens-implementability` | spec body, comments file, repo root, `<dir>/map-implementability.md`, `<dir>/settled.md`, `<dir>/lens-implementability.md` |
 
 On a host that cannot start the plugin's agents natively, take the
 "Start a fresh subagent" fallback in `docs/host-capabilities.md` under the
@@ -232,6 +233,9 @@ consolidation items included:
 - A finding you believe is wrong is still presented, marked **recommend
   decline** with the reason. You have no recorded human decision to demote on,
   so nothing is dropped silently.
+- A finding that reopens a ruling in `<dir>/settled.md` without naming
+  evidence that ruling did not have is still presented, marked **recommend
+  decline** with the reason `settled in round <k>, item <n>`.
 - Consolidation items go **first**, under a **Consolidation** heading: the
   human sees the body as it will
   read before seeing what the lenses make of it. They are their own group,
