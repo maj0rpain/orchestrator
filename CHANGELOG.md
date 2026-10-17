@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.11.5
+
+A multi-round spec review no longer puts the same point to the human twice: `spec-review apply` appends each round's changelog to a settled file, `settled.md`, that `spec-review begin --carry` (renamed from `--carry-map`, which is now refused) and a flow's round Inputs carry to the next round, and every lens reopens a ruling in it only on evidence the ruling did not have.
+
 ## 4.11.4
 
 `scripts/dev/helpers.sh` is a helper index for working on this repo (#1144): it lists every function of orch.sh's modules, or with `--tests` of the shared test setup and the gh adapter fake, each with the first line of its comment. CONTRIBUTING gains a Test helpers subsection - the fixtures to reach for first, running one section under `bash -x`, and the bash-version rule - and `CLAUDE.md` points to both. The implementer brief now reads any test-helpers reference or helper index a repo's agent files point to before writing tests.

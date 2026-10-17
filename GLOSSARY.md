@@ -260,7 +260,7 @@ review answers with its own recommendation: edits to the tickets the change touc
 the breakdown so the issue is broken down again. A spec review runs its whole round count, each round reading the body the previous one published. It is not a loop - no severity, nothing filed - and a review started after it ends is a new spec review, with its own round count.
 
 **Round**:
-One look within a spec review: consolidation, the lenses, one batch of proposed edits put to the human, the accepted edits applied, the ticket question when they touch an open ticket, and one changelog comment. Each round reads the body as the previous round published it.
+One look within a spec review: consolidation, the lenses, one batch of proposed edits put to the human, the accepted edits applied, the ticket question when they touch an open ticket, and one changelog comment. Each round reads the body as the previous round published it. A round's lenses read the rulings of the earlier rounds of the same review, and reopen one only on evidence it did not have.
 _Avoid_: pass, iteration (the review loop's).
 
 **Round count**:
