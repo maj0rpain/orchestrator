@@ -271,12 +271,12 @@ BATCH
   fake_issue_body 14 "$sra_body"
   printf '%s\n' "$d"
 }
-# sra <dir> <answer> [flags...]: apply on issue #14, standalone, round 1 of 2,
-# its output and status into out and st.
+# sra <dir> <answer> [flags...]: apply on issue #14, standalone, round
+# $sra_rnd (1/2 when unset), its output and status into out and st.
 sra() {
   local d="$1" a="$2"
   shift 2
-  out="$("$ORCH" spec-review apply "$d" "$a" --round 1/2 --issue 14 "$@" 2>&1)"; st=$?
+  out="$("$ORCH" spec-review apply "$d" "$a" --round "${sra_rnd:-1/2}" --issue 14 "$@" 2>&1)"; st=$?
 }
 # sra_refused <label> <dir> <want-in-message> <answer> [flags...]: apply is
 # refused, naming <want>, with nothing written: spec.md and changelog.md as
@@ -352,11 +352,13 @@ assert_eq "a round with a declined, an applied and a decided item writes settled
 
 # A second round, carried with begin --carry, appends after the first.
 sr_dir="$top/.orchestrator/spec-review/14"
+# sra_round <k/n>: copy a fresh fixture into the review's directory and apply
+# it as recommended, as round <k/n>.
 sra_round() {
   local src
   src="$(sra_dir)"
   cp "$src"/* "$sr_dir/"
-  out="$("$ORCH" spec-review apply "$sr_dir" recommended --round "$1" --issue 14 2>&1)"; st=$?
+  sra_rnd="$1" sra "$sr_dir" recommended
 }
 sra_tmp="$(mktemp -d)"
 "$ORCH" spec-review begin 14 >/dev/null
@@ -573,7 +575,7 @@ not run - timed out twice
 None - no ticket breakdown
 
 **Host fallbacks:** AskUserQuestion fell back to a plain question'
-assert_eq "--unattended writes settled.md too" "$(cmp -s "$d/settled.md" "$d/changelog.md" && echo same)" same
+assert_eq "--unattended writes settled.md too" "$(sra_cmp "$d/settled.md" "$d/changelog.md")" same
 
 # The ticket step's entry: a breakdown pauses before any GitHub write.
 d="$(sra_dir)"
