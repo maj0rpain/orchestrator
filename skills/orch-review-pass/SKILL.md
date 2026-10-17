@@ -78,6 +78,11 @@ step 3's `--deviations`.
 5. **Fix.** Read both reports, and fix, yourself, every finding you agree
    with that is not a spec question (step 7). Use no fixer agent, no closer,
    no severity, no budget, and file nothing. Commit the fixes as one commit.
+   The Spec report's `## Set aside` lines are not findings: each is a
+   requirement a deviation the caller handed in set aside on purpose, and
+   the caller's own record of its deviations already carries it - a quick
+   implementation's PR body, under **Deviations**. Fix none of them, and
+   record none as a decline or a spec question.
 6. **Declines.** Record each finding you decline, one line each:
    `` `file:line` - <claim> - <reason> `` - its `file:line`, or `-` when the
    report gave `-` for its location; the finding's claim, in a few words;
