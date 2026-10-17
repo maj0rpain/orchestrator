@@ -388,9 +388,7 @@ review_known_items() {
     n="${record##*/iteration-}"; n="${n%.md}"
     case "$n" in ''|*[!0-9]*) continue ;; esac
     if [ "$((10#$n))" -gt "$boundary" ]; then
-      while IFS= read -r entry; do
-        waiting+="- $entry - waiting to be filed, iteration $n"$'\n'
-      done < <(section_entries "$record" '## Waiting to be filed')
+      entries_append waiting "$record" '## Waiting to be filed' "waiting to be filed, iteration $n"
     else
       while IFS= read -r entry; do
         # The issue number is the entry's leading #<n>; an entry without one
