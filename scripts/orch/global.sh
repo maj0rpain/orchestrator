@@ -484,14 +484,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               all four act on the active flow's issue,
                               refusing once the flow is done; for any other
                               issue use issue <op> <n> <file>
-  spec-review begin <n> [--carry-map]
+  spec-review begin <n> [--carry]
                               start a standalone spec review of issue <n>:
                               refuse while an active flow holds <n> - at spec
                               (pointing at next) or at implement or review
                               (pointing at redo) - and otherwise empty
                               .orchestrator/spec-review/<n>/ and print its
-                              path. --carry-map, on rounds 2 and later, keeps
-                              its map-implementability.md through the wipe.
+                              path. --carry, on rounds 2 and later, keeps
+                              its map-implementability.md and settled.md
+                              through the wipe, each when it exists.
                               Reads state.json only to compare, and never
                               writes it
   spec-review check <dir>     validate a round's <dir>/batch.md before the
@@ -529,7 +530,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               finds it) or to the body's ## Ticket section.
                               Writes: ticket text edits, then ticket
                               block/unblock, then the body, then any ticket
-                              retire, then the comment. The issue is state's,
+                              retire, then the comment, then the changelog
+                              appended to <dir>/settled.md. The issue is state's,
                               through spec update/comment, or --issue's,
                               through issue update/comment, never reading
                               state.json. Each GitHub write lands in
