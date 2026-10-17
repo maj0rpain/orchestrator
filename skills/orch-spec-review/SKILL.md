@@ -66,11 +66,11 @@ the round count, in order:
 - **Each round reads the body the previous round published.** Each round
   takes a fresh working directory and fetches the body and comments again:
   the standalone entry re-runs its steps from `spec-review begin <issue>`,
-  which empties the directory but for the code map it keeps on rounds 2 and
-  later. Nothing is lost: the previous round has already published.
+  which empties the directory but for the code map and the settled file it
+  keeps on rounds 2 and later. Nothing is lost: the previous round has already published.
 - **Only the code map carries over.** The Implementability lens's code map,
   `map-implementability.md`, is the one file a round hands the next: the
-  standalone entry keeps it with `--carry-map` (step 1). Findings
+  standalone entry keeps it with `--carry` (step 1). Findings
   never carry over: each round stays an independent look. Round 1 never
   inherits a map.
 - **The whole count runs.** A round that finds nothing, or whose edits are
@@ -109,10 +109,10 @@ fetched or published. This session checks the value, never `orch.sh`.
 Steps 1 to 4 below run at the start of every round, as **Rounds** says.
 
 1. **Begin**, before fetching: `bash "$ORCH" spec-review begin <issue>` on
-   round 1, and `bash "$ORCH" spec-review begin <issue> --carry-map` on
+   round 1, and `bash "$ORCH" spec-review begin <issue> --carry` on
    rounds 2 and later. It prints the working directory, `<dir>` from here on,
-   emptied for this run - except, with `--carry-map`, for the previous
-   round's `map-implementability.md`, kept when it exists.
+   emptied for this run - except, with `--carry`, for the previous round's
+   `map-implementability.md` and `settled.md`, each kept when it exists.
    If it dies, stop and relay its message - when an active flow holds this
    issue, the message names the command to run instead. This is the review's
    only read of `state.json`, and it goes through `orch.sh`.
@@ -480,4 +480,7 @@ leaves out a comment whose body opens with it.
 
 The comment is history, visible on the issue; the body is the truth.
 `<dir>/changelog.md` stays in the round's working directory after it is
-posted.
+posted. As its last step, once every GitHub write has landed, `apply` also
+appends the changelog, exactly as written, to the review-wide settled file
+`<dir>/settled.md`, creating it on round 1: a pause or a failed write before
+then appends nothing.

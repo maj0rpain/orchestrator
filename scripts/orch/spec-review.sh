@@ -24,15 +24,16 @@ cmd_spec_review() {
   esac
 }
 
-# --carry-map, given on rounds 2 and later, keeps the Implementability lens's
-# code map through the wipe (#1141): every other entry is deleted in place, so
-# the map is never moved and there is no restore step to fail.
+# --carry, given on rounds 2 and later, keeps what a round hands the next
+# through the wipe: the Implementability lens's code map (#1141) and the
+# settled file (#1185), each when it exists. Every other entry is deleted in
+# place, so neither is ever moved and there is no restore step to fail.
 spec_review_begin() {
-  local usage="usage: orch.sh spec-review begin <n> [--carry-map]"
+  local usage="usage: orch.sh spec-review begin <n> [--carry]"
   local carry=0
   case "$#" in
     1) ;;
-    2) [ "$2" = --carry-map ] || die "$usage"; carry=1 ;;
+    2) [ "$2" = --carry ] || die "$usage"; carry=1 ;;
     *) die "$usage" ;;
   esac
   local issue="$1"
@@ -56,7 +57,7 @@ spec_review_begin() {
   # spec-review/.
   local dir="$ORCH/spec-review/$issue"
   if [ "$carry" = 1 ] && [ -d "$dir" ]; then
-    find "$dir" -mindepth 1 -maxdepth 1 ! -name map-implementability.md -exec rm -rf {} +
+    find "$dir" -mindepth 1 -maxdepth 1 ! -name map-implementability.md ! -name settled.md -exec rm -rf {} +
   else
     rm -rf "$dir"
   fi
@@ -1067,7 +1068,8 @@ spec_review_local_write() {
 # [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended]
 # [--host-fallbacks <file>]: the round's answer applied, the tickets
 # followed, the body published when it changed, any retire run, and the
-# changelog written to <dir>/changelog.md and posted. Every check runs before
+# changelog written to <dir>/changelog.md, posted, and appended to the
+# review-wide settled file, <dir>/settled.md. Every check runs before
 # the first write. With an accepted edit and a ticket breakdown but no
 # --tickets it pauses, exit 3, before any GitHub write, printing the
 # breakdown kind.
@@ -1236,4 +1238,8 @@ spec_review_apply() {
     spec_review_write "$dir" "the retire of #$issue's ticket breakdown" cmd_ticket_retire "$issue"
   fi
   spec_review_write "$dir" "the changelog comment on issue #$issue" "${comment[@]}" "$dir/changelog.md"
+  # The settled file, last: a pause or a failed write before this point
+  # appends nothing, so a rerun never appends a changelog twice.
+  { printf '%s\n' "$log" >>"$dir/settled.md"; } 2>/dev/null \
+    || die "could not append the changelog to $dir/settled.md - every GitHub write landed: $(spec_review_landed "$dir")"
 }
