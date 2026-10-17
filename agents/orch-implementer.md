@@ -108,7 +108,9 @@ and return that file's four-line **Report** in place of this file's.
 2. **Build the ticket test-first**, per **Test-driven development** below,
    at those seams. A test that needs a seam the Testing
    Decisions do not name is a deviation: pick the most defensible seam,
-   record it, and carry on.
+   record it, and carry on. Before writing tests, read any test-helpers
+   reference or helper index the repo's agent files (`CLAUDE.md`,
+   `AGENTS.md`) point to.
 3. **Verify as you go**: run typechecking and single test files regularly,
    and the repo's full verification once, at the end.
 4. **Commit** your work to the current branch, already checked out. That

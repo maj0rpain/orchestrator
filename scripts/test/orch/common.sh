@@ -20,7 +20,7 @@ common_upcalls() {
   code="$(grep -v '^[[:space:]]*#' "$common_file")"
   for f in "$1"/orch/*.sh; do
     case "$(basename "$f")" in common.sh|gh.sh) continue ;; esac
-    grep -oE '^[A-Za-z_][A-Za-z0-9_]*\(\)' "$f" | sed 's/()$//'
+    col0_names "$f"
   done | sort -u | while IFS= read -r name; do
     if printf '%s\n' "$code" | grep -qw -- "$name"; then printf '%s\n' "$name"; fi
   done

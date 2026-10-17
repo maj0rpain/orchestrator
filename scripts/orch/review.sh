@@ -20,6 +20,8 @@ ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
 # the key existed, or a value nothing can count.
 readonly DEFAULT_BUDGET=5
 
+# review_budget: prints the flow's review budget from state, or DEFAULT_BUDGET
+# where none is set or the value is not a number.
 review_budget() {
   local b
   b="$(state_get budget)"
@@ -134,6 +136,7 @@ review_terminal_state() {
 # extension rather than POSIX, which is a line this file can hold because the
 # fractions only ever come from a test - the shipped defaults are whole seconds.
 float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
+# float_add <a> <b>: prints a + b to three decimal places.
 float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
 
 # awk compares a number against a non-numeric string as strings, which makes

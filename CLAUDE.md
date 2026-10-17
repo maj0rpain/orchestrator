@@ -4,7 +4,7 @@ A Claude Code plugin. See [CONTRIBUTING.md](CONTRIBUTING.md) for layout and auth
 
 ## Layout
 
-Shell scripts live in `scripts/` (`orch.sh`, `hook-*.sh`, …). `orch.sh` is a thin entry point: each noun's code lives in `scripts/orch/<noun>.sh` (`doctor.sh` among them), the concept modules with no noun, `checkout.sh` and `filed-finding.sh`, among them too, each helper in the module of the concept it serves, and only the primitives no concept owns in `scripts/orch/common.sh`. Tests live in `scripts/test/`, with the orch.sh suite's sections in `scripts/test/orch/` (one `<noun>.sh` per orch.sh noun, named as its module is, and `checkout.sh` and `filed-finding.sh` for the concept modules of those names, plus `common.sh`, `setup.sh` and `harness.sh`). There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
+Shell scripts live in `scripts/` (`orch.sh`, `hook-*.sh`, …). `orch.sh` is a thin entry point: each noun's code lives in `scripts/orch/<noun>.sh` (`doctor.sh` among them), the concept modules with no noun, `checkout.sh` and `filed-finding.sh`, among them too, each helper in the module of the concept it serves, and only the primitives no concept owns in `scripts/orch/common.sh`. Tests live in `scripts/test/`, with the orch.sh suite's sections in `scripts/test/orch/` (one `<noun>.sh` per orch.sh noun, named as its module is, and `checkout.sh` and `filed-finding.sh` for the concept modules of those names, plus `common.sh`, `setup.sh` and `harness.sh`). Repo-development tools that do not ship to users live in `scripts/dev/` (`helpers.sh`, the helper index). There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
 
 ## Agent skills
 
@@ -48,6 +48,11 @@ orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
 the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
 section must pass on its own.
 Helper placement is checked by harness.sh's placement section; its failure message states the rule.
+Before writing or reusing a helper, run `scripts/dev/helpers.sh` (orch.sh's
+modules) or `scripts/dev/helpers.sh --tests` (the shared test setup and the gh
+fake) instead of grepping, and read CONTRIBUTING's Test helpers subsection: the
+fixtures to reach for first, running one section under `bash -x`, and the
+bash-version rule.
 See CONTRIBUTING.md's Develop section.
 
 ## Versioning

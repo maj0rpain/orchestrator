@@ -128,7 +128,7 @@ doctor_callbacks() {
   code="$(for f in "$1/orch.sh" "$1"/orch/*.sh; do
     [ "$f" = "$doctor_file" ] || grep -v '^[[:space:]]*#' "$f"
   done)"
-  grep -oE '^[A-Za-z_][A-Za-z0-9_]*\(\)' "$doctor_file" | sed 's/()$//' \
+  col0_names "$doctor_file" \
     | while IFS= read -r name; do
         [ "$name" = cmd_doctor ] && continue
         if printf '%s\n' "$code" | grep -qw -- "$name"; then printf '%s\n' "$name"; fi
