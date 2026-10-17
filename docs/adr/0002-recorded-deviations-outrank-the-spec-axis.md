@@ -1,5 +1,9 @@
 # A recorded deviation outranks the Spec axis
 
+Amended by ADR-0045: the Spec reviewer now reads `03-implement.md`'s
+**Deviations**, from its known-items file, and verifies what each one built;
+a recorded deviation still outranks it.
+
 Superseded in part by ADR-0018: the Spec axis is now reviewed by the plugin's
 own `orch-reviewer-spec` agent, not `code-review`'s Spec sub-agent. That
 reviewer still does not see `03-implement.md`, and a recorded deviation still

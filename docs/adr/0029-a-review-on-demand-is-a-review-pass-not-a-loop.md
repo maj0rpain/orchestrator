@@ -1,5 +1,7 @@
 # A review on demand is a review pass, not a loop
 
+Amended by ADR-0045: a review pass's reviewers are told the pass's known items, and hold back the findings those already carry.
+
 Superseded in part by ADR-0043: a review pass gains a third outcome beside fix and decline - a spec question, put to a human - and a standalone review pass may turn a PR into a draft or mark one ready.
 
 Supersedes in part ADR-0021: a quick implementation's reviewer prompts no longer carry iteration `01` or a report path from `quick path`; both come from `review-pass begin`.

@@ -510,6 +510,10 @@ A filed finding that is a spec question also holds the PR out of ready until a h
 Findings the loop demoted on a human's earlier decision are reported, never
 filed.
 
+**Known item**:
+Something a review has already dealt with - a finding waiting to be filed or filed by a review loop, a road a rejected alternative closed, a deviation, a finding declined by a review pass, or a question a spec ruling answered - that a reviewer is told about so it does not raise it again. A reviewer raises a known item again only when its location or cause has changed, and the Spec reviewer reports a deviation no commit carries out.
+_Avoid_: known issue, duplicate
+
 **Finding triage**:
 Checking open filed findings against the current default branch and settling
 each: closed as completed when the code it names has since been fixed,
