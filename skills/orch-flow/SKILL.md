@@ -137,8 +137,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    run the phase from step 1, exactly as it does for every flow that has no
    adopted issue. Non-empty means the issue already exists and is already
    recorded, so steps 1-3 do not run; instead run the marker check and 0a-0d
-   below. Three cases
-   reach them: an issue adopted after an interview about it, whose body
+   below. Three cases reach them: an issue adopted after an interview about it, whose body
    predates the plan; a blueprint adopted at init, whose body is already a
    spec; and a default `redo spec`, whose body carries the edits the previous
    spec review accepted, newer than `01-plan.md`. Because nothing records an
