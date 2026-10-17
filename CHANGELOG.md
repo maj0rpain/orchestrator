@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.12.0
+
+A flow's spec phase now stops its session once it has written the spec: after
+`orch-to-spec` publishes the issue, or after a rewrite of an adopted one,
+`orch.sh spec pause` writes a `spec-paused` marker and prints a stop block
+naming the host's way to start a fresh session. The fresh session's spec phase
+sees the marker and goes straight to the spec review, which then runs without
+the spec writer's code exploration in its context. `redo spec` moves the
+marker aside with the stale handoffs.
+
 ## 4.11.5
 
 A multi-round spec review no longer puts the same point to the human twice: `spec-review apply` appends each round's changelog to a settled file, `settled.md`, that `spec-review begin --carry` (renamed from `--carry-map`, which is now refused) and a flow's round Inputs carry to the next round, and every lens reopens a ruling in it only on evidence the ruling did not have.
