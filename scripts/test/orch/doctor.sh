@@ -953,6 +953,13 @@ complete_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a fresh flow is healthy" "$st" 0
 assert_contains "reports the phase" "$out" "phase: spec"
+# The spec-paused marker (#1181) is no handoff: doctor's verdict ignores it.
+healthy_out="$out"
+writeln 7 >"$(dirname "$("$ORCH" handoff path spec)")/spec-paused"
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a handoff folder holding spec-paused leaves the flow healthy" "$st" 0
+assert_eq "with the same report" "$out" "$healthy_out"
+rm -f "$(dirname "$("$ORCH" handoff path spec)")/spec-paused"
 # "published" names only one of the two paths an issue can arrive by (orch-to-spec
 # publishing vs. adoption at init, docs/adr/0005) - neutral wording here must
 # not imply the other path doesn't exist.

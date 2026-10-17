@@ -15,6 +15,10 @@ next_phase_cmd() {
   esac
 }
 
+# Prints a block that ends a session: <headline>, a blank line, then the
+# indented Next line naming the fresh session to start, through next_phase_cmd.
+print_next_block() { printf '%s\n\n  Next: %s\n' "$1" "$(next_phase_cmd)"; }
+
 # advance needs the base SHA the review diffs against before leaving implement.
 require_base_sha() { require_field "$1" base_sha "no base SHA recorded in state - branch create records it"; }
 
@@ -24,13 +28,11 @@ require_base_sha() { require_field "$1" base_sha "no base SHA recorded in state 
 # phase is the writer of the handoff <phase> consumes, read from the phase
 # table; done and a phase outside it have none, so no boundary.
 print_boundary() {
-  local phase="$1" done_name file next
+  local phase="$1" done_name file
   done_name="$(phase_writer "$phase")" ||
     die "no phase boundary at phase: $phase - the flow is not between phases"
   file="$(handoff_file_for "$phase")"
-  next="$(next_phase_cmd)"
-  printf 'Phase %s complete. Handoff written to %s/%s.\n\n  Next: %s\n' \
-    "$done_name" "$HANDOFF_DIR" "$file" "$next"
+  print_next_block "Phase $done_name complete. Handoff written to $HANDOFF_DIR/$file."
 }
 
 cmd_phase() {

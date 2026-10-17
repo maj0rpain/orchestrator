@@ -54,6 +54,10 @@ from a single session (ADR-0001), so inside the review phase the unit of fresh
 context is the loop, not the iteration. The loop is the unit of fresh context
 for its driver; the reviewers and the fixer get fresh context every iteration.
 A flow's spec review is a step of the spec phase, not a phase of its own.
+Unlike the review phase, the spec phase can span two sessions: when it writes
+the spec, the session that publishes or rewrites the issue stops there, and the
+spec review, ticket breakdown and handoff run in a fresh one, still in the spec
+phase.
 
 Note the tense: the recorded phase names the stage that runs **next**, not the
 one that just finished.

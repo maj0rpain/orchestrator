@@ -145,10 +145,12 @@ cmd_redo_spec() {
   # stale once the spec is being redone, so phase advance must not pass on
   # them (#279). redo_count stays put: it counts review step-backs and names
   # the retired branch, so the directory is told apart by a UTC timestamp.
+  # The spec-paused marker (#1181) moves with them, exactly when they do: left
+  # behind, it would carry the redone spec phase past its rewrite question.
   local dest
   dest="$HANDOFF_DIR/pre-redo-spec-$(dir_stamp)"
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
-  retire_handoffs "$dest" $(handoffs_after spec)
+  retire_handoffs "$dest" $(handoffs_after spec) "$SPEC_PAUSED_MARKER"
   phase_write spec
 }
 

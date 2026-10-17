@@ -339,6 +339,10 @@ state_fixture redo_count 2
 writeln '# plan' >.orchestrator/handoff/01-plan.md
 writeln '# spec' >.orchestrator/handoff/02-spec.md
 writeln '# implement' >.orchestrator/handoff/03-implement.md
+# The spec-paused marker (#1181) names the issue the spec phase last stopped
+# after writing; it moves aside with the stale handoffs, so a redone spec phase
+# never skips its rewrite question on an old one.
+writeln 40 >.orchestrator/handoff/spec-paused
 fake_github
 fake_issue 40 open
 before="$(fake_snapshot)"
@@ -355,6 +359,9 @@ assert_eq "and the stale implement handoff" "$(cat "$retired/03-implement.md" 2>
 assert_eq "leaving neither behind" \
   "$(ls .orchestrator/handoff/02-spec.md .orchestrator/handoff/03-implement.md 2>/dev/null)" ""
 assert_eq "the plan handoff untouched" "$(cat .orchestrator/handoff/01-plan.md)" "# plan"
+assert_eq "moves the spec-paused marker into the same directory" "$(cat "$retired/spec-paused" 2>/dev/null)" "40"
+assert_eq "so the handoff folder no longer holds it" \
+  "$(on_disk .orchestrator/handoff/spec-paused)" "absent"
 assert_eq "without bumping redo_count" "$("$ORCH" state get redo_count)" "2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance then refuses to leave spec" "$st" 1
@@ -366,6 +373,7 @@ state_fixture phase implement
 # meet a taken destination, which retire_handoffs refuses (#304).
 rm -rf .orchestrator/handoff/pre-redo-spec-*
 writeln '# spec again' >.orchestrator/handoff/02-spec.md
+writeln 41 >.orchestrator/handoff/spec-paused
 : >"$GH_FIXTURE/env.log"
 fake_github
 fake_issue 41 open
@@ -374,6 +382,10 @@ assert_status "--new-issue also steps back to spec" "$st" 0
 # shellcheck disable=SC2010 # counts what the glob matched; ls prints nothing when it matches none
 assert_eq "with no implement handoff, retires the spec handoff alone" \
   "$(ls .orchestrator/handoff/pre-redo-spec-*/02-spec.md 2>/dev/null | grep -c .) $(ls .orchestrator/handoff/pre-redo-spec-*/03-implement.md 2>/dev/null | grep -c .)" "1 0"
+assert_eq "--new-issue moves the spec-paused marker aside too" \
+  "$(cat .orchestrator/handoff/pre-redo-spec-*/spec-paused 2>/dev/null)" "41"
+assert_eq "leaving none in the handoff folder" \
+  "$(on_disk .orchestrator/handoff/spec-paused)" "absent"
 assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
 assert_eq "clearing the old issue" "$("$ORCH" state get issue)" ""
 assert_eq "closes the old issue" "$(fake_state_of 41)" "CLOSED"
@@ -396,6 +408,17 @@ assert_eq "leaving the phase where it was rather than half-finishing" \
 out="$("$ORCH" redo spec --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh redo spec"
+
+fake_unfail
+state_fixture phase implement
+"$ORCH" state set issue 43
+fake_issue 43 open
+rm -rf .orchestrator/handoff/pre-redo-spec-* .orchestrator/handoff/spec-paused
+writeln '# spec' >.orchestrator/handoff/02-spec.md
+out="$("$ORCH" redo spec 2>&1)"; st=$?
+assert_status "with no spec-paused marker, redo spec still succeeds" "$st" 0
+assert_eq "retiring the spec handoff as before" "$(cat .orchestrator/handoff/pre-redo-spec-*/02-spec.md 2>/dev/null)" "# spec"
+assert_eq "and leaving no marker behind" "$(ls .orchestrator/handoff/pre-redo-spec-*/spec-paused 2>/dev/null)" ""
 restore_suite_env
 
 # --- redo spec retires the ticket breakdown (#334) ---------------------------
@@ -469,6 +492,7 @@ assert_eq "and writes nothing to GitHub" "$(fake_snapshot)" "$before"
 
 rt4="$("$ORCH" ticket publish 53 "Four" "$tbody")"
 redo_spec_at 53
+writeln 53 >.orchestrator/handoff/spec-paused
 fake_fail adapter_sub_issue_unlink
 out="$("$ORCH" redo spec 2>&1)"; st=$?
 assert_status "a gh that will not unlink a ticket fails redo spec" "$st" 1
@@ -476,6 +500,8 @@ assert_contains "naming what failed" "$out" "gh could not unlink ticket #$rt4"
 assert_eq "leaving the phase at implement" "$("$ORCH" state get phase)" "implement"
 assert_eq "and the handoffs in place" "$(cat .orchestrator/handoff/02-spec.md .orchestrator/handoff/03-implement.md)" \
   "$(printf '# spec\n# implement')"
+assert_eq "and the spec-paused marker in place with them" "$(cat .orchestrator/handoff/spec-paused 2>/dev/null)" "53"
+rm -f .orchestrator/handoff/spec-paused
 fake_unfail
 fake_fail adapter_sub_issues
 out="$("$ORCH" redo spec 2>&1)"; st=$?
