@@ -1163,3 +1163,136 @@ out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "comments, longer names and the gh module pass" "$st" 0
 assert_eq "and print nothing" "$out" ""
 rm -rf "${gh_op_dir%/scripts}"
+
+# --- the helper index (#1144) -------------------------------------------------
+# scripts/dev/helpers.sh over the real tree, its listing checked against the
+# functions bash itself defines when it sources each covered file, then over a
+# copy of scripts/ with a planted file.
+echo
+echo "the helper index (#1144)"
+HELPERS="$PLUGIN_ROOT/scripts/dev/helpers.sh"
+
+# index_names <output>: each function line of a helpers.sh listing as
+# "<header path> <name>", sorted.
+index_names() {
+  printf '%s\n' "$1" | awk -F '\t' '
+    /^# / { file = substr($0, 3); next }
+    NF >= 2 { print file " " $1 }' | LC_ALL=C sort
+}
+
+# col0_names <file>: the names of the functions defined at column 0 of <file>.
+col0_names() {
+  grep -oE '^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)' "$1" | sed 's/[[:space:]]*()$//'
+}
+
+# sourced_names <file>: the functions a fresh bash defines by sourcing <file>.
+sourced_names() {
+  env -i bash -c 'source "$1" >/dev/null 2>&1; declare -F' _ "$1" | sed 's/^declare -f //'
+}
+
+# index_expected <rel>...: "<rel> <name>" for every function each covered file
+# defines but cmd_*, sorted - from declare -F, but from the column-0 grep for
+# setup.sh, which runs the suite's setup when it loads.
+index_expected() {
+  local rel
+  for rel in "$@"; do
+    if [ "$rel" = scripts/test/orch/setup.sh ]; then
+      col0_names "$PLUGIN_ROOT/$rel"
+    else
+      sourced_names "$PLUGIN_ROOT/$rel"
+    fi | grep -v '^cmd_' | sed "s|^|$rel |"
+  done | LC_ALL=C sort
+}
+
+index_modules=()
+for f in "$PLUGIN_ROOT"/scripts/orch/*.sh; do index_modules+=("scripts/orch/${f##*/}"); done
+index_tests=(scripts/test/orch/setup.sh scripts/test/gh_adapter_fake.sh)
+
+grep_disagrees=""
+for rel in "${index_modules[@]}" scripts/test/gh_adapter_fake.sh; do
+  [ "$(col0_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" = \
+    "$(sourced_names "$PLUGIN_ROOT/$rel" | LC_ALL=C sort)" ] || grep_disagrees+=" $rel"
+done
+assert_eq "the column-0 grep finds what declare -F finds, in every file that sources cleanly" \
+  "$grep_disagrees" ""
+
+out="$(cd / && "$HELPERS")"; st=$?
+assert_status "the default listing succeeds" "$st" 0
+assert_eq "it lists exactly the non-cmd_ functions of every module" \
+  "$(index_names "$out")" "$(index_expected "${index_modules[@]}")"
+assert_eq "under one header per module, in file order, relative to the repo root" \
+  "$(printf '%s\n' "$out" | grep '^# ')" "$(printf '# %s\n' "${index_modules[@]}")"
+index_default="$out"
+
+out="$(cd / && "$HELPERS" --tests)"; st=$?
+assert_status "the --tests listing succeeds" "$st" 0
+assert_eq "--tests lists exactly the non-cmd_ functions of the shared setup and the gh fake" \
+  "$(index_names "$out")" "$(index_expected "${index_tests[@]}")"
+assert_eq "under their two headers" "$(printf '%s\n' "$out" | grep '^# ')" \
+  "$(printf '# %s\n' "${index_tests[@]}")"
+
+undescribed=""
+for name in base_branch base_source section_body review_budget float_add \
+  require_state ticket_worktree_path fake_online orch_gh_failing; do
+  printf '%s\n' "$index_default"$'\n'"$out" | grep -qE "^$name"$'\t''[^-]' \
+    || undescribed+=" $name"
+done
+assert_eq "each of the nine newly commented helpers prints a description" "$undescribed" ""
+
+index_dir="$(tree_copy scripts)"
+plant_file "$index_dir/orch" zz-planted.sh <<'PLANTED'
+  # planted_one <a> [b]: the first line of its comment,
+  # not its second.
+  planted_one() { :; }
+  # Spaced, its comment holding no signature.
+  planted_spaced () {
+    :
+  }
+  planted_bare() { :; }
+  # The pair below shares this one comment.
+  planted_first() { :; }
+  planted_second() { :; }
+  # cmd_planted: an entry point.
+  cmd_planted() { :; }
+  planted_awk() {
+    awk '
+  function planted_in_awk() { return 1 }
+  planted_awk_col0() { return 1 }
+    '
+    cat <<'DOC'
+  planted_in_doc() { :; }
+  DOC
+  }
+  planted_last() { :; }
+  # planted_long <a> <b> <c>:
+  # the second line, where the signature filled the first.
+  planted_long() { :; }
+PLANTED
+index_want="# orch/zz-planted.sh
+planted_one	the first line of its comment,
+planted_spaced	Spaced, its comment holding no signature.
+planted_bare	-
+planted_first	The pair below shares this one comment.
+planted_second	-
+planted_awk	-
+planted_last	-
+planted_long	the second line, where the signature filled the first."
+out="$(cd "$index_dir" && ./dev/helpers.sh orch/zz-planted.sh)"; st=$?
+assert_status "a file argument succeeds" "$st" 0
+assert_eq "it lists that file alone, under the path as given: one-liners and name () definitions, a stripped signature or the line after one filling the first, - for no comment directly above, no cmd_ or embedded function" \
+  "$out" "$index_want"
+out="$(cd / && "$index_dir/dev/helpers.sh" "$index_dir/orch/zz-planted.sh")"; st=$?
+assert_eq "an absolute file argument is its own header" \
+  "$(printf '%s\n' "$out" | sed -n 1p)" "# $index_dir/orch/zz-planted.sh"
+out="$(cd / && "$index_dir/dev/helpers.sh")"
+assert_eq "the default listing of a copy includes a planted module" \
+  "$(printf '%s\n' "$out" | grep -c '^# scripts/orch/zz-planted.sh$')" 1
+
+for args in "--tests orch/zz-planted.sh" "orch/missing.sh" "--bogus" \
+  "orch/zz-planted.sh orch/base.sh"; do
+  # shellcheck disable=SC2086 # the words are the arguments
+  out="$(cd "$index_dir" && ./dev/helpers.sh $args 2>&1 >/dev/null)"; st=$?
+  assert_status "helpers.sh $args is a usage error" "$st" 2
+  assert_contains "and prints a usage line on stderr" "$out" "usage: "
+done
+rm -rf "${index_dir%/scripts}"

@@ -40,6 +40,7 @@ is_branch_name() {
 # abort and archiving, every worktree of the clone shares it, and it never
 # travels with a push.
 base_setting() { git config --get orchestrator.base 2>/dev/null || true; }
+# base_branch: prints the base branch - the configured one, else the default branch.
 base_branch() {
   local b
   b="$(base_setting)"
@@ -63,6 +64,7 @@ recorded_base() {
   git config --get "branch.$1.orchestrator-base" 2>/dev/null || base_branch
 }
 
+# base_source: prints `set` when a base branch is configured, else `default`.
 base_source() { if [ -n "$(base_setting)" ]; then echo set; else echo default; fi; }
 
 # Dies unless origin answers that it has branch $1 - the one check both

@@ -119,6 +119,8 @@ host_fallbacks_required() {
   [ ! -f "$STATE" ] || [ "$(state_get host_fallbacks 2>/dev/null)" = true ]
 }
 
+# section_body <file> <heading>: prints the lines of <file> under the line
+# exactly <heading>, up to the next `## ` heading.
 section_body() {
   awk -v h="$2" '$0 == h { inside = 1; next } /^## / { inside = 0 } inside { print }' "$1"
 }

@@ -494,6 +494,7 @@ fake_default_branch() { printf '%s' "$1" >"$ORCH_GH_FAKE_STORE/default_branch"; 
 # fake_offline: every operation fails with a connection error, as with GitHub
 # unreachable. fake_online undoes it, and doctor.sh's fake_noauth too.
 fake_offline() { : >"$ORCH_GH_FAKE_STORE/offline"; }
+# fake_online: GitHub reachable and authenticated again.
 fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth"; }
 
 # --- the fixture gh (adapter contract tests, #280) -----------------------------
@@ -547,6 +548,8 @@ gh_calls() {
 # settles on origin/HEAD, so a test using it pins that rather than leaving it to
 # this machine's gh.
 GH_FAILING="$(gh_fixture && printf '%s\n' "$GH_FIXTURE/bin")"
+# orch_gh_failing <args>...: runs orch.sh with the failing fixture gh first
+# on PATH.
 orch_gh_failing() { PATH="$GH_FAILING:$PATH" "$ORCH" "$@"; }
 
 # sc_add <slug> [args...]: makes a fixture side checkout quietly. add runs the
