@@ -183,3 +183,55 @@ assert_contains "help documents the spec verb" "$("$ORCH" help)" "spec fetch"
 assert_contains "help says the spec ops refuse once the flow is done" "$("$ORCH" help)" "refusing once the flow is done"
 assert_contains "and points at issue <op> for any other issue" "$("$ORCH" help)" "issue <op> <n> <file>"
 restore_suite_env
+
+# --- spec pause ---------------------------------------------------------------
+# The spec phase's stop once it has written the spec (#1181): the marker names
+# the flow's issue so the fresh session's spec phase goes straight to the spec
+# review, and the block names the host's way to start that session. The phase
+# stays spec - this is a stop inside a phase, not a boundary.
+echo
+echo "spec pause"
+fresh_flow pausetest
+fake_github
+state_fixture phase spec
+marker="$(dirname "$("$ORCH" handoff path spec)")/spec-paused"
+out="$("$ORCH" spec pause 2>&1)"; st=$?
+assert_status "spec pause refuses when state records no issue" "$st" 1
+assert_contains "naming the phase that records one" "$out" "spec phase"
+assert_eq "and writes no marker" "$([ -e "$marker" ] && echo present || echo absent)" "absent"
+"$ORCH" state set issue 21
+out="$("$ORCH" spec pause 2>&1)"; st=$?
+assert_status "spec pause succeeds at phase spec with an issue" "$st" 0
+assert_eq "printing the stop block with the Claude Code Next line" "$out" \
+  "$(printf 'Spec #21 written. The spec review runs in a fresh session.\n\n  Next: /clear, then /orchestrator:next')"
+assert_eq "writing the marker naming the recorded issue" "$(cat "$marker")" "21"
+assert_eq "and leaving the phase at spec" "$("$ORCH" state get phase)" "spec"
+printf '99\n' >"$marker"
+out="$(ORCHESTRATOR_HOST=junie "$ORCH" spec pause 2>&1)"; st=$?
+assert_status "spec pause runs again over a marker already there" "$st" 0
+assert_eq "overwriting it with the recorded issue" "$(cat "$marker")" "21"
+assert_eq "on Junie the Next line is Junie's" "$out" \
+  "$(printf 'Spec #21 written. The spec review runs in a fresh session.\n\n  Next: /new, then ask for the next phase with /orch-flow')"
+rm -f "$marker"
+for ph in implement review; do
+  state_fixture phase "$ph"
+  out="$("$ORCH" spec pause 2>&1)"; st=$?
+  assert_status "spec pause refuses at phase $ph" "$st" 1
+  assert_contains "saying it runs only in the spec phase" "$out" "spec pause runs only in the spec phase"
+  assert_eq "and writes no marker" "$([ -e "$marker" ] && echo present || echo absent)" "absent"
+done
+state_fixture phase "done"
+out="$("$ORCH" spec pause 2>&1)"; st=$?
+assert_status "spec pause refuses once the flow is done" "$st" 1
+assert_contains "naming the flow's issue" "$out" "the flow on issue #21 is done"
+assert_eq "and writes no marker" "$([ -e "$marker" ] && echo present || echo absent)" "absent"
+state_fixture phase spec
+out="$("$ORCH" spec pause extra 2>&1)"; st=$?
+assert_status "spec pause takes no arguments" "$st" 1
+assert_contains "with the usage" "$out" "usage: orch.sh spec pause"
+assert_contains "help documents spec pause" "$("$ORCH" help)" "spec pause"
+new_repo >/dev/null
+out="$("$ORCH" spec pause 2>&1)"; st=$?
+assert_status "spec pause refuses with no flow" "$st" 1
+assert_contains "saying there is no active flow" "$out" "no active flow"
+restore_suite_env

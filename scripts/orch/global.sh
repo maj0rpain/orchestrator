@@ -484,6 +484,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               all four act on the active flow's issue,
                               refusing once the flow is done; for any other
                               issue use issue <op> <n> <file>
+  spec pause                  stop the spec phase's session once the spec is
+                              written: write handoff/spec-paused naming the
+                              flow's issue, then print the stop block naming
+                              the host's way to start a fresh session; the
+                              phase stays spec. Refuses without a recorded
+                              issue, outside the spec phase, or once the flow
+                              is done
   spec-review begin <n> [--carry-map]
                               start a standalone spec review of issue <n>:
                               refuse while an active flow holds <n> - at spec

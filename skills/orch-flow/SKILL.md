@@ -136,14 +136,22 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 0. Check `bash "$ORCH" state get issue`. Empty means no `--issue` was given -
    run the phase from step 1, exactly as it does for every flow that has no
    adopted issue. Non-empty means the issue already exists and is already
-   recorded, so steps 1-3 do not run; instead run 0a-0d below. Three cases
+   recorded, so steps 1-3 do not run; instead run the marker check and 0a-0d
+   below. Three cases
    reach them: an issue adopted after an interview about it, whose body
    predates the plan; a blueprint adopted at init, whose body is already a
    spec; and a default `redo spec`, whose body carries the edits the previous
    spec review accepted, newer than `01-plan.md`. Because nothing records an
    issue's origin (`docs/adr/0005-an-adopted-issues-origin-is-not-recorded.md`),
-   a spec phase resumed after its own step 3, or after a rewrite, reaches them
-   too.
+   a spec phase resumed after its own step 3, or after a step-0c rewrite,
+   reaches them too: that session stopped with `spec pause`, so the resumed
+   phase takes the marker check and goes straight to step 4.
+   - **Marker check.** If `.orchestrator/handoff/spec-paused` exists and
+     holds the issue number `state get issue` prints, ask nothing and go to
+     step 4. `spec pause` writes it when the session that wrote the spec
+     stops, so the spec is already written and the rewrite question would be
+     asked about an issue just written. A marker naming another issue counts
+     as no marker: go on to 0a.
    - **0a. Redo check.** If any `.orchestrator/handoff/pre-redo-spec-*` folder
      exists, ask nothing and go to step 4. `redo spec` leaves that folder for
      either kind of redo and nothing removes it for the rest of the flow, so
@@ -168,8 +176,8 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
      stops without reporting the issue number, stop the phase: leave the
      state as it is (the phase stays `spec`), say what blocked, and leave
      whatever it already published - a replaced body, a retired breakdown -
-     in place; a re-run of the phase reaches 0b again. Otherwise go to
-     step 4.
+     in place; a re-run of the phase reaches 0b again. Otherwise stop the
+     session, as at the end of step 3.
    - **0d. On As it stands**, go to step 4.
 1. Read `bash "$ORCH" handoff path spec`. The **Rejected alternatives** section is
    load-bearing: do not re-propose anything it rules out.
@@ -177,6 +185,14 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    with the user - that exchange is the point, so do not skip it - and
    reports the issue it published.
 3. Record the published issue: `bash "$ORCH" state set issue <number>`.
+   Then stop the session: the spec review runs in a fresh one, without this
+   session's code exploration. Run `bash "$ORCH" spec pause`; it writes the
+   `spec-paused` marker, leaves the phase at `spec`, and prints the stop
+   block. Relay its output verbatim and say nothing after it, as **Printing
+   the boundary** says for a phase boundary. On a non-zero exit, relay its
+   `orch:` message and stop. The fresh session's step 0 takes the marker
+   check to step 4. Step 0d and step 0a explore no code, so they go to step
+   4 in this session and never stop here.
 4. Ask the round count. **The question blocks** - ask it as one question
    with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
    on Junie), before the first
@@ -323,7 +339,9 @@ one did.
 Every phase ends the same way, because the next phase needs a session this one
 cannot start. `orch.sh` owns the block that says so, and its host's `Next:`
 line: `phase advance` prints it on success, and `phase boundary` prints it at
-flow start. Relay that output verbatim - never compose the block yourself.
+flow start. The spec phase's stop after writing the spec ends the same way,
+through `spec pause`. Relay that output verbatim - never compose the block
+yourself.
 
 Say nothing after it. Do not start the next phase, and do not offer to.
 
@@ -398,7 +416,9 @@ If GitHub fails while retiring, it dies with the phase still `implement`, and
 a re-run resumes. Either way the
 stale `02-spec.md` handoff, and `03-implement.md` if one exists, move into
 `.orchestrator/handoff/pre-redo-spec-<UTC timestamp>/`, so `phase advance`
-cannot leave the redone spec phase on them; `state.redo_count` is not bumped.
+cannot leave the redone spec phase on them, and the `spec-paused` marker moves
+with them, so it cannot carry the redone phase past step 0; `state.redo_count`
+is not bumped.
 `01-plan.md` is never touched by either redo. `--new-issue`
 additionally closes the old issue first (never deletes it) with a comment
 explaining why, and clears `state.issue`, so `orch-to-spec` runs again from

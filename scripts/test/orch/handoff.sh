@@ -187,6 +187,18 @@ out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
 assert_status "a pre-1.0.0 flow's handoff validates without Host fallbacks" "$st" 0
 printf '%s\n' "$st_saved" >.orchestrator/state.json
 complete_handoff "$h"
+# The spec-paused marker (#1181) shares the handoff folder but is no handoff:
+# beside a complete handoff or an incomplete one, the verdict is unchanged.
+before_out="$("$ORCH" handoff validate "$h" 2>&1)"
+writeln 7 >"$(dirname "$h")/spec-paused"
+out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
+assert_status "a folder holding spec-paused still passes a complete handoff" "$st" 0
+assert_eq "with the same report" "$out" "$before_out"
+writeln '## Decisions' 'Use X.' >"$h"
+out="$("$ORCH" handoff validate "$h" 2>&1)"; st=$?
+assert_status "and still fails an incomplete one" "$st" 1
+rm -f "$(dirname "$h")/spec-paused"
+complete_handoff "$h"
 restore_suite_env
 
 # --- handoff section --------------------------------------------------------
