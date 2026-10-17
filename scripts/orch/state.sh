@@ -49,6 +49,7 @@ state_write() { flow_state_write "$STATE" "$1" "$2"; }
 # flow_state_write_string on $STATE.
 state_write_string() { flow_state_write_string "$STATE" "$1" "$2"; }
 
+# require_state: dies unless an active flow's state file exists.
 require_state() {
   [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
 }

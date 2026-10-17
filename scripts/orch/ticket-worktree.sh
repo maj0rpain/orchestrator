@@ -17,6 +17,7 @@ ticket_worktree_number() {
   printf '%s\n' "$1"
 }
 
+# ticket_worktree_path <n>: prints the path of ticket #<n>'s worktree.
 ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
 
 # forked_from_key <branch>: the git config key that records the branch ticket
