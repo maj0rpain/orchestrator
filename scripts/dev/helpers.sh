@@ -40,19 +40,19 @@ done
 # each heredoc's body up to its terminator.
 index() {
   awk -v header="$2" '
-    BEGIN { print "# " header; nh = 0; hi = 1; q = "" }
+    BEGIN { print "# " header; nheredocs = 0; cur_heredoc = 1; open_quote = "" }
     # describe(name): the first line of the comment block directly above, its
-    # `#` and any `<name> <args>:` signature dropped - or the second line of the block
-    # line, where the signature filled the first; - when there is none.
+    # `#` and any `<name> <args>:` signature dropped - or the second line
+    # of the block, where the signature filled the first; - when there is none.
     function describe(name,   desc, rest) {
       if (!incomment) return "-"
-      desc = uncomment(blk[1])
+      desc = uncomment(comment_lines[1])
       if (substr(desc, 1, length(name)) == name) {
         rest = substr(desc, length(name) + 1)
         if (match(rest, /^([ \t][^:]*)?:([ \t]|$)/)) desc = substr(rest, RLENGTH + 1)
       }
       sub(/^[ \t]+/, "", desc)
-      if (desc == "" && nb > 1) desc = uncomment(blk[2])
+      if (desc == "" && ncomment > 1) desc = uncomment(comment_lines[2])
       return desc == "" ? "-" : desc
     }
     function uncomment(line) {
@@ -63,28 +63,28 @@ index() {
       n = length(line); prev = " "
       for (i = 1; i <= n; i++) {
         c = substr(line, i, 1)
-        if (q == "'\''") { if (c == "'\''") q = ""; prev = c; continue }
-        if (q == "$") {
+        if (open_quote == "'\''") { if (c == "'\''") open_quote = ""; prev = c; continue }
+        if (open_quote == "$") {
           if (c == "\\") { i++; continue }
-          if (c == "'\''") q = ""
+          if (c == "'\''") open_quote = ""
           prev = c; continue
         }
-        if (q == "\"") {
+        if (open_quote == "\"") {
           if (c == "\\") { i++; continue }
-          if (c == "\"") q = ""
+          if (c == "\"") open_quote = ""
           prev = c; continue
         }
         if (c == "\\") { i++; prev = " "; continue }
         if (c == "#" && prev ~ /[ \t;(|&]/) return
-        if (c == "$" && substr(line, i + 1, 1) == "'\''") { q = "$"; i++; prev = c; continue }
-        if (c == "'\''" || c == "\"") { q = c; prev = c; continue }
+        if (c == "$" && substr(line, i + 1, 1) == "'\''") { open_quote = "$"; i++; prev = c; continue }
+        if (c == "'\''" || c == "\"") { open_quote = c; prev = c; continue }
         if (c == "<" && substr(line, i, 2) == "<<" && substr(line, i + 2, 1) != "<") {
           rest = substr(line, i + 2); strip = 0
           if (substr(rest, 1, 1) == "-") { strip = 1; rest = substr(rest, 2) }
           match(rest, /^[ \t]*/); ws = RLENGTH; rest = substr(rest, ws + 1)
           if (match(rest, /^("[A-Za-z_][A-Za-z0-9_]*"|'\''[A-Za-z_][A-Za-z0-9_]*'\''|[A-Za-z_][A-Za-z0-9_]*)/)) {
             word = substr(rest, 1, RLENGTH); gsub(/["'\'']/, "", word)
-            nh++; hword[nh] = word; hstrip[nh] = strip
+            nheredocs++; hword[nheredocs] = word; hstrip[nheredocs] = strip
             i += 1 + strip + ws + RLENGTH
             prev = " "; continue
           }
@@ -93,20 +93,20 @@ index() {
       }
     }
     {
-      if (hi <= nh) {
+      if (cur_heredoc <= nheredocs) {
         t = $0
-        if (hstrip[hi]) sub(/^\t*/, "", t)
-        if (t == hword[hi]) { hi++; if (hi > nh) { nh = 0; hi = 1 } }
+        if (hstrip[cur_heredoc]) sub(/^\t*/, "", t)
+        if (t == hword[cur_heredoc]) { cur_heredoc++; if (cur_heredoc > nheredocs) { nheredocs = 0; cur_heredoc = 1 } }
         incomment = 0; next
       }
-      if (q != "") { scan($0); incomment = 0; next }
+      if (open_quote != "") { scan($0); incomment = 0; next }
       if (match($0, /^[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)/)) {
         name = substr($0, 1, RLENGTH); sub(/[ \t]*\(\)$/, "", name)
         if (name !~ /^cmd_/) print name "\t" describe(name)
       }
       if ($0 ~ /^[ \t]*#/) {
-        if (!incomment) nb = 0
-        blk[++nb] = $0
+        if (!incomment) ncomment = 0
+        comment_lines[++ncomment] = $0
         incomment = 1
       } else {
         incomment = 0
