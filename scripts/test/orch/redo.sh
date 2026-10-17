@@ -361,7 +361,7 @@ assert_eq "leaving neither behind" \
 assert_eq "the plan handoff untouched" "$(cat .orchestrator/handoff/01-plan.md)" "# plan"
 assert_eq "moves the spec-paused marker into the same directory" "$(cat "$retired/spec-paused" 2>/dev/null)" "40"
 assert_eq "so the handoff folder no longer holds it" \
-  "$([ -e .orchestrator/handoff/spec-paused ] && echo present || echo absent)" "absent"
+  "$(on_disk .orchestrator/handoff/spec-paused)" "absent"
 assert_eq "without bumping redo_count" "$("$ORCH" state get redo_count)" "2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance then refuses to leave spec" "$st" 1
@@ -385,7 +385,7 @@ assert_eq "with no implement handoff, retires the spec handoff alone" \
 assert_eq "--new-issue moves the spec-paused marker aside too" \
   "$(cat .orchestrator/handoff/pre-redo-spec-*/spec-paused 2>/dev/null)" "41"
 assert_eq "leaving none in the handoff folder" \
-  "$([ -e .orchestrator/handoff/spec-paused ] && echo present || echo absent)" "absent"
+  "$(on_disk .orchestrator/handoff/spec-paused)" "absent"
 assert_eq "phase becomes spec" "$("$ORCH" state get phase)" "spec"
 assert_eq "clearing the old issue" "$("$ORCH" state get issue)" ""
 assert_eq "closes the old issue" "$(fake_state_of 41)" "CLOSED"

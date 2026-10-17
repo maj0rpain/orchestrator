@@ -198,7 +198,7 @@ marker="$(dirname "$("$ORCH" handoff path spec)")/spec-paused"
 out="$("$ORCH" spec pause 2>&1)"; st=$?
 assert_status "spec pause refuses when state records no issue" "$st" 1
 assert_contains "naming the phase that records one" "$out" "spec phase"
-assert_eq "and writes no marker" "$([ -e "$marker" ] && echo present || echo absent)" "absent"
+assert_eq "and writes no marker" "$(on_disk "$marker")" "absent"
 "$ORCH" state set issue 21
 out="$("$ORCH" spec pause 2>&1)"; st=$?
 assert_status "spec pause succeeds at phase spec with an issue" "$st" 0
@@ -206,7 +206,7 @@ assert_eq "printing the stop block with the Claude Code Next line" "$out" \
   "$(printf 'Spec #21 written. The spec review runs in a fresh session.\n\n  Next: /clear, then /orchestrator:next')"
 assert_eq "writing the marker naming the recorded issue" "$(cat "$marker")" "21"
 assert_eq "and leaving the phase at spec" "$("$ORCH" state get phase)" "spec"
-printf '99\n' >"$marker"
+writeln 99 >"$marker"
 out="$(ORCHESTRATOR_HOST=junie "$ORCH" spec pause 2>&1)"; st=$?
 assert_status "spec pause runs again over a marker already there" "$st" 0
 assert_eq "overwriting it with the recorded issue" "$(cat "$marker")" "21"
@@ -218,13 +218,13 @@ for ph in implement review; do
   out="$("$ORCH" spec pause 2>&1)"; st=$?
   assert_status "spec pause refuses at phase $ph" "$st" 1
   assert_contains "saying it runs only in the spec phase" "$out" "spec pause runs only in the spec phase"
-  assert_eq "and writes no marker" "$([ -e "$marker" ] && echo present || echo absent)" "absent"
+  assert_eq "and writes no marker" "$(on_disk "$marker")" "absent"
 done
 state_fixture phase "done"
 out="$("$ORCH" spec pause 2>&1)"; st=$?
 assert_status "spec pause refuses once the flow is done" "$st" 1
 assert_contains "naming the flow's issue" "$out" "the flow on issue #21 is done"
-assert_eq "and writes no marker" "$([ -e "$marker" ] && echo present || echo absent)" "absent"
+assert_eq "and writes no marker" "$(on_disk "$marker")" "absent"
 state_fixture phase spec
 out="$("$ORCH" spec pause extra 2>&1)"; st=$?
 assert_status "spec pause takes no arguments" "$st" 1
