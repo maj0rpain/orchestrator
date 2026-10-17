@@ -168,6 +168,11 @@ sc_clone() {
   export GH_REPO=acme/widgets
 }
 
+# col0_names <file>: the names of the functions defined at column 0 of <file>.
+col0_names() {
+  grep -oE '^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)' "$1" | sed 's/[[:space:]]*()$//'
+}
+
 # on_disk <path>: present or absent, whether anything is at <path>.
 on_disk() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
 # exclude_count <line>: how many times <line> appears whole in the current

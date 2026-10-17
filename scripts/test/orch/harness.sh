@@ -1180,11 +1180,6 @@ index_names() {
     NF >= 2 { print file " " $1 }' | LC_ALL=C sort
 }
 
-# col0_names <file>: the names of the functions defined at column 0 of <file>.
-col0_names() {
-  grep -oE '^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)' "$1" | sed 's/[[:space:]]*()$//'
-}
-
 # sourced_names <file>: the functions a fresh bash defines by sourcing <file>.
 sourced_names() {
   env -i bash -c 'source "$1" >/dev/null 2>&1; declare -F' _ "$1" | sed 's/^declare -f //'

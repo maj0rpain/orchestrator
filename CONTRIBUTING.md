@@ -106,7 +106,8 @@ and ships no version bump; the other rules still hold.
 `scripts/dev/helpers.sh` is the helper index, read from the code so it cannot
 drift: run it rather than grepping for a helper. Bare, it lists every function
 of orch.sh's modules (`scripts/orch/*.sh`) under a `# <path>` header per
-module, each with the first line of the comment above it, or `-` where there
+module, each with the first line of the comment above it - its second line
+where the first holds only the `<name> <args>:` signature - or `-` where there
 is none; `cmd_*` entry points are left out. `--tests` lists the shared test
 setup (`scripts/test/orch/setup.sh`) and the gh adapter fake
 (`scripts/test/gh_adapter_fake.sh`) instead - their fixtures, fakes and
