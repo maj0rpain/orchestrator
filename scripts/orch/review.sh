@@ -360,6 +360,58 @@ review_file() {
   note "$n"
 }
 
+# review_known_items <path> <loop boundary>: writes the loop's known-items
+# file to <path>, overwriting it - `## Deviations`, the implement handoff's
+# Deviations, then `## Known items`: Waiting to be filed from each record
+# numbered above the boundary, Filed from each at or below it, and the plan's
+# Rejected alternatives, every entry tagged with its source. A heading with no
+# entry reads None. Every refusal comes before the write, and the file is
+# built aside and moved into place, so a refused run leaves <path> as it was.
+review_known_items() {
+  [ $# -eq 2 ] || die "usage: orch.sh review known-items <path> <loop boundary>"
+  local path="$1" boundary="$2" implement plan known
+  case "$boundary" in ''|*[!0-9]*) die "not a loop boundary: $boundary (want the iteration read before the loop's first)" ;; esac
+  boundary=$((10#$boundary))
+  implement="$HANDOFF_DIR/$(handoff_file_for review)"
+  plan="$HANDOFF_DIR/$(handoff_file_for spec)"
+  [ -f "$implement" ] || die "implement handoff not found: $implement"
+  [ -f "$plan" ] || die "plan handoff not found: $plan"
+
+  local tmp record n entry tag deviations="" waiting="" filed="" rejected=""
+  tmp="$(mktemp "$path.XXXXXX")" || die "could not create a temp file beside $path"
+  # shellcheck disable=SC2064 # expanded now: $tmp is local, gone by exit
+  trap "rm -f $(printf '%q' "$tmp")" EXIT
+  while IFS= read -r entry; do deviations+="- $entry"$'\n'; done \
+    < <(section_entries "$implement" '## Deviations')
+  for record in "$REVIEW_DIR"/iteration-*.md; do
+    # Only the records themselves: the reports and known-items files beside
+    # them carry a suffix after the number.
+    n="${record##*/iteration-}"; n="${n%.md}"
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    if [ "$((10#$n))" -gt "$boundary" ]; then
+      while IFS= read -r entry; do
+        waiting+="- $entry - waiting to be filed, iteration $n"$'\n'
+      done < <(section_entries "$record" '## Waiting to be filed')
+    else
+      while IFS= read -r entry; do
+        # The issue number is the entry's leading #<n>; an entry without one
+        # is tagged filed alone.
+        tag="filed"
+        [[ $entry =~ ^(#[0-9]+) ]] && tag="filed ${BASH_REMATCH[1]}"
+        filed+="- $entry - $tag"$'\n'
+      done < <(section_entries "$record" '## Filed')
+    fi
+  done
+  while IFS= read -r entry; do rejected+="- $entry - rejected alternative"$'\n'; done \
+    < <(section_entries "$plan" '## Rejected alternatives')
+  [ -n "$deviations" ] || deviations=$'None.\n'
+  known="$waiting$filed$rejected"
+  [ -n "$known" ] || known=$'None.\n'
+  printf '## Deviations\n%s## Known items\n%s' "$deviations" "$known" >"$tmp" \
+    || die "could not write the known items"
+  mv "$tmp" "$path" || die "could not write the known items to $path"
+}
+
 cmd_review() {
   local op="${1:-}"
   shift || true
@@ -492,6 +544,10 @@ cmd_review() {
         esac
       done
       ;;
+    known-items)
+      require_state
+      review_known_items "$@"
+      ;;
     rerun) review_rerun "$@" ;;
     terminal)
       require_state
@@ -513,6 +569,6 @@ cmd_review() {
       done
       note "$dest"
       ;;
-    *) die "unknown review op: ${op:-<none>} (want begin|path|file|ci|rerun|ready|terminal|retire)" ;;
+    *) die "unknown review op: ${op:-<none>} (want begin|path|file|known-items|ci|rerun|ready|terminal|retire)" ;;
   esac
 }

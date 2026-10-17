@@ -123,6 +123,30 @@ section_body() {
   awk -v h="$2" '$0 == h { inside = 1; next } /^## / { inside = 0 } inside { print }' "$1"
 }
 
+# section_entries <file> <heading>: the entries under <heading> in <file>, one
+# per line - each top-level `- ` bullet joined with its indented continuation
+# lines by single spaces, its leading `- ` stripped, and each non-blank line
+# at the margin that is no bullet as an entry of its own. An entry reading
+# None, None. or None declined. is a source saying it has nothing, and is
+# dropped. The known-items builders copy these, and do no matching.
+section_entries() {
+  section_body "$1" "$2" | awk '
+    function flush() {
+      if (entry != "" && entry !~ /^None( declined)?\.?$/) print entry
+      entry = ""; bullet = 0
+    }
+    { sub(/[[:space:]]+$/, "") }
+    /^$/ { next }
+    /^- / { flush(); entry = substr($0, 3); sub(/^[[:space:]]+/, "", entry); bullet = 1; next }
+    /^[[:space:]]/ {
+      line = $0; sub(/^[[:space:]]+/, "", line)
+      if (bullet) entry = entry " " line; else { flush(); entry = line; flush() }
+      next
+    }
+    { flush(); entry = $0; flush() }
+    END { flush() }'
+}
+
 # The single statement of what a valid handoff is: one line per required
 # section, each `ok <heading>` or `FAIL <problem>`. doctor's flow-state check
 # reads the same answer rather than writing a second one that can drift from it.

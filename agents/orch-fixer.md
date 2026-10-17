@@ -248,7 +248,7 @@ Host fallbacks: <each fallback taken, or None>
 
 ## Waiting to be filed
 
-- <Axis>/<severity>: <claim> - <the rule that kept it out: needs a decision, spec question, not mechanical, loop-authored lines, final iteration, root cause out of reach, or could not fix>
+- <Axis>/<severity>: `<file>:<line>` <claim> - <the rule that kept it out: needs a decision, spec question, not mechanical, loop-authored lines, final iteration, root cause out of reach, or could not fix>
 
 ## Merge resolutions
 
@@ -278,6 +278,10 @@ filed and the rule that kept it out, met again already filed (with the issue
 number), or open blocking. A reviewer whose report went missing twice is
 listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
+
+Each **Waiting to be filed** bullet carries the finding's location, as the
+template shows, with `-` in its place when the finding gave `-`: later
+iterations' known items copy the bullet as written.
 
 **Merge resolutions** holds the prompt's, as given, `None` included -
 recorded, never fixed here unless a reviewer's finding on it reached the

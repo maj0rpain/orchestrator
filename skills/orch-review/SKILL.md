@@ -189,7 +189,10 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 
    `Verification` reads `not run - nothing changed`, **Fixed this
    iteration** and **Open blocking** read `None`, and **Merge resolutions**
-   holds step 2's. **PR body** depends on that base sync:
+   holds step 2's. **Waiting to be filed** lists each major or nit left
+   unfixed in the template's location-bearing bullet,
+   ``- <Axis>/<severity>: `<file>:<line>` <claim> - <rule>``, with `-` in
+   place of `<file>:<line>` when the finding gave `-`, or reads `None`. **PR body** depends on that base sync:
    - **Merge resolutions** is not `None` - step 2 resolved a conflict, so
      the diff from the base SHA changed while the PR was open: before
      writing the record, run **Checking the PR body** yourself, against

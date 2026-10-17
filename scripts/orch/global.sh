@@ -463,6 +463,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               file, then one labelled line per flag - and
                               refused before any write unless it parses back
                               to them. <line> is N or N-M
+  review known-items <path> <loop boundary>
+                              write the loop's known-items file to <path>,
+                              overwriting it: ## Deviations from the implement
+                              handoff, then ## Known items - Waiting to be
+                              filed from each record above the boundary, Filed
+                              from each at or below it, and the plan's
+                              Rejected alternatives, each tagged with its
+                              source; an empty heading reads None. Refused,
+                              writing nothing, without either handoff
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
   review rerun <pr>           rerun the failed jobs of the Actions run behind
