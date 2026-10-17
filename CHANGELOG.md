@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.11.4
+
+`scripts/dev/helpers.sh` is a helper index for working on this repo (#1144): it lists every function of orch.sh's modules, or with `--tests` of the shared test setup and the gh adapter fake, each with the first line of its comment. CONTRIBUTING gains a Test helpers subsection - the fixtures to reach for first, running one section under `bash -x`, and the bash-version rule - and `CLAUDE.md` points to both. The implementer brief now reads any test-helpers reference or helper index a repo's agent files point to before writing tests.
+
 ## 4.11.3
 
 Agents read an issue as its plain body plus `issue comments`, opened with the Read tool, never through `issue fetch --json`: a large spec is read once, in full, with nothing cut off. `issue fetch --json` stays, as the machine form for scripts.
