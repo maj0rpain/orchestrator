@@ -155,6 +155,30 @@ text_entries() {
     END { flush() }'
 }
 
+# entries_append <var> <file> <heading> [<tag>]: appends to <var> one `- `
+# bullet line per entry under <heading> in <file> - every entry of the whole
+# file when <heading> is empty - each ending ` - <tag>` when <tag> is given.
+entries_append() {
+  local _ea_entry _ea_tag="${4:+ - $4}"
+  while IFS= read -r _ea_entry; do
+    printf -v "$1" '%s- %s%s\n' "${!1}" "$_ea_entry" "$_ea_tag"
+  done < <(if [ -n "$3" ]; then section_entries "$2" "$3"; else text_entries <"$2"; fi)
+}
+
+# known_items_write <path> <deviations> <known>: writes a known-items file to
+# <path>, overwriting it - `## Deviations` then `## Known items`, each heading's
+# bullet lines, or None. when it has none. Built beside <path> and moved into
+# place, so a failed write leaves <path> as it was.
+known_items_write() {
+  local path="$1" deviations="$2" known="$3" tmp
+  [ -n "$deviations" ] || deviations=$'None.\n'
+  [ -n "$known" ] || known=$'None.\n'
+  tmp="$(mktemp "$path.XXXXXX")" || die "could not create a temp file beside $path"
+  printf '## Deviations\n%s## Known items\n%s' "$deviations" "$known" >"$tmp" \
+    || { rm -f "$tmp"; die "could not write the known items"; }
+  mv "$tmp" "$path" || { rm -f "$tmp"; die "could not write the known items to $path"; }
+}
+
 # The single statement of what a valid handoff is: one line per required
 # section, each `ok <heading>` or `FAIL <problem>`. doctor's flow-state check
 # reads the same answer rather than writing a second one that can drift from it.

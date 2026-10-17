@@ -238,6 +238,16 @@ adapter_labels() {
 COMMENTS_RENDER_JQ='def render_comments(login): [.[] | "<!-- comment @\(login) \(.createdAt) -->\n\(.body)"] | select(length > 0) | join("\n\n");'
 COMMENTS_JQ="$COMMENTS_RENDER_JQ"' .comments | render_comments(.author.login)'
 
+# comments_split <file> <dir>: splits <file>, comments in COMMENTS_JQ's shape,
+# into one file per comment under <dir>, numbered from 1 in order, each holding
+# the comment's body alone. A comment opens at its marker line, the one
+# COMMENTS_RENDER_JQ renders.
+comments_split() {
+  awk -v d="$2" '
+    /^<!-- comment @[^ ]* [^ ]* -->$/ { if (out != "") close(out); out = d "/" (++k); printf "" >out; next }
+    out != "" { print >out }' "$1"
+}
+
 # The trimmed object `issue fetch --json` publishes (#528): the issue's number,
 # title and body, its label names, and each comment's author login, gh's
 # ISO-8601 timestamp and body - every other field gh answers with is dropped,

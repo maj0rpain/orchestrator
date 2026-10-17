@@ -372,7 +372,7 @@ review_file() {
 # built aside and moved into place, so a refused run leaves <path> as it was.
 review_known_items() {
   [ $# -eq 2 ] || die "usage: orch.sh review known-items <path> <loop boundary>"
-  local path="$1" boundary="$2" implement plan known
+  local path="$1" boundary="$2" implement plan
   case "$boundary" in ''|*[!0-9]*) die "not a loop boundary: $boundary (want the iteration read before the loop's first)" ;; esac
   boundary=$((10#$boundary))
   implement="$HANDOFF_DIR/$(handoff_file_for review)"
@@ -380,12 +380,8 @@ review_known_items() {
   [ -f "$implement" ] || die "implement handoff not found: $implement"
   [ -f "$plan" ] || die "plan handoff not found: $plan"
 
-  local tmp record n entry tag deviations="" waiting="" filed="" rejected=""
-  tmp="$(mktemp "$path.XXXXXX")" || die "could not create a temp file beside $path"
-  # shellcheck disable=SC2064 # expanded now: $tmp is local, gone by exit
-  trap "rm -f $(printf '%q' "$tmp")" EXIT
-  while IFS= read -r entry; do deviations+="- $entry"$'\n'; done \
-    < <(section_entries "$implement" '## Deviations')
+  local record n entry tag deviations="" waiting="" filed="" rejected=""
+  entries_append deviations "$implement" '## Deviations'
   for record in "$REVIEW_DIR"/iteration-*.md; do
     # Only the records themselves: the reports and known-items files beside
     # them carry a suffix after the number.
@@ -405,14 +401,8 @@ review_known_items() {
       done < <(section_entries "$record" '## Filed')
     fi
   done
-  while IFS= read -r entry; do rejected+="- $entry - rejected alternative"$'\n'; done \
-    < <(section_entries "$plan" '## Rejected alternatives')
-  [ -n "$deviations" ] || deviations=$'None.\n'
-  known="$waiting$filed$rejected"
-  [ -n "$known" ] || known=$'None.\n'
-  printf '## Deviations\n%s## Known items\n%s' "$deviations" "$known" >"$tmp" \
-    || die "could not write the known items"
-  mv "$tmp" "$path" || die "could not write the known items to $path"
+  entries_append rejected "$plan" '## Rejected alternatives' 'rejected alternative'
+  known_items_write "$path" "$deviations" "$waiting$filed$rejected"
 }
 
 cmd_review() {

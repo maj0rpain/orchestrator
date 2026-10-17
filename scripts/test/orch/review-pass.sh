@@ -115,7 +115,6 @@ git checkout -q -b quick/21-foo
 fake_github
 fake_issue 21 open
 kp="$(mktemp -d)"
-exists() { [ -e "$1" ] && echo yes || echo no; }
 fake_comment 21 pat 2026-10-01T09:00:00Z $'Spec ruling: Does the cache expire -\n  yes, after an hour.'
 fake_comment 21 pat 2026-10-02T09:00:00Z 'Not a ruling. Spec ruling: buried mid-comment'
 fake_comment 21 pat 2026-10-03T09:00:00Z $'## Spec review\n\nRound 1.'
@@ -174,7 +173,7 @@ assert_status "refuses a missing --deviations file" "$st" 1
 assert_contains "naming it" "$out" "orch: deviations file not found: $kp/missing.md"
 assert_eq "leaving the existing file untouched" "$(cat "$kp/known.md")" "kept"
 out="$("$ORCH" review-pass known-items 21 "$kp/fresh.md" --deviations "$kp/missing.md" 2>&1)"
-assert_eq "and writing no file" "$(exists "$kp/fresh.md")" "no"
+assert_eq "and writing no file" "$([ -e "$kp/fresh.md" ] && echo yes || echo no)" "no"
 
 fake_pr 57 open quick/21-foo main
 for op in adapter_prs_open adapter_pr_body adapter_pr_comments adapter_issue_json; do
@@ -184,7 +183,7 @@ for op in adapter_prs_open adapter_pr_body adapter_pr_comments adapter_issue_jso
   assert_contains "with an orch: message for $op" "$out" "orch: gh could not"
   assert_eq "leaving the existing file untouched for $op" "$(cat "$kp/known.md")" "kept"
   out="$("$ORCH" review-pass known-items 21 "$kp/fresh.md" 2>&1)"
-  assert_eq "and writing no file for $op" "$(exists "$kp/fresh.md")" "no"
+  assert_eq "and writing no file for $op" "$([ -e "$kp/fresh.md" ] && echo yes || echo no)" "no"
   rm -rf "$ORCH_GH_FAKE_STORE/fail"
 done
 
@@ -195,7 +194,7 @@ for args in "" "21" "abc $kp/fresh.md" "21 $kp/fresh.md --deviations" \
   assert_status "refuses known-items '$args'" "$st" 1
   assert_contains "with an orch: message for '$args'" "$out" "orch: "
 done
-assert_eq "writing no file for any of them" "$(exists "$kp/fresh.md")" "no"
+assert_eq "writing no file for any of them" "$([ -e "$kp/fresh.md" ] && echo yes || echo no)" "no"
 assert_contains "orch.sh help lists review-pass known-items" "$("$ORCH" help)" \
   "review-pass known-items <issue> <path> [--deviations <file>]"
 rm -rf "$kp"

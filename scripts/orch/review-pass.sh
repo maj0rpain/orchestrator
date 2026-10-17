@@ -66,15 +66,6 @@ SPEC_RULING_ENTRIES_JQ='.comments[].body | gsub("\r"; "") | select(startswith("S
   | ltrimstr("Spec ruling:") | split("\n") | map(gsub("^\\s+|\\s+$"; ""))
   | map(select(length > 0)) | join(" ")'
 
-# comments_split <file> <dir>: splits <file>, comments in COMMENTS_JQ's shape,
-# into one file per comment under <dir>, numbered from 1 in order, each holding
-# the comment's body alone. A comment opens at its marker line.
-comments_split() {
-  awk -v d="$2" '
-    /^<!-- comment @[^ ]* [^ ]* -->$/ { if (out != "") close(out); out = d "/" (++k); printf "" >out; next }
-    out != "" { print >out }' "$1"
-}
-
 # has_headings <file> <heading>...: true when <file> has every <heading> as a
 # line of its own.
 has_headings() {
@@ -113,11 +104,10 @@ review_pass_known_items() {
     [ -r "$devfile" ] || die "deviations file not readable: $devfile"
   fi
 
-  local work tmp
+  local work
   work="$(mktemp -d)" || die "could not create a temp directory"
-  tmp="$(mktemp "$path.XXXXXX")" || { rm -rf "$work"; die "could not create a temp file beside $path"; }
-  # shellcheck disable=SC2064 # expanded now: both are local, gone by exit
-  trap "rm -rf $(printf '%q' "$work") $(printf '%q' "$tmp")" EXIT
+  # shellcheck disable=SC2064 # expanded now: $work is local, gone by exit
+  trap "rm -rf $(printf '%q' "$work")" EXIT
 
   local k entry comment issue_json issue_rulings deviations="" declined="" rulings=""
   # A subshell's die has already said why; 1 alone means no open PR.
@@ -130,24 +120,20 @@ review_pass_known_items() {
     tr -d '\r' <"$work/comments.raw" >"$work/comments"
     mkdir "$work/c"
     comments_split "$work/comments" "$work/c"
-    [ -n "$devfile" ] || while IFS= read -r entry; do deviations+="- $entry"$'\n'; done \
-      < <(section_entries "$work/body" '## Deviations')
-    while IFS= read -r entry; do declined+="- $entry - declined"$'\n'; done \
-      < <(section_entries "$work/body" '## Review')
+    [ -n "$devfile" ] || entries_append deviations "$work/body" '## Deviations'
+    entries_append declined "$work/body" '## Review' declined
     for ((k = 1; ; k++)); do
       comment="$work/c/$k"
       [ -f "$comment" ] || break
       if has_headings "$comment" "${REVIEW_PASS_HEADINGS[@]}"; then
-        while IFS= read -r entry; do declined+="- $entry - declined"$'\n'; done \
-          < <(section_entries "$comment" '## Review')
+        entries_append declined "$comment" '## Review' declined
       fi
-      while IFS= read -r entry; do rulings+="- $entry - spec ruling"$'\n'; done \
-        < <(section_entries "$comment" '## Spec rulings')
+      entries_append rulings "$comment" '## Spec rulings' 'spec ruling'
     done
   fi
   if [ -n "$devfile" ]; then
-    while IFS= read -r entry; do deviations+="- $entry"$'\n'; done \
-      < <(tr -d '\r' <"$devfile" | text_entries)
+    tr -d '\r' <"$devfile" >"$work/deviations"
+    entries_append deviations "$work/deviations" ''
   fi
   gh_or_die --out issue_json "read the comments of issue #$issue" adapter_issue_json "$issue"
   issue_rulings="$(jq -r "$SPEC_RULING_ENTRIES_JQ" <<<"$issue_json")" \
@@ -155,10 +141,5 @@ review_pass_known_items() {
   while IFS= read -r entry; do
     [ -z "$entry" ] || rulings+="- $entry - spec ruling"$'\n'
   done <<<"$issue_rulings"
-  [ -n "$deviations" ] || deviations=$'None.\n'
-  local known="$declined$rulings"
-  [ -n "$known" ] || known=$'None.\n'
-  printf '## Deviations\n%s## Known items\n%s' "$deviations" "$known" >"$tmp" \
-    || die "could not write the known items"
-  mv "$tmp" "$path" || die "could not write the known items to $path"
+  known_items_write "$path" "$deviations" "$declined$rulings"
 }
