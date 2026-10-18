@@ -141,7 +141,8 @@ benchmark has a fixture, `scripts/dev/lens-bench/<lens>/`: `spec.md`, the
 spec body the lens reads; `map.md`, its baseline map, when it has one; and
 `snapshot`, the commit whose tree the lens explores. The Implementability
 fixture is the 801e6f97 round-1 spec body and baseline map on snapshot
-`0fea0b6`. A new lens's benchmark is a new fixture directory and nothing else.
+`0fea0b6`, the map pruned from 27 locations to 25 by dropping two no decision
+in the spec depends on (#1244). A new lens's benchmark is a new fixture directory and nothing else.
 
 A human starts the runs, since they need a live `claude` (an agent's nested
 `claude -p` with a custom agent is blocked):
