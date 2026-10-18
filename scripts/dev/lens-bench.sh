@@ -154,14 +154,14 @@ cmd_run() {
   [ -f "$fixture/spec.md" ] || fail "$fixture/spec.md: missing"
   [ -f "$fixture/snapshot" ] || fail "$fixture/snapshot: missing"
   run_repo="$(git -C "$BENCH_DIR" rev-parse --show-toplevel)" || fail "$BENCH_DIR: not in a git repo"
-  local sha definition="agents/orch-lens-$lens.md" snapshot
+  local sha definition="agents/orch-lens-$lens.md" snapshot_ref snapshot
   sha="$(git -C "$run_repo" rev-parse --verify --quiet "$rev^{commit}")" ||
     fail "$rev: not a commit"
   git -C "$run_repo" cat-file -e "$sha:$definition" 2>/dev/null ||
     fail "$rev: no $definition at that revision"
-  snapshot="$(<"$fixture/snapshot")"
-  snapshot="$(git -C "$run_repo" rev-parse --verify --quiet "$snapshot^{commit}")" ||
-    fail "$fixture/snapshot: $(<"$fixture/snapshot") is not a commit"
+  snapshot_ref="$(<"$fixture/snapshot")"
+  snapshot="$(git -C "$run_repo" rev-parse --verify --quiet "$snapshot_ref^{commit}")" ||
+    fail "$fixture/snapshot: $snapshot_ref is not a commit"
   [ ! -e "$out" ] && [ ! -L "$out" ] || fail "$out: already exists"
   command -v claude >/dev/null || fail "claude: not on PATH"
 
@@ -272,13 +272,19 @@ covered() {
     <(locations "$1") <(locations "$2")
 }
 
-# The per-run measures of one transcript, tab-separated: turns, total input,
-# then the space-separated tool calls per turn, ranged Read line counts and
-# Grep result characters, each - when empty.
-TRANSCRIPT_JQ='
+# The jq definitions both transcript programs share: text, a message
+# content's text, and total_input, a usage's input tokens, cached ones counted.
+JQ_PRELUDE='
   def text: if type == "string" then .
     elif type == "array" then map(if type == "object" then (.text // "") else tostring end) | join("")
     else "" end;
+  def total_input: (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0);
+'
+
+# The per-run measures of one transcript, tab-separated: turns, total input,
+# then the space-separated tool calls per turn, ranged Read line counts and
+# Grep result characters, each - when empty.
+TRANSCRIPT_JQ="$JQ_PRELUDE"'
   def listed: map(tostring) | join(" ") | if . == "" then "-" else . end;
   reduce .[] as $m ({ids: [], usage: {}, calls: {}, uses: [], results: {}};
     ($m.message // {}) as $msg
@@ -296,7 +302,7 @@ TRANSCRIPT_JQ='
   | . as $s
   | [ ($s.ids | length),
       ([$s.ids[] as $i | $s.usage[$i]
-        | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)]
+        | total_input]
        | add // 0),
       ([$s.ids[] as $i | $s.calls[$i]] | listed),
       ([$s.uses[] | select(.name == "Read" and (.input | has("offset") or has("limit")))
@@ -309,10 +315,7 @@ TRANSCRIPT_JQ='
 # and their input, and per kind, the carried cost. $names is the spec's names,
 # $run the run's name. A turn's context is its total input; the results that
 # came in since the previous turn are the ones read after its last line.
-DIAGNOSIS_JQ='
-  def text: if type == "string" then .
-    elif type == "array" then map(if type == "object" then (.text // "") else tostring end) | join("")
-    else "" end;
+DIAGNOSIS_JQ="$JQ_PRELUDE"'
   def located: (if .name == "Read" then .input.file_path
       elif .name == "Grep" or .name == "Glob" then .input.pattern
       else null end) as $target
@@ -326,8 +329,7 @@ DIAGNOSIS_JQ='
         $msg.id as $id
         | (if .at | has($id) then .
            else .at[$id] = (.turns | length)
-             | .turns += [{context: ($msg.usage // {}
-                   | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)),
+             | .turns += [{context: ($msg.usage // {} | total_input),
                  uses: [], results: .pending}]
              | .pending = [] end)
         | .at[$id] as $i

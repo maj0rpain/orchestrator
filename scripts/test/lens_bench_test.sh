@@ -44,10 +44,10 @@ trap 'exit 130' INT TERM
 
 # >>> checks
 
-# run_bench <args...>: runs the tool; its stdout lands in $out, its stderr in
-# $err, its exit status in $st.
+# run_bench <args...>: runs the tool, $bench_script when set, else $BENCH; its
+# stdout lands in $out, its stderr in $err, its exit status in $st.
 run_bench() {
-  out="$(bash "$BENCH" "$@" 2>"$bench_root/stderr")"; st=$?
+  out="$(bash "${bench_script:-$BENCH}" "$@" 2>"$bench_root/stderr")"; st=$?
   err="$(<"$bench_root/stderr")"
 }
 
@@ -247,10 +247,7 @@ printf '%s\n' "${no_definition:0:7}" >"$bench_fixture/snapshot"
 BENCH_COPY="$bench_repo/scripts/dev/lens-bench.sh"
 
 # run_copy <args...>: run_bench, on the scratch repo's copy of the tool.
-run_copy() {
-  out="$(bash "$BENCH_COPY" "$@" 2>"$bench_root/stderr")"; st=$?
-  err="$(<"$bench_root/stderr")"
-}
+run_copy() { bench_script="$BENCH_COPY" run_bench "$@"; }
 # worktrees: how many worktrees the scratch repo has, its main one counted.
 worktrees() { bench_git worktree list | awk 'END { print NR }'; }
 # leftovers: the tool's temporary directories still under the temp root.
