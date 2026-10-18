@@ -125,6 +125,10 @@ upstream_of() {
   if [ -z "$merge$remote$up" ]; then echo none; else echo "remote=$remote merge=$merge upstream=$up"; fi
 }
 
+# pr_marker_of <branch>: the PR number pr open or pr publish recorded on
+# <branch>'s git config (#1200), empty when none was.
+pr_marker_of() { git config --get "branch.$1.orchestrator-pr" 2>/dev/null; }
+
 # new_repo_with_origin [branch]: new_repo, plus tracking refs for its origin:
 # origin/<branch> (default: the checked-out branch) set to HEAD, and
 # origin/HEAD pointing at it. Call it in the current shell, never inside $(...): new_repo cd's.

@@ -9,10 +9,6 @@
 # answer for too.
 fake_pull() { fake_issue "$1" open; : >"$ORCH_GH_FAKE_STORE/issues/$1/pull"; }
 
-# pr_marker_of <branch>: the PR number pr open or pr publish recorded on
-# <branch>'s git config (#1200), empty when none was.
-pr_marker_of() { git config --get "branch.$1.orchestrator-pr" 2>/dev/null; }
-
 # fake_prs: every PR number the store holds, in order, space-separated.
 fake_prs() { ls "$ORCH_GH_FAKE_STORE/prs" 2>/dev/null | sort -n | tr '\n' ' '; }
 

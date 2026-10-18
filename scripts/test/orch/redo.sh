@@ -122,7 +122,7 @@ assert_eq "leaves the one-per-flow flake rerun untouched" \
 assert_eq "renames the old branch aside" \
   "$(git rev-parse --verify --quiet orch/21-redotest-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
 assert_eq "keeping its PR marker, so the retired branch reads as handed off (#1200)" \
-  "$(git config --get "branch.orch/21-redotest-redo-1.orchestrator-pr")" "30"
+  "$(pr_marker_of orch/21-redotest-redo-1)" "30"
 assert_eq "and republishes it on origin" \
   "$(git -C "$bare" rev-parse --quiet --verify refs/heads/orch/21-redotest-redo-1 >/dev/null && echo present || echo gone)" "present"
 assert_eq "closes the old PR" "$(fake_pr_state_of 30)" "CLOSED"
