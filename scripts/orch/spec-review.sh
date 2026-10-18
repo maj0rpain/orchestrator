@@ -190,7 +190,7 @@ spec_review_batch_parse() {
   SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_LINE=()
   SR_IT_SUMMARY=(); SR_IT_ANCHOR=(); SR_IT_ANCHOR_LINE=(); SR_IT_REPLACE=(); SR_IT_RESOLVED=()
   SR_FD_ITEM=(); SR_FD_LENS=(); SR_FD_K=(); SR_FD_LINE=()
-  SR_CM_ITEM=(); SR_CM_QUOTE=()
+  SR_CM_ITEM=(); SR_CM_LOGIN=(); SR_CM_CREATED=(); SR_CM_QUOTE=()
   SR_OP_ITEM=(); SR_OP_LETTER=(); SR_OP_LABEL=(); SR_OP_LINE=()
   SR_OP_SUMMARY=(); SR_OP_ANCHOR=(); SR_OP_ANCHOR_LINE=(); SR_OP_REPLACE=()
   while IFS= read -r line || [ -n "$line" ]; do
@@ -298,7 +298,8 @@ spec_review_batch_parse() {
         read -r login created extra <<<"$args"
         case "$login" in @?*) ;; *) spec_review_batch_die "$lineno" "@@ comment wants @<login> <createdAt>" ;; esac
         [ -n "$created" ] && [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ comment wants @<login> <createdAt>"
-        SR_CM_ITEM[${#SR_CM_ITEM[@]}]="$cur"
+        j="${#SR_CM_ITEM[@]}"
+        SR_CM_ITEM[j]="$cur"; SR_CM_LOGIN[j]="$login"; SR_CM_CREATED[j]="$created"
         quote_wanted=1 ;;
       quote)
         [ -n "$quote_wanted" ] || spec_review_batch_die "$lineno" "@@ quote must follow @@ comment"
@@ -661,30 +662,125 @@ spec_review_wait() {
   note "lenses back: $summary"
 }
 
+# spec_review_problems_exit: when a check collected problems in SR_PROBLEMS,
+# warns each, one `orch: ` line apiece, and exits 1; else returns.
+spec_review_problems_exit() {
+  local p
+  [ "${#SR_PROBLEMS[@]}" -gt 0 ] || return 0
+  for p in "${SR_PROBLEMS[@]}"; do warn "$p"; done
+  exit 1
+}
+
 # spec-review check <dir>: the round's batch validated as apply would take the
 # all answer - every anchor checked, the recommended options in the dry run -
 # against <dir>/spec.fetched.md when it exists, else <dir>/spec.md. Writes
 # nothing, touches no GitHub, reads no flow state. Grammar, lens and citation
 # errors stop at the first; every anchor problem is reported, one `orch: `
-# line each, then exit 1. A clean batch prints a one-line summary.
+# line each, then exit 1. A clean batch prints its view on stdout - see
+# spec_review_view - and a one-line summary on stderr. With --tickets, the
+# round's tickets.md instead: see spec_review_tickets_check.
 spec_review_check() {
-  [ $# -eq 1 ] || die "usage: orch.sh spec-review check <dir>"
-  local dir="${1%/}" body p i anchors=0
+  local usage="usage: orch.sh spec-review check <dir> [--tickets]" dir="" tickets=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --tickets) tickets=1 ;;
+      -*) die "unknown option: $1 ($usage)" ;;
+      *) [ -z "$dir" ] || die "$usage"; dir="$1" ;;
+    esac
+    shift
+  done
+  [ -n "$dir" ] || die "$usage"
+  dir="${dir%/}"
+  local body i anchors=0
   [ -d "$dir" ] || die "no such directory: $dir"
+  if [ -n "$tickets" ]; then
+    spec_review_tickets_check "$dir"
+    return 0
+  fi
   [ -f "$dir/batch.md" ] || die "batch.md not found in $dir"
   body=spec.fetched.md
   [ -e "$dir/$body" ] || body=spec.md
   [ -f "$dir/$body" ] || die "spec.md not found in $dir"
   spec_review_validate "$dir" "$dir/$body" all collect
-  if [ "${#SR_PROBLEMS[@]}" -gt 0 ]; then
-    for p in "${SR_PROBLEMS[@]}"; do warn "$p"; done
-    exit 1
-  fi
+  spec_review_problems_exit
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     case "${SR_IT_REC[$i]}" in apply|decline) anchors=$((anchors + 1)) ;; esac
   done
   anchors=$((anchors + ${#SR_OP_ITEM[@]}))
-  note "batch.md passes: ${#SR_IT_N[@]} items, $anchors anchors, each matching once in $body, and the all answer applies cleanly"
+  spec_review_view
+  note "batch.md passes: ${#SR_IT_N[@]} items, $anchors anchors, each matching once in $body, and the all answer applies cleanly" >&2
+}
+
+# spec_review_quoted <text>: <text> as a markdown blockquote, line for line.
+spec_review_quoted() {
+  local l
+  while IFS= read -r l || [ -n "$l" ]; do
+    if [ -n "$l" ]; then printf '> %s\n' "$l"; else printf '>\n'; fi
+  done <<<"$1"
+}
+
+# spec_review_fenced <text>: <text> in a code block whose fence of backticks
+# is longer than any run of backticks in it, so a fence in the text stays text.
+spec_review_fenced() {
+  local fence='```'
+  while :; do
+    case "$1" in *"$fence"*) fence="$fence\`" ;; *) break ;; esac
+  done
+  printf '%s\n%s\n%s\n' "$fence" "$1" "$fence"
+}
+
+# spec_review_edit_view <anchor> <replacement>: an edit's Current and Proposed,
+# both in full.
+spec_review_edit_view() {
+  printf '\n**Current**\n\n%s\n\n**Proposed**\n\n%s\n' "$(spec_review_fenced "$1")" "$(spec_review_fenced "$2")"
+}
+
+# spec_review_view: the parsed batch as the human reads it before the batch
+# question - the lens lines, worded as the changelog words them, then every
+# item in batch order: its group, its recommendation, the text of each finding
+# it cites and of each comment it folds in, and its edit, or each option's, in
+# full. Rendered from spec_review_validate's arrays alone.
+spec_review_view() {
+  local l i j group
+  printf '## The batch\n\n### Lenses\n\n'
+  for l in "${!SR_LENS_NAME[@]}"; do
+    printf -- '- %s: ' "$(spec_review_title "${SR_LENS_NAME[$l]}")"
+    spec_review_lens_state_line "$l"
+  done
+  for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
+    case "${SR_IT_GROUP[$i]}" in
+      contradicts-the-plan) group="Contradicts the plan" ;;
+      *) group="$(spec_review_title "${SR_IT_GROUP[$i]}")" ;;
+    esac
+    printf '\n### Item %s - %s\n\n**Recommendation:** ' "${SR_IT_N[$i]}" "$group"
+    case "${SR_IT_REC[$i]}" in
+      apply) printf 'apply\n' ;;
+      decline) printf 'recommend decline - %s\n' "${SR_IT_ARG[$i]}" ;;
+      decision) printf 'decision - option %s recommended\n' "${SR_IT_ARG[$i]}" ;;
+      resolved) printf 'none - resolved by item %s\n' "${SR_IT_RESOLVED[$i]}" ;;
+    esac
+    for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
+      [ "${SR_FD_ITEM[$j]}" = "$i" ] || continue
+      printf '\n**Finding** (%s %s):\n\n' "$(spec_review_title "${SR_FD_LENS[$j]}")" "${SR_FD_K[$j]}"
+      spec_review_quoted "$(spec_review_finding_text "${SR_FD_LENS[$j]}" "${SR_FD_K[$j]}")"
+    done
+    for j in ${SR_CM_ITEM[@]+"${!SR_CM_ITEM[@]}"}; do
+      [ "${SR_CM_ITEM[$j]}" = "$i" ] || continue
+      printf '\n**Comment** by %s, %s:\n\n' "${SR_CM_LOGIN[$j]}" "${SR_CM_CREATED[$j]}"
+      spec_review_quoted "${SR_CM_QUOTE[$j]}"
+    done
+    case "${SR_IT_REC[$i]}" in
+      apply|decline) spec_review_edit_view "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}" ;;
+      decision)
+        for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
+          [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
+          printf '\n#### Option %s - %s' "${SR_OP_LETTER[$j]}" "${SR_OP_LABEL[$j]}"
+          [ "${SR_OP_LETTER[$j]}" != "${SR_IT_ARG[$i]}" ] || printf ' (recommended)'
+          printf '\n'
+          spec_review_edit_view "${SR_OP_ANCHOR[$j]}" "${SR_OP_REPLACE[$j]}"
+        done ;;
+    esac
+  done
 }
 
 # spec_review_item_sections <index>: the changelog sections item <index> is
@@ -754,6 +850,16 @@ spec_review_item_line() {
   esac
 }
 
+# spec_review_lens_state_line <l>: lens <l>'s state, as the batch view and
+# the changelog both word it - `ran`, or `not run - ` and why - on one line.
+spec_review_lens_state_line() {
+  case "${SR_LENS_STATE[$1]}" in
+    ran) printf 'ran\n' ;;
+    not-run) printf 'not run - %s\n' "${SR_LENS_REASON[$1]}" ;;
+    standalone) printf 'not run - standalone review, no plan to check against\n' ;;
+  esac
+}
+
 # spec_review_changelog <round> <unattended> <tickets-line> <host-fallbacks>:
 # the round's changelog, from the parsed batch, the lens files and the
 # dispositions.
@@ -766,10 +872,7 @@ spec_review_changelog() {
     printf '\n### %s\n' "$(spec_review_title "$section")"
     if [ "$section" != consolidation ]; then
       l="$(array_index SR_LENS_NAME "$section")"
-      case "${SR_LENS_STATE[$l]}" in
-        not-run) printf 'not run - %s\n' "${SR_LENS_REASON[$l]}"; continue ;;
-        standalone) printf 'not run - standalone review, no plan to check against\n'; continue ;;
-      esac
+      [ "${SR_LENS_STATE[$l]}" = ran ] || { spec_review_lens_state_line "$l"; continue; }
     fi
     lines=""
     for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
@@ -812,13 +915,14 @@ spec_review_ticket_item_check() {
 # spec_review_tickets_parse <file>: reads tickets.md into the ST_ arrays -
 # its `@@ recommend` line, then one entry per item and per `@@ closed` line,
 # or the lone `@@ none-affected` - dying on the first malformed line, named
-# by its number.
+# by its number. ST_LINE holds each item's header line, ST_ANCHOR_LINE a text
+# item's `@@ anchor` line.
 spec_review_tickets_parse() {
   local file="$1" line lineno=0 mode=top rest kw args cur=-1 seen=""
   local buf="" bufn=0 block_line=0 n kind tail t by b rec arg what
   ST_RECOMMEND=""; ST_NONE=""
   ST_N=(); ST_KIND=(); ST_T=(); ST_B=(); ST_REC=(); ST_ARG=(); ST_LINE=()
-  ST_SUMMARY=(); ST_ANCHOR=(); ST_REPLACE=(); ST_CL_T=(); ST_CL_WHAT=()
+  ST_SUMMARY=(); ST_ANCHOR=(); ST_ANCHOR_LINE=(); ST_REPLACE=(); ST_CL_T=(); ST_CL_WHAT=()
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
     case "$line" in
@@ -909,6 +1013,7 @@ spec_review_tickets_parse() {
         else
           [ -z "$args" ] || spec_review_tickets_die "$lineno" "@@ anchor takes nothing after it; the anchor is the lines below it"
           [ -z "${ST_ANCHOR[$cur]+x}" ] || spec_review_tickets_die "$lineno" "a second @@ anchor for this item"
+          ST_ANCHOR_LINE[cur]="$lineno"
           mode=anchor; buf=""; bufn=0; block_line="$lineno"
         fi ;;
       closed)
@@ -967,28 +1072,78 @@ spec_review_tickets_answer() {
   done
 }
 
-# spec_review_ticket_load <dir> <t> <what>: ticket #<t>'s fetched copy into
-# TK_FETCHED and TK_TEXT, once. Dies, naming <what>, when the session wrote
-# no ticket-<t>.md.
+# spec_review_ticket_load <dir> <t> <what> [collect]: ticket #<t>'s copy into
+# TK_FETCHED and TK_TEXT, once - ticket-<t>.fetched.md, else, before any
+# apply run has taken that copy, ticket-<t>.md. Dies, naming <what>, when the
+# session wrote no ticket-<t>.md; with [collect] set, the problem is appended
+# to SR_PROBLEMS instead and it returns 1.
 spec_review_ticket_load() {
-  local j copy
+  local j copy problem file="$1/ticket-$2.fetched.md"
   [ -z "$(array_index TK_T "$2")" ] || return 0
-  [ -f "$1/ticket-$2.md" ] \
-    || die "$3: ticket-$2.md not found in $1 - fetch each ticket a ticket item names into it"
-  file_read copy "$1/ticket-$2.fetched.md" \
-    || die "could not read $1/ticket-$2.fetched.md - nothing written"
+  if [ ! -f "$1/ticket-$2.md" ]; then
+    problem="$3: ticket-$2.md not found in $1 - fetch each ticket a ticket item names into it"
+    [ -n "${4:-}" ] || die "$problem"
+    SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$problem"
+    return 1
+  fi
+  [ -e "$file" ] || file="$1/ticket-$2.md"
+  file_read copy "$file" || die "could not read $file - nothing written"
   j="${#TK_T[@]}"
   TK_T[j]="$2"; TK_FETCHED[j]="$copy"; TK_TEXT[j]="$copy"
 }
 
+# spec_review_ticket_local <index> <body-var> <post> <dir> [collect]: ticket
+# item <index>'s checks that read no GitHub, the half apply and check share.
+# A text item's ticket is loaded (see spec_review_ticket_load) and, when
+# ST_DISP holds it applied, its edit made in memory: to its ticket's copy in
+# TK_TEXT, or a `## Ticket` edit to the body in <body-var>, anchored on
+# <post>, the body as the batch items left it. An applied edge item is
+# checked against its ticket's copy's `## Blocked by`. Dies on a problem;
+# with [collect] set - check's way - each problem, naming its tickets.md line
+# (a text item's `@@ anchor` line, else its header line), is appended to
+# SR_PROBLEMS instead.
+spec_review_ticket_local() {
+  local i="$1" body_var="$2" post="$3" dir="$4" collect="${5:-}" j at="" problem="" have=""
+  local what="ticket item ${ST_N[$1]}"
+  [ -z "$collect" ] || at="tickets.md line ${ST_LINE[$i]}: "
+  case "${ST_KIND[$i]}" in
+    ticket)
+      spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" "$collect" || return 0
+      [ "${ST_DISP[$i]}" = applied ] || return 0
+      [ -z "$collect" ] || at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
+      j="$(array_index TK_T "${ST_T[$i]}")"
+      spec_review_edit "TK_TEXT[$j]" "${TK_FETCHED[$j]}" "$at$what (#${ST_T[$i]})" \
+        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" "$collect" || true ;;
+    section)
+      [ "${ST_DISP[$i]}" = applied ] || return 0
+      [ -z "$collect" ] || at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
+      spec_review_edit "$body_var" "$post" "$at$what (## Ticket)" \
+        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" "$collect" || true ;;
+    block|unblock)
+      [ "${ST_DISP[$i]}" = applied ] || return 0
+      spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" "$collect" || return 0
+      j="$(array_index TK_T "${ST_T[$i]}")"
+      case $'\n'"$(printf '%s\n' "${TK_FETCHED[$j]}" | blocked_by_section_numbers)"$'\n' in
+        *$'\n'"${ST_B[$i]}"$'\n'*) have=1 ;;
+      esac
+      if [ "${ST_KIND[$i]}" = block ]; then
+        [ -z "$have" ] || problem="#${ST_T[$i]} is already blocked by #${ST_B[$i]}"
+      else
+        [ -n "$have" ] || problem="#${ST_T[$i]} is not blocked by #${ST_B[$i]}"
+      fi
+      [ -n "$problem" ] || return 0
+      [ -n "$collect" ] || die "$what: $problem - nothing written"
+      SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$at$what: $problem" ;;
+  esac
+}
+
 # spec_review_tickets_follow <body-var> <dir> <kind> <issue>: every accepted
-# ticket item checked and applied in memory - a text edit to its ticket's
-# fetched copy in TK_TEXT, a `## Ticket` edit to the body in <body-var>,
-# anchored on the body as the batch items left it - and every edge item
-# checked against the breakdown and the fetched tickets' `## Blocked by`
-# sections. Dies, before any write, on the first that fails.
+# ticket item checked and applied in memory - see spec_review_ticket_local -
+# and the checks that read GitHub: every edge item's tickets in the
+# breakdown, and a `## Ticket` item only on a collapsed one. Dies, before any
+# write, on the first that fails.
 spec_review_tickets_follow() {
-  local body_var="$1" dir="$2" kind="$3" issue="$4" i j t what post subs="" listed have
+  local body_var="$1" dir="$2" kind="$3" issue="$4" i t what post subs="" listed
   [ -z "$ST_RETIRE" ] || return 0
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
     case "${ST_KIND[$i]}" in
@@ -1002,41 +1157,87 @@ spec_review_tickets_follow() {
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
     what="ticket item ${ST_N[$i]}"
     case "${ST_KIND[$i]}" in
-      ticket)
-        spec_review_ticket_load "$dir" "${ST_T[$i]}" "$what"
-        [ "${ST_DISP[$i]}" = applied ] || continue
-        j="$(array_index TK_T "${ST_T[$i]}")"
-        spec_review_edit "TK_TEXT[$j]" "${TK_FETCHED[$j]}" "$what (#${ST_T[$i]})" \
-          "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" ;;
       section)
         [ "$kind" = collapsed ] \
-          || die "$what: a ## Ticket item, but #$issue's breakdown is $kind - nothing written"
-        [ "${ST_DISP[$i]}" = applied ] || continue
-        spec_review_edit "$body_var" "$post" "$what (## Ticket)" \
-          "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" ;;
+          || die "$what: a ## Ticket item, but #$issue's breakdown is $kind - nothing written" ;;
       block|unblock)
         for t in "${ST_T[$i]}" "${ST_B[$i]}"; do
           case $'\n'"$subs"$'\n' in
             *$'\n'"$t"$'\n'*) ;;
             *) die "$what: #$t is not a ticket of #$issue's breakdown - nothing written" ;;
           esac
-        done
-        [ "${ST_DISP[$i]}" = applied ] || continue
-        spec_review_ticket_load "$dir" "${ST_T[$i]}" "$what"
-        j="$(array_index TK_T "${ST_T[$i]}")"
-        have=""
-        case $'\n'"$(printf '%s\n' "${TK_FETCHED[$j]}" | blocked_by_section_numbers)"$'\n' in
-          *$'\n'"${ST_B[$i]}"$'\n'*) have=1 ;;
-        esac
-        if [ "${ST_KIND[$i]}" = block ]; then
-          [ -z "$have" ] \
-            || die "$what: #${ST_T[$i]} is already blocked by #${ST_B[$i]} - nothing written"
-        else
-          [ -n "$have" ] \
-            || die "$what: #${ST_T[$i]} is not blocked by #${ST_B[$i]} - nothing written"
-        fi ;;
+        done ;;
+    esac
+    spec_review_ticket_local "$i" "$body_var" "$post" "$dir"
+  done
+}
+
+# spec_review_tickets_check <dir>: check --tickets - <dir>/tickets.md
+# validated as apply --tickets would take the all answer, against the ticket
+# copies and <dir>/spec.md, with nothing written and no GitHub read. A
+# grammar error stops at the first; every other problem is reported, one
+# `orch: ` line each, then exit 1. A clean file prints its view on stdout -
+# see spec_review_tickets_view - and a one-line summary on stderr.
+spec_review_tickets_check() {
+  local dir="$1" i anchors=0 __srtc_body
+  [ -f "$dir/tickets.md" ] || die "tickets.md not found in $dir"
+  [ -f "$dir/spec.md" ] || die "spec.md not found in $dir"
+  spec_review_tickets_parse "$dir/tickets.md"
+  spec_review_tickets_answer all
+  file_read __srtc_body "$dir/spec.md" || die "could not read $dir/spec.md"
+  local post="$__srtc_body"
+  SR_PROBLEMS=(); TK_T=(); TK_FETCHED=(); TK_TEXT=()
+  for i in ${ST_N[@]+"${!ST_N[@]}"}; do
+    spec_review_ticket_local "$i" __srtc_body "$post" "$dir" collect
+    case "${ST_KIND[$i]}" in ticket|section) anchors=$((anchors + 1)) ;; esac
+  done
+  spec_review_problems_exit
+  spec_review_tickets_view
+  if [ -n "$ST_NONE" ]; then
+    note "tickets.md passes: no open ticket affected" >&2
+  else
+    note "tickets.md passes: ${#ST_N[@]} items, $anchors anchors, each matching once, and the all answer applies cleanly" >&2
+  fi
+}
+
+# spec_review_tickets_view: the parsed tickets.md as the human reads it
+# before the ticket question - every item in order, with its ticket or the
+# `## Ticket` section, its recommendation and its edit in full, then the
+# closed tickets and the file's recommended answer. Rendered from the ST_
+# arrays alone.
+spec_review_tickets_view() {
+  local i
+  printf '## The ticket items\n'
+  if [ -n "$ST_NONE" ]; then
+    printf '\nNo open ticket is affected.\n'
+    return 0
+  fi
+  for i in ${ST_N[@]+"${!ST_N[@]}"}; do
+    printf '\n### Item %s - ' "${ST_N[$i]}"
+    case "${ST_KIND[$i]}" in
+      ticket) printf '#%s\n' "${ST_T[$i]}" ;;
+      section) printf 'the %s section\n' '`## Ticket`' ;;
+      *) printf '%s #%s by #%s\n' "${ST_KIND[$i]}" "${ST_T[$i]}" "${ST_B[$i]}" ;;
+    esac
+    printf '\n**Recommendation:** '
+    case "${ST_REC[$i]}" in
+      apply) printf 'apply\n' ;;
+      decline) printf 'recommend decline - %s\n' "${ST_ARG[$i]}" ;;
+    esac
+    case "${ST_KIND[$i]}" in
+      ticket|section) spec_review_edit_view "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" ;;
     esac
   done
+  printf '\n### Closed tickets\n\n'
+  for i in ${ST_CL_T[@]+"${!ST_CL_T[@]}"}; do
+    printf -- '- #%s - %s\n' "${ST_CL_T[$i]}" "${ST_CL_WHAT[$i]}"
+  done
+  [ "${#ST_CL_T[@]}" -gt 0 ] || printf 'None\n'
+  printf '\n**Recommended answer:** '
+  case "$ST_RECOMMEND" in
+    apply) printf 'apply\n' ;;
+    retire) printf 'retire - the ticket breakdown retired, to be broken down again\n' ;;
+  esac
 }
 
 # spec_review_tickets_lines: the changelog's Tickets lines, from tickets.md,

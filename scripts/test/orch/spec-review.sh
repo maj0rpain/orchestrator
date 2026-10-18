@@ -5,6 +5,23 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# dir_snapshot <dir>: every file in <dir> with its checksum, for a
+# byte-identical comparison.
+dir_snapshot() { (cd "$1" && find . -type f | LC_ALL=C sort | xargs cksum); }
+# check_refused <runner> <label> <dir> <stderr>: <runner> <dir> - a check
+# run that sets out, err and st - exits 1 with exactly <stderr>, nothing on
+# stdout, and <dir> unchanged.
+check_refused() {
+  local runner="$1" before
+  shift
+  before="$(dir_snapshot "$2")"
+  "$runner" "$2"
+  assert_status "$1: refused" "$st" 1
+  assert_eq "$1: exactly these errors" "$err" "$3"
+  assert_eq "$1: nothing on stdout" "$out" ""
+  assert_eq "$1: the directory unchanged" "$(dir_snapshot "$2")" "$before"
+}
+
 # --- spec-review begin (#224) ------------------------------------------------
 # A standalone spec review's guard and working-directory reset have one right
 # answer each, so they live here: refuse an issue an active flow holds, and
@@ -107,7 +124,6 @@ cm_seed() {
   echo stale >"$sr_dir/lens-implementability.md"
   echo stale >"$sr_dir/sub/changelog.md"
 }
-cm_snapshot() { (cd "$sr_dir" && find . -type f | LC_ALL=C sort | xargs cksum); }
 cm_seed
 out="$("$ORCH" spec-review begin 14 --carry 2>&1)"; st=$?
 assert_status "--carry with a map and a settled file proceeds" "$st" 0
@@ -144,12 +160,12 @@ assert_eq "creating it empty" "$(ls -A "$top/.orchestrator/spec-review/16" 2>&1)
 
 for args in "14 --carry-map" "--carry 14" "14 --carry --carry" "14 --carry 15"; do
   cm_seed
-  before="$(cm_snapshot)"
+  before="$(dir_snapshot "$sr_dir")"
   # shellcheck disable=SC2086 # word splitting is the point: each word is an arg
   out="$("$ORCH" spec-review begin $args 2>&1)"; st=$?
   assert_status "refuses begin '$args'" "$st" 1
   assert_eq "with the usage for '$args'" "$out" "orch: usage: orch.sh spec-review begin <n> [--carry]"
-  assert_eq "deleting nothing for '$args'" "$(cm_snapshot)" "$before"
+  assert_eq "deleting nothing for '$args'" "$(dir_snapshot "$sr_dir")" "$before"
 done
 
 cm_seed
@@ -1094,43 +1110,317 @@ src() {
   out="$("$ORCH" spec-review check "$1" 2>"$src_err")"; st=$?
   err="$(cat "$src_err")"
 }
-# src_snapshot <dir>: every file in <dir> with its checksum, for a
-# byte-identical comparison.
-src_snapshot() { (cd "$1" && find . -type f | LC_ALL=C sort | xargs cksum); }
-# src_refused <label> <dir> <stderr>: check exits 1 with exactly <stderr>,
-# nothing on stdout, and <dir> unchanged.
-src_refused() {
-  local before
-  before="$(src_snapshot "$2")"
-  src "$2"
-  assert_status "$1: refused" "$st" 1
-  assert_eq "$1: exactly these errors" "$err" "$3"
-  assert_eq "$1: nothing on stdout" "$out" ""
-  assert_eq "$1: the directory unchanged" "$(src_snapshot "$2")" "$before"
-}
 
-# A clean batch: exit 0, one summary line, nothing written.
+# A clean batch: exit 0, the view on stdout, the one-line summary on stderr,
+# nothing written.
 d="$(src_dir)"
-before="$(src_snapshot "$d")"
+before="$(dir_snapshot "$d")"
 src "$d"
 assert_status "a clean batch passes" "$st" 0
-assert_eq "with a one-line summary" "$out" \
+assert_eq "with a one-line summary on stderr" "$err" \
   "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
-assert_eq "and nothing on stderr" "$err" ""
-assert_eq "the directory byte-identical" "$(src_snapshot "$d")" "$before"
+assert_not_contains "and not on stdout" "$out" "batch.md passes"
+assert_eq "the directory byte-identical" "$(dir_snapshot "$d")" "$before"
 assert_eq "no spec.fetched.md created" "$(on_disk "$d/spec.fetched.md")" absent
 
 # The Implementability lens's code map sits outside the lens-<name>.md
 # namespace, so check never parses it (#1141).
 d="$(src_dir)"
 printf '@@ item 9 bogus\n@@ finding nowhere 7\n@@ lens implementability ran\n' >"$d/map-implementability.md"
-before="$(src_snapshot "$d")"
+before="$(dir_snapshot "$d")"
 src "$d"
 assert_status "a map full of @@ lines passes" "$st" 0
-assert_eq "with the same summary" "$out" \
+assert_eq "with the same summary on stderr" "$err" \
   "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
-assert_eq "and nothing on stderr with a map" "$err" ""
-assert_eq "the directory, map included, byte-identical" "$(src_snapshot "$d")" "$before"
+assert_eq "the directory, map included, byte-identical" "$(dir_snapshot "$d")" "$before"
+
+# The view: each cited finding's text next to the item citing it (#1225).
+d="$(src_dir)"
+src "$d"
+view_item2="${out#*'### Item 2 - Consistency'}"; view_item2="${view_item2%%'### Item 3'*}"
+assert_contains "item 2's view carries the finding it cites" "$view_item2" \
+  "**Finding** (Consistency 1):
+
+> Beta contradicts the plan."
+assert_not_contains "and no other item's finding" "$view_item2" "Gamma is untestable."
+
+# The view of the skill's worked-example batch, as it stands: one item of each
+# kind and its ran and standalone lens lines.
+d="$(mktemp -d)"
+cat >"$d/spec.md" <<'BODY'
+# Widget export
+
+## Problem Statement
+
+Exports time out on large widgets.
+
+## Solution
+
+The export streams each widget in pages of 100.
+The export writes one file.
+
+## Testing Decisions
+
+- One seam: the `widget export` CLI.
+BODY
+cat >"$d/batch.md" <<'BATCH'
+@@ lens fidelity standalone
+@@ lens consistency ran
+@@ lens testability ran
+@@ lens implementability ran
+
+@@ item 1 consolidation apply
+@@ summary Failed pages are retried once
+@@ comment @alice 2026-10-01T09:00:00Z
+@@ quote
+A failed page should be retried once before the export gives up.
+@@ anchor
+The export streams each widget in pages of 100.
+@@ replace
+The export streams each widget in pages of 100.
+A failed page is retried once before the export fails.
+@@ end
+
+@@ item 2 testability apply
+@@ finding testability 1
+@@ summary The seam's test runs against a fake store
+@@ anchor
+- One seam: the `widget export` CLI.
+@@ replace
+- One seam: the `widget export` CLI, end to end, against a fake store.
+@@ end
+
+@@ item 3 consistency decline the glossary's term is widget, as the body says
+@@ finding consistency 1
+@@ summary Widgets renamed items
+@@ anchor
+Exports time out on large widgets.
+@@ replace
+Exports time out on large items.
+@@ end
+
+@@ item 4 implementability decision B
+@@ finding implementability 1
+@@ option A One file
+@@ summary The export writes one compressed file
+@@ anchor
+The export writes one file.
+@@ replace
+The export writes one compressed file.
+@@ end
+@@ option B One file per widget
+@@ summary The export writes one file per widget
+@@ anchor
+The export writes one file.
+@@ replace
+The export writes one file per widget.
+@@ end
+
+@@ item 5 implementability resolved
+@@ finding implementability 2
+@@ resolved-by 4
+BATCH
+printf '@@ finding 1\nThe body says widget where the glossary says item.\n' >"$d/lens-consistency.md"
+printf '@@ finding 1\nThe seam names no store to test against.\n' >"$d/lens-testability.md"
+printf '@@ finding 1\nOne file cannot hold the largest exports.\nThe store caps a file at 2 GB.\n@@ finding 2\nOne file is written before every page is fetched.\n' \
+  >"$d/lens-implementability.md"
+before="$(dir_snapshot "$d")"
+src "$d"
+assert_status "the worked example passes" "$st" 0
+assert_eq "its view, every item in full" "$out" '## The batch
+
+### Lenses
+
+- Fidelity: not run - standalone review, no plan to check against
+- Consistency: ran
+- Testability: ran
+- Implementability: ran
+
+### Item 1 - Consolidation
+
+**Recommendation:** apply
+
+**Comment** by @alice, 2026-10-01T09:00:00Z:
+
+> A failed page should be retried once before the export gives up.
+
+**Current**
+
+```
+The export streams each widget in pages of 100.
+```
+
+**Proposed**
+
+```
+The export streams each widget in pages of 100.
+A failed page is retried once before the export fails.
+```
+
+### Item 2 - Testability
+
+**Recommendation:** apply
+
+**Finding** (Testability 1):
+
+> The seam names no store to test against.
+
+**Current**
+
+```
+- One seam: the `widget export` CLI.
+```
+
+**Proposed**
+
+```
+- One seam: the `widget export` CLI, end to end, against a fake store.
+```
+
+### Item 3 - Consistency
+
+**Recommendation:** recommend decline - the glossary'"'"'s term is widget, as the body says
+
+**Finding** (Consistency 1):
+
+> The body says widget where the glossary says item.
+
+**Current**
+
+```
+Exports time out on large widgets.
+```
+
+**Proposed**
+
+```
+Exports time out on large items.
+```
+
+### Item 4 - Implementability
+
+**Recommendation:** decision - option B recommended
+
+**Finding** (Implementability 1):
+
+> One file cannot hold the largest exports.
+> The store caps a file at 2 GB.
+
+#### Option A - One file
+
+**Current**
+
+```
+The export writes one file.
+```
+
+**Proposed**
+
+```
+The export writes one compressed file.
+```
+
+#### Option B - One file per widget (recommended)
+
+**Current**
+
+```
+The export writes one file.
+```
+
+**Proposed**
+
+```
+The export writes one file per widget.
+```
+
+### Item 5 - Implementability
+
+**Recommendation:** none - resolved by item 4
+
+**Finding** (Implementability 2):
+
+> One file is written before every page is fetched.'
+assert_eq "its summary on stderr" "$err" \
+  "batch.md passes: 5 items, 5 anchors, each matching once in spec.md, and the all answer applies cleanly"
+assert_eq "the worked example's directory unchanged" "$(dir_snapshot "$d")" "$before"
+
+# The view of a flow's batch: Fidelity ran with a contradicts-the-plan item,
+# and a lens that did not run, cited by nothing. An edit holding a fence is
+# shown inside a longer one.
+d="$(mktemp -d)"
+cat >"$d/spec.md" <<'BODY'
+# Sync
+
+Run sync nightly:
+```sh
+orch sync
+```
+BODY
+cat >"$d/batch.md" <<'BATCH'
+@@ lens fidelity ran
+@@ lens consistency ran
+@@ lens testability not-run timed out twice
+@@ lens implementability ran
+
+@@ item 1 contradicts-the-plan apply
+@@ finding fidelity 1
+@@ summary Sync runs hourly, as the plan decided
+@@ anchor
+Run sync nightly:
+```sh
+orch sync
+```
+@@ replace
+Run sync hourly:
+```sh
+orch sync --hourly
+```
+@@ end
+BATCH
+printf '@@ finding 1\nThe plan decided hourly; the spec says nightly.\n' >"$d/lens-fidelity.md"
+printf '@@ none\n' >"$d/lens-consistency.md"
+printf '@@ none\n' >"$d/lens-implementability.md"
+before="$(dir_snapshot "$d")"
+src "$d"
+assert_status "a flow batch passes" "$st" 0
+assert_eq "its view" "$out" '## The batch
+
+### Lenses
+
+- Fidelity: ran
+- Consistency: ran
+- Testability: not run - timed out twice
+- Implementability: ran
+
+### Item 1 - Contradicts the plan
+
+**Recommendation:** apply
+
+**Finding** (Fidelity 1):
+
+> The plan decided hourly; the spec says nightly.
+
+**Current**
+
+````
+Run sync nightly:
+```sh
+orch sync
+```
+````
+
+**Proposed**
+
+````
+Run sync hourly:
+```sh
+orch sync --hourly
+```
+````'
+assert_eq "its summary on stderr" "$err" \
+  "batch.md passes: 1 items, 1 anchors, each matching once in spec.md, and the all answer applies cleanly"
+assert_eq "the flow batch's directory unchanged" "$(dir_snapshot "$d")" "$before"
 
 # No flow state read, no GitHub touched.
 mkdir -p "$top/.orchestrator"
@@ -1147,28 +1437,28 @@ sed 's/^Alpha line\.$/Alpha prime line./' <<<"$src_body" >"$d/spec.md"
 printf '%s' "$src_body" >"$d/spec.fetched.md"
 src "$d"
 assert_status "an edited spec.md passes against the spec.fetched.md it came from" "$st" 0
-assert_contains "naming spec.fetched.md" "$out" "each matching once in spec.fetched.md"
+assert_contains "naming spec.fetched.md" "$err" "each matching once in spec.fetched.md"
 printf '%s' "$src_body" >"$d/spec.md"
 sed 's/^Alpha line\.$/Alpha moved./' <<<"$src_body" >"$d/spec.fetched.md"
-src_refused "an anchor spec.md has but spec.fetched.md lacks" "$d" \
+check_refused src "an anchor spec.md has but spec.fetched.md lacks" "$d" \
   "orch: batch.md line 9: item 1: its anchor matches no text in the body"
 
 # Anchors: each problem once, every one in one run, each naming its line.
 d="$(src_dir)"
 sed -i '10s/.*/Twice./' "$d/batch.md"
-src_refused "an anchor matching twice, reported once" "$d" \
+check_refused src "an anchor matching twice, reported once" "$d" \
   "orch: batch.md line 9: item 1: its anchor matches more than one place in the body"
 d="$(src_dir)"
 sed -i '10a Beta line.' "$d/batch.md"
-src_refused "two overlapping edits, caught by the all dry run" "$d" \
+check_refused src "two overlapping edits, caught by the all dry run" "$d" \
   "orch: batch.md line 19: item 2: its anchor no longer matches exactly once after the earlier items' edits"
 d="$(src_dir)"
 sed -i '36s/.*/Nowhere either./' "$d/batch.md"
-src_refused "a decision option's anchor matching nothing" "$d" \
+check_refused src "a decision option's anchor matching nothing" "$d" \
   "orch: batch.md line 35: item 3 option B: its anchor matches no text in the body"
 d="$(src_dir)"
 sed -i '10s/.*/Nowhere./; 19s/.*/Twice./; 36s/.*/Nowhere either./' "$d/batch.md"
-src_refused "several bad anchors" "$d" \
+check_refused src "several bad anchors" "$d" \
   "orch: batch.md line 9: item 1: its anchor matches no text in the body
 orch: batch.md line 18: item 2: its anchor matches more than one place in the body
 orch: batch.md line 35: item 3 option B: its anchor matches no text in the body"
@@ -1176,25 +1466,25 @@ orch: batch.md line 35: item 3 option B: its anchor matches no text in the body"
 # Grammar: the first error only.
 d="$(src_dir)"
 sed -i '7s/.*/@@ bogus/; 16s/.*/@@ bogus/' "$d/batch.md"
-src_refused "two grammar errors" "$d" "orch: batch.md line 7: unknown line '@@ bogus'"
+check_refused src "two grammar errors" "$d" "orch: batch.md line 7: unknown line '@@ bogus'"
 
 # Lens files and citations.
 d="$(src_dir)"
 sed -i '42s/.*/@@ finding testability 3/' "$d/batch.md"
-src_refused "a citation past its lens file's count" "$d" \
+check_refused src "a citation past its lens file's count" "$d" \
   "orch: batch.md line 42: cites finding 3 of lens testability, but lens-testability.md holds 2"
 d="$(src_dir)"
 printf 'preamble\n@@ finding 1\nx\n' >"$d/lens-consistency.md"
-src_refused "a malformed lens file" "$d" \
+check_refused src "a malformed lens file" "$d" \
   "orch: lens-consistency.md line 1: text before the first @@ finding"
 
 # Errors with no batch line.
 d="$(src_dir)"
 rm "$d/batch.md"
-src_refused "no batch.md" "$d" "orch: batch.md not found in $d"
+check_refused src "no batch.md" "$d" "orch: batch.md not found in $d"
 d="$(src_dir)"
 sed -i '2d' "$d/batch.md"
-src_refused "a missing @@ lens line" "$d" \
+check_refused src "a missing @@ lens line" "$d" \
   "orch: batch.md: no @@ lens line for consistency - every lens in the table has one"
 
 # A batch check passes applies with all.
@@ -1235,6 +1525,225 @@ out="$("$ORCH" spec-review wipe 2>&1)"
 assert_contains "the unknown-op message lists check" "$out" "want begin|check|apply"
 assert_contains "help documents spec-review check" "$("$ORCH" help)" "spec-review check <dir>"
 rm -f "$src_err"
+restore_suite_env
+
+# --- spec-review check --tickets (#1226) ---------------------------------------
+# The ticket items validated before the ticket question - grammar, every text
+# anchor against the copy apply would edit, and every edge against its
+# ticket's ## Blocked by, as the all answer would take them - with nothing
+# written and no GitHub read, then the ticket view on stdout.
+echo
+echo "spec-review check --tickets (#1226)"
+new_repo >/dev/null
+fake_github
+srct_t20='## What to build
+
+Build alpha.
+
+## Blocked by
+
+None (can start immediately)'
+srct_t21='## What to build
+
+Build gamma.
+
+## Blocked by
+
+- #20'
+# srct_dir: a fresh round directory after the pause - spec.md, #20 and #21
+# fetched into ticket-<n>.md, and tickets.md drafted; prints its path. Its
+# @@ anchor lines: item 1 on 4, item 4 on 14.
+srct_dir() {
+  local d
+  d="$(mktemp -d)"
+  printf '# Spec\n\nAlpha line.\n' >"$d/spec.md"
+  printf '%s' "$srct_t20" >"$d/ticket-20.md"
+  printf '%s' "$srct_t21" >"$d/ticket-21.md"
+  cat >"$d/tickets.md" <<'TICKETS'
+@@ recommend apply
+@@ item 1 ticket 20 apply
+@@ summary #20 builds alpha prime
+@@ anchor
+Build alpha.
+@@ replace
+Build alpha prime.
+@@ end
+
+@@ item 2 unblock 21 by 20 apply
+@@ item 3 block 20 by 21 apply
+@@ item 4 ticket 21 decline gamma is unchanged
+@@ summary #21 builds gamma twice
+@@ anchor
+Build gamma.
+@@ replace
+Build gamma twice.
+@@ end
+@@ closed 22 the gamma API
+TICKETS
+  printf '%s\n' "$d"
+}
+# srct <dir>: check --tickets on <dir>, its stdout, stderr and status into
+# out, err and st.
+srct_err="$(mktemp)"
+srct() {
+  out="$("$ORCH" spec-review check "$1" --tickets 2>"$srct_err")"; st=$?
+  err="$(cat "$srct_err")"
+}
+# srct_passes <label> <dir> <stdout> <stderr>: check --tickets exits 0 with
+# exactly <stdout> and <stderr>, and <dir> unchanged.
+srct_passes() {
+  local before
+  before="$(dir_snapshot "$2")"
+  srct "$2"
+  assert_status "$1: passes" "$st" 0
+  assert_eq "$1: the ticket view on stdout" "$out" "$3"
+  assert_eq "$1: the pass summary on stderr" "$err" "$4"
+  assert_not_contains "$1: and not on stdout" "$out" "tickets.md passes"
+  assert_eq "$1: the directory unchanged" "$(dir_snapshot "$2")" "$before"
+}
+
+d="$(srct_dir)"
+srct_passes "a ticket batch" "$d" '## The ticket items
+
+### Item 1 - #20
+
+**Recommendation:** apply
+
+**Current**
+
+```
+Build alpha.
+```
+
+**Proposed**
+
+```
+Build alpha prime.
+```
+
+### Item 2 - unblock #21 by #20
+
+**Recommendation:** apply
+
+### Item 3 - block #20 by #21
+
+**Recommendation:** apply
+
+### Item 4 - #21
+
+**Recommendation:** recommend decline - gamma is unchanged
+
+**Current**
+
+```
+Build gamma.
+```
+
+**Proposed**
+
+```
+Build gamma twice.
+```
+
+### Closed tickets
+
+- #22 - the gamma API
+
+**Recommended answer:** apply' \
+  "tickets.md passes: 4 items, 2 anchors, each matching once, and the all answer applies cleanly"
+assert_eq "no fetched copy taken" "$(on_disk "$d/ticket-20.fetched.md")" absent
+
+# A collapsed breakdown's ## Ticket item, anchored on spec.md.
+d="$(mktemp -d)"
+printf '# Spec\n\n## Ticket\n\nBuild the spec.\n' >"$d/spec.md"
+printf '@@ recommend retire\n@@ item 1 section apply\n@@ summary The ticket builds alpha first\n@@ anchor\nBuild the spec.\n@@ replace\nBuild the spec, alpha first.\n@@ end\n' >"$d/tickets.md"
+srct_passes "a ## Ticket item" "$d" '## The ticket items
+
+### Item 1 - the `## Ticket` section
+
+**Recommendation:** apply
+
+**Current**
+
+```
+Build the spec.
+```
+
+**Proposed**
+
+```
+Build the spec, alpha first.
+```
+
+### Closed tickets
+
+None
+
+**Recommended answer:** retire - the ticket breakdown retired, to be broken down again' \
+  "tickets.md passes: 1 items, 1 anchors, each matching once, and the all answer applies cleanly"
+printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nNowhere.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
+check_refused srct "a section anchor not in spec.md" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body"
+
+# @@ none-affected.
+d="$(mktemp -d)"
+printf '# Spec\n' >"$d/spec.md"
+printf '@@ none-affected\n' >"$d/tickets.md"
+srct_passes "@@ none-affected" "$d" '## The ticket items
+
+No open ticket is affected.' "tickets.md passes: no open ticket affected"
+
+# An earlier run's fetched copy is the one apply edits, so the anchor is
+# checked against it.
+d="$(srct_dir)"
+printf '%s' "$srct_t20" >"$d/ticket-20.fetched.md"
+printf 'Rewritten.\n' >"$d/ticket-20.md"
+srct "$d"
+assert_status "an anchor matching the fetched copy, not ticket-20.md, passes" "$st" 0
+d="$(srct_dir)"
+printf 'Rewritten.\n' >"$d/ticket-20.fetched.md"
+check_refused srct "an anchor matching ticket-20.md, not the fetched copy" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body"
+
+# Refusals.
+d="$(srct_dir)"
+sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
+check_refused srct "a ticket anchor matching nothing" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body"
+d="$(srct_dir)"
+sed -i 's/^Build alpha\.$/##/' "$d/tickets.md"
+check_refused srct "a ticket anchor matching twice" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches more than one place in the body"
+d="$(srct_dir)"
+sed -i 's/^Build alpha\.$/Nowhere./; s/^Build gamma\.$/Nowhere./' "$d/tickets.md"
+check_refused srct "two bad anchors, each named" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body
+orch: tickets.md line 14: ticket item 4 (#21): its anchor matches no text in the body"
+d="$(srct_dir)"
+printf '@@ bogus\n' >>"$d/tickets.md"
+check_refused srct "a grammar error" "$d" "orch: tickets.md line 20: unknown line '@@ bogus'"
+d="$(srct_dir)"
+rm "$d/tickets.md"
+check_refused srct "no tickets.md" "$d" "orch: tickets.md not found in $d"
+d="$(srct_dir)"
+rm "$d/spec.md"
+check_refused srct "no spec.md" "$d" "orch: spec.md not found in $d"
+d="$(srct_dir)"
+rm "$d/ticket-20.md"
+check_refused srct "no ticket file, named by each item needing it" "$d" \
+  "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it
+orch: tickets.md line 11: ticket item 3: ticket-20.md not found in $d - fetch each ticket a ticket item names into it"
+d="$(srct_dir)"
+sed -i 's/^@@ item 3 block 20 by 21 apply$/@@ item 3 block 21 by 20 apply/' "$d/tickets.md"
+check_refused srct "a block edge already present" "$d" \
+  "orch: tickets.md line 11: ticket item 3: #21 is already blocked by #20"
+d="$(srct_dir)"
+sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' "$d/tickets.md"
+check_refused srct "an unblock edge absent" "$d" \
+  "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21"
+
+assert_contains "help documents spec-review check --tickets" "$("$ORCH" help)" "spec-review check <dir> [--tickets]"
+rm -f "$srct_err"
 restore_suite_env
 
 # --- spec-review wait (#1183) --------------------------------------------------

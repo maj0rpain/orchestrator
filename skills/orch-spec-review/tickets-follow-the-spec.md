@@ -68,13 +68,29 @@ item's is text in the body as the accepted edits left it.
 
 If no open ticket is affected, ask nothing: write `@@ none-affected` alone,
 or, when the edits touch a closed ticket, `@@ recommend apply` and one
-`@@ closed` line per closed ticket, so each is still listed. Otherwise print
-the ticket items in chat in full - each naming its ticket (`#<n>`, or the
-`## Ticket` section), what the accepted edits changed for it, and its
-replacement text, or for an edge change the one edge added or removed - and
-ask **one blocking question** with the host's ask tool (`AskUserQuestion` on
-Claude Code, `ask_user` on Junie), the list and the call in the same
-response, as for the spec batch. Its options are the spec batch's, under the
+`@@ closed` line per closed ticket, so each is still listed.
+
+Before any ticket item is shown, check `tickets.md`:
+
+```
+bash "$ORCH" spec-review check <dir> --tickets
+```
+
+It validates `tickets.md` as `apply --tickets` would take the **all**
+answer, writing nothing and reading no GitHub. On any exit but 0, each
+`orch:` line on stderr names what is wrong, most with its `tickets.md` line:
+fix `tickets.md` and run it again, until it exits 0. On exit 0 it prints the
+full ticket view on stdout - each item with its ticket (`#<n>`, or the
+`## Ticket` section), its recommendation, and its Current and Proposed text
+in full, or for an edge change the block or unblock it makes, then the
+closed tickets and the file's recommendation - and its one-line pass summary
+on stderr.
+
+When an open ticket is affected, paste `check --tickets`'s stdout into chat
+word for word, composing no view of your own, and ask **one blocking
+question** with the host's ask tool (`AskUserQuestion` on Claude Code,
+`ask_user` on Junie), the paste and the call in the same response, as for
+the spec batch. Its options are the spec batch's, under the
 skill's **Disposition**, each offered once and with the same rules, except:
 
 - **Retire and break down again** is added: no ticket is edited; the
