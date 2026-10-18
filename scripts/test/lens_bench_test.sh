@@ -529,6 +529,7 @@ echo : >"$seed_repo/lib/common.sh"
 echo : >"$seed_repo/bin/common.sh"
 printf 'one\ntwo\nthree\n' >"$seed_repo/data/unique.txt"
 echo a >"$seed_repo/notes/notes.txt"
+printf '## Spec axis - iteration 3/4\n\nText.\n' >"$seed_repo/docs/dash.md"
 seed_git add -A
 seed_git commit -qm snapshot
 seed_snapshot="$(seed_git rev-parse HEAD)"
@@ -592,6 +593,17 @@ has_line "counts the heading and function entries covering no location, whole fi
   "Heading and function entries outside the baseline: 3 of 6"
 assert_eq "removes the worktree after seeding" "$(seed_worktrees)" 1
 assert_eq "removes its temporary directory after seeding" "$(leftovers)" 0
+
+echo
+echo "seed: a heading whose text holds ' - '"
+cp -R "$seed_fixture" "$seed_repo/fixture-dash"
+printf 'Names `Spec axis - iteration 3/4`.\n' >"$seed_repo/fixture-dash/spec.md"
+printf 'docs/dash.md:1 Spec axis - its text\n' >"$seed_repo/fixture-dash/map.md"
+run_bench seed implementability --fixture "$seed_repo/fixture-dash"
+assert_status "a heading holding ' - ' and a / seeds" "$st" 0
+has_line "a heading holding ' - ' gets its entry" "$out" \
+  "docs/dash.md:1-3 Spec axis - iteration 3/4 - heading: named in the spec as Spec axis - iteration 3/4"
+has_line "a heading holding ' - ' counts as a heading" "$out" "| heading | 1 | 1/1 |"
 
 echo
 echo "seed: another snapshot"

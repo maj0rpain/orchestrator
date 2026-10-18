@@ -105,9 +105,10 @@ fail() {
 
 BENCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# The temporary directory `run` holds its worktree and run directories in,
-# and the output run subdirectory being written, both removed on exit.
-run_tmp="" run_partial=""
+# The temporary directory `run` and `seed` hold their worktree in - and
+# `run` its run directories - of the repo run_repo, and the output run
+# subdirectory `run` is writing, both removed on exit.
+run_tmp="" run_partial="" run_repo=""
 run_cleanup() {
   local status=$?
   if [ -n "$run_tmp" ]; then
@@ -117,6 +118,35 @@ run_cleanup() {
   fi
   [ -z "$run_partial" ] || rm -rf "$run_partial"
   exit "$status"
+}
+
+# snapshot_worktree <snapshot>: arms run_cleanup, makes run_tmp, and checks
+# <snapshot> out of run_repo in a detached worktree at $run_tmp/repo.
+snapshot_worktree() {
+  trap run_cleanup EXIT
+  trap 'exit 130' INT TERM
+  run_tmp="$(mktemp -d "${TMPDIR:-/tmp}/lens-bench.XXXXXX")"
+  git -C "$run_repo" worktree add --quiet --detach "$run_tmp/repo" "$1" >/dev/null 2>&1 ||
+    fail "$1: cannot check out the snapshot in a worktree"
+}
+
+# lens_fixture <lens>: the path of <lens>'s committed fixture directory,
+# failing when there is none.
+lens_fixture() {
+  local fixture="$BENCH_DIR/lens-bench/$1"
+  case "$1" in
+    */* | .*) fail "$1: unknown lens, no fixture directory $fixture" ;;
+  esac
+  [ -d "$fixture" ] || fail "$1: unknown lens, no fixture directory $fixture"
+  printf '%s\n' "$fixture"
+}
+
+# no_trailing_slashes <path>: <path> without its trailing slashes, so every
+# message names one path; a lone / stays itself.
+no_trailing_slashes() {
+  local path="$1"
+  while [[ "$path" == */ && "$path" != / ]]; do path="${path%/}"; done
+  printf '%s\n' "$path"
 }
 
 # frontmatter <file> <key>: the value of <key> in <file>'s frontmatter, one
@@ -176,11 +206,8 @@ cmd_run() {
   case "$n" in '' | *[!0-9]* | 0*) usage ;; esac
 
   # Every check before anything is created.
-  local fixture="$BENCH_DIR/lens-bench/$lens"
-  case "$lens" in
-    */* | .*) fail "$lens: unknown lens, no fixture directory $BENCH_DIR/lens-bench/$lens" ;;
-  esac
-  [ -d "$fixture" ] || fail "$lens: unknown lens, no fixture directory $BENCH_DIR/lens-bench/$lens"
+  local fixture
+  fixture="$(lens_fixture "$lens")" || exit
   [ -f "$fixture/spec.md" ] || fail "$fixture/spec.md: missing"
   [ -f "$fixture/snapshot" ] || fail "$fixture/snapshot: missing"
   run_repo="$(git -C "$BENCH_DIR" rev-parse --show-toplevel)" || fail "$BENCH_DIR: not in a git repo"
@@ -195,9 +222,7 @@ cmd_run() {
   [ ! -e "$out" ] && [ ! -L "$out" ] || fail "$out: already exists"
   command -v claude >/dev/null || fail "claude: not on PATH"
 
-  trap run_cleanup EXIT
-  trap 'exit 130' INT TERM
-  run_tmp="$(mktemp -d "${TMPDIR:-/tmp}/lens-bench.XXXXXX")"
+  snapshot_worktree "$snapshot"
   local agent="$run_tmp/definition.md" agents worktree="$run_tmp/repo"
   git -C "$run_repo" show "$sha:$definition" >"$agent"
   agents="$(jq -n \
@@ -209,8 +234,6 @@ cmd_run() {
       tools: ($tools | ltrimstr("[") | rtrimstr("]") | split(",")
               | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))),
       prompt: $prompt, model: $model}}')"
-  git -C "$run_repo" worktree add --quiet --detach "$worktree" "$snapshot" >/dev/null 2>&1 ||
-    fail "$snapshot: cannot check out the snapshot in a worktree"
 
   mkdir -p "$out"
   printf '%s\n' "$lens" >"$out/lens"
@@ -574,11 +597,8 @@ cmd_measure() {
   local dirs=() bench_dir file run first baseline total turns_all input_all cover_all
   local diagnoses names transcript measures turns input calls reads greps map
   local map_widths row cover runs
-  # Each directory without its trailing slashes, so every message names one
-  # path; a lone / stays itself.
   for bench_dir in "$@"; do
-    while [[ "$bench_dir" == */ && "$bench_dir" != / ]]; do bench_dir="${bench_dir%/}"; done
-    dirs+=("$bench_dir")
+    dirs+=("$(no_trailing_slashes "$bench_dir")")
   done
   set -- "${dirs[@]}"
 
@@ -697,6 +717,18 @@ headings() {
     END { if (NR > 0) finish() }' "$@"
 }
 
+# seed_entry <path> <start> <end> <kind> <symbol> <name>: appends the entry
+# to the calling cmd_seed's `entries`, and its kind to `entry_kinds` at the
+# same index, unless `seen` already holds the same path, range and kind -
+# so each entry keeps the first name that resolves to it.
+seed_entry() {
+  local key="$1:$2-$3 $4"
+  [ -z "${seen[$key]:-}" ] || return 0
+  seen[$key]=1
+  entries+=("$1:$2-$3 $5 - $4: named in the spec as $6")
+  entry_kinds+=("$4")
+}
+
 # The temporary directory `seed` holds its worktree in and the repo it is a
 # worktree of are run_tmp and run_repo, removed by run_cleanup as run's are.
 cmd_seed() {
@@ -711,13 +743,9 @@ cmd_seed() {
   done
   [ -n "$lens" ] || usage
   if [ -z "$fixture" ]; then
-    case "$lens" in
-      */* | .*) fail "$lens: unknown lens, no fixture directory $BENCH_DIR/lens-bench/$lens" ;;
-    esac
-    fixture="$BENCH_DIR/lens-bench/$lens"
-    [ -d "$fixture" ] || fail "$lens: unknown lens, no fixture directory $fixture"
+    fixture="$(lens_fixture "$lens")" || exit
   fi
-  while [[ "$fixture" == */ && "$fixture" != / ]]; do fixture="${fixture%/}"; done
+  fixture="$(no_trailing_slashes "$fixture")"
   [ -d "$fixture" ] || fail "$fixture: no such directory"
   [ -f "$fixture/spec.md" ] || fail "$fixture/spec.md: missing"
   [ -f "$fixture/snapshot" ] || fail "$fixture/snapshot: missing"
@@ -728,12 +756,8 @@ cmd_seed() {
   snapshot="$(git -C "$run_repo" rev-parse --verify --quiet "$rev^{commit}")" ||
     fail "$named_by: $rev is not a commit"
 
-  trap run_cleanup EXIT
-  trap 'exit 130' INT TERM
-  run_tmp="$(mktemp -d "${TMPDIR:-/tmp}/lens-bench.XXXXXX")"
+  snapshot_worktree "$snapshot"
   local worktree="$run_tmp/repo"
-  git -C "$run_repo" worktree add --quiet --detach "$worktree" "$snapshot" >/dev/null 2>&1 ||
-    fail "$snapshot: cannot check out the snapshot in a worktree"
 
   local files
   files="$(git -C "$worktree" ls-files)" || fail "$snapshot: cannot list the snapshot's tracked files"
@@ -773,66 +797,60 @@ cmd_seed() {
 
   # The entries, each under the first name that resolves to it.
   local -A seen=()
-  local -a entries=()
-  local kind name hits start end key last
-  add_entry() {
-    key="$1:$2-$3 $4"
-    [ -z "${seen[$key]:-}" ] || return 0
-    seen[$key]=1
-    entries+=("$1:$2-$3 $5 - $4: named in the spec as $name")
-  }
+  local -a entries=() entry_kinds=()
+  local kind name heading_hits function_hits file_hits start end last
   while IFS=$'\t' read -r kind name; do
     [ -n "$name" ] || continue
-    hits="$(SEED_NAME="$name" awk -F'\t' '$4 == ENVIRON["SEED_NAME"]' <<<"$all_headings")"
-    if [ -n "$hits" ] && [ "$(wc -l <<<"$hits")" -eq 1 ]; then
-      IFS=$'\t' read -r path start end _ <<<"$hits"
-      add_entry "$path" "$start" "$end" heading "$name"
+    heading_hits="$(SEED_NAME="$name" awk -F'\t' '$4 == ENVIRON["SEED_NAME"]' <<<"$all_headings")"
+    if [ -n "$heading_hits" ] && [ "$(wc -l <<<"$heading_hits")" -eq 1 ]; then
+      IFS=$'\t' read -r path start end _ <<<"$heading_hits"
+      seed_entry "$path" "$start" "$end" heading "$name" "$name"
     fi
     [ "$kind" = code ] || continue
     if [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-      hits="$(SEED_NAME="$name" awk '{
+      function_hits="$(SEED_NAME="$name" awk '{
           line = $0; sub(/^[^:]*:[0-9]+:/, "", line)
           sub(/^function[ \t]+/, "", line); sub(/[ \t]*\(.*/, "", line)
           if (line == ENVIRON["SEED_NAME"]) print }' <<<"$all_functions")"
-      if [ -n "$hits" ] && [ "$(wc -l <<<"$hits")" -eq 1 ]; then
-        path="${hits%%:*}"; start="${hits#*:}"; start="${start%%:*}"
+      if [ -n "$function_hits" ] && [ "$(wc -l <<<"$function_hits")" -eq 1 ]; then
+        path="${function_hits%%:*}"; start="${function_hits#*:}"; start="${start%%:*}"
         end="$(awk -v from="$start" 'NR > from && $0 == "}" { print NR; found = 1; exit }
           END { if (!found) print NR }' "$worktree/$path")"
-        add_entry "$path" "$start" "$end" function "$name"
+        seed_entry "$path" "$start" "$end" function "$name" "$name"
       fi
     fi
-    hits="$(SEED_NAME="$name" awk '$0 == ENVIRON["SEED_NAME"] { print; exit }' <<<"$files")"
-    [ -n "$hits" ] || hits="$(SEED_NAME="$name" awk '{ b = $0; sub(/.*\//, "", b) } b == ENVIRON["SEED_NAME"]' <<<"$files")"
-    if [ -n "$hits" ] && [ "$(wc -l <<<"$hits")" -eq 1 ] && [ -f "$worktree/$hits" ]; then
-      last="$(awk 'END { print (NR ? NR : 1) }' "$worktree/$hits")"
-      add_entry "$hits" 1 "$last" file "$hits"
+    file_hits="$(SEED_NAME="$name" awk '$0 == ENVIRON["SEED_NAME"] { print; exit }' <<<"$files")"
+    [ -n "$file_hits" ] || file_hits="$(SEED_NAME="$name" awk '{ b = $0; sub(/.*\//, "", b) } b == ENVIRON["SEED_NAME"]' <<<"$files")"
+    if [ -n "$file_hits" ] && [ "$(wc -l <<<"$file_hits")" -eq 1 ] && [ -f "$worktree/$file_hits" ]; then
+      last="$(awk 'END { print (NR ? NR : 1) }' "$worktree/$file_hits")"
+      seed_entry "$file_hits" 1 "$last" file "$file_hits" "$name"
     fi
   done <<<"$names"
 
   # The report, built before anything is printed.
-  local entry report="" baseline="" total counts k n
+  local i report="" baseline="" total k kind_entries kind_covered covered_total outside
   [ ! -f "$fixture/map.md" ] || baseline="$fixture/map.md"
   for k in heading function file; do
     : >"$run_tmp/$k.map"
   done
   : >"$run_tmp/measured.map"
-  for entry in "${entries[@]}"; do
-    k="${entry#* - }"; k="${k%%:*}"
-    printf '%s\n' "$entry" >>"$run_tmp/$k.map"
-    [ "$k" = file ] || printf '%s\n' "$entry" >>"$run_tmp/measured.map"
+  for i in "${!entries[@]}"; do
+    k="${entry_kinds[$i]}"
+    printf '%s\n' "${entries[$i]}" >>"$run_tmp/$k.map"
+    [ "$k" = file ] || printf '%s\n' "${entries[$i]}" >>"$run_tmp/measured.map"
   done
   if [ -n "$baseline" ]; then
     total="$(locations "$baseline" | awk 'END { print NR }')"
     report+="Baseline map: $total locations"$'\n\n'
     report+="| Kind | Entries | Baseline locations covered |"$'\n'"|---|---|---|"$'\n'
     for k in heading function file; do
-      n="$(awk 'END { print NR }' "$run_tmp/$k.map")"
-      counts="$(covered "$baseline" "$run_tmp/$k.map")"
-      report+="| $k | $n | $counts/$total$([ "$k" != file ] || echo ", left out of coverage") |"$'\n'
+      kind_entries="$(awk 'END { print NR }' "$run_tmp/$k.map")"
+      kind_covered="$(covered "$baseline" "$run_tmp/$k.map")"
+      report+="| $k | $kind_entries | $kind_covered/$total$([ "$k" != file ] || echo ", left out of coverage") |"$'\n'
     done
-    read -r counts n <<<"$(overlap "$baseline" "$run_tmp/measured.map")"
-    report+=$'\n'"Coverage over heading and function entries: $counts/$total"$'\n'
-    report+="Heading and function entries outside the baseline: $n of $(awk 'END { print NR }' "$run_tmp/measured.map")"$'\n'
+    read -r covered_total outside <<<"$(overlap "$baseline" "$run_tmp/measured.map")"
+    report+=$'\n'"Coverage over heading and function entries: $covered_total/$total"$'\n'
+    report+="Heading and function entries outside the baseline: $outside of $(awk 'END { print NR }' "$run_tmp/measured.map")"$'\n'
   else
     report+="Baseline map: none, so no coverage"$'\n\n'
     report+="| Kind | Entries |"$'\n'"|---|---|"$'\n'
