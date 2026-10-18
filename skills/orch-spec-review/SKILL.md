@@ -277,16 +277,20 @@ bash "$ORCH" spec-review check <dir>
 anything: its grammar, the lens files and the batch's citations of them, and
 every anchor - each item's and each option's - matching once in the body,
 then still matching once in a dry run of the **Apply all** answer. On exit 0
-it prints a one-line summary. On any other exit, each `orch:` line on stderr
-names what is wrong, most with its `batch.md` line: fix `batch.md` and run
-`check` again, until it exits 0. A batch that has not passed `check` is never
-shown and never asked about.
+it prints the full batch view on stdout - the lens lines, ran or not run
+with the reason, then every item with its group, its recommendation, its
+cited findings (or, for a consolidation item, its comment), and its Current
+and Proposed text in full, each option's for a decision item - and its
+one-line pass summary on stderr. On any other exit, each `orch:` line on
+stderr names what is wrong, most with its `batch.md` line: fix `batch.md` and
+run `check` again, until it exits 0. A batch that has not passed `check` is
+never shown and never asked about.
 
-Then present the whole batch in chat - each item's finding (or, for a consolidation item,
-its comment), lens or **Consolidation**, and its proposed edit or decision,
-every replacement in full, so the human reads each edit's wording before
-answering - and ask **one blocking question** with the host's ask tool
-(`AskUserQuestion` on Claude Code, `ask_user` on Junie), the list and the
+Then paste `check`'s stdout into chat word for word, so the human reads each
+edit's wording before answering. Compose no view of your own - no summary,
+no shortening, in any round: the view the human reads is `check`'s, every
+round alike. Then ask **one blocking question** with the host's ask tool
+(`AskUserQuestion` on Claude Code, `ask_user` on Junie), the paste and the
 call in the same response. The review never ends its turn on the list:
 presenting it is not the end of the step, the answer is. No edit is applied
 and no changelog is posted before the answer arrives. The options:

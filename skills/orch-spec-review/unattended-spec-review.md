@@ -14,9 +14,9 @@ differences only:
 - **Consolidation and the lenses** run unchanged: Consistency, Testability
   and Implementability, with Fidelity not run.
 - **Disposition**: `batch.md` is written and checked with `spec-review
-  check` until it passes, as in an attended review, and the batch printed in
-  the session in full as usual, so a human watching can see what is applied and
-  interrupt. Then no question is asked and nothing waits: the batch is
+  check` until it passes, as in an attended review, and the batch printed by
+  pasting `check`'s stdout word for word, as in an attended review, so a
+  human watching can see what is applied and interrupt. Then no question is asked and nothing waits: the batch is
   applied at once as **Apply as recommended** - every proposed edit applied,
   every **recommend decline** item skipped, and every decision item takes
   its recommended option.
@@ -33,7 +33,9 @@ differences only:
   decision item taken; a quick implementation lists those lines in its PR
   body. Declined items record **declined as recommended: <reason>**.
 - **Tickets follow the spec** runs as usual when `apply` pauses with exit 3:
-  `tickets.md` is drafted and its items printed, then no question is asked,
+  `tickets.md` is drafted and checked with `spec-review check <dir>
+  --tickets` until it passes, and its items printed by pasting that
+  command's stdout word for word; then no question is asked,
   and `apply` runs again with `--tickets recommended`, its one ticket answer
   in this mode. `tickets.md`'s `@@ recommend` line picks **Apply as
   recommended** or **Retire and break down again**.
