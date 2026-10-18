@@ -21,6 +21,15 @@ check_refused() {
   assert_eq "$1: nothing on stdout" "$out" ""
   assert_eq "$1: the directory unchanged" "$(dir_snapshot "$2")" "$before"
 }
+# src <dir> [arg...]: check on <dir> with any further args, its stdout, stderr
+# and status into out, err and st.
+src() {
+  local src_err
+  src_err="$(mktemp)"
+  out="$("$ORCH" spec-review check "$@" 2>"$src_err")"; st=$?
+  err="$(cat "$src_err")"
+  rm -f "$src_err"
+}
 
 # --- spec-review begin (#224) ------------------------------------------------
 # A standalone spec review's guard and working-directory reset have one right
@@ -238,7 +247,7 @@ Alpha line.
 @@ replace
 Alpha prime line.
 @@ end
-
+@@ why The comment asks for alpha prime
 @@ item 2 contradicts-the-plan decline material the plan chose this
 @@ finding fidelity 1
 @@ summary Reverse the plan on Beta
@@ -247,10 +256,11 @@ Beta line.
 @@ replace
 Beta reversed.
 @@ end
-
+@@ why Beta follows the plan's reversal
 @@ item 3 consistency decision A material
 @@ finding consistency 1
 @@ finding testability 1
+@@ why Gamma must agree with the summary
 @@ option A Keep gamma
 @@ summary Gamma kept
 @@ anchor
@@ -265,7 +275,6 @@ Gamma line.
 @@ replace
 Gamma dropped.
 @@ end
-
 @@ item 4 testability apply minor
 @@ finding testability 2
 @@ summary Insert a test note after Delta
@@ -502,7 +511,7 @@ assert_eq "its spec.md is the recommended answer's" "$(cat "$d/spec.md")" "$sra_
 sra_minor_dir() {
   local d
   d="$(sra_dir)"
-  sed -i '18s/contradicts-the-plan decline material/fidelity decline minor/' "$d/batch.md"
+  sed -i '18s/contradicts-the-plan decline material/fidelity decline minor/; 26s/.*//' "$d/batch.md"
   printf '%s\n' "$d"
 }
 for sra_case in "all|by all" "+2|by +<n>"; do
@@ -623,9 +632,9 @@ assert_status "an apply item with no block: refused" "$st" 1
 assert_eq "an apply item with no block keeps its message" "$out" \
   "orch: batch.md line 45: item 4 has no @@ anchor/@@ replace/@@ end block"
 d="$(sra_dir)"
-sed -i '16d' "$d/batch.md"
+sed -i '16,17d' "$d/batch.md"
 sra_refused "a replacement left open at the next @@ item" "$d" \
-  "batch.md line 17: expected @@ end to end the replacement begun on line 14, got '@@ item 2 contradicts-the-plan decline material the plan chose this'" recommended
+  "batch.md line 16: expected @@ end to end the replacement begun on line 14, got '@@ item 2 contradicts-the-plan decline material the plan chose this'" recommended
 d="$(sra_dir)"
 sed -i '14d' "$d/batch.md"
 sra "$d" recommended
@@ -647,6 +656,25 @@ for sra_flag in "" --unattended; do
     sra_label="${sra_case#*|}"
     sra_refused "${sra_flag:-attended}: ${sra_label%%|*}" "$d" "${sra_label#*|}" recommended ${sra_flag:+"$sra_flag"}
   done
+done
+
+# @@ why (#1248): a material item missing it refused attended and unattended,
+# before any write.
+for sra_flag in "" --unattended; do
+  d="$(sra_dir)"
+  printf 'earlier round\n' >"$d/settled.md"
+  sed -i '17s/.*//' "$d/batch.md"
+  sra_refused "${sra_flag:-attended}: a material item with no @@ why" "$d" \
+    "batch.md line 6: item 1 has no @@ why" recommended ${sra_flag:+"$sra_flag"}
+done
+d="$(sra_dir)"
+sra "$d" recommended
+assert_status "a valid batch with @@ why lines applies" "$st" 0
+assert_eq "its changelog is unchanged" "$(cat "$d/changelog.md")" "$sra_log"
+assert_eq "a declined finding still quoted word for word" \
+  "$(has_line "$(cat "$d/changelog.md")" '- (2) "The spec reverses the plan'"'"'s choice of beta." - spec departs from the plan: declined as recommended: the plan chose this')" yes
+for sra_why in "The comment asks for alpha prime" "Beta follows the plan's reversal" "Gamma must agree with the summary"; do
+  assert_not_contains "no @@ why text in the changelog: $sra_why" "$(cat "$d/changelog.md")" "$sra_why"
 done
 
 # Lens files and citations.
@@ -678,7 +706,7 @@ out="$("$ORCH" spec-review apply "$d" recommended --round 1/1 --unattended 2>&1)
 assert_status "--unattended without --issue is refused" "$st" 1
 assert_contains "saying so" "$out" "--unattended needs --issue"
 sra_refused "--unattended with another answer" "$d" "takes only the answer recommended" all --unattended
-sed -i 's/^@@ lens fidelity ran$/@@ lens fidelity standalone/; /^@@ item 2 /,/^@@ end$/d' "$d/batch.md"
+sed -i 's/^@@ lens fidelity ran$/@@ lens fidelity standalone/; /^@@ item 2 /,/^@@ why /d' "$d/batch.md"
 printf 'AskUserQuestion fell back to a plain question\n' >"$d/hosts"
 sra "$d" recommended --unattended --host-fallbacks "$d/hosts"
 assert_status "--unattended applies as recommended" "$st" 0
@@ -1162,8 +1190,9 @@ Twice.
 '
 # src_dir: a fresh round directory holding the fixture spec, batch and lens
 # files, with issue #14 reset to the fixture body; prints its path. The batch's
-# @@ anchor lines: item 1 on 9, item 2 on 18, item 3's options A and B on 28
-# and 35.
+# @@ anchor lines: item 1 on 9, item 2 on 18, item 3's options A and B on 29
+# and 36. Each material item's @@ why sits where it costs no line: an apply or
+# decline item's after its @@ end, a decision item's before its options.
 src_dir() {
   local d
   d="$(mktemp -d)"
@@ -1191,9 +1220,10 @@ Beta line.
 @@ replace
 Beta reversed.
 @@ end
-
+@@ why Beta contradicts the plan
 @@ item 3 testability decision A material
 @@ finding testability 1
+@@ why Gamma must be testable
 @@ option A Keep gamma
 @@ summary Gamma kept
 @@ anchor
@@ -1208,7 +1238,6 @@ Gamma line.
 @@ replace
 Gamma dropped.
 @@ end
-
 @@ item 4 testability resolved
 @@ finding testability 2
 @@ resolved-by 3
@@ -1219,12 +1248,6 @@ BATCH
   fake_issue 14 open
   fake_issue_body 14 "$src_body"
   printf '%s\n' "$d"
-}
-# src <dir>: check on <dir>, its stdout, stderr and status into out, err and st.
-src_err="$(mktemp)"
-src() {
-  out="$("$ORCH" spec-review check "$1" 2>"$src_err")"; st=$?
-  err="$(cat "$src_err")"
 }
 
 # A clean batch: exit 0, the view on stdout, the one-line summary on stderr,
@@ -1250,32 +1273,44 @@ assert_eq "with the same summary on stderr" "$err" \
   "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
 assert_eq "the directory, map included, byte-identical" "$(dir_snapshot "$d")" "$before"
 
-# The view: each cited finding's text next to the item citing it (#1225).
+# The compact view (#1250): the lens lines first, then the material items as
+# one numbered list, numbered as in batch.md, each a header line and its
+# sub-bullets - why, the findings it cites, its change - with no ### Item
+# heading; the minor list unchanged after it.
 d="$(src_dir)"
 src "$d"
-view_item2="${out#*'### Item 2 - Consistency'}"; view_item2="${view_item2%%'### Item 3'*}"
-assert_contains "item 2's view carries the finding it cites" "$view_item2" \
-  "**Finding** (Consistency 1):
+assert_eq "the compact view, its layout pinned" "$out" '## The batch
 
-> Beta contradicts the plan."
-assert_not_contains "and no other item's finding" "$view_item2" "Gamma is untestable."
+### Lenses
 
-# The view splits material from minor (#1237): material items in full, in
-# batch order; minor and resolved items one line each under Minor edits.
-d="$(src_dir)"
-src "$d"
-assert_not_contains "a minor item is not shown in full" "$out" "### Item 1 -"
-assert_not_contains "nor a resolved one" "$out" "### Item 4 -"
-assert_eq "the material items in full, in batch order, numbering unchanged" \
-  "$(grep '^### ' <<<"$out")" '### Lenses
-### Item 2 - Consistency
-### Item 3 - Testability
-### Minor edits'
-assert_eq "the view ends with the minor list, set off by blank lines" "${out#*$'\n```\n\n### Minor edits\n\n'}" \
-  '1. Fidelity: Alpha primed
+- Fidelity: ran
+- Consistency: ran
+- Testability: ran
+- Implementability: not run - timed out
+
+2. **Consistency** - Beta reversed (recommend decline: the plan chose this)
+   - why: Beta contradicts the plan
+   - findings: Consistency 1
+   - Beta ~~line.~~ **reversed.**
+3. **Testability** (decision, option A recommended)
+   - why: Gamma must be testable
+   - findings: Testability 1
+   - Option A - Keep gamma (recommended): Gamma kept
+     - Gamma ~~line.~~ **line (kept).**
+   - Option B - Drop gamma: Gamma dropped
+     - Gamma ~~line.~~ **dropped.**
+
+### Minor edits
+
+1. Fidelity: Alpha primed
 4. Testability: resolved by item 3'
+assert_eq "no ### Item heading, only the lens and minor ones" "$(grep '^### ' <<<"$out")" '### Lenses
+### Minor edits'
+for src_quote in "Beta contradicts the plan." "Gamma is untestable." "Gamma again." "Alpha is stale."; do
+  assert_not_contains "no finding quoted: $src_quote" "$out" "$src_quote"
+done
 d="$(src_dir)"
-sed -i '6s/ minor$/ material/' "$d/batch.md"
+sed -i '6s/ minor$/ material/; 14s/.*/@@ why Alpha is stale/' "$d/batch.md"
 src "$d"
 assert_status "a round with a resolved item but no minor one passes" "$st" 0
 assert_eq "its Minor edits list holds the resolved item alone" "${out#*$'\n\n### Minor edits\n\n'}" \
@@ -1285,7 +1320,7 @@ src "$d"
 assert_status "a round with nothing minor or resolved passes" "$st" 0
 assert_not_contains "and prints no Minor edits heading" "$out" "Minor edits"
 d="$(src_dir)"
-sed -i '15s/ material / minor /' "$d/batch.md"
+sed -i '15s/ material / minor /; 23s/.*//' "$d/batch.md"
 src "$d"
 assert_eq "a recommend-decline minor item's line carries its reason" \
   "$(has_line "$out" "2. Consistency: Beta reversed - recommend decline: the plan chose this")" yes
@@ -1316,6 +1351,33 @@ sed -i '6s/fidelity apply minor/contradicts-the-plan apply minor/' "$d/batch.md"
 check_refused src "a contradicts-the-plan item marked minor" "$d" \
   "orch: batch.md line 6: contradicts-the-plan item 1 is always material, never minor"
 
+# @@ why (#1248): required on every material item, refused anywhere else, each
+# refusal naming its batch.md line.
+d="$(src_dir)"
+sed -i '23s/.*//' "$d/batch.md"
+check_refused src "a material decline item with no @@ why" "$d" \
+  "orch: batch.md line 15: item 2 has no @@ why"
+d="$(src_dir)"
+sed -i '26d' "$d/batch.md"
+check_refused src "a decision item with no @@ why" "$d" \
+  "orch: batch.md line 24: item 3 has no @@ why"
+d="$(src_dir)"
+sed -i '23s/.*/@@ why/' "$d/batch.md"
+check_refused src "an empty @@ why" "$d" "orch: batch.md line 23: @@ why needs its line"
+d="$(src_dir)"
+sed -i '14s/.*/@@ why Alpha is stale/' "$d/batch.md"
+check_refused src "a @@ why on a minor item" "$d" "orch: batch.md line 14: a minor item carries no @@ why"
+d="$(src_dir)"
+printf '@@ why Gamma again\n' >>"$d/batch.md"
+check_refused src "a @@ why on a resolved item" "$d" "orch: batch.md line 44: a resolved item carries no @@ why"
+d="$(src_dir)"
+sed -i '26d; 27a @@ why Gamma must be testable' "$d/batch.md"
+check_refused src "a @@ why under an @@ option" "$d" \
+  "orch: batch.md line 27: @@ why belongs to the item, never under an @@ option"
+d="$(src_dir)"
+sed -i '16a @@ why Beta again' "$d/batch.md"
+check_refused src "a second @@ why on one item" "$d" "orch: batch.md line 24: a second @@ why for this item"
+
 # The view of the skill's worked-example batch, as it stands: one item of each
 # kind and its ran and standalone lens lines.
 d="$(mktemp -d)"
@@ -1343,6 +1405,7 @@ cat >"$d/batch.md" <<'BATCH'
 
 @@ item 1 consolidation apply material
 @@ summary Failed pages are retried once
+@@ why A page that fails once should not fail the whole export
 @@ comment @alice 2026-10-01T09:00:00Z
 @@ quote
 A failed page should be retried once before the export gives up.
@@ -1356,6 +1419,7 @@ A failed page is retried once before the export fails.
 @@ item 2 testability apply material
 @@ finding testability 1
 @@ summary The seam's test runs against a fake store
+@@ why The seam names no store to test against
 @@ anchor
 - One seam: the `widget export` CLI.
 @@ replace
@@ -1373,6 +1437,7 @@ Exports time out on large items.
 
 @@ item 4 implementability decision B material
 @@ finding implementability 1
+@@ why One file cannot hold the largest exports
 @@ option A One file
 @@ summary The export writes one compressed file
 @@ anchor
@@ -1399,7 +1464,7 @@ printf '@@ finding 1\nOne file cannot hold the largest exports.\nThe store caps 
 before="$(dir_snapshot "$d")"
 src "$d"
 assert_status "the worked example passes" "$st" 0
-assert_eq "its view, the material items in full, the minor and resolved ones listed" "$out" '## The batch
+assert_eq "its view, the material items as a list, the minor and resolved ones listed" "$out" '## The batch
 
 ### Lenses
 
@@ -1408,83 +1473,21 @@ assert_eq "its view, the material items in full, the minor and resolved ones lis
 - Testability: ran
 - Implementability: ran
 
-### Item 1 - Consolidation
-
-**Recommendation:** apply
-
-**Comment** by @alice, 2026-10-01T09:00:00Z:
-
-> A failed page should be retried once before the export gives up.
-
-**Current**
-
-```
-The export streams each widget in pages of 100.
-```
-
-**Proposed**
-
-```
-The export streams each widget in pages of 100.
-A failed page is retried once before the export fails.
-```
-
-### Item 2 - Testability
-
-**Recommendation:** apply
-
-**Finding** (Testability 1):
-
-> The seam names no store to test against.
-
-**Current**
-
-```
-- One seam: the `widget export` CLI.
-```
-
-**Proposed**
-
-```
-- One seam: the `widget export` CLI, end to end, against a fake store.
-```
-
-### Item 4 - Implementability
-
-**Recommendation:** decision - option B recommended
-
-**Finding** (Implementability 1):
-
-> One file cannot hold the largest exports.
-> The store caps a file at 2 GB.
-
-#### Option A - One file
-
-**Current**
-
-```
-The export writes one file.
-```
-
-**Proposed**
-
-```
-The export writes one compressed file.
-```
-
-#### Option B - One file per widget (recommended)
-
-**Current**
-
-```
-The export writes one file.
-```
-
-**Proposed**
-
-```
-The export writes one file per widget.
-```
+1. **Consolidation** - Failed pages are retried once (apply)
+   - why: A page that fails once should not fail the whole export
+   - comments: comment by @alice, 2026-10-01T09:00:00Z
+   - …widget in pages of 100. **A failed page is retried once before the export fails.**
+2. **Testability** - The seam'"'"'s test runs against a fake store (apply)
+   - why: The seam names no store to test against
+   - findings: Testability 1
+   - …One seam: the `widget export` ~~CLI.~~ **CLI, end to end, against a fake store.**
+4. **Implementability** (decision, option B recommended)
+   - why: One file cannot hold the largest exports
+   - findings: Implementability 1
+   - Option A - One file: The export writes one compressed file
+     - The export writes one **compressed** file.
+   - Option B - One file per widget (recommended): The export writes one file per widget
+     - The export writes one ~~file.~~ **file per widget.**
 
 ### Minor edits
 
@@ -1496,7 +1499,7 @@ assert_eq "the worked example's directory unchanged" "$(dir_snapshot "$d")" "$be
 
 # The view of a flow's batch: Fidelity ran with a contradicts-the-plan item,
 # and a lens that did not run, cited by nothing. An edit holding a fence is
-# shown inside a longer one.
+# diffed as words like any other, its backticks passed through as is.
 d="$(mktemp -d)"
 cat >"$d/spec.md" <<'BODY'
 # Sync
@@ -1515,6 +1518,7 @@ cat >"$d/batch.md" <<'BATCH'
 @@ item 1 contradicts-the-plan apply material
 @@ finding fidelity 1
 @@ summary Sync runs hourly, as the plan decided
+@@ why The plan decided hourly
 @@ anchor
 Run sync nightly:
 ```sh
@@ -1533,7 +1537,7 @@ printf '@@ none\n' >"$d/lens-implementability.md"
 before="$(dir_snapshot "$d")"
 src "$d"
 assert_status "a flow batch passes" "$st" 0
-assert_eq "its view" "$out" '## The batch
+assert_eq "its view, the fenced edit diffed word by word, unfenced" "$out" '## The batch
 
 ### Lenses
 
@@ -1542,34 +1546,115 @@ assert_eq "its view" "$out" '## The batch
 - Testability: not run - timed out twice
 - Implementability: ran
 
-### Item 1 - Contradicts the plan
-
-**Recommendation:** apply
-
-**Finding** (Fidelity 1):
-
-> The plan decided hourly; the spec says nightly.
-
-**Current**
-
-````
-Run sync nightly:
-```sh
-orch sync
-```
-````
-
-**Proposed**
-
-````
-Run sync hourly:
-```sh
-orch sync --hourly
-```
-````'
+1. **Contradicts the plan** - Sync runs hourly, as the plan decided (apply)
+   - why: The plan decided hourly
+   - findings: Fidelity 1
+   - Run sync ~~nightly:~~ **hourly:** ```sh orch sync **--hourly** ```'
 assert_eq "its summary on stderr" "$err" \
   "batch.md passes: 1 items, 1 anchors, each matching once in spec.md, and the all answer applies cleanly"
 assert_eq "the flow batch's directory unchanged" "$(dir_snapshot "$d")" "$before"
+
+# The word diff (#1250): the anchor against the replacement, word by word,
+# each changed span one sub-bullet with up to 5 words of context, `…` only
+# where context is cut short.
+# srd_words <from> <to>: the words w<from> to w<to>, one space apart.
+srd_words() {
+  local k out=""
+  for ((k = $1; k <= $2; k++)); do out="${out:+$out }w$k"; done
+  printf '%s' "$out"
+}
+# srd <anchor> <replacement>: check on a round whose one item, material,
+# edits <anchor> to <replacement>; its status into st, its change sub-bullets
+# into chg.
+srd() {
+  local d
+  d="$(mktemp -d)"
+  printf '# Spec\n\n%s\n' "$1" >"$d/spec.md"
+  printf '@@ lens fidelity ran\n@@ lens consistency ran\n@@ lens testability ran\n@@ lens implementability ran\n
+@@ item 1 fidelity apply material\n@@ finding fidelity 1\n@@ summary S\n@@ why W\n@@ anchor\n%s\n@@ replace\n%s\n@@ end\n' \
+    "$1" "$2" >"$d/batch.md"
+  printf '@@ finding 1\nF.\n' >"$d/lens-fidelity.md"
+  printf '@@ none\n' | tee "$d/lens-consistency.md" "$d/lens-testability.md" >"$d/lens-implementability.md"
+  src "$d"
+  chg="$(sed -n '/^   - findings: /,${//d;p}' <<<"$out")"
+}
+srd "$(srd_words 1 20)" "$(srd_words 1 9) X $(srd_words 11 20)"
+assert_status "a word diff's batch passes" "$st" 0
+assert_eq "context cut short on both sides is marked" "$chg" \
+  "   - …w5 w6 w7 w8 w9 ~~w10~~ **X** w11 w12 w13 w14 w15…"
+srd "a b c" "a X c"
+assert_eq "context running to the start and the end is not" "$chg" "   - a ~~b~~ **X** c"
+srd "$(srd_words 1 30)" "$(srd_words 1 4) X $(srd_words 6 16) Y $(srd_words 18 30)"
+assert_eq "two runs 11 unchanged words apart are two spans" "$chg" \
+  "   - w1 w2 w3 w4 ~~w5~~ **X** w6 w7 w8 w9 w10…
+   - …w12 w13 w14 w15 w16 ~~w17~~ **Y** w18 w19 w20 w21 w22…"
+srd "$(srd_words 1 30)" "$(srd_words 1 4) X $(srd_words 6 15) Y $(srd_words 17 30)"
+assert_eq "two runs 10 unchanged words apart share one span, the words between in full" "$chg" \
+  "   - w1 w2 w3 w4 ~~w5~~ **X** w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 ~~w16~~ **Y** w17 w18 w19 w20 w21…"
+srd "a b c d" "a b new words c d"
+assert_eq "a pure insertion shows only its added words" "$chg" "   - a b **new words** c d"
+srd "a b gone c d" "a b c d"
+assert_eq "a pure deletion only its removed words" "$chg" "   - a b ~~gone~~ c d"
+srd "one two
+three four" "one two
+three five"
+assert_eq "a multi-line anchor diffs as one run of words" "$chg" "   - one two three ~~four~~ **five**"
+srd "a b c" "a  b
+c"
+assert_status "an edit with no changed words passes" "$st" 0
+assert_eq "and shows it changes only whitespace" "$chg" "   - whitespace only, see full view"
+srd "a $(srd_words 1 20)" "a $(sed 's/w/x/g' <<<"$(srd_words 1 21)")"
+assert_eq "41 changed words collapse to the edit's size" "$chg" "   - rewritten, 41 words, see full view"
+srd "a $(srd_words 1 20)" "a $(sed 's/w/x/g' <<<"$(srd_words 1 20)")"
+assert_eq "40 do not" "$chg" "   - a ~~$(srd_words 1 20)~~ **$(sed 's/w/x/g' <<<"$(srd_words 1 20)")**"
+d="$(src_dir)"
+sed -i "39s/.*/Gamma $(srd_words 1 40)/" "$d/batch.md"
+src "$d"
+assert_contains "a decision option past the limit collapses on its own" "$out" \
+  "   - Option A - Keep gamma (recommended): Gamma kept
+     - Gamma ~~line.~~ **line (kept).**
+   - Option B - Drop gamma: Gamma dropped
+     - rewritten, 41 words, see full view"
+
+# The word lists live in a mktemp -d directory check removes, on success and
+# when git fails; a git exiting above 1 fails check naming the item.
+src_tmp="$(mktemp -d)"
+d="$(src_dir)"
+TMPDIR="$src_tmp" src "$d"
+assert_status "check passes with its own TMPDIR" "$st" 0
+assert_eq "check leaves no file behind" "$(ls -A "$src_tmp")" ""
+TMPDIR="$src_tmp" src "$d" --full 1 3
+assert_status "--full passes with its own TMPDIR" "$st" 0
+assert_eq "--full leaves no file behind" "$(ls -A "$src_tmp")" ""
+src_git="$(mktemp -d)"
+cat >"$src_git/git" <<FAKE
+#!/usr/bin/env bash
+case " \$* " in *" --no-index "*) echo "fatal: broken" >&2; exit 128 ;; esac
+exec $(type -P git) "\$@"
+FAKE
+chmod +x "$src_git/git"
+before="$(dir_snapshot "$d")"
+PATH="$src_git:$PATH" TMPDIR="$src_tmp" src "$d"
+assert_status "a git exiting above 1 fails check" "$st" 1
+assert_eq "with an orch: message naming the item" "$err" "fatal: broken
+orch: item 2: git diff exited 128 rendering its word diff"
+assert_eq "and no half view" "$out" ""
+assert_eq "leaving no file behind" "$(ls -A "$src_tmp")" ""
+assert_eq "and the round directory unchanged" "$(dir_snapshot "$d")" "$before"
+# A failed write of the diff output is not git's "texts differ": the first
+# diff leaves its output read-only, so the next one cannot open it to write.
+cat >"$src_git/git" <<FAKE
+#!/usr/bin/env bash
+case " \$* " in *" --no-index "*) chmod 400 "\$(dirname "\${@: -1}")/diff" ;; esac
+exec $(type -P git) "\$@"
+FAKE
+PATH="$src_git:$PATH" TMPDIR="$src_tmp" src "$d"
+assert_status "a failed write of the word diff fails check" "$st" 1
+assert_contains "with an orch: message naming the item" "$err" "orch: item 3 option A: could not write its word diff in $src_tmp/"
+assert_not_contains "not git's exit status 1" "$err" "git diff exited"
+assert_eq "and no half view, no whitespace-only line" "$out" ""
+assert_eq "leaving no file behind on a failed write" "$(ls -A "$src_tmp")" ""
+rm -rf "$src_tmp" "$src_git"
 
 # No flow state read, no GitHub touched.
 mkdir -p "$top/.orchestrator"
@@ -1602,15 +1687,15 @@ sed -i '10a Beta line.' "$d/batch.md"
 check_refused src "two overlapping edits, caught by the all dry run" "$d" \
   "orch: batch.md line 19: item 2: its anchor no longer matches exactly once after the earlier items' edits"
 d="$(src_dir)"
-sed -i '36s/.*/Nowhere either./' "$d/batch.md"
+sed -i '37s/.*/Nowhere either./' "$d/batch.md"
 check_refused src "a decision option's anchor matching nothing" "$d" \
-  "orch: batch.md line 35: item 3 option B: its anchor matches no text in the body"
+  "orch: batch.md line 36: item 3 option B: its anchor matches no text in the body"
 d="$(src_dir)"
-sed -i '10s/.*/Nowhere./; 19s/.*/Twice./; 36s/.*/Nowhere either./' "$d/batch.md"
+sed -i '10s/.*/Nowhere./; 19s/.*/Twice./; 37s/.*/Nowhere either./' "$d/batch.md"
 check_refused src "several bad anchors" "$d" \
   "orch: batch.md line 9: item 1: its anchor matches no text in the body
 orch: batch.md line 18: item 2: its anchor matches more than one place in the body
-orch: batch.md line 35: item 3 option B: its anchor matches no text in the body"
+orch: batch.md line 36: item 3 option B: its anchor matches no text in the body"
 
 # Grammar: the first error only.
 d="$(src_dir)"
@@ -1669,11 +1754,100 @@ assert_status "apply all refuses it" "$st" 1
 assert_eq "naming the same batch line" "$out" \
   "orch: batch.md line 18: item 2: its anchor matches no text in the body - nothing applied, nothing written"
 
+# check --full <n>... (#1249): the named items alone, each in the full
+# rendering, in the order named - any item in batch.md, minor or resolved
+# included - with nothing written.
+d="$(src_dir)"
+before="$(dir_snapshot "$d")"
+snap="$(fake_snapshot)"
+src "$d" --full 4 1 2
+assert_status "--full passes on a clean batch" "$st" 0
+assert_eq "--full prints the named items in full, in the order named, a minor and a resolved one among them" "$out" '
+### Item 4 - Testability
+
+**Recommendation:** resolved by item 3
+
+**Finding** (Testability 2):
+
+> Gamma again.
+
+### Item 1 - Fidelity
+
+**Recommendation:** apply
+
+**Finding** (Fidelity 1):
+
+> Alpha is stale.
+
+**Current**
+
+```
+Alpha line.
+```
+
+**Proposed**
+
+```
+Alpha prime line.
+```
+
+### Item 2 - Consistency
+
+**Recommendation:** recommend decline - the plan chose this
+
+**Finding** (Consistency 1):
+
+> Beta contradicts the plan.
+
+**Current**
+
+```
+Beta line.
+```
+
+**Proposed**
+
+```
+Beta reversed.
+```'
+assert_eq "--full keeps check's one-line summary on stderr" "$err" \
+  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
+assert_eq "--full leaves the directory byte-identical" "$(dir_snapshot "$d")" "$before"
+assert_eq "--full creates no spec.fetched.md" "$(on_disk "$d/spec.fetched.md")" absent
+assert_eq "--full makes no GitHub write" "$(fake_snapshot)" "$snap"
+src "$d" --full 3
+assert_contains "--full shows a decision item's options in full" "$out" "#### Option A - Keep gamma (recommended)"
+assert_not_contains "and no item it was not asked for" "$out" "### Item 2"
+assert_not_contains "nor the lens lines" "$out" "### Lenses"
+
+# Refusals: a missing or unknown number, and --full with --tickets.
+src_full_none() { src "$1" --full; }
+src_full_9() { src "$1" --full 9; }
+src_full_word() { src "$1" --full 2 two; }
+src_full_tickets() { src "$1" --full 2 --tickets; }
+src_tickets_full() { src "$1" --tickets --full 2; }
+d="$(src_dir)"
+check_refused src_full_none "--full with no number" "$d" \
+  "orch: --full needs at least one item number (usage: orch.sh spec-review check <dir> [--tickets | --full <n>...])"
+check_refused src_full_9 "--full naming an item not in batch.md" "$d" \
+  "orch: --full 9: batch.md has no item 9"
+check_refused src_full_word "--full naming a non-number" "$d" \
+  "orch: --full two: batch.md has no item two"
+check_refused src_full_tickets "--full then --tickets" "$d" \
+  "orch: --full and --tickets do not combine (usage: orch.sh spec-review check <dir> [--tickets | --full <n>...])"
+check_refused src_tickets_full "--tickets then --full" "$d" \
+  "orch: --full and --tickets do not combine (usage: orch.sh spec-review check <dir> [--tickets | --full <n>...])"
+d="$(src_dir)"
+sed -i '19s/.*/Nowhere./' "$d/batch.md"
+src_full_1() { src "$1" --full 1; }
+check_refused src_full_1 "--full on a batch check refuses" "$d" \
+  "orch: batch.md line 18: item 2: its anchor matches no text in the body"
+
 # Discoverability.
 out="$("$ORCH" spec-review wipe 2>&1)"
 assert_contains "the unknown-op message lists check" "$out" "want begin|check|apply"
 assert_contains "help documents spec-review check" "$("$ORCH" help)" "spec-review check <dir>"
-rm -f "$src_err"
+assert_contains "help documents spec-review check --full" "$("$ORCH" help)" "spec-review check <dir> [--tickets | --full <n>...]"
 restore_suite_env
 
 # --- spec-review check --tickets (#1226) ---------------------------------------
@@ -1731,13 +1905,8 @@ Build gamma twice.
 TICKETS
   printf '%s\n' "$d"
 }
-# srct <dir>: check --tickets on <dir>, its stdout, stderr and status into
-# out, err and st.
-srct_err="$(mktemp)"
-srct() {
-  out="$("$ORCH" spec-review check "$1" --tickets 2>"$srct_err")"; st=$?
-  err="$(cat "$srct_err")"
-}
+# srct <dir>: src with --tickets.
+srct() { src "$1" --tickets; }
 # srct_passes <label> <dir> <stdout> <stderr>: check --tickets exits 0 with
 # exactly <stdout> and <stderr>, and <dir> unchanged.
 srct_passes() {
@@ -1891,8 +2060,7 @@ sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' 
 check_refused srct "an unblock edge absent" "$d" \
   "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21"
 
-assert_contains "help documents spec-review check --tickets" "$("$ORCH" help)" "spec-review check <dir> [--tickets]"
-rm -f "$srct_err"
+assert_contains "help documents spec-review check --tickets" "$("$ORCH" help)" "spec-review check <dir> [--tickets | --full <n>...]"
 restore_suite_env
 
 # --- spec-review wait (#1183) --------------------------------------------------
