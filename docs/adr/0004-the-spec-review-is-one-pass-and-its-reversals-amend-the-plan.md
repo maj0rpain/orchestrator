@@ -6,6 +6,8 @@ Superseded in part by ADR-0034: a quick implementation's spec review is unattend
 
 Superseded in part by ADR-0041: a spec review runs a human-chosen number of rounds, not one pass.
 
+Superseded in part by ADR-0047: the spec review's session marks each item material or minor, though it still ranks nothing across lenses.
+
 A spec review runs once, in the spec phase, after the issue exists - published
 by `to-spec` or already adopted at init - and before `02-spec.md` is written.
 Four lenses read the issue as fresh sub-agents and report findings; every

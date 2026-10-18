@@ -265,6 +265,19 @@ Each item carries a recommendation: a proposed edit is recommended for
 applying unless it is marked **recommend decline** with its reason, and a
 decision item carries its recommended option.
 
+You, never a lens, then mark each item that carries an edit **material** or
+**minor**:
+
+- **Material**: the item's edit changes what gets built or how it is proven
+  - behaviour, scope, an interface, an acceptance criterion or a test seam.
+- **Minor**: anything else - wording, clarification, naming, internal
+  consistency, a cross-reference.
+- Every decision item and every `contradicts-the-plan` item is material;
+  `check` and `apply` refuse either marked minor.
+- A recommend-decline item whose edit would be material if applied is
+  material. No check catches this one: the call is yours.
+- A resolved item carries no mark: it has no edit.
+
 Number the items, consolidation items included, in one sequence, and write
 the batch once, to `<dir>/batch.md` - see **The batch file**. Then check it,
 before it is shown, in every mode - flow, standalone, and unattended:
@@ -277,17 +290,23 @@ bash "$ORCH" spec-review check <dir>
 anything: its grammar, the lens files and the batch's citations of them, and
 every anchor - each item's and each option's - matching once in the body,
 then still matching once in a dry run of the **Apply all** answer. On exit 0
-it prints the full batch view on stdout - the lens lines, ran or not run
-with the reason, then every item with its group, its recommendation, its
-cited findings (or, for a consolidation item, its comment), and its Current
-and Proposed text in full, each option's for a decision item - and its
-one-line pass summary on stderr. On any other exit, each `orch:` line on
+it prints the batch view on stdout - the lens lines, ran or not run with the
+reason, then every material item in full, in batch order, consolidation
+items first: its group, its recommendation, its cited findings (or, for a
+consolidation item, its comment), and its Current and Proposed text in full,
+each option's for a decision item. Then, under a `### Minor edits` heading,
+every minor and resolved item one line each, in batch order: `<n>. <Group>:
+<summary>`, a recommend-decline minor item's line ending `- recommend
+decline: <reason>`, and a resolved item's reading `<n>. <Group>: resolved by
+item <m>`. The heading is left out when no item is minor or resolved, and
+the item numbers stay the one sequence of `batch.md`. Its one-line pass
+summary goes to stderr. On any other exit, each `orch:` line on
 stderr names what is wrong, most with its `batch.md` line: fix `batch.md` and
 run `check` again, until it exits 0. A batch that has not passed `check` is
 never shown and never asked about.
 
 Then paste `check`'s stdout into chat word for word, so the human reads each
-edit's wording before answering. Compose no view of your own - no summary,
+material edit's wording, and each minor edit's summary, before answering. Compose no view of your own - no summary,
 no shortening, in any round: the view the human reads is `check`'s, every
 round alike. Then ask **one blocking question** with the host's ask tool
 (`AskUserQuestion` on Claude Code, `ask_user` on Junie), the paste and the
@@ -319,11 +338,11 @@ per item, in the batch's order:
 @@ lens <name> ran                        a lens that answered
 @@ lens <name> not-run <reason>           a lens that failed twice
 @@ lens fidelity standalone               Fidelity in a standalone review
-@@ item <n> <group> apply                 a proposed edit, recommended
-@@ item <n> <group> decline <reason>      a proposed edit marked recommend decline;
-                                            it still carries the edit it declines
-@@ item <n> <group> decision <letter>     a decision item, <letter> recommended
-@@ item <n> <group> resolved              a finding an earlier item resolves
+@@ item <n> <group> apply <mark>                   a proposed edit, recommended
+@@ item <n> <group> decline <mark> <reason>        a proposed edit marked recommend decline;
+                                                     it still carries the edit it declines
+@@ item <n> <group> decision <letter> <mark>        a decision item, <letter> recommended
+@@ item <n> <group> resolved                       a finding an earlier item resolves; no mark
 @@ summary <one line>                     the changelog's line when the item is applied
 @@ finding <lens> <k>                     repeatable: the lens findings the item resolves
 @@ comment @<login> <createdAt>           a consolidation item's comment, repeatable,
@@ -336,7 +355,10 @@ per item, in the batch's order:
 @@ end
 ```
 
-`<group>` is `consolidation` or a lens name. An
+`<group>` is `consolidation`, a lens name, or `contradicts-the-plan`.
+`<mark>` is `material` or `minor`, the last fixed token of the `@@ item`
+line, before any reason; a decision item and a `contradicts-the-plan` item
+are always `material`, and a resolved item takes no mark. An
 insertion is an anchor plus a replacement that repeats it. Every item with
 an anchor, and every option, has its one `@@ summary`. A `@@ finding` cites
 the `<k>`-th finding in `<dir>/lens-<lens>.md`, which `apply` copies into the
@@ -376,7 +398,7 @@ Its batch holds one item of each kind, and passes `check`:
 @@ lens testability ran
 @@ lens implementability ran
 
-@@ item 1 consolidation apply
+@@ item 1 consolidation apply material
 @@ summary Failed pages are retried once
 @@ comment @alice 2026-10-01T09:00:00Z
 @@ quote
@@ -388,7 +410,7 @@ The export streams each widget in pages of 100.
 A failed page is retried once before the export fails.
 @@ end
 
-@@ item 2 testability apply
+@@ item 2 testability apply material
 @@ finding testability 1
 @@ summary The seam's test runs against a fake store
 @@ anchor
@@ -397,7 +419,7 @@ A failed page is retried once before the export fails.
 - One seam: the `widget export` CLI, end to end, against a fake store.
 @@ end
 
-@@ item 3 consistency decline the glossary's term is widget, as the body says
+@@ item 3 consistency decline minor the glossary's term is widget, as the body says
 @@ finding consistency 1
 @@ summary Widgets renamed items
 @@ anchor
@@ -406,7 +428,7 @@ Exports time out on large widgets.
 Exports time out on large items.
 @@ end
 
-@@ item 4 implementability decision B
+@@ item 4 implementability decision B material
 @@ finding implementability 1
 @@ option A One file
 @@ summary The export writes one compressed file
@@ -435,12 +457,14 @@ The export writes one file per widget.
   `@@ replace`, `@@ end` block.
 - **Decline** (item 3): the same shape as an apply item - summary, anchor,
   replacement and `@@ end` - so **Apply all** can still apply it; the reason
-  is on its `@@ item` line.
+  is on its `@@ item` line, after its mark. Renaming a term is minor, so
+  `check` lists it under **Minor edits** with its reason.
 - **Decision** (item 4): no summary or block of its own; each `@@ option`
   carries its own `@@ summary` and block, and the `@@ item` line names the
   recommended letter.
 - **Resolved** (item 5): only its findings and `@@ resolved-by`; it takes no
-  `@@ summary`, `@@ anchor`, `@@ replace` or `@@ end`.
+  mark, `@@ summary`, `@@ anchor`, `@@ replace` or `@@ end`, and `check`
+  lists it under **Minor edits** as resolved by item 4.
 
 ## Applying the answer
 
