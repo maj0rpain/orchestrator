@@ -523,7 +523,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               through the wipe, each when it exists.
                               Reads state.json only to compare, and never
                               writes it
-  spec-review check <dir>     validate a round's <dir>/batch.md before the
+  spec-review check <dir> [--tickets]
+                              validate a round's <dir>/batch.md before the
                               batch question: its grammar, the lens files and
                               their citations, every anchor (each item's and
                               each decision option's) matching exactly once,
@@ -533,7 +534,18 @@ orch.sh - deterministic operations for the orchestrator flow
                               flow state. Exit 1 with one orch: line per
                               error, each naming its batch.md line - the first
                               grammar error only, every anchor problem; exit
-                              0 with a one-line summary
+                              0 with the batch view on stdout and a one-line
+                              summary on stderr. --tickets validates
+                              <dir>/tickets.md instead, before the ticket
+                              question, as apply --tickets would take the all
+                              answer: its grammar, each ticket item's anchor
+                              against ticket-<t>.fetched.md, else
+                              ticket-<t>.md, each ## Ticket item's against
+                              <dir>/spec.md, and each edge against its
+                              ticket's ## Blocked by - one orch: line per
+                              problem, each naming its tickets.md line, or the
+                              ticket view on stdout. The checks that need
+                              GitHub stay in apply
   spec-review wait <dir> <lens>...
                               block until <dir>/lens-<lens>.md exists for
                               every named lens (fidelity, consistency,

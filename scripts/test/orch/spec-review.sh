@@ -1525,6 +1525,238 @@ assert_contains "help documents spec-review check" "$("$ORCH" help)" "spec-revie
 rm -f "$src_err"
 restore_suite_env
 
+# --- spec-review check --tickets (#1226) ---------------------------------------
+# The ticket items validated before the ticket question - grammar, every text
+# anchor against the copy apply would edit, and every edge against its
+# ticket's ## Blocked by, as the all answer would take them - with nothing
+# written and no GitHub read, then the ticket view on stdout.
+echo
+echo "spec-review check --tickets (#1226)"
+new_repo >/dev/null
+fake_github
+srct_t20='## What to build
+
+Build alpha.
+
+## Blocked by
+
+None (can start immediately)'
+srct_t21='## What to build
+
+Build gamma.
+
+## Blocked by
+
+- #20'
+# srct_dir: a fresh round directory after the pause - spec.md, #20 and #21
+# fetched into ticket-<n>.md, and tickets.md drafted; prints its path. Its
+# @@ anchor lines: item 1 on 4, item 4 on 14.
+srct_dir() {
+  local d
+  d="$(mktemp -d)"
+  printf '# Spec\n\nAlpha line.\n' >"$d/spec.md"
+  printf '%s' "$srct_t20" >"$d/ticket-20.md"
+  printf '%s' "$srct_t21" >"$d/ticket-21.md"
+  cat >"$d/tickets.md" <<'TICKETS'
+@@ recommend apply
+@@ item 1 ticket 20 apply
+@@ summary #20 builds alpha prime
+@@ anchor
+Build alpha.
+@@ replace
+Build alpha prime.
+@@ end
+
+@@ item 2 unblock 21 by 20 apply
+@@ item 3 block 20 by 21 apply
+@@ item 4 ticket 21 decline gamma is unchanged
+@@ summary #21 builds gamma twice
+@@ anchor
+Build gamma.
+@@ replace
+Build gamma twice.
+@@ end
+@@ closed 22 the gamma API
+TICKETS
+  printf '%s\n' "$d"
+}
+# srct <dir>: check --tickets on <dir>, its stdout, stderr and status into
+# out, err and st.
+srct_err="$(mktemp)"
+srct() {
+  out="$("$ORCH" spec-review check "$1" --tickets 2>"$srct_err")"; st=$?
+  err="$(cat "$srct_err")"
+}
+# srct_snapshot <dir>: every file in <dir> with its checksum.
+srct_snapshot() { (cd "$1" && find . -type f | LC_ALL=C sort | xargs cksum); }
+# srct_passes <label> <dir> <stdout> <stderr>: check --tickets exits 0 with
+# exactly <stdout> and <stderr>, and <dir> unchanged.
+srct_passes() {
+  local before
+  before="$(srct_snapshot "$2")"
+  srct "$2"
+  assert_status "$1: passes" "$st" 0
+  assert_eq "$1: the ticket view on stdout" "$out" "$3"
+  assert_eq "$1: the pass summary on stderr" "$err" "$4"
+  assert_not_contains "$1: and not on stdout" "$out" "tickets.md passes"
+  assert_eq "$1: the directory unchanged" "$(srct_snapshot "$2")" "$before"
+}
+# srct_refused <label> <dir> <stderr>: check --tickets exits 1 with exactly
+# <stderr>, nothing on stdout, and <dir> unchanged.
+srct_refused() {
+  local before
+  before="$(srct_snapshot "$2")"
+  srct "$2"
+  assert_status "$1: refused" "$st" 1
+  assert_eq "$1: exactly these errors" "$err" "$3"
+  assert_eq "$1: nothing on stdout" "$out" ""
+  assert_eq "$1: the directory unchanged" "$(srct_snapshot "$2")" "$before"
+}
+
+d="$(srct_dir)"
+srct_passes "a ticket batch" "$d" '## The ticket items
+
+### Item 1 - #20
+
+**Recommendation:** apply
+
+**Current**
+
+```
+Build alpha.
+```
+
+**Proposed**
+
+```
+Build alpha prime.
+```
+
+### Item 2 - unblock #21 by #20
+
+**Recommendation:** apply
+
+### Item 3 - block #20 by #21
+
+**Recommendation:** apply
+
+### Item 4 - #21
+
+**Recommendation:** recommend decline - gamma is unchanged
+
+**Current**
+
+```
+Build gamma.
+```
+
+**Proposed**
+
+```
+Build gamma twice.
+```
+
+### Closed tickets
+
+- #22 - the gamma API
+
+**Recommended answer:** apply' \
+  "tickets.md passes: 4 items, 2 anchors, each matching once, and the all answer applies cleanly"
+assert_eq "no fetched copy taken" "$(on_disk "$d/ticket-20.fetched.md")" absent
+
+# A collapsed breakdown's ## Ticket item, anchored on spec.md.
+d="$(mktemp -d)"
+printf '# Spec\n\n## Ticket\n\nBuild the spec.\n' >"$d/spec.md"
+printf '@@ recommend retire\n@@ item 1 section apply\n@@ summary The ticket builds alpha first\n@@ anchor\nBuild the spec.\n@@ replace\nBuild the spec, alpha first.\n@@ end\n' >"$d/tickets.md"
+srct_passes "a ## Ticket item" "$d" '## The ticket items
+
+### Item 1 - the `## Ticket` section
+
+**Recommendation:** apply
+
+**Current**
+
+```
+Build the spec.
+```
+
+**Proposed**
+
+```
+Build the spec, alpha first.
+```
+
+### Closed tickets
+
+None
+
+**Recommended answer:** retire - the ticket breakdown retired, to be broken down again' \
+  "tickets.md passes: 1 items, 1 anchors, each matching once, and the all answer applies cleanly"
+printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nNowhere.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
+srct_refused "a section anchor not in spec.md" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body"
+
+# @@ none-affected.
+d="$(mktemp -d)"
+printf '# Spec\n' >"$d/spec.md"
+printf '@@ none-affected\n' >"$d/tickets.md"
+srct_passes "@@ none-affected" "$d" '## The ticket items
+
+No open ticket is affected.' "tickets.md passes: no open ticket affected"
+
+# An earlier run's fetched copy is the one apply edits, so the anchor is
+# checked against it.
+d="$(srct_dir)"
+printf '%s' "$srct_t20" >"$d/ticket-20.fetched.md"
+printf 'Rewritten.\n' >"$d/ticket-20.md"
+srct "$d"
+assert_status "an anchor matching the fetched copy, not ticket-20.md, passes" "$st" 0
+d="$(srct_dir)"
+printf 'Rewritten.\n' >"$d/ticket-20.fetched.md"
+srct_refused "an anchor matching ticket-20.md, not the fetched copy" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body"
+
+# Refusals.
+d="$(srct_dir)"
+sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
+srct_refused "a ticket anchor matching nothing" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body"
+d="$(srct_dir)"
+sed -i 's/^Build alpha\.$/##/' "$d/tickets.md"
+srct_refused "a ticket anchor matching twice" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches more than one place in the body"
+d="$(srct_dir)"
+sed -i 's/^Build alpha\.$/Nowhere./; s/^Build gamma\.$/Nowhere./' "$d/tickets.md"
+srct_refused "two bad anchors, each named" "$d" \
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body
+orch: tickets.md line 14: ticket item 4 (#21): its anchor matches no text in the body"
+d="$(srct_dir)"
+printf '@@ bogus\n' >>"$d/tickets.md"
+srct_refused "a grammar error" "$d" "orch: tickets.md line 20: unknown line '@@ bogus'"
+d="$(srct_dir)"
+rm "$d/tickets.md"
+srct_refused "no tickets.md" "$d" "orch: tickets.md not found in $d"
+d="$(srct_dir)"
+rm "$d/spec.md"
+srct_refused "no spec.md" "$d" "orch: spec.md not found in $d"
+d="$(srct_dir)"
+rm "$d/ticket-20.md"
+srct_refused "no ticket file, named by each item needing it" "$d" \
+  "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it
+orch: tickets.md line 11: ticket item 3: ticket-20.md not found in $d - fetch each ticket a ticket item names into it"
+d="$(srct_dir)"
+sed -i 's/^@@ item 3 block 20 by 21 apply$/@@ item 3 block 21 by 20 apply/' "$d/tickets.md"
+srct_refused "a block edge already present" "$d" \
+  "orch: tickets.md line 11: ticket item 3: #21 is already blocked by #20"
+d="$(srct_dir)"
+sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' "$d/tickets.md"
+srct_refused "an unblock edge absent" "$d" \
+  "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21"
+
+assert_contains "help documents spec-review check --tickets" "$("$ORCH" help)" "spec-review check <dir> [--tickets]"
+rm -f "$srct_err"
+restore_suite_env
+
 # --- spec-review wait (#1183) --------------------------------------------------
 # The session running a spec review starts its lenses and waits for all of them
 # in one blocking call: a lens is back when its findings file exists, and the
