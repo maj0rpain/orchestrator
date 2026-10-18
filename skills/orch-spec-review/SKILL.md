@@ -321,9 +321,12 @@ and no changelog is posted before the answer arrives. The options:
   decline**: as recommended, plus those items too. With no such item it would
   equal the first option, so it is not shown.
 - **Apply none** - always offered.
-- **Other** - item numbers, with the option letter on decision items, e.g.
-  `1B, 2, 3, 5`. Any item left out is declined; a decision item left out stays
-  undecided, and the changelog says so. The question text states this format.
+- **Other** - only the departures from the recommendation, comma-separated,
+  e.g. `3B, -4, +2`: `<n><letter>` gives decision item `<n>` option
+  `<letter>`; `-<n>` declines item `<n>`, or leaves a decision item undecided,
+  and the changelog says so; `+<n>` applies recommend-decline item `<n>`.
+  Every item not named stays as recommended. A bare item number is no
+  departure and is refused. The question text states this format.
 
 The spec batch is asked once; a long spec is one longer question, not twenty
 prompts.
@@ -469,10 +472,18 @@ The export writes one file per widget.
 ## Applying the answer
 
 One call applies the answer, run with the human's answer as given:
-`recommended` for **Apply as recommended**, `all`, `none`, or the Other list
-such as `"1B, 2, 3, 5"`. `--round <k>/<n>` names the round. The human's
-reasons for declined items go in a file, one `<n>: <reason>` line each,
-passed as `--reasons <file>`.
+`recommended` for **Apply as recommended**, `all`, `none`, or the Other
+override list such as `"3B, -4, +2"`. `--round <k>/<n>` names the round. A
+departure that matches the recommendation - `-<n>` on a recommend-decline
+item, or a decision's recommended letter - is accepted and recorded as
+recommended. `apply` refuses, before any write, a token that is not
+`<n><letter>`, `-<n>` or `+<n>` (a bare number among them), an unknown item
+or option letter, a letter on an item that is no decision, `+` on a decision
+item or on an item not recommended for decline, `-` or `+` on a resolved
+item, and an item named twice. The human's reasons for declined items - a
+`-<n>` decline among them - go in a file, one `<n>: <reason>` line each,
+passed as `--reasons <file>`; a line naming an item the answer does not
+decline is refused.
 
 ```
 bash "$ORCH" spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]

@@ -459,39 +459,54 @@ spec_review_findings_check() {
 # SR_DISP (applied, declined, taken, undecided or resolved), SR_ASREC (1 where
 # the human's call matched the recommendation) and SR_TAKEN (a decision's
 # letter), from the batch question's answer: recommended, all, none, or an
-# Other list such as `1B, 2, 3, 5`. Dies, before any write, on an unknown
-# item or option, a letter on an item that is no decision, a decision named
-# without one, a resolved item, or an item named twice.
+# Other override list such as `3B, -4, +2`, naming only the departures from
+# the recommendation - `<n><letter>` a decision's option, `-<n>` an item
+# declined or a decision left undecided, `+<n>` a recommend-decline item
+# applied - with every item it does not name taken as recommended. Dies,
+# before any write, on a token of no such form (a bare number among them), an
+# unknown item or option, a letter on an item that is no decision, `+` on a
+# decision or on an item not recommended for decline, `-` or `+` on a
+# resolved item, or an item named twice.
 spec_review_answer() {
-  local answer="$1" i tok n letter rest named=" " j
+  local answer="$1" base="$1" i tok n letter sign rest named=" " j
+  local form="is not recommended, all, none or a list of departures such as 3B, -4, +2"
   SR_DISP=(); SR_ASREC=(); SR_TAKEN=()
   case "$answer" in
     recommended|all|none) ;;
     *)
+      base=recommended
       rest="$answer,"
       while [ -n "$rest" ]; do
         tok="${rest%%,*}"; rest="${rest#*,}"
         trim_split "$tok" tok
-        n="${tok%%[A-Za-z]*}"; letter="${tok#"$n"}"
-        case "$n" in ''|*[!0-9]*) die "the answer '$answer' is not recommended, all, none or a list such as 1B, 2, 3 - '$tok' is no item" ;; esac
-        case "$letter" in ''|[A-Za-z]) ;; *) die "the answer '$answer' is not recommended, all, none or a list such as 1B, 2, 3 - '$tok' is no item" ;; esac
+        sign=""; letter=""
+        case "$tok" in
+          [-+]*) sign="${tok:0:1}"; n="${tok:1}" ;;
+          *) n="${tok%%[A-Za-z]*}"; letter="${tok#"$n"}" ;;
+        esac
+        case "$n" in ''|*[!0-9]*) n="" ;; esac
+        case "$sign:$letter" in :[A-Za-z]|[-+]:) ;; *) n="" ;; esac
+        [ -n "$n" ] || die "the answer '$answer' $form - '$tok' is not <n><letter>, -<n> or +<n>"
         letter="$(printf '%s' "$letter" | tr '[:lower:]' '[:upper:]')"
         i="$(array_index SR_IT_N "$n")"
         [ -n "$i" ] || die "the answer names item $n, which batch.md does not have"
         case "$named" in *" $n "*) die "the answer names item $n twice" ;; esac
         named="$named$n "
-        case "${SR_IT_REC[$i]}" in
-          resolved) die "the answer names item $n, which is resolved by item ${SR_IT_RESOLVED[$i]} and takes no answer" ;;
-          decision)
-            [ -n "$letter" ] || die "the answer names decision item $n without an option letter"
+        [ "${SR_IT_REC[$i]}" != resolved ] \
+          || die "the answer names item $n, which is resolved by item ${SR_IT_RESOLVED[$i]} and takes no answer"
+        case "$sign:${SR_IT_REC[$i]}" in
+          :decision)
             j="$(spec_review_option_index "$i" "$letter")"
             [ -n "$j" ] || die "the answer gives item $n option $letter, which it does not have"
             SR_DISP[i]=taken; SR_TAKEN[i]="$letter"
             [ "$letter" != "${SR_IT_ARG[$i]}" ] || SR_ASREC[i]=1 ;;
-          *)
-            [ -z "$letter" ] || die "the answer gives item $n the letter $letter, but item $n is no decision item"
-            SR_DISP[i]=applied
-            [ "${SR_IT_REC[$i]}" != apply ] || SR_ASREC[i]=1 ;;
+          :*) die "the answer gives item $n the letter $letter, but item $n is no decision item" ;;
+          -:decision) SR_DISP[i]=undecided ;;
+          -:decline) SR_DISP[i]=declined; SR_ASREC[i]=1 ;;
+          -:*) SR_DISP[i]=declined ;;
+          +:decline) SR_DISP[i]=applied ;;
+          +:decision) die "the answer names +$n, but item $n is a decision item: name its option, as ${n}${SR_IT_ARG[$i]}" ;;
+          +:*) die "the answer names +$n, but item $n is not recommended for decline" ;;
         esac
       done ;;
   esac
@@ -500,7 +515,7 @@ spec_review_answer() {
       resolved) SR_DISP[i]=resolved; continue ;;
     esac
     [ -z "${SR_DISP[$i]+x}" ] || continue
-    case "$answer:${SR_IT_REC[$i]}" in
+    case "$base:${SR_IT_REC[$i]}" in
       recommended:apply|all:apply|all:decline) SR_DISP[i]=applied; SR_ASREC[i]=1 ;;
       recommended:decision|all:decision)
         SR_DISP[i]=taken; SR_TAKEN[i]="${SR_IT_ARG[$i]}"; SR_ASREC[i]=1 ;;
@@ -610,7 +625,7 @@ spec_review_anchor() {
 # <body-file>'s text: SR_FETCHED holds the body as read, SR_TEXT the body
 # edited. Grammar, lens and citation errors die on the first. An anchor
 # problem dies too, unless [collect] is set: then every anchor - the ones the
-# answer leaves out checked on their own against SR_FETCHED - is checked, and
+# answer declines checked on their own against SR_FETCHED - is checked, and
 # each problem, naming its `@@ anchor` line, is appended to SR_PROBLEMS, the
 # failed edit skipped.
 spec_review_validate() {
@@ -1400,9 +1415,13 @@ spec_review_apply() {
         esac
         shift 2 ;;
       --unattended) unattended=true; shift ;;
-      -*) die "unknown option: $1 ($usage)" ;;
+      --*) die "unknown option: $1 ($usage)" ;;
       *)
-        if [ -z "$dir" ]; then dir="$1"
+        # An override answer may begin with -, as -4: after <dir>, a single
+        # dash starts the answer, never an option.
+        if [ -z "$dir" ]; then
+          case "$1" in -*) die "unknown option: $1 ($usage)" ;; esac
+          dir="$1"
         elif [ -z "$have_answer" ]; then answer="$1"; have_answer=1
         else die "$usage"
         fi

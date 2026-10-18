@@ -441,12 +441,13 @@ assert_eq "Tickets: not checked" "$(has_line "$sra_cl" "Not checked - no edit ap
 assert_eq "the changelog is still posted" "$(fake_comments_of 14)" "$sra_cl"
 assert_eq "applied.log records only the comment" "$(cat "$d/applied.log")" "the changelog comment on issue #14"
 
-# An Other list with a decision letter; an item left out is declined.
+# An Other override answer names only its departures (#1239): a decision's
+# letter and a `-<n>` decline, every item it does not name as recommended.
 d="$(sra_dir)"
-printf '\n2: keep the plan\n' >"$d/reasons"
-sra "$d" "3B, 4" --reasons "$d/reasons"
-assert_status "an Other list applies" "$st" 0
-assert_eq "exactly the items named, the decision by its letter" "$(cat "$d/spec.md")" '# Spec
+printf '\n1: the comment is stale\n' >"$d/reasons"
+sra "$d" "3B, -1" --reasons "$d/reasons"
+assert_status "an override answer applies" "$st" 0
+assert_eq "the departures taken, every unnamed item as recommended" "$(cat "$d/spec.md")" '# Spec
 
 Alpha line.
 Beta line.
@@ -456,29 +457,78 @@ Test note.
 Twice.
 Twice.'
 sra_cl="$(cat "$d/changelog.md")"
-assert_eq "the decision taken" "$(has_line "$sra_cl" "- (3) decision: took B - Drop gamma")" yes
-assert_eq "an item left out, declined by the human" \
-  "$(has_line "$sra_cl" '- (1) "Alpha should say alpha prime." - declined')" yes
-assert_eq "a contradicts-the-plan decline with the human's reason" \
-  "$(has_line "$sra_cl" '- (2) "The spec reverses the plan'"'"'s choice of beta." - spec departs from the plan: keep the plan')" yes
+assert_eq "<n><letter>: the decision takes that option" \
+  "$(has_line "$sra_cl" "- (3) decision: took B - Drop gamma")" yes
+assert_eq "-<n>: the item declined, with its --reasons line" \
+  "$(has_line "$sra_cl" '- (1) "Alpha should say alpha prime." - the comment is stale')" yes
+assert_eq "an unnamed recommend-decline item, declined as recommended" \
+  "$(has_line "$sra_cl" '- (2) "The spec reverses the plan'"'"'s choice of beta." - spec departs from the plan: declined as recommended: the plan chose this')" yes
+assert_eq "an unnamed apply item, applied" \
+  "$(has_line "$sra_cl" "- (4) Insert a test note after Delta")" yes
+assert_eq "posted as the round's comment" "$(fake_comments_of 14)" "$sra_cl"
 
+# `+<n>` applies a recommend-decline item; `-<n>` leaves a decision undecided
+# and declines an apply item.
 d="$(sra_dir)"
-sra "$d" "1, 4"
-assert_status "an Other list leaving a decision out applies" "$st" 0
-assert_contains "the decision item's anchor untouched" "$(cat "$d/spec.md")" $'\nGamma line.\n'
-assert_eq "left undecided under Consistency and Testability alike" \
+sra "$d" "-3, +2, -4"
+assert_status "an override answer with + and - applies" "$st" 0
+assert_eq "the recommend-decline edit applied, the decision and item 4 not" "$(cat "$d/spec.md")" '# Spec
+
+Alpha prime line.
+Beta reversed.
+Gamma line.
+Delta line.
+Twice.
+Twice.'
+sra_cl="$(cat "$d/changelog.md")"
+assert_eq "+<n>: recorded applied, by its summary" \
+  "$(has_line "$sra_cl" "- (2) Reverse the plan on Beta")" yes
+assert_eq "-<n> on a decision: left undecided under Consistency and Testability alike" \
   "$(grep -c '^- (3) .* - left undecided$' "$d/changelog.md")" 2
+assert_eq "-<n> on an apply item: declined" \
+  "$(has_line "$sra_cl" '- (4) "Delta has no test." - declined')" yes
+assert_eq "the resolved item still resolved" "$(has_line "$sra_cl" "- (5) resolved by (4)")" yes
+
+# A departure that matches the recommendation is recorded as recommended.
+d="$(sra_dir)"
+sra "$d" "3A, -2"
+assert_status "an override answer naming only the recommendation applies" "$st" 0
+assert_eq "its changelog is the recommended answer's" "$(cat "$d/changelog.md")" "$sra_log"
+assert_eq "its spec.md is the recommended answer's" "$(cat "$d/spec.md")" "$sra_clean"
+
+# A --reasons line naming an item the override answer does not decline.
+d="$(sra_dir)"
+printf '4: why\n' >"$d/reasons"
+sra_refused "a reason for an item the override answer applies" "$d" "item 4, which the answer does not decline" \
+  "-1" --reasons "$d/reasons"
+printf '2: why\n' >"$d/reasons"
+sra_refused "a reason for an item applied by +<n>" "$d" "item 2, which the answer does not decline" \
+  "+2" --reasons "$d/reasons"
 
 # Answers refused before any write.
 d="$(sra_dir)"
 echo "old log" >"$d/changelog.md"
-sra_refused "an unknown item" "$d" "item 9" "1, 9"
+sra_form="is not <n><letter>, -<n> or +<n>"
+sra_refused "the old list form" "$d" "'2' $sra_form" "2, 3"
+sra_refused "a bare number on a decision" "$d" "'3' $sra_form" "3"
+sra_refused "a malformed answer" "$d" "'1;2' $sra_form" "1;2"
+sra_refused "a sign with no number" "$d" "'-' $sra_form" "-"
+sra_refused "a sign and a letter" "$d" "'+3B' $sra_form" "+3B"
+sra_refused "two letters" "$d" "'3AB' $sra_form" "3AB"
+sra_refused "an empty token" "$d" "'' $sra_form" "-4,"
+sra_refused "an unknown item" "$d" "item 9, which batch.md does not have" "-1, -9"
+sra_refused "an unknown item with a letter" "$d" "item 9, which batch.md does not have" "9A"
 sra_refused "an unknown option" "$d" "option C" "3C"
 sra_refused "a letter on no decision" "$d" "no decision item" "4B"
-sra_refused "a decision with no letter" "$d" "without an option letter" "3"
-sra_refused "a resolved item named" "$d" "resolved by item 4" "4, 5"
-sra_refused "an item named twice" "$d" "twice" "4, 4"
-sra_refused "a malformed answer" "$d" "is no item" "1;2"
+sra_refused "+ on a decision" "$d" "item 3 is a decision item" "+3"
+sra_refused "+ on an item not recommended for decline" "$d" "item 4 is not recommended for decline" "+4"
+sra_refused "- on a resolved item" "$d" "resolved by item 4" "-5"
+sra_refused "+ on a resolved item" "$d" "resolved by item 4" "+5"
+sra_refused "a letter on a resolved item" "$d" "resolved by item 4" "5A"
+sra_refused "an item named twice" "$d" "item 4 twice" "-4, -4"
+sra_refused "a decision named twice" "$d" "item 3 twice" "3B, -3"
+sra_refused "an unknown long option, though the answer may begin with -" "$d" \
+  "unknown option: --bogus" "-4" --bogus
 
 # Anchors: no match, two matches - the whole batch refused.
 sed -i 's/^Delta line\.$/Nowhere line./' "$d/batch.md"
@@ -1557,9 +1607,9 @@ src_bad2
 out="$("$ORCH" spec-review apply "$d" none --round 1/1 --issue 14 2>&1)"; st=$?
 assert_status "apply none passes over an unapplied item's bad anchor" "$st" 0
 src_bad2
-out="$("$ORCH" spec-review apply "$d" "1, 3A" --round 1/1 --issue 14 2>&1)"; st=$?
-assert_status "apply with a list leaving the item out passes too" "$st" 0
-assert_contains "applying the items it names" "$(cat "$d/spec.md")" "Alpha prime line."
+out="$("$ORCH" spec-review apply "$d" "3A, -2" --round 1/1 --issue 14 2>&1)"; st=$?
+assert_status "apply with an override answer declining the item passes too" "$st" 0
+assert_contains "applying the items it does not decline" "$(cat "$d/spec.md")" "Alpha prime line."
 src_bad2
 src "$d"
 assert_eq "check names the bad anchor's line" "$err" \
