@@ -750,3 +750,93 @@ assert_contains "side-checkout prune is in the usage text" "$(orch_gh_failing he
 assert_contains "the CLI conventions' noun table names prune" \
   "$(grep '^| `side-checkout`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`prune`'
 restore_suite_env
+
+# --- archive keeps flow-less directories (#1247) ------------------------------
+# A standalone spec review's spec-review/<n>/ and a review pass's
+# review-pass/<branch>/ belong to no flow, so archiving a flow - by any command
+# - leaves them in place; in a side checkout being removed they go with the
+# worktree. Checked through what stays under .orchestrator/ and what lands in
+# the archive.
+echo
+echo "archive keeps flow-less directories"
+
+sc_clone
+fake_github
+top="$(git rev-parse --show-toplevel)"
+fake_offline
+
+# fl_seed <root>: gives the flow in the checkout at <root> a handoff, a review
+# record and a freely named spec-phase round directory, and puts a standalone
+# spec review's and a review pass's working directories beside it.
+fl_seed() {
+  local o="$1/.orchestrator"
+  mkdir -p "$o/handoff" "$o/review" "$o/round-2" "$o/spec-review/1244" "$o/review-pass/quick-9-x"
+  echo plan >"$o/handoff/01-plan.md"
+  echo record >"$o/review/r1.md"
+  echo round >"$o/round-2/notes.md"
+  echo body >"$o/spec-review/1244/body.md"
+  echo report >"$o/review-pass/quick-9-x/pass-1.md"
+}
+# fl_kept <label> <root>: both flow-less directories are still in place under
+# the checkout at <root>, with their files.
+fl_kept() {
+  assert_eq "$1: spec-review/<n>/ stays in place with its files" \
+    "$(on_disk "$2/.orchestrator/spec-review/1244/body.md")" "present"
+  assert_eq "$1: review-pass/<branch>/ stays in place with its files" \
+    "$(on_disk "$2/.orchestrator/review-pass/quick-9-x/pass-1.md")" "present"
+}
+# fl_archived <label> <archive-dir>: the flow's own entries landed in
+# <archive-dir>, and neither flow-less directory did.
+fl_archived() {
+  local e
+  for e in state.json handoff/01-plan.md review/r1.md round-2/notes.md; do
+    assert_eq "$1: the flow's $e is archived" "$(on_disk "$2/$e")" "present"
+  done
+  assert_eq "$1: no spec-review/ in the archive" "$(on_disk "$2/spec-review")" "absent"
+  assert_eq "$1: no review-pass/ in the archive" "$(on_disk "$2/review-pass")" "absent"
+}
+fl_dest() { find "$top/.orchestrator/archive" -maxdepth 1 -name "*-$1"; }
+
+# archive in the main checkout.
+orch_gh_failing init arc-flow >/dev/null
+fl_seed "$top"
+orch_gh_failing archive >/dev/null; st=$?
+assert_status "archive in the main checkout succeeds" "$st" 0
+fl_kept "archive" "$top"
+fl_archived "archive" "$(fl_dest arc-flow)"
+rm -rf "$top/.orchestrator/spec-review" "$top/.orchestrator/review-pass"
+
+# init over a done flow.
+orch_gh_failing init old-flow >/dev/null
+state_fixture phase "done"
+fl_seed "$top"
+orch_gh_failing init next-flow >/dev/null; st=$?
+assert_status "init over a done flow succeeds" "$st" 0
+fl_kept "init" "$top"
+fl_archived "init" "$(fl_dest old-flow)"
+orch_gh_failing archive >/dev/null
+rm -rf "$top/.orchestrator/spec-review" "$top/.orchestrator/review-pass"
+
+# side-checkout remove of a side checkout holding a done flow.
+rmv="$(sc_add rmv)"
+(cd "$rmv" && orch_gh_failing init rmv-flow >/dev/null && state_fixture phase "done")
+fl_seed "$rmv"
+orch_gh_failing side-checkout remove rmv >/dev/null 2>&1; st=$?
+assert_status "side-checkout remove succeeds" "$st" 0
+fl_archived "remove" "$(fl_dest rmv-flow)"
+assert_eq "remove: the worktree, with both directories, is gone" "$(on_disk "$rmv")" "absent"
+
+# The finished sweep over the main checkout's finished flow - the trigger
+# #1247 hit.
+fake_online
+orch_gh_failing init swp-flow >/dev/null
+git checkout -q -b orch/swp-flow
+state_fixture phase "done"; state_fixture branch orch/swp-flow; state_fixture pr 71
+fake_pr 71 merged orch/swp-flow main
+fl_seed "$top"
+orch_gh_failing side-checkout prune >/dev/null 2>&1; st=$?
+assert_status "the finished sweep succeeds" "$st" 0
+assert_eq "prune: the main checkout's flow is archived in place" "$(archived_count "$top" swp-flow)" "1"
+fl_kept "prune" "$top"
+fl_archived "prune" "$(fl_dest swp-flow)"
+restore_suite_env
