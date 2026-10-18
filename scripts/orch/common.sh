@@ -46,13 +46,12 @@ float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
 # clock the loop sleeps on, leaving it to poll as fast as it can. A poll loop's
 # knobs are read once, here, before anything sleeps on one of them.
 require_poll_knobs() {
-  local k v interval=""
+  local k v interval="${!#}"
   for k in "$@"; do
     eval "v=\$$k"
     case "$v" in
       ''|*[!0-9.]*|*.*.*|.) die "$k is not a number: $v" ;;
     esac
-    interval="$k"
   done
   eval "v=\$$interval"
   # Every character is a zero or the point, so the value is zero however it was
