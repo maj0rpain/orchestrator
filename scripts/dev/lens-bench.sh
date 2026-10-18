@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # lens-bench.sh run <lens> --definition <rev> --out <dir> [-n N] [--model M]
 # lens-bench.sh measure <dir>...
-# lens-bench.sh seed <lens> [--snapshot <rev>] [--fixture <dir>]
 #
 # The lens benchmark. `run` starts N headless runs (default 5) of one lens
 # definition, `agents/orch-lens-<lens>.md` read at git revision <rev>, on model
@@ -57,27 +56,6 @@
 # when there are none, and is carried over the turns left from that turn on;
 # the fixed base is the first turn's context times the number of turns.
 #
-# `seed` runs no model: it resolves the names a fixture's spec gives into a
-# seed map, a draft code map in the lens's map format, against the snapshot
-# (`--snapshot <rev>`, default the fixture's `snapshot`) checked out in a
-# temporary worktree of the repo holding the fixture (`--fixture <dir>`,
-# default the lens's), removed when `seed` ends or fails. The names are the
-# spec's code spans and bold spans, read as SPANS_AWK reads them; a bold span
-# also gives each comma-separated part, trimmed. A name equal to the text of
-# exactly one ATX heading in the snapshot's tracked Markdown, CHANGELOG.md
-# left out, gives a heading entry ranged to the next heading of the same or a
-# higher level; bold names resolve to headings alone. A code span that is an
-# identifier opening exactly one tracked line `NAME() {` or `function NAME()
-# {` gives a function entry ranged to the next `}` at column 0; one that is a
-# tracked path, or the basename of exactly one tracked file, gives a
-# whole-file entry. An ambiguous name gets no entry, and names resolving to
-# one path, range and kind give one entry under the first. It prints the seed
-# map, `<path>:<start>-<end> <symbol> - <kind>: named in the spec as <name>`,
-# then, against the fixture's baseline map when it has one, each kind's entry
-# count and the baseline locations it covers, the coverage of the heading and
-# function entries together, and how many of them cover no location;
-# whole-file entries count toward neither.
-#
 # A repo-development tool: it does not ship to users. Usage errors exit 2.
 # `run` exits 1 naming the problem, having created no output directory and no
 # worktree, on an unknown lens (no fixture directory), a revision with no
@@ -86,15 +64,12 @@
 # run, removing that run's subdirectory and keeping the runs before it.
 # `measure` exits 1 naming it on a missing directory, a directory missing its
 # lens, revision or model file or its spec body, or a run with no transcript,
-# before any report is printed. `seed` exits 1 naming the problem, printing
-# no seed, on an unknown lens, a fixture missing its spec body or snapshot, a
-# snapshot that is not a commit, or a worktree it cannot make or read.
+# before any report is printed.
 set -euo pipefail
 
 usage() {
   printf 'usage: %s run <lens> --definition <rev> --out <dir> [-n N] [--model M]\n' "${0##*/}" >&2
   printf 'usage: %s measure <dir>...\n' "${0##*/}" >&2
-  printf 'usage: %s seed <lens> [--snapshot <rev>] [--fixture <dir>]\n' "${0##*/}" >&2
   exit 2
 }
 
@@ -105,9 +80,9 @@ fail() {
 
 BENCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# The temporary directory `run` and `seed` hold their worktree in - and
-# `run` its run directories - of the repo run_repo, and the output run
-# subdirectory `run` is writing, both removed on exit.
+# The temporary directory `run` holds its worktree of the repo run_repo and
+# its run directories in, and the output run subdirectory `run` is writing,
+# both removed on exit.
 run_tmp="" run_partial="" run_repo=""
 run_cleanup() {
   local status=$?
@@ -670,202 +645,8 @@ cmd_measure() {
   done
 }
 
-# headings <file>...: each ATX heading in the Markdown <file>s, as
-# `<path><TAB><start><TAB><end><TAB><text>`. A heading is up to three spaces,
-# one to six #s, then a space, a tab or the line's end; its text drops the
-# surrounding blanks and any closing run of #s. A line in a fenced code block
-# is no heading (an indented one is four or more spaces in, so never one). Its
-# range runs to the line before the next heading of the same or a higher
-# level, or to the file's end.
-headings() {
-  awk '
-    function close_open(upto,   i) {
-      for (i = 1; i <= open_n; i++)
-        if (open_level[i] >= upto) {
-          printf "%s\t%d\t%d\t%s\n", FILENAME_prev, open_line[i], end_at, open_text[i]
-          open_level[i] = 0
-        }
-    }
-    function finish(   i) {
-      for (i = 1; i <= open_n; i++)
-        if (open_level[i]) printf "%s\t%d\t%d\t%s\n", FILENAME_prev, open_line[i], last, open_text[i]
-      open_n = 0
-    }
-    FNR == 1 { if (NR > 1) finish(); FILENAME_prev = FILENAME; fence = "" }
-    { last = FNR }
-    fence != "" {
-      if (match($0, /^ ? ? ?(`+|~+)[ \t]*$/)) {
-        run = $0; sub(/^ */, "", run); sub(/[ \t]*$/, "", run)
-        if (substr(run, 1, 1) == substr(fence, 1, 1) && length(run) >= length(fence)) fence = ""
-      }
-      next
-    }
-    /^ ? ? ?(```|~~~)/ {
-      run = $0; sub(/^ */, "", run); match(run, /^(`+|~+)/); run = substr(run, 1, RLENGTH)
-      if (!(substr(run, 1, 1) == "`" && index(substr($0, index($0, run) + length(run)), "`"))) { fence = run; next }
-    }
-    /^ ? ? ?#(#?#?#?#?#?)([ \t]|$)/ {
-      text = $0; sub(/^ */, "", text); match(text, /^#+/); level = RLENGTH
-      text = substr(text, level + 1)
-      sub(/^[ \t]+/, "", text); sub(/[ \t]+$/, "", text)
-      if (text ~ /^#+$/) text = ""
-      else sub(/[ \t]+#+$/, "", text)
-      end_at = FNR - 1
-      close_open(level)
-      open_n++; open_level[open_n] = level; open_line[open_n] = FNR; open_text[open_n] = text
-    }
-    END { if (NR > 0) finish() }' "$@"
-}
-
-# seed_entry <path> <start> <end> <kind> <symbol> <name>: appends the entry
-# to the calling cmd_seed's `entries`, and its kind to `entry_kinds` at the
-# same index, unless `seen` already holds the same path, range and kind -
-# so each entry keeps the first name that resolves to it.
-seed_entry() {
-  local key="$1:$2-$3 $4"
-  [ -z "${seen[$key]:-}" ] || return 0
-  seen[$key]=1
-  entries+=("$1:$2-$3 $5 - $4: named in the spec as $6")
-  entry_kinds+=("$4")
-}
-
-# The temporary directory `seed` holds its worktree in and the repo it is a
-# worktree of are run_tmp and run_repo, removed by run_cleanup as run's are.
-cmd_seed() {
-  local lens="" rev="" fixture=""
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --snapshot) [ "$#" -ge 2 ] || usage; rev="$2"; shift 2 ;;
-      --fixture) [ "$#" -ge 2 ] || usage; fixture="$2"; shift 2 ;;
-      -*) usage ;;
-      *) [ -z "$lens" ] || usage; lens="$1"; shift ;;
-    esac
-  done
-  [ -n "$lens" ] || usage
-  if [ -z "$fixture" ]; then
-    fixture="$(lens_fixture "$lens")" || exit
-  fi
-  fixture="$(no_trailing_slashes "$fixture")"
-  [ -d "$fixture" ] || fail "$fixture: no such directory"
-  [ -f "$fixture/spec.md" ] || fail "$fixture/spec.md: missing"
-  [ -f "$fixture/snapshot" ] || fail "$fixture/snapshot: missing"
-  run_repo="$(git -C "$fixture" rev-parse --show-toplevel 2>/dev/null)" ||
-    fail "$fixture: not in a git repo"
-  local named_by="--snapshot" snapshot
-  if [ -z "$rev" ]; then rev="$(<"$fixture/snapshot")"; named_by="$fixture/snapshot"; fi
-  snapshot="$(git -C "$run_repo" rev-parse --verify --quiet "$rev^{commit}")" ||
-    fail "$named_by: $rev is not a commit"
-
-  snapshot_worktree "$snapshot"
-  local worktree="$run_tmp/repo"
-
-  local files
-  files="$(git -C "$worktree" ls-files)" || fail "$snapshot: cannot list the snapshot's tracked files"
-
-  # The headings of every tracked Markdown file but CHANGELOG.md, and every
-  # line that opens a shell function.
-  local -a markdown=()
-  local path
-  while IFS= read -r path; do
-    case "$path" in
-      CHANGELOG.md | */CHANGELOG.md) ;;
-      *.md | *.markdown) markdown+=("$path") ;;
-    esac
-  done <<<"$files"
-  local all_headings="" all_functions="" status=0
-  if [ "${#markdown[@]}" -gt 0 ]; then
-    all_headings="$(cd "$worktree" && headings "${markdown[@]}")" ||
-      fail "$snapshot: cannot read the snapshot's Markdown"
-  fi
-  all_functions="$(git -C "$worktree" grep -I -n -E \
-    '^(function[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)[[:space:]]*\{[[:space:]]*$')" || status=$?
-  [ "$status" -le 1 ] || fail "$snapshot: cannot search the snapshot's files"
-
-  # Each name the spec gives, `<kind><TAB><name>`, in the order it gives
-  # them: a bold span also gives each comma-separated part.
-  local names
-  names="$(awk "$SPANS_AWK" "$fixture/spec.md" | awk -F'\t' '
-    $1 == "code" { print; next }
-    { print "bold\t" $2
-      if (index($2, ",")) {
-        n = split($2, part, ",")
-        for (i = 1; i <= n; i++) {
-          p = part[i]; sub(/^[ \t]+/, "", p); sub(/[ \t]+$/, "", p)
-          if (p != "") print "bold\t" p
-        }
-      } }')"
-
-  # The entries, each under the first name that resolves to it.
-  local -A seen=()
-  local -a entries=() entry_kinds=()
-  local kind name heading_hits function_hits file_hits start end last
-  while IFS=$'\t' read -r kind name; do
-    [ -n "$name" ] || continue
-    heading_hits="$(SEED_NAME="$name" awk -F'\t' '$4 == ENVIRON["SEED_NAME"]' <<<"$all_headings")"
-    if [ -n "$heading_hits" ] && [ "$(wc -l <<<"$heading_hits")" -eq 1 ]; then
-      IFS=$'\t' read -r path start end _ <<<"$heading_hits"
-      seed_entry "$path" "$start" "$end" heading "$name" "$name"
-    fi
-    [ "$kind" = code ] || continue
-    if [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-      function_hits="$(SEED_NAME="$name" awk '{
-          line = $0; sub(/^[^:]*:[0-9]+:/, "", line)
-          sub(/^function[ \t]+/, "", line); sub(/[ \t]*\(.*/, "", line)
-          if (line == ENVIRON["SEED_NAME"]) print }' <<<"$all_functions")"
-      if [ -n "$function_hits" ] && [ "$(wc -l <<<"$function_hits")" -eq 1 ]; then
-        path="${function_hits%%:*}"; start="${function_hits#*:}"; start="${start%%:*}"
-        end="$(awk -v from="$start" 'NR > from && $0 == "}" { print NR; found = 1; exit }
-          END { if (!found) print NR }' "$worktree/$path")"
-        seed_entry "$path" "$start" "$end" function "$name" "$name"
-      fi
-    fi
-    file_hits="$(SEED_NAME="$name" awk '$0 == ENVIRON["SEED_NAME"] { print; exit }' <<<"$files")"
-    [ -n "$file_hits" ] || file_hits="$(SEED_NAME="$name" awk '{ b = $0; sub(/.*\//, "", b) } b == ENVIRON["SEED_NAME"]' <<<"$files")"
-    if [ -n "$file_hits" ] && [ "$(wc -l <<<"$file_hits")" -eq 1 ] && [ -f "$worktree/$file_hits" ]; then
-      last="$(awk 'END { print (NR ? NR : 1) }' "$worktree/$file_hits")"
-      seed_entry "$file_hits" 1 "$last" file "$file_hits" "$name"
-    fi
-  done <<<"$names"
-
-  # The report, built before anything is printed.
-  local i report="" baseline="" total k kind_entries kind_covered covered_total outside
-  [ ! -f "$fixture/map.md" ] || baseline="$fixture/map.md"
-  for k in heading function file; do
-    : >"$run_tmp/$k.map"
-  done
-  : >"$run_tmp/measured.map"
-  for i in "${!entries[@]}"; do
-    k="${entry_kinds[$i]}"
-    printf '%s\n' "${entries[$i]}" >>"$run_tmp/$k.map"
-    [ "$k" = file ] || printf '%s\n' "${entries[$i]}" >>"$run_tmp/measured.map"
-  done
-  if [ -n "$baseline" ]; then
-    total="$(locations "$baseline" | awk 'END { print NR }')"
-    report+="Baseline map: $total locations"$'\n\n'
-    report+="| Kind | Entries | Baseline locations covered |"$'\n'"|---|---|---|"$'\n'
-    for k in heading function file; do
-      kind_entries="$(awk 'END { print NR }' "$run_tmp/$k.map")"
-      kind_covered="$(covered "$baseline" "$run_tmp/$k.map")"
-      report+="| $k | $kind_entries | $kind_covered/$total$([ "$k" != file ] || echo ", left out of coverage") |"$'\n'
-    done
-    read -r covered_total outside <<<"$(overlap "$baseline" "$run_tmp/measured.map")"
-    report+=$'\n'"Coverage over heading and function entries: $covered_total/$total"$'\n'
-    report+="Heading and function entries outside the baseline: $outside of $(awk 'END { print NR }' "$run_tmp/measured.map")"$'\n'
-  else
-    report+="Baseline map: none, so no coverage"$'\n\n'
-    report+="| Kind | Entries |"$'\n'"|---|---|"$'\n'
-    for k in heading function file; do
-      report+="| $k | $(awk 'END { print NR }' "$run_tmp/$k.map") |"$'\n'
-    done
-  fi
-
-  [ "${#entries[@]}" -eq 0 ] || printf '%s\n' "${entries[@]}"
-  printf '\n%s' "$report"
-}
-
 case "${1:-}" in
   run) shift; cmd_run "$@" ;;
   measure) shift; cmd_measure "$@" ;;
-  seed) shift; cmd_seed "$@" ;;
   *) usage ;;
 esac
