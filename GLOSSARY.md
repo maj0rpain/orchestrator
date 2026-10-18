@@ -295,7 +295,7 @@ other become one decision item instead. A comment that opens with a
 _Avoid_: fold (as a noun), proposed fold.
 
 **Material item**:
-A spec review item whose edit changes what gets built or how it is proven - behaviour, scope, an interface, an acceptance criterion or a test seam. Every decision item and every item recording that the spec contradicts the plan is material, and so is a recommend-decline whose edit would be. The batch shows it in full.
+A spec review item whose edit changes what gets built or how it is proven - behaviour, scope, an interface, an acceptance criterion or a test seam. Every decision item and every item recording that the spec contradicts the plan is material, and so is a recommend-decline whose edit would be. The batch shows its summary (each option's, for a decision item), its reason, the findings or comments it cites, and its edit as a word diff, or only its size when the diff collapses; its full text is shown on request.
 _Avoid_: high-severity item, important edit.
 
 **Minor item**:
