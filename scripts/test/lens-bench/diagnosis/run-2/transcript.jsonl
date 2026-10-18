@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"/d/spec.md\n/d/comments.md\n/d/repo\n/d/map-implementability.md\n/d/settled.md\n/d/lens-implementability.md"}}
+{"type":"assistant","message":{"id":"n1","role":"assistant","content":[{"type":"tool_use","id":"g","name":"Grep","input":{"pattern":"gamma"}}],"usage":{"input_tokens":500,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"g","content":"xxxxxxxxxx"}]}}
+{"type":"assistant","message":{"id":"n2","role":"assistant","content":[{"type":"text","text":"Done."}],"usage":{"input_tokens":600,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}

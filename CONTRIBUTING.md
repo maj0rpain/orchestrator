@@ -21,7 +21,7 @@ While iterating, run only the section you are working on, in quiet mode:
 `ORCH_TEST_ONLY=<section> ORCH_TEST_QUIET=1 scripts/test/orch_test.sh`, where
 `<section>` is an extended regex matched against the `# ---` section titles,
 e.g. `ORCH_TEST_ONLY='^branch create$'` or `ORCH_TEST_ONLY='^ticket'`. Run
-`scripts/test/all.sh` once before committing: it starts all four suites and
+`scripts/test/all.sh` once before committing: it starts all five suites and
 shellcheck over every shell file at once, so they overlap, carries on past a
 failing one, and once all have finished prints each suite's FAIL lines and a
 summary line, then shellcheck's findings and a `shellcheck: N findings` summary
@@ -133,6 +133,41 @@ child bash that does not inherit `-x`, so run it sequentially:
 
 `orch.sh`, its modules and the test suite target bash 4.0+: `mapfile`, `declare -A` and `printf -v` are fine. `scripts/flow-state.sh` and the `hook-*.sh` scripts stay bash 3.2-compatible (no namerefs, no `mapfile`, no `declare -A`), because they run under macOS's `/bin/bash`.
 
+### Measuring a lens
+
+`scripts/dev/lens-bench.sh` measures what a lens definition costs, over
+enough runs to tell its effect from run-to-run noise. Each lens with a
+benchmark has a fixture, `scripts/dev/lens-bench/<lens>/`: `spec.md`, the
+spec body the lens reads; `map.md`, its baseline map, when it has one; and
+`snapshot`, the commit whose tree the lens explores. The Implementability
+fixture is the 801e6f97 round-1 spec body and baseline map on snapshot
+`0fea0b6`. A new lens's benchmark is a new fixture directory and nothing else.
+
+A human starts the runs, since they need a live `claude` (an agent's nested
+`claude -p` with a custom agent is blocked):
+
+```
+scripts/dev/lens-bench.sh run implementability --definition <rev> --out <dir> [-n N] [--model M]
+```
+
+It reads `agents/orch-lens-<lens>.md` at `<rev>`, a commit and never a file
+path, checks the snapshot out in a temporary git worktree (removed when the
+runs end or fail; your checkout is never touched), and starts N `claude -p`
+runs from it, 5 by default, on model M, `claude-opus-5-5` by default. Each
+run's lens transcript and map land in `<dir>/run-1` .. `run-N`, beside
+`lens`, `revision`, `model`, `spec.md` and the baseline `map.md`. A failed run
+stops it, keeping the runs before it; the output directory must not exist.
+
+Anyone, an agent included, measures directories: `scripts/dev/lens-bench.sh
+measure <dir>...` prints a Markdown report on stdout, with no `claude`.
+
+To compare against a run made elsewhere, such as the #1196 baseline
+transcript, lay it out by hand as a one-run directory: write `lens`,
+`revision` and `model`, copy the fixture's `spec.md` and `map.md`, and put the
+lens agent's transcript (`~/.claude/projects/<cwd-slug>/<session>/subagents/agent-*.jsonl`)
+at `run-1/transcript.jsonl` and the map it wrote at `run-1/map.md`. Pass that
+directory to `measure` beside the new ones for a reference row.
+
 ## Layout
 
 ```
@@ -166,7 +201,10 @@ scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
 scripts/version-bump.sh       the version-bump Action's script: changelog fragments into one version bump (Develop)
 scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
-scripts/test/                 shell tests: orch_test.sh (the orch.sh suite's runner), hooks_test.sh, docs_lint.sh, version_bump_test.sh, all.sh
+scripts/dev/lens-bench.sh     the lens benchmark: run collects headless runs of a lens definition, measure turns them into a Markdown report of per-run cost, coverage, a summary and a diagnosis of the turns spent locating code the spec names (Develop, Measuring a lens)
+scripts/dev/lens-bench/       the lens benchmark's fixtures, one directory per lens: its spec body, baseline map and snapshot commit
+scripts/test/                 shell tests: orch_test.sh (the orch.sh suite's runner), hooks_test.sh, docs_lint.sh, version_bump_test.sh, lens_bench_test.sh, all.sh
+scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary
 scripts/test/orch/harness.sh  the harness's own sections: isolation, the section filter, quiet mode, all.sh
 scripts/test/orch/common.sh   the bottom-layer check on scripts/orch/common.sh
