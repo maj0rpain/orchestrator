@@ -896,7 +896,7 @@ SR_DIFF_LIMIT=40
 # <label>.
 spec_review_word_diff() {
   local dir="$1" label="$2" IFS=$' \t\n' a=() b=() ops=() words=() line hunk="" status=0
-  local n k total changed=0 s e nx from to rem add piece=() text
+  local n k w total changed=0 s e nx from to rem add piece=() text
   read -r -d '' -a a <<<"$3" || true
   read -r -d '' -a b <<<"$4" || true
   { { [ "${#a[@]}" -eq 0 ] || printf '%s\n' "${a[@]}"; } >"$dir/anchor" \
@@ -932,20 +932,20 @@ spec_review_word_diff() {
     from=$((s - SR_DIFF_CONTEXT)); [ "$from" -ge 0 ] || from=0
     to=$((e + SR_DIFF_CONTEXT)); [ "$to" -le "$total" ] || to="$total"
     piece=()
-    for ((k = from; k < s; k++)); do piece+=("${words[k]}"); done
+    for ((w = from; w < s; w++)); do piece+=("${words[w]}"); done
     [ "$from" -eq 0 ] || piece[0]="…${piece[0]}"
-    k="$s"
-    while [ "$k" -lt "$e" ]; do
-      if [ "${ops[k]}" = ' ' ]; then piece+=("${words[k]}"); k=$((k + 1)); continue; fi
+    w="$s"
+    while [ "$w" -lt "$e" ]; do
+      if [ "${ops[w]}" = ' ' ]; then piece+=("${words[w]}"); w=$((w + 1)); continue; fi
       rem=""; add=""
-      while [ "$k" -lt "$e" ] && [ "${ops[k]}" != ' ' ]; do
-        if [ "${ops[k]}" = - ]; then rem="${rem:+$rem }${words[k]}"; else add="${add:+$add }${words[k]}"; fi
-        k=$((k + 1))
+      while [ "$w" -lt "$e" ] && [ "${ops[w]}" != ' ' ]; do
+        if [ "${ops[w]}" = - ]; then rem="${rem:+$rem }${words[w]}"; else add="${add:+$add }${words[w]}"; fi
+        w=$((w + 1))
       done
       [ -z "$rem" ] || piece+=("~~$rem~~")
       [ -z "$add" ] || piece+=("**$add**")
     done
-    for ((k = e; k < to; k++)); do piece+=("${words[k]}"); done
+    for ((w = e; w < to; w++)); do piece+=("${words[w]}"); done
     [ "$to" -eq "$total" ] || piece[${#piece[@]}-1]="${piece[${#piece[@]}-1]}…"
     text="${piece[*]}"
     SR_DIFF="${SR_DIFF:+$SR_DIFF$'\n'}$text"

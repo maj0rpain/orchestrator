@@ -1240,10 +1240,11 @@ BATCH
   fake_issue_body 14 "$src_body"
   printf '%s\n' "$d"
 }
-# src <dir>: check on <dir>, its stdout, stderr and status into out, err and st.
+# src <dir> [arg...]: check on <dir> with any further args, its stdout, stderr
+# and status into out, err and st.
 src_err="$(mktemp)"
 src() {
-  out="$("$ORCH" spec-review check "$1" 2>"$src_err")"; st=$?
+  out="$("$ORCH" spec-review check "$@" 2>"$src_err")"; st=$?
   err="$(cat "$src_err")"
 }
 
@@ -1620,7 +1621,7 @@ d="$(src_dir)"
 TMPDIR="$src_tmp" src "$d"
 assert_status "check passes with its own TMPDIR" "$st" 0
 assert_eq "check leaves no file behind" "$(ls -A "$src_tmp")" ""
-out="$(TMPDIR="$src_tmp" "$ORCH" spec-review check "$d" --full 1 3 2>/dev/null)"; st=$?
+TMPDIR="$src_tmp" src "$d" --full 1 3
 assert_status "--full passes with its own TMPDIR" "$st" 0
 assert_eq "--full leaves no file behind" "$(ls -A "$src_tmp")" ""
 src_git="$(mktemp -d)"
@@ -1741,17 +1742,10 @@ assert_eq "naming the same batch line" "$out" \
 # check --full <n>... (#1249): the named items alone, each in the full
 # rendering, in the order named - any item in batch.md, minor or resolved
 # included - with nothing written.
-# srcf <dir> <arg>...: check <dir> --full <arg>..., as src does.
-srcf() {
-  local d="$1"
-  shift
-  out="$("$ORCH" spec-review check "$d" --full "$@" 2>"$src_err")"; st=$?
-  err="$(cat "$src_err")"
-}
 d="$(src_dir)"
 before="$(dir_snapshot "$d")"
 snap="$(fake_snapshot)"
-srcf "$d" 4 1 2
+src "$d" --full 4 1 2
 assert_status "--full passes on a clean batch" "$st" 0
 assert_eq "--full prints the named items in full, in the order named, a minor and a resolved one among them" "$out" '
 ### Item 4 - Testability
@@ -1806,17 +1800,17 @@ assert_eq "--full keeps check's one-line summary on stderr" "$err" \
 assert_eq "--full leaves the directory byte-identical" "$(dir_snapshot "$d")" "$before"
 assert_eq "--full creates no spec.fetched.md" "$(on_disk "$d/spec.fetched.md")" absent
 assert_eq "--full makes no GitHub write" "$(fake_snapshot)" "$snap"
-srcf "$d" 3
+src "$d" --full 3
 assert_contains "--full shows a decision item's options in full" "$out" "#### Option A - Keep gamma (recommended)"
 assert_not_contains "and no item it was not asked for" "$out" "### Item 2"
 assert_not_contains "nor the lens lines" "$out" "### Lenses"
 
 # Refusals: a missing or unknown number, and --full with --tickets.
-src_full_none() { srcf "$1"; }
-src_full_9() { srcf "$1" 9; }
-src_full_word() { srcf "$1" 2 two; }
-src_full_tickets() { srcf "$1" 2 --tickets; }
-src_tickets_full() { out="$("$ORCH" spec-review check "$1" --tickets --full 2 2>"$src_err")"; st=$?; err="$(cat "$src_err")"; }
+src_full_none() { src "$1" --full; }
+src_full_9() { src "$1" --full 9; }
+src_full_word() { src "$1" --full 2 two; }
+src_full_tickets() { src "$1" --full 2 --tickets; }
+src_tickets_full() { src "$1" --tickets --full 2; }
 d="$(src_dir)"
 check_refused src_full_none "--full with no number" "$d" \
   "orch: --full needs at least one item number (usage: orch.sh spec-review check <dir> [--tickets | --full <n>...])"
@@ -1830,7 +1824,7 @@ check_refused src_tickets_full "--tickets then --full" "$d" \
   "orch: --full and --tickets do not combine (usage: orch.sh spec-review check <dir> [--tickets | --full <n>...])"
 d="$(src_dir)"
 sed -i '19s/.*/Nowhere./' "$d/batch.md"
-src_full_1() { srcf "$1" 1; }
+src_full_1() { src "$1" --full 1; }
 check_refused src_full_1 "--full on a batch check refuses" "$d" \
   "orch: batch.md line 18: item 2: its anchor matches no text in the body"
 
