@@ -227,7 +227,7 @@ sra_dir() {
 @@ lens testability ran
 @@ lens implementability not-run timed out twice
 
-@@ item 1 consolidation apply
+@@ item 1 consolidation apply material
 @@ comment @alice 2026-01-02T00:00:00Z
 @@ quote
 Alpha should say
@@ -239,7 +239,7 @@ Alpha line.
 Alpha prime line.
 @@ end
 
-@@ item 2 contradicts-the-plan decline the plan chose this
+@@ item 2 contradicts-the-plan decline material the plan chose this
 @@ finding fidelity 1
 @@ summary Reverse the plan on Beta
 @@ anchor
@@ -248,7 +248,7 @@ Beta line.
 Beta reversed.
 @@ end
 
-@@ item 3 consistency decision A
+@@ item 3 consistency decision A material
 @@ finding consistency 1
 @@ finding testability 1
 @@ option A Keep gamma
@@ -266,7 +266,7 @@ Gamma line.
 Gamma dropped.
 @@ end
 
-@@ item 4 testability apply
+@@ item 4 testability apply minor
 @@ finding testability 2
 @@ summary Insert a test note after Delta
 @@ anchor
@@ -295,18 +295,18 @@ sra() {
   out="$("$ORCH" spec-review apply "$d" "$a" --round "${sra_rnd:-1/2}" --issue 14 "$@" 2>&1)"; st=$?
 }
 # sra_refused <label> <dir> <want-in-message> <answer> [flags...]: apply is
-# refused, naming <want>, with nothing written: spec.md and changelog.md as
-# they were, and the store untouched.
+# refused, naming <want>, with nothing written: spec.md, changelog.md and
+# settled.md as they were, and the store untouched.
 sra_refused() {
   local label="$1" d="$2" want="$3" before snap
   shift 3
-  before="$(cat "$d/spec.md"; echo; cat "$d/changelog.md" 2>/dev/null)"
+  before="$(cat "$d/spec.md"; echo; cat "$d/changelog.md" "$d/settled.md" 2>/dev/null)"
   snap="$(fake_snapshot)"
   sra "$d" "$@"
   assert_status "$label: refused" "$st" 1
   assert_contains "$label: naming it" "$out" "$want"
-  assert_eq "$label: spec.md and changelog.md unchanged" \
-    "$(cat "$d/spec.md"; echo; cat "$d/changelog.md" 2>/dev/null)" "$before"
+  assert_eq "$label: spec.md, changelog.md and settled.md unchanged" \
+    "$(cat "$d/spec.md"; echo; cat "$d/changelog.md" "$d/settled.md" 2>/dev/null)" "$before"
   assert_eq "$label: no GitHub write" "$(fake_snapshot)" "$snap"
 }
 
@@ -525,13 +525,29 @@ assert_eq "an apply item with no block keeps its message" "$out" \
 d="$(sra_dir)"
 sed -i '16d' "$d/batch.md"
 sra_refused "a replacement left open at the next @@ item" "$d" \
-  "batch.md line 17: expected @@ end to end the replacement begun on line 14, got '@@ item 2 contradicts-the-plan decline the plan chose this'" recommended
+  "batch.md line 17: expected @@ end to end the replacement begun on line 14, got '@@ item 2 contradicts-the-plan decline material the plan chose this'" recommended
 d="$(sra_dir)"
 sed -i '14d' "$d/batch.md"
 sra "$d" recommended
 assert_status "an anchor left open: refused" "$st" 1
 assert_eq "an anchor left open keeps its message" "$out" \
   "orch: batch.md line 15: expected @@ replace to end the anchor begun on line 12"
+
+# Malformed marks (#1237): refused attended and unattended, before any write.
+for sra_flag in "" --unattended; do
+  for sra_case in \
+    "45s/ minor$//|no mark|batch.md line 45: @@ item 4 ... apply needs its mark, material or minor" \
+    "45s/ minor$/ major/|an unknown mark|batch.md line 45: item 4's mark must be material or minor, got 'major'" \
+    "55s/$/ minor/|a mark on a resolved item|batch.md line 55: @@ item 5 ... a resolved item carries no mark" \
+    "27s/ material$/ minor/|a decision marked minor|batch.md line 27: decision item 3 is always material, never minor" \
+    "18s/decline material/decline minor/|a contradicts-the-plan item marked minor|batch.md line 18: contradicts-the-plan item 2 is always material, never minor"; do
+    d="$(sra_dir)"
+    printf 'earlier round\n' >"$d/settled.md"
+    sed -i "${sra_case%%|*}" "$d/batch.md"
+    sra_label="${sra_case#*|}"
+    sra_refused "${sra_flag:-attended}: ${sra_label%%|*}" "$d" "${sra_label#*|}" recommended ${sra_flag:+"$sra_flag"}
+  done
+done
 
 # Lens files and citations.
 d="$(sra_dir)"
@@ -1058,7 +1074,7 @@ src_dir() {
 @@ lens testability ran
 @@ lens implementability not-run timed out
 
-@@ item 1 fidelity apply
+@@ item 1 fidelity apply minor
 @@ finding fidelity 1
 @@ summary Alpha primed
 @@ anchor
@@ -1067,7 +1083,7 @@ Alpha line.
 Alpha prime line.
 @@ end
 
-@@ item 2 consistency decline the plan chose this
+@@ item 2 consistency decline material the plan chose this
 @@ finding consistency 1
 @@ summary Beta reversed
 @@ anchor
@@ -1076,7 +1092,7 @@ Beta line.
 Beta reversed.
 @@ end
 
-@@ item 3 testability decision A
+@@ item 3 testability decision A material
 @@ finding testability 1
 @@ option A Keep gamma
 @@ summary Gamma kept
@@ -1144,6 +1160,62 @@ assert_contains "item 2's view carries the finding it cites" "$view_item2" \
 > Beta contradicts the plan."
 assert_not_contains "and no other item's finding" "$view_item2" "Gamma is untestable."
 
+# The view splits material from minor (#1237): material items in full, in
+# batch order; minor and resolved items one line each under Minor edits.
+d="$(src_dir)"
+src "$d"
+assert_not_contains "a minor item is not shown in full" "$out" "### Item 1 -"
+assert_not_contains "nor a resolved one" "$out" "### Item 4 -"
+assert_eq "the material items in full, in batch order, numbering unchanged" \
+  "$(grep '^### ' <<<"$out")" '### Lenses
+### Item 2 - Consistency
+### Item 3 - Testability
+### Minor edits'
+assert_eq "the view ends with the minor list, set off by blank lines" "${out#*$'\n```\n\n### Minor edits\n\n'}" \
+  '1. Fidelity: Alpha primed
+4. Testability: resolved by item 3'
+d="$(src_dir)"
+sed -i '6s/ minor$/ material/' "$d/batch.md"
+src "$d"
+assert_status "a round with a resolved item but no minor one passes" "$st" 0
+assert_eq "its Minor edits list holds the resolved item alone" "${out#*$'\n\n### Minor edits\n\n'}" \
+  '4. Testability: resolved by item 3'
+sed -i '/^@@ item 4 /,$d' "$d/batch.md"
+src "$d"
+assert_status "a round with nothing minor or resolved passes" "$st" 0
+assert_not_contains "and prints no Minor edits heading" "$out" "Minor edits"
+d="$(src_dir)"
+sed -i '15s/ material / minor /' "$d/batch.md"
+src "$d"
+assert_eq "a recommend-decline minor item's line carries its reason" \
+  "$(has_line "$out" "2. Consistency: Beta reversed - recommend decline: the plan chose this")" yes
+
+# Marks: each malformed one refused, naming its batch.md line.
+d="$(src_dir)"
+sed -i '6s/ minor$//' "$d/batch.md"
+check_refused src "an item with no mark" "$d" \
+  "orch: batch.md line 6: @@ item 1 ... apply needs its mark, material or minor"
+d="$(src_dir)"
+sed -i '15s/ material / /' "$d/batch.md"
+check_refused src "a decline item with no mark" "$d" \
+  "orch: batch.md line 15: item 2's mark must be material or minor, got 'the'"
+d="$(src_dir)"
+sed -i '6s/ minor$/ major/' "$d/batch.md"
+check_refused src "an unknown mark" "$d" \
+  "orch: batch.md line 6: item 1's mark must be material or minor, got 'major'"
+d="$(src_dir)"
+sed -i '41s/$/ minor/' "$d/batch.md"
+check_refused src "a mark on a resolved item" "$d" \
+  "orch: batch.md line 41: @@ item 4 ... a resolved item carries no mark"
+d="$(src_dir)"
+sed -i '24s/ material$/ minor/' "$d/batch.md"
+check_refused src "a decision item marked minor" "$d" \
+  "orch: batch.md line 24: decision item 3 is always material, never minor"
+d="$(src_dir)"
+sed -i '6s/fidelity apply minor/contradicts-the-plan apply minor/' "$d/batch.md"
+check_refused src "a contradicts-the-plan item marked minor" "$d" \
+  "orch: batch.md line 6: contradicts-the-plan item 1 is always material, never minor"
+
 # The view of the skill's worked-example batch, as it stands: one item of each
 # kind and its ran and standalone lens lines.
 d="$(mktemp -d)"
@@ -1169,7 +1241,7 @@ cat >"$d/batch.md" <<'BATCH'
 @@ lens testability ran
 @@ lens implementability ran
 
-@@ item 1 consolidation apply
+@@ item 1 consolidation apply material
 @@ summary Failed pages are retried once
 @@ comment @alice 2026-10-01T09:00:00Z
 @@ quote
@@ -1181,7 +1253,7 @@ The export streams each widget in pages of 100.
 A failed page is retried once before the export fails.
 @@ end
 
-@@ item 2 testability apply
+@@ item 2 testability apply material
 @@ finding testability 1
 @@ summary The seam's test runs against a fake store
 @@ anchor
@@ -1190,7 +1262,7 @@ A failed page is retried once before the export fails.
 - One seam: the `widget export` CLI, end to end, against a fake store.
 @@ end
 
-@@ item 3 consistency decline the glossary's term is widget, as the body says
+@@ item 3 consistency decline minor the glossary's term is widget, as the body says
 @@ finding consistency 1
 @@ summary Widgets renamed items
 @@ anchor
@@ -1199,7 +1271,7 @@ Exports time out on large widgets.
 Exports time out on large items.
 @@ end
 
-@@ item 4 implementability decision B
+@@ item 4 implementability decision B material
 @@ finding implementability 1
 @@ option A One file
 @@ summary The export writes one compressed file
@@ -1227,7 +1299,7 @@ printf '@@ finding 1\nOne file cannot hold the largest exports.\nThe store caps 
 before="$(dir_snapshot "$d")"
 src "$d"
 assert_status "the worked example passes" "$st" 0
-assert_eq "its view, every item in full" "$out" '## The batch
+assert_eq "its view, the material items in full, the minor and resolved ones listed" "$out" '## The batch
 
 ### Lenses
 
@@ -1277,26 +1349,6 @@ A failed page is retried once before the export fails.
 - One seam: the `widget export` CLI, end to end, against a fake store.
 ```
 
-### Item 3 - Consistency
-
-**Recommendation:** recommend decline - the glossary'"'"'s term is widget, as the body says
-
-**Finding** (Consistency 1):
-
-> The body says widget where the glossary says item.
-
-**Current**
-
-```
-Exports time out on large widgets.
-```
-
-**Proposed**
-
-```
-Exports time out on large items.
-```
-
 ### Item 4 - Implementability
 
 **Recommendation:** decision - option B recommended
@@ -1334,13 +1386,10 @@ The export writes one file.
 The export writes one file per widget.
 ```
 
-### Item 5 - Implementability
+### Minor edits
 
-**Recommendation:** none - resolved by item 4
-
-**Finding** (Implementability 2):
-
-> One file is written before every page is fetched.'
+3. Consistency: Widgets renamed items - recommend decline: the glossary'"'"'s term is widget, as the body says
+5. Implementability: resolved by item 4'
 assert_eq "its summary on stderr" "$err" \
   "batch.md passes: 5 items, 5 anchors, each matching once in spec.md, and the all answer applies cleanly"
 assert_eq "the worked example's directory unchanged" "$(dir_snapshot "$d")" "$before"
@@ -1363,7 +1412,7 @@ cat >"$d/batch.md" <<'BATCH'
 @@ lens testability not-run timed out twice
 @@ lens implementability ran
 
-@@ item 1 contradicts-the-plan apply
+@@ item 1 contradicts-the-plan apply material
 @@ finding fidelity 1
 @@ summary Sync runs hourly, as the plan decided
 @@ anchor

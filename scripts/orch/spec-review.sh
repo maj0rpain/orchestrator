@@ -178,6 +178,17 @@ spec_review_item_check() {
 # naming the line.
 spec_review_batch_die() { die "batch.md line $1: $2"; }
 
+# spec_review_mark_check <line> <n> <rec> <mark>: dies, naming <line>,
+# unless item <n>'s <mark> - the last fixed token of its `@@ item` line - is
+# material or minor.
+spec_review_mark_check() {
+  case "$4" in
+    material|minor) ;;
+    '') spec_review_batch_die "$1" "@@ item $2 ... $3 needs its mark, material or minor" ;;
+    *) spec_review_batch_die "$1" "item $2's mark must be material or minor, got '$4'" ;;
+  esac
+}
+
 # spec_review_batch_parse <file>: reads the batch file into the SR_ arrays -
 # the `@@ lens` lines, then one entry per item, its findings, comments and
 # options - dying on the first malformed line, named by its number. The
@@ -185,9 +196,9 @@ spec_review_batch_die() { die "batch.md line $1: $2"; }
 spec_review_batch_parse() {
   local file="$1" line lineno=0 mode=top rest kw args cur=-1 opt=-1
   local buf="" bufn=0 block_line=0 quote_wanted="" n group rec arg lens state reason
-  local fd_lens fd_k login created letter label extra j
+  local fd_lens fd_k login created letter label extra j mark
   SR_LENS_NAME=(); SR_LENS_STATE=(); SR_LENS_REASON=()
-  SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_LINE=()
+  SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_MARK=(); SR_IT_LINE=()
   SR_IT_SUMMARY=(); SR_IT_ANCHOR=(); SR_IT_ANCHOR_LINE=(); SR_IT_REPLACE=(); SR_IT_RESOLVED=()
   SR_FD_ITEM=(); SR_FD_LENS=(); SR_FD_K=(); SR_FD_LINE=()
   SR_CM_ITEM=(); SR_CM_LOGIN=(); SR_CM_CREATED=(); SR_CM_QUOTE=()
@@ -264,18 +275,36 @@ spec_review_batch_parse() {
           *) spec_review_lens_known "$group" \
                || spec_review_batch_die "$lineno" "unknown group '$group' (want consolidation, a lens, or contradicts-the-plan)" ;;
         esac
+        mark=""
         case "$rec" in
-          apply|resolved)
-            [ -z "$arg" ] || spec_review_batch_die "$lineno" "@@ item $n ... $rec takes nothing after it" ;;
+          apply)
+            read -r mark extra <<<"$arg"
+            spec_review_mark_check "$lineno" "$n" "$rec" "$mark"
+            [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ item $n ... apply takes nothing after its mark"
+            arg="" ;;
+          resolved)
+            case "$arg" in
+              material|material' '*|minor|minor' '*) spec_review_batch_die "$lineno" "@@ item $n ... a resolved item carries no mark" ;;
+            esac
+            [ -z "$arg" ] || spec_review_batch_die "$lineno" "@@ item $n ... resolved takes nothing after it" ;;
           decline)
-            [ -n "$arg" ] || spec_review_batch_die "$lineno" "@@ item $n ... decline needs a reason" ;;
+            read -r mark arg <<<"$arg"
+            spec_review_mark_check "$lineno" "$n" "$rec" "$mark"
+            [ -n "$arg" ] || spec_review_batch_die "$lineno" "@@ item $n ... decline needs a reason after its mark" ;;
           decision)
-            case "$arg" in [A-Z]) ;; *) spec_review_batch_die "$lineno" "@@ item $n ... decision needs the recommended option's letter, A to Z" ;; esac ;;
-          *) spec_review_batch_die "$lineno" "item $n's recommendation must be apply, decline <reason>, decision <letter> or resolved" ;;
+            read -r arg mark extra <<<"$arg"
+            case "$arg" in [A-Z]) ;; *) spec_review_batch_die "$lineno" "@@ item $n ... decision needs the recommended option's letter, A to Z" ;; esac
+            spec_review_mark_check "$lineno" "$n" "$rec" "$mark"
+            [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ item $n ... decision takes nothing after its mark" ;;
+          *) spec_review_batch_die "$lineno" "item $n's recommendation must be apply <mark>, decline <mark> <reason>, decision <letter> <mark> or resolved" ;;
         esac
+        [ "$mark" != minor ] || [ "$rec" != decision ] \
+          || spec_review_batch_die "$lineno" "decision item $n is always material, never minor"
+        [ "$mark" != minor ] || [ "$group" != contradicts-the-plan ] \
+          || spec_review_batch_die "$lineno" "contradicts-the-plan item $n is always material, never minor"
         cur="${#SR_IT_N[@]}"; opt=-1
         SR_IT_N[cur]="$n"; SR_IT_GROUP[cur]="$group"; SR_IT_REC[cur]="$rec"
-        SR_IT_ARG[cur]="$arg"; SR_IT_LINE[cur]="$lineno"
+        SR_IT_ARG[cur]="$arg"; SR_IT_MARK[cur]="$mark"; SR_IT_LINE[cur]="$lineno"
         mode=item ;;
       summary)
         [ -n "$args" ] || spec_review_batch_die "$lineno" "@@ summary needs its line"
@@ -735,52 +764,85 @@ spec_review_edit_view() {
   printf '\n**Current**\n\n%s\n\n**Proposed**\n\n%s\n' "$(spec_review_fenced "$1")" "$(spec_review_fenced "$2")"
 }
 
+# spec_review_group_title <index>: the title item <index>'s header gives its
+# group - Contradicts the plan, else its section's heading.
+spec_review_group_title() {
+  case "${SR_IT_GROUP[$1]}" in
+    contradicts-the-plan) printf 'Contradicts the plan' ;;
+    *) spec_review_title "${SR_IT_GROUP[$1]}" ;;
+  esac
+}
+
+# spec_review_item_view <index>: item <index> in full - its group, its
+# recommendation, the text of each finding it cites and of each comment it
+# folds in, and its edit, or each option's, in full.
+spec_review_item_view() {
+  local i="$1" j
+  printf '\n### Item %s - %s\n\n**Recommendation:** ' "${SR_IT_N[$i]}" "$(spec_review_group_title "$i")"
+  case "${SR_IT_REC[$i]}" in
+    apply) printf 'apply\n' ;;
+    decline) printf 'recommend decline - %s\n' "${SR_IT_ARG[$i]}" ;;
+    decision) printf 'decision - option %s recommended\n' "${SR_IT_ARG[$i]}" ;;
+  esac
+  for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
+    [ "${SR_FD_ITEM[$j]}" = "$i" ] || continue
+    printf '\n**Finding** (%s %s):\n\n' "$(spec_review_title "${SR_FD_LENS[$j]}")" "${SR_FD_K[$j]}"
+    spec_review_quoted "$(spec_review_finding_text "${SR_FD_LENS[$j]}" "${SR_FD_K[$j]}")"
+  done
+  for j in ${SR_CM_ITEM[@]+"${!SR_CM_ITEM[@]}"}; do
+    [ "${SR_CM_ITEM[$j]}" = "$i" ] || continue
+    printf '\n**Comment** by %s, %s:\n\n' "${SR_CM_LOGIN[$j]}" "${SR_CM_CREATED[$j]}"
+    spec_review_quoted "${SR_CM_QUOTE[$j]}"
+  done
+  case "${SR_IT_REC[$i]}" in
+    apply|decline) spec_review_edit_view "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}" ;;
+    decision)
+      for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
+        [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
+        printf '\n#### Option %s - %s' "${SR_OP_LETTER[$j]}" "${SR_OP_LABEL[$j]}"
+        [ "${SR_OP_LETTER[$j]}" != "${SR_IT_ARG[$i]}" ] || printf ' (recommended)'
+        printf '\n'
+        spec_review_edit_view "${SR_OP_ANCHOR[$j]}" "${SR_OP_REPLACE[$j]}"
+      done ;;
+  esac
+}
+
+# spec_review_minor_line <index>: minor or resolved item <index> on one line
+# - `<n>. <Group>: <summary>`, a recommend-decline's reason after it, or a
+# resolved item's resolving item in place of a summary.
+spec_review_minor_line() {
+  local i="$1"
+  printf '%s. %s: ' "${SR_IT_N[$i]}" "$(spec_review_group_title "$i")"
+  case "${SR_IT_REC[$i]}" in
+    resolved) printf 'resolved by item %s\n' "${SR_IT_RESOLVED[$i]}" ;;
+    decline) printf '%s - recommend decline: %s\n' "${SR_IT_SUMMARY[$i]}" "${SR_IT_ARG[$i]}" ;;
+    *) printf '%s\n' "${SR_IT_SUMMARY[$i]}" ;;
+  esac
+}
+
 # spec_review_view: the parsed batch as the human reads it before the batch
 # question - the lens lines, worded as the changelog words them, then every
-# item in batch order: its group, its recommendation, the text of each finding
-# it cites and of each comment it folds in, and its edit, or each option's, in
-# full. Rendered from spec_review_validate's arrays alone.
+# material item in full, in batch order (see spec_review_item_view), then,
+# under a Minor edits heading omitted when there are none, every minor and
+# resolved item on one line, in batch order. Rendered from
+# spec_review_validate's arrays alone.
 spec_review_view() {
-  local l i j group
+  local l i minor=()
   printf '## The batch\n\n### Lenses\n\n'
   for l in "${!SR_LENS_NAME[@]}"; do
     printf -- '- %s: ' "$(spec_review_title "${SR_LENS_NAME[$l]}")"
     spec_review_lens_state_line "$l"
   done
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
-    case "${SR_IT_GROUP[$i]}" in
-      contradicts-the-plan) group="Contradicts the plan" ;;
-      *) group="$(spec_review_title "${SR_IT_GROUP[$i]}")" ;;
-    esac
-    printf '\n### Item %s - %s\n\n**Recommendation:** ' "${SR_IT_N[$i]}" "$group"
-    case "${SR_IT_REC[$i]}" in
-      apply) printf 'apply\n' ;;
-      decline) printf 'recommend decline - %s\n' "${SR_IT_ARG[$i]}" ;;
-      decision) printf 'decision - option %s recommended\n' "${SR_IT_ARG[$i]}" ;;
-      resolved) printf 'none - resolved by item %s\n' "${SR_IT_RESOLVED[$i]}" ;;
-    esac
-    for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
-      [ "${SR_FD_ITEM[$j]}" = "$i" ] || continue
-      printf '\n**Finding** (%s %s):\n\n' "$(spec_review_title "${SR_FD_LENS[$j]}")" "${SR_FD_K[$j]}"
-      spec_review_quoted "$(spec_review_finding_text "${SR_FD_LENS[$j]}" "${SR_FD_K[$j]}")"
-    done
-    for j in ${SR_CM_ITEM[@]+"${!SR_CM_ITEM[@]}"}; do
-      [ "${SR_CM_ITEM[$j]}" = "$i" ] || continue
-      printf '\n**Comment** by %s, %s:\n\n' "${SR_CM_LOGIN[$j]}" "${SR_CM_CREATED[$j]}"
-      spec_review_quoted "${SR_CM_QUOTE[$j]}"
-    done
-    case "${SR_IT_REC[$i]}" in
-      apply|decline) spec_review_edit_view "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}" ;;
-      decision)
-        for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
-          [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
-          printf '\n#### Option %s - %s' "${SR_OP_LETTER[$j]}" "${SR_OP_LABEL[$j]}"
-          [ "${SR_OP_LETTER[$j]}" != "${SR_IT_ARG[$i]}" ] || printf ' (recommended)'
-          printf '\n'
-          spec_review_edit_view "${SR_OP_ANCHOR[$j]}" "${SR_OP_REPLACE[$j]}"
-        done ;;
-    esac
+    if [ "${SR_IT_MARK[$i]}" = material ]; then
+      spec_review_item_view "$i"
+    else
+      minor+=("$i")
+    fi
   done
+  [ "${#minor[@]}" -gt 0 ] || return 0
+  printf '\n### Minor edits\n\n'
+  for i in "${minor[@]}"; do spec_review_minor_line "$i"; done
 }
 
 # spec_review_item_sections <index>: the changelog sections item <index> is
