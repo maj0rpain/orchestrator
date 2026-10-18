@@ -282,7 +282,9 @@ covered() {
 # backtick opens nothing, a line ending inside a span is a space, and one
 # leading and one trailing space are dropped when both are there and the span
 # is not all spaces. A span lies within one block - a paragraph, a list item
-# or a heading - and a fenced code block holds none.
+# or a heading - and a code block, fenced or indented, holds none. A line
+# indented four or more columns is an indented code block's when no paragraph
+# is open for it to continue and no list item holds it.
 code_spans() {
   awk '
     function run_end(s, i, n) { while (i <= n && substr(s, i, 1) == "`") i++; return i }
@@ -316,8 +318,10 @@ code_spans() {
       next
     }
     /^[ \t]*$/ { flush(); next }
-    /^[ ]?[ ]?[ ]?#/ { flush(); add($0); flush(); next }
-    /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/ { flush(); add($0); next }
+    block == "" && !item && /^([ ]?[ ]?[ ]?\t|    )/ { next }
+    /^[ ]?[ ]?[ ]?#/ { flush(); item = 0; add($0); flush(); next }
+    /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/ { flush(); item = 1; add($0); next }
+    /^[^ \t]/ && block == "" { item = 0 }
     { line = $0; sub(/^[ \t]+/, "", line); add(line) }
     END { flush() }' "$1"
 }
@@ -374,10 +378,13 @@ DIAGNOSIS_JQ="$JQ_PRELUDE"'
     | any($t | indices($n)[]; . as $i
         | ($i == 0 or ($t[$i - 1:$i] | wordy | not))
           and ($i + $l == ($t | length) or ($t[$i + $l:$i + $l + 1] | wordy | not)));
-  def located: if .name == "Read" then .input.file_path as $path
+  def family: if .name == "Read" then "read"
+    elif .name == "Grep" or .name == "Glob" then "search" else .name end;
+  def located: family as $f
+    | if $f == "read" then .input.file_path as $path
       | ($path | type) == "string"
         and any($names[] | select(pathlike); . as $n | $path == $n or ($path | endswith("/" + $n)))
-    elif .name == "Grep" or .name == "Glob" then .input.pattern as $pattern
+    elif $f == "search" then .input.pattern as $pattern
       | ($pattern | type) == "string"
         and any($names[] | select(length >= 3 and wordy); token_in($pattern))
     else false end;
@@ -408,11 +415,12 @@ DIAGNOSIS_JQ="$JQ_PRELUDE"'
   | . as $s
   | (($s.prompt // "") | split("\n") | map(select(. != "")) | .[0] // "" | gsub("^\\s+|\\s+$"; "")) as $spec
   | def kind: ($s.uses[.id] // {name: "unknown", input: {}}) as $u
-      | if $u.name == "Read" then
+      | ($u | family) as $f
+      | if $f == "read" then
           if $u.input.file_path == $spec then "the spec"
           elif ($u | ranged_read) then "ranged reads"
           else "whole reads" end
-        elif $u.name == "Grep" or $u.name == "Glob" then "Grep/Glob"
+        elif $f == "search" then "Grep/Glob"
         else $u.name end;
     ($s.turns | length) as $n
   | {run: $run,
@@ -472,8 +480,14 @@ stats() {
     }'
 }
 
-# Each directory without its trailing slash, so every message names one path.
-set -- "${@%/}"
+# Each directory without its trailing slashes, so every message names one
+# path; a lone / stays itself.
+dirs=()
+for bench_dir in "$@"; do
+  while [[ "$bench_dir" == */ && "$bench_dir" != / ]]; do bench_dir="${bench_dir%/}"; done
+  dirs+=("$bench_dir")
+done
+set -- "${dirs[@]}"
 
 # Every directory is checked before anything is printed.
 for bench_dir in "$@"; do

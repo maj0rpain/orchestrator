@@ -178,6 +178,20 @@ run_bench measure "$bench_root/spans"
 has_line "a double-backtick span is one name, not the single-backtick spans inside it" "$out" \
   "| run-2 | 0 (0%) | 0 (0%) | 2 (100%) | 0 (0%) | 0 (0%) | 1100 (100%) |"
 
+# A copy whose spec adds an indented code block naming `gamma`: a code block
+# holds no spans, so run-2's Grep for gamma still locates nothing named.
+cp -R "$FIXTURE/diagnosis" "$bench_root/indented"
+printf '\n    `gamma` in an indented code block\n' >>"$bench_root/indented/spec.md"
+run_bench measure "$bench_root/indented"
+has_line "an indented code block names nothing" "$out" \
+  "| run-2 | 0 (0%) | 0 (0%) | 2 (100%) | 0 (0%) | 0 (0%) | 1100 (100%) |"
+# A list item's indented continuation is the item's text, not a code block.
+cp -R "$FIXTURE/diagnosis" "$bench_root/item"
+printf '\n- an item\n\n    naming `gamma`\n' >>"$bench_root/item/spec.md"
+run_bench measure "$bench_root/item"
+has_line "a list item's indented paragraph names what it backticks" "$out" \
+  "| run-2 | 1 (50%) | 0 (0%) | 1 (50%) | 500 (45.5%) | 0 (0%) | 600 (54.5%) |"
+
 echo
 echo "the diagnosis: matching names"
 # names_measure <dir> <spans>: a copy of the diagnosis fixture, named <dir>,
@@ -237,6 +251,9 @@ refused "a directory given with a trailing slash names its missing file once-sla
 d="$(broken slash-no-transcript run-2/transcript.jsonl)"
 refused "a directory given with a trailing slash names its missing transcript once-slashed" \
   "$d/" "$d/run-2/transcript.jsonl: missing"
+d="$(broken slashes-no-lens lens)"
+refused "a directory given with several trailing slashes names its missing file once-slashed" \
+  "$d//" "$d/lens: missing"
 
 echo
 echo "run: usage errors"
