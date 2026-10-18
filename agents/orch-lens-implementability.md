@@ -52,17 +52,22 @@ open.
   the old-entry rule below call for.
 - Everything no entry names - a symbol the edited body newly names, even in
   a file the map already lists, and the callers or callees below - you
-  locate with Grep and Glob before you read any of its content. Locate with
-  Grep listing only file names, or with its output capped by a head limit,
-  never with uncapped content output; then read content only for the hits
-  the spec's decisions reach.
+  locate with Grep and Glob before you read any of its content, in two
+  steps. First, a Grep across the repo lists only file names
+  (`files_with_matches`). Then a content Grep, with line numbers and a head
+  limit of at most 30, runs only in the files that matter, to find the
+  lines to read. A content Grep never runs repo-wide, and never without a
+  head limit.
 - Batch: issue every independent Grep, Glob and Read of a step together in
-  one turn, rather than one per turn. Every turn re-reads the whole context,
+  one turn, rather than one per turn. Once the spec is read, list every
+  location it names and send all their Greps in one turn; then send the
+  reads for all the hits in one turn. Every turn re-reads the whole context,
   so fewer turns cost less.
 - Follow a caller or callee only when a decision in the spec depends on it.
-- For what no entry names, read with an offset and limit, a window of about
-  40 lines around a match, and widen it only when the code the spec's
-  decision depends on runs past it. Never read a whole file to find
+- For what no entry names, read with an offset and a limit of at most 40
+  lines, starting about 10 lines before the match. When the code the spec's
+  decision depends on runs past that window, read the next 40 lines in a
+  second read; never set a limit over 40. Never read a whole file to find
   something in it.
 - Do not survey the repo: code the spec does not reach is out of scope.
 
