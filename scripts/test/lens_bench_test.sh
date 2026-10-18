@@ -204,6 +204,12 @@ for file in lens revision model spec.md; do
 done
 d="$(broken no-transcript run-2/transcript.jsonl)"
 refused "a run subdirectory with no transcript" "$d" "$d/run-2/transcript.jsonl"
+d="$(broken slash-no-lens lens)"
+refused "a directory given with a trailing slash names its missing file once-slashed" \
+  "$d/" "$d/lens: missing"
+d="$(broken slash-no-transcript run-2/transcript.jsonl)"
+refused "a directory given with a trailing slash names its missing transcript once-slashed" \
+  "$d/" "$d/run-2/transcript.jsonl: missing"
 
 echo
 echo "run: usage errors"

@@ -150,8 +150,10 @@ cmd_run() {
 
   # Every check before anything is created.
   local fixture="$BENCH_DIR/lens-bench/$lens"
-  case "$lens" in */* | .*) fixture="" ;; esac
-  [ -n "$fixture" ] && [ -d "$fixture" ] || fail "$lens: unknown lens, no fixture directory $BENCH_DIR/lens-bench/$lens"
+  case "$lens" in
+    */* | .*) fail "$lens: unknown lens, no fixture directory $BENCH_DIR/lens-bench/$lens" ;;
+  esac
+  [ -d "$fixture" ] || fail "$lens: unknown lens, no fixture directory $BENCH_DIR/lens-bench/$lens"
   [ -f "$fixture/spec.md" ] || fail "$fixture/spec.md: missing"
   [ -f "$fixture/snapshot" ] || fail "$fixture/snapshot: missing"
   run_repo="$(git -C "$BENCH_DIR" rev-parse --show-toplevel)" || fail "$BENCH_DIR: not in a git repo"
@@ -459,20 +461,22 @@ stats() {
     }'
 }
 
+# Each directory without its trailing slash, so every message names one path.
+set -- "${@%/}"
+
 # Every directory is checked before anything is printed.
-for dir in "$@"; do
-  [ -d "$dir" ] || fail "$dir: no such directory"
+for bench_dir in "$@"; do
+  [ -d "$bench_dir" ] || fail "$bench_dir: no such directory"
   for file in lens revision model spec.md; do
-    [ -f "$dir/$file" ] || fail "$dir/$file: missing"
+    [ -f "$bench_dir/$file" ] || fail "$bench_dir/$file: missing"
   done
   while IFS= read -r run; do
-    [ -f "$dir/$run/transcript.jsonl" ] || fail "$dir/$run/transcript.jsonl: missing"
-  done < <(runs_of "$dir")
+    [ -f "$bench_dir/$run/transcript.jsonl" ] || fail "$bench_dir/$run/transcript.jsonl: missing"
+  done < <(runs_of "$bench_dir")
 done
 
 first=1
-for dir in "$@"; do
-  bench_dir="${dir%/}"
+for bench_dir in "$@"; do
   [ "$first" -eq 1 ] || echo
   first=0
   baseline=""
