@@ -93,6 +93,15 @@ archive_root() {
   if is_side_checkout "$1"; then main_checkout; else printf '%s\n' "$1"; fi
 }
 
+# FLOW_LESS_ENTRIES: the top-level entries under .orchestrator/ that belong
+# to no flow, which archive_flow leaves in place: the archive itself, the side
+# checkouts, and the working directories of a standalone spec review
+# (spec-review/<n>/, an unattended one included) and of a review pass
+# (review-pass/<branch>/). The rule: an entry a command creates for work that
+# belongs to no flow goes on this list; every other entry is the flow's, a
+# spec phase's freely named round directories included.
+FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass)
+
 # archive_flow <root> <archive-root>: moves the flow in the checkout at <root>
 # into a directory under <archive-root>'s .orchestrator/archive/, and prints
 # that directory - relative to this checkout when inside it, else in full.
@@ -100,15 +109,16 @@ archive_root() {
 # checkout's archive; any other checkout, a hand-made worktree included,
 # archives in place (see archive_root).
 archive_flow() {
-  local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" slug dest entry
+  local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" slug dest entry kept
   refuse_ticket_worktrees "$root"
   slug="$(state_get_in "$(flow_state_file "$root")" slug)"
   dest="$home/archive/$(dir_stamp)-$slug"
   mkdir -p "$dest"
   for entry in "$orch"/*; do
     [ -e "$entry" ] || continue
-    # Side checkouts are live worktrees, never part of the flow's files.
-    case "$(basename "$entry")" in archive|checkouts) continue ;; esac
+    for kept in "${FLOW_LESS_ENTRIES[@]}"; do
+      [ "$(basename "$entry")" = "$kept" ] && continue 2
+    done
     mv "$entry" "$dest/"
   done
   note "${dest#"$ROOT"/}"
