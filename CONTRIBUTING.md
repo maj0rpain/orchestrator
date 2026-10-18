@@ -161,6 +161,13 @@ stops it, keeping the runs before it; the output directory must not exist.
 Anyone, an agent included, measures directories: `scripts/dev/lens-bench.sh
 measure <dir>...` prints a Markdown report on stdout, with no `claude`.
 
+Before paying for runs, `scripts/dev/lens-bench.sh seed <lens> [--snapshot
+<rev>] [--fixture <dir>]` measures, with no model, how much of the baseline
+map a mechanical seed finds: it resolves the spec's backticked and bold names
+into unique headings, shell functions and files at the snapshot, prints them
+as a map, and reports each kind's coverage and the entries outside the
+baseline (whole-file entries left out of both).
+
 To compare against a run made elsewhere, such as the #1196 baseline
 transcript, lay it out by hand as a one-run directory: write `lens`,
 `revision` and `model`, copy the fixture's `spec.md` and `map.md`, and put the

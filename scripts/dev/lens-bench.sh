@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # lens-bench.sh run <lens> --definition <rev> --out <dir> [-n N] [--model M]
 # lens-bench.sh measure <dir>...
+# lens-bench.sh seed <lens> [--snapshot <rev>] [--fixture <dir>]
 #
 # The lens benchmark. `run` starts N headless runs (default 5) of one lens
 # definition, `agents/orch-lens-<lens>.md` read at git revision <rev>, on model
@@ -56,6 +57,27 @@
 # when there are none, and is carried over the turns left from that turn on;
 # the fixed base is the first turn's context times the number of turns.
 #
+# `seed` runs no model: it resolves the names a fixture's spec gives into a
+# seed map, a draft code map in the lens's map format, against the snapshot
+# (`--snapshot <rev>`, default the fixture's `snapshot`) checked out in a
+# temporary worktree of the repo holding the fixture (`--fixture <dir>`,
+# default the lens's), removed when `seed` ends or fails. The names are the
+# spec's code spans and bold spans, read as SPANS_AWK reads them; a bold span
+# also gives each comma-separated part, trimmed. A name equal to the text of
+# exactly one ATX heading in the snapshot's tracked Markdown, CHANGELOG.md
+# left out, gives a heading entry ranged to the next heading of the same or a
+# higher level; bold names resolve to headings alone. A code span that is an
+# identifier opening exactly one tracked line `NAME() {` or `function NAME()
+# {` gives a function entry ranged to the next `}` at column 0; one that is a
+# tracked path, or the basename of exactly one tracked file, gives a
+# whole-file entry. An ambiguous name gets no entry, and names resolving to
+# one path, range and kind give one entry under the first. It prints the seed
+# map, `<path>:<start>-<end> <symbol> - <kind>: named in the spec as <name>`,
+# then, against the fixture's baseline map when it has one, each kind's entry
+# count and the baseline locations it covers, the coverage of the heading and
+# function entries together, and how many of them cover no location;
+# whole-file entries count toward neither.
+#
 # A repo-development tool: it does not ship to users. Usage errors exit 2.
 # `run` exits 1 naming the problem, having created no output directory and no
 # worktree, on an unknown lens (no fixture directory), a revision with no
@@ -64,12 +86,15 @@
 # run, removing that run's subdirectory and keeping the runs before it.
 # `measure` exits 1 naming it on a missing directory, a directory missing its
 # lens, revision or model file or its spec body, or a run with no transcript,
-# before any report is printed.
+# before any report is printed. `seed` exits 1 naming the problem, printing
+# no seed, on an unknown lens, a fixture missing its spec body or snapshot, a
+# snapshot that is not a commit, or a worktree it cannot make or read.
 set -euo pipefail
 
 usage() {
   printf 'usage: %s run <lens> --definition <rev> --out <dir> [-n N] [--model M]\n' "${0##*/}" >&2
   printf 'usage: %s measure <dir>...\n' "${0##*/}" >&2
+  printf 'usage: %s seed <lens> [--snapshot <rev>] [--fixture <dir>]\n' "${0##*/}" >&2
   exit 2
 }
 
@@ -255,85 +280,135 @@ widths() {
   locations "$1" | awk '{ w = w (NR > 1 ? " " : "") ($3 - $2 + 1) } END { print (w == "" ? "-" : w) }'
 }
 
-# covered <baseline> <map>: how many of <baseline>'s locations an entry of
-# <map> covers: same path, overlapping range.
-covered() {
+# overlap <baseline> <map>: how many of <baseline>'s locations an entry of
+# <map> covers, then how many of <map>'s entries cover none of them, space
+# separated. An entry covers a location for the same path whose line range
+# overlaps the location's.
+overlap() {
   awk '
     FNR == NR { path[NR] = $1; from[NR] = $2; to[NR] = $3; n = NR; next }
-    { for (i = 1; i <= n; i++)
-        if ($1 == path[i] && $2 <= to[i] && from[i] <= $3) hit[i] = 1 }
-    END { c = 0; for (i in hit) c++; print c }' \
+    { hit_any = 0
+      for (i = 1; i <= n; i++)
+        if ($1 == path[i] && $2 <= to[i] && from[i] <= $3) { hit[i] = 1; hit_any = 1 }
+      if (!hit_any) outside++ }
+    END { c = 0; for (i in hit) c++; print c, outside + 0 }' \
     <(locations "$1") <(locations "$2")
 }
 
-# code_spans <file>: each code span in Markdown <file>, one per line, read as
-# CommonMark reads them: a run of N backticks opens a span that only a run of
+# covered <baseline> <map>: how many of <baseline>'s locations an entry of
+# <map> covers.
+covered() {
+  overlap "$1" "$2" | cut -d' ' -f1
+}
+
+# SPANS_AWK reads a Markdown file's spans, as CommonMark reads them, and
+# prints each as `<kind><TAB><text>`, in the order they open, the kind `code`
+# or `bold`. A code span: a run of N backticks opens a span that only a run of
 # exactly N closes, a run with no such closer is literal, a backslash-escaped
 # backtick opens nothing, a line ending inside a span is a space, and one
 # leading and one trailing space are dropped when both are there and the span
-# is not all spaces. A span lies within one block - a paragraph, a list item
-# or a heading (one to six #s, then a space, a tab or the line's end) - and a
-# code block, fenced or indented, holds none. Indentation is measured from the
-# content column of the list item holding the line, if any: a fence opens or
-# closes within three columns of it, and a line four or more columns past it
-# is an indented code block's when no paragraph is open for it to continue.
+# is not all spaces. A bold span: `**` opening and closing on one line, both
+# outside code spans and not backslash-escaped; its text keeps any code span
+# inside it, which is a code span too. A span lies within one block - a
+# paragraph, a list item or a heading (one to six #s, then a space, a tab or
+# the line's end) - and a code block, fenced or indented, holds none.
+# Indentation is measured from the content column of the list item holding
+# the line, if any: a fence opens or closes within three columns of it, and a
+# line four or more columns past it is an indented code block's when no
+# paragraph is open for it to continue.
+SPANS_AWK='
+  function run_end(s, i, n) { while (i <= n && substr(s, i, 1) == "`") i++; return i }
+  # span_close(s, i, n): where the code span the backtick run at i opens
+  # closes, or 0 when the run is literal.
+  function span_close(s, i, n,   j, k, e, m) {
+    j = run_end(s, i, n); m = j - i
+    for (k = j; k <= n; k = e) {
+      if (substr(s, k, 1) != "`") { e = k + 1; continue }
+      e = run_end(s, k, n)
+      if (e - k == m) return k
+    }
+    return 0
+  }
+  # bold_close(s, i, n): where the bold span opening at i closes on its
+  # line, or 0 when it does not.
+  function bold_close(s, i, n,   k, c, e) {
+    for (k = i + 2; k <= n; ) {
+      c = substr(s, k, 1)
+      if (c == "\n") return 0
+      if (c == "\\") { k += 2; continue }
+      if (c == "`") {
+        e = span_close(s, k, n)
+        if (e) { k = e + (run_end(s, k, n) - k); continue }
+        k = run_end(s, k, n); continue
+      }
+      if (substr(s, k, 2) == "**") return (k > i + 2 && index(substr(s, i, k - i), "\n") == 0) ? k : 0
+      k++
+    }
+    return 0
+  }
+  function flush(   s, n, i, j, m, closer, span) {
+    s = block; block = ""; n = length(s); i = 1
+    split("", shut)
+    while (i <= n) {
+      if (substr(s, i, 1) == "\\") { i += 2; continue }
+      if (substr(s, i, 2) == "**") {
+        if (i in shut) { i += 2; continue }
+        closer = bold_close(s, i, n)
+        if (closer) { print "bold\t" substr(s, i + 2, closer - i - 2); shut[closer] = 1; i += 2; continue }
+        i += 2; continue
+      }
+      if (substr(s, i, 1) != "`") { i++; continue }
+      j = run_end(s, i, n); m = j - i
+      closer = span_close(s, i, n)
+      if (!closer) { i = j; continue }
+      span = substr(s, j, closer - j)
+      gsub(/\n/, " ", span)
+      if (span ~ /^ .* $/ && span !~ /^ +$/) span = substr(span, 2, length(span) - 2)
+      print "code\t" span
+      i = closer + m
+    }
+  }
+  function add(line) { block = (block == "" ? line : block "\n" line) }
+  function indent(s,   i, c) {
+    for (i = 1; i <= length(s); i++) {
+      if (substr(s, i, 1) == " ") c++
+      else if (substr(s, i, 1) == "\t") c += 4 - c % 4
+      else break
+    }
+    return c + 0
+  }
+  function open_fence(s, at) { match(s, /^(`+|~+)/); fence = substr(s, 1, RLENGTH); fence_col = at }
+  { ind = indent($0); rest = $0; sub(/^[ \t]+/, "", rest) }
+  fence != "" {
+    if (rest != "" && ind < fence_col) fence = ""
+    else {
+      if (ind - fence_col <= 3 && index(rest, fence) == 1 && rest ~ /^(`+|~+)[ \t]*$/) fence = ""
+      next
+    }
+  }
+  rest == "" { flush(); next }
+  {
+    opens = rest ~ /^((```|~~~)|#(#?#?#?#?#?)([ \t]|$)|([-*+]|[0-9]+[.)])([ \t]|$))/
+    if (block == "" || opens) while (depth && ind < col[depth]) depth--
+    base = depth ? col[depth] : 0
+  }
+  ind - base >= 4 && block == "" { next }
+  ind - base <= 3 && rest ~ /^(```|~~~)/ { flush(); open_fence(rest, base); next }
+  ind - base <= 3 && rest ~ /^#(#?#?#?#?#?)([ \t]|$)/ { flush(); add(rest); flush(); next }
+  ind - base <= 3 && match(rest, /^([-*+]|[0-9]+[.)])([ \t]|$)/) {
+    flush(); marker = RLENGTH - (RLENGTH > 1 && substr(rest, RLENGTH) ~ /[ \t]/)
+    body = substr(rest, marker + 1); gap = indent(body); sub(/^[ \t]+/, "", body)
+    col[++depth] = ind + marker + (body == "" || gap > 4 ? 1 : gap)
+    if (body ~ /^(```|~~~)/) { open_fence(body, col[depth]); next }
+    add(rest); next
+  }
+  { add(rest) }
+  END { flush() }'
+
+# code_spans <file>: each code span in Markdown <file>, one per line, read
+# as SPANS_AWK reads them.
 code_spans() {
-  awk '
-    function run_end(s, i, n) { while (i <= n && substr(s, i, 1) == "`") i++; return i }
-    function flush(   s, n, i, j, k, e, m, closer, span) {
-      s = block; block = ""; n = length(s); i = 1
-      while (i <= n) {
-        if (substr(s, i, 1) == "\\") { i += 2; continue }
-        if (substr(s, i, 1) != "`") { i++; continue }
-        j = run_end(s, i, n); m = j - i; closer = 0
-        for (k = j; k <= n; k = e) {
-          if (substr(s, k, 1) != "`") { e = k + 1; continue }
-          e = run_end(s, k, n)
-          if (e - k == m) { closer = k; break }
-        }
-        if (!closer) { i = j; continue }
-        span = substr(s, j, closer - j)
-        if (span ~ /^ .* $/ && span !~ /^ +$/) span = substr(span, 2, length(span) - 2)
-        print span
-        i = closer + m
-      }
-    }
-    function add(line) { block = (block == "" ? line : block " " line) }
-    function indent(s,   i, c) {
-      for (i = 1; i <= length(s); i++) {
-        if (substr(s, i, 1) == " ") c++
-        else if (substr(s, i, 1) == "\t") c += 4 - c % 4
-        else break
-      }
-      return c + 0
-    }
-    function open_fence(s, at) { match(s, /^(`+|~+)/); fence = substr(s, 1, RLENGTH); fence_col = at }
-    { ind = indent($0); rest = $0; sub(/^[ \t]+/, "", rest) }
-    fence != "" {
-      if (rest != "" && ind < fence_col) fence = ""
-      else {
-        if (ind - fence_col <= 3 && index(rest, fence) == 1 && rest ~ /^(`+|~+)[ \t]*$/) fence = ""
-        next
-      }
-    }
-    rest == "" { flush(); next }
-    {
-      opens = rest ~ /^((```|~~~)|#(#?#?#?#?#?)([ \t]|$)|([-*+]|[0-9]+[.)])([ \t]|$))/
-      if (block == "" || opens) while (depth && ind < col[depth]) depth--
-      base = depth ? col[depth] : 0
-    }
-    ind - base >= 4 && block == "" { next }
-    ind - base <= 3 && rest ~ /^(```|~~~)/ { flush(); open_fence(rest, base); next }
-    ind - base <= 3 && rest ~ /^#(#?#?#?#?#?)([ \t]|$)/ { flush(); add(rest); flush(); next }
-    ind - base <= 3 && match(rest, /^([-*+]|[0-9]+[.)])([ \t]|$)/) {
-      flush(); marker = RLENGTH - (RLENGTH > 1 && substr(rest, RLENGTH) ~ /[ \t]/)
-      body = substr(rest, marker + 1); gap = indent(body); sub(/^[ \t]+/, "", body)
-      col[++depth] = ind + marker + (body == "" || gap > 4 ? 1 : gap)
-      if (body ~ /^(```|~~~)/) { open_fence(body, col[depth]); next }
-      add(rest); next
-    }
-    { add(rest) }
-    END { flush() }' "$1"
+  awk "$SPANS_AWK" "$1" | sed -n 's/^code\t//p'
 }
 
 # The jq definitions both transcript programs share: text, a message
@@ -575,8 +650,204 @@ cmd_measure() {
   done
 }
 
+# headings <file>...: each ATX heading in the Markdown <file>s, as
+# `<path><TAB><start><TAB><end><TAB><text>`. A heading is up to three spaces,
+# one to six #s, then a space, a tab or the line's end; its text drops the
+# surrounding blanks and any closing run of #s. A line in a fenced code block
+# is no heading (an indented one is four or more spaces in, so never one). Its
+# range runs to the line before the next heading of the same or a higher
+# level, or to the file's end.
+headings() {
+  awk '
+    function close_open(upto,   i) {
+      for (i = 1; i <= open_n; i++)
+        if (open_level[i] >= upto) {
+          printf "%s\t%d\t%d\t%s\n", FILENAME_prev, open_line[i], end_at, open_text[i]
+          open_level[i] = 0
+        }
+    }
+    function finish(   i) {
+      for (i = 1; i <= open_n; i++)
+        if (open_level[i]) printf "%s\t%d\t%d\t%s\n", FILENAME_prev, open_line[i], last, open_text[i]
+      open_n = 0
+    }
+    FNR == 1 { if (NR > 1) finish(); FILENAME_prev = FILENAME; fence = "" }
+    { last = FNR }
+    fence != "" {
+      if (match($0, /^ ? ? ?(`+|~+)[ \t]*$/)) {
+        run = $0; sub(/^ */, "", run); sub(/[ \t]*$/, "", run)
+        if (substr(run, 1, 1) == substr(fence, 1, 1) && length(run) >= length(fence)) fence = ""
+      }
+      next
+    }
+    /^ ? ? ?(```|~~~)/ {
+      run = $0; sub(/^ */, "", run); match(run, /^(`+|~+)/); run = substr(run, 1, RLENGTH)
+      if (!(substr(run, 1, 1) == "`" && index(substr($0, index($0, run) + length(run)), "`"))) { fence = run; next }
+    }
+    /^ ? ? ?#(#?#?#?#?#?)([ \t]|$)/ {
+      text = $0; sub(/^ */, "", text); match(text, /^#+/); level = RLENGTH
+      text = substr(text, level + 1)
+      sub(/^[ \t]+/, "", text); sub(/[ \t]+$/, "", text)
+      if (text ~ /^#+$/) text = ""
+      else sub(/[ \t]+#+$/, "", text)
+      end_at = FNR - 1
+      close_open(level)
+      open_n++; open_level[open_n] = level; open_line[open_n] = FNR; open_text[open_n] = text
+    }
+    END { if (NR > 0) finish() }' "$@"
+}
+
+# The temporary directory `seed` holds its worktree in and the repo it is a
+# worktree of are run_tmp and run_repo, removed by run_cleanup as run's are.
+cmd_seed() {
+  local lens="" rev="" fixture=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --snapshot) [ "$#" -ge 2 ] || usage; rev="$2"; shift 2 ;;
+      --fixture) [ "$#" -ge 2 ] || usage; fixture="$2"; shift 2 ;;
+      -*) usage ;;
+      *) [ -z "$lens" ] || usage; lens="$1"; shift ;;
+    esac
+  done
+  [ -n "$lens" ] || usage
+  if [ -z "$fixture" ]; then
+    case "$lens" in
+      */* | .*) fail "$lens: unknown lens, no fixture directory $BENCH_DIR/lens-bench/$lens" ;;
+    esac
+    fixture="$BENCH_DIR/lens-bench/$lens"
+    [ -d "$fixture" ] || fail "$lens: unknown lens, no fixture directory $fixture"
+  fi
+  while [[ "$fixture" == */ && "$fixture" != / ]]; do fixture="${fixture%/}"; done
+  [ -d "$fixture" ] || fail "$fixture: no such directory"
+  [ -f "$fixture/spec.md" ] || fail "$fixture/spec.md: missing"
+  [ -f "$fixture/snapshot" ] || fail "$fixture/snapshot: missing"
+  run_repo="$(git -C "$fixture" rev-parse --show-toplevel 2>/dev/null)" ||
+    fail "$fixture: not in a git repo"
+  local named_by="--snapshot" snapshot
+  if [ -z "$rev" ]; then rev="$(<"$fixture/snapshot")"; named_by="$fixture/snapshot"; fi
+  snapshot="$(git -C "$run_repo" rev-parse --verify --quiet "$rev^{commit}")" ||
+    fail "$named_by: $rev is not a commit"
+
+  trap run_cleanup EXIT
+  trap 'exit 130' INT TERM
+  run_tmp="$(mktemp -d "${TMPDIR:-/tmp}/lens-bench.XXXXXX")"
+  local worktree="$run_tmp/repo"
+  git -C "$run_repo" worktree add --quiet --detach "$worktree" "$snapshot" >/dev/null 2>&1 ||
+    fail "$snapshot: cannot check out the snapshot in a worktree"
+
+  local files
+  files="$(git -C "$worktree" ls-files)" || fail "$snapshot: cannot list the snapshot's tracked files"
+
+  # The headings of every tracked Markdown file but CHANGELOG.md, and every
+  # line that opens a shell function.
+  local -a markdown=()
+  local path
+  while IFS= read -r path; do
+    case "$path" in
+      CHANGELOG.md | */CHANGELOG.md) ;;
+      *.md | *.markdown) markdown+=("$path") ;;
+    esac
+  done <<<"$files"
+  local all_headings="" all_functions="" status=0
+  if [ "${#markdown[@]}" -gt 0 ]; then
+    all_headings="$(cd "$worktree" && headings "${markdown[@]}")" ||
+      fail "$snapshot: cannot read the snapshot's Markdown"
+  fi
+  all_functions="$(git -C "$worktree" grep -I -n -E \
+    '^(function[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)[[:space:]]*\{[[:space:]]*$')" || status=$?
+  [ "$status" -le 1 ] || fail "$snapshot: cannot search the snapshot's files"
+
+  # Each name the spec gives, `<kind><TAB><name>`, in the order it gives
+  # them: a bold span also gives each comma-separated part.
+  local names
+  names="$(awk "$SPANS_AWK" "$fixture/spec.md" | awk -F'\t' '
+    $1 == "code" { print; next }
+    { print "bold\t" $2
+      if (index($2, ",")) {
+        n = split($2, part, ",")
+        for (i = 1; i <= n; i++) {
+          p = part[i]; sub(/^[ \t]+/, "", p); sub(/[ \t]+$/, "", p)
+          if (p != "") print "bold\t" p
+        }
+      } }')"
+
+  # The entries, each under the first name that resolves to it.
+  local -A seen=()
+  local -a entries=()
+  local kind name hits start end key last
+  add_entry() {
+    key="$1:$2-$3 $4"
+    [ -z "${seen[$key]:-}" ] || return 0
+    seen[$key]=1
+    entries+=("$1:$2-$3 $5 - $4: named in the spec as $name")
+  }
+  while IFS=$'\t' read -r kind name; do
+    [ -n "$name" ] || continue
+    hits="$(SEED_NAME="$name" awk -F'\t' '$4 == ENVIRON["SEED_NAME"]' <<<"$all_headings")"
+    if [ -n "$hits" ] && [ "$(wc -l <<<"$hits")" -eq 1 ]; then
+      IFS=$'\t' read -r path start end _ <<<"$hits"
+      add_entry "$path" "$start" "$end" heading "$name"
+    fi
+    [ "$kind" = code ] || continue
+    if [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      hits="$(SEED_NAME="$name" awk '{
+          line = $0; sub(/^[^:]*:[0-9]+:/, "", line)
+          sub(/^function[ \t]+/, "", line); sub(/[ \t]*\(.*/, "", line)
+          if (line == ENVIRON["SEED_NAME"]) print }' <<<"$all_functions")"
+      if [ -n "$hits" ] && [ "$(wc -l <<<"$hits")" -eq 1 ]; then
+        path="${hits%%:*}"; start="${hits#*:}"; start="${start%%:*}"
+        end="$(awk -v from="$start" 'NR > from && $0 == "}" { print NR; found = 1; exit }
+          END { if (!found) print NR }' "$worktree/$path")"
+        add_entry "$path" "$start" "$end" function "$name"
+      fi
+    fi
+    hits="$(SEED_NAME="$name" awk '$0 == ENVIRON["SEED_NAME"] { print; exit }' <<<"$files")"
+    [ -n "$hits" ] || hits="$(SEED_NAME="$name" awk '{ b = $0; sub(/.*\//, "", b) } b == ENVIRON["SEED_NAME"]' <<<"$files")"
+    if [ -n "$hits" ] && [ "$(wc -l <<<"$hits")" -eq 1 ] && [ -f "$worktree/$hits" ]; then
+      last="$(awk 'END { print (NR ? NR : 1) }' "$worktree/$hits")"
+      add_entry "$hits" 1 "$last" file "$hits"
+    fi
+  done <<<"$names"
+
+  # The report, built before anything is printed.
+  local entry report="" baseline="" total counts k n
+  [ ! -f "$fixture/map.md" ] || baseline="$fixture/map.md"
+  for k in heading function file; do
+    : >"$run_tmp/$k.map"
+  done
+  : >"$run_tmp/measured.map"
+  for entry in "${entries[@]}"; do
+    k="${entry#* - }"; k="${k%%:*}"
+    printf '%s\n' "$entry" >>"$run_tmp/$k.map"
+    [ "$k" = file ] || printf '%s\n' "$entry" >>"$run_tmp/measured.map"
+  done
+  if [ -n "$baseline" ]; then
+    total="$(locations "$baseline" | awk 'END { print NR }')"
+    report+="Baseline map: $total locations"$'\n\n'
+    report+="| Kind | Entries | Baseline locations covered |"$'\n'"|---|---|---|"$'\n'
+    for k in heading function file; do
+      n="$(awk 'END { print NR }' "$run_tmp/$k.map")"
+      counts="$(covered "$baseline" "$run_tmp/$k.map")"
+      report+="| $k | $n | $counts/$total$([ "$k" != file ] || echo ", left out of coverage") |"$'\n'
+    done
+    read -r counts n <<<"$(overlap "$baseline" "$run_tmp/measured.map")"
+    report+=$'\n'"Coverage over heading and function entries: $counts/$total"$'\n'
+    report+="Heading and function entries outside the baseline: $n of $(awk 'END { print NR }' "$run_tmp/measured.map")"$'\n'
+  else
+    report+="Baseline map: none, so no coverage"$'\n\n'
+    report+="| Kind | Entries |"$'\n'"|---|---|"$'\n'
+    for k in heading function file; do
+      report+="| $k | $(awk 'END { print NR }' "$run_tmp/$k.map") |"$'\n'
+    done
+  fi
+
+  [ "${#entries[@]}" -eq 0 ] || printf '%s\n' "${entries[@]}"
+  printf '\n%s' "$report"
+}
+
 case "${1:-}" in
   run) shift; cmd_run "$@" ;;
   measure) shift; cmd_measure "$@" ;;
+  seed) shift; cmd_seed "$@" ;;
   *) usage ;;
 esac

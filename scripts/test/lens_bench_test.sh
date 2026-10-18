@@ -2,14 +2,17 @@
 #
 # Tests for scripts/dev/lens-bench.sh, the lens benchmark.
 #
-# Each case runs `lens-bench.sh measure` on output directories laid out as
+# The measure cases run `lens-bench.sh measure` on output directories laid out as
 # `lens-bench.sh run` writes them - the committed, hand-built fixture under
 # scripts/test/lens-bench/, or a copy of it with a file taken away - and
 # asserts only what the run prints and its exit status. The failure modes
 # worth catching: a split message counted twice, coverage judged by anything
 # but the overlap rule, a summary over the wrong values, a turn labelled or a
 # result's cost attributed to the wrong kind, and a broken directory measured
-# instead of refused.
+# instead of refused. The seed cases run `lens-bench.sh seed` on
+# scripts/test/lens-bench/seed/'s spec and map, against a scratch repo the
+# suite builds, and assert only what it prints, its exit status and that its
+# worktree is gone.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BENCH="$DIR/dev/lens-bench.sh"
@@ -458,6 +461,192 @@ assert_contains "a missing transcript names the run" "$err" "run-2"
 assert_eq "a missing transcript keeps the finished runs and removes its own" \
   "$(cd "$bench_root/runs-lost" && ls -d run-*)" run-1
 assert_eq "a missing transcript removes the worktree" "$(worktrees)" 1
+
+echo
+echo "seed: usage errors"
+for usage_case in "seed" "seed implementability extra" "seed implementability --snapshot" \
+  "seed implementability --fixture" "seed implementability --bogus"; do
+  # shellcheck disable=SC2086 # each case's words are its arguments
+  run_bench $usage_case
+  assert_status "'$usage_case' exits 2" "$st" 2
+  assert_contains "'$usage_case' prints the seed usage line" "$err" \
+    "lens-bench.sh seed <lens> [--snapshot <rev>] [--fixture <dir>]"
+  assert_empty "'$usage_case' prints no seed" "$out"
+done
+
+# A scratch repo to seed against: its first commit, the fixture's snapshot,
+# holds Markdown and shell files to resolve names in; its second adds a
+# heading only it has. The fixture directory, scripts/test/lens-bench/seed/'s
+# spec and map with a snapshot naming the first commit, sits untracked in it.
+seed_repo="$bench_root/seed-repo"
+seed_git() { git -C "$seed_repo" -c user.name=t -c user.email=t@t "$@"; }
+mkdir -p "$seed_repo"/{docs,lib,bin,data,notes}
+git init -q "$seed_repo"
+cat >"$seed_repo/docs/guide.md" <<'MD'
+# Guide
+
+## Alpha section
+
+Alpha text.
+
+### Alpha detail
+
+Detail.
+
+## Beta section
+
+```
+# Not a heading
+```
+
+Beta tail.
+
+## The reviewers
+
+Reviewers text.
+MD
+printf '## Shared\n' >"$seed_repo/docs/a.md"
+printf '## Shared\n' >"$seed_repo/docs/b.md"
+printf '# Changelog\n\n## Only in changelog\n' >"$seed_repo/CHANGELOG.md"
+cat >"$seed_repo/lib/tools.sh" <<'SH'
+#!/usr/bin/env bash
+
+alpha_fn() {
+  if true; then
+    {
+      echo a
+    }
+  fi
+}
+
+function beta_fn() {
+  echo b
+}
+SH
+printf 'dup_fn() {\n  :\n}\n' >"$seed_repo/lib/more.sh"
+printf 'dup_fn() {\n  :\n}\n' >"$seed_repo/bin/other.sh"
+echo : >"$seed_repo/lib/common.sh"
+echo : >"$seed_repo/bin/common.sh"
+printf 'one\ntwo\nthree\n' >"$seed_repo/data/unique.txt"
+echo a >"$seed_repo/notes/notes.txt"
+seed_git add -A
+seed_git commit -qm snapshot
+seed_snapshot="$(seed_git rev-parse HEAD)"
+printf '## Gamma section\n\nGamma.\n' >"$seed_repo/docs/later.md"
+seed_git add -A
+seed_git commit -qm later
+seed_fixture="$seed_repo/fixture"
+mkdir "$seed_fixture"
+cp "$FIXTURE/seed/spec.md" "$FIXTURE/seed/map.md" "$seed_fixture/"
+printf '%s\n' "${seed_snapshot:0:7}" >"$seed_fixture/snapshot"
+
+# seed_worktrees: how many worktrees the seed repo has, its main one counted.
+seed_worktrees() { seed_git worktree list | awk 'END { print NR }'; }
+
+echo
+echo "seed: the seed map"
+run_bench seed implementability --fixture "$seed_fixture"
+assert_status "seeding exits 0" "$st" 0
+assert_empty "seeding prints nothing on stderr" "$err"
+has_line "a unique heading spans to the line before the next heading of its level or higher" "$out" \
+  "docs/guide.md:3-10 Alpha section - heading: named in the spec as Alpha section"
+has_line "a # line in a fenced code block does not end a range" "$out" \
+  "docs/guide.md:11-18 Beta section - heading: named in the spec as Beta section"
+assert_lacks "a # line in a fenced code block is no heading" "$out" "Not a heading"
+has_line "a bold name resolves to a unique heading" "$out" \
+  "docs/guide.md:7-10 Alpha detail - heading: named in the spec as Alpha detail"
+has_line "the part of a bold name after its comma resolves to a unique heading, ranged to the file's end" "$out" \
+  "docs/guide.md:19-21 The reviewers - heading: named in the spec as The reviewers"
+assert_lacks "an ambiguous heading gets no entry" "$out" "Shared"
+assert_lacks "a heading only CHANGELOG.md holds gets no entry" "$out" "Only in changelog"
+has_line "a unique shell function spans to the next } at column 0" "$out" \
+  "lib/tools.sh:3-9 alpha_fn - function: named in the spec as alpha_fn"
+has_line "a function with a leading 'function ' resolves too" "$out" \
+  "lib/tools.sh:11-13 beta_fn - function: named in the spec as beta_fn"
+assert_lacks "an ambiguous function gets no entry" "$out" "dup_fn"
+has_line "two names resolving to one entry give one entry, under the first" "$out" \
+  "lib/tools.sh:1-13 lib/tools.sh - file: named in the spec as tools.sh"
+assert_lacks "the second name of a merged entry gives no entry" "$out" "named in the spec as lib/tools.sh"
+has_line "a unique basename gives a whole-file entry" "$out" \
+  "data/unique.txt:1-3 data/unique.txt - file: named in the spec as unique.txt"
+assert_lacks "an ambiguous basename gets no entry" "$out" "common.sh"
+assert_lacks "a heading the snapshot lacks gets no entry" "$out" "Gamma section"
+assert_eq "prints the seed map first, in the order the spec names its entries" \
+  "$(sed -n '1,/^$/p' <<<"$out" | sed '/^$/d' | cut -d' ' -f1)" \
+  "$(printf '%s\n' docs/guide.md:3-10 docs/guide.md:7-10 docs/guide.md:19-21 docs/guide.md:11-18 \
+    lib/tools.sh:3-9 lib/tools.sh:11-13 lib/tools.sh:1-13 data/unique.txt:1-3 notes/notes.txt:1-1)"
+
+echo
+echo "seed: coverage"
+# map.md: guide.md:4 (Alpha section), guide.md:20 (The reviewers),
+# tools.sh:5-6 (alpha_fn, and the whole file), more.sh:2 (named by no entry)
+# and unique.txt:1 (the whole file only).
+has_line "counts the baseline's locations" "$out" "Baseline map: 5 locations"
+has_line "heading entries: their count and the locations they cover" "$out" "| heading | 4 | 2/5 |"
+has_line "function entries: their count and the locations they cover" "$out" "| function | 2 | 1/5 |"
+has_line "file entries: their count and coverage, left out of the total" "$out" \
+  "| file | 3 | 2/5, left out of coverage |"
+has_line "the total covers over heading and function entries alone" "$out" \
+  "Coverage over heading and function entries: 3/5"
+has_line "counts the heading and function entries covering no location, whole files left out" "$out" \
+  "Heading and function entries outside the baseline: 3 of 6"
+assert_eq "removes the worktree after seeding" "$(seed_worktrees)" 1
+assert_eq "removes its temporary directory after seeding" "$(leftovers)" 0
+
+echo
+echo "seed: another snapshot"
+run_bench seed implementability --fixture "$seed_fixture" --snapshot HEAD
+assert_status "--snapshot exits 0" "$st" 0
+has_line "--snapshot resolves against that revision" "$out" \
+  "docs/later.md:1-3 Gamma section - heading: named in the spec as Gamma section"
+
+echo
+echo "seed: no baseline map"
+cp -R "$seed_fixture" "$seed_repo/fixture-no-map"
+rm "$seed_repo/fixture-no-map/map.md"
+run_bench seed implementability --fixture "$seed_repo/fixture-no-map"
+assert_status "a fixture with no baseline map exits 0" "$st" 0
+has_line "still prints the seed" "$out" \
+  "docs/guide.md:3-10 Alpha section - heading: named in the spec as Alpha section"
+has_line "says there is no baseline map" "$out" "Baseline map: none, so no coverage"
+has_line "gives each kind's entry count" "$out" "| heading | 4 |"
+assert_lacks "prints no coverage" "$out" "Coverage"
+
+# seed_refused <test> <named> <args...>: seed exits 1 naming <named>, prints
+# no seed, and leaves no worktree and no temporary directory behind.
+seed_refused() {
+  local name="$1" named="$2"
+  shift 2
+  run_bench seed "$@"
+  assert_status "$name: exits 1" "$st" 1
+  assert_contains "$name: names it" "$err" "$named"
+  assert_empty "$name: prints no seed" "$out"
+  assert_eq "$name: leaves no worktree" "$(seed_worktrees)" 1
+  assert_eq "$name: leaves no temporary directory" "$(leftovers)" 0
+}
+
+echo
+echo "seed: refusals"
+seed_refused "a snapshot that does not resolve" nosuchrev \
+  implementability --fixture "$seed_fixture" --snapshot nosuchrev
+seed_refused "an unknown lens" nosuch nosuch
+for file in spec.md snapshot; do
+  cp -R "$seed_fixture" "$seed_repo/fixture-no-$file"
+  rm "$seed_repo/fixture-no-$file/$file"
+  seed_refused "a fixture missing its $file" "$seed_repo/fixture-no-$file/$file" \
+    implementability --fixture "$seed_repo/fixture-no-$file"
+done
+# A git that fails to list the snapshot's files, so seed fails once its
+# worktree exists.
+mkdir -p "$bench_root/failing-git"
+cat >"$bench_root/failing-git/git" <<FAKE
+#!/usr/bin/env bash
+for arg in "\$@"; do [ "\$arg" != ls-files ] || exit 3; done
+exec "$(command -v git)" "\$@"
+FAKE
+chmod +x "$bench_root/failing-git/git"
+PATH="$bench_root/failing-git:$PATH" seed_refused "a failure once the worktree exists" \
+  "tracked files" implementability --fixture "$seed_fixture"
 
 # >>> summary
 echo
