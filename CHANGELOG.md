@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.14.0
+
+A spec review's session no longer takes a turn for each lens that hands back. `orch.sh spec-review wait <dir> <lens>...` blocks until every named lens's findings file exists, then prints one `lenses back: <lens> <count>, ...` line, and on a timeout exits 1 naming the lenses still missing; the `orch-spec-review` skill runs it in the same response that starts the lenses, and a second wait names only the lenses respawned after a failure. `ORCH_SPEC_REVIEW_WAIT_TIMEOUT` (default 900 seconds) and `ORCH_SPEC_REVIEW_WAIT_INTERVAL` (default 5) tune it, validated as the `review ci` knobs are. The Implementability lens now writes its findings file last, after its code map.
+
 ## 4.13.1
 
 The Implementability lens now trusts its code map instead of re-checking it every round. Each map entry names a line range, `<path>:<start>-<end>`, the smallest that holds the code a decision depends on; a later round reads only that range and searches again only when the range no longer holds the entry's symbol. An old entry with no range is located once and rewritten with its range.
