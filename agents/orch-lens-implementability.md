@@ -66,12 +66,21 @@ open.
   for all the search hits in one turn. Every turn re-reads the whole
   context, so fewer turns cost less.
 - Follow a caller or callee only when a decision in the spec depends on it.
+  A decision depends on more than what it names: on what it **breaks** -
+  each check, test or fixture that pins a shape, name or format the spec
+  changes - and on what it **consumes** - each source whose format, wording
+  or order the spec's new code reads or copies, and each step it runs
+  before or after. When the spec adds a numbered file, such as an ADR, find
+  the highest number taken. Locate these sites with the two-step search
+  above, on the literal text of each shape the spec changes or reads: a
+  heading, a prompt variable, a marker, a message.
 - For what no entry names, read with an offset and a limit of at most 40
   lines, starting about 10 lines before the match. When the code the spec's
   decision depends on runs past that window, read the next 40 lines in a
   second read; never set a limit over 40. Never read a whole file to find
   something in it.
-- Do not survey the repo: code the spec does not reach is out of scope.
+- Do not survey the repo: code the spec does not reach, by naming it,
+  breaking it or consuming it, is out of scope.
 
 ## The map file
 
