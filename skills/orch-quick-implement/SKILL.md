@@ -102,6 +102,20 @@ checkout, stop here once the issue is linked, and any rewrite is done, then
 go to **Starting in a side checkout** below: the side checkout's own session
 runs steps 1-7, its step 1 finding the issue already linked.
 
+Otherwise, at that same point - once the issue is linked and any rewrite is
+done - run `bash "$ORCH" branch busy`, which tells whether this checkout is a
+busy checkout. It cannot run earlier: the issue is the hand-off to a side
+checkout, and the rewrite needs this session's interview.
+
+- **Exit 0**: the checkout is free. Go on to step 2.
+- **Exit 3**: the checkout is busy - another implementation's work is here,
+  and a new branch would move it. Ask nothing: print a one-line note quoting
+  the line `branch busy` printed, naming what holds the checkout - for
+  example `This checkout is busy (busy: branch quick/12-x has no PR yet), so
+  this quick implementation moves to a side checkout.` - then go straight to
+  **Starting in a side checkout** below.
+- **Any other exit**: stop and relay its message.
+
 ## 2. Run an unattended spec review
 
 Run it on every run, whether the linked issue was just published in step 1 or
@@ -162,13 +176,13 @@ a flow's own `branch create` does, but records no flow state - a quick
 implementation keeps none. It records that base branch on the branch itself,
 so the PR in step 7 targets it even if the setting changes meanwhile.
 
-`branch off` exits 3, and only then, when this checkout holds a flow
-mid-pipeline: a quick implementation must never move that flow's checkout off
-its branch. **On exit 3, and on no other failure**, offer the human a side
-checkout as a multiple-choice question: run this quick implementation in a
-side checkout, a git worktree of its own beside the flow, or stop. On a yes,
-go to **Starting in a side checkout** below. On a no, or on any other `branch
-off` failure, relay the refusal and stop.
+`branch off` exits 3, and only then, when this checkout is a busy checkout -
+something started here between step 1's `branch busy` and now: a quick
+implementation must never move another implementation's branch or carry its
+uncommitted edits. **On exit 3, and on no other failure**, ask nothing: print
+the same one-line note as step 1, quoting the busy line `branch off` printed,
+and go straight to **Starting in a side checkout** below. On any other
+`branch off` failure, relay the refusal and stop.
 
 ## 5. Implement
 
@@ -297,11 +311,13 @@ ruled. See
 
 ## Starting in a side checkout
 
-Reached from step 1 (`--side`, or the human asking) or from step 4 (a yes to
-the offer on exit 3). It runs in this session, after step 1 has linked or
-published the issue, with any glossary or ADR wording in its body. The issue
-is the hand-off: no plan file is written. Before the hand-off, on either
-route, print step 1's rewrite outcome - the rewrite with its outcome word
+Reached from step 1 (`--side`, the human asking, or `branch busy` exiting 3
+on a busy checkout) or from step 4 (`branch off` exiting 3 on one). It runs in
+this session, after step 1 has linked or published the issue, with any
+glossary or ADR wording in its body. The issue is the hand-off: no plan file
+is written. From step 4, the side checkout's session runs step 2's spec review
+a second time, and its step 3 finds the breakdown already published. Before
+the hand-off, on either route, print step 1's rewrite outcome - the rewrite with its outcome word
 and, on `kept`, its edited-ticket count, as step 7's **Issue rewrite** line
 reads, or the reason there was none - since the side checkout's session
 records only that any rewrite ran here.

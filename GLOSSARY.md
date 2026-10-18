@@ -28,11 +28,19 @@ checkout, a ticket worktree, or a hand-made worktree (one the human made
 with `git worktree add`). Each holds at most one flow.
 _Avoid_: worktree, when the main checkout is meant too.
 
+**Busy checkout**:
+A checkout that holds work a new branch must not move: a flow
+mid-pipeline, a branch the plugin made that has no PR yet, or a working
+tree with changes outside the planning allowlist. A quick implementation
+started in a busy checkout goes to a side checkout; a flow started in one
+is offered a side checkout, except on a dirty tree, which `init` refuses.
+_Avoid_: locked checkout, active checkout.
+
 **Side checkout**:
 A git worktree the plugin makes inside the repo, so a second flow or a quick
 implementation can run beside the work already in this checkout, in a session
-of its own. Offered when a flow is already mid-pipeline, or made when a human
-asks for one. It counts as a checkout in its own right, so it holds at most
+of its own. Made when a quick implementation starts in a busy checkout, offered
+when a flow does, or made when a human asks for one. It counts as a checkout in its own right, so it holds at most
 one flow. One made for a quick implementation records that implementation's
 issue, so a session opened in it picks the issue up without being told. It is
 removed when its flow is archived with `archive` or
