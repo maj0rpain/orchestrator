@@ -534,7 +534,13 @@ comments word for word with the human's reason or **declined as
 recommended: <reason>**, an undecided decision item's sides then **left
 undecided**, **None** for a group with no items, **not run - <reason>** for
 a lens that failed twice, and Fidelity's standalone not-run line. Silence is
-never ambiguous: Consolidation, every lens, and Tickets have a line. The
+never ambiguous: Consolidation, every lens, and Tickets have a line. A
+minor item applied by the human's answer - by **Apply as recommended**,
+**Apply all**, `+<n>`, or left unnamed in an override answer - reads
+`- (<n>, minor) <summary>`, so the history shows it was applied without being
+shown in full; material, declined, decision and resolved lines carry no tag,
+and neither does any line of an unattended review's changelog, which no human
+answers. The
 heading keeps every earlier round's comment out of `comments.md`: `orch.sh`
 leaves out a comment whose body opens with it.
 

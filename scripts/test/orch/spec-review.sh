@@ -340,7 +340,7 @@ Round 1 of 2
 
 ### Testability
 - (3) decision: took A - Keep gamma
-- (4) Insert a test note after Delta
+- (4, minor) Insert a test note after Delta
 - (5) resolved by (4)
 
 ### Implementability
@@ -463,8 +463,8 @@ assert_eq "-<n>: the item declined, with its --reasons line" \
   "$(has_line "$sra_cl" '- (1) "Alpha should say alpha prime." - the comment is stale')" yes
 assert_eq "an unnamed recommend-decline item, declined as recommended" \
   "$(has_line "$sra_cl" '- (2) "The spec reverses the plan'"'"'s choice of beta." - spec departs from the plan: declined as recommended: the plan chose this')" yes
-assert_eq "an unnamed apply item, applied" \
-  "$(has_line "$sra_cl" "- (4) Insert a test note after Delta")" yes
+assert_eq "an unnamed minor apply item, applied and tagged minor" \
+  "$(has_line "$sra_cl" "- (4, minor) Insert a test note after Delta")" yes
 assert_eq "posted as the round's comment" "$(fake_comments_of 14)" "$sra_cl"
 
 # `+<n>` applies a recommend-decline item; `-<n>` leaves a decision undecided
@@ -495,6 +495,56 @@ sra "$d" "3A, -2"
 assert_status "an override answer naming only the recommendation applies" "$st" 0
 assert_eq "its changelog is the recommended answer's" "$(cat "$d/changelog.md")" "$sra_log"
 assert_eq "its spec.md is the recommended answer's" "$(cat "$d/spec.md")" "$sra_clean"
+
+# The minor tag (#1240): a minor item applied by the human's answer reads
+# `(<n>, minor)` in the changelog and settled.md; nothing else is tagged.
+# sra_minor_dir: sra_dir, with item 2 a minor recommend-decline item.
+sra_minor_dir() {
+  local d
+  d="$(sra_dir)"
+  sed -i '18s/contradicts-the-plan decline material/fidelity decline minor/' "$d/batch.md"
+  printf '%s\n' "$d"
+}
+for sra_case in "all|by all" "+2|by +<n>"; do
+  d="$(sra_minor_dir)"
+  sra "$d" "${sra_case%%|*}"
+  assert_status "a minor recommend-decline item applied ${sra_case#*|}: applies" "$st" 0
+  assert_eq "a minor recommend-decline item applied ${sra_case#*|}: tagged minor" \
+    "$(has_line "$(cat "$d/changelog.md")" "- (2, minor) Reverse the plan on Beta")" yes
+  assert_eq "a minor recommend-decline item applied ${sra_case#*|}: tagged minor in settled.md" \
+    "$(has_line "$(cat "$d/settled.md")" "- (2, minor) Reverse the plan on Beta")" yes
+done
+d="$(sra_dir)"
+sra "$d" recommended
+assert_eq "a minor item applied by recommended: tagged minor in settled.md" \
+  "$(has_line "$(cat "$d/settled.md")" "- (4, minor) Insert a test note after Delta")" yes
+d="$(sra_minor_dir)"
+sra "$d" "3B"
+assert_status "an override answer leaving minor items unnamed applies" "$st" 0
+sra_cl="$(cat "$d/changelog.md")"
+assert_eq "a minor item left unnamed in an override answer: tagged minor" \
+  "$(has_line "$sra_cl" "- (4, minor) Insert a test note after Delta")" yes
+assert_eq "a minor item left unnamed in an override answer: tagged minor in settled.md" \
+  "$(has_line "$(cat "$d/settled.md")" "- (4, minor) Insert a test note after Delta")" yes
+assert_eq "a minor item declined as recommended: untagged" \
+  "$(has_line "$sra_cl" '- (2) "The spec reverses the plan'"'"'s choice of beta." - declined as recommended: the plan chose this')" yes
+assert_eq "a material item applied: untagged" \
+  "$(has_line "$sra_cl" "- (1) Folded in @alice's comment on Alpha")" yes
+assert_eq "a decision line: untagged" "$(has_line "$sra_cl" "- (3) decision: took B - Drop gamma")" yes
+assert_eq "a resolved line: untagged" "$(has_line "$sra_cl" "- (5) resolved by (4)")" yes
+for sra_case in "-4|by -<n>" "none|by none"; do
+  d="$(sra_dir)"
+  sra "$d" "${sra_case%%|*}"
+  assert_eq "a minor item declined ${sra_case#*|}: untagged" \
+    "$(has_line "$(cat "$d/settled.md")" '- (4) "Delta has no test." - declined')" yes
+done
+d="$(sra_minor_dir)"
+sra "$d" recommended --unattended
+assert_status "an unattended run with minor items applies" "$st" 0
+assert_eq "an unattended run's changelog: no line tagged minor" \
+  "$(grep -c 'minor)' "$d/changelog.md")" 0
+assert_eq "an unattended run's minor applied item: untagged" \
+  "$(has_line "$(cat "$d/changelog.md")" "- (4) Insert a test note after Delta")" yes
 
 # A --reasons line naming an item the override answer does not decline.
 d="$(sra_dir)"

@@ -906,10 +906,13 @@ spec_review_decline_reason() {
 }
 
 # spec_review_item_line <index> <unattended>: item <index>'s changelog line.
+# A minor item applied by the human's answer is tagged `(<n>, minor)`; an
+# unattended run, which no human answers, tags nothing.
 spec_review_item_line() {
-  local i="$1" n="${SR_IT_N[$1]}" j reason
+  local i="$1" n="${SR_IT_N[$1]}" j reason tag=""
+  [ "$2" = true ] || [ "${SR_IT_MARK[$i]}" != minor ] || tag=", minor"
   case "${SR_DISP[$i]}" in
-    applied) printf -- '- (%s) %s\n' "$n" "${SR_IT_SUMMARY[$i]}" ;;
+    applied) printf -- '- (%s%s) %s\n' "$n" "$tag" "${SR_IT_SUMMARY[$i]}" ;;
     taken)
       j="$(spec_review_option_index "$i" "${SR_TAKEN[$i]}")"
       if [ "$2" = true ]; then
