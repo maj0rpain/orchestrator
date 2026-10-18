@@ -172,6 +172,8 @@ spec_review_item_check() {
   else
     [ -n "$has_find" ] || spec_review_batch_die "$line" "item $n cites no @@ finding"
   fi
+  [ "${SR_IT_MARK[$i]}" != material ] || [ -n "${SR_IT_WHY[$i]+x}" ] \
+    || spec_review_batch_die "$line" "item $n has no @@ why"
 }
 
 # spec_review_batch_die <line> <message>: a malformed batch file, refused
@@ -199,7 +201,7 @@ spec_review_batch_parse() {
   local fd_lens fd_k login created letter label extra j mark
   SR_LENS_NAME=(); SR_LENS_STATE=(); SR_LENS_REASON=()
   SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_MARK=(); SR_IT_LINE=()
-  SR_IT_SUMMARY=(); SR_IT_ANCHOR=(); SR_IT_ANCHOR_LINE=(); SR_IT_REPLACE=(); SR_IT_RESOLVED=()
+  SR_IT_SUMMARY=(); SR_IT_WHY=(); SR_IT_ANCHOR=(); SR_IT_ANCHOR_LINE=(); SR_IT_REPLACE=(); SR_IT_RESOLVED=()
   SR_FD_ITEM=(); SR_FD_LENS=(); SR_FD_K=(); SR_FD_LINE=()
   SR_CM_ITEM=(); SR_CM_LOGIN=(); SR_CM_CREATED=(); SR_CM_QUOTE=()
   SR_OP_ITEM=(); SR_OP_LETTER=(); SR_OP_LABEL=(); SR_OP_LINE=()
@@ -316,6 +318,13 @@ spec_review_batch_parse() {
           [ -z "${SR_IT_SUMMARY[$cur]+x}" ] || spec_review_batch_die "$lineno" "a second @@ summary for this item"
           SR_IT_SUMMARY[cur]="$args"
         fi ;;
+      why)
+        [ -n "$args" ] || spec_review_batch_die "$lineno" "@@ why needs its line"
+        [ "${SR_IT_REC[$cur]}" != resolved ] || spec_review_batch_die "$lineno" "a resolved item carries no @@ why"
+        [ "${SR_IT_MARK[$cur]}" = material ] || spec_review_batch_die "$lineno" "a minor item carries no @@ why"
+        [ "$opt" -lt 0 ] || spec_review_batch_die "$lineno" "@@ why belongs to the item, never under an @@ option"
+        [ -z "${SR_IT_WHY[$cur]+x}" ] || spec_review_batch_die "$lineno" "a second @@ why for this item"
+        SR_IT_WHY[cur]="$args" ;;
       finding)
         read -r fd_lens fd_k extra <<<"$args"
         [ -n "$fd_lens" ] && [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ finding wants <lens> <k>"

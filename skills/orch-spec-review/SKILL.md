@@ -348,6 +348,9 @@ per item, in the batch's order:
 @@ item <n> <group> decision <letter> <mark>        a decision item, <letter> recommended
 @@ item <n> <group> resolved                       a finding an earlier item resolves; no mark
 @@ summary <one line>                     the changelog's line when the item is applied
+@@ why <one line>                         a material item's reason for its edit, at item
+                                            level: one per material item, never under an
+                                            option, and on no minor or resolved item
 @@ finding <lens> <k>                     repeatable: the lens findings the item resolves
 @@ comment @<login> <createdAt>           a consolidation item's comment, repeatable,
 @@ quote                                    each followed by the comment's spec-bearing part
@@ -364,7 +367,13 @@ per item, in the batch's order:
 line, before any reason; a decision item and a `contradicts-the-plan` item
 are always `material`, and a resolved item takes no mark. An
 insertion is an anchor plus a replacement that repeats it. Every item with
-an anchor, and every option, has its one `@@ summary`. A `@@ finding` cites
+an anchor, and every option, has its one `@@ summary`. Every material item
+carries one `@@ why`, a decision item's before its first `@@ option`; on a
+recommend-decline item it is still the reason for the edit, and the reason
+for declining stays on the `@@ item` line. `check` and `apply` refuse a
+material item without one, naming its `@@ item` line, and a `@@ why` that is
+empty, on a minor or resolved item, under an option, or a second on one
+item. The changelog never carries it. A `@@ finding` cites
 the `<k>`-th finding in `<dir>/lens-<lens>.md`, which `apply` copies into the
 changelog, so the batch file never quotes a lens.
 
@@ -404,6 +413,7 @@ Its batch holds one item of each kind, and passes `check`:
 
 @@ item 1 consolidation apply material
 @@ summary Failed pages are retried once
+@@ why A page that fails once should not fail the whole export
 @@ comment @alice 2026-10-01T09:00:00Z
 @@ quote
 A failed page should be retried once before the export gives up.
@@ -417,6 +427,7 @@ A failed page is retried once before the export fails.
 @@ item 2 testability apply material
 @@ finding testability 1
 @@ summary The seam's test runs against a fake store
+@@ why The seam names no store to test against
 @@ anchor
 - One seam: the `widget export` CLI.
 @@ replace
@@ -434,6 +445,7 @@ Exports time out on large items.
 
 @@ item 4 implementability decision B material
 @@ finding implementability 1
+@@ why One file cannot hold the largest exports
 @@ option A One file
 @@ summary The export writes one compressed file
 @@ anchor
@@ -457,17 +469,19 @@ The export writes one file per widget.
 - **Consolidation** (item 1): an `apply` item citing its comment with
   `@@ comment` and `@@ quote` instead of a `@@ finding`. Its edit is an
   insertion: the replacement repeats the anchor and adds a line after it.
-- **Apply** (item 2): a `@@ finding`, a `@@ summary`, then one `@@ anchor`,
-  `@@ replace`, `@@ end` block.
+- **Apply** (item 2): a `@@ finding`, a `@@ summary`, its `@@ why`, as a
+  material item, then one `@@ anchor`, `@@ replace`, `@@ end` block.
 - **Decline** (item 3): the same shape as an apply item - summary, anchor,
   replacement and `@@ end` - so **Apply all** can still apply it; the reason
-  is on its `@@ item` line, after its mark. Renaming a term is minor, so
-  `check` lists it under **Minor edits** with its reason.
-- **Decision** (item 4): no summary or block of its own; each `@@ option`
-  carries its own `@@ summary` and block, and the `@@ item` line names the
-  recommended letter.
+  is on its `@@ item` line, after its mark. Renaming a term is minor, so it
+  carries no `@@ why`, and `check` lists it under **Minor edits** with its
+  reason.
+- **Decision** (item 4): no summary or block of its own, but its one
+  `@@ why` before its options; each `@@ option` carries its own
+  `@@ summary` and block, and the `@@ item` line names the recommended
+  letter.
 - **Resolved** (item 5): only its findings and `@@ resolved-by`; it takes no
-  mark, `@@ summary`, `@@ anchor`, `@@ replace` or `@@ end`, and `check`
+  mark, `@@ summary`, `@@ why`, `@@ anchor`, `@@ replace` or `@@ end`, and `check`
   lists it under **Minor edits** as resolved by item 4.
 
 ## Applying the answer
