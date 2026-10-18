@@ -96,8 +96,10 @@ skill's **Disposition**, each offered once and with the same rules, except:
 - **Retire and break down again** is added: no ticket is edited; the
   breakdown is retired after the body is published, and the issue broken
   down again.
-- **Other** takes item numbers only, e.g. `1, 3`: a ticket item has no
-  option letter.
+- **Other** is its own rule, not the spec batch's override form: the item
+  numbers to apply, comma-separated, e.g. `1, 3`. The listed items are
+  applied and every item left out is declined. A ticket item has no option
+  letter, and takes no `-` or `+`.
 - The option you recommend comes first and carries **(Recommended)**:
   **Retire and break down again** when `tickets.md` recommends a retire,
   otherwise **Apply as recommended**.

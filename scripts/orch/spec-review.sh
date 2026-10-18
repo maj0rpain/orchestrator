@@ -483,9 +483,13 @@ spec_review_answer() {
           [-+]*) sign="${tok:0:1}"; n="${tok:1}" ;;
           *) n="${tok%%[A-Za-z]*}"; letter="${tok#"$n"}" ;;
         esac
-        case "$n" in ''|*[!0-9]*) n="" ;; esac
-        case "$sign:$letter" in :[A-Za-z]|[-+]:) ;; *) n="" ;; esac
-        [ -n "$n" ] || die "the answer '$answer' $form - '$tok' is not <n><letter>, -<n> or +<n>"
+        case "$n" in
+          ''|*[!0-9]*) die "the answer '$answer' $form - '$tok' is not <n><letter>, -<n> or +<n>" ;;
+        esac
+        case "$sign:$letter" in
+          :[A-Za-z]|[-+]:) ;;
+          *) die "the answer '$answer' $form - '$tok' is not <n><letter>, -<n> or +<n>" ;;
+        esac
         letter="$(printf '%s' "$letter" | tr '[:lower:]' '[:upper:]')"
         i="$(array_index SR_IT_N "$n")"
         [ -n "$i" ] || die "the answer names item $n, which batch.md does not have"
