@@ -662,6 +662,15 @@ spec_review_wait() {
   note "lenses back: $summary"
 }
 
+# spec_review_problems_exit: when a check collected problems in SR_PROBLEMS,
+# warns each, one `orch: ` line apiece, and exits 1; else returns.
+spec_review_problems_exit() {
+  local p
+  [ "${#SR_PROBLEMS[@]}" -gt 0 ] || return 0
+  for p in "${SR_PROBLEMS[@]}"; do warn "$p"; done
+  exit 1
+}
+
 # spec-review check <dir>: the round's batch validated as apply would take the
 # all answer - every anchor checked, the recommended options in the dry run -
 # against <dir>/spec.fetched.md when it exists, else <dir>/spec.md. Writes
@@ -682,7 +691,7 @@ spec_review_check() {
   done
   [ -n "$dir" ] || die "$usage"
   dir="${dir%/}"
-  local body p i anchors=0
+  local body i anchors=0
   [ -d "$dir" ] || die "no such directory: $dir"
   if [ -n "$tickets" ]; then
     spec_review_tickets_check "$dir"
@@ -693,10 +702,7 @@ spec_review_check() {
   [ -e "$dir/$body" ] || body=spec.md
   [ -f "$dir/$body" ] || die "spec.md not found in $dir"
   spec_review_validate "$dir" "$dir/$body" all collect
-  if [ "${#SR_PROBLEMS[@]}" -gt 0 ]; then
-    for p in "${SR_PROBLEMS[@]}"; do warn "$p"; done
-    exit 1
-  fi
+  spec_review_problems_exit
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     case "${SR_IT_REC[$i]}" in apply|decline) anchors=$((anchors + 1)) ;; esac
   done
@@ -739,11 +745,7 @@ spec_review_view() {
   printf '## The batch\n\n### Lenses\n\n'
   for l in "${!SR_LENS_NAME[@]}"; do
     printf -- '- %s: ' "$(spec_review_title "${SR_LENS_NAME[$l]}")"
-    case "${SR_LENS_STATE[$l]}" in
-      ran) printf 'ran\n' ;;
-      not-run) printf 'not run - %s\n' "${SR_LENS_REASON[$l]}" ;;
-      standalone) printf 'not run - standalone review, no plan to check against\n' ;;
-    esac
+    spec_review_lens_state_line "$l"
   done
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     case "${SR_IT_GROUP[$i]}" in
@@ -848,6 +850,16 @@ spec_review_item_line() {
   esac
 }
 
+# spec_review_lens_state_line <l>: lens <l>'s state, as the batch view and
+# the changelog both word it - `ran`, or `not run - ` and why - on one line.
+spec_review_lens_state_line() {
+  case "${SR_LENS_STATE[$1]}" in
+    ran) printf 'ran\n' ;;
+    not-run) printf 'not run - %s\n' "${SR_LENS_REASON[$1]}" ;;
+    standalone) printf 'not run - standalone review, no plan to check against\n' ;;
+  esac
+}
+
 # spec_review_changelog <round> <unattended> <tickets-line> <host-fallbacks>:
 # the round's changelog, from the parsed batch, the lens files and the
 # dispositions.
@@ -860,10 +872,7 @@ spec_review_changelog() {
     printf '\n### %s\n' "$(spec_review_title "$section")"
     if [ "$section" != consolidation ]; then
       l="$(array_index SR_LENS_NAME "$section")"
-      case "${SR_LENS_STATE[$l]}" in
-        not-run) printf 'not run - %s\n' "${SR_LENS_REASON[$l]}"; continue ;;
-        standalone) printf 'not run - standalone review, no plan to check against\n'; continue ;;
-      esac
+      [ "${SR_LENS_STATE[$l]}" = ran ] || { spec_review_lens_state_line "$l"; continue; }
     fi
     lines=""
     for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
@@ -1069,12 +1078,12 @@ spec_review_tickets_answer() {
 # session wrote no ticket-<t>.md; with [collect] set, the problem is appended
 # to SR_PROBLEMS instead and it returns 1.
 spec_review_ticket_load() {
-  local j copy file="$1/ticket-$2.fetched.md"
+  local j copy problem file="$1/ticket-$2.fetched.md"
   [ -z "$(array_index TK_T "$2")" ] || return 0
   if [ ! -f "$1/ticket-$2.md" ]; then
-    copy="$3: ticket-$2.md not found in $1 - fetch each ticket a ticket item names into it"
-    [ -n "${4:-}" ] || die "$copy"
-    SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$copy"
+    problem="$3: ticket-$2.md not found in $1 - fetch each ticket a ticket item names into it"
+    [ -n "${4:-}" ] || die "$problem"
+    SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$problem"
     return 1
   fi
   [ -e "$file" ] || file="$1/ticket-$2.md"
@@ -1170,7 +1179,7 @@ spec_review_tickets_follow() {
 # `orch: ` line each, then exit 1. A clean file prints its view on stdout -
 # see spec_review_tickets_view - and a one-line summary on stderr.
 spec_review_tickets_check() {
-  local dir="$1" p i anchors=0 __srtc_body
+  local dir="$1" i anchors=0 __srtc_body
   [ -f "$dir/tickets.md" ] || die "tickets.md not found in $dir"
   [ -f "$dir/spec.md" ] || die "spec.md not found in $dir"
   spec_review_tickets_parse "$dir/tickets.md"
@@ -1182,10 +1191,7 @@ spec_review_tickets_check() {
     spec_review_ticket_local "$i" __srtc_body "$post" "$dir" collect
     case "${ST_KIND[$i]}" in ticket|section) anchors=$((anchors + 1)) ;; esac
   done
-  if [ "${#SR_PROBLEMS[@]}" -gt 0 ]; then
-    for p in "${SR_PROBLEMS[@]}"; do warn "$p"; done
-    exit 1
-  fi
+  spec_review_problems_exit
   spec_review_tickets_view
   if [ -n "$ST_NONE" ]; then
     note "tickets.md passes: no open ticket affected" >&2
