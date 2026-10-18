@@ -194,8 +194,21 @@ subagents - never forks, which inherit this context. On Claude Code that is
 the Agent tool with `subagent_type` set to the lens's agent name under the
 `orchestrator:` plugin scope. Each prompt carries only the paths its row
 names, the last of them its findings file, `<dir>/lens-<name>.md`. Each lens
-writes its numbered findings there and replies with only that path and a
-count.
+writes its numbered findings there, its findings file last, and replies with
+only that path and a count.
+
+In the same response that starts the lenses, right after starting them, run
+the wait with the working directory and the names of the lenses just started -
+three in a standalone review, four in a flow's, Fidelity included:
+
+```bash
+bash "$ORCH" spec-review wait <dir> <lens>...
+```
+
+It blocks until every named lens's findings file exists, so no lens's
+hand-back takes a turn of its own, and prints one line, `lenses back: <name>
+<count>, ...`. On exit 0, read the findings files. On a host whose lenses ran
+in this session, the files already exist and it returns at once.
 
 | Lens | Agent | Paths |
 |---|---|---|
@@ -210,7 +223,11 @@ plugin root, as its brief, and record it under **Host fallbacks** - see
 **Standalone spec review**.
 
 A lens that errors, returns nothing usable, or writes no readable findings
-file is spawned once more with the same prompt. A second failure makes it
+file has failed. When the wait times out, the hand-backs that queued during it
+are now visible, and each lens it names as missing has failed. A failed lens's
+findings file, if it left an unreadable one, is removed; then the lens is
+spawned once more with the same prompt, and in the same response a second
+`spec-review wait` names only the respawned lenses. A second failure makes it
 **not run - <reason>**: it appears that way in the batch and in the
 changelog, and the review continues on the lenses that answered. Three
 lenses and a recorded gap is a spec review; a silent gap is not.

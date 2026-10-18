@@ -27,6 +27,39 @@ note() { printf '%s\n' "$*"; }
 # colon-free so the path is valid on Windows too. now(), in flow-state.sh, stays
 # ISO-8601: it is a field value, never a path segment.
 dir_stamp() { date -u +%Y%m%d-%H%M%S; }
+
+# Float comparison and addition, in awk, because the poll loops' timings are
+# overridable and the tests turn them down to fractions of a second; bash
+# arithmetic is integer only and would read a grace of 0.3 as 0. A fractional
+# `sleep` is a GNU/BSD extension rather than POSIX, which is a line this file
+# can hold because the fractions only ever come from a test - the shipped
+# defaults are whole seconds.
+float_lt()  { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
+# float_add <a> <b>: prints a + b to three decimal places.
+float_add() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f\n", a + b }'; }
+
+# require_poll_knobs <var>... <interval-var>: dies unless every named variable
+# holds a number and the last, the poll interval, is greater than zero.
+# awk compares a number against a non-numeric string as strings, which makes
+# every `float_lt` true and a poll loop endless. A zero interval is the same
+# hazard by a different route: `sleep 0` returns at once and never advances the
+# clock the loop sleeps on, leaving it to poll as fast as it can. A poll loop's
+# knobs are read once, here, before anything sleeps on one of them.
+require_poll_knobs() {
+  local k v interval="${!#}"
+  for k in "$@"; do
+    eval "v=\$$k"
+    case "$v" in
+      ''|*[!0-9.]*|*.*.*|.) die "$k is not a number: $v" ;;
+    esac
+  done
+  eval "v=\$$interval"
+  # Every character is a zero or the point, so the value is zero however it was
+  # written - and a glob cannot say that without also matching 0.05.
+  case "${v//[0.]/}" in
+    '') die "$interval must be greater than zero: $v" ;;
+  esac
+}
 # capture_err <err-var> <command...>: runs the command, sets <err-var> to its
 # stderr byte for byte, and returns its status. It leaves stdout alone, to the
 # caller's own redirect: a body streamed to a file through

@@ -81,9 +81,11 @@ still names it, as a newly named location.
 **An old entry with no range**, `<path>:<line>`, is located once with Grep
 and rewritten with its range.
 
-Always rewrite the map file before replying, whether or not it existed:
-every entry with its current range, plus what the edited body newly names,
-one line per code location, under about 60 lines, no line starting `@@`.
+Always rewrite the map file, whether or not it existed, before you write
+the findings file: the findings file is the last thing you write, because its
+existence is what tells the review you are done. Write every entry with its
+current range, plus what the edited body newly names, one line per code
+location, under about 60 lines, no line starting `@@`.
 
 ## Reporting rules
 
@@ -106,7 +108,7 @@ path. Number them from 1, each a block that opens with its own line
 ```
 
 With no findings, the file holds the single line `@@ none`. No line of a
-finding's text starts with `@@`. Then, with the map file rewritten, reply with
-only the findings file's path and the number of findings, e.g. `<path> - 2
-findings`: the findings stay in the file, out of the reply, and the reply
+finding's text starts with `@@`. Write this file last, after the map file.
+Then reply with only the findings file's path and the number of findings,
+e.g. `<path> - 2 findings`: the findings stay in the file, out of the reply, and the reply
 never mentions the map.
