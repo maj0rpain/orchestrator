@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# branch.sh - orch.sh's branch command: create, off, base-sha, sync and retire.
+# branch.sh - orch.sh's branch command: create, off, busy, base-sha, sync and
+# retire.
 # Its tests: scripts/test/orch/branch.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -70,6 +71,17 @@ cmd_branch_off() {
   checkout_new_branch "$1" "$base"
   record_branch_base "$1" "$base" "$(git rev-parse HEAD)"
   note "$1"
+}
+
+# Whether this checkout is a busy checkout, every signal applying: exit 3 with
+# the one line naming what holds it, exit 0 printing nothing when it is free,
+# exit 1 on a usage error or a working tree that cannot be read. Exit 3 is used
+# by no other failure, so a skill can branch on it.
+cmd_branch_busy() {
+  [ $# -eq 0 ] || die "usage: orch.sh branch busy"
+  local held
+  checkout_busy held flow branch tree
+  [ -z "$held" ] || { note "$held"; exit 3; }
 }
 
 # The current branch's base SHA, as branch off, branch create or branch sync
@@ -148,6 +160,7 @@ cmd_branch() {
   case "$op" in
     create) cmd_branch_create "$@" ;;
     off)    cmd_branch_off "$@" ;;
+    busy)   cmd_branch_busy "$@" ;;
     base-sha) cmd_branch_base_sha "$@" ;;
     sync)   cmd_branch_sync "$@" ;;
     retire)
@@ -193,6 +206,6 @@ cmd_branch() {
       fi
       note "$new"
       ;;
-    *) die "unknown branch op: ${op:-<none>} (want create|off|base-sha|sync|retire)" ;;
+    *) die "unknown branch op: ${op:-<none>} (want create|off|busy|base-sha|sync|retire)" ;;
   esac
 }

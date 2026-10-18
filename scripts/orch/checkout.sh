@@ -101,3 +101,33 @@ current_branch_or_die() {
   case "${1-}" in die|die2) dier="$1"; shift ;; esac
   branch="$(checkout_branch)" || "$dier" "not on a branch (detached HEAD)${1-}"
 }
+
+# checkout_busy <var> <signal>...: assigns to <var> the one line naming what
+# makes this checkout a busy checkout - one holding work a new branch must not
+# move - or empty when it is free. Reads local git and state facts only, never
+# GitHub. The signals are checked in this order, the first that holds
+# reported, and only those named apply, so each caller picks its own (#1198):
+#   flow    a flow mid-pipeline (phase not done)
+#   branch  the current branch records a base (branch.<b>.orchestrator-base,
+#           as branch off and branch create write) but no PR
+#           (branch.<b>.orchestrator-pr); a detached HEAD never does
+#   tree    changes outside the planning allowlist, as dirty_outside_allowlist
+#           defines them
+# The tree is read only when no earlier signal holds; a tree that cannot be
+# read exits 1, never read as free or busy. Called as a bare statement, so
+# that exit stops the caller.
+checkout_busy() {
+  local var="$1" signals=" ${*:2} " b dirty line=""
+  if [[ "$signals" == *" flow "* ]] && flow_active; then
+    line="busy: a flow is mid-pipeline (slug: $(state_get slug), phase: $(state_get phase))"
+  elif [[ "$signals" == *" branch "* ]] && b="$(checkout_branch)" \
+    && git config --get "branch.$b.orchestrator-base" >/dev/null 2>&1 \
+    && ! git config --get "branch.$b.orchestrator-pr" >/dev/null 2>&1; then
+    line="busy: branch $b has no PR yet"
+  elif [[ "$signals" == *" tree "* ]]; then
+    dirty="$(dirty_outside_allowlist)" || exit 1
+    [ -z "$dirty" ] \
+      || line="busy: the working tree has changes outside the planning allowlist: ${dirty//$'\n'/, }"
+  fi
+  printf -v "$var" '%s' "$line"
+}

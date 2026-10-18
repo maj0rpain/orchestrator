@@ -208,6 +208,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               no state - for a quick implementation, which
                               keeps none. Refuses with exit 3, as init does,
                               while a flow is mid-pipeline
+  branch busy                 tell whether this checkout is a busy checkout,
+                              from local git and state only: a flow
+                              mid-pipeline, a branch the plugin made with no
+                              PR yet (no branch.<name>.orchestrator-pr), or
+                              changes outside the planning allowlist, checked
+                              in that order. Exit 0 printing nothing when
+                              free; exit 3 printing the first that holds; exit
+                              1 when the working tree cannot be read
   branch base-sha             print the current branch's base SHA as branch
                               off, branch create or branch sync recorded it;
                               a branch without one falls

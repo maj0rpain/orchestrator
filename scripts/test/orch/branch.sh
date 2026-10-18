@@ -569,9 +569,95 @@ cd "$SUITE_CWD" || exit 1
 rm -rf "$(dirname "$sc_origin")"
 restore_suite_env
 
+# --- branch busy (#1201) -------------------------------------------------------
+# Whether this checkout is a busy checkout - one holding work a new branch
+# must not move - from local git and state facts only: exit 3 with one line
+# naming what holds it, exit 0 and silence when it is free, exit 1 on a usage
+# error or a working tree that cannot be read.
+echo
+echo "branch busy"
+new_repo_with_origin
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a clean default branch is free" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+
+echo planned >docs/agents/note.md
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a change only on the planning allowlist is free" "$st" 0
+assert_eq "printing nothing" "$out" ""
+rm docs/agents/note.md
+
+echo edit >>README.md
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a dirty tree outside the allowlist is busy" "$st" 3
+assert_contains "naming the changed path" "$out" "README.md"
+git checkout -q README.md
+
+out="$(orch_gh_failing branch busy extra 2>&1)"; st=$?
+assert_status "an argument is a usage error" "$st" 1
+assert_contains "naming the usage" "$out" "usage: orch.sh branch busy"
+
+# The tree is read only when no earlier signal holds, and a tree that cannot
+# be read is neither free nor busy.
+cp .git/index .git/index.bak; echo garbage >.git/index
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "an unreadable tree exits 1" "$st" 1
+assert_contains "naming the git status failure" "$out" "git status failed"
+assert_not_contains "printing no busy line" "$out" "busy:"
+mv .git/index.bak .git/index
+
+git checkout -q --detach
+echo edit >docs/agents/x.md
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a detached HEAD is never a quick branch" "$st" 0
+rm docs/agents/x.md
+git checkout -q -
+
+orch_gh_failing branch off quick/5-held >/dev/null
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a branch made by branch off with no PR key is busy" "$st" 3
+assert_contains "naming the branch" "$out" "quick/5-held"
+
+echo edit >>README.md
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a branch with no PR key and a dirty tree is busy" "$st" 3
+assert_contains "naming the branch, the first signal that holds" "$out" "quick/5-held"
+assert_not_contains "not the dirty path" "$out" "README.md"
+git checkout -q README.md
+
+git config branch.quick/5-held.orchestrator-pr 42
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a branch with the PR key is free" "$st" 0
+assert_eq "printing nothing (PR key)" "$out" ""
+
+for phase in spec implement review; do
+  new_repo_with_origin
+  orch_gh_failing init held >/dev/null
+  state_fixture phase "$phase"
+  out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+  assert_status "a flow at $phase is busy" "$st" 3
+  assert_contains "naming the flow's slug and phase ($phase)" "$out" "slug: held, phase: $phase"
+done
+
+state_fixture phase "done"
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a done flow is free" "$st" 0
+assert_eq "printing nothing (done flow)" "$out" ""
+
+sc_clone
+side="$(sc_add fresh)"
+out="$(cd "$side" && orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a fresh side checkout is free" "$st" 0
+assert_eq "printing nothing (side checkout)" "$out" ""
+
+next_entry="$(orch_gh_failing help 2>&1 | awk '
+  found && !/^                              / { print; exit }
+  index($0, "  branch off ") == 1 { found = 1 }')"
+assert_contains "branch busy's help entry comes right after branch off's" "$next_entry" "  branch busy "
+
 # --- branch: unknown op -------------------------------------------------------
 new_repo >/dev/null
 out="$(orch_gh_failing branch bogus 2>&1)"; st=$?
 assert_status "branch bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
-assert_contains "naming all five" "$out" "create|off|base-sha|sync|retire"
+assert_contains "naming all six" "$out" "create|off|busy|base-sha|sync|retire"
