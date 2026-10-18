@@ -191,6 +191,20 @@ printf '\n- an item\n\n    naming `gamma`\n' >>"$bench_root/item/spec.md"
 run_bench measure "$bench_root/item"
 has_line "a list item's indented paragraph names what it backticks" "$out" \
   "| run-2 | 1 (50%) | 0 (0%) | 1 (50%) | 500 (45.5%) | 0 (0%) | 600 (54.5%) |"
+# A paragraph line opening with `#c` is no heading, so the span opened on the
+# line before closes on it, `b #c`, and the backtick after gamma is literal.
+cp -R "$FIXTURE/diagnosis" "$bench_root/hash"
+printf '\na `b\n#c` gamma ` d\n' >>"$bench_root/hash/spec.md"
+run_bench measure "$bench_root/hash"
+has_line "a line opening with # and no space continues the paragraph" "$out" \
+  "| run-2 | 0 (0%) | 0 (0%) | 2 (100%) | 0 (0%) | 0 (0%) | 1100 (100%) |"
+# A fence at a nested list item's content column opens a fenced code block,
+# which holds no spans, though it sits four spaces in.
+cp -R "$FIXTURE/diagnosis" "$bench_root/item-fence"
+printf '\n- an item\n  - a sub-item\n    ```\n    gamma\n    ```\n' >>"$bench_root/item-fence/spec.md"
+run_bench measure "$bench_root/item-fence"
+has_line "a fenced code block in a list item names nothing" "$out" \
+  "| run-2 | 0 (0%) | 0 (0%) | 2 (100%) | 0 (0%) | 0 (0%) | 1100 (100%) |"
 
 echo
 echo "the diagnosis: matching names"

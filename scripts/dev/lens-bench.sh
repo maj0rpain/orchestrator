@@ -282,9 +282,11 @@ covered() {
 # backtick opens nothing, a line ending inside a span is a space, and one
 # leading and one trailing space are dropped when both are there and the span
 # is not all spaces. A span lies within one block - a paragraph, a list item
-# or a heading - and a code block, fenced or indented, holds none. A line
-# indented four or more columns is an indented code block's when no paragraph
-# is open for it to continue and no list item holds it.
+# or a heading (one to six #s, then a space, a tab or the line's end) - and a
+# code block, fenced or indented, holds none. Indentation is measured from the
+# content column of the list item holding the line, if any: a fence opens or
+# closes within three columns of it, and a line four or more columns past it
+# is an indented code block's when no paragraph is open for it to continue.
 code_spans() {
   awk '
     function run_end(s, i, n) { while (i <= n && substr(s, i, 1) == "`") i++; return i }
@@ -307,22 +309,40 @@ code_spans() {
       }
     }
     function add(line) { block = (block == "" ? line : block " " line) }
+    function indent(s,   i, c) {
+      for (i = 1; i <= length(s); i++) {
+        if (substr(s, i, 1) == " ") c++
+        else if (substr(s, i, 1) == "\t") c += 4 - c % 4
+        else break
+      }
+      return c + 0
+    }
+    function open_fence(s, at) { match(s, /^(`+|~+)/); fence = substr(s, 1, RLENGTH); fence_col = at }
+    { ind = indent($0); rest = $0; sub(/^[ \t]+/, "", rest) }
     fence != "" {
-      line = $0; sub(/^[ ]?[ ]?[ ]?/, "", line)
-      if (index(line, fence) == 1 && line ~ /^(`+|~+)[ \t]*$/) fence = ""
-      next
+      if (rest != "" && ind < fence_col) fence = ""
+      else {
+        if (ind - fence_col <= 3 && index(rest, fence) == 1 && rest ~ /^(`+|~+)[ \t]*$/) fence = ""
+        next
+      }
     }
-    /^[ ]?[ ]?[ ]?(```|~~~)/ {
-      flush(); line = $0; sub(/^[ ]*/, "", line)
-      match(line, /^(`+|~+)/); fence = substr(line, 1, RLENGTH)
-      next
+    rest == "" { flush(); next }
+    {
+      opens = rest ~ /^((```|~~~)|#(#?#?#?#?#?)([ \t]|$)|([-*+]|[0-9]+[.)])([ \t]|$))/
+      if (block == "" || opens) while (depth && ind < col[depth]) depth--
+      base = depth ? col[depth] : 0
     }
-    /^[ \t]*$/ { flush(); next }
-    block == "" && !item && /^([ ]?[ ]?[ ]?\t|    )/ { next }
-    /^[ ]?[ ]?[ ]?#/ { flush(); item = 0; add($0); flush(); next }
-    /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/ { flush(); item = 1; add($0); next }
-    /^[^ \t]/ && block == "" { item = 0 }
-    { line = $0; sub(/^[ \t]+/, "", line); add(line) }
+    ind - base >= 4 && block == "" { next }
+    ind - base <= 3 && rest ~ /^(```|~~~)/ { flush(); open_fence(rest, base); next }
+    ind - base <= 3 && rest ~ /^#(#?#?#?#?#?)([ \t]|$)/ { flush(); add(rest); flush(); next }
+    ind - base <= 3 && match(rest, /^([-*+]|[0-9]+[.)])([ \t]|$)/) {
+      flush(); marker = RLENGTH - (RLENGTH > 1 && substr(rest, RLENGTH) ~ /[ \t]/)
+      body = substr(rest, marker + 1); gap = indent(body); sub(/^[ \t]+/, "", body)
+      col[++depth] = ind + marker + (body == "" || gap > 4 ? 1 : gap)
+      if (body ~ /^(```|~~~)/) { open_fence(body, col[depth]); next }
+      add(rest); next
+    }
+    { add(rest) }
     END { flush() }' "$1"
 }
 
