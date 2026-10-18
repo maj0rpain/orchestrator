@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.15.1
+
+`orch.sh spec-review check <dir>` prints the full batch view on stdout once the batch passes - the lens lines, then every item with its recommendation, cited findings or comment, and its Current and Proposed text in full - and its one-line pass summary on stderr, so no round of a spec review shows the human only summaries.
+
+Add `orch.sh spec-review check <dir> --tickets`: run before the ticket question, it validates `<dir>/tickets.md` as `apply --tickets` would take the all answer - its grammar, each ticket item's anchor against the copy `apply` would edit, each `## Ticket` item's against `spec.md`, and each edge against its ticket's `## Blocked by` - with nothing written and no GitHub read, one `orch:` line per problem naming its `tickets.md` line, and on a pass prints the full ticket view on stdout and its summary on stderr.
+
 ## 4.15.0
 
 A **busy checkout** - a flow mid-pipeline, a branch the plugin made that has no PR yet, or a working tree with changes outside the planning allowlist - now protects the work already in a checkout. New `orch.sh branch busy` tells whether this checkout is busy, exiting 3 with one line naming what holds it. `branch off`, `branch create` and `init` refuse a busy checkout with exit 3, and `pr open` and `pr publish` record the PR number on the branch, so a branch whose PR is open frees its checkout. A quick implementation started in a busy checkout, or whose `branch off` exits 3, goes straight to a side checkout without asking, with a one-line note; a flow's implement phase stops on a busy `branch create` and says what to clear. `GLOSSARY.md` gains **Busy checkout**, and ADR-0046 supersedes ADR-0037 in part.
