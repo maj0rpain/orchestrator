@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.15.0
+
+A **busy checkout** - a flow mid-pipeline, a branch the plugin made that has no PR yet, or a working tree with changes outside the planning allowlist - now protects the work already in a checkout. New `orch.sh branch busy` tells whether this checkout is busy, exiting 3 with one line naming what holds it. `branch off`, `branch create` and `init` refuse a busy checkout with exit 3, and `pr open` and `pr publish` record the PR number on the branch, so a branch whose PR is open frees its checkout. A quick implementation started in a busy checkout, or whose `branch off` exits 3, goes straight to a side checkout without asking, with a one-line note; a flow's implement phase stops on a busy `branch create` and says what to clear. `GLOSSARY.md` gains **Busy checkout**, and ADR-0046 supersedes ADR-0037 in part.
+
 ## 4.14.1
 
 The Implementability lens of a spec review now bounds its code exploration, so round 1 costs less: it batches independent Grep, Glob and Read calls into one turn, locates by file name first and then with a capped content Grep in the files that matter, reads windows of at most 40 lines around a match, widening by a second read, and keeps its map entries near a soft ceiling of about 60 lines, narrowing inherited over-wide entries.
