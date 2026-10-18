@@ -1,12 +1,30 @@
 #!/usr/bin/env bash
-# lens-bench.sh measure <dir>...: the lens benchmark. Measures one or more
-# benchmark output directories and prints a Markdown report on stdout.
+# lens-bench.sh run <lens> --definition <rev> --out <dir> [-n N] [--model M]
+# lens-bench.sh measure <dir>...
 #
-# A directory holds `lens`, `revision` and `model`, one line each; `spec.md`,
-# the fixture's spec body; `map.md`, the fixture's baseline map, when it has
-# one; and one subdirectory per run, `run-1` to `run-N`, each holding
-# `transcript.jsonl`, the lens agent's transcript, and `map.md`, the map the
-# lens wrote, when it wrote one.
+# The lens benchmark. `run` starts N headless runs (default 5) of one lens
+# definition, `agents/orch-lens-<lens>.md` read at git revision <rev>, on model
+# M (default claude-opus-5-5), against the lens's fixture,
+# scripts/dev/lens-bench/<lens>/, and collects them into <dir>, which it
+# creates. `measure` turns one or more such directories into a Markdown report
+# on stdout.
+#
+# A fixture holds `spec.md`, the spec body the lens reads; `map.md`, the
+# baseline map, when it has one; and `snapshot`, one line, the commit `run`
+# checks out in a temporary git worktree for the lens to explore. Each run
+# reads its six paths - spec body, comments file, repo root (the worktree),
+# map file, settled file and findings file - from a run directory of its own,
+# `spec.md`, `comments.md`, `map-<lens>.md`, `settled.md` and `lens-<lens>.md`;
+# round 1 has no map or settled file, so those two do not exist. `claude -p`
+# runs from the worktree, defining the definition as the agent `lens-new` and
+# asking the session to start it with the six paths. The worktree is removed
+# when the runs end or fail.
+#
+# A directory holds `lens`, `revision` (the full SHA) and `model`, one line
+# each; `spec.md`, the fixture's spec body; `map.md`, the fixture's baseline
+# map, when it has one; and one subdirectory per run, `run-1` to `run-N`, each
+# holding `transcript.jsonl`, the lens agent's transcript, and `map.md`, the
+# map the lens wrote, when it wrote one.
 #
 # Per directory, the report gives one row per run - turns (unique assistant
 # message ids), total input tokens (input + cache read + cache creation,
@@ -35,27 +53,178 @@
 # when there are none, and is carried over the turns left from that turn on;
 # the fixed base is the first turn's context times the number of turns.
 #
-# A repo-development tool: it does not ship to users. Usage errors exit 2; a
-# missing directory, a directory missing its lens, revision or model file or
-# its spec body, or a run with no transcript exits 1 naming it, before any
-# report is printed.
+# A repo-development tool: it does not ship to users. Usage errors exit 2.
+# `run` exits 1 naming the problem, having created no output directory and no
+# worktree, on an unknown lens (no fixture directory), a revision with no
+# definition of the lens, or an output directory that already exists; when a
+# run's `claude -p` fails or leaves no lens transcript, it exits 1 naming the
+# run, removing that run's subdirectory and keeping the runs before it.
+# `measure` exits 1 naming it on a missing directory, a directory missing its
+# lens, revision or model file or its spec body, or a run with no transcript,
+# before any report is printed.
 set -euo pipefail
 
 usage() {
+  printf 'usage: %s run <lens> --definition <rev> --out <dir> [-n N] [--model M]\n' "${0##*/}" >&2
   printf 'usage: %s measure <dir>...\n' "${0##*/}" >&2
   exit 2
 }
-
-[ "$#" -ge 2 ] && [ "$1" = measure ] || usage
-shift
-for arg in "$@"; do
-  case "$arg" in -*) usage ;; esac
-done
 
 fail() {
   printf 'lens-bench.sh: %s\n' "$1" >&2
   exit 1
 }
+
+BENCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# The temporary directory `run` holds its worktree and run directories in,
+# and the output run subdirectory being written, both removed on exit.
+run_tmp="" run_partial=""
+run_cleanup() {
+  local status=$?
+  if [ -n "$run_tmp" ]; then
+    git -C "$run_repo" worktree remove --force "$run_tmp/repo" 2>/dev/null || :
+    rm -rf "$run_tmp"
+    git -C "$run_repo" worktree prune 2>/dev/null || :
+  fi
+  [ -z "$run_partial" ] || rm -rf "$run_partial"
+  exit "$status"
+}
+
+# frontmatter <file> <key>: the value of <key> in <file>'s frontmatter, one
+# pair of surrounding quotes dropped.
+frontmatter() {
+  awk -v key="$2" '
+    NR == 1 && $0 == "---" { inside = 1; next }
+    inside && $0 == "---" { exit }
+    inside && index($0, key ":") == 1 {
+      v = substr($0, length(key) + 2)
+      sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+$/, "", v)
+      if (v ~ /^".*"$/ || v ~ /^\x27.*\x27$/) v = substr(v, 2, length(v) - 2)
+      print v; exit
+    }' "$1"
+}
+
+# body <file>: <file> after its frontmatter, leading blank lines dropped.
+body() {
+  awk '
+    NR == 1 && $0 == "---" { inside = 1; next }
+    inside { if ($0 == "---") inside = 0; next }
+    !started && $0 == "" { next }
+    { started = 1; print }' "$1"
+}
+
+# lens_transcript <session>: the lens agent's transcript in <session>'s
+# subagents directory: the one whose meta names agent type lens-new, or the
+# only one there is. Prints nothing when there is none.
+lens_transcript() {
+  local projects="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" t found="" count=0
+  for t in "$projects"/*/"$1"/subagents/agent-*.jsonl; do
+    [ -f "$t" ] || continue
+    count=$((count + 1))
+    if [ -f "${t%.jsonl}.meta.json" ] &&
+      [ "$(jq -r '.agentType // empty' "${t%.jsonl}.meta.json" 2>/dev/null)" = lens-new ]; then
+      printf '%s\n' "$t"
+      return
+    fi
+    found="$t"
+  done
+  [ "$count" -ne 1 ] || printf '%s\n' "$found"
+}
+
+cmd_run() {
+  local lens="" rev="" out="" n=5 model=claude-opus-5-5
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --definition) [ "$#" -ge 2 ] || usage; rev="$2"; shift 2 ;;
+      --out) [ "$#" -ge 2 ] || usage; out="$2"; shift 2 ;;
+      -n) [ "$#" -ge 2 ] || usage; n="$2"; shift 2 ;;
+      --model) [ "$#" -ge 2 ] || usage; model="$2"; shift 2 ;;
+      -*) usage ;;
+      *) [ -z "$lens" ] || usage; lens="$1"; shift ;;
+    esac
+  done
+  [ -n "$lens" ] && [ -n "$rev" ] && [ -n "$out" ] && [ -n "$model" ] || usage
+  case "$n" in '' | *[!0-9]* | 0*) usage ;; esac
+
+  # Every check before anything is created.
+  local fixture="$BENCH_DIR/lens-bench/$lens"
+  case "$lens" in */* | .*) fixture="" ;; esac
+  [ -n "$fixture" ] && [ -d "$fixture" ] || fail "$lens: unknown lens, no fixture directory $BENCH_DIR/lens-bench/$lens"
+  [ -f "$fixture/spec.md" ] || fail "$fixture/spec.md: missing"
+  [ -f "$fixture/snapshot" ] || fail "$fixture/snapshot: missing"
+  run_repo="$(git -C "$BENCH_DIR" rev-parse --show-toplevel)" || fail "$BENCH_DIR: not in a git repo"
+  local sha definition="agents/orch-lens-$lens.md" snapshot
+  sha="$(git -C "$run_repo" rev-parse --verify --quiet "$rev^{commit}")" ||
+    fail "$rev: not a commit"
+  git -C "$run_repo" cat-file -e "$sha:$definition" 2>/dev/null ||
+    fail "$rev: no $definition at that revision"
+  snapshot="$(<"$fixture/snapshot")"
+  snapshot="$(git -C "$run_repo" rev-parse --verify --quiet "$snapshot^{commit}")" ||
+    fail "$fixture/snapshot: $(<"$fixture/snapshot") is not a commit"
+  [ ! -e "$out" ] && [ ! -L "$out" ] || fail "$out: already exists"
+  command -v claude >/dev/null || fail "claude: not on PATH"
+
+  trap run_cleanup EXIT
+  trap 'exit 130' INT TERM
+  run_tmp="$(mktemp -d "${TMPDIR:-/tmp}/lens-bench.XXXXXX")"
+  local agent="$run_tmp/definition.md" agents worktree="$run_tmp/repo"
+  git -C "$run_repo" show "$sha:$definition" >"$agent"
+  agents="$(jq -n \
+    --arg description "$(frontmatter "$agent" description)" \
+    --arg tools "$(frontmatter "$agent" tools)" \
+    --arg prompt "$(body "$agent")" \
+    --arg model "$model" \
+    '{"lens-new": {description: $description,
+      tools: ($tools | ltrimstr("[") | rtrimstr("]") | split(",")
+              | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))),
+      prompt: $prompt, model: $model}}')"
+  git -C "$run_repo" worktree add --quiet --detach "$worktree" "$snapshot" >/dev/null 2>&1 ||
+    fail "$snapshot: cannot check out the snapshot in a worktree"
+
+  mkdir -p "$out"
+  out="$(cd "$out" && pwd)"
+  printf '%s\n' "$lens" >"$out/lens"
+  printf '%s\n' "$sha" >"$out/revision"
+  printf '%s\n' "$model" >"$out/model"
+  cp "$fixture/spec.md" "$out/spec.md"
+  [ ! -f "$fixture/map.md" ] || cp "$fixture/map.md" "$out/map.md"
+
+  local i dir prompt reply session transcript
+  for ((i = 1; i <= n; i++)); do
+    dir="$run_tmp/run-$i"
+    mkdir "$dir"
+    cp "$fixture/spec.md" "$dir/spec.md"
+    : >"$dir/comments.md"
+    prompt="Start the lens-new subagent with exactly this prompt and nothing else, then reply with its reply:"
+    prompt+=$'\n'"$dir/spec.md"$'\n'"$dir/comments.md"$'\n'"$worktree"
+    prompt+=$'\n'"$dir/map-$lens.md"$'\n'"$dir/settled.md"$'\n'"$dir/lens-$lens.md"
+    printf 'run-%s of %s...\n' "$i" "$n" >&2
+    run_partial="$out/run-$i"
+    reply="$(cd "$worktree" && claude -p "$prompt" --model "$model" --agents "$agents" \
+      --permission-mode acceptEdits --add-dir "$dir" --output-format json)" ||
+      fail "run-$i: claude -p failed"
+    session="$(jq -r '.session_id // empty' <<<"$reply" 2>/dev/null)" || session=""
+    [ -n "$session" ] || fail "run-$i: claude -p printed no session id"
+    transcript="$(lens_transcript "$session")"
+    [ -n "$transcript" ] || fail "run-$i: no lens transcript for session $session"
+    mkdir "$run_partial"
+    cp "$transcript" "$run_partial/transcript.jsonl"
+    [ ! -f "$dir/map-$lens.md" ] || cp "$dir/map-$lens.md" "$run_partial/map.md"
+    run_partial=""
+  done
+  printf '%s: %s runs\n' "$out" "$n" >&2
+}
+
+case "${1:-}" in
+  run) shift; cmd_run "$@"; exit 0 ;;
+  measure) [ "$#" -ge 2 ] || usage ;;
+  *) usage ;;
+esac
+shift
+for arg in "$@"; do
+  case "$arg" in -*) usage ;; esac
+done
 
 # runs_of <dir>: the names of <dir>'s run subdirectories, run-1 first, in
 # numeric order.

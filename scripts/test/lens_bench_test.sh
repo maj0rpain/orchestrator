@@ -194,6 +194,196 @@ done
 d="$(broken no-transcript run-2/transcript.jsonl)"
 refused "a run subdirectory with no transcript" "$d" "$d/run-2/transcript.jsonl"
 
+echo
+echo "run: usage errors"
+mkdir "$bench_root/usage"
+cd "$bench_root/usage" || exit 1
+for usage_case in "run" "run implementability" "run implementability --definition HEAD" \
+  "run implementability --out x" "run implementability --definition HEAD --out x -n" \
+  "run implementability --definition HEAD --out x -n 0" \
+  "run implementability --definition HEAD --out x -n two" \
+  "run implementability --definition HEAD --out x --model" \
+  "run implementability --definition HEAD --out x --bogus" \
+  "run implementability extra --definition HEAD --out x"; do
+  # shellcheck disable=SC2086 # each case's words are its arguments
+  run_bench $usage_case
+  assert_status "'$usage_case' exits 2" "$st" 2
+  assert_contains "'$usage_case' prints the run usage line" "$err" \
+    "lens-bench.sh run <lens> --definition <rev> --out <dir> [-n N] [--model M]"
+done
+assert_eq "a usage error creates no output directory" "$(ls -A)" ""
+cd "$OLDPWD" || exit 1
+
+# A scratch repo holding the tool and an implementability fixture, so run's
+# checks read a history of the suite's own making: its first commit has no
+# lens definition and is the fixture's snapshot, its second adds one.
+bench_repo="$bench_root/repo"
+bench_git() { git -C "$bench_repo" -c user.name=t -c user.email=t@t "$@"; }
+mkdir -p "$bench_repo/scripts/dev/lens-bench/implementability" "$bench_repo/agents"
+cp "$BENCH" "$bench_repo/scripts/dev/lens-bench.sh"
+git init -q "$bench_repo"
+echo snapshot >"$bench_repo/README"
+bench_git add README
+bench_git commit -qm snapshot
+no_definition="$(bench_git rev-parse HEAD)"
+cat >"$bench_repo/agents/orch-lens-implementability.md" <<'DEF'
+---
+name: orch-lens-implementability
+description: The test lens.
+tools: [Read, Grep, Glob, Write]
+---
+
+# Test lens
+
+Read the spec.
+DEF
+bench_git add agents
+bench_git commit -qm definition
+definition="$(bench_git rev-parse HEAD)"
+bench_fixture="$bench_repo/scripts/dev/lens-bench/implementability"
+printf 'The `spec` body.\n' >"$bench_fixture/spec.md"
+printf 'a.sh:1 the baseline\n' >"$bench_fixture/map.md"
+printf '%s\n' "${no_definition:0:7}" >"$bench_fixture/snapshot"
+BENCH_COPY="$bench_repo/scripts/dev/lens-bench.sh"
+
+# run_copy <args...>: run_bench, on the scratch repo's copy of the tool.
+run_copy() {
+  out="$(bash "$BENCH_COPY" "$@" 2>"$bench_root/stderr")"; st=$?
+  err="$(<"$bench_root/stderr")"
+}
+# worktrees: how many worktrees the scratch repo has, its main one counted.
+worktrees() { bench_git worktree list | awk 'END { print NR }'; }
+# leftovers: the tool's temporary directories still under the temp root.
+leftovers() { find "$bench_root" -maxdepth 1 -name 'lens-bench.*' | awk 'END { print NR }'; }
+
+# run_refused <test> <named> <args...>: run exits 1 naming <named>, and leaves
+# no output directory, no worktree and no temporary directory behind.
+run_refused() {
+  local name="$1" named="$2"
+  shift 2
+  run_copy run "$@"
+  assert_status "$name: exits 1" "$st" 1
+  assert_contains "$name: names it" "$err" "$named"
+  assert_eq "$name: creates no worktree" "$(worktrees)" 1
+  assert_eq "$name: leaves no temporary directory" "$(leftovers)" 0
+}
+
+echo
+echo "run: refusals before claude starts"
+run_refused "an unknown lens" "nosuch" nosuch --definition "$definition" --out "$bench_root/out-a"
+assert_eq "an unknown lens: creates no output directory" "$([ -e "$bench_root/out-a" ] && echo yes)" ""
+run_refused "a revision without the lens's definition" "agents/orch-lens-implementability.md" \
+  implementability --definition "$no_definition" --out "$bench_root/out-b"
+assert_eq "a revision without the definition: creates no output directory" \
+  "$([ -e "$bench_root/out-b" ] && echo yes)" ""
+run_refused "a revision that does not exist" "nosuchrev" \
+  implementability --definition nosuchrev --out "$bench_root/out-c"
+assert_eq "a revision that does not exist: creates no output directory" \
+  "$([ -e "$bench_root/out-c" ] && echo yes)" ""
+mkdir "$bench_root/out-d"
+run_refused "an output directory that already exists" "$bench_root/out-d" \
+  implementability --definition "$definition" --out "$bench_root/out-d"
+assert_eq "an existing output directory: is left empty" "$(ls -A "$bench_root/out-d")" ""
+
+# A fake claude on PATH, standing in for the live one past run's checks: it
+# logs its working directory to $bench_root/claude.cwd.<call>, the commit
+# checked out there to claude.head.<call>, and its
+# arguments as a JSON array to $bench_root/claude.args.<call>, writes
+# a map to the prompt's map path, leaves a lens-new transcript under
+# $HOME/.claude/projects/ and prints its session id. Its Nth call, counted in
+# $bench_root/claude.calls, fails when FAKE_CLAUDE_FAIL is N, and leaves no
+# transcript when FAKE_CLAUDE_NO_TRANSCRIPT is N.
+mkdir -p "$bench_root/bin" "$bench_root/home"
+cat >"$bench_root/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+calls="$(($(cat "$BENCH_ROOT/claude.calls" 2>/dev/null || echo 0) + 1))"
+echo "$calls" >"$BENCH_ROOT/claude.calls"
+echo "$PWD" >"$BENCH_ROOT/claude.cwd.$calls"
+git rev-parse HEAD >"$BENCH_ROOT/claude.head.$calls"
+jq -n '$ARGS.positional' --args -- "$@" >"$BENCH_ROOT/claude.args.$calls"
+[ "${FAKE_CLAUDE_FAIL:-}" != "$calls" ] || exit 3
+prompt="$2"
+printf 'a.sh:1-3 found\n' >"$(sed -n 5p <<<"$prompt")"
+if [ "${FAKE_CLAUDE_NO_TRANSCRIPT:-}" != "$calls" ]; then
+  sub="$HOME/.claude/projects/-fake/session-$calls/subagents"
+  mkdir -p "$sub"
+  printf '{"type":"assistant","n":%s}\n' "$calls" >"$sub/agent-a$calls.jsonl"
+  echo '{"agentType":"lens-new"}' >"$sub/agent-a$calls.meta.json"
+  echo '{"type":"assistant"}' >"$sub/agent-other.jsonl"
+fi
+printf '{"session_id":"session-%s"}\n' "$calls"
+FAKE
+chmod +x "$bench_root/bin/claude"
+
+# fake_run <args...>: run_copy run, with the fake claude, its call count reset.
+fake_run() {
+  rm -rf "$bench_root"/claude.calls "$bench_root"/claude.cwd.* "$bench_root"/claude.head.* \
+    "$bench_root"/claude.args.* \
+    "$bench_root/home/.claude"
+  PATH="$bench_root/bin:$PATH" HOME="$bench_root/home" BENCH_ROOT="$bench_root" \
+    run_copy run "$@"
+}
+
+echo
+echo "run: collecting runs (fake claude)"
+fake_run implementability --definition "${definition:0:7}" --out "$bench_root/runs" -n 2
+assert_status "two runs exit 0" "$st" 0
+assert_eq "records the lens" "$(cat "$bench_root/runs/lens")" implementability
+assert_eq "records the revision as its full SHA" "$(cat "$bench_root/runs/revision")" "$definition"
+assert_eq "records the default model" "$(cat "$bench_root/runs/model")" claude-opus-5-5
+assert_eq "copies the fixture's spec body" "$(cat "$bench_root/runs/spec.md")" 'The `spec` body.'
+assert_eq "copies the fixture's baseline map" "$(cat "$bench_root/runs/map.md")" "a.sh:1 the baseline"
+assert_eq "collects one subdirectory per run" "$(cd "$bench_root/runs" && ls -d run-*)" \
+  "$(printf 'run-1\nrun-2')"
+assert_eq "copies the lens-new transcript of each run's session" \
+  "$(cat "$bench_root/runs/run-2/transcript.jsonl")" '{"type":"assistant","n":2}'
+assert_eq "copies the map the lens wrote" "$(cat "$bench_root/runs/run-1/map.md")" "a.sh:1-3 found"
+assert_eq "removes the worktree after the runs" "$(worktrees)" 1
+assert_eq "removes its temporary directory after the runs" "$(leftovers)" 0
+args="$(cat "$bench_root/claude.args.1")"
+# arg_after <flag>: the argument after <flag> in claude's first call.
+arg_after() { jq -r --arg f "$1" '. as $a | (index($f)) as $i | $a[$i + 1]' <<<"$args"; }
+prompt="$(arg_after -p)"
+assert_eq "starts claude from the snapshot worktree, the prompt's repo root" \
+  "$(cat "$bench_root/claude.cwd.1")" "$(sed -n 4p <<<"$prompt")"
+assert_eq "the worktree has the snapshot checked out" "$(cat "$bench_root/claude.head.1")" \
+  "$no_definition"
+assert_eq "pins the model" "$(arg_after --model)" claude-opus-5-5
+agents="$(arg_after --agents)"
+assert_eq "defines the definition as the agent lens-new" \
+  "$(jq -c '."lens-new" | {description, tools, model}' <<<"$agents")" \
+  '{"description":"The test lens.","tools":["Read","Grep","Glob","Write"],"model":"claude-opus-5-5"}'
+assert_eq "gives lens-new the definition's body as its prompt" \
+  "$(jq -r '."lens-new".prompt' <<<"$agents")" "$(printf '# Test lens\n\nRead the spec.')"
+assert_eq "asks the session to start lens-new with the paths and nothing else" \
+  "$(sed -n 1p <<<"$prompt")" \
+  "Start the lens-new subagent with exactly this prompt and nothing else, then reply with its reply:"
+assert_eq "gives the six paths, each run's under the standard names" \
+  "$(sed -n '2p;3p;5p;6p;7p' <<<"$prompt" | sed 's|.*/||')" \
+  "$(printf 'spec.md\ncomments.md\nmap-implementability.md\nsettled.md\nlens-implementability.md')"
+assert_eq "the prompt is those seven lines" "$(wc -l <<<"$prompt" | tr -d ' ')" 7
+
+fake_run implementability --definition "$definition" --out "$bench_root/runs-model" -n 1 --model m-1
+assert_eq "--model pins another model" "$(cat "$bench_root/runs-model/model")" m-1
+
+echo
+echo "run: a failing run (fake claude)"
+FAKE_CLAUDE_FAIL=2 fake_run implementability --definition "$definition" --out "$bench_root/runs-fail" -n 3
+assert_status "a failed claude -p exits 1" "$st" 1
+assert_contains "a failed claude -p names the run" "$err" "run-2"
+assert_eq "a failed claude -p keeps the finished runs and removes its own" \
+  "$(cd "$bench_root/runs-fail" && ls -d run-*)" run-1
+assert_eq "a failed claude -p starts no later run" "$(cat "$bench_root/claude.calls")" 2
+assert_eq "a failed claude -p removes the worktree" "$(worktrees)" 1
+assert_eq "a failed claude -p removes its temporary directory" "$(leftovers)" 0
+FAKE_CLAUDE_NO_TRANSCRIPT=2 fake_run implementability --definition "$definition" \
+  --out "$bench_root/runs-lost" -n 3
+assert_status "a missing transcript exits 1" "$st" 1
+assert_contains "a missing transcript names the run" "$err" "run-2"
+assert_eq "a missing transcript keeps the finished runs and removes its own" \
+  "$(cd "$bench_root/runs-lost" && ls -d run-*)" run-1
+assert_eq "a missing transcript removes the worktree" "$(worktrees)" 1
+
 # >>> summary
 echo
 echo "$PASS passed, $FAIL failed"
