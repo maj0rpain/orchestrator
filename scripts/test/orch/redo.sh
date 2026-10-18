@@ -88,6 +88,8 @@ assert_eq "leaving the phase, branch, and redo count unchanged" \
 rm .orchestrator/review/iteration-05.md
 
 state_fixture pr 30
+# pr open records the PR on the branch (#1200); the redo carries it along.
+git config "branch.orch/21-redotest.orchestrator-pr" 30
 state_fixture base_sha deadbeefcafe
 "$ORCH" state set flake_rerun_used true
 mkdir -p .orchestrator/review
@@ -119,6 +121,8 @@ assert_eq "leaves the one-per-flow flake rerun untouched" \
   "$("$ORCH" state get flake_rerun_used)" "true"
 assert_eq "renames the old branch aside" \
   "$(git rev-parse --verify --quiet orch/21-redotest-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
+assert_eq "keeping its PR marker, so the retired branch reads as handed off (#1200)" \
+  "$(git config --get "branch.orch/21-redotest-redo-1.orchestrator-pr")" "30"
 assert_eq "and republishes it on origin" \
   "$(git -C "$bare" rev-parse --quiet --verify refs/heads/orch/21-redotest-redo-1 >/dev/null && echo present || echo gone)" "present"
 assert_eq "closes the old PR" "$(fake_pr_state_of 30)" "CLOSED"
