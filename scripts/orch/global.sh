@@ -695,7 +695,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               then one line for every other checkout holding
                               a flow and every side checkout
   archive                     move the live flow into .orchestrator/archive/,
-                              leaving archive/ and checkouts/ in place
+                              leaving archive/, checkouts/, spec-review/ and
+                              review-pass/ in place
                               (refuses, naming each, while a ticket worktree
                               is left under this checkout). In a side
                               checkout, the flow moves to the main checkout's

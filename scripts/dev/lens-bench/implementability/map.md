@@ -1,9 +1,7 @@
 scripts/orch/review.sh:363 cmd_review - gains `review known-items` op
 scripts/orch/review.sh:377 review path - REVIEW_DIR/iteration-NN.md, where iteration-NN-known.md sits
-scripts/orch/review.sh:501 review retire - globs iteration-*.md, will also move known files
 scripts/orch/review-pass.sh:14 cmd_review_pass - gains `review-pass known-items` op; begin prints <prefix>
 scripts/orch/handoff.sh:190 handoff section - prior art for heading extraction
-scripts/orch/handoff.sh:16 PHASE_TABLE - Rejected alternatives / Deviations headings
 scripts/orch/gh.sh:238 COMMENTS_RENDER_JQ - comment delimiter the builder splits PR/issue comments on
 scripts/orch/pr.sh:257 pr comments/fetch - sources for review-pass known-items
 scripts/test/docs_lint.sh:1591 scan_previously_declined - enforces five-variable review-pass prompt

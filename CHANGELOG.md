@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.16.1
+
+Archiving a flow - by `archive`, `init` over a done flow, `side-checkout remove` or the finished sweep - now leaves a standalone spec review's `spec-review/<n>/` and a review pass's `review-pass/<branch>/` in place, instead of moving them into the archive mid-run (#1247).
+
 ## 4.16.0
 
 The spec review's session marks every batch item that carries an edit `material` or `minor` on its `@@ item` line, and `orch.sh spec-review check` shows the material items in full and lists the minor and resolved ones one line each under a `### Minor edits` heading. `check` and `apply` refuse a missing or unknown mark, a mark on a resolved item, and a decision or contradicts-the-plan item marked minor, naming the `batch.md` line.
