@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.17.0
+
+`spec-review check` now prints a compact batch view: each material item is one numbered entry with its summary, its `@@ why` reason, the findings and comments it cites by name, and its edit as a word diff, collapsed to its size past 40 changed words. The human answers `show <n>` to read items in full through `check --full`.
+
 ## 4.16.1
 
 Archiving a flow - by `archive`, `init` over a done flow, `side-checkout remove` or the finished sweep - now leaves a standalone spec review's `spec-review/<n>/` and a review pass's `review-pass/<branch>/` in place, instead of moving them into the archive mid-run (#1247).
