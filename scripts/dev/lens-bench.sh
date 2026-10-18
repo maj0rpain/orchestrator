@@ -21,6 +21,20 @@
 # range `<line>-<line>`; anything after it on the line is ignored. A run with
 # no map has coverage 0 where there is a baseline map.
 #
+# Then the diagnosis, per run and summed over the directory's runs. Each code
+# span (backticked text) in `spec.md` is a name the spec gives; a tool call
+# locates spec-named code when its Read path, Grep pattern or Glob pattern
+# contains one. A turn is `named` when all its calls do, `mixed` when some do,
+# and `unnamed` when none do or it makes no call; the report gives each
+# label's share of turns and of input. Beside it, the carried cost by kind: a
+# tool result's kind is `the spec` for the Read of the first path in the
+# lens's prompt, a ranged read for any other Read passing offset or limit, a
+# whole read for one passing neither, Grep/Glob for both, and any other tool
+# by its name. A turn's growth over the previous turn's context is split among
+# the results read since then by character count, or is assistant output
+# when there are none, and is carried over the turns left from that turn on;
+# the fixed base is the first turn's context times the number of turns.
+#
 # A repo-development tool: it does not ship to users. Usage errors exit 2; a
 # missing directory, a directory missing its lens, revision or model file or
 # its spec body, or a run with no transcript exits 1 naming it, before any
@@ -122,6 +136,96 @@ TRANSCRIPT_JQ='
       ([$s.uses[] | select(.name == "Grep") | ($s.results[.id] // "") | length] | listed)
     ] | @tsv'
 
+# The diagnosis of one transcript, as one JSON object: per label, its turns
+# and their input, and per kind, the carried cost. $names is the spec's names,
+# $run the run's name. A turn's context is its total input; the results that
+# came in since the previous turn are the ones read after its last line.
+DIAGNOSIS_JQ='
+  def text: if type == "string" then .
+    elif type == "array" then map(if type == "object" then (.text // "") else tostring end) | join("")
+    else "" end;
+  def located: (if .name == "Read" then .input.file_path
+      elif .name == "Grep" or .name == "Glob" then .input.pattern
+      else null end) as $target
+    | ($target | type) == "string" and any($names[]; . as $n | $target | contains($n));
+  def tag: [.uses[] | located] as $l
+    | if ($l | all) and ($l | length) > 0 then "named"
+      elif ($l | any) then "mixed" else "unnamed" end;
+  reduce .[] as $m ({prompt: null, turns: [], at: {}, uses: {}, pending: []};
+    ($m.message // {}) as $msg
+    | if $m.type == "assistant" and $msg.id != null then
+        $msg.id as $id
+        | (if .at | has($id) then .
+           else .at[$id] = (.turns | length)
+             | .turns += [{context: ($msg.usage // {}
+                   | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)),
+                 uses: [], results: .pending}]
+             | .pending = [] end)
+        | .at[$id] as $i
+        | reduce (($msg.content // [])[]? | select(type == "object" and .type == "tool_use")) as $u
+            (.; .turns[$i].uses += [$u] | .uses[$u.id] = $u)
+      elif $m.type == "user" then
+        (if .prompt == null and (($msg.content | type) == "string"
+             or ([($msg.content // [])[]? | select(type == "object" and .type == "tool_result")] | length) == 0)
+         then .prompt = ($msg.content | text) else . end)
+        | if ($msg.content | type) == "array" then
+            reduce ($msg.content[] | select(type == "object" and .type == "tool_result")) as $r
+              (.; .pending += [{id: $r.tool_use_id, chars: ($r.content | text | length)}])
+          else . end
+      else . end)
+  | . as $s
+  | (($s.prompt // "") | split("\n") | map(select(. != "")) | .[0] // "" | gsub("^\\s+|\\s+$"; "")) as $spec
+  | def kind: ($s.uses[.id] // {name: "unknown", input: {}}) as $u
+      | if $u.name == "Read" then
+          if $u.input.file_path == $spec then "the spec"
+          elif ($u.input | has("offset") or has("limit")) then "ranged reads"
+          else "whole reads" end
+        elif $u.name == "Grep" or $u.name == "Glob" then "Grep/Glob"
+        else $u.name end;
+    ($s.turns | length) as $n
+  | {run: $run,
+     turns: (reduce ($s.turns[] | tag) as $l ({named: 0, mixed: 0, unnamed: 0}; .[$l] += 1)),
+     input: (reduce ($s.turns[] | [tag, .context]) as $t ({named: 0, mixed: 0, unnamed: 0}; .[$t[0]] += $t[1])),
+     carried: (reduce range(1; $n) as $i
+       ({"fixed base": (if $n > 0 then $s.turns[0].context * $n else 0 end), "the spec": 0,
+         "ranged reads": 0, "whole reads": 0, "Grep/Glob": 0, "assistant output": 0};
+        ($s.turns[$i].context - $s.turns[$i - 1].context) as $growth
+        | ($n - $i) as $left
+        | $s.turns[$i].results as $rs
+        | ([$rs[].chars] | add // 0) as $chars
+        | if ($rs | length) == 0 then .["assistant output"] += $growth * $left
+          else reduce $rs[] as $r (.;
+            .[$r | kind] += $growth * $left
+              * (if $chars > 0 then $r.chars / $chars else 1 / ($rs | length) end))
+          end))}'
+
+# The diagnosis tables of one directory, from its runs' diagnoses: each
+# label's share of turns and of input, then the carried cost by kind, one row
+# per run and one summed over them. Every other tool is a column by its name.
+REPORT_JQ='
+  def num: if . == floor then tostring else (. * 10 + 0.5 | floor) / 10 | tostring end;
+  def cell($whole): "\(. + 0.5 | floor) (\(if $whole == 0 then 0 else . * 100 / $whole end | (. * 10 + 0.5 | floor) / 10 | num)%)";
+  def sum: reduce .[] as $o ({}; reduce ($o | to_entries[]) as $e (.; .[$e.key] += $e.value));
+  ["fixed base", "the spec", "ranged reads", "whole reads", "Grep/Glob"] as $first
+  | ([.[].carried | keys[]] | unique
+     - $first - ["assistant output"]) as $tools
+  | ($first + $tools + ["assistant output"]) as $kinds
+  | (. + [{run: "All runs", turns: (map(.turns) | sum), input: (map(.input) | sum),
+           carried: (map(.carried) | sum)}]) as $rows
+  | "Diagnosis: each turn is named when all its tool calls target a name the spec gives (a backticked span), unnamed when none does or it makes none, and mixed otherwise.",
+    "",
+    "| Run | Named turns | Mixed turns | Unnamed turns | Named input | Mixed input | Unnamed input |",
+    "|---|---|---|---|---|---|---|",
+    ($rows[] | (.turns | add) as $t | (.input | add) as $i
+      | "| \(.run) | \(.turns.named | cell($t)) | \(.turns.mixed | cell($t)) | \(.turns.unnamed | cell($t)) | \(.input.named | cell($i)) | \(.input.mixed | cell($i)) | \(.input.unnamed | cell($i)) |"),
+    "",
+    "Carried cost by kind: each tool result carries its share of the next turn'"'"'s growth over the turns left, and the fixed base is the first turn'"'"'s context over every turn.",
+    "",
+    "| Run | \($kinds | map((.[:1] | ascii_upcase) + .[1:]) | join(" | ")) |",
+    "|\($kinds | map("---|") | join(""))---|",
+    ($rows[] | .carried as $c | ([$c[]] | add) as $w
+      | "| \(.run) | \([$kinds[] | ($c[.] // 0) | cell($w)] | join(" | ")) |")'
+
 # stats: the mean, median, minimum and maximum of the numbers on stdin, one
 # per line, tab-separated; a whole number prints as one, any other to one
 # decimal place.
@@ -168,7 +272,8 @@ for dir in "$@"; do
     echo '| Run | Turns | Input | Calls per turn | Ranged Read lines | Grep chars | Map entry widths |'
     echo '|---|---|---|---|---|---|---|'
   fi
-  turns_all="" input_all="" cover_all=""
+  turns_all="" input_all="" cover_all="" diagnoses=""
+  names="$(grep -o '`[^`]*`' "$dir/spec.md" | tr -d '`' | jq -Rsc 'split("\n") | map(select(. != ""))')"
   while IFS= read -r run; do
     transcript="$dir/$run/transcript.jsonl"
     measures="$(jq -rs "$TRANSCRIPT_JQ" "$transcript")" ||
@@ -183,6 +288,7 @@ for dir in "$@"; do
       cover_all+="$cover"$'\n'
     fi
     printf '%s\n' "$row"
+    diagnoses+="$(jq -sc --argjson names "$names" --arg run "$run" "$DIAGNOSIS_JQ" "$transcript")"$'\n'
     turns_all+="$turns"$'\n'
     input_all+="$input"$'\n'
   done < <(runs_of "$dir")
@@ -198,4 +304,6 @@ for dir in "$@"; do
     printf '%s' "$cover_all" | stats | awk -F'\t' -v t="$total" \
       '{ printf "| Coverage | %s/%s | %s/%s | %s/%s | %s/%s |\n", $1, t, $2, t, $3, t, $4, t }'
   fi
+  echo
+  printf '%s' "$diagnoses" | jq -rs "$REPORT_JQ"
 done

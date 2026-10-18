@@ -166,7 +166,7 @@ scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
 scripts/version-bump.sh       the version-bump Action's script: changelog fragments into one version bump (Develop)
 scripts/dev/helpers.sh        the helper index: every module or test helper with its one-line purpose (Develop, Test helpers)
-scripts/dev/lens-bench.sh     the lens benchmark: measure turns a lens's benchmark output directories into a Markdown report of per-run cost, coverage and a summary
+scripts/dev/lens-bench.sh     the lens benchmark: measure turns a lens's benchmark output directories into a Markdown report of per-run cost, coverage, a summary and a diagnosis of the turns spent locating code the spec names
 scripts/test/                 shell tests: orch_test.sh (the orch.sh suite's runner), hooks_test.sh, docs_lint.sh, version_bump_test.sh, lens_bench_test.sh, all.sh
 scripts/test/lens-bench/      lens_bench_test.sh's hand-built benchmark output directories
 scripts/test/orch/setup.sh    the orch.sh suite's shared setup (helpers used by more than one file) and summary

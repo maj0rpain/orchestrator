@@ -7,8 +7,9 @@
 # scripts/test/lens-bench/, or a copy of it with a file taken away - and
 # asserts only what the run prints and its exit status. The failure modes
 # worth catching: a split message counted twice, coverage judged by anything
-# but the overlap rule, a summary over the wrong values, and a broken
-# directory measured instead of refused.
+# but the overlap rule, a summary over the wrong values, a turn labelled or a
+# result's cost attributed to the wrong kind, and a broken directory measured
+# instead of refused.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BENCH="$DIR/dev/lens-bench.sh"
@@ -129,6 +130,42 @@ assert_eq "reports each directory under its own heading, in order" \
   "$(grep -E '^## ' <<<"$out")" \
   "$(printf '## %s\n## %s' "$FIXTURE/with-baseline" "$FIXTURE/no-baseline")"
 has_line "each directory has its own summary" "$out" "Summary over 2 runs:"
+
+echo
+echo "the diagnosis: turn labels"
+# diagnosis/spec.md names `alpha.sh` and `beta`, and a fenced block whose
+# backticks name nothing. run-1's five turns, of context 1000, 1400, 1600,
+# 2000 and 2100: the spec's Read and a Glob for alpha.sh (mixed); a ranged
+# Read of alpha.sh and a Grep for beta, one message split over two lines
+# (named); a whole Read of other.sh and a Write (unnamed); then two turns with
+# no tool call (unnamed). run-2: a Grep for gamma, then a reply (500, 600).
+run_bench measure "$FIXTURE/diagnosis"
+assert_status "measuring the diagnosis fixture exits 0" "$st" 0
+has_line "labels each turn, and the shares of turns and of input add up to the whole" "$out" \
+  "| run-1 | 1 (20%) | 1 (20%) | 3 (60%) | 1400 (17.3%) | 1000 (12.3%) | 5700 (70.4%) |"
+has_line "a run whose every turn locates nothing named is all unnamed" "$out" \
+  "| run-2 | 0 (0%) | 0 (0%) | 2 (100%) | 0 (0%) | 0 (0%) | 1100 (100%) |"
+has_line "the labels are summed per directory" "$out" \
+  "| All runs | 1 (14.3%) | 1 (14.3%) | 5 (71.4%) | 1400 (15.2%) | 1000 (10.9%) | 6800 (73.9%) |"
+
+echo
+echo "the diagnosis: carried cost by kind"
+has_line "kinds are columns, each other tool by its name" "$out" \
+  "| Run | Fixed base | The spec | Ranged reads | Whole reads | Grep/Glob | Write | Assistant output |"
+# run-1: the base is 1000 x 5 turns. Turn 2's growth of 400 splits 300:100
+# between the spec and the Glob, times the 4 turns left; turn 3's 200 splits
+# 150:50 between the ranged Read and the Grep, times 3; turn 4's 400 splits
+# 60:20 between the whole Read and the Write, times 2; turn 5's 100 has no
+# result before it, so it is assistant output, times 1.
+has_line "growth is split by characters, carried over the turns left, and the base is the first turn's context times the turns" "$out" \
+  "| run-1 | 5000 (61.7%) | 1200 (14.8%) | 450 (5.6%) | 600 (7.4%) | 550 (6.8%) | 200 (2.5%) | 100 (1.2%) |"
+has_line "a kind a run never used is 0" "$out" \
+  "| run-2 | 1000 (90.9%) | 0 (0%) | 0 (0%) | 0 (0%) | 100 (9.1%) | 0 (0%) | 0 (0%) |"
+has_line "the carried cost is summed per directory" "$out" \
+  "| All runs | 6000 (65.2%) | 1200 (13%) | 450 (4.9%) | 600 (6.5%) | 650 (7.1%) | 200 (2.2%) | 100 (1.1%) |"
+run_bench measure "$FIXTURE/no-baseline"
+has_line "a directory whose runs use no other tool has no column for one" "$out" \
+  "| Run | Fixed base | The spec | Ranged reads | Whole reads | Grep/Glob | Assistant output |"
 
 # broken <name> <file under with-baseline>: a copy of with-baseline, named
 # <name>, with <file> removed. Prints its path.
