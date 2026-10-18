@@ -319,12 +319,14 @@ code_spans() {
 }
 
 # The jq definitions both transcript programs share: text, a message
-# content's text, and total_input, a usage's input tokens, cached ones counted.
+# content's text, total_input, a usage's input tokens, cached ones counted,
+# and ranged_read, whether a tool use is a Read passing offset or limit.
 JQ_PRELUDE='
   def text: if type == "string" then .
     elif type == "array" then map(if type == "object" then (.text // "") else tostring end) | join("")
     else "" end;
   def total_input: (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0);
+  def ranged_read: .name == "Read" and (.input | has("offset") or has("limit"));
 '
 
 # The per-run measures of one transcript, tab-separated: turns, total input,
@@ -351,7 +353,7 @@ TRANSCRIPT_JQ="$JQ_PRELUDE"'
         | total_input]
        | add // 0),
       ([$s.ids[] as $i | $s.calls[$i]] | listed),
-      ([$s.uses[] | select(.name == "Read" and (.input | has("offset") or has("limit")))
+      ([$s.uses[] | select(ranged_read)
         | ($s.results[.id] // "") | [splits("\n")]
         | map(select(test("^ *[0-9]+(\t|→)"))) | length] | listed),
       ([$s.uses[] | select(.name == "Grep") | ($s.results[.id] // "") | length] | listed)
@@ -395,7 +397,7 @@ DIAGNOSIS_JQ="$JQ_PRELUDE"'
   | def kind: ($s.uses[.id] // {name: "unknown", input: {}}) as $u
       | if $u.name == "Read" then
           if $u.input.file_path == $spec then "the spec"
-          elif ($u.input | has("offset") or has("limit")) then "ranged reads"
+          elif ($u | ranged_read) then "ranged reads"
           else "whole reads" end
         elif $u.name == "Grep" or $u.name == "Glob" then "Grep/Glob"
         else $u.name end;
@@ -470,14 +472,14 @@ done
 
 first=1
 for dir in "$@"; do
-  dir="${dir%/}"
+  bench_dir="${dir%/}"
   [ "$first" -eq 1 ] || echo
   first=0
   baseline=""
-  [ -f "$dir/map.md" ] && baseline="$dir/map.md"
-  printf '## %s\n\n' "$dir"
+  [ -f "$bench_dir/map.md" ] && baseline="$bench_dir/map.md"
+  printf '## %s\n\n' "$bench_dir"
   printf 'Lens %s, revision %s, model %s\n\n' \
-    "$(<"$dir/lens")" "$(<"$dir/revision")" "$(<"$dir/model")"
+    "$(<"$bench_dir/lens")" "$(<"$bench_dir/revision")" "$(<"$bench_dir/model")"
   if [ -n "$baseline" ]; then
     total="$(locations "$baseline" | awk 'END { print NR }')"
     printf 'Baseline map: %s locations\n\n' "$total"
@@ -490,13 +492,13 @@ for dir in "$@"; do
     echo '|---|---|---|---|---|---|---|'
   fi
   turns_all="" input_all="" cover_all="" diagnoses=""
-  names="$(code_spans "$dir/spec.md" | jq -Rsc 'split("\n") | map(select(. != ""))')"
+  names="$(code_spans "$bench_dir/spec.md" | jq -Rsc 'split("\n") | map(select(. != ""))')"
   while IFS= read -r run; do
-    transcript="$dir/$run/transcript.jsonl"
+    transcript="$bench_dir/$run/transcript.jsonl"
     measures="$(jq -rs "$TRANSCRIPT_JQ" "$transcript")" ||
       fail "$transcript: not a transcript"
     IFS=$'\t' read -r turns input calls reads greps <<<"$measures"
-    map="$dir/$run/map.md"
+    map="$bench_dir/$run/map.md"
     if [ -f "$map" ]; then map_widths="$(widths "$map")"; else map_widths="-"; fi
     row="| $run | $turns | $input | $calls | $reads | $greps | $map_widths |"
     if [ -n "$baseline" ]; then
@@ -508,7 +510,7 @@ for dir in "$@"; do
     diagnoses+="$(jq -sc --argjson names "$names" --arg run "$run" "$DIAGNOSIS_JQ" "$transcript")"$'\n'
     turns_all+="$turns"$'\n'
     input_all+="$input"$'\n'
-  done < <(runs_of "$dir")
+  done < <(runs_of "$bench_dir")
 
   runs="$(printf '%s' "$turns_all" | awk 'END { print NR }')"
   [ "$runs" -gt 0 ] || continue
