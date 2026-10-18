@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"/x/spec.md"}}
+{"type":"assistant","message":{"id":"msg_b1","role":"assistant","content":[{"type":"tool_use","id":"u1","name":"Grep","input":{"pattern":"bar"}}],"usage":{"input_tokens":100,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":5}}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"u1","content":"x\ny"}]}}
+{"type":"assistant","message":{"id":"msg_b2","role":"assistant","content":[{"type":"text","text":"Done."}],"usage":{"input_tokens":200,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":2}}}
