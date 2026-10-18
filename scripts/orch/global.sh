@@ -522,6 +522,17 @@ orch.sh - deterministic operations for the orchestrator flow
                               error, each naming its batch.md line - the first
                               grammar error only, every anchor problem; exit
                               0 with a one-line summary
+  spec-review wait <dir> <lens>...
+                              block until <dir>/lens-<lens>.md exists for
+                              every named lens (fidelity, consistency,
+                              testability, implementability), then print
+                              "lenses back: <lens> <count>, ..." in the order
+                              named, <count> the file's @@ finding lines. Run
+                              in the response that starts the lenses. Exit 1,
+                              nothing on stdout, naming the lenses still
+                              missing after ORCH_SPEC_REVIEW_WAIT_TIMEOUT
+                              seconds (default 900), polling every
+                              ORCH_SPEC_REVIEW_WAIT_INTERVAL (default 5)
   spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
                     [--tickets <answer> [--ticket-reasons <file>]]
                     [--issue <n>] [--unattended] [--host-fallbacks <file>]

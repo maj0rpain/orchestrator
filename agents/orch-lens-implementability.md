@@ -58,8 +58,10 @@ spec touches. It is a hint, not a truth: confirm each entry with Grep before
 relying on it, drop entries that no longer hold, and add what the edited body
 newly names. It holds code locations only, never findings.
 
-Always rewrite the map file before replying, whether or not it existed:
-one line per code location, under about 60 lines, no line starting `@@`:
+Always rewrite the map file, whether or not it existed, before you write
+the findings file: the findings file is the last thing you write, because its
+existence is what tells the review you are done. Write the map as one line
+per code location, under about 60 lines, no line starting `@@`:
 
 ```
 <path>:<line> <symbol> - <why the spec touches it>
@@ -86,7 +88,7 @@ path. Number them from 1, each a block that opens with its own line
 ```
 
 With no findings, the file holds the single line `@@ none`. No line of a
-finding's text starts with `@@`. Then, with the map file rewritten, reply with
-only the findings file's path and the number of findings, e.g. `<path> - 2
-findings`: the findings stay in the file, out of the reply, and the reply
+finding's text starts with `@@`. Write this file last, after the map file.
+Then reply with only the findings file's path and the number of findings,
+e.g. `<path> - 2 findings`: the findings stay in the file, out of the reply, and the reply
 never mentions the map.

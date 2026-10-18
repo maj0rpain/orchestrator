@@ -20,7 +20,8 @@ cmd_spec_review() {
     begin) spec_review_begin "$@" ;;
     check) spec_review_check "$@" ;;
     apply) spec_review_apply "$@" ;;
-    *) die "unknown spec-review op: ${op:-<none>} (want begin|check|apply)" ;;
+    wait) spec_review_wait "$@" ;;
+    *) die "unknown spec-review op: ${op:-<none>} (want begin|check|apply|wait)" ;;
   esac
 }
 
@@ -613,6 +614,51 @@ spec_review_validate() {
         done ;;
     esac
   done
+}
+
+# --- spec-review wait (#1183) --------------------------------------------------
+#
+# The session running a review starts its lenses and runs this in the same
+# response, so a lens's hand-back queues behind the running tool instead of
+# taking a turn of its own. A lens is back when its findings file exists: each
+# lens writes it last. How long the wait lasts, and how often it looks, are
+# overridable through the environment, as `review ci`'s are, so a test can turn
+# them down to fractions of a second.
+ORCH_SPEC_REVIEW_WAIT_TIMEOUT="${ORCH_SPEC_REVIEW_WAIT_TIMEOUT:-900}"
+ORCH_SPEC_REVIEW_WAIT_INTERVAL="${ORCH_SPEC_REVIEW_WAIT_INTERVAL:-5}"
+
+# spec-review wait <dir> <lens>...: blocks until <dir>/lens-<lens>.md exists
+# for every named lens, then prints `lenses back: <lens> <count>, ...` in the
+# order named, <count> its `@@ finding ` lines - the file is not validated
+# here; check and the session's own read meet a malformed one. On timeout,
+# nothing on stdout, and exit 1 naming the lenses still missing.
+spec_review_wait() {
+  local usage="usage: orch.sh spec-review wait <dir> <lens>..."
+  [ $# -ge 2 ] || die "$usage"
+  local dir="${1%/}" lens missing summary slept=0 n
+  shift
+  [ -d "$dir" ] || die "no such directory: $dir"
+  for lens in "$@"; do
+    spec_review_lens_known "$lens" || die "unknown lens '$lens' (want one of: $SPEC_REVIEW_LENSES)"
+  done
+  require_poll_knobs ORCH_SPEC_REVIEW_WAIT_TIMEOUT ORCH_SPEC_REVIEW_WAIT_INTERVAL
+  while :; do
+    missing=""
+    for lens in "$@"; do
+      [ -e "$dir/lens-$lens.md" ] || missing+=" $lens"
+    done
+    [ -n "$missing" ] || break
+    float_lt "$slept" "$ORCH_SPEC_REVIEW_WAIT_TIMEOUT" \
+      || die "lenses not back after ${ORCH_SPEC_REVIEW_WAIT_TIMEOUT}s:$missing"
+    sleep "$ORCH_SPEC_REVIEW_WAIT_INTERVAL"
+    slept="$(float_add "$slept" "$ORCH_SPEC_REVIEW_WAIT_INTERVAL")"
+  done
+  summary=""
+  for lens in "$@"; do
+    n="$(grep -c '^@@ finding ' "$dir/lens-$lens.md" || true)"
+    summary+="${summary:+, }$lens ${n:-0}"
+  done
+  note "lenses back: $summary"
 }
 
 # spec-review check <dir>: the round's batch validated as apply would take the

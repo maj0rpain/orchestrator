@@ -1236,3 +1236,75 @@ assert_contains "the unknown-op message lists check" "$out" "want begin|check|ap
 assert_contains "help documents spec-review check" "$("$ORCH" help)" "spec-review check <dir>"
 rm -f "$src_err"
 restore_suite_env
+
+# --- spec-review wait (#1183) --------------------------------------------------
+# The session running a spec review starts its lenses and waits for all of them
+# in one blocking call: a lens is back when its findings file exists, and the
+# wait prints one summary line, or times out naming the lenses still missing.
+echo
+echo "spec-review wait (#1183)"
+new_repo >/dev/null
+export ORCH_SPEC_REVIEW_WAIT_TIMEOUT=1 ORCH_SPEC_REVIEW_WAIT_INTERVAL=0.05
+wt_dir="$(mktemp -d)"
+printf '@@ finding 1\nOne.\n@@ finding 2\nTwo.\n' >"$wt_dir/lens-testability.md"
+printf '@@ none\n' >"$wt_dir/lens-consistency.md"
+printf 'neither kind of line\n' >"$wt_dir/lens-implementability.md"
+out="$("$ORCH" spec-review wait "$wt_dir" testability consistency implementability 2>&1)"; st=$?
+assert_status "every named lens file present: the wait succeeds" "$st" 0
+assert_eq "one summary line, in the order named, @@ none and a file with neither counting 0" "$out" \
+  "lenses back: testability 2, consistency 0, implementability 0"
+
+: >"$wt_dir/lens-implementability.md"
+out="$("$ORCH" spec-review wait "$wt_dir/" implementability 2>&1)"; st=$?
+assert_status "an empty findings file is back too" "$st" 0
+assert_eq "counting 0" "$out" "lenses back: implementability 0"
+
+out="$("$ORCH" spec-review wait "$wt_dir" consistency 2>&1)"; st=$?
+assert_status "only the named lenses are waited for: a missing unnamed lens does not block" "$st" 0
+assert_eq "and only the named lens is summarized" "$out" "lenses back: consistency 0"
+
+wt_late="$(mktemp -d)"
+( sleep 0.3; printf '@@ finding 1\nLate.\n' >"$wt_late/lens-fidelity.md" ) &
+out="$(ORCH_SPEC_REVIEW_WAIT_TIMEOUT=5 "$ORCH" spec-review wait "$wt_late" fidelity 2>&1)"; st=$?
+wait
+assert_status "a file that appears during the wait ends it" "$st" 0
+assert_eq "with that lens's count" "$out" "lenses back: fidelity 1"
+
+wt_err="$(mktemp)"
+out="$("$ORCH" spec-review wait "$wt_dir" testability fidelity consistency implementability 2>"$wt_err")"; st=$?
+assert_status "a named lens missing past the timeout fails" "$st" 1
+assert_eq "printing nothing on stdout" "$out" ""
+assert_eq "and naming only the missing lens on stderr" "$(cat "$wt_err")" \
+  "orch: lenses not back after 1s: fidelity"
+rm -f "$wt_dir/lens-consistency.md"
+"$ORCH" spec-review wait "$wt_dir" consistency testability fidelity >/dev/null 2>"$wt_err"; st=$?
+assert_status "two missing lenses fail too" "$st" 1
+assert_eq "naming both, in the order named" "$(cat "$wt_err")" \
+  "orch: lenses not back after 1s: consistency fidelity"
+
+out="$("$ORCH" spec-review wait "$wt_dir" testability clarity 2>&1)"; st=$?
+assert_status "an unknown lens name is a usage error" "$st" 1
+assert_eq "naming it and the four lenses" "$out" \
+  "orch: unknown lens 'clarity' (want one of: fidelity consistency testability implementability)"
+out="$("$ORCH" spec-review wait "$wt_dir/nowhere" testability 2>&1)"; st=$?
+assert_status "a missing directory is a usage error" "$st" 1
+assert_eq "naming it" "$out" "orch: no such directory: $wt_dir/nowhere"
+out="$("$ORCH" spec-review wait "$wt_dir" 2>&1)"; st=$?
+assert_status "no lens names is a usage error" "$st" 1
+assert_eq "printing the usage" "$out" "orch: usage: orch.sh spec-review wait <dir> <lens>..."
+
+out="$(ORCH_SPEC_REVIEW_WAIT_TIMEOUT=soon "$ORCH" spec-review wait "$wt_dir" testability 2>&1)"; st=$?
+assert_status "a non-numeric timeout is rejected" "$st" 1
+assert_eq "naming the variable" "$out" "orch: ORCH_SPEC_REVIEW_WAIT_TIMEOUT is not a number: soon"
+out="$(ORCH_SPEC_REVIEW_WAIT_INTERVAL=often "$ORCH" spec-review wait "$wt_dir" testability 2>&1)"; st=$?
+assert_status "a non-numeric interval is rejected" "$st" 1
+assert_eq "naming the variable" "$out" "orch: ORCH_SPEC_REVIEW_WAIT_INTERVAL is not a number: often"
+out="$(ORCH_SPEC_REVIEW_WAIT_INTERVAL=0.0 timeout 5 "$ORCH" spec-review wait "$wt_dir" fidelity 2>&1)"; st=$?
+assert_status "a zero interval is rejected" "$st" 1
+assert_eq "naming the variable" "$out" "orch: ORCH_SPEC_REVIEW_WAIT_INTERVAL must be greater than zero: 0.0"
+
+out="$("$ORCH" spec-review wipe 2>&1)"
+assert_contains "the unknown-op message lists wait" "$out" "want begin|check|apply|wait"
+assert_contains "help documents spec-review wait" "$("$ORCH" help)" "spec-review wait <dir> <lens>..."
+rm -rf "$wt_dir" "$wt_late" "$wt_err"
+restore_suite_env ORCH_SPEC_REVIEW_WAIT_TIMEOUT ORCH_SPEC_REVIEW_WAIT_INTERVAL
