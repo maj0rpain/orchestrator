@@ -1207,11 +1207,9 @@ assert_not_contains "and are not reported" "$out" "planning allowlist"
 rm -rf docs/agents/notes.md .scratch
 # A git status that cannot run is a FAIL naming git's error, never the end of
 # the report: doctor is what you run when the world is already broken.
-idxbak="$(mktemp)"
-cp "$(git rev-parse --git-dir)/index" "$idxbak"
-printf 'garbage' >"$(git rev-parse --git-dir)/index"
+break_index
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
-cp "$idxbak" "$(git rev-parse --git-dir)/index"
+restore_index
 assert_status "a failing git status fails doctor --flow" "$st" 1
 assert_contains "the FAIL names git's error" "$out" \
   "FAIL  git status failed - cannot check the working tree: "

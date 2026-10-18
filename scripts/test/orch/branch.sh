@@ -42,6 +42,7 @@ assert_eq "prints the branch it made" "$out" "quick/9-widgets"
 assert_eq "checks it out" "$(git branch --show-current)" "quick/9-widgets"
 assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
 
+git checkout -q -
 out="$(orch_gh_failing branch off "quick/9-widgets" 2>&1)"; st=$?
 assert_status "refuses a name that already exists" "$st" 1
 assert_contains "names the branch" "$out" "quick/9-widgets already exists"
@@ -51,7 +52,8 @@ assert_status "refuses with no name" "$st" 1
 
 # #720: a quick implementation must never move an active flow's checkout off
 # its branch, so branch off refuses beside a flow mid-pipeline exactly as init
-# does - same exit code 3, same message - and checks nothing out.
+# does - the same busy checkout, exit code 3 and message - and checks nothing
+# out.
 for phase in spec implement review; do
   new_repo_with_origin
   orch_gh_failing init busy >/dev/null
@@ -59,7 +61,7 @@ for phase in spec implement review; do
   before="$(git branch --show-current)"
   out="$(orch_gh_failing branch off quick/4-beside 2>&1)"; st=$?
   assert_status "refuses beside a flow at $phase with exit 3" "$st" 3
-  assert_contains "with init's message ($phase)" "$out" "a flow is already active (slug: busy, phase: $phase)."
+  assert_contains "with init's message ($phase)" "$out" "busy: a flow is mid-pipeline (slug: busy, phase: $phase)"
   assert_contains "and init's remedy ($phase)" "$out" "One flow at a time"
   assert_eq "checks nothing out ($phase)" "$(git branch --show-current)" "$before"
   assert_eq "creates no branch ($phase)" \
@@ -569,9 +571,190 @@ cd "$SUITE_CWD" || exit 1
 rm -rf "$(dirname "$sc_origin")"
 restore_suite_env
 
+# --- branch busy (#1201) -------------------------------------------------------
+# Whether this checkout is a busy checkout - one holding work a new branch
+# must not move - from local git and state facts only: exit 3 with one line
+# naming what holds it, exit 0 and silence when it is free, exit 1 on a usage
+# error or a working tree that cannot be read.
+echo
+echo "branch busy"
+new_repo_with_origin
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a clean default branch is free" "$st" 0
+assert_eq "and prints nothing" "$out" ""
+
+echo planned >docs/agents/note.md
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a change only on the planning allowlist is free" "$st" 0
+assert_eq "printing nothing" "$out" ""
+rm docs/agents/note.md
+
+echo edit >>README.md
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a dirty tree outside the allowlist is busy" "$st" 3
+assert_contains "naming the changed path" "$out" "README.md"
+git checkout -q README.md
+
+out="$(orch_gh_failing branch busy extra 2>&1)"; st=$?
+assert_status "an argument is a usage error" "$st" 1
+assert_contains "naming the usage" "$out" "usage: orch.sh branch busy"
+assert_not_contains "printing no busy line" "$out" "busy:"
+
+# The tree is read only when no earlier signal holds, and a tree that cannot
+# be read is neither free nor busy.
+break_index
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "an unreadable tree exits 1" "$st" 1
+assert_contains "naming the git status failure" "$out" "git status failed"
+assert_not_contains "printing no busy line" "$out" "busy:"
+restore_index
+
+git checkout -q --detach
+echo edit >docs/agents/x.md
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a detached HEAD is never a quick branch" "$st" 0
+rm docs/agents/x.md
+git checkout -q -
+
+orch_gh_failing branch off quick/5-held >/dev/null
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a branch made by branch off with no PR key is busy" "$st" 3
+assert_contains "naming the branch" "$out" "quick/5-held"
+
+echo edit >>README.md
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a branch with no PR key and a dirty tree is busy" "$st" 3
+assert_contains "naming the branch, the first signal that holds" "$out" "quick/5-held"
+assert_not_contains "not the dirty path" "$out" "README.md"
+git checkout -q README.md
+
+git config branch.quick/5-held.orchestrator-pr 42
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a branch with the PR key is free" "$st" 0
+assert_eq "printing nothing (PR key)" "$out" ""
+
+for phase in spec implement review; do
+  new_repo_with_origin
+  orch_gh_failing init held >/dev/null
+  state_fixture phase "$phase"
+  out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+  assert_status "a flow at $phase is busy" "$st" 3
+  assert_contains "naming the flow's slug and phase ($phase)" "$out" "slug: held, phase: $phase"
+done
+
+state_fixture phase "done"
+out="$(orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a done flow is free" "$st" 0
+assert_eq "printing nothing (done flow)" "$out" ""
+
+sc_clone
+side="$(sc_add fresh)"
+out="$(cd "$side" && orch_gh_failing branch busy 2>&1)"; st=$?
+assert_status "a fresh side checkout is free" "$st" 0
+assert_eq "printing nothing (side checkout)" "$out" ""
+
+next_entry="$(orch_gh_failing help 2>&1 | awk '
+  found && !/^                              / { print; exit }
+  index($0, "  branch off ") == 1 { found = 1 }')"
+assert_contains "branch busy's help entry comes right after branch off's" "$next_entry" "  branch busy "
+
+# --- branch off and branch create refuse a busy checkout (#1202) ---------------
+# Neither ever moves another implementation's branch or carries its
+# uncommitted edits: each exits 3 in a busy checkout, a code no other failure
+# of theirs uses, and changes nothing. branch create skips the flow signal,
+# since the flow mid-pipeline is its own.
+echo
+echo "branch off and branch create refuse a busy checkout (#1202)"
+# What a refused call must leave as it was: the current branch, the working
+# tree with its uncommitted edits, and the local git config.
+checkout_facts() {
+  git branch --show-current
+  git status --porcelain
+  git diff
+  git config --local --list
+}
+
+new_repo_with_origin
+orch_gh_failing branch off quick/1-running >/dev/null
+echo edit >>README.md
+before="$(checkout_facts)"
+out="$(orch_gh_failing branch off quick/2-second 2>&1)"; st=$?
+assert_status "branch off on a quick branch with no PR exits 3" "$st" 3
+assert_contains "naming the branch that holds the checkout" "$out" "quick/1-running"
+assert_eq "leaving the branch, the tree, its edits and the git config as they were" \
+  "$(checkout_facts)" "$before"
+assert_eq "writing no orchestrator-base key" \
+  "$(git config --get branch.quick/2-second.orchestrator-base || echo unset)" "unset"
+
+git checkout -q -
+before="$(checkout_facts)"
+out="$(orch_gh_failing branch off quick/3-dirty 2>&1)"; st=$?
+assert_status "branch off on a dirty tree exits 3" "$st" 3
+assert_contains "naming the changed path" "$out" "README.md"
+assert_eq "leaving the dirty checkout as it was" "$(checkout_facts)" "$before"
+assert_eq "creating no branch" \
+  "$(git rev-parse --verify --quiet refs/heads/quick/3-dirty >/dev/null && echo made || echo none)" "none"
+git checkout -q README.md
+
+echo planned >docs/agents/note.md
+out="$(orch_gh_failing branch off quick/4-planned 2>&1)"; st=$?
+assert_status "branch off with only an allowlisted edit exits 0" "$st" 0
+assert_eq "making the branch" "$(git branch --show-current)" "quick/4-planned"
+assert_eq "carrying the edit onto it" "$(cat docs/agents/note.md)" "planned"
+rm docs/agents/note.md
+
+# A tree that cannot be read, where no earlier signal holds, is neither free
+# nor busy.
+new_repo_with_origin
+break_index
+before="$(branch_and_config)"
+out="$(orch_gh_failing branch off quick/5-unread 2>&1)"; st=$?
+assert_status "branch off on an unreadable tree exits 1" "$st" 1
+assert_eq "leaving the branch and the git config (branch off)" "$(branch_and_config)" "$before"
+restore_index
+
+new_repo_with_origin
+orch_gh_failing init own >/dev/null
+orch_gh_failing state set issue 12
+echo edit >>README.md
+before="$(checkout_facts)"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create on a dirty tree exits 3" "$st" 3
+assert_contains "naming the changed path (branch create)" "$out" "README.md"
+assert_eq "leaving the checkout as it was (branch create, dirty)" "$(checkout_facts)" "$before"
+assert_eq "recording no branch in state" "$(orch_gh_failing state get branch)" ""
+git checkout -q README.md
+
+# The flow mid-pipeline refuses branch off, so the earlier branch is made by
+# hand, as redo review leaves a retired branch with no PR key.
+default="$(git branch --show-current)"
+git checkout -q -b quick/6-earlier
+git config branch.quick/6-earlier.orchestrator-base "$default"
+before="$(checkout_facts)"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create on a quick branch with no PR exits 3" "$st" 3
+assert_contains "naming that branch" "$out" "quick/6-earlier"
+assert_eq "leaving the checkout as it was (branch create, quick branch)" "$(checkout_facts)" "$before"
+assert_eq "writing no orchestrator-base key (branch create)" \
+  "$(git config --get branch.orch/12-own.orchestrator-base || echo unset)" "unset"
+
+git checkout -q "$default"
+break_index
+before="$(branch_and_config)"
+before_state="$(cat .orchestrator/state.json)"
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create on an unreadable tree exits 1" "$st" 1
+assert_eq "leaving the branch and the git config (branch create)" "$(branch_and_config)" "$before"
+assert_eq "and the state (branch create)" "$(cat .orchestrator/state.json)" "$before_state"
+restore_index
+
+out="$(orch_gh_failing branch create 2>&1)"; st=$?
+assert_status "branch create succeeds beside its own flow when the checkout is otherwise free" "$st" 0
+assert_eq "checking its branch out" "$(git branch --show-current)" "orch/12-own"
+
 # --- branch: unknown op -------------------------------------------------------
 new_repo >/dev/null
 out="$(orch_gh_failing branch bogus 2>&1)"; st=$?
 assert_status "branch bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown branch op"
-assert_contains "naming all five" "$out" "create|off|base-sha|sync|retire"
+assert_contains "naming all six" "$out" "create|off|busy|base-sha|sync|retire"

@@ -11,6 +11,10 @@
 # pr open (a flow's own, draft, recorded into state) and pr publish (a quick
 # implementation's, not a draft, recording nothing) share it rather
 # than each hand-rolling the push/issue-line/gh-pr-create idiom.
+# Once the PR exists, it records the number on the branch as
+# branch.<b>.orchestrator-pr (#1200), so a busy check can tell, locally and
+# without GitHub, that the branch's work is handed off. A failed write only
+# warns: the PR is open either way, and the branch merely stays busy.
 open_pr() {
   local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr err keyword=Closes draft_opt=()
   git push -q -u origin "$branch"
@@ -26,6 +30,8 @@ open_pr() {
     gh_die "open the PR for branch $branch (issue #$issue)" "$err"
   fi
   rm -f "$tmp"
+  git config "branch.$branch.orchestrator-pr" "$pr" \
+    || warn "could not record PR #$pr on branch $branch - it counts as busy until you switch off it"
   printf '%s\n' "$pr"
 }
 

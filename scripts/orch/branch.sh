@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# branch.sh - orch.sh's branch command: create, off, base-sha, sync and retire.
+# branch.sh - orch.sh's branch command: create, off, busy, base-sha, sync and
+# retire.
 # Its tests: scripts/test/orch/branch.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
@@ -36,12 +37,15 @@ record_branch_base() {
   git config "branch.$1.orchestrator-base-sha" "$3"
 }
 
-# Besides state, it records the base and base SHA in the branch's git config,
+# It refuses a busy checkout with exit 3 - a branch the plugin made with no PR
+# yet, or a dirty tree - but not on the flow signal, since the flow
+# mid-pipeline is its own. Besides state, it records the base and base SHA in the branch's git config,
 # as branch off does, so branch sync and branch base-sha still find them once
 # the flow is done or archived.
 cmd_branch_create() {
   require_state
   [ $# -eq 0 ] || die "usage: orch.sh branch create"
+  refuse_busy_checkout branch tree
   local slug issue name base sha
   slug="$(state_get slug)"
   require_issue issue
@@ -61,15 +65,28 @@ cmd_branch_create() {
 # effect and records that base on the branch itself in local git config, so
 # pr publish targets it even if the setting moves in the meantime - and records
 # the base branch's tip at branching as the branch's base SHA, the meaning a
-# flow's base_sha has, for its reviewers to diff from.
+# flow's base_sha has, for its reviewers to diff from. It refuses a busy
+# checkout with exit 3, every signal applying, so it never moves another
+# implementation's branch or carries its uncommitted edits.
 cmd_branch_off() {
   [ $# -eq 1 ] || die "usage: orch.sh branch off <name>"
-  refuse_beside_active_flow
+  refuse_busy_checkout flow branch tree
   local base
   base="$(base_branch)"
   checkout_new_branch "$1" "$base"
   record_branch_base "$1" "$base" "$(git rev-parse HEAD)"
   note "$1"
+}
+
+# Whether this checkout is a busy checkout, every signal applying: exit 3 with
+# the one line naming what holds it, exit 0 printing nothing when it is free,
+# exit 1 on a usage error or a working tree that cannot be read. Exit 3 is used
+# by no other failure, so a skill can branch on it.
+cmd_branch_busy() {
+  [ $# -eq 0 ] || die "usage: orch.sh branch busy"
+  local line signal
+  checkout_busy line signal flow branch tree
+  [ -z "$signal" ] || { note "$line"; exit 3; }
 }
 
 # The current branch's base SHA, as branch off, branch create or branch sync
@@ -148,6 +165,7 @@ cmd_branch() {
   case "$op" in
     create) cmd_branch_create "$@" ;;
     off)    cmd_branch_off "$@" ;;
+    busy)   cmd_branch_busy "$@" ;;
     base-sha) cmd_branch_base_sha "$@" ;;
     sync)   cmd_branch_sync "$@" ;;
     retire)
@@ -193,6 +211,6 @@ cmd_branch() {
       fi
       note "$new"
       ;;
-    *) die "unknown branch op: ${op:-<none>} (want create|off|base-sha|sync|retire)" ;;
+    *) die "unknown branch op: ${op:-<none>} (want create|off|busy|base-sha|sync|retire)" ;;
   esac
 }

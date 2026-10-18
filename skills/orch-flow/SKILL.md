@@ -64,12 +64,15 @@ which holds the only copy of the plan.
    allowlist, listing them: show the human the list and stop. Do not commit,
    stash, or discard them yourself - they may be the planning edits the guard
    exists to catch.
-   Starting over a `done` flow archives it automatically and reports where -
-   only a flow still mid-pipeline (`spec`/`implement`/`review`) refuses, and
-   it alone exits 3. **On exit 3, and on no other failure**, offer the human
-   a side checkout as a multiple-choice question: start this flow in a side
-   checkout, a git worktree of its own beside the flow already here, or
-   stop. On a yes, go to **Starting in a side checkout** below. On a no,
+   Starting over a `done` flow archives it automatically and reports where.
+   `init` exits 3, and only then, in a busy checkout: a flow still
+   mid-pipeline (`spec`/`implement`/`review`), or a quick implementation
+   still running here - a branch the plugin made that has no PR yet. Dirty
+   paths are not a busy signal here: they get the exit-1 refusal above.
+   **On exit 3, and on no other failure**, offer the human a side checkout
+   as a multiple-choice question, quoting the busy line `init` printed: start
+   this flow in a side checkout, a git worktree of its own beside the work
+   already here, or stop. On a yes, go to **Starting in a side checkout** below. On a no,
    report the refusal and save the plan as for any other failure.
    **Whenever `init` fails, save the plan before stopping** - a failed
    precondition must never cost the user their plan. Write it, in the
@@ -260,6 +263,14 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    When it dies because the flow's base does not exist on origin, offer the
    maintainer the repair rather than an abort: `bash "$ORCH" base set <branch> --flow`
    points the flow at another base, then rerun `branch create`.
+   When it exits 3, the checkout is a busy checkout - a working tree with
+   changes outside the planning allowlist, or a branch the plugin made that
+   has no PR yet, as after `redo review` of a flow whose PR opened before
+   the PR marker existed. Stop the phase with the state left where it is,
+   relay the busy line it printed, and tell the human to commit or stash the
+   changes, or switch off the named branch, then run `/orchestrator:next`
+   again. The flow's state already exists here, so it is never moved to a
+   side checkout.
 3. Build the ticket frontier with the driver loop in `docs/driver-loop.md`
    (under the plugin root): loop steps a-f and its **Dispatching a
    subagent**, bound here as:

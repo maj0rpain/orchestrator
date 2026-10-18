@@ -125,17 +125,6 @@ flow_holding_phase() {
   printf '%s\n' "$phase"
 }
 
-# The refusal of a second flow beside one mid-pipeline, shared by init and
-# branch off (a quick implementation must never move an active flow's checkout
-# off its branch). It exits 3, a code no other failure of either uses, so a
-# skill can tell "a flow is active" apart from every other refusal.
-refuse_beside_active_flow() {
-  flow_active || return 0
-  warn "a flow is already active (slug: $(state_get slug), phase: $(state_get phase)).
-     One flow at a time - finish it, or run $(flow_cmd abort)."
-  exit 3
-}
-
 # Succeeds when state set may write key $1: its owner column is -. The one
 # place an owner is compared against -; an unknown key is not settable.
 state_key_settable() {

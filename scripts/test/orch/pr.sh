@@ -51,6 +51,8 @@ out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
 assert_eq "prints the PR number GitHub gave it" "$out" "23"
 assert_eq "and records it in state" "$("$ORCH" state get pr)" "23"
+assert_eq "and on the branch, so a busy check stays local (#1200)" \
+  "$(pr_marker_of orch/16-propen)" "23"
 assert_eq "opening it as a draft" "$(fake_pr_draft_of 23)" "yes"
 assert_eq "from the flow's branch" "$(fake_pr_head_of 23)" "orch/16-propen"
 assert_eq "under the title given" "$(fake_pr_title_of 23)" "Title"
@@ -65,9 +67,11 @@ assert_contains "and keeps the agent's original body intact after a blank line" 
 assert_eq "the create call never reached a real gh subprocess" \
   "$(gh_calls)" "0"
 
+git config --unset "branch.orch/16-propen.orchestrator-pr"
 fake_fail adapter_pr_create 'a pull request for branch "orch/16-propen" into branch "main" already exists'
 out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "a gh that will not open the PR fails it" "$st" 1
+assert_eq "writing no PR marker on the branch" "$(pr_marker_of orch/16-propen)" ""
 assert_contains "passing gh's reason through" "$out" "already exists"
 assert_contains "naming the branch it would have opened from" "$out" "orch/16-propen"
 assert_contains "and the issue it would have closed" "$out" "#16"
@@ -122,6 +126,8 @@ assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || e
 assert_eq "opens against the default branch" "$(fake_pr_base_of 23)" "main"
 assert_eq "not as a draft" "$(fake_pr_draft_of 23)" "no"
 assert_eq "and from the current branch" "$(fake_pr_head_of 23)" "quick/16-widgets"
+assert_eq "records the PR on the branch, so a busy check stays local (#1200)" \
+  "$(pr_marker_of quick/16-widgets)" "23"
 body_recorded="$(fake_pr_body_of 23)"
 assert_first_line "the recorded body opens with the closing keyword" \
   "$body_recorded" "Closes #16"
@@ -158,6 +164,8 @@ out="$("$ORCH" pr publish 16 "Title" "$body" --draft 2>&1)"; st=$?
 assert_status "--draft: opens the PR" "$st" 0
 assert_eq "--draft: prints the PR number" "$out" "24"
 assert_eq "--draft: as a draft" "$(fake_pr_draft_of 24)" "yes"
+assert_eq "--draft: records the draft PR on the branch too" \
+  "$(pr_marker_of quick/16-widgets)" "24"
 assert_first_line "--draft: its body still opens with the closing keyword" \
   "$(fake_pr_body_of 24)" "Closes #16"
 
@@ -165,6 +173,18 @@ out="$("$ORCH" pr publish 16 "Title" "$body" --ready 2>&1)"; st=$?
 assert_status "an unknown option is refused" "$st" 1
 assert_contains "naming it" "$out" "unknown option: --ready"
 assert_eq "opening nothing" "$(fake_prs)" "23 24 "
+
+# A PR that was never created leaves no marker, so the branch still counts as
+# holding its checkout (#1200).
+git checkout -q -b quick/17-gadgets
+fake_fail adapter_pr_create
+out="$("$ORCH" pr publish 17 "Title" "$body" 2>&1)"; st=$?
+assert_status "a failed create on a fresh branch fails" "$st" 1
+assert_eq "and writes no PR marker on it" "$(pr_marker_of quick/17-gadgets)" ""
+out="$("$ORCH" pr publish 17 "Title" "$body" --draft 2>&1)"; st=$?
+assert_status "--draft: a failed create on a fresh branch fails" "$st" 1
+assert_eq "--draft: and writes no PR marker on it" "$(pr_marker_of quick/17-gadgets)" ""
+fake_unfail
 
 help="$("$ORCH" help)"
 assert_contains "help documents --draft" "$help" "pr publish <issue> <title> <body-file> [--draft]"
