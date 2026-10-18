@@ -53,16 +53,18 @@ open.
 - Everything no entry names - a symbol the edited body newly names, even in
   a file the map already lists, and the callers or callees below - you
   locate with Grep and Glob before you read any of its content, in two
-  steps. First, a Grep across the repo lists only file names
-  (`files_with_matches`). Then a content Grep, with line numbers and a head
-  limit of at most 30, runs only in the files that matter, to find the
-  lines to read. A content Grep never runs repo-wide, and never without a
-  head limit.
+  steps. First, a search across the repo lists only the names of the
+  matching files (on Claude Code, Grep's `files_with_matches` output). Then
+  a content search, with line numbers and capped at 30 result lines (on
+  Claude Code, Grep's `head_limit`), runs only in the files that matter, to
+  find the lines to read. A content search never runs repo-wide, and never
+  uncapped.
 - Batch: issue every independent Grep, Glob and Read of a step together in
-  one turn, rather than one per turn. Once the spec is read, list every
-  location it names and send all their Greps in one turn; then send the
-  reads for all the hits in one turn. Every turn re-reads the whole context,
-  so fewer turns cost less.
+  one turn, rather than one per turn. Once the spec and the map are read,
+  send in one turn the range reads for every location a map entry names
+  and the searches for every location no entry names; then send the reads
+  for all the search hits in one turn. Every turn re-reads the whole
+  context, so fewer turns cost less.
 - Follow a caller or callee only when a decision in the spec depends on it.
 - For what no entry names, read with an offset and a limit of at most 40
   lines, starting about 10 lines before the match. When the code the spec's
