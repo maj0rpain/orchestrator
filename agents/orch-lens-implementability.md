@@ -47,15 +47,30 @@ open.
 - Start from the files, functions, commands and paths the spec and the map
   name.
 - Code a map entry names is read only at that entry's range, with an offset
-  and limit, never searched for and never read whole - even a file under
-  about 200 lines. The one exception is the Grep that **Using an entry** and
+  and limit, never searched for and never read whole, however short the
+  file. The one exception is the Grep that **Using an entry** and
   the old-entry rule below call for.
 - Everything no entry names - a symbol the edited body newly names, even in
   a file the map already lists, and the callers or callees below - you
-  locate with Grep and Glob.
+  locate with Grep and Glob before you read any of its content, in two
+  steps. First, a search across the repo lists only the names of the
+  matching files (on Claude Code, Grep's `files_with_matches` output). Then
+  a content search, with line numbers and capped at 30 result lines (on
+  Claude Code, Grep's `head_limit`), runs only in the files that matter, to
+  find the lines to read. A content search never runs repo-wide, and never
+  uncapped.
+- Batch: issue every independent Grep, Glob and Read of a step together in
+  one turn, rather than one per turn. Once the spec and the map are read,
+  send in one turn the range reads for every location a map entry names
+  and the searches for every location no entry names; then send the reads
+  for all the search hits in one turn. Every turn re-reads the whole
+  context, so fewer turns cost less.
 - Follow a caller or callee only when a decision in the spec depends on it.
-- For what no entry names, read with an offset and limit around a match;
-  read a whole file only when it is under about 200 lines.
+- For what no entry names, read with an offset and a limit of at most 40
+  lines, starting about 10 lines before the match. When the code the spec's
+  decision depends on runs past that window, read the next 40 lines in a
+  second read; never set a limit over 40. Never read a whole file to find
+  something in it.
 - Do not survey the repo: code the spec does not reach is out of scope.
 
 ## The map file
@@ -69,10 +84,15 @@ Each entry names the range of lines a decision depends on:
 ```
 
 The range is the smallest one that holds the code the spec's decision
-depends on - usually one function or one prose section - with no fixed cap.
+depends on - usually one function or one prose section - kept to a soft
+ceiling of about 60 lines. An entry stays one entry: it runs past the
+ceiling only when that code is one function or prose section longer than
+about 60 lines, and is never split to fit.
 
 **Using an entry.** Read the named range. If it still holds the symbol, rely
-on it and do not search. If it does not, Grep for the symbol in that path and
+on it and do not search - and when the range is over the soft ceiling and
+the decision's code fits a narrower one, record the narrower range. If the
+range no longer holds the symbol, Grep for the symbol in that path and
 record the new range; on more than one match, take the one the entry's reason
 describes. If the symbol or the file is gone from that path, drop the entry.
 A symbol that moved to another file is found again only if the edited body
