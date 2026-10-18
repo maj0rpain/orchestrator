@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.16.0
+
+The spec review's session marks every batch item that carries an edit `material` or `minor` on its `@@ item` line, and `orch.sh spec-review check` shows the material items in full and lists the minor and resolved ones one line each under a `### Minor edits` heading. `check` and `apply` refuse a missing or unknown mark, a mark on a resolved item, and a decision or contradicts-the-plan item marked minor, naming the `batch.md` line.
+
+`orch.sh spec-review apply`'s Other answer is now an override form naming only departures from the recommendation - `<n><letter>`, `-<n>`, `+<n>` - every item left unnamed staying as recommended; the old list-the-items-to-apply form, such as `2, 3`, is refused.
+
+In an attended review, the changelog, and so `settled.md`, tags each minor item applied by the human's answer `(<n>, minor)`; an unattended review's changelog carries no tag.
+
 ## 4.15.1
 
 `orch.sh spec-review check <dir>` prints the full batch view on stdout once the batch passes - the lens lines, then every item with its recommendation, cited findings or comment, and its Current and Proposed text in full - and its one-line pass summary on stderr, so no round of a spec review shows the human only summaries.
