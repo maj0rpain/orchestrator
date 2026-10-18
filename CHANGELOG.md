@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.13.1
+
+The Implementability lens now trusts its code map instead of re-checking it every round. Each map entry names a line range, `<path>:<start>-<end>`, the smallest that holds the code a decision depends on; a later round reads only that range and searches again only when the range no longer holds the entry's symbol. An old entry with no range is located once and rewritten with its range.
+
 ## 4.13.0
 
 Reviewers no longer re-raise what a review has already dealt with. Each reviewer still reviews the diff blind, then opens a known-items file - named in its prompt as a sixth variable, `Known items: <path>` - when it writes its report, and holds back every finding a known item already carries unless its location or cause has changed; the Spec reviewer also reads the recorded deviations first, and verifies what each one built. `orch.sh review known-items <path> <loop boundary>` builds a review loop's file from its records and handoffs, and `orch.sh review-pass known-items <issue> <path> [--deviations <file>]` builds a review pass's from the PR, its comments and the spec issue's rulings. A record's **Waiting to be filed** bullets now carry the finding's `<file>:<line>`, and a quick implementation's PR body records its implementers' deviations under **Deviations**.
