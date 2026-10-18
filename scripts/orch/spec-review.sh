@@ -895,7 +895,7 @@ SR_DIFF_LIMIT=40
 # are written in <dir>; a failed write, or git exiting above 1, dies naming
 # <label>.
 spec_review_word_diff() {
-  local dir="$1" label="$2" IFS=$' \t\n' a=() b=() ops=() words=() line hunk="" status=0
+  local dir="$1" label="$2" IFS=$' \t\n' a=() b=() ops=() words=() line hunk="" status=""
   local n k w total changed=0 s e nx from to rem add piece=() text
   read -r -d '' -a a <<<"$3" || true
   read -r -d '' -a b <<<"$4" || true
@@ -903,8 +903,12 @@ spec_review_word_diff() {
     && { [ "${#b[@]}" -eq 0 ] || printf '%s\n' "${b[@]}"; } >"$dir/replacement"; } 2>/dev/null \
     || die "$label: could not write its word lists in $dir"
   n="${#a[@]}"; [ "${#b[@]}" -le "$n" ] || n="${#b[@]}"
-  git --no-pager diff --no-index --no-color --no-ext-diff --no-textconv --diff-algorithm=myers \
-    --no-indent-heuristic --unified="$n" -- "$dir/anchor" "$dir/replacement" >"$dir/diff" || status=$?
+  # status stays empty when the redirect fails, so a failed write is never
+  # read as git's status 1; git's own stderr still reaches ours, on fd 3.
+  { git --no-pager diff --no-index --no-color --no-ext-diff --no-textconv --diff-algorithm=myers \
+      --no-indent-heuristic --unified="$n" -- "$dir/anchor" "$dir/replacement" 2>&3 && status=0 || status=$?; } \
+    3>&2 2>/dev/null >"$dir/diff" || true
+  [ -n "$status" ] || die "$label: could not write its word diff in $dir"
   [ "$status" -le 1 ] || die "$label: git diff exited $status rendering its word diff"
   while IFS= read -r line || [ -n "$line" ]; do
     if [ -z "$hunk" ]; then

@@ -21,6 +21,15 @@ check_refused() {
   assert_eq "$1: nothing on stdout" "$out" ""
   assert_eq "$1: the directory unchanged" "$(dir_snapshot "$2")" "$before"
 }
+# src <dir> [arg...]: check on <dir> with any further args, its stdout, stderr
+# and status into out, err and st.
+src() {
+  local src_err
+  src_err="$(mktemp)"
+  out="$("$ORCH" spec-review check "$@" 2>"$src_err")"; st=$?
+  err="$(cat "$src_err")"
+  rm -f "$src_err"
+}
 
 # --- spec-review begin (#224) ------------------------------------------------
 # A standalone spec review's guard and working-directory reset have one right
@@ -1240,13 +1249,6 @@ BATCH
   fake_issue_body 14 "$src_body"
   printf '%s\n' "$d"
 }
-# src <dir> [arg...]: check on <dir> with any further args, its stdout, stderr
-# and status into out, err and st.
-src_err="$(mktemp)"
-src() {
-  out="$("$ORCH" spec-review check "$@" 2>"$src_err")"; st=$?
-  err="$(cat "$src_err")"
-}
 
 # A clean batch: exit 0, the view on stdout, the one-line summary on stderr,
 # nothing written.
@@ -1639,6 +1641,19 @@ orch: item 2: git diff exited 128 rendering its word diff"
 assert_eq "and no half view" "$out" ""
 assert_eq "leaving no file behind" "$(ls -A "$src_tmp")" ""
 assert_eq "and the round directory unchanged" "$(dir_snapshot "$d")" "$before"
+# A failed write of the diff output is not git's "texts differ": the first
+# diff leaves its output read-only, so the next one cannot open it to write.
+cat >"$src_git/git" <<FAKE
+#!/usr/bin/env bash
+case " \$* " in *" --no-index "*) chmod 400 "\$(dirname "\${@: -1}")/diff" ;; esac
+exec $(type -P git) "\$@"
+FAKE
+PATH="$src_git:$PATH" TMPDIR="$src_tmp" src "$d"
+assert_status "a failed write of the word diff fails check" "$st" 1
+assert_contains "with an orch: message naming the item" "$err" "orch: item 3 option A: could not write its word diff in $src_tmp/"
+assert_not_contains "not git's exit status 1" "$err" "git diff exited"
+assert_eq "and no half view, no whitespace-only line" "$out" ""
+assert_eq "leaving no file behind on a failed write" "$(ls -A "$src_tmp")" ""
 rm -rf "$src_tmp" "$src_git"
 
 # No flow state read, no GitHub touched.
@@ -1833,7 +1848,6 @@ out="$("$ORCH" spec-review wipe 2>&1)"
 assert_contains "the unknown-op message lists check" "$out" "want begin|check|apply"
 assert_contains "help documents spec-review check" "$("$ORCH" help)" "spec-review check <dir>"
 assert_contains "help documents spec-review check --full" "$("$ORCH" help)" "spec-review check <dir> [--tickets | --full <n>...]"
-rm -f "$src_err"
 restore_suite_env
 
 # --- spec-review check --tickets (#1226) ---------------------------------------
@@ -1891,13 +1905,8 @@ Build gamma twice.
 TICKETS
   printf '%s\n' "$d"
 }
-# srct <dir>: check --tickets on <dir>, its stdout, stderr and status into
-# out, err and st.
-srct_err="$(mktemp)"
-srct() {
-  out="$("$ORCH" spec-review check "$1" --tickets 2>"$srct_err")"; st=$?
-  err="$(cat "$srct_err")"
-}
+# srct <dir>: src with --tickets.
+srct() { src "$1" --tickets; }
 # srct_passes <label> <dir> <stdout> <stderr>: check --tickets exits 0 with
 # exactly <stdout> and <stderr>, and <dir> unchanged.
 srct_passes() {
@@ -2052,7 +2061,6 @@ check_refused srct "an unblock edge absent" "$d" \
   "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21"
 
 assert_contains "help documents spec-review check --tickets" "$("$ORCH" help)" "spec-review check <dir> [--tickets | --full <n>...]"
-rm -f "$srct_err"
 restore_suite_env
 
 # --- spec-review wait (#1183) --------------------------------------------------
