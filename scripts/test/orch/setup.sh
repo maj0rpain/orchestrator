@@ -180,6 +180,14 @@ on_disk() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
+# break_index / restore_index: make the current repo's working tree
+# unreadable - git status fails on a garbage index - and put the index back.
+break_index() { cp .git/index .git/index.bak && echo garbage >.git/index; }
+restore_index() { mv .git/index.bak .git/index; }
+# branch_and_config: the current branch and the local git config, the facts a
+# refusal on an unreadable tree must leave as they were (git status cannot run
+# there, so these are what can be read).
+branch_and_config() { git branch --show-current; git config --local --list; }
 # flat_text: stdin on one line with every whitespace run collapsed to one
 # space.
 flat_text() { tr -s ' \t\n' '   '; }

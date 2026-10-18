@@ -102,11 +102,13 @@ git mv moved.sh src.sh
 
 # A git status that cannot run is not a clean tree - reading it as one would
 # wave through exactly the edits this check exists to catch.
-cp .git/index .git/index.bak; echo garbage >.git/index
+break_index
+before="$(branch_and_config)"
 out="$("$ORCH" init dirty 2>&1)"; st=$?
 assert_status "refuses when git status fails" "$st" 1
+assert_eq "leaves the branch and the git config when git status fails" "$(branch_and_config)" "$before"
 assert_eq "writes no state when git status fails" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
-mv .git/index.bak .git/index
+restore_index
 
 # The glossary and ADRs are planning records: a dirty one refuses init with
 # the guard's redirect, under its own heading (#186).

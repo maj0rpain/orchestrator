@@ -102,11 +102,13 @@ current_branch_or_die() {
   branch="$(checkout_branch)" || "$dier" "not on a branch (detached HEAD)${1-}"
 }
 
-# checkout_busy <var> <signal>...: assigns to <var> the one line naming what
-# makes this checkout a busy checkout - one holding work a new branch must not
-# move - or empty when it is free. Reads local git and state facts only, never
-# GitHub. The signals are checked in this order, the first that holds
-# reported, and only those named apply, so each caller picks its own (#1198):
+# checkout_busy <var> <held-var> <signal>...: assigns to <var> the one line
+# naming what makes this checkout a busy checkout - one holding work a new
+# branch must not move - or empty when it is free, and to <held-var> the name
+# of the signal that holds (flow, branch or tree), or empty. Reads local git
+# and state facts only, never GitHub. The signals are checked in this order,
+# the first that holds reported, and only those named apply, so each caller
+# picks its own (#1198):
 #   flow    a flow mid-pipeline (phase not done)
 #   branch  the current branch records a base (branch.<b>.orchestrator-base,
 #           as branch off and branch create write) but no PR
@@ -117,19 +119,24 @@ current_branch_or_die() {
 # read exits 1, never read as free or busy. Called as a bare statement, so
 # that exit stops the caller.
 checkout_busy() {
-  local var="$1" signals=" ${*:2} " b dirty line=""
+  local var="$1" held_var="$2" signals=" ${*:3} " b dirty busy_line="" busy_signal=""
   if [[ "$signals" == *" flow "* ]] && flow_active; then
-    line="busy: a flow is mid-pipeline (slug: $(state_get slug), phase: $(state_get phase))"
+    busy_signal=flow
+    busy_line="busy: a flow is mid-pipeline (slug: $(state_get slug), phase: $(state_get phase))"
   elif [[ "$signals" == *" branch "* ]] && b="$(checkout_branch)" \
     && git config --get "branch.$b.orchestrator-base" >/dev/null 2>&1 \
     && ! git config --get "branch.$b.orchestrator-pr" >/dev/null 2>&1; then
-    line="busy: branch $b has no PR yet"
+    busy_signal=branch
+    busy_line="busy: branch $b has no PR yet"
   elif [[ "$signals" == *" tree "* ]]; then
     dirty="$(dirty_outside_allowlist)" || exit 1
-    [ -z "$dirty" ] \
-      || line="busy: the working tree has changes outside the planning allowlist: ${dirty//$'\n'/, }"
+    [ -z "$dirty" ] || {
+      busy_signal=tree
+      busy_line="busy: the working tree has changes outside the planning allowlist: ${dirty//$'\n'/, }"
+    }
   fi
-  printf -v "$var" '%s' "$line"
+  printf -v "$var" '%s' "$busy_line"
+  printf -v "$held_var" '%s' "$busy_signal"
 }
 
 # refuse_busy_checkout <signal>...: the refusal shared by branch off, branch
@@ -141,15 +148,15 @@ checkout_busy() {
 # cannot be read exits 1 inside checkout_busy. Called as a bare statement, so
 # the exit stops the caller.
 refuse_busy_checkout() {
-  local held remedy
-  checkout_busy held "$@"
-  [ -n "$held" ] || return 0
-  case "$held" in
-    "busy: a flow"*) remedy="One flow at a time - finish it, or run $(flow_cmd abort)." ;;
-    "busy: branch"*) remedy="Open its PR, or switch off it." ;;
-    *) remedy="Commit, stash, or discard these changes." ;;
+  local line signal remedy
+  checkout_busy line signal "$@"
+  [ -n "$signal" ] || return 0
+  case "$signal" in
+    flow) remedy="One flow at a time - finish it, or run $(flow_cmd abort)." ;;
+    branch) remedy="Open its PR, or switch off it." ;;
+    tree) remedy="Commit, stash, or discard these changes." ;;
   esac
-  warn "$held
+  warn "$line
      $remedy"
   exit 3
 }

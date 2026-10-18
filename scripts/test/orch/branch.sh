@@ -601,12 +601,12 @@ assert_contains "naming the usage" "$out" "usage: orch.sh branch busy"
 
 # The tree is read only when no earlier signal holds, and a tree that cannot
 # be read is neither free nor busy.
-cp .git/index .git/index.bak; echo garbage >.git/index
+break_index
 out="$(orch_gh_failing branch busy 2>&1)"; st=$?
 assert_status "an unreadable tree exits 1" "$st" 1
 assert_contains "naming the git status failure" "$out" "git status failed"
 assert_not_contains "printing no busy line" "$out" "busy:"
-mv .git/index.bak .git/index
+restore_index
 
 git checkout -q --detach
 echo edit >docs/agents/x.md
@@ -705,13 +705,12 @@ rm docs/agents/note.md
 # A tree that cannot be read, where no earlier signal holds, is neither free
 # nor busy.
 new_repo_with_origin
-cp .git/index .git/index.bak; echo garbage >.git/index
-before_branch="$(git branch --show-current)"; before_config="$(git config --local --list)"
+break_index
+before="$(branch_and_config)"
 out="$(orch_gh_failing branch off quick/5-unread 2>&1)"; st=$?
 assert_status "branch off on an unreadable tree exits 1" "$st" 1
-assert_eq "leaving the branch (branch off)" "$(git branch --show-current)" "$before_branch"
-assert_eq "and the git config (branch off)" "$(git config --local --list)" "$before_config"
-mv .git/index.bak .git/index
+assert_eq "leaving the branch and the git config (branch off)" "$(branch_and_config)" "$before"
+restore_index
 
 new_repo_with_origin
 orch_gh_failing init own >/dev/null
@@ -739,15 +738,14 @@ assert_eq "writing no orchestrator-base key (branch create)" \
   "$(git config --get branch.orch/12-own.orchestrator-base || echo unset)" "unset"
 
 git checkout -q "$default"
-cp .git/index .git/index.bak; echo garbage >.git/index
-before_branch="$(git branch --show-current)"; before_config="$(git config --local --list)"
+break_index
+before="$(branch_and_config)"
 before_state="$(cat .orchestrator/state.json)"
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create on an unreadable tree exits 1" "$st" 1
-assert_eq "leaving the branch (branch create)" "$(git branch --show-current)" "$before_branch"
-assert_eq "the git config (branch create)" "$(git config --local --list)" "$before_config"
+assert_eq "leaving the branch and the git config (branch create)" "$(branch_and_config)" "$before"
 assert_eq "and the state (branch create)" "$(cat .orchestrator/state.json)" "$before_state"
-mv .git/index.bak .git/index
+restore_index
 
 out="$(orch_gh_failing branch create 2>&1)"; st=$?
 assert_status "branch create succeeds beside its own flow when the checkout is otherwise free" "$st" 0
