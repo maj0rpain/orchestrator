@@ -598,6 +598,7 @@ git checkout -q README.md
 out="$(orch_gh_failing branch busy extra 2>&1)"; st=$?
 assert_status "an argument is a usage error" "$st" 1
 assert_contains "naming the usage" "$out" "usage: orch.sh branch busy"
+assert_not_contains "printing no busy line" "$out" "busy:"
 
 # The tree is read only when no earlier signal holds, and a tree that cannot
 # be read is neither free nor busy.
