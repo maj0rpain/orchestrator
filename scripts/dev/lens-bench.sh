@@ -220,16 +220,6 @@ cmd_run() {
   printf '%s: %s runs\n' "$out" "$n" >&2
 }
 
-case "${1:-}" in
-  run) shift; cmd_run "$@"; exit 0 ;;
-  measure) [ "$#" -ge 2 ] || usage ;;
-  *) usage ;;
-esac
-shift
-for arg in "$@"; do
-  case "$arg" in -*) usage ;; esac
-done
-
 # runs_of <dir>: the names of <dir>'s run subdirectories, run-1 first, in
 # numeric order.
 runs_of() {
@@ -500,78 +490,93 @@ stats() {
     }'
 }
 
-# Each directory without its trailing slashes, so every message names one
-# path; a lone / stays itself.
-dirs=()
-for bench_dir in "$@"; do
-  while [[ "$bench_dir" == */ && "$bench_dir" != / ]]; do bench_dir="${bench_dir%/}"; done
-  dirs+=("$bench_dir")
-done
-set -- "${dirs[@]}"
-
-# Every directory is checked before anything is printed.
-for bench_dir in "$@"; do
-  [ -d "$bench_dir" ] || fail "$bench_dir: no such directory"
-  for file in lens revision model spec.md; do
-    [ -f "$bench_dir/$file" ] || fail "$bench_dir/$file: missing"
+cmd_measure() {
+  [ "$#" -ge 1 ] || usage
+  local arg
+  for arg in "$@"; do
+    case "$arg" in -*) usage ;; esac
   done
-  while IFS= read -r run; do
-    [ -f "$bench_dir/$run/transcript.jsonl" ] || fail "$bench_dir/$run/transcript.jsonl: missing"
-  done < <(runs_of "$bench_dir")
-done
+  local dirs=() bench_dir file run first baseline total turns_all input_all cover_all
+  local diagnoses names transcript measures turns input calls reads greps map
+  local map_widths row cover runs
+  # Each directory without its trailing slashes, so every message names one
+  # path; a lone / stays itself.
+  for bench_dir in "$@"; do
+    while [[ "$bench_dir" == */ && "$bench_dir" != / ]]; do bench_dir="${bench_dir%/}"; done
+    dirs+=("$bench_dir")
+  done
+  set -- "${dirs[@]}"
 
-first=1
-for bench_dir in "$@"; do
-  [ "$first" -eq 1 ] || echo
-  first=0
-  baseline=""
-  [ -f "$bench_dir/map.md" ] && baseline="$bench_dir/map.md"
-  printf '## %s\n\n' "$bench_dir"
-  printf 'Lens %s, revision %s, model %s\n\n' \
-    "$(<"$bench_dir/lens")" "$(<"$bench_dir/revision")" "$(<"$bench_dir/model")"
-  if [ -n "$baseline" ]; then
-    total="$(locations "$baseline" | awk 'END { print NR }')"
-    printf 'Baseline map: %s locations\n\n' "$total"
-    echo '| Run | Turns | Input | Calls per turn | Ranged Read lines | Grep chars | Map entry widths | Coverage |'
-    echo '|---|---|---|---|---|---|---|---|'
-  else
-    echo 'Baseline map: none, so no coverage'
-    echo
-    echo '| Run | Turns | Input | Calls per turn | Ranged Read lines | Grep chars | Map entry widths |'
-    echo '|---|---|---|---|---|---|---|'
-  fi
-  turns_all="" input_all="" cover_all="" diagnoses=""
-  names="$(code_spans "$bench_dir/spec.md" | jq -Rsc 'split("\n") | map(select(. != ""))')"
-  while IFS= read -r run; do
-    transcript="$bench_dir/$run/transcript.jsonl"
-    measures="$(jq -rs "$TRANSCRIPT_JQ" "$transcript")" ||
-      fail "$transcript: not a transcript"
-    IFS=$'\t' read -r turns input calls reads greps <<<"$measures"
-    map="$bench_dir/$run/map.md"
-    if [ -f "$map" ]; then map_widths="$(widths "$map")"; else map_widths="-"; fi
-    row="| $run | $turns | $input | $calls | $reads | $greps | $map_widths |"
+  # Every directory is checked before anything is printed.
+  for bench_dir in "$@"; do
+    [ -d "$bench_dir" ] || fail "$bench_dir: no such directory"
+    for file in lens revision model spec.md; do
+      [ -f "$bench_dir/$file" ] || fail "$bench_dir/$file: missing"
+    done
+    while IFS= read -r run; do
+      [ -f "$bench_dir/$run/transcript.jsonl" ] || fail "$bench_dir/$run/transcript.jsonl: missing"
+    done < <(runs_of "$bench_dir")
+  done
+
+  first=1
+  for bench_dir in "$@"; do
+    [ "$first" -eq 1 ] || echo
+    first=0
+    baseline=""
+    [ -f "$bench_dir/map.md" ] && baseline="$bench_dir/map.md"
+    printf '## %s\n\n' "$bench_dir"
+    printf 'Lens %s, revision %s, model %s\n\n' \
+      "$(<"$bench_dir/lens")" "$(<"$bench_dir/revision")" "$(<"$bench_dir/model")"
     if [ -n "$baseline" ]; then
-      if [ -f "$map" ]; then cover="$(covered "$baseline" "$map")"; else cover=0; fi
-      row+=" $cover/$total |"
-      cover_all+="$cover"$'\n'
+      total="$(locations "$baseline" | awk 'END { print NR }')"
+      printf 'Baseline map: %s locations\n\n' "$total"
+      echo '| Run | Turns | Input | Calls per turn | Ranged Read lines | Grep chars | Map entry widths | Coverage |'
+      echo '|---|---|---|---|---|---|---|---|'
+    else
+      echo 'Baseline map: none, so no coverage'
+      echo
+      echo '| Run | Turns | Input | Calls per turn | Ranged Read lines | Grep chars | Map entry widths |'
+      echo '|---|---|---|---|---|---|---|'
     fi
-    printf '%s\n' "$row"
-    diagnoses+="$(jq -sc --argjson names "$names" --arg run "$run" "$DIAGNOSIS_JQ" "$transcript")"$'\n'
-    turns_all+="$turns"$'\n'
-    input_all+="$input"$'\n'
-  done < <(runs_of "$bench_dir")
+    turns_all="" input_all="" cover_all="" diagnoses=""
+    names="$(code_spans "$bench_dir/spec.md" | jq -Rsc 'split("\n") | map(select(. != ""))')"
+    while IFS= read -r run; do
+      transcript="$bench_dir/$run/transcript.jsonl"
+      measures="$(jq -rs "$TRANSCRIPT_JQ" "$transcript")" ||
+        fail "$transcript: not a transcript"
+      IFS=$'\t' read -r turns input calls reads greps <<<"$measures"
+      map="$bench_dir/$run/map.md"
+      if [ -f "$map" ]; then map_widths="$(widths "$map")"; else map_widths="-"; fi
+      row="| $run | $turns | $input | $calls | $reads | $greps | $map_widths |"
+      if [ -n "$baseline" ]; then
+        if [ -f "$map" ]; then cover="$(covered "$baseline" "$map")"; else cover=0; fi
+        row+=" $cover/$total |"
+        cover_all+="$cover"$'\n'
+      fi
+      printf '%s\n' "$row"
+      diagnoses+="$(jq -sc --argjson names "$names" --arg run "$run" "$DIAGNOSIS_JQ" "$transcript")"$'\n'
+      turns_all+="$turns"$'\n'
+      input_all+="$input"$'\n'
+    done < <(runs_of "$bench_dir")
 
-  runs="$(printf '%s' "$turns_all" | awk 'END { print NR }')"
-  [ "$runs" -gt 0 ] || continue
-  printf '\nSummary over %s runs:\n\n' "$runs"
-  echo '| Measure | Mean | Median | Min | Max |'
-  echo '|---|---|---|---|---|'
-  printf '%s' "$turns_all" | stats | awk -F'\t' '{ printf "| Turns | %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
-  printf '%s' "$input_all" | stats | awk -F'\t' '{ printf "| Input | %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
-  if [ -n "$baseline" ]; then
-    printf '%s' "$cover_all" | stats | awk -F'\t' -v t="$total" \
-      '{ printf "| Coverage | %s/%s | %s/%s | %s/%s | %s/%s |\n", $1, t, $2, t, $3, t, $4, t }'
-  fi
-  echo
-  printf '%s' "$diagnoses" | jq -rs "$REPORT_JQ"
-done
+    runs="$(printf '%s' "$turns_all" | awk 'END { print NR }')"
+    [ "$runs" -gt 0 ] || continue
+    printf '\nSummary over %s runs:\n\n' "$runs"
+    echo '| Measure | Mean | Median | Min | Max |'
+    echo '|---|---|---|---|---|'
+    printf '%s' "$turns_all" | stats | awk -F'\t' '{ printf "| Turns | %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
+    printf '%s' "$input_all" | stats | awk -F'\t' '{ printf "| Input | %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
+    if [ -n "$baseline" ]; then
+      printf '%s' "$cover_all" | stats | awk -F'\t' -v t="$total" \
+        '{ printf "| Coverage | %s/%s | %s/%s | %s/%s | %s/%s |\n", $1, t, $2, t, $3, t, $4, t }'
+    fi
+    echo
+    printf '%s' "$diagnoses" | jq -rs "$REPORT_JQ"
+  done
+}
+
+case "${1:-}" in
+  run) shift; cmd_run "$@" ;;
+  measure) shift; cmd_measure "$@" ;;
+  *) usage ;;
+esac
