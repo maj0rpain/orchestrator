@@ -167,6 +167,17 @@ run_bench measure "$FIXTURE/no-baseline"
 has_line "a directory whose runs use no other tool has no column for one" "$out" \
   "| Run | Fixed base | The spec | Ranged reads | Whole reads | Grep/Glob | Assistant output |"
 
+echo
+echo "the diagnosis: code spans"
+# A copy of the diagnosis fixture whose spec adds the double-backtick span
+# ``x `gamma` y``: one name, `x `gamma` y`, so run-2's Grep for gamma, which
+# does not contain it, still locates nothing named.
+cp -R "$FIXTURE/diagnosis" "$bench_root/spans"
+printf '\nAlso ``x `gamma` y``.\n' >>"$bench_root/spans/spec.md"
+run_bench measure "$bench_root/spans"
+has_line "a double-backtick span is one name, not the single-backtick spans inside it" "$out" \
+  "| run-2 | 0 (0%) | 0 (0%) | 2 (100%) | 0 (0%) | 0 (0%) | 1100 (100%) |"
+
 # broken <name> <file under with-baseline>: a copy of with-baseline, named
 # <name>, with <file> removed. Prints its path.
 broken() {
@@ -254,12 +265,20 @@ worktrees() { bench_git worktree list | awk 'END { print NR }'; }
 leftovers() { find "$bench_root" -maxdepth 1 -name 'lens-bench.*' | awk 'END { print NR }'; }
 
 # run_refused <test> <named> <args...>: run exits 1 naming <named>, and leaves
-# no output directory, no worktree and no temporary directory behind.
+# no worktree and no temporary directory behind, nor the output directory its
+# --out names unless that existed before.
 run_refused() {
-  local name="$1" named="$2"
+  local name="$1" named="$2" out_dir="" existed="" arg prev=""
   shift 2
+  for arg in "$@"; do
+    [ "$prev" != --out ] || out_dir="$arg"
+    prev="$arg"
+  done
+  [ ! -e "$out_dir" ] || existed=1
   run_copy run "$@"
   assert_status "$name: exits 1" "$st" 1
+  [ -n "$existed" ] ||
+    assert_eq "$name: creates no output directory" "$([ -e "$out_dir" ] && echo yes)" ""
   assert_contains "$name: names it" "$err" "$named"
   assert_eq "$name: creates no worktree" "$(worktrees)" 1
   assert_eq "$name: leaves no temporary directory" "$(leftovers)" 0
@@ -268,15 +287,10 @@ run_refused() {
 echo
 echo "run: refusals before claude starts"
 run_refused "an unknown lens" "nosuch" nosuch --definition "$definition" --out "$bench_root/out-a"
-assert_eq "an unknown lens: creates no output directory" "$([ -e "$bench_root/out-a" ] && echo yes)" ""
 run_refused "a revision without the lens's definition" "agents/orch-lens-implementability.md" \
   implementability --definition "$no_definition" --out "$bench_root/out-b"
-assert_eq "a revision without the definition: creates no output directory" \
-  "$([ -e "$bench_root/out-b" ] && echo yes)" ""
 run_refused "a revision that does not exist" "nosuchrev" \
   implementability --definition nosuchrev --out "$bench_root/out-c"
-assert_eq "a revision that does not exist: creates no output directory" \
-  "$([ -e "$bench_root/out-c" ] && echo yes)" ""
 mkdir "$bench_root/out-d"
 run_refused "an output directory that already exists" "$bench_root/out-d" \
   implementability --definition "$definition" --out "$bench_root/out-d"

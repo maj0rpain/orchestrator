@@ -40,7 +40,8 @@
 # no map has coverage 0 where there is a baseline map.
 #
 # Then the diagnosis, per run and summed over the directory's runs. Each code
-# span (backticked text) in `spec.md` is a name the spec gives; a tool call
+# span (backticked text) in `spec.md`, as CommonMark reads one, is a name the
+# spec gives; a tool call
 # locates spec-named code when its Read path, Grep pattern or Glob pattern
 # contains one. A turn is `named` when all its calls do, `mixed` when some do,
 # and `unnamed` when none do or it makes no call; the report gives each
@@ -183,7 +184,6 @@ cmd_run() {
     fail "$snapshot: cannot check out the snapshot in a worktree"
 
   mkdir -p "$out"
-  out="$(cd "$out" && pwd)"
   printf '%s\n' "$lens" >"$out/lens"
   printf '%s\n' "$sha" >"$out/revision"
   printf '%s\n' "$model" >"$out/model"
@@ -270,6 +270,52 @@ covered() {
         if ($1 == path[i] && $2 <= to[i] && from[i] <= $3) hit[i] = 1 }
     END { c = 0; for (i in hit) c++; print c }' \
     <(locations "$1") <(locations "$2")
+}
+
+# code_spans <file>: each code span in Markdown <file>, one per line, read as
+# CommonMark reads them: a run of N backticks opens a span that only a run of
+# exactly N closes, a run with no such closer is literal, a backslash-escaped
+# backtick opens nothing, a line ending inside a span is a space, and one
+# leading and one trailing space are dropped when both are there and the span
+# is not all spaces. A span lies within one block - a paragraph, a list item
+# or a heading - and a fenced code block holds none.
+code_spans() {
+  awk '
+    function run_end(s, i, n) { while (i <= n && substr(s, i, 1) == "`") i++; return i }
+    function flush(   s, n, i, j, k, e, m, closer, span) {
+      s = block; block = ""; n = length(s); i = 1
+      while (i <= n) {
+        if (substr(s, i, 1) == "\\") { i += 2; continue }
+        if (substr(s, i, 1) != "`") { i++; continue }
+        j = run_end(s, i, n); m = j - i; closer = 0
+        for (k = j; k <= n; k = e) {
+          if (substr(s, k, 1) != "`") { e = k + 1; continue }
+          e = run_end(s, k, n)
+          if (e - k == m) { closer = k; break }
+        }
+        if (!closer) { i = j; continue }
+        span = substr(s, j, closer - j)
+        if (span ~ /^ .* $/ && span !~ /^ +$/) span = substr(span, 2, length(span) - 2)
+        print span
+        i = closer + m
+      }
+    }
+    function add(line) { block = (block == "" ? line : block " " line) }
+    fence != "" {
+      line = $0; sub(/^[ ]?[ ]?[ ]?/, "", line)
+      if (index(line, fence) == 1 && line ~ /^(`+|~+)[ \t]*$/) fence = ""
+      next
+    }
+    /^[ ]?[ ]?[ ]?(```|~~~)/ {
+      flush(); line = $0; sub(/^[ ]*/, "", line)
+      match(line, /^(`+|~+)/); fence = substr(line, 1, RLENGTH)
+      next
+    }
+    /^[ \t]*$/ { flush(); next }
+    /^[ ]?[ ]?[ ]?#/ { flush(); add($0); flush(); next }
+    /^[ \t]*([-*+]|[0-9]+[.)])([ \t]|$)/ { flush(); add($0); next }
+    { line = $0; sub(/^[ \t]+/, "", line); add(line) }
+    END { flush() }' "$1"
 }
 
 # The jq definitions both transcript programs share: text, a message
@@ -375,7 +421,7 @@ DIAGNOSIS_JQ="$JQ_PRELUDE"'
 # per run and one summed over them. Every other tool is a column by its name.
 REPORT_JQ='
   def num: if . == floor then tostring else (. * 10 + 0.5 | floor) / 10 | tostring end;
-  def cell($whole): "\(. + 0.5 | floor) (\(if $whole == 0 then 0 else . * 100 / $whole end | (. * 10 + 0.5 | floor) / 10 | num)%)";
+  def cell($whole): "\(. + 0.5 | floor) (\(if $whole == 0 then 0 else . * 100 / $whole end | num)%)";
   def sum: reduce .[] as $o ({}; reduce ($o | to_entries[]) as $e (.; .[$e.key] += $e.value));
   ["fixed base", "the spec", "ranged reads", "whole reads", "Grep/Glob"] as $first
   | ([.[].carried | keys[]] | unique
@@ -444,7 +490,7 @@ for dir in "$@"; do
     echo '|---|---|---|---|---|---|---|'
   fi
   turns_all="" input_all="" cover_all="" diagnoses=""
-  names="$(grep -o '`[^`]*`' "$dir/spec.md" | tr -d '`' | jq -Rsc 'split("\n") | map(select(. != ""))')"
+  names="$(code_spans "$dir/spec.md" | jq -Rsc 'split("\n") | map(select(. != ""))')"
   while IFS= read -r run; do
     transcript="$dir/$run/transcript.jsonl"
     measures="$(jq -rs "$TRANSCRIPT_JQ" "$transcript")" ||
