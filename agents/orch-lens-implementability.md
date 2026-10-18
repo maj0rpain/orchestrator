@@ -45,25 +45,45 @@ open.
 ## Reading the code
 
 - Start from the files, functions, commands and paths the spec and the map
-  name. Locate them with Grep and Glob.
+  name.
+- Code a map entry names is read only at that entry's range, with an offset
+  and limit, never searched for and never read whole - even a file under
+  about 200 lines. The one exception is the Grep that **Using an entry** and
+  the old-entry rule below call for.
+- Everything no entry names - a symbol the edited body newly names, even in
+  a file the map already lists, and the callers or callees below - you
+  locate with Grep and Glob.
 - Follow a caller or callee only when a decision in the spec depends on it.
-- Read with an offset and limit around a match; read a whole file only when
-  it is under about 200 lines.
+- For what no entry names, read with an offset and limit around a match;
+  read a whole file only when it is under about 200 lines.
 - Do not survey the repo: code the spec does not reach is out of scope.
 
 ## The map file
 
 The map file, when it exists, is the previous round's index of the code this
-spec touches. It is a hint, not a truth: confirm each entry with Grep before
-relying on it, drop entries that no longer hold, and add what the edited body
-newly names. It holds code locations only, never findings.
+spec touches, and you trust it. It holds code locations only, never findings.
+Each entry names the range of lines a decision depends on:
+
+```
+<path>:<start>-<end> <symbol> - <why the spec touches it>
+```
+
+The range is the smallest one that holds the code the spec's decision
+depends on - usually one function or one prose section - with no fixed cap.
+
+**Using an entry.** Read the named range. If it still holds the symbol, rely
+on it and do not search. If it does not, Grep for the symbol in that path and
+record the new range; on more than one match, take the one the entry's reason
+describes. If the symbol or the file is gone from that path, drop the entry.
+A symbol that moved to another file is found again only if the edited body
+still names it, as a newly named location.
+
+**An old entry with no range**, `<path>:<line>`, is located once with Grep
+and rewritten with its range.
 
 Always rewrite the map file before replying, whether or not it existed:
-one line per code location, under about 60 lines, no line starting `@@`:
-
-```
-<path>:<line> <symbol> - <why the spec touches it>
-```
+every entry with its current range, plus what the edited body newly names,
+one line per code location, under about 60 lines, no line starting `@@`.
 
 ## Reporting rules
 

@@ -101,7 +101,7 @@ sr_state="$top/.orchestrator/state.json"
 cm_seed() {
   rm -rf "$sr_dir"
   mkdir -p "$sr_dir/sub"
-  printf 'scripts/orch/x.sh:12 x_fn - the spec changes it\n' >"$sr_dir/map-implementability.md"
+  printf 'scripts/orch/x.sh:12-30 x_fn - the spec changes it\n' >"$sr_dir/map-implementability.md"
   printf '## Spec review\nRound 1 of 2\n' >"$sr_dir/settled.md"
   echo stale >"$sr_dir/spec.md"
   echo stale >"$sr_dir/lens-implementability.md"
@@ -116,7 +116,7 @@ assert_eq "keeping only the map and the settled file" "$(ls -A "$sr_dir" | LC_AL
   "map-implementability.md
 settled.md"
 assert_eq "the map with its content" "$(cat "$sr_dir/map-implementability.md" 2>&1)" \
-  "scripts/orch/x.sh:12 x_fn - the spec changes it"
+  "scripts/orch/x.sh:12-30 x_fn - the spec changes it"
 assert_eq "the settled file with its content" "$(cat "$sr_dir/settled.md" 2>&1)" \
   "## Spec review
 Round 1 of 2"
