@@ -15,8 +15,10 @@ differences only:
   and Implementability, with Fidelity not run.
 - **Disposition**: `batch.md` is written and checked with `spec-review
   check` until it passes, as in an attended review, and the batch printed by
-  pasting `check`'s stdout word for word, as in an attended review, so a
-  human watching can see what is applied and interrupt. Then no question is asked and nothing waits: the batch is
+  pasting `check`'s stdout word for word, as in an attended review - the
+  material items in full, the minor and resolved ones one line each under
+  **Minor edits** - so a human watching can see what is applied and
+  interrupt. Then no question is asked and nothing waits: the batch is
   applied at once as **Apply as recommended** - every proposed edit applied,
   every **recommend decline** item skipped, and every decision item takes
   its recommended option.

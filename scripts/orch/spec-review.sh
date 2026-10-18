@@ -178,16 +178,27 @@ spec_review_item_check() {
 # naming the line.
 spec_review_batch_die() { die "batch.md line $1: $2"; }
 
+# spec_review_mark_check <line> <n> <rec> <mark>: dies, naming <line>,
+# unless item <n>'s <mark> - the last fixed token of its `@@ item` line - is
+# material or minor.
+spec_review_mark_check() {
+  case "$4" in
+    material|minor) ;;
+    '') spec_review_batch_die "$1" "@@ item $2 ... $3 needs its mark, material or minor" ;;
+    *) spec_review_batch_die "$1" "item $2's mark must be material or minor, got '$4'" ;;
+  esac
+}
+
 # spec_review_batch_parse <file>: reads the batch file into the SR_ arrays -
 # the `@@ lens` lines, then one entry per item, its findings, comments and
 # options - dying on the first malformed line, named by its number. The
 # citations' ranges are checked later, against the lens files.
 spec_review_batch_parse() {
   local file="$1" line lineno=0 mode=top rest kw args cur=-1 opt=-1
-  local buf="" bufn=0 block_line=0 quote_wanted="" n group rec arg lens state reason
-  local fd_lens fd_k login created letter label extra j
+  local buf="" bufn=0 block_line=0 quote_wanted="" n group rec rec_tail arg lens state reason
+  local fd_lens fd_k login created letter label extra j mark
   SR_LENS_NAME=(); SR_LENS_STATE=(); SR_LENS_REASON=()
-  SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_LINE=()
+  SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_MARK=(); SR_IT_LINE=()
   SR_IT_SUMMARY=(); SR_IT_ANCHOR=(); SR_IT_ANCHOR_LINE=(); SR_IT_REPLACE=(); SR_IT_RESOLVED=()
   SR_FD_ITEM=(); SR_FD_LENS=(); SR_FD_K=(); SR_FD_LINE=()
   SR_CM_ITEM=(); SR_CM_LOGIN=(); SR_CM_CREATED=(); SR_CM_QUOTE=()
@@ -256,7 +267,7 @@ spec_review_batch_parse() {
         SR_LENS_NAME[j]="$lens"; SR_LENS_STATE[j]="$state"; SR_LENS_REASON[j]="$reason" ;;
       item)
         [ "$cur" -lt 0 ] || spec_review_item_check "$cur"
-        read -r n group rec arg <<<"$args"
+        read -r n group rec rec_tail <<<"$args"
         case "$n" in ''|*[!0-9]*|0*) spec_review_batch_die "$lineno" "item number must be a positive number, got '$n'" ;; esac
         [ -z "$(array_index SR_IT_N "$n")" ] || spec_review_batch_die "$lineno" "a second item $n"
         case "$group" in
@@ -264,18 +275,35 @@ spec_review_batch_parse() {
           *) spec_review_lens_known "$group" \
                || spec_review_batch_die "$lineno" "unknown group '$group' (want consolidation, a lens, or contradicts-the-plan)" ;;
         esac
+        mark=""; arg=""
         case "$rec" in
-          apply|resolved)
-            [ -z "$arg" ] || spec_review_batch_die "$lineno" "@@ item $n ... $rec takes nothing after it" ;;
+          apply)
+            read -r mark extra <<<"$rec_tail"
+            spec_review_mark_check "$lineno" "$n" "$rec" "$mark"
+            [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ item $n ... apply takes nothing after its mark" ;;
+          resolved)
+            case "$rec_tail" in
+              material|material' '*|minor|minor' '*) spec_review_batch_die "$lineno" "@@ item $n ... a resolved item carries no mark" ;;
+            esac
+            [ -z "$rec_tail" ] || spec_review_batch_die "$lineno" "@@ item $n ... resolved takes nothing after it" ;;
           decline)
-            [ -n "$arg" ] || spec_review_batch_die "$lineno" "@@ item $n ... decline needs a reason" ;;
+            read -r mark arg <<<"$rec_tail"
+            spec_review_mark_check "$lineno" "$n" "$rec" "$mark"
+            [ -n "$arg" ] || spec_review_batch_die "$lineno" "@@ item $n ... decline needs a reason after its mark" ;;
           decision)
-            case "$arg" in [A-Z]) ;; *) spec_review_batch_die "$lineno" "@@ item $n ... decision needs the recommended option's letter, A to Z" ;; esac ;;
-          *) spec_review_batch_die "$lineno" "item $n's recommendation must be apply, decline <reason>, decision <letter> or resolved" ;;
+            read -r arg mark extra <<<"$rec_tail"
+            case "$arg" in [A-Z]) ;; *) spec_review_batch_die "$lineno" "@@ item $n ... decision needs the recommended option's letter, A to Z" ;; esac
+            spec_review_mark_check "$lineno" "$n" "$rec" "$mark"
+            [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ item $n ... decision takes nothing after its mark" ;;
+          *) spec_review_batch_die "$lineno" "item $n's recommendation must be apply <mark>, decline <mark> <reason>, decision <letter> <mark> or resolved" ;;
         esac
+        [ "$mark" != minor ] || [ "$rec" != decision ] \
+          || spec_review_batch_die "$lineno" "decision item $n is always material, never minor"
+        [ "$mark" != minor ] || [ "$group" != contradicts-the-plan ] \
+          || spec_review_batch_die "$lineno" "contradicts-the-plan item $n is always material, never minor"
         cur="${#SR_IT_N[@]}"; opt=-1
         SR_IT_N[cur]="$n"; SR_IT_GROUP[cur]="$group"; SR_IT_REC[cur]="$rec"
-        SR_IT_ARG[cur]="$arg"; SR_IT_LINE[cur]="$lineno"
+        SR_IT_ARG[cur]="$arg"; SR_IT_MARK[cur]="$mark"; SR_IT_LINE[cur]="$lineno"
         mode=item ;;
       summary)
         [ -n "$args" ] || spec_review_batch_die "$lineno" "@@ summary needs its line"
@@ -430,39 +458,58 @@ spec_review_findings_check() {
 # SR_DISP (applied, declined, taken, undecided or resolved), SR_ASREC (1 where
 # the human's call matched the recommendation) and SR_TAKEN (a decision's
 # letter), from the batch question's answer: recommended, all, none, or an
-# Other list such as `1B, 2, 3, 5`. Dies, before any write, on an unknown
-# item or option, a letter on an item that is no decision, a decision named
-# without one, a resolved item, or an item named twice.
+# Other override list such as `3B, -4, +2`, naming only the departures from
+# the recommendation - `<n><letter>` a decision's option, `-<n>` an item
+# declined or a decision left undecided, `+<n>` a recommend-decline item
+# applied - with every item it does not name taken as recommended. Dies,
+# before any write, on a token of no such form (a bare number among them), an
+# unknown item or option, a letter on an item that is no decision, `+` on a
+# decision or on an item not recommended for decline, `-` or `+` on a
+# resolved item, or an item named twice.
 spec_review_answer() {
-  local answer="$1" i tok n letter rest named=" " j
+  local answer="$1" base="$1" i tok n letter sign rest named=" " j
+  local form="is not recommended, all, none or a list of departures such as 3B, -4, +2"
   SR_DISP=(); SR_ASREC=(); SR_TAKEN=()
   case "$answer" in
     recommended|all|none) ;;
     *)
+      base=recommended
       rest="$answer,"
       while [ -n "$rest" ]; do
         tok="${rest%%,*}"; rest="${rest#*,}"
         trim_split "$tok" tok
-        n="${tok%%[A-Za-z]*}"; letter="${tok#"$n"}"
-        case "$n" in ''|*[!0-9]*) die "the answer '$answer' is not recommended, all, none or a list such as 1B, 2, 3 - '$tok' is no item" ;; esac
-        case "$letter" in ''|[A-Za-z]) ;; *) die "the answer '$answer' is not recommended, all, none or a list such as 1B, 2, 3 - '$tok' is no item" ;; esac
+        sign=""; letter=""
+        case "$tok" in
+          [-+]*) sign="${tok:0:1}"; n="${tok:1}" ;;
+          *) n="${tok%%[A-Za-z]*}"; letter="${tok#"$n"}" ;;
+        esac
+        case "$n" in
+          ''|*[!0-9]*) die "the answer '$answer' $form - '$tok' is not <n><letter>, -<n> or +<n>" ;;
+        esac
+        case "$sign:$letter" in
+          :[A-Za-z]|[-+]:) ;;
+          *) die "the answer '$answer' $form - '$tok' is not <n><letter>, -<n> or +<n>" ;;
+        esac
         letter="$(printf '%s' "$letter" | tr '[:lower:]' '[:upper:]')"
         i="$(array_index SR_IT_N "$n")"
         [ -n "$i" ] || die "the answer names item $n, which batch.md does not have"
         case "$named" in *" $n "*) die "the answer names item $n twice" ;; esac
         named="$named$n "
-        case "${SR_IT_REC[$i]}" in
-          resolved) die "the answer names item $n, which is resolved by item ${SR_IT_RESOLVED[$i]} and takes no answer" ;;
-          decision)
-            [ -n "$letter" ] || die "the answer names decision item $n without an option letter"
+        [ "${SR_IT_REC[$i]}" != resolved ] \
+          || die "the answer names item $n, which is resolved by item ${SR_IT_RESOLVED[$i]} and takes no answer"
+        case "$sign:${SR_IT_REC[$i]}" in
+          :decision)
             j="$(spec_review_option_index "$i" "$letter")"
             [ -n "$j" ] || die "the answer gives item $n option $letter, which it does not have"
             SR_DISP[i]=taken; SR_TAKEN[i]="$letter"
             [ "$letter" != "${SR_IT_ARG[$i]}" ] || SR_ASREC[i]=1 ;;
-          *)
-            [ -z "$letter" ] || die "the answer gives item $n the letter $letter, but item $n is no decision item"
-            SR_DISP[i]=applied
-            [ "${SR_IT_REC[$i]}" != apply ] || SR_ASREC[i]=1 ;;
+          :*) die "the answer gives item $n the letter $letter, but item $n is no decision item" ;;
+          -:decision) SR_DISP[i]=undecided ;;
+          -:decline) SR_DISP[i]=declined; SR_ASREC[i]=1 ;;
+          -:*) SR_DISP[i]=declined ;;
+          +:decline) SR_DISP[i]=applied ;;
+          +:decision) die "the answer names +$n, but item $n is a decision item: name its option, as ${n}${SR_IT_ARG[$i]}" ;;
+          +:*) die "the answer names +$n, but item $n is not recommended for decline" ;;
         esac
       done ;;
   esac
@@ -471,7 +518,7 @@ spec_review_answer() {
       resolved) SR_DISP[i]=resolved; continue ;;
     esac
     [ -z "${SR_DISP[$i]+x}" ] || continue
-    case "$answer:${SR_IT_REC[$i]}" in
+    case "$base:${SR_IT_REC[$i]}" in
       recommended:apply|all:apply|all:decline) SR_DISP[i]=applied; SR_ASREC[i]=1 ;;
       recommended:decision|all:decision)
         SR_DISP[i]=taken; SR_TAKEN[i]="${SR_IT_ARG[$i]}"; SR_ASREC[i]=1 ;;
@@ -581,7 +628,7 @@ spec_review_anchor() {
 # <body-file>'s text: SR_FETCHED holds the body as read, SR_TEXT the body
 # edited. Grammar, lens and citation errors die on the first. An anchor
 # problem dies too, unless [collect] is set: then every anchor - the ones the
-# answer leaves out checked on their own against SR_FETCHED - is checked, and
+# answer declines checked on their own against SR_FETCHED - is checked, and
 # each problem, naming its `@@ anchor` line, is appended to SR_PROBLEMS, the
 # failed edit skipped.
 spec_review_validate() {
@@ -735,52 +782,85 @@ spec_review_edit_view() {
   printf '\n**Current**\n\n%s\n\n**Proposed**\n\n%s\n' "$(spec_review_fenced "$1")" "$(spec_review_fenced "$2")"
 }
 
+# spec_review_group_title <index>: the title item <index>'s header gives its
+# group - Contradicts the plan, else its section's heading.
+spec_review_group_title() {
+  case "${SR_IT_GROUP[$1]}" in
+    contradicts-the-plan) printf 'Contradicts the plan' ;;
+    *) spec_review_title "${SR_IT_GROUP[$1]}" ;;
+  esac
+}
+
+# spec_review_item_view <index>: item <index> in full - its group, its
+# recommendation, the text of each finding it cites and of each comment it
+# folds in, and its edit, or each option's, in full.
+spec_review_item_view() {
+  local i="$1" j
+  printf '\n### Item %s - %s\n\n**Recommendation:** ' "${SR_IT_N[$i]}" "$(spec_review_group_title "$i")"
+  case "${SR_IT_REC[$i]}" in
+    apply) printf 'apply\n' ;;
+    decline) printf 'recommend decline - %s\n' "${SR_IT_ARG[$i]}" ;;
+    decision) printf 'decision - option %s recommended\n' "${SR_IT_ARG[$i]}" ;;
+  esac
+  for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
+    [ "${SR_FD_ITEM[$j]}" = "$i" ] || continue
+    printf '\n**Finding** (%s %s):\n\n' "$(spec_review_title "${SR_FD_LENS[$j]}")" "${SR_FD_K[$j]}"
+    spec_review_quoted "$(spec_review_finding_text "${SR_FD_LENS[$j]}" "${SR_FD_K[$j]}")"
+  done
+  for j in ${SR_CM_ITEM[@]+"${!SR_CM_ITEM[@]}"}; do
+    [ "${SR_CM_ITEM[$j]}" = "$i" ] || continue
+    printf '\n**Comment** by %s, %s:\n\n' "${SR_CM_LOGIN[$j]}" "${SR_CM_CREATED[$j]}"
+    spec_review_quoted "${SR_CM_QUOTE[$j]}"
+  done
+  case "${SR_IT_REC[$i]}" in
+    apply|decline) spec_review_edit_view "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}" ;;
+    decision)
+      for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
+        [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
+        printf '\n#### Option %s - %s' "${SR_OP_LETTER[$j]}" "${SR_OP_LABEL[$j]}"
+        [ "${SR_OP_LETTER[$j]}" != "${SR_IT_ARG[$i]}" ] || printf ' (recommended)'
+        printf '\n'
+        spec_review_edit_view "${SR_OP_ANCHOR[$j]}" "${SR_OP_REPLACE[$j]}"
+      done ;;
+  esac
+}
+
+# spec_review_minor_line <index>: minor or resolved item <index> on one line
+# - `<n>. <Group>: <summary>`, a recommend-decline's reason after it, or a
+# resolved item's resolving item in place of a summary.
+spec_review_minor_line() {
+  local i="$1"
+  printf '%s. %s: ' "${SR_IT_N[$i]}" "$(spec_review_group_title "$i")"
+  case "${SR_IT_REC[$i]}" in
+    resolved) printf 'resolved by item %s\n' "${SR_IT_RESOLVED[$i]}" ;;
+    decline) printf '%s - recommend decline: %s\n' "${SR_IT_SUMMARY[$i]}" "${SR_IT_ARG[$i]}" ;;
+    *) printf '%s\n' "${SR_IT_SUMMARY[$i]}" ;;
+  esac
+}
+
 # spec_review_view: the parsed batch as the human reads it before the batch
 # question - the lens lines, worded as the changelog words them, then every
-# item in batch order: its group, its recommendation, the text of each finding
-# it cites and of each comment it folds in, and its edit, or each option's, in
-# full. Rendered from spec_review_validate's arrays alone.
+# material item in full, in batch order (see spec_review_item_view), then,
+# under a Minor edits heading omitted when there are none, every minor and
+# resolved item on one line, in batch order. Rendered from
+# spec_review_validate's arrays alone.
 spec_review_view() {
-  local l i j group
+  local l i minor=()
   printf '## The batch\n\n### Lenses\n\n'
   for l in "${!SR_LENS_NAME[@]}"; do
     printf -- '- %s: ' "$(spec_review_title "${SR_LENS_NAME[$l]}")"
     spec_review_lens_state_line "$l"
   done
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
-    case "${SR_IT_GROUP[$i]}" in
-      contradicts-the-plan) group="Contradicts the plan" ;;
-      *) group="$(spec_review_title "${SR_IT_GROUP[$i]}")" ;;
-    esac
-    printf '\n### Item %s - %s\n\n**Recommendation:** ' "${SR_IT_N[$i]}" "$group"
-    case "${SR_IT_REC[$i]}" in
-      apply) printf 'apply\n' ;;
-      decline) printf 'recommend decline - %s\n' "${SR_IT_ARG[$i]}" ;;
-      decision) printf 'decision - option %s recommended\n' "${SR_IT_ARG[$i]}" ;;
-      resolved) printf 'none - resolved by item %s\n' "${SR_IT_RESOLVED[$i]}" ;;
-    esac
-    for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
-      [ "${SR_FD_ITEM[$j]}" = "$i" ] || continue
-      printf '\n**Finding** (%s %s):\n\n' "$(spec_review_title "${SR_FD_LENS[$j]}")" "${SR_FD_K[$j]}"
-      spec_review_quoted "$(spec_review_finding_text "${SR_FD_LENS[$j]}" "${SR_FD_K[$j]}")"
-    done
-    for j in ${SR_CM_ITEM[@]+"${!SR_CM_ITEM[@]}"}; do
-      [ "${SR_CM_ITEM[$j]}" = "$i" ] || continue
-      printf '\n**Comment** by %s, %s:\n\n' "${SR_CM_LOGIN[$j]}" "${SR_CM_CREATED[$j]}"
-      spec_review_quoted "${SR_CM_QUOTE[$j]}"
-    done
-    case "${SR_IT_REC[$i]}" in
-      apply|decline) spec_review_edit_view "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}" ;;
-      decision)
-        for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
-          [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
-          printf '\n#### Option %s - %s' "${SR_OP_LETTER[$j]}" "${SR_OP_LABEL[$j]}"
-          [ "${SR_OP_LETTER[$j]}" != "${SR_IT_ARG[$i]}" ] || printf ' (recommended)'
-          printf '\n'
-          spec_review_edit_view "${SR_OP_ANCHOR[$j]}" "${SR_OP_REPLACE[$j]}"
-        done ;;
-    esac
+    if [ "${SR_IT_MARK[$i]}" = material ]; then
+      spec_review_item_view "$i"
+    else
+      minor+=("$i")
+    fi
   done
+  [ "${#minor[@]}" -gt 0 ] || return 0
+  printf '\n### Minor edits\n\n'
+  for i in "${minor[@]}"; do spec_review_minor_line "$i"; done
 }
 
 # spec_review_item_sections <index>: the changelog sections item <index> is
@@ -829,10 +909,13 @@ spec_review_decline_reason() {
 }
 
 # spec_review_item_line <index> <unattended>: item <index>'s changelog line.
+# A minor item applied by the human's answer is tagged `(<n>, minor)`; an
+# unattended run, which no human answers, tags nothing.
 spec_review_item_line() {
-  local i="$1" n="${SR_IT_N[$1]}" j reason
+  local i="$1" n="${SR_IT_N[$1]}" j reason tag=""
+  [ "$2" = true ] || [ "${SR_IT_MARK[$i]}" != minor ] || tag=", minor"
   case "${SR_DISP[$i]}" in
-    applied) printf -- '- (%s) %s\n' "$n" "${SR_IT_SUMMARY[$i]}" ;;
+    applied) printf -- '- (%s%s) %s\n' "$n" "$tag" "${SR_IT_SUMMARY[$i]}" ;;
     taken)
       j="$(spec_review_option_index "$i" "${SR_TAKEN[$i]}")"
       if [ "$2" = true ]; then
@@ -1338,9 +1421,13 @@ spec_review_apply() {
         esac
         shift 2 ;;
       --unattended) unattended=true; shift ;;
-      -*) die "unknown option: $1 ($usage)" ;;
+      --*) die "unknown option: $1 ($usage)" ;;
       *)
-        if [ -z "$dir" ]; then dir="$1"
+        # An override answer may begin with -, as -4: after <dir>, a single
+        # dash starts the answer, never an option.
+        if [ -z "$dir" ]; then
+          case "$1" in -*) die "unknown option: $1 ($usage)" ;; esac
+          dir="$1"
         elif [ -z "$have_answer" ]; then answer="$1"; have_answer=1
         else die "$usage"
         fi

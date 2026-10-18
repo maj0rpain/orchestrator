@@ -227,7 +227,7 @@ sra_dir() {
 @@ lens testability ran
 @@ lens implementability not-run timed out twice
 
-@@ item 1 consolidation apply
+@@ item 1 consolidation apply material
 @@ comment @alice 2026-01-02T00:00:00Z
 @@ quote
 Alpha should say
@@ -239,7 +239,7 @@ Alpha line.
 Alpha prime line.
 @@ end
 
-@@ item 2 contradicts-the-plan decline the plan chose this
+@@ item 2 contradicts-the-plan decline material the plan chose this
 @@ finding fidelity 1
 @@ summary Reverse the plan on Beta
 @@ anchor
@@ -248,7 +248,7 @@ Beta line.
 Beta reversed.
 @@ end
 
-@@ item 3 consistency decision A
+@@ item 3 consistency decision A material
 @@ finding consistency 1
 @@ finding testability 1
 @@ option A Keep gamma
@@ -266,7 +266,7 @@ Gamma line.
 Gamma dropped.
 @@ end
 
-@@ item 4 testability apply
+@@ item 4 testability apply minor
 @@ finding testability 2
 @@ summary Insert a test note after Delta
 @@ anchor
@@ -295,18 +295,18 @@ sra() {
   out="$("$ORCH" spec-review apply "$d" "$a" --round "${sra_rnd:-1/2}" --issue 14 "$@" 2>&1)"; st=$?
 }
 # sra_refused <label> <dir> <want-in-message> <answer> [flags...]: apply is
-# refused, naming <want>, with nothing written: spec.md and changelog.md as
-# they were, and the store untouched.
+# refused, naming <want>, with nothing written: spec.md, changelog.md and
+# settled.md as they were, and the store untouched.
 sra_refused() {
   local label="$1" d="$2" want="$3" before snap
   shift 3
-  before="$(cat "$d/spec.md"; echo; cat "$d/changelog.md" 2>/dev/null)"
+  before="$(cat "$d/spec.md"; echo; cat "$d/changelog.md" "$d/settled.md" 2>/dev/null)"
   snap="$(fake_snapshot)"
   sra "$d" "$@"
   assert_status "$label: refused" "$st" 1
   assert_contains "$label: naming it" "$out" "$want"
-  assert_eq "$label: spec.md and changelog.md unchanged" \
-    "$(cat "$d/spec.md"; echo; cat "$d/changelog.md" 2>/dev/null)" "$before"
+  assert_eq "$label: spec.md, changelog.md and settled.md unchanged" \
+    "$(cat "$d/spec.md"; echo; cat "$d/changelog.md" "$d/settled.md" 2>/dev/null)" "$before"
   assert_eq "$label: no GitHub write" "$(fake_snapshot)" "$snap"
 }
 
@@ -340,7 +340,7 @@ Round 1 of 2
 
 ### Testability
 - (3) decision: took A - Keep gamma
-- (4) Insert a test note after Delta
+- (4, minor) Insert a test note after Delta
 - (5) resolved by (4)
 
 ### Implementability
@@ -441,12 +441,13 @@ assert_eq "Tickets: not checked" "$(has_line "$sra_cl" "Not checked - no edit ap
 assert_eq "the changelog is still posted" "$(fake_comments_of 14)" "$sra_cl"
 assert_eq "applied.log records only the comment" "$(cat "$d/applied.log")" "the changelog comment on issue #14"
 
-# An Other list with a decision letter; an item left out is declined.
+# An Other override answer names only its departures (#1239): a decision's
+# letter and a `-<n>` decline, every item it does not name as recommended.
 d="$(sra_dir)"
-printf '\n2: keep the plan\n' >"$d/reasons"
-sra "$d" "3B, 4" --reasons "$d/reasons"
-assert_status "an Other list applies" "$st" 0
-assert_eq "exactly the items named, the decision by its letter" "$(cat "$d/spec.md")" '# Spec
+printf '\n1: the comment is stale\n' >"$d/reasons"
+sra "$d" "3B, -1" --reasons "$d/reasons"
+assert_status "an override answer applies" "$st" 0
+assert_eq "the departures taken, every unnamed item as recommended" "$(cat "$d/spec.md")" '# Spec
 
 Alpha line.
 Beta line.
@@ -456,29 +457,128 @@ Test note.
 Twice.
 Twice.'
 sra_cl="$(cat "$d/changelog.md")"
-assert_eq "the decision taken" "$(has_line "$sra_cl" "- (3) decision: took B - Drop gamma")" yes
-assert_eq "an item left out, declined by the human" \
-  "$(has_line "$sra_cl" '- (1) "Alpha should say alpha prime." - declined')" yes
-assert_eq "a contradicts-the-plan decline with the human's reason" \
-  "$(has_line "$sra_cl" '- (2) "The spec reverses the plan'"'"'s choice of beta." - spec departs from the plan: keep the plan')" yes
+assert_eq "<n><letter>: the decision takes that option" \
+  "$(has_line "$sra_cl" "- (3) decision: took B - Drop gamma")" yes
+assert_eq "-<n>: the item declined, with its --reasons line" \
+  "$(has_line "$sra_cl" '- (1) "Alpha should say alpha prime." - the comment is stale')" yes
+assert_eq "an unnamed recommend-decline item, declined as recommended" \
+  "$(has_line "$sra_cl" '- (2) "The spec reverses the plan'"'"'s choice of beta." - spec departs from the plan: declined as recommended: the plan chose this')" yes
+assert_eq "an unnamed minor apply item, applied and tagged minor" \
+  "$(has_line "$sra_cl" "- (4, minor) Insert a test note after Delta")" yes
+assert_eq "posted as the round's comment" "$(fake_comments_of 14)" "$sra_cl"
 
+# `+<n>` applies a recommend-decline item; `-<n>` leaves a decision undecided
+# and declines an apply item.
 d="$(sra_dir)"
-sra "$d" "1, 4"
-assert_status "an Other list leaving a decision out applies" "$st" 0
-assert_contains "the decision item's anchor untouched" "$(cat "$d/spec.md")" $'\nGamma line.\n'
-assert_eq "left undecided under Consistency and Testability alike" \
+sra "$d" "-3, +2, -4"
+assert_status "an override answer with + and - applies" "$st" 0
+assert_eq "the recommend-decline edit applied, the decision and item 4 not" "$(cat "$d/spec.md")" '# Spec
+
+Alpha prime line.
+Beta reversed.
+Gamma line.
+Delta line.
+Twice.
+Twice.'
+sra_cl="$(cat "$d/changelog.md")"
+assert_eq "+<n>: recorded applied, by its summary" \
+  "$(has_line "$sra_cl" "- (2) Reverse the plan on Beta")" yes
+assert_eq "-<n> on a decision: left undecided under Consistency and Testability alike" \
   "$(grep -c '^- (3) .* - left undecided$' "$d/changelog.md")" 2
+assert_eq "-<n> on an apply item: declined" \
+  "$(has_line "$sra_cl" '- (4) "Delta has no test." - declined')" yes
+assert_eq "the resolved item still resolved" "$(has_line "$sra_cl" "- (5) resolved by (4)")" yes
+
+# A departure that matches the recommendation is recorded as recommended.
+d="$(sra_dir)"
+sra "$d" "3A, -2"
+assert_status "an override answer naming only the recommendation applies" "$st" 0
+assert_eq "its changelog is the recommended answer's" "$(cat "$d/changelog.md")" "$sra_log"
+assert_eq "its spec.md is the recommended answer's" "$(cat "$d/spec.md")" "$sra_clean"
+
+# The minor tag (#1240): a minor item applied by the human's answer reads
+# `(<n>, minor)` in the changelog and settled.md; nothing else is tagged.
+# sra_minor_dir: sra_dir, with item 2 a minor recommend-decline item.
+sra_minor_dir() {
+  local d
+  d="$(sra_dir)"
+  sed -i '18s/contradicts-the-plan decline material/fidelity decline minor/' "$d/batch.md"
+  printf '%s\n' "$d"
+}
+for sra_case in "all|by all" "+2|by +<n>"; do
+  d="$(sra_minor_dir)"
+  sra "$d" "${sra_case%%|*}"
+  assert_status "a minor recommend-decline item applied ${sra_case#*|}: applies" "$st" 0
+  assert_eq "a minor recommend-decline item applied ${sra_case#*|}: tagged minor" \
+    "$(has_line "$(cat "$d/changelog.md")" "- (2, minor) Reverse the plan on Beta")" yes
+  assert_eq "a minor recommend-decline item applied ${sra_case#*|}: tagged minor in settled.md" \
+    "$(has_line "$(cat "$d/settled.md")" "- (2, minor) Reverse the plan on Beta")" yes
+done
+d="$(sra_dir)"
+sra "$d" recommended
+assert_eq "a minor item applied by recommended: tagged minor in settled.md" \
+  "$(has_line "$(cat "$d/settled.md")" "- (4, minor) Insert a test note after Delta")" yes
+d="$(sra_minor_dir)"
+sra "$d" "3B"
+assert_status "an override answer leaving minor items unnamed applies" "$st" 0
+sra_cl="$(cat "$d/changelog.md")"
+assert_eq "a minor item left unnamed in an override answer: tagged minor" \
+  "$(has_line "$sra_cl" "- (4, minor) Insert a test note after Delta")" yes
+assert_eq "a minor item left unnamed in an override answer: tagged minor in settled.md" \
+  "$(has_line "$(cat "$d/settled.md")" "- (4, minor) Insert a test note after Delta")" yes
+assert_eq "a minor item declined as recommended: untagged" \
+  "$(has_line "$sra_cl" '- (2) "The spec reverses the plan'"'"'s choice of beta." - declined as recommended: the plan chose this')" yes
+assert_eq "a material item applied: untagged" \
+  "$(has_line "$sra_cl" "- (1) Folded in @alice's comment on Alpha")" yes
+assert_eq "a decision line: untagged" "$(has_line "$sra_cl" "- (3) decision: took B - Drop gamma")" yes
+assert_eq "a resolved line: untagged" "$(has_line "$sra_cl" "- (5) resolved by (4)")" yes
+for sra_case in "-4|by -<n>" "none|by none"; do
+  d="$(sra_dir)"
+  sra "$d" "${sra_case%%|*}"
+  assert_eq "a minor item declined ${sra_case#*|}: untagged" \
+    "$(has_line "$(cat "$d/settled.md")" '- (4) "Delta has no test." - declined')" yes
+done
+d="$(sra_minor_dir)"
+sra "$d" recommended --unattended
+assert_status "an unattended run with minor items applies" "$st" 0
+assert_eq "an unattended run's changelog: no line tagged minor" \
+  "$(grep -c 'minor)' "$d/changelog.md")" 0
+assert_eq "an unattended run's minor applied item: untagged" \
+  "$(has_line "$(cat "$d/changelog.md")" "- (4) Insert a test note after Delta")" yes
+
+# A --reasons line naming an item the override answer does not decline.
+d="$(sra_dir)"
+printf '4: why\n' >"$d/reasons"
+sra_refused "a reason for an item the override answer applies" "$d" "item 4, which the answer does not decline" \
+  "-1" --reasons "$d/reasons"
+printf '2: why\n' >"$d/reasons"
+sra_refused "a reason for an item applied by +<n>" "$d" "item 2, which the answer does not decline" \
+  "+2" --reasons "$d/reasons"
 
 # Answers refused before any write.
 d="$(sra_dir)"
 echo "old log" >"$d/changelog.md"
-sra_refused "an unknown item" "$d" "item 9" "1, 9"
+sra_form="is not <n><letter>, -<n> or +<n>"
+sra_refused "the old list form" "$d" "'2' $sra_form" "2, 3"
+sra_refused "a bare number on a decision" "$d" "'3' $sra_form" "3"
+sra_refused "a malformed answer" "$d" "'1;2' $sra_form" "1;2"
+sra_refused "a sign with no number" "$d" "'-' $sra_form" "-"
+sra_refused "a sign and a letter" "$d" "'+3B' $sra_form" "+3B"
+sra_refused "two letters" "$d" "'3AB' $sra_form" "3AB"
+sra_refused "an empty token" "$d" "'' $sra_form" "-4,"
+sra_refused "an unknown item" "$d" "item 9, which batch.md does not have" "-1, -9"
+sra_refused "an unknown item with a letter" "$d" "item 9, which batch.md does not have" "9A"
 sra_refused "an unknown option" "$d" "option C" "3C"
 sra_refused "a letter on no decision" "$d" "no decision item" "4B"
-sra_refused "a decision with no letter" "$d" "without an option letter" "3"
-sra_refused "a resolved item named" "$d" "resolved by item 4" "4, 5"
-sra_refused "an item named twice" "$d" "twice" "4, 4"
-sra_refused "a malformed answer" "$d" "is no item" "1;2"
+sra_refused "+ on a decision" "$d" "item 3 is a decision item" "+3"
+sra_refused "+ on an item not recommended for decline" "$d" "item 4 is not recommended for decline" "+4"
+sra_refused "- on a resolved item" "$d" "resolved by item 4" "-5"
+sra_refused "+ on a resolved item" "$d" "resolved by item 4" "+5"
+sra_refused "a letter on a resolved item" "$d" "resolved by item 4" "5A"
+sra_refused "an item named twice" "$d" "item 4 twice" "-4, -4"
+sra_refused "a decision named twice" "$d" "item 3 twice" "3B, -3"
+sra_refused "an unknown long option, though the answer may begin with -" "$d" \
+  "unknown option: --bogus" "-4" --bogus
 
 # Anchors: no match, two matches - the whole batch refused.
 sed -i 's/^Delta line\.$/Nowhere line./' "$d/batch.md"
@@ -525,13 +625,29 @@ assert_eq "an apply item with no block keeps its message" "$out" \
 d="$(sra_dir)"
 sed -i '16d' "$d/batch.md"
 sra_refused "a replacement left open at the next @@ item" "$d" \
-  "batch.md line 17: expected @@ end to end the replacement begun on line 14, got '@@ item 2 contradicts-the-plan decline the plan chose this'" recommended
+  "batch.md line 17: expected @@ end to end the replacement begun on line 14, got '@@ item 2 contradicts-the-plan decline material the plan chose this'" recommended
 d="$(sra_dir)"
 sed -i '14d' "$d/batch.md"
 sra "$d" recommended
 assert_status "an anchor left open: refused" "$st" 1
 assert_eq "an anchor left open keeps its message" "$out" \
   "orch: batch.md line 15: expected @@ replace to end the anchor begun on line 12"
+
+# Malformed marks (#1237): refused attended and unattended, before any write.
+for sra_flag in "" --unattended; do
+  for sra_case in \
+    "45s/ minor$//|no mark|batch.md line 45: @@ item 4 ... apply needs its mark, material or minor" \
+    "45s/ minor$/ major/|an unknown mark|batch.md line 45: item 4's mark must be material or minor, got 'major'" \
+    "55s/$/ minor/|a mark on a resolved item|batch.md line 55: @@ item 5 ... a resolved item carries no mark" \
+    "27s/ material$/ minor/|a decision marked minor|batch.md line 27: decision item 3 is always material, never minor" \
+    "18s/decline material/decline minor/|a contradicts-the-plan item marked minor|batch.md line 18: contradicts-the-plan item 2 is always material, never minor"; do
+    d="$(sra_dir)"
+    printf 'earlier round\n' >"$d/settled.md"
+    sed -i "${sra_case%%|*}" "$d/batch.md"
+    sra_label="${sra_case#*|}"
+    sra_refused "${sra_flag:-attended}: ${sra_label%%|*}" "$d" "${sra_label#*|}" recommended ${sra_flag:+"$sra_flag"}
+  done
+done
 
 # Lens files and citations.
 d="$(sra_dir)"
@@ -1058,7 +1174,7 @@ src_dir() {
 @@ lens testability ran
 @@ lens implementability not-run timed out
 
-@@ item 1 fidelity apply
+@@ item 1 fidelity apply minor
 @@ finding fidelity 1
 @@ summary Alpha primed
 @@ anchor
@@ -1067,7 +1183,7 @@ Alpha line.
 Alpha prime line.
 @@ end
 
-@@ item 2 consistency decline the plan chose this
+@@ item 2 consistency decline material the plan chose this
 @@ finding consistency 1
 @@ summary Beta reversed
 @@ anchor
@@ -1076,7 +1192,7 @@ Beta line.
 Beta reversed.
 @@ end
 
-@@ item 3 testability decision A
+@@ item 3 testability decision A material
 @@ finding testability 1
 @@ option A Keep gamma
 @@ summary Gamma kept
@@ -1144,6 +1260,62 @@ assert_contains "item 2's view carries the finding it cites" "$view_item2" \
 > Beta contradicts the plan."
 assert_not_contains "and no other item's finding" "$view_item2" "Gamma is untestable."
 
+# The view splits material from minor (#1237): material items in full, in
+# batch order; minor and resolved items one line each under Minor edits.
+d="$(src_dir)"
+src "$d"
+assert_not_contains "a minor item is not shown in full" "$out" "### Item 1 -"
+assert_not_contains "nor a resolved one" "$out" "### Item 4 -"
+assert_eq "the material items in full, in batch order, numbering unchanged" \
+  "$(grep '^### ' <<<"$out")" '### Lenses
+### Item 2 - Consistency
+### Item 3 - Testability
+### Minor edits'
+assert_eq "the view ends with the minor list, set off by blank lines" "${out#*$'\n```\n\n### Minor edits\n\n'}" \
+  '1. Fidelity: Alpha primed
+4. Testability: resolved by item 3'
+d="$(src_dir)"
+sed -i '6s/ minor$/ material/' "$d/batch.md"
+src "$d"
+assert_status "a round with a resolved item but no minor one passes" "$st" 0
+assert_eq "its Minor edits list holds the resolved item alone" "${out#*$'\n\n### Minor edits\n\n'}" \
+  '4. Testability: resolved by item 3'
+sed -i '/^@@ item 4 /,$d' "$d/batch.md"
+src "$d"
+assert_status "a round with nothing minor or resolved passes" "$st" 0
+assert_not_contains "and prints no Minor edits heading" "$out" "Minor edits"
+d="$(src_dir)"
+sed -i '15s/ material / minor /' "$d/batch.md"
+src "$d"
+assert_eq "a recommend-decline minor item's line carries its reason" \
+  "$(has_line "$out" "2. Consistency: Beta reversed - recommend decline: the plan chose this")" yes
+
+# Marks: each malformed one refused, naming its batch.md line.
+d="$(src_dir)"
+sed -i '6s/ minor$//' "$d/batch.md"
+check_refused src "an item with no mark" "$d" \
+  "orch: batch.md line 6: @@ item 1 ... apply needs its mark, material or minor"
+d="$(src_dir)"
+sed -i '15s/ material / /' "$d/batch.md"
+check_refused src "a decline item with no mark" "$d" \
+  "orch: batch.md line 15: item 2's mark must be material or minor, got 'the'"
+d="$(src_dir)"
+sed -i '6s/ minor$/ major/' "$d/batch.md"
+check_refused src "an unknown mark" "$d" \
+  "orch: batch.md line 6: item 1's mark must be material or minor, got 'major'"
+d="$(src_dir)"
+sed -i '41s/$/ minor/' "$d/batch.md"
+check_refused src "a mark on a resolved item" "$d" \
+  "orch: batch.md line 41: @@ item 4 ... a resolved item carries no mark"
+d="$(src_dir)"
+sed -i '24s/ material$/ minor/' "$d/batch.md"
+check_refused src "a decision item marked minor" "$d" \
+  "orch: batch.md line 24: decision item 3 is always material, never minor"
+d="$(src_dir)"
+sed -i '6s/fidelity apply minor/contradicts-the-plan apply minor/' "$d/batch.md"
+check_refused src "a contradicts-the-plan item marked minor" "$d" \
+  "orch: batch.md line 6: contradicts-the-plan item 1 is always material, never minor"
+
 # The view of the skill's worked-example batch, as it stands: one item of each
 # kind and its ran and standalone lens lines.
 d="$(mktemp -d)"
@@ -1169,7 +1341,7 @@ cat >"$d/batch.md" <<'BATCH'
 @@ lens testability ran
 @@ lens implementability ran
 
-@@ item 1 consolidation apply
+@@ item 1 consolidation apply material
 @@ summary Failed pages are retried once
 @@ comment @alice 2026-10-01T09:00:00Z
 @@ quote
@@ -1181,7 +1353,7 @@ The export streams each widget in pages of 100.
 A failed page is retried once before the export fails.
 @@ end
 
-@@ item 2 testability apply
+@@ item 2 testability apply material
 @@ finding testability 1
 @@ summary The seam's test runs against a fake store
 @@ anchor
@@ -1190,7 +1362,7 @@ A failed page is retried once before the export fails.
 - One seam: the `widget export` CLI, end to end, against a fake store.
 @@ end
 
-@@ item 3 consistency decline the glossary's term is widget, as the body says
+@@ item 3 consistency decline minor the glossary's term is widget, as the body says
 @@ finding consistency 1
 @@ summary Widgets renamed items
 @@ anchor
@@ -1199,7 +1371,7 @@ Exports time out on large widgets.
 Exports time out on large items.
 @@ end
 
-@@ item 4 implementability decision B
+@@ item 4 implementability decision B material
 @@ finding implementability 1
 @@ option A One file
 @@ summary The export writes one compressed file
@@ -1227,7 +1399,7 @@ printf '@@ finding 1\nOne file cannot hold the largest exports.\nThe store caps 
 before="$(dir_snapshot "$d")"
 src "$d"
 assert_status "the worked example passes" "$st" 0
-assert_eq "its view, every item in full" "$out" '## The batch
+assert_eq "its view, the material items in full, the minor and resolved ones listed" "$out" '## The batch
 
 ### Lenses
 
@@ -1277,26 +1449,6 @@ A failed page is retried once before the export fails.
 - One seam: the `widget export` CLI, end to end, against a fake store.
 ```
 
-### Item 3 - Consistency
-
-**Recommendation:** recommend decline - the glossary'"'"'s term is widget, as the body says
-
-**Finding** (Consistency 1):
-
-> The body says widget where the glossary says item.
-
-**Current**
-
-```
-Exports time out on large widgets.
-```
-
-**Proposed**
-
-```
-Exports time out on large items.
-```
-
 ### Item 4 - Implementability
 
 **Recommendation:** decision - option B recommended
@@ -1334,13 +1486,10 @@ The export writes one file.
 The export writes one file per widget.
 ```
 
-### Item 5 - Implementability
+### Minor edits
 
-**Recommendation:** none - resolved by item 4
-
-**Finding** (Implementability 2):
-
-> One file is written before every page is fetched.'
+3. Consistency: Widgets renamed items - recommend decline: the glossary'"'"'s term is widget, as the body says
+5. Implementability: resolved by item 4'
 assert_eq "its summary on stderr" "$err" \
   "batch.md passes: 5 items, 5 anchors, each matching once in spec.md, and the all answer applies cleanly"
 assert_eq "the worked example's directory unchanged" "$(dir_snapshot "$d")" "$before"
@@ -1363,7 +1512,7 @@ cat >"$d/batch.md" <<'BATCH'
 @@ lens testability not-run timed out twice
 @@ lens implementability ran
 
-@@ item 1 contradicts-the-plan apply
+@@ item 1 contradicts-the-plan apply material
 @@ finding fidelity 1
 @@ summary Sync runs hourly, as the plan decided
 @@ anchor
@@ -1508,9 +1657,9 @@ src_bad2
 out="$("$ORCH" spec-review apply "$d" none --round 1/1 --issue 14 2>&1)"; st=$?
 assert_status "apply none passes over an unapplied item's bad anchor" "$st" 0
 src_bad2
-out="$("$ORCH" spec-review apply "$d" "1, 3A" --round 1/1 --issue 14 2>&1)"; st=$?
-assert_status "apply with a list leaving the item out passes too" "$st" 0
-assert_contains "applying the items it names" "$(cat "$d/spec.md")" "Alpha prime line."
+out="$("$ORCH" spec-review apply "$d" "3A, -2" --round 1/1 --issue 14 2>&1)"; st=$?
+assert_status "apply with an override answer declining the item passes too" "$st" 0
+assert_contains "applying the items it does not decline" "$(cat "$d/spec.md")" "Alpha prime line."
 src_bad2
 src "$d"
 assert_eq "check names the bad anchor's line" "$err" \

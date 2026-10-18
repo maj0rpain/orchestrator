@@ -561,10 +561,15 @@ orch.sh - deterministic operations for the orchestrator flow
                     [--tickets <answer> [--ticket-reasons <file>]]
                     [--issue <n>] [--unattended] [--host-fallbacks <file>]
                               apply a spec review round's answer - recommended,
-                              all, none, or an Other list such as 1B, 2, 3 -
-                              to <dir>/batch.md's items: each accepted edit
-                              by exact anchor on <dir>/spec.fetched.md (copied
-                              from spec.md on the first run) into spec.md,
+                              all, none, or an Other list of departures from
+                              the recommendation such as 3B, -4, +2 (<n><letter>
+                              a decision's option, -<n> an item declined or a
+                              decision left undecided, +<n> a recommend-decline
+                              item applied, every item not named as
+                              recommended) - to <dir>/batch.md's items: each
+                              accepted edit by exact anchor on
+                              <dir>/spec.fetched.md (copied from spec.md on
+                              the first run) into spec.md,
                               then the body published when it changed and
                               <dir>/changelog.md written and posted. Every
                               check runs before the first write: a malformed

@@ -265,6 +265,20 @@ Each item carries a recommendation: a proposed edit is recommended for
 applying unless it is marked **recommend decline** with its reason, and a
 decision item carries its recommended option.
 
+You, never a lens, then mark each item that carries an edit **material** or
+**minor**:
+
+- **Material**: the item's edit changes what gets built or how it is
+  proven - behaviour, scope, an interface, an acceptance criterion or a test
+  seam.
+- **Minor**: anything else - wording, clarification, naming, internal
+  consistency, a cross-reference.
+- Every decision item and every `contradicts-the-plan` item is material;
+  `check` and `apply` refuse either marked minor.
+- A recommend-decline item whose edit would be material if applied is
+  material. No check catches this one: the call is yours.
+- A resolved item carries no mark: it has no edit.
+
 Number the items, consolidation items included, in one sequence, and write
 the batch once, to `<dir>/batch.md` - see **The batch file**. Then check it,
 before it is shown, in every mode - flow, standalone, and unattended:
@@ -277,17 +291,23 @@ bash "$ORCH" spec-review check <dir>
 anything: its grammar, the lens files and the batch's citations of them, and
 every anchor - each item's and each option's - matching once in the body,
 then still matching once in a dry run of the **Apply all** answer. On exit 0
-it prints the full batch view on stdout - the lens lines, ran or not run
-with the reason, then every item with its group, its recommendation, its
-cited findings (or, for a consolidation item, its comment), and its Current
-and Proposed text in full, each option's for a decision item - and its
-one-line pass summary on stderr. On any other exit, each `orch:` line on
+it prints the batch view on stdout - the lens lines, ran or not run with the
+reason, then every material item in full, in batch order, consolidation
+items first: its group, its recommendation, its cited findings (or, for a
+consolidation item, its comment), and its Current and Proposed text in full,
+each option's for a decision item. Then, under a `### Minor edits` heading,
+every minor and resolved item one line each, in batch order: `<n>. <Group>:
+<summary>`, a recommend-decline minor item's line ending `- recommend
+decline: <reason>`, and a resolved item's reading `<n>. <Group>: resolved by
+item <m>`. The heading is left out when no item is minor or resolved, and
+the item numbers stay the one sequence of `batch.md`. Its one-line pass
+summary goes to stderr. On any other exit, each `orch:` line on
 stderr names what is wrong, most with its `batch.md` line: fix `batch.md` and
 run `check` again, until it exits 0. A batch that has not passed `check` is
 never shown and never asked about.
 
 Then paste `check`'s stdout into chat word for word, so the human reads each
-edit's wording before answering. Compose no view of your own - no summary,
+material edit's wording, and each minor edit's summary, before answering. Compose no view of your own - no summary,
 no shortening, in any round: the view the human reads is `check`'s, every
 round alike. Then ask **one blocking question** with the host's ask tool
 (`AskUserQuestion` on Claude Code, `ask_user` on Junie), the paste and the
@@ -302,9 +322,12 @@ and no changelog is posted before the answer arrives. The options:
   decline**: as recommended, plus those items too. With no such item it would
   equal the first option, so it is not shown.
 - **Apply none** - always offered.
-- **Other** - item numbers, with the option letter on decision items, e.g.
-  `1B, 2, 3, 5`. Any item left out is declined; a decision item left out stays
-  undecided, and the changelog says so. The question text states this format.
+- **Other** - only the departures from the recommendation, comma-separated,
+  e.g. `3B, -4, +2`: `<n><letter>` gives decision item `<n>` option
+  `<letter>`; `-<n>` declines item `<n>`, or leaves a decision item undecided,
+  and the changelog says so; `+<n>` applies recommend-decline item `<n>`.
+  Every item not named stays as recommended. A bare item number is no
+  departure and is refused. The question text states this format.
 
 The spec batch is asked once; a long spec is one longer question, not twenty
 prompts.
@@ -319,11 +342,11 @@ per item, in the batch's order:
 @@ lens <name> ran                        a lens that answered
 @@ lens <name> not-run <reason>           a lens that failed twice
 @@ lens fidelity standalone               Fidelity in a standalone review
-@@ item <n> <group> apply                 a proposed edit, recommended
-@@ item <n> <group> decline <reason>      a proposed edit marked recommend decline;
-                                            it still carries the edit it declines
-@@ item <n> <group> decision <letter>     a decision item, <letter> recommended
-@@ item <n> <group> resolved              a finding an earlier item resolves
+@@ item <n> <group> apply <mark>                   a proposed edit, recommended
+@@ item <n> <group> decline <mark> <reason>        a proposed edit marked recommend decline;
+                                                     it still carries the edit it declines
+@@ item <n> <group> decision <letter> <mark>        a decision item, <letter> recommended
+@@ item <n> <group> resolved                       a finding an earlier item resolves; no mark
 @@ summary <one line>                     the changelog's line when the item is applied
 @@ finding <lens> <k>                     repeatable: the lens findings the item resolves
 @@ comment @<login> <createdAt>           a consolidation item's comment, repeatable,
@@ -336,7 +359,10 @@ per item, in the batch's order:
 @@ end
 ```
 
-`<group>` is `consolidation` or a lens name. An
+`<group>` is `consolidation`, a lens name, or `contradicts-the-plan`.
+`<mark>` is `material` or `minor`, the last fixed token of the `@@ item`
+line, before any reason; a decision item and a `contradicts-the-plan` item
+are always `material`, and a resolved item takes no mark. An
 insertion is an anchor plus a replacement that repeats it. Every item with
 an anchor, and every option, has its one `@@ summary`. A `@@ finding` cites
 the `<k>`-th finding in `<dir>/lens-<lens>.md`, which `apply` copies into the
@@ -376,7 +402,7 @@ Its batch holds one item of each kind, and passes `check`:
 @@ lens testability ran
 @@ lens implementability ran
 
-@@ item 1 consolidation apply
+@@ item 1 consolidation apply material
 @@ summary Failed pages are retried once
 @@ comment @alice 2026-10-01T09:00:00Z
 @@ quote
@@ -388,7 +414,7 @@ The export streams each widget in pages of 100.
 A failed page is retried once before the export fails.
 @@ end
 
-@@ item 2 testability apply
+@@ item 2 testability apply material
 @@ finding testability 1
 @@ summary The seam's test runs against a fake store
 @@ anchor
@@ -397,7 +423,7 @@ A failed page is retried once before the export fails.
 - One seam: the `widget export` CLI, end to end, against a fake store.
 @@ end
 
-@@ item 3 consistency decline the glossary's term is widget, as the body says
+@@ item 3 consistency decline minor the glossary's term is widget, as the body says
 @@ finding consistency 1
 @@ summary Widgets renamed items
 @@ anchor
@@ -406,7 +432,7 @@ Exports time out on large widgets.
 Exports time out on large items.
 @@ end
 
-@@ item 4 implementability decision B
+@@ item 4 implementability decision B material
 @@ finding implementability 1
 @@ option A One file
 @@ summary The export writes one compressed file
@@ -435,20 +461,30 @@ The export writes one file per widget.
   `@@ replace`, `@@ end` block.
 - **Decline** (item 3): the same shape as an apply item - summary, anchor,
   replacement and `@@ end` - so **Apply all** can still apply it; the reason
-  is on its `@@ item` line.
+  is on its `@@ item` line, after its mark. Renaming a term is minor, so
+  `check` lists it under **Minor edits** with its reason.
 - **Decision** (item 4): no summary or block of its own; each `@@ option`
   carries its own `@@ summary` and block, and the `@@ item` line names the
   recommended letter.
 - **Resolved** (item 5): only its findings and `@@ resolved-by`; it takes no
-  `@@ summary`, `@@ anchor`, `@@ replace` or `@@ end`.
+  mark, `@@ summary`, `@@ anchor`, `@@ replace` or `@@ end`, and `check`
+  lists it under **Minor edits** as resolved by item 4.
 
 ## Applying the answer
 
 One call applies the answer, run with the human's answer as given:
-`recommended` for **Apply as recommended**, `all`, `none`, or the Other list
-such as `"1B, 2, 3, 5"`. `--round <k>/<n>` names the round. The human's
-reasons for declined items go in a file, one `<n>: <reason>` line each,
-passed as `--reasons <file>`.
+`recommended` for **Apply as recommended**, `all`, `none`, or the Other
+override list such as `"3B, -4, +2"`. `--round <k>/<n>` names the round. A
+departure that matches the recommendation - `-<n>` on a recommend-decline
+item, or a decision's recommended letter - is accepted and recorded as
+recommended. `apply` refuses, before any write, a token that is not
+`<n><letter>`, `-<n>` or `+<n>` (a bare number among them), an unknown item
+or option letter, a letter on an item that is no decision, `+` on a decision
+item or on an item not recommended for decline, `-` or `+` on a resolved
+item, and an item named twice. The human's reasons for declined items - a
+`-<n>` decline among them - go in a file, one `<n>: <reason>` line each,
+passed as `--reasons <file>`; a line naming an item the answer does not
+decline is refused.
 
 ```
 bash "$ORCH" spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
@@ -499,7 +535,13 @@ comments word for word with the human's reason or **declined as
 recommended: <reason>**, an undecided decision item's sides then **left
 undecided**, **None** for a group with no items, **not run - <reason>** for
 a lens that failed twice, and Fidelity's standalone not-run line. Silence is
-never ambiguous: Consolidation, every lens, and Tickets have a line. The
+never ambiguous: Consolidation, every lens, and Tickets have a line. A
+minor item applied by the human's answer - by **Apply as recommended**,
+**Apply all**, `+<n>`, or left unnamed in an override answer - reads
+`- (<n>, minor) <summary>`, so the history shows it was applied without being
+shown in full; material, declined, decision and resolved lines carry no tag,
+and neither does any line of an unattended review's changelog, which no human
+answers. The
 heading keeps every earlier round's comment out of `comments.md`: `orch.sh`
 leaves out a comment whose body opens with it.
 

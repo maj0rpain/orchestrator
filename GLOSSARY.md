@@ -294,6 +294,14 @@ other become one decision item instead. A comment that opens with a
 `## Spec review` heading is the review's own history and never produces one.
 _Avoid_: fold (as a noun), proposed fold.
 
+**Material item**:
+A spec review item whose edit changes what gets built or how it is proven - behaviour, scope, an interface, an acceptance criterion or a test seam. Every decision item and every item recording that the spec contradicts the plan is material, and so is a recommend-decline whose edit would be. The batch shows it in full.
+_Avoid_: high-severity item, important edit.
+
+**Minor item**:
+A spec review item that is not material - wording, clarification, naming, internal consistency, a cross-reference. The batch lists it in one line, and the human's answer takes its recommendation unless they name it.
+_Avoid_: nit (the review loop's), trivial edit.
+
 **Lens**:
 One of the four angles a spec review takes, each answering one question of the
 spec and nothing else:
@@ -475,9 +483,7 @@ which the review phase assigns; the reviewer itself reports findings unranked.
 A finding from a review pass carries none: the session that ran the pass
 fixes it, declines it, or, when it is a spec question, puts it to a human,
 unless a standalone review pass left it out as a
-smell-baseline finding. A finding about the spec carries no
-severity: a human accepts or declines the edit it proposes, or an unattended
-spec review applies it as recommended, and it is never filed.
+smell-baseline finding. A finding about the spec carries no severity: the spec review's session marks the item proposing its edit material or minor, a human accepts or declines that edit, or an unattended spec review applies it as recommended, and it is never filed.
 
 **Severity**:
 Which of three roles a finding plays - how wrong the change is, and so which
