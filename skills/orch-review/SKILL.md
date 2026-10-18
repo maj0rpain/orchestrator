@@ -125,7 +125,28 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    left in progress. Leave that merge for the human, and go to
    **Termination**: its terminal state is a bounded stop whose reason names
    the unresolved merge, or the refusal.
-3. Start both reviewers in parallel - see **The reviewers** - and wait for
+3. **Build the known items**, after the base sync and before anyone looks:
+
+   ```
+   bash "$ORCH" review known-items <known path> <loop boundary>
+   ```
+
+   `<known path>` sits beside the record `bash "$ORCH" review path` names, as
+   `iteration-NN-known.md`, and `<loop boundary>` is the `iteration` read in
+   **Before the first iteration**, step 4. It overwrites any file already
+   there with `03-implement.md`'s **Deviations**, this loop's **Waiting to be
+   filed**, earlier loops' **Filed** and `01-plan.md`'s **Rejected
+   alternatives**, each tagged with its source.
+
+   A **refusal** is a bounded stop, as a failed base sync is. Write this
+   iteration's record to `bash "$ORCH" review path` yourself, in the
+   record's shape (step 5): no **Findings** - `None - no review ran: known
+   items could not be built: <orch: message>` - `Verification` reading `not
+   run - known items could not be built`, and **Merge resolutions** holding
+   step 2's base sync as usual. Go to **Termination**: its terminal state
+   reads `stop - known items could not be built.`
+
+   Then start both reviewers in parallel - see **The reviewers** - and wait for
    both to return. **Every iteration reviews from its base SHA**, the one
    step 2 read, never from the previous iteration's HEAD: each is an
    independent look at the whole change, and the Spec axis cannot answer "is
@@ -172,6 +193,16 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
      **Filed** entry with no file and line predates that format; match it on
      its title against the finding's claim.
 
+   A reviewer holds back what its known items already carry, so most of
+   what earlier iterations dealt with never reaches you; these filters stay
+   the backstop for what it lets through. A finding marked `` re-raised
+   (<source>): <what changed> `` is a known item whose location or cause
+   changed: triage it as any other finding. An unmarked finding that matches
+   a known item is triaged as before - demoted, or met again. The Spec
+   report's `## Set aside` lines are not findings: each becomes a recorded
+   note under **Covered deviations** (see **Authority**), not fixed, not
+   filed, and given no disposition.
+
    Done when every finding in both reports has exactly one disposition.
 5. Nothing to fix means no fixer - a **clean iteration**. An iteration
    that starts a fixer is never clean, even if the fixer fixes nothing.
@@ -189,7 +220,10 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 
    `Verification` reads `not run - nothing changed`, **Fixed this
    iteration** and **Open blocking** read `None`, and **Merge resolutions**
-   holds step 2's. **PR body** depends on that base sync:
+   holds step 2's. **Waiting to be filed** lists each major or nit left
+   unfixed in the template's location-bearing bullet,
+   ``- <Axis>/<severity>: `<file>:<line>` <claim> - <rule>``, with `-` in
+   place of `<file>:<line>` when the finding gave `-`, or reads `None`. **PR body** depends on that base sync:
    - **Merge resolutions** is not `None` - step 2 resolved a conflict, so
      the diff from the base SHA changed while the PR was open: before
      writing the record, run **Checking the PR body** yourself, against
@@ -217,7 +251,7 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    closer files it - a major listed with the rule `spec question` still holds
    the PR out of **Ready**.
 7. Go to step 1. Nothing found ends the loop early; only the budget does,
-   or a failed base sync at step 2. A
+   a failed base sync at step 2, or known items step 3 could not build. A
    **clean iteration** - nothing to fix, so no fixer - is the cheap case, and
    buying the extra looks is the point.
 
@@ -236,8 +270,9 @@ Two plugin agents under the plugin root's `agents/`, one per axis:
   the spec issue asked for.
 
 Start both at once, as fresh agents (see **Starting an agent**), both in one
-message. Each prompt carries five variables and nothing else - no spec body,
-no diff, no brief, no word about earlier iterations or fixes:
+message. Each prompt carries six variables and nothing else - no spec body,
+no diff, no brief, no word about earlier iterations or fixes beyond the
+known-items file the sixth names:
 
 ```
 Base SHA: <this iteration's base SHA>
@@ -245,7 +280,14 @@ Spec issue: #<spec issue>
 Iteration: <NN>
 Report path: <report path>
 orch.sh: <the path ORCH holds>
+Known items: <the iteration-NN-known.md step 3 of The iteration built>
 ```
+
+Each reviewer reviews blind and opens the known items only when it writes its
+report, holding back each finding a known item already carries while its
+location and cause are unchanged; the Spec reviewer also reads the file's
+`## Deviations` before its review, to verify what each deviation built. See
+`docs/adr/0045-reviewers-filter-known-items-after-a-blind-review.md`.
 
 The report paths sit beside the record `bash "$ORCH" review path` names, with
 the axis as a suffix: `iteration-NN-standards.md` and `iteration-NN-spec.md`.
@@ -365,7 +407,10 @@ Applied before the rubric. Both would overturn a decision a human already made
 with more context than you have:
 
 - **Covered deviations.** A Spec-axis finding covered by `03-implement.md`'s
-  **Deviations** section becomes a recorded note: not fixed, not filed. See
+  **Deviations** section becomes a recorded note: not fixed, not filed. Each
+  line under the Spec report's `## Set aside` heading - a requirement a
+  listed deviation sets aside - becomes one such note too, so the PR comment
+  still repeats every covered deviation. See
   `docs/adr/0002-recorded-deviations-outrank-the-spec-axis.md`. Anything the
   section does *not* cover gets the normal rubric, so scope creep is still
   caught.
@@ -419,9 +464,9 @@ non-zero on the last two:
 
 ## Termination
 
-Reached when `review begin` refuses, or from a failed base sync (step 2 of
-**The iteration**). The same close-out runs whichever terminal state
-follows, in this order:
+Reached when `review begin` refuses, from a failed base sync (step 2 of
+**The iteration**), or from known items that could not be built (step 3).
+The same close-out runs whichever terminal state follows, in this order:
 
 1. **CI.** Wait on it, spending the flake rerun if it applies - see **CI**.
    Append a `## CI` section to the final iteration's record (`bash "$ORCH"
@@ -464,7 +509,8 @@ that claims a verification that never happened. An open blocking finding or a mi
 remains in the final record. Or this loop filed a spec question, a
 behaviour decision the spec left open: the reason names each, so a human
 rules on it before the PR goes ready. Or a base sync that failed, the reason naming
-the unresolved merge or the refusal. Or CI: `failing` with the flake rerun
+the unresolved merge or the refusal. Or known items that could not be built,
+the reason reading `stop - known items could not be built.` Or CI: `failing` with the flake rerun
 spent or the failure not looking flaky, or `unreachable`. The terminal action is to
 stop: **leave `phase` at `review` and the PR in draft**, and tell the human
 the reason and the closer's issue numbers. `done` means "this succeeded",

@@ -341,7 +341,8 @@ the human asks for them, and reports only how many it left out; a quick
 implementation's review pass keeps them. Another look is another review pass. A
 standalone review pass drops any finding an earlier review pass on the same PR
 already declined, and lists it as previously declined. A branch or issue an
-active flow holds belongs to that flow, never to a review pass.
+active flow holds belongs to that flow, never to a review pass. Its reviewers
+are told the pass's known items, and drop the findings those already carry.
 _Avoid_: single pass, quick review
 
 **Budget**:
@@ -513,6 +514,10 @@ tells the human it did.
 A filed finding that is a spec question also holds the PR out of ready until a human re-enters review.
 Findings the loop demoted on a human's earlier decision are reported, never
 filed.
+
+**Known item**:
+Something a review has already dealt with - a finding waiting to be filed or filed by a review loop, a road a rejected alternative closed, a deviation, a finding declined by a review pass, or a question a spec ruling answered - that a reviewer is told about so it does not raise it again. A reviewer raises a known item again only when its location or cause has changed, and the Spec reviewer reports a deviation no commit carries out.
+_Avoid_: known issue, duplicate
 
 **Finding triage**:
 Checking open filed findings against the current default branch and settling

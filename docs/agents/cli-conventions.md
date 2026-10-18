@@ -16,8 +16,8 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `branch`  | `create`, `off`, `base-sha`, `sync`, `retire`        |
 | `issue`   | `fetch`, `update`, `comment`, `comments`, `publish`, `triage`, `ready`, `close` |
 | `pr`      | `open`, `publish`, `release`, `comment`, `comments`, `fetch`, `update`, `draft`, `ready` |
-| `review`  | `begin`, `path`, `file`, `ready`, `ci`, `rerun`, `terminal`, `retire` |
-| `review-pass` | `begin`                                          |
+| `review`  | `begin`, `path`, `file`, `known-items`, `ready`, `ci`, `rerun`, `terminal`, `retire` |
+| `review-pass` | `begin`, `known-items`                           |
 | `spec`    | `fetch`, `update`, `comment`, `comments`, `pause`    |
 | `spec-review` | `begin`, `check`, `apply`                        |
 | `finding-triage` | `scan`, `apply`, `bundle`                     |

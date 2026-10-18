@@ -103,3 +103,99 @@ assert_contains "as an unknown command" "$out" "unknown command: quick"
 help="$("$ORCH" help)"
 assert_contains "help documents review-pass begin" "$help" "review-pass begin <issue>"
 assert_not_contains "help no longer mentions quick path" "$help" "quick path"
+
+# --- review-pass known-items ------------------------------------------------
+# A review pass's known-items file, built mechanically from the PR, its
+# comments and the spec issue's rulings, against the faked GitHub adapters.
+# Only what lands in the file, and the exit status, are checked.
+echo
+echo "review-pass known-items"
+new_repo >/dev/null
+git checkout -q -b quick/21-foo
+fake_github
+fake_issue 21 open
+kp="$(mktemp -d)"
+fake_comment 21 pat 2026-10-01T09:00:00Z $'Spec ruling: Does the cache expire -\n  yes, after an hour.'
+fake_comment 21 pat 2026-10-02T09:00:00Z 'Not a ruling. Spec ruling: buried mid-comment'
+fake_comment 21 pat 2026-10-03T09:00:00Z $'## Spec review\n\nRound 1.'
+writeln '- Built the key from the slug,' '  not from the member' 'None.' >"$kp/dev.md"
+
+"$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/dev.md"; st=$?
+assert_status "with no open PR it builds the file" "$st" 0
+assert_eq "from the issue's rulings and the --deviations file alone" \
+  "$(cat "$kp/known.md")" "$(writeln '## Deviations' \
+    '- Built the key from the slug, not from the member' \
+    '## Known items' \
+    '- Does the cache expire - yes, after an hour. - spec ruling')"
+
+fake_pr 57 open quick/21-foo main
+fake_pr_body 57 "$(writeln 'Closes #21' '' '## Review' '' \
+  '- `a.sh:3` - unused helper - out of scope' '- `-` - the name reads oddly -' \
+  '  a judgement call' '' '## Deviations' '' '- Kept the old cache, since #9 needs it' \
+  '' '## Spec questions' '' '- `b.sh:1` - should it retry?' '' '## Host fallbacks' '' 'None (claude).')"
+fake_pr_comment 57 pat 2026-10-04T09:00:00Z "$(writeln '## Review' '' \
+  '- `c.sh:7` - duplicated parser - needs a decision' '' '## Spec rulings' '' \
+  '- Should it retry? - Yes, once.' '' '## Host fallbacks' '' 'None (claude).')"
+fake_pr_comment 57 pat 2026-10-05T09:00:00Z "$(writeln '## Review' '' \
+  '- `d.sh:2` - no host fallbacks heading, so no pass - ignored')"
+fake_pr_comment 57 pat 2026-10-06T09:00:00Z "$(writeln '## Review' '' 'None declined.' '' \
+  '## Spec rulings' '' 'None.' '' '## Host fallbacks' '' 'None (claude).')"
+writeln 'stale content' >"$kp/known.md"
+"$ORCH" review-pass known-items 21 "$kp/known.md"; st=$?
+assert_status "with an open PR it builds the file" "$st" 0
+assert_eq "declines, rulings and the PR body's deviations, each under its heading, overwriting the old file" \
+  "$(cat "$kp/known.md")" "$(writeln '## Deviations' \
+    '- Kept the old cache, since #9 needs it' \
+    '## Known items' \
+    '- `a.sh:3` - unused helper - out of scope - declined' \
+    '- `-` - the name reads oddly - a judgement call - declined' \
+    '- `c.sh:7` - duplicated parser - needs a decision - declined' \
+    '- Should it retry? - Yes, once. - spec ruling' \
+    '- Does the cache expire - yes, after an hour. - spec ruling')"
+
+"$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/dev.md" >/dev/null; st=$?
+assert_status "--deviations with an open PR builds the file" "$st" 0
+assert_eq "its entries replacing the PR body's Deviations" \
+  "$(sed -n '1,/^## Known items$/p' "$kp/known.md")" \
+  "$(writeln '## Deviations' '- Built the key from the slug, not from the member' '## Known items')"
+
+: >"$kp/empty.md"
+fake_pr 57 closed quick/21-foo main
+rm -rf "$ORCH_GH_FAKE_STORE/issues/21/comments"
+"$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/empty.md" >/dev/null; st=$?
+assert_status "an empty --deviations file builds the file" "$st" 0
+assert_eq "and both empty headings read None." "$(cat "$kp/known.md")" \
+  "$(writeln '## Deviations' 'None.' '## Known items' 'None.')"
+
+writeln 'kept' >"$kp/known.md"
+out="$("$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/missing.md" 2>&1)"; st=$?
+assert_status "refuses a missing --deviations file" "$st" 1
+assert_contains "naming it" "$out" "orch: deviations file not found: $kp/missing.md"
+assert_eq "leaving the existing file untouched" "$(cat "$kp/known.md")" "kept"
+out="$("$ORCH" review-pass known-items 21 "$kp/fresh.md" --deviations "$kp/missing.md" 2>&1)"
+assert_eq "and writing no file" "$([ -e "$kp/fresh.md" ] && echo yes || echo no)" "no"
+
+fake_pr 57 open quick/21-foo main
+for op in adapter_prs_open adapter_pr_body adapter_pr_comments adapter_issue_json; do
+  fake_fail "$op"
+  out="$("$ORCH" review-pass known-items 21 "$kp/known.md" 2>&1)"; st=$?
+  assert_status "refuses when $op cannot be read" "$st" 1
+  assert_contains "with an orch: message for $op" "$out" "orch: gh could not"
+  assert_eq "leaving the existing file untouched for $op" "$(cat "$kp/known.md")" "kept"
+  out="$("$ORCH" review-pass known-items 21 "$kp/fresh.md" 2>&1)"
+  assert_eq "and writing no file for $op" "$([ -e "$kp/fresh.md" ] && echo yes || echo no)" "no"
+  rm -rf "$ORCH_GH_FAKE_STORE/fail"
+done
+
+for args in "" "21" "abc $kp/fresh.md" "21 $kp/fresh.md --deviations" \
+  "21 $kp/fresh.md --bogus x" "21 $kp/fresh.md extra"; do
+  # shellcheck disable=SC2086 # split on purpose: each case is a word list
+  out="$("$ORCH" review-pass known-items $args 2>&1)"; st=$?
+  assert_status "refuses known-items '$args'" "$st" 1
+  assert_contains "with an orch: message for '$args'" "$out" "orch: "
+done
+assert_eq "writing no file for any of them" "$([ -e "$kp/fresh.md" ] && echo yes || echo no)" "no"
+assert_contains "orch.sh help lists review-pass known-items" "$("$ORCH" help)" \
+  "review-pass known-items <issue> <path> [--deviations <file>]"
+rm -rf "$kp"
+restore_suite_env

@@ -1,5 +1,9 @@
 # The review loop owns its reviewer briefs
 
+Amended by ADR-0045: the reviewer prompt carries a sixth line, `Known items:
+<path>`, and each reviewer holds back the findings a known item already
+carries.
+
 Superseded in part by ADR-0019: the implement phase's ticket subagents no
 longer use `code-review` either; only quick implementation's single pass does.
 

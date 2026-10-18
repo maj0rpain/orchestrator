@@ -463,6 +463,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               file, then one labelled line per flag - and
                               refused before any write unless it parses back
                               to them. <line> is N or N-M
+  review known-items <path> <loop boundary>
+                              write the loop's known-items file to <path>,
+                              overwriting it: ## Deviations from the implement
+                              handoff, then ## Known items - Waiting to be
+                              filed from each record above the boundary, Filed
+                              from each at or below it, and the plan's
+                              Rejected alternatives, each tagged with its
+                              source; an empty heading reads None. Refused,
+                              writing nothing, without either handoff
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
   review rerun <pr>           rerun the failed jobs of the Actions run behind
@@ -554,6 +563,19 @@ orch.sh - deterministic operations for the orchestrator flow
                               branch name used whole, git-excluding
                               .orchestrator/. Never wipes; reads state.json
                               only to compare, and never writes it
+  review-pass known-items <issue> <path> [--deviations <file>]
+                              write the pass's known-items file to <path>,
+                              overwriting it: ## Deviations from the PR body,
+                              or the --deviations file in its place, then
+                              ## Known items - the declines under Review in
+                              the PR body and in each comment with both Review
+                              and Host fallbacks, and the Spec rulings lines
+                              of the PR's comments and the issue's
+                              "Spec ruling:" comments, each tagged with its
+                              source; an empty heading reads None. With no
+                              open PR, only the rulings and --deviations are
+                              read. Refused, writing nothing, on a missing
+                              --deviations file or an unreadable GitHub
   finding-triage scan [--all] [<issue> | --pr <n>]
                               read-only: fetch origin/<default> and sort each
                               open review:<severity> finding still in the

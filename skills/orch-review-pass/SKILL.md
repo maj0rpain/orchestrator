@@ -34,7 +34,9 @@ on demand (see **Standalone review pass**). A review pass has no driver: the
 session that runs it fixes what it agrees with itself.
 
 The caller names the spec issue and says where the declines, spec questions
-and host fallbacks go.
+and host fallbacks go. A caller with deviations to hand - a quick
+implementation, whose PR does not exist yet - also names a file of them, for
+step 3's `--deviations`.
 
 1. **Begin.** Run `bash "$ORCH" review-pass begin <issue>`. If it dies,
    relay its message and stop. It refuses a detached HEAD, the base branch,
@@ -47,12 +49,16 @@ and host fallbacks go.
    branch's tip that `branch off` recorded, or that its latest base sync
    moved it to, or, on a branch made without it, the merge-base with its
    base branch.
-3. **Start both reviewers** - `orch-reviewer-standards` and
-   `orch-reviewer-spec` - at once, both in one message, each as a fresh
+3. **Start both reviewers.** First build the pass's known items: run
+   `bash "$ORCH" review-pass known-items <issue> <prefix>-known.md`, adding
+   `--deviations <file>` when the caller handed one. It writes the earlier
+   passes' declines, the spec rulings and the deviations to that file. If it
+   dies, relay its message and stop the pass, as a failed review does. Then
+   start `orch-reviewer-standards` and `orch-reviewer-spec` at once, both in one message, each as a fresh
    subagent, never a fork, which would inherit this context. Start each as
    `docs/host-capabilities.md`'s **Start a fresh subagent** row describes for
    the host: on Claude Code, the Agent tool with `subagent_type` set to
-   `orchestrator:<agent>`. Each prompt carries these five variables and
+   `orchestrator:<agent>`. Each prompt carries these six variables and
    nothing else - no issue body, no diff, no brief:
 
    ```
@@ -61,6 +67,7 @@ and host fallbacks go.
    Iteration: <NN>
    Report path: <prefix>-<standards|spec>.md
    orch.sh: <the path ORCH holds>
+   Known items: <prefix>-known.md
    ```
 
 4. **A failed review.** A missing report, or one that says the base SHA did
@@ -71,6 +78,13 @@ and host fallbacks go.
 5. **Fix.** Read both reports, and fix, yourself, every finding you agree
    with that is not a spec question (step 7). Use no fixer agent, no closer,
    no severity, no budget, and file nothing. Commit the fixes as one commit.
+   The Spec report's `## Set aside` lines are not findings: each is a
+   requirement a known deviation set aside on purpose - one the caller
+   handed in with `--deviations`, or, in a standalone pass, one the PR
+   body's **Deviations** heading lists - and that record of the deviations
+   already carries it: a quick implementation's PR body, under
+   **Deviations**, or the open PR's own. Fix none of them, and record none
+   as a decline or a spec question.
 6. **Declines.** Record each finding you decline, one line each:
    `` `file:line` - <claim> - <reason> `` - its `file:line`, or `-` when the
    report gave `-` for its location; the finding's claim, in a few words;
@@ -144,8 +158,9 @@ the only Standards look the change gets before its PR (ADR-0021).
    a title or wording alone; line numbers are ignored, since they move
    between passes. A finding at `-` matches on the claim alone, and an
    older decline line with no claim matches on file plus reason. The
-   reviewers hear nothing of this: their prompts stay **Review pass** step
-   3's five variables.
+   reviewers were already told these declines, through **Review pass** step
+   3's known items, and hold back what they carry; this drop is the
+   backstop for a finding a reviewer raised again anyway.
 
    Also read every **Spec questions** heading in the PR body and comments:
    its lines are the PR's **earlier spec questions**. They are never matched

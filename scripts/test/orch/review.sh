@@ -1122,3 +1122,83 @@ out="$("$ORCH" review retire 2>&1)"; st=$?
 assert_status "refuses with no argument" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh review retire"
 restore_suite_env
+
+# --- review known-items -----------------------------------------------------
+# The loop's known-items file, built mechanically from the records and the
+# handoffs. Only what lands in the file, and the exit status, are checked.
+echo
+echo "review known-items"
+review_flow knownitems
+mkdir -p .orchestrator/review
+writeln '## Decisions' 'Placeholder.' '' '## Rejected alternatives' '' \
+  '- Driver-side matching made cheaper' '  - the waste is the reviewers'"'"' output' \
+  'A bare line of its own' '' '## Constraints' 'None' \
+  >.orchestrator/handoff/01-plan.md
+writeln '## PR' '#7' '## Deviations' '' '- Built the key from the slug,' \
+  '  not from the member' '- None of the cache was kept' '## Verification' 'ok' \
+  >.orchestrator/handoff/03-implement.md
+writeln '# Review iteration 1' '## Waiting to be filed' '' \
+  '- Standards/nit: `a.sh:3` an old loop nit - final iteration' \
+  '## Filed' '' '- #41 nit: a.sh:3 old loop nit' \
+  >.orchestrator/review/iteration-01.md
+writeln '# Review iteration 2' '## Waiting to be filed' 'None' \
+  '## Filed' 'None.' >.orchestrator/review/iteration-02.md
+writeln '# Review iteration 3' '## Waiting to be filed' '' \
+  '- Spec/major: `b.sh:10` the parser is duplicated - needs a decision' \
+  '- Standards/nit: - the name reads oddly - not mechanical' \
+  '## Filed' '' '- #99 major: b.sh:1 never read below the boundary' \
+  >.orchestrator/review/iteration-03.md
+: >.orchestrator/review/iteration-03-spec.md
+writeln '## Waiting to be filed' '- Standards/nit: `x.sh:1` a report, not a record - x' \
+  >.orchestrator/review/iteration-03-standards.md
+writeln 'stale content' >known.md
+"$ORCH" review known-items known.md 2; st=$?
+assert_status "builds the file" "$st" 0
+assert_eq "with every source under its heading and its tag, overwriting the old file" \
+  "$(cat known.md)" "$(writeln '## Deviations' \
+    '- Built the key from the slug, not from the member' \
+    '- None of the cache was kept' \
+    '## Known items' \
+    '- Spec/major: `b.sh:10` the parser is duplicated - needs a decision - waiting to be filed, iteration 03' \
+    '- Standards/nit: - the name reads oddly - not mechanical - waiting to be filed, iteration 03' \
+    '- #41 nit: a.sh:3 old loop nit - filed #41' \
+    "- Driver-side matching made cheaper - the waste is the reviewers' output - rejected alternative" \
+    '- A bare line of its own - rejected alternative')"
+
+"$ORCH" review known-items known.md 3 >/dev/null; st=$?
+assert_status "builds at a boundary with no record above it" "$st" 0
+assert_not_contains "nothing is waiting to be filed then" "$(cat known.md)" "waiting to be filed"
+assert_contains "and every record at or below it contributes Filed" \
+  "$(cat known.md)" "- #99 major: b.sh:1 never read below the boundary - filed #99"
+
+writeln '## Rejected alternatives' 'None.' >.orchestrator/handoff/01-plan.md
+writeln '## Deviations' '- None' >.orchestrator/handoff/03-implement.md
+rm .orchestrator/review/iteration-0[13].md
+"$ORCH" review known-items known.md 0 >/dev/null; st=$?
+assert_status "builds from sources that are all None" "$st" 0
+assert_eq "and both headings read None." "$(cat known.md)" \
+  "$(writeln '## Deviations' 'None.' '## Known items' 'None.')"
+
+writeln 'kept' >known.md
+for args in "known.md" "known.md two" "known.md -1"; do
+  # shellcheck disable=SC2086 # split on purpose: each case is a word list
+  out="$("$ORCH" review known-items $args 2>&1)"; st=$?
+  assert_status "refuses boundary args '$args'" "$st" 1
+  assert_contains "with an orch: message for '$args'" "$out" "orch: "
+done
+assert_eq "and leaves the existing file untouched" "$(cat known.md)" "kept"
+for f in 03-implement.md 01-plan.md; do
+  mv ".orchestrator/handoff/$f" "$f.bak"
+  out="$("$ORCH" review known-items fresh.md 0 2>&1)"; st=$?
+  assert_status "refuses with no $f" "$st" 1
+  assert_contains "naming it" "$out" "$f"
+  assert_eq "writing no file without $f" "$([ -e fresh.md ] && echo yes || echo no)" "no"
+  mv "$f.bak" ".orchestrator/handoff/$f"
+done
+rm .orchestrator/state.json
+out="$("$ORCH" review known-items fresh.md 0 2>&1)"; st=$?
+assert_status "refuses with no flow state" "$st" 1
+assert_contains "with an orch: message" "$out" "orch: no active flow"
+assert_eq "writing no file" "$([ -e fresh.md ] && echo yes || echo no)" "no"
+assert_contains "orch.sh help lists review known-items" "$("$ORCH" help)" "review known-items <path> <loop boundary>"
+restore_suite_env

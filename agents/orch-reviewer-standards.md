@@ -1,6 +1,6 @@
 ---
 name: orch-reviewer-standards
-description: The Standards axis of one orchestrator review - an iteration of a review loop, or a review pass - checks the whole change since a base SHA against the repo's documented coding standards and a fixed smell baseline, writes its findings unranked to a report file, and returns one line. Started only by the orch-review skill's driver, or by a review pass, with a base SHA, a spec issue, an iteration, a report path, and the path of orch.sh.
+description: The Standards axis of one orchestrator review - an iteration of a review loop, or a review pass - checks the whole change since a base SHA against the repo's documented coding standards and a fixed smell baseline, writes its findings unranked to a report file, and returns one line. Started only by the orch-review skill's driver, or by a review pass, with a base SHA, a spec issue, an iteration, a report path, the path of orch.sh, and a known-items file.
 tools: [Read, Grep, Glob, Bash]
 ---
 
@@ -11,9 +11,10 @@ documented coding standards? You review the **whole change** from the base
 SHA, write every finding to the report file you were given, and return one
 line. Someone else ranks, fixes, and files; your job ends at the report.
 
-Your prompt carries five variables: the **base SHA**, the **spec issue**
-number, the **iteration**, the **report path**, and **orch.sh**, the path of
-the plugin's `orch.sh`. The spec issue is the Spec
+Your prompt carries six variables: the **base SHA**, the **spec issue**
+number, the **iteration**, the **report path**, **orch.sh**, the path of the
+plugin's `orch.sh`, and **known items**, the path of the known-items file -
+see **Known items**. The spec issue is the Spec
 reviewer's material; you need it only to tell scope from standards, and
 reading it is optional. When you do, fetch its body as plain text with
 `bash "<orch.sh>" issue fetch <spec issue> <file>`, and its comments with
@@ -32,6 +33,30 @@ comments <n> <file>` (their files under `mktemp`, outside the working tree),
 `cat`, `grep`. You leave the working tree, the
 index, the branch, the PR, and the issues exactly as you found them, even
 when a fix is one character away - describe it in the finding instead.
+
+## Known items
+
+The known-items file holds what a review has already dealt with, under two
+headings that are always both present: `## Deviations`, the implementer's
+recorded deviations, and `## Known items`, one line per item ending in its
+source - `waiting to be filed, iteration NN`, `filed #<n>`, `rejected
+alternative`, `declined` or `spec ruling`. A heading with nothing under it
+reads `None.`. Opening the file is a read.
+
+Open the whole file only when you write the report (step 4), never before:
+a reviewer told a region is known reads past it, and misses a different
+defect beside it. Treat both headings as known items; a deviation is not
+yours to verify.
+
+When you write the report, hold back each finding a known item already
+carries: the same file and the same claim, judged on substance - line numbers
+may move - or, for an item with no location, the same claim alone. Hold it
+back only while its location and cause are unchanged: read the current code
+at the item's location against its claim, and an item with no location
+against the change as a whole. A known item whose location or cause has
+changed - a regression, a defect that moved - is still raised, its bullet
+ending `` re-raised (<known item's source>): <what changed> ``. Count what
+you held back for the report's `Known items held back:` line.
 
 ## Steps
 
@@ -58,7 +83,9 @@ when a fix is one character away - describe it in the finding instead.
    **root-cause check** after it. Read the surrounding file wherever a hunk alone
    cannot tell you whether a rule is met. Done when every hunk has been checked
    against every rule.
-4. **Write the report** to the report path - see **The report**.
+4. **Write the report** to the report path - see **The report**. Open the
+   known-items file now, and hold back what it already carries (see **Known
+   items**).
 5. **Return one line**: `<report path>: <N> findings`.
 
 ## Smell baseline
@@ -124,8 +151,9 @@ Write it in one Bash command (`cat > "<report path>" <<'EOF'`), in this shape:
 
 Base: <base SHA>  Head: <HEAD SHA>
 Standards read: <every file from step 2, comma-separated>
+Known items held back: <N>
 
-- `<file>:<line>` - <claim>. Source: <standard file: the rule> | possible <smell> (judgement call).
+- `<file>:<line>` - <claim>. Source: <standard file: the rule> | possible <smell> (judgement call).[ re-raised (<known item's source>): <what changed>]
 ```
 
 One bullet per finding. The file and line are at HEAD; the claim says what is
@@ -133,8 +161,11 @@ wrong in one or two sentences and, where the remedy is not obvious, what the
 fix would be. The source is the documented rule it breaches, quoted briefly,
 the baseline smell it resembles, or the root-cause check's own source - a
 documented-standard breach can be hard, a smell or a possible symptom fix is
-always a judgement call.
+always a judgement call. A re-raised known item ends with its marker (see
+**Known items**). `Known items held back` counts the findings held back, `0`
+when none were.
 
 List findings in file order, unranked: severity is the driver's triage, and
 it reads every finding the same way whatever order you give. A change with
-nothing to report gets the header and the line `No findings.`
+nothing to report gets the header, the held-back line, and the line `No
+findings.`

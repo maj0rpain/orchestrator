@@ -368,6 +368,13 @@ fake_pr() {
   printf '%s\n' "$4" >"$d/base"
 }
 
+# fake_pr_body <n> <text>: seeds PR #n's body, byte for byte.
+fake_pr_body() { printf '%s' "$2" >"$ORCH_GH_FAKE_STORE/prs/$1/body"; }
+
+# fake_pr_comment <n> <author> <created-at> <body>: seeds a comment on PR #n,
+# after any it has.
+fake_pr_comment() { fake_comment_seed "$ORCH_GH_FAKE_STORE/prs/$1/comments" "$2" "$3" "$4"; }
+
 # fake_pr_draft <n>: seeds PR #n as a draft.
 fake_pr_draft() { : >"$ORCH_GH_FAKE_STORE/prs/$1/draft"; }
 

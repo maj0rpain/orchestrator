@@ -178,12 +178,19 @@ Build the linked issue's ticket frontier with the driver loop in
 
 - **the issue**: the linked issue;
 - **the branch**: the quick implementation's branch;
-- **the record**: the PR body's **Host fallbacks**, **Merge resolutions** and
-  **Verification** headings (step 7);
+- **the record**: the PR body's **Host fallbacks**, **Merge resolutions**,
+  **Verification** and **Deviations** headings (step 7);
 - **the judge**: the review pass and the PR;
 - **the stop**: quick implementation stops, before the review and the PR,
   naming every failure;
 - **after loop step f**: **Base sync** below, then **6. Review**.
+
+As each implementer's report is recorded, its `Deviation` line goes under
+**Deviations** when it is not `None`: one bullet per such ticket, naming the
+ticket, `- #<ticket>: <the Deviation line's text>`. With no such ticket,
+**Deviations** reads `None.`. Step 6 hands these bullets to the review pass,
+and step 7's PR body carries them, so a later standalone pass reads them
+there.
 
 The breakdown is collapsed when step 3 found or made no sub-issue - `ticket
 exists` printed `collapsed`, or `orch-to-tickets` reported `collapsed`: no
@@ -207,6 +214,14 @@ Run a review pass: invoke the `orch-review-pass` skill and follow its
 one pass, never a multi-iteration review loop. The loop's budget, severity
 triage and filed findings are exactly what a quick implementation chooses to
 skip.
+
+The PR does not exist yet, so the pass cannot read step 5's **Deviations**
+from its body. Before invoking the pass, write those bullets - or nothing,
+when **Deviations** reads `None.` - to a file made with `mktemp`, outside the
+repo, and name that file to the pass as its deviations file, for its step 3's
+`--deviations`. If the file cannot be made or written, stop before the
+review, as a stopped pass does, naming the failure. Once the pass returns or
+stops, however it ends, remove the file.
 
 If the pass stops, stop before opening the PR. This skill promises a review
 before the PR, so it never opens one with an axis unreviewed.
@@ -257,7 +272,9 @@ with step 5's base sync's and loop step e's ticket resolutions, per
 **Merge resolutions** in `agents/orch-resolver.md` (under the plugin
 root). It carries a **Spec questions** heading, always present and separate
 from **Review**: each spec question step 6's pass recorded, one line each as
-the pass records it, or `None.` when it recorded none. It
+the pass records it, or `None.` when it recorded none. It carries a
+**Deviations** heading with step 5's deviation bullets, one per ticket whose
+`Deviation` line is not `None`, or `None.` when there are none. It
 ends with a **Host fallbacks** heading listing every fallback this run took -
 including any the spec review in step 2 took - or `None (<host>).` It
 pushes the branch and opens the PR against the base branch `branch off`
