@@ -195,7 +195,7 @@ spec_review_mark_check() {
 # citations' ranges are checked later, against the lens files.
 spec_review_batch_parse() {
   local file="$1" line lineno=0 mode=top rest kw args cur=-1 opt=-1
-  local buf="" bufn=0 block_line=0 quote_wanted="" n group rec arg lens state reason
+  local buf="" bufn=0 block_line=0 quote_wanted="" n group rec rec_tail arg lens state reason
   local fd_lens fd_k login created letter label extra j mark
   SR_LENS_NAME=(); SR_LENS_STATE=(); SR_LENS_REASON=()
   SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_MARK=(); SR_IT_LINE=()
@@ -267,7 +267,7 @@ spec_review_batch_parse() {
         SR_LENS_NAME[j]="$lens"; SR_LENS_STATE[j]="$state"; SR_LENS_REASON[j]="$reason" ;;
       item)
         [ "$cur" -lt 0 ] || spec_review_item_check "$cur"
-        read -r n group rec arg <<<"$args"
+        read -r n group rec rec_tail <<<"$args"
         case "$n" in ''|*[!0-9]*|0*) spec_review_batch_die "$lineno" "item number must be a positive number, got '$n'" ;; esac
         [ -z "$(array_index SR_IT_N "$n")" ] || spec_review_batch_die "$lineno" "a second item $n"
         case "$group" in
@@ -275,24 +275,23 @@ spec_review_batch_parse() {
           *) spec_review_lens_known "$group" \
                || spec_review_batch_die "$lineno" "unknown group '$group' (want consolidation, a lens, or contradicts-the-plan)" ;;
         esac
-        mark=""
+        mark=""; arg=""
         case "$rec" in
           apply)
-            read -r mark extra <<<"$arg"
+            read -r mark extra <<<"$rec_tail"
             spec_review_mark_check "$lineno" "$n" "$rec" "$mark"
-            [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ item $n ... apply takes nothing after its mark"
-            arg="" ;;
+            [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ item $n ... apply takes nothing after its mark" ;;
           resolved)
-            case "$arg" in
+            case "$rec_tail" in
               material|material' '*|minor|minor' '*) spec_review_batch_die "$lineno" "@@ item $n ... a resolved item carries no mark" ;;
             esac
-            [ -z "$arg" ] || spec_review_batch_die "$lineno" "@@ item $n ... resolved takes nothing after it" ;;
+            [ -z "$rec_tail" ] || spec_review_batch_die "$lineno" "@@ item $n ... resolved takes nothing after it" ;;
           decline)
-            read -r mark arg <<<"$arg"
+            read -r mark arg <<<"$rec_tail"
             spec_review_mark_check "$lineno" "$n" "$rec" "$mark"
             [ -n "$arg" ] || spec_review_batch_die "$lineno" "@@ item $n ... decline needs a reason after its mark" ;;
           decision)
-            read -r arg mark extra <<<"$arg"
+            read -r arg mark extra <<<"$rec_tail"
             case "$arg" in [A-Z]) ;; *) spec_review_batch_die "$lineno" "@@ item $n ... decision needs the recommended option's letter, A to Z" ;; esac
             spec_review_mark_check "$lineno" "$n" "$rec" "$mark"
             [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ item $n ... decision takes nothing after its mark" ;;

@@ -268,8 +268,9 @@ decision item carries its recommended option.
 You, never a lens, then mark each item that carries an edit **material** or
 **minor**:
 
-- **Material**: the item's edit changes what gets built or how it is proven
-  - behaviour, scope, an interface, an acceptance criterion or a test seam.
+- **Material**: the item's edit changes what gets built or how it is
+  proven - behaviour, scope, an interface, an acceptance criterion or a test
+  seam.
 - **Minor**: anything else - wording, clarification, naming, internal
   consistency, a cross-reference.
 - Every decision item and every `contradicts-the-plan` item is material;
