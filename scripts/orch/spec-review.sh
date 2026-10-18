@@ -190,7 +190,7 @@ spec_review_batch_parse() {
   SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_LINE=()
   SR_IT_SUMMARY=(); SR_IT_ANCHOR=(); SR_IT_ANCHOR_LINE=(); SR_IT_REPLACE=(); SR_IT_RESOLVED=()
   SR_FD_ITEM=(); SR_FD_LENS=(); SR_FD_K=(); SR_FD_LINE=()
-  SR_CM_ITEM=(); SR_CM_QUOTE=()
+  SR_CM_ITEM=(); SR_CM_LOGIN=(); SR_CM_CREATED=(); SR_CM_QUOTE=()
   SR_OP_ITEM=(); SR_OP_LETTER=(); SR_OP_LABEL=(); SR_OP_LINE=()
   SR_OP_SUMMARY=(); SR_OP_ANCHOR=(); SR_OP_ANCHOR_LINE=(); SR_OP_REPLACE=()
   while IFS= read -r line || [ -n "$line" ]; do
@@ -298,7 +298,8 @@ spec_review_batch_parse() {
         read -r login created extra <<<"$args"
         case "$login" in @?*) ;; *) spec_review_batch_die "$lineno" "@@ comment wants @<login> <createdAt>" ;; esac
         [ -n "$created" ] && [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ comment wants @<login> <createdAt>"
-        SR_CM_ITEM[${#SR_CM_ITEM[@]}]="$cur"
+        j="${#SR_CM_ITEM[@]}"
+        SR_CM_ITEM[j]="$cur"; SR_CM_LOGIN[j]="$login"; SR_CM_CREATED[j]="$created"
         quote_wanted=1 ;;
       quote)
         [ -n "$quote_wanted" ] || spec_review_batch_die "$lineno" "@@ quote must follow @@ comment"
@@ -666,7 +667,8 @@ spec_review_wait() {
 # against <dir>/spec.fetched.md when it exists, else <dir>/spec.md. Writes
 # nothing, touches no GitHub, reads no flow state. Grammar, lens and citation
 # errors stop at the first; every anchor problem is reported, one `orch: `
-# line each, then exit 1. A clean batch prints a one-line summary.
+# line each, then exit 1. A clean batch prints its view on stdout - see
+# spec_review_view - and a one-line summary on stderr.
 spec_review_check() {
   [ $# -eq 1 ] || die "usage: orch.sh spec-review check <dir>"
   local dir="${1%/}" body p i anchors=0
@@ -684,7 +686,84 @@ spec_review_check() {
     case "${SR_IT_REC[$i]}" in apply|decline) anchors=$((anchors + 1)) ;; esac
   done
   anchors=$((anchors + ${#SR_OP_ITEM[@]}))
-  note "batch.md passes: ${#SR_IT_N[@]} items, $anchors anchors, each matching once in $body, and the all answer applies cleanly"
+  spec_review_view
+  note "batch.md passes: ${#SR_IT_N[@]} items, $anchors anchors, each matching once in $body, and the all answer applies cleanly" >&2
+}
+
+# spec_review_quoted <text>: <text> as a markdown blockquote, line for line.
+spec_review_quoted() {
+  local l
+  while IFS= read -r l || [ -n "$l" ]; do
+    if [ -n "$l" ]; then printf '> %s\n' "$l"; else printf '>\n'; fi
+  done <<<"$1"
+}
+
+# spec_review_fenced <text>: <text> in a code block whose fence of backticks
+# is longer than any run of backticks in it, so a fence in the text stays text.
+spec_review_fenced() {
+  local fence='```'
+  while :; do
+    case "$1" in *"$fence"*) fence="$fence\`" ;; *) break ;; esac
+  done
+  printf '%s\n%s\n%s\n' "$fence" "$1" "$fence"
+}
+
+# spec_review_edit_view <anchor> <replacement>: an edit's Current and Proposed,
+# both in full.
+spec_review_edit_view() {
+  printf '\n**Current**\n\n%s\n\n**Proposed**\n\n%s\n' "$(spec_review_fenced "$1")" "$(spec_review_fenced "$2")"
+}
+
+# spec_review_view: the parsed batch as the human reads it before the batch
+# question - the lens lines, worded as the changelog words them, then every
+# item in batch order: its group, its recommendation, the text of each finding
+# it cites and of each comment it folds in, and its edit, or each option's, in
+# full. Rendered from spec_review_validate's arrays alone.
+spec_review_view() {
+  local l i j group
+  printf '## The batch\n\n### Lenses\n\n'
+  for l in "${!SR_LENS_NAME[@]}"; do
+    printf -- '- %s: ' "$(spec_review_title "${SR_LENS_NAME[$l]}")"
+    case "${SR_LENS_STATE[$l]}" in
+      ran) printf 'ran\n' ;;
+      not-run) printf 'not run - %s\n' "${SR_LENS_REASON[$l]}" ;;
+      standalone) printf 'not run - standalone review, no plan to check against\n' ;;
+    esac
+  done
+  for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
+    case "${SR_IT_GROUP[$i]}" in
+      contradicts-the-plan) group="Contradicts the plan" ;;
+      *) group="$(spec_review_title "${SR_IT_GROUP[$i]}")" ;;
+    esac
+    printf '\n### Item %s - %s\n\n**Recommendation:** ' "${SR_IT_N[$i]}" "$group"
+    case "${SR_IT_REC[$i]}" in
+      apply) printf 'apply\n' ;;
+      decline) printf 'recommend decline - %s\n' "${SR_IT_ARG[$i]}" ;;
+      decision) printf 'decision - option %s recommended\n' "${SR_IT_ARG[$i]}" ;;
+      resolved) printf 'none - resolved by item %s\n' "${SR_IT_RESOLVED[$i]}" ;;
+    esac
+    for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
+      [ "${SR_FD_ITEM[$j]}" = "$i" ] || continue
+      printf '\n**Finding** (%s %s):\n\n' "$(spec_review_title "${SR_FD_LENS[$j]}")" "${SR_FD_K[$j]}"
+      spec_review_quoted "$(spec_review_finding_text "${SR_FD_LENS[$j]}" "${SR_FD_K[$j]}")"
+    done
+    for j in ${SR_CM_ITEM[@]+"${!SR_CM_ITEM[@]}"}; do
+      [ "${SR_CM_ITEM[$j]}" = "$i" ] || continue
+      printf '\n**Comment** by %s, %s:\n\n' "${SR_CM_LOGIN[$j]}" "${SR_CM_CREATED[$j]}"
+      spec_review_quoted "${SR_CM_QUOTE[$j]}"
+    done
+    case "${SR_IT_REC[$i]}" in
+      apply|decline) spec_review_edit_view "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}" ;;
+      decision)
+        for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
+          [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
+          printf '\n#### Option %s - %s' "${SR_OP_LETTER[$j]}" "${SR_OP_LABEL[$j]}"
+          [ "${SR_OP_LETTER[$j]}" != "${SR_IT_ARG[$i]}" ] || printf ' (recommended)'
+          printf '\n'
+          spec_review_edit_view "${SR_OP_ANCHOR[$j]}" "${SR_OP_REPLACE[$j]}"
+        done ;;
+    esac
+  done
 }
 
 # spec_review_item_sections <index>: the changelog sections item <index> is

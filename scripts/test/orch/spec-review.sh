@@ -1109,14 +1109,15 @@ src_refused() {
   assert_eq "$1: the directory unchanged" "$(src_snapshot "$2")" "$before"
 }
 
-# A clean batch: exit 0, one summary line, nothing written.
+# A clean batch: exit 0, the view on stdout, the one-line summary on stderr,
+# nothing written.
 d="$(src_dir)"
 before="$(src_snapshot "$d")"
 src "$d"
 assert_status "a clean batch passes" "$st" 0
-assert_eq "with a one-line summary" "$out" \
+assert_eq "with a one-line summary on stderr" "$err" \
   "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
-assert_eq "and nothing on stderr" "$err" ""
+assert_not_contains "and not on stdout" "$out" "batch.md passes"
 assert_eq "the directory byte-identical" "$(src_snapshot "$d")" "$before"
 assert_eq "no spec.fetched.md created" "$(on_disk "$d/spec.fetched.md")" absent
 
@@ -1127,10 +1128,297 @@ printf '@@ item 9 bogus\n@@ finding nowhere 7\n@@ lens implementability ran\n' >
 before="$(src_snapshot "$d")"
 src "$d"
 assert_status "a map full of @@ lines passes" "$st" 0
-assert_eq "with the same summary" "$out" \
+assert_eq "with the same summary on stderr" "$err" \
   "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
-assert_eq "and nothing on stderr with a map" "$err" ""
 assert_eq "the directory, map included, byte-identical" "$(src_snapshot "$d")" "$before"
+
+# The view: each cited finding's text next to the item citing it (#1225).
+d="$(src_dir)"
+src "$d"
+view_item2="${out#*'### Item 2 - Consistency'}"; view_item2="${view_item2%%'### Item 3'*}"
+assert_contains "item 2's view carries the finding it cites" "$view_item2" \
+  "**Finding** (Consistency 1):
+
+> Beta contradicts the plan."
+assert_not_contains "and no other item's finding" "$view_item2" "Gamma is untestable."
+
+# The view of the skill's worked-example batch, as it stands: one item of each
+# kind and its ran and standalone lens lines.
+d="$(mktemp -d)"
+cat >"$d/spec.md" <<'BODY'
+# Widget export
+
+## Problem Statement
+
+Exports time out on large widgets.
+
+## Solution
+
+The export streams each widget in pages of 100.
+The export writes one file.
+
+## Testing Decisions
+
+- One seam: the `widget export` CLI.
+BODY
+cat >"$d/batch.md" <<'BATCH'
+@@ lens fidelity standalone
+@@ lens consistency ran
+@@ lens testability ran
+@@ lens implementability ran
+
+@@ item 1 consolidation apply
+@@ summary Failed pages are retried once
+@@ comment @alice 2026-10-01T09:00:00Z
+@@ quote
+A failed page should be retried once before the export gives up.
+@@ anchor
+The export streams each widget in pages of 100.
+@@ replace
+The export streams each widget in pages of 100.
+A failed page is retried once before the export fails.
+@@ end
+
+@@ item 2 testability apply
+@@ finding testability 1
+@@ summary The seam's test runs against a fake store
+@@ anchor
+- One seam: the `widget export` CLI.
+@@ replace
+- One seam: the `widget export` CLI, end to end, against a fake store.
+@@ end
+
+@@ item 3 consistency decline the glossary's term is widget, as the body says
+@@ finding consistency 1
+@@ summary Widgets renamed items
+@@ anchor
+Exports time out on large widgets.
+@@ replace
+Exports time out on large items.
+@@ end
+
+@@ item 4 implementability decision B
+@@ finding implementability 1
+@@ option A One file
+@@ summary The export writes one compressed file
+@@ anchor
+The export writes one file.
+@@ replace
+The export writes one compressed file.
+@@ end
+@@ option B One file per widget
+@@ summary The export writes one file per widget
+@@ anchor
+The export writes one file.
+@@ replace
+The export writes one file per widget.
+@@ end
+
+@@ item 5 implementability resolved
+@@ finding implementability 2
+@@ resolved-by 4
+BATCH
+printf '@@ finding 1\nThe body says widget where the glossary says item.\n' >"$d/lens-consistency.md"
+printf '@@ finding 1\nThe seam names no store to test against.\n' >"$d/lens-testability.md"
+printf '@@ finding 1\nOne file cannot hold the largest exports.\nThe store caps a file at 2 GB.\n@@ finding 2\nOne file is written before every page is fetched.\n' \
+  >"$d/lens-implementability.md"
+before="$(src_snapshot "$d")"
+src "$d"
+assert_status "the worked example passes" "$st" 0
+assert_eq "its view, every item in full" "$out" '## The batch
+
+### Lenses
+
+- Fidelity: not run - standalone review, no plan to check against
+- Consistency: ran
+- Testability: ran
+- Implementability: ran
+
+### Item 1 - Consolidation
+
+**Recommendation:** apply
+
+**Comment** by @alice, 2026-10-01T09:00:00Z:
+
+> A failed page should be retried once before the export gives up.
+
+**Current**
+
+```
+The export streams each widget in pages of 100.
+```
+
+**Proposed**
+
+```
+The export streams each widget in pages of 100.
+A failed page is retried once before the export fails.
+```
+
+### Item 2 - Testability
+
+**Recommendation:** apply
+
+**Finding** (Testability 1):
+
+> The seam names no store to test against.
+
+**Current**
+
+```
+- One seam: the `widget export` CLI.
+```
+
+**Proposed**
+
+```
+- One seam: the `widget export` CLI, end to end, against a fake store.
+```
+
+### Item 3 - Consistency
+
+**Recommendation:** recommend decline - the glossary'"'"'s term is widget, as the body says
+
+**Finding** (Consistency 1):
+
+> The body says widget where the glossary says item.
+
+**Current**
+
+```
+Exports time out on large widgets.
+```
+
+**Proposed**
+
+```
+Exports time out on large items.
+```
+
+### Item 4 - Implementability
+
+**Recommendation:** decision - option B recommended
+
+**Finding** (Implementability 1):
+
+> One file cannot hold the largest exports.
+> The store caps a file at 2 GB.
+
+#### Option A - One file
+
+**Current**
+
+```
+The export writes one file.
+```
+
+**Proposed**
+
+```
+The export writes one compressed file.
+```
+
+#### Option B - One file per widget (recommended)
+
+**Current**
+
+```
+The export writes one file.
+```
+
+**Proposed**
+
+```
+The export writes one file per widget.
+```
+
+### Item 5 - Implementability
+
+**Recommendation:** none - resolved by item 4
+
+**Finding** (Implementability 2):
+
+> One file is written before every page is fetched.'
+assert_eq "its summary on stderr" "$err" \
+  "batch.md passes: 5 items, 5 anchors, each matching once in spec.md, and the all answer applies cleanly"
+assert_eq "the worked example's directory unchanged" "$(src_snapshot "$d")" "$before"
+
+# The view of a flow's batch: Fidelity ran with a contradicts-the-plan item,
+# and a lens that did not run, cited by nothing. An edit holding a fence is
+# shown inside a longer one.
+d="$(mktemp -d)"
+cat >"$d/spec.md" <<'BODY'
+# Sync
+
+Run sync nightly:
+```sh
+orch sync
+```
+BODY
+cat >"$d/batch.md" <<'BATCH'
+@@ lens fidelity ran
+@@ lens consistency ran
+@@ lens testability not-run timed out twice
+@@ lens implementability ran
+
+@@ item 1 contradicts-the-plan apply
+@@ finding fidelity 1
+@@ summary Sync runs hourly, as the plan decided
+@@ anchor
+Run sync nightly:
+```sh
+orch sync
+```
+@@ replace
+Run sync hourly:
+```sh
+orch sync --hourly
+```
+@@ end
+BATCH
+printf '@@ finding 1\nThe plan decided hourly; the spec says nightly.\n' >"$d/lens-fidelity.md"
+printf '@@ none\n' >"$d/lens-consistency.md"
+printf '@@ none\n' >"$d/lens-implementability.md"
+before="$(src_snapshot "$d")"
+src "$d"
+assert_status "a flow batch passes" "$st" 0
+assert_eq "its view" "$out" '## The batch
+
+### Lenses
+
+- Fidelity: ran
+- Consistency: ran
+- Testability: not run - timed out twice
+- Implementability: ran
+
+### Item 1 - Contradicts the plan
+
+**Recommendation:** apply
+
+**Finding** (Fidelity 1):
+
+> The plan decided hourly; the spec says nightly.
+
+**Current**
+
+````
+Run sync nightly:
+```sh
+orch sync
+```
+````
+
+**Proposed**
+
+````
+Run sync hourly:
+```sh
+orch sync --hourly
+```
+````'
+assert_eq "its summary on stderr" "$err" \
+  "batch.md passes: 1 items, 1 anchors, each matching once in spec.md, and the all answer applies cleanly"
+assert_eq "the flow batch's directory unchanged" "$(src_snapshot "$d")" "$before"
 
 # No flow state read, no GitHub touched.
 mkdir -p "$top/.orchestrator"
@@ -1147,7 +1435,7 @@ sed 's/^Alpha line\.$/Alpha prime line./' <<<"$src_body" >"$d/spec.md"
 printf '%s' "$src_body" >"$d/spec.fetched.md"
 src "$d"
 assert_status "an edited spec.md passes against the spec.fetched.md it came from" "$st" 0
-assert_contains "naming spec.fetched.md" "$out" "each matching once in spec.fetched.md"
+assert_contains "naming spec.fetched.md" "$err" "each matching once in spec.fetched.md"
 printf '%s' "$src_body" >"$d/spec.md"
 sed 's/^Alpha line\.$/Alpha moved./' <<<"$src_body" >"$d/spec.fetched.md"
 src_refused "an anchor spec.md has but spec.fetched.md lacks" "$d" \
