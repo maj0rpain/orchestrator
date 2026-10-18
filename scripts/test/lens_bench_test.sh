@@ -178,6 +178,33 @@ run_bench measure "$bench_root/spans"
 has_line "a double-backtick span is one name, not the single-backtick spans inside it" "$out" \
   "| run-2 | 0 (0%) | 0 (0%) | 2 (100%) | 0 (0%) | 0 (0%) | 1100 (100%) |"
 
+echo
+echo "the diagnosis: matching names"
+# names_measure <dir> <spans>: a copy of the diagnosis fixture, named <dir>,
+# whose spec also gives the code spans <spans>, measured.
+names_measure() {
+  cp -R "$FIXTURE/diagnosis" "$bench_root/$1"
+  printf '\nAlso %s.\n' "$2" >>"$bench_root/$1/spec.md"
+  run_bench measure "$bench_root/$1"
+}
+# `d` and `-` are in every path the runs read, `/d/repo/other.sh`, and `j`
+# and `@@` are no code: none is a name a call can locate.
+names_measure short '`d`, `-`, `j` and `@@`'
+has_line "a span shorter than 3 characters, or with no letter, digit or underscore, locates nothing" "$out" \
+  "| run-1 | 1 (20%) | 1 (20%) | 3 (60%) | 1400 (17.3%) | 1000 (12.3%) | 5700 (70.4%) |"
+# `repo` is a directory of other.sh's path but not a path itself, and
+# `her.sh` ends that path but not after a `/`.
+names_measure paths '`repo` and `her.sh`'
+has_line "a Read locates only a path-like name its path is, or ends in after a slash" "$out" \
+  "| run-1 | 1 (20%) | 1 (20%) | 3 (60%) | 1400 (17.3%) | 1000 (12.3%) | 5700 (70.4%) |"
+# run-2's one call is a Grep for gamma, its first turn of 500.
+names_measure part '`gam`'
+has_line "a Grep locates a name only as a whole token of its pattern" "$out" \
+  "| run-2 | 0 (0%) | 0 (0%) | 2 (100%) | 0 (0%) | 0 (0%) | 1100 (100%) |"
+names_measure whole '`gamma`'
+has_line "a Grep whose pattern is a name locates it" "$out" \
+  "| run-2 | 1 (50%) | 0 (0%) | 1 (50%) | 500 (45.5%) | 0 (0%) | 600 (54.5%) |"
+
 # broken <name> <file under with-baseline>: a copy of with-baseline, named
 # <name>, with <file> removed. Prints its path.
 broken() {

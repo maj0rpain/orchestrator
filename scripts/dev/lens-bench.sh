@@ -41,9 +41,11 @@
 #
 # Then the diagnosis, per run and summed over the directory's runs. Each code
 # span (backticked text) in `spec.md`, as CommonMark reads one, is a name the
-# spec gives; a tool call
-# locates spec-named code when its Read path, Grep pattern or Glob pattern
-# contains one. A turn is `named` when all its calls do, `mixed` when some do,
+# spec gives. A Read locates spec-named code when its path is a path-like name
+# (one with no space that holds a `/` or ends in an extension), or ends in `/`
+# and one; a Grep or Glob, when its pattern holds a name of 3 or more
+# characters, one of them a letter, digit or underscore, as a whole token, with
+# no letter, digit or underscore either side. A turn is `named` when all its calls do, `mixed` when some do,
 # and `unnamed` when none do or it makes no call; the report gives each
 # label's share of turns and of input. Beside it, the carried cost by kind: a
 # tool result's kind is `the spec` for the Read of the first path in the
@@ -366,10 +368,19 @@ TRANSCRIPT_JQ="$JQ_PRELUDE"'
 # $run the run's name. A turn's context is its total input; the results that
 # came in since the previous turn are the ones read after its last line.
 DIAGNOSIS_JQ="$JQ_PRELUDE"'
-  def located: (if .name == "Read" then .input.file_path
-      elif .name == "Grep" or .name == "Glob" then .input.pattern
-      else null end) as $target
-    | ($target | type) == "string" and any($names[]; . as $n | $target | contains($n));
+  def wordy: test("[A-Za-z0-9_]");
+  def pathlike: test("^\\S+$") and (test("/") or test("\\.[A-Za-z0-9]+$"));
+  def token_in($t): . as $n | ($n | length) as $l
+    | any($t | indices($n)[]; . as $i
+        | ($i == 0 or ($t[$i - 1:$i] | wordy | not))
+          and ($i + $l == ($t | length) or ($t[$i + $l:$i + $l + 1] | wordy | not)));
+  def located: if .name == "Read" then .input.file_path as $path
+      | ($path | type) == "string"
+        and any($names[] | select(pathlike); . as $n | $path == $n or ($path | endswith("/" + $n)))
+    elif .name == "Grep" or .name == "Glob" then .input.pattern as $pattern
+      | ($pattern | type) == "string"
+        and any($names[] | select(length >= 3 and wordy); token_in($pattern))
+    else false end;
   def tag: [.uses[] | located] as $l
     | if ($l | all) and ($l | length) > 0 then "named"
       elif ($l | any) then "mixed" else "unnamed" end;
