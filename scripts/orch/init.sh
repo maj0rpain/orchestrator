@@ -80,11 +80,15 @@ cmd_init() {
     esac
   done
   slug="$(normalize_slug "$slug")"
-  # A "done" flow already succeeded - its handoffs are read by no later phase,
-  # so it is not "active" in any sense that matters. init archives it and
-  # proceeds instead of refusing; every other phase still blocks a second flow.
+  # A busy checkout - a flow mid-pipeline, or a branch the plugin made with no
+  # PR yet, as a quick implementation still running here leaves - refuses
+  # with exit 3. Dirty paths are not a busy signal here: they get the
+  # planning-allowlist check's own exit-1 refusal after it, so a stray edit is
+  # not taken into a side checkout. A "done" flow already succeeded - its
+  # handoffs are read by no later phase, so it does not hold the checkout.
+  # init archives it and proceeds instead of refusing.
   local archive_note="" archive_home
-  refuse_beside_active_flow
+  refuse_busy_checkout flow branch
   require_clean_outside_allowlist
   # Adoption is validated before anything is written, mirroring how
   # branch create and pr open die on their own preconditions rather than

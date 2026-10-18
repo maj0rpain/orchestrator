@@ -131,3 +131,25 @@ checkout_busy() {
   fi
   printf -v "$var" '%s' "$line"
 }
+
+# refuse_busy_checkout <signal>...: the refusal shared by branch off, branch
+# create and init, so none of them ever moves another implementation's branch
+# or carries its uncommitted edits. Checks the signals named, as checkout_busy
+# does; in a busy checkout it warns with the line naming what holds it and its
+# remedy, and exits 3, a code no other failure of those commands uses, so a
+# skill can tell a busy checkout apart from every other refusal. A tree that
+# cannot be read exits 1 inside checkout_busy. Called as a bare statement, so
+# the exit stops the caller.
+refuse_busy_checkout() {
+  local held remedy
+  checkout_busy held "$@"
+  [ -n "$held" ] || return 0
+  case "$held" in
+    "busy: a flow"*) remedy="One flow at a time - finish it, or run $(flow_cmd abort)." ;;
+    "busy: branch"*) remedy="Open its PR, or switch off it." ;;
+    *) remedy="Commit, stash, or discard these changes." ;;
+  esac
+  warn "$held
+     $remedy"
+  exit 3
+}

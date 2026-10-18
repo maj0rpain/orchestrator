@@ -22,11 +22,11 @@ assert_eq "excludes .orchestrator/ exactly once" "$(exclude_count .orchestrator/
 assert_eq "excludes .scratch/ exactly once" "$(exclude_count .scratch/)" "1"
 
 # #720: a flow mid-pipeline is refused with its own exit code, 3, so a skill
-# can tell "a flow is active" apart from every other init failure.
+# can tell a busy checkout apart from every other init failure.
 out="$("$ORCH" init other 2>&1)"; st=$?
 assert_status "refuses a second concurrent flow with exit 3" "$st" 3
 assert_contains "explains how to clear the active flow" "$out" "abort"
-assert_contains "with the message unchanged" "$out" "a flow is already active (slug: my-feature, phase: spec)."
+assert_contains "naming the flow that holds the checkout" "$out" "busy: a flow is mid-pipeline (slug: my-feature, phase: spec)"
 
 out="$("$ORCH" init other --bogus 2>&1)"; st=$?
 assert_status "rejects an unknown flag" "$st" 1
@@ -164,6 +164,39 @@ mkdir -p sub
 out="$(cd sub && "$ORCH" init clean-enough 2>&1)"; st=$?
 assert_status "starts with only allowlisted changes, even from a subdirectory" "$st" 0
 assert_eq "records the flow" "$("$ORCH" state get slug)" "clean-enough"
+restore_suite_env
+
+# --- init refuses a busy checkout (#1202) --------------------------------------
+# A quick implementation still running here holds the checkout as a flow
+# mid-pipeline does: init exits 3 on a quick branch with no PR, before its
+# planning-allowlist check, so a dirty tree there is exit 3 too, not exit 1.
+# Off such a branch, dirty paths keep init's own exit-1 refusal.
+echo
+echo "init refuses a busy checkout (#1202)"
+new_repo_with_origin
+orch_gh_failing branch off quick/3-running >/dev/null
+out="$(orch_gh_failing init beside 2>&1)"; st=$?
+assert_status "exits 3 on a quick branch with no PR" "$st" 3
+assert_contains "naming the branch" "$out" "quick/3-running"
+assert_eq "writing no state" "$(on_disk .orchestrator/state.json)" "absent"
+
+echo "code" >stray.sh
+out="$(orch_gh_failing init beside 2>&1)"; st=$?
+assert_status "exits 3, not 1, when that branch also has a dirty path outside the allowlist" "$st" 3
+assert_eq "writing no state (dirty quick branch)" "$(on_disk .orchestrator/state.json)" "absent"
+rm stray.sh
+
+git config branch.quick/3-running.orchestrator-pr 7
+echo "code" >stray.sh
+out="$(orch_gh_failing init beside 2>&1)"; st=$?
+assert_status "a dirty path outside the allowlist still gets the exit-1 refusal" "$st" 1
+assert_contains "with today's message" "$out" "the working tree has changes outside the planning allowlist:"
+rm stray.sh
+
+echo planned >docs/agents/note.md
+out="$(orch_gh_failing init beside 2>&1)"; st=$?
+assert_status "allowlisted edits still let it start" "$st" 0
+assert_eq "recording the flow" "$(orch_gh_failing state get slug)" "beside"
 restore_suite_env
 
 # --- init --issue -------------------------------------------------------

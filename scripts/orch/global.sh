@@ -137,11 +137,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               --host its host alone, github.com for an
                               OWNER/REPO repo, for gh api --hostname.
                               Exits 1, naming GH_REPO, when neither resolves
-  init <slug> [--issue N]     start a flow (refuses with exit 3 if one is
-                              active, unless it is done - a done flow is archived, unless a
-                              ticket worktree is left, and the
-                              new one starts over it, or if the working tree
-                              has changes outside the planning allowlist);
+  init <slug> [--issue N]     start a flow (refuses with exit 3 in a busy
+                              checkout: a flow mid-pipeline - a done flow is
+                              archived, unless a ticket worktree is left, and
+                              the new one starts over it - or a branch the
+                              plugin made with no PR yet; refuses with exit 1
+                              if the working tree has changes outside the
+                              planning allowlist);
                               --issue adopts an already-open,
                               ready-for-agent issue N as the flow's spec
                               instead of leaving it unset. Records the base
@@ -199,15 +201,17 @@ orch.sh - deterministic operations for the orchestrator flow
   branch create               create orch/<issue>-<slug> off the flow's base
                               branch, recorded at init, recording that base
                               and its tip as the base SHA in state and in
-                              the branch's git config, as branch off does
+                              the branch's git config, as branch off does.
+                              Refuses with exit 3 in a busy checkout, its own
+                              flow aside, changing nothing
   branch off <name>           create and check out <name> off the base branch
                               in effect, recording that base on the branch
                               (branch.<name>.orchestrator-base in local git
                               config) and its tip at branching as the base
                               SHA (branch.<name>.orchestrator-base-sha), and
                               no state - for a quick implementation, which
-                              keeps none. Refuses with exit 3, as init does,
-                              while a flow is mid-pipeline
+                              keeps none. Refuses with exit 3 in a busy
+                              checkout (see branch busy), changing nothing
   branch busy                 tell whether this checkout is a busy checkout,
                               from local git and state only: a flow
                               mid-pipeline, a branch the plugin made with no
