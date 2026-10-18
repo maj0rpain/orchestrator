@@ -725,18 +725,30 @@ spec_review_problems_exit() {
 # errors stop at the first; every anchor problem is reported, one `orch: `
 # line each, then exit 1. A clean batch prints its view on stdout - see
 # spec_review_view - and a one-line summary on stderr. With --tickets, the
-# round's tickets.md instead: see spec_review_tickets_check.
+# round's tickets.md instead: see spec_review_tickets_check. With --full
+# <n>..., the same validation, then only the named items on stdout, each in
+# full (see spec_review_item_view), in the order named - any item in
+# batch.md, minor or resolved included.
 spec_review_check() {
-  local usage="usage: orch.sh spec-review check <dir> [--tickets]" dir="" tickets=""
+  local usage="usage: orch.sh spec-review check <dir> [--tickets | --full <n>...]" dir="" tickets="" full="" n
+  local wanted=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --tickets) tickets=1 ;;
+      --full) full=1 ;;
       -*) die "unknown option: $1 ($usage)" ;;
-      *) [ -z "$dir" ] || die "$usage"; dir="$1" ;;
+      *)
+        if [ -n "$full" ]; then
+          wanted+=("$1")
+        else
+          [ -z "$dir" ] || die "$usage"; dir="$1"
+        fi ;;
     esac
     shift
   done
   [ -n "$dir" ] || die "$usage"
+  [ -z "$full" ] || [ -z "$tickets" ] || die "--full and --tickets do not combine ($usage)"
+  [ -z "$full" ] || [ "${#wanted[@]}" -gt 0 ] || die "--full needs at least one item number ($usage)"
   dir="${dir%/}"
   local body i anchors=0
   [ -d "$dir" ] || die "no such directory: $dir"
@@ -754,7 +766,14 @@ spec_review_check() {
     case "${SR_IT_REC[$i]}" in apply|decline) anchors=$((anchors + 1)) ;; esac
   done
   anchors=$((anchors + ${#SR_OP_ITEM[@]}))
-  spec_review_view
+  if [ -n "$full" ]; then
+    for n in "${wanted[@]}"; do
+      [ -n "$(array_index SR_IT_N "$n")" ] || die "--full $n: batch.md has no item $n"
+    done
+    for n in "${wanted[@]}"; do spec_review_item_view "$(array_index SR_IT_N "$n")"; done
+  else
+    spec_review_view
+  fi
   note "batch.md passes: ${#SR_IT_N[@]} items, $anchors anchors, each matching once in $body, and the all answer applies cleanly" >&2
 }
 
@@ -792,7 +811,7 @@ spec_review_group_title() {
 }
 
 # spec_review_item_view <index>: item <index> in full - its group, its
-# recommendation, the text of each finding it cites and of each comment it
+# recommendation (a resolved item's resolving item), the text of each finding it cites and of each comment it
 # folds in, and its edit, or each option's, in full.
 spec_review_item_view() {
   local i="$1" j
@@ -801,6 +820,7 @@ spec_review_item_view() {
     apply) printf 'apply\n' ;;
     decline) printf 'recommend decline - %s\n' "${SR_IT_ARG[$i]}" ;;
     decision) printf 'decision - option %s recommended\n' "${SR_IT_ARG[$i]}" ;;
+    resolved) printf 'resolved by item %s\n' "${SR_IT_RESOLVED[$i]}" ;;
   esac
   for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
     [ "${SR_FD_ITEM[$j]}" = "$i" ] || continue

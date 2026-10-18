@@ -1669,10 +1669,107 @@ assert_status "apply all refuses it" "$st" 1
 assert_eq "naming the same batch line" "$out" \
   "orch: batch.md line 18: item 2: its anchor matches no text in the body - nothing applied, nothing written"
 
+# check --full <n>... (#1249): the named items alone, each in the full
+# rendering, in the order named - any item in batch.md, minor or resolved
+# included - with nothing written.
+# srcf <dir> <arg>...: check <dir> --full <arg>..., as src does.
+srcf() {
+  local d="$1"
+  shift
+  out="$("$ORCH" spec-review check "$d" --full "$@" 2>"$src_err")"; st=$?
+  err="$(cat "$src_err")"
+}
+d="$(src_dir)"
+before="$(dir_snapshot "$d")"
+snap="$(fake_snapshot)"
+srcf "$d" 4 1 2
+assert_status "--full passes on a clean batch" "$st" 0
+assert_eq "--full prints the named items in full, in the order named, a minor and a resolved one among them" "$out" '
+### Item 4 - Testability
+
+**Recommendation:** resolved by item 3
+
+**Finding** (Testability 2):
+
+> Gamma again.
+
+### Item 1 - Fidelity
+
+**Recommendation:** apply
+
+**Finding** (Fidelity 1):
+
+> Alpha is stale.
+
+**Current**
+
+```
+Alpha line.
+```
+
+**Proposed**
+
+```
+Alpha prime line.
+```
+
+### Item 2 - Consistency
+
+**Recommendation:** recommend decline - the plan chose this
+
+**Finding** (Consistency 1):
+
+> Beta contradicts the plan.
+
+**Current**
+
+```
+Beta line.
+```
+
+**Proposed**
+
+```
+Beta reversed.
+```'
+assert_eq "--full keeps check's one-line summary on stderr" "$err" \
+  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
+assert_eq "--full leaves the directory byte-identical" "$(dir_snapshot "$d")" "$before"
+assert_eq "--full creates no spec.fetched.md" "$(on_disk "$d/spec.fetched.md")" absent
+assert_eq "--full makes no GitHub write" "$(fake_snapshot)" "$snap"
+srcf "$d" 3
+assert_contains "--full shows a decision item's options in full" "$out" "#### Option A - Keep gamma (recommended)"
+assert_not_contains "and no item it was not asked for" "$out" "### Item 2"
+assert_not_contains "nor the lens lines" "$out" "### Lenses"
+
+# Refusals: a missing or unknown number, and --full with --tickets.
+src_full_none() { srcf "$1"; }
+src_full_9() { srcf "$1" 9; }
+src_full_word() { srcf "$1" 2 two; }
+src_full_tickets() { srcf "$1" 2 --tickets; }
+src_tickets_full() { out="$("$ORCH" spec-review check "$1" --tickets --full 2 2>"$src_err")"; st=$?; err="$(cat "$src_err")"; }
+d="$(src_dir)"
+check_refused src_full_none "--full with no number" "$d" \
+  "orch: --full needs at least one item number (usage: orch.sh spec-review check <dir> [--tickets | --full <n>...])"
+check_refused src_full_9 "--full naming an item not in batch.md" "$d" \
+  "orch: --full 9: batch.md has no item 9"
+check_refused src_full_word "--full naming a non-number" "$d" \
+  "orch: --full two: batch.md has no item two"
+check_refused src_full_tickets "--full then --tickets" "$d" \
+  "orch: --full and --tickets do not combine (usage: orch.sh spec-review check <dir> [--tickets | --full <n>...])"
+check_refused src_tickets_full "--tickets then --full" "$d" \
+  "orch: --full and --tickets do not combine (usage: orch.sh spec-review check <dir> [--tickets | --full <n>...])"
+d="$(src_dir)"
+sed -i '19s/.*/Nowhere./' "$d/batch.md"
+src_full_1() { srcf "$1" 1; }
+check_refused src_full_1 "--full on a batch check refuses" "$d" \
+  "orch: batch.md line 18: item 2: its anchor matches no text in the body"
+
 # Discoverability.
 out="$("$ORCH" spec-review wipe 2>&1)"
 assert_contains "the unknown-op message lists check" "$out" "want begin|check|apply"
 assert_contains "help documents spec-review check" "$("$ORCH" help)" "spec-review check <dir>"
+assert_contains "help documents spec-review check --full" "$("$ORCH" help)" "spec-review check <dir> [--tickets | --full <n>...]"
 rm -f "$src_err"
 restore_suite_env
 
@@ -1891,7 +1988,7 @@ sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' 
 check_refused srct "an unblock edge absent" "$d" \
   "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21"
 
-assert_contains "help documents spec-review check --tickets" "$("$ORCH" help)" "spec-review check <dir> [--tickets]"
+assert_contains "help documents spec-review check --tickets" "$("$ORCH" help)" "spec-review check <dir> [--tickets | --full <n>...]"
 rm -f "$srct_err"
 restore_suite_env
 

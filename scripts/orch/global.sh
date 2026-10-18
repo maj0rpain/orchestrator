@@ -523,7 +523,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               through the wipe, each when it exists.
                               Reads state.json only to compare, and never
                               writes it
-  spec-review check <dir> [--tickets]
+  spec-review check <dir> [--tickets | --full <n>...]
                               validate a round's <dir>/batch.md before the
                               batch question: its grammar, the lens files and
                               their citations, every anchor (each item's and
@@ -545,7 +545,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               ticket's ## Blocked by - one orch: line per
                               problem, each naming its tickets.md line, or the
                               ticket view on stdout. The checks that need
-                              GitHub stay in apply
+                              GitHub stay in apply. --full <n>... validates
+                              batch.md the same way, then prints only the
+                              named items, any in batch.md, each in full
+                              (findings and comments quoted, Current and
+                              Proposed whole), in the order named; never
+                              with --tickets
   spec-review wait <dir> <lens>...
                               block until <dir>/lens-<lens>.md exists for
                               every named lens (fidelity, consistency,
