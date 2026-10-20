@@ -86,7 +86,7 @@ D_REPO_SEEN=""     # "ok" when GitHub answered for the repo, or empty
 D_REPO_REASON=""   # gh's stderr when that read failed, or empty
 D_REPO_BRANCH=""   # the default branch, as GitHub reports it, when valid
 D_JQ=""            # "ok", or empty when jq is missing
-D_STATE=""         # "ok" when state.json parses, or empty
+D_STATE=""         # "ok" when state.json is a JSON object, or empty
 D_GH_SKIPPED=0
 D_JQ_SKIPPED=0
 
@@ -148,11 +148,12 @@ d_probe_gh() {
 d_probe() {
   local scope="$1" view err
   if command -v jq >/dev/null 2>&1; then D_JQ=ok; fi
-  # A state file that does not parse invalidates every flow check at once.
+  # A state file that is not a JSON object - unparseable, or valid JSON of
+  # another type - invalidates every flow check at once. Judged by the Flow
+  # state module's own predicate, so doctor and the hooks agree on it.
   # Settled here so that d_run_flow can report it once, ahead of the list, and
   # the checks that would each have run jq at the same broken file never run.
-  if [ "$scope" != env ] && [ "$D_JQ" = ok ] && [ -f "$STATE" ] \
-     && jq -e . "$STATE" >/dev/null 2>&1; then
+  if [ "$scope" != env ] && [ "$D_JQ" = ok ] && flow_state_readable "$STATE"; then
     D_STATE=ok
   fi
   # The flow scope runs on every /orchestrator:next and every status, and a flow
@@ -879,7 +880,7 @@ d_run_flow() {
   fi
   # One problem earns one FAIL. Every check reads this file, so there is nothing
   # left to say about it and nothing that could be said honestly.
-  d_fail "$ORCH_DIR_NAME/state.json is not valid JSON."
+  d_fail "$ORCH_DIR_NAME/state.json is not a JSON object."
   d_remedy "$(flow_cmd abort)"
 }
 
