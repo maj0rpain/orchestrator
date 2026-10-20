@@ -138,7 +138,7 @@ gh_or_die() {
 #   adapter_issue_title_labels, adapter_issue_state, adapter_issues_labelled, adapter_issue_create,
 #   adapter_issue_body_edit, adapter_issue_comment, adapter_issue_relabel,
 #   adapter_issue_close, adapter_issue_reopen
-# - pr: adapter_pr_create, adapter_pr_body, adapter_pr_comments,
+# - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body, adapter_pr_comments,
 #   adapter_pr_refs, adapter_pr_ready, adapter_pr_draft,
 #   adapter_pr_state_draft, adapter_prs_open, adapter_prs_merged,
 #   adapter_prs_merged_bodies, adapter_pr_close, adapter_pr_comment,
@@ -440,15 +440,19 @@ adapter_issue_reopen() {
 
 # --- pr operations ---
 
-# adapter_pr_create <base> <head> <title> <body-file> [--draft]: opens the PR
-# from head into base - a draft under --draft - and prints its number alone.
+# adapter_pr_create <base> <head> <title> <body-file> [--draft]
+# [--label <name>]...: opens the PR from head into base - a draft under
+# --draft, carrying each label named (#1299), passed to gh pr create's --label
+# in the order given - and prints its number alone. gh adds the labels in a
+# mutation after the create, so the PR can open before they land.
 # Fails, printing nothing, where gh succeeded but printed no PR URL.
 adapter_pr_create() {
-  local base="$1" head="$2" title="$3" body="$4" args=() out n
+  local base="$1" head="$2" title="$3" body="$4" args=() out n options="--draft --label"
   shift 4
   while [ $# -gt 0 ]; do
     case "$1" in
       --draft) args+=(--draft); shift ;;
+      --label) option_value adapter_pr_create "$options" "$@" || return; args+=(--label "$2"); shift 2 ;;
       *) unknown_option adapter_pr_create "$1"; return ;;
     esac
   done
@@ -458,6 +462,11 @@ adapter_pr_create() {
     return 1
   fi
   printf '%s\n' "$n"
+}
+
+# adapter_pr_labels <n>: the PR's label names, one per line (#1299).
+adapter_pr_labels() {
+  gh pr view "$1" --json labels --jq '.labels[].name'
 }
 
 # adapter_pr_body <n>: the PR's body as GitHub holds it, then a newline.

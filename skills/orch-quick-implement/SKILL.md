@@ -294,7 +294,12 @@ including any the spec review in step 2 took - or `None (<host>).` It
 pushes the branch and opens the PR against the base branch `branch off`
 recorded. With one or more spec questions, append `--draft`:
 `bash "$ORCH" pr publish <issue> "<title>" <body-file> --draft` opens the
-PR as a draft. Without any, it opens without the flag, not a draft. A failed `pr
+PR as a draft. Without any, it opens without the flag, not a draft. Append
+`--label <name>` once for each label the repo's own instructions (its
+`CLAUDE.md`, `AGENTS.md` or `CONTRIBUTING.md`) require on this PR, judged
+against the same diff the body check read - none when they require none -
+so the PR carries them from creation and CI's first run sees them; never
+add one afterwards with `gh pr edit`. A failed `pr
 publish`, with `--draft` or without, stops this skill, relaying its reason;
 one with `--draft` is never retried without it. The body starts with `Closes #<issue>` when that
 base branch is the default branch, and `Refs #<issue>` otherwise - the

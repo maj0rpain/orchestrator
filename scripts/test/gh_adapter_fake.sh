@@ -35,6 +35,9 @@
 #   prs/<n>/title     the title
 #   prs/<n>/body      the body, byte for byte; absent, an empty one
 #   prs/<n>/draft     present, the PR is a draft
+#   prs/<n>/labels    the PR's label names, one per line
+#   pr_label_drops    label names, one per line, a PR create never stores -
+#                     as a gh whose label mutation did not land
 #   prs/<n>/head_oid  the head commit's SHA; absent, forty zeros
 #   prs/<n>/commits   the PR's commit SHAs, one per line, oldest first;
 #                     absent, the head alone
@@ -520,16 +523,18 @@ fake_pr_known() {
   return 1
 }
 
-# adapter_pr_create <base> <head> <title> <body-file> [--draft]: a new open PR
-# in the store, numbered as next_pr set (default one past the highest issue or
-# PR number the store holds, the two sharing GitHub's numbering), a draft under
-# --draft, its number printed.
+# adapter_pr_create <base> <head> <title> <body-file> [--draft]
+# [--label <name>]...: a new open PR in the store, numbered as next_pr set
+# (default one past the highest issue or PR number the store holds, the two
+# sharing GitHub's numbering), a draft under --draft, carrying each label named
+# but those pr_label_drops lists, its number printed.
 adapter_pr_create() {
-  local base="$1" head="$2" title="$3" body="$4" draft=false n d
+  local base="$1" head="$2" title="$3" body="$4" draft=false labels=() n d l options="--draft --label"
   shift 4
   while [ $# -gt 0 ]; do
     case "$1" in
       --draft) draft=true; shift ;;
+      --label) fake_option_value adapter_pr_create "$options" "$@" || return; labels+=("$2"); shift 2 ;;
       *) fake_unknown_option adapter_pr_create "$1"; return ;;
     esac
   done
@@ -543,7 +548,18 @@ adapter_pr_create() {
   printf '%s\n' "$title" >"$d/title"
   cat "$body" >"$d/body"
   [ "$draft" != true ] || : >"$d/draft"
+  : >"$d/labels"
+  for l in ${labels[@]+"${labels[@]}"}; do
+    grep -qxF -- "$l" "$(fake_store)/pr_label_drops" 2>/dev/null || printf '%s\n' "$l" >>"$d/labels"
+  done
   printf '%s\n' "$n"
+}
+
+# adapter_pr_labels <n>: the stored label names, one per line.
+adapter_pr_labels() {
+  ! fake_failing adapter_pr_labels || return 1
+  fake_pr_known "$1" || return 1
+  cat "$(fake_pr_dir "$1")/labels" 2>/dev/null || true
 }
 
 # adapter_pr_body <n>: the stored body, then a newline, as gh's --jq .body

@@ -302,7 +302,8 @@ for bad_args in "adapter_issue_relabel 14 --label x" "adapter_issue_relabel 14 -
            "adapter_issue_close 14 --why x" "adapter_issue_close 14 --reason" \
            "adapter_issue_close 14 --comment" "adapter_issue_close 14 completed" \
            "adapter_issue_close 14 --duplicate-of" \
-           "adapter_pr_create main x X $pbody --ready" "adapter_pr_create main x X $pbody true"; do
+           "adapter_pr_create main x X $pbody --ready" "adapter_pr_create main x X $pbody true" \
+           "adapter_pr_create main x X $pbody --label" "adapter_pr_create main x X $pbody --label --draft"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
   err="$(faked $bad_args 2>&1 >/dev/null)"; st=$?
   assert_status "the fake refuses '$bad_args'" "$st" 2
@@ -682,8 +683,15 @@ gh_reply 1 '' 'a pull request for branch "dup" into branch "main" already exists
 out="$(contract adapter_pr_create main dup "Dup" "$ibody" 2>&1)"; st=$?
 assert_status "pr create: a gh failure fails it" "$st" 1
 assert_eq "passing gh's stderr through" "$out" 'a pull request for branch "dup" into branch "main" already exists'
+# --label (#1299): each label passed straight to gh pr create's --label, in
+# the order given, with --draft where it was given.
+gh_reply 0 $'https://github.com/acme/widgets/pull/33\n' '' \
+  pr create --label no-version-bump --draft --label "needs review" --base main --head lab --title "Lab" --body-file "$ibody"
+out="$(contract adapter_pr_create main lab "Lab" "$ibody" --label no-version-bump --draft --label "needs review" 2>&1)"; st=$?
+assert_status "pr create: opens a PR with its labels" "$st" 0
+assert_eq "printing its number" "$out" "33"
 calls="$(gh_calls)"
-for bad_args in "--ready" "true" "--draft --base"; do
+for bad_args in "--ready" "true" "--draft --base" "--label" "--label --draft"; do
   # shellcheck disable=SC2086 # each case is a word list on purpose
   err="$(contract adapter_pr_create main bad "Bad" "$ibody" $bad_args 2>&1 >/dev/null)"; st=$?
   assert_status "pr create: '$bad_args' is refused" "$st" 2
@@ -691,6 +699,15 @@ for bad_args in "--ready" "true" "--draft --base"; do
 done
 unset bad_args
 assert_eq "no refused create made a gh call" "$(gh_calls)" "$calls"
+
+gh_reply 0 $'no-version-bump\nneeds review\n' '' pr view 57 --json labels --jq '.labels[].name'
+out="$(contract adapter_pr_labels 57 2>&1)"; st=$?
+assert_status "pr labels: reads the PR's label names (#1299)" "$st" 0
+assert_eq "one per line" "$out" "$(writeln no-version-bump 'needs review')"
+gh_reply 1 '' 'HTTP 502: Bad Gateway' pr view 58 --json labels --jq '.labels[].name'
+out="$(contract adapter_pr_labels 58 2>&1)"; st=$?
+assert_status "pr labels: a gh failure fails it" "$st" 1
+assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 
 gh_reply 0 $'Closes #12\n\nAdds it.\n' '' pr view 57 --json body --jq .body
 out="$(contract adapter_pr_body 57 2>&1)"; st=$?

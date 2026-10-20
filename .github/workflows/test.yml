@@ -9,6 +9,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # contents: read for the checkout; pull-requests: read for the PR's
+    # labels, which "Read main's commit" reads live.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -18,19 +23,25 @@ jobs:
       # Sets CHANGELOG_BASE, main's commit, for docs_lint.sh's changelog
       # fragment rule on every PR to main, and NO_VERSION_BUMP=1 when the PR
       # carries the no-version-bump label, which waives only its one-fragment
-      # part. A failed fetch or read fails the job rather than leaving it unset.
+      # part. The labels are the PR's as they stand now, read with gh, not the
+      # event payload's snapshot: gh pr create --label adds them in a mutation
+      # after the PR opens, so the opened run's payload can lack a label the
+      # PR has (#1299). A failed fetch or read fails the job rather than
+      # leaving it unset.
       - name: Read main's commit
         if: >-
           github.event_name == 'pull_request' &&
           github.event.pull_request.base.ref == 'main'
         env:
-          NO_BUMP_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'no-version-bump') }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin main:refs/remotes/origin/main
           base="$(git rev-parse --verify origin/main)"
           echo "CHANGELOG_BASE=$base" >>"$GITHUB_ENV"
-          if [ "$NO_BUMP_LABEL" = true ]; then
+          labels="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')"
+          if grep -qxF no-version-bump <<<"$labels"; then
             echo "NO_VERSION_BUMP=1" >>"$GITHUB_ENV"
           fi
       - name: Verify

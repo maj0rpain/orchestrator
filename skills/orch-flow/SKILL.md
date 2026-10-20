@@ -306,6 +306,13 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    `Closes #<issue>` when the base branch is the default branch, `Refs
    #<issue>` otherwise - so the body file carries no closing keyword of its
    own.
+   Append `--label <name>` once for each label the repo's own instructions
+   (its `CLAUDE.md`, `AGENTS.md` or `CONTRIBUTING.md`) require on this PR,
+   judged against the branch's diff, `git diff <base SHA>..HEAD` with the
+   base SHA from `bash "$ORCH" branch base-sha` - none when they require
+   none. The PR then carries them from creation, so CI's first run sees
+   them; never add one afterwards with `gh pr edit`. A `pr open` that fails
+   on a label stops the phase, relaying its reason.
 6. Invoke the `orch-handoff` skill for `03-implement.md`, assembling these
    sections from the tickets' reports, step 3's combined verification and
    step 4's base sync:
