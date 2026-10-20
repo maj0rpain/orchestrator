@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.18.2
+
+`orch.sh spec-review`'s error text is accurate and specific: `check`'s help says each error names its batch.md or lens-<name>.md line where it has one; a decision option not recommended that has no block is told it still carries the edit it would make; a resolved item's `@@ anchor`, `@@ replace` and `@@ end` share one refusal; every refusal for a wrongly ended block shows the line it got; and `apply --tickets` names the tickets.md line of each ticket-step refusal, as `check --tickets` does (#1265).
+
 ## 4.18.1
 
 The spec review's batch and ticket parsers now share their `@@` line split, and its two answer functions share their Other-list token walk and read a twice-named item from their dispositions. No message or outcome changes (#1264).
