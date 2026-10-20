@@ -11,6 +11,9 @@
 # the worktree - is what makes it one; a flow's state file is not, since a
 # hand-made worktree can hold a flow too.
 
+# The ownership marker's file name, in the worktree's own git folder.
+readonly SIDE_CHECKOUT_MARKER="orchestrator-side-checkout"
+
 # side_checkout_marked <git-dir>: whether the git folder <git-dir> holds the
 # ownership marker - the one place the marker's presence is tested.
 side_checkout_marked() { [ -f "$1/$SIDE_CHECKOUT_MARKER" ]; }

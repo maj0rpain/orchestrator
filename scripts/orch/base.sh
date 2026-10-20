@@ -1,5 +1,7 @@
 # shellcheck shell=bash
-# base.sh - orch.sh's base command: the checkout's base branch setting and a flow's own base.
+# base.sh - orch.sh's base command: the checkout's base branch setting and a
+# flow's own base, with the branch helpers every module calls (default_branch,
+# origin_has_branch, require_on_origin).
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 

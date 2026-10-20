@@ -64,15 +64,14 @@ readonly ISSUE_LIST_LIMIT="${ORCH_ISSUE_LIST_LIMIT:-1000}"
 REPO_MISSING="no GitHub repo to work on"
 REPO_CAUSE="$REPO_MISSING: origin is missing or not a GitHub owner/name"
 REPO_REMEDY="$REPO_CAUSE - set GH_REPO=<owner>/<repo>"
-readonly SIDE_CHECKOUT_MARKER="orchestrator-side-checkout"
 # The triage-label parser and LABELS_DOC, its one home; marked readonly here,
 # where orch.sh has always fixed it, since the module assigns it plainly.
 source "$ORCH_SCRIPTS/triage-labels.sh"
 readonly LABELS_DOC
 # The one host detector, host_detect, shared with the hooks (#281).
 source "$ORCH_SCRIPTS/host.sh"
-# The shared helpers, die among them, ahead of the ROOT block, which dies
-# through die outside a git repository.
+# The primitives no concept owns, die among them, ahead of the ROOT block,
+# which dies through die outside a git repository.
 source "$ORCH_SCRIPTS/orch/common.sh"
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository ($PWD) - run orch.sh from inside the repo's checkout"
@@ -82,9 +81,6 @@ STATE="$(flow_state_file "$ROOT")"
 readonly STATE
 readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
-# Read only by ticket-worktree.sh, but derived from ROOT, which is set after
-# common.sh is sourced, so it stays here with the rest of the ROOT block.
-readonly TICKET_WORKTREES="$ORCH/worktrees"
 
 # The noun modules, after the ROOT block, whose constants they read, with the
 # concept modules that have no noun of their own, checkout.sh and
