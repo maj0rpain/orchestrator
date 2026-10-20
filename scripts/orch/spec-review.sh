@@ -1154,10 +1154,7 @@ spec_review_changelog() {
     fi
     lines=""
     for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
-      case $'\n'"$(spec_review_item_sections "$i")"$'\n' in
-        *$'\n'"$section"$'\n'*) ;;
-        *) continue ;;
-      esac
+      list_has "$(spec_review_item_sections "$i")" "$section" || continue
       lines="$lines$(spec_review_item_line "$i" "$unattended")"$'\n'
     done
     if [ -n "$lines" ]; then printf '%s' "$lines"; else printf 'None\n'; fi
@@ -1396,9 +1393,8 @@ spec_review_ticket_local() {
       [ "${ST_DISP[$i]}" = applied ] || return 0
       spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" "$collect" || return 0
       j="$(array_index TK_T "${ST_T[$i]}")"
-      case $'\n'"$(printf '%s\n' "${TK_FETCHED[$j]}" | blocked_by_section_numbers)"$'\n' in
-        *$'\n'"${ST_B[$i]}"$'\n'*) have=1 ;;
-      esac
+      ! list_has "$(printf '%s\n' "${TK_FETCHED[$j]}" | blocked_by_section_numbers)" \
+        "${ST_B[$i]}" || have=1
       if [ "${ST_KIND[$i]}" = block ]; then
         [ -z "$have" ] || problem="#${ST_T[$i]} is already blocked by #${ST_B[$i]}"
       else
@@ -1435,10 +1431,8 @@ spec_review_tickets_follow() {
           || die "$what: a ## Ticket item, but #$issue's breakdown is $kind - nothing written" ;;
       block|unblock)
         for t in "${ST_T[$i]}" "${ST_B[$i]}"; do
-          case $'\n'"$subs"$'\n' in
-            *$'\n'"$t"$'\n'*) ;;
-            *) die "$what: #$t is not a ticket of #$issue's breakdown - nothing written" ;;
-          esac
+          list_has "$subs" "$t" \
+            || die "$what: #$t is not a ticket of #$issue's breakdown - nothing written"
         done ;;
     esac
     spec_review_ticket_local "$i" "$body_var" "$post" "$dir"

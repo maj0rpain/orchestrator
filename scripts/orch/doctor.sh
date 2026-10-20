@@ -17,7 +17,7 @@
 #
 # Sourced into orch.sh, from its orch/ directory, after its shared mechanism
 # (ORCH_SCRIPTS, ROOT, STATE, ORCH_DIR_NAME, PHASES, HANDOFF_DIR), common.sh
-# (die, note, now, capture, labels_have, and the like), triage-labels.sh
+# (die, note, now, capture, list_has, and the like), triage-labels.sh
 # (LABELS_DOC, TRIAGE_ROLES, triage_table_rows, triage_labels,
 # triage_label_for, triage_expected_labels) and host.sh (host_detect) are
 # defined; the gh adapter operations it calls, issue_state_labels_read among
@@ -423,7 +423,7 @@ check_labels_exist() {
   fi
   while IFS= read -r l; do
     if [ -z "$l" ]; then continue; fi
-    if ! labels_have "$have" "$l"; then missing="$(d_append "$missing" "$l")"; fi
+    if ! list_has "$have" "$l"; then missing="$(d_append "$missing" "$l")"; fi
   done <<<"$want"
   if [ -z "$missing" ]; then d_ok "every triage label exists on the repo"; return 0; fi
   # Found every one of them is a definitive answer whatever the page held, so
