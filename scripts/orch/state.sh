@@ -30,16 +30,15 @@ state_key_field() {
 state_get() { state_get_in "$STATE" "$1"; }
 
 # state_get against the state file <file>: reads <key> from any checkout's
-# state file, not only this one's. The key is validated first, so the read's
-# status is jq's own, never a lookup's.
+# state file, not only this one's. The key is looked up only when the read
+# fails, to pick the message: a key outside the table dies, and any other
+# failure returns the read's status, which is jq's own, never a lookup's.
 state_get_in() {
   local rc
-  state_key_field "$2" default >/dev/null || {
-    rc=$?
-    [ "$rc" -ne 1 ] || die "unknown state key: $2"
-    exit "$rc"
-  }
-  flow_state_get "$1" "$2"
+  flow_state_get "$1" "$2" && return
+  rc=$?
+  flow_state_key_field "$2" default >/dev/null || die "unknown state key: $2"
+  return "$rc"
 }
 
 # The unrestricted writer behind every internal state change, over

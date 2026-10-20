@@ -72,11 +72,7 @@ restore_suite_env
 echo
 echo "a flow started before the budget shipped"
 fresh_flow legacy
-# Raw jq, not state_fixture: deleting keys simulates an older release, and the
-# Flow state module has no delete operation - one only tests would use.
-legacy="$(mktemp)"
-jq 'del(.budget, .loop, .flake_rerun_used)' .orchestrator/state.json >"$legacy"
-mv "$legacy" .orchestrator/state.json
+state_fixture_drop budget loop flake_rerun_used
 assert_eq "the state it left behind names no budget" "$("$ORCH" state get budget)" ""
 assert_eq "review begin still claims an iteration" "$("$ORCH" review begin)" "1"
 assert_contains "records land flat under review/" "$("$ORCH" review path)" "/review/iteration-01.md"
@@ -116,10 +112,7 @@ restore_suite_env
 echo
 echo "state get defaults"
 fresh_flow sparse
-# Raw jq, not state_fixture: deleting keys simulates an older release, and the
-# Flow state module has no delete operation - one only tests would use.
-jq 'del(.iteration, .redo_count, .host_fallbacks, .flake_rerun_used, .budget)' \
-  .orchestrator/state.json >state.tmp && mv state.tmp .orchestrator/state.json
+state_fixture_drop iteration redo_count host_fallbacks flake_rerun_used budget
 assert_eq "an absent iteration reads as 0" "$("$ORCH" state get iteration)" "0"
 assert_eq "an absent redo_count reads as 0" "$("$ORCH" state get redo_count)" "0"
 assert_eq "an absent host_fallbacks reads as false" "$("$ORCH" state get host_fallbacks)" "false"
@@ -127,15 +120,13 @@ assert_eq "an absent flake_rerun_used reads as false" "$("$ORCH" state get flake
 assert_eq "an absent budget reads as empty" "$("$ORCH" state get budget)" ""
 out="$("$ORCH" state get nonsense 2>&1)"; st=$?
 assert_status "a key outside the schema is refused" "$st" 1
-assert_contains "naming the key" "$out" "nonsense"
+assert_eq "as an unknown state key, naming it" "$out" "orch: unknown state key: nonsense"
 complete_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
 # The string keys read back empty when missing too. phase goes only now: the
-# doctor --flow check above would fail a state file lacking it. Raw jq, as
-# above: the module has no delete operation.
-jq 'del(.slug, .phase, .issue, .base, .branch, .pr, .base_sha, .created, .updated)' \
-  .orchestrator/state.json >state.tmp && mv state.tmp .orchestrator/state.json
+# doctor --flow check above would fail a state file lacking it.
+state_fixture_drop slug phase issue base branch pr base_sha created updated
 for key in slug phase issue base branch pr base_sha created updated; do
   out="$("$ORCH" state get "$key" 2>&1)"; st=$?
   assert_status "an absent $key still reads" "$st" 0
@@ -200,6 +191,14 @@ state_fixture budget 3 2>/dev/null; st=$?
 assert_ne "state_fixture on an unparseable state.json returns non-zero" "$st" 0
 assert_eq "and leaves it untouched" "$(cat .orchestrator/state.json)" "not json"
 assert_eq "with nothing new beside it, after the fixture" "$(ls -A .orchestrator)" "$before_ls"
+# A read of it fails with the status jq itself gives on the file, not a
+# lookup's; a known key still reads, and an unknown one is still refused.
+jq . .orchestrator/state.json >/dev/null 2>&1; jq_st=$?
+"$ORCH" state get budget >/dev/null 2>&1; st=$?
+assert_status "state get on an unparseable state.json fails with jq's own status" "$st" "$jq_st"
+out="$("$ORCH" state get nonsense 2>&1)"; st=$?
+assert_status "state get of an unknown key on it still dies" "$st" 1
+assert_eq "as an unknown state key" "$out" "orch: unknown state key: nonsense"
 restore_suite_env
 
 # --- the Flow state module, sourced alone -----------------------------------
@@ -282,4 +281,32 @@ for pair in absent:1 done:1 review:0 invalid:0; do
   assert_eq "flow_state_active answers ${pair#*:} for a ${pair%%:*} file, printing nothing" \
     "$(fs_run "flow_state_active ${pair%%:*}.json")" "status ${pair#*:}"
 done
+# The seed: every key in table order, its literal or init's value for it.
+assert_eq "flow_state_seed prints every key in table order, a numeric issue a number" \
+  "$(fs_run 'flow_state_seed s 7 main | jq -c ".created |= type | .updated |= type"')" \
+  '{"slug":"s","phase":null,"issue":7,"base":"main","branch":null,"pr":null,"base_sha":null,"budget":null,"iteration":0,"flake_rerun_used":false,"redo_count":0,"host_fallbacks":true,"created":"string","updated":"string"}
+status 0'
+assert_eq "flow_state_seed seeds an empty issue as null" \
+  "$(fs_run 'flow_state_seed s "" main | jq -c .issue')" "null
+status 0"
+assert_contains "flow_state_seed stamps created with a UTC timestamp" \
+  "$(fs_run 'flow_state_seed s "" main | jq -r .created')" "Z"
+# An arg row with no arm in the seed's case is a programming error.
+assert_eq "flow_state_seed returns 2 for an arg row it has no value for, printing nothing" \
+  "$(fs_run 'STATE_KEYS="$STATE_KEYS
+bogus||arg|-"; flow_state_seed s "" main')" "status 2"
+before_ls="$(ls -A "$fs_dir")"
+assert_eq "flow_state_create creates an absent file" \
+  "$(fs_run 'flow_state_create created.json "{\"slug\":\"c\"}" && jq -c . created.json')" \
+  '{"slug":"c"}
+status 0'
+assert_eq "flow_state_create replaces an existing file" \
+  "$(fs_run 'flow_state_create object.json "{\"slug\":\"r\"}" && jq -c . object.json')" \
+  '{"slug":"r"}
+status 0'
+rm -f "$fs_dir/created.json"
+assert_ne "flow_state_create returns non-zero on a failed write" \
+  "$(fs_run 'flow_state_create object.json "not json" 2>/dev/null' | tail -n 1)" "status 0"
+assert_eq "and leaves the target untouched" "$(jq -c . "$fs_dir/object.json")" '{"slug":"r"}'
+assert_eq "with no temp file beside it" "$(ls -A "$fs_dir")" "$before_ls"
 restore_suite_env

@@ -20,6 +20,10 @@ assert_contains "excludes .orchestrator/ without touching .gitignore" \
 assert_eq "leaves the working tree clean" "$(git status --porcelain)" ""
 assert_eq "excludes .orchestrator/ exactly once" "$(exclude_count .orchestrator/)" "1"
 assert_eq "excludes .scratch/ exactly once" "$(exclude_count .scratch/)" "1"
+assert_eq "writes the seed, its keys in table order, each at its seeded value" \
+  "$(jq -c '.base |= type | .created |= type | .updated |= type' .orchestrator/state.json)" \
+  '{"slug":"my-feature","phase":"spec","issue":null,"base":"string","branch":null,"pr":null,"base_sha":null,"budget":null,"iteration":0,"flake_rerun_used":false,"redo_count":0,"host_fallbacks":true,"created":"string","updated":"string"}'
+assert_eq "and leaves no temp file beside it" "$(find .orchestrator -maxdepth 1 -name 'state.json.*' | wc -l | tr -d ' ')" "0"
 
 # #720: a flow mid-pipeline is refused with its own exit code, 3, so a skill
 # can tell a busy checkout apart from every other init failure.
@@ -368,6 +372,23 @@ assert_eq "the archived state still carries the old slug" \
   "$(jq -r .slug "$archived/state.json")" "willsucceed"
 assert_eq "the new flow's state records the newly adopted issue, not the old one" \
   "$("$ORCH" state get issue)" "42"
+
+# The seed is built before the done flow is archived: a build that fails -
+# here an arg row the seed has no value for, planted in a copy of the scripts
+# tree - leaves the done flow in place and writes nothing.
+fresh_flow unbuilt
+state_fixture phase "done"
+before="$(cat .orchestrator/state.json)"
+planted="$(mktemp -d)"
+cp -R "${ORCH%/*}" "$planted/"
+printf '%s\n' 'STATE_KEYS="$STATE_KEYS' 'bogus||arg|-"' >>"$planted/scripts/flow-state.sh"
+out="$("$planted/scripts/orch.sh" init next 2>&1)"; st=$?
+rm -rf "$planted"
+assert_status "init over a done flow whose seed build fails refuses" "$st" 1
+assert_eq "saying nothing was written" "$out" \
+  "orch: could not build the state seed - nothing was written"
+assert_eq "the done flow is left unarchived" "$(on_disk .orchestrator/archive)" "absent"
+assert_eq "and its state is not replaced" "$(cat .orchestrator/state.json)" "$before"
 restore_suite_env
 
 # --- init seeds the review loop ---------------------------------------------

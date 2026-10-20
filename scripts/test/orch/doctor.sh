@@ -986,7 +986,10 @@ cp .orchestrator/state.json "$statebak"
 printf '%s' '{not json' >.orchestrator/state.json
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "fails when state.json does not parse" "$st" 1
-assert_contains "names the file that will not parse" "$out" "not valid JSON"
+assert_contains "names the file that will not parse" "$out" \
+  "FAIL  .orchestrator/state.json is not a JSON object."
+assert_contains "with the abort remedy under it" \
+  "$(printf '%s\n' "$out" | grep -A1 '^FAIL  .orchestrator/state.json' | tail -n 1)" "abort"
 assert_eq "reports it once rather than once per check" \
   "$(printf '%s\n' "$out" | grep -c '^FAIL')" "1"
 assert_eq "claims nothing it could not read" \
@@ -1004,6 +1007,15 @@ for iv_args in "" "--flow"; do
   assert_leftover_reported "doctor $iv_args with an invalid state.json" "$iv_top" "$st" "$out"
 done
 "$ORCH" ticket-worktree remove 12
+# Valid JSON that is not an object is as unreadable to the hooks as a file
+# that does not parse, so doctor answers it the same way: one FAIL, and no
+# flow check erroring partway through on it.
+printf '%s' '[1]' >.orchestrator/state.json
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "fails when state.json is valid JSON but not an object" "$st" 1
+assert_eq "with the one FAIL and its abort remedy, and nothing else from the flow checks" \
+  "$(printf '%s\n' "$out" | sed -n '/^flow state/,$p' | grep -v -e '^$' -e ' warn, ' | sed 's/^      .*abort.*/REMEDY/')" \
+  "$(printf '%s\n' 'flow state' 'FAIL  .orchestrator/state.json is not a JSON object.' REMEDY)"
 cp "$statebak" .orchestrator/state.json
 
 state_fixture phase nonsense

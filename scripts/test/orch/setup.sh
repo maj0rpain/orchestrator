@@ -223,6 +223,20 @@ state_fixture() {
   flow_state_write "$(flow_state_file "$(git rev-parse --show-toplevel)")" "$1" "$2"
 }
 
+# state_fixture_drop <key>...: deletes each named key from the checkout's
+# state file in place, as a flow started by an older release lacks keys a
+# fresh one seeds. Raw jq, not the Flow state module: the module has no delete
+# operation - one only tests would use. The temp file sits beside the state
+# file and replaces it only when jq succeeds.
+state_fixture_drop() {
+  local file tmp
+  file="$(flow_state_file "$(git rev-parse --show-toplevel)")"
+  tmp="$(mktemp "$file.XXXXXX")" || return
+  jq 'reduce $ARGS.positional[] as $k (.; del(.[$k]))' "$file" --args "$@" >"$tmp" \
+    && mv "$tmp" "$file" \
+    || { rm -f "$tmp"; return 1; }
+}
+
 # complete_handoff <file>: a complete handoff at <file>, holding every section
 # the Handoff module's phase table requires for its name - read through
 # handoff_required in a shell that sourced orch.sh, so the fixture cannot drift
