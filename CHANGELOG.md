@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.18.4
+
+spec-review's validation helpers no longer take a collect mode argument that
+makes them react two ways: `check` and `apply` share one validation pass, which
+always visits every anchor, declined ones included, so `apply` now refuses a
+batch, or a ticket step, whose declined anchor is broken, as `check` already
+did. The anchor helper is renamed for what it does and counts the anchors it
+visits, so `check`'s summary no longer re-walks the items to count them.
+`common.sh`'s `labels_have` becomes the general `list_has`, used at every
+newline-list membership test, including the hand-rolled ones in spec-review.sh
+and ticket.sh. Every `apply --tickets` ticket-step error now names its
+`tickets.md line N: ` and ends ` - nothing written` (#1266).
+
 ## 4.18.3
 
 The spec review module's ambiguous local variables, and its ticket item no-GitHub check function, are renamed so each variable holds one meaning and every name says what it holds; behaviour is unchanged (#1267).
