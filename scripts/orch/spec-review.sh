@@ -191,12 +191,23 @@ spec_review_mark_check() {
   esac
 }
 
+# spec_review_at_line <line> <kw-var> <args-var>: an `@@` line of the batch
+# or tickets file split, its trailing CR stripped, into its keyword and the
+# rest of the line after one space - empty when there is none.
+spec_review_at_line() {
+  local __sral_rest="${1%$'\r'}" __sral_args=""
+  __sral_rest="${__sral_rest#@@}"; __sral_rest="${__sral_rest# }"
+  [ "${__sral_rest%% *}" = "$__sral_rest" ] || __sral_args="${__sral_rest#* }"
+  printf -v "$2" '%s' "${__sral_rest%% *}"
+  printf -v "$3" '%s' "$__sral_args"
+}
+
 # spec_review_batch_parse <file>: reads the batch file into the SR_ arrays -
 # the `@@ lens` lines, then one entry per item, its findings, comments and
 # options - dying on the first malformed line, named by its number. The
 # citations' ranges are checked later, against the lens files.
 spec_review_batch_parse() {
-  local file="$1" line lineno=0 mode=top rest kw args cur=-1 opt=-1
+  local file="$1" line lineno=0 mode=top kw args cur=-1 opt=-1
   local buf="" bufn=0 block_line=0 quote_wanted="" n group rec rec_tail arg lens state reason
   local fd_lens fd_k login created letter label extra j mark
   SR_LENS_NAME=(); SR_LENS_STATE=(); SR_LENS_REASON=()
@@ -222,9 +233,7 @@ spec_review_batch_parse() {
         spec_review_batch_die "$lineno" "text outside an @@ anchor, @@ replace or @@ quote block" ;;
     esac
     line="${line%$'\r'}"
-    rest="${line#@@}"; rest="${rest# }"
-    kw="${rest%% *}"; args=""
-    [ "$kw" = "$rest" ] || args="${rest#* }"
+    spec_review_at_line "$line" kw args
     case "$mode" in
       anchor)
         [ "$kw" = replace ] && [ -z "$args" ] \
@@ -463,6 +472,19 @@ spec_review_findings_check() {
   done
 }
 
+# spec_review_answer_tokens <answer> <array-var>: an Other-list answer split
+# on its commas into the named array, each token trimmed - a trailing comma
+# giving an empty last token.
+spec_review_answer_tokens() {
+  local __srat_rest="$1," __srat_k=0
+  eval "$2=()"
+  while [ -n "$__srat_rest" ]; do
+    trim_split "${__srat_rest%%,*}" "$2[$__srat_k]"
+    __srat_rest="${__srat_rest#*,}"
+    __srat_k=$((__srat_k + 1))
+  done
+}
+
 # spec_review_answer <answer>: each item's disposition into
 # SR_DISP (applied, declined, taken, undecided or resolved), SR_ASREC (1 where
 # the human's call matched the recommendation) and SR_TAKEN (a decision's
@@ -476,17 +498,15 @@ spec_review_findings_check() {
 # decision or on an item not recommended for decline, `-` or `+` on a
 # resolved item, or an item named twice.
 spec_review_answer() {
-  local answer="$1" base="$1" i tok n letter sign rest named=" " j
+  local answer="$1" base="$1" i tok n letter sign j toks=()
   local form="is not recommended, all, none or a list of departures such as 3B, -4, +2"
   SR_DISP=(); SR_ASREC=(); SR_TAKEN=()
   case "$answer" in
     recommended|all|none) ;;
     *)
       base=recommended
-      rest="$answer,"
-      while [ -n "$rest" ]; do
-        tok="${rest%%,*}"; rest="${rest#*,}"
-        trim_split "$tok" tok
+      spec_review_answer_tokens "$answer" toks
+      for tok in "${toks[@]}"; do
         sign=""; letter=""
         case "$tok" in
           [-+]*) sign="${tok:0:1}"; n="${tok:1}" ;;
@@ -502,8 +522,7 @@ spec_review_answer() {
         letter="$(printf '%s' "$letter" | tr '[:lower:]' '[:upper:]')"
         i="$(array_index SR_IT_N "$n")"
         [ -n "$i" ] || die "the answer names item $n, which batch.md does not have"
-        case "$named" in *" $n "*) die "the answer names item $n twice" ;; esac
-        named="$named$n "
+        [ -z "${SR_DISP[$i]+x}" ] || die "the answer names item $n twice"
         [ "${SR_IT_REC[$i]}" != resolved ] \
           || die "the answer names item $n, which is resolved by item ${SR_IT_RESOLVED[$i]} and takes no answer"
         case "$sign:${SR_IT_REC[$i]}" in
@@ -1192,7 +1211,7 @@ spec_review_ticket_item_check() {
 # by its number. ST_LINE holds each item's header line, ST_ANCHOR_LINE a text
 # item's `@@ anchor` line.
 spec_review_tickets_parse() {
-  local file="$1" line lineno=0 mode=top rest kw args cur=-1 seen=""
+  local file="$1" line lineno=0 mode=top kw args cur=-1 seen=""
   local buf="" bufn=0 block_line=0 n kind tail t by b rec arg what
   ST_RECOMMEND=""; ST_NONE=""
   ST_N=(); ST_KIND=(); ST_T=(); ST_B=(); ST_REC=(); ST_ARG=(); ST_LINE=()
@@ -1210,10 +1229,7 @@ spec_review_tickets_parse() {
         [ -n "$(trim "$line")" ] || continue
         spec_review_tickets_die "$lineno" "text outside an @@ anchor or @@ replace block" ;;
     esac
-    line="${line%$'\r'}"
-    rest="${line#@@}"; rest="${rest# }"
-    kw="${rest%% *}"; args=""
-    [ "$kw" = "$rest" ] || args="${rest#* }"
+    spec_review_at_line "$line" kw args
     case "$mode" in
       anchor)
         [ "$kw" = replace ] && [ -z "$args" ] \
@@ -1314,7 +1330,7 @@ spec_review_tickets_parse() {
 # or an Other list such as `1, 3`. Dies, before any write, on an unknown item
 # or one named twice.
 spec_review_tickets_answer() {
-  local answer="$1" rest tok i named=" "
+  local answer="$1" tok i toks=()
   ST_DISP=(); ST_ASREC=(); ST_RETIRE=""
   case "$answer" in
     retire) ST_RETIRE=1; return 0 ;;
@@ -1322,15 +1338,12 @@ spec_review_tickets_answer() {
       [ "$ST_RECOMMEND" != retire ] || { ST_RETIRE=1; return 0; } ;;
     all|none) ;;
     *)
-      rest="$answer,"
-      while [ -n "$rest" ]; do
-        tok="${rest%%,*}"; rest="${rest#*,}"
-        trim_split "$tok" tok
+      spec_review_answer_tokens "$answer" toks
+      for tok in "${toks[@]}"; do
         case "$tok" in ''|*[!0-9]*) die "the --tickets answer '$answer' is not recommended, all, none, retire or a list such as 1, 3 - '$tok' is no ticket item" ;; esac
         i="$(array_index ST_N "$tok")"
         [ -n "$i" ] || die "the --tickets answer names ticket item $tok, which tickets.md does not have"
-        case "$named" in *" $tok "*) die "the --tickets answer names ticket item $tok twice" ;; esac
-        named="$named$tok "
+        [ -z "${ST_DISP[$i]+x}" ] || die "the --tickets answer names ticket item $tok twice"
         ST_DISP[i]=applied
         [ "${ST_REC[$i]}" != apply ] || ST_ASREC[i]=1
       done ;;

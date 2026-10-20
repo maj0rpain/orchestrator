@@ -497,6 +497,11 @@ assert_eq "-<n> on a decision: left undecided under Consistency and Testability 
 assert_eq "-<n> on an apply item: declined" \
   "$(has_line "$sra_cl" '- (4) "Delta has no test." - declined')" yes
 assert_eq "the resolved item still resolved" "$(has_line "$sra_cl" "- (5) resolved by (4)")" yes
+sra_plain="$(cat "$d/spec.md" "$d/changelog.md")"
+d="$(sra_dir)"
+sra "$d" "  -3 ,+2 ,  -4  "
+assert_status "an Other list with surrounding spaces applies" "$st" 0
+assert_eq "the same result as the list written plainly" "$(cat "$d/spec.md" "$d/changelog.md")" "$sra_plain"
 
 # A departure that matches the recommendation is recorded as recommended.
 d="$(sra_dir)"
@@ -588,6 +593,18 @@ sra_refused "an item named twice" "$d" "item 4 twice" "-4, -4"
 sra_refused "a decision named twice" "$d" "item 3 twice" "3B, -3"
 sra_refused "an unknown long option, though the answer may begin with -" "$d" \
   "unknown option: --bogus" "-4" --bogus
+
+# The shared answer walk (#1264): each refusal's exact message, and the
+# twice-named check before the option and sign checks.
+sra_refused "an empty token, exactly" "$d" "'' $sra_form" "-4,"
+assert_eq "an empty token: the exact message" "$out" \
+  "orch: the answer '-4,' is not recommended, all, none or a list of departures such as 3B, -4, +2 - '' is not <n><letter>, -<n> or +<n>"
+sra_refused "an item named twice, exactly" "$d" "item 4 twice" "-4 , -4"
+assert_eq "an item named twice: the exact message" "$out" "orch: the answer names item 4 twice"
+sra_refused "a decision named twice, its second option unknown" "$d" "item 3 twice" "3B, 3Z"
+assert_eq "a repeat with a bad option dies twice, not on the option" "$out" "orch: the answer names item 3 twice"
+sra_refused "a declined item declined again" "$d" "item 2 twice" "-2, -2"
+assert_eq "a repeated -<n> dies twice" "$out" "orch: the answer names item 2 twice"
 
 # Anchors: no match, two matches - the whole batch refused.
 sed -i 's/^Delta line\.$/Nowhere line./' "$d/batch.md"
@@ -992,6 +1009,14 @@ assert_eq "a declined edge with the human's reason" "$(has_line "$sra_cl" '- (5)
 assert_eq "ticket writes in item order, text before edge" "$(head -n 3 "$d/applied.log")" "ticket #20's body
 ticket #21's body
 unblock #21 by #20"
+srt_other="$(cat "$d/spec.md" "$d/ticket-20.md" "$d/ticket-21.md" "$d/changelog.md"; fake_body_of 20; fake_body_of 21)"
+d="$(srt_dir)"
+srt_fetch "$d"
+printf '5: the edge stays\n' >"$d/treasons"
+sra "$d" recommended --tickets " 1 ,2,  4 " --ticket-reasons "$d/treasons"
+assert_status "an Other ticket list with surrounding spaces applies" "$st" 0
+assert_eq "the same result as the ticket list written plainly" \
+  "$(cat "$d/spec.md" "$d/ticket-20.md" "$d/ticket-21.md" "$d/changelog.md"; fake_body_of 20; fake_body_of 21)" "$srt_other"
 
 # --tickets none: no ticket write, the body still published.
 d="$(srt_dir)"
@@ -1071,6 +1096,12 @@ srt_refused "@@ none-affected with company" "$d" "tickets.md line 2" recommended
 cp "$d/tickets.keep" "$d/tickets.md"
 srt_refused "an Other ticket list naming an unknown item" "$d" "ticket item 9" recommended --tickets "1, 9"
 srt_refused "a malformed --tickets answer" "$d" "--tickets" recommended --tickets "1B"
+srt_refused "an empty --tickets token" "$d" "'' is no ticket item" recommended --tickets "1,"
+assert_eq "an empty --tickets token: the exact message" "$out" \
+  "orch: the --tickets answer '1,' is not recommended, all, none, retire or a list such as 1, 3 - '' is no ticket item"
+srt_refused "a ticket item named twice" "$d" "ticket item 1 twice" recommended --tickets "1, 1"
+assert_eq "a ticket item named twice: the exact message" "$out" \
+  "orch: the --tickets answer names ticket item 1 twice"
 printf 'one: why\n' >"$d/treasons"
 srt_refused "a malformed --ticket-reasons line" "$d" "--ticket-reasons line 1" recommended --tickets none --ticket-reasons "$d/treasons"
 printf '1: why\n' >"$d/treasons"
@@ -1367,6 +1398,27 @@ check_refused src "an empty @@ why" "$d" "orch: batch.md line 23: @@ why needs i
 d="$(src_dir)"
 sed -i '14s/.*/@@ why Alpha is stale/' "$d/batch.md"
 check_refused src "a @@ why on a minor item" "$d" "orch: batch.md line 14: a minor item carries no @@ why"
+# The shared @@ line split (#1264): CRLF @@ lines, bare keyword lines among
+# them, read as LF ones; a malformed one quoted without its CR.
+d="$(src_dir)"
+src "$d"
+src_lf_out="$out"; src_lf_err="$err"
+d="$(src_dir)"
+sed -i '/^@@/s/$/\r/' "$d/batch.md"
+src "$d"
+assert_status "a batch with CRLF @@ lines passes" "$st" 0
+assert_eq "with the same view as LF" "$out" "$src_lf_out"
+assert_eq "and the same summary" "$err" "$src_lf_err"
+d="$(src_dir)"
+sed -i '13d; /^@@/s/$/\r/' "$d/batch.md"
+check_refused src "a CRLF @@ line ending a replacement left open" "$d" \
+  "orch: batch.md line 14: expected @@ end to end the replacement begun on line 11, got '@@ item 2 consistency decline material the plan chose this'"
+d="$(src_dir)"
+printf '@@ bogus\r\n' >>"$d/batch.md"
+check_refused src "an unknown CRLF @@ line" "$d" "orch: batch.md line 44: unknown line '@@ bogus'"
+d="$(src_dir)"
+printf '@@\r\n' >>"$d/batch.md"
+check_refused src "a bare CRLF @@" "$d" "orch: batch.md line 44: unknown line '@@ '"
 d="$(src_dir)"
 printf '@@ why Gamma again\n' >>"$d/batch.md"
 check_refused src "a @@ why on a resolved item" "$d" "orch: batch.md line 44: a resolved item carries no @@ why"
@@ -2040,6 +2092,21 @@ orch: tickets.md line 14: ticket item 4 (#21): its anchor matches no text in the
 d="$(srct_dir)"
 printf '@@ bogus\n' >>"$d/tickets.md"
 check_refused srct "a grammar error" "$d" "orch: tickets.md line 20: unknown line '@@ bogus'"
+d="$(srct_dir)"
+srct "$d"
+srct_lf_out="$out"; srct_lf_err="$err"
+d="$(srct_dir)"
+sed -i '/^@@/s/$/\r/' "$d/tickets.md"
+srct "$d"
+assert_status "tickets.md with CRLF @@ lines passes" "$st" 0
+assert_eq "with the same ticket view as LF" "$out" "$srct_lf_out"
+assert_eq "and the same summary" "$err" "$srct_lf_err"
+d="$(srct_dir)"
+printf '@@ bogus\r\n' >>"$d/tickets.md"
+check_refused srct "an unknown CRLF @@ line" "$d" "orch: tickets.md line 20: unknown line '@@ bogus'"
+d="$(srct_dir)"
+printf '@@\r\n' >>"$d/tickets.md"
+check_refused srct "a bare CRLF @@" "$d" "orch: tickets.md line 20: unknown line '@@ '"
 d="$(srct_dir)"
 rm "$d/tickets.md"
 check_refused srct "no tickets.md" "$d" "orch: tickets.md not found in $d"
