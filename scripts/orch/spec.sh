@@ -24,7 +24,7 @@ cmd_spec() {
   [ $# -eq 1 ] || die "usage: orch.sh spec <fetch|update|comment|comments> <file>"
   local file="$1" issue
   require_issue issue
-  [ "$(state_get phase)" != "done" ] \
+  flow_active \
     || die "the flow on issue #$issue is done - spec $op acts only on an active flow's issue; for another issue use orch.sh issue $op <n> <file>"
   "cmd_issue_$op" "$issue" "$file"
 }
@@ -44,9 +44,9 @@ cmd_spec_pause() {
   [ $# -eq 0 ] || die "usage: orch.sh spec pause"
   local issue phase
   require_issue issue
-  phase="$(state_get phase)"
-  [ "$phase" != "done" ] \
+  flow_active \
     || die "the flow on issue #$issue is done - spec pause acts only on an active flow"
+  phase="$(state_get phase)"
   [ "$phase" = spec ] \
     || die "spec pause runs only in the spec phase - the flow is at phase $phase"
   mkdir -p "$HANDOFF_DIR" || die "cannot create $HANDOFF_DIR"

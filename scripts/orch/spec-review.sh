@@ -1722,7 +1722,7 @@ spec_review_apply() {
     flow=1
     require_state
     require_issue issue
-    [ "$(state_get phase)" != "done" ] \
+    flow_active \
       || die "the flow on issue #$issue is done - spec-review apply acts only on an active flow's issue; for another issue use --issue <n>"
   fi
 
