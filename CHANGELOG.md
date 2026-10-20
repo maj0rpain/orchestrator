@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.18.1
+
+The spec review's batch and ticket parsers now share their `@@` line split, and its two answer functions share their Other-list token walk and read a twice-named item from their dispositions. No message or outcome changes (#1264).
+
 ## 4.18.0
 
 `orch.sh ticket close <n>` now refuses, leaving the issue open, to close a ticket whose ticket worktree exists while its ticket branch has not merged into its forked-from branch (or records none); `--unmerged` closes it anyway. `ticket close` and `ticket-worktree remove` share one merged check, and the driver loop says to run `ticket merge`, `ticket close` and `ticket-worktree remove` as separate calls, each gated on the previous one exiting 0 (#1146).
