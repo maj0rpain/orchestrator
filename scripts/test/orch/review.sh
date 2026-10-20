@@ -323,7 +323,7 @@ before="$(fake_snapshot)"
 # each case is one line, label|drop|add: parts less the flag named by drop and
 # its value, then add, word-split on spaces, so no value in add may hold one
 while IFS='|' read -r label drop add; do
-  if [ -n "$drop" ]; then parts_with "$drop"; else args=("${parts[@]}"); fi
+  parts_with "$drop"
   # shellcheck disable=SC2206
   [ -z "$add" ] || args+=($add)
   out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
