@@ -43,20 +43,30 @@ gh_reason() {
   printf '%s\n' "${line:-gh gave no reason}"
 }
 
+# gh_die_opt_check <caller> <argc> <option> [value]: the one rule for gh_die's
+# own options, checked by gh_die and gh_or_die alike. <argc> is the caller's
+# "$#" at <option>, so a trailing option with no value is told from an empty
+# one. --exit must take 2; --hint must have a value, "" included. A bad pair
+# dies with status 1, naming <caller> (gh_die or gh_or_die) and the option.
+gh_die_opt_check() {
+  case "$3" in
+    --exit) [ "${4-}" = 2 ] || die "$1: --exit takes 2, not '${4-}'" ;;
+    --hint) [ "$2" -ge 2 ] || die "$1: --hint needs a value" ;;
+  esac
+}
+
 # gh_die [--exit 2] [--hint <text>] <what> <stderr>: dies with
 # "gh could not <what>: <gh_reason of stderr>", then " - <hint>" when a hint is
 # given - through die, or through die2 under --exit 2. A bad option dies with
-# status 1, naming it.
+# status 1, naming it, through gh_die_opt_check.
 gh_die() {
   local code=1 hint=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --exit)
-        [ "${2-}" = 2 ] || die "gh_die: --exit takes 2, not '${2-}'"
-        code=2; shift 2 ;;
-      --hint)
-        [ $# -ge 2 ] || die "gh_die: --hint needs a value"
-        hint="$2"; shift 2 ;;
+      --exit|--hint)
+        gh_die_opt_check gh_die $# "$@"
+        if [ "$1" = --exit ]; then code=2; else hint="$2"; fi
+        shift 2 ;;
       -*) die "gh_die: unknown option $1" ;;
       *) break ;;
     esac
@@ -71,8 +81,9 @@ gh_die() {
 # gh_or_die [--exit 2] [--hint <text>] [--out <var> | --file <path>] <what>
 # <op> [args...]: runs the operation through capture/capture_err - so in their
 # subshell, and the gh guard's no-repo death still reaches the real stderr -
-# and on failure dies through gh_die with the same --exit and --hint, passed
-# on as given: gh_die alone checks them.
+# and on failure dies through gh_die with the same --exit and --hint. Those
+# are checked through gh_die_opt_check before the operation runs, so a bad one
+# dies with status 1, naming gh_or_die, and the operation never runs.
 # --out <var> assigns the operation's stdout to the caller's variable (trailing
 # newlines gone, as capture reads it). --file <path> streams it into a temp
 # file beside the target, creating the target's directory, and moves it into
@@ -84,14 +95,15 @@ gh_die() {
 # death ends only the subshell, so the caller must pass its status on. Its
 # locals are prefixed so no caller's variable is shadowed.
 gh_or_die() {
-  local _gh_or_die_die=() _gh_or_die_out="" _gh_or_die_file=""
+  local _gh_or_die_die_opts=() _gh_or_die_out="" _gh_or_die_file=""
   local _gh_or_die_text _gh_or_die_err _gh_or_die_tmp _gh_or_die_st=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --exit|--hint)
-        # gh_die's own options: collected as given, for gh_die to check.
-        _gh_or_die_die+=("$1" "${2-}")
-        [ $# -ge 2 ] && shift 2 || shift ;;
+        # gh_die's own options: checked now, passed on to gh_die.
+        gh_die_opt_check gh_or_die $# "$@"
+        _gh_or_die_die_opts+=("$1" "$2")
+        shift 2 ;;
       --out|--file)
         [ -n "${2-}" ] || die "gh_or_die: $1 needs a value"
         if [ "$1" = --out ]; then _gh_or_die_out="$2"; else _gh_or_die_file="$2"; fi
@@ -120,7 +132,7 @@ gh_or_die() {
     capture_err _gh_or_die_err "${@:2}" || _gh_or_die_st=$?
   fi
   [ "$_gh_or_die_st" -ne 0 ] || return 0
-  gh_die ${_gh_or_die_die[@]+"${_gh_or_die_die[@]}"} "$1" "$_gh_or_die_err"
+  gh_die ${_gh_or_die_die_opts[@]+"${_gh_or_die_die_opts[@]}"} "$1" "$_gh_or_die_err"
 }
 
 # --- gh adapter -------------------------------------------------------------
@@ -277,22 +289,31 @@ adapter_issue_state_labels() {
   gh issue view "$1" --json state,labels --jq '.state, (.labels[].name)'
 }
 
+# gh_lines_read <adapter> <n> <err_var> <var>... <rest-var>: the readers'
+# shared contract (#1106), the one the readers below cite. Reads
+# <n> once through <adapter> and splits its answer through lines_split into
+# the caller-named variables: the first line into the first, and so on, every
+# line left into the last. Non-zero when the read fails, writing none of them,
+# and writing gh's stderr into <err_var>: the caller keeps its own failure
+# message. gh's stderr is captured, never passed through. Out-params through
+# `printf -v`, as require_field's, its locals prefixed so no caller's
+# variable name is shadowed.
+gh_lines_read() {
+  local __glr_out __glr_err
+  if ! capture __glr_out __glr_err "$1" "$2"; then
+    printf -v "$3" '%s' "$__glr_err"
+    return 1
+  fi
+  lines_split "$__glr_out" "${@:4}"
+}
+
 # issue_state_labels_read <n> <state_var> <labels_var> <err_var>: reads issue
 # <n> once through adapter_issue_state_labels and writes its state (the first
 # line) and its labels (the rest, possibly empty) into the first two
-# caller-named variables. Non-zero when the read fails, writing neither, and
-# writing gh's stderr into <err_var>: the caller keeps its own failure
-# message. gh's stderr is captured, never passed through. The answer is split
-# through lines_split, as issue_publish_verified's is.
-# Out-params through `printf -v`, as require_field's, its locals prefixed so
-# no caller's variable name is shadowed.
+# caller-named variables, on gh_lines_read's contract: non-zero on a failed
+# read, writing neither, gh's stderr captured into <err_var>.
 issue_state_labels_read() {
-  local __islr_out __islr_err
-  if ! capture __islr_out __islr_err adapter_issue_state_labels "$1"; then
-    printf -v "$4" '%s' "$__islr_err"
-    return 1
-  fi
-  lines_split "$__islr_out" "$2" "$3"
+  gh_lines_read adapter_issue_state_labels "$1" "$4" "$2" "$3"
 }
 
 # adapter_issue_state_labels_body <n>: OPEN or CLOSED on the first line, the
@@ -308,14 +329,11 @@ adapter_issue_state_labels_body() {
 # writes its state, its labels (one per line, possibly none) and its body into
 # the first three caller-named variables. Non-zero when the read fails or its
 # answer does not parse, writing none of them, and writing gh's stderr into
-# <err_var>, as issue_state_labels_read does.
+# <err_var>, as gh_lines_read does.
 issue_state_labels_body_read() {
-  local __islbr_out __islbr_err __islbr_state __islbr_count __islbr_labels="" __islbr_body __islbr_i
-  if ! capture __islbr_out __islbr_err adapter_issue_state_labels_body "$1"; then
-    printf -v "$5" '%s' "$__islbr_err"
-    return 1
-  fi
-  lines_split "$__islbr_out" __islbr_state __islbr_count __islbr_body
+  local __islbr_state __islbr_count __islbr_labels="" __islbr_body __islbr_i
+  gh_lines_read adapter_issue_state_labels_body "$1" "$5" \
+    __islbr_state __islbr_count __islbr_body || return 1
   case "$__islbr_count" in
     ''|*[!0-9]*) printf -v "$5" '%s' "gh answered no label count"; return 1 ;;
   esac
@@ -340,15 +358,10 @@ adapter_issue_title_labels() {
 # issue_title_labels_read <n> <title_var> <labels_var> <err_var>: reads issue
 # <n> once through adapter_issue_title_labels and writes its title and its
 # labels (one per line, possibly none) into the first two caller-named
-# variables, on issue_state_labels_read's contract: non-zero on a failed read,
+# variables, on gh_lines_read's contract: non-zero on a failed read,
 # writing neither, gh's stderr captured into <err_var>, never passed through.
 issue_title_labels_read() {
-  local __itlr_out __itlr_err
-  if ! capture __itlr_out __itlr_err adapter_issue_title_labels "$1"; then
-    printf -v "$4" '%s' "$__itlr_err"
-    return 1
-  fi
-  lines_split "$__itlr_out" "$2" "$3"
+  gh_lines_read adapter_issue_title_labels "$1" "$4" "$2" "$3"
 }
 
 # adapter_issue_state <n>: OPEN or CLOSED - or PULL where <n> is a pull
@@ -495,14 +508,9 @@ adapter_pr_refs() {
 # <err_var>: reads PR <n> once through adapter_pr_refs and writes its head SHA,
 # head branch, base branch (each empty where GitHub leaves it unset) and its
 # commits (one SHA per line, oldest first) into the first four caller-named
-# variables, on issue_state_labels_read's contract.
+# variables, on gh_lines_read's contract.
 pr_refs_read() {
-  local __prr_out __prr_err
-  if ! capture __prr_out __prr_err adapter_pr_refs "$1"; then
-    printf -v "$6" '%s' "$__prr_err"
-    return 1
-  fi
-  lines_split "$__prr_out" "$2" "$3" "$4" "$5"
+  gh_lines_read adapter_pr_refs "$1" "$6" "$2" "$3" "$4" "$5"
 }
 
 # adapter_pr_ready <n>: marks the draft PR ready for review. Prints nothing.
@@ -525,14 +533,11 @@ adapter_pr_state_draft() {
 # pr_state_draft_read <n> <state_var> <draft_var> <err_var>: reads PR <n> once
 # through adapter_pr_state_draft and writes its state (OPEN, CLOSED or MERGED)
 # and its draft flag, normalised to true or false, into the first two
-# caller-named variables, on issue_state_labels_read's contract.
+# caller-named variables, on gh_lines_read's contract.
 pr_state_draft_read() {
-  local __psdr_out __psdr_err __psdr_state __psdr_draft __psdr_rest
-  if ! capture __psdr_out __psdr_err adapter_pr_state_draft "$1"; then
-    printf -v "$4" '%s' "$__psdr_err"
-    return 1
-  fi
-  lines_split "$__psdr_out" __psdr_state __psdr_draft __psdr_rest
+  local __psdr_state __psdr_draft __psdr_rest
+  gh_lines_read adapter_pr_state_draft "$1" "$4" \
+    __psdr_state __psdr_draft __psdr_rest || return 1
   [ "$__psdr_draft" = true ] || __psdr_draft=false
   printf -v "$2" '%s' "$__psdr_state"
   printf -v "$3" '%s' "$__psdr_draft"

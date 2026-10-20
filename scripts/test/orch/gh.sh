@@ -196,6 +196,30 @@ assert_contains "both" "$out" "--file"
 out="$(in_orch 'gh_or_die --exit 2 --bogus "read issue #5" adapter_issue_body 5' 2>&1)"; st=$?
 assert_status "gh_or_die refuses an unknown option with status 1" "$st" 1
 assert_contains "naming it" "$out" "--bogus"
+
+# gh_die's own options, refused by gh_or_die before its operation runs (#1106):
+# the operation would leave a file behind, and none is there.
+out="$(in_orch 'gh_or_die --exit 3 "write a mark" touch "$1"' "$vdir/mark3" 2>&1)"; st=$?
+assert_status "gh_or_die --exit 3 dies with status 1" "$st" 1
+assert_eq "naming gh_or_die and the option" "$out" "orch: gh_or_die: --exit takes 2, not '3'"
+assert_eq "before its operation runs" "$(on_disk "$vdir/mark3")" absent
+out="$(in_orch 'gh_or_die --hint' 2>&1)"; st=$?
+assert_status "gh_or_die with a trailing --hint dies with status 1" "$st" 1
+assert_eq "naming gh_or_die and --hint" "$out" "orch: gh_or_die: --hint needs a value"
+out="$(in_orch 'gh_or_die --exit 2 --hint' 2>&1)"; st=$?
+assert_status "under --exit 2 too, with status 1, not 2" "$st" 1
+assert_eq "naming --hint" "$out" "orch: gh_or_die: --hint needs a value"
+out="$(in_orch 'gh_or_die --hint "" "write a mark" touch "$1"' "$vdir/marke" 2>&1)"; st=$?
+assert_status "gh_or_die accepts --hint \"\"" "$st" 0
+assert_eq "and runs its operation" "$(on_disk "$vdir/marke")" present
+out="$(in_orch 'gh_die --exit 3 "read issue #5" ""' 2>&1)"; st=$?
+assert_status "gh_die --exit 3 still dies with status 1" "$st" 1
+assert_eq "naming gh_die and the option" "$out" "orch: gh_die: --exit takes 2, not '3'"
+out="$(in_orch 'gh_die --exit 2 --hint' 2>&1)"; st=$?
+assert_status "gh_die with a trailing --hint dies with status 1" "$st" 1
+assert_eq "naming gh_die and --hint" "$out" "orch: gh_die: --hint needs a value"
+out="$(in_orch 'gh_die --hint "" "read issue #5" ""' 2>&1)"
+assert_eq "gh_die accepts --hint \"\"" "$out" "orch: gh could not read issue #5: gh gave no reason"
 rm -rf "$vdir"
 unset vdir
 
@@ -240,6 +264,44 @@ out="$(in_orch 'title=x labels=x; st=0; issue_title_labels_read 9 title labels e
   printf "%s|%s|%s|%s" "$st" "$title" "$labels" "$err"' 2>"$rerr")"
 assert_eq "a failed title read writes neither and fills the error variable" "$out" \
   "1|x|x|$GH_502"
+assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
+fake_unfail
+
+# gh_lines_read, the capture-and-split the readers share (#1106), and the
+# readers over it, the caller's variables named out, err and st.
+out="$(in_orch 'gh_lines_read adapter_issue_title_labels 9 st out err
+  printf "%s|%s" "$out" "$err"')"
+assert_eq "gh_lines_read splits the answer into the caller's variables" "$out" "A title|bug
+enhancement"
+out="$(in_orch 'issue_title_labels_read 9 out st err; printf "%s|%s" "$out" "$st"')"
+assert_eq "a reader fills variables named out and st" "$out" "A title|bug
+enhancement"
+out="$(in_orch 'issue_state_labels_read 9 out st err; printf "%s|%s" "$out" "$st"')"
+assert_eq "issue_state_labels_read fills them too" "$out" "OPEN|bug
+enhancement"
+fake_issue_body 9 $'Line one.\n\nLine three.\n'
+out="$(in_orch 'issue_state_labels_body_read 9 out st err gh_err
+  printf "%s|%s|%s" "$out" "$st" "$err"')"
+assert_eq "issue_state_labels_body_read writes the state, the labels and the body" "$out" \
+  "OPEN|bug
+enhancement|Line one.
+
+Line three."
+fake_fail adapter_issue_title_labels "$GH_502"
+out="$(in_orch 'out=x err=x; st=0; gh_lines_read adapter_issue_title_labels 9 gh_err out err || st=$?
+  printf "%s|%s|%s|%s" "$st" "$out" "$err" "$gh_err"' 2>"$rerr")"
+assert_eq "a failed gh_lines_read writes none, fills the error variable and returns non-zero" \
+  "$out" "1|x|x|$GH_502"
+assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
+out="$(in_orch 'out=x st=x; rc=0; issue_title_labels_read 9 out st err || rc=$?
+  printf "%s|%s|%s|%s" "$rc" "$out" "$st" "$err"' 2>"$rerr")"
+assert_eq "a failed reader writes the error into a variable named err" "$out" \
+  "1|x|x|$GH_502"
+fake_fail adapter_issue_state_labels_body "$GH_502"
+out="$(in_orch 'state=x labels=x body=x; st=0; issue_state_labels_body_read 9 state labels body err || st=$?
+  printf "%s|%s|%s|%s|%s" "$st" "$state" "$labels" "$body" "$err"' 2>"$rerr")"
+assert_eq "a failed issue_state_labels_body_read writes none and fills the error variable" \
+  "$out" "1|x|x|x|$GH_502"
 assert_eq "printing nothing to stderr" "$(cat "$rerr")" ""
 rm -f "$rerr"
 unset rerr
