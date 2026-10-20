@@ -130,6 +130,19 @@ orch.sh - deterministic operations for the orchestrator flow
                               orchestrator.parallel, else 3; 1 is sequential.
                               Dies naming the key and value when it is not a
                               positive integer
+  suite-cost run -- <cmd> [args...]
+                              run <cmd> in the current directory, its stdout,
+                              stderr and exit code passed through and nothing
+                              added on stdout; on exit 0 alone, append its
+                              suite cost to the clone-wide record under the
+                              git common directory (orchestrator/suite-cost),
+                              one line of five tab-separated fields: HEAD's
+                              full SHA at the start, CPU seconds (user plus
+                              system, children included), wall seconds, the
+                              UTC time in ISO 8601, and the command. An
+                              append that fails warns and records nothing
+  suite-cost history          print the record's lines, oldest first, or
+                              nothing when there is no record
   repo show [--name|--host]   print the GitHub repo orch.sh works on and its
                               source: GH_REPO when set, else the checkout's
                               origin - never gh's default repo. --name prints

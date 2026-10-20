@@ -12,6 +12,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | --------- | --------------------------------------------------- |
 | `base`    | `set`, `show`, `clear`                               |
 | `parallel` | `show`                                             |
+| `suite-cost` | `run`, `check`, `history`                     |
 | `repo`    | `show`                                               |
 | `branch`  | `create`, `off`, `busy`, `base-sha`, `sync`, `retire` |
 | `issue`   | `fetch`, `update`, `comment`, `comments`, `publish`, `triage`, `ready`, `close` |
