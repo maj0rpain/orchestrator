@@ -1356,6 +1356,10 @@ spec_review_ticket_load() {
   TK_T[j]="$2"; TK_FETCHED[j]="$copy"; TK_TEXT[j]="$copy"
 }
 
+# The text items spec_review_ticket_local has counted, which only check
+# --tickets reports; it resets this before its loop.
+SR_TICKET_ANCHOR_COUNT=0
+
 # spec_review_ticket_local <index> <body-var> <post> <dir>: ticket item
 # <index>'s checks that read no GitHub, the half apply and check share. A
 # text item, counted into SR_TICKET_ANCHOR_COUNT, has its ticket loaded (see
@@ -1410,7 +1414,7 @@ spec_review_ticket_local() {
 spec_review_tickets_follow() {
   local body_var="$1" dir="$2" kind="$3" issue="$4" i t what post subs="" listed
   [ -z "$ST_RETIRE" ] || return 0
-  SR_TICKET_ANCHOR_COUNT=0
+  SR_PROBLEMS=()
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
     case "${ST_KIND[$i]}" in
       block|unblock)

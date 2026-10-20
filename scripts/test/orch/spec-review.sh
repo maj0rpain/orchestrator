@@ -1197,6 +1197,23 @@ srt_refused "a ## Ticket item on a sub-issue breakdown" "$d" "tickets.md line 2:
 assert_eq "a ## Ticket item on a sub-issue breakdown: names its header line" "$out" \
   "orch: tickets.md line 2: ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues - nothing written"
 
+# srt_mode_setup <mode>: a fresh start for apply in <mode> - no state.json,
+# and in flow mode a flow on issue 14.
+srt_mode_setup() {
+  rm -f "$top/.orchestrator/state.json"
+  if [ "$1" = flow ]; then
+    "$ORCH" init srt >/dev/null 2>&1; "$ORCH" state set issue 14 >/dev/null
+  fi
+}
+# srt_apply_in <mode> <dir> <ticket-answer>: apply <dir>'s recommended
+# answer with --tickets <ticket-answer> in <mode>, setting out and st.
+srt_apply_in() {
+  if [ "$1" = flow ]; then
+    out="$("$ORCH" spec-review apply "$2" recommended --round 1/2 --tickets "$3" 2>&1)"; st=$?
+  else
+    sra "$2" recommended --tickets "$3"
+  fi
+}
 # Every kind of ticket-step error names its tickets.md line and ends
 # ` - nothing written`, with nothing written, in both modes.
 # srt_step_refused <mode> <label> <dir> <want> <ticket-answer>: apply in
@@ -1204,17 +1221,10 @@ assert_eq "a ## Ticket item on a sub-issue breakdown: names its header line" "$o
 # ticket files and changelog.md as they were, and GitHub untouched.
 srt_step_refused() {
   local mode="$1" label="$1: $2" d="$3" want="$4" before snap
-  rm -f "$top/.orchestrator/state.json"
-  if [ "$mode" = flow ]; then
-    "$ORCH" init srt >/dev/null 2>&1; "$ORCH" state set issue 14 >/dev/null
-  fi
+  srt_mode_setup "$mode"
   before="$(srt_files "$d"; cat "$d/settled.md" 2>/dev/null)"
   snap="$(fake_snapshot)"
-  if [ "$mode" = flow ]; then
-    out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 --tickets "$5" 2>&1)"; st=$?
-  else
-    sra "$d" recommended --tickets "$5"
-  fi
+  srt_apply_in "$mode" "$d" "$5"
   assert_status "$label: refused" "$st" 1
   assert_eq "$label: the exact message" "$out" "$want"
   assert_eq "$label: no local file written" "$(srt_files "$d"; cat "$d/settled.md" 2>/dev/null)" "$before"
@@ -1257,16 +1267,9 @@ srt_fail() {
   local mode="$1" how="$2" op="$3" n="$4"
   d="$(srt_dir)"
   srt_fetch "$d"
-  rm -f "$top/.orchestrator/state.json"
-  if [ "$mode" = flow ]; then
-    "$ORCH" init srt >/dev/null 2>&1; "$ORCH" state set issue 14 >/dev/null
-  fi
+  srt_mode_setup "$mode"
   if [ "$n" = 0 ]; then fake_fail "$op"; else fake_fail_after "$op" "$n"; fi
-  if [ "$mode" = flow ]; then
-    out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 --tickets "$how" 2>&1)"; st=$?
-  else
-    sra "$d" recommended --tickets "$how"
-  fi
+  srt_apply_in "$mode" "$d" "$how"
   fake_unfail
   assert_status "$mode: a failed $op stops apply" "$st" 1
   assert_eq "$mode: changelog.md stays after a failed $op" "$(on_disk "$d/changelog.md")" present
