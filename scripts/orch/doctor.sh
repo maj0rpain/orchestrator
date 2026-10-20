@@ -867,19 +867,18 @@ d_entries_at() {
 }
 
 # d_phase_list <entry>: the entry's phase list, comma-separated, with each
-# `<phase>+` element expanded to the phases it stands for.
+# `<phase>+` element expanded to the phases it stands for. Every element is
+# checked against the table, plain ones too, through phases_from.
 d_phase_list() {
   local rest="${1#*:}," el list="" from
   while [ -n "$rest" ]; do
     el="${rest%%,*}"
     rest="${rest#*,}"
+    from="$(phases_from "${el%+}")" || die "$1: no such phase in the phase table: ${el%+}"
     case "$el" in
-      *+)
-        from="$(phases_from "${el%+}")" || die "$1: no such phase in the phase table: ${el%+}"
-        el="$(printf '%s' "$from" | tr '\n' ',')"
-        ;;
+      *+) list="${list:+$list,}$(printf '%s' "$from" | tr '\n' ',')" ;;
+      *)  list="${list:+$list,}$el" ;;
     esac
-    list="${list:+$list,}$el"
   done
   printf '%s\n' "$list"
 }
