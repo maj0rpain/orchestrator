@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.18.0
+
+`orch.sh ticket close <n>` now refuses, leaving the issue open, to close a ticket whose ticket worktree exists while its ticket branch has not merged into its forked-from branch (or records none); `--unmerged` closes it anyway. `ticket close` and `ticket-worktree remove` share one merged check, and the driver loop says to run `ticket merge`, `ticket close` and `ticket-worktree remove` as separate calls, each gated on the previous one exiting 0 (#1146).
+
 ## 4.17.0
 
 `spec-review check` now prints a compact batch view: each material item is one numbered entry with its summary, its `@@ why` reason, the findings and comments it cites by name, and its edit as a word diff, collapsed to its size past 40 changed words. The human answers `show <n>` to read items in full through `check --full`.
