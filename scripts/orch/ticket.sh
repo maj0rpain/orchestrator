@@ -10,16 +10,22 @@
 # Stateless throughout, like issue publish/pr publish: callable with no
 # state.json, since quick implementation keeps none.
 
-# ticket_sub_issues <parent> [die|die2]: the parent's sub-issues as
+# ticket_sub_issues [--exit 2] <parent>: the parent's sub-issues as
 # adapter_sub_issues prints them - the listing the ticket commands read (#394),
 # save ticket_links_verified, which calls adapter_sub_issues itself so a failed
-# read can be retried rather than died on. Both failures die through the
-# second argument (default die): a parent that is no plain number, refused
-# before asking GitHub, and a GitHub that cannot list them.
+# read can be retried rather than died on. Both failures die with status 1, or
+# 2 under --exit 2, in the gh failure contract's own grammar (#1106): a parent
+# that is no plain number, refused before asking GitHub, and a GitHub that
+# cannot list them. --exit is passed on to gh_or_die as given, which checks it.
 ticket_sub_issues() {
-  local parent="$1" fail="${2:-die}" subs exit_opt=()
+  local exit_opt=() fail=die
+  if [ "${1-}" = --exit ]; then
+    exit_opt=("$1" "${2-}")
+    [ "${2-}" != 2 ] || fail=die2
+    shift 2 || shift
+  fi
+  local parent="${1-}" subs
   case "$parent" in ''|*[!0-9]*) "$fail" "parent must be a plain issue number, got: $parent" ;; esac
-  [ "$fail" != die2 ] || exit_opt=(--exit 2)
   gh_or_die ${exit_opt[@]+"${exit_opt[@]}"} --out subs "list sub-issues of #$parent" \
     adapter_sub_issues "$parent"
   if [ -n "$subs" ]; then printf '%s\n' "$subs"; fi
@@ -233,7 +239,7 @@ cmd_ticket_parent() {
 cmd_ticket_exists() {
   [ $# -eq 1 ] || die2 "usage: orch.sh ticket exists <parent>"
   local parent="$1" subs body
-  subs="$(ticket_sub_issues "$parent" die2)" || exit "$?"
+  subs="$(ticket_sub_issues --exit 2 "$parent")" || exit "$?"
   if [ -n "$subs" ]; then
     printf 'sub-issues\n'
     return 0
