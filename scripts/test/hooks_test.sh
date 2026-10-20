@@ -1026,13 +1026,17 @@ pg_ask() { pg_entry "$1" assistant "$(jq -nc --arg id "$2" '[{type:"tool_use", i
 pg_result() {
   pg_entry "$1" user "$(jq -nc --arg id "$2" --arg t "$3" --argjson e "${4:-false}" '[{type:"tool_result", tool_use_id:$id, content:$t, is_error:$e}]')"
 }
+# pg_nudge <view.md>: the pass line's tail naming <view.md>, from the producer
+# itself - spec-review.sh's spec_review_nudge, sourced - so a change to its
+# wording reaches the guard's cases rather than leaving them on a copy.
+pg_nudge() { (source "$DIR/orch/spec-review.sh" && spec_review_nudge "$(dirname "$1")"); }
 # pg_check <transcript> <id> <kind> <view.md>: a passing check run as Bash -
 # <kind> batch or tickets - its result <view.md>'s view then the stderr pass
-# line naming <view.md>, worded as spec-review.sh's spec_review_nudge words it.
+# line naming <view.md>, ending as spec_review_nudge ends it.
 pg_check() {
   pg_bash "$1" "$2" "bash \"\$ORCH\" spec-review check .orchestrator/spec-review/7"
   pg_result "$1" "$2" "$(cat "$4" 2>/dev/null)
-$3.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly - paste the view above into chat word for word, then ask in the same response; it is saved in $4"
+$3.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly$(pg_nudge "$4")"
 }
 # pg_decide <transcript-or-empty> [tool_use_id] [tool_name]: the guard's
 # decision on an ask - deny, allow (no output), or the exit status when it is
