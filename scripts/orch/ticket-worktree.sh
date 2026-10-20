@@ -51,6 +51,10 @@ $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)
      Remove each with orch.sh ticket-worktree remove <n> first."
 }
 
+# is_ticket_worktree <path>: whether a worktree sits at <path> itself - git
+# would resolve a leftover t<n> directory to the enclosing checkout instead.
+is_ticket_worktree() { [ "$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" = "$1" ]; }
+
 # Resolves ticket <n>'s worktree for a command that acts on an existing one:
 # dies unless <n> is a ticket number whose worktree exists and is on a branch.
 # It assigns to the caller's `n`, `path` and `branch`, which bash scopes
@@ -58,7 +62,7 @@ $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)
 ticket_worktree_resolve() {
   n="$(ticket_worktree_number "$1")"
   path="$(ticket_worktree_path "$n")"
-  [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
+  is_ticket_worktree "$path" \
     || die "no ticket worktree for ticket $n at $path"
   branch="$(checkout_branch "$path")" \
     || die "ticket worktree $path is not on a branch (detached HEAD)"
@@ -138,10 +142,9 @@ cmd_ticket_worktree_remove() {
   done
   if [ "$unmerged" = 1 ]; then
     path="$(ticket_worktree_path "$(ticket_worktree_number "$n")")"
-    # Only a worktree at $path itself: git would resolve a leftover t<n>
-    # directory to the enclosing checkout, whose rebase is not ours to abort.
-    if [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ] \
-      && rebase_in_progress "$path"; then
+    # Only a worktree at $path itself: a leftover t<n> directory's enclosing
+    # checkout's rebase is not ours to abort.
+    if is_ticket_worktree "$path" && rebase_in_progress "$path"; then
       git -C "$path" rebase --abort \
         || die "could not abort the rebase in progress in ticket worktree $path"
     fi

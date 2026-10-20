@@ -189,7 +189,7 @@ cmd_ticket_close() {
   case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
   if [ "$unmerged" = 0 ]; then
     path="$(ticket_worktree_path "$n")"
-    if [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ]; then
+    if is_ticket_worktree "$path"; then
       ticket_worktree_resolve "$n"
       ticket_branch_merged_or_die "$branch" "close it anyway"
     fi
