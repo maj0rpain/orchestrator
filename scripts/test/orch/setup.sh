@@ -539,9 +539,15 @@ fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth
 #
 # gh_fixture: puts a fixture `gh` on PATH for the real adapter operations'
 # contract tests, and leaves its directory in GH_FIXTURE. It holds no logic and
-# parses no flags: each call looks its whole argv up, byte for byte, among the
-# replies gh_reply registered, and answers that reply's stdout, stderr and exit
-# status. An argv with no reply fails, exit 127, naming the argv on stderr. Every
+# parses no flags: each call looks its whole argv up among the replies gh_reply
+# registered, and answers that reply's stdout, stderr and exit status. A reply
+# lives in replies/<key>, keyed by its argv's checksum - the one formula, in the
+# fixture's `key` script, which gh_reply calls too - so a call finds it with one
+# direct lookup, and a cmp against the stored argv keeps the match exact, byte
+# for byte. Registering an argv again replaces its reply: the later one wins. A
+# checksum collision is a loud failure, not a second slot: the later
+# registration takes the key, and the other argv answers 127. An argv with no
+# reply fails, exit 127, naming the argv on stderr. Every
 # call appends "GH_REPO=<repo> GH_HOST=<host> <argv>" to $GH_FIXTURE/env.log
 # (<unset> for an unset one), so a test asserts which repo a call was pinned to.
 # A section that calls it ends with restore_suite_env GH_FIXTURE.
@@ -549,28 +555,28 @@ gh_fixture() {
   GH_FIXTURE="$(mktemp -d)" || return 1
   export GH_FIXTURE
   mkdir "$GH_FIXTURE/bin" "$GH_FIXTURE/replies"
+  cat >"$GH_FIXTURE/key" <<'KEY'
+#!/usr/bin/env bash
+# key <argv...>: the replies directory name for that argv - the cksum of its
+# arguments, NUL-terminated, its space turned into -.
+printf '%s\0' "$@" | cksum | tr ' ' -
+KEY
   cat >"$GH_FIXTURE/bin/gh" <<'GH'
 #!/usr/bin/env bash
 d="$(cd "$(dirname "$0")/.." && pwd)"
 printf 'GH_REPO=%s GH_HOST=%s %s\n' "${GH_REPO-<unset>}" "${GH_HOST-<unset>}" "$*" >>"$d/env.log"
-argv="$(mktemp)"
-printf '%s\0' "$@" >"$argv"
-for r in "$d"/replies/*/; do
-  [ -f "$r/argv" ] || continue
-  if cmp -s "$argv" "$r/argv"; then
-    rm -f "$argv"
-    cat "$r/stdout"
-    cat "$r/stderr" >&2
-    exit "$(cat "$r/exit")"
-  fi
-done
-rm -f "$argv"
+r="$d/replies/$("$d/key" "$@")"
+if [ -f "$r/argv" ] && printf '%s\0' "$@" | cmp -s - "$r/argv"; then
+  cat "$r/stdout"
+  cat "$r/stderr" >&2
+  exit "$(cat "$r/exit")"
+fi
 printf 'fixture gh: no reply for:' >&2
 printf ' %q' "$@" >&2
 printf '\n' >&2
 exit 127
 GH
-  chmod +x "$GH_FIXTURE/bin/gh"
+  chmod +x "$GH_FIXTURE/key" "$GH_FIXTURE/bin/gh"
   PATH="$GH_FIXTURE/bin:$PATH"
 }
 
