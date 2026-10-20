@@ -220,6 +220,10 @@ assert_status "a findings list gh cannot read dies" "$st" 1
 assert_contains "naming the list, with gh's line" "$out" \
   "orch: gh could not list the review:major findings: HTTP 502: Bad Gateway"
 assert_not_contains "and nothing past it" "$out" "second line"
+out="$(scan --all 2>&1)"; st=$?
+assert_status "a findings list gh cannot read dies under --all too" "$st" 1
+assert_eq "with the same message (--all)" "$out" \
+  "orch: gh could not list the review:major findings: HTTP 502: Bad Gateway"
 fake_unfail
 
 out="$(scan --all --pr 21 2>&1)"; st=$?
