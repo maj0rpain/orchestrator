@@ -137,15 +137,20 @@ orch.sh - deterministic operations for the orchestrator flow
                               suite cost to the clone-wide record under the
                               git common directory (orchestrator/suite-cost),
                               one line of five tab-separated fields: HEAD's
-                              full SHA at the start, CPU seconds (user plus
+                              full SHA at the start, suffixed -dirty when
+                              git status --porcelain printed anything then
+                              (untracked files count, ignored paths do
+                              not), CPU seconds (user plus
                               system, children included), wall seconds, the
                               UTC time in ISO 8601, and the command. An
                               append that fails warns and records nothing
   suite-cost check -- <cmd> [args...]
                               print one verdict line comparing the head's
                               newest recorded run of <cmd> (on HEAD or an
-                              ancestor not on the base) with the baseline's
-                              (the newest on the base commit or an ancestor:
+                              ancestor not on the base, or a dirty one on
+                              HEAD or any ancestor) with the baseline's
+                              (the newest clean one, never a dirty one, on
+                              the base commit or an ancestor:
                               state.base_sha in a flow, else branch base-sha),
                               exiting 0: off (baseline below git config
                               orchestrator.suiteCost.floor, else 60 CPU

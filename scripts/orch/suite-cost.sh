@@ -7,7 +7,9 @@
 # The record is one file under the clone's git common directory, so the main
 # checkout, side checkouts and ticket worktrees share it, and it is per machine
 # by construction. Its line format is the record's documented interface: five
-# tab-separated fields - the full SHA of HEAD when the run started, the CPU
+# tab-separated fields - the full SHA of HEAD when the run started, suffixed
+# -dirty (the git describe --dirty convention) when git status --porcelain
+# printed anything then, untracked files counting and ignored paths not, the CPU
 # seconds (user plus system, children included), the wall seconds, both to two
 # places, the UTC time in ISO 8601, and the command, its words joined by single
 # spaces. history prints it as written, and the tests seed it.
@@ -55,10 +57,14 @@ suite_cost_record() {
 
 # suite_cost_run <cmd> [args...]: runs the command in the current directory,
 # its stdout, stderr and exit code passed through, and on exit 0 appends its
-# record line. Exits with the command's own status.
+# record line, its commit <sha>-dirty when the tree had changes as it started.
+# Exits with the command's own status.
 suite_cost_run() {
   local sha
   sha="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
+  if [ -n "$sha" ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    sha="$sha-dirty"
+  fi
   suite_cost_measure "$@"
   if [ "$SUITE_COST_STATUS" -eq 0 ]; then
     if [ -n "$sha" ]; then
@@ -148,17 +154,31 @@ suite_cost_newest() {
   return 1
 }
 
-# The head's commits: HEAD or an ancestor of it, but not the base commit nor
-# an ancestor of it - so a run recorded just before its commit still counts.
-# Local to suite_cost_check in effect: it reads the base commit, base_commit,
-# from that call's locals, through bash's dynamic scope.
+# The head's records: a clean one whose commit is HEAD or an ancestor of it,
+# but not the base commit nor an ancestor of it - so a run recorded just before
+# its commit still counts - or a dirty one whose commit is HEAD or any ancestor
+# of it, the base commit and its ancestors included, so a run made before a
+# ticket's first commit counts. Local to suite_cost_check in effect: it reads
+# the base commit, base_commit, from that call's locals, through bash's
+# dynamic scope.
 suite_cost_is_head() {
-  git merge-base --is-ancestor "$1" HEAD 2>/dev/null &&
-    ! git merge-base --is-ancestor "$1" "$base_commit" 2>/dev/null
+  case "$1" in
+    *-dirty) git merge-base --is-ancestor "${1%-dirty}" HEAD 2>/dev/null ;;
+    *)
+      git merge-base --is-ancestor "$1" HEAD 2>/dev/null &&
+        ! git merge-base --is-ancestor "$1" "$base_commit" 2>/dev/null
+      ;;
+  esac
 }
-# The baseline's commits: the base commit or an ancestor of it. Local to
-# suite_cost_check in effect, reading its base_commit as suite_cost_is_head does.
-suite_cost_is_base() { git merge-base --is-ancestor "$1" "$base_commit" 2>/dev/null; }
+# The baseline's records: clean ones alone, never a dirty one, whose commit is
+# the base commit or an ancestor of it. Local to suite_cost_check in effect,
+# reading its base_commit as suite_cost_is_head does.
+suite_cost_is_base() {
+  case "$1" in
+    *-dirty) return 1 ;;
+    *) git merge-base --is-ancestor "$1" "$base_commit" 2>/dev/null ;;
+  esac
+}
 
 # suite_cost_check <cmd> [args...]: prints one verdict line - off, ok,
 # grew <pct> - <finding text>, or unmeasured - comparing the head's newest

@@ -5,10 +5,11 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# The record's one documented line shape: the full HEAD SHA, CPU and wall
-# seconds to two places, the UTC time in ISO 8601, and the command, its words
-# joined by single spaces - five tab-separated fields.
-SUITE_COST_LINE='^[0-9a-f]{40}'$'\t''[0-9]+\.[0-9]{2}'$'\t''[0-9]+\.[0-9]{2}'$'\t''[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z'$'\t'
+# The record's one documented line shape: the full HEAD SHA, suffixed -dirty
+# when the tree had changes, CPU and wall seconds to two places, the UTC time
+# in ISO 8601, and the command, its words joined by single spaces - five
+# tab-separated fields.
+SUITE_COST_LINE='^[0-9a-f]{40}(-dirty)?'$'\t''[0-9]+\.[0-9]{2}'$'\t''[0-9]+\.[0-9]{2}'$'\t''[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z'$'\t'
 
 # check_repo: a repo for suite-cost check, cwd inside it, its record's
 # directory made: main's first commit (root) and its child (base), then branch
@@ -98,6 +99,29 @@ assert_contains "it warns on stderr with an orch: message" "$err" "orch: "
 assert_contains "naming the record" "$err" "$rec"
 assert_eq "and records nothing" "$(ls -A "$rec")" ""
 
+# A run with changes in the tree records its commit as <sha>-dirty; an
+# ignored path is no change.
+new_repo >/dev/null
+rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
+echo ignored >>.git/info/exclude
+touch ignored
+"$ORCH" suite-cost run -- true >/dev/null 2>&1
+assert_eq "a run with only an ignored path in the tree records the bare SHA" \
+  "$(tail -n 1 "$rec" | cut -f1)" "$(git rev-parse HEAD)"
+echo changed >>README.md
+"$ORCH" suite-cost run -- true >/dev/null 2>&1
+line="$(tail -n 1 "$rec")"
+assert_eq "a run with a tracked change records <sha>-dirty" \
+  "$(cut -f1 <<<"$line")" "$(git rev-parse HEAD)-dirty"
+[[ "$line" =~ $SUITE_COST_LINE ]] && shape=well-formed || shape="malformed: $line"
+assert_eq "in the documented shape" "$shape" well-formed
+assert_eq "still five fields" "$(awk -F'\t' '{ print NF }' <<<"$line")" 5
+git checkout -q -- README.md
+touch untracked
+"$ORCH" suite-cost run -- true >/dev/null 2>&1
+assert_eq "a run with an untracked file records <sha>-dirty" \
+  "$(tail -n 1 "$rec" | cut -f1)" "$(git rev-parse HEAD)-dirty"
+
 out="$("$ORCH" suite-cost bogus 2>&1)"; st=$?
 assert_status "suite-cost bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown suite-cost op"
@@ -186,6 +210,23 @@ seed_run "$base" 30.00 "scripts/test/orch_test.sh"
 seed_run "$head" 70.00
 assert_contains "the baseline is the newest recorded ancestor of the base, of the same command" \
   "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "grew 17 - "
+
+# Dirty records: one on the base, a run made before the ticket's first commit,
+# is the head's; it is never the baseline, which stays the clean record.
+check_repo
+seed_run "$base" 60.00
+seed_run "$base-dirty" 70.00
+assert_contains "a dirty record on the base counts as the head, the clean one the baseline" \
+  "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "grew 17 - "
+: >"$rec"
+seed_run "$root" 60.00
+seed_run "$base-dirty" 30.00
+seed_run "$head" 70.00
+assert_contains "a dirty record on the base is never the baseline" \
+  "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "grew 17 - "
+seed_run "$head-dirty" 80.00
+assert_contains "the newest head record, dirty, counts" \
+  "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "grew 33 - "
 
 # The base commit: base-sha's recorded SHA, else its merge-base; state.base_sha
 # inside a flow. Base costs 100, parent 60 and head 70: from base, the head is
