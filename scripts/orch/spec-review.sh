@@ -140,16 +140,16 @@ spec_review_text_store() {
 # spec_review_item_check <index>: dies, naming the item's header line, unless
 # the item carries what its recommendation needs.
 spec_review_item_check() {
-  local i="$1" line="${SR_IT_LINE[$1]}" n="${SR_IT_N[$1]}" opt fd cm opts=0 has_find="" has_comment="" decline_hint=""
+  local i="$1" line="${SR_IT_LINE[$1]}" n="${SR_IT_N[$1]}" opt fd cm opts=0 has_find="" has_comment="" unapplied_hint=""
   for opt in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
     [ "${SR_OP_ITEM[$opt]}" = "$i" ] || continue
     opts=$((opts + 1))
     [ -n "${SR_OP_SUMMARY[$opt]+x}" ] \
       || spec_review_batch_die "${SR_OP_LINE[$opt]}" "item $n option ${SR_OP_LETTER[$opt]} has no @@ summary"
-    decline_hint=""
-    [ "${SR_OP_LETTER[$opt]}" = "${SR_IT_ARG[$i]}" ] || decline_hint=" - an option not recommended still carries the edit it would make"
+    unapplied_hint=""
+    [ "${SR_OP_LETTER[$opt]}" = "${SR_IT_ARG[$i]}" ] || unapplied_hint=" - an option not recommended still carries the edit it would make"
     [ -n "${SR_OP_REPLACE[$opt]+x}" ] \
-      || spec_review_batch_die "${SR_OP_LINE[$opt]}" "item $n option ${SR_OP_LETTER[$opt]} has no @@ anchor/@@ replace/@@ end block$decline_hint"
+      || spec_review_batch_die "${SR_OP_LINE[$opt]}" "item $n option ${SR_OP_LETTER[$opt]} has no @@ anchor/@@ replace/@@ end block$unapplied_hint"
   done
   for fd in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
     [ "${SR_FD_ITEM[$fd]}" != "$i" ] || has_find=1
@@ -160,9 +160,9 @@ spec_review_item_check() {
   case "${SR_IT_REC[$i]}" in
     apply|decline)
       [ -n "${SR_IT_SUMMARY[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ summary"
-      decline_hint=""
-      [ "${SR_IT_REC[$i]}" != decline ] || decline_hint=" - a decline item still carries the edit it declines"
-      [ -n "${SR_IT_REPLACE[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ anchor/@@ replace/@@ end block$decline_hint" ;;
+      unapplied_hint=""
+      [ "${SR_IT_REC[$i]}" != decline ] || unapplied_hint=" - a decline item still carries the edit it declines"
+      [ -n "${SR_IT_REPLACE[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ anchor/@@ replace/@@ end block$unapplied_hint" ;;
     decision)
       [ "$opts" -ge 2 ] || spec_review_batch_die "$line" "decision item $n needs at least two @@ option blocks"
       [ -n "$(spec_review_option_index "$i" "${SR_IT_ARG[$i]}")" ] \
