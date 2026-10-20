@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.20.2
+
+The phase table is read by column name through one row reader, its stale-handoff helper is renamed `handoffs_written_from`, and `doctor --flow`'s upstream and draft checks take their phases from the table through `<phase>+` phase lists. No behaviour changes.
+
 ## 4.20.1
 
 - orch.sh's gh failure contract states each rule once: `gh_or_die` refuses a
