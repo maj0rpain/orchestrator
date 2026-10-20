@@ -199,7 +199,7 @@ scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functio
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
 scripts/host.sh               the one host detector, host_detect, sourced by orch.sh and hook-common.sh
 scripts/flow-state.sh         the Flow state module: state.json's keys, defaults, reading and writing, sourced by orch.sh and hook-common.sh
-scripts/hook-*.sh             the four hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie
+scripts/hook-*.sh             the five hooks; hook-grilling.sh also runs on UserPromptSubmit for Junie, hook-paste-guard.sh is Claude Code only
 scripts/hook-common.sh        payload reading and dual-host (Claude Code + Junie) output shared by the hooks
 scripts/planning-allowlist.sh the planning allowlist and planning records, shared by the edit guard and orch.sh
 scripts/version-bump.sh       the version-bump Action's script: changelog fragments into one version bump (Develop)

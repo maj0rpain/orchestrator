@@ -8,6 +8,9 @@
 # dir_snapshot <dir>: every file in <dir> with its checksum, for a
 # byte-identical comparison.
 dir_snapshot() { (cd "$1" && find . -type f | LC_ALL=C sort | xargs cksum); }
+# round_snapshot <dir>: dir_snapshot without the view.md a passing check
+# writes - the rest of the round directory a check must leave as it was.
+round_snapshot() { dir_snapshot "$1" | grep -v ' \./view\.md$'; }
 # check_refused <runner> <label> <dir> <stderr>: <runner> <dir> - a check
 # run that sets out, err and st - exits 1 with exactly <stderr>, nothing on
 # stdout, and <dir> unchanged.
@@ -29,6 +32,46 @@ src() {
   out="$("$ORCH" spec-review check "$@" 2>"$src_err")"; st=$?
   err="$(cat "$src_err")"
   rm -f "$src_err"
+}
+# src_nudge <dir>: what a check pass line that wrote a view ends with - the
+# paste nudge, naming <dir>/view.md, <dir> given absolute.
+src_nudge() {
+  printf '%s' " - paste the view above into chat word for word, then ask in the same response; it is saved in $1/view.md"
+}
+# src_view_saved <label> <dir> [arg...]: check on <dir> with any further args
+# exits 0 and leaves <dir>/view.md byte-identical to its stdout, a non-empty
+# view.
+src_view_saved() {
+  local label="$1" dir="$2" raw st
+  shift 2
+  raw="$(mktemp)"
+  "$ORCH" spec-review check "$dir" "$@" >"$raw" 2>/dev/null; st=$?
+  assert_status "$label: passes" "$st" 0
+  assert_eq "$label: prints a view" "$([ -s "$raw" ] && echo non-empty)" non-empty
+  assert_eq "$label: view.md byte-identical to stdout" \
+    "$(cmp -s "$raw" "$dir/view.md" && echo identical)" identical
+  rm -f "$raw"
+}
+# src_view_relative <runner> <label> <dir> <summary>: <runner> on a copy of
+# <dir> given as the relative rel-round passes with <summary> and the nudge
+# naming view.md by absolute path; the copy is removed after.
+src_view_relative() {
+  local runner="$1" label="$2"
+  mkdir rel-round && cp "$3"/* rel-round/
+  "$runner" rel-round
+  assert_eq "$label: given a relative <dir>, the pass line names view.md by absolute path, with the nudge" \
+    "$err" "$4$(src_nudge "$PWD/rel-round")"
+  rm -rf rel-round
+}
+# src_view_unwritable <runner> <label> <dir>: with <dir>/view.md a directory,
+# <runner> <dir> fails with an orch: message naming it and nothing on stdout.
+src_view_unwritable() {
+  local runner="$1" label="$2" dir="$3"
+  mkdir -p "$dir/view.md"
+  "$runner" "$dir"
+  assert_status "$label: an unwritable view.md fails" "$st" 1
+  assert_eq "$label: with an orch: message naming it" "$err" "orch: could not write $dir/view.md"
+  assert_eq "$label: and no view on stdout" "$out" ""
 }
 
 # --- spec-review begin (#224) ------------------------------------------------
@@ -1408,13 +1451,13 @@ BATCH
 # A clean batch: exit 0, the view on stdout, the one-line summary on stderr,
 # nothing written.
 d="$(src_dir)"
-before="$(dir_snapshot "$d")"
+before="$(round_snapshot "$d")"
 src "$d"
 assert_status "a clean batch passes" "$st" 0
 assert_eq "with a one-line summary on stderr" "$err" \
-  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
+  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
 assert_not_contains "and not on stdout" "$out" "batch.md passes"
-assert_eq "the directory byte-identical" "$(dir_snapshot "$d")" "$before"
+assert_eq "the directory byte-identical, view.md apart" "$(round_snapshot "$d")" "$before"
 assert_eq "no spec.fetched.md created" "$(on_disk "$d/spec.fetched.md")" absent
 
 # check's anchor count (#1281): a decision item counts one anchor for each
@@ -1454,18 +1497,18 @@ BATCH
 src "$d"
 assert_status "a lone decision item passes" "$st" 0
 assert_eq "counting an anchor for each of its three options" "$err" \
-  "batch.md passes: 1 items, 3 anchors, each matching once in spec.md, and the all answer applies cleanly"
+  "batch.md passes: 1 items, 3 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
 
 # The Implementability lens's code map sits outside the lens-<name>.md
 # namespace, so check never parses it (#1141).
 d="$(src_dir)"
 printf '@@ item 9 bogus\n@@ finding nowhere 7\n@@ lens implementability ran\n' >"$d/map-implementability.md"
-before="$(dir_snapshot "$d")"
+before="$(round_snapshot "$d")"
 src "$d"
 assert_status "a map full of @@ lines passes" "$st" 0
 assert_eq "with the same summary on stderr" "$err" \
-  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
-assert_eq "the directory, map included, byte-identical" "$(dir_snapshot "$d")" "$before"
+  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
+assert_eq "the directory, map included, byte-identical, view.md apart" "$(round_snapshot "$d")" "$before"
 
 # The compact view (#1250): the lens lines first, then the material items as
 # one numbered list, numbered as in batch.md, each a header line and its
@@ -1565,13 +1608,13 @@ check_refused src "a @@ why on a minor item" "$d" "orch: batch.md line 14: a min
 # them, read as LF ones; a malformed one quoted without its CR.
 d="$(src_dir)"
 src "$d"
-src_lf_out="$out"; src_lf_err="$err"
+src_lf_out="$out"; src_lf_err="$err"; src_lf_dir="$d"
 d="$(src_dir)"
 sed -i '/^@@/s/$/\r/' "$d/batch.md"
 src "$d"
 assert_status "a batch with CRLF @@ lines passes" "$st" 0
 assert_eq "with the same view as LF" "$out" "$src_lf_out"
-assert_eq "and the same summary" "$err" "$src_lf_err"
+assert_eq "and the same summary, naming its own view.md" "$err" "${src_lf_err//"$src_lf_dir"/"$d"}"
 d="$(src_dir)"
 sed -i '13d; /^@@/s/$/\r/' "$d/batch.md"
 check_refused src "a CRLF @@ line ending a replacement left open" "$d" \
@@ -1676,7 +1719,7 @@ printf '@@ finding 1\nThe body says widget where the glossary says item.\n' >"$d
 printf '@@ finding 1\nThe seam names no store to test against.\n' >"$d/lens-testability.md"
 printf '@@ finding 1\nOne file cannot hold the largest exports.\nThe store caps a file at 2 GB.\n@@ finding 2\nOne file is written before every page is fetched.\n' \
   >"$d/lens-implementability.md"
-before="$(dir_snapshot "$d")"
+before="$(round_snapshot "$d")"
 src "$d"
 assert_status "the worked example passes" "$st" 0
 assert_eq "its view, the material items as a list, the minor and resolved ones listed" "$out" '## The batch
@@ -1709,8 +1752,8 @@ assert_eq "its view, the material items as a list, the minor and resolved ones l
 3. Consistency: Widgets renamed items - recommend decline: the glossary'"'"'s term is widget, as the body says
 5. Implementability: resolved by item 4'
 assert_eq "its summary on stderr" "$err" \
-  "batch.md passes: 5 items, 5 anchors, each matching once in spec.md, and the all answer applies cleanly"
-assert_eq "the worked example's directory unchanged" "$(dir_snapshot "$d")" "$before"
+  "batch.md passes: 5 items, 5 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
+assert_eq "the worked example's directory unchanged, view.md apart" "$(round_snapshot "$d")" "$before"
 
 # The view of a flow's batch: Fidelity ran with a contradicts-the-plan item,
 # and a lens that did not run, cited by nothing. An edit holding a fence is
@@ -1749,7 +1792,7 @@ BATCH
 printf '@@ finding 1\nThe plan decided hourly; the spec says nightly.\n' >"$d/lens-fidelity.md"
 printf '@@ none\n' >"$d/lens-consistency.md"
 printf '@@ none\n' >"$d/lens-implementability.md"
-before="$(dir_snapshot "$d")"
+before="$(round_snapshot "$d")"
 src "$d"
 assert_status "a flow batch passes" "$st" 0
 assert_eq "its view, the fenced edit diffed word by word, unfenced" "$out" '## The batch
@@ -1766,8 +1809,8 @@ assert_eq "its view, the fenced edit diffed word by word, unfenced" "$out" '## T
    - findings: Fidelity 1
    - Run sync ~~nightly:~~ **hourly:** ```sh orch sync **--hourly** ```'
 assert_eq "its summary on stderr" "$err" \
-  "batch.md passes: 1 items, 1 anchors, each matching once in spec.md, and the all answer applies cleanly"
-assert_eq "the flow batch's directory unchanged" "$(dir_snapshot "$d")" "$before"
+  "batch.md passes: 1 items, 1 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
+assert_eq "the flow batch's directory unchanged, view.md apart" "$(round_snapshot "$d")" "$before"
 
 # The word diff (#1250): the anchor against the replacement, word by word,
 # each changed span one sub-bullet with up to 5 words of context, `…` only
@@ -1978,7 +2021,7 @@ assert_eq "naming the same batch line" "$out" \
 # rendering, in the order named - any item in batch.md, minor or resolved
 # included - with nothing written.
 d="$(src_dir)"
-before="$(dir_snapshot "$d")"
+before="$(round_snapshot "$d")"
 snap="$(fake_snapshot)"
 src "$d" --full 4 1 2
 assert_status "--full passes on a clean batch" "$st" 0
@@ -2031,8 +2074,8 @@ Beta line.
 Beta reversed.
 ```'
 assert_eq "--full keeps check's one-line summary on stderr" "$err" \
-  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
-assert_eq "--full leaves the directory byte-identical" "$(dir_snapshot "$d")" "$before"
+  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
+assert_eq "--full leaves the directory byte-identical, view.md apart" "$(round_snapshot "$d")" "$before"
 assert_eq "--full creates no spec.fetched.md" "$(on_disk "$d/spec.fetched.md")" absent
 assert_eq "--full makes no GitHub write" "$(fake_snapshot)" "$snap"
 src "$d" --full 3
@@ -2062,6 +2105,35 @@ sed -i '19s/.*/Nowhere./' "$d/batch.md"
 src_full_1() { src "$1" --full 1; }
 check_refused src_full_1 "--full on a batch check refuses" "$d" \
   "orch: batch.md line 18: item 2: its anchor matches no text in the body"
+
+# view.md (#1293): every check that prints a view saves exactly that stdout
+# to <dir>/view.md, overwriting any earlier one, and its pass line names the
+# file by absolute path with the paste nudge.
+d="$(src_dir)"
+src_view_saved "a batch check" "$d"
+src_view_relative src "a batch check" "$d" \
+  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
+assert_contains "the batch view's view.md holds the batch view" "$(cat "$d/view.md")" "## The batch"
+src_view_saved "--full after a batch check" "$d" --full 2 1
+assert_not_contains "--full overwrites the batch view's view.md" "$(cat "$d/view.md")" "## The batch"
+assert_contains "with the full items' view alone" "$(cat "$d/view.md")" "### Item 2 - Consistency"
+src "$d" --full 2 1
+assert_eq "--full's pass line names view.md, with the nudge" "$err" \
+  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
+# A failing check after a passing one leaves the earlier view.md as it was.
+d="$(src_dir)"
+src "$d"
+cp "$d/view.md" "$d.view-before"
+sed -i '19s/.*/Nowhere./' "$d/batch.md"
+src "$d"
+assert_status "a failing check after a passing one" "$st" 1
+assert_eq "leaves the earlier view.md byte-identical" \
+  "$(cmp -s "$d.view-before" "$d/view.md" && echo identical)" identical
+rm -f "$d.view-before"
+# A view.md that cannot be written fails check before any view or pass line.
+d="$(src_dir)"
+src_view_unwritable src "check" "$d"
+src_view_unwritable src_full_1 "check --full" "$d"
 
 # Discoverability.
 out="$("$ORCH" spec-review wipe 2>&1)"
@@ -2131,13 +2203,13 @@ srct() { src "$1" --tickets; }
 # exactly <stdout> and <stderr>, and <dir> unchanged.
 srct_passes() {
   local before
-  before="$(dir_snapshot "$2")"
+  before="$(round_snapshot "$2")"
   srct "$2"
   assert_status "$1: passes" "$st" 0
   assert_eq "$1: the ticket view on stdout" "$out" "$3"
   assert_eq "$1: the pass summary on stderr" "$err" "$4"
   assert_not_contains "$1: and not on stdout" "$out" "tickets.md passes"
-  assert_eq "$1: the directory unchanged" "$(dir_snapshot "$2")" "$before"
+  assert_eq "$1: the directory unchanged, view.md apart" "$(round_snapshot "$2")" "$before"
 }
 
 d="$(srct_dir)"
@@ -2188,7 +2260,7 @@ Build gamma twice.
 - #22 - the gamma API
 
 **Recommended answer:** apply' \
-  "tickets.md passes: 4 items, 2 anchors, each matching once, and the all answer applies cleanly"
+  "tickets.md passes: 4 items, 2 anchors, each matching once, and the all answer applies cleanly$(src_nudge "$d")"
 assert_eq "no fetched copy taken" "$(on_disk "$d/ticket-20.fetched.md")" absent
 
 # A collapsed breakdown's ## Ticket item, anchored on spec.md.
@@ -2218,7 +2290,7 @@ Build the spec, alpha first.
 None
 
 **Recommended answer:** retire - the ticket breakdown retired, to be broken down again' \
-  "tickets.md passes: 1 items, 1 anchors, each matching once, and the all answer applies cleanly"
+  "tickets.md passes: 1 items, 1 anchors, each matching once, and the all answer applies cleanly$(src_nudge "$d")"
 printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nNowhere.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
 check_refused srct "a section anchor not in spec.md" "$d" \
   "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body"
@@ -2242,6 +2314,33 @@ d="$(srct_dir)"
 printf 'Rewritten.\n' >"$d/ticket-20.fetched.md"
 check_refused srct "an anchor matching ticket-20.md, not the fetched copy" "$d" \
   "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body"
+
+# view.md (#1293): a check --tickets with an affected ticket saves its view
+# like the batch check; one with none affected removes any earlier view.md,
+# writes none and names none.
+d="$(srct_dir)"
+src_view_saved "--tickets with an affected ticket" "$d" --tickets
+assert_contains "its view.md holds the ticket view" "$(cat "$d/view.md")" "### Item 1 - #20"
+src_view_relative srct "--tickets" "$d" \
+  "tickets.md passes: 4 items, 2 anchors, each matching once, and the all answer applies cleanly"
+d="$(mktemp -d)"
+printf '# Spec\n' >"$d/spec.md"
+printf '@@ none-affected\n' >"$d/tickets.md"
+printf 'an earlier batch view\n' >"$d/view.md"
+srct "$d"
+assert_status "--tickets with none affected, after a view was saved: passes" "$st" 0
+assert_eq "its stdout is the stub" "$out" '## The ticket items
+
+No open ticket is affected.'
+assert_eq "no view.md is left" "$(on_disk "$d/view.md")" absent
+assert_eq "and its pass line names none" "$err" "tickets.md passes: no open ticket affected"
+mkdir -p "$d/view.md/held"
+srct "$d"
+assert_status "a view.md that cannot be removed fails --tickets with none affected" "$st" 1
+assert_eq "with an orch: message naming it" "$err" "orch: could not remove $d/view.md"
+assert_eq "and no stub on stdout" "$out" ""
+d="$(srct_dir)"
+src_view_unwritable srct "--tickets" "$d"
 
 # Refusals.
 d="$(srct_dir)"
@@ -2274,13 +2373,13 @@ check_refused srct "a replacement left open at a CRLF line" "$d" \
   "orch: tickets.md line 9: expected @@ end to end the replacement begun on line 6, got '@@ item 2 unblock 21 by 20 apply'"
 d="$(srct_dir)"
 srct "$d"
-srct_lf_out="$out"; srct_lf_err="$err"
+srct_lf_out="$out"; srct_lf_err="$err"; srct_lf_dir="$d"
 d="$(srct_dir)"
 sed -i '/^@@/s/$/\r/' "$d/tickets.md"
 srct "$d"
 assert_status "tickets.md with CRLF @@ lines passes" "$st" 0
 assert_eq "with the same ticket view as LF" "$out" "$srct_lf_out"
-assert_eq "and the same summary" "$err" "$srct_lf_err"
+assert_eq "and the same summary, naming its own view.md" "$err" "${srct_lf_err//"$srct_lf_dir"/"$d"}"
 d="$(srct_dir)"
 printf '@@ bogus\r\n' >>"$d/tickets.md"
 check_refused srct "an unknown CRLF @@ line" "$d" "orch: tickets.md line 20: unknown line '@@ bogus'"
