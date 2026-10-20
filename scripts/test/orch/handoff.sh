@@ -78,7 +78,7 @@ done
 # handoff_required, Host fallbacks left off by a pre-1.0.0 state, so only the
 # table's own headings show, in today's order.
 st_saved="$(cat .orchestrator/state.json)"
-jq 'del(.host_fallbacks)' <<<"$st_saved" >.orchestrator/state.json
+state_fixture_drop host_fallbacks
 assert_eq "handoff_required 01-plan.md prints its headings in order" \
   "$(sourced_orch handoff_required 01-plan.md)" \
   "$(writeln '## Decisions' '## Rejected alternatives' '## Constraints' '## Open assumptions')"
@@ -114,7 +114,8 @@ for p in spec implement review; do
   assert_status "complete_handoff writes a valid $(basename "$hf")" "$st" 0
   assert_contains "with Host fallbacks" "$(cat "$hf")" "## Host fallbacks"
 done
-jq 'del(.host_fallbacks)' <<<"$st_saved" >.orchestrator/state.json
+printf '%s\n' "$st_saved" >.orchestrator/state.json
+state_fixture_drop host_fallbacks
 complete_handoff "$hf"
 assert_contains "and with Host fallbacks when the state does not require it" \
   "$(cat "$hf")" "## Host fallbacks"
@@ -179,10 +180,8 @@ for p in spec implement review; do
 done
 # A flow started before 1.0.0 has no host_fallbacks in state.json and wrote
 # its handoffs without the section; upgrading mid-flow must not fail them.
-# Raw jq, not state_fixture: deleting keys simulates an older release, and the
-# Flow state module has no delete operation - one only tests would use.
 st_saved="$(cat .orchestrator/state.json)"
-jq 'del(.host_fallbacks)' <<<"$st_saved" >.orchestrator/state.json
+state_fixture_drop host_fallbacks
 out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
 assert_status "a pre-1.0.0 flow's handoff validates without Host fallbacks" "$st" 0
 printf '%s\n' "$st_saved" >.orchestrator/state.json

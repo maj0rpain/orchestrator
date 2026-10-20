@@ -72,11 +72,7 @@ restore_suite_env
 echo
 echo "a flow started before the budget shipped"
 fresh_flow legacy
-# Raw jq, not state_fixture: deleting keys simulates an older release, and the
-# Flow state module has no delete operation - one only tests would use.
-legacy="$(mktemp)"
-jq 'del(.budget, .loop, .flake_rerun_used)' .orchestrator/state.json >"$legacy"
-mv "$legacy" .orchestrator/state.json
+state_fixture_drop budget loop flake_rerun_used
 assert_eq "the state it left behind names no budget" "$("$ORCH" state get budget)" ""
 assert_eq "review begin still claims an iteration" "$("$ORCH" review begin)" "1"
 assert_contains "records land flat under review/" "$("$ORCH" review path)" "/review/iteration-01.md"
@@ -116,10 +112,7 @@ restore_suite_env
 echo
 echo "state get defaults"
 fresh_flow sparse
-# Raw jq, not state_fixture: deleting keys simulates an older release, and the
-# Flow state module has no delete operation - one only tests would use.
-jq 'del(.iteration, .redo_count, .host_fallbacks, .flake_rerun_used, .budget)' \
-  .orchestrator/state.json >state.tmp && mv state.tmp .orchestrator/state.json
+state_fixture_drop iteration redo_count host_fallbacks flake_rerun_used budget
 assert_eq "an absent iteration reads as 0" "$("$ORCH" state get iteration)" "0"
 assert_eq "an absent redo_count reads as 0" "$("$ORCH" state get redo_count)" "0"
 assert_eq "an absent host_fallbacks reads as false" "$("$ORCH" state get host_fallbacks)" "false"
@@ -132,10 +125,8 @@ complete_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
 # The string keys read back empty when missing too. phase goes only now: the
-# doctor --flow check above would fail a state file lacking it. Raw jq, as
-# above: the module has no delete operation.
-jq 'del(.slug, .phase, .issue, .base, .branch, .pr, .base_sha, .created, .updated)' \
-  .orchestrator/state.json >state.tmp && mv state.tmp .orchestrator/state.json
+# doctor --flow check above would fail a state file lacking it.
+state_fixture_drop slug phase issue base branch pr base_sha created updated
 for key in slug phase issue base branch pr base_sha created updated; do
   out="$("$ORCH" state get "$key" 2>&1)"; st=$?
   assert_status "an absent $key still reads" "$st" 0
