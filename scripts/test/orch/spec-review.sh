@@ -1015,6 +1015,17 @@ assert_status "a clean --tickets run applies" "$st" 0
 assert_eq "the --tickets rerun after a pause gives the same result as a clean run" \
   "$(cat "$d/spec.md" "$d/ticket-20.md" "$d/ticket-21.md" "$d/changelog.md"; fake_body_of 14; fake_body_of 20; fake_body_of 21)" "$srt_after"
 
+# A ticket copy that cannot be read is refused naming the ticket item's
+# tickets.md line (#1266 story 5) - a directory where ticket-20.fetched.md
+# goes, which no reader, root included, can read as a file.
+d="$(srt_dir)"
+sra "$d" recommended
+srt_fetch "$d"
+mkdir "$d/ticket-20.fetched.md"
+srt_refused "an unreadable ticket copy" "$d" "could not read" recommended --tickets recommended
+assert_eq "an unreadable ticket copy: names its tickets.md line" \
+  "$(has_line "$out" "orch: tickets.md line 2: ticket item 1: could not read $d/ticket-20.fetched.md - nothing written")" yes
+
 # An Other list: a text edit on #21 before its unblock; a declined edge's
 # reason from --ticket-reasons.
 d="$(srt_dir)"
@@ -1104,13 +1115,13 @@ srt_refused "no tickets.md" "$d" "tickets.md not found" recommended --tickets re
 cp "$d/tickets.keep" "$d/tickets.md"
 srt_refused "a ticket item with no ticket file" "$d" "ticket item 1: ticket-20.md not found" recommended --tickets recommended
 assert_eq "a ticket item with no ticket file: names its header line" "$out" \
-  "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it"
+  "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it - nothing written"
 srt_fetch "$d"
 assert_eq "ticket-20.fetched.md not yet taken by a run that found no file" "$(on_disk "$d/ticket-20.fetched.md")" absent
 sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
 srt_refused "a ticket anchor matching nothing" "$d" "ticket item 1 (#20): its anchor matches no text" recommended --tickets recommended
 assert_eq "a ticket anchor matching nothing: names its @@ anchor line" "$out" \
-  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing applied, nothing written"
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing written"
 assert_eq "the refused run took ticket-20.fetched.md" "$(cat "$d/ticket-20.fetched.md")" "$(printf '%s' "$srt_t20")"
 sed -i 's/^Nowhere\.$/##/' "$d/tickets.md"
 srt_refused "a ticket anchor matching twice" "$d" "ticket item 1 (#20): its anchor matches more than one place" recommended --tickets recommended
@@ -1151,7 +1162,7 @@ cp "$d/tickets.keep" "$d/tickets.md"
 mv "$d/ticket-21.md" "$d/ticket-21.keep"
 srt_refused "an edge item with no ticket file" "$d" "ticket item 2: ticket-21.md not found" recommended --tickets recommended
 assert_eq "an edge item with no ticket file: names its header line" "$out" \
-  "orch: tickets.md line 10: ticket item 2: ticket-21.md not found in $d - fetch each ticket a ticket item names into it"
+  "orch: tickets.md line 10: ticket item 2: ticket-21.md not found in $d - fetch each ticket a ticket item names into it - nothing written"
 mv "$d/ticket-21.keep" "$d/ticket-21.md"
 sed -i 's/^@@ item 5 block 21 by 20 /@@ item 5 block 99 by 20 /' "$d/tickets.md"
 srt_refused "an edge item whose ticket is not in the breakdown" "$d" "ticket item 5: #99 is not a ticket of #14's breakdown" recommended --tickets recommended
@@ -1189,7 +1200,7 @@ d="$(srt_collapsed)"
 sed -i 's/^Build the spec\.$/Alpha line./' "$d/tickets.md"
 srt_refused "a ## Ticket anchor on text the batch items replaced" "$d" "ticket item 1 (## Ticket): its anchor matches no text" recommended --tickets recommended
 assert_eq "a ## Ticket anchor matching nothing: names its @@ anchor line" "$out" \
-  "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing applied, nothing written"
+  "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing written"
 d="$(srt_dir)"
 srt_fetch "$d"
 printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nAlpha line.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
@@ -1197,22 +1208,88 @@ srt_refused "a ## Ticket item on a sub-issue breakdown" "$d" "ticket item 1: a #
 assert_eq "a ## Ticket item on a sub-issue breakdown: names its header line" "$out" \
   "orch: tickets.md line 2: ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues - nothing written"
 
+# srt_mode_setup <mode>: a fresh start for apply in <mode> - no state.json,
+# and in flow mode a flow on issue 14.
+srt_mode_setup() {
+  rm -f "$top/.orchestrator/state.json"
+  if [ "$1" = flow ]; then
+    "$ORCH" init srt >/dev/null 2>&1; "$ORCH" state set issue 14 >/dev/null
+  fi
+}
+# srt_apply_in <mode> <dir> <ticket-answer>: apply <dir>'s recommended
+# answer with --tickets <ticket-answer> in <mode>, setting out and st.
+srt_apply_in() {
+  if [ "$1" = flow ]; then
+    out="$("$ORCH" spec-review apply "$2" recommended --round 1/2 --tickets "$3" 2>&1)"; st=$?
+  else
+    sra "$2" recommended --tickets "$3"
+  fi
+}
+# Every kind of ticket-step error names its tickets.md line and ends
+# ` - nothing written`, with nothing written, in both modes.
+# srt_step_refused <mode> <label> <dir> <want> <ticket-answer>: apply in
+# <mode> (issue or flow) is refused with exactly <want>, leaving spec.md, the
+# ticket files and changelog.md as they were, and GitHub untouched.
+srt_step_refused() {
+  local mode="$1" label="$1: $2" d="$3" want="$4" before snap
+  srt_mode_setup "$mode"
+  before="$(srt_files "$d"; cat "$d/settled.md" 2>/dev/null)"
+  snap="$(fake_snapshot)"
+  srt_apply_in "$mode" "$d" "$5"
+  assert_status "$label: refused" "$st" 1
+  assert_eq "$label: the exact message" "$out" "$want"
+  assert_eq "$label: no local file written" "$(srt_files "$d"; cat "$d/settled.md" 2>/dev/null)" "$before"
+  assert_eq "$label: no GitHub update" "$(fake_snapshot)" "$snap"
+}
+for sra_mode in issue flow; do
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
+  srt_step_refused "$sra_mode" "a ticket-anchor problem" "$d" \
+    "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing written" recommended
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  sed -i 's/^Build gamma\.$/Nowhere./' "$d/tickets.md"
+  srt_step_refused "$sra_mode" "a declined ticket item's anchor problem" "$d" \
+    "orch: tickets.md line 14: ticket item 4 (#21): its anchor matches no text in the body - nothing written" recommended
+  d="$(srt_collapsed)"
+  sed -i 's/^@@ item 1 section apply$/@@ item 1 section decline not now/; s/^Build the spec\.$/Nowhere./' "$d/tickets.md"
+  srt_step_refused "$sra_mode" "a declined ## Ticket item's anchor problem" "$d" \
+    "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing written" recommended
+  d="$(srt_dir)"
+  srt_step_refused "$sra_mode" "a missing ticket" "$d" \
+    "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it - nothing written" recommended
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  srt_step_refused "$sra_mode" "a block problem" "$d" \
+    "orch: tickets.md line 19: ticket item 5: #21 is already blocked by #20 - nothing written" all
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' "$d/tickets.md"
+  srt_step_refused "$sra_mode" "an unblock problem" "$d" \
+    "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21 - nothing written" recommended
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nAlpha line.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
+  srt_step_refused "$sra_mode" "a ## Ticket item on a breakdown not collapsed" "$d" \
+    "orch: tickets.md line 2: ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues - nothing written" recommended
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  sed -i 's/^@@ item 5 block 21 by 20 /@@ item 5 block 99 by 20 /' "$d/tickets.md"
+  srt_step_refused "$sra_mode" "an edge outside the breakdown" "$d" \
+    "orch: tickets.md line 19: ticket item 5: #99 is not a ticket of #14's breakdown - nothing written" recommended
+done
+rm -rf "$top/.orchestrator"
+
 # A failed ticket write stops apply, naming the writes already landed, in
 # both modes.
 srt_fail() {
   local mode="$1" how="$2" op="$3" n="$4"
   d="$(srt_dir)"
   srt_fetch "$d"
-  rm -f "$top/.orchestrator/state.json"
-  if [ "$mode" = flow ]; then
-    "$ORCH" init srt >/dev/null 2>&1; "$ORCH" state set issue 14 >/dev/null
-  fi
+  srt_mode_setup "$mode"
   if [ "$n" = 0 ]; then fake_fail "$op"; else fake_fail_after "$op" "$n"; fi
-  if [ "$mode" = flow ]; then
-    out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 --tickets "$how" 2>&1)"; st=$?
-  else
-    sra "$d" recommended --tickets "$how"
-  fi
+  srt_apply_in "$mode" "$d" "$how"
   fake_unfail
   assert_status "$mode: a failed $op stops apply" "$st" 1
   assert_eq "$mode: changelog.md stays after a failed $op" "$(on_disk "$d/changelog.md")" present
@@ -1339,6 +1416,45 @@ assert_eq "with a one-line summary on stderr" "$err" \
 assert_not_contains "and not on stdout" "$out" "batch.md passes"
 assert_eq "the directory byte-identical" "$(dir_snapshot "$d")" "$before"
 assert_eq "no spec.fetched.md created" "$(on_disk "$d/spec.fetched.md")" absent
+
+# check's anchor count (#1281): a decision item counts one anchor for each
+# of its options, the ones the all answer declines included.
+d="$(src_dir)"
+cat >"$d/batch.md" <<'BATCH'
+@@ lens fidelity ran
+@@ lens consistency not-run timed out
+@@ lens testability not-run timed out
+@@ lens implementability not-run timed out
+
+@@ item 1 fidelity decision B material
+@@ finding fidelity 1
+@@ why Alpha and Delta are stale
+@@ option A Prime alpha
+@@ summary Alpha primed
+@@ anchor
+Alpha line.
+@@ replace
+Alpha prime line.
+@@ end
+@@ option B Prime delta
+@@ summary Delta primed
+@@ anchor
+Delta line.
+@@ replace
+Delta prime line.
+@@ end
+@@ option C Prime beta
+@@ summary Beta primed
+@@ anchor
+Beta line.
+@@ replace
+Beta prime line.
+@@ end
+BATCH
+src "$d"
+assert_status "a lone decision item passes" "$st" 0
+assert_eq "counting an anchor for each of its three options" "$err" \
+  "batch.md passes: 1 items, 3 anchors, each matching once in spec.md, and the all answer applies cleanly"
 
 # The Implementability lens's code map sits outside the lens-<name>.md
 # namespace, so check never parses it (#1141).
@@ -1835,15 +1951,20 @@ Delta line.
 Twice.
 Twice.'
 
-# apply checks only the anchors its answer accepts, naming the batch line.
+# apply checks every anchor, the ones its answer declines included, as check
+# does (#1281): a declined item's bad anchor refuses the batch, naming its
+# batch line, with nothing written.
 src_bad2() { d="$(src_dir)"; sed -i '19s/.*/Nowhere./' "$d/batch.md"; }
-src_bad2
-out="$("$ORCH" spec-review apply "$d" none --round 1/1 --issue 14 2>&1)"; st=$?
-assert_status "apply none passes over an unapplied item's bad anchor" "$st" 0
-src_bad2
-out="$("$ORCH" spec-review apply "$d" "3A, -2" --round 1/1 --issue 14 2>&1)"; st=$?
-assert_status "apply with an override answer declining the item passes too" "$st" 0
-assert_contains "applying the items it does not decline" "$(cat "$d/spec.md")" "Alpha prime line."
+for answer in none "3A, -2"; do
+  src_bad2
+  snap="$(fake_snapshot)"
+  out="$("$ORCH" spec-review apply "$d" "$answer" --round 1/1 --issue 14 2>&1)"; st=$?
+  assert_status "apply '$answer' refuses a declined item's bad anchor" "$st" 1
+  assert_eq "apply '$answer' names the bad anchor's batch line" "$out" \
+    "orch: batch.md line 18: item 2: its anchor matches no text in the body - nothing applied, nothing written"
+  assert_eq "apply '$answer' leaves spec.md unwritten" "$(cat "$d/spec.md")" "$(printf '%s' "$src_body")"
+  assert_eq "apply '$answer' writes nothing to GitHub" "$(fake_snapshot)" "$snap"
+done
 src_bad2
 src "$d"
 assert_eq "check names the bad anchor's line" "$err" \

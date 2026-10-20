@@ -59,3 +59,17 @@ assert_eq "only the missing entries print when some are present" \
 printf '%s\n' '.orchestrator/' >>"$ude_ex"
 assert_eq "nothing prints when every entry is present" \
   "$(sourced_orch orch_dirs_unexcluded)" ""
+
+# --- list_has -----------------------------------------------------------------
+# The one newline-list membership test: whole lines, matched literally.
+echo
+echo "list_has"
+new_repo >/dev/null
+lh_list=$'-n\nbug\na.c\nneeds triage'
+lh_verdicts=""
+for lh_item in -n bug a.c 'needs triage' bu abc needs '-'; do
+  if sourced_orch list_has "$lh_list" "$lh_item"; then lh_verdicts="$lh_verdicts y"
+  else lh_verdicts="$lh_verdicts n"; fi
+done
+assert_eq "list_has matches whole lines literally, an item beginning with - included" \
+  "$lh_verdicts" " y y y y n n n n"

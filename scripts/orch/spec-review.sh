@@ -118,25 +118,6 @@ spec_review_one_line() {
   printf '%s' "$out"
 }
 
-# spec_review_text_store <target> <text> <item> <option> <line>: a finished
-# anchor, replace or quote block stored where it belongs - option <option>'s
-# when it is 0 or more, else item <item>'s; a quote goes to the last comment.
-# An anchor keeps <line>, its `@@ anchor` line, for the errors naming it.
-spec_review_text_store() {
-  local item="$3" option="$4"
-  case "$1" in
-    anchor)
-      if [ "$option" -ge 0 ]; then
-        SR_OP_ANCHOR[option]="$2"; SR_OP_ANCHOR_LINE[option]="$5"
-      else
-        SR_IT_ANCHOR[item]="$2"; SR_IT_ANCHOR_LINE[item]="$5"
-      fi ;;
-    replace)
-      if [ "$option" -ge 0 ]; then SR_OP_REPLACE[option]="$2"; else SR_IT_REPLACE[item]="$2"; fi ;;
-    quote) SR_CM_QUOTE[${#SR_CM_QUOTE[@]}]="$2" ;;
-  esac
-}
-
 # spec_review_item_check <index>: dies, naming the item's header line, unless
 # the item carries what its recommendation needs.
 spec_review_item_check() {
@@ -242,18 +223,22 @@ spec_review_batch_parse() {
         [ "$kw" = replace ] && [ -z "$args" ] \
           || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'"
         [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the anchor is empty"
-        spec_review_text_store anchor "$buf" "$cur" "$opt" "$block_line"
+        if [ "$opt" -ge 0 ]; then
+          SR_OP_ANCHOR[opt]="$buf"; SR_OP_ANCHOR_LINE[opt]="$block_line"
+        else
+          SR_IT_ANCHOR[cur]="$buf"; SR_IT_ANCHOR_LINE[cur]="$block_line"
+        fi
         mode=replace; buf=""; bufn=0; block_line="$lineno"
         continue ;;
       replace)
         [ "$kw" = end ] && [ -z "$args" ] \
           || spec_review_batch_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'"
-        spec_review_text_store replace "$buf" "$cur" "$opt"
+        if [ "$opt" -ge 0 ]; then SR_OP_REPLACE[opt]="$buf"; else SR_IT_REPLACE[cur]="$buf"; fi
         mode=item; buf=""; bufn=0
         continue ;;
       quote)
         [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the quote is empty"
-        spec_review_text_store quote "$buf" "$cur" "$opt"
+        SR_CM_QUOTE+=("$buf")
         mode=item; buf=""; bufn=0 ;;
     esac
     [ -z "$quote_wanted" ] || [ "$kw" = quote ] \
@@ -391,7 +376,7 @@ spec_review_batch_parse() {
     anchor|replace) spec_review_batch_die "$block_line" "the @@ $mode block is never ended" ;;
     quote)
       [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the quote is empty"
-      spec_review_text_store quote "$buf" "$cur" "$opt" ;;
+      SR_CM_QUOTE+=("$buf") ;;
   esac
   [ -z "$quote_wanted" ] || spec_review_batch_die "$lineno" "@@ comment must be followed by @@ quote"
   [ "$cur" -lt 0 ] || spec_review_item_check "$cur"
@@ -612,12 +597,11 @@ spec_review_occurrences() {
   printf '%s' "$c"
 }
 
-# spec_review_edit <var> <fetched> <what> <anchor> <replacement> [collect]:
-# the text in <var> with <anchor> replaced once. Dies, naming <what>, unless
-# the anchor occurs exactly once both in <fetched>, the body as fetched, and
-# in the text the earlier items left. With [collect] set it dies on nothing:
-# the problem is appended to SR_PROBLEMS, <var> is left unedited, and it
-# returns 1.
+# spec_review_edit <var> <fetched> <what> <anchor> <replacement>: the text
+# in <var> with <anchor> replaced once, when the anchor occurs exactly once
+# both in <fetched>, the body as fetched, and in the text the earlier items
+# left. Otherwise the problem, naming <what>, is appended to SR_PROBLEMS,
+# <var> is left unedited, and it returns 1.
 spec_review_edit() {
   local __sre_text="${!1}" __sre_c __sre_problem=""
   __sre_c="$(spec_review_occurrences "$2" "$4")"
@@ -629,38 +613,47 @@ spec_review_edit() {
     __sre_problem="its anchor no longer matches exactly once after the earlier items' edits"
   fi
   if [ -n "$__sre_problem" ]; then
-    [ -n "${6:-}" ] || die "$3: $__sre_problem - nothing applied, nothing written"
     SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$3: $__sre_problem"
     return 1
   fi
   printf -v "$1" '%s' "${__sre_text%%"$4"*}$5${__sre_text#*"$4"}"
 }
 
-# spec_review_anchor <accepted> <what> <anchor> <replacement> [collect]: one
-# anchor of spec_review_validate's - applied to SR_TEXT when <accepted> is
-# set, else, with [collect] set, checked on its own against SR_FETCHED.
-spec_review_anchor() {
+# spec_review_edit_accepted <accepted> <var> <fetched> <what> <anchor>
+# <replacement>: spec_review_edit on <var> when <accepted> is set, else the
+# anchor checked on its own against a scratch copy of <fetched>, so a declined
+# item's broken anchor is a problem too. Returns spec_review_edit's status.
+spec_review_edit_accepted() {
   if [ -n "$1" ]; then
-    spec_review_edit SR_TEXT "$SR_FETCHED" "$2" "$3" "$4" "${5:-}" || true
-  elif [ -n "${5:-}" ]; then
+    spec_review_edit "$2" "$3" "$4" "$5" "$6"
+  else
     # shellcheck disable=SC2034 # spec_review_edit writes it by name; discarded
-    local scratch="$SR_FETCHED"
-    spec_review_edit scratch "$SR_FETCHED" "$2" "$3" "$4" "$5" || true
+    local scratch="$3"
+    spec_review_edit scratch "$3" "$4" "$5" "$6"
   fi
 }
 
-# spec_review_validate <dir> <body-file> <answer> [collect]: the one
-# validation check and apply share. Reads <dir>/batch.md and the lens files of
+# spec_review_anchor_visit <accepted> <what> <anchor> <replacement>: one
+# anchor of spec_review_validate's, counted into SR_ANCHOR_COUNT - applied to
+# SR_TEXT when <accepted> is set, else checked on its own against a scratch
+# copy of SR_FETCHED (see spec_review_edit_accepted).
+spec_review_anchor_visit() {
+  SR_ANCHOR_COUNT=$((SR_ANCHOR_COUNT + 1))
+  spec_review_edit_accepted "$1" SR_TEXT "$SR_FETCHED" "$2" "$3" "$4" || true
+}
+
+# spec_review_validate <dir> <body-file> <answer>: the one validation check
+# and apply share. Reads <dir>/batch.md and the lens files of
 # the lenses that ran, checks the citations, takes <answer> (see
 # spec_review_answer), and applies every anchor it accepts, in batch order, to
 # <body-file>'s text: SR_FETCHED holds the body as read, SR_TEXT the body
-# edited. Grammar, lens and citation errors die on the first. An anchor
-# problem dies too, unless [collect] is set: then every anchor - the ones the
-# answer declines checked on their own against SR_FETCHED - is checked, and
+# edited. Grammar, lens and citation errors die on the first. Every anchor is
+# visited (see spec_review_anchor_visit) and counted into SR_ANCHOR_COUNT -
+# the ones the answer declines checked on their own against SR_FETCHED - and
 # each problem, naming its `@@ anchor` line, is appended to SR_PROBLEMS, the
-# failed edit skipped.
+# failed edit skipped; each caller reacts to SR_PROBLEMS itself.
 spec_review_validate() {
-  local dir="$1" body="$2" answer="$3" collect="${4:-}" lens i l opt accepted
+  local dir="$1" body="$2" answer="$3" lens i l opt accepted
   spec_review_batch_parse "$dir/batch.md"
   SR_LF_LENS=(); SR_LF_K=(); SR_LF_TEXT=()
   for lens in $SPEC_REVIEW_LENSES; do
@@ -671,22 +664,22 @@ spec_review_validate() {
   spec_review_answer "$answer"
   file_read SR_FETCHED "$body" || die "could not read $body - nothing written"
   SR_TEXT="$SR_FETCHED"
-  SR_PROBLEMS=()
+  SR_PROBLEMS=(); SR_ANCHOR_COUNT=0
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     case "${SR_IT_REC[$i]}" in
       apply|decline)
         accepted=""
         [ "${SR_DISP[$i]}" != applied ] || accepted=1
-        spec_review_anchor "$accepted" "batch.md line ${SR_IT_ANCHOR_LINE[$i]}: item ${SR_IT_N[$i]}" \
-          "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}" "$collect" ;;
+        spec_review_anchor_visit "$accepted" "batch.md line ${SR_IT_ANCHOR_LINE[$i]}: item ${SR_IT_N[$i]}" \
+          "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}" ;;
       decision)
         for opt in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
           [ "${SR_OP_ITEM[$opt]}" = "$i" ] || continue
           accepted=""
           [ "${SR_DISP[$i]}" != taken ] || [ "${SR_TAKEN[$i]}" != "${SR_OP_LETTER[$opt]}" ] || accepted=1
-          spec_review_anchor "$accepted" \
+          spec_review_anchor_visit "$accepted" \
             "batch.md line ${SR_OP_ANCHOR_LINE[$opt]}: item ${SR_IT_N[$i]} option ${SR_OP_LETTER[$opt]}" \
-            "${SR_OP_ANCHOR[$opt]}" "${SR_OP_REPLACE[$opt]}" "$collect"
+            "${SR_OP_ANCHOR[$opt]}" "${SR_OP_REPLACE[$opt]}"
         done ;;
     esac
   done
@@ -779,7 +772,7 @@ spec_review_check() {
   [ -z "$full" ] || [ -z "$tickets" ] || die "--full and --tickets do not combine ($usage)"
   [ -z "$full" ] || [ "${#wanted[@]}" -gt 0 ] || die "--full needs at least one item number ($usage)"
   dir="${dir%/}"
-  local body i anchors=0
+  local body
   [ -d "$dir" ] || die "no such directory: $dir"
   if [ -n "$tickets" ]; then
     spec_review_tickets_check "$dir"
@@ -789,12 +782,8 @@ spec_review_check() {
   body=spec.fetched.md
   [ -e "$dir/$body" ] || body=spec.md
   [ -f "$dir/$body" ] || die "spec.md not found in $dir"
-  spec_review_validate "$dir" "$dir/$body" all collect
+  spec_review_validate "$dir" "$dir/$body" all
   spec_review_problems_exit
-  for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
-    case "${SR_IT_REC[$i]}" in apply|decline) anchors=$((anchors + 1)) ;; esac
-  done
-  anchors=$((anchors + ${#SR_OP_ITEM[@]}))
   if [ -n "$full" ]; then
     for n in "${wanted[@]}"; do
       [ -n "$(array_index SR_IT_N "$n")" ] || die "--full $n: batch.md has no item $n"
@@ -807,7 +796,7 @@ spec_review_check() {
     rm -rf "$SR_DIFF_DIR"
     spec_review_view
   fi
-  note "batch.md passes: ${#SR_IT_N[@]} items, $anchors anchors, each matching once in $body, and the all answer applies cleanly" >&2
+  note "batch.md passes: ${#SR_IT_N[@]} items, $SR_ANCHOR_COUNT anchors, each matching once in $body, and the all answer applies cleanly" >&2
 }
 
 # spec_review_quoted <text>: <text> as a markdown blockquote, line for line.
@@ -1169,10 +1158,7 @@ spec_review_changelog() {
     fi
     lines=""
     for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
-      case $'\n'"$(spec_review_item_sections "$i")"$'\n' in
-        *$'\n'"$section"$'\n'*) ;;
-        *) continue ;;
-      esac
+      list_has "$(spec_review_item_sections "$i")" "$section" || continue
       lines="$lines$(spec_review_item_line "$i" "$unattended")"$'\n'
     done
     if [ -n "$lines" ]; then printf '%s' "$lines"; else printf 'None\n'; fi
@@ -1360,80 +1346,86 @@ spec_review_tickets_answer() {
   done
 }
 
-# spec_review_ticket_load <dir> <t> <what> [collect]: ticket #<t>'s copy into
+# spec_review_ticket_load <dir> <t> <what>: ticket #<t>'s copy into
 # TK_FETCHED and TK_TEXT, once - ticket-<t>.fetched.md, else, before any
-# apply run has taken that copy, ticket-<t>.md. Dies, naming <what>, when the
-# session wrote no ticket-<t>.md; with [collect] set, the problem is appended
-# to SR_PROBLEMS instead and it returns 1.
+# apply run has taken that copy, ticket-<t>.md. When the session wrote no
+# ticket-<t>.md, the problem, naming <what>, is appended to SR_PROBLEMS and it
+# returns 1; a copy it cannot read dies, naming <what> too.
 spec_review_ticket_load() {
-  local j copy problem file="$1/ticket-$2.fetched.md"
+  local j copy file="$1/ticket-$2.fetched.md"
   [ -z "$(array_index TK_T "$2")" ] || return 0
   if [ ! -f "$1/ticket-$2.md" ]; then
-    problem="$3: ticket-$2.md not found in $1 - fetch each ticket a ticket item names into it"
-    [ -n "${4:-}" ] || die "$problem"
-    SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$problem"
+    SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$3: ticket-$2.md not found in $1 - fetch each ticket a ticket item names into it"
     return 1
   fi
   [ -e "$file" ] || file="$1/ticket-$2.md"
-  file_read copy "$file" || die "could not read $file - nothing written"
+  file_read copy "$file" || die "$3: could not read $file - nothing written"
   j="${#TK_T[@]}"
   TK_T[j]="$2"; TK_FETCHED[j]="$copy"; TK_TEXT[j]="$copy"
 }
 
-# spec_review_ticket_item_offline <index> <body-var> <batch-body> <dir>
-# [collect]: ticket item <index>'s checks that read no GitHub, the half apply
-# and check share. A text item's ticket is loaded (see
-# spec_review_ticket_load) and, when ST_DISP holds it applied, its edit made
-# in memory: to its ticket's copy in TK_TEXT, or a `## Ticket` edit to the
-# body in <body-var>, anchored on <batch-body>, the body as the batch items
-# left it. An applied edge item is checked against its ticket's copy's
-# `## Blocked by`. Each problem names its
-# tickets.md line (a text item's `@@ anchor` line, else its header line); it
-# dies on one, or with [collect] set - check's way - appends it to
-# SR_PROBLEMS instead.
+# The text items spec_review_ticket_item_offline has counted, which only
+# check --tickets reports; it resets this before its loop.
+SR_TICKET_ANCHOR_COUNT=0
+
+# spec_review_ticket_item_offline <index> <body-var> <batch-body> <dir>: ticket
+# item <index>'s checks that read no GitHub, the half apply and check share. A
+# text item, counted into SR_TICKET_ANCHOR_COUNT, has its ticket loaded (see
+# spec_review_ticket_load) and its anchor visited (see
+# spec_review_edit_accepted): when ST_DISP holds it applied, its edit made in
+# memory, to its ticket's copy in TK_TEXT, or a `## Ticket` edit to the body
+# in <body-var>, anchored on <batch-body>, the body as the batch items left it;
+# when declined, checked on its own against the ticket as fetched, or
+# <batch-body>. An applied edge item is checked against its ticket's copy's
+# `## Blocked by`. Each problem, naming its tickets.md line (a text item's
+# `@@ anchor` line, else its header line), is appended to SR_PROBLEMS; each
+# caller reacts to SR_PROBLEMS itself.
 spec_review_ticket_item_offline() {
-  local i="$1" body_var="$2" batch_body="$3" dir="$4" collect="${5:-}" j at problem="" have=""
+  local i="$1" body_var="$2" batch_body="$3" dir="$4" j at problem="" have="" accepted=""
   local what="ticket item ${ST_N[$1]}"
   at="tickets.md line ${ST_LINE[$i]}: "
+  [ "${ST_DISP[$i]}" != applied ] || accepted=1
   case "${ST_KIND[$i]}" in
     ticket)
-      spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" "$collect" || return 0
-      [ "${ST_DISP[$i]}" = applied ] || return 0
+      SR_TICKET_ANCHOR_COUNT=$((SR_TICKET_ANCHOR_COUNT + 1))
+      spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" || return 0
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
       j="$(array_index TK_T "${ST_T[$i]}")"
-      spec_review_edit "TK_TEXT[$j]" "${TK_FETCHED[$j]}" "$at$what (#${ST_T[$i]})" \
-        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" "$collect" || true ;;
+      spec_review_edit_accepted "$accepted" "TK_TEXT[$j]" "${TK_FETCHED[$j]}" \
+        "$at$what (#${ST_T[$i]})" "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" || return 0 ;;
     section)
-      [ "${ST_DISP[$i]}" = applied ] || return 0
+      SR_TICKET_ANCHOR_COUNT=$((SR_TICKET_ANCHOR_COUNT + 1))
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
-      spec_review_edit "$body_var" "$batch_body" "$at$what (## Ticket)" \
-        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" "$collect" || true ;;
+      spec_review_edit_accepted "$accepted" "$body_var" "$batch_body" "$at$what (## Ticket)" \
+        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" || return 0 ;;
     block|unblock)
-      [ "${ST_DISP[$i]}" = applied ] || return 0
-      spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" "$collect" || return 0
+      [ -n "$accepted" ] || return 0
+      spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" || return 0
       j="$(array_index TK_T "${ST_T[$i]}")"
-      case $'\n'"$(printf '%s\n' "${TK_FETCHED[$j]}" | blocked_by_section_numbers)"$'\n' in
-        *$'\n'"${ST_B[$i]}"$'\n'*) have=1 ;;
-      esac
+      ! list_has "$(printf '%s\n' "${TK_FETCHED[$j]}" | blocked_by_section_numbers)" \
+        "${ST_B[$i]}" || have=1
       if [ "${ST_KIND[$i]}" = block ]; then
         [ -z "$have" ] || problem="#${ST_T[$i]} is already blocked by #${ST_B[$i]}"
       else
         [ -n "$have" ] || problem="#${ST_T[$i]} is not blocked by #${ST_B[$i]}"
       fi
       [ -n "$problem" ] || return 0
-      [ -n "$collect" ] || die "$at$what: $problem - nothing written"
       SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$at$what: $problem" ;;
   esac
 }
 
-# spec_review_tickets_follow <body-var> <dir> <kind> <issue>: every accepted
-# ticket item checked and applied in memory - see
+# spec_review_tickets_follow <body-var> <dir> <kind> <issue>: every ticket
+# item checked, an accepted one applied in memory and a declined text item's
+# anchor checked on its own against a scratch copy - see
 # spec_review_ticket_item_offline - and the checks that read GitHub: every
 # edge item's tickets in the breakdown, and a `## Ticket` item only on a
-# collapsed one. Dies, before any write, on the first that fails.
+# collapsed one. Dies, before any write, on the first GitHub-reading check
+# that fails, else, after the loop, on the first problem
+# spec_review_ticket_item_offline collected.
 spec_review_tickets_follow() {
   local body_var="$1" dir="$2" kind="$3" issue="$4" i t what batch_body subs="" listed
   [ -z "$ST_RETIRE" ] || return 0
+  SR_PROBLEMS=()
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
     case "${ST_KIND[$i]}" in
       block|unblock)
@@ -1451,14 +1443,13 @@ spec_review_tickets_follow() {
           || die "$what: a ## Ticket item, but #$issue's breakdown is $kind - nothing written" ;;
       block|unblock)
         for t in "${ST_T[$i]}" "${ST_B[$i]}"; do
-          case $'\n'"$subs"$'\n' in
-            *$'\n'"$t"$'\n'*) ;;
-            *) die "$what: #$t is not a ticket of #$issue's breakdown - nothing written" ;;
-          esac
+          list_has "$subs" "$t" \
+            || die "$what: #$t is not a ticket of #$issue's breakdown - nothing written"
         done ;;
     esac
     spec_review_ticket_item_offline "$i" "$body_var" "$batch_body" "$dir"
   done
+  [ "${#SR_PROBLEMS[@]}" -eq 0 ] || die "${SR_PROBLEMS[0]} - nothing written"
 }
 
 # spec_review_tickets_check <dir>: check --tickets - <dir>/tickets.md
@@ -1468,24 +1459,23 @@ spec_review_tickets_follow() {
 # `orch: ` line each, then exit 1. A clean file prints its view on stdout -
 # see spec_review_tickets_view - and a one-line summary on stderr.
 spec_review_tickets_check() {
-  local dir="$1" i anchors=0 __srtc_body
+  local dir="$1" i __srtc_body
   [ -f "$dir/tickets.md" ] || die "tickets.md not found in $dir"
   [ -f "$dir/spec.md" ] || die "spec.md not found in $dir"
   spec_review_tickets_parse "$dir/tickets.md"
   spec_review_tickets_answer all
   file_read __srtc_body "$dir/spec.md" || die "could not read $dir/spec.md"
   local batch_body="$__srtc_body"
-  SR_PROBLEMS=(); TK_T=(); TK_FETCHED=(); TK_TEXT=()
+  SR_PROBLEMS=(); SR_TICKET_ANCHOR_COUNT=0; TK_T=(); TK_FETCHED=(); TK_TEXT=()
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
-    spec_review_ticket_item_offline "$i" __srtc_body "$batch_body" "$dir" collect
-    case "${ST_KIND[$i]}" in ticket|section) anchors=$((anchors + 1)) ;; esac
+    spec_review_ticket_item_offline "$i" __srtc_body "$batch_body" "$dir"
   done
   spec_review_problems_exit
   spec_review_tickets_view
   if [ -n "$ST_NONE" ]; then
     note "tickets.md passes: no open ticket affected" >&2
   else
-    note "tickets.md passes: ${#ST_N[@]} items, $anchors anchors, each matching once, and the all answer applies cleanly" >&2
+    note "tickets.md passes: ${#ST_N[@]} items, $SR_TICKET_ANCHOR_COUNT anchors, each matching once, and the all answer applies cleanly" >&2
   fi
 }
 
@@ -1705,8 +1695,10 @@ spec_review_apply() {
   done
 
   local i j fetched text
-  # Every accepted anchor, checked against the fetched copy and applied to it.
+  # Every anchor checked against the fetched copy, and every accepted one
+  # applied to it; the first problem refuses the batch.
   spec_review_validate "$dir" "$dir/spec.fetched.md" "$answer"
+  [ "${#SR_PROBLEMS[@]}" -eq 0 ] || die "${SR_PROBLEMS[0]} - nothing applied, nothing written"
   fetched="$SR_FETCHED"; text="$SR_TEXT"
   spec_review_reasons --reasons "$reasons" SR_IT_N SR_DISP SR_REASON \
     item batch.md "the answer"

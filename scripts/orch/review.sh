@@ -181,7 +181,7 @@ no_ci_evidence() {
   out="$(adapter_branch_required_checks "$base" 2>/dev/null)" || return 1
   [ -z "$out" ] || return 1
   out="$(adapter_branch_rules "$base" 2>/dev/null)" || return 1
-  if grep -qx required_status_checks <<<"$out"; then return 1; fi
+  if list_has "$out" required_status_checks; then return 1; fi
   # 4, then 3: the base tip is one ref, the PR's earlier commits may be many.
   ci_ref_unchecked "$base" || return 1
   while IFS= read -r sha; do

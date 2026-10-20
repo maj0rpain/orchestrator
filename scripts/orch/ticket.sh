@@ -495,7 +495,7 @@ ticket_edges_change() {
   before="$(ticket_blockers "$n")" || exit 1
   while IFS= read -r b; do
     present=""
-    case $'\n'"$before"$'\n' in *$'\n'"$b"$'\n'*) present=1 ;; esac
+    ! list_has "$before" "$b" || present=1
     [ "$present" != "$skip_present" ] || continue
     gh_or_die "$edge_word a blocking edge from ticket #$n on #$b" \
       "$edge_op" "$n" "$b"

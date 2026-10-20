@@ -8,10 +8,10 @@
 # of the ROOT block, which dies through die when run outside a git repository,
 # and ahead of every noun module.
 
-# labels_have <labels> <label>: whether <label> is one of the newline-separated
-# <labels>, matched whole-line and literally. The one label-membership test:
-# `--` keeps a label beginning with `-` a label, never a grep option.
-labels_have() {
+# list_has <list> <item>: whether <item> is one of the newline-separated
+# <list>, matched whole-line and literally. The one list-membership test:
+# `--` keeps an item beginning with `-` an item, never a grep option.
+list_has() {
   grep -qxF -- "$2" <<<"$1"
 }
 
