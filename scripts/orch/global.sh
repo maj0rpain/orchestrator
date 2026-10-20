@@ -141,6 +141,21 @@ orch.sh - deterministic operations for the orchestrator flow
                               system, children included), wall seconds, the
                               UTC time in ISO 8601, and the command. An
                               append that fails warns and records nothing
+  suite-cost check -- <cmd> [args...]
+                              print one verdict line comparing the head's
+                              newest recorded run of <cmd> (on HEAD or an
+                              ancestor not on the base) with the baseline's
+                              (the newest on the base commit or an ancestor:
+                              state.base_sha in a flow, else branch base-sha),
+                              exiting 0: off (baseline below git config
+                              orchestrator.suiteCost.floor, else 60 CPU
+                              seconds), ok, grew <pct> - <finding text> (past
+                              orchestrator.suiteCost.growth, else 10 percent),
+                              or unmeasured. Never runs <cmd> on the head;
+                              with no baseline it measures the base once in a
+                              temporary worktree. Dies naming the key and
+                              value when an override is not a non-negative
+                              number
   suite-cost history          print the record's lines, oldest first, or
                               nothing when there is no record
   repo show [--name|--host]   print the GitHub repo orch.sh works on and its

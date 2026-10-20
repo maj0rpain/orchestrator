@@ -578,6 +578,9 @@ triage keeps or flips it: a Standards finding that is a real defect becomes
 A fix that removes a defect's cause everywhere that cause acts - every copy of the logic, every call site, every input it mishandles - rather than only the reported instance. Its opposite, a **symptom fix**, makes the reported case pass while the cause stays live elsewhere.
 _Avoid_: foundational fix, proper fix
 
+**Suite cost**:
+The CPU time, user plus system, that one passing run of a verification command takes, as `orch.sh suite-cost run` records it with that command on the machine that ran it, or `suite-cost check` records it for a base it had to measure. Compared only between runs of the same command on the same machine; below the floor nothing compares it. Growth past the threshold is a finding with no reviewer behind it: in a review loop a major the driver raises from `check`'s verdict, and in a review pass a finding the session handles like any other.
+
 ### Hosts
 
 **Host**:
