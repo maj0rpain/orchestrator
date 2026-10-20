@@ -52,6 +52,8 @@
 #   scan_cheapest_test  the implementer's and fixer's Test-driven development sections carry one identical Cheapest sufficient test paragraph
 #   scan_test_cost_smells  the Standards reviewer carries the four test-cost smells outside the smell baseline
 #   scan_verify_suite_cost  the implementer, fixer and resolver run their verification through suite-cost run
+#   scan_improve_tests  orch-improve-tests has its command file and its six step headings in order
+#   scan_report_capability  docs/host-capabilities.md has a row for opening the report and a Markdown-summary fallback
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review section and starts its own reviewers
 #   scan_review_pass_callers  each caller of the review pass names orch-review-pass and the section it follows
 #   scan_review_loop_sheds_pass  orch-review keeps no copy of the review pass and points at orch-review-pass
@@ -1989,6 +1991,93 @@ spares "an agent that runs suite-cost run, wrapped across lines, is not flagged"
   "$out" "orch-(implementer|fixer)"
 check "the implementer, fixer and resolver run their verification through suite-cost run" \
   "$(scan_verify_suite_cost "$PLUGIN_ROOT")"
+
+# --- improve tests (#1309) -----------------------------------------------------
+echo
+echo "improve tests (#1309)"
+# orch-improve-tests is defined by its six steps, so each step heading stays
+# present and in order, and its command routes to it. Opening its report is a
+# host capability: a row in docs/host-capabilities.md, with a fallback
+# subsection that gives the Markdown summary in its place.
+improve_tests_skill='skills/orch-improve-tests/SKILL.md'
+improve_tests_steps='Scope
+Measure
+Hunt
+Rank
+Report
+Hand off'
+open_report_capability='Open a report in the browser'
+# scan_improve_tests <plugin root>: one line when the command file is missing
+# or routes elsewhere, and one per step heading (## <n>. <step>) missing from
+# the skill or out of order.
+scan_improve_tests() {
+  local r="$1" cmd="commands/improve-tests.md" step n=0 pairs=""
+  if [ ! -f "$r/$cmd" ]; then echo "$cmd: missing"
+  elif ! flat_text "$r/$cmd" | grep -qF '`orchestrator:orch-improve-tests` and follow it'; then
+    echo "$cmd: does not route to orch-improve-tests"
+  fi
+  while IFS= read -r step; do
+    n=$((n + 1))
+    pairs+="$improve_tests_skill|## $n. $step"$'\n'
+  done <<<"$improve_tests_steps"
+  scan_required_headings "$r" "$pairs"
+}
+# scan_report_capability <plugin root>: one line when docs/host-capabilities.md
+# has no row for opening the report, and one when its Fallbacks have no
+# subsection for it naming a Markdown summary.
+scan_report_capability() {
+  local r="$1" doc="docs/host-capabilities.md" body
+  grep -qF -- "| $open_report_capability |" "$r/$doc" 2>/dev/null \
+    || echo "$doc: no row for $open_report_capability"
+  if ! body="$(md_section "$r/$doc" "### $open_report_capability" 2>/dev/null)"; then
+    echo "$doc: no fallback for $open_report_capability"
+  elif ! flat_text <<<"$body" | grep -qiF 'markdown summary'; then
+    echo "$doc: the fallback for $open_report_capability gives no Markdown summary"
+  fi
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-improve-tests" "$fixture/commands" "$fixture/docs"
+printf '# I\n\n## 1. Scope\n\n## 2. Measure\n\n## 4. Rank\n\n## 3. Hunt\n\n## 5. Report\n' \
+  >"$fixture/$improve_tests_skill"
+out="$(scan_improve_tests "$fixture")"
+flags "a missing improve-tests command file is flagged" "$out" "commands/improve-tests.md: missing"
+flags "a step heading out of order is flagged" \
+  "$out" "$improve_tests_skill: required heading out of order: ## 4. Rank"
+flags "a missing step heading is flagged" \
+  "$out" "$improve_tests_skill: missing required heading: ## 6. Hand off"
+printf 'Call the Skill tool with `orchestrator:orch-interview` and follow it.\n' \
+  >"$fixture/commands/improve-tests.md"
+flags "a command file routing elsewhere is flagged" \
+  "$(scan_improve_tests "$fixture")" "commands/improve-tests.md: does not route to orch-improve-tests"
+printf 'Call the Skill tool with\n`orchestrator:orch-improve-tests` and follow it.\n' \
+  >"$fixture/commands/improve-tests.md"
+printf '# I\n\n## 1. Scope\n\n## 2. Measure\n\n## 3. Hunt\n\n## 4. Rank\n\n## 5. Report\n\n## 6. Hand off\n' \
+  >"$fixture/$improve_tests_skill"
+assert_empty "the six step headings in order and a wrapped route are not flagged" \
+  "$(scan_improve_tests "$fixture")"
+check "orch-improve-tests has its command and its six step headings in order" \
+  "$(scan_improve_tests "$PLUGIN_ROOT")"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  '| Ask | `AskUserQuestion`. | `ask_user`. |' '' '## Fallbacks' '' \
+  "### $open_report_capability" '' 'Say where the file is.' >"$fixture/docs/host-capabilities.md"
+out="$(scan_report_capability "$fixture")"
+flags "a host capability table with no report row is flagged" \
+  "$out" "docs/host-capabilities.md: no row for $open_report_capability"
+flags "a report fallback with no Markdown summary is flagged" \
+  "$out" "docs/host-capabilities.md: the fallback for $open_report_capability gives no Markdown summary"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  "| $open_report_capability | \`xdg-open\`. | Unverified. |" '' '## Fallbacks' '' \
+  '### Ask' '' 'Write a Markdown summary.' >"$fixture/docs/host-capabilities.md"
+flags "a report row with no fallback subsection is flagged" \
+  "$(scan_report_capability "$fixture")" "docs/host-capabilities.md: no fallback for $open_report_capability"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  "| $open_report_capability | \`xdg-open\`. | Unverified. |" '' '## Fallbacks' '' \
+  "### $open_report_capability" '' 'Write a Markdown' 'summary in chat.' >"$fixture/docs/host-capabilities.md"
+assert_empty "a report row with a Markdown summary fallback is not flagged" \
+  "$(scan_report_capability "$fixture")"
+check "docs/host-capabilities.md has a row for opening the report, with the Markdown fallback" \
+  "$(scan_report_capability "$PLUGIN_ROOT")"
 
 # --- review pass skill (#1138) -------------------------------------------------
 echo
