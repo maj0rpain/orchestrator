@@ -210,7 +210,7 @@ cmd_finding_triage_scan() {
   local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_err
   # shellcheck disable=SC2034 # finding_body_parse writes every field; the scan reads only the PR number
   local f_axis f_severity f_reason f_file f_line f_sha f_pr f_pr_number f_why f_question
-  local args=()
+  local args=() triage_filter=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --all) ! $all || die "$usage"; all=true ;;
@@ -236,14 +236,12 @@ cmd_finding_triage_scan() {
       || die "issue #$issue is not in triage - it carries no '$triage' label"
     nums="$issue"
   else
+    # The labels besides each severity's: the triage label, unless --all.
+    triage_filter=("$triage")
+    ! $all || triage_filter=()
     for sev in $FILED_SEVERITIES; do
-      if $all; then
-        gh_or_die --out out "list the review:$sev findings" \
-          adapter_issues_labelled "review:$sev"
-      else
-        gh_or_die --out out "list the review:$sev findings" \
-          adapter_issues_labelled "review:$sev" "$triage"
-      fi
+      gh_or_die --out out "list the review:$sev findings" \
+        adapter_issues_labelled "review:$sev" ${triage_filter[@]+"${triage_filter[@]}"}
       if [ "$(printf '%s\n' $out | grep -c .)" -ge "$ISSUE_LIST_LIMIT" ]; then
         warn "review:$sev findings reached the issue-list limit of $ISSUE_LIST_LIMIT - any past it are missing from this scan"
       fi
