@@ -537,7 +537,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               <dir>/spec.fetched.md, else <dir>/spec.md.
                               Writes nothing, touches no GitHub, reads no
                               flow state. Exit 1 with one orch: line per
-                              error, each naming its batch.md line - the first
+                              error, each naming its batch.md or
+                              lens-<name>.md line where it has one - the first
                               grammar error only, every anchor problem; exit
                               0 with the batch view on stdout and a one-line
                               summary on stderr. --tickets validates

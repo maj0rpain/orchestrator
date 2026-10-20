@@ -146,8 +146,10 @@ spec_review_item_check() {
     opts=$((opts + 1))
     [ -n "${SR_OP_SUMMARY[$j]+x}" ] \
       || spec_review_batch_die "${SR_OP_LINE[$j]}" "item $n option ${SR_OP_LETTER[$j]} has no @@ summary"
+    why=""
+    [ "${SR_OP_LETTER[$j]}" = "${SR_IT_ARG[$i]}" ] || why=" - an option not recommended still carries the edit it would make"
     [ -n "${SR_OP_REPLACE[$j]+x}" ] \
-      || spec_review_batch_die "${SR_OP_LINE[$j]}" "item $n option ${SR_OP_LETTER[$j]} has no @@ anchor/@@ replace/@@ end block"
+      || spec_review_batch_die "${SR_OP_LINE[$j]}" "item $n option ${SR_OP_LETTER[$j]} has no @@ anchor/@@ replace/@@ end block$why"
   done
   for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
     [ "${SR_FD_ITEM[$j]}" != "$i" ] || has_find=1
@@ -158,6 +160,7 @@ spec_review_item_check() {
   case "${SR_IT_REC[$i]}" in
     apply|decline)
       [ -n "${SR_IT_SUMMARY[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ summary"
+      why=""
       [ "${SR_IT_REC[$i]}" != decline ] || why=" - a decline item still carries the edit it declines"
       [ -n "${SR_IT_REPLACE[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ anchor/@@ replace/@@ end block$why" ;;
     decision)
@@ -237,7 +240,7 @@ spec_review_batch_parse() {
     case "$mode" in
       anchor)
         [ "$kw" = replace ] && [ -z "$args" ] \
-          || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line"
+          || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'"
         [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the anchor is empty"
         spec_review_text_store anchor "$buf" "$cur" "$opt" "$block_line"
         mode=replace; buf=""; bufn=0; block_line="$lineno"
@@ -370,7 +373,7 @@ spec_review_batch_parse() {
       anchor)
         [ -z "$args" ] || spec_review_batch_die "$lineno" "@@ anchor takes nothing after it; the anchor is the lines below it"
         case "${SR_IT_REC[$cur]}" in
-          resolved) spec_review_batch_die "$lineno" "a resolved item carries no anchor" ;;
+          resolved) spec_review_batch_die "$lineno" "a resolved item takes no @@ anchor, @@ replace or @@ end" ;;
           decision)
             [ "$opt" -ge 0 ] || spec_review_batch_die "$lineno" "a decision item's anchors go under its options"
             [ -z "${SR_OP_ANCHOR[$opt]+x}" ] || spec_review_batch_die "$lineno" "a second @@ anchor for this option" ;;
@@ -498,7 +501,7 @@ spec_review_answer_tokens() {
 # decision or on an item not recommended for decline, `-` or `+` on a
 # resolved item, or an item named twice.
 spec_review_answer() {
-  local answer="$1" base="$1" i tok n letter sign j toks=()
+  local answer="$1" base="$1" i tok n letter sign bad j toks=()
   local form="is not recommended, all, none or a list of departures such as 3B, -4, +2"
   SR_DISP=(); SR_ASREC=(); SR_TAKEN=()
   case "$answer" in
@@ -512,13 +515,10 @@ spec_review_answer() {
           [-+]*) sign="${tok:0:1}"; n="${tok:1}" ;;
           *) n="${tok%%[A-Za-z]*}"; letter="${tok#"$n"}" ;;
         esac
-        case "$n" in
-          ''|*[!0-9]*) die "the answer '$answer' $form - '$tok' is not <n><letter>, -<n> or +<n>" ;;
-        esac
-        case "$sign:$letter" in
-          :[A-Za-z]|[-+]:) ;;
-          *) die "the answer '$answer' $form - '$tok' is not <n><letter>, -<n> or +<n>" ;;
-        esac
+        bad=""
+        case "$n" in ''|*[!0-9]*) bad=1 ;; esac
+        case "$sign:$letter" in :[A-Za-z]|[-+]:) ;; *) bad=1 ;; esac
+        [ -z "$bad" ] || die "the answer '$answer' $form - '$tok' is not <n><letter>, -<n> or +<n>"
         letter="$(printf '%s' "$letter" | tr '[:lower:]' '[:upper:]')"
         i="$(array_index SR_IT_N "$n")"
         [ -n "$i" ] || die "the answer names item $n, which batch.md does not have"
@@ -1229,18 +1229,19 @@ spec_review_tickets_parse() {
         [ -n "$(trim "$line")" ] || continue
         spec_review_tickets_die "$lineno" "text outside an @@ anchor or @@ replace block" ;;
     esac
+    line="${line%$'\r'}"
     spec_review_at_line "$line" kw args
     case "$mode" in
       anchor)
         [ "$kw" = replace ] && [ -z "$args" ] \
-          || spec_review_tickets_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line"
+          || spec_review_tickets_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'"
         [ -n "$(trim "$buf")" ] || spec_review_tickets_die "$block_line" "the anchor is empty"
         ST_ANCHOR[cur]="$buf"
         mode=replace; buf=""; bufn=0; block_line="$lineno"
         continue ;;
       replace)
         [ "$kw" = end ] && [ -z "$args" ] \
-          || spec_review_tickets_die "$lineno" "expected @@ end to end the replacement begun on line $block_line"
+          || spec_review_tickets_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'"
         ST_REPLACE[cur]="$buf"
         mode=top; buf=""; bufn=0
         continue ;;
@@ -1385,25 +1386,25 @@ spec_review_ticket_load() {
 # ST_DISP holds it applied, its edit made in memory: to its ticket's copy in
 # TK_TEXT, or a `## Ticket` edit to the body in <body-var>, anchored on
 # <post>, the body as the batch items left it. An applied edge item is
-# checked against its ticket's copy's `## Blocked by`. Dies on a problem;
-# with [collect] set - check's way - each problem, naming its tickets.md line
-# (a text item's `@@ anchor` line, else its header line), is appended to
+# checked against its ticket's copy's `## Blocked by`. Each problem names its
+# tickets.md line (a text item's `@@ anchor` line, else its header line); it
+# dies on one, or with [collect] set - check's way - appends it to
 # SR_PROBLEMS instead.
 spec_review_ticket_local() {
-  local i="$1" body_var="$2" post="$3" dir="$4" collect="${5:-}" j at="" problem="" have=""
+  local i="$1" body_var="$2" post="$3" dir="$4" collect="${5:-}" j at problem="" have=""
   local what="ticket item ${ST_N[$1]}"
-  [ -z "$collect" ] || at="tickets.md line ${ST_LINE[$i]}: "
+  at="tickets.md line ${ST_LINE[$i]}: "
   case "${ST_KIND[$i]}" in
     ticket)
       spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" "$collect" || return 0
       [ "${ST_DISP[$i]}" = applied ] || return 0
-      [ -z "$collect" ] || at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
+      at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
       j="$(array_index TK_T "${ST_T[$i]}")"
       spec_review_edit "TK_TEXT[$j]" "${TK_FETCHED[$j]}" "$at$what (#${ST_T[$i]})" \
         "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" "$collect" || true ;;
     section)
       [ "${ST_DISP[$i]}" = applied ] || return 0
-      [ -z "$collect" ] || at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
+      at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
       spec_review_edit "$body_var" "$post" "$at$what (## Ticket)" \
         "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" "$collect" || true ;;
     block|unblock)
@@ -1419,7 +1420,7 @@ spec_review_ticket_local() {
         [ -n "$have" ] || problem="#${ST_T[$i]} is not blocked by #${ST_B[$i]}"
       fi
       [ -n "$problem" ] || return 0
-      [ -n "$collect" ] || die "$what: $problem - nothing written"
+      [ -n "$collect" ] || die "$at$what: $problem - nothing written"
       SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$at$what: $problem" ;;
   esac
 }
@@ -1442,7 +1443,7 @@ spec_review_tickets_follow() {
   done
   post="${!body_var}"
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
-    what="ticket item ${ST_N[$i]}"
+    what="tickets.md line ${ST_LINE[$i]}: ticket item ${ST_N[$i]}"
     case "${ST_KIND[$i]}" in
       section)
         [ "$kind" = collapsed ] \
@@ -1610,7 +1611,7 @@ spec_review_local_write() {
 spec_review_apply() {
   local usage="usage: orch.sh spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>] [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended] [--host-fallbacks <file>]"
   local dir="" answer="" have_answer="" round="" reasons="" issue="" unattended=false hosts_file="" hosts=""
-  local ticket_answer="" ticket_reasons=""
+  local ticket_answer="" ticket_reasons="" opt_like
   while [ $# -gt 0 ]; do
     case "$1" in
       --round|--reasons|--issue|--host-fallbacks|--tickets|--ticket-reasons)
@@ -1625,12 +1626,14 @@ spec_review_apply() {
         esac
         shift 2 ;;
       --unattended) unattended=true; shift ;;
-      --*) die "unknown option: $1 ($usage)" ;;
       *)
-        # An override answer may begin with -, as -4: after <dir>, a single
-        # dash starts the answer, never an option.
+        # An override answer may begin with -, as -4: before <dir> any
+        # leading dash makes an unknown option, after it only a double one -
+        # one dash is stripped first, so a single dash starts the answer.
+        opt_like="${1#-}"
+        [ -n "$dir" ] || opt_like="$1"
+        case "$opt_like" in -*) die "unknown option: $1 ($usage)" ;; esac
         if [ -z "$dir" ]; then
-          case "$1" in -*) die "unknown option: $1 ($usage)" ;; esac
           dir="$1"
         elif [ -z "$have_answer" ]; then answer="$1"; have_answer=1
         else die "$usage"
