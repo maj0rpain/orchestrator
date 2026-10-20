@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.20.1
+
+- orch.sh's gh failure contract states each rule once: `gh_or_die` refuses a
+  bad `--exit` or `--hint` before it runs its operation, through the option
+  check `gh_die` uses; `ticket_sub_issues` takes `[--exit 2]`; finding-triage's
+  scan makes one labelled-list call per severity; and the capture-and-split
+  readers share `gh_lines_read` (#1106).
+
 ## 4.20.0
 
 Add `orch.sh suite-cost`, which records the suite cost of each passing verification run: `suite-cost run -- <cmd>` runs the command with its output and exit code passed through and, on exit 0, appends its CPU and wall seconds to a clone-wide record; `suite-cost history` lists the record; and `suite-cost check -- <cmd>` compares the head's recorded cost with the base's and prints one verdict - `off` below a 60 CPU-second floor, `ok`, `grew <pct>` past 10% growth, or `unmeasured` - measuring the base once in a temporary worktree when no ancestor of it is recorded. The floor and threshold are set with `git config orchestrator.suiteCost.floor` and `orchestrator.suiteCost.growth`.
