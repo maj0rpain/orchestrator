@@ -49,13 +49,13 @@ new_repo >/dev/null
 rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
 
 assert_eq "a fresh clone has no record directory" "$(on_disk "${rec%/*}")" absent
-out="$("$ORCH" suite-cost run -- sh -c 'echo to-out; echo to-err >&2' 2>/dev/null)"; st=$?
+errf="$(mktemp)"
+out="$("$ORCH" suite-cost run -- sh -c 'echo to-out; echo to-err >&2' 2>"$errf")"; st=$?
 assert_status "a passing command's exit 0 passes through" "$st" 0
 assert_eq "its stdout passes through, with nothing added" "$out" "to-out"
-err="$("$ORCH" suite-cost run -- sh -c 'echo to-out; echo to-err >&2' 2>&1 >/dev/null)"
-assert_eq "its stderr passes through, with nothing added" "$err" "to-err"
+assert_eq "its stderr passes through, with nothing added" "$(cat "$errf")" "to-err"
 assert_eq "the missing record directory is created" "$(on_disk "$rec")" present
-assert_eq "each passing run appends exactly one line" "$(wc -l <"$rec" | tr -d ' ')" 2
+assert_eq "a passing run appends exactly one line" "$(wc -l <"$rec" | tr -d ' ')" 1
 line="$(tail -n 1 "$rec")"
 [[ "$line" =~ $SUITE_COST_LINE ]] && shape=well-formed || shape="malformed: $line"
 assert_eq "the line has the documented shape" "$shape" well-formed
@@ -75,7 +75,7 @@ git worktree add -q "$PWD/wt" other
 (cd wt && "$ORCH" suite-cost run -- true >/dev/null 2>&1)
 assert_eq "a run in a second worktree lands in the same record" \
   "$(tail -n 1 "$rec" | cut -f5)" "true"
-assert_eq "beside the main checkout's runs" "$(wc -l <"$rec" | tr -d ' ')" 3
+assert_eq "beside the main checkout's run" "$(wc -l <"$rec" | tr -d ' ')" 2
 
 for args in "" "true" "-- " "true --"; do
   # shellcheck disable=SC2086 # the words are the case
@@ -83,7 +83,7 @@ for args in "" "true" "-- " "true --"; do
   assert_status "run with '${args}' is a usage error" "$st" 1
   assert_contains "with its usage line" "$out" "usage: orch.sh suite-cost run -- <cmd> [args...]"
 done
-assert_eq "a usage error records nothing" "$(wc -l <"$rec" | tr -d ' ')" 3
+assert_eq "a usage error records nothing" "$(wc -l <"$rec" | tr -d ' ')" 2
 
 # An append that fails: the record's path is a directory, so no user, root
 # included, can write it.
@@ -174,12 +174,12 @@ assert_eq "growth at the threshold is ok, the newest head record counting" \
 seed_run "$head" 50.00
 assert_eq "a shrinking suite is ok" "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "ok"
 
-check_repo
+: >"$rec"
 seed_run "$base" 50.00
 seed_run "$head" 100.00
 assert_eq "a baseline below the floor is off" "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "off"
 
-check_repo
+: >"$rec"
 seed_run "$base" 100.00
 seed_run "$root" 60.00
 seed_run "$base" 30.00 "scripts/test/orch_test.sh"
@@ -281,11 +281,11 @@ if [ "$(id -u)" -ne 0 ]; then
   check_repo
   seed_run "$head" 70.00
   chmod 444 "$rec"
-  out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)"; st=$?
-  err="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>&1 >/dev/null)"
+  errf="$(mktemp)"
+  out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
   assert_status "a base run whose append fails exits 0" "$st" 0
   assert_eq "with a verdict from the fresh measurement" "$out" "off"
-  assert_contains "warning on stderr, naming the record" "$err" "orch: could not append to the suite-cost record $rec"
+  assert_contains "warning on stderr, naming the record" "$(cat "$errf")" "orch: could not append to the suite-cost record $rec"
   assert_eq "and leaving no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
   chmod 644 "$rec"
 fi

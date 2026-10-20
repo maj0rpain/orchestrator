@@ -135,15 +135,15 @@ suite_cost_base_commit() {
     { warn "base commit $sha names no commit"; return 1; }
 }
 
-# suite_cost_newest <rec> <cmd-string> <test>: prints the CPU seconds and
+# suite_cost_newest <rec> <cmd-string> <pred>: prints the CPU seconds and
 # commit, tab-separated, of the newest record line of <cmd-string> whose commit
-# passes <test> (a function given the commit), or fails printing nothing.
+# passes <pred> (a function given the commit), or fails printing nothing.
 suite_cost_newest() {
-  local rec="$1" want="$2" test="$3" sha cpu cmd
+  local rec="$1" want="$2" pred="$3" sha cpu cmd
   [ -e "$rec" ] || return 1
   while IFS=$'\t' read -r sha cpu _ _ cmd; do
     [ "$cmd" = "$want" ] || continue
-    if "$test" "$sha"; then printf '%s\t%s\n' "$cpu" "$sha"; return 0; fi
+    if "$pred" "$sha"; then printf '%s\t%s\n' "$cpu" "$sha"; return 0; fi
   done < <(awk '{ l[NR] = $0 } END { for (i = NR; i > 0; i--) print l[i] }' "$rec")
   return 1
 }
@@ -163,17 +163,17 @@ suite_cost_is_base() { git merge-base --is-ancestor "$1" "$SUITE_COST_BASE" 2>/d
 # a bad one dies before anything runs; the command runs only to measure a base
 # with no recorded ancestor, never on the head.
 suite_cost_check() {
-  local floor growth rec want head_cpu base_cpu base_sha found pct IFS=' '
+  local floor growth rec want head_cpu base_cpu base_sha head_found base_found pct IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
   want="$*"
   SUITE_COST_BASE="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
-  found="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
+  head_found="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
     { note unmeasured; return 0; }
-  head_cpu="${found%%$'\t'*}"
-  if found="$(suite_cost_newest "$rec" "$want" suite_cost_is_base)"; then
-    base_cpu="${found%%$'\t'*}" base_sha="${found#*$'\t'}"
+  head_cpu="${head_found%%$'\t'*}"
+  if base_found="$(suite_cost_newest "$rec" "$want" suite_cost_is_base)"; then
+    base_cpu="${base_found%%$'\t'*}" base_sha="${base_found#*$'\t'}"
   else
     suite_cost_base_run "$SUITE_COST_BASE" "$@" || { note unmeasured; return 0; }
     base_cpu="$SUITE_COST_CPU" base_sha="$SUITE_COST_BASE"
@@ -199,7 +199,7 @@ suite_cost_check() {
 # worktree is gone; a failed removal after a pass keeps the record and names
 # the left-over worktree.
 suite_cost_base_run() {
-  local base="$1" tmp wt here="$PWD" ok=0
+  local base="$1" tmp wt here="$PWD" status=0
   shift
   tmp="$(mktemp -d)" || { warn "could not make a temp directory for the base run"; return 1; }
   wt="$tmp/base"
@@ -215,16 +215,16 @@ suite_cost_base_run() {
       suite_cost_append "$base" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
     else
       warn "the base run at $base exited $SUITE_COST_STATUS - the suite cost is unmeasured"
-      ok=1
+      status=1
     fi
   else
-    ok=1
+    status=1
   fi
   if git worktree remove --force "$wt" >/dev/null 2>&1; then
     rmdir "$tmp" 2>/dev/null || true
   else
     warn "could not remove the base run's worktree $wt - remove it with: git worktree remove --force $wt"
-    ok=1
+    status=1
   fi
-  return "$ok"
+  return "$status"
 }

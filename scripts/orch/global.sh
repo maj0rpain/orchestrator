@@ -502,12 +502,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
                               creating the directory if it is not there yet
-  review file <major|nit> <title> --axis <spec|standards> --finding-file <f>
-              --severity-reason <r> --location <file>:<line> --sha <sha>
+  review file <major|nit> <title> --axis <spec|standards|suite-cost>
+              --finding-file <f> --severity-reason <r>
+              --location <file>:<line|suite> --sha <sha>
               --pr <url> --why <reason> [--spec-question <q>]
                               file a finding as a GitHub issue labelled
                               review:<severity>, the repo's needs-triage, and
-                              bug (spec axis) or enhancement (standards axis),
+                              bug (spec axis) or enhancement (standards or
+                              suite-cost axis),
                               creating the labels if missing; prints the number.
                               The body is rendered from the parts - the finding
                               file, then one labelled line per flag - and

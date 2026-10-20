@@ -262,6 +262,26 @@ assert_eq "adding the spec question line, a line range and trimmed values, the a
   "$(fake_body_of 18; printf x)" "$want"
 assert_eq "--axis SPEC files as bug" "$(fake_labels_of 18)" "bug needs-triage review:major "
 
+# A suite-cost finding - the `grew` major the driver raises from
+# `suite-cost check` - names the suite as a whole: axis suite-cost, location
+# the literal suite, with no line. It files as an enhancement.
+fake_github
+fake_next_issue 19
+out="$("$ORCH" review file major "Suite cost grew 25%" --axis suite-cost --finding-file "$finding" \
+  --severity-reason "Suite cost grew past the threshold" --location suite --sha abc1234 \
+  --pr "$pr_url" --why "found in the final iteration" 2>&1)"; st=$?
+assert_status "files a suite-cost finding located at the suite" "$st" 0
+assert_eq "printing its number" "$out" "19"
+want="$(printf '%s\n' 'The reviewer said this.' '' 'It spans two paragraphs.' '' \
+  '**Axis:** Suite-cost' '' \
+  '**Severity:** major - Suite cost grew past the threshold' '' \
+  '**Location:** `suite` at abc1234' '' \
+  "**PR:** $pr_url" '' \
+  '**Why not fixed in the loop:** found in the final iteration' ''; printf x)"
+assert_eq "rendering the suite-cost axis and the suite as its location" \
+  "$(fake_body_of 19; printf x)" "$want"
+assert_eq "--axis suite-cost files as enhancement" "$(fake_labels_of 19)" "enhancement needs-triage review:major "
+
 fake_github
 out="$("$ORCH" review file nit "Rename it" "${parts[@]}" 2>&1)"; st=$?
 assert_status "files a nit" "$st" 0
@@ -318,7 +338,7 @@ fake_unfail
 # Every refusal comes before any write: the fake's label and issue stores are
 # as they were. The store starts empty, so "as they were" is also "nothing".
 fake_github
-usage="orch: usage: orch.sh review file <major|nit> <title> --axis <spec|standards> --finding-file <f> --severity-reason <r> --location <file>:<line> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
+usage="orch: usage: orch.sh review file <major|nit> <title> --axis <spec|standards|suite-cost> --finding-file <f> --severity-reason <r> --location <file>:<line|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
 before="$(fake_snapshot)"
 # each case is one line, label|drop|add: parts less the flag named by drop and
 # its value, then add, word-split on spaces, so no value in add may hold one
@@ -358,7 +378,7 @@ assert_eq "with the usage line" "$out" "$usage"
 parts_with --axis style
 out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
 assert_status "refuses an unknown axis" "$st" 1
-assert_eq "in exactly these words" "$out" "orch: not a review axis: style (want spec or standards)"
+assert_eq "in exactly these words" "$out" "orch: not a review axis: style (want spec, standards or suite-cost)"
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
 out="$("$ORCH" review file blocking "Wrong" "${parts[@]}" 2>&1)"; st=$?
@@ -400,7 +420,7 @@ for loc in scripts/a.sh scripts/a.sh: :12 scripts/a.sh:x scripts/a.sh:12- script
   out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
   assert_status "refuses the location '$loc'" "$st" 1
   assert_eq "naming it and what it wants ($loc)" "$out" \
-    "orch: not a location: $loc (want <file>:<line> or <file>:<start>-<end>)"
+    "orch: not a location: $loc (want <file>:<line>, <file>:<start>-<end> or suite)"
 done
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 

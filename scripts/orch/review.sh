@@ -251,7 +251,7 @@ review_rerun() {
 # before any label or issue write, so a malformed finding never reaches GitHub
 # rather than surfacing weeks later as "body does not parse" in triage.
 review_file() {
-  local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards> --finding-file <f> --severity-reason <r> --location <file>:<line> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
+  local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards|suite-cost> --finding-file <f> --severity-reason <r> --location <file>:<line|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
   [ $# -ge 2 ] || die "$usage"
   local severity="$1" title="$2" flag value
   local axis="" finding="" reason="" location="" sha="" pr="" why="" question=""
@@ -290,14 +290,19 @@ review_file() {
   filed_severity_label "$severity" colour desc
   # The category follows the axis; finding triage confirms or flips it later.
   category="$(category_for_axis "$axis")" \
-    || die "not a review axis: $axis (want spec or standards)"
+    || die "not a review axis: $axis (want spec, standards or suite-cost)"
   [ -n "$title" ] || die "the title is empty"
   [ -f "$finding" ] || die "finding file not found: $finding"
   [ -n "$(tr -d '[:space:]' <"$finding")" ] || die "finding file is empty: $finding"
-  # Split at the last colon: the line is the part after it, N or N-M.
-  file="${location%:*}" line="${location##*:}"
-  [[ $location == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
-    || die "not a location: $location (want <file>:<line> or <file>:<start>-<end>)"
+  # Split at the last colon: the line is the part after it, N or N-M. The
+  # literal suite - a suite-cost finding's - names the suite, with no line.
+  if [ "$location" = "$SUITE_LOCATION" ]; then
+    file="$SUITE_LOCATION" line=""
+  else
+    file="${location%:*}" line="${location##*:}"
+    [[ $location == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
+      || die "not a location: $location (want <file>:<line>, <file>:<start>-<end> or suite)"
+  fi
 
   # The round trip. The temp file is removed on every exit - a refusal or a
   # gh failure dies, so a trap, not a closing rm, is what removes it.
