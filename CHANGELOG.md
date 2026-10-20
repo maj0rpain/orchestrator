@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.18.5
+
+An attended spec review now shows each round's view before its question. `spec-review check` saves the view it prints to `<dir>/view.md`, and its pass line names that file and says to paste the view word for word, then ask in the same response. On Claude Code a new `PreToolUse` hook on `AskUserQuestion`, `hook-paste-guard.sh`, refuses the first ask after each `check` that wrote a view, until the next `spec-review apply`, handing the view back to paste (#1287).
+
 ## 4.18.4
 
 spec-review's validation helpers no longer take a collect mode argument that
