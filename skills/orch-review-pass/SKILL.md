@@ -182,6 +182,13 @@ the only Standards look the change gets before its PR (ADR-0021).
    3's known items, and hold back what they carry; this drop is the
    backstop for a finding a reviewer raised again anyway.
 
+   A `grew` verdict from **Review pass** step 5's suite-cost check comes
+   later, in neither report, and its claim's numbers change every run, so
+   it matches an earlier decline at `suite` on that location alone. When
+   step 3 meets a `grew` and an earlier decline is at `suite`, drop it the
+   same way - neither fixed nor declined again - and keep it aside for
+   step 5's **Previously declined**.
+
    Also read every **Spec questions** heading in the PR body and comments:
    its lines are the PR's **earlier spec questions**. They are never matched
    as earlier declines - only lines under **Review** are - and `None.`
