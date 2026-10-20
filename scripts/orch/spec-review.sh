@@ -597,12 +597,11 @@ spec_review_occurrences() {
   printf '%s' "$c"
 }
 
-# spec_review_edit <var> <fetched> <what> <anchor> <replacement> [collect]:
-# the text in <var> with <anchor> replaced once. Dies, naming <what>, unless
-# the anchor occurs exactly once both in <fetched>, the body as fetched, and
-# in the text the earlier items left. With [collect] set it dies on nothing:
-# the problem is appended to SR_PROBLEMS, <var> is left unedited, and it
-# returns 1.
+# spec_review_edit <var> <fetched> <what> <anchor> <replacement>: the text
+# in <var> with <anchor> replaced once, when the anchor occurs exactly once
+# both in <fetched>, the body as fetched, and in the text the earlier items
+# left. Otherwise the problem, naming <what>, is appended to SR_PROBLEMS,
+# <var> is left unedited, and it returns 1.
 spec_review_edit() {
   local __sre_text="${!1}" __sre_c __sre_problem=""
   __sre_c="$(spec_review_occurrences "$2" "$4")"
@@ -614,38 +613,39 @@ spec_review_edit() {
     __sre_problem="its anchor no longer matches exactly once after the earlier items' edits"
   fi
   if [ -n "$__sre_problem" ]; then
-    [ -n "${6:-}" ] || die "$3: $__sre_problem - nothing applied, nothing written"
     SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$3: $__sre_problem"
     return 1
   fi
   printf -v "$1" '%s' "${__sre_text%%"$4"*}$5${__sre_text#*"$4"}"
 }
 
-# spec_review_anchor <accepted> <what> <anchor> <replacement> [collect]: one
-# anchor of spec_review_validate's - applied to SR_TEXT when <accepted> is
-# set, else, with [collect] set, checked on its own against SR_FETCHED.
-spec_review_anchor() {
+# spec_review_anchor_visit <accepted> <what> <anchor> <replacement>: one
+# anchor of spec_review_validate's, counted into SR_ANCHOR_COUNT - applied to
+# SR_TEXT when <accepted> is set, else checked on its own against a scratch
+# copy of SR_FETCHED. A problem goes to SR_PROBLEMS (see spec_review_edit).
+spec_review_anchor_visit() {
+  SR_ANCHOR_COUNT=$((SR_ANCHOR_COUNT + 1))
   if [ -n "$1" ]; then
-    spec_review_edit SR_TEXT "$SR_FETCHED" "$2" "$3" "$4" "${5:-}" || true
-  elif [ -n "${5:-}" ]; then
+    spec_review_edit SR_TEXT "$SR_FETCHED" "$2" "$3" "$4" || true
+  else
     # shellcheck disable=SC2034 # spec_review_edit writes it by name; discarded
     local scratch="$SR_FETCHED"
-    spec_review_edit scratch "$SR_FETCHED" "$2" "$3" "$4" "$5" || true
+    spec_review_edit scratch "$SR_FETCHED" "$2" "$3" "$4" || true
   fi
 }
 
-# spec_review_validate <dir> <body-file> <answer> [collect]: the one
-# validation check and apply share. Reads <dir>/batch.md and the lens files of
+# spec_review_validate <dir> <body-file> <answer>: the one validation check
+# and apply share. Reads <dir>/batch.md and the lens files of
 # the lenses that ran, checks the citations, takes <answer> (see
 # spec_review_answer), and applies every anchor it accepts, in batch order, to
 # <body-file>'s text: SR_FETCHED holds the body as read, SR_TEXT the body
-# edited. Grammar, lens and citation errors die on the first. An anchor
-# problem dies too, unless [collect] is set: then every anchor - the ones the
-# answer declines checked on their own against SR_FETCHED - is checked, and
+# edited. Grammar, lens and citation errors die on the first. Every anchor is
+# visited (see spec_review_anchor_visit) and counted into SR_ANCHOR_COUNT -
+# the ones the answer declines checked on their own against SR_FETCHED - and
 # each problem, naming its `@@ anchor` line, is appended to SR_PROBLEMS, the
-# failed edit skipped.
+# failed edit skipped; each caller reacts to SR_PROBLEMS itself.
 spec_review_validate() {
-  local dir="$1" body="$2" answer="$3" collect="${4:-}" lens i j accepted
+  local dir="$1" body="$2" answer="$3" lens i j accepted
   spec_review_batch_parse "$dir/batch.md"
   SR_LF_LENS=(); SR_LF_K=(); SR_LF_TEXT=()
   for lens in $SPEC_REVIEW_LENSES; do
@@ -656,22 +656,22 @@ spec_review_validate() {
   spec_review_answer "$answer"
   file_read SR_FETCHED "$body" || die "could not read $body - nothing written"
   SR_TEXT="$SR_FETCHED"
-  SR_PROBLEMS=()
+  SR_PROBLEMS=(); SR_ANCHOR_COUNT=0
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     case "${SR_IT_REC[$i]}" in
       apply|decline)
         accepted=""
         [ "${SR_DISP[$i]}" != applied ] || accepted=1
-        spec_review_anchor "$accepted" "batch.md line ${SR_IT_ANCHOR_LINE[$i]}: item ${SR_IT_N[$i]}" \
-          "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}" "$collect" ;;
+        spec_review_anchor_visit "$accepted" "batch.md line ${SR_IT_ANCHOR_LINE[$i]}: item ${SR_IT_N[$i]}" \
+          "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}" ;;
       decision)
         for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
           [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
           accepted=""
           [ "${SR_DISP[$i]}" != taken ] || [ "${SR_TAKEN[$i]}" != "${SR_OP_LETTER[$j]}" ] || accepted=1
-          spec_review_anchor "$accepted" \
+          spec_review_anchor_visit "$accepted" \
             "batch.md line ${SR_OP_ANCHOR_LINE[$j]}: item ${SR_IT_N[$i]} option ${SR_OP_LETTER[$j]}" \
-            "${SR_OP_ANCHOR[$j]}" "${SR_OP_REPLACE[$j]}" "$collect"
+            "${SR_OP_ANCHOR[$j]}" "${SR_OP_REPLACE[$j]}"
         done ;;
     esac
   done
@@ -764,7 +764,7 @@ spec_review_check() {
   [ -z "$full" ] || [ -z "$tickets" ] || die "--full and --tickets do not combine ($usage)"
   [ -z "$full" ] || [ "${#wanted[@]}" -gt 0 ] || die "--full needs at least one item number ($usage)"
   dir="${dir%/}"
-  local body i anchors=0
+  local body
   [ -d "$dir" ] || die "no such directory: $dir"
   if [ -n "$tickets" ]; then
     spec_review_tickets_check "$dir"
@@ -774,12 +774,8 @@ spec_review_check() {
   body=spec.fetched.md
   [ -e "$dir/$body" ] || body=spec.md
   [ -f "$dir/$body" ] || die "spec.md not found in $dir"
-  spec_review_validate "$dir" "$dir/$body" all collect
+  spec_review_validate "$dir" "$dir/$body" all
   spec_review_problems_exit
-  for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
-    case "${SR_IT_REC[$i]}" in apply|decline) anchors=$((anchors + 1)) ;; esac
-  done
-  anchors=$((anchors + ${#SR_OP_ITEM[@]}))
   if [ -n "$full" ]; then
     for n in "${wanted[@]}"; do
       [ -n "$(array_index SR_IT_N "$n")" ] || die "--full $n: batch.md has no item $n"
@@ -792,7 +788,7 @@ spec_review_check() {
     rm -rf "$SR_DIFF_DIR"
     spec_review_view
   fi
-  note "batch.md passes: ${#SR_IT_N[@]} items, $anchors anchors, each matching once in $body, and the all answer applies cleanly" >&2
+  note "batch.md passes: ${#SR_IT_N[@]} items, $SR_ANCHOR_COUNT anchors, each matching once in $body, and the all answer applies cleanly" >&2
 }
 
 # spec_review_quoted <text>: <text> as a markdown blockquote, line for line.
@@ -1383,12 +1379,16 @@ spec_review_ticket_local() {
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
       j="$(array_index TK_T "${ST_T[$i]}")"
       spec_review_edit "TK_TEXT[$j]" "${TK_FETCHED[$j]}" "$at$what (#${ST_T[$i]})" \
-        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" "$collect" || true ;;
+        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" \
+        || [ -n "$collect" ] \
+        || die "${SR_PROBLEMS[${#SR_PROBLEMS[@]}-1]} - nothing applied, nothing written" ;;
     section)
       [ "${ST_DISP[$i]}" = applied ] || return 0
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
       spec_review_edit "$body_var" "$post" "$at$what (## Ticket)" \
-        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" "$collect" || true ;;
+        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" \
+        || [ -n "$collect" ] \
+        || die "${SR_PROBLEMS[${#SR_PROBLEMS[@]}-1]} - nothing applied, nothing written" ;;
     block|unblock)
       [ "${ST_DISP[$i]}" = applied ] || return 0
       spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" "$collect" || return 0
@@ -1683,8 +1683,10 @@ spec_review_apply() {
   done
 
   local i j fetched text
-  # Every accepted anchor, checked against the fetched copy and applied to it.
+  # Every anchor checked against the fetched copy, and every accepted one
+  # applied to it; the first problem refuses the batch.
   spec_review_validate "$dir" "$dir/spec.fetched.md" "$answer"
+  [ "${#SR_PROBLEMS[@]}" -eq 0 ] || die "${SR_PROBLEMS[0]} - nothing applied, nothing written"
   fetched="$SR_FETCHED"; text="$SR_TEXT"
   spec_review_reasons --reasons "$reasons" SR_IT_N SR_DISP SR_REASON \
     item batch.md "the answer"

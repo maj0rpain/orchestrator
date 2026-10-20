@@ -1340,6 +1340,45 @@ assert_not_contains "and not on stdout" "$out" "batch.md passes"
 assert_eq "the directory byte-identical" "$(dir_snapshot "$d")" "$before"
 assert_eq "no spec.fetched.md created" "$(on_disk "$d/spec.fetched.md")" absent
 
+# check's anchor count (#1281): a decision item counts one anchor for each
+# of its options, the ones the all answer declines included.
+d="$(src_dir)"
+cat >"$d/batch.md" <<'BATCH'
+@@ lens fidelity ran
+@@ lens consistency not-run timed out
+@@ lens testability not-run timed out
+@@ lens implementability not-run timed out
+
+@@ item 1 fidelity decision B material
+@@ finding fidelity 1
+@@ why Alpha and Delta are stale
+@@ option A Prime alpha
+@@ summary Alpha primed
+@@ anchor
+Alpha line.
+@@ replace
+Alpha prime line.
+@@ end
+@@ option B Prime delta
+@@ summary Delta primed
+@@ anchor
+Delta line.
+@@ replace
+Delta prime line.
+@@ end
+@@ option C Prime beta
+@@ summary Beta primed
+@@ anchor
+Beta line.
+@@ replace
+Beta prime line.
+@@ end
+BATCH
+src "$d"
+assert_status "a lone decision item passes" "$st" 0
+assert_eq "counting an anchor for each of its three options" "$err" \
+  "batch.md passes: 1 items, 3 anchors, each matching once in spec.md, and the all answer applies cleanly"
+
 # The Implementability lens's code map sits outside the lens-<name>.md
 # namespace, so check never parses it (#1141).
 d="$(src_dir)"
@@ -1835,15 +1874,20 @@ Delta line.
 Twice.
 Twice.'
 
-# apply checks only the anchors its answer accepts, naming the batch line.
+# apply checks every anchor, the ones its answer declines included, as check
+# does (#1281): a declined item's bad anchor refuses the batch, naming its
+# batch line, with nothing written.
 src_bad2() { d="$(src_dir)"; sed -i '19s/.*/Nowhere./' "$d/batch.md"; }
-src_bad2
-out="$("$ORCH" spec-review apply "$d" none --round 1/1 --issue 14 2>&1)"; st=$?
-assert_status "apply none passes over an unapplied item's bad anchor" "$st" 0
-src_bad2
-out="$("$ORCH" spec-review apply "$d" "3A, -2" --round 1/1 --issue 14 2>&1)"; st=$?
-assert_status "apply with an override answer declining the item passes too" "$st" 0
-assert_contains "applying the items it does not decline" "$(cat "$d/spec.md")" "Alpha prime line."
+for answer in none "3A, -2"; do
+  src_bad2
+  snap="$(fake_snapshot)"
+  out="$("$ORCH" spec-review apply "$d" "$answer" --round 1/1 --issue 14 2>&1)"; st=$?
+  assert_status "apply '$answer' refuses a declined item's bad anchor" "$st" 1
+  assert_eq "apply '$answer' names the bad anchor's batch line" "$out" \
+    "orch: batch.md line 18: item 2: its anchor matches no text in the body - nothing applied, nothing written"
+  assert_eq "apply '$answer' leaves spec.md unwritten" "$(cat "$d/spec.md")" "$(printf '%s' "$src_body")"
+  assert_eq "apply '$answer' writes nothing to GitHub" "$(fake_snapshot)" "$snap"
+done
 src_bad2
 src "$d"
 assert_eq "check names the bad anchor's line" "$err" \
