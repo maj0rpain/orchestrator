@@ -142,20 +142,27 @@ flow_state_get() {
   jq -r --arg k "$2" --arg d "$default" '.[$k] | if . == null then $d else . end | tostring' "$1"
 }
 
-# flow_state_put <file> <key> <json>: the one state-file write, private to the
-# writers below. It stamps updated before it sets the key, so a write of
-# updated itself sticks. The temp file sits beside the state file and replaces
-# it only when jq succeeds; on any failure it is removed and the status
-# returned. Every command runs in a conditional, so a caller's set -e cannot
-# stop it before the cleanup.
-flow_state_put() {
-  local tmp rc
-  [ -f "$1" ] || return 1
-  tmp="$(mktemp "$1.XXXXXX")" || return
-  jq --arg k "$2" --argjson v "$3" --arg now "$(now)" \
-    '.updated = $now | .[$k] = $v' "$1" >"$tmp" \
-    && mv "$tmp" "$1" \
+# flow_state_replace <file> <jq-arg>...: replaces <file> whole with what jq
+# prints given <jq-arg>..., private to the writers below. The temp file sits
+# beside <file> and replaces it only when jq succeeds; on any failure it is
+# removed and the status returned. Every command runs in a conditional, so a
+# caller's set -e cannot stop it before the cleanup.
+flow_state_replace() {
+  local file="$1" tmp rc
+  shift
+  tmp="$(mktemp "$file.XXXXXX")" || return
+  jq "$@" >"$tmp" \
+    && mv "$tmp" "$file" \
     || { rc=$?; rm -f "$tmp"; return "$rc"; }
+}
+
+# flow_state_put <file> <key> <json>: the one write of a key, private to the
+# writers below. It stamps updated before it sets the key, so a write of
+# updated itself sticks.
+flow_state_put() {
+  [ -f "$1" ] || return 1
+  flow_state_replace "$1" --arg k "$2" --argjson v "$3" --arg now "$(now)" \
+    '.updated = $now | .[$k] = $v' "$1"
 }
 
 # flow_state_seed <slug> <issue> <base>: prints the JSON init seeds a new
@@ -186,17 +193,12 @@ EOT
 }
 
 # flow_state_create <file> <json>: writes <json> to <file>, creating it or
-# replacing it whole - init's write of a new flow's seed. As in
-# flow_state_put, the temp file sits beside <file> and replaces it only when
-# the write succeeds; on any failure it is removed and the status returned,
-# every command in a conditional so a caller's set -e cannot skip the cleanup.
-# The write goes through jq, so <json> that does not parse is a failed write.
+# replacing it whole - init's write of a new flow's seed - through
+# flow_state_replace, so a failed write leaves <file> untouched and no temp
+# file. The write goes through jq, so <json> that does not parse is a failed
+# write.
 flow_state_create() {
-  local tmp rc
-  tmp="$(mktemp "$1.XXXXXX")" || return
-  jq . <<<"$2" >"$tmp" 2>/dev/null \
-    && mv "$tmp" "$1" \
-    || { rc=$?; rm -f "$tmp"; return "$rc"; }
+  flow_state_replace "$1" . <<<"$2" 2>/dev/null
 }
 
 # flow_state_write <file> <key> <value>: the coercing writer. "null" stores a
