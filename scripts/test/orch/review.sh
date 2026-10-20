@@ -89,6 +89,22 @@ fake_ci_reset() {
 # fake_reruns: the Actions run ids rerun, read back, space-separated, in order.
 fake_reruns() { tr '\n' ' ' 2>/dev/null <"$ORCH_GH_FAKE_STORE/reruns" | sed 's/ $//'; }
 
+# parts_with <flag> [<value>]: sets args to review file's parts - its --flag
+# value pairs - with <flag>'s value replaced by <value>, in place, or, given no
+# value, with <flag> and its value dropped. An empty <value> still replaces.
+parts_with() {
+  local i=0
+  args=()
+  while [ "$i" -lt "${#parts[@]}" ]; do
+    if [ "${parts[$i]}" != "$1" ]; then
+      args+=("${parts[$i]}" "${parts[$((i + 1))]}")
+    elif [ $# -gt 1 ]; then
+      args+=("$1" "$2")
+    fi
+    i=$((i + 2))
+  done
+}
+
 # --- review ready's pointer to /orchestrator:finish (#727) ---------------------
 # review ready's stdout stays the PR number alone everywhere; in a side
 # checkout it points the human at /orchestrator:finish on stderr, for after the
@@ -257,10 +273,9 @@ assert_contains "the severity line naming the nit" "$(fake_body_of "$out")" "**S
 
 # The category is the axis's: a Spec finding is a defect against what was
 # asked for, a Standards finding an improvement on how it was built.
-axis_parts=("${parts[@]}")
-axis_parts[1]=spec
+parts_with --axis spec
 fake_github
-out="$("$ORCH" review file major "Misses a criterion" "${axis_parts[@]}" 2>&1)"; st=$?
+out="$("$ORCH" review file major "Misses a criterion" "${args[@]}" 2>&1)"; st=$?
 assert_status "files a Spec finding" "$st" 0
 assert_eq "labelled bug, and not enhancement" "$(fake_labels_of "$out")" "bug needs-triage review:major "
 assert_contains "creating bug with GitHub's default colour and description" \
@@ -268,13 +283,12 @@ assert_contains "creating bug with GitHub's default colour and description" \
 assert_not_contains "and no enhancement label" "$(fake_labels)" "enhancement${tab}"
 
 fake_github
-axis_parts[1]=Standards
-out="$("$ORCH" review file nit "Rename it" "${axis_parts[@]}" 2>&1)"; st=$?
+parts_with --axis Standards
+out="$("$ORCH" review file nit "Rename it" "${args[@]}" 2>&1)"; st=$?
 assert_status "files a Standards finding, whatever the axis's case" "$st" 0
 assert_eq "labelled enhancement, and not bug" "$(fake_labels_of "$out")" "enhancement needs-triage review:nit "
 assert_contains "creating enhancement with GitHub's default colour and description" \
   "$(fake_labels)" "enhancement${tab}a2eeef${tab}New feature or request"
-axis_parts[1]=spec
 
 # A category label that cannot be created - most often because the repo has
 # it already - does not stop the filing, and the repo's own is left as it is.
@@ -282,7 +296,8 @@ fake_github
 fake_label bug 123456 "The repo's own bug"
 fake_label enhancement 654321 "The repo's own enhancement"
 fake_next_issue 23
-out="$("$ORCH" review file major "Misses a criterion" "${axis_parts[@]}" 2>&1)"; st=$?
+parts_with --axis spec
+out="$("$ORCH" review file major "Misses a criterion" "${args[@]}" 2>&1)"; st=$?
 assert_status "a category label the repo has already does not stop filing" "$st" 0
 assert_eq "the number is still printed" "$out" "23"
 assert_contains "and the issue still carries the label" "$(fake_labels_of 23)" "bug "
@@ -294,7 +309,8 @@ assert_contains "nor over its own enhancement label" "$(fake_labels)" \
 fake_github
 fake_fail adapter_label_create "HTTP 502: Bad Gateway"
 fake_next_issue 24
-out="$("$ORCH" review file major "Misses a criterion" "${axis_parts[@]}" 2>&1)"; st=$?
+parts_with --axis spec
+out="$("$ORCH" review file major "Misses a criterion" "${args[@]}" 2>&1)"; st=$?
 assert_status "nor does one gh fails to create for another reason" "$st" 0
 assert_eq "the number alone printed, gh's error kept out of it" "$out" "24"
 fake_unfail
@@ -307,13 +323,7 @@ before="$(fake_snapshot)"
 # each case is one line, label|drop|add: parts less the flag named by drop and
 # its value, then add, word-split on spaces, so no value in add may hold one
 while IFS='|' read -r label drop add; do
-  args=()
-  i=0
-  while [ "$i" -lt "${#parts[@]}" ]; do
-    if [ "${parts[$i]}" = "$drop" ]; then i=$((i + 2)); continue; fi
-    args+=("${parts[$i]}" "${parts[$((i + 1))]}")
-    i=$((i + 2))
-  done
+  if [ -n "$drop" ]; then parts_with "$drop"; else args=("${parts[@]}"); fi
   # shellcheck disable=SC2206
   [ -z "$add" ] || args+=($add)
   out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
@@ -334,15 +344,8 @@ a flag with no value||--spec-question
 the old --body-file||--body-file x
 CASES
 for flag in --axis --finding-file --severity-reason --location --sha --pr --why --spec-question; do
-  args=("${parts[@]}" "$flag" "")
-  [ "$flag" = --spec-question ] || {
-    args=()
-    i=0
-    while [ "$i" -lt "${#parts[@]}" ]; do
-      if [ "${parts[$i]}" = "$flag" ]; then args+=("$flag" "   "); else args+=("${parts[$i]}" "${parts[$((i + 1))]}"); fi
-      i=$((i + 2))
-    done
-  }
+  # --spec-question is not in parts, so its empty value is appended instead
+  if [ "$flag" = --spec-question ]; then args=("${parts[@]}" "$flag" ""); else parts_with "$flag" "   "; fi
   out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
   assert_status "refuses an empty $flag" "$st" 1
   assert_eq "with the usage line (empty $flag)" "$out" "$usage"
@@ -352,7 +355,8 @@ out="$("$ORCH" review file major "Title" --axis spec "$finding" 2>&1)"; st=$?
 assert_status "insists on its flags rather than guessing a positional" "$st" 1
 assert_eq "with the usage line" "$out" "$usage"
 
-out="$("$ORCH" review file major "Title" --axis style "${parts[@]:2}" 2>&1)"; st=$?
+parts_with --axis style
+out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
 assert_status "refuses an unknown axis" "$st" 1
 assert_eq "in exactly these words" "$out" "orch: not a review axis: style (want spec or standards)"
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
@@ -372,24 +376,28 @@ assert_status "refuses an empty title" "$st" 1
 assert_eq "saying so" "$out" "orch: the title is empty"
 assert_eq "before anything reaches gh" "$(fake_snapshot)" "$before"
 
-out="$("$ORCH" review file major "Title" "${parts[@]:0:2}" --finding-file /nonexistent/finding.md "${parts[@]:4}" 2>&1)"; st=$?
+parts_with --finding-file /nonexistent/finding.md
+out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
 assert_status "refuses a finding file that does not exist" "$st" 1
 assert_eq "naming it" "$out" "orch: finding file not found: /nonexistent/finding.md"
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
 blank="$(mktemp)"
 printf '  \n\t\n\n' >"$blank"
-out="$("$ORCH" review file major "Title" "${parts[@]:0:2}" --finding-file "$blank" "${parts[@]:4}" 2>&1)"; st=$?
+parts_with --finding-file "$blank"
+out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
 assert_status "refuses a finding file holding only whitespace" "$st" 1
 assert_eq "naming it" "$out" "orch: finding file is empty: $blank"
 : >"$blank"
-out="$("$ORCH" review file major "Title" "${parts[@]:0:2}" --finding-file "$blank" "${parts[@]:4}" 2>&1)"; st=$?
+parts_with --finding-file "$blank"
+out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
 assert_status "and an empty one" "$st" 1
 assert_eq "naming it too" "$out" "orch: finding file is empty: $blank"
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
 for loc in scripts/a.sh scripts/a.sh: :12 scripts/a.sh:x scripts/a.sh:12- scripts/a.sh:-3 scripts/a.sh:1-2-3; do
-  out="$("$ORCH" review file major "Title" "${parts[@]:0:6}" --location "$loc" "${parts[@]:8}" 2>&1)"; st=$?
+  parts_with --location "$loc"
+  out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
   assert_status "refuses the location '$loc'" "$st" 1
   assert_eq "naming it and what it wants ($loc)" "$out" \
     "orch: not a location: $loc (want <file>:<line> or <file>:<start>-<end>)"
@@ -398,7 +406,8 @@ assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
 # The round trip: a body that does not parse back to its parts is refused,
 # naming the first field that did not.
-out="$("$ORCH" review file major "Title" "${parts[@]:0:12}" --why "$(printf 'one line\nand another')" 2>&1)"; st=$?
+parts_with --why "$(printf 'one line\nand another')"
+out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
 assert_status "refuses a value holding a newline" "$st" 1
 assert_eq "naming the field the round trip lost" "$out" \
   "orch: the rendered body does not parse back: why (given 'one line
@@ -407,13 +416,15 @@ assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
 quoting="$(mktemp)"
 printf 'It reads the line\n**Axis:** Spec\nas the axis.\n' >"$quoting"
-out="$("$ORCH" review file major "Title" "${parts[@]:0:2}" --finding-file "$quoting" "${parts[@]:4}" 2>&1)"; st=$?
+parts_with --finding-file "$quoting"
+out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
 assert_status "refuses a finding text quoting a labelled line at a line's start" "$st" 1
 assert_eq "naming the field it shadows" "$out" \
   "orch: the rendered body does not parse back: axis (given 'standards', parsed 'spec')"
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
-out="$("$ORCH" review file major "Title" "${parts[@]:0:6}" --location 'scripts/a`b.sh:12' "${parts[@]:8}" 2>&1)"; st=$?
+parts_with --location 'scripts/a`b.sh:12'
+out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
 assert_status "refuses a location file holding a backtick" "$st" 1
 assert_eq "naming the file field" "$out" \
   "orch: the rendered body does not parse back: file (given 'scripts/a\`b.sh', parsed 'b.sh')"
@@ -440,7 +451,8 @@ empty_tmp="$(mktemp -d)"
 out="$(TMPDIR="$empty_tmp" "$ORCH" review file major "Title" "${parts[@]}" 2>&1)"; st=$?
 assert_status "files with TMPDIR an empty directory" "$st" 0
 assert_eq "leaving it empty after a success" "$(ls -A "$empty_tmp")" ""
-out="$(TMPDIR="$empty_tmp" "$ORCH" review file major "Title" "${parts[@]:0:2}" --finding-file "$quoting" "${parts[@]:4}" 2>&1)"; st=$?
+parts_with --finding-file "$quoting"
+out="$(TMPDIR="$empty_tmp" "$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
 assert_status "refuses a body that does not parse back" "$st" 1
 assert_eq "leaving it empty after a round-trip refusal" "$(ls -A "$empty_tmp")" ""
 fake_fail adapter_issue_create "$GH_502"
