@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.20.3
+
+- `orch.sh doctor` judges whether `.orchestrator/state.json` is readable the
+  way the hooks do: valid JSON that is not an object now earns the one
+  "is not a JSON object" FAIL, which replaces "is not valid JSON", instead of
+  erroring partway through the flow checks.
+- `orch.sh init` writes its state seed atomically through the Flow state
+  module, so an interrupted init never leaves a truncated state.json. The
+  spec commands and `spec-review apply` check for an active flow through the
+  module too, and a state read walks the key table once.
+
 ## 4.20.2
 
 The phase table is read by column name through one row reader, its stale-handoff helper is renamed `handoffs_written_from`, and `doctor --flow`'s upstream and draft checks take their phases from the table through `<phase>+` phase lists. No behaviour changes.
