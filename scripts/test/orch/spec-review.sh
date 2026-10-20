@@ -497,11 +497,11 @@ assert_eq "-<n> on a decision: left undecided under Consistency and Testability 
 assert_eq "-<n> on an apply item: declined" \
   "$(has_line "$sra_cl" '- (4) "Delta has no test." - declined')" yes
 assert_eq "the resolved item still resolved" "$(has_line "$sra_cl" "- (5) resolved by (4)")" yes
-sra_spaced="$(cat "$d/spec.md" "$d/changelog.md")"
+sra_plain="$(cat "$d/spec.md" "$d/changelog.md")"
 d="$(sra_dir)"
 sra "$d" "  -3 ,+2 ,  -4  "
 assert_status "an Other list with surrounding spaces applies" "$st" 0
-assert_eq "the same result as the list written plainly" "$(cat "$d/spec.md" "$d/changelog.md")" "$sra_spaced"
+assert_eq "the same result as the list written plainly" "$(cat "$d/spec.md" "$d/changelog.md")" "$sra_plain"
 
 # A departure that matches the recommendation is recorded as recommended.
 d="$(sra_dir)"
