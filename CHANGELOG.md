@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.19.1
+
+Move two single-module constants out of orch.sh into their modules, and bring the stale comments and module headers in line with the concept-module split.
+
 ## 4.19.0
 
 `pr publish` and `pr open` take `--label <name>`, repeatable and any name, so a PR carries the labels the repo requires from creation; each label is read back once the PR is recorded, and one that did not land, or a failed read, fails the command naming the PR. Quick implementation and the flow pass the labels the repo's own instructions require, judged against the branch's diff, rather than adding them afterwards with `gh pr edit`. CI now decides the `no-version-bump` waiver from the PR's labels as they stand when the job runs, not from the event payload, so a PR's `opened` run no longer fails on a label added a moment after creation (#1299).
