@@ -18,31 +18,43 @@
 #   nothing.
 # - flow_state_get on a file jq cannot parse: jq's own error and status pass
 #   through unchanged.
-# - Writers (flow_state_write, flow_state_write_string): non-zero, the state
-#   file untouched and no temp file left, when the write fails; an absent
-#   state file is a failed write, and nothing is created.
+# - Writers (flow_state_write, flow_state_write_string, flow_state_create):
+#   non-zero, the state file untouched and no temp file left, when the write
+#   fails. flow_state_write and flow_state_write_string change an existing
+#   state file: an absent one is a failed write, and nothing is created.
+#   flow_state_create is the one writer that creates the file, or replaces it
+#   whole.
+# - flow_state_seed: 2 for an arg row it has no value for, a programming
+#   error, and non-zero when jq cannot build the seed. Either way it prints
+#   nothing.
 #
 # Every function carries the flow_state_ prefix but state_rows and now, so
 # none collides with orch.sh's wrappers, which keep today's names. It stays
 # bash-3.2 compatible (no namerefs). Its tests: the "Flow state module"
 # section of scripts/test/orch/state.sh.
 
-# The directory under a checkout's root holding its flow state. orch.sh marks
-# it readonly after sourcing this file.
+# The directory under a checkout's root holding its flow state. It lives here
+# because where the state file sits is the one fact orch.sh and the hooks
+# share: the hooks reach it only through flow_state_file, and orch.sh builds
+# its other .orchestrator/ paths on it - so it changes only when the state file
+# moves, never for a reason outside the state format. orch.sh marks it
+# readonly after sourcing this file; it is assigned plainly here because the
+# test setup sources this file too.
 ORCH_DIR_NAME=".orchestrator"
 
 # Every flow state key, one row each, in the order init seeds them into
 # state.json: key|default|seed|owner. state_get, state set and init all read
-# it, so adding a key is one row; an arg row also needs its value in cmd_init's
-# case, and init dies naming the key without it. state_rows is its one reader:
-# lines starting with # are comments, and blank lines are skipped.
+# it, so adding a key is one row; an arg row also needs its value in
+# flow_state_seed's case, and without it init dies "could not build the state
+# seed". state_rows is its one reader: lines starting with # are comments, and
+# blank lines are skipped.
 #
 # default: what state_get returns for a null or missing value. A flow started
 #   by an older release lacks keys a fresh one seeds; each reads back as its
 #   default. The default applies only to a null or missing value, never to a
 #   stored false (jq's `//` would treat false like null).
 # seed: the JSON literal init writes, or arg where init supplies the value at
-#   run time; the value comes from cmd_init's case.
+#   run time; the value comes from flow_state_seed's case.
 # owner: - for a key state set may write (state_key_settable); otherwise the
 #   reason it refuses, printed as "state set refuses <key>: <owner>".
 STATE_KEYS='slug||arg|init seeds it
@@ -117,6 +129,7 @@ flow_state_file() { printf '%s/%s/state.json\n' "$1" "$ORCH_DIR_NAME"; }
 
 # flow_state_readable <file>: true when <file> parses as a JSON object.
 flow_state_readable() {
+  # jq -e also exits 2 or 5 (usage, parse error); a predicate answers 0 or 1.
   jq -e 'type == "object"' "$1" >/dev/null 2>&1 || return 1
 }
 
@@ -141,6 +154,47 @@ flow_state_put() {
   tmp="$(mktemp "$1.XXXXXX")" || return
   jq --arg k "$2" --argjson v "$3" --arg now "$(now)" \
     '.updated = $now | .[$k] = $v' "$1" >"$tmp" \
+    && mv "$tmp" "$1" \
+    || { rc=$?; rm -f "$tmp"; return "$rc"; }
+}
+
+# flow_state_seed <slug> <issue> <base>: prints the JSON init seeds a new
+# flow's state file with, built in one pass over the key table in table order:
+# a constant row gives its seed literal, and an arg row the value its case arm
+# below gives - an empty <issue> seeds null, any other a number. An arg row
+# with no arm returns 2 and prints nothing, rather than seed null.
+flow_state_seed() {
+  local k s v fields="" seed
+  while IFS='|' read -r k _ s _; do
+    v="$s"
+    if [ "$s" = arg ]; then
+      case "$k" in
+        slug)    v='$slug' ;;
+        issue)   v='(if $issue == "" then null else ($issue | tonumber) end)' ;;
+        base)    v='$base' ;;
+        created|updated) v='$now' ;;
+        *) return 2 ;;
+      esac
+    fi
+    fields="${fields:+$fields,}\"$k\":$v"
+  done <<EOT
+$(state_rows)
+EOT
+  seed="$(jq -n --arg slug "$1" --arg issue "$2" --arg base "$3" --arg now "$(now)" \
+    "{$fields}" 2>/dev/null)" || return
+  printf '%s\n' "$seed"
+}
+
+# flow_state_create <file> <json>: writes <json> to <file>, creating it or
+# replacing it whole - init's write of a new flow's seed. As in
+# flow_state_put, the temp file sits beside <file> and replaces it only when
+# the write succeeds; on any failure it is removed and the status returned,
+# every command in a conditional so a caller's set -e cannot skip the cleanup.
+# The write goes through jq, so <json> that does not parse is a failed write.
+flow_state_create() {
+  local tmp rc
+  tmp="$(mktemp "$1.XXXXXX")" || return
+  jq . <<<"$2" >"$tmp" 2>/dev/null \
     && mv "$tmp" "$1" \
     || { rc=$?; rm -f "$tmp"; return "$rc"; }
 }

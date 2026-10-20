@@ -97,29 +97,12 @@ cmd_init() {
   # re-runnable rather than archived for nothing.
   [ -z "$issue" ] || validate_adopted_issue "$issue"
   # The whole seed is built before a done flow is archived or anything is
-  # written, so a lookup that dies leaves the previous state untouched. It is
-  # built in one pass over STATE_KEYS, in table order: a constant row gives its
-  # seed literal, and an arg row the jq expression its case arm gives, typed
-  # here. An arg row with no arm dies naming the key rather than seed null.
-  # For base, see the header of base_set_flow.
-  local k s v fields="" seed
-  while IFS='|' read -r k _ s _; do
-    v="$s"
-    if [ "$s" = arg ]; then
-      case "$k" in
-        slug)    v='$slug' ;;
-        issue)   v='(if $issue == "" then null else ($issue | tonumber) end)' ;;
-        base)    v='$base' ;;
-        created|updated) v='$now' ;;
-        *) die "init has no value for arg state key: $k" ;;
-      esac
-    fi
-    fields="${fields:+$fields,}\"$k\":$v"
-  done <<EOF
-$(state_rows)
-EOF
-  seed="$(jq -n --arg slug "$slug" --arg now "$(now)" --arg issue "$issue" --arg base "$(base_branch)" \
-    "{$fields}")" || die "could not build the state seed - nothing was written"
+  # written, so a build that fails leaves the previous state untouched. The
+  # Flow state module builds it from its key table; for base, see the header
+  # of base_set_flow.
+  local seed
+  seed="$(flow_state_seed "$slug" "$issue" "$(base_branch)")" \
+    || die "could not build the state seed - nothing was written"
   # archive_flow, not cmd_archive: in a side checkout the old flow moves to the
   # main checkout's archive, but the worktree stays - the new flow lives here.
   if [ -f "$STATE" ]; then
@@ -129,7 +112,7 @@ EOF
   fi
   mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"
   exclude_orch_dirs
-  printf '%s\n' "$seed" >"$STATE"
+  flow_state_create "$STATE" "$seed" || die "could not write $ORCH_DIR_NAME/state.json"
   phase_write spec
   [ -z "$archive_note" ] || note "$archive_note"
   note "$slug"

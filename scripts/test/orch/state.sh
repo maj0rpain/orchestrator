@@ -282,4 +282,32 @@ for pair in absent:1 done:1 review:0 invalid:0; do
   assert_eq "flow_state_active answers ${pair#*:} for a ${pair%%:*} file, printing nothing" \
     "$(fs_run "flow_state_active ${pair%%:*}.json")" "status ${pair#*:}"
 done
+# The seed: every key in table order, its literal or init's value for it.
+assert_eq "flow_state_seed prints every key in table order, a numeric issue a number" \
+  "$(fs_run 'flow_state_seed s 7 main | jq -c ".created |= type | .updated |= type"')" \
+  '{"slug":"s","phase":null,"issue":7,"base":"main","branch":null,"pr":null,"base_sha":null,"budget":null,"iteration":0,"flake_rerun_used":false,"redo_count":0,"host_fallbacks":true,"created":"string","updated":"string"}
+status 0'
+assert_eq "flow_state_seed seeds an empty issue as null" \
+  "$(fs_run 'flow_state_seed s "" main | jq -c .issue')" "null
+status 0"
+assert_contains "flow_state_seed stamps created with a UTC timestamp" \
+  "$(fs_run 'flow_state_seed s "" main | jq -r .created')" "Z"
+# An arg row with no arm in the seed's case is a programming error.
+assert_eq "flow_state_seed returns 2 for an arg row it has no value for, printing nothing" \
+  "$(fs_run 'STATE_KEYS="$STATE_KEYS
+bogus||arg|-"; flow_state_seed s "" main')" "status 2"
+before_ls="$(ls -A "$fs_dir")"
+assert_eq "flow_state_create creates an absent file" \
+  "$(fs_run 'flow_state_create created.json "{\"slug\":\"c\"}" && jq -c . created.json')" \
+  '{"slug":"c"}
+status 0'
+assert_eq "flow_state_create replaces an existing file" \
+  "$(fs_run 'flow_state_create object.json "{\"slug\":\"r\"}" && jq -c . object.json')" \
+  '{"slug":"r"}
+status 0'
+rm -f "$fs_dir/created.json"
+assert_ne "flow_state_create returns non-zero on a failed write" \
+  "$(fs_run 'flow_state_create object.json "not json" 2>/dev/null' | tail -n 1)" "status 0"
+assert_eq "and leaves the target untouched" "$(jq -c . "$fs_dir/object.json")" '{"slug":"r"}'
+assert_eq "with no temp file beside it" "$(ls -A "$fs_dir")" "$before_ls"
 restore_suite_env
