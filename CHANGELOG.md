@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.18.3
+
+The spec review module's ambiguous local variables, and its ticket item no-GitHub check function, are renamed so each variable holds one meaning and every name says what it holds; behaviour is unchanged (#1267).
+
 ## 4.18.2
 
 `orch.sh spec-review`'s error text is accurate and specific: `check`'s help says each error names its batch.md or lens-<name>.md line where it has one; a decision option not recommended that has no block is told it still carries the edit it would make; a resolved item's `@@ anchor`, `@@ replace` and `@@ end` share one refusal; every refusal for a wrongly ended block shows the line it got; and `apply --tickets` names the tickets.md line of each ticket-step refusal, as `check --tickets` does (#1265).
