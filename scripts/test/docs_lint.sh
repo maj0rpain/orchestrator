@@ -52,6 +52,7 @@
 #   scan_cheapest_test  the implementer's and fixer's Test-driven development sections carry one identical Cheapest sufficient test paragraph
 #   scan_test_cost_smells  the Standards reviewer carries the four test-cost smells outside the smell baseline
 #   scan_verify_suite_cost  the implementer, fixer and resolver run their verification through suite-cost run
+#   scan_suite_cost_check  the review loop's triage and the review pass run suite-cost check
 #   scan_improve_tests  orch-improve-tests has its command file and its six step headings in order
 #   scan_report_capability  docs/host-capabilities.md has a row for opening the report and a Markdown-summary fallback
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review section and starts its own reviewers
@@ -1991,6 +1992,45 @@ spares "an agent that runs suite-cost run, wrapped across lines, is not flagged"
   "$out" "orch-(implementer|fixer)"
 check "the implementer, fixer and resolver run their verification through suite-cost run" \
   "$(scan_verify_suite_cost "$PLUGIN_ROOT")"
+
+# --- suite-cost check (#1308) --------------------------------------------------
+echo
+echo "suite-cost check (#1308)"
+# Suite-cost growth surfaces as a finding at review time: the review loop's
+# triage, in orch-review's ## The iteration, and the review pass, in
+# orch-review-pass's ## Review pass, each run suite-cost check -- <cmd>.
+suite_cost_checks='skills/orch-review/SKILL.md|## The iteration
+skills/orch-review-pass/SKILL.md|## Review pass'
+# scan_suite_cost_check <plugin root>: one line per section that is missing
+# or never names suite-cost check --.
+scan_suite_cost_check() {
+  local r="$1" f h body
+  while IFS='|' read -r f h; do
+    if ! body="$(md_section "$r/$f" "$h" 2>/dev/null)"; then
+      echo "$f: no $h section"
+    elif ! flat_text <<<"$body" | grep -qF -- 'suite-cost check --'; then
+      echo "$f: $h does not run suite-cost check --"
+    fi
+  done <<<"$suite_cost_checks"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-review" "$fixture/skills/orch-review-pass"
+printf '# L\n\n## The iteration\n\nTriage the findings.\n\n## Severity\n\nRun `suite-cost check -- <cmd>`.\n' \
+  >"$fixture/skills/orch-review/SKILL.md"
+printf '# P\n\n## Other\n\nRun `suite-cost check -- <cmd>`.\n' >"$fixture/skills/orch-review-pass/SKILL.md"
+out="$(scan_suite_cost_check "$fixture")"
+flags "a review loop triage that never runs suite-cost check is flagged" \
+  "$out" "skills/orch-review/SKILL.md: ## The iteration does not run suite-cost check --"
+flags "a missing Review pass section is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: no ## Review pass section"
+printf '# L\n\n## The iteration\n\nTriage: run `bash "$ORCH" suite-cost\ncheck -- <cmd>`.\n' \
+  >"$fixture/skills/orch-review/SKILL.md"
+printf '# P\n\n## Review pass\n\nRun `suite-cost check -- <cmd>` once.\n' >"$fixture/skills/orch-review-pass/SKILL.md"
+assert_empty "a triage and a review pass that run suite-cost check, wrapped across lines, are not flagged" \
+  "$(scan_suite_cost_check "$fixture")"
+check "the review loop's triage and the review pass run suite-cost check" \
+  "$(scan_suite_cost_check "$PLUGIN_ROOT")"
 
 # --- improve tests (#1309) -----------------------------------------------------
 echo

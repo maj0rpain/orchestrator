@@ -36,7 +36,9 @@ session that runs it fixes what it agrees with itself.
 The caller names the spec issue and says where the declines, spec questions
 and host fallbacks go. A caller with deviations to hand - a quick
 implementation, whose PR does not exist yet - also names a file of them, for
-step 3's `--deviations`.
+step 3's `--deviations`. The caller also names the pass's **verification
+command**, for step 5's suite-cost check, or says it has none, and where
+a skipped check is reported.
 
 1. **Begin.** Run `bash "$ORCH" review-pass begin <issue>`. If it dies,
    relay its message and stop. It refuses a detached HEAD, the base branch,
@@ -85,6 +87,21 @@ step 3's `--deviations`.
    already carries it: a quick implementation's PR body, under
    **Deviations**, or the open PR's own. Fix none of them, and record none
    as a decline or a spec question.
+
+   **Suite cost.** Before fixing, run once, with the caller's verification
+   command:
+
+   ```
+   bash "$ORCH" suite-cost check -- <verification command>
+   ```
+
+   It prints one verdict line. Handle `grew <pct> - <finding text>` like
+   any other finding, at location `suite` - the suite as a whole - with the
+   finding text as its claim: fix it, or decline it with its reason. `off`,
+   `ok` and `unmeasured` raise nothing, and so does a `check` that dies:
+   relay its `orch:` message. When the caller has no verification command,
+   skip the check, and say so where the caller says. It is not a
+   smell-baseline finding, so no pass leaves it out.
 6. **Declines.** Record each finding you decline, one line each:
    `` `file:line` - <claim> - <reason> `` - its `file:line`, or `-` when the
    report gave `-` for its location; the finding's claim, in a few words;
@@ -136,7 +153,10 @@ the only Standards look the change gets before its PR (ADR-0021).
 
 1. **Run the pass**: **Review pass** steps 1 to 4, with the human's issue.
    When step 1 dies because an active flow holds this issue or this branch,
-   its message names the command to run instead.
+   its message names the command to run instead. The pass's verification
+   command is the full-suite command the repo's agent files (`CLAUDE.md`,
+   `AGENTS.md`) document. When they document none, the pass has none: its
+   suite-cost check is skipped, and step 5's **Suite cost** says so.
 2. **Earlier declines and questions.** Before fixing anything, read what
    earlier review passes on the branch's PR declined and asked. Run
    `bash "$ORCH" pr comments <prefix>-comments.md`:
@@ -185,6 +205,8 @@ the only Standards look the change gets before its PR (ADR-0021).
    A Source beginning `root-cause check` or `test-cost check`, or naming no
    baseline smell, is never one; nor is any Spec-report finding. A smell that matched an earlier
    decline is already under **Previously declined** and is not counted.
+   A `grew` verdict from **Review pass** step 5's suite-cost check is in
+   neither report and is never one: it is kept, whatever `--smells` says.
    Hidden smells are neither fixed nor declined. The reviewers are unchanged:
    the Standards reviewer still reports smells.
 3. **Fix, decline and ask**: **Review pass** steps 5 to 7, on the
@@ -221,7 +243,7 @@ the only Standards look the change gets before its PR (ADR-0021).
    **Review pass** step 2 read, fetching the body afresh: step 2's copy
    predates the commit. Its outcome goes to step 5's **PR body**. With no
    fixes there is no commit, and no check.
-5. **Report.** Write `<prefix>-comment.md` with seven headings, **Review** -
+5. **Report.** Write `<prefix>-comment.md` with eight headings, **Review** -
    the declines, or `None declined.` - **Previously declined** - each
    finding step 2 dropped as an earlier decline, as its `file:line` and
    claim, or `None.` - **Spec rulings** - each ruling step 3 posted, as
@@ -233,7 +255,10 @@ the only Standards look the change gets before its PR (ADR-0021).
    (--smells).` with `--smells` - and **PR body** - step 4's check's
    outcome value, `Not checked - no commit` when the pass made no commit,
    or `Not checked - no open PR` when it committed on a branch with no open
-   PR. **Smells** is its own heading, never a line under **Review**, so a
+   PR - and **Suite cost**, exactly one line: the verdict `suite-cost
+   check` printed, or `Skipped - no full-suite command documented.` when
+   step 1 found none. A `grew` the pass declined is also a line under
+   **Review**, at `suite`. **Smells** is its own heading, never a line under **Review**, so a
    later pass's step 2 reads no smell as a decline.
 
    Then, when the branch has an open PR (step 2's `pr comments` exited 0),
@@ -256,8 +281,8 @@ the only Standards look the change gets before its PR (ADR-0021).
      printed;
    - exit 1: the branch has no open PR; report the declines, the previously
      declined findings, the spec rulings, the unruled spec questions, host
-     fallbacks, the **Smells** line and the **PR body** outcome in the
-     session instead. The questions
+     fallbacks, the **Smells** line, the **PR body** outcome and the
+     **Suite cost** line in the session instead. The questions
      were still asked, and the rulings are on the spec issue;
    - exit 2: GitHub could not be read, or the post failed; stop and say so,
      relaying its reason. Never report this as nothing declined.

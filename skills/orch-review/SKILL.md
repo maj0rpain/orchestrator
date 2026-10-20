@@ -186,7 +186,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    - **Demoted**, with its authority - see **Authority**.
    - **Met again** - a finding a previous loop's **Filed** list already
      carries - the same file and line making the same claim, as the
-     closer's deduplication matches, never the title alone - is neither
+     closer's deduplication matches, never the title alone, or for a
+     suite-cost finding its axis and location alone (**Suite cost** below) - is neither
      fixed nor filed again; it keeps its issue number. This is the one owner
      of the already-filed rule: the closer files whatever this loop's records
      leave waiting and only reports what triage marked met again. A
@@ -203,7 +204,26 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    note under **Covered deviations** (see **Authority**), not fixed, not
    filed, and given no disposition.
 
-   Done when every finding in both reports has exactly one disposition.
+   **Suite cost.** Once per iteration, before giving any disposition, run
+
+   ```
+   bash "$ORCH" suite-cost check -- <verification command>
+   ```
+
+   with the verification command from **Before the first iteration**, step
+   2. It prints one verdict line. `grew <pct> - <finding text>` is a finding
+   with no reviewer behind it: a **major**, its axis `suite-cost`, its
+   `file:line` the literal `suite` - the suite as a whole - and its claim
+   the finding text. Triage it as any other major, by the **Severity** rule:
+   **Fix** unless its fix needs a decision or would touch this loop's own
+   fix commits' lines, **File** otherwise, and **File** in the final
+   iteration. **Met again** takes it as the same finding on its axis and
+   location alone, never its claim, since its numbers change every run.
+   `off`, `ok` and `unmeasured` raise nothing, and so does a `check` that
+   dies: relay its `orch:` message to the human.
+
+   Done when every finding in both reports, and a `grew` verdict's, has
+   exactly one disposition.
 5. Nothing to fix means no fixer - a **clean iteration**. An iteration
    that starts a fixer is never clean, even if the fixer fixes nothing.
    Write the record to `bash "$ORCH" review path` yourself, in the shape the fixer's brief
@@ -223,7 +243,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    holds step 2's. **Waiting to be filed** lists each major or nit left
    unfixed in the template's location-bearing bullet,
    ``- <Axis>/<severity>: `<file>:<line>` <claim> - <rule>``, with `-` in
-   place of `<file>:<line>` when the finding gave `-`, or reads `None`. **PR body** depends on that base sync:
+   place of `<file>:<line>` when the finding gave `-`, and `suite` for a
+   suite-cost finding, or reads `None`. **PR body** depends on that base sync:
    - **Merge resolutions** is not `None` - step 2 resolved a conflict, so
      the diff from the base SHA changed while the PR was open: before
      writing the record, run **Checking the PR body** yourself, against
