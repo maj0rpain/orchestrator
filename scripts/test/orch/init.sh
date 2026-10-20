@@ -23,7 +23,7 @@ assert_eq "excludes .scratch/ exactly once" "$(exclude_count .scratch/)" "1"
 assert_eq "writes the seed, its keys in table order, each at its seeded value" \
   "$(jq -c '.base |= type | .created |= type | .updated |= type' .orchestrator/state.json)" \
   '{"slug":"my-feature","phase":"spec","issue":null,"base":"string","branch":null,"pr":null,"base_sha":null,"budget":null,"iteration":0,"flake_rerun_used":false,"redo_count":0,"host_fallbacks":true,"created":"string","updated":"string"}'
-assert_eq "and leaves no temp file beside it" "$(ls -A .orchestrator | grep -c 'state.json.')" "0"
+assert_eq "and leaves no temp file beside it" "$(find .orchestrator -maxdepth 1 -name 'state.json.*' | wc -l | tr -d ' ')" "0"
 
 # #720: a flow mid-pipeline is refused with its own exit code, 3, so a skill
 # can tell a busy checkout apart from every other init failure.
