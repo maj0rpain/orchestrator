@@ -1104,13 +1104,13 @@ srt_refused "no tickets.md" "$d" "tickets.md not found" recommended --tickets re
 cp "$d/tickets.keep" "$d/tickets.md"
 srt_refused "a ticket item with no ticket file" "$d" "ticket item 1: ticket-20.md not found" recommended --tickets recommended
 assert_eq "a ticket item with no ticket file: names its header line" "$out" \
-  "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it"
+  "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it - nothing written"
 srt_fetch "$d"
 assert_eq "ticket-20.fetched.md not yet taken by a run that found no file" "$(on_disk "$d/ticket-20.fetched.md")" absent
 sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
 srt_refused "a ticket anchor matching nothing" "$d" "ticket item 1 (#20): its anchor matches no text" recommended --tickets recommended
 assert_eq "a ticket anchor matching nothing: names its @@ anchor line" "$out" \
-  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing applied, nothing written"
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing written"
 assert_eq "the refused run took ticket-20.fetched.md" "$(cat "$d/ticket-20.fetched.md")" "$(printf '%s' "$srt_t20")"
 sed -i 's/^Nowhere\.$/##/' "$d/tickets.md"
 srt_refused "a ticket anchor matching twice" "$d" "ticket item 1 (#20): its anchor matches more than one place" recommended --tickets recommended
@@ -1151,10 +1151,10 @@ cp "$d/tickets.keep" "$d/tickets.md"
 mv "$d/ticket-21.md" "$d/ticket-21.keep"
 srt_refused "an edge item with no ticket file" "$d" "ticket item 2: ticket-21.md not found" recommended --tickets recommended
 assert_eq "an edge item with no ticket file: names its header line" "$out" \
-  "orch: tickets.md line 10: ticket item 2: ticket-21.md not found in $d - fetch each ticket a ticket item names into it"
+  "orch: tickets.md line 10: ticket item 2: ticket-21.md not found in $d - fetch each ticket a ticket item names into it - nothing written"
 mv "$d/ticket-21.keep" "$d/ticket-21.md"
 sed -i 's/^@@ item 5 block 21 by 20 /@@ item 5 block 99 by 20 /' "$d/tickets.md"
-srt_refused "an edge item whose ticket is not in the breakdown" "$d" "ticket item 5: #99 is not a ticket of #14's breakdown" recommended --tickets recommended
+srt_refused "an edge item whose ticket is not in the breakdown" "$d" "tickets.md line 19: ticket item 5: #99 is not a ticket of #14's breakdown - nothing written" recommended --tickets recommended
 assert_eq "an edge item whose ticket is not in the breakdown: names its header line" "$out" \
   "orch: tickets.md line 19: ticket item 5: #99 is not a ticket of #14's breakdown - nothing written"
 cp "$d/tickets.keep" "$d/tickets.md"
@@ -1189,13 +1189,67 @@ d="$(srt_collapsed)"
 sed -i 's/^Build the spec\.$/Alpha line./' "$d/tickets.md"
 srt_refused "a ## Ticket anchor on text the batch items replaced" "$d" "ticket item 1 (## Ticket): its anchor matches no text" recommended --tickets recommended
 assert_eq "a ## Ticket anchor matching nothing: names its @@ anchor line" "$out" \
-  "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing applied, nothing written"
+  "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing written"
 d="$(srt_dir)"
 srt_fetch "$d"
 printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nAlpha line.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
-srt_refused "a ## Ticket item on a sub-issue breakdown" "$d" "ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues" recommended --tickets recommended
+srt_refused "a ## Ticket item on a sub-issue breakdown" "$d" "tickets.md line 2: ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues - nothing written" recommended --tickets recommended
 assert_eq "a ## Ticket item on a sub-issue breakdown: names its header line" "$out" \
   "orch: tickets.md line 2: ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues - nothing written"
+
+# Every kind of ticket-step error names its tickets.md line and ends
+# ` - nothing written`, with nothing written, in both modes.
+# srt_step_refused <mode> <label> <dir> <want> <ticket-answer>: apply in
+# <mode> (issue or flow) is refused with exactly <want>, leaving spec.md, the
+# ticket files and changelog.md as they were, and GitHub untouched.
+srt_step_refused() {
+  local mode="$1" label="$1: $2" d="$3" want="$4" before snap
+  rm -f "$top/.orchestrator/state.json"
+  if [ "$mode" = flow ]; then
+    "$ORCH" init srt >/dev/null 2>&1; "$ORCH" state set issue 14 >/dev/null
+  fi
+  before="$(srt_files "$d"; cat "$d/settled.md" 2>/dev/null)"
+  snap="$(fake_snapshot)"
+  if [ "$mode" = flow ]; then
+    out="$("$ORCH" spec-review apply "$d" recommended --round 1/2 --tickets "$5" 2>&1)"; st=$?
+  else
+    sra "$d" recommended --tickets "$5"
+  fi
+  assert_status "$label: refused" "$st" 1
+  assert_eq "$label: the exact message" "$out" "$want"
+  assert_eq "$label: no local file written" "$(srt_files "$d"; cat "$d/settled.md" 2>/dev/null)" "$before"
+  assert_eq "$label: no GitHub update" "$(fake_snapshot)" "$snap"
+}
+for sra_mode in issue flow; do
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
+  srt_step_refused "$sra_mode" "a ticket-anchor problem" "$d" \
+    "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing written" recommended
+  d="$(srt_dir)"
+  srt_step_refused "$sra_mode" "a missing ticket" "$d" \
+    "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it - nothing written" recommended
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  srt_step_refused "$sra_mode" "a block problem" "$d" \
+    "orch: tickets.md line 19: ticket item 5: #21 is already blocked by #20 - nothing written" all
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' "$d/tickets.md"
+  srt_step_refused "$sra_mode" "an unblock problem" "$d" \
+    "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21 - nothing written" recommended
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nAlpha line.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
+  srt_step_refused "$sra_mode" "a ## Ticket item on a breakdown not collapsed" "$d" \
+    "orch: tickets.md line 2: ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues - nothing written" recommended
+  d="$(srt_dir)"
+  srt_fetch "$d"
+  sed -i 's/^@@ item 5 block 21 by 20 /@@ item 5 block 99 by 20 /' "$d/tickets.md"
+  srt_step_refused "$sra_mode" "an edge outside the breakdown" "$d" \
+    "orch: tickets.md line 19: ticket item 5: #99 is not a ticket of #14's breakdown - nothing written" recommended
+done
+rm -rf "$top/.orchestrator"
 
 # A failed ticket write stops apply, naming the writes already landed, in
 # both modes.

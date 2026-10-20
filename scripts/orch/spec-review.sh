@@ -1338,18 +1338,16 @@ spec_review_tickets_answer() {
   done
 }
 
-# spec_review_ticket_load <dir> <t> <what> [collect]: ticket #<t>'s copy into
+# spec_review_ticket_load <dir> <t> <what>: ticket #<t>'s copy into
 # TK_FETCHED and TK_TEXT, once - ticket-<t>.fetched.md, else, before any
-# apply run has taken that copy, ticket-<t>.md. Dies, naming <what>, when the
-# session wrote no ticket-<t>.md; with [collect] set, the problem is appended
-# to SR_PROBLEMS instead and it returns 1.
+# apply run has taken that copy, ticket-<t>.md. When the session wrote no
+# ticket-<t>.md, the problem, naming <what>, is appended to SR_PROBLEMS and it
+# returns 1.
 spec_review_ticket_load() {
-  local j copy problem file="$1/ticket-$2.fetched.md"
+  local j copy file="$1/ticket-$2.fetched.md"
   [ -z "$(array_index TK_T "$2")" ] || return 0
   if [ ! -f "$1/ticket-$2.md" ]; then
-    problem="$3: ticket-$2.md not found in $1 - fetch each ticket a ticket item names into it"
-    [ -n "${4:-}" ] || die "$problem"
-    SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$problem"
+    SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$3: ticket-$2.md not found in $1 - fetch each ticket a ticket item names into it"
     return 1
   fi
   [ -e "$file" ] || file="$1/ticket-$2.md"
@@ -1358,40 +1356,39 @@ spec_review_ticket_load() {
   TK_T[j]="$2"; TK_FETCHED[j]="$copy"; TK_TEXT[j]="$copy"
 }
 
-# spec_review_ticket_local <index> <body-var> <post> <dir> [collect]: ticket
-# item <index>'s checks that read no GitHub, the half apply and check share.
-# A text item's ticket is loaded (see spec_review_ticket_load) and, when
-# ST_DISP holds it applied, its edit made in memory: to its ticket's copy in
-# TK_TEXT, or a `## Ticket` edit to the body in <body-var>, anchored on
-# <post>, the body as the batch items left it. An applied edge item is
-# checked against its ticket's copy's `## Blocked by`. Each problem names its
-# tickets.md line (a text item's `@@ anchor` line, else its header line); it
-# dies on one, or with [collect] set - check's way - appends it to
-# SR_PROBLEMS instead.
+# spec_review_ticket_local <index> <body-var> <post> <dir>: ticket item
+# <index>'s checks that read no GitHub, the half apply and check share. A
+# text item, counted into SR_TICKET_ANCHOR_COUNT, has its ticket loaded (see
+# spec_review_ticket_load) and, when ST_DISP holds it applied, its edit made
+# in memory: to its ticket's copy in TK_TEXT, or a `## Ticket` edit to the
+# body in <body-var>, anchored on <post>, the body as the batch items left
+# it. An applied edge item is checked against its ticket's copy's `## Blocked
+# by`. Each problem, naming its tickets.md line (a text item's `@@ anchor`
+# line, else its header line), is appended to SR_PROBLEMS; each caller reacts
+# to SR_PROBLEMS itself.
 spec_review_ticket_local() {
-  local i="$1" body_var="$2" post="$3" dir="$4" collect="${5:-}" j at problem="" have=""
+  local i="$1" body_var="$2" post="$3" dir="$4" j at problem="" have=""
   local what="ticket item ${ST_N[$1]}"
+  case "${ST_KIND[$i]}" in
+    ticket|section) SR_TICKET_ANCHOR_COUNT=$((SR_TICKET_ANCHOR_COUNT + 1)) ;;
+  esac
   at="tickets.md line ${ST_LINE[$i]}: "
   case "${ST_KIND[$i]}" in
     ticket)
-      spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" "$collect" || return 0
+      spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" || return 0
       [ "${ST_DISP[$i]}" = applied ] || return 0
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
       j="$(array_index TK_T "${ST_T[$i]}")"
       spec_review_edit "TK_TEXT[$j]" "${TK_FETCHED[$j]}" "$at$what (#${ST_T[$i]})" \
-        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" \
-        || [ -n "$collect" ] \
-        || die "${SR_PROBLEMS[${#SR_PROBLEMS[@]}-1]} - nothing applied, nothing written" ;;
+        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" || return 0 ;;
     section)
       [ "${ST_DISP[$i]}" = applied ] || return 0
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
       spec_review_edit "$body_var" "$post" "$at$what (## Ticket)" \
-        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" \
-        || [ -n "$collect" ] \
-        || die "${SR_PROBLEMS[${#SR_PROBLEMS[@]}-1]} - nothing applied, nothing written" ;;
+        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" || return 0 ;;
     block|unblock)
       [ "${ST_DISP[$i]}" = applied ] || return 0
-      spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" "$collect" || return 0
+      spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" || return 0
       j="$(array_index TK_T "${ST_T[$i]}")"
       ! list_has "$(printf '%s\n' "${TK_FETCHED[$j]}" | blocked_by_section_numbers)" \
         "${ST_B[$i]}" || have=1
@@ -1401,7 +1398,6 @@ spec_review_ticket_local() {
         [ -n "$have" ] || problem="#${ST_T[$i]} is not blocked by #${ST_B[$i]}"
       fi
       [ -n "$problem" ] || return 0
-      [ -n "$collect" ] || die "$at$what: $problem - nothing written"
       SR_PROBLEMS[${#SR_PROBLEMS[@]}]="$at$what: $problem" ;;
   esac
 }
@@ -1410,10 +1406,12 @@ spec_review_ticket_local() {
 # ticket item checked and applied in memory - see spec_review_ticket_local -
 # and the checks that read GitHub: every edge item's tickets in the
 # breakdown, and a `## Ticket` item only on a collapsed one. Dies, before any
-# write, on the first that fails.
+# write, on the first GitHub-reading check that fails, else, after the loop,
+# on the first problem spec_review_ticket_local collected.
 spec_review_tickets_follow() {
   local body_var="$1" dir="$2" kind="$3" issue="$4" i t what post subs="" listed
   [ -z "$ST_RETIRE" ] || return 0
+  SR_TICKET_ANCHOR_COUNT=0
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
     case "${ST_KIND[$i]}" in
       block|unblock)
@@ -1437,6 +1435,7 @@ spec_review_tickets_follow() {
     esac
     spec_review_ticket_local "$i" "$body_var" "$post" "$dir"
   done
+  [ "${#SR_PROBLEMS[@]}" -eq 0 ] || die "${SR_PROBLEMS[0]} - nothing written"
 }
 
 # spec_review_tickets_check <dir>: check --tickets - <dir>/tickets.md
@@ -1446,24 +1445,23 @@ spec_review_tickets_follow() {
 # `orch: ` line each, then exit 1. A clean file prints its view on stdout -
 # see spec_review_tickets_view - and a one-line summary on stderr.
 spec_review_tickets_check() {
-  local dir="$1" i anchors=0 __srtc_body
+  local dir="$1" i __srtc_body
   [ -f "$dir/tickets.md" ] || die "tickets.md not found in $dir"
   [ -f "$dir/spec.md" ] || die "spec.md not found in $dir"
   spec_review_tickets_parse "$dir/tickets.md"
   spec_review_tickets_answer all
   file_read __srtc_body "$dir/spec.md" || die "could not read $dir/spec.md"
   local post="$__srtc_body"
-  SR_PROBLEMS=(); TK_T=(); TK_FETCHED=(); TK_TEXT=()
+  SR_PROBLEMS=(); SR_TICKET_ANCHOR_COUNT=0; TK_T=(); TK_FETCHED=(); TK_TEXT=()
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
-    spec_review_ticket_local "$i" __srtc_body "$post" "$dir" collect
-    case "${ST_KIND[$i]}" in ticket|section) anchors=$((anchors + 1)) ;; esac
+    spec_review_ticket_local "$i" __srtc_body "$post" "$dir"
   done
   spec_review_problems_exit
   spec_review_tickets_view
   if [ -n "$ST_NONE" ]; then
     note "tickets.md passes: no open ticket affected" >&2
   else
-    note "tickets.md passes: ${#ST_N[@]} items, $anchors anchors, each matching once, and the all answer applies cleanly" >&2
+    note "tickets.md passes: ${#ST_N[@]} items, $SR_TICKET_ANCHOR_COUNT anchors, each matching once, and the all answer applies cleanly" >&2
   fi
 }
 
