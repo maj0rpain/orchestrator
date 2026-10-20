@@ -63,10 +63,12 @@ gh_die() {
   local code=1 hint=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --exit|--hint)
+      --exit)
         gh_die_opt_check gh_die $# "$@"
-        if [ "$1" = --exit ]; then code=2; else hint="$2"; fi
-        shift 2 ;;
+        code=2; shift 2 ;;
+      --hint)
+        gh_die_opt_check gh_die $# "$@"
+        hint="$2"; shift 2 ;;
       -*) die "gh_die: unknown option $1" ;;
       *) break ;;
     esac
