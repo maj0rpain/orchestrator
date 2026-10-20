@@ -1248,6 +1248,15 @@ for sra_mode in issue flow; do
   srt_step_refused "$sra_mode" "a ticket-anchor problem" "$d" \
     "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing written" recommended
   d="$(srt_dir)"
+  srt_fetch "$d"
+  sed -i 's/^Build gamma\.$/Nowhere./' "$d/tickets.md"
+  srt_step_refused "$sra_mode" "a declined ticket item's anchor problem" "$d" \
+    "orch: tickets.md line 14: ticket item 4 (#21): its anchor matches no text in the body - nothing written" recommended
+  d="$(srt_collapsed)"
+  sed -i 's/^@@ item 1 section apply$/@@ item 1 section decline not now/; s/^Build the spec\.$/Nowhere./' "$d/tickets.md"
+  srt_step_refused "$sra_mode" "a declined ## Ticket item's anchor problem" "$d" \
+    "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing written" recommended
+  d="$(srt_dir)"
   srt_step_refused "$sra_mode" "a missing ticket" "$d" \
     "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it - nothing written" recommended
   d="$(srt_dir)"

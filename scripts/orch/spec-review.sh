@@ -619,19 +619,27 @@ spec_review_edit() {
   printf -v "$1" '%s' "${__sre_text%%"$4"*}$5${__sre_text#*"$4"}"
 }
 
+# spec_review_edit_accepted <accepted> <var> <fetched> <what> <anchor>
+# <replacement>: spec_review_edit on <var> when <accepted> is set, else the
+# anchor checked on its own against a scratch copy of <fetched>, so a declined
+# item's broken anchor is a problem too. Returns spec_review_edit's status.
+spec_review_edit_accepted() {
+  if [ -n "$1" ]; then
+    spec_review_edit "$2" "$3" "$4" "$5" "$6"
+  else
+    # shellcheck disable=SC2034 # spec_review_edit writes it by name; discarded
+    local scratch="$3"
+    spec_review_edit scratch "$3" "$4" "$5" "$6"
+  fi
+}
+
 # spec_review_anchor_visit <accepted> <what> <anchor> <replacement>: one
 # anchor of spec_review_validate's, counted into SR_ANCHOR_COUNT - applied to
 # SR_TEXT when <accepted> is set, else checked on its own against a scratch
-# copy of SR_FETCHED. A problem goes to SR_PROBLEMS (see spec_review_edit).
+# copy of SR_FETCHED (see spec_review_edit_accepted).
 spec_review_anchor_visit() {
   SR_ANCHOR_COUNT=$((SR_ANCHOR_COUNT + 1))
-  if [ -n "$1" ]; then
-    spec_review_edit SR_TEXT "$SR_FETCHED" "$2" "$3" "$4" || true
-  else
-    # shellcheck disable=SC2034 # spec_review_edit writes it by name; discarded
-    local scratch="$SR_FETCHED"
-    spec_review_edit scratch "$SR_FETCHED" "$2" "$3" "$4" || true
-  fi
+  spec_review_edit_accepted "$1" SR_TEXT "$SR_FETCHED" "$2" "$3" "$4" || true
 }
 
 # spec_review_validate <dir> <body-file> <answer>: the one validation check
@@ -1363,34 +1371,35 @@ SR_TICKET_ANCHOR_COUNT=0
 # spec_review_ticket_local <index> <body-var> <post> <dir>: ticket item
 # <index>'s checks that read no GitHub, the half apply and check share. A
 # text item, counted into SR_TICKET_ANCHOR_COUNT, has its ticket loaded (see
-# spec_review_ticket_load) and, when ST_DISP holds it applied, its edit made
-# in memory: to its ticket's copy in TK_TEXT, or a `## Ticket` edit to the
-# body in <body-var>, anchored on <post>, the body as the batch items left
-# it. An applied edge item is checked against its ticket's copy's `## Blocked
+# spec_review_ticket_load) and its anchor visited (see
+# spec_review_edit_accepted): when ST_DISP holds it applied, its edit made in
+# memory, to its ticket's copy in TK_TEXT, or a `## Ticket` edit to the body
+# in <body-var>, anchored on <post>, the body as the batch items left it;
+# when declined, checked on its own against the ticket as fetched, or <post>.
+# An applied edge item is checked against its ticket's copy's `## Blocked
 # by`. Each problem, naming its tickets.md line (a text item's `@@ anchor`
 # line, else its header line), is appended to SR_PROBLEMS; each caller reacts
 # to SR_PROBLEMS itself.
 spec_review_ticket_local() {
-  local i="$1" body_var="$2" post="$3" dir="$4" j at problem="" have=""
+  local i="$1" body_var="$2" post="$3" dir="$4" j at problem="" have="" accepted=""
   local what="ticket item ${ST_N[$1]}"
   at="tickets.md line ${ST_LINE[$i]}: "
+  [ "${ST_DISP[$i]}" != applied ] || accepted=1
   case "${ST_KIND[$i]}" in
     ticket)
       SR_TICKET_ANCHOR_COUNT=$((SR_TICKET_ANCHOR_COUNT + 1))
       spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" || return 0
-      [ "${ST_DISP[$i]}" = applied ] || return 0
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
       j="$(array_index TK_T "${ST_T[$i]}")"
-      spec_review_edit "TK_TEXT[$j]" "${TK_FETCHED[$j]}" "$at$what (#${ST_T[$i]})" \
-        "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" || return 0 ;;
+      spec_review_edit_accepted "$accepted" "TK_TEXT[$j]" "${TK_FETCHED[$j]}" \
+        "$at$what (#${ST_T[$i]})" "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" || return 0 ;;
     section)
       SR_TICKET_ANCHOR_COUNT=$((SR_TICKET_ANCHOR_COUNT + 1))
-      [ "${ST_DISP[$i]}" = applied ] || return 0
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
-      spec_review_edit "$body_var" "$post" "$at$what (## Ticket)" \
+      spec_review_edit_accepted "$accepted" "$body_var" "$post" "$at$what (## Ticket)" \
         "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" || return 0 ;;
     block|unblock)
-      [ "${ST_DISP[$i]}" = applied ] || return 0
+      [ -n "$accepted" ] || return 0
       spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" || return 0
       j="$(array_index TK_T "${ST_T[$i]}")"
       ! list_has "$(printf '%s\n' "${TK_FETCHED[$j]}" | blocked_by_section_numbers)" \
