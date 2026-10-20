@@ -237,6 +237,11 @@ repo, and name that file to the pass as its deviations file, for its step 3's
 review, as a stopped pass does, naming the failure. Once the pass returns or
 stops, however it ends, remove the file.
 
+Name step 5's combined verification command - the one loop step f ran,
+whose result goes under the PR body's **Verification** - to the pass as its
+verification command, for its suite-cost check. A `grew` the pass declines
+goes under **Review** with the other declines.
+
 If the pass stops, stop before opening the PR. This skill promises a review
 before the PR, so it never opens one with an axis unreviewed.
 

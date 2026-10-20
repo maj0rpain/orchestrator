@@ -130,6 +130,39 @@ orch.sh - deterministic operations for the orchestrator flow
                               orchestrator.parallel, else 3; 1 is sequential.
                               Dies naming the key and value when it is not a
                               positive integer
+  suite-cost run -- <cmd> [args...]
+                              run <cmd> in the current directory, its stdout,
+                              stderr and exit code passed through and nothing
+                              added on stdout; on exit 0 alone, append its
+                              suite cost to the clone-wide record under the
+                              git common directory (orchestrator/suite-cost),
+                              one line of five tab-separated fields: HEAD's
+                              full SHA at the start, suffixed -dirty when
+                              git status --porcelain printed anything then
+                              (untracked files count, ignored paths do
+                              not), CPU seconds (user plus
+                              system, children included), wall seconds, the
+                              UTC time in ISO 8601, and the command. An
+                              append that fails warns and records nothing
+  suite-cost check -- <cmd> [args...]
+                              print one verdict line comparing the head's
+                              newest recorded run of <cmd> (on HEAD or an
+                              ancestor not on the base, or a dirty one on
+                              HEAD or any ancestor) with the baseline's
+                              (the newest clean one, never a dirty one, on
+                              the base commit or an ancestor:
+                              state.base_sha in a flow, else branch base-sha),
+                              exiting 0: off (baseline below git config
+                              orchestrator.suiteCost.floor, else 60 CPU
+                              seconds), ok, grew <pct> - <finding text> (past
+                              orchestrator.suiteCost.growth, else 10 percent),
+                              or unmeasured. Never runs <cmd> on the head;
+                              with no baseline it measures the base once in a
+                              temporary worktree. Dies naming the key and
+                              value when an override is not a non-negative
+                              number
+  suite-cost history          print the record's lines, oldest first, or
+                              nothing when there is no record
   repo show [--name|--host]   print the GitHub repo orch.sh works on and its
                               source: GH_REPO when set, else the checkout's
                               origin - never gh's default repo. --name prints
@@ -474,12 +507,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               flow's budget is spent (5 when none is set)
   review path [n]             record path, .orchestrator/review/iteration-NN.md,
                               creating the directory if it is not there yet
-  review file <major|nit> <title> --axis <spec|standards> --finding-file <f>
-              --severity-reason <r> --location <file>:<line> --sha <sha>
+  review file <major|nit> <title> --axis <spec|standards|suite-cost>
+              --finding-file <f> --severity-reason <r>
+              --location <file>:<line|suite> --sha <sha>
               --pr <url> --why <reason> [--spec-question <q>]
                               file a finding as a GitHub issue labelled
                               review:<severity>, the repo's needs-triage, and
-                              bug (spec axis) or enhancement (standards axis),
+                              bug (spec axis) or enhancement (standards or
+                              suite-cost axis),
                               creating the labels if missing; prints the number.
                               The body is rendered from the parts - the finding
                               file, then one labelled line per flag - and

@@ -98,6 +98,7 @@ Each flow phase runs in its own fresh session. The step-by-step detail is in
 | `/orchestrator:sync` | Merge the base branch into the current plugin-made branch. |
 | `/orchestrator:release` | Open the release PR from the base branch into the default branch. |
 | `/orchestrator:finding-triage [--all] [<issue> \| --pr <n>] \| --bundle` | Triage the review loop's filed findings, or bundle them. |
+| `/orchestrator:improve-tests [<direction>]` | Evaluate the test suite and propose refactors that cut its cost without testing less. |
 
 Every command in full: [docs/how-it-works.md](docs/how-it-works.md#commands-in-detail).
 

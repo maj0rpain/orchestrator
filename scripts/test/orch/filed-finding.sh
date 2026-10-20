@@ -93,6 +93,13 @@ assert_not_contains "no Spec question line when none is given" "$body" "Spec que
 assert_eq "a range without a Spec question parses back to every part" "$(parsed "$body")" \
   "$(fields spec major 'misses the spec' lib/x.sh 10-20 "$sha" "$url" 42 'found in the final iteration.')"
 
+body="$(rendered 'Grew.' suite-cost major 'grew past the threshold' suite '' "$sha" "$url" 'found in the final iteration.')"
+assert_contains "a suite-cost finding names the suite, with no line" "$body" "**Location:** \`suite\` at $sha"
+assert_eq "and parses back to every part, its line empty" "$(parsed "$body")" \
+  "$(fields suite-cost major 'grew past the threshold' suite '' "$sha" "$url" 42 'found in the final iteration.')"
+no_line="$(printf '%s\n' "$body" | sed "s/\`suite\`/\`src\/app.sh\`/")"
+assert_eq "while any other file with no line is no location" "$(parsed "$no_line" | grep '^file=')" "file="
+
 body="$(rendered 'Text.' standards nit 'cheap - but noisy - fix' a.sh 1 "$sha" "$url" 'not mechanical')"
 assert_eq "a severity reason containing ' - ' splits at the first one" "$(parsed "$body")" \
   "$(fields standards nit 'cheap - but noisy - fix' a.sh 1 "$sha" "$url" 42 'not mechanical')"

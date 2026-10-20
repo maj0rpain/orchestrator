@@ -78,15 +78,19 @@ triage_label_ensure() {
 
 # category_for_axis <axis>: the category a finding filed on that review axis
 # starts in, whatever the axis's case. A Spec finding misses what was asked
-# for, so it is a bug; a Standards finding improves how it was built. Prints
-# nothing and fails for any other axis; the caller words its own error.
+# for, so it is a bug; a Standards finding improves how it was built, and so
+# does a suite-cost one, the suite's cost growth `suite-cost check` reports.
+# Prints nothing and fails for any other axis; the caller words its own error.
 category_for_axis() {
   case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
     spec)      printf 'bug\n' ;;
-    standards) printf 'enhancement\n' ;;
+    standards|suite-cost) printf 'enhancement\n' ;;
     *) return 1 ;;
   esac
 }
+
+# The location a suite-cost finding names: the suite as a whole, with no line.
+readonly SUITE_LOCATION=suite
 
 # category_other <category>: the opposite category - the one a finding loses
 # when triage settles on <category>. Prints nothing and fails for anything but
@@ -115,7 +119,8 @@ category_label_ensure() {
 # finding text, its trailing newlines stripped, a blank line, then each
 # labelled line followed by a blank line, so GitHub shows each as its own
 # paragraph. The labelled lines are the closer's, byte for byte, so a body
-# filed before rendering existed parses as one rendered now does.
+# filed before rendering existed parses as one rendered now does. An empty
+# <line> renders the file alone, as a suite-cost finding's `suite` is.
 finding_body_render() {
   local axis display_axis
   axis="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
@@ -123,7 +128,7 @@ finding_body_render() {
   printf '%s\n\n' "$(cat "$1")" \
     "**Axis:** $display_axis" \
     "**Severity:** $3 - $4" \
-    "**Location:** \`$5:$6\` at $7" \
+    "**Location:** \`$5${6:+:$6}\` at $7" \
     "**PR:** $8" \
     "**Why not fixed in the loop:** $9"
   [ -z "${10:-}" ] || printf '%s\n\n' "**Spec question:** ${10}"
@@ -135,8 +140,9 @@ finding_body_render() {
 # comes from the first line that carries it, as finding triage always read
 # them: Location from the first line starting with its label, with no
 # fallback when that one does not parse - the first backticked <file>:<line>,
-# the file free of backticks and colons, and the hex run of the line's last
-# " at <hex>"; PR from the first line ending in a URL whose last segment after
+# the file free of backticks and colons, or else a backticked `suite`, a
+# suite-cost finding's location, with an empty line, and the hex run of the
+# line's last " at <hex>"; PR from the first line ending in a URL whose last segment after
 # /pull/ is a number; the rest from the first line starting with their label,
 # as the rest of it, trimmed. Severity splits at the first " - ". A field whose
 # line is missing or does not parse is left empty. Never dies, never prints:
@@ -172,8 +178,13 @@ finding_body_parse() {
       '**Location:**'*)
         [ -z "$__fbp_seen_loc" ] || continue
         __fbp_seen_loc=1
-        [[ $__fbp_line =~ $__fbp_loc_re ]] || continue
-        __fbp_loc_file="${BASH_REMATCH[1]}"; __fbp_loc_line="${BASH_REMATCH[2]}"
+        if [[ $__fbp_line =~ $__fbp_loc_re ]]; then
+          __fbp_loc_file="${BASH_REMATCH[1]}"; __fbp_loc_line="${BASH_REMATCH[2]}"
+        elif [[ $__fbp_line == *"\`$SUITE_LOCATION\`"* ]]; then
+          __fbp_loc_file="$SUITE_LOCATION"; __fbp_loc_line=""
+        else
+          continue
+        fi
         __fbp_rest="$__fbp_line" __fbp_sha=""
         while [[ $__fbp_rest =~ $__fbp_at_re ]]; do
           __fbp_sha="${BASH_REMATCH[1]}"

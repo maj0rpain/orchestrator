@@ -28,6 +28,7 @@ Checkout: <absolute path of the checkout or ticket worktree>
 In progress: merge | rebase
 Spec issue: #<n>
 Base branch: <name>
+orch.sh: <the path ORCH holds>
 ```
 
 - **Checkout** - where the merge or rebase is, or is to be started. Every
@@ -48,6 +49,8 @@ Base branch: <name>
   primary sources too.
 - **Base branch** - the branch the flow or quick implementation forks from;
   its commits and PRs are the other side of a base sync.
+- **orch.sh** - the path of the plugin's `orch.sh`, written `<orch.sh>`
+  below. A resumed implementer has it from its own prompt's `orch.sh:` line.
 
 It returns the four lines of **Report** below and nothing else. A host that
 cannot start it natively takes `docs/host-capabilities.md`'s **Start a fresh
@@ -82,6 +85,7 @@ failed sync stops and where its **Merge resolutions** go.
    In progress: merge
    Spec issue: #<issue> [(its tickets are its sub-issues)]
    Base branch: <the base the conflict message names as origin/<base>>
+   orch.sh: <the path ORCH holds>
    ```
 
    `<issue>` is the issue the caller names, its suffix added or left off
@@ -128,6 +132,7 @@ checked out in the driver's checkout.
    Rebase onto: <parent branch>
    Spec issue: #<the spec issue, or the linked issue> (its tickets are its sub-issues)
    Base branch: <the base branch the build forks from>
+   orch.sh: <the path ORCH holds>
    ```
 
    It starts the rebase itself.
@@ -195,8 +200,8 @@ implementer follows it from here.
    every hunk, find the commits that wrote it (`git log` and `git blame` on
    the lines, on each side), then the PRs and issues those commits name:
    the spec issue, its tickets, and the base branch's commits and PRs. Read
-   them through `orch.sh`'s `issue fetch` when you have its path, otherwise
-   `gh`, against the checkout's `origin` repo. Write down, per hunk, what
+   them through `bash "<orch.sh>" issue fetch`, against the checkout's
+   `origin` repo. Write down, per hunk, what
    each side meant - the behaviour it adds, fixes or removes - not just what
    text it changed.
 3. **Resolve each hunk preserving both intents.** Where the two intents fit
@@ -216,7 +221,9 @@ implementer follows it from here.
 6. **Discover and run the repo's automated checks**, and fix what the
    merge broke. Find the checks the repo itself documents - its
    `CLAUDE.md`, `AGENTS.md`, README, CI workflows, or test runner - and run
-   them on the resolved tree. Fix a failure the merge caused, within the two
+   them on the resolved tree through `bash "<orch.sh>" suite-cost run --
+   <command>`, which passes their output and exit code through unchanged and
+   records a passing run's suite cost. Fix a failure the merge caused, within the two
    sides' intents. A failure you cannot fix stays: record the command and
    `fail`, and carry on to finish.
 7. **Finish.** Stage every resolved file by path and commit: a merge
@@ -243,7 +250,7 @@ Verification: <command> pass|fail
 - `Dropped`: each intent dropped, with the side that meant it and why,
   separated by "; ", or `None`.
 - `Verification`: the checks command you ran and its result after your
-  fixes.
+  fixes: the bare command, never the `suite-cost run` wrapper.
 
 The driver judges a resolution - the resolver's, or a resumed
 implementer's - by this report and the checkout or ticket worktree it

@@ -43,12 +43,17 @@
 #   scan_early_exit_pipe  no script pipes into a quiet grep or into head
 #   scan_junie_planning  the Junie snippet has one begin and end marker and restates the planning allowlist and records
 #   scan_capability_table  each docs/host-capabilities.md row has both hosts' cells filled
+#   scan_names_phrase  each listed file, or section of one, names its phrase: the verifying agents suite-cost run, the review loop's triage and the review pass suite-cost check
 #   scan_review_pass  the review pass is defined once in orch-review-pass and quick implementation's step 6 runs it
 #   scan_unattended_modes  quick implementation's steps 1, 2 and 3 run the unattended modes
 #   scan_skill_refs  each skill's SKILL.md names every reference file beside it
 #   scan_spec_review_refs  orch-flow's spec phase step 4 names orch-spec-review's spec-phase.md
 #   scan_previously_declined  a standalone review pass lists earlier declines and the reviewers hear of them only through the known-items file
 #   scan_standalone_smells  the standalone review pass section and its command offer --smells
+#   scan_cheapest_test  the implementer's and fixer's Test-driven development sections carry one identical Cheapest sufficient test paragraph
+#   scan_test_cost_smells  the Standards reviewer carries the four test-cost smells outside the smell baseline
+#   scan_improve_tests  orch-improve-tests has its command file and its six step headings in order
+#   scan_report_capability  docs/host-capabilities.md has a row for opening the report and a Markdown-summary fallback
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review section and starts its own reviewers
 #   scan_review_pass_callers  each caller of the review pass names orch-review-pass and the section it follows
 #   scan_review_loop_sheds_pass  orch-review keeps no copy of the review pass and points at orch-review-pass
@@ -1633,6 +1638,26 @@ quick_step_refers() {
     || echo "$quick: step ${numbered%%.*} does not refer to $owner **$4** $5"
 }
 
+# scan_names_phrase <plugin root> <list> <phrase>: for each `file` or
+# `file|section` entry in the newline list, one line when the section is
+# missing, or when the file, or that section of it, never names the phrase,
+# read flattened so a phrase wrapped across lines still counts.
+scan_names_phrase() {
+  local r="$1" list="$2" phrase="$3" f h body
+  while IFS='|' read -r f h; do
+    [ -n "$f" ] || continue
+    if [ -z "$h" ]; then
+      flat_text "$r/$f" 2>/dev/null | grep -qF -- "$phrase" \
+        || echo "$f: does not name $phrase"
+    elif ! body="$(md_section "$r/$f" "$h" 2>/dev/null)"; then
+      echo "$f: no $h section"
+    elif ! flat_text <<<"$body" | grep -qF -- "$phrase"; then
+      echo "$f: $h does not name $phrase"
+    fi
+  done <<<"$list"
+  return 0
+}
+
 # --- review pass (#342) --------------------------------------------------------
 echo
 echo "review pass (#342)"
@@ -1641,13 +1666,8 @@ echo "review pass (#342)"
 # section rather than keeping its own copy.
 # scan_review_pass <plugin root>: one line per break of that rule.
 scan_review_pass() {
-  local r="$1" pass="skills/orch-review-pass/SKILL.md" body
-  if body="$(md_section "$r/$pass" "## Review pass")"; then
-    flat_text <<<"$body" | grep -qF 'review-pass begin' \
-      || echo "$pass: ## Review pass does not name review-pass begin"
-  else
-    echo "$pass: no ## Review pass section"
-  fi
+  local r="$1"
+  scan_names_phrase "$r" 'skills/orch-review-pass/SKILL.md|## Review pass' 'review-pass begin'
   quick_step_refers "$r" "## 6. Review" orch-review-pass "Review pass" section
   return 0
 }
@@ -1860,6 +1880,235 @@ assert_empty "a standalone pass and argument-hint naming --smells are not flagge
   "$(scan_standalone_smells "$fixture")"
 check "a standalone review pass takes --smells, and review-pass offers it" \
   "$(scan_standalone_smells "$PLUGIN_ROOT")"
+
+# --- test cost (#1307) ---------------------------------------------------------
+echo
+echo "test cost (#1307)"
+# The agents that write tests, the implementer and the fixer, carry one rule
+# for test cost: a paragraph led by **Cheapest sufficient test.** in each
+# Test-driven development section. Under ADR-0027 the two copies must match,
+# and no wording is pinned. The Standards reviewer carries four test-cost
+# smells in a section of its own, kept apart from the pinned smell baseline
+# (ADR-0018), so a standalone review pass never counts them as baseline smells.
+tdd_agents='agents/orch-implementer.md
+agents/orch-fixer.md'
+test_cost_smells='Duplicated coverage
+Expensive seam
+Per-test setup
+Waiting'
+# cheapest_paragraph <file>: the paragraph of <file>'s ## Test-driven
+# development section that a line beginning **Cheapest sufficient test.**
+# leads, up to the next blank line, flattened to one line. Empty when absent.
+cheapest_paragraph() {
+  md_section "$1" "## Test-driven development" 2>/dev/null \
+    | awk '/^\*\*Cheapest sufficient test\.\*\*/ { inb = 1 } inb && /^[[:space:]]*$/ { exit } inb' \
+    | flat_text
+}
+# scan_cheapest_test <plugin root>: one line per Test-driven development
+# section with no such paragraph, and one when the copies differ.
+scan_cheapest_test() {
+  local r="$1" f para first="" firstf=""
+  while IFS= read -r f; do
+    para="$(cheapest_paragraph "$r/$f")"
+    if [ -z "$para" ]; then
+      echo "$f: ## Test-driven development has no paragraph led by **Cheapest sufficient test.**"
+    elif [ -z "$firstf" ]; then first="$para"; firstf="$f"
+    elif [ "$para" != "$first" ]; then
+      echo "$f: the **Cheapest sufficient test.** paragraph differs from $firstf's"
+    fi
+  done <<<"$tdd_agents"
+  return 0
+}
+# scan_test_cost_smells <plugin root>: one line per test-cost smell missing
+# from the Standards reviewer's ## Test-cost smells section, or named in bold
+# inside its ## Smell baseline, and one when the section is missing.
+scan_test_cost_smells() {
+  local r="$1" f="agents/orch-reviewer-standards.md" body base smell
+  base="$(md_section "$r/$f" "## Smell baseline" 2>/dev/null)"
+  if ! body="$(md_section "$r/$f" "## Test-cost smells" 2>/dev/null)"; then
+    echo "$f: no ## Test-cost smells section"
+    body=""
+  fi
+  while IFS= read -r smell; do
+    if [ -n "$body" ] && ! grep -qF -- "**$smell**" <<<"$body"; then
+      echo "$f: ## Test-cost smells does not name **$smell**"
+    fi
+    if grep -qF -- "**$smell**" <<<"$base"; then
+      echo "$f: **$smell** is inside the ## Smell baseline"
+    fi
+  done <<<"$test_cost_smells"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents"
+para='**Cheapest sufficient test.** Pick the cheapest seam.
+Cost is only the tiebreak.'
+printf '# I\n\n## Test-driven development\n\nRules.\n\n## Other\n\n%s\n' "$para" >"$fixture/agents/orch-implementer.md"
+printf '# F\n\n## Test-driven development\n\n%s\n\nMore.\n' "${para/tiebreak/excuse}" >"$fixture/agents/orch-fixer.md"
+out="$(scan_cheapest_test "$fixture")"
+flags "a Test-driven development section with no Cheapest sufficient test paragraph is flagged" \
+  "$out" "agents/orch-implementer.md: ## Test-driven development has no paragraph led by **Cheapest sufficient test.**"
+printf '# I\n\n## Test-driven development\n\n%s\n\nNext paragraph.\n' "$para" >"$fixture/agents/orch-implementer.md"
+flags "copies of the Cheapest sufficient test paragraph that differ are flagged" \
+  "$(scan_cheapest_test "$fixture")" \
+  "agents/orch-fixer.md: the **Cheapest sufficient test.** paragraph differs from agents/orch-implementer.md's"
+printf '# F\n\nIntro.\n\n## Test-driven development\n\nA fix.\n\n%s\n' \
+  "$(printf '%s\n' "$para" | tr '\n' ' ' | sed 's/ $//; s/seam\. /seam.\n/')" >"$fixture/agents/orch-fixer.md"
+assert_empty "identical Cheapest sufficient test paragraphs, wrapped differently, are not flagged" \
+  "$(scan_cheapest_test "$fixture")"
+check "both Test-driven development sections carry the same Cheapest sufficient test paragraph" \
+  "$(scan_cheapest_test "$PLUGIN_ROOT")"
+printf '# S\n\n## Smell baseline\n\n- **Waiting**: a sleep.\n\n## Test-cost smells\n\n- **Duplicated coverage**: again.\n- **Expensive seam**: costly.\n' \
+  >"$fixture/agents/orch-reviewer-standards.md"
+out="$(scan_test_cost_smells "$fixture")"
+flags "a test-cost smell missing from the Test-cost smells section is flagged" \
+  "$out" "agents/orch-reviewer-standards.md: ## Test-cost smells does not name **Per-test setup**"
+flags "a test-cost smell inside the smell baseline is flagged" \
+  "$out" "agents/orch-reviewer-standards.md: **Waiting** is inside the ## Smell baseline"
+printf '# S\n\n## Smell baseline\n\n- **Mysterious Name**: a name.\n' >"$fixture/agents/orch-reviewer-standards.md"
+flags "a Standards reviewer with no Test-cost smells section is flagged" \
+  "$(scan_test_cost_smells "$fixture")" "agents/orch-reviewer-standards.md: no ## Test-cost smells section"
+printf '# S\n\n## Smell baseline\n\n- **Mysterious Name**: a name.\n\n## Test-cost smells\n\n- **Duplicated coverage**: a.\n- **Expensive seam**: b.\n- **Per-test setup**: c.\n- **Waiting**: d.\n' \
+  >"$fixture/agents/orch-reviewer-standards.md"
+assert_empty "four test-cost smells outside the smell baseline are not flagged" \
+  "$(scan_test_cost_smells "$fixture")"
+check "the Standards reviewer carries the four test-cost smells outside the smell baseline" \
+  "$(scan_test_cost_smells "$PLUGIN_ROOT")"
+
+# --- verify through suite cost (#1306) ----------------------------------------
+echo
+echo "verify through suite cost (#1306)"
+# The agents that run a repo's verification - the implementer, the fixer and
+# the resolver - run it as orch.sh suite-cost run -- <cmd>, so every passing
+# run is recorded as a suite cost with no bookkeeping of their own.
+verify_agents='agents/orch-implementer.md
+agents/orch-fixer.md
+agents/orch-resolver.md'
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents"
+printf '# I\n\nRun `bash "<orch.sh>" suite-cost\nrun -- <cmd>`.\n' >"$fixture/agents/orch-implementer.md"
+printf '# F\n\nRun `bash "<orch.sh>" suite-cost run -- <cmd>`.\n' >"$fixture/agents/orch-fixer.md"
+printf '# R\n\nRun the checks.\n' >"$fixture/agents/orch-resolver.md"
+out="$(scan_names_phrase "$fixture" "$verify_agents" 'suite-cost run --')"
+flags "an agent that runs its checks bare is flagged" \
+  "$out" "agents/orch-resolver.md: does not name suite-cost run --"
+spares "an agent that runs suite-cost run, wrapped across lines, is not flagged" \
+  "$out" "orch-(implementer|fixer)"
+check "the implementer, fixer and resolver run their verification through suite-cost run" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" "$verify_agents" 'suite-cost run --')"
+
+# --- suite-cost check (#1308) --------------------------------------------------
+echo
+echo "suite-cost check (#1308)"
+# Suite-cost growth surfaces as a finding at review time: the review loop's
+# triage, in orch-review's ## The iteration, and the review pass, in
+# orch-review-pass's ## Review pass, each run suite-cost check -- <cmd>.
+suite_cost_checks='skills/orch-review/SKILL.md|## The iteration
+skills/orch-review-pass/SKILL.md|## Review pass'
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-review" "$fixture/skills/orch-review-pass"
+printf '# L\n\n## The iteration\n\nTriage the findings.\n\n## Severity\n\nRun `suite-cost check -- <cmd>`.\n' \
+  >"$fixture/skills/orch-review/SKILL.md"
+printf '# P\n\n## Other\n\nRun `suite-cost check -- <cmd>`.\n' >"$fixture/skills/orch-review-pass/SKILL.md"
+out="$(scan_names_phrase "$fixture" "$suite_cost_checks" 'suite-cost check --')"
+flags "a review loop triage that never runs suite-cost check is flagged" \
+  "$out" "skills/orch-review/SKILL.md: ## The iteration does not name suite-cost check --"
+flags "a missing Review pass section is flagged" \
+  "$out" "skills/orch-review-pass/SKILL.md: no ## Review pass section"
+printf '# L\n\n## The iteration\n\nTriage: run `bash "$ORCH" suite-cost\ncheck -- <cmd>`.\n' \
+  >"$fixture/skills/orch-review/SKILL.md"
+printf '# P\n\n## Review pass\n\nRun `suite-cost check -- <cmd>` once.\n' >"$fixture/skills/orch-review-pass/SKILL.md"
+assert_empty "a triage and a review pass that run suite-cost check, wrapped across lines, are not flagged" \
+  "$(scan_names_phrase "$fixture" "$suite_cost_checks" 'suite-cost check --')"
+check "the review loop's triage and the review pass run suite-cost check" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" "$suite_cost_checks" 'suite-cost check --')"
+
+# --- improve tests (#1309) -----------------------------------------------------
+echo
+echo "improve tests (#1309)"
+# orch-improve-tests is defined by its six steps, so each step heading stays
+# present and in order, and its command routes to it. Opening its report is a
+# host capability: a row in docs/host-capabilities.md, with a fallback
+# subsection that gives the Markdown summary in its place.
+improve_tests_skill='skills/orch-improve-tests/SKILL.md'
+improve_tests_steps='Scope
+Measure
+Hunt
+Rank
+Report
+Hand off'
+open_report_capability='Open a report in the browser'
+# scan_improve_tests <plugin root>: one line when the command file is missing
+# or routes elsewhere, and one per step heading (## <n>. <step>) missing from
+# the skill or out of order.
+scan_improve_tests() {
+  local r="$1" cmd="commands/improve-tests.md" step n=0 pairs=""
+  if [ ! -f "$r/$cmd" ]; then echo "$cmd: missing"
+  elif ! flat_text "$r/$cmd" | grep -qF '`orchestrator:orch-improve-tests` and follow it'; then
+    echo "$cmd: does not route to orch-improve-tests"
+  fi
+  while IFS= read -r step; do
+    n=$((n + 1))
+    pairs+="$improve_tests_skill|## $n. $step"$'\n'
+  done <<<"$improve_tests_steps"
+  scan_required_headings "$r" "$pairs"
+}
+# scan_report_capability <plugin root>: one line when docs/host-capabilities.md
+# has no row for opening the report, and one when its Fallbacks have no
+# subsection for it naming a Markdown summary.
+scan_report_capability() {
+  local r="$1" doc="docs/host-capabilities.md" body
+  grep -qF -- "| $open_report_capability |" "$r/$doc" 2>/dev/null \
+    || echo "$doc: no row for $open_report_capability"
+  if ! body="$(md_section "$r/$doc" "### $open_report_capability" 2>/dev/null)"; then
+    echo "$doc: no fallback for $open_report_capability"
+  elif ! flat_text <<<"$body" | grep -qiF 'markdown summary'; then
+    echo "$doc: the fallback for $open_report_capability gives no Markdown summary"
+  fi
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-improve-tests" "$fixture/commands" "$fixture/docs"
+printf '# I\n\n## 1. Scope\n\n## 2. Measure\n\n## 4. Rank\n\n## 3. Hunt\n\n## 5. Report\n' \
+  >"$fixture/$improve_tests_skill"
+out="$(scan_improve_tests "$fixture")"
+flags "a missing improve-tests command file is flagged" "$out" "commands/improve-tests.md: missing"
+flags "a step heading out of order is flagged" \
+  "$out" "$improve_tests_skill: required heading out of order: ## 4. Rank"
+flags "a missing step heading is flagged" \
+  "$out" "$improve_tests_skill: missing required heading: ## 6. Hand off"
+printf 'Call the Skill tool with `orchestrator:orch-interview` and follow it.\n' \
+  >"$fixture/commands/improve-tests.md"
+flags "a command file routing elsewhere is flagged" \
+  "$(scan_improve_tests "$fixture")" "commands/improve-tests.md: does not route to orch-improve-tests"
+printf 'Call the Skill tool with\n`orchestrator:orch-improve-tests` and follow it.\n' \
+  >"$fixture/commands/improve-tests.md"
+printf '# I\n\n## 1. Scope\n\n## 2. Measure\n\n## 3. Hunt\n\n## 4. Rank\n\n## 5. Report\n\n## 6. Hand off\n' \
+  >"$fixture/$improve_tests_skill"
+assert_empty "the six step headings in order and a wrapped route are not flagged" \
+  "$(scan_improve_tests "$fixture")"
+check "orch-improve-tests has its command and its six step headings in order" \
+  "$(scan_improve_tests "$PLUGIN_ROOT")"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  '| Ask | `AskUserQuestion`. | `ask_user`. |' '' '## Fallbacks' '' \
+  "### $open_report_capability" '' 'Say where the file is.' >"$fixture/docs/host-capabilities.md"
+out="$(scan_report_capability "$fixture")"
+flags "a host capability table with no report row is flagged" \
+  "$out" "docs/host-capabilities.md: no row for $open_report_capability"
+flags "a report fallback with no Markdown summary is flagged" \
+  "$out" "docs/host-capabilities.md: the fallback for $open_report_capability gives no Markdown summary"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  "| $open_report_capability | \`xdg-open\`. | Unverified. |" '' '## Fallbacks' '' \
+  '### Ask' '' 'Write a Markdown summary.' >"$fixture/docs/host-capabilities.md"
+flags "a report row with no fallback subsection is flagged" \
+  "$(scan_report_capability "$fixture")" "docs/host-capabilities.md: no fallback for $open_report_capability"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  "| $open_report_capability | \`xdg-open\`. | Unverified. |" '' '## Fallbacks' '' \
+  "### $open_report_capability" '' 'Write a Markdown' 'summary in chat.' >"$fixture/docs/host-capabilities.md"
+assert_empty "a report row with a Markdown summary fallback is not flagged" \
+  "$(scan_report_capability "$fixture")"
+check "docs/host-capabilities.md has a row for opening the report, with the Markdown fallback" \
+  "$(scan_report_capability "$PLUGIN_ROOT")"
 
 # --- review pass skill (#1138) -------------------------------------------------
 echo

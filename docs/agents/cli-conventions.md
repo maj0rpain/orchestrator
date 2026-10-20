@@ -2,8 +2,8 @@
 
 `orch.sh`'s subcommand grammar: when a command acts on a thing, the thing comes
 first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
-<new>`, `orch.sh review file <major|nit> <title> --axis <spec|standards>
---finding-file <f> --severity-reason <r> --location <file>:<line> --sha <sha>
+<new>`, `orch.sh review file <major|nit> <title> --axis <spec|standards|suite-cost>
+--finding-file <f> --severity-reason <r> --location <file>:<line|suite> --sha <sha>
 --pr <url> --why <reason> [--spec-question <q>]`.
 
 ## Current nouns
@@ -12,6 +12,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | --------- | --------------------------------------------------- |
 | `base`    | `set`, `show`, `clear`                               |
 | `parallel` | `show`                                             |
+| `suite-cost` | `run`, `check`, `history`                     |
 | `repo`    | `show`                                               |
 | `branch`  | `create`, `off`, `busy`, `base-sha`, `sync`, `retire` |
 | `issue`   | `fetch`, `update`, `comment`, `comments`, `publish`, `triage`, `ready`, `close` |

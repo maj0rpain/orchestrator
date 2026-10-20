@@ -111,6 +111,7 @@ source "$ORCH_SCRIPTS/orch/side-checkout.sh"
 source "$ORCH_SCRIPTS/orch/spec.sh"
 source "$ORCH_SCRIPTS/orch/spec-review.sh"
 source "$ORCH_SCRIPTS/orch/state.sh"
+source "$ORCH_SCRIPTS/orch/suite-cost.sh"
 source "$ORCH_SCRIPTS/orch/ticket.sh"
 source "$ORCH_SCRIPTS/orch/ticket-worktree.sh"
 # The flow's phases, space-separated in flow order: read inside functions only
@@ -132,6 +133,7 @@ main() {
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
     parallel)      cmd_parallel "$@" ;;
+    suite-cost)    cmd_suite_cost "$@" ;;
     repo)          cmd_repo "$@" ;;
     init)          cmd_init "$@" ;;
     slug)          cmd_slug "$@" ;;

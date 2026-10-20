@@ -150,7 +150,9 @@ it did not. This is how review tells an agreed change from scope creep.>
 
 ## Verification
 <first line: the exact command that proves the change works, as you just ran
-it, and nothing else - the review loop runs this line every iteration and
+it, and nothing else - the bare command, without the `orch.sh suite-cost run
+--` wrapper the agents verify through, so the review loop's `suite-cost check
+-- <cmd>` never nests it. The review loop runs this line every iteration and
 treats a failure as blocking. Then, on its own line, the result: `pass` or
 `fail`, naming no ticket - it is the combined verification, run once over the
 whole branch after the frontier was exhausted, and belongs to no ticket. You

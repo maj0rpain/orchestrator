@@ -41,14 +41,18 @@ loop's outcome either: the terminal state in your prompt is final, and
    above the loop boundary - that is still unfixed: waiting to be filed,
    whatever rule kept it out. Demoted findings and fixed ones are excluded,
    and so is one a later record of this loop lists under **Fixed this
-   iteration** - the same file and line making the same claim, read from that
+   iteration** - the same file and line making the same claim, or for a
+   suite-cost finding the same axis and location alone, read from that
    record's **Findings** entry. Open blocking findings are excluded too:
    `review file` files only majors and nits, and a blocking finding stays
    with the loop. Earlier loops' records are not read: whether a finding
    is already filed is the driver's call, made in triage. Done when every
    record of this loop has been read.
 2. **Deduplicate.** Findings at the same file and line making the same claim
-   are one finding, however many iterations reported it.
+   are one finding, however many iterations reported it. Suite-cost findings
+   are matched on axis and location alone, never their claim, since their
+   numbers change every run: every suite-cost finding is one finding, filed
+   once with the newest record's claim.
 3. **Set aside what is already filed.** A finding a record of this loop marks
    as met again is filed once already and belongs to triage now - the
    driver's triage owns that match, so take the mark as given and check no
@@ -70,15 +74,15 @@ loop's outcome either: the terminal state in your prompt is final, and
 Each finding is filed with:
 
 ```
-bash "<orch.sh>" review file <major|nit> "<title>" --axis <spec|standards> \
-  --finding-file <file> --severity-reason "<reason>" --location <file>:<line> \
+bash "<orch.sh>" review file <major|nit> "<title>" --axis <spec|standards|suite-cost> \
+  --finding-file <file> --severity-reason "<reason>" --location <file>:<line|suite> \
   --sha <head SHA> --pr <url> --why "<reason>" [--spec-question "<question>"]
 ```
 
 It creates the `review:<severity>` label if the repo lacks it, resolves the
 repo's own name for `needs-triage` from `docs/agents/triage-labels.md`, labels
 the finding by category - `bug` for the Spec axis, `enhancement` for the
-Standards axis - opens the issue with all three, and prints the number. The
+Standards and suite-cost axes - opens the issue with all three, and prints the number. The
 title is the finding's one-line claim with no prefix - the severity lives in
 the label. Nothing calls `gh issue create` or `gh label create` directly.
 
@@ -90,12 +94,14 @@ order:
 1. `--finding-file`: a file holding the reviewer's finding, verbatim. It must
    not quote a labelled line at the start of a line;
 2. `--axis`: the finding's axis, from which `review file` renders
-   `**Axis:** <Spec|Standards>`;
+   `**Axis:** <Spec|Standards|Suite-cost>`;
 3. `--severity-reason`: the one-line reason the severity was assigned, from
    which, with the severity, it renders `**Severity:** <major|nit> - <reason>`;
 4. `--location` and `--sha`: the file and line - `<file>:<line>` or
    `<file>:<start>-<end>` - at the PR's head SHA, from which it renders
-   ``**Location:** `<file>:<line>` at <head SHA>``;
+   ``**Location:** `<file>:<line>` at <head SHA>``. A suite-cost finding's
+   location is the literal `suite`, the suite as a whole, rendered
+   ``**Location:** `suite` at <head SHA>``;
 5. `--pr`: the PR's URL, from which it renders `**PR:** <url>`;
 6. `--why`: one line on why it was not fixed in the loop, from which it
    renders `**Why not fixed in the loop:** <reason>`. It names the rule that

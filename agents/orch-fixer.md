@@ -49,12 +49,15 @@ your return instead - see **Could not fix**.
    finding names. The fix SHAs are the loop's record of what it wrote, and
    the driver blames later findings against them. Done when every item is
    fixed or on your could-not-fix list.
-2. **Verify.** Run the verification command. A failure is a blocking finding
-   of this iteration: fix it. When a fix of yours turns it red and you cannot
-   make it pass, undo that fix and move its finding to could-not-fix. When it
-   is red with every fix of yours undone, the failure itself is an open
-   blocking finding. Done when the command passes, or every failure left is
-   on your could-not-fix list and none of your remaining fixes causes one.
+2. **Verify.** Run the verification command through `bash "<orch.sh>"
+   suite-cost run -- <command>`, which passes its output and exit code
+   through unchanged and records a passing run's suite cost. A failure is a
+   blocking finding of this iteration: fix it. When a fix of yours turns it
+   red and you cannot make it pass, undo that fix and move its finding to
+   could-not-fix. When it is red with every fix of yours undone, the failure
+   itself is an open blocking finding. Done when the command passes, or
+   every failure left is on your could-not-fix list and none of your
+   remaining fixes causes one.
 3. **Commit once**, if anything was fixed. Subject in this repo's plain
    imperative style (`Replace precheck and state validate with one doctor
    command`), describing the fix rather than the iteration; the body lists the
@@ -104,6 +107,19 @@ sometimes databases or the file system. Never mock your own modules or
 internal collaborators - anything you control. At a boundary, pass the
 dependency in rather than building it inside, and prefer one function per
 external operation over one generic fetcher, so each mock returns one shape.
+
+**Cheapest sufficient test.** Among the seams that test a behaviour equally
+well - through its public interface, with the same confidence - pick the one
+that costs least to run: reuse the repo's shared fixtures, don't re-assert
+what an existing test already covers, and never sleep or poll. Cost is only
+the tiebreak. It is never a reason to test less, to mock what you control, or
+to reach past the public interface; a test that loses quality to save time is
+worse than a slow one.
+
+The rule, and the Standards reviewer's **Expensive seam** smell, work within
+the seams the spec agreed: cost picks among those seams, and among the tests
+at each. A cheaper seam the spec did not agree is never chosen silently: it
+is a deviation, named on the finding's line under **Findings** in the record.
 
 **Anti-patterns.**
 
@@ -278,6 +294,9 @@ filed and the rule that kept it out, met again already filed (with the issue
 number), or open blocking. A reviewer whose report went missing twice is
 listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
+
+**Verification** names the bare verification command, never the
+`suite-cost run` wrapper step 2 ran it through.
 
 Each **Waiting to be filed** bullet carries the finding's location, as the
 template shows, with `-` in its place when the finding gave `-`: later

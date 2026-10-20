@@ -292,6 +292,15 @@ assert_eq "it is unknown, its exact line naming the missing PR line" "$(line_of 
   "$(printf '16\t-\tsrc/other.sh:2\tunknown\tbody does not parse: no **PR:** line ending in a pull request URL\tneeds-triage')"
 fake_issue 16 closed
 
+# A suite-cost finding names the suite as a whole, no file or lines to follow:
+# it is unknown, never gone.
+finding 24 "review:major,needs-triage" "\`suite\` at $head_sha" 24
+out="$(scan 24 2>&1)"; st=$?
+assert_status "scans a suite-cost finding" "$st" 0
+assert_eq "it is unknown, its exact line saying it names the suite" "$(line_of 24 "$out")" \
+  "$(printf '24\t24\tsuite\tunknown\ta suite-cost finding names the suite as a whole, no lines to follow\tneeds-triage')"
+fake_issue 24 closed
+
 # A body the Filed finding module rendered scans as one in the closer's
 # hand-written format does, and so does a legacy body with no Axis or Why line.
 text="$(mktemp)"

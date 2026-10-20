@@ -112,7 +112,10 @@ and return that file's four-line **Report** in place of this file's.
    reference or helper index the repo's agent files (`CLAUDE.md`,
    `AGENTS.md`) point to.
 3. **Verify as you go**: run typechecking and single test files regularly,
-   and the repo's full verification once, at the end.
+   and the repo's full verification once, at the end, through `bash
+   "<orch.sh>" suite-cost run -- <cmd>`: it passes the command's output and
+   exit code through unchanged and records a passing run's suite cost. The
+   report's `Verification` line names `<cmd>` itself, without the wrapper.
 4. **Commit** your work to the current branch, already checked out. That
    branch is the flow's one branch, or with a `Worktree:` line your ticket
    branch: every commit you make lands on it, and the caller merges and
@@ -164,6 +167,19 @@ sometimes databases or the file system. Never mock your own modules or
 internal collaborators - anything you control. At a boundary, pass the
 dependency in rather than building it inside, and prefer one function per
 external operation over one generic fetcher, so each mock returns one shape.
+
+**Cheapest sufficient test.** Among the seams that test a behaviour equally
+well - through its public interface, with the same confidence - pick the one
+that costs least to run: reuse the repo's shared fixtures, don't re-assert
+what an existing test already covers, and never sleep or poll. Cost is only
+the tiebreak. It is never a reason to test less, to mock what you control, or
+to reach past the public interface; a test that loses quality to save time is
+worse than a slow one.
+
+The rule, and the Standards reviewer's **Expensive seam** smell, work within
+the seams the spec agreed: cost picks among those seams, and among the tests
+at each. A cheaper seam the spec did not agree is never chosen silently: it
+is a deviation, recorded like any other.
 
 **Anti-patterns.**
 
@@ -259,6 +275,8 @@ Deviation: <deviation>; <deviation> ... | None
 ```
 
 - `Commits`: your commits' short SHAs, oldest first, space-separated.
+- `Verification`: the bare full-verification command, never the
+  `suite-cost run` wrapper you ran it through.
 - `Criteria`: each unmet criterion in its ticket wording, shortened to fit
   the line, after `unmet:`; then each changed source file no test exercises,
   by its repo path, after `untested:`. Either part is left out when empty.
