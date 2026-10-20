@@ -51,6 +51,7 @@
 #   scan_standalone_smells  the standalone review pass section and its command offer --smells
 #   scan_cheapest_test  the implementer's and fixer's Test-driven development sections carry one identical Cheapest sufficient test paragraph
 #   scan_test_cost_smells  the Standards reviewer carries the four test-cost smells outside the smell baseline
+#   scan_verify_suite_cost  the implementer, fixer and resolver run their verification through suite-cost run
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review section and starts its own reviewers
 #   scan_review_pass_callers  each caller of the review pass names orch-review-pass and the section it follows
 #   scan_review_loop_sheds_pass  orch-review keeps no copy of the review pass and points at orch-review-pass
@@ -1956,6 +1957,38 @@ assert_empty "four test-cost smells outside the smell baseline are not flagged" 
   "$(scan_test_cost_smells "$fixture")"
 check "the Standards reviewer carries the four test-cost smells outside the smell baseline" \
   "$(scan_test_cost_smells "$PLUGIN_ROOT")"
+
+# --- verify through suite cost (#1306) ----------------------------------------
+echo
+echo "verify through suite cost (#1306)"
+# The agents that run a repo's verification - the implementer, the fixer and
+# the resolver - run it as orch.sh suite-cost run -- <cmd>, so every passing
+# run is recorded as a suite cost with no bookkeeping of their own.
+verify_agents='agents/orch-implementer.md
+agents/orch-fixer.md
+agents/orch-resolver.md'
+# scan_verify_suite_cost <plugin root>: one line per verifying agent that
+# never names suite-cost run --.
+scan_verify_suite_cost() {
+  local r="$1" f
+  while IFS= read -r f; do
+    flat_text "$r/$f" 2>/dev/null | grep -qF -- 'suite-cost run --' \
+      || echo "$f: does not run its verification through suite-cost run --"
+  done <<<"$verify_agents"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents"
+printf '# I\n\nRun `bash "<orch.sh>" suite-cost\nrun -- <cmd>`.\n' >"$fixture/agents/orch-implementer.md"
+printf '# F\n\nRun `bash "<orch.sh>" suite-cost run -- <cmd>`.\n' >"$fixture/agents/orch-fixer.md"
+printf '# R\n\nRun the checks.\n' >"$fixture/agents/orch-resolver.md"
+out="$(scan_verify_suite_cost "$fixture")"
+flags "an agent that runs its checks bare is flagged" \
+  "$out" "agents/orch-resolver.md: does not run its verification through suite-cost run --"
+spares "an agent that runs suite-cost run, wrapped across lines, is not flagged" \
+  "$out" "orch-(implementer|fixer)"
+check "the implementer, fixer and resolver run their verification through suite-cost run" \
+  "$(scan_verify_suite_cost "$PLUGIN_ROOT")"
 
 # --- review pass skill (#1138) -------------------------------------------------
 echo

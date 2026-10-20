@@ -112,7 +112,10 @@ and return that file's four-line **Report** in place of this file's.
    reference or helper index the repo's agent files (`CLAUDE.md`,
    `AGENTS.md`) point to.
 3. **Verify as you go**: run typechecking and single test files regularly,
-   and the repo's full verification once, at the end.
+   and the repo's full verification once, at the end, through `bash
+   "<orch.sh>" suite-cost run -- <cmd>`: it passes the command's output and
+   exit code through unchanged and records a passing run's suite cost. The
+   report's `Verification` line names `<cmd>` itself, without the wrapper.
 4. **Commit** your work to the current branch, already checked out. That
    branch is the flow's one branch, or with a `Worktree:` line your ticket
    branch: every commit you make lands on it, and the caller merges and
@@ -272,6 +275,8 @@ Deviation: <deviation>; <deviation> ... | None
 ```
 
 - `Commits`: your commits' short SHAs, oldest first, space-separated.
+- `Verification`: the bare full-verification command, never the
+  `suite-cost run` wrapper you ran it through.
 - `Criteria`: each unmet criterion in its ticket wording, shortened to fit
   the line, after `unmet:`; then each changed source file no test exercises,
   by its repo path, after `untested:`. Either part is left out when empty.

@@ -49,12 +49,15 @@ your return instead - see **Could not fix**.
    finding names. The fix SHAs are the loop's record of what it wrote, and
    the driver blames later findings against them. Done when every item is
    fixed or on your could-not-fix list.
-2. **Verify.** Run the verification command. A failure is a blocking finding
-   of this iteration: fix it. When a fix of yours turns it red and you cannot
-   make it pass, undo that fix and move its finding to could-not-fix. When it
-   is red with every fix of yours undone, the failure itself is an open
-   blocking finding. Done when the command passes, or every failure left is
-   on your could-not-fix list and none of your remaining fixes causes one.
+2. **Verify.** Run the verification command through `bash "<orch.sh>"
+   suite-cost run -- <command>`, which passes its output and exit code
+   through unchanged and records a passing run's suite cost. A failure is a
+   blocking finding of this iteration: fix it. When a fix of yours turns it
+   red and you cannot make it pass, undo that fix and move its finding to
+   could-not-fix. When it is red with every fix of yours undone, the failure
+   itself is an open blocking finding. Done when the command passes, or
+   every failure left is on your could-not-fix list and none of your
+   remaining fixes causes one.
 3. **Commit once**, if anything was fixed. Subject in this repo's plain
    imperative style (`Replace precheck and state validate with one doctor
    command`), describing the fix rather than the iteration; the body lists the
@@ -291,6 +294,9 @@ filed and the rule that kept it out, met again already filed (with the issue
 number), or open blocking. A reviewer whose report went missing twice is
 listed there as that axis's **missing look**. The fix SHAs listed here are
 what later iterations of this loop blame against.
+
+**Verification** names the bare verification command, never the
+`suite-cost run` wrapper step 2 ran it through.
 
 Each **Waiting to be filed** bullet carries the finding's location, as the
 template shows, with `-` in its place when the finding gave `-`: later
