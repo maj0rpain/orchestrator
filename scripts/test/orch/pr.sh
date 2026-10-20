@@ -16,6 +16,14 @@ fake_prs() { ls "$ORCH_GH_FAKE_STORE/prs" 2>/dev/null | sort -n | tr '\n' ' '; }
 fake_pr_head_of()  { cat "$ORCH_GH_FAKE_STORE/prs/$1/head" 2>/dev/null; }
 fake_pr_title_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/title" 2>/dev/null; }
 
+# fake_pr_labels_of <n>: PR #n's label names read back from the store, one
+# per line.
+fake_pr_labels_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/labels" 2>/dev/null || true; }
+
+# fake_pr_label_drop <name>: every later PR opened with label <name> is stored
+# without it, as a gh whose label mutation did not land (#1299).
+fake_pr_label_drop() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/pr_label_drops"; }
+
 # --- pr open -----------------------------------------------------------------
 # PR #15 merged without closing #14 because the agent's body opened with a verb
 # GitHub does not read as a closer. pr open owns the keyword instead, so no
@@ -80,6 +88,66 @@ assert_eq "opening nothing" "$(fake_prs)" "23 "
 assert_gh_dies "a failed open still exits 1" adapter_pr_create "$GH_502" 1 \
   "orch: gh could not open the PR for branch orch/16-propen (issue #16): HTTP 502: Bad Gateway" \
   "$ORCH" pr open "Title" "$body"
+
+# --label (#1299), as pr publish takes it: the draft PR carries each label
+# from creation, read back once it is recorded in state and on the branch.
+fake_unfail
+state_fixture pr ""
+errf="$(mktemp)"
+fake_next_pr 40
+out="$("$ORCH" pr open "Title" "$body" --label no-version-bump --label "needs review" 2>"$errf")"; st=$?
+assert_status "--label: opens the PR" "$st" 0
+assert_eq "--label: prints the PR number" "$out" "40"
+assert_eq "--label: carrying each label" "$(fake_pr_labels_of 40)" "$(writeln no-version-bump 'needs review')"
+assert_eq "--label: still a draft" "$(fake_pr_draft_of 40)" "yes"
+
+for bad_args in "--label" "--label --label" "--draft"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  out="$("$ORCH" pr open "Title" "$body" $bad_args 2>&1)"; st=$?
+  assert_status "'$bad_args' is refused" "$st" 1
+  assert_contains "naming it" "$out" "${bad_args%% *}"
+done
+assert_eq "no refused option opened a PR" "$(fake_prs)" "23 40 "
+
+git config --unset "branch.orch/16-propen.orchestrator-pr"
+state_fixture pr ""
+fake_next_pr 41
+fake_pr_label_drop no-version-bump
+fake_pr_label_drop "needs review"
+out="$("$ORCH" pr open "Title" "$body" --label no-version-bump --label "needs review" 2>"$errf")"; st=$?
+assert_status "labels that did not land fail the command" "$st" 1
+assert_eq "printing nothing on stdout" "$out" ""
+assert_eq "naming the PR and each missing label" "$(cat "$errf")" \
+  "orch: PR #41 is open but lacks the labels 'no-version-bump', 'needs review' - add them by hand"
+assert_eq "the PR is still recorded in state" "$("$ORCH" state get pr)" "41"
+assert_eq "and on the branch" "$(pr_marker_of orch/16-propen)" "41"
+
+git config --unset "branch.orch/16-propen.orchestrator-pr"
+state_fixture pr ""
+fake_next_pr 42
+fake_fail adapter_pr_labels "$GH_502"
+out="$("$ORCH" pr open "Title" "$body" --label ci 2>"$errf")"; st=$?
+assert_status "a failed label read fails the command" "$st" 1
+assert_eq "printing nothing on stdout" "$out" ""
+assert_eq "naming the PR and relaying gh's reason" "$(cat "$errf")" \
+  "orch: gh could not read the labels of PR #42, open and recorded on its branch: HTTP 502: Bad Gateway"
+assert_eq "the PR is still recorded in state" "$("$ORCH" state get pr)" "42"
+assert_eq "and on the branch" "$(pr_marker_of orch/16-propen)" "42"
+
+git config --unset "branch.orch/16-propen.orchestrator-pr"
+state_fixture pr ""
+fake_fail adapter_pr_create "could not add label: 'nope' not found"
+out="$("$ORCH" pr open "Title" "$body" --label nope 2>&1)"; st=$?
+assert_status "an unknown label fails the create" "$st" 1
+assert_eq "relaying gh's reason" "$out" \
+  "orch: gh could not open the PR for branch orch/16-propen (issue #16): could not add label: 'nope' not found"
+assert_eq "recording no PR in state" "$("$ORCH" state get pr)" ""
+assert_eq "nor on the branch" "$(pr_marker_of orch/16-propen)" ""
+assert_eq "opening nothing" "$(fake_prs)" "23 40 41 42 "
+fake_unfail
+
+assert_contains "help documents --label" "$("$ORCH" help)" \
+  "pr open <title> <body-file> [--label <name>]..."
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 
 # require_branch's die message is the other half of require_field's coverage
@@ -186,8 +254,77 @@ assert_status "--draft: a failed create on a fresh branch fails" "$st" 1
 assert_eq "--draft: and writes no PR marker on it" "$(pr_marker_of quick/17-gadgets)" ""
 fake_unfail
 
+# --label (#1299): a PR carries the labels the repo requires from creation,
+# so CI's first run sees them, and each is read back once the PR is recorded.
+git checkout -q -b quick/18-labels
+errf="$(mktemp)"
+fake_next_pr 30
+fake_fail adapter_pr_labels
+out="$("$ORCH" pr publish 18 "Title" "$body" 2>"$errf")"; st=$?
+assert_status "no labels: opens the PR" "$st" 0
+assert_eq "no labels: reading no labels back" "$out" "30"
+fake_unfail
+fake_next_pr 31
+out="$("$ORCH" pr publish 18 "Title" "$body" --label no-version-bump 2>"$errf")"; st=$?
+assert_status "--label: opens the PR" "$st" 0
+assert_eq "--label: prints the PR number" "$out" "31"
+assert_eq "--label: carrying the label" "$(fake_pr_labels_of 31)" "no-version-bump"
+fake_next_pr 32
+out="$("$ORCH" pr publish 18 "Title" "$body" --label no-version-bump --draft --label "needs review" 2>"$errf")"; st=$?
+assert_status "--label twice, around --draft: opens the PR" "$st" 0
+assert_eq "--label twice: carrying both labels" "$(fake_pr_labels_of 32)" "$(writeln no-version-bump 'needs review')"
+assert_eq "--label before --draft: as a draft" "$(fake_pr_draft_of 32)" "yes"
+fake_next_pr 33
+out="$("$ORCH" pr publish 18 "Title" "$body" --draft --label no-version-bump 2>"$errf")"; st=$?
+assert_status "--draft before --label: opens the PR" "$st" 0
+assert_eq "--draft before --label: as a draft" "$(fake_pr_draft_of 33)" "yes"
+assert_eq "--draft before --label: carrying the label" "$(fake_pr_labels_of 33)" "no-version-bump"
+
+for bad_args in "--label" "--label --draft"; do
+  # shellcheck disable=SC2086 # each case is a word list on purpose
+  out="$("$ORCH" pr publish 18 "Title" "$body" $bad_args 2>&1)"; st=$?
+  assert_status "'$bad_args' is refused" "$st" 1
+  assert_contains "naming --label" "$out" "--label needs a label name"
+done
+out="$("$ORCH" pr publish 18 "Title" "$body" --label "" 2>&1)"; st=$?
+assert_status "an empty --label is refused" "$st" 1
+assert_contains "naming --label" "$out" "--label needs a label name"
+assert_eq "no refused --label opened a PR" "$(fake_prs)" "23 24 30 31 32 33 "
+
+git checkout -q -b quick/19-dropped
+fake_next_pr 34
+fake_pr_label_drop "needs review"
+out="$("$ORCH" pr publish 19 "Title" "$body" --label no-version-bump --label "needs review" 2>"$errf")"; st=$?
+assert_status "a label that did not land fails the command" "$st" 1
+assert_eq "printing nothing on stdout" "$out" ""
+assert_eq "naming the PR and the missing label" "$(cat "$errf")" \
+  "orch: PR #34 is open but lacks the label 'needs review' - add it by hand"
+assert_eq "the PR is still recorded on the branch" "$(pr_marker_of quick/19-dropped)" "34"
+
+git checkout -q -b quick/20-unread
+fake_next_pr 35
+fake_fail adapter_pr_labels "$GH_502"
+out="$("$ORCH" pr publish 20 "Title" "$body" --label no-version-bump 2>"$errf")"; st=$?
+assert_status "a failed label read fails the command" "$st" 1
+assert_eq "printing nothing on stdout" "$out" ""
+assert_eq "naming the PR and relaying gh's reason" "$(cat "$errf")" \
+  "orch: gh could not read the labels of PR #35, open and recorded on its branch: HTTP 502: Bad Gateway"
+assert_eq "the PR is still recorded on the branch" "$(pr_marker_of quick/20-unread)" "35"
+fake_unfail
+
+git checkout -q -b quick/21-typo
+fake_fail adapter_pr_create "could not add label: 'no-verison-bump' not found"
+out="$("$ORCH" pr publish 21 "Title" "$body" --label no-verison-bump 2>&1)"; st=$?
+assert_status "an unknown label fails the create" "$st" 1
+assert_eq "relaying gh's reason" "$out" \
+  "orch: gh could not open the PR for branch quick/21-typo (issue #21): could not add label: 'no-verison-bump' not found"
+assert_eq "writing no PR marker" "$(pr_marker_of quick/21-typo)" ""
+assert_eq "opening nothing" "$(fake_prs)" "23 24 30 31 32 33 34 35 "
+fake_unfail
+
 help="$("$ORCH" help)"
-assert_contains "help documents --draft" "$help" "pr publish <issue> <title> <body-file> [--draft]"
+assert_contains "help documents --draft and --label" "$help" \
+  "pr publish <issue> <title> <body-file> [--draft] [--label <name>]..."
 restore_suite_env
 
 # --- pr draft (#967) ------------------------------------------------------------

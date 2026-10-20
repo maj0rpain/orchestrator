@@ -288,10 +288,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               ready-for-agent label, 1 when it does not, 2 on
                               a usage error or a gh failure - recording no
                               state
-  pr open <title> <body-file> push and open a draft PR against the flow's base
+  pr open <title> <body-file> [--label <name>]...
+                              push and open a draft PR against the flow's base
                               branch - Closes its issue into the default
-                              branch, Refs it into any other
-  pr publish <issue> <title> <body-file> [--draft]
+                              branch, Refs it into any other. --label,
+                              repeatable, opens it carrying that label, read
+                              back once the PR is recorded: one missing, or a
+                              failed read, fails naming the PR
+  pr publish <issue> <title> <body-file> [--draft] [--label <name>]...
                               push the current branch and open a non-draft PR
                               against the base branch branch off recorded for
                               it (else the base branch in effect) - Closes
@@ -299,7 +303,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               other - recording no state; prints the PR number
                               - for a quick implementation whose review pass
                               already ran. --draft opens it as a draft, for a
-                              pass that met a spec question
+                              pass that met a spec question. --label as pr
+                              open's
   pr release [--force] <title> <body-file>
                               open the release PR: a non-draft PR from the
                               base branch in effect into the default branch,

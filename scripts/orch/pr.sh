@@ -15,8 +15,14 @@
 # branch.<b>.orchestrator-pr (#1200), so a busy check can tell, locally and
 # without GitHub, that the branch's work is handed off. A failed write only
 # warns: the PR is open either way, and the branch merely stays busy.
+# Any labels after the draft flag reach gh pr create through the adapter
+# (#1299), so the PR carries them from creation; pr_labels_check reads them
+# back once the caller has recorded the PR.
 open_pr() {
-  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr err keyword=Closes draft_opt=()
+  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr err keyword=Closes create_opts=() label
+  shift 6
+  [ "$draft" != true ] || create_opts=(--draft)
+  for label; do create_opts+=(--label "$label"); done
   git push -q -u origin "$branch"
   # GitHub only acts on a closing keyword when the PR merges into the default
   # branch, so a PR into any other base branch refers to its issue instead of
@@ -24,8 +30,7 @@ open_pr() {
   [ "$base" = "$(default_branch)" ] || keyword=Refs
   tmp="$(mktemp)"
   { printf '%s #%s\n\n' "$keyword" "$issue"; cat "$body_file"; } >"$tmp"
-  [ "$draft" != true ] || draft_opt=(--draft)
-  if ! capture pr err adapter_pr_create "$base" "$branch" "$title" "$tmp" ${draft_opt[@]+"${draft_opt[@]}"}; then
+  if ! capture pr err adapter_pr_create "$base" "$branch" "$title" "$tmp" ${create_opts[@]+"${create_opts[@]}"}; then
     rm -f "$tmp"
     gh_die "open the PR for branch $branch (issue #$issue)" "$err"
   fi
@@ -35,17 +40,59 @@ open_pr() {
   printf '%s\n' "$pr"
 }
 
+# pr_label_value <usage> <option-names> --label [value...]: dies, naming
+# --label, unless it is followed by a label name - a value neither empty nor
+# one of <option-names>, a space-separated list. Any other name is taken as
+# given: gh refuses one the repo does not have, before it opens the PR.
+pr_label_value() {
+  local name
+  [ -n "${4:-}" ] || die "--label needs a label name - $1"
+  for name in $2; do
+    [ "$4" != "$name" ] || die "--label needs a label name - $1"
+  done
+}
+
+# pr_labels_check <pr> <label>...: with labels named, reads PR <pr>'s labels
+# back and dies, naming the PR and each label it lacks - or, where the read
+# fails, relaying gh's reason. gh adds the labels in a separate mutation after
+# the create (#1299), so a create that succeeded does not prove they landed.
+# Called only once the PR is recorded, so the record survives either death.
+pr_labels_check() {
+  local pr="$1" have err label missing="" count=0
+  shift
+  [ $# -gt 0 ] || return 0
+  capture have err adapter_pr_labels "$pr" \
+    || gh_die "read the labels of PR #$pr, open and recorded on its branch" "$err"
+  for label; do
+    list_has "$have" "$label" && continue
+    missing="${missing:+$missing, }'$label'"
+    count=$((count + 1))
+  done
+  [ "$count" -gt 0 ] || return 0
+  [ "$count" -gt 1 ] || die "PR #$pr is open but lacks the label $missing - add it by hand"
+  die "PR #$pr is open but lacks the labels $missing - add them by hand"
+}
+
 cmd_pr_open() {
   require_state
-  [ $# -eq 2 ] || die "usage: orch.sh pr open <title> <body-file>"
+  local usage="usage: orch.sh pr open <title> <body-file> [--label <name>]..." labels=()
+  [ $# -ge 2 ] || die "$usage"
   local title="$1" body_file="$2" issue branch pr
+  shift 2
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --label) pr_label_value "$usage" --label "$@"; labels+=("$2"); shift 2 ;;
+      *) die "unknown option: $1 - $usage" ;;
+    esac
+  done
   [ -f "$body_file" ] || die "body file not found: $body_file"
   require_issue issue
   require_branch branch
   # Draft is the honest signal: the review loop has not run yet, so marking it
   # ready is the loop's success condition rather than a comment nobody reads.
-  pr="$(open_pr "$branch" "$(flow_base)" "$issue" "$title" "$body_file" true)"
+  pr="$(open_pr "$branch" "$(flow_base)" "$issue" "$title" "$body_file" true ${labels[@]+"${labels[@]}"})"
   state_write pr "$pr"
+  pr_labels_check "$pr" ${labels[@]+"${labels[@]}"}
   note "$pr"
 }
 
@@ -56,19 +103,25 @@ cmd_pr_open() {
 # draft to promote later, since a quick implementation's review pass already
 # ran before this is called - unless that pass met a spec question (#967):
 # --draft then opens it as a draft, held until a human rules on the question.
+# --label, repeatable, opens it carrying each label named (#1299).
 cmd_pr_publish() {
-  local usage="usage: orch.sh pr publish <issue> <title> <body-file> [--draft]" draft=false
-  [ $# -eq 3 ] || [ $# -eq 4 ] || die "$usage"
-  if [ $# -eq 4 ]; then
-    [ "$4" = --draft ] || die "unknown option: $4 - $usage"
-    draft=true
-  fi
+  local usage="usage: orch.sh pr publish <issue> <title> <body-file> [--draft] [--label <name>]..." draft=false labels=()
+  [ $# -ge 3 ] || die "$usage"
   local issue="$1" title="$2" body_file="$3" branch base pr
+  shift 3
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --draft) draft=true; shift ;;
+      --label) pr_label_value "$usage" "--draft --label" "$@"; labels+=("$2"); shift 2 ;;
+      *) die "unknown option: $1 - $usage" ;;
+    esac
+  done
   [ -f "$body_file" ] || die "body file not found: $body_file"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   current_branch_or_die
   base="$(recorded_base "$branch")"
-  pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" "$draft")"
+  pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" "$draft" ${labels[@]+"${labels[@]}"})"
+  pr_labels_check "$pr" ${labels[@]+"${labels[@]}"}
   note "$pr"
 }
 
