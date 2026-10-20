@@ -360,7 +360,7 @@ check_orch_sh() {
       # into ~/.agents/skills, so one copy can be reached from both stores:
       # report it once.
       real="$(cd "$d" && pwd -P)" || continue
-      if grep -qxF "$real" <<<"$seen"; then continue; fi
+      if list_has "$seen" "$real"; then continue; fi
       seen="$(d_append "$seen" "$real")"
       d="${d%/}"; names="$(d_append "$names" "${d##*/}")"
     done
