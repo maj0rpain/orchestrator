@@ -1,5 +1,7 @@
 # shellcheck shell=bash
-# state.sh - orch.sh's state command: state get and state set.
+# state.sh - orch.sh's state command (state get and state set), with the state
+# helpers every module calls (state_get, state_write, require_state,
+# require_pr, require_issue, flow_active).
 # Its tests: scripts/test/orch/state.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 

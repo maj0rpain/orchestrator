@@ -17,6 +17,9 @@ ticket_worktree_number() {
   printf '%s\n' "$1"
 }
 
+# Where ticket worktrees live: under the checkout's .orchestrator/ folder.
+readonly TICKET_WORKTREES="$ORCH/worktrees"
+
 # ticket_worktree_path <n>: prints the path of ticket #<n>'s worktree.
 ticket_worktree_path() { printf '%s/t%s\n' "$TICKET_WORKTREES" "$1"; }
 
