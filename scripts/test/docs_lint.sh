@@ -43,6 +43,7 @@
 #   scan_early_exit_pipe  no script pipes into a quiet grep or into head
 #   scan_junie_planning  the Junie snippet has one begin and end marker and restates the planning allowlist and records
 #   scan_capability_table  each docs/host-capabilities.md row has both hosts' cells filled
+#   scan_names_phrase  each listed file, or section of one, names its phrase: the verifying agents suite-cost run, the review loop's triage and the review pass suite-cost check
 #   scan_review_pass  the review pass is defined once in orch-review-pass and quick implementation's step 6 runs it
 #   scan_unattended_modes  quick implementation's steps 1, 2 and 3 run the unattended modes
 #   scan_skill_refs  each skill's SKILL.md names every reference file beside it
@@ -51,7 +52,6 @@
 #   scan_standalone_smells  the standalone review pass section and its command offer --smells
 #   scan_cheapest_test  the implementer's and fixer's Test-driven development sections carry one identical Cheapest sufficient test paragraph
 #   scan_test_cost_smells  the Standards reviewer carries the four test-cost smells outside the smell baseline
-#   scan_names_phrase  each listed file, or section of one, names its phrase: the verifying agents suite-cost run, the review loop's triage and the review pass suite-cost check
 #   scan_improve_tests  orch-improve-tests has its command file and its six step headings in order
 #   scan_report_capability  docs/host-capabilities.md has a row for opening the report and a Markdown-summary fallback
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review section and starts its own reviewers
@@ -1638,6 +1638,26 @@ quick_step_refers() {
     || echo "$quick: step ${numbered%%.*} does not refer to $owner **$4** $5"
 }
 
+# scan_names_phrase <plugin root> <list> <phrase>: for each `file` or
+# `file|section` entry in the newline list, one line when the section is
+# missing, or when the file, or that section of it, never names the phrase,
+# read flattened so a phrase wrapped across lines still counts.
+scan_names_phrase() {
+  local r="$1" list="$2" phrase="$3" f h body
+  while IFS='|' read -r f h; do
+    [ -n "$f" ] || continue
+    if [ -z "$h" ]; then
+      flat_text "$r/$f" 2>/dev/null | grep -qF -- "$phrase" \
+        || echo "$f: does not name $phrase"
+    elif ! body="$(md_section "$r/$f" "$h" 2>/dev/null)"; then
+      echo "$f: no $h section"
+    elif ! flat_text <<<"$body" | grep -qF -- "$phrase"; then
+      echo "$f: $h does not name $phrase"
+    fi
+  done <<<"$list"
+  return 0
+}
+
 # --- review pass (#342) --------------------------------------------------------
 echo
 echo "review pass (#342)"
@@ -1646,13 +1666,8 @@ echo "review pass (#342)"
 # section rather than keeping its own copy.
 # scan_review_pass <plugin root>: one line per break of that rule.
 scan_review_pass() {
-  local r="$1" pass="skills/orch-review-pass/SKILL.md" body
-  if body="$(md_section "$r/$pass" "## Review pass")"; then
-    flat_text <<<"$body" | grep -qF 'review-pass begin' \
-      || echo "$pass: ## Review pass does not name review-pass begin"
-  else
-    echo "$pass: no ## Review pass section"
-  fi
+  local r="$1"
+  scan_names_phrase "$r" 'skills/orch-review-pass/SKILL.md|## Review pass' 'review-pass begin'
   quick_step_refers "$r" "## 6. Review" orch-review-pass "Review pass" section
   return 0
 }
@@ -1969,25 +1984,6 @@ echo "verify through suite cost (#1306)"
 verify_agents='agents/orch-implementer.md
 agents/orch-fixer.md
 agents/orch-resolver.md'
-# scan_names_phrase <plugin root> <list> <phrase>: for each `file` or
-# `file|section` entry in the newline list, one line when the section is
-# missing, or when the file, or that section of it, never names the phrase,
-# read flattened so a phrase wrapped across lines still counts.
-scan_names_phrase() {
-  local r="$1" list="$2" phrase="$3" f h body
-  while IFS='|' read -r f h; do
-    [ -n "$f" ] || continue
-    if [ -z "$h" ]; then
-      flat_text "$r/$f" 2>/dev/null | grep -qF -- "$phrase" \
-        || echo "$f: does not name $phrase"
-    elif ! body="$(md_section "$r/$f" "$h" 2>/dev/null)"; then
-      echo "$f: no $h section"
-    elif ! flat_text <<<"$body" | grep -qF -- "$phrase"; then
-      echo "$f: $h does not name $phrase"
-    fi
-  done <<<"$list"
-  return 0
-}
 fixture="$(new_fixture)"
 mkdir -p "$fixture/agents"
 printf '# I\n\nRun `bash "<orch.sh>" suite-cost\nrun -- <cmd>`.\n' >"$fixture/agents/orch-implementer.md"
