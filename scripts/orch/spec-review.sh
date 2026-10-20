@@ -1369,12 +1369,10 @@ spec_review_ticket_load() {
 spec_review_ticket_local() {
   local i="$1" body_var="$2" post="$3" dir="$4" j at problem="" have=""
   local what="ticket item ${ST_N[$1]}"
-  case "${ST_KIND[$i]}" in
-    ticket|section) SR_TICKET_ANCHOR_COUNT=$((SR_TICKET_ANCHOR_COUNT + 1)) ;;
-  esac
   at="tickets.md line ${ST_LINE[$i]}: "
   case "${ST_KIND[$i]}" in
     ticket)
+      SR_TICKET_ANCHOR_COUNT=$((SR_TICKET_ANCHOR_COUNT + 1))
       spec_review_ticket_load "$dir" "${ST_T[$i]}" "$at$what" || return 0
       [ "${ST_DISP[$i]}" = applied ] || return 0
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
@@ -1382,6 +1380,7 @@ spec_review_ticket_local() {
       spec_review_edit "TK_TEXT[$j]" "${TK_FETCHED[$j]}" "$at$what (#${ST_T[$i]})" \
         "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" || return 0 ;;
     section)
+      SR_TICKET_ANCHOR_COUNT=$((SR_TICKET_ANCHOR_COUNT + 1))
       [ "${ST_DISP[$i]}" = applied ] || return 0
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
       spec_review_edit "$body_var" "$post" "$at$what (## Ticket)" \
