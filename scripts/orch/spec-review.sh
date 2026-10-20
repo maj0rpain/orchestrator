@@ -140,29 +140,29 @@ spec_review_text_store() {
 # spec_review_item_check <index>: dies, naming the item's header line, unless
 # the item carries what its recommendation needs.
 spec_review_item_check() {
-  local i="$1" line="${SR_IT_LINE[$1]}" n="${SR_IT_N[$1]}" j opts=0 has_find="" has_comment="" why=""
-  for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
-    [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
+  local i="$1" line="${SR_IT_LINE[$1]}" n="${SR_IT_N[$1]}" opt fd cm opts=0 has_find="" has_comment="" unapplied_hint=""
+  for opt in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
+    [ "${SR_OP_ITEM[$opt]}" = "$i" ] || continue
     opts=$((opts + 1))
-    [ -n "${SR_OP_SUMMARY[$j]+x}" ] \
-      || spec_review_batch_die "${SR_OP_LINE[$j]}" "item $n option ${SR_OP_LETTER[$j]} has no @@ summary"
-    why=""
-    [ "${SR_OP_LETTER[$j]}" = "${SR_IT_ARG[$i]}" ] || why=" - an option not recommended still carries the edit it would make"
-    [ -n "${SR_OP_REPLACE[$j]+x}" ] \
-      || spec_review_batch_die "${SR_OP_LINE[$j]}" "item $n option ${SR_OP_LETTER[$j]} has no @@ anchor/@@ replace/@@ end block$why"
+    [ -n "${SR_OP_SUMMARY[$opt]+x}" ] \
+      || spec_review_batch_die "${SR_OP_LINE[$opt]}" "item $n option ${SR_OP_LETTER[$opt]} has no @@ summary"
+    unapplied_hint=""
+    [ "${SR_OP_LETTER[$opt]}" = "${SR_IT_ARG[$i]}" ] || unapplied_hint=" - an option not recommended still carries the edit it would make"
+    [ -n "${SR_OP_REPLACE[$opt]+x}" ] \
+      || spec_review_batch_die "${SR_OP_LINE[$opt]}" "item $n option ${SR_OP_LETTER[$opt]} has no @@ anchor/@@ replace/@@ end block$unapplied_hint"
   done
-  for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
-    [ "${SR_FD_ITEM[$j]}" != "$i" ] || has_find=1
+  for fd in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
+    [ "${SR_FD_ITEM[$fd]}" != "$i" ] || has_find=1
   done
-  for j in ${SR_CM_ITEM[@]+"${!SR_CM_ITEM[@]}"}; do
-    [ "${SR_CM_ITEM[$j]}" != "$i" ] || has_comment=1
+  for cm in ${SR_CM_ITEM[@]+"${!SR_CM_ITEM[@]}"}; do
+    [ "${SR_CM_ITEM[$cm]}" != "$i" ] || has_comment=1
   done
   case "${SR_IT_REC[$i]}" in
     apply|decline)
       [ -n "${SR_IT_SUMMARY[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ summary"
-      why=""
-      [ "${SR_IT_REC[$i]}" != decline ] || why=" - a decline item still carries the edit it declines"
-      [ -n "${SR_IT_REPLACE[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ anchor/@@ replace/@@ end block$why" ;;
+      unapplied_hint=""
+      [ "${SR_IT_REC[$i]}" != decline ] || unapplied_hint=" - a decline item still carries the edit it declines"
+      [ -n "${SR_IT_REPLACE[$i]+x}" ] || spec_review_batch_die "$line" "item $n has no @@ anchor/@@ replace/@@ end block$unapplied_hint" ;;
     decision)
       [ "$opts" -ge 2 ] || spec_review_batch_die "$line" "decision item $n needs at least two @@ option blocks"
       [ -n "$(spec_review_option_index "$i" "${SR_IT_ARG[$i]}")" ] \
@@ -212,7 +212,7 @@ spec_review_at_line() {
 spec_review_batch_parse() {
   local file="$1" line lineno=0 mode=top kw args cur=-1 opt=-1
   local buf="" bufn=0 block_line=0 quote_wanted="" n group rec rec_tail arg lens state reason
-  local fd_lens fd_k login created letter label extra j mark
+  local fd_lens fd_k login created letter label extra lens_slot fd_slot cm_slot target mark
   SR_LENS_NAME=(); SR_LENS_STATE=(); SR_LENS_REASON=()
   SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_MARK=(); SR_IT_LINE=()
   SR_IT_SUMMARY=(); SR_IT_WHY=(); SR_IT_ANCHOR=(); SR_IT_ANCHOR_LINE=(); SR_IT_REPLACE=(); SR_IT_RESOLVED=()
@@ -277,8 +277,8 @@ spec_review_batch_parse() {
             [ -n "$reason" ] || spec_review_batch_die "$lineno" "@@ lens $lens not-run needs a reason" ;;
           *) spec_review_batch_die "$lineno" "@@ lens $lens wants ran, not-run <reason> or standalone" ;;
         esac
-        j="${#SR_LENS_NAME[@]}"
-        SR_LENS_NAME[j]="$lens"; SR_LENS_STATE[j]="$state"; SR_LENS_REASON[j]="$reason" ;;
+        lens_slot="${#SR_LENS_NAME[@]}"
+        SR_LENS_NAME[lens_slot]="$lens"; SR_LENS_STATE[lens_slot]="$state"; SR_LENS_REASON[lens_slot]="$reason" ;;
       item)
         [ "$cur" -lt 0 ] || spec_review_item_check "$cur"
         read -r n group rec rec_tail <<<"$args"
@@ -341,14 +341,14 @@ spec_review_batch_parse() {
         read -r fd_lens fd_k extra <<<"$args"
         [ -n "$fd_lens" ] && [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ finding wants <lens> <k>"
         case "$fd_k" in ''|*[!0-9]*|0*) spec_review_batch_die "$lineno" "@@ finding wants <lens> <k>, k a positive number" ;; esac
-        j="${#SR_FD_ITEM[@]}"
-        SR_FD_ITEM[j]="$cur"; SR_FD_LENS[j]="$fd_lens"; SR_FD_K[j]="$fd_k"; SR_FD_LINE[j]="$lineno" ;;
+        fd_slot="${#SR_FD_ITEM[@]}"
+        SR_FD_ITEM[fd_slot]="$cur"; SR_FD_LENS[fd_slot]="$fd_lens"; SR_FD_K[fd_slot]="$fd_k"; SR_FD_LINE[fd_slot]="$lineno" ;;
       comment)
         read -r login created extra <<<"$args"
         case "$login" in @?*) ;; *) spec_review_batch_die "$lineno" "@@ comment wants @<login> <createdAt>" ;; esac
         [ -n "$created" ] && [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ comment wants @<login> <createdAt>"
-        j="${#SR_CM_ITEM[@]}"
-        SR_CM_ITEM[j]="$cur"; SR_CM_LOGIN[j]="$login"; SR_CM_CREATED[j]="$created"
+        cm_slot="${#SR_CM_ITEM[@]}"
+        SR_CM_ITEM[cm_slot]="$cur"; SR_CM_LOGIN[cm_slot]="$login"; SR_CM_CREATED[cm_slot]="$created"
         quote_wanted=1 ;;
       quote)
         [ -n "$quote_wanted" ] || spec_review_batch_die "$lineno" "@@ quote must follow @@ comment"
@@ -357,8 +357,8 @@ spec_review_batch_parse() {
       resolved-by)
         [ "${SR_IT_REC[$cur]}" = resolved ] || spec_review_batch_die "$lineno" "@@ resolved-by belongs to a resolved item"
         [ -z "${SR_IT_RESOLVED[$cur]+x}" ] || spec_review_batch_die "$lineno" "a second @@ resolved-by"
-        j="$(array_index SR_IT_N "$args")"
-        [ -n "$args" ] && [ -n "$j" ] && [ "$j" -lt "$cur" ] \
+        target="$(array_index SR_IT_N "$args")"
+        [ -n "$args" ] && [ -n "$target" ] && [ "$target" -lt "$cur" ] \
           || spec_review_batch_die "$lineno" "@@ resolved-by names '$args', which is no earlier item"
         SR_IT_RESOLVED[cur]="$args" ;;
       option)
@@ -567,7 +567,7 @@ spec_review_answer() {
 # <noun>.
 spec_review_reasons() {
   local flag="$1" f="$2" numbers="$3" disps="$4" reasons="$5" noun="$6" source="$7" answer_name="$8"
-  local line lineno=0 n reason i ref
+  local line lineno=0 n reason i disp_ref reason_ref
   eval "$reasons=()"
   [ -n "$f" ] || return 0
   [ -f "$f" ] || die "$flag file not found: $f"
@@ -578,11 +578,11 @@ spec_review_reasons() {
     spec_review_reason_split "$flag" "$lineno" "$line" n reason
     i="$(array_index "$numbers" "$n")"
     [ -n "$i" ] || die "$flag line $lineno names $noun $n, which $source does not have"
-    ref="${disps}[$i]"
-    [ "${!ref:-}" = declined ] \
+    disp_ref="${disps}[$i]"
+    [ "${!disp_ref:-}" = declined ] \
       || die "$flag line $lineno names $noun $n, which $answer_name does not decline"
-    ref="${reasons}[$i]"
-    [ -z "${!ref+x}" ] || die "$flag line $lineno names $noun $n a second time"
+    reason_ref="${reasons}[$i]"
+    [ -z "${!reason_ref+x}" ] || die "$flag line $lineno names $noun $n a second time"
     printf -v "${reasons}[$i]" '%s' "$reason"
   done <"$f"
 }
@@ -660,12 +660,12 @@ spec_review_anchor() {
 # each problem, naming its `@@ anchor` line, is appended to SR_PROBLEMS, the
 # failed edit skipped.
 spec_review_validate() {
-  local dir="$1" body="$2" answer="$3" collect="${4:-}" lens i j accepted
+  local dir="$1" body="$2" answer="$3" collect="${4:-}" lens i l opt accepted
   spec_review_batch_parse "$dir/batch.md"
   SR_LF_LENS=(); SR_LF_K=(); SR_LF_TEXT=()
   for lens in $SPEC_REVIEW_LENSES; do
-    j="$(array_index SR_LENS_NAME "$lens")"
-    [ "${SR_LENS_STATE[$j]}" != ran ] || spec_review_lens_parse "$dir" "$lens"
+    l="$(array_index SR_LENS_NAME "$lens")"
+    [ "${SR_LENS_STATE[$l]}" != ran ] || spec_review_lens_parse "$dir" "$lens"
   done
   spec_review_findings_check
   spec_review_answer "$answer"
@@ -680,13 +680,13 @@ spec_review_validate() {
         spec_review_anchor "$accepted" "batch.md line ${SR_IT_ANCHOR_LINE[$i]}: item ${SR_IT_N[$i]}" \
           "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}" "$collect" ;;
       decision)
-        for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
-          [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
+        for opt in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
+          [ "${SR_OP_ITEM[$opt]}" = "$i" ] || continue
           accepted=""
-          [ "${SR_DISP[$i]}" != taken ] || [ "${SR_TAKEN[$i]}" != "${SR_OP_LETTER[$j]}" ] || accepted=1
+          [ "${SR_DISP[$i]}" != taken ] || [ "${SR_TAKEN[$i]}" != "${SR_OP_LETTER[$opt]}" ] || accepted=1
           spec_review_anchor "$accepted" \
-            "batch.md line ${SR_OP_ANCHOR_LINE[$j]}: item ${SR_IT_N[$i]} option ${SR_OP_LETTER[$j]}" \
-            "${SR_OP_ANCHOR[$j]}" "${SR_OP_REPLACE[$j]}" "$collect"
+            "batch.md line ${SR_OP_ANCHOR_LINE[$opt]}: item ${SR_IT_N[$i]} option ${SR_OP_LETTER[$opt]}" \
+            "${SR_OP_ANCHOR[$opt]}" "${SR_OP_REPLACE[$opt]}" "$collect"
         done ;;
     esac
   done
@@ -915,17 +915,17 @@ SR_DIFF_LIMIT=40
 # <label>.
 spec_review_word_diff() {
   local dir="$1" label="$2" IFS=$' \t\n' a=() b=() ops=() words=() line hunk="" status=""
-  local n k w total changed=0 s e nx from to rem add piece=() text
+  local longest k w total changed=0 span_start span_end next_change from to rem add piece=() text
   read -r -d '' -a a <<<"$3" || true
   read -r -d '' -a b <<<"$4" || true
   { { [ "${#a[@]}" -eq 0 ] || printf '%s\n' "${a[@]}"; } >"$dir/anchor" \
     && { [ "${#b[@]}" -eq 0 ] || printf '%s\n' "${b[@]}"; } >"$dir/replacement"; } 2>/dev/null \
     || die "$label: could not write its word lists in $dir"
-  n="${#a[@]}"; [ "${#b[@]}" -le "$n" ] || n="${#b[@]}"
+  longest="${#a[@]}"; [ "${#b[@]}" -le "$longest" ] || longest="${#b[@]}"
   # status stays empty when the redirect fails, so a failed write is never
   # read as git's status 1; git's own stderr still reaches ours, on fd 3.
   { git --no-pager diff --no-index --no-color --no-ext-diff --no-textconv --diff-algorithm=myers \
-      --no-indent-heuristic --unified="$n" -- "$dir/anchor" "$dir/replacement" 2>&3 && status=0 || status=$?; } \
+      --no-indent-heuristic --unified="$longest" -- "$dir/anchor" "$dir/replacement" 2>&3 && status=0 || status=$?; } \
     3>&2 2>/dev/null >"$dir/diff" || true
   [ -n "$status" ] || die "$label: could not write its word diff in $dir"
   [ "$status" -le 1 ] || die "$label: git diff exited $status rendering its word diff"
@@ -944,35 +944,35 @@ spec_review_word_diff() {
   k=0
   while [ "$k" -lt "$total" ]; do
     [ "${ops[k]}" != ' ' ] || { k=$((k + 1)); continue; }
-    s="$k"; e="$k"
+    span_start="$k"; span_end="$k"
     while :; do
-      while [ "$e" -lt "$total" ] && [ "${ops[e]}" != ' ' ]; do e=$((e + 1)); done
-      nx="$e"
-      while [ "$nx" -lt "$total" ] && [ "${ops[nx]}" = ' ' ]; do nx=$((nx + 1)); done
-      [ "$nx" -lt "$total" ] && [ $((nx - e)) -le "$SR_DIFF_MERGE" ] || break
-      e="$nx"
+      while [ "$span_end" -lt "$total" ] && [ "${ops[span_end]}" != ' ' ]; do span_end=$((span_end + 1)); done
+      next_change="$span_end"
+      while [ "$next_change" -lt "$total" ] && [ "${ops[next_change]}" = ' ' ]; do next_change=$((next_change + 1)); done
+      [ "$next_change" -lt "$total" ] && [ $((next_change - span_end)) -le "$SR_DIFF_MERGE" ] || break
+      span_end="$next_change"
     done
-    from=$((s - SR_DIFF_CONTEXT)); [ "$from" -ge 0 ] || from=0
-    to=$((e + SR_DIFF_CONTEXT)); [ "$to" -le "$total" ] || to="$total"
+    from=$((span_start - SR_DIFF_CONTEXT)); [ "$from" -ge 0 ] || from=0
+    to=$((span_end + SR_DIFF_CONTEXT)); [ "$to" -le "$total" ] || to="$total"
     piece=()
-    for ((w = from; w < s; w++)); do piece+=("${words[w]}"); done
+    for ((w = from; w < span_start; w++)); do piece+=("${words[w]}"); done
     [ "$from" -eq 0 ] || piece[0]="…${piece[0]}"
-    w="$s"
-    while [ "$w" -lt "$e" ]; do
+    w="$span_start"
+    while [ "$w" -lt "$span_end" ]; do
       if [ "${ops[w]}" = ' ' ]; then piece+=("${words[w]}"); w=$((w + 1)); continue; fi
       rem=""; add=""
-      while [ "$w" -lt "$e" ] && [ "${ops[w]}" != ' ' ]; do
+      while [ "$w" -lt "$span_end" ] && [ "${ops[w]}" != ' ' ]; do
         if [ "${ops[w]}" = - ]; then rem="${rem:+$rem }${words[w]}"; else add="${add:+$add }${words[w]}"; fi
         w=$((w + 1))
       done
       [ -z "$rem" ] || piece+=("~~$rem~~")
       [ -z "$add" ] || piece+=("**$add**")
     done
-    for ((w = e; w < to; w++)); do piece+=("${words[w]}"); done
+    for ((w = span_end; w < to; w++)); do piece+=("${words[w]}"); done
     [ "$to" -eq "$total" ] || piece[${#piece[@]}-1]="${piece[${#piece[@]}-1]}…"
     text="${piece[*]}"
     SR_DIFF="${SR_DIFF:+$SR_DIFF$'\n'}$text"
-    k="$e"
+    k="$span_end"
   done
 }
 
@@ -1380,18 +1380,19 @@ spec_review_ticket_load() {
   TK_T[j]="$2"; TK_FETCHED[j]="$copy"; TK_TEXT[j]="$copy"
 }
 
-# spec_review_ticket_local <index> <body-var> <post> <dir> [collect]: ticket
-# item <index>'s checks that read no GitHub, the half apply and check share.
-# A text item's ticket is loaded (see spec_review_ticket_load) and, when
-# ST_DISP holds it applied, its edit made in memory: to its ticket's copy in
-# TK_TEXT, or a `## Ticket` edit to the body in <body-var>, anchored on
-# <post>, the body as the batch items left it. An applied edge item is
-# checked against its ticket's copy's `## Blocked by`. Each problem names its
+# spec_review_ticket_item_offline <index> <body-var> <batch-body> <dir>
+# [collect]: ticket item <index>'s checks that read no GitHub, the half apply
+# and check share. A text item's ticket is loaded (see
+# spec_review_ticket_load) and, when ST_DISP holds it applied, its edit made
+# in memory: to its ticket's copy in TK_TEXT, or a `## Ticket` edit to the
+# body in <body-var>, anchored on <batch-body>, the body as the batch items
+# left it. An applied edge item is checked against its ticket's copy's
+# `## Blocked by`. Each problem names its
 # tickets.md line (a text item's `@@ anchor` line, else its header line); it
 # dies on one, or with [collect] set - check's way - appends it to
 # SR_PROBLEMS instead.
-spec_review_ticket_local() {
-  local i="$1" body_var="$2" post="$3" dir="$4" collect="${5:-}" j at problem="" have=""
+spec_review_ticket_item_offline() {
+  local i="$1" body_var="$2" batch_body="$3" dir="$4" collect="${5:-}" j at problem="" have=""
   local what="ticket item ${ST_N[$1]}"
   at="tickets.md line ${ST_LINE[$i]}: "
   case "${ST_KIND[$i]}" in
@@ -1405,7 +1406,7 @@ spec_review_ticket_local() {
     section)
       [ "${ST_DISP[$i]}" = applied ] || return 0
       at="tickets.md line ${ST_ANCHOR_LINE[$i]}: "
-      spec_review_edit "$body_var" "$post" "$at$what (## Ticket)" \
+      spec_review_edit "$body_var" "$batch_body" "$at$what (## Ticket)" \
         "${ST_ANCHOR[$i]}" "${ST_REPLACE[$i]}" "$collect" || true ;;
     block|unblock)
       [ "${ST_DISP[$i]}" = applied ] || return 0
@@ -1426,12 +1427,12 @@ spec_review_ticket_local() {
 }
 
 # spec_review_tickets_follow <body-var> <dir> <kind> <issue>: every accepted
-# ticket item checked and applied in memory - see spec_review_ticket_local -
-# and the checks that read GitHub: every edge item's tickets in the
-# breakdown, and a `## Ticket` item only on a collapsed one. Dies, before any
-# write, on the first that fails.
+# ticket item checked and applied in memory - see
+# spec_review_ticket_item_offline - and the checks that read GitHub: every
+# edge item's tickets in the breakdown, and a `## Ticket` item only on a
+# collapsed one. Dies, before any write, on the first that fails.
 spec_review_tickets_follow() {
-  local body_var="$1" dir="$2" kind="$3" issue="$4" i t what post subs="" listed
+  local body_var="$1" dir="$2" kind="$3" issue="$4" i t what batch_body subs="" listed
   [ -z "$ST_RETIRE" ] || return 0
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
     case "${ST_KIND[$i]}" in
@@ -1441,7 +1442,7 @@ spec_review_tickets_follow() {
         break ;;
     esac
   done
-  post="${!body_var}"
+  batch_body="${!body_var}"
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
     what="tickets.md line ${ST_LINE[$i]}: ticket item ${ST_N[$i]}"
     case "${ST_KIND[$i]}" in
@@ -1456,7 +1457,7 @@ spec_review_tickets_follow() {
           esac
         done ;;
     esac
-    spec_review_ticket_local "$i" "$body_var" "$post" "$dir"
+    spec_review_ticket_item_offline "$i" "$body_var" "$batch_body" "$dir"
   done
 }
 
@@ -1473,10 +1474,10 @@ spec_review_tickets_check() {
   spec_review_tickets_parse "$dir/tickets.md"
   spec_review_tickets_answer all
   file_read __srtc_body "$dir/spec.md" || die "could not read $dir/spec.md"
-  local post="$__srtc_body"
+  local batch_body="$__srtc_body"
   SR_PROBLEMS=(); TK_T=(); TK_FETCHED=(); TK_TEXT=()
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
-    spec_review_ticket_local "$i" __srtc_body "$post" "$dir" collect
+    spec_review_ticket_item_offline "$i" __srtc_body "$batch_body" "$dir" collect
     case "${ST_KIND[$i]}" in ticket|section) anchors=$((anchors + 1)) ;; esac
   done
   spec_review_problems_exit
