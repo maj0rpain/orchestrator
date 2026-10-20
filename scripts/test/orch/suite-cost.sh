@@ -11,6 +11,18 @@
 # tab-separated fields.
 SUITE_COST_LINE='^[0-9a-f]{40}(-dirty)?'$'\t''[0-9]+\.[0-9]{2}'$'\t''[0-9]+\.[0-9]{2}'$'\t''[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z'$'\t'
 
+# assert_record_line <label> <line>: asserts <line> is a record line in the
+# documented shape, with exactly five tab-separated fields.
+assert_record_line() {
+  local shape=well-formed
+  if [[ ! "$2" =~ $SUITE_COST_LINE ]]; then
+    shape="malformed: $2"
+  elif [[ "$(awk -F'\t' '{ print NF }' <<<"$2")" != 5 ]]; then
+    shape="not five fields: $2"
+  fi
+  assert_eq "$1" "$shape" well-formed
+}
+
 # check_repo: a repo for suite-cost check, cwd inside it, its record's
 # directory made: main's first commit (root) and its child (base), then branch
 # feat off base, base recorded as its base SHA, with two commits (parent, then
@@ -58,12 +70,10 @@ assert_eq "its stderr passes through, with nothing added" "$(cat "$errf")" "to-e
 assert_eq "the missing record directory is created" "$(on_disk "$rec")" present
 assert_eq "a passing run appends exactly one line" "$(wc -l <"$rec" | tr -d ' ')" 1
 line="$(tail -n 1 "$rec")"
-[[ "$line" =~ $SUITE_COST_LINE ]] && shape=well-formed || shape="malformed: $line"
-assert_eq "the line has the documented shape" "$shape" well-formed
+assert_record_line "the line has the documented shape, in exactly five fields" "$line"
 assert_eq "its first field is HEAD's full SHA" "$(cut -f1 <<<"$line")" "$(git rev-parse HEAD)"
 assert_eq "its fifth field is the command, its words joined by single spaces" \
   "$(cut -f5 <<<"$line")" "sh -c echo to-out; echo to-err >&2"
-assert_eq "it has exactly five fields" "$(awk -F'\t' '{ print NF }' <<<"$line")" 5
 
 before="$(cat "$rec")"
 out="$("$ORCH" suite-cost run -- sh -c 'echo failing; exit 3' 2>&1)"; st=$?
@@ -113,9 +123,7 @@ echo changed >>README.md
 line="$(tail -n 1 "$rec")"
 assert_eq "a run with a tracked change records <sha>-dirty" \
   "$(cut -f1 <<<"$line")" "$(git rev-parse HEAD)-dirty"
-[[ "$line" =~ $SUITE_COST_LINE ]] && shape=well-formed || shape="malformed: $line"
-assert_eq "in the documented shape" "$shape" well-formed
-assert_eq "still five fields" "$(awk -F'\t' '{ print NF }' <<<"$line")" 5
+assert_record_line "in the documented shape, still five fields" "$line"
 git checkout -q -- README.md
 touch untracked
 "$ORCH" suite-cost run -- true >/dev/null 2>&1
@@ -300,8 +308,7 @@ assert_status "a base run's check exits 0" "$st" 0
 assert_eq "with the verdict alone on stdout - a cheap base is below the floor" "$out" "off"
 assert_eq "the command ran once" "$(on_disk "$marker")" present
 line="$(tail -n 1 "$rec")"
-[[ "$line" =~ $SUITE_COST_LINE ]] && shape=well-formed || shape="malformed: $line"
-assert_eq "its record line has the documented shape" "$shape" well-formed
+assert_record_line "its record line has the documented shape" "$line"
 assert_eq "recorded at the base commit" "$(cut -f1 <<<"$line")" "$base"
 assert_eq "for the command" "$(cut -f5 <<<"$line")" "${noisy[*]}"
 assert_eq "and the worktree is gone" "$(git worktree list | wc -l | tr -d ' ')" 1
