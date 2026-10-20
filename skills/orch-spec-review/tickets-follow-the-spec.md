@@ -95,7 +95,8 @@ When an open ticket is affected, paste `check --tickets`'s stdout into chat
 word for word, composing no view of your own, and ask **one blocking
 question** with the host's ask tool (`AskUserQuestion` on Claude Code,
 `ask_user` on Junie), the paste and the call in the same response, as for
-the spec batch. Its options are the spec batch's, under the
+the spec batch. On Claude Code the ask is refused until the view is pasted,
+as the spec batch's is. Its options are the spec batch's, under the
 skill's **Disposition**, each offered once and with the same rules, except:
 
 - **Retire and break down again** is added: no ticket is edited; the

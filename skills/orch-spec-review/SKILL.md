@@ -336,7 +336,10 @@ shortening, no expansion, in any round: the view the human reads is
 (`AskUserQuestion` on Claude Code, `ask_user` on Junie), the paste and the
 call in the same response. The review never ends its turn on the list:
 presenting it is not the end of the step, the answer is. No edit is applied
-and no changelog is posted before the answer arrives. The options:
+and no changelog is posted before the answer arrives. On Claude Code the ask
+is refused until the view is pasted: a hook refuses the first ask after each
+`check` that wrote a `view.md`, until the next `apply`, handing back that
+view - paste it word for word, then ask again. The options:
 
 - **Apply as recommended (Recommended)** - every proposed edit applied, every
   decision item takes its recommended option, every **recommend decline** item
@@ -359,7 +362,9 @@ Run `bash "$ORCH" spec-review check <dir> --full <n>...` with the numbers it
 names, paste its stdout into chat word for word, and ask the batch question
 again, the paste and the call in the same response. It writes the full
 items' view to `<dir>/view.md` in place of the batch view, and its pass line
-names that file and says to paste the view, as the batch `check`'s does. `apply` never receives
+names that file and says to paste the view, as the batch `check`'s does. On
+Claude Code the re-ask is refused until the view is pasted, as the batch
+question is. `apply` never receives
 a `show` answer. A `--full` refusal - a number not in `batch.md` - is told
 to the human, and the batch question asked again.
 

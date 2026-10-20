@@ -835,7 +835,8 @@ spec_review_view_path() {
 
 # spec_review_nudge <dir>: what a check pass line that saved a view ends
 # with - the instruction to paste the view word for word before asking, and
-# the view.md it was saved to, by absolute path.
+# the view.md it was saved to, by absolute path. scripts/hook-paste-guard.sh
+# arms on a pass line ending "; it is saved in <path>/view.md": keep that tail.
 spec_review_nudge() {
   printf ' - paste the view above into chat word for word, then ask in the same response; it is saved in %s' \
     "$(spec_review_view_path "$1")"

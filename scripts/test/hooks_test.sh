@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 #
-# Tests for the four hook scripts.
+# Tests for the five hook scripts.
 #
 # The failure modes worth catching: the grilling hook firing on skills that
 # aren't planning, firing twice in one session, or staying silent when it should
 # speak; the edit guard blocking the planning artifacts planning legitimately
 # writes, or letting a planning record (glossary, ADR) through; and the
-# quick-implement hook touching a marker it should leave alone.
+# quick-implement hook touching a marker it should leave alone; and the paste
+# guard letting a spec review ask before the view is shown, or blocking a
+# session that is not mid-review.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GRILL="$DIR/hook-grilling.sh"
 GUARD="$DIR/hook-guard.sh"
 QUICK="$DIR/hook-quick-implement.sh"
 START="$DIR/hook-session-start.sh"
+PASTE="$DIR/hook-paste-guard.sh"
 COMMON="$DIR/hook-common.sh"
 PASS=0
 FAIL=0
@@ -993,6 +996,140 @@ rm -f "$TMPDIR"/orchestrator-*-ss*
 
 assert_eq "hooks.json registers hook-session-start.sh under SessionStart with matcher clear" \
   "$(jq -r '[.hooks.SessionStart[]? | select(.matcher == "clear") | .hooks[]?.command | select(test("hook-session-start\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
+
+echo
+echo "hook-paste-guard (#1287)"
+
+# The guard is built in its fallback form (hook-paste-guard.sh's header): the
+# first AskUserQuestion after an arming `spec-review check` pass line is
+# refused with the view, the next allowed. Fixture transcripts are Claude
+# Code's JSONL shape: one entry per content block, a tool result in a user
+# entry, a tool_use in an assistant entry.
+PG="$(mktemp -d)"
+mkdir "$PG/batch" "$PG/full" "$PG/tickets" "$PG/gone" "$PG/empty"
+printf '## The batch\n\n1. Fidelity: name the seam\n\n### Minor edits\n\n2. Consistency: one term\n' >"$PG/batch/view.md"
+printf '### Item 2 - Consistency\n\n> one term throughout\n' >"$PG/full/view.md"
+printf '## Ticket #12\n\nRecommend: apply\n' >"$PG/tickets/view.md"
+
+# pg_entry <transcript> <type> <content-json>: one entry of <type>, its
+# message content <content-json>.
+pg_entry() {
+  jq -nc --arg ty "$2" --argjson c "$3" '{type:$ty, message:{role:(if $ty == "assistant" then "assistant" else "user" end), content:$c}}' >>"$1"
+}
+# pg_text <transcript> <text>: an assistant text block.
+pg_text() { pg_entry "$1" assistant "$(jq -nc --arg t "$2" '[{type:"text", text:$t}]')"; }
+# pg_bash <transcript> <id> <command>: an assistant Bash tool_use.
+pg_bash() { pg_entry "$1" assistant "$(jq -nc --arg id "$2" --arg c "$3" '[{type:"tool_use", id:$id, name:"Bash", input:{command:$c}}]')"; }
+# pg_ask <transcript> <id>: an assistant AskUserQuestion tool_use.
+pg_ask() { pg_entry "$1" assistant "$(jq -nc --arg id "$2" '[{type:"tool_use", id:$id, name:"AskUserQuestion", input:{questions:[]}}]')"; }
+# pg_result <transcript> <id> <text> [is_error]: a tool result.
+pg_result() {
+  pg_entry "$1" user "$(jq -nc --arg id "$2" --arg t "$3" --argjson e "${4:-false}" '[{type:"tool_result", tool_use_id:$id, content:$t, is_error:$e}]')"
+}
+# pg_check <transcript> <id> <kind> <view.md>: a passing check run as Bash -
+# <kind> batch or tickets - its result <view.md>'s view then the stderr pass
+# line naming <view.md>, worded as spec-review.sh's spec_review_nudge words it.
+pg_check() {
+  pg_bash "$1" "$2" "bash \"\$ORCH\" spec-review check .orchestrator/spec-review/7"
+  pg_result "$1" "$2" "$(cat "$4" 2>/dev/null)
+$3.md passes: 2 items, 3 anchors, each matching once, and the all answer applies cleanly - paste the view above into chat word for word, then ask in the same response; it is saved in $4"
+}
+# pg_decide <transcript-or-empty> [tool_use_id] [tool_name]: the guard's
+# decision on an ask - deny, allow (no output), or the exit status when it is
+# not 0 - with the deny reason left in $PG/reason, since the decision is read
+# in a subshell.
+pg_decide() {
+  local out st
+  out="$(jq -n --arg t "$1" --arg id "${2:-toolu_now}" --arg n "${3:-AskUserQuestion}" \
+    '{hook_event_name:"PreToolUse", session_id:"pg", cwd:"/tmp", transcript_path:$t, tool_use_id:$id, tool_name:$n, tool_input:{questions:[]}}' \
+    | "$PASTE" 2>/dev/null)"; st=$?
+  printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' >"$PG/reason" 2>/dev/null
+  if [ "$st" -ne 0 ]; then echo "exit $st"
+  elif [ -z "$out" ]; then echo allow
+  else printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision'
+  fi
+}
+
+T="$PG/armed.jsonl"
+pg_text "$T" "Running the lenses."
+pg_check "$T" toolu_c1 batch "$PG/batch/view.md"
+assert_eq "armed, the first ask is refused" "$(pg_decide "$T")" deny
+assert_contains "with the view in the reason" "$(cat "$PG/reason")" "$(cat "$PG/batch/view.md")"
+assert_contains "and the instruction to paste it word for word, then ask again" "$(cat "$PG/reason")" \
+  "Paste the view below into chat word for word"
+assert_contains "naming view.md" "$(cat "$PG/reason")" "$PG/batch/view.md"
+assert_eq "its top-level decision is block" \
+  "$(jq -n --arg t "$T" '{tool_name:"AskUserQuestion", transcript_path:$t, tool_use_id:"x"}' | "$PASTE" | jq -r '.decision')" block
+
+T2="$PG/same-response.jsonl"; cp "$T" "$T2"
+pg_text "$T2" "$(cat "$PG/batch/view.md")"
+pg_ask "$T2" toolu_now
+assert_eq "the first ask is refused even with a paste beside it, its own tool_use already written" \
+  "$(pg_decide "$T2" toolu_now)" deny
+
+T3="$PG/asked.jsonl"; cp "$T" "$T3"
+pg_ask "$T3" toolu_a1
+pg_result "$T3" toolu_a1 "Blocked by the orchestrator" true
+pg_text "$T3" "$(cat "$PG/batch/view.md")"
+assert_eq "the second ask after the check is allowed" "$(pg_decide "$T3" toolu_a2)" allow
+
+T4="$PG/rearmed.jsonl"; cp "$T3" "$T4"
+pg_check "$T4" toolu_c2 batch "$PG/full/view.md"
+assert_eq "an ask before a re-arming check --full does not count: refused" "$(pg_decide "$T4" toolu_a3)" deny
+assert_contains "with the full items' view in the reason" "$(cat "$PG/reason")" "$(cat "$PG/full/view.md")"
+assert_not_contains "not the batch view" "$(cat "$PG/reason")" "## The batch"
+
+T5="$PG/applied.jsonl"; cp "$T" "$T5"
+pg_bash "$T5" toolu_p1 "bash \"\$ORCH\" spec-review apply .orchestrator/spec-review/7 recommended"
+pg_result "$T5" toolu_p1 "orch: refused" true
+assert_eq "a spec-review apply after the check disarms, whatever its exit status" "$(pg_decide "$T5")" allow
+
+T6="$PG/tickets.jsonl"; cp "$T5" "$T6"
+pg_check "$T6" toolu_c3 tickets "$PG/tickets/view.md"
+assert_eq "an apply then a check --tickets with an affected ticket: refused" "$(pg_decide "$T6")" deny
+assert_contains "with the ticket view in the reason" "$(cat "$PG/reason")" "$(cat "$PG/tickets/view.md")"
+
+T7="$PG/no-ticket.jsonl"; cp "$T5" "$T7"
+pg_bash "$T7" toolu_c4 "bash \"\$ORCH\" spec-review check .orchestrator/spec-review/7 --tickets"
+pg_result "$T7" toolu_c4 "No open ticket is affected.
+tickets.md passes: no open ticket affected"
+assert_eq "a check --tickets with no view does not arm: allowed" "$(pg_decide "$T7")" allow
+
+T8="$PG/blob.jsonl"; cp "$T" "$T8"
+jq -nc '{type:"api-request-blob", message:{content:[{type:"tool_use", id:"toolu_b", name:"AskUserQuestion", input:{}}]}}' >>"$T8"
+echo 'not json {' >>"$T8"
+assert_eq "a request blob's ask copy and a line that is not JSON do not count: refused" "$(pg_decide "$T8")" deny
+
+assert_eq "a tool other than AskUserQuestion is allowed" "$(pg_decide "$T" toolu_now Bash)" allow
+
+# Fail open.
+assert_eq "a missing transcript allows" "$(pg_decide "$PG/none.jsonl")" allow
+assert_eq "no transcript_path allows" "$(pg_decide "")" allow
+assert_eq "a payload that is not JSON allows" "$(printf 'not json' | "$PASTE" 2>/dev/null; echo "exit $?")" "exit 0"
+assert_eq "a JSON payload that is not an object allows" "$(printf '[1]' | "$PASTE" 2>/dev/null; echo "exit $?")" "exit 0"
+if [ "$(id -u)" -eq 0 ]; then
+  ok "an unreadable transcript allows (skipped as root)"
+else
+  cp "$T" "$PG/unreadable.jsonl"; chmod 000 "$PG/unreadable.jsonl"
+  assert_eq "an unreadable transcript allows" "$(pg_decide "$PG/unreadable.jsonl")" allow
+  chmod 600 "$PG/unreadable.jsonl"
+fi
+T9="$PG/deleted.jsonl"
+pg_check "$T9" toolu_c5 batch "$PG/gone/view.md"
+assert_eq "a pass line naming a deleted view.md allows" "$(pg_decide "$T9")" allow
+: >"$PG/empty/view.md"
+T10="$PG/empty.jsonl"
+pg_check "$T10" toolu_c6 batch "$PG/empty/view.md"
+assert_eq "a pass line naming an empty view.md allows" "$(pg_decide "$T10")" allow
+T11="$PG/unrelated.jsonl"
+pg_text "$T11" "Which approach do you prefer?"
+pg_bash "$T11" toolu_u1 "git status"
+pg_result "$T11" toolu_u1 "nothing to commit"
+assert_eq "a transcript with no spec-review activity allows" "$(pg_decide "$T11")" allow
+rm -rf "$PG"
+
+assert_eq "hooks.json registers hook-paste-guard.sh under PreToolUse with matcher AskUserQuestion" \
+  "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "AskUserQuestion") | .hooks[]?.command | select(test("hook-paste-guard\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
 
 echo
 echo "execute bit (docs/host-capabilities.md, \"Execute bit\")"
