@@ -10,6 +10,59 @@
 # too, then once against the real plugin root.
 # The linter checks structure only: it never runs orch.sh and holds no flow
 # state.
+#
+# The rule index: every scan_* function, in the order this file defines them,
+# with the rule it checks. Only rules carry the scan_ prefix, and
+# scan_rule_index fails when this index and the definitions drift apart.
+# >>> rules
+#   scan_rule_index  this index lists every scan_* function, in file order
+#   scan_old_names  no old skill or command name outside history, and no old command file or skill directory
+#   scan_builtin_command_names  no command is named after a Claude Code built-in
+#   scan_old_glossary_names  no skill or agent names CONTEXT.md or CONTEXT-MAP.md
+#   scan_skill_names  each skill directory has the orch- prefix and its SKILL.md declares its name
+#   scan_orch_resolution  each SKILL.md and command resolves orch.sh and the plugin root the one documented way
+#   scan_orch_bash  each skill file, command and listed doc runs orch.sh through bash
+#   scan_plugin_root_placeholder  no skill file or command carries a <plugin root>/ placeholder
+#   scan_stop_text  each SKILL.md carries orch-flow's skills-only stop text word for word
+#   scan_junie_snippet_drift  docs/junie/AGENTS.md names every agent
+#   scan_junie_snippet_lookup  the Junie snippet's finding-the-plugin section carries the orch.sh lookup and the pointer
+#   scan_capability_pointer  each SKILL.md, and each agent invoking a mattpocock-skills skill, points at docs/host-capabilities.md
+#   scan_claude_scoped_names  no skill file or agent names a skill by its Claude-scoped name
+#   scan_ask_tool_names  each skill-file or agent sentence naming AskUserQuestion also names ask_user
+#   scan_offered_commands  each plugin command a skill file or agent offers has a commands/<cmd>.md
+#   scan_command_runs_orch  no command runs orch.sh itself
+#   scan_command_routes  each command is a thin route to an orch- skill, or a section of one, that exists
+#   scan_dispatch_copies  no skill file restates the implementer's report lines or the general-purpose-agent tier
+#   scan_lens_briefs  each lens agent owns a non-empty brief, Write and a findings-file section, and orch-spec-review carries no brief
+#   scan_required_headings  each load-bearing heading is present in its file, in the listed order
+#   scan_orch_names  each backticked orch- name resolves to a skill or an agent
+#   scan_agent_frontmatter  each agent declares its name and a flow-list allowlist with no Agent, Skill or AskUserQuestion
+#   scan_subissue_endpoints  no skill or agent calls GitHub's sub-issue endpoints itself
+#   scan_unpinned_gh  each skill or agent gh call is pinned to the repo with -R
+#   scan_flow_cmd  orch.sh and its modules name plugin commands only through flow_cmd
+#   scan_early_exit_pipe  no script pipes into a quiet grep or into head
+#   scan_junie_planning  the Junie snippet has one begin and end marker and restates the planning allowlist and records
+#   scan_capability_table  each docs/host-capabilities.md row has both hosts' cells filled
+#   scan_review_pass  the review pass is defined once in orch-review-pass and quick implementation's step 6 runs it
+#   scan_unattended_modes  quick implementation's steps 1, 2 and 3 run the unattended modes
+#   scan_skill_refs  each skill's SKILL.md names every reference file beside it
+#   scan_spec_review_refs  orch-flow's spec phase step 4 names orch-spec-review's spec-phase.md
+#   scan_previously_declined  a standalone review pass lists earlier declines and the reviewers hear of them only through the known-items file
+#   scan_standalone_smells  the standalone review pass section and its command offer --smells
+#   scan_review_pass_self_contained  orch-review-pass refers into no orch-review section and starts its own reviewers
+#   scan_review_pass_callers  each caller of the review pass names orch-review-pass and the section it follows
+#   scan_review_loop_sheds_pass  orch-review keeps no copy of the review pass and points at orch-review-pass
+#   scan_junie_review_pass  Junie's custom-agent block names orch-review-pass's dependency on both reviewers
+#   scan_closer_filing  the closer's Filing section names each labelled body line
+#   scan_cli_nouns  each routed orch.sh noun and its verbs are in the CLI conventions
+#   scan_side_checkout_issue  a quick implementation's side checkout records its issue and its new session picks it up
+#   scan_adopted_rewrite  the spec phase's step 0 offers to rewrite an adopted issue from the plan
+#   scan_docs_paths  each docs/ path a skill or agent names exists
+#   scan_driver_loop  the loop step labels live in docs/driver-loop.md only
+#   scan_layout_map  CONTRIBUTING's Layout map lists every docs/ file and directory
+#   scan_changelog  the CHANGELOG's top heading is the plugin version, with one non-empty section
+#   scan_changelog_fragments  a PR to main adds one well-formed changelog fragment and bumps nothing by hand
+# <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PASS=0
@@ -25,6 +78,18 @@ assert_empty()    { if [ -z "$2" ]; then ok "$1"; else bad "$1" "expected no out
 # flat_text [file]: the file, or stdin when given none, on one line with
 # every whitespace run collapsed to one space.
 flat_text() { tr -s ' \t\n' '   ' <"${1:-/dev/stdin}"; }
+
+# skill_md_files <plugin root>: every .md file directly in a skills/<name>/
+# directory, SKILL.md and reference files alike, one path per line. It never
+# descends into subdirectories or lists other files, so a file added beside a
+# SKILL.md needs no registration here.
+skill_md_files() {
+  local f
+  for f in "$1"/skills/*/*.md; do
+    [ -f "$f" ] && printf '%s\n' "$f"
+  done
+  return 0
+}
 
 # md_section <file> <heading>: the lines after the first line that is exactly
 # <heading> (trailing whitespace allowed), up to the next heading of the same
@@ -103,6 +168,62 @@ esac
 assert_eq "spares passes when no finding matches" \
   "$(ORCH_TEST_QUIET='' spares "probe" "$findings" '^skills/c\.md:')" "  ok   probe"
 
+# --- rule index (#1145) -------------------------------------------------------
+# The header's rule index, between the `# >>> rules` and `# <<< rules` lines,
+# lists every scan_* function in the order the file defines them, so a reader
+# finds a rule without paging through the file. Only rules carry the scan_
+# prefix, so every scan_<name>() definition at column 0 is one index line.
+echo
+echo "rule index (#1145)"
+# scan_rule_index <lint file>: one line per name defined but not indexed, per
+# name indexed but not defined, one when both list the same names in a
+# different order, and one when the file has no index block.
+scan_rule_index() {
+  local f="$1" n="${1#"$PLUGIN_ROOT"/}" indexed defined name
+  if ! grep -qx '# >>> rules' "$f" || ! grep -qx '# <<< rules' "$f"; then
+    echo "$n: no rule index between '# >>> rules' and '# <<< rules'"
+    return 0
+  fi
+  indexed="$(awk '$0 == "# <<< rules" { exit }
+    inb && /^#   scan_[a-z0-9_]+( |$)/ { print $2 }
+    $0 == "# >>> rules" { inb = 1 }' "$f")"
+  defined="$(sed -nE 's/^(scan_[a-z0-9_]+)\(\).*/\1/p' "$f")"
+  for name in $defined; do
+    grep -qxF -- "$name" <<<"$indexed" || echo "$n: $name is defined but not in the rule index"
+  done
+  for name in $indexed; do
+    grep -qxF -- "$name" <<<"$defined" || echo "$n: $name is in the rule index but not defined"
+  done
+  if [ "$indexed" != "$defined" ] \
+     && [ "$(sort <<<"$indexed")" = "$(sort <<<"$defined")" ]; then
+    echo "$n: the rule index is not in the order the scan_* functions are defined"
+  fi
+  return 0
+}
+fixture="$(new_fixture)"
+printf '%s\n' '#!/usr/bin/env bash' '# >>> rules' '#   scan_a  rule a' '#   scan_gone  a removed rule' \
+  '# <<< rules' '# scan_a <root>: a rule.' 'scan_a() { :; }' 'scan_new() { :; }' >"$fixture/lint.sh"
+out="$(scan_rule_index "$fixture/lint.sh")"
+flags "a scan_* function missing from the index is flagged" \
+  "$out" "$fixture/lint.sh: scan_new is defined but not in the rule index"
+flags "an indexed name with no scan_* function is flagged" \
+  "$out" "$fixture/lint.sh: scan_gone is in the rule index but not defined"
+spares "an indexed, defined name is not flagged" "$out" ' scan_a '
+printf '%s\n' '# >>> rules' '#   scan_b  rule b' '#   scan_a  rule a' '# <<< rules' \
+  'scan_a() { :; }' 'scan_b() { :; }' >"$fixture/lint.sh"
+flags "an index out of the functions' order is flagged" \
+  "$(scan_rule_index "$fixture/lint.sh")" "$fixture/lint.sh: the rule index is not in the order"
+printf '%s\n' '# Rules:' '#   scan_a  rule a' 'scan_a() { :; }' >"$fixture/lint.sh"
+flags "a file with no index block is flagged" \
+  "$(scan_rule_index "$fixture/lint.sh")" "$fixture/lint.sh: no rule index between"
+printf '%s\n' '# >>> rules' '#   scan_a  rule a' '#   scan_b  rule b' '# <<< rules' \
+  '# scan_b <root>: a comment outside the index.' 'scan_a() { :; }' 'helper() { :; }' 'scan_b() { :; }' \
+  >"$fixture/lint.sh"
+assert_empty "an index matching the functions in order is not flagged" \
+  "$(scan_rule_index "$fixture/lint.sh")"
+check "the rule index lists every scan_* function in file order" \
+  "$(scan_rule_index "$PLUGIN_ROOT/scripts/test/docs_lint.sh")"
+
 # --- skill names (ADR-0014) --------------------------------------------------
 # Every orchestrator skill carries the orch- prefix. An old unprefixed name
 # left in a skill, command, hook, or doc points a model at a skill that no
@@ -122,12 +243,12 @@ assert_eq "spares passes when no finding matches" \
 echo
 echo "skill names (ADR-0014)"
 old_names='orchestrator:(flow|handoff|review-spec|orch-review-spec|review|status|doctor)([^a-z-]|$)|skills/(flow|handoff|review|review-spec|quick-implement|orch-review-spec)/|^name: (flow|handoff|review|review-spec|quick-implement|orch-review-spec)$|(^|[^a-z-])(orch-plan|orchestrator:plan)([^a-z-]|$)'
-# scan_tracked_pattern <root> <label> <pattern> [pathspec...]: each line of a
+# tracked_pattern_lines <root> <label> <pattern> [pathspec...]: each line of a
 # tracked file matching the extended regex <pattern>, as
 # "<file>:<line>: <label>: <text>", where <label> is plain words with no "/",
 # "\" or "&". The pathspecs, if any, narrow the files scanned; a
 # ':(exclude)<path>' pathspec drops one.
-scan_tracked_pattern() {
+tracked_pattern_lines() {
   local r="$1" label="$2" pattern="$3"
   shift 3
   git -C "$r" ls-files -z -- "$@" \
@@ -139,7 +260,7 @@ scan_tracked_pattern() {
 # file outside history, and each old command file or skill directory.
 scan_old_names() {
   local r="$1"
-  scan_tracked_pattern "$r" "old skill or command name" "$old_names" \
+  tracked_pattern_lines "$r" "old skill or command name" "$old_names" \
     ':(exclude)CHANGELOG.md' ':(exclude)docs/adr' \
     ':(exclude)scripts/test' ':(exclude).out-of-scope'
   local p
@@ -303,7 +424,7 @@ echo "glossary names (#461)"
 # scan_old_glossary_names <plugin root>: each CONTEXT.md or CONTEXT-MAP.md in
 # a tracked file under skills/ or agents/.
 scan_old_glossary_names() {
-  scan_tracked_pattern "$1" "old glossary name" 'CONTEXT(-MAP)?\.md' \
+  tracked_pattern_lines "$1" "old glossary name" 'CONTEXT(-MAP)?\.md' \
     skills agents
 }
 fixture="$(new_fixture)"
@@ -339,7 +460,9 @@ mkdir -p "$fixture/skills/flow" "$fixture/skills/orch-x" "$fixture/skills/orch-o
 printf -- '---\nname: flow\n---\n' >"$fixture/skills/flow/SKILL.md"
 printf -- '---\nname: orch-y\n---\n' >"$fixture/skills/orch-x/SKILL.md"
 printf -- '---\nname: orch-ok\n---\n' >"$fixture/skills/orch-ok/SKILL.md"
+printf 'A reference file with no name: line.\n' >"$fixture/skills/orch-ok/ref.md"
 out="$(scan_skill_names "$fixture")"
+spares "a reference file is not asked for its own name: line" "$out" 'ref\.md'
 flags "an unprefixed skill directory is flagged" "$out" "skills/flow/: no orch- prefix"
 flags "a skill whose name: is not its directory is flagged" "$out" "skills/orch-x/SKILL.md: name: is 'orch-y', not its directory"
 spares "a prefixed skill named for its directory is not flagged" \
@@ -437,6 +560,12 @@ flags "the scan flags the Junie steps out of order" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: resolves orch.sh out of the documented order"
 documented_orch_form >"$fixture/commands/orch.md"
 assert_empty "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")"
+fixture2="$(new_fixture)"
+mkdir -p "$fixture2/skills/orch-x"
+documented_orch_form >"$fixture2/skills/orch-x/SKILL.md"
+printf 'Run `bash "$ORCH" status`.\n' >"$fixture2/skills/orch-x/ref.md"
+spares "a reference file using its skill's \$ORCH is not asked for its own ORCH= line" \
+  "$(scan_orch_resolution "$fixture2")" 'ref\.md'
 # plugin_root_fence: a fenced command that reads a file under the plugin root.
 plugin_root_fence() {
   printf '%s\n' '```' 'sed -n 1p "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"' '```'
@@ -470,7 +599,9 @@ check "every skill and command resolves orch.sh the one documented way" \
 # scan_orch_bash <plugin root>: print one line per call site that skips bash.
 scan_orch_bash() {
   local r="$1" f
-  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md \
+  local -a skill_files
+  mapfile -t skill_files < <(skill_md_files "$r")
+  for f in "${skill_files[@]}" "$r"/commands/*.md \
            "$r"/README.md "$r"/CONTRIBUTING.md "$r"/docs/how-it-works.md \
            "$r"/docs/junie/README.md "$r"/docs/host-capabilities.md; do
     [ -f "$f" ] || continue
@@ -481,6 +612,7 @@ scan_orch_bash() {
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-x" "$fixture/docs"
 printf 'Run `bash "$ORCH" status`.\nRun `"$ORCH" doctor`.\n' >"$fixture/skills/orch-x/SKILL.md"
+printf 'Run `"$ORCH" doctor`.\n' >"$fixture/skills/orch-x/ref.md"
 printf 'Run `${ORCH} status`.\n' >"$fixture/README.md"
 printf 'Run `${ORCH} status`.\n' >"$fixture/CONTRIBUTING.md"
 printf 'Then `${ORCH} doctor`.\n' >"$fixture/docs/how-it-works.md"
@@ -492,6 +624,7 @@ flags "the scan flags \${ORCH} run without bash" "$out" "README.md:1: runs orch.
 flags "the scan flags \${ORCH} without bash in CONTRIBUTING.md" "$out" "CONTRIBUTING.md:1: runs orch.sh without bash"
 flags "the scan flags \${ORCH} without bash in docs/how-it-works.md" "$out" "docs/how-it-works.md:1: runs orch.sh without bash"
 flags "the scan flags \${ORCH} without bash in docs/junie/README.md" "$out" "docs/junie/README.md:1: runs orch.sh without bash"
+flags "the scan flags \$ORCH run without bash in a skill's reference file" "$out" "skills/orch-x/ref.md:1: runs orch.sh without bash"
 spares "the scan accepts bash \"\$ORCH\"" "$out" 'SKILL.md:1:'
 check "every skill and doc runs orch.sh through bash" "$(scan_orch_bash "$PLUGIN_ROOT")"
 
@@ -500,7 +633,9 @@ check "every skill and doc runs orch.sh through bash" "$(scan_orch_bash "$PLUGIN
 # scan_plugin_root_placeholder <plugin root>: each <plugin root>/ placeholder.
 scan_plugin_root_placeholder() {
   local r="$1" f
-  for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md; do
+  local -a skill_files
+  mapfile -t skill_files < <(skill_md_files "$r")
+  for f in "${skill_files[@]}" "$r"/commands/*.md; do
     [ -f "$f" ] || continue
     grep -nF '<plugin root>/' "$f" \
       | sed -E "s|^([0-9]+):.*|${f#"$r"/}:\\1: <plugin root>/ placeholder|"
@@ -510,9 +645,11 @@ fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-x" "$fixture/commands"
 printf 'Read `<plugin root>/agents/orch-fixer.md`.\n' >"$fixture/skills/orch-x/SKILL.md"
 printf 'Run `<plugin root>/scripts/orch.sh`.\n' >"$fixture/commands/x.md"
+printf 'Read `<plugin root>/agents/orch-fixer.md`.\n' >"$fixture/skills/orch-x/ref.md"
 out="$(scan_plugin_root_placeholder "$fixture")"
 flags "the scan flags a <plugin root> placeholder in a skill" "$out" "skills/orch-x/SKILL.md:1: <plugin root>/ placeholder"
 flags "the scan flags a <plugin root> placeholder in a command" "$out" "commands/x.md:1: <plugin root>/ placeholder"
+flags "the scan flags a <plugin root> placeholder in a skill's reference file" "$out" "skills/orch-x/ref.md:1: <plugin root>/ placeholder"
 check "no skill or command carries a <plugin root> placeholder" "$(scan_plugin_root_placeholder "$PLUGIN_ROOT")"
 
 # --- skills-only stop text (#128, #121) ---------------------------------------
@@ -552,6 +689,8 @@ out="$(scan_stop_text "$fixture")"
 flags "the scan flags stop text that drifts from orch-flow's" "$out" "skills/orch-drift/SKILL.md: skills-only stop text differs from orch-flow's"
 flags "the scan flags a skill with no stop text" "$out" "skills/orch-none/SKILL.md: skills-only stop text differs from orch-flow's"
 spares "the scan accepts a word-for-word copy" "$out" 'orch-same'
+printf 'No stop text in a reference file.\n' >"$fixture/skills/orch-flow/ref.md"
+spares "a reference file is not asked for the stop text" "$(scan_stop_text "$fixture")" 'ref\.md'
 printf 'No stop text here.\n' >"$fixture/skills/orch-flow/SKILL.md"
 flags "the scan flags orch-flow with no stop text to match" \
   "$(scan_stop_text "$fixture")" "skills/orch-flow/SKILL.md: carries no skills-only stop text"
@@ -677,6 +816,7 @@ fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-x" "$fixture/skills/orch-y" "$fixture/agents"
 printf 'Invoke the skill `x`.\n' >"$fixture/skills/orch-x/SKILL.md"
 printf 'Invoke the skill `x` (see docs/host-capabilities.md).\n' >"$fixture/skills/orch-y/SKILL.md"
+printf 'Invoke the skill `x`.\n' >"$fixture/skills/orch-y/ref.md"
 printf 'Fix it through the `mattpocock-skills:tdd` skill.\n' >"$fixture/agents/orch-z.md"
 printf 'Fix it through the `mattpocock-skills:tdd` skill (see docs/host-capabilities.md).\n' >"$fixture/agents/orch-p.md"
 printf 'Read the diff and write the report.\n' >"$fixture/agents/orch-q.md"
@@ -686,6 +826,7 @@ flags "the scan flags a skill that never points at the reference" \
 flags "the scan flags an agent that never points at the reference" \
   "$out" "agents/orch-z.md: never points at docs/host-capabilities.md"
 spares "the scan accepts a skill that points at the reference" "$out" '^skills/orch-y/'
+spares "a reference file is not asked for its own pointer" "$out" 'ref\.md'
 spares "the scan accepts an agent that points at the reference" "$out" '^agents/orch-p\.md:'
 spares "the scan accepts an agent that invokes no skill without the pointer" "$out" '^agents/orch-q\.md:'
 check "every skill, and every agent invoking a mattpocock-skills skill, points at the reference" \
@@ -697,7 +838,9 @@ check "every skill, and every agent invoking a mattpocock-skills skill, points a
 # ever the generic orchestrator:<name>.
 scan_claude_scoped_names() {
   local r="$1" f
-  for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
+  local -a skill_files
+  mapfile -t skill_files < <(skill_md_files "$r")
+  for f in "${skill_files[@]}" "$r"/agents/*.md; do
     [ -f "$f" ] || continue
     grep -nE 'orchestrator:orch-' "$f" \
       | sed "s|^|${f#"$r"/}: names a skill by its Claude-scoped name: |"
@@ -707,11 +850,14 @@ scan_claude_scoped_names() {
 fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/orch-flow" "$fixture/skills/orch-x"
 printf 'Invoke `orchestrator:orch-handoff`.\n' >"$fixture/skills/orch-flow/SKILL.md"
+printf 'Then invoke `orchestrator:orch-sync`.\n' >"$fixture/skills/orch-x/ref.md"
 printf 'Invoke the `orch-handoff` skill (`orchestrator:<name>` on Claude Code).\n' >"$fixture/skills/orch-x/SKILL.md"
 out="$(scan_claude_scoped_names "$fixture")"
 flags "the scan flags a sibling skill named by its Claude scope" \
   "$out" "skills/orch-flow/SKILL.md: names a skill by its Claude-scoped name"
-spares "the scan accepts a bare skill name and the generic scoped form" "$out" '^skills/orch-x/'
+flags "the scan flags a Claude-scoped skill name in a skill's reference file" \
+  "$out" "skills/orch-x/ref.md: names a skill by its Claude-scoped name"
+spares "the scan accepts a bare skill name and the generic scoped form" "$out" '^skills/orch-x/SKILL\.md'
 check "no skill or agent names a skill by its Claude-scoped name" \
   "$(scan_claude_scoped_names "$PLUGIN_ROOT")"
 
@@ -723,7 +869,9 @@ check "no skill or agent names a skill by its Claude-scoped name" \
 # counts; docs/ is not scanned, since parts of it are Claude-only on purpose.
 scan_ask_tool_names() {
   local r="$1" f
-  for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
+  local -a skill_files
+  mapfile -t skill_files < <(skill_md_files "$r")
+  for f in "${skill_files[@]}" "$r"/agents/*.md; do
     [ -f "$f" ] || continue
     flat_text "$f" | awk -v file="${f#"$r"/}" '{
       n = split($0, s, /\. /)
@@ -745,6 +893,7 @@ printf 'Ask with `AskUserQuestion`. Junie has `ask_user`.\n' >"$fixture/skills/o
 printf 'Ask with the host'"'"'s ask tool (`AskUserQuestion` on Claude Code,\n`ask_user` on Junie). Then carry on.\n' \
   >"$fixture/skills/orch-d/SKILL.md"
 printf 'Ask the human with `AskUserQuestion`.\n' >"$fixture/agents/orch-z.md"
+printf 'Ask the human with `AskUserQuestion`.\n' >"$fixture/skills/orch-d/ref.md"
 out="$(scan_ask_tool_names "$fixture")"
 flags "the scan flags a skill sentence naming AskUserQuestion alone" \
   "$out" "skills/orch-a/SKILL.md: names AskUserQuestion without ask_user"
@@ -754,7 +903,9 @@ flags "the scan flags ask_user only in the next sentence" \
   "$out" "skills/orch-c/SKILL.md: names AskUserQuestion without ask_user"
 flags "the scan flags an agent sentence naming AskUserQuestion alone" \
   "$out" "agents/orch-z.md: names AskUserQuestion without ask_user"
-spares "the scan accepts both hosts' ask tools wrapped across lines" "$out" '^skills/orch-d/'
+flags "the scan flags a reference-file sentence naming AskUserQuestion alone" \
+  "$out" "skills/orch-d/ref.md: names AskUserQuestion without ask_user"
+spares "the scan accepts both hosts' ask tools wrapped across lines" "$out" '^skills/orch-d/SKILL\.md'
 check "every skill or agent sentence naming AskUserQuestion also names ask_user" \
   "$(scan_ask_tool_names "$PLUGIN_ROOT")"
 
@@ -763,7 +914,9 @@ check "every skill or agent sentence naming AskUserQuestion also names ask_user"
 # scan_command_routes checks reaches a skill section.
 scan_offered_commands() {
   local r="$1" f cmd
-  for f in "$r"/skills/*/SKILL.md "$r"/agents/*.md; do
+  local -a skill_files
+  mapfile -t skill_files < <(skill_md_files "$r")
+  for f in "${skill_files[@]}" "$r"/agents/*.md; do
     [ -f "$f" ] || continue
     for cmd in $(grep -oE '/orchestrator:[a-z][a-z-]*' "$f" | sed 's|^/orchestrator:||' | sort -u); do
       [ -f "$r/commands/$cmd.md" ] \
@@ -777,13 +930,16 @@ mkdir -p "$fixture/skills/orch-x" "$fixture/skills/orch-y" "$fixture/agents" "$f
 printf 'Offer `/orchestrator:abort`.\n' >"$fixture/skills/orch-x/SKILL.md"
 printf 'Offer `/orchestrator:nope 12`.\n' >"$fixture/agents/orch-z.md"
 printf 'Offer `/orchestrator:status`.\n' >"$fixture/skills/orch-y/SKILL.md"
+printf 'Offer `/orchestrator:gone`.\n' >"$fixture/skills/orch-y/ref.md"
 : >"$fixture/commands/status.md"
 out="$(scan_offered_commands "$fixture")"
 flags "the scan flags a skill offering a plugin command with no command file" \
   "$out" "skills/orch-x/SKILL.md: offers /orchestrator:abort, which has no commands/abort.md"
 flags "the scan flags an agent offering a plugin command with no command file" \
   "$out" "agents/orch-z.md: offers /orchestrator:nope, which has no commands/nope.md"
-spares "the scan accepts a plugin command that has a command file" "$out" '^skills/orch-y/'
+flags "the scan flags a reference file offering a plugin command with no command file" \
+  "$out" "skills/orch-y/ref.md: offers /orchestrator:gone, which has no commands/gone.md"
+spares "the scan accepts a plugin command that has a command file" "$out" '^skills/orch-y/SKILL\.md'
 check "every plugin command a skill or agent offers has a command file" \
   "$(scan_offered_commands "$PLUGIN_ROOT")"
 
@@ -863,7 +1019,9 @@ echo "one definition of starting a plugin agent (#181)"
 # scan_dispatch_copies <plugin root>: print one line per restated copy.
 scan_dispatch_copies() {
   local r="$1" f
-  for f in "$r"/skills/*/SKILL.md; do
+  local -a skill_files
+  mapfile -t skill_files < <(skill_md_files "$r")
+  for f in "${skill_files[@]}"; do
     [ -f "$f" ] || continue
     # The contract's one copy is the agent file, so any skill carrying all
     # five report lines is a second copy.
@@ -883,13 +1041,17 @@ fixture="$(new_fixture)"
 mkdir -p "$fixture/skills/a" "$fixture/skills/b"
 printf 'Returns `Ticket`, `Commits`, `Verification`, `Criteria`, `Deviation`.\n' >"$fixture/skills/a/SKILL.md"
 printf 'Else start a fresh general-purpose agent\nbriefed with its file under `agents/`.\n' >"$fixture/skills/b/SKILL.md"
+printf 'Returns `Ticket`, `Commits`, `Verification`, `Criteria`, `Deviation`.\n' >"$fixture/skills/b/ref.md"
 out="$(scan_dispatch_copies "$fixture")"
+flags "the scan flags the report lines copied into a skill's reference file" \
+  "$out" "skills/b/ref.md: restates the implementer's five report lines"
 flags "the scan flags the report lines copied into a skill" \
   "$out" "skills/a/SKILL.md: restates the implementer's five report lines"
 flags "the scan flags a skill restating the general-purpose-agent tier" \
   "$out" "skills/b/SKILL.md: restates the general-purpose-agent tier"
 printf 'Start the implementer as its agent file says.\n' >"$fixture/skills/a/SKILL.md"
 printf 'Summarise the log with a fresh general-purpose agent.\n' >"$fixture/skills/b/SKILL.md"
+printf 'Start the implementer as its agent file says.\n' >"$fixture/skills/b/ref.md"
 assert_empty "the scan accepts a pointer and a general-purpose agent with no agent file" \
   "$(scan_dispatch_copies "$fixture")"
 check "the host fallback and the implementer's report are each stated once" \
@@ -1537,20 +1699,52 @@ assert_empty "steps 1, 2 and 3 that run the unattended modes are not flagged" "$
 check "quick implementation's steps 1, 2 and 3 run the unattended modes" \
   "$(scan_unattended_modes "$PLUGIN_ROOT")"
 
-# --- spec review reference files (#1147) ---------------------------------------
+# --- skill reference files (#1147, #1145) -------------------------------------
 echo
-echo "spec review reference files (#1147)"
-# orch-spec-review's main file holds the shared core and the standalone entry;
-# what only one path needs sits in a reference file beside it, read only on
-# that path. The main file names each reference file, and orch-flow's spec
-# phase, which alone needs spec-phase.md, names it in its step 4, where it
-# invokes the review.
-# scan_spec_review_refs <plugin root>: one line per pointer missing.
+echo "skill reference files (#1147, #1145)"
+# A skill's SKILL.md holds what every path needs; what only one path needs sits
+# in a reference file beside it, read only on that path. A reference file is a
+# .md file directly in skills/<name>/ other than SKILL.md, and its SKILL.md
+# names it, so no reference file is orphaned. The files are worked out from
+# each skill's directory, never listed here, so adding one needs no edit to
+# this linter.
+# scan_skill_refs <plugin root>: one line per reference file its skill's
+# SKILL.md does not name.
+scan_skill_refs() {
+  local r="$1" f d
+  while IFS= read -r f; do
+    [ "${f##*/}" = SKILL.md ] && continue
+    d="${f%/*}"
+    grep -qF -- "${f##*/}" "$d/SKILL.md" 2>/dev/null \
+      || echo "${d#"$r"/}/SKILL.md: does not name ${f##*/}"
+  done < <(skill_md_files "$r")
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-x" "$fixture/skills/orch-y" "$fixture/skills/orch-z/sub"
+printf '# X\n\nOn that path, read named.md.\n' >"$fixture/skills/orch-x/SKILL.md"
+: >"$fixture/skills/orch-x/named.md"
+: >"$fixture/skills/orch-x/orphan.md"
+printf '# Y\n' >"$fixture/skills/orch-y/SKILL.md"
+: >"$fixture/skills/orch-y/lost.md"
+printf '# Z\n' >"$fixture/skills/orch-z/SKILL.md"
+: >"$fixture/skills/orch-z/notes.txt"
+: >"$fixture/skills/orch-z/sub/deep.md"
+out="$(scan_skill_refs "$fixture")"
+flags "a reference file its SKILL.md does not name is flagged" \
+  "$out" "skills/orch-x/SKILL.md: does not name orphan.md"
+flags "an unnamed reference file is flagged in any skill" \
+  "$out" "skills/orch-y/SKILL.md: does not name lost.md"
+spares "a reference file its SKILL.md names is not flagged" "$out" 'named\.md'
+spares "a skill with only SKILL.md, a non-.md file or a subdirectory gives nothing" "$out" '^skills/orch-z/'
+check "every skill's SKILL.md names each of its reference files" \
+  "$(scan_skill_refs "$PLUGIN_ROOT")"
+
+# orch-flow's spec phase, which alone needs orch-spec-review's spec-phase.md,
+# names it in its step 4, where it invokes the review.
+# scan_spec_review_refs <plugin root>: one line when that step 4 does not.
 scan_spec_review_refs() {
-  local r="$1" flow="skills/orch-flow/SKILL.md" main="skills/orch-spec-review/SKILL.md" ref step
-  for ref in spec-phase.md unattended-spec-review.md tickets-follow-the-spec.md; do
-    grep -qF -- "$ref" "$r/$main" 2>/dev/null || echo "$main: does not name $ref"
-  done
+  local r="$1" flow="skills/orch-flow/SKILL.md" step
   step="$(md_section "$r/$flow" "### Phase: spec" 2>/dev/null \
     | awk '/^[0-9]+\. / { inb = ($0 ~ /^4\. /) } inb' | flat_text)"
   grep -qF 'spec-phase.md' <<<"$step" \
@@ -1558,26 +1752,16 @@ scan_spec_review_refs() {
   return 0
 }
 fixture="$(new_fixture)"
-mkdir -p "$fixture/skills/orch-flow" "$fixture/skills/orch-spec-review"
+mkdir -p "$fixture/skills/orch-flow"
 printf '# F\n\n### Phase: spec\n\n4. Invoke `orch-spec-review`.\n5. Then read spec-phase.md.\n' \
   >"$fixture/skills/orch-flow/SKILL.md"
-printf '# S\n\nRead unattended-spec-review.md.\n' >"$fixture/skills/orch-spec-review/SKILL.md"
-out="$(scan_spec_review_refs "$fixture")"
 flags "a spec phase step 4 that does not name spec-phase.md is flagged" \
-  "$out" "skills/orch-flow/SKILL.md: spec phase step 4 does not name orch-spec-review's spec-phase.md"
-flags "a main skill file that does not name spec-phase.md is flagged" \
-  "$out" "skills/orch-spec-review/SKILL.md: does not name spec-phase.md"
-flags "a main skill file that does not name tickets-follow-the-spec.md is flagged" \
-  "$out" "skills/orch-spec-review/SKILL.md: does not name tickets-follow-the-spec.md"
-spares "a reference file the main skill file names is not flagged" \
-  "$out" 'does not name unattended-spec-review\.md'
+  "$(scan_spec_review_refs "$fixture")" "skills/orch-flow/SKILL.md: spec phase step 4 does not name orch-spec-review's spec-phase.md"
 printf '# F\n\n### Phase: spec\n\n4. Ask the round count.\n\n   Then invoke `orch-spec-review`, reading its\n   spec-phase.md.\n5. Break it down.\n' \
   >"$fixture/skills/orch-flow/SKILL.md"
-printf '# S\n\nA flow reads spec-phase.md; unattended-spec-review.md;\ntickets-follow-the-spec.md.\n' \
-  >"$fixture/skills/orch-spec-review/SKILL.md"
-assert_empty "a step 4 and a main file that name their reference files are not flagged" \
+assert_empty "a step 4 that names spec-phase.md is not flagged" \
   "$(scan_spec_review_refs "$fixture")"
-check "orch-flow's spec phase and orch-spec-review name the review's reference files" \
+check "orch-flow's spec phase step 4 names orch-spec-review's spec-phase.md" \
   "$(scan_spec_review_refs "$PLUGIN_ROOT")"
 
 # --- previously declined (#418) ------------------------------------------------

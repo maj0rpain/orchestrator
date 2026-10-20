@@ -3,6 +3,8 @@
 How the plugin is laid out, the authoring rules its docs lint enforces, and
 how to develop and test it. What the plugin does is in
 [README.md](README.md) and [docs/how-it-works.md](docs/how-it-works.md).
+The docs lint is `scripts/test/docs_lint.sh`, and its header lists every rule
+it enforces, each with its `scan_*` function.
 
 ## Reporting a bug
 
