@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.19.0
+
+`pr publish` and `pr open` take `--label <name>`, repeatable and any name, so a PR carries the labels the repo requires from creation; each label is read back once the PR is recorded, and one that did not land, or a failed read, fails the command naming the PR. Quick implementation and the flow pass the labels the repo's own instructions require, judged against the branch's diff, rather than adding them afterwards with `gh pr edit`. CI now decides the `no-version-bump` waiver from the PR's labels as they stand when the job runs, not from the event payload, so a PR's `opened` run no longer fails on a label added a moment after creation (#1299).
+
 ## 4.18.5
 
 An attended spec review now shows each round's view before its question. `spec-review check` saves the view it prints to `<dir>/view.md`, and its pass line names that file and says to paste the view word for word, then ask in the same response. On Claude Code a new `PreToolUse` hook on `AskUserQuestion`, `hook-paste-guard.sh`, refuses the first ask after each `check` that wrote a view, until the next `spec-review apply`, handing the view back to paste (#1287).
