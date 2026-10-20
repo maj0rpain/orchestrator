@@ -1165,7 +1165,7 @@ assert_eq "an edge item with no ticket file: names its header line" "$out" \
   "orch: tickets.md line 10: ticket item 2: ticket-21.md not found in $d - fetch each ticket a ticket item names into it - nothing written"
 mv "$d/ticket-21.keep" "$d/ticket-21.md"
 sed -i 's/^@@ item 5 block 21 by 20 /@@ item 5 block 99 by 20 /' "$d/tickets.md"
-srt_refused "an edge item whose ticket is not in the breakdown" "$d" "tickets.md line 19: ticket item 5: #99 is not a ticket of #14's breakdown - nothing written" recommended --tickets recommended
+srt_refused "an edge item whose ticket is not in the breakdown" "$d" "ticket item 5: #99 is not a ticket of #14's breakdown" recommended --tickets recommended
 assert_eq "an edge item whose ticket is not in the breakdown: names its header line" "$out" \
   "orch: tickets.md line 19: ticket item 5: #99 is not a ticket of #14's breakdown - nothing written"
 cp "$d/tickets.keep" "$d/tickets.md"
@@ -1204,7 +1204,7 @@ assert_eq "a ## Ticket anchor matching nothing: names its @@ anchor line" "$out"
 d="$(srt_dir)"
 srt_fetch "$d"
 printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nAlpha line.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
-srt_refused "a ## Ticket item on a sub-issue breakdown" "$d" "tickets.md line 2: ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues - nothing written" recommended --tickets recommended
+srt_refused "a ## Ticket item on a sub-issue breakdown" "$d" "ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues" recommended --tickets recommended
 assert_eq "a ## Ticket item on a sub-issue breakdown: names its header line" "$out" \
   "orch: tickets.md line 2: ticket item 1: a ## Ticket item, but #14's breakdown is sub-issues - nothing written"
 

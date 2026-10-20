@@ -1414,8 +1414,9 @@ spec_review_ticket_item_offline() {
   esac
 }
 
-# spec_review_tickets_follow <body-var> <dir> <kind> <issue>: every accepted
-# ticket item checked and applied in memory - see
+# spec_review_tickets_follow <body-var> <dir> <kind> <issue>: every ticket
+# item checked, an accepted one applied in memory and a declined text item's
+# anchor checked on its own against a scratch copy - see
 # spec_review_ticket_item_offline - and the checks that read GitHub: every
 # edge item's tickets in the breakdown, and a `## Ticket` item only on a
 # collapsed one. Dies, before any write, on the first GitHub-reading check
