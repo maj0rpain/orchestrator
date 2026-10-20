@@ -348,7 +348,12 @@ orch.sh - deterministic operations for the orchestrator flow
   ticket list <parent>       print every sub-issue of <parent>, open or
                               closed, as <n> open|closed, in the order they
                               were published
-  ticket close <n>           close ticket <n>
+  ticket close <n> [--unmerged]
+                              close ticket <n>; refuses while ticket <n>'s
+                              ticket worktree exists under this checkout and
+                              its ticket branch has not merged into its
+                              forked-from branch (or records none), leaving
+                              the issue open - --unmerged closes it anyway
   ticket reset <parent>      reopen every sub-issue of <parent> that is
                               currently closed, and only those
   ticket parent <n>          print <n>'s parent issue number, or nothing

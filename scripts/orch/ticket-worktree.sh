@@ -64,6 +64,18 @@ ticket_worktree_resolve() {
     || die "ticket worktree $path is not on a branch (detached HEAD)"
 }
 
+# ticket_branch_merged_or_die <branch> <what>: dies unless ticket branch
+# <branch> records a forked-from branch and is an ancestor of it - the one
+# merged check, shared by ticket-worktree remove and ticket close. Each
+# refusal ends "pass --unmerged to <what>", <what> naming the command's act.
+ticket_branch_merged_or_die() {
+  local parent
+  parent="$(forked_from_branch "$1")" \
+    || die "branch $1 records no forked-from branch - pass --unmerged to $2"
+  git merge-base --is-ancestor "$1" "$parent" 2>/dev/null \
+    || die "branch $1 is not merged into $parent - merge it first, or pass --unmerged to $2"
+}
+
 # Whether a rebase is in progress in the checkout at <path>.
 rebase_in_progress() {
   local gitdir
@@ -115,7 +127,7 @@ cmd_ticket_worktree_list() {
 # resolution) is aborted first, returning the ticket branch to its committed
 # tip, so the worktree is judged clean or dirty as that tip left it.
 cmd_ticket_worktree_remove() {
-  local n="" unmerged=0 path branch parent
+  local n="" unmerged=0 path branch
   while [ $# -gt 0 ]; do
     case "$1" in
       --unmerged) unmerged=1 ;;
@@ -137,14 +149,9 @@ cmd_ticket_worktree_remove() {
   ticket_worktree_resolve "$n"
   require_clean_tree "$path" \
     "ticket worktree $path is dirty - commit or discard its changes first; it is never removed with force"
-  if [ "$unmerged" = 0 ]; then
-    parent="$(forked_from_branch "$branch")" \
-      || die "branch $branch records no forked-from branch - pass --unmerged to discard it"
-    git merge-base --is-ancestor "$branch" "$parent" 2>/dev/null \
-      || die "branch $branch is not merged into $parent - merge it first, or pass --unmerged to discard it"
-  fi
+  [ "$unmerged" = 1 ] || ticket_branch_merged_or_die "$branch" "discard it"
   git worktree remove "$path" || die "could not remove ticket worktree $path"
-  # -D, not -d, either way: without --unmerged the merge-base check above
+  # -D, not -d, either way: without --unmerged the merged check above
   # already proved the branch merged into its forked-from branch, while -d
   # would judge it against this checkout's HEAD (a ticket branch has no
   # upstream) and could refuse after the worktree is gone.

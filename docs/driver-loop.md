@@ -57,7 +57,9 @@ caller's numbered steps.
   when `ticket next` has nothing more.
 - **d. As each report returns**, record it, then `bash "$ORCH" ticket merge
   <n>`, then `bash "$ORCH" ticket close <n>`, then `bash "$ORCH"
-  ticket-worktree remove <n>`, then refill (loop step c). A ticket is merged
+  ticket-worktree remove <n>`, then refill (loop step c). Run the three as
+  separate calls, each only after the previous one exits 0 - never chained
+  with `;`. A ticket is merged
   and closed whatever its `Verification` or `Criteria` line says, and is
   closed only after its merge succeeds. Any exit 1 from `ticket merge`,
   `ticket close` or `ticket-worktree remove`, a dispatch that fails, or a

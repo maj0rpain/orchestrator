@@ -170,10 +170,30 @@ cmd_ticket_list() {
   done <<<"$subs"
 }
 
+# Closes ticket <n>. Without --unmerged, a ticket worktree for <n> under this
+# checkout - a worktree at that path itself, never a leftover t<n> directory -
+# must be on a ticket branch merged into its forked-from branch, so work that
+# has not landed is never closed (#1146). With no ticket worktree, no check
+# runs. Every refusal comes before any gh call, leaving the issue open.
 cmd_ticket_close() {
-  [ $# -eq 1 ] || die "usage: orch.sh ticket close <n>"
-  local n="$1"
-  case "$n" in ''|*[!0-9]*) die "not a plain issue number: $n" ;; esac
+  local n="" unmerged=0 path branch usage="usage: orch.sh ticket close <n> [--unmerged]"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --unmerged) unmerged=1 ;;
+      -*) die "unknown flag: $1 ($usage)" ;;
+      *) [ -z "$n" ] || die "$usage"; n="$1" ;;
+    esac
+    shift
+  done
+  [ -n "$n" ] || die "$usage"
+  case "$n" in *[!0-9]*) die "not a plain issue number: $n" ;; esac
+  if [ "$unmerged" = 0 ]; then
+    path="$(ticket_worktree_path "$n")"
+    if [ "$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" = "$path" ]; then
+      ticket_worktree_resolve "$n"
+      ticket_branch_merged_or_die "$branch" "close it anyway"
+    fi
+  fi
   gh_or_die "close ticket #$n" adapter_issue_close "$n"
 }
 
