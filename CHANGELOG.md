@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.20.0
+
+Add `orch.sh suite-cost`, which records the suite cost of each passing verification run: `suite-cost run -- <cmd>` runs the command with its output and exit code passed through and, on exit 0, appends its CPU and wall seconds to a clone-wide record; `suite-cost history` lists the record; and `suite-cost check -- <cmd>` compares the head's recorded cost with the base's and prints one verdict - `off` below a 60 CPU-second floor, `ok`, `grew <pct>` past 10% growth, or `unmeasured` - measuring the base once in a temporary worktree when no ancestor of it is recorded. The floor and threshold are set with `git config orchestrator.suiteCost.floor` and `orchestrator.suiteCost.growth`.
+
+Add `/orchestrator:improve-tests`, the `orch-improve-tests` skill: it evaluates a repo's test suite without changing any file - scoping by git hot spots or a named direction, timing each test file or section once and sequentially, hunting six kinds of candidate in a fresh subagent, each naming a replacement that tests as well - ranks the candidates by measured cost saved, shows them in an HTML report (a Markdown summary in chat on a host that cannot open it), and hands the picked one to the planning interview.
+
+Suite-cost growth is now a review finding: each review loop iteration runs `suite-cost check` at triage and turns a `grew` verdict into a major at axis `suite-cost` and location `suite`, and each review pass runs it once with its verification command and fixes or declines a `grew` like any other finding. `orch.sh review file` files an unfixed one: it takes `--axis suite-cost` and `--location suite`, and finding triage scans the filed finding as `unknown`, naming the suite rather than lines.
+
 ## 4.19.1
 
 Move two single-module constants out of orch.sh into their modules, and bring the stale comments and module headers in line with the concept-module split.
