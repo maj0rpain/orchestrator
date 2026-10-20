@@ -127,7 +127,7 @@ assert_eq "an absent flake_rerun_used reads as false" "$("$ORCH" state get flake
 assert_eq "an absent budget reads as empty" "$("$ORCH" state get budget)" ""
 out="$("$ORCH" state get nonsense 2>&1)"; st=$?
 assert_status "a key outside the schema is refused" "$st" 1
-assert_contains "naming the key" "$out" "nonsense"
+assert_eq "as an unknown state key, naming it" "$out" "orch: unknown state key: nonsense"
 complete_handoff "$("$ORCH" handoff path spec)"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow passes a state file lacking those keys" "$st" 0
@@ -200,6 +200,14 @@ state_fixture budget 3 2>/dev/null; st=$?
 assert_ne "state_fixture on an unparseable state.json returns non-zero" "$st" 0
 assert_eq "and leaves it untouched" "$(cat .orchestrator/state.json)" "not json"
 assert_eq "with nothing new beside it, after the fixture" "$(ls -A .orchestrator)" "$before_ls"
+# A read of it fails with the status jq itself gives on the file, not a
+# lookup's; a known key still reads, and an unknown one is still refused.
+jq . .orchestrator/state.json >/dev/null 2>&1; jq_st=$?
+"$ORCH" state get budget >/dev/null 2>&1; st=$?
+assert_status "state get on an unparseable state.json fails with jq's own status" "$st" "$jq_st"
+out="$("$ORCH" state get nonsense 2>&1)"; st=$?
+assert_status "state get of an unknown key on it still dies" "$st" 1
+assert_eq "as an unknown state key" "$out" "orch: unknown state key: nonsense"
 restore_suite_env
 
 # --- the Flow state module, sourced alone -----------------------------------
