@@ -813,10 +813,11 @@ check_flow_handoffs() {
 }
 
 # An entry may list the phases it applies to, as `name:phase,phase`; one with
-# no list runs in every phase. d_run_flow does the filtering, so d_run never
+# no list runs in every phase. A `<phase>+` element stands for <phase> and
+# every phase after it in the phase table, so a phase added later is picked up. d_run_flow does the filtering, so d_run never
 # sees a suffix.
 FLOW_CHECKS="
-h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream:implement,review,done check_flow_pr check_flow_review_terminal:review check_flow_review_budget:review check_flow_review_ci:review check_flow_review_draft:review,done check_flow_handoffs
+h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream:implement+ check_flow_pr check_flow_review_terminal:review check_flow_review_budget:review check_flow_review_ci:review check_flow_review_draft:review+ check_flow_handoffs
 "
 
 # A registry's entries, one per line. Splitting a whitespace-separated list is
@@ -847,23 +848,48 @@ d_count() {
 
 # A registry's entries that apply at <phase>, each with its `:phases` suffix
 # stripped: an entry with no list always, a listed one only when its list names
-# <phase>. Printed space-separated, the shape d_run reads.
+# <phase>, a `<phase>+` element expanded through phases_from first. An element
+# naming a phase the table does not hold dies naming its entry, so a typo never
+# quietly disables a check. Printed space-separated, the shape d_run reads.
 d_entries_at() {
-  local phase="$2" e
+  local phase="$2" e list
   while IFS= read -r e; do
     case "$e" in
       "") ;;
-      *:*) case ",${e#*:}," in *",$phase,"*) printf '%s ' "${e%%:*}" ;; esac ;;
+      *:*)
+        # d_phase_list's die ends only its own subshell, so it is passed on.
+        list="$(d_phase_list "$e")" || exit 1
+        case ",$list," in *",$phase,"*) printf '%s ' "${e%%:*}" ;; esac
+        ;;
       *) printf '%s ' "$e" ;;
     esac
   done <<<"$(d_entries "$1")"
+}
+
+# d_phase_list <entry>: the entry's phase list, comma-separated, with each
+# `<phase>+` element expanded to the phases it stands for. Every element is
+# checked against the table, plain ones too, through phases_from.
+d_phase_list() {
+  local rest="${1#*:}," el list="" from
+  while [ -n "$rest" ]; do
+    el="${rest%%,*}"
+    rest="${rest#*,}"
+    from="$(phases_from "${el%+}")" || die "$1: no such phase in the phase table: ${el%+}"
+    case "$el" in
+      *+) list="${list:+$list,}$(printf '%s' "$from" | tr '\n' ',')" ;;
+      *)  list="${list:+$list,}$el" ;;
+    esac
+  done
+  printf '%s\n' "$list"
 }
 
 # The gate the flow checks used to carry one at a time, hoisted to the list -
 # and their phase guards with it, read from FLOW_CHECKS' phase lists.
 d_run_flow() {
   if [ "$D_JQ" = ok ] && [ "$D_STATE" = ok ]; then
-    d_run "$(d_entries_at "$FLOW_CHECKS" "$(state_get phase)")"
+    local entries
+    entries="$(d_entries_at "$FLOW_CHECKS" "$(state_get phase)")" || exit 1
+    d_run "$entries"
     # Outside the registry: it reads git alone and prints nothing when clean,
     # so a flow with a clean working tree reports exactly what it did before.
     check_flow_worktree_clean

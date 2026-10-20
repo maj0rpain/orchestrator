@@ -29,7 +29,7 @@ require_base_sha() { require_field "$1" base_sha "no base SHA recorded in state 
 # table; done and a phase outside it have none, so no boundary.
 print_boundary() {
   local phase="$1" done_name file
-  done_name="$(phase_writer "$phase")" ||
+  done_name="$(phase_cell writer "$phase")" ||
     die "no phase boundary at phase: $phase - the flow is not between phases"
   file="$(handoff_file_for "$phase")"
   print_next_block "Phase $done_name complete. Handoff written to $HANDOFF_DIR/$file."
@@ -60,6 +60,9 @@ cmd_phase() {
         2) die "write $file before leaving the $phase phase" ;;
         *) die "$file is not valid - fix it, then run phase advance again; the flow stays at $phase" ;;
       esac
+      # Deliberately a per-phase switch, not a phase table column: each
+      # requirement carries its own remedy message, which a column of field
+      # names could only reach through a naming convention.
       case "$next" in
         implement) require_issue _unused ;;
         review)    require_branch _unused; require_base_sha _unused; require_pr _unused ;;

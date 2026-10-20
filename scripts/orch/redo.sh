@@ -100,7 +100,7 @@ $detail" ;;
   # phase advance would let the redone implement phase leave on it (#279).
   # Same N as the review records beside it. The plan handoff is never touched.
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
-  retire_handoffs "$HANDOFF_DIR/pre-redo-$new_n" $(handoffs_after implement)
+  retire_handoffs "$HANDOFF_DIR/pre-redo-$new_n" $(handoffs_written_from implement)
 
   state_write branch null
   state_write pr null
@@ -150,7 +150,7 @@ cmd_redo_spec() {
   local dest
   dest="$HANDOFF_DIR/pre-redo-spec-$(dir_stamp)"
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
-  retire_handoffs "$dest" $(handoffs_after spec) "$SPEC_PAUSED_MARKER"
+  retire_handoffs "$dest" $(handoffs_written_from spec) "$SPEC_PAUSED_MARKER"
   phase_write spec
 }
 
