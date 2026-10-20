@@ -52,6 +52,27 @@ src_view_saved() {
     "$(cmp -s "$raw" "$dir/view.md" && echo identical)" identical
   rm -f "$raw"
 }
+# src_view_relative <runner> <label> <dir> <summary>: <runner> on a copy of
+# <dir> given as the relative rel-round passes with <summary> and the nudge
+# naming view.md by absolute path; the copy is removed after.
+src_view_relative() {
+  local runner="$1" label="$2"
+  mkdir rel-round && cp "$3"/* rel-round/
+  "$runner" rel-round
+  assert_eq "$label: given a relative <dir>, the pass line names view.md by absolute path, with the nudge" \
+    "$err" "$4$(src_nudge "$PWD/rel-round")"
+  rm -rf rel-round
+}
+# src_view_unwritable <runner> <label> <dir>: with <dir>/view.md a directory,
+# <runner> <dir> fails with an orch: message naming it and nothing on stdout.
+src_view_unwritable() {
+  local runner="$1" label="$2" dir="$3"
+  mkdir -p "$dir/view.md"
+  "$runner" "$dir"
+  assert_status "$label: an unwritable view.md fails" "$st" 1
+  assert_eq "$label: with an orch: message naming it" "$err" "orch: could not write $dir/view.md"
+  assert_eq "$label: and no view on stdout" "$out" ""
+}
 
 # --- spec-review begin (#224) ------------------------------------------------
 # A standalone spec review's guard and working-directory reset have one right
@@ -2090,11 +2111,8 @@ check_refused src_full_1 "--full on a batch check refuses" "$d" \
 # file by absolute path with the paste nudge.
 d="$(src_dir)"
 src_view_saved "a batch check" "$d"
-mkdir rel-round && cp "$d"/* rel-round/
-src rel-round
-assert_eq "given a relative <dir>, the pass line names view.md by absolute path, with the nudge" "$err" \
-  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$PWD/rel-round")"
-rm -rf rel-round
+src_view_relative src "a batch check" "$d" \
+  "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly"
 assert_contains "the batch view's view.md holds the batch view" "$(cat "$d/view.md")" "## The batch"
 src_view_saved "--full after a batch check" "$d" --full 2 1
 assert_not_contains "--full overwrites the batch view's view.md" "$(cat "$d/view.md")" "## The batch"
@@ -2114,14 +2132,8 @@ assert_eq "leaves the earlier view.md byte-identical" \
 rm -f "$d.view-before"
 # A view.md that cannot be written fails check before any view or pass line.
 d="$(src_dir)"
-mkdir "$d/view.md"
-src "$d"
-assert_status "an unwritable view.md fails check" "$st" 1
-assert_eq "with an orch: message naming it" "$err" "orch: could not write $d/view.md"
-assert_eq "and no view on stdout" "$out" ""
-src "$d" --full 1
-assert_status "an unwritable view.md fails check --full" "$st" 1
-assert_eq "--full: with an orch: message naming it" "$err" "orch: could not write $d/view.md"
+src_view_unwritable src "check" "$d"
+src_view_unwritable src_full_1 "check --full" "$d"
 
 # Discoverability.
 out="$("$ORCH" spec-review wipe 2>&1)"
@@ -2309,11 +2321,8 @@ check_refused srct "an anchor matching ticket-20.md, not the fetched copy" "$d" 
 d="$(srct_dir)"
 src_view_saved "--tickets with an affected ticket" "$d" --tickets
 assert_contains "its view.md holds the ticket view" "$(cat "$d/view.md")" "### Item 1 - #20"
-mkdir rel-round && cp "$d"/* rel-round/
-srct rel-round
-assert_eq "given a relative <dir>, the pass line names view.md by absolute path, with the nudge" "$err" \
-  "tickets.md passes: 4 items, 2 anchors, each matching once, and the all answer applies cleanly$(src_nudge "$PWD/rel-round")"
-rm -rf rel-round
+src_view_relative srct "--tickets" "$d" \
+  "tickets.md passes: 4 items, 2 anchors, each matching once, and the all answer applies cleanly"
 d="$(mktemp -d)"
 printf '# Spec\n' >"$d/spec.md"
 printf '@@ none-affected\n' >"$d/tickets.md"
@@ -2331,11 +2340,7 @@ assert_status "a view.md that cannot be removed fails --tickets with none affect
 assert_eq "with an orch: message naming it" "$err" "orch: could not remove $d/view.md"
 assert_eq "and no stub on stdout" "$out" ""
 d="$(srct_dir)"
-mkdir "$d/view.md"
-srct "$d"
-assert_status "an unwritable view.md fails --tickets" "$st" 1
-assert_eq "--tickets: with an orch: message naming it" "$err" "orch: could not write $d/view.md"
-assert_eq "--tickets: and no view on stdout" "$out" ""
+src_view_unwritable srct "--tickets" "$d"
 
 # Refusals.
 d="$(srct_dir)"
