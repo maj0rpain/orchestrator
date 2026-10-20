@@ -1342,7 +1342,7 @@ spec_review_tickets_answer() {
 # TK_FETCHED and TK_TEXT, once - ticket-<t>.fetched.md, else, before any
 # apply run has taken that copy, ticket-<t>.md. When the session wrote no
 # ticket-<t>.md, the problem, naming <what>, is appended to SR_PROBLEMS and it
-# returns 1.
+# returns 1; a copy it cannot read dies, naming <what> too.
 spec_review_ticket_load() {
   local j copy file="$1/ticket-$2.fetched.md"
   [ -z "$(array_index TK_T "$2")" ] || return 0
@@ -1351,7 +1351,7 @@ spec_review_ticket_load() {
     return 1
   fi
   [ -e "$file" ] || file="$1/ticket-$2.md"
-  file_read copy "$file" || die "could not read $file - nothing written"
+  file_read copy "$file" || die "$3: could not read $file - nothing written"
   j="${#TK_T[@]}"
   TK_T[j]="$2"; TK_FETCHED[j]="$copy"; TK_TEXT[j]="$copy"
 }

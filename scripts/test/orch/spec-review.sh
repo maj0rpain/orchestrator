@@ -1015,6 +1015,17 @@ assert_status "a clean --tickets run applies" "$st" 0
 assert_eq "the --tickets rerun after a pause gives the same result as a clean run" \
   "$(cat "$d/spec.md" "$d/ticket-20.md" "$d/ticket-21.md" "$d/changelog.md"; fake_body_of 14; fake_body_of 20; fake_body_of 21)" "$srt_after"
 
+# A ticket copy that cannot be read is refused naming the ticket item's
+# tickets.md line (#1266 story 5) - a directory where ticket-20.fetched.md
+# goes, which no reader, root included, can read as a file.
+d="$(srt_dir)"
+sra "$d" recommended
+srt_fetch "$d"
+mkdir "$d/ticket-20.fetched.md"
+srt_refused "an unreadable ticket copy" "$d" "could not read" recommended --tickets recommended
+assert_eq "an unreadable ticket copy: names its tickets.md line" \
+  "$(has_line "$out" "orch: tickets.md line 2: ticket item 1: could not read $d/ticket-20.fetched.md - nothing written")" yes
+
 # An Other list: a text edit on #21 before its unblock; a declined edge's
 # reason from --ticket-reasons.
 d="$(srt_dir)"
