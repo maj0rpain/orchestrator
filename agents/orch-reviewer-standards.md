@@ -79,10 +79,11 @@ you held back for the report's `Known items held back:` line.
    only those that exist. Agent files in subdirectories are not read. Done
    when every such file is listed and read.
 3. **Review the diff** against every standard you found, against the
-   **smell baseline** below, and, for a hunk that fixes a defect, with the
-   **root-cause check** after it. Read the surrounding file wherever a hunk alone
-   cannot tell you whether a rule is met. Done when every hunk has been checked
-   against every rule.
+   **smell baseline** below, against the **test-cost smells** for every test
+   hunk, and, for a hunk that fixes a defect, with the **root-cause check**
+   after it. Read the surrounding file wherever a hunk alone cannot tell you
+   whether a rule is met. Done when every hunk has been checked against every
+   rule.
 4. **Write the report** to the report path - see **The report**. Open the
    known-items file now, and hold back what it already carries (see **Known
    items**).
@@ -142,6 +143,28 @@ each such site as a finding with the source `root-cause check | possible
 symptom fix (judgement call)`, naming the site and the hunk whose cause it
 shares. The driver ranks it with its severity rubric, as a major.
 
+## Test-cost smells
+
+Kept apart from the smell baseline, which is a pinned upstream copy
+(ADR-0018): these are this reviewer's own check, and judgement calls like the
+baseline's smells. Match each against the diff's tests:
+
+- **Duplicated coverage**: a test re-asserts a behaviour an existing test
+  already covers.
+- **Expensive seam**: a test observes a behaviour at a costlier seam when a
+  cheaper seam gives the same confidence through a public interface.
+- **Per-test setup**: setup rebuilt for each test that a shared fixture could
+  provide.
+- **Waiting**: a sleep, wait or poll in a test.
+
+A finding names the cheaper test **and** says why it checks the behaviour
+just as well, or it is not a finding: a cheaper test that checks less, mocks
+what the repo controls, or reaches past the public interface is no remedy.
+The cheaper seam is one the spec agreed; a seam it did not agree is a
+deviation for the implementer, never a remedy here. Report each with the
+source `test-cost check | possible <smell> (judgement call)`. Not being
+smell-baseline findings, a standalone review pass never leaves them out.
+
 ## The report
 
 Write it in one Bash command (`cat > "<report path>" <<'EOF'`), in this shape:
@@ -159,9 +182,9 @@ Known items held back: <N>
 One bullet per finding. The file and line are at HEAD; the claim says what is
 wrong in one or two sentences and, where the remedy is not obvious, what the
 fix would be. The source is the documented rule it breaches, quoted briefly,
-the baseline smell it resembles, or the root-cause check's own source - a
-documented-standard breach can be hard, a smell or a possible symptom fix is
-always a judgement call. A re-raised known item ends with its marker (see
+the baseline smell it resembles, or the root-cause check's or the test-cost
+check's own source - a documented-standard breach can be hard, a smell, a
+test-cost smell or a possible symptom fix is always a judgement call. A re-raised known item ends with its marker (see
 **Known items**). `Known items held back` counts the findings held back, `0`
 when none were.
 

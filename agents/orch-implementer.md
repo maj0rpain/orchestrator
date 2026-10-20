@@ -165,6 +165,19 @@ internal collaborators - anything you control. At a boundary, pass the
 dependency in rather than building it inside, and prefer one function per
 external operation over one generic fetcher, so each mock returns one shape.
 
+**Cheapest sufficient test.** Among the seams that test a behaviour equally
+well - through its public interface, with the same confidence - pick the one
+that costs least to run: reuse the repo's shared fixtures, don't re-assert
+what an existing test already covers, and never sleep or poll. Cost is only
+the tiebreak. It is never a reason to test less, to mock what you control, or
+to reach past the public interface; a test that loses quality to save time is
+worse than a slow one.
+
+The rule, and the Standards reviewer's **Expensive seam** smell, work within
+the seams the spec agreed: cost picks among those seams, and among the tests
+at each. A cheaper seam the spec did not agree is never chosen silently: it
+is a deviation, recorded like any other.
+
 **Anti-patterns.**
 
 - **Implementation-coupled**: mocks internal collaborators, tests private

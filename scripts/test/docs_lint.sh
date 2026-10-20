@@ -49,6 +49,8 @@
 #   scan_spec_review_refs  orch-flow's spec phase step 4 names orch-spec-review's spec-phase.md
 #   scan_previously_declined  a standalone review pass lists earlier declines and the reviewers hear of them only through the known-items file
 #   scan_standalone_smells  the standalone review pass section and its command offer --smells
+#   scan_cheapest_test  the implementer's and fixer's Test-driven development sections carry one identical Cheapest sufficient test paragraph
+#   scan_test_cost_smells  the Standards reviewer carries the four test-cost smells outside the smell baseline
 #   scan_review_pass_self_contained  orch-review-pass refers into no orch-review section and starts its own reviewers
 #   scan_review_pass_callers  each caller of the review pass names orch-review-pass and the section it follows
 #   scan_review_loop_sheds_pass  orch-review keeps no copy of the review pass and points at orch-review-pass
@@ -1860,6 +1862,100 @@ assert_empty "a standalone pass and argument-hint naming --smells are not flagge
   "$(scan_standalone_smells "$fixture")"
 check "a standalone review pass takes --smells, and review-pass offers it" \
   "$(scan_standalone_smells "$PLUGIN_ROOT")"
+
+# --- test cost (#1307) ---------------------------------------------------------
+echo
+echo "test cost (#1307)"
+# The agents that write tests, the implementer and the fixer, carry one rule
+# for test cost: a paragraph led by **Cheapest sufficient test.** in each
+# Test-driven development section. Under ADR-0027 the two copies must match,
+# and no wording is pinned. The Standards reviewer carries four test-cost
+# smells in a section of its own, kept apart from the pinned smell baseline
+# (ADR-0018), so a standalone review pass never counts them as baseline smells.
+tdd_agents='agents/orch-implementer.md
+agents/orch-fixer.md'
+test_cost_smells='Duplicated coverage
+Expensive seam
+Per-test setup
+Waiting'
+# cheapest_paragraph <file>: the paragraph of <file>'s ## Test-driven
+# development section that a line beginning **Cheapest sufficient test.**
+# leads, up to the next blank line, flattened to one line. Empty when absent.
+cheapest_paragraph() {
+  md_section "$1" "## Test-driven development" 2>/dev/null \
+    | awk '/^\*\*Cheapest sufficient test\.\*\*/ { inb = 1 } inb && /^[[:space:]]*$/ { exit } inb' \
+    | flat_text
+}
+# scan_cheapest_test <plugin root>: one line per Test-driven development
+# section with no such paragraph, and one when the copies differ.
+scan_cheapest_test() {
+  local r="$1" f para first="" firstf=""
+  while IFS= read -r f; do
+    para="$(cheapest_paragraph "$r/$f")"
+    if [ -z "$para" ]; then
+      echo "$f: ## Test-driven development has no paragraph led by **Cheapest sufficient test.**"
+    elif [ -z "$firstf" ]; then first="$para"; firstf="$f"
+    elif [ "$para" != "$first" ]; then
+      echo "$f: the **Cheapest sufficient test.** paragraph differs from $firstf's"
+    fi
+  done <<<"$tdd_agents"
+  return 0
+}
+# scan_test_cost_smells <plugin root>: one line per test-cost smell missing
+# from the Standards reviewer's ## Test-cost smells section, or named in bold
+# inside its ## Smell baseline, and one when the section is missing.
+scan_test_cost_smells() {
+  local r="$1" f="agents/orch-reviewer-standards.md" body base smell
+  base="$(md_section "$r/$f" "## Smell baseline" 2>/dev/null)"
+  if ! body="$(md_section "$r/$f" "## Test-cost smells" 2>/dev/null)"; then
+    echo "$f: no ## Test-cost smells section"
+    body=""
+  fi
+  while IFS= read -r smell; do
+    if [ -n "$body" ] && ! grep -qF -- "**$smell**" <<<"$body"; then
+      echo "$f: ## Test-cost smells does not name **$smell**"
+    fi
+    if grep -qF -- "**$smell**" <<<"$base"; then
+      echo "$f: **$smell** is inside the ## Smell baseline"
+    fi
+  done <<<"$test_cost_smells"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents"
+para='**Cheapest sufficient test.** Pick the cheapest seam.
+Cost is only the tiebreak.'
+printf '# I\n\n## Test-driven development\n\nRules.\n\n## Other\n\n%s\n' "$para" >"$fixture/agents/orch-implementer.md"
+printf '# F\n\n## Test-driven development\n\n%s\n\nMore.\n' "${para/tiebreak/excuse}" >"$fixture/agents/orch-fixer.md"
+out="$(scan_cheapest_test "$fixture")"
+flags "a Test-driven development section with no Cheapest sufficient test paragraph is flagged" \
+  "$out" "agents/orch-implementer.md: ## Test-driven development has no paragraph led by **Cheapest sufficient test.**"
+printf '# I\n\n## Test-driven development\n\n%s\n\nNext paragraph.\n' "$para" >"$fixture/agents/orch-implementer.md"
+flags "copies of the Cheapest sufficient test paragraph that differ are flagged" \
+  "$(scan_cheapest_test "$fixture")" \
+  "agents/orch-fixer.md: the **Cheapest sufficient test.** paragraph differs from agents/orch-implementer.md's"
+printf '# F\n\nIntro.\n\n## Test-driven development\n\nA fix.\n\n%s\n' \
+  "$(printf '%s\n' "$para" | tr '\n' ' ' | sed 's/ $//; s/seam\. /seam.\n/')" >"$fixture/agents/orch-fixer.md"
+assert_empty "identical Cheapest sufficient test paragraphs, wrapped differently, are not flagged" \
+  "$(scan_cheapest_test "$fixture")"
+check "both Test-driven development sections carry the same Cheapest sufficient test paragraph" \
+  "$(scan_cheapest_test "$PLUGIN_ROOT")"
+printf '# S\n\n## Smell baseline\n\n- **Waiting**: a sleep.\n\n## Test-cost smells\n\n- **Duplicated coverage**: again.\n- **Expensive seam**: costly.\n' \
+  >"$fixture/agents/orch-reviewer-standards.md"
+out="$(scan_test_cost_smells "$fixture")"
+flags "a test-cost smell missing from the Test-cost smells section is flagged" \
+  "$out" "agents/orch-reviewer-standards.md: ## Test-cost smells does not name **Per-test setup**"
+flags "a test-cost smell inside the smell baseline is flagged" \
+  "$out" "agents/orch-reviewer-standards.md: **Waiting** is inside the ## Smell baseline"
+printf '# S\n\n## Smell baseline\n\n- **Mysterious Name**: a name.\n' >"$fixture/agents/orch-reviewer-standards.md"
+flags "a Standards reviewer with no Test-cost smells section is flagged" \
+  "$(scan_test_cost_smells "$fixture")" "agents/orch-reviewer-standards.md: no ## Test-cost smells section"
+printf '# S\n\n## Smell baseline\n\n- **Mysterious Name**: a name.\n\n## Test-cost smells\n\n- **Duplicated coverage**: a.\n- **Expensive seam**: b.\n- **Per-test setup**: c.\n- **Waiting**: d.\n' \
+  >"$fixture/agents/orch-reviewer-standards.md"
+assert_empty "four test-cost smells outside the smell baseline are not flagged" \
+  "$(scan_test_cost_smells "$fixture")"
+check "the Standards reviewer carries the four test-cost smells outside the smell baseline" \
+  "$(scan_test_cost_smells "$PLUGIN_ROOT")"
 
 # --- review pass skill (#1138) -------------------------------------------------
 echo

@@ -182,8 +182,8 @@ the only Standards look the change gets before its PR (ADR-0021).
    smells. A **smell-baseline finding** is a Standards-report finding whose
    Source reads `possible <smell> (judgement call)`, with `<smell>` one of
    the twelve in `agents/orch-reviewer-standards.md`'s **Smell baseline**.
-   A Source beginning `root-cause check`, or naming no baseline smell, is
-   never one; nor is any Spec-report finding. A smell that matched an earlier
+   A Source beginning `root-cause check` or `test-cost check`, or naming no
+   baseline smell, is never one; nor is any Spec-report finding. A smell that matched an earlier
    decline is already under **Previously declined** and is not counted.
    Hidden smells are neither fixed nor declined. The reviewers are unchanged:
    the Standards reviewer still reports smells.
