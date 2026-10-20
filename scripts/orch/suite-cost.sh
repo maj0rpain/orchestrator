@@ -150,12 +150,15 @@ suite_cost_newest() {
 
 # The head's commits: HEAD or an ancestor of it, but not the base commit nor
 # an ancestor of it - so a run recorded just before its commit still counts.
+# Local to suite_cost_check in effect: it reads the base commit, base_commit,
+# from that call's locals, through bash's dynamic scope.
 suite_cost_is_head() {
   git merge-base --is-ancestor "$1" HEAD 2>/dev/null &&
-    ! git merge-base --is-ancestor "$1" "$SUITE_COST_BASE" 2>/dev/null
+    ! git merge-base --is-ancestor "$1" "$base_commit" 2>/dev/null
 }
-# The baseline's commits: the base commit or an ancestor of it.
-suite_cost_is_base() { git merge-base --is-ancestor "$1" "$SUITE_COST_BASE" 2>/dev/null; }
+# The baseline's commits: the base commit or an ancestor of it. Local to
+# suite_cost_check in effect, reading its base_commit as suite_cost_is_head does.
+suite_cost_is_base() { git merge-base --is-ancestor "$1" "$base_commit" 2>/dev/null; }
 
 # suite_cost_check <cmd> [args...]: prints one verdict line - off, ok,
 # grew <pct> - <finding text>, or unmeasured - comparing the head's newest
@@ -163,20 +166,20 @@ suite_cost_is_base() { git merge-base --is-ancestor "$1" "$SUITE_COST_BASE" 2>/d
 # a bad one dies before anything runs; the command runs only to measure a base
 # with no recorded ancestor, never on the head.
 suite_cost_check() {
-  local floor growth rec want head_cpu base_cpu base_sha head_found base_found pct IFS=' '
+  local floor growth rec want base_commit head_cpu base_cpu base_sha head_found base_found pct IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
   want="$*"
-  SUITE_COST_BASE="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
+  base_commit="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
   head_found="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
     { note unmeasured; return 0; }
   head_cpu="${head_found%%$'\t'*}"
   if base_found="$(suite_cost_newest "$rec" "$want" suite_cost_is_base)"; then
     base_cpu="${base_found%%$'\t'*}" base_sha="${base_found#*$'\t'}"
   else
-    suite_cost_base_run "$SUITE_COST_BASE" "$@" || { note unmeasured; return 0; }
-    base_cpu="$SUITE_COST_CPU" base_sha="$SUITE_COST_BASE"
+    suite_cost_base_run "$base_commit" "$@" || { note unmeasured; return 0; }
+    base_cpu="$SUITE_COST_CPU" base_sha="$base_commit"
   fi
   # A zero baseline, possible only with a zero floor, has no growth to measure.
   if float_lt "$base_cpu" "$floor" || ! float_lt 0 "$base_cpu"; then

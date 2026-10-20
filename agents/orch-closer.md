@@ -41,14 +41,18 @@ loop's outcome either: the terminal state in your prompt is final, and
    above the loop boundary - that is still unfixed: waiting to be filed,
    whatever rule kept it out. Demoted findings and fixed ones are excluded,
    and so is one a later record of this loop lists under **Fixed this
-   iteration** - the same file and line making the same claim, read from that
+   iteration** - the same file and line making the same claim, or for a
+   suite-cost finding the same axis and location alone, read from that
    record's **Findings** entry. Open blocking findings are excluded too:
    `review file` files only majors and nits, and a blocking finding stays
    with the loop. Earlier loops' records are not read: whether a finding
    is already filed is the driver's call, made in triage. Done when every
    record of this loop has been read.
 2. **Deduplicate.** Findings at the same file and line making the same claim
-   are one finding, however many iterations reported it.
+   are one finding, however many iterations reported it. Suite-cost findings
+   are matched on axis and location alone, never their claim, since their
+   numbers change every run: every suite-cost finding is one finding, filed
+   once with the newest record's claim.
 3. **Set aside what is already filed.** A finding a record of this loop marks
    as met again is filed once already and belongs to triage now - the
    driver's triage owns that match, so take the mark as given and check no
