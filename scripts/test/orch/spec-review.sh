@@ -593,6 +593,12 @@ sra_refused "an item named twice" "$d" "item 4 twice" "-4, -4"
 sra_refused "a decision named twice" "$d" "item 3 twice" "3B, -3"
 sra_refused "an unknown long option, though the answer may begin with -" "$d" \
   "unknown option: --bogus" "-4" --bogus
+assert_contains "an unknown long option after <dir>: the exact message" "$out" \
+  "orch: unknown option: --bogus (usage: orch.sh spec-review apply <dir>"
+out="$("$ORCH" spec-review apply -x "$d" -4 --round 1/2 --issue 14 2>&1)"; st=$?
+assert_status "an unknown single-dash option before <dir>: refused" "$st" 1
+assert_contains "an unknown single-dash option before <dir>: the same message" "$out" \
+  "orch: unknown option: -x (usage: orch.sh spec-review apply <dir>"
 
 # The shared answer walk (#1264): each refusal's exact message, and the
 # twice-named check before the option and sign checks.
@@ -615,6 +621,10 @@ sed -i 's/^Twice\.$/Delta line./' "$d/batch.md"
 sra "$d" recommended
 assert_status "the corrected rerun applies" "$st" 0
 assert_eq "leaving the same spec.md as a clean run" "$(cat "$d/spec.md")" "$sra_clean"
+d="$(sra_dir)"
+sra "$d" -4
+assert_status "a single-dash override answer after <dir>: taken as the answer" "$st" 0
+assert_eq "a single-dash override answer after <dir>: item 4 declined" "$(has_line "$(cat "$d/spec.md")" "Test note.")" no
 
 # A malformed batch file, named by its line.
 d="$(sra_dir)"
@@ -656,8 +666,26 @@ d="$(sra_dir)"
 sed -i '14d' "$d/batch.md"
 sra "$d" recommended
 assert_status "an anchor left open: refused" "$st" 1
-assert_eq "an anchor left open keeps its message" "$out" \
-  "orch: batch.md line 15: expected @@ replace to end the anchor begun on line 12"
+assert_eq "an anchor left open shows the line it got" "$out" \
+  "orch: batch.md line 15: expected @@ replace to end the anchor begun on line 12, got '@@ end'"
+d="$(sra_dir)"
+printf '@@ anchor\nx\n@@ replace\ny\n@@ end\n' >>"$d/batch.md"
+sra "$d" recommended
+assert_status "a resolved item carrying @@ anchor: refused" "$st" 1
+assert_eq "a resolved item carrying @@ anchor: the one message for its blocks" "$out" \
+  "orch: batch.md line 58: $sra_resolved_takes"
+d="$(sra_dir)"
+sed -i '40,44d' "$d/batch.md"
+sra "$d" recommended
+assert_status "an option not recommended with no block: refused" "$st" 1
+assert_eq "an option not recommended with no block: says why it needs one" "$out" \
+  "orch: batch.md line 38: item 3 option B has no @@ anchor/@@ replace/@@ end block - an option not recommended still carries the edit it would make"
+d="$(sra_dir)"
+sed -i '33,37d' "$d/batch.md"
+sra "$d" recommended
+assert_status "the recommended option with no block: refused" "$st" 1
+assert_eq "the recommended option with no block: no hint" "$out" \
+  "orch: batch.md line 31: item 3 option A has no @@ anchor/@@ replace/@@ end block"
 
 # Malformed marks (#1237): refused attended and unattended, before any write.
 for sra_flag in "" --unattended; do
@@ -1075,10 +1103,14 @@ mv "$d/tickets.md" "$d/tickets.keep"
 srt_refused "no tickets.md" "$d" "tickets.md not found" recommended --tickets recommended
 cp "$d/tickets.keep" "$d/tickets.md"
 srt_refused "a ticket item with no ticket file" "$d" "ticket item 1: ticket-20.md not found" recommended --tickets recommended
+assert_eq "a ticket item with no ticket file: names its header line" "$out" \
+  "orch: tickets.md line 2: ticket item 1: ticket-20.md not found in $d - fetch each ticket a ticket item names into it"
 srt_fetch "$d"
 assert_eq "ticket-20.fetched.md not yet taken by a run that found no file" "$(on_disk "$d/ticket-20.fetched.md")" absent
 sed -i 's/^Build alpha\.$/Nowhere./' "$d/tickets.md"
 srt_refused "a ticket anchor matching nothing" "$d" "ticket item 1 (#20): its anchor matches no text" recommended --tickets recommended
+assert_eq "a ticket anchor matching nothing: names its @@ anchor line" "$out" \
+  "orch: tickets.md line 4: ticket item 1 (#20): its anchor matches no text in the body - nothing applied, nothing written"
 assert_eq "the refused run took ticket-20.fetched.md" "$(cat "$d/ticket-20.fetched.md")" "$(printf '%s' "$srt_t20")"
 sed -i 's/^Nowhere\.$/##/' "$d/tickets.md"
 srt_refused "a ticket anchor matching twice" "$d" "ticket item 1 (#20): its anchor matches more than one place" recommended --tickets recommended
@@ -1109,9 +1141,18 @@ srt_refused "a ticket reason for an accepted item" "$d" "does not decline" recom
 printf '9: why\n' >"$d/treasons"
 srt_refused "a ticket reason for an unknown item" "$d" "item 9" recommended --tickets none --ticket-reasons "$d/treasons"
 srt_refused "a block for an edge already present" "$d" "ticket item 5: #21 is already blocked by #20" recommended --tickets all
+assert_eq "a block for an edge already present: names its header line" "$out" \
+  "orch: tickets.md line 19: ticket item 5: #21 is already blocked by #20 - nothing written"
 sed -i 's/^@@ item 2 unblock 21 by 20 apply$/@@ item 2 unblock 20 by 21 apply/' "$d/tickets.md"
 srt_refused "an unblock for an edge not present" "$d" "ticket item 2: #20 is not blocked by #21" recommended --tickets recommended
+assert_eq "an unblock for an edge not present: names its header line" "$out" \
+  "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21 - nothing written"
 cp "$d/tickets.keep" "$d/tickets.md"
+mv "$d/ticket-21.md" "$d/ticket-21.keep"
+srt_refused "an edge item with no ticket file" "$d" "ticket item 2: ticket-21.md not found" recommended --tickets recommended
+assert_eq "an edge item with no ticket file: names its header line" "$out" \
+  "orch: tickets.md line 10: ticket item 2: ticket-21.md not found in $d - fetch each ticket a ticket item names into it"
+mv "$d/ticket-21.keep" "$d/ticket-21.md"
 sed -i 's/^@@ item 5 block 21 by 20 /@@ item 5 block 99 by 20 /' "$d/tickets.md"
 srt_refused "an edge item whose ticket is not in the breakdown" "$d" "ticket item 5: #99 is not a ticket of #14's breakdown" recommended --tickets recommended
 cp "$d/tickets.keep" "$d/tickets.md"
@@ -1145,6 +1186,8 @@ assert_eq "recorded" "$(tail -n 1 "$d/changelog.md")" "- (1) The ticket builds a
 d="$(srt_collapsed)"
 sed -i 's/^Build the spec\.$/Alpha line./' "$d/tickets.md"
 srt_refused "a ## Ticket anchor on text the batch items replaced" "$d" "ticket item 1 (## Ticket): its anchor matches no text" recommended --tickets recommended
+assert_eq "a ## Ticket anchor matching nothing: names its @@ anchor line" "$out" \
+  "orch: tickets.md line 4: ticket item 1 (## Ticket): its anchor matches no text in the body - nothing applied, nothing written"
 d="$(srt_dir)"
 srt_fetch "$d"
 printf '@@ recommend apply\n@@ item 1 section apply\n@@ summary s\n@@ anchor\nAlpha line.\n@@ replace\nx\n@@ end\n' >"$d/tickets.md"
@@ -2093,6 +2136,18 @@ d="$(srct_dir)"
 printf '@@ bogus\n' >>"$d/tickets.md"
 check_refused srct "a grammar error" "$d" "orch: tickets.md line 20: unknown line '@@ bogus'"
 d="$(srct_dir)"
+sed -i '6d' "$d/tickets.md"
+check_refused srct "an anchor left open" "$d" \
+  "orch: tickets.md line 7: expected @@ replace to end the anchor begun on line 4, got '@@ end'"
+d="$(srct_dir)"
+sed -i '8d' "$d/tickets.md"
+check_refused srct "a replacement left open" "$d" \
+  "orch: tickets.md line 9: expected @@ end to end the replacement begun on line 6, got '@@ item 2 unblock 21 by 20 apply'"
+d="$(srct_dir)"
+sed -i '8d; 10s/$/\r/' "$d/tickets.md"
+check_refused srct "a replacement left open at a CRLF line" "$d" \
+  "orch: tickets.md line 9: expected @@ end to end the replacement begun on line 6, got '@@ item 2 unblock 21 by 20 apply'"
+d="$(srct_dir)"
 srct "$d"
 srct_lf_out="$out"; srct_lf_err="$err"
 d="$(srct_dir)"
@@ -2128,6 +2183,8 @@ check_refused srct "an unblock edge absent" "$d" \
   "orch: tickets.md line 10: ticket item 2: #20 is not blocked by #21"
 
 assert_contains "help documents spec-review check --tickets" "$("$ORCH" help)" "spec-review check <dir> [--tickets | --full <n>...]"
+assert_contains "help names the file each check error names a line of" "$("$ORCH" help | tr -s ' \n' '  ')" \
+  "Exit 1 with one orch: line per error, each naming its batch.md or lens-<name>.md line where it has one - the first grammar error only"
 restore_suite_env
 
 # --- spec-review wait (#1183) --------------------------------------------------
