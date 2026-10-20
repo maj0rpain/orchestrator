@@ -742,10 +742,12 @@ spec_review_problems_exit() {
 # spec-review check <dir>: the round's batch validated as apply would take the
 # all answer - every anchor checked, the recommended options in the dry run -
 # against <dir>/spec.fetched.md when it exists, else <dir>/spec.md. Writes
-# nothing, touches no GitHub, reads no flow state. Grammar, lens and citation
+# only <dir>/view.md, touches no GitHub, reads no flow state. Grammar, lens and citation
 # errors stop at the first; every anchor problem is reported, one `orch: `
-# line each, then exit 1. A clean batch prints its view on stdout - see
-# spec_review_view - and a one-line summary on stderr; the word diffs' lists
+# line each, then exit 1, leaving any earlier view.md as it was. A clean batch
+# prints its view on stdout - see spec_review_view - saves it to
+# <dir>/view.md (see spec_review_view_save), and prints a one-line summary on
+# stderr, ending in spec_review_nudge; the word diffs' lists
 # go in a mktemp -d directory removed on every path, a failed diff's too. With --tickets, the
 # round's tickets.md instead: see spec_review_tickets_check. With --full
 # <n>..., the same validation, then only the named items on stdout, each in
@@ -788,15 +790,55 @@ spec_review_check() {
     for n in "${wanted[@]}"; do
       [ -n "$(array_index SR_IT_N "$n")" ] || die "--full $n: batch.md has no item $n"
     done
-    for n in "${wanted[@]}"; do spec_review_item_view "$(array_index SR_IT_N "$n")"; done
+    local index=()
+    for n in "${wanted[@]}"; do index+=("$(array_index SR_IT_N "$n")"); done
+    spec_review_view_save "$dir" spec_review_full_view "${index[@]}"
   else
     SR_DIFF_DIR="$(mktemp -d)" || die "could not create a temp directory for the word diffs"
     trap 'rm -rf "$SR_DIFF_DIR"' EXIT
     spec_review_diffs "$SR_DIFF_DIR"
     rm -rf "$SR_DIFF_DIR"
-    spec_review_view
+    spec_review_view_save "$dir" spec_review_view
   fi
-  note "batch.md passes: ${#SR_IT_N[@]} items, $SR_ANCHOR_COUNT anchors, each matching once in $body, and the all answer applies cleanly" >&2
+  note "batch.md passes: ${#SR_IT_N[@]} items, $SR_ANCHOR_COUNT anchors, each matching once in $body, and the all answer applies cleanly$(spec_review_nudge "$dir")" >&2
+}
+
+# spec_review_full_view <index>...: check --full's view - each item <index>
+# in full (see spec_review_item_view), in the order given.
+spec_review_full_view() {
+  local i
+  for i in "$@"; do spec_review_item_view "$i"; done
+}
+
+# spec_review_view_save <dir> <command...>: <command>'s stdout, a view,
+# written to <dir>/view.md - overwriting any earlier one - and then printed on
+# stdout, exactly. Dies before printing anything when the view cannot be
+# rendered or view.md cannot be written.
+spec_review_view_save() {
+  local dir="$1" view
+  shift
+  view="$("$@" && printf x)" || exit 1
+  view="${view%x}"
+  { printf '%s' "$view" >"$dir/view.md"; } 2>/dev/null \
+    || die "could not write $(spec_review_view_path "$dir")"
+  printf '%s' "$view"
+}
+
+# spec_review_view_path <dir>: <dir>/view.md's absolute path - <dir> taken
+# from the current directory when relative, symlinks left as named.
+spec_review_view_path() {
+  case "$1" in
+    /*) printf '%s/view.md' "$1" ;;
+    *) printf '%s/%s/view.md' "$PWD" "$1" ;;
+  esac
+}
+
+# spec_review_nudge <dir>: what a check pass line that saved a view ends
+# with - the instruction to paste the view word for word before asking, and
+# the view.md it was saved to, by absolute path.
+spec_review_nudge() {
+  printf ' - paste the view above into chat word for word, then ask in the same response; it is saved in %s' \
+    "$(spec_review_view_path "$1")"
 }
 
 # spec_review_quoted <text>: <text> as a markdown blockquote, line for line.
@@ -1454,10 +1496,13 @@ spec_review_tickets_follow() {
 
 # spec_review_tickets_check <dir>: check --tickets - <dir>/tickets.md
 # validated as apply --tickets would take the all answer, against the ticket
-# copies and <dir>/spec.md, with nothing written and no GitHub read. A
-# grammar error stops at the first; every other problem is reported, one
-# `orch: ` line each, then exit 1. A clean file prints its view on stdout -
-# see spec_review_tickets_view - and a one-line summary on stderr.
+# copies and <dir>/spec.md, with nothing written but <dir>/view.md and no
+# GitHub read. A grammar error stops at the first; every other problem is
+# reported, one `orch: ` line each, then exit 1. A clean file prints its view
+# on stdout - see spec_review_tickets_view - saves it to <dir>/view.md, and
+# prints a one-line summary on stderr ending in spec_review_nudge. With
+# @@ none-affected its stdout is a stub, not a view: any earlier view.md is
+# removed, none written, and the summary names none.
 spec_review_tickets_check() {
   local dir="$1" i __srtc_body
   [ -f "$dir/tickets.md" ] || die "tickets.md not found in $dir"
@@ -1471,11 +1516,14 @@ spec_review_tickets_check() {
     spec_review_ticket_item_offline "$i" __srtc_body "$batch_body" "$dir"
   done
   spec_review_problems_exit
-  spec_review_tickets_view
   if [ -n "$ST_NONE" ]; then
+    { rm -f "$dir/view.md"; } 2>/dev/null \
+      || die "could not remove $(spec_review_view_path "$dir")"
+    spec_review_tickets_view
     note "tickets.md passes: no open ticket affected" >&2
   else
-    note "tickets.md passes: ${#ST_N[@]} items, $SR_TICKET_ANCHOR_COUNT anchors, each matching once, and the all answer applies cleanly" >&2
+    spec_review_view_save "$dir" spec_review_tickets_view
+    note "tickets.md passes: ${#ST_N[@]} items, $SR_TICKET_ANCHOR_COUNT anchors, each matching once, and the all answer applies cleanly$(spec_review_nudge "$dir")" >&2
   fi
 }
 

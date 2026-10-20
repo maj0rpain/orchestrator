@@ -287,8 +287,8 @@ before it is shown, in every mode - flow, standalone, and unattended:
 bash "$ORCH" spec-review check <dir>
 ```
 
-`check` validates the batch as `apply` would take it, without writing
-anything: its grammar, the lens files and the batch's citations of them, and
+`check` validates the batch as `apply` would take it, writing nothing but
+`<dir>/view.md` (below): its grammar, the lens files and the batch's citations of them, and
 every anchor - each item's and each option's - matching once in the body,
 then still matching once in a dry run of the **Apply all** answer. On exit 0
 it prints the compact batch view on stdout - the lens lines, ran or not run
@@ -318,8 +318,12 @@ is minor or resolved, and the item numbers stay the one sequence of
 then prints only the named items, any of them, minor or resolved included,
 in the order named, each in full: its group, its recommendation, its cited
 findings and comments quoted, and its Current and Proposed text in full,
-each option's for a decision item. Its one-line pass
-summary goes to stderr. On any other exit, each `orch:` line on
+each option's for a decision item. Either form also writes exactly the view
+it printed to `<dir>/view.md`, overwriting any earlier one, and its one-line
+pass summary goes to stderr: it names that `view.md` by absolute path and
+tells you to paste the view above into chat word for word, then ask in the
+same response. A `check` that fails leaves any earlier `view.md` as it was.
+On any other exit, each `orch:` line on
 stderr names what is wrong, most with its `batch.md` line: fix `batch.md` and
 run `check` again, until it exits 0. A batch that has not passed `check` is
 never shown and never asked about.
@@ -353,7 +357,9 @@ and no changelog is posted before the answer arrives. The options:
 An Other answer of `show <n>...` is not an answer to the batch question.
 Run `bash "$ORCH" spec-review check <dir> --full <n>...` with the numbers it
 names, paste its stdout into chat word for word, and ask the batch question
-again, the paste and the call in the same response. `apply` never receives
+again, the paste and the call in the same response. It writes the full
+items' view to `<dir>/view.md` in place of the batch view, and its pass line
+names that file and says to paste the view, as the batch `check`'s does. `apply` never receives
 a `show` answer. A `--full` refusal - a number not in `batch.md` - is told
 to the human, and the batch question asked again.
 

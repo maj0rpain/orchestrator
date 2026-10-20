@@ -535,13 +535,16 @@ orch.sh - deterministic operations for the orchestrator flow
                               each decision option's) matching exactly once,
                               and a dry run of the all answer, against
                               <dir>/spec.fetched.md, else <dir>/spec.md.
-                              Writes nothing, touches no GitHub, reads no
-                              flow state. Exit 1 with one orch: line per
-                              error, each naming its batch.md or
+                              Writes only <dir>/view.md, touches no GitHub,
+                              reads no flow state. Exit 1 with one orch:
+                              line per error, each naming its batch.md or
                               lens-<name>.md line where it has one - the first
                               grammar error only, every anchor problem; exit
-                              0 with the batch view on stdout and a one-line
-                              summary on stderr. --tickets validates
+                              0 with the batch view on stdout, the same
+                              bytes in <dir>/view.md (overwritten), and a
+                              one-line summary on stderr naming view.md by
+                              absolute path and saying to paste the view
+                              word for word, then ask. --tickets validates
                               <dir>/tickets.md instead, before the ticket
                               question, as apply --tickets would take the all
                               answer: its grammar, each ticket item's anchor
@@ -550,13 +553,16 @@ orch.sh - deterministic operations for the orchestrator flow
                               <dir>/spec.md, and each edge against its
                               ticket's ## Blocked by - one orch: line per
                               problem, each naming its tickets.md line, or the
-                              ticket view on stdout. The checks that need
-                              GitHub stay in apply. --full <n>... validates
-                              batch.md the same way, then prints only the
-                              named items, any in batch.md, each in full
-                              (findings and comments quoted, Current and
-                              Proposed whole), in the order named; never
-                              with --tickets
+                              ticket view on stdout and in view.md - or, with
+                              no open ticket affected, the stub, with any
+                              earlier view.md removed and none named. The
+                              checks that need GitHub stay in apply.
+                              --full <n>... validates batch.md the same way,
+                              then prints only the named items, any in
+                              batch.md, each in full (findings and comments
+                              quoted, Current and Proposed whole), in the
+                              order named, that view in view.md; never with
+                              --tickets
   spec-review wait <dir> <lens>...
                               block until <dir>/lens-<lens>.md exists for
                               every named lens (fidelity, consistency,
