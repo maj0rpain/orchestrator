@@ -13,8 +13,8 @@ them the same way. Four further extractions were weighed and declined.
   coding-standards section 1 rules out.
 - **A shared `@@` block reader.** The anchor, replace and quote handling looks
   alike in the two parsers, but it reacts differently. Each side has its own
-  die function and stores a finished block in its own place: an item or
-  option through `spec_review_text_store`, or the `ST_` arrays directly. Only
+  die function and stores a finished block in its own place: an item's or
+  option's `SR_` arrays, or the `ST_` arrays. Only
   the batch has a quote mode, and the two return to different modes. A shared
   reader would need the die function passed in as a callback for those
   reactions, which section 1 warns against.

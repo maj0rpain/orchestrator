@@ -118,25 +118,6 @@ spec_review_one_line() {
   printf '%s' "$out"
 }
 
-# spec_review_text_store <target> <text> <item> <option> <line>: a finished
-# anchor, replace or quote block stored where it belongs - option <option>'s
-# when it is 0 or more, else item <item>'s; a quote goes to the last comment.
-# An anchor keeps <line>, its `@@ anchor` line, for the errors naming it.
-spec_review_text_store() {
-  local item="$3" option="$4"
-  case "$1" in
-    anchor)
-      if [ "$option" -ge 0 ]; then
-        SR_OP_ANCHOR[option]="$2"; SR_OP_ANCHOR_LINE[option]="$5"
-      else
-        SR_IT_ANCHOR[item]="$2"; SR_IT_ANCHOR_LINE[item]="$5"
-      fi ;;
-    replace)
-      if [ "$option" -ge 0 ]; then SR_OP_REPLACE[option]="$2"; else SR_IT_REPLACE[item]="$2"; fi ;;
-    quote) SR_CM_QUOTE[${#SR_CM_QUOTE[@]}]="$2" ;;
-  esac
-}
-
 # spec_review_item_check <index>: dies, naming the item's header line, unless
 # the item carries what its recommendation needs.
 spec_review_item_check() {
@@ -242,18 +223,22 @@ spec_review_batch_parse() {
         [ "$kw" = replace ] && [ -z "$args" ] \
           || spec_review_batch_die "$lineno" "expected @@ replace to end the anchor begun on line $block_line, got '$line'"
         [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the anchor is empty"
-        spec_review_text_store anchor "$buf" "$cur" "$opt" "$block_line"
+        if [ "$opt" -ge 0 ]; then
+          SR_OP_ANCHOR[opt]="$buf"; SR_OP_ANCHOR_LINE[opt]="$block_line"
+        else
+          SR_IT_ANCHOR[cur]="$buf"; SR_IT_ANCHOR_LINE[cur]="$block_line"
+        fi
         mode=replace; buf=""; bufn=0; block_line="$lineno"
         continue ;;
       replace)
         [ "$kw" = end ] && [ -z "$args" ] \
           || spec_review_batch_die "$lineno" "expected @@ end to end the replacement begun on line $block_line, got '$line'"
-        spec_review_text_store replace "$buf" "$cur" "$opt"
+        if [ "$opt" -ge 0 ]; then SR_OP_REPLACE[opt]="$buf"; else SR_IT_REPLACE[cur]="$buf"; fi
         mode=item; buf=""; bufn=0
         continue ;;
       quote)
         [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the quote is empty"
-        spec_review_text_store quote "$buf" "$cur" "$opt"
+        SR_CM_QUOTE+=("$buf")
         mode=item; buf=""; bufn=0 ;;
     esac
     [ -z "$quote_wanted" ] || [ "$kw" = quote ] \
@@ -391,7 +376,7 @@ spec_review_batch_parse() {
     anchor|replace) spec_review_batch_die "$block_line" "the @@ $mode block is never ended" ;;
     quote)
       [ -n "$(trim "$buf")" ] || spec_review_batch_die "$block_line" "the quote is empty"
-      spec_review_text_store quote "$buf" "$cur" "$opt" ;;
+      SR_CM_QUOTE+=("$buf") ;;
   esac
   [ -z "$quote_wanted" ] || spec_review_batch_die "$lineno" "@@ comment must be followed by @@ quote"
   [ "$cur" -lt 0 ] || spec_review_item_check "$cur"
