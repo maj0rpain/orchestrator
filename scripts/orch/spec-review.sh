@@ -1443,7 +1443,7 @@ spec_review_tickets_follow() {
   done
   post="${!body_var}"
   for i in ${ST_N[@]+"${!ST_N[@]}"}; do
-    what="ticket item ${ST_N[$i]}"
+    what="tickets.md line ${ST_LINE[$i]}: ticket item ${ST_N[$i]}"
     case "${ST_KIND[$i]}" in
       section)
         [ "$kind" = collapsed ] \
