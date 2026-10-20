@@ -1066,12 +1066,12 @@ echo "spec-review lenses run as plugin agents (#177)"
 # scan_lens_briefs <plugin root>: print one line per brief out of place. The
 # briefs' one copy is each lens agent's `## Brief` section, so the check is on
 # structure, never on the briefs' wording: every lens agent has a non-empty
-# `## Brief`, and orch-spec-review has no `**<Lens> brief.**` heading. Each
+# `## Brief`, and no orch-spec-review .md file has a `**<Lens> brief.**` heading. Each
 # lens agent also has Write in its tools: list and a `## The findings file`
 # section, the file it writes its findings to.
 lenses="fidelity consistency testability implementability"
 scan_lens_briefs() {
-  local r="$1" lens a heading brief
+  local r="$1" lens a heading brief f
   for lens in $lenses; do
     a="$r/agents/orch-lens-$lens.md"
     if [ -f "$a" ]; then
@@ -1088,8 +1088,10 @@ scan_lens_briefs() {
         echo "${a#"$r"/}: has no ## The findings file section"
     fi
     heading="**${lens^} brief.**"
-    grep -qF "$heading" "$r/skills/orch-spec-review/SKILL.md" 2>/dev/null &&
-      echo "skills/orch-spec-review/SKILL.md: carries the $heading heading"
+    for f in "$r"/skills/orch-spec-review/*.md; do
+      [ -f "$f" ] || continue
+      grep -qF "$heading" "$f" && echo "${f#"$r"/}: carries the $heading heading"
+    done
   done
   return 0
 }
@@ -1105,6 +1107,8 @@ printf -- '---\nname: orch-lens-implementability\ntools: [Read, Grep]\n---\n\n##
   >"$fixture/agents/orch-lens-implementability.md"
 printf 'Run the lenses.\n\n**Consistency brief.** Placeholder.\n' \
   >"$fixture/skills/orch-spec-review/SKILL.md"
+printf 'A reference file.\n\n**Testability brief.** Placeholder.\n' \
+  >"$fixture/skills/orch-spec-review/ref.md"
 out="$(scan_lens_briefs "$fixture")"
 flags "the scan flags an empty ## Brief section" \
   "$out" "agents/orch-lens-fidelity.md: has an empty ## Brief section"
@@ -1118,6 +1122,8 @@ flags "the scan flags a lens agent with no findings-file section" \
   "$out" "agents/orch-lens-implementability.md: has no ## The findings file section"
 flags "the scan flags a brief heading back in orch-spec-review" \
   "$out" "skills/orch-spec-review/SKILL.md: carries the **Consistency brief.** heading"
+flags "the scan flags a brief heading in an orch-spec-review reference file" \
+  "$out" "skills/orch-spec-review/ref.md: carries the **Testability brief.** heading"
 check "each lens agent owns a non-empty brief and the skill carries none" \
   "$(scan_lens_briefs "$PLUGIN_ROOT")"
 
