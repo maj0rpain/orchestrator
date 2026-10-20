@@ -46,34 +46,65 @@ out="$(sourced_orch handoffs_due bogus)"; st=$?
 assert_eq "handoffs_due prints nothing for a phase outside the table" "$out" ""
 assert_status "and succeeds" "$st" 0
 
-out="$(sourced_orch handoffs_after spec)"
-assert_eq "handoffs_after spec prints the spec and implement handoffs" "$out" \
+out="$(sourced_orch handoffs_written_from plan)"
+assert_eq "handoffs_written_from plan prints all three handoffs" "$out" \
+  "$(writeln 01-plan.md 02-spec.md 03-implement.md)"
+out="$(sourced_orch handoffs_written_from spec)"
+assert_eq "handoffs_written_from spec prints the spec and implement handoffs" "$out" \
   "$(writeln 02-spec.md 03-implement.md)"
-out="$(sourced_orch handoffs_after implement)"
-assert_eq "handoffs_after implement prints the implement handoff alone" "$out" "03-implement.md"
+out="$(sourced_orch handoffs_written_from implement)"
+assert_eq "handoffs_written_from implement prints the implement handoff alone" "$out" "03-implement.md"
 for p in review "done" bogus; do
-  out="$(sourced_orch handoffs_after "$p")"; st=$?
-  assert_eq "handoffs_after $p prints nothing" "$out" ""
-  assert_status "handoffs_after $p succeeds" "$st" 0
+  out="$(sourced_orch handoffs_written_from "$p")"; st=$?
+  assert_eq "handoffs_written_from $p prints nothing" "$out" ""
+  assert_status "handoffs_written_from $p succeeds" "$st" 0
 done
+
+for pair in "spec|$(writeln spec implement review "done")" \
+            "implement|$(writeln implement review "done")" \
+            "review|$(writeln review "done")" \
+            "done|done"; do
+  p="${pair%%|*}"
+  out="$(sourced_orch phases_from "$p")"; st=$?
+  assert_eq "phases_from $p prints $p and every later phase" "$out" "${pair#*|}"
+  assert_status "phases_from $p succeeds" "$st" 0
+done
+out="$(sourced_orch phases_from bogus)"; st=$?
+assert_eq "phases_from prints nothing for a phase outside the table" "$out" ""
+assert_ne "and fails" "$st" 0
 
 for pair in spec:implement implement:review review:done; do
   out="$(sourced_orch phase_next "${pair%%:*}")"; st=$?
   assert_eq "phase_next ${pair%%:*} prints ${pair#*:}" "$out" "${pair#*:}"
   assert_status "phase_next ${pair%%:*} succeeds" "$st" 0
 done
-for pair in spec:plan implement:spec review:implement; do
-  out="$(sourced_orch phase_writer "${pair%%:*}")"; st=$?
-  assert_eq "phase_writer ${pair%%:*} prints ${pair#*:}" "$out" "${pair#*:}"
-  assert_status "phase_writer ${pair%%:*} succeeds" "$st" 0
+for p in "done" bogus; do
+  out="$(sourced_orch phase_next "$p")"; st=$?
+  assert_eq "phase_next $p prints nothing" "$out" ""
+  assert_ne "phase_next $p fails" "$st" 0
 done
-for fn in phase_next phase_writer; do
+
+for cell in "handoff|spec|01-plan.md" "handoff|implement|02-spec.md" \
+            "handoff|review|03-implement.md" \
+            "writer|spec|plan" "writer|implement|spec" "writer|review|implement" \
+            "sections|spec|Decisions;Rejected alternatives;Constraints;Open assumptions" \
+            "sections|implement|Spec issue;Seams;Spec review changelog;Ticket breakdown" \
+            "sections|review|PR;Spec issue;Base SHA;Deviations;Verification"; do
+  col="${cell%%|*}"; rest="${cell#*|}"; p="${rest%%|*}"
+  out="$(sourced_orch phase_cell "$col" "$p")"; st=$?
+  assert_eq "phase_cell $col $p prints its cell" "$out" "${rest#*|}"
+  assert_status "phase_cell $col $p succeeds" "$st" 0
+done
+for col in handoff writer sections; do
   for p in "done" bogus; do
-    out="$(sourced_orch "$fn" "$p")"; st=$?
-    assert_eq "$fn $p prints nothing" "$out" ""
-    assert_ne "$fn $p fails" "$st" 0
+    out="$(sourced_orch phase_cell "$col" "$p")"; st=$?
+    assert_eq "phase_cell $col $p prints nothing" "$out" ""
+    assert_ne "phase_cell $col $p fails" "$st" 0
   done
 done
+out="$(sourced_orch phase_cell bogus spec 2>&1)"; st=$?
+assert_status "phase_cell with an unknown column dies" "$st" 1
+assert_eq "naming the column" "$out" "orch: unknown phase table column: bogus"
 
 # handoff_required, Host fallbacks left off by a pre-1.0.0 state, so only the
 # table's own headings show, in today's order.

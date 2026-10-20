@@ -3,16 +3,19 @@
 # Its tests: scripts/test/orch/handoff.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# The phase table: the one statement of the flow's phases, in flow order, and
-# of what each one consumes. One row per recorded state phase, its cells split
-# by `|`: the phase, the handoff it consumes, the writer (the phase that wrote
-# that handoff - an explicit column, never parsed out of the file name; plan is
-# a writer only, never a state phase), and that handoff's required sections,
+# The phase table: the one statement of the flow's phases' order and of what
+# each one consumes. One row per recorded state phase, its cells split by `|`:
+# the phase, the handoff it consumes, the writer (the phase that wrote that
+# handoff - an explicit column, never parsed out of the file name; plan is a
+# writer only, never a state phase), and that handoff's required sections,
 # split by `;`. done consumes nothing, so its cells are stored empty, and every
 # lookup by handoff file skips a row whose handoff is empty. A plain string,
 # read line by line: no associative or parallel arrays, so bash 3.2 runs it.
-# Every other statement of the phases derives from it, through the helpers
-# below.
+# The phase is the row key, always the first column, which is all phase_list
+# reads; the other columns are stated only in phase_cell's read, and every
+# other helper reads the table through those two. Every phase sequence derives
+# from it. A per-phase `case` that gives each phase its own message or
+# requirement (phase advance, review pass, spec review) may name phases.
 readonly PHASE_TABLE='spec|01-plan.md|plan|Decisions;Rejected alternatives;Constraints;Open assumptions
 implement|02-spec.md|spec|Spec issue;Seams;Spec review changelog;Ticket breakdown
 review|03-implement.md|implement|PR;Spec issue;Base SHA;Deviations;Verification
@@ -28,86 +31,105 @@ phase_list() {
   printf '%s\n' "$list"
 }
 
+# phase_cell <column> <phase>: <phase>'s cell in <column> of the table, the
+# column named handoff, writer or sections. Nothing, and non-zero, when the
+# cell is empty or the table does not hold <phase>; an unknown column dies.
+phase_cell() {
+  local phase handoff writer sections cell
+  case "$1" in
+    handoff|writer|sections) ;;
+    *) die "unknown phase table column: $1" ;;
+  esac
+  while IFS='|' read -r phase handoff writer sections; do
+    [ "$phase" = "$2" ] || continue
+    case "$1" in
+      handoff)  cell="$handoff" ;;
+      writer)   cell="$writer" ;;
+      sections) cell="$sections" ;;
+    esac
+    [ -n "$cell" ] || return 1
+    printf '%s\n' "$cell"
+    return 0
+  done <<<"$PHASE_TABLE"
+  return 1
+}
+
 # handoffs_due <phase>: the handoffs consumed by every row up to and including
 # <phase>, one per line - every handoff a flow at <phase> has written. A phase
 # the table does not hold prints nothing.
 handoffs_due() {
   local phase handoff due=""
-  while IFS='|' read -r phase handoff _; do
-    [ -z "$handoff" ] || due="$due$handoff"$'\n'
+  for phase in $(phase_list); do
+    if handoff="$(phase_cell handoff "$phase")"; then due="$due$handoff"$'\n'; fi
     if [ "$phase" = "$1" ]; then
       printf '%s' "$due"
       return 0
     fi
-  done <<<"$PHASE_TABLE"
+  done
 }
 
-# handoffs_after <phase>: the handoffs consumed by every row after <phase>, one
-# per line - the ones a step back to <phase> makes stale. Nothing after the
-# last handoff's row, or for a phase the table does not hold.
-handoffs_after() {
+# handoffs_written_from <phase>: the handoffs whose writer is <phase> or a
+# phase after it, one per line, in table order - the ones a step back to
+# <phase> makes stale. plan, a writer though no row, gives every handoff;
+# nothing for a name the writer column does not hold.
+handoffs_written_from() {
   local phase handoff found=0
-  while IFS='|' read -r phase handoff _; do
-    if [ "$found" = 1 ] && [ -n "$handoff" ]; then printf '%s\n' "$handoff"; fi
-    [ "$phase" != "$1" ] || found=1
-  done <<<"$PHASE_TABLE"
+  for phase in $(phase_list); do
+    handoff="$(phase_cell handoff "$phase")" || continue
+    [ "$(phase_cell writer "$phase")" != "$1" ] || found=1
+    if [ "$found" = 1 ]; then printf '%s\n' "$handoff"; fi
+  done
 }
 
 # phase_next <phase>: the phase after <phase>. Nothing, and non-zero, at the
 # last row or for a phase the table does not hold.
 phase_next() {
   local phase found=0
-  while IFS='|' read -r phase _; do
+  for phase in $(phase_list); do
     if [ "$found" = 1 ]; then
       printf '%s\n' "$phase"
       return 0
     fi
     [ "$phase" != "$1" ] || found=1
-  done <<<"$PHASE_TABLE"
+  done
   return 1
 }
 
-# phase_cell <column> <phase>: <phase>'s cell in <column> of the table,
-# counting the phase as column 0. Nothing, and non-zero, when the cell is empty
-# or the table does not hold <phase>.
-phase_cell() {
-  local -a cells
-  while IFS='|' read -r -a cells; do
-    if [ "${cells[0]-}" = "$2" ] && [ -n "${cells[$1]-}" ]; then
-      printf '%s\n' "${cells[$1]}"
-      return 0
-    fi
-  done <<<"$PHASE_TABLE"
-  return 1
+# phases_from <phase>: <phase> and every phase after it, one per line, in
+# table order. Nothing, and non-zero, for a phase the table does not hold.
+phases_from() {
+  local phase found=0
+  for phase in $(phase_list); do
+    [ "$phase" != "$1" ] || found=1
+    if [ "$found" = 1 ]; then printf '%s\n' "$phase"; fi
+  done
+  [ "$found" = 1 ]
 }
-
-# phase_writer <phase>: the phase that wrote the handoff <phase> consumes.
-# Nothing, and non-zero, at done or for a phase the table does not hold.
-phase_writer() { phase_cell 2 "$1"; }
 
 # Every review loop, however many the flow has run, reads the implement
 # handoff, so the four facts a loop runs on have exactly one authority.
 handoff_file_for() {
-  phase_cell 1 "$1" || die "no handoff defined for phase: $1"
+  phase_cell handoff "$1" || die "no handoff defined for phase: $1"
 }
 
 # A handoff missing a required section means the next phase runs blind, so the
 # boundary is where it must fail - the context to fix it still exists there.
 handoff_required() {
-  local handoff sections
-  while IFS='|' read -r _ handoff _ sections; do
-    if [ -n "$handoff" ] && [ "$handoff" = "$1" ]; then
-      while [ -n "$sections" ]; do
-        printf '## %s\n' "${sections%%;*}"
-        case "$sections" in
-          *";"*) sections="${sections#*;}" ;;
-          *) sections="" ;;
-        esac
-      done
-      if host_fallbacks_required; then printf '%s\n' '## Host fallbacks'; fi
-      return 0
-    fi
-  done <<<"$PHASE_TABLE"
+  local phase handoff sections
+  for phase in $(phase_list); do
+    handoff="$(phase_cell handoff "$phase")" || continue
+    [ "$handoff" = "$1" ] || continue
+    sections="$(phase_cell sections "$phase")" || sections=""
+    while [ -n "$sections" ]; do
+      printf '## %s\n' "${sections%%;*}"
+      case "$sections" in
+        *";"*) sections="${sections#*;}" ;;
+        *) sections="" ;;
+      esac
+    done
+    if host_fallbacks_required; then printf '%s\n' '## Host fallbacks'; fi
+    return 0
+  done
   die "unknown handoff file: $1"
 }
 

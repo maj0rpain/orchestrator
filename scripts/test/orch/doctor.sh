@@ -1614,6 +1614,20 @@ assert_eq "at an invalid phase no phase-listed check reports" \
   "$(phase_reports bogus | tr '\n' ' ')" "pr "
 restore_suite_env
 
+# A `<phase>+` element stands for <phase> and every later phase in the table,
+# on any element of an entry's list; one naming a phase the table does not
+# hold dies naming its entry, so a typo can never quietly disable a check.
+registry='a:implement+ b:review,spec+ c'
+assert_eq "at spec a + entry from a later phase is filtered out" \
+  "$(sourced_orch d_entries_at "$registry" spec)" "b c "
+assert_eq "at implement a + entry from implement applies" \
+  "$(sourced_orch d_entries_at "$registry" implement)" "a b c "
+assert_eq "at done every + entry applies" \
+  "$(sourced_orch d_entries_at "$registry" "done")" "a b c "
+out="$(sourced_orch d_entries_at 'a:implemnt+' implement 2>&1)"; st=$?
+assert_status "a + element naming an unknown phase dies" "$st" 1
+assert_contains "naming the entry" "$out" "orch: a:implemnt+"
+
 # --- doctor: base branch check -----------------------------------------------
 # A set base branch that has vanished from origin is the one stale setting that
 # would send the next flow's fork and PR at nothing, so it FAILs; origin being
