@@ -317,6 +317,67 @@ assert_gh_dies "a failed close still exits 1" adapter_issue_close "$GH_502" 1 \
   "$ORCH" ticket close "$n"
 restore_suite_env
 
+# A ticket whose ticket worktree exists is closed only once its ticket branch
+# has merged into its forked-from branch (#1146).
+tw_repo
+fake_github
+fake_issue 7 open
+wt="$("$ORCH" ticket-worktree add 7)"
+echo one >"$wt/ticket.txt" && git -C "$wt" add ticket.txt && git -C "$wt" commit -qm one
+out="$("$ORCH" ticket close 7 2>&1)"; st=$?
+assert_status "close refuses a ticket whose ticket branch is unmerged" "$st" 1
+assert_contains "naming the ticket branch and its forked-from branch" "$out" \
+  "orch: branch orch/5-feature--t7 is not merged into orch/5-feature - merge it first, or pass --unmerged to close it anyway"
+assert_eq "leaving the issue open" "$(fake_state_of 7)" "OPEN"
+
+out="$("$ORCH" ticket close 7 --bogus 2>&1)"; st=$?
+assert_status "close refuses an unknown flag" "$st" 1
+assert_contains "with the usage line" "$out" "usage: orch.sh ticket close <n> [--unmerged]"
+assert_eq "leaving the issue open" "$(fake_state_of 7)" "OPEN"
+
+out="$("$ORCH" ticket close --unmerged 7 2>&1)"; st=$?
+assert_status "close --unmerged closes an unmerged ticket anyway" "$st" 0
+assert_eq "closing it" "$(fake_state_of 7)" "CLOSED"
+
+# Merged by ticket merge: closes.
+fake_issue 8 open
+wt="$("$ORCH" ticket-worktree add 8)"
+echo two >"$wt/ticket8.txt" && git -C "$wt" add ticket8.txt && git -C "$wt" commit -qm two
+"$ORCH" ticket merge 8 >/dev/null 2>&1
+out="$("$ORCH" ticket close 8 2>&1)"; st=$?
+assert_status "close closes a ticket merged by ticket merge" "$st" 0
+assert_eq "closing it" "$(fake_state_of 8)" "CLOSED"
+
+# No forked-from branch recorded: refused.
+fake_issue 9 open
+wt="$("$ORCH" ticket-worktree add 9)"
+git config --unset branch.orch/5-feature--t9.orchestrator-ticket-parent
+out="$("$ORCH" ticket close 9 2>&1)"; st=$?
+assert_status "close refuses a ticket branch recording no forked-from branch" "$st" 1
+assert_contains "with the --unmerged hint" "$out" \
+  "orch: branch orch/5-feature--t9 records no forked-from branch - pass --unmerged to close it anyway"
+assert_eq "leaving the issue open" "$(fake_state_of 9)" "OPEN"
+
+# Detached HEAD: refused.
+fake_issue 10 open
+wt="$("$ORCH" ticket-worktree add 10)"
+git -C "$wt" checkout -q --detach
+out="$("$ORCH" ticket close 10 2>&1)"; st=$?
+assert_status "close refuses a ticket worktree on a detached HEAD" "$st" 1
+assert_contains "naming it" "$out" "orch: ticket worktree $wt is not on a branch (detached HEAD)"
+assert_eq "leaving the issue open" "$(fake_state_of 10)" "OPEN"
+
+# A leftover t<n> directory that is not a worktree: closes as today.
+fake_issue 11 open
+mkdir -p .orchestrator/worktrees/t11
+out="$("$ORCH" ticket close 11 2>&1)"; st=$?
+assert_status "close ignores a leftover t<n> directory that is not a worktree" "$st" 0
+assert_eq "closing it" "$(fake_state_of 11)" "CLOSED"
+
+assert_contains "the usage text lists ticket close <n> [--unmerged]" \
+  "$("$ORCH" help 2>&1)" "ticket close <n> [--unmerged]"
+restore_suite_env
+
 # --- ticket reset ------------------------------------------------------------
 # Reopens every sub-issue of <parent> that is currently closed, and only
 # those - what redo review needs before handing back to a fresh implement
