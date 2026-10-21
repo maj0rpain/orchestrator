@@ -540,11 +540,14 @@ cmd_ticket() {
 
 # The checkout that has <branch> checked out, or nothing: the first checkout
 # the walk lists on <branch>, a worktree whose directory is gone included.
+# Dies when the checkouts cannot be read; called in a substitution, so its
+# caller carries that status out.
 branch_checkout() {
-  local _kind _flow branch path
+  local list _kind _flow branch path
+  list="$(checkouts)" || die "could not read the checkouts - git worktree list failed"
   while read -r _kind _flow branch path; do
     if [ "$branch" = "$1" ]; then note "$path"; return 0; fi
-  done < <(checkouts)
+  done <<<"$list"
 }
 
 # Lands ticket <n>'s branch on the branch it was forked from: rebases it onto
@@ -565,7 +568,7 @@ cmd_ticket_merge() {
     || die "branch $branch records no forked-from branch"
   require_clean_tree "$path" \
     "ticket worktree $path is dirty - commit or discard its changes first"
-  parent_checkout="$(branch_checkout "$parent")"
+  parent_checkout="$(branch_checkout "$parent")" || exit $?
   [ -n "$parent_checkout" ] \
     || die "$parent, the branch $branch was forked from, is checked out nowhere - check it out first"
   require_clean_tree "$parent_checkout" \

@@ -193,6 +193,16 @@ on_disk() { if [ -e "$1" ]; then echo present; else echo absent; fi; }
 exclude_count() { grep -cxF "$1" "$(git rev-parse --git-common-dir)/info/exclude" || true; }
 
 writeln() { printf '%s\n' "$@"; }
+# nowalk_bin: a new directory holding a git that fails `worktree list` alone
+# and passes every other call through; first on PATH, it fails the checkouts
+# walk and nothing else.
+nowalk_bin() {
+  local dir
+  dir="$(mktemp -d)"
+  writeln '#!/bin/sh' '[ "$1 $2" = "worktree list" ] && exit 1' "exec $(command -v git) \"\$@\"" >"$dir/git"
+  chmod +x "$dir/git"
+  printf '%s\n' "$dir"
+}
 # break_index / restore_index: make the current repo's working tree
 # unreadable - git status fails on a garbage index - and put the index back.
 break_index() { cp .git/index .git/index.bak && echo garbage >.git/index; }

@@ -52,7 +52,8 @@ finished_flow() {
   [ -n "$branch" ] || { verdict="no branch"; return 1; }
   pr="$(state_get_in "$state" pr)"
   [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
-  base="$(flow_base_in "$state")"
+  base="$(flow_base_in "$state")" \
+    || { verdict="could not read the base branch from $state"; return 2; }
   pr_state_draft_read "$pr" pr_state _is_draft err \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   if [ "$pr_state" != MERGED ]; then
@@ -117,18 +118,34 @@ FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass)
 # <archive-root> is the caller's: a side checkout's flow goes to the main
 # checkout's archive; any other checkout, a hand-made worktree included,
 # archives in place (see archive_root).
+#
+# Every step checks its own status, since its callers run it where errexit is
+# off: a failed slug read, archive-directory creation or move dies naming the
+# path. state.json moves last, so a move failing partway leaves the flow
+# recognisable where it stands - the entries already moved stay in the new
+# archive directory, the rest in place, the message naming both - and a rerun
+# archives what is left into a fresh directory. There is no rollback.
 archive_flow() {
-  local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" slug dest entry kept
+  local root="$1" orch="$1/$ORCH_DIR_NAME" home="$2/$ORCH_DIR_NAME" state slug dest entry kept i
+  local entries=() moved
+  state="$(flow_state_file "$root")"
   refuse_ticket_worktrees "$root"
-  slug="$(state_get_in "$(flow_state_file "$root")" slug)"
+  slug="$(state_get_in "$state" slug)" || die "could not read the flow's slug from $state - nothing was archived"
   dest="$home/archive/$(dir_stamp)-$slug"
-  mkdir -p "$dest"
+  mkdir -p "$dest" 2>/dev/null || die "could not create the archive directory $dest - nothing was archived"
   for entry in "$orch"/*; do
     [ -e "$entry" ] || continue
     for kept in "${FLOW_LESS_ENTRIES[@]}"; do
       [ "$(basename "$entry")" = "$kept" ] && continue 2
     done
-    mv "$entry" "$dest/"
+    [ "$entry" = "$state" ] || entries+=("$entry")
+  done
+  [ ! -e "$state" ] || entries+=("$state")
+  for i in "${!entries[@]}"; do
+    if ! mv "${entries[i]}" "$dest/" 2>/dev/null; then
+      moved="${entries[*]:0:i}"
+      die "could not move ${entries[i]} into $dest - moved there: ${moved:-nothing}; left in place: ${entries[*]:i}"
+    fi
   done
   note "${dest#"$ROOT"/}"
 }
@@ -210,13 +227,14 @@ cmd_side_checkout_add() {
 # other: <slug> <path>, then what it holds (see checkout_holding).
 cmd_side_checkout_list() {
   [ $# -eq 0 ] || die "usage: orch.sh side-checkout list"
-  local kind _flow _branch path issue quick
+  local list kind _flow _branch path issue quick
+  list="$(checkouts)" || die "could not read the checkouts - git worktree list failed"
   while read -r kind _flow _branch path; do
     [ "$kind" = side ] || continue
     quick=""
     if issue="$(side_checkout_issue "$path")"; then quick=" quick #$issue"; fi
     note "${path##*/} $path $(checkout_holding "$path")$quick"
-  done < <(checkouts)
+  done <<<"$list"
 }
 
 # Prints the issue the current side checkout records (see side-checkout add
@@ -278,10 +296,11 @@ cmd_side_checkout_prune() {
   # archive_out is this entry's archive_flow output - its note, or its error -
   # cleared at the top of each entry so none outlives its own.
   local archive_out remove_err branch_err
-  local kind flow _kind _flow _branch walk=() finished=()
+  local list kind flow _kind _flow _branch walk=() finished=()
   here="$(pwd -P)"
   # The walk lists the main checkout first.
-  mapfile -t walk < <(checkouts)
+  list="$(checkouts)" || die "could not read the checkouts - nothing was removed"
+  mapfile -t walk <<<"$list"
   main_root=""
   # The parse main_checkout makes, repeated on the walk already held rather
   # than walking again.

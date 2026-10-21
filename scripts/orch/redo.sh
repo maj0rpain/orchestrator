@@ -55,6 +55,8 @@ cmd_redo_review() {
     malformed)
       die "the review loop's last iteration ($i) has a malformed terminal state - rewrite the first line of $(cmd_review path "$i") in the shape below; redo only runs once a loop actually ends.
 $detail" ;;
+    unreadable)
+      die "cannot read the review loop's terminal state: $detail" ;;
     stop) ;;
     *) die "review_terminal_state answered something redo does not know: $word" ;;
   esac

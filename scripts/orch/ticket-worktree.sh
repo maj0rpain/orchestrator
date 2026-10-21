@@ -32,14 +32,16 @@ forked_from_key() { printf 'branch.%s.orchestrator-ticket-parent\n' "$1"; }
 # recorded.
 forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
 
-# Prints <n> <path> for every ticket worktree under the checkout at <root>.
+# Prints <n> <path> for every ticket worktree under the checkout at <root>;
+# dies when the checkouts cannot be read, never reading that as none.
 ticket_worktrees_under() {
-  local _kind _flow _branch path name
+  local list _kind _flow _branch path name
+  list="$(checkouts)" || die "could not read the checkouts - git worktree list failed"
   while read -r _kind _flow _branch path; do
     checkout_ticket_path "$path" "$1" || continue
     name="${path##*/}"
     note "${name#t} $path"
-  done < <(checkouts)
+  done <<<"$list"
 }
 
 # refuse_ticket_worktrees <root>: dies, naming every ticket worktree under the
@@ -47,7 +49,8 @@ ticket_worktrees_under() {
 # break git's record of each one, and removing the checkout would delete them.
 refuse_ticket_worktrees() {
   local left
-  left="$(ticket_worktrees_under "$1")"
+  # Its die exits only the substitution, so its status is carried out here.
+  left="$(ticket_worktrees_under "$1")" || exit $?
   [ -n "$left" ] || return 0
   die "ticket worktrees are left under $1 - moving them would break git's record of them:
 $(while read -r n path; do printf '       %s (orch.sh ticket-worktree remove %s)\n' "$path" "$n"; done <<<"$left")

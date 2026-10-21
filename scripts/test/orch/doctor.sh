@@ -938,7 +938,8 @@ git worktree add -q -b nf-other "$nf_linked"
 out="$("$ORCH" doctor 2>&1)"; st=$?
 assert_leftover_reported "bare doctor with no flow" "$nf_top" "$st" "$out"
 assert_contains "still states there is no flow" "$out" "ok    no active flow"
-assert_not_contains "another checkout's ticket worktree is not reported with no flow" "$out" "t13"
+assert_not_contains "another checkout's ticket worktree is not reported with no flow" "$out" \
+  "$nf_linked/.orchestrator/worktrees/t13"
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "--flow still refuses with no flow and a leftover" "$st" 1
 assert_contains "still says why it cannot answer" "$out" "no active flow"
@@ -1191,7 +1192,7 @@ git worktree add -q -b orch/9-other "$tw_linked"
 (cd "$tw_linked" && "$ORCH" ticket-worktree add 13 >/dev/null)
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "another checkout's ticket worktree does not fail doctor --flow" "$st" 0
-assert_not_contains "nor is it reported" "$out" "t13"
+assert_not_contains "nor is it reported" "$out" "$tw_linked/.orchestrator/worktrees/t13"
 (cd "$tw_linked" && "$ORCH" ticket-worktree remove 13)
 git worktree remove "$tw_linked"
 git branch -q -D orch/9-other
@@ -1315,6 +1316,9 @@ assert_not_contains "says nothing for a flow not at done" "$out" "side checkout 
 assert_contains "and prints no FAIL" "$(printf '%s\n' "$out" | tail -1)" " 0 FAIL"
 out_in="$(cd "$dopen" && "$ORCH" doctor --env 2>&1)"
 assert_contains "warns the same from inside a side checkout" "$out_in" "orch.sh side-checkout remove dfin"
+out="$(PATH="$(nowalk_bin):$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "doctor --env fails when the checkouts cannot be read (#1333)" "$st" 1
+assert_contains "reporting it as a FAIL" "$out" "FAIL  could not read the checkouts"
 
 fake_offline
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
@@ -1430,6 +1434,15 @@ state_fixture iteration 5
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "at budget with no terminal record warns rather than fails" "$st" 0
 assert_contains "reads as interrupted, not pending" "$out" "looks interrupted, not stopped"
+
+# A review directory that cannot be made fails, naming it (#1334).
+rm -rf .orchestrator/review
+: >.orchestrator/review
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a review directory that cannot be made fails" "$st" 1
+assert_contains "with a FAIL line naming its path" "$out" \
+  "FAIL  review loop's terminal state cannot be read: cannot create the review directory $(pwd -P)/.orchestrator/review"
+rm -f .orchestrator/review
 
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05.md

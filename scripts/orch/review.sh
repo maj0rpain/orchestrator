@@ -21,10 +21,11 @@ ORCH_CI_INTERVAL="${ORCH_CI_INTERVAL:-10}"
 readonly DEFAULT_BUDGET=5
 
 # review_budget: prints the flow's review budget from state, or DEFAULT_BUDGET
-# where none is set or the value is not a number.
+# where none is set or the value is not a number. Returns the read's status
+# when state.json cannot be read, never a default in its place.
 review_budget() {
   local b
-  b="$(state_get budget)"
+  b="$(state_get budget)" || return
   case "$b" in ''|*[!0-9]*) b="$DEFAULT_BUDGET" ;; esac
   printf '%s\n' "$b"
 }
@@ -70,10 +71,11 @@ ci_probe() {
 # the same section_body/required-heading pattern handoff_report already uses,
 # not a second implementation of it. Prints the classification word on the
 # first line, and for `stop`, the recorded reason on the lines after it; for
-# `malformed`, the one expected-shape line callers quote rather than copy.
-# Exit status is 0 for ready/stop, non-zero for none/pending/interrupted/
-# malformed - a single boolean a caller can act on without re-deriving which
-# words count as terminal.
+# `malformed`, the one expected-shape line callers quote rather than copy;
+# for `unreadable`, what could not be read - the iteration or the record's
+# path. Exit status is 0 for ready/stop, non-zero for none/pending/
+# interrupted/malformed/unreadable - a single boolean a caller can act on
+# without re-deriving which words count as terminal.
 #
 # The section is read as markdown is written: blank lines under the heading
 # are skipped, the first line is trimmed, and `stop` may carry its reason on
@@ -83,11 +85,17 @@ ci_probe() {
 # of it, the same absence is pending.
 review_terminal_state() {
   require_state
-  local i b path sec="" line started="" body="" first_raw first rest after s sep
-  i="$(state_get iteration)"
-  b="$(review_budget)"
+  local i b path err sec="" line started="" body="" first_raw first rest after s sep
+  # Its callers run it in `$(...) || true`, where errexit is off, so each read
+  # is checked here: a failure answers unreadable, never pending/interrupted.
+  i="$(state_get iteration)" \
+    || { note unreadable; note "cannot read iteration from $STATE"; return 1; }
+  b="$(review_budget)" \
+    || { note unreadable; note "cannot read budget from $STATE"; return 1; }
   if [ "$i" -eq 0 ]; then note none; return 1; fi
-  path="$(cmd_review path "$i")"
+  # The detail is cmd_review path's own last orch: line.
+  capture path err cmd_review path "$i" \
+    || { note unreadable; note "${err##*orch: }"; return 1; }
   # A loop can stop short of its budget (a failed base sync goes straight to
   # Termination), so a recorded terminal state is read whatever the
   # iteration; only its absence depends on the budget - pending before it is
@@ -403,7 +411,7 @@ cmd_review() {
       n=$((10#$n))
       # Flat, and numbered on across every loop the flow runs: one flow, one
       # trail, and nothing is ever moved aside for a loop that comes later.
-      mkdir -p "$REVIEW_DIR"
+      mkdir -p "$REVIEW_DIR" || die "cannot create the review directory $REVIEW_DIR"
       printf '%s/iteration-%02d.md\n' "$REVIEW_DIR" "$n"
       ;;
     file)

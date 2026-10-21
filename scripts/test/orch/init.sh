@@ -322,6 +322,17 @@ assert_eq "nothing is archived" \
   "$([ -e .orchestrator/archive ] && echo present || echo absent)" "absent"
 "$ORCH" ticket-worktree remove 6
 
+# #1333: an archive that cannot be written stops init, the old flow untouched.
+fresh_flow first
+state_fixture phase "done"
+top="$(git rev-parse --show-toplevel)"
+state_before="$(cat .orchestrator/state.json)"
+: >.orchestrator/archive
+out="$("$ORCH" init second 2>&1)"; st=$?
+assert_status "init over a done flow dies when the archive cannot be written" "$st" 1
+assert_contains "naming the archive path" "$out" "orch: could not create the archive directory $top/.orchestrator/archive/"
+assert_eq "the old flow's state is untouched" "$(cat .orchestrator/state.json)" "$state_before"
+
 healthy_repo
 out="$("$ORCH" init nothing-to-archive)"
 assert_eq "with no prior flow, stdout is still just the slug" "$out" "nothing-to-archive"

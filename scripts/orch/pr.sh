@@ -31,8 +31,14 @@ open_pr() {
   # branch, so a PR into any other base branch refers to its issue instead of
   # claiming to close it - the release PR is what closes it.
   [ "$base" = "$(default_branch)" ] || keyword=Refs
-  tmp="$(mktemp)"
-  { printf '%s #%s\n\n' "$keyword" "$issue"; cat "$body_file"; } >"$tmp"
+  # open_pr runs in $(...), where errexit is off (#1327), so the temp body's
+  # creation and write are checked here: an unreadable body file would
+  # otherwise open the PR with only its closing line.
+  tmp="$(mktemp)" || die "could not create a temp file for the PR body - no PR was opened"
+  { printf '%s #%s\n\n' "$keyword" "$issue" && cat "$body_file"; } >"$tmp" || {
+    rm -f "$tmp"
+    die "could not write the PR body from $body_file - no PR was opened"
+  }
   if ! capture pr err adapter_pr_create "$base" "$branch" "$title" "$tmp" ${create_opts[@]+"${create_opts[@]}"}; then
     rm -f "$tmp"
     gh_die "open the PR for branch $branch (issue #$issue)" "$err"
@@ -80,7 +86,7 @@ cmd_pr_open() {
   require_state
   local usage="usage: orch.sh pr open <title> <body-file> [--label <name>]..." labels=()
   [ $# -ge 2 ] || die "$usage"
-  local title="$1" body_file="$2" issue branch pr
+  local title="$1" body_file="$2" issue branch base pr
   shift 2
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -91,9 +97,10 @@ cmd_pr_open() {
   [ -f "$body_file" ] || die "body file not found: $body_file"
   require_issue issue
   require_branch branch
+  base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
   # Draft is the honest signal: the review loop has not run yet, so marking it
   # ready is the loop's success condition rather than a comment nobody reads.
-  pr="$(open_pr "$branch" "$(flow_base)" "$issue" "$title" "$body_file" true ${labels[@]+"${labels[@]}"})"
+  pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" true ${labels[@]+"${labels[@]}"})"
   state_write pr "$pr"
   pr_labels_check "$pr" ${labels[@]+"${labels[@]}"}
   note "$pr"
@@ -236,11 +243,14 @@ cmd_pr_ready() {
 # (true or false), one per line. Returns 1, printing nothing, when the branch
 # has no open PR, as current_open_pr does.
 open_pr_draft_flag() {
-  local branch phase pr _pr_state is_draft err
+  local branch phase pr _pr_state is_draft err rc=0
   current_branch_or_die die2
-  if phase="$(flow_holding_phase "$branch")"; then
-    die2 "the active flow holds $branch at phase $phase - its PR changes state only through the review loop"
-  fi
+  phase="$(flow_holding_phase "$branch")" || rc=$?
+  case "$rc" in
+    0) die2 "the active flow holds $branch at phase $phase - its PR changes state only through the review loop" ;;
+    1) ;;
+    *) die2 "state.json cannot be read - run orch.sh doctor --flow" ;;
+  esac
   pr="$(current_open_pr)" || return $?
   pr_state_draft_read "$pr" _pr_state is_draft err \
     || gh_die --exit 2 "read PR #$pr" "$err"

@@ -1033,6 +1033,17 @@ assert_eq "and left clean" "$(git status --porcelain)" ""
 out="$("$ORCH" ticket-worktree remove 7)"; st=$?
 assert_status "a merged ticket's worktree then removes without --unmerged" "$st" 0
 
+# A walk that fails stops merge before anything moves (#1333), rather than
+# reading the forked-from branch as checked out nowhere.
+tw_repo
+wt="$("$ORCH" ticket-worktree add 7)"
+tm_commit "$wt" ticket.txt one
+flow_tip="$(git rev-parse orch/5-feature)"
+out="$(PATH="$(nowalk_bin):$PATH" "$ORCH" ticket merge 7 2>&1)"; st=$?
+assert_status "merge dies when the checkouts cannot be read" "$st" 1
+assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts"
+assert_eq "the forked-from branch stays at its prior tip" "$(git rev-parse orch/5-feature)" "$flow_tip"
+
 # Conflict: both sides change the same line.
 tw_repo
 wt="$("$ORCH" ticket-worktree add 7)"

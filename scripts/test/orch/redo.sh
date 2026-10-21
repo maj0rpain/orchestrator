@@ -75,6 +75,16 @@ out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "refuses a budget-spent loop with no terminal record" "$st" 1
 assert_contains "reading as interrupted, distinct from pending" "$out" "looks interrupted, not stopped"
 
+# A review directory that cannot be made is named, never read as interrupted (#1334).
+rm -rf .orchestrator/review
+: >.orchestrator/review
+out="$("$ORCH" redo review 2>&1)"; st=$?
+assert_status "refuses a review directory that cannot be made" "$st" 1
+assert_contains "naming its path" "$out" \
+  "orch: cannot read the review loop's terminal state: cannot create the review directory $(pwd -P)/.orchestrator/review"
+assert_not_contains "rather than reading as interrupted" "$out" "interrupted"
+rm -f .orchestrator/review
+
 # A malformed record is refused before anything moves, with the rewrite to do.
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'Stop' 'CI failed twice.' >.orchestrator/review/iteration-05.md

@@ -101,10 +101,12 @@ phase_write() {
 # base was recorded has none, and always forked from the default branch.
 flow_base() { flow_base_in "$STATE"; }
 
-# flow_base against another checkout's state file <file>.
+# flow_base against another checkout's state file <file>. A state file that
+# cannot be read returns the read's failure: the default branch stands in
+# only for a readable state that records no base.
 flow_base_in() {
   local b
-  b="$(state_get_in "$1" base)"
+  b="$(state_get_in "$1" base)" || return
   if [ -n "$b" ]; then printf '%s\n' "$b"; else default_branch; fi
 }
 
@@ -113,16 +115,22 @@ flow_active() { flow_state_active "$STATE"; }
 
 # flow_holding_phase <branch> [issue]: prints the phase of the active flow
 # (phase not done) when it holds the branch, or the issue where one is given,
-# and fails printing nothing otherwise. A branch or issue an active flow holds
-# belongs to it (ADR-0029), so review-pass begin and pr draft/ready refuse it,
-# each with its own message. Reads state.json only when one exists.
+# and returns 0. Returns 1 printing nothing when no active flow holds them,
+# and 2 when state.json cannot be read - so the guard fails closed. A branch
+# or issue an active flow holds belongs to it (ADR-0029), so review-pass begin
+# and pr draft/ready refuse it, each with its own message, and refuse status 2
+# too. Reads state.json only when one exists. Every
+# read is checked here: callers run it in `$(...) ||`, where errexit is off.
 flow_holding_phase() {
-  local branch="$1" issue="${2:-}" phase
+  local branch="$1" issue="${2:-}" phase held_branch held_issue
   flow_active || return 1
-  phase="$(state_get phase)"
-  [ "$(state_get branch)" = "$branch" ] \
-    || { [ -n "$issue" ] && [ "$(state_get issue)" = "$issue" ]; } \
-    || return 1
+  phase="$(state_get phase)" || return 2
+  held_branch="$(state_get branch)" || return 2
+  if [ "$held_branch" != "$branch" ]; then
+    [ -n "$issue" ] || return 1
+    held_issue="$(state_get issue)" || return 2
+    [ "$held_issue" = "$issue" ] || return 1
+  fi
   printf '%s\n' "$phase"
 }
 

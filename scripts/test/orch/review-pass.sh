@@ -75,6 +75,12 @@ assert_eq "state.json byte-identical after begin" "$(cksum <"$rp_state")" "$befo
 rp_flow implement 14 '"orch/14-x"'
 out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
 assert_status "an active flow on another issue and branch lets it through" "$st" 0
+printf '{\n' >"$rp_state"
+out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
+assert_status "a state.json that cannot be read refuses it (#1334)" "$st" 1
+assert_contains "naming doctor --flow" "$out" \
+  "orch: state.json cannot be read - run orch.sh doctor --flow"
+assert_not_contains "printing no report prefix" "$out" "$rp_dir/iteration-"
 rm -f "$rp_state"
 
 for args in "" "abc" "12x" "../12" "12 13"; do
