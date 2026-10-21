@@ -292,12 +292,16 @@ bash "$ORCH" spec-review check <dir>
 every anchor - each item's and each option's - matching once in the body,
 then still matching once in a dry run of the **Apply all** answer. On exit 0
 it prints the compact batch view on stdout - the lens lines, ran or not run
-with the reason, then the material items as one numbered list in batch
-order, consolidation items first, each numbered as in `batch.md` and with no
-`### Item` heading. Each entry is its header line - `<n>. **<Group>** -
-<summary> (apply)`, `<n>. **<Group>** - <summary> (recommend decline:
-<reason>)`, or for a decision item `<n>. **<Group>** (decision, option <L>
-recommended)` - then indented sub-bullets: `why:` and its `@@ why` line;
+with the reason, then the material items as one bulleted list in batch
+order, consolidation items first, each under its `batch.md` number and with
+no `### Item` heading. The number is written literally, in bold after the
+bullet, never as a Markdown ordered-list number, which a renderer would
+recount from the first item, so the number a human reads is the number
+their answer names. Each entry is its header line - `- **<n>** -
+**<Group>** - <summary> (apply)`, `- **<n>** - **<Group>** - <summary>
+(recommend decline: <reason>)`, or for a decision item `- **<n>** -
+**<Group>** (decision, option <L> recommended)` - then sub-bullets indented
+a fixed 2 spaces, whatever the number's width: `why:` and its `@@ why` line;
 `findings:` and the findings it cites by lens title and number, e.g.
 `Fidelity 1, Consistency 4`, then its comments as `comment by @<login>,
 <createdAt>` (labelled `comments:` when it cites only comments), never their
@@ -308,11 +312,12 @@ or fewer unchanged words apart share one span. An edit of more than 40
 changed words is the one line `rewritten, <N> words, see full view`, and an
 edit that changes no word `whitespace only, see full view`. A decision item
 gets one sub-bullet per option, `Option <L> - <label>: <summary>`, ` (recommended)`
-after the recommended one's label, its diff nested beneath. Then, under a
+after the recommended one's label, its diff nested beneath, 4 spaces in. Then, under a
 `### Minor edits` heading, every minor and resolved item one line each, in
-batch order: `<n>. <Group>: <summary>`, a recommend-decline minor item's
-line ending `- recommend decline: <reason>`, and a resolved item's reading
-`<n>. <Group>: resolved by item <m>`. The heading is left out when no item
+batch order: `- **<n>** - <Group>: <summary>`, a recommend-decline minor
+item's line ending `- recommend decline: <reason>`, and a resolved item's
+reading `- **<n>** - <Group>: resolved by item <m>`. No line of the view
+starts with `<digits>. `. The heading is left out when no item
 is minor or resolved, and the item numbers stay the one sequence of
 `batch.md`. `check <dir> --full <n>...` validates the batch the same way,
 then prints only the named items, any of them, minor or resolved included,
