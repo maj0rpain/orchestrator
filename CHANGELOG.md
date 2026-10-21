@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.20.11
+
+The spec review's compact view now prints each item's batch number literally, as `- **<n>** - ...`, instead of as a Markdown ordered-list number a chat renderer recounts from the first item, so the number a human reads is the number their `-3`, `+4` or `show 5` answer names; a material item's sub-bullets sit a fixed 2 spaces in, whatever its number's width (#1339).
+
 ## 4.20.10
 
 orch.sh no longer carries on past a failed step where bash turns errexit off: the flow archive, the flow-holding guard, the flow's base read, the review loop's terminal-state read and its budget read, `review path`, the PR and triage-comment bodies, and every walk of the repo's checkouts now check each step's status and stop with an `orch:` message naming it. A harness lint rejects a `local`, `export`, `declare` or `readonly` that carries a `$(...)` assignment, so that form of losing a substitution's status cannot come back (#1327).
