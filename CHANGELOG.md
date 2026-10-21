@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.20.10
+
+orch.sh no longer carries on past a failed step where bash turns errexit off: the flow archive, the flow-holding guard, the flow's base read, the review loop's terminal-state read and its budget read, `review path`, the PR and triage-comment bodies, and every walk of the repo's checkouts now check each step's status and stop with an `orch:` message naming it. A harness lint rejects a `local`, `export`, `declare` or `readonly` that carries a `$(...)` assignment, so that form of losing a substitution's status cannot come back (#1327).
+
 ## 4.20.9
 
 `doctor --flow` no longer warns that a pushed, tracked flow branch is not on origin when a local branch or tag named `origin/<branch>` sits beside it: every orch.sh read of a branch's upstream now reads the full ref (#1331).
