@@ -519,10 +519,14 @@ check_base_branch() {
 # With no side checkout there is nothing to ask GitHub, so the gate - and a
 # skip with GitHub unreachable - only counts once one exists.
 check_side_checkouts_finished() {
-  local kind _flow _branch path found=() verdict branch rc
+  local list kind _flow _branch path found=() verdict branch rc
+  if ! list="$(checkouts)"; then
+    d_fail "could not read the checkouts - git worktree list failed, so no side checkout could be checked."
+    return 0
+  fi
   while read -r kind _flow _branch path; do
     if [ "$kind" = side ]; then found+=("$path"); fi
-  done < <(checkouts)
+  done <<<"$list"
   [ "${#found[@]}" -gt 0 ] || return 0
   d_gh_gate || return 0
   for path in "${found[@]}"; do

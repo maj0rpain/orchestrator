@@ -27,12 +27,13 @@ cmd_status() {
 # flow and a quick implementation in the main checkout hold no flow and carry
 # no marker, so they never appear; with nothing to list, nothing is printed.
 status_others() {
-  local kind flow _branch path lines=""
+  local list kind flow _branch path lines=""
+  list="$(checkouts)" || die "could not read the checkouts - git worktree list failed"
   while read -r kind flow _branch path; do
     [ "$path" != "$ROOT" ] || continue
     [ "$flow" = 1 ] || [ "$kind" = side ] || continue
     lines+="  $path $(checkout_holding "$path")"$'\n'
-  done < <(checkouts)
+  done <<<"$list"
   [ -n "$lines" ] || return 0
   note ""
   note "other checkouts:"

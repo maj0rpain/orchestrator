@@ -1315,6 +1315,9 @@ assert_not_contains "says nothing for a flow not at done" "$out" "side checkout 
 assert_contains "and prints no FAIL" "$(printf '%s\n' "$out" | tail -1)" " 0 FAIL"
 out_in="$(cd "$dopen" && "$ORCH" doctor --env 2>&1)"
 assert_contains "warns the same from inside a side checkout" "$out_in" "orch.sh side-checkout remove dfin"
+out="$(PATH="$(nowalk_bin):$PATH" "$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "doctor --env fails when the checkouts cannot be read (#1333)" "$st" 1
+assert_contains "reporting it as a FAIL" "$out" "FAIL  could not read the checkouts"
 
 fake_offline
 out="$("$ORCH" doctor --env 2>&1)"; st=$?

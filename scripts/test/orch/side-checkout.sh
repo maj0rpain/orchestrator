@@ -369,9 +369,7 @@ git branch -q -D main--t42
 
 # A walk that fails archives nothing: archive and init die, the flow left in
 # place (#1110). A git on PATH that fails `worktree list` alone fails the walk.
-nowalk="$(mktemp -d)"
-writeln '#!/bin/sh' '[ "$1 $2" = "worktree list" ] && exit 1' "exec $(command -v git) \"\$@\"" >"$nowalk/git"
-chmod +x "$nowalk/git"
+nowalk="$(nowalk_bin)"
 (cd "$hand" && orch_gh_failing init walk-flow >/dev/null && state_fixture phase "done")
 out="$(cd "$hand" && PATH="$nowalk:$PATH" orch_gh_failing archive 2>&1)"; st=$?
 assert_status "archive dies when the walk fails" "$st" 1
@@ -382,6 +380,17 @@ assert_status "init over a done flow dies when the walk fails" "$st" 1
 assert_contains "naming the checkouts" "$out" "could not read the checkouts - nothing was archived or written"
 assert_eq "archiving nothing" "$(archived_count "$hand" walk-flow)" "0"
 assert_eq "the flow stays" "$(cd "$hand" && orch_gh_failing state get slug)" "walk-flow"
+# Every other reader of the walk stops on it too, rather than reading it as no
+# checkouts (#1333).
+out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout list 2>&1)"; st=$?
+assert_status "side-checkout list dies when the walk fails" "$st" 1
+assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts"
+out="$(PATH="$nowalk:$PATH" orch_gh_failing side-checkout prune 2>&1)"; st=$?
+assert_status "side-checkout prune dies when the walk fails" "$st" 1
+assert_contains "saying nothing was removed" "$out" "orch: could not read the checkouts - nothing was removed"
+out="$(PATH="$nowalk:$PATH" orch_gh_failing status 2>&1)"; st=$?
+assert_status "status dies when the walk fails" "$st" 1
+assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts"
 
 # side-checkout remove: every refusal before anything moves.
 out="$(orch_gh_failing side-checkout remove nosuch 2>&1)"; st=$?
@@ -701,6 +710,27 @@ assert_eq "its flow is not archived" "$(archived_count "$top" tw-flow)" "0"
 assert_eq "the side checkout stays" "$(on_disk "$tw/.orchestrator/state.json")" "present"
 assert_eq "with its branch" "$(sp_branch orch/tw-flow)" "kept"
 (cd "$tw" && orch_gh_failing ticket-worktree remove 8 >/dev/null)
+orch_gh_failing side-checkout prune >/dev/null 2>&1
+
+# #1333: an archive that cannot be written stops before the side checkout, its
+# state or its branch go. The archive root is the main checkout's.
+fake_offline
+ab="$(sc_add ab)"
+(cd "$ab" && orch_gh_failing init ab-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/ab-flow && state_fixture pr 57)
+sp_branch_off "$ab" orch/ab-flow
+fake_pr 57 merged orch/ab-flow main
+fake_online
+mv "$top/.orchestrator/archive" "$top/.orchestrator/archive.kept"
+: >"$top/.orchestrator/archive"
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+rm "$top/.orchestrator/archive"
+mv "$top/.orchestrator/archive.kept" "$top/.orchestrator/archive"
+assert_status "prune exits 1 when the archive cannot be written" "$st" 1
+assert_contains "naming the archive path" "$out" "orch: could not create the archive directory $top/.orchestrator/archive/"
+assert_eq "the side checkout stays" "$(on_disk "$ab")" "present"
+assert_eq "with its state" "$(on_disk "$ab/.orchestrator/state.json")" "present"
+assert_eq "and its branch" "$(sp_branch orch/ab-flow)" "kept"
 orch_gh_failing side-checkout prune >/dev/null 2>&1
 
 # Each removal reports only its own archive: a flowless side checkout swept

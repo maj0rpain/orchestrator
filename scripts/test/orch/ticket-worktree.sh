@@ -45,6 +45,10 @@ assert_status "list succeeds" "$st" 0
 assert_eq "list prints <n> <path> for each ticket worktree" "$out" \
   "$(printf '7 %s\n8 %s' "$top/.orchestrator/worktrees/t7" "$top/.orchestrator/worktrees/t8")"
 
+out="$(PATH="$(nowalk_bin):$PATH" "$ORCH" ticket-worktree list 2>&1)"; st=$?
+assert_status "list dies when the checkouts cannot be read (#1333)" "$st" 1
+assert_contains "naming the checkouts" "$out" "orch: could not read the checkouts"
+
 out="$("$ORCH" ticket-worktree add 7 2>&1)"; st=$?
 assert_status "add refuses an existing worktree" "$st" 1
 assert_contains "naming it" "$out" ".orchestrator/worktrees/t7"
