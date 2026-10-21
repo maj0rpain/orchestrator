@@ -47,6 +47,17 @@ changed since. Without such evidence, do not report it. An item the settled
 file records as left undecided, or as resolved by another item, is still
 open.
 
+## Reading the code
+
+- Batch: issue every independent search and read of a step together in one
+  turn (on Claude Code, its Grep, Glob and Read calls), rather than one per
+  turn. Every turn re-reads the whole context, so fewer turns cost less.
+- Locate in two steps. First, a search across the repo lists only the names
+  of the matching files (on Claude Code, Grep's `files_with_matches`
+  output). Then a content search, with line numbers and capped at 30 result
+  lines (on Claude Code, Grep's `head_limit`), runs only in the files that
+  matter. A content search never runs repo-wide, and never uncapped.
+
 ## Reporting rules
 
 - Report findings only, never draft edits.
