@@ -99,7 +99,8 @@ a skipped check is reported.
    any other finding, at location `suite` - the suite as a whole - with the
    finding text as its claim: fix it, or decline it with its reason. `off`,
    `ok` and `unmeasured` raise nothing, and so does a `check` that dies:
-   relay its `orch:` message. When the caller has no verification command,
+   relay its `orch:` message. With `unmeasured`, relay any `orch:` warning
+   `check` printed with it too, so a base run's setup failure reads as one. When the caller has no verification command,
    skip the check, and say so where the caller says. It is not a
    smell-baseline finding, so no pass leaves it out.
 6. **Declines.** Record each finding you decline, one line each:
