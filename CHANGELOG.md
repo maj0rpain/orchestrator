@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.20.5
+
+`suite-cost check` runs the per-clone setup command, git config
+`orchestrator.suiteCost.setup` (an install step such as `npm ci`), in the base
+worktree before the timed base run, untimed and its output on stderr; a failing
+setup warns and gives `unmeasured`. With no setup, a base run exiting 127 says
+the base worktree holds only tracked files and names the key. `orch-review` and
+`orch-review-pass` relay any `orch:` warning printed beside `unmeasured`.
+
 ## 4.20.4
 
 The test suite's fixture gh finds a canned reply by its argv's checksum with one direct lookup instead of scanning every reply, and a later reply for the same argv now replaces the earlier one.

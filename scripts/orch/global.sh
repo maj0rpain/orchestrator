@@ -158,7 +158,9 @@ orch.sh - deterministic operations for the orchestrator flow
                               orchestrator.suiteCost.growth, else 10 percent),
                               or unmeasured. Never runs <cmd> on the head;
                               with no baseline it measures the base once in a
-                              temporary worktree. Dies naming the key and
+                              temporary worktree, first running git config
+                              orchestrator.suiteCost.setup there, untimed,
+                              when it is set. Dies naming the key and
                               value when an override is not a non-negative
                               number
   suite-cost history          print the record's lines, oldest first, or
