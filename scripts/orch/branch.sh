@@ -123,7 +123,7 @@ cmd_branch_base_sha() {
 # nothing left to merge - retries the push, as it finishes a resolved conflict.
 cmd_branch_sync() {
   [ $# -eq 0 ] || die "usage: orch.sh branch sync"
-  local branch base held="" tip remote
+  local branch base held="" tip remote why
   current_branch_or_die ' - nothing was synced'
   if [ -f "$STATE" ] && [ "$(state_get branch)" = "$branch" ]; then
     held=1
@@ -153,8 +153,8 @@ cmd_branch_sync() {
   # passed --no-track (#1152) may still track its base until its first push.
   if [ "$(git config --get "branch.$branch.merge" 2>/dev/null)" = "refs/heads/$branch" ]; then
     remote="$(git config --get "branch.$branch.remote" 2>/dev/null)" || remote=origin
-    git push --quiet "$remote" "refs/heads/$branch:refs/heads/$branch" 2>/dev/null \
-      || die "could not push $branch - the merge and base SHA are recorded; rerun orch.sh branch sync to push"
+    git_push why --quiet "$remote" "refs/heads/$branch:refs/heads/$branch" \
+      || die "could not push $branch - the merge and base SHA are recorded; rerun orch.sh branch sync to push: $why"
   fi
   note "$branch synced with origin/$base at $tip"
 }
@@ -170,7 +170,7 @@ cmd_branch() {
     sync)   cmd_branch_sync "$@" ;;
     retire)
       [ $# -eq 2 ] || die "usage: orch.sh branch retire <old> <new>"
-      local old="$1" new="$2" upstream="" old_ok=1 new_ok=1
+      local old="$1" new="$2" upstream="" old_ok=1 new_ok=1 why
       git rev-parse --verify --quiet "$old" >/dev/null 2>&1 || old_ok=0
       git rev-parse --verify --quiet "$new" >/dev/null 2>&1 || new_ok=0
       if [ "$old_ok" = 1 ] && [ "$new_ok" = 1 ]; then
@@ -199,14 +199,14 @@ cmd_branch() {
         # The rename above is local-only and free to undo - if the push
         # never lands, undoing it is what keeps `$old` a real, retryable
         # branch instead of a name a retry can no longer find.
-        git push -q -u origin "$new" \
-          || { git branch -m "$new" "$old"; die "could not push $new to origin"; }
-        if ! git push -q origin --delete "$old" 2>/dev/null; then
+        git_push why -q -u origin "$new" \
+          || { git branch -m "$new" "$old"; die "could not push $new to origin: $why"; }
+        if ! git_push why -q origin --delete "$old"; then
           # Already gone - a previous call's delete already succeeded before
           # something else failed - is not an error to retry into; only a
           # ref that is still there and won't go is.
           git ls-remote --exit-code origin "refs/heads/$old" >/dev/null 2>&1 \
-            && die "could not delete origin/$old"
+            && die "could not delete origin/$old: $why"
         fi
       fi
       note "$new"

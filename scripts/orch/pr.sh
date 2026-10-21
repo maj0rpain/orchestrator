@@ -19,11 +19,14 @@
 # (#1299), so the PR carries them from creation; pr_labels_check reads them
 # back once the caller has recorded the PR.
 open_pr() {
-  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr err keyword=Closes create_opts=() label
+  local branch="$1" base="$2" issue="$3" title="$4" body_file="$5" draft="$6" tmp pr err why keyword=Closes create_opts=() label
   shift 6
   [ "$draft" != true ] || create_opts=(--draft)
   for label; do create_opts+=(--label "$label"); done
-  git push -q -u origin "$branch"
+  # A bare push would rely on set -e, which bash turns off inside the $(...)
+  # every caller runs open_pr in (#1300), so the status is checked here.
+  git_push why -q -u origin "$branch" \
+    || die "could not push branch $branch to origin - no PR was opened: $why"
   # GitHub only acts on a closing keyword when the PR merges into the default
   # branch, so a PR into any other base branch refers to its issue instead of
   # claiming to close it - the release PR is what closes it.

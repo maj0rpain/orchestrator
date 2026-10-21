@@ -93,6 +93,34 @@ capture() {
   rm -f "$_capture_file"
   return "$_capture_st"
 }
+# git_push <reason-var> <git push args...>: runs git push with the arguments,
+# sets <reason-var> to git's reason through git_push_reason, and returns the
+# push's status (#1300). Every push orch.sh makes runs through it, so none
+# drops the reason or leaves the status unchecked; each site keeps its own die.
+# Same rules as capture_err: current shell only, _git_push_-prefixed locals.
+git_push() {
+  local _git_push_err _git_push_st=0
+  capture_err _git_push_err git push "${@:2}" || _git_push_st=$?
+  git_push_reason "$_git_push_err" "$1"
+  return "$_git_push_st"
+}
+# git_push_reason <stderr> <var>: the reason a git push's stderr gives, into
+# <var> - its ` ! ` ref lines, trimmed and joined by "; ", since they carry a
+# rejection's cause; else its first fatal: line, an auth or network failure's;
+# else its first non-empty line; else "git gave no reason". git's first line
+# is often just "To <url>", so it comes last.
+git_push_reason() {
+  local _gpr_line _gpr_trim _gpr_bangs="" _gpr_fatal="" _gpr_first=""
+  while IFS= read -r _gpr_line; do
+    trim_split "$_gpr_line" _gpr_trim
+    case "$_gpr_line" in
+      ' ! '*) _gpr_bangs="${_gpr_bangs:+$_gpr_bangs; }$_gpr_trim" ;;
+      fatal:*) [ -n "$_gpr_fatal" ] || _gpr_fatal="$_gpr_line" ;;
+    esac
+    [ -n "$_gpr_first" ] || _gpr_first="$_gpr_trim"
+  done <<<"$1"
+  printf -v "$2" '%s' "${_gpr_bangs:-${_gpr_fatal:-${_gpr_first:-git gave no reason}}}"
+}
 # The argument with leading and trailing whitespace removed, as trim_split
 # writes it.
 trim() {

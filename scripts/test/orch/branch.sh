@@ -309,7 +309,8 @@ git push -q -u origin to-fail
 rm -rf "$bare"
 out="$(orch_gh_failing branch retire to-fail to-fail-redo-1 2>&1)"; st=$?
 assert_status "dies when the push to origin fails" "$st" 1
-assert_contains "with a clear reason" "$out" "could not push"
+assert_eq "relaying git's fatal: line as the reason (#1300)" "$out" \
+  "orch: could not push to-fail-redo-1 to origin: fatal: '$bare' does not appear to be a git repository"
 # The local rename happens before the push is even attempted - issue #63:
 # without a rollback, a push failure leaves `old` gone locally with nothing
 # a retry could find, even though nothing was ever published.
@@ -361,7 +362,8 @@ git checkout -q -b to-protect
 git push -q -u origin to-protect
 out="$(orch_gh_failing branch retire to-protect to-protect-redo-1 2>&1)"; st=$?
 assert_status "dies when the old ref genuinely cannot be deleted" "$st" 1
-assert_contains "with a clear reason" "$out" "could not delete origin/to-protect"
+assert_eq "with git's reason" "$out" \
+  "orch: could not delete origin/to-protect: ! [remote rejected] to-protect (deletion of the current branch prohibited)"
 
 out="$(orch_gh_failing branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1
@@ -475,14 +477,15 @@ assert_eq "and pushing the resolution" "$(bs_origin_tip orch/11-bsync)" "$resolv
 # A failed push: the merge and base SHA stand; a rerun pushes.
 new_tip="$(bs_advance push.txt push)"
 pushed="$(bs_origin_tip orch/11-bsync)"
-git config remote.origin.pushurl "$(mktemp -d)/missing.git"
+origin_rejects "$sc_origin"
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
+rm -f "$sc_origin/hooks/pre-receive"
 assert_status "a failed push exits 1" "$st" 1
-assert_contains "saying the push failed" "$out" "push"
+assert_eq "saying the push failed, with git's reason (#1300)" "$out" \
+  "orch: could not push orch/11-bsync - the merge and base SHA are recorded; rerun orch.sh branch sync to push: ! [remote rejected] orch/11-bsync -> orch/11-bsync (pre-receive hook declined)"
 assert_eq "with the merge commit made" "$(git rev-parse HEAD^2)" "$new_tip"
 assert_eq "and the base SHA recorded" "$(bs_sha)" "$new_tip"
 assert_eq "and origin unmoved" "$(bs_origin_tip orch/11-bsync)" "$pushed"
-git config --unset remote.origin.pushurl
 merged="$(git rev-parse HEAD)"
 out="$(orch_gh_failing branch sync 2>&1)"; st=$?
 assert_status "a rerun with origin reachable exits 0" "$st" 0
