@@ -359,7 +359,8 @@ fake_issue 13 closed
 # Findings whose filed lines the default branch later deleted outright: never
 # unchanged, whatever lines survive around them, and named by the commit that
 # deleted them. One file per case, all filed at one commit, each deleted by
-# its own commit after it.
+# its own commit after it. One unfiltered scan serves every case, each reading
+# its own line.
 git -C "$work" checkout -q main
 for f in whole end start middle later two replaced squashed split; do seq_lines "$f" 30 >"$work/src/del_$f.sh"; done
 git -C "$work" add src
@@ -395,32 +396,24 @@ finding 35 "review:nit,needs-triage" "\`src/del_two.sh:10-20\` at $filed_sha" 35
 finding 36 "review:nit,needs-triage" "\`src/del_replaced.sh:10\` at $filed_sha" 36
 finding 37 "review:nit,needs-triage" "\`src/del_squashed.sh:11\` at $squash_head_sha" 37
 finding 38 "review:nit,needs-triage" "\`src/del_split.sh:9-13\` at $split_head_sha" 38
-out="$(scan --pr 30 2>&1)"; st=$?
-assert_status "scans a finding whose lines were deleted" "$st" 0
+out="$(scan 2>&1)"; st=$?
+assert_status "scans the findings whose lines were deleted" "$st" 0
 assert_eq "a whole deleted range is changed, naming the deleting commit" \
   "$(line_of 30 "$out")" "$(printf '30\t30\tsrc/del_whole.sh:10\tchanged\t%s\tneeds-triage' "$whole_sha")"
-out="$(scan --pr 31 2>&1)"
 assert_eq "a range whose end was deleted is changed, naming the deleting commit" \
   "$(line_of 31 "$out")" "$(printf '31\t31\tsrc/del_end.sh:10-20\tchanged\t%s\tneeds-triage' "$end_sha")"
-out="$(scan --pr 32 2>&1)"
 assert_eq "a range whose start was deleted is changed, naming the deleting commit" \
   "$(line_of 32 "$out")" "$(printf '32\t32\tsrc/del_start.sh:10-20\tchanged\t%s\tneeds-triage' "$start_sha")"
-out="$(scan --pr 33 2>&1)"
 assert_eq "a range whose middle was deleted is changed, naming the deleting commit" \
   "$(line_of 33 "$out")" "$(printf '33\t33\tsrc/del_middle.sh:10-20\tchanged\t%s\tneeds-triage' "$middle_sha")"
-out="$(scan --pr 34 2>&1)"
 assert_eq "a later, unrelated edit to the file does not displace the deleting commit" \
   "$(line_of 34 "$out")" "$(printf '34\t34\tsrc/del_later.sh:10\tchanged\t%s\tneeds-triage' "$later_del_sha")"
-out="$(scan --pr 35 2>&1)"
 assert_eq "lines deleted across two commits name the later one" \
   "$(line_of 35 "$out")" "$(printf '35\t35\tsrc/del_two.sh:10-20\tchanged\t%s\tneeds-triage' "$two_sha")"
-out="$(scan --pr 36 2>&1)"
 assert_eq "a line replaced, not deleted, is changed, naming the replacing commit" \
   "$(line_of 36 "$out")" "$(printf '36\t36\tsrc/del_replaced.sh:10\tchanged\t%s\tneeds-triage' "$replaced_sha")"
-out="$(scan --pr 37 2>&1)"
 assert_eq "a finding filed at a squash-merged PR head names the deleting commit, not the squash" \
   "$(line_of 37 "$out")" "$(printf '37\t37\tsrc/del_squashed.sh:11\tchanged\t%s\tneeds-triage' "$squashed_sha")"
-out="$(scan --pr 38 2>&1)"
 assert_eq "a squash-merged finding deleted in two hunks names the deleting commit" \
   "$(line_of 38 "$out")" "$(printf '38\t38\tsrc/del_split.sh:9-13\tchanged\t%s\tneeds-triage' "$split_sha")"
 for n in 30 31 32 33 34 35 36 37 38; do fake_issue "$n" closed; done
