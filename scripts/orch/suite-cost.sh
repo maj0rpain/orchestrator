@@ -238,24 +238,19 @@ suite_cost_base_run() {
   fi
   setup="$(git config --get orchestrator.suiteCost.setup 2>/dev/null || true)"
   if cd "$wt"; then
-    if [ -n "$setup" ]; then
-      bash -c "$setup" >&2 || setup_status=$?
-    fi
-    if [ "$setup_status" -ne 0 ]; then
-      cd "$here" || die "could not return to $here"
-      warn "the base run's setup ($setup) at $base exited $setup_status - the suite cost is unmeasured"
-      status=1
+    [ -z "$setup" ] || bash -c "$setup" >&2 || setup_status=$?
+    [ "$setup_status" -ne 0 ] || suite_cost_measure "$@" >&2
+    cd "$here" || die "could not return to $here"
+    if [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
+      suite_cost_append "$base" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
     else
-      suite_cost_measure "$@" >&2
-      cd "$here" || die "could not return to $here"
-      if [ "$SUITE_COST_STATUS" -eq 0 ]; then
-        suite_cost_append "$base" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
+      status=1
+      if [ "$setup_status" -ne 0 ]; then
+        warn "the base run's setup ($setup) at $base exited $setup_status - the suite cost is unmeasured"
       elif [ "$SUITE_COST_STATUS" -eq 127 ] && [ -z "$setup" ]; then
         warn "the base run at $base exited 127 (command not found) - the base worktree holds only tracked files; if the command needs installed dependencies, set git config orchestrator.suiteCost.setup '<install command>'"
-        status=1
       else
         warn "the base run at $base exited $SUITE_COST_STATUS - the suite cost is unmeasured"
-        status=1
       fi
     fi
   else

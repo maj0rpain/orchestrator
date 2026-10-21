@@ -319,9 +319,12 @@ assert_eq "the next check uses that record, running nothing" "$(on_disk "$marker
 check_repo
 seed_run "$head" 70.00 "false"
 before="$(cat "$rec")"
-out="$("$ORCH" suite-cost check -- false 2>/dev/null)"; st=$?
+errf="$(mktemp)"
+out="$("$ORCH" suite-cost check -- false 2>"$errf")"; st=$?
 assert_status "a failing base run exits 0" "$st" 0
 assert_eq "and is unmeasured" "$out" "unmeasured"
+assert_contains "warning with its exit code" "$(cat "$errf")" \
+  "orch: the base run at $base exited 1 - the suite cost is unmeasured"
 assert_eq "recording nothing" "$(cat "$rec")" "$before"
 assert_eq "and leaving no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
 
@@ -329,7 +332,6 @@ if [ "$(id -u)" -ne 0 ]; then
   check_repo
   seed_run "$head" 70.00
   chmod 444 "$rec"
-  errf="$(mktemp)"
   out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
   assert_status "a base run whose append fails exits 0" "$st" 0
   assert_eq "with a verdict from the fresh measurement" "$out" "off"
@@ -345,7 +347,6 @@ needy=(sh -c 'test -f dep && touch "$0"' "$marker")
 seed_run "$head" 70.00 "${needy[*]}"
 git config orchestrator.suiteCost.setup \
   "echo setup-out; echo setup-err >&2; awk 'BEGIN { for (i = 0; i < 3e7; i++); }'; touch dep"
-errf="$(mktemp)"
 out="$("$ORCH" suite-cost check -- "${needy[@]}" 2>"$errf")"; st=$?
 assert_status "a base run with a setup exits 0" "$st" 0
 assert_eq "with the verdict alone on stdout, measured" "$out" "off"
@@ -390,10 +391,4 @@ git config orchestrator.suiteCost.setup true
 # shellcheck disable=SC2059
 assert_contains "with the key set, a 127 keeps today's warning" \
   "$(cat "$errf")" "$(printf "$today" "$base" 127)"
-git config --unset orchestrator.suiteCost.setup
-seed_run "$head" 70.00 "false"
-"$ORCH" suite-cost check -- false >/dev/null 2>"$errf"
-# shellcheck disable=SC2059
-assert_contains "with no key, another exit keeps today's warning" \
-  "$(cat "$errf")" "$(printf "$today" "$base" 1)"
 rm -f "$errf"
