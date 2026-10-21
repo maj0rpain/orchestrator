@@ -437,6 +437,13 @@ printf '{"slug":"x","phase":"review","issue":12,"branch":"orch/12-x"}\n' >"$stat
 rm -f "$ORCH_GH_FAKE_STORE/prs/57/draft"
 out="$("$ORCH" pr draft 2>"$errf")"; st=$?
 assert_status "an active flow on another branch lets it through" "$st" 0
+rm -f "$ORCH_GH_FAKE_STORE/prs/57/draft"
+printf '{\n' >"$state_file"
+out="$("$ORCH" pr draft 2>"$errf")"; st=$?
+assert_status "a state.json that cannot be read is refused (#1334)" "$st" 2
+assert_contains "naming doctor --flow" "$(cat "$errf")" \
+  "orch: state.json cannot be read - run orch.sh doctor --flow"
+assert_eq "leaving the PR ready" "$(fake_pr_draft_of 57)" "no"
 rm -f "$state_file"
 
 out="$("$ORCH" pr draft extra 2>"$errf")"; st=$?
@@ -509,6 +516,12 @@ for p in spec implement review; do
     "orch: the active flow holds quick/12-foo at phase $p - its PR changes state only through the review loop"
   assert_eq "leaving the PR a draft at $p" "$(fake_pr_draft_of 57)" "yes"
 done
+printf '{\n' >"$state_file"
+out="$("$ORCH" pr ready 2>"$errf")"; st=$?
+assert_status "a state.json that cannot be read is refused (#1334)" "$st" 2
+assert_contains "naming doctor --flow" "$(cat "$errf")" \
+  "orch: state.json cannot be read - run orch.sh doctor --flow"
+assert_eq "leaving the PR a draft" "$(fake_pr_draft_of 57)" "yes"
 rm -f "$state_file"
 
 out="$("$ORCH" pr ready extra 2>"$errf")"; st=$?

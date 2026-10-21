@@ -242,11 +242,14 @@ cmd_pr_ready() {
 # (true or false), one per line. Returns 1, printing nothing, when the branch
 # has no open PR, as current_open_pr does.
 open_pr_draft_flag() {
-  local branch phase pr _pr_state is_draft err
+  local branch phase pr _pr_state is_draft err held=0
   current_branch_or_die die2
-  if phase="$(flow_holding_phase "$branch")"; then
-    die2 "the active flow holds $branch at phase $phase - its PR changes state only through the review loop"
-  fi
+  phase="$(flow_holding_phase "$branch")" || held=$?
+  case "$held" in
+    0) die2 "the active flow holds $branch at phase $phase - its PR changes state only through the review loop" ;;
+    1) ;;
+    *) flow_holding_unreadable die2 ;;
+  esac
   pr="$(current_open_pr)" || return $?
   pr_state_draft_read "$pr" _pr_state is_draft err \
     || gh_die --exit 2 "read PR #$pr" "$err"

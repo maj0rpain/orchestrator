@@ -31,8 +31,10 @@ review_pass_begin() {
   current_branch_or_die
   [ "$branch" != "$(recorded_base "$branch")" ] \
     || die "$branch is the base branch - a review pass reviews a branch's change against it; check out the change's branch"
-  local phase held
-  if phase="$(flow_holding_phase "$branch" "$issue")"; then
+  local phase held rc=0
+  phase="$(flow_holding_phase "$branch" "$issue")" || rc=$?
+  case "$rc" in 0|1) ;; *) flow_holding_unreadable die ;; esac
+  if [ "$rc" -eq 0 ]; then
     held="$(state_get issue)"
     case "$phase" in
       implement|review)
