@@ -661,15 +661,11 @@ else
 fi
 
 # hooks_test.sh, version_bump_test.sh and lens_bench_test.sh own a temp root
-# too: each run whole,
-# then sent TERM once its TMPDIR has an entry.
+# too, each sent TERM once its TMPDIR has an entry. A passing run's leaks are
+# all.sh's check: it runs every suite in one fresh TMPDIR and fails the run on
+# anything left behind. Here, only TERM mid-run.
 for root_suite in hooks_test.sh version_bump_test.sh lens_bench_test.sh; do
   root_script="$(dirname "$SUITE_SCRIPT")/$root_suite"
-  root_fresh
-  TMPDIR="$root_tmp" ORCH_TEST_QUIET=1 bash "$root_script" >/dev/null 2>&1; st=$?
-  assert_status "$root_suite exits 0" "$st" 0
-  assert_eq "$root_suite leaves its TMPDIR empty" "$(ls -A "$root_tmp")" ""
-
   root_fresh
   TMPDIR="$root_tmp" ORCH_TEST_QUIET=1 bash "$root_script" >/dev/null 2>&1 &
   root_pid=$!

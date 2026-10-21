@@ -6,10 +6,12 @@
 (( 0 )) && source setup.sh
 
 # gh_reply <exit> <stdout> <stderr> <argv...>: the canned reply the fixture gh
-# answers to exactly that argv.
+# answers to exactly that argv, replacing any earlier reply for it.
 gh_reply() {
   local r
-  r="$(mktemp -d "$GH_FIXTURE/replies/XXXXXX")"
+  r="$GH_FIXTURE/replies/$("$GH_FIXTURE/key" "${@:4}")"
+  rm -rf "$r"
+  mkdir "$r" || return 1
   printf '%s' "$1" >"$r/exit"
   printf '%s' "$2" >"$r/stdout"
   printf '%s' "$3" >"$r/stderr"
@@ -1223,5 +1225,16 @@ assert_eq "passing gh's stderr through" "$out" "HTTP 502: Bad Gateway"
 assert_eq "every doctor operation was pinned to the resolved repo" \
   "$(grep -E ' (auth status|repo set-default|label list|issue list --state all|api repos/[{]owner[}]/[{]repo[}]/issues/7/)' "$GH_FIXTURE/env.log" \
     | grep -cv '^GH_REPO=acme/widgets GH_HOST=<unset> ')" "0"
+# The fixture gh itself: a later reply for the same argv replaces the earlier,
+# and an argv with no reply fails loudly.
+out="$(gh_fixture; gh_reply 0 'first' '' issue view 9 --json title
+  gh_reply 0 'second' '' issue view 9 --json title
+  gh issue view 9 --json title 2>&1)"; st=$?
+assert_status "fixture gh: two replies for one argv - a call succeeds" "$st" 0
+assert_eq "answering the later reply" "$out" "second"
+out="$(gh_fixture; gh_reply 0 'x' '' issue view 9
+  gh issue view 'nine 9' 2>&1)"; st=$?
+assert_status "fixture gh: an argv with no reply exits 127" "$st" 127
+assert_eq "naming the argv on stderr" "$out" "fixture gh: no reply for: issue view nine\\ 9"
 rm -f "$ibody"
 restore_suite_env GH_FIXTURE GH_HOST
