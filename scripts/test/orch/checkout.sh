@@ -124,6 +124,17 @@ out="$(sourced_orch checkout_branch "$detached")"; st=$?
 assert_status "checkout_branch on a detached HEAD returns 1" "$st" 1
 assert_eq "and prints nothing" "$out" ""
 
+# #1111: a tag of the branch's name makes git's short name ambiguous
+# (heads/<name>); checkout_branch still prints the bare branch name.
+git tag orch/2-feature
+assert_eq "checkout_branch beside a same-named tag prints the bare branch name" \
+  "$(sourced_orch checkout_branch)" "orch/2-feature"
+assert_eq "and so does checkout_branch <path>" \
+  "$(cd "$detached" && sourced_orch checkout_branch "$top")" "orch/2-feature"
+out="$(sourced_orch checkout_branch "$detached")"; st=$?
+assert_status "beside the tag a detached HEAD still returns 1" "$st" 1
+git tag -d orch/2-feature >/dev/null
+
 # current_branch_or_die run as a bare statement, then $branch printed.
 cbod() { bash -c 'source "$1"; shift; current_branch_or_die "$@"; printf "%s\n" "$branch"' _ "$ORCH" "$@"; }
 out="$(cbod 2>&1)"; st=$?

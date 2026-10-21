@@ -103,8 +103,14 @@ checkout_holding() {
 
 # checkout_branch [<path>]: prints the branch checked out in the checkout at
 # <path> (default: the current directory); returns 1 on a detached HEAD. The
-# one place `git symbolic-ref --quiet --short HEAD` is spelled.
-checkout_branch() { git -C "${1:-.}" symbolic-ref --quiet --short HEAD; }
+# one place `git symbolic-ref --quiet HEAD` is spelled: the ref is read in full
+# and refs/heads/ stripped, never through --short, which abbreviates a name
+# shared with a tag to heads/<name>.
+checkout_branch() {
+  local ref
+  ref="$(git -C "${1:-.}" symbolic-ref --quiet HEAD)" || return 1
+  printf '%s\n' "${ref#refs/heads/}"
+}
 
 # current_branch_or_die [die|die2] [<suffix>]: assigns the current branch to
 # the caller's `branch`, which bash scopes dynamically, or dies through the

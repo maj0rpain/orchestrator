@@ -719,6 +719,21 @@ assert_eq "the flowless side checkout is gone" "$(on_disk "$q5")" "absent"
 assert_eq "the main checkout's archive is reported once" \
   "$(printf '%s\n' "$out" | grep -c -- '-main-again$')" "1"
 
+# On a detached main checkout the in-place archive note still prints, with an
+# empty branch name, and prune carries on.
+fake_offline
+orch_gh_failing init main-detached >/dev/null
+state_fixture phase "done"; state_fixture branch orch/main-flow; state_fixture pr 56
+fake_pr 56 merged orch/main-flow main
+fake_online
+git checkout -q --detach
+out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
+git symbolic-ref HEAD refs/heads/orch/main-flow
+assert_status "prune succeeds on a detached main checkout" "$st" 0
+assert_eq "its finished flow is archived in place" "$(archived_count "$top" main-detached)" "1"
+assert_contains "the note still prints, with an empty branch name" "$out" \
+  "archived the main checkout's flow in place -  is still checked out"
+
 # A side checkout whose git status cannot run is never called finished: prune
 # removes nothing, naming git's error.
 fake_offline
