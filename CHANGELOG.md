@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.20.6
+
+A ticket worktree carrying a copied side-checkout marker is now a ticket worktree everywhere, not only in the checkout walk: `review ready` gives it no side-checkout warning, `archive` and `init` archive its flow in place, and `side-checkout issue` reports it as no side checkout. Every site reads one classification, the new `checkout_kind`, and `archive` and `init` archive nothing when the checkouts cannot be read (#1110).
+
 ## 4.20.5
 
 `suite-cost check` runs the per-clone setup command, git config
