@@ -592,8 +592,10 @@ check_flow_upstream() {
   # branch create passed --no-track (#1152) may still track its base until its
   # first push. An ok there would report a branch nobody can see as pushed.
   local upstream=""
-  upstream="$(git rev-parse --abbrev-ref --verify --quiet "$branch@{upstream}" 2>/dev/null)" || upstream=""
-  if [ "$upstream" = "origin/$branch" ]; then d_ok "upstream: $upstream"; return 0; fi
+  upstream="$(branch_upstream "$branch")" || upstream=""
+  if [ "$upstream" = "refs/remotes/origin/$branch" ]; then
+    d_ok "upstream: ${upstream#refs/remotes/}"; return 0
+  fi
   # After the merge the remote branch is routinely deleted; a push remedy here
   # would recreate a branch somebody removed on purpose.
   if [ "$phase" = "done" ]; then d_ok "upstream: none - expected after merge"; return 0; fi
