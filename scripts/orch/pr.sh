@@ -23,7 +23,10 @@ open_pr() {
   shift 6
   [ "$draft" != true ] || create_opts=(--draft)
   for label; do create_opts+=(--label "$label"); done
-  git push -q -u origin "$branch"
+  # A bare push would rely on set -e, which bash turns off inside the $(...)
+  # every caller runs open_pr in (#1300), so the status is checked here.
+  git_push err -q -u origin "$branch" \
+    || die "could not push branch $branch to origin - no PR was opened: $err"
   # GitHub only acts on a closing keyword when the PR merges into the default
   # branch, so a PR into any other base branch refers to its issue instead of
   # claiming to close it - the release PR is what closes it.

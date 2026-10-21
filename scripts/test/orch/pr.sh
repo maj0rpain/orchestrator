@@ -146,6 +146,24 @@ assert_eq "nor on the branch" "$(pr_marker_of orch/16-propen)" ""
 assert_eq "opening nothing" "$(fake_prs)" "23 40 41 42 "
 fake_unfail
 
+# A push origin rejects stops pr open before any create (#1300): open_pr runs
+# inside $(...), where set -e is off, so a failed push used to fall through
+# to the create and its misleading GraphQL error.
+git commit -q --allow-empty -m "unpushed work"
+origin_rejects "$bare"
+state_before="$(mktemp)"
+cp .orchestrator/state.json "$state_before"
+fake_next_pr 43
+out="$("$ORCH" pr open "Title" "$body" 2>"$errf")"; st=$?
+assert_status "a rejected push fails pr open" "$st" 1
+assert_eq "naming the branch, that no PR was opened, and git's reason" "$(cat "$errf")" \
+  "orch: could not push branch orch/16-propen to origin - no PR was opened: ! [remote rejected] orch/16-propen -> orch/16-propen (pre-receive hook declined)"
+assert_eq "creating no PR" "$(fake_prs)" "23 40 41 42 "
+assert_eq "writing no PR marker" "$(pr_marker_of orch/16-propen)" ""
+assert_eq "and leaving the flow state byte for byte" \
+  "$(cmp -s "$state_before" .orchestrator/state.json && echo same || echo changed)" "same"
+rm -f "$bare/hooks/pre-receive"
+
 assert_contains "help documents --label" "$("$ORCH" help)" \
   "pr open <title> <body-file> [--label <name>]..."
 unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
@@ -321,6 +339,28 @@ assert_eq "relaying gh's reason" "$out" \
 assert_eq "writing no PR marker" "$(pr_marker_of quick/21-typo)" ""
 assert_eq "opening nothing" "$(fake_prs)" "23 24 30 31 32 33 34 35 "
 fake_unfail
+
+# A failed push stops pr publish before any create, relaying git's reason
+# (#1300): the ` ! ` ref line of a rejection...
+git checkout -q -b quick/22-rejected
+origin_rejects "$bare"
+fake_next_pr 36
+out="$("$ORCH" pr publish 22 "Title" "$body" 2>&1)"; st=$?
+assert_status "a rejected push fails pr publish" "$st" 1
+assert_eq "naming the branch, that no PR was opened, and git's reason" "$out" \
+  "orch: could not push branch quick/22-rejected to origin - no PR was opened: ! [remote rejected] quick/22-rejected -> quick/22-rejected (pre-receive hook declined)"
+assert_eq "creating no PR" "$(fake_prs)" "23 24 30 31 32 33 34 35 "
+assert_eq "writing no PR marker" "$(pr_marker_of quick/22-rejected)" ""
+rm -f "$bare/hooks/pre-receive"
+# ...or git's fatal: line, when origin is no repository at all.
+missing="$(mktemp -d)/missing.git"
+git remote set-url origin "$missing"
+out="$("$ORCH" pr publish 22 "Title" "$body" 2>&1)"; st=$?
+assert_status "a push to a missing origin fails pr publish" "$st" 1
+assert_eq "relaying git's fatal: line" "$out" \
+  "orch: could not push branch quick/22-rejected to origin - no PR was opened: fatal: '$missing' does not appear to be a git repository"
+assert_eq "creating no PR there either" "$(fake_prs)" "23 24 30 31 32 33 34 35 "
+git remote set-url origin "$bare"
 
 help="$("$ORCH" help)"
 assert_contains "help documents --draft and --label" "$help" \

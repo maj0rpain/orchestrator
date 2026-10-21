@@ -73,3 +73,24 @@ for lh_item in -n bug a.c 'needs triage' bu abc needs '-'; do
 done
 assert_eq "list_has matches whole lines literally, an item beginning with - included" \
   "$lh_verdicts" " y y y y n n n n"
+
+# --- git_push (#1300) ---------------------------------------------------------
+# Every push orch.sh makes runs through git_push, which returns the push's
+# status and cuts git's reason out of its stderr. pr open, pr publish and
+# branch's sections pin each site; this pins the join of several ` ! ` lines,
+# which no command's single-ref push can reach.
+echo
+echo "git_push"
+new_repo >/dev/null
+gp_bare="$(mktemp -d)/origin.git"
+git init -q --bare "$gp_bare"
+bare_origin "$gp_bare"
+git push -q origin HEAD:refs/heads/main
+assert_eq "a push that lands returns 0" \
+  "$(sourced_orch eval 'git_push why origin HEAD:refs/heads/ok; echo "$?"')" "0"
+git commit -q --allow-empty -m "more"
+origin_rejects "$gp_bare"
+assert_eq "a rejected push of two refs returns 1 with both ' ! ' lines, joined by '; '" \
+  "$(sourced_orch eval 'git_push why origin HEAD:refs/heads/a HEAD:refs/heads/b || echo "$?: $why"')" \
+  "1: ! [remote rejected] HEAD -> a (pre-receive hook declined); ! [remote rejected] HEAD -> b (pre-receive hook declined)"
+restore_suite_env
