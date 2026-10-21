@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.20.4
+
+The test suite's fixture gh finds a canned reply by its argv's checksum with one direct lookup instead of scanning every reply, and a later reply for the same argv now replaces the earlier one.
+
 ## 4.20.3
 
 - `orch.sh doctor` judges whether `.orchestrator/state.json` is readable the
