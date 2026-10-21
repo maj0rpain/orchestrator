@@ -84,10 +84,26 @@ assert_eq "branch_checkout prints nothing for a branch checked out nowhere" \
 assert_eq "main_checkout prints the main checkout from a side checkout" \
   "$(cd "$side" && sourced_orch main_checkout)" "$top"
 
+# checkout_kind <path>: the walk's kind for the checkout holding <path> (#1110).
+marked="$(marked_ticket_worktree 11)"
+assert_eq "checkout_kind: a ticket worktree carrying a copied marker is ticket" \
+  "$(sourced_orch checkout_kind "$marked")" "ticket"
+assert_eq "checkout_kind: a side checkout is side" "$(sourced_orch checkout_kind "$side")" "side"
+mkdir -p "$side/sub"
+assert_eq "checkout_kind: a folder inside a side checkout is side" \
+  "$(sourced_orch checkout_kind "$side/sub")" "side"
+rmdir "$side/sub"
+assert_eq "checkout_kind: the main checkout is main" "$(sourced_orch checkout_kind "$top")" "main"
+assert_eq "checkout_kind: a hand-made worktree is hand-made" \
+  "$(sourced_orch checkout_kind "$handmade")" "hand-made"
+
 outside="$(fresh_dir)"
 out="$(bash -c 'source "$1"; cd "$2" && checkouts' _ "$ORCH" "$outside" 2>/dev/null)"; st=$?
 assert_ne "checkouts outside a repo fails" "$st" 0
 assert_eq "and prints nothing" "$out" ""
+out="$(bash -c 'source "$1"; cd "$2" && checkout_kind "$2"' _ "$ORCH" "$outside" 2>/dev/null)"; st=$?
+assert_ne "checkout_kind outside a repo fails" "$st" 0
+assert_eq "and checkout_kind prints nothing" "$out" ""
 
 # --- checkout current branch (#1079) -------------------------------------------
 # The Checkout module's one current-branch read: checkout_branch prints the

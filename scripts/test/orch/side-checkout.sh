@@ -167,6 +167,13 @@ assert_status "side-checkout issue refuses arguments with exit 2, never a 'none'
 git worktree remove "$qi"
 git branch -q -D quick/123-quick-one
 
+# A ticket worktree carrying a copied marker is no side checkout (#1110).
+marked="$(marked_ticket_worktree 41)"
+out="$(cd "$marked" && orch_gh_failing side-checkout issue 2>&1)"; st=$?
+assert_status "side-checkout issue exits 1 in a ticket worktree carrying a copied marker" "$st" 1
+git worktree remove "$marked"
+git branch -q -D main--t41
+
 worktrees_before="$(git worktree list | wc -l | tr -d ' ')"
 for bad in "" "12a" "#5"; do
   if [ -z "$bad" ]; then out="$(orch_gh_failing side-checkout add badissue --issue 2>&1)"; st=$?
@@ -346,6 +353,35 @@ assert_eq "it archives in place" "$(archived_count "$hand" hand-flow)" "1"
 assert_eq "not into the main checkout" "$(archived_count "$top" hand-flow)" "0"
 assert_eq "the worktree stays" "$(git -C "$hand" rev-parse --show-toplevel)" "$hand"
 assert_not_contains "with no removal reported" "$out" "side checkout"
+
+# archive in a ticket worktree carrying a copied marker archives in place and
+# leaves it, as a ticket worktree's, never as a side checkout's (#1110).
+marked="$(marked_ticket_worktree 42)"
+worktrees_before="$(git worktree list | wc -l | tr -d ' ')"
+(cd "$marked" && orch_gh_failing init marked-flow >/dev/null)
+out="$(cd "$marked" && orch_gh_failing archive 2>&1)"; st=$?
+assert_status "archive in a ticket worktree carrying a copied marker succeeds" "$st" 0
+assert_eq "it archives into that worktree's own archive" "$(archived_count "$marked" marked-flow)" "1"
+assert_eq "not into the main checkout" "$(archived_count "$top" marked-flow)" "0"
+assert_eq "and removes no worktree" "$(git worktree list | wc -l | tr -d ' ')" "$worktrees_before"
+git worktree remove "$marked"
+git branch -q -D main--t42
+
+# A walk that fails archives nothing: archive and init die, the flow left in
+# place (#1110). A git on PATH that fails `worktree list` alone fails the walk.
+nowalk="$(mktemp -d)"
+writeln '#!/bin/sh' '[ "$1 $2" = "worktree list" ] && exit 1' "exec $(command -v git) \"\$@\"" >"$nowalk/git"
+chmod +x "$nowalk/git"
+(cd "$hand" && orch_gh_failing init walk-flow >/dev/null && state_fixture phase "done")
+out="$(cd "$hand" && PATH="$nowalk:$PATH" orch_gh_failing archive 2>&1)"; st=$?
+assert_status "archive dies when the walk fails" "$st" 1
+assert_contains "naming the checkouts" "$out" "could not read the checkouts - nothing was archived"
+assert_eq "archiving nothing" "$(archived_count "$hand" walk-flow)" "0"
+out="$(cd "$hand" && PATH="$nowalk:$PATH" orch_gh_failing init next-walk-flow 2>&1)"; st=$?
+assert_status "init over a done flow dies when the walk fails" "$st" 1
+assert_contains "naming the checkouts" "$out" "could not read the checkouts - nothing was archived or written"
+assert_eq "archiving nothing" "$(archived_count "$hand" walk-flow)" "0"
+assert_eq "the flow stays" "$(cd "$hand" && orch_gh_failing state get slug)" "walk-flow"
 
 # side-checkout remove: every refusal before anything moves.
 out="$(orch_gh_failing side-checkout remove nosuch 2>&1)"; st=$?

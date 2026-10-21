@@ -125,6 +125,17 @@ assert_status "review ready succeeds in a side checkout" "$st" 0
 assert_eq "printing only the PR number on stdout" "$out" "70"
 assert_contains "pointing at /orchestrator:finish on stderr" "$(cat "$err_f")" "/orchestrator:finish"
 
+# A ticket worktree carrying a copied marker is no side checkout (#1110).
+marked="$(marked_ticket_worktree 43)"
+(cd "$marked" && orch_gh_failing init rr-ticket >/dev/null && state_fixture phase review && state_fixture pr 72)
+fake_pr 72 open orch/rr-ticket main
+fake_pr_draft 72
+out="$(cd "$marked" && orch_gh_failing review ready 2>"$err_f")"; st=$?
+assert_status "review ready succeeds in a ticket worktree carrying a copied marker" "$st" 0
+assert_not_contains "with no side-checkout warning" "$(cat "$err_f")" "side checkout"
+git worktree remove --force "$marked"
+git branch -q -D main--t43
+
 orch_gh_failing init rr-main >/dev/null
 state_fixture phase review; state_fixture pr 71
 fake_pr 71 open orch/rr-main main

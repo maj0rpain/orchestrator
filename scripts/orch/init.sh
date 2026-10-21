@@ -107,7 +107,7 @@ cmd_init() {
   # main checkout's archive, but the worktree stays - the new flow lives here.
   if [ -f "$STATE" ]; then
     archive_home="$(archive_root "$ROOT")" \
-      || die "could not read the main checkout - nothing was archived or written"
+      || die "could not read the checkouts - nothing was archived or written"
     archive_note="$(archive_flow "$ROOT" "$archive_home")" || exit 1
   fi
   mkdir -p "$HANDOFF_DIR" "$REVIEW_DIR"

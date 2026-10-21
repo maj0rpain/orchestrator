@@ -34,9 +34,9 @@ forked_from_branch() { git config --get "$(forked_from_key "$1")" 2>/dev/null; }
 
 # Prints <n> <path> for every ticket worktree under the checkout at <root>.
 ticket_worktrees_under() {
-  local kind _flow _branch path name
-  while read -r kind _flow _branch path; do
-    [ "$kind" = ticket ] && [ "${path%/*}" = "$1/$ORCH_DIR_NAME/worktrees" ] || continue
+  local _kind _flow _branch path name
+  while read -r _kind _flow _branch path; do
+    checkout_ticket_path "$path" "$1" || continue
     name="${path##*/}"
     note "${name#t} $path"
   done < <(checkouts)
