@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.20.12
+
+The Testability lens of a spec review now batches its independent searches and reads into one turn, and locates code in two steps - file names first, then a content search capped at 30 lines with line numbers - so its longest runs stop paying one turn per search (#1199).
+
 ## 4.20.11
 
 The spec review's compact view now prints each item's batch number literally, as `- **<n>** - ...`, instead of as a Markdown ordered-list number a chat renderer recounts from the first item, so the number a human reads is the number their `-3`, `+4` or `show 5` answer names; a material item's sub-bullets sit a fixed 2 spaces in, whatever its number's width (#1339).
