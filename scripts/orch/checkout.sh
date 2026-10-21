@@ -34,7 +34,7 @@ checkouts() {
       kind=main
     elif checkout_ticket_path "${paths[i]}" "${paths[@]}"; then
       kind=ticket
-    elif is_side_checkout "${paths[i]}"; then
+    elif side_checkout_marker "${paths[i]}" >/dev/null; then
       kind=side
     else
       kind=hand-made
@@ -55,6 +55,21 @@ checkout_ticket_path() {
   for root in "$@"; do
     [ "${path%/*}" = "$root/$ORCH_DIR_NAME/worktrees" ] && return 0
   done
+  return 1
+}
+
+# checkout_kind <path>: prints the walk's kind (main, ticket, side or
+# hand-made) for the checkout holding <path> - a folder inside a checkout
+# included - the one classification every site that asks a checkout's kind
+# reads. Fails, printing nothing, when <path> is in no checkout, the walk
+# fails, or no line of it matches.
+checkout_kind() {
+  local top list kind _flow _branch path
+  top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  list="$(cd "$top" && checkouts)" || return 1
+  while read -r kind _flow _branch path; do
+    [ "$path" = "$top" ] && { printf '%s\n' "$kind"; return 0; }
+  done <<<"$list"
   return 1
 }
 
@@ -88,8 +103,14 @@ checkout_holding() {
 
 # checkout_branch [<path>]: prints the branch checked out in the checkout at
 # <path> (default: the current directory); returns 1 on a detached HEAD. The
-# one place `git symbolic-ref --quiet --short HEAD` is spelled.
-checkout_branch() { git -C "${1:-.}" symbolic-ref --quiet --short HEAD; }
+# one place `git symbolic-ref --quiet HEAD` is spelled: the ref is read in full
+# and refs/heads/ stripped, never through --short, which abbreviates a name
+# shared with a tag to heads/<name>.
+checkout_branch() {
+  local ref
+  ref="$(git -C "${1:-.}" symbolic-ref --quiet HEAD)" || return 1
+  printf '%s\n' "${ref#refs/heads/}"
+}
 
 # current_branch_or_die [die|die2] [<suffix>]: assigns the current branch to
 # the caller's `branch`, which bash scopes dynamically, or dies through the

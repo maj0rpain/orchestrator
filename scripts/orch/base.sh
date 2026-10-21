@@ -18,13 +18,15 @@
 # has always been best-effort, and init and base show ask it before anything
 # needs GitHub.
 default_branch() {
-  local b=""
+  local b="" head_ref
   if repo_resolve; then
     b="$(adapter_repo_default_branch "$REPO_NAME" 2>/dev/null)" || b=""
   fi
   if ! is_branch_name "$b"; then
-    b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" || b=""
-    b="${b#origin/}"
+    # Read in full, never --short: a local branch named origin/<b> makes the
+    # short name remotes/origin/<b>.
+    head_ref="$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null)" || head_ref=""
+    b="${head_ref#refs/remotes/origin/}"
   fi
   is_branch_name "$b" || b="main"
   printf '%s\n' "$b"

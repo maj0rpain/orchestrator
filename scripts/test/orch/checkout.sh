@@ -84,10 +84,25 @@ assert_eq "branch_checkout prints nothing for a branch checked out nowhere" \
 assert_eq "main_checkout prints the main checkout from a side checkout" \
   "$(cd "$side" && sourced_orch main_checkout)" "$top"
 
+# checkout_kind <path>: the walk's kind for the checkout holding <path> (#1110).
+assert_eq "checkout_kind: a ticket worktree carrying a copied marker is ticket" \
+  "$(sourced_orch checkout_kind "$top/.orchestrator/worktrees/t9")" "ticket"
+assert_eq "checkout_kind: a side checkout is side" "$(sourced_orch checkout_kind "$side")" "side"
+mkdir -p "$side/sub"
+assert_eq "checkout_kind: a folder inside a side checkout is side" \
+  "$(sourced_orch checkout_kind "$side/sub")" "side"
+rmdir "$side/sub"
+assert_eq "checkout_kind: the main checkout is main" "$(sourced_orch checkout_kind "$top")" "main"
+assert_eq "checkout_kind: a hand-made worktree is hand-made" \
+  "$(sourced_orch checkout_kind "$handmade")" "hand-made"
+
 outside="$(fresh_dir)"
 out="$(bash -c 'source "$1"; cd "$2" && checkouts' _ "$ORCH" "$outside" 2>/dev/null)"; st=$?
 assert_ne "checkouts outside a repo fails" "$st" 0
 assert_eq "and prints nothing" "$out" ""
+out="$(bash -c 'source "$1"; cd "$2" && checkout_kind "$2"' _ "$ORCH" "$outside" 2>/dev/null)"; st=$?
+assert_ne "checkout_kind outside a repo fails" "$st" 0
+assert_eq "and checkout_kind prints nothing" "$out" ""
 
 # --- checkout current branch (#1079) -------------------------------------------
 # The Checkout module's one current-branch read: checkout_branch prints the
@@ -108,6 +123,17 @@ assert_eq "checkout_branch <path> prints the branch checked out there" \
 out="$(sourced_orch checkout_branch "$detached")"; st=$?
 assert_status "checkout_branch on a detached HEAD returns 1" "$st" 1
 assert_eq "and prints nothing" "$out" ""
+
+# #1111: a tag of the branch's name makes git's short name ambiguous
+# (heads/<name>); checkout_branch still prints the bare branch name.
+git tag orch/2-feature
+assert_eq "checkout_branch beside a same-named tag prints the bare branch name" \
+  "$(sourced_orch checkout_branch)" "orch/2-feature"
+assert_eq "and so does checkout_branch <path>" \
+  "$(cd "$detached" && sourced_orch checkout_branch "$top")" "orch/2-feature"
+out="$(sourced_orch checkout_branch "$detached")"; st=$?
+assert_status "beside the tag a detached HEAD still returns 1" "$st" 1
+git tag -d orch/2-feature >/dev/null
 
 # current_branch_or_die run as a bare statement, then $branch printed.
 cbod() { bash -c 'source "$1"; shift; current_branch_or_die "$@"; printf "%s\n" "$branch"' _ "$ORCH" "$@"; }

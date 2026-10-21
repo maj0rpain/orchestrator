@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.20.7
+
+A branch sharing its name with a tag is now always named as `<name>`, never `heads/<name>`, by `status`, `side-checkout list`, `branch base-sha`, `branch sync`, `pr publish` and every other command that reads the current branch, and the default-branch fallback settles on the right branch even beside a local branch named `origin/<default>`: symbolic refs are read in full rather than through git's `--short` abbreviation.
+
+## 4.20.6
+
+A ticket worktree carrying a copied side-checkout marker is now a ticket worktree everywhere, not only in the checkout walk: `review ready` gives it no side-checkout warning, `archive` and `init` archive its flow in place, and `side-checkout issue` reports it as no side checkout. Every site reads one classification, the new `checkout_kind`, and `archive` and `init` archive nothing when the checkouts cannot be read (#1110).
+
 ## 4.20.5
 
 `suite-cost check` runs the per-clone setup command, git config

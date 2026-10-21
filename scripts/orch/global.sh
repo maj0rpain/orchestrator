@@ -77,7 +77,7 @@ status_flow() {
 cmd_archive() {
   require_state
   local archive_home
-  archive_home="$(archive_root "$ROOT")" || die "could not read the main checkout - nothing was archived"
+  archive_home="$(archive_root "$ROOT")" || die "could not read the checkouts - nothing was archived"
   archive_flow "$ROOT" "$archive_home"
   # Only a side checkout archives anywhere but in place.
   if [ "$archive_home" != "$ROOT" ]; then side_checkout_remove_after_archive "$ROOT" "$archive_home"; fi
