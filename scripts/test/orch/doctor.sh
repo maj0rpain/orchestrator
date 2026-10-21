@@ -1368,6 +1368,30 @@ assert_eq "and is left where it was" \
   "$([ -f .orchestrator/review/loop-01/iteration-01.md ] && echo present || echo gone)" "present"
 restore_suite_env
 
+# --- doctor: upstream beside an ambiguous origin/<branch> (#1331) ------------
+# A local branch named origin/<branch> makes the upstream's short name
+# ambiguous, so git abbreviates it to remotes/origin/<branch>: a pushed,
+# tracked branch must still read as on origin. The local branch is made only
+# after the push, since made first it makes `git push -u` itself fail.
+echo
+echo "doctor: upstream beside an ambiguous origin/<branch>"
+review_flow ambiguousupstream
+doctor_github
+amb_branch="$(git branch --show-current)"
+state_fixture branch "$amb_branch"
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q -u origin "$amb_branch"
+git branch -q "origin/$amb_branch"
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "a pushed branch beside a local origin/<branch> reports its upstream ok" \
+  "$out" "ok    upstream: origin/$amb_branch"
+assert_not_contains "with no unpushed warning" "$out" "not on origin yet"
+assert_not_contains "and no push remedy" "$out" "git push -u origin"
+rm -rf "$(dirname "$bare")"
+restore_suite_env
+
 # --- doctor: review terminal check --------------------------------------
 # check_flow_pr's open/closed/unreadable branching is the direct template:
 # ok/warn on the classification, and phase-gated silent outside review.

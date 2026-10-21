@@ -301,6 +301,20 @@ assert_eq "pushes the new name to origin" \
 assert_eq "and deletes the old remote ref" \
   "$(git -C "$bare" rev-parse --quiet --verify refs/heads/to-retire >/dev/null && echo present || echo gone)" "gone"
 
+# A local branch named origin/<old> makes the upstream's short name ambiguous
+# (#1331): retire must still see the upstream and republish. Made only after
+# the push, since made first it makes `git push -u` itself fail.
+git checkout -q -b to-retire-amb
+git push -q -u origin to-retire-amb
+git branch -q origin/to-retire-amb
+out="$(orch_gh_failing branch retire to-retire-amb to-retire-amb-redo-1 2>&1)"; st=$?
+assert_status "retires a pushed branch beside a local origin/<old> branch" "$st" 0
+assert_eq "still pushes the new name to origin" \
+  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/to-retire-amb-redo-1 >/dev/null && echo present || echo gone)" "present"
+assert_eq "and still deletes the old remote ref" \
+  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/to-retire-amb >/dev/null && echo present || echo gone)" "gone"
+git branch -q -D origin/to-retire-amb
+
 # The fixture gap named in spec review: no test in the suite forces a real
 # `git push` to fail, since the gh-stub exit overrides only apply to gh.
 # Pointing origin at a path removed out from under it does.

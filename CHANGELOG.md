@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.20.9
+
+`doctor --flow` no longer warns that a pushed, tracked flow branch is not on origin when a local branch or tag named `origin/<branch>` sits beside it: every orch.sh read of a branch's upstream now reads the full ref (#1331).
+
 ## 4.20.8
 
 `pr open` and `pr publish` now stop when the branch push fails. They open no PR and report git's reason, instead of the misleading GraphQL error from the PR create that followed. Every push `orch.sh` makes, `branch sync`'s and `branch retire`'s included, now ends its `orch:` line with git's reason (#1300).
