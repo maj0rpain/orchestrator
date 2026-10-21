@@ -5,6 +5,19 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# literal_handoff <phase>: the pinned literal body of the handoff <phase> reads
+# (spec, implement or review), complete but for Host fallbacks.
+literal_handoff() {
+  case "$1" in
+    spec) writeln '## Decisions' 'Use X.' '' '## Rejected alternatives' 'Y, because Z.' '' \
+                  '## Constraints' 'Must run offline.' '' '## Open assumptions' 'Assumes W.' ;;
+    implement) writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
+                       '## Spec review changelog' 'Not reviewed.' '' '## Ticket breakdown' '#1.' ;;
+    review) writeln '## PR' '#3.' '' '## Spec issue' '#1.' '' '## Base SHA' 'abc1234.' '' \
+                    '## Deviations' 'None.' '' '## Verification' 'scripts/test/orch_test.sh' ;;
+  esac
+}
+
 # --- handoff path -----------------------------------------------------------
 echo
 echo "handoff path"
@@ -31,7 +44,7 @@ echo "phase table"
 fake_flow phase-table
 
 assert_eq "PHASES is the table's phases in order" \
-  "$(bash -c 'source "$1"; printf "%s\n" "$PHASES"' _ "$ORCH")" "spec implement review done"
+  "$(sourced_orch eval 'printf "%s\n" "$PHASES"')" "spec implement review done"
 
 for pair in "spec|01-plan.md" \
             "implement|$(writeln 01-plan.md 02-spec.md)" \
@@ -197,14 +210,7 @@ assert_eq "reports it as a FAIL line on stdout" "$out" "FAIL  handoff not found:
 for p in spec implement review; do
   hf="$("$ORCH" handoff path "$p")"
   # Each complete but for Host fallbacks, written literally.
-  case "$p" in
-    spec) writeln '## Decisions' 'Use X.' '' '## Rejected alternatives' 'Y, because Z.' '' \
-                  '## Constraints' 'Must run offline.' '' '## Open assumptions' 'Assumes W.' >"$hf" ;;
-    implement) writeln '## Spec issue' '#1.' '' '## Seams' 'The CLI.' '' \
-                       '## Spec review changelog' 'Not reviewed.' '' '## Ticket breakdown' '#1.' >"$hf" ;;
-    review) writeln '## PR' '#3.' '' '## Spec issue' '#1.' '' '## Base SHA' 'abc1234.' '' \
-                    '## Deviations' 'None.' '' '## Verification' 'scripts/test/orch_test.sh' >"$hf" ;;
-  esac
+  literal_handoff "$p" >"$hf"
   out="$("$ORCH" handoff validate "$hf" 2>&1)"; st=$?
   assert_status "$(basename "$hf") without Host fallbacks is incomplete" "$st" 1
   assert_contains "$(basename "$hf") names the missing Host fallbacks" "$out" "Host fallbacks"
@@ -239,17 +245,13 @@ echo
 echo "handoff section"
 fake_flow handoff-section
 h="$("$ORCH" handoff path spec)"
-writeln '## Decisions' 'Use X.' '' '## Rejected alternatives' 'Y, because Z.' '' \
-        '## Constraints' 'Must run offline.' '' '## Open assumptions' 'Assumes W.' '' \
-        '## Host fallbacks' 'None (Claude Code).' >"$h"
+{ literal_handoff spec; writeln '' '## Host fallbacks' 'None (Claude Code).'; } >"$h"
 out="$("$ORCH" handoff section "$h" "Rejected alternatives" 2>&1)"; st=$?
 assert_status "prints a named section" "$st" 0
 assert_eq "prints only that section's body" "$out" "Y, because Z."
 
 hi="$("$ORCH" handoff path review)"
-writeln '## PR' '#3.' '' '## Spec issue' '#1.' '' '## Base SHA' 'abc1234.' '' \
-        '## Deviations' 'None.' '' '## Verification' 'scripts/test/orch_test.sh' '' \
-        '## Host fallbacks' 'None (Claude Code).' >"$hi"
+{ literal_handoff review; writeln '' '## Host fallbacks' 'None (Claude Code).'; } >"$hi"
 assert_eq "reads Deviations out of an implement handoff" \
   "$("$ORCH" handoff section "$hi" Deviations)" "None."
 
