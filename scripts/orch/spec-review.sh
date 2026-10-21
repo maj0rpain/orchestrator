@@ -911,11 +911,12 @@ spec_review_item_view() {
 }
 
 # spec_review_minor_line <index>: minor or resolved item <index> on one line
-# - `<n>. <Group>: <summary>`, a recommend-decline's reason after it, or a
-# resolved item's resolving item in place of a summary.
+# - `- **<n>** - <Group>: <summary>`, a recommend-decline's reason after it,
+# or a resolved item's resolving item in place of a summary. The number is
+# literal, never a Markdown ordered-list number a renderer would recount.
 spec_review_minor_line() {
   local i="$1"
-  printf '%s. %s: ' "${SR_IT_N[$i]}" "$(spec_review_group_title "$i")"
+  printf -- '- **%s** - %s: ' "${SR_IT_N[$i]}" "$(spec_review_group_title "$i")"
   case "${SR_IT_REC[$i]}" in
     resolved) printf 'resolved by item %s\n' "${SR_IT_RESOLVED[$i]}" ;;
     decline) printf '%s - recommend decline: %s\n' "${SR_IT_SUMMARY[$i]}" "${SR_IT_ARG[$i]}" ;;
@@ -1039,19 +1040,20 @@ spec_review_bullets() {
 }
 
 # spec_review_material_entry <index>: material item <index> as one entry of
-# the compact view's numbered list - its header line, then its why, the
-# findings and comments it cites by name, and its change lines (see
-# spec_review_word_diff), or, for a decision item, one sub-bullet per option
-# with its change lines beneath. Sub-bullets are indented to the entry's text,
-# so they nest under any item number.
+# the compact view's list - its header line, `- **<n>** - **<Group>** ...`
+# with <n> its literal batch.md number, never a Markdown ordered-list number a
+# renderer would recount; then its why, the findings and comments it cites by
+# name, and its change lines (see spec_review_word_diff), or, for a decision
+# item, one sub-bullet per option with its change lines beneath. Sub-bullets
+# are indented a fixed 2 spaces, 4 under an option, whatever the number's
+# width, so none is ever a 4-space code block.
 spec_review_material_entry() {
-  local i="$1" n="${SR_IT_N[$1]}" pad j cites="" label=comments
-  pad=$((${#n} + 2))
+  local i="$1" n="${SR_IT_N[$1]}" pad=2 j cites="" label=comments
   case "${SR_IT_REC[$i]}" in
-    apply) printf '%s. **%s** - %s (apply)\n' "$n" "$(spec_review_group_title "$i")" "${SR_IT_SUMMARY[$i]}" ;;
-    decline) printf '%s. **%s** - %s (recommend decline: %s)\n' "$n" "$(spec_review_group_title "$i")" \
+    apply) printf -- '- **%s** - **%s** - %s (apply)\n' "$n" "$(spec_review_group_title "$i")" "${SR_IT_SUMMARY[$i]}" ;;
+    decline) printf -- '- **%s** - **%s** - %s (recommend decline: %s)\n' "$n" "$(spec_review_group_title "$i")" \
       "${SR_IT_SUMMARY[$i]}" "${SR_IT_ARG[$i]}" ;;
-    decision) printf '%s. **%s** (decision, option %s recommended)\n' "$n" "$(spec_review_group_title "$i")" \
+    decision) printf -- '- **%s** - **%s** (decision, option %s recommended)\n' "$n" "$(spec_review_group_title "$i")" \
       "${SR_IT_ARG[$i]}" ;;
   esac
   printf '%*s- why: %s\n' "$pad" '' "${SR_IT_WHY[$i]}"
@@ -1079,8 +1081,8 @@ spec_review_material_entry() {
 
 # spec_review_view: the parsed batch as the human reads it before the batch
 # question - the lens lines, worded as the changelog words them, then the
-# material items as one numbered list in batch order, each numbered as in
-# batch.md (see spec_review_material_entry), then, under a Minor edits
+# material items as one list in batch order, each under its batch.md number
+# (see spec_review_material_entry), then, under a Minor edits
 # heading omitted when there are none, every minor and resolved item on one
 # line, in batch order. Rendered from spec_review_validate's arrays and
 # spec_review_diffs' alone.

@@ -1511,7 +1511,7 @@ assert_eq "with the same summary on stderr" "$err" \
 assert_eq "the directory, map included, byte-identical, view.md apart" "$(round_snapshot "$d")" "$before"
 
 # The compact view (#1250): the lens lines first, then the material items as
-# one numbered list, numbered as in batch.md, each a header line and its
+# one list, each under its batch.md number, each a header line and its
 # sub-bullets - why, the findings it cites, its change - with no ### Item
 # heading; the minor list unchanged after it.
 d="$(src_dir)"
@@ -1525,22 +1525,22 @@ assert_eq "the compact view, its layout pinned" "$out" '## The batch
 - Testability: ran
 - Implementability: not run - timed out
 
-2. **Consistency** - Beta reversed (recommend decline: the plan chose this)
-   - why: Beta contradicts the plan
-   - findings: Consistency 1
-   - Beta ~~line.~~ **reversed.**
-3. **Testability** (decision, option A recommended)
-   - why: Gamma must be testable
-   - findings: Testability 1
-   - Option A - Keep gamma (recommended): Gamma kept
-     - Gamma ~~line.~~ **line (kept).**
-   - Option B - Drop gamma: Gamma dropped
-     - Gamma ~~line.~~ **dropped.**
+- **2** - **Consistency** - Beta reversed (recommend decline: the plan chose this)
+  - why: Beta contradicts the plan
+  - findings: Consistency 1
+  - Beta ~~line.~~ **reversed.**
+- **3** - **Testability** (decision, option A recommended)
+  - why: Gamma must be testable
+  - findings: Testability 1
+  - Option A - Keep gamma (recommended): Gamma kept
+    - Gamma ~~line.~~ **line (kept).**
+  - Option B - Drop gamma: Gamma dropped
+    - Gamma ~~line.~~ **dropped.**
 
 ### Minor edits
 
-1. Fidelity: Alpha primed
-4. Testability: resolved by item 3'
+- **1** - Fidelity: Alpha primed
+- **4** - Testability: resolved by item 3'
 assert_eq "no ### Item heading, only the lens and minor ones" "$(grep '^### ' <<<"$out")" '### Lenses
 ### Minor edits'
 for src_quote in "Beta contradicts the plan." "Gamma is untestable." "Gamma again." "Alpha is stale."; do
@@ -1551,7 +1551,7 @@ sed -i '6s/ minor$/ material/; 14s/.*/@@ why Alpha is stale/' "$d/batch.md"
 src "$d"
 assert_status "a round with a resolved item but no minor one passes" "$st" 0
 assert_eq "its Minor edits list holds the resolved item alone" "${out#*$'\n\n### Minor edits\n\n'}" \
-  '4. Testability: resolved by item 3'
+  '- **4** - Testability: resolved by item 3'
 sed -i '/^@@ item 4 /,$d' "$d/batch.md"
 src "$d"
 assert_status "a round with nothing minor or resolved passes" "$st" 0
@@ -1560,7 +1560,7 @@ d="$(src_dir)"
 sed -i '15s/ material / minor /; 23s/.*//' "$d/batch.md"
 src "$d"
 assert_eq "a recommend-decline minor item's line carries its reason" \
-  "$(has_line "$out" "2. Consistency: Beta reversed - recommend decline: the plan chose this")" yes
+  "$(has_line "$out" "- **2** - Consistency: Beta reversed - recommend decline: the plan chose this")" yes
 
 # Marks: each malformed one refused, naming its batch.md line.
 d="$(src_dir)"
@@ -1731,26 +1731,26 @@ assert_eq "its view, the material items as a list, the minor and resolved ones l
 - Testability: ran
 - Implementability: ran
 
-1. **Consolidation** - Failed pages are retried once (apply)
-   - why: A page that fails once should not fail the whole export
-   - comments: comment by @alice, 2026-10-01T09:00:00Z
-   - …widget in pages of 100. **A failed page is retried once before the export fails.**
-2. **Testability** - The seam'"'"'s test runs against a fake store (apply)
-   - why: The seam names no store to test against
-   - findings: Testability 1
-   - …One seam: the `widget export` ~~CLI.~~ **CLI, end to end, against a fake store.**
-4. **Implementability** (decision, option B recommended)
-   - why: One file cannot hold the largest exports
-   - findings: Implementability 1
-   - Option A - One file: The export writes one compressed file
-     - The export writes one **compressed** file.
-   - Option B - One file per widget (recommended): The export writes one file per widget
-     - The export writes one ~~file.~~ **file per widget.**
+- **1** - **Consolidation** - Failed pages are retried once (apply)
+  - why: A page that fails once should not fail the whole export
+  - comments: comment by @alice, 2026-10-01T09:00:00Z
+  - …widget in pages of 100. **A failed page is retried once before the export fails.**
+- **2** - **Testability** - The seam'"'"'s test runs against a fake store (apply)
+  - why: The seam names no store to test against
+  - findings: Testability 1
+  - …One seam: the `widget export` ~~CLI.~~ **CLI, end to end, against a fake store.**
+- **4** - **Implementability** (decision, option B recommended)
+  - why: One file cannot hold the largest exports
+  - findings: Implementability 1
+  - Option A - One file: The export writes one compressed file
+    - The export writes one **compressed** file.
+  - Option B - One file per widget (recommended): The export writes one file per widget
+    - The export writes one ~~file.~~ **file per widget.**
 
 ### Minor edits
 
-3. Consistency: Widgets renamed items - recommend decline: the glossary'"'"'s term is widget, as the body says
-5. Implementability: resolved by item 4'
+- **3** - Consistency: Widgets renamed items - recommend decline: the glossary'"'"'s term is widget, as the body says
+- **5** - Implementability: resolved by item 4'
 assert_eq "its summary on stderr" "$err" \
   "batch.md passes: 5 items, 5 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
 assert_eq "the worked example's directory unchanged, view.md apart" "$(round_snapshot "$d")" "$before"
@@ -1804,10 +1804,10 @@ assert_eq "its view, the fenced edit diffed word by word, unfenced" "$out" '## T
 - Testability: not run - timed out twice
 - Implementability: ran
 
-1. **Contradicts the plan** - Sync runs hourly, as the plan decided (apply)
-   - why: The plan decided hourly
-   - findings: Fidelity 1
-   - Run sync ~~nightly:~~ **hourly:** ```sh orch sync **--hourly** ```'
+- **1** - **Contradicts the plan** - Sync runs hourly, as the plan decided (apply)
+  - why: The plan decided hourly
+  - findings: Fidelity 1
+  - Run sync ~~nightly:~~ **hourly:** ```sh orch sync **--hourly** ```'
 assert_eq "its summary on stderr" "$err" \
   "batch.md passes: 1 items, 1 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
 assert_eq "the flow batch's directory unchanged, view.md apart" "$(round_snapshot "$d")" "$before"
@@ -1834,45 +1834,45 @@ srd() {
   printf '@@ finding 1\nF.\n' >"$d/lens-fidelity.md"
   printf '@@ none\n' | tee "$d/lens-consistency.md" "$d/lens-testability.md" >"$d/lens-implementability.md"
   src "$d"
-  chg="$(sed -n '/^   - findings: /,${//d;p}' <<<"$out")"
+  chg="$(sed -n '/^  - findings: /,${//d;p}' <<<"$out")"
 }
 srd "$(srd_words 1 20)" "$(srd_words 1 9) X $(srd_words 11 20)"
 assert_status "a word diff's batch passes" "$st" 0
 assert_eq "context cut short on both sides is marked" "$chg" \
-  "   - …w5 w6 w7 w8 w9 ~~w10~~ **X** w11 w12 w13 w14 w15…"
+  "  - …w5 w6 w7 w8 w9 ~~w10~~ **X** w11 w12 w13 w14 w15…"
 srd "a b c" "a X c"
-assert_eq "context running to the start and the end is not" "$chg" "   - a ~~b~~ **X** c"
+assert_eq "context running to the start and the end is not" "$chg" "  - a ~~b~~ **X** c"
 srd "$(srd_words 1 30)" "$(srd_words 1 4) X $(srd_words 6 16) Y $(srd_words 18 30)"
 assert_eq "two runs 11 unchanged words apart are two spans" "$chg" \
-  "   - w1 w2 w3 w4 ~~w5~~ **X** w6 w7 w8 w9 w10…
-   - …w12 w13 w14 w15 w16 ~~w17~~ **Y** w18 w19 w20 w21 w22…"
+  "  - w1 w2 w3 w4 ~~w5~~ **X** w6 w7 w8 w9 w10…
+  - …w12 w13 w14 w15 w16 ~~w17~~ **Y** w18 w19 w20 w21 w22…"
 srd "$(srd_words 1 30)" "$(srd_words 1 4) X $(srd_words 6 15) Y $(srd_words 17 30)"
 assert_eq "two runs 10 unchanged words apart share one span, the words between in full" "$chg" \
-  "   - w1 w2 w3 w4 ~~w5~~ **X** w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 ~~w16~~ **Y** w17 w18 w19 w20 w21…"
+  "  - w1 w2 w3 w4 ~~w5~~ **X** w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 ~~w16~~ **Y** w17 w18 w19 w20 w21…"
 srd "a b c d" "a b new words c d"
-assert_eq "a pure insertion shows only its added words" "$chg" "   - a b **new words** c d"
+assert_eq "a pure insertion shows only its added words" "$chg" "  - a b **new words** c d"
 srd "a b gone c d" "a b c d"
-assert_eq "a pure deletion only its removed words" "$chg" "   - a b ~~gone~~ c d"
+assert_eq "a pure deletion only its removed words" "$chg" "  - a b ~~gone~~ c d"
 srd "one two
 three four" "one two
 three five"
-assert_eq "a multi-line anchor diffs as one run of words" "$chg" "   - one two three ~~four~~ **five**"
+assert_eq "a multi-line anchor diffs as one run of words" "$chg" "  - one two three ~~four~~ **five**"
 srd "a b c" "a  b
 c"
 assert_status "an edit with no changed words passes" "$st" 0
-assert_eq "and shows it changes only whitespace" "$chg" "   - whitespace only, see full view"
+assert_eq "and shows it changes only whitespace" "$chg" "  - whitespace only, see full view"
 srd "a $(srd_words 1 20)" "a $(sed 's/w/x/g' <<<"$(srd_words 1 21)")"
-assert_eq "41 changed words collapse to the edit's size" "$chg" "   - rewritten, 41 words, see full view"
+assert_eq "41 changed words collapse to the edit's size" "$chg" "  - rewritten, 41 words, see full view"
 srd "a $(srd_words 1 20)" "a $(sed 's/w/x/g' <<<"$(srd_words 1 20)")"
-assert_eq "40 do not" "$chg" "   - a ~~$(srd_words 1 20)~~ **$(sed 's/w/x/g' <<<"$(srd_words 1 20)")**"
+assert_eq "40 do not" "$chg" "  - a ~~$(srd_words 1 20)~~ **$(sed 's/w/x/g' <<<"$(srd_words 1 20)")**"
 d="$(src_dir)"
 sed -i "39s/.*/Gamma $(srd_words 1 40)/" "$d/batch.md"
 src "$d"
 assert_contains "a decision option past the limit collapses on its own" "$out" \
-  "   - Option A - Keep gamma (recommended): Gamma kept
-     - Gamma ~~line.~~ **line (kept).**
-   - Option B - Drop gamma: Gamma dropped
-     - rewritten, 41 words, see full view"
+  "  - Option A - Keep gamma (recommended): Gamma kept
+    - Gamma ~~line.~~ **line (kept).**
+  - Option B - Drop gamma: Gamma dropped
+    - rewritten, 41 words, see full view"
 
 # The word lists live in a mktemp -d directory check removes, on success and
 # when git fails; a git exiting above 1 fails check naming the item.
@@ -2141,6 +2141,156 @@ assert_contains "the unknown-op message lists check" "$out" "want begin|check|ap
 assert_contains "help documents spec-review check" "$("$ORCH" help)" "spec-review check <dir>"
 assert_contains "help documents spec-review check --full" "$("$ORCH" help)" "spec-review check <dir> [--tickets | --full <n>...]"
 restore_suite_env
+
+# --- spec-review check literal item numbers (#1339) ---------------------------
+# The compact view prints each item's batch.md number literally, in a bolded
+# bullet, never as a Markdown ordered-list number a renderer counts on from
+# the first; a material item's sub-bullets sit a fixed 2 spaces in (4 under
+# a decision option), whatever its number's width.
+echo
+echo "spec-review check literal item numbers (#1339)"
+new_repo >/dev/null
+d="$(mktemp -d)"
+printf '# Spec\n\nLine one.\nLine two.\nLine three.\nLine four.\nLine five.\nLine seven.\nLine eight.\nLine nine.\nLine ten.\n' \
+  >"$d/spec.md"
+cat >"$d/batch.md" <<'BATCH'
+@@ lens fidelity ran
+@@ lens consistency ran
+@@ lens testability ran
+@@ lens implementability ran
+
+@@ item 1 fidelity apply material
+@@ finding fidelity 1
+@@ summary One edited
+@@ why One is stale
+@@ anchor
+Line one.
+@@ replace
+Line one, edited.
+@@ end
+@@ item 2 fidelity apply minor
+@@ finding fidelity 2
+@@ summary Two edited
+@@ anchor
+Line two.
+@@ replace
+Line two, edited.
+@@ end
+@@ item 3 consistency decline material the plan chose three
+@@ finding consistency 1
+@@ summary Three edited
+@@ why Three contradicts the plan
+@@ anchor
+Line three.
+@@ replace
+Line three, edited.
+@@ end
+@@ item 4 consistency decline minor the body says four
+@@ finding consistency 2
+@@ summary Four edited
+@@ anchor
+Line four.
+@@ replace
+Line four, edited.
+@@ end
+@@ item 5 testability decision B material
+@@ finding testability 1
+@@ why Five is untestable
+@@ option A Keep five
+@@ summary Five kept
+@@ anchor
+Line five.
+@@ replace
+Line five, kept.
+@@ end
+@@ option B Drop five
+@@ summary Five dropped
+@@ anchor
+Line five.
+@@ replace
+Line five, dropped.
+@@ end
+@@ item 6 testability resolved
+@@ finding testability 2
+@@ resolved-by 5
+@@ item 7 implementability apply minor
+@@ finding implementability 1
+@@ summary Seven edited
+@@ anchor
+Line seven.
+@@ replace
+Line seven, edited.
+@@ end
+@@ item 8 implementability apply minor
+@@ finding implementability 2
+@@ summary Eight edited
+@@ anchor
+Line eight.
+@@ replace
+Line eight, edited.
+@@ end
+@@ item 9 implementability apply minor
+@@ finding implementability 3
+@@ summary Nine edited
+@@ anchor
+Line nine.
+@@ replace
+Line nine, edited.
+@@ end
+@@ item 10 implementability apply material
+@@ finding implementability 4
+@@ summary Ten edited
+@@ why Ten is stale
+@@ anchor
+Line ten.
+@@ replace
+Line ten, edited.
+@@ end
+BATCH
+printf '@@ finding 1\nOne.\n@@ finding 2\nTwo.\n' >"$d/lens-fidelity.md"
+printf '@@ finding 1\nThree.\n@@ finding 2\nFour.\n' >"$d/lens-consistency.md"
+printf '@@ finding 1\nFive.\n@@ finding 2\nSix.\n' >"$d/lens-testability.md"
+printf '@@ finding 1\nSeven.\n@@ finding 2\nEight.\n@@ finding 3\nNine.\n@@ finding 4\nTen.\n' >"$d/lens-implementability.md"
+src "$d"
+assert_status "a ten-item batch passes" "$st" 0
+assert_eq "its compact view, every item under its batch.md number" "$out" '## The batch
+
+### Lenses
+
+- Fidelity: ran
+- Consistency: ran
+- Testability: ran
+- Implementability: ran
+
+- **1** - **Fidelity** - One edited (apply)
+  - why: One is stale
+  - findings: Fidelity 1
+  - Line ~~one.~~ **one, edited.**
+- **3** - **Consistency** - Three edited (recommend decline: the plan chose three)
+  - why: Three contradicts the plan
+  - findings: Consistency 1
+  - Line ~~three.~~ **three, edited.**
+- **5** - **Testability** (decision, option B recommended)
+  - why: Five is untestable
+  - findings: Testability 1
+  - Option A - Keep five: Five kept
+    - Line ~~five.~~ **five, kept.**
+  - Option B - Drop five (recommended): Five dropped
+    - Line ~~five.~~ **five, dropped.**
+- **10** - **Implementability** - Ten edited (apply)
+  - why: Ten is stale
+  - findings: Implementability 4
+  - Line ~~ten.~~ **ten, edited.**
+
+### Minor edits
+
+- **2** - Fidelity: Two edited
+- **4** - Consistency: Four edited - recommend decline: the body says four
+- **6** - Testability: resolved by item 5
+- **7** - Implementability: Seven edited
+- **8** - Implementability: Eight edited
+- **9** - Implementability: Nine edited'
+assert_eq "no line of it an ordered-list item" "$(grep -cE '^[0-9]+\. ' <<<"$out")" 0
 
 # --- spec-review check --tickets (#1226) ---------------------------------------
 # The ticket items validated before the ticket question - grammar, every text

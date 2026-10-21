@@ -16,7 +16,7 @@ differences only:
 - **Disposition**: `batch.md` is written and checked with `spec-review
   check` until it passes, as in an attended review, and the batch printed by
   pasting `check`'s stdout word for word, as in an attended review - the
-  same compact view: the material items as one numbered list, each with its
+  same compact view: the material items as one list, each under its batch number, with its
   summary, its reason, the findings it cites and its edit as a word diff,
   and the minor and resolved ones one line each under **Minor edits** - so a human watching can see what is applied and
   interrupt. Then no question is asked and nothing waits: the batch is
