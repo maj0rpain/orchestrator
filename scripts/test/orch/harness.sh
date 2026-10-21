@@ -252,8 +252,8 @@ DECL_SUBSTITUTION_RULE="The rule: split the declaration from the assignment - lo
 
 # decl_substitutions <dir>: checks orch.sh and its modules under <dir> (a
 # scripts/ tree) for a local, export, declare or readonly that itself carries
-# a $(...) assignment, quoted or not and after any other names on the same
-# declaration, and prints one line per such line, naming the file (as
+# a $(...) in an assignment's value - the whole value or part of it, quoted or
+# not, and after any other names on the same declaration - and prints one line per such line, naming the file (as
 # scripts/<path>) and line and the rule; returns 1 when it printed any. The
 # keyword counts in command position only - at a line's start, or after one
 # of ;&|{ or then, do, else - so a comment or a string naming it is no match,
@@ -261,7 +261,7 @@ DECL_SUBSTITUTION_RULE="The rule: split the declaration from the assignment - lo
 decl_substitutions() {
   local out
   out="$(cd "$1" && awk -v rule="$DECL_SUBSTITUTION_RULE" '
-    /(^[ \t]*|[;&|{][ \t]*|(then|do|else)[ \t]+)(local|export|declare|readonly)[ \t]([^;&|]*[ \t])?[A-Za-z_][A-Za-z0-9_]*="?\$\(/ {
+    /(^[ \t]*|[;&|{][ \t]*|(then|do|else)[ \t]+)(local|export|declare|readonly)[ \t]([^;&|]*[ \t])?[A-Za-z_][A-Za-z0-9_]*=[^;&|]*\$\(/ {
       printf "scripts/%s:%d declares a name with a $(...) assignment. %s\n", FILENAME, FNR, rule
     }
   ' orch.sh orch/*.sh)" || return 2
@@ -1207,6 +1207,9 @@ plant_file "$decl_dir/orch" zz-combined.sh <<'PLANTED'
     export planted_e="$(pwd)"
     if true; then declare -r planted_d=$(pwd); fi
     true && readonly planted_r="$(pwd)"
+    local planted_p="prefix-$(pwd)"
+    local planted_f="${planted_x:-$(pwd)}"
+    local -a planted_l=($(ls))
   }
 PLANTED
 out="$(decl_substitutions "$decl_dir")"; st=$?
@@ -1216,7 +1219,10 @@ assert_eq "naming each file and line and the rule" "$out" \
 scripts/orch/zz-combined.sh:3 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE
 scripts/orch/zz-combined.sh:4 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE
 scripts/orch/zz-combined.sh:5 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE
-scripts/orch/zz-combined.sh:6 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE"
+scripts/orch/zz-combined.sh:6 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE
+scripts/orch/zz-combined.sh:7 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE
+scripts/orch/zz-combined.sh:8 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE
+scripts/orch/zz-combined.sh:9 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE"
 rm -rf "${decl_dir%/scripts}"
 
 decl_dir="$(tree_copy scripts)"

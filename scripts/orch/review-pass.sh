@@ -33,18 +33,20 @@ review_pass_begin() {
     || die "$branch is the base branch - a review pass reviews a branch's change against it; check out the change's branch"
   local phase held rc=0
   phase="$(flow_holding_phase "$branch" "$issue")" || rc=$?
-  case "$rc" in 0|1) ;; *) flow_holding_unreadable die ;; esac
-  if [ "$rc" -eq 0 ]; then
-    held="$(state_get issue)"
-    case "$phase" in
-      implement|review)
-        die "the active flow holds issue #$held at phase $phase - this change belongs to that flow's review loop; run $(flow_cmd next)" ;;
-      spec)
-        die "the active flow holds issue #$held at phase spec - its change has not been built yet; run $(flow_cmd next)" ;;
-      *)
-        die "the active flow holds issue #$held at phase '$phase', which is not a flow phase - refusing to review it; run orch.sh doctor --flow" ;;
-    esac
-  fi
+  case "$rc" in
+    0)
+      held="$(state_get issue)"
+      case "$phase" in
+        implement|review)
+          die "the active flow holds issue #$held at phase $phase - this change belongs to that flow's review loop; run $(flow_cmd next)" ;;
+        spec)
+          die "the active flow holds issue #$held at phase spec - its change has not been built yet; run $(flow_cmd next)" ;;
+        *)
+          die "the active flow holds issue #$held at phase '$phase', which is not a flow phase - refusing to review it; run orch.sh doctor --flow" ;;
+      esac ;;
+    1) ;;
+    *) die "state.json cannot be read - run orch.sh doctor --flow" ;;
+  esac
   exclude_orch_dirs
   local dir="$ORCH/review-pass/$branch" f n max=0
   mkdir -p "$dir"

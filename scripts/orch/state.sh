@@ -119,24 +119,20 @@ flow_active() { flow_state_active "$STATE"; }
 # and 2 when state.json cannot be read - so the guard fails closed. A branch
 # or issue an active flow holds belongs to it (ADR-0029), so review-pass begin
 # and pr draft/ready refuse it, each with its own message, and refuse status 2
-# with flow_holding_unreadable. Reads state.json only when one exists. Every
+# too. Reads state.json only when one exists. Every
 # read is checked here: callers run it in `$(...) ||`, where errexit is off.
 flow_holding_phase() {
-  local branch="$1" issue="${2:-}" phase held
+  local branch="$1" issue="${2:-}" phase held_branch held_issue
   flow_active || return 1
   phase="$(state_get phase)" || return 2
-  held="$(state_get branch)" || return 2
-  if [ "$held" != "$branch" ]; then
+  held_branch="$(state_get branch)" || return 2
+  if [ "$held_branch" != "$branch" ]; then
     [ -n "$issue" ] || return 1
-    held="$(state_get issue)" || return 2
-    [ "$held" = "$issue" ] || return 1
+    held_issue="$(state_get issue)" || return 2
+    [ "$held_issue" = "$issue" ] || return 1
   fi
   printf '%s\n' "$phase"
 }
-
-# The one message for flow_holding_phase's status 2, through the die-like
-# function named by $1 (die or die2), so each caller keeps its exit code.
-flow_holding_unreadable() { "$1" "state.json cannot be read - run orch.sh doctor --flow"; }
 
 # Succeeds when state set may write key $1: its owner column is -. The one
 # place an owner is compared against -; an unknown key is not settable.

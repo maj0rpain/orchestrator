@@ -42,12 +42,13 @@ status_others() {
 
 # Full detail on the current checkout's flow.
 status_flow() {
-  local slug phase issue branch pr iteration redo_count base
+  local slug phase issue branch pr iteration redo_count base budget
   slug="$(state_get slug)";       phase="$(state_get phase)"
   issue="$(state_get issue)";     branch="$(state_get branch)"
   pr="$(state_get pr)";           iteration="$(state_get iteration)"
   redo_count="$(state_get redo_count)"
   base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
+  budget="$(review_budget)" || die "cannot read the flow's review budget from $STATE"
   issue="${issue:--}";            branch="${branch:--}";  pr="${pr:--}"
   note "flow:      $slug"
   note "phase:     $phase"
@@ -57,7 +58,7 @@ status_flow() {
   note "PR:        $pr"
   # Against the budget, not alone: "iteration 3" does not say how far along
   # the loop is, and the budget is the one number a human chose.
-  note "review:    iteration $iteration of $(review_budget)"
+  note "review:    iteration $iteration of $budget"
   # Unconditional, like every other line here: a flow that has never been
   # redone still has an answer - 0 - rather than a line that only appears once
   # something has happened.
