@@ -85,9 +85,8 @@ assert_eq "main_checkout prints the main checkout from a side checkout" \
   "$(cd "$side" && sourced_orch main_checkout)" "$top"
 
 # checkout_kind <path>: the walk's kind for the checkout holding <path> (#1110).
-marked="$(marked_ticket_worktree 11)"
 assert_eq "checkout_kind: a ticket worktree carrying a copied marker is ticket" \
-  "$(sourced_orch checkout_kind "$marked")" "ticket"
+  "$(sourced_orch checkout_kind "$top/.orchestrator/worktrees/t9")" "ticket"
 assert_eq "checkout_kind: a side checkout is side" "$(sourced_orch checkout_kind "$side")" "side"
 mkdir -p "$side/sub"
 assert_eq "checkout_kind: a folder inside a side checkout is side" \
