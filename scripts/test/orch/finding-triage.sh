@@ -601,6 +601,20 @@ out="$(apply 2 close-fixed 2>&1)"; st=$?
 assert_status "refuses no comment file" "$st" 1
 out="$(apply 2 close-fixed --comment-file /nonexistent/comment.md 2>&1)"; st=$?
 assert_status "refuses a comment file that is not there" "$st" 1
+# An unreadable comment file stops the post, naming the file, so the issue
+# never gets the disclaimer alone (#1335).
+if [ "$(id -u)" -ne 0 ]; then
+  triaged 2 "review:major,needs-triage,bug"
+  unreadable="$(mktemp)"
+  writeln 'Fixed by abc1234 on main.' >"$unreadable"
+  chmod 000 "$unreadable"
+  out="$(apply 2 close-fixed --comment-file "$unreadable" 2>&1)"; st=$?
+  assert_status "refuses an unreadable comment file" "$st" 1
+  assert_contains "naming the file" "$out" "orch: could not write the triage comment from $unreadable"
+  assert_eq "posting no comment" "$(fake_comments_of 2)" ""
+  chmod 644 "$unreadable"
+  rm -f "$unreadable"
+fi
 
 # A category label gh will not create - most often because the repo has it -
 # does not stop apply, and the repo's own is never overwritten.

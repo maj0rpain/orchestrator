@@ -31,8 +31,14 @@ open_pr() {
   # branch, so a PR into any other base branch refers to its issue instead of
   # claiming to close it - the release PR is what closes it.
   [ "$base" = "$(default_branch)" ] || keyword=Refs
-  tmp="$(mktemp)"
-  { printf '%s #%s\n\n' "$keyword" "$issue"; cat "$body_file"; } >"$tmp"
+  # open_pr runs in $(...), where errexit is off (#1327), so the temp body's
+  # creation and write are checked here: an unreadable body file would
+  # otherwise open the PR with only its closing line.
+  tmp="$(mktemp)" || die "could not create a temp file for the PR body - no PR was opened"
+  { printf '%s #%s\n\n' "$keyword" "$issue" && cat "$body_file"; } >"$tmp" || {
+    rm -f "$tmp"
+    die "could not write the PR body from $body_file - no PR was opened"
+  }
   if ! capture pr err adapter_pr_create "$base" "$branch" "$title" "$tmp" ${create_opts[@]+"${create_opts[@]}"}; then
     rm -f "$tmp"
     gh_die "open the PR for branch $branch (issue #$issue)" "$err"

@@ -353,6 +353,21 @@ assert_eq "creating no PR" "$(fake_prs)" "23 24 30 31 32 33 34 35 "
 assert_eq "writing no PR marker" "$(pr_marker_of quick/22-rejected)" ""
 rm -f "$bare/hooks/pre-receive"
 
+# An unreadable body file stops pr publish before any create, naming the file,
+# so no PR opens with only its closing line (#1335).
+if [ "$(id -u)" -ne 0 ]; then
+  git checkout -q -b quick/23-unreadable
+  unreadable="$(mktemp)"
+  writeln 'Implements the thing.' >"$unreadable"
+  chmod 000 "$unreadable"
+  out="$("$ORCH" pr publish 23 "Title" "$unreadable" 2>&1)"; st=$?
+  assert_status "an unreadable body file fails pr publish" "$st" 1
+  assert_contains "naming the file" "$out" "orch: could not write the PR body from $unreadable"
+  assert_eq "creating no PR" "$(fake_prs)" "23 24 30 31 32 33 34 35 "
+  chmod 644 "$unreadable"
+  rm -f "$unreadable"
+fi
+
 help="$("$ORCH" help)"
 assert_contains "help documents --draft and --label" "$help" \
   "pr publish <issue> <title> <body-file> [--draft] [--label <name>]..."
