@@ -308,9 +308,7 @@ cmd_side_checkout_prune() {
         warn "could not archive the main checkout's flow: ${archive_out%%$'\n'*}"; failed=1; continue
       fi
       note "$archive_out"
-      # Not checkout_branch: its short name can abbreviate an ambiguous branch
-      # (heads/foo beside a tag foo), and this note prints git's full name.
-      note "archived the main checkout's flow in place - $(git -C "$main_root" branch --show-current || true) is still checked out"
+      note "archived the main checkout's flow in place - $(checkout_branch "$main_root" || true) is still checked out"
       continue
     fi
     if checkout_has_flow "$path" && ! archive_out="$(archive_flow "$path" "$main_root" 2>&1)"; then

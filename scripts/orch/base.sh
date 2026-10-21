@@ -23,8 +23,10 @@ default_branch() {
     b="$(adapter_repo_default_branch "$REPO_NAME" 2>/dev/null)" || b=""
   fi
   if ! is_branch_name "$b"; then
-    b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" || b=""
-    b="${b#origin/}"
+    # Read in full, never --short: a local branch named origin/<b> makes the
+    # short name remotes/origin/<b>.
+    b="$(git symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null)" || b=""
+    b="${b#refs/remotes/origin/}"
   fi
   is_branch_name "$b" || b="main"
   printf '%s\n' "$b"
