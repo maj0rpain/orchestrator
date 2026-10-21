@@ -30,6 +30,15 @@ checkout_new_branch() {
     || git checkout -q --no-track -b "$name" "$base"
 }
 
+# branch_upstream <branch>: prints <branch>'s upstream ref in full
+# (refs/remotes/origin/<b>), or returns 1 when it has none. The one place an
+# upstream is read, never through --abbrev-ref: that abbreviates an ambiguous
+# name - beside a local branch or tag named origin/<b> - to remotes/origin/<b>
+# instead of the bare short name (#1331).
+branch_upstream() {
+  git rev-parse --symbolic-full-name --verify --quiet "$1@{upstream}" 2>/dev/null
+}
+
 # Records <base> and <sha> as branch <name>'s base and base SHA in its git
 # config, where branch sync and branch base-sha read them.
 record_branch_base() {
@@ -178,7 +187,7 @@ cmd_branch() {
       elif [ "$old_ok" = 0 ] && [ "$new_ok" = 0 ]; then
         die "branch $old does not exist"
       elif [ "$old_ok" = 1 ]; then
-        upstream="$(git rev-parse --abbrev-ref --verify --quiet "$old@{upstream}" 2>/dev/null)" || upstream=""
+        upstream="$(branch_upstream "$old")" || upstream=""
         git branch -m "$old" "$new"
       else
         # $old is already gone and $new already exists: a previous call's
