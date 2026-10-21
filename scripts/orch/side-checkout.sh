@@ -26,8 +26,10 @@ side_checkout_marker() {
     && side_checkout_marked "$gd" && printf '%s\n' "$gd/$SIDE_CHECKOUT_MARKER"
 }
 
-# Whether the worktree at <path> carries the ownership marker.
-is_side_checkout() { side_checkout_marker "$1" >/dev/null; }
+# is_side_checkout <path>: whether the checkout holding <path> is a side
+# checkout, as the walk classifies it (see checkout_kind) - a ticket worktree
+# carrying a copied marker is none. False when the walk fails.
+is_side_checkout() { [ "$(checkout_kind "$1")" = side ]; }
 
 # --- the finished sweep ---
 #
@@ -90,10 +92,14 @@ side_checkout_finished() {
 # archive_root <root>: prints the checkout whose .orchestrator/archive/
 # receives the flow in the checkout at <root> - the one computation of the
 # rule. A side checkout's flow goes to the main checkout's archive; any other
-# checkout, a hand-made worktree included, archives in place. Fails when <root>
-# is a side checkout and the main checkout cannot be read.
+# checkout, a ticket or hand-made worktree included, archives in place. Reads
+# the walk's kind itself, so it fails, printing nothing, when the walk fails or
+# when <root> is a side checkout and the main checkout cannot be read - never
+# archiving a side checkout's flow in place.
 archive_root() {
-  if is_side_checkout "$1"; then main_checkout; else printf '%s\n' "$1"; fi
+  local kind
+  kind="$(checkout_kind "$1")" || return 1
+  if [ "$kind" = side ]; then main_checkout; else printf '%s\n' "$1"; fi
 }
 
 # FLOW_LESS_ENTRIES: the top-level entries under .orchestrator/ that belong
@@ -140,10 +146,12 @@ side_checkout_close_note() {
 side_checkouts_dir() { printf '%s/%s/checkouts\n' "$1" "$ORCH_DIR_NAME"; }
 
 # side_checkout_issue <path>: prints the issue the side checkout at <path>
-# records in its marker; returns 1 when it is no side checkout, or its marker
-# holds no plain issue number.
+# records in its marker; returns 1 when it is no side checkout - a ticket
+# worktree carrying a copied marker included, checked before the marker is
+# read - or its marker holds no plain issue number.
 side_checkout_issue() {
   local marker issue
+  is_side_checkout "$1" || return 1
   marker="$(side_checkout_marker "$1")" || return 1
   issue="$(cat "$marker" 2>/dev/null)" || return 1
   case "$issue" in ''|*[!0-9]*) return 1 ;; esac
@@ -270,12 +278,14 @@ cmd_side_checkout_prune() {
   # archive_out is this entry's archive_flow output - its note, or its error -
   # cleared at the top of each entry so none outlives its own.
   local archive_out remove_err branch_err
-  local kind flow _branch walk=() finished=()
+  local kind flow _kind _flow _branch walk=() finished=()
   here="$(pwd -P)"
   # The walk lists the main checkout first.
   mapfile -t walk < <(checkouts)
   main_root=""
-  [ "${#walk[@]}" -eq 0 ] || read -r _ _ _ main_root <<<"${walk[0]}"
+  # The parse main_checkout makes, repeated on the walk already held rather
+  # than walking again.
+  [ "${#walk[@]}" -eq 0 ] || read -r _kind _flow _branch main_root <<<"${walk[0]}"
   # Every step works from the main checkout, so removing the checkout this
   # command ran in leaves the sweep somewhere to stand.
   cd "$main_root" || die "could not enter the main checkout $main_root"

@@ -622,6 +622,17 @@ sc_add() {
   return "$st"
 }
 
+# marked_ticket_worktree <n>: adds ticket worktree t<n> under the current
+# checkout, on a branch, and copies a side-checkout marker recording issue 123
+# into its git folder - a ticket worktree carrying a copied marker (#1110).
+# Prints its path.
+marked_ticket_worktree() {
+  local path
+  path="$("$ORCH" ticket-worktree add "$1")" || return
+  printf '123\n' >"$(git -C "$path" rev-parse --absolute-git-dir)/orchestrator-side-checkout"
+  printf '%s\n' "$path"
+}
+
 # The missing-repo wording, built the way orch.sh builds REPO_MISSING,
 # REPO_CAUSE and REPO_REMEDY - but spelled out here, never read from orch.sh,
 # so a wording change there that the suite does not mirror still fails a test.
