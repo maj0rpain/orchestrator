@@ -247,6 +247,29 @@ gh_op_placement() {
   return 1
 }
 
+# The declaration substitution rule, as decl_substitutions' message states it.
+DECL_SUBSTITUTION_RULE="The rule: split the declaration from the assignment - local x; x=\"\$(...)\" - so the substitution's status reaches errexit; local, export, declare and readonly return their own status, 0, in its place."
+
+# decl_substitutions <dir>: checks orch.sh and its modules under <dir> (a
+# scripts/ tree) for a local, export, declare or readonly that itself carries
+# a $(...) assignment, quoted or not and after any other names on the same
+# declaration, and prints one line per such line, naming the file (as
+# scripts/<path>) and line and the rule; returns 1 when it printed any. The
+# keyword counts in command position only - at a line's start, or after one
+# of ;&|{ or then, do, else - so a comment or a string naming it is no match,
+# and the declaration ends at the next ;, & or |, so the split form passes.
+decl_substitutions() {
+  local out
+  out="$(cd "$1" && awk -v rule="$DECL_SUBSTITUTION_RULE" '
+    /(^[ \t]*|[;&|{][ \t]*|(then|do|else)[ \t]+)(local|export|declare|readonly)[ \t]([^;&|]*[ \t])?[A-Za-z_][A-Za-z0-9_]*="?\$\(/ {
+      printf "scripts/%s:%d declares a name with a $(...) assignment. %s\n", FILENAME, FNR, rule
+    }
+  ' orch.sh orch/*.sh)" || return 2
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out" | LC_ALL=C sort -t: -k1,1 -k2,2n
+  return 1
+}
+
 # --- isolation --------------------------------------------------------------
 echo
 echo "isolation"
@@ -1162,6 +1185,55 @@ out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "comments, longer names and the gh module pass" "$st" 0
 assert_eq "and print nothing" "$out" ""
 rm -rf "${gh_op_dir%/scripts}"
+
+# --- declaration substitutions (#1327) ----------------------------------------
+# decl_substitutions over the real scripts/, then over copies of it, each with
+# a planted module: one with every combined form, and one whose lines all keep
+# the rule.
+echo
+echo "declaration substitutions (#1327)"
+out="$(decl_substitutions "$PLUGIN_ROOT/scripts")"; st=$?
+if [ "$st" -eq 0 ] && [ -z "$out" ]; then
+  ok "no module of the real tree declares a name with a \$(...) assignment"
+else
+  bad "no module of the real tree declares a name with a \$(...) assignment" "$out"
+fi
+
+decl_dir="$(tree_copy scripts)"
+plant_file "$decl_dir/orch" zz-combined.sh <<'PLANTED'
+  planted() {
+    local x="$(git rev-parse HEAD)"
+    local a b=$(date)
+    export planted_e="$(pwd)"
+    if true; then declare -r planted_d=$(pwd); fi
+    true && readonly planted_r="$(pwd)"
+  }
+PLANTED
+out="$(decl_substitutions "$decl_dir")"; st=$?
+assert_status "a declaration carrying a \$(...) assignment fails" "$st" 1
+assert_eq "naming each file and line and the rule" "$out" \
+  "scripts/orch/zz-combined.sh:2 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE
+scripts/orch/zz-combined.sh:3 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE
+scripts/orch/zz-combined.sh:4 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE
+scripts/orch/zz-combined.sh:5 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE
+scripts/orch/zz-combined.sh:6 declares a name with a \$(...) assignment. $DECL_SUBSTITUTION_RULE"
+rm -rf "${decl_dir%/scripts}"
+
+decl_dir="$(tree_copy scripts)"
+plant_file "$decl_dir/orch" zz-split.sh <<'PLANTED'
+  planted() {
+    local x; x="$(git rev-parse HEAD)"
+    local a b; b=$(date) || return
+    local y="$x" z=plain
+    export planted_e; planted_e="$(pwd)"
+    echo "local q=$(pwd)"
+    # local c="$(pwd)" in a comment
+  }
+PLANTED
+out="$(decl_substitutions "$decl_dir")"; st=$?
+assert_status "the split form, plain values, strings and comments pass" "$st" 0
+assert_eq "and print nothing" "$out" ""
+rm -rf "${decl_dir%/scripts}"
 
 # --- the helper index (#1144) -------------------------------------------------
 # scripts/dev/helpers.sh over the real tree, its listing checked against the
