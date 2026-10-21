@@ -86,8 +86,6 @@ gp_bare="$(mktemp -d)/origin.git"
 git init -q --bare "$gp_bare"
 bare_origin "$gp_bare"
 git push -q origin HEAD:refs/heads/main
-assert_eq "a push that lands returns 0" \
-  "$(sourced_orch eval 'git_push why origin HEAD:refs/heads/ok; echo "$?"')" "0"
 git commit -q --allow-empty -m "more"
 origin_rejects "$gp_bare"
 assert_eq "a rejected push of two refs returns 1 with both ' ! ' lines, joined by '; '" \

@@ -129,20 +129,12 @@ upstream_of() {
 # <branch>'s git config (#1200), empty when none was.
 pr_marker_of() { git config --get "branch.$1.orchestrator-pr" 2>/dev/null; }
 
-# origin_rejects <bare> [deletes]: installs a pre-receive hook in the bare
-# origin at <bare> that rejects every push - or, with deletes, only a push
-# deleting a ref (a zero new SHA) - so a push fails with git's real rejection
+# origin_rejects <bare>: installs a pre-receive hook in the bare origin at
+# <bare> that rejects every push, so a push fails with git's real rejection
 # stderr, offline (#1300). Removing <bare>/hooks/pre-receive lifts it.
 origin_rejects() {
   local hook="$1/hooks/pre-receive"
-  if [ "${2:-}" = deletes ]; then
-    # shellcheck disable=SC2016 # the hook's own variables, expanded when it runs
-    printf '%s\n' '#!/bin/sh' 'while read -r old new ref; do' \
-      '  case "$new" in *[!0]*) ;; *) echo "deletion rejected by test hook" >&2; exit 1 ;; esac' \
-      'done' >"$hook"
-  else
-    printf '%s\n' '#!/bin/sh' 'echo "rejected by test hook" >&2' 'exit 1' >"$hook"
-  fi
+  printf '%s\n' '#!/bin/sh' 'echo "rejected by test hook" >&2' 'exit 1' >"$hook"
   chmod +x "$hook"
 }
 

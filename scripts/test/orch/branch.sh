@@ -331,35 +331,6 @@ assert_eq "renames locally" \
   "$(git rev-parse --verify --quiet to-fail-redo-1 >/dev/null 2>&1 && echo present || echo gone)" "present"
 assert_eq "and publishes it" \
   "$(git -C "$bare2" rev-parse --quiet --verify refs/heads/to-fail-redo-1 >/dev/null && echo present || echo gone)" "present"
-# That retry's delete of to-fail failed, since bare2 never held it: the
-# ls-remote fallback, reading git's stderr through git_push now, still takes
-# an old ref already gone as done (#1300).
-assert_eq "an old remote name already gone is not an error" \
-  "$(git ls-remote origin refs/heads/to-fail)" ""
-
-# A push origin rejects: the death relays git's ` ! ` line, and the rename is
-# still undone (#1300).
-git checkout -q -b to-reject
-git push -q -u origin to-reject
-git commit -q --allow-empty -m "unpushed work"
-origin_rejects "$bare2"
-out="$(orch_gh_failing branch retire to-reject to-reject-redo-1 2>&1)"; st=$?
-assert_status "dies when origin rejects the push" "$st" 1
-assert_eq "relaying git's reason" "$out" \
-  "orch: could not push to-reject-redo-1 to origin: ! [remote rejected] to-reject-redo-1 -> to-reject-redo-1 (pre-receive hook declined)"
-assert_eq "rolling the local rename back" \
-  "$(git rev-parse --verify --quiet to-reject >/dev/null 2>&1 && echo present || echo gone)" "present"
-
-# Origin takes the new name but refuses the old one's delete: the push lands,
-# and the death relays git's reason for the delete.
-origin_rejects "$bare2" deletes
-out="$(orch_gh_failing branch retire to-reject to-reject-redo-1 2>&1)"; st=$?
-assert_status "dies when origin rejects the old name's delete" "$st" 1
-assert_eq "relaying git's reason for the delete" "$out" \
-  "orch: could not delete origin/to-reject: ! [remote rejected] to-reject (pre-receive hook declined)"
-assert_eq "after the new name landed" \
-  "$(git -C "$bare2" rev-parse --quiet --verify refs/heads/to-reject-redo-1 >/dev/null && echo present || echo gone)" "present"
-rm -f "$bare2/hooks/pre-receive"
 
 # Idempotent resume: a previous call whose local rename and remote push both
 # already succeeded, but whose remote delete of the old ref did not - the

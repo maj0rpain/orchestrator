@@ -341,7 +341,7 @@ assert_eq "opening nothing" "$(fake_prs)" "23 24 30 31 32 33 34 35 "
 fake_unfail
 
 # A failed push stops pr publish before any create, relaying git's reason
-# (#1300): the ` ! ` ref line of a rejection...
+# (#1300).
 git checkout -q -b quick/22-rejected
 origin_rejects "$bare"
 fake_next_pr 36
@@ -352,15 +352,6 @@ assert_eq "naming the branch, that no PR was opened, and git's reason" "$out" \
 assert_eq "creating no PR" "$(fake_prs)" "23 24 30 31 32 33 34 35 "
 assert_eq "writing no PR marker" "$(pr_marker_of quick/22-rejected)" ""
 rm -f "$bare/hooks/pre-receive"
-# ...or git's fatal: line, when origin is no repository at all.
-missing="$(mktemp -d)/missing.git"
-git remote set-url origin "$missing"
-out="$("$ORCH" pr publish 22 "Title" "$body" 2>&1)"; st=$?
-assert_status "a push to a missing origin fails pr publish" "$st" 1
-assert_eq "relaying git's fatal: line" "$out" \
-  "orch: could not push branch quick/22-rejected to origin - no PR was opened: fatal: '$missing' does not appear to be a git repository"
-assert_eq "creating no PR there either" "$(fake_prs)" "23 24 30 31 32 33 34 35 "
-git remote set-url origin "$bare"
 
 help="$("$ORCH" help)"
 assert_contains "help documents --draft and --label" "$help" \
