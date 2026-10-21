@@ -206,9 +206,10 @@ help_entry() {
     found { exit }
     index($0, cmd) == 1 { found = 1; print }'
 }
-# assert_help_names_handoffs_by_role <entry>: orch.sh help's <entry> entry
-# exists, names no NN-name.md handoff file, and points at handoff path, so
-# renaming a handoff file never leaves the help stale.
+# assert_help_names_handoffs_by_role <entry>:
+# asserts orch.sh help has an <entry> entry that names no NN-name.md handoff
+# file and points at handoff path, so renaming a handoff file never leaves the
+# help stale.
 assert_help_names_handoffs_by_role() {
   local entry="$1" text
   text="$(help_entry "$entry")"
