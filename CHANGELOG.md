@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.20.8
+
+`pr open` and `pr publish` now stop when the branch push fails. They open no PR and report git's reason, instead of the misleading GraphQL error from the PR create that followed. Every push `orch.sh` makes, `branch sync`'s and `branch retire`'s included, now ends its `orch:` line with git's reason (#1300).
+
 ## 4.20.7
 
 A branch sharing its name with a tag is now always named as `<name>`, never `heads/<name>`, by `status`, `side-checkout list`, `branch base-sha`, `branch sync`, `pr publish` and every other command that reads the current branch, and the default-branch fallback settles on the right branch even beside a local branch named `origin/<default>`: symbolic refs are read in full rather than through git's `--short` abbreviation.
