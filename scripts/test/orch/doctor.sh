@@ -1407,6 +1407,15 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "at budget with no terminal record warns rather than fails" "$st" 0
 assert_contains "reads as interrupted, not pending" "$out" "looks interrupted, not stopped"
 
+# A review directory that cannot be made fails, naming it (#1334).
+rm -rf .orchestrator/review
+: >.orchestrator/review
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "a review directory that cannot be made fails" "$st" 1
+assert_contains "with a FAIL line naming its path" "$out" \
+  "FAIL  review loop's terminal state cannot be read: cannot create the review directory $(pwd -P)/.orchestrator/review"
+rm -f .orchestrator/review
+
 mkdir -p .orchestrator/review
 writeln '## Terminal state' 'ready' >.orchestrator/review/iteration-05.md
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?

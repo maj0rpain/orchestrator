@@ -678,6 +678,8 @@ check_flow_review_terminal() {
     malformed)
       d_fail "review loop's last iteration ($i) has a malformed terminal state - $detail"
       d_remedy "rewrite the first line of $(cmd_review path "$i") in the expected shape above" ;;
+    unreadable)
+      d_fail "review loop's terminal state cannot be read: $detail" ;;
   esac
 }
 
