@@ -20,7 +20,9 @@ SUITE_COST_CHECK_USAGE="usage: orch.sh suite-cost check -- <cmd> [args...]"
 # check's defaults, read here alone: below the floor (CPU seconds) a baseline
 # is compared with nothing, and growth past the threshold (percent) is a
 # finding. Set per clone with git config orchestrator.suiteCost.floor and
-# orchestrator.suiteCost.growth.
+# orchestrator.suiteCost.growth. A third per-clone key,
+# orchestrator.suiteCost.setup, has no default: the install command (npm ci,
+# uv sync) a base run runs first in its worktree, read by suite_cost_base_run.
 SUITE_COST_FLOOR_DEFAULT=60
 SUITE_COST_GROWTH_DEFAULT=10
 
@@ -218,11 +220,14 @@ suite_cost_check() {
 # suite_cost_base_run <base> <cmd> [args...]: measures the command once in a
 # temporary detached worktree at <base>, its output sent to stderr so check's
 # stdout stays its verdict, records a pass, and removes the worktree whatever
-# happened. Succeeds, SUITE_COST_CPU set, only when the run passed and the
+# happened. The worktree holds only tracked files, so git config
+# orchestrator.suiteCost.setup, when set and non-empty, runs there first with
+# bash -c, untimed and its output on stderr; a failing setup measures nothing.
+# With no setup, a run exiting 127 names that key. Succeeds, SUITE_COST_CPU set, only when the run passed and the
 # worktree is gone; a failed removal after a pass keeps the record and names
 # the left-over worktree.
 suite_cost_base_run() {
-  local base="$1" tmp wt here="$PWD" status=0
+  local base="$1" tmp wt here="$PWD" status=0 setup setup_status=0
   shift
   tmp="$(mktemp -d)" || { warn "could not make a temp directory for the base run"; return 1; }
   wt="$tmp/base"
@@ -231,14 +236,27 @@ suite_cost_base_run() {
     rm -rf "$tmp"
     return 1
   fi
+  setup="$(git config --get orchestrator.suiteCost.setup 2>/dev/null || true)"
   if cd "$wt"; then
-    suite_cost_measure "$@" >&2
-    cd "$here" || die "could not return to $here"
-    if [ "$SUITE_COST_STATUS" -eq 0 ]; then
-      suite_cost_append "$base" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
-    else
-      warn "the base run at $base exited $SUITE_COST_STATUS - the suite cost is unmeasured"
+    if [ -n "$setup" ]; then
+      bash -c "$setup" >&2 || setup_status=$?
+    fi
+    if [ "$setup_status" -ne 0 ]; then
+      cd "$here" || die "could not return to $here"
+      warn "the base run's setup ($setup) at $base exited $setup_status - the suite cost is unmeasured"
       status=1
+    else
+      suite_cost_measure "$@" >&2
+      cd "$here" || die "could not return to $here"
+      if [ "$SUITE_COST_STATUS" -eq 0 ]; then
+        suite_cost_append "$base" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
+      elif [ "$SUITE_COST_STATUS" -eq 127 ] && [ -z "$setup" ]; then
+        warn "the base run at $base exited 127 (command not found) - the base worktree holds only tracked files; if the command needs installed dependencies, set git config orchestrator.suiteCost.setup '<install command>'"
+        status=1
+      else
+        warn "the base run at $base exited $SUITE_COST_STATUS - the suite cost is unmeasured"
+        status=1
+      fi
     fi
   else
     status=1

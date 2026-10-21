@@ -337,3 +337,63 @@ if [ "$(id -u)" -ne 0 ]; then
   assert_eq "and leaving no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
   chmod 644 "$rec"
 fi
+
+# A per-clone setup, git config orchestrator.suiteCost.setup, runs in the base
+# worktree before the timed run: here it writes the file the command needs.
+check_repo
+needy=(sh -c 'test -f dep && touch "$0"' "$marker")
+seed_run "$head" 70.00 "${needy[*]}"
+git config orchestrator.suiteCost.setup \
+  "echo setup-out; echo setup-err >&2; awk 'BEGIN { for (i = 0; i < 3e7; i++); }'; touch dep"
+errf="$(mktemp)"
+out="$("$ORCH" suite-cost check -- "${needy[@]}" 2>"$errf")"; st=$?
+assert_status "a base run with a setup exits 0" "$st" 0
+assert_eq "with the verdict alone on stdout, measured" "$out" "off"
+assert_eq "the command found what the setup provided" "$(on_disk "$marker")" present
+line="$(tail -n 1 "$rec")"
+assert_eq "the base is recorded" "$(cut -f1 <<<"$line")" "$base"
+assert_eq "without the setup's CPU time" \
+  "$(LC_ALL=C awk -v c="$(cut -f2 <<<"$line")" 'BEGIN { print (c < 0.25) ? "uncounted" : "counted " c }')" uncounted
+assert_contains "the setup's stdout reaches stderr" "$(cat "$errf")" "setup-out"
+assert_contains "and its stderr too" "$(cat "$errf")" "setup-err"
+assert_eq "and the worktree is gone" "$(git worktree list | wc -l | tr -d ' ')" 1
+
+check_repo
+seed_run "$head" 70.00
+git config orchestrator.suiteCost.setup "exit 3"
+before="$(cat "$rec")"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
+assert_status "a failing setup exits 0" "$st" 0
+assert_eq "and is unmeasured" "$out" "unmeasured"
+assert_contains "warning with its command, the base and its exit code" "$(cat "$errf")" \
+  "orch: the base run's setup (exit 3) at $base exited 3 - the suite cost is unmeasured"
+assert_eq "running no measurement" "$(on_disk "$marker")" absent
+assert_eq "recording nothing" "$(cat "$rec")" "$before"
+assert_eq "and leaving no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
+
+# A base run exiting 127 with no setup names the setup key.
+hint="orch: the base run at %s exited 127 (command not found) - the base worktree holds only tracked files; if the command needs installed dependencies, set git config orchestrator.suiteCost.setup '<install command>'"
+today="orch: the base run at %s exited %s - the suite cost is unmeasured"
+check_repo
+seed_run "$head" 70.00 "orch-no-such-command"
+"$ORCH" suite-cost check -- orch-no-such-command >/dev/null 2>"$errf"
+# shellcheck disable=SC2059
+assert_contains "with no setup key, a command not found gives the setup hint" \
+  "$(cat "$errf")" "$(printf "$hint" "$base")"
+git config orchestrator.suiteCost.setup ""
+"$ORCH" suite-cost check -- orch-no-such-command >/dev/null 2>"$errf"
+# shellcheck disable=SC2059
+assert_contains "an empty setup key gives the same hint" \
+  "$(cat "$errf")" "$(printf "$hint" "$base")"
+git config orchestrator.suiteCost.setup true
+"$ORCH" suite-cost check -- orch-no-such-command >/dev/null 2>"$errf"
+# shellcheck disable=SC2059
+assert_contains "with the key set, a 127 keeps today's warning" \
+  "$(cat "$errf")" "$(printf "$today" "$base" 127)"
+git config --unset orchestrator.suiteCost.setup
+seed_run "$head" 70.00 "false"
+"$ORCH" suite-cost check -- false >/dev/null 2>"$errf"
+# shellcheck disable=SC2059
+assert_contains "with no key, another exit keeps today's warning" \
+  "$(cat "$errf")" "$(printf "$today" "$base" 1)"
+rm -f "$errf"
