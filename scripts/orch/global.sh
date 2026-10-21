@@ -41,16 +41,17 @@ status_others() {
 
 # Full detail on the current checkout's flow.
 status_flow() {
-  local slug phase issue branch pr iteration redo_count
+  local slug phase issue branch pr iteration redo_count base
   slug="$(state_get slug)";       phase="$(state_get phase)"
   issue="$(state_get issue)";     branch="$(state_get branch)"
   pr="$(state_get pr)";           iteration="$(state_get iteration)"
   redo_count="$(state_get redo_count)"
+  base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
   issue="${issue:--}";            branch="${branch:--}";  pr="${pr:--}"
   note "flow:      $slug"
   note "phase:     $phase"
   note "issue:     $issue"
-  note "base:      $(flow_base)"
+  note "base:      $base"
   note "branch:    $branch"
   note "PR:        $pr"
   # Against the budget, not alone: "iteration 3" does not say how far along

@@ -101,10 +101,12 @@ phase_write() {
 # base was recorded has none, and always forked from the default branch.
 flow_base() { flow_base_in "$STATE"; }
 
-# flow_base against another checkout's state file <file>.
+# flow_base against another checkout's state file <file>. A state file that
+# cannot be read returns the read's failure: the default branch stands in
+# only for a readable state that records no base.
 flow_base_in() {
   local b
-  b="$(state_get_in "$1" base)"
+  b="$(state_get_in "$1" base)" || return
   if [ -n "$b" ]; then printf '%s\n' "$b"; else default_branch; fi
 }
 

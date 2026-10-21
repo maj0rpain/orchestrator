@@ -86,7 +86,7 @@ cmd_pr_open() {
   require_state
   local usage="usage: orch.sh pr open <title> <body-file> [--label <name>]..." labels=()
   [ $# -ge 2 ] || die "$usage"
-  local title="$1" body_file="$2" issue branch pr
+  local title="$1" body_file="$2" issue branch base pr
   shift 2
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -97,9 +97,10 @@ cmd_pr_open() {
   [ -f "$body_file" ] || die "body file not found: $body_file"
   require_issue issue
   require_branch branch
+  base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
   # Draft is the honest signal: the review loop has not run yet, so marking it
   # ready is the loop's success condition rather than a comment nobody reads.
-  pr="$(open_pr "$branch" "$(flow_base)" "$issue" "$title" "$body_file" true ${labels[@]+"${labels[@]}"})"
+  pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" true ${labels[@]+"${labels[@]}"})"
   state_write pr "$pr"
   pr_labels_check "$pr" ${labels[@]+"${labels[@]}"}
   note "$pr"

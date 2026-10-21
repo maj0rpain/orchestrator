@@ -52,7 +52,8 @@ finished_flow() {
   [ -n "$branch" ] || { verdict="no branch"; return 1; }
   pr="$(state_get_in "$state" pr)"
   [ -n "$pr" ] || { verdict="no PR recorded"; return 1; }
-  base="$(flow_base_in "$state")"
+  base="$(flow_base_in "$state")" \
+    || { verdict="could not read the base branch from $state"; return 2; }
   pr_state_draft_read "$pr" pr_state _is_draft err \
     || { verdict="could not read GitHub: $(gh_reason "$err")"; return 2; }
   if [ "$pr_state" != MERGED ]; then
