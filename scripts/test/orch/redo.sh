@@ -649,11 +649,6 @@ echo
 echo "redo help names handoffs by role"
 new_repo >/dev/null
 for entry in "redo review" "redo spec"; do
-  text="$(help_entry "$entry")"
-  assert_ne "help has a $entry entry" "$text" ""
-  assert_eq "the $entry entry names no handoff file" \
-    "$(printf '%s\n' "$text" | grep -oE '[0-9]{2}-[a-z-]+\.md')" ""
-  assert_contains "the $entry entry points at handoff path" \
-    "$(printf '%s\n' "$text" | flat_text)" "orch.sh handoff path"
+  assert_help_names_handoffs_by_role "$entry"
 done
 restore_suite_env

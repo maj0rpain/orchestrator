@@ -220,7 +220,9 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    iteration. **Met again** takes it as the same finding on its axis and
    location alone, never its claim, since its numbers change every run.
    `off`, `ok` and `unmeasured` raise nothing, and so does a `check` that
-   dies: relay its `orch:` message to the human.
+   dies: relay its `orch:` message to the human. With `unmeasured`, relay
+   to the human any `orch:` warning `check` printed with it too, so a base
+   run's setup failure reads as one.
 
    Done when every finding in both reports, and a `grew` verdict's, has
    exactly one disposition.

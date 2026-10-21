@@ -136,10 +136,5 @@ restore_suite_env
 echo
 echo "phase advance help names handoffs by role"
 new_repo >/dev/null
-text="$(help_entry "phase advance")"
-assert_ne "help has a phase advance entry" "$text" ""
-assert_eq "the phase advance entry names no handoff file" \
-  "$(printf '%s\n' "$text" | grep -oE '[0-9]{2}-[a-z-]+\.md')" ""
-assert_contains "the phase advance entry points at handoff path" \
-  "$(printf '%s\n' "$text" | flat_text)" "orch.sh handoff path"
+assert_help_names_handoffs_by_role "phase advance"
 restore_suite_env
