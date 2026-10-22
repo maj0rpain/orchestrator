@@ -3,10 +3,10 @@
 # text and working-tree helpers and the like. A helper lives in the module of
 # the concept it serves, whichever modules call it, and common.sh calls nothing
 # a noun module defines; its test section checks this. A concept with no noun
-# has a module of its own too: the Checkout module (checkout.sh) and the Filed
-# finding module (filed-finding.sh). Sourced by orch.sh ahead
-# of the ROOT block, which dies through die when run outside a git repository,
-# and ahead of every noun module.
+# has a module of its own too: the Checkout module (checkout.sh), the Filed
+# finding module (filed-finding.sh) and the Known items module
+# (known-items.sh). Sourced by orch.sh ahead of the ROOT block, which dies
+# through die when run outside a git repository, and ahead of every noun module.
 
 # list_has <list> <item>: whether <item> is one of the newline-separated
 # <list>, matched whole-line and literally. The one list-membership test:
