@@ -177,6 +177,18 @@ side_checkout_issue() {
   printf '%s\n' "$issue"
 }
 
+# side_checkout_for_issue <issue>: prints the path of the side checkout
+# whose marker records <issue>; returns 1 when there is none.
+side_checkout_for_issue() {
+  local list kind _flow _branch path
+  list="$(checkouts)" || return 1
+  while read -r kind _flow _branch path; do
+    [ "$kind" = side ] || continue
+    if [ "$(side_checkout_issue "$path" 2>/dev/null)" = "$1" ]; then printf '%s\n' "$path"; return 0; fi
+  done <<<"$list"
+  return 1
+}
+
 # Adds a worktree on no branch at origin/<base>, the base branch in effect,
 # freshly fetched: git refuses one branch in two worktrees, and the main
 # checkout usually holds the base. --issue N is written into the marker, so a

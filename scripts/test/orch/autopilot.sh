@@ -492,6 +492,25 @@ assert_status "a refusal with a failed claim delete dies" "$st" 1
 assert_contains "naming the writes that landed" "$out" "added needs-human, posted the refusal comment, removed orch:running"
 assert_eq "the claim is still held for the refusal" "$(fake_claim_held 7)" held
 fake_unfail
+# a session that released its claim exits after the next phase's claim is made:
+# the new claim is not this run's to fail, and the new run's pidfile survives
+rm -f "$top/.orchestrator/autopilot/limit"
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7 "$(hostname)" 111
+overlap_launcher="$(mktemp)"
+cat >"$overlap_launcher" <<OVERLAP
+#!/bin/sh
+rm -f "$ORCH_GH_FAKE_STORE/claims/7"
+printf '7\t%s\t222\timplement\t2026-01-02T00:00:00Z\n' "$(hostname)" >"$ORCH_GH_FAKE_STORE/claims/7"
+printf '999\n' >"$top/.orchestrator/autopilot/run/7.pid"
+exit 1
+OVERLAP
+chmod +x "$overlap_launcher"
+ORCH_AUTOPILOT_LAUNCHER="$overlap_launcher" "$ORCH" autopilot run 7 >/dev/null 2>&1
+assert_eq "a newer claim made while the session exits is left held" "$(fake_claim_held 7)" held
+assert_eq "and its issue is not failed" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
+assert_eq "the newer run's pidfile is not removed by the older run" "$(cat "$top/.orchestrator/autopilot/run/7.pid" 2>/dev/null)" "999"
+rm -f "$top/.orchestrator/autopilot/run/7.pid" "$ORCH_GH_FAKE_STORE/claims/7"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot watch ----------------------------------------------------------

@@ -574,6 +574,39 @@ check_flow_autopilot_label() {
   fi
 }
 
+# The same label check for each autopilot flow living in a side checkout other
+# than this one: the watcher makes those, so a plain doctor in the main checkout
+# is where a label that disagrees with a side checkout's recorded phase is seen.
+# This checkout's own flow is check_flow_autopilot_label's.
+check_autopilot_side_flows() {
+  local list kind _flow _branch path issue phase here p phase_labels
+  # issue_state is the read's throwaway half.
+  # shellcheck disable=SC2034
+  local issue_state="" flabels="" gh_err=""
+  list="$(checkouts)" || return 0
+  here="$(pwd -P)"
+  while read -r kind _flow _branch path; do
+    [ "$kind" = side ] && [ "$path" != "$here" ] || continue
+    issue="$(side_checkout_issue "$path" 2>/dev/null)" || continue
+    [ -f "$(flow_state_file "$path")" ] || continue
+    phase="$(state_get_in "$(flow_state_file "$path")" phase 2>/dev/null)" || continue
+    d_gh_gate || return 0
+    issue_state_labels_read "$issue" issue_state flabels gh_err || continue
+    phase_labels=""
+    for p in $(autopilot_phase_labels_in "$flabels"); do
+      phase_labels="${phase_labels:+$phase_labels }$(autopilot_phase_label "$p")"
+    done
+    [ -n "$phase_labels" ] || continue
+    if [ "$phase_labels" = "$(autopilot_phase_label "$phase")" ]; then
+      d_ok "phase label of #$issue: $phase_labels"
+    else
+      d_warn "issue #$issue is labelled $phase_labels, but its side checkout ${path##*/} last moved to phase $phase."
+      d_remedy "relabel the issue $(autopilot_phase_label "$phase"), or leave it to the watcher's redo rules"
+    fi
+  done <<<"$list"
+  return 0
+}
+
 # Claims held by another host for more than a day: the watcher never touches
 # them, so doctor is where they are noticed. Silent where origin cannot be read
 # or there are none.
@@ -594,7 +627,7 @@ ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_agent_settings check_side_checkouts_finished check_autopilot_claims
+h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
 "
 # flow state -----------------------------------------------------------------
 

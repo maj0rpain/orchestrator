@@ -390,18 +390,6 @@ autopilot_stop() {
   autopilot_release "$issue" "added $AUTOPILOT_HUMAN_LABEL, posted the $kind comment"
 }
 
-# autopilot_find_side_checkout <issue>: prints the path of the side checkout
-# whose marker records <issue>; returns 1 when there is none.
-autopilot_find_side_checkout() {
-  local list kind _flow _branch path
-  list="$(checkouts)" || return 1
-  while read -r kind _flow _branch path; do
-    [ "$kind" = side ] || continue
-    if [ "$(side_checkout_issue "$path" 2>/dev/null)" = "$1" ]; then printf '%s\n' "$path"; return 0; fi
-  done <<<"$list"
-  return 1
-}
-
 # autopilot_minimal_plan <file>: the plan a hand-labelled issue gets: the repo
 # defaults, a Decision saying the issue is reviewed as it stands, and None
 # elsewhere.
@@ -449,7 +437,7 @@ autopilot_spawn_run() {
 # released, the tick goes on.
 autopilot_pickup() {
   local issue="$1" phase="$2" side slug title labels gh_err recorded state redo
-  side="$(autopilot_find_side_checkout "$issue")" || side=""
+  side="$(side_checkout_for_issue "$issue")" || side=""
   if [ -z "$side" ]; then
     # labels is the read's throwaway half.
     issue_title_labels_read "$issue" title labels gh_err || {
@@ -650,25 +638,34 @@ autopilot_limit_reset() {
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line mine
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
-  side="$(autopilot_find_side_checkout "$issue")" || die "no side checkout records issue #$issue"
+  side="$(side_checkout_for_issue "$issue")" || die "no side checkout records issue #$issue"
   phase="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side"
   dir="$(autopilot_dir "$main_root")"
   mkdir -p "$dir/run" "$dir/logs" || die "could not create $dir"
   pidfile="$dir/run/$issue.pid"
   printf '%s\n' "$$" >"$pidfile"
+  # A later run of the same issue may have replaced the pidfile by the time this
+  # one exits: remove it only while it still names this run.
   # shellcheck disable=SC2064
-  trap "rm -f '$pidfile'" EXIT
+  trap "[ \"\$(cat '$pidfile' 2>/dev/null)\" != '$$' ] || rm -f '$pidfile'" EXIT
+  # The claim this run was started for: a session that releases it may exit
+  # after the next phase's claim is made, and that one is not this run's to fail.
+  autopilot_claims_read claims
+  mine=""
+  while IFS= read -r line; do
+    case "$line" in "$issue"$'\t'*) mine="$line" ;; esac
+  done <<<"$claims"
   log="$dir/logs/$issue-$phase-$(dir_stamp).log"
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
   ( cd "$side" && ORCH_AUTOPILOT=1 "$launcher" -p "$prompt" --permission-mode "$mode" ) >"$log" 2>&1 || rc=$?
   autopilot_claims_read claims
-  while IFS=$'\t' read -r line _; do
-    [ "$line" != "$issue" ] || held=1
+  while IFS= read -r line; do
+    case "$line" in "$issue"$'\t'*) [ -z "$mine" ] || [ "$line" = "$mine" ] || continue; held=1 ;; esac
   done <<<"$claims"
   if [ "$held" = 0 ]; then
     detail="autopilot run: issue #$issue's session exited $rc with its claim released"

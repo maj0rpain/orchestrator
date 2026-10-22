@@ -1963,6 +1963,25 @@ assert_not_contains "not a fresh one" "$out" "issue #8"
 assert_not_contains "nor this host's own" "$out" "issue #9"
 restore_suite_env
 
+# --- doctor: autopilot side-checkout flows ------------------------------------
+# A plain doctor in the main checkout checks the autopilot flows living in the
+# watcher's side checkouts.
+echo
+echo "doctor: autopilot side-checkout flows"
+tick_fixture
+fake_issue 7 open ready-for-agent orch:spec
+printf 'Side flow\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+fake_issue 7 open ready-for-agent orch:implement
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "doctor in the main checkout flags a side flow whose label disagrees" "$out" "issue #7 is labelled orch:implement, but its side checkout"
+assert_contains "naming the recorded phase" "$out" "last moved to phase spec"
+fake_issue 7 open ready-for-agent orch:spec
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "an agreeing side flow is ok" "$out" "phase label of #7: orch:spec"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
 # --- doctor --flow: autopilot handoff comments (#1457) -------------------------
 # In an autopilot session a handoff is the posted comment, so doctor --flow
 # validates the fetched comment, never a file under the handoff directory.
