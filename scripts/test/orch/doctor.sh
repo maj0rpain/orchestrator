@@ -1759,6 +1759,8 @@ assert_contains "naming the key, its value and the allowed efforts" "$out" \
   "FAIL  orchestrator.effort.closer is huge (global) - not an allowed effort (want low|medium|high|xhigh|max|inherit)"
 assert_contains "with the global clear as its remedy" "$out" \
   "$(printf '\n      orch.sh agent clear closer --effort --global\n')"
+assert_contains "still listing the failing role's model and effort with their sources" "$out" \
+  "ok    agent closer: model inherit (inherit), effort huge (global, invalid)"
 git config --local orchestrator.effort.closer low
 out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a global bad value hidden by a local one still fails" "$st" 1

@@ -87,7 +87,9 @@ readonly REVIEW_DIR="$ORCH/review"
 # filed-finding.sh, all sourced in alphabetical order. doctor.sh is one of the
 # noun modules, with one rule more: the dependency runs one way, doctor.sh
 # calling into this file and the other modules, which call nothing doctor.sh
-# defines but cmd_doctor, from main() (scripts/test/orch/doctor.sh holds this).
+# defines but cmd_doctor, from main(), and the reporters d_ok, d_warn, d_fail
+# and d_remedy, from a check living in the module of the concept it serves
+# (agent.sh's check_agent_settings) (scripts/test/orch/doctor.sh holds this).
 source "$ORCH_SCRIPTS/orch/agent.sh"
 source "$ORCH_SCRIPTS/orch/base.sh"
 source "$ORCH_SCRIPTS/orch/branch.sh"

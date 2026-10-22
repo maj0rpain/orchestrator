@@ -11,9 +11,11 @@
 # when the world is already broken, so no single check may abort the report.
 #
 # Nothing here is called back from orch.sh or its other modules but
-# cmd_doctor: init's adopted-issue check, validate_adopted_issue, lives in
-# init.sh, and the triage-label parser the checks read lives in
-# triage-labels.sh.
+# cmd_doctor and the reporters d_ok, d_warn, d_fail and d_remedy, which a
+# check living in the module of the concept it serves reports through
+# (agent.sh's check_agent_settings): init's adopted-issue check,
+# validate_adopted_issue, lives in init.sh, and the triage-label parser the
+# checks read lives in triage-labels.sh.
 #
 # Sourced into orch.sh, from its orch/ directory, after its shared mechanism
 # (ORCH_SCRIPTS, ROOT, STATE, ORCH_DIR_NAME, PHASES, HANDOFF_DIR), common.sh
