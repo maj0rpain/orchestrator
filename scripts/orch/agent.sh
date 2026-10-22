@@ -248,19 +248,19 @@ agent_copy_content() {
 
 # agent_sync_plan: what agent sync would change in this checkout's
 # .junie/agents/, without changing it - the one comparison sync and doctor
-# share. Sets AGENT_PLAN_DIR, AGENT_PLAN_WANT (the copies that should exist,
+# share. Sets AGENT_PLAN_PLUGIN (the plugin root), AGENT_PLAN_DIR, AGENT_PLAN_WANT (the copies that should exist,
 # one name per line), AGENT_PLAN_REFUSED (the unmarked orch-*.md in the way of
-# a copy, space-separated), AGENT_PLAN_WRITES (name:model:effort:missing|stale
-# per copy to write) and AGENT_PLAN_DELETES (marked copies no longer wanted,
+# a copy, space-separated), AGENT_PLAN_WRITES (name|model|effort|missing|stale
+# per copy to write; | because a custom: model holds a colon) and AGENT_PLAN_DELETES (marked copies no longer wanted,
 # one name per line).
 agent_sync_plan() {
   # src_model and src_effort receive agent_lookup's source and go unread here.
   # shellcheck disable=SC2034
-  local plugin file name role m e src_model src_effort content target state
-  plugin="$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)"
+  local file name role m e src_model src_effort content target state
+  AGENT_PLAN_PLUGIN="$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)"
   AGENT_PLAN_DIR="$ROOT/.junie/agents"
   AGENT_PLAN_WANT="" AGENT_PLAN_REFUSED="" AGENT_PLAN_WRITES=() AGENT_PLAN_DELETES=""
-  for file in "$plugin"/agents/orch-*.md; do
+  for file in "$AGENT_PLAN_PLUGIN"/agents/orch-*.md; do
     [ -e "$file" ] || continue
     name="$(basename "$file" .md)"
     role="$(agent_role_of "$name")"
@@ -279,7 +279,7 @@ agent_sync_plan() {
       [ "$(cat "$target"; echo x)" = "$content" ] && continue
       state=stale
     fi
-    AGENT_PLAN_WRITES+=("$name:$m:$e:$state")
+    AGENT_PLAN_WRITES+=("$name|$m|$e|$state")
   done
   AGENT_PLAN_REFUSED="${AGENT_PLAN_REFUSED# }"
   for file in "$AGENT_PLAN_DIR"/orch-*.md; do
@@ -306,9 +306,9 @@ agent_sync() {
     rm -f -- "$dir/$name.md" || die "agent sync: cannot delete $dir/$name.md"
   done <<<"$AGENT_PLAN_DELETES"
   for w in ${AGENT_PLAN_WRITES[@]+"${AGENT_PLAN_WRITES[@]}"}; do
-    IFS=: read -r name m e state <<<"$w"
+    IFS="|" read -r name m e state <<<"$w"
     mkdir -p "$dir" || die "agent sync: cannot create $dir"
-    agent_copy_content "$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)/agents/$name.md" "$m" "$e" >"$dir/$name.md" ||
+    agent_copy_content "$AGENT_PLAN_PLUGIN/agents/$name.md" "$m" "$e" >"$dir/$name.md" ||
       die "agent sync: cannot write $dir/$name.md"
   done
 }
@@ -323,7 +323,7 @@ agent_junie_session_cannot_tell() { d_ok "junie session: cannot tell ($1)"; }
 # compared only when set. Prints the line's set-part, (set model <v>, effort
 # <v>), on stdout; the status is the verdict.
 agent_junie_ran() {
-  local role set_model set_effort src ok=0
+  local role set_model set_effort src mismatch=0
   role="$(agent_role_of "$1")"
   set_model=inherit; set_effort=inherit
   if [ -n "$role" ]; then
@@ -331,9 +331,9 @@ agent_junie_ran() {
     agent_lookup effort "$role" set_effort src junie
   fi
   printf '(set model %s, effort %s)' "$set_model" "$set_effort"
-  if [ "$set_model" != inherit ] && [ "$2" != "$set_model" ] && [ "${2#"$set_model"-}" = "$2" ]; then ok=1; fi
-  if [ "$set_effort" != inherit ] && [ "$3" != "$set_effort" ]; then ok=1; fi
-  return "$ok"
+  if [ "$set_model" != inherit ] && [ "$2" != "$set_model" ] && [ "${2#"$set_model"-}" = "$2" ]; then mismatch=1; fi
+  if [ "$set_effort" != inherit ] && [ "$3" != "$set_effort" ]; then mismatch=1; fi
+  return "$mismatch"
 }
 
 # agent_junie_session: doctor's best-effort report of what each orch-* agent
@@ -346,7 +346,7 @@ agent_junie_ran() {
 # reasoningEffort= unless null, else inherited). A file that is missing or
 # does not parse gives one ok line saying it cannot tell, never a FAIL.
 agent_junie_session() {
-  local index="$HOME/.junie/sessions/index.jsonl" sid log lines agent line model effort rran report="" ran_line word v kind f
+  local index="$HOME/.junie/sessions/index.jsonl" sid log lines agent line model effort rran report="" ran_line report_line word v kind f
   command -v jq >/dev/null 2>&1 || { agent_junie_session_cannot_tell "jq is not installed"; return 0; }
   [ -f "$index" ] || { agent_junie_session_cannot_tell "no Junie session index"; return 0; }
   sid="$(jq -rs --arg d "$ROOT" 'map(select(.projectDir == $d)) | sort_by(.updatedAt) | last | .sessionId // empty' "$index" 2>/dev/null)" ||
@@ -376,9 +376,9 @@ agent_junie_session() {
       report="$report"$'\n'"warn|$ran_line $rran"
     fi
   done < <(printf '%s\n' "$lines" | sed -n 's/.*custom_agent_\(orch-[A-Za-z0-9-]*\)_[0-9]* with parameters.*/\1/p' | awk '!seen[$0]++')
-  while IFS='|' read -r kind line; do
+  while IFS='|' read -r kind report_line; do
     [ -n "$kind" ] || continue
-    if [ "$kind" = ok ]; then d_ok "$line"; else d_warn "$line"; fi
+    if [ "$kind" = ok ]; then d_ok "$report_line"; else d_warn "$report_line"; fi
   done <<<"$report"
 }
 
@@ -419,72 +419,61 @@ agent_junie_unrecognized() {
 # a skill in every repo without that local value. The remedy clears that key
 # at that scope.
 check_agent_settings() {
-  local role kind scope v src flag line scoped
-  for role in $AGENT_ROLES; do
-    line="agent $role:"
-    for kind in model effort; do
-      agent_lookup "$kind" "$role" v src
-      agent_allowed "$kind" "$v" || src="$src, invalid"
-      line="$line $kind $v ($src),"
-    done
-    d_ok "${line%,}"
-    for kind in model effort; do
-      for scope in local global; do
-        scoped="$(git config "--$scope" --get "orchestrator.$kind.$role" 2>/dev/null)" || continue
-        agent_allowed "$kind" "$scoped" && continue
-        flag="--$kind"; [ "$scope" = global ] && flag="$flag --global"
-        d_fail "orchestrator.$kind.$role is $scoped ($scope) - not an allowed $kind (want $(agent_values "$kind"))"
-        d_remedy "orch.sh agent clear $role $flag"
-      done
-    done
-  done
+  check_agent_settings_host claude
   agent_junie_session
   agent_junie_unrecognized
   check_junie_agent_settings
   return 0
 }
 
-# check_junie_agent_settings: the Junie half of check_agent_settings. One ok
-# line per role, with its effective Junie model and effort and their sources; a
-# disallowed stored value is a FAIL read at each scope on its own; and a WARN
-# when this checkout's .junie/agents/ copies are not what agent sync would
-# leave - the plan sync itself makes, so the two cannot disagree.
-check_junie_agent_settings() {
-  local role kind scope v src flag line scoped
+# check_agent_settings_host <host>: one ok line per role, with its effective
+# model and effort for <host> and their sources - a disallowed effective value
+# marked invalid - then a FAIL for each disallowed stored value, read at each
+# scope on its own. Junie's lines are named agent junie <role>.
+check_agent_settings_host() {
+  local host="$1" role kind scope v src label flag line scoped key
   for role in $AGENT_ROLES; do
-    line="agent junie $role:"
+    line="agent $role:"; [ "$host" = junie ] && line="agent junie $role:"
     for kind in model effort; do
-      agent_lookup "$kind" "$role" v src junie
-      agent_allowed "$kind" "$v" junie || src="$src, invalid"
-      line="$line $kind $v ($src),"
+      agent_lookup "$kind" "$role" v src "$host"
+      label="$src"; agent_allowed "$kind" "$v" "$host" || label="$src, invalid"
+      line="$line $kind $v ($label),"
     done
     d_ok "${line%,}"
     for kind in model effort; do
+      key="$(agent_key "$host" "$kind" "$role")"
       for scope in local global; do
-        scoped="$(git config "--$scope" --get "$(agent_key junie "$kind" "$role")" 2>/dev/null)" || continue
-        agent_allowed "$kind" "$scoped" junie && continue
-        flag="--host junie --$kind"; [ "$scope" = global ] && flag="$flag --global"
-        d_fail "$(agent_key junie "$kind" "$role") is $scoped ($scope) - not an allowed $kind (want $(agent_values "$kind" junie))"
-        d_remedy "orch.sh agent clear $role $flag"
+        scoped="$(git config "--$scope" --get "$key" 2>/dev/null)" || continue
+        agent_allowed "$kind" "$scoped" "$host" && continue
+        flag="$(agent_host_flag "$host") --$kind"; [ "$scope" = global ] && flag="$flag --global"
+        d_fail "$key is $scoped ($scope) - not an allowed $kind (want $(agent_values "$kind" "$host"))"
+        d_remedy "orch.sh agent clear $role$flag"
       done
     done
   done
+}
+
+# check_junie_agent_settings: the Junie half of check_agent_settings: the
+# per-role lines of check_agent_settings_host junie, and a WARN when this checkout's .junie/agents/ copies are not what agent sync would
+# leave - the plan sync itself makes, so the two cannot disagree.
+check_junie_agent_settings() {
+  check_agent_settings_host junie
   agent_sync_plan
-  local missing="" stale="" extra="" w name rest
+  local missing="" stale="" extra="" w name rest drift
   for w in ${AGENT_PLAN_WRITES[@]+"${AGENT_PLAN_WRITES[@]}"}; do
-    name="${w%%:*}"; rest="${w##*:}"
+    name="${w%%|*}"; rest="${w##*|}"
     if [ "$rest" = missing ]; then missing="$missing $name.md"; else stale="$stale $name.md"; fi
   done
   while IFS= read -r name; do
     [ -n "$name" ] && extra="$extra $name.md"
   done <<<"$AGENT_PLAN_DELETES"
   [ -z "$missing$stale$extra$AGENT_PLAN_REFUSED" ] && return 0
-  line="Junie agent copies in $AGENT_PLAN_DIR are not what agent sync would leave:"
-  [ -z "$missing" ] || line="$line missing$missing;"
-  [ -z "$stale" ] || line="$line stale$stale;"
-  [ -z "$extra" ] || line="$line extra$extra;"
-  [ -z "$AGENT_PLAN_REFUSED" ] || line="$line $AGENT_PLAN_REFUSED carries no sync marker and is in the way;"
-  d_warn "${line%;}"
+  drift="Junie agent copies in $AGENT_PLAN_DIR are not what agent sync would leave:"
+  [ -z "$missing" ] || drift="$drift missing$missing;"
+  [ -z "$stale" ] || drift="$drift stale$stale;"
+  [ -z "$extra" ] || drift="$drift extra$extra;"
+  [ -z "$AGENT_PLAN_REFUSED" ] || drift="$drift $AGENT_PLAN_REFUSED carries no sync marker and is in the way;"
+  d_warn "${drift%;}"
   d_remedy "orch.sh agent sync"
   return 0
 }

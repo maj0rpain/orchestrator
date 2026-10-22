@@ -180,14 +180,14 @@ assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer
 
 out="$("$ORCH" agent 2>&1)"; st=$?
 assert_status "refuses a missing verb" "$st" 1
-assert_contains "naming the verbs" "$out" "want set|show|clear|get"
+assert_contains "naming the verbs" "$out" "want set|show|clear|get|sync"
 out="$("$ORCH" agent show extra 2>&1)"; st=$?
 assert_status "show refuses an argument" "$st" 1
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "agent set is in the usage text" "$out" "agent set <role>"
 assert_contains "the CLI conventions' noun table has an agent row" \
-  "$(grep '^| `agent`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`set`, `show`, `clear`, `get`'
+  "$(grep '^| `agent`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`set`, `show`, `clear`, `get`, `sync`'
 # --host junie: the same verbs on the Junie keys, beside the Claude Code ones.
 jkey() { key "$1" "orchestrator.junie.$2.$3"; }
 out="$("$ORCH" agent get lens --host junie 2>&1)"; st=$?
@@ -342,6 +342,18 @@ printf '%s\n' 'tampered' >>"$as_dir/orch-implementer.md"
 "$ORCH" agent sync >/dev/null
 assert_eq "a hand-edited marked copy is rewritten" \
   "$(grep -c tampered "$as_dir/orch-implementer.md")" "0"
+
+"$ORCH" agent set implementer --host junie --model custom:my/profile.1 --effort low >/dev/null
+assert_eq "a custom: profile id is written whole, colon and all" \
+  "$(grep -E '^(model|reasoningLevel):' "$as_dir/orch-implementer.md")" \
+  "model: custom:my/profile.1
+reasoningLevel: low"
+touch -d '2001-01-01' "$as_dir/orch-implementer.md"
+"$ORCH" agent sync >/dev/null
+assert_eq "and a second sync finds that copy current" \
+  "$(stat -c %y "$as_dir/orch-implementer.md" | cut -c1-4)" "2001"
+"$ORCH" agent set implementer --host junie --model gpt-5-mini >/dev/null
+"$ORCH" agent clear implementer --host junie --effort >/dev/null
 
 "$ORCH" agent clear lens --host junie >/dev/null
 assert_eq "clear --host junie deletes the role's copies" "$(as_copies)" "orch-implementer.md"
