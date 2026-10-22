@@ -184,6 +184,7 @@ ORCH_AUTOPILOT=1 "$ORCH" autopilot ask spec "$q" >/dev/null 2>&1; st=$?
 assert_status "autopilot ask succeeds" "$st" 0
 assert_eq "the question is tagged and mentions the handle" "$(fake_comments_of 7 | head -2 | tr '\n' ' ')" "<!-- orch:question spec --> @o "
 assert_contains "carrying the question" "$(fake_comments_of 7)" "1. Keep it?"
+assert_contains "and the reply format" "$(fake_comments_of 7)" 'Reply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).'
 assert_eq "adding needs-human, dropping orch:running" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
 assert_eq "and releasing the claim" "$(fake_claim_held 7)" free
 ans="$(mktemp)"
@@ -453,6 +454,41 @@ assert_eq "a live run pidfile keeps a claim whose tick pid is dead" "$(fake_clai
 printf '%s\n' "$(dead_pid)" >"$top/.orchestrator/autopilot/run/12.pid"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a dead run pidfile makes it stale" "$(fake_claim_held 12)" free
+
+# a stop that dies partway leaves the claim held and names the writes that landed
+fake_issue 13 open ready-for-agent orch:spec orch:running
+fake_claim_seed 13 "$(hostname)" "$(dead_pid)"
+fake_fail adapter_claim_delete "HTTP 500"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "stale-claim cleanup with a failed claim delete dies" "$st" 1
+assert_contains "naming the claim ref" "$out" "delete the claim ref"
+assert_contains "and the writes that landed" "$out" "added needs-human, posted the failure comment, removed orch:running"
+assert_eq "the claim is still held" "$(fake_claim_held 13)" held
+fake_unfail
+fake_fail_after adapter_issue_relabel 1 "HTTP 500"
+fake_issue 13 open ready-for-agent orch:spec orch:running
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failed orch:running removal dies" "$st" 1
+assert_contains "naming the writes that landed" "$out" "writes that landed: added needs-human, posted the failure comment;"
+assert_eq "the claim is still held after it" "$(fake_claim_held 13)" held
+fake_unfail
+fake_fail adapter_issue_comment "HTTP 500"
+fake_issue 13 open ready-for-agent orch:spec orch:running
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a failed failure comment dies" "$st" 1
+assert_contains "naming only the label add" "$out" "writes that landed: added needs-human;"
+assert_eq "the claim is still held after that" "$(fake_claim_held 13)" held
+fake_unfail
+fake_claim_seed 13 otherhost
+# a refusal dies the same way
+fake_issue 7 open ready-for-agent orch:review
+(cd "$top/.orchestrator/checkouts/7-needs-ready" && state_fixture phase spec)
+fake_fail adapter_claim_delete "HTTP 500"
+out="$("$ORCH" autopilot tick 2>&1)"; st=$?
+assert_status "a refusal with a failed claim delete dies" "$st" 1
+assert_contains "naming the writes that landed" "$out" "added needs-human, posted the refusal comment, removed orch:running"
+assert_eq "the claim is still held for the refusal" "$(fake_claim_held 7)" held
+fake_unfail
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot watch ----------------------------------------------------------
@@ -532,12 +568,14 @@ printf 'Claude AI usage limit reached\n' >"$launcher_dir/out"; printf '1\n' >"$l
 limit_epoch="$(date -u -d "$(cat "$top/.orchestrator/autopilot/limit")" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$(cat "$top/.orchestrator/autopilot/limit")" +%s)"
 assert_eq "no reset time in the message: one hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
 assert_contains "the comment still names the usage limit" "$(fake_comments_of 8 | tail -4)" "usage limit"
+assert_not_contains "but names no reset time it does not have" "$(fake_comments_of 8 | tail -4)" "resets"
 # the other usage-limit wordings are detected, each with the one hour fallback
 for wording in "Claude Opus usage limit reached" "5-hour limit reached" "Weekly limit reached"; do
   rm -f "$top/.orchestrator/autopilot/limit"
   fake_issue 8 open ready-for-agent orch:spec
   printf '%s\n' "$wording" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
-  "$ORCH" autopilot tick >/dev/null 2>&1
+  fake_claim_seed 8
+  "$ORCH" autopilot run 8 >/dev/null 2>&1
   assert_eq "\"$wording\" writes the limit file" "$(on_disk "$top/.orchestrator/autopilot/limit")" present
   read -r limit_epoch _ < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
   assert_eq "and pauses an hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
@@ -546,14 +584,16 @@ done
 rm -f "$top/.orchestrator/autopilot/limit"
 fake_issue 8 open ready-for-agent orch:spec
 printf '5-hour limit reached ∙ resets 3pm\n' >"$launcher_dir/out"
-"$ORCH" autopilot tick >/dev/null 2>&1
+fake_claim_seed 8
+"$ORCH" autopilot run 8 >/dev/null 2>&1
 read -r limit_epoch limit_hour _ < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
 assert_eq "\"resets 3pm\" pauses until 15:00 local" "$limit_hour" "15"
 assert_eq "within the next day" "$([ "$limit_epoch" -gt "$(date +%s)" ] && [ "$limit_epoch" -le "$(( $(date +%s) + 86400 + 3600 ))" ] && echo yes)" "yes"
 rm -f "$top/.orchestrator/autopilot/limit"
 fake_issue 8 open ready-for-agent orch:spec
 printf 'Weekly limit reached ∙ resets Mon 9am\n' >"$launcher_dir/out"
-"$ORCH" autopilot tick >/dev/null 2>&1
+fake_claim_seed 8
+"$ORCH" autopilot run 8 >/dev/null 2>&1
 read -r limit_epoch limit_hour limit_day < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
 assert_eq "\"resets Mon 9am\" pauses until a Monday" "$limit_day" "Mon"
 assert_eq "at 09:00 local" "$limit_hour" "09"
@@ -563,8 +603,20 @@ for wording in "iteration limit reached" "API rate limit reached, retrying"; do
   rm -f "$top/.orchestrator/autopilot/limit"
   fake_issue 8 open ready-for-agent orch:spec
   printf '%s\n' "$wording" >"$launcher_dir/out"
-  "$ORCH" autopilot tick >/dev/null 2>&1
+  fake_claim_seed 8
+  "$ORCH" autopilot run 8 >/dev/null 2>&1
   assert_eq "\"$wording\" writes no limit file" "$(on_disk "$top/.orchestrator/autopilot/limit")" absent
 done
+# a failed session's stop dies partway: the claim stays held, the landed writes named
+rm -f "$top/.orchestrator/autopilot/limit"
+fake_issue 8 open ready-for-agent orch:spec orch:running
+printf 'session output line\n' >"$launcher_dir/out"
+fake_claim_seed 8
+fake_fail adapter_claim_delete "HTTP 500"
+out="$("$ORCH" autopilot run 8 2>&1)"; st=$?
+assert_status "a session failure whose claim delete fails dies" "$st" 1
+assert_contains "naming the writes that landed" "$out" "added needs-human, posted the failure comment, removed orch:running"
+assert_eq "the claim is still held" "$(fake_claim_held 8)" held
+fake_unfail
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 

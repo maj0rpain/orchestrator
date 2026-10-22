@@ -81,6 +81,8 @@ STATE="$(flow_state_file "$ROOT")"
 readonly STATE
 readonly HANDOFF_DIR="$ORCH/handoff"
 readonly REVIEW_DIR="$ORCH/review"
+# Where an autopilot flow fetches a handoff comment to read it as a file.
+readonly HANDOFF_SCRATCH_DIR="$ORCH/scratch"
 
 # The noun modules, after the ROOT block, whose constants they read, with the
 # concept modules that have no noun of their own, checkout.sh,

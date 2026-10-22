@@ -1276,4 +1276,48 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
 assert_status "review ready in autopilot succeeds" "$st" 0
 assert_eq "moving the label to orch:done" "$(fake_labels_of 7)" "orch:done ready-for-agent "
 assert_eq "releasing the claim" "$(fake_claim_held 7)" free
+
+# a failure partway leaves the claim held and names the writes that landed
+fake_issue 7 open ready-for-agent orch:review orch:running
+state_fixture phase review
+fake_claim_seed 7
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
+assert_status "a failed claim delete dies" "$st" 1
+assert_contains "naming the claim ref" "$out" "delete the claim ref"
+assert_contains "and the writes that landed" "$out" "marked PR #9 ready, moved the phase label to orch:done, recorded phase done, removed orch:running"
+assert_eq "the claim is still held" "$(fake_claim_held 7)" held
+fake_unfail
+fake_issue 7 open ready-for-agent orch:review orch:running
+state_fixture phase review
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
+assert_status "a failed label move dies" "$st" 1
+assert_contains "naming the PR write that landed" "$out" "writes that landed: marked PR #9 ready;"
+assert_eq "recording no phase" "$("$ORCH" state get phase)" "review"
+assert_eq "the claim is still held after it" "$(fake_claim_held 7)" held
+fake_unfail
+restore_suite_env
+
+# --- review known-items in an autopilot flow (#1457) --------------------------
+# The plan and implement handoffs are comments there, fetched and read as files.
+echo
+echo "review known-items in an autopilot flow"
+review_flow autopilot-known
+state_fixture issue 7
+fake_github
+fake_issue 7 open ready-for-agent orch:review orch:running
+mkdir -p .orchestrator/review
+out="$(ORCH_AUTOPILOT=1 "$ORCH" review known-items known.md 0 2>&1)"; st=$?
+assert_status "with no handoff comment it dies" "$st" 1
+assert_contains "naming the missing comment" "$out" "no 03-implement handoff comment"
+rm -rf .orchestrator/handoff
+printf '## Decisions\nNone\n\n## Rejected alternatives\n\n- Polling the PR\n  - too slow\n' >plan.md
+printf '## PR\n#7\n## Deviations\n\n- Kept the cache\n## Verification\nok\n' >impl.md
+fake_comment 7 o 2026-01-01T00:00:00Z "$(printf '<!-- orch:handoff 01-plan -->\n'; cat plan.md)"
+fake_comment 7 o 2026-01-02T00:00:00Z "$(printf '<!-- orch:handoff 03-implement -->\n'; cat impl.md)"
+ORCH_AUTOPILOT=1 "$ORCH" review known-items known.md 0 >/dev/null 2>&1; st=$?
+assert_status "with the comments posted it builds the file" "$st" 0
+assert_contains "carrying the implement comment's deviation" "$(cat known.md)" "- Kept the cache"
+assert_contains "and the plan comment's rejected alternative" "$(cat known.md)" "- Polling the PR - too slow - rejected alternative"
 restore_suite_env

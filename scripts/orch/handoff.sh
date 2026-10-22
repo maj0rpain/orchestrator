@@ -298,7 +298,7 @@ cmd_handoff() {
         # The handoff is a comment: fetched into a scratch file, with the
         # earlier ones beside it - a skill reaches a sibling handoff by its
         # directory - where they exist.
-        local issue scratch="$ORCH/scratch" earlier
+        local issue scratch="$HANDOFF_SCRATCH_DIR" earlier
         require_issue issue
         for earlier in $(handoffs_due "$1"); do
           [ "$earlier" = "$file" ] || handoff_comment_fetch "$issue" "${earlier%.md}" "$scratch/$earlier" || true

@@ -255,7 +255,8 @@ autopilot_ask() {
   require_issue issue
   autopilot_setting handle
   body="$(mktemp)" || die "could not create a temp file for the question comment"
-  { autopilot_question_marker "$phase"; printf '@%s\n\n' "$AUTOPILOT_VALUE"; cat "$file"; } >"$body"
+  { autopilot_question_marker "$phase"; printf '@%s\n\n' "$AUTOPILOT_VALUE"; cat "$file"
+    printf '\nReply in one comment like `1: A, 2: recommended, 3: <free text>` (`all: recommended` accepts everything).\n'; } >"$body"
   capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
   rm -f "$body"
   landed="posted the $phase question comment"
@@ -495,14 +496,15 @@ autopilot_pickup() {
 # is the run pidfile's, or - with none - the claim's own tick pid. Other hosts'
 # claims are never touched.
 autopilot_cleanup_stale() {
-  local main_root="$1" claims issue host pid phase _started pidfile
+  local main_root="$1" claims issue host tick_pid run_pid phase _started pidfile
   autopilot_claims_read claims
-  while IFS=$'\t' read -r issue host pid phase _started; do
+  while IFS=$'\t' read -r issue host tick_pid phase _started; do
     [ -n "$issue" ] && [ "$host" = "$(hostname)" ] || continue
     pidfile="$(autopilot_dir "$main_root")/run/$issue.pid"
-    [ ! -f "$pidfile" ] || pid="$(cat "$pidfile")"
-    ! autopilot_pid_alive "$pid" || continue
-    autopilot_stop "$issue" failure "$phase" "the session's process (pid ${pid:-unknown}) is gone and the claim was never released - no exit code or log to name"
+    run_pid=""
+    [ ! -f "$pidfile" ] || run_pid="$(cat "$pidfile")"
+    ! autopilot_pid_alive "${run_pid:-$tick_pid}" || continue
+    autopilot_stop "$issue" failure "$phase" "the session's process (pid ${run_pid:-${tick_pid:-unknown}}) is gone and the claim was never released - no exit code or log to name"
     rm -f "$pidfile"
   done <<<"$claims"
 }
@@ -583,7 +585,7 @@ autopilot_tick() {
 # holds none. A time already past today is the same time tomorrow, or, with a
 # weekday, a week on at most.
 autopilot_resets_epoch() {
-  local text re day="" h m ap now since target ahead cur i d
+  local text re day="" h m ap now_epoch since target clock shift_secs ahead cur i d
   text="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   re='resets[[:space:]]+(([a-z]{3})[a-z]*[[:space:]]+)?([0-9]{1,2})(:([0-9]{2}))?[[:space:]]*(am|pm)'
   [[ "$text" =~ $re ]] || return 1
@@ -591,9 +593,9 @@ autopilot_resets_epoch() {
   [ "$h" -ge 1 ] && [ "$h" -le 12 ] && [ "$m" -le 59 ] || return 1
   [ "$ap" = pm ] && [ "$h" -ne 12 ] && h=$((h + 12))
   [ "$ap" = am ] && [ "$h" -eq 12 ] && h=0
-  now="$(date +%s)"
+  now_epoch="$(date +%s)"
   since="$(( 10#$(date +%H) * 3600 + 10#$(date +%M) * 60 + 10#$(date +%S) ))"
-  target="$(( now - since + h * 3600 + m * 60 ))"
+  target="$(( now_epoch - since + h * 3600 + m * 60 ))"
   if [ -n "$day" ]; then
     ahead=""
     cur="$(date +%u)"
@@ -604,11 +606,18 @@ autopilot_resets_epoch() {
     done
     [ -n "$ahead" ] || return 1
     target=$((target + ahead * 86400))
-    [ "$target" -gt "$now" ] || target=$((target + 7 * 86400))
+    [ "$target" -gt "$now_epoch" ] || target=$((target + 7 * 86400))
   else
-    [ "$target" -gt "$now" ] || target=$((target + 86400))
+    [ "$target" -gt "$now_epoch" ] || target=$((target + 86400))
   fi
-  printf '%s\n' "$target"
+  # A clock change between now and then shifts the hour: pull the target back to
+  # the wanted local time of day.
+  clock="$(date -d "@$target" +%H:%M:%S 2>/dev/null || date -r "$target" +%H:%M:%S)"
+  since="$(( 10#${clock:0:2} * 3600 + 10#${clock:3:2} * 60 + 10#${clock:6:2} ))"
+  shift_secs="$(( h * 3600 + m * 60 - since ))"
+  [ "$shift_secs" -le 43200 ] || shift_secs=$((shift_secs - 86400))
+  [ "$shift_secs" -ge -43200 ] || shift_secs=$((shift_secs + 86400))
+  printf '%s\n' "$((target + shift_secs))"
 }
 
 # autopilot_limit_reset <log>: returns 0 when <log> holds Claude Code's
@@ -661,9 +670,13 @@ autopilot_run() {
   fi
   detail="the session exited with code $rc; log: $log"
   if reset="$(autopilot_limit_reset "$log")"; then
-    [ -n "$reset" ] || reset="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
+    if [ -n "$reset" ]; then
+      detail="the session stopped on a usage limit (resets $reset) and exited with code $rc; log: $log"
+    else
+      detail="the session stopped on a usage limit and exited with code $rc; log: $log"
+      reset="$(autopilot_epoch_iso "$(( $(date +%s) + 3600 ))")"
+    fi
     printf '%s\n' "$reset" >"$dir/limit"
-    detail="the session stopped on a usage limit (resets $reset) and exited with code $rc; log: $log"
   fi
   autopilot_stop "$issue" failure "$phase" "$detail"
 }
