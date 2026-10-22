@@ -13,6 +13,21 @@
 # seconds (user plus system, children included), the wall seconds, both to two
 # places, the UTC time in ISO 8601, and the command, its words joined by single
 # spaces. history prints it as written, and the tests seed it.
+#
+# Only a run no other suite-cost run overlapped is recorded. Beside the record,
+# the active-runs directory suite-cost.active holds one marker per measured run
+# in progress - suite-cost run, or check's base run - a file named by the pid
+# of the orch.sh process measuring it; its contended mark is a sibling file
+# <pid>.contended. A run first removes its own pid's .contended file, left by
+# an earlier run of the same process, then creates its marker, then lists the
+# others: it marks each other live one contended, and itself when there was
+# any. On finish it was overlapped when its .contended file exists, or when it
+# saw another live marker at start, and it removes its marker and .contended
+# file either way. A marker or .contended file whose pid names no live process
+# is stale: no contention, and removed by the run that finds it. A failed
+# .contended write for another run is not retried, and a failed removal is
+# ignored. A run that cannot register still runs but is not recorded. No run
+# ever waits for another.
 
 SUITE_COST_RUN_USAGE="usage: orch.sh suite-cost run -- <cmd> [args...]"
 SUITE_COST_CHECK_USAGE="usage: orch.sh suite-cost check -- <cmd> [args...]"
@@ -57,18 +72,76 @@ suite_cost_record() {
   printf '%s/orchestrator/suite-cost\n' "$d"
 }
 
+# suite_cost_active: prints the path of the clone's active-runs directory,
+# suite-cost.active beside the record.
+suite_cost_active() {
+  local rec
+  rec="$(suite_cost_record)" || return 1
+  printf '%s.active\n' "$rec"
+}
+
+# suite_cost_register: registers this orch.sh process's run as active, before
+# it is measured, and sets SUITE_COST_MARK to its marker's path, empty when it
+# could not register, and SUITE_COST_SAW to 1 when another live run's marker
+# was present, else 0. Stale markers and .contended files it finds are removed.
+suite_cost_register() {
+  local dir me f p
+  SUITE_COST_MARK="" SUITE_COST_SAW=0
+  dir="$(suite_cost_active 2>/dev/null)" || return 0
+  me="$dir/$$"
+  rm -f -- "$me.contended" 2>/dev/null || true
+  { mkdir -p -- "$dir" && : >"$me"; } 2>/dev/null || return 0
+  SUITE_COST_MARK="$me"
+  for f in "$dir"/*; do
+    p="${f##*/}"
+    p="${p%.contended}"
+    [[ "$p" =~ ^[0-9]+$ ]] && [ "$p" != "$$" ] || continue
+    if ! kill -0 "$p" 2>/dev/null; then
+      rm -f -- "$f" 2>/dev/null || true
+    elif [ "$f" = "$dir/$p" ]; then
+      SUITE_COST_SAW=1
+      : 2>/dev/null >"$f.contended" || true
+    fi
+  done
+  [ "$SUITE_COST_SAW" -eq 0 ] || : 2>/dev/null >"$me.contended" || true
+}
+
+# suite_cost_unregister: ends the run suite_cost_register began, removing its
+# marker and .contended file, and sets SUITE_COST_SOLO to solo, overlapped
+# (its .contended file existed, or it saw another live run at start) or
+# unregistered (it never had a marker).
+suite_cost_unregister() {
+  if [ -z "$SUITE_COST_MARK" ]; then
+    SUITE_COST_SOLO=unregistered
+    return 0
+  fi
+  SUITE_COST_SOLO=solo
+  if [ "$SUITE_COST_SAW" -eq 1 ] || [ -e "$SUITE_COST_MARK.contended" ]; then
+    SUITE_COST_SOLO=overlapped
+  fi
+  rm -f -- "$SUITE_COST_MARK" "$SUITE_COST_MARK.contended" 2>/dev/null || true
+  SUITE_COST_MARK=""
+}
+
 # suite_cost_run <cmd> [args...]: runs the command in the current directory,
 # its stdout, stderr and exit code passed through, and on exit 0 appends its
-# record line, its commit <sha>-dirty when the tree had changes as it started.
-# Exits with the command's own status.
+# record line, its commit <sha>-dirty when the tree had changes as it started -
+# unless another suite-cost run overlapped it, or it could not register as
+# active, either of which it warns of. Exits with the command's own status.
 suite_cost_run() {
   local sha
   sha="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
   if [ -n "$sha" ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
     sha="$sha-dirty"
   fi
+  suite_cost_register
   suite_cost_measure "$@"
-  if [ "$SUITE_COST_STATUS" -eq 0 ]; then
+  suite_cost_unregister
+  if [ "$SUITE_COST_SOLO" = unregistered ]; then
+    warn "this run could not register as active - its suite cost is not recorded"
+  elif [ "$SUITE_COST_SOLO" = overlapped ]; then
+    warn "this run overlapped another suite-cost run - its suite cost is not recorded"
+  elif [ "$SUITE_COST_STATUS" -eq 0 ]; then
     if [ -n "$sha" ]; then
       suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
     else
@@ -223,7 +296,10 @@ suite_cost_check() {
 # happened. The worktree holds only tracked files, so git config
 # orchestrator.suiteCost.setup, when set and non-empty, runs there first with
 # bash -c, untimed and its output on stderr; a failing setup measures nothing.
-# With no setup, a run exiting 127 names that key. Succeeds, SUITE_COST_CPU set, only when the run passed and the
+# The run is registered as active from its setup to its end, and a passing run
+# another suite-cost run overlapped, or that could not register, is not
+# recorded and fails, warning which.
+# With no setup, a run exiting 127 names that key. Succeeds, SUITE_COST_CPU set, only when the run passed solo and the
 # worktree is gone; a failed removal after a pass keeps the record and names
 # the left-over worktree.
 suite_cost_base_run() {
@@ -238,11 +314,20 @@ suite_cost_base_run() {
   fi
   setup="$(git config --get orchestrator.suiteCost.setup 2>/dev/null || true)"
   if cd "$wt"; then
+    suite_cost_register
     [ -z "$setup" ] || bash -c "$setup" >&2 || setup_status=$?
     [ "$setup_status" -ne 0 ] || suite_cost_measure "$@" >&2
+    suite_cost_unregister
     cd "$here" || die "could not return to $here"
-    if [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
+    if [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ] && [ "$SUITE_COST_SOLO" = solo ]; then
       suite_cost_append "$base" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
+    elif [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
+      status=1
+      if [ "$SUITE_COST_SOLO" = unregistered ]; then
+        warn "the base run at $base could not register as active - the suite cost is unmeasured"
+      else
+        warn "the base run at $base overlapped another suite-cost run - the suite cost is unmeasured"
+      fi
     else
       status=1
       if [ "$setup_status" -ne 0 ]; then

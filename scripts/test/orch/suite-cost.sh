@@ -130,6 +130,81 @@ touch untracked
 assert_eq "a run with an untracked file records <sha>-dirty" \
   "$(tail -n 1 "$rec" | cut -f1)" "$(git rev-parse HEAD)-dirty"
 
+# Solo recording: a run another suite-cost run overlapped is left out of the
+# record. Two runs are made certain to overlap by a FIFO handshake, no sleep:
+# the first's command opens one FIFO for writing and blocks until the second's
+# opens it for reading, then reads a second FIFO the other writes - so each
+# command is running, and its run registered, while the other's is.
+overlap="this run overlapped another suite-cost run - its suite cost is not recorded"
+new_repo >/dev/null
+rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
+hs="$(mktemp -d)"
+mkfifo "$hs/one" "$hs/two"
+"$ORCH" suite-cost run -- sh -c 'printf x >"$0"; read -r _ <"$1"; exit 4' "$hs/one" "$hs/two" \
+  >/dev/null 2>"$hs/err-a" &
+pid_a=$!
+"$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" \
+  >/dev/null 2>"$hs/err-b"; st_b=$?
+wait "$pid_a"; st_a=$?
+assert_status "the first of two overlapping runs passes its exit code through" "$st_a" 4
+assert_status "and so does the second" "$st_b" 0
+assert_contains "the first warns it overlapped another run" "$(cat "$hs/err-a")" "orch: $overlap"
+assert_contains "and so does the second" "$(cat "$hs/err-b")" "orch: $overlap"
+assert_eq "neither is recorded" "$("$ORCH" suite-cost history)" ""
+
+git branch other
+git worktree add -q "$PWD/wt" other
+"$ORCH" suite-cost run -- sh -c 'printf x >"$0"; read -r _ <"$1"' "$hs/one" "$hs/two" \
+  >/dev/null 2>"$hs/err-a" &
+pid_a=$!
+(cd wt && "$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" \
+  >/dev/null 2>"$hs/err-b"); st_b=$?
+wait "$pid_a"; st_a=$?
+assert_status "a run overlapping one in a linked worktree passes its exit code through" "$st_a" 0
+assert_status "and so does the linked worktree's run" "$st_b" 0
+assert_contains "the main checkout's run warns it overlapped" "$(cat "$hs/err-a")" "orch: $overlap"
+assert_contains "and so does the linked worktree's" "$(cat "$hs/err-b")" "orch: $overlap"
+assert_eq "neither is recorded, wherever it started" "$("$ORCH" suite-cost history)" ""
+
+err="$("$ORCH" suite-cost run -- true 2>&1)"
+assert_eq "a solo run after them warns nothing" "$err" ""
+line="$("$ORCH" suite-cost history)"
+assert_record_line "and is recorded, in the unchanged five-field line" "$line"
+
+# A stale marker or .contended file - its pid names no live process - is no
+# contention, and the run that finds it removes it.
+sh -c 'exit 0' &
+dead=$!
+wait "$dead"
+active="$rec.active"
+mkdir -p "$active"
+: >"$active/$dead"
+err="$("$ORCH" suite-cost run -- true 2>&1)"
+assert_eq "a stale marker seeded before a run is no contention" "$err" ""
+assert_eq "the run is recorded" "$("$ORCH" suite-cost history | wc -l | tr -d ' ')" 2
+assert_eq "and the stale marker is gone" "$(on_disk "$active/$dead")" absent
+: >"$active/$dead.contended"
+err="$("$ORCH" suite-cost run -- true 2>&1)"
+assert_eq "a stale .contended file with no marker is no contention" "$err" ""
+assert_eq "the run is recorded" "$("$ORCH" suite-cost history | wc -l | tr -d ' ')" 3
+assert_eq "and the stale .contended file is gone" "$(on_disk "$active/$dead.contended")" absent
+assert_eq "a run leaves no marker of its own behind" "$(ls -A "$active")" ""
+
+# A run that cannot register as active: a plain file where the active-runs
+# directory goes, the record itself still writable.
+new_repo >/dev/null
+rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
+mkdir -p "${rec%/*}"
+: >"$rec.active"
+errf="$(mktemp)"
+out="$("$ORCH" suite-cost run -- sh -c 'echo ran; exit 0' 2>"$errf")"; st=$?
+assert_status "a run that cannot register passes its exit code through" "$st" 0
+assert_eq "and its stdout" "$out" "ran"
+assert_contains "it warns it could not register" "$(cat "$errf")" \
+  "orch: this run could not register as active - its suite cost is not recorded"
+assert_eq "and is not recorded" "$("$ORCH" suite-cost history)" ""
+rm -rf "$hs" "$errf"
+
 out="$("$ORCH" suite-cost bogus 2>&1)"; st=$?
 assert_status "suite-cost bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown suite-cost op"
@@ -160,6 +235,8 @@ assert_contains "with its usage line" "$out" "usage: orch.sh suite-cost history"
 out="$("$ORCH" help 2>&1)"
 assert_contains "suite-cost run is in the usage text" "$out" "suite-cost run -- <cmd> [args...]"
 assert_contains "suite-cost history is in the usage text" "$out" "suite-cost history"
+assert_contains "the usage text says an overlapped run is not recorded" \
+  "$(tr -s ' \n' ' ' <<<"$out")" "A run another suite-cost run overlapped, in any checkout of the clone, is not recorded"
 assert_contains "suite-cost check is in the usage text" "$out" "suite-cost check -- <cmd> [args...]"
 assert_contains "the CLI conventions' noun table has a suite-cost row" \
   "$(grep '^| `suite-cost`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" \
@@ -391,4 +468,44 @@ git config orchestrator.suiteCost.setup true
 # shellcheck disable=SC2059
 assert_contains "with the key set, a 127 keeps today's warning" \
   "$(cat "$errf")" "$(printf "$today" "$base" 127)"
+rm -f "$errf"
+
+# A base run is a measured run too: one overlapped by a suite-cost run started
+# alongside check - the FIFO handshake of the suite-cost run section, the
+# FIFOs named by absolute path so the base worktree reaches them - is not
+# recorded, and check is unmeasured.
+check_repo
+hs="$(mktemp -d)"
+mkfifo "$hs/one" "$hs/two"
+waiter=(sh -c 'printf x >"$0"; read -r _ <"$1"' "$hs/one" "$hs/two")
+seed_run "$head" 70.00 "${waiter[*]}"
+before="$(cat "$rec")"
+"$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" \
+  >/dev/null 2>&1 &
+pid_a=$!
+out="$("$ORCH" suite-cost check -- "${waiter[@]}" 2>"$hs/err")"; st=$?
+wait "$pid_a"
+assert_status "an overlapped base run's check exits 0" "$st" 0
+assert_eq "and is unmeasured" "$out" "unmeasured"
+assert_contains "warning the base run overlapped another" "$(cat "$hs/err")" \
+  "orch: the base run at $base overlapped another suite-cost run - the suite cost is unmeasured"
+assert_eq "recording neither run" "$(cat "$rec")" "$before"
+assert_eq "and leaving no worktree" "$(git worktree list | wc -l | tr -d ' ')" 1
+rm -rf "$hs"
+
+# A base run that cannot register as active: a plain file where the
+# active-runs directory goes.
+check_repo
+seed_run "$head" 70.00
+before="$(cat "$rec")"
+: >"$rec.active"
+errf="$(mktemp)"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
+assert_status "a base run that cannot register exits 0" "$st" 0
+assert_eq "and is unmeasured" "$out" "unmeasured"
+assert_eq "though the command still ran" "$(on_disk "$marker")" present
+assert_contains "warning it could not register" "$(cat "$errf")" \
+  "orch: the base run at $base could not register as active - the suite cost is unmeasured"
+assert_not_contains "never with an overlap warning" "$(cat "$errf")" "overlapped"
+assert_eq "recording nothing" "$(cat "$rec")" "$before"
 rm -f "$errf"

@@ -146,7 +146,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               not), CPU seconds (user plus
                               system, children included), wall seconds, the
                               UTC time in ISO 8601, and the command. An
-                              append that fails warns and records nothing
+                              append that fails warns and records nothing.
+                              A run another suite-cost run overlapped, in
+                              any checkout of the clone, is not recorded,
+                              and warns; so is one that could not register
+                              as active (orchestrator/suite-cost.active).
+                              No run waits for another
   suite-cost check -- <cmd> [args...]
                               print one verdict line comparing the head's
                               newest recorded run of <cmd> (on HEAD or an
