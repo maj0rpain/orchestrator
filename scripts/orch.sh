@@ -91,6 +91,7 @@ readonly REVIEW_DIR="$ORCH/review"
 # and d_remedy, from a check living in the module of the concept it serves
 # (agent.sh's check_agent_settings) (scripts/test/orch/doctor.sh holds this).
 source "$ORCH_SCRIPTS/orch/agent.sh"
+source "$ORCH_SCRIPTS/orch/autopilot.sh"
 source "$ORCH_SCRIPTS/orch/base.sh"
 source "$ORCH_SCRIPTS/orch/branch.sh"
 source "$ORCH_SCRIPTS/orch/checkout.sh"
@@ -137,6 +138,7 @@ main() {
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
     agent)         cmd_agent "$@" ;;
+    autopilot)     cmd_autopilot "$@" ;;
     parallel)      cmd_parallel "$@" ;;
     suite-cost)    cmd_suite_cost "$@" ;;
     repo)          cmd_repo "$@" ;;

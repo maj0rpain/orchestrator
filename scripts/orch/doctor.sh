@@ -33,16 +33,6 @@
 # The most labels the labels-exist check asks gh to list.
 readonly LABEL_LIMIT=1000
 
-# repo_owner_name <name>: the OWNER/REPO of a [HOST/]OWNER/REPO repo name, as
-# repo_resolve sets REPO_NAME, any host dropped - repo_host's twin, in
-# repo.sh.
-repo_owner_name() {
-  case "$1" in
-    */*/*) printf '%s\n' "${1#*/}" ;;
-    *) printf '%s\n' "$1" ;;
-  esac
-}
-
 D_OK=0
 D_WARN=0
 D_FAIL=0

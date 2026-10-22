@@ -133,6 +133,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               orchestrator.parallel, else 3; 1 is sequential.
                               Dies naming the key and value when it is not a
                               positive integer
+  autopilot show              print the autopilot settings, each with its
+                              source: orchestrator.autopilot.permission-mode
+                              (no default), .cap (3), .handle (the repo's
+                              owner), .rounds (2), .budget (3). Dies naming
+                              the key and value when one is out of range
+  autopilot active            exit 0 in an autopilot session (ORCH_AUTOPILOT=1),
+                              1 otherwise
   agent set <role> [--model <m>] [--effort <e>] [--global]
                               set a role's agent setting in local config,
                               or global with --global. Roles: implementer,

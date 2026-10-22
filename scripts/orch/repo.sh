@@ -22,11 +22,19 @@ repo_resolve() {
 # The one parser of a [HOST/]OWNER/REPO repo name, as repo_resolve sets
 # REPO_NAME. repo_host <name> prints its explicit host, or nothing for an
 # OWNER/REPO name, whose host is the implicit github.com; repo_owner_name
-# <name>, in doctor.sh, its one caller, prints its OWNER/REPO, any host
-# dropped.
+# <name>, below, prints its OWNER/REPO, any host dropped.
 repo_host() {
   case "$1" in
     */*/*) printf '%s\n' "${1%%/*}" ;;
+  esac
+}
+
+# repo_owner_name <name>: the OWNER/REPO of a [HOST/]OWNER/REPO repo name, as
+# repo_resolve sets REPO_NAME, any host dropped - repo_host's twin.
+repo_owner_name() {
+  case "$1" in
+    */*/*) printf '%s\n' "${1#*/}" ;;
+    *) printf '%s\n' "$1" ;;
   esac
 }
 
