@@ -196,6 +196,7 @@ scripts/orch/filed-finding.sh the Filed finding module, a concept module with no
 scripts/orch/global.sh        the bare global commands with no module of their own (slug, status, archive, help)
 scripts/orch/common.sh        the primitives no concept owns (die, capture, ...)
 scripts/orch/gh.sh            the gh adapter layer (ADR-0033): gh(), every adapter_* operation, the ORCH_GH_ADAPTER hook
+scripts/orch/suite-cost.sh    the suite-cost noun's module, with the ORCH_SUITE_COST_TIMER hook: a test knob like ORCH_GH_ADAPTER, naming a file (the tests' scripts/test/suite_cost_timer_fake.sh) that overrides only the step timing a command
 scripts/orch/doctor.sh        diagnostics: the d_* reporting and check_* functions, the doctor noun's module
 scripts/triage-labels.sh      the triage-label parser and LABELS_DOC, sourced by orch.sh and hook-grilling.sh
 scripts/host.sh               the one host detector, host_detect, sourced by orch.sh and hook-common.sh

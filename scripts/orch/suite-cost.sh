@@ -163,6 +163,7 @@ suite_cost_run() {
 # Measured by bash's own time keyword and TIMEFORMAT, so no GNU-only time is
 # needed: the report goes to a temp file while the command's stderr goes
 # through fd 3 to the caller's. `command` keeps it off orch.sh's own functions.
+# The one step ORCH_SUITE_COST_TIMER's file overrides (see the module's end).
 suite_cost_measure() {
   local tf real user sys TIMEFORMAT='%2R %2U %2S'
   SUITE_COST_STATUS=0
@@ -410,3 +411,16 @@ suite_cost_tree_run() {
   fi
   return "$status"
 }
+
+# ORCH_SUITE_COST_TIMER is an opt-in test knob in the same spirit as gh.sh's
+# ORCH_GH_ADAPTER: a file sourced immediately after the module's functions are
+# defined, which overrides only the step that times a command,
+# suite_cost_measure. The command still runs for real - its output, exit
+# code, setup, worktrees and active-runs markers are unchanged - and only the
+# CPU and wall seconds it reports come from the override; the tests' fake is
+# scripts/test/suite_cost_timer_fake.sh. Unset - every normal run - nothing is
+# sourced and the real bash time measurement runs. It is not a user setting.
+if [ -n "${ORCH_SUITE_COST_TIMER:-}" ]; then
+  # shellcheck disable=SC1090 # the timer path is chosen at run time, by tests
+  source "$ORCH_SUITE_COST_TIMER"
+fi

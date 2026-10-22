@@ -609,16 +609,26 @@ rm -f "$errf"
 # A comparison past the threshold is confirmed before it is reported: check
 # measures the head once in a temporary worktree at HEAD, then the base once
 # at the baseline sample's commit, and compares again. The checked command is
-# sh run.sh, a tracked script whose content each commit sets, burning CPU with
-# an awk loop (1e7 iterations is about a third of a CPU second) or driving a
-# FIFO handshake; the growth is seeded, the head at twice the base.
+# sh run.sh, a tracked script whose content each commit sets - a no-op, a
+# failure, or a FIFO handshake - and the growth is seeded, the head at 100
+# over a base at 50. The CPU seconds a confirming run reports come from the
+# timer fake ORCH_SUITE_COST_TIMER names, keyed by the run's commit, so no
+# verdict here depends on the machine's speed or load.
 echo
 echo "suite-cost check confirmation"
+ORCH_SUITE_COST_FAKE_CPU="$(mktemp)"
+export ORCH_SUITE_COST_TIMER="$TEST_DIR/suite_cost_timer_fake.sh" ORCH_SUITE_COST_FAKE_CPU
+
+# fake_cpu <sha> <cpu>: the timer fake reports <cpu> CPU seconds for a run on
+# <sha> from now on.
+fake_cpu() { printf '%s %s\n' "$1" "$2" >>"$ORCH_SUITE_COST_FAKE_CPU"; }
 
 # confirm_repo <base script> <head script>: a repo, cwd inside it, whose base
 # commit tracks run.sh holding <base script> and whose head commit, on branch
 # feat recorded with base as its base SHA, holds <head script>; a low floor,
-# and a growth seeded for sh run.sh. Sets base, head, rec, cmd and cmd_str.
+# a growth seeded for sh run.sh, head 100.00 over base 50.00, and the timer
+# fake reporting 50.00 for a run on either commit until fake_cpu says
+# otherwise. Sets base, head, rec, cmd and cmd_str.
 confirm_repo() {
   new_repo >/dev/null
   printf '%s\n' "$1" >run.sh
@@ -636,49 +646,55 @@ confirm_repo() {
   mkdir -p "${rec%/*}"
   cmd=(sh run.sh)
   cmd_str="sh run.sh"
-  seed_run "$base" 1.00
-  seed_run "$head" 2.00
+  seed_run "$base" 50.00
+  seed_run "$head" 100.00
+  : >"$ORCH_SUITE_COST_FAKE_CPU"
+  fake_cpu "$base" 50.00
+  fake_cpu "$head" 50.00
 }
-# burn <iterations>: a script line burning CPU for <iterations> awk loops.
-burn() { printf "awk 'BEGIN { for (i = 0; i < %s; i++); }'" "$1"; }
 # recorded <sha>: the CPU seconds of the newest record line at <sha> past the
 # seeded ones, or nothing.
 recorded() { awk -F'\t' -v s="$1" '$1 == s && NR > 2 { c = $2 } END { print c }' "$rec"; }
 errf="$(mktemp)"
 unconfirmed_tail="the growth is unconfirmed"
 
-confirm_repo "$(burn 1.6e7)" "$(burn 1.6e7)"
+confirm_repo ":" ":"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
 assert_status "a confirmed check exits 0" "$st" 0
-assert_eq "a seeded growth the confirming runs do not bear out is ok" "$out" "ok"
+assert_eq "a seeded growth the confirming runs, at 50 each, do not bear out is ok" "$out" "ok"
 assert_eq "both passing solo confirming runs are recorded, head then base" \
   "$(awk -F'\t' 'NR > 2 { print $1 }' "$rec" | tr '\n' ' ')" "$head $base "
 assert_eq "and their worktrees are gone" "$(git worktree list | wc -l | tr -d ' ')" 1
 
-confirm_repo "$(burn 1e7)" "$(burn 3e7)"
+confirm_repo ":" ":"
+fake_cpu "$head" 90.00
+fake_cpu "$base" 60.00
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
-assert_contains "a growth that survives confirmation grew" "$out" "grew "
-assert_contains "its finding text names the lowest head value, the confirming run's" "$out" \
-  "$(recorded "$head") CPU seconds at the head"
-assert_contains "and the lowest baseline value, at the baseline commit" "$out" \
-  "against $(recorded "$base") at baseline commit $base"
+assert_contains "a growth that survives confirmation grew" "$out" "grew 80 - "
+assert_contains "its finding text names the lowest head value, the confirming run's 90" "$out" \
+  "90.00 CPU seconds at the head"
+assert_contains "and the lowest baseline value, the seeded 50, at the baseline commit" "$out" \
+  "against 50.00 at baseline commit $base"
 assert_contains "and the default threshold" "$out" "past the 15% threshold"
 
-confirm_repo "$(burn 1e7)" "$(burn 3e7)"
+confirm_repo ":" ":"
 : >"$rec"
-seed_run "$base" 0.30
-seed_run "$head-dirty" 0.50
+seed_run "$base" 30.00
+seed_run "$head-dirty" 50.00
+fake_cpu "$head" 90.00
+fake_cpu "$base" 30.00
 git config orchestrator.suiteCost.growth 16.5
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
-assert_contains "a dirty head sample's growth that survives grew" "$out" "grew "
+assert_contains "a dirty head sample's growth that survives grew" "$out" "grew 200 - "
 assert_contains "the head side is the head confirming run alone, the dirty sample not pooled" \
-  "$out" "$(recorded "$head") CPU seconds at the head"
-assert_not_contains "never the dirty sample's value" "$out" "0.50 CPU seconds"
+  "$out" "90.00 CPU seconds at the head"
+assert_not_contains "never the dirty sample's value" "$out" "50.00 CPU seconds"
 assert_contains "a decimal threshold is named" "$out" "past the 16.5% threshold"
 
 confirm_repo ":" ":"
 git config orchestrator.suiteCost.floor 0.5
-assert_eq "a base confirming run landing below the floor is off" \
+fake_cpu "$base" 0.05
+assert_eq "a base confirming run landing below the floor, at 0.05, is off" \
   "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "off"
 
 # Setup runs first in both confirming worktrees: each commit's script needs
@@ -773,3 +789,5 @@ assert_eq "the solo head confirming run before it is recorded" "$(grep -c "^$hea
 assert_eq "the overlapped base run is not" "$(grep -c "^$base" "$rec")" 1
 assert_eq "and no worktree is left" "$(git worktree list | wc -l | tr -d ' ')" 1
 rm -rf "$hs" "$errf"
+rm -f "$ORCH_SUITE_COST_FAKE_CPU"
+restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU
