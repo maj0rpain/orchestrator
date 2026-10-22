@@ -52,6 +52,7 @@ state_write_string() { flow_state_write_string "$STATE" "$1" "$2"; }
 
 # require_state [die2]: dies unless an active flow's state file exists - with
 # die2 for a command that reserves exit 1 for a meaningful "no".
+# shellcheck disable=SC2120 # die2 is passed by spec_phase_guard, in spec.sh
 require_state() {
   [ -f "$STATE" ] || "${1:-die}" "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
 }
