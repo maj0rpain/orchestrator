@@ -917,7 +917,7 @@ adapter_claim_create() {
   f="$(fake_store)/claims/$1"
   mkdir -p "$(fake_store)/claims"
   [ ! -e "$f" ] || return 2
-  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$(hostname)" "$3" "$2" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$f"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$(hostname)" "$3" "$2" "$(now)" >"$f"
 }
 
 # adapter_claim_delete <issue>: the claim removed; none there is freed all the same.

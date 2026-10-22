@@ -306,9 +306,11 @@ no round-count question: the count is `bash "$ORCH" autopilot rounds`. The
 round check's `<k> <n> waiting` means round k holds fundamental items back
 for the human's reply (`.orchestrator/spec-rounds/<k>/fundamental.md`): read
 the reply with `bash "$ORCH" autopilot answer spec <file>` (a `mktemp` file
-outside the repo; it dies when no reply has come, and the phase then stops
-for the next tick), translate it into `spec-review apply`'s answer grammar
-over the fundamental items, run `bash "$ORCH" spec-review apply <dir>
+outside the repo). When it dies because no reply has come, re-post the
+question with `bash "$ORCH" autopilot ask spec <file>` (the held-back items
+from `fundamental.md`, as the round's first ask wrote them) and stop: the
+phase never assumes the recommendations. With a reply, translate it into
+`spec-review apply`'s answer grammar over the fundamental items, run `bash "$ORCH" spec-review apply <dir>
 <answer> --round <k>/<n>` again - it applies only the held-back items, posts
 the round's one changelog and removes `fundamental.md` - and go on to the
 round's pause, or, after round n, to step 5. Rounds run through the

@@ -544,7 +544,7 @@ check_side_checkouts_finished() {
 check_flow_autopilot_label() {
   # issue_state is the read's throwaway half.
   # shellcheck disable=SC2034
-  local issue issue_state="" flabels="" gh_err="" phase p label phase_labels=""
+  local issue issue_state="" flabels="" gh_err="" phase p phase_labels=""
   issue="$(state_get issue)"
   phase="$(state_get phase)"
   if [ -z "$issue" ]; then
@@ -556,9 +556,8 @@ check_flow_autopilot_label() {
   fi
   d_gh_gate || return 0
   issue_state_labels_read "$issue" issue_state flabels gh_err || return 0
-  for p in $PHASES; do
-    label="$(autopilot_phase_label "$p")"
-    if list_has "$flabels" "$label"; then phase_labels="${phase_labels:+$phase_labels }$label"; fi
+  for p in $(autopilot_phase_labels_in "$flabels"); do
+    phase_labels="${phase_labels:+$phase_labels }$(autopilot_phase_label "$p")"
   done
   if [ -z "$phase_labels" ]; then
     if autopilot_active; then
@@ -579,15 +578,15 @@ check_flow_autopilot_label() {
 # them, so doctor is where they are noticed. Silent where origin cannot be read
 # or there are none.
 check_autopilot_claims() {
-  local list issue host pid phase started now age me
+  local list issue host pid phase started now_epoch age me
   list="$(adapter_claim_list 2>/dev/null)" || return 0
-  now="$(date -u +%s)"; me="$(hostname)"
+  now_epoch="$(date -u +%s)"; me="$(hostname)"
   while IFS=$'\t' read -r issue host pid phase started; do
     [ -n "$issue" ] && [ "$host" != "$me" ] || continue
     age="$(autopilot_iso_epoch "$started")" || continue
-    [ "$((now - age))" -gt 86400 ] || continue
+    [ "$((now_epoch - age))" -gt 86400 ] || continue
     d_warn "issue #$issue has been claimed by $host (pid $pid, phase $phase) since $started - more than a day."
-    d_remedy "if that session is gone: git push origin :refs/orch/claims/$issue, and remove its orch:running label"
+    d_remedy "if that session is gone: git push origin :refs/orch/claims/$issue, and remove its $AUTOPILOT_RUNNING_LABEL label"
   done <<<"$list"
 }
 
@@ -850,22 +849,41 @@ check_flow_worktree_clean() {
 # Which handoffs are due is the phase table's handoffs_due - phase names what
 # runs *next*, so every earlier phase has already written one.
 check_flow_handoffs() {
-  local phase files f path problems line
+  local phase files f path problems line issue scratch=""
   phase="$(state_get phase)"
   # A phase the table does not hold is due nothing, so the check skips it.
   files="$(handoffs_due "$phase")"
+  # In an autopilot session a handoff is the posted comment, fetched to a file.
+  if autopilot_active && [ -n "$files" ]; then
+    issue="$(state_get issue)"
+    if [ -z "$issue" ]; then
+      d_fail "autopilot session, but no issue is recorded - the handoff comments cannot be read."
+      d_remedy "$(flow_cmd abort)"
+      return 0
+    fi
+    d_gh_gate || return 0
+    scratch="$(mktemp -d)" || { d_fail "could not create a temp directory for the handoff comments."; return 0; }
+  fi
   for f in $files; do
     path="$HANDOFF_DIR/$f"
-    if [ ! -f "$path" ]; then
+    if [ -n "$scratch" ]; then
+      path="$scratch/$f"
+      if ! (handoff_comment_fetch "$issue" "${f%.md}" "$path") 2>/dev/null || [ ! -f "$path" ]; then
+        d_fail "handoff ${f%.md} comment is missing on issue #$issue - the phase that writes it has already run."
+        d_remedy "$(flow_cmd redo)"
+        continue
+      fi
+    elif [ ! -f "$path" ]; then
       d_fail "handoff $f is missing - the phase that writes it has already run."
       d_remedy "$(flow_cmd redo)"
       continue
     fi
-    problems="$(handoff_report "$path" | grep -v '^ok ' || true)"
+    problems="$(handoff_report "$path" "$f" | grep -v '^ok ' || true)"
     if [ -z "$problems" ]; then d_ok "handoff $f complete"; continue; fi
     while IFS= read -r line; do d_fail "handoff $f: ${line#FAIL }"; done <<<"$problems"
     d_remedy "$(flow_cmd redo)"
   done
+  [ -z "$scratch" ] || rm -rf "$scratch"
 }
 
 # An entry may list the phases it applies to, as `name:phase,phase`; one with

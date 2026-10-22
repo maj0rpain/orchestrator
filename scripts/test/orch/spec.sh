@@ -508,3 +508,19 @@ fi
 assert_contains "help documents spec pause --round" "$("$ORCH" help)" "spec pause --round <k>/<n>"
 restore_suite_env
 
+
+# --- spec pause --round in an autopilot flow (#1457) --------------------------
+# The pause releases the claim: orch:running dropped, then the claim ref.
+echo
+echo "spec pause --round in an autopilot flow"
+fake_flow autopilot-pause
+export ORCHESTRATOR_HOST=claude
+"$ORCH" state set issue 7 >/dev/null
+fake_claim_seed 7
+state_fixture phase spec
+fake_issue 7 open ready-for-agent orch:spec orch:running
+ORCH_AUTOPILOT=1 "$ORCH" spec pause --round 1/2 >/dev/null 2>&1; st=$?
+assert_status "spec pause --round in autopilot succeeds" "$st" 0
+assert_eq "dropping orch:running" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
+assert_eq "releasing the claim" "$(fake_claim_held 7)" free
+restore_suite_env

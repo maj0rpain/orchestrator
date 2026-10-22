@@ -425,9 +425,7 @@ cmd_review() {
       if autopilot_active; then
         local ap_issue
         require_issue ap_issue
-        autopilot_move_label "$ap_issue" "done" "marked PR #$pr ready"
-        phase_write "done"
-        autopilot_release "$ap_issue" "marked PR #$pr ready, moved the phase label to $(autopilot_phase_label "done"), recorded phase done"
+        autopilot_phase_move "$ap_issue" "done" "marked PR #$pr ready"
       else
         phase_write "done"
       fi

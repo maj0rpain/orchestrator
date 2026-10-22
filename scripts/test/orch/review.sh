@@ -1260,3 +1260,20 @@ assert_contains "with an orch: message" "$out" "orch: no active flow"
 assert_eq "writing no file" "$(on_disk fresh.md)" "absent"
 assert_contains "orch.sh help lists review known-items" "$("$ORCH" help)" "review known-items <path> <loop boundary>"
 restore_suite_env
+
+# --- review ready in an autopilot flow (#1457) --------------------------------
+# The label moves to orch:done and the claim is released once the PR is ready.
+echo
+echo "review ready in an autopilot flow"
+review_flow autopilot-ready
+state_fixture issue 7
+state_fixture pr 9
+fake_github
+fake_pr 9 open
+fake_issue 7 open ready-for-agent orch:review orch:running
+fake_claim_seed 7
+out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
+assert_status "review ready in autopilot succeeds" "$st" 0
+assert_eq "moving the label to orch:done" "$(fake_labels_of 7)" "orch:done ready-for-agent "
+assert_eq "releasing the claim" "$(fake_claim_held 7)" free
+restore_suite_env

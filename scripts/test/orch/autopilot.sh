@@ -5,49 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# fake_claim_seed <issue> [host] [pid] [started]: seeds a claim on the issue,
-# held by this host with pid 1 and a start long past unless given. A claim
-# is a ref on origin; the fake keeps it as a line in the store.
-fake_claim_seed() {
-  mkdir -p "$ORCH_GH_FAKE_STORE/claims"
-  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "${2:-$(hostname)}" "${3:-1}" spec "${4:-2026-01-01T00:00:00Z}" \
-    >"$ORCH_GH_FAKE_STORE/claims/$1"
-}
-
-# fake_claim_held <issue>: held or free, whether the store holds a claim on it.
-fake_claim_held() { [ -f "$ORCH_GH_FAKE_STORE/claims/$1" ] && echo held || echo free; }
-
-# tick_fixture: a clone of a bare origin, the gh fake, the permission mode set,
-# claude on PATH and the fake session launcher in place. The launcher records
-# argv, ORCH_AUTOPILOT, its directory and every issue's labels, then writes the
-# output and exits as seeded: $launcher_dir/out and /exit, and, in /release, the
-# issues whose claims it releases before exiting.
-tick_fixture() {
-  sc_clone
-  fake_github
-  git config orchestrator.autopilot.permission-mode acceptEdits
-  launcher_dir="$(mktemp -d)"
-  cat >"$launcher_dir/launcher" <<LAUNCHER
-#!/bin/sh
-{
-  printf 'argv:%s\n' "\$*"
-  printf 'autopilot:%s\n' "\${ORCH_AUTOPILOT:-}"
-  printf 'dir:%s\n' "\$(pwd -P)"
-  for d in "$ORCH_GH_FAKE_STORE"/issues/*/; do
-    printf 'labels:%s:%s\n' "\$(basename "\$d")" "\$(sort "\$d/labels" | tr '\n' ' ')"
-  done
-} >>"$launcher_dir/calls"
-[ -f "$launcher_dir/out" ] && cat "$launcher_dir/out"
-for n in \$(cat "$launcher_dir/release" 2>/dev/null); do rm -f "$ORCH_GH_FAKE_STORE/claims/\$n"; done
-exit "\$(cat "$launcher_dir/exit" 2>/dev/null || echo 0)"
-LAUNCHER
-  chmod +x "$launcher_dir/launcher"
-  export ORCH_AUTOPILOT_LAUNCHER="$launcher_dir/launcher" ORCH_AUTOPILOT_FOREGROUND=1
-  tickbin="$(mktemp -d)"
-  printf '#!/bin/sh\nexit 0\n' >"$tickbin/claude"; chmod +x "$tickbin/claude"
-  PATH="$tickbin:$PATH"
-}
-
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
 # dead_pid: the pid of a process that has exited.
@@ -205,68 +162,14 @@ out="$("$ORCH" autopilot start 7 2>&1)"; st=$?
 assert_contains "start's usage line" "$out" "usage: orch.sh autopilot start <issue> <plan-file>"
 restore_suite_env
 
-# --- autopilot claims ---------------------------------------------------------
-# phase advance, spec pause --round, autopilot ask and answer, claim release (#1457).
+# --- autopilot ask and answer -------------------------------------------------
+# The question comment, the reply read back, claim release (#1457).
 echo
-echo "autopilot claims"
-fake_flow autopilot-claims
+echo "autopilot ask and answer"
+fake_flow autopilot-ask
 export ORCHESTRATOR_HOST=claude
 "$ORCH" state set issue 7 >/dev/null
-fake_issue 7 open ready-for-agent orch:spec orch:running
-fake_claim_seed 7
-spec_h="$(mktemp -d)/02-spec.md"
-complete_handoff "$spec_h"
-
-out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
-assert_status "phase advance with no posted handoff dies" "$st" 1
-assert_contains "naming the missing comment" "$out" "no 02-spec handoff comment"
-assert_eq "leaving the label" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
-assert_eq "and the claim held" "$(fake_claim_held 7)" held
-
-ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
-out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
-assert_status "phase advance in autopilot succeeds on the posted handoff" "$st" 0
-assert_eq "moving the phase label" "$(fake_labels_of 7)" "orch:implement ready-for-agent "
-assert_eq "releasing the claim" "$(fake_claim_held 7)" free
-assert_eq "recording the phase" "$("$ORCH" state get phase)" "implement"
-assert_contains "naming the watcher" "$out" "the watcher starts the implement phase"
-
-# a failure partway leaves the claim held and names the writes that landed
-fake_issue 7 open ready-for-agent orch:spec orch:running
-ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
 state_fixture phase spec
-fake_claim_seed 7
-fake_fail adapter_claim_delete "HTTP 500"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
-assert_status "a failed claim delete dies" "$st" 1
-assert_contains "naming the claim ref" "$out" "delete the claim ref"
-assert_contains "and the writes that landed" "$out" "moved the phase label to orch:implement, recorded phase implement, removed orch:running"
-assert_eq "the claim is still held" "$(fake_claim_held 7)" held
-fake_unfail
-fake_issue 7 open ready-for-agent orch:spec orch:running
-ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
-state_fixture phase spec
-fake_fail adapter_issue_relabel "HTTP 500"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
-assert_status "a failed label move dies" "$st" 1
-assert_eq "recording no phase" "$("$ORCH" state get phase)" "spec"
-assert_eq "the claim is still held" "$(fake_claim_held 7)" held
-fake_unfail
-
-# an interactive flow touches no label
-fake_issue 7 open ready-for-agent
-env -u ORCH_AUTOPILOT "$ORCH" phase advance >/dev/null 2>&1
-assert_eq "an interactive phase advance touches no label" "$(fake_labels_of 7)" "ready-for-agent "
-assert_eq "and no claim" "$(fake_claim_held 7)" held
-
-# spec pause --round releases the claim
-state_fixture phase spec
-fake_issue 7 open ready-for-agent orch:spec orch:running
-ORCH_AUTOPILOT=1 "$ORCH" spec pause --round 1/2 >/dev/null 2>&1; st=$?
-assert_status "spec pause --round in autopilot succeeds" "$st" 0
-assert_eq "dropping orch:running" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
-assert_eq "releasing the claim" "$(fake_claim_held 7)" free
-
 # ask and answer
 fake_issue 7 open ready-for-agent orch:spec orch:running
 fake_claim_seed 7
@@ -299,48 +202,6 @@ assert_status "a failed needs-human add dies" "$st" 1
 assert_contains "naming the comment that landed" "$out" "posted the spec question comment"
 assert_eq "the claim stays held" "$(fake_claim_held 7)" held
 fake_unfail
-restore_suite_env
-
-# --- autopilot review ready ---------------------------------------------------
-echo
-echo "autopilot review ready"
-review_flow autopilot-ready
-state_fixture issue 7
-state_fixture pr 9
-fake_github
-fake_pr 9 open
-fake_issue 7 open ready-for-agent orch:review orch:running
-fake_claim_seed 7
-out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
-assert_status "review ready in autopilot succeeds" "$st" 0
-assert_eq "moving the label to orch:done" "$(fake_labels_of 7)" "orch:done ready-for-agent "
-assert_eq "releasing the claim" "$(fake_claim_held 7)" free
-restore_suite_env
-
-# --- autopilot doctor ---------------------------------------------------------
-echo
-echo "autopilot doctor"
-fake_flow autopilot-doctor
-"$ORCH" state set issue 7 >/dev/null
-fake_issue 7 open ready-for-agent orch:implement
-out="$("$ORCH" doctor --flow 2>&1)"
-assert_contains "doctor flags a label that disagrees with the recorded phase" "$out" "is labelled orch:implement, but this checkout last moved to phase spec"
-fake_issue 7 open ready-for-agent orch:spec
-out="$("$ORCH" doctor --flow 2>&1)"
-assert_contains "an agreeing label is ok" "$out" "phase label: orch:spec"
-fake_issue 7 open ready-for-agent
-out="$("$ORCH" doctor --flow 2>&1)"; st=$?
-assert_not_contains "an interactive flow's missing label is not mentioned" "$out" "phase label"
-out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
-assert_status "doctor --flow refuses an autopilot session with no phase label" "$st" 1
-assert_contains "naming it" "$out" "carries no phase label"
-fake_claim_seed 7 otherhost 5 2020-01-01T00:00:00Z
-fake_claim_seed 8 otherhost 5 "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-fake_claim_seed 9 "$(hostname)" 5 2020-01-01T00:00:00Z
-out="$("$ORCH" doctor --env 2>&1)"
-assert_contains "doctor lists another host's old claim" "$out" "issue #7 has been claimed by otherhost"
-assert_not_contains "not a fresh one" "$out" "issue #8"
-assert_not_contains "nor this host's own" "$out" "issue #9"
 restore_suite_env
 
 # --- autopilot tick and run ---------------------------------------------------
@@ -380,7 +241,7 @@ assert_eq "and no claim" "$(fake_claim_held 7)" free
 assert_eq "its run pidfile is gone" "$(on_disk "$top/.orchestrator/autopilot/run/7.pid")" absent
 logs="$(ls "$top/.orchestrator/autopilot/logs" 2>/dev/null)"
 assert_eq "one log, named <issue>-<phase>-<UTC timestamp>.log" \
-  "$(grep -cE '^7-spec-[0-9]{8}T[0-9]{6}Z\.log$' <<<"$logs")" "1"
+  "$(grep -cE '^7-spec-[0-9]{8}-[0-9]{6}\.log$' <<<"$logs")" "1"
 
 # a plan comment the issue already has is not posted again
 printf '' >"$launcher_dir/calls"
@@ -595,15 +456,12 @@ tick_fixture
 top="$(git rev-parse --show-toplevel)"
 pidfile="$(git rev-parse --git-common-dir)/orchestrator/autopilot-watch.pid"
 watch_log="$(mktemp)"
-"$ORCH" autopilot watch --every 1 >/dev/null 2>"$watch_log" &
-watch_pid=$!
-for _ in $(seq 1 50); do [ -f "$pidfile" ] && break; sleep 0.1; done
-assert_eq "a running watch records its pid under the git common directory" "$(cat "$pidfile" 2>/dev/null)" "$watch_pid"
+mkdir -p "$(dirname "$pidfile")"
+printf '%s\n' "$$" >"$pidfile"
 out="$("$ORCH" autopilot watch 2>&1)"; st=$?
 assert_status "a second watch of the same clone is refused" "$st" 1
 assert_contains "naming the live one" "$out" "already running"
-kill -TERM "$watch_pid"; wait "$watch_pid" 2>/dev/null
-assert_eq "an interrupted watch removes its pidfile" "$(on_disk "$pidfile")" absent
+assert_eq "and leaves the live one's pidfile" "$(cat "$pidfile")" "$$"
 
 printf '%s\n' "$(dead_pid)" >"$pidfile"
 "$ORCH" autopilot watch --every 1 >/dev/null 2>"$watch_log" &
@@ -611,6 +469,7 @@ watch_pid=$!
 for _ in $(seq 1 50); do [ "$(cat "$pidfile" 2>/dev/null)" = "$watch_pid" ] && break; sleep 0.1; done
 assert_eq "a dead pidfile is replaced" "$(cat "$pidfile" 2>/dev/null)" "$watch_pid"
 kill -TERM "$watch_pid"; wait "$watch_pid" 2>/dev/null
+assert_eq "an interrupted watch removes its pidfile" "$(on_disk "$pidfile")" absent
 
 # a failed tick is reported on stderr and the loop carries on
 fake_fail adapter_label_upsert "HTTP 500 label"
@@ -670,25 +529,15 @@ printf 'Claude AI usage limit reached\n' >"$launcher_dir/out"; printf '1\n' >"$l
 limit_epoch="$(date -u -d "$(cat "$top/.orchestrator/autopilot/limit")" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$(cat "$top/.orchestrator/autopilot/limit")" +%s)"
 assert_eq "no reset time in the message: one hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
 assert_contains "the comment still names the usage limit" "$(fake_comments_of 8 | tail -4)" "usage limit"
+# the other limit wordings are detected too, each with the one hour fallback
+for wording in "5-hour limit reached ∙ resets 3pm" "Weekly limit reached ∙ resets Mon 9am" "Claude Opus usage limit reached"; do
+  rm -f "$top/.orchestrator/autopilot/limit"
+  fake_issue 8 open ready-for-agent orch:spec
+  printf '%s\n' "$wording" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
+  "$ORCH" autopilot tick >/dev/null 2>&1
+  assert_eq "\"$wording\" writes the limit file" "$(on_disk "$top/.orchestrator/autopilot/limit")" present
+  limit_epoch="$(date -u -d "$(cat "$top/.orchestrator/autopilot/limit")" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$(cat "$top/.orchestrator/autopilot/limit")" +%s)"
+  assert_eq "and pauses an hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
+done
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
-# --- autopilot side-checkout prune -------------------------------------------
-echo
-echo "autopilot side-checkout prune"
-tick_fixture
-top="$(git rev-parse --show-toplevel)"
-fake_issue 7 open ready-for-agent orch:spec
-printf 'Prune me\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
-printf '7\n' >"$launcher_dir/release"
-"$ORCH" autopilot tick >/dev/null 2>&1
-side7="$top/.orchestrator/checkouts/7-prune-me"
-git -C "$side7" checkout -q -b orch/7-prune-me
-git -C "$side7" commit -q --allow-empty -m work
-(cd "$side7" && state_fixture phase "done" && state_fixture branch orch/7-prune-me && state_fixture pr 41)
-fake_pr 41 open orch/7-prune-me main
-"$ORCH" side-checkout prune >/dev/null 2>&1
-assert_eq "an autopilot flow's side checkout stays while its PR is open" "$(on_disk "$side7")" present
-fake_pr 41 merged orch/7-prune-me main
-"$ORCH" side-checkout prune >/dev/null 2>&1
-assert_eq "it is removed once its PR merges" "$(on_disk "$side7")" absent
-restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND

@@ -78,11 +78,7 @@ cmd_phase() {
         review)    require_branch _unused; require_base_sha _unused; require_pr _unused ;;
       esac
       if autopilot_active; then
-        # The label moves before state.json records the phase, so a failure
-        # between the two leaves the label one step ahead, never behind.
-        autopilot_move_label "$issue" "$next" ""
-        phase_write "$next"
-        autopilot_release "$issue" "moved the phase label to $(autopilot_phase_label "$next"), recorded phase $next"
+        autopilot_phase_move "$issue" "$next" ""
         note "Phase $(phase_cell writer "$next") complete. Handoff posted on issue #$issue; the watcher starts the $next phase."
         return 0
       fi

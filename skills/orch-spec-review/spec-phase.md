@@ -46,7 +46,9 @@ When a round has a fundamental item:
    ask spec <file>`. It @mentions the human, adds `needs-human` and releases the
    claim; the session ends.
 3. The fresh session meets `spec round` printing `<k> <n> waiting` and resumes
-   from the reply, as `orch-flow`'s autopilot spec phase says.
+   from the reply, as `orch-flow`'s autopilot spec phase says; with no reply it
+   re-posts the question with `autopilot ask spec` and stops, never assuming
+   the recommendations.
 
 ## Inputs
 

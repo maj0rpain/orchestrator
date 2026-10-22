@@ -93,6 +93,15 @@ autopilot_gate() {
 # phase on its issue, `orch:<phase>` - the label is the flow's phase record.
 autopilot_phase_label() { printf 'orch:%s\n' "$1"; }
 
+# autopilot_phase_labels_in <labels>: the phases, one per line in table order,
+# whose labels are among <labels>.
+autopilot_phase_labels_in() {
+  local p
+  for p in $PHASES; do
+    ! list_has "$1" "$(autopilot_phase_label "$p")" || printf '%s\n' "$p"
+  done
+}
+
 # autopilot_block_values <file> <key>: the value of each `<key>: <value>` line
 # in <file>'s `## Autopilot` section, trimmed, one per line.
 autopilot_block_values() {
@@ -149,7 +158,7 @@ autopilot_plan_value() {
 autopilot_start() {
   # state is the read's throwaway half: only the labels are checked here.
   # shellcheck disable=SC2034
-  local issue="$1" file="$2" ready state labels gh_err phase label first
+  local issue="$1" file="$2" ready state labels gh_err phase first
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   [ -f "$file" ] || die "plan file not found: $file"
   ready="$(triage_label_for ready-for-agent)"
@@ -157,10 +166,8 @@ autopilot_start() {
     || gh_die "read issue #$issue" "$gh_err"
   list_has "$labels" "$ready" ||
     die "issue #$issue does not carry the '$ready' label - an autopilot flow starts from a ready issue"
-  for phase in $PHASES; do
-    label="$(autopilot_phase_label "$phase")"
-    ! list_has "$labels" "$label" ||
-      die "issue #$issue already carries the phase label $label - it is already an autopilot flow"
+  for phase in $(autopilot_phase_labels_in "$labels"); do
+    die "issue #$issue already carries the phase label $(autopilot_phase_label "$phase") - it is already an autopilot flow"
   done
   handoff_check "$file" "" 01-plan.md autopilot || die "plan $file is not valid - nothing posted"
   handoff_comment_post "$issue" 01-plan "$file"
@@ -196,12 +203,11 @@ autopilot_chain_die() {
 autopilot_move_label() {
   # state is the read's throwaway half.
   # shellcheck disable=SC2034
-  local issue="$1" phase="$2" landed="$3" state labels gh_err p label args=()
+  local issue="$1" phase="$2" landed="$3" state labels gh_err p args=()
   issue_state_labels_read "$issue" state labels gh_err ||
     autopilot_chain_die "$landed" "$issue" "read the labels" "$gh_err"
-  for p in $PHASES; do
-    label="$(autopilot_phase_label "$p")"
-    [ "$p" = "$phase" ] || ! list_has "$labels" "$label" || args+=(--remove "$label")
+  for p in $(autopilot_phase_labels_in "$labels"); do
+    [ "$p" = "$phase" ] || args+=(--remove "$(autopilot_phase_label "$p")")
   done
   capture_err gh_err adapter_issue_relabel "$issue" --add "$(autopilot_phase_label "$phase")" ${args[@]+"${args[@]}"} ||
     autopilot_chain_die "$landed" "$issue" "move the phase label to $(autopilot_phase_label "$phase")" "$gh_err"
@@ -217,6 +223,16 @@ autopilot_release() {
   landed="${landed:+$landed, }removed $AUTOPILOT_RUNNING_LABEL"
   capture_err gh_err adapter_claim_delete "$issue" ||
     autopilot_chain_die "$landed" "$issue" "delete the claim ref" "$gh_err"
+}
+
+# autopilot_phase_move <issue> <phase> <landed>: a finished phase's close under
+# its claim - the phase label moved to <phase>, then the recorded phase, then
+# the claim released. The label moves before state.json records the phase, so
+# a failure between the two leaves the label one step ahead, never behind.
+autopilot_phase_move() {
+  autopilot_move_label "$1" "$2" "$3"
+  phase_write "$2"
+  autopilot_release "$1" "${3:+$3, }moved the phase label to $(autopilot_phase_label "$2"), recorded phase $2"
 }
 
 # autopilot_question_marker <phase>: the first line of a question comment.
@@ -276,20 +292,29 @@ autopilot_answer() {
 # One pass of the watcher, and the wrapper around one headless session. Every
 # write under a claim ends in autopilot_release, as above.
 
-# The six labels a tick ensures, one `name|colour|description` each.
-AUTOPILOT_LABELS=(
-  "orch:spec|1d76db|Autopilot flow: spec phase next"
-  "orch:implement|0e8a16|Autopilot flow: implement phase next"
-  "orch:review|5319e7|Autopilot flow: review phase next"
-  "orch:done|c2e0c6|Autopilot flow: done"
-  "orch:running|fbca04|Autopilot session running"
-  "needs-human|d93f0b|Waiting on the human"
-)
+# autopilot_label_entries: the labels a tick ensures, one `name|colour|description`
+# each: a label per phase of the table, then the running and human labels.
+autopilot_label_entries() {
+  local p colour what
+  for p in $PHASES; do
+    what="$p phase next"
+    case "$p" in
+      spec) colour=1d76db ;;
+      implement) colour=0e8a16 ;;
+      review) colour=5319e7 ;;
+      *) colour=c2e0c6; what="$p" ;;
+    esac
+    printf '%s|%s|Autopilot flow: %s\n' "$(autopilot_phase_label "$p")" "$colour" "$what"
+  done
+  printf '%s|fbca04|Autopilot session running\n' "$AUTOPILOT_RUNNING_LABEL"
+  printf '%s|d93f0b|Waiting on the human\n' "$AUTOPILOT_HUMAN_LABEL"
+}
 
-# Claude Code's usage-limit message, as grep -Ei reads it: the one pattern for
-# it. The part after a `|`, when the message has one, is the reset time as
-# epoch seconds.
-AUTOPILOT_LIMIT_PATTERN='usage limit reached(\|[0-9]+)?'
+# Claude Code's usage-limit messages, as grep -Ei reads it: the one pattern for
+# them - "usage limit reached", "5-hour limit reached", "weekly limit reached"
+# and the like. The part after a `|`, when the message has one, is the reset
+# time as epoch seconds; the other wordings carry none.
+AUTOPILOT_LIMIT_PATTERN='limit reached(\|[0-9]+)?'
 
 # autopilot_dir <main-root>: where a clone's autopilot files live - the run
 # pidfiles, the session logs and the limit file - under its main checkout.
@@ -319,12 +344,11 @@ autopilot_orch_in() {
 # autopilot_labels_ensure: the six labels exist with their colour and
 # description. A failed upsert dies naming the label, stopping the tick.
 autopilot_labels_ensure() {
-  local entry name colour description gh_err
-  for entry in "${AUTOPILOT_LABELS[@]}"; do
-    IFS='|' read -r name colour description <<<"$entry"
+  local name colour description gh_err
+  while IFS='|' read -r name colour description; do
     capture_err gh_err adapter_label_upsert "$name" "$colour" "$description" ||
       die "could not upsert the label $name: $(gh_reason "$gh_err") - the tick stops"
-  done
+  done <<<"$(autopilot_label_entries)"
 }
 
 # autopilot_claims_read <var>: the claims on origin, adapter_claim_list's
@@ -464,16 +488,16 @@ autopilot_pickup() {
   autopilot_spawn_run "$issue"
 }
 
-# autopilot_cleanup_stale <main>: every claim of this host whose process is
+# autopilot_cleanup_stale <main-root>: every claim of this host whose process is
 # gone is a failure: needs-human, a comment, then the claim released. The pid
 # is the run pidfile's, or - with none - the claim's own tick pid. Other hosts'
 # claims are never touched.
 autopilot_cleanup_stale() {
-  local main="$1" claims issue host pid phase _started pidfile
+  local main_root="$1" claims issue host pid phase _started pidfile
   autopilot_claims_read claims
   while IFS=$'\t' read -r issue host pid phase _started; do
     [ -n "$issue" ] && [ "$host" = "$(hostname)" ] || continue
-    pidfile="$(autopilot_dir "$main")/run/$issue.pid"
+    pidfile="$(autopilot_dir "$main_root")/run/$issue.pid"
     [ ! -f "$pidfile" ] || pid="$(cat "$pidfile")"
     ! autopilot_pid_alive "$pid" || continue
     autopilot_stop "$issue" failure "$phase" "the session's process (pid ${pid:-unknown}) is gone and the claim was never released - no exit code or log to name"
@@ -515,13 +539,13 @@ autopilot_candidates() {
 # One tick). A claim create that fails for a reason other than a lost race
 # stops the tick, naming it.
 autopilot_tick() {
-  local main cap claims count issue state labels gh_err phase p rc candidates
+  local main_root cap claims count issue state labels gh_err phase p rc candidates
   autopilot_setting cap; cap="$AUTOPILOT_VALUE"
-  main="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
-  cd "$main" || die "could not enter the main checkout $main"
+  main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
+  cd "$main_root" || die "could not enter the main checkout $main_root"
   autopilot_labels_ensure
-  autopilot_cleanup_stale "$main"
-  if autopilot_limit_paused "$main"; then return 0; fi
+  autopilot_cleanup_stale "$main_root"
+  if autopilot_limit_paused "$main_root"; then return 0; fi
   autopilot_claims_read claims
   count="$(grep -c . <<<"$claims" || true)"
   candidates="$(autopilot_candidates)"
@@ -534,9 +558,9 @@ autopilot_tick() {
     ! list_has "$labels" "$AUTOPILOT_RUNNING_LABEL" || continue
     ! list_has "$labels" "$AUTOPILOT_HUMAN_LABEL" || continue
     phase=""
-    for p in $PHASES; do
+    for p in $(autopilot_phase_labels_in "$labels"); do
       [ "$p" != "done" ] || continue
-      if list_has "$labels" "$(autopilot_phase_label "$p")"; then phase="$p"; break; fi
+      phase="$p"; break
     done
     [ -n "$phase" ] || continue
     rc=0
@@ -553,7 +577,7 @@ autopilot_tick() {
 
 # autopilot_limit_reset <log>: returns 0 when <log> holds Claude Code's
 # usage-limit message, printing its reset time as a UTC timestamp when the
-# message gives one; 1 when it does not.
+# message gives an epoch one; 1 when it does not.
 autopilot_limit_reset() {
   local hit
   hit="$(grep -Eio "$AUTOPILOT_LIMIT_PATTERN" "$1" | tail -n 1)" || true
@@ -569,20 +593,20 @@ autopilot_limit_reset() {
 # when the claim is still held at its exit, runs the failure handling. A
 # session that released its claim is left alone whatever its exit code.
 autopilot_run() {
-  local issue="$1" main side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line
+  local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   autopilot_setting permission-mode; mode="$AUTOPILOT_VALUE"
   [ "$AUTOPILOT_SOURCE" != unset ] || die "orchestrator.autopilot.permission-mode is not set"
-  main="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
+  main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
   side="$(autopilot_find_side_checkout "$issue")" || die "no side checkout records issue #$issue"
   phase="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side"
-  dir="$(autopilot_dir "$main")"
+  dir="$(autopilot_dir "$main_root")"
   mkdir -p "$dir/run" "$dir/logs" || die "could not create $dir"
   pidfile="$dir/run/$issue.pid"
   printf '%s\n' "$$" >"$pidfile"
   # shellcheck disable=SC2064
   trap "rm -f '$pidfile'" EXIT
-  log="$dir/logs/$issue-$phase-$(date -u +%Y%m%dT%H%M%SZ).log"
+  log="$dir/logs/$issue-$phase-$(dir_stamp).log"
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
   ( cd "$side" && ORCH_AUTOPILOT=1 "$launcher" -p "$prompt" --permission-mode "$mode" ) >"$log" 2>&1 || rc=$?
@@ -639,7 +663,7 @@ autopilot_watch() {
   while :; do
     rc=0
     "$(autopilot_self)" autopilot tick >/dev/null || rc=$?
-    [ "$rc" = 0 ] || echo "orch: autopilot watch: the tick failed (exit $rc); trying again in ${every}s" >&2
+    [ "$rc" = 0 ] || warn "autopilot watch: the tick failed (exit $rc); trying again in ${every}s"
     sleep "$every" &
     nap=$!
     wait "$nap" || true

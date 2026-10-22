@@ -138,3 +138,59 @@ echo "phase advance help names handoffs by role"
 new_repo >/dev/null
 assert_help_names_handoffs_by_role "phase advance"
 restore_suite_env
+
+# --- phase advance in an autopilot flow (#1457) -------------------------------
+# The handoff is the posted comment, the phase label moves before the recorded
+# phase, and the claim is released last.
+echo
+echo "phase advance in an autopilot flow"
+fake_flow autopilot-claims
+export ORCHESTRATOR_HOST=claude
+"$ORCH" state set issue 7 >/dev/null
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7
+spec_h="$(mktemp -d)/02-spec.md"
+complete_handoff "$spec_h"
+
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+assert_status "phase advance with no posted handoff dies" "$st" 1
+assert_contains "naming the missing comment" "$out" "no 02-spec handoff comment"
+assert_eq "leaving the label" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
+assert_eq "and the claim held" "$(fake_claim_held 7)" held
+
+ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+assert_status "phase advance in autopilot succeeds on the posted handoff" "$st" 0
+assert_eq "moving the phase label" "$(fake_labels_of 7)" "orch:implement ready-for-agent "
+assert_eq "releasing the claim" "$(fake_claim_held 7)" free
+assert_eq "recording the phase" "$("$ORCH" state get phase)" "implement"
+assert_contains "naming the watcher" "$out" "the watcher starts the implement phase"
+
+# a failure partway leaves the claim held and names the writes that landed
+fake_issue 7 open ready-for-agent orch:spec orch:running
+ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
+state_fixture phase spec
+fake_claim_seed 7
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+assert_status "a failed claim delete dies" "$st" 1
+assert_contains "naming the claim ref" "$out" "delete the claim ref"
+assert_contains "and the writes that landed" "$out" "moved the phase label to orch:implement, recorded phase implement, removed orch:running"
+assert_eq "the claim is still held" "$(fake_claim_held 7)" held
+fake_unfail
+fake_issue 7 open ready-for-agent orch:spec orch:running
+ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
+state_fixture phase spec
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+assert_status "a failed label move dies" "$st" 1
+assert_eq "recording no phase" "$("$ORCH" state get phase)" "spec"
+assert_eq "the claim is still held" "$(fake_claim_held 7)" held
+fake_unfail
+
+# an interactive flow touches no label
+fake_issue 7 open ready-for-agent
+env -u ORCH_AUTOPILOT "$ORCH" phase advance >/dev/null 2>&1
+assert_eq "an interactive phase advance touches no label" "$(fake_labels_of 7)" "ready-for-agent "
+assert_eq "and no claim" "$(fake_claim_held 7)" held
+restore_suite_env

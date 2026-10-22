@@ -545,6 +545,49 @@ fake_body_of()   { cat "$ORCH_GH_FAKE_STORE/issues/$1/body" 2>/dev/null; }
 fake_labels_of() { sort "$ORCH_GH_FAKE_STORE/issues/$1/labels" 2>/dev/null | tr '\n' ' '; }
 fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments"; }
 
+# fake_claim_seed <issue> [host] [pid] [started]: seeds a claim on the issue,
+# held by this host with pid 1 and a start long past unless given. A claim
+# is a ref on origin; the fake keeps it as a line in the store.
+fake_claim_seed() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/claims"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "${2:-$(hostname)}" "${3:-1}" spec "${4:-2026-01-01T00:00:00Z}" \
+    >"$ORCH_GH_FAKE_STORE/claims/$1"
+}
+
+# fake_claim_held <issue>: held or free, whether the store holds a claim on it.
+fake_claim_held() { [ -f "$ORCH_GH_FAKE_STORE/claims/$1" ] && echo held || echo free; }
+
+# tick_fixture: a clone of a bare origin, the gh fake, the permission mode set,
+# claude on PATH and the fake session launcher in place. The launcher records
+# argv, ORCH_AUTOPILOT, its directory and every issue's labels, then writes the
+# output and exits as seeded: $launcher_dir/out and /exit, and, in /release, the
+# issues whose claims it releases before exiting.
+tick_fixture() {
+  sc_clone
+  fake_github
+  git config orchestrator.autopilot.permission-mode acceptEdits
+  launcher_dir="$(mktemp -d)"
+  cat >"$launcher_dir/launcher" <<LAUNCHER
+#!/bin/sh
+{
+  printf 'argv:%s\n' "\$*"
+  printf 'autopilot:%s\n' "\${ORCH_AUTOPILOT:-}"
+  printf 'dir:%s\n' "\$(pwd -P)"
+  for d in "$ORCH_GH_FAKE_STORE"/issues/*/; do
+    printf 'labels:%s:%s\n' "\$(basename "\$d")" "\$(sort "\$d/labels" | tr '\n' ' ')"
+  done
+} >>"$launcher_dir/calls"
+[ -f "$launcher_dir/out" ] && cat "$launcher_dir/out"
+for n in \$(cat "$launcher_dir/release" 2>/dev/null); do rm -f "$ORCH_GH_FAKE_STORE/claims/\$n"; done
+exit "\$(cat "$launcher_dir/exit" 2>/dev/null || echo 0)"
+LAUNCHER
+  chmod +x "$launcher_dir/launcher"
+  export ORCH_AUTOPILOT_LAUNCHER="$launcher_dir/launcher" ORCH_AUTOPILOT_FOREGROUND=1
+  tickbin="$(mktemp -d)"
+  printf '#!/bin/sh\nexit 0\n' >"$tickbin/claude"; chmod +x "$tickbin/claude"
+  PATH="$tickbin:$PATH"
+}
+
 # fake_issues: every issue number the store holds, in order, space-separated.
 fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' ' '; }
 
