@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.29.0
+
+On Junie, the agent setting is chosen with `--host junie` on `orch.sh agent set|clear|get`, which store a per-role Junie model and effort beside the Claude Code ones, and `agent show` lists both hosts' settings. The setting is carried to Junie in generated, git-excluded copies of the plugin's agents that the new `orch.sh agent sync` writes. `orch.sh doctor` checks those copies, shows what each `orch-*` agent ran on in the last Junie session for the checkout, and fails on Junie's `Unrecognized 'model' value` for a model currently set.
+
 ## 4.28.5
 
 The Implementability and Testability lenses now name Junie's search and read tools beside Claude Code's, and `docs/host-capabilities.md` gains a **Search and read code** row with Junie's fallbacks. `orch.sh doctor` reports it as a capability Junie lacks.
