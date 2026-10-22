@@ -316,6 +316,9 @@ the round's one changelog and removes `fundamental.md` - and go on to the
 round's pause, or, after round n, to step 5. Rounds run through the
 `orch-spec-review` skill, which runs unattended in autopilot; step 5's
 breakdown runs `orch-to-tickets`' **Unattended breakdown**.
+A plan amendment after `apply` (a declined `contradicts the plan` item) is
+re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as `orch-spec-review`'s
+`spec-phase.md` says.
 
 ### Phase: implement
 

@@ -135,6 +135,11 @@ review loop demotes findings that propose a rejected alternative, and
 without the amendment it would later demote a code reviewer for proposing
 the spec's own choice.
 
+In an autopilot flow the plan handoff is the `01-plan` comment, and `handoff
+path` only fetches it into a scratch file: make the amendment in that file,
+then re-post it with `bash "$ORCH" handoff post 01-plan <file>`, or the edit is
+lost on the next fetch and the review loop reads the unamended comment.
+
 After round k of n, k < n, the amendment runs, then the pause: `orch-flow`'s
 spec phase step 4 runs `spec pause --round <k>/<n>` and the session stops,
 and the next round runs in a fresh one. The last round never pauses.
