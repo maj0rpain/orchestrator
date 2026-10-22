@@ -1026,6 +1026,126 @@ assert_contains "keeps a passing suite's last line, whatever it is" "$out" \
   "docs_lint.sh: a stray last line"
 rm -rf "$all_root"
 
+# --- shell code (#1411) -------------------------------------------------------
+# shell_code over planted files: the code view keeps every line, drops each
+# comment, and keeps strings, substitutions and heredoc bodies whole.
+echo
+echo "shell code (#1411)"
+shell_code_dir="$(mktemp -d)"
+
+plant_file "$shell_code_dir" trailing.sh <<'PLANTED'
+  x=1 # a trailing comment
+  f() { :; }# no blank, so a word
+  g;# after a semicolon
+PLANTED
+assert_eq "a trailing comment is dropped" "$(shell_code "$shell_code_dir/trailing.sh")" \
+  "$(printf '%s\n' 'x=1 ' 'f() { :; }# no blank, so a word' 'g;')"
+
+plant_file "$shell_code_dir" whole.sh <<'PLANTED'
+  a=1
+    # an indented comment
+  # a comment
+  b=2
+PLANTED
+out="$(shell_code "$shell_code_dir/whole.sh"; echo .)"
+assert_eq "a comment-only line prints as an empty line, one line per input line" \
+  "$out" "$(printf '%s\n' 'a=1' '  ' '' 'b=2' .)"
+
+plant_file "$shell_code_dir" words.sh <<'PLANTED'
+  y=a#b z="c # d" w='e # f' # cut
+PLANTED
+assert_eq "a # inside a word or quotes starts no comment" \
+  "$(shell_code "$shell_code_dir/words.sh")" "y=a#b z=\"c # d\" w='e # f' "
+
+plant_file "$shell_code_dir" ansi.sh <<'PLANTED'
+  v=$'g \' # h' # cut
+PLANTED
+assert_eq "\$'...' with an escaped quote stays open past it" \
+  "$(shell_code "$shell_code_dir/ansi.sh")" "v=\$'g \\' # h' "
+
+plant_file "$shell_code_dir" heredocs.sh <<'PLANTED'
+  cat <<'EOF' # cut
+  # quoted body, kept
+  noun_fn
+  EOF
+  cat <<EOF
+  # unquoted body, kept $(x)
+  EOF
+  y=1 # cut
+PLANTED
+assert_eq "a quoted and an unquoted heredoc body print whole" \
+  "$(shell_code "$shell_code_dir/heredocs.sh")" \
+  "$(printf '%s\n' "cat <<'EOF' " '# quoted body, kept' 'noun_fn' 'EOF' 'cat <<EOF' \
+    '# unquoted body, kept $(x)' 'EOF' 'y=1 ')"
+
+printf 'cat <<-EOF\n\t# tabbed body\n\tEOF\ny=1 # cut\n' >"$shell_code_dir/strip.sh"
+assert_eq "a <<- heredoc ends at a tab-indented terminator, its lines printed whole" \
+  "$(shell_code "$shell_code_dir/strip.sh")" "$(printf 'cat <<-EOF\n\t# tabbed body\n\tEOF\ny=1 ')"
+
+plant_file "$shell_code_dir" multiline.sh <<'PLANTED'
+  s="one
+  # not a comment
+  two" # cut
+  t='three
+  # not a comment either
+  ' # cut
+PLANTED
+assert_eq "a multi-line string keeps its # lines" \
+  "$(shell_code "$shell_code_dir/multiline.sh")" \
+  "$(printf '%s\n' 's="one' '# not a comment' 'two" ' "t='three" '# not a comment either' "' ")"
+
+plant_file "$shell_code_dir" subst.sh <<'PLANTED'
+  a=$(b # cut
+  )
+  c="$(d "#" e)" # cut
+  f=`g` # cut
+PLANTED
+assert_eq "\$(...) and backticks keep their code and drop their comments" \
+  "$(shell_code "$shell_code_dir/subst.sh")" \
+  "$(printf '%s\n' 'a=$(b ' ')' 'c="$(d "#" e)" ' 'f=`g` ')"
+
+plant_file "$shell_code_dir" param.sh <<'PLANTED'
+  b=${x#pat} c=${x##*/} # cut
+PLANTED
+assert_eq "a # inside \${...} starts no comment" \
+  "$(shell_code "$shell_code_dir/param.sh")" 'b=${x#pat} c=${x##*/} '
+
+plant_file "$shell_code_dir" continued.sh <<'PLANTED'
+  cmd one \
+    two # cut
+PLANTED
+assert_eq "the line after one ending in \\ is still code" \
+  "$(shell_code "$shell_code_dir/continued.sh")" "$(printf '%s\n' 'cmd one \' '  two ')"
+
+plant_file "$shell_code_dir" two.sh <<'PLANTED'
+  cat <<A <<'B' # cut
+  # first body
+  A
+  # second body
+  B
+  y=1 # cut
+PLANTED
+assert_eq "two heredocs opened on one line both print whole" \
+  "$(shell_code "$shell_code_dir/two.sh")" \
+  "$(printf '%s\n' "cat <<A <<'B' " '# first body' 'A' '# second body' 'B' 'y=1 ')"
+
+plant_file "$shell_code_dir" names.sh <<'PLANTED'
+  trap 'noun_fn' EXIT; x="adapter_pr_refs" # cut
+PLANTED
+assert_eq "a name inside a single- or double-quoted string is kept" \
+  "$(shell_code "$shell_code_dir/names.sh")" "trap 'noun_fn' EXIT; x=\"adapter_pr_refs\" "
+
+printf '%s\n' 's="open' '# inside' >"$shell_code_dir/open-quote.sh"
+printf '%s\n' 'cat <<EOF' '# inside' >"$shell_code_dir/open-heredoc.sh"
+printf '%s\n' '# first' 'y=1 # cut' >"$shell_code_dir/next.sh"
+assert_eq "a file ending inside an open quote leaves the next file's code alone" \
+  "$(shell_code "$shell_code_dir/open-quote.sh" "$shell_code_dir/next.sh")" \
+  "$(printf '%s\n' 's="open' '# inside' '' 'y=1 ')"
+assert_eq "a file ending inside a heredoc leaves the next file's code alone" \
+  "$(shell_code "$shell_code_dir/open-heredoc.sh" "$shell_code_dir/next.sh")" \
+  "$(printf '%s\n' 'cat <<EOF' '# inside' '' 'y=1 ')"
+rm -rf "$shell_code_dir"
+
 # --- helper placement (#1006) -------------------------------------------------
 # helper_placement over the real scripts/test/orch/, then over copies of it,
 # each with planted helpers: four placements that break the rule, and one copy
