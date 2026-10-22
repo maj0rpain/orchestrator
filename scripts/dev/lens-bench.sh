@@ -78,7 +78,7 @@ fail() {
   exit 1
 }
 
-BENCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # The temporary directory `run` holds its worktree of the repo run_repo and
 # its run directories in, and the output run subdirectory `run` is writing,
@@ -108,11 +108,12 @@ snapshot_worktree() {
 # lens_fixture <lens>: the path of <lens>'s committed fixture directory,
 # failing when there is none.
 lens_fixture() {
-  local fixture="$BENCH_DIR/lens-bench/$1"
+  local fixture="$SCRIPT_DIR/lens-bench/$1" shaped=1
+  # A bad-shaped name counts as missing: . and .. would resolve to a directory.
   case "$1" in
-    */* | .*) fail "$1: unknown lens, no fixture directory $fixture" ;;
+    */* | .*) shaped="" ;;
   esac
-  [ -d "$fixture" ] || fail "$1: unknown lens, no fixture directory $fixture"
+  [ -n "$shaped" ] && [ -d "$fixture" ] || fail "$1: unknown lens, no fixture directory $fixture"
   printf '%s\n' "$fixture"
 }
 
@@ -185,7 +186,7 @@ cmd_run() {
   fixture="$(lens_fixture "$lens")" || exit
   [ -f "$fixture/spec.md" ] || fail "$fixture/spec.md: missing"
   [ -f "$fixture/snapshot" ] || fail "$fixture/snapshot: missing"
-  run_repo="$(git -C "$BENCH_DIR" rev-parse --show-toplevel)" || fail "$BENCH_DIR: not in a git repo"
+  run_repo="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)" || fail "$SCRIPT_DIR: not in a git repo"
   local sha definition="agents/orch-lens-$lens.md" snapshot_ref snapshot
   sha="$(git -C "$run_repo" rev-parse --verify --quiet "$rev^{commit}")" ||
     fail "$rev: not a commit"
@@ -376,6 +377,11 @@ SPANS_AWK='
     return c + 0
   }
   function open_fence(s, at) { match(s, /^(`+|~+)/); fence = substr(s, 1, RLENGTH); fence_col = at }
+  BEGIN {
+    fence_re = "^(```|~~~)"
+    heading_re = "^#(#?#?#?#?#?)([ \t]|$)"
+    item_re = "^([-*+]|[0-9]+[.)])([ \t]|$)"
+  }
   { ind = indent($0); rest = $0; sub(/^[ \t]+/, "", rest) }
   fence != "" {
     if (rest != "" && ind < fence_col) fence = ""
@@ -386,18 +392,18 @@ SPANS_AWK='
   }
   rest == "" { flush(); next }
   {
-    opens = rest ~ /^((```|~~~)|#(#?#?#?#?#?)([ \t]|$)|([-*+]|[0-9]+[.)])([ \t]|$))/
+    opens = rest ~ fence_re || rest ~ heading_re || rest ~ item_re
     if (block == "" || opens) while (depth && ind < col[depth]) depth--
     base = depth ? col[depth] : 0
   }
   ind - base >= 4 && block == "" { next }
-  ind - base <= 3 && rest ~ /^(```|~~~)/ { flush(); open_fence(rest, base); next }
-  ind - base <= 3 && rest ~ /^#(#?#?#?#?#?)([ \t]|$)/ { flush(); add(rest); flush(); next }
-  ind - base <= 3 && match(rest, /^([-*+]|[0-9]+[.)])([ \t]|$)/) {
+  ind - base <= 3 && rest ~ fence_re { flush(); open_fence(rest, base); next }
+  ind - base <= 3 && rest ~ heading_re { flush(); add(rest); flush(); next }
+  ind - base <= 3 && match(rest, item_re) {
     flush(); marker = RLENGTH - (RLENGTH > 1 && substr(rest, RLENGTH) ~ /[ \t]/)
     body = substr(rest, marker + 1); gap = indent(body); sub(/^[ \t]+/, "", body)
     col[++depth] = ind + marker + (body == "" || gap > 4 ? 1 : gap)
-    if (body ~ /^(```|~~~)/) { open_fence(body, col[depth]); next }
+    if (body ~ fence_re) { open_fence(body, col[depth]); next }
     add(rest); next
   }
   { add(rest) }
@@ -409,15 +415,45 @@ code_spans() {
   awk "$SPANS_AWK" "$1" | sed -n 's/^code\t//p'
 }
 
-# The jq definitions both transcript programs share: text, a message
-# content's text, total_input, a usage's input tokens, cached ones counted,
-# and ranged_read, whether a tool use is a Read passing offset or limit.
+# The jq definitions the transcript programs and the report share: num, a
+# number to one decimal place (a whole number as is, any other rounded half
+# up); text, a message content's text; total_input, a usage's input tokens,
+# cached ones counted; ranged_read, whether a tool use is a Read passing
+# offset or limit; and turns, applied to a slurped transcript: its first user
+# prompt carrying no tool result, its turns, one per assistant message id,
+# each with its context (total input), tool uses and the tool results that
+# arrived since the previous turn, and every tool result'"'"'s text by tool-use id.
 JQ_PRELUDE='
+  def num: if . == floor then tostring else (. * 10 + 0.5 | floor) / 10 | tostring end;
   def text: if type == "string" then .
     elif type == "array" then map(if type == "object" then (.text // "") else tostring end) | join("")
     else "" end;
   def total_input: (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0);
   def ranged_read: .name == "Read" and (.input | has("offset") or has("limit"));
+  def turns:
+    reduce .[] as $m ({prompt: null, turns: [], at: {}, pending: [], results: {}};
+      ($m.message // {}) as $msg
+      | if $m.type == "assistant" and $msg.id != null then
+          $msg.id as $id
+          | (if .at | has($id) then .
+             else .at[$id] = (.turns | length)
+               | .turns += [{context: ($msg.usage // {} | total_input),
+                   uses: [], results: .pending}]
+               | .pending = [] end)
+          | .at[$id] as $i
+          | reduce (($msg.content // [])[]? | select(type == "object" and .type == "tool_use")) as $u
+              (.; .turns[$i].uses += [$u])
+        elif $m.type == "user" then
+          (if .prompt == null and (($msg.content | type) == "string"
+               or ([($msg.content // [])[]? | select(type == "object" and .type == "tool_result")] | length) == 0)
+           then .prompt = ($msg.content | text) else . end)
+          | if ($msg.content | type) == "array" then
+              reduce ($msg.content[] | select(type == "object" and .type == "tool_result")) as $r
+                (.; .pending += [{id: $r.tool_use_id, text: ($r.content | text)}]
+                    | .results[$r.tool_use_id] = ($r.content | text))
+            else . end
+        else . end)
+    | {prompt, turns, results};
 '
 
 # The per-run measures of one transcript, tab-separated: turns, total input,
@@ -425,29 +461,14 @@ JQ_PRELUDE='
 # Grep result characters, each - when empty.
 TRANSCRIPT_JQ="$JQ_PRELUDE"'
   def listed: map(tostring) | join(" ") | if . == "" then "-" else . end;
-  reduce .[] as $m ({ids: [], usage: {}, calls: {}, uses: [], results: {}};
-    ($m.message // {}) as $msg
-    | (if $m.type == "assistant" and $msg.id != null then
-        $msg.id as $id
-        | (if .usage | has($id) then .
-           else .ids += [$id] | .usage[$id] = ($msg.usage // {}) | .calls[$id] = 0 end)
-        | [($msg.content // [])[]? | select(type == "object" and .type == "tool_use")] as $u
-        | .calls[$id] += ($u | length) | .uses += $u
-      else . end)
-    | if ($msg.content | type) == "array" then
-        reduce ($msg.content[] | select(type == "object" and .type == "tool_result")) as $r
-          (.; .results[$r.tool_use_id] = ($r.content | text))
-      else . end)
-  | . as $s
-  | [ ($s.ids | length),
-      ([$s.ids[] as $i | $s.usage[$i]
-        | total_input]
-       | add // 0),
-      ([$s.ids[] as $i | $s.calls[$i]] | listed),
-      ([$s.uses[] | select(ranged_read)
-        | ($s.results[.id] // "") | [splits("\n")]
+  turns as $t
+  | [ ($t.turns | length),
+      ([$t.turns[].context] | add // 0),
+      ([$t.turns[] | .uses | length] | listed),
+      ([$t.turns[].uses[] | select(ranged_read)
+        | ($t.results[.id] // "") | [splits("\n")]
         | map(select(test("^ *[0-9]+(\t|→)"))) | length] | listed),
-      ([$s.uses[] | select(.name == "Grep") | ($s.results[.id] // "") | length] | listed)
+      ([$t.turns[].uses[] | select(.name == "Grep") | ($t.results[.id] // "") | length] | listed)
     ] | @tsv'
 
 # The diagnosis of one transcript, as one JSON object: per label, its turns
@@ -455,12 +476,12 @@ TRANSCRIPT_JQ="$JQ_PRELUDE"'
 # $run the run's name. A turn's context is its total input; the results that
 # came in since the previous turn are the ones read after its last line.
 DIAGNOSIS_JQ="$JQ_PRELUDE"'
-  def wordy: test("[A-Za-z0-9_]");
+  def has_word_char: test("[A-Za-z0-9_]");
   def pathlike: test("^\\S+$") and (test("/") or test("\\.[A-Za-z0-9]+$"));
   def token_in($t): . as $n | ($n | length) as $l
     | any($t | indices($n)[]; . as $i
-        | ($i == 0 or ($t[$i - 1:$i] | wordy | not))
-          and ($i + $l == ($t | length) or ($t[$i + $l:$i + $l + 1] | wordy | not)));
+        | ($i == 0 or ($t[$i - 1:$i] | has_word_char | not))
+          and ($i + $l == ($t | length) or ($t[$i + $l:$i + $l + 1] | has_word_char | not)));
   def family: if .name == "Read" then "read"
     elif .name == "Grep" or .name == "Glob" then "search" else .name end;
   def located: family as $f
@@ -469,35 +490,15 @@ DIAGNOSIS_JQ="$JQ_PRELUDE"'
         and any($names[] | select(pathlike); . as $n | $path == $n or ($path | endswith("/" + $n)))
     elif $f == "search" then .input.pattern as $pattern
       | ($pattern | type) == "string"
-        and any($names[] | select(length >= 3 and wordy); token_in($pattern))
+        and any($names[] | select(length >= 3 and has_word_char); token_in($pattern))
     else false end;
   def tag: [.uses[] | located] as $l
     | if ($l | all) and ($l | length) > 0 then "named"
       elif ($l | any) then "mixed" else "unnamed" end;
-  reduce .[] as $m ({prompt: null, turns: [], at: {}, uses: {}, pending: []};
-    ($m.message // {}) as $msg
-    | if $m.type == "assistant" and $msg.id != null then
-        $msg.id as $id
-        | (if .at | has($id) then .
-           else .at[$id] = (.turns | length)
-             | .turns += [{context: ($msg.usage // {} | total_input),
-                 uses: [], results: .pending}]
-             | .pending = [] end)
-        | .at[$id] as $i
-        | reduce (($msg.content // [])[]? | select(type == "object" and .type == "tool_use")) as $u
-            (.; .turns[$i].uses += [$u] | .uses[$u.id] = $u)
-      elif $m.type == "user" then
-        (if .prompt == null and (($msg.content | type) == "string"
-             or ([($msg.content // [])[]? | select(type == "object" and .type == "tool_result")] | length) == 0)
-         then .prompt = ($msg.content | text) else . end)
-        | if ($msg.content | type) == "array" then
-            reduce ($msg.content[] | select(type == "object" and .type == "tool_result")) as $r
-              (.; .pending += [{id: $r.tool_use_id, chars: ($r.content | text | length)}])
-          else . end
-      else . end)
-  | . as $s
+  turns as $s
+  | (reduce $s.turns[].uses[] as $u ({}; .[$u.id] = $u)) as $by_id
   | (($s.prompt // "") | split("\n") | map(select(. != "")) | .[0] // "" | gsub("^\\s+|\\s+$"; "")) as $spec
-  | def kind: ($s.uses[.id] // {name: "unknown", input: {}}) as $u
+  | def kind: ($by_id[.id] // {name: "unknown", input: {}}) as $u
       | ($u | family) as $f
       | if $f == "read" then
           if $u.input.file_path == $spec then "the spec"
@@ -514,7 +515,7 @@ DIAGNOSIS_JQ="$JQ_PRELUDE"'
          "ranged reads": 0, "whole reads": 0, "Grep/Glob": 0, "assistant output": 0};
         ($s.turns[$i].context - $s.turns[$i - 1].context) as $growth
         | ($n - $i) as $left
-        | $s.turns[$i].results as $rs
+        | ($s.turns[$i].results | map({id, chars: (.text | length)})) as $rs
         | ([$rs[].chars] | add // 0) as $chars
         | if ($rs | length) == 0 then .["assistant output"] += $growth * $left
           else reduce $rs[] as $r (.;
@@ -525,8 +526,7 @@ DIAGNOSIS_JQ="$JQ_PRELUDE"'
 # The diagnosis tables of one directory, from its runs' diagnoses: each
 # label's share of turns and of input, then the carried cost by kind, one row
 # per run and one summed over them. Every other tool is a column by its name.
-REPORT_JQ='
-  def num: if . == floor then tostring else (. * 10 + 0.5 | floor) / 10 | tostring end;
+REPORT_JQ="$JQ_PRELUDE"'
   def cell($whole): "\(. + 0.5 | floor) (\(if $whole == 0 then 0 else . * 100 / $whole end | num)%)";
   def sum: reduce .[] as $o ({}; reduce ($o | to_entries[]) as $e (.; .[$e.key] += $e.value));
   ["fixed base", "the spec", "ranged reads", "whole reads", "Grep/Glob"] as $first
@@ -549,18 +549,19 @@ REPORT_JQ='
     ($rows[] | .carried as $c | ([$c[]] | add) as $w
       | "| \(.run) | \([$kinds[] | ($c[.] // 0) | cell($w)] | join(" | ")) |")'
 
-# stats: the mean, median, minimum and maximum of the numbers on stdin, one
-# per line, tab-separated; a whole number prints as one, any other to one
-# decimal place.
-stats() {
-  sort -n | awk '
-    function num(x) { return (x == int(x)) ? sprintf("%d", x) : sprintf("%.1f", x) }
-    { v[NR] = $1; sum += $1 }
-    END {
-      if (NR == 0) exit
-      median = (NR % 2) ? v[(NR + 1) / 2] : (v[NR / 2] + v[NR / 2 + 1]) / 2
-      printf "%s\t%s\t%s\t%s\n", num(sum / NR), num(median), num(v[1]), num(v[NR])
-    }'
+# summary_row <label> [<total>]: reads numbers, one per line, and prints
+# their Markdown summary row: mean, median, minimum and maximum, each as
+# <value>/<total> when a total is given. Prints nothing on no numbers.
+summary_row() {
+  jq -rs --arg label "$1" --arg total "${2:-}" "$JQ_PRELUDE"'
+    if length == 0 then empty else
+      sort as $v | ($v | length) as $n
+      | [($v | add) / $n,
+         (if $n % 2 == 1 then $v[($n - 1) / 2] else ($v[$n / 2 - 1] + $v[$n / 2]) / 2 end),
+         $v[0], $v[-1]]
+      | map(num + (if $total == "" then "" else "/" + $total end))
+      | "| \($label) | \(join(" | ")) |"
+    end'
 }
 
 cmd_measure() {
@@ -569,34 +570,33 @@ cmd_measure() {
   for arg in "$@"; do
     case "$arg" in -*) usage ;; esac
   done
-  local dirs=() bench_dir file run first baseline total turns_all input_all cover_all
+  local dirs=() dir file run first baseline total turns_all input_all cover_all
   local diagnoses names transcript measures turns input calls reads greps map
   local map_widths row cover runs
-  for bench_dir in "$@"; do
-    dirs+=("$(no_trailing_slashes "$bench_dir")")
+  for arg in "$@"; do
+    dirs+=("$(no_trailing_slashes "$arg")")
   done
-  set -- "${dirs[@]}"
 
   # Every directory is checked before anything is printed.
-  for bench_dir in "$@"; do
-    [ -d "$bench_dir" ] || fail "$bench_dir: no such directory"
+  for dir in "${dirs[@]}"; do
+    [ -d "$dir" ] || fail "$dir: no such directory"
     for file in lens revision model spec.md; do
-      [ -f "$bench_dir/$file" ] || fail "$bench_dir/$file: missing"
+      [ -f "$dir/$file" ] || fail "$dir/$file: missing"
     done
     while IFS= read -r run; do
-      [ -f "$bench_dir/$run/transcript.jsonl" ] || fail "$bench_dir/$run/transcript.jsonl: missing"
-    done < <(runs_of "$bench_dir")
+      [ -f "$dir/$run/transcript.jsonl" ] || fail "$dir/$run/transcript.jsonl: missing"
+    done < <(runs_of "$dir")
   done
 
   first=1
-  for bench_dir in "$@"; do
+  for dir in "${dirs[@]}"; do
     [ "$first" -eq 1 ] || echo
     first=0
     baseline=""
-    [ -f "$bench_dir/map.md" ] && baseline="$bench_dir/map.md"
-    printf '## %s\n\n' "$bench_dir"
+    [ -f "$dir/map.md" ] && baseline="$dir/map.md"
+    printf '## %s\n\n' "$dir"
     printf 'Lens %s, revision %s, model %s\n\n' \
-      "$(<"$bench_dir/lens")" "$(<"$bench_dir/revision")" "$(<"$bench_dir/model")"
+      "$(<"$dir/lens")" "$(<"$dir/revision")" "$(<"$dir/model")"
     if [ -n "$baseline" ]; then
       total="$(locations "$baseline" | awk 'END { print NR }')"
       printf 'Baseline map: %s locations\n\n' "$total"
@@ -609,13 +609,13 @@ cmd_measure() {
       echo '|---|---|---|---|---|---|---|'
     fi
     turns_all="" input_all="" cover_all="" diagnoses=""
-    names="$(code_spans "$bench_dir/spec.md" | jq -Rsc 'split("\n") | map(select(. != ""))')"
+    names="$(code_spans "$dir/spec.md" | jq -Rsc 'split("\n") | map(select(. != ""))')"
     while IFS= read -r run; do
-      transcript="$bench_dir/$run/transcript.jsonl"
+      transcript="$dir/$run/transcript.jsonl"
       measures="$(jq -rs "$TRANSCRIPT_JQ" "$transcript")" ||
         fail "$transcript: not a transcript"
       IFS=$'\t' read -r turns input calls reads greps <<<"$measures"
-      map="$bench_dir/$run/map.md"
+      map="$dir/$run/map.md"
       if [ -f "$map" ]; then map_widths="$(widths "$map")"; else map_widths="-"; fi
       row="| $run | $turns | $input | $calls | $reads | $greps | $map_widths |"
       if [ -n "$baseline" ]; then
@@ -627,19 +627,16 @@ cmd_measure() {
       diagnoses+="$(jq -sc --argjson names "$names" --arg run "$run" "$DIAGNOSIS_JQ" "$transcript")"$'\n'
       turns_all+="$turns"$'\n'
       input_all+="$input"$'\n'
-    done < <(runs_of "$bench_dir")
+    done < <(runs_of "$dir")
 
     runs="$(printf '%s' "$turns_all" | awk 'END { print NR }')"
     [ "$runs" -gt 0 ] || continue
     printf '\nSummary over %s runs:\n\n' "$runs"
     echo '| Measure | Mean | Median | Min | Max |'
     echo '|---|---|---|---|---|'
-    printf '%s' "$turns_all" | stats | awk -F'\t' '{ printf "| Turns | %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
-    printf '%s' "$input_all" | stats | awk -F'\t' '{ printf "| Input | %s | %s | %s | %s |\n", $1, $2, $3, $4 }'
-    if [ -n "$baseline" ]; then
-      printf '%s' "$cover_all" | stats | awk -F'\t' -v t="$total" \
-        '{ printf "| Coverage | %s/%s | %s/%s | %s/%s | %s/%s |\n", $1, t, $2, t, $3, t, $4, t }'
-    fi
+    printf '%s' "$turns_all" | summary_row Turns
+    printf '%s' "$input_all" | summary_row Input
+    [ -z "$baseline" ] || printf '%s' "$cover_all" | summary_row Coverage "$total"
     echo
     printf '%s' "$diagnoses" | jq -rs "$REPORT_JQ"
   done

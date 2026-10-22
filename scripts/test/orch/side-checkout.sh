@@ -429,11 +429,9 @@ assert_eq "its flow is not moved" "$(archived_count "$top" new-flow)" "0"
 git -C "$gamma" checkout -q -- .
 # A git status that cannot run is a refusal naming git's error, never a clean
 # tree.
-gidx="$(git -C "$gamma" rev-parse --absolute-git-dir)/index"
-cp "$gidx" "$gidx.bak"
-printf 'garbage' >"$gidx"
+break_index "$gamma"
 out="$(orch_gh_failing side-checkout remove gamma 2>&1)"; st=$?
-mv "$gidx.bak" "$gidx"
+restore_index "$gamma"
 assert_status "remove refuses when git status cannot run" "$st" 1
 assert_contains "naming git's error" "$out" "git status failed - cannot check the working tree: "
 assert_eq "its flow is not moved" "$(archived_count "$top" new-flow)" "0"
@@ -771,11 +769,9 @@ q6="$(sc_add q6)"
 sp_branch_off "$q6" quick/14-q6
 fake_pr 53 merged quick/14-q6 main
 fake_online
-q6idx="$(git -C "$q6" rev-parse --absolute-git-dir)/index"
-cp "$q6idx" "$q6idx.bak"
-printf 'garbage' >"$q6idx"
+break_index "$q6"
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
-mv "$q6idx.bak" "$q6idx"
+restore_index "$q6"
 assert_status "prune fails when a side checkout's git status cannot run" "$st" 1
 assert_contains "naming git's error" "$out" "git status failed - cannot check the working tree: "
 assert_contains "and that nothing was removed" "$out" "nothing was removed"
