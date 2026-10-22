@@ -79,12 +79,27 @@ to a temporary file outside the repo (`mktemp`):
 Never ask the human whether to correct the body: the check makes its
 corrections and records them.
 
-Then write one comment to a temporary file outside the repo (`mktemp`), in
-the style of `docs/pr-writing.md` (under the plugin root): a
-**Merge resolutions** heading, then the sync's **Merge resolutions**, per
-**Merge resolutions** in `agents/orch-resolver.md` (under the plugin root),
-then a **PR body** heading holding the check's outcome value. Post it with
-`bash "$ORCH" pr comment <file>`:
+Then write one comment to a temporary file outside the repo (`mktemp`), to
+the comment shape of `docs/pr-writing.md` (under the plugin root), which
+owns its style; this step adds only the comment's own parts. In this order:
+
+1. **Lead**: 1-3 lines stating the outcome - the base tip merged, the
+   conflicts the resolver resolved, and whether the body was corrected -
+   with no preamble.
+2. **`## Summary` and `## Evidence`**, only for a merge whose conflicts the
+   resolver resolved - the only merge this step is reached for, so a clean
+   merge never carries them. **Summary** says what the resolution changed.
+   **Evidence** is only the resolver's `Verification` line: its command,
+   then `pass` or `fail`.
+3. **Two headings**, both present, in this order, each with its `None.`
+   form when empty:
+   - `## Merge resolutions` - the sync's **Merge resolutions**, per
+     **Merge resolutions** in `agents/orch-resolver.md` (under the plugin
+     root);
+   - `## PR body` - the check's outcome value.
+
+The comment never carries `## Merge Danger`: the body holds the PR's merge
+risk. Post it with `bash "$ORCH" pr comment <file>`:
 
 - **Exit 0**: posted. Tell the human the PR number it printed, and the PR
   body lines the check corrected, if any.

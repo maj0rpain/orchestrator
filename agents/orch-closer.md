@@ -147,20 +147,39 @@ bash "<orch.sh>" pr comment <file>
 It posts on the current branch's open PR. You run on the loop's PR branch,
 so that is the loop's PR, and the number it prints is your prompt's PR.
 
-Write it in the style of `docs/pr-writing.md` (under the plugin root). The
-PR is the only durable surface another human ever sees. Carry:
+Write it to the comment shape of `docs/pr-writing.md` (under the plugin
+root), which owns its style; this section adds only the comment's own parts.
+The PR is the only durable surface another human ever sees. In this order:
 
-- the iterations run;
-- what was fixed - blocking, majors, and nits - with severity and commit SHAs;
-- any open blocking finding and any missing look, from the records;
-- the issues filed, with number, severity, and title, the spec questions
-  among them listed apart under their own **Spec questions** heading - each
-  holds the PR in draft until a human rules on it;
-- the findings met again already filed, with their issue numbers, so the
-  human can triage them;
-- every covered deviation, and every rejected-alternative proposal with the
-  reason it lost - the records list each demoted finding with its authority
-  (see `docs/adr/0002-recorded-deviations-outrank-the-spec-axis.md`);
-- the CI result;
-- the host fallbacks;
-- the terminal state, and what happens next.
+1. **Lead**: 1-3 lines with the iterations run, the terminal state, and what
+   happens next.
+2. **`## Summary` and `## Evidence`**, only when the loop's fixer commits
+   changed code: the **Fixed this iteration** SHAs of this loop's records.
+   **Summary** says what those fixes changed. **Evidence** comes from each
+   iteration record's `## Evidence` - the tests that now pass and their red
+   runs, never invented - with the final record's **Verification** command
+   and `pass` or `fail` as its last line. A record with no `## Evidence`
+   section reads as `None`, and adds nothing. With no fixer commits, leave
+   both headings out.
+3. **The comment's own headings**, every one present, in this order, each
+   with its `None.` form when empty:
+   - `## Fixed` - each fix, blocking, major or nit, with its severity and
+     commit SHA;
+   - `## Open blocking` - each open blocking finding and any missing look,
+     from the records;
+   - `## Filed` - each issue filed, with number, severity and title, the
+     spec questions left out;
+   - `## Spec questions` - the spec questions among the filed issues, each
+     with its number and title; each holds the PR in draft until a human
+     rules on it;
+   - `## Already filed` - the findings met again already filed, with their
+     issue numbers, so the human can triage them;
+   - `## Demoted` - every covered deviation, and every rejected-alternative
+     proposal with the reason it lost, each with its authority, as the
+     records list them (see
+     `docs/adr/0002-recorded-deviations-outrank-the-spec-axis.md`);
+   - `## CI` - the CI result;
+   - `## Host fallbacks` - the host fallbacks, or `None (<host>).`
+
+The comment never carries `## Merge Danger`: the body holds the PR's merge
+risk.
