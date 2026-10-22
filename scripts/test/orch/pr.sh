@@ -692,6 +692,9 @@ out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses while a release PR is already open" "$st" 1
 assert_contains "printing that PR's number" "$out" "#57"
 assert_eq "and opens no second one" "$(fake_prs)" "55 56 57 "
+out="$(release "Release" "$summaryless" 2>&1)"; st=$?
+assert_eq "an open release PR is checked before the body's standard" "$out" \
+  "orch: a release PR from uat into main is already open: #57"
 assert_gh_dies "a failed open-PR list exits 1" adapter_prs_open "$GH_502" 1 \
   "orch: gh could not list the open PRs from uat into main: HTTP 502: Bad Gateway" \
   release "Release" "$body"
@@ -716,6 +719,9 @@ fake_pr_body 66 "Closes #5"
 out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses when no referenced issue is still open" "$st" 1
 assert_contains "saying there is nothing to close" "$out" "nothing to close"
+out="$(release "Release" "$summaryless" 2>&1)"; st=$?
+assert_eq "nothing to close is checked before the body's standard" "$out" \
+  "orch: nothing to close: no PR merged into uat refers to a still-open issue - pass --force to release anyway"
 assert_eq "and opens no PR" "$(fake_prs)" "60 61 66 "
 
 fake_next_pr 70

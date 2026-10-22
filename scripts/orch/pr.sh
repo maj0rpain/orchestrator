@@ -206,8 +206,6 @@ cmd_pr_release() {
   default="$(default_branch)"
   [ "$base" != "$default" ] ||
     die "the base branch is the default branch ($default) - there is nothing to release; set another with base set"
-  # Only Summary: a release PR carries PRs already reviewed (#1387).
-  pr_body_check "$body_file" Summary
   local open
   gh_or_die --out open "list the open PRs from $base into $default" \
     adapter_prs_open "$base" "$default"
@@ -231,6 +229,8 @@ cmd_pr_release() {
   done
   [ -n "$issues" ] || [ "$force" = true ] ||
     die "nothing to close: no PR merged into $base refers to a still-open issue - pass --force to release anyway"
+  # Only Summary: a release PR carries PRs already reviewed (#1387).
+  pr_body_check "$body_file" Summary
   tmp="$(mktemp)"
   {
     for n in $issues; do printf 'Closes #%s\n' "$n"; done
