@@ -4,6 +4,6 @@ Supersedes in part ADR-0034: the flow's spec phase no longer asks whether to rew
 
 ## Considered Options
 
-- **Keep asking** - rejected, the answer never differed from the recommendation.
-- **Always rewrite** - rejected, it would overwrite a blueprint that is already a spec.
-- **Use the Unattended rewrite** - rejected, the flow is the route a human picks to keep control of the spec.
+- **Keep asking.** Rejected: the answer never differed from the recommendation.
+- **Always rewrite.** Rejected: it would overwrite a blueprint that is already a spec.
+- **Use the Unattended rewrite.** Rejected: the flow is the route a human picks to keep control of the spec.
