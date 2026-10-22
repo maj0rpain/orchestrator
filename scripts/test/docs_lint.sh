@@ -983,7 +983,7 @@ scan_command_routes() {
     skill="$(sed 's/^`orchestrator://; s/`.*//' <<<"$route")"
     if [ -z "$skill" ]; then echo "${f#"$r"/}: routes to no orch- skill"
     elif [ ! -f "$r/skills/$skill/SKILL.md" ]; then echo "${f#"$r"/}: routes to a missing skill: $skill"
-    elif [ -n "$section" ]; then grep -qxF "## $section" "$r/skills/$skill/SKILL.md" \
+    elif [ -n "$section" ]; then md_section "$r/skills/$skill/SKILL.md" "## $section" >/dev/null \
       || echo "${f#"$r"/}: routes to a missing $skill section: $section"; fi
   done
   return 0
@@ -1011,6 +1011,10 @@ flags "the scan flags a command routed to a missing section of its own skill" \
 spares "the scan accepts a command routed to an existing orch-flow section" "$out" '^commands/status\.md:'
 spares "the scan accepts a thin route to a whole skill" "$out" '^commands/whole\.md:'
 spares "the scan accepts a wrapped route to an existing section of its own skill" "$out" '^commands/solo\.md:'
+printf '## Solo run\n\n## Padded run  \n' >"$fixture/skills/orch-y/SKILL.md"
+printf 'Invoke `orchestrator:orch-y` and follow its **Padded run** section.\n' >"$fixture/commands/padded.md"
+spares "the scan accepts a route to a section whose heading ends in trailing whitespace" \
+  "$(scan_command_routes "$fixture")" '^commands/padded\.md:'
 check "every command is a thin route to an orch- skill section that exists" \
   "$(scan_command_routes "$PLUGIN_ROOT")"
 
@@ -1528,7 +1532,7 @@ scan_flow_cmd() {
   (cd "$r" && awk '/^flow_cmd\(\)/,/^}/' scripts/orch.sh scripts/orch/*.sh 2>/dev/null) \
     | grep -oE 'section="[^"]+"' | sed 's/section="//; s/"$//' \
     | while IFS= read -r s; do
-        grep -qxF "## $s" "$r/skills/orch-flow/SKILL.md" 2>/dev/null ||
+        md_section "$r/skills/orch-flow/SKILL.md" "## $s" >/dev/null 2>&1 ||
           echo "skills/orch-flow/SKILL.md: has no section flow_cmd names: $s"
       done
   return 0
@@ -1575,6 +1579,13 @@ spares "an unquoted usage: string naming orch.sh abort is not flagged" \
   "$out" ':19:'
 flags "a usage: string beside another literal flow command is flagged" \
   "$out" "scripts/orch.sh:20: names a flow command literally, not through flow_cmd"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/scripts/orch" "$fixture/skills/orch-flow"
+printf '%s\n' 'flow_cmd() {' '  case "$1" in' '    pad) section="Padded step" ;;' '  esac' '}' \
+  >"$fixture/scripts/orch.sh"
+printf '# Flow\n\n## Padded step \t\n' >"$fixture/skills/orch-flow/SKILL.md"
+assert_empty "a flow_cmd section whose orch-flow heading ends in trailing whitespace is not flagged" \
+  "$(scan_flow_cmd "$fixture")"
 check "the scripts name a plugin command only through flow_cmd, whose sections exist" \
   "$(scan_flow_cmd "$PLUGIN_ROOT")"
 
@@ -2417,7 +2428,7 @@ scan_review_loop_sheds_pass() {
   local r="$1" review="skills/orch-review/SKILL.md" text desc heading
   text="$(flat_text "$r/$review" 2>/dev/null)"
   for heading in "Review pass" "Standalone review pass"; do
-    grep -qxE "## ${heading}[[:space:]]*" "$r/$review" 2>/dev/null \
+    md_section "$r/$review" "## $heading" >/dev/null 2>&1 \
       && echo "$review: holds a ## $heading section"
     grep -qF "**$heading**" <<<"$text" && echo "$review: names **$heading**"
   done
