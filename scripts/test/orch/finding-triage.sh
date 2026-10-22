@@ -155,9 +155,11 @@ assert_eq "and leaves the branches as they were" "$(git for-each-ref refs/heads)
 assert_eq "HEAD too" "$(git rev-parse HEAD) $(git symbolic-ref -q HEAD)" "$before_head"
 assert_eq "and the working tree" "$(git status --porcelain)" "$before_tree"
 
+all_out="$out"
 out="$(scan --pr 8 2>&1)"; st=$?
 assert_status "narrows to one source PR" "$st" 0
 assert_eq "scanning only that PR's findings" "$(printf '%s\n' "$out" | cut -f1 | tr '\n' ' ')" "7 "
+assert_eq "a kept finding's whole line is its line without --pr" "$out" "$(line_of 7 "$all_out")"
 
 out="$(scan 2 2>&1)"; st=$?
 assert_status "scans one explicit finding" "$st" 0

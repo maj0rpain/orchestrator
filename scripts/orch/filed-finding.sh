@@ -134,9 +134,11 @@ finding_body_render() {
   [ -z "${10:-}" ] || printf '%s\n\n' "**Spec question:** ${10}"
 }
 
-# finding_body_parse <body> <prefix>: reads every labelled line of a filed
-# finding's body into <prefix>_<field> - axis (lowercased), severity, reason,
-# file, line (N or N-M), sha, pr (the URL), pr_number, why and question. Each
+# finding_body_parse <body> <array>: reads every labelled line of a filed
+# finding's body into the caller's associative array <array>, keyed by field -
+# axis (lowercased), severity, reason, file, line (N or N-M), sha, pr (the
+# URL), pr_number, why and question. Every key is written on every call, so an
+# array reused across bodies never keeps a previous body's value. Each
 # comes from the first line that carries it, as finding triage always read
 # them: Location from the first line starting with its label, with no
 # fallback when that one does not parse - the first backticked <file>:<line>,
@@ -145,9 +147,16 @@ finding_body_render() {
 # line's last " at <hex>"; PR from the first line ending in a URL whose last segment after
 # /pull/ is a number; the rest from the first line starting with their label,
 # as the rest of it, trimmed. Severity splits at the first " - ". A field whose
-# line is missing or does not parse is left empty. Never dies, never prints:
-# each caller decides which fields it requires.
+# line is missing or does not parse is left empty. Never dies on a body, and
+# never prints on success: each caller decides which fields it requires. Dies
+# when <array> is not a declared associative array - a caller's programming
+# error, which would otherwise write a global. Bash 4.0: each key is assigned
+# by eval on the name the guard validated, its value passed by reference,
+# never interpolated - printf -v into an array element needs 4.1.
 finding_body_parse() {
+  [[ $2 =~ ^[A-Za-z_][A-Za-z0-9_]*$ && $2 != __fbp_* \
+    && $(declare -p "$2" 2>/dev/null) =~ ^declare\ -[A-Za-z]*A ]] \
+    || die "finding_body_parse: $2 is not a declared associative array"
   local __fbp_line __fbp_rest __fbp_v __fbp_loc_file __fbp_loc_line
   local __fbp_axis="" __fbp_severity="" __fbp_reason="" __fbp_file="" __fbp_lineno="" \
     __fbp_sha="" __fbp_pr="" __fbp_pr_number="" __fbp_why="" __fbp_question=""
@@ -212,14 +221,8 @@ finding_body_parse() {
       trim_split "${__fbp_line#'**PR:**'}" __fbp_pr
     fi
   done <<<"$1"
-  printf -v "$2_axis" '%s' "$__fbp_axis"
-  printf -v "$2_severity" '%s' "$__fbp_severity"
-  printf -v "$2_reason" '%s' "$__fbp_reason"
-  printf -v "$2_file" '%s' "$__fbp_file"
-  printf -v "$2_line" '%s' "$__fbp_lineno"
-  printf -v "$2_sha" '%s' "$__fbp_sha"
-  printf -v "$2_pr" '%s' "$__fbp_pr"
-  printf -v "$2_pr_number" '%s' "$__fbp_pr_number"
-  printf -v "$2_why" '%s' "$__fbp_why"
-  printf -v "$2_question" '%s' "$__fbp_question"
+  eval "$2[line]=\$__fbp_lineno"
+  for __fbp_v in axis severity reason file sha pr pr_number why question; do
+    eval "$2[\$__fbp_v]=\$__fbp_$__fbp_v"
+  done
 }

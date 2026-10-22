@@ -123,14 +123,15 @@ triage_state() {
   printf '%s\n' "${out:--}"
 }
 
-# finding_scan_one <issue> <body> <default ref> <triage state>: the scan's one
-# line for one finding.
+# finding_scan_one <issue> <body> <default ref> <triage state> [<pr filter>]:
+# the scan's one line for one finding - none when <pr filter> is given and the
+# body names another PR.
 finding_scan_one() {
   local n="$1" body="$2" ref="$3" roles="$4" pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out deleted
-  # shellcheck disable=SC2034 # finding_body_parse writes every field; the scan reads four
-  local f_axis f_severity f_reason f_file f_line f_sha f_pr f_pr_number f_why f_question
-  finding_body_parse "$body" f
-  pr="$f_pr_number" file="$f_file" lines="$f_line" sha="$f_sha"
+  local -A finding
+  finding_body_parse "$body" finding
+  pr="${finding[pr_number]}" file="${finding[file]}" lines="${finding[line]}" sha="${finding[sha]}"
+  [ -z "${5:-}" ] || [ "$pr" = "$5" ] || return 0
   if [ -z "$file" ]; then
     scan_line - unknown 'body does not parse: no **Location:** line naming `<file>:<line>` at <SHA>'
     return
@@ -208,8 +209,6 @@ finding_scan_one() {
 cmd_finding_triage_scan() {
   local usage="usage: orch.sh finding-triage scan [--all] [<issue> | --pr <n>]"
   local all=false issue="" pr_filter="" triage sev nums="" n out state labels body default ref gh_err
-  # shellcheck disable=SC2034 # finding_body_parse writes every field; the scan reads only the PR number
-  local f_axis f_severity f_reason f_file f_line f_sha f_pr f_pr_number f_why f_question
   local args=() triage_filter=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -257,11 +256,7 @@ cmd_finding_triage_scan() {
       issue_state_labels_body_read "$n" state labels body gh_err \
         || gh_die "read issue #$n" "$gh_err"
     fi
-    if [ -n "$pr_filter" ]; then
-      finding_body_parse "$body" f
-      [ "$f_pr_number" = "$pr_filter" ] || continue
-    fi
-    finding_scan_one "$n" "$body" "$ref" "$(triage_state "$labels")"
+    finding_scan_one "$n" "$body" "$ref" "$(triage_state "$labels")" "$pr_filter"
   done
 }
 
