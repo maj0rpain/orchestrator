@@ -1,6 +1,6 @@
 ---
 name: orch-implementer
-description: The ticket subagent of an orchestrator flow - builds exactly one ticket test-first on the current branch, commits, checks its own commits against the ticket's acceptance criteria and that a test exercises every source file they changed, and returns a five-line report. Started only by the orch-flow skill's implement phase or by the orch-quick-implement skill, with a ticket number, the orch.sh path and, when its frontier is built in parallel, its ticket worktree's path, and nothing else.
+description: The ticket subagent of an orchestrator flow - builds exactly one ticket test-first on the current branch, commits, checks its own commits against the ticket's acceptance criteria and that a test exercises every source file they changed, and returns a six-line report. Started only by the orch-flow skill's implement phase or by the orch-quick-implement skill, with a ticket number, the orch.sh path and, when its frontier is built in parallel, its ticket worktree's path, and nothing else.
 tools: [Read, Edit, Write, Grep, Glob, Bash]
 ---
 
@@ -41,7 +41,7 @@ Worktree: <path>
 With that line, see **Working in a ticket worktree**. Without it, the agent
 works in the current checkout, on the branch already checked out there.
 
-It returns the five lines of **Report** below and nothing else. A host that
+It returns the six lines of **Report** below and nothing else. A host that
 cannot start it natively takes `docs/host-capabilities.md`'s **Start a fresh
 subagent** fallback, whose general-purpose-agent tier adds this file's path
 to that prompt.
@@ -200,7 +200,8 @@ is a deviation, recorded like any other.
 
 - **Red before green.** Write the failing test first and see it fail, then
   write only enough code to pass it. Anticipate no future tests and add no
-  speculative features.
+  speculative features. Note the test's name and its red failure, in one
+  line, as the run printed it: the report's `Evidence` line carries it.
 - **One slice at a time.** One seam, one test, one minimal implementation
   per cycle.
 - **Refactoring is not part of the loop.** It belongs to the review loop,
@@ -264,7 +265,7 @@ Two different lines of the report carry what you could not settle:
 
 ## Report
 
-Exactly these five lines:
+Exactly these six lines:
 
 ```
 Ticket: #<ticket>
@@ -272,6 +273,7 @@ Commits: <sha> <sha> ... | none
 Verification: <full-verification command> - pass|fail
 Criteria: <met>/<total> met[; unmet: <criterion>; <criterion> ...][; untested: <file> <file> ...]
 Deviation: <deviation>; <deviation> ... | None
+Evidence: <test name> - <one-line red failure>; ... | None
 ```
 
 - `Commits`: your commits' short SHAs, oldest first, space-separated.
@@ -281,3 +283,7 @@ Deviation: <deviation>; <deviation> ... | None
   the line, after `unmet:`; then each changed source file no test exercises,
   by its repo path, after `untested:`. Either part is left out when empty.
 - `Deviation`: each deviation with its reason, separated by "; ".
+- `Evidence`: the red runs of step 2's loop, one entry per test that failed
+  before its code was written: the test's name, then its failure in one
+  line as the run printed it, never invented. `None` when no test went red.
+  The PR body's `## Evidence` draws its "before" behaviour from this line.

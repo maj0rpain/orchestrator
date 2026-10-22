@@ -111,7 +111,7 @@ assert_eq "with nothing set, branch off forks from the default branch" "$(git re
 assert_eq "and records the default branch" "$(recorded_base quick/6-main)" "main"
 
 body="$(mktemp)"
-writeln 'Implements the thing.' >"$body"
+pr_body_complete "$body"
 git checkout -q quick/5-uat
 fake_github
 fake_next_pr 41

@@ -195,7 +195,7 @@ assert_eq "base_sha is the recorded base's tip" "$(orch_gh_failing state get bas
 assert_contains "status prints the flow's base branch" "$(orch_gh_failing status)" "base:      uat"
 
 body="$(mktemp)"
-writeln 'Implements the thing.' >"$body"
+pr_body_complete "$body"
 fake_github
 fake_next_pr 31
 out="$(orch_gh_failing pr open "Title" "$body" 2>&1)"; st=$?

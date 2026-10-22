@@ -45,7 +45,7 @@
 #   scan_early_exit_pipe  no script pipes into a quiet grep or into head
 #   scan_junie_planning  the Junie snippet has one begin and end marker and restates the planning allowlist and records
 #   scan_capability_table  each docs/host-capabilities.md row has both hosts' cells filled
-#   scan_names_phrase  each listed file, or section of one, names its phrase: the verifying agents suite-cost run, the review loop's triage and the review pass suite-cost check
+#   scan_names_phrase  each listed file, or section of one, names its phrase: the verifying agents suite-cost run, the review loop's triage and the review pass suite-cost check, and the PR-writing sites docs/pr-writing.md
 #   scan_review_pass  the review pass is defined once in orch-review-pass and quick implementation's step 6 runs it
 #   scan_unattended_modes  quick implementation's steps 1, 2 and 3 run the unattended modes
 #   scan_skill_refs  each skill's SKILL.md names every reference file beside it
@@ -1019,21 +1019,25 @@ echo
 echo "one definition of starting a plugin agent (#181)"
 # The host fallback for starting a plugin agent lives once, in
 # docs/host-capabilities.md, and orch-implementer's dispatch contract (prompt
-# shape, five report lines) lives once too, in agents/orch-implementer.md - so
+# shape, six report lines) lives once too, in agents/orch-implementer.md - so
 # a change to either is made at one site, not copied into every skill that
 # starts an agent.
 # scan_dispatch_copies <plugin root>: print one line per restated copy.
 scan_dispatch_copies() {
-  local r="$1" f
+  local r="$1" f line named
   local -a skill_files
   mapfile -t skill_files < <(skill_md_files "$r")
   for f in "${skill_files[@]}"; do
     [ -f "$f" ] || continue
-    # The contract's one copy is the agent file, so any skill carrying all
-    # five report lines is a second copy.
-    if grep -qF '`Ticket`' "$f" && grep -qF '`Commits`' "$f" && grep -qF '`Verification`' "$f" \
-       && grep -qF '`Criteria`' "$f" && grep -qF '`Deviation`' "$f"; then
-      echo "${f#"$r"/}: restates the implementer's five report lines"
+    # The contract's one copy is the agent file, so any skill naming five or
+    # more of the six report lines is a second copy: the five original ones
+    # with `Evidence` or without it, or `Evidence` in place of one of them.
+    named=0
+    for line in Ticket Commits Verification Criteria Deviation Evidence; do
+      grep -qF "\`$line\`" "$f" && named=$((named + 1))
+    done
+    if [ "$named" -ge 5 ]; then
+      echo "${f#"$r"/}: restates the implementer's six report lines"
     fi
     # The general-purpose-agent tier: a general-purpose agent briefed with a
     # plugin agent's file. A general-purpose agent named with no agent file
@@ -1048,16 +1052,26 @@ mkdir -p "$fixture/skills/a" "$fixture/skills/b"
 printf 'Returns `Ticket`, `Commits`, `Verification`, `Criteria`, `Deviation`.\n' >"$fixture/skills/a/SKILL.md"
 printf 'Else start a fresh general-purpose agent\nbriefed with its file under `agents/`.\n' >"$fixture/skills/b/SKILL.md"
 printf 'Returns `Ticket`, `Commits`, `Verification`, `Criteria`, `Deviation`.\n' >"$fixture/skills/b/ref.md"
+mkdir -p "$fixture/skills/c"
+printf 'Returns `Ticket`, `Commits`, `Verification`, `Criteria`, `Evidence`, `Deviation`.\n' \
+  >"$fixture/skills/c/SKILL.md"
+printf 'Returns `Ticket`, `Commits`, `Verification`, `Criteria`, `Evidence`.\n' >"$fixture/skills/c/ref.md"
 out="$(scan_dispatch_copies "$fixture")"
 flags "the scan flags the report lines copied into a skill's reference file" \
-  "$out" "skills/b/ref.md: restates the implementer's five report lines"
+  "$out" "skills/b/ref.md: restates the implementer's six report lines"
 flags "the scan flags the report lines copied into a skill" \
-  "$out" "skills/a/SKILL.md: restates the implementer's five report lines"
+  "$out" "skills/a/SKILL.md: restates the implementer's six report lines"
+flags "the scan flags all six report lines copied into a skill" \
+  "$out" "skills/c/SKILL.md: restates the implementer's six report lines"
+flags "the scan flags a copy that keeps \`Evidence\` and drops another report line" \
+  "$out" "skills/c/ref.md: restates the implementer's six report lines"
 flags "the scan flags a skill restating the general-purpose-agent tier" \
   "$out" "skills/b/SKILL.md: restates the general-purpose-agent tier"
 printf 'Start the implementer as its agent file says.\n' >"$fixture/skills/a/SKILL.md"
 printf 'Summarise the log with a fresh general-purpose agent.\n' >"$fixture/skills/b/SKILL.md"
 printf 'Start the implementer as its agent file says.\n' >"$fixture/skills/b/ref.md"
+printf 'Its report ends with `Evidence` and `Deviation`.\n' >"$fixture/skills/c/SKILL.md"
+printf 'Start the implementer as its agent file says.\n' >"$fixture/skills/c/ref.md"
 assert_empty "the scan accepts a pointer and a general-purpose agent with no agent file" \
   "$(scan_dispatch_copies "$fixture")"
 check "the host fallback and the implementer's report are each stated once" \
@@ -2834,6 +2848,44 @@ spares "a listed docs/*.md is not flagged" "$out" 'docs/listed\.md'
 spares "a directory listed through all its files is not flagged" "$out" 'docs/whole/'
 spares "a directory listed as docs/<dir>/ is not flagged" "$out" 'docs/bydir/'
 check "every doc under docs/ is in CONTRIBUTING.md's Layout map" "$(scan_layout_map "$PLUGIN_ROOT")"
+
+# --- the PR-writing standard (#1389) ------------------------------------------
+echo
+echo "the PR-writing standard (#1389)"
+# Every PR body and PR comment the plugin writes follows docs/pr-writing.md,
+# so each PR-writing site names it: the three body sites, the three comment
+# sites, and the fixer's PR-body check.
+pr_writing_sites='skills/orch-flow/SKILL.md|### Phase: implement
+skills/orch-quick-implement/SKILL.md|## 7. Open the PR
+skills/orch-release/SKILL.md
+agents/orch-closer.md|## The PR comment
+skills/orch-review-pass/SKILL.md
+skills/orch-sync/SKILL.md
+agents/orch-fixer.md|## Checking the PR body'
+fixture="$(new_fixture)"
+mkdir -p "$fixture/agents" "$fixture/skills/orch-flow" "$fixture/skills/orch-quick-implement" \
+  "$fixture/skills/orch-release" "$fixture/skills/orch-review-pass" "$fixture/skills/orch-sync"
+printf '# F\n\n### Phase: implement\n\nOpen the PR.\n\n### Phase: review\n\nSee `docs/pr-writing.md`.\n' \
+  >"$fixture/skills/orch-flow/SKILL.md"
+printf '# Q\n\n## 7. Open the PR\n\nWrite it per\n`docs/pr-writing.md`.\n' >"$fixture/skills/orch-quick-implement/SKILL.md"
+printf '# R\n\nWrite the summary.\n' >"$fixture/skills/orch-release/SKILL.md"
+printf '# C\n\n## Filing\n\nFile.\n' >"$fixture/agents/orch-closer.md"
+for f in skills/orch-review-pass/SKILL.md skills/orch-sync/SKILL.md; do
+  printf '# S\n\nPost per `docs/pr-writing.md`.\n' >"$fixture/$f"
+done
+printf '# X\n\n## Checking the PR body\n\nCheck the human layer per `docs/pr-writing.md`.\n' \
+  >"$fixture/agents/orch-fixer.md"
+out="$(scan_names_phrase "$fixture" "$pr_writing_sites" 'docs/pr-writing.md')"
+flags "a flow implement phase that names the doc only in another phase is flagged" \
+  "$out" "skills/orch-flow/SKILL.md: ### Phase: implement does not name docs/pr-writing.md"
+flags "a release skill that never names the doc is flagged" \
+  "$out" "skills/orch-release/SKILL.md: does not name docs/pr-writing.md"
+flags "a closer with no PR comment section is flagged" \
+  "$out" "agents/orch-closer.md: no ## The PR comment section"
+spares "sites that name the doc, wrapped across lines or not, are not flagged" \
+  "$out" "orch-(quick-implement|review-pass|sync|fixer)"
+check "each PR-writing site names docs/pr-writing.md" \
+  "$(scan_names_phrase "$PLUGIN_ROOT" "$pr_writing_sites" 'docs/pr-writing.md')"
 
 # --- version and CHANGELOG (CLAUDE.md Versioning) -----------------------------
 # Every PR to main adds one changelog fragment, changelog.d/<issue>.md, and

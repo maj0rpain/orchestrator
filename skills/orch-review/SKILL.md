@@ -86,7 +86,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    previous one filed. Triage's **Met again** is the only check against them,
    since the closer reads only this loop's records. Any **open blocking**
    finding in the last of them still stands: it goes into this loop's first
-   triage.
+   triage. A record with no `## Evidence` section is read per **Evidence**
+   in `agents/orch-fixer.md` (under the plugin root).
 5. Ask the budget. **The question blocks** - ask it as a question
    with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
    on Junie). Ask once, before the
@@ -274,8 +275,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    above this skill's own directory.
 
    `Verification` reads `not run - nothing changed`, **Fixed this
-   iteration** and **Open blocking** read `None`, and **Merge resolutions**
-   holds step 2's. **Waiting to be filed** lists each major or nit left
+   iteration**, **Evidence** and **Open blocking** read `None`, and **Merge
+   resolutions** holds step 2's. **Waiting to be filed** lists each major or nit left
    unfixed in the template's location-bearing bullet,
    ``- <Axis>/<severity>: `<file>:<line>` <claim> - <rule>``, with `-` in
    place of `<file>:<line>` when the finding gave `-`, and `suite` for a
