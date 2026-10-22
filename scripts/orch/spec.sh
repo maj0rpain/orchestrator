@@ -83,6 +83,16 @@ spec_phase_guard() {
 # spec-paused it is no handoff - no phase table entry names it, so handoff
 # validate and doctor never look at it - and no state.json field.
 readonly SPEC_ROUND_MARKER=spec-round
+
+# spec_round_marker_write <issue> <k> <n>: the round marker, naming <issue>,
+# round <k> and the round count <n> - the one writer of the line spec round
+# parses; dies when it cannot write it.
+spec_round_marker_write() {
+  mkdir -p "$HANDOFF_DIR" 2>/dev/null || die "cannot create $HANDOFF_DIR"
+  { printf '%s %s %s\n' "$1" "$2" "$3" >"$HANDOFF_DIR/$SPEC_ROUND_MARKER"; } 2>/dev/null \
+    || die "cannot write the round marker $HANDOFF_DIR/$SPEC_ROUND_MARKER"
+}
+
 # The empty file spec-review apply writes in a round's directory as its very
 # last step: a round counts as complete only when its directory holds it.
 readonly SPEC_ROUND_COMPLETE=round-complete
@@ -91,18 +101,21 @@ readonly SPEC_ROUND_COMPLETE=round-complete
 # flow and are archived with it.
 readonly SPEC_ROUNDS_DIR="$ORCH/spec-rounds"
 
+# spec_round_number <s>: whether <s> is a positive whole number with no
+# leading zero - a round or a round count.
+spec_round_number() {
+  case "$1" in ''|*[!0-9]*|0*) return 1 ;; esac
+}
+
 # spec_round_count_parse <k>/<n> <k-var> <n-var>: a round and the round count,
 # two positive whole numbers with k no greater than n, into the variables
 # named; dies otherwise.
 spec_round_count_parse() {
   local __rc_arg="$1" __rc_k __rc_n
+  local __rc_want="want <k>/<n>, a round and the round count, two positive whole numbers, got: $__rc_arg"
+  case "$__rc_arg" in */*) ;; *) die "$__rc_want" ;; esac
   __rc_k="${__rc_arg%%/*}"; __rc_n="${__rc_arg#*/}"
-  case "$__rc_arg" in */*) ;; *) __rc_k="" ;; esac
-  case "$__rc_k" in [1-9]|[1-9]*[0-9]) ;; *) __rc_k="" ;; esac
-  case "$__rc_n" in [1-9]|[1-9]*[0-9]) ;; *) __rc_n="" ;; esac
-  case "$__rc_k$__rc_n" in *[!0-9]*) __rc_k="" ;; esac
-  [ -n "$__rc_k" ] && [ -n "$__rc_n" ] \
-    || die "want <k>/<n>, a round and the round count, two positive whole numbers, got: $__rc_arg"
+  spec_round_number "$__rc_k" && spec_round_number "$__rc_n" || die "$__rc_want"
   [ "$__rc_k" -le "$__rc_n" ] || die "round $__rc_k is past the round count $__rc_n"
   printf -v "$2" '%s' "$__rc_k"
   printf -v "$3" '%s' "$__rc_n"
@@ -121,9 +134,7 @@ cmd_spec_pause_round() {
   [ "$k" -lt "$n" ] \
     || die "round $k is the last of $n - the last round never pauses; go on to the ticket breakdown"
   spec_phase_guard die pause issue
-  mkdir -p "$HANDOFF_DIR" 2>/dev/null || die "cannot create $HANDOFF_DIR"
-  { printf '%s %s %s\n' "$issue" "$((k + 1))" "$n" >"$HANDOFF_DIR/$SPEC_ROUND_MARKER"; } 2>/dev/null \
-    || die "cannot write the round marker $HANDOFF_DIR/$SPEC_ROUND_MARKER"
+  spec_round_marker_write "$issue" "$((k + 1))" "$n"
   print_next_block "Spec review round $k of $n applied. Round $((k + 1)) runs in a fresh session."
 }
 
@@ -142,19 +153,18 @@ cmd_spec_round_dir() {
   spec_round_count_parse "$1" k n
   spec_phase_guard die round-dir issue
   local dir="$SPEC_ROUNDS_DIR/$k" f
-  spec_review_dir_empty "$dir"
+  rm -rf "$dir"
+  mkdir -p "$dir"
   if [ "$k" -eq 1 ]; then
     find "$SPEC_ROUNDS_DIR" -mindepth 1 -maxdepth 1 ! -name 1 -exec rm -rf {} +
   else
-    for f in map-implementability.md settled.md; do
+    for f in "${SPEC_REVIEW_CARRIED[@]}"; do
       [ ! -f "$SPEC_ROUNDS_DIR/$((k - 1))/$f" ] \
         || cp "$SPEC_ROUNDS_DIR/$((k - 1))/$f" "$dir/$f" \
         || die "cannot copy round $((k - 1))'s $f into $dir"
     done
   fi
-  mkdir -p "$HANDOFF_DIR" 2>/dev/null || die "cannot create $HANDOFF_DIR"
-  { printf '%s %s %s\n' "$issue" "$k" "$n" >"$HANDOFF_DIR/$SPEC_ROUND_MARKER"; } 2>/dev/null \
-    || die "cannot write the round marker $HANDOFF_DIR/$SPEC_ROUND_MARKER"
+  spec_round_marker_write "$issue" "$k" "$n"
   printf '%s/\n' "$dir"
 }
 
@@ -172,13 +182,10 @@ cmd_spec_round() {
   IFS= read -r line <"$marker" || [ -n "$line" ] \
     || die2 "malformed round marker $marker: it is empty - want <issue> <k> <n>; rerun orch.sh spec round-dir <k>/<n>"
   read -r m_issue k n extra <<<"$line"
-  case "$m_issue" in ''|*[!0-9]*) m_issue="" ;; esac
-  case "$k" in [1-9]|[1-9]*[0-9]) ;; *) k="" ;; esac
-  case "$n" in [1-9]|[1-9]*[0-9]) ;; *) n="" ;; esac
-  case "$k$n" in *[!0-9]*) k="" ;; esac
-  if [ -z "$m_issue" ] || [ -z "$k" ] || [ -z "$n" ] || [ -n "$extra" ] || [ "$k" -gt "$n" ]; then
-    die2 "malformed round marker $marker: '$line' - want <issue> <k> <n>; rerun orch.sh spec round-dir <k>/<n>"
-  fi
+  local malformed="malformed round marker $marker: '$line' - want <issue> <k> <n>; rerun orch.sh spec round-dir <k>/<n>"
+  case "$m_issue" in ''|*[!0-9]*) die2 "$malformed" ;; esac
+  spec_round_number "$k" && spec_round_number "$n" && [ -z "$extra" ] && [ "$k" -le "$n" ] \
+    || die2 "$malformed"
   [ "$m_issue" = "$issue" ] || return 1
   if [ ! -e "$SPEC_ROUNDS_DIR/$k/$SPEC_ROUND_COMPLETE" ]; then
     printf '%s %s\n' "$k" "$n"

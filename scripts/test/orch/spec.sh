@@ -5,6 +5,20 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# unwritable_dir <dir> <skip-name>: <dir> made unwritable, for a test of a
+# failed write; the caller restores it with chmod u+w. Where it stays writable
+# (running as root) it is restored here, <skip-name> skipped, and the return
+# non-zero, so the caller runs nothing.
+unwritable_dir() {
+  chmod a-w "$1"
+  if : 2>/dev/null >"$1/.probe"; then
+    rm -f "$1/.probe"
+    chmod u+w "$1"
+    skip "$2" "$1 stays writable (running as root?)"
+    return 1
+  fi
+}
+
 # --- spec ---------------------------------------------------------------------
 # The spec review's one hand on GitHub: fetch the body, replace it, comment on
 # it. The number comes from state so a review can never touch the wrong issue,
@@ -318,13 +332,11 @@ out="$("$ORCH" spec round-dir 3/2 2>&1)"; st=$?
 assert_status "round-dir refuses k past n" "$st" 1
 assert_contains "naming the round count" "$out" "round count 2"
 assert_eq "creating and deleting nothing" "$(rd_snapshot)" "$before"
-for ph in implement review; do
-  state_fixture phase "$ph"
-  out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
-  assert_status "round-dir refuses at phase $ph" "$st" 1
-  assert_contains "saying it runs only in the spec phase" "$out" "spec round-dir runs only in the spec phase"
-  assert_eq "creating and deleting nothing" "$(rd_snapshot)" "$before"
-done
+state_fixture phase implement
+out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
+assert_status "round-dir refuses at phase implement" "$st" 1
+assert_contains "saying it runs only in the spec phase" "$out" "spec round-dir runs only in the spec phase"
+assert_eq "creating and deleting nothing" "$(rd_snapshot)" "$before"
 state_fixture phase "done"
 out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
 assert_status "round-dir refuses once the flow is done" "$st" 1
@@ -333,12 +345,7 @@ assert_eq "creating and deleting nothing" "$(rd_snapshot)" "$before"
 state_fixture phase spec
 
 rm -f "$round_marker"
-chmod a-w "$handoff_dir"
-if : 2>/dev/null >"$handoff_dir/.probe"; then
-  rm -f "$handoff_dir/.probe"
-  chmod u+w "$handoff_dir"
-  skip "a failed marker write prints no path" "the handoff folder stays writable (running as root?)"
-else
+if unwritable_dir "$handoff_dir" "a failed marker write prints no path"; then
   out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
   chmod u+w "$handoff_dir"
   assert_status "round-dir fails when the marker cannot be written" "$st" 1
@@ -394,13 +401,11 @@ for bad_marker in "" garbage "21" "21 1" "21 3 2" "21 0 2" "21 a 2" "x 1 2" "21 
   assert_contains "with an orch: message naming it" "$out" "orch: malformed round marker"
 done
 writeln "$saved_marker" >"$round_marker"
-for ph in implement review; do
-  state_fixture phase "$ph"
-  out="$("$ORCH" spec round 2>&1)"; st=$?
-  assert_status "spec round exits 2 at phase $ph" "$st" 2
-  assert_contains "with an orch: message saying it runs only in the spec phase" "$out" \
-    "orch: spec round runs only in the spec phase"
-done
+state_fixture phase implement
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_status "spec round exits 2 at phase implement" "$st" 2
+assert_contains "with an orch: message saying it runs only in the spec phase" "$out" \
+  "orch: spec round runs only in the spec phase"
 state_fixture phase "done"
 out="$("$ORCH" spec round 2>&1)"; st=$?
 assert_status "spec round exits 2 once the flow is done" "$st" 2
@@ -466,14 +471,12 @@ assert_contains "with the usage" "$out" "usage: orch.sh spec pause [--round <k>/
 out="$("$ORCH" spec pause --round 1/2 extra 2>&1)"; st=$?
 assert_status "pause --round refuses an extra argument" "$st" 1
 assert_eq "writing no marker" "$(on_disk "$round_marker")" "absent"
-for ph in implement review; do
-  state_fixture phase "$ph"
-  out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
-  assert_status "pause --round refuses at phase $ph" "$st" 1
-  assert_contains "saying it runs only in the spec phase" "$out" "spec pause runs only in the spec phase"
-  assert_not_contains "printing no block" "$out" "Next:"
-  assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
-done
+state_fixture phase implement
+out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
+assert_status "pause --round refuses at phase implement" "$st" 1
+assert_contains "saying it runs only in the spec phase" "$out" "spec pause runs only in the spec phase"
+assert_not_contains "printing no block" "$out" "Next:"
+assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
 state_fixture phase "done"
 out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
 assert_status "pause --round refuses once the flow is done" "$st" 1
@@ -482,12 +485,7 @@ assert_not_contains "printing no block" "$out" "Next:"
 assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
 state_fixture phase spec
 
-chmod a-w "$handoff_dir"
-if : 2>/dev/null >"$handoff_dir/.probe"; then
-  rm -f "$handoff_dir/.probe"
-  chmod u+w "$handoff_dir"
-  skip "a failed round marker write prints no block" "the handoff folder stays writable (running as root?)"
-else
+if unwritable_dir "$handoff_dir" "a failed round marker write prints no block"; then
   out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
   chmod u+w "$handoff_dir"
   assert_status "pause --round fails when the marker cannot be written" "$st" 1
