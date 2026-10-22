@@ -295,6 +295,26 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    stays at spec - fix what it names and run it again. Relay its output (see
    **Printing the boundary**).
 
+#### In an autopilot flow
+
+When `bash "$ORCH" autopilot active` exits 0 the spec phase runs unattended
+and stops for the human only on a fundamental item of the spec review
+(ADR-0049). Step 0 is skipped: the plan's `## Autopilot` block settled what it
+decides, so the issue is reviewed as it stands - no rewrite decision, no
+marker check, no redo check. The round check still runs, first. Step 4 asks
+no round-count question: the count is `bash "$ORCH" autopilot rounds`. The
+round check's `<k> <n> waiting` means round k holds fundamental items back
+for the human's reply (`.orchestrator/spec-rounds/<k>/fundamental.md`): read
+the reply with `bash "$ORCH" autopilot answer spec <file>` (a `mktemp` file
+outside the repo; it dies when no reply has come, and the phase then stops
+for the next tick), translate it into `spec-review apply`'s answer grammar
+over the fundamental items, run `bash "$ORCH" spec-review apply <dir>
+<answer> --round <k>/<n>` again - it applies only the held-back items, posts
+the round's one changelog and removes `fundamental.md` - and go on to the
+round's pause, or, after round n, to step 5. Rounds run through the
+`orch-spec-review` skill, which runs unattended in autopilot; step 5's
+breakdown runs `orch-to-tickets`' **Unattended breakdown**.
+
 ### Phase: implement
 
 1. Read `bash "$ORCH" handoff path implement` and fetch the spec issue it names.

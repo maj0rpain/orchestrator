@@ -16,6 +16,38 @@ Everything in the skill's main file holds - **Rounds**, **Consolidation**,
 and **The changelog** - with the additions below. **Standalone spec review**
 does not apply: run **Inputs** below in its place.
 
+## In an autopilot flow
+
+When `bash "$ORCH" autopilot active` exits 0 the review runs unattended
+(ADR-0049), each round as in an **Unattended spec review** - `unattended-spec-review.md`
+- except that the round count comes from the plan, not from a question, and
+the answer is `recommended` without `--unattended`, which is for a quick
+implementation. The batch is printed as for an attended review and the
+session goes straight on; no question is asked of the human except for
+fundamental items. The ticket question, when `apply` pauses with exit 3, is
+taken as recommended: `--tickets recommended`.
+
+While writing `batch.md`, mark each material item that is also a **fundamental
+item** - one that would reverse or change a planning decision, revive a rejected
+alternative, or add or drop scope beyond the plan - with the mark `fundamental`
+in place of `material` on its `@@ item` line. Every `contradicts-the-plan`
+item is a candidate: judge it against `01-plan.md`'s decisions, rejected
+alternatives and scope. A hand-labelled issue's plan records no decisions, so
+its review marks none. `spec-review check` and `apply` accept the mark only
+under `ORCH_AUTOPILOT=1`.
+
+When a round has a fundamental item:
+
+1. Run `spec-review apply <dir> recommended --round <k>/<n>` as usual: it holds
+   the fundamental items back into `<dir>/fundamental.md`, applies every other
+   item as recommended, publishes the body and posts no changelog yet.
+2. Write the question to a scratch file: only the fundamental items, each with
+   its options and recommendation, and post it with `bash "$ORCH" autopilot
+   ask spec <file>`. It @mentions the human, adds `needs-human` and releases the
+   claim; the session ends.
+3. The fresh session meets `spec round` printing `<k> <n> waiting` and resumes
+   from the reply, as `orch-flow`'s autopilot spec phase says.
+
 ## Inputs
 
 Steps 1 to 3 run at the start of every round, each round in its own

@@ -883,6 +883,78 @@ sra_refused "a ticket exists failure" "$d" "ticket exists #14 exited 2" recommen
 fake_unfail
 assert_eq "and leaves no changelog.md" "$(on_disk "$d/changelog.md")" absent
 
+# Fundamental items (autopilot): the mark stands in for `material` only with
+# ORCH_AUTOPILOT=1; apply holds those items back into fundamental.md, applies
+# the rest and publishes without a changelog, and the resumed apply applies only
+# the held-back items and posts the round's one changelog.
+# srf_dir: sra_dir's fixture with item 3 (a decision) marked fundamental.
+srf_dir() {
+  local d
+  d="$(sra_dir)"
+  sed -i 's/^@@ item 3 consistency decision A material$/@@ item 3 consistency decision A fundamental/' "$d/batch.md"
+  printf '%s\n' "$d"
+}
+d="$(srf_dir)"
+out="$(env -u ORCH_AUTOPILOT "$ORCH" spec-review check "$d" 2>&1)"; st=$?
+assert_status "check refuses the fundamental mark without ORCH_AUTOPILOT" "$st" 1
+assert_contains "naming the mark" "$out" "item 3's mark must be material or minor, got 'fundamental'"
+sra "$d" recommended
+assert_status "apply refuses it too" "$st" 1
+assert_contains "naming the mark" "$out" "got 'fundamental'"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review check "$d" 2>&1)"; st=$?
+assert_status "check accepts it under ORCH_AUTOPILOT=1" "$st" 0
+sed -i 's/^@@ item 5 testability resolved$/@@ item 5 testability resolved fundamental/' "$d/batch.md"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review check "$d" 2>&1)"; st=$?
+assert_status "a resolved item refuses the mark, in autopilot" "$st" 1
+assert_contains "saying it carries no mark" "$out" "a resolved item carries no mark"
+
+d="$(srf_dir)"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 2>&1)"; st=$?
+assert_status "a round with a fundamental item applies" "$st" 0
+assert_eq "the rest is applied and the held item's edit left out" "$(cat "$d/spec.md")" '# Spec
+
+Alpha prime line.
+Beta line.
+Gamma line.
+Delta line.
+Test note.
+Twice.
+Twice.'
+assert_eq "the body is published" "$(fake_body_of 14)" "$(cat "$d/spec.md")"
+assert_eq "no changelog is posted yet" "$(fake_comments_of 14)" ""
+assert_eq "fundamental.md holds the item's block" "$(grep -c '^@@ item ' "$d/fundamental.md")" 1
+assert_contains "item 3 among them" "$(cat "$d/fundamental.md")" "@@ item 3 consistency decision A fundamental"
+assert_eq "no round-complete" "$(on_disk "$d/round-complete")" absent
+assert_eq "no settled.md" "$(on_disk "$d/settled.md")" absent
+
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 1C --round 1/2 --issue 14 2>&1)"; st=$?
+assert_status "the resumed apply refuses an option the item lacks" "$st" 1
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" -4 --round 1/2 --issue 14 2>&1)"; st=$?
+assert_status "the resumed apply refuses naming an item already applied" "$st" 1
+assert_contains "saying so" "$out" "names only fundamental items"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14 2>&1)"; st=$?
+assert_status "the resumed apply succeeds" "$st" 0
+assert_eq "the held-back decision's option B lands" "$(cat "$d/spec.md" | sed -n 5p)" "Gamma dropped."
+assert_eq "published" "$(fake_body_of 14)" "$(cat "$d/spec.md")"
+assert_contains "one changelog, holding the earlier items" "$(fake_comments_of 14)" "- (1) Folded in @alice's comment on Alpha"
+assert_contains "and the held-back one" "$(fake_comments_of 14)" "- (3) decision: took B - Drop gamma"
+assert_eq "exactly one changelog comment" "$(fake_comments_of 14 | grep -c '^## Spec review$')" 1
+assert_eq "settled.md holds it" "$(grep -c '^## Spec review$' "$d/settled.md")" 1
+assert_eq "fundamental.md removed" "$(on_disk "$d/fundamental.md")" absent
+assert_eq "round-complete written" "$(on_disk "$d/round-complete")" present
+
+d="$(srf_dir)"
+ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" recommended --round 1/2 --issue 14 >/dev/null 2>&1
+fake_fail adapter_issue_comment
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14 2>&1)"; st=$?
+fake_unfail
+assert_status "a failed changelog write in the resumed apply stops it" "$st" 1
+assert_contains "naming the writes that landed" "$out" "already landed: the body of issue #14"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec-review apply "$d" 3B --round 1/2 --issue 14 2>&1)"; st=$?
+assert_status "and apply refuses to run again" "$st" 1
+assert_contains "saying so" "$out" "apply refuses to run again"
+assert_eq "fundamental.md is kept" "$(on_disk "$d/fundamental.md")" present
+
 # Write order and failure.
 d="$(sra_dir)"
 mkdir "$d/changelog.md"

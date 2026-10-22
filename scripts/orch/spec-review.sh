@@ -203,10 +203,14 @@ spec_review_summary_cap() {
 
 # spec_review_mark_check <line> <n> <rec> <mark>: dies, naming <line>,
 # unless item <n>'s <mark> - the last fixed token of its `@@ item` line - is
-# material or minor.
+# material or minor, or fundamental when ORCH_AUTOPILOT=1 (a fundamental item
+# is material everywhere else: the parser reads it as material, flagged in
+# SR_IT_FUND).
 spec_review_mark_check() {
   case "$4" in
     material|minor) ;;
+    fundamental) autopilot_active \
+      || spec_review_batch_die "$1" "item $2's mark must be material or minor, got 'fundamental' - the mark is accepted only in an autopilot flow" ;;
     '') spec_review_batch_die "$1" "@@ item $2 ... $3 needs its mark, material or minor" ;;
     *) spec_review_batch_die "$1" "item $2's mark must be material or minor, got '$4'" ;;
   esac
@@ -230,9 +234,9 @@ spec_review_at_line() {
 spec_review_batch_parse() {
   local file="$1" line lineno=0 mode=top kw args cur=-1 opt=-1
   local buf="" bufn=0 block_line=0 quote_wanted="" n group rec rec_tail arg lens state reason
-  local fd_lens fd_k login created letter label extra lens_slot fd_slot cm_slot target mark
+  local fd_lens fd_k login created letter label extra lens_slot fd_slot cm_slot target mark fund
   SR_LENS_NAME=(); SR_LENS_STATE=(); SR_LENS_REASON=()
-  SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_MARK=(); SR_IT_LINE=()
+  SR_IT_N=(); SR_IT_GROUP=(); SR_IT_REC=(); SR_IT_ARG=(); SR_IT_MARK=(); SR_IT_LINE=(); SR_IT_FUND=()
   SR_IT_SUMMARY=(); SR_IT_WHY=(); SR_IT_ANCHOR=(); SR_IT_ANCHOR_LINE=(); SR_IT_REPLACE=(); SR_IT_RESOLVED=()
   SR_FD_ITEM=(); SR_FD_LENS=(); SR_FD_K=(); SR_FD_LINE=()
   SR_CM_ITEM=(); SR_CM_LOGIN=(); SR_CM_CREATED=(); SR_CM_QUOTE=()
@@ -319,7 +323,7 @@ spec_review_batch_parse() {
             [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ item $n ... apply takes nothing after its mark" ;;
           resolved)
             case "$rec_tail" in
-              material|material' '*|minor|minor' '*) spec_review_batch_die "$lineno" "@@ item $n ... a resolved item carries no mark" ;;
+              material|material' '*|minor|minor' '*|fundamental|fundamental' '*) spec_review_batch_die "$lineno" "@@ item $n ... a resolved item carries no mark" ;;
             esac
             [ -z "$rec_tail" ] || spec_review_batch_die "$lineno" "@@ item $n ... resolved takes nothing after it" ;;
           decline)
@@ -333,6 +337,8 @@ spec_review_batch_parse() {
             [ -z "$extra" ] || spec_review_batch_die "$lineno" "@@ item $n ... decision takes nothing after its mark" ;;
           *) spec_review_batch_die "$lineno" "item $n's recommendation must be apply <mark>, decline <mark> <reason>, decision <letter> <mark> or resolved" ;;
         esac
+        fund=""
+        if [ "$mark" = fundamental ]; then fund=1; mark=material; fi
         [ "$mark" != minor ] || [ "$rec" != decision ] \
           || spec_review_batch_die "$lineno" "decision item $n is always material, never minor"
         [ "$mark" != minor ] || [ "$group" != contradicts-the-plan ] \
@@ -340,6 +346,7 @@ spec_review_batch_parse() {
         cur="${#SR_IT_N[@]}"; opt=-1
         SR_IT_N[cur]="$n"; SR_IT_GROUP[cur]="$group"; SR_IT_REC[cur]="$rec"
         SR_IT_ARG[cur]="$arg"; SR_IT_MARK[cur]="$mark"; SR_IT_LINE[cur]="$lineno"
+        [ -z "$fund" ] || SR_IT_FUND[cur]=1
         mode=item ;;
       summary)
         [ -n "$args" ] || spec_review_batch_die "$lineno" "@@ summary needs its line"
@@ -547,6 +554,10 @@ spec_review_answer() {
         i="$(array_index SR_IT_N "$n")"
         [ -n "$i" ] || die "the answer names item $n, which batch.md does not have"
         [ -z "${SR_DISP[$i]+x}" ] || die "the answer names item $n twice"
+        [ "${SR_FMODE:-}" != hold ] || [ -z "${SR_IT_FUND[$i]:-}" ] \
+          || die "the answer names item $n, a fundamental item held back for the human's reply - it takes no answer in this run"
+        [ "${SR_FMODE:-}" != resume ] || [ -n "${SR_IT_FUND[$i]:-}" ] \
+          || die "the answer names item $n, which this round applied before the fundamental items were held back - the resumed answer names only fundamental items"
         [ "${SR_IT_REC[$i]}" != resolved ] \
           || die "the answer names item $n, which is resolved by item ${SR_IT_RESOLVED[$i]} and takes no answer"
         case "$sign:${SR_IT_REC[$i]}" in
@@ -565,12 +576,18 @@ spec_review_answer() {
         esac
       done ;;
   esac
+  local ibase
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     case "${SR_IT_REC[$i]}" in
       resolved) SR_DISP[i]=resolved; continue ;;
     esac
+    # A fundamental item is held back in an autopilot round's first run; the
+    # resumed run's answer is the fundamental items' alone, the rest recommended.
+    if [ "${SR_FMODE:-}" = hold ] && [ -n "${SR_IT_FUND[$i]:-}" ]; then SR_DISP[i]=held; continue; fi
+    ibase="$base"
+    [ "${SR_FMODE:-}" != resume ] || [ -n "${SR_IT_FUND[$i]:-}" ] || ibase=recommended
     [ -z "${SR_DISP[$i]+x}" ] || continue
-    case "$base:${SR_IT_REC[$i]}" in
+    case "$ibase:${SR_IT_REC[$i]}" in
       recommended:apply|all:apply|all:decline) SR_DISP[i]=applied; SR_ASREC[i]=1 ;;
       recommended:decision|all:decision)
         SR_DISP[i]=taken; SR_TAKEN[i]="${SR_IT_ARG[$i]}"; SR_ASREC[i]=1 ;;
@@ -705,6 +722,8 @@ spec_review_validate() {
   SR_TEXT="$SR_FETCHED"
   SR_PROBLEMS=(); SR_ANCHOR_COUNT=0
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
+    # The resumed run's body already holds the other items' edits.
+    [ "${SR_FMODE:-}" != resume ] || [ -n "${SR_IT_FUND[$i]:-}" ] || continue
     case "${SR_IT_REC[$i]}" in
       apply|decline)
         accepted=""
@@ -1551,6 +1570,30 @@ spec_review_local_write() {
     || die "could not write $1 - nothing written to GitHub"
 }
 
+# spec_review_hold <dir>: the end of an autopilot round's first run, when the
+# batch held fundamental items back - every other item is applied and the body
+# published, and no changelog is posted yet. Writes <dir>/fundamental.md, the
+# held-back items' blocks in the batch grammar behind the batch's `@@ lens`
+# lines: the round's save point, which spec round reports as waiting and the
+# resumed apply reads as its cue. Then clears applied.log, whose body write
+# is no failure the resumed run must refuse, and makes spec.fetched.md the
+# body as published, the base the resumed run's edits anchor in.
+spec_review_hold() {
+  local dir="$1" held=" " i
+  for i in ${SR_IT_FUND[@]+"${!SR_IT_FUND[@]}"}; do held="$held${SR_IT_N[$i]} "; done
+  { {
+    grep '^@@ lens ' "$dir/batch.md" || true
+    awk -v held="$held" '
+      /^@@ item / { keep = index(held, " " $3 " ") > 0 }
+      keep { print }' "$dir/batch.md"
+  } >"$dir/$SPEC_ROUND_FUNDAMENTAL"; } 2>/dev/null \
+    || die "could not write $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed: $(spec_review_landed "$dir")"
+  cp "$dir/spec.md" "$dir/spec.fetched.md" 2>/dev/null \
+    || die "could not copy spec.md to $dir/spec.fetched.md - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
+  rm -f "$dir/applied.log" 2>/dev/null \
+    || die "could not clear $dir/applied.log - the fundamental items are held in $dir/$SPEC_ROUND_FUNDAMENTAL; every GitHub write landed: $(spec_review_landed "$dir")"
+}
+
 # spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
 # [--tickets <answer> [--ticket-reasons <file>]] [--issue <n>] [--unattended]
 # [--host-fallbacks <file>]: the round's answer applied, the tickets
@@ -1622,6 +1665,13 @@ spec_review_apply() {
   dir="${dir%/}"
   [ ! -s "$dir/applied.log" ] \
     || die "$dir/applied.log records writes that already landed: $(spec_review_landed "$dir") - this review stopped at a failed write; apply refuses to run again"
+  # An autopilot round's two runs (see spec_review_hold): the first holds the
+  # fundamental items back, the run after the reply, finding fundamental.md,
+  # applies only those.
+  SR_FMODE=""
+  if autopilot_active; then
+    if [ -f "$dir/$SPEC_ROUND_FUNDAMENTAL" ]; then SR_FMODE=resume; else SR_FMODE=hold; fi
+  fi
   if [ -n "$hosts_file" ]; then
     [ -f "$hosts_file" ] || die "--host-fallbacks file not found: $hosts_file"
     hosts="$(spec_review_one_line "$(cat "$hosts_file")")"
@@ -1700,9 +1750,15 @@ spec_review_apply() {
     spec_review_local_write "$dir/ticket-${TK_T[$j]}.md" "${TK_TEXT[$j]}"
   done
 
+  local held_any=""
+  [ "$SR_FMODE" != hold ] || [ "${#SR_IT_FUND[@]}" -eq 0 ] || held_any=1
   local log
-  log="$(spec_review_changelog "$round" "$unattended" "$tickets" "$hosts")"
-  spec_review_local_write "$dir/changelog.md" "$log"$'\n'
+  if [ -z "$held_any" ]; then
+    log="$(spec_review_changelog "$round" "$unattended" "$tickets" "$hosts")"
+  else
+    log=""
+  fi
+  [ -n "$held_any" ] || spec_review_local_write "$dir/changelog.md" "$log"$'\n'
 
   # Flow mode writes through the spec command, whose guards hold; the
   # standalone entry through the stateless issue commands.
@@ -1732,11 +1788,20 @@ spec_review_apply() {
   if [ -n "$ST_RETIRE" ]; then
     spec_review_write "$dir" "the retire of #$issue's ticket breakdown" cmd_ticket_retire "$issue"
   fi
+  if [ -n "$held_any" ]; then
+    spec_review_hold "$dir"
+    return 0
+  fi
   spec_review_write "$dir" "the changelog comment on issue #$issue" "${comment[@]}" "$dir/changelog.md"
   # The settled file, last: a pause or a failed write before this point
   # appends nothing, so a rerun never appends a changelog twice.
   { printf '%s\n' "$log" >>"$dir/settled.md"; } 2>/dev/null \
     || die "could not append the changelog to $dir/settled.md - every GitHub write landed: $(spec_review_landed "$dir")"
+  if [ "$SR_FMODE" = resume ]; then
+    rm -f "$dir/$SPEC_ROUND_FUNDAMENTAL" 2>/dev/null \
+      && [ ! -e "$dir/$SPEC_ROUND_FUNDAMENTAL" ] \
+      || die "could not remove $dir/$SPEC_ROUND_FUNDAMENTAL - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
+  fi
   # The round's completion, the very last step: spec round reads it to tell
   # a resumed flow which round runs next, so it exists only once every write
   # above has landed.

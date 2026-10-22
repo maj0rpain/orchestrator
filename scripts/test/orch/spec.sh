@@ -396,6 +396,15 @@ out="$("$ORCH" spec round 2>&1)"; st=$?
 assert_status "spec round succeeds once the last round is complete" "$st" 0
 assert_eq "printing done and the count" "$out" "done 2"
 
+# An autopilot round holding fundamental items back waits for the human's answer.
+"$ORCH" spec round-dir 1/2 >/dev/null
+assert_eq "a round without fundamental.md is the round to run" "$("$ORCH" spec round 2>&1)" "1 2"
+: >"$rounds/1/fundamental.md"
+assert_eq "a round holding fundamental.md waits" "$("$ORCH" spec round 2>&1)" "1 2 waiting"
+rm -f "$rounds/1/fundamental.md"
+"$ORCH" spec round-dir 2/2 >/dev/null
+: >"$rounds/2/round-complete"
+
 saved_marker="$(cat "$round_marker")"
 for bad_marker in "" garbage "21" "21 1" "21 3 2" "21 0 2" "21 a 2" "x 1 2" "21 1 2 9"; do
   writeln "$bad_marker" >"$round_marker"
@@ -498,3 +507,4 @@ if unwritable_dir "$handoff_dir" "a failed round marker write prints no block"; 
 fi
 assert_contains "help documents spec pause --round" "$("$ORCH" help)" "spec pause --round <k>/<n>"
 restore_suite_env
+
