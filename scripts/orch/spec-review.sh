@@ -83,8 +83,10 @@ spec_review_dir_reset() {
 }
 
 # What a round hands the next: the Implementability lens's code map (#1141)
-# and the settled file (#1185). The one list both begin's --carry and a flow's
-# spec round-dir read.
+# and the settled file (#1185), read by both begin's --carry and a flow's spec
+# round-dir. A flow's round-dir also carries SPEC_ROUND_LENS_SETTING, which
+# --carry leaves out: a standalone review reads the lens setting once, in one
+# session.
 readonly SPEC_REVIEW_CARRIED=(map-implementability.md settled.md)
 
 # --- spec-review apply (#1117) -------------------------------------------------
