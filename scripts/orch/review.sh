@@ -319,18 +319,16 @@ review_file() {
   trap "rm -f $(printf '%q' "$body")" EXIT
   finding_body_render "$finding" "$axis" "$severity" "$reason" "$file" "$line" \
     "$sha" "$pr" "$why" "$question" >"$body"
-  # shellcheck disable=SC2034 # finding_body_parse writes them; read by name below
-  local got_axis got_severity got_reason got_file got_line got_sha got_pr got_pr_number got_why got_question
+  local -A got
   finding_body_parse "$(cat "$body")" got
-  local field given ref
+  local field given
   for field in axis severity reason file line sha pr why question; do
     case "$field" in
       axis) given="$(printf '%s' "$axis" | tr '[:upper:]' '[:lower:]')" ;;
       *)    given="${!field}" ;;
     esac
-    ref="got_$field"
-    [ "$given" = "${!ref}" ] \
-      || die "the rendered body does not parse back: $field (given '$given', parsed '${!ref}')"
+    [ "$given" = "${got[$field]}" ] \
+      || die "the rendered body does not parse back: $field (given '$given', parsed '${got[$field]}')"
   done
 
   severity_label_ensure "review:$severity" "$colour" "$desc"

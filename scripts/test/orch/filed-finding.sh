@@ -45,14 +45,15 @@ assert_status "a severity with no entry returns 1" "$?" 1
 echo
 echo "finding body"
 new_repo >/dev/null
-# parsed <body>: every field finding_body_parse writes, one "<field>=<value>"
-# per line, in a fixed order.
+# parsed <body>: every field finding_body_parse writes into its array, one
+# "<field>=<value>" per line, in a fixed order.
 # shellcheck disable=SC2016 # expanded by the inner bash
 parsed() {
   bash -c 'source "$1"
+    declare -A f
     finding_body_parse "$2" f
     for k in axis severity reason file line sha pr pr_number why question; do
-      v="f_$k"; printf "%s=%s\n" "$k" "${!v}"
+      printf "%s=%s\n" "$k" "${f[$k]}"
     done' _ "$ORCH" "$1"
 }
 # rendered <finding text> <part>...: the body finding_body_render prints for
@@ -138,3 +139,27 @@ assert_eq "the SHA is the hex run of the line's last ' at <hex>'" \
 out="$(parsed 'nothing labelled here' 2>&1)"; st=$?
 assert_status "a body with no labelled lines does not fail" "$st" 0
 assert_eq "and leaves every field empty, printing nothing else" "$out" "$(fields '' '' '' '' '' '' '' '' '')"
+
+# One array reused across bodies: every key is written on every call, so a
+# sparse body never shows the previous body's values.
+# shellcheck disable=SC2016 # expanded by the inner bash
+out="$(bash -c 'source "$1"
+  declare -A f
+  finding_body_parse "$2" f
+  finding_body_parse "$3" f
+  for k in axis severity reason file line sha pr pr_number why question; do
+    printf "%s=%s\n" "$k" "${f[$k]}"
+  done' _ "$ORCH" "$legacy" "$no_axis_why" 2>&1)"
+assert_eq "a sparse body parsed after a full one into the same array leaves its missing fields empty" \
+  "$out" "$(fields '' nit 'a reason.' src/app.sh 3 "$sha" "$url/" 42 '')"
+out="$(bash -c 'source "$1"; finding_body_parse "$2" nosuch' _ "$ORCH" "$legacy" 2>&1)"; st=$?
+assert_status "an undeclared array name fails" "$st" 1
+assert_eq "naming it" "$out" "orch: finding_body_parse: nosuch is not a declared associative array"
+# shellcheck disable=SC2016 # expanded by the inner bash
+out="$(bash -c 'source "$1"; g() { local f; finding_body_parse "$1" f; }; g "$2"' _ "$ORCH" "$legacy" 2>&1)"; st=$?
+assert_status "a scalar fails" "$st" 1
+assert_eq "naming it" "$out" "orch: finding_body_parse: f is not a declared associative array"
+# shellcheck disable=SC2016 # expanded by the inner bash
+out="$(bash -c 'source "$1"; g() { local -a f; finding_body_parse "$1" f; }; g "$2"' _ "$ORCH" "$legacy" 2>&1)"; st=$?
+assert_status "an indexed array fails" "$st" 1
+assert_eq "naming it" "$out" "orch: finding_body_parse: f is not a declared associative array"
