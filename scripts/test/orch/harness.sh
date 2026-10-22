@@ -205,31 +205,17 @@ GH_OP_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, names a 
 # five multi-field gh ops, and prints one line per file and op, sorted, naming
 # the file (as scripts/<path>), the op and the rule; returns 1 when it printed
 # any. An op counts as a whole word anywhere in code - a command word, or an
-# argument to capture, gh_or_die or any other runner; a comment is dropped
-# first (a # at a line's start or after a blank or one of ;&|() outside
-# quotes), and a name inside a longer name is no match.
+# argument to capture, gh_or_die or any other runner, or a word inside a
+# string; each line is read through SHELL_CODE_AWK's code view, so its comment
+# is dropped first, and a name inside a longer name is no match.
 gh_op_placement() {
   local out
   out="$(cd "$1" && find . -name '*.sh' ! -path ./orch/gh.sh ! -path './test/*' \
-    -exec awk -v rule="$GH_OP_PLACEMENT_RULE" -v opnames="$GH_MULTI_FIELD_OPS" '
+    -exec awk -v rule="$GH_OP_PLACEMENT_RULE" -v opnames="$GH_MULTI_FIELD_OPS" "$SHELL_CODE_AWK"'
     BEGIN { nop = split(opnames, ops, " ") }
-    # code(line): the line with its comment dropped; quotes are tracked within
-    # the line only.
-    function code(line,   i, n, c, q, prev) {
-      n = length(line); q = ""; prev = ""
-      for (i = 1; i <= n; i++) {
-        c = substr(line, i, 1)
-        if (q == "\047") { if (c == "\047") q = "" }
-        else if (q == "\"") { if (c == "\\") i++; else if (c == "\"") q = "" }
-        else if (c == "\\") i++
-        else if (c == "\047" || c == "\"") q = c
-        else if (c == "#" && (prev == "" || prev ~ /[ \t;&|()]/)) return substr(line, 1, i - 1)
-        prev = c
-      }
-      return line
-    }
     {
-      s = code($0); file = FILENAME; sub(/^\.\//, "scripts/", file)
+      shell_code_line($0)
+      s = sc_code; file = FILENAME; sub(/^\.\//, "scripts/", file)
       for (k = 1; k <= nop; k++) {
         t = s
         while (match(t, ops[k])) {
@@ -1304,6 +1290,43 @@ printf '%s\n' 'planted_gh() { adapter_issue_title_labels "$1"; }' \
 out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "comments, longer names and the gh module pass" "$st" 0
 assert_eq "and print nothing" "$out" ""
+rm -rf "${gh_op_dir%/scripts}"
+
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir/orch" zz-multiline.sh <<'PLANTED'
+  x="a string opened here
+  # and closed on this line" adapter_pr_refs "$n"
+PLANTED
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
+assert_status "an op after a multi-line string holding a # at a line's start fails" "$st" 1
+assert_eq "naming the file and the op" "$out" \
+  "scripts/orch/zz-multiline.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE"
+rm -rf "${gh_op_dir%/scripts}"
+
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir/orch" zz-param.sh <<'PLANTED'
+  y=${x#pat} adapter_issue_state_labels "$n"
+PLANTED
+plant_file "$gh_op_dir/orch" zz-ansi.sh <<'PLANTED'
+  y=$'it\'s # no comment' adapter_pr_state_draft "$n"
+PLANTED
+plant_file "$gh_op_dir/orch" zz-heredoc.sh <<'PLANTED'
+  cat <<EOF
+  # adapter_issue_title_labels on a heredoc body line
+  EOF
+PLANTED
+plant_file "$gh_op_dir/orch" zz-literal.sh <<'PLANTED'
+  trap 'adapter_issue_state_labels_body' EXIT
+  echo "adapter_pr_refs"
+PLANTED
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
+assert_status "an op after a # in \${...}, in \$'...' or on a heredoc body line, or in a quoted literal, fails" "$st" 1
+assert_eq "naming each file and op" "$out" \
+  "scripts/orch/zz-ansi.sh names adapter_pr_state_draft. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-heredoc.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-literal.sh names adapter_issue_state_labels_body. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-literal.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-param.sh names adapter_issue_state_labels. $GH_OP_PLACEMENT_RULE"
 rm -rf "${gh_op_dir%/scripts}"
 
 # --- declaration substitutions (#1327) ----------------------------------------
