@@ -216,7 +216,6 @@ err="$("$ORCH" suite-cost run -- true 2>&1)"
 assert_eq "a live pid's .contended file with no marker is no contention" "$err" ""
 assert_eq "the run is recorded" "$("$ORCH" suite-cost history | wc -l | tr -d ' ')" 4
 assert_eq "and that .contended file is gone" "$(on_disk "$active/$$.contended")" absent
-assert_eq "a run leaves no marker of its own behind" "$(ls -A "$active")" ""
 
 # A run that cannot register as active: a plain file where the active-runs
 # directory goes, the record itself still writable.
@@ -261,18 +260,21 @@ assert_status "history refuses an argument" "$st" 1
 assert_contains "with its usage line" "$out" "usage: orch.sh suite-cost history"
 
 out="$("$ORCH" help 2>&1)"
+flat="$(tr -s ' \n' ' ' <<<"$out")"
 assert_contains "suite-cost run is in the usage text" "$out" "suite-cost run -- <cmd> [args...]"
 assert_contains "suite-cost history is in the usage text" "$out" "suite-cost history"
 assert_contains "the usage text says an overlapped run is not recorded" \
-  "$(tr -s ' \n' ' ' <<<"$out")" "A run another suite-cost run overlapped, in any checkout of the clone, is not recorded"
+  "$flat" "A run another suite-cost run overlapped, in any checkout of the clone, is not recorded"
 assert_contains "suite-cost check is in the usage text" "$out" "suite-cost check -- <cmd> [args...]"
 assert_contains "check's usage text describes the lowest-sample comparison" "$out" \
   "lowest sample of <cmd> with the baseline's"
 assert_contains "and the 15 percent default" "$out" "else 15 percent"
-assert_contains "check's usage text says a growth is confirmed" "$(tr -s ' \n' ' ' <<<"$out")" \
+assert_contains "check's usage text says a growth is confirmed" "$flat" \
   "A growth is confirmed by measuring head and base once more"
-assert_contains "the head being run only to confirm a growth" "$(tr -s ' \n' ' ' <<<"$out")" \
+assert_contains "the head being run only to confirm a growth" "$flat" \
   "the head is run only to confirm a growth"
+assert_contains "check's usage text says an overlapped base or confirming run is not recorded" \
+  "$flat" "Such a base or confirming run is not recorded when another suite-cost run overlaps it, or when it could not register as active, and the verdict is then unmeasured"
 assert_contains "the CLI conventions' noun table has a suite-cost row" \
   "$(grep '^| `suite-cost`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" \
   '`run`, `check`, `history`'

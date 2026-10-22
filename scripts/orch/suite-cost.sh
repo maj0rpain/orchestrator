@@ -88,7 +88,7 @@ suite_cost_active() {
 # a .contended file whose marker is gone counting as stale whether or not its
 # pid is live.
 suite_cost_register() {
-  local dir me f p
+  local dir me f name p
   SUITE_COST_MARK="" SUITE_COST_SAW=0
   dir="$(suite_cost_active 2>/dev/null)" || return 0
   me="$dir/$$"
@@ -96,8 +96,8 @@ suite_cost_register() {
   { mkdir -p -- "$dir" && : >"$me"; } 2>/dev/null || return 0
   SUITE_COST_MARK="$me"
   for f in "$dir"/*; do
-    p="${f##*/}"
-    p="${p%.contended}"
+    name="${f##*/}"
+    p="${name%.contended}"
     [[ "$p" =~ ^[0-9]+$ ]] && [ "$p" != "$$" ] || continue
     if ! kill -0 "$p" 2>/dev/null; then
       rm -f -- "$f" 2>/dev/null || true

@@ -196,7 +196,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               baseline it measures the base once in a
                               temporary worktree. Each such run first runs
                               git config orchestrator.suiteCost.setup there,
-                              untimed, when it is set. Dies naming the key and
+                              untimed, when it is set. Such a base or
+                              confirming run is not recorded when another
+                              suite-cost run overlaps it, or when it could
+                              not register as active, and the verdict is
+                              then unmeasured. Dies naming the key and
                               value when an override is not a non-negative
                               number
   suite-cost history          print the record's lines, oldest first, or
