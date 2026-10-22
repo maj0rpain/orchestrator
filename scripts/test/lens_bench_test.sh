@@ -124,6 +124,23 @@ has_line "an even number of runs takes the median between the middle two" "$out"
 has_line "the summary has input" "$out" "| Input | 200 | 200 | 100 | 300 |"
 
 echo
+echo "the summary rounds half up"
+# Four runs of 1, 1, 1 and 2 turns: a mean of 1.25, an exact tie at one decimal.
+tie="$bench_root/tie"
+mkdir -p "$tie"
+cp "$FIXTURE/no-baseline/lens" "$FIXTURE/no-baseline/model" "$FIXTURE/no-baseline/revision" \
+  "$FIXTURE/no-baseline/spec.md" "$tie/"
+for tie_run in 1 2 3 4; do
+  mkdir "$tie/run-$tie_run"
+  printf '%s\n' '{"type":"assistant","message":{"id":"m1","content":[],"usage":{"input_tokens":100}}}' \
+    >"$tie/run-$tie_run/transcript.jsonl"
+done
+printf '%s\n' '{"type":"assistant","message":{"id":"m2","content":[],"usage":{"input_tokens":100}}}' \
+  >>"$tie/run-4/transcript.jsonl"
+run_bench measure "$tie"
+has_line "a mean tied at 1.25 prints 1.3" "$out" "| Turns | 1.3 | 1 | 1 | 2 |"
+
+echo
 echo "more than one directory"
 run_bench measure "$FIXTURE/with-baseline" "$FIXTURE/no-baseline"
 assert_status "two directories exit 0" "$st" 0
@@ -352,6 +369,9 @@ run_refused() {
 echo
 echo "run: refusals before claude starts"
 run_refused "an unknown lens" "nosuch" nosuch --definition "$definition" --out "$bench_root/out-a"
+run_refused "a lens name that climbs out" "..: unknown lens, no fixture directory" .. --definition "$definition" --out "$bench_root/out-e"
+run_refused "a lens name with a slash" "a/b: unknown lens, no fixture directory" \
+  a/b --definition "$definition" --out "$bench_root/out-f"
 run_refused "a revision without the lens's definition" "agents/orch-lens-implementability.md" \
   implementability --definition "$no_definition" --out "$bench_root/out-b"
 run_refused "a revision that does not exist" "nosuchrev" \
