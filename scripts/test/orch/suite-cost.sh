@@ -56,6 +56,22 @@ seed_run() {
   printf '%s\t%s\t1.00\t2026-10-01T10:00:00Z\t%s\n' "$1" "$2" "${3:-$cmd_str}" >>"$rec"
 }
 
+# handshake_fifos: makes a temp directory holding two FIFOs, one and two, for
+# a FIFO handshake that makes two suite-cost runs certain to overlap, and
+# prints its path.
+handshake_fifos() {
+  local dir
+  dir="$(mktemp -d)" && mkfifo "$dir/one" "$dir/two" && printf '%s\n' "$dir"
+}
+
+# handshake_partner <dir>: a suite-cost run whose command is the handshake's
+# second side - it reads <dir>/one, which the other side writes, then writes a
+# line to <dir>/two, which the other side reads - so it is running while the
+# other side's run is. Its output goes wherever the caller sends it.
+handshake_partner() {
+  "$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$1/one" "$1/two"
+}
+
 # --- suite-cost run ------------------------------------------------------------
 # Runs a verification command with its output and exit code passed through, and
 # records a passing run's suite cost in the clone-wide record.
@@ -141,13 +157,11 @@ assert_eq "a run with an untracked file records <sha>-dirty" \
 overlap="this run overlapped another suite-cost run - its suite cost is not recorded"
 new_repo >/dev/null
 rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
-hs="$(mktemp -d)"
-mkfifo "$hs/one" "$hs/two"
+hs="$(handshake_fifos)"
 "$ORCH" suite-cost run -- sh -c 'printf x >"$0"; read -r _ <"$1"; exit 4' "$hs/one" "$hs/two" \
   >/dev/null 2>"$hs/err-a" &
 pid_a=$!
-"$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" \
-  >/dev/null 2>"$hs/err-b"; st_b=$?
+handshake_partner "$hs" >/dev/null 2>"$hs/err-b"; st_b=$?
 wait "$pid_a"; st_a=$?
 assert_status "the first of two overlapping runs passes its exit code through" "$st_a" 4
 assert_status "and so does the second" "$st_b" 0
@@ -160,8 +174,7 @@ git worktree add -q "$PWD/wt" other
 "$ORCH" suite-cost run -- sh -c 'printf x >"$0"; read -r _ <"$1"' "$hs/one" "$hs/two" \
   >/dev/null 2>"$hs/err-a" &
 pid_a=$!
-(cd wt && "$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" \
-  >/dev/null 2>"$hs/err-b"); st_b=$?
+(cd wt && handshake_partner "$hs" >/dev/null 2>"$hs/err-b"); st_b=$?
 wait "$pid_a"; st_a=$?
 assert_status "a run overlapping one in a linked worktree passes its exit code through" "$st_a" 0
 assert_status "and so does the linked worktree's run" "$st_b" 0
@@ -545,13 +558,11 @@ rm -f "$errf"
 # FIFOs named by absolute path so the base worktree reaches them - is not
 # recorded, and check is unmeasured.
 check_repo
-hs="$(mktemp -d)"
-mkfifo "$hs/one" "$hs/two"
+hs="$(handshake_fifos)"
 waiter=(sh -c 'printf x >"$0"; read -r _ <"$1"' "$hs/one" "$hs/two")
 seed_run "$head" 70.00 "${waiter[*]}"
 before="$(cat "$rec")"
-"$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" \
-  >/dev/null 2>&1 &
+handshake_partner "$hs" >/dev/null 2>&1 &
 pid_a=$!
 out="$("$ORCH" suite-cost check -- "${waiter[@]}" 2>"$hs/err")"; st=$?
 wait "$pid_a"
@@ -718,13 +729,11 @@ assert_not_contains "never with an overlap warning" "$(cat "$errf")" "overlapped
 # section. The head's: a suite-cost run started alongside check reads a FIFO
 # the head's script writes, and writes one it reads.
 overlap="overlapped another suite-cost run - contention left the growth unconfirmed"
-hs="$(mktemp -d)"
-mkfifo "$hs/one" "$hs/two"
+hs="$(handshake_fifos)"
 marker="$hs/base-ran"
 confirm_repo "touch $marker" "printf x >$hs/one; read -r _ <$hs/two"
 before="$(cat "$rec")"
-"$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$hs/one" "$hs/two" \
-  >/dev/null 2>&1 &
+handshake_partner "$hs" >/dev/null 2>&1 &
 pid_a=$!
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 wait "$pid_a"

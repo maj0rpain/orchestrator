@@ -279,7 +279,7 @@ suite_cost_is_base() {
 # confirming run with the head sample only when that sample is on HEAD's
 # clean SHA, as a -dirty or ancestor one measured another tree.
 suite_cost_check() {
-  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha head_found base_found verdict clean IFS=' '
+  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha head_found base_found verdict pct clean IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
@@ -314,21 +314,22 @@ suite_cost_check() {
   if [ "$verdict" = off ] || [ "$verdict" = ok ]; then
     note "$verdict"
   else
-    note "grew $verdict - suite cost grew ${verdict}% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha"
+    pct="${verdict#grew }"
+    note "$verdict - suite cost grew ${pct}% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha"
   fi
 }
 
 # suite_cost_compare <head> <base> <floor> <growth>: prints off when <base> is
 # below <floor> or zero (possible only with a zero floor, and no growth to
-# measure), else the growth of <head> over <base> as a whole percent when it
-# is past <growth>, else ok.
+# measure), else grew <pct> when the growth of <head> over <base>, <pct> as a
+# whole percent, is past <growth>, else ok.
 suite_cost_compare() {
   if float_lt "$2" "$3" || ! float_lt 0 "$2"; then
     note off
     return 0
   fi
   LC_ALL=C awk -v h="$1" -v b="$2" -v g="$4" \
-    'BEGIN { p = (h - b) / b * 100; if (p > g) printf "%.0f\n", p; else print "ok" }'
+    'BEGIN { p = (h - b) / b * 100; if (p > g) printf "grew %.0f\n", p; else print "ok" }'
 }
 
 # suite_cost_min <a> <b>: prints the lower of two CPU seconds, as written.
@@ -352,21 +353,21 @@ suite_cost_min() {
 # and the worktree is gone; a failed removal after a pass keeps the record and
 # names the left-over worktree.
 suite_cost_tree_run() {
-  local role="$1" sha="$2" tmp wt here="$PWD" status=0 setup setup_status=0 run end
+  local role="$1" sha="$2" tmp wt here="$PWD" status=0 setup setup_status=0 run end no_worktree overlapped
   shift 2
   if [ "$role" = base ]; then
     run="the base run" end="the suite cost is unmeasured"
+    no_worktree="could not add a worktree at base commit $sha - $end"
+    overlapped="$run at $sha overlapped another suite-cost run - $end"
   else
     run="the confirming run" end="the growth is unconfirmed"
+    no_worktree="could not add a worktree for $run at $sha - $end"
+    overlapped="$run at $sha overlapped another suite-cost run - contention left the growth unconfirmed"
   fi
   tmp="$(mktemp -d)" || { warn "could not make a temp directory for $run"; return 1; }
   wt="$tmp/$role"
   if ! git worktree add -q --detach "$wt" "$sha" >/dev/null 2>&1; then
-    if [ "$role" = base ]; then
-      warn "could not add a worktree at base commit $sha - $end"
-    else
-      warn "could not add a worktree for $run at $sha - $end"
-    fi
+    warn "$no_worktree"
     rm -rf "$tmp"
     return 1
   fi
@@ -383,10 +384,8 @@ suite_cost_tree_run() {
       status=1
       if [ "$SUITE_COST_SOLO" = unregistered ]; then
         warn "$run at $sha could not register as active - $end"
-      elif [ "$role" = base ]; then
-        warn "$run at $sha overlapped another suite-cost run - $end"
       else
-        warn "$run at $sha overlapped another suite-cost run - contention left the growth unconfirmed"
+        warn "$overlapped"
       fi
     else
       status=1
