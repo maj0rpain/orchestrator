@@ -7,28 +7,34 @@
 # scripts/test/orch/filed-finding.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# The severities a filed finding carries as review:<severity> - the ones
-# `review file` files. Blocking is always fixed in the loop, never filed.
-readonly FILED_SEVERITIES="major nit"
+# The severity table: each severity a filed finding carries as
+# review:<severity> - the ones `review file` files - paired with its label's
+# colour, as <severity>:<colour>, in order. Blocking is always fixed in the
+# loop, never filed. Adding a severity is one entry here.
+readonly FILED_SEVERITY_TABLE="major:d93f0b nit:c5def5"
 
-# filed_severity_label <sev> <colour_var> <desc_var>: the severity table. Writes
-# the review:<sev> label's colour and description into the named variables;
-# returns 1, writing neither, for a severity with no entry. Every member of
-# FILED_SEVERITIES has one, so adding a severity edits this module only.
+# The filed severities alone, in the table's order, for usage lines, messages
+# and loops over them. The loop runs in the substitution's subshell, so its
+# variable never reaches the caller.
+FILED_SEVERITIES="$(for entry in $FILED_SEVERITY_TABLE; do printf '%s ' "${entry%%:*}"; done)"
+readonly FILED_SEVERITIES="${FILED_SEVERITIES% }"
+
+# filed_severity_label <sev> <colour_var> <desc_var>: writes the review:<sev>
+# label's colour, from the severity table, and description into the named
+# variables; returns 1, writing neither, for a severity with no entry.
 filed_severity_label() {
-  local __fsl_colour
-  case "$1" in
-    major) __fsl_colour=d93f0b ;;
-    nit)   __fsl_colour=c5def5 ;;
-    *) return 1 ;;
-  esac
-  printf -v "$2" '%s' "$__fsl_colour"
-  printf -v "$3" 'Review finding filed at %s severity' "$1"
+  local __fsl_entry
+  for __fsl_entry in $FILED_SEVERITY_TABLE; do
+    [ "$1" = "${__fsl_entry%%:*}" ] || continue
+    printf -v "$2" '%s' "${__fsl_entry#*:}"
+    printf -v "$3" 'Review finding filed at %s severity' "$1"
+    return 0
+  done
+  return 1
 }
 
-# Whether <sev> is a filed severity: the one membership check over
-# FILED_SEVERITIES, so adding a severity edits the constant and its table
-# entry, not every membership check.
+# Whether <sev> is a filed severity: the one membership check, over
+# FILED_SEVERITIES as derived from the severity table.
 is_filed_severity() {
   local s
   for s in $FILED_SEVERITIES; do [ "$1" != "$s" ] || return 0; done
@@ -82,7 +88,7 @@ triage_label_ensure() {
 # does a suite-cost one, the suite's cost growth `suite-cost check` reports.
 # Prints nothing and fails for any other axis; the caller words its own error.
 category_for_axis() {
-  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+  case "${1,,}" in
     spec)      printf 'bug\n' ;;
     standards|suite-cost) printf 'enhancement\n' ;;
     *) return 1 ;;
@@ -122,9 +128,8 @@ category_label_ensure() {
 # filed before rendering existed parses as one rendered now does. An empty
 # <line> renders the file alone, as a suite-cost finding's `suite` is.
 finding_body_render() {
-  local axis display_axis
-  axis="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
-  display_axis="$(printf '%s' "${axis:0:1}" | tr '[:lower:]' '[:upper:]')${axis:1}"
+  local axis="${2,,}"
+  local display_axis="${axis^}"
   printf '%s\n\n' "$(cat "$1")" \
     "**Axis:** $display_axis" \
     "**Severity:** $3 - $4" \
@@ -170,7 +175,7 @@ finding_body_parse() {
         [ -z "$__fbp_seen_axis" ] || continue
         __fbp_seen_axis=1
         trim_split "${__fbp_line#'**Axis:**'}" __fbp_v
-        __fbp_axis="$(printf '%s' "$__fbp_v" | tr '[:upper:]' '[:lower:]')"
+        __fbp_axis="${__fbp_v,,}"
         ;;
       '**Severity:**'*)
         [ -z "$__fbp_seen_sev" ] || continue

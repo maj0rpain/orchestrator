@@ -255,7 +255,7 @@ review_rerun() {
 # review_file <sev> <title> <flag> <value> ...: files a finding as a GitHub
 # issue, its body rendered from its parts by the Filed finding module. Every
 # check - the flags, the severity, the axis, the title, the finding file, the
-# location, and the round trip of the rendered body through the parser - comes
+# location, the sha, and the round trip of the rendered body through the parser - comes
 # before any label or issue write, so a malformed finding never reaches GitHub
 # rather than surfacing weeks later as "body does not parse" in triage.
 review_file() {
@@ -277,7 +277,7 @@ review_file() {
     value="$(trim "$2")"
     [ -n "$value" ] || die "$usage"
     case "$flag" in
-      --axis)            axis="$value" ;;
+      --axis)            axis="${value,,}" ;;
       --finding-file)    finding="$value" ;;
       --severity-reason) reason="$value" ;;
       --location)        location="$value" ;;
@@ -292,7 +292,7 @@ review_file() {
     case "$seen" in *" $flag "*) ;; *) die "$usage" ;; esac
   done
 
-  local colour desc category triage n file line body
+  local colour desc category triage n file line body_file
   is_filed_severity "$severity" \
     || die "not a severity that gets filed: $severity (want ${FILED_SEVERITIES// / or } - blocking is always fixed, never filed)"
   filed_severity_label "$severity" colour desc
@@ -311,24 +311,21 @@ review_file() {
     [[ $location == *:* && -n $file && $line =~ ^[0-9]+(-[0-9]+)?$ ]] \
       || die "not a location: $location (want <file>:<line>, <file>:<start>-<end> or suite)"
   fi
+  [[ $sha =~ ^[0-9a-fA-F]+$ ]] || die "not a sha: $sha (want a hex commit SHA)"
 
   # The round trip. The temp file is removed on every exit - a refusal or a
   # gh failure dies, so a trap, not a closing rm, is what removes it.
-  body="$(mktemp)" || die "could not create a temp file for the issue body"
-  # shellcheck disable=SC2064 # expanded now: $body is local, gone by exit
-  trap "rm -f $(printf '%q' "$body")" EXIT
+  body_file="$(mktemp)" || die "could not create a temp file for the issue body"
+  # shellcheck disable=SC2064 # expanded now: $body_file is local, gone by exit
+  trap "rm -f $(printf '%q' "$body_file")" EXIT
   finding_body_render "$finding" "$axis" "$severity" "$reason" "$file" "$line" \
-    "$sha" "$pr" "$why" "$question" >"$body"
+    "$sha" "$pr" "$why" "$question" >"$body_file"
   local -A got
-  finding_body_parse "$(cat "$body")" got
-  local field given
+  finding_body_parse "$(cat "$body_file")" got
+  local field
   for field in axis severity reason file line sha pr why question; do
-    case "$field" in
-      axis) given="$(printf '%s' "$axis" | tr '[:upper:]' '[:lower:]')" ;;
-      *)    given="${!field}" ;;
-    esac
-    [ "$given" = "${got[$field]}" ] \
-      || die "the rendered body does not parse back: $field (given '$given', parsed '${got[$field]}')"
+    [ "${!field}" = "${got[$field]}" ] \
+      || die "the rendered body does not parse back: $field (given '${!field}', parsed '${got[$field]}')"
   done
 
   severity_label_ensure "review:$severity" "$colour" "$desc"
@@ -338,7 +335,7 @@ review_file() {
   # The title carries no severity prefix: the label holds it, where triage
   # can change it, and the title reads as an issue.
   gh_or_die --out n "create the issue" \
-    adapter_issue_create "$title" "$body" "review:$severity" "$triage" "$category"
+    adapter_issue_create "$title" "$body_file" "review:$severity" "$triage" "$category"
   # Prints the number alone: the record cites a number, and the caller
   # would otherwise be parsing a URL out of prose every time.
   note "$n"
