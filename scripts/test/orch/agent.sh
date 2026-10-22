@@ -311,10 +311,10 @@ assert_eq "the copy is the plugin agent with the marker, model and effort after 
   "$(cat "$as_dir/orch-implementer.md")" \
   "$(awk -v m="$as_marker" 'NR == 1 { print; print m; print "model: gpt-5"; print "reasoningLevel: high"; next } { print }' "$as_plugin/orch-implementer.md")"
 assert_eq "the exclude file gains the copy line once" \
-  "$(as_exclude | grep -cxF '.junie/agents/orch-*.md')" "1"
+  "$(exclude_count '.junie/agents/orch-*.md')" "1"
 "$ORCH" agent sync >/dev/null
 assert_eq "a second sync adds no second exclude line" \
-  "$(as_exclude | grep -cxF '.junie/agents/orch-*.md')" "1"
+  "$(exclude_count '.junie/agents/orch-*.md')" "1"
 assert_eq "the copy stays out of git status" "$(git status --porcelain)" ""
 
 touch -d '2001-01-01' "$as_dir/orch-implementer.md"
@@ -375,11 +375,11 @@ printf '%s\n' 'hand made' >"$as_dir/orch-reviewer-spec.md"
 printf '%s\n' '---' "$as_marker" '---' >"$as_dir/orch-fixer.md"
 git config --local orchestrator.junie.model.implementer gpt-5
 git config --local orchestrator.junie.model.reviewer gpt-5
-before="$(cksum "$as_dir"/* ; as_exclude)"
+before="$(dir_snapshot "$as_dir"; as_exclude)"
 out="$("$ORCH" agent sync 2>&1)"; st=$?
 assert_status "sync refuses an unmarked orch-*.md in its way" "$st" 1
 assert_contains "naming the file" "$out" "orch-reviewer-spec.md"
-assert_eq "and changes nothing else" "$(cksum "$as_dir"/* ; as_exclude)" "$before"
+assert_eq "and changes nothing else" "$(dir_snapshot "$as_dir"; as_exclude)" "$before"
 assert_eq "the unmarked file is byte-identical" "$(cat "$as_dir/orch-reviewer-spec.md")" "hand made"
 
 out="$("$ORCH" agent set closer --host junie --model gpt-5 2>&1)"; st=$?
@@ -401,6 +401,17 @@ git config --local orchestrator.junie.model.closer gpt-5
 assert_eq "a sync in a linked worktree writes the common git dir's exclude" \
   "$(grep -cxF '.junie/agents/orch-*.md' "$as_main/.git/info/exclude")" "1"
 assert_eq "and the copy lands in the worktree" "$(as_copies)" "orch-closer.md"
+cd "$as_main" || exit 1
+
+# An exclude append that fails names the exclude file's path.
+new_repo >/dev/null
+rm -f .git/info/exclude
+mkdir -p .git/info/exclude
+git config --local orchestrator.junie.model.closer gpt-5
+out="$("$ORCH" agent sync 2>&1)"; st=$?
+assert_status "sync with an exclude file it cannot append to exits non-zero" "$st" 1
+assert_contains "naming the exclude file's path in its own message" "$out" "to the git exclude file .git/info/exclude"
+rm -rf .git/info/exclude
 cd "$as_main" || exit 1
 unset -f as_exclude as_copies
 unset as_dir as_marker as_plugin

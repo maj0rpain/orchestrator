@@ -212,6 +212,12 @@ agent_get() {
 AGENT_COPY_MARKER="# written by orch.sh agent sync"
 AGENT_COPY_EXCLUDE=".junie/agents/orch-*.md"
 
+# The shape of the log line Junie writes when it runs an orch agent, as
+# custom_agent_<name><tail> regex parts: agent_junie_session builds its three
+# patterns from them.
+AGENT_JUNIE_RUN_NAME='orch-[A-Za-z0-9-]*'
+AGENT_JUNIE_RUN_TAIL='_[0-9]* with parameters'
+
 # agent_role_of <agent>: the role a plugin agent's name belongs to, empty for
 # an agent no role covers.
 agent_role_of() {
@@ -301,7 +307,7 @@ agent_sync() {
   dir="$AGENT_PLAN_DIR"
   [ -z "$AGENT_PLAN_REFUSED" ] ||
     die "agent sync: $AGENT_PLAN_REFUSED in $dir carries no sync marker - not written by orch.sh agent sync, so left alone; rename or remove it, then rerun orch.sh agent sync"
-  if [ -n "$AGENT_PLAN_WANT" ]; then exclude_line "$AGENT_COPY_EXCLUDE" || die "agent sync: cannot add $AGENT_COPY_EXCLUDE to the git exclude file"; fi
+  if [ -n "$AGENT_PLAN_WANT" ]; then exclude_line "$AGENT_COPY_EXCLUDE" || die "agent sync: cannot add $AGENT_COPY_EXCLUDE to the git exclude file $(git rev-parse --git-common-dir)/info/exclude"; fi
   while IFS= read -r name; do
     [ -n "$name" ] || continue
     rm -f -- "$dir/$name.md" || die "agent sync: cannot delete $dir/$name.md"
@@ -376,10 +382,10 @@ agent_junie_session() {
   [ -n "$sid" ] || { agent_junie_session_cannot_tell "no session for this checkout"; return 0; }
   log="$(agent_junie_newest_log "$sid")"
   [ -n "$log" ] || { agent_junie_session_cannot_tell "no log names session $sid"; return 0; }
-  lines="$(grep -a 'Executing agent custom_agent_orch-[A-Za-z0-9-]*_[0-9]* with parameters' "$log" 2>/dev/null)" || true
+  lines="$(grep -a "Executing agent custom_agent_$AGENT_JUNIE_RUN_NAME$AGENT_JUNIE_RUN_TAIL" "$log" 2>/dev/null)" || true
   [ -n "$lines" ] || { agent_junie_session_cannot_tell "the log holds no agent runs"; return 0; }
   while IFS= read -r agent; do
-    line="$(printf '%s\n' "$lines" | grep -a "custom_agent_${agent}_[0-9]* with parameters" | tail -1)"
+    line="$(printf '%s\n' "$lines" | grep -a "custom_agent_$agent$AGENT_JUNIE_RUN_TAIL" | tail -1)"
     model="$(agent_junie_field "$line" model)"
     [ -n "$model" ] || { agent_junie_session_cannot_tell "the log does not parse"; return 0; }
     effort=inherited
@@ -393,7 +399,7 @@ agent_junie_session() {
     else
       report="$report"$'\n'"warn|$ran_line $set_part"
     fi
-  done < <(printf '%s\n' "$lines" | sed -n 's/.*custom_agent_\(orch-[A-Za-z0-9-]*\)_[0-9]* with parameters.*/\1/p' | awk '!seen[$0]++')
+  done < <(printf '%s\n' "$lines" | sed -n "s/.*custom_agent_\\($AGENT_JUNIE_RUN_NAME\\)$AGENT_JUNIE_RUN_TAIL.*/\\1/p" | awk '!seen[$0]++')
   while IFS='|' read -r kind report_line; do
     [ -n "$kind" ] || continue
     if [ "$kind" = ok ]; then d_ok "$report_line"; else d_warn "$report_line"; fi
