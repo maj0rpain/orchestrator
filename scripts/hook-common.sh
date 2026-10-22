@@ -108,6 +108,14 @@ hook_emit_deny() {
   }'
 }
 
+# Writes a Stop refusal: the top-level decision "block" with its reason, which
+# Claude Code hands the session as the instruction to go on, not ending the
+# turn. Stop has no hookSpecificOutput decision; that Junie reads it is
+# unverified (docs/host-capabilities.md, "Guard the batch question").
+hook_emit_block() {
+  jq -n --arg r "$1" '{decision: "block", reason: $r}'
+}
+
 # Writes injected context as one JSON object both hosts understand: Claude
 # Code reads hookSpecificOutput, Junie reads the top-level additionalContext.
 # $1 is the hook event name, $2 the context.

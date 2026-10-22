@@ -333,34 +333,39 @@ findings and comments quoted, and its Current and Proposed text in full,
 each option's for a decision item. Either form also writes exactly the view
 it printed to `<dir>/view.md`, overwriting any earlier one, and its one-line
 pass summary goes to stderr: it names that `view.md` by absolute path and
-tells you to paste the view above into chat word for word, then ask in the
-same response. A `check` that fails leaves any earlier `view.md` as it was.
+tells you to end your turn on one plain-text reply, with no tool call,
+holding the view above word for word and then the question with its answer
+words spelled out. A `check` that fails leaves any earlier `view.md` as it was.
 On any other exit, each `orch:` line on
 stderr names what is wrong, most with its `batch.md` line: fix `batch.md` and
 run `check` again, until it exits 0. A batch that has not passed `check` is
 never shown and never asked about.
 
-Then paste `check`'s stdout into chat word for word, so the human reads each
-material edit's summary and reason, each decision option's summary, and each
-minor edit's summary, before answering. Compose no view of your own - no summary, no
-shortening, no expansion, in any round: the view the human reads is
-`check`'s, every round alike. Then ask **one blocking question** with the host's ask tool
-(`AskUserQuestion` on Claude Code, `ask_user` on Junie), the paste and the
-call in the same response. The review never ends its turn on the list:
-presenting it is not the end of the step, the answer is. No edit is applied
-and no changelog is posted before the answer arrives. On Claude Code the ask
-is refused until the view is pasted: after each `check` that wrote a
-`view.md`, and until the next `apply`, a hook refuses every ask until one
-text block after that `check` holds the whole view, handing back that view
-each time - paste it word for word, then ask again. The options:
+Then end your turn on **one plain-text reply** - the turn-final reply - and
+make no tool call in it: `check`'s stdout word for word, so the human reads
+each material edit's summary and reason, each decision option's summary, and
+each minor edit's summary, then the batch question with its answer words
+spelled out. Compose no view of your own - no summary, no shortening, no
+expansion, in any round: the view the human reads is `check`'s, every round
+alike. Never ask the batch question with the host's ask tool
+(`AskUserQuestion` on Claude Code, `ask_user` on Junie), and never write the
+view in a response that also calls a tool: some hosts hide a long text
+written in the same response as a tool call, and the human never sees it
+(ADR-0051). The turn ends on the list and the question, in one reply: the
+human's next message is the answer. No edit is applied and no changelog is
+posted before the answer arrives. On Claude Code an ask-tool call is refused
+while the view is unpasted: after each `check` that wrote a `view.md`, and
+until the next `apply`, a hook refuses every ask until one text block after
+that `check` holds the whole view, handing back that view each time - end
+the turn on it and the batch question in plain text. The answers:
 
-- **Apply as recommended (Recommended)** - every proposed edit applied, every
-  decision item takes its recommended option, every **recommend decline** item
-  skipped. Always offered, first.
-- **Apply all** - offered only when at least one item is marked **recommend
-  decline**: as recommended, plus those items too. With no such item it would
-  equal the first option, so it is not shown.
-- **Apply none** - always offered.
+- **Apply as recommended (Recommended)**, answer word `recommended` - every
+  proposed edit applied, every decision item takes its recommended option,
+  every **recommend decline** item skipped. Always offered, first.
+- **Apply all**, answer word `all` - offered only when at least one item is
+  marked **recommend decline**: as recommended, plus those items too. With no
+  such item it would equal the first option, so it is not shown.
+- **Apply none**, answer word `none` - always offered.
 - **Other** - only the departures from the recommendation, comma-separated,
   e.g. `3B, -4, +2`: `<n><letter>` gives decision item `<n>` option
   `<letter>`; `-<n>` declines item `<n>`, or leaves a decision item undecided,
@@ -368,34 +373,53 @@ each time - paste it word for word, then ask again. The options:
   Every item not named stays as recommended. A bare item number is no
   departure and is refused. Other also takes `show <n>` - one or more item
   numbers, e.g. `show 3` or `show 3 5` - which prints those items in full,
-  or a free-text question. The question text names all three forms: a
-  departure list in this format, `show <n>...`, or a question in plain words.
+  or a free-text question.
+
+The question spells every answer out: `recommended`, `all` when offered,
+`none`, a departure list in this format, `show <n>...`, or a question in
+plain words. An answer word and its option's full label (`Apply as
+recommended`, `Apply all`, `Apply none`) are the same answer, and both are
+matched after trimming surrounding whitespace, letter case and trailing
+punctuation: `Recommended.` is `recommended`.
 
 Tell an Other answer's form this way. An answer starting with `show`
 followed by item numbers is a show request. An answer made only of
 departure-shaped tokens - `<n><letter>`, `-<n>`, `+<n>` or a bare `<n>` -
 comma-separated, is a departure list: it goes to `apply` as given, which
 refuses it as it does today if it is malformed, a bare number included.
-Anything else is a question.
+A reply that is clearly a question is a question.
+
+A **near-miss reply** matches none of these forms: a typo, extra words
+around an answer word, or mixed forms such as `recommended but not 4`. It is
+never guessed at and never re-pasted. State in one line what you would
+apply, in the grammar `apply` accepts (e.g. "Apply as recommended, except
+item 4 declined" - `-4`), then ask a short confirmation with the ask tool,
+nothing long in front of it: *Yes, apply that* / *No, I'll answer again*.
+*Yes, apply that* applies exactly what the line states. Any other reply to
+the confirmation - *No*, a free-text Other, or a dismissed ask - counts as
+*No*, and runs the question path below. Nothing is ever applied on a guess.
+On Claude Code this ask passes the hook: the view is already in the
+turn-final reply above it.
 
 An Other answer of `show <n>...` is not an answer to the batch question.
 Run `bash "$ORCH" spec-review check <dir> --full <n>...` with the numbers it
-names, paste its stdout into chat word for word, and ask the batch question
-again, the paste and the call in the same response. It writes the full
-items' view to `<dir>/view.md` in place of the batch view, and its pass line
-names that file and says to paste the view, as the batch `check`'s does. On
-Claude Code the re-ask is refused until the view is pasted, as the batch
-question is. `apply` never receives
-a `show` answer. A `--full` refusal - a number not in `batch.md` - is told
-to the human, and the batch question asked again.
+names, then end your turn on one plain-text reply holding its stdout word
+for word and the batch question again, its answer words spelled out, with no
+tool call. It writes the full items' view to `<dir>/view.md` in place of
+the batch view, and its pass line names that file and gives the same
+instruction as the batch `check`'s. On Claude Code an ask-tool call is
+refused until the view is pasted, as for the batch question. `apply` never
+receives a `show` answer. A `--full` refusal - a number not in `batch.md` -
+is told to the human, and the batch question asked again, the same way.
 
-An Other answer that is a question is not an answer to the batch question
-either. Answer it in chat: apply nothing, and do not run `apply`, which
-never receives a question. Then re-run `bash "$ORCH" spec-review check
-<dir>`, paste its new view into chat word for word, and ask the batch
-question again, the paste and the call in the same response. The re-run's
-pass line arms the guard again, so on Claude Code only a paste made after
-it lets the re-ask through.
+A question, or *No* to a near-miss confirmation, is not an answer to the
+batch question either: the question path runs. Answer a question in chat:
+apply nothing, and do not run `apply`, which never receives a question. Then
+re-run `bash "$ORCH" spec-review check <dir>` and end your turn on one
+plain-text reply holding its new view word for word and the batch question
+again, its answer words spelled out, with no tool call. The re-run's pass
+line arms the guard again, so on Claude Code only a paste made after it lets
+a later ask through.
 
 The spec batch is asked once; a long spec is one longer question, not twenty
 prompts.

@@ -34,9 +34,9 @@ src() {
   rm -f "$src_err"
 }
 # src_nudge <dir>: what a check pass line that wrote a view ends with - the
-# paste nudge, naming <dir>/view.md, <dir> given absolute.
+# turn-final nudge, naming <dir>/view.md, <dir> given absolute.
 src_nudge() {
-  printf '%s' " - paste the view above into chat word for word, then ask in the same response; it is saved in $1/view.md"
+  printf '%s' " - end your turn on one plain-text reply, no tool call: the view above word for word, then the question with its answer words spelled out; it is saved in $1/view.md"
 }
 # src_view_saved <label> <dir> [arg...]: check on <dir> with any further args
 # exits 0 and leaves <dir>/view.md byte-identical to its stdout, a non-empty

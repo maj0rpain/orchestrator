@@ -37,6 +37,13 @@
           { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-paste-guard.sh\"" }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/hook-paste-stop-guard.sh\"" }
+        ]
+      }
     ]
   }
 }

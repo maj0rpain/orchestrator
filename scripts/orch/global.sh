@@ -651,8 +651,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               0 with the batch view on stdout, the same
                               bytes in <dir>/view.md (overwritten), and a
                               one-line summary on stderr naming view.md by
-                              absolute path and saying to paste the view
-                              word for word, then ask. --tickets validates
+                              absolute path and saying to end the turn on
+                              one plain-text reply with no tool call: the
+                              view word for word, then the question.
+                              --tickets validates
                               <dir>/tickets.md instead, before the ticket
                               question, as apply --tickets would take the all
                               answer: its grammar, each ticket item's anchor

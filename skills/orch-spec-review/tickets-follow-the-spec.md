@@ -86,18 +86,22 @@ in full, or for an edge change the block or unblock it makes, then the
 closed tickets and the file's recommendation - writes exactly that view to
 `<dir>/view.md`, overwriting any earlier one, and prints its one-line pass
 summary on stderr, naming that `view.md` by absolute path and telling you to
-paste the view above into chat word for word, then ask in the same response.
+end your turn on one plain-text reply, with no tool call, holding the view
+above word for word and then the question with its answer words spelled out.
 With `@@ none-affected` its stdout is the `No open ticket is affected.` stub,
 which is no view: it removes any earlier `<dir>/view.md`, writes none, and
 its pass line names none.
 
-When an open ticket is affected, paste `check --tickets`'s stdout into chat
-word for word, composing no view of your own, and ask **one blocking
-question** with the host's ask tool (`AskUserQuestion` on Claude Code,
-`ask_user` on Junie), the paste and the call in the same response, as for
-the spec batch. On Claude Code the ask is refused until the view is pasted,
-as the spec batch's is. Its options are the spec batch's, under the
-skill's **Disposition**, each offered once and with the same rules, except:
+When an open ticket is affected, ask **one ticket question** as the spec
+batch is asked: end your turn on one plain-text reply, with no tool call,
+holding `check --tickets`'s stdout word for word, composing no view of your
+own, then the ticket question with its answer words spelled out. Never ask
+it with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user` on
+Junie): the turn ends on the view and the question, and the human's next
+message is the answer. On Claude Code an ask-tool call is refused until the
+view is pasted, as the spec batch's is. Its options are the spec batch's,
+under the skill's **Disposition**, each offered once and with the same
+rules, except:
 
 - **Retire and break down again** is added: no ticket is edited; the
   breakdown is retired after the body is published, and the issue broken
@@ -109,6 +113,19 @@ skill's **Disposition**, each offered once and with the same rules, except:
 - The option you recommend comes first and carries **(Recommended)**:
   **Retire and break down again** when `tickets.md` recommends a retire,
   otherwise **Apply as recommended**.
+
+Its answer words are the option names `apply --tickets` takes: `recommended`,
+`all`, `none`, `retire` (only when offered), or the Other form, the item
+numbers to apply, comma-separated (e.g. `1, 3`); the question spells them
+all out. An answer word and its option's full label (`Retire and break down
+again` is `retire`) are the same answer, matched after trimming surrounding
+whitespace, letter case and trailing punctuation, as for the spec batch. A
+near-miss reply - one matching none of these forms - is restated in one
+line, in the grammar `apply --tickets` takes, and confirmed with a short ask
+(*Yes, apply that* / *No, I'll answer again*), never guessed at and never
+re-pasted, as the spec batch's is. On *No*, or on a reply that is clearly a
+question, answer it, re-run `check --tickets`, and end the turn again on its
+view and the ticket question in one plain-text reply.
 
 ## Applying
 
