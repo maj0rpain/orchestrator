@@ -195,12 +195,21 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    `orch:` message and stop. The fresh session's step 0 takes the marker
    check to step 4. Step 0d and step 0a explore no code, so they go to step
    4 in this session and never stop here.
-4. Ask the round count. **The question blocks** - ask it as one question
+4. Ask the round count. First fetch the spec body, so the recommendation
+   rests on the spec: `bash "$ORCH" spec fetch <file>`, with `<file>` a
+   scratch file under `.orchestrator/`, and open it with the Read tool.
+   Size the recommendation from it: **1** for a one-site spec, **2** by
+   default, **3** for a large or cross-cutting spec (many acceptance
+   criteria, several modules, a new noun or ADR). A failed fetch stops the
+   phase, as `spec-phase.md`'s step 1 says for its own fetch.
+   **The question blocks** - ask it as one question
    with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
    on Junie), before the first
-   round: "How many spec review rounds?" Default 3. Any integer >= 1; there
-   is no upper cap. Options: **3 (Recommended)**, **1**, **5**, and **Other**
-   for any other number. 0 is not offered, deliberately: a flow's spec is
+   round: "How many spec review rounds?" Any integer >= 1; there
+   is no upper cap. Options: **2**, **1**, **3**, and **Other**
+   for any other number, the recommended one listed first, its label
+   followed by " (Recommended)" and its description giving the scope-based
+   reason in one clause. 0 is not offered, deliberately: a flow's spec is
    always reviewed. An Other that is not a whole number of 1 or more is asked
    again, naming the range. It is asked every time this step runs - on
    `redo spec` and for an adopted issue too - and nothing is written to

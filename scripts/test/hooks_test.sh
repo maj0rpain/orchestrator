@@ -199,9 +199,12 @@ check_blueprint_rewrite() {
   # The spec review question asks a round count (#873), not yes/no.
   assert_contains "asks how many spec review rounds $where" "$ctx" \
     "ask the user how many spec review rounds to run on it"
-  # The flow's options (#871), plus 0 to skip.
+  # The flow's options (#1345), plus 0 to skip, the recommendation sized to the spec.
   assert_contains "offers the flow's round options $where" "$ctx" \
-    "the options 3 (Recommended), 1, 5, and Other"
+    "with the options 2, 1, 3, and Other"
+  assert_contains "sizes the recommended round count to the spec $where" "$ctx" \
+    "1 for a one-site spec, 2 by default, 3 for a large or cross-cutting spec"
+  assert_not_contains "no longer offers 5 rounds $where" "$ctx" "1, 5, and Other"
   local ask_tool="the ask_user tool"
   [ "$host" = claude ] && ask_tool="the AskUserQuestion tool"
   assert_contains "asks the round count as one blocking question $where" "$ctx" \
