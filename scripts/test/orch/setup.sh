@@ -404,11 +404,11 @@ shell_code() {
 # deduped. A name in a comment is no call; one in a quoted literal is. It
 # filters nothing: a caller drops its own exemptions from the output.
 layer_calls() {
-  local defs=() code name
+  local defs=() code def name
   while [ "$#" -gt 0 ] && [ "$1" != -- ]; do defs+=("$1"); shift; done
   shift
   code="$(shell_code "$@")"
-  for name in "${defs[@]}"; do col0_names "$name"; done | sort -u \
+  for def in "${defs[@]}"; do col0_names "$def"; done | sort -u \
     | while IFS= read -r name; do
         if printf '%s\n' "$code" | grep -qw -- "$name"; then printf '%s\n' "$name"; fi
       done
