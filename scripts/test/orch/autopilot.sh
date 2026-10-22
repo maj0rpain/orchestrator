@@ -534,6 +534,16 @@ assert_contains "the comment names the redo" "$(fake_comments_of 7 | tail -3)" "
 assert_contains "as a refusal" "$(fake_comments_of 7 | tail -3)" "refused to run the implement phase"
 assert_eq "leaving needs-human" "$(fake_labels_of 7)" "needs-human orch:implement ready-for-agent "
 
+# one step back that redo accepts starts the new phase's session
+(cd "$side7" && state_fixture phase implement)
+fake_issue 7 open ready-for-agent orch:spec
+printf '7\n' >"$launcher_dir/release"
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a relabel one step back runs redo and starts the new phase's session" "$(tick_calls)" "1"
+assert_eq "the flow is back at spec" "$(cd "$side7" && "$ORCH" state get phase)" "spec"
+assert_contains "the session starts after orch:running was added" "$(cat "$launcher_dir/calls")" "labels:7:orch:running orch:spec ready-for-agent "
+printf '' >"$launcher_dir/calls"
+
 # a failed side-checkout add is a failure, the claim released
 fake_issue 8 open ready-for-agent orch:spec
 printf 'Blocked add\n' >"$ORCH_GH_FAKE_STORE/issues/8/title"
@@ -574,6 +584,51 @@ assert_eq "a live run pidfile keeps a claim whose tick pid is dead" "$(fake_clai
 printf '%s\n' "$(dead_pid)" >"$top/.orchestrator/autopilot/run/12.pid"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a dead run pidfile makes it stale" "$(fake_claim_held 12)" free
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
+# --- autopilot watch ----------------------------------------------------------
+# The loop around tick: one instance per clone, a failed tick survived, the
+# pidfile gone on interrupt (#1459).
+echo
+echo "autopilot watch"
+tick_fixture
+top="$(git rev-parse --show-toplevel)"
+pidfile="$(git rev-parse --git-common-dir)/orchestrator/autopilot-watch.pid"
+watch_log="$(mktemp)"
+"$ORCH" autopilot watch --every 1 >/dev/null 2>"$watch_log" &
+watch_pid=$!
+for _ in $(seq 1 50); do [ -f "$pidfile" ] && break; sleep 0.1; done
+assert_eq "a running watch records its pid under the git common directory" "$(cat "$pidfile" 2>/dev/null)" "$watch_pid"
+out="$("$ORCH" autopilot watch 2>&1)"; st=$?
+assert_status "a second watch of the same clone is refused" "$st" 1
+assert_contains "naming the live one" "$out" "already running"
+kill -TERM "$watch_pid"; wait "$watch_pid" 2>/dev/null
+assert_eq "an interrupted watch removes its pidfile" "$(on_disk "$pidfile")" absent
+
+printf '%s\n' "$(dead_pid)" >"$pidfile"
+"$ORCH" autopilot watch --every 1 >/dev/null 2>"$watch_log" &
+watch_pid=$!
+for _ in $(seq 1 50); do [ "$(cat "$pidfile" 2>/dev/null)" = "$watch_pid" ] && break; sleep 0.1; done
+assert_eq "a dead pidfile is replaced" "$(cat "$pidfile" 2>/dev/null)" "$watch_pid"
+kill -TERM "$watch_pid"; wait "$watch_pid" 2>/dev/null
+
+# a failed tick is reported on stderr and the loop carries on
+fake_fail adapter_label_upsert "HTTP 500 label"
+"$ORCH" autopilot watch --every 1 >/dev/null 2>"$watch_log" &
+watch_pid=$!
+for _ in $(seq 1 60); do [ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && break; sleep 0.1; done
+kill -0 "$watch_pid" 2>/dev/null; st=$?
+assert_status "watch survives a failed tick" "$st" 0
+assert_contains "reporting it with its exit status" "$(cat "$watch_log")" "the tick failed (exit 1)"
+assert_eq "and ticking again after it" "$([ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && echo yes)" "yes"
+kill -TERM "$watch_pid"; wait "$watch_pid" 2>/dev/null
+fake_unfail
+out="$("$ORCH" autopilot watch --every 0 2>&1)"; st=$?
+assert_status "--every refuses zero" "$st" 1
+git config --unset-all orchestrator.autopilot.permission-mode
+out="$("$ORCH" autopilot watch 2>&1)"; st=$?
+assert_status "watch refuses with no permission mode" "$st" 1
+assert_contains "naming the key" "$out" "orchestrator.autopilot.permission-mode"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick: the usage limit -------------------------------------------

@@ -603,6 +603,50 @@ autopilot_run() {
   autopilot_stop "$issue" failure "$phase" "$detail"
 }
 
+# --- watch (#1459) ------------------------------------------------------------
+
+AUTOPILOT_WATCH_EVERY_DEFAULT=60
+
+# autopilot_watch_pidfile: the clone's watch pidfile, under the git common
+# directory beside the suite-cost record, so every worktree of the clone
+# reaches the same one.
+autopilot_watch_pidfile() {
+  local d
+  d="$(git rev-parse --git-common-dir)" && d="$(cd "$d" && pwd -P)" ||
+    die "could not find the clone's git common directory"
+  printf '%s/orchestrator/autopilot-watch.pid\n' "$d"
+}
+
+# autopilot_watch <seconds>: repeats tick every <seconds> until interrupted.
+# Refuses while another watch of this clone is alive, replaces a pidfile whose
+# pid is dead, reports a failed tick on stderr and carries on, and removes its
+# pidfile when interrupted. Each tick is a fresh orch.sh process, so a tick
+# that dies takes nothing else with it.
+autopilot_watch() {
+  local every="$1" pidfile other rc nap=""
+  pidfile="$(autopilot_watch_pidfile)" || return 1
+  if [ -f "$pidfile" ]; then
+    other="$(cat "$pidfile" 2>/dev/null)" || other=""
+    ! autopilot_pid_alive "$other" ||
+      die "another autopilot watch (pid $other) is already running in this clone"
+  fi
+  mkdir -p "$(dirname "$pidfile")" || die "could not create $(dirname "$pidfile")"
+  printf '%s\n' "$$" >"$pidfile"
+  # shellcheck disable=SC2064
+  trap "rm -f '$pidfile'; [ -z \"\${nap:-}\" ] || kill \"\$nap\" 2>/dev/null; exit 0" INT TERM
+  # shellcheck disable=SC2064
+  trap "rm -f '$pidfile'" EXIT
+  while :; do
+    rc=0
+    "$(autopilot_self)" autopilot tick >/dev/null || rc=$?
+    [ "$rc" = 0 ] || echo "orch: autopilot watch: the tick failed (exit $rc); trying again in ${every}s" >&2
+    sleep "$every" &
+    nap=$!
+    wait "$nap" || true
+    nap=""
+  done
+}
+
 cmd_autopilot() {
   local op="${1:-}"
   shift || true
@@ -628,6 +672,21 @@ cmd_autopilot() {
       autopilot_gate
       autopilot_tick
       ;;
+    watch)
+      local every="$AUTOPILOT_WATCH_EVERY_DEFAULT"
+      case "${1:-}" in
+        "") ;;
+        --every)
+          [ $# -eq 2 ] || die "usage: orch.sh autopilot watch [--every <seconds>]"
+          every="$2"; shift 2 ;;
+        *) die "usage: orch.sh autopilot watch [--every <seconds>]" ;;
+      esac
+      [ $# -eq 0 ] || die "usage: orch.sh autopilot watch [--every <seconds>]"
+      [[ "$every" =~ ^[0-9]+$ ]] && [ "$((10#$every))" -gt 0 ] ||
+        die "--every must be a positive whole number of seconds, got: $every"
+      autopilot_gate
+      autopilot_watch "$((10#$every))"
+      ;;
     run)
       [ $# -eq 1 ] || die "usage: orch.sh autopilot run <issue>"
       autopilot_run "$1"
@@ -636,6 +695,6 @@ cmd_autopilot() {
       [ $# -eq 2 ] || die "usage: orch.sh autopilot $op <phase> <file>"
       "autopilot_$op" "$1" "$2"
       ;;
-    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|run|ask|answer)" ;;
+    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|tick|watch|run|ask|answer)" ;;
   esac
 }

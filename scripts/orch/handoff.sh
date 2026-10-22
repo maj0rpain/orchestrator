@@ -249,6 +249,33 @@ handoff_comment_fetch() {
   esac
 }
 
+# handoff_comments_retire <issue> <file>...: in an autopilot session, retires
+# each named handoff file's comment by posting a newer one tagged retired -
+# what moving the file into a pre-redo folder is for an interactive flow. A
+# handoff with no comment, or whose newest is already retired, posts nothing,
+# so a redo that died partway is finished by the next. A post that fails dies
+# naming the comments already posted. Outside an autopilot session it does
+# nothing: those handoffs are files.
+handoff_comments_retire() {
+  local issue="$1" file name scratch body gh_err posted=""
+  shift
+  autopilot_active || return 0
+  scratch="$(mktemp)" || die "could not create a temp file for the handoff check"
+  for file in "$@"; do
+    name="${file%.md}"
+    handoff_comment_fetch "$issue" "$name" "$scratch" || continue
+    body="$(mktemp)" || { rm -f "$scratch"; die "could not create a temp file for the retired comment"; }
+    { handoff_marker "$name" retired; printf 'Retired by an orchestrator redo: this handoff described work the redo sets aside.\n'; } >"$body"
+    capture_err gh_err adapter_issue_comment "$issue" "$body" || {
+      rm -f "$scratch" "$body"
+      die "could not retire the $name handoff on issue #$issue: $(gh_reason "$gh_err") - comments posted: ${posted:-none}; the recorded phase is unchanged, so a re-run retires the rest"
+    }
+    rm -f "$body"
+    posted="${posted:+$posted, }$name"
+  done
+  rm -f "$scratch"
+}
+
 # handoff_autopilot_only <op>: dies unless this is an autopilot session - the
 # only flow whose handoffs are comments.
 handoff_autopilot_only() {

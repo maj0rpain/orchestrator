@@ -66,6 +66,10 @@ $detail" ;;
   require_branch branch
   require_pr pr
   redo_count="$(state_get redo_count)"
+  # In an autopilot flow the handoffs are comments: retired first, before any
+  # state moves, so a redo that dies partway leaves the phase as it was.
+  # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
+  handoff_comments_retire "$issue" $(handoffs_written_from implement)
 
   # A previous call at this same redo can have already retired the branch
   # and recorded it here before dying on the PR close below - branch and
@@ -132,6 +136,11 @@ cmd_redo_spec() {
     *) die "usage: orch.sh redo spec [--new-issue]" ;;
   esac
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
+  # Autopilot handoff comments are retired before any state moves, as in redo review.
+  local cur
+  require_issue cur
+  # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
+  handoff_comments_retire "$cur" $(handoffs_written_from spec)
   if [ "$new_issue" -eq 1 ]; then
     local issue msg
     require_issue issue

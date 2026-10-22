@@ -154,6 +154,11 @@ orch.sh - deterministic operations for the orchestrator flow
                               cap), make or reuse its side checkout and start
                               `autopilot run` detached. Claude Code only;
                               needs orchestrator.autopilot.permission-mode
+  autopilot watch [--every <seconds>]
+                              repeat tick (default 60 s) until interrupted;
+                              one live watch per clone (a pidfile under the
+                              git common directory), a failed tick reported
+                              on stderr and the loop carried on
   autopilot run <issue>       the session wrapper a tick starts: runs claude -p
                               in the issue's side checkout, logging under
                               .orchestrator/autopilot/logs/, and fails the
