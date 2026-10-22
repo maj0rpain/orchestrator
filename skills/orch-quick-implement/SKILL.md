@@ -192,8 +192,9 @@ Build the linked issue's ticket frontier with the driver loop in
 
 - **the issue**: the linked issue;
 - **the branch**: the quick implementation's branch;
-- **the record**: the PR body's **Host fallbacks**, **Merge resolutions**,
-  **Verification** and **Deviations** headings (step 7);
+- **the record**: the PR body's **Host fallbacks**, **Merge resolutions**
+  and **Deviations** headings, and its **Evidence**, whose last line is loop
+  step f's command with `pass` or `fail` (step 7);
 - **the judge**: the review pass and the PR;
 - **the stop**: quick implementation stops, before the review and the PR,
   naming every failure;
@@ -240,7 +241,7 @@ review, as a stopped pass does, naming the failure. Once the pass returns or
 stops, however it ends, remove the file.
 
 Name step 5's combined verification command - the one loop step f ran,
-whose result goes under the PR body's **Verification** - to the pass as its
+whose result is the last line of the PR body's **Evidence** - to the pass as its
 verification command, for its suite-cost check. A `grew` the pass declines
 goes under **Review** with the other declines.
 
@@ -256,7 +257,14 @@ PR body's **Host fallbacks**.
 
 ## 7. Open the PR
 
-Commit, and draft the body file described below. Then, before `pr publish`,
+Commit, and draft the body file described below, by the body layout in
+`docs/pr-writing.md` (under the plugin root), which owns the **Summary**,
+**Evidence** and **Merge Danger** headings, their order before the
+headings below, and the style of all of them. **Evidence** draws on the
+reports' `Evidence` lines kept in step 5, and its last line is step 5's
+combined verification: the command loop step f ran, then `pass` or
+`fail`. The headings below are this site's own, its audit layer. Then,
+before `pr publish`,
 check the body file against what the branch actually changed, by
 **Checking the PR body** in `agents/orch-fixer.md` (under the plugin root):
 what to correct, how, and when the check is done. The diff is `git diff <base SHA>..HEAD`, with the
@@ -287,8 +295,7 @@ conversation` or `As it stands: the interview only confirmed the issue`.
 In a side checkout's session the line is `As it stands: a side checkout's
 recorded issue; any rewrite ran in the session that made the side
 checkout`. It
-carries a **Verification** heading with step 5's combined verification: the
-command it ran, then `pass` or `fail`, and a **Merge resolutions** heading
+carries a **Merge resolutions** heading
 with step 5's base sync's and loop step e's ticket resolutions, per
 **Merge resolutions** in `agents/orch-resolver.md` (under the plugin
 root). It carries a **Spec questions** heading, always present and separate
@@ -306,7 +313,9 @@ PR as a draft. Without any, it opens without the flag, not a draft. Append
 `CLAUDE.md`, `AGENTS.md` or `CONTRIBUTING.md`) require on this PR, judged
 against the same diff the body check read - none when they require none -
 so the PR carries them from creation and CI's first run sees them; never
-add one afterwards with `gh pr edit`. A failed `pr
+add one afterwards with `gh pr edit`. A `pr publish` that refuses the body
+for a piece `docs/pr-writing.md`'s layout requires has pushed nothing: fix
+the body file and rerun it. Any other failed `pr
 publish`, with `--draft` or without, stops this skill, relaying its reason;
 one with `--draft` is never retried without it. The body starts with `Closes #<issue>` when that
 base branch is the default branch, and `Refs #<issue>` otherwise - the

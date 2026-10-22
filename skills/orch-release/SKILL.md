@@ -51,8 +51,10 @@ Read what the release carries, for instance with
 
 - **Title:** short, naming the base branch and what the release delivers,
   e.g. `Release uat: base branch setting and release PRs`.
-- **Summary:** a body file (a temp file outside the repo) with a few lines on
-  what is being released, grouped by theme.
+- **Summary:** a body file (a temp file outside the repo) written by the
+  release layout in `docs/pr-writing.md` (under the plugin root): a
+  `## Summary` heading and nothing else, what is being released grouped
+  into themes, each with a visual where one helps, in that doc's style.
 
 Never write `Closes`, `Fixes`, `Resolves` or `Refs` lines into the summary.
 `pr release` writes one `Closes #N` line per issue above your body, and it is
@@ -70,7 +72,9 @@ a draft. It pushes nothing, because the base branch is already on `origin`.
 ## 4. Report
 
 - **Opened:** give the PR number, and the issues its body closes.
-- **Refused:** relay the reason `pr release` printed and stop. It refuses when
+- **Refused:** a body with no `## Summary` heading is refused, with
+  `--force` or without: fix the body file and run it again.
+  For any other refusal, relay the reason `pr release` printed and stop. It refuses when
   the base branch is the default branch, when a release PR from the base
   branch is already open (it prints that PR's number, so point the human at
   it), and when no PR merged into the base branch refers to a still-open issue.

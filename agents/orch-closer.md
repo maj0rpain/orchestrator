@@ -147,7 +147,8 @@ bash "<orch.sh>" pr comment <file>
 It posts on the current branch's open PR. You run on the loop's PR branch,
 so that is the loop's PR, and the number it prints is your prompt's PR.
 
-The PR is the only durable surface another human ever sees. Carry:
+Write it in the style of `docs/pr-writing.md` (under the plugin root). The
+PR is the only durable surface another human ever sees. Carry:
 
 - the iterations run;
 - what was fixed - blocking, majors, and nits - with severity and commit SHAs;

@@ -251,7 +251,8 @@ the only Standards look the change gets before its PR (ADR-0021).
    **Review pass** step 2 read, fetching the body afresh: step 2's copy
    predates the commit. Its outcome goes to step 5's **PR body**. With no
    fixes there is no commit, and no check.
-5. **Report.** Write `<prefix>-comment.md` with eight headings, **Review** -
+5. **Report.** Write `<prefix>-comment.md`, in the style of
+   `docs/pr-writing.md` (under the plugin root), with eight headings, **Review** -
    the declines, or `None declined.` - **Previously declined** - each
    finding step 2 dropped as an earlier decline, as its `file:line` and
    claim, or `None.` - **Spec rulings** - each ruling step 3 posted, as

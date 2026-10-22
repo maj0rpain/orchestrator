@@ -203,12 +203,22 @@ checks its local body file by step 2 and the done rule before the PR opens, with
    a claimed reason, a file list, a version - by rewording or removing it,
    and leave alone any statement the diff cannot settle either way. Keep
    the first line, the `Closes #<issue>` or `Refs #<issue>` line, as it is.
+   This covers the human layer `docs/pr-writing.md` (under the plugin root)
+   lays out, by that doc's rules: **Summary**'s visual, each test
+   **Evidence** names, and **Merge Danger**'s **Door** and **Blast Radius**
+   are checked against the diff like any other statement. Never remove a
+   required piece - the `## Summary`, `## Evidence` and `## Merge Danger`
+   headings and the `**Door:**` and `**Blast Radius:**` lines: reword a
+   stale one instead, so the corrected body keeps the structure `pr open`
+   requires. Never add a human-layer section a body lacks: a PR opened
+   before the standard keeps its body's shape.
 3. **Write back**, only if you changed anything, with `bash "<orch.sh>" pr
    update <file>`. With nothing changed, make no GitHub edit.
 
 Done when every helper, function, file, version and stated reason the body
-names has been checked against that diff, and each is supported by it or
-has been reworded or removed.
+names - the human layer's visual, tests and merge danger among them - has
+been checked against that diff, and each is supported by it or has been
+reworded or removed, no required piece removed.
 
 **Failure.** `pr fetch` exits 1 on every failure, no open PR included, so
 the check never tells the two apart; a site that skips the check on a branch

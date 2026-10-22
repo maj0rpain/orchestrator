@@ -79,7 +79,8 @@ to a temporary file outside the repo (`mktemp`):
 Never ask the human whether to correct the body: the check makes its
 corrections and records them.
 
-Then write one comment to a temporary file outside the repo (`mktemp`): a
+Then write one comment to a temporary file outside the repo (`mktemp`), in
+the style of `docs/pr-writing.md` (under the plugin root): a
 **Merge resolutions** heading, then the sync's **Merge resolutions**, per
 **Merge resolutions** in `agents/orch-resolver.md` (under the plugin root),
 then a **PR body** heading holding the check's outcome value. Post it with
