@@ -109,7 +109,9 @@ archive_root() {
 # (spec-review/<n>/, an unattended one included) and of a review pass
 # (review-pass/<branch>/). The rule: an entry a command creates for work that
 # belongs to no flow goes on this list; every other entry is the flow's, a
-# spec phase's freely named round directories included.
+# spec phase's freely named round directories and a flow's spec review round
+# directories (spec-rounds/<k>/) included. The round marker lives in the
+# handoff folder, so it goes with it.
 FLOW_LESS_ENTRIES=(archive checkouts spec-review review-pass)
 
 # archive_flow <root> <archive-root>: moves the flow in the checkout at <root>

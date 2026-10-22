@@ -62,9 +62,10 @@ from a single session (ADR-0001), so inside the review phase the unit of fresh
 context is the loop, not the iteration. The loop is the unit of fresh context
 for its driver; the reviewers and the fixer get fresh context every iteration.
 A flow's spec review is a step of the spec phase, not a phase of its own.
-Unlike the review phase, the spec phase can span two sessions: when it writes
-the spec, the session that publishes or rewrites the issue stops there, and the
-spec review, ticket breakdown and handoff run in a fresh one, still in the spec
+Unlike the review phase, the spec phase spans several sessions: when it writes
+the spec, the session that publishes or rewrites the issue stops there; each
+spec review round but the last stops after its changelog; and the last round,
+the ticket breakdown and the handoff run in one more, all still in the spec
 phase.
 
 Note the tense: the recorded phase names the stage that runs **next**, not the
@@ -278,8 +279,11 @@ One look within a spec review: consolidation, the lenses, one batch of proposed 
 _Avoid_: pass, iteration (the review loop's).
 
 **Round count**:
-The number of rounds a spec review runs. A flow's spec phase asks the human for it when the review starts, and a blueprint asks it in the planning hook's closing message, before the review; both recommend 3, and a blueprint may answer 0 to skip the review. A spec review run on demand runs 1 unless given another. A spec review runs its whole round count: a round that finds nothing does not end it early.
+The number of rounds a spec review runs. A flow's spec phase asks the human for it when the review starts, and a blueprint asks it in the planning hook's closing message, before the review; both recommend a count sized to the spec - 2 by default, fewer for a one-site spec, more for a large one - and a blueprint may answer 0 to skip the review. A spec review run on demand runs 1 unless given another. A spec review runs its whole round count: a round that finds nothing does not end it early.
 _Avoid_: budget (the review loop's).
+
+**Round marker**:
+The file in a flow's handoff folder naming the flow's issue, a spec review round and the round count, written by `orch.sh`, from which `orch.sh spec round` tells a fresh session the round to resume the review at. It is not a handoff, and it is never in `state.json`.
 
 **Unattended spec review**:
 A standalone spec review that asks the human nothing: every recommended edit
@@ -369,9 +373,11 @@ _Avoid_: single pass, quick review
 
 **Budget**:
 The number of iterations a review loop runs, chosen by a human when the loop
-starts - five unless they say otherwise. A loop runs its whole budget: finding
-nothing does not end it early, because every iteration is an independent look
-at the same change, and the value of the loop is in the number of looks.
+starts, from a number the driver suggests: for a flow's first loop, from the
+size of the change; for a further loop, from what the loop before it left. A
+loop runs its whole budget: finding nothing does not end it early, because
+every iteration is an independent look at the same change, and the value of
+the loop is in the number of looks.
 
 **Iteration**:
 One pass within a review loop: sync the branch with its base, review the

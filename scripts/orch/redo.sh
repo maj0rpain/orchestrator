@@ -149,10 +149,13 @@ cmd_redo_spec() {
   # the retired branch, so the directory is told apart by a UTC timestamp.
   # The spec-paused marker (#1181) moves with them, exactly when they do: left
   # behind, it would carry the redone spec phase past its rewrite question.
+  # The round marker (#1348) moves with them for the same reason: left behind,
+  # it would carry the redone spec review past round 1. The round directories
+  # stay in place, since round 1's `spec round-dir 1/<n>` clears them.
   local dest
   dest="$HANDOFF_DIR/pre-redo-spec-$(dir_stamp)"
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
-  retire_handoffs "$dest" $(handoffs_written_from spec) "$SPEC_PAUSED_MARKER"
+  retire_handoffs "$dest" $(handoffs_written_from spec) "$SPEC_PAUSED_MARKER" "$SPEC_ROUND_MARKER"
   phase_write spec
 }
 

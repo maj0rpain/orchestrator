@@ -57,14 +57,35 @@ spec_review_begin() {
   # Built from the validated number alone, so the wipe stays inside
   # spec-review/.
   local dir="$ORCH/spec-review/$issue"
-  if [ "$carry" = 1 ] && [ -d "$dir" ]; then
-    find "$dir" -mindepth 1 -maxdepth 1 ! -name map-implementability.md ! -name settled.md -exec rm -rf {} +
+  if [ "$carry" = 1 ]; then
+    spec_review_dir_reset "$dir" --carry
+  else
+    spec_review_dir_reset "$dir"
+  fi
+  printf '%s/\n' "$dir"
+}
+
+# spec_review_dir_reset <dir> [--carry]: a round's working directory made
+# ready to run in - emptied, created when missing - the one reset both a
+# standalone review's begin and a flow's spec round-dir run. --carry keeps
+# what a round hands the next, the SPEC_REVIEW_CARRIED files, each when it
+# exists, deleting every other entry in place.
+spec_review_dir_reset() {
+  local dir="$1"
+  if [ "${2-}" = --carry ] && [ -d "$dir" ]; then
+    local keep=() f
+    for f in "${SPEC_REVIEW_CARRIED[@]}"; do keep+=(! -name "$f"); done
+    find "$dir" -mindepth 1 -maxdepth 1 "${keep[@]}" -exec rm -rf {} +
   else
     rm -rf "$dir"
   fi
   mkdir -p "$dir"
-  printf '%s/\n' "$dir"
 }
+
+# What a round hands the next: the Implementability lens's code map (#1141)
+# and the settled file (#1185). The one list both begin's --carry and a flow's
+# spec round-dir read.
+readonly SPEC_REVIEW_CARRIED=(map-implementability.md settled.md)
 
 # --- spec-review apply (#1117) -------------------------------------------------
 #
@@ -1713,4 +1734,9 @@ spec_review_apply() {
   # appends nothing, so a rerun never appends a changelog twice.
   { printf '%s\n' "$log" >>"$dir/settled.md"; } 2>/dev/null \
     || die "could not append the changelog to $dir/settled.md - every GitHub write landed: $(spec_review_landed "$dir")"
+  # The round's completion, the very last step: spec round reads it to tell
+  # a resumed flow which round runs next, so it exists only once every write
+  # above has landed.
+  { : >"$dir/$SPEC_ROUND_COMPLETE"; } 2>/dev/null \
+    || die "could not write $dir/$SPEC_ROUND_COMPLETE - every GitHub write landed and settled.md is appended: $(spec_review_landed "$dir")"
 }
