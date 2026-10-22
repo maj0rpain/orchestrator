@@ -129,6 +129,16 @@ upstream_of() {
 # <branch>'s git config (#1200), empty when none was.
 pr_marker_of() { git config --get "branch.$1.orchestrator-pr" 2>/dev/null; }
 
+# pr_body_complete <file>: writes to <file> a PR body carrying every piece pr
+# open and pr publish require (#1387) - ## Summary, ## Evidence, and ## Merge
+# Danger with its **Door:** and **Blast Radius:** lines - its Summary holding
+# 'Implements the thing.' and 'Some detail.'.
+pr_body_complete() {
+  writeln '## Summary' '' 'Implements the thing.' '' 'Some detail.' '' \
+    '## Evidence' '' 'make test - pass' '' \
+    '## Merge Danger' '' '**Door:** two-way' '**Blast Radius:** the widget module' >"$1"
+}
+
 # origin_rejects <bare>: installs a pre-receive hook in the bare origin at
 # <bare> that rejects every push, so a push fails with git's real rejection
 # stderr, offline (#1300). Removing <bare>/hooks/pre-receive lifts it.
