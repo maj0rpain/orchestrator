@@ -419,3 +419,81 @@ out="$("$ORCH" spec round 2>&1)"; st=$?
 assert_status "spec round exits 2 with no flow" "$st" 2
 assert_contains "saying there is no active flow" "$out" "no active flow"
 restore_suite_env
+
+# --- spec pause --round -------------------------------------------------------
+# The stop a flow's spec review takes after round k of n, k < n, has applied
+# (#1347): the round marker names the next round and the count, so the fresh
+# session's spec round resumes at k+1, and the block names the host's way to
+# start that session. The marker is written first; the last round never pauses.
+echo
+echo "spec pause --round"
+fresh_flow pauseroundtest
+fake_github
+state_fixture phase spec
+handoff_dir="$(dirname "$("$ORCH" handoff path spec)")"
+round_marker="$handoff_dir/spec-round"
+out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
+assert_status "pause --round refuses when state records no issue" "$st" 1
+assert_contains "naming the phase that records one" "$out" "spec phase"
+assert_not_contains "printing no block" "$out" "Next:"
+assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
+"$ORCH" state set issue 21
+out="$("$ORCH" spec pause --round 1/3 2>&1)"; st=$?
+assert_status "pause --round 1/3 succeeds at phase spec with an issue" "$st" 0
+assert_eq "printing the stop block with the Claude Code Next line" "$out" \
+  "$(printf 'Spec review round 1 of 3 applied. Round 2 runs in a fresh session.\n\n  Next: /clear, then /orchestrator:next')"
+assert_eq "after which spec round runs round 2 of 3" "$("$ORCH" spec round 2>&1)" "2 3"
+assert_eq "leaving the phase at spec" "$("$ORCH" state get phase)" "spec"
+assert_eq "and writing no spec-paused marker" "$(on_disk "$handoff_dir/spec-paused")" "absent"
+out="$(ORCHESTRATOR_HOST=junie "$ORCH" spec pause --round 2/3 2>&1)"; st=$?
+assert_status "pause --round 2/3 runs over a marker already there" "$st" 0
+assert_eq "on Junie the Next line is Junie's" "$out" \
+  "$(printf 'Spec review round 2 of 3 applied. Round 3 runs in a fresh session.\n\n  Next: /new, then ask for the next phase with /orch-flow')"
+assert_eq "after which spec round runs round 3 of 3" "$("$ORCH" spec round 2>&1)" "3 3"
+
+rm -f "$round_marker"
+for arg in "" 1 2/2 3/2 0/2 1/0 a/2 1/b 1/2/3 /2 1/ -1/2; do
+  out="$("$ORCH" spec pause --round "$arg" 2>&1)"; st=$?
+  assert_status "pause --round refuses '$arg'" "$st" 1
+  assert_not_contains "printing no block for '$arg'" "$out" "Next:"
+  assert_eq "and writing no marker for '$arg'" "$(on_disk "$round_marker")" "absent"
+done
+out="$("$ORCH" spec pause --round 2/2 2>&1)"
+assert_contains "the last round never pauses" "$out" "the last round never pauses"
+out="$("$ORCH" spec pause --round 2>&1)"; st=$?
+assert_status "pause --round refuses no argument" "$st" 1
+assert_contains "with the usage" "$out" "usage: orch.sh spec pause [--round <k>/<n>]"
+out="$("$ORCH" spec pause --round 1/2 extra 2>&1)"; st=$?
+assert_status "pause --round refuses an extra argument" "$st" 1
+assert_eq "writing no marker" "$(on_disk "$round_marker")" "absent"
+for ph in implement review; do
+  state_fixture phase "$ph"
+  out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
+  assert_status "pause --round refuses at phase $ph" "$st" 1
+  assert_contains "saying it runs only in the spec phase" "$out" "spec pause runs only in the spec phase"
+  assert_not_contains "printing no block" "$out" "Next:"
+  assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
+done
+state_fixture phase "done"
+out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
+assert_status "pause --round refuses once the flow is done" "$st" 1
+assert_contains "naming the flow's issue" "$out" "the flow on issue #21 is done"
+assert_not_contains "printing no block" "$out" "Next:"
+assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
+state_fixture phase spec
+
+chmod a-w "$handoff_dir"
+if : 2>/dev/null >"$handoff_dir/.probe"; then
+  rm -f "$handoff_dir/.probe"
+  chmod u+w "$handoff_dir"
+  skip "a failed round marker write prints no block" "the handoff folder stays writable (running as root?)"
+else
+  out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
+  chmod u+w "$handoff_dir"
+  assert_status "pause --round fails when the marker cannot be written" "$st" 1
+  assert_not_contains "printing no block" "$out" "Next:"
+  assert_contains "naming the marker" "$out" "$round_marker"
+  assert_eq "and leaving no marker" "$(on_disk "$round_marker")" absent
+fi
+assert_contains "help documents spec pause --round" "$("$ORCH" help)" "spec pause --round <k>/<n>"
+restore_suite_env

@@ -562,6 +562,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               phase stays spec. Refuses without a recorded
                               issue, outside the spec phase, or once the flow
                               is done
+  spec pause --round <k>/<n>  stop a flow's spec review session after round k
+                              of n, k < n, has applied: write handoff/
+                              spec-round naming the flow's issue, k+1 and n,
+                              then print the stop block - a failed write
+                              prints no block. The last round never pauses.
+                              Refuses a malformed <k>/<n>, k not below n, and
+                              as spec pause does
   spec round-dir <k>/<n>      make a flow's spec review round k of n ready
                               and print its directory, .orchestrator/
                               spec-rounds/<k>/: emptied (created when

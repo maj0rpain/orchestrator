@@ -44,8 +44,15 @@ readonly SPEC_PAUSED_MARKER=spec-paused
 # Stops the spec phase's session after the spec is written: writes the marker,
 # then prints the stop block with the host's Next line. The marker is written
 # first, so a failed write prints no block; the phase is left at spec.
+# With --round <k>/<n>, the stop after round k of n of a flow's spec review
+# instead: see cmd_spec_pause_round.
 cmd_spec_pause() {
-  [ $# -eq 0 ] || die "usage: orch.sh spec pause"
+  if [ "${1:-}" = --round ]; then
+    shift
+    cmd_spec_pause_round "$@"
+    return
+  fi
+  [ $# -eq 0 ] || die "usage: orch.sh spec pause [--round <k>/<n>]"
   local issue
   spec_phase_guard die pause issue
   mkdir -p "$HANDOFF_DIR" || die "cannot create $HANDOFF_DIR"
@@ -99,6 +106,25 @@ spec_round_count_parse() {
   [ "$__rc_k" -le "$__rc_n" ] || die "round $__rc_k is past the round count $__rc_n"
   printf -v "$2" '%s' "$__rc_k"
   printf -v "$3" '%s' "$__rc_n"
+}
+
+# spec pause --round <k>/<n> (#1347): the stop after round k of n, k < n, has
+# applied its answer - writes the round marker naming the flow's issue, the
+# next round k+1 and the count n, so the fresh session's spec round resumes
+# there, then prints the stop block. The marker is written first, so a failed
+# write prints no block. The last round never pauses: the ticket breakdown and
+# the handoff follow it in the same session.
+cmd_spec_pause_round() {
+  [ $# -eq 1 ] || die "usage: orch.sh spec pause [--round <k>/<n>]"
+  local k n issue
+  spec_round_count_parse "$1" k n
+  [ "$k" -lt "$n" ] \
+    || die "round $k is the last of $n - the last round never pauses; go on to the ticket breakdown"
+  spec_phase_guard die pause issue
+  mkdir -p "$HANDOFF_DIR" 2>/dev/null || die "cannot create $HANDOFF_DIR"
+  { printf '%s %s %s\n' "$issue" "$((k + 1))" "$n" >"$HANDOFF_DIR/$SPEC_ROUND_MARKER"; } 2>/dev/null \
+    || die "cannot write the round marker $HANDOFF_DIR/$SPEC_ROUND_MARKER"
+  print_next_block "Spec review round $k of $n applied. Round $((k + 1)) runs in a fresh session."
 }
 
 # spec round-dir <k>/<n>: round k's working directory made ready and printed,
