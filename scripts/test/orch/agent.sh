@@ -293,7 +293,7 @@ HOME="$(mktemp -d)"
 export HOME
 as_dir=".junie/agents"
 as_marker="# written by orch.sh agent sync"
-as_plugin="$(cd "$(dirname "$ORCH")/.." && pwd)/agents"
+as_plugin="$PLUGIN_ROOT/agents"
 as_exclude() { cat "$(git rev-parse --git-common-dir)/info/exclude" 2>/dev/null; }
 # as_copies: the file names under .junie/agents, one per line.
 as_copies() { ls "$as_dir" 2>/dev/null; }

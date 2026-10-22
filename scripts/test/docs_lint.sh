@@ -45,7 +45,7 @@
 #   scan_early_exit_pipe  no script pipes into a quiet grep or into head
 #   scan_junie_planning  the Junie snippet has one begin and end marker and restates the planning allowlist and records
 #   scan_capability_table  each docs/host-capabilities.md row has both hosts' cells filled
-#   scan_names_phrase  each listed file, or section of one, names its phrase: the verifying agents suite-cost run, the review loop's triage and the review pass suite-cost check, and the PR-writing sites docs/pr-writing.md
+#   scan_names_phrase  each listed file, or section of one, names its phrase: the verifying agents suite-cost run, the review loop's triage and the review pass suite-cost check, and the PR-writing sites docs/pr-writing.md, host-capabilities' Agent settings naming agent sync, and the Junie README's Agent settings on Junie section naming --host junie and orch.sh doctor
 #   scan_review_pass  the review pass is defined once in orch-review-pass and quick implementation's step 6 runs it
 #   scan_unattended_modes  quick implementation's steps 1, 2 and 3 run the unattended modes
 #   scan_skill_refs  each skill's SKILL.md names every reference file beside it
@@ -1203,6 +1203,7 @@ assert_empty "Agent settings before Fallbacks and a linked Claude Code cell are 
   "$(scan_agent_settings_section "$fixture")"
 check "docs/host-capabilities.md has Agent settings before Fallbacks, linked from the table" \
   "$(scan_agent_settings_section "$PLUGIN_ROOT")"
+
 # --- spec-review lenses run as plugin agents (#177) ---------------------------
 echo
 echo "spec-review lenses run as plugin agents (#177)"
@@ -1809,7 +1810,7 @@ scan_names_phrase() {
 check "host-capabilities Agent settings names agent sync, the Junie sync step" \
   "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/host-capabilities.md|## Agent settings' 'agent sync')"
 check "the Junie README has an Agent settings on Junie section naming --host junie" \
-  "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/junie/README.md|## Agent settings on Junie' -- '--host junie')"
+  "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/junie/README.md|## Agent settings on Junie' '--host junie')"
 check "the Junie README's Agent settings on Junie section names orch.sh doctor" \
   "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/junie/README.md|## Agent settings on Junie' 'orch.sh doctor')"
 

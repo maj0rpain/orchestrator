@@ -1856,6 +1856,7 @@ assert_not_contains "and no message" "$out" "did not recognise"
 printf "WARN Unrecognized 'model' value 'bad-model', falling back to default. Allowed display names: X. Allowed LLM names: gpt-5, claude-opus-5-5\n" >>"$JH/logs/log-new.log"
 out="$(doc)"; st=$?
 assert_status "an unrecognised value that is not set gives no failure" "$st" 0
+assert_not_contains "and no message" "$out" "did not recognise"
 git config orchestrator.junie.model.fixer bad-model
 out="$(doc)"; st=$?
 assert_status "an unrecognised local set model fails" "$st" 1

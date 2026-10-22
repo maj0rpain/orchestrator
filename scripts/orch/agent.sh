@@ -256,7 +256,7 @@ agent_copy_content() {
 agent_sync_plan() {
   # src_model and src_effort receive agent_lookup's source and go unread here.
   # shellcheck disable=SC2034
-  local file name role m e src_model src_effort content target state
+  local file name role m e copy_model copy_effort src_model src_effort content target state
   AGENT_PLAN_PLUGIN="$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)"
   AGENT_PLAN_DIR="$ROOT/.junie/agents"
   AGENT_PLAN_WANT="" AGENT_PLAN_REFUSED="" AGENT_PLAN_WRITES=() AGENT_PLAN_DELETES=""
@@ -267,19 +267,20 @@ agent_sync_plan() {
     [ -n "$role" ] || continue
     agent_lookup model "$role" m src_model junie
     agent_lookup effort "$role" e src_effort junie
-    agent_allowed model "$m" junie || m=inherit
-    agent_allowed effort "$e" junie || e=inherit
-    [ "$m$e" = inheritinherit ] && continue
+    copy_model="$m" copy_effort="$e"
+    agent_allowed model "$m" junie || copy_model=inherit
+    agent_allowed effort "$e" junie || copy_effort=inherit
+    [ "$copy_model$copy_effort" = inheritinherit ] && continue
     AGENT_PLAN_WANT="$AGENT_PLAN_WANT$name"$'\n'
     target="$AGENT_PLAN_DIR/$name.md"
     state=missing
-    content="$(agent_copy_content "$file" "$m" "$e"; echo x)"
+    content="$(agent_copy_content "$file" "$copy_model" "$copy_effort"; echo x)"
     if [ -e "$target" ]; then
       if ! agent_copy_marked "$target"; then AGENT_PLAN_REFUSED="$AGENT_PLAN_REFUSED $name.md"; continue; fi
       [ "$(cat "$target"; echo x)" = "$content" ] && continue
       state=stale
     fi
-    AGENT_PLAN_WRITES+=("$name|$m|$e|$state")
+    AGENT_PLAN_WRITES+=("$name|$copy_model|$copy_effort|$state")
   done
   AGENT_PLAN_REFUSED="${AGENT_PLAN_REFUSED# }"
   for file in "$AGENT_PLAN_DIR"/orch-*.md; do
@@ -336,6 +337,19 @@ agent_junie_ran() {
   return "$mismatch"
 }
 
+# agent_junie_newest_log [<session id>]: prints the path of the newest
+# $HOME/.junie/logs/log-*.log by modification time, only among those naming
+# the session id when one is given; nothing when none qualifies.
+agent_junie_newest_log() {
+  local sid="${1:-}" f log=""
+  for f in "$HOME"/.junie/logs/log-*.log; do
+    [ -f "$f" ] || continue
+    [ -z "$sid" ] || grep -aqF -- "$sid" "$f" 2>/dev/null || continue
+    if [ -z "$log" ] || [ "$f" -nt "$log" ]; then log="$f"; fi
+  done
+  [ -z "$log" ] || printf '%s\n' "$log"
+}
+
 # agent_junie_session: doctor's best-effort report of what each orch-* agent
 # ran on in the last Junie session for this checkout, read from Junie's own
 # files under $HOME/.junie: the sessions/index.jsonl entry with the greatest
@@ -346,17 +360,13 @@ agent_junie_ran() {
 # reasoningEffort= unless null, else inherited). A file that is missing or
 # does not parse gives one ok line saying it cannot tell, never a FAIL.
 agent_junie_session() {
-  local index="$HOME/.junie/sessions/index.jsonl" sid log lines agent line model effort rran report="" ran_line report_line word v kind f
+  local index="$HOME/.junie/sessions/index.jsonl" sid log lines agent line model effort rran report="" ran_line report_line word v kind
   command -v jq >/dev/null 2>&1 || { agent_junie_session_cannot_tell "jq is not installed"; return 0; }
   [ -f "$index" ] || { agent_junie_session_cannot_tell "no Junie session index"; return 0; }
   sid="$(jq -rs --arg d "$ROOT" 'map(select(.projectDir == $d)) | sort_by(.updatedAt) | last | .sessionId // empty' "$index" 2>/dev/null)" ||
     { agent_junie_session_cannot_tell "the session index does not parse"; return 0; }
   [ -n "$sid" ] || { agent_junie_session_cannot_tell "no session for this checkout"; return 0; }
-  log=""
-  for f in "$HOME"/.junie/logs/log-*.log; do
-    [ -f "$f" ] && grep -aqF -- "$sid" "$f" 2>/dev/null || continue
-    if [ -z "$log" ] || [ "$f" -nt "$log" ]; then log="$f"; fi
-  done
+  log="$(agent_junie_newest_log "$sid")"
   [ -n "$log" ] || { agent_junie_session_cannot_tell "no log names session $sid"; return 0; }
   lines="$(grep -a 'Executing agent custom_agent_orch-[A-Za-z0-9-]*_[0-9]* with parameters' "$log" 2>/dev/null)" || true
   [ -n "$lines" ] || { agent_junie_session_cannot_tell "the log holds no agent runs"; return 0; }
@@ -389,12 +399,8 @@ agent_junie_session() {
 # log's Allowed LLM names and gives the agent set that fixes it. No log, or
 # no such role, prints nothing.
 agent_junie_unrecognized() {
-  local log value line role v src names f
-  log=""
-  for f in "$HOME"/.junie/logs/log-*.log; do
-    [ -f "$f" ] || continue
-    if [ -z "$log" ] || [ "$f" -nt "$log" ]; then log="$f"; fi
-  done
+  local log value line role v src names
+  log="$(agent_junie_newest_log)"
   [ -n "$log" ] || return 0
   while IFS= read -r value; do
     [ -n "$value" ] || continue
