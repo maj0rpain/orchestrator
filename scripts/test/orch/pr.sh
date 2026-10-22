@@ -265,7 +265,7 @@ fake_next_pr 23
 out="$("$ORCH" pr publish 16 "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
 assert_eq "prints the PR number GitHub gave it" "$out" "23"
-assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "opens against the default branch" "$(fake_pr_base_of 23)" "main"
 assert_eq "not as a draft" "$(fake_pr_draft_of 23)" "no"
 assert_eq "and from the current branch" "$(fake_pr_head_of 23)" "quick/16-widgets"

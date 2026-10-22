@@ -21,8 +21,8 @@ out="$("$ORCH" review-pass begin 12 2>&1)"; st=$?
 assert_status "with no state file it proceeds" "$st" 0
 assert_eq "printing the absolute iteration-01 prefix, the slashed branch as nested directories" \
   "$out" "$rp_dir/iteration-01"
-assert_eq "creating the branch's directory" "$([ -d "$rp_dir" ] && echo yes || echo no)" "yes"
-assert_eq "records no state" "$([ -f "$top/.orchestrator/state.json" ] && echo yes || echo no)" "no"
+assert_eq "creating the branch's directory" "$(on_disk "$rp_dir")" "present"
+assert_eq "records no state" "$(on_disk "$top/.orchestrator/state.json")" "absent"
 assert_contains "git-excludes .orchestrator/" "$(cat "$(git rev-parse --git-common-dir)/info/exclude")" ".orchestrator/"
 assert_contains "git-excludes .scratch/" "$(cat "$(git rev-parse --git-common-dir)/info/exclude")" ".scratch/"
 assert_eq "and leaves the working tree clean" "$(git status --porcelain)" ""
@@ -179,7 +179,7 @@ assert_status "refuses a missing --deviations file" "$st" 1
 assert_contains "naming it" "$out" "orch: deviations file not found: $kp/missing.md"
 assert_eq "leaving the existing file untouched" "$(cat "$kp/known.md")" "kept"
 out="$("$ORCH" review-pass known-items 21 "$kp/fresh.md" --deviations "$kp/missing.md" 2>&1)"
-assert_eq "and writing no file" "$([ -e "$kp/fresh.md" ] && echo yes || echo no)" "no"
+assert_eq "and writing no file" "$(on_disk "$kp/fresh.md")" "absent"
 
 fake_pr 57 open quick/21-foo main
 for op in adapter_prs_open adapter_pr_body adapter_pr_comments adapter_issue_json; do
@@ -189,7 +189,7 @@ for op in adapter_prs_open adapter_pr_body adapter_pr_comments adapter_issue_jso
   assert_contains "with an orch: message for $op" "$out" "orch: gh could not"
   assert_eq "leaving the existing file untouched for $op" "$(cat "$kp/known.md")" "kept"
   out="$("$ORCH" review-pass known-items 21 "$kp/fresh.md" 2>&1)"
-  assert_eq "and writing no file for $op" "$([ -e "$kp/fresh.md" ] && echo yes || echo no)" "no"
+  assert_eq "and writing no file for $op" "$(on_disk "$kp/fresh.md")" "absent"
   rm -rf "$ORCH_GH_FAKE_STORE/fail"
 done
 
@@ -200,7 +200,7 @@ for args in "" "21" "abc $kp/fresh.md" "21 $kp/fresh.md --deviations" \
   assert_status "refuses known-items '$args'" "$st" 1
   assert_contains "with an orch: message for '$args'" "$out" "orch: "
 done
-assert_eq "writing no file for any of them" "$([ -e "$kp/fresh.md" ] && echo yes || echo no)" "no"
+assert_eq "writing no file for any of them" "$(on_disk "$kp/fresh.md")" "absent"
 assert_contains "orch.sh help lists review-pass known-items" "$("$ORCH" help)" \
   "review-pass known-items <issue> <path> [--deviations <file>]"
 rm -rf "$kp"

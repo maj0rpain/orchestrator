@@ -77,7 +77,7 @@ out="$("$ORCH" spec fetch "$spec_body" 2>&1)"; st=$?
 assert_status "a gh that will not answer fails the fetch" "$st" 1
 assert_contains "with the reason" "$out" "issue view refused"
 assert_eq "and leaves no file a lens could mistake for a body" \
-  "$([ -e "$spec_body" ] && echo present || echo gone)" "gone"
+  "$(on_disk "$spec_body")" "absent"
 
 : >"$GH_FIXTURE/env.log"
 fake_issue_body 14 "The old body."

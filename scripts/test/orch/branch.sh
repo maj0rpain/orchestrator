@@ -40,7 +40,7 @@ new_repo_with_origin
 out="$(orch_gh_failing branch off "quick/9-widgets")"
 assert_eq "prints the branch it made" "$out" "quick/9-widgets"
 assert_eq "checks it out" "$(git branch --show-current)" "quick/9-widgets"
-assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 
 git checkout -q -
 out="$(orch_gh_failing branch off "quick/9-widgets" 2>&1)"; st=$?
