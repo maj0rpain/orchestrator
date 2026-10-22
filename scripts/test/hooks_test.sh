@@ -1065,8 +1065,9 @@ pg_text "$T" "Running the lenses."
 pg_check "$T" toolu_c1 batch "$PG/batch/view.md"
 assert_eq "armed, an ask with no paste after the pass line is refused" "$(pg_decide "$T")" deny
 assert_contains "with the view in the reason" "$(cat "$PG/reason")" "$(cat "$PG/batch/view.md")"
-assert_contains "and the instruction to paste it word for word, then ask again" "$(cat "$PG/reason")" \
-  "Paste the view below into chat word for word"
+assert_contains "and the instruction to end the turn on the view and the batch question in plain text" "$(cat "$PG/reason")" \
+  "End your turn on one plain-text reply, with no tool call: the view below word for word"
+assert_contains "not to use the ask tool for it" "$(cat "$PG/reason")" "Do not ask this question with the ask tool"
 assert_contains "naming view.md" "$(cat "$PG/reason")" "$PG/batch/view.md"
 assert_eq "its top-level decision is block" \
   "$(jq -n --arg t "$T" '{tool_name:"AskUserQuestion", transcript_path:$t, tool_use_id:"x"}' | "$PASTE" | jq -r '.decision')" block
@@ -1094,6 +1095,17 @@ pg_ask "$T3b" toolu_a2
 pg_result "$T3b" toolu_a2 "The user wants to clarify these questions." true
 pg_text "$T3b" "Understood."
 assert_eq "the view pasted in an earlier response after the pass line: allowed" "$(pg_decide "$T3b" toolu_a3)" allow
+
+# A human message: a user entry whose content is a string, as Claude Code
+# writes a typed reply.
+T3h="$PG/turn-final.jsonl"; cp "$T" "$T3h"
+pg_text "$T3h" "$(cat "$PG/batch/view.md")
+
+Answer recommended, none, a departure list, show <n>, or a question."
+jq -nc '{type:"user", message:{role:"user", content:"recommended but not 4"}}' >>"$T3h"
+pg_text "$T3h" "Apply as recommended, except item 4 declined?"
+assert_eq "the view in an earlier turn's final reply, then a human message, then the confirmation ask: allowed" \
+  "$(pg_decide "$T3h")" allow
 
 T3c="$PG/split.jsonl"; cp "$T" "$T3c"
 pg_text "$T3c" "## The batch

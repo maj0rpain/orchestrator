@@ -7,8 +7,11 @@
 # with no view on screen. `check` saves the view it printed to <dir>/view.md
 # and names that file in its stderr pass line; this hook reads the session's
 # transcript and refuses every ask after such a pass line until the view is
-# in chat, handing the view back with the instruction to paste it word for
-# word, then ask again (#1350).
+# in chat, handing the view back with the instruction to end the turn on it
+# and the batch question in plain text, not the ask tool (#1350, ADR-0051):
+# some hosts hide a long text written in the same response as a tool call.
+# The short confirmation ask after a near-miss answer passes, its view
+# already in the turn-final reply above.
 #
 # - Armed by the latest `check` pass line in a tool result that names a
 #   view.md (scripts/orch/spec-review.sh's spec_review_nudge words it).
@@ -105,6 +108,6 @@ while :; do
   sleep 0.25
 done
 
-hook_emit_deny "Blocked by the orchestrator: the human has not seen this round's view in chat. Paste the view below into chat word for word - every line, composing nothing of your own - then ask again, the paste and the ask in the same response. It is the view \`spec-review check\` printed and saved in $view:
+hook_emit_deny "Blocked by the orchestrator: the human has not seen this round's view in chat. Do not ask this question with the ask tool. End your turn on one plain-text reply, with no tool call: the view below word for word - every line, composing nothing of your own - then the batch question, its answer words spelled out; the human's next message is the answer. It is the view \`spec-review check\` printed and saved in $view:
 
 $(cat "$view")"
