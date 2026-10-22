@@ -108,6 +108,17 @@ out="$("$ORCH" agent set lens --model opus --model haiku 2>&1)"; st=$?
 assert_status "set refuses a flag given twice" "$st" 1
 untouched "a flag given twice"
 
+# set validates each value as it is parsed, so the first problem met is named.
+out="$("$ORCH" agent set implementer --model bogus --global --global 2>&1)"
+assert_eq "set names a disallowed model before a repeated --global" "$out" \
+  "orch: model bogus is not allowed (want sonnet|opus|haiku|fable|inherit)"
+out="$("$ORCH" agent set implementer --effort bad --model 2>&1)"
+assert_eq "set names a disallowed effort before a missing model value" "$out" \
+  "orch: effort bad is not allowed (want low|medium|high|xhigh|max|inherit)"
+out="$("$ORCH" agent set implementer --effort bad --model bad 2>&1)"
+assert_eq "set names the first disallowed value met" "$out" \
+  "orch: effort bad is not allowed (want low|medium|high|xhigh|max|inherit)"
+
 # set ... inherit clears the key at that scope, never storing the literal.
 "$ORCH" agent set fixer --model inherit >/dev/null
 assert_eq "set --model inherit clears the local model" "$(key local orchestrator.model.fixer)" "<unset>"
@@ -122,7 +133,7 @@ assert_eq "and leaves the global model" "$(key global orchestrator.model.fixer)"
 git config --local orchestrator.effort.resolver gpt
 out="$("$ORCH" agent show 2>&1)"; st=$?
 assert_status "show succeeds, even with a disallowed hand-set value" "$st" 0
-assert_eq "show lists every role in order with its sources, marking the invalid value" "$out" \
+assert_eq "show lists every role in order with its sources, marking the invalid value" "$(head -n 6 <<<"$out")" \
   "implementer model opus (local) effort high (local)
 lens model inherit (inherit) effort inherit (inherit)
 reviewer model haiku (local) effort low (local)
@@ -180,13 +191,239 @@ assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer
 
 out="$("$ORCH" agent 2>&1)"; st=$?
 assert_status "refuses a missing verb" "$st" 1
-assert_contains "naming the verbs" "$out" "want set|show|clear|get"
+assert_contains "naming the verbs" "$out" "want set|show|clear|get|sync"
 out="$("$ORCH" agent show extra 2>&1)"; st=$?
 assert_status "show refuses an argument" "$st" 1
 
 out="$("$ORCH" help 2>&1)"
 assert_contains "agent set is in the usage text" "$out" "agent set <role>"
 assert_contains "the CLI conventions' noun table has an agent row" \
-  "$(grep '^| `agent`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`set`, `show`, `clear`, `get`'
+  "$(grep '^| `agent`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`set`, `show`, `clear`, `get`, `sync`'
+# --host junie: the same verbs on the Junie keys, beside the Claude Code ones.
+jkey() { key "$1" "orchestrator.junie.$2.$3"; }
+out="$("$ORCH" agent get lens --host junie 2>&1)"; st=$?
+assert_status "get --host junie succeeds with nothing set" "$st" 0
+assert_eq "and prints inherit for both Junie keys" "$out" \
+  "model inherit
+effort inherit"
+out="$("$ORCH" agent set lens --host junie --model gpt-5 --effort medium 2>&1)"; st=$?
+assert_status "set --host junie accepts a model and an effort" "$st" 0
+assert_eq "set --host junie writes the Junie model" "$(jkey local model lens)" "gpt-5"
+assert_eq "set --host junie writes the Junie effort" "$(jkey local effort lens)" "medium"
+assert_eq "a Junie write leaves the Claude Code model alone" "$(key local orchestrator.model.lens)" "<unset>"
+assert_eq "get --host junie round-trips" "$("$ORCH" agent get lens --host junie 2>&1)" \
+  "model gpt-5
+effort medium"
+assert_eq "get without --host ignores the Junie keys" "$("$ORCH" agent get lens 2>&1)" \
+  "model inherit
+effort inherit"
+"$ORCH" agent set implementer --host junie --model custom:my/profile.1 >/dev/null
+assert_eq "set --host junie accepts a custom profile id" "$(jkey local model implementer)" "custom:my/profile.1"
+assert_eq "a Claude Code write leaves the Junie keys alone" \
+  "$("$ORCH" agent set implementer --model sonnet >/dev/null; jkey local model implementer)" "custom:my/profile.1"
+"$ORCH" agent set reviewer --host junie --model gpt-5 --global >/dev/null
+"$ORCH" agent set reviewer --host junie --effort low >/dev/null
+assert_eq "Junie lookup combines a global model and a local effort" \
+  "$("$ORCH" agent get reviewer --host junie 2>&1)" "model gpt-5
+effort low"
+"$ORCH" agent set reviewer --host junie --model o3 >/dev/null
+assert_eq "a local Junie model wins over the global one" \
+  "$("$ORCH" agent get reviewer --host junie 2>&1 | head -n 1)" "model o3"
+"$ORCH" agent set reviewer --host junie --model inherit >/dev/null
+assert_eq "set --host junie --model inherit clears the local key" "$(jkey local model reviewer)" "<unset>"
+assert_eq "so the global Junie model shows through" \
+  "$("$ORCH" agent get reviewer --host junie 2>&1 | head -n 1)" "model gpt-5"
+
+before="$(git config --local --get-regexp '^orchestrator\.' ; git config --global --get-regexp '^orchestrator\.')"
+out="$("$ORCH" agent set lens --host junie --model "GPT 5" 2>&1)"; st=$?
+assert_status "set --host junie refuses a model with a space" "$st" 1
+assert_contains "naming the pattern" "$out" "[A-Za-z0-9._:/-]+"
+assert_contains "pointing at the /model picker and --model flag" "$out" "/model"
+assert_contains "and warning about aliases" "$out" "aliases resolve unpredictably"
+untouched "a Junie model with a space"
+out="$("$ORCH" agent set lens --host junie --model 'a;b' 2>&1)"; st=$?
+assert_status "set --host junie refuses a disallowed character" "$st" 1
+untouched "a Junie model with a disallowed character"
+out="$("$ORCH" agent set lens --host junie --model $'gpt\nx' 2>&1)"; st=$?
+assert_status "set --host junie matches the model pattern as a whole" "$st" 1
+untouched "a multi-line Junie model"
+out="$("$ORCH" agent set lens --host junie --effort xhigh 2>&1)"; st=$?
+assert_status "set --host junie refuses an effort Claude Code allows" "$st" 1
+assert_contains "naming the Junie efforts" "$out" "low|medium|high|inherit"
+untouched "a disallowed Junie effort"
+out="$("$ORCH" agent set lens --host codex --model opus 2>&1)"; st=$?
+assert_status "set refuses another host" "$st" 1
+assert_contains "naming it" "$out" "codex"
+untouched "another host"
+out="$("$ORCH" agent get lens --host codex 2>&1)"; st=$?
+assert_status "get refuses another host" "$st" 1
+out="$("$ORCH" agent clear lens --host codex 2>&1)"; st=$?
+assert_status "clear refuses another host" "$st" 1
+assert_contains "naming it" "$out" "codex"
+
+git config --local orchestrator.junie.effort.fixer extreme
+git config --global orchestrator.junie.model.closer "bad model"
+out="$("$ORCH" agent show 2>&1)"; st=$?
+assert_status "show succeeds with invalid Junie values" "$st" 0
+assert_eq "show prints twelve lines" "$(wc -l <<<"$out" | tr -d ' ')" "12"
+assert_eq "show's Junie lines follow the six Claude Code lines, invalid values marked" "$(tail -n 6 <<<"$out")" \
+  "junie implementer model custom:my/profile.1 (local) effort inherit (inherit)
+junie lens model gpt-5 (local) effort medium (local)
+junie reviewer model gpt-5 (global) effort low (local)
+junie fixer model inherit (inherit) effort extreme (local, invalid)
+junie closer model bad model (global, invalid) effort inherit (inherit)
+junie resolver model inherit (inherit) effort inherit (inherit)"
+out="$("$ORCH" agent get fixer --host junie 2>&1)"; st=$?
+assert_status "get --host junie refuses an invalid stored value" "$st" 1
+assert_contains "naming the clear that removes it" "$out" "orch.sh agent clear fixer --host junie --effort"
+out="$("$ORCH" agent get closer --host junie 2>&1)"; st=$?
+assert_contains "naming the global clear" "$out" "orch.sh agent clear closer --host junie --model --global"
+
+"$ORCH" agent clear lens --host junie --model >/dev/null
+assert_eq "clear --host junie --model removes only the Junie model" \
+  "$(jkey local model lens) $(jkey local effort lens)" "<unset> medium"
+"$ORCH" agent clear lens --host junie >/dev/null
+assert_eq "clear --host junie removes both Junie keys" "$(jkey local effort lens)" "<unset>"
+"$ORCH" agent clear reviewer --host junie --global >/dev/null
+assert_eq "clear --host junie --global removes the global Junie key" "$(jkey global model reviewer)" "<unset>"
+assert_eq "and leaves the Claude Code keys" "$(key local orchestrator.model.implementer)" "sonnet"
+out="$("$ORCH" agent get 2>&1)"; st=$?
+assert_contains "get's usage names --host junie" "$out" "[--host junie]"
+unset -f jkey
 unset -f key untouched
+restore_suite_env
+
+# --- agent sync ----------------------------------------------------------------
+# Agent copies: sync writes a marked copy of each plugin agent whose role has a
+# Junie setting into the checkout's .junie/agents/, and keeps it out of git.
+# Driven through the CLI against a fresh repo and a throwaway HOME.
+echo
+echo "agent sync"
+new_repo >/dev/null
+HOME="$(mktemp -d)"
+export HOME
+as_dir=".junie/agents"
+as_marker="# written by orch.sh agent sync"
+as_plugin="$PLUGIN_ROOT/agents"
+as_exclude() { cat "$(git rev-parse --git-common-dir)/info/exclude" 2>/dev/null; }
+# as_copies: the file names under .junie/agents, one per line.
+as_copies() { ls "$as_dir" 2>/dev/null; }
+
+out="$("$ORCH" agent sync 2>&1)"; st=$?
+assert_status "sync with nothing set succeeds" "$st" 0
+assert_eq "sync with nothing set writes no copy" "$(as_copies)" ""
+out="$("$ORCH" agent sync extra 2>&1)"; st=$?
+assert_status "sync takes no argument" "$st" 1
+assert_contains "the usage text lists agent sync" "$("$ORCH" help 2>&1)" "agent sync"
+
+"$ORCH" agent set implementer --host junie --model gpt-5 --effort high >/dev/null
+assert_eq "set --host junie writes the copy" "$(as_copies)" "orch-implementer.md"
+assert_eq "the copy is the plugin agent with the marker, model and effort after the opening ---" \
+  "$(cat "$as_dir/orch-implementer.md")" \
+  "$(awk -v m="$as_marker" 'NR == 1 { print; print m; print "model: gpt-5"; print "reasoningLevel: high"; next } { print }' "$as_plugin/orch-implementer.md")"
+assert_eq "the exclude file gains the copy line once" \
+  "$(exclude_count '.junie/agents/orch-*.md')" "1"
+"$ORCH" agent sync >/dev/null
+assert_eq "a second sync adds no second exclude line" \
+  "$(exclude_count '.junie/agents/orch-*.md')" "1"
+assert_eq "the copy stays out of git status" "$(git status --porcelain)" ""
+
+touch -d '2001-01-01' "$as_dir/orch-implementer.md"
+"$ORCH" agent sync >/dev/null
+assert_eq "a second sync leaves an identical copy alone" \
+  "$(stat -c %y "$as_dir/orch-implementer.md" | cut -c1-4)" "2001"
+
+"$ORCH" agent set lens --host junie --model claude-opus-5-5 >/dev/null
+assert_eq "a lens setting writes every lens copy" "$(as_copies)" \
+  "orch-implementer.md
+orch-lens-consistency.md
+orch-lens-fidelity.md
+orch-lens-implementability.md
+orch-lens-testability.md"
+assert_eq "a model-only copy has no reasoningLevel" \
+  "$(grep -c '^reasoningLevel:' "$as_dir/orch-lens-fidelity.md")" "0"
+
+"$ORCH" agent set reviewer --model opus --effort high >/dev/null
+"$ORCH" agent sync >/dev/null
+assert_eq "the Claude Code keys never produce a copy" "$(as_copies | grep -c reviewer)" "0"
+
+"$ORCH" agent set implementer --host junie --model gpt-5-mini >/dev/null
+assert_contains "a changed setting rewrites the copy" "$(cat "$as_dir/orch-implementer.md")" "model: gpt-5-mini"
+printf '%s\n' 'tampered' >>"$as_dir/orch-implementer.md"
+"$ORCH" agent sync >/dev/null
+assert_eq "a hand-edited marked copy is rewritten" \
+  "$(grep -c tampered "$as_dir/orch-implementer.md")" "0"
+
+"$ORCH" agent set implementer --host junie --model custom:my/profile.1 --effort low >/dev/null
+assert_eq "a custom: profile id is written whole, colon and all" \
+  "$(grep -E '^(model|reasoningLevel):' "$as_dir/orch-implementer.md")" \
+  "model: custom:my/profile.1
+reasoningLevel: low"
+touch -d '2001-01-01' "$as_dir/orch-implementer.md"
+"$ORCH" agent sync >/dev/null
+assert_eq "and a second sync finds that copy current" \
+  "$(stat -c %y "$as_dir/orch-implementer.md" | cut -c1-4)" "2001"
+"$ORCH" agent set implementer --host junie --model gpt-5-mini >/dev/null
+"$ORCH" agent clear implementer --host junie --effort >/dev/null
+
+"$ORCH" agent clear lens --host junie >/dev/null
+assert_eq "clear --host junie deletes the role's copies" "$(as_copies)" "orch-implementer.md"
+printf '%s\n' '---' "$as_marker" 'name: orch-gone' '---' >"$as_dir/orch-gone.md"
+"$ORCH" agent sync >/dev/null
+assert_eq "a marked copy naming no plugin agent is deleted" "$(as_copies)" "orch-implementer.md"
+printf '%s\n' 'mine' >"$as_dir/notes.md"
+printf '%s\n' '---' 'name: orch-gone' "$as_marker" '---' >"$as_dir/orch-gone.md"
+"$ORCH" agent clear implementer --host junie >/dev/null
+assert_eq "only the line after the opening --- counts as the marker; non-orch files are never touched" \
+  "$(as_copies)" "notes.md
+orch-gone.md"
+rm -f "$as_dir/orch-gone.md"
+
+# An unmarked orch-*.md in the way is refused by name, and nothing else changes.
+"$ORCH" agent set implementer --host junie --model gpt-5 >/dev/null
+printf '%s\n' 'hand made' >"$as_dir/orch-reviewer-spec.md"
+"$ORCH" agent clear implementer --host junie --model >/dev/null
+printf '%s\n' '---' "$as_marker" '---' >"$as_dir/orch-fixer.md"
+git config --local orchestrator.junie.model.implementer gpt-5
+git config --local orchestrator.junie.model.reviewer gpt-5
+before="$(dir_snapshot "$as_dir"; as_exclude)"
+out="$("$ORCH" agent sync 2>&1)"; st=$?
+assert_status "sync refuses an unmarked orch-*.md in its way" "$st" 1
+assert_contains "naming the file" "$out" "orch-reviewer-spec.md"
+assert_eq "and changes nothing else" "$(dir_snapshot "$as_dir"; as_exclude)" "$before"
+assert_eq "the unmarked file is byte-identical" "$(cat "$as_dir/orch-reviewer-spec.md")" "hand made"
+
+out="$("$ORCH" agent set closer --host junie --model gpt-5 2>&1)"; st=$?
+assert_status "set --host junie with an unmarked file in the way exits non-zero" "$st" 1
+assert_contains "with sync's message" "$out" "orch-reviewer-spec.md"
+assert_eq "the key is still written" "$(git config --local --get orchestrator.junie.model.closer)" "gpt-5"
+out="$("$ORCH" agent clear closer --host junie 2>&1)"; st=$?
+assert_status "clear --host junie with an unmarked file in the way exits non-zero" "$st" 1
+assert_contains "clear carries sync's message" "$out" "orch-reviewer-spec.md"
+assert_eq "the key is still removed" "$(git config --local --get orchestrator.junie.model.closer || echo none)" "none"
+
+# A linked worktree adds the line to the common git dir's exclude file.
+new_repo >/dev/null
+as_main="$PWD"
+git worktree add -q "$as_main-wt" -b wt
+cd "$as_main-wt" || exit 1
+git config --local orchestrator.junie.model.closer gpt-5
+"$ORCH" agent sync >/dev/null
+assert_eq "a sync in a linked worktree writes the common git dir's exclude" \
+  "$(grep -cxF '.junie/agents/orch-*.md' "$as_main/.git/info/exclude")" "1"
+assert_eq "and the copy lands in the worktree" "$(as_copies)" "orch-closer.md"
+cd "$as_main" || exit 1
+
+# An exclude append that fails names the exclude file's path.
+new_repo >/dev/null
+rm -f .git/info/exclude
+mkdir -p .git/info/exclude
+git config --local orchestrator.junie.model.closer gpt-5
+out="$("$ORCH" agent sync 2>&1)"; st=$?
+assert_status "sync with an exclude file it cannot append to exits non-zero" "$st" 1
+assert_contains "naming the exclude file's path in its own message" "$out" "to the git exclude file .git/info/exclude"
+rm -rf .git/info/exclude
+cd "$as_main" || exit 1
+unset -f as_exclude as_copies
+unset as_dir as_marker as_plugin
 restore_suite_env

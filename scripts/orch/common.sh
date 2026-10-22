@@ -270,25 +270,41 @@ finding_triage_cmd() {
 # unfamiliar repo never dirties its working tree. A line already present is
 # never written again. The file is the clone's shared one (the common dir),
 # the only info/exclude git reads, so a linked worktree writes it too.
-exclude_orch_dirs() {
-  local ex missing
+exclude_orch_dirs() { exclude_line "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")"; }
+
+# exclude_lines <lines>: appends each of the newline-separated <lines> to the
+# clone's shared info/exclude, as the caller has already found it missing.
+# Nothing is written for an empty <lines>. The one place that file is appended
+# to: exclude_line passes it the lines it lacks, for exclude_orch_dirs and
+# agent sync's agent-copy line alike.
+exclude_lines() {
+  local ex
   ex="$(git rev-parse --git-common-dir)/info/exclude"
-  missing="$(orch_dirs_unexcluded)"
   mkdir -p "${ex%/*}"
-  if [ -n "$missing" ]; then printf '%s\n' "$missing" >>"$ex"; fi
+  if [ -n "$1" ]; then printf '%s\n' "$1" >>"$ex"; fi
+}
+
+# exclude_line <lines>: makes sure each of the newline-separated <lines> is a
+# line of the clone's shared info/exclude, adding it once and never again.
+exclude_line() { exclude_lines "$(exclude_missing "$1")"; }
+
+# exclude_missing <lines>: prints, one per line, each of the newline-separated
+# <lines> the clone's shared info/exclude lacks - every one when the file is
+# missing. The one place the membership test is written: exclude_line appends
+# exactly this, and orch_dirs_unexcluded prints it.
+exclude_missing() {
+  local ex l
+  ex="$(git rev-parse --git-common-dir)/info/exclude"
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    grep -qxF -- "$l" "$ex" 2>/dev/null || printf '%s\n' "$l"
+  done <<<"$1"
 }
 
 # Prints, one per line, each EXCLUDED_DIRS entry the clone's shared
-# info/exclude lacks - every entry when the file is missing. The one place the
-# membership test is written: exclude_orch_dirs appends exactly this, and
-# doctor's check_git_exclude reports exactly this.
-orch_dirs_unexcluded() {
-  local ex d
-  ex="$(git rev-parse --git-common-dir)/info/exclude"
-  for d in "${EXCLUDED_DIRS[@]}"; do
-    grep -qxF "$d" "$ex" 2>/dev/null || printf '%s\n' "$d"
-  done
-}
+# info/exclude lacks - every entry when the file is missing. doctor's check_git_exclude
+# reports exactly this.
+orch_dirs_unexcluded() { exclude_missing "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")"; }
 # Prints, one per line, every path with tracked modifications or untracked
 # files in this working tree that falls outside the planning allowlist. -z
 # keeps unusual file names intact; a rename or copy carries its source path as
