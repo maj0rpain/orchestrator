@@ -158,6 +158,10 @@ orch.sh - deterministic operations for the orchestrator flow
                               `effort <level|inherit>`, each looked up local,
                               then global, else inherit; refuses a
                               disallowed value, naming its key
+  agent sync                  write, refresh and delete this checkout's
+                              .junie/agents/ copies of the plugin's agents
+                              to match the Junie agent setting; refuses an
+                              unmarked orch-*.md in the way, changing nothing
   suite-cost run -- <cmd> [args...]
                               run <cmd> in the current directory, its stdout,
                               stderr and exit code passed through and nothing

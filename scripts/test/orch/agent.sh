@@ -281,3 +281,115 @@ assert_contains "get's usage names --host junie" "$out" "[--host junie]"
 unset -f jkey
 unset -f key untouched
 restore_suite_env
+
+# --- agent sync ----------------------------------------------------------------
+# Agent copies: sync writes a marked copy of each plugin agent whose role has a
+# Junie setting into the checkout's .junie/agents/, and keeps it out of git.
+# Driven through the CLI against a fresh repo and a throwaway HOME.
+echo
+echo "agent sync"
+new_repo >/dev/null
+HOME="$(mktemp -d)"
+export HOME
+as_dir=".junie/agents"
+as_marker="# written by orch.sh agent sync"
+as_plugin="$(cd "$(dirname "$ORCH")/.." && pwd)/agents"
+as_exclude() { cat "$(git rev-parse --git-common-dir)/info/exclude" 2>/dev/null; }
+# as_copies: the file names under .junie/agents, one per line.
+as_copies() { ls "$as_dir" 2>/dev/null; }
+
+out="$("$ORCH" agent sync 2>&1)"; st=$?
+assert_status "sync with nothing set succeeds" "$st" 0
+assert_eq "sync with nothing set writes no copy" "$(as_copies)" ""
+out="$("$ORCH" agent sync extra 2>&1)"; st=$?
+assert_status "sync takes no argument" "$st" 1
+assert_contains "the usage text lists agent sync" "$("$ORCH" help 2>&1)" "agent sync"
+
+"$ORCH" agent set implementer --host junie --model gpt-5 --effort high >/dev/null
+assert_eq "set --host junie writes the copy" "$(as_copies)" "orch-implementer.md"
+assert_eq "the copy is the plugin agent with the marker, model and effort after the opening ---" \
+  "$(cat "$as_dir/orch-implementer.md")" \
+  "$(awk -v m="$as_marker" 'NR == 1 { print; print m; print "model: gpt-5"; print "reasoningLevel: high"; next } { print }' "$as_plugin/orch-implementer.md")"
+assert_eq "the exclude file gains the copy line once" \
+  "$(as_exclude | grep -cxF '.junie/agents/orch-*.md')" "1"
+"$ORCH" agent sync >/dev/null
+assert_eq "a second sync adds no second exclude line" \
+  "$(as_exclude | grep -cxF '.junie/agents/orch-*.md')" "1"
+assert_eq "the copy stays out of git status" "$(git status --porcelain)" ""
+
+touch -d '2001-01-01' "$as_dir/orch-implementer.md"
+"$ORCH" agent sync >/dev/null
+assert_eq "a second sync leaves an identical copy alone" \
+  "$(stat -c %y "$as_dir/orch-implementer.md" | cut -c1-4)" "2001"
+
+"$ORCH" agent set lens --host junie --model claude-opus-5-5 >/dev/null
+assert_eq "a lens setting writes every lens copy" "$(as_copies)" \
+  "orch-implementer.md
+orch-lens-consistency.md
+orch-lens-fidelity.md
+orch-lens-implementability.md
+orch-lens-testability.md"
+assert_eq "a model-only copy has no reasoningLevel" \
+  "$(grep -c '^reasoningLevel:' "$as_dir/orch-lens-fidelity.md")" "0"
+
+"$ORCH" agent set reviewer --model opus --effort high >/dev/null
+"$ORCH" agent sync >/dev/null
+assert_eq "the Claude Code keys never produce a copy" "$(as_copies | grep -c reviewer)" "0"
+
+"$ORCH" agent set implementer --host junie --model gpt-5-mini >/dev/null
+assert_contains "a changed setting rewrites the copy" "$(cat "$as_dir/orch-implementer.md")" "model: gpt-5-mini"
+printf '%s\n' 'tampered' >>"$as_dir/orch-implementer.md"
+"$ORCH" agent sync >/dev/null
+assert_eq "a hand-edited marked copy is rewritten" \
+  "$(grep -c tampered "$as_dir/orch-implementer.md")" "0"
+
+"$ORCH" agent clear lens --host junie >/dev/null
+assert_eq "clear --host junie deletes the role's copies" "$(as_copies)" "orch-implementer.md"
+printf '%s\n' '---' "$as_marker" 'name: orch-gone' '---' >"$as_dir/orch-gone.md"
+"$ORCH" agent sync >/dev/null
+assert_eq "a marked copy naming no plugin agent is deleted" "$(as_copies)" "orch-implementer.md"
+printf '%s\n' 'mine' >"$as_dir/notes.md"
+printf '%s\n' '---' 'name: orch-gone' "$as_marker" '---' >"$as_dir/orch-gone.md"
+"$ORCH" agent clear implementer --host junie >/dev/null
+assert_eq "only the line after the opening --- counts as the marker; non-orch files are never touched" \
+  "$(as_copies)" "notes.md
+orch-gone.md"
+rm -f "$as_dir/orch-gone.md"
+
+# An unmarked orch-*.md in the way is refused by name, and nothing else changes.
+"$ORCH" agent set implementer --host junie --model gpt-5 >/dev/null
+printf '%s\n' 'hand made' >"$as_dir/orch-reviewer-spec.md"
+"$ORCH" agent clear implementer --host junie --model >/dev/null
+printf '%s\n' '---' "$as_marker" '---' >"$as_dir/orch-fixer.md"
+git config --local orchestrator.junie.model.implementer gpt-5
+git config --local orchestrator.junie.model.reviewer gpt-5
+before="$(cksum "$as_dir"/* ; as_exclude)"
+out="$("$ORCH" agent sync 2>&1)"; st=$?
+assert_status "sync refuses an unmarked orch-*.md in its way" "$st" 1
+assert_contains "naming the file" "$out" "orch-reviewer-spec.md"
+assert_eq "and changes nothing else" "$(cksum "$as_dir"/* ; as_exclude)" "$before"
+assert_eq "the unmarked file is byte-identical" "$(cat "$as_dir/orch-reviewer-spec.md")" "hand made"
+
+out="$("$ORCH" agent set closer --host junie --model gpt-5 2>&1)"; st=$?
+assert_status "set --host junie with an unmarked file in the way exits non-zero" "$st" 1
+assert_contains "with sync's message" "$out" "orch-reviewer-spec.md"
+assert_eq "the key is still written" "$(git config --local --get orchestrator.junie.model.closer)" "gpt-5"
+out="$("$ORCH" agent clear closer --host junie 2>&1)"; st=$?
+assert_status "clear --host junie with an unmarked file in the way exits non-zero" "$st" 1
+assert_contains "clear carries sync's message" "$out" "orch-reviewer-spec.md"
+assert_eq "the key is still removed" "$(git config --local --get orchestrator.junie.model.closer || echo none)" "none"
+
+# A linked worktree adds the line to the common git dir's exclude file.
+new_repo >/dev/null
+as_main="$PWD"
+git worktree add -q "$as_main-wt" -b wt
+cd "$as_main-wt" || exit 1
+git config --local orchestrator.junie.model.closer gpt-5
+"$ORCH" agent sync >/dev/null
+assert_eq "a sync in a linked worktree writes the common git dir's exclude" \
+  "$(grep -cxF '.junie/agents/orch-*.md' "$as_main/.git/info/exclude")" "1"
+assert_eq "and the copy lands in the worktree" "$(as_copies)" "orch-closer.md"
+cd "$as_main" || exit 1
+unset -f as_exclude as_copies
+unset as_dir as_marker as_plugin
+restore_suite_env

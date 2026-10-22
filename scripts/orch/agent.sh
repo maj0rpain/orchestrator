@@ -145,6 +145,7 @@ agent_set() {
       git config "--$scope" "$(agent_key "$host" "$kind" "$role")" "$v"
     fi
   done
+  if [ "$host" = junie ]; then agent_sync; fi
 }
 
 # agent clear <role> [--model] [--effort] [--global]: both keys, or only those
@@ -167,6 +168,7 @@ agent_clear() {
   done
   [ -n "$kinds" ] || kinds="model effort"
   for kind in $kinds; do agent_unset "$scope" "$(agent_key "$host" "$kind" "$role")"; done
+  if [ "$host" = junie ]; then agent_sync; fi
 }
 
 # agent_show_host <host>: one line per role, in role order - its model and
@@ -203,6 +205,93 @@ agent_get() {
     out="$out$kind $v"$'\n'
   done
   printf '%s' "$out"
+}
+
+# The marker sync puts on the line right after a copy's opening ---, and the
+# exclude line that keeps the copies out of git.
+AGENT_COPY_MARKER="# written by orch.sh agent sync"
+AGENT_COPY_EXCLUDE=".junie/agents/orch-*.md"
+
+# agent_role_of <agent>: the role a plugin agent's name belongs to, empty for
+# an agent no role covers.
+agent_role_of() {
+  case "$1" in
+    orch-implementer) echo implementer ;;
+    orch-lens-*) echo lens ;;
+    orch-reviewer-*) echo reviewer ;;
+    orch-fixer) echo fixer ;;
+    orch-closer) echo closer ;;
+    orch-resolver) echo resolver ;;
+  esac
+}
+
+# agent_copy_marked <file>: whether <file> carries the marker - on the line
+# right after its opening --- and nowhere else.
+agent_copy_marked() {
+  [ "$(sed -n 1p "$1")" = "---" ] && [ "$(sed -n 2p "$1")" = "$AGENT_COPY_MARKER" ]
+}
+
+# agent_copy_content <agent-file> <model> <effort>: what sync writes for a
+# plugin agent: the file with the marker, then model: and reasoningLevel:
+# (each only when not inherit) right after its opening ---.
+agent_copy_content() {
+  awk -v marker="$AGENT_COPY_MARKER" -v model="$2" -v effort="$3" '
+    NR == 1 {
+      print
+      print marker
+      if (model != "inherit") print "model: " model
+      if (effort != "inherit") print "reasoningLevel: " effort
+      next
+    }
+    { print }' "$1"
+}
+
+# agent sync: brings the checkout's .junie/agents/ copies up to date with the
+# Junie setting. Nothing is changed when an unmarked orch-*.md is in the way of
+# a copy it would write: that is refused by name, after the whole plan is made.
+agent_sync() {
+  # src_model and src_effort receive agent_lookup's source and go unread here.
+  # shellcheck disable=SC2034
+  local plugin dir file name role m e src_model src_effort content target
+  local refused="" writes=() want=""
+  plugin="$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)"
+  dir="$ROOT/.junie/agents"
+  for file in "$plugin"/agents/orch-*.md; do
+    [ -e "$file" ] || continue
+    name="$(basename "$file" .md)"
+    role="$(agent_role_of "$name")"
+    [ -n "$role" ] || continue
+    agent_lookup model "$role" m src_model junie
+    agent_lookup effort "$role" e src_effort junie
+    agent_allowed model "$m" junie || m=inherit
+    agent_allowed effort "$e" junie || e=inherit
+    [ "$m$e" = inheritinherit ] && continue
+    want="$want$name"$'\n'
+    target="$dir/$name.md"
+    content="$(agent_copy_content "$file" "$m" "$e"; echo x)"
+    if [ -e "$target" ]; then
+      if ! agent_copy_marked "$target"; then refused="$refused $name.md"; continue; fi
+      [ "$(cat "$target"; echo x)" = "$content" ] && continue
+    fi
+    writes+=("$name:$m:$e")
+  done
+  [ -z "$refused" ] ||
+    die "agent sync: ${refused# } in $dir carries no sync marker - not written by orch.sh agent sync, so left alone; rename or remove it, then rerun orch.sh agent sync"
+  if [ -n "$want" ]; then exclude_line "$AGENT_COPY_EXCLUDE" || die "agent sync: cannot add $AGENT_COPY_EXCLUDE to the git exclude file"; fi
+  for file in "$dir"/orch-*.md; do
+    [ -e "$file" ] || continue
+    name="$(basename "$file" .md)"
+    agent_copy_marked "$file" || continue
+    list_has "$want" "$name" && continue
+    rm -f -- "$file" || die "agent sync: cannot delete $file"
+  done
+  local w
+  for w in ${writes[@]+"${writes[@]}"}; do
+    IFS=: read -r name m e <<<"$w"
+    mkdir -p "$dir" || die "agent sync: cannot create $dir"
+    agent_copy_content "$plugin/agents/$name.md" "$m" "$e" >"$dir/$name.md" ||
+      die "agent sync: cannot write $dir/$name.md"
+  done
 }
 
 # check_agent_settings: doctor's agent settings check, named in its env check
@@ -246,6 +335,10 @@ cmd_agent() {
       agent_show
       ;;
     clear) agent_clear "$@" ;;
+    sync)
+      [ $# -eq 0 ] || die "usage: orch.sh agent sync"
+      agent_sync
+      ;;
     get)
       local get_usage="usage: orch.sh agent get <role> [--host junie]"
       if [ $# -eq 1 ]; then agent_get "$1" claude
@@ -255,6 +348,6 @@ cmd_agent() {
         agent_get "$1" "$get_host"
       else die "$get_usage"; fi
       ;;
-    *) die "unknown agent op: ${op:-<none>} (want set|show|clear|get)" ;;
+    *) die "unknown agent op: ${op:-<none>} (want set|show|clear|get|sync)" ;;
   esac
 }

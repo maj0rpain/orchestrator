@@ -270,12 +270,24 @@ finding_triage_cmd() {
 # unfamiliar repo never dirties its working tree. A line already present is
 # never written again. The file is the clone's shared one (the common dir),
 # the only info/exclude git reads, so a linked worktree writes it too.
-exclude_orch_dirs() {
-  local ex missing
+exclude_orch_dirs() { exclude_lines "$(orch_dirs_unexcluded)"; }
+
+# exclude_lines <lines>: appends each of the newline-separated <lines> to the
+# clone's shared info/exclude, as the caller has already found it missing.
+# Nothing is written for an empty <lines>. The one place that file is appended
+# to: exclude_orch_dirs passes the EXCLUDED_DIRS it lacks, and agent sync its
+# agent-copy line.
+exclude_lines() {
+  local ex
   ex="$(git rev-parse --git-common-dir)/info/exclude"
-  missing="$(orch_dirs_unexcluded)"
   mkdir -p "${ex%/*}"
-  if [ -n "$missing" ]; then printf '%s\n' "$missing" >>"$ex"; fi
+  if [ -n "$1" ]; then printf '%s\n' "$1" >>"$ex"; fi
+}
+
+# exclude_line <line>: makes sure <line> is a line of the clone's shared
+# info/exclude, adding it once and never again.
+exclude_line() {
+  grep -qxF -- "$1" "$(git rev-parse --git-common-dir)/info/exclude" 2>/dev/null || exclude_lines "$1"
 }
 
 # Prints, one per line, each EXCLUDED_DIRS entry the clone's shared
