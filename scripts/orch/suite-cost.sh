@@ -13,6 +13,21 @@
 # seconds (user plus system, children included), the wall seconds, both to two
 # places, the UTC time in ISO 8601, and the command, its words joined by single
 # spaces. history prints it as written, and the tests seed it.
+#
+# Only a run no other suite-cost run overlapped is recorded. Beside the record,
+# the active-runs directory suite-cost.active holds one marker per measured run
+# in progress - suite-cost run, check's base run, or one of its confirming runs
+# - a file named by the pid of the orch.sh process measuring it; its contended
+# mark is a sibling file <pid>.contended. A run first removes its own pid's
+# .contended file, left by an earlier run of the same process, then creates its
+# marker, then lists the others: it marks each other live one contended, and
+# itself when there was any. On finish it was overlapped when its .contended
+# file exists, or when it saw another live marker at start, and it removes its
+# marker and .contended file either way. A marker or .contended file whose pid
+# names no live process is stale, and so is a .contended file whose marker is
+# gone: no contention, and removed by the run that finds it. A failed .contended write for another run is not retried, and a
+# failed removal is ignored. A run that cannot register still runs but is not
+# recorded. No run ever waits for another.
 
 SUITE_COST_RUN_USAGE="usage: orch.sh suite-cost run -- <cmd> [args...]"
 SUITE_COST_CHECK_USAGE="usage: orch.sh suite-cost check -- <cmd> [args...]"
@@ -22,9 +37,10 @@ SUITE_COST_CHECK_USAGE="usage: orch.sh suite-cost check -- <cmd> [args...]"
 # finding. Set per clone with git config orchestrator.suiteCost.floor and
 # orchestrator.suiteCost.growth. A third per-clone key,
 # orchestrator.suiteCost.setup, has no default: the install command (npm ci,
-# uv sync) a base run runs first in its worktree, read by suite_cost_base_run.
+# uv sync) a base run or confirming run runs first in its worktree, read by
+# suite_cost_tree_run.
 SUITE_COST_FLOOR_DEFAULT=60
-SUITE_COST_GROWTH_DEFAULT=10
+SUITE_COST_GROWTH_DEFAULT=15
 
 cmd_suite_cost() {
   local op="${1:-}"
@@ -57,18 +73,80 @@ suite_cost_record() {
   printf '%s/orchestrator/suite-cost\n' "$d"
 }
 
+# suite_cost_active: prints the path of the clone's active-runs directory,
+# suite-cost.active beside the record.
+suite_cost_active() {
+  local rec
+  rec="$(suite_cost_record)" || return 1
+  printf '%s.active\n' "$rec"
+}
+
+# suite_cost_register: registers this orch.sh process's run as active, before
+# it is measured, and sets SUITE_COST_MARK to its marker's path, empty when it
+# could not register, and SUITE_COST_SAW to 1 when another live run's marker
+# was present, else 0. Stale markers and .contended files it finds are removed,
+# a .contended file whose marker is gone counting as stale whether or not its
+# pid is live.
+suite_cost_register() {
+  local dir me f name p
+  SUITE_COST_MARK="" SUITE_COST_SAW=0
+  dir="$(suite_cost_active 2>/dev/null)" || return 0
+  me="$dir/$$"
+  rm -f -- "$me.contended" 2>/dev/null || true
+  { mkdir -p -- "$dir" && : >"$me"; } 2>/dev/null || return 0
+  SUITE_COST_MARK="$me"
+  for f in "$dir"/*; do
+    name="${f##*/}"
+    p="${name%.contended}"
+    [[ "$p" =~ ^[0-9]+$ ]] && [ "$p" != "$$" ] || continue
+    if ! kill -0 "$p" 2>/dev/null; then
+      rm -f -- "$f" 2>/dev/null || true
+    elif [ "$f" = "$dir/$p" ]; then
+      SUITE_COST_SAW=1
+      : 2>/dev/null >"$f.contended" || true
+    elif [ ! -e "$dir/$p" ]; then
+      rm -f -- "$f" 2>/dev/null || true
+    fi
+  done
+  [ "$SUITE_COST_SAW" -eq 0 ] || : 2>/dev/null >"$me.contended" || true
+}
+
+# suite_cost_unregister: ends the run suite_cost_register began, removing its
+# marker and .contended file, and sets SUITE_COST_SOLO to solo, overlapped
+# (its .contended file existed, or it saw another live run at start) or
+# unregistered (it never had a marker).
+suite_cost_unregister() {
+  if [ -z "$SUITE_COST_MARK" ]; then
+    SUITE_COST_SOLO=unregistered
+    return 0
+  fi
+  SUITE_COST_SOLO=solo
+  if [ "$SUITE_COST_SAW" -eq 1 ] || [ -e "$SUITE_COST_MARK.contended" ]; then
+    SUITE_COST_SOLO=overlapped
+  fi
+  rm -f -- "$SUITE_COST_MARK" "$SUITE_COST_MARK.contended" 2>/dev/null || true
+  SUITE_COST_MARK=""
+}
+
 # suite_cost_run <cmd> [args...]: runs the command in the current directory,
 # its stdout, stderr and exit code passed through, and on exit 0 appends its
-# record line, its commit <sha>-dirty when the tree had changes as it started.
-# Exits with the command's own status.
+# record line, its commit <sha>-dirty when the tree had changes as it started -
+# unless another suite-cost run overlapped it, or it could not register as
+# active, either of which it warns of. Exits with the command's own status.
 suite_cost_run() {
   local sha
   sha="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
   if [ -n "$sha" ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
     sha="$sha-dirty"
   fi
+  suite_cost_register
   suite_cost_measure "$@"
-  if [ "$SUITE_COST_STATUS" -eq 0 ]; then
+  suite_cost_unregister
+  if [ "$SUITE_COST_SOLO" = unregistered ]; then
+    warn "this run could not register as active - its suite cost is not recorded"
+  elif [ "$SUITE_COST_SOLO" = overlapped ]; then
+    warn "this run overlapped another suite-cost run - its suite cost is not recorded"
+  elif [ "$SUITE_COST_STATUS" -eq 0 ]; then
     if [ -n "$sha" ]; then
       suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
     else
@@ -85,6 +163,7 @@ suite_cost_run() {
 # Measured by bash's own time keyword and TIMEFORMAT, so no GNU-only time is
 # needed: the report goes to a temp file while the command's stderr goes
 # through fd 3 to the caller's. `command` keeps it off orch.sh's own functions.
+# The one step ORCH_SUITE_COST_TIMER's file overrides (see the module's end).
 suite_cost_measure() {
   local tf real user sys TIMEFORMAT='%2R %2U %2S'
   SUITE_COST_STATUS=0
@@ -143,17 +222,28 @@ suite_cost_base_commit() {
     { warn "base commit $sha names no commit"; return 1; }
 }
 
-# suite_cost_newest <rec> <cmd-string> <pred>: prints the CPU seconds and
-# commit, tab-separated, of the newest record line of <cmd-string> whose commit
-# passes <pred> (a function given the commit), or fails printing nothing.
+# suite_cost_newest <rec> <cmd-string> <pred>: prints the commit of the newest
+# record line of <cmd-string> whose commit passes <pred> (a function given the
+# commit), or fails printing nothing.
 suite_cost_newest() {
-  local rec="$1" want="$2" pred="$3" sha cpu cmd
+  local rec="$1" want="$2" pred="$3" sha cmd
   [ -e "$rec" ] || return 1
-  while IFS=$'\t' read -r sha cpu _ _ cmd; do
+  while IFS=$'\t' read -r sha _ _ _ cmd; do
     [ "$cmd" = "$want" ] || continue
-    if "$pred" "$sha"; then printf '%s\t%s\n' "$cpu" "$sha"; return 0; fi
+    if "$pred" "$sha"; then printf '%s\n' "$sha"; return 0; fi
   done < <(awk '{ l[NR] = $0 } END { for (i = NR; i > 0; i--) print l[i] }' "$rec")
   return 1
+}
+
+# suite_cost_lowest <rec> <cmd-string> <commit>: prints the lowest CPU seconds
+# among the record lines of <cmd-string> whose commit field is <commit>
+# exactly, so a <sha>-dirty line and a <sha> one are never pooled, or prints
+# nothing when there is none.
+suite_cost_lowest() {
+  [ -e "$1" ] || return 0
+  LC_ALL=C awk -F'\t' -v want="$2" -v sha="$3" '
+    $1 == sha && $5 == want && (n++ == 0 || $2 + 0 < low + 0) { low = $2 }
+    END { if (n) print low }' "$1"
 }
 
 # The head's records: a clean one whose commit is HEAD or an ancestor of it,
@@ -183,74 +273,131 @@ suite_cost_is_base() {
 }
 
 # suite_cost_check <cmd> [args...]: prints one verdict line - off, ok,
-# grew <pct> - <finding text>, or unmeasured - comparing the head's newest
-# record of the command with the baseline's. The knobs are validated first, so
-# a bad one dies before anything runs; the command runs only to measure a base
-# with no recorded ancestor, never on the head.
+# grew <pct> - <finding text>, or unmeasured - comparing the head's lowest
+# sample of the command with the baseline's: the lowest CPU seconds on the
+# commit of the newest head record, and on that of the newest baseline record.
+# The knobs are validated first, so a bad one dies before anything runs. The
+# command runs to measure a base with no recorded ancestor, and runs on the
+# head only to confirm a growth: a comparison past the threshold measures the
+# head at HEAD and then the base at the baseline sample's commit, once each,
+# and compares again before it is reported. The head side pools the head
+# confirming run with the head sample only when that sample is on HEAD's
+# clean SHA, as a -dirty or ancestor one measured another tree.
 suite_cost_check() {
-  local floor growth rec want base_commit head_cpu base_cpu base_sha head_found base_found pct IFS=' '
+  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict pct head_commit IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
   want="$*"
   base_commit="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
-  head_found="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
+  head_sha="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
     { note unmeasured; return 0; }
-  head_cpu="${head_found%%$'\t'*}"
-  if base_found="$(suite_cost_newest "$rec" "$want" suite_cost_is_base)"; then
-    base_cpu="${base_found%%$'\t'*}" base_sha="${base_found#*$'\t'}"
+  head_cpu="$(suite_cost_lowest "$rec" "$want" "$head_sha")"
+  if base_sha="$(suite_cost_newest "$rec" "$want" suite_cost_is_base)"; then
+    base_cpu="$(suite_cost_lowest "$rec" "$want" "$base_sha")"
   else
-    suite_cost_base_run "$base_commit" "$@" || { note unmeasured; return 0; }
+    suite_cost_tree_run base "$base_commit" "$@" || { note unmeasured; return 0; }
     base_cpu="$SUITE_COST_CPU" base_sha="$base_commit"
   fi
-  # A zero baseline, possible only with a zero floor, has no growth to measure.
-  if float_lt "$base_cpu" "$floor" || ! float_lt 0 "$base_cpu"; then
-    note off
+  verdict="$(suite_cost_compare "$head_cpu" "$base_cpu" "$floor" "$growth")"
+  if [ "$verdict" = off ] || [ "$verdict" = ok ]; then
+    note "$verdict"
     return 0
   fi
-  pct="$(LC_ALL=C awk -v h="$head_cpu" -v b="$base_cpu" -v g="$growth" \
-    'BEGIN { p = (h - b) / b * 100; if (p > g) printf "%.0f", p }')"
-  if [ -z "$pct" ]; then
-    note ok
+  head_commit="$(git rev-parse --verify -q HEAD)" || { note unmeasured; return 0; }
+  suite_cost_tree_run confirm "$head_commit" "$@" || { note unmeasured; return 0; }
+  if [ "$head_sha" = "$head_commit" ]; then
+    head_cpu="$(suite_cost_min "$head_cpu" "$SUITE_COST_CPU")"
   else
-    note "grew $pct - suite cost grew ${pct}% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha"
+    head_cpu="$SUITE_COST_CPU"
+  fi
+  suite_cost_tree_run confirm "$base_sha" "$@" || { note unmeasured; return 0; }
+  base_cpu="$(suite_cost_min "$base_cpu" "$SUITE_COST_CPU")"
+  verdict="$(suite_cost_compare "$head_cpu" "$base_cpu" "$floor" "$growth")"
+  if [ "$verdict" = off ] || [ "$verdict" = ok ]; then
+    note "$verdict"
+  else
+    pct="${verdict#grew }"
+    note "$verdict - suite cost grew ${pct}% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha"
   fi
 }
 
-# suite_cost_base_run <base> <cmd> [args...]: measures the command once in a
-# temporary detached worktree at <base>, its output sent to stderr so check's
-# stdout stays its verdict, records a pass, and removes the worktree whatever
-# happened. The worktree holds only tracked files, so git config
+# suite_cost_compare <head> <base> <floor> <growth>: prints off when <base> is
+# below <floor> or zero (possible only with a zero floor, and no growth to
+# measure), else grew <pct> when the growth of <head> over <base>, <pct> as a
+# whole percent, is past <growth>, else ok.
+suite_cost_compare() {
+  if float_lt "$2" "$3" || ! float_lt 0 "$2"; then
+    note off
+    return 0
+  fi
+  LC_ALL=C awk -v h="$1" -v b="$2" -v g="$4" \
+    'BEGIN { p = (h - b) / b * 100; if (p > g) printf "grew %.0f\n", p; else print "ok" }'
+}
+
+# suite_cost_min <a> <b>: prints the lower of two CPU seconds, as written.
+suite_cost_min() {
+  if float_lt "$2" "$1"; then note "$2"; else note "$1"; fi
+}
+
+# suite_cost_tree_run <role> <commit> <cmd> [args...]: measures the command
+# once in a temporary detached worktree at <commit>, its output sent to stderr
+# so check's stdout stays its verdict, records a pass, and removes the
+# worktree whatever happened. <role> is base, for the base run check makes
+# when the base has no recorded ancestor, or confirm, for a confirming run;
+# it picks the warnings' wording, a confirming run's naming the growth as
+# unconfirmed. The worktree holds only tracked files, so git config
 # orchestrator.suiteCost.setup, when set and non-empty, runs there first with
 # bash -c, untimed and its output on stderr; a failing setup measures nothing.
-# With no setup, a run exiting 127 names that key. Succeeds, SUITE_COST_CPU set, only when the run passed and the
-# worktree is gone; a failed removal after a pass keeps the record and names
-# the left-over worktree.
-suite_cost_base_run() {
-  local base="$1" tmp wt here="$PWD" status=0 setup setup_status=0
-  shift
-  tmp="$(mktemp -d)" || { warn "could not make a temp directory for the base run"; return 1; }
-  wt="$tmp/base"
-  if ! git worktree add -q --detach "$wt" "$base" >/dev/null 2>&1; then
-    warn "could not add a worktree at base commit $base - the suite cost is unmeasured"
+# The run is registered as active from its setup to its end, and a passing run
+# another suite-cost run overlapped, or that could not register, is not
+# recorded and fails, warning which. With no setup, a base run exiting 127
+# names that key. Succeeds, SUITE_COST_CPU set, only when the run passed solo
+# and the worktree is gone; a failed removal after a pass keeps the record and
+# names the left-over worktree.
+suite_cost_tree_run() {
+  local role="$1" sha="$2" tmp wt here="$PWD" status=0 setup setup_status=0 run end no_worktree overlapped
+  shift 2
+  if [ "$role" = base ]; then
+    run="the base run" end="the suite cost is unmeasured"
+    no_worktree="could not add a worktree at base commit $sha - $end"
+    overlapped="$run at $sha overlapped another suite-cost run - $end"
+  else
+    run="the confirming run" end="the growth is unconfirmed"
+    no_worktree="could not add a worktree for $run at $sha - $end"
+    overlapped="$run at $sha overlapped another suite-cost run - contention left the growth unconfirmed"
+  fi
+  tmp="$(mktemp -d)" || { warn "could not make a temp directory for $run"; return 1; }
+  wt="$tmp/$role"
+  if ! git worktree add -q --detach "$wt" "$sha" >/dev/null 2>&1; then
+    warn "$no_worktree"
     rm -rf "$tmp"
     return 1
   fi
   setup="$(git config --get orchestrator.suiteCost.setup 2>/dev/null || true)"
   if cd "$wt"; then
+    suite_cost_register
     [ -z "$setup" ] || bash -c "$setup" >&2 || setup_status=$?
     [ "$setup_status" -ne 0 ] || suite_cost_measure "$@" >&2
+    suite_cost_unregister
     cd "$here" || die "could not return to $here"
-    if [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
-      suite_cost_append "$base" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
+    if [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ] && [ "$SUITE_COST_SOLO" = solo ]; then
+      suite_cost_append "$sha" "$SUITE_COST_CPU" "$SUITE_COST_WALL" "$@"
+    elif [ "$setup_status" -eq 0 ] && [ "$SUITE_COST_STATUS" -eq 0 ]; then
+      status=1
+      if [ "$SUITE_COST_SOLO" = unregistered ]; then
+        warn "$run at $sha could not register as active - $end"
+      else
+        warn "$overlapped"
+      fi
     else
       status=1
       if [ "$setup_status" -ne 0 ]; then
-        warn "the base run's setup ($setup) at $base exited $setup_status - the suite cost is unmeasured"
-      elif [ "$SUITE_COST_STATUS" -eq 127 ] && [ -z "$setup" ]; then
-        warn "the base run at $base exited 127 (command not found) - the base worktree holds only tracked files; if the command needs installed dependencies, set git config orchestrator.suiteCost.setup '<install command>'"
+        warn "$run's setup ($setup) at $sha exited $setup_status - $end"
+      elif [ "$role" = base ] && [ "$SUITE_COST_STATUS" -eq 127 ] && [ -z "$setup" ]; then
+        warn "$run at $sha exited 127 (command not found) - the base worktree holds only tracked files; if the command needs installed dependencies, set git config orchestrator.suiteCost.setup '<install command>'"
       else
-        warn "the base run at $base exited $SUITE_COST_STATUS - the suite cost is unmeasured"
+        warn "$run at $sha exited $SUITE_COST_STATUS - $end"
       fi
     fi
   else
@@ -259,8 +406,21 @@ suite_cost_base_run() {
   if git worktree remove --force "$wt" >/dev/null 2>&1; then
     rmdir "$tmp" 2>/dev/null || true
   else
-    warn "could not remove the base run's worktree $wt - remove it with: git worktree remove --force $wt"
+    warn "could not remove $run's worktree $wt - remove it with: git worktree remove --force $wt"
     status=1
   fi
   return "$status"
 }
+
+# ORCH_SUITE_COST_TIMER is an opt-in test knob in the same spirit as gh.sh's
+# ORCH_GH_ADAPTER: a file sourced immediately after the module's functions are
+# defined, which overrides only the step that times a command,
+# suite_cost_measure. The command still runs for real - its output, exit
+# code, setup, worktrees and active-runs markers are unchanged - and only the
+# CPU and wall seconds it reports come from the override; the tests' fake is
+# scripts/test/suite_cost_timer_fake.sh. Unset - every normal run - nothing is
+# sourced and the real bash time measurement runs. It is not a user setting.
+if [ -n "${ORCH_SUITE_COST_TIMER:-}" ]; then
+  # shellcheck disable=SC1090 # the timer path is chosen at run time, by tests
+  source "$ORCH_SUITE_COST_TIMER"
+fi

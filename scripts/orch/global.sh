@@ -165,24 +165,42 @@ orch.sh - deterministic operations for the orchestrator flow
                               not), CPU seconds (user plus
                               system, children included), wall seconds, the
                               UTC time in ISO 8601, and the command. An
-                              append that fails warns and records nothing
+                              append that fails warns and records nothing.
+                              A run another suite-cost run overlapped, in
+                              any checkout of the clone, is not recorded,
+                              and warns; so is one that could not register
+                              as active (orchestrator/suite-cost.active).
+                              No run waits for another
   suite-cost check -- <cmd> [args...]
                               print one verdict line comparing the head's
-                              newest recorded run of <cmd> (on HEAD or an
-                              ancestor not on the base, or a dirty one on
-                              HEAD or any ancestor) with the baseline's
-                              (the newest clean one, never a dirty one, on
-                              the base commit or an ancestor:
-                              state.base_sha in a flow, else branch base-sha),
-                              exiting 0: off (baseline below git config
+                              lowest sample of <cmd> with the baseline's
+                              lowest, exiting 0. The head sample is the
+                              lowest CPU seconds among the recorded runs on
+                              the commit of the newest head record (on HEAD
+                              or an ancestor not on the base, or a dirty one
+                              on HEAD or any ancestor; <sha>-dirty and <sha>
+                              are different commits); the baseline sample
+                              the lowest on the commit of the newest
+                              baseline record (a clean one, never a dirty
+                              one, on the base commit or an ancestor:
+                              state.base_sha in a flow, else branch base-sha).
+                              Verdicts: off (baseline below git config
                               orchestrator.suiteCost.floor, else 60 CPU
                               seconds), ok, grew <pct> - <finding text> (past
-                              orchestrator.suiteCost.growth, else 10 percent),
-                              or unmeasured. Never runs <cmd> on the head;
-                              with no baseline it measures the base once in a
-                              temporary worktree, first running git config
-                              orchestrator.suiteCost.setup there, untimed,
-                              when it is set. Dies naming the key and
+                              orchestrator.suiteCost.growth, else 15 percent),
+                              or unmeasured. A growth is confirmed by
+                              measuring head and base once more, in
+                              temporary worktrees at HEAD and the baseline
+                              sample's commit, and comparing again; the
+                              head is run only to confirm a growth. With no
+                              baseline it measures the base once in a
+                              temporary worktree. Each such run first runs
+                              git config orchestrator.suiteCost.setup there,
+                              untimed, when it is set. Such a base or
+                              confirming run is not recorded when another
+                              suite-cost run overlaps it, or when it could
+                              not register as active, and the verdict is
+                              then unmeasured. Dies naming the key and
                               value when an override is not a non-negative
                               number
   suite-cost history          print the record's lines, oldest first, or
