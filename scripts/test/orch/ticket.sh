@@ -37,7 +37,7 @@ assert_eq "printing the child's issue number and nothing else" "$out" "100"
 assert_eq "passes the title through" "$(fake_title_of 100)" "First ticket"
 assert_eq "sends the body file's contents" "$(fake_body_of 100)" "Build the thing."
 assert_eq "applies ready-for-agent" "$(fake_labels_of 100)" "ready-for-agent "
-assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "links the child as 50's sub-issue" "$(fake_sub_issues_of 50)" "100"
 
 out="$("$ORCH" ticket publish 50 "Second ticket" "$body" --blocked-by 100 2>&1)"; st=$?

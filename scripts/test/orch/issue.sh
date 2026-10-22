@@ -71,7 +71,7 @@ assert_eq "printing the issue number and nothing else" "$out" "7"
 assert_eq "filing an open issue" "$(fake_state_of 7)" "OPEN"
 assert_eq "under the title given" "$(fake_title_of 7)" "Widgets need a handle"
 assert_eq "with the body file's contents" "$(fake_body_of 7)" "The shared understanding, written up."
-assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "the create call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 fake_github
@@ -703,14 +703,14 @@ fake_github
 fake_issue 23 open
 fake_issue_body 23 "Body of #23."
 assert_eq "no state.json exists yet in this repo" \
-  "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+  "$(on_disk .orchestrator/state.json)" "absent"
 issue_body="$(mktemp)"
 : >"$GH_FIXTURE/env.log"
 out="$("$ORCH" issue fetch 23 "$issue_body" 2>&1)"; st=$?
 assert_status "fetch writes the issue's body to the file, with no state.json present" "$st" 0
 assert_eq "and prints nothing" "$out" ""
 assert_eq "exactly what GitHub holds" "$(cat "$issue_body")" "Body of #23."
-assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "the view call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 rm -f "$issue_body"
@@ -718,7 +718,7 @@ out="$("$ORCH" issue fetch 404 "$issue_body" 2>&1)"; st=$?
 assert_status "an issue gh cannot read fails the fetch" "$st" 1
 assert_contains "naming the issue" "$out" "issue #404"
 assert_eq "and leaves no file a caller could mistake for a body" \
-  "$([ -e "$issue_body" ] && echo present || echo gone)" "gone"
+  "$(on_disk "$issue_body")" "absent"
 
 # issue fetch streams gh's stdout to the file, so what gh printed - the body
 # and the one newline gh's --jq adds - round-trips byte for byte, and its
@@ -804,7 +804,7 @@ rm -f "$issue_json"
 out="$("$ORCH" issue fetch 27 "$issue_json" --json 2>&1)"; st=$?
 assert_status "a failed fetch --json into no file fails too" "$st" 1
 assert_eq "and leaves no file behind" \
-  "$([ -e "$issue_json" ] && echo present || echo gone)" "gone"
+  "$(on_disk "$issue_json")" "absent"
 fake_unfail
 
 for args in "27 --json $issue_json" "--json 27 $issue_json" "27 $issue_json --jsn" "27 $issue_json --json extra"; do
@@ -813,11 +813,11 @@ for args in "27 --json $issue_json" "--json 27 $issue_json" "27 $issue_json --js
   assert_status "fetch refuses a misplaced or unknown flag: $args" "$st" 1
   assert_contains "with the usage line" "$out" "usage: orch.sh issue fetch <n> <file> [--json]"
 done
-assert_eq "and writes no file" "$([ -e "$issue_json" ] && echo present || echo gone)" "gone"
+assert_eq "and writes no file" "$(on_disk "$issue_json")" "absent"
 out="$("$ORCH" issue comments 27 "$issue_json" --json 2>&1)"; st=$?
 assert_status "--json is fetch's alone: comments refuses it" "$st" 1
 assert_contains "with its own usage line" "$out" "usage: orch.sh issue comments <n> <file>"
-assert_eq "and writes no file" "$([ -e "$issue_json" ] && echo present || echo gone)" "gone"
+assert_eq "and writes no file" "$(on_disk "$issue_json")" "absent"
 assert_contains "help lists --json under issue fetch" "$("$ORCH" help)" "issue fetch <n> <file> [--json]"
 
 tricky="$(mktemp)"
@@ -827,7 +827,7 @@ assert_status "update replaces the issue's body, with no state.json present" "$s
 assert_eq "and prints nothing" "$out" ""
 assert_eq "the issue number given, not one from state, holds the file's contents, exactly" \
   "$(fake_body_of 23)" "$(cat "$tricky")"
-assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "the edit call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 out="$("$ORCH" issue update 23 "$tricky" --json 2>&1)"; st=$?
@@ -857,7 +857,7 @@ assert_status "comment posts the file on the issue, with no state.json present" 
 assert_eq "and prints nothing" "$out" ""
 assert_eq "on the issue number given, not one from state, the file's contents as the comment, exactly" \
   "$(fake_comments_of 23)" "$(cat "$tricky")"
-assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "the comment call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 out="$("$ORCH" issue comment 23 /nonexistent/body.md 2>&1)"; st=$?
@@ -930,7 +930,7 @@ assert_eq "each comment in order, opened by its author-and-date marker, one blan
     '<!-- comment @pat 2026-09-02T11:30:00Z -->' 'Also: the second line' '\\ stays unescaped.')"
 assert_eq "as multi-line text, one file line per comment line, nothing escaped onto one line" \
   "$(wc -l <"$issue_comments" | tr -d ' ')" "8"
-assert_eq "records no state" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "records no state" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "the view call never reached a real gh subprocess" "$(gh_calls)" "0"
 
 fake_issue 25 open
@@ -980,7 +980,7 @@ assert_contains "help documents issue comments" "$("$ORCH" help)" "issue comment
 rm -f "$issue_comments"
 
 assert_eq "still no state.json - this section recorded none" \
-  "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+  "$(on_disk .orchestrator/state.json)" "absent"
 
 "$ORCH" init reviewtest >/dev/null
 assert_eq "the first iteration is 1" "$("$ORCH" review begin)" "1"

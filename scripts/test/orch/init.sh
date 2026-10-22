@@ -78,7 +78,7 @@ echo "code" >stray.sh
 out="$("$ORCH" init dirty 2>&1)"; st=$?
 assert_status "refuses an untracked file outside the allowlist" "$st" 1
 assert_contains "names the untracked path" "$out" "stray.sh"
-assert_eq "writes no state when it refuses" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "writes no state when it refuses" "$(on_disk .orchestrator/state.json)" "absent"
 assert_contains "says how to resolve it" "$out" "Commit, stash, or discard"
 assert_contains "says to retry" "$out" "run init again"
 assert_contains "names what planning may change" "$out" "docs/agents/"
@@ -111,7 +111,7 @@ before="$(branch_and_config)"
 out="$("$ORCH" init dirty 2>&1)"; st=$?
 assert_status "refuses when git status fails" "$st" 1
 assert_eq "leaves the branch and the git config when git status fails" "$(branch_and_config)" "$before"
-assert_eq "writes no state when git status fails" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "writes no state when git status fails" "$(on_disk .orchestrator/state.json)" "absent"
 restore_index
 
 # The glossary and ADRs are planning records: a dirty one refuses init with
@@ -133,7 +133,7 @@ assert_not_contains "records-only refusal has no source block" "$out" "Changes o
 # records-only refusal never offers it.
 assert_not_contains "records-only refusal never says to commit" "$out" "Commit"
 assert_contains "says to discard or stash the records" "$out" "Discard or stash these changes, then run init again."
-assert_eq "writes no state for a dirty record" "$([ -f .orchestrator/state.json ] && echo yes || echo no)" "no"
+assert_eq "writes no state for a dirty record" "$(on_disk .orchestrator/state.json)" "absent"
 rm GLOSSARY.md
 
 # The legacy glossary names stay records, for repos not yet renamed (#461).
@@ -224,7 +224,7 @@ out="$("$ORCH" init nope --issue 99 2>&1)"; st=$?
 assert_status "refuses to adopt an issue gh cannot read" "$st" 1
 assert_contains "names the issue number" "$out" "99"
 assert_eq "no flow is left active after a failed adoption" \
-  "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+  "$(on_disk .orchestrator/state.json)" "absent"
 
 healthy_repo
 fake_issue 7 closed ready-for-agent
@@ -263,7 +263,7 @@ assert_eq "saying it could not be read, the whole line with gh's first line and 
   "$(has_line "$out" "orch: gh could not read issue #44: HTTP 502: Bad Gateway - check it exists and gh is authenticated")" yes
 assert_not_contains "and nothing past gh's first line" "$out" "second line"
 assert_eq "leaving no flow active" \
-  "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+  "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "and GitHub unchanged" "$(fake_snapshot)" "$before_store"
 fake_unfail
 
@@ -276,7 +276,7 @@ out="$("$ORCH" init nope --issue https://github.com/acme/widgets/issues/42 2>&1)
 assert_status "refuses a non-numeric --issue value" "$st" 1
 assert_contains "says --issue wants a plain number" "$out" "--issue"
 assert_eq "no flow is left active after a malformed --issue" \
-  "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+  "$(on_disk .orchestrator/state.json)" "absent"
 
 healthy_repo
 out="$("$ORCH" init 2>&1)"; st=$?
@@ -300,7 +300,7 @@ assert_eq "the new slug is the final line" "$(printf '%s\n' "$out" | tail -1)" "
 assert_eq "exactly two lines - the archive path, then the slug" \
   "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
 assert_eq "the old flow's state is archived under .orchestrator/archive/" \
-  "$([ -f "$archived/state.json" ] && echo present || echo gone)" "present"
+  "$(on_disk "$archived/state.json")" "present"
 assert_eq "the archived state still carries the old slug" \
   "$(jq -r .slug "$archived/state.json")" "first"
 assert_eq "the new flow's state reflects the new slug" "$("$ORCH" state get slug)" "second"
@@ -319,7 +319,7 @@ assert_contains "naming it" "$out" "$top/.orchestrator/worktrees/t6"
 assert_contains "with ticket-worktree remove as the remedy" "$out" "ticket-worktree remove"
 assert_eq "the done flow is left in place" "$("$ORCH" state get slug)" "first"
 assert_eq "nothing is archived" \
-  "$([ -e .orchestrator/archive ] && echo present || echo absent)" "absent"
+  "$(on_disk .orchestrator/archive)" "absent"
 "$ORCH" ticket-worktree remove 6
 
 # #1333: an archive that cannot be written stops init, the old flow untouched.
@@ -378,7 +378,7 @@ assert_eq "the new slug is the final line" "$(printf '%s\n' "$out" | tail -1)" "
 assert_eq "exactly two lines - the archive path, then the slug" \
   "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
 assert_eq "the old flow's state is archived under .orchestrator/archive/" \
-  "$([ -f "$archived/state.json" ] && echo present || echo gone)" "present"
+  "$(on_disk "$archived/state.json")" "present"
 assert_eq "the archived state still carries the old slug" \
   "$(jq -r .slug "$archived/state.json")" "willsucceed"
 assert_eq "the new flow's state records the newly adopted issue, not the old one" \
@@ -410,9 +410,9 @@ assert_eq "a flow starts with no loop counter" \
   "$("$ORCH" state get | jq -r 'has("loop")')" "false"
 assert_eq "and no budget until a human names one" "$("$ORCH" state get budget)" ""
 assert_eq "with somewhere to file its records" \
-  "$([ -d .orchestrator/review ] && echo present || echo gone)" "present"
+  "$(on_disk .orchestrator/review)" "present"
 assert_eq "and no per-loop directory under it" \
-  "$([ -e .orchestrator/review/loop-01 ] && echo present || echo gone)" "gone"
+  "$(on_disk .orchestrator/review/loop-01)" "absent"
 # The flake rerun belongs to the flow, so it is seeded once here and never
 # refilled. `state get` reads it back as "false" - the review skill tests only
 # for "true", so spent is "true" and anything else is unspent.

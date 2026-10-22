@@ -359,14 +359,14 @@ review_known_items() {
   [ -f "$plan" ] || die "plan handoff not found: $plan"
 
   local record n entry tag deviations="" waiting="" filed="" rejected=""
-  entries_append deviations "$implement" '## Deviations'
+  section_entries_append deviations "$implement" '## Deviations'
   for record in "$REVIEW_DIR"/iteration-*.md; do
     # Only the records themselves: the reports and known-items files beside
     # them carry a suffix after the number.
     n="${record##*/iteration-}"; n="${n%.md}"
     case "$n" in ''|*[!0-9]*) continue ;; esac
     if [ "$((10#$n))" -gt "$boundary" ]; then
-      entries_append waiting "$record" '## Waiting to be filed' "waiting to be filed, iteration $n"
+      section_entries_append waiting "$record" '## Waiting to be filed' "waiting to be filed, iteration $n"
     else
       while IFS= read -r entry; do
         # The issue number is the entry's leading #<n>; an entry without one
@@ -377,7 +377,7 @@ review_known_items() {
       done < <(section_entries "$record" '## Filed')
     fi
   done
-  entries_append rejected "$plan" '## Rejected alternatives' 'rejected alternative'
+  section_entries_append rejected "$plan" '## Rejected alternatives' 'rejected alternative'
   known_items_write "$path" "$deviations" "$waiting$filed$rejected"
 }
 

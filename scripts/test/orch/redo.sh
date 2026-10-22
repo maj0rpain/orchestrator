@@ -140,13 +140,13 @@ assert_contains "with a comment naming the retired branch" \
   "$(fake_pr_comments_of 30)" "orch/21-redotest-redo-1"
 assert_eq "the pr close call never reached a real gh subprocess" "$(gh_calls)" "0"
 assert_eq "moves the old loop's records aside" \
-  "$([ -f .orchestrator/review/pre-redo-1/iteration-05.md ] && echo yes || echo no)" "yes"
+  "$(on_disk .orchestrator/review/pre-redo-1/iteration-05.md)" "present"
 assert_eq "leaving the flat trail empty" \
-  "$([ -e .orchestrator/review/iteration-05.md ] && echo yes || echo no)" "no"
+  "$(on_disk .orchestrator/review/iteration-05.md)" "absent"
 assert_eq "retires the stale implement handoff under the same redo number" \
   "$(cat .orchestrator/handoff/pre-redo-1/03-implement.md)" "# implement"
 assert_eq "leaving no implement handoff behind" \
-  "$([ -e .orchestrator/handoff/03-implement.md ] && echo yes || echo no)" "no"
+  "$(on_disk .orchestrator/handoff/03-implement.md)" "absent"
 assert_eq "and the plan handoff untouched" "$(cat .orchestrator/handoff/01-plan.md)" "$plan_before"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance then refuses to leave implement" "$st" 1
@@ -172,9 +172,9 @@ assert_eq "and numbers on rather than repeating redo-1" "$out" "2"
 assert_eq "naming the branch redo-2" \
   "$(git rev-parse --verify --quiet orch/21-redotest-redo-2 >/dev/null 2>&1 && echo present || echo gone)" "present"
 assert_eq "without disturbing redo-1's records" \
-  "$([ -f .orchestrator/review/pre-redo-1/iteration-05.md ] && echo yes || echo no)" "yes"
+  "$(on_disk .orchestrator/review/pre-redo-1/iteration-05.md)" "present"
 assert_eq "moving the second loop's records into pre-redo-2" \
-  "$([ -f .orchestrator/review/pre-redo-2/iteration-05.md ] && echo yes || echo no)" "yes"
+  "$(on_disk .orchestrator/review/pre-redo-2/iteration-05.md)" "present"
 
 state_fixture phase review
 "$ORCH" state set issue 21
@@ -197,7 +197,7 @@ assert_eq "leaving the phase where it was rather than half-finishing" \
 assert_eq "still renames the branch aside since retire runs before the pr close" \
   "$(git rev-parse --verify --quiet orch/21-redotest-redo-3 >/dev/null 2>&1 && echo present || echo gone)" "present"
 assert_eq "and never moves the loop's records since gh failed first" \
-  "$([ -f .orchestrator/review/iteration-01.md ] && echo yes || echo no)" "yes"
+  "$(on_disk .orchestrator/review/iteration-01.md)" "present"
 # Issue #63: the rename above is real, so state.branch has to follow it
 # rather than keep naming a branch retire already renamed away - otherwise a
 # retried redo dies confusingly against a branch that no longer exists.
@@ -290,7 +290,7 @@ assert_eq "leaving the live implement handoff in place" \
 assert_eq "and the retired one untouched" \
   "$(cat .orchestrator/handoff/pre-redo-1/03-implement.md)" "# older implement"
 assert_eq "never retiring into a suffixed pre-redo-1-2" \
-  "$([ -e .orchestrator/handoff/pre-redo-1-2 ] && echo present || echo gone)" "gone"
+  "$(on_disk .orchestrator/handoff/pre-redo-1-2)" "absent"
 restore_suite_env
 
 # --- redo review reopens tickets -------------------------------------------

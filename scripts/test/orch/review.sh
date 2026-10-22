@@ -166,7 +166,7 @@ assert_contains "files the record flat under review/" \
 assert_contains "zero-pads an explicit iteration" \
   "$("$ORCH" review path 2)" "/review/iteration-02.md"
 assert_eq "creates the directory it names" \
-  "$([ -d .orchestrator/review ] && echo present || echo gone)" "present"
+  "$(on_disk .orchestrator/review)" "present"
 out="$("$ORCH" review path nope 2>&1)"; st=$?
 assert_status "rejects an iteration that is not a number" "$st" 1
 restore_suite_env
@@ -1141,7 +1141,7 @@ out="$("$ORCH" review retire 1)"
 assert_contains "a no-op with nothing to move still prints the destination" \
   "$out" "/review/pre-redo-1"
 assert_eq "and creates no directory for it" \
-  "$([ -d .orchestrator/review/pre-redo-1 ] && echo present || echo gone)" "gone"
+  "$(on_disk .orchestrator/review/pre-redo-1)" "absent"
 
 mkdir -p .orchestrator/review
 : >.orchestrator/review/iteration-01.md
@@ -1150,11 +1150,11 @@ out="$("$ORCH" review retire 1)"
 assert_contains "moves every iteration record into pre-redo-N" \
   "$out" "/review/pre-redo-1"
 assert_eq "iteration-01 landed under it" \
-  "$([ -f .orchestrator/review/pre-redo-1/iteration-01.md ] && echo yes || echo no)" "yes"
+  "$(on_disk .orchestrator/review/pre-redo-1/iteration-01.md)" "present"
 assert_eq "iteration-02 landed under it too" \
-  "$([ -f .orchestrator/review/pre-redo-1/iteration-02.md ] && echo yes || echo no)" "yes"
+  "$(on_disk .orchestrator/review/pre-redo-1/iteration-02.md)" "present"
 assert_eq "and the flat trail is empty afterwards" \
-  "$([ -e .orchestrator/review/iteration-01.md ] && echo yes || echo no)" "no"
+  "$(on_disk .orchestrator/review/iteration-01.md)" "absent"
 
 # The per-reviewer report files ride along with their records.
 : >.orchestrator/review/iteration-03.md
@@ -1163,9 +1163,9 @@ assert_eq "and the flat trail is empty afterwards" \
 "$ORCH" review retire 2 >/dev/null
 for f in iteration-03.md iteration-03-standards.md iteration-03-spec.md; do
   assert_eq "$f landed in pre-redo-2" \
-    "$([ -f ".orchestrator/review/pre-redo-2/$f" ] && echo yes || echo no)" "yes"
+    "$(on_disk ".orchestrator/review/pre-redo-2/$f")" "present"
   assert_eq "$f left the flat trail" \
-    "$([ -e ".orchestrator/review/$f" ] && echo yes || echo no)" "no"
+    "$(on_disk ".orchestrator/review/$f")" "absent"
 done
 
 : >.orchestrator/review/iteration-01.md
@@ -1250,13 +1250,13 @@ for f in 03-implement.md 01-plan.md; do
   out="$("$ORCH" review known-items fresh.md 0 2>&1)"; st=$?
   assert_status "refuses with no $f" "$st" 1
   assert_contains "naming it" "$out" "$f"
-  assert_eq "writing no file without $f" "$([ -e fresh.md ] && echo yes || echo no)" "no"
+  assert_eq "writing no file without $f" "$(on_disk fresh.md)" "absent"
   mv "$f.bak" ".orchestrator/handoff/$f"
 done
 rm .orchestrator/state.json
 out="$("$ORCH" review known-items fresh.md 0 2>&1)"; st=$?
 assert_status "refuses with no flow state" "$st" 1
 assert_contains "with an orch: message" "$out" "orch: no active flow"
-assert_eq "writing no file" "$([ -e fresh.md ] && echo yes || echo no)" "no"
+assert_eq "writing no file" "$(on_disk fresh.md)" "absent"
 assert_contains "orch.sh help lists review known-items" "$("$ORCH" help)" "review known-items <path> <loop boundary>"
 restore_suite_env

@@ -57,7 +57,7 @@ git worktree remove "$top/.orchestrator/worktrees/t8"
 out="$("$ORCH" ticket-worktree add 8 2>&1)"; st=$?
 assert_status "add refuses an existing ticket branch" "$st" 1
 assert_contains "naming the branch" "$out" "orch/5-feature--t8 already exists"
-assert_eq "and adds no worktree" "$([ -e .orchestrator/worktrees/t8 ] && echo present || echo absent)" "absent"
+assert_eq "and adds no worktree" "$(on_disk .orchestrator/worktrees/t8)" "absent"
 git branch -q -D orch/5-feature--t8
 
 out="$("$ORCH" ticket-worktree add 0 2>&1)"; st=$?
@@ -114,7 +114,7 @@ tw_repo
 wt="$("$ORCH" ticket-worktree add 7)"
 out="$("$ORCH" ticket-worktree remove 7)"; st=$?
 assert_status "remove of a merged, clean ticket succeeds" "$st" 0
-assert_eq "it removes the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
+assert_eq "it removes the worktree" "$(on_disk "$wt")" "absent"
 assert_eq "and git no longer records it" "$(git worktree list | wc -l | tr -d ' ')" "1"
 assert_eq "it deletes the ticket branch" "$(git branch --list 'orch/5-feature--t7')" ""
 assert_eq "remove then list prints nothing" "$("$ORCH" ticket-worktree list)" ""
@@ -144,7 +144,7 @@ ticket_tip="$(git rev-parse orch/5-feature--t7)"
 out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
 assert_status "remove refuses an unmerged branch" "$st" 1
 assert_contains "saying it is unmerged" "$out" "not merged"
-assert_eq "leaving the worktree in place" "$([ -d "$wt" ] && echo present || echo absent)" "present"
+assert_eq "leaving the worktree in place" "$(on_disk "$wt")" "present"
 assert_eq "and the branch at its tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 # No recorded forked-from branch: remove cannot judge the branch merged.
 git config --unset branch.orch/5-feature--t7.orchestrator-ticket-parent
@@ -152,11 +152,11 @@ out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
 assert_status "remove refuses a branch that records no forked-from branch" "$st" 1
 assert_contains "saying so, with the --unmerged hint" "$out" \
   "orch: branch orch/5-feature--t7 records no forked-from branch - pass --unmerged to discard it"
-assert_eq "leaving the worktree in place" "$([ -d "$wt" ] && echo present || echo absent)" "present"
+assert_eq "leaving the worktree in place" "$(on_disk "$wt")" "present"
 assert_eq "and the branch at its tip" "$(git rev-parse orch/5-feature--t7)" "$ticket_tip"
 out="$("$ORCH" ticket-worktree remove 7 --unmerged)"; st=$?
 assert_status "remove --unmerged discards a clean worktree's unmerged branch" "$st" 0
-assert_eq "removing the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
+assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
 assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 
 # Left mid-rebase - a ticket conflict's resolution that failed: --unmerged
@@ -209,7 +209,7 @@ git merge -q --ff-only orch/5-feature--t7
 git checkout -q -b orch/5-elsewhere HEAD~1
 out="$("$ORCH" ticket-worktree remove 7 2>&1)"; st=$?
 assert_status "remove of a ticket merged into its forked-from branch but not HEAD succeeds" "$st" 0
-assert_eq "removing the worktree" "$([ -e "$wt" ] && echo present || echo absent)" "absent"
+assert_eq "removing the worktree" "$(on_disk "$wt")" "absent"
 assert_eq "and the branch" "$(git branch --list 'orch/5-feature--t7')" ""
 git checkout -q orch/5-feature
 

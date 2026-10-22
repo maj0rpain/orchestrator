@@ -29,9 +29,9 @@ dest="$("$ORCH" archive)"
 assert_contains "archive path carries the slug" "$dest" "my-feature"
 assert_eq "archive names its directory <YYYYMMDD-HHMMSS>-<slug>" \
   "$(printf '%s\n' "$dest" | grep -c '^\.orchestrator/archive/[0-9]\{8\}-[0-9]\{6\}-my-feature$')" "1"
-assert_eq "live state is cleared" "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+assert_eq "live state is cleared" "$(on_disk .orchestrator/state.json)" "absent"
 assert_eq "handoff is preserved under archive/" \
-  "$([ -f "$dest/handoff/01-plan.md" ] && echo present || echo gone)" "present"
+  "$(on_disk "$dest/handoff/01-plan.md")" "present"
 out="$("$ORCH" status 2>&1)"
 assert_contains "status reports no active flow afterwards" "$out" "No active flow"
 out="$("$ORCH" init second 2>&1)"; st=$?
@@ -51,16 +51,16 @@ assert_contains "naming the first" "$out" "$top/.orchestrator/worktrees/t4"
 assert_contains "naming the second" "$out" "$top/.orchestrator/worktrees/t5"
 assert_contains "with ticket-worktree remove as the remedy" "$out" "ticket-worktree remove"
 assert_eq "and moves nothing: the state stays" \
-  "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "present"
+  "$(on_disk .orchestrator/state.json)" "present"
 assert_eq "no archive directory is made" \
-  "$([ -e .orchestrator/archive ] && echo present || echo absent)" "absent"
+  "$(on_disk .orchestrator/archive)" "absent"
 assert_eq "the ticket worktrees stay where git recorded them" \
   "$(git -C .orchestrator/worktrees/t4 rev-parse --show-toplevel)" "$top/.orchestrator/worktrees/t4"
 "$ORCH" ticket-worktree remove 4
 "$ORCH" ticket-worktree remove 5
 out="$("$ORCH" archive)"; st=$?
 assert_status "with the ticket worktrees removed, archive moves the flow as before" "$st" 0
-assert_eq "live state is cleared" "$([ -f .orchestrator/state.json ] && echo present || echo gone)" "gone"
+assert_eq "live state is cleared" "$(on_disk .orchestrator/state.json)" "absent"
 restore_suite_env
 
 # --- mp-skill ---------------------------------------------------------------

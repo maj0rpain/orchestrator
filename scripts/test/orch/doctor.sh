@@ -1372,7 +1372,7 @@ assert_status "a stray review/loop-NN/ directory from an older flow still passes
 assert_eq "and earns no line of its own" \
   "$(printf '%s\n' "$out" | grep -c 'loop-01')" "0"
 assert_eq "and is left where it was" \
-  "$([ -f .orchestrator/review/loop-01/iteration-01.md ] && echo present || echo gone)" "present"
+  "$(on_disk .orchestrator/review/loop-01/iteration-01.md)" "present"
 restore_suite_env
 
 # --- doctor: upstream beside an ambiguous origin/<branch> (#1331) ------------

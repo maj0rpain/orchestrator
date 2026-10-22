@@ -113,7 +113,7 @@ review_pass_known_items() {
   # shellcheck disable=SC2064 # expanded now: $work is local, gone by exit
   trap "rm -rf $(printf '%q' "$work")" EXIT
 
-  local k entry comment issue_json issue_rulings deviations="" declined="" rulings=""
+  local k comment issue_json issue_rulings deviations="" declined="" rulings=""
   # A subshell's die has already said why; 1 alone means no open PR.
   pr="$(current_open_pr)" && st=0 || st=$?
   [ "$st" -le 1 ] || exit 1
@@ -124,26 +124,26 @@ review_pass_known_items() {
     tr -d '\r' <"$work/comments.raw" >"$work/comments"
     mkdir "$work/c"
     comments_split "$work/comments" "$work/c"
-    [ -n "$devfile" ] || entries_append deviations "$work/body" '## Deviations'
-    entries_append declined "$work/body" '## Review' declined
+    [ -n "$devfile" ] || section_entries_append deviations "$work/body" '## Deviations'
+    section_entries_append declined "$work/body" '## Review' declined
     for ((k = 1; ; k++)); do
       comment="$work/c/$k"
       [ -f "$comment" ] || break
       if has_headings "$comment" "${REVIEW_PASS_HEADINGS[@]}"; then
-        entries_append declined "$comment" '## Review' declined
+        section_entries_append declined "$comment" '## Review' declined
       fi
-      entries_append rulings "$comment" '## Spec rulings' 'spec ruling'
+      section_entries_append rulings "$comment" '## Spec rulings' 'spec ruling'
     done
   fi
   if [ -n "$devfile" ]; then
     tr -d '\r' <"$devfile" >"$work/deviations"
-    entries_append deviations "$work/deviations" ''
+    text_entries_append deviations "$work/deviations"
   fi
   gh_or_die --out issue_json "read the comments of issue #$issue" adapter_issue_json "$issue"
   issue_rulings="$(jq -r "$SPEC_RULING_ENTRIES_JQ" <<<"$issue_json")" \
     || die "could not read the comments of issue #$issue"
-  while IFS= read -r entry; do
-    [ -z "$entry" ] || rulings+="- $entry - spec ruling"$'\n'
-  done <<<"$issue_rulings"
+  printf '%s\n' "$issue_rulings" >"$work/rulings" \
+    || die "could not write the rulings of issue #$issue to $work/rulings"
+  text_entries_append rulings "$work/rulings" 'spec ruling'
   known_items_write "$path" "$deviations" "$declined$rulings"
 }
