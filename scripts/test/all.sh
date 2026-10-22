@@ -16,17 +16,17 @@
 # Then shellcheck, from the repo root two levels up, at warning severity, one
 # process per shell file matched by the one recursive glob scripts/**/*.sh,
 # with .shellcheckrc's source settings. A glob that matches nothing is dropped,
-# never passed to shellcheck as the literal pattern. Every process starts at once, alongside the suites,
-# with no throttle, so no single shellcheck run over every file is the
-# critical path - this deliberately reverses #777's one-process rule. Each
-# process's stdout and stderr go to its own captured buffer, and all.sh waits
-# on each one; the buffers are joined in glob order, and the status taken is
-# the highest exit among the processes. Its summary line has the same shape:
-# each finding line, then "shellcheck: N findings"; or "shellcheck: 0
-# findings" when clean; or, on a non-zero exit with no finding line, the
-# output of shellcheck, then "shellcheck: failed (exit N)". With no shellcheck
-# on PATH it prints "shellcheck: not installed - skipped", which fails the run
-# only when CI is set.
+# never passed to shellcheck as the literal pattern. Every process starts at
+# once, alongside the suites, with no throttle, so no single shellcheck run
+# over every file is the critical path - this deliberately reverses #777's
+# one-process rule. Each process's stdout and stderr go to its own captured
+# buffer, and all.sh waits on each one; the buffers are joined in glob order,
+# and the status taken is the highest exit among the processes. Its summary
+# line has the same shape: each finding line, then "shellcheck: N findings"; or
+# "shellcheck: 0 findings" when clean; or, on a non-zero exit with no finding
+# line, the output of shellcheck, then "shellcheck: failed (exit N)". With
+# no shellcheck on PATH it prints "shellcheck: not installed - skipped", which
+# fails the run only when CI is set.
 #
 # The suites run with TMPDIR set to a fresh, empty directory under that
 # temporary directory. Once they have finished, if anything is left in it -

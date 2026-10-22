@@ -21,7 +21,7 @@ count_lines() {
 # whose stubs are made from the list. A caller fails on its failure: a list
 # that came back empty would make every loop run zero times.
 suites_read() {
-  local file="$1" n line name
+  local file="$1" n line list name
   SUITES=()
   SUITES_ERR=""
   n="$(grep -c '^suites=(' "$file")" || true
@@ -30,8 +30,8 @@ suites_read() {
     return 1
   fi
   line="$(grep '^suites=(' "$file")"
-  line="${line#suites=(}"
-  read -ra SUITES <<<"${line%%)*}"
+  list="${line#suites=(}"
+  read -ra SUITES <<<"${list%%)*}"
   if [ "${#SUITES[@]}" -eq 0 ]; then
     SUITES_ERR="orch: $file holds an empty suites list"
     return 1
@@ -658,8 +658,8 @@ for root_suite in hooks_test.sh version_bump_test.sh lens_bench_test.sh; do
 done
 
 # all.sh checks every full run for leaks: a copy of it beside a stub for each
-# suite in its list, all passing, run with no shellcheck on its PATH, once with an
-# orch_test.sh stub that leaves a file in its TMPDIR.
+# suite in its list, all passing, run with no shellcheck on its PATH, once with
+# an orch_test.sh stub that leaves a file in its TMPDIR.
 root_all="$root_dir/all"
 mkdir -p "$root_all/scripts/test" "$root_all/bin" "$root_all/tmp"
 cp "$(dirname "$SUITE_SCRIPT")/all.sh" "$root_all/scripts/test/"
@@ -706,14 +706,15 @@ rm -rf "$guard_dir"
 # --- all.sh, the single entry point (#615) ----------------------------------
 # A copy of all.sh in <tmp>/scripts/test/ beside a stub for each suite in its
 # list, never the real ones, so <tmp> is the repo root: orch_test.sh's stub
-# fails, the others pass. Each stub logs whether ORCH_TEST_ONLY, ORCH_TEST_QUIET and
-# ORCH_TEST_JOBS reached it, and CHANGELOG_BASE and NO_VERSION_BUMP. Only
-# the overlap case's own stubs, swapped in for that case alone, drop marker
-# files; the shared stubs and the stub shellcheck of every other case never do. One planted shell file
-# each in <tmp>/scripts/, <tmp>/scripts/test/, <tmp>/scripts/test/orch/ and a
-# nested directory all.sh does not name is there for the lint step to find. Every run sets or unsets CI and runs on a
-# PATH of only the tools all.sh and the stubs need, plus a stub shellcheck
-# when the case wants one - the real one never runs.
+# fails, the others pass. Each stub logs whether ORCH_TEST_ONLY,
+# ORCH_TEST_QUIET and ORCH_TEST_JOBS reached it, and CHANGELOG_BASE and
+# NO_VERSION_BUMP. Only the overlap case's own stubs, swapped in for that case
+# alone, drop marker files; the shared stubs and the stub shellcheck of every
+# other case never do. One planted shell file each in <tmp>/scripts/,
+# <tmp>/scripts/test/, <tmp>/scripts/test/orch/ and a nested directory all.sh
+# does not name is there for the lint step to find. Every run sets or unsets
+# CI and runs on a PATH of only the tools all.sh and the stubs need, plus a
+# stub shellcheck when the case wants one - the real one never runs.
 echo
 echo "all.sh, the single entry point (#615)"
 suites_read "$(dirname "$SUITE_SCRIPT")/all.sh" || bad "reads all.sh's suite list" "$SUITES_ERR"
