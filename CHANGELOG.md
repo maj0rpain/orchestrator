@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.28.3
+
+The known-items file builders' helpers move out of the handoff module into a Known items module of their own, `known-items.sh`, and the appender that switched modes on an empty heading becomes a pair, `section_entries_append` and `text_entries_append`. The known-items file `review known-items` and `review-pass known-items` write does not change, apart from the one accepted change to how review-pass reads issue rulings: through `text_entries_append`, so a ruling reading `None`, `None.` or `None declined.` is dropped and a leading `- ` is stripped (#1271).
+
 ## 4.28.2
 
 `review file` refuses a non-hex `--sha` up front with `orch: not a sha: <sha> (want a hex commit SHA)`, rather than blaming the location as a round-trip mismatch. The filed severities and their label colours now live in one table, the axis is case-converted with bash expansions, and `review file`'s temp file is named `body_file`.
