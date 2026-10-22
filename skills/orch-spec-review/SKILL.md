@@ -334,9 +334,10 @@ shortening, no expansion, in any round: the view the human reads is
 call in the same response. The review never ends its turn on the list:
 presenting it is not the end of the step, the answer is. No edit is applied
 and no changelog is posted before the answer arrives. On Claude Code the ask
-is refused until the view is pasted: a hook refuses the first ask after each
-`check` that wrote a `view.md`, until the next `apply`, handing back that
-view - paste it word for word, then ask again. The options:
+is refused until the view is pasted: after each `check` that wrote a
+`view.md`, and until the next `apply`, a hook refuses every ask until one
+text block after that `check` holds the whole view, handing back that view
+each time - paste it word for word, then ask again. The options:
 
 - **Apply as recommended (Recommended)** - every proposed edit applied, every
   decision item takes its recommended option, every **recommend decline** item
