@@ -5,6 +5,20 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# unwritable_dir <dir> <skip-name>: <dir> made unwritable, for a test of a
+# failed write; the caller restores it with chmod u+w. Where it stays writable
+# (running as root) it is restored here, <skip-name> skipped, and the return
+# non-zero, so the caller runs nothing.
+unwritable_dir() {
+  chmod a-w "$1"
+  if : 2>/dev/null >"$1/.probe"; then
+    rm -f "$1/.probe"
+    chmod u+w "$1"
+    skip "$2" "$1 stays writable (running as root?)"
+    return 1
+  fi
+}
+
 # --- spec ---------------------------------------------------------------------
 # The spec review's one hand on GitHub: fetch the body, replace it, comment on
 # it. The number comes from state so a review can never touch the wrong issue,
@@ -234,4 +248,250 @@ new_repo >/dev/null
 out="$("$ORCH" spec pause 2>&1)"; st=$?
 assert_status "spec pause refuses with no flow" "$st" 1
 assert_contains "saying there is no active flow" "$out" "no active flow"
+restore_suite_env
+
+# --- spec round-dir -----------------------------------------------------------
+# A flow's spec review round works in a fixed directory derived from its
+# number (#1346): round-dir makes it ready - emptied, round 1 clearing every
+# other round's, a later round carrying in the previous round's code map and
+# settled file - and writes the round marker last, so a round never runs
+# without it.
+echo
+echo "spec round-dir"
+fresh_flow rounddirtest
+state_fixture phase spec
+top="$(git rev-parse --show-toplevel)"
+rounds="$top/.orchestrator/spec-rounds"
+handoff_dir="$(dirname "$("$ORCH" handoff path spec)")"
+round_marker="$handoff_dir/spec-round"
+# rd_snapshot: every path under spec-rounds/ and the round marker's content,
+# so a refusal is checked to have created and deleted nothing.
+rd_snapshot() { find "$rounds" 2>/dev/null | sort; cat "$round_marker" 2>/dev/null; }
+before="$(rd_snapshot)"
+out="$("$ORCH" spec round-dir 1/1 2>&1)"; st=$?
+assert_status "round-dir refuses when state records no issue" "$st" 1
+assert_contains "naming the phase that records one" "$out" "spec phase"
+assert_eq "creating nothing and writing no marker" "$(rd_snapshot)" "$before"
+"$ORCH" state set issue 21
+out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
+assert_status "round-dir 1/2 succeeds at phase spec with an issue" "$st" 0
+assert_eq "printing round 1's fixed directory and nothing else" "$out" "$rounds/1/"
+assert_eq "which it creates, empty" "$(ls -A "$rounds/1" 2>&1)" ""
+mkdir -p "$rounds/1/sub"
+writeln stale >"$rounds/1/changelog.md"
+writeln stale >"$rounds/1/settled.md"
+writeln stale >"$rounds/1/sub/x"
+out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
+assert_status "round-dir runs again over a populated round directory" "$st" 0
+assert_eq "emptying it" "$(ls -A "$rounds/1" 2>&1)" ""
+mkdir -p "$rounds/2" "$rounds/3"
+writeln stale >"$rounds/2/changelog.md"
+writeln stale >"$rounds/3/map-implementability.md"
+out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
+assert_status "round-dir 1 succeeds over other rounds' directories" "$st" 0
+assert_eq "deleting every one but its own" "$(ls -A "$rounds" 2>&1)" "1"
+
+writeln 'the code map' >"$rounds/1/map-implementability.md"
+writeln 'round 1 changelog' >"$rounds/1/settled.md"
+writeln 'round 1 changelog' >"$rounds/1/changelog.md"
+: >"$rounds/1/round-complete"
+mkdir -p "$rounds/2"
+writeln stale >"$rounds/2/spec.md"
+out="$("$ORCH" spec round-dir 2/2 2>&1)"; st=$?
+assert_status "round-dir 2/2 succeeds" "$st" 0
+assert_eq "printing round 2's fixed directory" "$out" "$rounds/2/"
+assert_eq "emptied, then holding only round 1's code map and settled file" \
+  "$(ls -A "$rounds/2" 2>&1)" "$(writeln map-implementability.md settled.md)"
+assert_eq "the code map copied as it was" "$(cat "$rounds/2/map-implementability.md")" "the code map"
+assert_eq "and the settled file" "$(cat "$rounds/2/settled.md")" "round 1 changelog"
+assert_eq "leaving round 1's directory as it was" "$(ls -A "$rounds/1" 2>&1)" \
+  "$(writeln changelog.md map-implementability.md round-complete settled.md)"
+rm -f "$rounds/1/map-implementability.md" "$rounds/1/settled.md"
+out="$("$ORCH" spec round-dir 2/2 2>&1)"; st=$?
+assert_status "round-dir 2/2 succeeds when round 1 left no code map or settled file" "$st" 0
+assert_eq "silently, printing only the path" "$out" "$rounds/2/"
+assert_eq "copying nothing" "$(ls -A "$rounds/2" 2>&1)" ""
+
+out="$("$ORCH" spec round-dir 1/1 2>&1)"; st=$?
+assert_status "round-dir 1/1 succeeds" "$st" 0
+assert_eq "writing the marker, so spec round runs round 1 of 1" "$("$ORCH" spec round 2>&1)" "1 1"
+: >"$rounds/1/round-complete"
+assert_eq "and, once round 1 holds round-complete, every round is done" "$("$ORCH" spec round 2>&1)" "done 1"
+
+before="$(rd_snapshot)"
+for arg in "" 1 0/2 1/0 2/1 a/2 1/b 1/2/3 /2 1/ -1/2 "1 /2"; do
+  out="$("$ORCH" spec round-dir "$arg" 2>&1)"; st=$?
+  assert_status "round-dir refuses '$arg'" "$st" 1
+  assert_eq "creating and deleting nothing for '$arg'" "$(rd_snapshot)" "$before"
+done
+assert_contains "naming the form it wants" "$out" "<k>/<n>"
+out="$("$ORCH" spec round-dir 2>&1)"; st=$?
+assert_status "round-dir refuses no argument" "$st" 1
+assert_contains "with the usage" "$out" "usage: orch.sh spec round-dir <k>/<n>"
+out="$("$ORCH" spec round-dir 3/2 2>&1)"; st=$?
+assert_status "round-dir refuses k past n" "$st" 1
+assert_contains "naming the round count" "$out" "round count 2"
+assert_eq "creating and deleting nothing" "$(rd_snapshot)" "$before"
+state_fixture phase implement
+out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
+assert_status "round-dir refuses at phase implement" "$st" 1
+assert_contains "saying it runs only in the spec phase" "$out" "spec round-dir runs only in the spec phase"
+assert_eq "creating and deleting nothing" "$(rd_snapshot)" "$before"
+state_fixture phase "done"
+out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
+assert_status "round-dir refuses once the flow is done" "$st" 1
+assert_contains "naming the flow's issue" "$out" "the flow on issue #21 is done"
+assert_eq "creating and deleting nothing" "$(rd_snapshot)" "$before"
+state_fixture phase spec
+
+rm -f "$round_marker"
+if unwritable_dir "$handoff_dir" "a failed marker write prints no path"; then
+  out="$("$ORCH" spec round-dir 1/2 2>&1)"; st=$?
+  chmod u+w "$handoff_dir"
+  assert_status "round-dir fails when the marker cannot be written" "$st" 1
+  assert_not_contains "printing no path" "$out" "$rounds/1/"
+  assert_contains "naming the marker" "$out" "$round_marker"
+  assert_eq "and leaving no marker" "$(on_disk "$round_marker")" absent
+fi
+assert_contains "help documents spec round-dir" "$("$ORCH" help)" "spec round-dir <k>/<n>"
+rm -rf "$rounds" "$round_marker"
+restore_suite_env
+
+# --- spec round ---------------------------------------------------------------
+# The resumed session's marker check (#1346): the round to run next and the
+# count, from the round marker and whether that round's directory holds
+# round-complete. Exit 1 means "no marker for this flow", so every failure is
+# exit 2 - step 0 must never read one as "no marker".
+echo
+echo "spec round"
+fresh_flow roundtest
+state_fixture phase spec
+top="$(git rev-parse --show-toplevel)"
+rounds="$top/.orchestrator/spec-rounds"
+round_marker="$(dirname "$("$ORCH" handoff path spec)")/spec-round"
+"$ORCH" state set issue 21
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_status "spec round exits 1 with no marker" "$st" 1
+assert_eq "printing nothing" "$out" ""
+"$ORCH" spec round-dir 1/2 >/dev/null
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_status "spec round succeeds with a marker" "$st" 0
+assert_eq "printing the marker's round and count" "$out" "1 2"
+"$ORCH" state set issue 22
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_status "spec round exits 1 with a marker naming another issue" "$st" 1
+assert_eq "printing nothing" "$out" ""
+"$ORCH" state set issue 21
+: >"$rounds/1/round-complete"
+assert_eq "once round 1 holds round-complete, round 2 runs next" "$("$ORCH" spec round 2>&1)" "2 2"
+writeln 'round 1 changelog' >"$rounds/1/settled.md"
+"$ORCH" spec round-dir 2/2 >/dev/null
+assert_eq "round 2's directory with only a carried-in settled.md is not done" \
+  "$("$ORCH" spec round 2>&1)" "2 2"
+: >"$rounds/2/round-complete"
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_status "spec round succeeds once the last round is complete" "$st" 0
+assert_eq "printing done and the count" "$out" "done 2"
+
+saved_marker="$(cat "$round_marker")"
+for bad_marker in "" garbage "21" "21 1" "21 3 2" "21 0 2" "21 a 2" "x 1 2" "21 1 2 9"; do
+  writeln "$bad_marker" >"$round_marker"
+  out="$("$ORCH" spec round 2>&1)"; st=$?
+  assert_status "spec round exits 2 on the malformed marker '$bad_marker'" "$st" 2
+  assert_contains "with an orch: message naming it" "$out" "orch: malformed round marker"
+done
+writeln "$saved_marker" >"$round_marker"
+state_fixture phase implement
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_status "spec round exits 2 at phase implement" "$st" 2
+assert_contains "with an orch: message saying it runs only in the spec phase" "$out" \
+  "orch: spec round runs only in the spec phase"
+state_fixture phase "done"
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_status "spec round exits 2 once the flow is done" "$st" 2
+assert_contains "with an orch: message naming the flow's issue" "$out" "orch: the flow on issue #21 is done"
+state_fixture phase spec
+state_fixture_drop issue
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_status "spec round exits 2 when state records no issue" "$st" 2
+assert_contains "with an orch: message naming the phase that records one" "$out" "orch: no issue recorded"
+out="$("$ORCH" spec round extra 2>&1)"; st=$?
+assert_status "spec round takes no arguments, exiting 2" "$st" 2
+assert_contains "with the usage" "$out" "usage: orch.sh spec round"
+assert_contains "help documents spec round" "$("$ORCH" help)" "spec round  "
+new_repo >/dev/null
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_status "spec round exits 2 with no flow" "$st" 2
+assert_contains "saying there is no active flow" "$out" "no active flow"
+restore_suite_env
+
+# --- spec pause --round -------------------------------------------------------
+# The stop a flow's spec review takes after round k of n, k < n, has applied
+# (#1347): the round marker names the next round and the count, so the fresh
+# session's spec round resumes at k+1, and the block names the host's way to
+# start that session. The marker is written first; the last round never pauses.
+echo
+echo "spec pause --round"
+fresh_flow pauseroundtest
+fake_github
+state_fixture phase spec
+handoff_dir="$(dirname "$("$ORCH" handoff path spec)")"
+round_marker="$handoff_dir/spec-round"
+out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
+assert_status "pause --round refuses when state records no issue" "$st" 1
+assert_contains "naming the phase that records one" "$out" "spec phase"
+assert_not_contains "printing no block" "$out" "Next:"
+assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
+"$ORCH" state set issue 21
+out="$("$ORCH" spec pause --round 1/3 2>&1)"; st=$?
+assert_status "pause --round 1/3 succeeds at phase spec with an issue" "$st" 0
+assert_eq "printing the stop block with the Claude Code Next line" "$out" \
+  "$(printf 'Spec review round 1 of 3 applied. Round 2 runs in a fresh session.\n\n  Next: /clear, then /orchestrator:next')"
+assert_eq "after which spec round runs round 2 of 3" "$("$ORCH" spec round 2>&1)" "2 3"
+assert_eq "leaving the phase at spec" "$("$ORCH" state get phase)" "spec"
+assert_eq "and writing no spec-paused marker" "$(on_disk "$handoff_dir/spec-paused")" "absent"
+out="$(ORCHESTRATOR_HOST=junie "$ORCH" spec pause --round 2/3 2>&1)"; st=$?
+assert_status "pause --round 2/3 runs over a marker already there" "$st" 0
+assert_eq "on Junie the Next line is Junie's" "$out" \
+  "$(printf 'Spec review round 2 of 3 applied. Round 3 runs in a fresh session.\n\n  Next: /new, then ask for the next phase with /orch-flow')"
+assert_eq "after which spec round runs round 3 of 3" "$("$ORCH" spec round 2>&1)" "3 3"
+
+rm -f "$round_marker"
+for arg in a/2 2/2 3/2; do
+  out="$("$ORCH" spec pause --round "$arg" 2>&1)"; st=$?
+  assert_status "pause --round refuses '$arg'" "$st" 1
+  assert_not_contains "printing no block for '$arg'" "$out" "Next:"
+  assert_eq "and writing no marker for '$arg'" "$(on_disk "$round_marker")" "absent"
+done
+out="$("$ORCH" spec pause --round 2/2 2>&1)"
+assert_contains "the last round never pauses" "$out" "the last round never pauses"
+out="$("$ORCH" spec pause --round 2>&1)"; st=$?
+assert_status "pause --round refuses no argument" "$st" 1
+assert_contains "with the usage" "$out" "usage: orch.sh spec pause [--round <k>/<n>]"
+out="$("$ORCH" spec pause --round 1/2 extra 2>&1)"; st=$?
+assert_status "pause --round refuses an extra argument" "$st" 1
+assert_eq "writing no marker" "$(on_disk "$round_marker")" "absent"
+state_fixture phase implement
+out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
+assert_status "pause --round refuses at phase implement" "$st" 1
+assert_contains "saying it runs only in the spec phase" "$out" "spec pause runs only in the spec phase"
+assert_not_contains "printing no block" "$out" "Next:"
+assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
+state_fixture phase "done"
+out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
+assert_status "pause --round refuses once the flow is done" "$st" 1
+assert_contains "naming the flow's issue" "$out" "the flow on issue #21 is done"
+assert_not_contains "printing no block" "$out" "Next:"
+assert_eq "and writes no marker" "$(on_disk "$round_marker")" "absent"
+state_fixture phase spec
+
+if unwritable_dir "$handoff_dir" "a failed round marker write prints no block"; then
+  out="$("$ORCH" spec pause --round 1/2 2>&1)"; st=$?
+  chmod u+w "$handoff_dir"
+  assert_status "pause --round fails when the marker cannot be written" "$st" 1
+  assert_not_contains "printing no block" "$out" "Next:"
+  assert_contains "naming the marker" "$out" "$round_marker"
+  assert_eq "and leaving no marker" "$(on_disk "$round_marker")" absent
+fi
+assert_contains "help documents spec pause --round" "$("$ORCH" help)" "spec pause --round <k>/<n>"
 restore_suite_env

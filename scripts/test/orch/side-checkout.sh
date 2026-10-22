@@ -847,12 +847,15 @@ top="$(git rev-parse --show-toplevel)"
 fake_offline
 
 # fl_seed <root>: gives the flow in the checkout at <root> a handoff, a review
-# record and a freely named spec-phase round directory, and puts a standalone
-# spec review's and a review pass's working directories beside it.
+# record, a freely named spec-phase round directory, a flow's spec review round
+# directory under spec-rounds/ and its round marker (#1348), and puts a
+# standalone spec review's and a review pass's working directories beside it.
 fl_seed() {
   local o="$1/.orchestrator"
-  mkdir -p "$o/handoff" "$o/review" "$o/round-2" "$o/spec-review/1244" "$o/review-pass/quick-9-x"
+  mkdir -p "$o/handoff" "$o/review" "$o/round-2" "$o/spec-rounds/1" "$o/spec-review/1244" "$o/review-pass/quick-9-x"
   echo plan >"$o/handoff/01-plan.md"
+  echo '40 1 2' >"$o/handoff/spec-round"
+  echo changes >"$o/spec-rounds/1/changelog.md"
   echo record >"$o/review/r1.md"
   echo round >"$o/round-2/notes.md"
   echo body >"$o/spec-review/1244/body.md"
@@ -870,7 +873,7 @@ fl_kept() {
 # <archive-dir>, and neither flow-less directory did.
 fl_archived() {
   local e
-  for e in state.json handoff/01-plan.md review/r1.md round-2/notes.md; do
+  for e in state.json handoff/01-plan.md handoff/spec-round review/r1.md round-2/notes.md spec-rounds/1/changelog.md; do
     assert_eq "$1: the flow's $e is archived" "$(on_disk "$2/$e")" "present"
   done
   assert_eq "$1: no spec-review/ in the archive" "$(on_disk "$2/spec-review")" "absent"

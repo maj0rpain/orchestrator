@@ -357,6 +357,9 @@ writeln '# implement' >.orchestrator/handoff/03-implement.md
 # after writing; it moves aside with the stale handoffs, so a redone spec phase
 # never skips its rewrite question on an old one.
 writeln 40 >.orchestrator/handoff/spec-paused
+# The round marker (#1348) names the spec review round to resume at; it moves
+# aside with them too, so a redone review never resumes past round 1.
+writeln '40 2 3' >.orchestrator/handoff/spec-round
 fake_github
 fake_issue 40 open
 before="$(fake_snapshot)"
@@ -376,6 +379,12 @@ assert_eq "the plan handoff untouched" "$(cat .orchestrator/handoff/01-plan.md)"
 assert_eq "moves the spec-paused marker into the same directory" "$(cat "$retired/spec-paused" 2>/dev/null)" "40"
 assert_eq "so the handoff folder no longer holds it" \
   "$(on_disk .orchestrator/handoff/spec-paused)" "absent"
+assert_eq "moves the round marker into the same directory" "$(cat "$retired/spec-round" 2>/dev/null)" "40 2 3"
+assert_eq "so the handoff folder no longer holds it either" \
+  "$(on_disk .orchestrator/handoff/spec-round)" "absent"
+out="$("$ORCH" spec round 2>&1)"; st=$?
+assert_status "spec round then finds no round marker" "$st" 1
+assert_eq "and prints nothing" "$out" ""
 assert_eq "without bumping redo_count" "$("$ORCH" state get redo_count)" "2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance then refuses to leave spec" "$st" 1

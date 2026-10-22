@@ -19,7 +19,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `pr`      | `open`, `publish`, `release`, `comment`, `comments`, `fetch`, `update`, `draft`, `ready` |
 | `review`  | `begin`, `path`, `file`, `known-items`, `ready`, `ci`, `rerun`, `terminal`, `retire` |
 | `review-pass` | `begin`, `known-items`                           |
-| `spec`    | `fetch`, `update`, `comment`, `comments`, `pause`    |
+| `spec`    | `fetch`, `update`, `comment`, `comments`, `pause`, `round`, `round-dir` |
 | `spec-review` | `begin`, `check`, `apply`, `wait`                |
 | `finding-triage` | `scan`, `apply`, `bundle`                     |
 | `ticket`  | `publish`, `next`, `list`, `close`, `reset`, `parent`, `exists`, `retire`, `block`, `unblock`, `merge` |

@@ -50,9 +50,11 @@ state_write() { flow_state_write "$STATE" "$1" "$2"; }
 # flow_state_write_string on $STATE.
 state_write_string() { flow_state_write_string "$STATE" "$1" "$2"; }
 
-# require_state: dies unless an active flow's state file exists.
+# require_state [die2]: dies unless an active flow's state file exists - with
+# die2 for a command that reserves exit 1 for a meaningful "no".
+# shellcheck disable=SC2120 # die2 is passed by spec_phase_guard, in spec.sh
 require_state() {
-  [ -f "$STATE" ] || die "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
+  [ -f "$STATE" ] || "${1:-die}" "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
 }
 
 # Fetches a required state field through state_get, dies with $3 if it comes back empty,
@@ -68,10 +70,13 @@ require_state() {
 # is the bare form, and `die` in that form runs directly in the caller's flow
 # rather than inside a command substitution subshell, so `set -e` actually
 # stops it instead of the caller carrying on with an empty value.
+#
+# A fourth argument, die2, dies through die2 instead, for a command that
+# reserves exit 1 for a meaningful "no".
 require_field() {
-  local __rf_out="$1" __rf_key="$2" __rf_msg="$3" __rf_val
+  local __rf_out="$1" __rf_key="$2" __rf_msg="$3" __rf_die="${4:-die}" __rf_val
   __rf_val="$(state_get "$__rf_key")"
-  [ -n "$__rf_val" ] || die "$__rf_msg"
+  [ -n "$__rf_val" ] || "$__rf_die" "$__rf_msg"
   printf -v "$__rf_out" '%s' "$__rf_val"
 }
 
@@ -80,8 +85,9 @@ require_field() {
 require_pr() { require_field "$1" pr "no PR recorded in state - the implement phase opens it"; }
 
 # branch create, pr open, and every spec op need the flow's spec issue number
-# before touching GitHub.
-require_issue() { require_field "$1" issue "no issue recorded in state - the spec phase must publish one first"; }
+# before touching GitHub. A second argument, die2, is passed on to
+# require_field.
+require_issue() { require_field "$1" issue "no issue recorded in state - the spec phase must publish one first" "${2:-die}"; }
 
 # pr open and redo review both need the flow's branch before touching GitHub.
 require_branch() { require_field "$1" branch "no branch recorded in state"; }

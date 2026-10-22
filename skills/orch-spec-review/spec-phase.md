@@ -18,11 +18,19 @@ does not apply: run **Inputs** below in its place.
 
 ## Inputs
 
-Steps 1 to 4 run at the start of every round, each round in a fresh
+Steps 1 to 3 run at the start of every round, each round in its own
 directory: each round reads the body the previous round published.
 
-1. Fetch the body: `bash "$ORCH" spec fetch <dir>/spec.md`, with `<dir>` a fresh
-   directory under `.orchestrator/` - `spec fetch` creates it. It reads the
+`<dir>` is what `bash "$ORCH" spec round-dir <k>/<n>` prints, run first for
+round k of n: `.orchestrator/spec-rounds/<k>/`. It makes the directory
+ready - emptied, every other round's directory deleted on round 1, and
+round k-1's `map-implementability.md` and `settled.md` copied in on later
+rounds, each when it exists - and writes the round marker, so a session that
+fails after the round resumes from it. This is how the code map and the
+settled file carry over in a flow, across sessions too. A failure stops the
+phase exactly as a failed body fetch does.
+
+1. Fetch the body: `bash "$ORCH" spec fetch <dir>/spec.md`. It reads the
    issue number from state. A failure stops the phase: state stays where it
    is, say what blocked, offer `/orchestrator:abort` (on a host with
    no plugin commands, `orch-flow`'s **Abort** section). A review with no
@@ -36,14 +44,6 @@ directory: each round reads the body the previous round published.
    - the glossary, the decisions and the repo root, as the main file's
      **Standalone spec review** step 4 resolves them. A failed `glossary
      match` stops the phase exactly as a failed body fetch does.
-4. On rounds 2 and later, copy the previous round's
-   `map-implementability.md` and `settled.md` into `<dir>`, each when it
-   exists - the previous round's directory is still on disk. This is how
-   the code map and the settled file carry over in a flow. A file that does
-   not exist is not copied, and nothing is said about it. Round 1 copies
-   nothing, and deletes any `settled.md` already in `<dir>`, which `spec
-   fetch` does not empty, so a spec review re-run after `/orchestrator:redo`
-   starts with none.
 
 The main file's rule that nothing from this session's conversation reaches a
 lens holds here too: not the plan as you remember it, not `orch-to-spec`'s
@@ -90,8 +90,12 @@ review loop demotes findings that propose a rejected alternative, and
 without the amendment it would later demote a code reviewer for proposing
 the spec's own choice.
 
+After round k of n, k < n, the amendment runs, then the pause: `orch-flow`'s
+spec phase step 4 runs `spec pause --round <k>/<n>` and the session stops,
+and the next round runs in a fresh one. The last round never pauses.
+
 After the last round, return every round's changelog to the flow skill, in
-round order, as the path of each round's `<dir>/changelog.md`, so the
+round order, as the paths `.orchestrator/spec-rounds/<k>/changelog.md`, so the
 implement phase carries the disposition without a network call. Its layout
 in `02-spec.md` is the **Spec review changelog** section of `orch-handoff`'s
 `02-spec.md` template. When a round retired the breakdown, breaking the

@@ -61,7 +61,9 @@ Consolidation, the lenses, one batch question, and one `spec-review apply`
 run that applies the accepted edits and posts one `## Spec review` changelog
 comment - two runs when **Tickets follow the spec** pauses it for the ticket
 question. The review runs rounds 1 to `<n>`, `<n>`
-the round count, in order:
+the round count, in order, all in one session - except in a flow, where each
+round but the last runs in its own session and the last runs in the session
+that breaks the issue down: see `spec-phase.md`.
 
 - **Each round reads the body the previous round published.** Each round
   takes a fresh working directory and fetches the body and comments again:
@@ -82,16 +84,22 @@ the round count, in order:
   published, each with its own changelog comment. When any round of this
   review had already run `ticket retire` - the failing round included - the
   stop message also says the issue has no ticket breakdown and needs
-  `/orchestrator:to-tickets <issue>`.
+  `/orchestrator:to-tickets <issue>`. In a flow's resumed session, whether an
+  earlier round ran `ticket retire` is read from the earlier rounds'
+  changelogs in their fixed directories, `.orchestrator/spec-rounds/<k>/changelog.md`
+  (their Tickets section), or from `ticket exists`; nothing extra is
+  recorded.
 - **A retire holds for every later round.** After a round runs
   `ticket retire`, every later round sees `ticket exists` exit 1 and records
   **None - no ticket breakdown**.
 - **Tickets follow the spec** is not another round: within a round, no lens
   runs again.
 
-The round count lives in the session only: nothing writes it to
-`state.json`, and `orch.sh` has no key for it. A standalone review takes it
-from `--rounds`, 1 without it.
+The round count is never written to `state.json`, and `orch.sh` has no
+key for it there. In a flow, it lives in the round marker from round 1 on,
+written by `orch.sh` (`spec round-dir` and `spec pause --round`). A
+standalone review keeps it in the session only, and takes it from
+`--rounds`, 1 without it.
 
 ## Standalone spec review
 

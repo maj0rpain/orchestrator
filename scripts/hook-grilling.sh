@@ -290,8 +290,10 @@ ${run_next} Do not ask the user to type a command.${route_here}
   The route's steps run in this order, and one rule covers every step: when a step stops or fails, stop there - run no later step, and report why it stopped.
   orch-to-spec stops when it ends without reporting the issue number. Once it has reported the number,
   ask the user how many spec review rounds to run on it, as one blocking question with ${ask_tool},
-  with the options 3 (Recommended), 1, 5, and Other for any other whole number from 0 up,
+  with the options 2, 1, 3, and Other for any other whole number from 0 up,
   where 0 skips the review. 0 is the deliberate lower bound.
+  Recommend a count sized to the spec you just wrote: 1 for a one-site spec, 2 by default, 3 for a large or cross-cutting spec (many acceptance criteria, several modules, a new noun or ADR).
+  List the recommended count first, append \" (Recommended)\" to its label, and give that scope-based reason in one clause.
   An Other that is not a whole number from 0 up is asked again, naming the range;
   ask every time, never assume.
   On a count of 1 or more, run the standalone orch-spec-review for that many

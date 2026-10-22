@@ -562,6 +562,31 @@ orch.sh - deterministic operations for the orchestrator flow
                               phase stays spec. Refuses without a recorded
                               issue, outside the spec phase, or once the flow
                               is done
+  spec pause --round <k>/<n>  stop a flow's spec review session after round k
+                              of n, k < n, has applied: write handoff/
+                              spec-round naming the flow's issue, k+1 and n,
+                              then print the stop block - a failed write
+                              prints no block. The last round never pauses.
+                              Refuses a malformed <k>/<n>, k not below n, and
+                              as spec pause does
+  spec round-dir <k>/<n>      make a flow's spec review round k of n ready
+                              and print its directory, .orchestrator/
+                              spec-rounds/<k>/: emptied (created when
+                              missing); on round 1 every other round's
+                              directory deleted; on a later round round
+                              k-1's map-implementability.md and settled.md
+                              copied in, each when it exists. Then write
+                              handoff/spec-round naming the flow's issue, k
+                              and n - a failed write prints no path.
+                              Idempotent. Refuses a malformed <k>/<n>, k past
+                              n, and as spec pause does
+  spec round                  print the round a resumed spec review runs
+                              next, from handoff/spec-round: "<k> <n>" - k+1
+                              once round k's directory holds round-complete -
+                              or "done <n>" once round n's does. Exits 1,
+                              printing nothing, with no marker or one naming
+                              another issue; 2 on a malformed marker and on
+                              every refusal spec pause makes
   spec-review begin <n> [--carry]
                               start a standalone spec review of issue <n>:
                               refuse while an active flow holds <n> - at spec
@@ -649,7 +674,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               Writes: ticket text edits, then ticket
                               block/unblock, then the body, then any ticket
                               retire, then the comment, then the changelog
-                              appended to <dir>/settled.md. The issue is state's,
+                              appended to <dir>/settled.md, then, last, an
+                              empty <dir>/round-complete. The issue is state's,
                               through spec update/comment, or --issue's,
                               through issue update/comment, never reading
                               state.json. Each GitHub write lands in

@@ -139,15 +139,28 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
 0. Check `bash "$ORCH" state get issue`. Empty means no `--issue` was given -
    run the phase from step 1, exactly as it does for every flow that has no
    adopted issue. Non-empty means the issue already exists and is already
-   recorded, so steps 1-3 do not run; instead run the marker check and 0a-0d
-   below. Three cases reach them: an issue adopted after an interview about it, whose body
+   recorded, so steps 1-3 do not run; instead run the round check, the
+   marker check and 0a-0d below. Three cases reach them: an issue adopted after an interview about it, whose body
    predates the plan; a blueprint adopted at init, whose body is already a
    spec; and a default `redo spec`, whose body carries the edits the previous
    spec review accepted, newer than `01-plan.md`. Because nothing records an
    issue's origin (`docs/adr/0005-an-adopted-issues-origin-is-not-recorded.md`),
    a spec phase resumed after its own step 3, or after a step-0c rewrite,
    reaches them too: that session stopped with `spec pause`, so the resumed
-   phase takes the marker check and goes straight to step 4.
+   phase takes the marker check and goes straight to step 4. A spec phase
+   resumed after a spec review round paused takes the round check instead.
+   - **Round check.** Run `bash "$ORCH" spec round` first, ahead of the
+     marker check. It reads the round marker, the file `spec pause --round`
+     and `spec round-dir` leave in the handoff folder. When it prints
+     `<k> <n>`, ask nothing and run round k of n in this session: step 4's
+     review from round k, with no round count asked. When it prints
+     `done <n>`, every round has run - the session that ran the last one
+     failed after it, say in the ticket breakdown - so ask nothing and go to
+     step 5, with every round's changelog at
+     `.orchestrator/spec-rounds/<k>/changelog.md`, k from 1 to n. Only when
+     it exits 1, no round marker for this issue, go on to the marker check.
+     Any other exit is a failure: relay its `orch:` message and stop, leaving
+     the state where it is.
    - **Marker check.** If `.orchestrator/handoff/spec-paused` exists and
      holds the issue number `state get issue` prints, ask nothing and go to
      step 4. `spec pause` writes it when the session that wrote the spec
@@ -195,16 +208,27 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    `orch:` message and stop. The fresh session's step 0 takes the marker
    check to step 4. Step 0d and step 0a explore no code, so they go to step
    4 in this session and never stop here.
-4. Ask the round count. **The question blocks** - ask it as one question
+4. Ask the round count. First fetch the spec body, so the recommendation
+   rests on the spec: `bash "$ORCH" spec fetch <file>`, with `<file>` a
+   scratch file under `.orchestrator/`, and open it with the Read tool.
+   Size the recommendation from it: **1** for a one-site spec, **2** by
+   default, **3** for a large or cross-cutting spec (many acceptance
+   criteria, several modules, a new noun or ADR). A failed fetch stops the
+   phase, as `spec-phase.md`'s step 1 says for its own fetch.
+   **The question blocks** - ask it as one question
    with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
    on Junie), before the first
-   round: "How many spec review rounds?" Default 3. Any integer >= 1; there
-   is no upper cap. Options: **3 (Recommended)**, **1**, **5**, and **Other**
-   for any other number. 0 is not offered, deliberately: a flow's spec is
+   round: "How many spec review rounds?" Any integer >= 1; there
+   is no upper cap. Options: **2**, **1**, **3**, and **Other**
+   for any other number, the recommended one listed first, its label
+   followed by " (Recommended)" and its description giving the scope-based
+   reason in one clause. 0 is not offered, deliberately: a flow's spec is
    always reviewed. An Other that is not a whole number of 1 or more is asked
-   again, naming the range. It is asked every time this step runs - on
-   `redo spec` and for an adopted issue too - and nothing is written to
-   `state.json`: the count lives in this session only.
+   again, naming the range. It is asked every time this step starts at
+   round 1 - on `redo spec` and for an adopted issue too - and never when
+   step 0's round check resumes a later round. Nothing is written to
+   `state.json`: from round 1 on the count lives in the round marker `spec
+   round-dir` writes.
 
    Then invoke the `orch-spec-review` skill and follow it for that many
    rounds, its spec-phase entry: read `spec-phase.md` in that skill's
@@ -218,6 +242,16 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    option in it: no spec reaches the implement phase unreviewed, and the
    human's control is at each round's batch, where they may decline every
    edit.
+
+   Each round but the last runs in its own session. After round k of n,
+   k < n, has applied its answer - and amended `01-plan.md`'s **Rejected
+   alternatives** for any declined `contradicts the plan` item - run
+   `bash "$ORCH" spec pause --round <k>/<n>`. It writes the round marker
+   and prints the stop block: relay it verbatim and say nothing after it,
+   as **Printing the boundary** says; nothing asks whether to stop the
+   review there. On a non-zero exit, relay its `orch:` message and stop.
+   The fresh session's round check runs round k+1. Round n runs to
+   completion in its session, and the phase goes on to step 5 there.
 5. Run `bash "$ORCH" ticket exists <spec issue>` first, with the spec issue
    from `bash "$ORCH" state get issue`.
 
@@ -243,8 +277,11 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    **Any other exit** means GitHub could not be read: stop, leaving the state
    where it is, say what blocked, and offer `/orchestrator:abort`.
 6. Invoke the `orch-handoff` skill for `02-spec.md`, with every round's
-   changelog the review returned as its **Spec review changelog**, each
-   copied from that round's `changelog.md` rather than typed again, laid out
+   changelog as its **Spec review changelog**, read from
+   `.orchestrator/spec-rounds/1/changelog.md` through
+   `.orchestrator/spec-rounds/<n>/changelog.md`, in round order - the
+   earlier rounds ran in earlier sessions - each copied rather than typed
+   again, laid out
    as that template says, and its **Ticket breakdown** as
    either the spec issue number (published or found as sub-issues) or
    `None: work directly against #<n>` naming the spec issue (collapsed, per
@@ -357,7 +394,8 @@ Every phase ends the same way, because the next phase needs a session this one
 cannot start. `orch.sh` owns the block that says so, and its host's `Next:`
 line: `phase advance` prints it on success, and `phase boundary` prints it at
 flow start. The spec phase's stop after writing the spec ends the same way,
-through `spec pause`. Relay that output verbatim - never compose the block
+through `spec pause`, and so does each pause after a spec review round but
+the last, through `spec pause --round`. Relay that output verbatim - never compose the block
 yourself.
 
 Say nothing after it. Do not start the next phase, and do not offer to.
@@ -433,8 +471,9 @@ If GitHub fails while retiring, it dies with the phase still `implement`, and
 a re-run resumes. Either way the
 stale `02-spec.md` handoff, and `03-implement.md` if one exists, move into
 `.orchestrator/handoff/pre-redo-spec-<UTC timestamp>/`, so `phase advance`
-cannot leave the redone spec phase on them, and the `spec-paused` marker moves
-with them, so it cannot carry the redone phase past step 0; `state.redo_count`
+cannot leave the redone spec phase on them, and the `spec-paused` marker and
+the round marker move with them, so neither can carry the redone phase past
+step 0 or past round 1; `state.redo_count`
 is not bumped.
 `01-plan.md` is never touched by either redo. `--new-issue`
 additionally closes the old issue first (never deletes it) with a comment
