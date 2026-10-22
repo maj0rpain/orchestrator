@@ -24,8 +24,8 @@
 # itself when there was any. On finish it was overlapped when its .contended
 # file exists, or when it saw another live marker at start, and it removes its
 # marker and .contended file either way. A marker or .contended file whose pid
-# names no live process is stale: no contention, and removed by the run that
-# finds it. A failed .contended write for another run is not retried, and a
+# names no live process is stale, and so is a .contended file whose marker is
+# gone: no contention, and removed by the run that finds it. A failed .contended write for another run is not retried, and a
 # failed removal is ignored. A run that cannot register still runs but is not
 # recorded. No run ever waits for another.
 
@@ -84,7 +84,9 @@ suite_cost_active() {
 # suite_cost_register: registers this orch.sh process's run as active, before
 # it is measured, and sets SUITE_COST_MARK to its marker's path, empty when it
 # could not register, and SUITE_COST_SAW to 1 when another live run's marker
-# was present, else 0. Stale markers and .contended files it finds are removed.
+# was present, else 0. Stale markers and .contended files it finds are removed,
+# a .contended file whose marker is gone counting as stale whether or not its
+# pid is live.
 suite_cost_register() {
   local dir me f p
   SUITE_COST_MARK="" SUITE_COST_SAW=0
@@ -102,6 +104,8 @@ suite_cost_register() {
     elif [ "$f" = "$dir/$p" ]; then
       SUITE_COST_SAW=1
       : 2>/dev/null >"$f.contended" || true
+    elif [ ! -e "$dir/$p" ]; then
+      rm -f -- "$f" 2>/dev/null || true
     fi
   done
   [ "$SUITE_COST_SAW" -eq 0 ] || : 2>/dev/null >"$me.contended" || true
@@ -217,15 +221,15 @@ suite_cost_base_commit() {
     { warn "base commit $sha names no commit"; return 1; }
 }
 
-# suite_cost_newest <rec> <cmd-string> <pred>: prints the CPU seconds and
-# commit, tab-separated, of the newest record line of <cmd-string> whose commit
-# passes <pred> (a function given the commit), or fails printing nothing.
+# suite_cost_newest <rec> <cmd-string> <pred>: prints the commit of the newest
+# record line of <cmd-string> whose commit passes <pred> (a function given the
+# commit), or fails printing nothing.
 suite_cost_newest() {
-  local rec="$1" want="$2" pred="$3" sha cpu cmd
+  local rec="$1" want="$2" pred="$3" sha cmd
   [ -e "$rec" ] || return 1
-  while IFS=$'\t' read -r sha cpu _ _ cmd; do
+  while IFS=$'\t' read -r sha _ _ _ cmd; do
     [ "$cmd" = "$want" ] || continue
-    if "$pred" "$sha"; then printf '%s\t%s\n' "$cpu" "$sha"; return 0; fi
+    if "$pred" "$sha"; then printf '%s\n' "$sha"; return 0; fi
   done < <(awk '{ l[NR] = $0 } END { for (i = NR; i > 0; i--) print l[i] }' "$rec")
   return 1
 }
@@ -279,18 +283,16 @@ suite_cost_is_base() {
 # confirming run with the head sample only when that sample is on HEAD's
 # clean SHA, as a -dirty or ancestor one measured another tree.
 suite_cost_check() {
-  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha head_found base_found verdict pct clean IFS=' '
+  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict pct clean IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
   want="$*"
   base_commit="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
-  head_found="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
+  head_sha="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
     { note unmeasured; return 0; }
-  head_sha="${head_found#*$'\t'}"
   head_cpu="$(suite_cost_lowest "$rec" "$want" "$head_sha")"
-  if base_found="$(suite_cost_newest "$rec" "$want" suite_cost_is_base)"; then
-    base_sha="${base_found#*$'\t'}"
+  if base_sha="$(suite_cost_newest "$rec" "$want" suite_cost_is_base)"; then
     base_cpu="$(suite_cost_lowest "$rec" "$want" "$base_sha")"
   else
     suite_cost_tree_run base "$base_commit" "$@" || { note unmeasured; return 0; }

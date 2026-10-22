@@ -64,6 +64,13 @@ handshake_fifos() {
   dir="$(mktemp -d)" && mkfifo "$dir/one" "$dir/two" && printf '%s\n' "$dir"
 }
 
+# handshake_first <dir>: prints the handshake's first side as a shell script
+# line - it writes to <dir>/one, blocking until the second side reads it, then
+# reads <dir>/two, which the second side writes - for sh -c or a run.sh body.
+handshake_first() {
+  printf 'printf x >%s/one; read -r _ <%s/two\n' "$1" "$1"
+}
+
 # handshake_partner <dir>: a suite-cost run whose command is the handshake's
 # second side - it reads <dir>/one, which the other side writes, then writes a
 # line to <dir>/two, which the other side reads - so it is running while the
@@ -158,8 +165,7 @@ overlap="this run overlapped another suite-cost run - its suite cost is not reco
 new_repo >/dev/null
 rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
 hs="$(handshake_fifos)"
-"$ORCH" suite-cost run -- sh -c 'printf x >"$0"; read -r _ <"$1"; exit 4' "$hs/one" "$hs/two" \
-  >/dev/null 2>"$hs/err-a" &
+"$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs"); exit 4" >/dev/null 2>"$hs/err-a" &
 pid_a=$!
 handshake_partner "$hs" >/dev/null 2>"$hs/err-b"; st_b=$?
 wait "$pid_a"; st_a=$?
@@ -171,8 +177,7 @@ assert_eq "neither is recorded" "$("$ORCH" suite-cost history)" ""
 
 git branch other
 git worktree add -q "$PWD/wt" other
-"$ORCH" suite-cost run -- sh -c 'printf x >"$0"; read -r _ <"$1"' "$hs/one" "$hs/two" \
-  >/dev/null 2>"$hs/err-a" &
+"$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs")" >/dev/null 2>"$hs/err-a" &
 pid_a=$!
 (cd wt && handshake_partner "$hs" >/dev/null 2>"$hs/err-b"); st_b=$?
 wait "$pid_a"; st_a=$?
@@ -204,6 +209,13 @@ err="$("$ORCH" suite-cost run -- true 2>&1)"
 assert_eq "a stale .contended file with no marker is no contention" "$err" ""
 assert_eq "the run is recorded" "$("$ORCH" suite-cost history | wc -l | tr -d ' ')" 3
 assert_eq "and the stale .contended file is gone" "$(on_disk "$active/$dead.contended")" absent
+# A .contended file whose pid is live but whose marker was removed meanwhile -
+# the test shell's own pid, which has no marker - is stale in the same way.
+: >"$active/$$.contended"
+err="$("$ORCH" suite-cost run -- true 2>&1)"
+assert_eq "a live pid's .contended file with no marker is no contention" "$err" ""
+assert_eq "the run is recorded" "$("$ORCH" suite-cost history | wc -l | tr -d ' ')" 4
+assert_eq "and that .contended file is gone" "$(on_disk "$active/$$.contended")" absent
 assert_eq "a run leaves no marker of its own behind" "$(ls -A "$active")" ""
 
 # A run that cannot register as active: a plain file where the active-runs
@@ -559,13 +571,13 @@ rm -f "$errf"
 # recorded, and check is unmeasured.
 check_repo
 hs="$(handshake_fifos)"
-waiter=(sh -c 'printf x >"$0"; read -r _ <"$1"' "$hs/one" "$hs/two")
+waiter=(sh -c "$(handshake_first "$hs")")
 seed_run "$head" 70.00 "${waiter[*]}"
 before="$(cat "$rec")"
 handshake_partner "$hs" >/dev/null 2>&1 &
-pid_a=$!
+pid_partner=$!
 out="$("$ORCH" suite-cost check -- "${waiter[@]}" 2>"$hs/err")"; st=$?
-wait "$pid_a"
+wait "$pid_partner"
 assert_status "an overlapped base run's check exits 0" "$st" 0
 assert_eq "and is unmeasured" "$out" "unmeasured"
 assert_contains "warning the base run overlapped another" "$(cat "$hs/err")" \
@@ -631,7 +643,7 @@ burn() { printf "awk 'BEGIN { for (i = 0; i < %s; i++); }'" "$1"; }
 # seeded ones, or nothing.
 recorded() { awk -F'\t' -v s="$1" '$1 == s && NR > 2 { c = $2 } END { print c }' "$rec"; }
 errf="$(mktemp)"
-unconfirmed="the growth is unconfirmed"
+unconfirmed_tail="the growth is unconfirmed"
 
 confirm_repo "$(burn 1.6e7)" "$(burn 1.6e7)"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"; st=$?
@@ -683,7 +695,7 @@ before="$(cat "$rec")"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a failing head confirming run is unmeasured" "$out" "unmeasured"
 assert_contains "warning with its exit code" "$(cat "$errf")" \
-  "orch: the confirming run at $head exited 5 - $unconfirmed"
+  "orch: the confirming run at $head exited 5 - $unconfirmed_tail"
 assert_eq "the base confirming run does not run" "$(on_disk "$marker")" absent
 assert_eq "and nothing is recorded" "$(cat "$rec")" "$before"
 
@@ -691,7 +703,7 @@ confirm_repo "exit 6" ":"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a failing base confirming run is unmeasured" "$out" "unmeasured"
 assert_contains "warning with its exit code" "$(cat "$errf")" \
-  "orch: the confirming run at $base exited 6 - $unconfirmed"
+  "orch: the confirming run at $base exited 6 - $unconfirmed_tail"
 assert_eq "the passing solo head confirming run before it is recorded" "$(recorded "$head")" \
   "$(awk -F'\t' 'NR == 3 { print $2 }' "$rec")"
 assert_eq "the failing base run is not" "$(recorded "$base")" ""
@@ -702,7 +714,7 @@ before="$(cat "$rec")"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a failing confirming setup is unmeasured" "$out" "unmeasured"
 assert_contains "warning with the setup, the head and its exit code" "$(cat "$errf")" \
-  "orch: the confirming run's setup (exit 3) at $head exited 3 - $unconfirmed"
+  "orch: the confirming run's setup (exit 3) at $head exited 3 - $unconfirmed_tail"
 assert_eq "recording nothing" "$(cat "$rec")" "$before"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -714,7 +726,7 @@ if [ "$(id -u)" -ne 0 ]; then
   chmod 755 "$wts"
   assert_eq "a confirming worktree that cannot be added is unmeasured" "$out" "unmeasured"
   assert_contains "warning it could not add the worktree" "$(cat "$errf")" \
-    "orch: could not add a worktree for the confirming run at $head - $unconfirmed"
+    "orch: could not add a worktree for the confirming run at $head - $unconfirmed_tail"
 fi
 
 confirm_repo ":" ":"
@@ -722,31 +734,31 @@ confirm_repo ":" ":"
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a confirming run that cannot register is unmeasured" "$out" "unmeasured"
 assert_contains "warning it could not register" "$(cat "$errf")" \
-  "orch: the confirming run at $head could not register as active - $unconfirmed"
+  "orch: the confirming run at $head could not register as active - $unconfirmed_tail"
 assert_not_contains "never with an overlap warning" "$(cat "$errf")" "overlapped"
 
 # Overlapped confirming runs, by the FIFO handshake of the suite-cost run
 # section. The head's: a suite-cost run started alongside check reads a FIFO
 # the head's script writes, and writes one it reads.
-overlap="overlapped another suite-cost run - contention left the growth unconfirmed"
+overlap_tail="overlapped another suite-cost run - contention left the growth unconfirmed"
 hs="$(handshake_fifos)"
 marker="$hs/base-ran"
-confirm_repo "touch $marker" "printf x >$hs/one; read -r _ <$hs/two"
+confirm_repo "touch $marker" "$(handshake_first "$hs")"
 before="$(cat "$rec")"
 handshake_partner "$hs" >/dev/null 2>&1 &
-pid_a=$!
+pid_partner=$!
 out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
-wait "$pid_a"
+wait "$pid_partner"
 assert_eq "an overlapped head confirming run is unmeasured" "$out" "unmeasured"
 assert_contains "warning of the contention at the head" "$(cat "$errf")" \
-  "orch: the confirming run at $head $overlap"
+  "orch: the confirming run at $head $overlap_tail"
 assert_eq "the base confirming run does not run" "$(on_disk "$marker")" absent
 assert_eq "and nothing is recorded" "$(cat "$rec")" "$before"
 
 # The base's, after a solo head confirming run: the base's script signals on
 # one FIFO that it is running and waits on another, and only then does a
 # suite-cost run start, its command writing the second.
-confirm_repo "printf x >$hs/one; read -r _ <$hs/two" ":"
+confirm_repo "$(handshake_first "$hs")" ":"
 "$ORCH" suite-cost check -- "${cmd[@]}" >"$hs/out" 2>"$errf" &
 pid_c=$!
 read -r _ <"$hs/one"
@@ -754,7 +766,7 @@ read -r _ <"$hs/one"
 wait "$pid_c"
 assert_eq "an overlapped base confirming run is unmeasured" "$(cat "$hs/out")" "unmeasured"
 assert_contains "warning of the contention at the base" "$(cat "$errf")" \
-  "orch: the confirming run at $base $overlap"
+  "orch: the confirming run at $base $overlap_tail"
 assert_eq "the solo head confirming run before it is recorded" "$(grep -c "^$head" "$rec")" 2
 assert_eq "the overlapped base run is not" "$(grep -c "^$base" "$rec")" 1
 assert_eq "and no worktree is left" "$(git worktree list | wc -l | tr -d ' ')" 1
