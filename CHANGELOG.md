@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.27.0
+
+`orch.sh suite-cost check` compares the lowest sample on each side instead of the newest - the lowest CPU seconds among the records on the newest head record's commit against the lowest on the newest baseline record's commit, a `-dirty` record never pooled with a clean one of the same SHA - and its default growth threshold rises from 10% to 15%, so noise between runs no longer raises a `suite-cost` finding.
+
+Before it reports a growth, `suite-cost check` now confirms it: it measures the head once in a temporary worktree at HEAD, then the base once at the baseline sample's commit, each running `orchestrator.suiteCost.setup` first when set and each recorded when it passes solo, and compares the lowest samples again - so only a growth that survives a second, back-to-back measurement is reported as `grew`. A confirming run that fails, cannot register, or overlaps another suite-cost run leaves the check `unmeasured`, with a warning; a verdict decided from the record alone still runs nothing.
+
+A suite cost is now recorded only for a run no other suite-cost run overlapped: every measured run registers itself as active in `suite-cost.active` beside the record, shared by the main checkout, side checkouts and ticket worktrees of one clone, and an overlapped run still passes its command's output and exit code through but is left out of the record, with a warning. A marker left by a dead process is not contention.
+
 ## 4.26.0
 
 `orch.sh pr open` and `pr publish` refuse a PR body without the human layer - `## Summary`, `## Evidence`, and `## Merge Danger` with a `**Door:** one-way|two-way` line and a non-empty `**Blast Radius:**` line - and `pr release` refuses one without `## Summary`, `--force` included. The check reads structure only, skips fenced code blocks, names every missing or invalid piece in one message, and runs before anything is pushed or created.
