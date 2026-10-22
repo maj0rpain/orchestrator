@@ -538,11 +538,14 @@ fake_comments_of() { fake_comment_bodies "$ORCH_GH_FAKE_STORE/issues/$1/comments
 # fake_issues: every issue number the store holds, in order, space-separated.
 fake_issues() { ls "$ORCH_GH_FAKE_STORE/issues" 2>/dev/null | sort -n | tr '\n' ' '; }
 
+# dir_snapshot <dir>: every file under <dir>, by its path from <dir>, with its
+# checksum, in a fixed order - for a byte-identical comparison with another
+# snapshot of the same directory.
+dir_snapshot() { (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r cksum); }
+
 # fake_snapshot: a digest of the whole store, so a test asserts a read-only
 # command left it as it was.
-fake_snapshot() {
-  (cd "$ORCH_GH_FAKE_STORE" && find . -type f -print0 | sort -z | xargs -0 -r cksum)
-}
+fake_snapshot() { dir_snapshot "$ORCH_GH_FAKE_STORE"; }
 
 # fake_pr <n> <state> <head> <base>: seeds PR #n afresh, open, closed or
 # merged, from the head branch into the base - no body, comments or commits,

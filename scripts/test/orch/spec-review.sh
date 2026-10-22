@@ -5,9 +5,6 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# dir_snapshot <dir>: every file in <dir> with its checksum, for a
-# byte-identical comparison.
-dir_snapshot() { (cd "$1" && find . -type f | LC_ALL=C sort | xargs cksum); }
 # round_snapshot <dir>: dir_snapshot without the view.md a passing check
 # writes - the rest of the round directory a check must leave as it was.
 round_snapshot() { dir_snapshot "$1" | grep -v ' \./view\.md$'; }
@@ -23,6 +20,20 @@ check_refused() {
   assert_eq "$1: exactly these errors" "$err" "$3"
   assert_eq "$1: nothing on stdout" "$out" ""
   assert_eq "$1: the directory unchanged" "$(dir_snapshot "$2")" "$before"
+}
+# check_passes <runner> <label> <dir> <stdout> <stderr>: <runner> <dir> - a
+# check run that sets out, err and st - exits 0 with exactly <stdout> and
+# <stderr>, the summary on stderr alone, and <dir> unchanged, view.md apart.
+check_passes() {
+  local runner="$1" before
+  shift
+  before="$(round_snapshot "$2")"
+  "$runner" "$2"
+  assert_status "$1: passes" "$st" 0
+  assert_eq "$1: exactly this view on stdout" "$out" "$3"
+  assert_eq "$1: exactly this summary on stderr" "$err" "$4"
+  assert_not_contains "$1: and the summary not on stdout" "$out" "$4"
+  assert_eq "$1: the directory unchanged, view.md apart" "$(round_snapshot "$2")" "$before"
 }
 # src <dir> [arg...]: check on <dir> with any further args, its stdout, stderr
 # and status into out, err and st.
@@ -1748,10 +1759,7 @@ printf '@@ finding 1\nThe body says widget where the glossary says item.\n' >"$d
 printf '@@ finding 1\nThe seam names no store to test against.\n' >"$d/lens-testability.md"
 printf '@@ finding 1\nOne file cannot hold the largest exports.\nThe store caps a file at 2 GB.\n@@ finding 2\nOne file is written before every page is fetched.\n' \
   >"$d/lens-implementability.md"
-before="$(round_snapshot "$d")"
-src "$d"
-assert_status "the worked example passes" "$st" 0
-assert_eq "its view, the material items as a list, the minor and resolved ones listed" "$out" '## The batch
+check_passes src "the worked example" "$d" '## The batch
 
 ### Lenses
 
@@ -1769,10 +1777,8 @@ assert_eq "its view, the material items as a list, the minor and resolved ones l
 ### Minor edits
 
 - **3** - Consistency: Widgets renamed items - recommend decline: the glossary'"'"'s term is widget, as the body says
-- **5** - Implementability: resolved by item 4'
-assert_eq "its summary on stderr" "$err" \
+- **5** - Implementability: resolved by item 4' \
   "batch.md passes: 5 items, 5 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
-assert_eq "the worked example's directory unchanged, view.md apart" "$(round_snapshot "$d")" "$before"
 
 # The view of a flow's batch: Fidelity ran with a contradicts-the-plan item,
 # and a lens that did not run, cited by nothing. An edit holding a fence
@@ -1811,10 +1817,7 @@ BATCH
 printf '@@ finding 1\nThe plan decided hourly; the spec says nightly.\n' >"$d/lens-fidelity.md"
 printf '@@ none\n' >"$d/lens-consistency.md"
 printf '@@ none\n' >"$d/lens-implementability.md"
-before="$(round_snapshot "$d")"
-src "$d"
-assert_status "a flow batch passes" "$st" 0
-assert_eq "its view, the fenced edit as its summary and reason alone" "$out" '## The batch
+check_passes src "a flow batch, the fenced edit as its summary and reason alone" "$d" '## The batch
 
 ### Lenses
 
@@ -1823,10 +1826,8 @@ assert_eq "its view, the fenced edit as its summary and reason alone" "$out" '##
 - Testability: not run - timed out twice
 - Implementability: ran
 
-- **1** - **Contradicts the plan** - Sync runs hourly, as the plan decided (apply) - The plan decided hourly'
-assert_eq "its summary on stderr" "$err" \
+- **1** - **Contradicts the plan** - Sync runs hourly, as the plan decided (apply) - The plan decided hourly' \
   "batch.md passes: 1 items, 1 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
-assert_eq "the flow batch's directory unchanged, view.md apart" "$(round_snapshot "$d")" "$before"
 
 # check makes no temporary directory (#1351): it passes with mktemp failing,
 # and leaves nothing in TMPDIR, a failed check included.
@@ -1936,9 +1937,15 @@ Twice.'
 # apply checks every anchor, the ones its answer declines included, as check
 # does (#1281): a declined item's bad anchor refuses the batch, naming its
 # batch line, with nothing written.
-src_bad2() { d="$(src_dir)"; sed -i '19s/.*/Nowhere./' "$d/batch.md"; }
+# src_dir, with item 2's anchor (batch.md line 18) matching no text in the body.
+src_dir_unmatched_anchor() {
+  local d
+  d="$(src_dir)"
+  sed -i '19s/.*/Nowhere./' "$d/batch.md"
+  printf '%s\n' "$d"
+}
 for answer in none "3A, -2"; do
-  src_bad2
+  d="$(src_dir_unmatched_anchor)"
   snap="$(fake_snapshot)"
   out="$("$ORCH" spec-review apply "$d" "$answer" --round 1/1 --issue 14 2>&1)"; st=$?
   assert_status "apply '$answer' refuses a declined item's bad anchor" "$st" 1
@@ -1947,7 +1954,7 @@ for answer in none "3A, -2"; do
   assert_eq "apply '$answer' leaves spec.md unwritten" "$(cat "$d/spec.md")" "$(printf '%s' "$src_body")"
   assert_eq "apply '$answer' writes nothing to GitHub" "$(fake_snapshot)" "$snap"
 done
-src_bad2
+d="$(src_dir_unmatched_anchor)"
 src "$d"
 assert_eq "check names the bad anchor's line" "$err" \
   "orch: batch.md line 18: item 2: its anchor matches no text in the body"
@@ -1960,11 +1967,9 @@ assert_eq "naming the same batch line" "$out" \
 # rendering, in the order named - any item in batch.md, minor or resolved
 # included - with nothing written.
 d="$(src_dir)"
-before="$(round_snapshot "$d")"
 snap="$(fake_snapshot)"
-src "$d" --full 4 1 2
-assert_status "--full passes on a clean batch" "$st" 0
-assert_eq "--full prints the named items in full, in the order named, a minor and a resolved one among them" "$out" '
+src_full_412() { src "$1" --full 4 1 2; }
+check_passes src_full_412 "--full on a clean batch, the named items in full, in the order named, a minor and a resolved one among them" "$d" '
 ### Item 4 - Testability
 
 **Recommendation:** resolved by item 3
@@ -2011,10 +2016,8 @@ Beta line.
 
 ```
 Beta reversed.
-```'
-assert_eq "--full keeps check's one-line summary on stderr" "$err" \
+```' \
   "batch.md passes: 4 items, 4 anchors, each matching once in spec.md, and the all answer applies cleanly$(src_nudge "$d")"
-assert_eq "--full leaves the directory byte-identical, view.md apart" "$(round_snapshot "$d")" "$before"
 assert_eq "--full creates no spec.fetched.md" "$(on_disk "$d/spec.fetched.md")" absent
 assert_eq "--full makes no GitHub write" "$(fake_snapshot)" "$snap"
 src "$d" --full 3
@@ -2278,21 +2281,9 @@ TICKETS
 }
 # srct <dir>: src with --tickets.
 srct() { src "$1" --tickets; }
-# srct_passes <label> <dir> <stdout> <stderr>: check --tickets exits 0 with
-# exactly <stdout> and <stderr>, and <dir> unchanged.
-srct_passes() {
-  local before
-  before="$(round_snapshot "$2")"
-  srct "$2"
-  assert_status "$1: passes" "$st" 0
-  assert_eq "$1: the ticket view on stdout" "$out" "$3"
-  assert_eq "$1: the pass summary on stderr" "$err" "$4"
-  assert_not_contains "$1: and not on stdout" "$out" "tickets.md passes"
-  assert_eq "$1: the directory unchanged, view.md apart" "$(round_snapshot "$2")" "$before"
-}
 
 d="$(srct_dir)"
-srct_passes "a ticket batch" "$d" '## The ticket items
+check_passes srct "a ticket batch" "$d" '## The ticket items
 
 ### Item 1 - #20
 
@@ -2346,7 +2337,7 @@ assert_eq "no fetched copy taken" "$(on_disk "$d/ticket-20.fetched.md")" absent
 d="$(mktemp -d)"
 printf '# Spec\n\n## Ticket\n\nBuild the spec.\n' >"$d/spec.md"
 printf '@@ recommend retire\n@@ item 1 section apply\n@@ summary The ticket builds alpha first\n@@ anchor\nBuild the spec.\n@@ replace\nBuild the spec, alpha first.\n@@ end\n' >"$d/tickets.md"
-srct_passes "a ## Ticket item" "$d" '## The ticket items
+check_passes srct "a ## Ticket item" "$d" '## The ticket items
 
 ### Item 1 - the `## Ticket` section
 
@@ -2378,7 +2369,7 @@ check_refused srct "a section anchor not in spec.md" "$d" \
 d="$(mktemp -d)"
 printf '# Spec\n' >"$d/spec.md"
 printf '@@ none-affected\n' >"$d/tickets.md"
-srct_passes "@@ none-affected" "$d" '## The ticket items
+check_passes srct "@@ none-affected" "$d" '## The ticket items
 
 No open ticket is affected.' "tickets.md passes: no open ticket affected"
 
