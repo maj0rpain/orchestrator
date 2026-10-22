@@ -294,6 +294,103 @@ agent_sync() {
   done
 }
 
+# agent_junie_session_cannot_tell <reason>: doctor's one ok line when Junie's
+# files cannot say what the agents ran on. Never a FAIL.
+agent_junie_session_cannot_tell() { d_ok "junie session: cannot tell ($1)"; }
+
+# agent_junie_ran <agent> <model> <effort>: whether what <agent> ran on
+# agrees with its role's Junie setting - a model is compared only when set,
+# and matches when equal to it or it followed by - and more; an effort is
+# compared only when set. Prints the line's set-part, (set model <v>, effort
+# <v>), on stdout; the status is the verdict.
+agent_junie_ran() {
+  local role set_model set_effort src ok=0
+  role="$(agent_role_of "$1")"
+  set_model=inherit; set_effort=inherit
+  if [ -n "$role" ]; then
+    agent_lookup model "$role" set_model src junie
+    agent_lookup effort "$role" set_effort src junie
+  fi
+  printf '(set model %s, effort %s)' "$set_model" "$set_effort"
+  if [ "$set_model" != inherit ] && [ "$2" != "$set_model" ] && [ "${2#"$set_model"-}" = "$2" ]; then ok=1; fi
+  if [ "$set_effort" != inherit ] && [ "$3" != "$set_effort" ]; then ok=1; fi
+  return "$ok"
+}
+
+# agent_junie_session: doctor's best-effort report of what each orch-* agent
+# ran on in the last Junie session for this checkout, read from Junie's own
+# files under $HOME/.junie: the sessions/index.jsonl entry with the greatest
+# updatedAt whose projectDir is this checkout's root, then the one
+# logs/log-*.log holding its sessionId; events.jsonl is not read. Each
+# agent's last "Executing agent custom_agent_<agent>_<n> with parameters"
+# line gives its model= and its effort (effort= unless null, else
+# reasoningEffort= unless null, else inherited). A file that is missing or
+# does not parse gives one ok line saying it cannot tell, never a FAIL.
+agent_junie_session() {
+  local index="$HOME/.junie/sessions/index.jsonl" sid log lines agent line model effort rran report="" ran_line word v kind f
+  command -v jq >/dev/null 2>&1 || { agent_junie_session_cannot_tell "jq is not installed"; return 0; }
+  [ -f "$index" ] || { agent_junie_session_cannot_tell "no Junie session index"; return 0; }
+  sid="$(jq -rs --arg d "$ROOT" 'map(select(.projectDir == $d)) | sort_by(.updatedAt) | last | .sessionId // empty' "$index" 2>/dev/null)" ||
+    { agent_junie_session_cannot_tell "the session index does not parse"; return 0; }
+  [ -n "$sid" ] || { agent_junie_session_cannot_tell "no session for this checkout"; return 0; }
+  log=""
+  for f in "$HOME"/.junie/logs/log-*.log; do
+    [ -f "$f" ] && grep -aqF -- "$sid" "$f" 2>/dev/null || continue
+    if [ -z "$log" ] || [ "$f" -nt "$log" ]; then log="$f"; fi
+  done
+  [ -n "$log" ] || { agent_junie_session_cannot_tell "no log names session $sid"; return 0; }
+  lines="$(grep -a 'Executing agent custom_agent_orch-[A-Za-z0-9-]*_[0-9]* with parameters' "$log" 2>/dev/null)" || true
+  [ -n "$lines" ] || { agent_junie_session_cannot_tell "the log holds no agent runs"; return 0; }
+  while IFS= read -r agent; do
+    line="$(printf '%s\n' "$lines" | grep -a "custom_agent_${agent}_[0-9]* with parameters" | tail -1)"
+    model="$(printf '%s' "$line" | sed -n 's/.*[^A-Za-z]model=\([^ ,)]*\).*/\1/p')"
+    [ -n "$model" ] || { agent_junie_session_cannot_tell "the log does not parse"; return 0; }
+    effort=inherited
+    for word in effort reasoningEffort; do
+      v="$(printf '%s' "$line" | sed -n "s/.*[^A-Za-z]$word=\\([^ ,)]*\\).*/\\1/p")"
+      if [ -n "$v" ] && [ "$v" != null ]; then effort="$v"; break; fi
+    done
+    ran_line="junie $agent ran model $model, effort $effort"
+    if rran="$(agent_junie_ran "$agent" "$model" "$effort")"; then
+      report="$report"$'\n'"ok|$ran_line $rran"
+    else
+      report="$report"$'\n'"warn|$ran_line $rran"
+    fi
+  done < <(printf '%s\n' "$lines" | sed -n 's/.*custom_agent_\(orch-[A-Za-z0-9-]*\)_[0-9]* with parameters.*/\1/p' | awk '!seen[$0]++')
+  while IFS='|' read -r kind line; do
+    [ -n "$kind" ] || continue
+    if [ "$kind" = ok ]; then d_ok "$line"; else d_warn "$line"; fi
+  done <<<"$report"
+}
+
+# agent_junie_unrecognized: doctor's best-effort FAIL on Junie's own
+# Unrecognized 'model' value line, from the most recent log
+# (logs/log-*.log modified last) whether or not a session was found: when the
+# value is a role's effective Junie model, it names the role, prints the
+# log's Allowed LLM names and gives the agent set that fixes it. No log, or
+# no such role, prints nothing.
+agent_junie_unrecognized() {
+  local log value line role v src names f
+  log=""
+  for f in "$HOME"/.junie/logs/log-*.log; do
+    [ -f "$f" ] || continue
+    if [ -z "$log" ] || [ "$f" -nt "$log" ]; then log="$f"; fi
+  done
+  [ -n "$log" ] || return 0
+  while IFS= read -r value; do
+    [ -n "$value" ] || continue
+    line="$(grep -aF "Unrecognized 'model' value '$value'" "$log" | tail -1)"
+    names="$(printf '%s' "$line" | sed -n 's/.*\(Allowed LLM names:.*\)/\1/p')"
+    for role in $AGENT_ROLES; do
+      agent_lookup model "$role" v src junie
+      [ "$v" = "$value" ] || continue
+      d_fail "Junie did not recognise model $value, set for $role ($src) - it fell back to the session model"
+      [ -z "$names" ] || d_remedy "$names"
+      d_remedy "orch.sh agent set $role --host junie --model <id>"
+    done
+  done < <(sed -n "s/.*Unrecognized 'model' value '\\([^']*\\)'.*/\\1/p" "$log" 2>/dev/null | awk '!seen[$0]++')
+}
+
 # check_agent_settings: doctor's agent settings check, named in its env check
 # list and reporting through its reporter trio. One ok line per role, in role
 # order, with its effective model and effort and their sources - a disallowed
@@ -322,6 +419,8 @@ check_agent_settings() {
       done
     done
   done
+  agent_junie_session
+  agent_junie_unrecognized
   return 0
 }
 

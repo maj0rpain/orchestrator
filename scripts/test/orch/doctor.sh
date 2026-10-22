@@ -1774,3 +1774,102 @@ out="$("$ORCH" doctor --env 2>&1)"; st=$?
 assert_status "a global bad value hidden by a local one still fails" "$st" 1
 assert_contains "naming the global key" "$out" "FAIL  orchestrator.effort.closer is huge (global)"
 restore_suite_env
+
+# --- doctor: Junie session and log (#1449) -------------------------------------
+# Best effort, from Junie's own files under $HOME/.junie: the newest session for
+# this checkout names its log, whose last "Executing agent" line per orch-*
+# agent says what it ran on; and the newest log's Unrecognized 'model' value
+# line FAILs when the value is a role's effective Junie model.
+echo
+echo "doctor: Junie session and log"
+healthy_repo
+doctor_github
+JH="$HOME/.junie"
+root="$(git rev-parse --show-toplevel)"
+junie_reset() { rm -rf "$JH"; mkdir -p "$JH/sessions" "$JH/logs"; }
+junie_index() { # <session> <updatedAt>...
+  : >"$JH/sessions/index.jsonl"
+  while [ $# -ge 2 ]; do
+    printf '{"sessionId":"%s","projectDir":"%s","createdAt":"1","updatedAt":"%s"}\n' "$1" "$root" "$2" >>"$JH/sessions/index.jsonl"
+    shift 2
+  done
+}
+junie_exec() { # <log> <session> <agent> <model> <effort> <reasoningEffort>
+  printf 'session %s\n%s INFO Executing agent custom_agent_%s_1 with parameters AgentParams(model=%s, effort=%s, reasoningEffort=%s)\n' \
+    "$2" "x" "$3" "$4" "$5" "$6" >>"$JH/logs/$1"
+}
+doc() { "$ORCH" doctor --env 2>&1; }
+
+junie_reset
+junie_index new 20 old 10
+junie_exec log-a.log old orch-reviewer-spec gpt-4 null low
+junie_exec log-b.log new orch-reviewer-spec gpt-5-2025-08-07 null high
+junie_exec log-b.log new orch-fixer claude-opus-5-5 medium null
+junie_exec log-b.log new orch-fixer claude-opus-5-5 low null
+git config orchestrator.junie.model.reviewer gpt-5
+git config orchestrator.junie.effort.reviewer high
+out="$(doc)"; st=$?
+assert_status "a Junie session report exits 0" "$st" 0
+assert_contains "the newer session is chosen; a dated model matches the set one, effort read from reasoningEffort=" "$out" \
+  "ok    junie orch-reviewer-spec ran model gpt-5-2025-08-07, effort high (set model gpt-5, effort high)"
+assert_contains "an inherit key gives an ok line with effort read from effort=, the last line wins" "$out" \
+  "ok    junie orch-fixer ran model claude-opus-5-5, effort low (set model inherit, effort inherit)"
+assert_not_contains "an agent absent from the log gets no line" "$out" "junie orch-closer"
+assert_not_contains "no cannot-tell line when the session is read" "$out" "junie session: cannot tell"
+
+git config orchestrator.junie.model.reviewer gpt-4
+git config orchestrator.junie.effort.reviewer low
+out="$(doc)"; st=$?
+assert_status "a mismatch is a WARN, not a failure" "$st" 0
+assert_contains "a model and effort mismatch warns" "$out" \
+  "warn  junie orch-reviewer-spec ran model gpt-5-2025-08-07, effort high (set model gpt-4, effort low)"
+git config --unset orchestrator.junie.model.reviewer
+git config --unset orchestrator.junie.effort.reviewer
+
+cannot() { # <label> <reason>
+  out="$(doc)"; st=$?
+  assert_status "$1 exits 0" "$st" 0
+  assert_contains "$1 gives the cannot-tell line" "$out" "ok    junie session: cannot tell ($2"
+}
+junie_reset
+cannot "no session" "no Junie session index"
+junie_index other 5; sed -i 's#"projectDir":"[^"]*"#"projectDir":"/elsewhere"#' "$JH/sessions/index.jsonl"
+cannot "an index without this checkout" "no session for this checkout"
+junie_index lost 5
+cannot "a session no log names" "no log names session lost"
+echo 'not json' >"$JH/sessions/index.jsonl"
+cannot "a garbled index" "the session index does not parse"
+junie_index g 5
+printf 'g\ngarbage\n' >"$JH/logs/log-g.log"
+cannot "a garbled log" "the log "
+
+junie_reset
+junie_index s 5
+echo "s" >"$JH/logs/log-old.log"
+printf "WARN Unrecognized 'model' value 'old-model', falling back to default. Allowed LLM names: a, b\n" >>"$JH/logs/log-old.log"
+touch -d '2 days ago' "$JH/logs/log-old.log"
+echo "nothing" >"$JH/logs/log-new.log"
+git config orchestrator.junie.model.fixer old-model
+out="$(doc)"; st=$?
+assert_status "the line only in an older log gives no failure" "$st" 0
+assert_not_contains "and no message" "$out" "did not recognise"
+printf "WARN Unrecognized 'model' value 'bad-model', falling back to default. Allowed display names: X. Allowed LLM names: gpt-5, claude-opus-5-5\n" >>"$JH/logs/log-new.log"
+out="$(doc)"; st=$?
+assert_status "an unrecognised value that is not set gives no failure" "$st" 0
+git config orchestrator.junie.model.fixer bad-model
+out="$(doc)"; st=$?
+assert_status "an unrecognised local set model fails" "$st" 1
+assert_contains "naming the role" "$out" "FAIL  Junie did not recognise model bad-model, set for fixer (local)"
+assert_contains "printing the allowed LLM names" "$out" "Allowed LLM names: gpt-5, claude-opus-5-5"
+assert_contains "with the agent set remedy" "$out" "orch.sh agent set fixer --host junie --model <id>"
+git config --unset orchestrator.junie.model.fixer
+git config --global orchestrator.junie.model.closer bad-model
+out="$(doc)"; st=$?
+assert_status "an unrecognised global set model fails" "$st" 1
+assert_contains "naming the global role" "$out" "set for closer (global)"
+git config orchestrator.junie.model.closer good
+out="$(doc)"; st=$?
+assert_status "a global model hidden by a local one gives no failure" "$st" 0
+git config --unset orchestrator.junie.model.closer
+rm -rf "$JH"
+restore_suite_env
