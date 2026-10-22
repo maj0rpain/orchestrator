@@ -192,8 +192,11 @@ reporting rules and may write only its findings file - and the
 Implementability lens its code map too. Start them all at once as fresh
 subagents - never forks, which inherit this context. On Claude Code that is
 the Agent tool with `subagent_type` set to the lens's agent name under the
-`orchestrator:` plugin scope. Each prompt carries only the paths its row
-names, the last of them its findings file, `<dir>/lens-<name>.md`. Each lens
+`orchestrator:` plugin scope, every lens on the `lens` setting: run
+`bash "$ORCH" agent get lens` once, before the review's first round, per
+**Agent settings** in `docs/host-capabilities.md`. Each prompt carries only
+the paths its row names, the last of them its findings file,
+`<dir>/lens-<name>.md`. Each lens
 writes its numbered findings there, its findings file last, and replies with
 only that path and a count.
 
