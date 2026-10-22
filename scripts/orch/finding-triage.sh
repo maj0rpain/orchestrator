@@ -128,9 +128,9 @@ triage_state() {
 # body names another PR.
 finding_scan_one() {
   local n="$1" body="$2" ref="$3" roles="$4" pr file lines sha resolved_sha start end new_start new_end detail file_commit log_out deleted
-  local -A f
-  finding_body_parse "$body" f
-  pr="${f[pr_number]}" file="${f[file]}" lines="${f[line]}" sha="${f[sha]}"
+  local -A finding
+  finding_body_parse "$body" finding
+  pr="${finding[pr_number]}" file="${finding[file]}" lines="${finding[line]}" sha="${finding[sha]}"
   [ -z "${5:-}" ] || [ "$pr" = "$5" ] || return 0
   if [ -z "$file" ]; then
     scan_line - unknown 'body does not parse: no **Location:** line naming `<file>:<line>` at <SHA>'
