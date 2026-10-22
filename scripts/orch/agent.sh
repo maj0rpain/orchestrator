@@ -324,12 +324,14 @@ agent_junie_session_cannot_tell() { d_ok "junie session: cannot tell ($1)"; }
 # compared only when set. Prints the line's set-part, (set model <v>, effort
 # <v>), on stdout; the status is the verdict.
 agent_junie_ran() {
-  local role set_model set_effort src mismatch=0
+  # src_model and src_effort receive agent_lookup's source and go unread here.
+  # shellcheck disable=SC2034
+  local role set_model set_effort src_model src_effort mismatch=0
   role="$(agent_role_of "$1")"
   set_model=inherit; set_effort=inherit
   if [ -n "$role" ]; then
-    agent_lookup model "$role" set_model src junie
-    agent_lookup effort "$role" set_effort src junie
+    agent_lookup model "$role" set_model src_model junie
+    agent_lookup effort "$role" set_effort src_effort junie
   fi
   printf '(set model %s, effort %s)' "$set_model" "$set_effort"
   if [ "$set_model" != inherit ] && [ "$2" != "$set_model" ] && [ "${2#"$set_model"-}" = "$2" ]; then mismatch=1; fi

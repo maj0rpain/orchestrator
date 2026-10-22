@@ -286,21 +286,25 @@ exclude_lines() {
 
 # exclude_line <line>: makes sure <line> is a line of the clone's shared
 # info/exclude, adding it once and never again.
-exclude_line() {
-  grep -qxF -- "$1" "$(git rev-parse --git-common-dir)/info/exclude" 2>/dev/null || exclude_lines "$1"
+exclude_line() { exclude_lines "$(exclude_missing "$1")"; }
+
+# exclude_missing <lines>: prints, one per line, each of the newline-separated
+# <lines> the clone's shared info/exclude lacks - every one when the file is
+# missing. The one place the membership test is written: exclude_line and
+# orch_dirs_unexcluded both print exactly this, and exclude_orch_dirs appends it.
+exclude_missing() {
+  local ex l
+  ex="$(git rev-parse --git-common-dir)/info/exclude"
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    grep -qxF -- "$l" "$ex" 2>/dev/null || printf '%s\n' "$l"
+  done <<<"$1"
 }
 
 # Prints, one per line, each EXCLUDED_DIRS entry the clone's shared
-# info/exclude lacks - every entry when the file is missing. The one place the
-# membership test is written: exclude_orch_dirs appends exactly this, and
-# doctor's check_git_exclude reports exactly this.
-orch_dirs_unexcluded() {
-  local ex d
-  ex="$(git rev-parse --git-common-dir)/info/exclude"
-  for d in "${EXCLUDED_DIRS[@]}"; do
-    grep -qxF "$d" "$ex" 2>/dev/null || printf '%s\n' "$d"
-  done
-}
+# info/exclude lacks - every entry when the file is missing. exclude_orch_dirs
+# appends exactly this, and doctor's check_git_exclude reports exactly this.
+orch_dirs_unexcluded() { exclude_missing "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")"; }
 # Prints, one per line, every path with tracked modifications or untracked
 # files in this working tree that falls outside the planning allowlist. -z
 # keeps unusual file names intact; a rename or copy carries its source path as
