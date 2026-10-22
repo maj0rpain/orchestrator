@@ -983,7 +983,7 @@ scan_command_routes() {
     skill="$(sed 's/^`orchestrator://; s/`.*//' <<<"$route")"
     if [ -z "$skill" ]; then echo "${f#"$r"/}: routes to no orch- skill"
     elif [ ! -f "$r/skills/$skill/SKILL.md" ]; then echo "${f#"$r"/}: routes to a missing skill: $skill"
-    elif [ -n "$section" ]; then grep -qxF "## $section" "$r/skills/$skill/SKILL.md" \
+    elif [ -n "$section" ]; then md_section "$r/skills/$skill/SKILL.md" "## $section" >/dev/null \
       || echo "${f#"$r"/}: routes to a missing $skill section: $section"; fi
   done
   return 0
@@ -1011,6 +1011,10 @@ flags "the scan flags a command routed to a missing section of its own skill" \
 spares "the scan accepts a command routed to an existing orch-flow section" "$out" '^commands/status\.md:'
 spares "the scan accepts a thin route to a whole skill" "$out" '^commands/whole\.md:'
 spares "the scan accepts a wrapped route to an existing section of its own skill" "$out" '^commands/solo\.md:'
+printf '## Solo run\n\n## Padded run  \n' >"$fixture/skills/orch-y/SKILL.md"
+printf 'Invoke `orchestrator:orch-y` and follow its **Padded run** section.\n' >"$fixture/commands/padded.md"
+spares "the scan accepts a route to a section whose heading ends in trailing whitespace" \
+  "$(scan_command_routes "$fixture")" '^commands/padded\.md:'
 check "every command is a thin route to an orch- skill section that exists" \
   "$(scan_command_routes "$PLUGIN_ROOT")"
 
@@ -1528,7 +1532,7 @@ scan_flow_cmd() {
   (cd "$r" && awk '/^flow_cmd\(\)/,/^}/' scripts/orch.sh scripts/orch/*.sh 2>/dev/null) \
     | grep -oE 'section="[^"]+"' | sed 's/section="//; s/"$//' \
     | while IFS= read -r s; do
-        grep -qxF "## $s" "$r/skills/orch-flow/SKILL.md" 2>/dev/null ||
+        md_section "$r/skills/orch-flow/SKILL.md" "## $s" >/dev/null 2>&1 ||
           echo "skills/orch-flow/SKILL.md: has no section flow_cmd names: $s"
       done
   return 0
@@ -1575,6 +1579,13 @@ spares "an unquoted usage: string naming orch.sh abort is not flagged" \
   "$out" ':19:'
 flags "a usage: string beside another literal flow command is flagged" \
   "$out" "scripts/orch.sh:20: names a flow command literally, not through flow_cmd"
+fixture="$(new_fixture)"
+mkdir -p "$fixture/scripts/orch" "$fixture/skills/orch-flow"
+printf '%s\n' 'flow_cmd() {' '  case "$1" in' '    pad) section="Padded step" ;;' '  esac' '}' \
+  >"$fixture/scripts/orch.sh"
+printf '# Flow\n\n## Padded step \t\n' >"$fixture/skills/orch-flow/SKILL.md"
+assert_empty "a flow_cmd section whose orch-flow heading ends in trailing whitespace is not flagged" \
+  "$(scan_flow_cmd "$fixture")"
 check "the scripts name a plugin command only through flow_cmd, whose sections exist" \
   "$(scan_flow_cmd "$PLUGIN_ROOT")"
 
@@ -1761,9 +1772,9 @@ spares "a filled row is not flagged" "$out" ':(1|2|3):'
 check "every host capability row has both hosts' cells filled" \
   "$(scan_capability_table "$PLUGIN_ROOT")"
 
-# names_skill_section <text> <skill> <section>: the text names <skill>, as
-# given, and its **<section>** in bold.
-names_skill_section() { grep -qF -- "$2" <<<"$1" && grep -qF -- "**$3**" <<<"$1"; }
+# names_with_bold <text> <token> <bold>: the text names <token>, as given,
+# and <bold> in bold, as **<bold>**.
+names_with_bold() { grep -qF -- "$2" <<<"$1" && grep -qF -- "**$3**" <<<"$1"; }
 
 # quick_step_refers <plugin root> <step heading> <skill> <section> <noun>:
 # one line when that quick-implement step does not name `<skill>` and its
@@ -1772,7 +1783,7 @@ quick_step_refers() {
   local quick="skills/orch-quick-implement/SKILL.md" body numbered="${2#\#\# }" owner="$3's"
   [[ $3 == *s && $3 != *ss ]] && owner="$3'"
   body="$(md_section "$1/$quick" "$2" | flat_text)"
-  names_skill_section "$body" "\`$3\`" "$4" \
+  names_with_bold "$body" "\`$3\`" "$4" \
     || echo "$quick: step ${numbered%%.*} does not refer to $owner **$4** $5"
 }
 
@@ -2302,11 +2313,18 @@ Met again'
 # orch-review or orchestrator:orch-review, never orch-review-pass or
 # orch-reviewer-spec.
 names_orch_review() { grep -qE '(^|[^a-z0-9-])orch-review([^a-z0-9-]|$)'; }
-# skill_description <file>: the description line of the file's frontmatter.
-skill_description() {
-  awk 'NR == 1 && $0 == "---" { inb = 1; next } inb && $0 == "---" { exit }
-    inb && /^description:/ { print }' "$1" 2>/dev/null
+# skill_part <file> frontmatter|body: the lines between the `---` fence on
+# line 1 and the next `---`, or the lines after that closing fence. With no
+# fence on line 1 the frontmatter is empty and the body is the whole file; with
+# the fence never closed, every line after line 1 is frontmatter.
+skill_part() {
+  P="$2" awk 'BEGIN { body = ENVIRON["P"] == "body" }
+    NR == 1 && $0 == "---" { fm = 1; next }
+    fm && $0 == "---" { fm = 0; next }
+    fm != body { print }' "$1" 2>/dev/null
 }
+# skill_description <file>: the description line of the file's frontmatter.
+skill_description() { skill_part "$1" frontmatter | grep '^description:'; }
 # scan_review_pass_self_contained <plugin root>: one line per reference from
 # orch-review-pass into orch-review, and per missing reviewer-start or
 # description token.
@@ -2319,7 +2337,7 @@ scan_review_pass_self_contained() {
       && echo "$pass: names orch-review's loop-only **$name**"
   done <<<"$review_loop_only"
   names_orch_review <"$r/$pass" 2>/dev/null && echo "$pass: names the orch-review skill"
-  names_skill_section "$text" '`docs/host-capabilities.md`' "Start a fresh subagent" \
+  names_with_bold "$text" '`docs/host-capabilities.md`' "Start a fresh subagent" \
     || echo "$pass: does not name docs/host-capabilities.md's **Start a fresh subagent**"
   grep -qF 'subagent_type' <<<"$text" || echo "$pass: does not name subagent_type"
   desc="$(skill_description "$r/$pass")"
@@ -2364,6 +2382,15 @@ assert_empty "a self-contained pass is not flagged" "$(scan_review_pass_self_con
 check "orch-review-pass refers into no orch-review section and says how to start a reviewer" \
   "$(scan_review_pass_self_contained "$PLUGIN_ROOT")"
 
+# follows_standalone_pass <text> <prefix>: one line, after <prefix> and a
+# space, when the text does not name orch-review-pass's **Standalone review
+# pass**, and one when it names the orch-review skill.
+follows_standalone_pass() {
+  names_with_bold "$1" orch-review-pass "Standalone review pass" \
+    || echo "$2 does not name orch-review-pass's **Standalone review pass**"
+  names_orch_review <<<"$1" && echo "$2 names the orch-review skill"
+  return 0
+}
 # scan_review_pass_callers <plugin root>: one line per caller of the pass that
 # does not name orch-review-pass and the section it follows, or names
 # orch-review. Quick implementation's step 6 is named by scan_review_pass.
@@ -2371,15 +2398,11 @@ scan_review_pass_callers() {
   local r="$1" cmd="commands/review-pass.md" quick="skills/orch-quick-implement/SKILL.md"
   local sync="skills/orch-sync/SKILL.md" cmd_text step6_text offer_text
   cmd_text="$(flat_text "$r/$cmd" 2>/dev/null)"
-  names_skill_section "$cmd_text" orch-review-pass "Standalone review pass" \
-    || echo "$cmd: does not name orch-review-pass's **Standalone review pass**"
-  names_orch_review <<<"$cmd_text" && echo "$cmd: names the orch-review skill"
+  follows_standalone_pass "$cmd_text" "$cmd:"
   step6_text="$(md_section "$r/$quick" "## 6. Review" | flat_text)"
   names_orch_review <<<"$step6_text" && echo "$quick: step 6 names the orch-review skill"
   offer_text="$(md_section "$r/$sync" "## 3. Offer a review pass" | flat_text)"
-  names_skill_section "$offer_text" orch-review-pass "Standalone review pass" \
-    || echo "$sync: step 3 does not name orch-review-pass's **Standalone review pass**"
-  names_orch_review <<<"$offer_text" && echo "$sync: step 3 names the orch-review skill"
+  follows_standalone_pass "$offer_text" "$sync: step 3"
   return 0
 }
 fixture="$(new_fixture)"
@@ -2417,15 +2440,14 @@ scan_review_loop_sheds_pass() {
   local r="$1" review="skills/orch-review/SKILL.md" text desc heading
   text="$(flat_text "$r/$review" 2>/dev/null)"
   for heading in "Review pass" "Standalone review pass"; do
-    grep -qxE "## ${heading}[[:space:]]*" "$r/$review" 2>/dev/null \
+    md_section "$r/$review" "## $heading" >/dev/null 2>&1 \
       && echo "$review: holds a ## $heading section"
     grep -qF "**$heading**" <<<"$text" && echo "$review: names **$heading**"
   done
   desc="$(skill_description "$r/$review")"
   grep -qF 'orch-review-pass' <<<"$desc" || echo "$review: description does not name orch-review-pass"
   grep -qF '/orchestrator:review-pass' <<<"$desc" && echo "$review: description names /orchestrator:review-pass"
-  awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' \
-    "$r/$review" 2>/dev/null | grep -qF 'orch-review-pass' \
+  skill_part "$r/$review" body | grep -qF 'orch-review-pass' \
     || echo "$review: body does not name orch-review-pass"
   return 0
 }
@@ -2454,6 +2476,18 @@ printf '%s\n' '---' 'name: orch-review' 'description: The loop. The review pass 
   >"$fixture/skills/orch-review/SKILL.md"
 assert_empty "an orch-review that points to orch-review-pass is not flagged" \
   "$(scan_review_loop_sheds_pass "$fixture")"
+printf '%s\n' '---' 'name: orch-review' 'description: The loop. The review pass is orch-review-pass.' '---' '' \
+  '# Loop' '' 'No pointer here.' >"$fixture/skills/orch-review/SKILL.md"
+flags "an orch-review naming orch-review-pass only in its frontmatter is flagged" \
+  "$(scan_review_loop_sheds_pass "$fixture")" "skills/orch-review/SKILL.md: body does not name orch-review-pass"
+printf '%s\n' '---' 'name: orch-review' 'description: The loop.' '---' '' \
+  'description: see orch-review-pass.' >"$fixture/skills/orch-review/SKILL.md"
+flags "a body description: line does not satisfy the orch-review description check" \
+  "$(scan_review_loop_sheds_pass "$fixture")" "skills/orch-review/SKILL.md: description does not name orch-review-pass"
+printf '%s\n' '# Loop' '' 'A review pass lives in the `orch-review-pass` skill.' \
+  >"$fixture/skills/orch-review/SKILL.md"
+spares "an orch-review with no frontmatter whose body names orch-review-pass keeps its body" \
+  "$(scan_review_loop_sheds_pass "$fixture")" 'body does not name orch-review-pass'
 check "orch-review holds the loop only and points to orch-review-pass" \
   "$(scan_review_loop_sheds_pass "$PLUGIN_ROOT")"
 
