@@ -67,12 +67,12 @@ echo "list_has"
 new_repo >/dev/null
 lh_list=$'-n\nbug\na.c\nneeds triage'
 lh_verdicts=""
-for lh_item in -n bug a.c 'needs triage' bu abc needs '-'; do
+for lh_item in -n bug a.c 'needs triage' bu abc needs '-' $'bug\na.c'; do
   if sourced_orch list_has "$lh_list" "$lh_item"; then lh_verdicts="$lh_verdicts y"
   else lh_verdicts="$lh_verdicts n"; fi
 done
-assert_eq "list_has matches whole lines literally, an item beginning with - included" \
-  "$lh_verdicts" " y y y y n n n n"
+assert_eq "list_has matches whole lines literally, an item beginning with - included, one spanning lines never" \
+  "$lh_verdicts" " y y y y n n n n n"
 
 # --- git_push (#1300) ---------------------------------------------------------
 # Every push orch.sh makes runs through git_push, which returns the push's

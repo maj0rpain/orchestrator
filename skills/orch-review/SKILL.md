@@ -126,6 +126,12 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    Then `bash "$ORCH" state set budget <that number>`. The bound is mechanical from
    here: `review begin` enforces it, and a session that has argued with itself
    for four iterations cannot re-remember five as six.
+6. Read the agent settings, once, for the whole loop: `bash "$ORCH" agent get
+   reviewer`, `agent get fixer`, `agent get closer` and `agent get resolver`,
+   per **Agent settings** in `docs/host-capabilities.md` under the plugin
+   root. Every reviewer, fixer and closer this loop starts, and every
+   resolver its base syncs start, runs on these, never re-read per
+   iteration.
 
 ## The iteration
 
@@ -407,7 +413,9 @@ orch.sh: <the path ORCH holds>
 The reviewers, the fixer, and the closer are all started the same way: as a
 fresh subagent, never a fork, which would inherit this context. On Claude
 Code that is the Agent tool with `subagent_type` set to the agent's name under
-the `orchestrator:` plugin scope.
+the `orchestrator:` plugin scope, on its role's setting from **Before the
+first iteration** step 6, per **Agent settings** in
+`docs/host-capabilities.md`.
 
 **Host fallback.** A host that cannot start one of them natively takes
 `docs/host-capabilities.md`'s **Start a fresh subagent** fallback, with the

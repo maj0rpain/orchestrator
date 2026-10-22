@@ -170,6 +170,12 @@ guard denies edits outside it while planning, on a host where the guard
 arms - not Junie (ADR-0025) - and a flow at `done` does not disarm it. A flow
 will not start while the working tree has changes outside it (ADR-0013).
 
+**Agent setting**:
+The model and reasoning effort a role's agents run with: each chosen per role
+by the user, or else inherited from the session that starts them. A role is
+one of six groups of the plugin's agents that share a setting: implementer,
+lens, reviewer, fixer, closer and resolver.
+
 ### Quick implementation and blueprint
 
 **Quick implementation**:
