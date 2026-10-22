@@ -108,6 +108,17 @@ out="$("$ORCH" agent set lens --model opus --model haiku 2>&1)"; st=$?
 assert_status "set refuses a flag given twice" "$st" 1
 untouched "a flag given twice"
 
+# set validates each value as it is parsed, so the first problem met is named.
+out="$("$ORCH" agent set implementer --model bogus --global --global 2>&1)"
+assert_eq "set names a disallowed model before a repeated --global" "$out" \
+  "orch: model bogus is not allowed (want sonnet|opus|haiku|fable|inherit)"
+out="$("$ORCH" agent set implementer --effort bad --model 2>&1)"
+assert_eq "set names a disallowed effort before a missing model value" "$out" \
+  "orch: effort bad is not allowed (want low|medium|high|xhigh|max|inherit)"
+out="$("$ORCH" agent set implementer --effort bad --model bad 2>&1)"
+assert_eq "set names the first disallowed value met" "$out" \
+  "orch: effort bad is not allowed (want low|medium|high|xhigh|max|inherit)"
+
 # set ... inherit clears the key at that scope, never storing the literal.
 "$ORCH" agent set fixer --model inherit >/dev/null
 assert_eq "set --model inherit clears the local model" "$(key local orchestrator.model.fixer)" "<unset>"
