@@ -1873,3 +1873,64 @@ assert_status "a global model hidden by a local one gives no failure" "$st" 0
 git config --unset orchestrator.junie.model.closer
 rm -rf "$JH"
 restore_suite_env
+
+# --- doctor: Junie agent settings check (#1448) --------------------------------
+# Doctor lists the Junie setting of every role beside the Claude Code one, fails
+# a disallowed stored Junie value at each scope with the clear that removes it,
+# and warns when this checkout's .junie/agents/ copies are not what agent sync
+# would leave (missing, stale or extra, or an unmarked orch-*.md in the way).
+echo
+echo "doctor: Junie agent settings check"
+healthy_repo
+doctor_github
+git config --global orchestrator.junie.model.reviewer gpt-5
+git config --local orchestrator.junie.effort.implementer high
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_contains "lists a role's local Junie effort and inherited model" "$out" \
+  "ok    agent junie implementer: model inherit (inherit), effort high (local)"
+assert_contains "lists a role's global Junie model" "$out" \
+  "ok    agent junie reviewer: model gpt-5 (global), effort inherit (inherit)"
+assert_contains "lists every role, the last among them" "$out" \
+  "ok    agent junie resolver: model inherit (inherit), effort inherit (inherit)"
+assert_contains "warns of the missing copies" "$out" "warn  Junie agent copies in"
+assert_contains "naming a missing copy" "$out" "missing orch-implementer.md"
+assert_contains "with agent sync as its remedy" "$out" "$(printf '\n      orch.sh agent sync\n')"
+assert_status "a copies WARN alone does not fail doctor" "$st" 0
+
+"$ORCH" agent sync
+out="$("$ORCH" doctor --env 2>&1)"
+assert_eq "no WARN once sync has run" "$(printf '%s\n' "$out" | grep -c 'Junie agent copies')" "0"
+
+echo "# hand edit" >>.junie/agents/orch-implementer.md
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "warns of a stale copy" "$out" "stale orch-implementer.md"
+"$ORCH" agent sync
+
+git config --local --unset orchestrator.junie.effort.implementer
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "warns of an extra copy once its setting is gone" "$out" "extra orch-implementer.md"
+"$ORCH" agent sync 2>/dev/null
+
+printf '%s\n' 'mine' >.junie/agents/orch-reviewer-spec.md
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "warns of an unmarked file in the way, by name" "$out" \
+  "orch-reviewer-spec.md carries no sync marker and is in the way"
+rm -f .junie/agents/orch-reviewer-spec.md
+
+git config --local orchestrator.junie.model.fixer "my model"
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a local disallowed Junie model fails doctor" "$st" 1
+assert_contains "naming the key and value" "$out" \
+  "FAIL  orchestrator.junie.model.fixer is my model (local) - not an allowed model"
+assert_contains "with the local Junie clear as its remedy" "$out" \
+  "$(printf '\n      orch.sh agent clear fixer --host junie --model\n')"
+git config --local --unset orchestrator.junie.model.fixer
+
+git config --global orchestrator.junie.effort.closer huge
+git config --local orchestrator.junie.effort.closer low
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a global bad Junie value hidden by a local one still fails" "$st" 1
+assert_contains "naming the global key" "$out" "FAIL  orchestrator.junie.effort.closer is huge (global)"
+assert_contains "with the global Junie clear as its remedy" "$out" \
+  "$(printf '\n      orch.sh agent clear closer --host junie --effort --global\n')"
+restore_suite_env

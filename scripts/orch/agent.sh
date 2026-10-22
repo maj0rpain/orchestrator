@@ -246,16 +246,20 @@ agent_copy_content() {
     { print }' "$1"
 }
 
-# agent sync: brings the checkout's .junie/agents/ copies up to date with the
-# Junie setting. Nothing is changed when an unmarked orch-*.md is in the way of
-# a copy it would write: that is refused by name, after the whole plan is made.
-agent_sync() {
+# agent_sync_plan: what agent sync would change in this checkout's
+# .junie/agents/, without changing it - the one comparison sync and doctor
+# share. Sets AGENT_PLAN_DIR, AGENT_PLAN_WANT (the copies that should exist,
+# one name per line), AGENT_PLAN_REFUSED (the unmarked orch-*.md in the way of
+# a copy, space-separated), AGENT_PLAN_WRITES (name:model:effort:missing|stale
+# per copy to write) and AGENT_PLAN_DELETES (marked copies no longer wanted,
+# one name per line).
+agent_sync_plan() {
   # src_model and src_effort receive agent_lookup's source and go unread here.
   # shellcheck disable=SC2034
-  local plugin dir file name role m e src_model src_effort content target
-  local refused="" writes=() want=""
+  local plugin file name role m e src_model src_effort content target state
   plugin="$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)"
-  dir="$ROOT/.junie/agents"
+  AGENT_PLAN_DIR="$ROOT/.junie/agents"
+  AGENT_PLAN_WANT="" AGENT_PLAN_REFUSED="" AGENT_PLAN_WRITES=() AGENT_PLAN_DELETES=""
   for file in "$plugin"/agents/orch-*.md; do
     [ -e "$file" ] || continue
     name="$(basename "$file" .md)"
@@ -266,30 +270,45 @@ agent_sync() {
     agent_allowed model "$m" junie || m=inherit
     agent_allowed effort "$e" junie || e=inherit
     [ "$m$e" = inheritinherit ] && continue
-    want="$want$name"$'\n'
-    target="$dir/$name.md"
+    AGENT_PLAN_WANT="$AGENT_PLAN_WANT$name"$'\n'
+    target="$AGENT_PLAN_DIR/$name.md"
+    state=missing
     content="$(agent_copy_content "$file" "$m" "$e"; echo x)"
     if [ -e "$target" ]; then
-      if ! agent_copy_marked "$target"; then refused="$refused $name.md"; continue; fi
+      if ! agent_copy_marked "$target"; then AGENT_PLAN_REFUSED="$AGENT_PLAN_REFUSED $name.md"; continue; fi
       [ "$(cat "$target"; echo x)" = "$content" ] && continue
+      state=stale
     fi
-    writes+=("$name:$m:$e")
+    AGENT_PLAN_WRITES+=("$name:$m:$e:$state")
   done
-  [ -z "$refused" ] ||
-    die "agent sync: ${refused# } in $dir carries no sync marker - not written by orch.sh agent sync, so left alone; rename or remove it, then rerun orch.sh agent sync"
-  if [ -n "$want" ]; then exclude_line "$AGENT_COPY_EXCLUDE" || die "agent sync: cannot add $AGENT_COPY_EXCLUDE to the git exclude file"; fi
-  for file in "$dir"/orch-*.md; do
+  AGENT_PLAN_REFUSED="${AGENT_PLAN_REFUSED# }"
+  for file in "$AGENT_PLAN_DIR"/orch-*.md; do
     [ -e "$file" ] || continue
     name="$(basename "$file" .md)"
     agent_copy_marked "$file" || continue
-    list_has "$want" "$name" && continue
-    rm -f -- "$file" || die "agent sync: cannot delete $file"
+    list_has "$AGENT_PLAN_WANT" "$name" && continue
+    AGENT_PLAN_DELETES="$AGENT_PLAN_DELETES$name"$'\n'
   done
-  local w
-  for w in ${writes[@]+"${writes[@]}"}; do
-    IFS=: read -r name m e <<<"$w"
+}
+
+# agent sync: brings the checkout's .junie/agents/ copies up to date with the
+# Junie setting. Nothing is changed when an unmarked orch-*.md is in the way of
+# a copy it would write: that is refused by name, after the whole plan is made.
+agent_sync() {
+  local dir name m e state w
+  agent_sync_plan
+  dir="$AGENT_PLAN_DIR"
+  [ -z "$AGENT_PLAN_REFUSED" ] ||
+    die "agent sync: $AGENT_PLAN_REFUSED in $dir carries no sync marker - not written by orch.sh agent sync, so left alone; rename or remove it, then rerun orch.sh agent sync"
+  if [ -n "$AGENT_PLAN_WANT" ]; then exclude_line "$AGENT_COPY_EXCLUDE" || die "agent sync: cannot add $AGENT_COPY_EXCLUDE to the git exclude file"; fi
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    rm -f -- "$dir/$name.md" || die "agent sync: cannot delete $dir/$name.md"
+  done <<<"$AGENT_PLAN_DELETES"
+  for w in ${AGENT_PLAN_WRITES[@]+"${AGENT_PLAN_WRITES[@]}"}; do
+    IFS=: read -r name m e state <<<"$w"
     mkdir -p "$dir" || die "agent sync: cannot create $dir"
-    agent_copy_content "$plugin/agents/$name.md" "$m" "$e" >"$dir/$name.md" ||
+    agent_copy_content "$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)/agents/$name.md" "$m" "$e" >"$dir/$name.md" ||
       die "agent sync: cannot write $dir/$name.md"
   done
 }
@@ -421,6 +440,52 @@ check_agent_settings() {
   done
   agent_junie_session
   agent_junie_unrecognized
+  check_junie_agent_settings
+  return 0
+}
+
+# check_junie_agent_settings: the Junie half of check_agent_settings. One ok
+# line per role, with its effective Junie model and effort and their sources; a
+# disallowed stored value is a FAIL read at each scope on its own; and a WARN
+# when this checkout's .junie/agents/ copies are not what agent sync would
+# leave - the plan sync itself makes, so the two cannot disagree.
+check_junie_agent_settings() {
+  local role kind scope v src flag line scoped
+  for role in $AGENT_ROLES; do
+    line="agent junie $role:"
+    for kind in model effort; do
+      agent_lookup "$kind" "$role" v src junie
+      agent_allowed "$kind" "$v" junie || src="$src, invalid"
+      line="$line $kind $v ($src),"
+    done
+    d_ok "${line%,}"
+    for kind in model effort; do
+      for scope in local global; do
+        scoped="$(git config "--$scope" --get "$(agent_key junie "$kind" "$role")" 2>/dev/null)" || continue
+        agent_allowed "$kind" "$scoped" junie && continue
+        flag="--host junie --$kind"; [ "$scope" = global ] && flag="$flag --global"
+        d_fail "$(agent_key junie "$kind" "$role") is $scoped ($scope) - not an allowed $kind (want $(agent_values "$kind" junie))"
+        d_remedy "orch.sh agent clear $role $flag"
+      done
+    done
+  done
+  agent_sync_plan
+  local missing="" stale="" extra="" w name rest
+  for w in ${AGENT_PLAN_WRITES[@]+"${AGENT_PLAN_WRITES[@]}"}; do
+    name="${w%%:*}"; rest="${w##*:}"
+    if [ "$rest" = missing ]; then missing="$missing $name.md"; else stale="$stale $name.md"; fi
+  done
+  while IFS= read -r name; do
+    [ -n "$name" ] && extra="$extra $name.md"
+  done <<<"$AGENT_PLAN_DELETES"
+  [ -z "$missing$stale$extra$AGENT_PLAN_REFUSED" ] && return 0
+  line="Junie agent copies in $AGENT_PLAN_DIR are not what agent sync would leave:"
+  [ -z "$missing" ] || line="$line missing$missing;"
+  [ -z "$stale" ] || line="$line stale$stale;"
+  [ -z "$extra" ] || line="$line extra$extra;"
+  [ -z "$AGENT_PLAN_REFUSED" ] || line="$line $AGENT_PLAN_REFUSED carries no sync marker and is in the way;"
+  d_warn "${line%;}"
+  d_remedy "orch.sh agent sync"
   return 0
 }
 
