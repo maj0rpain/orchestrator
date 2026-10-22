@@ -51,6 +51,18 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 
 ## Before the first iteration
 
+**In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0) the loop
+runs headless and asks the human nothing directly. First, when
+`iteration` is not 0 and the previous loop ended in a bounded stop for a spec
+question, read the human's reply before anything else:
+`bash "$ORCH" autopilot answer review <file>` (a `mktemp` file). It exits 1
+when no comment follows the question: re-post the same question with
+`bash "$ORCH" autopilot ask review <question-file>` and stop - never assume
+the recommendations. With a reply, apply it to the spec issue's body:
+`bash "$ORCH" spec fetch <file>`, edit the body to carry the ruling, then
+`bash "$ORCH" spec update <file>`. Then carry on with the steps below, whose step 5
+reads the budget from the plan instead of asking.
+
 1. Find the handoff: `bash "$ORCH" handoff path review`. It is always
    `03-implement.md`, on every loop of the flow. Read it one section at a
    time, through `bash "$ORCH" handoff section <file> <heading>`, and never
@@ -88,7 +100,14 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    finding in the last of them still stands: it goes into this loop's first
    triage. A record with no `## Evidence` section is read per **Evidence**
    in `agents/orch-fixer.md` (under the plugin root).
-5. Ask the budget. **The question blocks** - ask it as a question
+5. **In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0) the
+   budget is never asked: `bash "$ORCH" autopilot budget` prints the plan's
+   budget, and every loop of the flow runs it, the first and each one after a
+   bounded stop. On a first loop, set `budget` to it; on a re-entry, to
+   `iteration` plus it. Then `bash "$ORCH" state set budget <that number>`
+   and go to step 6; the rest of this step is the interactive question.
+
+   Ask the budget. **The question blocks** - ask it as a question
    with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
    on Junie). Ask once, before the
    first iteration, and never again mid-loop:
@@ -576,6 +595,17 @@ the reason and the closer's issue numbers. `done` means "this succeeded",
 never "this stopped". A human may re-enter the review phase from here; that
 is a fresh loop with its own budget, and **Before the first iteration**
 describes it.
+
+**In an autopilot flow** the terminal action differs. Ready ends with
+`bash "$ORCH" review ready` as above, which also moves the label to `orch:done` and
+releases the claim; nothing more runs. A bounded stop - a spec question among
+them, the PR staying in draft - never ends by telling the human in the
+session: write the stop reason (and, for a spec question, each question with
+its recommendation, numbered, as the interview formats them) to a `mktemp` file
+and run `bash "$ORCH" autopilot ask review <file>`, which posts it as a question
+comment, labels the issue `needs-human` and releases the claim; then stop.
+Removing `needs-human` starts another loop with the planned budget, which
+reads the reply first, per the top of **Before the first iteration**.
 
 `## Terminal state` is written exactly once, here, only once a terminal state
 has actually been decided - never guessed or backfilled. It is what

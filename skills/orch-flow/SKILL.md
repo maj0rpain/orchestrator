@@ -311,6 +311,13 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    changes, or switch off the named branch, then run `/orchestrator:next`
    again. The flow's state already exists here, so it is never moved to a
    side checkout.
+
+   **In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0) neither
+   case is offered: an exit 3, or a base missing on origin, is a failure. Ask
+   no question and offer no `base set`; stop the phase with the state left
+   where it is and exit, relaying the line `branch create` printed. The claim
+   stays held, so the watcher labels the issue `needs-human` with a failure
+   comment naming the phase, exit code and log.
 3. Build the ticket frontier with the driver loop in `docs/driver-loop.md`
    (under the plugin root): loop steps a-f and its **Dispatching a
    subagent**, bound here as:
