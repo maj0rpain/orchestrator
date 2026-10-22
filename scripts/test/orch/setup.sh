@@ -383,6 +383,22 @@ shell_code() {
   awk "$SHELL_CODE_AWK"'{ shell_code_line($0); print sc_code }' "$@"
 }
 
+# layer_calls <defs-file>... -- <code-file>...: the calls a layer check finds
+# - each name defined at column 0 (col0_names) of the defs files that the code
+# view (shell_code) of the code files names as a whole word, sorted and
+# deduped. A name in a comment is no call; one in a quoted literal is. It
+# filters nothing: a caller drops its own exemptions from the output.
+layer_calls() {
+  local defs=() code name
+  while [ "$#" -gt 0 ] && [ "$1" != -- ]; do defs+=("$1"); shift; done
+  shift
+  code="$(shell_code "$@")"
+  for name in "${defs[@]}"; do col0_names "$name"; done | sort -u \
+    | while IFS= read -r name; do
+        if printf '%s\n' "$code" | grep -qw -- "$name"; then printf '%s\n' "$name"; fi
+      done
+}
+
 # --- doctor harness ---------------------------------------------------------
 
 # The documented triage-label table, in the shape the setup skill writes it:
