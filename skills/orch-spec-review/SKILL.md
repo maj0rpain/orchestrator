@@ -297,22 +297,14 @@ order, consolidation items first, each under its `batch.md` number and with
 no `### Item` heading. The number is written literally, in bold after the
 bullet, never as a Markdown ordered-list number, which a renderer would
 recount from the first item, so the number a human reads is the number
-their answer names. Each entry is its header line - `- **<n>** -
-**<Group>** - <summary> (apply)`, `- **<n>** - **<Group>** - <summary>
-(recommend decline: <reason>)`, or for a decision item `- **<n>** -
-**<Group>** (decision, option <L> recommended)` - then sub-bullets indented
-a fixed 2 spaces, whatever the number's width: `why:` and its `@@ why` line;
-`findings:` and the findings it cites by lens title and number, e.g.
-`Fidelity 1, Consistency 4`, then its comments as `comment by @<login>,
-<createdAt>` (labelled `comments:` when it cites only comments), never their
-text; and its edit as a word diff, one sub-bullet per changed span, removed
-words struck through and added words in bold, with up to five words of
-context either side and `…` where context is cut short. Two changed runs 10
-or fewer unchanged words apart share one span. An edit of more than 40
-changed words is the one line `rewritten, <N> words, see full view`, and an
-edit that changes no word `whitespace only, see full view`. A decision item
-gets one sub-bullet per option, `Option <L> - <label>: <summary>`, ` (recommended)`
-after the recommended one's label, its diff nested beneath, 4 spaces in. Then, under a
+their answer names. Each entry is one line, its summary and its reason -
+`- **<n>** - **<Group>** - <summary> (apply) - <why>`, or `- **<n>** -
+**<Group>** - <summary> (recommend decline: <reason>) - <why>`, `<why>` its
+`@@ why` line - or for a decision item its header, `- **<n>** - **<Group>**
+(decision, option <L> recommended) - <why>`, then one sub-bullet per option,
+indented a fixed 2 spaces: `Option <L> - <label>: <summary>`, ` (recommended)`
+after the recommended one's label. The compact view cites no finding or
+comment and shows no diff: `--full` prints an item in full. Then, under a
 `### Minor edits` heading, every minor and resolved item one line each, in
 batch order: `- **<n>** - <Group>: <summary>`, a recommend-decline minor
 item's line ending `- recommend decline: <reason>`, and a resolved item's
@@ -334,8 +326,8 @@ run `check` again, until it exits 0. A batch that has not passed `check` is
 never shown and never asked about.
 
 Then paste `check`'s stdout into chat word for word, so the human reads each
-material edit's summary, reason and word diff, and each minor edit's
-summary, before answering. Compose no view of your own - no summary, no
+material edit's summary and reason, each decision option's summary, and each
+minor edit's summary, before answering. Compose no view of your own - no summary, no
 shortening, no expansion, in any round: the view the human reads is
 `check`'s, every round alike. Then ask **one blocking question** with the host's ask tool
 (`AskUserQuestion` on Claude Code, `ask_user` on Junie), the paste and the
