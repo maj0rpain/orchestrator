@@ -256,7 +256,7 @@ agent_copy_content() {
 agent_sync_plan() {
   # src_model and src_effort receive agent_lookup's source and go unread here.
   # shellcheck disable=SC2034
-  local file name role m e copy_model copy_effort src_model src_effort content target state
+  local file copy name role m e copy_model copy_effort src_model src_effort content target state
   AGENT_PLAN_PLUGIN="$(CDPATH='' cd -- "$ORCH_SCRIPTS/.." && pwd)"
   AGENT_PLAN_DIR="$ROOT/.junie/agents"
   AGENT_PLAN_WANT="" AGENT_PLAN_REFUSED="" AGENT_PLAN_WRITES=() AGENT_PLAN_DELETES=""
@@ -283,10 +283,10 @@ agent_sync_plan() {
     AGENT_PLAN_WRITES+=("$name|$copy_model|$copy_effort|$state")
   done
   AGENT_PLAN_REFUSED="${AGENT_PLAN_REFUSED# }"
-  for file in "$AGENT_PLAN_DIR"/orch-*.md; do
-    [ -e "$file" ] || continue
-    name="$(basename "$file" .md)"
-    agent_copy_marked "$file" || continue
+  for copy in "$AGENT_PLAN_DIR"/orch-*.md; do
+    [ -e "$copy" ] || continue
+    name="$(basename "$copy" .md)"
+    agent_copy_marked "$copy" || continue
     list_has "$AGENT_PLAN_WANT" "$name" && continue
     AGENT_PLAN_DELETES="$AGENT_PLAN_DELETES$name"$'\n'
   done
@@ -352,6 +352,12 @@ agent_junie_newest_log() {
   [ -z "$log" ] || printf '%s\n' "$log"
 }
 
+# agent_junie_field <line> <word>: the value after <word>= in a Junie log
+# line, up to a space, comma or closing parenthesis; nothing when absent.
+agent_junie_field() {
+  printf '%s' "$1" | sed -n "s/.*[^A-Za-z]$2=\\([^ ,)]*\\).*/\\1/p"
+}
+
 # agent_junie_session: doctor's best-effort report of what each orch-* agent
 # ran on in the last Junie session for this checkout, read from Junie's own
 # files under $HOME/.junie: the sessions/index.jsonl entry with the greatest
@@ -362,7 +368,7 @@ agent_junie_newest_log() {
 # reasoningEffort= unless null, else inherited). A file that is missing or
 # does not parse gives one ok line saying it cannot tell, never a FAIL.
 agent_junie_session() {
-  local index="$HOME/.junie/sessions/index.jsonl" sid log lines agent line model effort rran report="" ran_line report_line word v kind
+  local index="$HOME/.junie/sessions/index.jsonl" sid log lines agent line model effort set_part report="" ran_line report_line word v kind
   command -v jq >/dev/null 2>&1 || { agent_junie_session_cannot_tell "jq is not installed"; return 0; }
   [ -f "$index" ] || { agent_junie_session_cannot_tell "no Junie session index"; return 0; }
   sid="$(jq -rs --arg d "$ROOT" 'map(select(.projectDir == $d)) | sort_by(.updatedAt) | last | .sessionId // empty' "$index" 2>/dev/null)" ||
@@ -374,18 +380,18 @@ agent_junie_session() {
   [ -n "$lines" ] || { agent_junie_session_cannot_tell "the log holds no agent runs"; return 0; }
   while IFS= read -r agent; do
     line="$(printf '%s\n' "$lines" | grep -a "custom_agent_${agent}_[0-9]* with parameters" | tail -1)"
-    model="$(printf '%s' "$line" | sed -n 's/.*[^A-Za-z]model=\([^ ,)]*\).*/\1/p')"
+    model="$(agent_junie_field "$line" model)"
     [ -n "$model" ] || { agent_junie_session_cannot_tell "the log does not parse"; return 0; }
     effort=inherited
     for word in effort reasoningEffort; do
-      v="$(printf '%s' "$line" | sed -n "s/.*[^A-Za-z]$word=\\([^ ,)]*\\).*/\\1/p")"
+      v="$(agent_junie_field "$line" "$word")"
       if [ -n "$v" ] && [ "$v" != null ]; then effort="$v"; break; fi
     done
     ran_line="junie $agent ran model $model, effort $effort"
-    if rran="$(agent_junie_ran "$agent" "$model" "$effort")"; then
-      report="$report"$'\n'"ok|$ran_line $rran"
+    if set_part="$(agent_junie_ran "$agent" "$model" "$effort")"; then
+      report="$report"$'\n'"ok|$ran_line $set_part"
     else
-      report="$report"$'\n'"warn|$ran_line $rran"
+      report="$report"$'\n'"warn|$ran_line $set_part"
     fi
   done < <(printf '%s\n' "$lines" | sed -n 's/.*custom_agent_\(orch-[A-Za-z0-9-]*\)_[0-9]* with parameters.*/\1/p' | awk '!seen[$0]++')
   while IFS='|' read -r kind report_line; do
