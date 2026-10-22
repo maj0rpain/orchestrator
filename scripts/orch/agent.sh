@@ -56,19 +56,11 @@ agent_values() {
   elif [ "$1" = model ]; then agent_want "$AGENT_MODELS"; else agent_want "$AGENT_EFFORTS"; fi
 }
 
-# agent_host <arg>...: the host named by a --host flag among the arguments -
-# junie, or claude when there is none - on stdout. Any other value is refused,
-# naming it.
-agent_host() {
-  while [ $# -gt 0 ]; do
-    if [ "$1" = --host ]; then
-      [ $# -ge 2 ] || die "--host needs a value (want junie)"
-      [ "$2" = junie ] || die "host $2 is not allowed (want junie)"
-      printf junie; return 0
-    fi
-    shift
-  done
-  printf claude
+# agent_host_named <value>: <value> as the host a --host flag names - junie.
+# Any other value is refused, naming it.
+agent_host_named() {
+  [ "$1" = junie ] || die "host $1 is not allowed (want junie)"
+  printf junie
 }
 
 # agent_key <host> <kind> <role>: the git config key of the setting.
@@ -113,26 +105,35 @@ agent_unset() { git config "--$1" --unset-all "$2" 2>/dev/null || true; }
 # so a stored inherit can never hide a global value.
 agent_set() {
   local usage="usage: orch.sh agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]"
-  local role="${1:-}" model="" effort="" scope=local kind v host seen_host=""
+  local role="${1:-}" model="" effort="" scope=local kind v host=""
   shift || true
   agent_require_role "$role"
-  host="$(agent_host "$@")" || exit 1
   while [ $# -gt 0 ]; do
     case "$1" in
       --model|--effort)
         kind="${1#--}"
-        [ $# -ge 2 ] || die "$1 needs a value (want $(agent_values "$kind" "$host"))"
+        [ $# -ge 2 ] || die "$1 needs a value (want $(agent_values "$kind" "${host:-claude}"))"
         if [ "$kind" = model ]; then
           [ -z "$model" ] || die "$usage"; model="$2"
         else
           [ -z "$effort" ] || die "$usage"; effort="$2"
         fi
-        agent_allowed "$kind" "$2" "$host" || die "$kind $2 is not allowed (want $(agent_values "$kind" "$host"))"
         shift 2 ;;
-      --host) [ -z "$seen_host" ] || die "$usage"; seen_host=1; shift 2 ;;
+      --host)
+        [ -z "$host" ] || die "$usage"
+        [ $# -ge 2 ] || die "--host needs a value (want junie)"
+        host="$(agent_host_named "$2")" || exit 1
+        shift 2 ;;
       --global) [ "$scope" = local ] || die "$usage"; scope=global; shift ;;
       *) die "$usage" ;;
     esac
+  done
+  host="${host:-claude}"
+  # Validated once the loop has the host, wherever --host stood.
+  for kind in model effort; do
+    if [ "$kind" = model ]; then v="$model"; else v="$effort"; fi
+    [ -z "$v" ] || agent_allowed "$kind" "$v" "$host" ||
+      die "$kind $v is not allowed (want $(agent_values "$kind" "$host"))"
   done
   [ -n "$model$effort" ] ||
     die "agent set needs --model or --effort (models: $(agent_values model "$host"); efforts: $(agent_values effort "$host"))"
@@ -153,19 +154,23 @@ agent_set() {
 # on a key that is not set.
 agent_clear() {
   local usage="usage: orch.sh agent clear <role> [--model] [--effort] [--global] [--host junie]"
-  local role="${1:-}" kinds="" scope=local kind host seen_host=""
+  local role="${1:-}" kinds="" scope=local kind host=""
   shift || true
   agent_require_role "$role"
-  host="$(agent_host "$@")" || exit 1
   while [ $# -gt 0 ]; do
     case "$1" in
       --model|--effort) kinds="$kinds ${1#--}" ;;
       --global) scope=global ;;
-      --host) [ -z "$seen_host" ] || die "$usage"; seen_host=1; shift ;;
+      --host)
+        [ -z "$host" ] || die "$usage"
+        [ $# -ge 2 ] || die "--host needs a value (want junie)"
+        host="$(agent_host_named "$2")" || exit 1
+        shift ;;
       *) die "$usage" ;;
     esac
     shift
   done
+  host="${host:-claude}"
   [ -n "$kinds" ] || kinds="model effort"
   for kind in $kinds; do agent_unset "$scope" "$(agent_key "$host" "$kind" "$role")"; done
   if [ "$host" = junie ]; then agent_sync; fi
@@ -517,7 +522,7 @@ cmd_agent() {
       if [ $# -eq 1 ]; then agent_get "$1" claude
       elif [ $# -eq 3 ] && [ "$2" = --host ]; then
         local get_host
-        get_host="$(agent_host "$@")" || exit 1
+        get_host="$(agent_host_named "$3")" || exit 1
         agent_get "$1" "$get_host"
       else die "$get_usage"; fi
       ;;
