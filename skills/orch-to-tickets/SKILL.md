@@ -108,7 +108,36 @@ Ask the user:
   genuinely gate it?
 - Should any tickets be merged or split further?
 
-Iterate until the user approves the breakdown. A breakdown of 0 or 1 tickets
+The breakdown and these questions are one **turn-final reply**: end your
+turn on one plain-text reply, with no tool call in it, holding the numbered
+list and then the questions with the answers spelled out - `approve`, or the
+changes wanted in plain words. The user's next message is the answer. Never
+ask it with the ask-the-user capability, and never write the breakdown in
+a response that also calls a tool: some hosts hide a long text written in
+the same response as a tool call, and the user never sees it (ADR-0051).
+
+`approve` and its full label (`Approve the breakdown`) are the same answer,
+both matched after trimming surrounding whitespace, letter case and
+trailing punctuation: `Approve.` is `approve`. Changes in plain words start
+another round: redraft, then end your turn again on the new breakdown and
+the questions, the same way.
+
+A **near-miss reply** is neither `approve`, nor changes wanted, nor clearly
+a question: a typo, or mixed forms such as `approve but merge 2 and 3`. It
+is never guessed at and never re-shown. State in one line what you would
+do (e.g. "Approve, except tickets 2 and 3 merged"), then ask a short
+confirmation with the ask-the-user capability, nothing long in front of
+it: *Yes, apply that* / *No, I'll answer again*. *Yes, apply that* does
+exactly what the line states: an approval publishes, a change starts
+another round. Any other reply to the confirmation - *No*, a free-text
+answer, or a dismissed ask - counts as *No*. Nothing is ever applied on a
+guess.
+
+On *No*, or on a reply that is clearly a question, the question path runs:
+answer the question in chat, change nothing, then end your turn again on
+the breakdown and its questions in one plain-text reply, with no tool call.
+
+Iterate until the user answers `approve`. A breakdown of 0 or 1 tickets
 is a legitimate outcome: the parent is already one ticket's worth of work.
 
 ### 5. Publish, or collapse
@@ -182,7 +211,9 @@ Steps 1-3, 5 and 6 run as written. Step 4, the quiz, is replaced:
   each blocking edge naming only a ticket that genuinely gates it. Merge,
   split or re-edge the draft until it holds.
 - Print the breakdown as step 4 presents it - each ticket's **Title**,
-  **Blocked by** and **What it delivers** - so a human watching can see it.
+  **Blocked by** and **What it delivers** - so a human watching can see it,
+  in a reply of its own with no tool call in it, for the reason step 4
+  gives.
 - Ask nothing, and go straight to step 5: it publishes 2 or more tickets, or
   collapses 0 or 1 into the parent.
 
