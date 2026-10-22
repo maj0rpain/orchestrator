@@ -205,6 +205,25 @@ A PR into a base branch other than the default says `Refs #N` rather than
 branch. `/orchestrator:release` closes them: the model writes the release
 PR's title and summary, and `orch.sh pr release` writes the `Closes` lines.
 
+## Agent settings
+
+Every agent the plugin starts runs on the model and reasoning effort of the
+session that starts it, unless you choose an **agent setting** for its role:
+`implementer` (the ticket subagent), `lens`, `reviewer`, `fixer`, `closer`
+or `resolver`. A role's model and effort are set on their own:
+
+| Command | What it does |
+| --- | --- |
+| `orch.sh agent set <role> [--model <m>] [--effort <e>] [--global]` | Set the role's model (`sonnet`, `opus`, `haiku` or `fable`) and/or effort (`low`, `medium`, `high`, `xhigh` or `max`), in the clone's local git config, or your global git config with `--global`. Refuses an unknown role, a value not in those lists, or neither flag, writing nothing. `inherit` clears the key at that scope. |
+| `orch.sh agent show` | Print every role's model and effort, each with its source: `local`, `global` or `inherit`. A value set by hand that is not allowed is shown marked `invalid`. |
+| `orch.sh agent clear <role> [--model] [--effort] [--global]` | Clear both keys, or only the one named, in local config, or global config with `--global`. Succeeds when nothing was set. |
+| `orch.sh agent get <role>` | Print the role's effective `model <alias\|inherit>` and `effort <level\|inherit>`, the two lines a skill reads. Refuses a value that is not allowed, naming its key. |
+
+Each key, `orchestrator.model.<role>` and `orchestrator.effort.<role>`, is
+looked up on its own: the clone's local git config first, then your global
+git config, else `inherit` - the session's own. A model set globally and an
+effort set locally both apply.
+
 ## Hosts
 
 The plugin runs on Claude Code and on the Junie CLI; Junie's setup is in

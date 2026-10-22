@@ -88,6 +88,7 @@ readonly REVIEW_DIR="$ORCH/review"
 # noun modules, with one rule more: the dependency runs one way, doctor.sh
 # calling into this file and the other modules, which call nothing doctor.sh
 # defines but cmd_doctor, from main() (scripts/test/orch/doctor.sh holds this).
+source "$ORCH_SCRIPTS/orch/agent.sh"
 source "$ORCH_SCRIPTS/orch/base.sh"
 source "$ORCH_SCRIPTS/orch/branch.sh"
 source "$ORCH_SCRIPTS/orch/checkout.sh"
@@ -132,6 +133,7 @@ main() {
     doctor)        cmd_doctor "$@" ;;
     default-branch) cmd_default_branch "$@" ;;
     base)          cmd_base "$@" ;;
+    agent)         cmd_agent "$@" ;;
     parallel)      cmd_parallel "$@" ;;
     suite-cost)    cmd_suite_cost "$@" ;;
     repo)          cmd_repo "$@" ;;
