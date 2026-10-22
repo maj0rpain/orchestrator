@@ -1264,7 +1264,7 @@ else
   # gate without anyone remembering to add a preamble - and this number moving is
   # how you find out that happened.
   assert_contains "collapses every flow check into one line when jq is gone" \
-    "$out" "10 flow checks skipped: jq is not installed"
+    "$out" "11 flow checks skipped: jq is not installed"
   assert_not_contains "with no ticket worktree, doctor without jq says nothing of them" \
     "$out" "ticket worktree"
 fi

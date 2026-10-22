@@ -148,6 +148,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               validate the plan (## Autopilot block included),
                               post it as the plan handoff comment, then add
                               orch:spec
+  autopilot ask <phase> <file>
+                              post <file> as the phase's question comment
+                              (@mentioning the handle), add needs-human, then
+                              release the claim
+  autopilot answer <phase> <file>
+                              write the newest question and every later
+                              comment to <file>; exit 1 when none follows
   agent set <role> [--model <m>] [--effort <e>] [--global]
                               set a role's agent setting in local config,
                               or global with --global. Roles: implementer,

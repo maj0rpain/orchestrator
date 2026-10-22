@@ -141,6 +141,9 @@ cmd_spec_pause_round() {
     || die "round $k is the last of $n - the last round never pauses; go on to the ticket breakdown"
   spec_phase_guard die pause issue
   spec_round_marker_write "$issue" "$((k + 1))" "$n"
+  # In autopilot the round's session ends here: the claim is released, and the
+  # next tick starts the next round.
+  ! autopilot_active || autopilot_release "$issue" "wrote the round marker"
   print_next_block "Spec review round $k of $n applied. Round $((k + 1)) runs in a fresh session."
 }
 

@@ -169,6 +169,108 @@ autopilot_start() {
     die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
 }
 
+# autopilot_iso_epoch <YYYY-MM-DDTHH:MM:SSZ>: the UTC timestamp as epoch
+# seconds, GNU or BSD date; non-zero for a value neither reads.
+autopilot_iso_epoch() {
+  date -u -d "$1" +%s 2>/dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null
+}
+
+# --- phase moves and the claim's release (#1457) ---------------------------
+#
+# Every chain of writes an autopilot session makes under its claim ends in the
+# release, which deletes orch:running and then, last, the claim ref: a chain
+# that fails partway leaves the claim held, and dies naming the writes that
+# landed, so the next tick cleans it up as a failure.
+
+AUTOPILOT_RUNNING_LABEL="orch:running"
+AUTOPILOT_HUMAN_LABEL="needs-human"
+
+# autopilot_chain_die <landed> <issue> <what> <gh-stderr>: dies for a write of
+# a chain that failed, naming the reason and the writes that landed before it.
+autopilot_chain_die() {
+  die "could not $3 on issue #$2: $(gh_reason "$4") - writes that landed: ${1:-none}; the claim stays held"
+}
+
+# autopilot_move_label <issue> <phase> <landed>: <issue>'s phase label made
+# the one for <phase> - the other phase labels removed - in one edit.
+autopilot_move_label() {
+  # state is the read's throwaway half.
+  # shellcheck disable=SC2034
+  local issue="$1" phase="$2" landed="$3" state labels gh_err p label args=()
+  issue_state_labels_read "$issue" state labels gh_err ||
+    autopilot_chain_die "$landed" "$issue" "read the labels" "$gh_err"
+  for p in $PHASES; do
+    label="$(autopilot_phase_label "$p")"
+    [ "$p" = "$phase" ] || ! list_has "$labels" "$label" || args+=(--remove "$label")
+  done
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$(autopilot_phase_label "$phase")" ${args[@]+"${args[@]}"} ||
+    autopilot_chain_die "$landed" "$issue" "move the phase label to $(autopilot_phase_label "$phase")" "$gh_err"
+}
+
+# autopilot_release <issue> <landed>: finishes a phase - deletes orch:running,
+# then the claim ref, last. <landed> names the writes already made, for the
+# message of a failure.
+autopilot_release() {
+  local issue="$1" landed="$2" gh_err
+  capture_err gh_err adapter_issue_relabel "$issue" --remove "$AUTOPILOT_RUNNING_LABEL" ||
+    autopilot_chain_die "$landed" "$issue" "remove $AUTOPILOT_RUNNING_LABEL" "$gh_err"
+  landed="${landed:+$landed, }removed $AUTOPILOT_RUNNING_LABEL"
+  capture_err gh_err adapter_claim_delete "$issue" ||
+    autopilot_chain_die "$landed" "$issue" "delete the claim ref" "$gh_err"
+}
+
+# autopilot_question_marker <phase>: the first line of a question comment.
+autopilot_question_marker() { printf '<!-- orch:question %s -->\n' "$1"; }
+
+# autopilot_phase_arg <phase>: dies unless <phase> is a phase a question can be
+# asked in - a flow phase other than done.
+autopilot_phase_arg() {
+  case " $PHASES " in *" $1 "*) ;; *) die "not a flow phase: $1 (want ${PHASES// /|})" ;; esac
+  [ "$1" != "done" ] || die "a done flow asks no question"
+}
+
+# autopilot_ask <phase> <file>: posts <file> as <phase>'s question comment, the
+# configured handle @mentioned, adds needs-human, then releases the claim.
+autopilot_ask() {
+  local phase="$1" file="$2" issue body gh_err landed
+  autopilot_phase_arg "$phase"
+  [ -f "$file" ] || die "question file not found: $file"
+  require_state
+  require_issue issue
+  autopilot_setting handle
+  body="$(mktemp)" || die "could not create a temp file for the question comment"
+  { autopilot_question_marker "$phase"; printf '@%s\n\n' "$AUTOPILOT_VALUE"; cat "$file"; } >"$body"
+  capture_err gh_err adapter_issue_comment "$issue" "$body" || { rm -f "$body"; gh_die "post the $phase question on issue #$issue" "$gh_err"; }
+  rm -f "$body"
+  landed="posted the $phase question comment"
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$AUTOPILOT_HUMAN_LABEL" ||
+    autopilot_chain_die "$landed" "$issue" "add $AUTOPILOT_HUMAN_LABEL" "$gh_err"
+  autopilot_release "$issue" "$landed, added $AUTOPILOT_HUMAN_LABEL"
+}
+
+# autopilot_answer <phase> <file>: writes <phase>'s newest question comment,
+# marker stripped, and every comment after it to <file>, each later one after a
+# `---` line. Dies, writing nothing, when there is no question or no comment
+# follows it - the caller re-asks.
+autopilot_answer() {
+  local phase="$1" file="$2" issue json out
+  autopilot_phase_arg "$phase"
+  require_state
+  require_issue issue
+  gh_or_die --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
+  out="$(jq -j --arg m "$(autopilot_question_marker "$phase")" '
+    (.comments | map(.body | split("\n")[0] | rtrimstr("\r") == ($m | rtrimstr("\n"))) | rindex(true)) as $q
+    | if $q == null then "noq" elif $q == (.comments | length) - 1 then "noreply"
+      else (.comments[$q:] | map(.body) | .[0] |= (split("\n")[1:] | join("\n")) | join("\n---\n")) end' <<<"$json")" ||
+    die "could not read issue #$issue's comments"
+  case "$out" in
+    noq) die "issue #$issue has no $phase question comment" ;;
+    noreply) die "no reply to the $phase question on issue #$issue yet" ;;
+  esac
+  mkdir -p "$(dirname "$file")"
+  printf '%s\n' "$out" >"$file"
+}
+
 cmd_autopilot() {
   local op="${1:-}"
   shift || true
@@ -189,6 +291,10 @@ cmd_autopilot() {
       [ $# -eq 2 ] || die "usage: orch.sh autopilot start <issue> <plan-file>"
       autopilot_start "$1" "$2"
       ;;
-    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start)" ;;
+    ask|answer)
+      [ $# -eq 2 ] || die "usage: orch.sh autopilot $op <phase> <file>"
+      "autopilot_$op" "$1" "$2"
+      ;;
+    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start|ask|answer)" ;;
   esac
 }

@@ -5,6 +5,18 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# fake_claim_seed <issue> [host] [pid] [started]: seeds a claim on the issue,
+# held by this host with pid 1 and a start long past unless given. A claim
+# is a ref on origin; the fake keeps it as a line in the store.
+fake_claim_seed() {
+  mkdir -p "$ORCH_GH_FAKE_STORE/claims"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "${2:-$(hostname)}" "${3:-1}" spec "${4:-2026-01-01T00:00:00Z}" \
+    >"$ORCH_GH_FAKE_STORE/claims/$1"
+}
+
+# fake_claim_held <issue>: held or free, whether the store holds a claim on it.
+fake_claim_held() { [ -f "$ORCH_GH_FAKE_STORE/claims/$1" ] && echo held || echo free; }
+
 # --- autopilot ---------------------------------------------------------------
 # The clone-scoped autopilot settings, the autopilot-session check and the
 # host gate tick and watch share.
@@ -154,4 +166,142 @@ assert_eq "autopilot rounds prints the newest plan comment's Rounds" "$("$ORCH" 
 assert_eq "autopilot budget prints its Budget" "$("$ORCH" autopilot budget)" "5"
 out="$("$ORCH" autopilot start 7 2>&1)"; st=$?
 assert_contains "start's usage line" "$out" "usage: orch.sh autopilot start <issue> <plan-file>"
+restore_suite_env
+
+# --- autopilot claims ---------------------------------------------------------
+# phase advance, spec pause --round, autopilot ask and answer, claim release (#1457).
+echo
+echo "autopilot claims"
+fake_flow autopilot-claims
+export ORCHESTRATOR_HOST=claude
+"$ORCH" state set issue 7 >/dev/null
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7
+spec_h="$(mktemp -d)/02-spec.md"
+complete_handoff "$spec_h"
+
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+assert_status "phase advance with no posted handoff dies" "$st" 1
+assert_contains "naming the missing comment" "$out" "no 02-spec handoff comment"
+assert_eq "leaving the label" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
+assert_eq "and the claim held" "$(fake_claim_held 7)" held
+
+ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+assert_status "phase advance in autopilot succeeds on the posted handoff" "$st" 0
+assert_eq "moving the phase label" "$(fake_labels_of 7)" "orch:implement ready-for-agent "
+assert_eq "releasing the claim" "$(fake_claim_held 7)" free
+assert_eq "recording the phase" "$("$ORCH" state get phase)" "implement"
+assert_contains "naming the watcher" "$out" "the watcher starts the implement phase"
+
+# a failure partway leaves the claim held and names the writes that landed
+fake_issue 7 open ready-for-agent orch:spec orch:running
+ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
+state_fixture phase spec
+fake_claim_seed 7
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+assert_status "a failed claim delete dies" "$st" 1
+assert_contains "naming the claim ref" "$out" "delete the claim ref"
+assert_contains "and the writes that landed" "$out" "moved the phase label to orch:implement, recorded phase implement, removed orch:running"
+assert_eq "the claim is still held" "$(fake_claim_held 7)" held
+fake_unfail
+fake_issue 7 open ready-for-agent orch:spec orch:running
+ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
+state_fixture phase spec
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" phase advance 2>&1)"; st=$?
+assert_status "a failed label move dies" "$st" 1
+assert_eq "recording no phase" "$("$ORCH" state get phase)" "spec"
+assert_eq "the claim is still held" "$(fake_claim_held 7)" held
+fake_unfail
+
+# an interactive flow touches no label
+fake_issue 7 open ready-for-agent
+env -u ORCH_AUTOPILOT "$ORCH" phase advance >/dev/null 2>&1
+assert_eq "an interactive phase advance touches no label" "$(fake_labels_of 7)" "ready-for-agent "
+assert_eq "and no claim" "$(fake_claim_held 7)" held
+
+# spec pause --round releases the claim
+state_fixture phase spec
+fake_issue 7 open ready-for-agent orch:spec orch:running
+ORCH_AUTOPILOT=1 "$ORCH" spec pause --round 1/2 >/dev/null 2>&1; st=$?
+assert_status "spec pause --round in autopilot succeeds" "$st" 0
+assert_eq "dropping orch:running" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
+assert_eq "releasing the claim" "$(fake_claim_held 7)" free
+
+# ask and answer
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7
+q="$(mktemp)"; printf '1. Keep it? Recommended: yes\n\nReply like `1: A`.\n' >"$q"
+ORCH_AUTOPILOT=1 "$ORCH" autopilot ask spec "$q" >/dev/null 2>&1; st=$?
+assert_status "autopilot ask succeeds" "$st" 0
+assert_eq "the question is tagged and mentions the handle" "$(fake_comments_of 7 | head -2 | tr '\n' ' ')" "<!-- orch:question spec --> @o "
+assert_contains "carrying the question" "$(fake_comments_of 7)" "1. Keep it?"
+assert_eq "adding needs-human, dropping orch:running" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
+assert_eq "and releasing the claim" "$(fake_claim_held 7)" free
+ans="$(mktemp)"
+out="$("$ORCH" autopilot answer spec "$ans" 2>&1)"; st=$?
+assert_status "answer with no reply exits 1" "$st" 1
+assert_contains "saying so" "$out" "no reply"
+fake_comment 7 o 2026-01-02T00:00:00Z "1: A"
+fake_comment 7 o 2026-01-03T00:00:00Z "thanks"
+"$ORCH" autopilot answer spec "$ans" >/dev/null 2>&1; st=$?
+assert_status "answer with a reply succeeds" "$st" 0
+assert_contains "writing the question" "$(cat "$ans")" "1. Keep it?"
+assert_contains "and the reply" "$(cat "$ans")" "1: A"
+assert_contains "and every later comment" "$(cat "$ans")" "thanks"
+out="$("$ORCH" autopilot answer implement "$ans" 2>&1)"; st=$?
+assert_status "answer for a phase never asked dies" "$st" 1
+# a failed label add leaves the claim held and names the comment
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" autopilot ask spec "$q" 2>&1)"; st=$?
+assert_status "a failed needs-human add dies" "$st" 1
+assert_contains "naming the comment that landed" "$out" "posted the spec question comment"
+assert_eq "the claim stays held" "$(fake_claim_held 7)" held
+fake_unfail
+restore_suite_env
+
+# --- autopilot review ready ---------------------------------------------------
+echo
+echo "autopilot review ready"
+review_flow autopilot-ready
+state_fixture issue 7
+state_fixture pr 9
+fake_github
+fake_pr 9 open
+fake_issue 7 open ready-for-agent orch:review orch:running
+fake_claim_seed 7
+out="$(ORCH_AUTOPILOT=1 "$ORCH" review ready 2>&1)"; st=$?
+assert_status "review ready in autopilot succeeds" "$st" 0
+assert_eq "moving the label to orch:done" "$(fake_labels_of 7)" "orch:done ready-for-agent "
+assert_eq "releasing the claim" "$(fake_claim_held 7)" free
+restore_suite_env
+
+# --- autopilot doctor ---------------------------------------------------------
+echo
+echo "autopilot doctor"
+fake_flow autopilot-doctor
+"$ORCH" state set issue 7 >/dev/null
+fake_issue 7 open ready-for-agent orch:implement
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "doctor flags a label that disagrees with the recorded phase" "$out" "is labelled orch:implement, but this checkout last moved to phase spec"
+fake_issue 7 open ready-for-agent orch:spec
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "an agreeing label is ok" "$out" "phase label: orch:spec"
+fake_issue 7 open ready-for-agent
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_not_contains "an interactive flow's missing label is not mentioned" "$out" "phase label"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor --flow refuses an autopilot session with no phase label" "$st" 1
+assert_contains "naming it" "$out" "carries no phase label"
+fake_claim_seed 7 otherhost 5 2020-01-01T00:00:00Z
+fake_claim_seed 8 otherhost 5 "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fake_claim_seed 9 "$(hostname)" 5 2020-01-01T00:00:00Z
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "doctor lists another host's old claim" "$out" "issue #7 has been claimed by otherhost"
+assert_not_contains "not a fresh one" "$out" "issue #8"
+assert_not_contains "nor this host's own" "$out" "issue #9"
 restore_suite_env

@@ -422,7 +422,15 @@ cmd_review() {
       # phase left to retry it from.
       gh_or_die --hint "the flow stays in review" "mark PR #$pr ready" \
         adapter_pr_ready "$pr"
-      phase_write "done"
+      if autopilot_active; then
+        local ap_issue
+        require_issue ap_issue
+        autopilot_move_label "$ap_issue" "done" "marked PR #$pr ready"
+        phase_write "done"
+        autopilot_release "$ap_issue" "marked PR #$pr ready, moved the phase label to $(autopilot_phase_label "done"), recorded phase done"
+      else
+        phase_write "done"
+      fi
       note "$pr"
       # stdout stays the PR number alone; the pointer goes to stderr. A side
       # checkout outlives its PR, so the human is told how to clear it once

@@ -42,7 +42,7 @@ cmd_phase() {
     advance)
       [ $# -eq 0 ] || die "usage: orch.sh phase advance"
       require_state
-      local phase next file _unused
+      local phase next file name issue _unused
       phase="$(state_get phase)"
       # The guards run in this order; past them, the next phase is the phase
       # table's, and phase_next fails only on a phase outside the table.
@@ -56,10 +56,20 @@ cmd_phase() {
       # checked before the state fields so a missing handoff - the likelier
       # gap - is the one reported.
       file="$HANDOFF_DIR/$(handoff_file_for "$next")"
-      handoff_check "$file" || case $? in
-        2) die "write $file before leaving the $phase phase" ;;
-        *) die "$file is not valid - fix it, then run phase advance again; the flow stays at $phase" ;;
-      esac
+      if autopilot_active; then
+        # The handoff is the posted comment: fetched, then checked as a file.
+        require_issue issue
+        name="$(handoff_file_for "$next")"
+        file="$ORCH/scratch/$name"
+        handoff_comment_fetch "$issue" "${name%.md}" "$file" ||
+          die "issue #$issue has no ${name%.md} handoff comment - post it with handoff post before leaving the $phase phase"
+        handoff_check "$file" "" "$name" || die "the ${name%.md} comment on issue #$issue is not valid - post a fixed one, then run phase advance again; the flow stays at $phase"
+      else
+        handoff_check "$file" || case $? in
+          2) die "write $file before leaving the $phase phase" ;;
+          *) die "$file is not valid - fix it, then run phase advance again; the flow stays at $phase" ;;
+        esac
+      fi
       # Deliberately a per-phase switch, not a phase table column: each
       # requirement carries its own remedy message, which a column of field
       # names could only reach through a naming convention.
@@ -67,6 +77,15 @@ cmd_phase() {
         implement) require_issue _unused ;;
         review)    require_branch _unused; require_base_sha _unused; require_pr _unused ;;
       esac
+      if autopilot_active; then
+        # The label moves before state.json records the phase, so a failure
+        # between the two leaves the label one step ahead, never behind.
+        autopilot_move_label "$issue" "$next" ""
+        phase_write "$next"
+        autopilot_release "$issue" "moved the phase label to $(autopilot_phase_label "$next"), recorded phase $next"
+        note "Phase $(phase_cell writer "$next") complete. Handoff posted on issue #$issue; the watcher starts the $next phase."
+        return 0
+      fi
       phase_write "$next"
       print_boundary "$next"
       ;;

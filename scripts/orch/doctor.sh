@@ -536,13 +536,67 @@ check_side_checkouts_finished() {
   return 0
 }
 
+# An autopilot flow's phase is its issue's phase label (ADR-0052); state.json
+# records the phase this checkout last moved to. A label that disagrees is
+# flagged. An interactive flow carries no phase label and is left alone - except
+# under ORCH_AUTOPILOT=1, where a flow with none is refused: autopilot behaviour
+# must never leak into an interactive flow.
+check_flow_autopilot_label() {
+  # issue_state is the read's throwaway half.
+  # shellcheck disable=SC2034
+  local issue issue_state="" flabels="" gh_err="" phase p label phase_labels=""
+  issue="$(state_get issue)"
+  phase="$(state_get phase)"
+  if [ -z "$issue" ]; then
+    if autopilot_active; then
+      d_fail "autopilot session, but no issue is recorded - the flow's phase has no label to live on."
+      d_remedy "$(flow_cmd abort)"
+    fi
+    return 0
+  fi
+  d_gh_gate || return 0
+  issue_state_labels_read "$issue" issue_state flabels gh_err || return 0
+  for p in $PHASES; do
+    label="$(autopilot_phase_label "$p")"
+    if list_has "$flabels" "$label"; then phase_labels="${phase_labels:+$phase_labels }$label"; fi
+  done
+  if [ -z "$phase_labels" ]; then
+    if autopilot_active; then
+      d_fail "issue #$issue carries no phase label - an autopilot session needs the flow's phase recorded on its issue."
+      d_remedy "gh issue edit $issue --add-label $(autopilot_phase_label "$phase")"
+    fi
+    return 0
+  fi
+  if [ "$phase_labels" = "$(autopilot_phase_label "$phase")" ]; then
+    d_ok "phase label: $phase_labels"
+  else
+    d_warn "issue #$issue is labelled $phase_labels, but this checkout last moved to phase $phase."
+    d_remedy "relabel the issue $(autopilot_phase_label "$phase"), or leave it to the watcher's redo rules"
+  fi
+}
+
+# Claims held by another host for more than a day: the watcher never touches
+# them, so doctor is where they are noticed. Silent where origin cannot be read
+# or there are none.
+check_autopilot_claims() {
+  local list issue host pid phase started now age me
+  list="$(adapter_claim_list 2>/dev/null)" || return 0
+  now="$(date -u +%s)"; me="$(hostname)"
+  while IFS=$'\t' read -r issue host pid phase started; do
+    [ -n "$issue" ] && [ "$host" != "$me" ] || continue
+    age="$(autopilot_iso_epoch "$started")" || continue
+    [ "$((now - age))" -gt 86400 ] || continue
+    d_warn "issue #$issue has been claimed by $host (pid $pid, phase $phase) since $started - more than a day."
+    d_remedy "if that session is gone: git push origin :refs/orch/claims/$issue, and remove its orch:running label"
+  done <<<"$list"
+}
+
 ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_agent_settings check_side_checkouts_finished
+h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_agent_settings check_side_checkouts_finished check_autopilot_claims
 "
-
 # flow state -----------------------------------------------------------------
 
 # Every check below reads state.json through jq, so a missing jq and a file that
@@ -819,7 +873,7 @@ check_flow_handoffs() {
 # every phase after it in the phase table, so a phase added later is picked up. d_run_flow does the filtering, so d_run never
 # sees a suffix.
 FLOW_CHECKS="
-h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream:implement+ check_flow_pr check_flow_review_terminal:review check_flow_review_budget:review check_flow_review_ci:review check_flow_review_draft:review+ check_flow_handoffs
+h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream:implement+ check_flow_pr check_flow_review_terminal:review check_flow_review_budget:review check_flow_review_ci:review check_flow_review_draft:review+ check_flow_handoffs check_flow_autopilot_label
 "
 
 # A registry's entries, one per line. Splitting a whitespace-separated list is
