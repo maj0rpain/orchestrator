@@ -213,10 +213,20 @@ nowalk_bin() {
   chmod +x "$dir/git"
   printf '%s\n' "$dir"
 }
-# break_index / restore_index: make the current repo's working tree
-# unreadable - git status fails on a garbage index - and put the index back.
-break_index() { cp .git/index .git/index.bak && echo garbage >.git/index; }
-restore_index() { mv .git/index.bak .git/index; }
+# break_index / restore_index [<checkout>]: make a checkout's working tree
+# (default: the current directory) unreadable - git status fails on a garbage
+# index - and put the index back. They return non-zero, touching no file, when
+# the checkout's git directory cannot be resolved.
+break_index() {
+  local idx
+  idx="$(git -C "${1:-.}" rev-parse --absolute-git-dir)/index" || return 1
+  cp "$idx" "$idx.bak" && echo garbage >"$idx"
+}
+restore_index() {
+  local idx
+  idx="$(git -C "${1:-.}" rev-parse --absolute-git-dir)/index" || return 1
+  mv "$idx.bak" "$idx"
+}
 # branch_and_config: the current branch and the local git config, the facts a
 # refusal on an unreadable tree must leave as they were (git status cannot run
 # there, so these are what can be read).

@@ -93,9 +93,9 @@ cmd_branch_off() {
 # by no other failure, so a skill can branch on it.
 cmd_branch_busy() {
   [ $# -eq 0 ] || die "usage: orch.sh branch busy"
-  local line signal
-  checkout_busy line signal flow branch tree
-  [ -z "$signal" ] || { note "$line"; exit 3; }
+  local line remedy
+  checkout_busy line remedy flow branch tree
+  [ -z "$line" ] || { note "$line"; exit 3; }
 }
 
 # The current branch's base SHA, as branch off, branch create or branch sync
