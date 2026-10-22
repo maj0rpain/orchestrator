@@ -807,6 +807,68 @@ adapter_run_rerun() {
   gh run rerun "$1" --failed >/dev/null
 }
 
+# --- claim operations (#1454) ---
+#
+# A claim is a ref on origin, refs/orch/claims/<issue>: the one origin write
+# autopilot adds. These run git against origin, not gh, but are adapter
+# operations all the same, so the suite fakes them with the rest.
+
+# adapter_claim_create <issue> <phase> <pid>: takes the claim on <issue> for
+# <phase>, recording this host, <pid> and the start time. It pushes a throwaway
+# empty-tree commit, made with commit-tree so no checkout is touched, to the
+# claim's ref with an empty --force-with-lease expect: the push succeeds only
+# where the ref does not exist, atomically on the server, so exactly one of
+# two racers wins. Prints nothing. Exit 2 where an existing ref beat it - the
+# loss, the only status a caller reads as "skip this issue"; exit 1, git's
+# reason on stderr, for any other failure.
+adapter_claim_create() {
+  local ref="refs/orch/claims/$1" commit reason
+  commit="$(git commit-tree "$(git hash-object -t tree /dev/null)" -m "orch claim $1" \
+    -m "$(printf 'host: %s\npid: %s\nphase: %s\nstarted: %s' \
+      "$(hostname)" "$3" "$2" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")")" || return 1
+  git_push reason --force-with-lease="$ref:" origin "$commit:$ref" && return 0
+  case "$reason" in
+    *'stale info'*|*'already exists'*) return 2 ;;
+  esac
+  printf '%s\n' "$reason" >&2
+  return 1
+}
+
+# adapter_claim_delete <issue>: frees the claim on <issue>. A claim already
+# gone is freed all the same: succeeds. Prints nothing; git's reason on stderr
+# where the push fails.
+adapter_claim_delete() {
+  local reason
+  git_push reason origin ":refs/orch/claims/$1" && return 0
+  case "$reason" in
+    *'does not exist'*) return 0 ;;
+  esac
+  printf '%s\n' "$reason" >&2
+  return 1
+}
+
+# adapter_claim_list: the claims on origin, one line each, by issue number, as
+# TSV "<issue><TAB><host><TAB><pid><TAB><phase><TAB><started>", read from each
+# claim commit's message; nothing for none. Fetches refs/orch/claims/* first,
+# pruning the local copies of claims since freed. Fails, git's reason on
+# stderr, where origin cannot be read.
+adapter_claim_list() {
+  local err ref issue msg host pid phase started
+  capture_err err git fetch --quiet --prune origin '+refs/orch/claims/*:refs/orch/claims/*' || {
+    printf '%s\n' "${err:-git gave no reason}" >&2
+    return 1
+  }
+  while IFS= read -r ref; do
+    issue="${ref##*/}"
+    msg="$(git show -s --format=%B "$ref")" || return 1
+    host="$(sed -n 's/^host: //p' <<<"$msg")"
+    pid="$(sed -n 's/^pid: //p' <<<"$msg")"
+    phase="$(sed -n 's/^phase: //p' <<<"$msg")"
+    started="$(sed -n 's/^started: //p' <<<"$msg")"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$issue" "$host" "$pid" "$phase" "$started"
+  done < <(git for-each-ref --format='%(refname)' refs/orch/claims/ | sort -t/ -k4,4n)
+}
+
 if [ -n "${ORCH_GH_ADAPTER:-}" ]; then
   # shellcheck disable=SC1090 # the adapter path is chosen at run time, by tests
   source "$ORCH_GH_ADAPTER"

@@ -86,6 +86,9 @@
 #                     or a commit status, one per line; absent, none do
 #   unreadable_refs   refs whose check-run and status reads both fail
 #   reruns            the Actions run ids rerun, one per line, in order
+#   claims/<issue>    the issue's claim, one TSV line
+#                     "<issue><TAB><host><TAB><pid><TAB><phase><TAB><started>";
+#                     absent, the issue is unclaimed
 #   local_default     gh's own local default repo, as OWNER/REPO; absent,
 #                     none is set
 #   no_sub_issues     present, the sub-issues endpoint refuses every issue
@@ -903,4 +906,31 @@ adapter_commit_has_statuses() {
 adapter_run_rerun() {
   ! fake_failing adapter_run_rerun || return 1
   printf '%s\n' "$1" >>"$(fake_store)/reruns"
+}
+
+# adapter_claim_create <issue> <phase> <pid>: the claim stored as one line, this
+# host and the start time beside the arguments; status 2 where the issue is
+# already claimed, as the real operation's lost race.
+adapter_claim_create() {
+  ! fake_failing adapter_claim_create || return 1
+  local f
+  f="$(fake_store)/claims/$1"
+  mkdir -p "$(fake_store)/claims"
+  [ ! -e "$f" ] || return 2
+  printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$(hostname)" "$3" "$2" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$f"
+}
+
+# adapter_claim_delete <issue>: the claim removed; none there is freed all the same.
+adapter_claim_delete() {
+  ! fake_failing adapter_claim_delete || return 1
+  rm -f "$(fake_store)/claims/$1"
+}
+
+# adapter_claim_list: every stored claim's line, by issue number.
+adapter_claim_list() {
+  ! fake_failing adapter_claim_list || return 1
+  local f
+  for f in $(ls "$(fake_store)/claims" 2>/dev/null | sort -n); do
+    cat "$(fake_store)/claims/$f"
+  done
 }
