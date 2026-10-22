@@ -115,7 +115,7 @@ $detail" ;;
 # The full `implement -> spec` transition. Defaults to keeping the existing
 # spec issue and re-reviewing it - through the spec phase's step 0, whose
 # redo check reads the pre-redo-spec-* folder this leaves behind and so
-# skips the rewrite question an adopted issue gets - and retires that issue's ticket
+# skips the rewrite decision an adopted issue gets - and retires that issue's ticket
 # breakdown (`ticket retire`, issue #334) so the redone spec is broken down
 # again. The retire runs first: a GitHub failure there dies with the phase
 # still `implement` and the handoffs in place, so a re-run resumes. Only
@@ -148,7 +148,7 @@ cmd_redo_spec() {
   # them (#279). redo_count stays put: it counts review step-backs and names
   # the retired branch, so the directory is told apart by a UTC timestamp.
   # The spec-paused marker (#1181) moves with them, exactly when they do: left
-  # behind, it would carry the redone spec phase past its rewrite question.
+  # behind, it would carry the redone spec phase past its rewrite decision.
   # The round marker (#1348) moves with them for the same reason: left behind,
   # it would carry the redone spec review past round 1. The round directories
   # stay in place, since round 1's `spec round-dir 1/<n>` clears them.

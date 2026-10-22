@@ -355,7 +355,7 @@ writeln '# spec' >.orchestrator/handoff/02-spec.md
 writeln '# implement' >.orchestrator/handoff/03-implement.md
 # The spec-paused marker (#1181) names the issue the spec phase last stopped
 # after writing; it moves aside with the stale handoffs, so a redone spec phase
-# never skips its rewrite question on an old one.
+# never skips its rewrite decision on an old one.
 writeln 40 >.orchestrator/handoff/spec-paused
 # The round marker (#1348) names the spec review round to resume at; it moves
 # aside with them too, so a redone review never resumes past round 1.

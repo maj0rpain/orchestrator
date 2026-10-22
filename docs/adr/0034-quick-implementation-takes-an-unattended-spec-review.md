@@ -1,5 +1,7 @@
 # Quick implementation takes an unattended spec review
 
+Superseded in part by ADR-0050: the flow's spec phase decides an adopted issue's rewrite without asking.
+
 Supersedes in part ADR-0004: in a quick implementation the spec review applies its own recommendations; the human's control there is the choice of route.
 
 Quick implementation is meant for small changes, run hands-off. Yet each run stopped at up to three spec-review questions - whether to run a review at all, the batch, and the ticket follow-up when a linked blueprint's tickets were touched - plus `orch-to-tickets`' breakdown quiz. A human who picked quick implementation to walk away from small work had to keep coming back.
