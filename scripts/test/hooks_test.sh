@@ -998,13 +998,16 @@ assert_eq "hooks.json registers hook-session-start.sh under SessionStart with ma
   "$(jq -r '[.hooks.SessionStart[]? | select(.matcher == "clear") | .hooks[]?.command | select(test("hook-session-start\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
 
 echo
-echo "hook-paste-guard (#1287)"
+echo "hook-paste-guard (#1287, #1350)"
 
-# The guard is built in its fallback form (hook-paste-guard.sh's header): the
-# first AskUserQuestion after an arming `spec-review check` pass line is
-# refused with the view, the next allowed. Fixture transcripts are Claude
-# Code's JSONL shape: one entry per content block, a tool result in a user
-# entry, a tool_use in an assistant entry.
+# The guard refuses every AskUserQuestion after an arming `spec-review check`
+# pass line, until the next `spec-review apply`, unless one assistant text
+# block written after the pass line holds every non-blank line of the view
+# (hook-paste-guard.sh's header). Fixture transcripts are Claude Code's JSONL
+# shape: one entry per content block, a tool result in a user entry, a
+# tool_use in an assistant entry. ORCH_PASTE_GUARD_WAIT=0 drops the re-read
+# window, so a refused case returns at once; the window's own cases set it.
+export ORCH_PASTE_GUARD_WAIT=0
 PG="$(mktemp -d)"
 mkdir "$PG/batch" "$PG/full" "$PG/tickets" "$PG/gone" "$PG/empty"
 printf '## The batch\n\n1. Fidelity: name the seam\n\n### Minor edits\n\n2. Consistency: one term\n' >"$PG/batch/view.md"
@@ -1057,7 +1060,7 @@ pg_decide() {
 T="$PG/armed.jsonl"
 pg_text "$T" "Running the lenses."
 pg_check "$T" toolu_c1 batch "$PG/batch/view.md"
-assert_eq "armed, the first ask is refused" "$(pg_decide "$T")" deny
+assert_eq "armed, an ask with no paste after the pass line is refused" "$(pg_decide "$T")" deny
 assert_contains "with the view in the reason" "$(cat "$PG/reason")" "$(cat "$PG/batch/view.md")"
 assert_contains "and the instruction to paste it word for word, then ask again" "$(cat "$PG/reason")" \
   "Paste the view below into chat word for word"
@@ -1065,23 +1068,68 @@ assert_contains "naming view.md" "$(cat "$PG/reason")" "$PG/batch/view.md"
 assert_eq "its top-level decision is block" \
   "$(jq -n --arg t "$T" '{tool_name:"AskUserQuestion", transcript_path:$t, tool_use_id:"x"}' | "$PASTE" | jq -r '.decision')" block
 
-T2="$PG/same-response.jsonl"; cp "$T" "$T2"
-pg_text "$T2" "$(cat "$PG/batch/view.md")"
-pg_ask "$T2" toolu_now
-assert_eq "the first ask is refused even with a paste beside it, its own tool_use already written" \
-  "$(pg_decide "$T2" toolu_now)" deny
+T2="$PG/asked.jsonl"; cp "$T" "$T2"
+pg_ask "$T2" toolu_a1
+pg_result "$T2" toolu_a1 "Blocked by the orchestrator" true
+pg_text "$T2" "Here is the batch."
+assert_eq "a second ask with still no paste is refused too" "$(pg_decide "$T2" toolu_a2)" deny
+assert_contains "with the view in its reason" "$(cat "$PG/reason")" "$(cat "$PG/batch/view.md")"
 
-T3="$PG/asked.jsonl"; cp "$T" "$T3"
-pg_ask "$T3" toolu_a1
-pg_result "$T3" toolu_a1 "Blocked by the orchestrator" true
+T3="$PG/same-response.jsonl"; cp "$T" "$T3"
 pg_text "$T3" "$(cat "$PG/batch/view.md")"
-assert_eq "the second ask after the check is allowed" "$(pg_decide "$T3" toolu_a2)" allow
+pg_ask "$T3" toolu_now
+assert_eq "the view pasted in the ask's own response, its tool_use already written: allowed" \
+  "$(pg_decide "$T3" toolu_now)" allow
+
+T3b="$PG/earlier-response.jsonl"; cp "$T2" "$T3b"
+pg_text "$T3b" "The view:
+
+$(cat "$PG/batch/view.md")
+
+Which way?"
+pg_ask "$T3b" toolu_a2
+pg_result "$T3b" toolu_a2 "The user wants to clarify these questions." true
+pg_text "$T3b" "Understood."
+assert_eq "the view pasted in an earlier response after the pass line: allowed" "$(pg_decide "$T3b" toolu_a3)" allow
+
+T3c="$PG/split.jsonl"; cp "$T" "$T3c"
+pg_text "$T3c" "## The batch
+
+1. Fidelity: name the seam"
+pg_text "$T3c" "### Minor edits
+
+2. Consistency: one term"
+assert_eq "a view split across two text blocks is refused" "$(pg_decide "$T3c")" deny
+
+T3d="$PG/rewrapped.jsonl"; cp "$T" "$T3d"
+pg_text "$T3d" "  ## The   batch
+1. Fidelity:
+name	the seam
+### Minor edits
+2.  Consistency:   one term  "
+assert_eq "the view pasted with different whitespace (re-wrapped, extra spaces, a tab): allowed" "$(pg_decide "$T3d")" allow
+
+T3e="$PG/partial.jsonl"; cp "$T" "$T3e"
+pg_text "$T3e" "## The batch
+
+1. Fidelity: name the seam
+
+### Minor edits"
+assert_eq "the view with one non-blank line missing is refused" "$(pg_decide "$T3e")" deny
+
+T3f="$PG/before.jsonl"
+pg_text "$T3f" "$(cat "$PG/batch/view.md")"
+pg_check "$T3f" toolu_c1 batch "$PG/batch/view.md"
+assert_eq "the view pasted only before the arming pass line is refused" "$(pg_decide "$T3f")" deny
 
 T4="$PG/rearmed.jsonl"; cp "$T3" "$T4"
+pg_result "$T4" toolu_now "User has answered your questions: show 2"
 pg_check "$T4" toolu_c2 batch "$PG/full/view.md"
-assert_eq "an ask before a re-arming check --full does not count: refused" "$(pg_decide "$T4" toolu_a3)" deny
+assert_eq "a re-arming check --full after a pasted batch view: refused" "$(pg_decide "$T4" toolu_a3)" deny
 assert_contains "with the full items' view in the reason" "$(cat "$PG/reason")" "$(cat "$PG/full/view.md")"
 assert_not_contains "not the batch view" "$(cat "$PG/reason")" "## The batch"
+pg_text "$T4" "$(cat "$PG/full/view.md")"
+assert_eq "then allowed once the full view is pasted" "$(pg_decide "$T4" toolu_a3)" allow
 
 T5="$PG/applied.jsonl"; cp "$T" "$T5"
 pg_bash "$T5" toolu_p1 "bash \"\$ORCH\" spec-review apply .orchestrator/spec-review/7 recommended"
@@ -1099,10 +1147,21 @@ pg_result "$T7" toolu_c4 "No open ticket is affected.
 tickets.md passes: no open ticket affected"
 assert_eq "a check --tickets with no view does not arm: allowed" "$(pg_decide "$T7")" allow
 
+pg_text "$T6" "$(cat "$PG/tickets/view.md")"
+assert_eq "then allowed once the ticket view is pasted" "$(pg_decide "$T6")" allow
+
 T8="$PG/blob.jsonl"; cp "$T" "$T8"
-jq -nc '{type:"api-request-blob", message:{content:[{type:"tool_use", id:"toolu_b", name:"AskUserQuestion", input:{}}]}}' >>"$T8"
-echo 'not json {' >>"$T8"
-assert_eq "a request blob's ask copy and a line that is not JSON do not count: refused" "$(pg_decide "$T8")" deny
+jq -nc --arg v "$(cat "$PG/batch/view.md")" '{type:"api-request-blob", message:{role:"assistant", content:[{type:"text", text:$v},
+  {type:"tool_use", id:"toolu_b", name:"Bash", input:{command:"bash \"$ORCH\" spec-review apply .orchestrator/spec-review/7 recommended"}}]}}' >>"$T8"
+jq -nc --arg v "$(cat "$PG/batch/view.md")" '{type:"assistant", message:{content:[{type:"text", text:$v}]}}' | cut -c2- >>"$T8"
+assert_eq "a request blob's copy of the paste and the apply, and a line that is not JSON, do not count: refused" \
+  "$(pg_decide "$T8")" deny
+pg_text "$T8" "$(cat "$PG/batch/view.md")"
+assert_eq "a paste after a line that is not JSON still counts: allowed" "$(pg_decide "$T8")" allow
+
+T8b="$PG/unrelated-ask.jsonl"; cp "$T" "$T8b"
+pg_text "$T8b" "Before the batch: which branch should this land on?"
+assert_eq "an ask unrelated to the spec review, made while armed, is refused like any other" "$(pg_decide "$T8b")" deny
 
 assert_eq "a tool other than AskUserQuestion is allowed" "$(pg_decide "$T" toolu_now Bash)" allow
 
@@ -1130,6 +1189,32 @@ pg_text "$T11" "Which approach do you prefer?"
 pg_bash "$T11" toolu_u1 "git status"
 pg_result "$T11" toolu_u1 "nothing to commit"
 assert_eq "a transcript with no spec-review activity allows" "$(pg_decide "$T11")" allow
+# The re-read window, with a `sleep` stub on PATH in place of the wall clock:
+# the hook sleeps between reads, so the stub runs where Claude Code would be
+# writing a response's text block after PreToolUse fires. In the first case
+# the stub appends the paste on its first call, so it lands between two reads,
+# and with the window at its full length the ask is allowed. In the second, an
+# ask whose view is already in chat is allowed on the first read: the stub
+# records each call, and is never called.
+mkdir "$PG/stub"
+cat >"$PG/stub/sleep" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"$PG_SLEEP_LOG"
+if [ -n "${PG_SLEEP_PASTE:-}" ] && [ ! -e "$PG_SLEEP_PASTE.done" ]; then
+  cat "$PG_SLEEP_PASTE" >>"$PG_SLEEP_INTO"; : >"$PG_SLEEP_PASTE.done"
+fi
+STUB
+chmod +x "$PG/stub/sleep"
+T12="$PG/late.jsonl"; cp "$T" "$T12"
+pg_text "$PG/paste.jsonl" "$(cat "$PG/batch/view.md")"
+assert_eq "a paste appended within the window is seen: allowed" \
+  "$(PATH="$PG/stub:$PATH" PG_SLEEP_LOG="$PG/sleep-late.log" PG_SLEEP_PASTE="$PG/paste.jsonl" PG_SLEEP_INTO="$T12" \
+    ORCH_PASTE_GUARD_WAIT='' pg_decide "$T12")" allow
+assert_eq "with the full window, an ask whose view is already in chat is allowed" \
+  "$(PATH="$PG/stub:$PATH" PG_SLEEP_LOG="$PG/sleep-first.log" ORCH_PASTE_GUARD_WAIT='' pg_decide "$T3")" allow
+if [ -e "$PG/sleep-first.log" ]; then bad "and on the first read" "slept: $(tr '\n' ' ' <"$PG/sleep-first.log")"
+else ok "and on the first read"; fi
+unset ORCH_PASTE_GUARD_WAIT
 rm -rf "$PG"
 
 assert_eq "hooks.json registers hook-paste-guard.sh under PreToolUse with matcher AskUserQuestion" \

@@ -164,6 +164,20 @@ spec_review_item_check() {
 # naming the line.
 spec_review_batch_die() { die "batch.md line $1: $2"; }
 
+# The most words a batch.md @@ summary may hold (#1352), so each line of the
+# compact view stays short.
+SPEC_REVIEW_SUMMARY_WORDS=30
+
+# spec_review_summary_cap <line> <what> <summary>: dies, naming <line> and
+# <what> - `item <n>` or `item <n> option <L>` - when <summary> holds more
+# than SPEC_REVIEW_SUMMARY_WORDS words, each a run of non-whitespace.
+spec_review_summary_cap() {
+  local words
+  read -r -a words <<<"$3"
+  [ "${#words[@]}" -le "$SPEC_REVIEW_SUMMARY_WORDS" ] \
+    || spec_review_batch_die "$1" "$2's @@ summary has ${#words[@]} words, more than $SPEC_REVIEW_SUMMARY_WORDS"
+}
+
 # spec_review_mark_check <line> <n> <rec> <mark>: dies, naming <line>,
 # unless item <n>'s <mark> - the last fixed token of its `@@ item` line - is
 # material or minor.
@@ -308,10 +322,12 @@ spec_review_batch_parse() {
         [ -n "$args" ] || spec_review_batch_die "$lineno" "@@ summary needs its line"
         [ "${SR_IT_REC[$cur]}" != resolved ] || spec_review_batch_die "$lineno" "a resolved item carries no @@ summary"
         if [ "$opt" -ge 0 ]; then
+          spec_review_summary_cap "$lineno" "item ${SR_IT_N[$cur]} option ${SR_OP_LETTER[$opt]}" "$args"
           [ -z "${SR_OP_SUMMARY[$opt]+x}" ] || spec_review_batch_die "$lineno" "a second @@ summary for this option"
           SR_OP_SUMMARY[opt]="$args"
         else
           [ "${SR_IT_REC[$cur]}" != decision ] || spec_review_batch_die "$lineno" "a decision item's summaries go under its options"
+          spec_review_summary_cap "$lineno" "item ${SR_IT_N[$cur]}" "$args"
           [ -z "${SR_IT_SUMMARY[$cur]+x}" ] || spec_review_batch_die "$lineno" "a second @@ summary for this item"
           SR_IT_SUMMARY[cur]="$args"
         fi ;;
@@ -747,8 +763,7 @@ spec_review_problems_exit() {
 # line each, then exit 1, leaving any earlier view.md as it was. A clean batch
 # prints its view on stdout - see spec_review_view - saves it to
 # <dir>/view.md (see spec_review_view_save), and prints a one-line summary on
-# stderr, ending in spec_review_nudge; the word diffs' lists
-# go in a mktemp -d directory removed on every path, a failed diff's too. With --tickets, the
+# stderr, ending in spec_review_nudge. With --tickets, the
 # round's tickets.md instead: see spec_review_tickets_check. With --full
 # <n>..., the same validation, then only the named items on stdout, each in
 # full (see spec_review_item_view), in the order named - any item in
@@ -794,10 +809,6 @@ spec_review_check() {
     for n in "${wanted[@]}"; do index+=("$(array_index SR_IT_N "$n")"); done
     spec_review_view_save "$dir" spec_review_full_view "${index[@]}"
   else
-    SR_DIFF_DIR="$(mktemp -d)" || die "could not create a temp directory for the word diffs"
-    trap 'rm -rf "$SR_DIFF_DIR"' EXIT
-    spec_review_diffs "$SR_DIFF_DIR"
-    rm -rf "$SR_DIFF_DIR"
     spec_review_view_save "$dir" spec_review_view
   fi
   note "batch.md passes: ${#SR_IT_N[@]} items, $SR_ANCHOR_COUNT anchors, each matching once in $body, and the all answer applies cleanly$(spec_review_nudge "$dir")" >&2
@@ -902,12 +913,19 @@ spec_review_item_view() {
     decision)
       for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
         [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
-        printf '\n#### Option %s - %s' "${SR_OP_LETTER[$j]}" "${SR_OP_LABEL[$j]}"
-        [ "${SR_OP_LETTER[$j]}" != "${SR_IT_ARG[$i]}" ] || printf ' (recommended)'
-        printf '\n'
+        printf '\n#### %s\n' "$(spec_review_option_line "$i" "$j")"
         spec_review_edit_view "${SR_OP_ANCHOR[$j]}" "${SR_OP_REPLACE[$j]}"
       done ;;
   esac
+}
+
+# spec_review_option_line <index> <option>: option <option> of decision item
+# <index> as both views name it - `Option <L> - <label>`, then ` (recommended)`
+# when it is the recommended one - the compact view's sub-bullet and --full's
+# heading alike.
+spec_review_option_line() {
+  printf 'Option %s - %s' "${SR_OP_LETTER[$2]}" "${SR_OP_LABEL[$2]}"
+  [ "${SR_OP_LETTER[$2]}" != "${SR_IT_ARG[$1]}" ] || printf ' (recommended)'
 }
 
 # spec_review_minor_line <index>: minor or resolved item <index> on one line
@@ -924,157 +942,28 @@ spec_review_minor_line() {
   esac
 }
 
-# --- the compact view's word diff (#1250) ---------------------------------------
-#
-# A material edit is shown as the words it changes, not its whole text: the
-# anchor and the replacement are written one word per line - a word a run of
-# non-whitespace, line breaks whitespace like any other - and compared by
-# git's Myers diff, every option that moves an alignment pinned on the command
-# line, so no user config changes the view.
-
-# Context words shown either side of a changed span, the most unchanged words
-# between two changed runs that still share one span, and the most changed
-# words an edit shows before it collapses to its size.
-SR_DIFF_CONTEXT=5
-SR_DIFF_MERGE=10
-SR_DIFF_LIMIT=40
-
-# spec_review_word_diff <dir> <label> <anchor> <replacement>: the edit's change
-# lines into SR_DIFF, one per line - one per changed span, `…<context>
-# ~~<removed>~~ **<added>** <context>…`, `…` only where context is cut short;
-# or `rewritten, <N> words, see full view` past SR_DIFF_LIMIT changed words;
-# or `whitespace only, see full view` when no word changes. The word lists
-# are written in <dir>; a failed write, or git exiting above 1, dies naming
-# <label>.
-spec_review_word_diff() {
-  local dir="$1" label="$2" IFS=$' \t\n' a=() b=() ops=() words=() line hunk="" status=""
-  local longest k w total changed=0 span_start span_end next_change from to rem add piece=() text
-  read -r -d '' -a a <<<"$3" || true
-  read -r -d '' -a b <<<"$4" || true
-  { { [ "${#a[@]}" -eq 0 ] || printf '%s\n' "${a[@]}"; } >"$dir/anchor" \
-    && { [ "${#b[@]}" -eq 0 ] || printf '%s\n' "${b[@]}"; } >"$dir/replacement"; } 2>/dev/null \
-    || die "$label: could not write its word lists in $dir"
-  longest="${#a[@]}"; [ "${#b[@]}" -le "$longest" ] || longest="${#b[@]}"
-  # status stays empty when the redirect fails, so a failed write is never
-  # read as git's status 1; git's own stderr still reaches ours, on fd 3.
-  { git --no-pager diff --no-index --no-color --no-ext-diff --no-textconv --diff-algorithm=myers \
-      --no-indent-heuristic --unified="$longest" -- "$dir/anchor" "$dir/replacement" 2>&3 && status=0 || status=$?; } \
-    3>&2 2>/dev/null >"$dir/diff" || true
-  [ -n "$status" ] || die "$label: could not write its word diff in $dir"
-  [ "$status" -le 1 ] || die "$label: git diff exited $status rendering its word diff"
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [ -z "$hunk" ]; then
-      case "$line" in '@@ '*) hunk=1 ;; esac
-      continue
-    fi
-    ops+=("${line:0:1}"); words+=("${line:1}")
-  done <"$dir/diff"
-  total="${#ops[@]}"
-  for ((k = 0; k < total; k++)); do [ "${ops[k]}" = ' ' ] || changed=$((changed + 1)); done
-  if [ "$changed" -eq 0 ]; then SR_DIFF='whitespace only, see full view'; return 0; fi
-  if [ "$changed" -gt "$SR_DIFF_LIMIT" ]; then SR_DIFF="rewritten, $changed words, see full view"; return 0; fi
-  SR_DIFF=""
-  k=0
-  while [ "$k" -lt "$total" ]; do
-    [ "${ops[k]}" != ' ' ] || { k=$((k + 1)); continue; }
-    span_start="$k"; span_end="$k"
-    while :; do
-      while [ "$span_end" -lt "$total" ] && [ "${ops[span_end]}" != ' ' ]; do span_end=$((span_end + 1)); done
-      next_change="$span_end"
-      while [ "$next_change" -lt "$total" ] && [ "${ops[next_change]}" = ' ' ]; do next_change=$((next_change + 1)); done
-      [ "$next_change" -lt "$total" ] && [ $((next_change - span_end)) -le "$SR_DIFF_MERGE" ] || break
-      span_end="$next_change"
-    done
-    from=$((span_start - SR_DIFF_CONTEXT)); [ "$from" -ge 0 ] || from=0
-    to=$((span_end + SR_DIFF_CONTEXT)); [ "$to" -le "$total" ] || to="$total"
-    piece=()
-    for ((w = from; w < span_start; w++)); do piece+=("${words[w]}"); done
-    [ "$from" -eq 0 ] || piece[0]="…${piece[0]}"
-    w="$span_start"
-    while [ "$w" -lt "$span_end" ]; do
-      if [ "${ops[w]}" = ' ' ]; then piece+=("${words[w]}"); w=$((w + 1)); continue; fi
-      rem=""; add=""
-      while [ "$w" -lt "$span_end" ] && [ "${ops[w]}" != ' ' ]; do
-        if [ "${ops[w]}" = - ]; then rem="${rem:+$rem }${words[w]}"; else add="${add:+$add }${words[w]}"; fi
-        w=$((w + 1))
-      done
-      [ -z "$rem" ] || piece+=("~~$rem~~")
-      [ -z "$add" ] || piece+=("**$add**")
-    done
-    for ((w = span_end; w < to; w++)); do piece+=("${words[w]}"); done
-    [ "$to" -eq "$total" ] || piece[${#piece[@]}-1]="${piece[${#piece[@]}-1]}…"
-    text="${piece[*]}"
-    SR_DIFF="${SR_DIFF:+$SR_DIFF$'\n'}$text"
-    k="$span_end"
-  done
-}
-
-# spec_review_diffs <dir>: every material item's word diff, or each of its
-# options', into SR_IT_DIFF and SR_OP_DIFF - all of them before the view
-# prints a line, so a failed diff prints no half view.
-spec_review_diffs() {
-  local dir="$1" i j
-  SR_IT_DIFF=(); SR_OP_DIFF=()
-  for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
-    [ "${SR_IT_MARK[$i]}" = material ] || continue
-    case "${SR_IT_REC[$i]}" in
-      apply|decline)
-        spec_review_word_diff "$dir" "item ${SR_IT_N[$i]}" "${SR_IT_ANCHOR[$i]}" "${SR_IT_REPLACE[$i]}"
-        SR_IT_DIFF[i]="$SR_DIFF" ;;
-      decision)
-        for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
-          [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
-          spec_review_word_diff "$dir" "item ${SR_IT_N[$i]} option ${SR_OP_LETTER[$j]}" \
-            "${SR_OP_ANCHOR[$j]}" "${SR_OP_REPLACE[$j]}"
-          SR_OP_DIFF[j]="$SR_DIFF"
-        done ;;
-    esac
-  done
-}
-
-# spec_review_bullets <indent> <lines>: each of <lines> as a sub-bullet,
-# <indent> spaces in.
-spec_review_bullets() {
-  local l
-  while IFS= read -r l; do printf '%*s- %s\n' "$1" '' "$l"; done <<<"$2"
-}
-
 # spec_review_material_entry <index>: material item <index> as one entry of
-# the compact view's list - its header line, `- **<n>** - **<Group>** ...`
-# with <n> its literal batch.md number, never a Markdown ordered-list number a
-# renderer would recount; then its why, the findings and comments it cites by
-# name, and its change lines (see spec_review_word_diff), or, for a decision
-# item, one sub-bullet per option with its change lines beneath. Sub-bullets
-# are indented a fixed 2 spaces, 4 under an option, whatever the number's
-# width, so none is ever a 4-space code block.
+# the compact view's list - one line, `- **<n>** - **<Group>** - <summary>
+# (apply) - <why>`, a recommend-decline's `(recommend decline: <reason>)` in
+# place of `(apply)`, with <n> its literal batch.md number, never a Markdown
+# ordered-list number a renderer would recount; a decision item's header
+# `- **<n>** - **<Group>** (decision, option <L> recommended) - <why>`, then
+# one sub-bullet per option, `Option <L> - <label>: <summary>` (see
+# spec_review_option_line), indented a fixed 2 spaces, so none is ever a
+# 4-space code block. No citation and no diff: --full shows those.
 spec_review_material_entry() {
-  local i="$1" n="${SR_IT_N[$1]}" pad=2 j cites="" label=comments
+  local i="$1" n="${SR_IT_N[$1]}" j
   case "${SR_IT_REC[$i]}" in
-    apply) printf -- '- **%s** - **%s** - %s (apply)\n' "$n" "$(spec_review_group_title "$i")" "${SR_IT_SUMMARY[$i]}" ;;
-    decline) printf -- '- **%s** - **%s** - %s (recommend decline: %s)\n' "$n" "$(spec_review_group_title "$i")" \
-      "${SR_IT_SUMMARY[$i]}" "${SR_IT_ARG[$i]}" ;;
-    decision) printf -- '- **%s** - **%s** (decision, option %s recommended)\n' "$n" "$(spec_review_group_title "$i")" \
-      "${SR_IT_ARG[$i]}" ;;
-  esac
-  printf '%*s- why: %s\n' "$pad" '' "${SR_IT_WHY[$i]}"
-  for j in ${SR_FD_ITEM[@]+"${!SR_FD_ITEM[@]}"}; do
-    [ "${SR_FD_ITEM[$j]}" = "$i" ] || continue
-    cites="${cites:+$cites, }$(spec_review_title "${SR_FD_LENS[$j]}") ${SR_FD_K[$j]}"; label=findings
-  done
-  for j in ${SR_CM_ITEM[@]+"${!SR_CM_ITEM[@]}"}; do
-    [ "${SR_CM_ITEM[$j]}" = "$i" ] || continue
-    cites="${cites:+$cites, }comment by ${SR_CM_LOGIN[$j]}, ${SR_CM_CREATED[$j]}"
-  done
-  printf '%*s- %s: %s\n' "$pad" '' "$label" "$cites"
-  case "${SR_IT_REC[$i]}" in
-    apply|decline) spec_review_bullets "$pad" "${SR_IT_DIFF[$i]}" ;;
+    apply) printf -- '- **%s** - **%s** - %s (apply) - %s\n' "$n" "$(spec_review_group_title "$i")" \
+      "${SR_IT_SUMMARY[$i]}" "${SR_IT_WHY[$i]}" ;;
+    decline) printf -- '- **%s** - **%s** - %s (recommend decline: %s) - %s\n' "$n" "$(spec_review_group_title "$i")" \
+      "${SR_IT_SUMMARY[$i]}" "${SR_IT_ARG[$i]}" "${SR_IT_WHY[$i]}" ;;
     decision)
+      printf -- '- **%s** - **%s** (decision, option %s recommended) - %s\n' "$n" "$(spec_review_group_title "$i")" \
+        "${SR_IT_ARG[$i]}" "${SR_IT_WHY[$i]}"
       for j in ${SR_OP_ITEM[@]+"${!SR_OP_ITEM[@]}"}; do
         [ "${SR_OP_ITEM[$j]}" = "$i" ] || continue
-        printf '%*s- Option %s - %s' "$pad" '' "${SR_OP_LETTER[$j]}" "${SR_OP_LABEL[$j]}"
-        [ "${SR_OP_LETTER[$j]}" != "${SR_IT_ARG[$i]}" ] || printf ' (recommended)'
-        printf ': %s\n' "${SR_OP_SUMMARY[$j]}"
-        spec_review_bullets $((pad + 2)) "${SR_OP_DIFF[$j]}"
+        printf '  - %s: %s\n' "$(spec_review_option_line "$i" "$j")" "${SR_OP_SUMMARY[$j]}"
       done ;;
   esac
 }
@@ -1084,8 +973,7 @@ spec_review_material_entry() {
 # material items as one list in batch order, each under its batch.md number
 # (see spec_review_material_entry), then, under a Minor edits
 # heading omitted when there are none, every minor and resolved item on one
-# line, in batch order. Rendered from spec_review_validate's arrays and
-# spec_review_diffs' alone.
+# line, in batch order. Rendered from spec_review_validate's arrays alone.
 spec_review_view() {
   local l i minor=() first=1
   printf '## The batch\n\n### Lenses\n\n'
@@ -1153,13 +1041,11 @@ spec_review_decline_reason() {
 }
 
 # spec_review_item_line <index> <unattended>: item <index>'s changelog line.
-# A minor item applied by the human's answer is tagged `(<n>, minor)`; an
-# unattended run, which no human answers, tags nothing.
+# An applied item reads `- (<n>) <summary>`, minor or material alike (#1352).
 spec_review_item_line() {
-  local i="$1" n="${SR_IT_N[$1]}" j reason tag=""
-  [ "$2" = true ] || [ "${SR_IT_MARK[$i]}" != minor ] || tag=", minor"
+  local i="$1" n="${SR_IT_N[$1]}" j reason
   case "${SR_DISP[$i]}" in
-    applied) printf -- '- (%s%s) %s\n' "$n" "$tag" "${SR_IT_SUMMARY[$i]}" ;;
+    applied) printf -- '- (%s) %s\n' "$n" "${SR_IT_SUMMARY[$i]}" ;;
     taken)
       j="$(spec_review_option_index "$i" "${SR_TAKEN[$i]}")"
       if [ "$2" = true ]; then
