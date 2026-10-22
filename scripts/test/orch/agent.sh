@@ -122,7 +122,7 @@ assert_eq "and leaves the global model" "$(key global orchestrator.model.fixer)"
 git config --local orchestrator.effort.resolver gpt
 out="$("$ORCH" agent show 2>&1)"; st=$?
 assert_status "show succeeds, even with a disallowed hand-set value" "$st" 0
-assert_eq "show lists every role in order with its sources, marking the invalid value" "$out" \
+assert_eq "show lists every role in order with its sources, marking the invalid value" "$(head -n 6 <<<"$out")" \
   "implementer model opus (local) effort high (local)
 lens model inherit (inherit) effort inherit (inherit)
 reviewer model haiku (local) effort low (local)
@@ -188,5 +188,96 @@ out="$("$ORCH" help 2>&1)"
 assert_contains "agent set is in the usage text" "$out" "agent set <role>"
 assert_contains "the CLI conventions' noun table has an agent row" \
   "$(grep '^| `agent`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`set`, `show`, `clear`, `get`'
+# --host junie: the same verbs on the Junie keys, beside the Claude Code ones.
+jkey() { key "$1" "orchestrator.junie.$2.$3"; }
+out="$("$ORCH" agent get lens --host junie 2>&1)"; st=$?
+assert_status "get --host junie succeeds with nothing set" "$st" 0
+assert_eq "and prints inherit for both Junie keys" "$out" \
+  "model inherit
+effort inherit"
+out="$("$ORCH" agent set lens --host junie --model gpt-5 --effort medium 2>&1)"; st=$?
+assert_status "set --host junie accepts a model and an effort" "$st" 0
+assert_eq "set --host junie writes the Junie model" "$(jkey local model lens)" "gpt-5"
+assert_eq "set --host junie writes the Junie effort" "$(jkey local effort lens)" "medium"
+assert_eq "a Junie write leaves the Claude Code model alone" "$(key local orchestrator.model.lens)" "<unset>"
+assert_eq "get --host junie round-trips" "$("$ORCH" agent get lens --host junie 2>&1)" \
+  "model gpt-5
+effort medium"
+assert_eq "get without --host ignores the Junie keys" "$("$ORCH" agent get lens 2>&1)" \
+  "model inherit
+effort inherit"
+"$ORCH" agent set implementer --host junie --model custom:my/profile.1 >/dev/null
+assert_eq "set --host junie accepts a custom profile id" "$(jkey local model implementer)" "custom:my/profile.1"
+assert_eq "a Claude Code write leaves the Junie keys alone" \
+  "$("$ORCH" agent set implementer --model sonnet >/dev/null; jkey local model implementer)" "custom:my/profile.1"
+"$ORCH" agent set reviewer --host junie --model gpt-5 --global >/dev/null
+"$ORCH" agent set reviewer --host junie --effort low >/dev/null
+assert_eq "Junie lookup combines a global model and a local effort" \
+  "$("$ORCH" agent get reviewer --host junie 2>&1)" "model gpt-5
+effort low"
+"$ORCH" agent set reviewer --host junie --model o3 >/dev/null
+assert_eq "a local Junie model wins over the global one" \
+  "$("$ORCH" agent get reviewer --host junie 2>&1 | head -n 1)" "model o3"
+"$ORCH" agent set reviewer --host junie --model inherit >/dev/null
+assert_eq "set --host junie --model inherit clears the local key" "$(jkey local model reviewer)" "<unset>"
+assert_eq "so the global Junie model shows through" \
+  "$("$ORCH" agent get reviewer --host junie 2>&1 | head -n 1)" "model gpt-5"
+
+before="$(git config --local --get-regexp '^orchestrator\.' ; git config --global --get-regexp '^orchestrator\.')"
+out="$("$ORCH" agent set lens --host junie --model "GPT 5" 2>&1)"; st=$?
+assert_status "set --host junie refuses a model with a space" "$st" 1
+assert_contains "naming the pattern" "$out" "[A-Za-z0-9._:/-]+"
+assert_contains "pointing at the /model picker and --model flag" "$out" "/model"
+assert_contains "and warning about aliases" "$out" "aliases resolve unpredictably"
+untouched "a Junie model with a space"
+out="$("$ORCH" agent set lens --host junie --model 'a;b' 2>&1)"; st=$?
+assert_status "set --host junie refuses a disallowed character" "$st" 1
+untouched "a Junie model with a disallowed character"
+out="$("$ORCH" agent set lens --host junie --model $'gpt\nx' 2>&1)"; st=$?
+assert_status "set --host junie matches the model pattern as a whole" "$st" 1
+untouched "a multi-line Junie model"
+out="$("$ORCH" agent set lens --host junie --effort xhigh 2>&1)"; st=$?
+assert_status "set --host junie refuses an effort Claude Code allows" "$st" 1
+assert_contains "naming the Junie efforts" "$out" "low|medium|high|inherit"
+untouched "a disallowed Junie effort"
+out="$("$ORCH" agent set lens --host codex --model opus 2>&1)"; st=$?
+assert_status "set refuses another host" "$st" 1
+assert_contains "naming it" "$out" "codex"
+untouched "another host"
+out="$("$ORCH" agent get lens --host codex 2>&1)"; st=$?
+assert_status "get refuses another host" "$st" 1
+out="$("$ORCH" agent clear lens --host codex 2>&1)"; st=$?
+assert_status "clear refuses another host" "$st" 1
+assert_contains "naming it" "$out" "codex"
+
+git config --local orchestrator.junie.effort.fixer extreme
+git config --global orchestrator.junie.model.closer "bad model"
+out="$("$ORCH" agent show 2>&1)"; st=$?
+assert_status "show succeeds with invalid Junie values" "$st" 0
+assert_eq "show prints twelve lines" "$(wc -l <<<"$out" | tr -d ' ')" "12"
+assert_eq "show's Junie lines follow the six Claude Code lines, invalid values marked" "$(tail -n 6 <<<"$out")" \
+  "junie implementer model custom:my/profile.1 (local) effort inherit (inherit)
+junie lens model gpt-5 (local) effort medium (local)
+junie reviewer model gpt-5 (global) effort low (local)
+junie fixer model inherit (inherit) effort extreme (local, invalid)
+junie closer model bad model (global, invalid) effort inherit (inherit)
+junie resolver model inherit (inherit) effort inherit (inherit)"
+out="$("$ORCH" agent get fixer --host junie 2>&1)"; st=$?
+assert_status "get --host junie refuses an invalid stored value" "$st" 1
+assert_contains "naming the clear that removes it" "$out" "orch.sh agent clear fixer --host junie --effort"
+out="$("$ORCH" agent get closer --host junie 2>&1)"; st=$?
+assert_contains "naming the global clear" "$out" "orch.sh agent clear closer --host junie --model --global"
+
+"$ORCH" agent clear lens --host junie --model >/dev/null
+assert_eq "clear --host junie --model removes only the Junie model" \
+  "$(jkey local model lens) $(jkey local effort lens)" "<unset> medium"
+"$ORCH" agent clear lens --host junie >/dev/null
+assert_eq "clear --host junie removes both Junie keys" "$(jkey local effort lens)" "<unset>"
+"$ORCH" agent clear reviewer --host junie --global >/dev/null
+assert_eq "clear --host junie --global removes the global Junie key" "$(jkey global model reviewer)" "<unset>"
+assert_eq "and leaves the Claude Code keys" "$(key local orchestrator.model.implementer)" "sonnet"
+out="$("$ORCH" agent get 2>&1)"; st=$?
+assert_contains "get's usage names --host junie" "$out" "[--host junie]"
+unset -f jkey
 unset -f key untouched
 restore_suite_env
