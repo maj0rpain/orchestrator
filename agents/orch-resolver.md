@@ -78,7 +78,10 @@ failed sync stops and where its **Merge resolutions** go.
      go to step 4.
    - **Exit 3**: a conflict, the merge left in progress. Go to step 2.
 2. **Resolve.** Start a fresh `orch-resolver` per **Starting this agent**
-   above, its prompt:
+   above, on the `resolver` setting: the caller runs `bash "$ORCH" agent get
+   resolver` once, at its run's start, per **Agent settings** in
+   `docs/host-capabilities.md` (under the plugin root), never per sync.
+   Its prompt:
 
    ```
    Checkout: <git rev-parse --show-toplevel>
@@ -125,7 +128,9 @@ checked out in the driver's checkout.
 2. **Or start a fresh resolver.** Where the implementer cannot be resumed -
    the host cannot resume a finished subagent, its context is gone, or the
    resume fails - start a fresh `orch-resolver` per **Starting this agent**
-   above, its prompt:
+   above, on the `resolver` setting the driver read before loop step a
+   (`bash "$ORCH" agent get resolver`, per **Agent settings**, as step 2 of
+   **A driver's base sync** says). Its prompt:
 
    ```
    Checkout: <the ticket worktree's path>

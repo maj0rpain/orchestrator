@@ -294,21 +294,24 @@ assert_eq "deleting every one but its own" "$(ls -A "$rounds" 2>&1)" "1"
 writeln 'the code map' >"$rounds/1/map-implementability.md"
 writeln 'round 1 changelog' >"$rounds/1/settled.md"
 writeln 'round 1 changelog' >"$rounds/1/changelog.md"
+printf 'model opus\neffort high\n' >"$rounds/1/agent-lens"
 : >"$rounds/1/round-complete"
 mkdir -p "$rounds/2"
 writeln stale >"$rounds/2/spec.md"
 out="$("$ORCH" spec round-dir 2/2 2>&1)"; st=$?
 assert_status "round-dir 2/2 succeeds" "$st" 0
 assert_eq "printing round 2's fixed directory" "$out" "$rounds/2/"
-assert_eq "emptied, then holding only round 1's code map and settled file" \
-  "$(ls -A "$rounds/2" 2>&1)" "$(writeln map-implementability.md settled.md)"
+assert_eq "emptied, then holding only round 1's lens setting, code map and settled file" \
+  "$(ls -A "$rounds/2" 2>&1)" "$(writeln agent-lens map-implementability.md settled.md)"
+assert_eq "the lens setting copied as round 1 read it" "$(cat "$rounds/2/agent-lens")" \
+  "$(writeln 'model opus' 'effort high')"
 assert_eq "the code map copied as it was" "$(cat "$rounds/2/map-implementability.md")" "the code map"
 assert_eq "and the settled file" "$(cat "$rounds/2/settled.md")" "round 1 changelog"
 assert_eq "leaving round 1's directory as it was" "$(ls -A "$rounds/1" 2>&1)" \
-  "$(writeln changelog.md map-implementability.md round-complete settled.md)"
-rm -f "$rounds/1/map-implementability.md" "$rounds/1/settled.md"
+  "$(writeln agent-lens changelog.md map-implementability.md round-complete settled.md)"
+rm -f "$rounds/1/agent-lens" "$rounds/1/map-implementability.md" "$rounds/1/settled.md"
 out="$("$ORCH" spec round-dir 2/2 2>&1)"; st=$?
-assert_status "round-dir 2/2 succeeds when round 1 left no code map or settled file" "$st" 0
+assert_status "round-dir 2/2 succeeds when round 1 left no lens setting, code map or settled file" "$st" 0
 assert_eq "silently, printing only the path" "$out" "$rounds/2/"
 assert_eq "copying nothing" "$(ls -A "$rounds/2" 2>&1)" ""
 

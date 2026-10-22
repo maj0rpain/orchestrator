@@ -333,6 +333,12 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    subagent, for ticket `<n>`. **Any other content** names the spec issue
    as a parent whose GitHub sub-issues carry the real tickets, and the loop
    works its frontier.
+
+   The phase reads its agent settings once, before loop step a, as
+   **Dispatching a subagent** says, per **Agent settings** in
+   `docs/host-capabilities.md`: `bash "$ORCH" agent get implementer` and
+   `bash "$ORCH" agent get resolver`. Step 4's base sync starts its resolver
+   on that same `resolver` setting.
 4. **Base sync.** Bring the flow's branch up to date with its base before
    its PR opens, by **A driver's base sync** in
    `agents/orch-resolver.md` (under the plugin root), with the spec issue
