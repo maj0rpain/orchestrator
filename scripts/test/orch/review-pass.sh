@@ -173,6 +173,17 @@ assert_status "an empty --deviations file builds the file" "$st" 0
 assert_eq "and both empty headings read None." "$(cat "$kp/known.md")" \
   "$(writeln '## Deviations' 'None.' '## Known items' 'None.')"
 
+fake_comment 21 pat 2026-10-07T09:00:00Z 'Spec ruling: None.'
+"$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/empty.md" >/dev/null
+assert_eq "an issue ruling reading None. yields no known item" \
+  "$(sed -n '/^## Known items$/,$p' "$kp/known.md")" "$(writeln '## Known items' 'None.')"
+fake_comment 21 pat 2026-10-08T09:00:00Z 'Spec ruling: - foo'
+"$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/empty.md" >/dev/null
+assert_eq "an issue ruling with a leading bullet loses it" \
+  "$(sed -n '/^## Known items$/,$p' "$kp/known.md")" \
+  "$(writeln '## Known items' '- foo - spec ruling')"
+rm -rf "$ORCH_GH_FAKE_STORE/issues/21/comments"
+
 writeln 'kept' >"$kp/known.md"
 out="$("$ORCH" review-pass known-items 21 "$kp/known.md" --deviations "$kp/missing.md" 2>&1)"; st=$?
 assert_status "refuses a missing --deviations file" "$st" 1
