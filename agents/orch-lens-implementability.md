@@ -47,20 +47,20 @@ open.
 - Start from the files, functions, commands and paths the spec and the map
   name.
 - Code a map entry names is read only at that entry's range, with an offset
-  and limit, never searched for and never read whole, however short the
-  file. The one exception is the Grep that **Using an entry** and
-  the old-entry rule below call for.
+  and limit (on Claude Code, Read's `offset` and `limit`; on Junie, `open`
+  at the range's starting line number; see `docs/host-capabilities.md`'s **Search and read code**), never searched for and
+  never read whole, however short the file. The one exception is the search
+  that **Using an entry** and the old-entry rule below call for.
 - Everything no entry names - a symbol the edited body newly names, even in
   a file the map already lists, and the callers or callees below - you
-  locate with Grep and Glob before you read any of its content, in two
+  locate by search before you read any of its content, in two
   steps. First, a search across the repo lists only the names of the
-  matching files (on Claude Code, Grep's `files_with_matches` output). Then
-  a content search, with line numbers and capped at 30 result lines (on
-  Claude Code, Grep's `head_limit`), runs only in the files that matter, to
+  matching files (on Claude Code, Grep's `files_with_matches` output; on Junie, `grep_search`'s file names; see `docs/host-capabilities.md`'s **Search and read code**). Then
+  a content search, with line numbers and capped at 30 result lines (on Claude Code, Grep's `head_limit`; on Junie, `grep_search` scoped by `path`; see `docs/host-capabilities.md`'s **Search and read code**), runs only in the files that matter, to
   find the lines to read. A content search never runs repo-wide, and never
   uncapped.
-- Batch: issue every independent Grep, Glob and Read of a step together in
-  one turn, rather than one per turn. Once the spec and the map are read,
+- Batch: issue every independent search and read of a step together in one
+  turn (on Claude Code, its Grep, Glob and Read calls; on Junie, its `grep_search`, `glob_search` and `open` calls), rather than one per turn. Once the spec and the map are read,
   send in one turn the range reads for every location a map entry names
   and the searches for every location no entry names; then send the reads
   for all the search hits in one turn. Every turn re-reads the whole
@@ -92,13 +92,13 @@ about 60 lines, and is never split to fit.
 **Using an entry.** Read the named range. If it still holds the symbol, rely
 on it and do not search - and when the range is over the soft ceiling and
 the decision's code fits a narrower one, record the narrower range. If the
-range no longer holds the symbol, Grep for the symbol in that path and
+range no longer holds the symbol, search for the symbol in that path and
 record the new range; on more than one match, take the one the entry's reason
 describes. If the symbol or the file is gone from that path, drop the entry.
 A symbol that moved to another file is found again only if the edited body
 still names it, as a newly named location.
 
-**An old entry with no range**, `<path>:<line>`, is located once with Grep
+**An old entry with no range**, `<path>:<line>`, is located once by search
 and rewritten with its range.
 
 Always rewrite the map file, whether or not it existed, before you write

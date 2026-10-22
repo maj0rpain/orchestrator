@@ -23,7 +23,9 @@ Adding a host means adding a column here, teaching `scripts/host.sh`'s
 `host_detect` to detect it, and teaching `doctor.sh` to name its install
 methods (#132). Fill a cell only with a verified fact,
 and write "unverified" for anything not yet confirmed. The Junie CLI column comes
-from the documentation bundled with Junie CLI 3419.7.
+from the documentation bundled with Junie CLI 3419.7 and from tool calls
+observed in Junie CLI 3419.7 sessions (recorded under `~/.junie/sessions`),
+which count as verified facts.
 
 `orch.sh doctor` reads this table: every row whose cell in the detected
 host's column is marked **Fallback** is reported as a capability that host
@@ -43,6 +45,7 @@ on exactly its own cells.
 | Arm the edit guard | A `PostToolUse` hook on `Skill` writes the planning marker, and `hook-guard.sh` denies source edits (ADR-0006). A `Skill` call to `orchestrator:orch-quick-implement` lifts it. | None: the guard does not arm on Junie (ADR-0025). The planning message and the `docs/junie/AGENTS.md` planning section steer planning away from source edits, and `orch.sh init`'s working-tree check catches any at flow start. **Fallback**. |
 | Guard the batch question | Two hooks, armed by a `spec-review check` pass line naming a `view.md` and disarmed by the next `spec-review apply`, sharing one transcript scan (`paste-guard.sh`). A `PreToolUse` hook on `AskUserQuestion` (`hook-paste-guard.sh`) refuses every ask with the view, told to end the turn on it and the batch question in one plain-text reply, not the ask tool, until one text block after that pass line holds the whole view. A `Stop` hook (`hook-paste-stop-guard.sh`) refuses to end the turn, handing the view back the same way, unless one text block of the final reply - after the later of the last human message and that pass line - holds it (#1287, #1350, #1421, ADR-0051). | No `PreToolUse` guard: the nudge in `check`'s pass line instead. **Fallback**. The `Stop` hook has no tool matcher, so it may fire; whether Junie fires `Stop`, and what its payload holds, is not confirmed. **Unverified**. On Junie's payload or transcript it fails open. |
 | Open a report in the browser | `xdg-open <file>` on Linux or `open <file>` on macOS, through the Bash tool. Where neither command is there or it fails (a headless or remote machine), take the fallback. | Its shell runs the same commands; whether a browser opens from it is unverified. **Unverified**. |
+| Search and read code | The three steps of a lens's search-and-read rules. List the matching files: Grep with `output_mode: files_with_matches`. Search the content: Grep with `-n` and `head_limit`, scoped to the files from step one. Read a range: Read with `offset` and `limit`. Glob for path patterns. | Per the bundled docs, the tool groups are `Read`, `Glob` and `Grep`, and a `tools:` allowlist or hook matcher uses those names. Observed in Junie CLI 3419.7 sessions, the model calls `grep_search(regex, path, file_extension_list)`, in the `Grep` group; `glob_search(glob, path)`, in `Glob`; and `open(path, line_number)`, plus `open_entire_file`, `scroll_up` and `scroll_down`, in `Read`. `grep_search` returns matches grouped by file with line ranges, so line numbers are there, but it has no files-only mode and no result cap the caller sets; its own truncation threshold is unverified. `open` has no offset and limit, and its window size is unverified. **Fallback**. |
 
 ## Agent settings
 
@@ -182,6 +185,27 @@ allows the turn to end. The nudge in `spec-review check`'s pass line is the whol
 enforcement: it names the `view.md` it wrote and says to end the turn on one
 plain-text reply, with no tool call, holding the view above word for word
 and then the question with its answer words spelled out. Follow it.
+
+### Search and read code
+
+A lens taking this fallback records no fallback line: every Junie run takes
+it, and `orch.sh doctor` already reports the gap. Never use Bash `grep -rl`
+on any Junie path: a lens run natively keeps its `Read, Grep, Glob` allowlist
+and has no Bash, and one run as a general-purpose agent or in the session
+keeps its brief's read-only tools, so every path behaves alike.
+
+- **Files only.** Run `grep_search` narrowed by `path` and
+  `file_extension_list`, and take only the file names from its file-grouped
+  output.
+- **Cap.** Limit the content search to the files from step one, one
+  `grep_search` per file through `path`, and act on no more than its first
+  30 result lines. The tool's own truncation is unverified.
+- **Range read.** Open at the line where the range starts with
+  `open(path, line_number)`, then `scroll_down` for the next window, and
+  never `open_entire_file`. The window size is unverified and may show more
+  than 40 lines; act on at most 40 lines from the range's start and treat
+  the rest of the window as unread, so the 40-line limit and the "never read
+  a whole file" rule both hold.
 
 ### Open a report in the browser
 

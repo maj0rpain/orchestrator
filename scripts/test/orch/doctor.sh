@@ -784,6 +784,12 @@ assert_contains "names the forked subagent Junie cannot start" "$out" "Start a f
 # ticket at a time (ADR-0036): a gap, not Unverified.
 assert_contains "names the background subagent Junie cannot start" \
   "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Start a background subagent"
+# Junie's grep_search has no files-only mode and no caller-set cap (#1342): a
+# known gap with a fallback, not Unverified.
+assert_contains "names the code search Junie cannot do as asked" \
+  "$(printf '%s\n' "$out" | grep -o 'lacks: [^;]*')" "Search and read code"
+assert_eq "does not call the code search unverified on Junie" \
+  "$(printf '%s\n' "$out" | grep -o 'unverified: .*' | grep -c 'Search and read code')" "0"
 # A human on Junie still starts a skill with /<name>; only the model lacks it.
 assert_contains "names only mid-step skill invocation as missing" "$out" "Invoke a skill from a step"
 assert_contains "points at the reference for the fallbacks" "$out" "docs/host-capabilities.md"
