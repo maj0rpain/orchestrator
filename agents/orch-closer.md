@@ -158,9 +158,9 @@ The PR is the only durable surface another human ever sees. In this order:
    **Summary** says what those fixes changed. **Evidence** comes from each
    iteration record's `## Evidence` - the tests that now pass and their red
    runs, never invented - with the final record's **Verification** command
-   and `pass` or `fail` as its last line. A record with no `## Evidence`
-   section reads as `None`, and adds nothing. With no fixer commits, leave
-   both headings out.
+   and `pass` or `fail` as its last line; a record with no `## Evidence`
+   section is read per **Evidence** in `agents/orch-fixer.md` (under the
+   plugin root). With no fixer commits, leave both headings out.
 3. **The comment's own headings**, every one present, in this order, each
    with its `None.` form when empty:
    - `## Fixed` - each fix, blocking, major or nit, with its severity and
@@ -180,6 +180,3 @@ The PR is the only durable surface another human ever sees. In this order:
      `docs/adr/0002-recorded-deviations-outrank-the-spec-axis.md`);
    - `## CI` - the CI result;
    - `## Host fallbacks` - the host fallbacks, or `None (<host>).`
-
-The comment never carries `## Merge Danger`: the body holds the PR's merge
-risk.

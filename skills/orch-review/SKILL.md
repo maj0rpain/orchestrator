@@ -86,8 +86,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    previous one filed. Triage's **Met again** is the only check against them,
    since the closer reads only this loop's records. Any **open blocking**
    finding in the last of them still stands: it goes into this loop's first
-   triage. A record with no `## Evidence` section, written before the record
-   had one, reads as `None` there: carry on.
+   triage. A record with no `## Evidence` section is read per **Evidence**
+   in `agents/orch-fixer.md` (under the plugin root).
 5. Ask the budget. **The question blocks** - ask it as a question
    with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
    on Junie). Ask once, before the

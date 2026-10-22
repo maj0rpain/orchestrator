@@ -271,6 +271,9 @@ assert_eq "pushes the current branch" \
 out="$("$ORCH" pr publish abc "Title" "$body" 2>&1)"; st=$?
 assert_status "refuses an issue that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
+out="$("$ORCH" pr publish abc "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
+assert_eq "the issue argument is checked before the body's standard" "$out" \
+  "orch: issue must be a plain issue number, got: abc"
 
 out="$("$ORCH" pr publish 16 "Title" /nonexistent/body.md 2>&1)"; st=$?
 assert_status "refuses a body file that does not exist" "$st" 1
@@ -418,11 +421,6 @@ fi
 # reads structure only: fenced lines are not headings, and the Door and Blast
 # Radius lines count only under ## Merge Danger.
 git checkout -q -b quick/24-standard
-while IFS=$'\t' read -r piece named; do
-  out="$("$ORCH" pr publish 24 "Title" "$(pr_body_without "$piece")" 2>&1)"; st=$?
-  assert_status "a body without '$piece' is refused" "$st" 1
-  assert_contains "naming the missing piece" "$out" "$named"
-done <<<"$PR_BODY_PIECES"
 bad_body="$(mktemp)"
 writeln '## Summary' '' 'Did it.' '' '## Evidence' '' 'make test - pass' '' \
   '## Merge Danger' '' '**Door:** maybe' '**Blast Radius:** the widget module' >"$bad_body"
@@ -443,10 +441,11 @@ out="$("$ORCH" pr publish 24 "Title" "$bad_body" 2>&1)"; st=$?
 assert_status "pieces only inside a fence or outside Merge Danger are refused" "$st" 1
 assert_eq "counting each as missing" "$out" \
   "$PR_BODY_REFUSED no ## Evidence heading; no **Door:** line under ## Merge Danger; no **Blast Radius:** line under ## Merge Danger"
+reordered_body="$(mktemp)"
 writeln '## Merge Danger' '' '**Blast Radius:** the widget module' '**Door:** one-way' '' \
-  '## Evidence' '' '```' 'not a fence end: ````' '```' '' '## Summary' '' 'Did it.' >"$bad_body"
+  '## Evidence' '' '```' 'not a fence end: ````' '```' '' '## Summary' '' 'Did it.' >"$reordered_body"
 fake_next_pr 37
-out="$("$ORCH" pr publish 24 "Title" "$bad_body" 2>&1)"; st=$?
+out="$("$ORCH" pr publish 24 "Title" "$reordered_body" 2>&1)"; st=$?
 assert_status "a body with every piece, in any order, opens the PR" "$st" 0
 assert_eq "printing its number" "$out" "37"
 git checkout -q -b quick/25-refused

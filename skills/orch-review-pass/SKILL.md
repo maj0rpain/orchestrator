@@ -285,8 +285,7 @@ the only Standards look the change gets before its PR (ADR-0021).
 
    A `grew` the pass declined is also a line under **Review**, at `suite`.
    **Smells** is its own heading, never a line under **Review**, so a
-   later pass's step 2 reads no smell as a decline. The comment never
-   carries `## Merge Danger`: the body holds the PR's merge risk.
+   later pass's step 2 reads no smell as a decline.
 
    Then, when the branch has an open PR (step 2's `pr comments` exited 0),
    set its state before posting:

@@ -324,8 +324,7 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    - **after loop step f**: this phase's step 4.
 
    Keep each report's `Evidence` line, its sixth, for step 5's PR body: the
-   red runs its **Evidence** draws on. A report with no `Evidence:` line
-   reads as `Evidence: None`; carry on.
+   red runs its **Evidence** draws on.
 
    Whether the breakdown is collapsed comes from the handoff's **Ticket
    breakdown** section, written by the spec phase's step 5.

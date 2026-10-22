@@ -98,8 +98,7 @@ owns its style; this step adds only the comment's own parts. In this order:
      root);
    - `## PR body` - the check's outcome value.
 
-The comment never carries `## Merge Danger`: the body holds the PR's merge
-risk. Post it with `bash "$ORCH" pr comment <file>`:
+Post it with `bash "$ORCH" pr comment <file>`:
 
 - **Exit 0**: posted. Tell the human the PR number it printed, and the PR
   body lines the check corrected, if any.

@@ -182,8 +182,8 @@ cmd_pr_publish() {
     esac
   done
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  pr_body_check "$body_file" Summary Evidence "Merge Danger"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
+  pr_body_check "$body_file" Summary Evidence "Merge Danger"
   current_branch_or_die
   base="$(recorded_base "$branch")"
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" "$draft" ${labels[@]+"${labels[@]}"})"
