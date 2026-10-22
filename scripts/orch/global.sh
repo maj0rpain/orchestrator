@@ -170,25 +170,35 @@ orch.sh - deterministic operations for the orchestrator flow
   autopilot answer <phase> <file>
                               write the newest question and every later
                               comment to <file>; exit 1 when none follows
-  agent set <role> [--model <m>] [--effort <e>] [--global]
+  agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]
                               set a role's agent setting in local config,
                               or global with --global. Roles: implementer,
                               lens, reviewer, fixer, closer, resolver; models:
                               sonnet, opus, haiku, fable; efforts: low,
                               medium, high, xhigh, max; inherit clears the
                               key at that scope. Validates everything before
-                              writing; refuses a call with neither flag
+                              writing; refuses a call with neither flag.
+                              --host junie sets the Junie keys instead:
+                              any name Junie's /model picker and --model
+                              flag take, efforts low, medium, high
   agent show                  print each role's model and effort with each
                               one's source: local, global or inherit; a
-                              disallowed hand-set value is marked invalid
-  agent clear <role> [--model] [--effort] [--global]
+                              disallowed hand-set value is marked invalid;
+                              then the same for Junie, each line prefixed
+                              junie
+  agent clear <role> [--model] [--effort] [--global] [--host junie]
                               clear both keys, or only the one named, in
                               local config, or global with --global;
                               succeeds silently when nothing was set
-  agent get <role>            print exactly `model <alias|inherit>` and
+  agent get <role> [--host junie]
+                              print exactly `model <alias|inherit>` and
                               `effort <level|inherit>`, each looked up local,
                               then global, else inherit; refuses a
                               disallowed value, naming its key
+  agent sync                  write, refresh and delete this checkout's
+                              .junie/agents/ copies of the plugin's agents
+                              to match the Junie agent setting; refuses an
+                              unmarked orch-*.md in the way, changing nothing
   suite-cost run -- <cmd> [args...]
                               run <cmd> in the current directory, its stdout,
                               stderr and exit code passed through and nothing

@@ -225,6 +225,14 @@ looked up on its own: the clone's local git config first, then your global
 git config, else `inherit` - the session's own. A model set globally and an
 effort set locally both apply.
 
+Each host has its own setting. Junie's keys, `orchestrator.junie.model.<role>`
+and `orchestrator.junie.effort.<role>`, are set with `--host junie` on `set`,
+`clear` and `get`, and take a Junie LLM name (or `custom:<profile-id>`) and an
+effort of `low`, `medium` or `high`. Junie reads the setting from generated,
+git-excluded copies of the plugin's agents in the checkout's `.junie/agents/`,
+which `orch.sh agent sync` writes, refreshes and deletes; `set` and `clear`
+with `--host junie` run it, and on Junie every skill runs it once per run.
+
 ## Hosts
 
 The plugin runs on Claude Code and on the Junie CLI; Junie's setup is in
