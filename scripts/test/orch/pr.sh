@@ -20,6 +20,12 @@ fake_pr_title_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/title" 2>/dev/null; }
 # per line.
 fake_pr_labels_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/labels" 2>/dev/null || true; }
 
+# origin_branch_state <bare> <branch>: "pushed" when <branch> reached the bare
+# origin repo <bare>, else "missing".
+origin_branch_state() {
+  git -C "$1" rev-parse --quiet --verify "refs/heads/$2" >/dev/null && echo pushed || echo missing
+}
+
 # fake_pr_label_drop <name>: every later PR opened with label <name> is stored
 # without it, as a gh whose label mutation did not land (#1299).
 fake_pr_label_drop() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/pr_label_drops"; }
@@ -96,7 +102,7 @@ assert_status "a body with no piece at all is refused" "$st" 1
 assert_eq "naming every missing piece in one message" "$out" \
   "$PR_BODY_REFUSED no ## Summary heading; no ## Evidence heading; no ## Merge Danger heading; no **Door:** line under ## Merge Danger; no **Blast Radius:** line under ## Merge Danger"
 assert_eq "a refused body pushes nothing" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/orch/16-propen >/dev/null && echo pushed || echo missing)" \
+  "$(origin_branch_state "$bare" orch/16-propen)" \
   "missing"
 assert_eq "creates no PR" "$(fake_prs)" ""
 assert_eq "writes no PR marker" "$(pr_marker_of orch/16-propen)" ""
@@ -271,7 +277,7 @@ assert_first_line "the recorded body opens with the closing keyword" \
 assert_contains "and keeps the agent's original body intact after a blank line" \
   "$body_recorded" "Some detail."
 assert_eq "pushes the current branch" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/quick/16-widgets >/dev/null && echo pushed || echo missing)" \
+  "$(origin_branch_state "$bare" quick/16-widgets)" \
   "pushed"
 
 out="$("$ORCH" pr publish abc "Title" "$body" 2>&1)"; st=$?
@@ -458,7 +464,7 @@ git checkout -q -b quick/25-refused
 out="$("$ORCH" pr publish 25 "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
 assert_status "a refused body on a fresh branch fails" "$st" 1
 assert_eq "pushing nothing" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/quick/25-refused >/dev/null && echo pushed || echo missing)" \
+  "$(origin_branch_state "$bare" quick/25-refused)" \
   "missing"
 assert_eq "creating no PR" "$(fake_prs)" "23 24 30 31 32 33 34 35 37 "
 assert_eq "and writing no PR marker" "$(pr_marker_of quick/25-refused)" ""
