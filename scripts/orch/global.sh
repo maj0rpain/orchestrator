@@ -169,11 +169,15 @@ orch.sh - deterministic operations for the orchestrator flow
                               orchestrator.suiteCost.floor, else 60 CPU
                               seconds), ok, grew <pct> - <finding text> (past
                               orchestrator.suiteCost.growth, else 15 percent),
-                              or unmeasured. Never runs <cmd> on the head;
-                              with no baseline it measures the base once in a
-                              temporary worktree, first running git config
-                              orchestrator.suiteCost.setup there, untimed,
-                              when it is set. Dies naming the key and
+                              or unmeasured. A growth is confirmed by
+                              measuring head and base once more, in
+                              temporary worktrees at HEAD and the baseline
+                              sample's commit, and comparing again; the
+                              head is run only to confirm a growth. With no
+                              baseline it measures the base once in a
+                              temporary worktree. Each such run first runs
+                              git config orchestrator.suiteCost.setup there,
+                              untimed, when it is set. Dies naming the key and
                               value when an override is not a non-negative
                               number
   suite-cost history          print the record's lines, oldest first, or
