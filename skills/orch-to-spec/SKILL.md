@@ -25,7 +25,7 @@ Read your arguments first. A leading issue number - `704` or `#704` - selects
 being published as a new issue. With no leading issue number, the skill runs in
 **publish mode**: it publishes a new issue, as below. A planning session's
 Blueprint route hands over its interviewed issue this way, `orch-flow`'s
-spec phase hands over an adopted issue the human chose to rewrite from the
+spec phase hands over an adopted issue it decided to rewrite from the
 plan, and `/orchestrator:to-spec <n>` reaches rewrite mode standalone. All
 three take it attended, as written. A quick implementation reaches rewrite mode
 in its **Unattended rewrite** form below.
