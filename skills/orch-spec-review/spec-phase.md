@@ -52,7 +52,10 @@ reasoning, not the seams as agreed in chat.
 ## The Fidelity lens
 
 A flow runs four lenses: the three in the main file's table, and Fidelity,
-started with them. Its row:
+started with them, all on the `lens` setting. Each round's session reads it
+itself, with `bash "$ORCH" agent get lens` before its lenses start, as the
+main file's **The lenses** says: a round in a session of its own never reuses
+an earlier session's read. The Fidelity row:
 
 | Lens | Agent | Paths |
 |---|---|---|
