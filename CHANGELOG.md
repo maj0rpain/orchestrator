@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.25.0
+
+Add `orch.sh agent set|show|clear|get`, the agent setting: a model and a reasoning effort per role (implementer, lens, reviewer, fixer, closer, resolver), each its own git config key, looked up local, then global, else inherit.
+
+`orch.sh doctor` lists each role's agent setting with its sources, and fails on a disallowed hand-set value, naming the `orch.sh agent clear` that removes it.
+
+Every skill that starts one of the plugin's agents now reads its role's setting with `orch.sh agent get` once per run and passes it to the Agent tool's `model` and `effort`, per the new **Agent settings** section of `docs/host-capabilities.md`; Junie and the host fallback tiers ignore it, and a docs lint section holds every start site to it.
+
 ## 4.24.0
 
 A flow's spec phase no longer asks whether to rewrite an adopted issue from the plan: it decides - a rewrite when the plan changed the issue's scope or substance, as it stands otherwise - prints one line naming its decision and the reason, and acts on it. The rewrite itself stays attended (ADR-0050).
