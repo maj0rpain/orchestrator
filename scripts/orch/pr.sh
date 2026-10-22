@@ -32,8 +32,8 @@ open_pr() {
   # claiming to close it - the release PR is what closes it.
   [ "$base" = "$(default_branch)" ] || keyword=Refs
   # open_pr runs in $(...), where errexit is off (#1327), so the temp body's
-  # creation and write are checked here: an unreadable body file would
-  # otherwise open the PR with only its closing line.
+  # creation and write are checked here: a failed write to the temp file
+  # would otherwise open the PR with a truncated body.
   tmp="$(mktemp)" || die "could not create a temp file for the PR body - no PR was opened"
   { printf '%s #%s\n\n' "$keyword" "$issue" && cat "$body_file"; } >"$tmp" || {
     rm -f "$tmp"
@@ -82,6 +82,61 @@ pr_labels_check() {
   die "PR #$pr is open but lacks the labels $missing - add them by hand"
 }
 
+# pr_body_check <body-file> <heading>...: dies, naming in one message every
+# piece of the PR-writing standard (#1387) the body lacks or gets wrong, unless
+# it has an exact `## <heading>` line for each <heading> - and, when Merge
+# Danger is one of them, exactly one `**Door:**` line reading one-way or
+# two-way and a `**Blast Radius:**` line with a value, both under
+# ## Merge Danger before the next H2. Structure only, never wording or order
+# (ADR-0027): lines inside fenced code blocks are skipped, so a Summary visual
+# can neither satisfy nor break it. Run after the caller's argument and state
+# checks, which it would otherwise mask, and before any push or create, so a
+# refusal leaves nothing behind for the caller to undo.
+pr_body_check() {
+  local body_file="$1" required problems
+  shift
+  required="$(IFS='|'; printf '%s' "$*")"
+  problems="$(awk -v required="$required" '
+    function run(s, c,   n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
+    function add(p) { out = out (out == "" ? "" : "; ") p }
+    function value(s) { sub(/^[ \t]+/, "", s); return s }
+    {
+      line = $0; sub(/[ \t\r]+$/, "", line)
+      s = line; sub(/^ ? ? ?/, "", s); c = substr(s, 1, 1)
+      if (fence != "") {
+        if (c == fence && run(s, c) >= fence_len && run(s, c) == length(s)) fence = ""
+        next
+      }
+      if ((c == "`" || c == "~") && run(s, c) >= 3) { fence = c; fence_len = run(s, c); next }
+      if (line ~ /^## /) { section = substr(line, 4); seen[section] = 1; next }
+      if (section != "Merge Danger") next
+      if (index(line, "**Door:**") == 1) {
+        doors++; v = value(substr(line, 10))
+        if (v == "") bad_doors[++bad] = "an empty **Door:** value"
+        else if (v != "one-way" && v != "two-way") bad_doors[++bad] = "**Door:** value \047" v "\047 is not one-way or two-way"
+      } else if (index(line, "**Blast Radius:**") == 1) {
+        blasts++
+        if (value(substr(line, 18)) == "") empty_blast = 1
+      }
+    }
+    END {
+      n = split(required, req, "|")
+      for (i = 1; i <= n; i++) {
+        if (!(req[i] in seen)) add("no ## " req[i] " heading")
+        if (req[i] != "Merge Danger") continue
+        if (!doors) add("no **Door:** line under ## Merge Danger")
+        for (j = 1; j <= bad; j++) add(bad_doors[j])
+        if (doors > 1) add("a second **Door:** line under ## Merge Danger")
+        if (!blasts) add("no **Blast Radius:** line under ## Merge Danger")
+        else if (empty_blast) add("an empty **Blast Radius:** value")
+      }
+      print out
+    }' "$body_file" 2>/dev/null)" \
+    || die "could not read the PR body from $body_file - no PR was opened"
+  [ -z "$problems" ] ||
+    die "the PR body does not meet the PR-writing standard - no PR was opened: $problems"
+}
+
 cmd_pr_open() {
   require_state
   local usage="usage: orch.sh pr open <title> <body-file> [--label <name>]..." labels=()
@@ -98,6 +153,7 @@ cmd_pr_open() {
   require_issue issue
   require_branch branch
   base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
+  pr_body_check "$body_file" Summary Evidence "Merge Danger"
   # Draft is the honest signal: the review loop has not run yet, so marking it
   # ready is the loop's success condition rather than a comment nobody reads.
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" true ${labels[@]+"${labels[@]}"})"
@@ -130,6 +186,7 @@ cmd_pr_publish() {
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
   current_branch_or_die
   base="$(recorded_base "$branch")"
+  pr_body_check "$body_file" Summary Evidence "Merge Danger"
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" "$draft" ${labels[@]+"${labels[@]}"})"
   pr_labels_check "$pr" ${labels[@]+"${labels[@]}"}
   note "$pr"
@@ -172,6 +229,8 @@ cmd_pr_release() {
   done
   [ -n "$issues" ] || [ "$force" = true ] ||
     die "nothing to close: no PR merged into $base refers to a still-open issue - pass --force to release anyway"
+  # Only Summary: a release PR carries PRs already reviewed (#1387).
+  pr_body_check "$body_file" Summary
   tmp="$(mktemp)"
   {
     for n in $issues; do printf 'Closes #%s\n' "$n"; done

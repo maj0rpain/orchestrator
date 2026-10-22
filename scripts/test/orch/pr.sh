@@ -20,9 +20,37 @@ fake_pr_title_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/title" 2>/dev/null; }
 # per line.
 fake_pr_labels_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/labels" 2>/dev/null || true; }
 
+# origin_branch_state <bare> <branch>: "pushed" when <branch> reached the bare
+# origin repo <bare>, else "missing".
+origin_branch_state() {
+  git -C "$1" rev-parse --quiet --verify "refs/heads/$2" >/dev/null && echo pushed || echo missing
+}
+
 # fake_pr_label_drop <name>: every later PR opened with label <name> is stored
 # without it, as a gh whose label mutation did not land (#1299).
 fake_pr_label_drop() { printf '%s\n' "$1" >>"$ORCH_GH_FAKE_STORE/pr_label_drops"; }
+
+# pr_body_without <line>: prints the path of a fresh PR body, pr_body_complete's
+# with every line that is exactly <line> dropped.
+pr_body_without() {
+  local full cut
+  full="$(mktemp)" && cut="$(mktemp)" || return 1
+  pr_body_complete "$full"
+  grep -vxF -- "$1" "$full" >"$cut"
+  printf '%s\n' "$cut"
+}
+
+# PR_BODY_PIECES: each line pr_body_complete writes that pr open and pr
+# publish require (#1387), a tab, and the piece the refusal names without it.
+PR_BODY_PIECES="$(printf '%s\t%s\n' \
+  '## Summary' 'no ## Summary heading' \
+  '## Evidence' 'no ## Evidence heading' \
+  '## Merge Danger' 'no ## Merge Danger heading' \
+  '**Door:** two-way' 'no **Door:** line under ## Merge Danger' \
+  '**Blast Radius:** the widget module' 'no **Blast Radius:** line under ## Merge Danger')"
+
+# PR_BODY_REFUSED: the opening of every PR-body refusal, before its file.
+PR_BODY_REFUSED="orch: the PR body does not meet the PR-writing standard - no PR was opened:"
 
 # --- pr open -----------------------------------------------------------------
 # PR #15 merged without closing #14 because the agent's body opened with a verb
@@ -44,16 +72,42 @@ git push -q origin HEAD:refs/heads/main
 git checkout -q -b orch/16-propen
 state_fixture branch orch/16-propen
 body="$(mktemp)"
-writeln 'Implements the thing.' '' 'Some detail.' >"$body"
+pr_body_complete "$body"
 
 out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "refuses when state has no issue" "$st" 1
 assert_contains "with the guard branch create uses" "$out" \
   "no issue recorded in state - the spec phase must publish one first"
+out="$("$ORCH" pr open "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
+assert_eq "the recorded issue is checked before the body's standard" "$out" \
+  "orch: no issue recorded in state - the spec phase must publish one first"
 
 "$ORCH" state set issue 16
 fake_github
 fake_next_pr 23
+
+# The PR-writing standard (#1387): a body lacking a piece of the human layer
+# is refused before anything is pushed, created or recorded.
+state_before="$(mktemp)"
+cp .orchestrator/state.json "$state_before"
+while IFS=$'\t' read -r piece named; do
+  out="$("$ORCH" pr open "Title" "$(pr_body_without "$piece")" 2>&1)"; st=$?
+  assert_status "a body without '$piece' is refused" "$st" 1
+  assert_contains "naming the missing piece" "$out" "$named"
+done <<<"$PR_BODY_PIECES"
+bare_body="$(mktemp)"
+writeln 'Implements the thing.' >"$bare_body"
+out="$("$ORCH" pr open "Title" "$bare_body" 2>&1)"; st=$?
+assert_status "a body with no piece at all is refused" "$st" 1
+assert_eq "naming every missing piece in one message" "$out" \
+  "$PR_BODY_REFUSED no ## Summary heading; no ## Evidence heading; no ## Merge Danger heading; no **Door:** line under ## Merge Danger; no **Blast Radius:** line under ## Merge Danger"
+assert_eq "a refused body pushes nothing" \
+  "$(origin_branch_state "$bare" orch/16-propen)" \
+  "missing"
+assert_eq "creates no PR" "$(fake_prs)" ""
+assert_eq "writes no PR marker" "$(pr_marker_of orch/16-propen)" ""
+assert_eq "and records no PR in state" \
+  "$(cmp -s "$state_before" .orchestrator/state.json && echo same || echo changed)" "same"
 : >"$GH_FIXTURE/env.log"
 out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "opens the PR" "$st" 0
@@ -178,11 +232,14 @@ new_repo >/dev/null
 "$ORCH" init nobranch >/dev/null
 "$ORCH" state set issue 21
 body="$(mktemp)"
-writeln 'Implements the thing.' >"$body"
+pr_body_complete "$body"
 out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "refuses when state has no branch" "$st" 1
 assert_contains "with the exact require_branch die message" "$out" \
   "no branch recorded in state"
+out="$("$ORCH" pr open "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
+assert_eq "the recorded branch is checked before the body's standard" "$out" \
+  "orch: no branch recorded in state"
 restore_suite_env
 
 # --- pr publish --------------------------------------------------------------
@@ -201,7 +258,7 @@ bare_origin "$bare"
 git push -q origin HEAD:refs/heads/main
 git checkout -q -b quick/16-widgets
 body="$(mktemp)"
-writeln 'Implements the thing.' '' 'Some detail.' >"$body"
+pr_body_complete "$body"
 
 fake_github
 fake_next_pr 23
@@ -220,12 +277,15 @@ assert_first_line "the recorded body opens with the closing keyword" \
 assert_contains "and keeps the agent's original body intact after a blank line" \
   "$body_recorded" "Some detail."
 assert_eq "pushes the current branch" \
-  "$(git -C "$bare" rev-parse --quiet --verify refs/heads/quick/16-widgets >/dev/null && echo pushed || echo missing)" \
+  "$(origin_branch_state "$bare" quick/16-widgets)" \
   "pushed"
 
 out="$("$ORCH" pr publish abc "Title" "$body" 2>&1)"; st=$?
 assert_status "refuses an issue that is not a plain number" "$st" 1
 assert_contains "naming it" "$out" "abc"
+out="$("$ORCH" pr publish abc "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
+assert_eq "the issue argument is checked before the body's standard" "$out" \
+  "orch: issue must be a plain issue number, got: abc"
 
 out="$("$ORCH" pr publish 16 "Title" /nonexistent/body.md 2>&1)"; st=$?
 assert_status "refuses a body file that does not exist" "$st" 1
@@ -362,11 +422,57 @@ if [ "$(id -u)" -ne 0 ]; then
   chmod 000 "$unreadable"
   out="$("$ORCH" pr publish 23 "Title" "$unreadable" 2>&1)"; st=$?
   assert_status "an unreadable body file fails pr publish" "$st" 1
-  assert_contains "naming the file" "$out" "orch: could not write the PR body from $unreadable"
+  assert_eq "naming the file" "$out" "orch: could not read the PR body from $unreadable - no PR was opened"
   assert_eq "creating no PR" "$(fake_prs)" "23 24 30 31 32 33 34 35 "
   chmod 644 "$unreadable"
   rm -f "$unreadable"
 fi
+
+# The PR-writing standard (#1387): pr publish refuses a body lacking a piece
+# of the human layer, or carrying one that is invalid, before any push. It
+# reads structure only: fenced lines are not headings, and the Door and Blast
+# Radius lines count only under ## Merge Danger.
+git checkout -q -b quick/24-standard
+bad_body="$(mktemp)"
+writeln '## Summary' '' 'Did it.' '' '## Evidence' '' 'make test - pass' '' \
+  '## Merge Danger' '' '**Door:** maybe' '**Blast Radius:** the widget module' >"$bad_body"
+out="$("$ORCH" pr publish 24 "Title" "$bad_body" 2>&1)"; st=$?
+assert_status "a Door value other than one-way or two-way is refused" "$st" 1
+assert_eq "naming the bad value" "$out" \
+  "$PR_BODY_REFUSED **Door:** value 'maybe' is not one-way or two-way"
+writeln '## Summary' '' 'Did it.' '' '## Evidence' '' 'make test - pass' '' \
+  '## Merge Danger' '' '**Door:** one-way' '**Door:** two-way' '**Blast Radius:**' >"$bad_body"
+out="$("$ORCH" pr publish 24 "Title" "$bad_body" 2>&1)"; st=$?
+assert_status "a second Door line and an empty Blast Radius are refused" "$st" 1
+assert_eq "naming both" "$out" \
+  "$PR_BODY_REFUSED a second **Door:** line under ## Merge Danger; an empty **Blast Radius:** value"
+writeln '## Summary' '' '```markdown' '## Evidence' '```' '' \
+  '**Door:** two-way' '**Blast Radius:** the widget module' '' \
+  '## Merge Danger' '' '~~~~' '**Door:** two-way' '~~~~' >"$bad_body"
+out="$("$ORCH" pr publish 24 "Title" "$bad_body" 2>&1)"; st=$?
+assert_status "pieces only inside a fence or outside Merge Danger are refused" "$st" 1
+assert_eq "counting each as missing" "$out" \
+  "$PR_BODY_REFUSED no ## Evidence heading; no **Door:** line under ## Merge Danger; no **Blast Radius:** line under ## Merge Danger"
+reordered_body="$(mktemp)"
+writeln '## Merge Danger' '' '**Blast Radius:** the widget module' '**Door:** one-way' '' \
+  '## Evidence' '' '```' 'not a fence end: ````' '```' '' '## Summary' '' 'Did it.' >"$reordered_body"
+fake_next_pr 37
+out="$("$ORCH" pr publish 24 "Title" "$reordered_body" 2>&1)"; st=$?
+assert_status "a body with every piece, in any order, opens the PR" "$st" 0
+assert_eq "printing its number" "$out" "37"
+git checkout -q -b quick/25-refused
+out="$("$ORCH" pr publish 25 "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
+assert_status "a refused body on a fresh branch fails" "$st" 1
+assert_eq "pushing nothing" \
+  "$(origin_branch_state "$bare" quick/25-refused)" \
+  "missing"
+assert_eq "creating no PR" "$(fake_prs)" "23 24 30 31 32 33 34 35 37 "
+assert_eq "and writing no PR marker" "$(pr_marker_of quick/25-refused)" ""
+git checkout -q --detach
+out="$("$ORCH" pr publish 25 "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
+assert_eq "the current branch is checked before the body's standard" "$out" \
+  "orch: not on a branch (detached HEAD)"
+git checkout -q quick/25-refused
 
 help="$("$ORCH" help)"
 assert_contains "help documents --draft and --label" "$help" \
@@ -556,7 +662,7 @@ git push -q origin HEAD:refs/heads/main HEAD:refs/heads/uat
 git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 body="$(mktemp)"
-writeln 'Ships the uat project.' '' 'Some detail.' >"$body"
+writeln '## Summary' '' 'Ships the uat project.' '' 'Some detail.' >"$body"
 release() { orch_gh_failing pr release "$@"; }
 # The issues the merged PRs below refer to: #3 and #8 already closed, #62 a
 # pull request, not an issue.
@@ -570,6 +676,11 @@ out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses when the base branch is the default branch" "$st" 1
 assert_contains "naming it" "$out" "main"
 assert_eq "and opens no PR" "$(fake_prs)" ""
+summaryless="$(mktemp)"
+writeln 'Ships the uat project.' >"$summaryless"
+out="$(release "Release" "$summaryless" 2>&1)"; st=$?
+assert_eq "the base branch is checked before the body's standard" "$out" \
+  "orch: the base branch is the default branch (main) - there is nothing to release; set another with base set"
 
 orch_gh_failing base set uat >/dev/null
 # Open PRs that are not a release PR: from uat into another base, and from
@@ -581,6 +692,9 @@ out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses while a release PR is already open" "$st" 1
 assert_contains "printing that PR's number" "$out" "#57"
 assert_eq "and opens no second one" "$(fake_prs)" "55 56 57 "
+out="$(release "Release" "$summaryless" 2>&1)"; st=$?
+assert_eq "an open release PR is checked before the body's standard" "$out" \
+  "orch: a release PR from uat into main is already open: #57"
 assert_gh_dies "a failed open-PR list exits 1" adapter_prs_open "$GH_502" 1 \
   "orch: gh could not list the open PRs from uat into main: HTTP 502: Bad Gateway" \
   release "Release" "$body"
@@ -605,6 +719,9 @@ fake_pr_body 66 "Closes #5"
 out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses when no referenced issue is still open" "$st" 1
 assert_contains "saying there is nothing to close" "$out" "nothing to close"
+out="$(release "Release" "$summaryless" 2>&1)"; st=$?
+assert_eq "nothing to close is checked before the body's standard" "$out" \
+  "orch: nothing to close: no PR merged into uat refers to a still-open issue - pass --force to release anyway"
 assert_eq "and opens no PR" "$(fake_prs)" "60 61 66 "
 
 fake_next_pr 70
@@ -631,7 +748,7 @@ out="$(release "Release uat" "$body" 2>&1)"; st=$?
 assert_status "opens the release PR" "$st" 0
 assert_eq "prints its number" "$out" "71"
 assert_eq "one Closes line per still-open issue, deduplicated, above the caller's body" \
-  "$(fake_pr_body_of 71)" "$(writeln 'Closes #5' 'Closes #6' 'Closes #7' 'Closes #9' '' 'Ships the uat project.' '' 'Some detail.')"
+  "$(fake_pr_body_of 71)" "$(writeln 'Closes #5' 'Closes #6' 'Closes #7' 'Closes #9' '' '## Summary' '' 'Ships the uat project.' '' 'Some detail.')"
 assert_eq "from the base branch" "$(fake_pr_head_of 71)" "uat"
 assert_eq "into the default branch" "$(fake_pr_base_of 71)" "main"
 assert_eq "with the caller's title" "$(fake_pr_title_of 71)" "Release uat"
@@ -652,6 +769,25 @@ assert_gh_dies "a failed Closes-line state read exits 1" adapter_issue_state "$G
   "orch: gh could not read the state of issue #5: HTTP 502: Bad Gateway" \
   release "Release" "$body"
 assert_eq "opening no PR" "$(fake_prs)" "62 63 64 65 71 "
+
+# The PR-writing standard (#1387): a release PR needs ## Summary and nothing
+# more, and --force, which only overrides "nothing to close", still checks it.
+fake_pr 71 closed uat main
+summaryless="$(mktemp)"
+writeln 'Ships the uat project.' '' '## Evidence' '' 'make test - pass' >"$summaryless"
+out="$(release "Release" "$summaryless" 2>&1)"; st=$?
+assert_status "a body without ## Summary is refused" "$st" 1
+assert_eq "naming it" "$out" "$PR_BODY_REFUSED no ## Summary heading"
+out="$(release --force "Release" "$summaryless" 2>&1)"; st=$?
+assert_status "--force: a body without ## Summary is still refused" "$st" 1
+assert_eq "--force: naming it" "$out" "$PR_BODY_REFUSED no ## Summary heading"
+assert_eq "opening no PR" "$(fake_prs)" "62 63 64 65 71 "
+summary_only="$(mktemp)"
+writeln '## Summary' '' 'Ships the uat project.' >"$summary_only"
+fake_next_pr 72
+out="$(release "Release" "$summary_only" 2>&1)"; st=$?
+assert_status "a body with only ## Summary opens the release PR" "$st" 0
+assert_eq "printing its number" "$out" "72"
 
 out="$(release "Release" 2>&1)"; st=$?
 assert_status "refuses a missing body file argument" "$st" 1

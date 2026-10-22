@@ -137,7 +137,8 @@ is a deviation, named on the finding's line under **Findings** in the record.
 - **One test per blocking behaviour finding**, at a seam the repo's existing
   tests already use.
 - **Watch it fail on the unfixed code.** That failure is the proof the
-  problem was real.
+  problem was real. Note the test's name and its failure, in one line, as
+  the run printed it: the record's **Evidence** carries it.
 - **Then the smallest fix that removes the cause**, and makes it pass.
   Name the finding's cause, and search for every site it acts at - other
   copies of the logic, other callers, other inputs it mishandles - then fix
@@ -202,12 +203,22 @@ checks its local body file by step 2 and the done rule before the PR opens, with
    a claimed reason, a file list, a version - by rewording or removing it,
    and leave alone any statement the diff cannot settle either way. Keep
    the first line, the `Closes #<issue>` or `Refs #<issue>` line, as it is.
+   This covers the human layer `docs/pr-writing.md` (under the plugin root)
+   lays out, by that doc's rules: **Summary**'s visual, each test
+   **Evidence** names, and **Merge Danger**'s **Door** and **Blast Radius**
+   are checked against the diff like any other statement. Never remove a
+   required piece - the `## Summary`, `## Evidence` and `## Merge Danger`
+   headings and the `**Door:**` and `**Blast Radius:**` lines: reword a
+   stale one instead, so the corrected body keeps the structure `pr open`
+   requires. Never add a human-layer section a body lacks: a PR opened
+   before the standard keeps its body's shape.
 3. **Write back**, only if you changed anything, with `bash "<orch.sh>" pr
    update <file>`. With nothing changed, make no GitHub edit.
 
 Done when every helper, function, file, version and stated reason the body
-names has been checked against that diff, and each is supported by it or
-has been reworded or removed.
+names - the human layer's visual, tests and merge danger among them - has
+been checked against that diff, and each is supported by it or has been
+reworded or removed, no required piece removed.
 
 **Failure.** `pr fetch` exits 1 on every failure, no open PR included, so
 the check never tells the two apart; a site that skips the check on a branch
@@ -258,6 +269,10 @@ Host fallbacks: <each fallback taken, or None>
 
 - <severity>: <claim> - <fix commit SHA>
 
+## Evidence
+
+- <test name> - <one-line red failure>
+
 ## Open blocking
 
 - <claim> - <why it could not be fixed>
@@ -301,6 +316,13 @@ what later iterations of this loop blame against.
 Each **Waiting to be filed** bullet carries the finding's location, as the
 template shows, with `-` in its place when the finding gave `-`: later
 iterations' known items copy the bullet as written.
+
+**Evidence** holds the red run of each failing test step 1 wrote, one entry
+per test: its name, then its failure on the unfixed code in one line as the
+run printed it, never invented - or `None` when no test went red. The closer
+draws its comment's Evidence from it. A reader of a record with no
+`## Evidence` section, one written before the section existed, reads it as
+`None` and carries on.
 
 **Merge resolutions** holds the prompt's, as given, `None` included -
 recorded, never fixed here unless a reviewer's finding on it reached the

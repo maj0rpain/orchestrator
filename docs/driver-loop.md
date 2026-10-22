@@ -61,7 +61,9 @@ caller's numbered steps.
   separate calls, each only after the previous one exits 0 - never chained
   with `;`. A ticket is merged
   and closed whatever its `Verification` or `Criteria` line says, and is
-  closed only after its merge succeeds. Any exit 1 from `ticket merge`,
+  closed only after its merge succeeds. A report is six lines, the sixth
+  `Evidence`; one with no `Evidence:` line reads as `Evidence: None` and is
+  processed as normal, never as malformed. Any exit 1 from `ticket merge`,
   `ticket close` or `ticket-worktree remove`, a dispatch that fails, or a
   report that comes back malformed stops refilling: the tickets still in
   flight report and are processed as normal, then **the stop** happens,

@@ -253,22 +253,37 @@ the only Standards look the change gets before its PR (ADR-0021).
    **Review pass** step 2 read, fetching the body afresh: step 2's copy
    predates the commit. Its outcome goes to step 5's **PR body**. With no
    fixes there is no commit, and no check.
-5. **Report.** Write `<prefix>-comment.md` with eight headings, **Review** -
-   the declines, or `None declined.` - **Previously declined** - each
-   finding step 2 dropped as an earlier decline, as its `file:line` and
-   claim, or `None.` - **Spec rulings** - each ruling step 3 posted, as
-   `<question> - <answer>`, or `None.` - **Spec questions** - each question
-   left unruled, as **Review pass** step 7 records it, or `None.` - **Host
-   fallbacks** - each fallback taken, or `None (<host>).` - and **Smells**,
-   exactly one line: `<N> hidden - rerun with --smells to see them.` when
-   step 2 hid N >= 1, `None hidden.` when it hid none, or `Included
-   (--smells).` with `--smells` - and **PR body** - step 4's check's
-   outcome value, `Not checked - no commit` when the pass made no commit,
-   or `Not checked - no open PR` when it committed on a branch with no open
-   PR - and **Suite cost**, exactly one line: the verdict `suite-cost
-   check` printed, or `Skipped - no full-suite command documented.` when
-   step 1 found none. A `grew` the pass declined is also a line under
-   **Review**, at `suite`. **Smells** is its own heading, never a line under **Review**, so a
+5. **Report.** Write `<prefix>-comment.md` to **Comment shape** in
+   `docs/pr-writing.md` (under the plugin root), which owns its skeleton
+   and style; this step adds only the comment's own parts.
+   - **Lead**: the pass's outcome - what it fixed, declined and left open.
+   - **Summary and Evidence**: the commit is step 4's fix commit.
+     **Summary** says what the fix changed. **Evidence** comes from that
+     fix's test runs only, never invented: each test it wrote or ran that
+     now passes, with the red run of each that failed first, and as its
+     last line the verification command it ran after the fix, with `pass`
+     or `fail`.
+   - **Eight headings**, in order:
+     - `## Review` - the declines, or `None declined.`;
+     - `## Previously declined` - each finding step 2 dropped as an
+       earlier decline, as its `file:line` and claim, or `None.`;
+     - `## Spec rulings` - each ruling step 3 posted, as
+       `<question> - <answer>`, or `None.`;
+     - `## Spec questions` - each question left unruled, as **Review
+       pass** step 7 records it, or `None.`;
+     - `## Host fallbacks` - each fallback taken, or `None (<host>).`;
+     - `## Smells` - exactly one line: `<N> hidden - rerun with --smells to
+       see them.` when step 2 hid N >= 1, `None hidden.` when it hid none,
+       or `Included (--smells).` with `--smells`;
+     - `## PR body` - step 4's check's outcome value, `Not checked - no
+       commit` when the pass made no commit, or `Not checked - no open PR`
+       when it committed on a branch with no open PR;
+     - `## Suite cost` - exactly one line: the verdict `suite-cost check`
+       printed, or `Skipped - no full-suite command documented.` when step
+       1 found none.
+
+   A `grew` the pass declined is also a line under **Review**, at `suite`.
+   **Smells** is its own heading, never a line under **Review**, so a
    later pass's step 2 reads no smell as a decline.
 
    Then, when the branch has an open PR (step 2's `pr comments` exited 0),
