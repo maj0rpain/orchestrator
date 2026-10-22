@@ -164,24 +164,27 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    - **Marker check.** If `.orchestrator/handoff/spec-paused` exists and
      holds the issue number `state get issue` prints, ask nothing and go to
      step 4. `spec pause` writes it when the session that wrote the spec
-     stops, so the spec is already written and the rewrite question would be
-     asked about an issue just written. A marker naming another issue counts
+     stops, so the spec is already written and the rewrite decision would be
+     made about an issue just written. A marker naming another issue counts
      as no marker: go on to 0a.
    - **0a. Redo check.** If any `.orchestrator/handoff/pre-redo-spec-*` folder
      exists, ask nothing and go to step 4. `redo spec` leaves that folder for
      either kind of redo and nothing removes it for the rest of the flow, so
      it means a `redo spec` ran in this flow: the issue body is newer than
      `01-plan.md`, and a rewrite would silently undo reviewed work.
-   - **0b. Ask the rewrite question.** Read the body first with
-     `bash "$ORCH" issue fetch <n> <file>` (a `mktemp` file outside the repo),
-     opened with the Read tool, never `cat`, and compare it with `01-plan.md` (`bash "$ORCH" handoff path spec`). Then
-     ask one blocking question with the host's ask tool (`AskUserQuestion`
-     on Claude Code, `ask_user` on Junie), before step 4's round count: "Rewrite #<n> from the plan before review, or review it as it stands?"
-     Options: **Rewrite** and **As it stands**, the recommended one marked
-     (Recommended): **Rewrite** when the plan changed the issue's scope or
-     substance; **As it stands** for a blueprint (the body is already a
-     spec), an issue the interview only confirmed, or a body that already
-     reflects the plan, as on a resumed spec phase.
+   - **0b. Make the rewrite decision.** Ask nothing. Read the body first
+     with `bash "$ORCH" issue fetch <n> <file>` (a `mktemp` file outside the
+     repo), opened with the Read tool, never `cat`, and compare it with
+     `01-plan.md` (`bash "$ORCH" handoff path spec`). Then decide:
+     **Rewrite** when the plan changed the issue's scope or substance,
+     including any glossary or ADR wording the planning decided - a
+     blueprint's too, so the rewrite's retire-or-keep question still meets
+     its breakdown; **As it stands** otherwise: a blueprint the plan did not
+     change (the body is already a spec), an issue the interview only
+     confirmed, or a body that already reflects the plan. Before acting,
+     print one line naming the decision and its reason, so a human watching
+     can stop a wrong one: `Rewriting #<n> from the plan: <reason>` or
+     `Reviewing #<n> as it stands: <reason>`.
    - **0c. On Rewrite**, invoke the `orch-to-spec` skill in rewrite mode on
      the issue (args `<n>`), from `01-plan.md` - its **Rejected alternatives**
      section is load-bearing, as in step 1 - and follow it. Its test-seams
@@ -472,7 +475,7 @@ closed as not planned if still open, commented on and unlinked, or the
 collapsed `## Ticket` section cut from the body - then changes `state.phase`
 to `spec`, so the spec phase's step 5 breaks the redone spec down again; the
 spec phase's step 0 does the rest: the `pre-redo-spec-*` folder below makes
-it skip the rewrite question and go straight to the spec review.
+it skip the rewrite decision and go straight to the spec review.
 If GitHub fails while retiring, it dies with the phase still `implement`, and
 a re-run resumes. Either way the
 stale `02-spec.md` handoff, and `03-implement.md` if one exists, move into
