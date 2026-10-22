@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
 #
-# The whole test run, the one command to run before committing: orch_test.sh,
-# hooks_test.sh, docs_lint.sh, version_bump_test.sh and lens_bench_test.sh,
-# each in quiet mode, and shellcheck, all started at once so they overlap.
+# The whole test run, the one command to run before committing: every suite in
+# the `suites` list below, each in quiet mode, and shellcheck, all started at
+# once so they overlap.
 # Each one's stdout is captured to a temporary directory, removed on exit, and
 # its exit status is taken from waiting on it; once every one has finished,
 # their output is printed in a fixed order, no matter which finished first. A
-# failing suite does not stop the others. Printed per suite, in the order
-# orch_test.sh, hooks_test.sh, docs_lint.sh, version_bump_test.sh,
-# lens_bench_test.sh: its FAIL lines with their detail lines, then one summary
+# failing suite does not stop the others. Printed per suite, in the order of
+# the `suites` list: its FAIL lines with their detail lines, then one summary
 # line, "<suite>: <its last line>", or "<suite>: died before its summary (exit
 # N)" when it exited non-zero and its last line is not a summary line. A
 # suite's stderr is not captured: it passes straight through, and the suites'
 # stderr may interleave.
 #
 # Then shellcheck, from the repo root two levels up, at warning severity, one
-# process per shell file matched by scripts/*.sh scripts/orch/*.sh
-# scripts/test/*.sh scripts/test/orch/*.sh, with .shellcheckrc's source
-# settings. A glob that matches nothing is dropped, never passed to shellcheck
-# as the literal pattern. Every process starts at once, alongside the suites,
+# process per shell file matched by the one recursive glob scripts/**/*.sh,
+# with .shellcheckrc's source settings. A glob that matches nothing is dropped,
+# never passed to shellcheck as the literal pattern. Every process starts at once, alongside the suites,
 # with no throttle, so no single shellcheck run over every file is the
 # critical path - this deliberately reverses #777's one-process rule. Each
 # process's stdout and stderr go to its own captured buffer, and all.sh waits
@@ -30,7 +28,7 @@
 # on PATH it prints "shellcheck: not installed - skipped", which fails the run
 # only when CI is set.
 #
-# The five suites run with TMPDIR set to a fresh, empty directory under that
+# The suites run with TMPDIR set to a fresh, empty directory under that
 # temporary directory. Once they have finished, if anything is left in it -
 # a suite that did not remove its temp files - all.sh prints "all.sh: the
 # suites left temp files behind" after the suites' summaries and before
@@ -66,10 +64,9 @@ if command -v shellcheck >/dev/null 2>&1; then
   have_sc=1
   root="$dir/../.."
   sc_pids=()
-  shopt -s nullglob
-  sc_files=("$root"/scripts/*.sh "$root"/scripts/orch/*.sh "$root"/scripts/test/*.sh
-    "$root"/scripts/test/orch/*.sh)
-  shopt -u nullglob
+  shopt -s globstar nullglob
+  sc_files=("$root"/scripts/**/*.sh)
+  shopt -u globstar nullglob
   for sc_file in "${sc_files[@]}"; do
     sc_rel="${sc_file#"$root/"}"
     (cd "$root" && exec shellcheck -S warning -f gcc "$sc_rel") \
