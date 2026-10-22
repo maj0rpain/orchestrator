@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.23.0
+
+A flow's spec review now runs each round but the last in its own session: after round k of n, `orch.sh spec pause --round <k>/<n>` writes a round marker and prints the stop block, and the fresh session's spec phase resumes at the next round through `orch.sh spec round`, asking nothing. Each round works in `.orchestrator/spec-rounds/<k>/`, made ready by `orch.sh spec round-dir <k>/<n>`. The recommended round count is now sized to the spec - 2 by default, 1 for a one-site spec, 3 for a large one - from the options 2, 1, 3 and Other.
+
 ## 4.22.0
 
 The review loop's budget question now suggests a budget sized to the change instead of a fixed default of 5: a first loop offers 3, 5 or 8, the driver's pick from the lines, files, tickets and modules the change touches, risk weighing above raw size; a further loop after a bounded stop offers 1, 3 or 5, judged from what the previous loop left. The suggestion is listed first, marked "(Recommended)" with a one-clause reason, and Other still takes any whole number from 1 up (#1362).
