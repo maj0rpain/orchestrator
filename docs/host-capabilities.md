@@ -169,8 +169,10 @@ It hands the view back with the same instruction, and lets the turn end once
 the payload's `stop_hook_active` is set, so it cannot loop. Both re-read the
 transcript for a few seconds before refusing, so a reply written late still
 counts. Where a host fires `Stop` before the final reply is in the
-transcript, or not at all, the Stop guard fails open and the paste guard and
-the skill text carry the enforcement.
+transcript, the Stop guard does not fail open: past the window it refuses
+the reply not yet written, and the turn ends on the next stop, once
+`stop_hook_active` is set. Where a host never fires `Stop`, the Stop guard
+does nothing, and the paste guard and the skill text carry the enforcement.
 
 Junie has no paste guard, so nothing refuses an ask the view was not pasted
 before. Junie reads the same hooks file, and the Stop guard has no tool

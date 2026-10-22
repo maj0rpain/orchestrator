@@ -26,11 +26,9 @@
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/paste-guard.sh"
 
-hook_read_payload 2>/dev/null
-printf '%s' "$input" | jq -e 'type == "object"' >/dev/null 2>&1 || exit 0
+paste_guard_payload || exit 0
 tool="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
 [ "$tool" = "AskUserQuestion" ] || exit 0
-transcript="$(printf '%s' "$input" | jq -r '.transcript_path // ""')"
 paste_guard_check "$transcript" since && exit 0
 
 hook_emit_deny "Blocked by the orchestrator: the human has not seen this round's view in chat. Do not ask this question with the ask tool. $(paste_guard_instruction)"

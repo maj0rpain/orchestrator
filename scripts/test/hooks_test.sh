@@ -1301,12 +1301,39 @@ assert_eq "the view pasted before a re-run check's pass line, none after: refuse
 
 assert_eq "stop_hook_active set: allowed" "$(sg_decide "$T" true)" allow
 
-# Fail open: the cases the payload alone decides, then one shared
-# paste_guard_check input proving the wiring - the PreToolUse block above pins
-# the rest of them.
+assert_eq "a final reply holding the view re-wrapped, whitespace normalised: allowed" "$(sg_decide "$T3d")" allow
+assert_eq "a spec-review apply after the check disarms: allowed" "$(sg_decide "$T5")" allow
+
+# The re-read window, with the paste guard's `sleep` stub: it appends the
+# final reply on its first call, between two reads.
+S6="$PG/stop-late.jsonl"; cp "$T" "$S6"
+pg_text "$PG/stop-paste.jsonl" "$(cat "$PG/batch/view.md")"
+assert_eq "a final reply holding the view written within the window: allowed" \
+  "$(PATH="$PG/stub:$PATH" PG_SLEEP_LOG="$PG/sleep-stop.log" PG_SLEEP_PASTE="$PG/stop-paste.jsonl" PG_SLEEP_INTO="$S6" \
+    ORCH_PASTE_GUARD_WAIT='' sg_decide "$S6")" allow
+
+# Fail open.
+assert_eq "a payload that is not JSON allows" "$(printf 'not json' | "$STOP" 2>/dev/null; echo "exit $?")" "exit 0"
 assert_eq "a JSON payload that is not an object allows" "$(printf '[1]' | "$STOP" 2>/dev/null; echo "exit $?")" "exit 0"
 assert_eq "no transcript_path allows" "$(sg_decide "")" allow
 assert_eq "a missing transcript allows" "$(sg_decide "$PG/none.jsonl")" allow
+assert_eq "a pass line naming a deleted view.md allows" "$(sg_decide "$T9")" allow
+assert_eq "a pass line naming an empty view.md allows" "$(sg_decide "$T10")" allow
+assert_eq "a transcript with no arming pass line allows" "$(sg_decide "$T11")" allow
+if [ "$(id -u)" -eq 0 ]; then
+  ok "an unreadable transcript allows (skipped as root)"
+  ok "a pass line naming an unreadable view.md allows (skipped as root)"
+else
+  chmod 000 "$PG/unreadable.jsonl"
+  assert_eq "an unreadable transcript allows" "$(sg_decide "$PG/unreadable.jsonl")" allow
+  chmod 600 "$PG/unreadable.jsonl"
+  mkdir "$PG/locked"; cp "$PG/batch/view.md" "$PG/locked/view.md"
+  S7="$PG/stop-locked.jsonl"
+  pg_check "$S7" toolu_c8 batch "$PG/locked/view.md"
+  chmod 000 "$PG/locked/view.md"
+  assert_eq "a pass line naming an unreadable view.md allows" "$(sg_decide "$S7")" allow
+  chmod 600 "$PG/locked/view.md"
+fi
 unset ORCH_PASTE_GUARD_WAIT
 rm -rf "$PG"
 

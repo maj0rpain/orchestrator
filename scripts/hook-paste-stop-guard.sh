@@ -30,10 +30,8 @@
 source "$(dirname "${BASH_SOURCE[0]}")/hook-common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/paste-guard.sh"
 
-hook_read_payload 2>/dev/null
-printf '%s' "$input" | jq -e 'type == "object"' >/dev/null 2>&1 || exit 0
+paste_guard_payload || exit 0
 [ "$(printf '%s' "$input" | jq -r '.stop_hook_active == true')" = true ] && exit 0
-transcript="$(printf '%s' "$input" | jq -r '.transcript_path // ""')"
 paste_guard_check "$transcript" final && exit 0
 
 hook_emit_block "Blocked by the orchestrator: the human has not seen this round's view in your final reply. $(paste_guard_instruction)"

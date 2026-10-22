@@ -32,6 +32,18 @@
 # shorten it.
 PASTE_GUARD_WAIT=3
 
+# paste_guard_payload: reads the hook payload on stdin (hook_read_payload, so
+# `input` holds it) and sets `transcript` to its transcript_path, or empty when
+# it names none; fails - the guard allows - when the payload is not a JSON
+# object.
+paste_guard_payload() {
+  hook_read_payload 2>/dev/null
+  # shellcheck disable=SC2154 # input is set by hook_read_payload, in hook-common.sh
+  printf '%s' "$input" | jq -e 'type == "object"' >/dev/null 2>&1 || return 1
+  # shellcheck disable=SC2034 # transcript is read by the hook that sourced this file
+  transcript="$(printf '%s' "$input" | jq -r '.transcript_path // ""')"
+}
+
 # paste_guard_scan <transcript>: prints the armed view.md's path on its first
 # line, then a JSON array of the assistant text blocks written after its pass
 # line, then a JSON array of those written after the later of that pass line
@@ -86,7 +98,7 @@ paste_guard_pasted() {
 # view.md. <blocks> picks the text blocks that may hold the paste: since,
 # those after the arming pass line; final, the final reply.
 paste_guard_check() {
-  local wait_s tries scan blocks
+  local wait_s tries scan rest blocks
   wait_s="$PASTE_GUARD_WAIT"
   case "${ORCH_PASTE_GUARD_WAIT:-}" in
     ''|*[!0-9]*) ;;
@@ -98,10 +110,10 @@ paste_guard_check() {
     scan="$(paste_guard_scan "$1")" || return 0
     view="${scan%%$'\n'*}"
     [ -n "$view" ] && [ -s "$view" ] && [ -r "$view" ] || return 0
-    blocks="${scan#*$'\n'}"
+    rest="${scan#*$'\n'}"
     case "$2" in
-      since) blocks="${blocks%%$'\n'*}" ;;
-      *) blocks="${blocks#*$'\n'}" ;;
+      since) blocks="${rest%%$'\n'*}" ;;
+      *) blocks="${rest#*$'\n'}" ;;
     esac
     paste_guard_pasted "$blocks" "$view" && return 0
     [ "$tries" -gt 0 ] || return 1
