@@ -283,7 +283,7 @@ suite_cost_is_base() {
 # confirming run with the head sample only when that sample is on HEAD's
 # clean SHA, as a -dirty or ancestor one measured another tree.
 suite_cost_check() {
-  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict pct clean IFS=' '
+  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict pct head_commit IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
@@ -303,9 +303,9 @@ suite_cost_check() {
     note "$verdict"
     return 0
   fi
-  clean="$(git rev-parse --verify -q HEAD)" || { note unmeasured; return 0; }
-  suite_cost_tree_run confirm "$clean" "$@" || { note unmeasured; return 0; }
-  if [ "$head_sha" = "$clean" ]; then
+  head_commit="$(git rev-parse --verify -q HEAD)" || { note unmeasured; return 0; }
+  suite_cost_tree_run confirm "$head_commit" "$@" || { note unmeasured; return 0; }
+  if [ "$head_sha" = "$head_commit" ]; then
     head_cpu="$(suite_cost_min "$head_cpu" "$SUITE_COST_CPU")"
   else
     head_cpu="$SUITE_COST_CPU"
@@ -336,7 +336,7 @@ suite_cost_compare() {
 
 # suite_cost_min <a> <b>: prints the lower of two CPU seconds, as written.
 suite_cost_min() {
-  LC_ALL=C awk -v a="$1" -v b="$2" 'BEGIN { print (b + 0 < a + 0) ? b : a }'
+  if float_lt "$2" "$1"; then note "$2"; else note "$1"; fi
 }
 
 # suite_cost_tree_run <role> <commit> <cmd> [args...]: measures the command
