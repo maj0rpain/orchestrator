@@ -146,6 +146,37 @@ agent_get() {
   printf '%s' "$out"
 }
 
+# check_agent_settings: doctor's agent settings check, named in its env check
+# list and reporting through its reporter trio. One ok line per role, in role
+# order, with its effective model and effort and their sources. Each key is
+# also read at local and at global scope on its own, so a disallowed value is a
+# FAIL even where a local value hides it: it would still stop a skill in every
+# repo without that local value. The remedy clears that key at that scope.
+check_agent_settings() {
+  local role kind scope v src bad flag line
+  for role in $AGENT_ROLES; do
+    bad=0
+    for kind in model effort; do
+      for scope in local global; do
+        v="$(git config "--$scope" --get "orchestrator.$kind.$role" 2>/dev/null)" || continue
+        agent_allowed "$kind" "$v" && continue
+        bad=1
+        flag="--$kind"; [ "$scope" = global ] && flag="$flag --global"
+        d_fail "orchestrator.$kind.$role is $v ($scope) - not an allowed $kind (want $(agent_values "$kind"))"
+        d_remedy "orch.sh agent clear $role $flag"
+      done
+    done
+    [ "$bad" -eq 0 ] || continue
+    line="agent $role:"
+    for kind in model effort; do
+      agent_lookup "$kind" "$role" v src
+      line="$line $kind $v ($src),"
+    done
+    d_ok "${line%,}"
+  done
+  return 0
+}
+
 cmd_agent() {
   local op="${1:-}"
   shift || true

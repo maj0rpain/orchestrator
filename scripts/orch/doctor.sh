@@ -23,7 +23,8 @@
 # defined; the gh adapter operations it calls, issue_state_labels_read among
 # them, live in gh.sh. The helpers it calls from noun modules
 # (default_branch, base_setting and origin_has_branch from base.sh,
-# require_state from state.sh) are defined by the time cmd_doctor runs,
+# require_state from state.sh), and check_agent_settings, agent.sh's check
+# its env check list names, are defined by the time cmd_doctor runs,
 # because every module is sourced before main dispatches. cmd_doctor is then
 # dispatched from main() exactly like any other command.
 
@@ -547,7 +548,7 @@ ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_side_checkouts_finished
+h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_agent_settings check_side_checkouts_finished
 "
 
 # flow state -----------------------------------------------------------------

@@ -119,8 +119,11 @@ echo "doctor.sh is a one-way dependency (#281)"
 # doctor.sh calls into orch.sh, never the other way round: no non-comment line
 # of orch.sh or of any module beside doctor.sh in its orch/ directory names, as
 # a whole word, a function doctor.sh defines - except cmd_doctor, which main()
-# dispatches. doctor_callbacks <scripts-dir> prints each such name found, for
-# the functions defined in <scripts-dir>/orch/doctor.sh. host.sh,
+# dispatches, and the reporters d_ok, d_warn, d_fail and d_remedy, which a
+# check living in the module of the concept it serves (agent.sh's
+# check_agent_settings, #1358) reports through when doctor runs it.
+# doctor_callbacks <scripts-dir> prints each such name found, for the
+# functions defined in <scripts-dir>/orch/doctor.sh. host.sh,
 # triage-labels.sh and planning-allowlist.sh are outside it: the hooks share
 # them, and they call nothing in doctor.sh.
 doctor_callbacks() {
@@ -130,17 +133,17 @@ doctor_callbacks() {
   done)"
   col0_names "$doctor_file" \
     | while IFS= read -r name; do
-        [ "$name" = cmd_doctor ] && continue
+        case "$name" in cmd_doctor|d_ok|d_warn|d_fail|d_remedy) continue ;; esac
         if printf '%s\n' "$code" | grep -qw -- "$name"; then printf '%s\n' "$name"; fi
       done
 }
 dep_dir="$(mktemp -d)"
 mkdir "$dep_dir/orch"
-printf '%s\n' 'check_x() {' '  :' '}' 'cmd_doctor() { check_x; }' >"$dep_dir/orch/doctor.sh"
+printf '%s\n' 'check_x() {' '  :' '}' 'd_ok() { :; }' 'cmd_doctor() { check_x; }' >"$dep_dir/orch/doctor.sh"
 printf '%s\n' 'main() { cmd_doctor; }' >"$dep_dir/orch.sh"
 printf '%s\n' '# check_x is named in a comment only' '  # check_x again' \
-  'run() { cmd_doctor; check_xy; }' >"$dep_dir/orch/clean.sh"
-assert_eq "a comment, cmd_doctor or a longer word is no call back into doctor.sh" \
+  'run() { cmd_doctor; check_xy; }' 'check_y() { d_ok y; }' >"$dep_dir/orch/clean.sh"
+assert_eq "a comment, cmd_doctor, a reporter or a longer word is no call back into doctor.sh" \
   "$(doctor_callbacks "$dep_dir")" ""
 printf '%s\n' 'run() { check_x; }' >"$dep_dir/orch/calls.sh"
 assert_eq "a doctor.sh function called from a module is caught" \
@@ -1714,4 +1717,48 @@ assert_status "an unverifiable base branch does not block the flow" "$st" 0
 assert_contains "warns that origin could not be reached" "$out" "warn  base branch gone"
 git config --unset orchestrator.base
 rm -rf "$(dirname "$bare")"
+restore_suite_env
+
+# --- doctor: agent settings check (#1358) -------------------------------------
+# Doctor lists every role's agent setting, model and effort each with its
+# source, as ok lines; a disallowed hand-set value, local or global, is a FAIL
+# naming the key, its value and the allowed values, with the clear at the bad
+# value's own scope as its remedy - so it is fixed before a skill stops on it.
+echo
+echo "doctor: agent settings check"
+healthy_repo
+doctor_github
+git config --global orchestrator.model.reviewer haiku
+git config --local orchestrator.effort.implementer high
+for scope in "" --env; do
+  out="$("$ORCH" doctor $scope 2>&1)"; st=$?
+  assert_status "doctor ${scope:-(bare)} passes with valid agent settings" "$st" 0
+  assert_contains "doctor ${scope:-(bare)} lists a role's local effort and inherited model" "$out" \
+    "ok    agent implementer: model inherit (inherit), effort high (local)"
+  assert_contains "doctor ${scope:-(bare)} lists a role's global model" "$out" \
+    "ok    agent reviewer: model haiku (global), effort inherit (inherit)"
+  assert_contains "doctor ${scope:-(bare)} lists every role, the last among them" "$out" \
+    "ok    agent resolver: model inherit (inherit), effort inherit (inherit)"
+done
+
+git config --local orchestrator.model.fixer gpt
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a local disallowed model fails doctor" "$st" 1
+assert_contains "naming the key, its value and the allowed models" "$out" \
+  "FAIL  orchestrator.model.fixer is gpt (local) - not an allowed model (want sonnet|opus|haiku|fable|inherit)"
+assert_contains "with the local clear as its remedy" "$out" \
+  "$(printf '\n      orch.sh agent clear fixer --model\n')"
+git config --local --unset orchestrator.model.fixer
+
+git config --global orchestrator.effort.closer huge
+out="$("$ORCH" doctor 2>&1)"; st=$?
+assert_status "a global disallowed effort fails bare doctor" "$st" 1
+assert_contains "naming the key, its value and the allowed efforts" "$out" \
+  "FAIL  orchestrator.effort.closer is huge (global) - not an allowed effort (want low|medium|high|xhigh|max|inherit)"
+assert_contains "with the global clear as its remedy" "$out" \
+  "$(printf '\n      orch.sh agent clear closer --effort --global\n')"
+git config --local orchestrator.effort.closer low
+out="$("$ORCH" doctor --env 2>&1)"; st=$?
+assert_status "a global bad value hidden by a local one still fails" "$st" 1
+assert_contains "naming the global key" "$out" "FAIL  orchestrator.effort.closer is huge (global)"
 restore_suite_env
