@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.26.0
+
+`orch.sh pr open` and `pr publish` refuse a PR body without the human layer - `## Summary`, `## Evidence`, and `## Merge Danger` with a `**Door:** one-way|two-way` line and a non-empty `**Blast Radius:**` line - and `pr release` refuses one without `## Summary`, `--force` included. The check reads structure only, skips fenced code blocks, names every missing or invalid piece in one message, and runs before anything is pushed or created.
+
+The three PR comments the plugin posts - the closer's review-loop comment, the review pass's report and the base sync's comment - share one shape: a 1-3 line lead, `## Summary` and `## Evidence` only when the comment's commits changed code, then the site's own headings in a fixed order with `None.` forms, and never `## Merge Danger`.
+
 ## 4.25.0
 
 Add `orch.sh agent set|show|clear|get`, the agent setting: a model and a reasoning effort per role (implementer, lens, reviewer, fixer, closer, resolver), each its own git config key, looked up local, then global, else inherit.
