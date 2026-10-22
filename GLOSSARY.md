@@ -171,10 +171,10 @@ arms - not Junie (ADR-0025) - and a flow at `done` does not disarm it. A flow
 will not start while the working tree has changes outside it (ADR-0013).
 
 **Agent setting**:
-The model and reasoning effort a role's agents run with: each chosen per role
-by the user, or else inherited from the session that starts them. A role is
-one of six groups of the plugin's agents that share a setting: implementer,
-lens, reviewer, fixer, closer and resolver.
+The model and reasoning effort a role's agents run with: each chosen per role and per host by the user, or else inherited from the session that starts them. Each host has its own setting, since hosts name models and efforts differently. A role is one of six groups of the plugin's agents that share a setting: implementer, lens, reviewer, fixer, closer and resolver.
+
+**Agent copy**:
+A project-scope copy of one of the plugin's agents that `orch.sh agent sync` writes into a checkout's `.junie/agents/`, its frontmatter carrying that role's Junie agent setting and a marker line saying sync owns it. Never committed; sync writes over or deletes only a file that carries the marker.
 
 ### Quick implementation and blueprint
 

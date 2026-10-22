@@ -36,7 +36,7 @@ on exactly its own cells.
 | --- | --- | --- |
 | Invoke a skill from a step | The Skill tool, by scoped name (`orchestrator:orch-flow`). | No Skill tool, so the model cannot invoke one mid-step. A human still starts one with `/<name>`, or Junie picks one automatically. Naming a skill as `$<name>` in a prompt is unverified. **Fallback**. |
 | Ask a multiple-choice question | `AskUserQuestion`. | `ask_user`, which the plan agent and the main agent both have (#202). |
-| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`, on its role's [agent setting](#agent-settings). | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). It loads the plugin's `agents/` as custom agents (#200), but a capability filter at agent start usually hides them, and starting a hidden agent by name fails with `Unknown agent`. Both hosts read its `tools:` YAML list as the agent's allowlist, so an agent left visible starts with the tools it needs. **Fallback**. Take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file, and record the reason as the agent hidden by Junie's capability filter. JetBrains tracks the filter as JUNIE-5493: appending the plugin's `docs/junie/AGENTS.md` snippet to `~/.junie/AGENTS.md` keeps the agents visible, and [docs/junie/README.md](junie/README.md) gives the command and a per-prompt fallback. The [agent setting](#agent-settings) is ignored on Junie: every agent starts on the session's model and effort. |
+| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`, on its role's [agent setting](#agent-settings). | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). It loads the plugin's `agents/` as custom agents (#200), but a capability filter at agent start usually hides them, and starting a hidden agent by name fails with `Unknown agent`. Both hosts read its `tools:` YAML list as the agent's allowlist, so an agent left visible starts with the tools it needs. **Fallback**. Take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file, and record the reason as the agent hidden by Junie's capability filter. JetBrains tracks the filter as JUNIE-5493: appending the plugin's `docs/junie/AGENTS.md` snippet to `~/.junie/AGENTS.md` keeps the agents visible, and [docs/junie/README.md](junie/README.md) gives the command and a per-prompt fallback. The [agent setting](#agent-settings) reaches Junie in generated copies of the plugin's agents under the checkout's `.junie/agents/`, which a skill refreshes with `bash "$ORCH" agent sync` once per run before its first plugin agent; the copy carries the setting, so nothing is passed to the start. Whether a copy a skill names (rather than the user's prompt) gets past the capability filter is **Unverified**. |
 | Start a background subagent | The Agent tool, run in the background, so several ticket subagents build at once and each report returns as it finishes. | No documented way to start a subagent in the background and keep working while it runs. **Fallback**. |
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. `/new` fires `SessionStart` with `source: clear` per Junie CLI's bundled docs, unverified live. |
@@ -66,16 +66,30 @@ names the roles it starts and points here, and states none of this itself.
   setting, read and passed by these instructions, is the explicit ask the
   Agent tool's `effort` parameter needs.
 - If `agent get` refuses, stop the run and relay its message.
+- On Junie, the setting travels in agent copies instead (see **Host
+  fallback**): before a skill starts any plugin agent, it runs `bash "$ORCH"
+  agent sync` once per run. A failed sync stops the run, relaying its
+  message. The skill reads no `agent get` and passes nothing to the start:
+  the copy carries the setting.
 - If the Agent tool refuses a valid value (the account has no access to
   `fable`, say), stop and report the refusal, naming `bash "$ORCH" agent
   clear <role>` as the fix. Never retry on another model, or without the
   parameter.
 
-**Host fallback.** The setting applies only to a plugin agent started
-natively through Claude Code's Agent tool. It is ignored on Junie, and by
-every tier of the **Start a fresh subagent** fallback below: a general-purpose
-agent briefed with the agent's file, or the work done in this session, takes
-no setting. There, skip the read and start the agent as the fallback says.
+**Host fallback.** The Claude Code setting applies only to a plugin agent
+started natively through Claude Code's Agent tool. Junie has its own setting
+(`--host junie`), which reaches it in agent copies: project-scope copies of
+the plugin's agents that `agent sync` writes into the checkout's
+`.junie/agents/`, each with the role's `model:` and `reasoningLevel:` in its
+frontmatter. A copy named like a plugin agent wins over the plugin's own, so
+the agent starts on the copy's setting. Whether a copy a skill names (rather
+than the user's prompt) gets past Junie's capability filter is **Unverified**.
+If it is hidden, the first tier of the **Start a fresh subagent** fallback
+below, a general-purpose agent briefed with the agent's file, runs without the
+setting and is recorded as a host fallback. Every tier of that fallback takes
+no setting: a general-purpose agent briefed with the agent's file, or the work
+done in this session, starts on the session's model and effort, and there the
+skill skips the read and starts the agent as the fallback says.
 
 ## Fallbacks
 
