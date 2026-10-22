@@ -41,7 +41,7 @@ on exactly its own cells.
 | Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. Where commands do not load, `orch-spec-review` is invoked directly with the issue number. |
 | Inject context at planning time | A `PostToolUse` hook on `Skill` (`hook-grilling.sh`) that fires when the skill name contains `grilling` or `orch-interview`. | A `UserPromptSubmit` hook (`hook-grilling.sh`, #202) that fires when the prompt names a grilling entry point as `/<name>` or `$<name>` (`grilling`, `grill-me`, `grill-with-docs`, `wayfinder`, `improve-codebase-architecture`, or `orch-interview`, each under any scope, or `orchestrator:interview`). Per the bundled docs, only the interactive TUI fires the event and its context reaches the main agent only. A live probe on #202 confirmed the hook fires from the extension's `hooks.json` and that Junie rewrites a typed `/<name>` into `$<name>`. When Junie picks grilling on its own, no prompt names it and no message is sent. Junie's router sends a grilling prompt to its plan agent, which ends on Junie's own plan screen and skips the closing question, so the hook asks it again when the human picks "Confirm and implement". That submits the fixed prompt `Implement the suggested plan` to the main agent, and a live run on #202 showed the question appear there. "Save the plan and stop" submits no prompt, so nothing is asked. |
 | Arm the edit guard | A `PostToolUse` hook on `Skill` writes the planning marker, and `hook-guard.sh` denies source edits (ADR-0006). A `Skill` call to `orchestrator:orch-quick-implement` lifts it. | None: the guard does not arm on Junie (ADR-0025). The planning message and the `docs/junie/AGENTS.md` planning section steer planning away from source edits, and `orch.sh init`'s working-tree check catches any at flow start. **Fallback**. |
-| Guard the batch question | A `PreToolUse` hook on `AskUserQuestion` (`hook-paste-guard.sh`): after a `spec-review check` pass line naming a `view.md`, and until the next `spec-review apply`, every ask is refused with the view and told to end the turn on it and the batch question in one plain-text reply, not the ask tool, until one text block after that pass line holds the whole view (#1287, #1350, ADR-0051). | None: the nudge in `check`'s pass line instead. **Fallback**. |
+| Guard the batch question | Two hooks, armed by a `spec-review check` pass line naming a `view.md` and disarmed by the next `spec-review apply`, sharing one transcript scan (`paste-guard.sh`). A `PreToolUse` hook on `AskUserQuestion` (`hook-paste-guard.sh`) refuses every ask with the view, told to end the turn on it and the batch question in one plain-text reply, not the ask tool, until one text block after that pass line holds the whole view. A `Stop` hook (`hook-paste-stop-guard.sh`) refuses to end the turn, handing the view back the same way, unless one text block of the final reply - after the later of the last human message and that pass line - holds it (#1287, #1350, #1421, ADR-0051). | No `PreToolUse` guard: the nudge in `check`'s pass line instead. **Fallback**. The `Stop` hook has no tool matcher, so it may fire; whether Junie fires `Stop`, and what its payload holds, is not confirmed. **Unverified**. On Junie's payload or transcript it fails open. |
 | Open a report in the browser | `xdg-open <file>` on Linux or `open <file>` on macOS, through the Bash tool. Where neither command is there or it fails (a headless or remote machine), take the fallback. | Its shell runs the same commands; whether a browser opens from it is unverified. **Unverified**. |
 
 ## Agent settings
@@ -154,15 +154,29 @@ spelled out, the human's next message the answer (ADR-0051). Some hosts hide
 a long text written in the same response as a tool call, so the view is
 never shown beside an ask-tool call.
 
-On Claude Code the paste guard checks the transcript for the paste and
-refuses every ask until the view is in chat, not just the first. Its deny
-message hands the view back and says to end the turn on it and the batch
-question in plain text, and not to use the ask tool for it. The short
-confirmation ask that follows a near-miss answer passes, since the view is
-already in the turn-final reply above it.
+On Claude Code two guards enforce it, arming on the same pass line, disarming
+on the same `spec-review apply`, and reading the transcript through one
+shared scan, so they match the paste and fail open alike. The paste guard,
+on `PreToolUse`, refuses every ask until the view is in chat, not just the
+first. Its deny message hands the view back and says to end the turn on it
+and the batch question in plain text, and not to use the ask tool for it.
+The short confirmation ask that follows a near-miss answer passes, since the
+view is already in the turn-final reply above it. The Stop guard refuses to
+end the turn unless the final reply holds the view: one text block written
+after the later of the last human message and the arming pass line, so a
+view pasted in an earlier turn, or before a re-run `check`, does not count.
+It hands the view back with the same instruction, and lets the turn end once
+the payload's `stop_hook_active` is set, so it cannot loop. Both re-read the
+transcript for a few seconds before refusing, so a reply written late still
+counts. Where a host fires `Stop` before the final reply is in the
+transcript, or not at all, the Stop guard fails open and the paste guard and
+the skill text carry the enforcement.
 
 Junie has no paste guard, so nothing refuses an ask the view was not pasted
-before. The nudge in `spec-review check`'s pass line is the whole
+before. Junie reads the same hooks file, and the Stop guard has no tool
+matcher, so it may fire there; whether it does is unverified, and on a
+payload with no `transcript_path` or a transcript with no arming pass line it
+allows the turn to end. The nudge in `spec-review check`'s pass line is the whole
 enforcement: it names the `view.md` it wrote and says to end the turn on one
 plain-text reply, with no tool call, holding the view above word for word
 and then the question with its answer words spelled out. Follow it.

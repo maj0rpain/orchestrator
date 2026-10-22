@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tests for the five hook scripts.
+# Tests for the six hook scripts.
 #
 # The failure modes worth catching: the grilling hook firing on skills that
 # aren't planning, firing twice in one session, or staying silent when it should
@@ -16,6 +16,7 @@ GUARD="$DIR/hook-guard.sh"
 QUICK="$DIR/hook-quick-implement.sh"
 START="$DIR/hook-session-start.sh"
 PASTE="$DIR/hook-paste-guard.sh"
+STOP="$DIR/hook-paste-stop-guard.sh"
 COMMON="$DIR/hook-common.sh"
 PASS=0
 FAIL=0
@@ -1229,11 +1230,115 @@ assert_eq "with the full window, an ask whose view is already in chat is allowed
   "$(PATH="$PG/stub:$PATH" PG_SLEEP_LOG="$PG/sleep-first.log" ORCH_PASTE_GUARD_WAIT='' pg_decide "$T3")" allow
 if [ -e "$PG/sleep-first.log" ]; then bad "and on the first read" "slept: $(tr '\n' ' ' <"$PG/sleep-first.log")"
 else ok "and on the first read"; fi
-unset ORCH_PASTE_GUARD_WAIT
-rm -rf "$PG"
 
 assert_eq "hooks.json registers hook-paste-guard.sh under PreToolUse with matcher AskUserQuestion" \
   "$(jq -r '[.hooks.PreToolUse[]? | select(.matcher == "AskUserQuestion") | .hooks[]?.command | select(test("hook-paste-guard\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
+
+echo
+echo "hook-paste-stop-guard (#1421)"
+
+# The Stop guard refuses to end the turn while the paste guard is armed,
+# unless one assistant text block written after the later of the last human
+# message and the arming pass line holds every non-blank line of the view
+# (hook-paste-stop-guard.sh's header). It reuses the paste guard's fixture
+# transcripts and helpers above; ORCH_PASTE_GUARD_WAIT=0 still holds.
+
+# sg_human <transcript> <content-json> [isMeta]: a user entry of <content-json>,
+# marked isMeta when the third argument is true.
+sg_human() {
+  jq -nc --argjson c "$2" --argjson m "${3:-false}" '{type:"user", message:{role:"user", content:$c}} + (if $m then {isMeta:true} else {} end)' >>"$1"
+}
+# sg_decide <transcript-or-empty> [stop_hook_active]: the Stop guard's
+# decision - block, allow (no output), or the exit status when it is not 0 -
+# with the block reason left in $PG/reason.
+sg_decide() {
+  local out st
+  out="$(jq -n --arg t "$1" --argjson a "${2:-false}" \
+    '{hook_event_name:"Stop", session_id:"sg", cwd:"/tmp", transcript_path:$t, stop_hook_active:$a}' \
+    | "$STOP" 2>/dev/null)"; st=$?
+  printf '%s' "$out" | jq -r '.reason // ""' >"$PG/reason" 2>/dev/null
+  if [ "$st" -ne 0 ]; then echo "exit $st"
+  elif [ -z "$out" ]; then echo allow
+  else printf '%s' "$out" | jq -r '.decision'
+  fi
+}
+
+assert_eq "armed, a final reply without the view is refused" "$(sg_decide "$T")" block
+assert_contains "with the view in the reason" "$(cat "$PG/reason")" "$(cat "$PG/batch/view.md")"
+assert_contains "and the instruction to end the turn on the view and the question in plain text" "$(cat "$PG/reason")" \
+  "End your turn on one plain-text reply, with no tool call: the view below word for word"
+assert_contains "naming view.md" "$(cat "$PG/reason")" "$PG/batch/view.md"
+assert_eq "its output names no PreToolUse decision" \
+  "$(jq -n --arg t "$T" '{transcript_path:$t}' | "$STOP" | jq -r '.hookSpecificOutput // "none"')" none
+
+S1="$PG/stop-earlier-string.jsonl"; cp "$T3" "$S1"
+pg_result "$S1" toolu_now "User has answered your questions: recommended"
+sg_human "$S1" '"what does item 2 change?"'
+pg_text "$S1" "Item 2 makes the term consistent."
+assert_eq "the view pasted only before a human message with string content: refused" "$(sg_decide "$S1")" block
+
+S2="$PG/stop-earlier-blocks.jsonl"; cp "$T3" "$S2"
+pg_result "$S2" toolu_now "User has answered your questions: recommended"
+sg_human "$S2" '[{"type":"text","text":"what does item 2 change?"}]'
+pg_text "$S2" "Item 2 makes the term consistent."
+assert_eq "the view pasted only before a human message of text blocks: refused" "$(sg_decide "$S2")" block
+
+S3="$PG/stop-tool-results.jsonl"; cp "$T" "$S3"
+pg_text "$S3" "$(cat "$PG/batch/view.md")"
+pg_bash "$S3" toolu_s3 "git status"
+pg_result "$S3" toolu_s3 "nothing to commit"
+sg_human "$S3" '"Base directory for this skill: /plugin/skills/orch-spec-review"' true
+sg_human "$S3" '[{"type":"text","text":"<local-command-caveat>Caveat</local-command-caveat>"}]' true
+pg_text "$S3" "Answer recommended, none, a departure list, show <n>, or a question."
+assert_eq "tool results and isMeta entries after the paste do not mark the boundary: allowed" "$(sg_decide "$S3")" allow
+
+S4="$PG/stop-rewrapped.jsonl"; cp "$T3d" "$S4"
+assert_eq "a final reply holding the view with different whitespace: allowed" "$(sg_decide "$S4")" allow
+
+assert_eq "a final reply holding the view only split across two text blocks: refused" "$(sg_decide "$T3c")" block
+
+S5="$PG/stop-rerun.jsonl"; cp "$T" "$S5"
+pg_text "$S5" "$(cat "$PG/batch/view.md")"
+pg_check "$S5" toolu_c7 batch "$PG/batch/view.md"
+assert_eq "the view pasted before a re-run check's pass line, none after: refused" "$(sg_decide "$S5")" block
+
+assert_eq "stop_hook_active set: allowed" "$(sg_decide "$T" true)" allow
+
+assert_eq "after spec-review apply: allowed" "$(sg_decide "$T5")" allow
+
+S6="$PG/stop-late.jsonl"; cp "$T" "$S6"
+rm -f "$PG/paste.jsonl.done"
+assert_eq "a final reply appended within the re-read window is seen: allowed" \
+  "$(PATH="$PG/stub:$PATH" PG_SLEEP_LOG="$PG/sleep-stop.log" PG_SLEEP_PASTE="$PG/paste.jsonl" PG_SLEEP_INTO="$S6" \
+    ORCH_PASTE_GUARD_WAIT='' sg_decide "$S6")" allow
+
+# Fail open.
+assert_eq "a payload that is not JSON allows" "$(printf 'not json' | "$STOP" 2>/dev/null; echo "exit $?")" "exit 0"
+assert_eq "a JSON payload that is not an object allows" "$(printf '[1]' | "$STOP" 2>/dev/null; echo "exit $?")" "exit 0"
+assert_eq "no transcript_path allows" "$(sg_decide "")" allow
+assert_eq "a missing transcript allows" "$(sg_decide "$PG/none.jsonl")" allow
+assert_eq "a pass line naming a deleted view.md allows" "$(sg_decide "$T9")" allow
+assert_eq "a pass line naming an empty view.md allows" "$(sg_decide "$T10")" allow
+assert_eq "a transcript with no arming pass line allows" "$(sg_decide "$T11")" allow
+if [ "$(id -u)" -eq 0 ]; then
+  ok "an unreadable transcript allows (skipped as root)"
+  ok "an unreadable view.md allows (skipped as root)"
+else
+  chmod 000 "$PG/unreadable.jsonl"
+  assert_eq "an unreadable transcript allows" "$(sg_decide "$PG/unreadable.jsonl")" allow
+  chmod 600 "$PG/unreadable.jsonl"
+  mkdir "$PG/locked"; cp "$PG/batch/view.md" "$PG/locked/view.md"
+  S7="$PG/stop-locked.jsonl"
+  pg_check "$S7" toolu_c8 batch "$PG/locked/view.md"
+  chmod 000 "$PG/locked/view.md"
+  assert_eq "an unreadable view.md allows" "$(sg_decide "$S7")" allow
+  chmod 600 "$PG/locked/view.md"
+fi
+unset ORCH_PASTE_GUARD_WAIT
+rm -rf "$PG"
+
+assert_eq "hooks.json registers hook-paste-stop-guard.sh under Stop" \
+  "$(jq -r '[.hooks.Stop[]? | .hooks[]?.command | select(test("hook-paste-stop-guard\\.sh"))] | length' "$DIR/../hooks/hooks.json")" 1
 
 echo
 echo "execute bit (docs/host-capabilities.md, \"Execute bit\")"
