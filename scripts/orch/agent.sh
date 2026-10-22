@@ -16,12 +16,16 @@ AGENT_EFFORTS="low medium high xhigh max inherit"
 # agent_want <list>: the list as an orch: message's allowed values, a|b|c.
 agent_want() { printf '%s' "${1// /|}"; }
 
+# agent_listed <list> <word>: whether <word> is one of the space-separated
+# <list>'s words, whole - never several of them, nor part of one.
+agent_listed() { list_has "${1// /$'\n'}" "$2"; }
+
 # agent_allowed <kind> <value>: whether <value> is allowed for the model or
 # effort key.
 agent_allowed() {
   local list
   if [ "$1" = model ]; then list="$AGENT_MODELS"; else list="$AGENT_EFFORTS"; fi
-  case " $list " in *" $2 "*) return 0 ;; *) return 1 ;; esac
+  agent_listed "$list" "$2"
 }
 
 # agent_values <kind>: the allowed values for the model or effort key, a|b|c.
@@ -31,9 +35,7 @@ agent_values() {
 
 # agent_require_role <role>: dies unless <role> is one of the roles.
 agent_require_role() {
-  case " $AGENT_ROLES " in
-    *" $1 "*) [ -n "$1" ] && return 0 ;;
-  esac
+  agent_listed "$AGENT_ROLES" "$1" && return 0
   die "unknown role ${1:-<none>} (want $(agent_want "$AGENT_ROLES"))"
 }
 
@@ -117,13 +119,13 @@ agent_clear() {
 # agent show: one line per role, in role order - its model and effort, each
 # with its source, a disallowed value marked invalid rather than refused.
 agent_show() {
-  local role kind v src line
+  local role kind v src label line
   for role in $AGENT_ROLES; do
     line="$role"
     for kind in model effort; do
       agent_lookup "$kind" "$role" v src
-      agent_allowed "$kind" "$v" || src="$src, invalid"
-      line="$line $kind $v ($src)"
+      label="$src"; agent_allowed "$kind" "$v" || label="$src, invalid"
+      line="$line $kind $v ($label)"
     done
     printf '%s\n' "$line"
   done
@@ -155,7 +157,7 @@ agent_get() {
 # a skill in every repo without that local value. The remedy clears that key
 # at that scope.
 check_agent_settings() {
-  local role kind scope v src flag line
+  local role kind scope v src flag line scoped
   for role in $AGENT_ROLES; do
     line="agent $role:"
     for kind in model effort; do
@@ -166,10 +168,10 @@ check_agent_settings() {
     d_ok "${line%,}"
     for kind in model effort; do
       for scope in local global; do
-        v="$(git config "--$scope" --get "orchestrator.$kind.$role" 2>/dev/null)" || continue
-        agent_allowed "$kind" "$v" && continue
+        scoped="$(git config "--$scope" --get "orchestrator.$kind.$role" 2>/dev/null)" || continue
+        agent_allowed "$kind" "$scoped" && continue
         flag="--$kind"; [ "$scope" = global ] && flag="$flag --global"
-        d_fail "orchestrator.$kind.$role is $v ($scope) - not an allowed $kind (want $(agent_values "$kind"))"
+        d_fail "orchestrator.$kind.$role is $scoped ($scope) - not an allowed $kind (want $(agent_values "$kind"))"
         d_remedy "orch.sh agent clear $role $flag"
       done
     done

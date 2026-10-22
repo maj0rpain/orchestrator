@@ -80,6 +80,18 @@ out="$("$ORCH" agent set lens --effort huge 2>&1)"; st=$?
 assert_status "set refuses a disallowed effort" "$st" 1
 assert_contains "naming the allowed efforts" "$out" "orch: effort huge is not allowed (want low|medium|high|xhigh|max|inherit)"
 untouched "a disallowed effort"
+out="$("$ORCH" agent set lens --model "opus haiku" 2>&1)"; st=$?
+assert_status "set refuses a model made of several allowed words" "$st" 1
+assert_contains "naming the allowed models" "$out" "orch: model opus haiku is not allowed"
+untouched "a model made of several allowed words"
+out="$("$ORCH" agent set lens --effort $'low\nmedium' 2>&1)"; st=$?
+assert_status "set refuses an effort made of several allowed lines" "$st" 1
+untouched "an effort made of several allowed lines"
+out="$("$ORCH" agent set "lens reviewer" --model opus 2>&1)"; st=$?
+assert_status "set refuses a role made of several roles" "$st" 1
+assert_eq "with only an orch: message naming the roles" "$out" \
+  "orch: unknown role lens reviewer (want implementer|lens|reviewer|fixer|closer|resolver)"
+untouched "a role made of several roles"
 out="$("$ORCH" agent set lens 2>&1)"; st=$?
 assert_status "set refuses a call with neither --model nor --effort" "$st" 1
 assert_contains "naming both flags and the allowed values" "$out" \
@@ -128,6 +140,15 @@ git config --global orchestrator.model.lens gpt-5
 out="$("$ORCH" agent get lens 2>&1)"; st=$?
 assert_status "get refuses a hand-set disallowed global value" "$st" 1
 assert_contains "naming the global remedy" "$out" "orch.sh agent clear lens --model --global"
+git config --local orchestrator.model.reviewer "opus haiku"
+out="$("$ORCH" agent get reviewer 2>&1)"; st=$?
+assert_status "get refuses a hand-set value made of several allowed words" "$st" 1
+assert_contains "naming the key and its value" "$out" \
+  "orch: orchestrator.model.reviewer is opus haiku - not an allowed model"
+git config --local orchestrator.model.reviewer haiku
+out="$("$ORCH" agent get "lens reviewer" 2>&1)"; st=$?
+assert_status "get refuses a role made of several roles" "$st" 1
+assert_contains "naming the roles" "$out" "orch: unknown role lens reviewer (want"
 out="$("$ORCH" agent get implementor 2>&1)"; st=$?
 assert_status "get refuses an unknown role" "$st" 1
 assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer|closer|resolver)"

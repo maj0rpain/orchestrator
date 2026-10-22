@@ -10,9 +10,10 @@
 
 # list_has <list> <item>: whether <item> is one of the newline-separated
 # <list>, matched whole-line and literally. The one list-membership test:
-# `--` keeps an item beginning with `-` an item, never a grep option.
+# `--` keeps an item beginning with `-` an item, never a grep option, and an
+# item spanning lines is no line at all, never several of grep's patterns.
 list_has() {
-  grep -qxF -- "$2" <<<"$1"
+  [[ $2 != *$'\n'* ]] && grep -qxF -- "$2" <<<"$1"
 }
 
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
