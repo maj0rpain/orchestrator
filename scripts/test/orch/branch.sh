@@ -5,6 +5,10 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
+# base_key <branch>: the base branch recorded on <branch> (its
+# orchestrator-base git config key), or <unset>.
+base_key() { git config --get "branch.$1.orchestrator-base" || echo "<unset>"; }
+
 # --- branch create -----------------------------------------------------------
 # Unlike branch off's caller-named branch, this one derives its own name from
 # state - slug plus the recorded issue - and records both `branch` and
@@ -96,19 +100,18 @@ git fetch -q origin
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 uat_tip="$(git rev-parse origin/uat)"
 main_tip="$(git rev-parse origin/main)"
-recorded_base() { git config --get "branch.$1.orchestrator-base" || echo "<unset>"; }
 
 orch_gh_failing base set uat >/dev/null
 out="$(orch_gh_failing branch off quick/5-uat 2>&1)"; st=$?
 assert_status "branch off succeeds" "$st" 0
 assert_eq "branch off forks from the base branch in effect" "$(git rev-parse HEAD)" "$uat_tip"
-assert_eq "and records it on the branch" "$(recorded_base quick/5-uat)" "uat"
+assert_eq "and records it on the branch" "$(base_key quick/5-uat)" "uat"
 
 git checkout -q main
 orch_gh_failing base clear >/dev/null
 orch_gh_failing branch off quick/6-main >/dev/null
 assert_eq "with nothing set, branch off forks from the default branch" "$(git rev-parse HEAD)" "$main_tip"
-assert_eq "and records the default branch" "$(recorded_base quick/6-main)" "main"
+assert_eq "and records the default branch" "$(base_key quick/6-main)" "main"
 
 body="$(mktemp)"
 pr_body_complete "$body"
@@ -138,7 +141,7 @@ assert_status "branch off refuses a base branch origin says is gone" "$st" 1
 assert_contains "naming the base branch" "$out" \
   "base branch gone does not exist on origin - push it, or start again on another base branch"
 assert_not_contains "never pointing at a flow's correction" "$out" "--flow"
-assert_eq "and records nothing for the branch it did not make" "$(recorded_base quick/8-gone)" "<unset>"
+assert_eq "and records nothing for the branch it did not make" "$(base_key quick/8-gone)" "<unset>"
 orch_gh_failing base clear >/dev/null
 rm -rf "$(dirname "$bare")"
 
@@ -685,10 +688,9 @@ echo "branch off and branch create refuse a busy checkout (#1202)"
 # What a refused call must leave as it was: the current branch, the working
 # tree with its uncommitted edits, and the local git config.
 checkout_facts() {
-  git branch --show-current
+  branch_and_config
   git status --porcelain
   git diff
-  git config --local --list
 }
 
 new_repo_with_origin
@@ -698,16 +700,18 @@ before="$(checkout_facts)"
 out="$(orch_gh_failing branch off quick/2-second 2>&1)"; st=$?
 assert_status "branch off on a quick branch with no PR exits 3" "$st" 3
 assert_contains "naming the branch that holds the checkout" "$out" "quick/1-running"
+assert_contains "and its remedy" "$out" "Open its PR, or switch off it."
 assert_eq "leaving the branch, the tree, its edits and the git config as they were" \
   "$(checkout_facts)" "$before"
 assert_eq "writing no orchestrator-base key" \
-  "$(git config --get branch.quick/2-second.orchestrator-base || echo unset)" "unset"
+  "$(base_key quick/2-second)" "<unset>"
 
 git checkout -q -
 before="$(checkout_facts)"
 out="$(orch_gh_failing branch off quick/3-dirty 2>&1)"; st=$?
 assert_status "branch off on a dirty tree exits 3" "$st" 3
 assert_contains "naming the changed path" "$out" "README.md"
+assert_contains "and its remedy (tree)" "$out" "Commit, stash, or discard these changes."
 assert_eq "leaving the dirty checkout as it was" "$(checkout_facts)" "$before"
 assert_eq "creating no branch" \
   "$(git rev-parse --verify --quiet refs/heads/quick/3-dirty >/dev/null && echo made || echo none)" "none"
@@ -753,7 +757,7 @@ assert_status "branch create on a quick branch with no PR exits 3" "$st" 3
 assert_contains "naming that branch" "$out" "quick/6-earlier"
 assert_eq "leaving the checkout as it was (branch create, quick branch)" "$(checkout_facts)" "$before"
 assert_eq "writing no orchestrator-base key (branch create)" \
-  "$(git config --get branch.orch/12-own.orchestrator-base || echo unset)" "unset"
+  "$(base_key orch/12-own)" "<unset>"
 
 git checkout -q "$default"
 break_index
