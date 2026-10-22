@@ -1189,20 +1189,31 @@ pg_text "$T11" "Which approach do you prefer?"
 pg_bash "$T11" toolu_u1 "git status"
 pg_result "$T11" toolu_u1 "nothing to commit"
 assert_eq "a transcript with no spec-review activity allows" "$(pg_decide "$T11")" allow
-# The re-read window. A background writer appends the paste shortly after the
-# hook starts, as Claude Code writes a response's text block after PreToolUse
-# fires; with the window at its full length the ask is allowed. And an ask
-# whose view is already in chat is allowed on the first read, well inside it.
+# The re-read window, with a `sleep` stub on PATH in place of the wall clock:
+# the hook sleeps between reads, so the stub runs where Claude Code would be
+# writing a response's text block after PreToolUse fires. In the first case
+# the stub appends the paste on its first call, so it lands between two reads,
+# and with the window at its full length the ask is allowed. In the second, an
+# ask whose view is already in chat is allowed on the first read: the stub
+# records each call, and is never called.
+mkdir "$PG/stub"
+cat >"$PG/stub/sleep" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"$PG_SLEEP_LOG"
+if [ -n "${PG_SLEEP_PASTE:-}" ] && [ ! -e "$PG_SLEEP_PASTE.done" ]; then
+  cat "$PG_SLEEP_PASTE" >>"$PG_SLEEP_INTO"; : >"$PG_SLEEP_PASTE.done"
+fi
+STUB
+chmod +x "$PG/stub/sleep"
 T12="$PG/late.jsonl"; cp "$T" "$T12"
-( sleep 0.5; pg_text "$T12" "$(cat "$PG/batch/view.md")" ) &
-pg_writer=$!
-assert_eq "a paste appended within the window is seen: allowed" "$(ORCH_PASTE_GUARD_WAIT='' pg_decide "$T12")" allow
-wait "$pg_writer"
-pg_start="$(date +%s%N)"
-pg_seen="$(ORCH_PASTE_GUARD_WAIT='' pg_decide "$T3")"
-pg_ms=$(( ($(date +%s%N) - pg_start) / 1000000 ))
-assert_eq "with the full window, an ask whose view is already in chat is allowed" "$pg_seen" allow
-if [ "$pg_ms" -lt 2000 ]; then ok "and at once (${pg_ms}ms)"; else bad "and at once" "took ${pg_ms}ms"; fi
+pg_text "$PG/paste.jsonl" "$(cat "$PG/batch/view.md")"
+assert_eq "a paste appended within the window is seen: allowed" \
+  "$(PATH="$PG/stub:$PATH" PG_SLEEP_LOG="$PG/sleep-late.log" PG_SLEEP_PASTE="$PG/paste.jsonl" PG_SLEEP_INTO="$T12" \
+    ORCH_PASTE_GUARD_WAIT='' pg_decide "$T12")" allow
+assert_eq "with the full window, an ask whose view is already in chat is allowed" \
+  "$(PATH="$PG/stub:$PATH" PG_SLEEP_LOG="$PG/sleep-first.log" ORCH_PASTE_GUARD_WAIT='' pg_decide "$T3")" allow
+if [ -e "$PG/sleep-first.log" ]; then bad "and on the first read" "slept: $(tr '\n' ' ' <"$PG/sleep-first.log")"
+else ok "and on the first read"; fi
 unset ORCH_PASTE_GUARD_WAIT
 rm -rf "$PG"
 
