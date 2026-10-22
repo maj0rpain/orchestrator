@@ -50,13 +50,18 @@ open.
 ## Reading the code
 
 - Batch: issue every independent search and read of a step together in one
-  turn (on Claude Code, its Grep, Glob and Read calls), rather than one per
-  turn. Every turn re-reads the whole context, so fewer turns cost less.
+  turn (on Claude Code, its Grep, Glob and Read calls; on Junie, its
+  `grep_search`, `glob_search` and `open` calls), rather than one per turn.
+  Every turn re-reads the whole context, so fewer turns cost less.
 - Locate in two steps. First, a search across the repo lists only the names
   of the matching files (on Claude Code, Grep's `files_with_matches`
-  output). Then a content search, with line numbers and capped at 30 result
-  lines (on Claude Code, Grep's `head_limit`), runs only in the files that
-  matter. A content search never runs repo-wide, and never uncapped.
+  output; on Junie, `grep_search`'s file names; see
+  `docs/host-capabilities.md`'s **Search and read code**). Then a content
+  search, with line numbers and capped at 30 result lines (on Claude Code,
+  Grep's `head_limit`; on Junie, `grep_search` scoped by `path`; see
+  `docs/host-capabilities.md`'s **Search and read code**), runs only in
+  the files that matter. A content search never runs repo-wide, and never
+  uncapped.
 
 ## Reporting rules
 
