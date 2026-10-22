@@ -211,11 +211,12 @@ Steps 1-3, 5 and 6 run as written. Step 4, the quiz, is replaced:
   each blocking edge naming only a ticket that genuinely gates it. Merge,
   split or re-edge the draft until it holds.
 - Print the breakdown as step 4 presents it - each ticket's **Title**,
-  **Blocked by** and **What it delivers** - so a human watching can see it,
-  in a reply of its own with no tool call in it, for the reason step 4
-  gives.
-- Ask nothing, and go straight to step 5: it publishes 2 or more tickets, or
-  collapses 0 or 1 into the parent.
+  **Blocked by** and **What it delivers** - so a human watching can see it.
+  It is not a turn-final reply: it asks no question, and a reply with no
+  tool call ends the turn, so never end the turn on it. The published
+  tickets carry the same breakdown.
+- Ask nothing, and go straight to step 5 in the same turn: it publishes 2 or
+  more tickets, or collapses 0 or 1 into the parent.
 
 A failure in step 5 stops the breakdown as it does in the attended process,
 and the quick implementation that ran it stops with it.
