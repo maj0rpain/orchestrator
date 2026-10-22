@@ -119,8 +119,7 @@ fake_flow autopilot-start
 "$ORCH" state set issue 7 >/dev/null
 fake_issue 7 open ready-for-agent
 planf="$(mktemp -d)/01-plan.md"
-complete_handoff "$planf"
-printf '\n## Autopilot\n\nRounds: 4\nBudget: 5\n' >>"$planf"
+plan_file "$planf" $'Rounds: 4\nBudget: 5'
 
 out="$("$ORCH" autopilot rounds 2>&1)"; st=$?
 assert_status "rounds with no plan comment dies" "$st" 1

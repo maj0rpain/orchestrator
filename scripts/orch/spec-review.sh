@@ -1752,13 +1752,11 @@ spec_review_apply() {
 
   local held_any=""
   [ "$SR_FMODE" != hold ] || [ "${#SR_IT_FUND[@]}" -eq 0 ] || held_any=1
-  local log
+  local log=""
   if [ -z "$held_any" ]; then
     log="$(spec_review_changelog "$round" "$unattended" "$tickets" "$hosts")"
-  else
-    log=""
+    spec_review_local_write "$dir/changelog.md" "$log"$'\n'
   fi
-  [ -n "$held_any" ] || spec_review_local_write "$dir/changelog.md" "$log"$'\n'
 
   # Flow mode writes through the spec command, whose guards hold; the
   # standalone entry through the stateless issue commands.

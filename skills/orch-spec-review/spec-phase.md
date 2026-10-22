@@ -20,8 +20,10 @@ does not apply: run **Inputs** below in its place.
 
 When `bash "$ORCH" autopilot active` exits 0 the review runs unattended
 (ADR-0049), each round as in an **Unattended spec review** - `unattended-spec-review.md`
-- except that the round count comes from the plan, not from a question, and
-the answer is `recommended` without `--unattended`, which is for a quick
+- except that all four lenses run, Fidelity included, in flow mode (**Inputs**
+and **The Fidelity lens** below, not the standalone form with `--round 1/1
+--issue`); the round count comes from the plan, not from a question; and the
+answer is `recommended` without `--unattended`, which is for a quick
 implementation. The batch is printed as for an attended review and the
 session goes straight on; no question is asked of the human except for
 fundamental items. The ticket question, when `apply` pauses with exit 3, is

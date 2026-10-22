@@ -1977,8 +1977,7 @@ out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "doctor --flow fails with the handoff comments missing" "$st" 1
 assert_contains "naming the missing plan comment" "$out" "handoff 01-plan comment is missing on issue #7"
 plan_h="$(mktemp -d)/01-plan.md"
-complete_handoff "$plan_h"
-printf '## Autopilot\n\nRounds: 2\nBudget: 3\n' >>"$plan_h"
+plan_file "$plan_h" $'Rounds: 2\nBudget: 3'
 spec_h="$(mktemp -d)/02-spec.md"
 complete_handoff "$spec_h"
 ORCH_AUTOPILOT=1 "$ORCH" handoff post 01-plan "$plan_h" >/dev/null 2>&1

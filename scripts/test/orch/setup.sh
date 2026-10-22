@@ -303,6 +303,12 @@ complete_handoff() {
     writeln "$heading" "Placeholder for ${heading#\#\# }." ''
   done <<<"$headings" >"$1"
 }
+# plan_file <file> [block]: a complete plan handoff, with the `## Autopilot`
+# block's body when one is given.
+plan_file() {
+  complete_handoff "$1" || return 1
+  [ -z "${2:-}" ] || printf '\n## Autopilot\n\n%s\n' "$2" >>"$1"
+}
 
 # SHELL_CODE_AWK: the one rule of what counts as code in a shell file, an awk
 # function library an awk scanner includes by concatenation (awk

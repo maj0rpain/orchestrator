@@ -455,12 +455,6 @@ restore_suite_env
 
 # --- handoff comments (autopilot) ---------------------------------------------
 # In an autopilot flow a handoff is one tagged issue comment, its only copy.
-# plan_file <file> [block]: a complete plan handoff, with the `## Autopilot`
-# block's body when one is given.
-plan_file() {
-  complete_handoff "$1" || return 1
-  [ -z "${2:-}" ] || printf '\n## Autopilot\n\n%s\n' "$2" >>"$1"
-}
 echo
 echo "handoff post, fetch and path in autopilot"
 fake_flow handoff-comments
