@@ -126,18 +126,7 @@ has_line "the summary has input" "$out" "| Input | 200 | 200 | 100 | 300 |"
 echo
 echo "the summary rounds half up"
 # Four runs of 1, 1, 1 and 2 turns: a mean of 1.25, an exact tie at one decimal.
-tie="$bench_root/tie"
-mkdir -p "$tie"
-cp "$FIXTURE/no-baseline/lens" "$FIXTURE/no-baseline/model" "$FIXTURE/no-baseline/revision" \
-  "$FIXTURE/no-baseline/spec.md" "$tie/"
-for tie_run in 1 2 3 4; do
-  mkdir "$tie/run-$tie_run"
-  printf '%s\n' '{"type":"assistant","message":{"id":"m1","content":[],"usage":{"input_tokens":100}}}' \
-    >"$tie/run-$tie_run/transcript.jsonl"
-done
-printf '%s\n' '{"type":"assistant","message":{"id":"m2","content":[],"usage":{"input_tokens":100}}}' \
-  >>"$tie/run-4/transcript.jsonl"
-run_bench measure "$tie"
+run_bench measure "$FIXTURE/tie"
 has_line "a mean tied at 1.25 prints 1.3" "$out" "| Turns | 1.3 | 1 | 1 | 2 |"
 
 echo

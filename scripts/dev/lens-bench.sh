@@ -108,12 +108,12 @@ snapshot_worktree() {
 # lens_fixture <lens>: the path of <lens>'s committed fixture directory,
 # failing when there is none.
 lens_fixture() {
-  local fixture="$SCRIPT_DIR/lens-bench/$1" exists=1
+  local fixture="$SCRIPT_DIR/lens-bench/$1" shaped=1
   # A bad-shaped name counts as missing: . and .. would resolve to a directory.
   case "$1" in
-    */* | .*) exists="" ;;
+    */* | .*) shaped="" ;;
   esac
-  [ -n "$exists" ] && [ -d "$fixture" ] || fail "$1: unknown lens, no fixture directory $fixture"
+  [ -n "$shaped" ] && [ -d "$fixture" ] || fail "$1: unknown lens, no fixture directory $fixture"
   printf '%s\n' "$fixture"
 }
 
