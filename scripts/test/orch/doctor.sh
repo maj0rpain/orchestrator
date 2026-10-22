@@ -116,10 +116,11 @@ assert_eq "doctor.sh no longer defines host_detect" \
 # --- doctor.sh is a one-way dependency (#281) ----------------------------------
 echo
 echo "doctor.sh is a one-way dependency (#281)"
-# doctor.sh calls into orch.sh, never the other way round: no non-comment line
-# of orch.sh or of any module beside doctor.sh in its orch/ directory names, as
-# a whole word, a function doctor.sh defines - except cmd_doctor, which main()
-# dispatches, and the reporters d_ok, d_warn, d_fail and d_remedy, which a
+# doctor.sh calls into orch.sh, never the other way round: the code view
+# (shell_code) of orch.sh and of every module beside doctor.sh in its orch/
+# directory names, as a whole word, no function doctor.sh defines - a name in a
+# comment is no call; one in a quoted literal is - except cmd_doctor, which
+# main() dispatches, and the reporters d_ok, d_warn, d_fail and d_remedy, which a
 # check living in the module of the concept it serves (agent.sh's
 # check_agent_settings, #1358) reports through when doctor runs it.
 # doctor_callbacks <scripts-dir> prints each such name found, for the

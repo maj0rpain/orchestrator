@@ -9,9 +9,10 @@
 echo
 echo "common.sh is the bottom layer"
 # common.sh holds the primitives no concept owns and calls nothing a noun
-# module defines: no non-comment line of it names, as a whole word, a function
+# module defines: its code view (shell_code) names, as a whole word, no function
 # defined in a module of its orch/ directory other than common.sh and gh.sh,
-# the adapter layer below it. common_upcalls <scripts-dir> prints each such
+# the adapter layer below it. A name in a comment is no call; one in a quoted
+# literal is. common_upcalls <scripts-dir> prints each such
 # name found in <scripts-dir>/orch/common.sh. A definition is a column-0
 # `name()` line. host.sh, triage-labels.sh and planning-allowlist.sh sit
 # outside orch/, so common.sh's calls into them are outside the check.
