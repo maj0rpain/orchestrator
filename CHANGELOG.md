@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.28.5
+
+The Implementability and Testability lenses now name Junie's search and read tools beside Claude Code's, and `docs/host-capabilities.md` gains a **Search and read code** row with Junie's fallbacks. `orch.sh doctor` reports it as a capability Junie lacks.
+
 ## 4.28.4
 
 Give the busy-checkout line and remedy one dispatch, and tidy the test helpers behind it (no change in behaviour).
