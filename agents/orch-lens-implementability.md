@@ -48,20 +48,27 @@ open.
   name.
 - Code a map entry names is read only at that entry's range, with an offset
   and limit (on Claude Code, Read's `offset` and `limit`; on Junie, `open`
-  at the range's starting line number; see `docs/host-capabilities.md`'s **Search and read code**), never searched for and
-  never read whole, however short the file. The one exception is the search
+  at the range's starting line number; see `docs/host-capabilities.md`'s
+  **Search and read code**), never searched for and never read whole,
+  however short the file. The one exception is the search
   that **Using an entry** and the old-entry rule below call for.
 - Everything no entry names - a symbol the edited body newly names, even in
   a file the map already lists, and the callers or callees below - you
-  locate by search before you read any of its content, in two
-  steps. First, a search across the repo lists only the names of the
-  matching files (on Claude Code, Grep's `files_with_matches` output; on Junie, `grep_search`'s file names; see `docs/host-capabilities.md`'s **Search and read code**). Then
-  a content search, with line numbers and capped at 30 result lines (on Claude Code, Grep's `head_limit`; on Junie, `grep_search` scoped by `path`; see `docs/host-capabilities.md`'s **Search and read code**), runs only in the files that matter, to
-  find the lines to read. A content search never runs repo-wide, and never
+  locate by search before you read any of its content, in two steps.
+  First, a search across the repo lists only the names of the matching
+  files (on Claude Code, Grep's `files_with_matches` output; on Junie,
+  `grep_search`'s file names; see `docs/host-capabilities.md`'s **Search
+  and read code**). Then a content search, with line numbers and capped at
+  30 result lines (on Claude Code, Grep's `head_limit`; on Junie,
+  `grep_search` scoped by `path`; see `docs/host-capabilities.md`'s
+  **Search and read code**), runs only in the files that matter, to find
+  the lines to read. A content search never runs repo-wide, and never
   uncapped.
 - Batch: issue every independent search and read of a step together in one
-  turn (on Claude Code, its Grep, Glob and Read calls; on Junie, its `grep_search`, `glob_search` and `open` calls), rather than one per turn. Once the spec and the map are read,
-  send in one turn the range reads for every location a map entry names
+  turn (on Claude Code, its Grep, Glob and Read calls; on Junie, its
+  `grep_search`, `glob_search` and `open` calls), rather than one per turn.
+  Once the spec and the map are read, send in one turn the range reads
+  for every location a map entry names
   and the searches for every location no entry names; then send the reads
   for all the search hits in one turn. Every turn re-reads the whole
   context, so fewer turns cost less.
