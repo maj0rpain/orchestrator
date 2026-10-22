@@ -204,7 +204,9 @@ As each implementer's report is recorded, its `Deviation` line goes under
 ticket, `- #<ticket>: <the Deviation line's text>`. With no such ticket,
 **Deviations** reads `None.`. Step 6 hands these bullets to the review pass,
 and step 7's PR body carries them, so a later standalone pass reads them
-there.
+there. Keep each report's `Evidence` line, its sixth, for step 7's PR body:
+the red runs its **Evidence** draws on. A report with no `Evidence:` line
+reads as `Evidence: None`; carry on.
 
 The breakdown is collapsed when step 3 found or made no sub-issue - `ticket
 exists` printed `collapsed`, or `orch-to-tickets` reported `collapsed`: no

@@ -137,7 +137,8 @@ is a deviation, named on the finding's line under **Findings** in the record.
 - **One test per blocking behaviour finding**, at a seam the repo's existing
   tests already use.
 - **Watch it fail on the unfixed code.** That failure is the proof the
-  problem was real.
+  problem was real. Note the test's name and its failure, in one line, as
+  the run printed it: the record's **Evidence** carries it.
 - **Then the smallest fix that removes the cause**, and makes it pass.
   Name the finding's cause, and search for every site it acts at - other
   copies of the logic, other callers, other inputs it mishandles - then fix
@@ -258,6 +259,10 @@ Host fallbacks: <each fallback taken, or None>
 
 - <severity>: <claim> - <fix commit SHA>
 
+## Evidence
+
+- <test name> - <one-line red failure>
+
 ## Open blocking
 
 - <claim> - <why it could not be fixed>
@@ -301,6 +306,13 @@ what later iterations of this loop blame against.
 Each **Waiting to be filed** bullet carries the finding's location, as the
 template shows, with `-` in its place when the finding gave `-`: later
 iterations' known items copy the bullet as written.
+
+**Evidence** holds the red run of each failing test step 1 wrote, one entry
+per test: its name, then its failure on the unfixed code in one line as the
+run printed it, never invented - or `None` when no test went red. The closer
+draws its comment's Evidence from it. A reader of a record with no
+`## Evidence` section, one written before the section existed, reads it as
+`None` and carries on.
 
 **Merge resolutions** holds the prompt's, as given, `None` included -
 recorded, never fixed here unless a reviewer's finding on it reached the
