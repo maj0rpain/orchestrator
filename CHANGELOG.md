@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.28.1
+
+The filed-finding body parser fills one associative array the caller declares, and `finding-triage scan --pr` parses each body once.
+
 ## 4.28.0
 
 The spec review shows its view and asks its batch question, `show <n>` re-ask and ticket question as one turn-final plain-text reply with the answer words spelled out, not with the ask tool, since some hosts hide a long text written beside a tool call. `spec-review check`'s pass line and the paste guard's deny message now say to end the turn on the view in plain text (ADR-0051).
