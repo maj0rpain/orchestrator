@@ -33,6 +33,9 @@ missing="$(bash -c 'source "$1"
       || printf "%s\n" "$sev"
   done' _ "$ORCH" 2>&1)"
 assert_eq "every member of FILED_SEVERITIES has a severity-table entry" "$missing" ""
+# shellcheck disable=SC2016 # expanded by the inner bash
+assert_eq "FILED_SEVERITIES lists the table's severities in its order" \
+  "$(bash -c 'source "$1" && printf "%s" "$FILED_SEVERITIES"' _ "$ORCH")" "major nit"
 bash -c 'source "$1" && filed_severity_label blocking colour desc' _ "$ORCH"
 assert_status "a severity with no entry returns 1" "$?" 1
 

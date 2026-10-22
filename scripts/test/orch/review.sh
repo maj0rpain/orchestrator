@@ -293,6 +293,14 @@ assert_eq "rendering the suite-cost axis and the suite as its location" \
   "$(fake_body_of 19; printf x)" "$want"
 assert_eq "--axis suite-cost files as enhancement" "$(fake_labels_of 19)" "enhancement needs-triage review:major "
 
+# A sha in upper-case hex files as given.
+fake_github
+parts_with --sha ABC1234
+out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
+assert_status "files an upper-case hex sha" "$st" 0
+assert_contains "naming it in the location line" "$(fake_body_of "$out")" \
+  '**Location:** `scripts/a.sh:12` at ABC1234'
+
 fake_github
 out="$("$ORCH" review file nit "Rename it" "${parts[@]}" 2>&1)"; st=$?
 assert_status "files a nit" "$st" 0
@@ -433,6 +441,13 @@ for loc in scripts/a.sh scripts/a.sh: :12 scripts/a.sh:x scripts/a.sh:12- script
   assert_eq "naming it and what it wants ($loc)" "$out" \
     "orch: not a location: $loc (want <file>:<line>, <file>:<start>-<end> or suite)"
 done
+assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
+
+parts_with --sha HEAD
+out="$("$ORCH" review file major "Title" "${args[@]}" 2>&1)"; st=$?
+assert_status "refuses a sha that is not hex" "$st" 1
+assert_eq "naming the sha, not a field of the round trip" "$out" \
+  "orch: not a sha: HEAD (want a hex commit SHA)"
 assert_eq "and writes nothing" "$(fake_snapshot)" "$before"
 
 # The round trip: a body that does not parse back to its parts is refused,
