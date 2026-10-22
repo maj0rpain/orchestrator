@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.22.0
+
+The review loop's budget question now suggests a budget sized to the change instead of a fixed default of 5: a first loop offers 3, 5 or 8, the driver's pick from the lines, files, tickets and modules the change touches, risk weighing above raw size; a further loop after a bounded stop offers 1, 3 or 5, judged from what the previous loop left. The suggestion is listed first, marked "(Recommended)" with a one-clause reason, and Other still takes any whole number from 1 up (#1362).
+
 ## 4.21.0
 
 The spec review's compact view now shows each material item as one line, its summary and its reason, with one `Option <L> - <label>: <summary>` line per option of a decision item; the word diffs and the findings each item cited are gone, and `show <n>` still prints an item in full. `spec-review check` and `apply` refuse a summary of more than 30 words, the changelog no longer tags the minor items the human's answer applied, and the batch question's Other answer may now be a free-text question, answered in chat before the batch is asked again (#1344, #1250, #1268).
