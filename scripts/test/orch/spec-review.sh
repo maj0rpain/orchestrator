@@ -392,7 +392,7 @@ Round 1 of 2
 
 ### Testability
 - (3) decision: took A - Keep gamma
-- (4, minor) Insert a test note after Delta
+- (4) Insert a test note after Delta
 - (5) resolved by (4)
 
 ### Implementability
@@ -515,8 +515,8 @@ assert_eq "-<n>: the item declined, with its --reasons line" \
   "$(has_line "$sra_cl" '- (1) "Alpha should say alpha prime." - the comment is stale')" yes
 assert_eq "an unnamed recommend-decline item, declined as recommended" \
   "$(has_line "$sra_cl" '- (2) "The spec reverses the plan'"'"'s choice of beta." - spec departs from the plan: declined as recommended: the plan chose this')" yes
-assert_eq "an unnamed minor apply item, applied and tagged minor" \
-  "$(has_line "$sra_cl" "- (4, minor) Insert a test note after Delta")" yes
+assert_eq "an unnamed minor apply item, applied, untagged" \
+  "$(has_line "$sra_cl" "- (4) Insert a test note after Delta")" yes
 assert_eq "posted as the round's comment" "$(fake_comments_of 14)" "$sra_cl"
 
 # `+<n>` applies a recommend-decline item; `-<n>` leaves a decision undecided
@@ -553,8 +553,9 @@ assert_status "an override answer naming only the recommendation applies" "$st" 
 assert_eq "its changelog is the recommended answer's" "$(cat "$d/changelog.md")" "$sra_log"
 assert_eq "its spec.md is the recommended answer's" "$(cat "$d/spec.md")" "$sra_clean"
 
-# The minor tag (#1240): a minor item applied by the human's answer reads
-# `(<n>, minor)` in the changelog and settled.md; nothing else is tagged.
+# No minor tag (#1240, #1352): a minor item applied by the human's answer
+# reads `- (<n>) <summary>` in the changelog and settled.md, untagged like
+# every other line, attended or unattended alike.
 # sra_minor_dir: sra_dir, with item 2 a minor recommend-decline item.
 sra_minor_dir() {
   local d
@@ -566,29 +567,26 @@ for sra_case in "all|by all" "+2|by +<n>"; do
   d="$(sra_minor_dir)"
   sra "$d" "${sra_case%%|*}"
   assert_status "a minor recommend-decline item applied ${sra_case#*|}: applies" "$st" 0
-  assert_eq "a minor recommend-decline item applied ${sra_case#*|}: tagged minor" \
-    "$(has_line "$(cat "$d/changelog.md")" "- (2, minor) Reverse the plan on Beta")" yes
-  assert_eq "a minor recommend-decline item applied ${sra_case#*|}: tagged minor in settled.md" \
-    "$(has_line "$(cat "$d/settled.md")" "- (2, minor) Reverse the plan on Beta")" yes
+  assert_eq "a minor recommend-decline item applied ${sra_case#*|}: untagged" \
+    "$(has_line "$(cat "$d/changelog.md")" "- (2) Reverse the plan on Beta")" yes
+  assert_eq "a minor recommend-decline item applied ${sra_case#*|}: untagged in settled.md" \
+    "$(has_line "$(cat "$d/settled.md")" "- (2) Reverse the plan on Beta")" yes
 done
 d="$(sra_dir)"
 sra "$d" recommended
-assert_eq "a minor item applied by recommended: tagged minor in settled.md" \
-  "$(has_line "$(cat "$d/settled.md")" "- (4, minor) Insert a test note after Delta")" yes
+assert_eq "a minor item applied by recommended: untagged in settled.md" \
+  "$(has_line "$(cat "$d/settled.md")" "- (4) Insert a test note after Delta")" yes
 d="$(sra_minor_dir)"
 sra "$d" "3B"
 assert_status "an override answer leaving minor items unnamed applies" "$st" 0
 sra_cl="$(cat "$d/changelog.md")"
-assert_eq "a minor item left unnamed in an override answer: tagged minor" \
-  "$(has_line "$sra_cl" "- (4, minor) Insert a test note after Delta")" yes
-assert_eq "a minor item left unnamed in an override answer: tagged minor in settled.md" \
-  "$(has_line "$(cat "$d/settled.md")" "- (4, minor) Insert a test note after Delta")" yes
+assert_eq "a minor item left unnamed in an override answer: untagged" \
+  "$(has_line "$sra_cl" "- (4) Insert a test note after Delta")" yes
+assert_eq "a minor item left unnamed in an override answer: untagged in settled.md" \
+  "$(has_line "$(cat "$d/settled.md")" "- (4) Insert a test note after Delta")" yes
+assert_eq "an attended changelog: no line tagged minor" "$(grep -c 'minor)' "$d/changelog.md")" 0
 assert_eq "a minor item declined as recommended: untagged" \
   "$(has_line "$sra_cl" '- (2) "The spec reverses the plan'"'"'s choice of beta." - declined as recommended: the plan chose this')" yes
-assert_eq "a material item applied: untagged" \
-  "$(has_line "$sra_cl" "- (1) Folded in @alice's comment on Alpha")" yes
-assert_eq "a decision line: untagged" "$(has_line "$sra_cl" "- (3) decision: took B - Drop gamma")" yes
-assert_eq "a resolved line: untagged" "$(has_line "$sra_cl" "- (5) resolved by (4)")" yes
 for sra_case in "-4|by -<n>" "none|by none"; do
   d="$(sra_dir)"
   sra "$d" "${sra_case%%|*}"
@@ -679,6 +677,22 @@ sra_refused "text outside a block" "$d" "batch.md line 58: text outside" recomme
 d="$(sra_dir)"
 sed -i '/^@@ summary Insert/d' "$d/batch.md"
 sra_refused "an item with no summary" "$d" "item 4 has no @@ summary" recommended
+
+# The summary cap (#1352): apply shares check's grammar, so refuses the same
+# summaries of more than 30 words and passes one of 30.
+sra_w30="$(printf 'w%s ' {1..30})"; sra_w30="${sra_w30% }"
+d="$(sra_dir)"
+sed -i "s/^@@ summary Insert a test note after Delta\$/@@ summary $sra_w30 w31/" "$d/batch.md"
+sra_refused "a 31-word item summary" "$d" \
+  "orch: batch.md line 47: item 4's @@ summary has 31 words, more than 30" recommended
+d="$(sra_dir)"
+sed -i "s/^@@ summary Gamma dropped\$/@@ summary $sra_w30 w31/" "$d/batch.md"
+sra_refused "a 31-word option summary" "$d" \
+  "orch: batch.md line 39: item 3 option B's @@ summary has 31 words, more than 30" recommended
+d="$(sra_dir)"
+sed -i "s/^@@ summary Insert a test note after Delta\$/@@ summary $sra_w30/; s/^@@ summary Gamma dropped\$/@@ summary $sra_w30/" "$d/batch.md"
+sra "$d" recommended
+assert_status "30-word item and option summaries: apply" "$st" 0
 d="$(sra_dir)"
 sed -i '/^@@ lens consistency/d' "$d/batch.md"
 sra_refused "a lens with no @@ lens line" "$d" "no @@ lens line for consistency" recommended
@@ -1628,6 +1642,24 @@ check_refused src "a @@ why under an @@ option" "$d" \
 d="$(src_dir)"
 sed -i '16a @@ why Beta again' "$d/batch.md"
 check_refused src "a second @@ why on one item" "$d" "orch: batch.md line 24: a second @@ why for this item"
+
+# The summary cap (#1352): an item's or an option's @@ summary of more than
+# 30 words - runs of non-whitespace - is refused, naming the item, its option
+# and its batch.md line; one of exactly 30 words passes.
+src_w30="$(printf 'w%s  ' {1..30})"; src_w30="${src_w30%  }"
+src_w31="$src_w30	w31"
+d="$(src_dir)"
+sed -i "17s/.*/@@ summary $src_w31/" "$d/batch.md"
+check_refused src "a 31-word item summary" "$d" \
+  "orch: batch.md line 17: item 2's @@ summary has 31 words, more than 30"
+d="$(src_dir)"
+sed -i "35s/.*/@@ summary $src_w31/" "$d/batch.md"
+check_refused src "a 31-word option summary" "$d" \
+  "orch: batch.md line 35: item 3 option B's @@ summary has 31 words, more than 30"
+d="$(src_dir)"
+sed -i "17s/.*/@@ summary $src_w30/; 35s/.*/@@ summary $src_w30/" "$d/batch.md"
+src "$d"
+assert_status "30-word item and option summaries pass" "$st" 0
 
 # The view of the skill's worked-example batch, as it stands: one item of each
 # kind and its ran and standalone lens lines.

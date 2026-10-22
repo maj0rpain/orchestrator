@@ -164,6 +164,20 @@ spec_review_item_check() {
 # naming the line.
 spec_review_batch_die() { die "batch.md line $1: $2"; }
 
+# The most words a batch.md @@ summary may hold (#1352), so each line of the
+# compact view stays short.
+SPEC_REVIEW_SUMMARY_WORDS=30
+
+# spec_review_summary_cap <line> <what> <summary>: dies, naming <line> and
+# <what> - `item <n>` or `item <n> option <L>` - when <summary> holds more
+# than SPEC_REVIEW_SUMMARY_WORDS words, each a run of non-whitespace.
+spec_review_summary_cap() {
+  local words
+  read -r -a words <<<"$3"
+  [ "${#words[@]}" -le "$SPEC_REVIEW_SUMMARY_WORDS" ] \
+    || spec_review_batch_die "$1" "$2's @@ summary has ${#words[@]} words, more than $SPEC_REVIEW_SUMMARY_WORDS"
+}
+
 # spec_review_mark_check <line> <n> <rec> <mark>: dies, naming <line>,
 # unless item <n>'s <mark> - the last fixed token of its `@@ item` line - is
 # material or minor.
@@ -308,10 +322,12 @@ spec_review_batch_parse() {
         [ -n "$args" ] || spec_review_batch_die "$lineno" "@@ summary needs its line"
         [ "${SR_IT_REC[$cur]}" != resolved ] || spec_review_batch_die "$lineno" "a resolved item carries no @@ summary"
         if [ "$opt" -ge 0 ]; then
+          spec_review_summary_cap "$lineno" "item ${SR_IT_N[$cur]} option ${SR_OP_LETTER[$opt]}" "$args"
           [ -z "${SR_OP_SUMMARY[$opt]+x}" ] || spec_review_batch_die "$lineno" "a second @@ summary for this option"
           SR_OP_SUMMARY[opt]="$args"
         else
           [ "${SR_IT_REC[$cur]}" != decision ] || spec_review_batch_die "$lineno" "a decision item's summaries go under its options"
+          spec_review_summary_cap "$lineno" "item ${SR_IT_N[$cur]}" "$args"
           [ -z "${SR_IT_SUMMARY[$cur]+x}" ] || spec_review_batch_die "$lineno" "a second @@ summary for this item"
           SR_IT_SUMMARY[cur]="$args"
         fi ;;
@@ -1025,13 +1041,11 @@ spec_review_decline_reason() {
 }
 
 # spec_review_item_line <index> <unattended>: item <index>'s changelog line.
-# A minor item applied by the human's answer is tagged `(<n>, minor)`; an
-# unattended run, which no human answers, tags nothing.
+# An applied item reads `- (<n>) <summary>`, minor or material alike (#1352).
 spec_review_item_line() {
-  local i="$1" n="${SR_IT_N[$1]}" j reason tag=""
-  [ "$2" = true ] || [ "${SR_IT_MARK[$i]}" != minor ] || tag=", minor"
+  local i="$1" n="${SR_IT_N[$1]}" j reason
   case "${SR_DISP[$i]}" in
-    applied) printf -- '- (%s%s) %s\n' "$n" "$tag" "${SR_IT_SUMMARY[$i]}" ;;
+    applied) printf -- '- (%s) %s\n' "$n" "${SR_IT_SUMMARY[$i]}" ;;
     taken)
       j="$(spec_review_option_index "$i" "${SR_TAKEN[$i]}")"
       if [ "$2" = true ]; then
