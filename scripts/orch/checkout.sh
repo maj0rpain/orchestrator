@@ -140,7 +140,7 @@ current_branch_or_die() {
 # read exits 1, never read as free or busy. Called as a bare statement, so
 # that exit stops the caller.
 checkout_busy() {
-  local var="$1" remedy_var="$2" signals=" ${*:3} " b dirty busy_line="" busy_remedy=""
+  local line_var="$1" remedy_var="$2" signals=" ${*:3} " b dirty busy_line="" busy_remedy=""
   if [[ "$signals" == *" flow "* ]] && flow_active; then
     busy_line="busy: a flow is mid-pipeline (slug: $(state_get slug), phase: $(state_get phase))"
     busy_remedy="One flow at a time - finish it, or run $(flow_cmd abort)."
@@ -156,7 +156,7 @@ checkout_busy() {
       busy_remedy="Commit, stash, or discard these changes."
     }
   fi
-  printf -v "$var" '%s' "$busy_line"
+  printf -v "$line_var" '%s' "$busy_line"
   printf -v "$remedy_var" '%s' "$busy_remedy"
 }
 

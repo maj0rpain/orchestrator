@@ -27,7 +27,7 @@ assert_eq "checks the new branch out" "$(git branch --show-current)" "orch/11-bc
 assert_eq "records the branch in state" "$(orch_gh_failing state get branch)" "orch/11-bcreate"
 assert_eq "records the fork point as base_sha" "$(orch_gh_failing state get base_sha)" "$before_sha"
 assert_eq "records the flow's base in the branch's git config" \
-  "$(git config --get branch.orch/11-bcreate.orchestrator-base)" "$(orch_gh_failing state get base)"
+  "$(base_key orch/11-bcreate)" "$(orch_gh_failing state get base)"
 assert_eq "and the fork point as its base SHA there" \
   "$(git config --get branch.orch/11-bcreate.orchestrator-base-sha)" "$before_sha"
 
