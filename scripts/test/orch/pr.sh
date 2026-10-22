@@ -72,6 +72,9 @@ out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "refuses when state has no issue" "$st" 1
 assert_contains "with the guard branch create uses" "$out" \
   "no issue recorded in state - the spec phase must publish one first"
+out="$("$ORCH" pr open "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
+assert_eq "the recorded issue is checked before the body's standard" "$out" \
+  "orch: no issue recorded in state - the spec phase must publish one first"
 
 "$ORCH" state set issue 16
 fake_github
@@ -228,6 +231,9 @@ out="$("$ORCH" pr open "Title" "$body" 2>&1)"; st=$?
 assert_status "refuses when state has no branch" "$st" 1
 assert_contains "with the exact require_branch die message" "$out" \
   "no branch recorded in state"
+out="$("$ORCH" pr open "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
+assert_eq "the recorded branch is checked before the body's standard" "$out" \
+  "orch: no branch recorded in state"
 restore_suite_env
 
 # --- pr publish --------------------------------------------------------------
@@ -456,6 +462,11 @@ assert_eq "pushing nothing" \
   "missing"
 assert_eq "creating no PR" "$(fake_prs)" "23 24 30 31 32 33 34 35 37 "
 assert_eq "and writing no PR marker" "$(pr_marker_of quick/25-refused)" ""
+git checkout -q --detach
+out="$("$ORCH" pr publish 25 "Title" "$(pr_body_without '## Summary')" 2>&1)"; st=$?
+assert_eq "the current branch is checked before the body's standard" "$out" \
+  "orch: not on a branch (detached HEAD)"
+git checkout -q quick/25-refused
 
 help="$("$ORCH" help)"
 assert_contains "help documents --draft and --label" "$help" \
@@ -659,6 +670,11 @@ out="$(release "Release" "$body" 2>&1)"; st=$?
 assert_status "refuses when the base branch is the default branch" "$st" 1
 assert_contains "naming it" "$out" "main"
 assert_eq "and opens no PR" "$(fake_prs)" ""
+summaryless="$(mktemp)"
+writeln 'Ships the uat project.' >"$summaryless"
+out="$(release "Release" "$summaryless" 2>&1)"; st=$?
+assert_eq "the base branch is checked before the body's standard" "$out" \
+  "orch: the base branch is the default branch (main) - there is nothing to release; set another with base set"
 
 orch_gh_failing base set uat >/dev/null
 # Open PRs that are not a release PR: from uat into another base, and from

@@ -32,8 +32,8 @@ open_pr() {
   # claiming to close it - the release PR is what closes it.
   [ "$base" = "$(default_branch)" ] || keyword=Refs
   # open_pr runs in $(...), where errexit is off (#1327), so the temp body's
-  # creation and write are checked here: an unreadable body file would
-  # otherwise open the PR with only its closing line.
+  # creation and write are checked here: a failed write to the temp file
+  # would otherwise open the PR with a truncated body.
   tmp="$(mktemp)" || die "could not create a temp file for the PR body - no PR was opened"
   { printf '%s #%s\n\n' "$keyword" "$issue" && cat "$body_file"; } >"$tmp" || {
     rm -f "$tmp"
@@ -89,7 +89,8 @@ pr_labels_check() {
 # two-way and a `**Blast Radius:**` line with a value, both under
 # ## Merge Danger before the next H2. Structure only, never wording or order
 # (ADR-0027): lines inside fenced code blocks are skipped, so a Summary visual
-# can neither satisfy nor break it. Run before any push or create, so a
+# can neither satisfy nor break it. Run after the caller's argument and state
+# checks, which it would otherwise mask, and before any push or create, so a
 # refusal leaves nothing behind for the caller to undo.
 pr_body_check() {
   local body_file="$1" required problems
@@ -149,10 +150,10 @@ cmd_pr_open() {
     esac
   done
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  pr_body_check "$body_file" Summary Evidence "Merge Danger"
   require_issue issue
   require_branch branch
   base="$(flow_base)" || die "cannot read the flow's base branch from $STATE"
+  pr_body_check "$body_file" Summary Evidence "Merge Danger"
   # Draft is the honest signal: the review loop has not run yet, so marking it
   # ready is the loop's success condition rather than a comment nobody reads.
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" true ${labels[@]+"${labels[@]}"})"
@@ -183,9 +184,9 @@ cmd_pr_publish() {
   done
   [ -f "$body_file" ] || die "body file not found: $body_file"
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
-  pr_body_check "$body_file" Summary Evidence "Merge Danger"
   current_branch_or_die
   base="$(recorded_base "$branch")"
+  pr_body_check "$body_file" Summary Evidence "Merge Danger"
   pr="$(open_pr "$branch" "$base" "$issue" "$title" "$body_file" "$draft" ${labels[@]+"${labels[@]}"})"
   pr_labels_check "$pr" ${labels[@]+"${labels[@]}"}
   note "$pr"
@@ -201,12 +202,12 @@ cmd_pr_release() {
   local title="$1" body_file="$2" base default
   [ -n "$title" ] || die "the title is empty"
   [ -f "$body_file" ] || die "body file not found: $body_file"
-  # Only Summary: a release PR carries PRs already reviewed (#1387).
-  pr_body_check "$body_file" Summary
   base="$(base_branch)"
   default="$(default_branch)"
   [ "$base" != "$default" ] ||
     die "the base branch is the default branch ($default) - there is nothing to release; set another with base set"
+  # Only Summary: a release PR carries PRs already reviewed (#1387).
+  pr_body_check "$body_file" Summary
   local open
   gh_or_die --out open "list the open PRs from $base into $default" \
     adapter_prs_open "$base" "$default"
