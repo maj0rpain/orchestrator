@@ -150,9 +150,13 @@ section_body() {
 # The single statement of what a valid handoff is: one line per required
 # section, each `ok <heading>` or `FAIL <problem>`. doctor's flow-state check
 # reads the same answer rather than writing a second one that can drift from it.
+# <name> is the handoff file name the sections are looked up by, the file's own
+# basename unless given: an autopilot scratch file is not named as its handoff.
+# The plan's `## Autopilot` block is checked, and required, in an autopilot
+# session or when the third argument is `autopilot` (autopilot start).
 handoff_report() {
   local file="$1" base heading required failed=0
-  base="$(basename "$file")"
+  base="${2:-$(basename "$file")}"
   # Resolved up front, and the failure caught by hand: read straight out of a
   # process substitution, a name this file does not know would die in a subshell
   # nobody checks, the loop would read nothing, and a file with no required
@@ -169,6 +173,9 @@ handoff_report() {
       printf 'ok %s\n' "$heading"
     fi
   done <<<"$required"
+  if [ "$base" = 01-plan.md ] && { autopilot_active || [ "${3:-}" = autopilot ]; }; then
+    autopilot_block_report "$file" || failed=1
+  fi
   return "$failed"
 }
 
@@ -177,13 +184,15 @@ handoff_report() {
 # A missing file is one FAIL line and status 2, an invalid one status 1, so a
 # caller can pick its remedy without testing the file again. It never dies -
 # the status is the verdict, and each caller keeps its own reaction to it.
+# The third and fourth arguments are handoff_report's <name> and `autopilot`
+# switch.
 handoff_check() {
   local file="$1" show_ok="${2:-}" report line failed=0
   if [ ! -f "$file" ]; then
     note "FAIL  handoff not found: $file"
     return 2
   fi
-  report="$(handoff_report "$file")" || failed=1
+  report="$(handoff_report "$file" "${3:-}" "${4:-}")" || failed=1
   while IFS= read -r line; do
     case "$line" in
       "ok "*)   [ "$show_ok" = ok ] && note "ok    ${line#ok }" ;;
@@ -191,6 +200,59 @@ handoff_check() {
     esac
   done <<<"$report"
   return "$failed"
+}
+
+# handoff_marker <name> [retired]: the first line of a handoff's comment, the
+# hidden tag that makes an issue comment the handoff <name>: `01-plan`,
+# `02-spec` or `03-implement`.
+handoff_marker() { printf '<!-- orch:handoff %s%s -->\n' "$1" "${2:+ $2}"; }
+
+# handoff_name_check <name>: dies unless <name> is a handoff the table holds,
+# its file name without the `.md`.
+handoff_name_check() {
+  local phase handoff names=""
+  for phase in $(phase_list); do
+    handoff="$(phase_cell handoff "$phase")" || continue
+    [ "${handoff%.md}" != "$1" ] || return 0
+    names="${names:+$names|}${handoff%.md}"
+  done
+  die "unknown handoff name: $1 (want $names)"
+}
+
+# handoff_comment_post <issue> <name> <file>: posts <file>, already validated,
+# as a new comment on <issue> under <name>'s marker. The newest tagged comment
+# is the handoff, so a post never edits an earlier one.
+handoff_comment_post() {
+  local issue="$1" name="$2" file="$3" body
+  body="$(mktemp)" || die "could not create a temp file for the handoff comment"
+  { handoff_marker "$name"; cat "$file"; } >"$body"
+  gh_or_die "post the $name handoff on issue #$issue" adapter_issue_comment "$issue" "$body" \
+    || { rm -f "$body"; return 1; }
+  rm -f "$body"
+}
+
+# handoff_comment_fetch <issue> <name> <file>: writes the body of <issue>'s
+# newest comment tagged for <name>, marker stripped, to <file>. Non-zero, and
+# <file> untouched, when there is none or the newest is tagged retired.
+handoff_comment_fetch() {
+  local issue="$1" name="$2" file="$3" json raw
+  gh_or_die --out json "read the comments of issue #$issue" adapter_issue_json "$issue"
+  raw="$(jq -j --arg m "$(handoff_marker "$name")" --arg r "$(handoff_marker "$name" retired)" '
+    [.comments[] | select((.body | split("\n")[0] | rtrimstr("\r")) as $l | $l == $m or $l == $r)]
+    | last | .body // empty' <<<"$json")" || die "could not read issue #$issue's comments"
+  [ -n "$raw" ] || return 1
+  [ "$(printf '%s\n' "${raw%%$'\n'*}" | tr -d '\r')" != "$(handoff_marker "$name" retired)" ] || return 1
+  mkdir -p "$(dirname "$file")"
+  case "$raw" in
+    *$'\n'*) printf '%s\n' "${raw#*$'\n'}" >"$file" ;;
+    *) : >"$file" ;;
+  esac
+}
+
+# handoff_autopilot_only <op>: dies unless this is an autopilot session - the
+# only flow whose handoffs are comments.
+handoff_autopilot_only() {
+  autopilot_active || die "handoff $1 is for an autopilot flow (ORCH_AUTOPILOT=1): an interactive flow keeps its handoffs as files"
 }
 
 cmd_handoff() {
@@ -205,7 +267,39 @@ cmd_handoff() {
       # handoff directory and a zero exit, which is worse than no answer.
       local file
       file="$(handoff_file_for "$1")"
+      if autopilot_active; then
+        # The handoff is a comment: fetched into a scratch file, with the
+        # earlier ones beside it - a skill reaches a sibling handoff by its
+        # directory - where they exist.
+        local issue scratch="$ORCH/scratch" earlier
+        require_issue issue
+        for earlier in $(handoffs_due "$1"); do
+          [ "$earlier" = "$file" ] || handoff_comment_fetch "$issue" "${earlier%.md}" "$scratch/$earlier" || true
+        done
+        handoff_comment_fetch "$issue" "${file%.md}" "$scratch/$file" ||
+          die "issue #$issue has no ${file%.md} handoff comment"
+        printf '%s/%s\n' "$scratch" "$file"
+        return 0
+      fi
       printf '%s/%s\n' "$HANDOFF_DIR" "$file"
+      ;;
+    post)
+      [ $# -eq 2 ] || die "usage: orch.sh handoff post <name> <file>"
+      handoff_autopilot_only post
+      handoff_name_check "$1"
+      [ -f "$2" ] || die "handoff not found: $2"
+      local issue
+      require_issue issue
+      handoff_check "$2" "" "$1.md" || die "handoff $2 is not valid - nothing posted"
+      handoff_comment_post "$issue" "$1" "$2"
+      ;;
+    fetch)
+      [ $# -eq 2 ] || die "usage: orch.sh handoff fetch <name> <file>"
+      handoff_autopilot_only fetch
+      handoff_name_check "$1"
+      local issue
+      require_issue issue
+      handoff_comment_fetch "$issue" "$1" "$2" || die "issue #$issue has no $1 handoff comment"
       ;;
     validate)
       [ $# -eq 1 ] || die "usage: orch.sh handoff validate <file>"
@@ -228,6 +322,6 @@ cmd_handoff() {
         /[^[:space:]]/ { for (; held > 0; held--) print ""; print; seen = 1; next }
         seen { held++ }'
       ;;
-    *) die "unknown handoff op: ${op:-<none>} (want path|validate|section)" ;;
+    *) die "unknown handoff op: ${op:-<none>} (want path|post|fetch|validate|section)" ;;
   esac
 }

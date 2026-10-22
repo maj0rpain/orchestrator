@@ -89,6 +89,86 @@ autopilot_gate() {
     die "orchestrator.autopilot.permission-mode is not set - choose how headless sessions run (git config orchestrator.autopilot.permission-mode <${AUTOPILOT_MODES// /|}>)"
 }
 
+# autopilot_phase_label <phase>: the label that records an autopilot flow's
+# phase on its issue, `orch:<phase>` - the label is the flow's phase record.
+autopilot_phase_label() { printf 'orch:%s\n' "$1"; }
+
+# autopilot_block_values <file> <key>: the value of each `<key>: <value>` line
+# in <file>'s `## Autopilot` section, trimmed, one per line.
+autopilot_block_values() {
+  section_body "$1" '## Autopilot' | sed -n "s/^$2:[[:space:]]*\\(.*[^[:space:]]\\)[[:space:]]*\$/\\1/p"
+}
+
+# autopilot_block_report <file>: the plan's `## Autopilot` block, in
+# handoff_report's lines - `ok ## Autopilot`, or one FAIL line per problem -
+# and non-zero when any failed. The block is `Rounds` and `Budget`, each one
+# line holding a whole number of 1 or more.
+autopilot_block_report() {
+  local file="$1" key values failed=0
+  if ! grep -qxF '## Autopilot' "$file"; then
+    printf 'FAIL missing section: ## Autopilot\n'
+    return 1
+  fi
+  for key in Rounds Budget; do
+    values="$(autopilot_block_values "$file" "$key")"
+    if [ -z "$values" ]; then
+      printf 'FAIL ## Autopilot has no %s line (want "%s: <n>")\n' "$key" "$key"; failed=1
+    elif [ "$(wc -l <<<"$values" | tr -d ' ')" -gt 1 ]; then
+      printf 'FAIL ## Autopilot repeats its %s line\n' "$key"; failed=1
+    elif ! [[ "$values" =~ ^[0-9]+$ ]] || [ "$((10#$values))" -lt 1 ]; then
+      printf 'FAIL ## Autopilot %s is %s - it must be a whole number of 1 or more\n' "$key" "$values"; failed=1
+    fi
+  done
+  [ "$failed" = 1 ] || printf 'ok ## Autopilot\n'
+  return "$failed"
+}
+
+# autopilot_plan_value <Rounds|Budget>: the value of that line of the `##
+# Autopilot` block of the flow's issue's newest plan comment, printed as a plain
+# integer. Dies when the issue has no plan handoff or its block has no valid
+# value.
+autopilot_plan_value() {
+  local issue file value
+  require_issue issue
+  file="$(mktemp)" || die "could not create a temp file for the plan comment"
+  handoff_comment_fetch "$issue" 01-plan "$file" || { rm -f "$file"; die "issue #$issue has no 01-plan handoff comment"; }
+  value="$(autopilot_block_values "$file" "$1")"
+  rm -f "$file"
+  [[ "$value" =~ ^[0-9]+$ ]] && [ "$((10#$value))" -ge 1 ] ||
+    die "issue #$issue's plan comment has no valid ## Autopilot $1 line"
+  printf '%s\n' "$((10#$value))"
+}
+
+# autopilot_start <issue> <plan-file>: the planning close's last step. Before
+# any write it refuses an issue without the ready-for-agent label (checked as
+# issue ready checks it) and one that already carries a phase label, then
+# validates the plan, ## Autopilot block included. Then it posts the plan
+# comment and, last, adds the first phase's label - so a failure after the
+# comment leaves the issue unlabelled, never picked up. A re-run on an
+# unlabelled issue posts a newer plan comment, which supersedes the earlier.
+autopilot_start() {
+  # state is the read's throwaway half: only the labels are checked here.
+  # shellcheck disable=SC2034
+  local issue="$1" file="$2" ready state labels gh_err phase label first
+  case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
+  [ -f "$file" ] || die "plan file not found: $file"
+  ready="$(triage_label_for ready-for-agent)"
+  issue_state_labels_read "$issue" state labels gh_err \
+    || gh_die "read issue #$issue" "$gh_err"
+  list_has "$labels" "$ready" ||
+    die "issue #$issue does not carry the '$ready' label - an autopilot flow starts from a ready issue"
+  for phase in $PHASES; do
+    label="$(autopilot_phase_label "$phase")"
+    ! list_has "$labels" "$label" ||
+      die "issue #$issue already carries the phase label $label - it is already an autopilot flow"
+  done
+  handoff_check "$file" "" 01-plan.md autopilot || die "plan $file is not valid - nothing posted"
+  handoff_comment_post "$issue" 01-plan "$file"
+  first="$(autopilot_phase_label "${PHASES%% *}")"
+  capture_err gh_err adapter_issue_relabel "$issue" --add "$first" ||
+    die "posted the 01-plan comment on issue #$issue but adding $first failed: $(gh_reason "$gh_err") - the issue is unlabelled, so no watcher picks it up; re-run autopilot start"
+}
+
 cmd_autopilot() {
   local op="${1:-}"
   shift || true
@@ -101,6 +181,14 @@ cmd_autopilot() {
       [ $# -eq 0 ] || die "usage: orch.sh autopilot active"
       autopilot_active
       ;;
-    *) die "unknown autopilot op: ${op:-<none>} (want show|active)" ;;
+    rounds|budget)
+      [ $# -eq 0 ] || die "usage: orch.sh autopilot $op"
+      case "$op" in rounds) autopilot_plan_value Rounds ;; budget) autopilot_plan_value Budget ;; esac
+      ;;
+    start)
+      [ $# -eq 2 ] || die "usage: orch.sh autopilot start <issue> <plan-file>"
+      autopilot_start "$1" "$2"
+      ;;
+    *) die "unknown autopilot op: ${op:-<none>} (want show|active|rounds|budget|start)" ;;
   esac
 }

@@ -12,7 +12,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | --------- | --------------------------------------------------- |
 | `base`    | `set`, `show`, `clear`                               |
 | `parallel` | `show`                                             |
-| `autopilot` | `show`, `active`                                 |
+| `autopilot` | `show`, `active`, `rounds`, `budget`, `start`    |
 | `agent`   | `set`, `show`, `clear`, `get`                        |
 | `suite-cost` | `run`, `check`, `history`                     |
 | `repo`    | `show`                                               |
@@ -28,7 +28,7 @@ first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
 | `ticket-worktree` | `add`, `list`, `remove`                     |
 | `side-checkout` | `add`, `list`, `remove`, `prune`, `issue`     |
 | `state`   | `get`, `set`                                         |
-| `handoff` | `path`, `validate`, `section`                        |
+| `handoff` | `path`, `post`, `fetch`, `validate`, `section`       |
 | `glossary` | `terms`, `show`, `match`                           |
 | `phase`   | `advance`, `boundary`                                |
 

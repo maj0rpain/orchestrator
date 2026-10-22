@@ -309,7 +309,7 @@ assert_contains "with a usage line" "$out" "usage: orch.sh handoff section <file
 
 assert_contains "orch.sh help lists handoff section" "$("$ORCH" help)" "handoff section"
 out="$("$ORCH" handoff bogus 2>&1)"
-assert_contains "an unknown handoff op lists section" "$out" "want path|validate|section"
+assert_contains "an unknown handoff op lists section" "$out" "want path|post|fetch|validate|section"
 rm -f "$hs" "$hi"
 restore_suite_env
 
@@ -451,4 +451,99 @@ complete_handoff "$h3"
 out="$("$ORCH" handoff validate "$h3" 2>&1)"; st=$?
 assert_status "an old implement handoff without Merge resolutions still validates" "$st" 0
 assert_not_contains "and is not told the section is missing" "$out" "Merge resolutions"
+restore_suite_env
+
+# --- handoff comments (autopilot) ---------------------------------------------
+# In an autopilot flow a handoff is one tagged issue comment, its only copy.
+# plan_file <file> [block]: a complete plan handoff, with the `## Autopilot`
+# block's body when one is given.
+plan_file() {
+  complete_handoff "$1" || return 1
+  [ -z "${2:-}" ] || printf '\n## Autopilot\n\n%s\n' "$2" >>"$1"
+}
+echo
+echo "handoff post, fetch and path in autopilot"
+fake_flow handoff-comments
+"$ORCH" state set issue 7 >/dev/null
+fake_issue 7 open
+planf="$(mktemp -d)/01-plan.md"
+plan_file "$planf" $'Rounds: 2\nBudget: 3'
+
+out="$("$ORCH" handoff post 01-plan "$planf" 2>&1)"; st=$?
+assert_status "handoff post refuses outside autopilot" "$st" 1
+assert_contains "saying it is for an autopilot flow" "$out" "autopilot"
+export ORCH_AUTOPILOT=1
+out="$("$ORCH" handoff post 01-plan "$planf" 2>&1)"; st=$?
+assert_status "handoff post posts a valid plan" "$st" 0
+assert_eq "as one comment" "$(ls "$ORCH_GH_FAKE_STORE/issues/7/comments" | wc -l | tr -d ' ')" "1"
+assert_eq "tagged with the handoff's name" "$(fake_comments_of 7 | head -1)" "<!-- orch:handoff 01-plan -->"
+
+fetched="$(mktemp -d)/got.md"
+"$ORCH" handoff fetch 01-plan "$fetched" >/dev/null 2>&1; st=$?
+assert_status "handoff fetch succeeds" "$st" 0
+assert_eq "writing the body with the marker stripped" "$(cat "$fetched")" "$(cat "$planf")"
+
+# the newest tagged comment wins; untagged comments are not handoffs
+sed -i 's/Placeholder for Decisions\./Newer decisions./' "$planf"
+"$ORCH" handoff post 01-plan "$planf" >/dev/null 2>&1
+fake_comment 7 someone 2030-01-01T00:00:00Z "unrelated chatter"
+"$ORCH" handoff fetch 01-plan "$fetched" >/dev/null 2>&1
+assert_contains "the newest tagged comment wins" "$(cat "$fetched")" "Newer decisions."
+assert_eq "an older one is left in place" "$(ls "$ORCH_GH_FAKE_STORE/issues/7/comments" | wc -l | tr -d ' ')" "3"
+
+p="$("$ORCH" handoff path spec 2>&1)"; st=$?
+assert_status "handoff path fetches in autopilot" "$st" 0
+assert_contains "printing a scratch file under .orchestrator" "$p" "/.orchestrator/"
+assert_contains "holding the newest handoff" "$(cat "$p")" "Newer decisions."
+assert_not_contains "and not the handoff directory" "$p" "/handoff/"
+
+# a retired newest comment reads as no handoff
+fake_comment 7 someone 2030-01-02T00:00:00Z "<!-- orch:handoff 01-plan retired -->"
+out="$("$ORCH" handoff fetch 01-plan "$fetched" 2>&1)"; st=$?
+assert_status "a retired newest comment is no handoff to fetch" "$st" 1
+assert_contains "saying so" "$out" "no 01-plan handoff"
+out="$("$ORCH" handoff path spec 2>&1)"; st=$?
+assert_status "nor to path" "$st" 1
+out="$("$ORCH" handoff fetch 02-spec "$fetched" 2>&1)"; st=$?
+assert_status "a handoff never posted is none" "$st" 1
+out="$("$ORCH" handoff fetch bogus "$fetched" 2>&1)"; st=$?
+assert_status "an unknown name is refused" "$st" 1
+assert_contains "naming the names that exist" "$out" "01-plan"
+
+# a failed post posts nothing
+before="$(fake_snapshot)"
+bad_plan="$(mktemp -d)/01-plan.md"; printf '## Decisions\nOnly.\n' >"$bad_plan"
+out="$("$ORCH" handoff post 01-plan "$bad_plan" 2>&1)"; st=$?
+assert_status "an invalid handoff is refused" "$st" 1
+assert_contains "naming the missing section" "$out" "missing section"
+assert_eq "posting nothing" "$(fake_snapshot)" "$before"
+fake_fail adapter_issue_comment "HTTP 502"
+out="$("$ORCH" handoff post 01-plan "$planf" 2>&1)"; st=$?
+assert_status "a post gh refuses dies" "$st" 1
+fake_unfail
+assert_eq "having posted nothing" "$(fake_snapshot)" "$before"
+unset ORCH_AUTOPILOT
+restore_suite_env
+
+echo
+echo "handoff validate's Autopilot block"
+new_repo >/dev/null
+f="$(mktemp -d)/01-plan.md"
+plan_file "$f"
+out="$(env -u ORCH_AUTOPILOT "$ORCH" handoff validate "$f" 2>&1)"; st=$?
+assert_status "an interactive plan without the block validates as today" "$st" 0
+out="$(ORCH_AUTOPILOT=1 "$ORCH" handoff validate "$f" 2>&1)"; st=$?
+assert_status "an autopilot plan without the block fails" "$st" 1
+assert_contains "naming the block" "$out" "missing section: ## Autopilot"
+plan_file "$f" $'Rounds: 2\nBudget: 3'
+out="$(ORCH_AUTOPILOT=1 "$ORCH" handoff validate "$f" 2>&1)"; st=$?
+assert_status "a plan with the block passes in autopilot" "$st" 0
+assert_contains "reporting it ok" "$out" "ok    ## Autopilot"
+for body in $'Rounds: 0\nBudget: 3' $'Rounds: two\nBudget: 3' $'Rounds: 2' $'Budget: 3' $'Rounds: 2\nBudget: -1' $'Rounds: 2\nRounds: 3\nBudget: 3'; do
+  plan_file "$f" "$body"
+  out="$(ORCH_AUTOPILOT=1 "$ORCH" handoff validate "$f" 2>&1)"; st=$?
+  assert_status "the block '$(flat_text <<<"$body")' fails in autopilot" "$st" 1
+  out="$(env -u ORCH_AUTOPILOT "$ORCH" handoff validate "$f" 2>&1)"; st=$?
+  assert_status "and is ignored interactively" "$st" 0
+done
 restore_suite_env

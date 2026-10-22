@@ -140,6 +140,14 @@ orch.sh - deterministic operations for the orchestrator flow
                               the key and value when one is out of range
   autopilot active            exit 0 in an autopilot session (ORCH_AUTOPILOT=1),
                               1 otherwise
+  autopilot rounds            print the Rounds line of the flow's issue's
+  autopilot budget            plan comment (budget: its Budget line)
+  autopilot start <issue> <plan-file>
+                              the planning close's last step: refuse an issue
+                              without ready-for-agent or with a phase label,
+                              validate the plan (## Autopilot block included),
+                              post it as the plan handoff comment, then add
+                              orch:spec
   agent set <role> [--model <m>] [--effort <e>] [--global]
                               set a role's agent setting in local config,
                               or global with --global. Roles: implementer,
@@ -251,7 +259,17 @@ orch.sh - deterministic operations for the orchestrator flow
   phase boundary              print the block that ends a phase - the
                               handoff the current phase reads, and the
                               host's Next line
-  handoff path <phase>        print the handoff path for a phase
+  handoff path <phase>        print the handoff path for a phase (in an
+                              autopilot flow: fetch the handoff comment into a
+                              scratch file under .orchestrator/ and print it)
+  handoff post <name> <file>  in an autopilot flow: validate <file> and post
+                              it as the issue comment tagged
+                              `<!-- orch:handoff <name> -->` (01-plan,
+                              02-spec, 03-implement); the newest wins, and a
+                              failed post posts nothing
+  handoff fetch <name> <file> in an autopilot flow: write the newest such
+                              comment's body, marker stripped, to <file>; a
+                              newest one tagged retired is no handoff
   handoff validate <file>     check required sections exist and are non-empty
   handoff section <file> <heading>
                               print the body of the section headed

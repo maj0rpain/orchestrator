@@ -97,3 +97,61 @@ assert_contains "the CLI conventions' noun table has an autopilot row" \
   "$(grep '^| `autopilot`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`active`'
 assert_contains "host-capabilities has the headless-session row" \
   "$(grep '^| Start a headless session' "$PLUGIN_ROOT/docs/host-capabilities.md")" '`claude -p`'
+restore_suite_env
+
+# --- autopilot rounds, budget and start ---------------------------------------
+# The plan comment's `## Autopilot` block, and the planning close's last step.
+echo
+echo "autopilot start"
+fake_flow autopilot-start
+"$ORCH" state set issue 7 >/dev/null
+fake_issue 7 open ready-for-agent
+planf="$(mktemp -d)/01-plan.md"
+complete_handoff "$planf"
+printf '\n## Autopilot\n\nRounds: 4\nBudget: 5\n' >>"$planf"
+
+out="$("$ORCH" autopilot rounds 2>&1)"; st=$?
+assert_status "rounds with no plan comment dies" "$st" 1
+assert_contains "naming the missing plan" "$out" "no 01-plan handoff"
+
+fake_issue 8 open
+out="$("$ORCH" autopilot start 8 "$planf" 2>&1)"; st=$?
+assert_status "start refuses an issue without ready-for-agent" "$st" 1
+assert_contains "naming the label" "$out" "ready-for-agent"
+assert_eq "writing nothing" "$(fake_comments_of 8)$(fake_labels_of 8)" ""
+fake_issue 9 open ready-for-agent orch:review
+out="$("$ORCH" autopilot start 9 "$planf" 2>&1)"; st=$?
+assert_status "start refuses an issue with a phase label" "$st" 1
+assert_contains "naming the label" "$out" "orch:review"
+assert_eq "writing nothing" "$(fake_comments_of 9)" ""
+fake_issue 9 open ready-for-agent
+bad_plan="$(mktemp -d)/01-plan.md"; complete_handoff "$bad_plan"
+out="$("$ORCH" autopilot start 9 "$bad_plan" 2>&1)"; st=$?
+assert_status "start refuses a plan with no Autopilot block" "$st" 1
+assert_contains "naming it" "$out" "## Autopilot"
+assert_eq "writing nothing" "$(fake_comments_of 9)$(fake_labels_of 9)" "ready-for-agent "
+
+# a failure after the comment leaves the issue unlabelled and names the comment
+fake_fail adapter_issue_relabel "HTTP 502"
+out="$("$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
+assert_status "a failed label add dies" "$st" 1
+assert_contains "naming the comment posted" "$out" "posted the 01-plan comment on issue #7"
+assert_eq "leaving the issue without a phase label" "$(fake_labels_of 7)" "ready-for-agent "
+assert_eq "the comment is there" "$(fake_comments_of 7 | head -1)" "<!-- orch:handoff 01-plan -->"
+fake_unfail
+
+# a re-run on an unlabelled issue posts a newer plan comment, then labels last
+sed -i 's/^Rounds: 4/Rounds: 6/' "$planf"
+"$ORCH" autopilot start 7 "$planf" >/dev/null 2>&1; st=$?
+assert_status "a re-run on an unlabelled issue succeeds" "$st" 0
+assert_eq "posting a second plan comment" "$(ls "$ORCH_GH_FAKE_STORE/issues/7/comments" | wc -l | tr -d ' ')" "2"
+assert_eq "and adding orch:spec" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
+out="$("$ORCH" autopilot start 7 "$planf" 2>&1)"; st=$?
+assert_status "a run on a labelled issue refuses" "$st" 1
+assert_contains "naming the label" "$out" "orch:spec"
+
+assert_eq "autopilot rounds prints the newest plan comment's Rounds" "$("$ORCH" autopilot rounds)" "6"
+assert_eq "autopilot budget prints its Budget" "$("$ORCH" autopilot budget)" "5"
+out="$("$ORCH" autopilot start 7 2>&1)"; st=$?
+assert_contains "start's usage line" "$out" "usage: orch.sh autopilot start <issue> <plan-file>"
+restore_suite_env
