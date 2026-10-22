@@ -41,7 +41,7 @@ on exactly its own cells.
 | Run a plugin command | `/orchestrator:<command>`. | Whether Junie loads a Claude plugin's `commands/` is not confirmed. **Unverified**. Where commands do not load, `orch-spec-review` is invoked directly with the issue number. |
 | Inject context at planning time | A `PostToolUse` hook on `Skill` (`hook-grilling.sh`) that fires when the skill name contains `grilling` or `orch-interview`. | A `UserPromptSubmit` hook (`hook-grilling.sh`, #202) that fires when the prompt names a grilling entry point as `/<name>` or `$<name>` (`grilling`, `grill-me`, `grill-with-docs`, `wayfinder`, `improve-codebase-architecture`, or `orch-interview`, each under any scope, or `orchestrator:interview`). Per the bundled docs, only the interactive TUI fires the event and its context reaches the main agent only. A live probe on #202 confirmed the hook fires from the extension's `hooks.json` and that Junie rewrites a typed `/<name>` into `$<name>`. When Junie picks grilling on its own, no prompt names it and no message is sent. Junie's router sends a grilling prompt to its plan agent, which ends on Junie's own plan screen and skips the closing question, so the hook asks it again when the human picks "Confirm and implement". That submits the fixed prompt `Implement the suggested plan` to the main agent, and a live run on #202 showed the question appear there. "Save the plan and stop" submits no prompt, so nothing is asked. |
 | Arm the edit guard | A `PostToolUse` hook on `Skill` writes the planning marker, and `hook-guard.sh` denies source edits (ADR-0006). A `Skill` call to `orchestrator:orch-quick-implement` lifts it. | None: the guard does not arm on Junie (ADR-0025). The planning message and the `docs/junie/AGENTS.md` planning section steer planning away from source edits, and `orch.sh init`'s working-tree check catches any at flow start. **Fallback**. |
-| Guard the batch question | A `PreToolUse` hook on `AskUserQuestion` (`hook-paste-guard.sh`): after a `spec-review check` pass line naming a `view.md`, and until the next `spec-review apply`, the first ask is refused with the view and told to paste it word for word, then ask again (#1287). | None: the nudge in `check`'s pass line instead. **Fallback**. |
+| Guard the batch question | A `PreToolUse` hook on `AskUserQuestion` (`hook-paste-guard.sh`): after a `spec-review check` pass line naming a `view.md`, and until the next `spec-review apply`, every ask is refused with the view and told to paste it word for word, then ask again, until one text block after that pass line holds the whole view (#1287, #1350). | None: the nudge in `check`'s pass line instead. **Fallback**. |
 | Open a report in the browser | `xdg-open <file>` on Linux or `open <file>` on macOS, through the Bash tool. Where neither command is there or it fails (a headless or remote machine), take the fallback. | Its shell runs the same commands; whether a browser opens from it is unverified. **Unverified**. |
 
 ## Fallbacks
@@ -117,7 +117,8 @@ flow start instead of prevented.
 ### Guard the batch question
 
 Junie has no paste guard, so nothing refuses an ask the view was not pasted
-before. The nudge in `spec-review check`'s pass line is the whole
+before. On Claude Code the guard checks the transcript for the paste and
+refuses every ask until the view is in chat, not just the first. The nudge in `spec-review check`'s pass line is the whole
 enforcement: it names the `view.md` it wrote and says to paste the view above
 into chat word for word, then ask in the same response. Follow it.
 

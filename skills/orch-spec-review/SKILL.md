@@ -305,22 +305,14 @@ order, consolidation items first, each under its `batch.md` number and with
 no `### Item` heading. The number is written literally, in bold after the
 bullet, never as a Markdown ordered-list number, which a renderer would
 recount from the first item, so the number a human reads is the number
-their answer names. Each entry is its header line - `- **<n>** -
-**<Group>** - <summary> (apply)`, `- **<n>** - **<Group>** - <summary>
-(recommend decline: <reason>)`, or for a decision item `- **<n>** -
-**<Group>** (decision, option <L> recommended)` - then sub-bullets indented
-a fixed 2 spaces, whatever the number's width: `why:` and its `@@ why` line;
-`findings:` and the findings it cites by lens title and number, e.g.
-`Fidelity 1, Consistency 4`, then its comments as `comment by @<login>,
-<createdAt>` (labelled `comments:` when it cites only comments), never their
-text; and its edit as a word diff, one sub-bullet per changed span, removed
-words struck through and added words in bold, with up to five words of
-context either side and `…` where context is cut short. Two changed runs 10
-or fewer unchanged words apart share one span. An edit of more than 40
-changed words is the one line `rewritten, <N> words, see full view`, and an
-edit that changes no word `whitespace only, see full view`. A decision item
-gets one sub-bullet per option, `Option <L> - <label>: <summary>`, ` (recommended)`
-after the recommended one's label, its diff nested beneath, 4 spaces in. Then, under a
+their answer names. Each entry is one line, its summary and its reason -
+`- **<n>** - **<Group>** - <summary> (apply) - <why>`, or `- **<n>** -
+**<Group>** - <summary> (recommend decline: <reason>) - <why>`, `<why>` its
+`@@ why` line - or for a decision item its header, `- **<n>** - **<Group>**
+(decision, option <L> recommended) - <why>`, then one sub-bullet per option,
+indented a fixed 2 spaces: `Option <L> - <label>: <summary>`, ` (recommended)`
+after the recommended one's label. The compact view cites no finding or
+comment and shows no diff: `--full` prints an item in full. Then, under a
 `### Minor edits` heading, every minor and resolved item one line each, in
 batch order: `- **<n>** - <Group>: <summary>`, a recommend-decline minor
 item's line ending `- recommend decline: <reason>`, and a resolved item's
@@ -342,17 +334,18 @@ run `check` again, until it exits 0. A batch that has not passed `check` is
 never shown and never asked about.
 
 Then paste `check`'s stdout into chat word for word, so the human reads each
-material edit's summary, reason and word diff, and each minor edit's
-summary, before answering. Compose no view of your own - no summary, no
+material edit's summary and reason, each decision option's summary, and each
+minor edit's summary, before answering. Compose no view of your own - no summary, no
 shortening, no expansion, in any round: the view the human reads is
 `check`'s, every round alike. Then ask **one blocking question** with the host's ask tool
 (`AskUserQuestion` on Claude Code, `ask_user` on Junie), the paste and the
 call in the same response. The review never ends its turn on the list:
 presenting it is not the end of the step, the answer is. No edit is applied
 and no changelog is posted before the answer arrives. On Claude Code the ask
-is refused until the view is pasted: a hook refuses the first ask after each
-`check` that wrote a `view.md`, until the next `apply`, handing back that
-view - paste it word for word, then ask again. The options:
+is refused until the view is pasted: after each `check` that wrote a
+`view.md`, and until the next `apply`, a hook refuses every ask until one
+text block after that `check` holds the whole view, handing back that view
+each time - paste it word for word, then ask again. The options:
 
 - **Apply as recommended (Recommended)** - every proposed edit applied, every
   decision item takes its recommended option, every **recommend decline** item
@@ -366,9 +359,17 @@ view - paste it word for word, then ask again. The options:
   `<letter>`; `-<n>` declines item `<n>`, or leaves a decision item undecided,
   and the changelog says so; `+<n>` applies recommend-decline item `<n>`.
   Every item not named stays as recommended. A bare item number is no
-  departure and is refused. The question text states this format, and that
-  `show <n>` - one or more item numbers, e.g. `show 3` or `show 3 5` - prints
-  those items in full.
+  departure and is refused. Other also takes `show <n>` - one or more item
+  numbers, e.g. `show 3` or `show 3 5` - which prints those items in full,
+  or a free-text question. The question text names all three forms: a
+  departure list in this format, `show <n>...`, or a question in plain words.
+
+Tell an Other answer's form this way. An answer starting with `show`
+followed by item numbers is a show request. An answer made only of
+departure-shaped tokens - `<n><letter>`, `-<n>`, `+<n>` or a bare `<n>` -
+comma-separated, is a departure list: it goes to `apply` as given, which
+refuses it as it does today if it is malformed, a bare number included.
+Anything else is a question.
 
 An Other answer of `show <n>...` is not an answer to the batch question.
 Run `bash "$ORCH" spec-review check <dir> --full <n>...` with the numbers it
@@ -380,6 +381,14 @@ Claude Code the re-ask is refused until the view is pasted, as the batch
 question is. `apply` never receives
 a `show` answer. A `--full` refusal - a number not in `batch.md` - is told
 to the human, and the batch question asked again.
+
+An Other answer that is a question is not an answer to the batch question
+either. Answer it in chat: apply nothing, and do not run `apply`, which
+never receives a question. Then re-run `bash "$ORCH" spec-review check
+<dir>`, paste its new view into chat word for word, and ask the batch
+question again, the paste and the call in the same response. The re-run's
+pass line arms the guard again, so on Claude Code only a paste made after
+it lets the re-ask through.
 
 The spec batch is asked once; a long spec is one longer question, not twenty
 prompts.
@@ -419,7 +428,11 @@ per item, in the batch's order:
 line, before any reason; a decision item and a `contradicts-the-plan` item
 are always `material`, and a resolved item takes no mark. An
 insertion is an anchor plus a replacement that repeats it. Every item with
-an anchor, and every option, has its one `@@ summary`. Every material item
+an anchor, and every option, has its one `@@ summary`: one sentence stating
+what the spec will say after the edit, not the topic the edit touches. `check`
+and `apply` refuse a summary, an item's or an option's, of more than 30
+words - each a run of non-whitespace - naming the item, its option and its
+`batch.md` line. Every material item
 carries one `@@ why`, a decision item's before its first `@@ option`; on a
 recommend-decline item it is still the reason for the edit, and the reason
 for declining stays on the `@@ item` line. `check` and `apply` refuse a
@@ -601,13 +614,9 @@ comments word for word with the human's reason or **declined as
 recommended: <reason>**, an undecided decision item's sides then **left
 undecided**, **None** for a group with no items, **not run - <reason>** for
 a lens that failed twice, and Fidelity's standalone not-run line. Silence is
-never ambiguous: Consolidation, every lens, and Tickets have a line. A
-minor item applied by the human's answer - by **Apply as recommended**,
-**Apply all**, `+<n>`, or left unnamed in an override answer - reads
-`- (<n>, minor) <summary>`, so the history shows it was applied without being
-shown in full; material, declined, decision and resolved lines carry no tag,
-and neither does any line of an unattended review's changelog, which no human
-answers. The
+never ambiguous: Consolidation, every lens, and Tickets have a line. An
+applied item, minor or material, reads `- (<n>) <summary>`, attended or
+unattended alike: no line carries a minor tag. The
 heading keeps every earlier round's comment out of `comments.md`: `orch.sh`
 leaves out a comment whose body opens with it.
 
