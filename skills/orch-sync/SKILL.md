@@ -41,8 +41,10 @@ other, the base branch included.
 
 ## 1. Sync
 
-Follow **A driver's base sync** in `agents/orch-resolver.md` (under the
-plugin root), steps 1 to 4, on the current branch. The resolver's issue is
+First read the `resolver` setting, once: `bash "$ORCH" agent get resolver`,
+per **Agent settings** in `docs/host-capabilities.md`. Then follow **A
+driver's base sync** in `agents/orch-resolver.md` (under the plugin root),
+steps 1 to 4, on the current branch, starting any resolver on that setting. The resolver's issue is
 the one the branch's name carries - the number after `orch/` or `quick/` in
 `orch/<issue>-…` or `quick/<issue>-…`. On a branch whose name carries no
 issue, it is the issue the human gives: ask for one and wait.

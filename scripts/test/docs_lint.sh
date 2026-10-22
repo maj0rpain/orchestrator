@@ -33,6 +33,8 @@
 #   scan_command_runs_orch  no command runs orch.sh itself
 #   scan_command_routes  each command is a thin route to an orch- skill, or a section of one, that exists
 #   scan_dispatch_copies  no skill file restates the implementer's report lines or the general-purpose-agent tier
+#   scan_agent_settings  each file that starts a plugin agent points at Agent settings and names agent get <role> for each role it starts
+#   scan_agent_settings_section  docs/host-capabilities.md has Agent settings before Fallbacks, linked from its Start a fresh subagent row
 #   scan_lens_briefs  each lens agent owns a non-empty brief, Write and a findings-file section, and orch-spec-review carries no brief
 #   scan_required_headings  each load-bearing heading is present in its file, in the listed order
 #   scan_orch_names  each backticked orch- name resolves to a skill or an agent
@@ -1065,6 +1067,129 @@ assert_empty "the scan accepts a pointer and a general-purpose agent with no age
   "$(scan_dispatch_copies "$fixture")"
 check "the host fallback and the implementer's report are each stated once" \
   "$(scan_dispatch_copies "$PLUGIN_ROOT")"
+
+# --- start sites read the agent setting (#1359) ------------------------------
+echo
+echo "start sites read the agent setting (#1359)"
+# Every start of one of the plugin's agents runs on its role's agent setting,
+# and the rule for that lives once, in docs/host-capabilities.md's **Agent
+# settings** section. So every file that starts a plugin agent points at that
+# section and names `agent get <role>` for each role it starts. A file starts
+# an agent when, read flattened, it starts one under the `orchestrator:`
+# plugin scope (the scope named, `subagent_type`, or `orchestrator:<agent>`) -
+# its roles then come from the orch- agent names it gives, never from an
+# agent's file path - or when it points
+# at a shared section that starts one: **Dispatching a subagent** starts the
+# implementer, **A driver's base sync** and **A driver's ticket resolution**
+# the resolver. A skill's scoped name, such as `orchestrator:orch-flow`, is
+# not a start, and a **Start a fresh subagent** pointer is not a read.
+# agent_role <agent name>: the role an orch- agent's setting is read under.
+agent_role() {
+  case "$1" in
+    orch-lens-*) echo lens ;;
+    orch-reviewer-*) echo reviewer ;;
+    orch-*) echo "${1#orch-}" ;;
+  esac
+}
+# agent_start_files <plugin root>: every skill file, agent file and docs/
+# file a start site can live in, one path per line.
+agent_start_files() {
+  skill_md_files "$1"
+  find "$1/agents" "$1/docs" -name '*.md' -type f 2>/dev/null | sort
+  return 0
+}
+# scan_agent_settings <plugin root>: one line per role a start site starts
+# without reading its setting.
+scan_agent_settings() {
+  local r="$1" f text name roles role
+  local -a files
+  mapfile -t files < <(agent_start_files "$r")
+  for f in "${files[@]}"; do
+    text="$(flat_text "$f")"
+    roles=""
+    if grep -qE '`orchestrator:` plugin scope|subagent_type|orchestrator:<agent>|orchestrator:orch-(implementer|lens-|reviewer-|fixer|closer|resolver)' <<<"$text"; then
+      # An agent's file path, such as agents/orch-fixer.md, names a file to
+      # read, not an agent to start.
+      while IFS= read -r name; do
+        case "$name" in /* | *.md | '') continue ;; esac
+        roles+=" $(agent_role "$name")"
+      done < <(grep -oE '/?\borch-(implementer|lens-[a-z]+|reviewer-[a-z]+|fixer|closer|resolver)\b(\.md)?' <<<"$text")
+    fi
+    grep -qF '**Dispatching a subagent**' <<<"$text" && roles+=" implementer"
+    grep -qE "\*\*A driver's (base sync|ticket resolution)\*\*" <<<"$text" && roles+=" resolver"
+    [ -n "$roles" ] || continue
+    if ! grep -qE '\*\*Agent settings\*\*|#agent-settings\)' <<<"$text"; then
+      echo "${f#"$r"/}: starts a plugin agent but does not point at **Agent settings**"
+    fi
+    for role in $(tr ' ' '\n' <<<"$roles" | sort -u); do
+      grep -qF "agent get $role" <<<"$text" ||
+        echo "${f#"$r"/}: starts an agent of the $role role but does not name agent get $role"
+    done
+  done
+  return 0
+}
+# scan_agent_settings_section <plugin root>: docs/host-capabilities.md has
+# the **Agent settings** heading before **Fallbacks**, and the Claude Code
+# cell of its Start a fresh subagent row links to it. Structure only
+# (ADR-0027): the rule's wording is left to review.
+scan_agent_settings_section() {
+  local doc="docs/host-capabilities.md"
+  awk -F'|' -v f="$doc" '
+    /^## Agent settings[[:space:]]*$/ && !settings { settings = NR }
+    /^## Fallbacks[[:space:]]*$/ && !fallbacks { fallbacks = NR }
+    /^\| Start a fresh subagent \|/ { row = 1; if ($3 ~ /\(#agent-settings\)/) linked = 1 }
+    END {
+      if (!settings) print f ": has no ## Agent settings section"
+      else if (fallbacks && fallbacks < settings) print f ": ## Agent settings is not before ## Fallbacks"
+      if (!row) print f ": has no Start a fresh subagent row"
+      else if (!linked) print f ": the Start a fresh subagent Claude Code cell does not link to #agent-settings"
+    }' "$1/$doc"
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/a" "$fixture/skills/b" "$fixture/skills/c" "$fixture/agents" "$fixture/docs"
+printf 'Start `orch-reviewer-spec` with the Agent tool, `subagent_type` set to\n`orchestrator:<agent>`, as **Start a fresh subagent** says.\n' \
+  >"$fixture/skills/a/SKILL.md"
+printf 'Start `orch-fixer` under the `orchestrator:`\nplugin scope. Read `agent get fixer`\nper **Agent settings** in `docs/host-capabilities.md`.\nIts record is in `agents/orch-closer.md`.\n' \
+  >"$fixture/skills/b/SKILL.md"
+printf 'Run the flow with `orchestrator:orch-flow`, then follow **A driver'"'"'s base sync**.\n' \
+  >"$fixture/skills/c/SKILL.md"
+printf '## Dispatching a subagent\n\nStart `orch-implementer` under the `orchestrator:` plugin scope, reading\n`agent get implementer` per [Agent settings](host-capabilities.md#agent-settings).\n' \
+  >"$fixture/docs/loop.md"
+printf 'Follow **Dispatching a subagent** in `docs/loop.md`.\n' >"$fixture/agents/orch-x.md"
+out="$(scan_agent_settings "$fixture")"
+flags "a start site with no read is flagged for its pointer" \
+  "$out" "skills/a/SKILL.md: starts a plugin agent but does not point at **Agent settings**"
+flags "a start site with no read is flagged for its role" \
+  "$out" "skills/a/SKILL.md: starts an agent of the reviewer role but does not name agent get reviewer"
+spares "a start site with a read is accepted, its read wrapped across lines" "$out" '^skills/b/'
+spares "an agent's file path is not a start of that agent" "$out" 'starts a closer'
+spares "a linked Agent settings pointer counts as a read" "$out" '^docs/loop\.md'
+flags "a pointer at a driver's base sync starts the resolver" \
+  "$out" "skills/c/SKILL.md: starts an agent of the resolver role but does not name agent get resolver"
+spares "a skill's scoped name is not a start" "$out" 'skills/c/SKILL.md: starts an agent of the (implementer|lens|reviewer|fixer|closer) '
+flags "a pointer at Dispatching a subagent starts the implementer" \
+  "$out" "agents/orch-x.md: starts an agent of the implementer role but does not name agent get implementer"
+check "every start site points at Agent settings and reads each role it starts" \
+  "$(scan_agent_settings "$PLUGIN_ROOT")"
+
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docs"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  '| Start a fresh subagent | The Agent tool. | Ignored ([settings](#agent-settings)). |' \
+  '' '## Fallbacks' '' '## Agent settings' >"$fixture/docs/host-capabilities.md"
+out="$(scan_agent_settings_section "$fixture")"
+flags "an Agent settings section after Fallbacks is flagged" \
+  "$out" "docs/host-capabilities.md: ## Agent settings is not before ## Fallbacks"
+flags "a Claude Code cell with no link to Agent settings is flagged" \
+  "$out" "docs/host-capabilities.md: the Start a fresh subagent Claude Code cell does not link to #agent-settings"
+printf '%s\n' '| Capability | Claude Code | Junie CLI |' '| --- | --- | --- |' \
+  '| Start a fresh subagent | The Agent tool, on its [setting](#agent-settings). | Ignored. |' \
+  '' '## Agent settings' '' '## Fallbacks' >"$fixture/docs/host-capabilities.md"
+assert_empty "Agent settings before Fallbacks and a linked Claude Code cell are accepted" \
+  "$(scan_agent_settings_section "$fixture")"
+check "docs/host-capabilities.md has Agent settings before Fallbacks, linked from the table" \
+  "$(scan_agent_settings_section "$PLUGIN_ROOT")"
 
 # --- spec-review lenses run as plugin agents (#177) ---------------------------
 echo

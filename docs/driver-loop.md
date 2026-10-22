@@ -93,7 +93,14 @@ Start the plugin's `orch-implementer` agent exactly as the **Starting this
 agent** section of `agents/orch-implementer.md` (under the plugin root) says,
 for the ticket named above. On Claude Code it is the agent named
 `orch-implementer` under the `orchestrator:` plugin scope, run in the
-background on the parallel path. A host that cannot start it natively takes
+background on the parallel path, on the `implementer` setting. The driver
+reads it, and the `resolver` setting **A driver's ticket resolution** starts
+its resolvers on, once, before loop step a, per **Agent settings** in
+`docs/host-capabilities.md`: `bash "$ORCH" agent get implementer` and
+`bash "$ORCH" agent get resolver`. Every ticket subagent and resolver of the
+run starts on those, and a ticket subagent resumed to resolve its own merge
+conflict keeps the setting it started with. A host that cannot start it
+natively takes
 `docs/host-capabilities.md`'s **Start a fresh subagent** fallback; record it
 under **the record**'s host fallbacks, along with any fallback that section
 says the agent takes.

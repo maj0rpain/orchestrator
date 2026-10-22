@@ -34,7 +34,7 @@ on exactly its own cells.
 | --- | --- | --- |
 | Invoke a skill from a step | The Skill tool, by scoped name (`orchestrator:orch-flow`). | No Skill tool, so the model cannot invoke one mid-step. A human still starts one with `/<name>`, or Junie picks one automatically. Naming a skill as `$<name>` in a prompt is unverified. **Fallback**. |
 | Ask a multiple-choice question | `AskUserQuestion`. | `ask_user`, which the plan agent and the main agent both have (#202). |
-| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`. | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). It loads the plugin's `agents/` as custom agents (#200), but a capability filter at agent start usually hides them, and starting a hidden agent by name fails with `Unknown agent`. Both hosts read its `tools:` YAML list as the agent's allowlist, so an agent left visible starts with the tools it needs. **Fallback**. Take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file, and record the reason as the agent hidden by Junie's capability filter. JetBrains tracks the filter as JUNIE-5493: appending the plugin's `docs/junie/AGENTS.md` snippet to `~/.junie/AGENTS.md` keeps the agents visible, and [docs/junie/README.md](junie/README.md) gives the command and a per-prompt fallback. |
+| Start a fresh subagent | The Agent tool, as a fresh general-purpose agent, or as one of the plugin's agents from `agents/` by its `orchestrator:<name>`, on its role's [agent setting](#agent-settings). | Junie CLI documents custom subagents, each run in its own context ([Junie CLI subagents](https://junie.jetbrains.com/docs/junie-cli-subagents.html)). It loads the plugin's `agents/` as custom agents (#200), but a capability filter at agent start usually hides them, and starting a hidden agent by name fails with `Unknown agent`. Both hosts read its `tools:` YAML list as the agent's allowlist, so an agent left visible starts with the tools it needs. **Fallback**. Take the fallback below, whose first tier is a fresh general-purpose agent briefed with the agent's file, and record the reason as the agent hidden by Junie's capability filter. JetBrains tracks the filter as JUNIE-5493: appending the plugin's `docs/junie/AGENTS.md` snippet to `~/.junie/AGENTS.md` keeps the agents visible, and [docs/junie/README.md](junie/README.md) gives the command and a per-prompt fallback. The [agent setting](#agent-settings) is ignored on Junie: every agent starts on the session's model and effort. |
 | Start a background subagent | The Agent tool, run in the background, so several ticket subagents build at once and each report returns as it finishes. | No documented way to start a subagent in the background and keep working while it runs. **Fallback**. |
 | Start a forked subagent | The Agent tool, as a fork. The plugin never asks for one: a fork inherits the context the plugin keeps out. | None. The plugin never asks for one. **Fallback**. |
 | Start a fresh session | The human runs `/clear`. | The human runs `/new`. Whether the old session keeps running is unverified. `/new` fires `SessionStart` with `source: clear` per Junie CLI's bundled docs, unverified live. |
@@ -43,6 +43,36 @@ on exactly its own cells.
 | Arm the edit guard | A `PostToolUse` hook on `Skill` writes the planning marker, and `hook-guard.sh` denies source edits (ADR-0006). A `Skill` call to `orchestrator:orch-quick-implement` lifts it. | None: the guard does not arm on Junie (ADR-0025). The planning message and the `docs/junie/AGENTS.md` planning section steer planning away from source edits, and `orch.sh init`'s working-tree check catches any at flow start. **Fallback**. |
 | Guard the batch question | A `PreToolUse` hook on `AskUserQuestion` (`hook-paste-guard.sh`): after a `spec-review check` pass line naming a `view.md`, and until the next `spec-review apply`, every ask is refused with the view and told to paste it word for word, then ask again, until one text block after that pass line holds the whole view (#1287, #1350). | None: the nudge in `check`'s pass line instead. **Fallback**. |
 | Open a report in the browser | `xdg-open <file>` on Linux or `open <file>` on macOS, through the Bash tool. Where neither command is there or it fails (a headless or remote machine), take the fallback. | Its shell runs the same commands; whether a browser opens from it is unverified. **Unverified**. |
+
+## Agent settings
+
+This is the one definition of how a skill starts one of the plugin's agents
+on its role's **agent setting**: the model and reasoning effort the user
+chose for that role with `orch.sh agent set` (see `docs/how-it-works.md`'s
+**Agent settings**). A role is one of `implementer`, `lens`, `reviewer`,
+`fixer`, `closer` and `resolver`. Each skill or doc that starts an agent
+names the roles it starts and points here, and states none of this itself.
+
+- Run `bash "$ORCH" agent get <role>` once, at the start of the skill's run,
+  before its first agent starts. It prints `model <alias|inherit>` and
+  `effort <level|inherit>`. Every agent of that role the run starts uses
+  those values, even if the setting changes mid-run.
+- For every agent of that role the run starts, pass `model` and `effort` to
+  the Agent tool, leaving out each one whose value is `inherit`. A role with
+  no setting starts exactly as it would without this section. The user's
+  setting, read and passed by these instructions, is the explicit ask the
+  Agent tool's `effort` parameter needs.
+- If `agent get` refuses, stop the run and relay its message.
+- If the Agent tool refuses a valid value (the account has no access to
+  `fable`, say), stop and report the refusal, naming `bash "$ORCH" agent
+  clear <role>` as the fix. Never retry on another model, or without the
+  parameter.
+
+**Host fallback.** The setting applies only to a plugin agent started
+natively through Claude Code's Agent tool. It is ignored on Junie, and by
+every tier of the **Start a fresh subagent** fallback below: a general-purpose
+agent briefed with the agent's file, or the work done in this session, takes
+no setting. There, skip the read and start the agent as the fallback says.
 
 ## Fallbacks
 

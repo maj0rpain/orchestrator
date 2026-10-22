@@ -60,7 +60,9 @@ a skipped check is reported.
    subagent, never a fork, which would inherit this context. Start each as
    `docs/host-capabilities.md`'s **Start a fresh subagent** row describes for
    the host: on Claude Code, the Agent tool with `subagent_type` set to
-   `orchestrator:<agent>`. Each prompt carries these six variables and
+   `orchestrator:<agent>`, both on the `reviewer` setting: run `bash "$ORCH"
+   agent get reviewer` once, at the pass's start, per **Agent settings** in
+   `docs/host-capabilities.md`. Each prompt carries these six variables and
    nothing else - no issue body, no diff, no brief:
 
    ```

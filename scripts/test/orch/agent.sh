@@ -1,0 +1,192 @@
+# shellcheck shell=bash
+# The guard below is never true - (( 0 )) is a keyword no variable or function
+# can redefine - so the line never runs; it points shellcheck at setup.sh's
+# definitions, which orch_test.sh evals before this file's sections.
+# shellcheck source=setup.sh
+(( 0 )) && source setup.sh
+
+# --- agent ---------------------------------------------------------------------
+# The agent setting: a model and an effort per role, each its own git config
+# key, looked up local, then global, else inherit. Driven against a fresh
+# repo's real local config and a throwaway HOME's real global config, so a
+# --global write never reaches another section's or the developer's config.
+echo
+echo "agent"
+new_repo >/dev/null
+HOME="$(mktemp -d)"
+export HOME
+# key <scope> <key>: the key's value at that scope, or <unset>.
+key() { git config "--$1" --get "$2" 2>/dev/null || echo "<unset>"; }
+
+out="$("$ORCH" agent get implementer 2>&1)"; st=$?
+assert_status "get succeeds with nothing set" "$st" 0
+assert_eq "get prints inherit for both keys when nothing is set" "$out" \
+  "model inherit
+effort inherit"
+
+out="$("$ORCH" agent set implementer --model opus --effort high 2>&1)"; st=$?
+assert_status "set accepts a model and an effort" "$st" 0
+assert_eq "set writes the model to local config" "$(key local orchestrator.model.implementer)" "opus"
+assert_eq "set writes the effort to local config" "$(key local orchestrator.effort.implementer)" "high"
+assert_eq "set leaves global config alone" "$(key global orchestrator.model.implementer)" "<unset>"
+assert_eq "get round-trips both keys" "$("$ORCH" agent get implementer 2>&1)" \
+  "model opus
+effort high"
+
+"$ORCH" agent set reviewer --model haiku >/dev/null
+assert_eq "set with only --model leaves the effort inheriting" "$("$ORCH" agent get reviewer 2>&1)" \
+  "model haiku
+effort inherit"
+"$ORCH" agent set reviewer --effort low >/dev/null
+assert_eq "set with only --effort keeps the model already set" "$("$ORCH" agent get reviewer 2>&1)" \
+  "model haiku
+effort low"
+
+# Lookup: local over global over inherit, each key on its own.
+out="$("$ORCH" agent set fixer --model sonnet --effort max --global 2>&1)"; st=$?
+assert_status "set --global succeeds" "$st" 0
+assert_eq "set --global writes the model to global config" "$(key global orchestrator.model.fixer)" "sonnet"
+assert_eq "set --global leaves local config alone" "$(key local orchestrator.model.fixer)" "<unset>"
+assert_eq "get falls back to global config" "$("$ORCH" agent get fixer 2>&1)" \
+  "model sonnet
+effort max"
+"$ORCH" agent set fixer --model opus >/dev/null
+assert_eq "a local model overrides the global one, and the global effort still applies" \
+  "$("$ORCH" agent get fixer 2>&1)" \
+  "model opus
+effort max"
+"$ORCH" agent set closer --model fable --global >/dev/null
+"$ORCH" agent set closer --effort xhigh >/dev/null
+assert_eq "a global model and a local effort combine" "$("$ORCH" agent get closer 2>&1)" \
+  "model fable
+effort xhigh"
+
+# Refusals: each exit 1, naming the allowed values, config untouched.
+before="$(git config --local --get-regexp '^orchestrator\.' ; git config --global --get-regexp '^orchestrator\.')"
+untouched() {
+  assert_eq "$1 leaves config untouched" \
+    "$(git config --local --get-regexp '^orchestrator\.' ; git config --global --get-regexp '^orchestrator\.')" "$before"
+}
+out="$("$ORCH" agent set implementor --model opus 2>&1)"; st=$?
+assert_status "set refuses an unknown role" "$st" 1
+assert_contains "with an orch: message naming the roles" "$out" \
+  "orch: unknown role implementor (want implementer|lens|reviewer|fixer|closer|resolver)"
+untouched "an unknown role"
+out="$("$ORCH" agent set lens --model gpt 2>&1)"; st=$?
+assert_status "set refuses a disallowed model" "$st" 1
+assert_contains "naming the allowed models" "$out" "orch: model gpt is not allowed (want sonnet|opus|haiku|fable|inherit)"
+untouched "a disallowed model"
+out="$("$ORCH" agent set lens --effort huge 2>&1)"; st=$?
+assert_status "set refuses a disallowed effort" "$st" 1
+assert_contains "naming the allowed efforts" "$out" "orch: effort huge is not allowed (want low|medium|high|xhigh|max|inherit)"
+untouched "a disallowed effort"
+out="$("$ORCH" agent set lens --model "opus haiku" 2>&1)"; st=$?
+assert_status "set refuses a model made of several allowed words" "$st" 1
+assert_contains "naming the allowed models" "$out" "orch: model opus haiku is not allowed"
+untouched "a model made of several allowed words"
+out="$("$ORCH" agent set lens --effort $'low\nmedium' 2>&1)"; st=$?
+assert_status "set refuses an effort made of several allowed lines" "$st" 1
+untouched "an effort made of several allowed lines"
+out="$("$ORCH" agent set "lens reviewer" --model opus 2>&1)"; st=$?
+assert_status "set refuses a role made of several roles" "$st" 1
+assert_eq "with only an orch: message naming the roles" "$out" \
+  "orch: unknown role lens reviewer (want implementer|lens|reviewer|fixer|closer|resolver)"
+untouched "a role made of several roles"
+out="$("$ORCH" agent set lens 2>&1)"; st=$?
+assert_status "set refuses a call with neither --model nor --effort" "$st" 1
+assert_contains "naming both flags and the allowed values" "$out" \
+  "orch: agent set needs --model or --effort (models: sonnet|opus|haiku|fable|inherit; efforts: low|medium|high|xhigh|max|inherit)"
+untouched "a call with neither flag"
+out="$("$ORCH" agent set lens --model sonnet --effort bogus 2>&1)"; st=$?
+assert_status "set refuses a mixed valid and disallowed call" "$st" 1
+assert_contains "naming the disallowed value's allowed values" "$out" "orch: effort bogus is not allowed"
+untouched "a mixed valid and disallowed call"
+out="$("$ORCH" agent set lens --model 2>&1)"; st=$?
+assert_status "set refuses --model with no value" "$st" 1
+untouched "--model with no value"
+out="$("$ORCH" agent set lens --model opus --model haiku 2>&1)"; st=$?
+assert_status "set refuses a flag given twice" "$st" 1
+untouched "a flag given twice"
+
+# set ... inherit clears the key at that scope, never storing the literal.
+"$ORCH" agent set fixer --model inherit >/dev/null
+assert_eq "set --model inherit clears the local model" "$(key local orchestrator.model.fixer)" "<unset>"
+assert_eq "so the global model shows through again" "$("$ORCH" agent get fixer 2>&1)" \
+  "model sonnet
+effort max"
+"$ORCH" agent set fixer --effort inherit --global >/dev/null
+assert_eq "set --effort inherit --global clears the global effort" "$(key global orchestrator.effort.fixer)" "<unset>"
+assert_eq "and leaves the global model" "$(key global orchestrator.model.fixer)" "sonnet"
+
+# show: one line per role, in role order, with each key's source.
+git config --local orchestrator.effort.resolver gpt
+out="$("$ORCH" agent show 2>&1)"; st=$?
+assert_status "show succeeds, even with a disallowed hand-set value" "$st" 0
+assert_eq "show lists every role in order with its sources, marking the invalid value" "$out" \
+  "implementer model opus (local) effort high (local)
+lens model inherit (inherit) effort inherit (inherit)
+reviewer model haiku (local) effort low (local)
+fixer model sonnet (global) effort inherit (inherit)
+closer model fable (global) effort xhigh (local)
+resolver model inherit (inherit) effort gpt (local, invalid)"
+
+# get refuses a disallowed effective value, naming key, value and allowed values.
+out="$("$ORCH" agent get resolver 2>&1)"; st=$?
+assert_status "get refuses a hand-set disallowed value" "$st" 1
+assert_contains "naming the key, its value and the allowed values" "$out" \
+  "orch: orchestrator.effort.resolver is gpt - not an allowed effort (want low|medium|high|xhigh|max|inherit)"
+assert_not_contains "and printing no values" "$out" "model inherit"
+git config --global orchestrator.model.lens gpt-5
+out="$("$ORCH" agent get lens 2>&1)"; st=$?
+assert_status "get refuses a hand-set disallowed global value" "$st" 1
+assert_contains "naming the global remedy" "$out" "orch.sh agent clear lens --model --global"
+git config --local orchestrator.model.reviewer "opus haiku"
+out="$("$ORCH" agent get reviewer 2>&1)"; st=$?
+assert_status "get refuses a hand-set value made of several allowed words" "$st" 1
+assert_contains "naming the key and its value" "$out" \
+  "orch: orchestrator.model.reviewer is opus haiku - not an allowed model"
+git config --local orchestrator.model.reviewer haiku
+out="$("$ORCH" agent get "lens reviewer" 2>&1)"; st=$?
+assert_status "get refuses a role made of several roles" "$st" 1
+assert_contains "naming the roles" "$out" "orch: unknown role lens reviewer (want"
+out="$("$ORCH" agent get implementor 2>&1)"; st=$?
+assert_status "get refuses an unknown role" "$st" 1
+assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer|closer|resolver)"
+
+# clear: both keys, or only the one named, at the scope named.
+out="$("$ORCH" agent clear resolver 2>&1)"; st=$?
+assert_status "clear succeeds" "$st" 0
+assert_eq "clear removes the invalid local effort" "$(key local orchestrator.effort.resolver)" "<unset>"
+out="$("$ORCH" agent clear lens --model --global 2>&1)"; st=$?
+assert_status "clear --model --global succeeds" "$st" 0
+assert_eq "and removes the global model" "$(key global orchestrator.model.lens)" "<unset>"
+out="$("$ORCH" agent clear implementer --effort 2>&1)"; st=$?
+assert_eq "clear --effort removes only the effort" "$("$ORCH" agent get implementer 2>&1)" \
+  "model opus
+effort inherit"
+"$ORCH" agent clear closer >/dev/null
+assert_eq "clear with no flag removes both local keys, leaving the global model" \
+  "$("$ORCH" agent get closer 2>&1)" \
+  "model fable
+effort inherit"
+"$ORCH" agent clear closer --global >/dev/null
+assert_eq "clear --global removes the global keys" "$(key global orchestrator.model.closer)" "<unset>"
+out="$("$ORCH" agent clear closer 2>&1)"; st=$?
+assert_status "clear on an unset key exits 0" "$st" 0
+assert_eq "with no output" "$out" ""
+out="$("$ORCH" agent clear implementor 2>&1)"; st=$?
+assert_status "clear refuses an unknown role" "$st" 1
+assert_contains "naming the roles" "$out" "(want implementer|lens|reviewer|fixer|closer|resolver)"
+
+out="$("$ORCH" agent 2>&1)"; st=$?
+assert_status "refuses a missing verb" "$st" 1
+assert_contains "naming the verbs" "$out" "want set|show|clear|get"
+out="$("$ORCH" agent show extra 2>&1)"; st=$?
+assert_status "show refuses an argument" "$st" 1
+
+out="$("$ORCH" help 2>&1)"
+assert_contains "agent set is in the usage text" "$out" "agent set <role>"
+assert_contains "the CLI conventions' noun table has an agent row" \
+  "$(grep '^| `agent`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" '`set`, `show`, `clear`, `get`'
+unset -f key untouched
+restore_suite_env

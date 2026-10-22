@@ -133,6 +133,25 @@ orch.sh - deterministic operations for the orchestrator flow
                               orchestrator.parallel, else 3; 1 is sequential.
                               Dies naming the key and value when it is not a
                               positive integer
+  agent set <role> [--model <m>] [--effort <e>] [--global]
+                              set a role's agent setting in local config,
+                              or global with --global. Roles: implementer,
+                              lens, reviewer, fixer, closer, resolver; models:
+                              sonnet, opus, haiku, fable; efforts: low,
+                              medium, high, xhigh, max; inherit clears the
+                              key at that scope. Validates everything before
+                              writing; refuses a call with neither flag
+  agent show                  print each role's model and effort with each
+                              one's source: local, global or inherit; a
+                              disallowed hand-set value is marked invalid
+  agent clear <role> [--model] [--effort] [--global]
+                              clear both keys, or only the one named, in
+                              local config, or global with --global;
+                              succeeds silently when nothing was set
+  agent get <role>            print exactly `model <alias|inherit>` and
+                              `effort <level|inherit>`, each looked up local,
+                              then global, else inherit; refuses a
+                              disallowed value, naming its key
   suite-cost run -- <cmd> [args...]
                               run <cmd> in the current directory, its stdout,
                               stderr and exit code passed through and nothing
@@ -574,7 +593,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               spec-rounds/<k>/: emptied (created when
                               missing); on round 1 every other round's
                               directory deleted; on a later round round
-                              k-1's map-implementability.md and settled.md
+                              k-1's agent-lens (round 1's lens setting),
+                              map-implementability.md and settled.md
                               copied in, each when it exists. Then write
                               handoff/spec-round naming the flow's issue, k
                               and n - a failed write prints no path.
