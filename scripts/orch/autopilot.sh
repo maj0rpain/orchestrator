@@ -34,7 +34,7 @@ autopilot_lookup() {
 # their defaults. Dies naming key and value when a value is out of range.
 # The handle's owner is resolved only when the handle is needed.
 autopilot_setting() {
-  local name="$1" key="orchestrator.autopilot.$1" def=""
+  local name="$1" key="orchestrator.autopilot.$1" def="" owner
   autopilot_lookup "$name" AUTOPILOT_VALUE AUTOPILOT_SOURCE
   case "$name" in
     permission-mode)
@@ -45,7 +45,7 @@ autopilot_setting() {
       [ "$AUTOPILOT_SOURCE" = unset ] || return 0
       AUTOPILOT_SOURCE=default
       if repo_resolve; then
-        AUTOPILOT_VALUE="$(repo_owner_name "$REPO_NAME")"; AUTOPILOT_VALUE="${AUTOPILOT_VALUE%%/*}"
+        owner="$(repo_owner_name "$REPO_NAME")"; AUTOPILOT_VALUE="${owner%%/*}"
       else
         die "$REPO_REMEDY (the handle defaults to the repo's owner; or git config $key <handle>)"
       fi ;;
@@ -56,7 +56,7 @@ autopilot_setting() {
         budget) def="$AUTOPILOT_BUDGET_DEFAULT" ;;
       esac
       if [ "$AUTOPILOT_SOURCE" = unset ]; then AUTOPILOT_VALUE="$def"; AUTOPILOT_SOURCE=default; fi
-      [[ "$AUTOPILOT_VALUE" =~ ^[0-9]+$ ]] && [ "$((10#$AUTOPILOT_VALUE))" -gt 0 ] ||
+      is_positive_int "$AUTOPILOT_VALUE" ||
         die "$key is $AUTOPILOT_VALUE - it must be a positive integer (git config $key <n>)"
       AUTOPILOT_VALUE="$((10#$AUTOPILOT_VALUE))" ;;
   esac
@@ -124,7 +124,7 @@ autopilot_block_report() {
       printf 'FAIL ## Autopilot has no %s line (want "%s: <n>")\n' "$key" "$key"; failed=1
     elif [ "$(wc -l <<<"$values" | tr -d ' ')" -gt 1 ]; then
       printf 'FAIL ## Autopilot repeats its %s line\n' "$key"; failed=1
-    elif ! [[ "$values" =~ ^[0-9]+$ ]] || [ "$((10#$values))" -lt 1 ]; then
+    elif ! is_positive_int "$values"; then
       printf 'FAIL ## Autopilot %s is %s - it must be a whole number of 1 or more\n' "$key" "$values"; failed=1
     fi
   done
@@ -143,7 +143,7 @@ autopilot_plan_value() {
   handoff_comment_fetch "$issue" 01-plan "$file" || { rm -f "$file"; die "issue #$issue has no 01-plan handoff comment"; }
   value="$(autopilot_block_values "$file" "$1")"
   rm -f "$file"
-  [[ "$value" =~ ^[0-9]+$ ]] && [ "$((10#$value))" -ge 1 ] ||
+  is_positive_int "$value" ||
     die "issue #$issue's plan comment has no valid ## Autopilot $1 line"
   printf '%s\n' "$((10#$value))"
 }
@@ -311,10 +311,12 @@ autopilot_label_entries() {
 }
 
 # Claude Code's usage-limit messages, as grep -Ei reads it: the one pattern for
-# them - "usage limit reached", "5-hour limit reached", "weekly limit reached"
-# and the like. The part after a `|`, when the message has one, is the reset
-# time as epoch seconds; the other wordings carry none.
-AUTOPILOT_LIMIT_PATTERN='limit reached(\|[0-9]+)?'
+# them, anchored on its own wordings - "usage limit reached", "<N>-hour limit
+# reached", "weekly limit reached" - so another "limit reached" (an iteration
+# limit, an API rate limit, test output) is no usage limit. After the wording
+# a message may carry its reset time, as `|<epoch seconds>` or as
+# `∙ resets <time>`; the others carry none.
+AUTOPILOT_LIMIT_PATTERN='(usage|[0-9]+-hour|weekly) limit reached(\|[0-9]+|[^|]{0,8}resets [^|]*)?'
 
 # autopilot_dir <main-root>: where a clone's autopilot files live - the run
 # pidfiles, the session logs and the limit file - under its main checkout.
@@ -575,15 +577,52 @@ autopilot_tick() {
   done <<<"$candidates"
 }
 
+# autopilot_resets_epoch <text>: the next moment, in local time and as epoch
+# seconds, of the `resets [<weekday>] <h>[:<mm>]<am|pm>` time in <text>, such
+# as "resets 3pm" or "resets Mon 9am"; non-zero, nothing printed, when <text>
+# holds none. A time already past today is the same time tomorrow, or, with a
+# weekday, a week on at most.
+autopilot_resets_epoch() {
+  local text re day="" h m ap now since target ahead cur i d
+  text="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  re='resets[[:space:]]+(([a-z]{3})[a-z]*[[:space:]]+)?([0-9]{1,2})(:([0-9]{2}))?[[:space:]]*(am|pm)'
+  [[ "$text" =~ $re ]] || return 1
+  day="${BASH_REMATCH[2]}"; h="$((10#${BASH_REMATCH[3]}))"; m="$((10#${BASH_REMATCH[5]:-0}))"; ap="${BASH_REMATCH[6]}"
+  [ "$h" -ge 1 ] && [ "$h" -le 12 ] && [ "$m" -le 59 ] || return 1
+  [ "$ap" = pm ] && [ "$h" -ne 12 ] && h=$((h + 12))
+  [ "$ap" = am ] && [ "$h" -eq 12 ] && h=0
+  now="$(date +%s)"
+  since="$(( 10#$(date +%H) * 3600 + 10#$(date +%M) * 60 + 10#$(date +%S) ))"
+  target="$(( now - since + h * 3600 + m * 60 ))"
+  if [ -n "$day" ]; then
+    ahead=""
+    cur="$(date +%u)"
+    i=0
+    for d in mon tue wed thu fri sat sun; do
+      i=$((i + 1))
+      [ "$d" != "$day" ] || ahead="$(( (i - cur + 7) % 7 ))"
+    done
+    [ -n "$ahead" ] || return 1
+    target=$((target + ahead * 86400))
+    [ "$target" -gt "$now" ] || target=$((target + 7 * 86400))
+  else
+    [ "$target" -gt "$now" ] || target=$((target + 86400))
+  fi
+  printf '%s\n' "$target"
+}
+
 # autopilot_limit_reset <log>: returns 0 when <log> holds Claude Code's
 # usage-limit message, printing its reset time as a UTC timestamp when the
-# message gives an epoch one; 1 when it does not.
+# message gives one - an epoch, or a `resets <time>` that autopilot_resets_epoch
+# reads; 1 when the log holds no usage-limit message.
 autopilot_limit_reset() {
-  local hit
+  local hit epoch
   hit="$(grep -Eio "$AUTOPILOT_LIMIT_PATTERN" "$1" | tail -n 1)" || true
   [ -n "$hit" ] || return 1
   case "$hit" in
     *'|'*) autopilot_epoch_iso "${hit##*|}" ;;
+    *)
+      if epoch="$(autopilot_resets_epoch "$hit")"; then autopilot_epoch_iso "$epoch"; fi ;;
   esac
   return 0
 }
@@ -615,7 +654,9 @@ autopilot_run() {
     [ "$line" != "$issue" ] || held=1
   done <<<"$claims"
   if [ "$held" = 0 ]; then
-    note "autopilot run: issue #$issue's session exited $rc with its claim released"
+    detail="autopilot run: issue #$issue's session exited $rc with its claim released"
+    note "$detail"
+    printf '%s\n' "$detail" >>"$log"
     return 0
   fi
   detail="the session exited with code $rc; log: $log"
@@ -636,9 +677,8 @@ AUTOPILOT_WATCH_EVERY_DEFAULT=60
 # reaches the same one.
 autopilot_watch_pidfile() {
   local d
-  d="$(git rev-parse --git-common-dir)" && d="$(cd "$d" && pwd -P)" ||
-    die "could not find the clone's git common directory"
-  printf '%s/orchestrator/autopilot-watch.pid\n' "$d"
+  d="$(clone_orchestrator_dir)" || return 1
+  printf '%s/autopilot-watch.pid\n' "$d"
 }
 
 # autopilot_watch <seconds>: repeats tick every <seconds> until interrupted.
@@ -706,7 +746,7 @@ cmd_autopilot() {
         *) die "usage: orch.sh autopilot watch [--every <seconds>]" ;;
       esac
       [ $# -eq 0 ] || die "usage: orch.sh autopilot watch [--every <seconds>]"
-      [[ "$every" =~ ^[0-9]+$ ]] && [ "$((10#$every))" -gt 0 ] ||
+      is_positive_int "$every" ||
         die "--every must be a positive whole number of seconds, got: $every"
       autopilot_gate
       autopilot_watch "$((10#$every))"

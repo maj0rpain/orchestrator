@@ -7,6 +7,12 @@
 
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
+# local_fields <iso>: the limit file's UTC timestamp as "<epoch> <%H> <%a>" in local time.
+local_fields() {
+  local e
+  e="$(date -u -d "$1" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s)"
+  printf '%s %s\n' "$e" "$(date -d "@$e" '+%H %a' 2>/dev/null || date -r "$e" '+%H %a')"
+}
 # dead_pid: the pid of a process that has exited.
 dead_pid() { sleep 0 & local p=$!; wait "$p"; printf '%s\n' "$p"; }
 
@@ -278,6 +284,8 @@ fake_issue 7 open ready-for-agent orch:spec
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a released claim and a non-zero exit is no failure" "$(fake_labels_of 7)" "orch:running orch:spec ready-for-agent "
 assert_not_contains "and posts no failure comment" "$(fake_comments_of 7)" "Autopilot failed"
+released_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_contains "its exit code is recorded in the session log" "$(cat "$released_log")" "session exited 3 with its claim released"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick: the cap, lost claims and the order ---------------------
@@ -463,24 +471,19 @@ assert_status "a second watch of the same clone is refused" "$st" 1
 assert_contains "naming the live one" "$out" "already running"
 assert_eq "and leaves the live one's pidfile" "$(cat "$pidfile")" "$$"
 
+# one watch, started over a dead pidfile while every tick fails
 printf '%s\n' "$(dead_pid)" >"$pidfile"
-"$ORCH" autopilot watch --every 1 >/dev/null 2>"$watch_log" &
-watch_pid=$!
-for _ in $(seq 1 50); do [ "$(cat "$pidfile" 2>/dev/null)" = "$watch_pid" ] && break; sleep 0.1; done
-assert_eq "a dead pidfile is replaced" "$(cat "$pidfile" 2>/dev/null)" "$watch_pid"
-kill -TERM "$watch_pid"; wait "$watch_pid" 2>/dev/null
-assert_eq "an interrupted watch removes its pidfile" "$(on_disk "$pidfile")" absent
-
-# a failed tick is reported on stderr and the loop carries on
 fake_fail adapter_label_upsert "HTTP 500 label"
 "$ORCH" autopilot watch --every 1 >/dev/null 2>"$watch_log" &
 watch_pid=$!
-for _ in $(seq 1 60); do [ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && break; sleep 0.1; done
+for _ in $(seq 1 60); do [ "$(cat "$pidfile" 2>/dev/null)" = "$watch_pid" ] && [ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && break; sleep 0.1; done
+assert_eq "a dead pidfile is replaced" "$(cat "$pidfile" 2>/dev/null)" "$watch_pid"
 kill -0 "$watch_pid" 2>/dev/null; st=$?
 assert_status "watch survives a failed tick" "$st" 0
 assert_contains "reporting it with its exit status" "$(cat "$watch_log")" "the tick failed (exit 1)"
 assert_eq "and ticking again after it" "$([ "$(grep -c 'the tick failed' "$watch_log")" -ge 2 ] && echo yes)" "yes"
 kill -TERM "$watch_pid"; wait "$watch_pid" 2>/dev/null
+assert_eq "an interrupted watch removes its pidfile" "$(on_disk "$pidfile")" absent
 fake_unfail
 out="$("$ORCH" autopilot watch --every 0 2>&1)"; st=$?
 assert_status "--every refuses zero" "$st" 1
@@ -529,15 +532,39 @@ printf 'Claude AI usage limit reached\n' >"$launcher_dir/out"; printf '1\n' >"$l
 limit_epoch="$(date -u -d "$(cat "$top/.orchestrator/autopilot/limit")" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$(cat "$top/.orchestrator/autopilot/limit")" +%s)"
 assert_eq "no reset time in the message: one hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
 assert_contains "the comment still names the usage limit" "$(fake_comments_of 8 | tail -4)" "usage limit"
-# the other limit wordings are detected too, each with the one hour fallback
-for wording in "5-hour limit reached ∙ resets 3pm" "Weekly limit reached ∙ resets Mon 9am" "Claude Opus usage limit reached"; do
+# the other usage-limit wordings are detected, each with the one hour fallback
+for wording in "Claude Opus usage limit reached" "5-hour limit reached" "Weekly limit reached"; do
   rm -f "$top/.orchestrator/autopilot/limit"
   fake_issue 8 open ready-for-agent orch:spec
   printf '%s\n' "$wording" >"$launcher_dir/out"; printf '1\n' >"$launcher_dir/exit"
   "$ORCH" autopilot tick >/dev/null 2>&1
   assert_eq "\"$wording\" writes the limit file" "$(on_disk "$top/.orchestrator/autopilot/limit")" present
-  limit_epoch="$(date -u -d "$(cat "$top/.orchestrator/autopilot/limit")" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$(cat "$top/.orchestrator/autopilot/limit")" +%s)"
+  read -r limit_epoch _ < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
   assert_eq "and pauses an hour on" "$(( (limit_epoch - $(date +%s) + 30) / 3600 ))" "1"
+done
+# a "resets <time>" message pauses until that next moment, in local time
+rm -f "$top/.orchestrator/autopilot/limit"
+fake_issue 8 open ready-for-agent orch:spec
+printf '5-hour limit reached ∙ resets 3pm\n' >"$launcher_dir/out"
+"$ORCH" autopilot tick >/dev/null 2>&1
+read -r limit_epoch limit_hour _ < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
+assert_eq "\"resets 3pm\" pauses until 15:00 local" "$limit_hour" "15"
+assert_eq "within the next day" "$([ "$limit_epoch" -gt "$(date +%s)" ] && [ "$limit_epoch" -le "$(( $(date +%s) + 86400 + 3600 ))" ] && echo yes)" "yes"
+rm -f "$top/.orchestrator/autopilot/limit"
+fake_issue 8 open ready-for-agent orch:spec
+printf 'Weekly limit reached ∙ resets Mon 9am\n' >"$launcher_dir/out"
+"$ORCH" autopilot tick >/dev/null 2>&1
+read -r limit_epoch limit_hour limit_day < <(local_fields "$(cat "$top/.orchestrator/autopilot/limit")")
+assert_eq "\"resets Mon 9am\" pauses until a Monday" "$limit_day" "Mon"
+assert_eq "at 09:00 local" "$limit_hour" "09"
+assert_eq "within the next week" "$([ "$limit_epoch" -gt "$(date +%s)" ] && [ "$limit_epoch" -le "$(( $(date +%s) + 7 * 86400 + 3600 ))" ] && echo yes)" "yes"
+# another "limit reached" is no usage limit
+for wording in "iteration limit reached" "API rate limit reached, retrying"; do
+  rm -f "$top/.orchestrator/autopilot/limit"
+  fake_issue 8 open ready-for-agent orch:spec
+  printf '%s\n' "$wording" >"$launcher_dir/out"
+  "$ORCH" autopilot tick >/dev/null 2>&1
+  assert_eq "\"$wording\" writes no limit file" "$(on_disk "$top/.orchestrator/autopilot/limit")" absent
 done
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 

@@ -15,7 +15,7 @@ cmd_parallel() {
       [ $# -eq 0 ] || die "usage: orch.sh parallel show"
       v="$(git config --get orchestrator.parallel 2>/dev/null || true)"
       [ -n "$v" ] || v="$PARALLEL_DEFAULT"
-      [[ "$v" =~ ^[0-9]+$ ]] && [ "$((10#$v))" -gt 0 ] ||
+      is_positive_int "$v" ||
         die "orchestrator.parallel is $v - it must be a positive integer (git config orchestrator.parallel <n>)"
       note "$((10#$v))"
       ;;

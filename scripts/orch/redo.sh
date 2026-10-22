@@ -137,20 +137,17 @@ cmd_redo_spec() {
   esac
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
   # Autopilot handoff comments are retired before any state moves, as in redo review.
-  local cur
-  require_issue cur
+  local issue
+  require_issue issue
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs
-  handoff_comments_retire "$cur" $(handoffs_written_from spec)
+  handoff_comments_retire "$issue" $(handoffs_written_from spec)
   if [ "$new_issue" -eq 1 ]; then
-    local issue msg
-    require_issue issue
+    local msg
     msg="$(printf 'This issue was closed by an orchestrator redo because the spec itself needed to change.\n\nA fresh issue will follow from orch-to-spec in this same flow.\n')"
     gh_or_die "close issue #$issue" adapter_issue_close "$issue" --comment "$msg"
     state_write issue null
   else
-    local kept
-    require_issue kept
-    cmd_ticket_retire "$kept"
+    cmd_ticket_retire "$issue"
   fi
   # The spec handoff - and the implement handoff built on it, if any - are
   # stale once the spec is being redone, so phase advance must not pass on

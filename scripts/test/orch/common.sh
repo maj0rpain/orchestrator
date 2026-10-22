@@ -79,6 +79,19 @@ done
 assert_eq "list_has matches whole lines literally, an item beginning with - included, one spanning lines never" \
   "$lh_verdicts" " y y y y n n n n n"
 
+# --- is_positive_int ----------------------------------------------------------
+# The one whole-number-of-1-or-more test.
+echo
+echo "is_positive_int"
+new_repo >/dev/null
+pi_verdicts=""
+for pi_item in 1 08 42 0 00 -1 1.5 '' abc ' 3'; do
+  if sourced_orch is_positive_int "$pi_item"; then pi_verdicts="$pi_verdicts y"
+  else pi_verdicts="$pi_verdicts n"; fi
+done
+assert_eq "is_positive_int accepts whole numbers of 1 or more, leading zeros included, and nothing else" \
+  "$pi_verdicts" " y y y n n n n n n n"
+
 # --- git_push (#1300) ---------------------------------------------------------
 # Every push orch.sh makes runs through git_push, which returns the push's
 # status and cuts git's reason out of its stderr. pr open, pr publish and
