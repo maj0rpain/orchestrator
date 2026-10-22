@@ -286,6 +286,15 @@ assert_eq "a released claim and a non-zero exit is no failure" "$(fake_labels_of
 assert_not_contains "and posts no failure comment" "$(fake_comments_of 7)" "Autopilot failed"
 released_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
 assert_contains "its exit code is recorded in the session log" "$(cat "$released_log")" "session exited 3 with its claim released"
+
+# one that exited zero with its claim still held is a failure too
+rm -f "$launcher_dir/release"; printf '0\n' >"$launcher_dir/exit"
+fake_issue 7 open ready-for-agent orch:spec
+"$ORCH" autopilot tick >/dev/null 2>&1
+assert_eq "a clean exit with the claim held is needs-human" "$(fake_labels_of 7)" "needs-human orch:spec ready-for-agent "
+assert_eq "its claim is released" "$(fake_claim_held 7)" free
+clean_log="$(ls "$top/.orchestrator/autopilot/logs"/7-spec-*.log | tail -1)"
+assert_contains "the failure comment names the log" "$(fake_comments_of 7 | tail -4)" "log: $clean_log"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
 # --- autopilot tick: the cap, lost claims and the order ---------------------
