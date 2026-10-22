@@ -94,8 +94,9 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    - First loop, whenever `iteration` is 0 - a flow's first loop, and the
      first loop after a Redo: "How many review iterations?" Options 3, 5 and
      8, plus Other for any integer ≥ 1; there is no upper cap. Suggest one
-     from the size of the change, by your own judgement, the way the
-     planning close recommends a route. Weigh lines and files changed
+     from the size of the change, by your own judgement, as the planning
+     interview's closing route question recommends a route from the scope
+     of the work (`scripts/hook-grilling.sh`). Weigh lines and files changed
      (`git diff --stat` from the base SHA), the ticket count (`bash "$ORCH"
      ticket list <spec issue>`, one line per sub-issue; no lines means a
      collapsed breakdown, which counts as 1 ticket), and how many modules or
