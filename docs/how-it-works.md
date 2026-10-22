@@ -121,8 +121,9 @@ phase and fail `doctor --flow`; `orch.sh ticket-worktree list` shows them and
 ### Review
 
 The review phase is a bounded loop: a budget of iterations the human chooses
-at the start (five by default), a fresh review from the base SHA every one of
-them by the plugin's own two reviewer agents (standards and spec), a
+at the start (suggested from the size of the change), a fresh review from the
+base SHA every one of them by the plugin's own two reviewer agents (standards
+and spec), a
 blocking/major/nit rubric applied on top of their reports, and every blocking
 finding fixed along with the majors and mechanical nits that need no
 decision - one fix commit per iteration that fixed anything. The driving

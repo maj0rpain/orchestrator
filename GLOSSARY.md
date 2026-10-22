@@ -363,9 +363,11 @@ _Avoid_: single pass, quick review
 
 **Budget**:
 The number of iterations a review loop runs, chosen by a human when the loop
-starts - five unless they say otherwise. A loop runs its whole budget: finding
-nothing does not end it early, because every iteration is an independent look
-at the same change, and the value of the loop is in the number of looks.
+starts, from a number the driver suggests: for a flow's first loop, from the
+size of the change; for a further loop, from what the loop before it left. A
+loop runs its whole budget: finding nothing does not end it early, because
+every iteration is an independent look at the same change, and the value of
+the loop is in the number of looks.
 
 **Iteration**:
 One pass within a review loop: sync the branch with its base, review the

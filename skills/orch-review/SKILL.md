@@ -91,10 +91,37 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
    with the host's ask tool (`AskUserQuestion` on Claude Code, `ask_user`
    on Junie). Ask once, before the
    first iteration, and never again mid-loop:
-   - First loop: "How many review iterations?" Default 5. Any integer ≥ 1;
-     there is no upper cap.
-   - Re-entry: "How many more?" Same default and range. The new loop continues
-     the iteration numbering, so set `budget` to `iteration + n`.
+   - First loop, whenever `iteration` is 0 - a flow's first loop, and the
+     first loop after a Redo: "How many review iterations?" Options 3, 5 and
+     8, plus Other for any integer ≥ 1; there is no upper cap. Suggest one
+     from the size of the change, by your own judgement, as the planning
+     interview's closing route question recommends a route from the scope
+     of the work (`scripts/hook-grilling.sh`). Weigh lines and files changed
+     (`git diff --stat` from the base SHA), the ticket count (`bash "$ORCH"
+     ticket list <spec issue>`, one line per sub-issue; no lines means a
+     collapsed breakdown, which counts as 1 ticket), and how many modules or
+     skills the change touches. Risk weighs above raw size: a small change
+     to the review loop's or flow state's own machinery deserves more looks
+     than a large docs change.
+     - 3: small - one site, one ticket.
+     - 5: medium - a few files, 2-3 tickets.
+     - 8: large - many modules, 4+ tickets, or the loop or state machinery
+       itself.
+   - Re-entry: "How many more?" Options 1, 3 and 5, plus Other for any
+     integer ≥ 1. Suggest one from what the previous loop's records (step 4)
+     left - any open blocking still standing, and how much its final
+     iterations still found - never from the change's size.
+     - 1: a single stuck blocker.
+     - 3: steady remaining churn.
+     - 5: the final iterations were still finding new blocking findings.
+
+     The new loop continues the iteration numbering, so set `budget` to
+     `iteration + n`.
+
+   List the suggested option first, with " (Recommended)" appended to its
+   label and a one-clause reason - the size, or what the last loop left - in
+   its description, or in the question text where the host's options have
+   no description. Exactly one option carries "(Recommended)".
 
    Then `bash "$ORCH" state set budget <that number>`. The bound is mechanical from
    here: `review begin` enforces it, and a session that has argued with itself
