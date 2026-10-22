@@ -246,11 +246,15 @@ A `PostToolUse` hook on `Skill(orch-interview)`, and on the
 `mattpocock-skills` entry points named above when they are installed, starts
 a planning session. It fires once per session and tells the model that once a
 shared understanding is reached, the next step is a human's call, not the
-model's: call `AskUserQuestion` with exactly three options, start the flow
+model's: call `AskUserQuestion` with exactly four options (three on Junie), start the flow
 (`orchestrator:orch-flow`), a quick implementation
-(`orchestrator:orch-quick-implement`), or a blueprint only (publish the spec,
-offer a spec review, publish the ticket breakdown, then stop), and do
-whichever the human picks.
+(`orchestrator:orch-quick-implement`), a blueprint only (publish the spec,
+offer a spec review, publish the ticket breakdown, then stop), or, on Claude
+Code only, an autopilot flow, and do whichever the human picks. The autopilot
+flow runs `orch-to-spec`, writes the `orch-handoff` skill's `01-plan.md` with
+its `## Autopilot` block to a scratch file, and ends in `autopilot start
+<issue> <plan-file>`; the planning session writes no flow state and makes no
+side checkout.
 
 Beside a flow already running in the checkout (any phase but `done`), it
 still sends the planning rules, with a closing that names that flow - its

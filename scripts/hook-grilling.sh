@@ -108,6 +108,9 @@ if [ "$host" = junie ]; then
   ask_tool="the ask_user tool"
   ask_step="Call the ask_user tool with
   exactly three options:"
+  autopilot_option=""
+  run_autopilot=""
+  autopilot_route=""
   plugin_root="$(hook_plugin_root)"
   next_redo="the **Next phase** and **Redo** sections of $plugin_root/skills/orch-flow/SKILL.md
     (this host has no plugin commands: read that file and follow the section
@@ -136,7 +139,19 @@ else
   ask_tool="the AskUserQuestion tool"
   next_redo="/orchestrator:next or /orchestrator:redo"
   ask_step="Call the AskUserQuestion tool with
-  exactly three options:"
+  exactly four options:"
+  autopilot_option="
+      4. Autopilot flow - hands the plan to the autopilot watcher, which carries it through spec, implement and review unattended and asks the human only by comment on the issue."
+  run_autopilot="On \"Autopilot flow\", follow the Autopilot route below yourself. "
+  autopilot_route="
+- On \"Autopilot flow\" (Claude Code only), the route ends in the plan handoff; this planning session writes no flow state and makes no side checkout, so run neither \`init\` nor \`side-checkout add\`.
+  First write the spec: call the Skill tool with \"orchestrator:orch-to-spec\" - in rewrite mode, args set to the interviewed issue's number, when there is one, else in publish mode - with its test-seams check.
+  Then write the plan with the \`orch-handoff\` skill's \`01-plan.md\` template, including its \`## Autopilot\` block, to a scratch file (mktemp) outside the repo:
+  Rounds sized by the spec phase's rule - 1 for a one-site spec, 2 by default, 3 for a large or cross-cutting spec - and Budget, the review loop's iteration budget, from the interview.
+  Last run
+  bash \"$(hook_plugin_root)/scripts/orch.sh\" autopilot start <issue> <plan-file>
+  through that path, <issue> being the spec's issue number. When a step stops or fails, stop there and report why; the route ends in \`autopilot start\`.
+  Then report that the watcher picks the issue up."
   run_flow_quick="On \"Start the orchestrator flow\", call the Skill tool with
   \"orchestrator:orch-flow\" yourself. On \"Quick implementation\", call the Skill
   tool with \"orchestrator:orch-quick-implement\" yourself. "
@@ -211,7 +226,7 @@ if [ "$flow_active" = 1 ]; then
   # Beside a flow, Start and Quick implementation take the side-checkout route.
   run_flow_quick="$run_flow_quick_side"
 fi
-run_next="- ${run_flow_quick}${run_blueprint}${flow_quick_files}${blueprint_files}"
+run_next="- ${run_flow_quick}${run_autopilot}${run_blueprint}${flow_quick_files}${blueprint_files}"
 
 # The interviewed issue (#571): an open issue the planning was about is
 # offered a move to ready-for-agent before the route question, so init
@@ -272,7 +287,7 @@ choice="${ask_step}
          review pipeline, with its own handoff and review loop.
       2. Quick implementation - hands-off, for small changes: implement this directly, with no further questions before the PR.
       3. Blueprint only - write the spec (rewriting the interviewed issue, if
-         there is one) and its ticket breakdown, then stop; implement later.
+         there is one) and its ticket breakdown, then stop; implement later.${autopilot_option}
 
 Keep the route options in the order above unless you recommend one.
 To recommend a route from the scope of the work (Quick implementation for a one-site fix, say), list it first, append \" (Recommended)\" to its label, and give that scope-based reason in one clause in its description, or in the question text where options have no description.
@@ -303,7 +318,7 @@ ${run_next} Do not ask the user to type a command.${route_here}
   If orch-to-tickets fails after rewrite mode retired a breakdown, the report also says that #<n> carries its new body and no ticket breakdown, and needs /orchestrator:to-tickets <n>. Then stop: do not
   implement or edit source. Report the issue number and how to pick it up
   later: /orchestrator:start --issue <n>, or a quick implementation that names
-  the issue."
+  the issue.${autopilot_route}"
 
 if [ "$plan_confirmed" = 1 ]; then
   hook_emit_context "$event" "The orchestrator plugin is installed in this repo, and the user just
