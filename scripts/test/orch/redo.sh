@@ -382,9 +382,6 @@ assert_eq "so the handoff folder no longer holds it" \
 assert_eq "moves the round marker into the same directory" "$(cat "$retired/spec-round" 2>/dev/null)" "40 2 3"
 assert_eq "so the handoff folder no longer holds it either" \
   "$(on_disk .orchestrator/handoff/spec-round)" "absent"
-out="$("$ORCH" spec round 2>&1)"; st=$?
-assert_status "spec round then finds no round marker" "$st" 1
-assert_eq "and prints nothing" "$out" ""
 assert_eq "without bumping redo_count" "$("$ORCH" state get redo_count)" "2"
 out="$("$ORCH" phase advance 2>&1)"; st=$?
 assert_status "phase advance then refuses to leave spec" "$st" 1

@@ -153,8 +153,7 @@ cmd_spec_round_dir() {
   spec_round_count_parse "$1" k n
   spec_phase_guard die round-dir issue
   local dir="$SPEC_ROUNDS_DIR/$k" f
-  rm -rf "$dir"
-  mkdir -p "$dir"
+  spec_review_dir_reset "$dir"
   if [ "$k" -eq 1 ]; then
     find "$SPEC_ROUNDS_DIR" -mindepth 1 -maxdepth 1 ! -name 1 -exec rm -rf {} +
   else
