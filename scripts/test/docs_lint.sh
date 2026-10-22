@@ -1772,9 +1772,9 @@ spares "a filled row is not flagged" "$out" ':(1|2|3):'
 check "every host capability row has both hosts' cells filled" \
   "$(scan_capability_table "$PLUGIN_ROOT")"
 
-# names_skill_section <text> <skill> <section>: the text names <skill>, as
-# given, and its **<section>** in bold.
-names_skill_section() { grep -qF -- "$2" <<<"$1" && grep -qF -- "**$3**" <<<"$1"; }
+# names_with_bold <text> <token> <bold>: the text names <token>, as given,
+# and <bold> in bold, as **<bold>**.
+names_with_bold() { grep -qF -- "$2" <<<"$1" && grep -qF -- "**$3**" <<<"$1"; }
 
 # quick_step_refers <plugin root> <step heading> <skill> <section> <noun>:
 # one line when that quick-implement step does not name `<skill>` and its
@@ -1783,7 +1783,7 @@ quick_step_refers() {
   local quick="skills/orch-quick-implement/SKILL.md" body numbered="${2#\#\# }" owner="$3's"
   [[ $3 == *s && $3 != *ss ]] && owner="$3'"
   body="$(md_section "$1/$quick" "$2" | flat_text)"
-  names_skill_section "$body" "\`$3\`" "$4" \
+  names_with_bold "$body" "\`$3\`" "$4" \
     || echo "$quick: step ${numbered%%.*} does not refer to $owner **$4** $5"
 }
 
@@ -2337,7 +2337,7 @@ scan_review_pass_self_contained() {
       && echo "$pass: names orch-review's loop-only **$name**"
   done <<<"$review_loop_only"
   names_orch_review <"$r/$pass" 2>/dev/null && echo "$pass: names the orch-review skill"
-  names_skill_section "$text" '`docs/host-capabilities.md`' "Start a fresh subagent" \
+  names_with_bold "$text" '`docs/host-capabilities.md`' "Start a fresh subagent" \
     || echo "$pass: does not name docs/host-capabilities.md's **Start a fresh subagent**"
   grep -qF 'subagent_type' <<<"$text" || echo "$pass: does not name subagent_type"
   desc="$(skill_description "$r/$pass")"
@@ -2382,6 +2382,15 @@ assert_empty "a self-contained pass is not flagged" "$(scan_review_pass_self_con
 check "orch-review-pass refers into no orch-review section and says how to start a reviewer" \
   "$(scan_review_pass_self_contained "$PLUGIN_ROOT")"
 
+# follows_standalone_pass <text> <prefix>: one line, after <prefix> and a
+# space, when the text does not name orch-review-pass's **Standalone review
+# pass**, and one when it names the orch-review skill.
+follows_standalone_pass() {
+  names_with_bold "$1" orch-review-pass "Standalone review pass" \
+    || echo "$2 does not name orch-review-pass's **Standalone review pass**"
+  names_orch_review <<<"$1" && echo "$2 names the orch-review skill"
+  return 0
+}
 # scan_review_pass_callers <plugin root>: one line per caller of the pass that
 # does not name orch-review-pass and the section it follows, or names
 # orch-review. Quick implementation's step 6 is named by scan_review_pass.
@@ -2389,15 +2398,11 @@ scan_review_pass_callers() {
   local r="$1" cmd="commands/review-pass.md" quick="skills/orch-quick-implement/SKILL.md"
   local sync="skills/orch-sync/SKILL.md" cmd_text step6_text offer_text
   cmd_text="$(flat_text "$r/$cmd" 2>/dev/null)"
-  names_skill_section "$cmd_text" orch-review-pass "Standalone review pass" \
-    || echo "$cmd: does not name orch-review-pass's **Standalone review pass**"
-  names_orch_review <<<"$cmd_text" && echo "$cmd: names the orch-review skill"
+  follows_standalone_pass "$cmd_text" "$cmd:"
   step6_text="$(md_section "$r/$quick" "## 6. Review" | flat_text)"
   names_orch_review <<<"$step6_text" && echo "$quick: step 6 names the orch-review skill"
   offer_text="$(md_section "$r/$sync" "## 3. Offer a review pass" | flat_text)"
-  names_skill_section "$offer_text" orch-review-pass "Standalone review pass" \
-    || echo "$sync: step 3 does not name orch-review-pass's **Standalone review pass**"
-  names_orch_review <<<"$offer_text" && echo "$sync: step 3 names the orch-review skill"
+  follows_standalone_pass "$offer_text" "$sync: step 3"
   return 0
 }
 fixture="$(new_fixture)"
