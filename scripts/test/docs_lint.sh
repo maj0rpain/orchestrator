@@ -2313,11 +2313,18 @@ Met again'
 # orch-review or orchestrator:orch-review, never orch-review-pass or
 # orch-reviewer-spec.
 names_orch_review() { grep -qE '(^|[^a-z0-9-])orch-review([^a-z0-9-]|$)'; }
-# skill_description <file>: the description line of the file's frontmatter.
-skill_description() {
-  awk 'NR == 1 && $0 == "---" { inb = 1; next } inb && $0 == "---" { exit }
-    inb && /^description:/ { print }' "$1" 2>/dev/null
+# skill_part <file> frontmatter|body: the lines between the `---` fence on
+# line 1 and the next `---`, or the lines after that closing fence. With no
+# fence on line 1 the frontmatter is empty and the body is the whole file; with
+# the fence never closed, every line after line 1 is frontmatter.
+skill_part() {
+  P="$2" awk 'BEGIN { body = ENVIRON["P"] == "body" }
+    NR == 1 && $0 == "---" { fm = 1; next }
+    fm && $0 == "---" { fm = 0; next }
+    fm != body { print }' "$1" 2>/dev/null
 }
+# skill_description <file>: the description line of the file's frontmatter.
+skill_description() { skill_part "$1" frontmatter | grep '^description:'; }
 # scan_review_pass_self_contained <plugin root>: one line per reference from
 # orch-review-pass into orch-review, and per missing reviewer-start or
 # description token.
@@ -2435,8 +2442,7 @@ scan_review_loop_sheds_pass() {
   desc="$(skill_description "$r/$review")"
   grep -qF 'orch-review-pass' <<<"$desc" || echo "$review: description does not name orch-review-pass"
   grep -qF '/orchestrator:review-pass' <<<"$desc" && echo "$review: description names /orchestrator:review-pass"
-  awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' \
-    "$r/$review" 2>/dev/null | grep -qF 'orch-review-pass' \
+  skill_part "$r/$review" body | grep -qF 'orch-review-pass' \
     || echo "$review: body does not name orch-review-pass"
   return 0
 }
@@ -2465,6 +2471,18 @@ printf '%s\n' '---' 'name: orch-review' 'description: The loop. The review pass 
   >"$fixture/skills/orch-review/SKILL.md"
 assert_empty "an orch-review that points to orch-review-pass is not flagged" \
   "$(scan_review_loop_sheds_pass "$fixture")"
+printf '%s\n' '---' 'name: orch-review' 'description: The loop. The review pass is orch-review-pass.' '---' '' \
+  '# Loop' '' 'No pointer here.' >"$fixture/skills/orch-review/SKILL.md"
+flags "an orch-review naming orch-review-pass only in its frontmatter is flagged" \
+  "$(scan_review_loop_sheds_pass "$fixture")" "skills/orch-review/SKILL.md: body does not name orch-review-pass"
+printf '%s\n' '---' 'name: orch-review' 'description: The loop.' '---' '' \
+  'description: see orch-review-pass.' >"$fixture/skills/orch-review/SKILL.md"
+flags "a body description: line does not satisfy the orch-review description check" \
+  "$(scan_review_loop_sheds_pass "$fixture")" "skills/orch-review/SKILL.md: description does not name orch-review-pass"
+printf '%s\n' '# Loop' '' 'A review pass lives in the `orch-review-pass` skill.' \
+  >"$fixture/skills/orch-review/SKILL.md"
+spares "an orch-review with no frontmatter whose body names orch-review-pass keeps its body" \
+  "$(scan_review_loop_sheds_pass "$fixture")" 'body does not name orch-review-pass'
 check "orch-review holds the loop only and points to orch-review-pass" \
   "$(scan_review_loop_sheds_pass "$PLUGIN_ROOT")"
 
