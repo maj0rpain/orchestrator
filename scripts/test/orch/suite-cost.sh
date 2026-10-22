@@ -23,6 +23,14 @@ assert_record_line() {
   assert_eq "$1" "$shape" well-formed
 }
 
+# rec_path [made]: sets rec to the record's path in the cwd's clone, resolved
+# with pwd -P as suite-cost resolves it; with made, also creates the record's
+# directory.
+rec_path() {
+  rec="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)/orchestrator/suite-cost"
+  [[ "${1:-}" != made ]] || mkdir -p "${rec%/*}"
+}
+
 # check_repo: a repo for suite-cost check, cwd inside it, its record's
 # directory made: main's first commit (root) and its child (base), then branch
 # feat off base, base recorded as its base SHA, with two commits (parent, then
@@ -42,8 +50,7 @@ check_repo() {
   parent="$(git rev-parse HEAD)"
   git commit -q --allow-empty -m two
   head="$(git rev-parse HEAD)"
-  rec="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)/orchestrator/suite-cost"
-  mkdir -p "${rec%/*}"
+  rec_path made
   marker="$(mktemp -d)/ran"
   cmd=(sh -c 'touch "$0"; exit 9' "$marker")
   cmd_str="${cmd[*]}"
@@ -85,7 +92,7 @@ handshake_partner() {
 echo
 echo "suite-cost run"
 new_repo >/dev/null
-rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
+rec_path
 
 assert_eq "a fresh clone has no record directory" "$(on_disk "${rec%/*}")" absent
 errf="$(mktemp)"
@@ -125,7 +132,7 @@ assert_eq "a usage error records nothing" "$(wc -l <"$rec" | tr -d ' ')" 2
 # An append that fails: the record's path is a directory, so no user, root
 # included, can write it.
 new_repo >/dev/null
-rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
+rec_path
 mkdir -p "$rec"
 out="$("$ORCH" suite-cost run -- echo passed 2>/dev/null)"; st=$?
 assert_status "an unwritable record still passes the command's exit 0 through" "$st" 0
@@ -138,7 +145,7 @@ assert_eq "and records nothing" "$(ls -A "$rec")" ""
 # A run with changes in the tree records its commit as <sha>-dirty; an
 # ignored path is no change.
 new_repo >/dev/null
-rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
+rec_path
 echo ignored >>.git/info/exclude
 touch ignored
 "$ORCH" suite-cost run -- true >/dev/null 2>&1
@@ -163,7 +170,7 @@ assert_eq "a run with an untracked file records <sha>-dirty" \
 # command is running, and its run registered, while the other's is.
 overlap="this run overlapped another suite-cost run - its suite cost is not recorded"
 new_repo >/dev/null
-rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
+rec_path
 hs="$(handshake_fifos)"
 "$ORCH" suite-cost run -- sh -c "$(handshake_first "$hs"); exit 4" >/dev/null 2>"$hs/err-a" &
 pid_a=$!
@@ -220,8 +227,7 @@ assert_eq "and that .contended file is gone" "$(on_disk "$active/$$.contended")"
 # A run that cannot register as active: a plain file where the active-runs
 # directory goes, the record itself still writable.
 new_repo >/dev/null
-rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
-mkdir -p "${rec%/*}"
+rec_path made
 : >"$rec.active"
 errf="$(mktemp)"
 out="$("$ORCH" suite-cost run -- sh -c 'echo ran; exit 0' 2>"$errf")"; st=$?
@@ -245,8 +251,7 @@ out="$("$ORCH" suite-cost history 2>&1)"; st=$?
 assert_status "history succeeds with no record" "$st" 0
 assert_eq "and prints nothing" "$out" ""
 
-rec="$(git rev-parse --git-common-dir)/orchestrator/suite-cost"
-mkdir -p "${rec%/*}"
+rec_path made
 seed="$(printf '%s\t%s\t%s\t%s\t%s\n' \
   "$(git rev-parse HEAD)" 61.50 12.03 2026-10-01T10:00:00Z "scripts/test/all.sh" \
   "$(git rev-parse HEAD)" 64.00 12.50 2026-10-02T10:00:00Z "scripts/test/all.sh")"
@@ -642,8 +647,7 @@ confirm_repo() {
   git commit -q --allow-empty -m head
   head="$(git rev-parse HEAD)"
   git config orchestrator.suiteCost.floor 0.01
-  rec="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)/orchestrator/suite-cost"
-  mkdir -p "${rec%/*}"
+  rec_path made
   cmd=(sh run.sh)
   cmd_str="sh run.sh"
   seed_run "$base" 50.00
