@@ -148,6 +148,16 @@ orch.sh - deterministic operations for the orchestrator flow
                               validate the plan (## Autopilot block included),
                               post it as the plan handoff comment, then add
                               orch:spec
+  autopilot tick              one watcher pass: ensure the six labels, clean up
+                              this host's stale claims, then claim each open
+                              phase-labelled issue (oldest first, below the
+                              cap), make or reuse its side checkout and start
+                              `autopilot run` detached. Claude Code only;
+                              needs orchestrator.autopilot.permission-mode
+  autopilot run <issue>       the session wrapper a tick starts: runs claude -p
+                              in the issue's side checkout, logging under
+                              .orchestrator/autopilot/logs/, and fails the
+                              issue when the claim is still held at its exit
   autopilot ask <phase> <file>
                               post <file> as the phase's question comment
                               (@mentioning the handle), add needs-human, then
