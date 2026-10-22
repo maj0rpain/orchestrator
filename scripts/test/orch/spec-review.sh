@@ -417,6 +417,8 @@ d="$(sra_dir)"
 sra "$d" recommended
 assert_eq "a round with a declined, an applied and a decided item writes settled.md as changelog.md" \
   "$(sra_cmp "$d/settled.md" "$d/changelog.md")" same
+assert_eq "and, last, an empty round-complete beside it" \
+  "$([ -f "$d/round-complete" ] && wc -c <"$d/round-complete" | tr -d ' ' || echo absent)" 0
 
 # A second round, carried with begin --carry, appends after the first.
 sr_dir="$top/.orchestrator/spec-review/14"
@@ -451,6 +453,7 @@ sra "$d" recommended
 fake_unfail
 assert_status "a failed first write stops apply" "$st" 1
 assert_eq "leaving settled.md unchanged" "$(cat "$d/settled.md")" "earlier round"
+assert_eq "and writing no round-complete" "$(on_disk "$d/round-complete")" absent
 sra "$d" recommended
 assert_status "the rerun applies" "$st" 0
 { printf 'earlier round\n'; cat "$d/changelog.md"; } >"$d/want-settled"
@@ -464,6 +467,7 @@ assert_status "a failed append stops apply" "$st" 1
 assert_contains "naming settled.md" "$out" "$d/settled.md"
 assert_contains "and that every GitHub write landed" "$out" "every GitHub write landed"
 assert_contains "the comment among them" "$(fake_comments_of 14)" "Round 1 of 2"
+assert_eq "and the round is not complete: no round-complete" "$(on_disk "$d/round-complete")" absent
 
 # Apply all: the recommend-decline item too.
 d="$(sra_dir)"
