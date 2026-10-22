@@ -66,7 +66,8 @@ tree_copy() {
 # inside a section is not. A call is a name in command position: at a line's
 # start or after `;`, `&&`, `||`, `|`, `&`, `$(`, a backtick, `(`, `{`, `!`, or
 # one of then, do, else, elif, if, while, until; a case-arm pattern at a line's
-# start (`name)`, `a|name)`) is none. Comments, quoted strings and
+# start (`name)`, `a|name)`) is none. It reads SHELL_CODE_AWK's words view:
+# comments, quoted strings and
 # quoted heredocs are dropped first, but `$(...)` and backticks inside double
 # quotes and unquoted heredocs are still read; a call inside a helper's own
 # body is not counted for it. setup.sh's helper fails with no caller, or with
@@ -74,82 +75,16 @@ tree_copy() {
 # calls it.
 helper_placement() {
   local out
-  out="$(awk -v rule="$HELPER_PLACEMENT_RULE" '
-    function push(m) { sp++; st[sp] = m; depth[sp] = 0 }
-    # sanitize(line): the line with its comment dropped, every quoted string
-    # or ${...} turned into a q and a closing backtick into a space, keeping
-    # the code of the substitutions inside double quotes. The quoting state,
-    # a stack in st[1..sp] over the code st[0], carries from line to line.
-    function sanitize(line,   out, i, n, c, c2, m, prev, w, j) {
-      out = ""; n = length(line); prev = ""
-      for (i = 1; i <= n; i++) {
-        c = substr(line, i, 1); c2 = substr(line, i, 2); m = st[sp]
-        if (m == "S") { if (c == "\047") { sp--; out = out "q" } }
-        else if (m == "E") { if (c == "\\") i++; else if (c == "\047") { sp--; out = out "q" } }
-        else if (m == "D" || m == "H" || m == "P") {
-          if (c == "\\") i++
-          else if (c2 == "$(") { push("C"); out = out "$("; i++ }
-          else if (c2 == "${") { push("P"); i++ }
-          else if (c == "`") { push("B"); out = out "`" }
-          else if (m == "D" && c == "\"") { sp--; out = out "q" }
-          else if (m == "P" && c == "\"") push("D")
-          else if (m == "P" && c == "\047" && st[sp - 1] != "D") push("S")
-          else if (m == "P" && c == "{") depth[sp]++
-          else if (m == "P" && c == "}") { if (depth[sp]) depth[sp]--; else { sp--; if (st[sp] != "D" && st[sp] != "H") out = out "q" } }
-        }
-        else {
-          # code: the bottom N, a $(...) C, or a backtick B
-          if (c == "\\") { if (i == n) cont = 1; else out = out "qq"; i++ }
-          else if (c == "#" && (prev == "" || prev ~ /[ \t;&|()]/)) break
-          else if (c2 == "$\047") { push("E"); i++ }
-          else if (c == "\047") push("S")
-          else if (c == "\"") push("D")
-          else if (c2 == "$(") { push("C"); out = out "$("; i++ }
-          else if (c2 == "${") { push("P"); i++ }
-          else if (c == "`") { if (m == "B") { sp--; out = out " " } else { push("B"); out = out "`" } }
-          else if (m == "C" && c == "(") { depth[sp]++; out = out c }
-          else if (m == "C" && c == ")") { if (depth[sp]) depth[sp]--; else sp--; out = out c }
-          else if (substr(line, i, 3) == "<<<") { out = out "<<<"; i += 2 }
-          else if (c2 == "<<") {
-            # a heredoc: its delimiter, and whether it is quoted
-            j = i + 2; w = substr(line, j); hstrip[nh + 1] = 0
-            if (substr(w, 1, 1) == "-") { hstrip[nh + 1] = 1; w = substr(w, 2); j++ }
-            match(w, /^[ \t]*/); j += RLENGTH; w = substr(w, RLENGTH + 1)
-            if (match(w, /^(\047[^\047]*\047|"[^"]*"|\\[A-Za-z0-9_]+|[A-Za-z0-9_]+)/)) {
-              nh++; hword[nh] = substr(w, 1, RLENGTH); hquoted[nh] = 1
-              if (hword[nh] ~ /^[\047"]/) hword[nh] = substr(hword[nh], 2, RLENGTH - 2)
-              else if (hword[nh] ~ /^\\/) hword[nh] = substr(hword[nh], 2)
-              else hquoted[nh] = 0
-              i = j + RLENGTH - 1
-            } else i++
-            out = out "q"
-          }
-          else out = out c
-        }
-        prev = c
-      }
-      return out
-    }
+  out="$(awk -v rule="$HELPER_PLACEMENT_RULE" "$SHELL_CODE_AWK"'
     function count(s, re,   t) { t = s; return gsub(re, "", t) }
     FNR == 1 {
       file = FILENAME; sub(/.*\//, "", file)
-      files[file] = 1; sp = 0; st[0] = "N"; nh = 0; hcur = 0; insec = 0; cont = 0; fn = ""; fdepth = 0
+      files[file] = 1; insec = 0; fn = ""; fdepth = 0
     }
     {
-      line = $0
-      if (hcur) {
-        # inside a heredoc body
-        t = line; if (hstrip[hcur]) sub(/^\t+/, "", t)
-        if (t == hword[hcur]) { hcur = hcur < nh ? hcur + 1 : 0; if (!hcur) nh = 0; next }
-        if (hquoted[hcur]) next
-        top = 0; base = sp; push("H"); s = sanitize(line); sp = base
-      } else {
-        if (sp == 0 && file != setup && line ~ /^# --- /) insec = 1
-        lead = cont ? "q " : ""; cont = 0
-        top = sp == 0 && fdepth == 0
-        s = lead sanitize(line)
-        if (nh && !hcur) hcur = 1
-      }
+      # the words view: comments dropped, strings and quoted heredocs a q
+      shell_code_line($0); s = sc_words; top = sc_top && fdepth == 0
+      if (sc_top && file != setup && $0 ~ /^# --- /) insec = 1
       if (top && fn == "" && match(s, /^[ \t]*(function[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*\(\)/)) {
         name = substr(s, 1, RLENGTH); sub(/^[ \t]*(function[ \t]+)?/, "", name); sub(/[ \t]*\(\)$/, "", name)
         fn = name; opened = 0; fdepth = 0
@@ -205,31 +140,17 @@ GH_OP_PLACEMENT_RULE="The rule: only the gh module, scripts/orch/gh.sh, names a 
 # five multi-field gh ops, and prints one line per file and op, sorted, naming
 # the file (as scripts/<path>), the op and the rule; returns 1 when it printed
 # any. An op counts as a whole word anywhere in code - a command word, or an
-# argument to capture, gh_or_die or any other runner; a comment is dropped
-# first (a # at a line's start or after a blank or one of ;&|() outside
-# quotes), and a name inside a longer name is no match.
+# argument to capture, gh_or_die or any other runner, or a word inside a
+# string; each line is read through SHELL_CODE_AWK's code view, so its comment
+# is dropped first, and a name inside a longer name is no match.
 gh_op_placement() {
   local out
   out="$(cd "$1" && find . -name '*.sh' ! -path ./orch/gh.sh ! -path './test/*' \
-    -exec awk -v rule="$GH_OP_PLACEMENT_RULE" -v opnames="$GH_MULTI_FIELD_OPS" '
+    -exec awk -v rule="$GH_OP_PLACEMENT_RULE" -v opnames="$GH_MULTI_FIELD_OPS" "$SHELL_CODE_AWK"'
     BEGIN { nop = split(opnames, ops, " ") }
-    # code(line): the line with its comment dropped; quotes are tracked within
-    # the line only.
-    function code(line,   i, n, c, q, prev) {
-      n = length(line); q = ""; prev = ""
-      for (i = 1; i <= n; i++) {
-        c = substr(line, i, 1)
-        if (q == "\047") { if (c == "\047") q = "" }
-        else if (q == "\"") { if (c == "\\") i++; else if (c == "\"") q = "" }
-        else if (c == "\\") i++
-        else if (c == "\047" || c == "\"") q = c
-        else if (c == "#" && (prev == "" || prev ~ /[ \t;&|()]/)) return substr(line, 1, i - 1)
-        prev = c
-      }
-      return line
-    }
     {
-      s = code($0); file = FILENAME; sub(/^\.\//, "scripts/", file)
+      shell_code_line($0)
+      s = sc_code; file = FILENAME; sub(/^\.\//, "scripts/", file)
       for (k = 1; k <= nop; k++) {
         t = s
         while (match(t, ops[k])) {
@@ -1026,6 +947,126 @@ assert_contains "keeps a passing suite's last line, whatever it is" "$out" \
   "docs_lint.sh: a stray last line"
 rm -rf "$all_root"
 
+# --- shell code (#1411) -------------------------------------------------------
+# shell_code over planted files: the code view keeps every line, drops each
+# comment, and keeps strings, substitutions and heredoc bodies whole.
+echo
+echo "shell code (#1411)"
+shell_code_dir="$(mktemp -d)"
+
+plant_file "$shell_code_dir" trailing.sh <<'PLANTED'
+  x=1 # a trailing comment
+  f() { :; }# no blank, so a word
+  g;# after a semicolon
+PLANTED
+assert_eq "a trailing comment is dropped" "$(shell_code "$shell_code_dir/trailing.sh")" \
+  "$(printf '%s\n' 'x=1 ' 'f() { :; }# no blank, so a word' 'g;')"
+
+plant_file "$shell_code_dir" whole.sh <<'PLANTED'
+  a=1
+    # an indented comment
+  # a comment
+  b=2
+PLANTED
+out="$(shell_code "$shell_code_dir/whole.sh"; echo .)"
+assert_eq "a comment-only line prints as an empty line, one line per input line" \
+  "$out" "$(printf '%s\n' 'a=1' '  ' '' 'b=2' .)"
+
+plant_file "$shell_code_dir" words.sh <<'PLANTED'
+  y=a#b z="c # d" w='e # f' # cut
+PLANTED
+assert_eq "a # inside a word or quotes starts no comment" \
+  "$(shell_code "$shell_code_dir/words.sh")" "y=a#b z=\"c # d\" w='e # f' "
+
+plant_file "$shell_code_dir" ansi.sh <<'PLANTED'
+  v=$'g \' # h' # cut
+PLANTED
+assert_eq "\$'...' with an escaped quote stays open past it" \
+  "$(shell_code "$shell_code_dir/ansi.sh")" "v=\$'g \\' # h' "
+
+plant_file "$shell_code_dir" heredocs.sh <<'PLANTED'
+  cat <<'EOF' # cut
+  # quoted body, kept
+  noun_fn
+  EOF
+  cat <<EOF
+  # unquoted body, kept $(x)
+  EOF
+  y=1 # cut
+PLANTED
+assert_eq "a quoted and an unquoted heredoc body print whole" \
+  "$(shell_code "$shell_code_dir/heredocs.sh")" \
+  "$(printf '%s\n' "cat <<'EOF' " '# quoted body, kept' 'noun_fn' 'EOF' 'cat <<EOF' \
+    '# unquoted body, kept $(x)' 'EOF' 'y=1 ')"
+
+printf 'cat <<-EOF\n\t# tabbed body\n\tEOF\ny=1 # cut\n' >"$shell_code_dir/strip.sh"
+assert_eq "a <<- heredoc ends at a tab-indented terminator, its lines printed whole" \
+  "$(shell_code "$shell_code_dir/strip.sh")" "$(printf 'cat <<-EOF\n\t# tabbed body\n\tEOF\ny=1 ')"
+
+plant_file "$shell_code_dir" multiline.sh <<'PLANTED'
+  s="one
+  # not a comment
+  two" # cut
+  t='three
+  # not a comment either
+  ' # cut
+PLANTED
+assert_eq "a multi-line string keeps its # lines" \
+  "$(shell_code "$shell_code_dir/multiline.sh")" \
+  "$(printf '%s\n' 's="one' '# not a comment' 'two" ' "t='three" '# not a comment either' "' ")"
+
+plant_file "$shell_code_dir" subst.sh <<'PLANTED'
+  a=$(b # cut
+  )
+  c="$(d "#" e)" # cut
+  f=`g` # cut
+PLANTED
+assert_eq "\$(...) and backticks keep their code and drop their comments" \
+  "$(shell_code "$shell_code_dir/subst.sh")" \
+  "$(printf '%s\n' 'a=$(b ' ')' 'c="$(d "#" e)" ' 'f=`g` ')"
+
+plant_file "$shell_code_dir" param.sh <<'PLANTED'
+  b=${x#pat} c=${x##*/} # cut
+PLANTED
+assert_eq "a # inside \${...} starts no comment" \
+  "$(shell_code "$shell_code_dir/param.sh")" 'b=${x#pat} c=${x##*/} '
+
+plant_file "$shell_code_dir" continued.sh <<'PLANTED'
+  cmd one \
+    two # cut
+PLANTED
+assert_eq "the line after one ending in \\ is still code" \
+  "$(shell_code "$shell_code_dir/continued.sh")" "$(printf '%s\n' 'cmd one \' '  two ')"
+
+plant_file "$shell_code_dir" two.sh <<'PLANTED'
+  cat <<A <<'B' # cut
+  # first body
+  A
+  # second body
+  B
+  y=1 # cut
+PLANTED
+assert_eq "two heredocs opened on one line both print whole" \
+  "$(shell_code "$shell_code_dir/two.sh")" \
+  "$(printf '%s\n' "cat <<A <<'B' " '# first body' 'A' '# second body' 'B' 'y=1 ')"
+
+plant_file "$shell_code_dir" names.sh <<'PLANTED'
+  trap 'noun_fn' EXIT; x="adapter_pr_refs" # cut
+PLANTED
+assert_eq "a name inside a single- or double-quoted string is kept" \
+  "$(shell_code "$shell_code_dir/names.sh")" "trap 'noun_fn' EXIT; x=\"adapter_pr_refs\" "
+
+printf '%s\n' 's="open' '# inside' >"$shell_code_dir/open-quote.sh"
+printf '%s\n' 'cat <<EOF' '# inside' >"$shell_code_dir/open-heredoc.sh"
+printf '%s\n' '# first' 'y=1 # cut' >"$shell_code_dir/next.sh"
+assert_eq "a file ending inside an open quote leaves the next file's code alone" \
+  "$(shell_code "$shell_code_dir/open-quote.sh" "$shell_code_dir/next.sh")" \
+  "$(printf '%s\n' 's="open' '# inside' '' 'y=1 ')"
+assert_eq "a file ending inside a heredoc leaves the next file's code alone" \
+  "$(shell_code "$shell_code_dir/open-heredoc.sh" "$shell_code_dir/next.sh")" \
+  "$(printf '%s\n' 'cat <<EOF' '# inside' '' 'y=1 ')"
+rm -rf "$shell_code_dir"
+
 # --- helper placement (#1006) -------------------------------------------------
 # helper_placement over the real scripts/test/orch/, then over copies of it,
 # each with planted helpers: four placements that break the rule, and one copy
@@ -1127,6 +1168,38 @@ assert_status "helpers placed by the rule pass" "$st" 0
 assert_eq "and print nothing" "$out" ""
 rm -rf "${placement_dir%/orch}"
 
+# Heredocs and continuation lines: a helper named in a quoted heredoc body, or
+# starting the line after a `\`, is no call; one called in $(...) in an
+# unquoted heredoc body is; a name() line in a heredoc body defines nothing.
+placement_dir="$(tree_copy scripts/test/orch)"
+printf '%s\n' 'planted_quoted() { :; }' 'planted_here() { :; }' \
+  'planted_cont() { :; }' >>"$placement_dir/setup.sh"
+plant_file "$placement_dir" zz-h.sh <<'PLANTED'
+  cat <<EOF
+  planted_fake() { :; }
+  EOF
+  # --- planted heredoc
+  cat <<'EOF'
+  planted_quoted
+  EOF
+  cat <<EOF
+  x $(planted_here)
+  EOF
+  echo \
+  planted_cont
+PLANTED
+plant_file "$placement_dir" zz-i.sh <<'PLANTED'
+  # --- planted fake
+  planted_fake
+PLANTED
+out="$(helper_placement "$placement_dir")"; st=$?
+assert_status "helpers named only in heredocs or continuations fail" "$st" 1
+assert_eq "a quoted heredoc body, a continuation and a heredoc name() are no call or definition" "$out" \
+  "planted_cont is defined in setup.sh and called by no file. $HELPER_PLACEMENT_RULE
+planted_here is defined in setup.sh and called by zz-h.sh. $HELPER_PLACEMENT_RULE
+planted_quoted is defined in setup.sh and called by no file. $HELPER_PLACEMENT_RULE"
+rm -rf "${placement_dir%/orch}"
+
 # --- gh op placement (#1037) --------------------------------------------------
 # gh_op_placement over the real scripts/, then over copies of it, each with a
 # planted file naming a multi-field gh op: three that break the rule, and three
@@ -1184,6 +1257,43 @@ printf '%s\n' 'planted_gh() { adapter_issue_title_labels "$1"; }' \
 out="$(gh_op_placement "$gh_op_dir")"; st=$?
 assert_status "comments, longer names and the gh module pass" "$st" 0
 assert_eq "and print nothing" "$out" ""
+rm -rf "${gh_op_dir%/scripts}"
+
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir/orch" zz-multiline.sh <<'PLANTED'
+  x="a string opened here
+  # and closed on this line" adapter_pr_refs "$n"
+PLANTED
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
+assert_status "an op after a multi-line string holding a # at a line's start fails" "$st" 1
+assert_eq "naming the file and the op" "$out" \
+  "scripts/orch/zz-multiline.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE"
+rm -rf "${gh_op_dir%/scripts}"
+
+gh_op_dir="$(tree_copy scripts)"
+plant_file "$gh_op_dir/orch" zz-param.sh <<'PLANTED'
+  y=${x#pat} adapter_issue_state_labels "$n"
+PLANTED
+plant_file "$gh_op_dir/orch" zz-ansi.sh <<'PLANTED'
+  y=$'it\'s # no comment' adapter_pr_state_draft "$n"
+PLANTED
+plant_file "$gh_op_dir/orch" zz-heredoc.sh <<'PLANTED'
+  cat <<EOF
+  # adapter_issue_title_labels on a heredoc body line
+  EOF
+PLANTED
+plant_file "$gh_op_dir/orch" zz-literal.sh <<'PLANTED'
+  trap 'adapter_issue_state_labels_body' EXIT
+  echo "adapter_pr_refs"
+PLANTED
+out="$(gh_op_placement "$gh_op_dir")"; st=$?
+assert_status "an op after a # in \${...}, in \$'...' or on a heredoc body line, or in a quoted literal, fails" "$st" 1
+assert_eq "naming each file and op" "$out" \
+  "scripts/orch/zz-ansi.sh names adapter_pr_state_draft. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-heredoc.sh names adapter_issue_title_labels. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-literal.sh names adapter_issue_state_labels_body. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-literal.sh names adapter_pr_refs. $GH_OP_PLACEMENT_RULE
+scripts/orch/zz-param.sh names adapter_issue_state_labels. $GH_OP_PLACEMENT_RULE"
 rm -rf "${gh_op_dir%/scripts}"
 
 # --- declaration substitutions (#1327) ----------------------------------------

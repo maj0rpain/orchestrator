@@ -9,21 +9,20 @@
 echo
 echo "common.sh is the bottom layer"
 # common.sh holds the primitives no concept owns and calls nothing a noun
-# module defines: no non-comment line of it names, as a whole word, a function
+# module defines: its code view (shell_code) names, as a whole word, no function
 # defined in a module of its orch/ directory other than common.sh and gh.sh,
-# the adapter layer below it. common_upcalls <scripts-dir> prints each such
+# the adapter layer below it. A name in a comment is no call; one in a quoted
+# literal is. common_upcalls <scripts-dir> prints each such
 # name found in <scripts-dir>/orch/common.sh. A definition is a column-0
 # `name()` line. host.sh, triage-labels.sh and planning-allowlist.sh sit
 # outside orch/, so common.sh's calls into them are outside the check.
 common_upcalls() {
-  local common_file="$1/orch/common.sh" code name f
-  code="$(grep -v '^[[:space:]]*#' "$common_file")"
+  local defs=() f
   for f in "$1"/orch/*.sh; do
     case "$(basename "$f")" in common.sh|gh.sh) continue ;; esac
-    col0_names "$f"
-  done | sort -u | while IFS= read -r name; do
-    if printf '%s\n' "$code" | grep -qw -- "$name"; then printf '%s\n' "$name"; fi
+    defs+=("$f")
   done
+  layer_calls "${defs[@]}" -- "$1/orch/common.sh"
 }
 layer_dir="$(mktemp -d)"
 mkdir "$layer_dir/orch"
@@ -32,8 +31,14 @@ printf '%s\n' '# noun_fn is named in a comment only' '  # noun_fn again' \
   'prim() { noun_fnx; }' >"$layer_dir/orch/common.sh"
 assert_eq "a comment or a longer word is no call into a noun module" \
   "$(common_upcalls "$layer_dir")" ""
+printf '%s\n' 'x=1 # noun_fn' >"$layer_dir/orch/common.sh"
+assert_eq "a name in a trailing comment is no call into a noun module" \
+  "$(common_upcalls "$layer_dir")" ""
 printf '%s\n' 'prim() { noun_fn; }' >"$layer_dir/orch/common.sh"
 assert_eq "a noun-module function called from common.sh is caught" \
+  "$(common_upcalls "$layer_dir")" "noun_fn"
+printf '%s\n' "prim() { trap 'noun_fn' EXIT; }" >"$layer_dir/orch/common.sh"
+assert_eq "a name in a quoted literal is still a call into a noun module" \
   "$(common_upcalls "$layer_dir")" "noun_fn"
 printf '%s\n' 'gh() {' '  :' '}' >"$layer_dir/orch/gh.sh"
 printf '%s\n' 'own() {' '  :' '}' 'prim() { gh; own; }' >"$layer_dir/orch/common.sh"

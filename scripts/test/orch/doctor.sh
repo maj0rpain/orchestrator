@@ -116,10 +116,11 @@ assert_eq "doctor.sh no longer defines host_detect" \
 # --- doctor.sh is a one-way dependency (#281) ----------------------------------
 echo
 echo "doctor.sh is a one-way dependency (#281)"
-# doctor.sh calls into orch.sh, never the other way round: no non-comment line
-# of orch.sh or of any module beside doctor.sh in its orch/ directory names, as
-# a whole word, a function doctor.sh defines - except cmd_doctor, which main()
-# dispatches, and the reporters d_ok, d_warn, d_fail and d_remedy, which a
+# doctor.sh calls into orch.sh, never the other way round: the code view
+# (shell_code) of orch.sh and of every module beside doctor.sh in its orch/
+# directory names, as a whole word, no function doctor.sh defines - a name in a
+# comment is no call; one in a quoted literal is - except cmd_doctor, which
+# main() dispatches, and the reporters d_ok, d_warn, d_fail and d_remedy, which a
 # check living in the module of the concept it serves (agent.sh's
 # check_agent_settings, #1358) reports through when doctor runs it.
 # doctor_callbacks <scripts-dir> prints each such name found, for the
@@ -127,15 +128,12 @@ echo "doctor.sh is a one-way dependency (#281)"
 # triage-labels.sh and planning-allowlist.sh are outside it: the hooks share
 # them, and they call nothing in doctor.sh.
 doctor_callbacks() {
-  local doctor_file="$1/orch/doctor.sh" code name f
-  code="$(for f in "$1/orch.sh" "$1"/orch/*.sh; do
-    [ "$f" = "$doctor_file" ] || grep -v '^[[:space:]]*#' "$f"
-  done)"
-  col0_names "$doctor_file" \
-    | while IFS= read -r name; do
-        case "$name" in cmd_doctor|d_ok|d_warn|d_fail|d_remedy) continue ;; esac
-        if printf '%s\n' "$code" | grep -qw -- "$name"; then printf '%s\n' "$name"; fi
-      done
+  local doctor_file="$1/orch/doctor.sh" code_files=() f
+  for f in "$1/orch.sh" "$1"/orch/*.sh; do
+    [ "$f" = "$doctor_file" ] || code_files+=("$f")
+  done
+  layer_calls "$doctor_file" -- "${code_files[@]}" \
+    | grep -vxE 'cmd_doctor|d_ok|d_warn|d_fail|d_remedy' || true
 }
 dep_dir="$(mktemp -d)"
 mkdir "$dep_dir/orch"
@@ -145,6 +143,10 @@ printf '%s\n' '# check_x is named in a comment only' '  # check_x again' \
   'run() { cmd_doctor; check_xy; }' 'check_y() { d_ok y; }' >"$dep_dir/orch/clean.sh"
 assert_eq "a comment, cmd_doctor, a reporter or a longer word is no call back into doctor.sh" \
   "$(doctor_callbacks "$dep_dir")" ""
+printf '%s\n' 'x=1 # check_x' >"$dep_dir/orch/trailing.sh"
+assert_eq "a name in a trailing comment is no call back into doctor.sh" \
+  "$(doctor_callbacks "$dep_dir")" ""
+rm "$dep_dir/orch/trailing.sh"
 printf '%s\n' 'run() { check_x; }' >"$dep_dir/orch/calls.sh"
 assert_eq "a doctor.sh function called from a module is caught" \
   "$(doctor_callbacks "$dep_dir")" "check_x"
