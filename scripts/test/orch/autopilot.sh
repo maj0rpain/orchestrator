@@ -451,8 +451,12 @@ assert_eq "another host's claim is left alone" "$(fake_claim_held 11)" held
 assert_eq "and its labels" "$(fake_labels_of 11)" "orch:running orch:spec ready-for-agent "
 assert_eq "a live run pidfile keeps a claim whose tick pid is dead" "$(fake_claim_held 12)" held
 printf '%s\n' "$(dead_pid)" >"$top/.orchestrator/autopilot/run/12.pid"
+mkdir -p "$top/.orchestrator/autopilot/logs"
+: >"$top/.orchestrator/autopilot/logs/12-spec-20250101T000000.log"
 "$ORCH" autopilot tick >/dev/null 2>&1
 assert_eq "a dead run pidfile makes it stale" "$(fake_claim_held 12)" free
+assert_contains "the stale comment names the session log" "$(fake_comments_of 12)" "logs/12-spec-20250101T000000.log"
+assert_contains "and says no exit code is known" "$(fake_comments_of 12)" "no exit code"
 
 # a stop that dies partway leaves the claim held and names the writes that landed
 fake_issue 13 open ready-for-agent orch:spec orch:running

@@ -84,6 +84,12 @@ autopilot_gate() {
   if [ "$(host_detect)" = junie ] || ! command -v claude >/dev/null 2>&1; then
     die "autopilot is Claude Code only (no headless-session fallback on this host; see docs/host-capabilities.md)"
   fi
+  autopilot_mode_require
+}
+
+# autopilot_mode_require: sets AUTOPILOT_VALUE to the permission mode, dying,
+# naming the key and its remedy, when none is set.
+autopilot_mode_require() {
   autopilot_setting permission-mode
   [ "$AUTOPILOT_SOURCE" != unset ] ||
     die "orchestrator.autopilot.permission-mode is not set - choose how headless sessions run (git config orchestrator.autopilot.permission-mode <${AUTOPILOT_MODES// /|}>)"
@@ -496,7 +502,7 @@ autopilot_pickup() {
 # is the run pidfile's, or - with none - the claim's own tick pid. Other hosts'
 # claims are never touched.
 autopilot_cleanup_stale() {
-  local main_root="$1" claims issue host tick_pid run_pid phase _started pidfile
+  local main_root="$1" claims issue host tick_pid run_pid phase _started pidfile log detail
   autopilot_claims_read claims
   while IFS=$'\t' read -r issue host tick_pid phase _started; do
     [ -n "$issue" ] && [ "$host" = "$(hostname)" ] || continue
@@ -504,7 +510,10 @@ autopilot_cleanup_stale() {
     run_pid=""
     [ ! -f "$pidfile" ] || run_pid="$(cat "$pidfile")"
     ! autopilot_pid_alive "${run_pid:-$tick_pid}" || continue
-    autopilot_stop "$issue" failure "$phase" "the session's process (pid ${run_pid:-${tick_pid:-unknown}}) is gone and the claim was never released - no exit code or log to name"
+    detail="the session's process (pid ${run_pid:-${tick_pid:-unknown}}) is gone and the claim was never released - no exit code is known"
+    log="$(ls -1 "$(autopilot_dir "$main_root")/logs/$issue-$phase-"*.log 2>/dev/null | tail -n 1)" || true
+    if [ -n "$log" ]; then detail="$detail; log: $log"; else detail="$detail; no session log"; fi
+    autopilot_stop "$issue" failure "$phase" "$detail"
     rm -f "$pidfile"
   done <<<"$claims"
 }
@@ -643,8 +652,7 @@ autopilot_limit_reset() {
 autopilot_run() {
   local issue="$1" main_root side phase mode launcher dir log pidfile prompt rc=0 claims held=0 reset detail line
   case "$issue" in ''|*[!0-9]*) die "issue must be a plain issue number, got: $issue" ;; esac
-  autopilot_setting permission-mode; mode="$AUTOPILOT_VALUE"
-  [ "$AUTOPILOT_SOURCE" != unset ] || die "orchestrator.autopilot.permission-mode is not set"
+  autopilot_mode_require; mode="$AUTOPILOT_VALUE"
   main_root="$(main_checkout)" || die "could not read the checkouts - git worktree list failed"
   side="$(autopilot_find_side_checkout "$issue")" || die "no side checkout records issue #$issue"
   phase="$(state_get_in "$(flow_state_file "$side")" phase)" || die "could not read the recorded phase of $side"

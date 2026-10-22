@@ -519,6 +519,14 @@ spec_review_answer_tokens() {
   done
 }
 
+# spec_review_item_held <i>: whether item <i> is a fundamental item an
+# autopilot round's first run holds back for the human's reply.
+spec_review_item_held() { [ "${SR_FMODE:-}" = hold ] && [ -n "${SR_IT_FUND[$1]:-}" ]; }
+
+# spec_review_item_skipped <i>: whether item <i> is one the resumed run leaves
+# alone - the round already applied it before the fundamental items were held.
+spec_review_item_skipped() { [ "${SR_FMODE:-}" = resume ] && [ -z "${SR_IT_FUND[$1]:-}" ]; }
+
 # spec_review_answer <answer>: each item's disposition into
 # SR_DISP (applied, declined, taken, undecided or resolved), SR_ASREC (1 where
 # the human's call matched the recommendation) and SR_TAKEN (a decision's
@@ -554,9 +562,9 @@ spec_review_answer() {
         i="$(array_index SR_IT_N "$n")"
         [ -n "$i" ] || die "the answer names item $n, which batch.md does not have"
         [ -z "${SR_DISP[$i]+x}" ] || die "the answer names item $n twice"
-        [ "${SR_FMODE:-}" != hold ] || [ -z "${SR_IT_FUND[$i]:-}" ] \
+        ! spec_review_item_held "$i" \
           || die "the answer names item $n, a fundamental item held back for the human's reply - it takes no answer in this run"
-        [ "${SR_FMODE:-}" != resume ] || [ -n "${SR_IT_FUND[$i]:-}" ] \
+        ! spec_review_item_skipped "$i" \
           || die "the answer names item $n, which this round applied before the fundamental items were held back - the resumed answer names only fundamental items"
         [ "${SR_IT_REC[$i]}" != resolved ] \
           || die "the answer names item $n, which is resolved by item ${SR_IT_RESOLVED[$i]} and takes no answer"
@@ -583,9 +591,9 @@ spec_review_answer() {
     esac
     # A fundamental item is held back in an autopilot round's first run; the
     # resumed run's answer is the fundamental items' alone, the rest recommended.
-    if [ "${SR_FMODE:-}" = hold ] && [ -n "${SR_IT_FUND[$i]:-}" ]; then SR_DISP[i]=held; continue; fi
+    if spec_review_item_held "$i"; then SR_DISP[i]=held; continue; fi
     ibase="$base"
-    [ "${SR_FMODE:-}" != resume ] || [ -n "${SR_IT_FUND[$i]:-}" ] || ibase=recommended
+    ! spec_review_item_skipped "$i" || ibase=recommended
     [ -z "${SR_DISP[$i]+x}" ] || continue
     case "$ibase:${SR_IT_REC[$i]}" in
       recommended:apply|all:apply|all:decline) SR_DISP[i]=applied; SR_ASREC[i]=1 ;;
@@ -723,7 +731,7 @@ spec_review_validate() {
   SR_PROBLEMS=(); SR_ANCHOR_COUNT=0
   for i in ${SR_IT_N[@]+"${!SR_IT_N[@]}"}; do
     # The resumed run's body already holds the other items' edits.
-    [ "${SR_FMODE:-}" != resume ] || [ -n "${SR_IT_FUND[$i]:-}" ] || continue
+    ! spec_review_item_skipped "$i" || continue
     case "${SR_IT_REC[$i]}" in
       apply|decline)
         accepted=""

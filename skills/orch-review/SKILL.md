@@ -57,7 +57,8 @@ runs headless and asks the human nothing directly. First, when
 question, read the human's reply before anything else:
 `bash "$ORCH" autopilot answer review <file>` (a `mktemp` file). It exits 1
 when no comment follows the question: re-post the same question with
-`bash "$ORCH" autopilot ask review <question-file>` and stop - never assume
+`bash "$ORCH" autopilot ask review .orchestrator/review/question.md` (the
+save point the asking site wrote) and stop - never assume
 the recommendations. With a reply, apply it to the spec issue's body:
 `bash "$ORCH" spec fetch <file>`, edit the body to carry the ruling, then
 `bash "$ORCH" spec update <file>`. Then carry on with the steps below, whose step 5
@@ -601,8 +602,11 @@ describes it.
 releases the claim; nothing more runs. A bounded stop - a spec question among
 them, the PR staying in draft - never ends by telling the human in the
 session: write the stop reason (and, for a spec question, each question with
-its recommendation, numbered, as the interview formats them) to a `mktemp` file
-and run `bash "$ORCH" autopilot ask review <file>`, which posts it as a question
+its recommendation, numbered, as the interview formats them) to
+`.orchestrator/review/question.md` in the side checkout - the question's save
+point, which a fresh session re-posts when the human removes `needs-human`
+without replying - and run
+`bash "$ORCH" autopilot ask review .orchestrator/review/question.md`, which posts it as a question
 comment, labels the issue `needs-human` and releases the claim; then stop.
 Removing `needs-human` starts another loop with the planned budget, which
 reads the reply first, per the top of **Before the first iteration**.
