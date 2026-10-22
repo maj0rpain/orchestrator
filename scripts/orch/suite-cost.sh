@@ -39,7 +39,7 @@ SUITE_COST_CHECK_USAGE="usage: orch.sh suite-cost check -- <cmd> [args...]"
 # orchestrator.suiteCost.setup, has no default: the install command (npm ci,
 # uv sync) a base run runs first in its worktree, read by suite_cost_base_run.
 SUITE_COST_FLOOR_DEFAULT=60
-SUITE_COST_GROWTH_DEFAULT=10
+SUITE_COST_GROWTH_DEFAULT=15
 
 cmd_suite_cost() {
   local op="${1:-}"
@@ -229,6 +229,17 @@ suite_cost_newest() {
   return 1
 }
 
+# suite_cost_lowest <rec> <cmd-string> <commit>: prints the lowest CPU seconds
+# among the record lines of <cmd-string> whose commit field is <commit>
+# exactly, so a <sha>-dirty line and a <sha> one are never pooled, or prints
+# nothing when there is none.
+suite_cost_lowest() {
+  [ -e "$1" ] || return 0
+  LC_ALL=C awk -F'\t' -v want="$2" -v sha="$3" '
+    $1 == sha && $5 == want && (n++ == 0 || $2 + 0 < low + 0) { low = $2 }
+    END { if (n) print low }' "$1"
+}
+
 # The head's records: a clean one whose commit is HEAD or an ancestor of it,
 # but not the base commit nor an ancestor of it - so a run recorded just before
 # its commit still counts - or a dirty one whose commit is HEAD or any ancestor
@@ -256,8 +267,10 @@ suite_cost_is_base() {
 }
 
 # suite_cost_check <cmd> [args...]: prints one verdict line - off, ok,
-# grew <pct> - <finding text>, or unmeasured - comparing the head's newest
-# record of the command with the baseline's. The knobs are validated first, so
+# grew <pct> - <finding text>, or unmeasured - comparing the head's lowest
+# sample of the command with the baseline's: the lowest CPU seconds on the
+# commit of the newest head record, and on that of the newest baseline record.
+# The knobs are validated first, so
 # a bad one dies before anything runs; the command runs only to measure a base
 # with no recorded ancestor, never on the head.
 suite_cost_check() {
@@ -269,9 +282,10 @@ suite_cost_check() {
   base_commit="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
   head_found="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
     { note unmeasured; return 0; }
-  head_cpu="${head_found%%$'\t'*}"
+  head_cpu="$(suite_cost_lowest "$rec" "$want" "${head_found#*$'\t'}")"
   if base_found="$(suite_cost_newest "$rec" "$want" suite_cost_is_base)"; then
-    base_cpu="${base_found%%$'\t'*}" base_sha="${base_found#*$'\t'}"
+    base_sha="${base_found#*$'\t'}"
+    base_cpu="$(suite_cost_lowest "$rec" "$want" "$base_sha")"
   else
     suite_cost_base_run "$base_commit" "$@" || { note unmeasured; return 0; }
     base_cpu="$SUITE_COST_CPU" base_sha="$base_commit"

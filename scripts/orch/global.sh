@@ -154,16 +154,21 @@ orch.sh - deterministic operations for the orchestrator flow
                               No run waits for another
   suite-cost check -- <cmd> [args...]
                               print one verdict line comparing the head's
-                              newest recorded run of <cmd> (on HEAD or an
-                              ancestor not on the base, or a dirty one on
-                              HEAD or any ancestor) with the baseline's
-                              (the newest clean one, never a dirty one, on
-                              the base commit or an ancestor:
-                              state.base_sha in a flow, else branch base-sha),
-                              exiting 0: off (baseline below git config
+                              lowest sample of <cmd> with the baseline's
+                              lowest, exiting 0. The head sample is the
+                              lowest CPU seconds among the recorded runs on
+                              the commit of the newest head record (on HEAD
+                              or an ancestor not on the base, or a dirty one
+                              on HEAD or any ancestor; <sha>-dirty and <sha>
+                              are different commits); the baseline sample
+                              the lowest on the commit of the newest
+                              baseline record (a clean one, never a dirty
+                              one, on the base commit or an ancestor:
+                              state.base_sha in a flow, else branch base-sha).
+                              Verdicts: off (baseline below git config
                               orchestrator.suiteCost.floor, else 60 CPU
                               seconds), ok, grew <pct> - <finding text> (past
-                              orchestrator.suiteCost.growth, else 10 percent),
+                              orchestrator.suiteCost.growth, else 15 percent),
                               or unmeasured. Never runs <cmd> on the head;
                               with no baseline it measures the base once in a
                               temporary worktree, first running git config

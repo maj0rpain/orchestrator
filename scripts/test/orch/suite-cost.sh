@@ -238,6 +238,9 @@ assert_contains "suite-cost history is in the usage text" "$out" "suite-cost his
 assert_contains "the usage text says an overlapped run is not recorded" \
   "$(tr -s ' \n' ' ' <<<"$out")" "A run another suite-cost run overlapped, in any checkout of the clone, is not recorded"
 assert_contains "suite-cost check is in the usage text" "$out" "suite-cost check -- <cmd> [args...]"
+assert_contains "check's usage text describes the lowest-sample comparison" "$out" \
+  "lowest sample of <cmd> with the baseline's"
+assert_contains "and the 15 percent default" "$out" "else 15 percent"
 assert_contains "the CLI conventions' noun table has a suite-cost row" \
   "$(grep '^| `suite-cost`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" \
   '`run`, `check`, `history`'
@@ -274,10 +277,10 @@ assert_contains "a head record on HEAD's parent counts, and the newer one on the
 assert_contains "its text names the baseline commit" "$out" "$base"
 assert_contains "and its CPU seconds" "$out" "60.00"
 assert_contains "the head's CPU seconds" "$out" "70.00"
-assert_contains "and the threshold" "$out" "10%"
+assert_contains "and the default threshold" "$out" "15%"
 assert_eq "check never runs the command with both recorded" "$(on_disk "$marker")" absent
 
-seed_run "$head" 66.00
+seed_run "$head" 69.00
 assert_eq "growth at the threshold is ok, the newest head record counting" \
   "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "ok"
 seed_run "$head" 50.00
@@ -295,6 +298,63 @@ seed_run "$base" 30.00 "scripts/test/orch_test.sh"
 seed_run "$head" 70.00
 assert_contains "the baseline is the newest recorded ancestor of the base, of the same command" \
   "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "grew 17 - "
+
+# Lowest samples: of several records on the newest head record's commit, or
+# on the newest baseline record's, the lowest decides, not the newest.
+check_repo
+seed_run "$base" 100.00
+seed_run "$head" 105.00
+seed_run "$head" 130.00
+assert_eq "the lowest head sample on the head's commit decides, not the newest" \
+  "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "ok"
+: >"$rec"
+seed_run "$base" 80.00
+seed_run "$base" 100.00
+seed_run "$head" 100.00
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)"
+assert_contains "the lowest baseline sample on the baseline's commit decides, not the newest" \
+  "$out" "grew 25 - "
+assert_contains "the finding text names the lowest head value" "$out" "100.00 CPU seconds at the head"
+assert_contains "the lowest baseline value and the baseline commit" "$out" "against 80.00 at baseline commit $base"
+: >"$rec"
+seed_run "$base" 100.00
+seed_run "$head" 90.00 "scripts/test/orch_test.sh"
+seed_run "$parent" 90.00
+seed_run "$head" 130.00
+assert_contains "only samples on the newest head record's commit, of its command, are pooled" \
+  "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "grew 30 - "
+: >"$rec"
+seed_run "$root" 70.00
+seed_run "$base" 100.00
+seed_run "$head" 100.00
+assert_eq "only samples on the newest baseline record's commit are pooled" \
+  "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "ok"
+: >"$rec"
+seed_run "$base" 100.00
+seed_run "$head-dirty" 100.00
+seed_run "$head" 130.00
+assert_contains "a -dirty sample of the head's SHA is not pooled with its clean ones" \
+  "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "grew 30 - "
+: >"$rec"
+seed_run "$base" 100.00
+seed_run "$head" 100.00
+seed_run "$head-dirty" 130.00
+assert_contains "nor a clean sample with the -dirty ones" \
+  "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "grew 30 - "
+assert_eq "check never runs the command over seeded samples" "$(on_disk "$marker")" absent
+
+# The default threshold, 15%, with no override.
+check_repo
+seed_run "$base" 100.00
+seed_run "$head" 112.00
+assert_eq "with no override, records 12% apart are ok" \
+  "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "ok"
+: >"$rec"
+seed_run "$base" 100.00
+seed_run "$head" 116.00
+assert_contains "and records 16% apart grew, past the 15% default" \
+  "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "grew 16 - suite cost grew 16% past the 15% threshold"
+assert_eq "running nothing" "$(on_disk "$marker")" absent
 
 # Dirty records: one on the base, a run made before the ticket's first commit,
 # is the head's; it is never the baseline, which stays the clean record.
