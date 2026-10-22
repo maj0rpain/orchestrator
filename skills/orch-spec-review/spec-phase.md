@@ -24,10 +24,11 @@ directory: each round reads the body the previous round published.
 `<dir>` is what `bash "$ORCH" spec round-dir <k>/<n>` prints, run first for
 round k of n: `.orchestrator/spec-rounds/<k>/`. It makes the directory
 ready - emptied, every other round's directory deleted on round 1, and
-round k-1's `map-implementability.md` and `settled.md` copied in on later
-rounds, each when it exists - and writes the round marker, so a session that
-fails after the round resumes from it. This is how the code map and the
-settled file carry over in a flow, across sessions too. A failure stops the
+round k-1's `agent-lens`, `map-implementability.md` and `settled.md` copied
+in on later rounds, each when it exists - and writes the round marker, so a
+session that fails after the round resumes from it. This is how the lens
+setting, the code map and the settled file carry over in a flow, across
+sessions too. A failure stops the
 phase exactly as a failed body fetch does.
 
 1. Fetch the body: `bash "$ORCH" spec fetch <dir>/spec.md`. It reads the
@@ -52,10 +53,17 @@ reasoning, not the seams as agreed in chat.
 ## The Fidelity lens
 
 A flow runs four lenses: the three in the main file's table, and Fidelity,
-started with them, all on the `lens` setting. Each round's session reads it
-itself, with `bash "$ORCH" agent get lens` before its lenses start, as the
-main file's **The lenses** says: a round in a session of its own never reuses
-an earlier session's read. The Fidelity row:
+started with them, all on the `lens` setting as round 1 read it. Round 1
+runs the main file's read into its round directory, `bash "$ORCH" agent get
+lens >"<dir>/agent-lens"`, and starts its lenses on the `model` and `effort`
+lines that file holds; a refusal stops the run as **Agent settings** says.
+`spec round-dir` copies the file into each later round's directory, and a
+later round starts its lenses on `<dir>/agent-lens`, never running `agent get
+lens` again: a round in a session of its own still runs on round 1's values,
+even if the setting changed since. A later round whose directory holds no
+`agent-lens` - round 1 took the **Agent settings** host fallback and skipped
+the read - starts its lenses as round 1 did, with no setting. The Fidelity
+row:
 
 | Lens | Agent | Paths |
 |---|---|---|

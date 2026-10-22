@@ -593,7 +593,8 @@ orch.sh - deterministic operations for the orchestrator flow
                               spec-rounds/<k>/: emptied (created when
                               missing); on round 1 every other round's
                               directory deleted; on a later round round
-                              k-1's map-implementability.md and settled.md
+                              k-1's agent-lens (round 1's lens setting),
+                              map-implementability.md and settled.md
                               copied in, each when it exists. Then write
                               handoff/spec-round naming the flow's issue, k
                               and n - a failed write prints no path.

@@ -101,6 +101,12 @@ readonly SPEC_ROUND_COMPLETE=round-complete
 # flow and are archived with it.
 readonly SPEC_ROUNDS_DIR="$ORCH/spec-rounds"
 
+# The file round 1 of a flow's spec review writes its `agent get lens` read
+# to, in its round directory: every later round, in a session of its own,
+# starts its lenses on these values rather than reading the setting again, so
+# the whole review runs on one lens setting (#1353).
+readonly SPEC_ROUND_LENS_SETTING=agent-lens
+
 # spec_round_number <s>: whether <s> is a positive whole number with no
 # leading zero - a round or a round count.
 spec_round_number() {
@@ -143,9 +149,9 @@ cmd_spec_pause_round() {
 # failed write prints no path and a round never runs without its marker.
 # Ready means emptied (created when missing); on round 1 every other round's
 # directory deleted, a redone review leaking nothing stale; on a later round
-# round k-1's code map and settled file copied in, each when it exists - a
-# copy, not a carry in place, since every round keeps its own directory for
-# the final session to read its changelog from. Idempotent.
+# round k-1's lens setting, code map and settled file copied in, each when it
+# exists - a copy, not a carry in place, since every round keeps its own
+# directory for the final session to read its changelog from. Idempotent.
 cmd_spec_round_dir() {
   local usage="usage: orch.sh spec round-dir <k>/<n>"
   [ $# -eq 1 ] || die "$usage"
@@ -157,7 +163,7 @@ cmd_spec_round_dir() {
   if [ "$k" -eq 1 ]; then
     find "$SPEC_ROUNDS_DIR" -mindepth 1 -maxdepth 1 ! -name 1 -exec rm -rf {} +
   else
-    for f in "${SPEC_REVIEW_CARRIED[@]}"; do
+    for f in "$SPEC_ROUND_LENS_SETTING" "${SPEC_REVIEW_CARRIED[@]}"; do
       [ ! -f "$SPEC_ROUNDS_DIR/$((k - 1))/$f" ] \
         || cp "$SPEC_ROUNDS_DIR/$((k - 1))/$f" "$dir/$f" \
         || die "cannot copy round $((k - 1))'s $f into $dir"

@@ -201,10 +201,12 @@ Implementability lens its code map too. Start them all at once as fresh
 subagents - never forks, which inherit this context. On Claude Code that is
 the Agent tool with `subagent_type` set to the lens's agent name under the
 `orchestrator:` plugin scope, every lens on the `lens` setting: run
-`bash "$ORCH" agent get lens` once per session, before that session's first
-round, per **Agent settings** in `docs/host-capabilities.md`: once for a
-whole standalone review, and once in each of a flow's round sessions (see
-`spec-phase.md`). Each prompt carries only
+`bash "$ORCH" agent get lens` once, before the review's first round, per
+**Agent settings** in `docs/host-capabilities.md`, and start every round's
+lenses on those values, even if the setting changes between rounds. A flow's
+later rounds, each in a session of its own, take them from round 1's read
+rather than reading again, as `spec-phase.md`'s **The Fidelity lens** says.
+Each prompt carries only
 the paths its row names, the last of them its findings file,
 `<dir>/lens-<name>.md`. Each lens
 writes its numbered findings there, its findings file last, and replies with
