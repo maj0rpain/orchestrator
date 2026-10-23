@@ -342,8 +342,8 @@ seed_run "$base" 100.00
 seed_run "$root" 60.00
 seed_run "$base" 30.00 "scripts/test/orch_test.sh"
 seed_run "$head" 70.00
-assert_eq "the baseline is the newest recorded ancestor of the base, of the same command" \
-  "$(verdict)" "unmeasured"
+assert_eq "the baseline is the base commit's own newest record of the same command, never an ancestor's" \
+  "$(verdict)" "ok"
 rm -f "$marker"
 
 # Lowest samples: of several records on the newest head record's commit, or
@@ -410,7 +410,7 @@ assert_eq "a dirty record on the base counts as the head, the clean one the base
   "$(verdict)" "unmeasured"
 rm -f "$marker"
 : >"$rec"
-seed_run "$root" 60.00
+seed_run "$base" 60.00
 seed_run "$base-dirty" 30.00
 seed_run "$head" 70.00
 assert_eq "a dirty record on the base is never the baseline" "$(verdict)" "unmeasured"
@@ -475,7 +475,7 @@ for args in "" "true" "-- "; do
 done
 
 # --- suite-cost check base run -------------------------------------------------
-# With no recorded ancestor of the base, check measures the base once, in a
+# With no record on the base commit, check measures the base once, in a
 # temporary worktree it removes, and records a pass.
 echo
 echo "suite-cost check base run"
@@ -494,6 +494,28 @@ assert_eq "and the worktree is gone" "$(git worktree list | wc -l | tr -d ' ')" 
 rm -f "$marker"
 "$ORCH" suite-cost check -- "${noisy[@]}" >/dev/null 2>&1
 assert_eq "the next check uses that record, running nothing" "$(on_disk "$marker")" absent
+
+# The baseline is the base commit's own records, never an ancestor's: an older
+# ancestor's record is ignored and the base is measured by a base run.
+check_repo
+seed_run "$root" 100.00 "${pass[*]}"
+seed_run "$head" 70.00 "${pass[*]}"
+out="$("$ORCH" suite-cost check -- "${pass[@]}" 2>/dev/null)"
+assert_eq "an ancestor's record is ignored: the base is measured and the verdict compares against it" "$out" "off"
+assert_eq "by a base run of the command" "$(on_disk "$marker")" present
+assert_eq "recorded at the base commit" "$(tail -n 1 "$rec" | cut -f1)" "$base"
+rm -f "$marker"
+out="$("$ORCH" suite-cost check -- "${pass[@]}" 2>/dev/null)"
+assert_eq "a second check uses the base run's record" "$out" "off"
+assert_eq "and makes no second base run" "$(on_disk "$marker")" absent
+
+check_repo
+seed_run "$root" 10.00 "${pass[*]}"
+seed_run "$base" 100.00 "${pass[*]}"
+seed_run "$head" 70.00 "${pass[*]}"
+out="$("$ORCH" suite-cost check -- "${pass[@]}" 2>/dev/null)"
+assert_eq "a record on the base commit itself is the baseline" "$out" "ok"
+assert_eq "with no base run" "$(on_disk "$marker")" absent
 
 check_repo
 seed_run "$head" 70.00 "false"

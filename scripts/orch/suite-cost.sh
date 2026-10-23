@@ -262,12 +262,12 @@ suite_cost_is_head() {
   esac
 }
 # The baseline's records: clean ones alone, never a dirty one, whose commit is
-# the base commit or an ancestor of it. Local to suite_cost_check in effect,
-# reading its base_commit as suite_cost_is_head does.
+# the base commit itself, never an ancestor of it. Local to suite_cost_check in
+# effect, reading its base_commit as suite_cost_is_head does.
 suite_cost_is_base() {
   case "$1" in
     *-dirty) return 1 ;;
-    *) git merge-base --is-ancestor "$1" "$base_commit" 2>/dev/null ;;
+    *) [ "$1" = "$base_commit" ] ;;
   esac
 }
 
@@ -276,8 +276,8 @@ suite_cost_is_base() {
 # sample of the command with the baseline's: the lowest CPU seconds on the
 # commit of the newest head record, and on that of the newest baseline record.
 # The knobs are validated first, so a bad one dies before anything runs. The
-# command runs to measure a base with no recorded ancestor, and runs on the
-# head only to confirm a growth: a comparison past the threshold measures the
+# command runs to measure a base commit with no clean record of its own, and
+# runs on the head only to confirm a growth: a comparison past the threshold measures the
 # head at HEAD and then the base at the baseline sample's commit, once each,
 # and compares again before it is reported. The head side pools the head
 # confirming run with the head sample only when that sample is on HEAD's
@@ -343,7 +343,7 @@ suite_cost_min() {
 # once in a temporary detached worktree at <commit>, its output sent to stderr
 # so check's stdout stays its verdict, records a pass, and removes the
 # worktree whatever happened. <role> is base, for the base run check makes
-# when the base has no recorded ancestor, or confirm, for a confirming run;
+# when the base commit has no clean record, or confirm, for a confirming run;
 # it picks the warnings' wording, a confirming run's naming the growth as
 # unconfirmed. The worktree holds only tracked files, so git config
 # orchestrator.suiteCost.setup, when set and non-empty, runs there first with
