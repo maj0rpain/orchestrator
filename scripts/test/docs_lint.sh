@@ -74,6 +74,8 @@
 #     host-capabilities' Agent settings naming agent sync, and the Junie
 #     README's Agent settings on Junie section naming --host junie and orch.sh
 #     doctor
+#   scan_build_args  every build arg docker/compose.yaml interpolates is named
+#     in docker/.env.example
 #   scan_review_pass  the review pass is defined once in orch-review-pass and
 #     quick implementation's step 6 runs it
 #   scan_unattended_modes  quick implementation's steps 1, 2 and 3 run the
@@ -1924,6 +1926,33 @@ for pat in '**/.env' '**/.env.*' '!**/.env.example' .claude/settings.local.json;
   check ".dockerignore lists $pat" \
     "$(grep -qxF -- "$pat" "$PLUGIN_ROOT/.dockerignore" || echo ".dockerignore: does not list $pat")"
 done
+
+# Compose interpolates build.args from the project env file, so every variable
+# it interpolates there is named in docker/.env.example (#1569).
+# scan_build_args <plugin root>: one line per build arg .env.example omits.
+scan_build_args() {
+  local r="$1" v
+  awk '/^ *args:/ { match($0, /^ */); n = RLENGTH; inargs = 1; next }
+    inargs { match($0, /^ */); if (RLENGTH <= n) inargs = 0; else print }' \
+    "$r/docker/compose.yaml" |
+    grep -o '\${[A-Za-z_][A-Za-z0-9_]*' | tr -d '${' | sort -u |
+    while IFS= read -r v; do
+      grep -q "^#* *$v=" "$r/docker/.env.example" ||
+        echo "docker/.env.example: does not name build arg $v"
+    done
+  return 0
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/docker"
+printf 'services:\n  a:\n    build:\n      args:\n        FOO: ${FOO:-}\n        BAR: ${BAR:-}\n    restart: no\n' \
+  >"$fixture/docker/compose.yaml"
+printf '# FOO=\n' >"$fixture/docker/.env.example"
+flags "a build arg missing from .env.example is flagged" \
+  "$(scan_build_args "$fixture")" "docker/.env.example: does not name build arg BAR"
+printf '# FOO=\nBAR=1\n' >"$fixture/docker/.env.example"
+assert_empty "build args all listed in .env.example are not flagged" "$(scan_build_args "$fixture")"
+check "every build arg docker/compose.yaml interpolates is named in docker/.env.example" \
+  "$(scan_build_args "$PLUGIN_ROOT")"
 
 # --- review pass (#342) -------------------------------------------------------
 echo
