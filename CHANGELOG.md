@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.32.2
+
+`suite-cost check` now takes its baseline only from clean records on the base commit itself, never an ancestor's, and measures a base commit with no record, so a `grew` verdict reflects the branch's own growth. A verdict it confirmed is stored and reused while the clean head, base commit, command and thresholds are unchanged, so an unchanged tree is not measured again.
+
 ## 4.32.1
 
 Speed up doctor and the agent commands by reading the agent settings' git config once per scope per process.
