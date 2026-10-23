@@ -635,6 +635,9 @@ autopilot_limit_reset() {
 
 # The tools a headless phase session gets: those the plugin's skills and agents use.
 AUTOPILOT_TOOLS="Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion"
+# Its settings: no bundled skills, and no plugin-authoring, a built-in plugin
+# that disableBundledSkills leaves listed.
+AUTOPILOT_SETTINGS='{"disableBundledSkills":true,"enabledPlugins":{"plugin-authoring@builtin":false}}'
 
 # autopilot_run <issue>: the session wrapper a tick starts: runs the headless
 # session in the issue's side checkout, its output in the session log, and
@@ -666,7 +669,7 @@ autopilot_run() {
   launcher="${ORCH_AUTOPILOT_LAUNCHER:-claude}"
   prompt="Run the orchestrator:orch-flow skill's Next phase in this checkout: do the phase it names, and stop when the phase is finished."
   ( cd "$side" && ORCH_AUTOPILOT=1 CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1 "$launcher" -p "$prompt" --permission-mode "$mode" \
-      --tools "$AUTOPILOT_TOOLS" --settings '{"disableBundledSkills":true}' \
+      --tools "$AUTOPILOT_TOOLS" --settings "$AUTOPILOT_SETTINGS" \
       --strict-mcp-config --exclude-dynamic-system-prompt-sections ) >"$log" 2>&1 || rc=$?
   autopilot_claims_read claims
   while IFS= read -r line; do
