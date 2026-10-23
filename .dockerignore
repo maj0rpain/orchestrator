@@ -1,3 +1,6 @@
 .git
 .orchestrator
 .scratch
+docker/.env
+docker/.env.*
+!docker/.env.example

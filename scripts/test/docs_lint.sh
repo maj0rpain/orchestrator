@@ -1828,12 +1828,19 @@ done
 
 # The container and host-alternative subsections sit inside ### Setup, and the
 # files the container docs name exist (#1502).
-for phrase in docker/compose.yaml docker/.env.example systemd; do
+container_files=(docker/compose.yaml docker/.env.example)
+for phrase in "${container_files[@]}" systemd; do
   check "how-it-works' Autopilot Setup names $phrase" \
     "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/how-it-works.md|### Setup' "$phrase")"
 done
-for f in docker/compose.yaml docker/.env.example; do
+for f in "${container_files[@]}"; do
   check "$f exists" "$([ -f "$PLUGIN_ROOT/$f" ] || echo "$f: missing")"
+done
+# The build context is the plugin root, so .dockerignore must keep the filled-in
+# env files out of the image.
+for pat in docker/.env 'docker/.env.*' '!docker/.env.example'; do
+  check ".dockerignore lists $pat" \
+    "$(grep -qxF -- "$pat" "$PLUGIN_ROOT/.dockerignore" || echo ".dockerignore: does not list $pat")"
 done
 
 # --- review pass (#342) --------------------------------------------------------
