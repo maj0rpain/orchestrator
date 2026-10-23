@@ -24,21 +24,19 @@ COPY --chown=orch:orch . /home/orch/orchestrator-src
 USER orch
 WORKDIR /home/orch
 
-# Install the plugin from the build context as a local marketplace. If the CLI
-# cannot do that non-interactively, copy it into the plugin cache layout.
-# /home/orch/orchestrator is a stable link to whichever root results.
+# Install the plugin from the build context as a local marketplace. There is no
+# copy fallback: a failing step fails the build, naming the step.
+# /home/orch/orchestrator is a stable link to the installed plugin root.
 RUN set -eu; \
     version="$(jq -r .version /home/orch/orchestrator-src/.claude-plugin/plugin.json)"; \
-    if claude plugin marketplace add /home/orch/orchestrator-src \
-       && claude plugin install orchestrator@orchestrator \
-       && [ -f "/home/orch/.claude/plugins/cache/orchestrator/orchestrator/$version/scripts/orch.sh" ]; then \
-      ln -s "/home/orch/.claude/plugins/cache/orchestrator/orchestrator/$version" /home/orch/orchestrator; \
-    else \
-      dest="/home/orch/.claude/plugins/cache/orchestrator/orchestrator/$version"; \
-      mkdir -p "$dest"; \
-      cp -a /home/orch/orchestrator-src/. "$dest"/; \
-      ln -sfn "$dest" /home/orch/orchestrator; \
-    fi
+    installed="/home/orch/.claude/plugins/cache/orchestrator/orchestrator/$version"; \
+    claude plugin marketplace add /home/orch/orchestrator-src \
+      || { echo "build failed: claude plugin marketplace add" >&2; exit 1; }; \
+    claude plugin install orchestrator@orchestrator \
+      || { echo "build failed: claude plugin install" >&2; exit 1; }; \
+    [ -f "$installed/scripts/orch.sh" ] \
+      || { echo "build failed: installed orch.sh not found at $installed/scripts/orch.sh" >&2; exit 1; }; \
+    ln -s "$installed" /home/orch/orchestrator
 
 ENV ORCH_SH=/home/orch/orchestrator/scripts/orch.sh
 
