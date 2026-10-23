@@ -1826,6 +1826,23 @@ for phrase in orchestrator.autopilot.permission-mode 'orch.sh autopilot tick' ne
     "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/how-it-works.md|## Autopilot' "$phrase")"
 done
 
+# The container and host-alternative subsections sit inside ### Setup, and the
+# files the container docs name exist (#1502).
+container_files=(docker/compose.yaml docker/.env.example)
+for phrase in "${container_files[@]}" systemd; do
+  check "how-it-works' Autopilot Setup names $phrase" \
+    "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/how-it-works.md|### Setup' "$phrase")"
+done
+for f in "${container_files[@]}"; do
+  check "$f exists" "$([ -f "$PLUGIN_ROOT/$f" ] || echo "$f: missing")"
+done
+# The build context is the plugin root, so .dockerignore must keep the filled-in
+# secrets (the .gitignore Secrets patterns, at any depth) out of the image.
+for pat in '**/.env' '**/.env.*' '!**/.env.example' .claude/settings.local.json; do
+  check ".dockerignore lists $pat" \
+    "$(grep -qxF -- "$pat" "$PLUGIN_ROOT/.dockerignore" || echo ".dockerignore: does not list $pat")"
+done
+
 # --- review pass (#342) --------------------------------------------------------
 echo
 echo "review pass (#342)"

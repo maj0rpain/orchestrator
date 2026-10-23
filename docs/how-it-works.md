@@ -276,6 +276,87 @@ every review loop of that flow runs that budget.
 session cannot answer a permission prompt, so the permission mode decides what
 it may do unattended.
 
+#### The container
+
+`docker/` ships a container that runs the watcher for one repo, isolated from
+your machine: headless sessions run in `bypassPermissions` there, and the
+container is the boundary. Copy `docker/.env.example` to `docker/.env`
+(gitignored), fill it in, and run `docker compose up -d` from `docker/`
+(`docker/compose.yaml`). The host's `~/.claude` is never mounted.
+
+- **Claude credential**, one of: `CLAUDE_CODE_OAUTH_TOKEN`, from `claude
+  setup-token`, bills to a Claude subscription; `ANTHROPIC_API_KEY` bills to
+  API usage.
+- **`GH_TOKEN`**, used for `gh` and for `git push` over HTTPS. Use a
+  fine-grained personal access token scoped to the one repo, with contents,
+  issues and pull requests read/write.
+- **`REPO`**, as `owner/name`. The container refuses to start, with an `orch:`
+  line per missing variable in `docker compose logs`, when `REPO`, `GH_TOKEN`
+  or both Claude credentials are missing.
+- **Optional:** `ORCH_GIT_NAME` and `ORCH_GIT_EMAIL` (commits default to the
+  token owner's login and GitHub noreply address); `ORCH_PERMISSION_MODE`
+  (default `bypassPermissions`), `ORCH_CAP`, `ORCH_HANDLE`, `ORCH_ROUNDS` and
+  `ORCH_BUDGET`, written to the matching `orchestrator.autopilot.*` keys, an
+  unset one leaving its key unset; `ORCH_CLONE_DIR` (default
+  `/home/orch/repo`).
+
+The repo is cloned into a named volume on first start and reused after, so
+side checkouts, flow state and logs survive a restart. Session logs stay
+where the watcher writes them, under `.orchestrator/autopilot/logs/` in that
+volume; the watcher's stderr is the container's output, shown by `docker
+compose logs`.
+
+For a repo whose tests need a toolchain, build with the `EXTRA_APT_PACKAGES`
+build arg, e.g. `EXTRA_APT_PACKAGES="python3 make" docker compose build`. For
+a heavier one, extend the locally built image (use its name from `docker
+image ls`):
+
+```dockerfile
+FROM <the built image>
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends golang \
+    && rm -rf /var/lib/apt/lists/*
+USER orch
+```
+
+Run one compose project per repo, each with its own env file, clone and
+pidfile: `ORCH_ENV_FILE=.env.<name> docker compose -p <name> up -d`
+(`ORCH_ENV_FILE` defaults to `.env`). Name each env file `docker/.env.<name>`,
+beside `.env`: `.env` and `.env.*` (and `.claude/settings.local.json`) are gitignored
+and kept out of the image at any depth, so an env file named or kept elsewhere would hold tokens that can be
+committed or baked into the image.
+
+#### The host alternative
+
+Without Docker, run scheduled one-shot ticks of `orch.sh autopilot tick`
+instead of a watcher process. This gives no isolation: headless sessions run
+with your files, credentials and settings, so pick the permission mode with
+that in mind. A systemd user unit and timer (`~/.config/systemd/user/`),
+with `<repo>` your clone and `<orch.sh>` its path, as `autopilot-tick.service`
+and `autopilot-tick.timer`:
+
+```ini
+[Service]
+Type=oneshot
+WorkingDirectory=<repo>
+ExecStart=<orch.sh> autopilot tick
+```
+
+```ini
+[Timer]
+OnUnitActiveSec=60
+OnBootSec=60
+[Install]
+WantedBy=timers.target
+```
+
+Enable it with `systemctl --user enable --now autopilot-tick.timer`. Or a cron
+line:
+
+```
+* * * * * cd <repo> && <orch.sh> autopilot tick
+```
+
 ### Running it
 
 Run `orch.sh autopilot watch [--every <seconds>]` (60 seconds by default), or
