@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.32.5
+
+Outside a git checkout, orch.sh's error now names the checkout the caller came from (its `OLDPWD`), or else says to `cd` into the repo's checkout, and warns that a `mktemp` path is for files, not the working directory. The issue-tracker doc says never to `cd` into a `mktemp` path.
+
 ## 4.32.4
 
 Reviewers no longer probe for standards documents that may not exist. `orch.sh review standards` resolves them mechanically - root `CLAUDE.md` and `AGENTS.md`, or with neither `CODING_STANDARDS.md` and `CONTRIBUTING.md`, then the `.md` paths they mention, two hops, only paths that exist - and the review loop and the review pass hand that one `Standards:` line to both reviewers as a seventh prompt variable (#1521).
