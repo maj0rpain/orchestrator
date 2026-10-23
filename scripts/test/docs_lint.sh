@@ -2655,11 +2655,11 @@ check "orch-review holds the loop only and points to orch-review-pass" \
 # scan_junie_review_pass <plugin root>: one line when Junie's custom-agent
 # block has no orch-review-pass dependency sentence naming both reviewers.
 scan_junie_review_pass() {
-  local r="$1" doc="docs/junie/AGENTS.md" line
+  local r="$1" doc="docs/junie/AGENTS.md" sentence
   # The sentence runs to its first full stop, across a wrapped line.
-  line="$(md_section "$r/$doc" "## orchestrator plugin: custom agents" 2>/dev/null \
+  sentence="$(md_section "$r/$doc" "## orchestrator plugin: custom agents" 2>/dev/null \
     | flat_text | grep -oE '(^| )The orch-review-pass skill depends on[^.]*')"
-  { grep -qF 'orch-reviewer-spec' <<<"$line" && grep -qF 'orch-reviewer-standards' <<<"$line"; } \
+  { grep -qF 'orch-reviewer-spec' <<<"$sentence" && grep -qF 'orch-reviewer-standards' <<<"$sentence"; } \
     || echo "$doc: no orch-review-pass dependency sentence naming both reviewers"
   return 0
 }
@@ -3420,39 +3420,46 @@ scan_line_width() {
   local f
   while IFS= read -r f; do
     F="$f" LC_ALL=C awk '
-      FNR == 1 { sh = ENVIRON["F"] ~ /\.sh$/; word = ""; fm = 0; fence = "" }
-      { t = $0; sub(/^[[:space:]]+/, "", t) }
-      sh && word != "" {
-        e = $0; if (dash) sub(/^\t+/, "", e)
-        if (e == word) word = ""
+      FNR == 1 {
+        is_shell = ENVIRON["F"] ~ /\.sh$/
+        heredoc_end = ""; in_frontmatter = 0; fence = ""
+      }
+      { stripped = $0; sub(/^[[:space:]]+/, "", stripped) }
+      is_shell && heredoc_end != "" {
+        closer = $0; if (tabs_stripped) sub(/^\t+/, "", closer)
+        if (closer == heredoc_end) heredoc_end = ""
         next
       }
-      sh && t !~ /^#/ {
-        h = $0; gsub(/<<</, "", h)
-        if (match(h, /<<-?[[:space:]]*["\047]?[A-Za-z_][A-Za-z0-9_]*/)) {
-          word = substr(h, RSTART + 2, RLENGTH - 2)
-          dash = word ~ /^-/
-          sub(/^-?[[:space:]]*["\047]?/, "", word)
+      is_shell && stripped !~ /^#/ {
+        code = $0; gsub(/<<</, "", code)
+        if (match(code, /<<-?[[:space:]]*["\047]?[A-Za-z_][A-Za-z0-9_]*/)) {
+          heredoc_end = substr(code, RSTART + 2, RLENGTH - 2)
+          tabs_stripped = heredoc_end ~ /^-/
+          sub(/^-?[[:space:]]*["\047]?/, "", heredoc_end)
         }
         next
       }
-      sh && FNR == 1 && t ~ /^#!/ { next }
-      sh && t ~ /^#[[:space:]]*shellcheck/ { next }
-      !sh && FNR == 1 && $0 == "---" { fm = 1; next }
-      fm { if ($0 == "---") fm = 0; next }
-      !sh && match(t, /^(```|~~~)/) {
-        m = substr(t, 1, 3)
-        if (fence == "") fence = m; else if (m == fence) fence = ""
+      is_shell && FNR == 1 && stripped ~ /^#!/ { next }
+      is_shell && stripped ~ /^#[[:space:]]*shellcheck/ { next }
+      !is_shell && FNR == 1 && $0 == "---" { in_frontmatter = 1; next }
+      in_frontmatter { if ($0 == "---") in_frontmatter = 0; next }
+      !is_shell && match(stripped, /^(```|~~~)/) {
+        marker = substr(stripped, 1, 3)
+        if (fence == "") fence = marker; else if (marker == fence) fence = ""
         next
       }
-      fence != "" || t ~ /^\|/ || /https?:\/\// { next }
+      fence != "" || stripped ~ /^\|/ || /https?:\/\// { next }
       {
-        k = t; sub(/^#+[[:space:]]*/, "", k); sub(/[[:space:]]+$/, "", k)
-        sub(/^([-*+]|[0-9]+[.)])[[:space:]]+/, "", k)
-        if (k !~ /[[:space:]]/) next
+        bare = stripped; sub(/^#+[[:space:]]*/, "", bare)
+        sub(/[[:space:]]+$/, "", bare)
+        sub(/^([-*+]|[0-9]+[.)])[[:space:]]+/, "", bare)
+        if (bare !~ /[[:space:]]/) next
       }
-      { t = $0; n = length(t) - gsub(/[\200-\277]/, "", t) }
-      n > 80 { print ENVIRON["F"] ":" FNR ": " n " columns, past 80" }' "$1/$f"
+      {
+        chars = $0
+        cols = length(chars) - gsub(/[\200-\277]/, "", chars)
+      }
+      cols > 80 { print ENVIRON["F"] ":" FNR ": " cols " columns, past 80" }' "$1/$f"
   done < <(cd "$1" && {
     find skills agents commands docs -name '*.md' 2>/dev/null
     for f in README.md CONTRIBUTING.md GLOSSARY.md CLAUDE.md; do
