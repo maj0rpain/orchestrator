@@ -112,6 +112,14 @@ md_section() {
     END { exit !seen }' "$1"
 }
 
+# md_section_first_block <file> <heading>: the lines of the first fenced code
+# block in md_section's <heading> section, each with its leading whitespace
+# stripped, so an indented block reads the same as a flush one.
+md_section_first_block() {
+  md_section "$1" "$2" \
+    | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//'
+}
+
 # check <rule> <findings>: ok when the scan found nothing, else one FAIL line
 # per finding, each naming the file and the problem.
 check() {
@@ -2022,8 +2030,7 @@ scan_previously_declined() {
     || echo "$pass: ## Standalone review pass does not name pr comments"
   grep -qF '**Previously declined**' <<<"$body" \
     || echo "$pass: ## Standalone review pass does not name **Previously declined**"
-  prompt="$(md_section "$r/$pass" "## Review pass" \
-    | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//')"
+  prompt="$(md_section_first_block "$r/$pass" "## Review pass")"
   [ "$prompt" = "$(printf '%s\n' 'Base SHA: <base SHA>' 'Spec issue: #<issue>' 'Iteration: <NN>' \
     'Report path: <prefix>-<standards|spec>.md' 'orch.sh: <the path ORCH holds>' \
     'Known items: <prefix>-known.md' 'Standards: <the line review standards printed>')" ] \
@@ -2083,8 +2090,7 @@ echo "review loop reviewer prompt (#1532)"
 # ## The reviewers prompt block is not those seven lines.
 scan_review_loop_prompt() {
   local r="$1" skill="skills/orch-review/SKILL.md" prompt
-  prompt="$(md_section "$r/$skill" "## The reviewers" \
-    | awk '/^[[:space:]]*```/ { if (inb) exit; inb = 1; next } inb' | sed 's/^[[:space:]]*//')"
+  prompt="$(md_section_first_block "$r/$skill" "## The reviewers")"
   [ "$prompt" = "$(printf '%s\n' "Base SHA: <this iteration's base SHA>" 'Spec issue: #<spec issue>' \
     'Iteration: <NN>' 'Report path: <report path>' 'orch.sh: <the path ORCH holds>' \
     'Known items: <the iteration-NN-known.md step 3 of The iteration built>' \
