@@ -627,6 +627,7 @@ pc="$(sc_add pc)"
   && state_fixture phase "done" && state_fixture branch orch/pc-flow && state_fixture pr 62)
 sp_branch_off "$pc" orch/pc-flow
 fake_pr 62 closed orch/pc-flow main
+# The main checkout's flow's branch, made only after tm's merge has landed on main.
 git checkout -q -b orch/main-flow
 # A hand-made worktree holding a finished flow.
 hand="$(mktemp -d)/hand"
@@ -674,8 +675,8 @@ assert_contains "reported as left alone" "$out" "$hand: not a side checkout, lef
 restore_suite_env
 
 # --- side-checkout prune: edge cases (#726) -----------------------------------
-# The prune cases that need no checkout of the main section: each arranges its own
-# side checkouts on a fresh clone, so the sweep never walks leftovers.
+# The prune cases that need no checkout of the main section, on a clone of their
+# own: each arranges the side checkouts it names.
 echo
 echo "side-checkout prune edge cases"
 sc_clone
