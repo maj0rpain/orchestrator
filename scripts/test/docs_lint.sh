@@ -2943,8 +2943,7 @@ echo "docs/ in the Layout map (#1008)"
 # layout_paths <plugin root>: the first word of each line of the Layout map's
 # code block.
 layout_paths() {
-  md_section "$1/CONTRIBUTING.md" "## Layout" 2>/dev/null \
-    | awk '/^```/ { if (inb) exit; inb = 1; next } inb && NF { print $1 }'
+  md_section_first_block "$1/CONTRIBUTING.md" "## Layout" 2>/dev/null | awk 'NF { print $1 }'
 }
 # scan_layout_map <plugin root>: each docs/*.md and docs/<dir>/ the Layout map
 # does not list, as "CONTRIBUTING.md: the Layout map does not list <path>",
