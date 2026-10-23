@@ -832,6 +832,8 @@ assert_eq "in the documented format: head, base, floor, growth, time, command, v
 second="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
 assert_eq "a second check on the unchanged clean HEAD prints the same verdict" "$second" "$first"
 assert_eq "and runs the command no more" "$(runs)" 2
+out="$("$ORCH" suite-cost check -- sh -c "sh run.sh" 2>/dev/null)"
+assert_eq "a different command does not reuse it" "$out" "unmeasured"
 
 printf 'x\n' >untracked
 before_runs="$(runs)"
@@ -864,14 +866,6 @@ printf '%s\t%s\t0.01\t15\t2020-01-01T00:00:00Z\tsh run.sh\tok\n' "$head" "$(git 
 before_runs="$(runs)"
 "$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
 assert_eq "a verdict stored for a different base commit is not reused" "$(runs)" "$((before_runs + 2))"
-
-grown_repo
-"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
-before_runs="$(runs)"
-"$ORCH" suite-cost check -- sh run.sh >/dev/null 2>&1
-assert_eq "the same command is still reused" "$(runs)" "$before_runs"
-out="$("$ORCH" suite-cost check -- sh -c "sh run.sh" 2>/dev/null)"
-assert_eq "a different command does not reuse it" "$out" "unmeasured"
 
 # A confirmed ok is reused too, and an ok reached without confirmation stores nothing.
 confirm_repo "echo b >>$cnt" "echo h >>$cnt"

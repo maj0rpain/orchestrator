@@ -191,12 +191,21 @@ suite_cost_measure() {
 # line, making the record's directory when missing. An append that fails
 # warns and records nothing, returning 0: the run it measured stands.
 suite_cost_append() {
-  local sha="$1" cpu="$2" wall="$3" rec IFS=' '
+  local sha="$1" cpu="$2" wall="$3" IFS=' '
   shift 3
-  rec="$(suite_cost_record)"
-  if ! { mkdir -p "${rec%/*}" &&
-    printf '%s\t%s\t%s\t%s\t%s\n' "$sha" "$cpu" "$wall" "$(now)" "$*" >>"$rec"; } 2>/dev/null; then
-    warn "could not append to the suite-cost record $rec - this run's suite cost is not recorded"
+  suite_cost_append_line "$(suite_cost_record)" "suite-cost record" "this run's suite cost is not recorded" \
+    "$sha" "$cpu" "$wall" "$(now)" "$*"
+}
+
+# suite_cost_append_line <file> <name> <lost> <field>...: appends the fields
+# to <file> as one tab-separated line, making its directory when missing. An
+# append that fails warns, naming the file as the <name> and saying <lost>,
+# and returns 0: what was measured stands.
+suite_cost_append_line() {
+  local file="$1" name="$2" lost="$3" IFS=$'\t'
+  shift 3
+  if ! { mkdir -p "${file%/*}" && printf '%s\n' "$*" >>"$file"; } 2>/dev/null; then
+    warn "could not append to the $name $file - $lost"
   fi
   return 0
 }
@@ -295,7 +304,7 @@ suite_cost_is_base() {
 # confirming run with the head sample only when that sample is on HEAD's
 # clean SHA, as a -dirty or ancestor one measured another tree.
 suite_cost_check() {
-  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict head_commit clean_head IFS=' '
+  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict head_commit clean_head line IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
@@ -319,7 +328,11 @@ suite_cost_check() {
     suite_cost_tree_run base "$base_commit" "$@" || { note unmeasured; return 0; }
     base_cpu="$SUITE_COST_CPU" base_sha="$base_commit"
   fi
-  ! suite_cost_verdict_note "" || return 0
+  line="$(suite_cost_verdict_line)"
+  case "$line" in
+    grew*) ;;
+    *) note "$line"; return 0 ;;
+  esac
   head_commit="$(git rev-parse --verify -q HEAD)" || { note unmeasured; return 0; }
   suite_cost_tree_run confirm "$head_commit" "$@" || { note unmeasured; return 0; }
   if [ "$head_sha" = "$head_commit" ]; then
@@ -329,26 +342,22 @@ suite_cost_check() {
   fi
   suite_cost_tree_run confirm "$base_sha" "$@" || { note unmeasured; return 0; }
   base_cpu="$(suite_cost_min "$base_cpu" "$SUITE_COST_CPU")"
-  suite_cost_verdict_note confirmed || true
+  line="$(suite_cost_verdict_line)"
+  note "$line"
+  [ -z "$clean_head" ] || suite_cost_verdict_store "$line"
 }
 
-# suite_cost_verdict_note <confirmed>: the one compare-and-note block (#1401).
-# Compares head_cpu with base_cpu, then prints the verdict line - off, ok, or
-# grew <pct> - <finding text> - and, when <confirmed> is non-empty and the
-# tree was clean when check started, stores it. Unconfirmed, a grew verdict is
-# not printed: it returns 1 so the caller confirms it. Local to
-# suite_cost_check in effect, reading its locals through bash's dynamic scope.
-suite_cost_verdict_note() {
-  local result line
+# suite_cost_verdict_line: the one compare block (#1401). Compares head_cpu
+# with base_cpu and prints the verdict line - off, ok, or grew <pct> -
+# <finding text>. Local to suite_cost_check in effect, reading its locals
+# through bash's dynamic scope.
+suite_cost_verdict_line() {
+  local result
   result="$(suite_cost_compare "$head_cpu" "$base_cpu" "$floor" "$growth")"
-  line="$result"
-  if [ "$result" != off ] && [ "$result" != ok ]; then
-    [ -n "$1" ] || return 1
-    line="$result - suite cost grew ${result#grew }% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha"
-  fi
-  note "$line"
-  [ -z "$1" ] || [ -z "$clean_head" ] || suite_cost_verdict_store "$line"
-  return 0
+  case "$result" in
+    grew*) note "$result - suite cost grew ${result#grew }% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha" ;;
+    *) note "$result" ;;
+  esac
 }
 
 # suite_cost_verdicts: prints the path of the clone's verdict record,
@@ -381,13 +390,8 @@ suite_cost_verdict_find() {
 # verdict key, making the directory when missing. A write that fails warns,
 # returning 0: the verdict still prints.
 suite_cost_verdict_store() {
-  local file
-  file="$(suite_cost_verdicts)"
-  if ! { mkdir -p "${file%/*}" &&
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$clean_head" "$base_commit" "$floor" "$growth" "$(now)" "$want" "$1" >>"$file"; } 2>/dev/null; then
-    warn "could not append to the suite-cost verdict record $file - this verdict is not stored"
-  fi
-  return 0
+  suite_cost_append_line "$(suite_cost_verdicts)" "suite-cost verdict record" "this verdict is not stored" \
+    "$clean_head" "$base_commit" "$floor" "$growth" "$(now)" "$want" "$1"
 }
 
 # suite_cost_compare <head> <base> <floor> <growth>: prints off when <base> is
