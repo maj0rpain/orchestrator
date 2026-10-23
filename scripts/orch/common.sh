@@ -9,7 +9,8 @@
 # through die when run outside a git repository, and ahead of every noun module.
 
 # list_has <list> <item>: whether <item> is one of the newline-separated
-# <list>, matched whole-line and literally. The one list-membership test:
+# <list>, matched whole-line and literally. The one newline-list membership test
+# (agent_listed matches its space-separated lists without a fork):
 # `--` keeps an item beginning with `-` an item, never a grep option, and an
 # item spanning lines is no line at all, never several of grep's patterns.
 list_has() {
