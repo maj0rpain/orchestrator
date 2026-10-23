@@ -281,6 +281,8 @@ assert_contains "clear prints its usage for a repeated --host" "$out" "usage: or
 out="$("$ORCH" agent get lens --host junie --host junie 2>&1)"; st=$?
 assert_status "get refuses --host given twice" "$st" 1
 assert_contains "get prints its usage for a repeated --host" "$out" "usage: orch.sh agent get <role>"
+"$ORCH" agent set lens --host codex --model x >/dev/null 2>&1
+assert_eq "a refused set --host codex writes no model key" "$(git config --local --get orchestrator.model.lens || echo '<unset>')" "<unset>"
 "$ORCH" agent set lens --model haiku >/dev/null
 "$ORCH" agent clear lens --host codex >/dev/null 2>&1
 assert_eq "a refused clear --host codex leaves a set key set" "$(git config --local --get orchestrator.model.lens)" "haiku"
