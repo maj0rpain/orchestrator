@@ -1837,8 +1837,8 @@ for f in "${container_files[@]}"; do
   check "$f exists" "$([ -f "$PLUGIN_ROOT/$f" ] || echo "$f: missing")"
 done
 # The build context is the plugin root, so .dockerignore must keep the filled-in
-# env files out of the image.
-for pat in docker/.env 'docker/.env.*' '!docker/.env.example'; do
+# secrets (the .gitignore Secrets patterns, at any depth) out of the image.
+for pat in '**/.env' '**/.env.*' '!**/.env.example' .claude/settings.local.json; do
   check ".dockerignore lists $pat" \
     "$(grep -qxF -- "$pat" "$PLUGIN_ROOT/.dockerignore" || echo ".dockerignore: does not list $pat")"
 done
