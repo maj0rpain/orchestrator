@@ -249,7 +249,12 @@ orch.sh - deterministic operations for the orchestrator flow
                               confirming run is not recorded when another
                               suite-cost run overlaps it, or when it could
                               not register as active, and the verdict is
-                              then unmeasured. Dies naming the key and
+                              then unmeasured. A verdict confirmed this way
+                              is stored (orchestrator/suite-cost.verdicts)
+                              and reused, printed with nothing run, while
+                              the clean HEAD, base commit, command, floor
+                              and growth are unchanged; a dirty tree never
+                              reuses one. Dies naming the key and
                               value when an override is not a non-negative
                               number
   suite-cost history          print the record's lines, oldest first, or

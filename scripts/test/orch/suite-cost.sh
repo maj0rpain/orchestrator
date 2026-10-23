@@ -814,6 +814,110 @@ assert_contains "warning of the contention at the base" "$(cat "$errf")" \
 assert_eq "the solo head confirming run before it is recorded" "$(grep -c "^$head" "$rec")" 2
 assert_eq "the overlapped base run is not" "$(grep -c "^$base" "$rec")" 1
 assert_eq "and no worktree is left" "$(git worktree list | wc -l | tr -d ' ')" 1
+# Verdict reuse: a verdict check confirmed is stored in suite-cost.verdicts and
+# printed again, nothing run, while the clean HEAD, base commit, command and
+# knobs are unchanged. A command that appends to a counter file counts runs.
+cnt="$(mktemp)"
+runs() { wc -l <"$cnt" | tr -d ' '; }
+grown_repo() {
+  confirm_repo "echo b >>$cnt" "echo h >>$cnt"
+  fake_cpu "$head" 90.00
+  fake_cpu "$base" 60.00
+  vf="$rec.verdicts"
+}
+
+grown_repo
+first="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_contains "a confirmed growth grew" "$first" "grew 80 - "
+assert_eq "its two confirming runs ran" "$(runs)" 2
+assert_eq "one verdict line is written" "$(wc -l <"$vf" | tr -d ' ')" 1
+assert_eq "in the documented format: head, base, floor, growth, time, command, verdict" \
+  "$(awk -F'\t' -v h="$head" -v b="$base" -v v="$first" \
+    '$1 == h && $2 == b && $3 == "0.01" && $4 == 15 && $5 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/ && $6 == "sh run.sh" && $7 == v { print "ok" }' "$vf")" "ok"
+second="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_eq "a second check on the unchanged clean HEAD prints the same verdict" "$second" "$first"
+assert_eq "and runs the command no more" "$(runs)" 2
+
+printf 'x\n' >untracked
+before_runs="$(runs)"
+"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+assert_eq "a dirty tree does not reuse the verdict" "$(runs)" "$((before_runs + 2))"
+assert_eq "and writes no line" "$(wc -l <"$vf" | tr -d ' ')" 1
+rm -f untracked
+
+git config orchestrator.suiteCost.growth 20
+before_runs="$(runs)"
+"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+assert_eq "a changed growth knob does not reuse it" "$(runs)" "$((before_runs + 2))"
+git config orchestrator.suiteCost.growth 15
+git config orchestrator.suiteCost.floor 0.02
+before_runs="$(runs)"
+"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+assert_eq "a changed floor knob does not reuse it" "$(runs)" "$((before_runs + 2))"
+git config orchestrator.suiteCost.floor 0.01
+
+before_runs="$(runs)"
+git commit -q --allow-empty -m next
+nhead="$(git rev-parse HEAD)"
+fake_cpu "$nhead" 90.00
+seed_run "$nhead" 100.00
+"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+assert_eq "a new commit does not reuse it" "$(runs)" "$((before_runs + 2))"
+
+grown_repo
+printf '%s\t%s\t0.01\t15\t2020-01-01T00:00:00Z\tsh run.sh\tok\n' "$head" "$(git rev-parse "$base~1")" >"$vf"
+before_runs="$(runs)"
+"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+assert_eq "a verdict stored for a different base commit is not reused" "$(runs)" "$((before_runs + 2))"
+
+grown_repo
+"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+before_runs="$(runs)"
+"$ORCH" suite-cost check -- sh run.sh >/dev/null 2>&1
+assert_eq "the same command is still reused" "$(runs)" "$before_runs"
+"$ORCH" suite-cost check -- sh -c "sh run.sh" >/dev/null 2>&1
+assert_eq "a different command does not reuse it" "$(wc -l <"$vf" | tr -d ' ')" 1
+
+# A confirmed ok is reused too, and an ok reached without confirmation stores nothing.
+confirm_repo "echo b >>$cnt" "echo h >>$cnt"
+vf="$rec.verdicts"
+before_runs="$(runs)"
+okv="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)"
+assert_eq "a seeded growth the confirming runs do not bear out is ok" "$okv" "ok"
+assert_eq "it ran the two confirming runs" "$(runs)" "$((before_runs + 2))"
+"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+assert_eq "a confirmed ok is reused" "$(runs)" "$((before_runs + 2))"
+
+confirm_repo ":" ":"
+vf="$rec.verdicts"
+: >"$rec"
+seed_run "$base" 50.00
+seed_run "$head" 52.00
+"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+assert_eq "an ok reached without confirmation stores nothing" "$(on_disk "$vf")" absent
+
+confirm_repo "exit 6" ":"
+vf="$rec.verdicts"
+"$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
+assert_eq "a confirmation ending unmeasured writes no line" "$(on_disk "$vf")" absent
+
+# The newest of two matching lines wins.
+grown_repo
+printf '%s\t%s\t0.01\t15\t2020-01-01T00:00:00Z\tsh run.sh\tgrew 1 - old\n' "$head" "$base" >"$vf"
+printf '%s\t%s\t0.01\t15\t2021-01-01T00:00:00Z\tsh run.sh\tok\n' "$head" "$base" >>"$vf"
+before_runs="$(runs)"
+assert_eq "with two matching lines the newest one's verdict is printed" \
+  "$("$ORCH" suite-cost check -- "${cmd[@]}" 2>/dev/null)" "ok"
+assert_eq "and nothing ran" "$(runs)" "$before_runs"
+
+# An unwritable verdict record warns and the verdict still prints.
+grown_repo
+mkdir -p "$vf"
+out="$("$ORCH" suite-cost check -- "${cmd[@]}" 2>"$errf")"
+assert_contains "the verdict still prints" "$out" "grew 80 - "
+assert_contains "after an orch: warning" "$(cat "$errf")" "orch: could not append to the suite-cost verdict record"
+rm -rf "$vf" "$cnt"
+
 rm -rf "$hs" "$errf"
 rm -f "$ORCH_SUITE_COST_FAKE_CPU"
 restore_suite_env ORCH_SUITE_COST_TIMER ORCH_SUITE_COST_FAKE_CPU

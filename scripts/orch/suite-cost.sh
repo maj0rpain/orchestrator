@@ -28,6 +28,18 @@
 # gone: no contention, and removed by the run that finds it. A failed .contended write for another run is not retried, and a
 # failed removal is ignored. A run that cannot register still runs but is not
 # recorded. No run ever waits for another.
+#
+# A verdict check confirmed (both confirming runs succeeded) is stored in a
+# second clone-wide file, suite-cost.verdicts beside the record, so a later
+# check on an unchanged clean tree prints it and runs nothing. Its line format
+# is documented here: seven tab-separated fields - HEAD's clean full SHA, the
+# base commit's full SHA, the floor and the growth knobs as in effect, the UTC
+# time in ISO 8601, the command (its words joined by single spaces), and the
+# verdict line as printed. A line is written only with HEAD clean when check
+# started; unmeasured is never stored, nor an ok or off reached without
+# confirmation. The newest line matching all of HEAD, base, floor, growth and
+# command wins; later runs on HEAD or the base do not invalidate it. A dirty
+# tree never reads the file. history does not print it.
 
 SUITE_COST_RUN_USAGE="usage: orch.sh suite-cost run -- <cmd> [args...]"
 SUITE_COST_CHECK_USAGE="usage: orch.sh suite-cost check -- <cmd> [args...]"
@@ -283,12 +295,21 @@ suite_cost_is_base() {
 # confirming run with the head sample only when that sample is on HEAD's
 # clean SHA, as a -dirty or ancestor one measured another tree.
 suite_cost_check() {
-  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict pct head_commit IFS=' '
+  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict head_commit clean_head IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
   want="$*"
   base_commit="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
+  clean_head="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
+  if [ -n "$clean_head" ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    clean_head=""
+  fi
+  if [ -n "$clean_head" ] &&
+    verdict="$(suite_cost_verdict_find "$clean_head" "$base_commit" "$floor" "$growth" "$want")"; then
+    note "$verdict"
+    return 0
+  fi
   head_sha="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
     { note unmeasured; return 0; }
   head_cpu="$(suite_cost_lowest "$rec" "$want" "$head_sha")"
@@ -298,11 +319,7 @@ suite_cost_check() {
     suite_cost_tree_run base "$base_commit" "$@" || { note unmeasured; return 0; }
     base_cpu="$SUITE_COST_CPU" base_sha="$base_commit"
   fi
-  verdict="$(suite_cost_compare "$head_cpu" "$base_cpu" "$floor" "$growth")"
-  if [ "$verdict" = off ] || [ "$verdict" = ok ]; then
-    note "$verdict"
-    return 0
-  fi
+  ! suite_cost_verdict_note "" || return 0
   head_commit="$(git rev-parse --verify -q HEAD)" || { note unmeasured; return 0; }
   suite_cost_tree_run confirm "$head_commit" "$@" || { note unmeasured; return 0; }
   if [ "$head_sha" = "$head_commit" ]; then
@@ -312,13 +329,62 @@ suite_cost_check() {
   fi
   suite_cost_tree_run confirm "$base_sha" "$@" || { note unmeasured; return 0; }
   base_cpu="$(suite_cost_min "$base_cpu" "$SUITE_COST_CPU")"
+  suite_cost_verdict_note confirmed || true
+}
+
+# suite_cost_verdict_note <confirmed>: the one compare-and-note block (#1401).
+# Compares head_cpu with base_cpu, then prints the verdict line - off, ok, or
+# grew <pct> - <finding text> - and, when <confirmed> is non-empty and the
+# tree was clean when check started, stores it. Unconfirmed, a grew verdict is
+# not printed: it returns 1 so the caller confirms it. Local to
+# suite_cost_check in effect, reading and setting its locals through bash's
+# dynamic scope.
+suite_cost_verdict_note() {
+  local pct
   verdict="$(suite_cost_compare "$head_cpu" "$base_cpu" "$floor" "$growth")"
-  if [ "$verdict" = off ] || [ "$verdict" = ok ]; then
-    note "$verdict"
-  else
+  if [ "$verdict" != off ] && [ "$verdict" != ok ]; then
+    [ -n "$1" ] || return 1
     pct="${verdict#grew }"
-    note "$verdict - suite cost grew ${pct}% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha"
+    verdict="$verdict - suite cost grew ${pct}% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha"
   fi
+  note "$verdict"
+  [ -z "$1" ] || [ -z "$clean_head" ] ||
+    suite_cost_verdict_store "$clean_head" "$base_commit" "$floor" "$growth" "$want" "$verdict"
+  return 0
+}
+
+# suite_cost_verdicts: prints the path of the clone's verdict record,
+# suite-cost.verdicts beside the suite-cost record.
+suite_cost_verdicts() {
+  local rec
+  rec="$(suite_cost_record)" || return 1
+  printf '%s.verdicts\n' "$rec"
+}
+
+# suite_cost_verdict_find <head> <base> <floor> <growth> <cmd-string>: prints
+# the verdict of the newest verdict line with exactly that key, or fails
+# printing nothing.
+suite_cost_verdict_find() {
+  local file out
+  file="$(suite_cost_verdicts)" || return 1
+  [ -e "$file" ] || return 1
+  out="$(LC_ALL=C awk -F'\t' -v h="$1" -v b="$2" -v f="$3" -v g="$4" -v c="$5" '
+    $1 == h && $2 == b && ($3 "") == f && ($4 "") == g && $6 == c { v = $7; hit = 1 }
+    END { if (hit) print v; else exit 1 }' "$file" 2>/dev/null)" || return 1
+  printf '%s\n' "$out"
+}
+
+# suite_cost_verdict_store <head> <base> <floor> <growth> <cmd-string> <verdict>:
+# appends one verdict line, making the directory when missing. A write that
+# fails warns, returning 0: the verdict still prints.
+suite_cost_verdict_store() {
+  local file
+  file="$(suite_cost_verdicts)"
+  if ! { mkdir -p "${file%/*}" &&
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$(now)" "$5" "$6" >>"$file"; } 2>/dev/null; then
+    warn "could not append to the suite-cost verdict record $file - this verdict is not stored"
+  fi
+  return 0
 }
 
 # suite_cost_compare <head> <base> <floor> <growth>: prints off when <base> is
