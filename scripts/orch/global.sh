@@ -635,6 +635,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               Rejected alternatives, each tagged with its
                               source; an empty heading reads None. Refused,
                               writing nothing, without either handoff
+  review standards            print the reviewers' Standards: line - root
+                              CLAUDE.md and AGENTS.md (with neither,
+                              CODING_STANDARDS.md and CONTRIBUTING.md), then
+                              the .md paths they mention in backticks or
+                              Markdown links, then those mentioned there: two
+                              hops, each path once, only paths that exist,
+                              joined by ", "; Standards: none when none do
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
   review rerun <pr>           rerun the failed jobs of the Actions run behind
@@ -748,6 +755,20 @@ orch.sh - deterministic operations for the orchestrator flow
                               missing after ORCH_SPEC_REVIEW_WAIT_TIMEOUT
                               seconds (default 900), polling every
                               ORCH_SPEC_REVIEW_WAIT_INTERVAL (default 5)
+  spec-review prompt <dir> <lens>
+                              print <lens>'s whole prompt, for the session
+                              to pass unchanged: one "<label>: <path>" line
+                              per path in its lens-table row, every path
+                              absolute, the findings file last. A missing
+                              input (glossary.md, docs/adr/, settled.md, the
+                              previous map-implementability.md) prints
+                              "<label>: none"; Map file: and Findings file:
+                              are always given. <dir> is a standalone
+                              review's or a flow round's directory and must
+                              hold spec.md and comments.md. fidelity only in
+                              a directory under .orchestrator/spec-rounds/,
+                              its Plan handoff what handoff path spec prints;
+                              dies when that fails, and on an unknown lens
   spec-review apply <dir> <answer> --round <k>/<n> [--reasons <file>]
                     [--tickets <answer> [--ticket-reasons <file>]]
                     [--issue <n>] [--unattended] [--host-fallbacks <file>]

@@ -21,7 +21,8 @@ cmd_spec_review() {
     check) spec_review_check "$@" ;;
     apply) spec_review_apply "$@" ;;
     wait) spec_review_wait "$@" ;;
-    *) die "unknown spec-review op: ${op:-<none>} (want begin|check|apply|wait)" ;;
+    prompt) spec_review_prompt "$@" ;;
+    *) die "unknown spec-review op: ${op:-<none>} (want begin|check|apply|wait|prompt)" ;;
   esac
 }
 
@@ -794,6 +795,62 @@ spec_review_wait() {
     summary+="${summary:+, }$lens ${n:-0}"
   done
   note "lenses back: $summary"
+}
+
+# --- spec-review prompt (#1521) ------------------------------------------------
+#
+# A lens's whole prompt, for the session to pass unchanged: path existence is a
+# fact orch.sh hands the lens, never one the lens discovers, so a lens never
+# probes a round file that is not there.
+
+# spec_review_prompt_line <label> <path>: `<label>: <path>` when <path>
+# exists, `<label>: none` otherwise - an input the lens reads only when given.
+spec_review_prompt_line() {
+  if [ -e "$2" ]; then printf '%s: %s\n' "$1" "$2"; else printf '%s: none\n' "$1"; fi
+}
+
+# spec-review prompt <dir> <lens>: prints <lens>'s prompt, one labelled line
+# per path in its row of the lens table, every path absolute, the findings
+# file last. <dir> is a standalone review's directory or a flow's round
+# directory, holding spec.md and comments.md, which the session fetched first.
+# A missing optional input prints none; the findings file and the
+# Implementability map file are write targets, always given. Fidelity runs
+# only in a flow round directory - one under SPEC_ROUNDS_DIR - and its plan
+# handoff is what `handoff path spec` prints, the op dying when it fails.
+spec_review_prompt() {
+  [ $# -eq 2 ] || die "usage: orch.sh spec-review prompt <dir> <lens>"
+  local dir="${1%/}" lens="$2" plan plan_err
+  spec_review_lens_known "$lens" || die "unknown lens '$lens' (want one of: $SPEC_REVIEW_LENSES)"
+  [ -d "$dir" ] || die "no such directory: $dir"
+  dir="$(cd "$dir" && pwd -P)" || die "cannot resolve the directory: $1"
+  [ -f "$dir/spec.md" ] || die "no spec body: $dir/spec.md does not exist - fetch it first"
+  [ -f "$dir/comments.md" ] || die "no comments file: $dir/comments.md does not exist - fetch it first"
+  if [ "$lens" = fidelity ]; then
+    case "$dir/" in
+      "$SPEC_ROUNDS_DIR"/?*) ;;
+      *) die "the Fidelity lens runs only in a flow's spec review: $dir is not under $SPEC_ROUNDS_DIR/" ;;
+    esac
+    capture plan plan_err cmd_handoff path spec || {
+      [ -z "$plan_err" ] || die "no plan handoff for the Fidelity prompt: $(spec_review_err_line "$plan_err")"
+      die "no plan handoff for the Fidelity prompt: $plan does not exist"
+    }
+  fi
+  printf 'Spec body: %s\nComments: %s\n' "$dir/spec.md" "$dir/comments.md"
+  case "$lens" in
+    consistency)
+      spec_review_prompt_line Glossary "$dir/glossary.md"
+      spec_review_prompt_line 'ADR directory' "$ROOT/docs/adr/"
+      ;;
+    testability) printf 'Repo root: %s\n' "$ROOT" ;;
+    implementability)
+      printf 'Repo root: %s\n' "$ROOT"
+      spec_review_prompt_line 'Previous map' "$dir/map-implementability.md"
+      printf 'Map file: %s\n' "$dir/map-implementability.md"
+      ;;
+    fidelity) printf 'Plan handoff: %s\n' "$plan" ;;
+  esac
+  spec_review_prompt_line Settled "$dir/settled.md"
+  printf 'Findings file: %s\n' "$dir/lens-$lens.md"
 }
 
 # spec_review_problems_exit: when a check collected problems in SR_PROBLEMS,

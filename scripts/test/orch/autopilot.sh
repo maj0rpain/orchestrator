@@ -86,8 +86,7 @@ assert_status "autopilot active exits 1 under ORCH_AUTOPILOT=0" "$st" 1
 
 # The gate: host first, then the permission mode.
 noclaude_path="$(
-  claude_dir="$(PATH="$PATH" command -v claude 2>/dev/null || true)"; claude_dir="${claude_dir%/*}"
-  new=""; IFS=:; for d in $PATH; do [ "$d" = "$claude_dir" ] || new="$new:$d"; done; printf '%s' "${new#:}")"
+  new=""; IFS=:; for d in $PATH; do [ -x "$d/claude" ] || new="$new:$d"; done; printf '%s' "${new#:}")"
 git config orchestrator.autopilot.permission-mode plan
 out="$(PATH="$fakebin:$PATH" sourced_orch autopilot_gate 2>&1)"; st=$?
 assert_status "the gate passes with claude on PATH, a mode set and no host signal" "$st" 0

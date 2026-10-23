@@ -133,13 +133,14 @@ Steps 1 to 4 below run at the start of every round, as **Rounds** says.
 3. **Fetch the comments**: `bash "$ORCH" issue comments <issue>
    <dir>/comments.md`. A failure stops the review, as a failed body fetch
    does.
-4. Resolve the other files the lenses read, and record the paths:
-   - the glossary: when the root `GLOSSARY.md` exists, write `bash "$ORCH"
-     glossary match <dir>/spec.md <dir>/comments.md > <dir>/glossary.md` and
-     record that path, else record no glossary path; a failed `glossary
-     match` stops the review, as a failed body fetch does;
-   - the decisions: `docs/adr/` at the repo root, where it exists;
-   - the repo root, for the codebase.
+4. **The glossary**: only when the root `GLOSSARY.md` exists, write
+   `bash "$ORCH" glossary match <dir>/spec.md <dir>/comments.md >
+   <dir>/glossary.md`; with no root glossary, write nothing, and the
+   Consistency prompt reads `Glossary: none`. A failed `glossary match`
+   stops the review, as a failed body fetch does. Every other path a lens
+   reads - the ADR directory, the repo root, the settled file and the
+   previous code map - `spec-review prompt` resolves itself, from what
+   exists when it runs.
 
    There is no plan handoff. Nothing from this session's conversation
    reaches a lens: a lens that needs something gets a file path.
@@ -206,9 +207,14 @@ the Agent tool with `subagent_type` set to the lens's agent name under the
 lenses on those values, even if the setting changes between rounds. A flow's
 later rounds, each in a session of its own, take them from round 1's read
 rather than reading again, as `spec-phase.md`'s **The Fidelity lens** says.
-Each prompt carries only
-the paths its row names, the last of them its findings file,
-`<dir>/lens-<name>.md`. Each lens
+Each lens's prompt is exactly
+what `bash "$ORCH" spec-review prompt <dir> <lens>` prints, passed unchanged:
+one labelled line per path its row names, every path absolute, the last of
+them its findings file, `<dir>/lens-<name>.md`. An input that does not exist
+reads `none`, which the lens takes as a meaning, never as a path to try;
+the findings file and the Implementability map file are always given. Never
+build or edit a prompt by hand; when the op dies, relay its message and stop
+the review, as a failed body fetch does. Each lens
 writes its numbered findings there, its findings file last, and replies with
 only that path and a count.
 
@@ -225,11 +231,11 @@ hand-back takes a turn of its own, and prints one line, `lenses back: <name>
 <count>, ...`. On exit 0, read the findings files. On a host whose lenses ran
 in this session, the files already exist and it returns at once.
 
-| Lens | Agent | Paths |
+| Lens | Agent | Prompt |
 |---|---|---|
-| Consistency | `orch-lens-consistency` | spec body, comments file, glossary, ADR directory, `<dir>/settled.md`, `<dir>/lens-consistency.md` |
-| Testability | `orch-lens-testability` | spec body, comments file, repo root, `<dir>/settled.md`, `<dir>/lens-testability.md` |
-| Implementability | `orch-lens-implementability` | spec body, comments file, repo root, `<dir>/map-implementability.md`, `<dir>/settled.md`, `<dir>/lens-implementability.md` |
+| Consistency | `orch-lens-consistency` | pass what `spec-review prompt <dir> consistency` prints: spec body, comments, glossary, ADR directory, settled, findings file |
+| Testability | `orch-lens-testability` | pass what `spec-review prompt <dir> testability` prints: spec body, comments, repo root, settled, findings file |
+| Implementability | `orch-lens-implementability` | pass what `spec-review prompt <dir> implementability` prints: spec body, comments, repo root, previous map, map file, settled, findings file |
 
 On a host that cannot start the plugin's agents natively, take the
 "Start a fresh subagent" fallback in `docs/host-capabilities.md` under the
