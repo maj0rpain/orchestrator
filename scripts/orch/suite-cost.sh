@@ -28,6 +28,18 @@
 # gone: no contention, and removed by the run that finds it. A failed .contended write for another run is not retried, and a
 # failed removal is ignored. A run that cannot register still runs but is not
 # recorded. No run ever waits for another.
+#
+# A verdict check confirmed (both confirming runs succeeded) is stored in a
+# second clone-wide file, suite-cost.verdicts beside the record, so a later
+# check on an unchanged clean tree prints it and runs nothing. Its line format
+# is documented here: seven tab-separated fields - HEAD's clean full SHA, the
+# base commit's full SHA, the floor and the growth knobs as in effect, the UTC
+# time in ISO 8601, the command (its words joined by single spaces), and the
+# verdict line as printed. A line is written only with HEAD clean when check
+# started; unmeasured is never stored, nor an ok or off reached without
+# confirmation. The newest line matching all of HEAD, base, floor, growth and
+# command wins; later runs on HEAD or the base do not invalidate it. A dirty
+# tree never reads the file. history does not print it.
 
 SUITE_COST_RUN_USAGE="usage: orch.sh suite-cost run -- <cmd> [args...]"
 SUITE_COST_CHECK_USAGE="usage: orch.sh suite-cost check -- <cmd> [args...]"
@@ -134,10 +146,7 @@ suite_cost_unregister() {
 # active, either of which it warns of. Exits with the command's own status.
 suite_cost_run() {
   local sha
-  sha="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
-  if [ -n "$sha" ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-    sha="$sha-dirty"
-  fi
+  sha="$(suite_cost_head_commit)"
   suite_cost_register
   suite_cost_measure "$@"
   suite_cost_unregister
@@ -153,6 +162,18 @@ suite_cost_run() {
     fi
   fi
   exit "$SUITE_COST_STATUS"
+}
+
+# suite_cost_head_commit: prints the commit field a run started now would
+# record - HEAD's full SHA, suffixed -dirty when git status --porcelain prints
+# anything - or nothing when HEAD names no commit.
+suite_cost_head_commit() {
+  local sha
+  sha="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
+  if [ -n "$sha" ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    sha="$sha-dirty"
+  fi
+  note "$sha"
 }
 
 # suite_cost_measure <cmd> [args...]: runs the command once, its stdout,
@@ -179,12 +200,21 @@ suite_cost_measure() {
 # line, making the record's directory when missing. An append that fails
 # warns and records nothing, returning 0: the run it measured stands.
 suite_cost_append() {
-  local sha="$1" cpu="$2" wall="$3" rec IFS=' '
+  local sha="$1" cpu="$2" wall="$3" IFS=' '
   shift 3
-  rec="$(suite_cost_record)"
-  if ! { mkdir -p "${rec%/*}" &&
-    printf '%s\t%s\t%s\t%s\t%s\n' "$sha" "$cpu" "$wall" "$(now)" "$*" >>"$rec"; } 2>/dev/null; then
-    warn "could not append to the suite-cost record $rec - this run's suite cost is not recorded"
+  suite_cost_append_line "$(suite_cost_record)" "suite-cost record" "this run's suite cost is not recorded" \
+    "$sha" "$cpu" "$wall" "$(now)" "$*"
+}
+
+# suite_cost_append_line <file> <name> <lost> <field>...: appends the fields
+# to <file> as one tab-separated line, making its directory when missing. An
+# append that fails warns, naming the file as the <name> and saying <lost>,
+# and returns 0: what was measured stands.
+suite_cost_append_line() {
+  local file="$1" name="$2" lost="$3" IFS=$'\t'
+  shift 3
+  if ! { mkdir -p "${file%/*}" && printf '%s\n' "$*" >>"$file"; } 2>/dev/null; then
+    warn "could not append to the $name $file - $lost"
   fi
   return 0
 }
@@ -240,8 +270,9 @@ suite_cost_newest() {
 # nothing when there is none.
 suite_cost_lowest() {
   [ -e "$1" ] || return 0
-  LC_ALL=C awk -F'\t' -v want="$2" -v sha="$3" '
-    $1 == sha && $5 == want && (n++ == 0 || $2 + 0 < low + 0) { low = $2 }
+  # The strings go through ENVIRON, as awk -v would expand their backslashes.
+  want="$2" sha="$3" LC_ALL=C awk -F'\t' '
+    $1 == ENVIRON["sha"] && $5 == ENVIRON["want"] && (n++ == 0 || $2 + 0 < low + 0) { low = $2 }
     END { if (n) print low }' "$1"
 }
 
@@ -262,12 +293,12 @@ suite_cost_is_head() {
   esac
 }
 # The baseline's records: clean ones alone, never a dirty one, whose commit is
-# the base commit or an ancestor of it. Local to suite_cost_check in effect,
-# reading its base_commit as suite_cost_is_head does.
+# the base commit itself, never an ancestor of it. Local to suite_cost_check in
+# effect, reading its base_commit as suite_cost_is_head does.
 suite_cost_is_base() {
   case "$1" in
     *-dirty) return 1 ;;
-    *) git merge-base --is-ancestor "$1" "$base_commit" 2>/dev/null ;;
+    *) [ "$1" = "$base_commit" ] ;;
   esac
 }
 
@@ -276,19 +307,28 @@ suite_cost_is_base() {
 # sample of the command with the baseline's: the lowest CPU seconds on the
 # commit of the newest head record, and on that of the newest baseline record.
 # The knobs are validated first, so a bad one dies before anything runs. The
-# command runs to measure a base with no recorded ancestor, and runs on the
-# head only to confirm a growth: a comparison past the threshold measures the
+# command runs to measure a base commit with no clean record of its own, and
+# runs on the head only to confirm a growth: a comparison past the threshold measures the
 # head at HEAD and then the base at the baseline sample's commit, once each,
 # and compares again before it is reported. The head side pools the head
 # confirming run with the head sample only when that sample is on HEAD's
 # clean SHA, as a -dirty or ancestor one measured another tree.
 suite_cost_check() {
-  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict pct head_commit IFS=' '
+  local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict head_field head_commit clean_head line IFS=' '
   floor="$(suite_cost_knob orchestrator.suiteCost.floor "$SUITE_COST_FLOOR_DEFAULT")" || exit 1
   growth="$(suite_cost_knob orchestrator.suiteCost.growth "$SUITE_COST_GROWTH_DEFAULT")" || exit 1
   rec="$(suite_cost_record)" || exit 1
   want="$*"
   base_commit="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
+  head_field="$(suite_cost_head_commit)"
+  head_commit="${head_field%-dirty}"
+  clean_head=""
+  [ "$head_field" != "$head_commit" ] || clean_head="$head_commit"
+  if [ -n "$clean_head" ] &&
+    verdict="$(suite_cost_verdict_find)"; then
+    note "$verdict"
+    return 0
+  fi
   head_sha="$(suite_cost_newest "$rec" "$want" suite_cost_is_head)" ||
     { note unmeasured; return 0; }
   head_cpu="$(suite_cost_lowest "$rec" "$want" "$head_sha")"
@@ -298,12 +338,12 @@ suite_cost_check() {
     suite_cost_tree_run base "$base_commit" "$@" || { note unmeasured; return 0; }
     base_cpu="$SUITE_COST_CPU" base_sha="$base_commit"
   fi
-  verdict="$(suite_cost_compare "$head_cpu" "$base_cpu" "$floor" "$growth")"
-  if [ "$verdict" = off ] || [ "$verdict" = ok ]; then
-    note "$verdict"
-    return 0
-  fi
-  head_commit="$(git rev-parse --verify -q HEAD)" || { note unmeasured; return 0; }
+  line="$(suite_cost_verdict_line)"
+  case "$line" in
+    grew*) ;;
+    *) note "$line"; return 0 ;;
+  esac
+  [ -n "$head_commit" ] || { note unmeasured; return 0; }
   suite_cost_tree_run confirm "$head_commit" "$@" || { note unmeasured; return 0; }
   if [ "$head_sha" = "$head_commit" ]; then
     head_cpu="$(suite_cost_min "$head_cpu" "$SUITE_COST_CPU")"
@@ -312,13 +352,57 @@ suite_cost_check() {
   fi
   suite_cost_tree_run confirm "$base_sha" "$@" || { note unmeasured; return 0; }
   base_cpu="$(suite_cost_min "$base_cpu" "$SUITE_COST_CPU")"
-  verdict="$(suite_cost_compare "$head_cpu" "$base_cpu" "$floor" "$growth")"
-  if [ "$verdict" = off ] || [ "$verdict" = ok ]; then
-    note "$verdict"
-  else
-    pct="${verdict#grew }"
-    note "$verdict - suite cost grew ${pct}% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha"
-  fi
+  line="$(suite_cost_verdict_line)"
+  note "$line"
+  [ -z "$clean_head" ] || suite_cost_verdict_store "$line"
+}
+
+# suite_cost_verdict_line: the one compare block (#1401). Compares head_cpu
+# with base_cpu and prints the verdict line - off, ok, or grew <pct> -
+# <finding text>. Local to suite_cost_check in effect, reading its locals
+# through bash's dynamic scope.
+suite_cost_verdict_line() {
+  local result
+  result="$(suite_cost_compare "$head_cpu" "$base_cpu" "$floor" "$growth")"
+  case "$result" in
+    grew*) note "$result - suite cost grew ${result#grew }% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha" ;;
+    *) note "$result" ;;
+  esac
+}
+
+# suite_cost_verdicts: prints the path of the clone's verdict record,
+# suite-cost.verdicts beside the suite-cost record.
+suite_cost_verdicts() {
+  local rec
+  rec="$(suite_cost_record)" || return 1
+  printf '%s.verdicts\n' "$rec"
+}
+
+# The verdict key - HEAD's clean SHA, the base commit, the floor, the growth
+# and the command string - is read by suite_cost_verdict_find and
+# suite_cost_verdict_store from suite_cost_check's locals clean_head,
+# base_commit, floor, growth and want, through bash's dynamic scope, so its
+# layout is stated once, in the module header.
+
+# suite_cost_verdict_find: prints the verdict of the newest verdict line with
+# exactly the verdict key, or fails printing nothing.
+suite_cost_verdict_find() {
+  local file out
+  file="$(suite_cost_verdicts)" || return 1
+  [ -e "$file" ] || return 1
+  # The key goes through ENVIRON, as awk -v would expand its backslashes.
+  out="$(h="$clean_head" b="$base_commit" f="$floor" g="$growth" c="$want" LC_ALL=C awk -F'\t' '
+    $1 == ENVIRON["h"] && $2 == ENVIRON["b"] && $3 == ENVIRON["f"] && $4 == ENVIRON["g"] && $6 == ENVIRON["c"] { v = $7; hit = 1 }
+    END { if (hit) print v; else exit 1 }' "$file" 2>/dev/null)" || return 1
+  printf '%s\n' "$out"
+}
+
+# suite_cost_verdict_store <verdict>: appends one verdict line under the
+# verdict key, making the directory when missing. A write that fails warns,
+# returning 0: the verdict still prints.
+suite_cost_verdict_store() {
+  suite_cost_append_line "$(suite_cost_verdicts)" "suite-cost verdict record" "this verdict is not stored" \
+    "$clean_head" "$base_commit" "$floor" "$growth" "$(now)" "$want" "$1"
 }
 
 # suite_cost_compare <head> <base> <floor> <growth>: prints off when <base> is
@@ -343,7 +427,7 @@ suite_cost_min() {
 # once in a temporary detached worktree at <commit>, its output sent to stderr
 # so check's stdout stays its verdict, records a pass, and removes the
 # worktree whatever happened. <role> is base, for the base run check makes
-# when the base has no recorded ancestor, or confirm, for a confirming run;
+# when the base commit has no clean record, or confirm, for a confirming run;
 # it picks the warnings' wording, a confirming run's naming the growth as
 # unconfirmed. The worktree holds only tracked files, so git config
 # orchestrator.suiteCost.setup, when set and non-empty, runs there first with

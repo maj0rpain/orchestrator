@@ -229,7 +229,7 @@ orch.sh - deterministic operations for the orchestrator flow
                               are different commits); the baseline sample
                               the lowest on the commit of the newest
                               baseline record (a clean one, never a dirty
-                              one, on the base commit or an ancestor:
+                              one, on the base commit itself:
                               state.base_sha in a flow, else branch base-sha).
                               Verdicts: off (baseline below git config
                               orchestrator.suiteCost.floor, else 60 CPU
@@ -239,15 +239,22 @@ orch.sh - deterministic operations for the orchestrator flow
                               measuring head and base once more, in
                               temporary worktrees at HEAD and the baseline
                               sample's commit, and comparing again; the
-                              head is run only to confirm a growth. With no
-                              baseline it measures the base once in a
-                              temporary worktree. Each such run first runs
+                              head is run only to confirm a growth. A base
+                              commit with no clean record of its own is
+                              measured once, never an ancestor's record
+                              reused, in a temporary
+                              worktree. Each such run first runs
                               git config orchestrator.suiteCost.setup there,
                               untimed, when it is set. Such a base or
                               confirming run is not recorded when another
                               suite-cost run overlaps it, or when it could
                               not register as active, and the verdict is
-                              then unmeasured. Dies naming the key and
+                              then unmeasured. A verdict confirmed this way
+                              is stored (orchestrator/suite-cost.verdicts)
+                              and reused, printed with nothing run, while
+                              the clean HEAD, base commit, command, floor
+                              and growth are unchanged; a dirty tree never
+                              reuses one. Dies naming the key and
                               value when an override is not a non-negative
                               number
   suite-cost history          print the record's lines, oldest first, or
