@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.30.0
+
+Add the autopilot flow, a fourth route at the planning close on Claude Code: a watcher, `orch.sh autopilot watch` (or a scheduler calling `autopilot tick`), starts each phase as a headless `claude -p` session in the issue's side checkout, up to a per-repo cap. The flow's phase lives in a label on its issue (`orch:spec`, `orch:implement`, `orch:review`, `orch:done`), each session claims its issue through a git ref under `refs/orch/claims`, and its handoffs are tagged issue comments (`handoff post`, `handoff fetch`). The human is reached only through an issue comment that @mentions them and the `needs-human` label: a fundamental spec-review item, a review-loop bounded stop or spec question (`autopilot ask`, `autopilot answer`), or a failed session, which is never retried. A session that stops on Claude Code's usage limit pauses new pickups until the reset time. Relabelling an issue one phase back drives `redo`. `autopilot start` hands a planned issue to the watcher, `autopilot show` prints the settings, and `doctor` flags a label that disagrees with the recorded phase and other hosts' old claims. ADR-0052 records the design, amending ADR-0034, ADR-0041 and ADR-0050; the glossary gains the autopilot terms.
+
 ## 4.29.0
 
 On Junie, the agent setting is chosen with `--host junie` on `orch.sh agent set|clear|get`, which store a per-role Junie model and effort beside the Claude Code ones, and `agent show` lists both hosts' settings. The setting is carried to Junie in generated, git-excluded copies of the plugin's agents that the new `orch.sh agent sync` writes. `orch.sh doctor` checks those copies, shows what each `orch-*` agent ran on in the last Junie session for the checkout, and fails on Junie's `Unrecognized 'model' value` for a model currently set.
