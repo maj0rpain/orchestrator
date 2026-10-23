@@ -412,8 +412,9 @@ review_standards_resolve() {
   esac
   [[ $target =~ ^[A-Za-z][A-Za-z0-9+.-]*: ]] && return 0
   [[ $target == *.md ]] || return 0
-  local IFS=/
-  for seg in $base $target; do
+  local IFS=/ segs
+  read -ra segs <<< "$base/$target"
+  for seg in "${segs[@]}"; do
     case "$seg" in
       ''|.) ;;
       ..) [ "${#out[@]}" -gt 0 ] || return 0; unset 'out[${#out[@]}-1]' ;;
@@ -467,9 +468,9 @@ review_standards() {
   if [ "${#listed[@]}" -eq 0 ]; then
     note "Standards: none"
   else
-    local IFS=,
-    p="${listed[*]}"
-    note "Standards: ${p//,/, }"
+    local IFS=, joined
+    joined="${listed[*]}"
+    note "Standards: ${joined//,/, }"
   fi
 }
 

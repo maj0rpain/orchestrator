@@ -839,8 +839,7 @@ spec_review_prompt() {
   case "$lens" in
     consistency)
       spec_review_prompt_line Glossary "$dir/glossary.md"
-      if [ -d "$ROOT/docs/adr" ]; then printf 'ADR directory: %s/docs/adr/\n' "$ROOT"
-      else printf 'ADR directory: none\n'; fi
+      spec_review_prompt_line 'ADR directory' "$ROOT/docs/adr/"
       ;;
     testability) printf 'Repo root: %s\n' "$ROOT" ;;
     implementability)
