@@ -3502,6 +3502,8 @@ spares "an over-long line in CHANGELOG.md or changelog.d/ is not flagged" \
   "$out" '^(CHANGELOG\.md|changelog\.d/12\.md):'
 spares "an over-long line in a *.md outside the covered paths is not flagged" \
   "$out" '^\.out-of-scope/'
+check "no covered Markdown or shell comment line is past 80 columns" \
+  "$(scan_line_width "$PLUGIN_ROOT")"
 
 # >>> summary
 echo
