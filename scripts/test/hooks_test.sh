@@ -157,6 +157,7 @@ assert_contains "says exactly four options" "$out" "exactly four options"
 assert_contains "autopilot route ends in autopilot start" "$out" "autopilot start <issue> <plan-file>"
 assert_contains "autopilot route forbids init and side-checkout add" "$out" 'neither `init` nor `side-checkout add`'
 assert_contains "autopilot route writes the plan's Autopilot block" "$out" "## Autopilot"
+assert_contains "autopilot route sizes Budget by the review loop's rule" "$out" "Budget, the review loop's iteration budget, sized by the review loop's rule from the scope the interview settled"
 assert_contains "tells the model to invoke the flow skill itself" "$out" "orchestrator:orch-flow"
 assert_contains "tells the model to invoke the quick-implement skill itself" "$out" "orchestrator:orch-quick-implement"
 # With no active flow, a human's request for a side checkout is honoured

@@ -147,7 +147,7 @@ else
 - On \"Autopilot flow\" (Claude Code only), the route ends in the plan handoff; this planning session writes no flow state and makes no side checkout, so run neither \`init\` nor \`side-checkout add\`.
   First write the spec: call the Skill tool with \"orchestrator:orch-to-spec\" - in rewrite mode, args set to the interviewed issue's number, when there is one, else in publish mode - with its test-seams check.
   Then write the plan with the \`orch-handoff\` skill's \`01-plan.md\` template, including its \`## Autopilot\` block, to a file named \`01-plan.md\` in a fresh \`mktemp -d\` directory outside the repo (\`handoff validate\` looks sections up by basename; this session runs without ORCH_AUTOPILOT, so \`autopilot start\` is the check that covers the \`## Autopilot\` block):
-  Rounds sized by the spec phase's rule - 1 for a one-site spec, 2 by default, 3 for a large or cross-cutting spec - and Budget, the review loop's iteration budget, from the interview.
+  Rounds sized by the spec phase's rule - 1 for a one-site spec, 2 by default, 3 for a large or cross-cutting spec - and Budget, the review loop's iteration budget, sized by the review loop's rule from the scope the interview settled - 3 for one site and one ticket, 5 for a few files and 2-3 tickets, 8 for many modules, 4+ tickets, or the review loop's or flow state's own machinery, risk weighing above size.
   Last run
   bash \"$(hook_plugin_root)/scripts/orch.sh\" autopilot start <issue> <plan-file>
   through that path, <issue> being the spec's issue number. When a step stops or fails, stop there and report why; the route ends in \`autopilot start\`.
