@@ -1321,3 +1321,42 @@ assert_status "with the comments posted it builds the file" "$st" 0
 assert_contains "carrying the implement comment's deviation" "$(cat known.md)" "- Kept the cache"
 assert_contains "and the plan comment's rejected alternative" "$(cat known.md)" "- Polling the PR - too slow - rejected alternative"
 restore_suite_env
+
+# --- review standards (#1532) -------------------------------------------------
+# The standards documents both reviewers read, resolved mechanically: only
+# what the one printed line says is checked, on fixture repos.
+echo
+echo "review standards"
+new_repo >/dev/null
+assert_eq "a repo with no standards document prints none" \
+  "$("$ORCH" review standards)" "Standards: none"
+out_dir="$(mktemp -d)"; : >"$out_dir/out.md"
+mkdir -p docs/agents docs/deep
+: >docs/agents/c.md; : >docs/deep/third.md; : >CONTRIBUTING.md
+writeln '# claude' 'See `docs/agents/a.md` and [the guide](docs/agents/missing.md).' \
+  'Also `AGENTS.md`, `CONTRIBUTING.md#develop` and `docs/agents/` itself.' >CLAUDE.md
+writeln '# agents' 'Read [c](docs/agents/c.md#section) first.' >AGENTS.md
+writeln '# a' 'Then [b](b.md#top), `CONTRIBUTING.md` again,' \
+  "[out](../../$(basename "$out_dir")/out.md), [abs]($out_dir/out.md)," \
+  '[url](https://example.com/README.md), `/etc/x.md` and `docs/agents/gone.md`.' \
+  >docs/agents/a.md
+writeln '# b' 'A third hop: [third](../deep/third.md), `docs/deep/third.md`.' >docs/agents/b.md
+assert_eq "both root agent files, then first-hop then second-hop mentions, each once, no third hop, joined by ', '" \
+  "$("$ORCH" review standards)" \
+  "Standards: CLAUDE.md, AGENTS.md, docs/agents/a.md, CONTRIBUTING.md, docs/agents/c.md, docs/agents/b.md"
+rm AGENTS.md
+writeln '# claude' 'Nothing to follow.' >CLAUDE.md
+assert_eq "only CLAUDE.md is listed when AGENTS.md is missing" \
+  "$("$ORCH" review standards)" "Standards: CLAUDE.md"
+rm CLAUDE.md
+writeln '# contributing' 'See [the standards](docs/agents/a.md).' >CONTRIBUTING.md
+writeln '# coding' 'Plain.' >CODING_STANDARDS.md
+assert_eq "with no root agent file, CODING_STANDARDS.md then CONTRIBUTING.md, followed the same two hops" \
+  "$("$ORCH" review standards)" \
+  "Standards: CODING_STANDARDS.md, CONTRIBUTING.md, docs/agents/a.md, docs/agents/b.md"
+out="$("$ORCH" review standards extra 2>&1)"; st=$?
+assert_status "refuses an argument" "$st" 1
+assert_contains "with its usage" "$out" "orch: usage: orch.sh review standards"
+assert_contains "orch.sh help lists review standards" "$("$ORCH" help)" "review standards"
+rm -rf "$out_dir"
+restore_suite_env

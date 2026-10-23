@@ -635,6 +635,13 @@ orch.sh - deterministic operations for the orchestrator flow
                               Rejected alternatives, each tagged with its
                               source; an empty heading reads None. Refused,
                               writing nothing, without either handoff
+  review standards            print the reviewers' Standards: line - root
+                              CLAUDE.md and AGENTS.md (with neither,
+                              CODING_STANDARDS.md and CONTRIBUTING.md), then
+                              the .md paths they mention in backticks or
+                              Markdown links, then those mentioned there: two
+                              hops, each path once, only paths that exist,
+                              joined by ", "; Standards: none when none do
   review ci                   classify the PR's checks: green, failing, none, or
                               unreachable; exits non-zero on the last two
   review rerun <pr>           rerun the failed jobs of the Actions run behind

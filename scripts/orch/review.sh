@@ -393,6 +393,86 @@ review_known_items() {
   known_items_write "$path" "$deviations" "$waiting$filed$rejected"
 }
 
+# review_standards_resolve <file> <path>: the repo-relative path a mention in
+# <file> (repo-relative) names - a backtick path, given as `<path>`, against
+# the repo root, any other <path> (a Markdown link target) against <file>'s
+# directory - with any # fragment dropped. Prints nothing for a URL, an
+# absolute path, a path that leaves the repo, or one not ending in .md.
+review_standards_resolve() {
+  local file="$1" target="$2" base="" seg out=()
+  if [[ $target == \`*\` ]]; then
+    target="${target:1:${#target}-2}"
+  else
+    target="${target#<}"; target="${target%>}"
+    [[ $file == */* ]] && base="${file%/*}"
+  fi
+  target="${target%%#*}"
+  case "$target" in
+    ''|/*|*[[:space:]]*) return 0 ;;
+  esac
+  [[ $target =~ ^[A-Za-z][A-Za-z0-9+.-]*: ]] && return 0
+  [[ $target == *.md ]] || return 0
+  local IFS=/
+  for seg in $base $target; do
+    case "$seg" in
+      ''|.) ;;
+      ..) [ "${#out[@]}" -gt 0 ] || return 0; unset 'out[${#out[@]}-1]' ;;
+      *) out+=("$seg") ;;
+    esac
+  done
+  [ "${#out[@]}" -eq 0 ] || printf '%s\n' "${out[*]}"
+}
+
+# review_standards_mentions <file>: the repo-relative .md paths <file> mentions,
+# in backticks or as Markdown links, one per line in the order they appear.
+review_standards_mentions() {
+  local file="$1" m
+  while IFS= read -r m; do
+    case "$m" in
+      \`*) review_standards_resolve "$file" "$m" ;;
+      *) m="${m#](}"; m="${m%)}"; review_standards_resolve "$file" "${m%%[[:space:]]*}" ;;
+    esac
+  done < <(grep -oE '`[^`]+`|\]\([^)]+\)' "$ROOT/$file" 2>/dev/null)
+}
+
+# review_standards: the one Standards: line both reviewers' prompts end with -
+# root CLAUDE.md and AGENTS.md, or with neither CODING_STANDARDS.md and
+# CONTRIBUTING.md, then the .md paths they mention, then the ones those
+# mention: two hops, never a third, each path listed once at its first place
+# and only when it exists.
+review_standards() {
+  [ $# -eq 0 ] || die "usage: orch.sh review standards"
+  local listed=() hop=() next=() f p
+  for f in CLAUDE.md AGENTS.md; do
+    [ ! -f "$ROOT/$f" ] || listed+=("$f")
+  done
+  if [ "${#listed[@]}" -eq 0 ]; then
+    for f in CODING_STANDARDS.md CONTRIBUTING.md; do
+      [ ! -f "$ROOT/$f" ] || listed+=("$f")
+    done
+  fi
+  hop=(${listed[@]+"${listed[@]}"})
+  local round
+  for round in 1 2; do
+    next=()
+    for f in ${hop[@]+"${hop[@]}"}; do
+      while IFS= read -r p; do
+        [ -f "$ROOT/$p" ] || continue
+        list_has "$(printf '%s\n' "${listed[@]}")" "$p" && continue
+        listed+=("$p"); next+=("$p")
+      done < <(review_standards_mentions "$f")
+    done
+    hop=(${next[@]+"${next[@]}"})
+  done
+  if [ "${#listed[@]}" -eq 0 ]; then
+    note "Standards: none"
+  else
+    local IFS=,
+    p="${listed[*]}"
+    note "Standards: ${p//,/, }"
+  fi
+}
+
 cmd_review() {
   local op="${1:-}"
   shift || true
@@ -529,6 +609,7 @@ cmd_review() {
       require_state
       review_known_items "$@"
       ;;
+    standards) review_standards "$@" ;;
     rerun) review_rerun "$@" ;;
     terminal)
       require_state
@@ -550,6 +631,6 @@ cmd_review() {
       done
       note "$dest"
       ;;
-    *) die "unknown review op: ${op:-<none>} (want begin|path|file|known-items|ci|rerun|ready|terminal|retire)" ;;
+    *) die "unknown review op: ${op:-<none>} (want begin|path|file|known-items|standards|ci|rerun|ready|terminal|retire)" ;;
   esac
 }
