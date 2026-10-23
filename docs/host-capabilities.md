@@ -22,8 +22,8 @@ same way.
 Adding a host means adding a column here, teaching `scripts/host.sh`'s
 `host_detect` to detect it, and teaching `doctor.sh` to name its install
 methods (#132). Fill a cell only with a verified fact,
-and write "unverified" for anything not yet confirmed. The Junie CLI column comes
-from the documentation bundled with Junie CLI 3419.7 and from tool calls
+and write "unverified" for anything not yet confirmed. The Junie CLI column
+comes from the documentation bundled with Junie CLI 3419.7 and from tool calls
 observed in Junie CLI 3419.7 sessions (recorded under `~/.junie/sessions`),
 which count as verified facts.
 
@@ -128,8 +128,9 @@ prompt, and where to record the fallback. Take the first tier that fits:
    Where the brief names a capability this host lacks, take that capability's
    fallback from this file too, and record it where the starting skill
    says. Where a skill starts several agents at once, run them one at a
-   time, finishing each report before starting the next. The loop around the subagent does not change: a ticket is still
-   closed only once its report is written.
+   time, finishing each report before starting the next. The loop around the
+   subagent does not change: a ticket is still closed only once its report is
+   written.
 
 Record the tier taken where the starting skill says, with the reason: which
 agent was not available, and why.
@@ -196,9 +197,9 @@ Junie has no paste guard, so nothing refuses an ask the view was not pasted
 before. Junie reads the same hooks file, and the Stop guard has no tool
 matcher, so it may fire there; whether it does is unverified, and on a
 payload with no `transcript_path` or a transcript with no arming pass line it
-allows the turn to end. The nudge in `spec-review check`'s pass line is the whole
-enforcement: it names the `view.md` it wrote and says to end the turn on one
-plain-text reply, with no tool call, holding the view above word for word
+allows the turn to end. The nudge in `spec-review check`'s pass line is the
+whole enforcement: it names the `view.md` it wrote and says to end the turn on
+one plain-text reply, with no tool call, holding the view above word for word
 and then the question with its answer words spelled out. Follow it.
 
 ### Search and read code
@@ -236,9 +237,9 @@ shell does not set `JUNIE_EXTENSION_ROOT` either - only `JUNIE_DATA`,
 `JUNIE_SHIM_PATH`, and `JUNIE_TMPDIR` - and Junie does not tell the model a
 skill's own directory (#201). So every skill that runs `orch.sh` looks for the
 Junie CLI install with a literal
-`ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` before falling back
-to the path relative to the skill; CONTRIBUTING.md, "Resolving orch.sh", gives the
-order.
+`ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` before falling
+back to the path relative to the skill; CONTRIBUTING.md, "Resolving orch.sh",
+gives the order.
 
 ## Execute bit
 

@@ -1,6 +1,10 @@
-# The fixer carries its own TDD rules, and the fixer and closer have tool allowlists
+The fixer carries its own TDD rules,
+and the fixer and closer have tool allowlists
+=============================================
 
-Superseded in part by ADR-0035: a blocking fix's "then the smallest fix" is now the smallest fix that removes the cause, at every site it acts at; major and nit fixes are unchanged.
+Superseded in part by ADR-0035: a blocking fix's "then the smallest fix" is now
+the smallest fix that removes the cause, at every site it acts at; major and nit
+fixes are unchanged.
 
 Supersedes in part ADR-0024: the fixer no longer invokes
 `mattpocock-skills:tdd`; the shared rules file ADR-0024 deferred is

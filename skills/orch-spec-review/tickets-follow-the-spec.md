@@ -77,12 +77,12 @@ bash "$ORCH" spec-review check <dir> --tickets
 ```
 
 It validates `tickets.md` as `apply --tickets` would take the **all**
-answer, writing nothing but `<dir>/view.md` and reading no GitHub. On any exit but 0, each
-`orch:` line on stderr names what is wrong, most with its `tickets.md` line:
-fix `tickets.md` and run it again, until it exits 0. On exit 0 it prints the
-full ticket view on stdout - each item with its ticket (`#<n>`, or the
-`## Ticket` section), its recommendation, and its Current and Proposed text
-in full, or for an edge change the block or unblock it makes, then the
+answer, writing nothing but `<dir>/view.md` and reading no GitHub. On any exit
+but 0, each `orch:` line on stderr names what is wrong, most with its
+`tickets.md` line: fix `tickets.md` and run it again, until it exits 0. On exit
+0 it prints the full ticket view on stdout - each item with its ticket (`#<n>`,
+or the `## Ticket` section), its recommendation, and its Current and Proposed
+text in full, or for an edge change the block or unblock it makes, then the
 closed tickets and the file's recommendation - writes exactly that view to
 `<dir>/view.md`, overwriting any earlier one, and prints its one-line pass
 summary on stderr, naming that `view.md` by absolute path and telling you to

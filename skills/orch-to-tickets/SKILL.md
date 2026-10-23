@@ -19,11 +19,12 @@ outcomes to whoever invoked it: the published ticket numbers, or `collapsed`.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
@@ -157,8 +158,8 @@ label, and reads all of it back before it reports success. Never publish with
 an ad hoc `gh` call. If it fails, stop and report which tickets were published
 before it did.
 
-When a published ticket's blocking edges are wrong - any number missing or extra -
-repair them in place rather than retiring the breakdown:
+When a published ticket's blocking edges are wrong - any number missing or
+extra - repair them in place rather than retiring the breakdown:
 
 ```
 bash "$ORCH" ticket block <n> --by N,N,...
@@ -199,9 +200,9 @@ The published ticket numbers in publishing order, or `collapsed`.
 ## Unattended breakdown
 
 The mode a quick implementation takes, and an autopilot flow's spec phase
-(ADR-0049): a breakdown that asks the human nothing (ADR-0034). It is also what follows a
-retire in `orch-spec-review`'s **Unattended spec review**, defined in that
-skill's `unattended-spec-review.md`.
+(ADR-0049): a breakdown that asks the human nothing (ADR-0034). It is also what
+follows a retire in `orch-spec-review`'s **Unattended spec review**, defined in
+that skill's `unattended-spec-review.md`.
 
 Steps 1-3, 5 and 6 run as written. Step 4, the quiz, is replaced:
 

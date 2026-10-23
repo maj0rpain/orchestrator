@@ -48,11 +48,12 @@ triage filed findings rather than running `/orchestrator:finding-triage`.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
@@ -188,12 +189,12 @@ category through the batch's **Other** answer below. Every finding is still
 read in full per step 2 (ADR-0039), whatever its state.
 
 Each still-open outcome other than Leave as is also states its category, `bug`
-or `enhancement`: keep it, or flip it with a one-line reason - a Standards finding that is a
-real defect becomes `bug`, a Spec finding that is a nice-to-have becomes
-`enhancement`. The category in place is the one the closer's rule sets from
-the body's `**Axis:**` line - `bug` for Spec, `enhancement` for Standards -
-and that is also the default for a finding filed before categories, which
-carries none.
+or `enhancement`: keep it, or flip it with a one-line reason - a Standards
+finding that is a real defect becomes `bug`, a Spec finding that is a
+nice-to-have becomes `enhancement`. The category in place is the one the
+closer's rule sets from the body's `**Axis:**` line - `bug` for Spec,
+`enhancement` for Standards - and that is also the default for a finding filed
+before categories, which carries none.
 
 Ask **one blocking question** per batch as a **turn-final reply**: end your
 turn on one plain-text reply, with no tool call in it, holding the batch and
@@ -239,8 +240,8 @@ the step; the answer is. A wrong proposal costs nothing until then.
 
 Once a batch is answered, apply each finding in it with one call, writing its
 comment to a temp file outside the repo first - except a finding left as is,
-which writes nothing: no `apply`, no comment, no label change. `apply` prepends the
-AI-generated disclaimer itself; do not write it.
+which writes nothing: no `apply`, no comment, no label change. `apply` prepends
+the AI-generated disclaimer itself; do not write it.
 
 ```
 bash "$ORCH" finding-triage apply <issue> <close-fixed|wontfix> --comment-file <file>

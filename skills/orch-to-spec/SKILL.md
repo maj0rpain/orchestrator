@@ -36,11 +36,12 @@ in its **Unattended rewrite** form below.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
@@ -57,13 +58,13 @@ turns out missing, take the fallback it documents and tell your caller which.
 1. **Explore** the repo to understand the current state of the code, if you
    have not already. In rewrite mode, also read the issue's current body:
    `bash "$ORCH" issue fetch <n> <file>`, into a file outside the repo's
-   tracked tree, opened with the Read tool, never `cat`. If it fails, stop and say why. Use the vocabulary of the
-   project's glossary throughout the spec - list its term names with
-   `bash "$ORCH" glossary terms` and read the entries you need with
-   `bash "$ORCH" glossary show <term>...` - and respect the ADRs in the area
-   you are touching. A failed glossary command is reported with its `orch:` message,
-   and the step carries on without glossary entries, never reading
-   `GLOSSARY.md` whole in their place.
+   tracked tree, opened with the Read tool, never `cat`. If it fails, stop and
+   say why. Use the vocabulary of the project's glossary throughout the spec -
+   list its term names with `bash "$ORCH" glossary terms` and read the entries
+   you need with `bash "$ORCH" glossary show <term>...` - and respect the ADRs
+   in the area you are touching. A failed glossary command is reported with its
+   `orch:` message, and the step carries on without glossary entries, never
+   reading `GLOSSARY.md` whole in their place.
 
 2. **Check the test seams.** Sketch the seams at which the feature will be
    tested. Prefer existing seams to new ones, and the highest seam possible.
@@ -82,12 +83,13 @@ turns out missing, take the fallback it documents and tell your caller which.
    In rewrite mode, fold in whatever of the issue's original body still holds.
 
 4. **Publish** it. In rewrite mode, follow **Rewrite the issue** below
-   instead of this step. In publish mode: `bash "$ORCH" issue publish "<title>" <body-file>`. It
-   creates the issue, applies the `ready-for-agent` triage role's label (the
-   repo's own name for it when `docs/agents/triage-labels.md` maps one), and
-   reads the title and label back before it reports success. Never publish
-   with an ad hoc `gh` call, and add no other triage label. If it fails, stop
-   and say why: a spec that is not verifiably published is not published.
+   instead of this step. In publish mode: `bash "$ORCH" issue publish
+   "<title>" <body-file>`. It creates the issue, applies the `ready-for-agent`
+   triage role's label (the repo's own name for it when
+   `docs/agents/triage-labels.md` maps one), and reads the title and label back
+   before it reports success. Never publish with an ad hoc `gh` call, and add no
+   other triage label. If it fails, stop and say why: a spec that is not
+   verifiably published is not published.
 
 5. **Report** the issue number: the published issue's in publish mode; in
    rewrite mode, report as **Rewrite the issue** says.
@@ -112,8 +114,8 @@ names.
      "no breakdown": that would publish a second one.
 2. **Replace the body:** `bash "$ORCH" issue update <n> <body-file>`. The
    title is never changed, and no comment preserving the old body is posted:
-   GitHub's edit history keeps it. If it fails, stop and say why. Never fall back to `issue publish`, and run
-   no ticket step.
+   GitHub's edit history keeps it. If it fails, stop and say why. Never fall
+   back to `issue publish`, and run no ticket step.
 3. **On retire**, run `bash "$ORCH" ticket retire <n>` now, after the update,
    so it cuts any `## Ticket` section from the body just written. If it
    fails, stop and say why, and run no ticket step: `orch-to-tickets` does

@@ -19,7 +19,8 @@ does not apply: run **Inputs** below in its place.
 ## In an autopilot flow
 
 When `bash "$ORCH" autopilot active` exits 0 the review runs unattended
-(ADR-0049), each round as in an **Unattended spec review** - `unattended-spec-review.md`
+(ADR-0049), each round as in an **Unattended spec review** -
+`unattended-spec-review.md`
 - except that all four lenses run, Fidelity included, in flow mode (**Inputs**
 and **The Fidelity lens** below, not the standalone form with `--round 1/1
 --issue`); the round count comes from the plan, not from a question; and the

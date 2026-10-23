@@ -1,4 +1,6 @@
-# The closer files only its own loop's findings; triage owns the already-filed rule
+The closer files only its own loop's findings;
+triage owns the already-filed rule
+==============================================
 
 Supersedes ADR-0017 in part: its driver, fixer, and closer, and the closer's
 filing and PR comment, stand; its closer filing "across the flow's records"

@@ -4,7 +4,8 @@ Superseded in part by ADR-0016: the loop now also fixes majors and
 mechanical nits that need no decision. The full budget and the case for
 repeated independent looks below still stand.
 
-Superseded in part by ADR-0042: a filed major that is a spec question holds the PR out of ready.
+Superseded in part by ADR-0042: a filed major that is a spec question holds the
+PR out of ready.
 
 A review loop runs a fixed budget of iterations, each a fresh review of the
 whole change from the base SHA. It fixes blocking findings inside the iteration
@@ -43,8 +44,9 @@ rather than anything a previous loop wrote.
 A PR can be marked ready with majors open against it. That is the intended
 outcome: a major means the change works, and the issue it became carries the
 reasoning so triage can decide against the whole codebase whether it is worth
-fixing at all. The bounded stop shrinks to two ways in - an unreviewed final fix,
-or CI - and the last iteration's fixes are still never marked ready unreviewed.
+fixing at all. The bounded stop shrinks to two ways in - an unreviewed final
+fix, or CI - and the last iteration's fixes are still never marked ready
+unreviewed.
 
 The filing has to carry the reasoning. `.orchestrator/` is git-excluded and
 eventually archived, so a filed finding stripped to one line would be worthless

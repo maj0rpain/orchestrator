@@ -86,8 +86,8 @@ open.
 ## The map file
 
 The previous map, when given as a path, is the previous round's index of the
-code this spec touches, and you trust it. It holds code locations only, never findings.
-Each entry names the range of lines a decision depends on:
+code this spec touches, and you trust it. It holds code locations only, never
+findings. Each entry names the range of lines a decision depends on:
 
 ```
 <path>:<start>-<end> <symbol> - <why the spec touches it>
@@ -140,5 +140,5 @@ path. Number them from 1, each a block that opens with its own line
 With no findings, the file holds the single line `@@ none`. No line of a
 finding's text starts with `@@`. Write this file last, after the map file.
 Then reply with only the findings file's path and the number of findings,
-e.g. `<path> - 2 findings`: the findings stay in the file, out of the reply, and the reply
-never mentions the map.
+e.g. `<path> - 2 findings`: the findings stay in the file, out of the reply, and
+the reply never mentions the map.

@@ -1,5 +1,19 @@
 # A long block and its question end the turn in plain text
 
-Supersedes ADR-0049 (the spec review shows each edit as a summary and a reason) in part: the batch question is no longer asked with the ask tool, so its Other answer forms - a departure list, `show <n>`, a question - are typed as the reply to a turn-final plain-text question. Supersedes ADR-0047 and ADR-0048 in part: the one batch question, and `show <n>` within it, are a turn-final plain-text question, not an ask-tool call.
+Supersedes ADR-0049 (the spec review shows each edit as a summary and a reason)
+in part: the batch question is no longer asked with the ask tool, so its Other
+answer forms - a departure list, `show <n>`, a question - are typed as the reply
+to a turn-final plain-text question. Supersedes ADR-0047 and ADR-0048 in part:
+the one batch question, and `show <n>` within it, are a turn-final plain-text
+question, not an ask-tool call.
 
-Some hosts (seen: Claude Code through the Agent SDK in T3 Code) turn a long text written in the same response as a tool call into a summarised thinking block: the human never sees it and the transcript holds a paraphrase. So a skill that shows the human a long block - a spec review's view, a finding-triage batch, a ticket breakdown, a test-suite summary - and asks about it ends its turn on one reply holding the block and the question in plain text, its answers spelled out, and reads the human's next message as the answer. The ask tool stays for short questions with nothing long in front of them. We gave up the ask tool's clickable options for these questions, because a choice the human cannot see the grounds for is no choice.
+Some hosts (seen: Claude Code through the Agent SDK in T3 Code) turn a long text
+written in the same response as a tool call into a summarised thinking block:
+the human never sees it and the transcript holds a paraphrase. So a skill that
+shows the human a long block - a spec review's view, a finding-triage batch, a
+ticket breakdown, a test-suite summary - and asks about it ends its turn on one
+reply holding the block and the question in plain text, its answers spelled out,
+and reads the human's next message as the answer. The ask tool stays for short
+questions with nothing long in front of them. We gave up the ask tool's
+clickable options for these questions, because a choice the human cannot see the
+grounds for is no choice.

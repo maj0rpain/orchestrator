@@ -43,11 +43,12 @@ changelog** is shared between them, run once per round:
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
@@ -69,7 +70,8 @@ that breaks the issue down: see `spec-phase.md`.
   takes a fresh working directory and fetches the body and comments again:
   the standalone entry re-runs its steps from `spec-review begin <issue>`,
   which empties the directory but for the code map and the settled file it
-  keeps on rounds 2 and later. Nothing is lost: the previous round has already published.
+  keeps on rounds 2 and later. Nothing is lost: the previous round has already
+  published.
 - **The code map and the settled file carry over.** The Implementability
   lens's code map, `map-implementability.md`, and the settled file,
   `settled.md`, are the files a round hands the next: the standalone entry
@@ -86,9 +88,9 @@ that breaks the issue down: see `spec-phase.md`.
   stop message also says the issue has no ticket breakdown and needs
   `/orchestrator:to-tickets <issue>`. In a flow's resumed session, whether an
   earlier round ran `ticket retire` is read from the earlier rounds'
-  changelogs in their fixed directories, `.orchestrator/spec-rounds/<k>/changelog.md`
-  (their Tickets section), or from `ticket exists`; nothing extra is
-  recorded.
+  changelogs in their fixed directories,
+  `.orchestrator/spec-rounds/<k>/changelog.md` (their Tickets section), or from
+  `ticket exists`; nothing extra is recorded.
 - **A retire holds for every later round.** After a round runs
   `ticket retire`, every later round sees `ticket exists` exit 1 and records
   **None - no ticket breakdown**.
@@ -161,9 +163,9 @@ the answer** below, with these differences:
   answer**.
 - **Host fallbacks and lens failures**: among the review's own records, they
   are recorded in the changelog comment only, under a **Host fallbacks**
-  line that `apply --host-fallbacks <file>` writes. A standalone review has one changelog, not two. A quick
-  implementation that runs the review in the same session also lists the
-  host fallbacks it saw in its own PR body.
+  line that `apply --host-fallbacks <file>` writes. A standalone review has one
+  changelog, not two. A quick implementation that runs the review in the same
+  session also lists the host fallbacks it saw in its own PR body.
 
 
 A quick implementation runs this entry in its **Unattended spec review**
@@ -265,9 +267,9 @@ consolidation items included:
 - One edit that satisfies several findings is proposed once, naming every
   finding it resolves.
 - Two findings that cannot both hold - a Consistency "the glossary defines X
-  as Y" against an Implementability "the codebase does X as Z" - become a **decision** item:
-  both findings side by side, the consequence of each option, and your
-  recommendation. The human makes the planning call.
+  as Y" against an Implementability "the codebase does X as Z" - become a
+  **decision** item: both findings side by side, the consequence of each option,
+  and your recommendation. The human makes the planning call.
 - A finding you believe is wrong is still presented, marked **recommend
   decline** with the reason. You have no recorded human decision to demote on,
   so nothing is dropped silently.
@@ -309,10 +311,10 @@ bash "$ORCH" spec-review check <dir>
 ```
 
 `check` validates the batch as `apply` would take it, writing nothing but
-`<dir>/view.md` (below): its grammar, the lens files and the batch's citations of them, and
-every anchor - each item's and each option's - matching once in the body,
-then still matching once in a dry run of the **Apply all** answer. On exit 0
-it prints the compact batch view on stdout - the lens lines, ran or not run
+`<dir>/view.md` (below): its grammar, the lens files and the batch's citations
+of them, and every anchor - each item's and each option's - matching once in the
+body, then still matching once in a dry run of the **Apply all** answer. On exit
+0 it prints the compact batch view on stdout - the lens lines, ran or not run
 with the reason, then the material items as one bulleted list in batch
 order, consolidation items first, each under its `batch.md` number and with
 no `### Item` heading. The number is written literally, in bold after the
@@ -433,8 +435,8 @@ prompts.
 ### The batch file
 
 Marker lines; a line starting `@@ ` is reserved, and no body line starts that
-way. The `@@ lens` lines come first, one per lens, Fidelity included, then one block
-per item, in the batch's order:
+way. The `@@ lens` lines come first, one per lens, Fidelity included, then one
+block per item, in the batch's order:
 
 ```
 @@ lens <name> ran                        a lens that answered
@@ -583,8 +585,8 @@ The export writes one file per widget.
   `@@ summary` and block, and the `@@ item` line names the recommended
   letter.
 - **Resolved** (item 5): only its findings and `@@ resolved-by`; it takes no
-  mark, `@@ summary`, `@@ why`, `@@ anchor`, `@@ replace` or `@@ end`, and `check`
-  lists it under **Minor edits** as resolved by item 4.
+  mark, `@@ summary`, `@@ why`, `@@ anchor`, `@@ replace` or `@@ end`, and
+  `check` lists it under **Minor edits** as resolved by item 4.
 
 ## Applying the answer
 

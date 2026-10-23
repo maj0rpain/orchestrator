@@ -1,6 +1,7 @@
 # Quick implementation lifts the edit guard on a read of its skill file
 
-Superseded by ADR-0025: the edit guard no longer arms on Junie, and the Read lift is removed.
+Superseded by ADR-0025: the edit guard no longer arms on Junie, and the Read
+lift is removed.
 
 Supersedes ADR-0013: on Junie the edit guard now arms, so the premise that
 nothing mechanical can arm it there no longer holds. Its flow-start
@@ -23,15 +24,17 @@ hook on `Read`, and deletes the session's marker when the read path -
 the working directory, normalized - is the same file as
 `<plugin_root>/skills/orch-quick-implement/SKILL.md`, where `<plugin_root>` is
 the hook script's own plugin root. Same file, not same string, so a host that
-resolves a symlinked plugin root to its real path still matches. There is no host gate: Junie's `PreToolUse`
-may lack `project_path`, which is how the hooks tell Junie apart, so the exact
-installed path is the whole condition, on every host. The `Skill` trigger is
-unchanged, and so is `hook-guard.sh`'s guarding logic (ADR-0006).
+resolves a symlinked plugin root to its real path still matches. There is no
+host gate: Junie's `PreToolUse` may lack `project_path`, which is how the hooks
+tell Junie apart, so the exact installed path is the whole condition, on every
+host. The `Skill` trigger is unchanged, and so is `hook-guard.sh`'s guarding
+logic (ADR-0006).
 
 The guard's planning denial names both lifts on every host, since the host
-cannot be told apart on Junie's `PreToolUse`: the `orchestrator:orch-quick-implement`
-Skill call, and a Read of the installed `SKILL.md`. That also recovers a model
-that loaded the skill through the shell instead.
+cannot be told apart on Junie's `PreToolUse`: the
+`orchestrator:orch-quick-implement` Skill call, and a Read of the installed
+`SKILL.md`. That also recovers a model that loaded the skill through the shell
+instead.
 
 ## Considered Options
 

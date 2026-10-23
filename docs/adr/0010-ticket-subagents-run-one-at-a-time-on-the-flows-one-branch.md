@@ -47,6 +47,6 @@ session pays for one report and one `ticket close` per ticket, not a
 teardown and rebuild of shared state between them. A ticket that can't be
 completed exactly as written comes back as a deviation in that report
 instead of stalling the loop, and every deviation is collected into the
-phase's one handoff (`skills/orch-handoff/SKILL.md`) rather than scattered across
-per-ticket artefacts - there is still only one implement-phase handoff and
-one review, of the whole diff, same as before this feature existed.
+phase's one handoff (`skills/orch-handoff/SKILL.md`) rather than scattered
+across per-ticket artefacts - there is still only one implement-phase handoff
+and one review, of the whole diff, same as before this feature existed.

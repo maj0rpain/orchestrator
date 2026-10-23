@@ -98,8 +98,8 @@ and return that file's four-line **Report** in place of this file's.
    When either fetch fails, stop and return the report with the failure as
    a deviation. Then find its spec issue: `bash "<orch.sh>"
    ticket parent <ticket>` prints the parent of a sub-issue ticket, and empty
-   output means the ticket is the spec issue itself. A failure is retried once, then
-   recorded as a deviation. When the spec issue is not the ticket itself,
+   output means the ticket is the spec issue itself. A failure is retried once,
+   then recorded as a deviation. When the spec issue is not the ticket itself,
    fetch its body alone the same way, into its own `mktemp` file, and open it
    with Read, once and in full; its comments are not read. Read its
    **Implementation Decisions**, its **Testing Decisions** - the seams

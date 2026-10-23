@@ -2,9 +2,10 @@
 
 `orch.sh`'s subcommand grammar: when a command acts on a thing, the thing comes
 first. `orch.sh <noun> <verb> [args...]` - e.g. `orch.sh branch retire <old>
-<new>`, `orch.sh review file <major|nit> <title> --axis <spec|standards|suite-cost>
---finding-file <f> --severity-reason <r> --location <file>:<line|suite> --sha <sha>
---pr <url> --why <reason> [--spec-question <q>]`.
+<new>`, `orch.sh review file <major|nit> <title>
+--axis <spec|standards|suite-cost> --finding-file <f> --severity-reason <r>
+--location <file>:<line|suite> --sha <sha> --pr <url> --why <reason>
+[--spec-question <q>]`.
 
 ## Current nouns
 

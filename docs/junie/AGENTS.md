@@ -16,9 +16,9 @@ artifacts (docs/agents/, .scratch/, .orchestrator/) are fine to edit.
 ## orchestrator plugin: finding the plugin
 
 To find the orchestrator plugin's `orch.sh` (`ORCH`), as its skills do:
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install).
-If it prints one path, `ORCH` is that path.
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path.
 If it prints more than one, stop and show the human the paths.
 If it prints nothing, find `orch.sh` as the running skill's own lookup says.
 The plugin root is two directories above that `orch.sh`. Resolve `ORCH` and
@@ -36,20 +36,40 @@ the running skill says:
   plugin root to read and follow as its brief (**Start a fresh subagent**).
 
 <!-- Temporary workaround for https://youtrack.jetbrains.com/issue/JUNIE-5493
-     (Junie's capability filter hides plugin custom agents). Remove this section once fixed. -->
+     (Junie's capability filter hides plugin custom agents). Remove this section
+     once fixed. -->
 ## orchestrator plugin: custom agents
 
-The orch-* custom agents below are the orchestrator plugin's agents (`orchestrator:orch-*`).
+The orch-* custom agents below are the orchestrator plugin's agents
+(`orchestrator:orch-*`).
 
-The orch-flow skill depends on the orch-implementer, orch-lens-fidelity, orch-lens-consistency, orch-lens-testability, orch-lens-implementability, orch-reviewer-spec, orch-reviewer-standards, orch-fixer, orch-closer, and orch-resolver custom agents. Whenever the orch-flow skill is used, those ten custom agents are required too.
+The orch-flow skill depends on the orch-implementer, orch-lens-fidelity,
+orch-lens-consistency, orch-lens-testability, orch-lens-implementability,
+orch-reviewer-spec, orch-reviewer-standards, orch-fixer, orch-closer, and
+orch-resolver custom agents. Whenever the orch-flow skill is used, those ten
+custom agents are required too.
 
-The orch-quick-implement skill depends on the orch-implementer, orch-reviewer-spec, orch-reviewer-standards, orch-lens-consistency, orch-lens-testability, orch-lens-implementability, and orch-resolver custom agents. Whenever the orch-quick-implement skill is used, those seven custom agents are required too.
+The orch-quick-implement skill depends on the orch-implementer,
+orch-reviewer-spec, orch-reviewer-standards, orch-lens-consistency,
+orch-lens-testability, orch-lens-implementability, and orch-resolver custom
+agents. Whenever the orch-quick-implement skill is used, those seven custom
+agents are required too.
 
-The orch-review skill depends on the orch-reviewer-spec, orch-reviewer-standards, orch-fixer, orch-closer, and orch-resolver custom agents. Whenever the orch-review skill is used, those five custom agents are required too.
+The orch-review skill depends on the orch-reviewer-spec,
+orch-reviewer-standards, orch-fixer, orch-closer, and orch-resolver custom
+agents. Whenever the orch-review skill is used, those five custom agents are
+required too.
 
-The orch-review-pass skill depends on the orch-reviewer-spec and orch-reviewer-standards custom agents. Whenever the orch-review-pass skill is used, those two custom agents are required too.
+The orch-review-pass skill depends on the orch-reviewer-spec and
+orch-reviewer-standards custom agents. Whenever the orch-review-pass skill is
+used, those two custom agents are required too.
 
-The orch-sync skill depends on the orch-resolver, orch-reviewer-spec, and orch-reviewer-standards custom agents. Whenever the orch-sync skill is used, those three custom agents are required too.
+The orch-sync skill depends on the orch-resolver, orch-reviewer-spec, and
+orch-reviewer-standards custom agents. Whenever the orch-sync skill is used,
+those three custom agents are required too.
 
-The orch-spec-review skill depends on the orch-lens-fidelity, orch-lens-consistency, orch-lens-testability, and orch-lens-implementability custom agents. Whenever the orch-spec-review skill is used, those four custom agents are required too.
+The orch-spec-review skill depends on the orch-lens-fidelity,
+orch-lens-consistency, orch-lens-testability, and orch-lens-implementability
+custom agents. Whenever the orch-spec-review skill is used, those four custom
+agents are required too.
 <!-- orchestrator:end -->

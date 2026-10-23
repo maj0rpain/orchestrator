@@ -38,11 +38,12 @@ pass** - see the `orch-review-pass` skill, the one definition of it.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
@@ -61,8 +62,8 @@ when no comment follows the question: re-post the same question with
 save point the asking site wrote) and stop - never assume
 the recommendations. With a reply, apply it to the spec issue's body:
 `bash "$ORCH" spec fetch <file>`, edit the body to carry the ruling, then
-`bash "$ORCH" spec update <file>`. Then carry on with the steps below, whose step 5
-reads the budget from the plan instead of asking.
+`bash "$ORCH" spec update <file>`. Then carry on with the steps below, whose
+step 5 reads the budget from the plan instead of asking.
 
 1. Find the handoff: `bash "$ORCH" handoff path review`. It is always
    `03-implement.md`, on every loop of the flow. Read it one section at a
@@ -144,9 +145,9 @@ reads the budget from the plan instead of asking.
    its description, or in the question text where the host's options have
    no description. Exactly one option carries "(Recommended)".
 
-   Then `bash "$ORCH" state set budget <that number>`. The bound is mechanical from
-   here: `review begin` enforces it, and a session that has argued with itself
-   for four iterations cannot re-remember five as six.
+   Then `bash "$ORCH" state set budget <that number>`. The bound is mechanical
+   from here: `review begin` enforces it, and a session that has argued with
+   itself for four iterations cannot re-remember five as six.
 6. Read the agent settings, once, for the whole loop: `bash "$ORCH" agent get
    reviewer`, `agent get fixer`, `agent get closer` and `agent get resolver`,
    per **Agent settings** in `docs/host-capabilities.md` under the plugin
@@ -246,10 +247,10 @@ reads the budget from the plan instead of asking.
    - **Met again** - a finding a previous loop's **Filed** list already
      carries - the same file and line making the same claim, as the
      closer's deduplication matches, never the title alone, or for a
-     suite-cost finding its axis and location alone (**Suite cost** below) - is neither
-     fixed nor filed again; it keeps its issue number. This is the one owner
-     of the already-filed rule: the closer files whatever this loop's records
-     leave waiting and only reports what triage marked met again. A
+     suite-cost finding its axis and location alone (**Suite cost** below) - is
+     neither fixed nor filed again; it keeps its issue number. This is the one
+     owner of the already-filed rule: the closer files whatever this loop's
+     records leave waiting and only reports what triage marked met again. A
      **Filed** entry with no file and line predates that format; match it on
      its title against the finding's claim.
 
@@ -295,9 +296,9 @@ reads the budget from the plan instead of asking.
    exactly one disposition.
 5. Nothing to fix means no fixer - a **clean iteration**. An iteration
    that starts a fixer is never clean, even if the fixer fixes nothing.
-   Write the record to `bash "$ORCH" review path` yourself, in the shape the fixer's brief
-   gives, reading just that section - the brief's last, whose template holds
-   `##` headings of its own, so read to the end of the file:
+   Write the record to `bash "$ORCH" review path` yourself, in the shape the
+   fixer's brief gives, reading just that section - the brief's last, whose
+   template holds `##` headings of its own, so read to the end of the file:
 
    ```
    sed -n '/^## The record$/,$p' "${CLAUDE_PLUGIN_ROOT}/agents/orch-fixer.md"
@@ -309,8 +310,8 @@ reads the budget from the plan instead of asking.
 
    `Verification` reads `not run - nothing changed`, **Fixed this
    iteration**, **Evidence** and **Open blocking** read `None`, and **Merge
-   resolutions** holds step 2's. **Waiting to be filed** lists each major or nit left
-   unfixed in the template's location-bearing bullet,
+   resolutions** holds step 2's. **Waiting to be filed** lists each major or nit
+   left unfixed in the template's location-bearing bullet,
    ``- <Axis>/<severity>: `<file>:<line>` <claim> - <rule>``, with `-` in
    place of `<file>:<line>` when the finding gave `-`, and `suite` for a
    suite-cost finding, or reads `None`. **PR body** depends on that base sync:
@@ -434,7 +435,8 @@ decided. It files every unfixed major and nit across this loop's records -
 those numbered above the **loop boundary**, less any a later iteration of
 this loop fixed - through `orch.sh review file`, posts the loop's one PR
 comment, writes the **Filed** list into the final record, and returns the
-issue numbers; its brief carries the Filing and PR-comment rules. Its prompt carries:
+issue numbers; its brief carries the Filing and PR-comment rules. Its prompt
+carries:
 
 ```
 PR: #<pr>
@@ -528,8 +530,8 @@ Waited on **once per loop**, at **Termination**, and never inside an
 iteration: that would block a single session for most of an hour, and the fix
 commits are pushed as they land anyway.
 
-`bash "$ORCH" review ci` polls the PR's checks and prints one of four words, exiting
-non-zero on the last two:
+`bash "$ORCH" review ci` polls the PR's checks and prints one of four words,
+exiting non-zero on the last two:
 
 - **green** - carry on.
 - **none** - the repo has no checks. Carry on: requiring CI in a repo that has
@@ -538,12 +540,12 @@ non-zero on the last two:
   in the head, no required checks on the base branch, and no check or status
   on an earlier PR commit or the base tip - and its detail line says which.
 - **failing** - a required check failed, and the detail lines name which.
-  Required means required by the branch protection of the PR's base branch. If it
-  looks flaky rather than caused by the change, the flow has **one** flake
-  rerun: `bash "$ORCH" state get flake_rerun_used` reads `true` once it is spent and
-  empty while it is not. Spend it with `bash "$ORCH" review rerun <pr>`, which
-  reruns the failed jobs of the GitHub Actions run behind the PR's first failed
-  or cancelled check:
+  Required means required by the branch protection of the PR's base branch. If
+  it looks flaky rather than caused by the change, the flow has **one** flake
+  rerun: `bash "$ORCH" state get flake_rerun_used` reads `true` once it is spent
+  and empty while it is not. Spend it with `bash "$ORCH" review rerun <pr>`,
+  which reruns the failed jobs of the GitHub Actions run behind the PR's first
+  failed or cancelled check:
 
   - **exit 0** - the rerun started. Only this spends the flake rerun.
   - **exit 1** - that check is not an Actions run, so there is no rerun to
@@ -551,11 +553,11 @@ non-zero on the last two:
   - **exit 2** - anything else (GitHub unreadable, the rerun refused): a
     **bounded stop**.
 
-  On exit 0, record `bash "$ORCH" state set flake_rerun_used true` and ask `review ci` again. A
-  second failure is a **bounded stop**. That second ask restarts the
-  fifteen-minute wait rather than inheriting what is left of the first, because
-  a rerun restarts the checks - so this one path, once per flow, can wait longer
-  than the cap.
+  On exit 0, record `bash "$ORCH" state set flake_rerun_used true` and ask
+  `review ci` again. A second failure is a **bounded stop**. That second ask
+  restarts the fifteen-minute wait rather than inheriting what is left of the
+  first, because a rerun restarts the checks - so this one path, once per flow,
+  can wait longer than the cap.
 - **unreachable** - GitHub would not answer, or the checks were still pending at
   the cap. A **bounded stop**: marking a PR ready over a result nothing ever
   produced claims a verification that never happened.
@@ -603,32 +605,33 @@ first: a loop that ends well ends without parking on a prompt.
 the finding where there is one. The final iteration was not clean: it started
 a fixer, whether for a blocking finding this review made or for open blocking
 carried in. Nothing has reviewed what it wrote, and marking a PR ready over
-that claims a verification that never happened. An open blocking finding or a missing look
-remains in the final record. Or this loop filed a spec question, a
+that claims a verification that never happened. An open blocking finding or a
+missing look remains in the final record. Or this loop filed a spec question, a
 behaviour decision the spec left open: the reason names each, so a human
-rules on it before the PR goes ready. Or a base sync that failed, the reason naming
-the unresolved merge or the refusal. Or known items that could not be built,
-the reason reading `stop - known items could not be built.` Or CI: `failing` with the flake rerun
-spent or the failure not looking flaky, or `unreachable`. The terminal action is to
-stop: **leave `phase` at `review` and the PR in draft**, and tell the human
-the reason and the closer's issue numbers. `done` means "this succeeded",
-never "this stopped". A human may re-enter the review phase from here; that
-is a fresh loop with its own budget, and **Before the first iteration**
-describes it.
+rules on it before the PR goes ready. Or a base sync that failed, the reason
+naming the unresolved merge or the refusal. Or known items that could not be
+built, the reason reading `stop - known items could not be built.` Or CI:
+`failing` with the flake rerun spent or the failure not looking flaky, or
+`unreachable`. The terminal action is to stop: **leave `phase` at `review` and
+the PR in draft**, and tell the human the reason and the closer's issue numbers.
+`done` means "this succeeded", never "this stopped". A human may re-enter the
+review phase from here; that is a fresh loop with its own budget, and **Before
+the first iteration** describes it.
 
 **In an autopilot flow** the terminal action differs. Ready ends with
-`bash "$ORCH" review ready` as above, which also moves the label to `orch:done` and
-releases the claim; nothing more runs. A bounded stop - a spec question among
-them, the PR staying in draft - never ends by telling the human in the
+`bash "$ORCH" review ready` as above, which also moves the label to `orch:done`
+and releases the claim; nothing more runs. A bounded stop - a spec question
+among them, the PR staying in draft - never ends by telling the human in the
 session: write the stop reason (and, for a spec question, each question with
 its recommendation, numbered, as the interview formats them) to
 `.orchestrator/review/question.md` in the side checkout - the question's save
 point, which a fresh session re-posts when the human removes `needs-human`
 without replying - and run
-`bash "$ORCH" autopilot ask review .orchestrator/review/question.md`, which posts it as a question
-comment, labels the issue `needs-human` and releases the claim; then stop.
-Removing `needs-human` starts another loop with the planned budget, which
-reads the reply first, per the top of **Before the first iteration**.
+`bash "$ORCH" autopilot ask review .orchestrator/review/question.md`, which
+posts it as a question comment, labels the issue `needs-human` and releases the
+claim; then stop. Removing `needs-human` starts another loop with the planned
+budget, which reads the reply first, per the top of **Before the first
+iteration**.
 
 `## Terminal state` is written exactly once, here, only once a terminal state
 has actually been decided - never guessed or backfilled. It is what
