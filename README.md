@@ -40,14 +40,29 @@ On the Junie CLI, see [docs/junie/README.md](docs/junie/README.md).
 
 1. In your repo, run `/orchestrator:interview` and plan the change with it
    until you share an understanding.
-2. It closes with one question: pick a flow, a quick implementation, or a
-   blueprint only.
+2. It closes with one question: pick a flow, a quick implementation, a
+   blueprint only, or (Claude Code only) the autopilot flow.
 3. For a flow, run `/orchestrator:next` in a fresh session (`/clear`) for each
    phase - spec, implement, review - until the PR is ready. A quick
    implementation runs to its PR on its own; a blueprint stops once its spec
    and tickets are published.
 
-## Three routes
+## Running autopilot
+
+The minimum steps for the [autopilot flow](docs/how-it-works.md#autopilot).
+`orch.sh` is `scripts/orch.sh` under the plugin's install directory, e.g.
+`~/.claude/plugins/cache/orchestrator/orchestrator/<version>/scripts/orch.sh`.
+
+1. Set the permission mode its headless sessions run in, e.g.
+   `git config orchestrator.autopilot.permission-mode acceptEdits`.
+2. Start the watcher: `orch.sh autopilot watch`.
+3. Pick "Autopilot flow" at the planning close.
+4. Answer its questions on the issue, then remove the `needs-human` label.
+
+Setup, scheduling, and the question format are in
+[docs/how-it-works.md](docs/how-it-works.md#autopilot).
+
+## Four routes
 
 Every route starts from a planning session and is chosen by a human, never by
 the model. The terms are defined in [GLOSSARY.md](GLOSSARY.md).
@@ -63,6 +78,14 @@ bounded stop that says why.
 possibly rewritten from the plan, unattended - an unattended spec review, its ticket breakdown, the same test-first build, a
 review pass by the plugin's own reviewer agents, and a PR - in one session.
 
+**Autopilot flow.** The flow's phases without the `/clear` and
+`/orchestrator:next` between them. A **watcher** (`orch.sh autopilot watch`)
+starts each phase - spec, implement, review - as a headless `claude -p`
+session in the issue's side checkout. The flow's phase lives in an `orch:`
+**phase label** on its issue, and the human is reached only through an issue
+comment that @mentions them and the `needs-human` label. It is Claude Code
+only.
+
 **Blueprint.** The closing question's "Blueprint only" option: the spec issue
 and its ticket breakdown are published, the spec review offered, and then it
 stops. A flow or a quick implementation can pick it up later.
@@ -72,6 +95,7 @@ flowchart TD
     P[Planning interview] --> Q{Pick a route}
     Q -->|Flow| S[Spec] --> I[Implement] --> R[Review] --> PR1[PR ready]
     Q -->|Quick implementation| QI[Issue] --> QT[Tickets] --> QB[Test-first build] --> QR[Review pass] --> PR2[PR]
+    Q -->|Autopilot| A[Watcher starts spec, implement, review headless] --> PR3[PR ready]
     Q -->|Blueprint only| B[Spec issue and tickets published] --> STOP[Stop]
 ```
 
