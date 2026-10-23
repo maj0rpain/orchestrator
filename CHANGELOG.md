@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.32.9
+
+Document `EXTRA_APT_PACKAGES` in the autopilot container's env file and give a second compose project's command `--env-file` and `--build`, so its image is built from its own env file.
+
 ## 4.32.8
 
 Pin shell scripts to LF line endings with a `.gitattributes`, so the
