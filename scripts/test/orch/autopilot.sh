@@ -225,10 +225,12 @@ out="$("$ORCH" autopilot tick 2>&1)"; st=$?
 assert_status "a tick over one hand-labelled issue succeeds" "$st" 0
 calls="$(cat "$launcher_dir/calls" 2>/dev/null)"
 side7="$top/.orchestrator/checkouts/7-add-the-widget"
-assert_contains "the session runs claude -p with the permission mode" "$calls" "argv:-p "
-assert_contains "naming the mode" "$calls" "--permission-mode acceptEdits"
 assert_contains "asking in words for orch-flow's Next phase" "$calls" "orchestrator:orch-flow skill's Next phase"
 assert_contains "with ORCH_AUTOPILOT=1" "$calls" "autopilot:1"
+assert_contains "with the Explore and Plan agents disabled" "$calls" "explore-plan:1"
+# Every argument but the second, the prompt, which the line above matches.
+assert_eq "the session runs claude -p with the permission mode and the lean flags" "$(grep '^arg:' "$launcher_dir/calls" | sed -n '1p;3,$p' | tr '\n' '|')" \
+  "arg:-p|arg:--permission-mode|arg:acceptEdits|arg:--tools|arg:Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion|arg:--settings|arg:{\"disableBundledSkills\":true,\"enabledPlugins\":{\"plugin-authoring@builtin\":false}}|arg:--strict-mcp-config|arg:--exclude-dynamic-system-prompt-sections|"
 assert_contains "in the side checkout, slugged <n>-<title>" "$calls" "dir:$side7"
 assert_contains "after orch:running was added" "$calls" "labels:7:orch:running orch:spec ready-for-agent "
 assert_eq "the flow adopted issue 7" "$(cd "$side7" && "$ORCH" state get issue)" "7"

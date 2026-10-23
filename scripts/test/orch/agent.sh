@@ -289,6 +289,43 @@ assert_eq "clear --host junie --global removes the global Junie key" "$(jkey glo
 assert_eq "and leaves the Claude Code keys" "$(key local orchestrator.model.implementer)" "sonnet"
 out="$("$ORCH" agent get 2>&1)"; st=$?
 assert_contains "get's usage names --host junie" "$out" "[--host junie]"
+
+# The agent settings are read once per process from git config's -z records.
+git config --local --add orchestrator.model.resolver opus
+git config --local --add orchestrator.model.resolver sonnet
+assert_eq "agent show reads the last of a key written twice" \
+  "$("$ORCH" agent show | grep '^resolver')" "resolver model sonnet (local) effort inherit (inherit)"
+assert_eq "agent get reads the last of a key written twice" \
+  "$("$ORCH" agent get resolver 2>&1 | head -n 1)" "model sonnet"
+git config --local --unset-all orchestrator.model.resolver
+printf '[orchestrator "effort"]\n\tresolver\n' >>.git/config
+out="$("$ORCH" agent show | grep '^resolver')"
+assert_eq "a key with no value reads as the empty value, marked invalid" \
+  "$out" "resolver model inherit (inherit) effort  (local, invalid)"
+out="$("$ORCH" agent get resolver 2>&1)"; st=$?
+assert_status "get refuses a key with no value" "$st" 1
+assert_contains "naming its key" "$out" "orchestrator.effort.resolver"
+git config --local --unset-all orchestrator.effort.resolver
+git config --local orchestrator.model.resolver $'opus\nsonnet'
+out="$("$ORCH" agent show)"
+assert_contains "a stored multi-line value is one invalid value" "$out" "resolver model opus
+sonnet (local, invalid)"
+assert_contains "and leaves other keys' lines" "$out" "closer model inherit (inherit) effort inherit (inherit)"
+out="$("$ORCH" agent get resolver 2>&1)"; st=$?
+assert_status "get refuses a stored multi-line value" "$st" 1
+assert_contains "naming its key" "$out" "orchestrator.model.resolver"
+git config --local --unset-all orchestrator.model.resolver
+
+# A write is synced in the same command: the copy carries the value just set.
+"$ORCH" agent set resolver --host junie --model gpt-5 >/dev/null
+assert_contains "set --host junie writes a copy carrying the model" \
+  "$(cat .junie/agents/orch-resolver.md)" "gpt-5"
+"$ORCH" agent set resolver --host junie --model o3 >/dev/null
+assert_contains "a second set leaves the copy carrying the new model" \
+  "$(cat .junie/agents/orch-resolver.md)" "o3"
+assert_eq "and not the old one" "$(grep -c gpt-5 .junie/agents/orch-resolver.md)" "0"
+"$ORCH" agent clear resolver --host junie >/dev/null
+assert_eq "clear --host junie removes the copy" "$([ -e .junie/agents/orch-resolver.md ] && echo present || echo gone)" "gone"
 unset -f jkey
 unset -f key untouched
 restore_suite_env
