@@ -2,7 +2,9 @@
 # `docker compose up -d` (run from this directory). A second project sets
 # ORCH_ENV_FILE to its own env file, which must be named docker/.env.<name>
 # (only .env and .env.* are gitignored and kept out of the image):
-# `ORCH_ENV_FILE=.env.other docker compose -p other up -d`. The host's
+# `ORCH_ENV_FILE=.env.other docker compose --env-file .env.other -p other up -d
+# --build`. Both flags: ORCH_ENV_FILE gives the container its settings,
+# --env-file gives the build its args (EXTRA_APT_PACKAGES). The host's
 # ~/.claude is never mounted.
 services:
   autopilot:

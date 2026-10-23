@@ -306,10 +306,12 @@ where the watcher writes them, under `.orchestrator/autopilot/logs/` in that
 volume; the watcher's stderr is the container's output, shown by `docker
 compose logs`.
 
-For a repo whose tests need a toolchain, build with the `EXTRA_APT_PACKAGES`
-build arg, e.g. `EXTRA_APT_PACKAGES="python3 make" docker compose build`. For
-a heavier one, extend the locally built image (use its name from `docker
-image ls`):
+For a repo whose tests need a toolchain, set `EXTRA_APT_PACKAGES` in the
+repo's env file (`docker/.env`, or `docker/.env.<name>`) to a space-separated
+list of apt packages, e.g. `EXTRA_APT_PACKAGES=python3 make`. It is read when
+the image is built, so a change takes effect only with `docker compose up -d
+--build`; plain `up -d` reuses the built image. For a heavier one, extend the
+locally built image (use its name from `docker image ls`):
 
 ```dockerfile
 FROM <the built image>
@@ -320,11 +322,15 @@ USER orch
 ```
 
 Run one compose project per repo, each with its own env file, clone and
-pidfile: `ORCH_ENV_FILE=.env.<name> docker compose -p <name> up -d`
-(`ORCH_ENV_FILE` defaults to `.env`). Name each env file `docker/.env.<name>`,
-beside `.env`: `.env` and `.env.*` (and `.claude/settings.local.json`) are
-gitignored and kept out of the image at any depth, so an env file named or kept
-elsewhere would hold tokens that can be committed or baked into the image.
+pidfile: `ORCH_ENV_FILE=.env.<name> docker compose --env-file .env.<name> -p
+<name> up -d --build` (`ORCH_ENV_FILE` defaults to `.env`). Both flags:
+`ORCH_ENV_FILE` gives the container its settings, `--env-file` gives the build
+its args. Without `--env-file`, the image is built with `docker/.env`'s
+`EXTRA_APT_PACKAGES`, not the project's own. Name each env file
+`docker/.env.<name>`, beside `.env`: `.env` and `.env.*` (and
+`.claude/settings.local.json`) are gitignored and kept out of the image at any
+depth, so an env file named or kept elsewhere would hold tokens that can be
+committed or baked into the image.
 
 #### The host alternative
 
