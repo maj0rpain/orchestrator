@@ -831,7 +831,7 @@ spec_review_prompt() {
       *) die "the Fidelity lens runs only in a flow's spec review: $dir is not under $SPEC_ROUNDS_DIR/" ;;
     esac
     capture plan plan_err cmd_handoff path spec || {
-      [ -z "$plan_err" ] || die "no plan handoff for the Fidelity prompt: ${plan_err#orch: }"
+      [ -z "$plan_err" ] || die "no plan handoff for the Fidelity prompt: $(spec_review_err_line "$plan_err")"
       die "no plan handoff for the Fidelity prompt: $plan does not exist"
     }
   fi
