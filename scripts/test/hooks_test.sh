@@ -136,7 +136,8 @@ assert_contains "offers Blueprint only as an option" "$out" "Blueprint only"
 # opening with a number and a period counts, indented or not, so no other line
 # of the message may open that way (#983).
 count_closing_options() { printf '%s' "$1" | jq -r '.additionalContext' | grep -cE '^ *[0-9]+\. '; }
-assert_eq "offers exactly three options" "$(count_closing_options "$out")" "3"
+assert_contains "offers Autopilot flow as a fourth option on Claude Code" "$out" "4. Autopilot flow"
+assert_eq "offers exactly four options on Claude Code" "$(count_closing_options "$out")" "4"
 # The route options keep the hook's order unless one is recommended, and a
 # recommendation is labelled with a scope reason (#983). Matched by exact
 # rule substrings: the Blueprint rounds question has its own "(Recommended)".
@@ -152,7 +153,11 @@ check_route_rules() {
   assert_eq "states the order rule once $where" "$(count_of "$ctx" "$order")" "1"
 }
 check_route_rules "on Claude Code" "$(printf '%s' "$out" | jq -r '.additionalContext')"
-assert_contains "says exactly three options" "$out" "exactly three options"
+assert_contains "says exactly four options" "$out" "exactly four options"
+assert_contains "autopilot route ends in autopilot start" "$out" "autopilot start <issue> <plan-file>"
+assert_contains "autopilot route forbids init and side-checkout add" "$out" 'neither `init` nor `side-checkout add`'
+assert_contains "autopilot route writes the plan's Autopilot block" "$out" "## Autopilot"
+assert_contains "autopilot route sizes Budget by the review loop's rule" "$out" "Budget, the review loop's iteration budget, sized by the review loop's rule from the scope the interview settled"
 assert_contains "tells the model to invoke the flow skill itself" "$out" "orchestrator:orch-flow"
 assert_contains "tells the model to invoke the quick-implement skill itself" "$out" "orchestrator:orch-quick-implement"
 # With no active flow, a human's request for a side checkout is honoured
@@ -362,7 +367,7 @@ assert_contains "sends the planning rules beside an active flow" "$ctx" "Do NOT 
 assert_contains "names the active flow's issue and phase" "$ctx" "the flow for #42 is active in this checkout, at phase spec"
 assert_contains "the same-flow branch names the flow's issue" "$ctx" "about this flow's issue, #42"
 check_flow_variant "on Claude Code" "$ctx" "$cc_next_redo"
-assert_eq "offers exactly three options beside an active flow" "$(count_closing_options "$out")" "3"
+assert_eq "offers exactly four options beside an active flow" "$(count_closing_options "$out")" "4"
 check_route_rules "beside an active flow" "$ctx"
 assert_marker_present "writes the grilling marker beside an active flow" grilling s6
 assert_empty "stays silent on a second planning call beside an active flow" \
@@ -428,6 +433,7 @@ assert_contains "offers starting the flow on Junie" "$ctx" "Start the orchestrat
 assert_contains "offers quick implementation on Junie" "$ctx" "Quick implementation"
 assert_contains "offers Blueprint only on Junie" "$ctx" "Blueprint only"
 assert_eq "offers exactly three options on Junie" "$(count_closing_options "$out")" "3"
+assert_not_contains "offers no Autopilot flow on Junie" "$ctx" "Autopilot flow"
 check_route_rules "on Junie" "$ctx"
 check_blueprint_rewrite "on Junie" "$ctx" junie
 assert_not_contains "no route tells the model to delete the marker on Junie" "$ctx" "marker"
@@ -672,8 +678,8 @@ check_done_close() {
 }
 ctx="$(skill_event "mattpocock-skills:grilling" dc1 | "$GRILL" | jq -r '.additionalContext')"
 check_done_close "on Claude Code" "$ctx" "the AskUserQuestion tool"
-assert_eq "keeps three numbered lines with the done-close on Claude Code" \
-  "$(printf '%s\n' "$ctx" | grep -cE '^ *[0-9]+\. ')" "3"
+assert_eq "keeps four numbered lines with the done-close on Claude Code" \
+  "$(printf '%s\n' "$ctx" | grep -cE '^ *[0-9]+\. ')" "4"
 ctx="$(prompt_event '$grilling' dc2 | "$GRILL" | jq -r '.additionalContext')"
 check_done_close "on Junie" "$ctx" "the ask_user tool"
 assert_eq "keeps three numbered lines with the done-close on Junie" \

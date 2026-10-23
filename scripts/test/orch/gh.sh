@@ -1238,3 +1238,68 @@ assert_status "fixture gh: an argv with no reply exits 127" "$st" 127
 assert_eq "naming the argv on stderr" "$out" "fixture gh: no reply for: issue view nine\\ 9"
 rm -f "$ibody"
 restore_suite_env GH_FIXTURE GH_HOST
+
+# --- claim adapter operations (#1454) -------------------------------------------
+# A claim is a ref on origin, created create-only so exactly one racer wins.
+# The real operations run against a local bare repo standing in for origin;
+# the fake's counterparts keep the same contract in its store.
+echo
+echo "claim adapter operations"
+new_repo >/dev/null
+claim_origin="$(mktemp -d)"
+git init -q --bare "$claim_origin"
+git remote set-url origin "$claim_origin"
+claim_head="$(git rev-parse HEAD)"
+
+# claim_contract <adapter>: the claim create, list and delete contract, run by
+# the adapter on the current shell's environment.
+claim_contract() {
+  local who="$1" out st
+  out="$(claim_op adapter_claim_list 2>&1)"
+  assert_eq "$who: no claim lists nothing" "$out" ""
+  out="$(claim_op adapter_claim_create 41 spec 1234 2>&1)"; st=$?
+  assert_status "$who: a first create wins" "$st" 0
+  out="$(claim_op adapter_claim_create 41 implement 5678 2>&1)"; st=$?
+  assert_status "$who: a second create of the same issue loses with status 2" "$st" 2
+  out="$(claim_op adapter_claim_list 2>&1)"
+  assert_eq "$who: the loser changed nothing" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "1"
+  assert_eq "$who: list prints issue, host, pid, phase and start time" \
+    "$(printf '%s\n' "$out" | awk -F'\t' -v h="$(hostname)" '$1 == 41 && $2 == h && $3 == 1234 && $4 == "spec" && $5 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$/ && NF == 5 { print "ok" }')" "ok"
+  claim_op adapter_claim_create 7 review 99 >/dev/null 2>&1
+  assert_eq "$who: list prints one line per claim, by issue number" \
+    "$(claim_op adapter_claim_list | cut -f1 | tr '\n' ' ')" "7 41 "
+  out="$(claim_op adapter_claim_delete 41 2>&1)"; st=$?
+  assert_status "$who: a delete succeeds" "$st" 0
+  assert_eq "$who: and the list no longer has the claim" "$(claim_op adapter_claim_list | cut -f1 | tr '\n' ' ')" "7 "
+  out="$(claim_op adapter_claim_create 41 review 4321 2>&1)"; st=$?
+  assert_status "$who: a delete frees the issue for a new create" "$st" 0
+}
+
+claim_op() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
+claim_contract "origin"
+assert_eq "a claim is a ref on origin that holds the empty tree" \
+  "$(git -C "$claim_origin" rev-parse "refs/orch/claims/41^{tree}")" "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+assert_eq "and touches no branch of origin" "$(git -C "$claim_origin" for-each-ref --format='%(refname)' | grep -vc '^refs/orch/claims/')" "0"
+assert_eq "and leaves the checkout's HEAD where it was" "$(git rev-parse HEAD)" "$claim_head"
+git remote set-url origin "$claim_origin/nowhere"
+out="$(claim_op adapter_claim_create 50 spec 1 2>&1)"; st=$?
+assert_status "a push that fails for another reason fails with status 1, not 2" "$st" 1
+assert_ne "and says why" "$out" ""
+out="$(claim_op adapter_claim_delete 50 2>&1)"; st=$?
+assert_status "a delete that fails fails it" "$st" 1
+out="$(claim_op adapter_claim_list 2>&1)"; st=$?
+assert_status "a list that cannot reach origin fails" "$st" 1
+git remote set-url origin "$claim_origin"
+out="$(claim_op adapter_claim_delete 50 2>&1)"; st=$?
+assert_status "a delete of a claim that is not there succeeds" "$st" 0
+
+fake_github
+claim_op() { bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
+claim_contract "fake"
+fake_fail adapter_claim_create "boom"
+out="$(claim_op adapter_claim_create 51 spec 1 2>&1)"; st=$?
+assert_status "fake: a seeded failure fails a create with status 1" "$st" 1
+assert_eq "fake: with the seeded stderr" "$out" "boom"
+fake_unfail
+rm -rf "$claim_origin"
+restore_suite_env

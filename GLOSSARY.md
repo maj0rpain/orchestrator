@@ -14,13 +14,13 @@ flow at a time per checkout - a second flow runs in a side checkout - except a
 flow at phase `done`, which doesn't count against that limit: it no longer
 blocks a new one, which archives it automatically rather than requiring it be
 cleared by hand. Its alternative, for changes that don't need the pipeline, is
-a quick implementation.
+a quick implementation. An autopilot flow is one whose phases a watcher starts.
 
 **Flow state**:
 What a checkout records about its flow, in `.orchestrator/state.json`: the
 flow's slug, issue, base branch, branch, PR and phase, and the review
 loop's counters. A checkout holds at most one. A flow whose state is at
-phase `done` no longer counts as active.
+phase `done` no longer counts as active. In an autopilot flow the phase label on the issue, not the recorded phase, is the source of truth; the recorded phase is the phase this checkout last moved to.
 
 **Checkout**:
 A working tree of the repo: the main checkout (the clone itself), a side
@@ -45,7 +45,7 @@ one flow. One made for a quick implementation records that implementation's
 issue, so a session opened in it picks the issue up without being told. It is
 removed when its flow is archived with `archive` or
 `/orchestrator:abort`, by `/orchestrator:finish` once its work is finished, or
-by hand, and never with force.
+by hand, and never with force. An autopilot flow gets one on its issue's first pickup, recording that issue as a quick implementation's does, and every later phase reuses it.
 _Avoid_: sibling worktree, flow worktree, second checkout.
 
 **Finished**:
@@ -66,7 +66,7 @@ Unlike the review phase, the spec phase spans several sessions: when it writes
 the spec, the session that publishes or rewrites the issue stops there; each
 spec review round but the last stops after its changelog; and the last round,
 the ticket breakdown and the handoff run in one more, all still in the spec
-phase.
+phase. In an autopilot flow each phase still runs in its own session, started by the watcher instead of the human. An autopilot flow's spec is written in the planning session, or for a hand-labelled issue is its body as it stands, so its spec phase starts at the spec review.
 
 Note the tense: the recorded phase names the stage that runs **next**, not the
 one that just finished.
@@ -78,7 +78,7 @@ valid; the step back of a Redo retires the handoffs it makes stale.
 The written record one phase leaves for the next, and the only thing that
 crosses a phase boundary. A handoff references artefacts that already exist (an
 issue, a PR, a diff) and states what exists nowhere else: reasoning, rejected
-options, deviations.
+options, deviations. In an autopilot flow each handoff is one tagged comment on the issue, its only copy.
 
 **Redo**:
 A deliberate step back to re-run a phase whose output was wrong - never the
@@ -105,6 +105,43 @@ _Avoid_: existing issue, pre-existing issue, given issue.
 **Interviewed issue**:
 An open issue a planning session was run about, or the open issue the human names in its place when the session closes. When the human confirms the plan, the session offers to move it to the `ready-for-agent` triage label, since the interview settled what triage would have, and asks nothing when it already carries it - unless the plan finds its work already done, when the session offers to close it as done instead. A blueprint drawn from that session rewrites this issue as its spec issue rather than publishing a new one; a quick implementation started from it may rewrite it from the plan, as **Quick implementation** says.
 _Avoid_: planned issue, subject issue.
+
+### Autopilot flow
+
+**Autopilot flow**:
+A flow whose phases are started by a watcher rather than a human. Its phase is recorded as a label on its issue, its handoffs are issue comments, and its questions reach the human as issue comments. It stops for the human only on a fundamental item, a bounded stop (a spec question the review loop meets among them), or a failure.
+_Avoid_: auto flow, headless flow.
+
+**Watcher**:
+The process that starts each autopilot flow's next phase, in that flow's side checkout, within the repo's cap.
+
+**Claim**:
+A watcher's exclusive hold on one issue's next phase - a ref on origin that only one watcher can create.
+_Avoid_: lock (unqualified).
+
+**Phase label**:
+The `orch:` label on an issue that records an autopilot flow's phase.
+
+**Fundamental item**:
+A material spec review item whose edit would change what the human decided in planning - reversing or changing a decision the plan recorded, reviving a rejected alternative, or adding or dropping scope beyond the plan. In an autopilot flow's spec review it is the only kind of item that reaches the human.
+
+**Save point**:
+What an autopilot phase writes to its side checkout before asking the human a question, so that the fresh session started after the answer resumes from it and the reply, never re-exploring code.
+
+**Hand-labelled issue**:
+An issue a human gave a phase label by hand, without the planning close's autopilot route. Its plan comment is the minimal one, and its body is reviewed as it stands.
+
+**Plan comment**:
+The issue comment tagged `<!-- orch:handoff 01-plan -->` that holds an autopilot flow's plan handoff.
+
+**Question comment**:
+The issue comment tagged `<!-- orch:question <phase> -->` that asks the human an autopilot phase's numbered questions.
+
+**Pickup rule**:
+The rule a watcher picks issues by: open, a phase label other than `orch:done`, and neither `orch:running` nor `needs-human`.
+
+**Cap**:
+The most autopilot sessions a repo runs at once, counted as the claim refs on origin. It is soft: watchers acting in the same instant can overshoot it.
 
 ### Repository and tooling
 
@@ -266,7 +303,7 @@ after the issue exists - published by the spec phase or already adopted at
 init - and before its handoff is written. A human may also ask for one on
 demand, against any issue, and a quick implementation takes an unattended one
 before its ticket breakdown: either way a standalone spec review, which belongs to no
-flow and leaves no handoff. It first proposes folding into the body anything
+flow and leaves no handoff. An autopilot flow's is also unattended, but in the flow, one per round for its planned round count. It first proposes folding into the body anything
 the issue's comments say that the body does not - a triage agent brief, a
 follow-up - so the body stays the one place the spec is written. Its lenses
 then read the spec, body and comments, independently - four in a flow, three
@@ -283,18 +320,18 @@ One look within a spec review: consolidation, the lenses, one batch of proposed 
 _Avoid_: pass, iteration (the review loop's).
 
 **Round count**:
-The number of rounds a spec review runs. A flow's spec phase asks the human for it when the review starts, and a blueprint asks it in the planning hook's closing message, before the review; both recommend a count sized to the spec - 2 by default, fewer for a one-site spec, more for a large one - and a blueprint may answer 0 to skip the review. A spec review run on demand runs 1 unless given another. A spec review runs its whole round count: a round that finds nothing does not end it early.
+The number of rounds a spec review runs. A flow's spec phase asks the human for it when the review starts, and a blueprint asks it in the planning hook's closing message, before the review; both recommend a count sized to the spec - 2 by default, fewer for a one-site spec, more for a large one - and a blueprint may answer 0 to skip the review. A spec review run on demand runs 1 unless given another. A spec review runs its whole round count: a round that finds nothing does not end it early. An autopilot flow's is chosen once, at the planning close, and recorded in its plan.
 _Avoid_: budget (the review loop's).
 
 **Round marker**:
 The file in a flow's handoff folder naming the flow's issue, a spec review round and the round count, written by `orch.sh`, from which `orch.sh spec round` tells a fresh session the round to resume the review at. It is not a handoff, and it is never in `state.json`.
 
 **Unattended spec review**:
-A standalone spec review that asks the human nothing: every recommended edit
+A spec review that asks the human nothing: every recommended edit
 is applied, every decision item takes its recommended option, and a ticket
 breakdown the edits touch follows its recommended option, retiring included.
-The batch is still shown and the changelog still records it all. Only a quick
-implementation takes one. It runs one round.
+The batch is still shown and the changelog still records it all. A quick
+implementation takes one, standalone, of one round; an autopilot flow's spec review is one, in the flow, per round for its planned round count, except that a fundamental item reaches the human.
 _Avoid_: auto spec review, silent spec review.
 
 **Consolidation item**:
@@ -338,7 +375,7 @@ The public boundary a test observes behaviour at. Seams are agreed with a human
 in the spec phase, recorded in the spec and its handoff, and that agreement is
 the only one: the implement phase tests at the seams it is given and does not
 re-ask. A seam the code turns out not to allow is a deviation, recorded like
-any other.
+any other. In an autopilot flow they are agreed in the planning session, which writes the spec; a hand-labelled issue's are the ones its body states, accepted by the human who labelled it.
 
 ### Review loop
 
@@ -381,7 +418,7 @@ starts, from a number the driver suggests: for a flow's first loop, from the
 size of the change; for a further loop, from what the loop before it left. A
 loop runs its whole budget: finding nothing does not end it early, because
 every iteration is an independent look at the same change, and the value of
-the loop is in the number of looks.
+the loop is in the number of looks. An autopilot flow's is chosen once, at the planning close, and every loop of that flow runs it.
 
 **Iteration**:
 One pass within a review loop: sync the branch with its base, review the

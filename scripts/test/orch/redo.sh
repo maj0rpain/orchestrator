@@ -661,6 +661,81 @@ out="$("$ORCH" help 2>&1)"
 assert_contains "ticket retire is in the usage text" "$out" "ticket retire <parent>"
 restore_suite_env
 
+# --- redo spec in an autopilot flow (#1459) ----------------------------------
+# The handoffs are comments: a redo retires each by posting a newer comment
+# tagged retired, before it moves any state.
+echo
+echo "redo spec in an autopilot flow"
+fresh_flow redoautopilot
+fake_github
+fake_issue 60 open
+fake_comment 60 someone 2030-01-01T00:00:00Z "<!-- orch:handoff 02-spec -->
+spec text"
+fake_comment 60 someone 2030-01-01T00:00:01Z "<!-- orch:handoff 03-implement -->
+implement text"
+state_fixture phase implement
+"$ORCH" state set issue 60
+fake_fail_after adapter_issue_comment 1 "HTTP 500 comment"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" redo spec 2>&1)"; st=$?
+assert_status "a redo that dies between its retirement comments fails" "$st" 1
+assert_contains "naming the comment it posted" "$out" "comments posted: 02-spec"
+assert_eq "leaving the recorded phase as it was" "$("$ORCH" state get phase)" "implement"
+fake_unfail
+out="$(ORCH_AUTOPILOT=1 "$ORCH" redo spec 2>&1)"; st=$?
+assert_status "the next redo finishes" "$st" 0
+assert_eq "the phase is spec" "$("$ORCH" state get phase)" "spec"
+retired="$(fake_comments_of 60 | grep -c 'orch:handoff .* retired')"
+assert_eq "each handoff is retired exactly once: the next redo skipped the one already retired" "$retired" "2"
+assert_contains "the spec handoff is retired" "$(fake_comments_of 60)" "<!-- orch:handoff 02-spec retired -->"
+assert_contains "and the implement handoff" "$(fake_comments_of 60)" "<!-- orch:handoff 03-implement retired -->"
+restore_suite_env
+
+# --- redo review in an autopilot flow (#1459) --------------------------------
+# The implement handoff is a comment: redo review retires it by posting a newer
+# comment tagged retired, before any state moves, so a redo that dies partway
+# leaves the recorded phase at review.
+echo
+echo "redo review in an autopilot flow"
+healthy_repo
+fake_github
+fake_issue 61 open
+fake_pr 62 open orch/61-redoap main
+bare="$(mktemp -d)/origin.git"
+git init -q --bare "$bare"
+bare_origin "$bare"
+git push -q origin HEAD:refs/heads/main
+"$ORCH" init redoap >/dev/null
+fake_comment 61 someone 2030-01-01T00:00:01Z "<!-- orch:handoff 03-implement -->
+implement text"
+state_fixture phase review
+"$ORCH" state set issue 61
+git checkout -q -b orch/61-redoap
+git push -q -u origin orch/61-redoap
+state_fixture branch orch/61-redoap
+state_fixture pr 62
+state_fixture iteration 1
+"$ORCH" state set budget 1
+mkdir -p .orchestrator/review
+writeln '## Terminal state' 'stop' 'CI failed twice.' >.orchestrator/review/iteration-01.md
+fake_fail adapter_issue_comment "HTTP 500 comment"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" redo review 2>&1)"; st=$?
+assert_status "a redo review whose retirement comment fails dies" "$st" 1
+assert_eq "moving no state: the branch stays" "$("$ORCH" state get branch)" "orch/61-redoap"
+assert_eq "and the redo count" "$("$ORCH" state get redo_count)" "0"
+fake_unfail
+fake_fail adapter_pr_close "$GH_502"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" redo review 2>&1)"; st=$?
+assert_status "a redo review that dies at the PR close fails" "$st" 1
+assert_contains "the implement handoff is retired by comment before any state moved" \
+  "$(fake_comments_of 61)" "<!-- orch:handoff 03-implement retired -->"
+assert_eq "leaving the recorded phase at review" "$("$ORCH" state get phase)" "review"
+fake_unfail
+out="$(ORCH_AUTOPILOT=1 "$ORCH" redo review 2>&1)"; st=$?
+assert_status "the next redo review finishes" "$st" 0
+assert_eq "stepping back to implement" "$("$ORCH" state get phase)" "implement"
+assert_eq "retiring the handoff exactly once" "$(fake_comments_of 61 | grep -c 'orch:handoff 03-implement retired')" "1"
+restore_suite_env
+
 # --- redo help names handoffs by role (#1066) -------------------------------
 # The help names each handoff by its role and points at handoff path for the
 # file, so renaming a handoff file never leaves the help stale.

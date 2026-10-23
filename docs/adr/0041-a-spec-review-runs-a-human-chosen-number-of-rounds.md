@@ -1,5 +1,7 @@
 # A spec review runs a human-chosen number of rounds
 
+Amended by ADR-0052: an autopilot flow's spec review runs the plan's round count, not 1.
+
 Supersedes in part ADR-0004: the spec review is no longer one pass.
 
 Superseded in part by ADR-0049: a flow's spec review runs each round but the last in its own session, keeping the count in the round marker rather than the session, and the recommended count is sized to the spec, defaulting to 2.

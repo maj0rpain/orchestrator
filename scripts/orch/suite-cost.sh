@@ -68,9 +68,8 @@ cmd_suite_cost() {
 # common directory, made absolute so it holds wherever the caller runs.
 suite_cost_record() {
   local d
-  d="$(git rev-parse --git-common-dir)" && d="$(cd "$d" && pwd -P)" ||
-    die "could not find the clone's git common directory"
-  printf '%s/orchestrator/suite-cost\n' "$d"
+  d="$(clone_orchestrator_dir)" || return 1
+  printf '%s/suite-cost\n' "$d"
 }
 
 # suite_cost_active: prints the path of the clone's active-runs directory,

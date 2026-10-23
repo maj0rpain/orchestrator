@@ -27,7 +27,9 @@ being published as a new issue. With no leading issue number, the skill runs in
 Blueprint route hands over its interviewed issue this way, `orch-flow`'s
 spec phase hands over an adopted issue it decided to rewrite from the
 plan, and `/orchestrator:to-spec <n>` reaches rewrite mode standalone. All
-three take it attended, as written. A quick implementation reaches rewrite mode
+three take it attended, as written. A planning session's Autopilot route
+(Claude Code only) reaches either mode the same way, then goes on to write the
+plan and run `autopilot start`. A quick implementation reaches rewrite mode
 in its **Unattended rewrite** form below.
 
 ```

@@ -295,6 +295,31 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    stays at spec - fix what it names and run it again. Relay its output (see
    **Printing the boundary**).
 
+#### In an autopilot flow
+
+When `bash "$ORCH" autopilot active` exits 0 the spec phase runs unattended
+and stops for the human only on a fundamental item of the spec review
+(ADR-0049). Step 0 is skipped: the plan's `## Autopilot` block settled what it
+decides, so the issue is reviewed as it stands - no rewrite decision, no
+marker check, no redo check. The round check still runs, first. Step 4 asks
+no round-count question: the count is `bash "$ORCH" autopilot rounds`. The
+round check's `<k> <n> waiting` means round k holds fundamental items back
+for the human's reply (`.orchestrator/spec-rounds/<k>/fundamental.md`): read
+the reply with `bash "$ORCH" autopilot answer spec <file>` (a `mktemp` file
+outside the repo). When it dies because no reply has come, re-post the
+question with `bash "$ORCH" autopilot ask spec <file>` (the held-back items
+from `fundamental.md`, as the round's first ask wrote them) and stop: the
+phase never assumes the recommendations. With a reply, translate it into
+`spec-review apply`'s answer grammar over the fundamental items, run `bash "$ORCH" spec-review apply <dir>
+<answer> --round <k>/<n>` again - it applies only the held-back items, posts
+the round's one changelog and removes `fundamental.md` - and go on to the
+round's pause, or, after round n, to step 5. Rounds run through the
+`orch-spec-review` skill, which runs unattended in autopilot; step 5's
+breakdown runs `orch-to-tickets`' **Unattended breakdown**.
+A plan amendment after `apply` (a declined `contradicts the plan` item) is
+re-posted with `bash "$ORCH" handoff post 01-plan <file>`, as `orch-spec-review`'s
+`spec-phase.md` says.
+
 ### Phase: implement
 
 1. Read `bash "$ORCH" handoff path implement` and fetch the spec issue it names.
@@ -311,6 +336,13 @@ phase, tell the user to start a fresh session (Claude Code `/clear`, Junie
    changes, or switch off the named branch, then run `/orchestrator:next`
    again. The flow's state already exists here, so it is never moved to a
    side checkout.
+
+   **In an autopilot flow** (`bash "$ORCH" autopilot active` exits 0) neither
+   case is offered: an exit 3, or a base missing on origin, is a failure. Ask
+   no question and offer no `base set`; stop the phase with the state left
+   where it is and exit, relaying the line `branch create` printed. The claim
+   stays held, so the watcher labels the issue `needs-human` with a failure
+   comment naming the phase, exit code and log.
 3. Build the ticket frontier with the driver loop in `docs/driver-loop.md`
    (under the plugin root): loop steps a-f and its **Dispatching a
    subagent**, bound here as:

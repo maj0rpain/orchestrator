@@ -198,8 +198,8 @@ The published ticket numbers in publishing order, or `collapsed`.
 
 ## Unattended breakdown
 
-The mode a quick implementation takes, and only a quick implementation: a
-breakdown that asks the human nothing (ADR-0034). It is also what follows a
+The mode a quick implementation takes, and an autopilot flow's spec phase
+(ADR-0049): a breakdown that asks the human nothing (ADR-0034). It is also what follows a
 retire in `orch-spec-review`'s **Unattended spec review**, defined in that
 skill's `unattended-spec-review.md`.
 

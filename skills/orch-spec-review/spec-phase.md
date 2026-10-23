@@ -16,6 +16,42 @@ Everything in the skill's main file holds - **Rounds**, **Consolidation**,
 and **The changelog** - with the additions below. **Standalone spec review**
 does not apply: run **Inputs** below in its place.
 
+## In an autopilot flow
+
+When `bash "$ORCH" autopilot active` exits 0 the review runs unattended
+(ADR-0049), each round as in an **Unattended spec review** - `unattended-spec-review.md`
+- except that all four lenses run, Fidelity included, in flow mode (**Inputs**
+and **The Fidelity lens** below, not the standalone form with `--round 1/1
+--issue`); the round count comes from the plan, not from a question; and the
+answer is `recommended` without `--unattended`, which is for a quick
+implementation. The batch is printed as for an attended review and the
+session goes straight on; no question is asked of the human except for
+fundamental items. The ticket question, when `apply` pauses with exit 3, is
+taken as recommended: `--tickets recommended`.
+
+While writing `batch.md`, mark each material item that is also a **fundamental
+item** - one that would reverse or change a planning decision, revive a rejected
+alternative, or add or drop scope beyond the plan - with the mark `fundamental`
+in place of `material` on its `@@ item` line. Every `contradicts-the-plan`
+item is a candidate: judge it against `01-plan.md`'s decisions, rejected
+alternatives and scope. A hand-labelled issue's plan records no decisions, so
+its review marks none. `spec-review check` and `apply` accept the mark only
+under `ORCH_AUTOPILOT=1`.
+
+When a round has a fundamental item:
+
+1. Run `spec-review apply <dir> recommended --round <k>/<n>` as usual: it holds
+   the fundamental items back into `<dir>/fundamental.md`, applies every other
+   item as recommended, publishes the body and posts no changelog yet.
+2. Write the question to a scratch file: only the fundamental items, each with
+   its options and recommendation, and post it with `bash "$ORCH" autopilot
+   ask spec <file>`. It @mentions the human, adds `needs-human` and releases the
+   claim; the session ends.
+3. The fresh session meets `spec round` printing `<k> <n> waiting` and resumes
+   from the reply, as `orch-flow`'s autopilot spec phase says; with no reply it
+   re-posts the question with `autopilot ask spec` and stops, never assuming
+   the recommendations.
+
 ## Inputs
 
 Steps 1 to 3 run at the start of every round, each round in its own
@@ -100,6 +136,11 @@ recommendation's when it was declined through **Apply as recommended**. The
 review loop demotes findings that propose a rejected alternative, and
 without the amendment it would later demote a code reviewer for proposing
 the spec's own choice.
+
+In an autopilot flow the plan handoff is the `01-plan` comment, and `handoff
+path` only fetches it into a scratch file: make the amendment in that file,
+then re-post it with `bash "$ORCH" handoff post 01-plan <file>`, or the edit is
+lost on the next fetch and the review loop reads the unamended comment.
 
 After round k of n, k < n, the amendment runs, then the pause: `orch-flow`'s
 spec phase step 4 runs `spec pause --round <k>/<n>` and the session stops,

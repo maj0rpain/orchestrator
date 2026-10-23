@@ -33,16 +33,6 @@
 # The most labels the labels-exist check asks gh to list.
 readonly LABEL_LIMIT=1000
 
-# repo_owner_name <name>: the OWNER/REPO of a [HOST/]OWNER/REPO repo name, as
-# repo_resolve sets REPO_NAME, any host dropped - repo_host's twin, in
-# repo.sh.
-repo_owner_name() {
-  case "$1" in
-    */*/*) printf '%s\n' "${1#*/}" ;;
-    *) printf '%s\n' "$1" ;;
-  esac
-}
-
 D_OK=0
 D_WARN=0
 D_FAIL=0
@@ -546,13 +536,99 @@ check_side_checkouts_finished() {
   return 0
 }
 
+# An autopilot flow's phase is its issue's phase label (ADR-0052); state.json
+# records the phase this checkout last moved to. A label that disagrees is
+# flagged. An interactive flow carries no phase label and is left alone - except
+# under ORCH_AUTOPILOT=1, where a flow with none is refused: autopilot behaviour
+# must never leak into an interactive flow.
+check_flow_autopilot_label() {
+  # issue_state is the read's throwaway half.
+  # shellcheck disable=SC2034
+  local issue issue_state="" flabels="" gh_err="" phase p phase_labels=""
+  issue="$(state_get issue)"
+  phase="$(state_get phase)"
+  if [ -z "$issue" ]; then
+    if autopilot_active; then
+      d_fail "autopilot session, but no issue is recorded - the flow's phase has no label to live on."
+      d_remedy "$(flow_cmd abort)"
+    fi
+    return 0
+  fi
+  d_gh_gate || return 0
+  issue_state_labels_read "$issue" issue_state flabels gh_err || return 0
+  for p in $(autopilot_phase_labels_in "$flabels"); do
+    phase_labels="${phase_labels:+$phase_labels }$(autopilot_phase_label "$p")"
+  done
+  if [ -z "$phase_labels" ]; then
+    if autopilot_active; then
+      d_fail "issue #$issue carries no phase label - an autopilot session needs the flow's phase recorded on its issue."
+      d_remedy "gh issue edit $issue --add-label $(autopilot_phase_label "$phase")"
+    fi
+    return 0
+  fi
+  if [ "$phase_labels" = "$(autopilot_phase_label "$phase")" ]; then
+    d_ok "phase label: $phase_labels"
+  else
+    d_warn "issue #$issue is labelled $phase_labels, but this checkout last moved to phase $phase."
+    d_remedy "relabel the issue $(autopilot_phase_label "$phase"), or leave it to the watcher's redo rules"
+  fi
+}
+
+# The same label check for each autopilot flow living in a side checkout other
+# than this one: the watcher makes those, so a plain doctor in the main checkout
+# is where a label that disagrees with a side checkout's recorded phase is seen.
+# This checkout's own flow is check_flow_autopilot_label's.
+check_autopilot_side_flows() {
+  local list kind _flow _branch path issue phase here p phase_labels
+  # issue_state is the read's throwaway half.
+  # shellcheck disable=SC2034
+  local issue_state="" flabels="" gh_err=""
+  list="$(checkouts)" || return 0
+  here="$(pwd -P)"
+  while read -r kind _flow _branch path; do
+    [ "$kind" = side ] && [ "$path" != "$here" ] || continue
+    issue="$(side_checkout_issue "$path" 2>/dev/null)" || continue
+    [ -f "$(flow_state_file "$path")" ] || continue
+    phase="$(state_get_in "$(flow_state_file "$path")" phase 2>/dev/null)" || continue
+    d_gh_gate || return 0
+    issue_state_labels_read "$issue" issue_state flabels gh_err || continue
+    phase_labels=""
+    for p in $(autopilot_phase_labels_in "$flabels"); do
+      phase_labels="${phase_labels:+$phase_labels }$(autopilot_phase_label "$p")"
+    done
+    [ -n "$phase_labels" ] || continue
+    if [ "$phase_labels" = "$(autopilot_phase_label "$phase")" ]; then
+      d_ok "phase label of #$issue: $phase_labels"
+    else
+      d_warn "issue #$issue is labelled $phase_labels, but its side checkout ${path##*/} last moved to phase $phase."
+      d_remedy "relabel the issue $(autopilot_phase_label "$phase"), or leave it to the watcher's redo rules"
+    fi
+  done <<<"$list"
+  return 0
+}
+
+# Claims held by another host for more than a day: the watcher never touches
+# them, so doctor is where they are noticed. Silent where origin cannot be read
+# or there are none.
+check_autopilot_claims() {
+  local list issue host pid phase started now_epoch age me
+  list="$(adapter_claim_list 2>/dev/null)" || return 0
+  now_epoch="$(date -u +%s)"; me="$(hostname)"
+  while IFS=$'\t' read -r issue host pid phase started; do
+    [ -n "$issue" ] && [ "$host" != "$me" ] || continue
+    age="$(autopilot_iso_epoch "$started")" || continue
+    [ "$((now_epoch - age))" -gt 86400 ] || continue
+    d_warn "issue #$issue has been claimed by $host (pid $pid, phase $phase) since $started - more than a day."
+    d_remedy "if that session is gone: git push origin :refs/orch/claims/$issue, and remove its $AUTOPILOT_RUNNING_LABEL label"
+  done <<<"$list"
+}
+
 ENV_CHECKS="
 h_tools  check_git check_gh check_jq check_bash
 h_auth   check_origin check_gh_auth check_gh_repo check_default_branch
 h_plugin check_host check_plugin_root check_orch_sh
-h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_agent_settings check_side_checkouts_finished
+h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude check_base_branch check_agent_settings check_side_checkouts_finished check_autopilot_claims check_autopilot_side_flows
 "
-
 # flow state -----------------------------------------------------------------
 
 # Every check below reads state.json through jq, so a missing jq and a file that
@@ -806,22 +882,37 @@ check_flow_worktree_clean() {
 # Which handoffs are due is the phase table's handoffs_due - phase names what
 # runs *next*, so every earlier phase has already written one.
 check_flow_handoffs() {
-  local phase files f path problems line
+  local phase files f path problems line issue="" scratch=""
   phase="$(state_get phase)"
   # A phase the table does not hold is due nothing, so the check skips it.
   files="$(handoffs_due "$phase")"
+  # In an autopilot session a handoff is the posted comment, fetched to a file.
+  if autopilot_active && [ -n "$files" ]; then
+    issue="$(state_get issue)"
+    if [ -z "$issue" ]; then
+      d_fail "autopilot session, but no issue is recorded - the handoff comments cannot be read."
+      d_remedy "$(flow_cmd abort)"
+      return 0
+    fi
+    d_gh_gate || return 0
+    scratch="$(mktemp -d)" || { d_fail "could not create a temp directory for the handoff comments."; return 0; }
+  fi
   for f in $files; do
-    path="$HANDOFF_DIR/$f"
-    if [ ! -f "$path" ]; then
-      d_fail "handoff $f is missing - the phase that writes it has already run."
+    if ! path="$(handoff_resolve "$issue" "$f" "$scratch")"; then
+      if [ -n "$scratch" ]; then
+        d_fail "handoff ${f%.md} comment is missing on issue #$issue - the phase that writes it has already run."
+      else
+        d_fail "handoff $f is missing - the phase that writes it has already run."
+      fi
       d_remedy "$(flow_cmd redo)"
       continue
     fi
-    problems="$(handoff_report "$path" | grep -v '^ok ' || true)"
+    problems="$(handoff_report "$path" "$f" | grep -v '^ok ' || true)"
     if [ -z "$problems" ]; then d_ok "handoff $f complete"; continue; fi
     while IFS= read -r line; do d_fail "handoff $f: ${line#FAIL }"; done <<<"$problems"
     d_remedy "$(flow_cmd redo)"
   done
+  [ -z "$scratch" ] || rm -rf "$scratch"
 }
 
 # An entry may list the phases it applies to, as `name:phase,phase`; one with
@@ -829,7 +920,7 @@ check_flow_handoffs() {
 # every phase after it in the phase table, so a phase added later is picked up. d_run_flow does the filtering, so d_run never
 # sees a suffix.
 FLOW_CHECKS="
-h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream:implement+ check_flow_pr check_flow_review_terminal:review check_flow_review_budget:review check_flow_review_ci:review check_flow_review_draft:review+ check_flow_handoffs
+h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream:implement+ check_flow_pr check_flow_review_terminal:review check_flow_review_budget:review check_flow_review_ci:review check_flow_review_draft:review+ check_flow_handoffs check_flow_autopilot_label
 "
 
 # A registry's entries, one per line. Splitting a whitespace-separated list is

@@ -30,6 +30,31 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 Get the path from `bash "$ORCH" handoff path <phase>`. Validate with
 `bash "$ORCH" handoff validate <path>` and fix anything it flags before returning.
 
+## In an autopilot flow
+
+When `bash "$ORCH" autopilot active` exits 0, the handoff is one issue comment,
+its only copy, and no file is written into `.orchestrator/handoff/`. Write the
+handoff to a scratch file (`mktemp`, named for its handoff, e.g.
+`.../01-plan.md`), validate it with `bash "$ORCH" handoff validate <file>`, and
+post it with `bash "$ORCH" handoff post <name> <file>`, `<name>` being `01-plan`,
+`02-spec` or `03-implement`. `handoff post` validates again and posts nothing
+when the file is invalid. The `01-plan.md` template gains an `## Autopilot`
+block (below) that `handoff validate` requires in autopilot; interactive plans
+omit it. The rest of this skill - what belongs in a handoff, the templates -
+applies unchanged.
+
+The `## Autopilot` block, written at the end of `01-plan.md`:
+
+```markdown
+## Autopilot
+
+Rounds: <n>
+Budget: <n>
+```
+
+Both lines are whole numbers of 1 or more: the spec review's round count and
+the review loop's iteration budget.
+
 ## What belongs in one
 
 The reader is a fresh agent with no memory of this session.

@@ -107,7 +107,14 @@ subsection, and the fix removes the cause at every site listed: a
 The interview is done when the frontier is empty: every branch of the design
 tree visited, nothing left silently assumed. Do not act on the plan until the
 user confirms you have reached a shared understanding; then close as the
-planning hook's message says.
+planning hook's message says. On Claude Code the closing question has a fourth
+route, **Autopilot flow**: `orch-to-spec` (rewrite mode on the interviewed
+issue, else publish mode, with its test-seams check), then the `orch-handoff`
+skill's `01-plan.md` with its `## Autopilot` block - Rounds by the spec phase's
+sizing rule, Budget by the review loop's (3, 5 or 8, from the scope this
+interview settled, risk weighing above size) - written to a scratch file, then
+`autopilot start <issue> <plan-file>`. The route never runs `init` or
+`side-checkout add`, and this session writes no flow state.
 
 ## Domain language
 

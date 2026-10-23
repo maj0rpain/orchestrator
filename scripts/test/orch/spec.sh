@@ -396,6 +396,15 @@ out="$("$ORCH" spec round 2>&1)"; st=$?
 assert_status "spec round succeeds once the last round is complete" "$st" 0
 assert_eq "printing done and the count" "$out" "done 2"
 
+# An autopilot round holding fundamental items back waits for the human's answer.
+"$ORCH" spec round-dir 1/2 >/dev/null
+assert_eq "a round without fundamental.md is the round to run" "$("$ORCH" spec round 2>&1)" "1 2"
+: >"$rounds/1/fundamental.md"
+assert_eq "a round holding fundamental.md waits" "$("$ORCH" spec round 2>&1)" "1 2 waiting"
+rm -f "$rounds/1/fundamental.md"
+"$ORCH" spec round-dir 2/2 >/dev/null
+: >"$rounds/2/round-complete"
+
 saved_marker="$(cat "$round_marker")"
 for bad_marker in "" garbage "21" "21 1" "21 3 2" "21 0 2" "21 a 2" "x 1 2" "21 1 2 9"; do
   writeln "$bad_marker" >"$round_marker"
@@ -497,4 +506,39 @@ if unwritable_dir "$handoff_dir" "a failed round marker write prints no block"; 
   assert_eq "and leaving no marker" "$(on_disk "$round_marker")" absent
 fi
 assert_contains "help documents spec pause --round" "$("$ORCH" help)" "spec pause --round <k>/<n>"
+restore_suite_env
+
+
+# --- spec pause --round in an autopilot flow (#1457) --------------------------
+# The pause releases the claim: orch:running dropped, then the claim ref.
+echo
+echo "spec pause --round in an autopilot flow"
+fake_flow autopilot-pause
+export ORCHESTRATOR_HOST=claude
+"$ORCH" state set issue 7 >/dev/null
+fake_claim_seed 7
+state_fixture phase spec
+fake_issue 7 open ready-for-agent orch:spec orch:running
+ORCH_AUTOPILOT=1 "$ORCH" spec pause --round 1/2 >/dev/null 2>&1; st=$?
+assert_status "spec pause --round in autopilot succeeds" "$st" 0
+assert_eq "dropping orch:running" "$(fake_labels_of 7)" "orch:spec ready-for-agent "
+assert_eq "releasing the claim" "$(fake_claim_held 7)" free
+
+# a failure partway leaves the claim held and names the writes that landed
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_claim_seed 7
+fake_fail adapter_claim_delete "HTTP 500"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec pause --round 1/2 2>&1)"; st=$?
+assert_status "a failed claim delete dies" "$st" 1
+assert_contains "naming the claim ref" "$out" "delete the claim ref"
+assert_contains "and the writes that landed" "$out" "wrote the round marker, removed orch:running"
+assert_eq "the claim is still held" "$(fake_claim_held 7)" held
+fake_unfail
+fake_issue 7 open ready-for-agent orch:spec orch:running
+fake_fail adapter_issue_relabel "HTTP 500"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" spec pause --round 1/2 2>&1)"; st=$?
+assert_status "a failed orch:running removal dies" "$st" 1
+assert_contains "naming the marker that landed" "$out" "writes that landed: wrote the round marker;"
+assert_eq "the claim is still held after it" "$(fake_claim_held 7)" held
+fake_unfail
 restore_suite_env

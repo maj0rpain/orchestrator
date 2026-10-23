@@ -35,6 +35,21 @@ print_boundary() {
   print_next_block "Phase $done_name complete. Handoff written to $HANDOFF_DIR/$file."
 }
 
+# phase_finish <next> <reason>: records <next> as the flow's phase. In an
+# autopilot session it also moves the issue's phase label and releases the
+# claim, <reason> naming what was done, and returns 0; otherwise it only writes
+# the phase and returns 1, so a caller keeps its own output for each.
+phase_finish() {
+  local issue
+  if autopilot_active; then
+    require_issue issue
+    autopilot_phase_move "$issue" "$1" "$2"
+    return 0
+  fi
+  phase_write "$1"
+  return 1
+}
+
 cmd_phase() {
   local op="${1:-}"
   shift || true
@@ -42,7 +57,7 @@ cmd_phase() {
     advance)
       [ $# -eq 0 ] || die "usage: orch.sh phase advance"
       require_state
-      local phase next file _unused
+      local phase next file name issue _unused
       phase="$(state_get phase)"
       # The guards run in this order; past them, the next phase is the phase
       # table's, and phase_next fails only on a phase outside the table.
@@ -55,11 +70,20 @@ cmd_phase() {
       # The handoff this phase writes is the one the next phase reads. It is
       # checked before the state fields so a missing handoff - the likelier
       # gap - is the one reported.
-      file="$HANDOFF_DIR/$(handoff_file_for "$next")"
-      handoff_check "$file" || case $? in
-        2) die "write $file before leaving the $phase phase" ;;
-        *) die "$file is not valid - fix it, then run phase advance again; the flow stays at $phase" ;;
-      esac
+      name="$(handoff_file_for "$next")"
+      if autopilot_active; then
+        # The handoff is the posted comment: fetched, then checked as a file.
+        require_issue issue
+        file="$(handoff_resolve "$issue" "$name" "$HANDOFF_SCRATCH_DIR")" ||
+          die "issue #$issue has no ${name%.md} handoff comment - post it with handoff post before leaving the $phase phase"
+        handoff_check "$file" "" "$name" || die "the ${name%.md} comment on issue #$issue is not valid - post a fixed one, then run phase advance again; the flow stays at $phase"
+      else
+        file="$(handoff_resolve "" "$name" "")" || true
+        handoff_check "$file" || case $? in
+          2) die "write $file before leaving the $phase phase" ;;
+          *) die "$file is not valid - fix it, then run phase advance again; the flow stays at $phase" ;;
+        esac
+      fi
       # Deliberately a per-phase switch, not a phase table column: each
       # requirement carries its own remedy message, which a column of field
       # names could only reach through a naming convention.
@@ -67,8 +91,11 @@ cmd_phase() {
         implement) require_issue _unused ;;
         review)    require_branch _unused; require_base_sha _unused; require_pr _unused ;;
       esac
-      phase_write "$next"
-      print_boundary "$next"
+      if phase_finish "$next" ""; then
+        note "Phase $(phase_cell writer "$next") complete. Handoff posted on issue #$issue; the watcher starts the $next phase."
+      else
+        print_boundary "$next"
+      fi
       ;;
     boundary)
       [ $# -eq 0 ] || die "usage: orch.sh phase boundary"

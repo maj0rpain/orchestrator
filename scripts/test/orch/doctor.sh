@@ -1264,7 +1264,7 @@ else
   # gate without anyone remembering to add a preamble - and this number moving is
   # how you find out that happened.
   assert_contains "collapses every flow check into one line when jq is gone" \
-    "$out" "10 flow checks skipped: jq is not installed"
+    "$out" "11 flow checks skipped: jq is not installed"
   assert_not_contains "with no ticket worktree, doctor without jq says nothing of them" \
     "$out" "ticket worktree"
 fi
@@ -1934,4 +1934,80 @@ assert_status "a global bad Junie value hidden by a local one still fails" "$st"
 assert_contains "naming the global key" "$out" "FAIL  orchestrator.junie.effort.closer is huge (global)"
 assert_contains "with the global Junie clear as its remedy" "$out" \
   "$(printf '\n      orch.sh agent clear closer --host junie --effort --global\n')"
+restore_suite_env
+
+# --- doctor: autopilot phase label and claims (#1457) -------------------------
+# The phase label against the recorded phase, and old claims of other hosts.
+echo
+echo "doctor: autopilot phase label and claims"
+fake_flow autopilot-doctor
+"$ORCH" state set issue 7 >/dev/null
+fake_issue 7 open ready-for-agent orch:implement
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "doctor flags a label that disagrees with the recorded phase" "$out" "is labelled orch:implement, but this checkout last moved to phase spec"
+fake_issue 7 open ready-for-agent orch:spec
+out="$("$ORCH" doctor --flow 2>&1)"
+assert_contains "an agreeing label is ok" "$out" "phase label: orch:spec"
+fake_issue 7 open ready-for-agent
+out="$("$ORCH" doctor --flow 2>&1)"; st=$?
+assert_not_contains "an interactive flow's missing label is not mentioned" "$out" "phase label"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor --flow refuses an autopilot session with no phase label" "$st" 1
+assert_contains "naming it" "$out" "carries no phase label"
+fake_claim_seed 7 otherhost 5 2020-01-01T00:00:00Z
+fake_claim_seed 8 otherhost 5 "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fake_claim_seed 9 "$(hostname)" 5 2020-01-01T00:00:00Z
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "doctor lists another host's old claim" "$out" "issue #7 has been claimed by otherhost"
+assert_not_contains "not a fresh one" "$out" "issue #8"
+assert_not_contains "nor this host's own" "$out" "issue #9"
+restore_suite_env
+
+# --- doctor: autopilot side-checkout flows ------------------------------------
+# A plain doctor in the main checkout checks the autopilot flows living in the
+# watcher's side checkouts.
+echo
+echo "doctor: autopilot side-checkout flows"
+tick_fixture
+fake_issue 7 open ready-for-agent orch:spec
+printf 'Side flow\n' >"$ORCH_GH_FAKE_STORE/issues/7/title"
+# The side checkout is built by the commands a pickup runs: add, then init.
+side7="$("$ORCH" side-checkout add 7-side-flow --issue 7 2>/dev/null)"
+(cd "$side7" && "$ORCH" init 7-side-flow --issue 7 >/dev/null 2>&1)
+fake_issue 7 open ready-for-agent orch:implement
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "doctor in the main checkout flags a side flow whose label disagrees" "$out" "issue #7 is labelled orch:implement, but its side checkout"
+assert_contains "naming the recorded phase" "$out" "last moved to phase spec"
+fake_issue 7 open ready-for-agent orch:spec
+out="$("$ORCH" doctor --env 2>&1)"
+assert_contains "an agreeing side flow is ok" "$out" "phase label of #7: orch:spec"
+restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
+
+# --- doctor --flow: autopilot handoff comments (#1457) -------------------------
+# In an autopilot session a handoff is the posted comment, so doctor --flow
+# validates the fetched comment, never a file under the handoff directory.
+echo
+echo "doctor --flow: autopilot handoff comments"
+fake_flow autopilot-handoffs
+export ORCHESTRATOR_HOST=claude
+"$ORCH" state set issue 7 >/dev/null
+state_fixture phase implement
+fake_issue 7 open ready-for-agent orch:implement
+out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_status "doctor --flow fails with the handoff comments missing" "$st" 1
+assert_contains "naming the missing plan comment" "$out" "handoff 01-plan comment is missing on issue #7"
+plan_h="$(mktemp -d)/01-plan.md"
+plan_file "$plan_h" $'Rounds: 2\nBudget: 3'
+spec_h="$(mktemp -d)/02-spec.md"
+complete_handoff "$spec_h"
+ORCH_AUTOPILOT=1 "$ORCH" handoff post 01-plan "$plan_h" >/dev/null 2>&1
+ORCH_AUTOPILOT=1 "$ORCH" handoff post 02-spec "$spec_h" >/dev/null 2>&1
+out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"; st=$?
+assert_not_contains "posted handoff comments are not reported missing" "$out" "is missing"
+assert_contains "the plan comment validates" "$out" "handoff 01-plan.md complete"
+assert_contains "and the spec comment" "$out" "handoff 02-spec.md complete"
+fake_comment 7 o 2030-01-01T00:00:00Z "<!-- orch:handoff 02-spec -->
+## Decisions"
+out="$(ORCH_AUTOPILOT=1 "$ORCH" doctor --flow 2>&1)"
+assert_contains "an incomplete newest comment is flagged" "$out" "handoff 02-spec.md: "
 restore_suite_env

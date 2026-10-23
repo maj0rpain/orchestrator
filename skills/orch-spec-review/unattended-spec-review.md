@@ -3,7 +3,8 @@
 A reference file of the `orch-spec-review` skill, read only in an unattended
 run.
 
-The mode a quick implementation takes, and only a quick implementation: a
+The mode a quick implementation takes, and which an autopilot flow's spec
+phase builds on (see `spec-phase.md`, which states its differences): a
 standalone spec review that asks the human nothing (ADR-0034). It is the one
 definition of the mode - quick implementation's own steps never restate its
 rules. Everything in the skill's **Standalone spec review** holds, with these

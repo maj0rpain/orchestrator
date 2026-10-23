@@ -1,5 +1,7 @@
 # Quick implementation takes an unattended spec review
 
+Amended by ADR-0052: an autopilot flow's spec review is unattended too.
+
 Superseded in part by ADR-0050: the flow's spec phase decides an adopted issue's rewrite without asking.
 
 Supersedes in part ADR-0004: in a quick implementation the spec review applies its own recommendations; the human's control there is the choice of route.

@@ -133,6 +133,43 @@ orch.sh - deterministic operations for the orchestrator flow
                               orchestrator.parallel, else 3; 1 is sequential.
                               Dies naming the key and value when it is not a
                               positive integer
+  autopilot show              print the autopilot settings, each with its
+                              source: orchestrator.autopilot.permission-mode
+                              (no default), .cap (3), .handle (the repo's
+                              owner), .rounds (2), .budget (3). Dies naming
+                              the key and value when one is out of range
+  autopilot active            exit 0 in an autopilot session (ORCH_AUTOPILOT=1),
+                              1 otherwise
+  autopilot rounds            print the Rounds line of the flow's issue's
+  autopilot budget            plan comment (budget: its Budget line)
+  autopilot start <issue> <plan-file>
+                              the planning close's last step: refuse an issue
+                              without ready-for-agent or with a phase label,
+                              validate the plan (## Autopilot block included),
+                              post it as the plan handoff comment, then add
+                              orch:spec
+  autopilot tick              one watcher pass: ensure the six labels, clean up
+                              this host's stale claims, then claim each open
+                              phase-labelled issue (oldest first, below the
+                              cap), make or reuse its side checkout and start
+                              `autopilot run` detached. Claude Code only;
+                              needs orchestrator.autopilot.permission-mode
+  autopilot watch [--every <seconds>]
+                              repeat tick (default 60 s) until interrupted;
+                              one live watch per clone (a pidfile under the
+                              git common directory), a failed tick reported
+                              on stderr and the loop carried on
+  autopilot run <issue>       the session wrapper a tick starts: runs claude -p
+                              in the issue's side checkout, logging under
+                              .orchestrator/autopilot/logs/, and fails the
+                              issue when the claim is still held at its exit
+  autopilot ask <phase> <file>
+                              post <file> as the phase's question comment
+                              (@mentioning the handle), add needs-human, then
+                              release the claim
+  autopilot answer <phase> <file>
+                              write the newest question and every later
+                              comment to <file>; exit 1 when none follows
   agent set <role> [--model <m>] [--effort <e>] [--global] [--host junie]
                               set a role's agent setting in local config,
                               or global with --global. Roles: implementer,
@@ -254,7 +291,17 @@ orch.sh - deterministic operations for the orchestrator flow
   phase boundary              print the block that ends a phase - the
                               handoff the current phase reads, and the
                               host's Next line
-  handoff path <phase>        print the handoff path for a phase
+  handoff path <phase>        print the handoff path for a phase (in an
+                              autopilot flow: fetch the handoff comment into a
+                              scratch file under .orchestrator/ and print it)
+  handoff post <name> <file>  in an autopilot flow: validate <file> and post
+                              it as the issue comment tagged
+                              `<!-- orch:handoff <name> -->` (01-plan,
+                              02-spec, 03-implement); the newest wins, and a
+                              failed post posts nothing
+  handoff fetch <name> <file> in an autopilot flow: write the newest such
+                              comment's body, marker stripped, to <file>; a
+                              newest one tagged retired is no handoff
   handoff validate <file>     check required sections exist and are non-empty
   handoff section <file> <heading>
                               print the body of the section headed
