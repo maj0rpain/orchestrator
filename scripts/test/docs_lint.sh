@@ -3114,7 +3114,7 @@ check "CHANGELOG.md's top entry is the plugin.json version" "$(scan_changelog "$
 # own. The one fragment's issue must not be a sub-issue: a fragment is named
 # for the PR's issue, never a ticket (CLAUDE.md Versioning).
 scan_changelog_fragments() {
-  local r="$1" base="$2" no_bump="${3:-}" mb status path added=() old new heading frag n parent
+  local r="$1" base="$2" no_bump="${3:-}" mb status path added=() old new heading frag issue parent
   if ! mb="$(git -C "$r" merge-base "$base" HEAD 2>/dev/null)"; then
     echo "CHANGELOG_BASE: no merge-base with HEAD for '$base'"; return 0
   fi
@@ -3152,11 +3152,11 @@ scan_changelog_fragments() {
       git -C "$r" show "HEAD:${added[0]}" >"$frag/${added[0]}"
       (cd "$frag" && bash "$PLUGIN_ROOT/scripts/version-bump.sh" 2>&1 >/dev/null) |
         sed 's/^version-bump: //'
-      n="${added[0]#changelog.d/}" n="${n%.md}"
-      if ! parent="$(cd "$r" && issue_parent_url "$n")"; then
-        echo "${added[0]}: looking up #$n's parent issue failed (gh api), so the fragment's name is unchecked"
+      issue="$(basename "${added[0]}" .md)"
+      if ! parent="$(cd "$r" && issue_parent_url "$issue")"; then
+        echo "${added[0]}: looking up #$issue's parent issue failed (gh api), so the fragment's name is unchecked"
       elif [ -n "$parent" ]; then
-        echo "${added[0]}: #$n is a sub-issue of #${parent##*/}; name the fragment for the PR's issue, never a ticket"
+        echo "${added[0]}: #$issue is a sub-issue of #${parent##*/}; name the fragment for the PR's issue, never a ticket"
       fi
     fi
   fi
