@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.32.1
+
+Speed up doctor and the agent commands by reading the agent settings' git config once per scope per process.
+
 ## 4.32.0
 
 Autopilot phase sessions start lean: a tool allowlist, no bundled skills or built-in plugin-authoring plugin, no MCP servers, no Explore or Plan agents, and the container turns off nonessential traffic and file checkpointing.
