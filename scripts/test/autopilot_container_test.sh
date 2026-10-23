@@ -129,6 +129,8 @@ run_entry -REPO -GH_TOKEN -CLAUDE_CODE_OAUTH_TOKEN
 assert_status "all three missing: one exit 1" "$st" 1
 assert_eq "all three missing: one line each" "$(printf '%s\n' "$err" | grep -c '^orch: ')" 3
 assert_eq "all three missing: nothing but orch lines" "$(printf '%s\n' "$err" | grep -vc '^orch: ')" 0
+assert_empty "all three missing: gh never ran" "$(<"$gh_log")"
+assert_empty "all three missing: orch.sh never ran" "$(<"$orch_log")"
 
 run_entry -CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY=key
 assert_status "the API key alone is accepted" "$st" 0

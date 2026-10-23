@@ -320,8 +320,11 @@ USER orch
 ```
 
 Run one compose project per repo, each with its own env file, clone and
-pidfile: `ORCH_ENV_FILE=<env file> docker compose -p <name> up -d`
-(`ORCH_ENV_FILE` defaults to `.env`).
+pidfile: `ORCH_ENV_FILE=.env.<name> docker compose -p <name> up -d`
+(`ORCH_ENV_FILE` defaults to `.env`). Name each env file `docker/.env.<name>`,
+beside `.env`: only `.env` and `.env.*` are gitignored and kept out of the
+image, so an env file named or kept elsewhere would hold tokens that can be
+committed or baked into the image.
 
 #### The host alternative
 
