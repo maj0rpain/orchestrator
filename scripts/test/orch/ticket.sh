@@ -997,7 +997,7 @@ out="$("$ORCH" ticket bogus 2>&1)"; st=$?
 assert_status "ticket bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown ticket op"
 
-# --- ticket merge (#621) -------------------------------------------------------
+# --- ticket merge (#621) ------------------------------------------------------
 # Lands a ticket branch on the branch it was forked from: rebase inside the
 # ticket worktree, then fast-forward the forked-from branch wherever it is
 # checked out. Checked through branches, tips and exit status.

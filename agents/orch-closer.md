@@ -82,9 +82,10 @@ bash "<orch.sh>" review file <major|nit> "<title>" --axis <spec|standards|suite-
 It creates the `review:<severity>` label if the repo lacks it, resolves the
 repo's own name for `needs-triage` from `docs/agents/triage-labels.md`, labels
 the finding by category - `bug` for the Spec axis, `enhancement` for the
-Standards and suite-cost axes - opens the issue with all three, and prints the number. The
-title is the finding's one-line claim with no prefix - the severity lives in
-the label. Nothing calls `gh issue create` or `gh label create` directly.
+Standards and suite-cost axes - opens the issue with all three, and prints the
+number. The title is the finding's one-line claim with no prefix - the severity
+lives in the label. Nothing calls `gh issue create` or `gh label create`
+directly.
 
 `review file` renders the body from its parts and checks it: it refuses,
 before any label or issue is written, a body that does not parse back to the

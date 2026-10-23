@@ -29,8 +29,9 @@ added to make.
 The loop can finish, and mark a PR ready, while the spec has requirements that
 were never implemented. That is the intended outcome, but it is only safe if it
 is visible: every covered deviation is repeated in the loop's PR comment, so the
-person merging sees "the spec asked for this and we deliberately did not" without
-having to read a handoff file that is git-excluded and eventually archived.
+person merging sees "the spec asked for this and we deliberately did not"
+without having to read a handoff file that is git-excluded and eventually
+archived.
 
 The failure mode to watch for is the section being used to wave work through.
 Its authority comes entirely from the user having agreed at implement time; an

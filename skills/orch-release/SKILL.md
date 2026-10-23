@@ -21,11 +21,12 @@ a release rather than running `/orchestrator:release`.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
@@ -37,10 +38,10 @@ This skill needs no capability beyond running shell commands.
 
 ## 1. Resolve the base branch
 
-Run `bash "$ORCH" base show`. It prints `<branch> (set)` or `<branch> (default)`.
-If the source is `default`, stop: there is nothing to release, because work
-already lands on the default branch. Tell the human they can set another base
-branch with `bash "$ORCH" base set <branch>`.
+Run `bash "$ORCH" base show`. It prints `<branch> (set)` or `<branch>
+(default)`. If the source is `default`, stop: there is nothing to release,
+because work already lands on the default branch. Tell the human they can set
+another base branch with `bash "$ORCH" base set <branch>`.
 
 Run `bash "$ORCH" default-branch` to name the default branch.
 
@@ -62,9 +63,9 @@ the only source of that list, so no issue can be dropped from it.
 
 ## 3. Open the release PR
 
-Run `bash "$ORCH" pr release "<title>" <body-file>`. Add `--force` before the title
-only when the human has explicitly asked to release even though nothing would
-be closed. Never add it on your own after a refusal.
+Run `bash "$ORCH" pr release "<title>" <body-file>`. Add `--force` before the
+title only when the human has explicitly asked to release even though nothing
+would be closed. Never add it on your own after a refusal.
 
 On success it prints the PR number. The PR is opened ready for review, not as
 a draft. It pushes nothing, because the base branch is already on `origin`.
@@ -74,9 +75,9 @@ a draft. It pushes nothing, because the base branch is already on `origin`.
 - **Opened:** give the PR number, and the issues its body closes.
 - **Refused:** a body with no `## Summary` heading is refused, with
   `--force` or without: fix the body file and run it again.
-  For any other refusal, relay the reason `pr release` printed and stop. It refuses when
-  the base branch is the default branch, when a release PR from the base
-  branch is already open (it prints that PR's number, so point the human at
+  For any other refusal, relay the reason `pr release` printed and stop. It
+  refuses when the base branch is the default branch, when a release PR from the
+  base branch is already open (it prints that PR's number, so point the human at
   it), and when no PR merged into the base branch refers to a still-open issue.
   In the last case, say that `--force` opens the release PR anyway, and use it
   only if the human asks.

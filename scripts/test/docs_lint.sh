@@ -4,10 +4,10 @@
 # commands and docs.
 #
 # Each rule is a scan_* function that takes a plugin root (and, for the
-# fragment rule, main's commit) and prints one line per problem, "<file>: <problem>",
-# and nothing when the root obeys it. Each rule runs first against fixture
-# plugin roots that break it, so a rule that stops flagging anything fails here
-# too, then once against the real plugin root.
+# fragment rule, main's commit) and prints one line per problem,
+# "<file>: <problem>", and nothing when the root obeys it. Each rule runs first
+# against fixture plugin roots that break it, so a rule that stops flagging
+# anything fails here too, then once against the real plugin root.
 # The linter checks structure only: it never runs orch.sh and holds no flow
 # state.
 #
@@ -16,59 +16,111 @@
 # scan_rule_index fails when this index and the definitions drift apart.
 # >>> rules
 #   scan_rule_index  this index lists every scan_* function, in file order
-#   scan_old_names  no old skill or command name outside history, and no old command file or skill directory
+#   scan_old_names  no old skill or command name outside history, and no old
+#     command file or skill directory
 #   scan_builtin_command_names  no command is named after a Claude Code built-in
-#   scan_old_glossary_names  no skill or agent names CONTEXT.md or CONTEXT-MAP.md
-#   scan_skill_names  each skill directory has the orch- prefix and its SKILL.md declares its name
-#   scan_orch_resolution  each SKILL.md and command resolves orch.sh and the plugin root the one documented way
-#   scan_orch_bash  each skill file, command and listed doc runs orch.sh through bash
-#   scan_plugin_root_placeholder  no skill file or command carries a <plugin root>/ placeholder
-#   scan_stop_text  each SKILL.md carries orch-flow's skills-only stop text word for word
+#   scan_old_glossary_names  no skill or agent names CONTEXT.md or
+#     CONTEXT-MAP.md
+#   scan_skill_names  each skill directory has the orch- prefix and its SKILL.md
+#     declares its name
+#   scan_orch_resolution  each SKILL.md and command resolves orch.sh and the
+#     plugin root the one documented way
+#   scan_orch_bash  each skill file, command and listed doc runs orch.sh through
+#     bash
+#   scan_plugin_root_placeholder  no skill file or command carries a
+#     <plugin root>/ placeholder
+#   scan_stop_text  each SKILL.md carries orch-flow's skills-only stop text word
+#     for word
 #   scan_junie_snippet_drift  docs/junie/AGENTS.md names every agent
-#   scan_junie_snippet_lookup  the Junie snippet's finding-the-plugin section carries the orch.sh lookup and the pointer
-#   scan_capability_pointer  each SKILL.md, and each agent invoking a mattpocock-skills skill, points at docs/host-capabilities.md
-#   scan_claude_scoped_names  no skill file or agent names a skill by its Claude-scoped name
-#   scan_ask_tool_names  each skill-file or agent sentence naming AskUserQuestion also names ask_user
-#   scan_offered_commands  each plugin command a skill file or agent offers has a commands/<cmd>.md
+#   scan_junie_snippet_lookup  the Junie snippet's finding-the-plugin section
+#     carries the orch.sh lookup and the pointer
+#   scan_capability_pointer  each SKILL.md, and each agent invoking a
+#     mattpocock-skills skill, points at docs/host-capabilities.md
+#   scan_claude_scoped_names  no skill file or agent names a skill by its
+#     Claude-scoped name
+#   scan_ask_tool_names  each skill-file or agent sentence naming
+#     AskUserQuestion also names ask_user
+#   scan_offered_commands  each plugin command a skill file or agent offers has
+#     a commands/<cmd>.md
 #   scan_command_runs_orch  no command runs orch.sh itself
-#   scan_command_routes  each command is a thin route to an orch- skill, or a section of one, that exists
-#   scan_dispatch_copies  no skill file restates the implementer's report lines or the general-purpose-agent tier
-#   scan_agent_settings  each file that starts a plugin agent points at Agent settings and names agent get <role> for each role it starts
-#   scan_agent_settings_section  docs/host-capabilities.md has Agent settings before Fallbacks, linked from its Start a fresh subagent row
-#   scan_lens_briefs  each lens agent owns a non-empty brief, Write and a findings-file section, and orch-spec-review carries no brief
-#   scan_required_headings  each load-bearing heading is present in its file, in the listed order
+#   scan_command_routes  each command is a thin route to an orch- skill, or a
+#     section of one, that exists
+#   scan_dispatch_copies  no skill file restates the implementer's report lines
+#     or the general-purpose-agent tier
+#   scan_agent_settings  each file that starts a plugin agent points at Agent
+#     settings and names agent get <role> for each role it starts
+#   scan_agent_settings_section  docs/host-capabilities.md has Agent settings
+#     before Fallbacks, linked from its Start a fresh subagent row
+#   scan_lens_briefs  each lens agent owns a non-empty brief, Write and a
+#     findings-file section, and orch-spec-review carries no brief
+#   scan_required_headings  each load-bearing heading is present in its file, in
+#     the listed order
 #   scan_orch_names  each backticked orch- name resolves to a skill or an agent
-#   scan_agent_frontmatter  each agent declares its name and a flow-list allowlist with no Agent, Skill or AskUserQuestion
-#   scan_subissue_endpoints  no skill or agent calls GitHub's sub-issue endpoints itself
+#   scan_agent_frontmatter  each agent declares its name and a flow-list
+#     allowlist with no Agent, Skill or AskUserQuestion
+#   scan_subissue_endpoints  no skill or agent calls GitHub's sub-issue
+#     endpoints itself
 #   scan_unpinned_gh  each skill or agent gh call is pinned to the repo with -R
-#   scan_flow_cmd  orch.sh and its modules name plugin commands only through flow_cmd
+#   scan_flow_cmd  orch.sh and its modules name plugin commands only through
+#     flow_cmd
 #   scan_early_exit_pipe  no script pipes into a quiet grep or into head
-#   scan_junie_planning  the Junie snippet has one begin and end marker and restates the planning allowlist and records
-#   scan_capability_table  each docs/host-capabilities.md row has both hosts' cells filled
-#   scan_names_phrase  each listed file, or section of one, names its phrase: the verifying agents suite-cost run, the review loop's triage and the review pass suite-cost check, and the PR-writing sites docs/pr-writing.md, host-capabilities' Agent settings naming agent sync, and the Junie README's Agent settings on Junie section naming --host junie and orch.sh doctor
-#   scan_review_pass  the review pass is defined once in orch-review-pass and quick implementation's step 6 runs it
-#   scan_unattended_modes  quick implementation's steps 1, 2 and 3 run the unattended modes
+#   scan_junie_planning  the Junie snippet has one begin and end marker and
+#     restates the planning allowlist and records
+#   scan_capability_table  each docs/host-capabilities.md row has both hosts'
+#     cells filled
+#   scan_names_phrase  each listed file, or section of one, names its phrase:
+#     the verifying agents suite-cost run, the review loop's triage and the
+#     review pass suite-cost check, and the PR-writing sites docs/pr-writing.md,
+#     host-capabilities' Agent settings naming agent sync, and the Junie
+#     README's Agent settings on Junie section naming --host junie and orch.sh
+#     doctor
+#   scan_review_pass  the review pass is defined once in orch-review-pass and
+#     quick implementation's step 6 runs it
+#   scan_unattended_modes  quick implementation's steps 1, 2 and 3 run the
+#     unattended modes
 #   scan_skill_refs  each skill's SKILL.md names every reference file beside it
-#   scan_spec_review_refs  orch-flow's spec phase step 4 names spec-phase.md and changelog.md, orch-spec-review's Applying the answer names spec-review apply, and orch-handoff's 02-spec.md Spec review changelog names changelog.md
-#   scan_previously_declined  a standalone review pass lists earlier declines and the reviewers hear of them only through the known-items file
-#   scan_review_loop_prompt  the review loop's reviewer prompt is the seven variables, Standards: last
-#   scan_standalone_smells  the standalone review pass section and its command offer --smells
-#   scan_cheapest_test  the implementer's and fixer's Test-driven development sections carry one identical Cheapest sufficient test paragraph
-#   scan_test_cost_smells  the Standards reviewer carries the four test-cost smells outside the smell baseline
-#   scan_improve_tests  orch-improve-tests has its command file and its six step headings in order
-#   scan_report_capability  docs/host-capabilities.md has a row for opening the report and a Markdown-summary fallback
-#   scan_review_pass_self_contained  orch-review-pass refers into no orch-review section and starts its own reviewers
-#   scan_review_pass_callers  each caller of the review pass names orch-review-pass and the section it follows
-#   scan_review_loop_sheds_pass  orch-review keeps no copy of the review pass and points at orch-review-pass
-#   scan_junie_review_pass  Junie's custom-agent block names orch-review-pass's dependency on both reviewers
-#   scan_closer_filing  the closer's Filing section names each labelled body line
-#   scan_cli_nouns  each routed orch.sh noun and its verbs are in the CLI conventions
-#   scan_side_checkout_issue  a quick implementation's side checkout records its issue and its new session picks it up
+#   scan_spec_review_refs  orch-flow's spec phase step 4 names spec-phase.md and
+#     changelog.md, orch-spec-review's Applying the answer names spec-review
+#     apply, and orch-handoff's 02-spec.md Spec review changelog names
+#     changelog.md
+#   scan_previously_declined  a standalone review pass lists earlier declines
+#     and the reviewers hear of them only through the known-items file
+#   scan_review_loop_prompt  the review loop's reviewer prompt is the seven
+#     variables, Standards: last
+#   scan_standalone_smells  the standalone review pass section and its command
+#     offer --smells
+#   scan_cheapest_test  the implementer's and fixer's Test-driven development
+#     sections carry one identical Cheapest sufficient test paragraph
+#   scan_test_cost_smells  the Standards reviewer carries the four test-cost
+#     smells outside the smell baseline
+#   scan_improve_tests  orch-improve-tests has its command file and its six step
+#     headings in order
+#   scan_report_capability  docs/host-capabilities.md has a row for opening the
+#     report and a Markdown-summary fallback
+#   scan_review_pass_self_contained  orch-review-pass refers into no orch-review
+#     section and starts its own reviewers
+#   scan_review_pass_callers  each caller of the review pass names
+#     orch-review-pass and the section it follows
+#   scan_review_loop_sheds_pass  orch-review keeps no copy of the review pass
+#     and points at orch-review-pass
+#   scan_junie_review_pass  Junie's custom-agent block names orch-review-pass's
+#     dependency on both reviewers
+#   scan_closer_filing  the closer's Filing section names each labelled body
+#     line
+#   scan_cli_nouns  each routed orch.sh noun and its verbs are in the CLI
+#     conventions
+#   scan_side_checkout_issue  a quick implementation's side checkout records its
+#     issue and its new session picks it up
 #   scan_docs_paths  each docs/ path a skill or agent names exists
 #   scan_driver_loop  the loop step labels live in docs/driver-loop.md only
-#   scan_layout_map  CONTRIBUTING's Layout map lists every docs/ file and directory
-#   scan_changelog  the CHANGELOG's top heading is the plugin version, with one non-empty section
-#   scan_changelog_fragments  a PR to main adds one well-formed changelog fragment, named for no sub-issue, and bumps nothing by hand
+#   scan_layout_map  CONTRIBUTING's Layout map lists every docs/ file and
+#     directory
+#   scan_changelog  the CHANGELOG's top heading is the plugin version, with one
+#     non-empty section
+#   scan_changelog_fragments  a PR to main adds one well-formed changelog
+#     fragment, named for no sub-issue, and bumps nothing by hand
+#   scan_line_width  no covered Markdown or shell comment line is past 80
+#     columns, outside the exempt lines
 # <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -171,7 +223,8 @@ assert_eq "md_section matches the heading line exactly" \
   "$(md_section "$fixture/doc.md" "## Brie"; echo "exit $?")" "exit 1"
 
 # --- spares self-test --------------------------------------------------------
-# spares runs in a subshell here, so the deliberate FAIL never reaches the count.
+# spares runs in a subshell here, so the deliberate FAIL never reaches the
+# count.
 echo
 echo "spares self-test"
 findings="$(printf '%s\n' 'skills/a.md:1: a problem' 'skills/b.md:2: another problem')"
@@ -236,6 +289,11 @@ printf '%s\n' '# >>> rules' '#   scan_a  rule a' '#   scan_b  rule b' '# <<< rul
   >"$fixture/lint.sh"
 assert_empty "an index matching the functions in order is not flagged" \
   "$(scan_rule_index "$fixture/lint.sh")"
+printf '%s\n' '# >>> rules' '#   scan_a  rule a, whose description' \
+  '#     continues onto a deeper-indented line' '#   scan_b  rule b' '# <<< rules' \
+  'scan_a() { :; }' 'scan_b() { :; }' >"$fixture/lint.sh"
+assert_empty "an index entry continued onto a deeper-indented line is not flagged" \
+  "$(scan_rule_index "$fixture/lint.sh")"
 check "the rule index lists every scan_* function in file order" \
   "$(scan_rule_index "$PLUGIN_ROOT/scripts/test/docs_lint.sh")"
 
@@ -246,10 +304,10 @@ check "the rule index lists every scan_* function in file order" \
 # name the old ones; scripts/test/ feeds old names in deliberately as negative
 # cases. The spec review's command and skill were renamed spec-review in 2.0.0
 # (#235), so the review-spec names, command included, are old names too.
-# The old review skill's directory and name line remain old names. The planning entry point
-# was renamed interview in 3.0.0 (#373), so orch-plan, under any prefix, and
-# the command orchestrator:plan are old names too, each matched as a whole
-# token: .scratch/orch-plan-<slug>.md names a saved plan, not the skill.
+# The old review skill's directory and name line remain old names. The planning
+# entry point was renamed interview in 3.0.0 (#373), so orch-plan, under any
+# prefix, and the command orchestrator:plan are old names too, each matched as a
+# whole token: .scratch/orch-plan-<slug>.md names a saved plan, not the skill.
 # /orchestrator:quick-implement is a live command too (#723), so only the
 # quick-implement skill's directory and name line remain old names. The
 # commands review, status and doctor were renamed review-pass, flow-status and
@@ -319,7 +377,8 @@ printf 'Run `/orchestrator:interview`.\nCall `orchestrator:orch-interview`.\nski
 printf 'Save it to `.scratch/orch-plan-<slug>.md`.\n' >"$fixture/commands/scratch.md"
 printf 'Run `/orchestrator:quick-implement 12`.\nCall `orchestrator:orch-quick-implement`.\n' >"$fixture/commands/quick.md"
 printf 'See skills/quick-implement/SKILL.md.\n' >"$fixture/commands/q1.md"
-# review, status and doctor were renamed review-pass, flow-status, health (#374).
+# review, status and doctor were renamed review-pass, flow-status, health
+# (#374).
 printf 'Run `/orchestrator:review 12`.\n' >"$fixture/commands/r1.md"
 printf 'Run `/orchestrator:status`.\n' >"$fixture/commands/r2.md"
 printf 'Run `/orchestrator:doctor`.\n' >"$fixture/commands/r3.md"
@@ -488,9 +547,10 @@ check "every skill directory carries the orch- prefix and declares its name" "$(
 # Only Claude Code expands CLAUDE_PLUGIN_ROOT, and only in hooks/hooks.json on
 # other hosts, so skill and command text must pair it with the
 # relative fallback. The one documented form (CONTRIBUTING.md, "Resolving
-# orch.sh") is the ORCH= line, the Junie step, and the fallback sentence; any other mention
-# of the variable, or a file that runs orch.sh without them, is a regression.
-# hooks/hooks.json is deliberately out of scope: both hosts expand it there.
+# orch.sh") is the ORCH= line, the Junie step, and the fallback sentence; any
+# other mention of the variable, or a file that runs orch.sh without them, is a
+# regression. hooks/hooks.json is deliberately out of scope: both hosts expand
+# it there.
 echo
 echo "orch.sh resolution (#123)"
 orch_line='ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"'
@@ -515,17 +575,21 @@ orch_lookup="$orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_ma
 orch_steps="$orch_lookup $orch_fallback"
 # scan_orch_resolution <plugin root>: print one line per offending file.
 scan_orch_resolution() {
-  local r="$1" f flat root_sentence
-  local -a allowed
+  local r="$1" f flat rest root_sentence
   for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md; do
     [ -f "$f" ] || continue
+    # Checked on the flat text: a sentence wrapped at 80 columns still counts.
     flat="$(flat_text "$f")"
-    allowed=(-e "$orch_line" -e "$orch_junie")
-    grep -qF "$root_fallback" "$f" && allowed+=(-e "$root_fallback" -e '"${CLAUDE_PLUGIN_ROOT}/')
-    if grep -n 'CLAUDE_PLUGIN_ROOT' "$f" | grep -vF "${allowed[@]}" | grep -q .; then
+    rest="${flat//"$orch_line"/}"
+    rest="${rest//"$orch_junie"/}"
+    if [[ "$flat" == *"$root_fallback"* ]]; then
+      rest="${rest//"$root_fallback"/}"
+      rest="${rest//'"${CLAUDE_PLUGIN_ROOT}/'/}"
+    fi
+    if [[ "$rest" == *CLAUDE_PLUGIN_ROOT* ]]; then
       echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
     fi
-    if grep -qF "$root_fallback" "$f"; then
+    if [[ "$flat" == *"$root_fallback"* ]]; then
       # The sentence runs to the first full stop followed by a space;
       # orch.sh's own dot is followed by a backtick, so it does not end it.
       root_sentence="${flat#*"$root_fallback"}"
@@ -535,10 +599,10 @@ scan_orch_resolution() {
     fi
     if grep -qE 'orch\.sh|\$ORCH' "$f"; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
-      grep -qF "$orch_junie" "$f" || echo "${f#"$r"/}: uses orch.sh without the Junie step"
-      grep -qF "$orch_junie_one" "$f" || echo "${f#"$r"/}: uses orch.sh without the one-install step"
-      grep -qF "$orch_junie_many" "$f" || echo "${f#"$r"/}: uses orch.sh without the stop on several Junie installs"
-      grep -qF "$orch_fallback" "$f" || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
+      [[ "$flat" == *"$orch_junie"* ]] || echo "${f#"$r"/}: uses orch.sh without the Junie step"
+      [[ "$flat" == *"$orch_junie_one"* ]] || echo "${f#"$r"/}: uses orch.sh without the one-install step"
+      [[ "$flat" == *"$orch_junie_many"* ]] || echo "${f#"$r"/}: uses orch.sh without the stop on several Junie installs"
+      [[ "$flat" == *"$orch_fallback"* ]] || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
       [[ "$flat" == *"$orch_steps"* ]] || echo "${f#"$r"/}: resolves orch.sh out of the documented order"
     fi
   done
@@ -575,6 +639,9 @@ flags "the scan flags the Junie steps out of order" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: resolves orch.sh out of the documented order"
 documented_orch_form >"$fixture/commands/orch.md"
 assert_empty "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")"
+documented_orch_form | fold -s -w 80 >"$fixture/commands/orch.md"
+assert_empty "the scan accepts the documented form wrapped at 80 columns" \
+  "$(scan_orch_resolution "$fixture")"
 fixture2="$(new_fixture)"
 mkdir -p "$fixture2/skills/orch-x"
 documented_orch_form >"$fixture2/skills/orch-x/SKILL.md"
@@ -610,7 +677,8 @@ check "every skill and command resolves orch.sh the one documented way" \
   "$(scan_orch_resolution "$PLUGIN_ROOT")"
 
 # Some hosts drop the execute bit on install or update, so orch.sh is always
-# run through bash, quoted or not (#142; docs/host-capabilities.md, "Execute bit").
+# run through bash, quoted or not (#142; docs/host-capabilities.md,
+# "Execute bit").
 # scan_orch_bash <plugin root>: print one line per call site that skips bash.
 scan_orch_bash() {
   local r="$1" f
@@ -725,8 +793,8 @@ check "every skill carries orch-flow's skills-only stop text word for word" "$(s
 # once JUNIE-5493 is fixed.
 echo
 echo "Junie snippet names every agent (#264)"
-# scan_junie_snippet_drift <plugin root>: each agents/*.md the snippet does not name.
-# It checks names only, not which skill lists which agent: that per-skill
+# scan_junie_snippet_drift <plugin root>: each agents/*.md the snippet does not
+# name. It checks names only, not which skill lists which agent: that per-skill
 # mapping is hand-kept, an accepted drift for a temporary workaround.
 scan_junie_snippet_drift() {
   local r="$1" a n
@@ -1222,9 +1290,9 @@ echo "spec-review lenses run as plugin agents (#177)"
 # scan_lens_briefs <plugin root>: print one line per brief out of place. The
 # briefs' one copy is each lens agent's `## Brief` section, so the check is on
 # structure, never on the briefs' wording: every lens agent has a non-empty
-# `## Brief`, and no orch-spec-review .md file has a `**<Lens> brief.**` heading. Each
-# lens agent also has Write in its tools: list and a `## The findings file`
-# section, the file it writes its findings to.
+# `## Brief`, and no orch-spec-review .md file has a `**<Lens> brief.**`
+# heading. Each lens agent also has Write in its tools: list and a
+# `## The findings file` section, the file it writes its findings to.
 lenses="fidelity consistency testability implementability"
 scan_lens_briefs() {
   local r="$1" lens a heading brief f
@@ -1461,7 +1529,8 @@ echo "sub-issue endpoints (#179)"
 # orch.sh's ticket group is the one caller of GitHub's sub-issue endpoints, so
 # no brief calls them itself: an agent finds its spec issue through `ticket
 # parent`.
-# scan_subissue_endpoints <plugin root>: each skill or agent line that calls one.
+# scan_subissue_endpoints <plugin root>: each skill or agent line that calls
+# one.
 scan_subissue_endpoints() {
   (cd "$1" && grep -rnE 'gh api[^`]*(/parent|sub_issues)|issues/[^ ]*/(parent|sub_issues)' agents skills 2>/dev/null) \
     | sed -E 's/^([^:]+:[0-9]+):.*/\1: calls a sub-issue endpoint/'
@@ -1537,7 +1606,8 @@ scan_flow_cmd() {
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
     | sed -E "s/usage: [\"']?orch\\.sh (redo|abort)//g" | grep -E 'orch\.sh (redo|abort)' \
     | sed -E 's/^([^:]+:[0-9]+):.*/\1: names a flow command literally, not through flow_cmd/'
-  # Not a section read: this range is a shell function body in orch.sh or a module.
+  # Not a section read: this range is a shell function body in orch.sh or a
+  # module.
   (cd "$r" && awk '/^flow_cmd\(\)/,/^}/' scripts/orch.sh scripts/orch/*.sh 2>/dev/null) \
     | grep -oE 'section="[^"]+"' | sed 's/section="//; s/"$//' \
     | while IFS= read -r s; do
@@ -1609,17 +1679,19 @@ echo "no pipe into a quiet grep or head (#987, #1019)"
 # same way once it has its lines, and a writer with more than a pipe holds
 # left to send fails on every run (#1019). The safe form passes the value as a
 # herestring, `grep -q y <<<"$v"`, written in full before grep runs, and cuts
-# lines with a reader of all its input, `awk -v n=1 'NR<=n'`. Every .sh under scripts/ is scanned, whether or not it sets
-# pipefail, except scripts/test/, whose runners run outside orch.sh; the gh
-# fake is scanned, since orch.sh sources it. A pipe is a single |, never ||.
-# The quiet flags are -q or -m in any short-flag bundle or as a word, --quiet,
+# lines with a reader of all its input,
+# `awk -v n=1 'NR<=n'`. Every .sh under scripts/ is scanned, whether or not it
+# sets pipefail, except scripts/test/, whose runners run outside orch.sh; the gh
+# fake is scanned, since orch.sh sources it. A pipe is a single |, never ||. The
+# quiet flags are -q or -m in any short-flag bundle or as a word, --quiet,
 # --silent and --max-count, anywhere among that grep's words up to the next |,
 # ;, && or ||. head is flagged whatever its flags, when it is the first word
 # after the pipe, ending at whitespace, ), ;, &, | or the line's end, so
-# `| header` is not. There are no exemptions. A line is judged whole: a trailing comment is not stripped,
-# since # sits inside quoted patterns, and words are not parsed for quoting,
-# so an option-shaped word inside a pattern counts too. Comment lines are
-# spared. A pipe continued onto the next line with \ goes unseen.
+# `| header` is not. There are no exemptions. A line is judged whole: a trailing
+# comment is not stripped, since # sits inside quoted patterns, and words are
+# not parsed for quoting, so an option-shaped word inside a pattern counts too.
+# Comment lines are spared. A pipe continued onto the next line with \ goes
+# unseen.
 # scan_early_exit_pipe <plugin root>: "<file>:<line>: <text>" for each line of
 # a scanned script that pipes into a quiet grep or into head, <text> with
 # leading whitespace trimmed.
@@ -1754,7 +1826,7 @@ spares "an allowlist that matches across a line break is not flagged" \
 check "the Junie snippet is marked once and lists planning-allowlist.sh's lists" \
   "$(scan_junie_planning "$PLUGIN_ROOT")"
 
-# --- host capability table ------------------------------------------------------
+# --- host capability table ----------------------------------------------------
 echo
 echo "host capability table"
 # docs/host-capabilities.md maps each capability to each host, so every row
@@ -1787,7 +1859,8 @@ names_with_bold() { grep -qF -- "$2" <<<"$1" && grep -qF -- "**$3**" <<<"$1"; }
 
 # quick_step_refers <plugin root> <step heading> <skill> <section> <noun>:
 # one line when that quick-implement step does not name `<skill>` and its
-# **<section>**. A name ending in one s (orch-to-tickets) takes a bare apostrophe.
+# **<section>**. A name ending in one s (orch-to-tickets) takes a bare
+# apostrophe.
 quick_step_refers() {
   local quick="skills/orch-quick-implement/SKILL.md" body numbered="${2#\#\# }" owner="$3's"
   [[ $3 == *s && $3 != *ss ]] && owner="$3'"
@@ -1852,11 +1925,11 @@ for pat in '**/.env' '**/.env.*' '!**/.env.example' .claude/settings.local.json;
     "$(grep -qxF -- "$pat" "$PLUGIN_ROOT/.dockerignore" || echo ".dockerignore: does not list $pat")"
 done
 
-# --- review pass (#342) --------------------------------------------------------
+# --- review pass (#342) -------------------------------------------------------
 echo
 echo "review pass (#342)"
-# A review pass is defined once, in orch-review-pass's ## Review pass section, which
-# starts with review-pass begin. Quick implementation's step 6 runs that
+# A review pass is defined once, in orch-review-pass's ## Review pass section,
+# which starts with review-pass begin. Quick implementation's step 6 runs that
 # section rather than keeping its own copy.
 # scan_review_pass <plugin root>: one line per break of that rule.
 scan_review_pass() {
@@ -2013,7 +2086,7 @@ assert_empty "a spec review whose sites name their files and command, however wo
 check "the spec review's references name spec-phase.md, changelog.md and spec-review apply" \
   "$(scan_spec_review_refs "$PLUGIN_ROOT")"
 
-# --- previously declined (#418) ------------------------------------------------
+# --- previously declined (#418) -----------------------------------------------
 echo
 echo "previously declined (#418)"
 # A standalone review pass reads earlier passes' declines through pr comments
@@ -2080,7 +2153,7 @@ assert_empty "a pass that reads earlier declines and passes the seven variables 
 check "a standalone review pass drops earlier declines and the reviewer prompt is the seven variables" \
   "$(scan_previously_declined "$PLUGIN_ROOT")"
 
-# --- review loop reviewer prompt (#1532) ----------------------------------------
+# --- review loop reviewer prompt (#1532) --------------------------------------
 echo
 echo "review loop reviewer prompt (#1532)"
 # The review loop's reviewers get the same seven variables a review pass's do,
@@ -2114,7 +2187,7 @@ printf '%s\n' '# R' '' '## The reviewers' '' '```' "Base SHA: <this iteration's 
 assert_empty "the seven-variable loop prompt is not flagged" "$(scan_review_loop_prompt "$fixture")"
 check "the review loop's reviewer prompt is the seven variables" "$(scan_review_loop_prompt "$PLUGIN_ROOT")"
 
-# --- standalone pass smells (#419) ---------------------------------------------
+# --- standalone pass smells (#419) --------------------------------------------
 echo
 echo "standalone pass smells (#419)"
 # A standalone review pass leaves out the Standards reviewer's smell-baseline
@@ -2147,7 +2220,7 @@ assert_empty "a standalone pass and argument-hint naming --smells are not flagge
 check "a standalone review pass takes --smells, and review-pass offers it" \
   "$(scan_standalone_smells "$PLUGIN_ROOT")"
 
-# --- test cost (#1307) ---------------------------------------------------------
+# --- test cost (#1307) --------------------------------------------------------
 echo
 echo "test cost (#1307)"
 # The agents that write tests, the implementer and the fixer, carry one rule
@@ -2263,7 +2336,7 @@ spares "an agent that runs suite-cost run, wrapped across lines, is not flagged"
 check "the implementer, fixer and resolver run their verification through suite-cost run" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$verify_agents" 'suite-cost run --')"
 
-# --- suite-cost check (#1308) --------------------------------------------------
+# --- suite-cost check (#1308) -------------------------------------------------
 echo
 echo "suite-cost check (#1308)"
 # Suite-cost growth surfaces as a finding at review time: the review loop's
@@ -2289,7 +2362,7 @@ assert_empty "a triage and a review pass that run suite-cost check, wrapped acro
 check "the review loop's triage and the review pass run suite-cost check" \
   "$(scan_names_phrase "$PLUGIN_ROOT" "$suite_cost_checks" 'suite-cost check --')"
 
-# --- improve tests (#1309) -----------------------------------------------------
+# --- improve tests (#1309) ----------------------------------------------------
 echo
 echo "improve tests (#1309)"
 # orch-improve-tests is defined by its six steps, so each step heading stays
@@ -2376,7 +2449,7 @@ assert_empty "a report row with a Markdown summary fallback is not flagged" \
 check "docs/host-capabilities.md has a row for opening the report, with the Markdown fallback" \
   "$(scan_report_capability "$PLUGIN_ROOT")"
 
-# --- review pass skill (#1138) -------------------------------------------------
+# --- review pass skill (#1138) ------------------------------------------------
 echo
 echo "review pass skill (#1138)"
 # The review pass lives in its own skill, orch-review-pass, so a pass loads
@@ -2582,10 +2655,11 @@ check "orch-review holds the loop only and points to orch-review-pass" \
 # scan_junie_review_pass <plugin root>: one line when Junie's custom-agent
 # block has no orch-review-pass dependency sentence naming both reviewers.
 scan_junie_review_pass() {
-  local r="$1" doc="docs/junie/AGENTS.md" line
-  line="$(md_section "$r/$doc" "## orchestrator plugin: custom agents" 2>/dev/null \
-    | grep -E '^The orch-review-pass skill depends on')"
-  { grep -qF 'orch-reviewer-spec' <<<"$line" && grep -qF 'orch-reviewer-standards' <<<"$line"; } \
+  local r="$1" doc="docs/junie/AGENTS.md" sentence
+  # The sentence runs to its first full stop, across a wrapped line.
+  sentence="$(md_section "$r/$doc" "## orchestrator plugin: custom agents" 2>/dev/null \
+    | flat_text | grep -oE '(^| )The orch-review-pass skill depends on[^.]*')"
+  { grep -qF 'orch-reviewer-spec' <<<"$sentence" && grep -qF 'orch-reviewer-standards' <<<"$sentence"; } \
     || echo "$doc: no orch-review-pass dependency sentence naming both reviewers"
   return 0
 }
@@ -2600,6 +2674,11 @@ printf '%s\n' '## orchestrator plugin: custom agents' '' \
   'The orch-review-pass skill depends on the orch-reviewer-spec and orch-reviewer-standards custom agents.' \
   >"$fixture/docs/junie/AGENTS.md"
 assert_empty "an orch-review-pass sentence naming both reviewers is not flagged" \
+  "$(scan_junie_review_pass "$fixture")"
+printf '%s\n' '## orchestrator plugin: custom agents' '' \
+  'The orch-review-pass skill depends on the orch-reviewer-spec and' \
+  'orch-reviewer-standards custom agents.' >"$fixture/docs/junie/AGENTS.md"
+assert_empty "an orch-review-pass sentence wrapped across lines is not flagged" \
   "$(scan_junie_review_pass "$fixture")"
 check "Junie's custom-agent block names orch-review-pass's reviewers" \
   "$(scan_junie_review_pass "$PLUGIN_ROOT")"
@@ -2655,7 +2734,7 @@ assert_empty "a Filing section naming all six is not flagged" "$(scan_closer_fil
 check "the closer's Filing section names every labelled line the closer's body format carries" \
   "$(scan_closer_filing "$PLUGIN_ROOT")"
 
-# --- routed nouns and their verbs are in the CLI conventions -------------------
+# --- routed nouns and their verbs are in the CLI conventions ------------------
 # docs/agents/cli-conventions.md maps orch.sh's grammar: every noun the
 # dispatcher in main() routes is either a row of its Current nouns table or is
 # named in its Exceptions section, so a new noun cannot ship unmapped. A table
@@ -2855,10 +2934,11 @@ echo "docs/ paths resolve (#901)"
 # A skill or agent that names a docs/<path>.md under the plugin root points a
 # model at that file, so the file must exist. Directory references (docs/adr/)
 # and placeholders (docs/adr/<file>.md) name no one file and are not checked.
-# A path under the plugin root's variable or placeholder (${CLAUDE_PLUGIN_ROOT}/docs/,
-# <plugin root>/docs/) is checked; one under any other directory is not ours.
-# skill_agent_md_grep <plugin root> <grep args...>: grep run over every .md file
-# under the root's skills/ and agents/, each hit as "<file>:<line>:<match>".
+# A path under the plugin root's variable or placeholder
+# (${CLAUDE_PLUGIN_ROOT}/docs/, <plugin root>/docs/) is checked; one under any
+# other directory is not ours. skill_agent_md_grep <plugin root> <grep args...>:
+# grep run over every .md file under the root's skills/ and agents/, each hit as
+# "<file>:<line>:<match>".
 skill_agent_md_grep() {
   local r="$1"; shift
   (cd "$r" && find skills agents -name '*.md' -type f 2>/dev/null | sort | xargs -r grep -H "$@")
@@ -2900,7 +2980,7 @@ spares "a docs/ placeholder path is not flagged" "$out" '<file>'
 spares "a path that only ends in docs/ is not flagged" "$out" '^agents/b\.md'
 check "every docs/ file a skill or agent names exists" "$(scan_docs_paths "$PLUGIN_ROOT")"
 
-# --- one driver loop (#901) ----------------------------------------------------
+# --- one driver loop (#901) ---------------------------------------------------
 echo
 echo "one driver loop (#901)"
 # The driver loop's steps a-f live once, in docs/driver-loop.md under the plugin
@@ -2932,7 +3012,7 @@ flags "a loop step label missing from the doc is flagged" \
 spares "a skill that only points at the doc is not flagged" "$out" '^skills/orch-b/'
 check "the driver loop lives once, in docs/driver-loop.md" "$(scan_driver_loop "$PLUGIN_ROOT")"
 
-# --- docs/ in the Layout map (#1008) -------------------------------------------
+# --- docs/ in the Layout map (#1008) ------------------------------------------
 echo
 echo "docs/ in the Layout map (#1008)"
 # Every doc under docs/ has a line in CONTRIBUTING.md's Layout map, the code
@@ -3327,6 +3407,174 @@ if [ -n "${CHANGELOG_BASE+set}" ]; then
 else
   ok "the changelog fragment rule skipped (CHANGELOG_BASE unset)"
 fi
+
+# --- line width (#1524) -------------------------------------------------------
+echo
+echo "line width (#1524)"
+# CONTRIBUTING's Develop section states the width, 80 columns, and the files
+# it covers. A covered line fails when it is longer than 80, counted in
+# characters, so a multi-byte character is one column.
+# SHELL_CODE_AWK, the one rule of what counts as code in a shell file, read
+# from the orch.sh suite's setup, which cannot be sourced here: a line is a
+# comment only when it starts outside any open quote, substitution or heredoc.
+SHELL_CODE_AWK="$(awk "/^SHELL_CODE_AWK='\$/ { f = 1; next } f && /^'\$/ { exit } f" \
+  "$PLUGIN_ROOT/scripts/test/orch/setup.sh")"
+[ -n "$SHELL_CODE_AWK" ] || {
+  echo "docs_lint.sh: no SHELL_CODE_AWK in scripts/test/orch/setup.sh" >&2; exit 1; }
+# scan_line_width <plugin root>: "<file>:<line>: <length> columns, past 80"
+# for each covered, non-exempt line longer than 80.
+scan_line_width() {
+  local f
+  while IFS= read -r f; do
+    F="$f" LC_ALL=C awk "$SHELL_CODE_AWK"'
+      FNR == 1 {
+        is_shell = ENVIRON["F"] ~ /\.sh$/
+        in_frontmatter = 0; fence = ""
+      }
+      { stripped = $0; sub(/^[[:space:]]+/, "", stripped) }
+      is_shell { shell_code_line($0) }
+      is_shell && (!sc_top || stripped !~ /^#/) { next }
+      is_shell && FNR == 1 && stripped ~ /^#!/ { next }
+      is_shell && stripped ~ /^#[[:space:]]*shellcheck/ { next }
+      !is_shell && FNR == 1 && $0 == "---" { in_frontmatter = 1; next }
+      in_frontmatter { if ($0 == "---") in_frontmatter = 0; next }
+      !is_shell && match(stripped, /^(```|~~~)/) {
+        marker = substr(stripped, 1, 3)
+        if (fence == "") fence = marker; else if (marker == fence) fence = ""
+        next
+      }
+      fence != "" || stripped ~ /^\|/ || /https?:\/\// { next }
+      {
+        bare = stripped; sub(/^#+[[:space:]]*/, "", bare)
+        sub(/[[:space:]]+$/, "", bare)
+        sub(/^([-*+]|[0-9]+[.)])[[:space:]]+/, "", bare)
+        if (bare !~ /[[:space:]]/) next
+      }
+      {
+        chars = $0
+        cols = length(chars) - gsub(/[\200-\277]/, "", chars)
+      }
+      cols > 80 { print ENVIRON["F"] ":" FNR ": " cols " columns, past 80" }' "$1/$f"
+  done < <(cd "$1" && {
+    find skills agents commands docs -name '*.md' 2>/dev/null
+    for f in README.md CONTRIBUTING.md GLOSSARY.md CLAUDE.md; do
+      [ -f "$f" ] && echo "$f"
+    done
+    find scripts -name '*.sh' 2>/dev/null
+  } | sort)
+  return 0
+}
+# wide_line <prefix> <n>: <prefix> padded with x to <n> columns.
+wide_line() {
+  local s="$1"
+  while [ "${#s}" -lt "$2" ]; do s="${s}x"; done
+  printf '%s\n' "$s"
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-a"
+{ echo '# A'; echo; wide_line 'Some prose ' 81; wide_line 'Some prose ' 80; } \
+  >"$fixture/skills/orch-a/SKILL.md"
+out="$(scan_line_width "$fixture")"
+flags "a covered Markdown line of 81 columns is flagged, with file, line, length" \
+  "$out" "skills/orch-a/SKILL.md:3: 81 columns, past 80"
+spares "an 80-column line is not flagged" "$out" '^skills/orch-a/SKILL\.md:4:'
+mkdir -p "$fixture/scripts/orch"
+{ wide_line '#!/usr/bin/env bash # a shebang ' 90
+  wide_line '  # a whole-line comment ' 81
+  wide_line 'echo "a code line" ' 81
+  wide_line 'echo hi  # a trailing comment ' 90
+} >"$fixture/scripts/orch/a.sh"
+out="$(scan_line_width "$fixture")"
+flags "a whole-line shell comment of 81 columns under scripts/ is flagged" \
+  "$out" "scripts/orch/a.sh:2: 81 columns, past 80"
+spares "an 81-column shell code line is not flagged" "$out" '^scripts/orch/a\.sh:3:'
+spares "an over-long trailing comment on a code line is not flagged" \
+  "$out" '^scripts/orch/a\.sh:4:'
+spares "a #! shebang line is not flagged" "$out" '^scripts/orch/a\.sh:1:'
+# heredoc_case <opener> <terminator>: a heredoc holding an over-long # line,
+# then an over-long comment after its terminator.
+heredoc_case() {
+  printf 'cat %s\n' "$1"
+  wide_line '# inside the heredoc body ' 90
+  printf '%s\n' "$2"
+  wide_line '# after the heredoc ' 90
+}
+{ heredoc_case '<<EOF' 'EOF'; heredoc_case "<<'END'" 'END'
+  heredoc_case '<<"X1"' 'X1'; heredoc_case '<<-EOF' $'\tEOF'
+  echo 'grep -q y <<<"$v"'; wide_line '# after a herestring ' 90
+} >"$fixture/scripts/orch/heredoc.sh"
+out="$(scan_line_width "$fixture")"
+spares "a # line inside a heredoc body is not flagged" \
+  "$out" '^scripts/orch/heredoc\.sh:(2|6|10|14):'
+{ echo "echo \"cat <<'EOF' is quoted, no heredoc\""
+  wide_line '# after a quoted <<EOF ' 90
+  echo 'awk "'; wide_line '# inside a multi-line string ' 90; echo '"'
+} >"$fixture/scripts/orch/quoted.sh"
+out_quoted="$(scan_line_width "$fixture")"
+flags "an over-long comment after a quoted <<WORD is flagged" \
+  "$out_quoted" "scripts/orch/quoted.sh:2: 90 columns, past 80"
+spares "a # line inside a multi-line string is not flagged" \
+  "$out_quoted" '^scripts/orch/quoted\.sh:4:'
+for n in 4 8 12 16 18; do
+  flags "an over-long comment after a heredoc's terminator, line $n, is flagged" \
+    "$out" "scripts/orch/heredoc.sh:$n: 90 columns, past 80"
+done
+mkdir -p "$fixture/agents"
+{ echo '---'; wide_line 'description: a long one ' 90; echo '---'  # 1-3
+  echo '```'; wide_line 'some code ' 90; echo '```'                # 4-6
+  echo '  ~~~'; wide_line 'some code ' 90; echo '  ~~~'            # 7-9
+  wide_line '| a | table row ' 90                                  # 10
+  wide_line 'See http://example.com for ' 90                       # 11
+  wide_line 'See https://example.com for ' 90                      # 12
+  wide_line '' 90                                                  # 13
+  wide_line '  - ' 90                                              # 14
+  wide_line '12. ' 90                                              # 15
+  wide_line '## ' 90                                               # 16
+  printf '%s\n' "Prose $(printf '%.0s→' {1..74})"                  # 17
+  echo '---'; wide_line 'Some prose ' 81                           # 18-19
+} >"$fixture/agents/orch-x.md"
+{ echo '#!/usr/bin/env bash'
+  wide_line '# shellcheck disable=SC2016 because of a reason ' 90
+  wide_line '#shellcheck source=setup.sh ' 90
+  wide_line '  # ' 90
+} >"$fixture/scripts/orch/exempt.sh"
+out="$(scan_line_width "$fixture")"
+spares "a line in the first line's frontmatter is not flagged" \
+  "$out" '^agents/orch-x\.md:2:'
+spares "a line in a backtick fence is not flagged" "$out" '^agents/orch-x\.md:5:'
+spares "a line in a tilde fence is not flagged" "$out" '^agents/orch-x\.md:8:'
+spares "a table row is not flagged" "$out" '^agents/orch-x\.md:10:'
+spares "a line containing a URL is not flagged" "$out" '^agents/orch-x\.md:1[12]:'
+spares "an unbreakable-token line is not flagged" "$out" '^agents/orch-x\.md:13:'
+spares "an unbreakable token after a list marker is not flagged" \
+  "$out" '^agents/orch-x\.md:1[45]:'
+spares "an unbreakable token after a # is not flagged" "$out" '^agents/orch-x\.md:16:'
+spares "an 80-character line of multi-byte characters is not flagged" \
+  "$out" '^agents/orch-x\.md:17:'
+flags "an over-long line after a mid-document --- is flagged" \
+  "$out" "agents/orch-x.md:19: 81 columns, past 80"
+spares "a # shellcheck directive is not flagged" "$out" '^scripts/orch/exempt\.sh:[23]:'
+spares "an unbreakable token after a shell # is not flagged" \
+  "$out" '^scripts/orch/exempt\.sh:4:'
+mkdir -p "$fixture/commands" "$fixture/changelog.d" "$fixture/docs/adr" \
+  "$fixture/.out-of-scope"
+for f in README.md commands/c.md docs/adr/0001-a.md CHANGELOG.md changelog.d/12.md \
+  .out-of-scope/x.md; do
+  wide_line 'Some prose ' 81 >"$fixture/$f"
+done
+out="$(scan_line_width "$fixture")"
+flags "an over-long line in the root README.md is flagged" \
+  "$out" "README.md:1: 81 columns, past 80"
+flags "an over-long line in a commands/ file is flagged" \
+  "$out" "commands/c.md:1: 81 columns, past 80"
+flags "an over-long line in an ADR is flagged" \
+  "$out" "docs/adr/0001-a.md:1: 81 columns, past 80"
+spares "an over-long line in CHANGELOG.md or changelog.d/ is not flagged" \
+  "$out" '^(CHANGELOG\.md|changelog\.d/12\.md):'
+spares "an over-long line in a *.md outside the covered paths is not flagged" \
+  "$out" '^\.out-of-scope/'
+check "no covered Markdown or shell comment line is past 80 columns" \
+  "$(scan_line_width "$PLUGIN_ROOT")"
 
 # >>> summary
 echo

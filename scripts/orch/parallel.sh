@@ -5,7 +5,8 @@
 
 # The clone's parallel cap: how many ticket subagents one frontier runs at once,
 # 1 meaning sequential. Read here alone, so the default lives in one place and
-# the skills never call git config; it is set with git config orchestrator.parallel.
+# the skills never call git config; it is set with git config
+# orchestrator.parallel.
 PARALLEL_DEFAULT=3
 cmd_parallel() {
   local op="${1:-}" v

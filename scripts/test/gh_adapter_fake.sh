@@ -14,7 +14,8 @@
 # for the next one a test runs. orch_test.sh's fake_github creates the store,
 # and its fake_* helpers seed and read it back. Its layout:
 #
-#   labels           one label per line, "<name><TAB><colour><TAB><description>";
+#   labels           one label per line,
+#                    "<name><TAB><colour><TAB><description>";
 #                    absent, the repo has no labels
 #   issues/<n>/state  OPEN or CLOSED
 #   issues/<n>/labels one label per line
@@ -112,7 +113,8 @@ fake_countdown() {
 
 # fake_failing <operation>: true when fake_fail named the operation, with its
 # stderr written. An operation calls `! fake_failing <op> || return 1` once it
-# has parsed its own arguments, so a bad call exits 2 even with a failure seeded.
+# has parsed its own arguments, so a bad call exits 2 even with a failure
+# seeded.
 fake_failing() {
   local f n s
   s="$(fake_store)" || return 1
@@ -205,7 +207,7 @@ adapter_labels() {
   cut -f1 "$f" | awk -v n="$1" 'NR<=n'
 }
 
-# --- issue operations, on the store ---------------------------------------------
+# --- issue operations, on the store -------------------------------------------
 
 fake_issue_dir() { printf '%s/issues/%s\n' "$(fake_store)" "$1"; }
 
@@ -514,7 +516,7 @@ adapter_issue_reopen() {
   rm -f "$(fake_issue_dir "$1")/reason" "$(fake_issue_dir "$1")/duplicate_of"
 }
 
-# --- pr operations, on the store ------------------------------------------------
+# --- pr operations, on the store ----------------------------------------------
 
 fake_pr_dir() { printf '%s/prs/%s\n' "$(fake_store)" "$1"; }
 
@@ -683,7 +685,7 @@ adapter_pr_state_draft() {
   if [ -f "$(fake_pr_dir "$1")/draft" ]; then echo true; else echo false; fi
 }
 
-# --- sub-issue and dependency operations, on the store --------------------------
+# --- sub-issue and dependency operations, on the store ------------------------
 
 # fake_open_blockers <n>: how many of #n's stored blockers are still open.
 fake_open_blockers() {
@@ -789,7 +791,7 @@ adapter_sub_issues_supported() {
   if [ -f "$(fake_store)/no_sub_issues" ]; then echo no; else echo yes; fi
 }
 
-# --- repo operations, on the store ----------------------------------------------
+# --- repo operations, on the store --------------------------------------------
 
 # adapter_repo_default_branch <repo>: the stored default_branch answer, as is.
 # A store with none fails it, as gh does for a repo it cannot resolve. Failing
@@ -817,7 +819,7 @@ adapter_auth_status() {
   echo "Logged in to github.com account fake-gh"
 }
 
-# --- ci operations, on the store ------------------------------------------------
+# --- ci operations, on the store ----------------------------------------------
 
 # fake_checks_answer <answer>: the checks one scripted answer stands for, in
 # adapter_pr_checks's TSV shape - or, for boom, a connection error.
@@ -920,7 +922,8 @@ adapter_claim_create() {
   printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$(hostname)" "$3" "$2" "$(now)" >"$f"
 }
 
-# adapter_claim_delete <issue>: the claim removed; none there is freed all the same.
+# adapter_claim_delete <issue>: the claim removed; none there is freed all the
+# same.
 adapter_claim_delete() {
   ! fake_failing adapter_claim_delete || return 1
   rm -f "$(fake_store)/claims/$1"

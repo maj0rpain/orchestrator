@@ -86,7 +86,7 @@ handshake_partner() {
   "$ORCH" suite-cost run -- sh -c 'read -r _ <"$0"; printf "x\n" >"$1"' "$1/one" "$1/two"
 }
 
-# --- suite-cost run ------------------------------------------------------------
+# --- suite-cost run -----------------------------------------------------------
 # Runs a verification command with its output and exit code passed through, and
 # records a passing run's suite cost in the clone-wide record.
 echo
@@ -242,7 +242,7 @@ out="$("$ORCH" suite-cost bogus 2>&1)"; st=$?
 assert_status "suite-cost bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown suite-cost op"
 
-# --- suite-cost history --------------------------------------------------------
+# --- suite-cost history -------------------------------------------------------
 # Prints the record's lines oldest first, in the documented line shape.
 echo
 echo "suite-cost history"
@@ -289,7 +289,7 @@ assert_contains "the CLI conventions' noun table has a suite-cost row" \
   "$(grep '^| `suite-cost`' "$PLUGIN_ROOT/docs/agents/cli-conventions.md")" \
   '`run`, `check`, `history`'
 
-# --- suite-cost check ----------------------------------------------------------
+# --- suite-cost check ---------------------------------------------------------
 # Compares the head's recorded suite cost with the baseline's and prints one
 # verdict line. Records are seeded in the documented line shape, so no path
 # burns real CPU, and the command marks that it ran and fails: a verdict
@@ -480,7 +480,7 @@ for args in "" "true" "-- "; do
   assert_contains "with its usage line" "$out" "usage: orch.sh suite-cost check -- <cmd> [args...]"
 done
 
-# --- suite-cost check base run -------------------------------------------------
+# --- suite-cost check base run ------------------------------------------------
 # With no record on the base commit, check measures the base once, in a
 # temporary worktree it removes, and records a pass.
 echo
@@ -627,7 +627,7 @@ assert_not_contains "never with an overlap warning" "$(cat "$errf")" "overlapped
 assert_eq "recording nothing" "$(cat "$rec")" "$before"
 rm -f "$errf"
 
-# --- suite-cost check confirmation ---------------------------------------------
+# --- suite-cost check confirmation --------------------------------------------
 # A comparison past the threshold is confirmed before it is reported: check
 # measures the head once in a temporary worktree at HEAD, then the base once
 # at the baseline sample's commit, and compares again. The checked command is
@@ -877,7 +877,8 @@ before_runs="$(runs)"
 "$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
 assert_eq "a verdict stored for a different base commit is not reused" "$(runs)" "$((before_runs + 2))"
 
-# A confirmed ok is reused too, and an ok reached without confirmation stores nothing.
+# A confirmed ok is reused too, and an ok reached without confirmation stores
+# nothing.
 confirm_repo "echo b >>$cnt" "echo h >>$cnt"
 vf="$rec.verdicts"
 before_runs="$(runs)"

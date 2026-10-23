@@ -44,8 +44,8 @@ only `# ---` sections, optionally preceded by a preamble: the text before its
 first `# ---` line, run before that file's sections whenever one of them runs.
 
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
-the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
-section must pass on its own. Helper placement is checked by harness.sh's
+the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so
+every section must pass on its own. Helper placement is checked by harness.sh's
 placement section; its failure message states the rule.
 
 orch.sh's own code is laid out the same way: `scripts/orch/<noun>.sh` holds one
@@ -69,6 +69,15 @@ settings; severity is a command-line option only, so a manual run needs
 opens with a shellcheck shell directive and a never-run `source setup.sh` line
 behind a `source=setup.sh` directive, so shellcheck reads setup.sh's
 definitions; a new section file copies those lines.
+
+**Line width** is 80 columns: no covered line is longer than 80. It covers
+every `*.md` under `skills/`, `agents/`, `commands/` and `docs/`, the root
+`README.md`, `CONTRIBUTING.md`, `GLOSSARY.md` and `CLAUDE.md`, and the
+whole-line comments of every `*.sh` under `scripts/`, outside heredoc bodies;
+never `CHANGELOG.md`, `changelog.d/` or shell code. Frontmatter, fenced code,
+table rows, lines with a URL, `# shellcheck` directives and one-token lines
+are exempt. `docs_lint.sh`'s `scan_line_width` is the check, naming each
+over-long line's file, line and length.
 
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the
@@ -101,11 +110,12 @@ version-bump Action (`.github/workflows/version-bump.yml`) runs
 `scripts/version-bump.sh`, which gathers every fragment on `main` into one
 version bump: `version` raised by the highest level among them, one `## <new
 version>` entry on top of `CHANGELOG.md` carrying their prose in issue-number
-order, the fragments deleted, `.gitkeep` left in place. The Action commits that as `Release <version>`
-and pushes it; a push that loses a race with another merge leaves the
-fragments to that merge's run. Run `scripts/version-bump.sh` from a scratch
-copy of the checkout to see how a fragment renders: it edits the files in
-place and does not commit. `scripts/test/version_bump_test.sh` tests it.
+order, the fragments deleted, `.gitkeep` left in place. The Action commits that
+as `Release <version>` and pushes it; a push that loses a race with another
+merge leaves the fragments to that merge's run. Run `scripts/version-bump.sh`
+from a scratch copy of the checkout to see how a fragment renders: it edits the
+files in place and does not commit. `scripts/test/version_bump_test.sh` tests
+it.
 
 CI (`docs_lint.sh`) enforces the rule: a PR to `main` adds exactly one
 well-formed fragment, and never changes `version`, adds a `## ` heading to
@@ -144,9 +154,13 @@ The fixtures to reach for first:
 To debug, run one section under `bash -x`. The suite selects whole `# ---`
 sections, not single cases, and in parallel mode each section re-runs in a
 child bash that does not inherit `-x`, so run it sequentially:
-`ORCH_TEST_ONLY='^<section>$' ORCH_TEST_JOBS=1 bash -x scripts/test/orch_test.sh`.
+`ORCH_TEST_ONLY='^<section>$' ORCH_TEST_JOBS=1 bash -x
+scripts/test/orch_test.sh`.
 
-`orch.sh`, its modules and the test suite target bash 4.0+: `mapfile`, `declare -A` and `printf -v` are fine. `scripts/flow-state.sh` and the `hook-*.sh` scripts stay bash 3.2-compatible (no namerefs, no `mapfile`, no `declare -A`), because they run under macOS's `/bin/bash`.
+`orch.sh`, its modules and the test suite target bash 4.0+: `mapfile`, `declare
+-A` and `printf -v` are fine. `scripts/flow-state.sh` and the `hook-*.sh`
+scripts stay bash 3.2-compatible (no namerefs, no `mapfile`, no `declare -A`),
+because they run under macOS's `/bin/bash`.
 
 ### Measuring a lens
 
@@ -157,7 +171,8 @@ spec body the lens reads; `map.md`, its baseline map, when it has one; and
 `snapshot`, the commit whose tree the lens explores. The Implementability
 fixture is the 801e6f97 round-1 spec body and baseline map on snapshot
 `0fea0b6`, the map pruned from 27 locations to 25 by dropping two no decision
-in the spec depends on (#1244). A new lens's benchmark is a new fixture directory and nothing else.
+in the spec depends on (#1244). A new lens's benchmark is a new fixture
+directory and nothing else.
 
 A human starts the runs, since they need a live `claude` (an agent's nested
 `claude -p` with a custom agent is blocked):
@@ -180,8 +195,9 @@ measure <dir>...` prints a Markdown report on stdout, with no `claude`.
 To compare against a run made elsewhere, such as the #1196 baseline
 transcript, lay it out by hand as a one-run directory: write `lens`,
 `revision` and `model`, copy the fixture's `spec.md` and `map.md`, and put the
-lens agent's transcript (`~/.claude/projects/<cwd-slug>/<session>/subagents/agent-*.jsonl`)
-at `run-1/transcript.jsonl` and the map it wrote at `run-1/map.md`. Pass that
+lens agent's transcript
+(`~/.claude/projects/<cwd-slug>/<session>/subagents/agent-*.jsonl`) at
+`run-1/transcript.jsonl` and the map it wrote at `run-1/map.md`. Pass that
 directory to `measure` beside the new ones for a reference row.
 
 ## Layout
@@ -254,11 +270,11 @@ cannot drift between sessions.
 ## Resolving orch.sh
 
 Only Claude Code expands `CLAUDE_PLUGIN_ROOT` in skills. Other hosts expand it
-only inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is). Junie
-CLI's agent shell has no `JUNIE_EXTENSION_ROOT` either, and Junie does not tell
-the model a skill's own directory. So every skill that runs `orch.sh` states the
-path one way, in this order: the `ORCH=` line, then the Junie CLI install, then
-the relative fallback:
+only inside `hooks/hooks.json` (which keeps `${CLAUDE_PLUGIN_ROOT}` as is).
+Junie CLI's agent shell has no `JUNIE_EXTENSION_ROOT` either, and Junie does not
+tell the model a skill's own directory. So every skill that runs `orch.sh`
+states the path one way, in this order: the `ORCH=` line, then the Junie CLI
+install, then the relative fallback:
 
 ````
 ```
@@ -279,8 +295,9 @@ The Junie step is prose carrying a literal `ls`, not a bash line that sets
 marketplace clone under `extensions/marketplaces/`. Keep the first line of the
 Junie sentence and the three "If it prints" sentences intact, in that order,
 then call `bash "$ORCH" <subcommand>` everywhere else. Do not copy the scripts
-into a skill. Commands never run `orch.sh`: each is a thin route into a skill, usually
-an `orch-flow` section (see [Naming host capabilities](#naming-host-capabilities)).
+into a skill. Commands never run `orch.sh`: each is a thin route into a skill,
+usually an `orch-flow` section (see [Naming host
+capabilities](#naming-host-capabilities)).
 
 A skill that reads another file under the plugin root names it as
 `"${CLAUDE_PLUGIN_ROOT}/<path>"`, and the same file carries a sentence starting
@@ -298,18 +315,19 @@ Skills and the agent briefs under `agents/` describe capabilities ("invoke a
 skill", "start a fresh subagent", "ask a multiple-choice question"), may name
 the Claude Code tool inline as an example, alongside the Junie tool for the
 same capability; `docs_lint.sh` fails when a skill or agent names
-`AskUserQuestion` in a sentence that does not also name `ask_user`. They point at
-[docs/host-capabilities.md](docs/host-capabilities.md), which maps each
+`AskUserQuestion` in a sentence that does not also name `ask_user`. They point
+at [docs/host-capabilities.md](docs/host-capabilities.md), which maps each
 capability to each host and documents the fallback where a host lacks one. A
 phase records every fallback it took in its handoff's **Host fallbacks**
 section, which `handoff validate` requires for flows started on 1.0.0 or later
 (a flow already in progress at upgrade is exempt); an agent records its own
-where its brief says. Commands are Claude Code shortcuts only: each one routes to a
-skill, or to one section of it (usually an `orch-flow` section), and holds no
-behaviour of its own, so invoking the skill on another host is complete. `docs_lint.sh` fails when a skill, or an agent that
-invokes a skill, never points at the reference, when a skill or agent offers
-a `/orchestrator:<cmd>` that has no `commands/<cmd>.md`, or when a command runs
-`orch.sh` or routes to a section that does not exist.
+where its brief says. Commands are Claude Code shortcuts only: each one routes
+to a skill, or to one section of it (usually an `orch-flow` section), and holds
+no behaviour of its own, so invoking the skill on another host is complete.
+`docs_lint.sh` fails when a skill, or an agent that invokes a skill, never
+points at the reference, when a skill or agent offers a `/orchestrator:<cmd>`
+that has no `commands/<cmd>.md`, or when a command runs `orch.sh` or routes to a
+section that does not exist.
 
 ## Command names
 

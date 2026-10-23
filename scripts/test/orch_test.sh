@@ -26,9 +26,9 @@
 # section order: before any section runs it cd's into a fresh `mktemp -d`
 # directory that is no git repo, points HOME (and SUITE_HOME, which sections
 # restore) at a fresh temp directory, and unsets CLAUDE_PLUGIN_ROOT - exiting
-# non-zero if it cannot. A section run on its own that forgets to arrange its own repo
-# then fails against an empty directory instead of the caller's checkout. The
-# isolation section, the suite's first, asserts all of this.
+# non-zero if it cannot. A section run on its own that forgets to arrange its
+# own repo then fails against an empty directory instead of the caller's
+# checkout. The isolation section, the suite's first, asserts all of this.
 #
 # Nor does the suite reach the real gh. The shared setup puts a stub gh first
 # on PATH that logs each call and fails, and the summary turns every logged
@@ -36,7 +36,9 @@
 # a GitHub origin installs fake_github first, or uses orch_gh_failing where it
 # tests gh's own argv; the fixture gh, prepended later, still wins over it.
 #
-# Every section must pass on its own, as the parallel runner runs each one; where a helper lives is checked by harness.sh's placement section, whose failure message states the rule.
+# Every section must pass on its own, as the parallel runner runs each one;
+# where a helper lives is checked by harness.sh's placement section, whose
+# failure message states the rule.
 
 # The suite's own directory, walked to once; every path below builds on it.
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -119,9 +119,9 @@ $detail" ;;
 # The full `implement -> spec` transition. Defaults to keeping the existing
 # spec issue and re-reviewing it - through the spec phase's step 0, whose
 # redo check reads the pre-redo-spec-* folder this leaves behind and so
-# skips the rewrite decision an adopted issue gets - and retires that issue's ticket
-# breakdown (`ticket retire`, issue #334) so the redone spec is broken down
-# again. The retire runs first: a GitHub failure there dies with the phase
+# skips the rewrite decision an adopted issue gets - and retires that issue's
+# ticket breakdown (`ticket retire`, issue #334) so the redone spec is broken
+# down again. The retire runs first: a GitHub failure there dies with the phase
 # still `implement` and the handoffs in place, so a re-run resumes. Only
 # `--new-issue` closes the old one and clears state.issue, so orch-to-spec
 # runs again from scratch; its tickets are left as they are.
@@ -136,7 +136,8 @@ cmd_redo_spec() {
     *) die "usage: orch.sh redo spec [--new-issue]" ;;
   esac
   [ $# -eq 0 ] || die "usage: orch.sh redo spec [--new-issue]"
-  # Autopilot handoff comments are retired before any state moves, as in redo review.
+  # Autopilot handoff comments are retired before any state moves, as in redo
+  # review.
   local issue
   require_issue issue
   # shellcheck disable=SC2046 # handoff filenames hold no spaces or globs

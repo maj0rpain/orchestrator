@@ -26,7 +26,8 @@ state_key_field() {
 
 # Every read of state.json goes through here, so what an absent key means is
 # decided in the STATE_KEYS table rather than at each call site. A key outside
-# the table dies: a misspelt read would otherwise look exactly like an unset one.
+# the table dies: a misspelt read would otherwise look exactly like an unset
+# one.
 state_get() { state_get_in "$STATE" "$1"; }
 
 # state_get against the state file <file>: reads <key> from any checkout's
@@ -57,11 +58,11 @@ require_state() {
   [ -f "$STATE" ] || "${1:-die}" "no active flow ($ORCH_DIR_NAME/state.json not found). Run $(flow_cmd start) first."
 }
 
-# Fetches a required state field through state_get, dies with $3 if it comes back empty,
-# and otherwise writes it into the variable named by $1 - a caller-named
-# out-param via `printf -v` rather than a nameref: bash 3.2 has neither
-# `local -n` nor `declare -n`, and this file promises to still run there (the
-# same idiom `d_gate` uses in doctor.sh).
+# Fetches a required state field through state_get, dies with $3 if it comes
+# back empty, and otherwise writes it into the variable named by $1 - a
+# caller-named out-param via `printf -v` rather than a nameref: bash 3.2 has
+# neither `local -n` nor `declare -n`, and this file promises to still run there
+# (the same idiom `d_gate` uses in doctor.sh).
 #
 # Call it as a bare statement on its own line - `local pr; require_pr pr` -
 # never folded into `$(...)`. A caller-named out-param has no result to

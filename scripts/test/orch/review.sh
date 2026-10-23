@@ -105,7 +105,7 @@ parts_with() {
   done
 }
 
-# --- review ready's pointer to /orchestrator:finish (#727) ---------------------
+# --- review ready's pointer to /orchestrator:finish (#727) --------------------
 # review ready's stdout stays the PR number alone everywhere; in a side
 # checkout it points the human at /orchestrator:finish on stderr, for after the
 # PR merges.
@@ -527,12 +527,12 @@ restore_suite_env
 
 # --- review ready -----------------------------------------------------------
 # Marking the PR ready and recording the flow as done are one operation, because
-# either half alone is a lie: a `done` flow over a draft PR, or a PR promoted out
-# of draft by a flow that still thinks it is reviewing.
+# either half alone is a lie: a `done` flow over a draft PR, or a PR promoted
+# out of draft by a flow that still thinks it is reviewing.
 #
-# Goes through the store-backed fake (fake_github) - the fixture gh's log stays empty
-# across both calls, proving neither reaches a real gh subprocess. The real
-# operation is pinned in "gh adapter contract".
+# Goes through the store-backed fake (fake_github) - the fixture gh's log stays
+# empty across both calls, proving neither reaches a real gh subprocess. The
+# real operation is pinned in "gh adapter contract".
 echo
 echo "review ready"
 review_flow reviewready
@@ -588,7 +588,8 @@ assert_eq "and not the ones that passed" "$(printf '%s\n' "$out" | grep -c 'lint
 
 # A cancelled run is not a run that passed, and it is never going to report. It
 # classifies as failing, which is also the arm that offers the flake rerun - the
-# right remedy for a check that was killed rather than one that judged the change.
+# right remedy for a check that was killed rather than one that judged the
+# change.
 fake_checks 7 all cancel
 out="$("$ORCH" review ci 2>&1)"; st=$?
 assert_status "a cancelled check stops the loop too" "$st" 1
@@ -608,10 +609,10 @@ assert_first_line "classified as none" "$out" "none"
 # whether the repo requires nothing or requires something that has not landed
 # yet. Widening to every check on the commit before the grace is out is how an
 # unrelated green check gets mistaken for a required one that never arrived - so
-# the unfiltered answer here is `failing`, and a green result proves it was never
-# consulted. The grace is set well clear of a whole-second wall-clock tick, so
-# what the test proves is the second answer winning rather than how fast the
-# first one came.
+# the unfiltered answer here is `failing`, and a green result proves it was
+# never consulted. The grace is set well clear of a whole-second wall-clock
+# tick, so what the test proves is the second answer winning rather than how
+# fast the first one came.
 fake_checks 7 required none green
 fake_checks 7 all failing
 out="$(ORCH_CI_GRACE=5 "$ORCH" review ci 2>&1)"; st=$?

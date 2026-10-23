@@ -28,9 +28,9 @@ fake_pr_state_of() { cat "$ORCH_GH_FAKE_STORE/prs/$1/state" 2>/dev/null; }
 # terminal state, and a full composition above it.
 #
 # cmd_redo_review's PR close goes through the store-backed fake (fake_github)
-# - a check of the fixture gh's log right after the first successful redo proves it never
-# spawns a real gh subprocess. The real operation is pinned in "gh adapter
-# contract".
+# - a check of the fixture gh's log right after the first successful redo proves
+# it never spawns a real gh subprocess. The real operation is pinned in "gh
+# adapter contract".
 echo
 echo "redo review"
 healthy_repo
@@ -75,7 +75,8 @@ out="$("$ORCH" redo review 2>&1)"; st=$?
 assert_status "refuses a budget-spent loop with no terminal record" "$st" 1
 assert_contains "reading as interrupted, distinct from pending" "$out" "looks interrupted, not stopped"
 
-# A review directory that cannot be made is named, never read as interrupted (#1334).
+# A review directory that cannot be made is named, never read as interrupted
+# (#1334).
 rm -rf .orchestrator/review
 : >.orchestrator/review
 out="$("$ORCH" redo review 2>&1)"; st=$?
@@ -336,9 +337,9 @@ restore_suite_env
 
 # --- redo spec --------------------------------------------------------------
 # --new-issue's close goes through the store-backed fake (fake_github), the
-# closed issue read back from its store - the fixture gh's log stays empty, proving it
-# never spawns a real gh subprocess. The real operation is pinned in "gh
-# adapter contract".
+# closed issue read back from its store - the fixture gh's log stays empty,
+# proving it never spawns a real gh subprocess. The real operation is pinned in
+# "gh adapter contract".
 echo
 echo "redo spec"
 fresh_flow redospec

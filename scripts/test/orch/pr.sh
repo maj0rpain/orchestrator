@@ -58,9 +58,9 @@ PR_BODY_REFUSED="orch: the PR body does not meet the PR-writing standard - no PR
 # agent-chosen wording can leave a spec issue open again.
 #
 # open_pr's create goes through the store-backed fake (fake_github), and the
-# PR it opened is read back from the store - the fixture gh's log stays empty, proving
-# it never spawns a real gh subprocess. The real operation is pinned in "gh
-# adapter contract".
+# PR it opened is read back from the store - the fixture gh's log stays empty,
+# proving it never spawns a real gh subprocess. The real operation is pinned in
+# "gh adapter contract".
 echo
 echo "pr open"
 healthy_repo
@@ -479,7 +479,7 @@ assert_contains "help documents --draft and --label" "$help" \
   "pr publish <issue> <title> <body-file> [--draft] [--label <name>]..."
 restore_suite_env
 
-# --- pr draft (#967) ------------------------------------------------------------
+# --- pr draft (#967) ----------------------------------------------------------
 # Turns the current branch's open PR into a draft, for a standalone review pass
 # that leaves a spec question unruled. Stateless, with pr comment's exit codes.
 echo
@@ -565,7 +565,7 @@ unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 help="$("$ORCH" help)"
 assert_contains "help documents pr draft" "$help" "pr draft "
 
-# --- pr ready (#967) ------------------------------------------------------------
+# --- pr ready (#967) ----------------------------------------------------------
 # Marks the current branch's open PR ready, for a standalone review pass once
 # every spec question holding it in draft is ruled. Stateless, with pr
 # comment's exit codes.
@@ -646,7 +646,7 @@ assert_status "pr bogus is an unknown op" "$st" 1
 assert_contains "listed alongside the ops that exist" "$out" "unknown pr op"
 assert_contains "naming both" "$out" "open|publish"
 
-# --- pr release -----------------------------------------------------------------
+# --- pr release ---------------------------------------------------------------
 # The release PR carries the base branch back into the default branch and
 # closes every still-open issue whose work reached it - read from the bodies of
 # the PRs merged into the base branch, never remembered by a human. Every
@@ -796,7 +796,7 @@ orch_gh_failing base clear >/dev/null
 rm -rf "$(dirname "$bare")"
 restore_suite_env
 
-# --- pr comment (#343) ----------------------------------------------------------
+# --- pr comment (#343) --------------------------------------------------------
 # A stateless post on the current branch's open PR, so a standalone review pass
 # records its declines without calling gh itself. Three outcomes, like ticket
 # exists: 0 posted (printing the PR), 1 only for no open PR, 2 for the rest.
@@ -900,7 +900,7 @@ unset ORCH_GH_ADAPTER ORCH_GH_FAKE_STORE
 help="$("$ORCH" help)"
 assert_contains "help documents pr comment" "$help" "pr comment <file>"
 
-# --- pr fetch / pr update (#444) -----------------------------------------------
+# --- pr fetch / pr update (#444) ----------------------------------------------
 # The PR counterpart of issue fetch/update, on the current branch's open PR, so
 # the fixer corrects a PR body without calling gh itself. pr update refuses a
 # body that would drop the Closes/Refs line pr open/pr publish wrote.
@@ -996,7 +996,7 @@ help="$("$ORCH" help)"
 assert_contains "help documents pr fetch" "$help" "pr fetch <file>"
 assert_contains "help documents pr update" "$help" "pr update <file>"
 
-# --- pr comments (#418) --------------------------------------------------------
+# --- pr comments (#418) -------------------------------------------------------
 # Every comment on the current branch's open PR, in issue comments' format, so a
 # standalone review pass reads earlier passes' declines without calling gh
 # itself. Three outcomes, like pr comment: 0 written, 1 only for no open PR, 2

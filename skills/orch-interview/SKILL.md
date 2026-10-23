@@ -17,11 +17,12 @@ Follow that message; it is the one source for both.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator

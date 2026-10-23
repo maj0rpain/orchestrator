@@ -48,4 +48,6 @@ rewrite of an interviewed issue.
 
 ## Note: the grilling hook no longer stands down beside a flow
 
-Since #640 the grilling hook sends the planning message beside a flow at any phase other than `done`, as a variant naming that flow, instead of standing down. The edit guard still stands down as the second decision above says.
+Since #640 the grilling hook sends the planning message beside a flow at any
+phase other than `done`, as a variant naming that flow, instead of standing
+down. The edit guard still stands down as the second decision above says.

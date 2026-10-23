@@ -19,7 +19,8 @@ list_has() {
 
 die()  { printf 'orch: %s\n' "$*" >&2; exit 1; }
 # die for commands that reserve exit 1 for a meaningful "no" (pr comment: no
-# open PR; ticket exists: no breakdown), so their failures exit with status 2 instead.
+# open PR; ticket exists: no breakdown), so their failures exit with status 2
+# instead.
 die2() { printf 'orch: %s\n' "$*" >&2; exit 2; }
 # warn: die's line on stderr, without the exit - for a refusal that returns its
 # own status, or a warning the command carries on past.
@@ -317,8 +318,8 @@ exclude_missing() {
 }
 
 # Prints, one per line, each EXCLUDED_DIRS entry the clone's shared
-# info/exclude lacks - every entry when the file is missing. doctor's check_git_exclude
-# reports exactly this.
+# info/exclude lacks - every entry when the file is missing. doctor's
+# check_git_exclude reports exactly this.
 orch_dirs_unexcluded() { exclude_missing "$(printf '%s\n' "${EXCLUDED_DIRS[@]}")"; }
 # Prints, one per line, every path with tracked modifications or untracked
 # files in this working tree that falls outside the planning allowlist. -z

@@ -1,12 +1,17 @@
 # The spec review is one pass, and its reversals amend the plan handoff
 
-Superseded in part by ADR-0030: a failed comments fetch now stops the review too.
+Superseded in part by ADR-0030: a failed comments fetch now stops the review
+too.
 
-Superseded in part by ADR-0034: a quick implementation's spec review is unattended, and its ticket follow-up takes its own recommendation, retiring included.
+Superseded in part by ADR-0034: a quick implementation's spec review is
+unattended, and its ticket follow-up takes its own recommendation, retiring
+included.
 
-Superseded in part by ADR-0041: a spec review runs a human-chosen number of rounds, not one pass.
+Superseded in part by ADR-0041: a spec review runs a human-chosen number of
+rounds, not one pass.
 
-Superseded in part by ADR-0047: the spec review's session marks each item material or minor, though it still ranks nothing across lenses.
+Superseded in part by ADR-0047: the spec review's session marks each item
+material or minor, though it still ranks nothing across lenses.
 
 A spec review runs once, in the spec phase, after the issue exists - published
 by `to-spec` or already adopted at init - and before `02-spec.md` is written.
@@ -88,4 +93,12 @@ another standalone review.
 
 ## Note: tickets follow the spec (2026-10-04)
 
-When the spec review's accepted edits touch an open ticket of an existing breakdown, it asks the human a second question: how the breakdown should follow the edits just accepted - per-ticket edits, or retiring the breakdown so it is broken down again. This is not a second pass. No lens runs and the spec is not reviewed again; the question only brings existing tickets in line with a spec the human has already decided. The one-pass decision is unchanged. The review may now also write the issue's tickets - their bodies, or retiring the breakdown and, in a standalone review, breaking the issue down again - and only to follow edits the human has already accepted.
+When the spec review's accepted edits touch an open ticket of an existing
+breakdown, it asks the human a second question: how the breakdown should follow
+the edits just accepted - per-ticket edits, or retiring the breakdown so it is
+broken down again. This is not a second pass. No lens runs and the spec is not
+reviewed again; the question only brings existing tickets in line with a spec
+the human has already decided. The one-pass decision is unchanged. The review
+may now also write the issue's tickets - their bodies, or retiring the breakdown
+and, in a standalone review, breaking the issue down again - and only to follow
+edits the human has already accepted.

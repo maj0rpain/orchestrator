@@ -7,8 +7,8 @@ description: Write an orchestrator handoff file into .orchestrator/handoff/ so t
 
 Write the handoff for the phase that is ending. The upstream
 `mattpocock-skills:handoff` writes to the OS temp directory and cannot be
-model-invoked; this one writes into the repo's git-excluded `.orchestrator/handoff/`
-and can.
+model-invoked; this one writes into the repo's git-excluded
+`.orchestrator/handoff/` and can.
 
 `orch.sh` resolves as:
 
@@ -16,11 +16,12 @@ and can.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
@@ -28,7 +29,8 @@ plugin (`/plugin install orchestrator@orchestrator` on Claude Code, or
 `maj0rpain/orchestrator` as a Junie extension, which is unverified).
 
 Get the path from `bash "$ORCH" handoff path <phase>`. Validate with
-`bash "$ORCH" handoff validate <path>` and fix anything it flags before returning.
+`bash "$ORCH" handoff validate <path>` and fix anything it flags before
+returning.
 
 ## In an autopilot flow
 
@@ -36,12 +38,12 @@ When `bash "$ORCH" autopilot active` exits 0, the handoff is one issue comment,
 its only copy, and no file is written into `.orchestrator/handoff/`. Write the
 handoff to a scratch file (`mktemp`, named for its handoff, e.g.
 `.../01-plan.md`), validate it with `bash "$ORCH" handoff validate <file>`, and
-post it with `bash "$ORCH" handoff post <name> <file>`, `<name>` being `01-plan`,
-`02-spec` or `03-implement`. `handoff post` validates again and posts nothing
-when the file is invalid. The `01-plan.md` template gains an `## Autopilot`
-block (below) that `handoff validate` requires in autopilot; interactive plans
-omit it. The rest of this skill - what belongs in a handoff, the templates -
-applies unchanged.
+post it with `bash "$ORCH" handoff post <name> <file>`, `<name>` being
+`01-plan`, `02-spec` or `03-implement`. `handoff post` validates again and posts
+nothing when the file is invalid. The `01-plan.md` template gains an `##
+Autopilot` block (below) that `handoff validate` requires in autopilot;
+interactive plans omit it. The rest of this skill - what belongs in a handoff,
+the templates - applies unchanged.
 
 The `## Autopilot` block, written at the end of `01-plan.md`:
 
@@ -60,13 +62,14 @@ the review loop's iteration budget.
 The reader is a fresh agent with no memory of this session.
 
 - **Reference, do not copy.** The spec, the PR, the diff, and the ADRs already
-  exist. Link them by number, URL, or path. Duplicated content goes stale in a way
-  linked content does not.
-- **Write what exists nowhere else.** Reasoning, rejected options, and the reasons
-  behind a judgement call live only in the conversation that just happened.
+  exist. Link them by number, URL, or path. Duplicated content goes stale in a
+  way linked content does not.
+- **Write what exists nowhere else.** Reasoning, rejected options, and the
+  reasons behind a judgement call live only in the conversation that just
+  happened.
 - **Redact.** No keys, tokens, or personal data.
-- Every required section must have content. "None" is a valid answer; blank is not,
-  because a blank section reads as "not yet considered".
+- Every required section must have content. "None" is a valid answer; blank is
+  not, because a blank section reads as "not yet considered".
 - **Record every host fallback.** Each template ends in **Host fallbacks**: one
   line per capability this phase ran through its documented fallback in the
   host capabilities reference (`docs/host-capabilities.md` under the plugin

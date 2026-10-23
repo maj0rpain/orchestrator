@@ -5,12 +5,13 @@
 # Its tests: scripts/test/orch/base.sh.
 # Sourced by orch.sh, after common.sh and the ROOT block.
 
-# Ask GitHub first. refs/remotes/origin/HEAD is a *local cached pointer* frozen at
-# clone time - in a clone taken while a feature branch was checked out it names
-# that branch, which would silently base every feature branch off the wrong place.
-# It is a fallback for repos gh cannot answer for, not the primary source.
-# Each candidate counts only when it is a valid branch name, so noise around
-# gh's answer - or a failed gh's output - falls through to the next (#465).
+# Ask GitHub first. refs/remotes/origin/HEAD is a *local cached pointer* frozen
+# at clone time - in a clone taken while a feature branch was checked out it
+# names that branch, which would silently base every feature branch off the
+# wrong place. It is a fallback for repos gh cannot answer for, not the primary
+# source. Each candidate counts only when it is a valid branch name, so noise
+# around gh's answer - or a failed gh's output - falls through to the next
+# (#465).
 #
 # GitHub is asked only when the repo resolves - adapter_repo_default_branch
 # takes it positionally, since `gh repo view` ignores GH_REPO - and a checkout
@@ -32,7 +33,8 @@ default_branch() {
   printf '%s\n' "$b"
 }
 
-# Whether $1 is a valid branch name (git check-ref-format --branch rejects an empty one).
+# Whether $1 is a valid branch name (git check-ref-format --branch rejects an
+# empty one).
 is_branch_name() {
   git check-ref-format --branch "$1" >/dev/null 2>&1
 }
@@ -44,7 +46,8 @@ is_branch_name() {
 # abort and archiving, every worktree of the clone shares it, and it never
 # travels with a push.
 base_setting() { git config --get orchestrator.base 2>/dev/null || true; }
-# base_branch: prints the base branch - the configured one, else the default branch.
+# base_branch: prints the base branch - the configured one, else the default
+# branch.
 base_branch() {
   local b
   b="$(base_setting)"

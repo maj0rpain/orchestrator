@@ -78,8 +78,9 @@ review phase runs a bounded review loop that ends with the PR ready, or on a
 bounded stop that says why.
 
 **Quick implementation.** The route with no phases: a linked issue -
-possibly rewritten from the plan, unattended - an unattended spec review, its ticket breakdown, the same test-first build, a
-review pass by the plugin's own reviewer agents, and a PR - in one session.
+possibly rewritten from the plan, unattended - an unattended spec review, its
+ticket breakdown, the same test-first build, a review pass by the plugin's own
+reviewer agents, and a PR - in one session.
 
 **Autopilot flow.** The flow's phases without the `/clear` and
 `/orchestrator:next` between them. A **watcher** (`orch.sh autopilot watch`)
@@ -127,7 +128,8 @@ Each flow phase runs in its own fresh session. The step-by-step detail is in
 | `/orchestrator:finding-triage [--all] [<issue> \| --pr <n>] \| --bundle` | Triage the review loop's filed findings, or bundle them. |
 | `/orchestrator:improve-tests [<direction>]` | Evaluate the test suite and propose refactors that cut its cost without testing less. |
 
-Every command in full: [docs/how-it-works.md](docs/how-it-works.md#commands-in-detail).
+Every command in full:
+[docs/how-it-works.md](docs/how-it-works.md#commands-in-detail).
 
 ## Further reading
 

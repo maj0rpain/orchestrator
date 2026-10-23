@@ -24,9 +24,9 @@ implementation, or blueprint only.
     ending ready, or on a bounded stop. After a bounded stop, `/clear` and a
     fresh review session may run again.
 - **Quick implementation** (`orchestrator:orch-quick-implement`): an issue,
-  possibly rewritten from the plan unattended, an unattended spec review, `orch-to-tickets` publishing tickets, branch
-  `quick/<issue>-<slug>`, one subagent per ticket building test-first, a
-  review pass, and a PR.
+  possibly rewritten from the plan unattended, an unattended spec review,
+  `orch-to-tickets` publishing tickets, branch `quick/<issue>-<slug>`, one
+  subagent per ticket building test-first, a review pass, and a PR.
 - **Blueprint only**: `orch-to-spec` publishes the issue, a spec review is
   offered, `orch-to-tickets` publishes the tickets, and it stops.
 
@@ -66,9 +66,9 @@ the phase first decides whether to rewrite its body from the plan, by
 plan changed the issue's scope or substance, as it stands for a blueprint the
 plan did not change or a body that already reflects the plan - and prints its
 decision. After a `redo spec`, whose `pre-redo-spec-*` handoff folder it finds,
-it skips the decision: the body then carries reviewed edits newer than the plan. Either way, the
-review first proposes folding into the issue body whatever the issue's
-comments say that the body does not, then
+it skips the decision: the body then carries reviewed edits newer than the plan.
+Either way, the review first proposes folding into the issue body whatever the
+issue's comments say that the body does not, then
 reviews the issue, body and comments, through four independent lenses -
 Fidelity to the plan, Consistency with itself and the glossary, Testability at
 the agreed seams, Implementability from the spec alone - each a read-only
@@ -322,9 +322,9 @@ USER orch
 Run one compose project per repo, each with its own env file, clone and
 pidfile: `ORCH_ENV_FILE=.env.<name> docker compose -p <name> up -d`
 (`ORCH_ENV_FILE` defaults to `.env`). Name each env file `docker/.env.<name>`,
-beside `.env`: `.env` and `.env.*` (and `.claude/settings.local.json`) are gitignored
-and kept out of the image at any depth, so an env file named or kept elsewhere would hold tokens that can be
-committed or baked into the image.
+beside `.env`: `.env` and `.env.*` (and `.claude/settings.local.json`) are
+gitignored and kept out of the image at any depth, so an env file named or kept
+elsewhere would hold tokens that can be committed or baked into the image.
 
 #### The host alternative
 
@@ -430,8 +430,8 @@ A `PostToolUse` hook on `Skill(orch-interview)`, and on the
 `mattpocock-skills` entry points named above when they are installed, starts
 a planning session. It fires once per session and tells the model that once a
 shared understanding is reached, the next step is a human's call, not the
-model's: call `AskUserQuestion` with exactly four options (three on Junie), start the flow
-(`orchestrator:orch-flow`), a quick implementation
+model's: call `AskUserQuestion` with exactly four options (three on Junie),
+start the flow (`orchestrator:orch-flow`), a quick implementation
 (`orchestrator:orch-quick-implement`), a blueprint only (publish the spec,
 offer a spec review, publish the ticket breakdown, then stop), or, on Claude
 Code only, an autopilot flow, and do whichever the human picks. The autopilot

@@ -5,7 +5,7 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# --- parallel show -------------------------------------------------------------
+# --- parallel show ------------------------------------------------------------
 # The clone's parallel cap: how many ticket subagents a frontier runs at once.
 # The default lives here alone, so the skills never read git config themselves.
 echo

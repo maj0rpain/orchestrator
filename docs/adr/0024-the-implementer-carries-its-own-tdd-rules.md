@@ -1,8 +1,14 @@
 # The implementer carries its own TDD rules
 
-Superseded in part by ADR-0026: the fixer no longer invokes `mattpocock-skills:tdd`; the shared-file option this ADR deferred is rejected for now, to be reopened if a third reader appears; and this ADR's statement that agents have no way to locate a plugin file at runtime no longer holds: the plugin root sits beside the `orch.sh` path every agent receives.
+Superseded in part by ADR-0026: the fixer no longer invokes
+`mattpocock-skills:tdd`; the shared-file option this ADR deferred is rejected
+for now, to be reopened if a third reader appears; and this ADR's statement that
+agents have no way to locate a plugin file at runtime no longer holds: the
+plugin root sits beside the `orch.sh` path every agent receives.
 
-Superseded in part by ADR-0035: the minimal implementation of a ticket that fixes a defect is now the smallest one that removes the defect's cause, at every site it acts at.
+Superseded in part by ADR-0035: the minimal implementation of a ticket that
+fixes a defect is now the smallest one that removes the defect's cause, at every
+site it acts at.
 
 Supersedes in part ADR-0019: `orch-implementer`'s tools are Read, Edit,
 Write, Grep, Glob, and Bash, without Skill, and it builds test-first from
@@ -18,8 +24,8 @@ what a good test is, the anti-patterns, and the rules of the loop, with
 Claude Code and an `mp-skill tdd` route everywhere else, and on Junie CLI
 a native start of the implementer, whose comma-form `tools:` listed Skill,
 got no tools at all; whether the form or the Skill entry caused it was
-never isolated (#204). Owning the rules removes Skill from the list and the host split
-from the brief.
+never isolated (#204). Owning the rules removes Skill from the list and the host
+split from the brief.
 
 The copy is adapted, not verbatim. Upstream `tdd` confirms seams with the
 user, calls the Skill tool for `codebase-design`, and sends refactoring to

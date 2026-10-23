@@ -61,4 +61,6 @@ human mid-phase.
 
 ## Note: side checkouts
 
-Built in #57 as the **side checkout**, inside the repo rather than beside it; see ADR-0037. Quick implementations get one too, and `/orchestrator:finish` cleans up finished ones.
+Built in #57 as the **side checkout**, inside the repo rather than beside it;
+see ADR-0037. Quick implementations get one too, and `/orchestrator:finish`
+cleans up finished ones.

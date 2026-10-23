@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# Delivers the planning message once per session when planning starts. One script, two hosts; the tool that asks the closing question
-# and the sentence on how to run the next skill differ between them, and only
-# Junie asks the question again when a plan is confirmed.
+# Delivers the planning message once per session when planning starts. One
+# script, two hosts; the tool that asks the closing question and the sentence on
+# how to run the next skill differ between them, and only Junie asks the
+# question again when a plan is confirmed.
 #
 # Claude Code: PostToolUse on the Skill tool. Two skills mark that planning
 # has begun: the plugin's own orch-interview, and, when mattpocock-skills is
@@ -20,15 +21,15 @@
 #
 # It injects context only. It cannot force compliance, which is why the real
 # durability lives in .orchestrator/state.json and, on Claude Code, the edit
-# guard; on Junie, orch.sh init's flow-start working-tree check (ADR-0025). Fires once
-# per session. Beside a running flow it still sends the planning rules, with a
-# closing that names that flow and states two branches: about that flow, point
-# to its next or redo; about anything else, the interviewed-issue step and the
-# route question, where only Blueprint runs in this checkout and Start and
-# Quick implementation proceed in a side checkout (#640, #729). With no flow,
-# a human's request for a side checkout is honoured. When the planning finds
-# the interviewed issue's work already done, the done-close (#985) stands in
-# for the ready-for-agent move and the route question.
+# guard; on Junie, orch.sh init's flow-start working-tree check (ADR-0025).
+# Fires once per session. Beside a running flow it still sends the planning
+# rules, with a closing that names that flow and states two branches: about that
+# flow, point to its next or redo; about anything else, the interviewed-issue
+# step and the route question, where only Blueprint runs in this checkout and
+# Start and Quick implementation proceed in a side checkout (#640, #729). With
+# no flow, a human's request for a side checkout is honoured. When the planning
+# finds the interviewed issue's work already done, the done-close (#985) stands
+# in for the ready-for-agent move and the route question.
 
 set -euo pipefail
 
@@ -57,9 +58,9 @@ if [ "$event" = "UserPromptSubmit" ]; then
   entry='(^|[[:space:]])[/$](([a-z-]+:)?(grilling|grill-me|grill-with-docs|wayfinder|improve-codebase-architecture|orch-interview)|orchestrator:interview)([[:space:]]|$)'
   [ "$plan_confirmed" = 1 ] || [[ "$prompt" =~ $entry ]] || exit 0
 else
-  # "grilling" or "orch-interview" only. grill-me and grill-with-docs route through
-  # grilling rather than being it, so matching the substring catches them
-  # without double-firing.
+  # "grilling" or "orch-interview" only. grill-me and grill-with-docs route
+  # through grilling rather than being it, so matching the substring catches
+  # them without double-firing.
   case "$skill" in *grilling*|*orch-interview*) ;; *) exit 0 ;; esac
 fi
 

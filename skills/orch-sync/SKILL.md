@@ -17,11 +17,12 @@ loop marked the PR ready and the base moved again, say. See
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
@@ -44,10 +45,10 @@ other, the base branch included.
 First read the `resolver` setting, once: `bash "$ORCH" agent get resolver`,
 per **Agent settings** in `docs/host-capabilities.md`. Then follow **A
 driver's base sync** in `agents/orch-resolver.md` (under the plugin root),
-steps 1 to 4, on the current branch, starting any resolver on that setting. The resolver's issue is
-the one the branch's name carries - the number after `orch/` or `quick/` in
-`orch/<issue>-…` or `quick/<issue>-…`. On a branch whose name carries no
-issue, it is the issue the human gives: ask for one and wait.
+steps 1 to 4, on the current branch, starting any resolver on that setting. The
+resolver's issue is the one the branch's name carries - the number after `orch/`
+or `quick/` in `orch/<issue>-…` or `quick/<issue>-…`. On a branch whose name
+carries no issue, it is the issue the human gives: ask for one and wait.
 
 - **Exit 0 on the first `branch sync`** - a clean merge, or nothing to
   merge: tell the human which, and stop. Nothing more happens: no PR body

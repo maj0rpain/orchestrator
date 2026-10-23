@@ -31,11 +31,12 @@ that pass; it never justifies testing less.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
@@ -58,8 +59,9 @@ Decide which tests to look at.
 - **Hot spots.** Otherwise, scope by recent hot spots in git history: the test
   files changed most often lately, and the test files covering the source
   files changed most often. For instance
-  `git log --since=90.days --name-only --format= | sort | uniq -c | sort -rn | head -n 30`,
-  kept to the test files and to the sources whose tests you can find.
+  `git log --since=90.days --name-only --format= | sort | uniq -c | sort -rn |
+  head -n 30`, kept to the test files and to the sources whose tests you can
+  find.
 
 Read the repo's agent files (`CLAUDE.md`, `AGENTS.md`) and contributor docs
 for how its tests are laid out and run. Say the scope in one line before
@@ -165,8 +167,9 @@ is never guessed at and never re-shown. State in one line what you would
 do (e.g. "Take candidate 2 forward"), then ask a short confirmation with
 the multiple-choice question capability, nothing long in front of it:
 *Yes, apply that* / *No, I'll answer again*. *Yes, apply that* does
-exactly what the line states. Any other reply to the confirmation - *No*, a free-text answer, or a dismissed
-ask - counts as *No*. Nothing is ever picked on a guess.
+exactly what the line states. Any other reply to the confirmation - *No*, a
+free-text answer, or a dismissed ask - counts as *No*. Nothing is ever picked on
+a guess.
 
 On *No*, or on a reply that is clearly a question, the question path runs:
 answer the question in chat, pick nothing, then end your turn again on the

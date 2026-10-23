@@ -26,7 +26,8 @@ out="$(orch_gh_failing base show)"; st=$?
 assert_status "show succeeds with nothing set" "$st" 0
 assert_eq "show names the default branch as the source when nothing is set" "$out" "main (default)"
 # #1111: a local branch named origin/main makes git's short name for
-# origin/HEAD ambiguous (remotes/origin/main); the fallback still settles on main.
+# origin/HEAD ambiguous (remotes/origin/main); the fallback still settles on
+# main.
 git branch origin/main
 assert_eq "default-branch beside a local origin/main branch still names main" \
   "$(orch_gh_failing default-branch 2>/dev/null)" "main"
@@ -72,7 +73,7 @@ out="$(orch_gh_failing base set 2>&1)"; st=$?
 assert_status "set refuses with no branch" "$st" 1
 rm -rf "$(dirname "$bare")"
 
-# --- a flow's base branch -------------------------------------------------------
+# --- a flow's base branch -----------------------------------------------------
 # A flow fixes its base branch at init, so a later `base set` never moves the
 # flow's fork point or its PR. uat carries a commit main does not, so where the
 # flow branch forked from is visible in its history.

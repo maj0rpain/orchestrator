@@ -20,7 +20,9 @@ a quick implementation. An autopilot flow is one whose phases a watcher starts.
 What a checkout records about its flow, in `.orchestrator/state.json`: the
 flow's slug, issue, base branch, branch, PR and phase, and the review
 loop's counters. A checkout holds at most one. A flow whose state is at
-phase `done` no longer counts as active. In an autopilot flow the phase label on the issue, not the recorded phase, is the source of truth; the recorded phase is the phase this checkout last moved to.
+phase `done` no longer counts as active. In an autopilot flow the phase label on
+the issue, not the recorded phase, is the source of truth; the recorded phase is
+the phase this checkout last moved to.
 
 **Checkout**:
 A working tree of the repo: the main checkout (the clone itself), a side
@@ -40,13 +42,14 @@ _Avoid_: locked checkout, active checkout.
 A git worktree the plugin makes inside the repo, so a second flow or a quick
 implementation can run beside the work already in this checkout, in a session
 of its own. Made when a quick implementation starts in a busy checkout, offered
-when a flow does, or made when a human asks for one. It counts as a checkout in its own right, so it holds at most
-one flow. One made for a quick implementation records that implementation's
-issue, so a session opened in it picks the issue up without being told. It is
-removed when its flow is archived with `archive` or
+when a flow does, or made when a human asks for one. It counts as a checkout in
+its own right, so it holds at most one flow. One made for a quick implementation
+records that implementation's issue, so a session opened in it picks the issue
+up without being told. It is removed when its flow is archived with `archive` or
 `/orchestrator:abort`, by `/orchestrator:finish` once its work is finished, or
-by hand, and never with force. An autopilot flow gets one on its issue's first pickup, recording that issue as a quick implementation's does, and every later phase reuses it.
-_Avoid_: sibling worktree, flow worktree, second checkout.
+by hand, and never with force. An autopilot flow gets one on its issue's first
+pickup, recording that issue as a quick implementation's does, and every later
+phase reuses it. _Avoid_: sibling worktree, flow worktree, second checkout.
 
 **Finished**:
 A side checkout is finished when its branch's pull request has merged into its
@@ -66,7 +69,10 @@ Unlike the review phase, the spec phase spans several sessions: when it writes
 the spec, the session that publishes or rewrites the issue stops there; each
 spec review round but the last stops after its changelog; and the last round,
 the ticket breakdown and the handoff run in one more, all still in the spec
-phase. In an autopilot flow each phase still runs in its own session, started by the watcher instead of the human. An autopilot flow's spec is written in the planning session, or for a hand-labelled issue is its body as it stands, so its spec phase starts at the spec review.
+phase. In an autopilot flow each phase still runs in its own session, started by
+the watcher instead of the human. An autopilot flow's spec is written in the
+planning session, or for a hand-labelled issue is its body as it stands, so its
+spec phase starts at the spec review.
 
 Note the tense: the recorded phase names the stage that runs **next**, not the
 one that just finished.
@@ -78,7 +84,8 @@ valid; the step back of a Redo retires the handoffs it makes stale.
 The written record one phase leaves for the next, and the only thing that
 crosses a phase boundary. A handoff references artefacts that already exist (an
 issue, a PR, a diff) and states what exists nowhere else: reasoning, rejected
-options, deviations. In an autopilot flow each handoff is one tagged comment on the issue, its only copy.
+options, deviations. In an autopilot flow each handoff is one tagged comment on
+the issue, its only copy.
 
 **Redo**:
 A deliberate step back to re-run a phase whose output was wrong - never the
@@ -103,45 +110,67 @@ runs the spec review against it.
 _Avoid_: existing issue, pre-existing issue, given issue.
 
 **Interviewed issue**:
-An open issue a planning session was run about, or the open issue the human names in its place when the session closes. When the human confirms the plan, the session offers to move it to the `ready-for-agent` triage label, since the interview settled what triage would have, and asks nothing when it already carries it - unless the plan finds its work already done, when the session offers to close it as done instead. A blueprint drawn from that session rewrites this issue as its spec issue rather than publishing a new one; a quick implementation started from it may rewrite it from the plan, as **Quick implementation** says.
-_Avoid_: planned issue, subject issue.
+An open issue a planning session was run about, or the open issue the human
+names in its place when the session closes. When the human confirms the plan,
+the session offers to move it to the `ready-for-agent` triage label, since the
+interview settled what triage would have, and asks nothing when it already
+carries it - unless the plan finds its work already done, when the session
+offers to close it as done instead. A blueprint drawn from that session rewrites
+this issue as its spec issue rather than publishing a new one; a quick
+implementation started from it may rewrite it from the plan, as **Quick
+implementation** says. _Avoid_: planned issue, subject issue.
 
 ### Autopilot flow
 
 **Autopilot flow**:
-A flow whose phases are started by a watcher rather than a human. Its phase is recorded as a label on its issue, its handoffs are issue comments, and its questions reach the human as issue comments. It stops for the human only on a fundamental item, a bounded stop (a spec question the review loop meets among them), or a failure.
-_Avoid_: auto flow, headless flow.
+A flow whose phases are started by a watcher rather than a human. Its phase is
+recorded as a label on its issue, its handoffs are issue comments, and its
+questions reach the human as issue comments. It stops for the human only on a
+fundamental item, a bounded stop (a spec question the review loop meets among
+them), or a failure. _Avoid_: auto flow, headless flow.
 
 **Watcher**:
-The process that starts each autopilot flow's next phase, in that flow's side checkout, within the repo's cap.
+The process that starts each autopilot flow's next phase, in that flow's side
+checkout, within the repo's cap.
 
 **Claim**:
-A watcher's exclusive hold on one issue's next phase - a ref on origin that only one watcher can create.
-_Avoid_: lock (unqualified).
+A watcher's exclusive hold on one issue's next phase - a ref on origin that only
+one watcher can create. _Avoid_: lock (unqualified).
 
 **Phase label**:
 The `orch:` label on an issue that records an autopilot flow's phase.
 
 **Fundamental item**:
-A material spec review item whose edit would change what the human decided in planning - reversing or changing a decision the plan recorded, reviving a rejected alternative, or adding or dropping scope beyond the plan. In an autopilot flow's spec review it is the only kind of item that reaches the human.
+A material spec review item whose edit would change what the human decided in
+planning - reversing or changing a decision the plan recorded, reviving a
+rejected alternative, or adding or dropping scope beyond the plan. In an
+autopilot flow's spec review it is the only kind of item that reaches the human.
 
 **Save point**:
-What an autopilot phase writes to its side checkout before asking the human a question, so that the fresh session started after the answer resumes from it and the reply, never re-exploring code.
+What an autopilot phase writes to its side checkout before asking the human a
+question, so that the fresh session started after the answer resumes from it and
+the reply, never re-exploring code.
 
 **Hand-labelled issue**:
-An issue a human gave a phase label by hand, without the planning close's autopilot route. Its plan comment is the minimal one, and its body is reviewed as it stands.
+An issue a human gave a phase label by hand, without the planning close's
+autopilot route. Its plan comment is the minimal one, and its body is reviewed
+as it stands.
 
 **Plan comment**:
-The issue comment tagged `<!-- orch:handoff 01-plan -->` that holds an autopilot flow's plan handoff.
+The issue comment tagged `<!-- orch:handoff 01-plan -->` that holds an autopilot
+flow's plan handoff.
 
 **Question comment**:
-The issue comment tagged `<!-- orch:question <phase> -->` that asks the human an autopilot phase's numbered questions.
+The issue comment tagged `<!-- orch:question <phase> -->` that asks the human an
+autopilot phase's numbered questions.
 
 **Pickup rule**:
-The rule a watcher picks issues by: open, a phase label other than `orch:done`, and neither `orch:running` nor `needs-human`.
+The rule a watcher picks issues by: open, a phase label other than `orch:done`,
+and neither `orch:running` nor `needs-human`.
 
 **Cap**:
-The most autopilot sessions a repo runs at once, counted as the claim refs on origin. It is soft: watchers acting in the same instant can overshoot it.
+The most autopilot sessions a repo runs at once, counted as the claim refs on
+origin. It is soft: watchers acting in the same instant can overshoot it.
 
 ### Repository and tooling
 
@@ -191,10 +220,10 @@ branch, never remembered by a human.
 **Doctor**:
 A diagnostic surface a maintainer or agent can run at any time, via the
 `health` command or `orch.sh doctor`, to check that the machine, the repo, and
-the active flow are sound. Organized into named scopes - `--env`, `--flow` - with bare `doctor`
-covering everything. Every check it runs reports through one of three states -
-`ok`, `warn`, or `FAIL` - and the overall report reflects the worst state seen
-without aborting partway through.
+the active flow are sound. Organized into named scopes - `--env`, `--flow` -
+with bare `doctor` covering everything. Every check it runs reports through one
+of three states - `ok`, `warn`, or `FAIL` - and the overall report reflects the
+worst state seen without aborting partway through.
 
 **Planning allowlist**:
 The files a planning session may legitimately change: agent docs, and
@@ -208,10 +237,17 @@ arms - not Junie (ADR-0025) - and a flow at `done` does not disarm it. A flow
 will not start while the working tree has changes outside it (ADR-0013).
 
 **Agent setting**:
-The model and reasoning effort a role's agents run with: each chosen per role and per host by the user, or else inherited from the session that starts them. Each host has its own setting, since hosts name models and efforts differently. A role is one of six groups of the plugin's agents that share a setting: implementer, lens, reviewer, fixer, closer and resolver.
+The model and reasoning effort a role's agents run with: each chosen per role
+and per host by the user, or else inherited from the session that starts them.
+Each host has its own setting, since hosts name models and efforts differently.
+A role is one of six groups of the plugin's agents that share a setting:
+implementer, lens, reviewer, fixer, closer and resolver.
 
 **Agent copy**:
-A project-scope copy of one of the plugin's agents that `orch.sh agent sync` writes into a checkout's `.junie/agents/`, its frontmatter carrying that role's Junie agent setting and a marker line saying sync owns it. Never committed; sync writes over or deletes only a file that carries the marker.
+A project-scope copy of one of the plugin's agents that `orch.sh agent sync`
+writes into a checkout's `.junie/agents/`, its frontmatter carrying that role's
+Junie agent setting and a marker line saying sync owns it. Never committed; sync
+writes over or deletes only a file that carries the marker.
 
 ### Quick implementation and blueprint
 
@@ -236,8 +272,19 @@ breakdown and broke the issue down again, but not when its rewrite retired
 that breakdown.
 
 **Blueprint**:
-Everything a change needs before implementation, carried no further: its spec issue - published new, or the interviewed issue rewritten, its earlier breakdown retired and broken down again if the human chooses - reviewed if the human chose to, and its ticket breakdown. Chosen once, by a human, at the close of a planning session, as the alternative to starting a flow or a quick implementation. A flow later adopts it, or a quick implementation links it; either way its ticket breakdown is already published and is not run again, unless a spec review changes the spec and retires that breakdown - by the human's choice, or by its own recommendation in an unattended spec review - or a flow's spec phase, finding the plan changed it, rewrites it from the plan and the human has that rewrite retire that breakdown, or a quick implementation's rewrite from the plan retires it.
-_Avoid_: planning-only, parked spec, banked spec.
+Everything a change needs before implementation, carried no further: its spec
+issue - published new, or the interviewed issue rewritten, its earlier breakdown
+retired and broken down again if the human chooses - reviewed if the human chose
+to, and its ticket breakdown. Chosen once, by a human, at the close of a
+planning session, as the alternative to starting a flow or a quick
+implementation. A flow later adopts it, or a quick implementation links it;
+either way its ticket breakdown is already published and is not run again,
+unless a spec review changes the spec and retires that breakdown - by the
+human's choice, or by its own recommendation in an unattended spec review - or a
+flow's spec phase, finding the plan changed it, rewrites it from the plan and
+the human has that rewrite retire that breakdown, or a quick implementation's
+rewrite from the plan retires it. _Avoid_: planning-only, parked spec, banked
+spec.
 
 **Unattended rewrite**:
 `orch-to-spec`'s rewrite mode asking the human nothing, taken only by a quick
@@ -253,11 +300,11 @@ The set of sub-issues published against a spec issue (a flow's, a quick
 implementation's linked issue, or a blueprint's) - each one a sub-issue of that
 parent, not a second issue the flow or quick implementation now holds, and
 may block, or be blocked by, other tickets in the same breakdown. When the
-approved breakdown - in a quick implementation, the drafted one - resolves to 0 or 1 tickets, no sub-issue is published at
-all: the drafted ticket's content, if there is one, is folded into the
-parent issue's own body instead, and the parent is worked directly as if it
-were the sole ticket - a breakdown of one, collapsed onto its own parent
-rather than split out beneath it.
+approved breakdown - in a quick implementation, the drafted one - resolves to 0
+or 1 tickets, no sub-issue is published at all: the drafted ticket's content, if
+there is one, is folded into the parent issue's own body instead, and the parent
+is worked directly as if it were the sole ticket - a breakdown of one, collapsed
+onto its own parent rather than split out beneath it.
 
 **Ticket subagent**:
 The fresh, non-fork agent that builds exactly one ticket of a ticket
@@ -298,41 +345,61 @@ implementation both run it.
 ### Spec review
 
 **Spec review**:
-One review of a spec issue, in one or more rounds. Usually a step of a flow's spec phase,
-after the issue exists - published by the spec phase or already adopted at
-init - and before its handoff is written. A human may also ask for one on
-demand, against any issue, and a quick implementation takes an unattended one
-before its ticket breakdown: either way a standalone spec review, which belongs to no
-flow and leaves no handoff. An autopilot flow's is also unattended, but in the flow, one per round for its planned round count. It first proposes folding into the body anything
-the issue's comments say that the body does not - a triage agent brief, a
-follow-up - so the body stays the one place the spec is written. Its lenses
-then read the spec, body and comments, independently - four in a flow, three
-in a standalone review; every finding they report, and every consolidation item, is
-put to a human with a proposed edit, and only the edits the human accepts
-change the spec - in an unattended spec review, the recommended ones. When the issue already has a ticket breakdown and the
-accepted edits touch an open ticket, it then raises the ticket question - how that
-breakdown should follow - which a human answers, and an unattended spec
-review answers with its own recommendation: edits to the tickets the change touches, or retiring
-the breakdown so the issue is broken down again. A spec review runs its whole round count, each round reading the body the previous one published. It is not a loop - no severity, nothing filed - and a review started after it ends is a new spec review, with its own round count.
+One review of a spec issue, in one or more rounds. Usually a step of a flow's
+spec phase, after the issue exists - published by the spec phase or already
+adopted at init - and before its handoff is written. A human may also ask for
+one on demand, against any issue, and a quick implementation takes an unattended
+one before its ticket breakdown: either way a standalone spec review, which
+belongs to no flow and leaves no handoff. An autopilot flow's is also
+unattended, but in the flow, one per round for its planned round count. It first
+proposes folding into the body anything the issue's comments say that the body
+does not - a triage agent brief, a follow-up - so the body stays the one place
+the spec is written. Its lenses then read the spec, body and comments,
+independently - four in a flow, three in a standalone review; every finding they
+report, and every consolidation item, is put to a human with a proposed edit,
+and only the edits the human accepts change the spec - in an unattended spec
+review, the recommended ones. When the issue already has a ticket breakdown and
+the accepted edits touch an open ticket, it then raises the ticket question -
+how that breakdown should follow - which a human answers, and an unattended spec
+review answers with its own recommendation: edits to the tickets the change
+touches, or retiring the breakdown so the issue is broken down again. A spec
+review runs its whole round count, each round reading the body the previous one
+published. It is not a loop - no severity, nothing filed - and a review started
+after it ends is a new spec review, with its own round count.
 
 **Round**:
-One look within a spec review: consolidation, the lenses, one batch of proposed edits put to the human, the accepted edits applied, the ticket question when they touch an open ticket, and one changelog comment. Each round reads the body as the previous round published it. A round's lenses read the rulings of the earlier rounds of the same review, and reopen one only on evidence it did not have.
-_Avoid_: pass, iteration (the review loop's).
+One look within a spec review: consolidation, the lenses, one batch of proposed
+edits put to the human, the accepted edits applied, the ticket question when
+they touch an open ticket, and one changelog comment. Each round reads the body
+as the previous round published it. A round's lenses read the rulings of the
+earlier rounds of the same review, and reopen one only on evidence it did not
+have. _Avoid_: pass, iteration (the review loop's).
 
 **Round count**:
-The number of rounds a spec review runs. A flow's spec phase asks the human for it when the review starts, and a blueprint asks it in the planning hook's closing message, before the review; both recommend a count sized to the spec - 2 by default, fewer for a one-site spec, more for a large one - and a blueprint may answer 0 to skip the review. A spec review run on demand runs 1 unless given another. A spec review runs its whole round count: a round that finds nothing does not end it early. An autopilot flow's is chosen once, at the planning close, and recorded in its plan.
-_Avoid_: budget (the review loop's).
+The number of rounds a spec review runs. A flow's spec phase asks the human for
+it when the review starts, and a blueprint asks it in the planning hook's
+closing message, before the review; both recommend a count sized to the spec - 2
+by default, fewer for a one-site spec, more for a large one - and a blueprint
+may answer 0 to skip the review. A spec review run on demand runs 1 unless given
+another. A spec review runs its whole round count: a round that finds nothing
+does not end it early. An autopilot flow's is chosen once, at the planning
+close, and recorded in its plan. _Avoid_: budget (the review loop's).
 
 **Round marker**:
-The file in a flow's handoff folder naming the flow's issue, a spec review round and the round count, written by `orch.sh`, from which `orch.sh spec round` tells a fresh session the round to resume the review at. It is not a handoff, and it is never in `state.json`.
+The file in a flow's handoff folder naming the flow's issue, a spec review round
+and the round count, written by `orch.sh`, from which `orch.sh spec round` tells
+a fresh session the round to resume the review at. It is not a handoff, and it
+is never in `state.json`.
 
 **Unattended spec review**:
 A spec review that asks the human nothing: every recommended edit
 is applied, every decision item takes its recommended option, and a ticket
 breakdown the edits touch follows its recommended option, retiring included.
 The batch is still shown and the changelog still records it all. A quick
-implementation takes one, standalone, of one round; an autopilot flow's spec review is one, in the flow, per round for its planned round count, except that a fundamental item reaches the human.
-_Avoid_: auto spec review, silent spec review.
+implementation takes one, standalone, of one round; an autopilot flow's spec
+review is one, in the flow, per round for its planned round count, except that a
+fundamental item reaches the human. _Avoid_: auto spec review, silent spec
+review.
 
 **Consolidation item**:
 One proposed edit in a spec review that folds into the spec body what an
@@ -346,12 +413,20 @@ other become one decision item instead. A comment that opens with a
 _Avoid_: fold (as a noun), proposed fold.
 
 **Material item**:
-A spec review item whose edit changes what gets built or how it is proven - behaviour, scope, an interface, an acceptance criterion or a test seam. Every decision item and every item recording that the spec contradicts the plan is material, and so is a recommend-decline whose edit would be. The batch shows its summary and its reason on one line, and for a decision item its reason, then each option's summary on a line of its own; its full text, with the findings or comments it cites, is shown on request.
-_Avoid_: high-severity item, important edit.
+A spec review item whose edit changes what gets built or how it is proven -
+behaviour, scope, an interface, an acceptance criterion or a test seam. Every
+decision item and every item recording that the spec contradicts the plan is
+material, and so is a recommend-decline whose edit would be. The batch shows its
+summary and its reason on one line, and for a decision item its reason, then
+each option's summary on a line of its own; its full text, with the findings or
+comments it cites, is shown on request. _Avoid_: high-severity item, important
+edit.
 
 **Minor item**:
-A spec review item that is not material - wording, clarification, naming, internal consistency, a cross-reference. The batch lists it in one line, and the human's answer takes its recommendation unless they name it.
-_Avoid_: nit (the review loop's), trivial edit.
+A spec review item that is not material - wording, clarification, naming,
+internal consistency, a cross-reference. The batch lists it in one line, and the
+human's answer takes its recommendation unless they name it. _Avoid_: nit (the
+review loop's), trivial edit.
 
 **Lens**:
 One of the four angles a spec review takes, each answering one question of the
@@ -375,7 +450,9 @@ The public boundary a test observes behaviour at. Seams are agreed with a human
 in the spec phase, recorded in the spec and its handoff, and that agreement is
 the only one: the implement phase tests at the seams it is given and does not
 re-ask. A seam the code turns out not to allow is a deviation, recorded like
-any other. In an autopilot flow they are agreed in the planning session, which writes the spec; a hand-labelled issue's are the ones its body states, accepted by the human who labelled it.
+any other. In an autopilot flow they are agreed in the planning session, which
+writes the spec; a hand-labelled issue's are the ones its body states, accepted
+by the human who labelled it.
 
 ### Review loop
 
@@ -400,17 +477,17 @@ reason. A spec question it meets is neither fixed nor declined but put to a
 human: in the session by a standalone review pass, whose rulings are recorded
 on the spec issue, or, in a quick implementation, by opening the PR as a draft
 that names it. A standalone review pass marks ready a PR held in draft for spec
-questions once every one is ruled. A quick implementation takes one before its PR opens. A human may also
-ask for one on demand, against an issue and the branch they are on - after a
-quick implementation, say - which is a standalone review pass. A standalone
-review pass leaves out the Standards reviewer's smell-baseline findings unless
-the human asks for them, and reports only how many it left out; a quick
-implementation's review pass keeps them. Another look is another review pass. A
-standalone review pass drops any finding an earlier review pass on the same PR
-already declined, and lists it as previously declined. A branch or issue an
-active flow holds belongs to that flow, never to a review pass. Its reviewers
-are told the pass's known items, and drop the findings those already carry.
-_Avoid_: single pass, quick review
+questions once every one is ruled. A quick implementation takes one before its
+PR opens. A human may also ask for one on demand, against an issue and the
+branch they are on - after a quick implementation, say - which is a standalone
+review pass. A standalone review pass leaves out the Standards reviewer's
+smell-baseline findings unless the human asks for them, and reports only how
+many it left out; a quick implementation's review pass keeps them. Another look
+is another review pass. A standalone review pass drops any finding an earlier
+review pass on the same PR already declined, and lists it as previously
+declined. A branch or issue an active flow holds belongs to that flow, never to
+a review pass. Its reviewers are told the pass's known items, and drop the
+findings those already carry. _Avoid_: single pass, quick review
 
 **Budget**:
 The number of iterations a review loop runs, chosen by a human when the loop
@@ -418,7 +495,8 @@ starts, from a number the driver suggests: for a flow's first loop, from the
 size of the change; for a further loop, from what the loop before it left. A
 loop runs its whole budget: finding nothing does not end it early, because
 every iteration is an independent look at the same change, and the value of
-the loop is in the number of looks. An autopilot flow's is chosen once, at the planning close, and every loop of that flow runs it.
+the loop is in the number of looks. An autopilot flow's is chosen once, at the
+planning close, and every loop of that flow runs it.
 
 **Iteration**:
 One pass within a review loop: sync the branch with its base, review the
@@ -436,8 +514,8 @@ blocking**.
 
 A loop finishes **Ready** only on a clean final iteration that leaves no open
 blocking finding - one found in this iteration or carried in from an earlier
-one - and no **missing look**, and files no spec question, with CI green or absent. Anything else is a
-bounded stop.
+one - and no **missing look**, and files no spec question, with CI green or
+absent. Anything else is a bounded stop.
 
 **Driver**:
 The session that runs a driver loop or a review loop, starting the fresh
@@ -514,7 +592,8 @@ The terminal state of a loop that ended without the change being ready - because
 its final iteration was not clean (it started a fixer, whose work nothing has
 reviewed), left a blocking
 finding its fixer could not fix, lacked one of its two looks, or filed a spec
-question, or because CI could not be called green. A stop is not a failed change and not a successful one.
+question, or because CI could not be called green. A stop is not a failed change
+and not a successful one.
 
 **Flake rerun**:
 The one permitted re-run of a failing CI check on the theory that it failed for
@@ -536,7 +615,10 @@ which the review phase assigns; the reviewer itself reports findings unranked.
 A finding from a review pass carries none: the session that ran the pass
 fixes it, declines it, or, when it is a spec question, puts it to a human,
 unless a standalone review pass left it out as a
-smell-baseline finding. A finding about the spec carries no severity: the spec review's session marks the item proposing its edit material or minor, a human accepts or declines that edit, or an unattended spec review applies it as recommended, and it is never filed.
+smell-baseline finding. A finding about the spec carries no severity: the spec
+review's session marks the item proposing its edit material or minor, a human
+accepts or declines that edit, or an unattended spec review applies it as
+recommended, and it is never filed.
 
 **Pattern finding**:
 A finding whose claim holds at more than one place - one cause or one breached
@@ -555,7 +637,8 @@ findings the loop may fix without asking anyone:
 - **Major** - the change works but carries real cost: a documented standard
   breached, a smell with teeth, scope nobody asked for. Fixed by the loop
   unless the fix needs a decision or would touch the loop's own fixes; filed
-  otherwise. A major that is a spec question is filed and holds the PR out of ready.
+  otherwise. A major that is a spec question is filed and holds the PR out of
+  ready.
 - **Nit** - taste and judgement calls. Fixed by the loop only when it is a
   mechanical nit; filed otherwise.
 
@@ -570,7 +653,17 @@ import, a comment naming the wrong function, a broken link. Rewording prose is
 never mechanical, however small.
 
 **Spec question**:
-A finding whose fix needs a decision about what the change does that the spec, plan and deviations leave unsettled - silent, ambiguous, or self-contradictory on it. A finding that the change contradicts what the spec clearly asks for is blocking in a review loop, and fixed in a review pass, not a spec question; a decision about structure only - which of two refactorings, which name - is not one either. In a review loop only a major can be one; a review pass judges it by content alone, with no severity. A spec question a review loop files holds the PR out of ready, so a human rules on it before the PR is marked ready; one a later loop meets again does not. One a review pass meets is neither fixed nor declined: a standalone review pass puts it to the human, and one left unruled - or met in a quick implementation - holds the PR in draft.
+A finding whose fix needs a decision about what the change does that the spec,
+plan and deviations leave unsettled - silent, ambiguous, or self-contradictory
+on it. A finding that the change contradicts what the spec clearly asks for is
+blocking in a review loop, and fixed in a review pass, not a spec question; a
+decision about structure only - which of two refactorings, which name - is not
+one either. In a review loop only a major can be one; a review pass judges it by
+content alone, with no severity. A spec question a review loop files holds the
+PR out of ready, so a human rules on it before the PR is marked ready; one a
+later loop meets again does not. One a review pass meets is neither fixed nor
+declined: a standalone review pass puts it to the human, and one left unruled -
+or met in a quick implementation - holds the PR in draft.
 
 **Filed finding**:
 A major or nit the loop did not fix, turned into an issue when a loop
@@ -581,16 +674,20 @@ and the loop's reasoning about it, including which of those kept it out of the
 loop, deduplicated across a loop's iterations by the closer and across a
 flow's loops by the driver's triage. Its **Filed** entry names its file and
 line, so a later loop's triage matches a finding it meets again on file, line,
-and claim. A filed finding enters **finding triage** against the whole codebase rather
-than against one diff: a later loop that meets it again leaves it alone, and
-tells the human it did.
-A filed finding that is a spec question also holds the PR out of ready until a human re-enters review.
-Findings the loop demoted on a human's earlier decision are reported, never
-filed.
+and claim. A filed finding enters **finding triage** against the whole codebase
+rather than against one diff: a later loop that meets it again leaves it alone,
+and tells the human it did.
+A filed finding that is a spec question also holds the PR out of ready until a
+human re-enters review. Findings the loop demoted on a human's earlier decision
+are reported, never filed.
 
 **Known item**:
-Something a review has already dealt with - a finding waiting to be filed or filed by a review loop, a road a rejected alternative closed, a deviation, a finding declined by a review pass, or a question a spec ruling answered - that a reviewer is told about so it does not raise it again. A reviewer raises a known item again only when its location or cause has changed, and the Spec reviewer reports a deviation no commit carries out.
-_Avoid_: known issue, duplicate
+Something a review has already dealt with - a finding waiting to be filed or
+filed by a review loop, a road a rejected alternative closed, a deviation, a
+finding declined by a review pass, or a question a spec ruling answered - that a
+reviewer is told about so it does not raise it again. A reviewer raises a known
+item again only when its location or cause has changed, and the Spec reviewer
+reports a deviation no commit carries out. _Avoid_: known issue, duplicate
 
 **Finding triage**:
 Checking open filed findings against the current default branch and settling
@@ -601,7 +698,10 @@ as labelled. A finding whose fix needs a decision goes to a human, never to an
 agent. The findings are checked at the default SHA and put to the human one
 batch per source PR. It takes the findings still in `needs-triage`, or, as a
 **re-check**, the open filed findings whatever their triage label. Not the
-driver's triage, which ranks one iteration's findings inside a review loop. With `--bundle`, it instead takes only the open findings already triaged to `ready-for-agent` or `ready-for-human`, puts them to the human in one batch across source PRs, and groups them by code area into bundles.
+driver's triage, which ranks one iteration's findings inside a review loop. With
+`--bundle`, it instead takes only the open findings already triaged to
+`ready-for-agent` or `ready-for-human`, puts them to the human in one batch
+across source PRs, and groups them by code area into bundles.
 
 **Re-check**:
 A finding triage that also takes open filed findings already out of
@@ -611,8 +711,12 @@ when it no longer holds, and otherwise left as labelled unless the human names
 another outcome.
 
 **Bundle**:
-One issue that carries several filed findings from one code area, so they are worked on together. Its body restates each member - its claim, location at the default SHA, and any options - so it reads alone. Each member is closed as a duplicate of it. A bundle is not a filed finding: it carries no `review:` label, and finding triage never takes it.
-_Avoid_: consolidated issue (a consolidation item is a spec review's)
+One issue that carries several filed findings from one code area, so they are
+worked on together. Its body restates each member - its claim, location at the
+default SHA, and any options - so it reads alone. Each member is closed as a
+duplicate of it. A bundle is not a filed finding: it carries no `review:` label,
+and finding triage never takes it. _Avoid_: consolidated issue (a consolidation
+item is a spec review's)
 
 **Member**:
 A filed finding carried by a bundle, closed as its duplicate.
@@ -628,17 +732,34 @@ The PR whose review loop filed a finding, named on the filed finding's
 `**PR:**` line.
 
 **Category**:
-A filed finding's or a bundle's `bug` or `enhancement` label. The closer sets it from the
-finding's axis - `bug` for Spec, `enhancement` for Standards - and finding
-triage keeps or flips it: a Standards finding that is a real defect becomes
-`bug`, a Spec finding that is a nice-to-have becomes `enhancement`. A bundle's is `bug` whenever any member's is.
+A filed finding's or a bundle's `bug` or `enhancement` label. The closer sets it
+from the finding's axis - `bug` for Spec, `enhancement` for Standards - and
+finding triage keeps or flips it: a Standards finding that is a real defect
+becomes `bug`, a Spec finding that is a nice-to-have becomes `enhancement`. A
+bundle's is `bug` whenever any member's is.
 
 **Root-cause fix**:
-A fix that removes a defect's cause everywhere that cause acts - every copy of the logic, every call site, every input it mishandles - rather than only the reported instance. Its opposite, a **symptom fix**, makes the reported case pass while the cause stays live elsewhere.
-_Avoid_: foundational fix, proper fix
+A fix that removes a defect's cause everywhere that cause acts - every copy of
+the logic, every call site, every input it mishandles - rather than only the
+reported instance. Its opposite, a **symptom fix**, makes the reported case pass
+while the cause stays live elsewhere. _Avoid_: foundational fix, proper fix
 
 **Suite cost**:
-The CPU time, user plus system, that one passing run of a verification command takes, as `orch.sh suite-cost run` records it with that command on the machine that ran it, or `suite-cost check` records it for a base it had to measure or a head and base it measured to confirm a growth. The baseline is the base commit's own runs, never an earlier commit's, so a base with none is measured first. A verdict `check` confirmed is stored and reused while the head, base commit, command and threshold are unchanged, so an unchanged tree is not measured again. A run made with uncommitted changes is recorded as dirty: it can measure the head, never the base. Recorded only for a run no other suite-cost run overlapped. Compared, lowest sample against lowest sample, only between runs of the same command on the same machine, and a growth is confirmed by measuring head and base once more before it counts; below the floor nothing compares it. Growth past the threshold is a finding with no reviewer behind it: in a review loop a major the driver raises from `check`'s verdict, and in a review pass a finding the session handles like any other.
+The CPU time, user plus system, that one passing run of a verification command
+takes, as `orch.sh suite-cost run` records it with that command on the machine
+that ran it, or `suite-cost check` records it for a base it had to measure or a
+head and base it measured to confirm a growth. The baseline is the base commit's
+own runs, never an earlier commit's, so a base with none is measured first. A
+verdict `check` confirmed is stored and reused while the head, base commit,
+command and threshold are unchanged, so an unchanged tree is not measured again.
+A run made with uncommitted changes is recorded as dirty: it can measure the
+head, never the base. Recorded only for a run no other suite-cost run
+overlapped. Compared, lowest sample against lowest sample, only between runs of
+the same command on the same machine, and a growth is confirmed by measuring
+head and base once more before it counts; below the floor nothing compares it.
+Growth past the threshold is a finding with no reviewer behind it: in a review
+loop a major the driver raises from `check`'s verdict, and in a review pass a
+finding the session handles like any other.
 
 ### Hosts
 

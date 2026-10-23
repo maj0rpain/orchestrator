@@ -307,7 +307,8 @@ cmd_issue_triage() {
   # ready-for-human, wontfix - show it ran; after that the finding is an
   # ordinary issue, and the interview settles what ready-for-human waited on.
   # The gate reads labels, not history, and --override does not bypass it. Any
-  # review:<severity> label marks a finding, not only the severities filed today.
+  # review:<severity> label marks a finding, not only the severities filed
+  # today.
   local finding
   if has_review_label "$labels"; then
     finding="$(review_labels "$labels" | sed -n 1p)"

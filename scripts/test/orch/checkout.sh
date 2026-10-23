@@ -8,7 +8,7 @@
 # fresh_dir: a new empty directory's physical path, as git records it.
 fresh_dir() { (cd "$(mktemp -d)" && pwd -P); }
 
-# --- checkout (#1078) ----------------------------------------------------------
+# --- checkout (#1078) ---------------------------------------------------------
 # The Checkout module's walk, checkouts: one line per checkout of the repo,
 # <kind> <flow> <branch> <path>, the main checkout first. Checked against real
 # temporary checkouts, through what the walk prints.
@@ -104,7 +104,7 @@ out="$(bash -c 'source "$1"; cd "$2" && checkout_kind "$2"' _ "$ORCH" "$outside"
 assert_ne "checkout_kind outside a repo fails" "$st" 0
 assert_eq "and checkout_kind prints nothing" "$out" ""
 
-# --- checkout current branch (#1079) -------------------------------------------
+# --- checkout current branch (#1079) ------------------------------------------
 # The Checkout module's one current-branch read: checkout_branch prints the
 # branch checked out, and current_branch_or_die assigns it to the caller's
 # branch or dies with the one detached-HEAD message.

@@ -16,11 +16,12 @@ for how a change gets made - test-driven, reviewed, then opened as a PR.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
@@ -31,7 +32,8 @@ Steps here name capabilities (invoke a skill, start a fresh subagent,
 start a background subagent).
 `docs/host-capabilities.md` under the plugin root maps each one to your host.
 Where your host's cell says **Fallback**, or **Unverified** and the capability
-turns out missing, take the fallback it documents and list it under a **Host fallbacks** heading in the PR body (step 7).
+turns out missing, take the fallback it documents and list it under a **Host
+fallbacks** heading in the PR body (step 7).
 
 ## 1. Require a linked issue
 
@@ -57,12 +59,12 @@ if it records a different issue, the argument wins, and your reply to the
 human carries a one-line note naming both - the argument's issue used, the
 recorded one set aside. No file or PR body carries that note.
 
-- Whichever issue is linked, a glossary or ADR change (`GLOSSARY.md`, `GLOSSARY-MAP.md`,
-  `docs/adr/`) the planning session decided goes into the linked issue's body
-  word for word - the new or replaced text, naming the file and entry - never
-  into those files during planning. It lands with the change it describes
-  (ADR-0022). The standalone spec review in step 2 runs no Fidelity lens, so
-  nothing else checks the wording survived.
+- Whichever issue is linked, a glossary or ADR change (`GLOSSARY.md`,
+  `GLOSSARY-MAP.md`, `docs/adr/`) the planning session decided goes into the
+  linked issue's body word for word - the new or replaced text, naming the file
+  and entry - never into those files during planning. It lands with the change
+  it describes (ADR-0022). The standalone spec review in step 2 runs no Fidelity
+  lens, so nothing else checks the wording survived.
 - If none of the four yields an issue - `issue publish` fails too - stop
   and say why. A quick implementation
   with no issue behind it is exactly the unaccountable path this skill exists
@@ -143,10 +145,10 @@ changelog comment. Failed lenses stay in the changelog only.
 ## 3. Publish the ticket breakdown
 
 Unconditional, whether the linked issue was just published in step 1 or
-already existed - never gated by a human choice of its own, the same treatment the flow's spec phase gives this same
-step. No spec-writing step exists on this path, so the breakdown is drawn
-directly off the linked issue as it stands after step 2's spec review -
-it is the only spec this path has.
+already existed - never gated by a human choice of its own, the same treatment
+the flow's spec phase gives this same step. No spec-writing step exists on this
+path, so the breakdown is drawn directly off the linked issue as it stands after
+step 2's spec review - it is the only spec this path has.
 
 First run `bash "$ORCH" ticket exists <linked issue>`:
 
@@ -170,11 +172,12 @@ First run `bash "$ORCH" ticket exists <linked issue>`:
 
 Get the slug from `bash "$ORCH" slug "<short description>"` - the same
 normalisation `orch.sh init` applies to a flow's slug, exposed as a primitive
-rather than re-derived here - then `bash "$ORCH" branch off "quick/<issue>-<slug>"`.
-`branch off` forks it off the base branch (`bash "$ORCH" base show`) the same way
-a flow's own `branch create` does, but records no flow state - a quick
-implementation keeps none. It records that base branch on the branch itself,
-so the PR in step 7 targets it even if the setting changes meanwhile.
+rather than re-derived here - then `bash "$ORCH" branch off
+"quick/<issue>-<slug>"`. `branch off` forks it off the base branch
+(`bash "$ORCH" base show`) the same way a flow's own `branch create` does, but
+records no flow state - a quick implementation keeps none. It records that base
+branch on the branch itself, so the PR in step 7 targets it even if the setting
+changes meanwhile.
 
 `branch off` exits 3, and only then, when this checkout is a busy checkout -
 something started here between step 1's `branch busy` and now: a quick
@@ -271,11 +274,11 @@ combined verification: the command loop step f ran, then `pass` or
 before `pr publish`,
 check the body file against what the branch actually changed, by
 **Checking the PR body** in `agents/orch-fixer.md` (under the plugin root):
-what to correct, how, and when the check is done. The diff is `git diff <base SHA>..HEAD`, with the
-base SHA from `bash "$ORCH" branch base-sha`. Only this differs: the check
-reads and corrects the local body file, before `pr publish`, so there is no
-`pr fetch` and no `pr update` - no live PR is edited - and nothing is
-recorded about the check.
+what to correct, how, and when the check is done. The diff is `git diff <base
+SHA>..HEAD`, with the base SHA from `bash "$ORCH" branch base-sha`. Only this
+differs: the check reads and corrects the local body file, before `pr publish`,
+so there is no `pr fetch` and no `pr update` - no live PR is edited - and
+nothing is recorded about the check.
 
 Then open the PR with `bash "$ORCH" pr publish <issue> "<title>"
 <body-file>` - the same boundary `pr open` draws for a flow, kept out of
@@ -321,17 +324,17 @@ add one afterwards with `gh pr edit`. A `pr publish` that refuses the body
 for a piece `docs/pr-writing.md`'s layout requires has pushed nothing: fix
 the body file and rerun it. Any other failed `pr
 publish`, with `--draft` or without, stops this skill, relaying its reason;
-one with `--draft` is never retried without it. The body starts with `Closes #<issue>` when that
-base branch is the default branch, and `Refs #<issue>` otherwise - the
-issue closes when the release PR carries the work into the default branch
-(the `orch-release` skill). Either way `pr publish` writes that line, so the
-body file carries no closing keyword of its own. Without a spec question it
-is not a draft, because the review pass in step 6 already happened, so there
-is no loop left to promote it - a draft would leave it stuck with nothing
-watching it. With one, the draft waits on a human's ruling, not on a loop:
-the human resumes with a standalone review pass (`/orchestrator:review-pass
-<issue>`), which asks the questions and marks the PR ready once every one is
-ruled. See
+one with `--draft` is never retried without it. The body starts with
+`Closes #<issue>` when that base branch is the default branch, and
+`Refs #<issue>` otherwise - the issue closes when the release PR carries the
+work into the default branch (the `orch-release` skill). Either way `pr publish`
+writes that line, so the body file carries no closing keyword of its own.
+Without a spec question it is not a draft, because the review pass in step 6
+already happened, so there is no loop left to promote it - a draft would leave
+it stuck with nothing watching it. With one, the draft waits on a human's
+ruling, not on a loop: the human resumes with a standalone review pass
+(`/orchestrator:review-pass <issue>`), which asks the questions and marks the PR
+ready once every one is ruled. See
 `docs/adr/0043-a-spec-question-met-in-a-review-pass-reaches-a-human-before-the-pr-is-ready.md`.
 
 ## Starting in a side checkout
@@ -342,10 +345,10 @@ this session, after step 1 has linked or published the issue, with any
 glossary or ADR wording in its body. The issue is the hand-off: no plan file
 is written. From step 4, the side checkout's session runs step 2's spec review
 a second time, and its step 3 finds the breakdown already published. Before
-the hand-off, on either route, print step 1's rewrite outcome - the rewrite with its outcome word
-and, on `kept`, its edited-ticket count, as step 7's **Issue rewrite** line
-reads, or the reason there was none - since the side checkout's session
-records only that any rewrite ran here.
+the hand-off, on either route, print step 1's rewrite outcome - the rewrite with
+its outcome word and, on `kept`, its edited-ticket count, as step 7's **Issue
+rewrite** line reads, or the reason there was none - since the side checkout's
+session records only that any rewrite ran here.
 
 1. Get the slug from `bash "$ORCH" slug "<short description>"`.
 2. `bash "$ORCH" side-checkout add <slug> --issue <issue>`, with the linked

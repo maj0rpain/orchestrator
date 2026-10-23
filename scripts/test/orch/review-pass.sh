@@ -5,7 +5,7 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# --- review-pass begin (#342) --------------------------------------------------
+# --- review-pass begin (#342) -------------------------------------------------
 # A review pass's start: the guard and the numbered report prefix each have one
 # right answer, so they live here. Needs no flow state, may run where init never
 # did, and never wipes: a second pass on a branch never overwrites the first.

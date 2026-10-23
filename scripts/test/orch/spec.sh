@@ -24,9 +24,9 @@ unwritable_dir() {
 # it. The number comes from state so a review can never touch the wrong issue,
 # and the store-backed fake (fake_github) holds what reached GitHub, so the
 # test reads the body sent back, not only that the command exited zero -
-# the fixture gh's log stays empty across every call below, proving none of them ever
-# spawns a real gh subprocess. The real operations are pinned in "gh adapter
-# contract".
+# the fixture gh's log stays empty across every call below, proving none of them
+# ever spawns a real gh subprocess. The real operations are pinned in
+# "gh adapter contract".
 echo
 echo "spec"
 fresh_flow spectest
@@ -396,7 +396,8 @@ out="$("$ORCH" spec round 2>&1)"; st=$?
 assert_status "spec round succeeds once the last round is complete" "$st" 0
 assert_eq "printing done and the count" "$out" "done 2"
 
-# An autopilot round holding fundamental items back waits for the human's answer.
+# An autopilot round holding fundamental items back waits for the human's
+# answer.
 "$ORCH" spec round-dir 1/2 >/dev/null
 assert_eq "a round without fundamental.md is the round to run" "$("$ORCH" spec round 2>&1)" "1 2"
 : >"$rounds/1/fundamental.md"

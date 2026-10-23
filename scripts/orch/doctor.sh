@@ -70,10 +70,10 @@ d_join() {
   printf '%s\n' "$out"
 }
 
-# Gates. A check whose answer is unavailable reports *skip* rather than a FAIL it
-# derived from not knowing, and the skipped group collapses into a single warn
-# naming the cause - N warns, or worse N invented FAILs, would bury the one real
-# problem underneath them.
+# Gates. A check whose answer is unavailable reports *skip* rather than a FAIL
+# it derived from not knowing, and the skipped group collapses into a single
+# warn naming the cause - N warns, or worse N invented FAILs, would bury the one
+# real problem underneath them.
 D_GH=""            # "ok", or the reason GitHub could not be asked
 D_REPO_SEEN=""     # "ok" when GitHub answered for the repo, or empty
 D_REPO_REASON=""   # gh's stderr when that read failed, or empty
@@ -151,7 +151,8 @@ d_probe() {
   fi
   # The flow scope runs on every /orchestrator:next and every status, and a flow
   # with no PR recorded has nothing to ask GitHub. It reaches gh through
-  # d_gh_gate instead, which probes on first use, so that run costs no round trip.
+  # d_gh_gate instead, which probes on first use, so that run costs no round
+  # trip.
   if [ "$scope" = flow ]; then return 0; fi
   d_probe_gh
   # The same read default_branch makes, validated the same way (#485): an
@@ -632,11 +633,12 @@ h_repo   check_labels_doc check_labels_exist check_sub_issues check_git_exclude 
 # flow state -----------------------------------------------------------------
 
 # Every check below reads state.json through jq, so a missing jq and a file that
-# will not parse each settle all of them at once. Both are decided in d_run_flow,
-# before any of them runs, rather than in a preamble each check has to remember:
-# a check that forgot would run jq at a broken file and report a confident wrong
-# ok, and the review group added for #2 is exactly such an append to the list.
-# Reaching a check at all is now the proof that its preconditions held.
+# will not parse each settle all of them at once. Both are decided in
+# d_run_flow, before any of them runs, rather than in a preamble each check has
+# to remember: a check that forgot would run jq at a broken file and report a
+# confident wrong ok, and the review group added for #2 is exactly such an
+# append to the list. Reaching a check at all is now the proof that its
+# preconditions held.
 
 check_state_phase() {
   local phase
@@ -917,8 +919,8 @@ check_flow_handoffs() {
 
 # An entry may list the phases it applies to, as `name:phase,phase`; one with
 # no list runs in every phase. A `<phase>+` element stands for <phase> and
-# every phase after it in the phase table, so a phase added later is picked up. d_run_flow does the filtering, so d_run never
-# sees a suffix.
+# every phase after it in the phase table, so a phase added later is picked up.
+# d_run_flow does the filtering, so d_run never sees a suffix.
 FLOW_CHECKS="
 h_flow check_state_phase check_flow_issue check_flow_branch check_flow_upstream:implement+ check_flow_pr check_flow_review_terminal:review check_flow_review_budget:review check_flow_review_ci:review check_flow_review_draft:review+ check_flow_handoffs check_flow_autopilot_label
 "

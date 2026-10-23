@@ -13,11 +13,12 @@ may run one on demand. This skill is the one definition of it.
 ORCH="${CLAUDE_PLUGIN_ROOT}/scripts/orch.sh"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is unset, run `ls "$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh`
-(the Junie CLI install). If it prints one path, `ORCH` is that path.
-If it prints more than one, stop and show the human the paths.
-If it prints nothing, `ORCH` is `scripts/orch.sh`
-two directories above this skill's own directory (the plugin root).
+If `CLAUDE_PLUGIN_ROOT` is unset, run `ls
+"$HOME"/.junie/extensions/*/orchestrator/scripts/orch.sh` (the Junie CLI
+install). If it prints one path, `ORCH` is that path. If it prints more than
+one, stop and show the human the paths. If it prints nothing, `ORCH` is
+`scripts/orch.sh` two directories above this skill's own directory (the plugin
+root).
 
 If `orch.sh` is at none of these paths, this is a skills-only install: stop, and
 tell the human `orch.sh` is missing and to install the full orchestrator
@@ -60,14 +61,14 @@ a skipped check is reported.
    standards` prints one line, `Standards: ` and the repo's standards
    documents, every path one that exists, or `Standards: none`; keep it
    verbatim, for both reviewers and any restart step 4 makes. Then
-   start `orch-reviewer-standards` and `orch-reviewer-spec` at once, both in one message, each as a fresh
-   subagent, never a fork, which would inherit this context. Start each as
-   `docs/host-capabilities.md`'s **Start a fresh subagent** row describes for
-   the host: on Claude Code, the Agent tool with `subagent_type` set to
-   `orchestrator:<agent>`, both on the `reviewer` setting: run `bash "$ORCH"
-   agent get reviewer` once, at the pass's start, per **Agent settings** in
-   `docs/host-capabilities.md`. Each prompt carries these seven variables and
-   nothing else - no issue body, no diff, no brief:
+   start `orch-reviewer-standards` and `orch-reviewer-spec` at once, both in one
+   message, each as a fresh subagent, never a fork, which would inherit this
+   context. Start each as `docs/host-capabilities.md`'s **Start a fresh
+   subagent** row describes for the host: on Claude Code, the Agent tool with
+   `subagent_type` set to `orchestrator:<agent>`, both on the `reviewer`
+   setting: run `bash "$ORCH" agent get reviewer` once, at the pass's start, per
+   **Agent settings** in `docs/host-capabilities.md`. Each prompt carries these
+   seven variables and nothing else - no issue body, no diff, no brief:
 
    ```
    Base SHA: <base SHA>
@@ -123,9 +124,9 @@ a skipped check is reported.
    finding text as its claim: fix it, or decline it with its reason. `off`,
    `ok` and `unmeasured` raise nothing, and so does a `check` that dies:
    relay its `orch:` message. With `unmeasured`, relay any `orch:` warning
-   `check` printed with it too, so a base run's setup failure reads as one. When the caller has no verification command,
-   skip the check, and say so where the caller says. It is not a
-   smell-baseline finding, so no pass leaves it out.
+   `check` printed with it too, so a base run's setup failure reads as one. When
+   the caller has no verification command, skip the check, and say so where the
+   caller says. It is not a smell-baseline finding, so no pass leaves it out.
 6. **Declines.** Record each finding you decline, one line each:
    `` `file:line` - <claim> - <reason> `` - its `file:line`, or `-` when the
    report gave `-` for its location; the finding's claim, in a few words;
@@ -155,11 +156,11 @@ prompt above. Record each fallback where the caller puts host fallbacks.
 
 ## Standalone review pass
 
-A human may ask for a review pass on demand - `/orchestrator:review-pass <issue>`,
-or in plain words - after a quick implementation, say, or on any branch. It
-reviews the branch they are on, from its base SHA, with the given issue as the
-spec. It is **Review pass** above with the differences below, never a review
-loop: no budget, and nothing filed. See
+A human may ask for a review pass on demand -
+`/orchestrator:review-pass <issue>`, or in plain words - after a quick
+implementation, say, or on any branch. It reviews the branch they are on, from
+its base SHA, with the given issue as the spec. It is **Review pass** above with
+the differences below, never a review loop: no budget, and nothing filed. See
 `docs/adr/0029-a-review-on-demand-is-a-review-pass-not-a-loop.md`.
 
 The issue number comes from the human: the command's one numeric argument, or
@@ -234,10 +235,10 @@ the only Standards look the change gets before its PR (ADR-0021).
    Source reads `possible <smell> (judgement call)`, with `<smell>` one of
    the twelve in `agents/orch-reviewer-standards.md`'s **Smell baseline**.
    A Source beginning `root-cause check` or `test-cost check`, or naming no
-   baseline smell, is never one; nor is any Spec-report finding. A smell that matched an earlier
-   decline is already under **Previously declined** and is not counted.
-   A `grew` verdict from **Review pass** step 5's suite-cost check is in
-   neither report and is never one: it is kept, whatever `--smells` says.
+   baseline smell, is never one; nor is any Spec-report finding. A smell that
+   matched an earlier decline is already under **Previously declined** and is
+   not counted. A `grew` verdict from **Review pass** step 5's suite-cost check
+   is in neither report and is never one: it is kept, whatever `--smells` says.
    Hidden smells are neither fixed nor declined. The reviewers are unchanged:
    the Standards reviewer still reports smells.
 3. **Fix, decline and ask**: **Review pass** steps 5 to 7, on the

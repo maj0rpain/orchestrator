@@ -17,16 +17,16 @@ differences only:
 - **Disposition**: `batch.md` is written and checked with `spec-review
   check` until it passes, as in an attended review, and the batch printed by
   pasting `check`'s stdout word for word, as in an attended review - the
-  same compact view: the material items as one list, each under its batch number, on one
-  line with its summary and its reason, a decision item's options one line
-  each, no citation and no diff, and the minor and resolved ones one line each under **Minor edits** - so a human watching can see what is applied and
-  interrupt. It is not a turn-final reply, whatever `check`'s pass line
-  says: it asks no question, and a reply with no tool call ends the turn,
-  so never end the turn on it. Then no question is asked and nothing waits:
-  go straight on to `apply` in the same turn, the batch
-  applied at once as **Apply as recommended** - every proposed edit applied,
-  every **recommend decline** item skipped, and every decision item takes
-  its recommended option.
+  same compact view: the material items as one list, each under its batch
+  number, on one line with its summary and its reason, a decision item's options
+  one line each, no citation and no diff, and the minor and resolved ones one
+  line each under **Minor edits** - so a human watching can see what is applied
+  and interrupt. It is not a turn-final reply, whatever `check`'s pass line
+  says: it asks no question, and a reply with no tool call ends the turn, so
+  never end the turn on it. Then no question is asked and nothing waits: go
+  straight on to `apply` in the same turn, the batch applied at once as **Apply
+  as recommended** - every proposed edit applied, every **recommend decline**
+  item skipped, and every decision item takes its recommended option.
 - **Applying**: the standalone call in **Applying the answer**, with the
   answer `recommended` and `--unattended` added:
 

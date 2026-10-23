@@ -14,10 +14,10 @@ with no fresh subagent: there it takes the host-capabilities fallback, does the
 fixer's and the closer's work in its own session, and records that as a host
 fallback. When triage leaves something the loop fixes, it starts a fresh
 `orch-fixer`, which fixes, verifies, commits, pushes, writes the iteration's
-review record, and returns about five lines. At termination it starts a fresh `orch-closer`, which files
-the unfixed majors and nits across the flow's records, posts the one PR
-comment, and returns the issue numbers. A clean iteration starts no fixer; the
-driver writes its record itself.
+review record, and returns about five lines. At termination it starts a fresh
+`orch-closer`, which files the unfixed majors and nits across the flow's
+records, posts the one PR comment, and returns the issue numbers. A clean
+iteration starts no fixer; the driver writes its record itself.
 
 Keeping the bookkeeping in one context made that context the problem. A
 measured budget-4 loop peaked at 134k tokens against a 120k target: each

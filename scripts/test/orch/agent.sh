@@ -5,7 +5,7 @@
 # shellcheck source=setup.sh
 (( 0 )) && source setup.sh
 
-# --- agent ---------------------------------------------------------------------
+# --- agent --------------------------------------------------------------------
 # The agent setting: a model and an effort per role, each its own git config
 # key, looked up local, then global, else inherit. Driven against a fresh
 # repo's real local config and a throwaway HOME's real global config, so a
@@ -141,7 +141,8 @@ fixer model sonnet (global) effort inherit (inherit)
 closer model fable (global) effort xhigh (local)
 resolver model inherit (inherit) effort gpt (local, invalid)"
 
-# get refuses a disallowed effective value, naming key, value and allowed values.
+# get refuses a disallowed effective value, naming key, value and allowed
+# values.
 out="$("$ORCH" agent get resolver 2>&1)"; st=$?
 assert_status "get refuses a hand-set disallowed value" "$st" 1
 assert_contains "naming the key, its value and the allowed values" "$out" \
@@ -330,7 +331,7 @@ unset -f jkey
 unset -f key untouched
 restore_suite_env
 
-# --- agent sync ----------------------------------------------------------------
+# --- agent sync ---------------------------------------------------------------
 # Agent copies: sync writes a marked copy of each plugin agent whose role has a
 # Junie setting into the checkout's .junie/agents/, and keeps it out of git.
 # Driven through the CLI against a fresh repo and a throwaway HOME.

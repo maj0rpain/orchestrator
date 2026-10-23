@@ -1,17 +1,32 @@
 # orchestrator
 
-A Claude Code plugin. See [CONTRIBUTING.md](CONTRIBUTING.md) for layout and authoring reference.
+A Claude Code plugin. See [CONTRIBUTING.md](CONTRIBUTING.md) for layout and
+authoring reference.
 
 ## Layout
 
-Shell scripts live in `scripts/` (`orch.sh`, `hook-*.sh`, …). `orch.sh` is a thin entry point: each noun's code lives in `scripts/orch/<noun>.sh` (`doctor.sh` among them), the concept modules with no noun, `checkout.sh`, `filed-finding.sh` and `known-items.sh`, among them too, each helper in the module of the concept it serves, and only the primitives no concept owns in `scripts/orch/common.sh`. Tests live in `scripts/test/`, with the orch.sh suite's sections in `scripts/test/orch/` (one `<noun>.sh` per orch.sh noun, named as its module is, and `checkout.sh`, `filed-finding.sh` and `known-items.sh` for the concept modules of those names, plus `common.sh`, `setup.sh` and `harness.sh`). The autopilot container's files live in `docker/` (`Dockerfile`, `compose.yaml`, `.env.example`), its entrypoint is `scripts/autopilot-container.sh`, and `scripts/test/autopilot_container_test.sh` tests it. Repo-development tools that do not ship to users live in `scripts/dev/` (`helpers.sh`, the helper index). There is no top-level `tests/`, and `hooks/` holds only `hooks.json`.
+Shell scripts live in `scripts/` (`orch.sh`, `hook-*.sh`, …). `orch.sh` is a
+thin entry point: each noun's code lives in `scripts/orch/<noun>.sh`
+(`doctor.sh` among them), the concept modules with no noun, `checkout.sh`,
+`filed-finding.sh` and `known-items.sh`, among them too, each helper in the
+module of the concept it serves, and only the primitives no concept owns in
+`scripts/orch/common.sh`. Tests live in `scripts/test/`, with the orch.sh
+suite's sections in `scripts/test/orch/` (one `<noun>.sh` per orch.sh noun,
+named as its module is, and `checkout.sh`, `filed-finding.sh` and
+`known-items.sh` for the concept modules of those names, plus `common.sh`,
+`setup.sh` and `harness.sh`). The autopilot container's files live in `docker/`
+(`Dockerfile`, `compose.yaml`, `.env.example`), its entrypoint is
+`scripts/autopilot-container.sh`, and `scripts/test/autopilot_container_test.sh`
+tests it. Repo-development tools that do not ship to users live in
+`scripts/dev/` (`helpers.sh`, the helper index). There is no top-level `tests/`,
+and `hooks/` holds only `hooks.json`.
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues and specs live as GitHub issues on `maj0rpain/orchestrator`, driven by the `gh` CLI.
-See `docs/agents/issue-tracker.md`.
+Issues and specs live as GitHub issues on `maj0rpain/orchestrator`, driven by
+the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
@@ -25,8 +40,8 @@ See `docs/agents/domain.md`.
 
 ### CLI conventions
 
-`orch.sh` subcommand grammar: noun before verb, e.g. `orch.sh branch retire <old> <new>`.
-See `docs/agents/cli-conventions.md`.
+`orch.sh` subcommand grammar: noun before verb, e.g. `orch.sh branch
+retire <old> <new>`. See `docs/agents/cli-conventions.md`.
 
 ### Coding standards
 
@@ -45,14 +60,14 @@ go in the file for the noun it touches (a new noun gets a new file; a concept
 module with no noun, `checkout.sh`, `filed-finding.sh` or `known-items.sh`, gets
 a section file named as it is).
 orch_test.sh runs its sections in parallel, `ORCH_TEST_JOBS` at a time (default:
-the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so every
-section must pass on its own.
-Helper placement is checked by harness.sh's placement section; its failure message states the rule.
-Before writing or reusing a helper, run `scripts/dev/helpers.sh` (orch.sh's
-modules) or `scripts/dev/helpers.sh --tests` (the shared test setup and the gh
-fake) instead of grepping, and read CONTRIBUTING's Test helpers subsection: the
-fixtures to reach for first, running one section under `bash -x`, and the
-bash-version rule.
+the core count; `ORCH_TEST_JOBS=1` runs them sequentially in one shell), so
+every section must pass on its own.
+Helper placement is checked by harness.sh's placement section; its failure
+message states the rule. Before writing or reusing a helper, run
+`scripts/dev/helpers.sh` (orch.sh's modules) or `scripts/dev/helpers.sh --tests`
+(the shared test setup and the gh fake) instead of grepping, and read
+CONTRIBUTING's Test helpers subsection: the fixtures to reach for first, running
+one section under `bash -x`, and the bash-version rule.
 See CONTRIBUTING.md's Develop section.
 
 ## Versioning

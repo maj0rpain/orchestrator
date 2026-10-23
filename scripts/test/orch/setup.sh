@@ -79,8 +79,8 @@ assert_not_contains() {
 assert_status() {
   if [ "$2" -eq "$3" ]; then ok "$1"; else bad "$1" "expected exit $3, got $2"; fi
 }
-# The CI classifier's verdict is its first line and the detail lines below it are
-# not the assertion, so most of these read one line out of a captured $out.
+# The CI classifier's verdict is its first line and the detail lines below it
+# are not the assertion, so most of these read one line out of a captured $out.
 assert_first_line() {
   assert_eq "$1" "$(printf '%s\n' "$2" | sed -n 1p)" "$3"
 }
@@ -150,7 +150,8 @@ origin_rejects() {
 
 # new_repo_with_origin [branch]: new_repo, plus tracking refs for its origin:
 # origin/<branch> (default: the checked-out branch) set to HEAD, and
-# origin/HEAD pointing at it. Call it in the current shell, never inside $(...): new_repo cd's.
+# origin/HEAD pointing at it. Call it in the current shell, never inside $(...):
+# new_repo cd's.
 new_repo_with_origin() {
   new_repo >/dev/null
   local b="${1:-$(git branch --show-current)}"
@@ -665,7 +666,9 @@ fake_fail() {
 # The seeded two-line gh stderr whose first line a death must carry.
 GH_502=$'HTTP 502: Bad Gateway\nsecond line'
 
-# assert_gh_dies <label> <op> <seed> <status> <message> <command...>: gh fails at <op>, and the command (2>&1, into out and st) exits <status> printing exactly <message>.
+# assert_gh_dies <label> <op> <seed> <status> <message> <command...>: gh fails
+# at <op>, and the command (2>&1, into out and st) exits <status> printing
+# exactly <message>.
 assert_gh_dies() {
   local label="$1" op="$2" seed="$3" status="$4" message="$5"
   shift 5
@@ -761,7 +764,7 @@ fake_offline() { : >"$ORCH_GH_FAKE_STORE/offline"; }
 # fake_online: GitHub reachable and authenticated again.
 fake_online()  { rm -f "$ORCH_GH_FAKE_STORE/offline" "$ORCH_GH_FAKE_STORE/noauth"; }
 
-# --- the fixture gh (adapter contract tests, #280) -----------------------------
+# --- the fixture gh (adapter contract tests, #280) ----------------------------
 #
 # gh_fixture: puts a fixture `gh` on PATH for the real adapter operations'
 # contract tests, and leaves its directory in GH_FIXTURE. It holds no logic and

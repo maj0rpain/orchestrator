@@ -1,6 +1,8 @@
 # The edit guard arms only where a host offers a mechanical trigger
 
-Superseded in part by ADR-0023, itself superseded by ADR-0025: the guard does not arm on Junie, and the flow-start working-tree check below is the Junie backstop.
+Superseded in part by ADR-0023, itself superseded by ADR-0025: the guard does
+not arm on Junie, and the flow-start working-tree check below is the Junie
+backstop.
 
 The planning edit guard (`hook-guard.sh`) is armed by a marker that a
 `PostToolUse` hook on the `Skill` tool creates when grilling starts. Junie,
