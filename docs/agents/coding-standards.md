@@ -3,6 +3,7 @@
 Judgement calls for code in this repo that no lint or test enforces. The
 Standards reviewer, ticket subagents and the fixer all read this doc. Rules a
 check already enforces are left to that check.
+Line width is one of them: see CONTRIBUTING's Develop section.
 
 ## 1. Reuse, then extract only what reacts the same
 

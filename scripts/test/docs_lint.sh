@@ -69,6 +69,8 @@
 #   scan_layout_map  CONTRIBUTING's Layout map lists every docs/ file and directory
 #   scan_changelog  the CHANGELOG's top heading is the plugin version, with one non-empty section
 #   scan_changelog_fragments  a PR to main adds one well-formed changelog fragment, named for no sub-issue, and bumps nothing by hand
+#   scan_line_width  no covered Markdown or shell comment line is past 80
+#     columns, outside the exempt lines
 # <<< rules
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -235,6 +237,11 @@ printf '%s\n' '# >>> rules' '#   scan_a  rule a' '#   scan_b  rule b' '# <<< rul
   '# scan_b <root>: a comment outside the index.' 'scan_a() { :; }' 'helper() { :; }' 'scan_b() { :; }' \
   >"$fixture/lint.sh"
 assert_empty "an index matching the functions in order is not flagged" \
+  "$(scan_rule_index "$fixture/lint.sh")"
+printf '%s\n' '# >>> rules' '#   scan_a  rule a, whose description' \
+  '#     continues onto a deeper-indented line' '#   scan_b  rule b' '# <<< rules' \
+  'scan_a() { :; }' 'scan_b() { :; }' >"$fixture/lint.sh"
+assert_empty "an index entry continued onto a deeper-indented line is not flagged" \
   "$(scan_rule_index "$fixture/lint.sh")"
 check "the rule index lists every scan_* function in file order" \
   "$(scan_rule_index "$PLUGIN_ROOT/scripts/test/docs_lint.sh")"
@@ -3327,6 +3334,161 @@ if [ -n "${CHANGELOG_BASE+set}" ]; then
 else
   ok "the changelog fragment rule skipped (CHANGELOG_BASE unset)"
 fi
+
+# --- line width (#1524) -------------------------------------------------------
+echo
+echo "line width (#1524)"
+# CONTRIBUTING's Develop section states the width, 80 columns, and the files
+# it covers. A covered line fails when it is longer than 80, counted in
+# characters, so a multi-byte character is one column.
+# scan_line_width <plugin root>: "<file>:<line>: <length> columns, past 80"
+# for each covered, non-exempt line longer than 80.
+scan_line_width() {
+  local f
+  while IFS= read -r f; do
+    F="$f" LC_ALL=C awk '
+      FNR == 1 { sh = ENVIRON["F"] ~ /\.sh$/; word = ""; fm = 0; fence = "" }
+      { t = $0; sub(/^[[:space:]]+/, "", t) }
+      sh && word != "" {
+        e = $0; if (dash) sub(/^\t+/, "", e)
+        if (e == word) word = ""
+        next
+      }
+      sh && t !~ /^#/ {
+        h = $0; gsub(/<<</, "", h)
+        if (match(h, /<<-?[[:space:]]*["\047]?[A-Za-z_][A-Za-z0-9_]*/)) {
+          word = substr(h, RSTART + 2, RLENGTH - 2)
+          dash = word ~ /^-/
+          sub(/^-?[[:space:]]*["\047]?/, "", word)
+        }
+        next
+      }
+      sh && FNR == 1 && t ~ /^#!/ { next }
+      sh && t ~ /^#[[:space:]]*shellcheck/ { next }
+      !sh && FNR == 1 && $0 == "---" { fm = 1; next }
+      fm { if ($0 == "---") fm = 0; next }
+      !sh && match(t, /^(```|~~~)/) {
+        m = substr(t, 1, 3)
+        if (fence == "") fence = m; else if (m == fence) fence = ""
+        next
+      }
+      fence != "" || t ~ /^\|/ || /https?:\/\// { next }
+      {
+        k = t; sub(/^#+[[:space:]]*/, "", k); sub(/[[:space:]]+$/, "", k)
+        sub(/^([-*+]|[0-9]+[.)])[[:space:]]+/, "", k)
+        if (k !~ /[[:space:]]/) next
+      }
+      { t = $0; n = length(t) - gsub(/[\200-\277]/, "", t) }
+      n > 80 { print ENVIRON["F"] ":" FNR ": " n " columns, past 80" }' "$1/$f"
+  done < <(cd "$1" && {
+    find skills agents commands docs -name '*.md' 2>/dev/null
+    for f in README.md CONTRIBUTING.md GLOSSARY.md CLAUDE.md; do
+      [ -f "$f" ] && echo "$f"
+    done
+    find scripts -name '*.sh' 2>/dev/null
+  } | sort)
+  return 0
+}
+# wide_line <prefix> <n>: <prefix> padded with x to <n> columns.
+wide_line() {
+  local s="$1"
+  while [ "${#s}" -lt "$2" ]; do s="${s}x"; done
+  printf '%s\n' "$s"
+}
+fixture="$(new_fixture)"
+mkdir -p "$fixture/skills/orch-a"
+{ echo '# A'; echo; wide_line 'Some prose ' 81; wide_line 'Some prose ' 80; } \
+  >"$fixture/skills/orch-a/SKILL.md"
+out="$(scan_line_width "$fixture")"
+flags "a covered Markdown line of 81 columns is flagged, with file, line, length" \
+  "$out" "skills/orch-a/SKILL.md:3: 81 columns, past 80"
+spares "an 80-column line is not flagged" "$out" '^skills/orch-a/SKILL\.md:4:'
+mkdir -p "$fixture/scripts/orch"
+{ wide_line '#!/usr/bin/env bash # a shebang ' 90
+  wide_line '  # a whole-line comment ' 81
+  wide_line 'echo "a code line" ' 81
+  wide_line 'echo hi  # a trailing comment ' 90
+} >"$fixture/scripts/orch/a.sh"
+out="$(scan_line_width "$fixture")"
+flags "a whole-line shell comment of 81 columns under scripts/ is flagged" \
+  "$out" "scripts/orch/a.sh:2: 81 columns, past 80"
+spares "an 81-column shell code line is not flagged" "$out" '^scripts/orch/a\.sh:3:'
+spares "an over-long trailing comment on a code line is not flagged" \
+  "$out" '^scripts/orch/a\.sh:4:'
+spares "a #! shebang line is not flagged" "$out" '^scripts/orch/a\.sh:1:'
+# heredoc_case <opener> <terminator>: a heredoc holding an over-long # line,
+# then an over-long comment after its terminator.
+heredoc_case() {
+  printf 'cat %s\n' "$1"
+  wide_line '# inside the heredoc body ' 90
+  printf '%s\n' "$2"
+  wide_line '# after the heredoc ' 90
+}
+{ heredoc_case '<<EOF' 'EOF'; heredoc_case "<<'END'" 'END'
+  heredoc_case '<<"X1"' 'X1'; heredoc_case '<<-EOF' $'\tEOF'
+  echo 'grep -q y <<<"$v"'; wide_line '# after a herestring ' 90
+} >"$fixture/scripts/orch/heredoc.sh"
+out="$(scan_line_width "$fixture")"
+spares "a # line inside a heredoc body is not flagged" \
+  "$out" '^scripts/orch/heredoc\.sh:(2|6|10|14):'
+for n in 4 8 12 16 18; do
+  flags "an over-long comment after a heredoc's terminator, line $n, is flagged" \
+    "$out" "scripts/orch/heredoc.sh:$n: 90 columns, past 80"
+done
+mkdir -p "$fixture/agents"
+{ echo '---'; wide_line 'description: a long one ' 90; echo '---'  # 1-3
+  echo '```'; wide_line 'some code ' 90; echo '```'                # 4-6
+  echo '  ~~~'; wide_line 'some code ' 90; echo '  ~~~'            # 7-9
+  wide_line '| a | table row ' 90                                  # 10
+  wide_line 'See http://example.com for ' 90                       # 11
+  wide_line 'See https://example.com for ' 90                      # 12
+  wide_line '' 90                                                  # 13
+  wide_line '  - ' 90                                              # 14
+  wide_line '12. ' 90                                              # 15
+  wide_line '## ' 90                                               # 16
+  printf '%s\n' "Prose $(printf '%.0s→' {1..74})"                  # 17
+  echo '---'; wide_line 'Some prose ' 81                           # 18-19
+} >"$fixture/agents/orch-x.md"
+{ echo '#!/usr/bin/env bash'
+  wide_line '# shellcheck disable=SC2016 because of a reason ' 90
+  wide_line '#shellcheck source=setup.sh ' 90
+  wide_line '  # ' 90
+} >"$fixture/scripts/orch/exempt.sh"
+out="$(scan_line_width "$fixture")"
+spares "a line in the first line's frontmatter is not flagged" \
+  "$out" '^agents/orch-x\.md:2:'
+spares "a line in a backtick fence is not flagged" "$out" '^agents/orch-x\.md:5:'
+spares "a line in a tilde fence is not flagged" "$out" '^agents/orch-x\.md:8:'
+spares "a table row is not flagged" "$out" '^agents/orch-x\.md:10:'
+spares "a line containing a URL is not flagged" "$out" '^agents/orch-x\.md:1[12]:'
+spares "an unbreakable-token line is not flagged" "$out" '^agents/orch-x\.md:13:'
+spares "an unbreakable token after a list marker is not flagged" \
+  "$out" '^agents/orch-x\.md:1[45]:'
+spares "an unbreakable token after a # is not flagged" "$out" '^agents/orch-x\.md:16:'
+spares "an 80-character line of multi-byte characters is not flagged" \
+  "$out" '^agents/orch-x\.md:17:'
+flags "an over-long line after a mid-document --- is flagged" \
+  "$out" "agents/orch-x.md:19: 81 columns, past 80"
+spares "a # shellcheck directive is not flagged" "$out" '^scripts/orch/exempt\.sh:[23]:'
+spares "an unbreakable token after a shell # is not flagged" \
+  "$out" '^scripts/orch/exempt\.sh:4:'
+mkdir -p "$fixture/commands" "$fixture/changelog.d" "$fixture/docs/adr" \
+  "$fixture/.out-of-scope"
+for f in README.md commands/c.md docs/adr/0001-a.md CHANGELOG.md changelog.d/12.md \
+  .out-of-scope/x.md; do
+  wide_line 'Some prose ' 81 >"$fixture/$f"
+done
+out="$(scan_line_width "$fixture")"
+flags "an over-long line in the root README.md is flagged" \
+  "$out" "README.md:1: 81 columns, past 80"
+flags "an over-long line in a commands/ file is flagged" \
+  "$out" "commands/c.md:1: 81 columns, past 80"
+flags "an over-long line in an ADR is flagged" \
+  "$out" "docs/adr/0001-a.md:1: 81 columns, past 80"
+spares "an over-long line in CHANGELOG.md or changelog.d/ is not flagged" \
+  "$out" '^(CHANGELOG\.md|changelog\.d/12\.md):'
+spares "an over-long line in a *.md outside the covered paths is not flagged" \
+  "$out" '^\.out-of-scope/'
 
 # >>> summary
 echo

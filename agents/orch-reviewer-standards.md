@@ -80,6 +80,7 @@ you held back for the report's `Known items held back:` line.
    whether a rule is met. When a finding names a pattern, grep for every site
    of it - see **Pattern findings**. Done when every hunk has been checked
    against every rule.
+   Line width is the docs linter's job, never a finding, at any length.
 4. **Write the report** to the report path - see **The report**. Open the
    known-items file now, and hold back what it already carries (see **Known
    items**).

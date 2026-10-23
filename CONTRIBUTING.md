@@ -70,6 +70,15 @@ opens with a shellcheck shell directive and a never-run `source setup.sh` line
 behind a `source=setup.sh` directive, so shellcheck reads setup.sh's
 definitions; a new section file copies those lines.
 
+**Line width** is 80 columns: no covered line is longer than 80. It covers
+every `*.md` under `skills/`, `agents/`, `commands/` and `docs/`, the root
+`README.md`, `CONTRIBUTING.md`, `GLOSSARY.md` and `CLAUDE.md`, and the
+whole-line comments of every `*.sh` under `scripts/`, outside heredoc bodies;
+never `CHANGELOG.md`, `changelog.d/` or shell code. Frontmatter, fenced code,
+table rows, lines with a URL, `# shellcheck` directives and one-token lines
+are exempt. `docs_lint.sh`'s `scan_line_width` is the check, naming each
+over-long line's file, line and length.
+
 `--plugin-dir` is the development loop: it loads the working tree, so edits take
 effect on the next session with no push. The installed copy is a clone of the
 default branch pinned to `version` in `plugin.json`, so changes reach it only
