@@ -59,6 +59,9 @@ The minimum steps for the [autopilot flow](docs/how-it-works.md#autopilot).
 3. Pick "Autopilot flow" at the planning close.
 4. Answer its questions on the issue, then remove the `needs-human` label.
 
+To run the watcher isolated from your machine instead, use the
+[container](docs/how-it-works.md#the-container).
+
 Setup, scheduling, and the question format are in
 [docs/how-it-works.md](docs/how-it-works.md#autopilot).
 

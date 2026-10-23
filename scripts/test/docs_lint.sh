@@ -1826,6 +1826,16 @@ for phrase in orchestrator.autopilot.permission-mode 'orch.sh autopilot tick' ne
     "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/how-it-works.md|## Autopilot' "$phrase")"
 done
 
+# The container and host-alternative subsections sit inside ### Setup, and the
+# files the container docs name exist (#1502).
+for phrase in docker/compose.yaml docker/.env.example systemd; do
+  check "how-it-works' Autopilot Setup names $phrase" \
+    "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/how-it-works.md|### Setup' "$phrase")"
+done
+for f in docker/compose.yaml docker/.env.example; do
+  check "$f exists" "$([ -f "$PLUGIN_ROOT/$f" ] || echo "$f: missing")"
+done
+
 # --- review pass (#342) --------------------------------------------------------
 echo
 echo "review pass (#342)"
