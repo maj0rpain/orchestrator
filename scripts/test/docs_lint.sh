@@ -3414,31 +3414,26 @@ echo "line width (#1524)"
 # CONTRIBUTING's Develop section states the width, 80 columns, and the files
 # it covers. A covered line fails when it is longer than 80, counted in
 # characters, so a multi-byte character is one column.
+# SHELL_CODE_AWK, the one rule of what counts as code in a shell file, read
+# from the orch.sh suite's setup, which cannot be sourced here: a line is a
+# comment only when it starts outside any open quote, substitution or heredoc.
+SHELL_CODE_AWK="$(awk "/^SHELL_CODE_AWK='\$/ { f = 1; next } f && /^'\$/ { exit } f" \
+  "$PLUGIN_ROOT/scripts/test/orch/setup.sh")"
+[ -n "$SHELL_CODE_AWK" ] || {
+  echo "docs_lint.sh: no SHELL_CODE_AWK in scripts/test/orch/setup.sh" >&2; exit 1; }
 # scan_line_width <plugin root>: "<file>:<line>: <length> columns, past 80"
 # for each covered, non-exempt line longer than 80.
 scan_line_width() {
   local f
   while IFS= read -r f; do
-    F="$f" LC_ALL=C awk '
+    F="$f" LC_ALL=C awk "$SHELL_CODE_AWK"'
       FNR == 1 {
         is_shell = ENVIRON["F"] ~ /\.sh$/
-        heredoc_end = ""; in_frontmatter = 0; fence = ""
+        in_frontmatter = 0; fence = ""
       }
       { stripped = $0; sub(/^[[:space:]]+/, "", stripped) }
-      is_shell && heredoc_end != "" {
-        closer = $0; if (tabs_stripped) sub(/^\t+/, "", closer)
-        if (closer == heredoc_end) heredoc_end = ""
-        next
-      }
-      is_shell && stripped !~ /^#/ {
-        code = $0; gsub(/<<</, "", code)
-        if (match(code, /<<-?[[:space:]]*["\047]?[A-Za-z_][A-Za-z0-9_]*/)) {
-          heredoc_end = substr(code, RSTART + 2, RLENGTH - 2)
-          tabs_stripped = heredoc_end ~ /^-/
-          sub(/^-?[[:space:]]*["\047]?/, "", heredoc_end)
-        }
-        next
-      }
+      is_shell { shell_code_line($0) }
+      is_shell && (!sc_top || stripped !~ /^#/) { next }
       is_shell && FNR == 1 && stripped ~ /^#!/ { next }
       is_shell && stripped ~ /^#[[:space:]]*shellcheck/ { next }
       !is_shell && FNR == 1 && $0 == "---" { in_frontmatter = 1; next }
@@ -3511,6 +3506,15 @@ heredoc_case() {
 out="$(scan_line_width "$fixture")"
 spares "a # line inside a heredoc body is not flagged" \
   "$out" '^scripts/orch/heredoc\.sh:(2|6|10|14):'
+{ echo "echo \"cat <<'EOF' is quoted, no heredoc\""
+  wide_line '# after a quoted <<EOF ' 90
+  echo 'awk "'; wide_line '# inside a multi-line string ' 90; echo '"'
+} >"$fixture/scripts/orch/quoted.sh"
+out_quoted="$(scan_line_width "$fixture")"
+flags "an over-long comment after a quoted <<WORD is flagged" \
+  "$out_quoted" "scripts/orch/quoted.sh:2: 90 columns, past 80"
+spares "a # line inside a multi-line string is not flagged" \
+  "$out_quoted" '^scripts/orch/quoted\.sh:4:'
 for n in 4 8 12 16 18; do
   flags "an over-long comment after a heredoc's terminator, line $n, is flagged" \
     "$out" "scripts/orch/heredoc.sh:$n: 90 columns, past 80"
