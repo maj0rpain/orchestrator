@@ -1333,11 +1333,17 @@ assert_eq "a repo with no standards document prints none" \
 out_dir="$(mktemp -d)"; : >"$out_dir/out.md"
 mkdir -p docs/agents docs/deep
 : >docs/agents/c.md; : >docs/deep/third.md; : >CONTRIBUTING.md
+# Each refused mention names a file that would exist in the repo were its
+# filter to fail: the path clamped at the root, the absolute path or the URL
+# read as relative.
+mkdir -p "$(basename "$out_dir")" etc docs/agents/etc docs/agents/https:/example.com
+: >"$(basename "$out_dir")/out.md"; : >etc/x.md; : >docs/agents/etc/x.md
+: >docs/agents/https:/example.com/README.md
 writeln '# claude' 'See `docs/agents/a.md` and [the guide](docs/agents/missing.md).' \
   'Also `AGENTS.md`, `CONTRIBUTING.md#develop` and `docs/agents/` itself.' >CLAUDE.md
 writeln '# agents' 'Read [c](docs/agents/c.md#section) first.' >AGENTS.md
 writeln '# a' 'Then [b](b.md#top), `CONTRIBUTING.md` again,' \
-  "[out](../../$(basename "$out_dir")/out.md), [abs]($out_dir/out.md)," \
+  "[out](../../../$(basename "$out_dir")/out.md), [abs](/etc/x.md)," \
   '[url](https://example.com/README.md), `/etc/x.md` and `docs/agents/gone.md`.' \
   >docs/agents/a.md
 writeln '# b' 'A third hop: [third](../deep/third.md), `docs/deep/third.md`.' >docs/agents/b.md

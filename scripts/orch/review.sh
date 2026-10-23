@@ -393,19 +393,12 @@ review_known_items() {
   known_items_write "$path" "$deviations" "$waiting$filed$rejected"
 }
 
-# review_standards_resolve <file> <path>: the repo-relative path a mention in
-# <file> (repo-relative) names - a backtick path, given as `<path>`, against
-# the repo root, any other <path> (a Markdown link target) against <file>'s
-# directory - with any # fragment dropped. Prints nothing for a URL, an
-# absolute path, a path that leaves the repo, or one not ending in .md.
+# review_standards_resolve <base> <path>: the repo-relative path <path> names,
+# taken against <base> (a repo-relative directory, empty for the repo root),
+# with any # fragment dropped. Prints nothing for a URL, an absolute path, a
+# path that leaves the repo, or one not ending in .md.
 review_standards_resolve() {
-  local file="$1" target="$2" base="" seg out=()
-  if [[ $target == \`*\` ]]; then
-    target="${target:1:${#target}-2}"
-  else
-    target="${target#<}"; target="${target%>}"
-    [[ $file == */* ]] && base="${file%/*}"
-  fi
+  local base="$1" target="$2" seg out=()
   target="${target%%#*}"
   case "$target" in
     ''|/*|*[[:space:]]*) return 0 ;;
@@ -425,13 +418,19 @@ review_standards_resolve() {
 }
 
 # review_standards_mentions <file>: the repo-relative .md paths <file> mentions,
-# in backticks or as Markdown links, one per line in the order they appear.
+# in backticks (against the repo root) or as Markdown links (against <file>'s
+# directory), one per line in the order they appear.
 review_standards_mentions() {
-  local file="$1" m
+  local file="$1" dir="" m
+  [[ $file == */* ]] && dir="${file%/*}"
   while IFS= read -r m; do
     case "$m" in
-      \`*) review_standards_resolve "$file" "$m" ;;
-      *) m="${m#](}"; m="${m%)}"; review_standards_resolve "$file" "${m%%[[:space:]]*}" ;;
+      \`*) review_standards_resolve "" "${m:1:${#m}-2}" ;;
+      *)
+        m="${m#](}"; m="${m%)}"; m="${m%%[[:space:]]*}"
+        m="${m#<}"; m="${m%>}"
+        review_standards_resolve "$dir" "$m"
+        ;;
     esac
   done < <(grep -oE '`[^`]+`|\]\([^)]+\)' "$ROOT/$file" 2>/dev/null)
 }
