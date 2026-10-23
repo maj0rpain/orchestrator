@@ -64,7 +64,8 @@ assert_eq "live state is cleared" "$(on_disk .orchestrator/state.json)" "absent"
 restore_suite_env
 
 # --- mp-skill ---------------------------------------------------------------
-# The plugin reads no upstream skill any more (ADR-0028), so the resolver is gone.
+# The plugin reads no upstream skill any more (ADR-0028), so the resolver is
+# gone.
 echo
 echo "mp-skill"
 new_repo >/dev/null

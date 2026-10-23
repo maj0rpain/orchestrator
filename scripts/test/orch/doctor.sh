@@ -6,7 +6,8 @@
 (( 0 )) && source setup.sh
 
 # Git Bash / MSYS2 (and Cygwin) both set OSTYPE this way; used to skip fixtures
-# that are known not to work in that environment rather than report a false FAIL.
+# that are known not to work in that environment rather than report a false
+# FAIL.
 on_windows_bash() {
   case "$OSTYPE" in msys*|cygwin*) return 0 ;; *) return 1 ;; esac
 }
@@ -113,15 +114,15 @@ assert_eq "environment mode: JUNIE_SHIM_PATH outranks CLAUDECODE=1" \
 assert_eq "doctor.sh no longer defines host_detect" \
   "$(grep -c '^host_detect()' "$(dirname "$ORCH")/orch/doctor.sh")" "0"
 
-# --- doctor.sh is a one-way dependency (#281) ----------------------------------
+# --- doctor.sh is a one-way dependency (#281) ---------------------------------
 echo
 echo "doctor.sh is a one-way dependency (#281)"
 # doctor.sh calls into orch.sh, never the other way round: the code view
 # (shell_code) of orch.sh and of every module beside doctor.sh in its orch/
 # directory names, as a whole word, no function doctor.sh defines - a name in a
 # comment is no call; one in a quoted literal is - except cmd_doctor, which
-# main() dispatches, and the reporters d_ok, d_warn, d_fail and d_remedy, which a
-# check living in the module of the concept it serves (agent.sh's
+# main() dispatches, and the reporters d_ok, d_warn, d_fail and d_remedy, which
+# a check living in the module of the concept it serves (agent.sh's
 # check_agent_settings, #1358) reports through when doctor runs it.
 # doctor_callbacks <scripts-dir> prints each such name found, for the
 # functions defined in <scripts-dir>/orch/doctor.sh. host.sh,
@@ -974,9 +975,9 @@ out="$("$ORCH" doctor --flow 2>&1)"; st=$?
 assert_status "a handoff folder holding spec-paused and spec-round leaves the flow healthy" "$st" 0
 assert_eq "with the same report" "$out" "$healthy_out"
 rm -f "$(dirname "$("$ORCH" handoff path spec)")/spec-paused" "$(dirname "$("$ORCH" handoff path spec)")/spec-round"
-# "published" names only one of the two paths an issue can arrive by (orch-to-spec
-# publishing vs. adoption at init, docs/adr/0005) - neutral wording here must
-# not imply the other path doesn't exist.
+# "published" names only one of the two paths an issue can arrive by
+# (orch-to-spec publishing vs. adoption at init, docs/adr/0005) - neutral
+# wording here must not imply the other path doesn't exist.
 assert_contains "reports no issue recorded yet without implying publication is the only path" \
   "$out" "issue: not recorded yet"
 assert_eq "--flow leaves the environment alone" \
@@ -984,8 +985,8 @@ assert_eq "--flow leaves the environment alone" \
 assert_eq "stays quiet about an upstream before the implement phase" \
   "$(printf '%s\n' "$out" | grep -c 'upstream')" "0"
 
-# /orchestrator:next and /orchestrator:flow-status both run this scope every time, and
-# a flow with no PR recorded has nothing to ask GitHub about.
+# /orchestrator:next and /orchestrator:flow-status both run this scope every
+# time, and a flow with no PR recorded has nothing to ask GitHub about.
 # GitHub unreachable shows it: one question would put a skip line in the report.
 fake_offline
 out="$("$ORCH" doctor --flow 2>&1)"
@@ -1070,8 +1071,8 @@ assert_contains "reports it as empty, not missing" "$out" "empty section"
 complete_handoff "$("$ORCH" handoff path implement)"
 
 # check_flow_issue runs unconditionally on state.issue, whichever path put it
-# there - adopted at init or published by orch-to-spec - and mirrors check_flow_pr's
-# open/closed/unreadable shape.
+# there - adopted at init or published by orch-to-spec - and mirrors
+# check_flow_pr's open/closed/unreadable shape.
 "$ORCH" state set issue 11
 fake_issue 11 open ready-for-agent
 out="$("$ORCH" doctor --flow 2>&1)"; st=$?
@@ -1260,9 +1261,9 @@ if on_windows_bash; then
 else
   out="$(PATH="$nojq_path" "$ORCH" doctor 2>&1)"; st=$?
   assert_status "bare doctor without jq fails on the tools check" "$st" 1
-  # The count comes from the registry, so a check appended to it is covered by the
-  # gate without anyone remembering to add a preamble - and this number moving is
-  # how you find out that happened.
+  # The count comes from the registry, so a check appended to it is covered by
+  # the gate without anyone remembering to add a preamble - and this number
+  # moving is how you find out that happened.
   assert_contains "collapses every flow check into one line when jq is gone" \
     "$out" "11 flow checks skipped: jq is not installed"
   assert_not_contains "with no ticket worktree, doctor without jq says nothing of them" \
@@ -1678,7 +1679,8 @@ restore_suite_env
 
 # A `<phase>+` element stands for <phase> and every later phase in the table,
 # on any element of an entry's list; any element, plain or `+`, naming a phase
-# the table does not hold dies naming its entry, so a typo can never quietly disable a check.
+# the table does not hold dies naming its entry, so a typo can never quietly
+# disable a check.
 registry='a:implement+ b:review,spec+ c'
 assert_eq "at spec a + entry from a later phase is filtered out" \
   "$(sourced_orch d_entries_at "$registry" spec)" "b c "
@@ -1775,7 +1777,7 @@ assert_status "a global bad value hidden by a local one still fails" "$st" 1
 assert_contains "naming the global key" "$out" "FAIL  orchestrator.effort.closer is huge (global)"
 restore_suite_env
 
-# --- doctor: Junie session and log (#1449) -------------------------------------
+# --- doctor: Junie session and log (#1449) ------------------------------------
 # Best effort, from Junie's own files under $HOME/.junie: the newest session for
 # this checkout names its log, whose last "Executing agent" line per orch-*
 # agent says what it ran on; and the newest log's Unrecognized 'model' value
@@ -1875,7 +1877,7 @@ git config --unset orchestrator.junie.model.closer
 rm -rf "$JH"
 restore_suite_env
 
-# --- doctor: Junie agent settings check (#1448) --------------------------------
+# --- doctor: Junie agent settings check (#1448) -------------------------------
 # Doctor lists the Junie setting of every role beside the Claude Code one, fails
 # a disallowed stored Junie value at each scope with the clear that removes it,
 # and warns when this checkout's .junie/agents/ copies are not what agent sync
@@ -1983,7 +1985,7 @@ out="$("$ORCH" doctor --env 2>&1)"
 assert_contains "an agreeing side flow is ok" "$out" "phase label of #7: orch:spec"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
-# --- doctor --flow: autopilot handoff comments (#1457) -------------------------
+# --- doctor --flow: autopilot handoff comments (#1457) ------------------------
 # In an autopilot session a handoff is the posted comment, so doctor --flow
 # validates the fetched comment, never a file under the handoff directory.
 echo

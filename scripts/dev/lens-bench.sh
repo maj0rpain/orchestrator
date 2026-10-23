@@ -45,16 +45,16 @@
 # (one with no space that holds a `/` or ends in an extension), or ends in `/`
 # and one; a Grep or Glob, when its pattern holds a name of 3 or more
 # characters, one of them a letter, digit or underscore, as a whole token, with
-# no letter, digit or underscore either side. A turn is `named` when all its calls do, `mixed` when some do,
-# and `unnamed` when none do or it makes no call; the report gives each
-# label's share of turns and of input. Beside it, the carried cost by kind: a
-# tool result's kind is `the spec` for the Read of the first path in the
-# lens's prompt, a ranged read for any other Read passing offset or limit, a
-# whole read for one passing neither, Grep/Glob for both, and any other tool
-# by its name. A turn's growth over the previous turn's context is split among
-# the results read since then by character count, or is assistant output
-# when there are none, and is carried over the turns left from that turn on;
-# the fixed base is the first turn's context times the number of turns.
+# no letter, digit or underscore either side. A turn is `named` when all its
+# calls do, `mixed` when some do, and `unnamed` when none do or it makes no
+# call; the report gives each label's share of turns and of input. Beside it,
+# the carried cost by kind: a tool result's kind is `the spec` for the Read of
+# the first path in the lens's prompt, a ranged read for any other Read passing
+# offset or limit, a whole read for one passing neither, Grep/Glob for both, and
+# any other tool by its name. A turn's growth over the previous turn's context
+# is split among the results read since then by character count, or is assistant
+# output when there are none, and is carried over the turns left from that turn
+# on; the fixed base is the first turn's context times the number of turns.
 #
 # A repo-development tool: it does not ship to users. Usage errors exit 2.
 # `run` exits 1 naming the problem, having created no output directory and no
@@ -422,7 +422,8 @@ code_spans() {
 # offset or limit; and turns, applied to a slurped transcript: its first user
 # prompt carrying no tool result, its turns, one per assistant message id,
 # each with its context (total input), tool uses and the tool results that
-# arrived since the previous turn, and every tool result'"'"'s text by tool-use id.
+# arrived since the previous turn, and every tool result'"'"'s text by tool-use
+# id.
 JQ_PRELUDE='
   def num: if . == floor then tostring else (. * 10 + 0.5 | floor) / 10 | tostring end;
   def text: if type == "string" then .

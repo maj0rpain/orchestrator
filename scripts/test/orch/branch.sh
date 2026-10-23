@@ -79,7 +79,7 @@ out="$(orch_gh_failing branch off quick/4-after)"; st=$?
 assert_status "a done flow does not block branch off" "$st" 0
 assert_eq "which checks the branch out as before" "$(git branch --show-current)" "quick/4-after"
 
-# --- a quick implementation's base branch --------------------------------------
+# --- a quick implementation's base branch -------------------------------------
 # A quick implementation keeps no state.json, so branch off records the base
 # branch it forked from on the branch itself - pr publish then targets that
 # base even if the setting moved in the meantime, and falls back to the setting
@@ -386,7 +386,7 @@ out="$(orch_gh_failing branch retire 2>&1)"; st=$?
 assert_status "refuses with the wrong number of arguments" "$st" 1
 assert_contains "with a usage line" "$out" "usage: orch.sh branch retire"
 
-# --- branch sync (#792) --------------------------------------------------------
+# --- branch sync (#792) -------------------------------------------------------
 # Merges origin's tip of the current plugin-made branch's base into it - never
 # rebasing, never the local base - moves its base SHA to that tip, and pushes
 # when the branch has an upstream. Exit 3 is a conflict left in progress; every
@@ -591,7 +591,7 @@ cd "$SUITE_CWD" || exit 1
 rm -rf "$(dirname "$sc_origin")"
 restore_suite_env
 
-# --- branch busy (#1201) -------------------------------------------------------
+# --- branch busy (#1201) ------------------------------------------------------
 # Whether this checkout is a busy checkout - one holding work a new branch
 # must not move - from local git and state facts only: exit 3 with one line
 # naming what holds it, exit 0 and silence when it is free, exit 1 on a usage
@@ -678,7 +678,7 @@ next_entry="$(orch_gh_failing help 2>&1 | awk '
   index($0, "  branch off ") == 1 { found = 1 }')"
 assert_contains "branch busy's help entry comes right after branch off's" "$next_entry" "  branch busy "
 
-# --- branch off and branch create refuse a busy checkout (#1202) ---------------
+# --- branch off and branch create refuse a busy checkout (#1202) --------------
 # Neither ever moves another implementation's branch or carries its
 # uncommitted edits: each exits 3 in a busy checkout, a code no other failure
 # of theirs uses, and changes nothing. branch create skips the flow signal,

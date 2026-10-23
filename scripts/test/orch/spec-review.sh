@@ -249,8 +249,8 @@ done
 rm -f "$sr_state"
 
 # --- quick implementation runs an unattended spec review (#237) -------------
-# A quick implementation runs an unattended standalone spec review before any flow
-# exists, so spec-review begin needs no state.
+# A quick implementation runs an unattended standalone spec review before any
+# flow exists, so spec-review begin needs no state.
 echo
 echo "quick implementation runs an unattended spec review (#237)"
 new_repo >/dev/null
@@ -259,7 +259,7 @@ out="$("$ORCH" spec-review begin 21 2>&1)"; st=$?
 assert_status "spec-review begin with no flow state succeeds" "$st" 0
 assert_eq "and prints the working directory" "$out" "$top/.orchestrator/spec-review/21/"
 
-# --- spec-review apply (#1117) -------------------------------------------------
+# --- spec-review apply (#1117) ------------------------------------------------
 # A round's answer, taken as given: the accepted items applied to spec.md by
 # exact anchor, the body published when it changed, and the changelog written
 # and posted - every check before the first write. GitHub is the store-backed
@@ -1448,7 +1448,8 @@ for sra_mode in issue flow; do
   srt_fail "$sra_mode" recommended adapter_blocker_add 0
   assert_contains "$sra_mode: a block failure named" "$out" "could not write block #20 by #21"
   assert_contains "$sra_mode: the text edit and the unblock landed" "$out" "already landed: ticket #20's body; unblock #21 by #20;"
-  # The ticket update, then the two edges' ## Blocked by rewrites, then the body.
+  # The ticket update, then the two edges' ## Blocked by rewrites, then the
+  # body.
   srt_fail "$sra_mode" recommended adapter_issue_body_edit 3
   assert_contains "$sra_mode: a body failure named" "$out" "could not write the body of issue #14"
   assert_contains "$sra_mode: the ticket writes landed" "$out" "already landed: ticket #20's body; unblock #21 by #20; block #20 by #21;"
@@ -1469,7 +1470,7 @@ assert_status "an unattended ticket write failure stops apply" "$st" 1
 assert_contains "naming the landed writes" "$out" "already landed: ticket #20's body; unblock #21 by #20;"
 restore_suite_env
 
-# --- spec-review check (#1137) -------------------------------------------------
+# --- spec-review check (#1137) ------------------------------------------------
 # A round's batch validated before the batch question: everything apply checks
 # that does not depend on the answer - grammar, lens files, citations, every
 # anchor on its own and in the all answer's dry run - with nothing written.
@@ -2296,7 +2297,7 @@ assert_eq "its compact view, every item under its batch.md number" "$out" '## Th
 - **9** - Implementability: Nine edited'
 assert_eq "no line of it an ordered-list item" "$(grep -cE '^[0-9]+\. ' <<<"$out")" 0
 
-# --- spec-review check --tickets (#1226) ---------------------------------------
+# --- spec-review check --tickets (#1226) --------------------------------------
 # The ticket items validated before the ticket question - grammar, every text
 # anchor against the copy apply would edit, and every edge against its
 # ticket's ## Blocked by, as the all answer would take them - with nothing
@@ -2553,7 +2554,7 @@ assert_contains "help names the file each check error names a line of" "$("$ORCH
   "Exit 1 with one orch: line per error, each naming its batch.md or lens-<name>.md line where it has one - the first grammar error only"
 restore_suite_env
 
-# --- spec-review wait (#1183) --------------------------------------------------
+# --- spec-review wait (#1183) -------------------------------------------------
 # The session running a spec review starts its lenses and waits for all of them
 # in one blocking call: a lens is back when its findings file exists, and the
 # wait prints one summary line, or times out naming the lenses still missing.
@@ -2625,7 +2626,7 @@ assert_contains "help documents spec-review wait" "$("$ORCH" help)" "spec-review
 rm -rf "$wait_dir" "$wait_late" "$wait_err"
 restore_suite_env ORCH_SPEC_REVIEW_WAIT_TIMEOUT ORCH_SPEC_REVIEW_WAIT_INTERVAL
 
-# --- spec-review prompt (#1521) ------------------------------------------------
+# --- spec-review prompt (#1521) -----------------------------------------------
 # A lens's whole prompt, printed for the session to pass unchanged: every input
 # path it names exists or reads none, and the write targets - the findings
 # file and the Implementability map file - are always given as paths.

@@ -19,7 +19,7 @@ sp_branch_off() {
   git -C "$1" commit -q --allow-empty -m "work on $2"
 }
 
-# --- side-checkout (#722) ------------------------------------------------------
+# --- side-checkout (#722) -----------------------------------------------------
 # A side checkout: a worktree the plugin makes under the main checkout's
 # .orchestrator/checkouts/<slug>, on no branch at origin/<base>, carrying the
 # ownership marker in its own git folder. Checked through what git and the
@@ -229,7 +229,7 @@ assert_eq "docs/how-it-works.md names side-checkout issue" \
   "$(grep -c 'orch.sh side-checkout issue' "$PLUGIN_ROOT/docs/how-it-works.md" | tr -d ' ')" "1"
 restore_suite_env
 
-# --- status lists every checkout (#725) ----------------------------------------
+# --- status lists every checkout (#725) ---------------------------------------
 # status keeps its full detail on this checkout's flow, then lists one line
 # for every other checkout holding a flow, and every side checkout without
 # one. Checked through status's output against real worktrees of a clone.
@@ -303,7 +303,7 @@ assert_not_contains "a quick implementation in the main checkout never appears" 
 assert_not_contains "nor its branch" "$out" "quick/9-main"
 restore_suite_env
 
-# --- side-checkout archive and remove (#724) -----------------------------------
+# --- side-checkout archive and remove (#724) ----------------------------------
 # git worktree remove deletes ignored files, .orchestrator/ included, so a side
 # checkout's flow is archived into the main checkout before its worktree goes.
 # Checked through the archive and worktrees left on disk, and the output.
@@ -584,7 +584,8 @@ assert_contains "a failed refs read removes nothing" "$out" "nothing was removed
 assert_eq "the finished flow side checkout stays" "$(on_disk "$fl")" "present"
 fake_unfail
 
-# A side checkout with no flow reads the merged-PR list instead: the same verdict.
+# A side checkout with no flow reads the merged-PR list instead: the same
+# verdict.
 fake_fail adapter_prs_merged "$GH_502"
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune fails when the merged-PR list fails" "$st" 1
@@ -627,7 +628,8 @@ pc="$(sc_add pc)"
   && state_fixture phase "done" && state_fixture branch orch/pc-flow && state_fixture pr 62)
 sp_branch_off "$pc" orch/pc-flow
 fake_pr 62 closed orch/pc-flow main
-# The main checkout's flow's branch, made only after tm's merge has landed on main.
+# The main checkout's flow's branch, made only after tm's merge has landed on
+# main.
 git checkout -q -b orch/main-flow
 # A hand-made worktree holding a finished flow.
 hand="$(mktemp -d)/hand"
@@ -639,7 +641,8 @@ fake_pr 46 merged orch/hand-flow main
 fake_online
 
 # A tag named as the main checkout's branch makes git's short branch name
-# ambiguous; the report still names the branch as git branch --show-current does.
+# ambiguous; the report still names the branch as git branch --show-current
+# does.
 git tag orch/main-flow
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
 assert_status "prune succeeds" "$st" 0
@@ -939,7 +942,7 @@ fl_kept "prune" "$top"
 fl_archived "prune" "$(fl_dest swp-flow)"
 restore_suite_env
 
-# --- side-checkout prune: an autopilot flow's checkout (#1458) -----------------
+# --- side-checkout prune: an autopilot flow's checkout (#1458) ----------------
 # Pruned as any flow's is: kept while its PR is open, removed once it merges.
 echo
 echo "side-checkout prune of an autopilot flow"

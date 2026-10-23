@@ -23,7 +23,7 @@ gh_reply() {
 # sourced with ORCH_GH_ADAPTER unset, against whatever gh is on PATH.
 contract() { env -u ORCH_GH_ADAPTER bash -c 'source "$1"; shift; "$@"' _ "$ORCH" "$@"; }
 
-# --- every gh call pinned to the repo (#520) -----------------------------------
+# --- every gh call pinned to the repo (#520) ----------------------------------
 # A fork whose gh default points upstream: origin is the fork, GH_REPO unset,
 # ORCH_GH_ADAPTER unset so the real adapter operations run, against the fixture
 # gh. Every call that reaches it must carry the fork - none may fall back to
@@ -97,7 +97,7 @@ assert_eq "every gh call carried the host-qualified repo and its host" \
   "$(grep -cv '^GH_REPO=ghe.example.com/fork/widgets GH_HOST=ghe.example.com ' "$GH_FIXTURE/env.log")" "0"
 restore_suite_env GH_HOST GH_FIXTURE
 
-# --- gh_reason and capture_err (#846) -------------------------------------------
+# --- gh_reason and capture_err (#846) -----------------------------------------
 
 echo
 echo "gh_reason and capture_err"
@@ -129,7 +129,7 @@ assert_eq "a command that succeeds silently returns 0 and leaves the variable em
 rm -f "$cefile"
 unset cefile
 
-# --- gh failure verb and readers (#1022) ----------------------------------------
+# --- gh failure verb and readers (#1022) --------------------------------------
 # gh_die builds the one "gh could not <what>: <reason>" death, gh_or_die runs an
 # operation and dies through it, and the readers split a multi-field answer into
 # caller-named variables. Sourced, as gh_reason is, against the fake.
@@ -325,7 +325,7 @@ assert_eq "and nothing reached gh" "$(cat "$GH_FIXTURE/env.log" 2>/dev/null)" ""
 restore_suite_env GH_HOST GH_FIXTURE
 unset -f in_orch
 
-# --- gh fake (#280) --------------------------------------------------------------
+# --- gh fake (#280) -----------------------------------------------------------
 # The store-backed fake's own helpers: the store fake_github makes, the seeds
 # that land in it in the layout documented at the top of gh_adapter_fake.sh,
 # and the lag countdown an operation answers stale by.
@@ -444,7 +444,7 @@ restore_suite_env
 assert_eq "restore_suite_env undoes fake_github" \
   "${ORCH_GH_ADAPTER-unset} ${ORCH_GH_FAKE_STORE-unset}" "unset unset"
 
-# --- gh adapter contract (#280) ------------------------------------------------
+# --- gh adapter contract (#280) -----------------------------------------------
 # Each real adapter operation, run against the fixture gh: the exact argv it
 # hands gh, the plain text it prints, and a failure - non-zero, gh's stderr
 # passed through. The behaviour tests fake these same operations, so these are
@@ -703,7 +703,8 @@ assert_contains "naming the operation" "$err" "adapter_issue_close"
 assert_contains "as --reason missing its value" "$err" "--reason needs a value"
 assert_not_contains "not as an unknown option Redone." "$err" "unknown option"
 assert_eq "no refused close made a gh call" "$(gh_calls)" "$calls"
-# A comment that only begins with -- is a value, first or after an earlier option.
+# A comment that only begins with -- is a value, first or after an earlier
+# option.
 gh_reply 0 '' '' issue close 28 --comment "--x"
 out="$(contract adapter_issue_close 28 --comment "--x" 2>&1)"; st=$?
 assert_status "issue close: a comment beginning with -- is posted" "$st" 0
@@ -1239,7 +1240,7 @@ assert_eq "naming the argv on stderr" "$out" "fixture gh: no reply for: issue vi
 rm -f "$ibody"
 restore_suite_env GH_FIXTURE GH_HOST
 
-# --- claim adapter operations (#1454) -------------------------------------------
+# --- claim adapter operations (#1454) -----------------------------------------
 # A claim is a ref on origin, created create-only so exactly one racer wins.
 # The real operations run against a local bare repo standing in for origin;
 # the fake's counterparts keep the same contract in its store.

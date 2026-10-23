@@ -205,7 +205,8 @@ check_blueprint_rewrite() {
   # The spec review question asks a round count (#873), not yes/no.
   assert_contains "asks how many spec review rounds $where" "$ctx" \
     "ask the user how many spec review rounds to run on it"
-  # The flow's options (#1345), plus 0 to skip, the recommendation sized to the spec.
+  # The flow's options (#1345), plus 0 to skip, the recommendation sized to the
+  # spec.
   assert_contains "offers the flow's round options $where" "$ctx" \
     "with the options 2, 1, 3, and Other"
   assert_contains "sizes the recommended round count to the spec $where" "$ctx" \
@@ -749,7 +750,8 @@ assert_eq "denies a source edit during planning" \
 assert_contains "explains what to do instead" "$out" "orchestrator:orch-flow"
 assert_contains "names the blocked file" "$out" "src/main.ts"
 # One JSON object serves both hosts: Junie reads the top-level decision/reason.
-# "block" is Claude Code's legacy top-level value; Junie accepting it is unverified (#121).
+# "block" is Claude Code's legacy top-level value; Junie accepting it is
+# unverified (#121).
 assert_eq "carries Junie's top-level block decision" \
   "$(printf '%s' "$out" | jq -r '.decision')" "block"
 assert_contains "carries Junie's top-level reason" \

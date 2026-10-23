@@ -149,15 +149,15 @@ finding_body_render() {
 # fallback when that one does not parse - the first backticked <file>:<line>,
 # the file free of backticks and colons, or else a backticked `suite`, a
 # suite-cost finding's location, with an empty line, and the hex run of the
-# line's last " at <hex>"; PR from the first line ending in a URL whose last segment after
-# /pull/ is a number; the rest from the first line starting with their label,
-# as the rest of it, trimmed. Severity splits at the first " - ". A field whose
-# line is missing or does not parse is left empty. Never dies on a body, and
-# never prints on success: each caller decides which fields it requires. Dies
-# when <array> is not a declared associative array - a caller's programming
-# error, which would otherwise write a global. Bash 4.0: each key is assigned
-# by eval on the name the guard validated, its value passed by reference,
-# never interpolated - printf -v into an array element needs 4.1.
+# line's last " at <hex>"; PR from the first line ending in a URL whose last
+# segment after /pull/ is a number; the rest from the first line starting with
+# their label, as the rest of it, trimmed. Severity splits at the first " - ". A
+# field whose line is missing or does not parse is left empty. Never dies on a
+# body, and never prints on success: each caller decides which fields it
+# requires. Dies when <array> is not a declared associative array - a caller's
+# programming error, which would otherwise write a global. Bash 4.0: each key is
+# assigned by eval on the name the guard validated, its value passed by
+# reference, never interpolated - printf -v into an array element needs 4.1.
 finding_body_parse() {
   [[ $2 =~ ^[A-Za-z_][A-Za-z0-9_]*$ && $2 != __fbp_* \
     && $(declare -p "$2" 2>/dev/null) =~ ^declare\ -[A-Za-z]*A ]] \

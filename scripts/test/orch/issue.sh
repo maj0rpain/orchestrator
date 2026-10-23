@@ -54,8 +54,8 @@ check_dies() {
 # implementation has no flow to record into.
 #
 # Creation goes through the store-backed fake (fake_github), and what it filed
-# is read back from the store - the fixture gh's log stays empty, proving it never
-# spawns a real gh subprocess. The real operation is pinned in "gh adapter
+# is read back from the store - the fixture gh's log stays empty, proving it
+# never spawns a real gh subprocess. The real operation is pinned in "gh adapter
 # contract".
 echo
 echo "issue publish"
@@ -519,7 +519,8 @@ out="$("$ORCH" issue triage 81 --override --check 2>&1)"; st=$?
 assert_status "in either order" "$st" 1
 assert_eq "relabelling nothing and posting no comment" "$(fake_snapshot)" "$before"
 
-# One shared walk (story 9): on each label set, --check and the plain write agree.
+# One shared walk (story 9): on each label set, --check and the plain write
+# agree.
 for labelled in "82|ready-for-agent" "83|wontfix" "84|ready-for-human" \
             "85|ready-for-human wontfix" "86|ready-for-agent ready-for-human" \
             "87|needs-triage" "88|needs-info bug"; do
@@ -694,8 +695,9 @@ restore_suite_env
 # `init reviewtest` below ever writes a state.json into this repo.
 #
 # Goes through the store-backed fake (fake_github), what each op wrote read
-# back from the store - the fixture gh's log stays empty, proving it never spawns a real
-# gh subprocess. The real operations are pinned in "gh adapter contract".
+# back from the store - the fixture gh's log stays empty, proving it never
+# spawns a real gh subprocess. The real operations are pinned in
+# "gh adapter contract".
 echo
 echo "issue fetch/update"
 healthy_repo
@@ -1023,7 +1025,7 @@ assert_status "and refuses the sixth too" "$st" 1
 "$ORCH" state set budget null
 restore_suite_env
 
-# --- outside a checkout (#931) ---------------------------------------------------
+# --- outside a checkout (#931) ------------------------------------------------
 # Run from the suite's own non-repo cwd: the death names the cwd and the
 # remedy. It comes before dispatch, so any subcommand reaches it. The remedy
 # names the checkout OLDPWD resolves to, when it resolves to one (#1523);

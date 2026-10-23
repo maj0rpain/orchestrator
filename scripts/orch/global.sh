@@ -89,8 +89,8 @@ cmd_archive() {
 # side_checkout_remove_after_archive <path> <main-root>: removes the side
 # checkout at <path>, through the main checkout at <main-root>, once its flow
 # is archived, never with force. A dirty worktree is reported and kept: the
-# archive has still succeeded. When this command ran inside the removed worktree, the session
-# working there is told to close.
+# archive has still succeeded. When this command ran inside the removed
+# worktree, the session working there is told to close.
 side_checkout_remove_after_archive() {
   local path="$1" main_root="$2" err here
   # Read before the removal: once the worktree is gone, so is this directory.

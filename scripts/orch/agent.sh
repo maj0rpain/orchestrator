@@ -138,10 +138,10 @@ agent_require_role() {
 }
 
 # agent_lookup <kind> <role> <value-var> <source-var> [<host>]: the key
-# orchestrator.<kind>.<role> (orchestrator.junie.<kind>.<role> for host junie) looked up on its own - local config, then global
-# config, else inherit - into <value-var>, and where it came from (local,
-# global or inherit) into <source-var>. Never validates: show looks at a bad
-# value, get refuses it.
+# orchestrator.<kind>.<role> (orchestrator.junie.<kind>.<role> for host junie)
+# looked up on its own - local config, then global config, else inherit - into
+# <value-var>, and where it came from (local, global or inherit) into
+# <source-var>. Never validates: show looks at a bad value, get refuses it.
 agent_lookup() {
   local lookup_key lookup_value
   agent_key lookup_key "${5:-claude}" "$1" "$2"
@@ -246,9 +246,10 @@ agent_show_host() {
 # agent show: Claude Code's six lines, then Junie's six.
 agent_show() { agent_show_host claude; agent_show_host junie; }
 
-# agent get <role> [--host junie]: exactly two lines, model then effort, the effective values.
-# A disallowed value is refused, naming its key, its value, the allowed values
-# and the clear that removes it - never quietly read as inherit.
+# agent get <role> [--host junie]: exactly two lines, model then effort, the
+# effective values. A disallowed value is refused, naming its key, its value,
+# the allowed values and the clear that removes it - never quietly read as
+# inherit.
 agent_get() {
   local role="$1" host="$2" kind v src flag out="" key
   agent_require_role "$role"
@@ -311,11 +312,12 @@ agent_copy_content() {
 
 # agent_sync_plan: what agent sync would change in this checkout's
 # .junie/agents/, without changing it - the one comparison sync and doctor
-# share. Sets AGENT_PLAN_PLUGIN (the plugin root), AGENT_PLAN_DIR, AGENT_PLAN_WANT (the copies that should exist,
-# one name per line), AGENT_PLAN_REFUSED (the unmarked orch-*.md in the way of
-# a copy, space-separated), AGENT_PLAN_WRITES (name|model|effort|missing|stale
-# per copy to write; | because a custom: model holds a colon) and AGENT_PLAN_DELETES (marked copies no longer wanted,
-# one name per line).
+# share. Sets AGENT_PLAN_PLUGIN (the plugin root), AGENT_PLAN_DIR,
+# AGENT_PLAN_WANT (the copies that should exist, one name per line),
+# AGENT_PLAN_REFUSED (the unmarked orch-*.md in the way of a copy,
+# space-separated), AGENT_PLAN_WRITES (name|model|effort|missing|stale per copy
+# to write; | because a custom: model holds a colon) and AGENT_PLAN_DELETES
+# (marked copies no longer wanted, one name per line).
 agent_sync_plan() {
   # src_model and src_effort receive agent_lookup's source and go unread here.
   # shellcheck disable=SC2034
@@ -531,8 +533,9 @@ check_agent_settings_host() {
 }
 
 # check_junie_agent_settings: the Junie half of check_agent_settings: the
-# per-role lines of check_agent_settings_host junie, and a WARN when this checkout's .junie/agents/ copies are not what agent sync would
-# leave - the plan sync itself makes, so the two cannot disagree.
+# per-role lines of check_agent_settings_host junie, and a WARN when this
+# checkout's .junie/agents/ copies are not what agent sync would leave - the
+# plan sync itself makes, so the two cannot disagree.
 check_junie_agent_settings() {
   check_agent_settings_host junie
   agent_sync_plan

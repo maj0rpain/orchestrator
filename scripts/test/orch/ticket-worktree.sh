@@ -11,7 +11,7 @@ rebasing() {
   [ -d "$(git -C "${1:-.}" rev-parse --absolute-git-dir)/rebase-merge" ] && echo rebasing || echo none
 }
 
-# --- ticket-worktree (#619) ----------------------------------------------------
+# --- ticket-worktree (#619) ---------------------------------------------------
 # A ticket's own worktree on its own ticket branch, under the checkout's
 # .orchestrator/worktrees/. Checked through what git shows afterwards -
 # branches, tips, worktrees, the exclude file - never orch.sh's internals.
@@ -230,7 +230,7 @@ assert_contains "the CLI conventions' noun table has a ticket-worktree row" \
   '`add`, `list`, `remove`'
 restore_suite_env
 
-# --- a ticket branch has no upstream (#1152) -----------------------------------
+# --- a ticket branch has no upstream (#1152) ----------------------------------
 # Under branch.autoSetupMerge=inherit, a branch made from HEAD would take the
 # parent branch's upstream; the ticket branch is local and short-lived, so it
 # takes none.

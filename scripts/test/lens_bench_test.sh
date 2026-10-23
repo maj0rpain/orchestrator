@@ -2,8 +2,8 @@
 #
 # Tests for scripts/dev/lens-bench.sh, the lens benchmark.
 #
-# The measure cases run `lens-bench.sh measure` on output directories laid out as
-# `lens-bench.sh run` writes them - the committed, hand-built fixture under
+# The measure cases run `lens-bench.sh measure` on output directories laid out
+# as `lens-bench.sh run` writes them - the committed, hand-built fixture under
 # scripts/test/lens-bench/, or a copy of it with a file taken away - and
 # asserts only what the run prints and its exit status. The failure modes
 # worth catching: a split message counted twice, coverage judged by anything

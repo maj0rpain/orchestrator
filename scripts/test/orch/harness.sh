@@ -205,11 +205,12 @@ DECL_SUBSTITUTION_RULE="The rule: split the declaration from the assignment - lo
 # decl_substitutions <dir>: checks orch.sh and its modules under <dir> (a
 # scripts/ tree) for a local, export, declare or readonly that itself carries
 # a $(...) in an assignment's value - the whole value or part of it, quoted or
-# not, and after any other names on the same declaration - and prints one line per such line, naming the file (as
-# scripts/<path>) and line and the rule; returns 1 when it printed any. The
-# keyword counts in command position only - at a line's start, or after one
-# of ;&|{ or then, do, else - so a comment or a string naming it is no match,
-# and the declaration ends at the next ;, & or |, so the split form passes.
+# not, and after any other names on the same declaration - and prints one line
+# per such line, naming the file (as scripts/<path>) and line and the rule;
+# returns 1 when it printed any. The keyword counts in command position only -
+# at a line's start, or after one of ;&|{ or then, do, else - so a comment or a
+# string naming it is no match, and the declaration ends at the next ;, & or |,
+# so the split form passes.
 decl_substitutions() {
   local out
   out="$(cd "$1" && awk -v rule="$DECL_SUBSTITUTION_RULE" '
@@ -237,7 +238,7 @@ assert_eq "no caller git config is reachable" \
   "${XDG_CONFIG_HOME-unset} ${GIT_CONFIG_GLOBAL-unset}" "unset unset"
 assert_eq "cwd is the harness's fresh temp directory" "$(pwd)" "$SUITE_CWD"
 
-# --- the section filter (ORCH_TEST_ONLY, #612) ----------------------------------
+# --- the section filter (ORCH_TEST_ONLY, #612) --------------------------------
 # The suite run as a child process under a filter, asserted on its stdout and
 # exit status. The child starts inside a git repo, so its isolation section
 # shows the harness holds under a filter too.
@@ -293,7 +294,7 @@ assert_eq "lists no shared-setup header" \
   "$(count_lines -E 'doctor harness|fixture gh' "$out")" "0"
 assert_eq "runs nothing" "$(count_lines 'passed' "$out")" "0"
 
-# --- quiet mode (ORCH_TEST_QUIET, #614) ----------------------------------------
+# --- quiet mode (ORCH_TEST_QUIET, #614) ---------------------------------------
 # A filtered, quiet child run of this suite, and one quiet run each of the
 # other suites in all.sh's list. Quiet mode hides the ok lines only: the
 # counts, headers, FAIL/skip lines with their detail, and the summary all
@@ -358,7 +359,7 @@ for quiet_suite in "${SUITES[@]}"; do
 done
 rm -rf "$cut_dir"
 
-# --- the parallel runner (ORCH_TEST_JOBS, #780) --------------------------------
+# --- the parallel runner (ORCH_TEST_JOBS, #780) -------------------------------
 # A copy of the scripts tree with planted sections. Two passing ones run with
 # ORCH_TEST_JOBS=2, compared with the same filter run sequentially; then the
 # others - one slow, one writing to stderr, one exiting mid-way, one failing -
@@ -444,7 +445,7 @@ assert_eq "counts that one failure in the summary" \
   "$(printf '%s\n' "$out" | tail -n 1)" "6 passed, 1 failed"
 rm -rf "$par_dir"
 
-# --- the section files (#932) ---------------------------------------------------
+# --- the section files (#932) -------------------------------------------------
 # A copy of the scripts tree cut down to isolation - harness.sh keeps only its
 # first section, and no other noun file is left - then given new noun files:
 # zz-planted.sh, _planted.sh, a-planted.sh, two files with a preamble and one
@@ -543,7 +544,7 @@ assert_ne "the suite lists its section titles" "$(count_lines '' "$out")" "0"
 assert_eq "no title appears twice across the walk" \
   "$(printf '%s\n' "$out" | LC_ALL=C sort | uniq -d)" ""
 
-# --- the suite's temp root (#807) -----------------------------------------------
+# --- the suite's temp root (#807) ---------------------------------------------
 # A cut-down suite - isolation plus one planted section that calls new_repo -
 # each run given its own fresh, empty TMPDIR, asserted empty once it exits:
 # passing, failing, and interrupted once its section is running. The marker

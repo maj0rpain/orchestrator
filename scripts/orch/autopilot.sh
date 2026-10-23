@@ -299,8 +299,9 @@ autopilot_answer() {
 # One pass of the watcher, and the wrapper around one headless session. Every
 # write under a claim ends in autopilot_release, as above.
 
-# autopilot_label_entries: the labels a tick ensures, one `name|colour|description`
-# each: a label per phase of the table, then the running and human labels.
+# autopilot_label_entries: the labels a tick ensures, one
+# `name|colour|description` each: a label per phase of the table, then the
+# running and human labels.
 autopilot_label_entries() {
   local p colour what
   for p in $PHASES; do
@@ -334,7 +335,8 @@ autopilot_pid_alive() {
   [[ "${1:-}" =~ ^[0-9]+$ ]] && { kill -0 "$1" 2>/dev/null || ps -p "$1" >/dev/null 2>&1; }
 }
 
-# autopilot_epoch_iso <epoch>: epoch seconds as a UTC timestamp, GNU or BSD date.
+# autopilot_epoch_iso <epoch>: epoch seconds as a UTC timestamp, GNU or BSD
+# date.
 autopilot_epoch_iso() {
   date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ
 }
@@ -633,7 +635,8 @@ autopilot_limit_reset() {
   return 0
 }
 
-# The tools a headless phase session gets: those the plugin's skills and agents use.
+# The tools a headless phase session gets: those the plugin's skills and agents
+# use.
 AUTOPILOT_TOOLS="Agent,Skill,Bash,Read,Edit,Write,Grep,Glob,SendMessage,AskUserQuestion"
 # Its settings: no bundled skills, and no plugin-authoring, a built-in plugin
 # that disableBundledSkills leaves listed.
@@ -659,7 +662,8 @@ autopilot_run() {
   # shellcheck disable=SC2064
   trap "[ \"\$(cat '$pidfile' 2>/dev/null)\" != '$$' ] || rm -f '$pidfile'" EXIT
   # The claim this run was started for: a session that releases it may exit
-  # after the next phase's claim is made, and that one is not this run's to fail.
+  # after the next phase's claim is made, and that one is not this run's to
+  # fail.
   autopilot_claims_read claims
   mine=""
   while IFS= read -r line; do

@@ -7,7 +7,8 @@
 
 # tick_calls: how many sessions the launcher has been asked for.
 tick_calls() { local n; n="$(grep -c '^argv:' "$launcher_dir/calls" 2>/dev/null)"; printf '%s\n' "${n:-0}"; }
-# local_fields <iso>: the limit file's UTC timestamp as "<epoch> <%H> <%a>" in local time.
+# local_fields <iso>: the limit file's UTC timestamp as "<epoch> <%H> <%a>" in
+# local time.
 local_fields() {
   local e
   e="$(date -u -d "$1" +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ "$1" +%s)"
@@ -468,7 +469,8 @@ assert_eq "a dead run pidfile makes it stale" "$(fake_claim_held 12)" free
 assert_contains "the stale comment names the session log" "$(fake_comments_of 12)" "logs/12-spec-20250101T000000.log"
 assert_contains "and says no exit code is known" "$(fake_comments_of 12)" "no exit code"
 
-# a stop that dies partway leaves the claim held and names the writes that landed
+# a stop that dies partway leaves the claim held and names the writes that
+# landed
 fake_issue 13 open ready-for-agent orch:spec orch:running
 fake_claim_seed 13 "$(hostname)" "$(dead_pid)"
 fake_fail adapter_claim_delete "HTTP 500"
@@ -561,7 +563,7 @@ assert_status "watch refuses with no permission mode" "$st" 1
 assert_contains "naming the key" "$out" "orchestrator.autopilot.permission-mode"
 restore_suite_env ORCH_AUTOPILOT_LAUNCHER ORCH_AUTOPILOT_FOREGROUND
 
-# --- autopilot tick: the usage limit -------------------------------------------
+# --- autopilot tick: the usage limit ------------------------------------------
 echo
 echo "autopilot tick usage limit"
 tick_fixture
@@ -639,7 +641,8 @@ for wording in "iteration limit reached" "API rate limit reached, retrying"; do
   "$ORCH" autopilot run 8 >/dev/null 2>&1
   assert_eq "\"$wording\" writes no limit file" "$(on_disk "$top/.orchestrator/autopilot/limit")" absent
 done
-# a failed session's stop dies partway: the claim stays held, the landed writes named
+# a failed session's stop dies partway: the claim stays held, the landed writes
+# named
 rm -f "$top/.orchestrator/autopilot/limit"
 fake_issue 8 open ready-for-agent orch:spec orch:running
 printf 'session output line\n' >"$launcher_dir/out"

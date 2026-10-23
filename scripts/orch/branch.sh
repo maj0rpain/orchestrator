@@ -48,9 +48,9 @@ record_branch_base() {
 
 # It refuses a busy checkout with exit 3 - a branch the plugin made with no PR
 # yet, or a dirty tree - but not on the flow signal, since the flow
-# mid-pipeline is its own. Besides state, it records the base and base SHA in the branch's git config,
-# as branch off does, so branch sync and branch base-sha still find them once
-# the flow is done or archived.
+# mid-pipeline is its own. Besides state, it records the base and base SHA in
+# the branch's git config, as branch off does, so branch sync and branch
+# base-sha still find them once the flow is done or archived.
 cmd_branch_create() {
   require_state
   [ $# -eq 0 ] || die "usage: orch.sh branch create"

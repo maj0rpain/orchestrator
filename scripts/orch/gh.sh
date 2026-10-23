@@ -140,8 +140,8 @@ gh_or_die() {
 # --- gh adapter -------------------------------------------------------------
 #
 # The seam between orch.sh's decision logic and the `gh` CLI. A caller like
-# filed-finding.sh's severity_label_ensure calls an adapter operation, never `gh`
-# itself, so a test can replace one in-process function instead of faking a
+# filed-finding.sh's severity_label_ensure calls an adapter operation, never
+# `gh` itself, so a test can replace one in-process function instead of faking a
 # `gh` binary on PATH. Every GitHub call in orch.sh and its modules goes
 # through one. History: begun with labels (#91), issues (#92); all since #280.
 #
@@ -149,11 +149,11 @@ gh_or_die() {
 # - label: adapter_label_upsert, adapter_label_create, adapter_labels
 # - issue: adapter_issue_body, adapter_issue_comments,
 #   adapter_issue_state_labels, adapter_issue_state_labels_body,
-#   adapter_issue_title_labels, adapter_issue_state, adapter_issues_labelled, adapter_issue_create,
-#   adapter_issue_body_edit, adapter_issue_comment, adapter_issue_relabel,
-#   adapter_issue_close, adapter_issue_reopen
-# - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body, adapter_pr_comments,
-#   adapter_pr_refs, adapter_pr_ready, adapter_pr_draft,
+#   adapter_issue_title_labels, adapter_issue_state, adapter_issues_labelled,
+#   adapter_issue_create, adapter_issue_body_edit, adapter_issue_comment,
+#   adapter_issue_relabel, adapter_issue_close, adapter_issue_reopen
+# - pr: adapter_pr_create, adapter_pr_labels, adapter_pr_body,
+#   adapter_pr_comments, adapter_pr_refs, adapter_pr_ready, adapter_pr_draft,
 #   adapter_pr_state_draft, adapter_prs_open, adapter_prs_merged,
 #   adapter_prs_merged_bodies, adapter_pr_close, adapter_pr_comment,
 #   adapter_pr_body_edit
@@ -167,17 +167,17 @@ gh_or_die() {
 #   adapter_commit_has_statuses, adapter_run_rerun
 #
 # ORCH_GH_ADAPTER is an opt-in test knob in the same spirit as review.sh's
-# ORCH_CI_* ones, but read differently: not a value substituted at load time, but
-# a file sourced immediately after the real adapter functions are defined:
+# ORCH_CI_* ones, but read differently: not a value substituted at load time,
+# but a file sourced immediately after the real adapter functions are defined:
 # anything it redefines overrides the corresponding real function for the
 # rest of the process, and anything it leaves alone keeps shelling out to the
 # real `gh` below. Unset - every normal run - nothing is sourced and behaviour
 # is identical to before the seam existed.
 #
 # Operations under the #280 contract - the label, issue, PR, sub-issue and
-# dependency, repo, and CI ones - are named for what their callers need and own gh's
-# flags, --jq and GitHub's database ids: each prints plain text in the shape
-# documented on it, and on a gh failure returns non-zero with gh's stderr
+# dependency, repo, and CI ones - are named for what their callers need and own
+# gh's flags, --jq and GitHub's database ids: each prints plain text in the
+# shape documented on it, and on a gh failure returns non-zero with gh's stderr
 # passed through.
 #
 # Their arguments (#664): required ones are positional, optional ones named
@@ -192,7 +192,8 @@ gh_or_die() {
 # <option> is followed by a value that is neither empty nor one of
 # <option-names>, a space-separated list each compared whole; otherwise says so
 # on stderr and returns 2. Called as
-# `option_value <operation> "<option-names>" "$@" || return` from an option loop.
+# `option_value <operation> "<option-names>" "$@" || return` from an option
+# loop.
 option_value() {
   local value="${4:-}" refused="" name names
   read -r -a names <<<"$2"

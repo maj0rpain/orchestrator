@@ -30,8 +30,9 @@ review_budget() {
   printf '%s\n' "$b"
 }
 
-# One look at the PR's checks, classified. Prints the classification on the first
-# line and any detail on the lines after it, indented like doctor's remedies.
+# One look at the PR's checks, classified. Prints the classification on the
+# first line and any detail on the lines after it, indented like doctor's
+# remedies.
 #
 # adapter_pr_checks answers nothing at all for a repo with no checks, and fails
 # for an API that would not answer or an answer it could not read - so the two
@@ -140,13 +141,14 @@ review_terminal_state() {
 
 # The larger of the wall clock and the time this loop has spent asleep. The wall
 # clock alone is whole seconds, which a sub-second override never reaches; the
-# sleep total alone ignores however long each `gh` call took, which would stretch
-# a 15-minute cap well past 15 minutes on a slow connection.
+# sleep total alone ignores however long each `gh` call took, which would
+# stretch a 15-minute cap well past 15 minutes on a slow connection.
 ci_elapsed() { awk -v w="$(( $(date +%s) - $1 ))" -v s="$2" 'BEGIN { print (w > s) ? w : s }'; }
 
 # One turn of the poll loop: wait, then advance both clocks. It assigns to the
 # caller's `slept` and `elapsed`, which bash scopes dynamically - threading two
-# counters back out through a subshell's stdout would cost more than it explains.
+# counters back out through a subshell's stdout would cost more than it
+# explains.
 ci_tick() {
   sleep "$ORCH_CI_INTERVAL"
   slept="$(float_add "$slept" "$ORCH_CI_INTERVAL")"
@@ -255,9 +257,10 @@ review_rerun() {
 # review_file <sev> <title> <flag> <value> ...: files a finding as a GitHub
 # issue, its body rendered from its parts by the Filed finding module. Every
 # check - the flags, the severity, the axis, the title, the finding file, the
-# location, the sha, and the round trip of the rendered body through the parser - comes
-# before any label or issue write, so a malformed finding never reaches GitHub
-# rather than surfacing weeks later as "body does not parse" in triage.
+# location, the sha, and the round trip of the rendered body through the
+# parser - comes before any label or issue write, so a malformed finding never
+# reaches GitHub rather than surfacing weeks later as "body does not parse" in
+# triage.
 review_file() {
   local usage="usage: orch.sh review file <${FILED_SEVERITIES// /|}> <title> --axis <spec|standards|suite-cost> --finding-file <f> --severity-reason <r> --location <file>:<line|suite> --sha <sha> --pr <url> --why <reason> [--spec-question <q>]"
   [ $# -ge 2 ] || die "$usage"
@@ -536,8 +539,8 @@ cmd_review() {
       # By the time the loop ends the fixer's last push is usually minutes old,
       # and a CI that has not registered a check in that time is not about to.
       # `push_age` is how long before this call the push landed; a PR that will
-      # not say what its head is, or a head with no reflog entry, leaves it at zero,
-      # and the grace counts from the call as it always did.
+      # not say what its head is, or a head with no reflog entry, leaves it at
+      # zero, and the grace counts from the call as it always did.
       if pr_refs_read "$pr" head_oid head_ref base_ref commits refs_err; then
         pushed="$(ci_push_time "$head_oid" "$head_ref")"
         case "$pushed" in
@@ -553,12 +556,13 @@ cmd_review() {
       fi
       while :; do
         # Branch protection's required checks decide it wherever it names any.
-        # When nothing required has reported, gh's message cannot tell "this repo
-        # requires nothing" from "what it requires has not registered yet" - so
-        # the grace is spent waiting on the required set, and only once it runs
-        # out does the net widen to every check on the commit. Widening sooner is
-        # how an unrelated green check gets mistaken for a required one that
-        # never arrived, and the PR marked ready over it.
+        # When nothing required has reported, gh's message cannot tell
+        # "this repo requires nothing" from
+        # "what it requires has not registered yet" - so the grace is spent
+        # waiting on the required set, and only once it runs out does the net
+        # widen to every check on the commit. Widening sooner is how an
+        # unrelated green check gets mistaken for a required one that never
+        # arrived, and the PR marked ready over it.
         res="$(ci_probe "$pr" required)"
         verdict="${res%%$'\n'*}"
         if [ "$verdict" = none ]; then

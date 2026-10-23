@@ -26,7 +26,7 @@ squash_pr_head() {
   del_commit "$2" "1i $3" "the PR, squash-merged" >/dev/null
 }
 
-# --- finding-triage scan -------------------------------------------------------
+# --- finding-triage scan ------------------------------------------------------
 # The scan sorts each open filed finding still in needs-triage against the
 # default branch: whether the code its **Location:** names, at the PR's head
 # SHA, has changed since. The issues come from the store-backed fake
@@ -472,7 +472,7 @@ fake_unfail
 fake_issue 18 closed
 restore_suite_env
 
-# --- finding-triage apply ------------------------------------------------------
+# --- finding-triage apply -----------------------------------------------------
 # Apply is finding triage's one write to GitHub: the comment, with the AI
 # disclaimer on top, then the labels and, for the closing outcomes, the close.
 # The store-backed fake (fake_github) applies each comment, label edit and
@@ -691,7 +691,8 @@ for outcome in close-fixed wontfix ready-for-agent ready-for-human; do
     *) left="bug $outcome review:major " ;;
   esac
   assert_eq "leaving only the state $outcome sets" "$(fake_labels_of 6)" "$left"
-  # One other role apiece: ready-for-agent, or ready-for-human for ready-for-agent.
+  # One other role apiece: ready-for-agent, or ready-for-human for
+  # ready-for-agent.
   other=ready-for-agent
   [ "$outcome" != ready-for-agent ] || other=ready-for-human
   triaged 7 "review:minor,$other,bug"
@@ -742,7 +743,7 @@ assert_eq "wontfix included" "$(fake_labels_of 3)" "enhancement nope review:nit 
 rm docs/agents/triage-labels.md
 restore_suite_env
 
-# --- finding-triage bundle -----------------------------------------------------
+# --- finding-triage bundle ----------------------------------------------------
 # Bundle is finding triage's write for a group of already-triaged findings: one
 # new bundle issue, and every member commented and closed as its duplicate.
 # The store-backed fake (fake_github) holds what reached GitHub, so the bundle

@@ -90,7 +90,7 @@ spec_review_dir_reset() {
 # session.
 readonly SPEC_REVIEW_CARRIED=(map-implementability.md settled.md)
 
-# --- spec-review apply (#1117) -------------------------------------------------
+# --- spec-review apply (#1117) ------------------------------------------------
 #
 # A round's mechanical steps after the human answers the batch question: the
 # session writes the batch once, to <dir>/batch.md, each lens its findings to
@@ -591,7 +591,8 @@ spec_review_answer() {
       resolved) SR_DISP[i]=resolved; continue ;;
     esac
     # A fundamental item is held back in an autopilot round's first run; the
-    # resumed run's answer is the fundamental items' alone, the rest recommended.
+    # resumed run's answer is the fundamental items' alone, the rest
+    # recommended.
     if spec_review_item_held "$i"; then SR_DISP[i]=held; continue; fi
     ibase="$base"
     ! spec_review_item_skipped "$i" || ibase=recommended
@@ -609,8 +610,8 @@ spec_review_answer() {
 
 # spec_review_reasons <flag> <file> <numbers> <dispositions> <reasons> <noun>
 # <source> <answer>: the human's decline reasons from <file>, given as <flag>
-# (no reasons when it is empty), one `<n>: <reason>` line per item, into the array
-# named <reasons> - emptied first - at the index of <n> in the array named
+# (no reasons when it is empty), one `<n>: <reason>` line per item, into the
+# array named <reasons> - emptied first - at the index of <n> in the array named
 # <numbers>. Blank lines are skipped; a malformed line, or one naming an item
 # <source> does not have, one whose entry in the array named <dispositions>
 # is not declined by <answer>, or one named twice, dies, calling the item a
@@ -752,7 +753,7 @@ spec_review_validate() {
   done
 }
 
-# --- spec-review wait (#1183) --------------------------------------------------
+# --- spec-review wait (#1183) -------------------------------------------------
 #
 # The session running a review starts its lenses and runs this in the same
 # response, so a lens's hand-back queues behind the running tool instead of
@@ -797,7 +798,7 @@ spec_review_wait() {
   note "lenses back: $summary"
 }
 
-# --- spec-review prompt (#1521) ------------------------------------------------
+# --- spec-review prompt (#1521) -----------------------------------------------
 #
 # A lens's whole prompt, for the session to pass unchanged: path existence is a
 # fact orch.sh hands the lens, never one the lens discovers, so a lens never
@@ -865,10 +866,10 @@ spec_review_problems_exit() {
 # spec-review check <dir>: the round's batch validated as apply would take the
 # all answer - every anchor checked, the recommended options in the dry run -
 # against <dir>/spec.fetched.md when it exists, else <dir>/spec.md. Writes
-# only <dir>/view.md, touches no GitHub, reads no flow state. Grammar, lens and citation
-# errors stop at the first; every anchor problem is reported, one `orch: `
-# line each, then exit 1, leaving any earlier view.md as it was. A clean batch
-# prints its view on stdout - see spec_review_view - saves it to
+# only <dir>/view.md, touches no GitHub, reads no flow state. Grammar, lens and
+# citation errors stop at the first; every anchor problem is reported, one
+# `orch: ` line each, then exit 1, leaving any earlier view.md as it was. A
+# clean batch prints its view on stdout - see spec_review_view - saves it to
 # <dir>/view.md (see spec_review_view_save), and prints a one-line summary on
 # stderr, ending in spec_review_nudge. With --tickets, the
 # round's tickets.md instead: see spec_review_tickets_check. With --full
@@ -995,8 +996,9 @@ spec_review_group_title() {
 }
 
 # spec_review_item_view <index>: item <index> in full - its group, its
-# recommendation (a resolved item's resolving item), the text of each finding it cites and of each comment it
-# folds in, and its edit, or each option's, in full.
+# recommendation (a resolved item's resolving item), the text of each finding it
+# cites and of each comment it folds in, and its edit, or each option's, in
+# full.
 spec_review_item_view() {
   local i="$1" j
   printf '\n### Item %s - %s\n\n**Recommendation:** ' "${SR_IT_N[$i]}" "$(spec_review_group_title "$i")"
@@ -1206,7 +1208,7 @@ spec_review_changelog() {
   [ -z "$4" ] || printf '\n**Host fallbacks:** %s\n' "$4"
 }
 
-# --- spec-review apply --tickets (#1118) ---------------------------------------
+# --- spec-review apply --tickets (#1118) --------------------------------------
 #
 # The ticket step: on the rerun after the pause, <dir>/tickets.md holds the
 # ticket items the session drafted - text edits against ticket-<t>.md or the

@@ -182,10 +182,11 @@ cmd_spec_round_dir() {
 
 # spec round: the round a resumed flow's spec review runs next, from the
 # round marker - `<k> <n> waiting` while the marker's round holds fundamental
-# items back for the human's answer (autopilot), else `<k> <n>`, the marker's k, or k+1 once round k's directory
-# holds round-complete - or `done <n>` once round n's does. Exit 1, printing
-# nothing, when there is no marker or it names another issue; every failure
-# is exit 2, so a caller never reads one as "no marker".
+# items back for the human's answer (autopilot), else `<k> <n>`, the marker's k,
+# or k+1 once round k's directory holds round-complete - or `done <n>` once
+# round n's does. Exit 1, printing nothing, when there is no marker or it names
+# another issue; every failure is exit 2, so a caller never reads one as
+# "no marker".
 cmd_spec_round() {
   [ $# -eq 0 ] || die2 "usage: orch.sh spec round"
   local issue marker="$HANDOFF_DIR/$SPEC_ROUND_MARKER" line m_issue k n extra

@@ -44,7 +44,7 @@ out="$("$ORCH" init other --issue x 2>&1)"; st=$?
 assert_status "a malformed --issue keeps its exit code" "$st" 1
 restore_suite_env
 
-# --- init git-excludes the plugin's directories once ---------------------------
+# --- init git-excludes the plugin's directories once --------------------------
 echo
 echo "init git-excludes the plugin's directories once"
 fake_flow first
@@ -172,7 +172,7 @@ assert_status "starts with only allowlisted changes, even from a subdirectory" "
 assert_eq "records the flow" "$("$ORCH" state get slug)" "clean-enough"
 restore_suite_env
 
-# --- init refuses a busy checkout (#1202) --------------------------------------
+# --- init refuses a busy checkout (#1202) -------------------------------------
 # A quick implementation still running here holds the checkout as a flow
 # mid-pipeline does: init exits 3 on a quick branch with no PR, before its
 # planning-allowlist check, so a dirty tree there is exit 3 too, not exit 1.

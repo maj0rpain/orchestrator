@@ -25,9 +25,10 @@
 # file exists, or when it saw another live marker at start, and it removes its
 # marker and .contended file either way. A marker or .contended file whose pid
 # names no live process is stale, and so is a .contended file whose marker is
-# gone: no contention, and removed by the run that finds it. A failed .contended write for another run is not retried, and a
-# failed removal is ignored. A run that cannot register still runs but is not
-# recorded. No run ever waits for another.
+# gone: no contention, and removed by the run that finds it. A failed .contended
+# write for another run is not retried, and a failed removal is ignored. A run
+# that cannot register still runs but is not recorded. No run ever waits for
+# another.
 #
 # A verdict check confirmed (both confirming runs succeeded) is stored in a
 # second clone-wide file, suite-cost.verdicts beside the record, so a later
@@ -308,10 +309,10 @@ suite_cost_is_base() {
 # commit of the newest head record, and on that of the newest baseline record.
 # The knobs are validated first, so a bad one dies before anything runs. The
 # command runs to measure a base commit with no clean record of its own, and
-# runs on the head only to confirm a growth: a comparison past the threshold measures the
-# head at HEAD and then the base at the baseline sample's commit, once each,
-# and compares again before it is reported. The head side pools the head
-# confirming run with the head sample only when that sample is on HEAD's
+# runs on the head only to confirm a growth: a comparison past the threshold
+# measures the head at HEAD and then the base at the baseline sample's commit,
+# once each, and compares again before it is reported. The head side pools the
+# head confirming run with the head sample only when that sample is on HEAD's
 # clean SHA, as a -dirty or ancestor one measured another tree.
 suite_cost_check() {
   local floor growth rec want base_commit head_cpu head_sha base_cpu base_sha verdict head_field head_commit clean_head line IFS=' '

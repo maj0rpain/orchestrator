@@ -74,11 +74,11 @@ triage_table_rows() {
     }' "$ROOT/$LABELS_DOC"
 }
 
-# Parsed, never hardcoded. That file documents its right-hand column as editable,
-# so a hardcoded list of the five canonical names would make doctor confidently
-# wrong in exactly the repos that customised themselves - the worst thing a
-# diagnostic can be. A thin filter over triage_table_rows: every row's local
-# label name, skipping rows that left it blank.
+# Parsed, never hardcoded. That file documents its right-hand column as
+# editable, so a hardcoded list of the five canonical names would make doctor
+# confidently wrong in exactly the repos that customised themselves - the worst
+# thing a diagnostic can be. A thin filter over triage_table_rows: every row's
+# local label name, skipping rows that left it blank.
 triage_labels() {
   triage_table_rows | awk -F'\t' '$2 != "" { print $2 }'
 }
