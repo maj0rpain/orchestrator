@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.32.4
+
+Reviewers no longer probe for standards documents that may not exist. `orch.sh review standards` resolves them mechanically - root `CLAUDE.md` and `AGENTS.md`, or with neither `CODING_STANDARDS.md` and `CONTRIBUTING.md`, then the `.md` paths they mention, two hops, only paths that exist - and the review loop and the review pass hand that one `Standards:` line to both reviewers as a seventh prompt variable (#1521).
+
+Spec-review lens prompts are printed by the new `orch.sh spec-review prompt <dir> <lens>`, which names every input path that exists and prints `none` for the rest, so lens subagents no longer probe for round files that are not there (#1521).
+
 ## 4.32.3
 
 A pattern finding now lists every site of its pattern: both reviewers grep for every site and report them in its `Sites:`, the review loop hands the site list to the fixer, and the fixer and the review pass fix or defer every site, grep once more before committing, and never delete or weaken an assertion or fixture the spec names. `GLOSSARY.md` gains the **Pattern finding** entry.
