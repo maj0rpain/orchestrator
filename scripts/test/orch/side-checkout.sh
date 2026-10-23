@@ -9,6 +9,16 @@
 # checkout at <top> holds.
 archived_count() { find "$1/.orchestrator/archive" -maxdepth 1 -name "*-$2" 2>/dev/null | wc -l | tr -d ' '; }
 
+# sp_branch <branch>: kept or gone, by whether the local branch exists.
+sp_branch() { if git rev-parse --verify --quiet "refs/heads/$1" >/dev/null; then echo kept; else echo gone; fi; }
+# sp_branch_off <path> <branch>: puts the side checkout at <path> on a new
+# branch with one commit of its own, never merged into main locally - as a
+# squash merge on GitHub leaves it.
+sp_branch_off() {
+  git -C "$1" checkout -q -b "$2"
+  git -C "$1" commit -q --allow-empty -m "work on $2"
+}
+
 # --- side-checkout (#722) ------------------------------------------------------
 # A side checkout: a worktree the plugin makes under the main checkout's
 # .orchestrator/checkouts/<slug>, on no branch at origin/<base>, carrying the
@@ -512,15 +522,6 @@ restore_suite_env
 # left on disk, and the report, against the store-backed GitHub fake.
 echo
 echo "side-checkout prune"
-sp_branch() { if git rev-parse --verify --quiet "refs/heads/$1" >/dev/null; then echo kept; else echo gone; fi; }
-# sp_branch_off <path> <branch>: puts the side checkout at <path> on a new
-# branch with one commit of its own, never merged into main locally - as a
-# squash merge on GitHub leaves it.
-sp_branch_off() {
-  git -C "$1" checkout -q -b "$2"
-  git -C "$1" commit -q --allow-empty -m "work on $2"
-}
-
 sc_clone
 fake_github
 top="$(git rev-parse --show-toplevel)"
@@ -537,49 +538,10 @@ fake_pr 41 merged orch/fl-flow main
 qk="$(sc_add qk)"
 sp_branch_off "$qk" quick/7-qk
 fake_pr 42 merged quick/7-qk main
-# An open PR.
-op="$(sc_add op)"
-sp_branch_off "$op" quick/8-op
-fake_pr 43 open quick/8-op main
-# A dirty tree, its PR merged.
-dt="$(sc_add dt)"
-sp_branch_off "$dt" quick/9-dt
-fake_pr 44 merged quick/9-dt main
-echo wip >"$dt/wip.txt"
-# A flow not at done.
-nd="$(sc_add nd)"
-(cd "$nd" && orch_gh_failing init nd-flow >/dev/null && state_fixture phase implement)
-# A finished side checkout whose PR was a true merge: its branch is an
-# ancestor of main.
-tm="$(sc_add tm)"
-sp_branch_off "$tm" quick/17-tm
-git merge -q --no-ff --no-edit quick/17-tm
-fake_pr 56 merged quick/17-tm main
-# A side checkout still on no branch.
-nb="$(sc_add nb)"
-# Flows at done whose recorded PR is still open, and closed unmerged: their
-# verdict names the PR's state in lowercase.
-po="$(sc_add po)"
-(cd "$po" && orch_gh_failing init po-flow >/dev/null \
-  && state_fixture phase "done" && state_fixture branch orch/po-flow && state_fixture pr 61)
-sp_branch_off "$po" orch/po-flow
-fake_pr 61 open orch/po-flow main
-pc="$(sc_add pc)"
-(cd "$pc" && orch_gh_failing init pc-flow >/dev/null \
-  && state_fixture phase "done" && state_fixture branch orch/pc-flow && state_fixture pr 62)
-sp_branch_off "$pc" orch/pc-flow
-fake_pr 62 closed orch/pc-flow main
 # The main checkout's own finished flow.
 orch_gh_failing init main-flow >/dev/null
-git checkout -q -b orch/main-flow
 state_fixture phase "done"; state_fixture branch orch/main-flow; state_fixture pr 45
 fake_pr 45 merged orch/main-flow main
-# A hand-made worktree holding a finished flow.
-hand="$(mktemp -d)/hand"
-git worktree add -q -b orch/hand-flow "$hand" main
-(cd "$hand" && orch_gh_failing init hand-flow >/dev/null \
-  && state_fixture phase "done" && state_fixture branch orch/hand-flow && state_fixture pr 46)
-fake_pr 46 merged orch/hand-flow main
 
 # GitHub unreachable: nothing is removed.
 out="$(orch_gh_failing side-checkout prune 2>&1)"; st=$?
@@ -632,6 +594,49 @@ assert_contains "a failed merged-PR list removes nothing" "$out" "nothing was re
 assert_eq "the finished quick side checkout stays" "$(on_disk "$qk")" "present"
 fake_unfail
 
+fake_offline
+# An open PR.
+op="$(sc_add op)"
+sp_branch_off "$op" quick/8-op
+fake_pr 43 open quick/8-op main
+# A dirty tree, its PR merged.
+dt="$(sc_add dt)"
+sp_branch_off "$dt" quick/9-dt
+fake_pr 44 merged quick/9-dt main
+echo wip >"$dt/wip.txt"
+# A flow not at done.
+nd="$(sc_add nd)"
+(cd "$nd" && orch_gh_failing init nd-flow >/dev/null && state_fixture phase implement)
+# A finished side checkout whose PR was a true merge: its branch is an
+# ancestor of main.
+tm="$(sc_add tm)"
+sp_branch_off "$tm" quick/17-tm
+git merge -q --no-ff --no-edit quick/17-tm
+fake_pr 56 merged quick/17-tm main
+# A side checkout still on no branch.
+nb="$(sc_add nb)"
+# Flows at done whose recorded PR is still open, and closed unmerged: their
+# verdict names the PR's state in lowercase.
+po="$(sc_add po)"
+(cd "$po" && orch_gh_failing init po-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/po-flow && state_fixture pr 61)
+sp_branch_off "$po" orch/po-flow
+fake_pr 61 open orch/po-flow main
+pc="$(sc_add pc)"
+(cd "$pc" && orch_gh_failing init pc-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/pc-flow && state_fixture pr 62)
+sp_branch_off "$pc" orch/pc-flow
+fake_pr 62 closed orch/pc-flow main
+git checkout -q -b orch/main-flow
+# A hand-made worktree holding a finished flow.
+hand="$(mktemp -d)/hand"
+git worktree add -q -b orch/hand-flow "$hand" main
+(cd "$hand" && orch_gh_failing init hand-flow >/dev/null \
+  && state_fixture phase "done" && state_fixture branch orch/hand-flow && state_fixture pr 46)
+fake_pr 46 merged orch/hand-flow main
+
+fake_online
+
 # A tag named as the main checkout's branch makes git's short branch name
 # ambiguous; the report still names the branch as git branch --show-current does.
 git tag orch/main-flow
@@ -666,6 +671,18 @@ assert_eq "a hand-made worktree's flow is untouched" "$(on_disk "$hand/.orchestr
 assert_eq "and the worktree stays" "$(on_disk "$hand")" "present"
 assert_eq "with its branch" "$(sp_branch orch/hand-flow)" "kept"
 assert_contains "reported as left alone" "$out" "$hand: not a side checkout, left alone"
+restore_suite_env
+
+# --- side-checkout prune: edge cases (#726) -----------------------------------
+# The prune cases that need no checkout of the main section: each arranges its own
+# side checkouts on a fresh clone, so the sweep never walks leftovers.
+echo
+echo "side-checkout prune edge cases"
+sc_clone
+fake_github
+top="$(git rev-parse --show-toplevel)"
+git checkout -q -b orch/main-flow
+mkdir -p "$top/.orchestrator/archive"
 
 # A failure after the archive is reported, that checkout stays, and the sweep
 # moves on. A locked worktree is one git refuses to remove without force.
