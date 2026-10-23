@@ -146,10 +146,7 @@ suite_cost_unregister() {
 # active, either of which it warns of. Exits with the command's own status.
 suite_cost_run() {
   local sha
-  sha="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
-  if [ -n "$sha" ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-    sha="$sha-dirty"
-  fi
+  sha="$(suite_cost_head_commit)"
   suite_cost_register
   suite_cost_measure "$@"
   suite_cost_unregister
@@ -165,6 +162,18 @@ suite_cost_run() {
     fi
   fi
   exit "$SUITE_COST_STATUS"
+}
+
+# suite_cost_head_commit: prints the commit field a run started now would
+# record - HEAD's full SHA, suffixed -dirty when git status --porcelain prints
+# anything - or nothing when HEAD names no commit.
+suite_cost_head_commit() {
+  local sha
+  sha="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
+  if [ -n "$sha" ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    sha="$sha-dirty"
+  fi
+  note "$sha"
 }
 
 # suite_cost_measure <cmd> [args...]: runs the command once, its stdout,
@@ -261,8 +270,9 @@ suite_cost_newest() {
 # nothing when there is none.
 suite_cost_lowest() {
   [ -e "$1" ] || return 0
-  LC_ALL=C awk -F'\t' -v want="$2" -v sha="$3" '
-    $1 == sha && $5 == want && (n++ == 0 || $2 + 0 < low + 0) { low = $2 }
+  # The strings go through ENVIRON, as awk -v would expand their backslashes.
+  want="$2" sha="$3" LC_ALL=C awk -F'\t' '
+    $1 == ENVIRON["sha"] && $5 == ENVIRON["want"] && (n++ == 0 || $2 + 0 < low + 0) { low = $2 }
     END { if (n) print low }' "$1"
 }
 
@@ -310,10 +320,10 @@ suite_cost_check() {
   rec="$(suite_cost_record)" || exit 1
   want="$*"
   base_commit="$(suite_cost_base_commit)" || { note unmeasured; return 0; }
-  clean_head="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
-  if [ -n "$clean_head" ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-    clean_head=""
-  fi
+  head_commit="$(suite_cost_head_commit)"
+  clean_head="$head_commit"
+  [ "${clean_head%-dirty}" = "$clean_head" ] || clean_head=""
+  head_commit="${head_commit%-dirty}"
   if [ -n "$clean_head" ] &&
     verdict="$(suite_cost_verdict_find)"; then
     note "$verdict"
@@ -333,7 +343,7 @@ suite_cost_check() {
     grew*) ;;
     *) note "$line"; return 0 ;;
   esac
-  head_commit="$(git rev-parse --verify -q HEAD)" || { note unmeasured; return 0; }
+  [ -n "$head_commit" ] || { note unmeasured; return 0; }
   suite_cost_tree_run confirm "$head_commit" "$@" || { note unmeasured; return 0; }
   if [ "$head_sha" = "$head_commit" ]; then
     head_cpu="$(suite_cost_min "$head_cpu" "$SUITE_COST_CPU")"
@@ -380,8 +390,9 @@ suite_cost_verdict_find() {
   local file out
   file="$(suite_cost_verdicts)" || return 1
   [ -e "$file" ] || return 1
-  out="$(LC_ALL=C awk -F'\t' -v h="$clean_head" -v b="$base_commit" -v f="$floor" -v g="$growth" -v c="$want" '
-    $1 == h && $2 == b && ($3 "") == f && ($4 "") == g && $6 == c { v = $7; hit = 1 }
+  # The key goes through ENVIRON, as awk -v would expand its backslashes.
+  out="$(h="$clean_head" b="$base_commit" f="$floor" g="$growth" c="$want" LC_ALL=C awk -F'\t' '
+    $1 == ENVIRON["h"] && $2 == ENVIRON["b"] && $3 == ENVIRON["f"] && $4 == ENVIRON["g"] && $6 == ENVIRON["c"] { v = $7; hit = 1 }
     END { if (hit) print v; else exit 1 }' "$file" 2>/dev/null)" || return 1
   printf '%s\n' "$out"
 }

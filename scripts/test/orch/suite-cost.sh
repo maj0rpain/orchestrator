@@ -842,6 +842,16 @@ assert_eq "a dirty tree does not reuse the verdict" "$(runs)" "$((before_runs + 
 assert_eq "and writes no line" "$(wc -l <"$vf" | tr -d ' ')" 1
 rm -f untracked
 
+bs_cmd=(sh run.sh 'a\.b')
+seed_run "$head" 100.00 "${bs_cmd[*]}"
+seed_run "$base" 50.00 "${bs_cmd[*]}"
+before_runs="$(runs)"
+out="$("$ORCH" suite-cost check -- "${bs_cmd[@]}" 2>/dev/null)"
+assert_contains "a command with a backslash compares its own records" "$out" "grew 80 - "
+assert_eq "and confirms once" "$(runs)" "$((before_runs + 2))"
+"$ORCH" suite-cost check -- "${bs_cmd[@]}" >/dev/null 2>&1
+assert_eq "its confirmed verdict is reused, the backslash matched as written" "$(runs)" "$((before_runs + 2))"
+
 git config orchestrator.suiteCost.growth 20
 before_runs="$(runs)"
 "$ORCH" suite-cost check -- "${cmd[@]}" >/dev/null 2>&1
