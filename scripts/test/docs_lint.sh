@@ -522,17 +522,21 @@ orch_lookup="$orch_junie (the Junie CLI install). $orch_junie_one $orch_junie_ma
 orch_steps="$orch_lookup $orch_fallback"
 # scan_orch_resolution <plugin root>: print one line per offending file.
 scan_orch_resolution() {
-  local r="$1" f flat root_sentence
-  local -a allowed
+  local r="$1" f flat rest root_sentence
   for f in "$r"/skills/*/SKILL.md "$r"/commands/*.md; do
     [ -f "$f" ] || continue
+    # Checked on the flat text: a sentence wrapped at 80 columns still counts.
     flat="$(flat_text "$f")"
-    allowed=(-e "$orch_line" -e "$orch_junie")
-    grep -qF "$root_fallback" "$f" && allowed+=(-e "$root_fallback" -e '"${CLAUDE_PLUGIN_ROOT}/')
-    if grep -n 'CLAUDE_PLUGIN_ROOT' "$f" | grep -vF "${allowed[@]}" | grep -q .; then
+    rest="${flat//"$orch_line"/}"
+    rest="${rest//"$orch_junie"/}"
+    if [[ "$flat" == *"$root_fallback"* ]]; then
+      rest="${rest//"$root_fallback"/}"
+      rest="${rest//'"${CLAUDE_PLUGIN_ROOT}/'/}"
+    fi
+    if [[ "$rest" == *CLAUDE_PLUGIN_ROOT* ]]; then
       echo "${f#"$r"/}: CLAUDE_PLUGIN_ROOT outside the ORCH= line and its fallback"
     fi
-    if grep -qF "$root_fallback" "$f"; then
+    if [[ "$flat" == *"$root_fallback"* ]]; then
       # The sentence runs to the first full stop followed by a space;
       # orch.sh's own dot is followed by a backtick, so it does not end it.
       root_sentence="${flat#*"$root_fallback"}"
@@ -542,10 +546,10 @@ scan_orch_resolution() {
     fi
     if grep -qE 'orch\.sh|\$ORCH' "$f"; then
       grep -qxF "$orch_line" "$f" || echo "${f#"$r"/}: uses orch.sh without the ORCH= line"
-      grep -qF "$orch_junie" "$f" || echo "${f#"$r"/}: uses orch.sh without the Junie step"
-      grep -qF "$orch_junie_one" "$f" || echo "${f#"$r"/}: uses orch.sh without the one-install step"
-      grep -qF "$orch_junie_many" "$f" || echo "${f#"$r"/}: uses orch.sh without the stop on several Junie installs"
-      grep -qF "$orch_fallback" "$f" || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
+      [[ "$flat" == *"$orch_junie"* ]] || echo "${f#"$r"/}: uses orch.sh without the Junie step"
+      [[ "$flat" == *"$orch_junie_one"* ]] || echo "${f#"$r"/}: uses orch.sh without the one-install step"
+      [[ "$flat" == *"$orch_junie_many"* ]] || echo "${f#"$r"/}: uses orch.sh without the stop on several Junie installs"
+      [[ "$flat" == *"$orch_fallback"* ]] || echo "${f#"$r"/}: uses orch.sh without the relative fallback"
       [[ "$flat" == *"$orch_steps"* ]] || echo "${f#"$r"/}: resolves orch.sh out of the documented order"
     fi
   done
@@ -582,6 +586,9 @@ flags "the scan flags the Junie steps out of order" \
   "$(scan_orch_resolution "$fixture")" "commands/orch.md: resolves orch.sh out of the documented order"
 documented_orch_form >"$fixture/commands/orch.md"
 assert_empty "the scan accepts the documented form" "$(scan_orch_resolution "$fixture")"
+documented_orch_form | fold -s -w 80 >"$fixture/commands/orch.md"
+assert_empty "the scan accepts the documented form wrapped at 80 columns" \
+  "$(scan_orch_resolution "$fixture")"
 fixture2="$(new_fixture)"
 mkdir -p "$fixture2/skills/orch-x"
 documented_orch_form >"$fixture2/skills/orch-x/SKILL.md"
@@ -2590,8 +2597,9 @@ check "orch-review holds the loop only and points to orch-review-pass" \
 # block has no orch-review-pass dependency sentence naming both reviewers.
 scan_junie_review_pass() {
   local r="$1" doc="docs/junie/AGENTS.md" line
+  # The sentence runs to its first full stop, across a wrapped line.
   line="$(md_section "$r/$doc" "## orchestrator plugin: custom agents" 2>/dev/null \
-    | grep -E '^The orch-review-pass skill depends on')"
+    | flat_text | grep -oE '(^| )The orch-review-pass skill depends on[^.]*')"
   { grep -qF 'orch-reviewer-spec' <<<"$line" && grep -qF 'orch-reviewer-standards' <<<"$line"; } \
     || echo "$doc: no orch-review-pass dependency sentence naming both reviewers"
   return 0
@@ -2607,6 +2615,11 @@ printf '%s\n' '## orchestrator plugin: custom agents' '' \
   'The orch-review-pass skill depends on the orch-reviewer-spec and orch-reviewer-standards custom agents.' \
   >"$fixture/docs/junie/AGENTS.md"
 assert_empty "an orch-review-pass sentence naming both reviewers is not flagged" \
+  "$(scan_junie_review_pass "$fixture")"
+printf '%s\n' '## orchestrator plugin: custom agents' '' \
+  'The orch-review-pass skill depends on the orch-reviewer-spec and' \
+  'orch-reviewer-standards custom agents.' >"$fixture/docs/junie/AGENTS.md"
+assert_empty "an orch-review-pass sentence wrapped across lines is not flagged" \
   "$(scan_junie_review_pass "$fixture")"
 check "Junie's custom-agent block names orch-review-pass's reviewers" \
   "$(scan_junie_review_pass "$PLUGIN_ROOT")"
