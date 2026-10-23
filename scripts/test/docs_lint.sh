@@ -1813,10 +1813,14 @@ check "the Junie README has an Agent settings on Junie section naming --host jun
   "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/junie/README.md|## Agent settings on Junie' '--host junie')"
 check "the Junie README's Agent settings on Junie section names orch.sh doctor" \
   "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/junie/README.md|## Agent settings on Junie' 'orch.sh doctor')"
-check "README's Running autopilot names orch.sh autopilot watch" \
-  "$(scan_names_phrase "$PLUGIN_ROOT" 'README.md|## Running autopilot' 'orch.sh autopilot watch')"
-check "README's Running autopilot names orchestrator.autopilot.permission-mode" \
-  "$(scan_names_phrase "$PLUGIN_ROOT" 'README.md|## Running autopilot' 'orchestrator.autopilot.permission-mode')"
+
+# --- autopilot docs (#1497) ---------------------------------------------------
+echo
+echo "autopilot docs (#1497)"
+for phrase in 'orch.sh autopilot watch' orchestrator.autopilot.permission-mode; do
+  check "README's Running autopilot names $phrase" \
+    "$(scan_names_phrase "$PLUGIN_ROOT" 'README.md|## Running autopilot' "$phrase")"
+done
 for phrase in orchestrator.autopilot.permission-mode 'orch.sh autopilot tick' needs-human 'all: recommended' 'orch.sh doctor'; do
   check "how-it-works' Autopilot section names $phrase" \
     "$(scan_names_phrase "$PLUGIN_ROOT" 'docs/how-it-works.md|## Autopilot' "$phrase")"
