@@ -15,6 +15,8 @@ Resolve the repo first, and pin every `gh` call to it with `-R`, never to `gh`'s
 
 Do not infer the repo from `git remote -v` or leave it to `gh`: `orch.sh repo show --name` is the one answer (see **Repo** in `GLOSSARY.md`).
 
+The `mktemp` file that **Read an issue** and **Read a PR** below write into is for the file only: never `cd` into a `mktemp` path, since orch.sh resolves its checkout from the cwd.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_

@@ -1025,11 +1025,27 @@ restore_suite_env
 
 # --- outside a checkout (#931) ---------------------------------------------------
 # Run from the suite's own non-repo cwd: the death names the cwd and the
-# remedy. It comes before dispatch, so any subcommand reaches it.
+# remedy. It comes before dispatch, so any subcommand reaches it. The remedy
+# names the checkout OLDPWD resolves to, when it resolves to one (#1523);
+# every case pins OLDPWD, so the suite's own leftover never decides it.
 echo
 echo "outside a checkout (#931)"
+outside_repo="$(new_repo)"
+git -C "$outside_repo" worktree add -q -b side "$outside_repo-wt" 2>/dev/null
+mkdir -p "$outside_repo-wt/sub/dir"
+outside_plain="$(mktemp -d)"
 cd "$SUITE_CWD" || exit 1
-err="$(bash "$ORCH" issue fetch 931 out.md 2>&1 >/dev/null)"; st=$?
+outside_generic="orch: not inside a git repository ($PWD) - cd into the repo's checkout (its root or a worktree) and run orch.sh there; a mktemp path is for files, not the working directory"
+err="$(OLDPWD="$outside_repo-wt/sub/dir" bash "$ORCH" issue fetch 931 out.md 2>&1 >/dev/null)"; st=$?
 assert_status "orch.sh outside a git repository exits 1" "$st" 1
-assert_eq "naming the cwd and the remedy" "$err" \
-  "orch: not inside a git repository ($PWD) - run orch.sh from inside the repo's checkout"
+assert_eq "an OLDPWD inside a linked worktree names that worktree's toplevel" "$err" \
+  "orch: not inside a git repository ($PWD) - cd into the checkout you came from, $outside_repo-wt, and run orch.sh there; a mktemp path is for files, not the working directory"
+err="$(OLDPWD="$outside_plain" bash "$ORCH" issue fetch 931 out.md 2>&1 >/dev/null)"; st=$?
+assert_status "with an OLDPWD outside any repo, exits 1" "$st" 1
+assert_eq "an OLDPWD outside any repo gives the generic remedy" "$err" "$outside_generic"
+err="$(OLDPWD='' bash "$ORCH" issue fetch 931 out.md 2>&1 >/dev/null)"; st=$?
+assert_status "with an empty OLDPWD, exits 1" "$st" 1
+assert_eq "an empty OLDPWD gives the generic remedy" "$err" "$outside_generic"
+err="$(env -u OLDPWD bash "$ORCH" issue fetch 931 out.md 2>&1 >/dev/null)"; st=$?
+assert_status "with OLDPWD unset, exits 1" "$st" 1
+assert_eq "an unset OLDPWD gives the generic remedy" "$err" "$outside_generic"

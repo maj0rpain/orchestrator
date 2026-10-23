@@ -74,7 +74,14 @@ source "$ORCH_SCRIPTS/host.sh"
 # which dies through die outside a git repository.
 source "$ORCH_SCRIPTS/orch/common.sh"
 
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository ($PWD) - run orch.sh from inside the repo's checkout"
+# Outside a checkout, the remedy names the one the caller came from: an agent
+# whose cwd drifted into a mktemp directory still has OLDPWD (#1523).
+if ! ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+  if [ -n "${OLDPWD:-}" ] && came_from="$(git -C "$OLDPWD" rev-parse --show-toplevel 2>/dev/null)"; then
+    die "not inside a git repository ($PWD) - cd into the checkout you came from, $came_from, and run orch.sh there; a mktemp path is for files, not the working directory"
+  fi
+  die "not inside a git repository ($PWD) - cd into the repo's checkout (its root or a worktree) and run orch.sh there; a mktemp path is for files, not the working directory"
+fi
 readonly ROOT
 readonly ORCH="$ROOT/$ORCH_DIR_NAME"
 STATE="$(flow_state_file "$ROOT")"
