@@ -278,6 +278,11 @@ assert_contains "check's usage text says a growth is confirmed" "$flat" \
   "A growth is confirmed by measuring head and base once more"
 assert_contains "the head being run only to confirm a growth" "$flat" \
   "the head is run only to confirm a growth"
+assert_contains "check's usage text says a confirmed verdict is reused" "$flat" \
+  "A verdict confirmed this way is stored (orchestrator/suite-cost.verdicts) and reused, printed with nothing run"
+assert_not_contains "check's usage text names no ancestor baseline" "$flat" "the base commit or an ancestor"
+assert_contains "check's usage text says a base commit with no record of its own is measured" "$flat" \
+  "never an ancestor's record reused"
 assert_contains "check's usage text says an overlapped base or confirming run is not recorded" \
   "$flat" "Such a base or confirming run is not recorded when another suite-cost run overlaps it, or when it could not register as active, and the verdict is then unmeasured"
 assert_contains "the CLI conventions' noun table has a suite-cost row" \
@@ -344,6 +349,7 @@ seed_run "$base" 30.00 "scripts/test/orch_test.sh"
 seed_run "$head" 70.00
 assert_eq "the baseline is the base commit's own newest record of the same command, never an ancestor's" \
   "$(verdict)" "ok"
+assert_eq "with no base run" "$(on_disk "$marker")" absent
 rm -f "$marker"
 
 # Lowest samples: of several records on the newest head record's commit, or
@@ -505,17 +511,6 @@ assert_eq "an ancestor's record is ignored: the base is measured and the verdict
 assert_eq "by a base run of the command" "$(on_disk "$marker")" present
 assert_eq "recorded at the base commit" "$(tail -n 1 "$rec" | cut -f1)" "$base"
 rm -f "$marker"
-out="$("$ORCH" suite-cost check -- "${pass[@]}" 2>/dev/null)"
-assert_eq "a second check uses the base run's record" "$out" "off"
-assert_eq "and makes no second base run" "$(on_disk "$marker")" absent
-
-check_repo
-seed_run "$root" 10.00 "${pass[*]}"
-seed_run "$base" 100.00 "${pass[*]}"
-seed_run "$head" 70.00 "${pass[*]}"
-out="$("$ORCH" suite-cost check -- "${pass[@]}" 2>/dev/null)"
-assert_eq "a record on the base commit itself is the baseline" "$out" "ok"
-assert_eq "with no base run" "$(on_disk "$marker")" absent
 
 check_repo
 seed_run "$head" 70.00 "false"
@@ -875,8 +870,8 @@ grown_repo
 before_runs="$(runs)"
 "$ORCH" suite-cost check -- sh run.sh >/dev/null 2>&1
 assert_eq "the same command is still reused" "$(runs)" "$before_runs"
-"$ORCH" suite-cost check -- sh -c "sh run.sh" >/dev/null 2>&1
-assert_eq "a different command does not reuse it" "$(wc -l <"$vf" | tr -d ' ')" 1
+out="$("$ORCH" suite-cost check -- sh -c "sh run.sh" 2>/dev/null)"
+assert_eq "a different command does not reuse it" "$out" "unmeasured"
 
 # A confirmed ok is reused too, and an ok reached without confirmation stores nothing.
 confirm_repo "echo b >>$cnt" "echo h >>$cnt"

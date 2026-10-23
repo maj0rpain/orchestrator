@@ -306,7 +306,7 @@ suite_cost_check() {
     clean_head=""
   fi
   if [ -n "$clean_head" ] &&
-    verdict="$(suite_cost_verdict_find "$clean_head" "$base_commit" "$floor" "$growth" "$want")"; then
+    verdict="$(suite_cost_verdict_find)"; then
     note "$verdict"
     return 0
   fi
@@ -337,19 +337,17 @@ suite_cost_check() {
 # grew <pct> - <finding text> - and, when <confirmed> is non-empty and the
 # tree was clean when check started, stores it. Unconfirmed, a grew verdict is
 # not printed: it returns 1 so the caller confirms it. Local to
-# suite_cost_check in effect, reading and setting its locals through bash's
-# dynamic scope.
+# suite_cost_check in effect, reading its locals through bash's dynamic scope.
 suite_cost_verdict_note() {
-  local pct
-  verdict="$(suite_cost_compare "$head_cpu" "$base_cpu" "$floor" "$growth")"
-  if [ "$verdict" != off ] && [ "$verdict" != ok ]; then
+  local result line
+  result="$(suite_cost_compare "$head_cpu" "$base_cpu" "$floor" "$growth")"
+  line="$result"
+  if [ "$result" != off ] && [ "$result" != ok ]; then
     [ -n "$1" ] || return 1
-    pct="${verdict#grew }"
-    verdict="$verdict - suite cost grew ${pct}% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha"
+    line="$result - suite cost grew ${result#grew }% past the ${growth}% threshold: $head_cpu CPU seconds at the head against $base_cpu at baseline commit $base_sha"
   fi
-  note "$verdict"
-  [ -z "$1" ] || [ -z "$clean_head" ] ||
-    suite_cost_verdict_store "$clean_head" "$base_commit" "$floor" "$growth" "$want" "$verdict"
+  note "$line"
+  [ -z "$1" ] || [ -z "$clean_head" ] || suite_cost_verdict_store "$line"
   return 0
 }
 
@@ -361,27 +359,32 @@ suite_cost_verdicts() {
   printf '%s.verdicts\n' "$rec"
 }
 
-# suite_cost_verdict_find <head> <base> <floor> <growth> <cmd-string>: prints
-# the verdict of the newest verdict line with exactly that key, or fails
-# printing nothing.
+# The verdict key - HEAD's clean SHA, the base commit, the floor, the growth
+# and the command string - is read by suite_cost_verdict_find and
+# suite_cost_verdict_store from suite_cost_check's locals clean_head,
+# base_commit, floor, growth and want, through bash's dynamic scope, so its
+# layout is stated once, in the module header.
+
+# suite_cost_verdict_find: prints the verdict of the newest verdict line with
+# exactly the verdict key, or fails printing nothing.
 suite_cost_verdict_find() {
   local file out
   file="$(suite_cost_verdicts)" || return 1
   [ -e "$file" ] || return 1
-  out="$(LC_ALL=C awk -F'\t' -v h="$1" -v b="$2" -v f="$3" -v g="$4" -v c="$5" '
+  out="$(LC_ALL=C awk -F'\t' -v h="$clean_head" -v b="$base_commit" -v f="$floor" -v g="$growth" -v c="$want" '
     $1 == h && $2 == b && ($3 "") == f && ($4 "") == g && $6 == c { v = $7; hit = 1 }
     END { if (hit) print v; else exit 1 }' "$file" 2>/dev/null)" || return 1
   printf '%s\n' "$out"
 }
 
-# suite_cost_verdict_store <head> <base> <floor> <growth> <cmd-string> <verdict>:
-# appends one verdict line, making the directory when missing. A write that
-# fails warns, returning 0: the verdict still prints.
+# suite_cost_verdict_store <verdict>: appends one verdict line under the
+# verdict key, making the directory when missing. A write that fails warns,
+# returning 0: the verdict still prints.
 suite_cost_verdict_store() {
   local file
   file="$(suite_cost_verdicts)"
   if ! { mkdir -p "${file%/*}" &&
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$(now)" "$5" "$6" >>"$file"; } 2>/dev/null; then
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$clean_head" "$base_commit" "$floor" "$growth" "$(now)" "$want" "$1" >>"$file"; } 2>/dev/null; then
     warn "could not append to the suite-cost verdict record $file - this verdict is not stored"
   fi
   return 0
