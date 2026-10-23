@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.31.0
+
+Run the autopilot watcher in a Docker container isolated from the host: `docker/` ships a Dockerfile, compose project and example env file, and how-it-works documents the container and a host alternative (systemd or cron calling `orch.sh autopilot tick`).
+
 ## 4.30.1
 
 Document the autopilot flow in the README and docs/how-it-works.md.
